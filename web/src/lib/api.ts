@@ -1,4 +1,17 @@
-import type { Agent, AgentInput, Category, CliStatus, Workflow, WorkflowInput } from '@shared/schema'
+import type {
+  Agent,
+  AgentInput,
+  Category,
+  CliStatus,
+  DirInfo,
+  DirListing,
+  Project,
+  ProjectCategory,
+  ProjectCategoryInput,
+  ProjectInput,
+  Workflow,
+  WorkflowInput,
+} from '@shared/schema'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${url}`, {
@@ -31,4 +44,19 @@ export const api = {
   createWorkflow: (input: WorkflowInput) => request<Workflow>('/workflows', json('POST', input)),
   updateWorkflow: (id: string, input: WorkflowInput) => request<Workflow>(`/workflows/${id}`, json('PUT', input)),
   deleteWorkflow: (id: string) => request<void>(`/workflows/${id}`, { method: 'DELETE' }),
+
+  projectCategories: () => request<ProjectCategory[]>('/project-categories'),
+  createProjectCategory: (input: ProjectCategoryInput) =>
+    request<ProjectCategory>('/project-categories', json('POST', input)),
+  updateProjectCategory: (id: string, input: ProjectCategoryInput) =>
+    request<ProjectCategory>(`/project-categories/${id}`, json('PUT', input)),
+  deleteProjectCategory: (id: string) => request<void>(`/project-categories/${id}`, { method: 'DELETE' }),
+
+  projects: () => request<Project[]>('/projects'),
+  createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
+  updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
+
+  inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
+  listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
 }

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import type { Agent, Category, CliStatus, Workflow } from '@shared/schema'
+import type { Agent, Category, CliStatus, Project, ProjectCategory, Workflow } from '@shared/schema'
 import { api } from './api'
 
 interface Data {
@@ -9,6 +9,10 @@ interface Data {
   categories: Category[]
   workflows: Workflow[]
   clis: CliStatus[]
+  projects: Project[]
+  projectCategories: ProjectCategory[]
+  setProjects: React.Dispatch<React.SetStateAction<Project[]>>
+  setProjectCategories: React.Dispatch<React.SetStateAction<ProjectCategory[]>>
   setAgents: React.Dispatch<React.SetStateAction<Agent[]>>
   setCategories: React.Dispatch<React.SetStateAction<Category[]>>
   setWorkflows: React.Dispatch<React.SetStateAction<Workflow[]>>
@@ -24,10 +28,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [categories, setCategories] = useState<Category[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [clis, setClis] = useState<CliStatus[]>([])
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
 
   useEffect(() => {
-    Promise.all([api.agents(), api.categories(), api.workflows(), api.clis()])
-      .then(([a, c, w, l]) => {
+    Promise.all([api.agents(), api.categories(), api.workflows(), api.clis(), api.projects(), api.projectCategories()])
+      .then(([a, c, w, l, p, pc]) => {
+        setProjects(p)
+        setProjectCategories(pc)
         setAgents(a)
         setCategories(c)
         setWorkflows(w)
@@ -43,7 +51,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <Ctx.Provider
-      value={{ loading, agents, categories, workflows, clis, setAgents, setCategories, setWorkflows, refreshClis }}
+      value={{
+        loading,
+        agents,
+        categories,
+        workflows,
+        clis,
+        projects,
+        projectCategories,
+        setAgents,
+        setCategories,
+        setWorkflows,
+        setProjects,
+        setProjectCategories,
+        refreshClis,
+      }}
     >
       {children}
     </Ctx.Provider>

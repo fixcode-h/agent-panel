@@ -69,3 +69,45 @@ export interface CliStatus {
   models: { id: string; label: string }[]
   docsUrl: string
 }
+
+/** 项目分类：同一类项目共用一个默认工作流，例如「Web 应用」「游戏客户端」 */
+export const ProjectCategoryInput = z.object({
+  name: z.string().trim().min(1, '分类名不能为空').max(20),
+  description: z.string().trim().max(200).default(''),
+  /** 默认工作流；为空表示还没指定 */
+  workflowId: z.string().default(''),
+})
+export type ProjectCategoryInput = z.infer<typeof ProjectCategoryInput>
+
+export const ProjectCategory = ProjectCategoryInput.extend(Meta.shape)
+export type ProjectCategory = z.infer<typeof ProjectCategory>
+
+/** 项目：本机上的一个目录，Agent 会在这个目录里按工作流执行任务 */
+export const ProjectInput = z.object({
+  name: z.string().trim().min(1, '名称不能为空').max(40),
+  description: z.string().trim().max(200).default(''),
+  /** 本机绝对路径 */
+  path: z.string().trim().default(''),
+  categoryId: z.string().default(''),
+  /** 单独指定的工作流；为空时使用分类的默认工作流 */
+  workflowId: z.string().default(''),
+})
+export type ProjectInput = z.infer<typeof ProjectInput>
+
+export const Project = ProjectInput.extend(Meta.shape)
+export type Project = z.infer<typeof Project>
+
+/** 本地目录检测结果 */
+export interface DirInfo {
+  path: string
+  exists: boolean
+  isDir: boolean
+  /** 是 git 仓库时的当前分支（分离 HEAD 时为提交号前 7 位） */
+  gitBranch: string | null
+}
+
+export interface DirListing {
+  path: string
+  parent: string | null
+  dirs: { name: string; path: string }[]
+}

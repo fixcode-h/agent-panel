@@ -5,12 +5,13 @@ import { cn } from '@/lib/utils'
 import { DataProvider, NavCtx, type PageId, type Route } from '@/lib/data'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
+import { ProjectsPage } from '@/pages/ProjectsPage'
 
 /** 左侧导航；新增页面在这里登记即可 */
 const NAV: { id: PageId; label: string; icon: LucideIcon; page?: () => React.ReactNode }[] = [
   { id: 'agents', label: 'Agent', icon: Bot, page: () => <AgentsPage /> },
   { id: 'workflows', label: '工作流', icon: Workflow, page: () => <WorkflowsPage /> },
-  { id: 'projects', label: '项目', icon: FolderKanban },
+  { id: 'projects', label: '项目', icon: FolderKanban, page: () => <ProjectsPage /> },
 ]
 
 function useTheme() {

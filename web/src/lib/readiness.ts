@@ -1,4 +1,4 @@
-import type { Agent, CliStatus, Workflow } from '@shared/schema'
+import type { Agent, CliStatus, DirInfo, Workflow } from '@shared/schema'
 
 export interface Check {
   ok: boolean
@@ -57,6 +57,35 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]):
       label: '每个子 Agent 都有分派',
       hint: unassigned.length ? `文档里没提到：${unassigned.map((a) => a.name).join('、')}` : '子 Agent 都在文档中出现',
       optional: true,
+    },
+  ]
+}
+
+export function projectChecks(
+  p: { path: string },
+  dir: DirInfo | null,
+  workflow: Workflow | undefined,
+  agents: Agent[],
+  clis: CliStatus[],
+): Check[] {
+  const dirOk = !!dir?.exists && dir.isDir
+  return [
+    {
+      ok: dirOk,
+      label: '本地目录可用',
+      hint: !p.path.trim() ? '还没有选择目录' : dirOk ? dir!.path : '目录不存在或不是文件夹',
+    },
+    {
+      ok: !!dir?.gitBranch,
+      label: '是 git 仓库',
+      hint: dir?.gitBranch ? `当前分支 ${dir.gitBranch}` : '建议用 git 管理，方便查看和回退 Agent 的改动',
+      optional: true,
+    },
+    { ok: !!workflow, label: '已指定工作流', hint: workflow ? workflow.name : '在项目或项目分类上指定' },
+    {
+      ok: !!workflow && isReady(workflowChecks(workflow, agents, clis)),
+      label: '工作流已就绪',
+      hint: !workflow ? '先指定工作流' : isReady(workflowChecks(workflow, agents, clis)) ? '可以执行' : '到工作流页面查看未通过的检查',
     },
   ]
 }

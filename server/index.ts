@@ -2,14 +2,28 @@ import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { z } from 'zod'
-import { Agent, AgentInput, Category, CategoryInput, Workflow, WorkflowInput } from '../shared/schema.ts'
+import {
+  Agent,
+  AgentInput,
+  Category,
+  CategoryInput,
+  Project,
+  ProjectCategory,
+  ProjectCategoryInput,
+  ProjectInput,
+  Workflow,
+  WorkflowInput,
+} from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { createCollection } from './store.ts'
 import { detectClis } from './detect.ts'
+import { inspectDir, listDir, resolvePath } from './fs.ts'
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
 const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
+const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>('project-categories.json', ProjectCategory)
+const projects = createCollection<ProjectInput, Project>('projects.json', Project)
 
 const app = new Hono().basePath('/api')
 
@@ -110,9 +124,89 @@ app.put('/workflows/:id', async (c) => {
   return w ? c.json(w) : bad(c, '工作流不存在', 404)
 })
 
-app.delete('/workflows/:id', async (c) =>
-  (await workflows.remove(c.req.param('id'))) ? c.body(null, 204) : bad(c, '工作流不存在', 404),
+app.delete('/workflows/:id', async (c) => {
+  const id = c.req.param('id')
+  const users = [
+    ...(await projectCategories.list()).filter((x) => x.workflowId === id).map((x) => `项目分类「${x.name}」`),
+    ...(await projects.list()).filter((x) => x.workflowId === id).map((x) => `项目「${x.name}」`),
+  ]
+  if (users.length) return bad(c, `正在被使用：${users.join('、')}，请先改用其他工作流`, 409)
+  return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, '工作流不存在', 404)
+})
+
+// ---- 项目分类 ----
+async function parseProjectCategory(body: unknown, selfId?: string) {
+  const p = ProjectCategoryInput.safeParse(body)
+  if (!p.success) return { error: z.prettifyError(p.error) }
+  if ((await projectCategories.list()).some((x) => x.name === p.data.name && x.id !== selfId))
+    return { error: `分类「${p.data.name}」已存在` }
+  if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: '工作流不存在' }
+  return { data: p.data }
+}
+
+app.get('/project-categories', async (c) => c.json(await projectCategories.list()))
+
+app.post('/project-categories', async (c) => {
+  const r = await parseProjectCategory(await c.req.json())
+  return r.error ? bad(c, r.error) : c.json(await projectCategories.create(r.data!), 201)
+})
+
+app.put('/project-categories/:id', async (c) => {
+  const id = c.req.param('id')
+  const r = await parseProjectCategory(await c.req.json(), id)
+  if (r.error) return bad(c, r.error)
+  const x = await projectCategories.update(id, r.data!)
+  return x ? c.json(x) : bad(c, '分类不存在', 404)
+})
+
+// 删除分类时，其中的项目变为未分类
+app.delete('/project-categories/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!(await projectCategories.remove(id))) return bad(c, '分类不存在', 404)
+  for (const p of await projects.list()) {
+    if (p.categoryId === id) await projects.update(p.id, { ...p, categoryId: '' })
+  }
+  return c.body(null, 204)
+})
+
+// ---- 项目 ----
+async function parseProject(body: unknown) {
+  const p = ProjectInput.safeParse(body)
+  if (!p.success) return { error: z.prettifyError(p.error) }
+  if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: '项目分类不存在' }
+  if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: '工作流不存在' }
+  if (p.data.path) p.data.path = resolvePath(p.data.path)
+  return { data: p.data }
+}
+
+app.get('/projects', async (c) => c.json(await projects.list()))
+
+app.post('/projects', async (c) => {
+  const r = await parseProject(await c.req.json())
+  return r.error ? bad(c, r.error) : c.json(await projects.create(r.data!), 201)
+})
+
+app.put('/projects/:id', async (c) => {
+  const r = await parseProject(await c.req.json())
+  if (r.error) return bad(c, r.error)
+  const x = await projects.update(c.req.param('id'), r.data!)
+  return x ? c.json(x) : bad(c, '项目不存在', 404)
+})
+
+app.delete('/projects/:id', async (c) =>
+  (await projects.remove(c.req.param('id'))) ? c.body(null, 204) : bad(c, '项目不存在', 404),
 )
+
+// ---- 本地目录 ----
+app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
+
+app.get('/fs/list', async (c) => {
+  try {
+    return c.json(await listDir(c.req.query('path') ?? ''))
+  } catch (e) {
+    return bad(c, `无法读取目录：${(e as Error).message}`)
+  }
+})
 
 const root = new Hono()
 root.route('/', app)
