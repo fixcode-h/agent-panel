@@ -1,0 +1,81 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* 设计 token：改主题只需要改这里 */
+:root {
+  --bg: oklch(0.985 0.003 270);
+  --surface: oklch(1 0 0);
+  --surface-2: oklch(0.965 0.005 270);
+  --border: oklch(0.91 0.008 270);
+  --fg: oklch(0.22 0.02 270);
+  --muted: oklch(0.52 0.02 270);
+  --accent: oklch(0.58 0.2 285);
+  --accent-fg: oklch(0.99 0 0);
+  --accent-soft: oklch(0.58 0.2 285 / 0.1);
+  --success: oklch(0.6 0.15 155);
+  --warning: oklch(0.72 0.15 75);
+  --danger: oklch(0.58 0.21 25);
+  --ring: oklch(0.58 0.2 285 / 0.45);
+}
+.dark {
+  --bg: oklch(0.155 0.012 275);
+  --surface: oklch(0.195 0.014 275);
+  --surface-2: oklch(0.235 0.016 275);
+  --border: oklch(0.3 0.016 275);
+  --fg: oklch(0.95 0.005 275);
+  --muted: oklch(0.68 0.018 275);
+  --accent: oklch(0.68 0.18 285);
+  --accent-fg: oklch(0.16 0.02 285);
+  --accent-soft: oklch(0.68 0.18 285 / 0.14);
+  --success: oklch(0.74 0.15 155);
+  --warning: oklch(0.8 0.14 80);
+  --danger: oklch(0.68 0.19 25);
+  --ring: oklch(0.68 0.18 285 / 0.5);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+  --color-ring: var(--ring);
+  --font-sans: 'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+body {
+  @apply bg-bg text-fg font-sans antialiased;
+}
+* {
+  @apply border-border;
+}
+::selection {
+  background: var(--accent-soft);
+}
+
+@keyframes sheet-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
