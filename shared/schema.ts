@@ -10,6 +10,8 @@ export const AgentInput = z.object({
   cli: z.string().min(1, '请选择 CLI'),
   model: z.string().trim().default(''),
   role: AgentRole.default('sub'),
+  /** 卡片上显示的图标，可选值见 web/src/lib/agent-icons.ts */
+  icon: z.string().default('bot'),
   /** 角色设定 / 系统提示词，执行时会拼在任务前面 */
   instructions: z.string().max(8000).default(''),
   /** 追加给 CLI 的参数，例如 --dangerously-skip-permissions */

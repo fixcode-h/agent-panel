@@ -5,36 +5,41 @@ import { cn } from '@/lib/utils'
 export const Dialog = D.Root
 
 function Overlay() {
-  return <D.Overlay className="fixed inset-0 z-40 bg-black/50 backdrop-blur-[2px] animate-[fade-in_150ms_ease-out]" />
+  return (
+    <D.Overlay className="fixed inset-0 z-40 bg-[oklch(0.1_0.01_286/0.55)] backdrop-blur-sm animate-[fade-in_180ms_ease-out]" />
+  )
 }
 
-/** 右侧滑出的抽屉，适合较长的编辑表单 */
+/** 右侧浮出的抽屉，适合较长的编辑表单 */
 export function SheetContent({
   title,
   description,
+  icon,
   children,
   footer,
 }: {
   title: string
   description?: string
+  icon?: React.ReactNode
   children: React.ReactNode
   footer?: React.ReactNode
 }) {
   return (
     <D.Portal>
       <Overlay />
-      <D.Content className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l bg-surface shadow-2xl animate-[sheet-in_220ms_cubic-bezier(0.2,0.8,0.2,1)] focus:outline-none">
-        <div className="flex items-start justify-between gap-4 border-b px-6 py-5">
-          <div>
-            <D.Title className="text-base font-semibold">{title}</D.Title>
-            {description && <D.Description className="mt-1 text-sm text-muted">{description}</D.Description>}
+      <D.Content className="fixed inset-y-2 right-2 z-50 flex w-[calc(100%-1rem)] max-w-[560px] flex-col overflow-hidden rounded-2xl border border-border-strong bg-elevated shadow-2xl animate-[sheet-in_260ms_cubic-bezier(0.2,0.8,0.2,1)] focus:outline-none">
+        <div className="flex items-center gap-3 border-b px-6 py-4">
+          {icon}
+          <div className="min-w-0 flex-1">
+            <D.Title className="text-[15px] font-semibold">{title}</D.Title>
+            {description && <D.Description className="mt-0.5 truncate text-xs text-muted">{description}</D.Description>}
           </div>
-          <D.Close className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-fg">
+          <D.Close className="rounded-lg p-1.5 text-muted transition-colors hover:bg-surface-2 hover:text-fg">
             <X className="h-4 w-4" />
           </D.Close>
         </div>
-        <div className="flex-1 overflow-y-auto px-6 py-5">{children}</div>
-        {footer && <div className="flex justify-end gap-2 border-t bg-surface-2/40 px-6 py-4">{footer}</div>}
+        <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
+        {footer && <div className="flex items-center justify-end gap-2 border-t bg-surface-2/50 px-6 py-3.5">{footer}</div>}
       </D.Content>
     </D.Portal>
   )
@@ -44,10 +49,12 @@ export function SheetContent({
 export function DialogContent({
   title,
   description,
+  icon,
   footer,
 }: {
   title: string
   description?: React.ReactNode
+  icon?: React.ReactNode
   footer: React.ReactNode
 }) {
   return (
@@ -55,12 +62,13 @@ export function DialogContent({
       <Overlay />
       <D.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2',
-          'rounded-2xl border bg-surface p-6 shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none',
+          'fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-[400px] -translate-x-1/2 -translate-y-1/2',
+          'rounded-2xl border border-border-strong bg-elevated p-6 shadow-2xl animate-[pop-in_180ms_ease-out] focus:outline-none',
         )}
       >
-        <D.Title className="text-base font-semibold">{title}</D.Title>
-        {description && <D.Description className="mt-2 text-sm text-muted leading-relaxed">{description}</D.Description>}
+        {icon && <div className="mb-4">{icon}</div>}
+        <D.Title className="text-[15px] font-semibold">{title}</D.Title>
+        {description && <D.Description className="mt-1.5 text-[13px] leading-relaxed text-muted">{description}</D.Description>}
         <div className="mt-6 flex justify-end gap-2">{footer}</div>
       </D.Content>
     </D.Portal>

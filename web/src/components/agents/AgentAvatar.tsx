@@ -1,16 +1,37 @@
+import { agentIcon } from '@/lib/agent-icons'
 import { cliStyle } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 
-export function AgentAvatar({ name, cli, size = 'md' }: { name: string; cli: string; size?: 'md' | 'lg' }) {
+const sizes = {
+  sm: 'h-9 w-9 rounded-[10px] [&>svg]:h-[18px] [&>svg]:w-[18px]',
+  md: 'h-11 w-11 rounded-xl [&>svg]:h-5 [&>svg]:w-5',
+  lg: 'h-[52px] w-[52px] rounded-[14px] [&>svg]:h-6 [&>svg]:w-6',
+}
+
+/** Agent 头像：底色代表 CLI，图标代表职责 */
+export function AgentAvatar({
+  icon,
+  cli,
+  size = 'md',
+  dim,
+}: {
+  icon: string
+  cli: string
+  size?: keyof typeof sizes
+  dim?: boolean
+}) {
+  const Icon = agentIcon(icon)
   return (
     <div
       className={cn(
-        'grid shrink-0 place-items-center rounded-xl bg-gradient-to-br font-semibold text-white shadow-inner',
-        cliStyle(cli).gradient,
-        size === 'lg' ? 'h-14 w-14 text-xl' : 'h-10 w-10 text-base',
+        'relative grid shrink-0 place-items-center bg-gradient-to-br text-white shadow-lg',
+        'ring-1 ring-inset ring-white/20',
+        cliStyle(cli).tile,
+        sizes[size],
+        dim && 'grayscale opacity-60',
       )}
     >
-      {name.trim().slice(0, 1).toUpperCase() || '?'}
+      <Icon strokeWidth={2} />
     </div>
   )
 }
