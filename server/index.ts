@@ -1,49 +1,118 @@
-import { Hono } from 'hono'
+import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { z } from 'zod'
-import { AgentInput } from '../shared/schema.ts'
+import { Agent, AgentInput, Category, CategoryInput, Workflow, WorkflowInput } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
-import { store } from './store.ts'
+import { createCollection } from './store.ts'
 import { detectClis } from './detect.ts'
+
+const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
+const categories = createCollection<CategoryInput, Category>('categories.json', Category)
+const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
 
 const app = new Hono().basePath('/api')
 
-function parseInput(body: unknown) {
-  const parsed = AgentInput.safeParse(body)
-  if (!parsed.success) return { error: z.prettifyError(parsed.error) }
-  if (!getCli(parsed.data.cli)) return { error: `未知的 CLI：${parsed.data.cli}` }
-  return { data: parsed.data }
+const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
+
+async function parseAgent(body: unknown) {
+  const p = AgentInput.safeParse(body)
+  if (!p.success) return { error: z.prettifyError(p.error) }
+  if (!getCli(p.data.cli)) return { error: `未知的 CLI：${p.data.cli}` }
+  if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: '分类不存在' }
+  return { data: p.data }
+}
+
+async function parseWorkflow(body: unknown) {
+  const p = WorkflowInput.safeParse(body)
+  if (!p.success) return { error: z.prettifyError(p.error) }
+  const wf = p.data
+  const ids = new Set((await agents.list()).map((a) => a.id))
+  if (wf.mainAgentId && !ids.has(wf.mainAgentId)) return { error: '主 Agent 不存在' }
+  // 去掉不存在的、重复的成员，以及和主 Agent 相同的成员
+  const seen = new Set<string>([wf.mainAgentId])
+  wf.members = wf.members.filter((m) => ids.has(m.agentId) && !seen.has(m.agentId) && seen.add(m.agentId))
+  return { data: wf }
 }
 
 app.get('/health', (c) => c.json({ ok: true }))
-
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 
-app.get('/agents', async (c) => c.json(await store.list()))
+// ---- 分类 ----
+app.get('/categories', async (c) => c.json(await categories.list()))
+
+async function parseCategory(body: unknown, selfId?: string) {
+  const p = CategoryInput.safeParse(body)
+  if (!p.success) return { error: z.prettifyError(p.error) }
+  const dup = (await categories.list()).some((x) => x.name === p.data.name && x.id !== selfId)
+  return dup ? { error: `分类「${p.data.name}」已存在` } : { data: p.data }
+}
+
+app.post('/categories', async (c) => {
+  const r = await parseCategory(await c.req.json())
+  return r.error ? bad(c, r.error) : c.json(await categories.create(r.data!), 201)
+})
+
+app.put('/categories/:id', async (c) => {
+  const id = c.req.param('id')
+  const r = await parseCategory(await c.req.json(), id)
+  if (r.error) return bad(c, r.error)
+  const x = await categories.update(id, r.data!)
+  return x ? c.json(x) : bad(c, '分类不存在', 404)
+})
+
+// 删除分类时，其中的 Agent 变为未分类
+app.delete('/categories/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!(await categories.remove(id))) return bad(c, '分类不存在', 404)
+  for (const a of await agents.list()) {
+    if (a.categoryId === id) await agents.update(a.id, { ...a, categoryId: '' })
+  }
+  return c.body(null, 204)
+})
+
+// ---- Agent ----
+app.get('/agents', async (c) => c.json(await agents.list()))
 
 app.post('/agents', async (c) => {
-  const r = parseInput(await c.req.json())
-  if (r.error) return c.json({ error: r.error }, 400)
-  return c.json(await store.create(r.data!), 201)
+  const r = await parseAgent(await c.req.json())
+  return r.error ? bad(c, r.error) : c.json(await agents.create(r.data!), 201)
 })
 
 app.put('/agents/:id', async (c) => {
-  const r = parseInput(await c.req.json())
-  if (r.error) return c.json({ error: r.error }, 400)
-  const agent = await store.update(c.req.param('id'), r.data!)
-  return agent ? c.json(agent) : c.json({ error: 'Agent 不存在' }, 404)
-})
-
-app.post('/agents/:id/main', async (c) => {
-  const agents = await store.setMain(c.req.param('id'))
-  return agents ? c.json(agents) : c.json({ error: 'Agent 不存在' }, 404)
+  const r = await parseAgent(await c.req.json())
+  if (r.error) return bad(c, r.error)
+  const a = await agents.update(c.req.param('id'), r.data!)
+  return a ? c.json(a) : bad(c, 'Agent 不存在', 404)
 })
 
 app.delete('/agents/:id', async (c) => {
-  const ok = await store.remove(c.req.param('id'))
-  return ok ? c.body(null, 204) : c.json({ error: 'Agent 不存在' }, 404)
+  const id = c.req.param('id')
+  const used = (await workflows.list()).filter(
+    (w) => w.mainAgentId === id || w.members.some((m) => m.agentId === id),
+  )
+  if (used.length) return bad(c, `正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`, 409)
+  return (await agents.remove(id)) ? c.body(null, 204) : bad(c, 'Agent 不存在', 404)
 })
+
+// ---- 工作流 ----
+app.get('/workflows', async (c) => c.json(await workflows.list()))
+
+app.post('/workflows', async (c) => {
+  const r = await parseWorkflow(await c.req.json())
+  return r.error ? bad(c, r.error) : c.json(await workflows.create(r.data!), 201)
+})
+
+app.put('/workflows/:id', async (c) => {
+  const r = await parseWorkflow(await c.req.json())
+  if (r.error) return bad(c, r.error)
+  const w = await workflows.update(c.req.param('id'), r.data!)
+  return w ? c.json(w) : bad(c, '工作流不存在', 404)
+})
+
+app.delete('/workflows/:id', async (c) =>
+  (await workflows.remove(c.req.param('id'))) ? c.body(null, 204) : bad(c, '工作流不存在', 404),
+)
 
 const root = new Hono()
 root.route('/', app)
@@ -54,7 +123,7 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 const port = Number(process.env.PORT ?? 8787)
-// 只监听本机：这个服务能启动本地 CLI，不应暴露到局域网
+// 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网
 serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, () => {
   console.log(`Agent 面板服务已启动: http://127.0.0.1:${port}`)
 })

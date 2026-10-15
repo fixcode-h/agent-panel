@@ -1,11 +1,12 @@
 import { agentIcon } from '@/lib/agent-icons'
-import { cliStyle } from '@/lib/cli-style'
+import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 
 const sizes = {
-  sm: 'h-9 w-9 rounded-[10px] [&>svg]:h-[18px] [&>svg]:w-[18px]',
-  md: 'h-11 w-11 rounded-xl [&>svg]:h-5 [&>svg]:w-5',
-  lg: 'h-[52px] w-[52px] rounded-[14px] [&>svg]:h-6 [&>svg]:w-6',
+  xs: 'h-[22px] w-[22px] rounded-md [&>svg]:h-3 [&>svg]:w-3',
+  sm: 'h-[26px] w-[26px] rounded-[7px] [&>svg]:h-3.5 [&>svg]:w-3.5',
+  md: 'h-9 w-9 rounded-[9px] [&>svg]:h-[18px] [&>svg]:w-[18px]',
+  lg: 'h-12 w-12 rounded-xl [&>svg]:h-6 [&>svg]:w-6',
 }
 
 /** Agent 头像：底色代表 CLI，图标代表职责 */
@@ -22,16 +23,11 @@ export function AgentAvatar({
 }) {
   const Icon = agentIcon(icon)
   return (
-    <div
-      className={cn(
-        'relative grid shrink-0 place-items-center bg-gradient-to-br text-white shadow-lg',
-        'ring-1 ring-inset ring-white/20',
-        cliStyle(cli).tile,
-        sizes[size],
-        dim && 'grayscale opacity-60',
-      )}
+    <span
+      className={cn('grid shrink-0 place-items-center text-white', sizes[size], dim && 'opacity-50 grayscale')}
+      style={{ background: cliColor(cli) }}
     >
-      <Icon strokeWidth={2} />
-    </div>
+      <Icon strokeWidth={1.8} />
+    </span>
   )
 }

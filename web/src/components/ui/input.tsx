@@ -1,19 +1,18 @@
 import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
-const base =
-  'w-full rounded-[10px] border border-border-strong bg-bg/60 px-3 text-[13px] text-fg placeholder:text-subtle ' +
-  'transition-[border-color,box-shadow] hover:border-subtle/60 ' +
-  'focus:outline-none focus:border-accent focus:ring-4 focus:ring-ring/40'
+export const fieldClass =
+  'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
+  'outline-none transition-[border-color,box-shadow] focus:border-accent focus:ring-[3px] focus:ring-accent-soft'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  ({ className, ...props }, ref) => <input ref={ref} className={cn(base, 'h-9', className)} {...props} />,
+  ({ className, ...props }, ref) => <input ref={ref} className={cn(fieldClass, 'h-10', className)} {...props} />,
 )
 Input.displayName = 'Input'
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
   ({ className, ...props }, ref) => (
-    <textarea ref={ref} className={cn(base, 'py-2.5 min-h-24 resize-y leading-relaxed', className)} {...props} />
+    <textarea ref={ref} className={cn(fieldClass, 'resize-y py-2.5 leading-relaxed', className)} {...props} />
   ),
 )
 Textarea.displayName = 'Textarea'
@@ -32,25 +31,33 @@ export function Field({
   className?: string
 }) {
   return (
-    <label className={cn('block', className)}>
-      <span className="mb-1.5 block text-[12px] font-medium text-fg/85">{label}</span>
+    <label className={cn('flex min-w-0 flex-col gap-1.5', className)}>
+      <span className="text-xs text-muted">{label}</span>
       {children}
       {error ? (
-        <span className="mt-1.5 block text-xs text-danger">{error}</span>
+        <span className="text-xs text-danger">{error}</span>
       ) : hint ? (
-        <span className="mt-1.5 block text-xs leading-relaxed text-subtle">{hint}</span>
+        <span className="text-xs text-subtle">{hint}</span>
       ) : null}
     </label>
   )
 }
 
-/** 表单里的分组标题 */
-export function Section({ title, desc, children }: { title: string; desc?: string; children: React.ReactNode }) {
+/** 表单分组：标题 + 内容，组之间用细线隔开 */
+export function FormSection({
+  title,
+  aside,
+  children,
+}: {
+  title: string
+  aside?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <section className="space-y-4">
-      <div>
+    <section className="flex flex-col gap-4 border-t pt-7 first:border-t-0 first:pt-0">
+      <div className="flex items-center gap-2">
         <h3 className="text-[13px] font-semibold">{title}</h3>
-        {desc && <p className="mt-0.5 text-xs text-subtle">{desc}</p>}
+        {aside && <div className="ml-auto">{aside}</div>}
       </div>
       {children}
     </section>

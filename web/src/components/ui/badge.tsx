@@ -2,10 +2,10 @@ import type { HTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 const tones = {
-  neutral: 'bg-surface-2 text-muted ring-border-strong',
-  accent: 'bg-accent-soft text-accent ring-accent/25',
-  success: 'bg-success/10 text-success ring-success/25',
-  warning: 'bg-warning/10 text-warning ring-warning/25',
+  neutral: 'bg-card text-muted border border-line',
+  accent: 'bg-accent-soft text-accent',
+  success: 'bg-success/12 text-success',
+  warning: 'bg-warning/12 text-warning',
 }
 
 export function Badge({
@@ -16,11 +16,22 @@ export function Badge({
   return (
     <span
       className={cn(
-        'inline-flex h-5 items-center gap-1 rounded-full px-2 text-[11px] font-medium whitespace-nowrap ring-1 ring-inset',
+        'inline-flex items-center gap-1 rounded-full px-2 py-px text-xs whitespace-nowrap',
         tones[tone],
         className,
       )}
       {...props}
     />
+  )
+}
+
+/** 状态小圆点 + 文字 */
+export function StatusDot({ tone, label }: { tone: 'success' | 'warning' | 'muted'; label?: string }) {
+  const color = { success: 'bg-success text-success', warning: 'bg-warning text-warning', muted: 'bg-subtle text-subtle' }[tone]
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 text-xs', color.split(' ')[1])}>
+      <span className={cn('h-1.5 w-1.5 rounded-full', color.split(' ')[0])} />
+      {label}
+    </span>
   )
 }

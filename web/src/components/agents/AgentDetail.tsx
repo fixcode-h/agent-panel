@@ -1,0 +1,264 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Copy, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import type { Agent, AgentInput } from '@shared/schema'
+import { api } from '@/lib/api'
+import { useData, useNav } from '@/lib/data'
+import { AGENT_ICONS } from '@/lib/agent-icons'
+import { cliColor } from '@/lib/cli-style'
+import { agentChecks, isReady } from '@/lib/readiness'
+import { useAutosave } from '@/lib/useAutosave'
+import { cn } from '@/lib/utils'
+import { Badge, StatusDot } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
+import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Detail, DetailHeader } from '@/components/layout/Detail'
+import { ReadinessCard } from '@/components/layout/ReadinessCard'
+import { AgentAvatar } from './AgentAvatar'
+import { CategoryPicker } from './CategoryPicker'
+import { CommandPreview } from './CommandPreview'
+
+const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
+
+/** 按空格拆参数，支持用引号包住含空格的值 */
+const splitArgs = (s: string) =>
+  (s.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((a) => a.replace(/^(["'])(.*)\1$/, '$2'))
+const joinArgs = (a: string[]) => a.map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(' ')
+
+/** 选择项卡片：CLI 选择用 */
+function OptionCard({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={selected}
+      className={cn(
+        'flex flex-[1_1_200px] cursor-pointer items-center gap-3 rounded-[10px] border border-line-strong bg-card p-3 text-left transition-shadow',
+        selected && 'border-accent ring-[3px] ring-accent-soft',
+      )}
+    >
+      {children}
+    </button>
+  )
+}
+
+export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; onDuplicate: () => void; onDeleted: () => void }) {
+  const { clis, categories, workflows, setAgents } = useData()
+  const { go } = useNav()
+  const [draft, setDraft] = useState<AgentInput>(() => toInput(agent))
+  const [args, setArgs] = useState(() => joinArgs(agent.extraArgs))
+  const [deleting, setDeleting] = useState(false)
+
+  const value = { ...draft, extraArgs: splitArgs(args) }
+  const valid = !!draft.name.trim()
+  const save = useAutosave(
+    value,
+    async (v) => {
+      const saved = await api.updateAgent(agent.id, v)
+      setAgents((as) => as.map((a) => (a.id === saved.id ? saved : a)))
+    },
+    valid,
+  )
+
+  const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
+  const cli = clis.find((c) => c.id === draft.cli)
+  const live = { ...agent, ...value }
+  const checks = agentChecks(live, cli)
+  const category = categories.find((c) => c.id === draft.categoryId)
+  const usedIn = workflows
+    .map((w) => ({
+      w,
+      role: w.mainAgentId === agent.id ? '主 Agent' : w.members.some((m) => m.agentId === agent.id) ? '子 Agent' : '',
+    }))
+    .filter((x) => x.role)
+
+  const remove = async () => {
+    try {
+      await api.deleteAgent(agent.id)
+      setAgents((as) => as.filter((a) => a.id !== agent.id))
+      toast.success(`已删除「${agent.name}」`)
+      onDeleted()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <>
+      <Detail
+        header={
+          <DetailHeader
+            leading={<AgentAvatar icon={draft.icon} cli={draft.cli} size="lg" dim={!draft.enabled} />}
+            title={draft.name || '未命名 Agent'}
+            meta={
+              <>
+                <Badge>{category?.name ?? '未分类'}</Badge>
+                {!draft.enabled ? (
+                  <StatusDot tone="muted" label="已停用" />
+                ) : isReady(checks) ? (
+                  <StatusDot tone="success" label="就绪" />
+                ) : (
+                  <StatusDot tone="warning" label="CLI 未安装" />
+                )}
+              </>
+            }
+            subtitle={draft.description || '还没有简介'}
+            save={{ ...save, invalid: valid ? undefined : '名称为空，未保存' }}
+            actions={
+              <>
+                <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[13px] text-muted">
+                  <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
+                  启用
+                </label>
+                <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
+                  <Copy className="h-4 w-4" />
+                </Button>
+                <Button variant="danger-outline" size="icon" aria-label="删除" title="删除" onClick={() => setDeleting(true)}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </>
+            }
+          />
+        }
+        form={
+          <>
+            <FormSection title="基本信息">
+              <div className="flex flex-wrap gap-4">
+                <Field label="名称" className="flex-[1_1_200px]" error={valid ? undefined : '名称不能为空'}>
+                  <Input value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="例如：前端开发" />
+                </Field>
+                <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                  <span className="text-xs text-muted">分类</span>
+                  <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
+                </div>
+              </div>
+              <Field label="简介">
+                <Input value={draft.description} onChange={(e) => set('description', e.target.value)} placeholder="一句话说明它擅长什么" />
+              </Field>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">图标</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {AGENT_ICONS.map(({ id, label, icon: Icon }) => (
+                    <button
+                      type="button"
+                      key={id}
+                      aria-label={label}
+                      title={label}
+                      onClick={() => set('icon', id)}
+                      className={cn(
+                        'grid h-9 w-9 cursor-pointer place-items-center rounded-lg border border-line-strong bg-field text-muted transition-colors hover:text-fg',
+                        draft.icon === id && 'border-accent bg-accent-soft text-accent hover:text-accent',
+                      )}
+                    >
+                      <Icon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </FormSection>
+
+            <FormSection title="运行环境">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">CLI</span>
+                <div className="flex flex-wrap gap-2.5">
+                  {clis.map((c) => (
+                    <OptionCard
+                      key={c.id}
+                      selected={draft.cli === c.id}
+                      onClick={() => draft.cli !== c.id && setDraft((d) => ({ ...d, cli: c.id, model: '' }))}
+                    >
+                      <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: cliColor(c.id) }} />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="font-medium">{c.name}</span>
+                        <span className={cn('truncate text-xs', c.installed ? 'text-success' : 'text-warning')}>
+                          {c.installed ? `已安装 · ${c.version?.split(' ')[0] ?? ''}` : '本机未检测到'}
+                        </span>
+                      </span>
+                    </OptionCard>
+                  ))}
+                </div>
+              </div>
+              <Field label="模型">
+                <Input
+                  value={draft.model}
+                  onChange={(e) => set('model', e.target.value)}
+                  placeholder="留空使用 CLI 默认模型"
+                  className="font-mono text-[13px]"
+                />
+              </Field>
+              {cli && (
+                <div className="-mt-1.5 flex flex-wrap gap-1.5">
+                  {cli.models.map((m) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      title={m.label}
+                      onClick={() => set('model', m.id)}
+                      className={cn(
+                        'h-7 cursor-pointer rounded-full border border-line-strong px-2.5 font-mono text-xs text-muted transition-colors hover:text-fg',
+                        draft.model === m.id && 'border-accent bg-accent text-white hover:text-white',
+                      )}
+                    >
+                      {m.id}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </FormSection>
+
+            <FormSection title="行为">
+              <Field label="角色设定" hint="执行任务时会作为前置说明交给这个 Agent。">
+                <Textarea
+                  rows={5}
+                  value={draft.instructions}
+                  onChange={(e) => set('instructions', e.target.value)}
+                  placeholder="例如：你是资深前端工程师，负责按照设计稿实现页面，完成后运行测试并汇报结果。"
+                />
+              </Field>
+              <Field label="额外参数" hint="追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。">
+                <Input
+                  value={args}
+                  onChange={(e) => setArgs(e.target.value)}
+                  placeholder="例如：--permission-mode acceptEdits"
+                  className="font-mono text-[13px]"
+                />
+              </Field>
+            </FormSection>
+          </>
+        }
+        aside={
+          <>
+            <CommandPreview cli={draft.cli} model={draft.model} extraArgs={value.extraArgs} />
+            <ReadinessCard checks={checks} />
+            <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
+              <h3 className="text-[13px] font-semibold">所在工作流</h3>
+              {usedIn.length === 0 && <p className="text-xs text-subtle">还没有工作流使用它。</p>}
+              {usedIn.map(({ w, role }) => (
+                <button
+                  key={w.id}
+                  onClick={() => go({ page: 'workflows', id: w.id })}
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-sel"
+                >
+                  <WorkflowIcon className="h-4 w-4 text-subtle" />
+                  <span className="flex-1 truncate">{w.name}</span>
+                  <Badge tone={role === '主 Agent' ? 'accent' : 'neutral'}>{role}</Badge>
+                </button>
+              ))}
+            </section>
+          </>
+        }
+      />
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`删除「${agent.name}」？`}
+        description={usedIn.length ? '它正在被工作流使用，需要先从这些工作流中移除。' : '删除后无法恢复。'}
+        onConfirm={remove}
+      />
+    </>
+  )
+}

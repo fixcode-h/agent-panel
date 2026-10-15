@@ -1,7 +1,8 @@
-import { previewCommand } from '@shared/clis'
+import { SquareTerminal } from 'lucide-react'
+import { getCli } from '@shared/clis'
 import { cn } from '@/lib/utils'
 
-/** 仿终端的命令预览 */
+/** 仿终端的命令预览，固定深色 */
 export function CommandPreview({
   cli,
   model,
@@ -13,23 +14,26 @@ export function CommandPreview({
   extraArgs: string[]
   className?: string
 }) {
-  const [cmd, ...rest] = previewCommand(cli, model, extraArgs).split(' ')
+  const def = getCli(cli)
+  if (!def) return null
+  const args = def.buildArgs({ model, prompt: '"<任务描述>"', extraArgs })
+  const color = (t: string) =>
+    t.startsWith('-') ? 'text-[#7cc4fa]' : t.startsWith('"') ? 'text-[#f2c46d]' : 'text-[#d9dbe0]'
   return (
-    <div className={cn('overflow-hidden rounded-xl border bg-[oklch(0.16_0.01_286)] text-[oklch(0.9_0.01_286)]', className)}>
-      <div className="flex items-center gap-1.5 border-b border-white/[0.06] px-3.5 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
-        <span className="ml-2 text-[11px] text-white/40">命令预览</span>
+    <section className={cn('overflow-hidden rounded-xl border border-[#23252c] bg-[#0b0c0f]', className)}>
+      <div className="flex items-center gap-1.5 border-b border-[#1e2026] px-3.5 py-2.5 text-xs text-[#8c909a]">
+        <SquareTerminal className="h-3.5 w-3.5" />
+        命令预览
       </div>
-      <pre className="whitespace-pre-wrap [overflow-wrap:anywhere] px-3.5 py-3 font-mono text-[12px] leading-relaxed">
-        <span className="text-[oklch(0.75_0.15_150)]">$</span> <span className="text-[oklch(0.82_0.12_290)]">{cmd}</span>{' '}
-        {rest.map((t, i) => (
-          <span key={i} className={t.startsWith('-') ? 'text-[oklch(0.8_0.1_220)]' : t.startsWith('"') ? 'text-[oklch(0.82_0.12_80)]' : ''}>
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] [overflow-wrap:anywhere]">
+        <span className="text-[#5fd39a]">$ </span>
+        <span className="text-[#b9aeff]">{def.command} </span>
+        {args.map((t, i) => (
+          <span key={i} className={color(t)}>
             {t}{' '}
           </span>
         ))}
-      </pre>
-    </div>
+      </p>
+    </section>
   )
 }

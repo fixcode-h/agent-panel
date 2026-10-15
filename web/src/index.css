@@ -1,76 +1,77 @@
 @import 'tailwindcss';
-@import '@fontsource-variable/inter';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/noto-sans-sc/400.css';
+@import '@fontsource/noto-sans-sc/500.css';
+@import '@fontsource/noto-sans-sc/600.css';
 @import '@fontsource-variable/jetbrains-mono';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* 设计 token：改主题只需要改这里 */
 :root {
-  --bg: oklch(0.982 0.004 286);
-  --surface: oklch(1 0 0);
-  --surface-2: oklch(0.967 0.005 286);
-  --elevated: oklch(1 0 0);
-  --border: oklch(0.92 0.006 286);
-  --border-strong: oklch(0.86 0.01 286);
-  --fg: oklch(0.21 0.02 286);
-  --muted: oklch(0.55 0.018 286);
-  --subtle: oklch(0.7 0.012 286);
-  --accent: oklch(0.56 0.22 288);
-  --accent-2: oklch(0.62 0.2 330);
-  --accent-fg: oklch(0.99 0 0);
-  --accent-soft: oklch(0.56 0.22 288 / 0.08);
-  --success: oklch(0.6 0.15 158);
-  --warning: oklch(0.7 0.16 65);
-  --danger: oklch(0.58 0.21 25);
-  --ring: oklch(0.56 0.22 288 / 0.35);
-  --glow: oklch(0.7 0.18 288 / 0.16);
-  --grid: oklch(0.5 0.02 286 / 0.06);
-  --shadow: 0 1px 2px oklch(0.2 0.02 286 / 0.04), 0 4px 16px -4px oklch(0.2 0.02 286 / 0.08);
+  --bg: #f6f6f7;
+  --rail: #ededef;
+  --panel: #fbfbfc;
+  --card: #ffffff;
+  --field: #ffffff;
+  --line: #e4e5e8;
+  --line-strong: #d3d5da;
+  --fg: #17181c;
+  --muted: #575b64;
+  --subtle: #7a7e87;
+  --sel: #ffffff;
+  --sel-line: #d3d5da;
+  --accent: #5b4bdb;
+  --accent-soft: rgb(91 75 219 / 0.12);
+  --success: #1e8a5a;
+  --warning: #a86a10;
+  --danger: #c8392c;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.06);
 }
 .dark {
-  --bg: oklch(0.13 0.008 286);
-  --surface: oklch(0.17 0.009 286);
-  --surface-2: oklch(0.205 0.01 286);
-  --elevated: oklch(0.19 0.01 286);
-  --border: oklch(1 0 0 / 0.075);
-  --border-strong: oklch(1 0 0 / 0.14);
-  --fg: oklch(0.97 0.003 286);
-  --muted: oklch(0.7 0.012 286);
-  --subtle: oklch(0.52 0.012 286);
-  --accent: oklch(0.7 0.17 290);
-  --accent-2: oklch(0.72 0.17 335);
-  --accent-fg: oklch(0.99 0 0);
-  --accent-soft: oklch(0.7 0.17 290 / 0.12);
-  --success: oklch(0.76 0.15 158);
-  --warning: oklch(0.82 0.14 78);
-  --danger: oklch(0.7 0.18 25);
-  --ring: oklch(0.7 0.17 290 / 0.45);
-  --glow: oklch(0.6 0.2 290 / 0.22);
-  --grid: oklch(1 0 0 / 0.035);
-  --shadow: 0 1px 0 oklch(1 0 0 / 0.04) inset, 0 8px 24px -8px oklch(0 0 0 / 0.5);
+  --bg: #0e0f12;
+  --rail: #0a0b0d;
+  --panel: #121317;
+  --card: #17191e;
+  --field: #0f1013;
+  --line: #23252c;
+  --line-strong: #30333b;
+  --fg: #ecedef;
+  --muted: #a3a6ae;
+  --subtle: #767a84;
+  --sel: #1c1e25;
+  --sel-line: #30333b;
+  --accent: #7c6cf2;
+  --accent-soft: rgb(124 108 242 / 0.16);
+  --success: #4cc38a;
+  --warning: #e5a84b;
+  --danger: #ef6a5e;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
 }
 
 @theme inline {
   --color-bg: var(--bg);
-  --color-surface: var(--surface);
-  --color-surface-2: var(--surface-2);
-  --color-elevated: var(--elevated);
-  --color-border: var(--border);
-  --color-border-strong: var(--border-strong);
+  --color-rail: var(--rail);
+  --color-panel: var(--panel);
+  --color-card: var(--card);
+  --color-field: var(--field);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
   --color-fg: var(--fg);
   --color-muted: var(--muted);
   --color-subtle: var(--subtle);
+  --color-sel: var(--sel);
+  --color-sel-line: var(--sel-line);
   --color-accent: var(--accent);
-  --color-accent-2: var(--accent-2);
-  --color-accent-fg: var(--accent-fg);
   --color-accent-soft: var(--accent-soft);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
-  --color-ring: var(--ring);
   --shadow-card: var(--shadow);
-  --font-sans: 'Inter Variable', 'PingFang SC', 'HarmonyOS Sans SC', 'Microsoft YaHei UI', 'Microsoft YaHei', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', 'SFMono-Regular', Consolas, monospace;
+  --font-sans: 'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
 }
 
 html,
@@ -79,11 +80,10 @@ body,
   height: 100%;
 }
 body {
-  @apply bg-bg text-fg font-sans antialiased;
-  font-feature-settings: 'cv11', 'ss01';
+  @apply bg-bg text-fg font-sans text-sm antialiased;
 }
 * {
-  @apply border-border;
+  @apply border-line;
 }
 ::selection {
   background: var(--accent-soft);
@@ -93,69 +93,35 @@ body {
   height: 10px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-strong);
+  background: var(--line-strong);
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
 }
-
-/* 页面顶部的光晕 + 网格背景 */
-.page-backdrop {
-  background:
-    radial-gradient(60rem 26rem at 30% -8rem, var(--glow), transparent 70%),
-    radial-gradient(40rem 20rem at 85% -6rem, oklch(0.7 0.17 335 / 0.08), transparent 70%);
-}
-.page-backdrop::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(var(--grid) 1px, transparent 1px),
-    linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size: 32px 32px;
-  mask-image: radial-gradient(ellipse 70% 50% at 40% 0%, black, transparent 75%);
-  pointer-events: none;
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-/* 渐变描边：给主 Agent 卡片用 */
-.gradient-border {
-  position: relative;
-  isolation: isolate;
+/* 预览工作流文档 */
+.doc-preview {
+  @apply text-[14px] leading-7 text-fg;
 }
-.gradient-border::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  padding: 1px;
-  border-radius: inherit;
-  background: linear-gradient(135deg, var(--accent), var(--accent-2) 45%, transparent 80%);
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
-}
+.doc-preview h1 { @apply mt-6 mb-2 text-[18px] font-semibold first:mt-0; }
+.doc-preview h2 { @apply mt-5 mb-2 text-[15px] font-semibold first:mt-0; }
+.doc-preview h3 { @apply mt-4 mb-1 text-[14px] font-semibold; }
+.doc-preview p { @apply my-2 text-muted; }
+.doc-preview ul { @apply my-2 list-disc pl-5 text-muted; }
+.doc-preview ol { @apply my-2 list-decimal pl-5 text-muted; }
+.doc-preview code { @apply rounded bg-field px-1 py-0.5 font-mono text-[12.5px]; }
+.doc-preview pre { @apply my-3 overflow-x-auto rounded-lg border bg-field p-3; }
+.doc-preview pre code { @apply bg-transparent p-0; }
+.doc-preview blockquote { @apply my-3 border-l-2 border-line-strong pl-3 text-subtle; }
+.doc-preview .mention { @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[13px] font-medium text-accent; }
+.doc-preview .mention.unknown { @apply bg-warning/15 text-warning; }
 
-@keyframes sheet-in {
-  from { transform: translateX(24px); opacity: 0; }
-  to { transform: translateX(0); opacity: 1; }
-}
-@keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in {
   from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-}
-@keyframes rise {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes pulse-dot {
-  0%, 100% { box-shadow: 0 0 0 0 currentColor; }
-  50% { box-shadow: 0 0 0 4px transparent; }
-}
-.animate-rise {
-  animation: rise 360ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
 }

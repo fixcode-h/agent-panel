@@ -3,13 +3,13 @@
 一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex CLI 等），
 由主 Agent 按工作流文档拆解任务、分派给子 Agent 逐步执行。
 
-当前版本：**Agent 配置**。
+当前版本：**Agent 配置 + 工作流**。
 
-- 新建 / 编辑 / 复制 / 删除 Agent
-- 每个 Agent 选择 CLI（Claude Code / Codex）和模型，可写角色设定和额外参数
-- 恰好一个主 Agent，其余为子 Agent，可一键切换
-- 自动检测本机是否装了对应 CLI，并预览实际会执行的命令
-- 深色 / 浅色主题
+- **Agent**：每个 Agent 是「CLI（Claude Code / Codex）+ 模型 + 角色设定」的组合，按分类管理，
+  新建或编辑时可以直接新建分类；自动检测本机 CLI，预览实际执行的命令
+- **工作流**：选一个主 Agent 和若干子 Agent 组成团队（子 Agent 有顺序和职责说明），
+  再用 Markdown 写工作流文档，用 `@Agent名称` 指定每一步由谁执行；带模板、预览和就绪检查
+- 编辑自动保存，深色 / 浅色主题
 
 ## 快速开始
 
@@ -27,7 +27,7 @@ npm run build
 npm start          # http://127.0.0.1:8787
 ```
 
-配置保存在 `data/agents.json`（已加入 .gitignore），可用环境变量 `AGENT_PANEL_DATA` 指定目录。
+配置保存在 `data/` 下的 `agents.json`、`categories.json`、`workflows.json`（已加入 .gitignore），可用环境变量 `AGENT_PANEL_DATA` 指定目录。
 服务只监听 127.0.0.1，因为它之后会在本机启动 CLI。
 
 ## 技术栈
@@ -47,7 +47,9 @@ shared/   前后端共享：数据结构（schema.ts）、CLI 注册表（clis.t
 server/   Hono API、JSON 存储、CLI 安装检测
 web/      React 前端
   src/components/ui/      基础组件（按钮、输入框、抽屉、开关…）
-  src/components/agents/  Agent 卡片、编辑器
+  src/components/layout/  列表 + 详情布局、就绪检查
+  src/components/agents/  Agent 详情、分类选择、Agent 选择器
+  src/components/workflows/ 团队编辑、工作流文档编辑
   src/pages/              页面
 ```
 
@@ -60,7 +62,7 @@ web/      React 前端
 
 ## 路线图
 
-1. ✅ Agent 配置
-2. 工作流：选择主 Agent + 子 Agent，编写工作流文档
+1. ✅ Agent 配置（含分类）
+2. ✅ 工作流：主 Agent + 子 Agent 团队，工作流文档
 3. 项目分类：每个分类绑定一个工作流和本地目录
 4. 执行：按用户描述启动主 Agent，实时查看各 Agent 输出

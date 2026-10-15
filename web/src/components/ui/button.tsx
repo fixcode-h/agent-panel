@@ -2,17 +2,17 @@ import { forwardRef, type ButtonHTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 const variants = {
-  primary:
-    'text-white bg-gradient-to-b from-accent to-[color-mix(in_oklch,var(--accent),black_14%)] ' +
-    'shadow-[0_1px_0_rgb(255_255_255/0.2)_inset,0_6px_20px_-6px_var(--accent)] hover:brightness-110',
-  secondary: 'bg-surface text-fg border border-border-strong shadow-card hover:bg-surface-2',
-  ghost: 'text-muted hover:text-fg hover:bg-surface-2',
-  danger: 'bg-danger text-white hover:brightness-110 shadow-[0_6px_20px_-6px_var(--danger)]',
+  primary: 'bg-accent text-white hover:brightness-110',
+  secondary: 'bg-card text-fg border border-line-strong hover:bg-sel',
+  ghost: 'text-muted hover:text-fg hover:bg-sel',
+  danger: 'bg-danger text-white hover:brightness-110',
+  'danger-outline': 'bg-card text-danger border border-line-strong hover:bg-danger/10',
 }
 const sizes = {
-  sm: 'h-8 px-3 text-xs gap-1.5 rounded-lg',
-  md: 'h-9 px-4 text-[13px] gap-2 rounded-[10px]',
-  icon: 'h-8 w-8 justify-center rounded-lg',
+  sm: 'h-8 px-2.5 text-[13px] gap-1.5',
+  md: 'h-9 px-3.5 text-[13px] gap-1.5',
+  icon: 'h-9 w-9 justify-center',
+  'icon-sm': 'h-7 w-7 justify-center',
 }
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -26,9 +26,8 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       ref={ref}
       type={type}
       className={cn(
-        'inline-flex items-center font-medium transition-all duration-150 select-none cursor-pointer',
-        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-        'disabled:opacity-50 disabled:pointer-events-none active:scale-[0.97]',
+        'inline-flex shrink-0 cursor-pointer items-center rounded-lg font-medium transition-colors select-none',
+        'disabled:pointer-events-none disabled:opacity-50',
         variants[variant],
         sizes[size],
         className,
