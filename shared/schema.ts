@@ -250,6 +250,8 @@ export interface CliModel {
   group?: string
   /** cli：CLI 自己提供的（账号可用的、内置的）；config：配置文件里接的第三方 API */
   origin?: 'cli' | 'config'
+  /** 上下文窗口（token）；CLI 没给出时省略 */
+  contextWindow?: number
 }
 
 export interface CliModels {

@@ -2,8 +2,16 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, AgentInput } from '@shared/schema'
-import { getCli } from '@shared/clis'
-import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings, tierOf } from '@shared/settings'
+import { getCli, MODEL_TIERS } from '@shared/clis'
+import {
+  agentCli,
+  agentPermission,
+  agentRun,
+  cliSettings,
+  defaultSettings,
+  supportsEffort,
+  tierOf,
+} from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
@@ -19,10 +27,10 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Segmented } from '@/components/ui/segmented'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Detail, DetailHeader } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from './AgentAvatar'
-import { ModelSelect } from './ModelSelect'
 import { CategoryPicker } from './CategoryPicker'
 import { CommandPreview } from './CommandPreview'
 
@@ -73,10 +81,26 @@ export function AgentDetail({
   const permId = agentPermission(draft, s)
   const perm = (cliDef ?? getCli(cliId))?.permissions.find((p) => p.id === permId) ?? { id: permId, hint: '' }
   const defEffort = run.effort || cliDef?.models.find((m) => m.id === usedModel)?.defaultEffort || ''
-  // 换 CLI 时保留档位，具体模型名不通用所以清空
+  // 换 CLI 时保留档位；思考强度新 CLI 支持就保留；权限各 CLI 不通用，回到跟随设置
   const pickCli = (id: string) =>
     draft.cli !== id &&
-    setDraft((d) => ({ ...d, cli: id, model: tierOf(d.model) ? d.model : '', effort: '', permission: '' }))
+    setDraft((d) => ({
+      ...d,
+      cli: id,
+      model: tierOf(d.model) ? d.model : '@medium',
+      effort: d.effort && supportsEffort(id || defCli, d.effort) ? d.effort : '',
+      permission: '',
+    }))
+  const follow = !draft.cli
+  // 模型只能选三档；以前存的具体模型名单独列一项，换成档位后就不再出现
+  const tierOptions = [
+    ...MODEL_TIERS.map((t) => ({ value: `@${t.id}`, label: `${t.label}档 · ${cs.tiers[t.id].model || '自动'}` })),
+    ...(draft.model && !tierOf(draft.model)
+      ? [{ value: draft.model, label: `${draft.model}（旧设置，请换成档位）` }]
+      : !draft.model
+        ? [{ value: '', label: `默认模型 · ${usedModel || '自动'}（旧设置，请换成档位）` }]
+        : []),
+  ]
   const live = { ...agent, ...value }
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
@@ -200,33 +224,36 @@ export function AgentDetail({
             </FormSection>
 
             <FormSection title="运行环境">
+              <Checkbox
+                checked={follow}
+                onChange={(v) => pickCli(v ? '' : defCli)}
+                label={`跟随默认 CLI（现在是 ${clis.find((c) => c.id === defCli)?.name ?? defCli}）`}
+                hint="在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。"
+              />
               <div className="flex flex-wrap gap-4">
                 <Field label="CLI" className="flex-[1_1_220px]">
                   <Select
                     aria-label="CLI"
-                    value={draft.cli === defCli ? '' : draft.cli}
+                    value={cliId}
+                    disabled={follow}
                     onChange={(e) => pickCli(e.target.value)}
-                    // 系统默认的 CLI 直接标（默认），选它就是跟随设置里的默认 CLI
                     options={clis.map((c) => ({
-                      value: c.id === defCli ? '' : c.id,
+                      value: c.id,
                       label: `${c.name}${c.id === defCli ? '（默认）' : ''}${
                         !c.enabled ? ' · 已停用' : c.installed ? '' : ' · 未安装'
                       }`,
                     }))}
                   />
                 </Field>
-                {cliDef && (
-                  <Field label="模型" className="flex-[2_1_280px]">
-                    <ModelSelect
-                      key={cliId}
-                      def={cliDef}
-                      value={draft.model}
-                      onChange={(v) => set('model', v)}
-                      tiers={cs.tiers}
-                      defaultValue={cs.defaultModel || cliDefaultModel(cliDef)?.id || ''}
-                    />
-                  </Field>
-                )}
+                <Field label="模型" className="flex-[2_1_280px]" hint="三档对应的模型在设置里每个 CLI 下配置">
+                  <Select
+                    aria-label="模型"
+                    value={draft.model}
+                    onChange={(e) => set('model', e.target.value)}
+                    options={tierOptions}
+                    className="font-mono text-[13px]"
+                  />
+                </Field>
               </div>
               {cliDef && (
                 <Field

@@ -282,6 +282,9 @@ export function claudeParser(cwd: string): Parser {
         addCacheWrite: gap(c.write, live.write),
         addOutput: gap(o.usage?.output_tokens ?? 0, live.output),
         addCost: o.total_cost_usd ?? 0,
+        // modelUsage 里每个用到的模型都有 contextWindow；子 Agent 可能用了别的小模型，取最大的那个
+        window:
+          Math.max(0, ...Object.values(o.modelUsage ?? {}).map((m: any) => Number(m?.contextWindow) || 0)) || undefined,
       })
       if (o.session_id) out.push({ type: 'session', id: o.session_id })
       const ok = !o.is_error && (o.subtype === undefined || o.subtype === 'success')

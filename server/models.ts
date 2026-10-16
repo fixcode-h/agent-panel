@@ -1,3 +1,4 @@
+import { readFileSync, realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
@@ -7,6 +8,7 @@ import type { CliModel, CliModels } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { getSettings } from './settings.ts'
+import { resolveCommand } from './cli-source.ts'
 
 /**
  * 从本机 CLI 读取可用的模型：内置列表跟不上 CLI 的更新，也不知道用户账号能用哪些模型。
@@ -165,11 +167,15 @@ export function parseCommandCodeModels(out: string): CliModel[] {
  * 没登录只能用 ~/.commandcode/providers.json 里接的 BYOK 接口，只列这些。
  */
 async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
-  const [r, st] = await Promise.all([
+  const [r, st, windows] = await Promise.all([
     capture(command, ['--list-models'], homedir(), env, 30_000),
     capture(command, ['status'], homedir(), env, 15_000).catch(() => null),
+    commandCodeWindows(command, env).catch(() => new Map<string, number>()),
   ])
-  const models = parseCommandCodeModels(r.stdout)
+  const models = parseCommandCodeModels(r.stdout).map((m) => {
+    const w = windows.get(m.id) ?? windows.get(m.id.slice(m.id.lastIndexOf('/') + 1))
+    return w ? { ...m, contextWindow: w } : m
+  })
   if (!models.length) {
     if (r.spawnError) throw new Error(r.spawnError)
     throw new Error((r.stderr || r.stdout).trim().split('\n').at(-1) || `退出码 ${r.code}`)
@@ -187,6 +193,84 @@ async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promi
     }
   // 没登录只能用 BYOK；没接 BYOK 时还是给出全部，否则下拉是空的，真正执行时 CLI 会提示登录
   return byok.length ? { models: byok, auth: 'api', from: 'providers.json' } : { models: tagged, auth: 'api' }
+}
+
+/** 「1M」「256K」「1.05M」换成 token 数 */
+export function parseContextSize(s: string) {
+  const m = /^([\d.]+)\s*([KM])$/i.exec(s.trim())
+  if (!m) return undefined
+  return Math.round(Number(m[1]) * (m[2].toUpperCase() === 'M' ? 1_000_000 : 1_000))
+}
+
+/** Command Code 安装包里的模型目录（reference/models.md）：表格的 Context 列是每个模型的上下文窗口 */
+export function parseCommandCodeCatalog(md: string) {
+  const out = new Map<string, number>()
+  for (const line of md.split('\n')) {
+    const cells = line.split('|').map((c) => c.trim())
+    const id = /^`([^`]+)`$/.exec(cells[1] ?? '')?.[1]
+    const w = id && parseContextSize(cells[3] ?? '')
+    if (id && w) out.set(id, w)
+  }
+  return out
+}
+
+/**
+ * Command Code 每个模型的上下文窗口。--list-models 不输出窗口，从两处补：
+ * 安装包里随版本更新的模型目录，以及 ~/.commandcode/providers.json 里自己接的模型写的 contextWindow / limit.context。
+ */
+async function commandCodeWindows(command: string, env: NodeJS.ProcessEnv) {
+  const out = new Map<string, number>()
+  const pkg = packageDir(command, env, 'command-code')
+  if (pkg) {
+    const md = await readFile(path.join(pkg, 'dist/bundled/command-code-knowledge/reference/models.md'), 'utf8').catch(
+      () => '',
+    )
+    for (const [k, v] of parseCommandCodeCatalog(md)) out.set(k, v)
+  }
+  try {
+    const p = JSON.parse(await readFile(path.join(homedir(), '.commandcode', 'providers.json'), 'utf8'))
+    // 结构因版本而异，按「带 contextWindow 的模型对象」找，键名或 id 都记上
+    const walk = (v: any, key: string, prefix: string) => {
+      if (!v || typeof v !== 'object') return
+      const w = Number(v.contextWindow ?? v.limit?.context)
+      const id = typeof v.id === 'string' ? v.id : key
+      if (w > 0 && id) {
+        out.set(id, w)
+        if (prefix) out.set(`${prefix}/${id}`, w)
+      }
+      for (const [k, c] of Object.entries(v)) walk(c, Array.isArray(v) ? '' : k, key && !w ? key : prefix)
+    }
+    walk(p, '', '')
+  } catch {}
+  return out
+}
+
+/** 命令对应的 npm 包目录：顺着可执行文件（符号链接）往上找，Windows 的 .cmd 包装在 npm 前缀下的 node_modules 里 */
+function packageDir(command: string, env: NodeJS.ProcessEnv, name: string) {
+  const file = resolveCommand(command, env)
+  if (!file) return undefined
+  const has = (d: string) => {
+    try {
+      return JSON.parse(readFileSync(path.join(d, 'package.json'), 'utf8')).name === name
+    } catch {
+      return false
+    }
+  }
+  let d = path.dirname(realpathSafe(file))
+  for (let i = 0; i < 6; i++, d = path.dirname(d)) if (has(d)) return d
+  const near = [
+    path.join(path.dirname(file), 'node_modules', name),
+    path.join(path.dirname(file), '..', 'lib', 'node_modules', name),
+  ]
+  return near.find(has)
+}
+
+const realpathSafe = (p: string) => {
+  try {
+    return realpathSync(p)
+  } catch {
+    return p
+  }
 }
 
 /** Claude Code 用户自己配置的模型（第三方网关、固定版本等） */
@@ -261,6 +345,16 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
   cache.set(id, { at: Date.now(), data })
   return data
 }
+
+/** Command Code 的上下文窗口只要读文件，不用跑 CLI，执行任务时模型列表还没读过也能查到 */
+export async function knownWindows(id: string): Promise<Map<string, number>> {
+  if (id !== 'commandcode') return new Map()
+  const cs = cliSettings(await getSettings(), id)
+  return commandCodeWindows(cs.command, childEnv(cs.env)).catch(() => new Map())
+}
+
+/** 已经读过的模型列表（不触发读取）：执行任务时查上下文窗口用，不能为此再去跑一次 CLI */
+export const cachedModels = (id: string) => cache.get(id)?.data
 
 export const invalidateModels = (id?: string) => (id ? cache.delete(id) : cache.clear())
 

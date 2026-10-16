@@ -43,6 +43,9 @@ export const tierToken = (t: ModelTier) => `@${t}`
 /** 模型字段是档位时返回档位 */
 export const tierOf = (model: string) => MODEL_TIERS.find((t) => model === `@${t.id}`)
 
+/** CLI 支持这个思考强度吗；内置列表里没有的当作不支持 */
+export const supportsEffort = (cli: string, effort: string) => !!getCli(cli)?.efforts.some((e) => e.id === effort)
+
 /** Agent 实际使用的 CLI：没选时用系统默认 */
 export const agentCli = (a: { cli: string }, settings: Settings) => a.cli || defaultCli(settings)
 
@@ -57,7 +60,9 @@ export function agentRun(a: { cli: string; model: string; effort?: string }, set
   const pick = a.model || cs.defaultModel
   const t = tierOf(pick)
   const model = t ? cs.tiers[t.id].model : pick
-  const effort = a.effort || (t ? cs.tiers[t.id].effort : '') || cs.defaultEffort
+  // Agent 自己选的思考强度换了 CLI 后可能不支持（例如跟随默认 CLI 换成了 Command Code），这时用档位的
+  const own = a.effort && supportsEffort(cli, a.effort) ? a.effort : ''
+  const effort = own || (t ? cs.tiers[t.id].effort : '') || cs.defaultEffort
   return { cli, model, effort, tier: t }
 }
 

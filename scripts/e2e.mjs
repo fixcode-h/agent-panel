@@ -267,6 +267,7 @@ try {
   assert.equal(t.usage.cacheWriteTokens, 500 * 2)
   assert.equal(t.usage.outputTokens, 120 * 2 + 300 + 80)
   assert.equal(t.usage.agents[B.id].window, 258400, 'Codex 报告的上下文窗口')
+  assert.equal(t.usage.agents[A.id].window, 500000, 'Claude Code 在 result.modelUsage 里报告的上下文窗口')
   assert.equal(t.usage.agents[B.id].context, 24300)
   assert.ok(
     Object.values(t.usage.agents).every((u) => u.tps === 0),
@@ -642,7 +643,25 @@ try {
   let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
   t3 = await waitDone(t3.id)
   assert.ok(calls().at(-1).args.includes('model="gpt-6.1-sol"'))
+  // 跟随默认 CLI 的 Agent：默认 CLI 换成 Command Code 后跟着换，档位换成它的模型，它不支持的思考强度改用档位的
+  await call('PUT', '/agents/' + D.id, { ...D, model: '@high', effort: 'xhigh' })
+  await call('PUT', '/settings', {
+    ...settings,
+    defaultCli: 'commandcode',
+    clis: {
+      ...settings.clis,
+      commandcode: cli({ tiers: { high: { model: 'fake/pro', effort: 'high' }, medium: '', low: '' } }),
+    },
+  })
+  await waitDone(
+    (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '跟随' })).id,
+  )
+  const kf = calls().at(-1)
+  assert.equal(kf.kind, 'commandcode')
+  assert.equal(kf.args[kf.args.indexOf('-m') + 1], 'fake/pro')
+  assert.equal(kf.args[kf.args.indexOf('--effort') + 1], 'high', '不支持的思考强度改用档位的')
   // 设置了具体的默认模型后，没填的档位跟随默认模型
+  await call('PUT', '/agents/' + D.id, { ...D, model: '@medium', effort: '' })
   await call('PUT', '/settings', {
     ...settings,
     defaultCli: 'codex',

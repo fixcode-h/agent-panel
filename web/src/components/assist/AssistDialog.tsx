@@ -250,7 +250,7 @@ function RunPicker({
     agentRun({ cli: def.id, model }, settings).effort || def.models.find((m) => m.id === usedModel)?.defaultEffort || ''
   const effortOpts = defaultEffortOptions(def, defaultEffort)
   const compact =
-    'h-7 w-auto max-w-[190px] gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
+    'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
   return (
     <div
       className="flex min-w-0 items-center gap-0.5"
@@ -263,7 +263,8 @@ function RunPicker({
         onChange={(e) => onModel(e.target.value)}
         options={options}
         disabled={disabled}
-        className={cn(compact, 'font-mono')}
+        // 限制宽度：模型名很长时截断，不要把右边的发送按钮挤出去
+        className={cn(compact, 'max-w-[170px] font-mono')}
       />
       {def.efforts.length > 0 && (
         <Select
@@ -271,7 +272,7 @@ function RunPicker({
           value={effort === defaultEffort ? '' : effort}
           onChange={(e) => onEffort(e.target.value)}
           disabled={disabled}
-          className={compact}
+          className={cn(compact, 'max-w-[130px]')}
           options={effortOpts}
         />
       )}
@@ -440,7 +441,7 @@ export function AssistDialog({
     <D.Root open={open} onOpenChange={(o) => !running && onOpenChange(o)}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[860px] max-w-[1180px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
+        <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
           <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
             <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
               {target ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
@@ -466,7 +467,7 @@ export function AssistDialog({
 
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             {/* 对话 */}
-            <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[460px] md:border-r md:border-b-0">
+            <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
               <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
                 <span className="mr-1 text-xs text-subtle">使用</span>
                 {orderClis(CLIS, settings?.cliOrder ?? []).map((c) => {
@@ -578,7 +579,7 @@ export function AssistDialog({
                         disabled={running}
                       />
                     )}
-                    <span className="ml-2 hidden text-[11px] text-subtle sm:inline">Enter 发送</span>
+                    <span className="ml-2 hidden shrink-0 text-[11px] text-subtle sm:inline">Enter 发送</span>
                     {running ? (
                       <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
                         <Square className="h-3 w-3 fill-current" />

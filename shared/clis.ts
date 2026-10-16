@@ -199,10 +199,14 @@ export const CLIS: CliDefinition[] = [
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
     ],
     permissions: [
-      { id: 'accept-edits', label: '自动接受改文件', hint: '可以直接读写文件；需要审批的命令会被拒绝' },
-      { id: 'yolo', label: '跳过所有确认', hint: '可以执行任意命令，只在信任的项目里用' },
+      {
+        id: 'accept-edits',
+        label: '自动接受改文件',
+        hint: 'Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」',
+      },
+      { id: 'yolo', label: '跳过所有确认', hint: '可以改文件、执行任意命令，只在信任的项目里用' },
       { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
-      { id: 'standard', label: '标准', hint: '非交互模式下需要审批的操作都会被拒绝' },
+      { id: 'standard', label: '标准', hint: '非交互执行时改文件和跑命令都会被拦下' },
     ],
     // 思考强度是否生效取决于模型
     efforts: [
@@ -226,7 +230,10 @@ export const CLIS: CliDefinition[] = [
       '--no-auto-update',
       ...opt(o.model, '-m', o.model),
       ...opt(o.effort, '--effort', o.effort!),
-      ...opt(o.permission, '--permission-mode', o.permission),
+      // -p 模式下 Command Code 只认 --dangerously-skip-permissions，--permission-mode yolo 仍会拦下改文件和命令
+      ...(o.permission === 'yolo'
+        ? ['--dangerously-skip-permissions']
+        : opt(o.permission, '--permission-mode', o.permission)),
       ...opt(o.resume, '--resume', o.resume!),
       '--max-turns',
       String(o.maxTurns ?? 200),

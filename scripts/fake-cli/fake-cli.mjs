@@ -283,6 +283,7 @@ if (kind === 'claude') {
     session_id: session,
     total_cost_usd: 0.0123,
     usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 },
+    modelUsage: { sonnet: { contextWindow: 500000 }, 'haiku-small': { contextWindow: 100000 } },
   })
 } else if (kind === 'codex') {
   note('item/reasoning/summaryTextDelta', { itemId: 'r0', delta: '**规划**\n\n先看目录', summaryIndex: 0 })

@@ -13,6 +13,7 @@ import type {
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
+import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli } from './invoke.ts'
@@ -65,8 +66,11 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
-/** 上下文窗口大小；CLI 不直接报告，按模型估计 */
-function windowFor(cli: string, model: string) {
+/**
+ * 上下文窗口大小。优先用 CLI 在执行中报告的（Claude Code 的 result.modelUsage、Codex 的 tokenUsage），
+ * 其次是读模型列表时拿到的（Command Code 安装包里的模型目录、providers.json），最后才按模型名估计。
+ */
+function guessWindow(cli: string, model: string) {
   if (/1m/i.test(model)) return 1_000_000
   if (cli === 'codex') return 272_000
   return 200_000
@@ -175,6 +179,17 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     return cur
   }
 
+  // 只用已经读过的模型列表（设置页、Agent 页打开时会读），不为了查窗口再跑一次 CLI
+  const catalog = cachedModels(cliId)?.models ?? []
+  const files = await knownWindows(cliId)
+  const windowFor = (cli: string, m: string) =>
+    catalog.find((x) => x.id === m || x.id.endsWith(`/${m}`))?.contextWindow ??
+    files.get(m) ??
+    files.get(m.slice(m.lastIndexOf('/') + 1)) ??
+    guessWindow(cli, m)
+  // CLI 报告过窗口后就以它为准，后面没带窗口的用量事件不要改回估计值
+  let reported = false
+
   /** 这个 Agent 的用量记录，没有就建一条 */
   const au = (): AgentUsage => {
     const prev = task.usage.agents[agentId]
@@ -241,7 +256,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
         const u = au()
         if (ev.model) u.model = ev.model
         if (ev.context !== undefined) u.context = ev.context
-        u.window = ev.window ?? windowFor(cliId, u.model || model)
+        if (ev.window) {
+          u.window = ev.window
+          reported = true
+        } else if (!reported) u.window = windowFor(cliId, u.model || model)
         u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
         const t = task.usage
