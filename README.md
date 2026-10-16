@@ -6,7 +6,7 @@
 
 **在线预览：https://fixcode-h.github.io/agent-panel/** （展示 dev 分支的最新内容；预览版在浏览器里模拟执行，不调用 CLI）
 
-**下载：[Releases](https://github.com/fixcode-h/agent-panel/releases)** 。包只从 main 发布；解压后只需要 Node.js 20+，Windows 双击 `AgentPanel.exe`（不弹命令行窗口，图标在任务栏通知区，启动后自动打开浏览器，右键图标退出），macOS / Linux 运行 `./start.sh`。Windows 第一次运行如果提示「Windows 已保护你的电脑」，是因为托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。
+**下载：[Releases](https://github.com/fixcode-h/agent-panel/releases)** 。包只从 main 发布；解压后只需要 Node.js 20+，Windows 双击 `AgentPanel.exe`（不弹命令行窗口，图标在任务栏通知区，启动后自动打开浏览器，右键图标退出），macOS / Linux 运行 `./start.sh`，想开机自动在后台运行就执行一次 `./install-service.sh`。Windows 第一次运行如果提示「Windows 已保护你的电脑」，是因为托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。
 
 - **Agent**：每个 Agent 是「CLI + 模型 + 角色设定」的组合，按分类管理；自动检测本机 CLI，预览实际执行的命令。
   CLI 可以选「系统默认」，模型可以只选高 / 中 / 低档，执行时按设置换成具体的 CLI、模型和思考强度，改设置就能整体切换；

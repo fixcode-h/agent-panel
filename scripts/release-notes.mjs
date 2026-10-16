@@ -83,7 +83,7 @@ out.push(
   '### 下载',
   '',
   `- Windows — \`${name}.zip\`，解压后双击 \`AgentPanel.exe\`（不弹命令行窗口，图标在任务栏通知区，右键可以退出）`,
-  `- macOS / Linux — \`${name}.tar.gz\`，解压后运行 \`./start.sh\``,
+  `- macOS / Linux — \`${name}.tar.gz\`，解压后运行 \`./start.sh\`；运行一次 \`./install-service.sh\` 可以开机自动在后台运行`,
   '',
   '需要 Node.js 20+，以及至少一个已登录的 CLI（Claude Code、Codex 或 Command Code）。启动后会自动用浏览器打开 http://127.0.0.1:8787 。',
   'Windows 第一次运行时如果提示「Windows 已保护你的电脑」：托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。',

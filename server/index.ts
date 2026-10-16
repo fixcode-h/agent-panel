@@ -360,7 +360,8 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问
   const url = withToken(`http://127.0.0.1:${port}`)
   console.log(`Agent 面板服务已启动: ${url}`)
-  const open = prod && !restarted && (await getSettings()).openBrowser
+  // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
+  const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
   if (tray) {
     // 托盘程序读这两行：显示地址，并由它打开浏览器（服务自己打开会经过 cmd）
     console.log(`AGENT_PANEL_READY ${url}`)

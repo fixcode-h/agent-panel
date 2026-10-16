@@ -35,7 +35,7 @@ function currentVersion() {
 const API = () => process.env.AGENT_PANEL_RELEASES_URL ?? `https://api.github.com/repos/${REPO}/releases`
 
 /** 包里会被替换的文件；data/ 等其他内容不动 */
-const FILES = ['server.mjs', 'package.json', 'start.sh', 'README.md', '使用说明.txt']
+const FILES = ['server.mjs', 'package.json', 'start.sh', 'install-service.sh', 'README.md', '使用说明.txt']
 /** 托盘程序约定的「请重启我」退出码，和 scripts/tray/AgentPanel.cs 里的 RestartCode 一致 */
 export const TRAY_RESTART = 75
 /** Windows 托盘启动程序：正在运行时不能覆盖，但可以改名，所以先挪开再放新的 */
@@ -82,7 +82,8 @@ async function apply(src: string, dir: string) {
   }
   // 换成托盘程序后不再需要命令行启动文件
   if (existsSync(path.join(dir, TRAY_EXE))) await rm(path.join(dir, 'start.cmd'), { force: true }).catch(() => {})
-  if (existsSync(path.join(dir, 'start.sh'))) await chmod(path.join(dir, 'start.sh'), 0o755).catch(() => {})
+  for (const sh of ['start.sh', 'install-service.sh'])
+    if (existsSync(path.join(dir, sh))) await chmod(path.join(dir, sh), 0o755).catch(() => {})
   await rm(old, { recursive: true, force: true }).catch(() => {})
 }
 
@@ -303,8 +304,9 @@ export function cleanupOldTray(dir = appDir()) {
 
 export function restartProcess(close: () => void) {
   close()
-  // 由托盘程序启动时交给它重启：退出码 75 表示要重启，托盘会用同样的方式再启动一次
-  if (process.env.AGENT_PANEL_TRAY) {
+  // 由托盘程序或系统服务（launchd / systemd，见 install-service.sh）启动时交给它们重启：
+  // 退出码 75 表示要重启。自己再起一个进程的话，systemd 会在主进程退出时把它一起结束
+  if (process.env.AGENT_PANEL_TRAY || process.env.AGENT_PANEL_SUPERVISED) {
     setTimeout(() => process.exit(TRAY_RESTART), 200)
     return
   }

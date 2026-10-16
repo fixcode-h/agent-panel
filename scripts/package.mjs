@@ -104,6 +104,9 @@ writeFileSync(
   ].join('\n'),
 )
 chmodSync(path.join(out, 'start.sh'), 0o755)
+// macOS / Linux 装成开机自动运行的后台服务（launchd / systemd），和 Windows 的托盘程序对应
+cpSync(path.join(root, 'scripts', 'service', 'install-service.sh'), path.join(out, 'install-service.sh'))
+chmodSync(path.join(out, 'install-service.sh'), 0o755)
 // Windows 托盘启动程序：在 CI 的 Windows 机器上编译（见 ci.yml），双击后不弹命令行窗口。
 // 发布时必须带上（--require-tray）；本机出包没有编译过就不放
 const tray = path.join(root, 'build', 'tray', 'AgentPanel.exe')
@@ -118,7 +121,8 @@ writeFileSync(
     '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex（codex）或 Command Code（cmdc）',
     '3. 启动：Windows 双击 AgentPanel.exe，程序在任务栏右下角的通知区显示图标，不会打开命令行窗口，',
     '   启动完成后自动用默认浏览器打开面板；右键图标可以重新打开面板、查看运行日志或退出（退出后面板也会停止）。',
-    '   macOS / Linux 运行 ./start.sh（或 node server.mjs --prod），然后浏览器打开 http://127.0.0.1:8787',
+    '   macOS / Linux 运行 ./start.sh（或 node server.mjs --prod），然后浏览器打开 http://127.0.0.1:8787；',
+    '   想开机自动在后台运行、不用一直开着终端，运行一次 ./install-service.sh（移除：./install-service.sh uninstall）。',
     '   Windows 第一次双击时如果提示「Windows 已保护你的电脑」：托盘程序没有购买代码签名证书，',
     '   点「更多信息」→「仍要运行」即可，之后不会再提示。',
     '',
