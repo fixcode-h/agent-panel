@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
 import type { TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
@@ -98,39 +98,90 @@ export function AgentMessage({
   const { agents } = useData()
   const a = author ? undefined : agents.find((x) => x.id === m.agentId)
   return (
-    <div className="flex gap-3">
-      {compact ? (
-        <span className="w-[26px] shrink-0" />
-      ) : a || author ? (
-        <AgentAvatar icon={a?.icon ?? author!.icon ?? 'sparkles'} cli={a?.cli ?? author!.cli} size="sm" />
-      ) : (
-        <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        {!compact && (
-          <div className="flex items-center gap-2 pt-0.5 text-[13px]">
-            <span className="font-medium">{author?.name ?? a?.name ?? t('已删除的 Agent')}</span>
-            {(author?.model || a) && (
-              <span className="font-mono text-xs text-subtle">{author ? author.model : modelOf(a!)}</span>
-            )}
-          </div>
-        )}
-        {slot}
-        {!hideProcess && m.thinking?.trim() && (
-          <Thinking text={m.thinking} live={!!live && !m.text.trim() && !m.tools.length} />
-        )}
-        {!hideProcess && m.tools.length > 0 && (
-          <div className="flex flex-col gap-1">
-            {m.tools.map((t, i) => (
-              <ToolRow key={i} tool={t} />
-            ))}
-          </div>
-        )}
-        {m.text && <Markdown text={m.text} teamNames={teamNames} live={live} />}
-      </div>
-    </div>
+    <MessageBody
+      m={m}
+      teamNames={teamNames}
+      compact={compact}
+      live={live}
+      hideProcess={hideProcess}
+      slot={slot}
+      name={author?.name ?? a?.name ?? t('已删除的 Agent')}
+      model={author ? author.model : a ? modelOf(a) : undefined}
+      icon={a || author ? (a?.icon ?? author!.icon ?? 'sparkles') : undefined}
+      cli={a?.cli ?? author?.cli ?? ''}
+    />
   )
 }
+
+type BodyProps = {
+  m: TaskMessage
+  teamNames: Set<string>
+  compact?: boolean
+  live?: boolean
+  hideProcess?: boolean
+  slot?: React.ReactNode
+  name: string
+  model?: string
+  /** 没有时显示空白头像（Agent 已删除） */
+  icon?: string
+  cli: string
+}
+
+/** 消息内容会变的部分：文字、思考长度和每个工具调用的结果 */
+const sig = (m: TaskMessage) =>
+  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.tools.map((x) => `${x.output?.length ?? 0}${x.failed ? '!' : ''}`).join(',')}`
+
+/**
+ * 每次轮询拿到的都是新的任务对象，长任务有上千条消息时全部重新渲染（Markdown、代码高亮）会很卡。
+ * 只在这条消息的内容或显示方式变了时才重新渲染
+ */
+const MessageBody = memo(
+  function MessageBody({ m, teamNames, compact, live, hideProcess, slot, name, model, icon, cli }: BodyProps) {
+    return (
+      <div className="flex gap-3">
+        {compact ? (
+          <span className="w-[26px] shrink-0" />
+        ) : icon ? (
+          <AgentAvatar icon={icon} cli={cli} size="sm" />
+        ) : (
+          <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />
+        )}
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {!compact && (
+            <div className="flex items-center gap-2 pt-0.5 text-[13px]">
+              <span className="font-medium">{name}</span>
+              {model && <span className="font-mono text-xs text-subtle">{model}</span>}
+            </div>
+          )}
+          {slot}
+          {!hideProcess && m.thinking?.trim() && (
+            <Thinking text={m.thinking} live={!!live && !m.text.trim() && !m.tools.length} />
+          )}
+          {!hideProcess && m.tools.length > 0 && (
+            <div className="flex flex-col gap-1">
+              {m.tools.map((t, i) => (
+                <ToolRow key={i} tool={t} />
+              ))}
+            </div>
+          )}
+          {m.text && <Markdown text={m.text} teamNames={teamNames} live={live} />}
+        </div>
+      </div>
+    )
+  },
+  (a, b) =>
+    !a.slot &&
+    !b.slot &&
+    sig(a.m) === sig(b.m) &&
+    a.teamNames === b.teamNames &&
+    a.compact === b.compact &&
+    a.live === b.live &&
+    a.hideProcess === b.hideProcess &&
+    a.name === b.name &&
+    a.model === b.model &&
+    a.icon === b.icon &&
+    a.cli === b.cli,
+)
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
 export function Msgs({
