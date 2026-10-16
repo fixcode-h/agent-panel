@@ -1,0 +1,102 @@
+#!/usr/bin/env node
+/**
+ * 出包：把正式版前端和打成单文件的服务端放进 release/agent-panel-<版本>/，再压成 zip 和 tar.gz。
+ * 包里只有正式版（不含在线演示的模拟后端），解压后只需要 Node.js 20+，不用 npm install。
+ *
+ * 用法：node scripts/package.mjs [版本号]   版本号默认取 package.json
+ */
+import { execFileSync } from 'node:child_process'
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import path from 'node:path'
+import { build } from 'esbuild'
+
+const root = path.resolve(import.meta.dirname, '..')
+const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
+const version = (process.argv[2] ?? pkg.version).replace(/^v/, '')
+const name = `agent-panel-${version}`
+const outRoot = path.join(root, 'release')
+const out = path.join(outRoot, name)
+const run = (cmd, args, cwd = root) => execFileSync(cmd, args, { cwd, stdio: 'inherit' })
+
+rmSync(out, { recursive: true, force: true })
+mkdirSync(out, { recursive: true })
+
+// 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
+run('npx', ['vite', 'build'])
+cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
+const grep = (word) => {
+  try {
+    return execFileSync('grep', ['-rl', word, path.join(out, 'dist')], { encoding: 'utf8' }).trim()
+  } catch {
+    return '' // grep 没找到时退出码是 1
+  }
+}
+for (const word of ['demo-backend', 'demo-assist', '恢复示例数据']) {
+  const hit = grep(word)
+  if (hit) throw new Error(`包里混进了演示内容（${word}）：${hit}`)
+}
+
+// 2. 服务端打成一个文件，依赖全部内联
+await build({
+  entryPoints: [path.join(root, 'server/index.ts')],
+  outfile: path.join(out, 'server.mjs'),
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  minify: false,
+  legalComments: 'none',
+  define: { 'process.env.NODE_ENV': '"production"' },
+  // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
+  banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
+})
+
+// 3. 启动脚本和说明
+writeFileSync(
+  path.join(out, 'package.json'),
+  JSON.stringify(
+    {
+      name: 'agent-panel',
+      version,
+      private: true,
+      type: 'module',
+      description: pkg.description,
+      engines: { node: '>=20' },
+      scripts: { start: 'node server.mjs --prod' },
+    },
+    null,
+    2,
+  ) + '\n',
+)
+writeFileSync(
+  path.join(out, 'start.sh'),
+  '#!/bin/sh\n# 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\ncd "$(dirname "$0")" && exec node server.mjs --prod\n',
+)
+chmodSync(path.join(out, 'start.sh'), 0o755)
+writeFileSync(
+  path.join(out, 'start.cmd'),
+  '@echo off\r\nrem 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\r\ncd /d "%~dp0"\r\nnode server.mjs --prod\r\npause\r\n',
+)
+writeFileSync(
+  path.join(out, '使用说明.txt'),
+  [
+    `Agent 面板 v${version}`,
+    '',
+    '1. 安装 Node.js 20 或更新版本：https://nodejs.org',
+    '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex CLI（codex）或 Command Code（cmdc）',
+    '3. 启动：Windows 双击 start.cmd；macOS / Linux 运行 ./start.sh（或 node server.mjs --prod）',
+    '4. 浏览器打开 http://127.0.0.1:8787',
+    '',
+    '数据保存在本目录的 data/ 下，升级时把旧版本的 data/ 复制过来即可。',
+    '端口用环境变量 PORT 修改，数据目录用 AGENT_PANEL_DATA 修改。',
+    '',
+  ].join('\n'),
+)
+cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
+
+// 4. 压缩
+for (const f of [`${name}.zip`, `${name}.tar.gz`]) rmSync(path.join(outRoot, f), { force: true })
+run('zip', ['-qr', `${name}.zip`, name], outRoot)
+run('tar', ['-czf', `${name}.tar.gz`, name], outRoot)
+if (!existsSync(path.join(outRoot, `${name}.zip`))) throw new Error('压缩失败')
+console.log(`已出包：release/${name}.zip、release/${name}.tar.gz`)
