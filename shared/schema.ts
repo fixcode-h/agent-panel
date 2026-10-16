@@ -522,8 +522,8 @@ export const CliSettings = z.object({
 export type CliSettings = z.infer<typeof CliSettings>
 
 export const Settings = z.object({
-  /** 单个步骤最长运行时间（分钟），超时会停止 */
-  stepTimeoutMinutes: z.number().int().min(1).max(600).default(60),
+  /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
+  stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),

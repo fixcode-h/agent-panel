@@ -134,7 +134,7 @@ function seed(): Db {
     icon: 'brain',
     categoryId: plan.id,
     cli: 'claude',
-    model: 'opus',
+    model: 'claude-opus-5-5',
     description: '理解需求、拆分任务、分派并验收结果',
     instructions:
       '你是这个项目的技术负责人。先阅读工作流文档和需求，把任务拆成可独立验证的小步骤，分派给合适的子 Agent，并在每一步完成后检查结果。',
@@ -144,7 +144,7 @@ function seed(): Db {
     icon: 'layout',
     categoryId: dev.id,
     cli: 'claude',
-    model: 'sonnet',
+    model: 'claude-sonnet-5-5',
     description: '实现 React 页面与交互，保证视觉还原',
   })
   const be = agent({
@@ -169,7 +169,7 @@ function seed(): Db {
     icon: 'shield',
     categoryId: qa.id,
     cli: 'claude',
-    model: 'haiku',
+    model: 'claude-haiku-5-5',
     description: '检查改动的正确性与风格，给出修改建议',
     enabled: false,
   })

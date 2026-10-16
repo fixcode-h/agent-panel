@@ -29,7 +29,7 @@ import {
   type CliStatus,
   type Settings,
 } from '@shared/schema'
-import { cliSettings, defaultCli, orderClis, tierOf } from '@shared/settings'
+import { cliSettings, defaultCli, orderClis, tierFallback, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, effortLabel } from '@/lib/cli-style'
@@ -218,15 +218,18 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
   )
 }
 
-/** 高 / 中 / 低三档：每档一个模型和思考强度，留空用灰色的建议值 */
+/** 高 / 中 / 低三档：每档一个模型和思考强度，模型留空跟随默认模型（没设默认模型时用建议值） */
 function TierTable({
   def,
   value,
+  defaultModel,
   onChange,
   readOnly,
 }: {
   def: CliDefinition
   value: CliDraft['tiers']
+  /** 这个 CLI 设置里的默认模型，留空的档位跟随它 */
+  defaultModel: string
   onChange?: (v: CliDraft['tiers']) => void
   /** 只展示：「默认 CLI」里跟随那个 CLI 自己的档位设置 */
   readOnly?: boolean
@@ -240,7 +243,7 @@ function TierTable({
         <span>思考强度</span>
       </div>
       {MODEL_TIERS.map((t) => {
-        const sug = def.tiers[t.id]
+        const sug = { ...def.tiers[t.id], model: tierFallback(def, defaultModel, t.id) }
         return (
           <div
             key={t.id}
@@ -265,7 +268,7 @@ function TierTable({
               </>
             ) : (
               <>
-                {/* 档位自己的模型下拉不列档位；留空是内置的建议值，标（默认） */}
+                {/* 档位自己的模型下拉不列档位；留空时用的模型标（默认） */}
                 <ModelSelect
                   aria-label={`${def.name} ${t.label}档模型`}
                   def={def}
@@ -288,6 +291,37 @@ function TierTable({
   )
 }
 
+/** AI 创建用的模型：和其他模型下拉同一套，默认选中这个 CLI 设置里的默认模型 */
+function AssistModel({
+  cli,
+  draft,
+  value,
+  onChange,
+}: {
+  cli: string
+  draft?: CliDraft
+  value: string
+  onChange: (v: string) => void
+}) {
+  const def = useCliDef(cli) ?? CLIS.find((c) => c.id === cli)
+  if (!def || !draft) return null
+  const tiers = {
+    high: { model: draft.tiers.high.model || tierFallback(def, draft.defaultModel, 'high') },
+    medium: { model: draft.tiers.medium.model || tierFallback(def, draft.defaultModel, 'medium') },
+    low: { model: draft.tiers.low.model || tierFallback(def, draft.defaultModel, 'low') },
+  }
+  return (
+    <ModelSelect
+      aria-label="AI 创建使用的模型"
+      def={def}
+      value={value}
+      onChange={onChange}
+      tiers={tiers}
+      defaultValue={draft.defaultModel || cliDefaultModel(def)?.id || ''}
+    />
+  )
+}
+
 /** 只读的设置值：样子和输入框对齐，但不能改 */
 function ReadValue({ children, mono }: { children: React.ReactNode; mono?: boolean }) {
   return (
@@ -306,7 +340,7 @@ function ReadValue({ children, mono }: { children: React.ReactNode; mono?: boole
 function defaultModelText(def: CliDefinition, d: CliDraft) {
   const v = d.defaultModel
   const t = tierOf(v)
-  if (t) return `${t.label}档 · ${d.tiers[t.id].model || def.tiers[t.id].model}`
+  if (t) return `${t.label}档 · ${d.tiers[t.id].model || tierFallback(def, '', t.id)}`
   if (v) return v
   const m = cliDefaultModel(def)?.id
   return m ? `${m}（默认）` : '自动（默认）'
@@ -329,9 +363,9 @@ function DefaultModel({
   onChange: (v: string) => void
 }) {
   const tiers = {
-    high: { model: draft.tiers.high.model || def.tiers.high.model },
-    medium: { model: draft.tiers.medium.model || def.tiers.medium.model },
-    low: { model: draft.tiers.low.model || def.tiers.low.model },
+    high: { model: draft.tiers.high.model || tierFallback(def, draft.defaultModel, 'high') },
+    medium: { model: draft.tiers.medium.model || tierFallback(def, draft.defaultModel, 'medium') },
+    low: { model: draft.tiers.low.model || tierFallback(def, draft.defaultModel, 'low') },
   }
   return (
     <ModelSelect
@@ -365,11 +399,11 @@ function ModelSource({ cli, data }: { cli: CliDefinition; data?: CliModels }) {
     data.source === 'cli'
       ? `${how}已从本机 ${cli.name} 读到 ${data.models.length} 个可用模型。`
       : data.auth === 'api' && !data.error
-        ? `${how}下面是常用的别名和型号，也可以直接填写模型名。`
+        ? `${how}下面是常用的型号，也可以直接填写模型名。`
         : data.error
           ? `没能从 ${cli.name} 读到模型列表（${data.error}），下面是内置的建议，也可以直接填写模型名。`
           : cli.id === 'claude'
-            ? `${cli.name} 没有列出模型的命令，下面是常用的别名和型号，也可以直接填写完整的模型名。`
+            ? `${cli.name} 没有列出模型的命令，下面是常用的型号，也可以直接填写完整的模型名。`
             : '下面是内置的建议，也可以直接填写模型名。'
   return <p className={cn('pt-1 text-xs leading-relaxed', data.error ? 'text-warning' : 'text-subtle')}>{text}</p>
 }
@@ -519,8 +553,17 @@ function CliSection({
 
       <Group title="模型">
         <ModelSource cli={def} data={models} />
-        <Row title="三档模型" desc="Agent 选了高、中、低档时使用的模型和思考强度。留空用灰色的建议值。" stack>
-          <TierTable def={full} value={draft.tiers} onChange={(v) => set('tiers', v)} />
+        <Row
+          title="三档模型"
+          desc="Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。"
+          stack
+        >
+          <TierTable
+            def={full}
+            value={draft.tiers}
+            defaultModel={draft.defaultModel}
+            onChange={(v) => set('tiers', v)}
+          />
         </Row>
         <Row title="默认模型" desc="Agent 没有指定模型时使用，可以选一个档位">
           <DefaultModel def={full} draft={draft} onChange={(v) => set('defaultModel', v)} />
@@ -697,7 +740,7 @@ function SettingsBody({
   }, [])
 
   const minutes = Number(timeout)
-  const valid = Number.isInteger(minutes) && minutes >= 1 && minutes <= 600
+  const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
   const tier = (t: { model: string; effort: string }) => ({ model: t.model.trim(), effort: t.effort })
   const value: Settings = {
     openBrowser,
@@ -832,7 +875,7 @@ function SettingsBody({
                   在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 CLI。
                 </p>
               )}
-              <Row title="单个步骤最长运行时间" desc="分钟。超时后会停止这一步，任务标记为失败。">
+              <Row title="单个步骤最长运行时间" desc="分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。">
                 <div className="flex flex-col gap-1">
                   <Input
                     inputMode="numeric"
@@ -842,7 +885,7 @@ function SettingsBody({
                     className={cn('h-9', !valid && 'border-danger focus:border-danger focus:ring-danger/20')}
                     aria-label="单个步骤最长运行时间（分钟）"
                   />
-                  {!valid && <span className="text-xs text-danger">填 1 到 600 之间的整数</span>}
+                  {!valid && <span className="text-xs text-danger">填 0 到 1440 之间的整数，0 表示不限制</span>}
                 </div>
               </Row>
               {!demo && (
@@ -920,7 +963,12 @@ function SettingsBody({
                   }
                   stack
                 >
-                  <TierTable def={defDef} value={drafts[defCli].tiers} readOnly />
+                  <TierTable
+                    def={defDef}
+                    value={drafts[defCli].tiers}
+                    defaultModel={drafts[defCli].defaultModel}
+                    readOnly
+                  />
                 </Row>
                 {/* 默认模型和思考强度也只展示，在对应 CLI 里改 */}
                 <Row title="默认模型" desc={`Agent 没有指定模型时使用，跟随 ${defDef.name} 的设置`}>
@@ -961,20 +1009,23 @@ function SettingsBody({
                     aria-label="AI 创建使用的 CLI"
                     value={assist.cli || defCli}
                     // 选回默认的就不单独记，之后换了默认 CLI 会跟着变
-                    onChange={(e) => setAssist({ ...assist, cli: e.target.value === defCli ? '' : e.target.value })}
+                    // 换 CLI 时模型名不通用，清空回到那个 CLI 的默认模型
+                    onChange={(e) =>
+                      setAssist({ ...assist, cli: e.target.value === defCli ? '' : e.target.value, model: '' })
+                    }
                     options={ordered.map((c) => ({
                       value: c.id,
                       label: `${c.name}${c.id === defCli ? '（默认）' : ''}`,
                     }))}
                   />
                 </Row>
-                <Row title="模型" desc="留空使用该 CLI 的默认模型">
-                  <Input
+                <Row title="模型" desc="默认用这个 CLI 设置里的默认模型">
+                  <AssistModel
+                    key={assist.cli || defCli}
+                    cli={assist.cli || defCli}
+                    draft={drafts[assist.cli || defCli]}
                     value={assist.model}
-                    onChange={(e) => setAssist({ ...assist, model: e.target.value })}
-                    placeholder="例如 opus"
-                    className="h-9 font-mono text-[13px]"
-                    spellCheck={false}
+                    onChange={(v) => setAssist({ ...assist, model: v })}
                   />
                 </Row>
                 <Row title="创建 Agent 的补充规则" desc="会加进提示词，例如命名习惯、团队约定" stack>

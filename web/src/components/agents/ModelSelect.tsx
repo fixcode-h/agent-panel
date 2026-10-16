@@ -58,11 +58,10 @@ export function ModelSelect({
   className?: string
   'aria-label'?: string
 }) {
-  const options = modelOptions(def, { tiers, defaultValue })
-  const listed = (v: string) => v === '' || v === defaultValue || options.some((o) => o.value === v)
-  // 选了「其他模型…」，或者值不在列表里（列表读到之前也先按填写显示，读到后自动换回下拉）
-  const [picked, setCustom] = useState(false)
-  const custom = picked || !listed(value)
+  // 列表里没有的值（自己填的、以前存的）放进「其他」组里显示，不用切到输入框
+  const options = modelOptions(def, { tiers, defaultValue, extra: value ? [value] : [] })
+  // 只有主动选了「其他模型…」才显示输入框
+  const [custom, setCustom] = useState(false)
   const shown = custom ? CUSTOM : value === defaultValue ? '' : value
   return (
     <div className={cn('flex min-w-0 flex-col gap-2', className)}>
@@ -79,7 +78,7 @@ export function ModelSelect({
       />
       {custom && (
         <Input
-          autoFocus={!value}
+          autoFocus
           aria-label="模型名"
           value={value}
           onChange={(e) => onChange(e.target.value.trim())}

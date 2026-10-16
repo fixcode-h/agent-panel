@@ -12,7 +12,7 @@ import { getSettings } from './settings.ts'
  * 从本机 CLI 读取可用的模型：内置列表跟不上 CLI 的更新，也不知道用户账号能用哪些模型。
  * - Codex：通过 `codex app-server` 的 model/list 请求（和 Codex 自己的 /model 菜单同一个来源）
  * - Command Code：`cmdc --list-models`
- * - Claude Code：没有列出模型的命令，用内置的别名和型号，再加上用户在环境变量、settings.json 里配置的模型
+ * - Claude Code：没有列出模型的命令，用内置的型号（opus / sonnet 这类别名不列，和具体型号重复），再加上用户在环境变量、settings.json 里配置的模型
  */
 
 const TTL = 10 * 60_000
@@ -214,7 +214,7 @@ async function claudeConfigured(env: NodeJS.ProcessEnv): Promise<CliModel[]> {
 }
 
 /**
- * Claude Code 的登录方式：`claude auth status` 输出 JSON。claude.ai 账号（订阅）登录时能用全部别名和型号；
+ * Claude Code 的登录方式：`claude auth status` 输出 JSON。claude.ai 账号（订阅）登录时能用全部内置型号；
  * API Key、apiKeyHelper、Bedrock / Vertex 或自定义 ANTHROPIC_BASE_URL 时只列配置里写的模型。
  */
 async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'account' | 'api' | undefined> {

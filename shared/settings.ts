@@ -1,14 +1,22 @@
-import { CLIS, getCli, MODEL_TIERS, type ModelTier } from './clis.ts'
+import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
 import { CliSettings, Settings } from './schema.ts'
 
 export const defaultSettings = (): Settings => Settings.parse({})
+
+/**
+ * 档位留空时用的模型：设置了具体的默认模型就跟随它（改了默认模型，空着的档位跟着变），
+ * 否则用内置的建议值。默认模型本身是档位时不算，免得互相引用。
+ */
+export function tierFallback(def: CliDefinition | undefined, defaultModel: string, t: ModelTier) {
+  return (defaultModel && !defaultModel.startsWith('@') ? defaultModel : '') || def?.tiers[t].model || ''
+}
 
 /** 某个 CLI 的有效设置：没配置过的项用默认值补齐 */
 export function cliSettings(settings: Settings, cliId: string): CliSettings & { command: string; permission: string } {
   const def = getCli(cliId)
   const s = CliSettings.parse(settings.clis[cliId] ?? {})
   const tier = (t: ModelTier) => ({
-    model: s.tiers[t].model || def?.tiers[t].model || '',
+    model: s.tiers[t].model || tierFallback(def, s.defaultModel, t),
     effort: s.tiers[t].effort || def?.tiers[t].effort || '',
   })
   return {

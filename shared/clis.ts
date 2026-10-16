@@ -79,9 +79,6 @@ export const CLIS: CliDefinition[] = [
     command: 'claude',
     versionArgs: ['--version'],
     models: [
-      { id: 'opus', label: 'Opus（别名，跟随最新）' },
-      { id: 'sonnet', label: 'Sonnet（别名，跟随最新）' },
-      { id: 'haiku', label: 'Haiku（别名，跟随最新）' },
       { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
       { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
@@ -101,9 +98,9 @@ export const CLIS: CliDefinition[] = [
       { id: 'max', label: '最高' },
     ],
     tiers: {
-      high: { model: 'opus', effort: 'high' },
-      medium: { model: 'sonnet', effort: 'medium' },
-      low: { model: 'haiku', effort: 'low' },
+      high: { model: 'claude-opus-5-5', effort: 'high' },
+      medium: { model: 'claude-sonnet-5-5', effort: 'medium' },
+      low: { model: 'claude-haiku-5-5', effort: 'low' },
     },
     defaultPermission: 'acceptEdits',
     systemPromptFlag: true,

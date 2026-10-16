@@ -303,7 +303,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     env: childEnv(cs.env),
     input,
     signal: ctx.signal,
-    timeoutMs: settings.stepTimeoutMinutes * 60_000,
+    // 0 表示不限制
+    timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,
     onEvent: apply,
     canAsk: true,
   }).finally(() => {

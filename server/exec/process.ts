@@ -90,7 +90,7 @@ export function runProcess(o: {
     const onAbort = () => stop('stopped')
     o.signal?.addEventListener('abort', onAbort)
     if (o.signal?.aborted) stop('stopped')
-    const timer = setTimeout(() => stop('timeout'), o.timeoutMs ?? 2 ** 31 - 1)
+    const timer = setTimeout(() => stop('timeout'), o.timeoutMs || 2 ** 31 - 1)
 
     child.on('error', (e: NodeJS.ErrnoException) =>
       done({ code: null, spawnError: e.code === 'ENOENT' ? `找不到命令「${o.command}」` : e.message }),

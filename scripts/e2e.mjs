@@ -625,7 +625,8 @@ try {
   assert.equal((await call('GET', '/clis')).find((x) => x.isDefault).id, 'codex')
   for (const [ag, kind, flag, model] of [
     [D, 'codex', '-c', 'model="gpt-top"'],
-    [L, 'claude', '--model', 'haiku'],
+    // Claude 设置了默认模型 sonnet，低档没填就跟随默认模型
+    [L, 'claude', '--model', 'sonnet'],
   ]) {
     let t2 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '档位' })
     t2 = await waitDone(t2.id)
@@ -641,6 +642,19 @@ try {
   let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
   t3 = await waitDone(t3.id)
   assert.ok(calls().at(-1).args.includes('model="gpt-6.1-sol"'))
+  // 设置了具体的默认模型后，没填的档位跟随默认模型
+  await call('PUT', '/settings', {
+    ...settings,
+    defaultCli: 'codex',
+    clis: {
+      ...settings.clis,
+      codex: cli({ defaultModel: 'gpt-def', tiers: { high: 'gpt-top', medium: '', low: '' } }),
+    },
+  })
+  t3 = await waitDone(
+    (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })).id,
+  )
+  assert.ok(calls().at(-1).args.includes('model="gpt-def"'), '空档位跟随默认模型')
   // Agent 自己的权限覆盖 CLI 设置；换了 CLI 不认的旧值时跟随设置
   await call('PUT', '/agents/' + L.id, { ...L, permission: 'plan' })
   await waitDone(
@@ -856,7 +870,8 @@ try {
   assert.equal(mm.models[0].isDefault, true)
   const cl = await call('GET', '/clis/claude/models')
   assert.equal(cl.source, 'builtin')
-  assert.ok(cl.models.some((m) => m.id === 'opus'))
+  assert.ok(cl.models.some((m) => m.id === 'claude-opus-5-5'))
+  assert.ok(!cl.models.some((m) => m.id === 'opus'), '不列别名')
   step('从本机 CLI 读取模型列表：Codex 走 app-server，Command Code 走 --list-models')
 
   // 目录浏览带上快速入口（Windows 上是各个盘符）
