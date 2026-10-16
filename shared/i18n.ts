@@ -36,6 +36,12 @@ export function setLang(l: Lang) {
   lang = l
 }
 
+/** 补充词典：只在某些构建里用到的文案（例如在线演示），不放进主词典 */
+export function extendDict(l: Lang, dict: Record<string, string>) {
+  const d = DICTS[l]
+  if (d) for (const k in dict) d[k] ??= dict[k]
+}
+
 /** 翻译一句文案；{name} 换成 vars 里的值 */
 export function t(zh: string, vars?: Record<string, string | number>): string {
   const s = DICTS[lang]?.[zh] ?? zh

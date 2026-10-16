@@ -24,14 +24,7 @@ export const EN_APP: Record<string, string> = {
   '加载失败：{msg}': 'Failed to load: {msg}',
 
   // 在线演示提示条
-  在线演示: 'Live demo',
-  '：数据只存在你的浏览器里，CLI 和本机目录是模拟的。':
-    ': data lives only in your browser; the CLIs and local folders are simulated.',
-  恢复示例数据: 'Restore sample data',
   关闭提示: 'Dismiss',
-  '恢复示例数据？': 'Restore sample data?',
-  '你在演示里新建和修改的 Agent、工作流、项目和任务都会被清掉，换回最初的示例。':
-    'Agents, workflows, projects and tasks you created or changed in the demo will be cleared and replaced with the original samples.',
   恢复: 'Restore',
 
   // 侧栏

@@ -236,11 +236,7 @@ export const EN_SETTINGS: Record<string, string> = {
     "The new version is installed, but the server didn't restart automatically. Please restart the panel manually.",
 
   // 在线演示提示条
-  恢复示例数据: 'Restore sample data',
   关闭提示: 'Dismiss',
-  '恢复示例数据？': 'Restore sample data?',
-  '你在演示里新建和修改的 Agent、工作流、项目和任务都会被清掉，换回最初的示例。':
-    'Agents, workflows, projects and tasks you created or changed in the demo will be cleared and replaced with the original samples.',
   恢复: 'Restore',
   没有输出时提醒: 'Warn when there is no output',
   '分钟，填 0 不检测。CLI 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。':

@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { FlaskConical, RotateCcw, X } from 'lucide-react'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { t } from '@shared/i18n'
+import { extendDict, t } from '@shared/i18n'
+import { EN_DEMO } from '@shared/locales/en/demo'
 
 /** 在线演示模式顶部提示条：数据只存在浏览器里，可一键恢复示例数据 */
 export function DemoBanner() {
+  // 放在组件里而不是模块顶层：正式版里这个组件整个被去掉，演示文案也就不会进包
+  extendDict('en', EN_DEMO)
   const [open, setOpen] = useState(true)
   const [confirming, setConfirming] = useState(false)
   if (!open) return null
