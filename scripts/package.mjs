@@ -101,7 +101,11 @@ writeFileSync(
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
 
-// 4. 压缩
+// 4. 压缩（--no-archive 只生成目录，CI 在 Windows 上试运行托盘程序时用）
+if (process.argv.includes('--no-archive')) {
+  console.log(`已生成：release/${name}`)
+  process.exit(0)
+}
 for (const f of [`${name}.zip`, `${name}.tar.gz`]) rmSync(path.join(outRoot, f), { force: true })
 run('zip', ['-qr', `${name}.zip`, name], outRoot)
 run('tar', ['-czf', `${name}.tar.gz`, name], outRoot)
