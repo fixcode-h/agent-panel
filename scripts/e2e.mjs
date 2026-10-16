@@ -377,7 +377,12 @@ try {
       '增量合起来和完整任务一致',
     )
   }
-  step('任务列表只给摘要，任务页通过推送拿增量')
+  // 归档：只是打个标记，列表里带着，取消归档后恢复
+  const arch = await call('PATCH', `/tasks/${t.id}`, { archived: true })
+  assert.equal(arch.archived, true)
+  assert.equal((await call('GET', '/tasks')).find((x) => x.id === t.id).archived, true)
+  await call('PATCH', `/tasks/${t.id}`, { archived: false })
+  step('任务列表只给摘要，任务页通过推送拿增量；可以归档')
 
   // 任务存下创建时的工作流：之后改了工作流，老任务的记录不变；继续执行时可以选择改用新的
   {

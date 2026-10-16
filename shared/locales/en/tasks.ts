@@ -284,4 +284,5 @@ export const EN_TASKS: Record<string, string> = {
   先写上要改的地方: 'Describe what to change first',
   退回修改: 'Send back',
   '通过，继续': 'Approve and continue',
+  '另有 {n} 个已归档': '{n} more archived',
 }

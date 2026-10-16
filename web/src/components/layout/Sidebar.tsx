@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
+  Archive,
+  ArchiveRestore,
   BellRing,
   Bot,
+  Check,
+  ListFilter,
+  Search,
   Code2,
   MessagesSquare,
   ChevronDown,
@@ -258,12 +263,15 @@ function TaskRow({
   active,
   onOpen,
   onDeleted,
+  hint,
   className,
 }: {
   task: Task
   active: boolean
   onOpen: () => void
   onDeleted: () => void
+  /** 时间前面的小字，搜索结果里显示所属项目 */
+  hint?: string
   className?: string
 }) {
   const { removeTask, upsertTask } = useData()
@@ -277,6 +285,14 @@ function TaskRow({
     if (!title || title === task.title) return
     try {
       upsertTask(await api.renameTask(task.id, title))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const archive = async (archived: boolean) => {
+    try {
+      upsertTask(await api.archiveTask(task.id, archived))
+      toast.success(archived ? t('已归档，可以在筛选里选「已归档」找到') : t('已取消归档'))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -332,6 +348,7 @@ function TaskRow({
               <TaskStatusIcon status={task.status} className="h-3.5 w-3.5" />
             ) : null}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
+            {hint && <span className="max-w-[40%] shrink truncate text-[11px] text-subtle">{hint}</span>}
             <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(task.updatedAt)}</span>
           </button>
         </ContextMenuTrigger>
@@ -349,6 +366,17 @@ function TaskRow({
             <PencilLine className="h-4 w-4" />
             {t('重命名')}
           </ContextMenuItem>
+          {task.archived ? (
+            <ContextMenuItem onSelect={() => archive(false)}>
+              <ArchiveRestore className="h-4 w-4" />
+              {t('取消归档')}
+            </ContextMenuItem>
+          ) : (
+            <ContextMenuItem disabled={task.status === 'running'} onSelect={() => archive(true)}>
+              <Archive className="h-4 w-4" />
+              {t('归档')}
+            </ContextMenuItem>
+          )}
           <ContextMenuSeparator />
           <ContextMenuItem danger onSelect={() => setDeleting(true)}>
             <Trash2 className="h-4 w-4" />
@@ -367,15 +395,116 @@ function TaskRow({
   )
 }
 
-/** Chat 模式的侧栏：最近的聊天，右键可以重命名、删除 */
+type TaskFilter = 'all' | 'running' | 'failed' | 'waiting' | 'archived'
+const FILTERS: { id: TaskFilter; label: string }[] = [
+  { id: 'all', label: t('全部') },
+  { id: 'running', label: t('执行中') },
+  { id: 'failed', label: t('失败') },
+  { id: 'waiting', label: t('等我处理') },
+  { id: 'archived', label: t('已归档') },
+]
+
+/** 按标题和第一条要求搜索，按状态筛选；归档的只在「已归档」里出现 */
+function matchTask(tk: Task, query: string, filter: TaskFilter) {
+  if (filter === 'archived' ? !tk.archived : tk.archived) return false
+  if (filter === 'running' && tk.status !== 'running') return false
+  if (filter === 'failed' && tk.status !== 'failed') return false
+  if (filter === 'waiting' && !tk.requests?.length) return false
+  const q = query.trim().toLowerCase()
+  if (!q) return true
+  const first = tk.messages.find((m) => m.role === 'user')?.text ?? ''
+  return tk.title.toLowerCase().includes(q) || first.toLowerCase().includes(q)
+}
+
+/** 侧栏顶部的搜索框和筛选 */
+function TaskSearch({
+  query,
+  onQuery,
+  filter,
+  onFilter,
+  placeholder,
+}: {
+  query: string
+  onQuery: (q: string) => void
+  filter: TaskFilter
+  onFilter: (f: TaskFilter) => void
+  placeholder: string
+}) {
+  return (
+    <div className="flex shrink-0 items-center gap-1 px-0.5 pb-1">
+      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent bg-field/70 px-2 text-[13px] focus-within:border-accent/60 focus-within:bg-field">
+        <Search className="h-3.5 w-3.5 shrink-0 text-subtle" />
+        <input
+          id="sidebar-search"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape' && (query || filter !== 'all')) {
+              e.stopPropagation()
+              onQuery('')
+              onFilter('all')
+              e.currentTarget.blur()
+            }
+          }}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          className="min-w-0 flex-1 bg-transparent outline-none placeholder:text-subtle"
+        />
+        {query && (
+          <button
+            onClick={() => onQuery('')}
+            aria-label={t('清除搜索')}
+            className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:text-fg"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </label>
+      <Menu>
+        <MenuTrigger asChild>
+          <button
+            aria-label={t('筛选')}
+            title={filter === 'all' ? t('筛选') : FILTERS.find((f) => f.id === filter)?.label}
+            className={cn(
+              'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg transition-colors',
+              filter === 'all' ? 'text-subtle hover:bg-sel hover:text-fg' : 'bg-accent-soft text-accent',
+            )}
+          >
+            <ListFilter className="h-3.5 w-3.5" />
+          </button>
+        </MenuTrigger>
+        <MenuContent align="end">
+          {FILTERS.map((f) => (
+            <MenuItem key={f.id} onSelect={() => onFilter(f.id)}>
+              <Check className={cn('h-4 w-4', f.id !== filter && 'invisible')} />
+              {f.label}
+            </MenuItem>
+          ))}
+        </MenuContent>
+      </Menu>
+    </div>
+  )
+}
+
+/** Chat 模式的侧栏：最近的聊天，右键可以重命名、归档、删除 */
 function ChatList() {
   const { route, go } = useNav()
   const { tasks } = useData()
-  const chats = tasks.filter((t) => !t.projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<TaskFilter>('all')
+  const chats = tasks
+    .filter((t) => !t.projectId && matchTask(t, query, filter))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const filtering = !!query.trim() || filter !== 'all'
   return (
-    <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">{t('最近')}</p>
-      {chats.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">{t('还没有聊天。')}</p>}
+    <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+      <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
+      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">
+        {filtering ? t('找到 {n} 个', { n: chats.length }) : t('最近')}
+      </p>
+      {chats.length === 0 && (
+        <p className="px-2.5 py-1 text-xs text-subtle">{filtering ? t('没有符合的聊天。') : t('还没有聊天。')}</p>
+      )}
       <div className="flex flex-col gap-px">
         {chats.map((t) => (
           <TaskRow
@@ -409,7 +538,15 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   // 按项目分组，最近有动静的项目排在前面；组内按更新时间
   const [folded, toggleFolded, setFolded] = useFolded()
   const [more, setMore] = useState<Set<string>>(new Set())
-  const recent = [...tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const [query, setQuery] = useState('')
+  const [filter, setFilter] = useState<TaskFilter>('all')
+  const filtering = !!query.trim() || filter !== 'all'
+  const projectTasks = tasks.filter((t) => t.projectId)
+  const found = filtering
+    ? projectTasks.filter((t) => matchTask(t, query, filter)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    : []
+  // 归档的不在项目分组里显示
+  const recent = projectTasks.filter((t) => !t.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   const byProject = new Map<string, Task[]>()
   for (const t of recent) byProject.set(t.projectId, [...(byProject.get(t.projectId) ?? []), t])
   // 所有项目都列出来（还没有对话的也在），最近有动静的排前面
@@ -520,8 +657,44 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         ) : (
           <ChatList />
         )
+      ) : !narrow && filtering ? (
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+          <TaskSearch
+            query={query}
+            onQuery={setQuery}
+            filter={filter}
+            onFilter={setFilter}
+            placeholder={t('搜索任务')}
+          />
+          <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">
+            {t('找到 {n} 个', { n: found.length })}
+          </p>
+          {found.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">{t('没有符合的任务。')}</p>}
+          <div className="flex flex-col gap-px">
+            {found.map((tk) => (
+              <TaskRow
+                key={tk.id}
+                task={tk}
+                hint={projectName(tk.projectId)}
+                active={route.page === 'projects' && route.sub === tk.id}
+                onOpen={() => go({ page: 'projects', id: tk.projectId, sub: tk.id })}
+                onDeleted={() =>
+                  route.page === 'projects' && route.sub === tk.id && go({ page: 'projects', id: tk.projectId })
+                }
+                className="px-2.5"
+              />
+            ))}
+          </div>
+        </div>
       ) : !narrow ? (
-        <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+        <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+          <TaskSearch
+            query={query}
+            onQuery={setQuery}
+            filter={filter}
+            onFilter={setFilter}
+            placeholder={t('搜索任务')}
+          />
           <div className="group/head flex h-7 shrink-0 items-center gap-0.5 pr-1 pl-2.5">
             <button
               onClick={() => toggleFolded(ALL)}

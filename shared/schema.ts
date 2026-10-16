@@ -413,7 +413,9 @@ export const QueuedMessage = z.object({
 })
 export type QueuedMessage = z.infer<typeof QueuedMessage>
 /** 可以直接修改的任务字段 */
-export const TaskPatch = z.object({ title: z.string().trim().min(1, t('标题不能为空')).max(80) }).partial()
+export const TaskPatch = z
+  .object({ title: z.string().trim().min(1, t('标题不能为空')).max(80), archived: z.boolean() })
+  .partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
@@ -585,6 +587,8 @@ export const TaskData = z.object({
   queue: z.array(QueuedMessage).default([]),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
+  /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
+  archived: z.boolean().optional(),
 })
 export type TaskData = z.infer<typeof TaskData>
 

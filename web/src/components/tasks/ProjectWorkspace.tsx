@@ -28,7 +28,10 @@ function ProjectHome({ project }: { project: Project }) {
   const { tasks, tasksLoaded, workflows, agents, projectCategories, upsertTask } = useData()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
-  const list = tasks.filter((t) => t.projectId === project.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）
+  const all = tasks.filter((t) => t.projectId === project.id)
+  const archived = all.filter((t) => t.archived).length
+  const list = all.filter((t) => !t.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   // 有任务在执行时每秒刷新，耗时跟着走
   const now = useNow(list.some((t) => t.status === 'running'))
   const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))
@@ -73,7 +76,10 @@ function ProjectHome({ project }: { project: Project }) {
         />
 
         <section className="flex flex-col">
-          <h2 className="mb-2 px-1 text-xs font-medium text-subtle">{t('任务 · {n}', { n: list.length })}</h2>
+          <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
+            <span className="flex-1">{t('任务 · {n}', { n: list.length })}</span>
+            {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
+          </h2>
           {list.length === 0 && tasksLoaded ? (
             <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[13px] text-subtle">
               {t('还没有任务。在上面描述要做的事，Agent 会按工作流完成。')}

@@ -110,6 +110,7 @@ export const api = {
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
+  archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),
