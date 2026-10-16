@@ -66,6 +66,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
   })
 
   const parse = parserFor(cliId, cwd)
+  // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
+  const mine: TaskMessage[] = []
   let cur: TaskMessage | undefined
   const texts: string[] = []
   const errors: string[] = []
@@ -73,6 +75,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
   const newMsg = () => {
     cur = { id: ctx.newId(), role: 'agent', agentId, step, text: '', tools: [], at: new Date().toISOString() }
     task.messages.push(cur)
+    mine.push(cur)
     return cur
   }
 
@@ -149,7 +152,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     },
   })
 
-  for (const m of task.messages) if (m.agentId === agentId && m.step === step && m.text) texts.push(m.text)
+  for (const m of mine) if (m.text) texts.push(m.text)
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline).catch(() => null)
     if (changes) task.changes = changes
@@ -175,7 +178,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
       /(no|not).{0,40}(session|conversation|thread)|(session|conversation|thread).{0,40}not found/i.test(detail)
     ) {
       delete task.sessions[sessionKey]
-      return runAgent(ctx, call, true)
+      // 新会话没有之前的上下文，要用完整提示
+      return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
     }
     return {
       ok: false,

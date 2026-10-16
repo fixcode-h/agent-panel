@@ -28,7 +28,14 @@ export function tasksApi(deps: {
   projectCategories: Lister<ProjectCategory>
 }) {
   const store = createCollection<TaskData, Task>('tasks.json', Task)
-  const live = new Map<string, { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> }>()
+  type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> }
+  const live = new Map<string, Live>()
+  /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
+  const reserve = (task: Task): Live => {
+    const entry: Live = { task: structuredClone(task), stop: false, abort: new AbortController() }
+    live.set(task.id, entry)
+    return entry
+  }
 
   // 服务重启时，之前没跑完的任务标记为已停止
   void store.list().then(async (all) => {
@@ -49,19 +56,17 @@ export function tasksApi(deps: {
     return id ? ((await deps.workflows.get(id)) ?? undefined) : undefined
   }
 
-  async function start(task: Task, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
-    const settings = await getSettings()
-    const project = await deps.projects.get(task.projectId)
-    const entry: { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> } = {
-      task: structuredClone(task),
-      stop: false,
-      abort: new AbortController(),
-    }
-    live.set(task.id, entry)
-    // 先同步标成执行中，接口返回时页面就能开始轮询
+  async function start(entry: Live, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
+    const task = entry.task
+    // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
+    const [settings, project] = await Promise.all([getSettings(), deps.projects.get(task.projectId)]).catch((e) => {
+      live.delete(task.id)
+      throw e
+    })
     let last = 0
-    const flush = () => store.update(task.id, entry.task)
+    const flush = () =>
+      store.update(task.id, entry.task).catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
       // 流式输出时最多每秒落盘一次，关键节点立即落盘
@@ -157,7 +162,7 @@ export function tasksApi(deps: {
       if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
     const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID()))
-    return c.json(await start(task, input.prompt, true, workflow, agents), 201)
+    return c.json(await start(reserve(task), input.prompt, true, workflow, agents), 201)
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -170,7 +175,8 @@ export function tasksApi(deps: {
     if (live.has(id)) return bad(c, '任务正在执行，请等它完成或先停止', 409)
     const task = await store.get(id)
     if (!task) return bad(c, '任务不存在', 404)
-    const next: Task = structuredClone(task)
+    const entry = reserve(task)
+    const next = entry.task
     next.messages.push({
       id: randomUUID(),
       role: 'user',
@@ -180,8 +186,13 @@ export function tasksApi(deps: {
       tools: [],
       at: new Date().toISOString(),
     })
-    const workflow = next.workflowId ? ((await deps.workflows.get(next.workflowId)) ?? undefined) : undefined
-    return c.json(await start(next, p.data.text, false, workflow, await deps.agents.list()))
+    try {
+      const workflow = next.workflowId ? ((await deps.workflows.get(next.workflowId)) ?? undefined) : undefined
+      return c.json(await start(entry, p.data.text, false, workflow, await deps.agents.list()))
+    } catch (e) {
+      live.delete(id)
+      throw e
+    }
   })
 
   routes.post('/:id/stop', async (c) => {
@@ -198,6 +209,11 @@ export function tasksApi(deps: {
 
   return {
     routes,
+    /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
+    stopAll() {
+      for (const id of live.keys()) stopTask(id)
+      return Promise.allSettled([...live.values()].map((e) => e.done))
+    },
     async removeByProject(projectId: string) {
       for (const t of (await store.list()).filter((t) => t.projectId === projectId)) {
         stopTask(t.id)

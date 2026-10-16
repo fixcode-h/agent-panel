@@ -4,6 +4,7 @@
  *
  * 运行：npm run test:e2e（需要 git；假 CLI 依赖 shebang，只能在 macOS / Linux 上跑）
  */
+import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -240,16 +241,21 @@ try {
   assert.equal(h2.status, 'failed')
   assert.match(h2.messages.at(-1).text, /验收 1 轮仍未通过/)
   assert.deepEqual(h2.steps.filter((s) => !s.parentId).map((s) => s.status), ['failed', 'pending'])
-  // 循环引用：自己引用自己时给出提示
-  const loop = await call('POST', '/workflows', {
-    name: '自引用', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
-    flows: [flow('main', '', [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })], [['start', 'z'], ['z', 'end']])],
-  })
-  await call('PUT', `/projects/${project.id}`, { ...project, workflowId: loop.id })
-  let lp = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '套娃' })
-  lp = await waitDone(lp.id)
-  assert.equal(lp.status, 'failed')
-  assert.match(lp.messages.at(-1).text, /嵌套超过/)
+  // 保存时拦下有问题的流程图：自己调用自己、节点连成环
+  await assert.rejects(
+    call('POST', '/workflows', {
+      name: '自引用', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
+      flows: [flow('main', '', [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })], [['start', 'z'], ['z', 'end']])],
+    }),
+    /循环调用/,
+  )
+  await assert.rejects(
+    call('POST', '/workflows', {
+      name: '成环', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
+      flows: [flow('main', '', [node('p', '甲', ''), node('q', '乙', '')], [['start', 'p'], ['p', 'q'], ['q', 'p']])],
+    }),
+    /连成了环/,
+  )
   await call('PUT', `/projects/${project.id}`, { ...project, workflowId: wf.id })
   step('节点入口：开始流程的结果交给节点，验收不通过退回完善、轮数用完失败，结束流程、流程节点、引用其他工作流都能执行')
 
@@ -385,6 +391,23 @@ try {
   assert.equal(sim.simulated, true)
   assert.equal(calls().length, before, '模拟执行不应调用 CLI')
   step('模拟执行：不调用 CLI')
+
+  // ---- 只接受本机页面的请求 ----
+  const raw = (method, url, headers, body) =>
+    new Promise((resolve, reject) => {
+      const u = new URL(base + url)
+      const req = http.request({ host: u.hostname, port: u.port, path: u.pathname, method, headers }, (res) => {
+        res.resume()
+        resolve(res.statusCode)
+      })
+      req.on('error', reject)
+      req.end(body)
+    })
+  assert.equal(await raw('GET', '/projects', { host: 'evil.example:' + new URL(base).port }), 403, 'DNS 重绑定：外部域名的 Host')
+  assert.equal(await raw('GET', '/projects', { origin: 'https://evil.example' }), 403, '外部网站的 Origin')
+  assert.equal(await raw('POST', '/assist', { 'content-type': 'text/plain' }, '{}'), 415, '不是 JSON 的写请求')
+  assert.equal(await raw('GET', '/projects', { origin: 'http://localhost:5173' }), 200, '本机页面可以访问')
+  step('只接受本机页面的请求：拦下外部 Host、外部 Origin 和非 JSON 的写请求')
 
   console.log('\n全部通过')
 } catch (e) {
