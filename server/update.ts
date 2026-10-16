@@ -253,6 +253,8 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
           received: 0,
           total: 0,
         }
+        // 只有页面正在看的这一次有用，以前的记录丢掉
+        for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
         jobs.set(job.id, job)
         install(job, rel).catch((e) => {
           job.status = 'failed'

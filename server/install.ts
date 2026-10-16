@@ -197,6 +197,8 @@ export function installApi() {
       command: action === 'install' ? `npm install -g ${def.npmPackage}@latest` : `npm uninstall -g ${def.npmPackage}`,
       log: '',
     }
+    // 页面只用每个 CLI 最近一次的记录，这个 CLI 以前结束的记录可以丢掉，免得一直攒在内存里
+    for (const [id, j] of jobs) if (j.cli === def.id && j.status !== 'running') jobs.delete(id)
     jobs.set(job.id, job)
     void run(job, def.npmPackage).catch((e) => {
       job.status = 'failed'

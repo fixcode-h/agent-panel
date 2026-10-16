@@ -101,7 +101,11 @@ interface Invocation {
 
 type FlowResult = { ok: true; output: string } | Fail
 
-/** 从验收输出里读结论（也用于条件连线的「结论」）；没写结论时视为通过 */
+/**
+ * 从验收输出里读结论（也用于条件连线的「结论」）；没写结论时视为通过。
+ * 给 Agent 的提示词（节点说明、验收要求、结论格式）固定用中文，不跟界面语言走：结论靠固定的说法识别，
+ * 提示词跟着界面换语言，换语言前后的工作流行为就会不一样。英文的「verdict: pass/fail」也认，模型偶尔会这样写
+ */
 export function parseVerdict(text: string): 'pass' | 'fail' | '' {
   const all = [...text.matchAll(/结论\s*[:：]\s*\**\s*(不通过|通过)/g)]
   if (all.length) return all.at(-1)![1] === '通过' ? 'pass' : 'fail'
