@@ -10,7 +10,6 @@ import { useAgentView } from '@/lib/agent-view'
 
 function AgentLine({ agent }: { agent: Agent }) {
   const { cliName, modelOf } = useAgentView()
-  const { clis } = useData()
   return (
     <>
       <AgentAvatar icon={agent.icon} cli={agent.cli} dim={!agent.enabled} />

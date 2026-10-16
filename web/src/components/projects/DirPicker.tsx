@@ -56,6 +56,8 @@ function DirBrowser({
 
   useEffect(() => {
     if (open) go(start)
+    // 打开时跳到起始目录，之后由用户浏览
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   return (

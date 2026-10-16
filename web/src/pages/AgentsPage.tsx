@@ -133,7 +133,9 @@ export function AgentsPage() {
   const selected = agents.find((a) => a.id === route.id) ?? agents[0]
   useEffect(() => {
     if (!loading && selected && route.id !== selected.id) go({ page: 'agents', id: selected.id })
-  }, [loading, selected?.id])
+    // 地址里的 id 不存在（例如已删除）时也要换成第一个；go 每次渲染都是新的，不放进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, selected?.id, route.id])
 
   const q = query.trim().toLowerCase()
   const match = (a: Agent) => !q || `${a.name}${a.description}${modelOf(a)}`.toLowerCase().includes(q)

@@ -19,6 +19,8 @@ export function ProjectsPage() {
       go({ page: 'projects', id: selected.id })
       openProject(selected.id)
     }
+    // 导航函数每次渲染都是新的
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, selected, route.sub])
 
   if (!selected || route.sub === 'settings') return null

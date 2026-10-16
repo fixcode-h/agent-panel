@@ -50,6 +50,8 @@ export function TaskFlow({
     if (!focus) return
     setSel(focus.id)
     setFollow(false)
+    // 每次点「定位」（focus.at 变化）才跳过去
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.at])
   // 下面的输出跟着最新内容滚动；往上翻看时不打扰，翻回底部又继续跟随
   const scroller = useRef<HTMLDivElement>(null)
@@ -93,7 +95,9 @@ export function TaskFlow({
       }
     }
     return out
-  }, [flow, workflow, workflows, agents, task])
+    // tops 由 task 算出来，modelOf 由设置决定：依赖写 task 和 settings，设置里换了模型节点上也跟着变
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [flow, workflow, workflows, agents, task, data.settings])
 
   if (!flow || !workflow)
     return (

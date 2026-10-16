@@ -26,7 +26,9 @@ export function WorkflowsPage() {
   const selected = workflows.find((w) => w.id === route.id) ?? workflows[0]
   useEffect(() => {
     if (!loading && selected && route.id !== selected.id) go({ page: 'workflows', id: selected.id })
-  }, [loading, selected?.id])
+    // 地址里的 id 不存在（例如已删除）时也要换成第一个；go 每次渲染都是新的，不放进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, selected?.id, route.id])
 
   const q = query.trim().toLowerCase()
   const list = workflows.filter((w) => !q || `${w.name}${w.description}`.toLowerCase().includes(q))

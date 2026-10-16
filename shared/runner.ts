@@ -2,18 +2,7 @@
  * 模拟执行：按工作流节点生成示例输出，不调用 CLI。
  * 只给在线演示用，正式版不会打包进去。真实执行见 server/exec/runner.ts。
  */
-import type {
-  Agent,
-  FileChange,
-  NewTaskInput,
-  Task,
-  TaskData,
-  TaskMessage,
-  TaskStep,
-  ToolUse,
-  Workflow,
-  Settings,
-} from './schema.ts'
+import type { Agent, FileChange, Task, TaskMessage, TaskStep, ToolUse, Workflow, Settings } from './schema.ts'
 import { getCli } from './clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultSettings } from './settings.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'

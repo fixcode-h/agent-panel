@@ -355,10 +355,14 @@ export function AssistDialog({
     // 没单独指定时用设置里的默认 CLI
     const pref = settings?.assist.cli || (settings ? defaultCli(settings) : '')
     pickCli(usable.find((c) => c.id === pref)?.id ?? usable[0]?.id ?? pref ?? CLIS[0].id)
+    // 打开时按当时的设置选一次 CLI，之后用户自己选的不被覆盖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // 生成中轮询
   useEffect(() => {
+    // 只在换了任务或运行状态变化时重新开始轮询
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     if (!job || job.status !== 'running') return
     // 一次请求回来再发下一次；卸载或任务结束后到达的旧响应直接丢掉，不会重复追加或把结束的任务恢复成进行中
     let alive = true
@@ -396,6 +400,8 @@ export function AssistDialog({
       alive = false
       clearTimeout(t)
     }
+    // 依赖写成「是否在运行」：状态从 running 变成别的时停掉轮询
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, job?.status === 'running'])
 
   useEffect(() => {

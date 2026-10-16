@@ -11,7 +11,6 @@ import {
   type Attachment,
   type Project,
   type ProjectCategory,
-  type TaskData,
   type Workflow,
 } from '../shared/schema.ts'
 import { taskWorkflows, workflowClosure } from '../shared/flow.ts'

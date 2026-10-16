@@ -136,6 +136,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
     ro.observe(el)
     return () => ro.disconnect()
     // 任务加载出来之前页面上还没有 main
+    // 任务从无到有时开始量尺寸
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [!task])
   const stick = useRef(true)
 
@@ -150,6 +152,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       .task(taskId)
       .then(apply)
       .catch((e) => toast.error((e as Error).message))
+    // 换任务时取一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
   const running = task?.status === 'running'

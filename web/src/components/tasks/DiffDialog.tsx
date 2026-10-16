@@ -75,6 +75,8 @@ export function DiffDialog({
       .taskDiff(task.id, path)
       .then(setDiff)
       .catch((e) => setError((e as Error).message))
+    // key 里已经包含 path
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task.id, key])
   useEffect(() => {
     if (!path) setDiff(null)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { BellRing, ClipboardCheck, FilePen, Loader2, MessageCircleQuestion, SquareTerminal, Wrench } from 'lucide-react'
-import type { Task, TaskRequest } from '@shared/schema'
+import type { Task } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'

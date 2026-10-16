@@ -228,6 +228,8 @@ function AutoFit() {
     if (!ready || done.current) return
     done.current = true
     smartFit(rf, dom)
+    // 节点第一次量好尺寸时适配一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
   return null
 }

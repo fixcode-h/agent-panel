@@ -63,10 +63,11 @@ export function Markdown({
   const ref = useRef<HTMLDivElement>(null)
   const openFile = useFileOpen()
   // 在任务页里时，像文件路径的行内代码可以点开看文件
+  const canOpen = !!openFile
   const html = useMemo(() => {
     const h = renderDoc(text, teamNames)
-    return openFile ? linkPaths(h) : h
-  }, [text, teamNames, !!openFile])
+    return canOpen ? linkPaths(h) : h
+  }, [text, teamNames, canOpen])
 
   useEffect(() => {
     const root = ref.current

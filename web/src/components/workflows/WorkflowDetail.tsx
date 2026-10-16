@@ -62,6 +62,8 @@ export function WorkflowDetail({
   useEffect(() => {
     onFlowTab?.(tab === 'flow')
     return () => onFlowTab?.(false)
+    // 父组件每次渲染都传新的函数，只在切换标签时通知
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [tab])
   const valid = !!draft.name.trim()
   const save = useAutosave(

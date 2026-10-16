@@ -460,6 +460,8 @@ function CliSection({
   useEffect(() => {
     setUpdate(null)
     if (ok && !installer.running) void checkUpdate()
+    // 只在版本或安装状态变化时重新检查
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [def.id, ok, status?.version, installer.running])
   const [removing, setRemoving] = useState(false)
   return (
@@ -790,6 +792,8 @@ function SettingsBody({
         )
     })
     void resumeInstallJobs()
+    // 只在安装结束时执行一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshClis])
   // 打开设置就开始读各个 CLI 的模型列表，切到 CLI 页时多半已经读好（Command Code 第一次要几秒）
   useEffect(() => {
