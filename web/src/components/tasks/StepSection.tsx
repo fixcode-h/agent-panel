@@ -1,4 +1,4 @@
-import { Info, Loader2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Loader2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { parseVerdict } from '@shared/engine'
 import { useData } from '@/lib/data'
@@ -6,35 +6,17 @@ import { stepDuration, stepLabel, verdictText } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { AgentMessage } from './Messages'
+import { FoldedRun, SystemNote } from './Messages'
+import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
 
-export function SystemNote({ text, className }: { text: string; className?: string }) {
-  return (
-    <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
-      <Info className="mt-px h-3.5 w-3.5 shrink-0" />
-      <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
-    </div>
-  )
-}
+export { SystemNote }
 
-function Msgs({ msgs, teamNames }: { msgs: TaskMessage[]; teamNames: Set<string> }) {
-  return (
-    <>
-      {msgs.map((m, k) =>
-        m.role === 'system' ? (
-          <SystemNote key={m.id} text={m.text} />
-        ) : (
-          <AgentMessage
-            key={m.id}
-            m={m}
-            teamNames={teamNames}
-            compact={k > 0 && msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
-          />
-        ),
-      )}
-    </>
-  )
+/** 这个节点（含子节点）里正在执行的 Agent */
+function running(task: Task, rootId: string) {
+  return task.steps
+    .filter((s) => s.status === 'running' && (s.id === rootId || s.id.startsWith(rootId + '/')))
+    .map((s) => s.agentId)
 }
 
 /** 连续属于同一个节点的消息归成一段 */
@@ -69,7 +51,7 @@ export function StepSection({
   const { agents } = useData()
   const now = useNow(task.status === 'running')
   const root = task.steps.find((s) => s.id === rootId)
-  if (!root) return <Msgs msgs={msgs} teamNames={teamNames} />
+  if (!root) return <FoldedRun msgs={msgs} teamNames={teamNames} />
   const a = agents.find((x) => x.id === root.agentId)
   const time = stepDuration(root, now)
   const vt = verdictText(root)
@@ -110,7 +92,8 @@ export function StepSection({
       )}
       <div className={cn('flex flex-col gap-4', !bare && 'ml-[7px] border-l pl-5')}>
         {runs(msgs).map((r, i) => {
-          if (r.step === rootId) return <Msgs key={i} msgs={r.msgs} teamNames={teamNames} />
+          if (r.step === rootId)
+            return <FoldedRun key={i} msgs={r.msgs} teamNames={teamNames} live={root.status === 'running'} />
           const s = task.steps.find((x) => x.id === r.step)
           const v =
             s?.slot === 'review'
@@ -137,7 +120,7 @@ export function StepSection({
                   </span>
                 )}
               </div>
-              <Msgs msgs={r.msgs} teamNames={teamNames} />
+              <FoldedRun msgs={r.msgs} teamNames={teamNames} live={s?.status === 'running'} />
             </div>
           )
         })}
@@ -145,6 +128,7 @@ export function StepSection({
           <span className="flex items-center gap-2 text-xs text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
             {msgs.length ? '执行中…' : '正在启动…'}
+            <LiveStats task={task} agentIds={running(task, rootId)} />
           </span>
         )}
       </div>

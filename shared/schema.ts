@@ -332,6 +332,8 @@ export const TaskMessage = z.object({
   step: z.string().default(''),
   text: z.string().default(''),
   tools: z.array(ToolUse).default([]),
+  /** 生成这段回复前的思考过程（CLI 给出的思考或推理摘要） */
+  thinking: z.string().optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -375,6 +377,25 @@ export type FileChange = z.infer<typeof FileChange>
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
 
+export const AgentUsage = z.object({
+  context: z.number(),
+  window: z.number(),
+  model: z.string().default(''),
+  /** 正在输出时的速度（token/秒），没在输出时为 0 */
+  tps: z.number().default(0),
+  /** 这个 Agent 累计输出的 token 和花在生成上的时间，用来算平均速度 */
+  outputTokens: z.number().default(0),
+  genMs: z.number().default(0),
+})
+export type AgentUsage = z.infer<typeof AgentUsage>
+
+export const TaskTodo = z.object({
+  text: z.string(),
+  status: z.enum(['pending', 'running', 'done']),
+  agentId: z.string().default(''),
+})
+export type TaskTodo = z.infer<typeof TaskTodo>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -390,17 +411,22 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
-  /** 用量：每个 Agent 最近一次的上下文占用，以及累计 token 和费用 */
+  /** 用量：每个 Agent 最近一次的上下文占用和实时速度，以及累计 token 和费用 */
   usage: z
     .object({
-      agents: z
-        .record(z.string(), z.object({ context: z.number(), window: z.number(), model: z.string().default('') }))
-        .default({}),
+      agents: z.record(z.string(), AgentUsage).default({}),
+      /** 输入 token（含缓存命中和缓存写入的部分） */
       inputTokens: z.number().default(0),
       outputTokens: z.number().default(0),
+      /** 输入里命中缓存的部分 */
+      cacheReadTokens: z.number().default(0),
+      /** 输入里写入缓存的部分 */
+      cacheWriteTokens: z.number().default(0),
       costUsd: z.number().default(0),
     })
-    .default({ agents: {}, inputTokens: 0, outputTokens: 0, costUsd: 0 }),
+    .default({ agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }),
+  /** CLI 维护的待办清单（Claude Code 的 TodoWrite、Codex 的计划），对话任务的进度看它 */
+  todos: z.array(TaskTodo).default([]),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
 })

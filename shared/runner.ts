@@ -150,7 +150,33 @@ function mergeChanges(into: FileChange[], add: FileChange[]) {
   }
 }
 
-/** 一条 Agent 消息：先逐个出现工具调用，再逐段输出文字 */
+/** 模拟的思考过程，按输出内容挑一句 */
+function thoughtFor(out: Output) {
+  if (out.tools.some((t) => t.kind === 'edit'))
+    return '先读一下相关文件，确认现有的写法和命名，再按同样的风格改。改完跑一遍检查，确认没有影响其他地方。'
+  if (/验收结论/.test(out.text)) return '对照验收标准逐条检查：先看改动范围，再跑测试，最后确认有没有遗漏的场景。'
+  return '先搞清楚需求和项目结构，找到相关的代码，再决定怎么拆分和回答。'
+}
+
+/** 模拟用量：每次调用读一遍上下文（大部分命中缓存），输出按字数估算 */
+function fakeUsage(ctx: RunContext, agentId: string, text: string) {
+  const u = ctx.task.usage
+  const input = 14000 + Math.round(Math.random() * 6000) + ctx.task.messages.length * 400
+  const read = Math.round(input * (0.72 + Math.random() * 0.18))
+  const out = Math.round(text.length * 0.9) + 120
+  u.inputTokens += input
+  u.cacheReadTokens = (u.cacheReadTokens ?? 0) + read
+  u.cacheWriteTokens = (u.cacheWriteTokens ?? 0) + Math.round((input - read) * 0.6)
+  u.outputTokens += out
+  const a = agent(ctx, agentId)
+  a.context = input + out
+  a.outputTokens += out
+}
+
+const agent = (ctx: RunContext, id: string) =>
+  (ctx.task.usage.agents[id] ??= { context: 0, window: 200_000, model: '', tps: 0, outputTokens: 0, genMs: 0 })
+
+/** 一条 Agent 消息：先思考，再逐个出现工具调用，最后逐段输出文字；输出时显示模拟的速度 */
 async function speak(ctx: RunContext, agentId: string, step: string, out: Output) {
   const msg: TaskMessage = {
     id: ctx.newId(),
@@ -159,10 +185,25 @@ async function speak(ctx: RunContext, agentId: string, step: string, out: Output
     step,
     text: '',
     tools: [],
+    thinking: '',
     at: new Date().toISOString(),
   }
   ctx.task.messages.push(msg)
   ctx.changed()
+  const a = agent(ctx, agentId)
+  const stream = async (text: string, put: (s: string) => void) => {
+    for (let i = 0; i < text.length; i += 4) {
+      await ctx.sleep(40)
+      if (ctx.stopped()) return false
+      put(text.slice(0, i + 4))
+      a.tps = Math.round((38 + Math.random() * 30) * 10) / 10
+      a.genMs += 40
+      ctx.changed()
+    }
+    a.tps = 0
+    return true
+  }
+  if (!(await stream(thoughtFor(out), (s) => (msg.thinking = s)))) return false
   for (const t of out.tools) {
     await ctx.sleep(450)
     if (ctx.stopped()) return false
@@ -170,12 +211,8 @@ async function speak(ctx: RunContext, agentId: string, step: string, out: Output
     ctx.changed()
   }
   mergeChanges(ctx.task.changes, out.changes)
-  for (let i = 0; i < out.text.length; i += 6) {
-    await ctx.sleep(35)
-    if (ctx.stopped()) return false
-    msg.text = out.text.slice(0, i + 6)
-    ctx.changed()
-  }
+  if (!(await stream(out.text, (s) => (msg.text = s)))) return false
+  fakeUsage(ctx, agentId, out.text)
   ctx.changed(true)
   return true
 }
@@ -220,7 +257,14 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
           text: `收到：「${need}」\n\n已经按要求调整，改动在 \`${last ?? 'src/index.ts'}\`。还有需要修改的地方可以继续说。`,
         }
   }
+  if (!call.step && ctx.first)
+    task.todos = [
+      { text: '搜索相关代码', status: 'done', agentId: call.agentId },
+      { text: '阅读实现', status: 'done', agentId: call.agentId },
+      { text: '整理回答', status: 'running', agentId: call.agentId },
+    ]
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
+  if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
 }
 

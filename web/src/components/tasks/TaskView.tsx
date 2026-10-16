@@ -24,7 +24,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { AgentMessage } from './Messages'
+import { AgentMessage, FoldedRun } from './Messages'
+import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskFlow } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
@@ -32,12 +33,20 @@ import { TaskStatusIcon } from './TaskStatusIcon'
 
 type Block =
   | { kind: 'msg'; m: TaskMessage }
+  /** 对话里 Agent 连续的回复（一轮），完成后折叠过程 */
+  | { kind: 'turn'; key: string; msgs: TaskMessage[] }
   | { kind: 'steps'; key: string; roots: string[]; byRoot: Map<string, TaskMessage[]> }
 
 /** 把消息分段：连续的节点输出归到一段，段里再按主流程节点分开，同时执行的节点输出不会交错 */
 function toBlocks(task: Task): Block[] {
   const blocks: Block[] = []
   for (const m of task.messages) {
+    if (!m.step && m.role === 'agent') {
+      const b = blocks.at(-1)
+      if (b?.kind === 'turn') b.msgs.push(m)
+      else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
+      continue
+    }
     if (!m.step || m.role === 'user') {
       blocks.push({ kind: 'msg', m })
       continue
@@ -324,8 +333,12 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
               />
             ) : (
               <div className="mx-auto flex max-w-[760px] flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
-                {blocks.map((b) =>
-                  b.kind === 'steps' ? (
+                {blocks.map((b, bi) =>
+                  b.kind === 'turn' ? (
+                    <div key={b.key} className="flex flex-col gap-4">
+                      <FoldedRun msgs={b.msgs} teamNames={teamNames} live={running && bi === blocks.length - 1} />
+                    </div>
+                  ) : b.kind === 'steps' ? (
                     <div key={b.key} className="flex flex-col gap-7">
                       {b.roots.map((r) => (
                         <StepSection key={r} task={task} rootId={r} msgs={b.byRoot.get(r)!} teamNames={teamNames} />
@@ -348,12 +361,14 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                   <div className="flex items-center gap-2 text-[13px] text-muted">
                     <Loader2 className="h-4 w-4 animate-spin text-accent" />
                     {chatAgent?.name ?? 'Agent'} 正在回复
+                    <LiveStats task={task} agentIds={[task.agentId]} />
                   </div>
                 )}
                 {running && task.mode === 'workflow' && runningSteps.length === 0 && (
                   <div className="flex items-center gap-2 text-[13px] text-muted">
                     <Loader2 className="h-4 w-4 animate-spin text-accent" />
                     {mainAgent?.name ?? '主 Agent'} 正在处理
+                    <LiveStats task={task} />
                   </div>
                 )}
               </div>

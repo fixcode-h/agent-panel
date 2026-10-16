@@ -212,6 +212,40 @@ try {
   assert.equal(Object.keys(t.usage.agents).length, 3)
   assert.equal(t.usage.agents[A.id].context, 13020)
   assert.ok(Math.abs(t.usage.costUsd - 0.0246) < 1e-9)
+  // 用量：输入含缓存，缓存命中单独记；流式过程中计入的和最后的总数不重复
+  // Claude 两个节点各 25530 输入（25000 命中、500 写入），Codex 24000（20000 命中），Command Code 9000（1000 命中）
+  assert.equal(t.usage.inputTokens, 25530 * 2 + 24000 + 9000)
+  assert.equal(t.usage.cacheReadTokens, 25000 * 2 + 20000 + 1000)
+  assert.equal(t.usage.cacheWriteTokens, 500 * 2)
+  assert.equal(t.usage.outputTokens, 120 * 2 + 300 + 80)
+  assert.equal(t.usage.agents[B.id].window, 258400, 'Codex 报告的上下文窗口')
+  assert.equal(t.usage.agents[B.id].context, 24300)
+  assert.ok(
+    Object.values(t.usage.agents).every((u) => u.tps === 0),
+    '结束后速度归零',
+  )
+  // 思考过程记在回复上
+  for (const who of [A, B, C])
+    assert.ok(
+      t.messages.some((m) => m.agentId === who.id && m.thinking),
+      `${who.name} 的思考没有记录`,
+    )
+  assert.ok(t.messages.some((m) => m.agentId === B.id && m.thinking?.includes('先看目录')))
+  // 待办：Claude 的 TodoWrite 和 Codex 的计划
+  assert.deepEqual(
+    t.todos.filter((x) => x.agentId === B.id).map((x) => [x.text, x.status]),
+    [
+      ['看目录', 'done'],
+      ['写文件', 'running'],
+    ],
+  )
+  assert.deepEqual(
+    t.todos.filter((x) => x.agentId === A.id).map((x) => [x.text, x.status]),
+    [
+      ['读代码', 'done'],
+      ['正在写文件', 'running'],
+    ],
+  )
   step('工作流任务：按连线执行，输出、工具、改动（排除任务前的改动）、用量都正确')
 
   let c = calls()
@@ -230,12 +264,14 @@ try {
   assert.ok(c2.start < c3.end && c3.start < c2.end, '同一阶段的两个节点应该同时运行')
   assert.ok(Math.min(c2.start, c3.start) >= c1.end, '下游节点要等上游结束')
   assert.ok(c4.start >= Math.max(c2.end, c3.end), '有两个上游的节点要等两个都结束')
-  assert.ok(c2.input.startsWith('## 你的角色\n你是乙'), 'Codex 不支持系统提示参数，角色应拼进任务描述')
+  assert.equal(c2.developer, '你是乙，负责实现。', 'Codex 的角色说明通过 developerInstructions 传入')
+  assert.ok(!c2.input.includes('## 你的角色'))
   assert.match(c2.input, /上游节点的结果[\s\S]*### 分析/)
   assert.match(c2.input, /同时进行的节点[\s\S]*文档（丙）/)
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)
-  assert.ok(c2.args.includes('-m') && c2.args.includes('gpt-5.6'))
-  assert.equal(c2.args.at(-1), '-')
+  assert.equal(c2.args[0], 'app-server', 'Codex 用 app-server 执行才有流式输出')
+  assert.ok(c2.args.includes('model="gpt-5.6"'))
+  assert.ok(c2.args.includes('approval_policy="never"'))
   assert.ok(c3.args.includes('--effort') && c3.args.includes('low'))
   assert.equal(c4.kind, 'claude')
   assert.match(c4.input, /上游节点的结果[\s\S]*### 实现[\s\S]*### 文档/)
@@ -402,7 +438,7 @@ try {
   )
   assert.match(hc[1].input, /开始流程的结果[\s\S]*的回复/)
   assert.match(hc[2].input, /实现功能」的验收流程（第 1 轮验收）[\s\S]*验收结论/)
-  assert.ok(hc[3].args.includes('resume'), '验收不通过后续接节点的会话继续完善')
+  assert.ok(hc[3].resume, '验收不通过后续接节点的会话继续完善')
   assert.match(hc[3].input, /验收没有通过（第 1 轮）[\s\S]*验收结论：不通过/)
   assert.match(hc[4].input, /第 2 轮验收/)
   assert.match(hc[6].input, /工作流「小流程」[\s\S]*上游节点的结果|工作流「小流程」[\s\S]*## 输入/)
@@ -490,7 +526,7 @@ try {
   const L = await agent({ name: '低档', cli: 'claude', model: '@low' })
   assert.equal((await call('GET', '/clis')).find((x) => x.isDefault).id, 'codex')
   for (const [ag, kind, flag, model] of [
-    [D, 'codex', '-m', 'gpt-top'],
+    [D, 'codex', '-c', 'model="gpt-top"'],
     [L, 'claude', '--model', 'haiku'],
   ]) {
     let t2 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '档位' })
@@ -506,7 +542,7 @@ try {
   await call('PUT', '/agents/' + D.id, { ...D, model: '@medium' })
   let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
   t3 = await waitDone(t3.id)
-  assert.equal(calls().at(-1).args[calls().at(-1).args.indexOf('-m') + 1], 'gpt-6.1-sol')
+  assert.ok(calls().at(-1).args.includes('model="gpt-6.1-sol"'))
   await call('PUT', '/settings', settings)
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {

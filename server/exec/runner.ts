@@ -1,11 +1,21 @@
 import { stat } from 'node:fs/promises'
-import type { Agent, CliStatus, Project, Settings, Task, TaskMessage, Workflow } from '../../shared/schema.ts'
+import type {
+  Agent,
+  AgentUsage,
+  CliStatus,
+  Project,
+  Settings,
+  Task,
+  TaskMessage,
+  Workflow,
+} from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentRun, cliSettings } from '../../shared/settings.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
-import { parserFor, type CliEvent } from './parsers.ts'
-import { childEnv, runProcess } from './process.ts'
+import { invokeCli } from './invoke.ts'
+import type { CliEvent } from './parsers.ts'
+import { childEnv } from './process.ts'
 
 export interface RealContext {
   task: Task
@@ -33,6 +43,62 @@ function windowFor(cli: string, model: string) {
   return 200_000
 }
 
+/** 估算一段文字的 token 数：中日韩字符约一个字一个 token，其余约四个字符一个 token。只用于显示实时速度 */
+export function estTokens(s: string) {
+  const cjk = s.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/g)?.length ?? 0
+  return cjk + (s.length - cjk) / 4
+}
+
+/**
+ * 实时输出速度：最近 3 秒内流式输出的 token 数 ÷ 时间。CLI 只在一次请求结束时才报告真实的输出 token，
+ * 所以先按字数估算，拿到真实数字后按「真实 ÷ 估算」校准。
+ */
+function speedMeter(onIdle: () => void) {
+  const WINDOW = 3000
+  let samples: [number, number][] = []
+  let est = 0
+  let real = 0
+  let lastAt = 0
+  let genMs = 0
+  let tps = 0
+  const ratio = () => (est > 50 && real > 0 ? Math.min(3, Math.max(0.5, real / est)) : 1)
+  const timer = setInterval(() => {
+    if (tps && Date.now() - lastAt > 1500) {
+      tps = 0
+      samples = []
+      onIdle()
+    }
+  }, 500)
+  return {
+    /** 流式输出了一段文字；返回新增的生成时间（毫秒） */
+    add(text: string) {
+      const now = Date.now()
+      const gap = lastAt ? now - lastAt : 0
+      // 两段输出间隔太久（在跑工具）不算生成时间
+      const add = gap < 2000 ? gap : 0
+      genMs += add
+      lastAt = now
+      est += estTokens(text)
+      samples.push([now, est])
+      while (samples.length > 2 && now - samples[1][0] > WINDOW) samples.shift()
+      const [t0, e0] = samples[0]
+      const dt = (now - t0) / 1000
+      tps = dt > 0.3 ? ((est - e0) / dt) * ratio() : tps
+      return add
+    },
+    real(n: number) {
+      real += n
+    },
+    get tps() {
+      return Math.round(tps * 10) / 10
+    },
+    stop() {
+      clearInterval(timer)
+      tps = 0
+    },
+  }
+}
+
 /** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
 async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
@@ -56,16 +122,15 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
   const instructions = agent.instructions.trim()
   let input = prompt
   if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${prompt}`
-  const args = def.buildArgs({
+  const build = {
     model,
     effort: run.effort,
     permission: cs.permission,
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     resume,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
-  })
+  }
 
-  const parse = parserFor(cliId, cwd)
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
   const mine: TaskMessage[] = []
   let cur: TaskMessage | undefined
@@ -79,15 +144,46 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     return cur
   }
 
+  /** 这个 Agent 的用量记录，没有就建一条 */
+  const au = (): AgentUsage => {
+    const prev = task.usage.agents[agentId]
+    if (prev) return prev
+    return (task.usage.agents[agentId] = {
+      context: 0,
+      window: windowFor(cliId, model),
+      model,
+      tps: 0,
+      outputTokens: 0,
+      genMs: 0,
+    })
+  }
+  const meter = speedMeter(() => {
+    au().tps = 0
+    ctx.changed()
+  })
+  const streamed = (text: string) => {
+    const u = au()
+    u.genMs = (u.genMs ?? 0) + meter.add(text)
+    u.tps = meter.tps
+  }
+
   const apply = (ev: CliEvent) => {
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
         break
+      case 'thinking': {
+        // 思考属于接下来的那段回复：当前消息已经有文字或工具时另起一条
+        const m = !cur || cur.text.trim() || cur.tools.length ? newMsg() : cur
+        m.thinking = ev.delta ? (m.thinking ?? '') + ev.text : ev.text
+        streamed(ev.text)
+        break
+      }
       case 'text_delta': {
         if (!cur && !ev.text.trim()) break
         const m = cur ?? newMsg()
         m.text += ev.text
+        streamed(ev.text)
         break
       }
       case 'text': {
@@ -109,18 +205,27 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
         break
       }
       case 'usage': {
-        const prev = task.usage.agents[agentId]
-        const m = ev.model || prev?.model || model
-        task.usage.agents[agentId] = {
-          context: ev.context ?? prev?.context ?? 0,
-          window: windowFor(cliId, m),
-          model: m,
-        }
-        task.usage.inputTokens += ev.addInput ?? 0
-        task.usage.outputTokens += ev.addOutput ?? 0
-        task.usage.costUsd += ev.addCost ?? 0
+        const u = au()
+        if (ev.model) u.model = ev.model
+        if (ev.context !== undefined) u.context = ev.context
+        u.window = ev.window ?? windowFor(cliId, u.model || model)
+        u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
+        meter.real(ev.addOutput ?? 0)
+        const t = task.usage
+        t.inputTokens += ev.addInput ?? 0
+        t.outputTokens += ev.addOutput ?? 0
+        t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
+        t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
+        t.costUsd += ev.addCost ?? 0
         break
       }
+      case 'todos':
+        // 只替换这个 Agent 自己的清单，工作流里其他 Agent 的不动
+        task.todos = [
+          ...(task.todos ?? []).filter((x) => x.agentId !== agentId),
+          ...ev.todos.map((x) => ({ ...x, agentId })),
+        ]
+        break
       case 'error':
         errors.push(ev.message)
         break
@@ -131,25 +236,19 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     ctx.changed()
   }
 
-  const r = await runProcess({
+  const r = await invokeCli({
+    cliId,
     command: cs.command,
-    args,
+    build,
     cwd,
     env: childEnv(cs.env),
-    stdin: input,
+    input,
     signal: ctx.signal,
     timeoutMs: settings.stepTimeoutMinutes * 60_000,
-    onLine: (line) => {
-      const t = line.trim()
-      if (!t.startsWith('{')) return
-      let obj: unknown
-      try {
-        obj = JSON.parse(t)
-      } catch {
-        return
-      }
-      for (const ev of parse(obj)) apply(ev)
-    },
+    onEvent: apply,
+  }).finally(() => {
+    meter.stop()
+    if (task.usage.agents[agentId]) task.usage.agents[agentId].tps = 0
   })
 
   for (const m of mine) if (m.text) texts.push(m.text)

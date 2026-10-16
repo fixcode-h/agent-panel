@@ -17,8 +17,8 @@ import { getCli } from '../shared/clis.ts'
 import type { Agent, Category, Workflow } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { detectClis } from './detect.ts'
-import { parserFor } from './exec/parsers.ts'
-import { childEnv, runProcess } from './exec/process.ts'
+import { invokeCli } from './exec/invoke.ts'
+import { childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -79,39 +79,29 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
-      const parse = parserFor(input.cli, cwd)
-      const r = await runProcess({
+      const r = await invokeCli({
+        cliId: input.cli,
         command: cs.command,
-        args: def.buildArgs({
+        build: {
           // 默认模型可能是「@high」这样的档位，要换成具体模型和思考强度
           model: run.model,
           effort: run.effort,
           permission: READ_ONLY[input.cli] ?? cs.permission,
           extraArgs: safeArgs(cs.extraArgs),
-        }),
+        },
         cwd,
         env: childEnv(cs.env),
-        stdin: buildAssistPrompt(input.kind, ctx, messages, installed),
+        input: buildAssistPrompt(input.kind, ctx, messages, installed),
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
-        onLine: (line) => {
-          const t = line.trim()
-          if (!t.startsWith('{')) return
-          let obj: unknown
-          try {
-            obj = JSON.parse(t)
-          } catch {
-            return
-          }
-          for (const ev of parse(obj)) {
-            if (ev.type === 'text_delta') text += ev.text
-            else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
-            else if (ev.type === 'error') errors.push(ev.message)
-            else if (ev.type === 'thinking')
-              job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
-            else if (ev.type === 'tool') job.tools = [...(job.tools ?? []), ev.tool.label].slice(-5)
-            else if (ev.type === 'result') result = ev
-          }
+        onEvent: (ev) => {
+          if (ev.type === 'text_delta') text += ev.text
+          else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
+          else if (ev.type === 'error') errors.push(ev.message)
+          else if (ev.type === 'thinking')
+            job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
+          else if (ev.type === 'tool') job.tools = [...(job.tools ?? []), ev.tool.label].slice(-5)
+          else if (ev.type === 'result') result = ev
           // 执行中只显示说明部分，JSON 写到一半时不显示，只显示写了多少
           job.text = text.split('```')[0].trim()
           job.outChars = text.length

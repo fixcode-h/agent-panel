@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ChevronDown, FolderOpen, GitBranch, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Project, Task, Workflow } from '@shared/schema'
+import type { Project, Task, TaskTodo, Workflow } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { contextUsage, fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
+import { cacheRate, contextUsage, fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
@@ -44,7 +44,18 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
 
   return (
     <div className="flex flex-col gap-3">
-      <Section title="任务进度" extra={task.mode === 'workflow' && tops.length ? `${done}/${tops.length}` : undefined}>
+      <Section
+        title="任务进度"
+        extra={
+          task.mode === 'workflow'
+            ? tops.length
+              ? `${done}/${tops.length}`
+              : undefined
+            : (task.todos ?? []).length
+              ? `${task.todos.filter((t) => t.status === 'done').length}/${task.todos.length}`
+              : undefined
+        }
+      >
         {task.mode === 'workflow' ? (
           <ol className="flex flex-col">
             {tops.map((st, si) => {
@@ -112,8 +123,17 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
               )
             })}
           </ol>
+        ) : (task.todos ?? []).length ? (
+          <Todos todos={task.todos} />
         ) : (
-          <p className="text-xs leading-relaxed text-subtle">直接对话没有固定步骤，每次你发消息 Agent 回答一轮。</p>
+          <p className="text-xs leading-relaxed text-subtle">
+            直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。
+          </p>
+        )}
+        {task.mode === 'workflow' && (task.todos ?? []).length > 0 && (
+          <div className="mt-3 border-t pt-2.5">
+            <Todos todos={task.todos} byAgent={byId} />
+          </div>
         )}
       </Section>
 
@@ -175,21 +195,30 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
                         style={{ width: `${Math.max(p, 1)}%` }}
                       />
                     </div>
-                    <span className="font-mono text-[11px] text-subtle">
-                      {u.model || '默认模型'} · 已使用 {p.toFixed(1)}%
+                    <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
+                      <span>
+                        {u.model || '默认模型'} · 已使用 {p.toFixed(1)}%
+                      </span>
+                      {u.tps > 0 ? (
+                        <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
+                      ) : (
+                        u.genMs > 3000 &&
+                        u.outputTokens > 0 && (
+                          <span title="输出 token ÷ 生成用时">
+                            · 平均 {((u.outputTokens / u.genMs) * 1000).toFixed(1)} token/s
+                          </span>
+                        )
+                      )}
                     </span>
                   </li>
                 )
               })}
             </ul>
           )}
-          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t pt-2.5 font-mono text-[11px] text-subtle">
-            <span>累计输入 {fmtTokens(task.usage.inputTokens)}</span>
-            <span>输出 {fmtTokens(task.usage.outputTokens)}</span>
-            {task.usage.costUsd > 0 && <span>费用 ${task.usage.costUsd.toFixed(3)}</span>}
-          </div>
         </Section>
       )}
+
+      {!task.simulated || task.usage.inputTokens > 0 ? <TokenUsage task={task} /> : null}
 
       <Section
         title="更改"
@@ -250,6 +279,96 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
           </li>
         </ul>
       </Section>
+    </div>
+  )
+}
+
+/** Token 用量：总数、输入 / 输出、缓存命中和命中率、费用 */
+function TokenUsage({ task }: { task: Task }) {
+  const u = task.usage
+  const total = u.inputTokens + u.outputTokens
+  const rate = cacheRate(task)
+  const tps = Object.values(u.agents).reduce((n, a) => n + (a.tps ?? 0), 0)
+  const rows: [string, string, string?][] = [
+    ['输入', fmtTokens(u.inputTokens)],
+    ['输出', fmtTokens(u.outputTokens)],
+    ['缓存命中', fmtTokens(u.cacheReadTokens ?? 0)],
+    ['缓存写入', fmtTokens(u.cacheWriteTokens ?? 0)],
+    ['未命中缓存', fmtTokens(Math.max(0, u.inputTokens - (u.cacheReadTokens ?? 0)))],
+  ]
+  return (
+    <Section
+      title="Token 用量"
+      extra={tps > 0 ? <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span> : undefined}
+    >
+      {total === 0 ? (
+        <p className="text-xs text-subtle">CLI 报告用量后会显示在这里。</p>
+      ) : (
+        <div className="flex flex-col gap-2.5">
+          <div className="flex items-baseline justify-between">
+            <span className="font-mono text-lg font-semibold tabular-nums">{fmtTokens(total)}</span>
+            <span className="text-xs text-subtle">累计 token</span>
+          </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-baseline justify-between text-xs">
+              <span className="text-muted">缓存命中率</span>
+              <span className="font-mono font-medium tabular-nums">{(rate * 100).toFixed(1)}%</span>
+            </div>
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-field"
+              role="img"
+              aria-label={`缓存命中率 ${(rate * 100).toFixed(1)}%`}
+            >
+              <span className="block h-full rounded-full bg-success" style={{ width: `${rate * 100}%` }} />
+            </div>
+          </div>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
+            {rows.map(([k, v]) => (
+              <div key={k} className="flex items-baseline justify-between gap-2">
+                <dt className="text-subtle">{k}</dt>
+                <dd className="font-mono text-muted tabular-nums">{v}</dd>
+              </div>
+            ))}
+            {u.costUsd > 0 && (
+              <div className="flex items-baseline justify-between gap-2">
+                <dt className="text-subtle">费用</dt>
+                <dd className="font-mono text-muted tabular-nums">${u.costUsd.toFixed(3)}</dd>
+              </div>
+            )}
+          </dl>
+        </div>
+      )}
+    </Section>
+  )
+}
+
+/** CLI 的待办清单 / 计划；工作流里注明是哪个 Agent 的 */
+function Todos({ todos, byAgent }: { todos: TaskTodo[]; byAgent?: Map<string, { name: string }> }) {
+  const groups = new Map<string, TaskTodo[]>()
+  for (const t of todos) groups.set(t.agentId, [...(groups.get(t.agentId) ?? []), t])
+  return (
+    <div className="flex flex-col gap-2.5">
+      {[...groups].map(([id, list]) => (
+        <div key={id} className="flex flex-col gap-1">
+          {byAgent && <span className="text-[11px] text-subtle">{byAgent.get(id)?.name ?? 'Agent'} 的待办</span>}
+          <ul className="flex flex-col gap-1">
+            {list.map((t, i) => (
+              <li key={i} className="flex items-start gap-2 text-xs">
+                <StepIcon status={t.status} className="mt-px h-3.5 w-3.5" />
+                <span
+                  className={cn(
+                    'min-w-0 flex-1 [overflow-wrap:anywhere]',
+                    t.status === 'done' ? 'text-subtle line-through decoration-line-strong' : 'text-fg',
+                    t.status === 'running' && 'font-medium',
+                  )}
+                >
+                  {t.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
     </div>
   )
 }
