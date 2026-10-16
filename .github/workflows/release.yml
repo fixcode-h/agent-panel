@@ -1,0 +1,62 @@
+# 出包：只在推送到 main（用户明确要求合并到主干时才会发生）时运行，dev 分支不会触发。
+# 先跑和 dev 一样的检查（ci.yml），通过后出包并发布正式版（Latest），标签 v<主>.<次>.<提交数>。
+# 包里是正式版前端 + 打成单文件的服务端，不含在线演示的模拟后端。
+name: 出包
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: release-${{ github.ref_name }}
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: 计算版本号
+        id: ver
+        run: |
+          base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
+          count=$(git rev-list --count HEAD)
+          echo "version=${base}.${count}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: tray
+          path: build/tray
+      - name: 出包
+        run: node scripts/package.mjs ${{ steps.ver.outputs.version }} --require-tray
+      - name: 生成更新说明
+        run: node scripts/release-notes.mjs ${{ steps.ver.outputs.version }} main > release/notes.md
+      - name: 发布到 Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          tag="v${VERSION}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "版本 $tag 已经发布过，跳过"
+            exit 0
+          fi
+          gh release create "$tag" \
+            "release/agent-panel-${VERSION}.zip" \
+            "release/agent-panel-${VERSION}.tar.gz" \
+            --target "$GITHUB_SHA" \
+            --title "$tag" \
+            --notes-file release/notes.md \
+            --latest
