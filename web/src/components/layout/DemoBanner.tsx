@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { FlaskConical, RotateCcw, X } from 'lucide-react'
+import { ConfirmDialog } from '@/components/ui/dialog'
 
 /** 在线演示模式顶部提示条：数据只存在浏览器里，可一键恢复示例数据 */
 export function DemoBanner() {
   const [open, setOpen] = useState(true)
+  const [confirming, setConfirming] = useState(false)
   if (!open) return null
   const reset = async () => {
     const { resetDemo } = await import('@/lib/demo-backend')
@@ -18,7 +20,7 @@ export function DemoBanner() {
         <span className="text-subtle">：数据只存在你的浏览器里，CLI 和本机目录是模拟的。</span>
       </span>
       <button
-        onClick={reset}
+        onClick={() => setConfirming(true)}
         className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-accent hover:bg-accent-soft"
       >
         <RotateCcw className="h-3.5 w-3.5" />
@@ -31,6 +33,14 @@ export function DemoBanner() {
       >
         <X className="h-4 w-4" />
       </button>
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title="恢复示例数据？"
+        description="你在演示里新建和修改的 Agent、工作流、项目和任务都会被清掉，换回最初的示例。"
+        confirmText="恢复"
+        onConfirm={reset}
+      />
     </div>
   )
 }

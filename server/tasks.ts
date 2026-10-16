@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   FollowUpInput,
+  TaskPatch,
   NewTaskInput,
   Task,
   type Agent,
@@ -193,6 +194,40 @@ export function tasksApi(deps: {
       live.delete(id)
       throw e
     }
+  })
+
+  // 失败或停止后继续：不加新消息，从没完成的节点接着跑；工作流已完成时重做最后一条要求
+  routes.post('/:id/resume', async (c) => {
+    const id = c.req.param('id')
+    const prev = live.get(id)
+    if (prev && prev.task.status !== 'running') await prev.done
+    if (live.has(id)) return bad(c, '任务正在执行', 409)
+    const task = await store.get(id)
+    if (!task) return bad(c, '任务不存在', 404)
+    if (task.status !== 'failed' && task.status !== 'stopped') return bad(c, '只有失败或停止的任务可以继续')
+    const entry = reserve(task)
+    const users = task.messages.filter((m) => m.role === 'user' && !m.step)
+    try {
+      const workflow = task.workflowId ? ((await deps.workflows.get(task.workflowId)) ?? undefined) : undefined
+      return c.json(await start(entry, users.at(-1)?.text ?? '', false, workflow, await deps.agents.list()))
+    } catch (e) {
+      live.delete(id)
+      throw e
+    }
+  })
+
+  routes.patch('/:id', async (c) => {
+    const id = c.req.param('id')
+    const p = TaskPatch.safeParse(await c.req.json())
+    if (!p.success) return bad(c, z.prettifyError(p.error))
+    const e = live.get(id)
+    if (e) {
+      Object.assign(e.task, p.data)
+      return c.json(e.task)
+    }
+    const task = await store.get(id)
+    if (!task) return bad(c, '任务不存在', 404)
+    return c.json(await store.update(id, { ...task, ...p.data }))
   })
 
   routes.post('/:id/stop', async (c) => {

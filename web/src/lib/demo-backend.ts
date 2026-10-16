@@ -17,6 +17,7 @@ import {
   type Flow,
   type FlowNode,
   FollowUpInput,
+  TaskPatch,
   NewTaskInput,
   Settings,
   type Task,
@@ -446,13 +447,18 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
-      const used = d.workflows.filter((w) => w.mainAgentId === id || w.members.some((m) => m.agentId === id))
+      const used = d.workflows.filter(
+        (w) =>
+          w.mainAgentId === id ||
+          w.members.some((m) => m.agentId === id) ||
+          w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
+      )
       if (used.length) fail(`正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`)
       remove('agents', id, 'Agent 不存在')
       return undefined
     }
     const input = parse(AgentInput, body)
-    if (!getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
+    if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     return method === 'POST' ? create('agents', input) : update('agents', id, input, 'Agent 不存在')
   }
@@ -618,6 +624,18 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     void followUp(d, task, parse(FollowUpInput, body).text)
+    return task
+  }
+  if (sub === 'resume') {
+    if (live.has(task.id)) fail('任务正在执行')
+    if (task.status !== 'failed' && task.status !== 'stopped') fail('只有失败或停止的任务可以继续')
+    const users = task.messages.filter((m) => m.role === 'user' && !m.step)
+    void startTurn(d, task, users.at(-1)?.text ?? '', false)
+    return task
+  }
+  if (method === 'PATCH') {
+    Object.assign(task, parse(TaskPatch, body))
+    persist()
     return task
   }
   return task

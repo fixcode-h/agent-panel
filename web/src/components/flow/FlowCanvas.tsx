@@ -3,6 +3,7 @@ import {
   Background,
   BackgroundVariant,
   Controls,
+  MiniMap,
   Handle,
   MarkerType,
   Position,
@@ -159,7 +160,8 @@ export function smartFit(rf: ReactFlowInstance, el: HTMLElement | null, duration
   const H = el.clientHeight
   const pad = 48
   const fit = Math.min((W - pad * 2) / b.width, (H - pad * 2) / b.height)
-  const zoom = Math.max(0.6, Math.min(1, fit))
+  // 尽量整张图都放得下；太大时最小缩到 0.45，再小字就看不清了，剩下的靠小地图和拖动
+  const zoom = Math.max(0.45, Math.min(1, fit))
   const x = zoom > fit ? pad - b.x * zoom : (W - b.width * zoom) / 2 - b.x * zoom
   const y = (H - b.height * zoom) / 2 - b.y * zoom
   void rf.setViewport({ x, y, zoom }, { duration })
@@ -374,6 +376,19 @@ export function FlowCanvas({
         <AutoFit />
         <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} />
         <Controls showInteractive={false} position="bottom-left" />
+        {flow.nodes.length > 4 && (
+          <MiniMap
+            pannable
+            zoomable
+            position="bottom-right"
+            ariaLabel="小地图"
+            className="!m-3 hidden overflow-hidden rounded-lg border !bg-card sm:block"
+            style={{ width: 150, height: 96 }}
+            maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"
+            nodeColor="var(--line-strong)"
+            nodeStrokeWidth={0}
+          />
+        )}
       </ReactFlow>
     </div>
   )

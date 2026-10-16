@@ -392,6 +392,19 @@ try {
   assert.equal(calls().length, before, '模拟执行不应调用 CLI')
   step('模拟执行：不调用 CLI')
 
+  // 重命名；停止后继续执行
+  assert.equal((await call('PATCH', `/tasks/${sim.id}`, { title: '新标题' })).title, '新标题')
+  let rs = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '停一下再继续' })
+  await call('POST', `/tasks/${rs.id}/stop`)
+  rs = await waitDone(rs.id)
+  assert.equal(rs.status, 'stopped')
+  await call('POST', `/tasks/${rs.id}/resume`)
+  rs = await waitDone(rs.id)
+  assert.equal(rs.status, 'done')
+  assert.equal(rs.messages.filter((m) => m.role === 'user').length, 1, '继续执行不会新增用户消息')
+  await assert.rejects(call('POST', `/tasks/${rs.id}/resume`), /只有失败或停止/)
+  step('重命名任务；停止后继续执行')
+
   // ---- 只接受本机页面的请求 ----
   const raw = (method, url, headers, body) =>
     new Promise((resolve, reject) => {

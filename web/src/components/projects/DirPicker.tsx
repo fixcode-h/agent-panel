@@ -32,6 +32,8 @@ function DirBrowser({
       setJump(l.path)
       setError('')
     } catch (e) {
+      // 跳转失败时不能再停留在旧目录上，否则「选择此目录」会选中旧目录
+      setListing(null)
       setError((e as Error).message)
     } finally {
       setLoading(false)
@@ -113,22 +115,42 @@ function DirBrowser({
   )
 }
 
-/** 检测路径：停止输入 400ms 后请求一次 */
-export function useDirInfo(path: string) {
-  const [info, setInfo] = useState<DirInfo | null>(null)
+const dirCache = new Map<string, DirInfo | null>()
+
+/**
+ * 检测路径：停止输入 400ms 后请求一次。
+ * 返回 undefined 表示还在检查（不要当成「目录不存在」），null 表示没有路径或检查失败；
+ * 结果只对应当前路径，改路径时不会继续显示旧路径的结果。
+ */
+export function useDirInfo(path: string): DirInfo | null | undefined {
+  const key = path.trim()
+  const [state, setState] = useState<{ key: string; info: DirInfo | null }>(() => ({
+    key,
+    info: dirCache.get(key) ?? null,
+  }))
   useEffect(() => {
-    if (!path.trim()) return setInfo(null)
+    if (!key) return
+    let alive = true
     const t = setTimeout(
       () =>
         api
-          .inspectDir(path)
-          .then(setInfo)
-          .catch(() => setInfo(null)),
-      400,
+          .inspectDir(key)
+          .then((info) => info)
+          .catch(() => null)
+          .then((info) => {
+            dirCache.set(key, info)
+            if (alive) setState({ key, info })
+          }),
+      dirCache.has(key) ? 0 : 400,
     )
-    return () => clearTimeout(t)
-  }, [path])
-  return info
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [key])
+  if (!key) return null
+  if (state.key === key) return state.info
+  return dirCache.has(key) ? dirCache.get(key)! : undefined
 }
 
 export function DirPicker({
@@ -138,7 +160,7 @@ export function DirPicker({
 }: {
   value: string
   onChange: (p: string) => void
-  info: DirInfo | null
+  info: DirInfo | null | undefined
 }) {
   const [browsing, setBrowsing] = useState(false)
   return (
@@ -157,6 +179,12 @@ export function DirPicker({
           浏览
         </Button>
       </div>
+      {value.trim() && info === undefined && (
+        <span className="flex items-center gap-1.5 text-xs text-subtle">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          正在检查目录…
+        </span>
+      )}
       {value.trim() && info && (
         <span
           className={cn(

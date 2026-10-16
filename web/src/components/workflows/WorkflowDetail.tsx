@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Crown, GitBranch, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Crown, Download, GitBranch, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { exportWorkflow } from '@/lib/transfer'
 import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -33,7 +34,11 @@ export function WorkflowDetail({
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
-  const { agents, clis, workflows, setWorkflows } = useData()
+  const { agents, clis, workflows, setWorkflows, projects, projectCategories } = useData()
+  const usedBy = [
+    ...projectCategories.filter((c) => c.workflowId === workflow.id).map((c) => `项目分类「${c.name}」`),
+    ...projects.filter((p) => p.workflowId === workflow.id).map((p) => `项目「${p.name}」`),
+  ]
   const { go } = useNav()
   const [draft, setDraft] = useState<WorkflowInput>(() => toInput(workflow))
   const [deleting, setDeleting] = useState(false)
@@ -95,6 +100,15 @@ export function WorkflowDetail({
                 </Button>
                 <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
                   <Copy className="h-4 w-4" />
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label="导出"
+                  title="导出成文件（连同用到的 Agent），可以在别的电脑上导入"
+                  onClick={() => exportWorkflow({ ...workflow, ...draft }, agents)}
+                >
+                  <Download className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="danger-outline"
@@ -221,6 +235,7 @@ export function WorkflowDetail({
         onOpenChange={setDeleting}
         title={`删除「${workflow.name}」？`}
         description="团队里的 Agent 不会被删除。此操作无法撤销。"
+        blocked={usedBy.length ? `正在被 ${usedBy.join('、')} 使用，请先改用其他工作流。` : undefined}
         onConfirm={remove}
       />
       <AssistDialog open={assist} onOpenChange={setAssist} kind="workflow" target={workflow} onApplied={onOptimized} />

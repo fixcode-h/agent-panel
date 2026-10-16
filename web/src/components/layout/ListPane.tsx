@@ -32,8 +32,8 @@ export function ListPane({
     >
       <div className="flex flex-col gap-3 px-4 pt-5 pb-3">
         <div className="flex items-center gap-2">
-          <h1 className="text-lg font-semibold">{title}</h1>
-          <span className="rounded-full border bg-card px-2 text-xs text-muted">{count}</span>
+          <h1 className="shrink-0 text-lg font-semibold whitespace-nowrap">{title}</h1>
+          <span className="shrink-0 rounded-full border bg-card px-2 text-xs text-muted">{count}</span>
           <div className="ml-auto flex items-center gap-1.5">
             {extra}
             <Button size="sm" onClick={onNew}>
@@ -84,7 +84,7 @@ export function GroupHeader({
       <span className="truncate">{label}</span>
       {count !== undefined && <span className="shrink-0">· {count}</span>}
       {actions && (
-        <span className="ml-auto flex items-center opacity-0 transition-opacity group-hover/g:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+        <span className="ml-auto flex items-center opacity-0 transition-opacity [@media(hover:none)]:opacity-100 group-hover/g:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
           {actions}
         </span>
       )}

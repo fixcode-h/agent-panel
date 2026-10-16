@@ -45,6 +45,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const reloadTasks = useCallback(async () => {
     try {
       setTasks(await api.allTasks())
+    } catch {
+      // 后端暂时连不上时保留现有列表，下次刷新再试
     } finally {
       setTasksLoaded(true)
     }

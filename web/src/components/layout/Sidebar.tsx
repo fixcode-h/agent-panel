@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useEscape } from '@/lib/useEscape'
 import {
   Bot,
   FolderKanban,
@@ -50,7 +51,8 @@ function dayGroup(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
-  const diff = (today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000
+  // 跨夏令时的那天相差 23 / 25 小时，取整
+  const diff = Math.round((today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000)
   if (diff <= 0) return '今天'
   if (diff === 1) return '昨天'
   if (diff < 7) return '近 7 天'
@@ -114,6 +116,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [collapsed, toggleCollapsed] = useCollapsed()
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
+  useEscape(mobileOpen, () => setMobileOpen(false))
 
   const recent = [...tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 30)
   const groups = new Map<string, Task[]>()
@@ -246,8 +249,14 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-black/40" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-rail shadow-pop">
+          <aside
+            role="dialog"
+            aria-modal="true"
+            aria-label="菜单"
+            className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-rail shadow-pop"
+          >
             <button
+              autoFocus
               onClick={() => setMobileOpen(false)}
               aria-label="关闭菜单"
               className="absolute top-3 right-3 z-10 grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel"

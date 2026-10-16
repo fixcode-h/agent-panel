@@ -144,22 +144,28 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
 
 export function projectChecks(
   p: { path: string },
-  dir: DirInfo | null,
+  /** undefined：还在检查 */
+  dir: DirInfo | null | undefined,
   workflow: Workflow | undefined,
   agents: Agent[],
   clis: CliStatus[],
 ): Check[] {
   const dirOk = !!dir?.exists && dir.isDir
+  const checking = dir === undefined && !!p.path.trim()
   return [
     {
-      ok: dirOk,
+      ok: dirOk || checking,
       label: '本地目录可用',
-      hint: !p.path.trim() ? '还没有选择目录' : dirOk ? dir!.path : '目录不存在或不是文件夹',
+      hint: !p.path.trim() ? '还没有选择目录' : checking ? '正在检查…' : dirOk ? dir!.path : '目录不存在或不是文件夹',
     },
     {
-      ok: !!dir?.gitBranch,
+      ok: !!dir?.gitBranch || checking,
       label: '是 git 仓库',
-      hint: dir?.gitBranch ? `当前分支 ${dir.gitBranch}` : '建议用 git 管理，方便查看和回退 Agent 的改动',
+      hint: checking
+        ? '正在检查…'
+        : dir?.gitBranch
+          ? `当前分支 ${dir.gitBranch}`
+          : '建议用 git 管理，方便查看和回退 Agent 的改动',
       optional: true,
     },
     { ok: !!workflow, label: '已指定工作流', hint: workflow ? workflow.name : '在项目或项目分类上指定' },

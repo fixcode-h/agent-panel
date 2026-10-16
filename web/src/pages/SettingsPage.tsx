@@ -1,13 +1,26 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { Check, Copy, Cpu, FlaskConical, Play, RefreshCw, Settings2, Sparkles, X, type LucideIcon } from 'lucide-react'
+import {
+  Check,
+  Copy,
+  Cpu,
+  FlaskConical,
+  Play,
+  RefreshCw,
+  Settings2,
+  Sparkles,
+  X,
+  type LucideIcon,
+  SquareTerminal,
+} from 'lucide-react'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { CliSettings, type CliStatus, type Settings } from '@shared/schema'
 import { cliSettings, defaultCli, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
+import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -248,7 +261,12 @@ function CliSection({
   return (
     <>
       <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-field/40 p-3.5">
-        <span className="h-10 w-10 shrink-0 rounded-[10px]" style={{ background: cliColor(def.id) }} />
+        <span
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-[10px] text-white"
+          style={{ background: cliColor(def.id) }}
+        >
+          <SquareTerminal className="h-5 w-5" strokeWidth={1.8} />
+        </span>
         <div className="min-w-0 flex-[1_1_180px]">
           <p className="flex items-center gap-2 font-medium">
             {def.name}
@@ -404,6 +422,7 @@ function SettingsBody({
   const { setSettings, clis, refreshClis } = useData()
   const [execution, setExecution] = useState(initial.execution)
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
+  const [notify, setNotifyOn] = useState(notifyEnabled)
   const [drafts, setDrafts] = useState(() => toDraft(initial))
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
@@ -440,7 +459,8 @@ function SettingsBody({
       setSettings(await api.saveSettings(v))
       await refreshClis()
     },
-    valid,
+    // 超时填错时这一项沿用原值，其他设置照常保存
+    true,
   )
 
   const detect = async () => {
@@ -536,14 +556,28 @@ function SettingsBody({
                 />
               </Row>
               <Row title="单个步骤最长运行时间" desc="分钟。超时后会停止这一步，任务标记为失败。">
-                <Input
-                  type="number"
-                  min={1}
-                  max={600}
-                  value={timeout}
-                  onChange={(e) => setTimeoutMin(e.target.value)}
-                  className="h-9"
-                  aria-label="单个步骤最长运行时间（分钟）"
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={timeout}
+                    onChange={(e) => setTimeoutMin(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!valid}
+                    className={cn('h-9', !valid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label="单个步骤最长运行时间（分钟）"
+                  />
+                  {!valid && <span className="text-xs text-danger">填 1 到 600 之间的整数</span>}
+                </div>
+              </Row>
+              <Row title="任务完成时通知我" desc="页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。">
+                <Switch
+                  aria-label="任务完成时通知我"
+                  checked={notify}
+                  disabled={!notifySupported()}
+                  onCheckedChange={async (on) => {
+                    const ok = await setNotify(on)
+                    setNotifyOn(ok)
+                    if (on && !ok) toast.error('浏览器没有允许通知，可以在地址栏左侧的网站设置里打开')
+                  }}
                 />
               </Row>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">

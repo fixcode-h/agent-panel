@@ -28,7 +28,7 @@ export function ProjectDetail({
   onDuplicate: () => void
   onDeleted: () => void
 }) {
-  const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis } = useData()
+  const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<ProjectInput>(() => toInput(project))
   const [deleting, setDeleting] = useState(false)
@@ -53,6 +53,8 @@ export function ProjectDetail({
     try {
       await api.deleteProject(project.id)
       setProjects((ps) => ps.filter((p) => p.id !== project.id))
+      // 后端连同任务一起删了，侧栏的最近任务也要去掉
+      void reloadTasks()
       toast.success(`已删除「${project.name}」`)
       onDeleted()
     } catch (e) {

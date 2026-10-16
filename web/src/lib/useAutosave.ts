@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
@@ -29,7 +30,12 @@ export function useAutosave<T>(value: T, save: (v: T) => Promise<unknown>, valid
   }
 
   useEffect(() => {
-    if (serialized === baseline.current || !valid) return
+    if (serialized === baseline.current) {
+      // 改回了已保存的内容：之前的「保存失败」不再成立
+      setStatus((s) => (s === 'error' || s === 'pending' ? 'idle' : s))
+      return
+    }
+    if (!valid) return
     setStatus('pending')
     const t = setTimeout(run, 600)
     return () => clearTimeout(t)
@@ -38,7 +44,9 @@ export function useAutosave<T>(value: T, save: (v: T) => Promise<unknown>, valid
   useEffect(
     () => () => {
       const l = latest.current
-      if (l.valid && l.serialized !== baseline.current) void l.save(l.value)
+      // 离开页面时补存；失败只能用提示告诉用户，页面已经不在了
+      if (l.valid && l.serialized !== baseline.current)
+        l.save(l.value).catch((e) => toast.error(`刚才的修改没有保存：${(e as Error).message}`))
     },
     [],
   )

@@ -75,6 +75,8 @@ export const api = {
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
+  resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
+  renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),

@@ -9,6 +9,8 @@ import {
   MessageSquareText,
   MoreHorizontal,
   PanelRight,
+  Pencil,
+  RotateCw,
   Square,
   Trash2,
   X,
@@ -16,6 +18,7 @@ import {
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId } from '@shared/flow'
 import { api } from '@/lib/api'
+import { useEscape } from '@/lib/useEscape'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -71,6 +74,10 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const [resuming, setResuming] = useState(false)
+  const [scrolled, setScrolled] = useState(false)
+  useEscape(panel, () => setPanel(false))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
@@ -145,6 +152,27 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
       toast.error((e as Error).message)
     }
   }
+  const resume = async () => {
+    setResuming(true)
+    stick.current = true
+    try {
+      apply(await api.resumeTask(task.id))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setResuming(false)
+    }
+  }
+  const rename = async () => {
+    const title = renaming?.trim()
+    setRenaming(null)
+    if (!title || title === task.title) return
+    try {
+      apply(await api.renameTask(task.id, title))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
   const remove = async () => {
     try {
       await api.deleteTask(task.id)
@@ -164,12 +192,18 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   const isFlow = task.mode === 'workflow' && view === 'flow'
+  const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim()
 
   return (
     <>
       <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
         <main className="flex min-w-0 flex-1 flex-col md:h-full">
-          <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
+          <header
+            className={cn(
+              'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
+              scrolled ? 'border-line' : 'border-transparent',
+            )}
+          >
             <nav aria-label="位置" className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
               <button
                 onClick={() => go({ page: 'projects', id: project.id })}
@@ -179,7 +213,30 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
               </button>
               <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
               <TaskStatusIcon status={task.status} className="ml-1" />
-              <h2 className="min-w-0 truncate px-1 font-medium">{task.title}</h2>
+              {renaming !== null ? (
+                <input
+                  autoFocus
+                  aria-label="任务标题"
+                  value={renaming}
+                  maxLength={80}
+                  onChange={(e) => setRenaming(e.target.value)}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onBlur={rename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
+                    if (e.key === 'Escape') setRenaming(null)
+                  }}
+                  className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
+                />
+              ) : (
+                <h2
+                  title="双击重命名"
+                  onDoubleClick={() => setRenaming(task.title)}
+                  className="min-w-0 truncate px-1 font-medium"
+                >
+                  {task.title}
+                </h2>
+              )}
               {task.simulated && (
                 <span
                   title="没有真正调用 CLI，输出是示例"
@@ -236,6 +293,10 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                 </Button>
               </MenuTrigger>
               <MenuContent>
+                <MenuItem onSelect={() => setRenaming(task.title)}>
+                  <Pencil className="h-4 w-4" />
+                  重命名
+                </MenuItem>
                 <MenuItem danger onSelect={() => setDeleting(true)}>
                   <Trash2 className="h-4 w-4" />
                   删除任务
@@ -249,6 +310,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
             onScroll={(e) => {
               const el = e.currentTarget
               stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+              setScrolled(el.scrollTop > 4)
             }}
             className="flex-1 overflow-y-auto"
           >
@@ -320,7 +382,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
               <div className="flex items-center gap-2 px-3 pb-2.5">
                 <span className="min-w-0 truncate pl-1 text-xs text-subtle">
                   {running
-                    ? runningSteps.length > 1
+                    ? tops.filter((s) => s.status === 'running').length > 1
                       ? `${tops.filter((s) => s.status === 'running').length} 个节点同时执行中`
                       : '执行中，可以随时停止'
                     : task.mode === 'workflow'
@@ -337,15 +399,42 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                     停止
                   </Button>
                 ) : (
-                  <button
-                    aria-label="发送"
-                    title="发送（Enter）"
-                    disabled={!text.trim() || sending}
-                    onClick={send}
-                    className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
-                  </button>
+                  <>
+                    {canResume && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="ml-auto rounded-lg"
+                        disabled={resuming}
+                        onClick={resume}
+                        title={
+                          task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
+                            ? '从没完成的节点继续执行'
+                            : '重新执行最后一条要求'
+                        }
+                      >
+                        {resuming ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCw className="h-3.5 w-3.5" />
+                        )}
+                        {task.status === 'failed' ? '重试' : '继续执行'}
+                      </Button>
+                    )}
+                    <button
+                      aria-label="发送"
+                      title="发送（Enter）"
+                      disabled={!text.trim() || sending}
+                      onClick={send}
+                      className={cn(
+                        'grid h-8 w-8',
+                        !canResume && 'ml-auto',
+                        'shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40',
+                      )}
+                    >
+                      <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -363,7 +452,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
           {panel && (
             <div className="mb-2 flex items-center justify-between xl:hidden">
               <span className="px-1 text-[13px] font-semibold">任务面板</span>
-              <Button variant="ghost" size="icon-sm" aria-label="关闭面板" onClick={() => setPanel(false)}>
+              <Button autoFocus variant="ghost" size="icon-sm" aria-label="关闭面板" onClick={() => setPanel(false)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>

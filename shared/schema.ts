@@ -263,6 +263,8 @@ export const NewTaskInput = z.object({
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
 export const FollowUpInput = z.object({ text: z.string().trim().min(1, '内容不能为空').max(20000) })
+/** 可以直接修改的任务字段 */
+export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不能为空').max(80) }).partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({

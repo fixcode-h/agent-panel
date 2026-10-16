@@ -117,7 +117,7 @@ export function ProjectsPage() {
                     size="icon-sm"
                     aria-label="在此分类新建项目"
                     title="在此分类新建项目"
-                    className="ml-auto opacity-0 group-hover/g:opacity-100 focus:opacity-100"
+                    className="ml-auto opacity-0 [@media(hover:none)]:opacity-100 group-hover/g:opacity-100 focus:opacity-100"
                     onClick={() => create({ categoryId: g.id })}
                   >
                     <Plus className="h-3.5 w-3.5" />
@@ -160,7 +160,7 @@ export function ProjectsPage() {
           onNewProject={() => create({ categoryId: selectedCategory.id })}
         />
       ) : projects.length > 0 ? (
-        <DetailEmpty icon={<FolderGit2 className="h-6 w-6" />} title="选择一个项目">
+        <DetailEmpty desktopOnly icon={<FolderGit2 className="h-6 w-6" />} title="选择一个项目">
           <p>
             点开项目可以查看它的任务，或者新建任务让 Agent 按工作流执行。项目的目录和工作流在项目里的「设置」中修改。
           </p>

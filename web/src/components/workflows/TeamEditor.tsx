@@ -84,9 +84,12 @@ export function TeamEditor({
             const a = byId.get(m.agentId)
             if (!a) return null
             return (
-              <li key={m.agentId} className="flex flex-wrap items-center gap-3 rounded-[10px] border bg-card p-3">
+              <li
+                key={m.agentId}
+                className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-[10px] border bg-card p-3 lg:grid-cols-[16px_minmax(150px,1fr)_minmax(0,1.3fr)_auto]"
+              >
                 <span className="w-4 text-center font-mono text-xs text-subtle">{i + 1}</span>
-                <span className="flex min-w-0 flex-[1_1_160px] items-center gap-3">
+                <span className="flex min-w-0 items-center gap-3">
                   <AgentLine agent={a} />
                 </span>
                 <input
@@ -94,7 +97,7 @@ export function TeamEditor({
                   value={m.responsibility}
                   onChange={(e) => update(i, e.target.value)}
                   placeholder="在这个工作流中负责…"
-                  className="h-9 min-w-0 flex-[2_1_220px] rounded-lg border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+                  className="order-last col-span-2 col-start-2 h-9 min-w-0 rounded-lg lg:order-none lg:col-span-1 lg:col-start-auto border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
                 />
                 <span className="flex items-center">
                   <Button

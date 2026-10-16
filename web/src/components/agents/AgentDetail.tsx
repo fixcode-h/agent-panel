@@ -99,7 +99,14 @@ export function AgentDetail({
   const usedIn = workflows
     .map((w) => ({
       w,
-      role: w.mainAgentId === agent.id ? '主 Agent' : w.members.some((m) => m.agentId === agent.id) ? '子 Agent' : '',
+      role:
+        w.mainAgentId === agent.id
+          ? '主 Agent'
+          : w.members.some((m) => m.agentId === agent.id)
+            ? '子 Agent'
+            : w.flows.some((f) => f.nodes.some((n) => n.agentId === agent.id))
+              ? '节点执行者'
+              : '',
     }))
     .filter((x) => x.role)
 
@@ -376,7 +383,12 @@ export function AgentDetail({
         open={deleting}
         onOpenChange={setDeleting}
         title={`删除「${agent.name}」？`}
-        description={usedIn.length ? '它正在被工作流使用，需要先从这些工作流中移除。' : '删除后无法恢复。'}
+        description="删除后无法恢复。"
+        blocked={
+          usedIn.length
+            ? `它正在被工作流 ${usedIn.map(({ w }) => `「${w.name}」`).join('、')} 使用，需要先从这些工作流中移除才能删除。`
+            : undefined
+        }
         onConfirm={remove}
       />
       <AssistDialog open={assist} onOpenChange={setAssist} kind="agent" target={agent} onApplied={onOptimized} />

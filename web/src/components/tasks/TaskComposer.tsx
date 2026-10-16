@@ -41,7 +41,7 @@ export function TaskComposer({
   onCreated: (t: Task) => void
   autoFocus?: boolean
 }) {
-  const { workflows, agents, clis, projects, projectCategories } = useData()
+  const { workflows, agents, clis, projects, projectCategories, loading } = useData()
   const { modelOf } = useAgentView()
   const [projectId, setProjectId] = useState(() => {
     try {
@@ -116,124 +116,134 @@ export function TaskComposer({
           placeholder={effMode === 'workflow' ? '描述要做的事，Agent 会按工作流分工完成' : '想问什么，或者让它做什么'}
           className="block max-h-80 min-h-[84px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
         />
-        <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
-          {!fixed && (
-            <Popover>
-              <PopoverTrigger className={chip} title="在哪个项目里执行">
-                <FolderGit2 className="h-4 w-4 shrink-0" />
-                <span className="truncate">{project?.name ?? '选择项目'}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px]">
-                <div className="max-h-72 overflow-y-auto">
-                  {projects.map((p) => (
-                    <PopoverClose key={p.id} className={menuItem} onClick={() => setProjectId(p.id)}>
-                      <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate">{p.name}</span>
-                        <span className="truncate font-mono text-[11px] text-subtle">{p.path || '未选择目录'}</span>
-                      </span>
-                      {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
-                    </PopoverClose>
-                  ))}
-                  {projects.length === 0 && (
-                    <p className="px-2.5 py-2 text-xs text-subtle">还没有项目，先在「项目」里添加一个本机目录</p>
-                  )}
-                </div>
-              </PopoverContent>
-            </Popover>
-          )}
-
-          <div role="radiogroup" aria-label="执行方式" className="flex items-center rounded-lg bg-field/60 p-0.5">
-            {(
-              [
-                { id: 'workflow', label: '工作流', icon: WorkflowIcon },
-                { id: 'chat', label: '对话', icon: MessageSquare },
-              ] as const
-            ).map((m) => (
-              <button
-                key={m.id}
-                role="radio"
-                aria-checked={effMode === m.id}
-                onClick={() => setMode(m.id)}
-                className={cn(
-                  'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
-                  effMode === m.id ? 'bg-card text-fg shadow-card' : 'text-subtle hover:text-fg',
-                )}
-              >
-                <m.icon className="h-3.5 w-3.5" />
-                {m.label}
-              </button>
+        {loading ? (
+          // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成工作流
+          <div className="flex items-center gap-2 px-3.5 pt-1 pb-3" aria-hidden>
+            {[96, 120, 110].map((w) => (
+              <span key={w} className="h-7 animate-pulse rounded-lg bg-field" style={{ width: w }} />
             ))}
+            <span className="ml-auto h-8 w-8 rounded-lg bg-accent/40" />
           </div>
-
-          {effMode === 'workflow' ? (
-            <Popover>
-              <PopoverTrigger className={chip} title="执行的工作流">
-                <span className="truncate">{workflow?.name ?? '选择工作流'}</span>
-                {workflow && <span className="shrink-0 text-xs text-subtle">{nodes} 个节点</span>}
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-              </PopoverTrigger>
-              <PopoverContent className="w-[280px]">
-                <div className="max-h-72 overflow-y-auto">
-                  {workflows.map((w) => (
-                    <PopoverClose key={w.id} className={menuItem} onClick={() => setWorkflowId(w.id)}>
-                      <span
-                        className={cn(
-                          'h-2 w-2 shrink-0 rounded-full',
-                          isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',
-                        )}
-                      />
-                      <span className="flex min-w-0 flex-1 flex-col">
-                        <span className="truncate">{w.name}</span>
-                        <span className="truncate text-xs text-subtle">
-                          {w.id === defaultWf ? '项目默认 · ' : ''}
-                          {topoOrder(entryFlow(w)).length} 个节点
+        ) : (
+          <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
+            {!fixed && (
+              <Popover>
+                <PopoverTrigger className={chip} title="在哪个项目里执行">
+                  <FolderGit2 className="h-4 w-4 shrink-0" />
+                  <span className="truncate">{project?.name ?? '选择项目'}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                </PopoverTrigger>
+                <PopoverContent className="w-[280px]">
+                  <div className="max-h-72 overflow-y-auto">
+                    {projects.map((p) => (
+                      <PopoverClose key={p.id} className={menuItem} onClick={() => setProjectId(p.id)}>
+                        <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">{p.name}</span>
+                          <span className="truncate font-mono text-[11px] text-subtle">{p.path || '未选择目录'}</span>
                         </span>
-                      </span>
-                      {w.id === workflow?.id && <Check className="h-4 w-4 text-accent" />}
-                    </PopoverClose>
-                  ))}
-                  {workflows.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">还没有工作流</p>}
-                </div>
-              </PopoverContent>
-            </Popover>
-          ) : (
-            <AgentPicker onPick={(a) => setAgentId(a.id)} align="start">
-              <button className={chip} title="对话的 Agent">
-                {agent ? (
-                  <>
-                    <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" dim={!agent.enabled} />
-                    <span className="truncate">{agent.name}</span>
-                    <span className="hidden truncate font-mono text-[11px] text-subtle sm:inline">
-                      {modelOf(agent)}
-                    </span>
-                  </>
-                ) : (
-                  <span>选择 Agent</span>
-                )}
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-              </button>
-            </AgentPicker>
-          )}
+                        {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
+                      </PopoverClose>
+                    ))}
+                    {projects.length === 0 && (
+                      <p className="px-2.5 py-2 text-xs text-subtle">还没有项目，先在「项目」里添加一个本机目录</p>
+                    )}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            )}
 
-          <button
-            onClick={start}
-            disabled={!canStart}
-            aria-label="开始执行"
-            title="开始执行（Enter）"
-            className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
-          </button>
-        </div>
+            <div role="radiogroup" aria-label="执行方式" className="flex items-center rounded-lg bg-field/60 p-0.5">
+              {(
+                [
+                  { id: 'workflow', label: '工作流', icon: WorkflowIcon },
+                  { id: 'chat', label: '对话', icon: MessageSquare },
+                ] as const
+              ).map((m) => (
+                <button
+                  key={m.id}
+                  role="radio"
+                  aria-checked={effMode === m.id}
+                  onClick={() => setMode(m.id)}
+                  className={cn(
+                    'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
+                    effMode === m.id ? 'bg-card text-fg shadow-card' : 'text-subtle hover:text-fg',
+                  )}
+                >
+                  <m.icon className="h-3.5 w-3.5" />
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {effMode === 'workflow' ? (
+              <Popover>
+                <PopoverTrigger className={chip} title="执行的工作流">
+                  <span className="truncate">{workflow?.name ?? '选择工作流'}</span>
+                  {workflow && <span className="shrink-0 text-xs text-subtle">{nodes} 个节点</span>}
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                </PopoverTrigger>
+                <PopoverContent className="w-[280px]">
+                  <div className="max-h-72 overflow-y-auto">
+                    {workflows.map((w) => (
+                      <PopoverClose key={w.id} className={menuItem} onClick={() => setWorkflowId(w.id)}>
+                        <span
+                          className={cn(
+                            'h-2 w-2 shrink-0 rounded-full',
+                            isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',
+                          )}
+                        />
+                        <span className="flex min-w-0 flex-1 flex-col">
+                          <span className="truncate">{w.name}</span>
+                          <span className="truncate text-xs text-subtle">
+                            {w.id === defaultWf ? '项目默认 · ' : ''}
+                            {topoOrder(entryFlow(w)).length} 个节点
+                          </span>
+                        </span>
+                        {w.id === workflow?.id && <Check className="h-4 w-4 text-accent" />}
+                      </PopoverClose>
+                    ))}
+                    {workflows.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">还没有工作流</p>}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <AgentPicker onPick={(a) => setAgentId(a.id)} align="start">
+                <button className={chip} title="对话的 Agent">
+                  {agent ? (
+                    <>
+                      <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" dim={!agent.enabled} />
+                      <span className="truncate">{agent.name}</span>
+                      <span className="hidden truncate font-mono text-[11px] text-subtle sm:inline">
+                        {modelOf(agent)}
+                      </span>
+                    </>
+                  ) : (
+                    <span>选择 Agent</span>
+                  )}
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                </button>
+              </AgentPicker>
+            )}
+
+            <button
+              onClick={start}
+              disabled={!canStart}
+              aria-label="开始执行"
+              title="开始执行（Enter）"
+              className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
+            </button>
+          </div>
+        )}
       </div>
       {notReady && (
         <p className="px-1 text-xs text-warning">
           工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。
         </p>
       )}
-      {!prompt && (
+      {!prompt && !loading && (
         <div className="flex flex-wrap gap-2 px-0.5">
           {EXAMPLES[effMode].map((e) => (
             <button

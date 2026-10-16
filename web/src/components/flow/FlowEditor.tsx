@@ -358,7 +358,15 @@ function Editor({
   const [full, setFull] = useState(false)
   useEffect(() => {
     if (!full) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setFull(false)
+    // Esc 先交给打开着的下拉、菜单关闭，没有弹出层时才退出全屏
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return
+      if (
+        document.querySelector('[data-radix-popper-content-wrapper], [role=menu], [role=listbox], [role=alertdialog]')
+      )
+        return
+      setFull(false)
+    }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
   }, [full])
@@ -378,13 +386,8 @@ function Editor({
   const add = (kind: 'agent' | 'flow') => {
     const r = box.current?.getBoundingClientRect()
     const c = r ? rf.screenToFlowPosition({ x: r.left + r.width / 2, y: r.top + r.height / 2 }) : { x: 300, y: 0 }
-    const k = flow.nodes.length % 6
-    const n = newNode({
-      kind,
-      title: kind === 'flow' ? '调用流程' : '新节点',
-      x: Math.round(c.x - 124 + k * 28),
-      y: Math.round(c.y - 40 + k * 28),
-    })
+    const p = freeSpot(flow, c.x - 124, c.y - 40)
+    const n = newNode({ kind, title: kind === 'flow' ? '调用流程' : '新节点', x: p.x, y: p.y })
     setFlow({ ...flow, nodes: [...flow.nodes, n] })
     setSelected(n.id)
   }
@@ -420,7 +423,10 @@ function Editor({
   }, [drop])
 
   const addFlow = () => {
-    const f = newFlow(`子流程 ${w.flows.length}`)
+    const names = new Set(w.flows.map((f) => f.name))
+    let i = 1
+    while (names.has(`子流程 ${i}`)) i++
+    const f = newFlow(`子流程 ${i}`)
     onChange({ flows: [...w.flows, f] })
     setFlowId(f.id)
     setSelected(START)
@@ -677,6 +683,27 @@ function Editor({
  * 工作流的流程图编辑器：自由摆放节点，拖动连线决定先后；一个工作流可以有多个流程（主流程 + 子流程），
  * 节点可以在开始、验收、结束三个位置挂载其他流程。
  */
+/** 新节点的位置：从画布中间开始，向外找一个不压住已有节点的空位 */
+function freeSpot(flow: Flow, x0: number, y0: number) {
+  const W = 260
+  const H = 130
+  const boxes = [
+    ...flow.nodes.map((n) => ({ x: n.x, y: n.y })),
+    ...(flow.startPos ? [flow.startPos] : []),
+    ...(flow.endPos ? [flow.endPos] : []),
+  ]
+  const free = (x: number, y: number) => boxes.every((b) => Math.abs(b.x - x) >= W || Math.abs(b.y - y) >= H)
+  for (let r = 0; r < 8; r++)
+    for (let dx = -r; dx <= r; dx++)
+      for (let dy = -r; dy <= r; dy++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue
+        const x = Math.round(x0 + dx * W)
+        const y = Math.round(y0 + dy * H)
+        if (free(x, y)) return { x, y }
+      }
+  return { x: Math.round(x0), y: Math.round(y0) }
+}
+
 export function FlowEditor(props: {
   w: W
   onChange: (p: Partial<WorkflowInput>) => void
