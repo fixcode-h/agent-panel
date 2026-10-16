@@ -326,6 +326,36 @@ function TierTable({
   )
 }
 
+/** 只读的设置值：样子和输入框对齐，但不能改 */
+function ReadValue({ children, mono }: { children: React.ReactNode; mono?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'flex h-9 items-center truncate rounded-lg border border-line bg-field/50 px-3 text-[13px] text-muted',
+        mono && 'font-mono',
+      )}
+    >
+      {children}
+    </span>
+  )
+}
+
+/** 某个 CLI 的默认模型实际是什么：档位换成那一档的模型，没设置时是 CLI 自己的默认 */
+function defaultModelText(def: CliDefinition, d: CliDraft) {
+  const v = d.defaultModel
+  const t = tierOf(v)
+  if (t) return `${t.label}档 · ${d.tiers[t.id].model || def.tiers[t.id].model}`
+  if (v) return v
+  const m = cliDefaultModel(def)?.id
+  return m ? `${m}（默认）` : '自动（默认）'
+}
+
+function defaultEffortText(def: CliDefinition, d: CliDraft) {
+  const e = d.defaultEffort || cliDefaultModel(def)?.defaultEffort
+  if (!e) return 'auto · 自动（默认）'
+  return `${e} · ${effortLabel(def, e)}${d.defaultEffort ? '' : '（默认）'}`
+}
+
 /** 默认模型：可以是档位或具体模型；不指定时就是 CLI 自己的默认模型，直接标（默认） */
 function DefaultModel({
   def,
@@ -951,13 +981,12 @@ function SettingsBody({
                 >
                   <TierTable def={defDef} value={drafts[defCli].tiers} readOnly />
                 </Row>
-                <Row title="默认模型" desc="Agent 没有指定模型时使用">
-                  <DefaultModel
-                    key={defCli}
-                    def={defDef}
-                    draft={drafts[defCli]}
-                    onChange={(v) => setDrafts((ds) => ({ ...ds, [defCli]: { ...ds[defCli], defaultModel: v } }))}
-                  />
+                {/* 默认模型和思考强度也只展示，在对应 CLI 里改 */}
+                <Row title="默认模型" desc={`Agent 没有指定模型时使用，跟随 ${defDef.name} 的设置`}>
+                  <ReadValue mono>{defaultModelText(defDef, drafts[defCli])}</ReadValue>
+                </Row>
+                <Row title="默认思考强度" desc={`Agent 和档位都没有指定时使用，跟随 ${defDef.name} 的设置`}>
+                  <ReadValue>{defaultEffortText(defDef, drafts[defCli])}</ReadValue>
                 </Row>
               </Group>
             </>
