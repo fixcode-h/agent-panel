@@ -20,7 +20,7 @@ import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { answerRequest, runRealTurn } from './exec/runner.ts'
-import { CHATS_DIR } from './store.ts'
+import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
 import { mkdir, rm } from 'node:fs/promises'
@@ -509,8 +509,9 @@ export function tasksApi(deps: {
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
     await dropUploads([task])
     await dropWorktree(task)
-    // 聊天的工作目录跟着删掉
+    // 聊天的工作目录、节点交接的文件跟着删掉
     await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})
+    await rm(path.join(HANDOFF_DIR, id), { recursive: true, force: true }).catch(() => {})
     return c.body(null, 204)
   })
 
@@ -531,6 +532,7 @@ export function tasksApi(deps: {
         stopTask(t.id)
         await store.remove(t.id)
         await dropWorktree(t, repo)
+        await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
       }
       await dropUploads(removed)
     },

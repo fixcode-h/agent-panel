@@ -431,6 +431,26 @@ try {
   assert.ok(!c4.args.includes('--resume'), '不同节点用各自的新会话')
   step('调用参数：模型、权限、角色设定、上游结果、同时进行的节点、工作目录都对；没有依赖的节点同时运行')
 
+  // 上游的结果太长：交给下游的只放开头，完整内容存成文件，下游的 CLI 能读到那个目录
+  const nLong = calls().length
+  let tLong = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'LONGOUT 写个详细方案' })
+  tLong = await waitDone(tLong.id)
+  assert.equal(tLong.status, 'done')
+  const down = calls()
+    .slice(nLong)
+    .find((x) => x.kind === 'codex')
+  const handoff = /完整内容在文件 (\S+?\.md)/.exec(down.input)?.[1]
+  assert.ok(handoff && existsSync(handoff), '下游拿到完整结果的文件路径 ' + down.input.slice(-300))
+  assert.ok(readFileSync(handoff, 'utf8').includes('很长的方案。'.repeat(1000) + '结尾'), '文件里是完整结果')
+  assert.ok(!down.input.includes('结尾'), '提示里只放开头')
+  const cLong = calls()
+    .slice(nLong)
+    .find((x) => x.kind === 'claude' && x.input.includes('上游节点的结果'))
+  assert.ok(cLong.args.includes(path.dirname(handoff)), 'Claude Code 能读交接文件的目录')
+  await call('DELETE', `/tasks/${tLong.id}`)
+  assert.ok(!existsSync(path.dirname(handoff)), '删除任务时删掉交接文件')
+  step('节点交接：上游结果太长时完整内容存成文件，下游按路径去读')
+
   // ---- 追加要求：主 Agent 续接会话 ----
   await call('POST', `/tasks/${t.id}/messages`, { text: '按钮改成红色' })
   t = await waitDone(t.id)

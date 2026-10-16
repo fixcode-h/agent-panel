@@ -66,6 +66,8 @@ export interface EngineHost {
   changed: (flush?: boolean) => void
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
+  /** 节点结果太长时把完整内容存成文件，返回文件路径，下游节点自己去读；没有时只截断 */
+  saveHandoff?: (step: TaskStep, text: string) => Promise<string>
   /** 有节点失败或用户停止后置位：所有层级的流程都不再启动新节点、新一轮验收 */
   halted?: boolean
 }
@@ -353,6 +355,12 @@ async function runNode(
   }
 
   step.output = clip(text, MAX_OUTPUT)
+  // 架构方案、测试的失败清单经常比交接上限长：完整内容存成文件，交给下游的结果里写明去哪读
+  if (text.length > MAX_OUTPUT && host.saveHandoff) {
+    const file = await host.saveHandoff(step, text).catch(() => '')
+    if (file)
+      step.output += `\n\n（完整结果有 ${text.length} 字，这里只附了开头。完整内容在文件 ${file}，开始之前请先读完。）`
+  }
   step.status = 'done'
   step.endedAt = now()
   host.changed(true)

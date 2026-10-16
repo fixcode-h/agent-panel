@@ -131,7 +131,10 @@ const verdict = input.includes('最后单独一行写「验收结论')
     ? '\n验收结论：不通过'
     : '\n验收结论：通过'
   : ''
-const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}`
+// LONGOUT：第一个节点输出一份很长的结果（测试交接内容超过上限时存成文件）
+const long =
+  input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
+const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${long}`
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')

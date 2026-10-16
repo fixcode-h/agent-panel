@@ -1,4 +1,6 @@
-import { stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import type {
   Agent,
   AgentUsage,
@@ -14,6 +16,7 @@ import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
 import { withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
+import { HANDOFF_DIR } from '../store.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
@@ -214,7 +217,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     resume,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
-    addDirs: task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : undefined,
+    // 节点交接的完整结果也在数据目录里
+    addDirs: [
+      ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
+      ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
+    ],
   }
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
@@ -516,5 +523,12 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, call),
+    saveHandoff: async (step, text) => {
+      const dir = path.join(HANDOFF_DIR, ctx.task.id)
+      await mkdir(dir, { recursive: true })
+      const file = path.join(dir, `${step.id}.md`)
+      await writeFile(file, `# ${step.title}\n\n${text}\n`)
+      return file
+    },
   })
 }
