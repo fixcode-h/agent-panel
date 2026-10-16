@@ -207,7 +207,7 @@ function workflowDraft(text: string, ctx: AssistContext): { draft: WorkflowDraft
       name: '架构师',
       description: '拆分任务并验收',
       cli: 'claude',
-      model: 'opus',
+      model: 'claude-opus-5-5',
       icon: 'brain',
       category: '',
       instructions: '## 职责\n分析需求、拆分任务、验收结果。',

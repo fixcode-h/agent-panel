@@ -126,6 +126,21 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         },
       ]
     }
+    // 沙箱里要额外的权限（联网、写沙箱外的目录）：同意就按请求的范围给这一轮，拒绝就一项都不给
+    if (m.method === 'item/permissions/requestApproval') {
+      const want = p.permissions ?? {}
+      const fsPaths = [...(want.fileSystem?.write ?? []), ...(want.fileSystem?.read ?? [])].map(String)
+      const what = [want.network?.enabled && '联网', fsPaths.length && `访问 ${fsPaths.join('、')}`].filter(Boolean)
+      return [
+        {
+          type: 'ask',
+          kind: 'command',
+          title: `需要额外权限：${what.join('，') || '越过沙箱'}`,
+          detail: String(p.reason ?? ''),
+          reply: (r) => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} }),
+        },
+      ]
+    }
     send({ id: m.id, error: { code: -32601, message: `面板不支持 ${m.method}` } })
     return []
   }
@@ -166,6 +181,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'edit',
+              name: c.kind?.type === 'add' ? '写入' : c.kind?.type === 'delete' ? '删除' : undefined,
               label: p,
               detail: add || del ? `+${add} -${del}` : kind,
               input: c.diff ? clipDetail(String(c.diff)) : undefined,
@@ -180,6 +196,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'other',
+              name: 'MCP',
               label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`,
               detail: item.error ? '失败' : '',
               input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
@@ -198,7 +215,8 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'other',
-              label: String(item.tool ?? '工具'),
+              name: String(item.tool ?? '工具'),
+              label: '',
               detail: '',
               input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
               output: item.contentItems ? clipDetail(toolText(item.contentItems)) : undefined,
@@ -207,9 +225,9 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
           },
         ]
       case 'webSearch':
-        return [{ type: 'tool', tool: { kind: 'search', label: `网页搜索 ${item.query ?? ''}`.trim(), detail: '' } }]
+        return [{ type: 'tool', tool: { kind: 'web', name: '网页搜索', label: String(item.query ?? ''), detail: '' } }]
       case 'imageView':
-        return [{ type: 'tool', tool: { kind: 'read', label: rel(o.cwd, item.path), detail: '' } }]
+        return [{ type: 'tool', tool: { kind: 'read', name: '查看图片', label: rel(o.cwd, item.path), detail: '' } }]
       default:
         return []
     }

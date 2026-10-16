@@ -23,7 +23,8 @@ function Section({ title, extra, children }: { title: string; extra?: React.Reac
         <ChevronDown className={cn('h-3.5 w-3.5 text-subtle transition-transform', !open && '-rotate-90')} />
         <span className="ml-auto text-xs font-normal text-subtle">{extra}</span>
       </button>
-      {open && <div className="px-3.5 pb-3.5">{children}</div>}
+      {/* 每块限制高度，节点、Agent 多的时候在块里滚动，不把下面的块挤到很远 */}
+      {open && <div className="max-h-[320px] overflow-y-auto overscroll-contain px-3.5 pb-3.5">{children}</div>}
     </section>
   )
 }

@@ -32,6 +32,25 @@ const Meta = z.object({ id: z.string(), createdAt: z.string(), updatedAt: z.stri
 export const Agent = AgentInput.extend(Meta.shape)
 export type Agent = z.infer<typeof Agent>
 
+/**
+ * 自带的默认 Agent：不能删除，CLI、模型、思考强度固定跟随设置里的默认 CLI，
+ * 对话时可以在输入框旁边临时换模型和思考强度。新建的对话没选过 Agent 时用它。
+ */
+export const DEFAULT_AGENT_ID = 'default-agent'
+export const defaultAgent = (): Agent => {
+  const at = new Date(0).toISOString()
+  return {
+    ...AgentInput.parse({
+      name: '默认 Agent',
+      description: '使用默认 CLI 的默认模型和思考强度，对话时可以临时调整',
+      icon: 'sparkles',
+    }),
+    id: DEFAULT_AGENT_ID,
+    createdAt: at,
+    updatedAt: at,
+  }
+}
+
 /** Agent 分类，例如「开发」「测试」「文档」，只用于组织列表 */
 export const CategoryInput = z.object({
   name: z.string().trim().min(1, '分类名不能为空').max(20),
@@ -250,6 +269,8 @@ export interface CliModel {
   group?: string
   /** cli：CLI 自己提供的（账号可用的、内置的）；config：配置文件里接的第三方 API */
   origin?: 'cli' | 'config'
+  /** 上下文窗口（token）；CLI 没给出时省略 */
+  contextWindow?: number
 }
 
 export interface CliModels {
@@ -317,6 +338,20 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
+
+/** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
+export const Attachment = z.object({
+  name: z.string().min(1).max(200),
+  /** 本机绝对路径 */
+  path: z.string().min(1),
+  size: z.number().int().min(0),
+  mime: z.string().default(''),
+})
+export type Attachment = z.infer<typeof Attachment>
+/** 一次最多附上的文件数 */
+export const MAX_ATTACHMENTS = 10
+/** 单个附件的大小上限（字节） */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
@@ -326,17 +361,27 @@ export const NewTaskInput = z.object({
   workflowId: z.string().default(''),
   /** chat 模式：对话的 Agent */
   agentId: z.string().default(''),
+  /** chat 模式用默认 Agent 时临时选的模型和思考强度；为空跟随默认 CLI 的设置 */
+  model: z.string().trim().max(200).default(''),
+  effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, '请描述任务').max(20000),
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
-export const FollowUpInput = z.object({ text: z.string().trim().min(1, '内容不能为空').max(20000) })
+export const FollowUpInput = z.object({
+  text: z.string().trim().min(1, '内容不能为空').max(20000),
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+})
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不能为空').max(80) }).partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
-  kind: z.enum(['read', 'edit', 'run', 'search', 'other']),
+  kind: z.enum(['read', 'edit', 'run', 'search', 'web', 'skill', 'agent', 'other']),
+  /** 动作名，显示在最前面，例如「读取」「技能」「MCP」；为空时按 kind 给默认的 */
+  name: z.string().optional(),
+  /** 动作的对象：文件、命令、技能名、搜索词 */
   label: z.string(),
   detail: z.string().default(''),
   /** 点开工具调用时显示：完整命令、参数或改动内容 */
@@ -358,6 +403,8 @@ export const TaskMessage = z.object({
   tools: z.array(ToolUse).default([]),
   /** 生成这段回复前的思考过程（CLI 给出的思考或推理摘要） */
   thinking: z.string().optional(),
+  /** 用户消息附上的文件和图片 */
+  attachments: z.array(Attachment).optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -442,7 +489,14 @@ export const TaskData = z.object({
   mode: TaskMode,
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
+  /** 对话时给默认 Agent 临时选的模型和思考强度，继续对话也用它 */
+  model: z.string().default(''),
+  effort: z.string().default(''),
   status: TaskStatus,
+  /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
+  runMs: z.number().default(0),
+  /** 这一轮开始执行的时间；没在执行时为空 */
+  runStartedAt: z.string().default(''),
   /** 所有节点：主流程的节点按执行顺序排在前面，执行中产生的子节点追加在后面 */
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
@@ -521,9 +575,12 @@ export const CliSettings = z.object({
 })
 export type CliSettings = z.infer<typeof CliSettings>
 
+/** 内容区默认宽度 */
+export const CONTENT_WIDTH = 880
+
 export const Settings = z.object({
-  /** 单个步骤最长运行时间（分钟），超时会停止 */
-  stepTimeoutMinutes: z.number().int().min(1).max(600).default(60),
+  /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
+  stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
@@ -531,6 +588,8 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
+  /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
+  contentWidth: z.number().int().min(640).max(1600).default(CONTENT_WIDTH),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

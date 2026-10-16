@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   CliInstallJob,
   CliModels,
   CliUpdate,
@@ -19,6 +20,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { DataKind, DataUsage } from '@shared/data'
 import type { AppReleases, AppUpdateJob } from '@shared/version'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -88,7 +90,11 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = []) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments })),
+  upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
+  projectFiles: (projectId: string, q: string) =>
+    request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
   resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
@@ -102,5 +108,11 @@ export const api = {
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
+  dataUsage: () => request<DataUsage>('/data'),
+  revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
+  clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
+  exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
+  importData: (backup: unknown) =>
+    request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }

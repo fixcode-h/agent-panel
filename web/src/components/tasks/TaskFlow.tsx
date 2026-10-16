@@ -131,7 +131,7 @@ export function TaskFlow({
           }}
           className="min-h-0 flex-1 overflow-y-auto"
         >
-          <div className="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-4 pb-6 md:px-6">
+          <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
             <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky />
             {!msgs.length && step.status !== 'running' && (
               <p className="text-[13px] text-subtle">

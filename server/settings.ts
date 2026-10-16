@@ -1,11 +1,11 @@
-import path from 'node:path'
 import { Settings } from '../shared/schema.ts'
 import { defaultSettings } from '../shared/settings.ts'
 
-import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
+import { dataPath, onReset, readJson, writeJsonAtomic } from './store.ts'
 
-const FILE = path.join(DATA_DIR, 'settings.json')
+const FILE = dataPath('settings.json')
 let cache: Settings | null = null
+onReset(() => (cache = null))
 
 export async function getSettings(): Promise<Settings> {
   if (cache) return cache

@@ -24,6 +24,8 @@ export interface BuildOptions {
   /** 追加的系统提示词（只有支持的 CLI 会用到，其余拼进任务描述） */
   systemPrompt?: string
   maxTurns?: number
+  /** 工作目录之外还允许读写的目录（例如附件所在的目录） */
+  addDirs?: string[]
 }
 
 export type ModelTier = 'high' | 'medium' | 'low'
@@ -79,9 +81,6 @@ export const CLIS: CliDefinition[] = [
     command: 'claude',
     versionArgs: ['--version'],
     models: [
-      { id: 'opus', label: 'Opus（别名，跟随最新）' },
-      { id: 'sonnet', label: 'Sonnet（别名，跟随最新）' },
-      { id: 'haiku', label: 'Haiku（别名，跟随最新）' },
       { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
       { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
@@ -101,9 +100,9 @@ export const CLIS: CliDefinition[] = [
       { id: 'max', label: '最高' },
     ],
     tiers: {
-      high: { model: 'opus', effort: 'high' },
-      medium: { model: 'sonnet', effort: 'medium' },
-      low: { model: 'haiku', effort: 'low' },
+      high: { model: 'claude-opus-5-5', effort: 'high' },
+      medium: { model: 'claude-sonnet-5-5', effort: 'medium' },
+      low: { model: 'claude-haiku-5-5', effort: 'low' },
     },
     defaultPermission: 'acceptEdits',
     systemPromptFlag: true,
@@ -121,10 +120,12 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.effort, '--effort', o.effort!),
       ...(o.permission === 'bypassPermissions'
         ? ['--dangerously-skip-permissions']
-        : opt(o.permission && o.permission !== 'default', '--permission-mode', o.permission)),
+        : // 「逐项确认」也要明确传 default，否则会沿用 ~/.claude/settings.json 里的 defaultMode
+          opt(o.permission, '--permission-mode', o.permission)),
       ...opt(o.resume, '--resume', o.resume!),
       ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
+      ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
       ...o.extraArgs,
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',
@@ -175,8 +176,9 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
       '-c',
       `sandbox_mode="${o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'}"`,
+      // 和 thread/start 里传的一致：完全访问不确认，其余越过沙箱时请用户确认
       '-c',
-      'approval_policy="never"',
+      `approval_policy="${o.permission === 'danger-full-access' ? 'never' : 'on-request'}"`,
       ...appServerArgs(o.extraArgs),
     ],
     installHint: 'npm install -g @openai/codex',
@@ -199,10 +201,14 @@ export const CLIS: CliDefinition[] = [
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
     ],
     permissions: [
-      { id: 'accept-edits', label: '自动接受改文件', hint: '可以直接读写文件；需要审批的命令会被拒绝' },
-      { id: 'yolo', label: '跳过所有确认', hint: '可以执行任意命令，只在信任的项目里用' },
+      {
+        id: 'accept-edits',
+        label: '自动接受改文件',
+        hint: 'Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」',
+      },
+      { id: 'yolo', label: '跳过所有确认', hint: '可以改文件、执行任意命令，只在信任的项目里用' },
       { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
-      { id: 'standard', label: '标准', hint: '非交互模式下需要审批的操作都会被拒绝' },
+      { id: 'standard', label: '标准', hint: '非交互执行时改文件和跑命令都会被拦下' },
     ],
     // 思考强度是否生效取决于模型
     efforts: [
@@ -226,7 +232,10 @@ export const CLIS: CliDefinition[] = [
       '--no-auto-update',
       ...opt(o.model, '-m', o.model),
       ...opt(o.effort, '--effort', o.effort!),
-      ...opt(o.permission, '--permission-mode', o.permission),
+      // -p 模式下 Command Code 只认 --dangerously-skip-permissions，--permission-mode yolo 仍会拦下改文件和命令
+      ...(o.permission === 'yolo'
+        ? ['--dangerously-skip-permissions']
+        : opt(o.permission, '--permission-mode', o.permission)),
       ...opt(o.resume, '--resume', o.resume!),
       '--max-turns',
       String(o.maxTurns ?? 200),

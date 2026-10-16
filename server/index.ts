@@ -5,6 +5,8 @@ import { stat } from 'node:fs/promises'
 import { z } from 'zod'
 import {
   Agent,
+  DEFAULT_AGENT_ID,
+  defaultAgent,
   AgentInput,
   Category,
   CategoryInput,
@@ -17,7 +19,8 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { END, START, findRefCycle, migrateDocSteps } from '../shared/flow.ts'
-import { createCollection } from './store.ts'
+import { createCollection, migrateDataDir } from './store.ts'
+import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
@@ -28,8 +31,12 @@ import { cleanupOldTray, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
+import { cleanupUploads, searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 
-const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
+// 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
+migrateDataDir()
+
+const agents = createCollection<AgentInput, Agent>('agents.json', Agent, () => [defaultAgent()])
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
 const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
@@ -216,12 +223,16 @@ app.post('/agents', async (c) => {
 app.put('/agents/:id', async (c) => {
   const r = await parseAgent(await c.req.json())
   if (r.error) return bad(c, r.error)
-  const a = await agents.update(c.req.param('id'), r.data!)
+  const id = c.req.param('id')
+  // 默认 Agent 的 CLI、模型、思考强度固定跟随默认 CLI，只能改名称、角色设定这些
+  if (id === DEFAULT_AGENT_ID) Object.assign(r.data!, { cli: '', model: '', effort: '', enabled: true })
+  const a = await agents.update(id, r.data!)
   return a ? c.json(a) : bad(c, 'Agent 不存在', 404)
 })
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
+  if (id === DEFAULT_AGENT_ID) return bad(c, '默认 Agent 是自带的，不能删除', 409)
   const used = (await workflows.list()).filter(
     (w) =>
       w.mainAgentId === id ||
@@ -329,6 +340,19 @@ const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
 app.route('/assist', assistApi({ agents, categories, workflows }))
 
+// ---- 附件和 @ 引用的项目文件 ----
+app.route('/uploads/raw', uploadsRawApi())
+app.route('/uploads', uploadsApi())
+app.get('/projects/:id/files', async (c) => {
+  const p = await projects.get(c.req.param('id'))
+  if (!p?.path) return bad(c, '这个项目还没有选择目录')
+  try {
+    return c.json(await searchProjectFiles(p.path, c.req.query('q') ?? ''))
+  } catch (e) {
+    return bad(c, `无法读取项目文件：${(e as Error).message}`)
+  }
+})
+
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
 
@@ -354,6 +378,8 @@ app.get('/fs/list', async (c) => {
   }
 })
 
+app.route('/data', dataApi({ running: () => tasks.running() }))
+
 app.route(
   '/app',
   updateApi({
@@ -362,6 +388,8 @@ app.route(
     restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   }),
 )
+
+void cleanupUploads()
 
 const root = new Hono()
 root.route('/', app)

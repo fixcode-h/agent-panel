@@ -27,6 +27,7 @@ let input = ''
 let appThread = ''
 let appResume = ''
 let developer = ''
+let policy = {}
 if (args[0] === 'app-server') {
   const { createInterface } = await import('node:readline')
   for await (const line of createInterface({ input: process.stdin })) {
@@ -36,6 +37,7 @@ if (args[0] === 'app-server') {
       appResume = req.params.threadId ?? ''
       appThread = appResume || randomUUID()
       developer = req.params.developerInstructions ?? ''
+      policy = { approval: req.params.approvalPolicy, sandbox: req.params.sandbox }
       console.log(JSON.stringify({ id: req.id, result: { thread: { id: appThread } } }))
     }
     if (req.method === 'turn/start') {
@@ -98,7 +100,7 @@ if (streamIn) {
 } else if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
-  const extra = kind === 'codex' ? { resume: appResume, developer } : {}
+  const extra = kind === 'codex' ? { resume: appResume, developer, ...policy } : {}
   appendFileSync(
     log,
     JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, pid: process.pid, start: Date.now() }) + '\n',
@@ -283,6 +285,7 @@ if (kind === 'claude') {
     session_id: session,
     total_cost_usd: 0.0123,
     usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 },
+    modelUsage: { sonnet: { contextWindow: 500000 }, 'haiku-small': { contextWindow: 100000 } },
   })
 } else if (kind === 'codex') {
   note('item/reasoning/summaryTextDelta', { itemId: 'r0', delta: '**规划**\n\n先看目录', summaryIndex: 0 })

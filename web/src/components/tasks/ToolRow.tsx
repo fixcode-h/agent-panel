@@ -1,13 +1,17 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, FileText, PencilLine, Search, Terminal, Wrench } from 'lucide-react'
+import { Bot, ChevronRight, FileText, Globe, PencilLine, Search, Sparkles, Terminal, Wrench } from 'lucide-react'
 import type { ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
+import { toolVerb } from '@/lib/tasks'
 
 export const toolIcon = {
   read: FileText,
   edit: PencilLine,
   run: Terminal,
   search: Search,
+  web: Globe,
+  skill: Sparkles,
+  agent: Bot,
   other: Wrench,
 }
 
@@ -117,7 +121,8 @@ function Block({ label, text, tone }: { label: string; text: string; tone?: 'dan
  */
 export function ToolRow({ tool }: { tool: ToolUse }) {
   const [open, setOpen] = useState(false)
-  const Icon = toolIcon[tool.kind]
+  const Icon = toolIcon[tool.kind] ?? Wrench
+  const verb = toolVerb(tool)
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
@@ -131,7 +136,10 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
         className="group flex w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-muted hover:text-fg"
       >
         <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
-        <span className="min-w-0 flex-1 truncate">{tool.label}</span>
+        <span className="min-w-0 flex-1 truncate">
+          {verb && <span className="mr-1.5 font-sans font-medium text-fg/80">{verb}</span>}
+          {tool.label}
+        </span>
         {diff ? (
           <span className="shrink-0">
             {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}

@@ -5,6 +5,9 @@
 import { z } from 'zod'
 import {
   Agent,
+  DEFAULT_AGENT_ID,
+  defaultAgent,
+  Attachment,
   AgentInput,
   Category,
   CategoryInput,
@@ -28,11 +31,12 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
+import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
-import { newTask } from '@shared/task'
+import { beginRun, endRun, newTask, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -134,7 +138,7 @@ function seed(): Db {
     icon: 'brain',
     categoryId: plan.id,
     cli: 'claude',
-    model: 'opus',
+    model: 'claude-opus-5-5',
     description: '理解需求、拆分任务、分派并验收结果',
     instructions:
       '你是这个项目的技术负责人。先阅读工作流文档和需求，把任务拆成可独立验证的小步骤，分派给合适的子 Agent，并在每一步完成后检查结果。',
@@ -144,7 +148,7 @@ function seed(): Db {
     icon: 'layout',
     categoryId: dev.id,
     cli: 'claude',
-    model: 'sonnet',
+    model: 'claude-sonnet-5-5',
     description: '实现 React 页面与交互，保证视觉还原',
   })
   const be = agent({
@@ -169,7 +173,7 @@ function seed(): Db {
     icon: 'shield',
     categoryId: qa.id,
     cli: 'claude',
-    model: 'haiku',
+    model: 'claude-haiku-5-5',
     description: '检查改动的正确性与风格，给出修改建议',
     enabled: false,
   })
@@ -350,12 +354,84 @@ function load(): Db {
     const raw = localStorage.getItem(KEY)
     if (raw) db = JSON.parse(raw) as Db
   } catch {}
-  return (db ??= seed())
+  db ??= seed()
+  // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
+  if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
+  return db
 }
 function persist() {
   try {
     localStorage.setItem(KEY, JSON.stringify(db))
   } catch {}
+}
+
+// ---- 设置里的「数据」：演示没有用户目录，按浏览器里存的演示数据估算占用，导入导出用同样的备份格式 ----
+const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) => Record<string, unknown>> = {
+  config: (d) => ({
+    'settings.json': d.settings ?? Settings.parse({}),
+    'config/agents.json': d.agents,
+    'config/categories.json': d.categories,
+    'config/workflows.json': d.workflows,
+    'config/project-categories.json': d.projectCategories,
+  }),
+  projects: (d) => ({ 'projects/projects.json': d.projects }),
+  tasks: (d) => ({ 'tasks/tasks.json': d.tasks ?? [] }),
+}
+const utf8ToB64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+const b64ToUtf8 = (b: string) => new TextDecoder().decode(Uint8Array.from(atob(b), (c) => c.charCodeAt(0)))
+
+function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
+  if (!action && method === 'GET') {
+    const kinds = DATA_KINDS.map((k) => {
+      if (k.id === 'uploads') {
+        const sizes = [...demoUploads.values()].map((u) => Math.floor((u.length * 3) / 4))
+        return { id: k.id, files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) }
+      }
+      if (k.id === 'cache') return { id: k.id, files: 0, bytes: 0 }
+      const files = Object.values(DEMO_DATA_FILES[k.id](d))
+      return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
+    })
+    const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0
+    return { dir: '~/.agent-panel（在线演示，数据存在浏览器里）', kinds, memory: { rss: heap, heapUsed: heap } }
+  }
+  if (action === 'reveal') fail('在线演示不能打开本机目录')
+  if (action === 'clear') {
+    const k = (body as { kind: DataKind }).kind
+    if (k === 'projects') d.projects = []
+    if (k === 'projects' || k === 'tasks') d.tasks = []
+    if (k === 'uploads') demoUploads.clear()
+    persist()
+    return { ok: true }
+  }
+  if (action === 'export') {
+    const kinds = (query.get('kinds') ?? '')
+      .split(',')
+      .filter((k): k is keyof typeof DEMO_DATA_FILES => k in DEMO_DATA_FILES)
+    if (!kinds.length) fail('请选择要导出的数据')
+    const files: Record<string, string> = {}
+    for (const k of kinds)
+      for (const [rel, v] of Object.entries(DEMO_DATA_FILES[k](d))) files[rel] = utf8ToB64(JSON.stringify(v, null, 2))
+    return { app: 'agent-panel', version: 1, exportedAt: new Date().toISOString(), kinds, files }
+  }
+  if (action === 'import') {
+    const b = body as { app?: string; kinds?: DataKind[]; files?: Record<string, string> }
+    if (b?.app !== 'agent-panel' || !b.files || !Array.isArray(b.kinds)) fail('不是 Agent 面板导出的数据文件')
+    const kinds = b.kinds ?? []
+    const files = b.files ?? {}
+    const get = (rel: string) => (files[rel] ? JSON.parse(b64ToUtf8(files[rel])) : undefined)
+    if (kinds.includes('config')) {
+      d.settings = Settings.parse(get('settings.json') ?? {})
+      d.agents = get('config/agents.json') ?? []
+      d.categories = get('config/categories.json') ?? []
+      d.workflows = get('config/workflows.json') ?? []
+      d.projectCategories = get('config/project-categories.json') ?? []
+    }
+    if (kinds.includes('projects')) d.projects = get('projects/projects.json') ?? []
+    if (kinds.includes('tasks')) d.tasks = get('tasks/tasks.json') ?? []
+    persist()
+    return { ok: true, kinds, files: Object.keys(files).length }
+  }
+  fail('不支持的操作')
 }
 
 /** 清空演示数据，恢复示例 */
@@ -464,6 +540,31 @@ function cliAction(id: string, action: CliInstallJob['action']) {
   return job
 }
 
+/** 演示上传的附件内容（data URL），刷新页面后就没了 */
+export const demoUploads = new Map<string, string>()
+
+/** 演示项目里的文件，输入 @ 时从这里找 */
+const DEMO_FILES = [
+  'package.json',
+  'README.md',
+  'vite.config.ts',
+  'src/main.tsx',
+  'src/App.tsx',
+  'src/api/cart.ts',
+  'src/api/orders.ts',
+  'src/api/products.ts',
+  'src/components/CartBadge.tsx',
+  'src/components/ProductCard.tsx',
+  'src/components/RestockButton.tsx',
+  'src/pages/Login.tsx',
+  'src/pages/OrderList.tsx',
+  'src/pages/ProductDetail.tsx',
+  'src/store/cart.ts',
+  'src/utils/date.ts',
+  'src/utils/format.ts',
+  'tests/cart.test.ts',
+]
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -536,6 +637,23 @@ function route(method: string, url: string, body: unknown): unknown {
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
     return demoAssistJob(id) ?? fail('找不到这次生成，可能已过期')
   }
+  // 附件：演示没有本机磁盘，内容留在页面内存里给缩略图用，路径是假的
+  if (res === 'uploads' && method === 'POST') {
+    const u = body as { name: string; mime: string; data: string }
+    const a: Attachment = {
+      name: u.name,
+      path: `/demo/uploads/${crypto.randomUUID()}/${u.name}`,
+      size: Math.floor((u.data.length * 3) / 4),
+      mime: u.mime,
+    }
+    demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
+    return a
+  }
+  if (res === 'data') return demoData(d, id, method, body, query)
+  if (res === 'projects' && id && sub === 'files') {
+    const q = (query.get('q') ?? '').toLowerCase()
+    return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)
+  }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'reveal') throw new Error('在线演示不能打开本机目录')
@@ -556,6 +674,7 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
+      if (id === DEFAULT_AGENT_ID) fail('默认 Agent 是自带的，不能删除')
       const used = d.workflows.filter(
         (w) =>
           w.mainAgentId === id ||
@@ -569,6 +688,7 @@ function route(method: string, url: string, body: unknown): unknown {
     const input = parse(AgentInput, body)
     if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
+    if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
     return method === 'POST' ? create('agents', input) : update('agents', id, input, 'Agent 不存在')
   }
 
@@ -655,6 +775,7 @@ function projectWorkflow(d: Db, p: Project) {
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
   const entry = { stop: false }
   live.set(task.id, entry)
+  beginRun(task)
   let last = 0
   const done = runTurn({
     task,
@@ -675,6 +796,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     },
     newId: () => `demo-${crypto.randomUUID()}`,
   }).finally(() => {
+    endRun(task)
     live.delete(task.id)
     persist()
   })
@@ -692,10 +814,10 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     ...newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
     simulated: true,
   })
-  return { task, done: startTurn(d, task, input.prompt, true, fast) }
+  return { task, done: startTurn(d, task, withAttachments(input.prompt, input.attachments), true, fast) }
 }
 
-function followUp(d: Db, task: Task, text: string, fast = false) {
+function followUp(d: Db, task: Task, text: string, fast = false, attachments: Attachment[] = []) {
   if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
   task.messages.push({
     id: `demo-${crypto.randomUUID()}`,
@@ -704,9 +826,10 @@ function followUp(d: Db, task: Task, text: string, fast = false) {
     step: '',
     text,
     tools: [],
+    ...(attachments.length ? { attachments } : {}),
     at: new Date().toISOString(),
   })
-  return startTurn(d, task, text, false, fast)
+  return startTurn(d, task, withAttachments(text, attachments), false, fast)
 }
 
 function tasksRoute(
@@ -737,7 +860,8 @@ function tasksRoute(
     return task
   }
   if (sub === 'messages') {
-    void followUp(d, task, parse(FollowUpInput, body).text)
+    const f = parse(FollowUpInput, body)
+    void followUp(d, task, f.text, false, f.attachments)
     return task
   }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
@@ -784,6 +908,8 @@ async function seedTasks(d: Db) {
     t.createdAt = shift(t.createdAt)
     t.updatedAt = shift(t.updatedAt)
     t.messages.forEach((m) => (m.at = shift(m.at)))
+    // 示例任务是瞬间跑完的，给一个像样的执行时长
+    if (t.status !== 'running') t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
   }
   if (admin) {
     const { task, done } = createTask(
@@ -794,6 +920,9 @@ async function seedTasks(d: Db) {
         workflowId: '',
         agentId: '',
         prompt: '订单导出 Excel 时，日期列整体往右错了一列',
+        attachments: [],
+        model: '',
+        effort: '',
       },
       true,
     )
@@ -809,6 +938,9 @@ async function seedTasks(d: Db) {
         workflowId: '',
         agentId: fe.id,
         prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因',
+        attachments: [],
+        model: '',
+        effort: '',
       },
       true,
     )
@@ -824,6 +956,9 @@ async function seedTasks(d: Db) {
         workflowId: '',
         agentId: '',
         prompt: '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手机号，到货时发短信通知。',
+        attachments: [],
+        model: '',
+        effort: '',
       },
       true,
     )

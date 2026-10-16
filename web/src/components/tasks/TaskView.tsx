@@ -31,6 +31,15 @@ import { TaskFlow } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
 import { RequestCard } from './RequestCard'
 import { TaskStatusIcon } from './TaskStatusIcon'
+import {
+  AttachMenu,
+  AttachmentChips,
+  MessageAttachments,
+  useAttachments,
+  useDropPaste,
+  useFileMention,
+} from './Attachments'
+import { DropHint } from './TaskComposer'
 
 type Block =
   | { kind: 'msg'; m: TaskMessage }
@@ -81,6 +90,11 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   const { go } = useNav()
   const [task, setTask] = useState<Task | null>(null)
   const [text, setText] = useState('')
+  const followTa = useRef<HTMLTextAreaElement>(null)
+  // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
+  const files = useAttachments()
+  const drop = useDropPaste(files.add)
+  const mention = useFileMention(project.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -137,12 +151,13 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
     )
 
   const send = async () => {
-    if (!text.trim() || running || sending) return
+    if (!text.trim() || running || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
-      apply(await api.sendMessage(task.id, text))
+      apply(await api.sendMessage(task.id, text, files.attachments))
       setText('')
+      files.clear()
       setTimeout(
         () =>
           api
@@ -337,7 +352,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                 }}
               />
             ) : (
-              <div className="mx-auto flex max-w-[760px] flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
+              <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
                 {blocks.map((b, bi) =>
                   b.kind === 'turn' ? (
                     <div key={b.key} className="flex flex-col gap-4">
@@ -350,11 +365,11 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                       ))}
                     </div>
                   ) : b.m.role === 'user' ? (
-                    <div
-                      key={b.m.id}
-                      className="ml-auto max-w-[85%] rounded-2xl bg-sel px-4 py-2.5 text-[14.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
-                    >
-                      {b.m.text}
+                    <div key={b.m.id} className="ml-auto flex max-w-[85%] flex-col items-end gap-2">
+                      {!!b.m.attachments?.length && <MessageAttachments items={b.m.attachments} />}
+                      <div className="rounded-2xl bg-sel px-4 py-2.5 text-[14.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
+                        {b.m.text}
+                      </div>
                     </div>
                   ) : b.m.role === 'system' ? (
                     <SystemNote key={b.m.id} text={b.m.text} className="justify-center text-center" />
@@ -382,16 +397,32 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
             <RequestCard task={task} onAnswered={apply} />
-            <div className="mx-auto max-w-[760px] rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop">
+            <div
+              {...drop.container}
+              className={cn(
+                'relative mx-auto max-w-(--content-w) rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop',
+                drop.over && 'border-accent ring-2 ring-accent/25',
+              )}
+            >
+              {mention.menu}
+              {drop.over && <DropHint />}
+              <AttachmentChips items={files.items} onRemove={files.remove} />
               <label htmlFor="follow-up" className="sr-only">
                 继续输入要求
               </label>
               <textarea
                 id="follow-up"
+                ref={followTa}
                 rows={2}
                 value={text}
-                onChange={(e) => setText(e.target.value)}
+                onChange={(e) => {
+                  setText(e.target.value)
+                  mention.sync()
+                }}
+                onSelect={mention.sync}
+                onPaste={drop.onPaste}
                 onKeyDown={(e) => {
+                  if (mention.onKeyDown(e)) return
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     send()
@@ -400,7 +431,8 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                 placeholder={running ? '执行中，完成后可以继续输入要求' : '继续输入要求'}
                 className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
               />
-              <div className="flex items-center gap-2 px-3 pb-2.5">
+              <div className="flex items-center gap-1 px-2.5 pb-2.5">
+                <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
                 <span className="min-w-0 truncate pl-1 text-xs text-subtle">
                   {running
                     ? tops.filter((s) => s.status === 'running').length > 1

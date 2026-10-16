@@ -6,7 +6,7 @@
  */
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert/strict'
@@ -46,6 +46,9 @@ for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
   execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
 }
+// 旧版本平铺的数据文件，启动时应搬进 config/
+execFileSync('mkdir', ['-p', dataDir])
+writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
 const relServer = http.createServer((req, res) => {
   const host = `http://127.0.0.1:${relServer.address().port}`
   if (req.url.startsWith('/releases')) {
@@ -267,6 +270,7 @@ try {
   assert.equal(t.usage.cacheWriteTokens, 500 * 2)
   assert.equal(t.usage.outputTokens, 120 * 2 + 300 + 80)
   assert.equal(t.usage.agents[B.id].window, 258400, 'Codex 报告的上下文窗口')
+  assert.equal(t.usage.agents[A.id].window, 500000, 'Claude Code 在 result.modelUsage 里报告的上下文窗口')
   assert.equal(t.usage.agents[B.id].context, 24300)
   assert.ok(
     Object.values(t.usage.agents).every((u) => u.tps === 0),
@@ -319,7 +323,12 @@ try {
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)
   assert.equal(c2.args[0], 'app-server', 'Codex 用 app-server 执行才有流式输出')
   assert.ok(c2.args.includes('model="gpt-5.6"'))
-  assert.ok(c2.args.includes('approval_policy="never"'))
+  assert.ok(c2.args.includes('approval_policy="on-request"'), '参数里的确认方式和 thread/start 一致')
+  assert.deepEqual(
+    [c2.approval, c2.sandbox],
+    ['on-request', 'workspace-write'],
+    '可写项目目录：沙箱内运行，越过沙箱时确认',
+  )
   assert.ok(c3.args.includes('--effort') && c3.args.includes('low'))
   assert.equal(c4.kind, 'claude')
   assert.match(c4.input, /上游节点的结果[\s\S]*### 实现[\s\S]*### 文档/)
@@ -355,6 +364,56 @@ try {
   c = calls().at(-1)
   assert.ok(c.args.includes('--resume') && c.args.includes(chat.sessions[C.id]))
   step('对话任务：直接发给选中的 Agent，继续对话会续接会话')
+
+  // ---- 自带的默认 Agent ----
+  const allAgents = await call('GET', '/agents')
+  const def = allAgents.find((x) => x.id === 'default-agent')
+  assert.ok(def && def.cli === '' && def.model === '', '自带默认 Agent，跟随默认 CLI 的默认模型')
+  assert.equal(
+    (await fetch(`${base}/agents/default-agent`, { method: 'DELETE', headers: { 'content-type': 'application/json' } }))
+      .status,
+    409,
+    '默认 Agent 不能删除',
+  )
+  const renamed = await call('PUT', '/agents/default-agent', { ...def, name: '助手', cli: 'codex', model: '@high' })
+  assert.deepEqual(
+    [renamed.name, renamed.cli, renamed.model],
+    ['助手', '', ''],
+    '默认 Agent 只能改名称这些，模型固定跟随默认',
+  )
+  await call('PUT', '/agents/default-agent', def)
+  let dc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '默认' })
+  dc = await waitDone(dc.id)
+  c = calls().at(-1)
+  assert.equal(c.kind, 'claude')
+  assert.equal(c.args[c.args.indexOf('--model') + 1], 'sonnet', '用默认 CLI 的默认模型')
+  assert.ok(dc.runMs > 0 && !dc.runStartedAt, '记下执行时间')
+  dc = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    model: 'claude-opus-5-5',
+    effort: 'high',
+    prompt: '换模型',
+  })
+  dc = await waitDone(dc.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--model') + 1], 'claude-opus-5-5', '对话时临时换的模型')
+  assert.equal(c.args[c.args.indexOf('--effort') + 1], 'high')
+  await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
+  await waitDone(dc.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--model') + 1], 'claude-opus-5-5', '继续对话也用临时换的模型')
+  const other = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: C.id,
+    model: 'x',
+    prompt: '别的',
+  })
+  assert.equal(other.model, '', '其他 Agent 不接受临时模型')
+  await waitDone(other.id)
+  step('默认 Agent：跟随默认 CLI，不能删除，对话时可以临时换模型和思考强度；任务记录执行时间')
 
   // ---- 停止 ----
   let slow = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'SLOW 慢慢来' })
@@ -625,7 +684,8 @@ try {
   assert.equal((await call('GET', '/clis')).find((x) => x.isDefault).id, 'codex')
   for (const [ag, kind, flag, model] of [
     [D, 'codex', '-c', 'model="gpt-top"'],
-    [L, 'claude', '--model', 'haiku'],
+    // Claude 设置了默认模型 sonnet，低档没填就跟随默认模型
+    [L, 'claude', '--model', 'sonnet'],
   ]) {
     let t2 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '档位' })
     t2 = await waitDone(t2.id)
@@ -641,6 +701,37 @@ try {
   let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
   t3 = await waitDone(t3.id)
   assert.ok(calls().at(-1).args.includes('model="gpt-6.1-sol"'))
+  // 跟随默认 CLI 的 Agent：默认 CLI 换成 Command Code 后跟着换，档位换成它的模型，它不支持的思考强度改用档位的
+  await call('PUT', '/agents/' + D.id, { ...D, model: '@high', effort: 'xhigh' })
+  await call('PUT', '/settings', {
+    ...settings,
+    defaultCli: 'commandcode',
+    clis: {
+      ...settings.clis,
+      commandcode: cli({ tiers: { high: { model: 'fake/pro', effort: 'high' }, medium: '', low: '' } }),
+    },
+  })
+  await waitDone(
+    (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '跟随' })).id,
+  )
+  const kf = calls().at(-1)
+  assert.equal(kf.kind, 'commandcode')
+  assert.equal(kf.args[kf.args.indexOf('-m') + 1], 'fake/pro')
+  assert.equal(kf.args[kf.args.indexOf('--effort') + 1], 'high', '不支持的思考强度改用档位的')
+  // 设置了具体的默认模型后，没填的档位跟随默认模型
+  await call('PUT', '/agents/' + D.id, { ...D, model: '@medium', effort: '' })
+  await call('PUT', '/settings', {
+    ...settings,
+    defaultCli: 'codex',
+    clis: {
+      ...settings.clis,
+      codex: cli({ defaultModel: 'gpt-def', tiers: { high: 'gpt-top', medium: '', low: '' } }),
+    },
+  })
+  t3 = await waitDone(
+    (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })).id,
+  )
+  assert.ok(calls().at(-1).args.includes('model="gpt-def"'), '空档位跟随默认模型')
   // Agent 自己的权限覆盖 CLI 设置；换了 CLI 不认的旧值时跟随设置
   await call('PUT', '/agents/' + L.id, { ...L, permission: 'plan' })
   await waitDone(
@@ -654,7 +745,114 @@ try {
   )
   pk = calls().at(-1).args
   assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'acceptEdits', 'CLI 不支持的权限跟随设置')
+  const runWith = async (ag, permission) => {
+    await call('PUT', '/agents/' + ag.id, { ...ag, permission })
+    await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '权限' })).id,
+    )
+    return calls().at(-1)
+  }
+  pk = (await runWith(L, 'default')).args
+  assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'default', '逐项确认明确传 default，不沿用 Claude 自己的设置')
+  assert.ok(pk.includes('--permission-prompt-tool'), '需要确认的操作交给面板')
+  pk = (await runWith(L, 'bypassPermissions')).args
+  assert.ok(pk.includes('--dangerously-skip-permissions') && !pk.includes('--permission-prompt-tool'), '跳过所有确认')
+  await call('PUT', '/agents/' + L.id, { ...L, permission: '' })
+  let ck = await runWith(B, 'danger-full-access')
+  assert.deepEqual([ck.approval, ck.sandbox], ['never', 'danger-full-access'], 'Codex 完全访问：不用沙箱、不确认')
+  assert.ok(ck.args.includes('approval_policy="never"') && ck.args.includes('sandbox_mode="danger-full-access"'))
+  ck = await runWith(B, 'read-only')
+  assert.deepEqual([ck.approval, ck.sandbox], ['on-request', 'read-only'], 'Codex 只读')
+  await call('PUT', '/agents/' + B.id, { ...B, permission: '' })
   await call('PUT', '/settings', settings)
+
+  // ---- 附件和 @ 引用项目文件 ----
+  const att = await call('POST', '/uploads', {
+    name: '截图.png',
+    mime: 'image/png',
+    data: Buffer.from('png!').toString('base64'),
+  })
+  assert.equal(att.size, 4)
+  assert.ok(att.path.startsWith(path.join(dataDir, 'uploads')), '附件存在数据目录里')
+  const rawRes = await fetch(`${base}/uploads/raw?path=${encodeURIComponent(att.path)}`)
+  assert.equal(rawRes.headers.get('content-type'), 'image/png')
+  assert.equal(await rawRes.text(), 'png!')
+  assert.equal(
+    (await fetch(`${base}/uploads/raw?path=${encodeURIComponent(path.join(projectDir, 'README.md'))}`)).status,
+    400,
+    '不能读附件目录以外的文件',
+  )
+  let tAtt = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: L.id,
+    prompt: '看看这张图',
+    attachments: [att],
+  })
+  tAtt = await waitDone(tAtt.id)
+  assert.deepEqual(
+    tAtt.messages[0].attachments.map((a) => a.name),
+    ['截图.png'],
+  )
+  assert.equal(tAtt.messages[0].text, '看看这张图', '附件不写进消息正文')
+  const kAtt = calls().at(-1)
+  assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
+  assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
+  assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
+  step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件')
+  // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
+  assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
+  assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
+  assert.ok(existsSync(path.join(dataDir, 'tasks/tasks.json')), '任务记录在 tasks/ 下')
+  const usage = await call('GET', '/data')
+  assert.equal(usage.dir, dataDir)
+  const kindOf = (u, k) => u.kinds.find((x) => x.id === k)
+  assert.ok(kindOf(usage, 'tasks').bytes > 0 && kindOf(usage, 'uploads').files >= 1 && usage.memory.rss > 0)
+  mkdirSync(path.join(dataDir, 'cache/junk'), { recursive: true })
+  writeFileSync(path.join(dataDir, 'cache/junk/x.bin'), 'x'.repeat(100))
+  assert.equal(kindOf(await call('GET', '/data'), 'cache').bytes, 100)
+  await call('POST', '/data/clear', { kind: 'cache' })
+  assert.equal(kindOf(await call('GET', '/data'), 'cache').files, 0, '缓存清理掉了')
+  assert.equal(
+    (
+      await fetch(`${base}/data/clear`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{"kind":"config"}',
+      })
+    ).status,
+    400,
+    '配置不能清理',
+  )
+  const backup = await call('GET', '/data/export?kinds=config,projects,tasks')
+  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/tasks.json'] && !backup.files['uploads'])
+  const agentsBefore = await call('GET', '/agents')
+  const tasksBefore = (await call('GET', '/tasks')).length
+  await call('DELETE', `/agents/${agentsBefore.at(-1).id}`).catch(() => {})
+  await call('POST', '/data/clear', { kind: 'tasks' })
+  assert.equal((await call('GET', '/tasks')).length, 0, '清理任务记录后马上生效')
+  const imported = await call('POST', '/data/import', backup)
+  assert.equal(imported.files, Object.keys(backup.files).length)
+  assert.deepEqual(
+    (await call('GET', '/agents')).map((a) => a.id),
+    agentsBefore.map((a) => a.id),
+    '导入后 Agent 恢复',
+  )
+  assert.equal((await call('GET', '/tasks')).length, tasksBefore, '导入后任务记录恢复')
+  const evil = { ...backup, kinds: ['tasks'], files: { '../escape.json': 'e30=' } }
+  assert.equal(
+    (
+      await fetch(`${base}/data/import`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(evil),
+      })
+    ).status,
+    400,
+    '不能写到数据目录外',
+  )
+  assert.ok(!existsSync(path.join(tmp, 'escape.json')))
+  step('数据目录：旧文件迁移、占用统计、清理、导出导入')
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {
     name: '旧格式',
@@ -856,7 +1054,8 @@ try {
   assert.equal(mm.models[0].isDefault, true)
   const cl = await call('GET', '/clis/claude/models')
   assert.equal(cl.source, 'builtin')
-  assert.ok(cl.models.some((m) => m.id === 'opus'))
+  assert.ok(cl.models.some((m) => m.id === 'claude-opus-5-5'))
+  assert.ok(!cl.models.some((m) => m.id === 'opus'), '不列别名')
   step('从本机 CLI 读取模型列表：Codex 走 app-server，Command Code 走 --list-models')
 
   // 目录浏览带上快速入口（Windows 上是各个盘符）
