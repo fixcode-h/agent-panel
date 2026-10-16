@@ -69,7 +69,6 @@ export const EN_SHARED: Record<string, string> = {
   // settings.ts
   'CLI 默认': 'CLI default',
   '{tier}档 · {model}': '{tier} tier · {model}',
-  '默认 · {model}': 'Default · {model}',
 
   // schema.ts
   名称不能为空: 'Name is required',

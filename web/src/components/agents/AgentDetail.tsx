@@ -252,13 +252,14 @@ export function AgentDetail({
             <FormSection title={t('运行环境')}>
               {builtin ? (
                 <p className="rounded-lg border bg-field px-3 py-2.5 text-[13px] leading-relaxed text-muted">
-                  {t('自带的默认 Agent 固定使用默认 CLI（现在是 {cli}）的默认模型', {
-                    cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
-                  })}
-                  <span className="mx-1 font-mono text-fg">{usedModel || t('自动')}</span>
-                  {t('和思考强度')}
-                  <span className="mx-1 font-mono text-fg">{defEffort || t('自动')}</span>
-                  {t('，在设置里换默认 CLI 或默认模型时跟着变。对话时可以在输入框旁边临时换模型和思考强度。')}
+                  {t(
+                    '自带的默认 Agent 固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
+                    {
+                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                      model: usedModel || t('自动'),
+                      effort: defEffort || t('自动'),
+                    },
+                  )}
                 </p>
               ) : (
                 <>

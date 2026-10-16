@@ -49,11 +49,8 @@ export const EN_AGENTS: Record<string, string> = {
   一句话说明它擅长什么: 'One line on what it’s good at',
   图标: 'Icon',
   运行环境: 'Runtime',
-  '自带的默认 Agent 固定使用默认 CLI（现在是 {cli}）的默认模型':
-    'The built-in default Agent always uses the default CLI ({cli} for now) with its default model',
-  和思考强度: 'and effort',
-  '，在设置里换默认 CLI 或默认模型时跟着变。对话时可以在输入框旁边临时换模型和思考强度。':
-    '. They follow the default CLI and model in Settings. In a chat, you can switch model and effort for the moment next to the input box.',
+  '自带的默认 Agent 固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。':
+    'The built-in default Agent always uses the default CLI with its default model and effort, currently {cli} · {model} · {effort}. They follow the default CLI and model in Settings. In a chat, you can switch model and effort for the moment next to the input box.',
   '跟随默认 CLI（现在是 {cli}）': 'Follow the default CLI ({cli} for now)',
   '在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。':
     'When the default CLI changes in Settings, this Agent switches too, using the same tier’s model on the new CLI. Uncheck to pin a specific CLI.',

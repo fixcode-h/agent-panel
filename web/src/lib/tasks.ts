@@ -1,4 +1,4 @@
-import type { Agent, Task, TaskStatus, TaskStep, ToolUse, Workflow } from '@shared/schema'
+import type { Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 
@@ -17,60 +17,6 @@ export function timeAgo(iso: string, now = Date.now()) {
   if (s < 86400) return t('{n} 小时前', { n: Math.floor(s / 3600) })
   if (s < 86400 * 30) return t('{n} 天前', { n: Math.floor(s / 86400) })
   return new Date(iso).toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN')
-}
-
-/** 粗略估算 token：中日韩字符约 1 个，其他字符约 4 个一个 */
-export function estimateTokens(text: string) {
-  const cjk = (text.match(/[\u3000-\u9fff\uff00-\uffef]/g) ?? []).length
-  return Math.ceil(cjk + (text.length - cjk) / 4)
-}
-
-/** 每次读文件、跑命令带回的内容，按经验值估算 */
-const TOOL_TOKENS: Record<ToolUse['kind'], number> = {
-  read: 1800,
-  search: 600,
-  run: 900,
-  edit: 400,
-  web: 1500,
-  skill: 1200,
-  agent: 800,
-  other: 300,
-}
-
-export interface ContextPart {
-  key: string
-  label: string
-  tokens: number
-  color: string
-}
-
-/** 上下文占用估算。真实执行接入后改为读取 CLI 返回的用量 */
-export function contextUsage(task: Task, workflow: Workflow | undefined, agents: Agent[]) {
-  const team = task.mode === 'chat' ? [task.agentId] : [...new Set(task.steps.map((s) => s.agentId))]
-  const byId = new Map(agents.map((a) => [a.id, a]))
-  const parts: ContextPart[] = [
-    { key: 'doc', label: t('工作流文档'), tokens: estimateTokens(workflow?.document ?? ''), color: 'var(--accent)' },
-    {
-      key: 'role',
-      label: t('角色设定'),
-      tokens: team.reduce((n, id) => n + estimateTokens(byId.get(id)?.instructions ?? ''), 0),
-      color: '#3b82f6',
-    },
-    {
-      key: 'msg',
-      label: t('对话消息'),
-      tokens: task.messages.reduce((n, m) => n + estimateTokens(m.text), 0),
-      color: '#10b981',
-    },
-    {
-      key: 'tool',
-      label: t('工具结果'),
-      tokens: task.messages.reduce((n, m) => n + m.tools.reduce((k, t) => k + TOOL_TOKENS[t.kind], 0), 0),
-      color: '#f59e0b',
-    },
-  ]
-  const used = parts.reduce((n, p) => n + p.tokens, 0)
-  return { parts, used, window: 200_000 }
 }
 
 export const fmtTokens = (n: number) =>
@@ -137,6 +83,10 @@ export function toolVerb(tool: ToolUse) {
 export function currentActivity(a: ReturnType<typeof stepActivity>) {
   if (a.last?.text.trim()) return t('正在输出：{text}', { text: plainLine(a.last.text, true) })
   if (a.lastTool) return `${toolVerb(a.lastTool)} ${a.lastTool.label}`.trim()
+  // 开着思考的模型先想很久才出正文，这时显示想到哪了，免得一直停在「正在启动」
+  const thinking = a.last?.thinking ? plainLine(a.last.thinking, true) : ''
+  if (thinking) return t('正在思考：{text}', { text: thinking })
+  if (a.last) return t('正在思考…')
   return t('正在启动 CLI…')
 }
 

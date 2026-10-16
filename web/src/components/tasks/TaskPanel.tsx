@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { ChevronDown, FolderOpen, GitBranch, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Project, Task, TaskTodo, Workflow } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { cacheRate, contextUsage, fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
+import { cacheRate, fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
@@ -87,8 +87,6 @@ export function TaskPanel({
   const byId = new Map(agents.map((a) => [a.id, a]))
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
-  const ctx = contextUsage(task, workflow, agents)
-  const pct = (n: number) => (n / ctx.window) * 100
   const add = task.changes.reduce((n, c) => n + c.add, 0)
   const del = task.changes.reduce((n, c) => n + c.del, 0)
   const chatAgent = byId.get(task.agentId)
@@ -208,86 +206,51 @@ export function TaskPanel({
       {only !== 'progress' && (
         <>
           <CommandSection task={task} />
-          {task.simulated ? (
-            <Section title={t('上下文')} extra={t('估算')}>
-              <div className="mb-1.5 flex items-baseline justify-between text-xs">
-                <span className="font-medium text-fg">{t('已使用 {n}%', { n: pct(ctx.used).toFixed(1) })}</span>
-                <span className="font-mono text-subtle">
-                  {fmtTokens(ctx.used)} / {fmtTokens(ctx.window)}
-                </span>
-              </div>
-              <div
-                className="flex h-1.5 overflow-hidden rounded-full bg-field"
-                role="img"
-                aria-label={t('上下文已使用 {n}%', { n: pct(ctx.used).toFixed(1) })}
-              >
-                {ctx.parts.map((p) => (
-                  <span key={p.key} style={{ width: `${pct(p.tokens)}%`, background: p.color }} />
-                ))}
-              </div>
-              <ul className="mt-2.5 flex flex-col gap-1.5 text-xs">
-                {ctx.parts.map((p) => (
-                  <li key={p.key} className="flex items-center gap-2 text-muted">
-                    <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
-                    <span className="flex-1">{p.label}</span>
-                    <span className="font-mono text-subtle">{fmtTokens(p.tokens)}</span>
-                    <span className="w-12 text-right font-mono">{pct(p.tokens).toFixed(1)}%</span>
-                  </li>
-                ))}
-                <li className="flex items-center gap-2 text-subtle">
-                  <span className="h-2 w-2 shrink-0 rounded-[2px] bg-field ring-1 ring-line-strong" />
-                  <span className="flex-1">{t('剩余')}</span>
-                  <span className="font-mono">{fmtTokens(ctx.window - ctx.used)}</span>
-                  <span className="w-12 text-right font-mono">{pct(ctx.window - ctx.used).toFixed(1)}%</span>
-                </li>
-              </ul>
-            </Section>
-          ) : (
-            <Section title={t('上下文')} extra={t('CLI 报告')}>
-              {Object.keys(task.usage.agents).length === 0 ? (
-                <p className="text-xs text-subtle">{t('CLI 开始运行后会显示上下文占用。')}</p>
-              ) : (
-                <ul className="flex flex-col gap-3">
-                  {Object.entries(task.usage.agents).map(([id, u]) => {
-                    const a = byId.get(id)
-                    const p = Math.min(100, (u.context / u.window) * 100)
-                    return (
-                      <li key={id} className="flex flex-col gap-1.5">
-                        <div className="flex items-center gap-2 text-xs">
-                          {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
-                          <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? t('已删除的 Agent')}</span>
-                          <span className="font-mono text-subtle">
-                            {fmtTokens(u.context)} / {fmtTokens(u.window)}
-                          </span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-field">
-                          <span
-                            className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
-                            style={{ width: `${Math.max(p, 1)}%` }}
-                          />
-                        </div>
-                        <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
-                          <span>
-                            {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
-                          </span>
-                          {u.tps > 0 ? (
-                            <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
-                          ) : (
-                            u.genMs > 3000 &&
-                            u.outputTokens > 0 && (
-                              <span title={t('输出 token ÷ 生成用时')}>
-                                · {t('平均 {n} token/s', { n: ((u.outputTokens / u.genMs) * 1000).toFixed(1) })}
-                              </span>
-                            )
-                          )}
+          {/* 演示里的模拟执行也写每个 Agent 的用量，和真实执行用同一个视图 */}
+          <Section title={t('上下文')} extra={task.simulated ? t('模拟') : t('CLI 报告')}>
+            {Object.keys(task.usage.agents).length === 0 ? (
+              <p className="text-xs text-subtle">{t('CLI 开始运行后会显示上下文占用。')}</p>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {Object.entries(task.usage.agents).map(([id, u]) => {
+                  const a = byId.get(id)
+                  const p = Math.min(100, (u.context / u.window) * 100)
+                  return (
+                    <li key={id} className="flex flex-col gap-1.5">
+                      <div className="flex items-center gap-2 text-xs">
+                        {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
+                        <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? t('已删除的 Agent')}</span>
+                        <span className="font-mono text-subtle">
+                          {fmtTokens(u.context)} / {fmtTokens(u.window)}
                         </span>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-            </Section>
-          )}
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-field">
+                        <span
+                          className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
+                          style={{ width: `${Math.max(p, 1)}%` }}
+                        />
+                      </div>
+                      <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
+                        <span>
+                          {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
+                        </span>
+                        {u.tps > 0 ? (
+                          <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
+                        ) : (
+                          u.genMs > 3000 &&
+                          u.outputTokens > 0 && (
+                            <span title={t('输出 token ÷ 生成用时')}>
+                              · {t('平均 {n} token/s', { n: ((u.outputTokens / u.genMs) * 1000).toFixed(1) })}
+                            </span>
+                          )
+                        )}
+                      </span>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+          </Section>
 
           {!task.simulated || task.usage.inputTokens > 0 ? <TokenUsage task={task} /> : null}
 

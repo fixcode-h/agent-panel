@@ -1,5 +1,5 @@
 import { shortVersion } from './cli-style'
-import type { Agent, CliStatus, DirInfo, Workflow } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Agent, type CliStatus, type DirInfo, type Workflow } from '@shared/schema'
 import { entryFlow, findRefCycle, flowLabel, getFlow, reachable, refsOf, topoOrder } from '@shared/flow'
 import { t } from '@shared/i18n'
 
@@ -32,7 +32,8 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
             : t('没有找到 {cmd}，安装后或在设置里填写路径', { cmd: cli.command }),
     },
     { ok: a.enabled, label: t('已启用'), hint: a.enabled ? t('可以被工作流调用') : t('停用后工作流不会调用它') },
-    {
+    // 自带的默认 Agent 固定跟随默认 CLI 的默认模型，不能指定，这一项对它没有意义
+    a.id !== DEFAULT_AGENT_ID && {
       ok: !!a.model,
       label: t('已指定模型或档位'),
       hint: a.model.startsWith('@') ? t('按设置里的档位选择模型') : a.model || t('留空会使用设置里的默认模型'),
@@ -44,7 +45,7 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
       hint: instr ? t('共 {n} 字', { n: instr.length }) : t('建议写清楚它的职责和交付标准'),
       optional: true,
     },
-  ]
+  ].filter((c): c is Check => !!c)
 }
 
 export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], workflows: Workflow[] = []): Check[] {

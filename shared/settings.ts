@@ -85,5 +85,6 @@ export function modelText(a: { cli: string; model: string; effort?: string }, se
     ? t('{tier}档 · {model}', { tier: tier.label, model: m })
     : a.model
       ? m
-      : t('默认 · {model}', { model: m })
+      : // 没选模型：直接写实际用的模型，CLI 名后面已经标了（默认），这里不再重复「默认」
+        r.model || t('默认模型')
 }
