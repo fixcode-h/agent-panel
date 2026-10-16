@@ -1691,6 +1691,31 @@ try {
   assert.equal(await raw('GET', '/projects', { origin: 'http://localhost:5173' }), 200, '本机页面可以访问')
   step('只接受本机页面的请求：拦下外部 Host、外部 Origin 和非 JSON 的写请求')
 
+  // ---- 访问令牌 ----
+  {
+    const token = readFileSync(path.join(dataDir, 'access-token'), 'utf8').trim()
+    const json = { 'content-type': 'application/json' }
+    const cur = await call('GET', '/settings')
+    const on = await fetch(base + '/settings', {
+      method: 'PUT',
+      headers: json,
+      body: JSON.stringify({ ...cur, requireToken: true }),
+    })
+    const cookie = (on.headers.get('set-cookie') ?? '').split(';')[0]
+    assert.equal(cookie, `agent_panel_token=${token}`, '打开令牌的浏览器拿到 Cookie')
+    assert.equal((await fetch(base + '/projects')).status, 401, '没带令牌被拒绝')
+    assert.equal((await fetch(base + '/projects', { headers: { cookie } })).status, 200)
+    // 带令牌的地址：发 Cookie 后跳到去掉令牌的地址
+    const r = await fetch(base.replace('/api', '') + `/tasks?token=${token}&x=1`, { redirect: 'manual' })
+    assert.equal(r.status, 302)
+    assert.equal(r.headers.get('location'), '/tasks?x=1')
+    assert.match(r.headers.get('set-cookie') ?? '', /agent_panel_token=/)
+    assert.equal((await fetch(base.replace('/api', '') + '/?token=wrong', { redirect: 'manual' })).status, 401)
+    await fetch(base + '/settings', { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify(cur) })
+    assert.equal((await fetch(base + '/projects')).status, 200, '关掉后不再要求')
+  }
+  step('访问令牌：打开后没带令牌的请求被拒绝，用带令牌的地址打开的浏览器拿到 Cookie')
+
   // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
   {
     const trayPort = port + 1
@@ -1710,7 +1735,7 @@ try {
     child.stdout.on('data', (d) => (out += d))
     const exited = new Promise((r) => child.on('exit', (code) => r(code)))
     for (let i = 0; i < 100 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
-    assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}`), '托盘模式输出地址')
+    assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}/?token=`), '托盘模式输出带令牌的地址')
     // 退出时还有 CLI 在跑：要一起停掉，不能留在后台继续改项目
     const n = calls().length
     await fetch(`http://127.0.0.1:${trayPort}/api/tasks`, {

@@ -219,7 +219,9 @@ class Tray : ApplicationContext
     {
         url = u;
         openItem.Enabled = true;
-        string text = "Agent 面板 · " + u;
+        // 地址里带着访问令牌，提示文字里不显示
+        int q = u.IndexOf('?');
+        string text = "Agent 面板 · " + (q >= 0 ? u.Substring(0, q) : u);
         icon.Text = text.Length > 63 ? text.Substring(0, 63) : text;
         try { File.WriteAllText(Path.Combine(dir, ".agent-panel-url"), u); } catch { }
     }

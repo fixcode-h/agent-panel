@@ -248,4 +248,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
     'Restores the program files from before the update and restarts. Your data is kept, and you can switch back to the current version later.',
   回到上一个版本: 'Go back',
+  访问令牌: 'Access token',
+  '打开后，只有用启动时显示的地址（带 token）打开过的浏览器能访问面板，本机的其他程序不能直接调用接口。这个浏览器会自动获得授权。':
+    "When on, only browsers that opened the address shown at startup (with the token) can use the panel, and other programs on this computer can't call the API directly. This browser is authorized automatically.",
 }

@@ -738,6 +738,7 @@ function SettingsBody({
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
+  const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [language, setLanguage] = useState(initial.language)
   const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
@@ -802,6 +803,7 @@ function SettingsBody({
   const tier = (x: { model: string; effort: string }) => ({ model: x.model.trim(), effort: x.effort })
   const value: Settings = {
     openBrowser,
+    requireToken,
     contentWidth,
     language,
     cliOrder,
@@ -1073,6 +1075,16 @@ function SettingsBody({
                   desc={t('启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。')}
                 >
                   <Switch aria-label={t('启动后打开浏览器')} checked={openBrowser} onCheckedChange={setOpenBrowser} />
+                </Row>
+              )}
+              {!demo && (
+                <Row
+                  title={t('访问令牌')}
+                  desc={t(
+                    '打开后，只有用启动时显示的地址（带 token）打开过的浏览器能访问面板，本机的其他程序不能直接调用接口。这个浏览器会自动获得授权。',
+                  )}
+                >
+                  <Switch aria-label={t('访问令牌')} checked={requireToken} onCheckedChange={setRequireToken} />
                 </Row>
               )}
               <Row

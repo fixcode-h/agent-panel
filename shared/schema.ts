@@ -655,6 +655,8 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
+  /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
+  requireToken: z.boolean().default(false),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
   /** 最宽 1280：再宽两边的任务进度、右栏会被挤得太窄；以前存的更大的值收到上限 */
   contentWidth: z

@@ -36,6 +36,7 @@ import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
+import { grantCookie, tokenGuard, withToken } from './auth.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -183,6 +184,8 @@ app.put('/settings', async (c) => {
   if (!p.success) return bad(c, z.prettifyError(p.error))
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
   invalidateClis()
+  // 打开访问令牌的是这个浏览器：先给它发 Cookie，免得刚打开就把自己关在外面
+  if (p.data.requireToken) grantCookie(c)
   return c.json(await saveSettings(p.data))
 })
 
@@ -412,6 +415,7 @@ app.route(
 void tasks.cleanupUploads()
 
 const root = new Hono()
+root.use('*', tokenGuard)
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
 const prod = process.env.NODE_ENV === 'production' || process.argv.includes('--prod')
@@ -430,7 +434,8 @@ const tray = !!process.env.AGENT_PANEL_TRAY
 delete process.env.AGENT_PANEL_RESTARTED
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
-  const url = `http://127.0.0.1:${port}`
+  // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问
+  const url = withToken(`http://127.0.0.1:${port}`)
   console.log(`Agent 面板服务已启动: ${url}`)
   const open = prod && !restarted && (await getSettings()).openBrowser
   if (tray) {

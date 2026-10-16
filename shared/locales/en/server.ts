@@ -263,4 +263,9 @@ export const EN_SERVER: Record<string, string> = {
   '从源码运行时请用 git 切换版本': 'When running from source, use git to switch versions',
   没有可以退回的版本: 'No previous version to go back to',
   '退回失败：{error}': 'Failed to go back: {error}',
+  '需要访问令牌：请用启动时显示的地址打开面板':
+    'Access token required: open the panel from the address shown at startup',
+  需要访问令牌: 'Access token required',
+  '这个面板打开了访问令牌。Windows 上右键托盘图标选「打开面板」；其他系统请打开终端里显示的带 token 的地址。':
+    'This panel requires an access token. On Windows, right-click the tray icon and choose Open panel; elsewhere, open the address with the token shown in the terminal.',
 }
