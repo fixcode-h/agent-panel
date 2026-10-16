@@ -4,7 +4,7 @@
 
 ## 项目
 
-本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex CLI、Command Code），按工作流的流程图执行。
+本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex、Command Code），按工作流的流程图执行。
 
 - 全部 TypeScript：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），服务端 `server/`（Hono，只监听 127.0.0.1），
   前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。不用 Python。

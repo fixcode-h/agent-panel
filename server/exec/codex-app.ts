@@ -1,6 +1,6 @@
 import path from 'node:path'
 import type { BuildOptions } from '../../shared/clis.ts'
-import { codexUsage, oneLine, type CliEvent } from './parsers.ts'
+import { clipDetail, codexUsage, oneLine, toolText, type CliEvent } from './parsers.ts'
 
 /**
  * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行：`codex exec --json` 只在每一项完成时输出整段文字，
@@ -8,7 +8,7 @@ import { codexUsage, oneLine, type CliEvent } from './parsers.ts'
  *
  * 流程：initialize → thread/start（续接时 thread/resume）→ turn/start → 收通知直到 turn/completed，然后关掉 stdin 让它退出。
  */
-export function codexAppSession(o: BuildOptions & { cwd: string; input: string }) {
+export function codexAppSession(o: BuildOptions & { cwd: string; input: string; platform?: string }) {
   let io: { write: (s: string) => void; end: () => void } | undefined
   let thread = ''
   let finished = false
@@ -37,11 +37,37 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string }
     return [{ type: 'result', ok, error }]
   }
 
+  const startThread = () => {
+    if (o.resume) send({ id: 2, method: 'thread/resume', params: { threadId: o.resume, ...overrides } })
+    else send({ id: 2, method: 'thread/start', params: overrides })
+  }
+  // Windows 上沙箱要先初始化一次（Codex 自己的界面会弹提示），没初始化时每条命令都报 helper_unknown_error
+  const needsWinSandbox = (o.platform ?? process.platform) === 'win32' && sandbox !== 'danger-full-access'
+  const sandboxFailed = (why: string): CliEvent[] => [
+    {
+      type: 'error',
+      message: `Codex 的 Windows 沙箱初始化失败（${why}），命令和改文件都无法执行。可以在终端里运行一次 codex 按提示完成沙箱设置，或在设置里把 Codex 的权限改成「完全访问」。`,
+    },
+    ...finish(false),
+  ]
+
   function onResponse(m: any): CliEvent[] {
     if (m.id === 1) {
       send({ method: 'initialized' })
-      if (o.resume) send({ id: 2, method: 'thread/resume', params: { threadId: o.resume, ...overrides } })
-      else send({ id: 2, method: 'thread/start', params: overrides })
+      if (needsWinSandbox) send({ id: 10, method: 'windowsSandbox/readiness', params: {} })
+      else startThread()
+      return []
+    }
+    if (m.id === 10) {
+      // 旧版本没有这个接口，直接开始
+      if (m.error || m.result?.status === 'ready') startThread()
+      // 用不需要管理员权限的方式初始化，不会弹出系统授权框；完成后会收到 windowsSandbox/setupCompleted
+      else send({ id: 11, method: 'windowsSandbox/setupStart', params: { mode: 'unelevated', cwd: o.cwd } })
+      return []
+    }
+    if (m.id === 11) {
+      if (m.error) return sandboxFailed(String(m.error.message ?? '未知错误'))
+      if (m.result?.started === false) startThread()
       return []
     }
     if (m.id === 2) {
@@ -92,13 +118,18 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string }
       }
       case 'commandExecution': {
         const code = item.exitCode
+        const cmd = unwrapShell(item.command)
+        const failed = item.status === 'failed' || item.status === 'declined' || (code !== null && code !== 0)
         return [
           {
             type: 'tool',
             tool: {
               kind: 'run',
-              label: oneLine(unwrapShell(item.command)),
+              label: oneLine(cmd),
               detail: item.status === 'declined' ? '被拒绝' : code ? `退出码 ${code}` : '',
+              input: clipDetail(cmd),
+              output: item.aggregatedOutput ? clipDetail(String(item.aggregatedOutput)) : undefined,
+              failed: failed || undefined,
             },
           },
         ]
@@ -110,16 +141,48 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string }
           const kind = { add: '新建', delete: '删除', update: '修改' }[c.kind?.type as string] ?? ''
           return {
             type: 'tool',
-            tool: { kind: 'edit', label: p, detail: add || del ? `+${add} -${del}` : kind },
+            tool: {
+              kind: 'edit',
+              label: p,
+              detail: add || del ? `+${add} -${del}` : kind,
+              input: c.diff ? clipDetail(String(c.diff)) : undefined,
+              failed: item.status === 'failed' || item.status === 'declined' || undefined,
+            },
             file: { path: p, add, del },
           }
         })
       case 'mcpToolCall':
         return [
-          { type: 'tool', tool: { kind: 'other', label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`, detail: '' } },
+          {
+            type: 'tool',
+            tool: {
+              kind: 'other',
+              label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`,
+              detail: item.error ? '失败' : '',
+              input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
+              output: item.error
+                ? clipDetail(toolText(item.error.message ?? item.error))
+                : item.result
+                  ? clipDetail(toolText(item.result.content ?? item.result))
+                  : undefined,
+              failed: !!item.error || undefined,
+            },
+          },
         ]
       case 'dynamicToolCall':
-        return [{ type: 'tool', tool: { kind: 'other', label: String(item.tool ?? '工具'), detail: '' } }]
+        return [
+          {
+            type: 'tool',
+            tool: {
+              kind: 'other',
+              label: String(item.tool ?? '工具'),
+              detail: '',
+              input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
+              output: item.contentItems ? clipDetail(toolText(item.contentItems)) : undefined,
+              failed: item.success === false || undefined,
+            },
+          },
+        ]
       case 'webSearch':
         return [{ type: 'tool', tool: { kind: 'search', label: `网页搜索 ${item.query ?? ''}`.trim(), detail: '' } }]
       case 'imageView':
@@ -144,6 +207,11 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string }
   function onNotification(m: any): CliEvent[] {
     const p = m.params ?? {}
     switch (m.method) {
+      case 'windowsSandbox/setupCompleted':
+        if (thread || finished) return []
+        if (m.params?.success === false) return sandboxFailed(String(m.params?.error ?? '未知错误'))
+        startThread()
+        return []
       case 'item/started':
         // 新的一段回复开始，之前的段落要和它分开
         if (p.item?.type === 'agentMessage' && textSeen) return [{ type: 'text_delta', text: '\n\n' }]
@@ -233,10 +301,26 @@ function diffStat(diff: unknown) {
   return { add, del }
 }
 
-function unwrapShell(cmd: unknown) {
-  const s = Array.isArray(cmd) ? cmd.join(' ') : String(cmd ?? '')
-  const m = s.match(/^(?:\/bin\/)?(?:ba|z)?sh -l?c ['"]?([\s\S]*?)['"]?$/)
-  return m ? m[1] : s
+/**
+ * 去掉外面包的一层 shell，只留真正的命令：bash -lc '…'、Windows 上的 "…\\cmd.exe" /c "…"、
+ * "…\\powershell.exe" -Command '…'（可能套好几层）
+ */
+export function unwrapShell(cmd: unknown) {
+  let s = (Array.isArray(cmd) ? cmd.join(' ') : String(cmd ?? '')).trim()
+  const shells = [
+    /^(?:\/bin\/|\/usr\/bin\/)?(?:ba|z)?sh\s+-l?c\s+([\s\S]+)$/,
+    /^"?(?:[^"\s]*[\\/])?cmd(?:\.exe)?"?\s+\/[cCkK]\s+([\s\S]+)$/i,
+    /^"?(?:[^"\s]*[\\/])?(?:powershell|pwsh)(?:\.exe)?"?(?:\s+-(?:NoProfile|NonInteractive|NoLogo|ExecutionPolicy\s+\S+))*\s+-(?:Command|c)\s+([\s\S]+)$/i,
+  ]
+  for (let i = 0; i < 5; i++) {
+    const m = shells.map((r) => s.match(r)).find(Boolean)
+    if (!m) break
+    s = m[1].trim()
+    // 去掉整体包着的一层引号
+    if (s.length > 1 && (s[0] === '"' || s[0] === "'") && s.endsWith(s[0])) s = s.slice(1, -1)
+  }
+  // 命令里的路径在 JSON 里转义成了 \\，显示时还原
+  return s.replace(/\\\\/g, '\\')
 }
 
 function rel(cwd: string, p: unknown) {

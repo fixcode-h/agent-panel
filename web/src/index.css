@@ -24,6 +24,17 @@
   --danger: #bf3b2c;
   --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
+  --code-bg: #f7f6f1;
+  --code-chip: #f1efe8;
+  --code-chip-fg: #a83f22;
+  --hl-comment: #8a877d;
+  --hl-keyword: #a626a4;
+  --hl-string: #3f7f3a;
+  --hl-number: #b4560f;
+  --hl-func: #2f63c0;
+  --hl-type: #a06a00;
+  --hl-attr: #b0412f;
+  --hl-tag: #c2412d;
 }
 .dark {
   color-scheme: dark;
@@ -46,6 +57,17 @@
   --danger: #ec7a64;
   --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
   --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
+  --code-bg: #1f1f1d;
+  --code-chip: #353532;
+  --code-chip-fg: #f0a08a;
+  --hl-comment: #7f7d75;
+  --hl-keyword: #c792ea;
+  --hl-string: #a5d28a;
+  --hl-number: #f0a868;
+  --hl-func: #82aaff;
+  --hl-type: #e5c07b;
+  --hl-attr: #f07f6c;
+  --hl-tag: #f07f6c;
 }
 
 @theme inline {
@@ -130,16 +152,90 @@ body,
 
 /* 任务对话里 Agent 的回复：正文用主文字色，段距更紧 */
 .chat-md { @apply text-[14px] leading-[1.75] text-fg; }
-.chat-md p { @apply my-1.5 first:mt-0 last:mb-0; }
-.chat-md ul { @apply my-1.5 list-disc pl-5; }
-.chat-md ol { @apply my-1.5 list-decimal pl-5; }
-.chat-md li { @apply my-0.5; }
+.chat-md > * { @apply my-2.5 first:mt-0 last:mb-0; }
+.chat-md p { @apply my-2 first:mt-0 last:mb-0; }
+.chat-md h1 { @apply mt-5 mb-2 text-[18px] leading-snug font-semibold; }
+.chat-md h2 { @apply mt-5 mb-2 text-[16px] leading-snug font-semibold; }
+.chat-md h3 { @apply mt-4 mb-1.5 text-[14.5px] font-semibold; }
+.chat-md h4,
+.chat-md h5,
+.chat-md h6 { @apply mt-3 mb-1 text-[14px] font-semibold text-muted; }
+.chat-md ul { @apply my-2 list-disc pl-5; }
+.chat-md ol { @apply my-2 list-decimal pl-5; }
+.chat-md li { @apply my-1 pl-0.5 marker:text-subtle; }
+.chat-md li > ul,
+.chat-md li > ol { @apply my-1; }
 .chat-md strong { @apply font-semibold; }
-.chat-md code { @apply rounded bg-field px-1 py-0.5 font-mono text-[12.5px]; }
-.chat-md pre { @apply my-2 overflow-x-auto rounded-lg border bg-field p-3; }
-.chat-md pre code { @apply bg-transparent p-0; }
+.chat-md a { @apply text-accent underline decoration-accent/40 underline-offset-2 hover:decoration-accent; }
+.chat-md hr { @apply my-4 border-line; }
+.chat-md blockquote { @apply border-l-[3px] border-line-strong pl-3.5 text-muted; }
+.chat-md img { @apply max-w-full rounded-lg; }
+/* 行内代码：和 Claude Code 一样是带细边框的小标签 */
+.chat-md :not(pre) > code {
+  @apply rounded-[5px] border px-[5px] py-px font-mono text-[12.5px];
+  background: var(--code-chip);
+  color: var(--code-chip-fg);
+}
+/* 代码块：一张卡片，顶部语言名和复制按钮 */
+.chat-md .md-code { @apply my-3 overflow-hidden rounded-xl border; background: var(--code-bg); }
+.chat-md .md-code-bar {
+  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[11.5px] text-subtle;
+}
+.chat-md .md-copy { @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[11.5px] text-subtle hover:bg-sel hover:text-fg; }
+.chat-md pre { @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[12.5px] leading-[1.65]; }
+.chat-md pre code { @apply whitespace-pre [overflow-wrap:normal]; }
+.chat-md > pre { @apply my-3 rounded-xl border; background: var(--code-bg); }
+/* mermaid：图居中，源码收在下面 */
+.chat-md .md-mermaid { @apply my-3 overflow-hidden rounded-xl border; background: var(--code-bg); }
+.chat-md .md-mermaid-svg { @apply flex justify-center overflow-x-auto p-4; }
+.chat-md .md-mermaid-svg svg { @apply h-auto max-w-full; }
+.chat-md .md-mermaid details { @apply border-t; }
+.chat-md .md-mermaid summary { @apply cursor-pointer px-3.5 py-1.5 text-[12px] text-subtle select-none hover:text-fg; }
+.chat-md .md-mermaid details pre { @apply border-t; }
+/* 表格：细线、表头加粗，太宽时横向滚动 */
+.chat-md table { @apply my-3 block w-max max-w-full overflow-x-auto border-collapse text-[13px]; }
+.chat-md th { @apply border-b border-line-strong px-3 py-1.5 text-left font-semibold; }
+.chat-md td { @apply border-b px-3 py-1.5 align-top; }
+.chat-md tr:last-child td { @apply border-b-0; }
+.chat-md input[type='checkbox'] { @apply mr-1.5 align-[-2px] accent-accent; }
 .chat-md .mention { @apply rounded-md bg-accent-soft px-1 py-px text-[13px] font-medium text-accent; }
 .chat-md .mention.unknown { @apply bg-warning/15 text-warning; }
+
+/* 代码高亮配色（两套主题各一份，颜色在 :root / .dark 的变量里） */
+.hljs-comment,
+.hljs-quote { color: var(--hl-comment); font-style: italic; }
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-doctag,
+.hljs-meta .hljs-keyword { color: var(--hl-keyword); }
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-meta .hljs-string { color: var(--hl-string); }
+.hljs-number,
+.hljs-literal,
+.hljs-symbol,
+.hljs-bullet { color: var(--hl-number); }
+.hljs-title,
+.hljs-title.function_,
+.hljs-section { color: var(--hl-func); }
+.hljs-type,
+.hljs-title.class_,
+.hljs-built_in,
+.hljs-selector-class { color: var(--hl-type); }
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-property,
+.hljs-params { color: var(--hl-attr); }
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-meta { color: var(--hl-tag); }
+.hljs-deletion { color: var(--danger); }
+.hljs-emphasis { font-style: italic; }
+.hljs-strong { font-weight: 600; }
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in {
@@ -215,9 +311,28 @@ body,
 .react-flow__edge:focus .react-flow__edge-path {
   stroke-width: 2.25;
 }
-/* 框选的选框、选中多个节点后的外框：用主题色，不用 xyflow 默认的蓝色 */
-.react-flow__selection,
+/* 流程图节点：选中时主题色柔光；执行中光晕缓慢呼吸 */
+.node-selected {
+  box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 22%, transparent), var(--shadow-pop);
+}
+.node-running {
+  animation: node-breathe 2.4s ease-in-out infinite;
+}
+@keyframes node-breathe {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 30%, transparent), 0 0 0 0 transparent; }
+  50% { box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 45%, transparent), 0 0 22px 2px color-mix(in oklab, var(--accent) 22%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .node-running { animation: none; box-shadow: 0 0 0 2px color-mix(in oklab, var(--accent) 35%, transparent); }
+}
+/* 选中多个节点后不画外框，只高亮节点本身；外框仍在（透明），按住拖动可以整体移动 */
 .react-flow__nodesselection-rect {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+}
+/* 拖动框选时的选框：用主题色，不用 xyflow 默认的蓝色 */
+.react-flow__selection {
   background: color-mix(in oklab, var(--accent) 8%, transparent);
   border: 1px dashed color-mix(in oklab, var(--accent) 70%, transparent);
   border-radius: 6px;

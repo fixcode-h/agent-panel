@@ -7,6 +7,7 @@ import type {
   Settings,
   Task,
   TaskMessage,
+  ToolUse,
   Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
@@ -157,6 +158,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
       genMs: 0,
     })
   }
+  const toolsById = new Map<string, ToolUse>()
   const meter = speedMeter(() => {
     au().tps = 0
     ctx.changed()
@@ -195,6 +197,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
         const m = !cur || cur.text.trim() ? newMsg() : cur
         m.text = ''
         m.tools.push(ev.tool)
+        if (ev.id) toolsById.set(ev.id, ev.tool)
         if (ev.file && !ctx.isGit) {
           const old = task.changes.find((c) => c.path === ev.file!.path)
           if (old) {
@@ -217,6 +220,16 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
         t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
         t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
         t.costUsd += ev.addCost ?? 0
+        break
+      }
+      case 'tool_result': {
+        // 工具的输出晚于调用到达，补到对应的那一行上
+        const t = toolsById.get(ev.id)
+        if (t) {
+          if (ev.output) t.output = ev.output
+          if (ev.failed) t.failed = true
+          if (ev.patch) t.input = ev.patch
+        }
         break
       }
       case 'todos':

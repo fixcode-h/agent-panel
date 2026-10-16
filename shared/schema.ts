@@ -234,6 +234,8 @@ export interface CliModel {
   efforts?: string[]
   /** CLI 自己的默认模型 */
   isDefault?: boolean
+  /** 这个模型默认的思考强度 */
+  defaultEffort?: string
   /** 分组，例如 Command Code 的「Open Source」「Google」 */
   group?: string
 }
@@ -246,6 +248,10 @@ export interface CliModels {
   efforts: string[]
   /** 读取失败的原因（这时 models 是内置列表） */
   error?: string
+  /** 登录方式：account 是账号登录，列出账号能用的全部模型；api 是 API Key / 自定义接口，列出配置文件里配的模型 */
+  auth?: 'account' | 'api'
+  /** 模型从哪读的，例如「~/.codex/config.toml」，显示在设置里 */
+  from?: string
 }
 
 /** 项目分类：同一类项目共用一个默认工作流，例如「Web 应用」「游戏客户端」 */
@@ -321,6 +327,12 @@ export const ToolUse = z.object({
   kind: z.enum(['read', 'edit', 'run', 'search', 'other']),
   label: z.string(),
   detail: z.string().default(''),
+  /** 点开工具调用时显示：完整命令、参数或改动内容 */
+  input: z.string().optional(),
+  /** 工具的输出（命令输出、读到的内容、错误），过长时截断 */
+  output: z.string().optional(),
+  /** 工具执行失败 */
+  failed: z.boolean().optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 

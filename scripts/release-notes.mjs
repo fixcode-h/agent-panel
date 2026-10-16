@@ -86,7 +86,7 @@ out.push(
   `- Windows — \`${name}.zip\`，解压后双击 \`start.cmd\``,
   `- macOS / Linux — \`${name}.tar.gz\`，解压后运行 \`./start.sh\``,
   '',
-  '需要 Node.js 20+，以及至少一个已登录的 CLI（Claude Code、Codex CLI 或 Command Code）。启动后浏览器打开 http://127.0.0.1:8787 。',
+  '需要 Node.js 20+，以及至少一个已登录的 CLI（Claude Code、Codex 或 Command Code）。启动后浏览器打开 http://127.0.0.1:8787 。',
   '升级时把旧版本目录里的 `data/` 复制到新版本目录即可保留配置和任务。',
   '',
 )

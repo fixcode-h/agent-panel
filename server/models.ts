@@ -18,17 +18,31 @@ import { getSettings } from './settings.ts'
 const TTL = 10 * 60_000
 const cache = new Map<string, { at: number; data: CliModels }>()
 
-const builtin = (def: CliDefinition): CliModel[] => def.models.map((m) => ({ id: m.id, label: m.label }))
+const builtin = (def: CliDefinition): CliModel[] =>
+  def.models.map((m) => ({ id: m.id, label: m.label, isDefault: m.isDefault }))
 
 /** 按 id 去重，先出现的优先 */
 function uniq(models: CliModel[]) {
-  const seen = new Set<string>()
-  return models.filter((m) => !seen.has(m.id) && seen.add(m.id))
+  const seen = new Map<string, CliModel>()
+  return models.filter((m) => {
+    const first = seen.get(m.id)
+    // 重复出现时保留默认标记（例如 settings.json 里把 opus 设成了默认）
+    if (first) first.isDefault ||= m.isDefault
+    else seen.set(m.id, m)
+    return !first
+  })
 }
 
-async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<CliModel[]> {
+type Picked = { models: CliModel[]; auth?: 'account' | 'api'; from?: string }
+
+/**
+ * Codex：同一个 app-server 里读账号（account/read）、配置（config/read）和模型列表（model/list）。
+ * ChatGPT 账号登录时用 model/list，就是账号能用的模型；API Key 或自定义 model_provider 时
+ * model/list 只是内置预设，改用 config.toml 里配的模型（model、review_model、各 profile 的 model）。
+ */
+async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
   const ac = new AbortController()
-  let result: CliModel[] | null = null
+  const got: { list?: CliModel[]; account?: any; config?: any } = {}
   let rpcError = ''
   const req = (o: object) => JSON.stringify(o) + '\n'
   const r = await runProcess({
@@ -42,38 +56,78 @@ async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Cli
     stdin:
       req({ id: 0, method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } }) +
       req({ method: 'initialized' }) +
+      req({ id: 2, method: 'account/read', params: {} }) +
+      req({ id: 3, method: 'config/read', params: {} }) +
       req({ id: 1, method: 'model/list', params: { limit: 200 } }),
     onLine: (line) => {
-      let msg: { id?: number; result?: { data?: unknown[] }; error?: { message?: string } }
+      let msg: { id?: number; result?: any; error?: { message?: string } }
       try {
         msg = JSON.parse(line)
       } catch {
         return
       }
-      if (msg.id !== 1) return
-      if (msg.error) rpcError = msg.error.message ?? '未知错误'
-      else
-        result = (msg.result?.data ?? [])
-          .map((x) => x as Record<string, any>)
-          .filter((m) => !m.hidden && typeof m.id === 'string')
-          .map((m) => ({
-            id: m.model || m.id,
-            label: m.displayName || m.id,
-            description: m.description || undefined,
-            efforts: Array.isArray(m.supportedReasoningEfforts)
-              ? m.supportedReasoningEfforts.map((e: any) => e.reasoningEffort).filter(Boolean)
-              : undefined,
-            isDefault: !!m.isDefault || undefined,
-          }))
-      // 拿到回复就停掉服务
-      ac.abort()
+      if (msg.id === 2) got.account = msg.error ? null : (msg.result ?? null)
+      else if (msg.id === 3) got.config = msg.error ? null : (msg.result?.config ?? null)
+      else if (msg.id === 1) {
+        if (msg.error) rpcError = msg.error.message ?? '未知错误'
+        else
+          got.list = (msg.result?.data ?? [])
+            .map((x: unknown) => x as Record<string, any>)
+            .filter((m: Record<string, any>) => !m.hidden && typeof m.id === 'string')
+            .map((m: Record<string, any>) => ({
+              id: m.model || m.id,
+              label: m.displayName || m.id,
+              description: m.description || undefined,
+              efforts: Array.isArray(m.supportedReasoningEfforts)
+                ? m.supportedReasoningEfforts.map((e: any) => e.reasoningEffort).filter(Boolean)
+                : undefined,
+              isDefault: !!m.isDefault || undefined,
+              defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : undefined,
+            }))
+      }
+      // 三个都回来就停掉服务（旧版本不认识 account/read、config/read 时回的是错误，也算回来了）
+      if ((got.list || rpcError) && got.account !== undefined && got.config !== undefined) ac.abort()
     },
   })
-  if (result) return result
+  const configured = codexConfigured(got.config)
+  const account = got.account?.account
+  if (account?.type === 'chatgpt' && got.list) return { models: got.list, auth: 'account', from: 'ChatGPT 账号' }
+  // 没有用 ChatGPT 账号：API Key、自定义接口、Bedrock
+  if (account || got.account?.requiresOpenaiAuth === false || got.config?.model_provider) {
+    if (configured.length) return { models: configured, auth: 'api', from: 'config.toml' }
+    if (got.list) return { models: got.list, auth: 'api' }
+  }
+  if (got.list) return { models: got.list }
   if (rpcError) throw new Error(`Codex 返回错误：${rpcError}`)
   if (r.spawnError) throw new Error(r.spawnError)
   if (r.killed === 'timeout') throw new Error('Codex 没有在 20 秒内返回模型列表')
   throw new Error(r.stderr.trim().split('\n').at(-1) || `Codex 退出了（退出码 ${r.code}）`)
+}
+
+/** config.toml 里配的模型：顶层 model 是默认，其次 review_model 和各 profile 的 model */
+export function codexConfigured(config: any): CliModel[] {
+  if (!config || typeof config !== 'object') return []
+  const out: CliModel[] = []
+  const effort = typeof config.model_reasoning_effort === 'string' ? config.model_reasoning_effort : undefined
+  if (typeof config.model === 'string' && config.model)
+    out.push({
+      id: config.model,
+      label: config.model,
+      description: '默认模型（config.toml）',
+      isDefault: true,
+      defaultEffort: effort,
+    })
+  if (typeof config.review_model === 'string' && config.review_model)
+    out.push({ id: config.review_model, label: config.review_model, description: '审查用的模型（review_model）' })
+  for (const [name, p] of Object.entries((config.profiles ?? {}) as Record<string, any>))
+    if (p && typeof p.model === 'string' && p.model)
+      out.push({
+        id: p.model,
+        label: p.model,
+        description: `profile「${name}」`,
+        defaultEffort: typeof p.model_reasoning_effort === 'string' ? p.model_reasoning_effort : undefined,
+      })
+  return uniq(out)
 }
 
 /** 解析 `cmdc --list-models`：分组标题单独一行，模型行是「id  两个以上空格  说明」 */
@@ -100,12 +154,27 @@ export function parseCommandCodeModels(out: string): CliModel[] {
   return models
 }
 
-async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promise<CliModel[]> {
-  const r = await capture(command, ['--list-models'], homedir(), env, 30_000)
+/**
+ * Command Code：`cmdc status` 判断有没有登录 Command Code 账号。登录了就列出全部模型（账号的加上自己接的 BYOK）；
+ * 没登录只能用 ~/.commandcode/providers.json 里接的 BYOK 接口，只列这些。
+ */
+async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
+  const [r, st] = await Promise.all([
+    capture(command, ['--list-models'], homedir(), env, 30_000),
+    capture(command, ['status'], homedir(), env, 15_000).catch(() => null),
+  ])
   const models = parseCommandCodeModels(r.stdout)
-  if (models.length) return models
-  if (r.spawnError) throw new Error(r.spawnError)
-  throw new Error((r.stderr || r.stdout).trim().split('\n').at(-1) || `退出码 ${r.code}`)
+  if (!models.length) {
+    if (r.spawnError) throw new Error(r.spawnError)
+    throw new Error((r.stderr || r.stdout).trim().split('\n').at(-1) || `退出码 ${r.code}`)
+  }
+  const status = (st?.stdout ?? '') + (st?.stderr ?? '')
+  const loggedOut = /not authenticated|not logged in|未登录/i.test(status)
+  if (!loggedOut)
+    return { models, auth: st && !st.spawnError && st.code === 0 ? 'account' : undefined, from: 'Command Code 账号' }
+  const byok = models.filter((m) => /\(byok\)/i.test(m.group ?? ''))
+  // 没接 BYOK 时还是给出全部，否则下拉是空的；真正执行时 CLI 会提示登录
+  return byok.length ? { models: byok, auth: 'api', from: 'providers.json' } : { models, auth: 'api' }
 }
 
 /** Claude Code 用户自己配置的模型（第三方网关、固定版本等） */
@@ -123,13 +192,29 @@ async function claudeConfigured(env: NodeJS.ProcessEnv): Promise<CliModel[]> {
     const s = JSON.parse(await readFile(path.join(dir, 'settings.json'), 'utf8'))
     settingsEnv = s.env ?? {}
     if (typeof s.model === 'string' && s.model)
-      found.push({ id: s.model, label: s.model, description: 'settings.json 里的默认模型' })
+      found.push({ id: s.model, label: s.model, description: 'settings.json 里的默认模型', isDefault: true })
   } catch {}
   for (const [k, desc] of keys) {
     const v = env[k] || settingsEnv[k]
     if (v) found.push({ id: v, label: v, description: desc })
   }
   return found
+}
+
+/**
+ * Claude Code 的登录方式：`claude auth status` 输出 JSON。claude.ai 账号（订阅）登录时能用全部别名和型号；
+ * API Key、apiKeyHelper、Bedrock / Vertex 或自定义 ANTHROPIC_BASE_URL 时只列配置里写的模型。
+ */
+async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'account' | 'api' | undefined> {
+  if (env.ANTHROPIC_BASE_URL || env.ANTHROPIC_API_KEY || env.ANTHROPIC_AUTH_TOKEN) return 'api'
+  const r = await capture(command, ['auth', 'status'], homedir(), env, 15_000).catch(() => null)
+  try {
+    const s = JSON.parse(r?.stdout ?? '')
+    if (s.apiProvider && s.apiProvider !== 'firstParty') return 'api'
+    if (/api.?key/i.test(String(s.authMethod ?? ''))) return 'api'
+    if (s.loggedIn) return 'account'
+  } catch {}
+  return undefined
 }
 
 export async function cliModels(id: string, refresh = false): Promise<CliModels> {
@@ -141,10 +226,16 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
   const env = childEnv(cs.env)
   let data: CliModels
   try {
-    if (id === 'codex') data = { source: 'cli', models: await codexModels(cs.command, env), efforts: [] }
-    else if (id === 'commandcode')
-      data = { source: 'cli', models: await commandCodeModels(cs.command, env), efforts: [] }
-    else data = { source: 'builtin', models: uniq([...builtin(def), ...(await claudeConfigured(env))]), efforts: [] }
+    if (id === 'codex' || id === 'commandcode') {
+      const p = id === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)
+      data = { source: 'cli', models: p.models, efforts: [], auth: p.auth, from: p.from }
+    } else {
+      const [auth, configured] = await Promise.all([claudeAuth(cs.command, env), claudeConfigured(env)])
+      data =
+        auth === 'api' && configured.length
+          ? { source: 'cli', models: uniq(configured), efforts: [], auth, from: 'settings.json / 环境变量' }
+          : { source: 'builtin', models: uniq([...builtin(def), ...configured]), efforts: [], auth }
+    }
   } catch (e) {
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }
   }

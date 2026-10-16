@@ -4,11 +4,11 @@ import { toast } from 'sonner'
 import { ArrowUp, Check, CircleAlert, Crown, Loader2, Sparkles, Square, Wand2, X } from 'lucide-react'
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
-import { agentRun, cliSettings, orderClis } from '@shared/settings'
+import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type { Agent, AgentInput, Settings, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cliColor, effortLabel } from '@/lib/cli-style'
-import { useCliDef } from '@/lib/cli-models'
+import { sortEfforts, useCliDef } from '@/lib/cli-models'
 import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
 import { useData } from '@/lib/data'
@@ -235,33 +235,47 @@ function RunPicker({
 }) {
   const cs = cliSettings(settings, def.id)
   const run = agentRun({ cli: def.id, model, effort }, settings)
-  // 「默认」显示设置里会用到的具体模型，档位也换成具体模型
+  // 不单独放「默认」选项：默认会用到的那个模型直接选中，后面标上（默认）
   const base = agentRun({ cli: def.id, model: '' }, settings)
+  const defaultModel = base.model || def.models.find((m) => m.isDefault)?.id || ''
   const tierRun = (t: ModelTier) => agentRun({ cli: def.id, model: `@${t}` }, settings)
+  const mark = (on: boolean) => (on ? '（默认）' : '')
   const modelOptions = [
-    { value: '', label: base.model ? `默认 · ${base.model}` : '默认模型' },
+    // 设置里没配、CLI 也没说默认是哪个时（例如 Claude Code 按账号决定），只能交给 CLI 自己选
+    ...(defaultModel ? [] : [{ value: '', label: '自动（默认）' }]),
     ...MODEL_TIERS.map((t) => ({
       value: `@${t.id}`,
-      label: `${t.label}档 · ${tierRun(t.id).model || 'CLI 默认'}`,
+      label: `${t.label}档 · ${tierRun(t.id).model || '自动'}`,
       group: '档位',
     })),
-    ...def.models.map((m) => ({ value: m.id, label: m.id, group: '模型' })),
+    ...def.models.map((m) => ({ value: m.id, label: `${m.id}${mark(m.id === defaultModel)}`, group: '模型' })),
   ]
-  if (model && !modelOptions.some((o) => o.value === model))
-    modelOptions.push({ value: model, label: model, group: '模型' })
-  // 思考强度「跟随」时显示跟着模型或档位得到的值
-  const follow = agentRun({ cli: def.id, model }, settings).effort
+  for (const v of [defaultModel, model])
+    if (v && !modelOptions.some((o) => o.value === v))
+      modelOptions.push({ value: v, label: `${v}${mark(v === defaultModel)}`, group: '模型' })
+  // 思考强度的默认：档位或设置给的，其次是模型自己的默认
+  const usedModel = run.model || defaultModel
+  const defaultEffort =
+    agentRun({ cli: def.id, model }, settings).effort || def.models.find((m) => m.id === usedModel)?.defaultEffort || ''
+  const efforts = sortEfforts(def.efforts, (e) => e.id)
+  if (defaultEffort && !efforts.some((e) => e.id === defaultEffort))
+    efforts.push({ id: defaultEffort, label: effortLabel(def, defaultEffort) })
+  const effortOpts = [
+    ...(defaultEffort ? [] : [{ value: '', label: 'auto · 自动（默认）' }]),
+    ...efforts.map((e) => ({ value: e.id, label: `${e.id} · ${e.label}${mark(e.id === defaultEffort)}` })),
+  ]
   const compact =
-    'h-7 w-auto max-w-[170px] gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
+    'h-7 w-auto max-w-[190px] gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
   return (
     <div
       className="flex min-w-0 items-center gap-0.5"
-      title={`这次用 ${run.model || 'CLI 默认模型'}${run.effort ? ` · ${effortLabel(def, run.effort)}` : ''}`}
+      title={`这次用 ${run.model || defaultModel || 'CLI 自动选择的模型'}${run.effort ? ` · ${effortLabel(def, run.effort)}` : ''}`}
     >
       <Select
         aria-label="模型"
-        value={model}
-        onChange={(e) => onModel(e.target.value)}
+        value={model || defaultModel}
+        // 选回默认的那个就清空，之后设置里改了默认也会跟着变
+        onChange={(e) => onModel(e.target.value === defaultModel ? '' : e.target.value)}
         options={modelOptions}
         disabled={disabled}
         className={cn(compact, 'font-mono')}
@@ -269,14 +283,11 @@ function RunPicker({
       {def.efforts.length > 0 && (
         <Select
           aria-label="思考强度"
-          value={effort}
-          onChange={(e) => onEffort(e.target.value)}
+          value={effort || defaultEffort}
+          onChange={(e) => onEffort(e.target.value === defaultEffort ? '' : e.target.value)}
           disabled={disabled}
           className={compact}
-          options={[
-            { value: '', label: follow ? `思考 · ${effortLabel(def, follow)}` : '思考 · CLI 默认' },
-            ...def.efforts.map((e) => ({ value: e.id, label: `思考 · ${e.label}` })),
-          ]}
+          options={effortOpts}
         />
       )}
       {!cs.enabled && <span className="text-[11px] text-warning">已停用</span>}
@@ -326,7 +337,8 @@ export function AssistDialog({
     setTurns([])
     setText('')
     setJob(null)
-    const pref = settings?.assist.cli
+    // 没单独指定时用设置里的默认 CLI
+    const pref = settings?.assist.cli || (settings ? defaultCli(settings) : '')
     pickCli(usable.find((c) => c.id === pref)?.id ?? usable[0]?.id ?? pref ?? CLIS[0].id)
   }, [open])
 

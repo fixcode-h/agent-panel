@@ -9,7 +9,10 @@ export type CliEvent =
   | { type: 'text'; text: string }
   /** 思考过程：Claude 是增量，Codex 是一段段的推理摘要 */
   | { type: 'thinking'; text: string; delta?: boolean }
-  | { type: 'tool'; tool: ToolUse; file?: { path: string; add: number; del: number } }
+  /** id 用来把之后的 tool_result 对应到这次调用 */
+  | { type: 'tool'; tool: ToolUse; file?: { path: string; add: number; del: number }; id?: string }
+  /** patch：改文件的工具给出的 unified diff，用来替换调用时记下的改前改后 */
+  | { type: 'tool_result'; id: string; output: string; failed?: boolean; patch?: string }
   /**
    * 用量。context 是当前上下文占用；add* 是这次新增的 token：输入都按「含缓存」计，缓存命中、缓存写入是输入里的一部分
    */
@@ -34,6 +37,71 @@ export type Parser = (obj: any) => CliEvent[]
 /** 文本的行数（末尾换行不算多一行） */
 export const lines = (s: unknown) =>
   typeof s === 'string' && s ? s.split('\n').length - (s.endsWith('\n') ? 1 : 0) : 0
+/** 工具详情最多保留的字数：命令输出可能很长，任务文件不能无限变大 */
+const MAX_DETAIL = 8000
+export const clipDetail = (s: string) =>
+  s.length > MAX_DETAIL ? `${s.slice(0, MAX_DETAIL)}\n…（还有 ${s.length - MAX_DETAIL} 个字符没有显示）` : s
+
+/** 工具输出可能是字符串，也可能是 [{type:'text', text}] 这样的内容块 */
+export function toolText(c: unknown): string {
+  if (typeof c === 'string') return c
+  if (Array.isArray(c)) return c.map((b) => (typeof b === 'string' ? b : (b?.text ?? b?.content ?? ''))).join('\n')
+  if (c && typeof c === 'object') return toolText((c as any).content ?? (c as any).text ?? JSON.stringify(c, null, 2))
+  return c === undefined || c === null ? '' : String(c)
+}
+
+/** 工具的输入整理成便于阅读的文字：命令直接显示，改文件显示改前改后，其余显示 JSON */
+function inputText(name: string, input: any): string {
+  if (!input || typeof input !== 'object') return toolText(input)
+  const cmd = input.command ?? input.cmd
+  if (typeof cmd === 'string') return cmd
+  const edits: any[] = Array.isArray(input.edits) ? input.edits : [input]
+  const pairs = edits.filter((e) => typeof (e?.old_string ?? e?.oldString ?? e?.old_str) === 'string')
+  if (pairs.length)
+    return pairs
+      .map((e) => {
+        const minus = String(e.old_string ?? e.oldString ?? e.old_str)
+          .split('\n')
+          .map((l) => `-${l}`)
+        const plus = String(e.new_string ?? e.newString ?? e.new_str ?? '')
+          .split('\n')
+          .map((l) => `+${l}`)
+        // 每处改动一段，段头不带行号（调用时还不知道在第几行，CLI 给出结果后会换成带行号的 diff）
+        return ['@@ @@', ...minus, ...plus].join('\n')
+      })
+      .join('\n')
+  // 新写的文件按「全部是新增行」的 diff 显示
+  if (typeof input.content === 'string' && /write|create/i.test(name))
+    return input.content
+      .replace(/\n$/, '')
+      .split('\n')
+      .map((l: string) => `+${l}`)
+      .join('\n')
+  return JSON.stringify(input, null, 2)
+}
+
+/** Claude Code 改文件后在 tool_use_result.structuredPatch 里给出带行号的 diff，转成 unified diff */
+function claudePatch(r: any): string | undefined {
+  const hunks: any[] = Array.isArray(r?.structuredPatch) ? r.structuredPatch : []
+  if (!hunks.length) return undefined
+  return clipDetail(
+    hunks
+      .map((h) => `@@ -${h.oldStart},${h.oldLines} +${h.newStart},${h.newLines} @@\n${(h.lines ?? []).join('\n')}`)
+      .join('\n'),
+  )
+}
+
+/** 给工具事件补上 id 和完整输入 */
+function detailed(ev: CliEvent, id: unknown, name: string, input: unknown): CliEvent {
+  if (ev.type !== 'tool') return ev
+  const text = inputText(name, input)
+  return {
+    ...ev,
+    id: typeof id === 'string' ? id : undefined,
+    tool: { ...ev.tool, input: text ? clipDetail(text) : undefined },
+  }
+}
+
 export const oneLine = (s: string, n = 120) => {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n) + '…' : t
@@ -155,7 +223,7 @@ export function claudeParser(cwd: string): Parser {
       for (const b of o.message.content ?? []) {
         if (b.type === 'text' && b.text && !streamed.has(id)) out.push({ type: 'text', text: b.text })
         if (b.type === 'tool_use') {
-          out.push(claudeTool(b.name, b.input, cwd))
+          out.push(detailed(claudeTool(b.name, b.input, cwd), b.id, b.name, b.input))
           if (b.name === 'TodoWrite' && Array.isArray(b.input?.todos))
             out.push({
               type: 'todos',
@@ -166,6 +234,17 @@ export function claudeParser(cwd: string): Parser {
             })
         }
       }
+    } else if (o.type === 'user' && Array.isArray(o.message?.content)) {
+      const patch = claudePatch(o.tool_use_result)
+      for (const b of o.message.content)
+        if (b?.type === 'tool_result' && b.tool_use_id)
+          out.push({
+            type: 'tool_result',
+            id: b.tool_use_id,
+            output: clipDetail(toolText(b.content)),
+            failed: !!b.is_error,
+            patch,
+          })
     } else if (o.type === 'result' || (o.total_cost_usd !== undefined && o.usage)) {
       const c = claudeInput(o.usage ?? {})
       const gap = (total: number, seen: number) => Math.max(0, total - seen)
@@ -262,7 +341,22 @@ export function commandCodeParser(cwd: string): Parser {
         thinking = true
       } else if (e.type === 'thinking_end' && !thinking && e.text)
         out.push({ type: 'thinking', text: sep() + e.text, delta: true })
-      else if (e.type === 'tool_queued') out.push(genericTool(String(e.toolName ?? 'tool'), e.input, cwd))
+      else if (e.type === 'tool_queued')
+        out.push(
+          detailed(
+            genericTool(String(e.toolName ?? 'tool'), e.input, cwd),
+            e.toolCallId,
+            String(e.toolName ?? ''),
+            e.input,
+          ),
+        )
+      else if ((e.type === 'tool_completed' || e.type === 'tool_errored') && e.toolCallId)
+        out.push({
+          type: 'tool_result',
+          id: e.toolCallId,
+          output: clipDetail(toolText(e.type === 'tool_errored' ? e.error : e.result)),
+          failed: e.type === 'tool_errored',
+        })
       else if (e.type === 'model_request_end' && e.usage) {
         const u = e.usage
         const read = u.cacheReadTokens ?? 0

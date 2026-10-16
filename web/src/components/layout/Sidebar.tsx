@@ -2,8 +2,15 @@ import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
   Bot,
+  ChevronDown,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  Folder,
+  FolderOpen,
   FolderKanban,
-  Menu,
+  Menu as MenuIcon,
+  MoreHorizontal,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -19,6 +26,9 @@ import { useData, useNav, type PageId } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
+import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { api } from '@/lib/api'
+import { toast } from 'sonner'
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -48,17 +58,51 @@ const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'workflows', label: '工作流', icon: Workflow },
 ]
 
-function dayGroup(iso: string) {
+/** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
+function shortTime(iso: string) {
   const d = new Date(iso)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   // 跨夏令时的那天相差 23 / 25 小时，取整
   const diff = Math.round((today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000)
-  if (diff <= 0) return '今天'
+  if (diff <= 0) return d.toTimeString().slice(0, 5)
   if (diff === 1) return '昨天'
-  if (diff < 7) return '近 7 天'
-  return '更早'
+  if (diff < 7) return `${diff} 天前`
+  return `${d.getMonth() + 1}/${d.getDate()}`
 }
+
+/** 每个项目默认显示的任务数，多的点「更多」展开 */
+const PER_PROJECT = 5
+
+/** 收起的项目分组记在本机浏览器里 */
+function useFolded() {
+  const [v, set] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('sidebar-folded') ?? '[]'))
+    } catch {
+      return new Set()
+    }
+  })
+  const toggle = (id: string) =>
+    set((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(id)) next.add(id)
+      try {
+        localStorage.setItem('sidebar-folded', JSON.stringify([...next]))
+      } catch {}
+      return next
+    })
+  const replace = (next: Set<string>) => {
+    set(next)
+    try {
+      localStorage.setItem('sidebar-folded', JSON.stringify([...next]))
+    } catch {}
+  }
+  return [v, toggle, replace] as const
+}
+
+/** 整个「项目」分组收起时记在 folded 里的键 */
+const ALL = '__all'
 
 function useCollapsed() {
   const [v, set] = useState(() => {
@@ -126,7 +170,7 @@ function Row({
 /** 左侧栏：参考 Claude Code，上面是新建和导航，中间是最近任务，下面是设置 */
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings } = useNav()
-  const { tasks, projects } = useData()
+  const { tasks, projects, setProjects } = useData()
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
@@ -135,11 +179,28 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   useEffect(() => setMobileOpen(false), [route])
   useEscape(mobileOpen, () => setMobileOpen(false))
 
-  const recent = [...tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)).slice(0, 30)
-  const groups = new Map<string, Task[]>()
-  for (const t of recent) groups.set(dayGroup(t.updatedAt), [...(groups.get(dayGroup(t.updatedAt)) ?? []), t])
-  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
-  const running = tasks.filter((t) => t.status === 'running').length
+  // 按项目分组，最近有动静的项目排在前面；组内按更新时间
+  const [folded, toggleFolded, setFolded] = useFolded()
+  const [more, setMore] = useState<Set<string>>(new Set())
+  const recent = [...tasks].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const byProject = new Map<string, Task[]>()
+  for (const t of recent) byProject.set(t.projectId, [...(byProject.get(t.projectId) ?? []), t])
+  // 所有项目都列出来（还没有对话的也在），最近有动静的排前面
+  const last = (p: { id: string; updatedAt: string }) => byProject.get(p.id)?.[0]?.updatedAt ?? p.updatedAt
+  const groups: [string, Task[]][] = [...projects]
+    .sort((a, b) => last(b).localeCompare(last(a)))
+    .map((p) => [p.id, byProject.get(p.id) ?? []])
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '已删除的项目'
+  const allOpen = !folded.has(ALL)
+  const newProject = async () => {
+    try {
+      const p = await api.createProject({ name: '新项目', description: '', path: '', categoryId: '', workflowId: '' })
+      setProjects((ps) => [...ps, p])
+      go({ page: 'projects', id: p.id, sub: 'settings' })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
 
   const body = (narrow: boolean) => (
     <>
@@ -169,7 +230,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           onClick={() => go({ page: 'home' })}
           className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
         />
-        {NAV.map((n) => (
+        {/* 展开时项目直接列在下面，不再单独放「项目」入口；收起成图标栏时保留 */}
+        {NAV.filter((n) => narrow || n.id !== 'projects').map((n) => (
           <Row
             key={n.id}
             icon={n.icon}
@@ -183,40 +245,163 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
 
       {!narrow ? (
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-          {recent.length === 0 && (
-            <p className="px-2.5 pt-2 text-xs leading-relaxed text-subtle">还没有任务。点「新建任务」描述要做的事。</p>
+          <div className="group/head flex h-7 shrink-0 items-center gap-0.5 pr-1 pl-2.5">
+            <button
+              onClick={() => toggleFolded(ALL)}
+              aria-expanded={allOpen}
+              className="flex cursor-pointer items-center gap-1 text-xs text-subtle hover:text-fg"
+            >
+              项目
+              <ChevronDown className={cn('h-3 w-3 transition-transform', !allOpen && '-rotate-90')} />
+            </button>
+            <Menu>
+              <MenuTrigger asChild>
+                <button
+                  aria-label="项目菜单"
+                  title="更多"
+                  className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </button>
+              </MenuTrigger>
+              <MenuContent align="end">
+                <MenuItem onSelect={() => go({ page: 'projects' })}>
+                  <FolderKanban className="h-4 w-4" />
+                  管理项目和分类
+                </MenuItem>
+                <MenuItem onSelect={() => setFolded(new Set())}>
+                  <ChevronsUpDown className="h-4 w-4" />
+                  全部展开
+                </MenuItem>
+                <MenuItem onSelect={() => setFolded(new Set(projects.map((p) => p.id)))}>
+                  <ChevronsDownUp className="h-4 w-4" />
+                  全部收起
+                </MenuItem>
+              </MenuContent>
+            </Menu>
+            <button
+              onClick={newProject}
+              aria-label="新建项目"
+              title="新建项目"
+              className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {allOpen && projects.length === 0 && (
+            <p className="px-2.5 pt-1 text-xs leading-relaxed text-subtle">
+              还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。
+            </p>
           )}
-          {[...groups].map(([label, ts]) => (
-            <section key={label} className="mb-3">
-              <h3 className="px-2.5 pb-1 text-xs text-subtle">
-                {label}
-                {label === '今天' && running > 0 && <span className="text-accent"> · {running} 个执行中</span>}
-              </h3>
-              {ts.map((t) => {
-                const on = route.page === 'projects' && route.sub === t.id
-                return (
-                  <button
-                    key={t.id}
-                    onClick={() => go({ page: 'projects', id: t.projectId, sub: t.id })}
-                    aria-current={on || undefined}
-                    title={`${t.title} · ${projectName(t.projectId)}`}
+          {allOpen &&
+            groups.map(([pid, ts]) => {
+              const open = !folded.has(pid)
+              const running = ts.filter((t) => t.status === 'running').length
+              // 收起「更多」时也要露出正在看的那个任务
+              const shown = more.has(pid)
+                ? ts
+                : ts.filter((t, i) => i < PER_PROJECT || (route.page === 'projects' && route.sub === t.id))
+              const onProject = route.page === 'projects' && route.id === pid && !route.sub
+              return (
+                <section key={pid} className="mb-2">
+                  <div
                     className={cn(
-                      'group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors',
-                      on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                      'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[12.5px] transition-colors',
+                      onProject ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
                     )}
                   >
-                    {t.status === 'running' || t.status === 'failed' ? (
-                      <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
-                    ) : null}
-                    <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                    <span className="max-w-[40%] shrink-0 truncate text-[11px] text-subtle">
-                      {projectName(t.projectId)}
-                    </span>
-                  </button>
-                )
-              })}
-            </section>
-          ))}
+                    <button
+                      onClick={() => toggleFolded(pid)}
+                      aria-expanded={open}
+                      aria-label={open ? '收起' : '展开'}
+                      disabled={!ts.length}
+                      className={cn(
+                        'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg',
+                        !ts.length && 'invisible',
+                      )}
+                    >
+                      <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
+                    </button>
+                    <button
+                      onClick={() => go({ page: 'projects', id: pid })}
+                      title={`打开项目「${projectName(pid)}」`}
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
+                    >
+                      {open ? (
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      ) : (
+                        <Folder className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-medium">{projectName(pid)}</span>
+                    </button>
+                    {running > 0 ? (
+                      <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10.5px] leading-[18px] font-medium text-accent group-hover/proj:hidden">
+                        {running} 个执行中
+                      </span>
+                    ) : (
+                      ts.length > 0 && (
+                        <span className="shrink-0 pr-1 text-[11px] text-subtle tabular-nums group-hover/proj:hidden">
+                          {ts.length}
+                        </span>
+                      )
+                    )}
+                    <button
+                      onClick={() => go({ page: 'projects', id: pid })}
+                      aria-label={`在「${projectName(pid)}」新建对话`}
+                      title="新建对话"
+                      // 还没有对话的项目一直显示 +，有对话的鼠标移上去才显示
+                      className={cn(
+                        ts.length ? 'hidden' : 'grid opacity-60',
+                        'h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle group-hover/proj:grid group-hover/proj:opacity-100 hover:bg-sel hover:text-fg',
+                      )}
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {open && ts.length > 0 && (
+                    <div className="mt-0.5 ml-[18px] flex flex-col gap-px border-l pl-1.5">
+                      {shown.map((t) => {
+                        const on = route.page === 'projects' && route.sub === t.id
+                        return (
+                          <button
+                            key={t.id}
+                            onClick={() => go({ page: 'projects', id: t.projectId, sub: t.id })}
+                            aria-current={on || undefined}
+                            title={t.title}
+                            className={cn(
+                              'group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors',
+                              on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                            )}
+                          >
+                            {t.status === 'running' || t.status === 'failed' ? (
+                              <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
+                            ) : null}
+                            <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                            <span className="shrink-0 text-[11px] text-subtle tabular-nums">
+                              {shortTime(t.updatedAt)}
+                            </span>
+                          </button>
+                        )
+                      })}
+                      {ts.length > PER_PROJECT && (
+                        <button
+                          onClick={() =>
+                            setMore((prev) => {
+                              const next = new Set(prev)
+                              if (!next.delete(pid)) next.add(pid)
+                              return next
+                            })
+                          }
+                          className="h-7 cursor-pointer rounded-lg px-2 text-left text-xs text-subtle hover:bg-sel/70 hover:text-fg"
+                        >
+                          {more.has(pid) ? '收起' : `显示全部 ${ts.length} 个`}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )
+            })}
         </div>
       ) : (
         <div className="flex-1" />
@@ -259,7 +444,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           aria-label="打开菜单"
           className="grid h-9 w-9 cursor-pointer place-items-center rounded-lg text-muted hover:bg-sel"
         >
-          <Menu className="h-5 w-5" />
+          <MenuIcon className="h-5 w-5" />
         </button>
         <Logo />
         <span className="font-serif text-[15px] font-semibold">Agent 面板</span>

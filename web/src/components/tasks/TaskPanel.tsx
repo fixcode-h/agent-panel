@@ -311,8 +311,14 @@ function TokenUsage({ task }: { task: Task }) {
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between text-xs">
-              <span className="text-muted">缓存命中率</span>
-              <span className="font-mono font-medium tabular-nums">{(rate * 100).toFixed(1)}%</span>
+              {/* 整个任务所有调用累加：读缓存的输入 ÷ 全部输入，不是最后一次请求的 */}
+              <span className="text-muted">缓存命中率 · 累计</span>
+              <span
+                className="font-mono font-medium tabular-nums"
+                title={`读缓存 ${fmtTokens(task.usage.cacheReadTokens ?? 0)} / 输入 ${fmtTokens(task.usage.inputTokens)}`}
+              >
+                {(rate * 100).toFixed(1)}%
+              </span>
             </div>
             <div
               className="h-1.5 overflow-hidden rounded-full bg-field"

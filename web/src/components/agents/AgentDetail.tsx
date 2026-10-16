@@ -7,7 +7,7 @@ import { agentCli, agentRun, cliSettings, defaultSettings, tierOf, tierToken } f
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
-import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
+import { cliColor, effortLabel, effortOptions, modelSuggestions } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
@@ -292,7 +292,7 @@ export function AgentDetail({
               <Field label="或指定模型">
                 <ComboInput
                   aria-label="模型名"
-                  suggestions={(cliDef?.models ?? []).map((m) => ({ value: m.id, label: m.label }))}
+                  suggestions={modelSuggestions(cliDef)}
                   value={tier ? '' : draft.model}
                   onChange={(v) => set('model', v)}
                   spellCheck={false}

@@ -1,6 +1,6 @@
 # Agent 面板
 
-一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex CLI、Command Code），
+一个跑在本机的网页控制台：按项目分类，调度本机的编码 Agent（Claude Code、Codex、Command Code），
 由主 Agent 和子 Agent 按工作流的流程图执行：连线决定先后，没有先后关系的节点同时执行，节点可以挂载验收流程，不通过就退回修改。
 界面参考 Claude Code。
 
@@ -44,7 +44,7 @@
 | CLI | 安装 | 设置里的默认命令 |
 | --- | --- | --- |
 | Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` |
-| Codex CLI | `npm install -g @openai/codex` | `codex` |
+| Codex | `npm install -g @openai/codex` | `codex` |
 | Command Code | `npm install -g command-code` | `cmdc` |
 
 CLI 需要先在终端里登录一次（或在设置的「环境变量」里填 API Key）。

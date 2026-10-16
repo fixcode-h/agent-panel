@@ -330,7 +330,8 @@ function FlowInspector({
       </div>
       <p className="flex gap-2 text-[12.5px] leading-relaxed text-subtle">
         <MousePointerClick className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        从节点右侧的圆点拖到另一个节点就能连线。右键按住拖动画布；左键在空白处拖出选框能选中多个节点，再拖其中一个就一起移动；选中后按 Delete 删除。
+        从节点右侧的圆点拖到另一个节点就能连线。右键按住拖动画布；左键在空白处拖出选框能选中多个节点，再拖其中一个就一起移动；选中后按
+        Delete 删除。
       </p>
       <ReadinessCard checks={checks} />
     </div>
