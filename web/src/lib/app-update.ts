@@ -60,9 +60,18 @@ export async function installRelease(tag: string) {
     set({ job })
   }
   if (job.status === 'failed') throw new Error(job.error ?? t('更新失败'))
-  const version = tag.replace(/^v/, '')
+  await waitRestart(tag.replace(/^v/, ''))
+}
+
+/** 回到更新前的版本：服务端换回程序文件后重启 */
+export async function rollbackRelease() {
+  const { version } = await api.appRollback()
+  await waitRestart(version)
+}
+
+/** 重启要几秒；新服务起来、版本对上后刷新页面加载对应的前端 */
+async function waitRestart(version: string) {
   set({ restarting: version })
-  // 重启要几秒；新服务起来、版本对上后刷新页面加载新的前端
   for (let i = 0; i < 90; i++) {
     await sleep(1000)
     const v = await api.appVersion().catch(() => null)

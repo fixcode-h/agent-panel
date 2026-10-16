@@ -17,6 +17,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { build } from 'esbuild'
 
@@ -112,6 +113,9 @@ writeFileSync(
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
 
+// 打好的服务端要能直接加载（更新时新版本也是这样试跑的）
+run(process.execPath, [path.join(out, 'server.mjs'), '--self-check'], out)
+
 // 4. 压缩（--no-archive 只生成目录，CI 在 Windows 上试运行托盘程序时用）
 if (process.argv.includes('--no-archive')) {
   console.log(`已生成：release/${name}`)
@@ -121,4 +125,12 @@ for (const f of [`${name}.zip`, `${name}.tar.gz`]) rmSync(path.join(outRoot, f),
 run('zip', ['-qr', `${name}.zip`, name], outRoot)
 run('tar', ['-czf', `${name}.tar.gz`, name], outRoot)
 if (!existsSync(path.join(outRoot, `${name}.zip`))) throw new Error('压缩失败')
-console.log(`已出包：release/${name}.zip、release/${name}.tar.gz`)
+// 校验文件和包一起发布：设置里更新时先对哈希，下载不完整就不装
+const sums = [`${name}.zip`, `${name}.tar.gz`].map(
+  (f) =>
+    `${createHash('sha256')
+      .update(readFileSync(path.join(outRoot, f)))
+      .digest('hex')}  ${f}`,
+)
+writeFileSync(path.join(outRoot, 'SHA256SUMS'), sums.join('\n') + '\n')
+console.log(`已出包：release/${name}.zip、release/${name}.tar.gz、release/SHA256SUMS`)

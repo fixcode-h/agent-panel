@@ -8,6 +8,7 @@ import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -41,10 +42,16 @@ writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
 for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   const d = path.join(relDir, `agent-panel-${v}`)
   execFileSync('mkdir', ['-p', path.join(d, 'dist')])
-  writeFileSync(path.join(d, 'server.mjs'), `// new ${v}\n`)
+  // 0.11.8 的服务端加载就出错：更新时试跑不通过，要退回原来的版本
+  writeFileSync(path.join(d, 'server.mjs'), v === '0.11.8' ? 'process.exit(3)\n' : `// new ${v}\n`)
   writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
   writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
   execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
+  // 校验文件：0.11.4 的哈希故意写错
+  const hash = createHash('sha256')
+    .update(readFileSync(`${d}.tar.gz`))
+    .digest('hex')
+  writeFileSync(`${d}.sums`, `${v === '0.11.4' ? '0'.repeat(64) : hash}  agent-panel-${v}.tar.gz\n`)
 }
 // 旧版本平铺的数据文件，启动时应搬进 config/
 execFileSync('mkdir', ['-p', dataDir])
@@ -80,6 +87,7 @@ const relServer = http.createServer((req, res) => {
       assets: [
         { name: `agent-panel-${v}.tar.gz`, browser_download_url: `${host}/dl/agent-panel-${v}.tar.gz`, size: 100 },
         { name: `agent-panel-${v}.zip`, browser_download_url: `${host}/dl/agent-panel-${v}.zip`, size: 100 },
+        { name: 'SHA256SUMS', browser_download_url: `${host}/dl/agent-panel-${v}.sums`, size: 100 },
       ],
     })
     res.end(JSON.stringify([rel('0.11.9-dev', true, 16), rel('0.11.8', false, 15), rel('0.11.4', false, 10)]))
@@ -1629,17 +1637,38 @@ try {
   )
   assert.equal(rels.update.tag, 'v0.11.8', '正式版只提示更新的正式版')
   await assert.rejects(call('POST', '/app/install', { tag: 'v9.9.9' }), /找不到版本/)
-  let aj = await call('POST', '/app/install', { tag: 'v0.11.9-dev' })
-  for (let i = 0; aj.status === 'running' && i < 100; i++) {
-    await sleep(100)
-    aj = await call('GET', `/app/install/${aj.id}`)
+  const installJob = async (tag) => {
+    let j = await call('POST', '/app/install', { tag })
+    for (let i = 0; j.status === 'running' && i < 150; i++) {
+      await sleep(100)
+      j = await call('GET', `/app/install/${j.id}`)
+    }
+    return j
   }
+  // 哈希对不上：不装，程序文件不动
+  let aj = await installJob('v0.11.4')
+  assert.equal(aj.status, 'failed')
+  assert.match(aj.error, /校验不通过/)
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
+  // 新的服务端加载不了：自动换回原来的文件
+  aj = await installJob('v0.11.8')
+  assert.equal(aj.status, 'failed')
+  assert.match(aj.error, /退回原来的版本/)
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
+  assert.ok(existsSync(path.join(appDir, 'dist/old.html')), '前端也换回来')
+  aj = await installJob('v0.11.9-dev')
   assert.equal(aj.status, 'done', aj.error)
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
   assert.ok(existsSync(path.join(appDir, 'dist/index.html')) && !existsSync(path.join(appDir, 'dist/old.html')))
   assert.equal(readFileSync(path.join(appDir, 'data/keep.json'), 'utf8'), '{"keep":true}', '数据不能动')
   assert.ok(!existsSync(path.join(appDir, 'dist.old')) && !existsSync(path.join(appDir, 'dist.next')))
-  step('版本更新：读取 GitHub 上的包、判断有没有新版本，下载切换后替换程序文件、保留数据')
+  // 回到上一个版本：和当前版本互换，换完还能再换回来
+  assert.equal((await call('GET', '/app/version')).previous, '0.11.5')
+  assert.deepEqual(await call('POST', '/app/rollback'), { version: '0.11.5' })
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
+  assert.ok(existsSync(path.join(appDir, 'dist/old.html')))
+  assert.equal(readFileSync(path.join(dataDir, 'cache/updates/previous/server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
+  step('版本更新：读取 GitHub 上的包、校验哈希，替换程序文件、保留数据；新版本加载不了自动退回，也能手动回到上一个版本')
 
   // ---- 只接受本机页面的请求 ----
   const raw = (method, url, headers, body) =>

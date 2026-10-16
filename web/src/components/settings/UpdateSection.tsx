@@ -1,8 +1,17 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUpCircle, ChevronRight, CircleCheck, Download, ExternalLink, Loader2, RefreshCw } from 'lucide-react'
+import {
+  ArrowUpCircle,
+  ChevronRight,
+  CircleCheck,
+  Download,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Undo2,
+} from 'lucide-react'
 import { compareVersions, type AppRelease } from '@shared/version'
-import { installRelease, loadReleases, useAppUpdate } from '@/lib/app-update'
+import { installRelease, loadReleases, rollbackRelease, useAppUpdate } from '@/lib/app-update'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -114,6 +123,7 @@ function ReleaseRow({
 export function UpdateSection() {
   const { data, loading, job, restarting } = useAppUpdate()
   const [confirm, setConfirm] = useState<AppRelease | null>(null)
+  const [undo, setUndo] = useState(false)
   const demo = !!import.meta.env.VITE_DEMO
   const current = data?.current ?? ''
   const canInstall = !!data?.packaged && !demo
@@ -147,16 +157,16 @@ export function UpdateSection() {
           </Button>
         </div>
 
-        {job && running ? (
+        {running ? (
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs">
               <span className="flex items-center gap-1.5 text-fg">
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
                 {restarting
                   ? t('已安装 v{version}，正在重启，完成后页面会自动刷新…', { version: restarting })
-                  : `${job.tag} · ${job.phase}`}
+                  : `${job?.tag} · ${job?.phase}`}
               </span>
-              {!restarting && job.total > 0 && (
+              {!restarting && job && job.total > 0 && (
                 <span className="font-mono text-subtle">
                   {mb(job.received)} / {mb(job.total)}
                 </span>
@@ -166,7 +176,7 @@ export function UpdateSection() {
               <span
                 className="block h-full rounded-full bg-accent transition-[width]"
                 style={{
-                  width: `${restarting ? 100 : job.total ? Math.min(100, (job.received / job.total) * 90) : 5}%`,
+                  width: `${restarting ? 100 : job?.total ? Math.min(100, (job.received / job.total) * 90) : 5}%`,
                 }}
               />
             </div>
@@ -218,6 +228,13 @@ export function UpdateSection() {
               : t('从源码运行时请用 git 拉取更新；这里可以查看和下载发布的包。')}
           {!demo && current.includes('-dev') && ' ' + t('当前是预览版，会提示所有更新的包；正式版只提示正式版。')}
         </p>
+        {canInstall && data?.previous && data.previous !== current && (
+          // 更新前留下的版本：新版本有问题时可以直接换回去，不用重新下载
+          <Button size="sm" variant="ghost" className="w-fit" disabled={running} onClick={() => setUndo(true)}>
+            <Undo2 className="h-3.5 w-3.5" />
+            {t('回到上一个版本 v{version}', { version: data.previous })}
+          </Button>
+        )}
       </section>
 
       <section className="flex flex-col">
@@ -257,6 +274,17 @@ export function UpdateSection() {
         }
         confirmText={confirm && compareVersions(confirm.version, current) > 0 ? t('更新') : t('切换')}
         onConfirm={() => confirm && install(confirm)}
+      />
+      <ConfirmDialog
+        open={undo}
+        onOpenChange={setUndo}
+        title={t('回到 v{version}？', { version: data?.previous ?? '' })}
+        description={t('会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。')}
+        confirmText={t('回到上一个版本')}
+        onConfirm={() => {
+          setUndo(false)
+          rollbackRelease().catch((e) => toast.error((e as Error).message))
+        }}
       />
     </div>
   )

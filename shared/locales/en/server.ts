@@ -252,4 +252,15 @@ export const EN_SERVER: Record<string, string> = {
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
   缺少文件路径: 'Missing file path',
   只能查看项目目录里的文件: 'Only files inside the project folder can be viewed',
+  校验中: 'Verifying',
+  '下载校验文件失败：{status}': 'Failed to download the checksum file: {status}',
+  '校验文件里没有 {name}': '{name} is missing from the checksum file',
+  '下载的包校验不通过，可能下载不完整，请重试':
+    'The downloaded package failed verification and may be incomplete. Please try again',
+  检查新版本: 'Checking the new version',
+  '新版本没能装好，已经退回原来的版本：{error}':
+    'The new version could not be installed, so the previous version was restored: {error}',
+  '从源码运行时请用 git 切换版本': 'When running from source, use git to switch versions',
+  没有可以退回的版本: 'No previous version to go back to',
+  '退回失败：{error}': 'Failed to go back: {error}',
 }

@@ -243,4 +243,9 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 turns it off. When a CLI prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so a CLI stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
   '没有输出时提醒（分钟）': 'Warn when there is no output (minutes)',
   '填 0 到 1440 之间的整数，0 表示不检测': 'Enter a whole number from 0 to 1440; 0 turns it off',
+  '回到上一个版本 v{version}': 'Back to previous version v{version}',
+  '回到 v{version}？': 'Go back to v{version}?',
+  '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
+    'Restores the program files from before the update and restarts. Your data is kept, and you can switch back to the current version later.',
+  回到上一个版本: 'Go back',
 }

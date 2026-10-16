@@ -1048,7 +1048,7 @@ async function seedTasks(d: Db) {
  * 版本更新：在线演示直接从浏览器读 GitHub Releases（接口允许跨域），当作最新发布的版本；不能安装。
  */
 async function demoApp(url: string): Promise<unknown> {
-  if (url.startsWith('/app/install')) fail('在线演示不能安装，可以下载包到本机运行')
+  if (url.startsWith('/app/install') || url.startsWith('/app/rollback')) fail('在线演示不能安装，可以下载包到本机运行')
   let list: AppRelease[] = []
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)

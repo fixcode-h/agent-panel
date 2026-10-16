@@ -55,10 +55,11 @@ export const api = {
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
 
-  appVersion: () => request<{ current: string; packaged: boolean }>('/app/version'),
+  appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
+  appRollback: () => request<{ version: string }>('/app/rollback', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string) => request<Category>('/categories', json('POST', { name })),
