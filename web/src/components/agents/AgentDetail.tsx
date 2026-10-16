@@ -141,7 +141,7 @@ export function AgentDetail({
             title={draft.name || '未命名 Agent'}
             meta={
               <>
-                <Badge>{category?.name ?? '未分类'}</Badge>
+                <Badge>{builtin ? '默认' : (category?.name ?? '未分类')}</Badge>
                 {!draft.enabled ? (
                   <StatusDot tone="muted" label="已停用" />
                 ) : isReady(checks) ? (
@@ -194,10 +194,12 @@ export function AgentDetail({
                     placeholder="例如：前端开发"
                   />
                 </Field>
-                <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                  <span className="text-xs text-muted">分类</span>
-                  <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
-                </div>
+                {!builtin && (
+                  <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                    <span className="text-xs text-muted">分类</span>
+                    <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
+                  </div>
+                )}
               </div>
               <Field label="简介">
                 <Input

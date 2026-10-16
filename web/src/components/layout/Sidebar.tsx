@@ -23,6 +23,8 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Pause,
+  Play,
   Plus,
   Settings,
   Sun,
@@ -35,6 +37,7 @@ import { useData, useNav, type PageId, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
+import { useTaskControl } from '@/components/tasks/TaskControl'
 import {
   ContextMenu,
   ContextMenuContent,
@@ -241,15 +244,30 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
   )
 }
 
-/** Chat 模式的侧栏：最近的聊天，右键可以重命名、删除 */
-function ChatList() {
-  const { route, go } = useNav()
-  const { tasks, removeTask, upsertTask } = useData()
-  const chats = tasks.filter((t) => !t.projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-  const [renaming, setRenaming] = useState('')
-  const [deleting, setDeleting] = useState<Task>()
-  const rename = async (t: Task, title: string) => {
-    setRenaming('')
+/**
+ * 侧栏里的一个任务（聊天）：点击打开，右键可以暂停 / 继续、重命名、删除。
+ * 暂停和继续同一时间只显示能用的那个。
+ */
+function TaskRow({
+  task: t,
+  active,
+  onOpen,
+  onDeleted,
+  className,
+}: {
+  task: Task
+  active: boolean
+  onOpen: () => void
+  onDeleted: () => void
+  className?: string
+}) {
+  const { removeTask, upsertTask } = useData()
+  const control = useTaskControl(t)
+  const [renaming, setRenaming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const chat = !t.projectId
+  const rename = async (title: string) => {
+    setRenaming(false)
     title = title.trim()
     if (!title || title === t.title) return
     try {
@@ -258,82 +276,113 @@ function ChatList() {
       toast.error((e as Error).message)
     }
   }
-  const remove = async (t: Task) => {
+  const remove = async () => {
     try {
       await api.deleteTask(t.id)
       removeTask(t.id)
-      if (route.page === 'chat' && route.id === t.id) go({ page: 'chat' })
+      onDeleted()
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
-      setDeleting(undefined)
+      setDeleting(false)
     }
   }
+  if (renaming)
+    return (
+      <input
+        autoFocus
+        aria-label={chat ? '聊天标题' : '任务标题'}
+        defaultValue={t.title}
+        maxLength={80}
+        onFocus={(e) => e.currentTarget.select()}
+        onBlur={(e) => rename(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+          if (e.key === 'Escape') setRenaming(false)
+        }}
+        className="h-8 rounded-lg border border-accent bg-field px-2 text-[13px] text-fg outline-none"
+      />
+    )
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <button
+            onClick={onOpen}
+            aria-current={active || undefined}
+            title={t.title}
+            className={cn(
+              'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg text-left text-[13px] transition-colors',
+              active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+              className,
+            )}
+          >
+            {t.requests?.length ? (
+              // Agent 在等你确认操作或回答问题
+              <BellRing
+                aria-label="需要你处理"
+                className="h-3.5 w-3.5 shrink-0 animate-[bell_1.6s_ease-in-out_infinite] text-warning"
+              />
+            ) : t.status === 'running' || t.status === 'failed' ? (
+              <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
+            ) : null}
+            <span className="min-w-0 flex-1 truncate">{t.title}</span>
+            <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(t.updatedAt)}</span>
+          </button>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          {control.action && (
+            <>
+              <ContextMenuItem disabled={control.busy} onSelect={control.run}>
+                {control.action === 'pause' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {control.label}
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
+          <ContextMenuItem onSelect={() => setRenaming(true)}>
+            <PencilLine className="h-4 w-4" />
+            重命名
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+          <ContextMenuItem danger onSelect={() => setDeleting(true)}>
+            <Trash2 className="h-4 w-4" />
+            删除
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`删除「${t.title}」？`}
+        description={chat ? '这次聊天的记录会一起删除。' : '任务的记录会一起删除，项目里的文件不受影响。'}
+        onConfirm={remove}
+      />
+    </>
+  )
+}
+
+/** Chat 模式的侧栏：最近的聊天，右键可以重命名、删除 */
+function ChatList() {
+  const { route, go } = useNav()
+  const { tasks } = useData()
+  const chats = tasks.filter((t) => !t.projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">最近</p>
       {chats.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">还没有聊天。</p>}
       <div className="flex flex-col gap-px">
-        {chats.map((t) => {
-          const on = route.page === 'chat' && route.id === t.id
-          return renaming === t.id ? (
-            <input
-              key={t.id}
-              autoFocus
-              aria-label="聊天标题"
-              defaultValue={t.title}
-              maxLength={80}
-              onFocus={(e) => e.currentTarget.select()}
-              onBlur={(e) => rename(t, e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') e.currentTarget.blur()
-                if (e.key === 'Escape') setRenaming('')
-              }}
-              className="h-8 rounded-lg border border-accent bg-field px-2 text-[13px] text-fg outline-none"
-            />
-          ) : (
-            <ContextMenu key={t.id}>
-              <ContextMenuTrigger asChild>
-                <button
-                  onClick={() => go({ page: 'chat', id: t.id })}
-                  aria-current={on || undefined}
-                  title={t.title}
-                  className={cn(
-                    'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors',
-                    on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-                  )}
-                >
-                  {t.requests?.length ? (
-                    <BellRing aria-label="需要你处理" className="h-3.5 w-3.5 shrink-0 text-warning" />
-                  ) : t.status === 'running' || t.status === 'failed' ? (
-                    <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
-                  ) : null}
-                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                  <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(t.updatedAt)}</span>
-                </button>
-              </ContextMenuTrigger>
-              <ContextMenuContent>
-                <ContextMenuItem onSelect={() => setRenaming(t.id)}>
-                  <PencilLine className="h-4 w-4" />
-                  重命名
-                </ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem danger onSelect={() => setDeleting(t)}>
-                  <Trash2 className="h-4 w-4" />
-                  删除
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          )
-        })}
+        {chats.map((t) => (
+          <TaskRow
+            key={t.id}
+            task={t}
+            active={route.page === 'chat' && route.id === t.id}
+            onOpen={() => go({ page: 'chat', id: t.id })}
+            onDeleted={() => route.page === 'chat' && route.id === t.id && go({ page: 'chat' })}
+            className="px-2.5"
+          />
+        ))}
       </div>
-      <ConfirmDialog
-        open={!!deleting}
-        onOpenChange={(o) => !o && setDeleting(undefined)}
-        title={`删除「${deleting?.title ?? ''}」？`}
-        description="这次聊天的记录会一起删除。"
-        onConfirm={() => deleting && remove(deleting)}
-      />
     </div>
   )
 }
@@ -638,35 +687,18 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                   </ContextMenu>
                   {open && ts.length > 0 && (
                     <div className="mt-0.5 ml-[18px] flex flex-col gap-px border-l pl-1.5">
-                      {shown.map((t) => {
-                        const on = route.page === 'projects' && route.sub === t.id
-                        return (
-                          <button
-                            key={t.id}
-                            onClick={() => go({ page: 'projects', id: t.projectId, sub: t.id })}
-                            aria-current={on || undefined}
-                            title={t.title}
-                            className={cn(
-                              'group flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[13px] transition-colors',
-                              on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-                            )}
-                          >
-                            {t.requests?.length ? (
-                              // Agent 在等你确认操作或回答问题
-                              <BellRing
-                                aria-label="需要你处理"
-                                className="h-3.5 w-3.5 shrink-0 animate-[bell_1.6s_ease-in-out_infinite] text-warning"
-                              />
-                            ) : t.status === 'running' || t.status === 'failed' ? (
-                              <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
-                            ) : null}
-                            <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                            <span className="shrink-0 text-[11px] text-subtle tabular-nums">
-                              {shortTime(t.updatedAt)}
-                            </span>
-                          </button>
-                        )
-                      })}
+                      {shown.map((t) => (
+                        <TaskRow
+                          key={t.id}
+                          task={t}
+                          active={route.page === 'projects' && route.sub === t.id}
+                          onOpen={() => go({ page: 'projects', id: t.projectId, sub: t.id })}
+                          onDeleted={() =>
+                            route.page === 'projects' && route.sub === t.id && go({ page: 'projects', id: pid })
+                          }
+                          className="px-2"
+                        />
+                      ))}
                       {ts.length > PER_PROJECT && (
                         <button
                           onClick={() =>

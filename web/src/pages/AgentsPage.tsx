@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Bot, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
-import type { Agent, AgentInput, Category } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
@@ -15,6 +15,9 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { useAgentView } from '@/lib/agent-view'
+
+/** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
+const DEFAULT_GROUP = '#default'
 
 function CategoryHeader({ category, count, onAdd }: { category: Category; count: number; onAdd: () => void }) {
   const { setCategories, setAgents } = useData()
@@ -131,9 +134,18 @@ export function AgentsPage() {
 
   const q = query.trim().toLowerCase()
   const match = (a: Agent) => !q || `${a.name}${a.description}${modelOf(a)}`.toLowerCase().includes(q)
-  const groups = [...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }]
-    .map((g) => ({ ...g, items: agents.filter((a) => a.categoryId === g.id && match(a)) }))
-    // 搜索时隐藏空分类；「未分类」为空时也不显示
+  // 自带的默认 Agent 单独放在最上面的「默认」分类，不跟着用户的分类走
+  const groups = [
+    {
+      category: null as Category | null,
+      id: DEFAULT_GROUP,
+      items: agents.filter((a) => a.id === DEFAULT_AGENT_ID && match(a)),
+    },
+    ...[...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }].map(
+      (g) => ({ ...g, items: agents.filter((a) => a.id !== DEFAULT_AGENT_ID && a.categoryId === g.id && match(a)) }),
+    ),
+  ]
+    // 搜索时隐藏空分类；「默认」「未分类」为空时也不显示
     .filter((g) => g.items.length || (!q && g.category))
 
   const create = async (input: Partial<AgentInput> = {}) => {
@@ -144,7 +156,7 @@ export function AgentsPage() {
         cli: '',
         model: '@medium',
         effort: '',
-        categoryId: selected?.categoryId ?? '',
+        categoryId: selected?.id === DEFAULT_AGENT_ID ? '' : (selected?.categoryId ?? ''),
         icon: 'bot',
         instructions: '',
         permission: '',
@@ -228,7 +240,7 @@ export function AgentsPage() {
                   onAdd={() => create({ categoryId: g.id })}
                 />
               ) : (
-                <GroupHeader label="未分类" count={g.items.length} />
+                <GroupHeader label={g.id === DEFAULT_GROUP ? '默认' : '未分类'} count={g.items.length} />
               )
             }
           >

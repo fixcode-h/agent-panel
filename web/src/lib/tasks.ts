@@ -4,7 +4,7 @@ import { SLOT_LABEL } from '@shared/flow'
 export const statusLabel: Record<TaskStatus, string> = {
   running: '执行中',
   done: '已完成',
-  stopped: '已停止',
+  stopped: '已暂停',
   failed: '失败',
 }
 

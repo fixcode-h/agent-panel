@@ -21,7 +21,7 @@ export async function setNotify(on: boolean) {
   return p === 'granted'
 }
 
-const TEXT: Record<string, string> = { done: '已完成', failed: '失败了', stopped: '已停止' }
+const TEXT: Record<string, string> = { done: '已完成', failed: '失败了', stopped: '已暂停' }
 
 /**
  * 任务从执行中变成完成 / 失败时：页面不在前台就发系统通知；标签页标题显示正在执行的任务数。

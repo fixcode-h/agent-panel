@@ -11,7 +11,7 @@ import {
   PanelRight,
   Pencil,
   RotateCw,
-  Square,
+  Pause,
   Trash2,
   X,
 } from 'lucide-react'
@@ -438,7 +438,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   {running
                     ? tops.filter((s) => s.status === 'running').length > 1
                       ? `${tops.filter((s) => s.status === 'running').length} 个节点同时执行中`
-                      : '执行中，可以随时停止'
+                      : '执行中，可以随时暂停'
                     : task.mode === 'workflow'
                       ? tops.every((s) => s.status === 'done')
                         ? `由主 Agent ${mainAgent?.name ?? ''} 处理追加要求`
@@ -449,8 +449,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 </span>
                 {running ? (
                   <Button size="sm" variant="secondary" className="ml-auto rounded-lg" onClick={stop}>
-                    <Square className="h-3 w-3 fill-current" />
-                    停止
+                    <Pause className="h-3.5 w-3.5" />
+                    暂停
                   </Button>
                 ) : (
                   <>

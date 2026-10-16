@@ -427,7 +427,7 @@ function finish(host: EngineHost, r: Fail) {
       s.interrupted = !!r.stopped
       s.endedAt = now()
     }
-  if (r.stopped) system(host, '已停止。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
+  if (r.stopped) system(host, '已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
   else {
     const failed = host.task.steps.filter((s) => s.status === 'failed' && !s.parentId).map((s) => `「${s.title}」`)
     system(

@@ -18,6 +18,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { TaskComposer, projectWorkflowId } from './TaskComposer'
+import { TaskControlButton } from './TaskControl'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { TaskView } from './TaskView'
 
@@ -84,10 +85,11 @@ function ProjectHome({ project }: { project: Project }) {
                 const tops = t.steps.filter((s) => !s.parentId)
                 const done = tops.filter((s) => s.status === 'done').length
                 return (
-                  <li key={t.id}>
+                  // 暂停 / 继续按钮不能套在整行的按钮里，放在行的右边
+                  <li key={t.id} className="flex items-center transition-colors hover:bg-sel/60">
                     <button
                       onClick={() => open(t.id)}
-                      className="flex w-full cursor-pointer items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-sel/60"
+                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
                     >
                       <TaskStatusIcon status={t.status} />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
@@ -112,6 +114,7 @@ function ProjectHome({ project }: { project: Project }) {
                         {t.status === 'done' ? timeAgo(t.updatedAt, now) : statusLabel[t.status]}
                       </span>
                     </button>
+                    <TaskControlButton task={t} className="mr-4" />
                   </li>
                 )
               })}
