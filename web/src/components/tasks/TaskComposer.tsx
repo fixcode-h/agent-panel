@@ -17,16 +17,6 @@ import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMenti
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
-const EXAMPLES = {
-  workflow: [
-    '商品详情页增加「到货提醒」，缺货时显示按钮，到货后短信通知',
-    '给订单列表加上按状态筛选和分页',
-    '把登录页改成支持手机号验证码登录',
-  ],
-  chat: ['购物车角标偶尔不刷新，帮我找找原因', '解释一下这个项目的目录结构', '帮我给 utils 里的函数补上单元测试'],
-  standalone: ['解释一下 TypeScript 的条件类型', '帮我写一个按日期分组的 SQL', '比较一下 Redis 和 Memcached'],
-}
-
 export function projectWorkflowId(p: Project | undefined, cats: { id: string; workflowId: string }[]) {
   return p ? p.workflowId || cats.find((c) => c.id === p.categoryId)?.workflowId || '' : ''
 }
@@ -298,22 +288,6 @@ export function TaskComposer({
         <p className="px-1 text-xs text-warning">
           工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。
         </p>
-      )}
-      {!prompt && !loading && (
-        <div className="flex flex-wrap gap-2 px-0.5">
-          {EXAMPLES[standalone ? 'standalone' : effMode].map((e) => (
-            <button
-              key={e}
-              onClick={() => {
-                setPrompt(e)
-                ta.current?.focus()
-              }}
-              className="max-w-full cursor-pointer truncate rounded-lg border px-3 py-1.5 text-[12.5px] text-subtle transition-colors hover:border-line-strong hover:text-fg"
-            >
-              {e}
-            </button>
-          ))}
-        </div>
       )}
     </div>
   )
