@@ -7,8 +7,8 @@ import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/c
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type { Agent, AgentInput, Settings, TaskMessage, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
-import { cliColor, effortLabel, modelGroup } from '@/lib/cli-style'
-import { sortEfforts, useCliDef } from '@/lib/cli-models'
+import { cliColor, defaultEffortOptions, effortLabel } from '@/lib/cli-style'
+import { useCliDef } from '@/lib/cli-models'
 import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
 import { useData } from '@/lib/data'
@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
 import { FoldedRun, type Author } from '@/components/tasks/Messages'
+import { modelOptions } from '@/components/agents/ModelSelect'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
 
@@ -236,35 +237,18 @@ function RunPicker({
   const base = agentRun({ cli: def.id, model: '' }, settings)
   const defaultModel = base.model || def.models.find((m) => m.isDefault)?.id || ''
   const tierRun = (t: ModelTier) => agentRun({ cli: def.id, model: `@${t}` }, settings)
-  const mark = (on: boolean) => (on ? '（默认）' : '')
-  const modelOptions = [
-    // 设置里没配、CLI 也没说默认是哪个时（例如 Claude Code 按账号决定），只能交给 CLI 自己选
-    ...(defaultModel ? [] : [{ value: '', label: '自动（默认）' }]),
-    ...MODEL_TIERS.map((t) => ({
-      value: `@${t.id}`,
-      label: `${t.label}档 · ${tierRun(t.id).model || '自动'}`,
-      group: '档位',
-    })),
-    ...def.models.map((m) => ({
-      value: m.id,
-      label: `${m.id}${mark(m.id === defaultModel)}`,
-      group: modelGroup(def, m),
-    })),
-  ]
-  for (const v of [defaultModel, model])
-    if (v && !modelOptions.some((o) => o.value === v))
-      modelOptions.push({ value: v, label: `${v}${mark(v === defaultModel)}`, group: '其他' })
+  // 和 Agent、设置里的模型下拉同一套：档位、CLI 读取、配置文件三组，默认的那项标（默认）
+  const defaultPick = cs.defaultModel || def.models.find((m) => m.isDefault)?.id || ''
+  const tierRuns = Object.fromEntries(MODEL_TIERS.map((t) => [t.id, { model: tierRun(t.id).model }])) as Record<
+    ModelTier,
+    { model: string }
+  >
+  const options = modelOptions(def, { tiers: tierRuns, defaultValue: defaultPick, extra: [model] })
   // 思考强度的默认：档位或设置给的，其次是模型自己的默认
   const usedModel = run.model || defaultModel
   const defaultEffort =
     agentRun({ cli: def.id, model }, settings).effort || def.models.find((m) => m.id === usedModel)?.defaultEffort || ''
-  const efforts = sortEfforts(def.efforts, (e) => e.id)
-  if (defaultEffort && !efforts.some((e) => e.id === defaultEffort))
-    efforts.push({ id: defaultEffort, label: effortLabel(def, defaultEffort) })
-  const effortOpts = [
-    ...(defaultEffort ? [] : [{ value: '', label: 'auto · 自动（默认）' }]),
-    ...efforts.map((e) => ({ value: e.id, label: `${e.id} · ${e.label}${mark(e.id === defaultEffort)}` })),
-  ]
+  const effortOpts = defaultEffortOptions(def, defaultEffort)
   const compact =
     'h-7 w-auto max-w-[190px] gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
   return (
@@ -274,18 +258,18 @@ function RunPicker({
     >
       <Select
         aria-label="模型"
-        value={model || defaultModel}
-        // 选回默认的那个就清空，之后设置里改了默认也会跟着变
-        onChange={(e) => onModel(e.target.value === defaultModel ? '' : e.target.value)}
-        options={modelOptions}
+        value={model === defaultPick ? '' : model}
+        // 选默认的那项就是留空，之后设置里改了默认也会跟着变
+        onChange={(e) => onModel(e.target.value)}
+        options={options}
         disabled={disabled}
         className={cn(compact, 'font-mono')}
       />
       {def.efforts.length > 0 && (
         <Select
           aria-label="思考强度"
-          value={effort || defaultEffort}
-          onChange={(e) => onEffort(e.target.value === defaultEffort ? '' : e.target.value)}
+          value={effort === defaultEffort ? '' : effort}
+          onChange={(e) => onEffort(e.target.value)}
           disabled={disabled}
           className={compact}
           options={effortOpts}

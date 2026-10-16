@@ -53,6 +53,13 @@ export function agentRun(a: { cli: string; model: string; effort?: string }, set
   return { cli, model, effort, tier: t }
 }
 
+/** Agent 实际用的权限：自己指定且这个 CLI 支持就用自己的，否则跟随 CLI 设置（换过 CLI 时旧值可能不认） */
+export function agentPermission(a: { cli: string; permission?: string }, settings: Settings) {
+  const cli = agentCli(a, settings)
+  const ok = a.permission && getCli(cli)?.permissions.some((p) => p.id === a.permission)
+  return ok ? a.permission! : cliSettings(settings, cli).permission
+}
+
 export const agentModel = (a: { cli: string; model: string }, settings: Settings) => agentRun(a, settings).model
 
 /** 列表里显示的模型：「中档 · sonnet」「opus」「默认 · sonnet」 */

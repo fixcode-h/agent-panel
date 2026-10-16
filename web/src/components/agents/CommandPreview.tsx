@@ -1,7 +1,7 @@
 import { SquareTerminal } from 'lucide-react'
 import { getCli } from '@shared/clis'
 import type { Settings } from '@shared/schema'
-import { agentCli, agentRun, cliSettings, defaultSettings } from '@shared/settings'
+import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
@@ -10,6 +10,7 @@ export function CommandPreview({
   cli,
   model,
   effort = '',
+  permission = '',
   extraArgs,
   className,
   title = '命令预览',
@@ -18,6 +19,8 @@ export function CommandPreview({
   cli: string
   model: string
   effort?: string
+  /** Agent 自己指定的权限；为空跟随 CLI 设置 */
+  permission?: string
   extraArgs: string[]
   className?: string
   title?: string
@@ -35,7 +38,7 @@ export function CommandPreview({
   const args = def.buildArgs({
     model: run.model,
     effort: run.effort,
-    permission: cs.permission,
+    permission: agentPermission({ cli, permission }, s),
     extraArgs: [...cs.extraArgs, ...extraArgs],
   })
   const color = (t: string) => (t.startsWith('-') ? 'text-[#7cc4fa]' : 'text-[#d9dbe0]')

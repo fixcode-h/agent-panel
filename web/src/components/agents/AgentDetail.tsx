@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, AgentInput } from '@shared/schema'
-import { MODEL_TIERS, getCli } from '@shared/clis'
-import { agentCli, agentRun, cliSettings, defaultSettings, tierOf, tierToken } from '@shared/settings'
+import { getCli } from '@shared/clis'
+import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
-import { cliColor, effortLabel, effortOptions, modelSuggestions } from '@/lib/cli-style'
+import { cliDefaultModel, defaultEffortOptions } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
@@ -16,40 +16,17 @@ import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { ComboInput, Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
+import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Segmented } from '@/components/ui/segmented'
 import { Detail, DetailHeader } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from './AgentAvatar'
+import { ModelSelect } from './ModelSelect'
 import { CategoryPicker } from './CategoryPicker'
 import { CommandPreview } from './CommandPreview'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
-
-/** 选择项卡片：CLI 选择用 */
-function OptionCard({
-  selected,
-  onClick,
-  children,
-}: {
-  selected: boolean
-  onClick: () => void
-  children: React.ReactNode
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-pressed={selected}
-      className={cn(
-        'flex flex-[1_1_200px] cursor-pointer items-center gap-3 rounded-[10px] border border-line-strong bg-card p-3 text-left transition-shadow',
-        selected && 'border-accent ring-[3px] ring-accent-soft',
-      )}
-    >
-      {children}
-    </button>
-  )
-}
 
 export function AgentDetail({
   agent,
@@ -86,15 +63,20 @@ export function AgentDetail({
   const cliId = agentCli(draft, s)
   const cli = clis.find((c) => c.id === cliId)
   const cs = cliSettings(s, cliId)
-  const defaultModel = cs.defaultModel
   // 模型和思考强度用本机 CLI 实际支持的（读不到时是内置建议）
   const cliDef = useCliDef(cliId)
   // 不看 Agent 自己的思考强度，得到「跟随设置」时的值
   const run = agentRun({ ...draft, effort: '' }, s)
-  const tier = tierOf(draft.model)
+  const defCli = agentCli({ cli: '' }, s)
+  // 不指定思考强度时实际用的：档位或设置给的，其次是模型自己的默认
+  const usedModel = agentRun(draft, s).model || cliDefaultModel(cliDef ?? getCli(cliId)!)?.id
+  const permId = agentPermission(draft, s)
+  const perm = (cliDef ?? getCli(cliId))?.permissions.find((p) => p.id === permId) ?? { id: permId, hint: '' }
+  const defEffort = run.effort || cliDef?.models.find((m) => m.id === usedModel)?.defaultEffort || ''
   // 换 CLI 时保留档位，具体模型名不通用所以清空
   const pickCli = (id: string) =>
-    draft.cli !== id && setDraft((d) => ({ ...d, cli: id, model: tierOf(d.model) ? d.model : '', effort: '' }))
+    draft.cli !== id &&
+    setDraft((d) => ({ ...d, cli: id, model: tierOf(d.model) ? d.model : '', effort: '', permission: '' }))
   const live = { ...agent, ...value }
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
@@ -218,108 +200,67 @@ export function AgentDetail({
             </FormSection>
 
             <FormSection title="运行环境">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">CLI</span>
-                <div className="flex flex-wrap gap-2.5">
-                  <OptionCard selected={!draft.cli} onClick={() => pickCli('')}>
-                    <span
-                      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
-                      style={{ background: cliColor(agentCli({ cli: '' }, s)) }}
-                    >
-                      <Settings2 className="h-4 w-4" />
-                    </span>
-                    <span className="flex min-w-0 flex-col">
-                      <span className="font-medium">系统默认</span>
-                      <span className="truncate text-xs text-subtle">
-                        当前：{getCli(agentCli({ cli: '' }, s))?.name}，在设置里切换
-                      </span>
-                    </span>
-                  </OptionCard>
-                  {clis.map((c) => (
-                    <OptionCard key={c.id} selected={draft.cli === c.id} onClick={() => pickCli(c.id)}>
-                      <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: cliColor(c.id) }} />
-                      <span className="flex min-w-0 flex-col">
-                        <span className="font-medium">{c.name}</span>
-                        <span
-                          className={cn('truncate text-xs', c.enabled && c.installed ? 'text-success' : 'text-warning')}
-                        >
-                          {!c.enabled
-                            ? '已在设置中停用'
-                            : c.installed
-                              ? `已安装 · ${c.version?.split(' ')[0] ?? ''}`
-                              : '本机未检测到'}
-                        </span>
-                      </span>
-                    </OptionCard>
-                  ))}
-                </div>
+              <div className="flex flex-wrap gap-4">
+                <Field label="CLI" className="flex-[1_1_220px]">
+                  <Select
+                    aria-label="CLI"
+                    value={draft.cli === defCli ? '' : draft.cli}
+                    onChange={(e) => pickCli(e.target.value)}
+                    // 系统默认的 CLI 直接标（默认），选它就是跟随设置里的默认 CLI
+                    options={clis.map((c) => ({
+                      value: c.id === defCli ? '' : c.id,
+                      label: `${c.name}${c.id === defCli ? '（默认）' : ''}${
+                        !c.enabled ? ' · 已停用' : c.installed ? '' : ' · 未安装'
+                      }`,
+                    }))}
+                  />
+                </Field>
+                {cliDef && (
+                  <Field label="模型" className="flex-[2_1_280px]">
+                    <ModelSelect
+                      key={cliId}
+                      def={cliDef}
+                      value={draft.model}
+                      onChange={(v) => set('model', v)}
+                      tiers={cs.tiers}
+                      defaultValue={cs.defaultModel || cliDefaultModel(cliDef)?.id || ''}
+                    />
+                  </Field>
+                )}
               </div>
-              <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">模型档位</span>
-                <div role="radiogroup" aria-label="模型档位" className="grid grid-cols-3 gap-2">
-                  {MODEL_TIERS.map((t) => {
-                    const on = tier?.id === t.id
-                    return (
-                      <button
-                        key={t.id}
-                        type="button"
-                        role="radio"
-                        aria-checked={on}
-                        title={t.hint}
-                        onClick={() => set('model', on ? '' : tierToken(t.id))}
-                        className={cn(
-                          'flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors',
-                          on ? 'border-accent bg-accent-soft' : 'bg-field hover:border-line-strong',
-                        )}
-                      >
-                        <span className={cn('text-[13px] font-medium', on ? 'text-accent' : 'text-fg')}>
-                          {t.label}档 <span className="font-normal text-subtle">· {t.hint}</span>
-                        </span>
-                        <span className="w-full truncate font-mono text-xs text-muted">
-                          {cs.tiers[t.id].model || 'CLI 默认'}
-                          {cs.tiers[t.id].effort && (
-                            <span className="text-subtle"> · {effortLabel(cliDef, cs.tiers[t.id].effort)}</span>
-                          )}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                <span className="text-xs text-subtle">
-                  选档位后，执行时按设置里 {cli?.name ?? cliId} 的档位换成具体模型；换 CLI 也会跟着换。
-                </span>
-              </div>
-              <Field label="或指定模型">
-                <ComboInput
-                  aria-label="模型名"
-                  suggestions={modelSuggestions(cliDef)}
-                  value={tier ? '' : draft.model}
-                  onChange={(v) => set('model', v)}
-                  spellCheck={false}
-                  placeholder={
-                    tier
-                      ? `已选${tier.label}档：${cs.tiers[tier.id].model}，填写会改为指定模型`
-                      : defaultModel
-                        ? `留空使用设置里的默认模型：${defaultModel}`
-                        : '留空使用 CLI 默认模型'
-                  }
-                  className="font-mono text-[13px]"
-                />
-              </Field>
               {cliDef && (
                 <Field
                   label="思考强度"
-                  hint="越高想得越久、越慢。不指定时用档位的设置，再没有就用 CLI 的默认。"
+                  hint="越高想得越久、越慢。选档位时默认用档位的思考强度。"
                   className="max-w-[320px]"
                 >
                   <Select
-                    value={draft.effort}
+                    aria-label="思考强度"
+                    value={draft.effort === defEffort ? '' : draft.effort}
                     onChange={(e) => set('effort', e.target.value)}
-                    options={effortOptions(
-                      cliDef,
-                      run.effort ? `跟随设置 · ${effortLabel(cliDef, run.effort)}` : '跟随设置 · CLI 默认',
-                    )}
+                    options={defaultEffortOptions(cliDef, defEffort)}
                   />
+                </Field>
+              )}
+              {cliDef && (
+                <Field
+                  label="权限"
+                  hint={
+                    <span className={cn(/任意命令|不使用沙箱/.test(perm.hint) && 'text-warning')}>{perm.hint}</span>
+                  }
+                >
+                  <div>
+                    <Segmented
+                      label="权限"
+                      // CLI 设置里的权限标（默认），选它就是跟随设置
+                      value={perm.id === cs.permission ? '' : perm.id}
+                      onChange={(v) => set('permission', v)}
+                      options={cliDef.permissions.map((p) => ({
+                        id: p.id === cs.permission ? '' : p.id,
+                        label: `${p.label}${p.id === cs.permission ? '（默认）' : ''}`,
+                      }))}
+                    />
+                  </div>
                 </Field>
               )}
             </FormSection>
@@ -337,7 +278,7 @@ export function AgentDetail({
                 <Input
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
-                  placeholder="例如：--permission-mode acceptEdits"
+                  placeholder="例如：--add-dir ../shared"
                   className="font-mono text-[13px]"
                 />
               </Field>
@@ -346,7 +287,13 @@ export function AgentDetail({
         }
         aside={
           <>
-            <CommandPreview cli={draft.cli} model={draft.model} effort={draft.effort} extraArgs={value.extraArgs} />
+            <CommandPreview
+              cli={draft.cli}
+              model={draft.model}
+              effort={draft.effort}
+              permission={draft.permission}
+              extraArgs={value.extraArgs}
+            />
             <ReadinessCard checks={checks} />
             <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
               <h3 className="text-[13px] font-semibold">所在工作流</h3>

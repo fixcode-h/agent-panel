@@ -641,6 +641,19 @@ try {
   let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
   t3 = await waitDone(t3.id)
   assert.ok(calls().at(-1).args.includes('model="gpt-6.1-sol"'))
+  // Agent 自己的权限覆盖 CLI 设置；换了 CLI 不认的旧值时跟随设置
+  await call('PUT', '/agents/' + L.id, { ...L, permission: 'plan' })
+  await waitDone(
+    (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: L.id, prompt: '权限' })).id,
+  )
+  let pk = calls().at(-1).args
+  assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'plan', 'Agent 指定的权限')
+  await call('PUT', '/agents/' + L.id, { ...L, permission: 'read-only' })
+  await waitDone(
+    (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: L.id, prompt: '权限' })).id,
+  )
+  pk = calls().at(-1).args
+  assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'acceptEdits', 'CLI 不支持的权限跟随设置')
   await call('PUT', '/settings', settings)
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {
@@ -668,7 +681,7 @@ try {
     'o3>end',
     'start>o1',
   ])
-  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型和思考强度；旧格式工作流自动转换')
+  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型和思考强度；Agent 权限覆盖设置；旧格式工作流自动转换')
 
   // ---- AI 创建 / 优化 ----
   async function assistDone(job) {

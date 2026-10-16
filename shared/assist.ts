@@ -367,6 +367,7 @@ function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; 
       categoryId: cat?.id ?? '',
       instructions: d.instructions,
       effort: '',
+      permission: '',
       extraArgs: [],
       enabled: true,
     },
