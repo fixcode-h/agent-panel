@@ -1,11 +1,12 @@
 import { useState } from 'react'
 import { Toaster } from 'sonner'
-import { Bot, FolderKanban, Moon, Sun, Workflow, type LucideIcon } from 'lucide-react'
+import { Bot, FolderKanban, Moon, Settings, Sun, Workflow, type LucideIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { DataProvider, NavCtx, type PageId, type Route } from '@/lib/data'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
+import { SettingsPage } from '@/pages/SettingsPage'
 import { DemoBanner } from '@/components/layout/DemoBanner'
 
 /** 左侧导航；新增页面在这里登记即可 */
@@ -44,7 +45,7 @@ function Logo() {
 export function App() {
   const [route, setRoute] = useState<Route>({ page: 'agents' })
   const [dark, toggleTheme] = useTheme()
-  const current = NAV.find((n) => n.id === route.page)!
+  const current = NAV.find((n) => n.id === route.page)
 
   return (
     <DataProvider>
@@ -87,8 +88,20 @@ export function App() {
             >
               {dark ? <Sun className="h-5 w-5" strokeWidth={1.8} /> : <Moon className="h-5 w-5" strokeWidth={1.8} />}
             </button>
+            <button
+              onClick={() => setRoute({ page: 'settings' })}
+              aria-label="设置"
+              title="设置"
+              aria-current={route.page === 'settings' ? 'page' : undefined}
+              className={cn(
+                'grid h-11 w-11 cursor-pointer place-items-center rounded-[10px] md:mt-1',
+                route.page === 'settings' ? 'bg-accent-soft text-accent' : 'text-subtle hover:text-fg',
+              )}
+            >
+              <Settings className="h-5 w-5" strokeWidth={1.8} />
+            </button>
           </nav>
-          <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">{current.page?.()}</div>
+          <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">{route.page === 'settings' ? <SettingsPage /> : current?.page?.()}</div>
         </div>
         </div>
         <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />

@@ -2,6 +2,7 @@
 const colors: Record<string, string> = {
   claude: '#c96442',
   codex: '#0e8a6b',
+  commandcode: '#b4307a',
 }
 
 export const cliColor = (id: string) => colors[id] ?? '#64748b'

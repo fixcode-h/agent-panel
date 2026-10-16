@@ -8,7 +8,7 @@ import { AGENT_ICONS } from '@/lib/agent-icons'
 import { cliColor } from '@/lib/cli-style'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
-import { cn } from '@/lib/utils'
+import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -22,10 +22,6 @@ import { CommandPreview } from './CommandPreview'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
 
-/** 按空格拆参数，支持用引号包住含空格的值 */
-const splitArgs = (s: string) =>
-  (s.match(/"[^"]*"|'[^']*'|\S+/g) ?? []).map((a) => a.replace(/^(["'])(.*)\1$/, '$2'))
-const joinArgs = (a: string[]) => a.map((x) => (/\s/.test(x) ? `"${x}"` : x)).join(' ')
 
 /** 选择项卡片：CLI 选择用 */
 function OptionCard({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
@@ -45,7 +41,7 @@ function OptionCard({ selected, onClick, children }: { selected: boolean; onClic
 }
 
 export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; onDuplicate: () => void; onDeleted: () => void }) {
-  const { clis, categories, workflows, setAgents } = useData()
+  const { clis, categories, workflows, setAgents, settings } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<AgentInput>(() => toInput(agent))
   const [args, setArgs] = useState(() => joinArgs(agent.extraArgs))
@@ -64,6 +60,7 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
 
   const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
   const cli = clis.find((c) => c.id === draft.cli)
+  const defaultModel = settings?.clis[draft.cli]?.defaultModel ?? ''
   const live = { ...agent, ...value }
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
@@ -174,8 +171,8 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
                       <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: cliColor(c.id) }} />
                       <span className="flex min-w-0 flex-col">
                         <span className="font-medium">{c.name}</span>
-                        <span className={cn('truncate text-xs', c.installed ? 'text-success' : 'text-warning')}>
-                          {c.installed ? `已安装 · ${c.version?.split(' ')[0] ?? ''}` : '本机未检测到'}
+                        <span className={cn('truncate text-xs', c.enabled && c.installed ? 'text-success' : 'text-warning')}>
+                          {!c.enabled ? '已在设置中停用' : c.installed ? `已安装 · ${c.version?.split(' ')[0] ?? ''}` : '本机未检测到'}
                         </span>
                       </span>
                     </OptionCard>
@@ -186,7 +183,7 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
                 <Input
                   value={draft.model}
                   onChange={(e) => set('model', e.target.value)}
-                  placeholder="留空使用 CLI 默认模型"
+                  placeholder={defaultModel ? `留空使用设置里的默认模型：${defaultModel}` : '留空使用 CLI 默认模型'}
                   className="font-mono text-[13px]"
                 />
               </Field>

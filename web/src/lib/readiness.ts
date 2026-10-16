@@ -14,12 +14,12 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
   const instr = a.instructions.trim()
   return [
     {
-      ok: !!cli?.installed,
+      ok: !!cli?.installed && cli.enabled,
       label: 'CLI 已安装',
-      hint: cli?.installed ? `${cli.name} ${cli.version?.split(' ')[0] ?? ''}` : `安装 ${cli?.name ?? a.cli} 后才能运行`,
+      hint: !cli ? `未知的 CLI：${a.cli}` : !cli.enabled ? `${cli.name} 已在设置中停用` : cli.installed ? `${cli.name} ${cli.version?.split(' ')[0] ?? ''}` : `没有找到 ${cli.command}，安装后或在设置里填写路径`,
     },
     { ok: a.enabled, label: '已启用', hint: a.enabled ? '可以被工作流调用' : '停用后工作流不会调用它' },
-    { ok: !!a.model, label: '已指定模型', hint: a.model || '留空会使用 CLI 默认模型', optional: true },
+    { ok: !!a.model, label: '已指定模型', hint: a.model || '留空会使用设置里的默认模型', optional: true },
     { ok: !!instr, label: '已写角色设定', hint: instr ? `共 ${instr.length} 字` : '建议写清楚它的职责和交付标准', optional: true },
   ]
 }
@@ -37,7 +37,10 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]):
   const mentions = parseMentions(w.document)
   const unknown = mentions.filter((m) => !teamNames.has(m))
   const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !mentions.includes(a.name)) as Agent[]
-  const notRunnable = team.filter((a) => !a.enabled || !clis.find((c) => c.id === a.cli)?.installed)
+  const notRunnable = team.filter((a) => {
+    const c = clis.find((x) => x.id === a.cli)
+    return !a.enabled || !c?.installed || !c.enabled
+  })
 
   return [
     { ok: !!main, label: '已选择主 Agent', hint: main ? main.name : '主 Agent 负责按文档推进并分派步骤' },

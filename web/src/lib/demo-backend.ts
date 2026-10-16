@@ -16,6 +16,7 @@ import {
   WorkflowInput,
   FollowUpInput,
   NewTaskInput,
+  Settings,
   type Task,
   type CliStatus,
   type DirInfo,
@@ -34,6 +35,7 @@ interface Db {
   projects: Project[]
   /** 旧版本的演示数据没有这一项，首次访问时补上示例任务 */
   tasks?: Task[]
+  settings?: Settings
 }
 
 class HttpError extends Error {}
@@ -114,10 +116,9 @@ function seed(): Db {
     description: '理解需求、拆分任务、分派并验收结果',
     instructions:
       '你是这个项目的技术负责人。先阅读工作流文档和需求，把任务拆成可独立验证的小步骤，分派给合适的子 Agent，并在每一步完成后检查结果。',
-    extraArgs: ['--permission-mode', 'plan'],
   })
   const fe = agent({ name: '前端开发', icon: 'layout', categoryId: dev.id, cli: 'claude', model: 'sonnet', description: '实现 React 页面与交互，保证视觉还原' })
-  const be = agent({ name: '后端开发', icon: 'database', categoryId: dev.id, cli: 'codex', model: 'gpt-5-codex', description: '实现 Node API、数据层与本机进程调度', extraArgs: ['--full-auto'] })
+  const be = agent({ name: '后端开发', icon: 'database', categoryId: dev.id, cli: 'codex', model: 'gpt-5.6', description: '实现 Node API、数据层与本机进程调度' })
   const qaAgent = agent({ name: '测试工程师', icon: 'test', categoryId: qa.id, cli: 'claude', model: 'sonnet', description: '编写并运行单元测试与端到端测试' })
   const review = agent({ name: '代码审查', icon: 'shield', categoryId: qa.id, cli: 'claude', model: 'haiku', description: '检查改动的正确性与风格，给出修改建议', enabled: false })
   const docs = agent({ name: '文档助手', icon: 'doc', cli: 'claude', model: 'haiku', description: '整理 README 和变更说明' })
@@ -233,12 +234,15 @@ function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
 }
 
 function clis(): CliStatus[] {
+  const s = load().settings
   return CLIS.map((c) => ({
     id: c.id,
     name: c.name,
-    command: c.command,
+    command: s?.clis[c.id]?.command || c.command,
+    enabled: s?.clis[c.id]?.enabled ?? true,
     installed: c.id === 'claude',
     version: c.id === 'claude' ? '2.1.300 (Claude Code)' : undefined,
+    error: c.id === 'claude' ? undefined : '在线演示：模拟为未安装',
     models: c.models,
     docsUrl: c.docsUrl,
   }))
@@ -251,6 +255,12 @@ function route(method: string, url: string, body: unknown): unknown {
   const seg = path.split('/').filter(Boolean)
   const [res, id, sub] = seg
 
+  if (res === 'settings') {
+    // 在线演示只能模拟执行
+    if (method === 'PUT') d.settings = { ...parse(Settings, body), execution: 'simulate' }
+    persist()
+    return (d.settings ??= { ...Settings.parse({}), execution: 'simulate' })
+  }
   if (res === 'clis') return clis()
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')

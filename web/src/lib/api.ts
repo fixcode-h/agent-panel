@@ -9,6 +9,7 @@ import type {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  Settings,
   NewTaskInput,
   Task,
   Workflow,
@@ -35,6 +36,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
 export const api = {
+  settings: () => request<Settings>('/settings'),
+  saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
+
   clis: (refresh = false) => request<CliStatus[]>(`/clis${refresh ? '?refresh=1' : ''}`),
 
   categories: () => request<Category[]>('/categories'),

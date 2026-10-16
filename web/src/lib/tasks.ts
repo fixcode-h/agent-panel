@@ -19,12 +19,12 @@ export function timeAgo(iso: string, now = Date.now()) {
 
 /** 粗略估算 token：中日韩字符约 1 个，其他字符约 4 个一个 */
 export function estimateTokens(text: string) {
-  const cjk = (text.match(/[　-鿿＀-￯]/g) ?? []).length
+  const cjk = (text.match(/[\u3000-\u9fff\uff00-\uffef]/g) ?? []).length
   return Math.ceil(cjk + (text.length - cjk) / 4)
 }
 
 /** 每次读文件、跑命令带回的内容，按经验值估算 */
-const TOOL_TOKENS = { read: 1800, search: 600, run: 900, edit: 400 } as const
+const TOOL_TOKENS = { read: 1800, search: 600, run: 900, edit: 400, other: 300 } as const
 
 export interface ContextPart {
   key: string

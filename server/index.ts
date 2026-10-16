@@ -17,7 +17,9 @@ import {
 import { getCli } from '../shared/clis.ts'
 import { createCollection } from './store.ts'
 import { tasksApi } from './tasks.ts'
-import { detectClis } from './detect.ts'
+import { detectClis, invalidateClis } from './detect.ts'
+import { getSettings, saveSettings } from './settings.ts'
+import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
@@ -51,6 +53,16 @@ async function parseWorkflow(body: unknown) {
 }
 
 app.get('/health', (c) => c.json({ ok: true }))
+// ---- 设置 ----
+app.get('/settings', async (c) => c.json(await getSettings()))
+app.put('/settings', async (c) => {
+  const p = Settings.safeParse(await c.req.json())
+  if (!p.success) return bad(c, z.prettifyError(p.error))
+  for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
+  invalidateClis()
+  return c.json(await saveSettings(p.data))
+})
+
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 
 // ---- 分类 ----
@@ -219,7 +231,7 @@ app.get('/fs/list', async (c) => {
 const root = new Hono()
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
-if (process.env.NODE_ENV === 'production') {
+if (process.env.NODE_ENV === 'production' || process.argv.includes('--prod')) {
   root.use('/*', serveStatic({ root: './dist' }))
   root.get('*', serveStatic({ path: './dist/index.html' }))
 }

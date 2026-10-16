@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import type { Agent, Category, CliStatus, Project, ProjectCategory, Workflow } from '@shared/schema'
+import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Workflow } from '@shared/schema'
 import { api } from './api'
 
 interface Data {
@@ -11,6 +11,8 @@ interface Data {
   clis: CliStatus[]
   projects: Project[]
   projectCategories: ProjectCategory[]
+  settings: Settings | null
+  setSettings: (s: Settings) => void
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>
   setProjectCategories: React.Dispatch<React.SetStateAction<ProjectCategory[]>>
   setAgents: React.Dispatch<React.SetStateAction<Agent[]>>
@@ -30,10 +32,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [clis, setClis] = useState<CliStatus[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
+  const [settings, setSettings] = useState<Settings | null>(null)
 
   useEffect(() => {
-    Promise.all([api.agents(), api.categories(), api.workflows(), api.clis(), api.projects(), api.projectCategories()])
-      .then(([a, c, w, l, p, pc]) => {
+    Promise.all([api.agents(), api.categories(), api.workflows(), api.clis(), api.projects(), api.projectCategories(), api.settings()])
+      .then(([a, c, w, l, p, pc, s]) => {
+        setSettings(s)
         setProjects(p)
         setProjectCategories(pc)
         setAgents(a)
@@ -59,6 +63,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         clis,
         projects,
         projectCategories,
+        settings,
+        setSettings,
         setAgents,
         setCategories,
         setWorkflows,
@@ -79,7 +85,7 @@ export function useData() {
 }
 
 /** 当前页面和选中项；用于跨页面跳转，例如从 Agent 跳到使用它的工作流 */
-export type PageId = 'agents' | 'workflows' | 'projects'
+export type PageId = 'agents' | 'workflows' | 'projects' | 'settings'
 export interface Route {
   page: PageId
   id?: string

@@ -1,5 +1,14 @@
 import { useState } from 'react'
-import { ChevronDown, Circle, CircleCheck, FolderOpen, GitBranch, Loader2, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
+import {
+  ChevronDown,
+  Circle,
+  CircleCheck,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  MessageSquare,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 import type { Project, Task, Workflow } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { contextUsage, fmtTokens } from '@/lib/tasks'
@@ -39,7 +48,10 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
 
   return (
     <div className="flex flex-col gap-3">
-      <Section title="任务进度" extra={task.mode === 'workflow' && task.steps.length ? `${done}/${task.steps.length}` : undefined}>
+      <Section
+        title="任务进度"
+        extra={task.mode === 'workflow' && task.steps.length ? `${done}/${task.steps.length}` : undefined}
+      >
         {task.mode === 'workflow' ? (
           <ol className="flex flex-col">
             {task.steps.map((s, i) => {
@@ -57,7 +69,13 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
                     )}
                   </span>
                   <span className="flex min-w-0 flex-col gap-0.5">
-                    <span className={cn('text-[13px]', s.status === 'pending' ? 'text-muted' : 'text-fg', s.status === 'running' && 'font-medium')}>
+                    <span
+                      className={cn(
+                        'text-[13px]',
+                        s.status === 'pending' ? 'text-muted' : 'text-fg',
+                        s.status === 'running' && 'font-medium',
+                      )}
+                    >
                       {s.title}
                     </span>
                     {a && (
@@ -76,35 +94,79 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
         )}
       </Section>
 
-      <Section title="上下文" extra="估算">
-        <div className="mb-1.5 flex items-baseline justify-between text-xs">
-          <span className="font-medium text-fg">已使用 {pct(ctx.used).toFixed(1)}%</span>
-          <span className="font-mono text-subtle">
-            {fmtTokens(ctx.used)} / {fmtTokens(ctx.window)}
-          </span>
-        </div>
-        <div className="flex h-1.5 overflow-hidden rounded-full bg-field" role="img" aria-label={`上下文已使用 ${pct(ctx.used).toFixed(1)}%`}>
-          {ctx.parts.map((p) => (
-            <span key={p.key} style={{ width: `${pct(p.tokens)}%`, background: p.color }} />
-          ))}
-        </div>
-        <ul className="mt-2.5 flex flex-col gap-1.5 text-xs">
-          {ctx.parts.map((p) => (
-            <li key={p.key} className="flex items-center gap-2 text-muted">
-              <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
-              <span className="flex-1">{p.label}</span>
-              <span className="font-mono text-subtle">{fmtTokens(p.tokens)}</span>
-              <span className="w-12 text-right font-mono">{pct(p.tokens).toFixed(1)}%</span>
+      {task.simulated ? (
+        <Section title="上下文" extra="估算">
+          <div className="mb-1.5 flex items-baseline justify-between text-xs">
+            <span className="font-medium text-fg">已使用 {pct(ctx.used).toFixed(1)}%</span>
+            <span className="font-mono text-subtle">
+              {fmtTokens(ctx.used)} / {fmtTokens(ctx.window)}
+            </span>
+          </div>
+          <div
+            className="flex h-1.5 overflow-hidden rounded-full bg-field"
+            role="img"
+            aria-label={`上下文已使用 ${pct(ctx.used).toFixed(1)}%`}
+          >
+            {ctx.parts.map((p) => (
+              <span key={p.key} style={{ width: `${pct(p.tokens)}%`, background: p.color }} />
+            ))}
+          </div>
+          <ul className="mt-2.5 flex flex-col gap-1.5 text-xs">
+            {ctx.parts.map((p) => (
+              <li key={p.key} className="flex items-center gap-2 text-muted">
+                <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
+                <span className="flex-1">{p.label}</span>
+                <span className="font-mono text-subtle">{fmtTokens(p.tokens)}</span>
+                <span className="w-12 text-right font-mono">{pct(p.tokens).toFixed(1)}%</span>
+              </li>
+            ))}
+            <li className="flex items-center gap-2 text-subtle">
+              <span className="h-2 w-2 shrink-0 rounded-[2px] bg-field ring-1 ring-line-strong" />
+              <span className="flex-1">剩余</span>
+              <span className="font-mono">{fmtTokens(ctx.window - ctx.used)}</span>
+              <span className="w-12 text-right font-mono">{pct(ctx.window - ctx.used).toFixed(1)}%</span>
             </li>
-          ))}
-          <li className="flex items-center gap-2 text-subtle">
-            <span className="h-2 w-2 shrink-0 rounded-[2px] bg-field ring-1 ring-line-strong" />
-            <span className="flex-1">剩余</span>
-            <span className="font-mono">{fmtTokens(ctx.window - ctx.used)}</span>
-            <span className="w-12 text-right font-mono">{pct(ctx.window - ctx.used).toFixed(1)}%</span>
-          </li>
-        </ul>
-      </Section>
+          </ul>
+        </Section>
+      ) : (
+        <Section title="上下文" extra="CLI 报告">
+          {Object.keys(task.usage.agents).length === 0 ? (
+            <p className="text-xs text-subtle">CLI 开始运行后会显示上下文占用。</p>
+          ) : (
+            <ul className="flex flex-col gap-3">
+              {Object.entries(task.usage.agents).map(([id, u]) => {
+                const a = byId.get(id)
+                const p = Math.min(100, (u.context / u.window) * 100)
+                return (
+                  <li key={id} className="flex flex-col gap-1.5">
+                    <div className="flex items-center gap-2 text-xs">
+                      {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
+                      <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? '已删除的 Agent'}</span>
+                      <span className="font-mono text-subtle">
+                        {fmtTokens(u.context)} / {fmtTokens(u.window)}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-field">
+                      <span
+                        className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
+                        style={{ width: `${Math.max(p, 1)}%` }}
+                      />
+                    </div>
+                    <span className="font-mono text-[11px] text-subtle">
+                      {u.model || '默认模型'} · 已使用 {p.toFixed(1)}%
+                    </span>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+          <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t pt-2.5 font-mono text-[11px] text-subtle">
+            <span>累计输入 {fmtTokens(task.usage.inputTokens)}</span>
+            <span>输出 {fmtTokens(task.usage.outputTokens)}</span>
+            {task.usage.costUsd > 0 && <span>费用 ${task.usage.costUsd.toFixed(3)}</span>}
+          </div>
+        </Section>
+      )}
 
       <Section
         title="更改"

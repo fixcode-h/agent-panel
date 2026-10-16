@@ -1,36 +1,34 @@
-import { execFile } from 'node:child_process'
 import { CLIS } from '../shared/clis.ts'
 import type { CliStatus } from '../shared/schema.ts'
+import { cliSettings } from '../shared/settings.ts'
+import { capture, childEnv } from './exec/process.ts'
+import { getSettings } from './settings.ts'
 
 const TTL = 30_000
 let cached: { at: number; data: CliStatus[] } | null = null
 
-function version(command: string, args: string[]): Promise<string | null> {
-  return new Promise((resolve) => {
-    execFile(
-      command,
-      args,
-      { timeout: 5000, shell: process.platform === 'win32', windowsHide: true },
-      (err, stdout, stderr) => {
-        if (err) return resolve(null)
-        resolve((stdout || stderr).trim().split('\n')[0] ?? '')
-      },
-    )
-  })
+export const invalidateClis = () => {
+  cached = null
 }
 
-/** 检测每个 CLI 是否装在本机（结果缓存 30 秒） */
+/** 检测每个 CLI 是否装在本机（使用设置里的可执行文件和环境变量，结果缓存 30 秒） */
 export async function detectClis(force = false): Promise<CliStatus[]> {
   if (!force && cached && Date.now() - cached.at < TTL) return cached.data
+  const settings = await getSettings()
   const data = await Promise.all(
-    CLIS.map(async (c) => {
-      const v = await version(c.command, c.versionArgs)
+    CLIS.map(async (c): Promise<CliStatus> => {
+      const cs = cliSettings(settings, c.id)
+      const r = await capture(cs.command, c.versionArgs, process.cwd(), childEnv(cs.env), 10_000)
+      const out = (r.stdout || r.stderr).trim().split('\n')[0] ?? ''
+      const installed = !r.spawnError && !r.killed && r.code === 0
       return {
         id: c.id,
         name: c.name,
-        command: c.command,
-        installed: v !== null,
-        version: v ?? undefined,
+        command: cs.command,
+        enabled: cs.enabled,
+        installed,
+        version: installed ? out : undefined,
+        error: installed ? undefined : (r.spawnError ?? (r.killed ? '检测超时' : out || `退出码 ${r.code}`)),
         models: c.models,
         docsUrl: c.docsUrl,
       }

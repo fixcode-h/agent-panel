@@ -1,6 +1,20 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, FileText, FlaskConical, Info, Loader2, PanelRight, PencilLine, Search, Square, Terminal, Trash2, X } from 'lucide-react'
+import {
+  ArrowUp,
+  FileText,
+  FlaskConical,
+  Info,
+  Loader2,
+  PanelRight,
+  PencilLine,
+  Search,
+  Square,
+  Terminal,
+  Trash2,
+  Wrench,
+  X,
+} from 'lucide-react'
 import type { Project, Task, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -13,7 +27,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { TaskPanel } from './TaskPanel'
 import { TaskStatusIcon } from './TaskStatusIcon'
 
-const toolIcon = { read: FileText, edit: PencilLine, run: Terminal, search: Search }
+const toolIcon = { read: FileText, edit: PencilLine, run: Terminal, search: Search, other: Wrench }
 
 function ToolRow({ tool }: { tool: ToolUse }) {
   const Icon = toolIcon[tool.kind]
@@ -33,18 +47,26 @@ function ToolRow({ tool }: { tool: ToolUse }) {
   )
 }
 
-function AgentMessage({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
+function AgentMessage({ m, teamNames, compact }: { m: TaskMessage; teamNames: Set<string>; compact?: boolean }) {
   const { agents } = useData()
   const a = agents.find((x) => x.id === m.agentId)
   const html = useMemo(() => renderDoc(m.text, teamNames), [m.text, teamNames])
   return (
     <div className="flex gap-3">
-      {a ? <AgentAvatar icon={a.icon} cli={a.cli} size="sm" /> : <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />}
+      {compact ? (
+        <span className="w-[26px] shrink-0" />
+      ) : a ? (
+        <AgentAvatar icon={a.icon} cli={a.cli} size="sm" />
+      ) : (
+        <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />
+      )}
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex items-center gap-2 pt-0.5 text-[13px]">
-          <span className="font-medium">{a?.name ?? '已删除的 Agent'}</span>
-          {a?.model && <span className="font-mono text-xs text-subtle">{a.model}</span>}
-        </div>
+        {!compact && (
+          <div className="flex items-center gap-2 pt-0.5 text-[13px]">
+            <span className="font-medium">{a?.name ?? '已删除的 Agent'}</span>
+            {a?.model && <span className="font-mono text-xs text-subtle">{a.model}</span>}
+          </div>
+        )}
         {m.tools.length > 0 && (
           <div className="flex flex-col gap-1">
             {m.tools.map((t, i) => (
@@ -85,14 +107,24 @@ export function TaskView({
   }
 
   useEffect(() => {
-    api.task(taskId).then(apply).catch((e) => toast.error((e as Error).message))
+    api
+      .task(taskId)
+      .then(apply)
+      .catch((e) => toast.error((e as Error).message))
   }, [taskId])
 
   // 执行中时轮询；真实执行接入后可以换成服务端推送
   const running = task?.status === 'running'
   useEffect(() => {
     if (!running) return
-    const t = setInterval(() => api.task(taskId).then(apply).catch(() => {}), 700)
+    const t = setInterval(
+      () =>
+        api
+          .task(taskId)
+          .then(apply)
+          .catch(() => {}),
+      700,
+    )
     return () => clearInterval(t)
   }, [running, taskId])
 
@@ -120,7 +152,14 @@ export function TaskView({
       apply(await api.sendMessage(task.id, text))
       setText('')
       // 发送后马上拉一次，让「执行中」尽快出现
-      setTimeout(() => api.task(task.id).then(apply).catch(() => {}), 200)
+      setTimeout(
+        () =>
+          api
+            .task(task.id)
+            .then(apply)
+            .catch(() => {}),
+        200,
+      )
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -151,6 +190,8 @@ export function TaskView({
   const busyAgent = agents.find((a) => a.id === (runningStep?.agentId ?? lastAgent?.agentId))
   const chatAgent = agents.find((a) => a.id === task.agentId)
   let prevStep = -1
+  // 同一个 Agent 在同一步里连续的消息只显示一次头像和名字
+  let prevSpeaker = ''
 
   return (
     <>
@@ -160,7 +201,9 @@ export function TaskView({
             <TaskStatusIcon status={task.status} />
             <h2 className="min-w-0 flex-[1_1_200px] truncate text-[15px] font-semibold">{task.title}</h2>
             <div className="flex items-center gap-2">
-              <Badge>{task.mode === 'workflow' ? `工作流 · ${workflow?.name ?? '已删除'}` : `对话 · ${chatAgent?.name ?? '已删除'}`}</Badge>
+              <Badge>
+                {task.mode === 'workflow' ? `工作流 · ${workflow?.name ?? '已删除'}` : `对话 · ${chatAgent?.name ?? '已删除'}`}
+              </Badge>
               {task.simulated && (
                 <Badge tone="warning" title="还没有真正调用 CLI，输出是示例">
                   <FlaskConical className="h-3 w-3" />
@@ -195,12 +238,15 @@ export function TaskView({
               {task.messages.map((m) => {
                 // 进入新步骤时插一条分隔线
                 let stepHeader
+                const speaker = m.role === 'agent' ? `${m.agentId}:${m.step}` : ''
+                const compact = !!speaker && speaker === prevSpeaker
+                prevSpeaker = speaker
                 if (m.role === 'agent') {
                   if (m.step >= 0 && m.step !== prevStep) stepHeader = task.steps[m.step]
                   prevStep = m.step
                 }
                 return (
-                  <div key={m.id} className="flex flex-col gap-5">
+                  <div key={m.id} className={cn('flex flex-col gap-5', compact && '-mt-3')}>
                     {stepHeader && (
                       <div className="flex items-center gap-3 text-xs text-subtle">
                         <span className="h-px flex-1 bg-line" />
@@ -220,7 +266,7 @@ export function TaskView({
                         {m.text}
                       </div>
                     ) : (
-                      <AgentMessage m={m} teamNames={teamNames} />
+                      <AgentMessage m={m} teamNames={teamNames} compact={compact} />
                     )}
                   </div>
                 )
@@ -259,10 +305,12 @@ export function TaskView({
                   {running
                     ? '执行中，可以随时停止'
                     : task.mode === 'workflow'
-                    ? task.steps.every((s) => s.status === 'done')
-                      ? `由主 Agent ${agents.find((a) => a.id === workflow?.mainAgentId)?.name ?? ''} 处理追加要求`
-                      : '会从没完成的步骤继续执行'
-                    : `发给 ${chatAgent?.name ?? 'Agent'}`}
+                      ? task.steps.every((s) => s.status === 'done')
+                        ? `由主 Agent ${agents.find((a) => a.id === workflow?.mainAgentId)?.name ?? ''} 处理追加要求`
+                        : task.status === 'failed'
+                          ? '会从失败的步骤重新执行'
+                          : '会从没完成的步骤继续执行'
+                      : `发给 ${chatAgent?.name ?? 'Agent'}`}
                 </span>
                 {running ? (
                   <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>

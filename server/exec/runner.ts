@@ -1,0 +1,287 @@
+import { stat } from 'node:fs/promises'
+import type { Agent, CliStatus, Project, Settings, Task, TaskMessage, Workflow } from '../../shared/schema.ts'
+import { getCli } from '../../shared/clis.ts'
+import { cliSettings } from '../../shared/settings.ts'
+import { gitChanges } from './git.ts'
+import { parserFor, type CliEvent } from './parsers.ts'
+import { childEnv, runProcess } from './process.ts'
+
+export interface RealContext {
+  task: Task
+  agents: Agent[]
+  workflow?: Workflow
+  project: Project
+  settings: Settings
+  clis: CliStatus[]
+  /** 本轮用户输入 */
+  prompt: string
+  signal: AbortSignal
+  changed: (flush?: boolean) => void
+  newId: () => string
+  /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
+  isGit: boolean
+}
+
+type AgentResult = { ok: true; text: string } | { ok: false; stopped?: boolean; error: string }
+
+const MAX_SUMMARY = 1500
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
+
+/** 上下文窗口大小；CLI 不直接报告，按模型估计 */
+function windowFor(cli: string, model: string) {
+  if (/1m/i.test(model)) return 1_000_000
+  if (cli === 'codex') return 272_000
+  return 200_000
+}
+
+function system(ctx: RealContext, text: string) {
+  ctx.task.messages.push({
+    id: ctx.newId(),
+    role: 'system',
+    agentId: '',
+    step: -1,
+    text,
+    tools: [],
+    at: new Date().toISOString(),
+  })
+}
+
+/** 工作流文档里某个二级标题下面的正文 */
+function sectionBody(doc: string, index: number) {
+  const heads = [...doc.matchAll(/^##\s+.+$/gm)]
+  const h = heads[index]
+  if (!h) return ''
+  const start = h.index! + h[0].length
+  const rest = doc.slice(start)
+  const end = rest.search(/^#{1,2}\s/m)
+  return (end < 0 ? rest : rest.slice(0, end)).trim()
+}
+
+function userRequests(task: Task) {
+  const users = task.messages.filter((m) => m.role === 'user').map((m) => m.text)
+  return { original: users[0] ?? '', extra: users.slice(1) }
+}
+
+function stepSummaries(task: Task, upTo: number, agents: Agent[]) {
+  const out: string[] = []
+  for (let i = 0; i < upTo; i++) {
+    const s = task.steps[i]
+    const text = task.messages
+      .filter((m) => m.role === 'agent' && m.step === i && m.text)
+      .map((m) => m.text)
+      .join('\n\n')
+    const who = agents.find((a) => a.id === s.agentId)?.name ?? ''
+    out.push(`### 第 ${i + 1} 步：${s.title}（${who}）\n${text ? clip(text, MAX_SUMMARY) : '（没有文字输出）'}`)
+  }
+  return out.join('\n\n')
+}
+
+function stepPrompt(ctx: RealContext, i: number) {
+  const { task, workflow, agents } = ctx
+  const step = task.steps[i]
+  const { original, extra } = userRequests(task)
+  const body = workflow ? sectionBody(workflow.document, i) : ''
+  return [
+    `你正在执行工作流「${workflow?.name ?? ''}」的第 ${i + 1}/${task.steps.length} 步：${step.title}`,
+    `## 用户需求\n${original}`,
+    extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
+    workflow?.document.trim() ? `## 工作流文档\n${workflow.document.trim()}` : '',
+    body ? `## 本步骤说明\n${body}` : '',
+    i > 0 ? `## 之前步骤的结果\n${stepSummaries(task, i, agents)}` : '',
+    `## 要求\n只完成本步骤「${step.title}」，不要做其他步骤的工作。完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function followUpPrompt(ctx: RealContext) {
+  const { original } = userRequests(ctx.task)
+  if (ctx.task.mode === 'chat') return ctx.prompt
+  return [
+    `用户对任务「${ctx.task.title}」提出了追加要求：\n${ctx.prompt}`,
+    `## 任务的原始需求\n${original}`,
+    ctx.workflow?.document.trim() ? `## 工作流文档\n${ctx.workflow.document.trim()}` : '',
+    '工作流的各个步骤已经完成。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
+async function runAgent(ctx: RealContext, agentId: string, step: number, prompt: string, retried = false): Promise<AgentResult> {
+  const { task, settings, project } = ctx
+  const agent = ctx.agents.find((a) => a.id === agentId)
+  if (!agent) return { ok: false, error: '找不到执行这一步的 Agent，可能已被删除' }
+  const def = getCli(agent.cli)
+  if (!def) return { ok: false, error: `未知的 CLI：${agent.cli}` }
+  const cs = cliSettings(settings, agent.cli)
+  if (!cs.enabled) return { ok: false, error: `${def.name} 在设置里被停用了` }
+  if (!agent.enabled) return { ok: false, error: `Agent「${agent.name}」已停用` }
+  const cwd = project.path
+  const dir = await stat(cwd).catch(() => null)
+  if (!dir?.isDirectory()) return { ok: false, error: `项目目录不存在：${cwd || '（未设置）'}` }
+
+  const model = agent.model || cs.defaultModel
+  const resume = task.sessions[agentId]
+  const instructions = agent.instructions.trim()
+  let input = prompt
+  if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${prompt}`
+  const args = def.buildArgs({
+    model,
+    permission: cs.permission,
+    extraArgs: [...cs.extraArgs, ...agent.extraArgs],
+    resume,
+    systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
+  })
+
+  const parse = parserFor(agent.cli, cwd)
+  let cur: TaskMessage | undefined
+  const texts: string[] = []
+  const errors: string[] = []
+  let result: { ok: boolean; error?: string } | undefined
+  const newMsg = () => {
+    cur = { id: ctx.newId(), role: 'agent', agentId, step, text: '', tools: [], at: new Date().toISOString() }
+    task.messages.push(cur)
+    return cur
+  }
+
+  const apply = (ev: CliEvent) => {
+    switch (ev.type) {
+      case 'session':
+        task.sessions[agentId] = ev.id
+        break
+      case 'text_delta': {
+        if (!cur && !ev.text.trim()) break
+        const m = cur ?? newMsg()
+        m.text += ev.text
+        break
+      }
+      case 'text': {
+        const m = cur ?? newMsg()
+        m.text = m.text ? `${m.text.trimEnd()}\n\n${ev.text}` : ev.text
+        break
+      }
+      case 'tool': {
+        const m = !cur || cur.text.trim() ? newMsg() : cur
+        m.text = ''
+        m.tools.push(ev.tool)
+        if (ev.file && !ctx.isGit) {
+          const old = task.changes.find((c) => c.path === ev.file!.path)
+          if (old) {
+            old.add += ev.file.add
+            old.del += ev.file.del
+          } else task.changes.push({ ...ev.file })
+        }
+        break
+      }
+      case 'usage': {
+        const prev = task.usage.agents[agentId]
+        const m = ev.model || prev?.model || model
+        task.usage.agents[agentId] = {
+          context: ev.context ?? prev?.context ?? 0,
+          window: windowFor(agent.cli, m),
+          model: m,
+        }
+        task.usage.inputTokens += ev.addInput ?? 0
+        task.usage.outputTokens += ev.addOutput ?? 0
+        task.usage.costUsd += ev.addCost ?? 0
+        break
+      }
+      case 'error':
+        errors.push(ev.message)
+        break
+      case 'result':
+        result = ev
+        break
+    }
+    ctx.changed()
+  }
+
+  const r = await runProcess({
+    command: cs.command,
+    args,
+    cwd,
+    env: childEnv(cs.env),
+    stdin: input,
+    signal: ctx.signal,
+    timeoutMs: settings.stepTimeoutMinutes * 60_000,
+    onLine: (line) => {
+      const t = line.trim()
+      if (!t.startsWith('{')) return
+      let obj: unknown
+      try {
+        obj = JSON.parse(t)
+      } catch {
+        return
+      }
+      for (const ev of parse(obj)) apply(ev)
+    },
+  })
+
+  for (const m of task.messages) if (m.agentId === agentId && m.step === step && m.text) texts.push(m.text)
+  if (ctx.isGit) {
+    const changes = await gitChanges(cwd, task.baseline).catch(() => null)
+    if (changes) task.changes = changes
+  }
+  ctx.changed(true)
+
+  if (r.killed === 'stopped') return { ok: false, stopped: true, error: '已停止' }
+  if (r.killed === 'timeout') return { ok: false, error: `超过 ${settings.stepTimeoutMinutes} 分钟没有完成，已停止` }
+  if (r.spawnError)
+    return {
+      ok: false,
+      error: `${r.spawnError}。请确认已安装 ${def.name}（${def.installHint}），或在设置里填写可执行文件的完整路径。`,
+    }
+  const failed = result ? !result.ok : r.code !== 0
+  if (failed) {
+    const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
+    // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
+    if (
+      resume &&
+      !retried &&
+      /(no|not).{0,40}(session|conversation|thread)|(session|conversation|thread).{0,40}not found/i.test(detail)
+    ) {
+      delete task.sessions[agentId]
+      return runAgent(ctx, agentId, step, prompt, true)
+    }
+    return {
+      ok: false,
+      error: `${def.name} 执行失败${r.code !== null && r.code !== 0 ? `（退出码 ${r.code}）` : ''}：${clip(detail || '没有更多信息', 1500)}`,
+    }
+  }
+  return { ok: true, text: texts.join('\n\n') }
+}
+
+function finish(ctx: RealContext, r: Extract<AgentResult, { ok: false }>) {
+  for (const s of ctx.task.steps) if (s.status === 'running') s.status = r.stopped ? 'pending' : 'failed'
+  system(ctx, r.stopped ? '已停止。可以在下面输入新的要求继续。' : r.error)
+  ctx.task.status = r.stopped ? 'stopped' : 'failed'
+  ctx.changed(true)
+}
+
+/** 真实执行一轮：工作流从没完成的步骤继续；都完成后由主 Agent 处理追加要求；对话模式直接发给对应 Agent */
+export async function runRealTurn(ctx: RealContext) {
+  const { task } = ctx
+  task.status = 'running'
+  task.simulated = false
+  ctx.changed(true)
+
+  if (task.mode === 'workflow' && task.steps.some((s) => s.status !== 'done')) {
+    for (let i = 0; i < task.steps.length; i++) {
+      const step = task.steps[i]
+      if (step.status === 'done') continue
+      step.status = 'running'
+      ctx.changed(true)
+      const r = await runAgent(ctx, step.agentId, i, stepPrompt(ctx, i))
+      if (!r.ok) return finish(ctx, r)
+      step.status = 'done'
+      ctx.changed(true)
+    }
+  } else {
+    const who = task.mode === 'chat' ? task.agentId : (ctx.workflow?.mainAgentId ?? task.steps[0]?.agentId ?? '')
+    const r = await runAgent(ctx, who, -1, followUpPrompt(ctx))
+    if (!r.ok) return finish(ctx, r)
+  }
+  task.status = 'done'
+  ctx.changed(true)
+}

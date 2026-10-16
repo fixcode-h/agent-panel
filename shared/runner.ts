@@ -64,6 +64,9 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, age
     messages: [{ id, role: 'user', agentId: '', step: -1, text: input.prompt.trim(), tools: [], at: now }],
     changes: [],
     simulated: true,
+    sessions: {},
+    usage: { agents: {}, inputTokens: 0, outputTokens: 0, costUsd: 0 },
+    baseline: {},
   }
 }
 

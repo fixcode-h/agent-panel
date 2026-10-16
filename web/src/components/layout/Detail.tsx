@@ -55,7 +55,7 @@ export function DetailHeader({
   )
 }
 
-function SaveIndicator({ status, error, invalid }: { status: SaveStatus; error: string; invalid?: string }) {
+export function SaveIndicator({ status, error, invalid }: { status: SaveStatus; error: string; invalid?: string }) {
   if (invalid)
     return (
       <span className="flex items-center gap-1.5 text-xs text-warning">

@@ -63,9 +63,14 @@ export type Workflow = z.infer<typeof Workflow>
 export interface CliStatus {
   id: string
   name: string
+  /** 实际使用的可执行文件（设置里改过就是改后的值） */
   command: string
+  /** 设置里是否启用 */
+  enabled: boolean
   installed: boolean
   version?: string
+  /** 检测失败的原因 */
+  error?: string
   models: { id: string; label: string }[]
   docsUrl: string
 }
@@ -136,7 +141,7 @@ export const FollowUpInput = z.object({ text: z.string().trim().min(1, '内容�
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
-  kind: z.enum(['read', 'edit', 'run', 'search']),
+  kind: z.enum(['read', 'edit', 'run', 'search', 'other']),
   label: z.string(),
   detail: z.string().default(''),
 })
@@ -177,10 +182,50 @@ export const TaskData = z.object({
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
   changes: z.array(FileChange).default([]),
-  /** 当前是模拟执行（真实调用 CLI 尚未接入） */
+  /** 模拟执行（设置里选了模拟，或在线演示） */
   simulated: z.boolean().default(true),
+  /** 每个 Agent 在 CLI 里的会话 id，用于续接 */
+  sessions: z.record(z.string(), z.string()).default({}),
+  /** 用量：每个 Agent 最近一次的上下文占用，以及累计 token 和费用 */
+  usage: z
+    .object({
+      agents: z
+        .record(z.string(), z.object({ context: z.number(), window: z.number(), model: z.string().default('') }))
+        .default({}),
+      inputTokens: z.number().default(0),
+      outputTokens: z.number().default(0),
+      costUsd: z.number().default(0),
+    })
+    .default({ agents: {}, inputTokens: 0, outputTokens: 0, costUsd: 0 }),
+  /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
+  baseline: z.record(z.string(), z.string()).default({}),
 })
 export type TaskData = z.infer<typeof TaskData>
 
 export const Task = TaskData.extend(Meta.shape)
 export type Task = z.infer<typeof Task>
+
+/** 单个 CLI 的本机设置 */
+export const CliSettings = z.object({
+  enabled: z.boolean().default(true),
+  /** 可执行文件；为空时用默认命令名（从 PATH 查找） */
+  command: z.string().trim().default(''),
+  /** Agent 没有指定模型时使用 */
+  defaultModel: z.string().trim().default(''),
+  /** 权限模式，取值见 shared/clis.ts 里各 CLI 的 permissions */
+  permission: z.string().default(''),
+  /** 每次调用都追加的参数 */
+  extraArgs: z.array(z.string()).default([]),
+  /** 追加的环境变量，例如 API Key、代理 */
+  env: z.array(z.object({ key: z.string().trim(), value: z.string() })).default([]),
+})
+export type CliSettings = z.infer<typeof CliSettings>
+
+export const Settings = z.object({
+  /** real：真正调用本机 CLI；simulate：只生成示例输出，用来熟悉界面 */
+  execution: z.enum(['real', 'simulate']).default('real'),
+  /** 单个步骤最长运行时间（分钟），超时会停止 */
+  stepTimeoutMinutes: z.number().int().min(1).max(600).default(60),
+  clis: z.record(z.string(), CliSettings).default({}),
+})
+export type Settings = z.infer<typeof Settings>

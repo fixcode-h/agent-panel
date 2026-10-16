@@ -1,8 +1,21 @@
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { FollowUpInput, NewTaskInput, Task, type Agent, type Project, type ProjectCategory, type TaskData, type Workflow } from '../shared/schema.ts'
+import {
+  FollowUpInput,
+  NewTaskInput,
+  Task,
+  type Agent,
+  type Project,
+  type ProjectCategory,
+  type TaskData,
+  type Workflow,
+} from '../shared/schema.ts'
 import { newTask, runTurn } from '../shared/runner.ts'
+import { getSettings } from './settings.ts'
+import { detectClis } from './detect.ts'
+import { gitNumstat } from './exec/git.ts'
+import { runRealTurn } from './exec/runner.ts'
 import { createCollection } from './store.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -15,12 +28,16 @@ export function tasksApi(deps: {
   projectCategories: Lister<ProjectCategory>
 }) {
   const store = createCollection<TaskData, Task>('tasks.json', Task)
-  const live = new Map<string, { task: Task; stop: boolean }>()
+  const live = new Map<string, { task: Task; stop: boolean; abort: AbortController }>()
 
   // 服务重启时，之前没跑完的任务标记为已停止
   void store.list().then(async (all) => {
     for (const t of all.filter((t) => t.status === 'running'))
-      await store.update(t.id, { ...t, status: 'stopped', steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending' } : s)) })
+      await store.update(t.id, {
+        ...t,
+        status: 'stopped',
+        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending' } : s)),
+      })
   })
 
   const current = async (id: string) => live.get(id)?.task ?? (await store.get(id))
@@ -32,33 +49,78 @@ export function tasksApi(deps: {
     return id ? ((await deps.workflows.get(id)) ?? undefined) : undefined
   }
 
-  function start(task: Task, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
-    const entry = { task: structuredClone(task), stop: false }
+  async function start(task: Task, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
+    const settings = await getSettings()
+    const project = await deps.projects.get(task.projectId)
+    const entry = { task: structuredClone(task), stop: false, abort: new AbortController() }
     live.set(task.id, entry)
+    // 先同步标成执行中，接口返回时页面就能开始轮询
+    entry.task.status = 'running'
+    let last = 0
     const flush = () => store.update(task.id, entry.task)
-    runTurn({
-      task: entry.task,
-      agents,
-      workflow,
-      prompt,
-      first,
-      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-      stopped: () => entry.stop,
-      changed: (f) => {
-        entry.task.updatedAt = new Date().toISOString()
-        if (f) void flush()
-      },
-      newId: randomUUID,
-    })
+    const changed = (f?: boolean) => {
+      entry.task.updatedAt = new Date().toISOString()
+      // 流式输出时最多每秒落盘一次，关键节点立即落盘
+      if (f || Date.now() - last > 1000) {
+        last = Date.now()
+        void flush()
+      }
+    }
+    const simulate = settings.execution === 'simulate' || !project
+    const run = simulate
+      ? runTurn({
+          task: entry.task,
+          agents,
+          workflow,
+          prompt,
+          first,
+          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+          stopped: () => entry.stop,
+          changed,
+          newId: randomUUID,
+        })
+      : (async () => {
+          const snapshot = await gitNumstat(project.path).catch(() => null)
+          if (first) entry.task.baseline = snapshot ?? {}
+          await runRealTurn({
+            task: entry.task,
+            agents,
+            workflow,
+            project,
+            settings,
+            clis: await detectClis(),
+            prompt,
+            signal: entry.abort.signal,
+            changed,
+            newId: randomUUID,
+            isGit: snapshot !== null,
+          })
+        })()
+    run
       .catch((e) => {
         entry.task.status = 'failed'
-        entry.task.messages.push({ id: randomUUID(), role: 'system', agentId: '', step: -1, text: `执行出错：${(e as Error).message}`, tools: [], at: new Date().toISOString() })
+        entry.task.messages.push({
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: -1,
+          text: `执行出错：${(e as Error).message}`,
+          tools: [],
+          at: new Date().toISOString(),
+        })
       })
       .finally(async () => {
         await flush()
         live.delete(task.id)
       })
     return entry.task
+  }
+
+  const stopTask = (id: string) => {
+    const e = live.get(id)
+    if (!e) return
+    e.stop = true
+    e.abort.abort()
   }
 
   const routes = new Hono()
@@ -87,7 +149,7 @@ export function tasksApi(deps: {
       if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
     const task = await store.create(newTask(input, workflow, agents, new Date().toISOString(), randomUUID()))
-    return c.json(start(task, input.prompt, true, workflow, agents), 201)
+    return c.json(await start(task, input.prompt, true, workflow, agents), 201)
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -98,21 +160,28 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     if (!task) return bad(c, '任务不存在', 404)
     const next: Task = structuredClone(task)
-    next.messages.push({ id: randomUUID(), role: 'user', agentId: '', step: -1, text: p.data.text, tools: [], at: new Date().toISOString() })
+    next.messages.push({
+      id: randomUUID(),
+      role: 'user',
+      agentId: '',
+      step: -1,
+      text: p.data.text,
+      tools: [],
+      at: new Date().toISOString(),
+    })
     const workflow = next.workflowId ? ((await deps.workflows.get(next.workflowId)) ?? undefined) : undefined
-    return c.json(start(next, p.data.text, false, workflow, await deps.agents.list()))
+    return c.json(await start(next, p.data.text, false, workflow, await deps.agents.list()))
   })
 
   routes.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
-    const e = live.get(id)
-    if (e) e.stop = true
+    stopTask(id)
     return c.json(await current(id))
   })
 
   routes.delete('/:id', async (c) => {
     const id = c.req.param('id')
-    if (live.has(id)) live.get(id)!.stop = true
+    stopTask(id)
     return (await store.remove(id)) ? c.body(null, 204) : bad(c, '任务不存在', 404)
   })
 
@@ -120,7 +189,7 @@ export function tasksApi(deps: {
     routes,
     async removeByProject(projectId: string) {
       for (const t of (await store.list()).filter((t) => t.projectId === projectId)) {
-        if (live.has(t.id)) live.get(t.id)!.stop = true
+        stopTask(t.id)
         await store.remove(t.id)
       }
     },
