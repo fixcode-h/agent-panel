@@ -15,7 +15,7 @@ import {
 } from '../shared/assist.ts'
 import { getCli } from '../shared/clis.ts'
 import type { Agent, Category, Workflow } from '../shared/schema.ts'
-import { cliSettings } from '../shared/settings.ts'
+import { cliSettings, defaultCli } from '../shared/settings.ts'
 import { detectClis } from './detect.ts'
 import { parserFor } from './exec/parsers.ts'
 import { childEnv, runProcess } from './exec/process.ts'
@@ -139,6 +139,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         workflows: await deps.workflows.list(),
         rules: input.kind === 'agent' ? settings.assist.agentRules : settings.assist.workflowRules,
         target: target ?? undefined,
+        defaultCli: defaultCli(settings),
       }
       const job = {
         id: randomUUID(),

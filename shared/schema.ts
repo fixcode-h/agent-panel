@@ -7,7 +7,9 @@ import { z } from 'zod'
 export const AgentInput = z.object({
   name: z.string().trim().min(1, '名称不能为空').max(40),
   description: z.string().trim().max(200).default(''),
-  cli: z.string().min(1, '请选择 CLI'),
+  /** 为空表示使用设置里的默认 CLI */
+  cli: z.string().default(''),
+  /** 具体模型名；@high / @medium / @low 表示档位；为空用 CLI 的默认模型 */
   model: z.string().trim().default(''),
   /** 所属分类；为空表示未分类 */
   categoryId: z.string().default(''),
@@ -95,6 +97,8 @@ export interface CliStatus {
   version?: string
   /** 检测失败的原因 */
   error?: string
+  /** 是否是设置里的默认 CLI（Agent 选「系统默认」时使用） */
+  isDefault?: boolean
   models: { id: string; label: string }[]
   docsUrl: string
 }
@@ -247,6 +251,14 @@ export const CliSettings = z.object({
   command: z.string().trim().default(''),
   /** Agent 没有指定模型时使用 */
   defaultModel: z.string().trim().default(''),
+  /** 高 / 中 / 低三档对应的模型；为空用内置的建议值 */
+  tiers: z
+    .object({
+      high: z.string().trim().default(''),
+      medium: z.string().trim().default(''),
+      low: z.string().trim().default(''),
+    })
+    .default({ high: '', medium: '', low: '' }),
   /** 权限模式，取值见 shared/clis.ts 里各 CLI 的 permissions */
   permission: z.string().default(''),
   /** 每次调用都追加的参数 */
@@ -261,6 +273,8 @@ export const Settings = z.object({
   execution: z.enum(['real', 'simulate']).default('real'),
   /** 单个步骤最长运行时间（分钟），超时会停止 */
   stepTimeoutMinutes: z.number().int().min(1).max(600).default(60),
+  /** Agent 选「系统默认」时使用的 CLI */
+  defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z

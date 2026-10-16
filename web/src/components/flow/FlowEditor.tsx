@@ -24,6 +24,7 @@ import { Field, Input, Textarea } from '@/components/ui/input'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { Pipeline, type PipelineColumn } from './Pipeline'
+import { useAgentView } from '@/lib/agent-view'
 
 type Drop = { stage: string; before: string | null } | { gap: number } | null
 
@@ -79,6 +80,7 @@ export function FlowEditor({
   /** 没选中节点时右侧显示的内容（例如就绪检查） */
   overview?: React.ReactNode
 }) {
+  const { modelOf } = useAgentView()
   const [selected, setSelected] = useState<string | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   // 拖动中的节点 id 同步记在 ref 里，dragover 触发时 state 可能还没更新
@@ -513,7 +515,7 @@ export function FlowEditor({
                           {isMain && <Crown className="h-3 w-3 text-accent" />}
                         </span>
                         <span className="truncate text-[11px] text-subtle">
-                          {responsibility || a.description || a.model}
+                          {responsibility || a.description || modelOf(a)}
                         </span>
                       </span>
                     </button>

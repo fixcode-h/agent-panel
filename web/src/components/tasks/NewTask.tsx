@@ -12,9 +12,11 @@ import { fieldClass } from '@/components/ui/input'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
+import { useAgentView } from '@/lib/agent-view'
 
 /** 新建任务：选择按工作流执行还是直接和某个 Agent 对话，再描述要做的事 */
 export function NewTask({ project, onCreated }: { project: Project; onCreated: (t: Task) => void }) {
+  const { modelOf } = useAgentView()
   const { workflows, agents, clis, projectCategories } = useData()
   const projectWorkflowId =
     project.workflowId || projectCategories.find((c) => c.id === project.categoryId)?.workflowId || ''
@@ -159,7 +161,7 @@ export function NewTask({ project, onCreated }: { project: Project; onCreated: (
                   <>
                     <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" dim={!agent.enabled} />
                     <span className="flex-1 truncate">{agent.name}</span>
-                    <span className="font-mono text-xs text-subtle">{agent.model || '默认模型'}</span>
+                    <span className="font-mono text-xs text-subtle">{modelOf(agent)}</span>
                   </>
                 ) : (
                   <span className="flex-1 text-subtle">选择一个 Agent</span>

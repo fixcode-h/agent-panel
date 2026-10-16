@@ -14,6 +14,7 @@ import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { useAgentView } from '@/lib/agent-view'
 
 function CategoryHeader({ category, count, onAdd }: { category: Category; count: number; onAdd: () => void }) {
   const { setCategories, setAgents } = useData()
@@ -115,6 +116,7 @@ function CategoryHeader({ category, count, onAdd }: { category: Category; count:
 }
 
 export function AgentsPage() {
+  const { cliName, cliOf, modelOf } = useAgentView()
   const { loading, agents, categories, clis, setAgents, refreshClis } = useData()
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
@@ -128,7 +130,7 @@ export function AgentsPage() {
   }, [loading, selected?.id])
 
   const q = query.trim().toLowerCase()
-  const match = (a: Agent) => !q || `${a.name}${a.description}${a.model}`.toLowerCase().includes(q)
+  const match = (a: Agent) => !q || `${a.name}${a.description}${modelOf(a)}`.toLowerCase().includes(q)
   const groups = [...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }]
     .map((g) => ({ ...g, items: agents.filter((a) => a.categoryId === g.id && match(a)) }))
     // 搜索时隐藏空分类；「未分类」为空时也不显示
@@ -139,8 +141,8 @@ export function AgentsPage() {
       const a = await api.createAgent({
         name: '新 Agent',
         description: '',
-        cli: clis.find((c) => c.installed)?.id ?? 'claude',
-        model: '',
+        cli: '',
+        model: '@medium',
         categoryId: selected?.categoryId ?? '',
         icon: 'bot',
         instructions: '',
@@ -167,7 +169,7 @@ export function AgentsPage() {
   }
 
   const status = (a: Agent) => {
-    const installed = clis.find((c) => c.id === a.cli)?.installed
+    const installed = clis.find((c) => c.id === cliOf(a))?.installed
     return !a.enabled ? 'bg-line-strong' : installed ? 'bg-success' : 'bg-warning'
   }
 
@@ -233,7 +235,7 @@ export function AgentsPage() {
                 onClick={() => go({ page: 'agents', id: a.id })}
                 leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
                 title={a.name}
-                subtitle={`${clis.find((c) => c.id === a.cli)?.name.split(' ')[0] ?? a.cli} · ${a.model || '默认模型'}`}
+                subtitle={`${cliName(a)} · ${modelOf(a)}`}
                 trailing={<span className={cn('h-2 w-2 shrink-0 rounded-full', status(a))} />}
               />
             ))}

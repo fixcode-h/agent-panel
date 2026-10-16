@@ -10,17 +10,37 @@ export interface Check {
 
 export const isReady = (checks: Check[]) => checks.every((c) => c.ok || c.optional)
 
+/** Agent 实际用的 CLI 的检测结果：没选 CLI 时是设置里的默认 CLI */
+export const cliFor = (a: { cli: string }, clis: CliStatus[]) =>
+  a.cli ? clis.find((c) => c.id === a.cli) : (clis.find((c) => c.isDefault) ?? clis[0])
+
 export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
   const instr = a.instructions.trim()
   return [
     {
       ok: !!cli?.installed && cli.enabled,
       label: 'CLI 已安装',
-      hint: !cli ? `未知的 CLI：${a.cli}` : !cli.enabled ? `${cli.name} 已在设置中停用` : cli.installed ? `${cli.name} ${cli.version?.split(' ')[0] ?? ''}` : `没有找到 ${cli.command}，安装后或在设置里填写路径`,
+      hint: !cli
+        ? `未知的 CLI：${a.cli}`
+        : !cli.enabled
+          ? `${cli.name} 已在设置中停用`
+          : cli.installed
+            ? `${cli.name} ${cli.version?.split(' ')[0] ?? ''}`
+            : `没有找到 ${cli.command}，安装后或在设置里填写路径`,
     },
     { ok: a.enabled, label: '已启用', hint: a.enabled ? '可以被工作流调用' : '停用后工作流不会调用它' },
-    { ok: !!a.model, label: '已指定模型', hint: a.model || '留空会使用设置里的默认模型', optional: true },
-    { ok: !!instr, label: '已写角色设定', hint: instr ? `共 ${instr.length} 字` : '建议写清楚它的职责和交付标准', optional: true },
+    {
+      ok: !!a.model,
+      label: '已指定模型或档位',
+      hint: a.model.startsWith('@') ? '按设置里的档位选择模型' : a.model || '留空会使用设置里的默认模型',
+      optional: true,
+    },
+    {
+      ok: !!instr,
+      label: '已写角色设定',
+      hint: instr ? `共 ${instr.length} 字` : '建议写清楚它的职责和交付标准',
+      optional: true,
+    },
   ]
 }
 
@@ -30,22 +50,30 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]):
   const team = [main, ...w.members.map((m) => byId.get(m.agentId))].filter(Boolean) as Agent[]
   const teamIds = new Set(team.map((a) => a.id))
   const nodes = w.stages.flatMap((s) => s.nodes)
-  const outside = [...new Set(nodes.filter((n) => n.agentId && !teamIds.has(n.agentId)).map((n) => n.title || '未命名节点'))]
+  const outside = [
+    ...new Set(nodes.filter((n) => n.agentId && !teamIds.has(n.agentId)).map((n) => n.title || '未命名节点')),
+  ]
   const emptyStages = w.stages.filter((s) => !s.nodes.length).length
   const used = new Set(nodes.map((n) => n.agentId))
   const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !used.has(a.id)) as Agent[]
   const notRunnable = team.filter((a) => {
-    const c = clis.find((x) => x.id === a.cli)
+    const c = cliFor(a, clis)
     return !a.enabled || !c?.installed || !c.enabled
   })
   const parallel = w.stages.filter((s) => s.nodes.length > 1).length
 
   return [
-    { ok: !!main, label: '已选择主 Agent', hint: main ? main.name : '主 Agent 执行没指定 Agent 的节点，并处理追加要求' },
+    {
+      ok: !!main,
+      label: '已选择主 Agent',
+      hint: main ? main.name : '主 Agent 执行没指定 Agent 的节点，并处理追加要求',
+    },
     {
       ok: notRunnable.length === 0,
       label: '团队成员都可运行',
-      hint: notRunnable.length ? `${notRunnable.map((a) => a.name).join('、')} 已停用或 CLI 未安装` : `共 ${team.length} 个 Agent`,
+      hint: notRunnable.length
+        ? `${notRunnable.map((a) => a.name).join('、')} 已停用或 CLI 未安装`
+        : `共 ${team.length} 个 Agent`,
     },
     {
       ok: nodes.length > 0 && emptyStages === 0,
@@ -59,7 +87,9 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]):
     {
       ok: outside.length === 0,
       label: '节点的 Agent 都在团队中',
-      hint: outside.length ? `这些节点的 Agent 不在团队里：${outside.join('、')}` : '没指定 Agent 的节点由主 Agent 执行',
+      hint: outside.length
+        ? `这些节点的 Agent 不在团队里：${outside.join('、')}`
+        : '没指定 Agent 的节点由主 Agent 执行',
     },
     {
       ok: unassigned.length === 0,
@@ -100,7 +130,11 @@ export function projectChecks(
     {
       ok: !!workflow && isReady(workflowChecks(workflow, agents, clis)),
       label: '工作流已就绪',
-      hint: !workflow ? '先指定工作流' : isReady(workflowChecks(workflow, agents, clis)) ? '可以执行' : '到工作流页面查看未通过的检查',
+      hint: !workflow
+        ? '先指定工作流'
+        : isReady(workflowChecks(workflow, agents, clis))
+          ? '可以执行'
+          : '到工作流页面查看未通过的检查',
     },
   ]
 }

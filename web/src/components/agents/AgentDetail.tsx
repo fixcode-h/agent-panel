@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, AgentInput } from '@shared/schema'
+import { MODEL_TIERS, getCli } from '@shared/clis'
+import { agentCli, cliSettings, defaultSettings, tierOf, tierToken } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
@@ -79,8 +81,15 @@ export function AgentDetail({
   )
 
   const set = <K extends keyof AgentInput>(k: K, v: AgentInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
-  const cli = clis.find((c) => c.id === draft.cli)
-  const defaultModel = settings?.clis[draft.cli]?.defaultModel ?? ''
+  const s = settings ?? defaultSettings()
+  const cliId = agentCli(draft, s)
+  const cli = clis.find((c) => c.id === cliId)
+  const cs = cliSettings(s, cliId)
+  const defaultModel = cs.defaultModel
+  const tier = tierOf(draft.model)
+  // 换 CLI 时保留档位，具体模型名不通用所以清空
+  const pickCli = (id: string) =>
+    draft.cli !== id && setDraft((d) => ({ ...d, cli: id, model: tierOf(d.model) ? d.model : '' }))
   const live = { ...agent, ...value }
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
@@ -200,12 +209,22 @@ export function AgentDetail({
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">CLI</span>
                 <div className="flex flex-wrap gap-2.5">
-                  {clis.map((c) => (
-                    <OptionCard
-                      key={c.id}
-                      selected={draft.cli === c.id}
-                      onClick={() => draft.cli !== c.id && setDraft((d) => ({ ...d, cli: c.id, model: '' }))}
+                  <OptionCard selected={!draft.cli} onClick={() => pickCli('')}>
+                    <span
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-white"
+                      style={{ background: cliColor(agentCli({ cli: '' }, s)) }}
                     >
+                      <Settings2 className="h-4 w-4" />
+                    </span>
+                    <span className="flex min-w-0 flex-col">
+                      <span className="font-medium">系统默认</span>
+                      <span className="truncate text-xs text-subtle">
+                        当前：{getCli(agentCli({ cli: '' }, s))?.name}，在设置里切换
+                      </span>
+                    </span>
+                  </OptionCard>
+                  {clis.map((c) => (
+                    <OptionCard key={c.id} selected={draft.cli === c.id} onClick={() => pickCli(c.id)}>
                       <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: cliColor(c.id) }} />
                       <span className="flex min-w-0 flex-col">
                         <span className="font-medium">{c.name}</span>
@@ -223,11 +242,49 @@ export function AgentDetail({
                   ))}
                 </div>
               </div>
-              <Field label="模型">
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">模型档位</span>
+                <div role="radiogroup" aria-label="模型档位" className="grid grid-cols-3 gap-2">
+                  {MODEL_TIERS.map((t) => {
+                    const on = tier?.id === t.id
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={on}
+                        title={t.hint}
+                        onClick={() => set('model', on ? '' : tierToken(t.id))}
+                        className={cn(
+                          'flex min-w-0 cursor-pointer flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors',
+                          on ? 'border-accent bg-accent-soft' : 'bg-field hover:border-line-strong',
+                        )}
+                      >
+                        <span className={cn('text-[13px] font-medium', on ? 'text-accent' : 'text-fg')}>
+                          {t.label}档 <span className="font-normal text-subtle">· {t.hint}</span>
+                        </span>
+                        <span className="w-full truncate font-mono text-xs text-muted">
+                          {cs.tiers[t.id] || 'CLI 默认'}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                <span className="text-xs text-subtle">
+                  选档位后，执行时按设置里 {cli?.name ?? cliId} 的档位换成具体模型；换 CLI 也会跟着换。
+                </span>
+              </div>
+              <Field label="或指定模型">
                 <Input
-                  value={draft.model}
+                  value={tier ? '' : draft.model}
                   onChange={(e) => set('model', e.target.value)}
-                  placeholder={defaultModel ? `留空使用设置里的默认模型：${defaultModel}` : '留空使用 CLI 默认模型'}
+                  placeholder={
+                    tier
+                      ? `已选${tier.label}档：${cs.tiers[tier.id]}，填写会改为指定模型`
+                      : defaultModel
+                        ? `留空使用设置里的默认模型：${defaultModel}`
+                        : '留空使用 CLI 默认模型'
+                  }
                   className="font-mono text-[13px]"
                 />
               </Field>

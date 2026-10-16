@@ -191,6 +191,27 @@ try {
   assert.deepEqual(badWf.steps.map((s) => s.status), ['failed', 'pending', 'pending', 'pending'])
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
 
+  // ---- 系统默认 CLI 和模型档位 ----
+  await call('PUT', '/settings', { ...settings, defaultCli: 'codex', clis: { ...settings.clis, codex: cli({ tiers: { high: 'gpt-top', medium: '', low: '' } }) } })
+  const D = await agent({ name: '默认', cli: '', model: '@high' })
+  const L = await agent({ name: '低档', cli: 'claude', model: '@low' })
+  assert.equal((await call('GET', '/clis')).find((x) => x.isDefault).id, 'codex')
+  for (const [ag, kind, flag, model] of [[D, 'codex', '-m', 'gpt-top'], [L, 'claude', '--model', 'haiku']]) {
+    let t2 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '档位' })
+    t2 = await waitDone(t2.id)
+    assert.equal(t2.status, 'done', JSON.stringify(t2.messages.at(-1)))
+    const k = calls().at(-1)
+    assert.equal(k.kind, kind)
+    assert.equal(k.args[k.args.indexOf(flag) + 1], model)
+  }
+  // 中档没填时用内置建议值
+  await call('PUT', '/agents/' + D.id, { ...D, model: '@medium' })
+  let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
+  t3 = await waitDone(t3.id)
+  assert.equal(calls().at(-1).args[calls().at(-1).args.indexOf('-m') + 1], 'gpt-5.5')
+  await call('PUT', '/settings', settings)
+  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型')
+
   // ---- AI 创建 / 优化 ----
   async function assistDone(job) {
     for (let i = 0; job.status === 'running'; i++) {

@@ -4,6 +4,7 @@ import type { TaskMessage, ToolUse } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { renderDoc } from '@/lib/workflow-doc'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { useAgentView } from '@/lib/agent-view'
 
 export const toolIcon = {
   read: FileText,
@@ -33,6 +34,7 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
 }
 
 export function AgentMessage({ m, teamNames, compact }: { m: TaskMessage; teamNames: Set<string>; compact?: boolean }) {
+  const { modelOf } = useAgentView()
   const { agents } = useData()
   const a = agents.find((x) => x.id === m.agentId)
   const html = useMemo(() => renderDoc(m.text, teamNames), [m.text, teamNames])
@@ -49,7 +51,7 @@ export function AgentMessage({ m, teamNames, compact }: { m: TaskMessage; teamNa
         {!compact && (
           <div className="flex items-center gap-2 pt-0.5 text-[13px]">
             <span className="font-medium">{a?.name ?? '已删除的 Agent'}</span>
-            {a?.model && <span className="font-mono text-xs text-subtle">{a.model}</span>}
+            {a && <span className="font-mono text-xs text-subtle">{modelOf(a)}</span>}
           </div>
         )}
         {m.tools.length > 0 && (

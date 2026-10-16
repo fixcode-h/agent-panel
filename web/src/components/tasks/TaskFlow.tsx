@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { Pipeline, type EdgeTone, type PipelineColumn } from '@/components/flow/Pipeline'
 import { AgentMessage } from './Messages'
+import { useAgentView } from '@/lib/agent-view'
 
 type Status = TaskStep['status']
 
@@ -54,6 +55,7 @@ function StepCard({
   selected: boolean
   onSelect: () => void
 }) {
+  const { modelOf } = useAgentView()
   const { agents } = useData()
   const a = agents.find((x) => x.id === step.agentId)
   const act = stepActivity(task, i)
@@ -93,7 +95,7 @@ function StepCard({
       <span className="flex items-center gap-1.5 text-xs text-muted">
         {a ? <AgentAvatar icon={a.icon} cli={a.cli} size="xs" dim={step.status === 'pending'} /> : null}
         <span className="truncate">{a?.name ?? '已删除的 Agent'}</span>
-        {a?.model && <span className="truncate font-mono text-[11px] text-subtle">{a.model}</span>}
+        {a && <span className="truncate font-mono text-[11px] text-subtle">{modelOf(a)}</span>}
       </span>
       <span
         className={cn(

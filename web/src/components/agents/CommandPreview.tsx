@@ -1,6 +1,6 @@
 import { SquareTerminal } from 'lucide-react'
 import { getCli } from '@shared/clis'
-import { defaultSettings, cliSettings } from '@shared/settings'
+import { agentCli, agentModel, cliSettings, defaultSettings } from '@shared/settings'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
@@ -19,11 +19,13 @@ export function CommandPreview({
   title?: string
 }) {
   const { settings } = useData()
-  const def = getCli(cli)
+  const s = settings ?? defaultSettings()
+  const id = agentCli({ cli }, s)
+  const def = getCli(id)
   if (!def) return null
-  const cs = cliSettings(settings ?? defaultSettings(), cli)
+  const cs = cliSettings(s, id)
   const args = def.buildArgs({
-    model: model || cs.defaultModel,
+    model: agentModel({ cli, model }, s),
     permission: cs.permission,
     extraArgs: [...cs.extraArgs, ...extraArgs],
   })

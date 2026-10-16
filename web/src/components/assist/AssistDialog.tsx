@@ -7,6 +7,7 @@ import { CLIS } from '@shared/clis'
 import type { Agent, AgentInput, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cliColor } from '@/lib/cli-style'
+import { useAgentView } from '@/lib/agent-view'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
@@ -31,7 +32,7 @@ const EXAMPLES: Record<AssistKind, string[]> = {
 
 function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; before?: Agent; newCategory: string }) {
   const { categories } = useData()
-  const cli = CLIS.find((c) => c.id === agent.cli)
+  const { cliOf, cliName, modelOf } = useAgentView()
   const changed = (k: keyof AgentInput) => before && JSON.stringify(before[k]) !== JSON.stringify(agent[k])
   const tag = (k: keyof AgentInput) => (changed(k) ? <Badge tone="accent">已修改</Badge> : null)
   const cat = newCategory || categories.find((c) => c.id === agent.categoryId)?.name
@@ -52,12 +53,15 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[13px]">
         <dt className="text-subtle">CLI</dt>
         <dd className="flex items-center gap-2">
-          <span className="h-2 w-2 rounded-full" style={{ background: cliColor(agent.cli) }} />
-          {cli?.name} {tag('cli')}
+          <span className="h-2 w-2 rounded-full" style={{ background: cliColor(cliOf(agent)) }} />
+          {agent.cli
+            ? CLIS.find((c) => c.id === agent.cli)?.name
+            : `系统默认（${cliName(agent).replace('（默认）', '')}）`}{' '}
+          {tag('cli')}
         </dd>
         <dt className="text-subtle">模型</dt>
         <dd className="font-mono text-xs">
-          {agent.model || '默认模型'} {tag('model')}
+          {modelOf(agent)} {tag('model')}
         </dd>
         <dt className="text-subtle">分类</dt>
         <dd>

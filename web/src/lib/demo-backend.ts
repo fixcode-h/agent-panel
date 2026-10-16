@@ -25,6 +25,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { CLIS, getCli } from '@shared/clis'
+import { defaultCli } from '@shared/settings'
 import { newTask, runTurn } from '@shared/runner'
 import { flowId } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
@@ -142,8 +143,8 @@ function seed(): Db {
     name: '测试工程师',
     icon: 'test',
     categoryId: qa.id,
-    cli: 'claude',
-    model: 'sonnet',
+    cli: '',
+    model: '@medium',
     description: '编写并运行单元测试与端到端测试',
   })
   const review = agent({
@@ -158,8 +159,8 @@ function seed(): Db {
   const docs = agent({
     name: '文档助手',
     icon: 'doc',
-    cli: 'claude',
-    model: 'haiku',
+    cli: '',
+    model: '@low',
     description: '整理 README 和变更说明',
   })
 
@@ -324,6 +325,7 @@ function clis(): CliStatus[] {
     command: s?.clis[c.id]?.command || c.command,
     enabled: s?.clis[c.id]?.enabled ?? true,
     installed: c.id === 'claude',
+    isDefault: c.id === (s ? defaultCli(s) : 'claude'),
     version: c.id === 'claude' ? '2.1.300 (Claude Code)' : undefined,
     error: c.id === 'claude' ? undefined : '在线演示：模拟为未安装',
     models: c.models,
@@ -357,6 +359,7 @@ function route(method: string, url: string, body: unknown): unknown {
         categories: d.categories,
         workflows: d.workflows,
         rules: input.kind === 'agent' ? settings.assist.agentRules : settings.assist.workflowRules,
+        defaultCli: defaultCli(settings),
         target,
       })
     }

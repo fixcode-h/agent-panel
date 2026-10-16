@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, FlaskConical, Play, RefreshCw } from 'lucide-react'
-import { CLIS, type CliDefinition } from '@shared/clis'
-import type { CliSettings, CliStatus, Settings } from '@shared/schema'
-import { cliSettings } from '@shared/settings'
+import { CLIS, MODEL_TIERS, type CliDefinition } from '@shared/clis'
+import { CliSettings, type CliStatus, type Settings } from '@shared/schema'
+import { cliSettings, defaultCli } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
@@ -49,6 +49,50 @@ function CopyText({ text }: { text: string }) {
       {text}
       {done ? <Check className="h-3 w-3 text-success" /> : <Copy className="h-3 w-3" />}
     </button>
+  )
+}
+
+/** 高 / 中 / 低三档模型：留空用内置建议值 */
+function TierInputs({
+  def,
+  value,
+  onChange,
+}: {
+  def: CliDefinition
+  value: CliDraft['tiers']
+  onChange: (v: CliDraft['tiers']) => void
+}) {
+  const list = `models-${def.id}`
+  return (
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <datalist id={list}>
+        {def.models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.label}
+          </option>
+        ))}
+      </datalist>
+      {MODEL_TIERS.map((t) => (
+        <label key={t.id} className="flex min-w-0 flex-col gap-1.5 rounded-lg border bg-field p-2.5">
+          <span className="flex items-center gap-2 text-xs">
+            <span className="grid h-5 w-5 place-items-center rounded-md bg-accent-soft font-medium text-accent">
+              {t.label}
+            </span>
+            <span className="text-muted">{t.label}档</span>
+            <span className="truncate text-subtle">{t.hint}</span>
+          </span>
+          <Input
+            aria-label={`${def.name} ${t.label}档模型`}
+            list={list}
+            value={value[t.id]}
+            onChange={(e) => onChange({ ...value, [t.id]: e.target.value })}
+            placeholder={def.tiers[t.id]}
+            className="h-8 bg-card font-mono text-[13px]"
+            spellCheck={false}
+          />
+        </label>
+      ))}
+    </div>
   )
 }
 
@@ -144,6 +188,11 @@ function CliCard({
         )}
 
         <div className="flex flex-col gap-1.5">
+          <span className="text-xs text-muted">模型档位 · Agent 选了档位时使用，留空用灰色的建议值</span>
+          <TierInputs def={def} value={draft.tiers} onChange={(v) => set('tiers', v)} />
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <span className="text-xs text-muted">权限</span>
           <div role="radiogroup" aria-label={`${def.name} 权限`} className="flex flex-wrap gap-1.5">
             {def.permissions.map((p) => (
@@ -210,6 +259,7 @@ const toDraft = (s: Settings): Record<string, CliDraft> =>
           enabled: eff.enabled,
           command: raw?.command ?? '',
           defaultModel: eff.defaultModel,
+          tiers: CliSettings.shape.tiers.parse(raw?.tiers),
           permission: eff.permission,
           args: joinArgs(eff.extraArgs),
           envText: envToText(eff.env),
@@ -225,6 +275,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const [drafts, setDrafts] = useState(() => toDraft(initial))
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
+  const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const demo = !!import.meta.env.VITE_DEMO
 
   const minutes = Number(timeout)
@@ -232,6 +283,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const value: Settings = {
     execution,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
+    defaultCli: defCli,
     clis: Object.fromEntries(
       Object.entries(drafts).map(([id, d]) => [
         id,
@@ -239,6 +291,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
           enabled: d.enabled,
           command: d.command.trim(),
           defaultModel: d.defaultModel.trim(),
+          tiers: { high: d.tiers.high.trim(), medium: d.tiers.medium.trim(), low: d.tiers.low.trim() },
           permission: d.permission,
           extraArgs: splitArgs(d.args),
           env: textToEnv(d.envText),
@@ -336,6 +389,53 @@ function SettingsForm({ initial }: { initial: Settings }) {
           >
             <Input type="number" min={1} max={600} value={timeout} onChange={(e) => setTimeoutMin(e.target.value)} />
           </Field>
+        </FormSection>
+
+        <FormSection title="默认 CLI 与模型档位">
+          <p className="-mt-2 text-xs leading-relaxed text-subtle">
+            Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成对应的模型。
+            改这里就能让所有用默认设置的 Agent 一起切换。
+          </p>
+          <div role="radiogroup" aria-label="默认 CLI" className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {CLIS.map((c) => {
+              const on = defCli === c.id
+              const st = clis.find((x) => x.id === c.id)
+              return (
+                <button
+                  key={c.id}
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => setDefCli(c.id)}
+                  className={cn(
+                    'flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-left transition-colors',
+                    on ? 'border-accent bg-accent-soft' : 'bg-card hover:border-line-strong',
+                  )}
+                >
+                  <span className="h-7 w-7 shrink-0 rounded-[7px]" style={{ background: cliColor(c.id) }} />
+                  <span className="flex min-w-0 flex-col">
+                    <span className={cn('text-[13px] font-medium', on && 'text-accent')}>{c.name}</span>
+                    <span
+                      className={cn(
+                        'truncate text-xs',
+                        !st ? 'text-subtle' : st.installed ? 'text-success' : 'text-warning',
+                      )}
+                    >
+                      {!st ? '检测中…' : !st.enabled ? '已停用' : st.installed ? '已安装' : '未安装'}
+                    </span>
+                  </span>
+                  {on && <Check className="ml-auto h-4 w-4 shrink-0 text-accent" />}
+                </button>
+              )
+            })}
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs text-muted">{CLIS.find((c) => c.id === defCli)?.name} 的三档模型</span>
+            <TierInputs
+              def={CLIS.find((c) => c.id === defCli)!}
+              value={drafts[defCli].tiers}
+              onChange={(v) => setDrafts((ds) => ({ ...ds, [defCli]: { ...ds[defCli], tiers: v } }))}
+            />
+          </div>
         </FormSection>
 
         <FormSection title="CLI">

@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import type { Agent, CliStatus, Project, Settings, Task, TaskMessage, TaskStep, Workflow } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
-import { cliSettings } from '../../shared/settings.ts'
+import { agentCli, agentModel, cliSettings } from '../../shared/settings.ts'
 import { findNode, taskStages } from '../../shared/flow.ts'
 import { gitChanges } from './git.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
@@ -62,7 +62,9 @@ function stepSummaries(task: Task, beforeStage: number, agents: Agent[]) {
       .map((m) => m.text)
       .join('\n\n')
     const who = agents.find((a) => a.id === s.agentId)?.name ?? ''
-    out.push(`### ${task.stages[s.stage]?.title ?? `阶段 ${s.stage + 1}`} · ${s.title}（${who}）\n${text ? clip(text, MAX_SUMMARY) : '（没有文字输出）'}`)
+    out.push(
+      `### ${task.stages[s.stage]?.title ?? `阶段 ${s.stage + 1}`} · ${s.title}（${who}）\n${text ? clip(text, MAX_SUMMARY) : '（没有文字输出）'}`,
+    )
   })
   return out.join('\n\n')
 }
@@ -117,16 +119,17 @@ async function runAgent(
   const { task, settings, project } = ctx
   const agent = ctx.agents.find((a) => a.id === agentId)
   if (!agent) return { ok: false, error: '找不到执行这一步的 Agent，可能已被删除' }
-  const def = getCli(agent.cli)
-  if (!def) return { ok: false, error: `未知的 CLI：${agent.cli}` }
-  const cs = cliSettings(settings, agent.cli)
+  const cliId = agentCli(agent, settings)
+  const def = getCli(cliId)
+  if (!def) return { ok: false, error: `未知的 CLI：${cliId}` }
+  const cs = cliSettings(settings, cliId)
   if (!cs.enabled) return { ok: false, error: `${def.name} 在设置里被停用了` }
   if (!agent.enabled) return { ok: false, error: `Agent「${agent.name}」已停用` }
   const cwd = project.path
   const dir = await stat(cwd).catch(() => null)
   if (!dir?.isDirectory()) return { ok: false, error: `项目目录不存在：${cwd || '（未设置）'}` }
 
-  const model = agent.model || cs.defaultModel
+  const model = agentModel(agent, settings)
   const resume = task.sessions[sessionKey]
   const instructions = agent.instructions.trim()
   let input = prompt
@@ -139,7 +142,7 @@ async function runAgent(
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
   })
 
-  const parse = parserFor(agent.cli, cwd)
+  const parse = parserFor(cliId, cwd)
   let cur: TaskMessage | undefined
   const texts: string[] = []
   const errors: string[] = []
@@ -184,7 +187,7 @@ async function runAgent(
         const m = ev.model || prev?.model || model
         task.usage.agents[agentId] = {
           context: ev.context ?? prev?.context ?? 0,
-          window: windowFor(agent.cli, m),
+          window: windowFor(cliId, m),
           model: m,
         }
         task.usage.inputTokens += ev.addInput ?? 0
@@ -239,7 +242,9 @@ async function runAgent(
     }
   const failed = result ? !result.ok : r.code !== 0
   if (failed) {
-    const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
+    const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')]
+      .filter(Boolean)
+      .join('\n')
     // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
     if (
       resume &&

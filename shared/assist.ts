@@ -34,7 +34,9 @@ export type AssistInput = z.infer<typeof AssistInput>
 export const AgentDraft = z.object({
   name: z.string().trim().min(1, 'name 不能为空').max(40, 'name 最多 40 个字'),
   description: z.string().trim().max(200).default(''),
-  cli: z.string().trim().min(1, 'cli 不能为空'),
+  /** 空字符串表示系统默认 CLI */
+  cli: z.string().trim().default(''),
+  /** @high / @medium / @low 表示档位 */
   model: z.string().trim().default(''),
   icon: z.string().trim().default('bot'),
   category: z.string().trim().default(''),
@@ -110,13 +112,16 @@ export interface AssistContext {
   rules: string
   /** 优化时的当前内容 */
   target?: Agent | Workflow
+  /** 设置里的系统默认 CLI */
+  defaultCli?: string
 }
 
 const KIND_NAME = { agent: 'Agent', workflow: '工作流' }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
 - description 一句话说明它擅长什么，不超过 60 字
-- cli 从「可用的 CLI」里选 id；没有特别要求时选已安装的；model 可以留空表示用设置里的默认模型
+- cli 留空表示使用系统默认 CLI（推荐，方便以后在设置里统一切换）；用户点名某个 CLI、或角色明显需要某个 CLI 时才填「可用的 CLI」里的 id
+- model 优先写档位：@high（复杂任务、架构设计）、@medium（日常开发）、@low（简单改动、整理文档），执行时按设置换成对应模型；用户点名具体模型时才写模型名
 - icon 从「可选图标」里选最贴切的 id
 - category 填已有分类的名称；确实没有合适的才写一个新名称，留空表示不分类
 - instructions 是角色设定，会作为系统提示词发给 CLI，用 Markdown 写清楚：职责范围、工作方式、要遵守的约束、交付标准和完成后怎么汇报；不要写和具体项目无关的空话`
@@ -160,7 +165,7 @@ const WORKFLOW_SHAPE = `{
 
 function agentLine(a: Agent, categories: Category[]) {
   const cat = categories.find((c) => c.id === a.categoryId)?.name
-  return `- ${a.name}（${a.cli}${a.model ? ` / ${a.model}` : ''}${cat ? `，分类：${cat}` : ''}${a.enabled ? '' : '，已停用'}）：${a.description || '没有简介'}`
+  return `- ${a.name}（${a.cli || '系统默认 CLI'}${a.model ? ` / ${a.model}` : ''}${cat ? `，分类：${cat}` : ''}${a.enabled ? '' : '，已停用'}）：${a.description || '没有简介'}`
 }
 
 /** 把工作流转成和草稿相同的结构，优化时给 CLI 看 */
@@ -220,7 +225,7 @@ export function buildAssistPrompt(
     `## 背景
 - Agent：一个可复用的「本机 CLI + 模型 + 角色设定」组合，执行任务时由面板在项目目录里调用对应 CLI。
 - 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排：阶段依次执行，阶段内的节点并行。`,
-    `## 可用的 CLI\n${clis}`,
+    `## 可用的 CLI\n${clis}${ctx.defaultCli ? `\n系统默认 CLI：${ctx.defaultCli}` : ''}`,
     `## 可选图标\n${AGENT_ICON_IDS.map(([id, label]) => `${id}（${label}）`).join('、')}`,
     `## 已有的分类\n${ctx.categories.map((c) => c.name).join('、') || '（没有）'}`,
     `## 已有的 Agent\n${ctx.agents.map((a) => agentLine(a, ctx.categories)).join('\n') || '（没有）'}`,
@@ -266,7 +271,10 @@ export function extractJson(text: string): { json?: unknown; rest: string; error
 const issues = (e: z.ZodError) => e.issues.map((i) => `${i.path.join('.') || '(根)'}：${i.message}`).join('；')
 
 function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; newCategory: string; error?: string } {
-  const cli = getCli(d.cli) ?? CLIS.find((c) => c.name.toLowerCase() === d.cli.toLowerCase())
+  const sys = !d.cli || /^(default|系统默认|默认)$/i.test(d.cli)
+  const cli = sys ? { id: '' } : (getCli(d.cli) ?? CLIS.find((c) => c.name.toLowerCase() === d.cli.toLowerCase()))
+  const tier = d.model.replace(/^@/, '').toLowerCase()
+  const model = ['high', 'medium', 'low'].includes(tier) ? `@${tier}` : d.model
   if (!cli) return { newCategory: '', error: `cli「${d.cli}」不存在，只能是 ${CLIS.map((c) => c.id).join(' / ')}` }
   const icon = AGENT_ICON_IDS.some(([id]) => id === d.icon) ? d.icon : 'bot'
   const cat = d.category ? ctx.categories.find((c) => c.name === d.category) : undefined
@@ -275,7 +283,7 @@ function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; 
       name: d.name,
       description: d.description,
       cli: cli.id,
-      model: d.model,
+      model,
       icon,
       categoryId: cat?.id ?? '',
       instructions: d.instructions,

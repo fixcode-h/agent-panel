@@ -1,5 +1,6 @@
 import { agentIcon } from '@/lib/agent-icons'
 import { cliColor } from '@/lib/cli-style'
+import { useAgentView } from '@/lib/agent-view'
 import { cn } from '@/lib/utils'
 
 const sizes = {
@@ -22,10 +23,11 @@ export function AgentAvatar({
   dim?: boolean
 }) {
   const Icon = agentIcon(icon)
+  const { cliOf } = useAgentView()
   return (
     <span
       className={cn('grid shrink-0 place-items-center text-white', sizes[size], dim && 'opacity-50 grayscale')}
-      style={{ background: cliColor(cli) }}
+      style={{ background: cliColor(cliOf({ cli })) }}
     >
       <Icon strokeWidth={1.8} />
     </span>

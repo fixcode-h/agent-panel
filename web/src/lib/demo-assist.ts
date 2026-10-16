@@ -78,7 +78,7 @@ const unique = (name: string, taken: string[]) => {
   for (let i = 2; ; i++) if (!taken.includes(`${name} ${i}`)) return `${name} ${i}`
 }
 
-function agentDraft(text: string, ctx: AssistContext, cli: string): { draft: AgentDraft; note: string } {
+function agentDraft(text: string, ctx: AssistContext): { draft: AgentDraft; note: string } {
   const target = ctx.target as Agent | undefined
   if (target) {
     const d = agentToDraft(target, ctx.categories)
@@ -102,8 +102,8 @@ function agentDraft(text: string, ctx: AssistContext, cli: string): { draft: Age
     draft: {
       name,
       description: role?.desc ?? '按需求完成通用的开发任务',
-      cli,
-      model: cli === 'claude' ? 'sonnet' : '',
+      cli: '',
+      model: role?.icon === 'doc' ? '@low' : '@medium',
       icon: role?.icon ?? 'bot',
       category: cat?.name ?? '',
       instructions: `## 职责\n${role?.duty ?? '按需求完成开发任务'}。\n\n## 用户的要求\n${text.trim()}\n\n## 工作方式\n- 先阅读相关代码，再动手修改\n- 只改和任务相关的文件\n\n## 交付标准\n- 说明改了哪些文件、为什么这样改\n- 有测试的项目运行测试并附上结果`,
@@ -233,7 +233,7 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
     attempt: 1,
   }
   jobs.set(job.id, job)
-  const gen = input.kind === 'agent' ? agentDraft(text, ctx, input.cli) : workflowDraft(text, ctx)
+  const gen = input.kind === 'agent' ? agentDraft(text, ctx) : workflowDraft(text, ctx)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   let i = 0
   const tick = () => {

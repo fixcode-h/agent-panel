@@ -50,7 +50,7 @@ const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json
 async function parseAgent(body: unknown) {
   const p = AgentInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  if (!getCli(p.data.cli)) return { error: `未知的 CLI：${p.data.cli}` }
+  if (p.data.cli && !getCli(p.data.cli)) return { error: `未知的 CLI：${p.data.cli}` }
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: '分类不存在' }
   return { data: p.data }
 }

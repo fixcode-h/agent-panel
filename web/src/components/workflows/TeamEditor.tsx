@@ -5,8 +5,10 @@ import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { cn } from '@/lib/utils'
+import { useAgentView } from '@/lib/agent-view'
 
 function AgentLine({ agent }: { agent: Agent }) {
+  const { cliName, modelOf } = useAgentView()
   const { clis } = useData()
   return (
     <>
@@ -14,7 +16,7 @@ function AgentLine({ agent }: { agent: Agent }) {
       <span className="flex min-w-0 flex-col">
         <span className="truncate font-medium">{agent.name}</span>
         <span className="truncate font-mono text-xs text-muted">
-          {clis.find((c) => c.id === agent.cli)?.name.split(' ')[0] ?? agent.cli} · {agent.model || '默认模型'}
+          {cliName(agent)} · {modelOf(agent)}
         </span>
       </span>
     </>
@@ -50,8 +52,7 @@ export function TeamEditor({
     <>
       <div className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5 text-xs text-muted">
-          <Crown className="h-3.5 w-3.5 text-accent" />
-          主 Agent
+          <Crown className="h-3.5 w-3.5 text-accent" />主 Agent
           <span className="text-subtle">· 按文档推进，把步骤分派给子 Agent，并验收结果</span>
         </span>
         {main ? (
@@ -96,7 +97,13 @@ export function TeamEditor({
                   className="h-9 min-w-0 flex-[2_1_220px] rounded-lg border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
                 />
                 <span className="flex items-center">
-                  <Button variant="ghost" size="icon-sm" aria-label="上移" disabled={i === 0} onClick={() => move(i, -1)}>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label="上移"
+                    disabled={i === 0}
+                    onClick={() => move(i, -1)}
+                  >
                     <ArrowUp className="h-3.5 w-3.5" />
                   </Button>
                   <Button

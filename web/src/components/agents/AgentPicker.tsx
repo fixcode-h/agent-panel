@@ -3,6 +3,7 @@ import type { Agent } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from './AgentAvatar'
+import { useAgentView } from '@/lib/agent-view'
 
 /** 从已有 Agent 中选一个，按分类分组，可搜索 */
 export function AgentPicker({
@@ -16,6 +17,7 @@ export function AgentPicker({
   children: React.ReactNode
   align?: 'start' | 'end'
 }) {
+  const { modelOf } = useAgentView()
   const { agents, categories } = useData()
   const [q, setQ] = useState('')
   const pool = agents.filter((a) => !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()))
@@ -43,13 +45,15 @@ export function AgentPicker({
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{a.name}</span>
-                    <span className="truncate font-mono text-[11px] text-subtle">{a.model || '默认模型'}</span>
+                    <span className="truncate font-mono text-[11px] text-subtle">{modelOf(a)}</span>
                   </span>
                 </PopoverClose>
               ))}
             </div>
           ))}
-          {groups.length === 0 && <p className="px-2.5 py-3 text-xs text-subtle">没有可选的 Agent，先去 Agent 页面创建</p>}
+          {groups.length === 0 && (
+            <p className="px-2.5 py-3 text-xs text-subtle">没有可选的 Agent，先去 Agent 页面创建</p>
+          )}
         </div>
       </PopoverContent>
     </Popover>

@@ -8,6 +8,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { taskStages } from '@shared/flow'
 import { StepStatusIcon } from './TaskFlow'
+import { useAgentView } from '@/lib/agent-view'
 
 function Section({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(true)
@@ -29,6 +30,7 @@ function Section({ title, extra, children }: { title: string; extra?: React.Reac
 
 /** 任务页右栏：任务进度、上下文、更改、环境，参考 Claude Code 的会话侧栏 */
 export function TaskPanel({ task, project, workflow }: { task: Task; project: Project; workflow?: Workflow }) {
+  const { modelOf } = useAgentView()
   const { agents } = useData()
   const dir = useDirInfo(project.path)
   const byId = new Map(agents.map((a) => [a.id, a]))
@@ -244,7 +246,7 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
                 <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 <span className="truncate">
                   对话：{chatAgent?.name ?? '已删除的 Agent'}
-                  {chatAgent?.model && <span className="font-mono text-subtle"> · {chatAgent.model}</span>}
+                  {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
                 </span>
               </>
             )}

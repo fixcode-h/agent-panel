@@ -24,6 +24,15 @@ export interface BuildOptions {
   maxTurns?: number
 }
 
+export type ModelTier = 'high' | 'medium' | 'low'
+
+/** 模型档位：Agent 可以只选档位，执行时换成当前 CLI 在设置里对应的模型 */
+export const MODEL_TIERS: { id: ModelTier; label: string; hint: string }[] = [
+  { id: 'high', label: '高', hint: '复杂任务、架构设计' },
+  { id: 'medium', label: '中', hint: '日常开发' },
+  { id: 'low', label: '低', hint: '简单改动、速度优先' },
+]
+
 export interface CliDefinition {
   id: string
   name: string
@@ -32,6 +41,8 @@ export interface CliDefinition {
   versionArgs: string[]
   /** 模型建议；用户仍可以手填任意模型名 */
   models: { id: string; label: string }[]
+  /** 高 / 中 / 低三档默认对应的模型，设置里可以改 */
+  tiers: Record<ModelTier, string>
   permissions: PermissionOption[]
   defaultPermission: string
   /** 是否支持 --append-system-prompt 这类参数 */
@@ -64,6 +75,7 @@ export const CLIS: CliDefinition[] = [
       { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
       { id: 'default', label: '默认', hint: '非交互模式下需要审批的操作都会被拒绝' },
     ],
+    tiers: { high: 'opus', medium: 'sonnet', low: 'haiku' },
     defaultPermission: 'acceptEdits',
     systemPromptFlag: true,
     buildArgs: (o) => [
@@ -99,6 +111,7 @@ export const CLIS: CliDefinition[] = [
       { id: 'read-only', label: '只读', hint: '只能读文件和跑只读命令' },
       { id: 'danger-full-access', label: '完全访问', hint: '不使用沙箱、不确认，只在信任的项目里用' },
     ],
+    tiers: { high: 'gpt-5.6', medium: 'gpt-5.5', low: 'gpt-5.3-codex' },
     defaultPermission: 'workspace-write',
     systemPromptFlag: false,
     // resume 子命令不支持 -s，沙箱统一用 -c 配置
@@ -138,6 +151,7 @@ export const CLIS: CliDefinition[] = [
       { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
       { id: 'standard', label: '标准', hint: '非交互模式下需要审批的操作都会被拒绝' },
     ],
+    tiers: { high: 'claude-sonnet-5-5', medium: 'deepseek/deepseek-v4-pro', low: 'deepseek/deepseek-v4-flash' },
     defaultPermission: 'accept-edits',
     systemPromptFlag: false,
     buildArgs: (o) => [

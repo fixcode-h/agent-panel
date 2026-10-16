@@ -1,6 +1,6 @@
 import { CLIS } from '../shared/clis.ts'
 import type { CliStatus } from '../shared/schema.ts'
-import { cliSettings } from '../shared/settings.ts'
+import { cliSettings, defaultCli } from '../shared/settings.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 
@@ -13,8 +13,10 @@ export const invalidateClis = () => {
 
 /** 检测每个 CLI 是否装在本机（使用设置里的可执行文件和环境变量，结果缓存 30 秒） */
 export async function detectClis(force = false): Promise<CliStatus[]> {
-  if (!force && cached && Date.now() - cached.at < TTL) return cached.data
   const settings = await getSettings()
+  // 默认 CLI 不走缓存，设置改了立即生效
+  const mark = (data: CliStatus[]) => data.map((c) => ({ ...c, isDefault: c.id === defaultCli(settings) }))
+  if (!force && cached && Date.now() - cached.at < TTL) return mark(cached.data)
   const data = await Promise.all(
     CLIS.map(async (c): Promise<CliStatus> => {
       const cs = cliSettings(settings, c.id)
@@ -35,5 +37,5 @@ export async function detectClis(force = false): Promise<CliStatus[]> {
     }),
   )
   cached = { at: Date.now(), data }
-  return data
+  return mark(data)
 }
