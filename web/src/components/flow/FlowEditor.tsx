@@ -18,6 +18,7 @@ import {
   END,
   START,
   autoLayout,
+  edge,
   entryFlow,
   flowLabel,
   flowTemplate,
@@ -33,6 +34,8 @@ import type { Check } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
+import { menuItem } from '@/components/ui/menu'
+import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { FlowCanvas, HOOK_LABEL, smartFit, type HookSlot } from './FlowCanvas'
 import { nodeViews, parseRef, refOptions, refValue } from './views'
@@ -386,6 +389,36 @@ function Editor({
     setSelected(n.id)
   }
 
+  // 从节点拖线到空白处松手：弹出菜单，新建的节点自动连上
+  const [drop, setDrop] = useState<{
+    from: string
+    reverse: boolean
+    x: number
+    y: number
+    fx: number
+    fy: number
+  } | null>(null)
+  const createFrom = (o: Partial<FlowNode>) => {
+    if (!drop) return
+    const n = newNode({ title: '新节点', ...o, x: Math.round(drop.fx), y: Math.round(drop.fy - 40) })
+    const e = drop.reverse ? edge(n.id, drop.from) : edge(drop.from, n.id)
+    setFlow({ ...flow, nodes: [...flow.nodes, n], edges: [...flow.edges, e] })
+    setSelected(n.id)
+    setDrop(null)
+  }
+  const linkTerm = () => {
+    if (!drop) return
+    const e = drop.reverse ? edge(START, drop.from) : edge(drop.from, END)
+    if (!flow.edges.some((x) => x.from === e.from && x.to === e.to)) setFlow({ ...flow, edges: [...flow.edges, e] })
+    setDrop(null)
+  }
+  useEffect(() => {
+    if (!drop) return
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setDrop(null)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [drop])
+
   const addFlow = () => {
     const f = newFlow(`子流程 ${w.flows.length}`)
     onChange({ flows: [...w.flows, f] })
@@ -395,7 +428,7 @@ function Editor({
 
   const views = nodeViews(flow, w, workflows, agents, modelOf)
   const node = flow.nodes.find((n) => n.id === selected)
-  const edge = selected.startsWith('edge:') ? flow.edges.find((e) => `edge:${e.id}` === selected) : undefined
+  const selEdge = selected.startsWith('edge:') ? flow.edges.find((e) => `edge:${e.id}` === selected) : undefined
   const name = (id: string) =>
     id === START ? '开始' : id === END ? '结束' : flow.nodes.find((n) => n.id === id)?.title || '未命名节点'
 
@@ -484,8 +517,80 @@ function Editor({
             onSelect={setSelected}
             onChange={setFlow}
             onReject={(m) => toast.warning(m)}
+            onDropOnPane={(d) => {
+              const r = box.current!.getBoundingClientRect()
+              const f = rf.screenToFlowPosition(d.client)
+              setDrop({
+                from: d.from,
+                reverse: d.reverse,
+                x: Math.min(d.client.x - r.left, Math.min(r.width, window.innerWidth - r.left) - 250),
+                y: Math.min(d.client.y - r.top, Math.min(r.height, window.innerHeight - r.top) - 330),
+                fx: d.reverse ? f.x - 248 : f.x,
+                fy: f.y,
+              })
+            }}
             className="flex-1"
           />
+          {drop && (
+            <div className="absolute inset-0 z-20" onPointerDown={() => setDrop(null)}>
+              <div
+                role="menu"
+                aria-label="新建节点"
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute flex max-h-[320px] w-[240px] flex-col overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
+                style={{ left: Math.max(8, drop.x), top: Math.max(8, drop.y) }}
+              >
+                <span className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">
+                  新建节点，{drop.reverse ? '连到' : '接在'}「{name(drop.from)}」{drop.reverse ? '前面' : '后面'}
+                </span>
+                <button role="menuitem" className={menuItem} onClick={() => createFrom({ agentId: '' })}>
+                  <Bot className="h-4 w-4 shrink-0 text-subtle" />
+                  <span className="truncate">主 Agent{main ? ` · ${main.name}` : ''}</span>
+                </button>
+                {team.map((t) => (
+                  <button
+                    key={t.agent.id}
+                    role="menuitem"
+                    className={menuItem}
+                    onClick={() =>
+                      createFrom({ agentId: t.agent.id, title: t.responsibility.slice(0, 60) || '新节点' })
+                    }
+                  >
+                    <AgentAvatar icon={t.agent.icon} cli={t.agent.cli} size="xs" />
+                    <span className="truncate">{t.agent.name}</span>
+                  </button>
+                ))}
+                {refOptions(w, workflows, flow.id).filter((o) => o.value).length > 0 && (
+                  <>
+                    <span className="mt-1 border-t px-2.5 pt-2 pb-1 text-[11px] text-subtle">调用流程</span>
+                    {refOptions(w, workflows, flow.id)
+                      .filter((o) => o.value)
+                      .map((o) => (
+                        <button
+                          key={o.value}
+                          role="menuitem"
+                          className={menuItem}
+                          onClick={() =>
+                            createFrom({ kind: 'flow', flow: parseRef(o.value), title: o.label.slice(0, 60) })
+                          }
+                        >
+                          <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
+                          <span className="truncate">{o.label}</span>
+                        </button>
+                      ))}
+                  </>
+                )}
+                {drop.from !== START && (
+                  <>
+                    <span className="mt-1 border-t" />
+                    <button role="menuitem" className={menuItem} onClick={linkTerm}>
+                      {drop.reverse ? '从「开始」连过来' : '连到「结束」'}
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
           {flow.nodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
               <div className="pointer-events-auto flex max-w-[360px] flex-col items-center gap-3 rounded-2xl border bg-card p-5 text-center shadow-pop">
@@ -534,17 +639,17 @@ function Editor({
             setFlow={setFlow}
             onSelect={setSelected}
           />
-        ) : edge ? (
+        ) : selEdge ? (
           <div className="flex flex-col gap-4 p-5">
             <h3 className="font-serif text-[17px] font-semibold">连线</h3>
             <p className="text-[13px] leading-relaxed text-muted">
-              「{name(edge.from)}」完成后才会开始「{name(edge.to)}」。
+              「{name(selEdge.from)}」完成后才会开始「{name(selEdge.to)}」。
             </p>
             <Button
               variant="danger-outline"
               className="self-start"
               onClick={() => {
-                setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== edge.id) })
+                setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
                 setSelected('')
               }}
             >

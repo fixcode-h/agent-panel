@@ -190,6 +190,7 @@ export function FlowCanvas({
   onSelect,
   onChange,
   onReject,
+  onDropOnPane,
   edgeTone,
   className,
 }: {
@@ -204,6 +205,8 @@ export function FlowCanvas({
   onChange?: (f: Flow) => void
   /** 连线不合法时的提示 */
   onReject?: (msg: string) => void
+  /** 从节点拖出的线松手在空白处：reverse 表示是从节点左侧（输入端）拖出的 */
+  onDropOnPane?: (d: { from: string; reverse: boolean; client: { x: number; y: number } }) => void
   edgeTone?: (from: string, to: string) => EdgeTone
   className?: string
 }) {
@@ -336,6 +339,22 @@ export function FlowCanvas({
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onConnect={onConnect}
+        onConnectEnd={(e, state) => {
+          if (!editable || state.isValid || !state.fromNode) return
+          if (state.toNode) {
+            const from = state.fromHandle?.type === 'target' ? state.toNode.id : state.fromNode.id
+            const to = state.fromHandle?.type === 'target' ? state.fromNode.id : state.toNode.id
+            const err = check({ source: from, target: to, sourceHandle: null, targetHandle: null })
+            if (err) onReject?.(err)
+            return
+          }
+          const p = 'changedTouches' in e ? e.changedTouches[0] : e
+          onDropOnPane?.({
+            from: state.fromNode.id,
+            reverse: state.fromHandle?.type === 'target',
+            client: { x: p.clientX, y: p.clientY },
+          })
+        }}
         isValidConnection={(c) => !check(c)}
         onPaneClick={() => onSelect('')}
         nodesDraggable={!!editable}
