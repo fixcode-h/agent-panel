@@ -323,7 +323,12 @@ try {
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)
   assert.equal(c2.args[0], 'app-server', 'Codex 用 app-server 执行才有流式输出')
   assert.ok(c2.args.includes('model="gpt-5.6"'))
-  assert.ok(c2.args.includes('approval_policy="never"'))
+  assert.ok(c2.args.includes('approval_policy="on-request"'), '参数里的确认方式和 thread/start 一致')
+  assert.deepEqual(
+    [c2.approval, c2.sandbox],
+    ['on-request', 'workspace-write'],
+    '可写项目目录：沙箱内运行，越过沙箱时确认',
+  )
   assert.ok(c3.args.includes('--effort') && c3.args.includes('low'))
   assert.equal(c4.kind, 'claude')
   assert.match(c4.input, /上游节点的结果[\s\S]*### 实现[\s\S]*### 文档/)
@@ -690,6 +695,25 @@ try {
   )
   pk = calls().at(-1).args
   assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'acceptEdits', 'CLI 不支持的权限跟随设置')
+  const runWith = async (ag, permission) => {
+    await call('PUT', '/agents/' + ag.id, { ...ag, permission })
+    await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '权限' })).id,
+    )
+    return calls().at(-1)
+  }
+  pk = (await runWith(L, 'default')).args
+  assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'default', '逐项确认明确传 default，不沿用 Claude 自己的设置')
+  assert.ok(pk.includes('--permission-prompt-tool'), '需要确认的操作交给面板')
+  pk = (await runWith(L, 'bypassPermissions')).args
+  assert.ok(pk.includes('--dangerously-skip-permissions') && !pk.includes('--permission-prompt-tool'), '跳过所有确认')
+  await call('PUT', '/agents/' + L.id, { ...L, permission: '' })
+  let ck = await runWith(B, 'danger-full-access')
+  assert.deepEqual([ck.approval, ck.sandbox], ['never', 'danger-full-access'], 'Codex 完全访问：不用沙箱、不确认')
+  assert.ok(ck.args.includes('approval_policy="never"') && ck.args.includes('sandbox_mode="danger-full-access"'))
+  ck = await runWith(B, 'read-only')
+  assert.deepEqual([ck.approval, ck.sandbox], ['on-request', 'read-only'], 'Codex 只读')
+  await call('PUT', '/agents/' + B.id, { ...B, permission: '' })
   await call('PUT', '/settings', settings)
 
   // ---- 附件和 @ 引用项目文件 ----

@@ -126,6 +126,21 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         },
       ]
     }
+    // 沙箱里要额外的权限（联网、写沙箱外的目录）：同意就按请求的范围给这一轮，拒绝就一项都不给
+    if (m.method === 'item/permissions/requestApproval') {
+      const want = p.permissions ?? {}
+      const fsPaths = [...(want.fileSystem?.write ?? []), ...(want.fileSystem?.read ?? [])].map(String)
+      const what = [want.network?.enabled && '联网', fsPaths.length && `访问 ${fsPaths.join('、')}`].filter(Boolean)
+      return [
+        {
+          type: 'ask',
+          kind: 'command',
+          title: `需要额外权限：${what.join('，') || '越过沙箱'}`,
+          detail: String(p.reason ?? ''),
+          reply: (r) => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} }),
+        },
+      ]
+    }
     send({ id: m.id, error: { code: -32601, message: `面板不支持 ${m.method}` } })
     return []
   }

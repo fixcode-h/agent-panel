@@ -120,7 +120,8 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.effort, '--effort', o.effort!),
       ...(o.permission === 'bypassPermissions'
         ? ['--dangerously-skip-permissions']
-        : opt(o.permission && o.permission !== 'default', '--permission-mode', o.permission)),
+        : // 「逐项确认」也要明确传 default，否则会沿用 ~/.claude/settings.json 里的 defaultMode
+          opt(o.permission, '--permission-mode', o.permission)),
       ...opt(o.resume, '--resume', o.resume!),
       ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
@@ -175,8 +176,9 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
       '-c',
       `sandbox_mode="${o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'}"`,
+      // 和 thread/start 里传的一致：完全访问不确认，其余越过沙箱时请用户确认
       '-c',
-      'approval_policy="never"',
+      `approval_policy="${o.permission === 'danger-full-access' ? 'never' : 'on-request'}"`,
       ...appServerArgs(o.extraArgs),
     ],
     installHint: 'npm install -g @openai/codex',
