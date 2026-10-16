@@ -14,6 +14,11 @@ import type {
 } from '@shared/schema'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  // 在线演示版没有后端，请求交给浏览器里的模拟实现
+  if (import.meta.env.VITE_DEMO) {
+    const { handle } = await import('./demo-backend')
+    return handle(init?.method ?? 'GET', url, init?.body ? JSON.parse(init.body as string) : undefined) as Promise<T>
+  }
   const res = await fetch(`/api${url}`, {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },

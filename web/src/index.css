@@ -1,11 +1,4 @@
 @import 'tailwindcss';
-@import '@fontsource/ibm-plex-sans/400.css';
-@import '@fontsource/ibm-plex-sans/500.css';
-@import '@fontsource/ibm-plex-sans/600.css';
-@import '@fontsource/noto-sans-sc/400.css';
-@import '@fontsource/noto-sans-sc/500.css';
-@import '@fontsource/noto-sans-sc/600.css';
-@import '@fontsource-variable/jetbrains-mono';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -70,8 +63,8 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --shadow-card: var(--shadow);
-  --font-sans: 'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono Variable', ui-monospace, Consolas, monospace;
+  --font-sans: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 
 html,

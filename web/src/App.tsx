@@ -6,6 +6,7 @@ import { DataProvider, NavCtx, type PageId, type Route } from '@/lib/data'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
+import { DemoBanner } from '@/components/layout/DemoBanner'
 
 /** 左侧导航；新增页面在这里登记即可 */
 const NAV: { id: PageId; label: string; icon: LucideIcon; page?: () => React.ReactNode }[] = [
@@ -48,7 +49,9 @@ export function App() {
   return (
     <DataProvider>
       <NavCtx.Provider value={{ route, go: setRoute }}>
-        <div className="flex min-h-full flex-col md:h-full md:flex-row">
+        <div className="flex min-h-full flex-col md:h-full">
+        {import.meta.env.VITE_DEMO && <DemoBanner />}
+        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
           <nav
             aria-label="主导航"
             className="flex shrink-0 items-center gap-1 border-b bg-rail px-3 py-2 md:w-[76px] md:flex-col md:border-r md:border-b-0 md:px-0 md:py-4"
@@ -86,6 +89,7 @@ export function App() {
             </button>
           </nav>
           <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">{current.page?.()}</div>
+        </div>
         </div>
         <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />
       </NavCtx.Provider>
