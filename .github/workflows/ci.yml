@@ -1,4 +1,4 @@
-# 检查：类型、端到端测试、构建，以及在 Windows 上编译并试运行托盘程序。
+# 检查：类型、CLI 输出解析、端到端测试、构建，以及在 Windows 上编译并试运行托盘程序。
 # 推送到 dev 和 PR 时运行，只检查不出包；主干的出包流程（release.yml）也调用它，检查通过后再出包。
 name: 检查
 
@@ -20,6 +20,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run test:unit
       - run: npm run test:e2e
       - run: npm run build
 

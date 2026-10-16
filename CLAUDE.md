@@ -20,6 +20,7 @@
 ```bash
 npm run dev          # 前端 :5173 + 后端 :8787
 npm run typecheck    # 类型检查
+npm run test:unit    # CLI 输出解析测试（样本在 server/exec/fixtures/，CLI 升级后重新录）
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟三个 CLI）
 npm run build        # 正式版前端
 npx vite build --mode demo   # 在线演示版
@@ -32,7 +33,7 @@ npm run package      # 出包到 release/（正式版，不含演示内容）
 
 - **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。
 - **只有用户明确说「合并到主干」时，才把 `dev` 合并到 `main`**。不要自行合并，也不要直接往 `main` 提交。
-- 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、端到端测试、构建；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
+- 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、解析测试、端到端测试、构建；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
   - 推送到 `dev`：**只检查，不出包**，不会出现出包的步骤。
   - 合并到 `main`：检查通过后出包，发布正式版（Latest）到 GitHub Releases，标签 `v<主>.<次>.<提交数>`
   - 包由 `scripts/package.mjs` 生成：正式版前端 + 打成单文件的服务端 `server.mjs` + 启动脚本，解压后只需要 Node.js 20+。
