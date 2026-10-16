@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { linkPaths, parsePath, useFileOpen } from './FileDialog'
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
@@ -60,7 +61,12 @@ export function Markdown({
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const html = useMemo(() => renderDoc(text, teamNames), [text, teamNames])
+  const openFile = useFileOpen()
+  // 在任务页里时，像文件路径的行内代码可以点开看文件
+  const html = useMemo(() => {
+    const h = renderDoc(text, teamNames)
+    return openFile ? linkPaths(h) : h
+  }, [text, teamNames, !!openFile])
 
   useEffect(() => {
     const root = ref.current
@@ -92,6 +98,12 @@ export function Markdown({
 
   // 复制按钮是渲染出来的 HTML，用事件委托处理
   const onClick = (e: React.MouseEvent) => {
+    const file = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
+    if (file && openFile) {
+      const p = parsePath(file.textContent ?? '')
+      if (p) openFile(p.path, p.line)
+      return
+    }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')
     if (!btn) return
     const code = btn.closest('.md-code')?.querySelector('code')?.textContent ?? ''
@@ -105,6 +117,9 @@ export function Markdown({
     <div
       ref={ref}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && (e.target as HTMLElement).dataset.path) onClick(e as unknown as React.MouseEvent)
+      }}
       className={cn('chat-md [overflow-wrap:anywhere]', live && 'streaming-caret', className)}
       dangerouslySetInnerHTML={{ __html: html }}
     />

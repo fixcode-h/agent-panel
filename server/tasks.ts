@@ -23,7 +23,7 @@ import { answerRequest, runRealTurn } from './exec/runner.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 import { t } from '../shared/i18n.ts'
@@ -444,6 +444,26 @@ export function tasksApi(deps: {
       .filter((x) => x.kind === 'edit' && x.label === file && x.input)
       .map((x) => x.input!)
     return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
+  })
+
+  // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件
+  routes.get('/:id/file', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const dir = await taskDir(tk)
+    const want = (c.req.query('path') ?? '').trim()
+    if (!dir || !want) return bad(c, t('缺少文件路径'))
+    const full = path.resolve(dir, want)
+    const rel = path.relative(dir, full)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return bad(c, t('只能查看项目目录里的文件'))
+    const info = await stat(full).catch(() => null)
+    if (!info?.isFile()) return c.json({ path: rel, dir, exists: false, content: '', truncated: false })
+    const LIMIT = 400_000
+    const buf = await readFile(full)
+    const head = buf.subarray(0, LIMIT)
+    // 有 0 字节的多半是二进制文件，不显示内容
+    if (head.includes(0)) return c.json({ path: rel, dir, exists: true, binary: true, content: '', truncated: false })
+    return c.json({ path: rel, dir, exists: true, content: head.toString('utf8'), truncated: buf.length > LIMIT })
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { toast } from 'sonner'
 import {
@@ -34,6 +34,7 @@ import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskFlow } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
+import { FileDialog, FileOpenCtx } from './FileDialog'
 import { RequestCard } from './RequestCard'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import {
@@ -110,6 +111,9 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   useEscape(panel, () => setPanel(false))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
+  // Agent 输出里点了文件路径：在弹窗里看文件内容
+  const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
+  const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
   useEscape(task?.status === 'running' && !panel && !stopAsk, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
@@ -257,7 +261,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim()
 
   return (
-    <>
+    <FileOpenCtx.Provider value={openFile}>
       <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
         <main ref={mainRef} className="flex min-w-0 flex-1 flex-col md:h-full">
           <header
@@ -626,7 +630,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
         description={t('会删除这个任务的对话记录，不会撤销已经改动的文件。')}
         onConfirm={remove}
       />
-    </>
+      <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+    </FileOpenCtx.Provider>
   )
 }
 

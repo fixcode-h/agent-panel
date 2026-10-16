@@ -103,6 +103,10 @@ export const api = {
     request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(
       `/tasks/${id}/diff?path=${encodeURIComponent(path)}`,
     ),
+  taskFile: (id: string, path: string) =>
+    request<{ path: string; dir: string; exists: boolean; binary?: boolean; content: string; truncated: boolean }>(
+      `/tasks/${id}/file?path=${encodeURIComponent(path)}`,
+    ),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
   /** 独立分支：合并进项目当前的分支，或丢弃 */
   finishWorktree: (id: string, merge: boolean) =>

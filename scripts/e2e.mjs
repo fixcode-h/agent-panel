@@ -1241,6 +1241,11 @@ try {
   await call('DELETE', `/tasks/${tIso.id}`)
   await call('DELETE', `/tasks/${tDrop.id}`)
   step('独立分支：任务在 git worktree 里执行，合并或丢弃后清理分支和目录')
+  // Agent 输出里提到的文件可以点开看：只能读项目目录里的
+  const rd = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
+  assert.equal(rd.content, '# demo\n')
+  assert.equal((await call('GET', `/tasks/${tCommit.id}/file?path=nope.ts`)).exists, false)
+  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file?path=../../etc/passwd`)).status, 400)
   // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
   const attDir = path.dirname(att.path)
   await call('DELETE', `/tasks/${tAtt.id}`)

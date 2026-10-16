@@ -938,6 +938,9 @@ function tasksRoute(
     persist()
     return task
   }
+  // 演示里没有真的项目目录，看不到文件内容
+  if (sub === 'file')
+    return { path: query.get('path') ?? '', dir: '', exists: false, content: '', truncated: false, demo: true }
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''

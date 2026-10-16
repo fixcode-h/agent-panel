@@ -288,4 +288,12 @@ export const EN_TASKS: Record<string, string> = {
   '停止这个任务？': 'Stop this task?',
   '正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。':
     'The running CLI will be stopped. You can click "Continue" later to pick up where it left off.',
+  查看文件: 'View file',
+  '在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。':
+    'The live demo has no real project folder. Run it locally to view files here.',
+  '项目目录里找不到这个文件，可能已经被移动或删除。':
+    "This file isn't in the project folder. It may have been moved or deleted.",
+  '这是二进制文件，不显示内容。': "This is a binary file, so its content isn't shown.",
+  '文件太大，只显示了前面一部分。完整内容请在编辑器里查看。':
+    'The file is too large, so only the beginning is shown. Open it in an editor to see all of it.',
 }

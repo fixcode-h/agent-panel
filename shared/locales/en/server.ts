@@ -250,4 +250,6 @@ export const EN_SERVER: Record<string, string> = {
   '你确认了「{title}」的结果，接着往下执行': 'You approved the result of "{title}"; continuing',
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
+  缺少文件路径: 'Missing file path',
+  只能查看项目目录里的文件: 'Only files inside the project folder can be viewed',
 }
