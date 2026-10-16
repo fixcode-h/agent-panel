@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ArrowUp, Folder, FolderOpen, GitBranch, Loader2, X } from 'lucide-react'
+import { ArrowUp, Folder, FolderOpen, GitBranch, HardDrive, House, Loader2, X } from 'lucide-react'
 import type { DirInfo, DirListing } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+
+/** 找出包含 p 的最长的入口路径；Windows 盘符不区分大小写 */
+function bestRoot(roots: { path: string }[], p: string) {
+  const norm = (x: string) => x.replace(/[\\/]+$/, '').toLowerCase()
+  const target = norm(p)
+  let best = ''
+  for (const r of roots) {
+    const root = norm(r.path)
+    const inside = target === root || target.startsWith(root + '/') || target.startsWith(root + '\\') || root === ''
+    if (inside && r.path.length > best.length) best = r.path
+  }
+  return best
+}
 
 /** 在服务端（也就是本机）浏览目录并选中一个 */
 function DirBrowser({
@@ -80,6 +93,31 @@ function DirBrowser({
               aria-label="路径"
             />
           </form>
+          {listing?.roots && listing.roots.length > 0 && (
+            <nav aria-label="磁盘和常用位置" className="flex flex-wrap gap-1.5 border-b px-5 py-2.5">
+              {listing.roots.map((r, i) => {
+                // 当前路径落在哪个盘 / 位置下就高亮哪个；主目录优先于它所在的盘
+                const cur = bestRoot(listing.roots!, listing.path) === r.path
+                const Icon = i === 0 ? House : HardDrive
+                return (
+                  <button
+                    key={r.path}
+                    type="button"
+                    onClick={() => go(r.path)}
+                    aria-current={cur ? 'location' : undefined}
+                    title={r.path}
+                    className={cn(
+                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] transition-colors',
+                      cur ? 'border-accent/50 bg-accent/12 text-fg' : 'text-muted hover:bg-sel hover:text-fg',
+                    )}
+                  >
+                    <Icon className={cn('h-3.5 w-3.5', cur ? 'text-accent' : 'text-subtle')} />
+                    {r.name}
+                  </button>
+                )
+              })}
+            </nav>
+          )}
           <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
             {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
             {error && <p className="px-3 py-2 text-[13px] text-danger">{error}</p>}

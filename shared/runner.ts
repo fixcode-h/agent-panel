@@ -1,6 +1,6 @@
 /**
  * 模拟执行：按工作流节点生成示例输出，不调用 CLI。
- * 设置里选了「模拟执行」时由本机服务使用；在线演示始终使用它。真实执行见 server/exec/runner.ts。
+ * 只给在线演示用，正式版不会打包进去。真实执行见 server/exec/runner.ts。
  */
 import type {
   Agent,
@@ -13,7 +13,6 @@ import type {
   ToolUse,
   Workflow,
 } from './schema.ts'
-import { planTask } from './flow.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
 
 export interface RunContext {
@@ -30,30 +29,6 @@ export interface RunContext {
   /** task 被原地修改后调用；flush 表示到了值得落盘的节点 */
   changed: (flush?: boolean) => void
   newId: () => string
-}
-
-export function taskTitle(prompt: string) {
-  const line = prompt.trim().split('\n')[0]
-  return line.length > 32 ? line.slice(0, 32) + '…' : line
-}
-
-/** 新建任务的初始数据 */
-export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now: string, id: string): TaskData {
-  return {
-    projectId: input.projectId,
-    title: taskTitle(input.prompt),
-    mode: input.mode,
-    workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
-    agentId: input.mode === 'chat' ? input.agentId : '',
-    status: 'running',
-    ...(input.mode === 'workflow' ? planTask(workflow) : { steps: [] }),
-    messages: [{ id, role: 'user', agentId: '', step: '', text: input.prompt.trim(), tools: [], at: now }],
-    changes: [],
-    simulated: true,
-    sessions: {},
-    usage: { agents: {}, inputTokens: 0, outputTokens: 0, costUsd: 0 },
-    baseline: {},
-  }
 }
 
 // ---- 模拟输出 ----

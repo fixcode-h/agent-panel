@@ -20,6 +20,8 @@ import { createCollection } from './store.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
+import { installApi } from './install.ts'
+import { modelsApi } from './models.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
@@ -164,6 +166,8 @@ app.put('/settings', async (c) => {
 })
 
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
+app.route('/clis', installApi())
+app.route('/clis', modelsApi())
 
 // ---- 分类 ----
 app.get('/categories', async (c) => c.json(await categories.list()))

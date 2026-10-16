@@ -8,6 +8,7 @@ import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
 import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
+import { useCliDef } from '@/lib/cli-models'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
@@ -15,7 +16,7 @@ import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
+import { ComboInput, Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Detail, DetailHeader } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
@@ -86,7 +87,8 @@ export function AgentDetail({
   const cli = clis.find((c) => c.id === cliId)
   const cs = cliSettings(s, cliId)
   const defaultModel = cs.defaultModel
-  const cliDef = getCli(cliId)
+  // 模型和思考强度用本机 CLI 实际支持的（读不到时是内置建议）
+  const cliDef = useCliDef(cliId)
   // 不看 Agent 自己的思考强度，得到「跟随设置」时的值
   const run = agentRun({ ...draft, effort: '' }, s)
   const tier = tierOf(draft.model)
@@ -288,9 +290,12 @@ export function AgentDetail({
                 </span>
               </div>
               <Field label="或指定模型">
-                <Input
+                <ComboInput
+                  aria-label="模型名"
+                  suggestions={(cliDef?.models ?? []).map((m) => ({ value: m.id, label: m.label }))}
                   value={tier ? '' : draft.model}
-                  onChange={(e) => set('model', e.target.value)}
+                  onChange={(v) => set('model', v)}
+                  spellCheck={false}
                   placeholder={
                     tier
                       ? `已选${tier.label}档：${cs.tiers[tier.id].model}，填写会改为指定模型`
@@ -301,24 +306,6 @@ export function AgentDetail({
                   className="font-mono text-[13px]"
                 />
               </Field>
-              {cli && (
-                <div className="-mt-1.5 flex flex-wrap gap-1.5">
-                  {cli.models.map((m) => (
-                    <button
-                      type="button"
-                      key={m.id}
-                      title={m.label}
-                      onClick={() => set('model', m.id)}
-                      className={cn(
-                        'h-7 cursor-pointer rounded-full border border-line-strong px-2.5 font-mono text-xs text-muted transition-colors hover:text-fg',
-                        draft.model === m.id && 'border-accent bg-accent text-white hover:text-white',
-                      )}
-                    >
-                      {m.id}
-                    </button>
-                  ))}
-                </div>
-              )}
               {cliDef && (
                 <Field
                   label="思考强度"

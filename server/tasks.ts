@@ -12,7 +12,7 @@ import {
   type TaskData,
   type Workflow,
 } from '../shared/schema.ts'
-import { newTask, runTurn } from '../shared/runner.ts'
+import { newTask } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitNumstat } from './exec/git.ts'
@@ -76,38 +76,26 @@ export function tasksApi(deps: {
         void flush()
       }
     }
-    const simulate = settings.execution === 'simulate' || !project
-    const run = simulate
-      ? runTurn({
-          task: entry.task,
-          agents,
-          workflows: await deps.workflows.list(),
-          workflow,
-          prompt,
-          first,
-          sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-          stopped: () => entry.stop,
-          changed,
-          newId: randomUUID,
-        })
-      : (async () => {
-          const snapshot = await gitNumstat(project.path).catch(() => null)
-          if (first) entry.task.baseline = snapshot ?? {}
-          await runRealTurn({
-            task: entry.task,
-            agents,
-            workflows: await deps.workflows.list(),
-            workflow,
-            project,
-            settings,
-            clis: await detectClis(),
-            prompt,
-            signal: entry.abort.signal,
-            changed,
-            newId: randomUUID,
-            isGit: snapshot !== null,
-          })
-        })()
+    const run = (async () => {
+      // 项目被删掉后任务还在，这时没有目录可以执行
+      if (!project) throw new Error('任务所属的项目已经不存在')
+      const snapshot = await gitNumstat(project.path).catch(() => null)
+      if (first) entry.task.baseline = snapshot ?? {}
+      await runRealTurn({
+        task: entry.task,
+        agents,
+        workflows: await deps.workflows.list(),
+        workflow,
+        project,
+        settings,
+        clis: await detectClis(),
+        prompt,
+        signal: entry.abort.signal,
+        changed,
+        newId: randomUUID,
+        isGit: snapshot !== null,
+      })
+    })()
     entry.done = run
       .catch((e) => {
         entry.task.status = 'failed'

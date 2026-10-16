@@ -24,18 +24,6 @@ mkdirSync(out, { recursive: true })
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
 run('npx', ['vite', 'build'])
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
-const grep = (word) => {
-  try {
-    return execFileSync('grep', ['-rl', word, path.join(out, 'dist')], { encoding: 'utf8' }).trim()
-  } catch {
-    return '' // grep 没找到时退出码是 1
-  }
-}
-for (const word of ['demo-backend', 'demo-assist', '恢复示例数据']) {
-  const hit = grep(word)
-  if (hit) throw new Error(`包里混进了演示内容（${word}）：${hit}`)
-}
-
 // 2. 服务端打成一个文件，依赖全部内联
 await build({
   entryPoints: [path.join(root, 'server/index.ts')],
@@ -50,6 +38,21 @@ await build({
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 })
+
+// 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里
+const grep = (word) => {
+  try {
+    return execFileSync('grep', ['-rl', word, path.join(out, 'dist'), path.join(out, 'server.mjs')], {
+      encoding: 'utf8',
+    }).trim()
+  } catch {
+    return '' // grep 没找到时退出码是 1
+  }
+}
+for (const word of ['demo-backend', 'demo-assist', '恢复示例数据', '模拟执行', '找到 6 个相关文件']) {
+  const hit = grep(word)
+  if (hit) throw new Error(`包里混进了演示内容（${word}）：${hit}`)
+}
 
 // 3. 启动脚本和说明
 writeFileSync(

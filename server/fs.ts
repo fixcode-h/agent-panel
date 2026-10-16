@@ -1,4 +1,4 @@
-import { readdir, readFile, stat } from 'node:fs/promises'
+import { access, readdir, readFile, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { DirInfo, DirListing } from '../shared/schema.ts'
@@ -44,5 +44,25 @@ export async function listDir(p: string): Promise<DirListing> {
     .map((e) => ({ name: e.name, path: path.join(full, e.name) }))
     .sort((a, b) => a.name.localeCompare(b.name))
   const parent = path.dirname(full)
-  return { path: full, parent: parent === full ? null : parent, dirs }
+  return { path: full, parent: parent === full ? null : parent, dirs, roots: await roots() }
+}
+
+let driveCache: { at: number; list: { name: string; path: string }[] } | null = null
+
+/** Windows 上逐个试 A: 到 Z:，没有现成的接口能列盘符；结果缓存 10 秒，插拔 U 盘后很快能看到 */
+async function roots() {
+  const home = { name: '主目录', path: os.homedir() }
+  if (process.platform !== 'win32') return [home, { name: '/', path: '/' }]
+  if (!driveCache || Date.now() - driveCache.at > 10_000) {
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')
+    const found = await Promise.all(
+      letters.map((l) =>
+        access(`${l}:\\`)
+          .then(() => ({ name: `${l}:`, path: `${l}:\\` }))
+          .catch(() => null),
+      ),
+    )
+    driveCache = { at: Date.now(), list: found.filter((x) => x !== null) }
+  }
+  return [home, ...driveCache.list]
 }

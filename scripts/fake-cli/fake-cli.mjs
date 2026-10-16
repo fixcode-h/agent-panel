@@ -16,11 +16,55 @@ if (args.includes('--version')) {
   process.exit(0)
 }
 
+// Codex 的 app-server：按行读 JSON-RPC 请求，只回答 initialize 和 model/list，stdin 不关闭就一直等
+if (args[0] === 'app-server') {
+  const { createInterface } = await import('node:readline')
+  for await (const line of createInterface({ input: process.stdin })) {
+    const req = JSON.parse(line)
+    if (req.method === 'initialize') console.log(JSON.stringify({ id: req.id, result: { userAgent: 'fake' } }))
+    if (req.method === 'model/list') {
+      const effort = (e) => ({ reasoningEffort: e, description: e })
+      const data = [
+        {
+          id: 'fake-pro',
+          model: 'fake-pro',
+          displayName: 'Fake Pro',
+          description: '最强',
+          hidden: false,
+          isDefault: true,
+          supportedReasoningEfforts: ['low', 'high', 'ultra'].map(effort),
+        },
+        {
+          id: 'fake-mini',
+          model: 'fake-mini',
+          displayName: 'Fake Mini',
+          description: '最快',
+          hidden: false,
+          supportedReasoningEfforts: ['low'].map(effort),
+        },
+        { id: 'fake-hidden', model: 'fake-hidden', displayName: 'Hidden', hidden: true, supportedReasoningEfforts: [] },
+      ]
+      console.log(JSON.stringify({ id: req.id, result: { data, nextCursor: null } }))
+    }
+  }
+  process.exit(0)
+}
+// Command Code 的 --list-models
+if (args.includes('--list-models')) {
+  console.log(
+    'Available models  ·  3 models\n\nOpen Source\n\nfake/flash               fast model (default)\nfake/pro                 strong model\n\nOpenAI\n\ngpt-fake                 openai model\n\nPass the full id, or just the short name after the last "/":\ncmd --model fake/pro',
+  )
+  process.exit(0)
+}
+
 let input = ''
 for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
-  appendFileSync(log, JSON.stringify({ kind, args, cwd: process.cwd(), input, pid: process.pid, start: Date.now() }) + '\n')
+  appendFileSync(
+    log,
+    JSON.stringify({ kind, args, cwd: process.cwd(), input, pid: process.pid, start: Date.now() }) + '\n',
+  )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
 }
@@ -32,7 +76,11 @@ const fail = input.includes('FAIL')
 const resumeIdx = kind === 'codex' ? args.indexOf('resume') : args.indexOf('--resume')
 const session = resumeIdx >= 0 ? args[resumeIdx + 1] : randomUUID()
 const file = `${kind}-output.txt`
-const verdict = input.includes('最后单独一行写「验收结论') ? (input.includes('第 1 轮验收') ? '\n验收结论：不通过' : '\n验收结论：通过') : ''
+const verdict = input.includes('最后单独一行写「验收结论')
+  ? input.includes('第 1 轮验收')
+    ? '\n验收结论：不通过'
+    : '\n验收结论：通过'
+  : ''
 const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}`
 
 for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 30)
@@ -46,7 +94,15 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
   if (kind === 'claude') {
     out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
     out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text }] } })
-    out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: session, total_cost_usd: 0, usage: {} })
+    out({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: text,
+      session_id: session,
+      total_cost_usd: 0,
+      usage: {},
+    })
   } else if (kind === 'codex') {
     out({ type: 'thread.started', thread_id: session })
     out({ type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text } })
@@ -61,27 +117,107 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
 
 if (kind === 'claude') {
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
-  out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1', model: 'claude-fake', usage: { input_tokens: 10, cache_read_input_tokens: 12000, cache_creation_input_tokens: 500 } } } })
-  out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: `${process.cwd()}/README.md` } }] } })
+  out({
+    type: 'stream_event',
+    event: {
+      type: 'message_start',
+      message: {
+        id: 'm1',
+        model: 'claude-fake',
+        usage: { input_tokens: 10, cache_read_input_tokens: 12000, cache_creation_input_tokens: 500 },
+      },
+    },
+  })
+  out({
+    type: 'assistant',
+    message: {
+      id: 'm1',
+      content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: `${process.cwd()}/README.md` } }],
+    },
+  })
   writeFileSync(file, 'line1\nline2\n')
-  out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 't2', name: 'Write', input: { file_path: `${process.cwd()}/${file}`, content: 'line1\nline2\n' } }] } })
-  out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] } })
-  out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm2', model: 'claude-fake', usage: { input_tokens: 20, cache_read_input_tokens: 13000, cache_creation_input_tokens: 0 } } } })
+  out({
+    type: 'assistant',
+    message: {
+      id: 'm1',
+      content: [
+        {
+          type: 'tool_use',
+          id: 't2',
+          name: 'Write',
+          input: { file_path: `${process.cwd()}/${file}`, content: 'line1\nline2\n' },
+        },
+      ],
+    },
+  })
+  out({
+    type: 'assistant',
+    message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] },
+  })
+  out({
+    type: 'stream_event',
+    event: {
+      type: 'message_start',
+      message: {
+        id: 'm2',
+        model: 'claude-fake',
+        usage: { input_tokens: 20, cache_read_input_tokens: 13000, cache_creation_input_tokens: 0 },
+      },
+    },
+  })
   out({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text', text: '' } } })
-  for (const part of reply.match(/.{1,6}/g)) out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: part } } })
+  for (const part of reply.match(/.{1,6}/g))
+    out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: part } } })
   out({ type: 'assistant', message: { id: 'm2', content: [{ type: 'text', text: reply }] } })
   if (fail) {
-    out({ type: 'result', subtype: 'error_during_execution', is_error: true, result: '模拟的失败', session_id: session, usage: {}, total_cost_usd: 0 })
+    out({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result: '模拟的失败',
+      session_id: session,
+      usage: {},
+      total_cost_usd: 0,
+    })
     process.exit(1)
   }
-  out({ type: 'result', subtype: 'success', is_error: false, result: reply, session_id: session, total_cost_usd: 0.0123, usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 } })
+  out({
+    type: 'result',
+    subtype: 'success',
+    is_error: false,
+    result: reply,
+    session_id: session,
+    total_cost_usd: 0.0123,
+    usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 },
+  })
 } else if (kind === 'codex') {
   out({ type: 'thread.started', thread_id: session })
   out({ type: 'turn.started' })
-  out({ type: 'item.started', item: { id: 'item_0', type: 'command_execution', command: "bash -lc 'ls -la'", status: 'in_progress' } })
-  out({ type: 'item.completed', item: { id: 'item_0', type: 'command_execution', command: "bash -lc 'ls -la'", aggregated_output: '', exit_code: 0, status: 'completed' } })
+  out({
+    type: 'item.started',
+    item: { id: 'item_0', type: 'command_execution', command: "bash -lc 'ls -la'", status: 'in_progress' },
+  })
+  out({
+    type: 'item.completed',
+    item: {
+      id: 'item_0',
+      type: 'command_execution',
+      command: "bash -lc 'ls -la'",
+      aggregated_output: '',
+      exit_code: 0,
+      status: 'completed',
+    },
+  })
   writeFileSync(file, 'a\nb\nc\n')
-  out({ type: 'item.completed', item: { id: 'item_1', type: 'file_change', changes: [{ path: `${process.cwd()}/${file}`, kind: 'add' }], status: 'completed' } })
+  out({
+    type: 'item.completed',
+    item: {
+      id: 'item_1',
+      type: 'file_change',
+      changes: [{ path: `${process.cwd()}/${file}`, kind: 'add' }],
+      status: 'completed',
+    },
+  })
   out({ type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: reply } })
   if (fail) {
     out({ type: 'turn.failed', error: { message: '模拟的失败' } })
@@ -95,13 +231,32 @@ if (kind === 'claude') {
   ev({ type: 'tool_queued', toolCallId: 'c1', toolName: 'read_file', input: { path: 'README.md' } })
   writeFileSync(file, 'x\n')
   ev({ type: 'tool_queued', toolCallId: 'c2', toolName: 'write_file', input: { path: file, content: 'x\n' } })
-  ev({ type: 'model_request_end', model: 'cmd-fake', usage: { inputTokens: 9000, outputTokens: 80, cacheReadTokens: 1000, cacheWriteTokens: 0 } })
+  ev({
+    type: 'model_request_end',
+    model: 'cmd-fake',
+    usage: { inputTokens: 9000, outputTokens: 80, cacheReadTokens: 1000, cacheWriteTokens: 0 },
+  })
   ev({ type: 'message_start' })
   for (const part of reply.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
   ev({ type: 'message_end', content: [{ type: 'text', text: reply }] })
   if (fail) {
-    out({ type: 'result', subtype: 'error', sessionId: session, usage: {}, durationMs: 1, finalText: '', error: '模拟的失败' })
+    out({
+      type: 'result',
+      subtype: 'error',
+      sessionId: session,
+      usage: {},
+      durationMs: 1,
+      finalText: '',
+      error: '模拟的失败',
+    })
     process.exit(1)
   }
-  out({ type: 'result', subtype: 'success', sessionId: session, usage: { inputTokens: 10000, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 }, durationMs: 10, finalText: reply })
+  out({
+    type: 'result',
+    subtype: 'success',
+    sessionId: session,
+    usage: { inputTokens: 10000, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
+    durationMs: 10,
+    finalText: reply,
+  })
 }
