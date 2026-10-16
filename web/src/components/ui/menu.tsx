@@ -1,3 +1,4 @@
+import * as C from '@radix-ui/react-context-menu'
 import * as M from '@radix-ui/react-dropdown-menu'
 import * as P from '@radix-ui/react-popover'
 import { cn } from '@/lib/utils'
@@ -23,6 +24,30 @@ export function MenuContent({ children, align = 'end' }: { children: React.React
 
 export function MenuItem({ danger, className, ...props }: M.DropdownMenuItemProps & { danger?: boolean }) {
   return <M.Item className={cn(menuItem, danger && 'text-danger', className)} {...props} />
+}
+
+export function MenuSeparator() {
+  return <M.Separator className="my-1 h-px bg-line" />
+}
+
+/** 右键菜单，和下拉菜单同一套样式 */
+export const ContextMenu = C.Root
+export const ContextMenuTrigger = C.Trigger
+
+export function ContextMenuContent({ children }: { children: React.ReactNode }) {
+  return (
+    <C.Portal>
+      <C.Content className={cn(popoverPanel, 'min-w-[180px]')}>{children}</C.Content>
+    </C.Portal>
+  )
+}
+
+export function ContextMenuItem({ danger, className, ...props }: C.ContextMenuItemProps & { danger?: boolean }) {
+  return <C.Item className={cn(menuItem, danger && 'text-danger', className)} {...props} />
+}
+
+export function ContextMenuSeparator() {
+  return <C.Separator className="my-1 h-px bg-line" />
 }
 
 export const Popover = P.Root

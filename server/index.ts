@@ -1,6 +1,7 @@
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { stat } from 'node:fs/promises'
 import { z } from 'zod'
 import {
   Agent,
@@ -21,7 +22,7 @@ import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { installApi } from './install.ts'
-import { openBrowser } from './open.ts'
+import { openBrowser, revealDir } from './open.ts'
 import { modelsApi } from './models.ts'
 import { cleanupOldTray, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
@@ -330,6 +331,20 @@ app.route('/assist', assistApi({ agents, categories, workflows }))
 
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
+
+// 在系统的文件管理器里打开项目目录；只接受已有项目的目录，不能用来打开任意路径
+app.post('/fs/reveal', async (c) => {
+  const { projectId } = (await c.req.json().catch(() => ({}))) as { projectId?: string }
+  const p = (await projects.list()).find((x) => x.id === projectId)
+  if (!p?.path) return bad(c, '这个项目还没有选择目录')
+  const dir = resolvePath(p.path)
+  const ok = await stat(dir)
+    .then((s) => s.isDirectory())
+    .catch(() => false)
+  if (!ok) return bad(c, `目录不存在：${dir}`)
+  revealDir(dir)
+  return c.json({ ok: true })
+})
 
 app.get('/fs/list', async (c) => {
   try {

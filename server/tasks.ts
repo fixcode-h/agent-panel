@@ -38,13 +38,25 @@ export function tasksApi(deps: {
     return entry
   }
 
-  // 服务重启时，之前没跑完的任务标记为已停止
+  // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   void store.list().then(async (all) => {
     for (const t of all.filter((t) => t.status === 'running'))
       await store.update(t.id, {
         ...t,
         status: 'stopped',
-        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending' } : s)),
+        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
+        messages: [
+          ...t.messages,
+          {
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text: '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
+            tools: [],
+            at: new Date().toISOString(),
+          },
+        ],
       })
   })
 

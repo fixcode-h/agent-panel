@@ -114,7 +114,8 @@ export function ComboInput({
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
   value: string
   onChange: (v: string) => void
-  suggestions: { value: string; label?: string }[]
+  /** 带 group 的建议按组显示 */
+  suggestions: { value: string; label?: string; group?: string }[]
 }) {
   const [open, setOpen] = useState(false)
   const [typed, setTyped] = useState(false)
@@ -188,7 +189,15 @@ export function ComboInput({
           className="z-50 max-h-[min(320px,var(--radix-popover-content-available-height))] w-[var(--radix-popover-trigger-width)] overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
         >
           <div role="listbox">
-            {list.map((s, i) => (
+            {list.map((s, i) => [
+              s.group && s.group !== list[i - 1]?.group && (
+                <div
+                  key={`g:${s.group}`}
+                  className={cn('px-2.5 pt-1.5 pb-1 text-[11px] text-subtle', i > 0 && 'mt-1 border-t pt-2')}
+                >
+                  {s.group}
+                </div>
+              ),
               <button
                 key={s.value}
                 type="button"
@@ -207,8 +216,8 @@ export function ComboInput({
                   )}
                 </span>
                 {s.value === value && <Check className="absolute right-2.5 h-3.5 w-3.5 text-accent" />}
-              </button>
-            ))}
+              </button>,
+            ])}
           </div>
         </P.Content>
       </P.Portal>

@@ -136,7 +136,7 @@ export type PageId = 'home' | 'agents' | 'workflows' | 'projects'
 export interface Route {
   page: PageId
   id?: string
-  /** 二级选择，例如项目里的任务 id、'new'（新建任务）或 'settings'（项目设置） */
+  /** 二级选择，例如项目里的任务 id、'new'（新建任务） */
   sub?: string
 }
 export const NavCtx = createContext<{
@@ -144,5 +144,7 @@ export const NavCtx = createContext<{
   go: (r: Route) => void
   /** 打开设置；section 指定打开哪一栏 */
   openSettings: (section?: string) => void
-}>({ route: { page: 'home' }, go: () => {}, openSettings: () => {} })
+  /** 打开项目设置弹窗；不传 id 是新建项目 */
+  openProject: (id?: string) => void
+}>({ route: { page: 'home' }, go: () => {}, openSettings: () => {}, openProject: () => {} })
 export const useNav = () => useContext(NavCtx)

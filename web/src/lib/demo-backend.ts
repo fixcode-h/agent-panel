@@ -498,7 +498,20 @@ function route(method: string, url: string, body: unknown): unknown {
       const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
       return {
         source: 'builtin',
-        models: def.models.map((m) => ({ id: m.id, label: m.label })),
+        models: [
+          ...def.models.map((m) => ({ id: m.id, label: m.label, isDefault: m.isDefault, origin: 'cli' as const })),
+          // 演示配置文件里接了一个第三方 API，下拉里分成两组
+          ...(id === 'codex'
+            ? [
+                {
+                  id: 'deepseek-v4-pro',
+                  label: 'deepseek-v4-pro',
+                  description: 'profile「deepseek」',
+                  origin: 'config' as const,
+                },
+              ]
+            : []),
+        ],
         efforts: [],
       } satisfies CliModels
     }
@@ -525,6 +538,7 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
+  if (res === 'fs' && id === 'reveal') throw new Error('在线演示不能打开本机目录')
 
   if (res === 'categories') {
     if (method === 'GET') return d.categories

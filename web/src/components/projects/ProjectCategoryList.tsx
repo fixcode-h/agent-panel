@@ -1,0 +1,123 @@
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Layers, Plus, Trash2 } from 'lucide-react'
+import type { ProjectCategory, ProjectCategoryInput } from '@shared/schema'
+import { api } from '@/lib/api'
+import { useData } from '@/lib/data'
+import { useAutosave } from '@/lib/useAutosave'
+import { Button } from '@/components/ui/button'
+import { ConfirmDialog } from '@/components/ui/dialog'
+import { Field, Input } from '@/components/ui/input'
+import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
+
+const toInput = ({ id, createdAt, updatedAt, ...rest }: ProjectCategory): ProjectCategoryInput => rest
+
+/** 设置里的「项目分类」：分类决定项目默认用哪个工作流，改动自动保存 */
+export function ProjectCategoryList() {
+  const { projectCategories, setProjectCategories } = useData()
+  const create = async () => {
+    const base = '新分类'
+    let name = base
+    for (let i = 2; projectCategories.some((c) => c.name === name); i++) name = `${base} ${i}`
+    try {
+      const c = await api.createProjectCategory({ name, description: '', workflowId: '' })
+      setProjectCategories((cs) => [...cs, c])
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <p className="text-[13px] leading-relaxed text-subtle">
+        项目选了分类后默认使用分类的工作流；项目也可以在项目设置里单独指定。
+      </p>
+      {projectCategories.length === 0 && (
+        <p className="rounded-xl border border-dashed p-6 text-center text-[13px] text-subtle">还没有项目分类。</p>
+      )}
+      {projectCategories.map((c) => (
+        <CategoryRow key={c.id} category={c} />
+      ))}
+      <div>
+        <Button variant="secondary" size="sm" onClick={create}>
+          <Plus className="h-3.5 w-3.5" />
+          新建分类
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function CategoryRow({ category }: { category: ProjectCategory }) {
+  const { projects, setProjectCategories, setProjects } = useData()
+  const [draft, setDraft] = useState<ProjectCategoryInput>(() => toInput(category))
+  const [deleting, setDeleting] = useState(false)
+  const valid = !!draft.name.trim()
+  useAutosave(
+    draft,
+    async (v) => {
+      const saved = await api.updateProjectCategory(category.id, v)
+      setProjectCategories((cs) => cs.map((c) => (c.id === saved.id ? saved : c)))
+    },
+    valid,
+  )
+  const set = <K extends keyof ProjectCategoryInput>(k: K, v: ProjectCategoryInput[K]) =>
+    setDraft((d) => ({ ...d, [k]: v }))
+  const members = projects.filter((p) => p.categoryId === category.id).length
+
+  const remove = async () => {
+    try {
+      await api.deleteProjectCategory(category.id)
+      setProjectCategories((cs) => cs.filter((c) => c.id !== category.id))
+      setProjects((ps) => ps.map((p) => (p.categoryId === category.id ? { ...p, categoryId: '' } : p)))
+      toast.success(`已删除分类「${category.name}」`)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
+      <div className="flex items-center gap-2">
+        <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.8} />
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{draft.name || '未命名分类'}</span>
+        <span className="shrink-0 text-xs text-subtle">{members} 个项目</span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`删除分类「${category.name}」`}
+          title="删除分类"
+          className="hover:text-danger"
+          onClick={() => setDeleting(true)}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      <div className="flex flex-wrap gap-3">
+        <Field label="名称" className="flex-[1_1_160px]" error={valid ? undefined : '名称不能为空'}>
+          <Input className="h-9" value={draft.name} onChange={(e) => set('name', e.target.value)} />
+        </Field>
+        <Field label="简介" className="flex-[2_1_220px]">
+          <Input
+            className="h-9"
+            value={draft.description}
+            onChange={(e) => set('description', e.target.value)}
+            placeholder="哪类项目归到这里"
+          />
+        </Field>
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-muted">默认工作流</span>
+        <WorkflowPicker value={draft.workflowId} onChange={(id) => set('workflowId', id)} emptyLabel="不指定" />
+      </div>
+      <ConfirmDialog
+        open={deleting}
+        onOpenChange={setDeleting}
+        title={`删除分类「${category.name}」？`}
+        description="分类里的项目不会被删除，会变成未分类。"
+        onConfirm={remove}
+      />
+    </section>
+  )
+}

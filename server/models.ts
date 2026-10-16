@@ -89,15 +89,21 @@ async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Pic
       if ((got.list || rpcError) && got.account !== undefined && got.config !== undefined) ac.abort()
     },
   })
-  const configured = codexConfigured(got.config)
+  const configured = codexConfigured(got.config).map((m) => ({ ...m, origin: 'config' as const }))
+  const listed = (got.list ?? []).map((m) => ({ ...m, origin: 'cli' as const }))
   const account = got.account?.account
-  if (account?.type === 'chatgpt' && got.list) return { models: got.list, auth: 'account', from: 'ChatGPT 账号' }
-  // 没有用 ChatGPT 账号：API Key、自定义接口、Bedrock
-  if (account || got.account?.requiresOpenaiAuth === false || got.config?.model_provider) {
-    if (configured.length) return { models: configured, auth: 'api', from: 'config.toml' }
-    if (got.list) return { models: got.list, auth: 'api' }
-  }
-  if (got.list) return { models: got.list }
+  const api =
+    account?.type !== 'chatgpt' &&
+    !!(account || got.account?.requiresOpenaiAuth === false || got.config?.model_provider)
+  // config.toml 里写了 model 时它才是 Codex 实际用的默认模型
+  if (configured.some((m) => m.isDefault)) listed.forEach((m) => delete m.isDefault)
+  if (got.list || configured.length)
+    return {
+      // 用 API / 自定义接口时 model/list 只是内置预设，配置文件里的排前面
+      models: api ? [...configured, ...listed] : [...listed, ...configured],
+      auth: account?.type === 'chatgpt' ? 'account' : api ? 'api' : undefined,
+      from: account?.type === 'chatgpt' ? 'ChatGPT 账号' : configured.length ? 'config.toml' : undefined,
+    }
   if (rpcError) throw new Error(`Codex 返回错误：${rpcError}`)
   if (r.spawnError) throw new Error(r.spawnError)
   if (r.killed === 'timeout') throw new Error('Codex 没有在 20 秒内返回模型列表')
@@ -170,11 +176,17 @@ async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promi
   }
   const status = (st?.stdout ?? '') + (st?.stderr ?? '')
   const loggedOut = /not authenticated|not logged in|未登录/i.test(status)
+  // providers.json 里自己接的接口（BYOK）算配置文件里的模型，其余是 Command Code 账号的
+  const tagged = models.map((m) => ({ ...m, origin: /\(byok\)/i.test(m.group ?? '') ? 'config' : 'cli' }) as CliModel)
+  const byok = tagged.filter((m) => m.origin === 'config')
   if (!loggedOut)
-    return { models, auth: st && !st.spawnError && st.code === 0 ? 'account' : undefined, from: 'Command Code 账号' }
-  const byok = models.filter((m) => /\(byok\)/i.test(m.group ?? ''))
-  // 没接 BYOK 时还是给出全部，否则下拉是空的；真正执行时 CLI 会提示登录
-  return byok.length ? { models: byok, auth: 'api', from: 'providers.json' } : { models, auth: 'api' }
+    return {
+      models: tagged,
+      auth: st && !st.spawnError && st.code === 0 ? 'account' : undefined,
+      from: 'Command Code 账号',
+    }
+  // 没登录只能用 BYOK；没接 BYOK 时还是给出全部，否则下拉是空的，真正执行时 CLI 会提示登录
+  return byok.length ? { models: byok, auth: 'api', from: 'providers.json' } : { models: tagged, auth: 'api' }
 }
 
 /** Claude Code 用户自己配置的模型（第三方网关、固定版本等） */
@@ -230,11 +242,15 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
       const p = id === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)
       data = { source: 'cli', models: p.models, efforts: [], auth: p.auth, from: p.from }
     } else {
-      const [auth, configured] = await Promise.all([claudeAuth(cs.command, env), claudeConfigured(env)])
+      const [auth, found] = await Promise.all([claudeAuth(cs.command, env), claudeConfigured(env)])
+      const configured = found.map((m) => ({ ...m, origin: 'config' as const }))
+      const base = builtin(def).map((m) => ({ ...m, origin: 'cli' as const }))
+      // settings.json 里写了 model 时它才是默认
+      if (configured.some((m) => m.isDefault)) base.forEach((m) => delete m.isDefault)
       data =
         auth === 'api' && configured.length
-          ? { source: 'cli', models: uniq(configured), efforts: [], auth, from: 'settings.json / 环境变量' }
-          : { source: 'builtin', models: uniq([...builtin(def), ...configured]), efforts: [], auth }
+          ? { source: 'cli', models: [...configured, ...base], efforts: [], auth, from: 'settings.json / 环境变量' }
+          : { source: 'builtin', models: [...base, ...configured], efforts: [], auth }
     }
   } catch (e) {
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }

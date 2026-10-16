@@ -196,6 +196,10 @@ export interface CliStatus {
   error?: string
   /** 是否是设置里的默认 CLI（Agent 选「系统默认」时使用） */
   isDefault?: boolean
+  /** 实际运行的文件（按 PATH 找到的） */
+  path?: string
+  /** 安装方式：npm 全局包、Claude Code 官方安装脚本、Homebrew、其他；更新和卸载用对应的方式 */
+  source?: 'npm' | 'native' | 'brew' | 'other'
   models: { id: string; label: string }[]
   docsUrl: string
 }
@@ -213,6 +217,10 @@ export interface CliInstallJob {
   error?: string
   /** 完成后重新检测到的状态 */
   cliStatus?: CliStatus
+  /** 安装时本来就装着：其实是更新 */
+  update?: boolean
+  /** 完成时的补充说明，例如「已改用 npm 安装的那个」 */
+  note?: string
 }
 
 /** 已安装版本和 npm 上的最新版本 */
@@ -238,6 +246,8 @@ export interface CliModel {
   defaultEffort?: string
   /** 分组，例如 Command Code 的「Open Source」「Google」 */
   group?: string
+  /** cli：CLI 自己提供的（账号可用的、内置的）；config：配置文件里接的第三方 API */
+  origin?: 'cli' | 'config'
 }
 
 export interface CliModels {
@@ -380,6 +390,8 @@ export const TaskStep = z.object({
   verdict: z.enum(['', 'pass', 'fail']).default(''),
   /** 已经验收了几轮 */
   rounds: z.number().int().default(0),
+  /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
+  interrupted: z.boolean().default(false),
 })
 export type TaskStep = z.infer<typeof TaskStep>
 

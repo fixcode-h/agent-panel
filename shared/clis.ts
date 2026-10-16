@@ -42,7 +42,7 @@ export interface CliDefinition {
   command: string
   versionArgs: string[]
   /** 模型建议；用户仍可以手填任意模型名 */
-  models: { id: string; label: string; isDefault?: boolean; defaultEffort?: string }[]
+  models: { id: string; label: string; isDefault?: boolean; defaultEffort?: string; origin?: 'cli' | 'config' }[]
   /** 支持的思考强度（从低到高）；为空表示不支持 */
   efforts: { id: string; label: string }[]
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */

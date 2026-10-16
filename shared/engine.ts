@@ -189,7 +189,10 @@ async function runNode(
   const step = ensureStep(host, inv, node, index)
   if (step.status === 'done') return { ok: true, output: step.output }
   if (host.halted) return { ok: false, halted: true, error: '' }
-  dropRerun(host, step)
+  // 上次执行到一半被打断、CLI 会话还在：续接会话接着做，不从头再来
+  const resumeHalf = step.interrupted && !!host.task.sessions[step.id] && node.kind === 'agent'
+  step.interrupted = false
+  if (!resumeHalf) dropRerun(host, step)
   step.status = 'running'
   step.startedAt = now()
   step.endedAt = ''
@@ -214,6 +217,8 @@ async function runNode(
 
   const fail = (r: Fail): FlowResult => {
     step.status = r.stopped || r.halted ? 'pending' : 'failed'
+    // 被停止时已经做了一部分，记下来，继续执行时续接会话
+    step.interrupted = !!r.stopped && !!host.task.sessions[step.id]
     if (r.stopped || r.halted) step.startedAt = ''
     step.endedAt = now()
     host.changed(true)
@@ -246,11 +251,15 @@ async function runNode(
     }
     if (!step.agentId) return { ok: false, error: `「${step.title}」没有可执行的 Agent，请先给工作流选择主 Agent` }
     const full = nodePrompt(host, inv, node, step, input, start)
+    const cont =
+      round === 0 && resumeHalf
+        ? `上次执行到一半被中断了（停止或面板重启）。请检查已经做了哪些，从中断的地方接着完成本节点「${step.title}」的工作，完成后同样简要总结。`
+        : ''
     return host.runAgent({
       step,
       agentId: step.agentId,
-      prompt: extra || full,
-      fresh: extra ? `${full}\n\n${extra}` : undefined,
+      prompt: extra || cont || full,
+      fresh: extra || cont ? `${full}\n\n${extra}` : undefined,
       sessionKey: step.id,
       reviewing: inv.slot === 'review',
     })
@@ -399,9 +408,10 @@ function finish(host: EngineHost, r: Fail) {
   for (const s of host.task.steps)
     if (s.status === 'running') {
       s.status = r.stopped ? 'pending' : 'failed'
+      s.interrupted = !!r.stopped
       s.endedAt = now()
     }
-  system(host, r.stopped ? '已停止。可以在下面输入新的要求继续。' : r.error || '执行失败')
+  system(host, r.stopped ? '已停止。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。' : r.error || '执行失败')
   host.task.status = r.stopped ? 'stopped' : 'failed'
   host.changed(true)
 }

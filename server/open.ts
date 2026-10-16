@@ -23,3 +23,13 @@ export function openBrowser(url: string) {
     console.log(`没能自动打开浏览器，请手动访问 ${url}`)
   }
 }
+
+/** 用系统的文件管理器打开目录（参数直接传给程序，不经过 shell） */
+export function revealDir(dir: string) {
+  const cmd = process.platform === 'win32' ? 'explorer.exe' : process.platform === 'darwin' ? 'open' : 'xdg-open'
+  try {
+    const child = spawn(cmd, [dir], { stdio: 'ignore', detached: true, windowsHide: true })
+    child.on('error', () => {})
+    child.unref()
+  } catch {}
+}

@@ -7,7 +7,7 @@ import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/c
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type { Agent, AgentInput, Settings, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
-import { cliColor, effortLabel } from '@/lib/cli-style'
+import { cliColor, effortLabel, modelGroup } from '@/lib/cli-style'
 import { sortEfforts, useCliDef } from '@/lib/cli-models'
 import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
@@ -248,11 +248,15 @@ function RunPicker({
       label: `${t.label}档 · ${tierRun(t.id).model || '自动'}`,
       group: '档位',
     })),
-    ...def.models.map((m) => ({ value: m.id, label: `${m.id}${mark(m.id === defaultModel)}`, group: '模型' })),
+    ...def.models.map((m) => ({
+      value: m.id,
+      label: `${m.id}${mark(m.id === defaultModel)}`,
+      group: modelGroup(def, m),
+    })),
   ]
   for (const v of [defaultModel, model])
     if (v && !modelOptions.some((o) => o.value === v))
-      modelOptions.push({ value: v, label: `${v}${mark(v === defaultModel)}`, group: '模型' })
+      modelOptions.push({ value: v, label: `${v}${mark(v === defaultModel)}`, group: '其他' })
   // 思考强度的默认：档位或设置给的，其次是模型自己的默认
   const usedModel = run.model || defaultModel
   const defaultEffort =
