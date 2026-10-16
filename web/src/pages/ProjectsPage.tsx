@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { ChevronRight, FolderGit2, FolderPlus, Plus } from 'lucide-react'
 import type { Project, ProjectInput } from '@shared/schema'
@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
-import { ProjectDetail } from '@/components/projects/ProjectDetail'
+import { ProjectWorkspace } from '@/components/tasks/ProjectWorkspace'
 import { ProjectCategoryDetail } from '@/components/projects/ProjectCategoryDetail'
 
 export function ProjectsPage() {
@@ -18,10 +18,7 @@ export function ProjectsPage() {
 
   const catId = route.id?.startsWith('cat:') ? route.id.slice(4) : null
   const selectedCategory = catId ? projectCategories.find((c) => c.id === catId) : undefined
-  const selected = selectedCategory ? undefined : (projects.find((p) => p.id === route.id) ?? projects[0])
-  useEffect(() => {
-    if (!loading && !catId && selected && route.id !== selected.id) go({ page: 'projects', id: selected.id })
-  }, [loading, selected?.id, catId])
+  const selected = selectedCategory ? undefined : projects.find((p) => p.id === route.id)
 
   const q = query.trim().toLowerCase()
   const match = (p: Project) => !q || `${p.name}${p.description}${p.path}`.toLowerCase().includes(q)
@@ -38,13 +35,13 @@ export function ProjectsPage() {
         name: '新项目',
         description: '',
         path: '',
-        categoryId: selected?.categoryId ?? catId ?? '',
+        categoryId: catId ?? '',
         workflowId: '',
         ...input,
       })
       setProjects((ps) => [...ps, p])
       setQuery('')
-      go({ page: 'projects', id: p.id })
+      go({ page: 'projects', id: p.id, sub: 'settings' })
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -67,6 +64,10 @@ export function ProjectsPage() {
     const { id, createdAt, updatedAt, ...rest } = p
     create({ ...rest, name: `${p.name} 副本` })
   }
+
+  // 点进项目后整个页面换成项目工作区（任务列表 + 任务对话）
+  if (selected)
+    return <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} onDuplicate={() => duplicate(selected)} />
 
   return (
     <>
@@ -128,7 +129,7 @@ export function ProjectsPage() {
             {g.items.map((p) => (
               <ListItem
                 key={p.id}
-                selected={p.id === selected?.id}
+                selected={false}
                 onClick={() => go({ page: 'projects', id: p.id })}
                 leading={
                   <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-[#3b6fd8] text-white">
@@ -154,13 +155,10 @@ export function ProjectsPage() {
           category={selectedCategory}
           onNewProject={() => create({ categoryId: selectedCategory.id })}
         />
-      ) : selected ? (
-        <ProjectDetail
-          key={selected.id}
-          project={selected}
-          onDuplicate={() => duplicate(selected)}
-          onDeleted={() => go({ page: 'projects' })}
-        />
+      ) : projects.length > 0 ? (
+        <DetailEmpty icon={<FolderGit2 className="h-6 w-6" />} title="选择一个项目">
+          <p>点开项目可以查看它的任务，或者新建任务让 Agent 按工作流执行。项目的目录和工作流在项目里的「设置」中修改。</p>
+        </DetailEmpty>
       ) : (
         !loading && (
           <DetailEmpty icon={<FolderGit2 className="h-6 w-6" />} title="添加第一个项目">

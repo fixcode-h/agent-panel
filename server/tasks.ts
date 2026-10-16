@@ -1,0 +1,128 @@
+import { Hono, type Context } from 'hono'
+import { randomUUID } from 'node:crypto'
+import { z } from 'zod'
+import { FollowUpInput, NewTaskInput, Task, type Agent, type Project, type ProjectCategory, type TaskData, type Workflow } from '../shared/schema.ts'
+import { newTask, runTurn } from '../shared/runner.ts'
+import { createCollection } from './store.ts'
+
+type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
+
+/** 任务接口与执行。执行中的任务放在内存里，按节点落盘，避免流式输出时频繁写文件 */
+export function tasksApi(deps: {
+  agents: Lister<Agent>
+  workflows: Lister<Workflow>
+  projects: Lister<Project>
+  projectCategories: Lister<ProjectCategory>
+}) {
+  const store = createCollection<TaskData, Task>('tasks.json', Task)
+  const live = new Map<string, { task: Task; stop: boolean }>()
+
+  // 服务重启时，之前没跑完的任务标记为已停止
+  void store.list().then(async (all) => {
+    for (const t of all.filter((t) => t.status === 'running'))
+      await store.update(t.id, { ...t, status: 'stopped', steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending' } : s)) })
+  })
+
+  const current = async (id: string) => live.get(id)?.task ?? (await store.get(id))
+  const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
+
+  async function projectWorkflow(p: Project) {
+    const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
+    const id = p.workflowId || cat?.workflowId
+    return id ? ((await deps.workflows.get(id)) ?? undefined) : undefined
+  }
+
+  function start(task: Task, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
+    const entry = { task: structuredClone(task), stop: false }
+    live.set(task.id, entry)
+    const flush = () => store.update(task.id, entry.task)
+    runTurn({
+      task: entry.task,
+      agents,
+      workflow,
+      prompt,
+      first,
+      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
+      stopped: () => entry.stop,
+      changed: (f) => {
+        entry.task.updatedAt = new Date().toISOString()
+        if (f) void flush()
+      },
+      newId: randomUUID,
+    })
+      .catch((e) => {
+        entry.task.status = 'failed'
+        entry.task.messages.push({ id: randomUUID(), role: 'system', agentId: '', step: -1, text: `执行出错：${(e as Error).message}`, tools: [], at: new Date().toISOString() })
+      })
+      .finally(async () => {
+        await flush()
+        live.delete(task.id)
+      })
+    return entry.task
+  }
+
+  const routes = new Hono()
+
+  routes.get('/', async (c) => {
+    const pid = c.req.query('projectId')
+    const all = (await store.list()).map((t) => live.get(t.id)?.task ?? t)
+    return c.json(pid ? all.filter((t) => t.projectId === pid) : all)
+  })
+
+  routes.get('/:id', async (c) => {
+    const t = await current(c.req.param('id'))
+    return t ? c.json(t) : bad(c, '任务不存在', 404)
+  })
+
+  routes.post('/', async (c) => {
+    const p = NewTaskInput.safeParse(await c.req.json())
+    if (!p.success) return bad(c, z.prettifyError(p.error))
+    const input = p.data
+    const project = await deps.projects.get(input.projectId)
+    if (!project) return bad(c, '项目不存在', 404)
+    const agents = await deps.agents.list()
+    let workflow: Workflow | undefined
+    if (input.mode === 'workflow') {
+      workflow = input.workflowId ? ((await deps.workflows.get(input.workflowId)) ?? undefined) : await projectWorkflow(project)
+      if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
+    } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
+    const task = await store.create(newTask(input, workflow, agents, new Date().toISOString(), randomUUID()))
+    return c.json(start(task, input.prompt, true, workflow, agents), 201)
+  })
+
+  routes.post('/:id/messages', async (c) => {
+    const id = c.req.param('id')
+    const p = FollowUpInput.safeParse(await c.req.json())
+    if (!p.success) return bad(c, z.prettifyError(p.error))
+    if (live.has(id)) return bad(c, '任务正在执行，请等它完成或先停止', 409)
+    const task = await store.get(id)
+    if (!task) return bad(c, '任务不存在', 404)
+    const next: Task = structuredClone(task)
+    next.messages.push({ id: randomUUID(), role: 'user', agentId: '', step: -1, text: p.data.text, tools: [], at: new Date().toISOString() })
+    const workflow = next.workflowId ? ((await deps.workflows.get(next.workflowId)) ?? undefined) : undefined
+    return c.json(start(next, p.data.text, false, workflow, await deps.agents.list()))
+  })
+
+  routes.post('/:id/stop', async (c) => {
+    const id = c.req.param('id')
+    const e = live.get(id)
+    if (e) e.stop = true
+    return c.json(await current(id))
+  })
+
+  routes.delete('/:id', async (c) => {
+    const id = c.req.param('id')
+    if (live.has(id)) live.get(id)!.stop = true
+    return (await store.remove(id)) ? c.body(null, 204) : bad(c, '任务不存在', 404)
+  })
+
+  return {
+    routes,
+    async removeByProject(projectId: string) {
+      for (const t of (await store.list()).filter((t) => t.projectId === projectId)) {
+        if (live.has(t.id)) live.get(t.id)!.stop = true
+        await store.remove(t.id)
+      }
+    },
+  }
+}

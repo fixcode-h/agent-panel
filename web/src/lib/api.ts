@@ -9,6 +9,8 @@ import type {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  NewTaskInput,
+  Task,
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
@@ -61,6 +63,13 @@ export const api = {
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
+
+  tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
+  task: (id: string) => request<Task>(`/tasks/${id}`),
+  createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
+  sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
+  stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
+  deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),

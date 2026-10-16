@@ -83,6 +83,8 @@ export type PageId = 'agents' | 'workflows' | 'projects'
 export interface Route {
   page: PageId
   id?: string
+  /** 二级选择，例如项目里的任务 id、'new'（新建任务）或 'settings'（项目设置） */
+  sub?: string
 }
 export const NavCtx = createContext<{ route: Route; go: (r: Route) => void }>({ route: { page: 'agents' }, go: () => {} })
 export const useNav = () => useContext(NavCtx)

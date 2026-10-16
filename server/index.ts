@@ -16,6 +16,7 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { createCollection } from './store.ts'
+import { tasksApi } from './tasks.ts'
 import { detectClis } from './detect.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
 
@@ -193,9 +194,16 @@ app.put('/projects/:id', async (c) => {
   return x ? c.json(x) : bad(c, '项目不存在', 404)
 })
 
-app.delete('/projects/:id', async (c) =>
-  (await projects.remove(c.req.param('id'))) ? c.body(null, 204) : bad(c, '项目不存在', 404),
-)
+app.delete('/projects/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!(await projects.remove(id))) return bad(c, '项目不存在', 404)
+  await tasks.removeByProject(id)
+  return c.body(null, 204)
+})
+
+// ---- 任务 ----
+const tasks = tasksApi({ agents, workflows, projects, projectCategories })
+app.route('/tasks', tasks.routes)
 
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))

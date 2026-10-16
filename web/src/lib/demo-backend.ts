@@ -14,11 +14,15 @@ import {
   ProjectInput,
   Workflow,
   WorkflowInput,
+  FollowUpInput,
+  NewTaskInput,
+  type Task,
   type CliStatus,
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
 import { CLIS, getCli } from '@shared/clis'
+import { newTask, runTurn } from '@shared/runner'
 
 const KEY = 'agent-panel-demo-v1'
 
@@ -28,6 +32,8 @@ interface Db {
   workflows: Workflow[]
   projectCategories: ProjectCategory[]
   projects: Project[]
+  /** 旧版本的演示数据没有这一项，首次访问时补上示例任务 */
+  tasks?: Task[]
 }
 
 class HttpError extends Error {}
@@ -313,6 +319,8 @@ function route(method: string, url: string, body: unknown): unknown {
     if (method === 'GET') return d.projects
     if (method === 'DELETE') {
       remove('projects', id, '项目不存在')
+      d.tasks = (d.tasks ?? []).filter((t) => t.projectId !== id)
+      persist()
       return undefined
     }
     const input = parse(ProjectInput, body)
@@ -322,14 +330,143 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }
 
+  if (res === 'tasks') return tasksRoute(method, id, sub, query, body)
+
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)
 }
 
 export async function handle(method: string, url: string, body: unknown) {
   // 稍微延迟一下，模拟真实请求，让「保存中」等状态能被看到
   await new Promise((r) => setTimeout(r, 120))
-  return route(method, url, body)
+  const d = load()
+  if (!d.tasks) {
+    d.tasks = []
+    await seedTasks(d)
+    persist()
+  }
+  const result = route(method, url, body)
+  // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新
+  return result === undefined ? undefined : JSON.parse(JSON.stringify(result))
 }
 
 // 让类型检查确认演示数据结构与真实 schema 一致
 export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project }
+
+// ---- 任务 ----
+const live = new Map<string, { stop: boolean }>()
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+function projectWorkflow(d: Db, p: Project) {
+  const id = p.workflowId || d.projectCategories.find((c) => c.id === p.categoryId)?.workflowId
+  return d.workflows.find((w) => w.id === id)
+}
+
+function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
+  const entry = { stop: false }
+  live.set(task.id, entry)
+  let last = 0
+  const done = runTurn({
+    task,
+    agents: d.agents,
+    workflow: d.workflows.find((w) => w.id === task.workflowId),
+    prompt,
+    first,
+    sleep: fast ? async () => {} : sleep,
+    stopped: () => entry.stop,
+    changed: (flush) => {
+      task.updatedAt = new Date().toISOString()
+      // 流式输出时不必每个字都写 localStorage
+      if (flush || Date.now() - last > 800) {
+        last = Date.now()
+        persist()
+      }
+    },
+    newId: () => `demo-${crypto.randomUUID()}`,
+  }).finally(() => {
+    live.delete(task.id)
+    persist()
+  })
+  return done
+}
+
+function createTask(d: Db, input: NewTaskInput, fast = false) {
+  const project = d.projects.find((p) => p.id === input.projectId) ?? fail('项目不存在')
+  let workflow: Workflow | undefined
+  if (input.mode === 'workflow') {
+    workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
+    if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
+  } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
+  const task = create<Task>('tasks', newTask(input, workflow, d.agents, new Date().toISOString(), `demo-${crypto.randomUUID()}`))
+  return { task, done: startTurn(d, task, input.prompt, true, fast) }
+}
+
+function followUp(d: Db, task: Task, text: string, fast = false) {
+  if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
+  task.messages.push({ id: `demo-${crypto.randomUUID()}`, role: 'user', agentId: '', step: -1, text, tools: [], at: new Date().toISOString() })
+  return startTurn(d, task, text, false, fast)
+}
+
+function tasksRoute(method: string, id: string | undefined, sub: string | undefined, query: URLSearchParams, body: unknown) {
+  const d = load()
+  const tasks = (d.tasks ??= [])
+  if (!id) {
+    if (method === 'GET') {
+      const pid = query.get('projectId')
+      return pid ? tasks.filter((t) => t.projectId === pid) : tasks
+    }
+    return createTask(d, parse(NewTaskInput, body)).task
+  }
+  const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
+  if (method === 'DELETE') {
+    if (live.has(id)) live.get(id)!.stop = true
+    remove('tasks', id, '任务不存在')
+    return undefined
+  }
+  if (sub === 'stop') {
+    if (live.has(id)) live.get(id)!.stop = true
+    return task
+  }
+  if (sub === 'messages') {
+    void followUp(d, task, parse(FollowUpInput, body).text)
+    return task
+  }
+  return task
+}
+
+/** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
+async function seedTasks(d: Db) {
+  const [shop, admin] = d.projects
+  const fe = d.agents.find((a) => a.name === '前端开发')
+  const back = (t: Task, minutes: number) => {
+    const shift = (iso: string) => new Date(new Date(iso).getTime() - minutes * 60_000).toISOString()
+    t.createdAt = shift(t.createdAt)
+    t.updatedAt = shift(t.updatedAt)
+    t.messages.forEach((m) => (m.at = shift(m.at)))
+  }
+  if (admin) {
+    const { task, done } = createTask(d, { projectId: admin.id, mode: 'workflow', workflowId: '', agentId: '', prompt: '订单导出 Excel 时，日期列整体往右错了一列' }, true)
+    await done
+    back(task, 60 * 26)
+  }
+  if (shop && fe) {
+    const { task, done } = createTask(d, { projectId: shop.id, mode: 'chat', workflowId: '', agentId: fe.id, prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因' }, true)
+    await done
+    back(task, 60 * 3)
+  }
+  if (shop) {
+    const { task, done } = createTask(
+      d,
+      {
+        projectId: shop.id,
+        mode: 'workflow',
+        workflowId: '',
+        agentId: '',
+        prompt: '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手机号，到货时发短信通知。',
+      },
+      true,
+    )
+    await done
+    await followUp(d, task, '按钮文案改成「到货通知我」，已经登记过的用户显示「已登记」并置灰。', true)
+    back(task, 25)
+  }
+}

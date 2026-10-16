@@ -113,6 +113,19 @@ body {
 .doc-preview .mention { @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[13px] font-medium text-accent; }
 .doc-preview .mention.unknown { @apply bg-warning/15 text-warning; }
 
+/* 任务对话里 Agent 的回复：正文用主文字色，段距更紧 */
+.chat-md { @apply text-[14px] leading-[1.75] text-fg; }
+.chat-md p { @apply my-1.5 first:mt-0 last:mb-0; }
+.chat-md ul { @apply my-1.5 list-disc pl-5; }
+.chat-md ol { @apply my-1.5 list-decimal pl-5; }
+.chat-md li { @apply my-0.5; }
+.chat-md strong { @apply font-semibold; }
+.chat-md code { @apply rounded bg-field px-1 py-0.5 font-mono text-[12.5px]; }
+.chat-md pre { @apply my-2 overflow-x-auto rounded-lg border bg-field p-3; }
+.chat-md pre code { @apply bg-transparent p-0; }
+.chat-md .mention { @apply rounded-md bg-accent-soft px-1 py-px text-[13px] font-medium text-accent; }
+.chat-md .mention.unknown { @apply bg-warning/15 text-warning; }
+
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in {
   from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }

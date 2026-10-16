@@ -111,3 +111,76 @@ export interface DirListing {
   parent: string | null
   dirs: { name: string; path: string }[]
 }
+
+/**
+ * 任务：在某个项目里执行的一次工作。
+ * - workflow：按工作流执行，主 Agent 按文档步骤推进，步骤分派给子 Agent
+ * - chat：直接和一个 Agent 对话
+ * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
+ */
+export const TaskMode = z.enum(['workflow', 'chat'])
+export type TaskMode = z.infer<typeof TaskMode>
+
+export const NewTaskInput = z.object({
+  projectId: z.string().min(1, '缺少项目'),
+  mode: TaskMode,
+  /** workflow 模式：为空时用项目的工作流 */
+  workflowId: z.string().default(''),
+  /** chat 模式：对话的 Agent */
+  agentId: z.string().default(''),
+  prompt: z.string().trim().min(1, '请描述任务').max(20000),
+})
+export type NewTaskInput = z.infer<typeof NewTaskInput>
+
+export const FollowUpInput = z.object({ text: z.string().trim().min(1, '内容不能为空').max(20000) })
+
+/** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
+export const ToolUse = z.object({
+  kind: z.enum(['read', 'edit', 'run', 'search']),
+  label: z.string(),
+  detail: z.string().default(''),
+})
+export type ToolUse = z.infer<typeof ToolUse>
+
+export const TaskMessage = z.object({
+  id: z.string(),
+  role: z.enum(['user', 'agent', 'system']),
+  agentId: z.string().default(''),
+  /** 属于第几个步骤；-1 表示不属于任何步骤（追问、对话） */
+  step: z.number().int().default(-1),
+  text: z.string().default(''),
+  tools: z.array(ToolUse).default([]),
+  at: z.string(),
+})
+export type TaskMessage = z.infer<typeof TaskMessage>
+
+export const TaskStep = z.object({
+  title: z.string(),
+  agentId: z.string().default(''),
+  status: z.enum(['pending', 'running', 'done', 'failed', 'skipped']).default('pending'),
+})
+export type TaskStep = z.infer<typeof TaskStep>
+
+export const FileChange = z.object({ path: z.string(), add: z.number().int(), del: z.number().int() })
+export type FileChange = z.infer<typeof FileChange>
+
+export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
+export type TaskStatus = z.infer<typeof TaskStatus>
+
+export const TaskData = z.object({
+  projectId: z.string(),
+  title: z.string(),
+  mode: TaskMode,
+  workflowId: z.string().default(''),
+  agentId: z.string().default(''),
+  status: TaskStatus,
+  steps: z.array(TaskStep).default([]),
+  messages: z.array(TaskMessage).default([]),
+  changes: z.array(FileChange).default([]),
+  /** 当前是模拟执行（真实调用 CLI 尚未接入） */
+  simulated: z.boolean().default(true),
+})
+export type TaskData = z.infer<typeof TaskData>
+
+export const Task = TaskData.extend(Meta.shape)
+export type Task = z.infer<typeof Task>
