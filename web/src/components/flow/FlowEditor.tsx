@@ -384,8 +384,9 @@ function Editor({
   const { modelOf } = useAgentView()
   const [flowId, setFlowId] = useState(() => entryFlow(w).id)
   const [selected, setSelected] = useState('')
-  // 右边的属性栏可以收起，把宽度让给画布；选中节点或连线时自动打开
-  const [inspector, setInspector] = useState(true)
+  // 右边的属性栏默认收起，把宽度让给画布；选中节点或连线时自动打开。
+  // 还没有节点的新流程默认打开，那里有怎么连线的说明和就绪检查
+  const [inspector, setInspector] = useState(() => !entryFlow(w).nodes.some((n) => n.kind === 'agent'))
   useEffect(() => {
     if (selected && selected !== START && selected !== END) setInspector(true)
   }, [selected])

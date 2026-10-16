@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { toast } from 'sonner'
 import {
@@ -32,7 +32,6 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { AgentMessage, FoldedRun } from './Messages'
 import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
-import { TaskFlow } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { RequestCard } from './RequestCard'
@@ -46,6 +45,9 @@ import {
   useFileMention,
 } from './Attachments'
 import { DropHint } from './TaskComposer'
+
+/** 流程图视图用到的画布库比较大，切到流程图时才加载 */
+const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
 
 type Block =
   | { kind: 'msg'; m: TaskMessage }
@@ -390,15 +392,17 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
               className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
             >
               {isFlow ? (
-                <TaskFlow
-                  task={task}
-                  focus={focus}
-                  gutter={progressCard}
-                  onOpenChat={() => {
-                    stick.current = true
-                    setView('chat')
-                  }}
-                />
+                <Suspense fallback={null}>
+                  <TaskFlow
+                    task={task}
+                    focus={focus}
+                    gutter={progressCard}
+                    onOpenChat={() => {
+                      stick.current = true
+                      setView('chat')
+                    }}
+                  />
+                </Suspense>
               ) : (
                 <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
                   {blocks.map((b, bi) =>
