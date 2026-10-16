@@ -37,14 +37,15 @@ export function TaskPanel({
   onStep,
 }: {
   task: Task
-  project: Project
+  /** Chat 模式的聊天没有项目 */
+  project?: Project
   workflow?: Workflow
   /** 点了任务进度里的某一步 */
   onStep?: (id: string) => void
 }) {
   const { modelOf } = useAgentView()
   const { agents } = useData()
-  const dir = useDirInfo(project.path)
+  const dir = useDirInfo(project?.path ?? '')
   const byId = new Map(agents.map((a) => [a.id, a]))
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
@@ -271,9 +272,13 @@ export function TaskPanel({
         <ul className="flex flex-col gap-2 text-xs text-muted">
           <li className="flex items-center gap-2">
             <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className="min-w-0 truncate font-mono" title={project.path}>
-              {project.path || '未选择目录'}
-            </span>
+            {project ? (
+              <span className="min-w-0 truncate font-mono" title={project.path}>
+                {project.path || '未选择目录'}
+              </span>
+            ) : (
+              <span className="min-w-0 truncate">聊天，不在任何项目里</span>
+            )}
           </li>
           {dir?.gitBranch && (
             <li className="flex items-center gap-2">

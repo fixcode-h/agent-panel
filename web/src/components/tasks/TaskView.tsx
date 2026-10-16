@@ -85,7 +85,8 @@ function toBlocks(task: Task): Block[] {
 }
 
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
-export function TaskView({ taskId, project }: { taskId: string; project: Project }) {
+/** project 为空时是 Chat 模式的聊天，不属于任何项目 */
+export function TaskView({ taskId, project }: { taskId: string; project?: Project }) {
   const { agents, workflows, upsertTask, removeTask } = useData()
   const { go } = useNav()
   const [task, setTask] = useState<Task | null>(null)
@@ -94,7 +95,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments()
   const drop = useDropPaste(files.add)
-  const mention = useFileMention(project.id, text, setText, followTa)
+  const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -205,7 +206,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
       await api.deleteTask(task.id)
       removeTask(task.id)
       toast.success('已删除任务')
-      go({ page: 'projects', id: project.id })
+      go(project ? { page: 'projects', id: project.id } : { page: 'chat' })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -233,10 +234,10 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
           >
             <nav aria-label="位置" className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
               <button
-                onClick={() => go({ page: 'projects', id: project.id })}
+                onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
                 className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
               >
-                {project.name}
+                {project?.name ?? '聊天'}
               </button>
               <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
               <TaskStatusIcon status={task.status} className="ml-1" />

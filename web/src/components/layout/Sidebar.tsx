@@ -3,6 +3,8 @@ import { useEscape } from '@/lib/useEscape'
 import {
   BellRing,
   Bot,
+  Code2,
+  MessagesSquare,
   ChevronDown,
   ChevronRight,
   ChevronsDownUp,
@@ -29,7 +31,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
-import { useData, useNav, type PageId } from '@/lib/data'
+import { useData, useNav, type PageId, type Route } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { useAppUpdate } from '@/lib/app-update'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
@@ -184,6 +186,158 @@ function Row({
   )
 }
 
+/** 切到 Agent 模式时回到上次在 Agent 模式里看的页面 */
+let lastAgentRoute: Route = { page: 'home' }
+
+/**
+ * 顶部的模式切换，参考 Claude 应用：Chat 是不属于项目的聊天，Agent 是按项目执行任务。
+ * 收起侧栏时只显示一个按钮，点了切到另一个模式。
+ */
+function ModeSwitch({ narrow }: { narrow: boolean }) {
+  const { route, go } = useNav()
+  const chat = route.page === 'chat'
+  const modes = [
+    {
+      id: 'chat',
+      label: 'Chat 模式：直接聊天，不用选项目',
+      icon: MessagesSquare,
+      on: chat,
+      to: { page: 'chat' } as Route,
+    },
+    { id: 'agent', label: 'Agent 模式：在项目里执行任务和工作流', icon: Code2, on: !chat, to: lastAgentRoute },
+  ]
+  if (narrow) {
+    const other = modes.find((m) => !m.on)!
+    return (
+      <button
+        onClick={() => go(other.to)}
+        aria-label={`切换到${other.label}`}
+        title={`切换到${other.label}`}
+        className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg"
+      >
+        <other.icon className="h-[17px] w-[17px]" strokeWidth={1.8} />
+      </button>
+    )
+  }
+  return (
+    <div role="radiogroup" aria-label="模式" className="flex shrink-0 items-center gap-0.5 rounded-lg border p-0.5">
+      {modes.map((m) => (
+        <button
+          key={m.id}
+          role="radio"
+          aria-checked={m.on}
+          aria-label={m.label}
+          title={m.label}
+          onClick={() => !m.on && go(m.to)}
+          className={cn(
+            'grid h-6.5 w-7 cursor-pointer place-items-center rounded-md transition-colors',
+            m.on ? 'bg-sel text-fg shadow-card' : 'text-subtle hover:text-fg',
+          )}
+        >
+          <m.icon className="h-[15px] w-[15px]" strokeWidth={1.8} />
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Chat 模式的侧栏：最近的聊天，右键可以重命名、删除 */
+function ChatList() {
+  const { route, go } = useNav()
+  const { tasks, removeTask, upsertTask } = useData()
+  const chats = tasks.filter((t) => !t.projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const [renaming, setRenaming] = useState('')
+  const [deleting, setDeleting] = useState<Task>()
+  const rename = async (t: Task, title: string) => {
+    setRenaming('')
+    title = title.trim()
+    if (!title || title === t.title) return
+    try {
+      upsertTask(await api.renameTask(t.id, title))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const remove = async (t: Task) => {
+    try {
+      await api.deleteTask(t.id)
+      removeTask(t.id)
+      if (route.page === 'chat' && route.id === t.id) go({ page: 'chat' })
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDeleting(undefined)
+    }
+  }
+  return (
+    <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
+      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">最近</p>
+      {chats.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">还没有聊天。</p>}
+      <div className="flex flex-col gap-px">
+        {chats.map((t) => {
+          const on = route.page === 'chat' && route.id === t.id
+          return renaming === t.id ? (
+            <input
+              key={t.id}
+              autoFocus
+              aria-label="聊天标题"
+              defaultValue={t.title}
+              maxLength={80}
+              onFocus={(e) => e.currentTarget.select()}
+              onBlur={(e) => rename(t, e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') e.currentTarget.blur()
+                if (e.key === 'Escape') setRenaming('')
+              }}
+              className="h-8 rounded-lg border border-accent bg-field px-2 text-[13px] text-fg outline-none"
+            />
+          ) : (
+            <ContextMenu key={t.id}>
+              <ContextMenuTrigger asChild>
+                <button
+                  onClick={() => go({ page: 'chat', id: t.id })}
+                  aria-current={on || undefined}
+                  title={t.title}
+                  className={cn(
+                    'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 text-left text-[13px] transition-colors',
+                    on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                  )}
+                >
+                  {t.requests?.length ? (
+                    <BellRing aria-label="需要你处理" className="h-3.5 w-3.5 shrink-0 text-warning" />
+                  ) : t.status === 'running' || t.status === 'failed' ? (
+                    <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
+                  ) : null}
+                  <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                  <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(t.updatedAt)}</span>
+                </button>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem onSelect={() => setRenaming(t.id)}>
+                  <PencilLine className="h-4 w-4" />
+                  重命名
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem danger onSelect={() => setDeleting(t)}>
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </ContextMenuItem>
+              </ContextMenuContent>
+            </ContextMenu>
+          )
+        })}
+      </div>
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(undefined)}
+        title={`删除「${deleting?.title ?? ''}」？`}
+        description="这次聊天的记录会一起删除。"
+        onConfirm={() => deleting && remove(deleting)}
+      />
+    </div>
+  )
+}
+
 /** 左侧栏：参考 Claude Code，上面是新建和导航，中间是最近任务，下面是设置 */
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings, openProject } = useNav()
@@ -194,6 +348,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [collapsed, toggleCollapsed] = useCollapsed()
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
+  const chatMode = route.page === 'chat'
+  if (!chatMode) lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 
   // 按项目分组，最近有动静的项目排在前面；组内按更新时间
@@ -244,45 +400,73 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
 
   const body = (narrow: boolean) => (
     <>
-      <div className={cn('flex h-14 shrink-0 items-center gap-2.5 px-3', narrow && 'justify-center px-0')}>
+      <div className={cn('flex h-14 shrink-0 items-center gap-1.5 px-3', narrow && 'justify-center px-0')}>
         {!narrow && (
           <button onClick={() => go({ page: 'home' })} className="flex min-w-0 cursor-pointer items-center gap-2.5">
             <Logo />
             <span className="truncate font-serif text-[16px] font-semibold tracking-tight">Agent 面板</span>
           </button>
         )}
+        {!narrow && (
+          <span className="ml-auto">
+            <ModeSwitch narrow={false} />
+          </span>
+        )}
         <button
           onClick={toggleCollapsed}
           aria-label={narrow ? '展开侧栏' : '收起侧栏'}
           title={narrow ? '展开侧栏' : '收起侧栏'}
-          className="ml-auto hidden h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid"
+          className={cn(
+            'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid',
+            narrow && 'ml-auto',
+          )}
         >
           {narrow ? <PanelLeftOpen className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
         </button>
       </div>
 
       <nav aria-label="主导航" className={cn('flex flex-col gap-0.5 px-2', narrow && 'items-center')}>
-        <Row
-          icon={Plus}
-          label="新建任务"
-          collapsed={narrow}
-          on={route.page === 'home'}
-          onClick={() => go({ page: 'home' })}
-          className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
-        />
-        {NAV.map((n) => (
+        {narrow && <ModeSwitch narrow />}
+        {chatMode ? (
           <Row
-            key={n.id}
-            icon={n.icon}
-            label={n.label}
+            icon={Plus}
+            label="新建聊天"
             collapsed={narrow}
-            on={route.page === n.id}
-            onClick={() => go({ page: n.id })}
+            on={!route.id}
+            onClick={() => go({ page: 'chat' })}
+            className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
           />
-        ))}
+        ) : (
+          <>
+            <Row
+              icon={Plus}
+              label="新建任务"
+              collapsed={narrow}
+              on={route.page === 'home'}
+              onClick={() => go({ page: 'home' })}
+              className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
+            />
+            {NAV.map((n) => (
+              <Row
+                key={n.id}
+                icon={n.icon}
+                label={n.label}
+                collapsed={narrow}
+                on={route.page === n.id}
+                onClick={() => go({ page: n.id })}
+              />
+            ))}
+          </>
+        )}
       </nav>
 
-      {!narrow ? (
+      {chatMode ? (
+        narrow ? (
+          <div className="flex-1" />
+        ) : (
+          <ChatList />
+        )
+      ) : !narrow ? (
         <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
           <div className="group/head flex h-7 shrink-0 items-center gap-0.5 pr-1 pl-2.5">
             <button

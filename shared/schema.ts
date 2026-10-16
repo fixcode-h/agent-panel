@@ -355,7 +355,8 @@ export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
-  projectId: z.string().min(1, '缺少项目'),
+  /** 为空表示 Chat 模式的聊天：不属于任何项目，只能直接对话 */
+  projectId: z.string().default(''),
   mode: TaskMode,
   /** workflow 模式：为空时用项目的工作流 */
   workflowId: z.string().default(''),

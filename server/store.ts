@@ -20,6 +20,8 @@ import type { z } from 'zod'
  */
 export const DATA_DIR = process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel')
 export const CACHE_DIR = path.join(DATA_DIR, 'cache')
+/** Chat 模式的聊天各自的工作目录（不属于任何项目） */
+export const CHATS_DIR = path.join(DATA_DIR, 'chats')
 
 /** 每个数据文件在数据目录里的位置；左边是旧版本平铺在 data/ 下的文件名 */
 export const DATA_FILES: Record<string, string> = {

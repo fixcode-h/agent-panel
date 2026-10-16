@@ -17,7 +17,9 @@ import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitNumstat } from './exec/git.ts'
 import { answerRequest, runRealTurn } from './exec/runner.ts'
-import { createCollection } from './store.ts'
+import { CHATS_DIR, createCollection } from './store.ts'
+import { mkdir, rm } from 'node:fs/promises'
+import path from 'node:path'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -65,6 +67,23 @@ export function tasksApi(deps: {
       })
   })
 
+  /** Chat 模式的聊天在数据目录里各有一个空的工作目录，不碰任何项目 */
+  const chatProject = (dir: string): Project => ({
+    id: '',
+    name: '聊天',
+    description: '',
+    path: dir,
+    categoryId: '',
+    workflowId: '',
+    createdAt: '',
+    updatedAt: '',
+  })
+  const chatWorkspace = async (id: string) => {
+    const dir = path.join(CHATS_DIR, id)
+    await mkdir(dir, { recursive: true })
+    return chatProject(dir)
+  }
+
   const current = async (id: string) => live.get(id)?.task ?? (await store.get(id))
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
@@ -79,7 +98,10 @@ export function tasksApi(deps: {
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
     beginRun(entry.task)
-    const [settings, project] = await Promise.all([getSettings(), deps.projects.get(task.projectId)]).catch((e) => {
+    const [settings, project] = await Promise.all([
+      getSettings(),
+      task.projectId ? deps.projects.get(task.projectId) : chatWorkspace(task.id),
+    ]).catch((e) => {
       live.delete(task.id)
       throw e
     })
@@ -159,7 +181,9 @@ export function tasksApi(deps: {
     const p = NewTaskInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const input = p.data
-    const project = await deps.projects.get(input.projectId)
+    // 没有项目的是 Chat 模式的聊天，只能直接对话
+    if (!input.projectId && input.mode !== 'chat') return bad(c, '缺少项目')
+    const project = input.projectId ? await deps.projects.get(input.projectId) : chatProject('')
     if (!project) return bad(c, '项目不存在', 404)
     const agents = await deps.agents.list()
     let workflow: Workflow | undefined
@@ -273,7 +297,10 @@ export function tasksApi(deps: {
   routes.delete('/:id', async (c) => {
     const id = c.req.param('id')
     stopTask(id)
-    return (await store.remove(id)) ? c.body(null, 204) : bad(c, '任务不存在', 404)
+    if (!(await store.remove(id))) return bad(c, '任务不存在', 404)
+    // 聊天的工作目录跟着删掉
+    await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})
+    return c.body(null, 204)
   })
 
   return {

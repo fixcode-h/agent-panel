@@ -138,7 +138,7 @@ export function useData() {
 }
 
 /** 当前页面和选中项；用于跨页面跳转，例如从 Agent 跳到使用它的工作流 */
-export type PageId = 'home' | 'agents' | 'workflows' | 'projects'
+export type PageId = 'home' | 'agents' | 'workflows' | 'projects' | 'chat'
 export interface Route {
   page: PageId
   id?: string

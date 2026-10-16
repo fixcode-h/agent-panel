@@ -413,7 +413,32 @@ try {
   })
   assert.equal(other.model, '', '其他 Agent 不接受临时模型')
   await waitDone(other.id)
-  step('默认 Agent：跟随默认 CLI，不能删除，对话时可以临时换模型和思考强度；任务记录执行时间')
+  // Chat 模式：不属于项目的聊天，在数据目录里单独的工作目录执行
+  let free = await call('POST', '/tasks', { mode: 'chat', agentId: 'default-agent', prompt: '随便聊聊' })
+  assert.equal(free.projectId, '')
+  free = await waitDone(free.id)
+  assert.equal(free.status, 'done')
+  c = calls().at(-1)
+  assert.equal(c.cwd, path.join(dataDir, 'chats', free.id), '聊天不在任何项目目录里执行')
+  await call('POST', `/tasks/${free.id}/messages`, { text: '再说说' })
+  free = await waitDone(free.id)
+  assert.ok(calls().at(-1).args.includes('--resume'), '聊天继续时续接会话')
+  assert.equal(
+    (
+      await fetch(`${base}/tasks`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mode: 'workflow', prompt: 'x' }),
+      })
+    ).status,
+    400,
+    '工作流必须选项目',
+  )
+  await fetch(`${base}/tasks/${free.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' } })
+  assert.ok(!existsSync(path.join(dataDir, 'chats', free.id)), '删除聊天时工作目录一起删掉')
+  step(
+    '默认 Agent：跟随默认 CLI，不能删除，对话时可以临时换模型和思考强度；任务记录执行时间；Chat 模式的聊天不属于项目',
+  )
 
   // ---- 停止 ----
   let slow = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'SLOW 慢慢来' })

@@ -10,7 +10,7 @@ import { revealDir } from './open.ts'
 const PATHS: Record<DataKind, string[]> = {
   config: ['settings.json', 'config'],
   projects: ['projects'],
-  tasks: ['tasks'],
+  tasks: ['tasks', 'chats'],
   uploads: ['uploads'],
   cache: ['cache'],
 }
