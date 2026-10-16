@@ -11,7 +11,7 @@ import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input, Select, Textarea } from '@/components/ui/input'
+import { ComboInput, Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { CommandPreview } from '@/components/agents/CommandPreview'
@@ -132,17 +132,9 @@ function TierTable({
   value: CliDraft['tiers']
   onChange: (v: CliDraft['tiers']) => void
 }) {
-  const list = `models-${def.id}`
   const set = (t: ModelTier, k: 'model' | 'effort', v: string) => onChange({ ...value, [t]: { ...value[t], [k]: v } })
   return (
     <div className="overflow-hidden rounded-xl border">
-      <datalist id={list}>
-        {def.models.map((m) => (
-          <option key={m.id} value={m.id}>
-            {m.label}
-          </option>
-        ))}
-      </datalist>
       <div className="hidden grid-cols-[120px_1fr_170px] gap-3 border-b bg-field/50 px-3.5 py-2 text-xs text-subtle sm:grid">
         <span>档位</span>
         <span>模型</span>
@@ -164,11 +156,11 @@ function TierTable({
                 <span className="truncate text-[11px] text-subtle">{t.hint}</span>
               </span>
             </span>
-            <Input
+            <ComboInput
               aria-label={`${def.name} ${t.label}档模型`}
-              list={list}
+              suggestions={def.models.map((m) => ({ value: m.id, label: m.label }))}
               value={value[t.id].model}
-              onChange={(e) => set(t.id, 'model', e.target.value)}
+              onChange={(v) => set(t.id, 'model', v)}
               placeholder={sug.model}
               className="h-9 font-mono text-[13px]"
               spellCheck={false}

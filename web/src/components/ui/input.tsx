@@ -1,4 +1,7 @@
-import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { forwardRef, useState, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import * as S from '@radix-ui/react-select'
+import * as P from '@radix-ui/react-popover'
+import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export const fieldClass =
@@ -17,45 +20,199 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
 )
 Textarea.displayName = 'Textarea'
 
-const selectArrow =
-  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")"
+const EMPTY = '__empty__'
+const enc = (v: string) => (v === '' ? EMPTY : v)
+const dec = (v: string) => (v === EMPTY ? '' : v)
 
-/** 原生下拉框，样式和输入框一致 */
+const listPanel =
+  'z-50 max-h-[min(360px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] ' +
+  'overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop animate-[fade-in_120ms_ease-out]'
+export const listItem =
+  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-1.5 pr-8 pl-2.5 text-left text-[13px] ' +
+  'outline-none data-[highlighted]:bg-sel data-[state=checked]:text-fg data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
+
+/** 下拉框：样式和输入框一致，弹出的列表也跟随主题（不用系统原生列表） */
 export function Select({
   options,
   className,
-  style,
-  ...props
-}: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> & {
-  /** 带 group 的选项按组放进 optgroup */
+  value,
+  onChange,
+  disabled,
+  id,
+  'aria-label': ariaLabel,
+}: {
+  /** 带 group 的选项按组显示 */
   options: { value: string; label: string; group?: string }[]
+  value: string
+  onChange: (e: { target: { value: string } }) => void
+  className?: string
+  disabled?: boolean
+  id?: string
+  'aria-label'?: string
 }) {
   const groups = [...new Set(options.map((o) => o.group ?? ''))]
-  const opt = (o: { value: string; label: string }) => (
-    <option key={o.value} value={o.value}>
-      {o.label}
-    </option>
-  )
+  const current = options.find((o) => o.value === value)
   return (
-    <select
-      className={cn(
-        fieldClass,
-        'h-9 cursor-pointer appearance-none bg-[length:14px] bg-[right_10px_center] bg-no-repeat pr-8',
-        className,
-      )}
-      style={{ backgroundImage: selectArrow, ...style }}
-      {...props}
-    >
-      {groups.map((g) =>
-        g ? (
-          <optgroup key={g} label={g}>
-            {options.filter((o) => o.group === g).map(opt)}
-          </optgroup>
-        ) : (
-          options.filter((o) => !o.group).map(opt)
-        ),
-      )}
-    </select>
+    <S.Root value={enc(value)} onValueChange={(v) => onChange({ target: { value: dec(v) } })} disabled={disabled}>
+      <S.Trigger
+        id={id}
+        aria-label={ariaLabel}
+        className={cn(
+          fieldClass,
+          'flex h-9 cursor-pointer items-center justify-between gap-2 text-left disabled:cursor-not-allowed disabled:opacity-60 data-[state=open]:border-accent data-[state=open]:ring-[3px] data-[state=open]:ring-accent-soft',
+          className,
+        )}
+      >
+        <span className={cn('min-w-0 truncate', !current && 'text-subtle')}>{current?.label ?? value}</span>
+        <S.Icon>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-subtle" />
+        </S.Icon>
+      </S.Trigger>
+      <S.Portal>
+        <S.Content position="popper" sideOffset={6} className={listPanel}>
+          <S.ScrollUpButton className="grid h-5 place-items-center text-subtle">
+            <ChevronUp className="h-3.5 w-3.5" />
+          </S.ScrollUpButton>
+          <S.Viewport className="p-1">
+            {groups.map((g, i) => (
+              <S.Group key={g || '_'}>
+                {g && (
+                  <>
+                    {i > 0 && <S.Separator className="mx-1 my-1 h-px bg-line" />}
+                    <S.Label className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">{g}</S.Label>
+                  </>
+                )}
+                {options
+                  .filter((o) => (o.group ?? '') === g)
+                  .map((o) => (
+                    <S.Item key={o.value} value={enc(o.value)} className={listItem}>
+                      <S.ItemText>{o.label}</S.ItemText>
+                      <S.ItemIndicator className="absolute right-2.5">
+                        <Check className="h-3.5 w-3.5 text-accent" />
+                      </S.ItemIndicator>
+                    </S.Item>
+                  ))}
+              </S.Group>
+            ))}
+          </S.Viewport>
+          <S.ScrollDownButton className="grid h-5 place-items-center text-subtle">
+            <ChevronDown className="h-3.5 w-3.5" />
+          </S.ScrollDownButton>
+        </S.Content>
+      </S.Portal>
+    </S.Root>
+  )
+}
+
+/** 可以自由填写、也能从建议里选的输入框（替代原生 datalist） */
+export function ComboInput({
+  value,
+  onChange,
+  suggestions,
+  className,
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
+  value: string
+  onChange: (v: string) => void
+  suggestions: { value: string; label?: string }[]
+}) {
+  const [open, setOpen] = useState(false)
+  const [typed, setTyped] = useState(false)
+  const [hi, setHi] = useState(-1)
+  const q = value.trim().toLowerCase()
+  const list =
+    typed && q
+      ? suggestions.filter((s) => s.value.toLowerCase().includes(q) || s.label?.toLowerCase().includes(q))
+      : suggestions
+  const pick = (v: string) => {
+    onChange(v)
+    setOpen(false)
+  }
+  return (
+    <P.Root open={open && list.length > 0} onOpenChange={setOpen}>
+      <P.Anchor asChild>
+        <div className="relative">
+          <input
+            {...props}
+            value={value}
+            role="combobox"
+            aria-expanded={open}
+            autoComplete="off"
+            className={cn(fieldClass, 'h-10 pr-8', className)}
+            onFocus={() => {
+              setTyped(false)
+              setOpen(true)
+            }}
+            onClick={() => setOpen(true)}
+            onChange={(e) => {
+              onChange(e.target.value)
+              setTyped(true)
+              setHi(-1)
+              setOpen(true)
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                e.preventDefault()
+                setOpen(true)
+                const d = e.key === 'ArrowDown' ? 1 : -1
+                setHi((h) => (h + d + list.length) % Math.max(1, list.length))
+              } else if (e.key === 'Enter' && open && list[hi]) {
+                e.preventDefault()
+                pick(list[hi].value)
+              } else if (e.key === 'Escape') setOpen(false)
+            }}
+          />
+          <button
+            type="button"
+            tabIndex={-1}
+            aria-label="展开建议"
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              setTyped(false)
+              setOpen((o) => !o)
+            }}
+            className="absolute inset-y-0 right-0 grid w-8 cursor-pointer place-items-center text-subtle hover:text-fg"
+          >
+            <ChevronDown className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </P.Anchor>
+      <P.Portal>
+        <P.Content
+          align="start"
+          sideOffset={6}
+          onOpenAutoFocus={(e) => e.preventDefault()}
+          onInteractOutside={(e) => {
+            if ((e.target as HTMLElement).closest?.('[role=combobox]')) e.preventDefault()
+          }}
+          className="z-50 max-h-[min(320px,var(--radix-popover-content-available-height))] w-[var(--radix-popover-trigger-width)] overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
+        >
+          <div role="listbox">
+            {list.map((s, i) => (
+              <button
+                key={s.value}
+                type="button"
+                role="option"
+                aria-selected={s.value === value}
+                data-highlighted={i === hi ? '' : undefined}
+                onMouseDown={(e) => e.preventDefault()}
+                onMouseEnter={() => setHi(i)}
+                onClick={() => pick(s.value)}
+                className={listItem}
+              >
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate font-mono text-[12.5px]">{s.value}</span>
+                  {s.label && s.label !== s.value && (
+                    <span className="truncate text-[11px] text-subtle">{s.label}</span>
+                  )}
+                </span>
+                {s.value === value && <Check className="absolute right-2.5 h-3.5 w-3.5 text-accent" />}
+              </button>
+            ))}
+          </div>
+        </P.Content>
+      </P.Portal>
+    </P.Root>
   )
 }
 
