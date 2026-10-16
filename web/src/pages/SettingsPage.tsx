@@ -20,12 +20,20 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
-import { CliSettings, type CliInstallJob, type CliModels, type CliStatus, type Settings } from '@shared/schema'
-import { cliSettings, defaultCli, tierOf } from '@shared/settings'
+import {
+  CliSettings,
+  type CliInstallJob,
+  type CliModels,
+  type CliUpdate,
+  type CliStatus,
+  type Settings,
+} from '@shared/schema'
+import { cliSettings, defaultCli, orderClis, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
 import { loadCliModels, useCliDef, useCliModels } from '@/lib/cli-models'
+import { clearInstallJob, resumeInstallJobs, setInstallFinish, startInstall, useInstallJob } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
@@ -35,6 +43,8 @@ import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { CommandPreview } from '@/components/agents/CommandPreview'
+import { UpdateSection } from '@/components/settings/UpdateSection'
+import { useAppUpdate } from '@/lib/app-update'
 
 const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
 const textToEnv = (t: string) =>
@@ -147,36 +157,12 @@ function CopyText({ text }: { text: string }) {
  * 失败时给出原因和命令，用户可以复制到终端自己运行（例如需要 sudo）。
  */
 function useCliInstaller(def: CliDefinition) {
-  const { refreshClis, tasks, agents, settings } = useData()
-  const [job, setJob] = useState<CliInstallJob | null>(null)
+  const { tasks, agents, settings } = useData()
+  const job = useInstallJob(def.id)
   const running = job?.status === 'running'
-  useEffect(() => {
-    if (!job || job.status !== 'running') return
-    let alive = true
-    let t: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      try {
-        const j = await api.cliJob(job.id)
-        if (!alive) return
-        setJob(j)
-        if (j.status === 'running') t = setTimeout(poll, 700)
-        else {
-          await Promise.all([refreshClis().catch(() => {}), loadCliModels(def.id, true).catch(() => {})])
-          if (j.status === 'done') toast.success(`${def.name} 已${j.action === 'install' ? '安装' : '卸载'}`)
-        }
-      } catch (e) {
-        if (alive) toast.error((e as Error).message)
-      }
-    }
-    t = setTimeout(poll, 500)
-    return () => {
-      alive = false
-      clearTimeout(t)
-    }
-  }, [job?.id, running])
   const start = async (action: CliInstallJob['action']) => {
     try {
-      setJob(await api.cliAction(def.id, action))
+      await startInstall(def.id, action)
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -191,7 +177,7 @@ function useCliInstaller(def: CliDefinition) {
           t.steps.some((s) => s.agentId === a.id && s.status === 'running'),
       ),
   )
-  return { job, running, start, clear: () => setJob(null), busy }
+  return { job, running, start, clear: () => clearInstallJob(def.id), busy }
 }
 
 function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void }) {
@@ -407,6 +393,17 @@ function CliSection({
   const perm = def.permissions.find((p) => p.id === draft.permission) ?? def.permissions[0]
   const ok = status?.installed
   const installer = useCliInstaller(def)
+  // 只有 npm 上有更新的版本时才显示「更新」
+  const [update, setUpdate] = useState<CliUpdate | null>(null)
+  const checkUpdate = (refresh = false) =>
+    api
+      .cliUpdate(def.id, refresh)
+      .then(setUpdate)
+      .catch(() => setUpdate(null))
+  useEffect(() => {
+    setUpdate(null)
+    if (ok && !installer.running) void checkUpdate()
+  }, [def.id, ok, status?.version, installer.running])
   const [removing, setRemoving] = useState(false)
   return (
     <>
@@ -445,20 +442,22 @@ function CliSection({
         )}
         {status && ok && (
           <>
-            <Button
-              variant="secondary"
-              size="sm"
-              title="用 npm 安装最新版本"
-              onClick={() => installer.start('install')}
-              disabled={installer.running}
-            >
-              {installer.running && installer.job?.action === 'install' ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <ArrowUpCircle className="h-3.5 w-3.5" />
-              )}
-              更新
-            </Button>
+            {(update?.available || (installer.running && installer.job?.action === 'install')) && (
+              <Button
+                variant="secondary"
+                size="sm"
+                title={update ? `当前 ${update.current}，npm 上最新是 ${update.latest}` : undefined}
+                onClick={() => installer.start('install')}
+                disabled={installer.running}
+              >
+                {installer.running && installer.job?.action === 'install' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ArrowUpCircle className="h-3.5 w-3.5" />
+                )}
+                {installer.running ? '更新中' : `更新到 ${update?.latest}`}
+              </Button>
+            )}
             <Button variant="danger-outline" size="sm" onClick={() => setRemoving(true)} disabled={installer.running}>
               {installer.running && installer.job?.action === 'uninstall' ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -474,7 +473,10 @@ function CliSection({
           size="icon-sm"
           aria-label="重新检测"
           title="重新检测"
-          onClick={onDetect}
+          onClick={() => {
+            onDetect()
+            if (ok) void checkUpdate(true)
+          }}
           disabled={detecting || installer.running}
         >
           <RefreshCw className={cn('h-3.5 w-3.5', detecting && 'animate-spin')} />
@@ -618,11 +620,12 @@ interface Section {
   cli?: CliDefinition
 }
 
-const SECTIONS: Section[] = [
+const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: '常规', icon: Settings2 },
   { id: 'models', label: '默认 CLI', icon: Cpu },
-  ...CLIS.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
+  ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: 'AI 创建', icon: Sparkles },
+  { id: 'update', label: '版本更新', icon: ArrowUpCircle },
 ]
 
 function SettingsBody({
@@ -637,11 +640,36 @@ function SettingsBody({
   const { setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [notify, setNotifyOn] = useState(notifyEnabled)
+  const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
+  const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
+  const ordered = orderClis(CLIS, cliOrder)
+  const SECTIONS = sectionsFor(ordered)
+  // 侧栏里拖动 CLI 调整顺序：拖到哪一项上就插到那里
+  const [dragging, setDragging] = useState('')
+  const moveCli = (id: string, to: number) =>
+    setCliOrder((o) => {
+      const from = o.indexOf(id)
+      if (from < 0 || to < 0 || to >= o.length || from === to) return o
+      const next = o.filter((x) => x !== id)
+      next.splice(to, 0, id)
+      return next
+    })
   const [drafts, setDrafts] = useState(() => toDraft(initial))
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const demo = !!import.meta.env.VITE_DEMO
+  const update = useAppUpdate().data?.update
+  // 安装 / 卸载结束后重新检测，并提示结果；进度在 cli-install 里，切换页面不会丢
+  useEffect(() => {
+    setInstallFinish((j) => {
+      const name = CLIS.find((c) => c.id === j.cli)?.name ?? j.cli
+      void Promise.all([refreshClis().catch(() => {}), loadCliModels(j.cli, true).catch(() => {})])
+      if (j.status === 'done') toast.success(`${name} 已${j.action === 'install' ? '安装' : '卸载'}`)
+      else toast.error(`${name} ${j.action === 'install' ? '安装' : '卸载'}失败`)
+    })
+    void resumeInstallJobs()
+  }, [refreshClis])
   // 打开设置就开始读各个 CLI 的模型列表，切到 CLI 页时多半已经读好（Command Code 第一次要几秒）
   useEffect(() => {
     for (const c of CLIS) loadCliModels(c.id).catch(() => {})
@@ -651,6 +679,8 @@ function SettingsBody({
   const valid = Number.isInteger(minutes) && minutes >= 1 && minutes <= 600
   const tier = (t: { model: string; effort: string }) => ({ model: t.model.trim(), effort: t.effort })
   const value: Settings = {
+    openBrowser,
+    cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     defaultCli: defCli,
     clis: Object.fromEntries(
@@ -709,14 +739,38 @@ function SettingsBody({
           return (
             <div key={s.id} className="contents">
               {s.cli && !SECTIONS[i - 1]?.cli && (
-                <span className="hidden px-2.5 pt-3 pb-1 text-[11px] text-subtle md:block">CLI</span>
+                <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[11px] text-subtle md:flex">
+                  CLI
+                  <span className="text-[10.5px] text-subtle/80">拖动调整顺序</span>
+                </span>
               )}
               <button
                 onClick={() => onSection(s.id)}
                 aria-current={on ? 'page' : undefined}
+                title={s.cli ? '拖动调整顺序，或按 Alt + ↑ / ↓' : undefined}
+                draggable={!!s.cli}
+                onDragStart={(e) => {
+                  if (!s.cli) return
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', s.cli.id)
+                  setDragging(s.cli.id)
+                }}
+                onDragOver={(e) => {
+                  if (!dragging || !s.cli) return
+                  e.preventDefault()
+                  if (s.cli.id !== dragging) moveCli(dragging, cliOrder.indexOf(s.cli.id))
+                }}
+                onDrop={(e) => e.preventDefault()}
+                onDragEnd={() => setDragging('')}
+                onKeyDown={(e) => {
+                  if (!s.cli || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+                  e.preventDefault()
+                  moveCli(s.cli.id, cliOrder.indexOf(s.cli.id) + (e.key === 'ArrowUp' ? -1 : 1))
+                }}
                 className={cn(
                   'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
                   on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                  s.cli && dragging === s.cli.id && 'opacity-50',
                 )}
               >
                 {s.cli ? (
@@ -725,6 +779,9 @@ function SettingsBody({
                   s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                 )}
                 <span className="truncate">{s.label}</span>
+                {s.id === 'update' && update && (
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="有新版本" />
+                )}
                 {st && (
                   <span
                     className={cn(
@@ -772,6 +829,11 @@ function SettingsBody({
                   {!valid && <span className="text-xs text-danger">填 1 到 600 之间的整数</span>}
                 </div>
               </Row>
+              {!demo && (
+                <Row title="启动后打开浏览器" desc="启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。">
+                  <Switch aria-label="启动后打开浏览器" checked={openBrowser} onCheckedChange={setOpenBrowser} />
+                </Row>
+              )}
               <Row title="任务完成时通知我" desc="页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。">
                 <Switch
                   aria-label="任务完成时通知我"
@@ -794,7 +856,7 @@ function SettingsBody({
                 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。
               </p>
               <div role="radiogroup" aria-label="默认 CLI" className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {CLIS.map((c) => {
+                {ordered.map((c) => {
                   const on = defCli === c.id
                   const st = statusOf(c.id)
                   return (
@@ -859,6 +921,8 @@ function SettingsBody({
             />
           )}
 
+          {cur.id === 'update' && <UpdateSection />}
+
           {cur.id === 'assist' && (
             <>
               <p className="text-[13px] leading-relaxed text-subtle">
@@ -870,7 +934,7 @@ function SettingsBody({
                     aria-label="AI 创建使用的 CLI"
                     value={assist.cli}
                     onChange={(e) => setAssist({ ...assist, cli: e.target.value })}
-                    options={[{ value: '', label: '自动' }, ...CLIS.map((c) => ({ value: c.id, label: c.name }))]}
+                    options={[{ value: '', label: '自动' }, ...ordered.map((c) => ({ value: c.id, label: c.name }))]}
                   />
                 </Row>
                 <Row title="模型" desc="留空使用该 CLI 的默认模型">
@@ -932,6 +996,8 @@ export function SettingsDialog({
         <D.Overlay className="fixed inset-0 z-40 bg-black/45 animate-[fade-in_150ms_ease-out]" />
         <D.Content
           aria-describedby={undefined}
+          // 点设置外面的空白处不关闭，避免改到一半误关；用右上角的关闭按钮或 Esc 关闭
+          onInteractOutside={(e) => e.preventDefault()}
           className="fixed top-1/2 left-1/2 z-50 h-[min(720px,calc(100dvh-2rem))] w-[min(980px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <D.Title className="sr-only">设置</D.Title>

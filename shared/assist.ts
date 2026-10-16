@@ -47,6 +47,8 @@ export const AssistInput = z.object({
   cli: z.string().min(1, '请选择 CLI'),
   /** 为空时用设置里这个 CLI 的默认模型 */
   model: z.string().trim().default(''),
+  /** 为空时跟着模型档位或这个 CLI 的默认思考强度 */
+  effort: z.string().trim().default(''),
   messages: z.array(AssistMessage).min(1).max(40),
 })
 export type AssistInput = z.infer<typeof AssistInput>
@@ -138,6 +140,11 @@ export interface AssistJob {
   error?: string
   /** 第几次尝试（格式不对会自动让 CLI 修正一次） */
   attempt: number
+  /** 执行中的进度：最近的思考内容、用到的工具、已输出的字数（含 JSON），让页面不是一直「正在生成」 */
+  thinking?: string
+  tools?: string[]
+  outChars?: number
+  startedAt?: number
 }
 
 export interface AssistContext {

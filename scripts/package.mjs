@@ -34,7 +34,8 @@ await build({
   target: 'node20',
   minify: false,
   legalComments: 'none',
-  define: { 'process.env.NODE_ENV': '"production"' },
+  // 版本号写进服务端，设置里的「版本更新」靠它判断有没有新包
+  define: { 'process.env.NODE_ENV': '"production"', __APP_VERSION__: JSON.stringify(version) },
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 })
@@ -78,7 +79,9 @@ writeFileSync(
 chmodSync(path.join(out, 'start.sh'), 0o755)
 writeFileSync(
   path.join(out, 'start.cmd'),
-  '@echo off\r\nrem 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\r\ncd /d "%~dp0"\r\nnode server.mjs --prod\r\npause\r\n',
+  // 前四行不能改：在设置里更新时会覆盖这个文件，而 cmd 是按位置往下读正在执行的脚本的；
+  // 只在出错时暂停，在设置里更新后重启时窗口不会停在「按任意键继续」
+  '@echo off\r\nrem 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\r\ncd /d "%~dp0"\r\nnode server.mjs --prod\r\nif errorlevel 1 pause\r\n',
 )
 writeFileSync(
   path.join(out, '使用说明.txt'),
@@ -90,7 +93,8 @@ writeFileSync(
     '3. 启动：Windows 双击 start.cmd；macOS / Linux 运行 ./start.sh（或 node server.mjs --prod）',
     '4. 浏览器打开 http://127.0.0.1:8787',
     '',
-    '数据保存在本目录的 data/ 下，升级时把旧版本的 data/ 复制过来即可。',
+    '数据保存在本目录的 data/ 下。可以在设置的「版本更新」里检查和安装新版本，数据会保留；',
+    '手动升级时把旧版本的 data/ 复制到新版本目录即可。',
     '端口用环境变量 PORT 修改，数据目录用 AGENT_PANEL_DATA 修改。',
     '',
   ].join('\n'),

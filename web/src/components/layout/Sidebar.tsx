@@ -17,6 +17,7 @@ import {
 import type { Task } from '@shared/schema'
 import { useData, useNav, type PageId } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { useAppUpdate } from '@/lib/app-update'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
 
 export function Logo({ className }: { className?: string }) {
@@ -83,6 +84,7 @@ function Row({
   onClick,
   collapsed,
   className,
+  badge,
 }: {
   icon: LucideIcon
   label: string
@@ -90,6 +92,8 @@ function Row({
   onClick: () => void
   collapsed: boolean
   className?: string
+  /** 右上角的提示点，例如有新版本 */
+  badge?: string
 }) {
   return (
     <button
@@ -103,8 +107,18 @@ function Row({
         className,
       )}
     >
-      <Icon className="h-[18px] w-[18px] shrink-0" strokeWidth={1.7} />
+      <span className="relative shrink-0">
+        <Icon className="h-[18px] w-[18px]" strokeWidth={1.7} />
+        {badge && collapsed && (
+          <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-accent ring-2 ring-rail" />
+        )}
+      </span>
       {!collapsed && <span className="truncate">{label}</span>}
+      {badge && !collapsed && (
+        <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[11px] text-accent">
+          {badge}
+        </span>
+      )}
     </button>
   )
 }
@@ -113,6 +127,9 @@ function Row({
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings } = useNav()
   const { tasks, projects } = useData()
+  // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
+  const appUpdate = useAppUpdate().data
+  const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
   const [collapsed, toggleCollapsed] = useCollapsed()
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
@@ -210,9 +227,10 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           icon={Settings}
           label="设置"
           collapsed={narrow}
+          badge={update ? '有新版本' : undefined}
           onClick={() => {
             setMobileOpen(false)
-            openSettings()
+            openSettings(update ? 'update' : undefined)
           }}
           className={cn(!narrow && 'flex-1')}
         />

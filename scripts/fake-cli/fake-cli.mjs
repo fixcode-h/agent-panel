@@ -10,18 +10,34 @@ import { appendFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 
 const args = process.argv.slice(2)
-const kind = args[0] === 'exec' ? 'codex' : args.includes('stream-json') ? 'claude' : 'commandcode'
+const kind = args[0] === 'app-server' ? 'codex' : args.includes('stream-json') ? 'claude' : 'commandcode'
 if (args.includes('--version')) {
   console.log(`${kind}-fake 0.0.1`)
   process.exit(0)
 }
 
-// Codex 的 app-server：按行读 JSON-RPC 请求，只回答 initialize 和 model/list，stdin 不关闭就一直等
+// Codex 的 app-server：按行读 JSON-RPC 请求，回答 initialize、model/list，并按 thread/start、turn/start 执行一轮；
+// stdin 不关闭就一直等
+let input = ''
+let appThread = ''
+let appResume = ''
+let developer = ''
 if (args[0] === 'app-server') {
   const { createInterface } = await import('node:readline')
   for await (const line of createInterface({ input: process.stdin })) {
     const req = JSON.parse(line)
     if (req.method === 'initialize') console.log(JSON.stringify({ id: req.id, result: { userAgent: 'fake' } }))
+    if (req.method === 'thread/start' || req.method === 'thread/resume') {
+      appResume = req.params.threadId ?? ''
+      appThread = appResume || randomUUID()
+      developer = req.params.developerInstructions ?? ''
+      console.log(JSON.stringify({ id: req.id, result: { thread: { id: appThread } } }))
+    }
+    if (req.method === 'turn/start') {
+      console.log(JSON.stringify({ id: req.id, result: { turn: { id: 't1', status: 'inProgress' } } }))
+      input = req.params.input.map((x) => x.text).join('')
+      break
+    }
     if (req.method === 'model/list') {
       const effort = (e) => ({ reasoningEffort: e, description: e })
       const data = [
@@ -47,7 +63,7 @@ if (args[0] === 'app-server') {
       console.log(JSON.stringify({ id: req.id, result: { data, nextCursor: null } }))
     }
   }
-  process.exit(0)
+  if (!input) process.exit(0)
 }
 // Command Code 的 --list-models
 if (args.includes('--list-models')) {
@@ -57,13 +73,13 @@ if (args.includes('--list-models')) {
   process.exit(0)
 }
 
-let input = ''
-for await (const chunk of process.stdin) input += chunk
+if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
+  const extra = kind === 'codex' ? { resume: appResume, developer } : {}
   appendFileSync(
     log,
-    JSON.stringify({ kind, args, cwd: process.cwd(), input, pid: process.pid, start: Date.now() }) + '\n',
+    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, pid: process.pid, start: Date.now() }) + '\n',
   )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
@@ -73,8 +89,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n')
 const slow = input.includes('SLOW')
 const fail = input.includes('FAIL')
-const resumeIdx = kind === 'codex' ? args.indexOf('resume') : args.indexOf('--resume')
-const session = resumeIdx >= 0 ? args[resumeIdx + 1] : randomUUID()
+const resumeIdx = args.indexOf('--resume')
+const session = kind === 'codex' ? appThread : resumeIdx >= 0 ? args[resumeIdx + 1] : randomUUID()
+// app-server 的通知
+const note = (method, params) => out({ method, params: { threadId: session, turnId: 't1', ...params } })
+const codexDone = (status, error) => {
+  note('turn/completed', { turn: { id: 't1', status, error: error ? { message: error } : null, items: [] } })
+  process.exit(0)
+}
 const file = `${kind}-output.txt`
 const verdict = input.includes('最后单独一行写「验收结论')
   ? input.includes('第 1 轮验收')
@@ -104,9 +126,10 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
       usage: {},
     })
   } else if (kind === 'codex') {
-    out({ type: 'thread.started', thread_id: session })
-    out({ type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text } })
-    out({ type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } })
+    note('item/reasoning/summaryTextDelta', { itemId: 'r0', delta: '想一想怎么配置', summaryIndex: 0 })
+    for (const part of text.match(/[\s\S]{1,40}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
+    note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
+    codexDone('completed')
   } else {
     out({ type: 'event', event: { type: 'run_start', sessionId: session } })
     out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
@@ -128,6 +151,11 @@ if (kind === 'claude') {
       },
     },
   })
+  for (const part of ['先看看', '项目结构'])
+    out({
+      type: 'stream_event',
+      event: { type: 'content_block_delta', delta: { type: 'thinking_delta', thinking: part } },
+    })
   out({
     type: 'assistant',
     message: {
@@ -135,6 +163,26 @@ if (kind === 'claude') {
       content: [{ type: 'tool_use', id: 't1', name: 'Read', input: { file_path: `${process.cwd()}/README.md` } }],
     },
   })
+  out({
+    type: 'assistant',
+    message: {
+      id: 'm1',
+      content: [
+        {
+          type: 'tool_use',
+          id: 't0',
+          name: 'TodoWrite',
+          input: {
+            todos: [
+              { content: '读代码', status: 'completed', activeForm: '读代码中' },
+              { content: '写文件', status: 'in_progress', activeForm: '正在写文件' },
+            ],
+          },
+        },
+      ],
+    },
+  })
+  out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 40 } } })
   writeFileSync(file, 'line1\nline2\n')
   out({
     type: 'assistant',
@@ -191,43 +239,47 @@ if (kind === 'claude') {
     usage: { input_tokens: 30, cache_read_input_tokens: 25000, cache_creation_input_tokens: 500, output_tokens: 120 },
   })
 } else if (kind === 'codex') {
-  out({ type: 'thread.started', thread_id: session })
-  out({ type: 'turn.started' })
-  out({
-    type: 'item.started',
-    item: { id: 'item_0', type: 'command_execution', command: "bash -lc 'ls -la'", status: 'in_progress' },
+  note('item/reasoning/summaryTextDelta', { itemId: 'r0', delta: '**规划**\n\n先看目录', summaryIndex: 0 })
+  note('turn/plan/updated', {
+    explanation: null,
+    plan: [
+      { step: '看目录', status: 'completed' },
+      { step: '写文件', status: 'inProgress' },
+    ],
   })
-  out({
-    type: 'item.completed',
-    item: {
-      id: 'item_0',
-      type: 'command_execution',
-      command: "bash -lc 'ls -la'",
-      aggregated_output: '',
-      exit_code: 0,
-      status: 'completed',
-    },
+  note('item/completed', {
+    item: { id: 'c0', type: 'commandExecution', command: "bash -lc 'ls -la'", exitCode: 0, status: 'completed' },
   })
   writeFileSync(file, 'a\nb\nc\n')
-  out({
-    type: 'item.completed',
+  note('item/completed', {
     item: {
-      id: 'item_1',
-      type: 'file_change',
-      changes: [{ path: `${process.cwd()}/${file}`, kind: 'add' }],
+      id: 'f0',
+      type: 'fileChange',
+      changes: [{ path: `${process.cwd()}/${file}`, kind: { type: 'add' }, diff: '+a\n+b\n+c\n' }],
       status: 'completed',
     },
   })
-  out({ type: 'item.completed', item: { id: 'item_2', type: 'agent_message', text: reply } })
-  if (fail) {
-    out({ type: 'turn.failed', error: { message: '模拟的失败' } })
-    process.exit(1)
+  note('item/started', { item: { id: 'a0', type: 'agentMessage', text: '' } })
+  for (const part of reply.match(/.{1,6}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
+  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text: reply } })
+  const usage = {
+    totalTokens: 24300,
+    inputTokens: 24000,
+    cachedInputTokens: 20000,
+    cacheWriteInputTokens: 0,
+    outputTokens: 300,
+    reasoningOutputTokens: 100,
   }
-  out({ type: 'turn.completed', usage: { input_tokens: 24000, cached_input_tokens: 20000, output_tokens: 300 } })
+  note('thread/tokenUsage/updated', { tokenUsage: { total: usage, last: usage, modelContextWindow: 258400 } })
+  if (fail) codexDone('failed', '模拟的失败')
+  codexDone('completed')
 } else {
   const ev = (e) => out({ type: 'event', event: e })
   ev({ type: 'run_start', sessionId: session })
   ev({ type: 'message_start' })
+  ev({ type: 'thinking_start' })
+  ev({ type: 'thinking_delta', delta: '想想先读哪个文件' })
+  ev({ type: 'thinking_end', text: '想想先读哪个文件' })
   ev({ type: 'tool_queued', toolCallId: 'c1', toolName: 'read_file', input: { path: 'README.md' } })
   writeFileSync(file, 'x\n')
   ev({ type: 'tool_queued', toolCallId: 'c2', toolName: 'write_file', input: { path: file, content: 'x\n' } })

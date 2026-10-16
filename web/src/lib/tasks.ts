@@ -63,7 +63,19 @@ export function contextUsage(task: Task, workflow: Workflow | undefined, agents:
   return { parts, used, window: 200_000 }
 }
 
-export const fmtTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+export const fmtTokens = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
+
+/** 实时速度：正在输出的 Agent 的 token/s 之和（工作流里可能几个节点同时输出） */
+export function liveTps(task: Task, agentIds?: string[]) {
+  return Object.entries(task.usage.agents)
+    .filter(([id]) => !agentIds || agentIds.includes(id))
+    .reduce((n, [, u]) => n + (u.tps ?? 0), 0)
+}
+
+/** 缓存命中率：输入里命中缓存的比例 */
+export const cacheRate = (task: Task) =>
+  task.usage.inputTokens > 0 ? (task.usage.cacheReadTokens ?? 0) / task.usage.inputTokens : 0
 
 /** 某个节点的执行情况：操作次数、改动文件数、当前在做什么、输出；deep 时包括开始、验收、结束等子节点 */
 export function stepActivity(task: Task, id: string, deep = false) {

@@ -54,6 +54,8 @@ export function runProcess(o: {
   onStderr?: (text: string) => void
   /** 写完 stdin 后不关闭：codex app-server 这类服务一读到 EOF 就退出，要等拿到回复再停掉它 */
   keepStdinOpen?: boolean
+  /** 启动后拿到写 stdin 的方法：按协议一来一回对话的 CLI（codex app-server）用它发请求 */
+  onSpawn?: (io: { write: (s: string) => void; end: () => void }) => void
 }): Promise<ProcessResult> {
   return new Promise((resolve) => {
     let killed: ProcessResult['killed'] = null
@@ -112,7 +114,10 @@ export function runProcess(o: {
     })
 
     child.stdin!.on('error', () => {})
-    if (o.keepStdinOpen) child.stdin!.write(o.stdin ?? '')
+    if (o.onSpawn) {
+      const stdin = child.stdin!
+      o.onSpawn({ write: (s) => void (stdin.writable && stdin.write(s)), end: () => stdin.end() })
+    } else if (o.keepStdinOpen) child.stdin!.write(o.stdin ?? '')
     else child.stdin!.end(o.stdin ?? '')
   })
 }

@@ -61,6 +61,17 @@ export interface CliDefinition {
 
 const opt = (cond: unknown, ...args: string[]) => (cond ? args : [])
 
+/** 设置里的额外参数是按 codex exec 写的；app-server 只认配置类参数（-c、--enable、--disable），其余丢掉免得启动失败 */
+function appServerArgs(args: string[]) {
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (/^(-c|--config|--enable|--disable)$/.test(a) && i + 1 < args.length) out.push(a, args[++i])
+    else if (/^(--config|--enable|--disable)=/.test(a)) out.push(a)
+  }
+  return out
+}
+
 export const CLIS: CliDefinition[] = [
   {
     id: 'claude',
@@ -146,20 +157,19 @@ export const CLIS: CliDefinition[] = [
       low: { model: 'gpt-6-luna', effort: 'low' },
     },
     defaultPermission: 'workspace-write',
-    systemPromptFlag: false,
-    // resume 子命令不支持 -s，沙箱统一用 -c 配置
+    // 角色说明通过 app-server 的 developerInstructions 传入
+    systemPromptFlag: true,
+    // 用 app-server 执行才能拿到流式输出；模型、思考强度、沙箱也会在 thread/start、turn/start 里再传一次，
+    // 写在参数里是为了让「环境」里显示的命令看得出用了什么。任务描述和续接的会话走协议，不在参数里
     buildArgs: (o) => [
-      'exec',
-      ...opt(o.resume, 'resume', o.resume!),
-      '--json',
-      '--skip-git-repo-check',
-      ...opt(o.model, '-m', o.model),
+      'app-server',
+      ...opt(o.model, '-c', `model="${o.model}"`),
       ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
-      ...(o.permission === 'danger-full-access'
-        ? ['--dangerously-bypass-approvals-and-sandbox']
-        : ['-c', `sandbox_mode="${o.permission || 'workspace-write'}"`]),
-      ...o.extraArgs,
-      '-',
+      '-c',
+      `sandbox_mode="${o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'}"`,
+      '-c',
+      'approval_policy="never"',
+      ...appServerArgs(o.extraArgs),
     ],
     installHint: 'npm install -g @openai/codex',
     npmPackage: '@openai/codex',
