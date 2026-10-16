@@ -6,7 +6,17 @@
  * 用法：node scripts/package.mjs [版本号]   版本号默认取 package.json
  */
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
 import { build } from 'esbuild'
 
@@ -22,7 +32,8 @@ rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
-run('npx', ['vite', 'build'])
+// 直接用 node 跑 vite：Windows 上 npx 是 .cmd，execFileSync 启动不了
+run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'])
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
 // 2. 服务端打成一个文件，依赖全部内联
 await build({
@@ -41,15 +52,14 @@ await build({
 })
 
 // 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里
-const grep = (word) => {
-  try {
-    return execFileSync('grep', ['-rl', word, path.join(out, 'dist'), path.join(out, 'server.mjs')], {
-      encoding: 'utf8',
-    }).trim()
-  } catch {
-    return '' // grep 没找到时退出码是 1
-  }
-}
+// 不用系统的 grep：Windows 上没有，而且找不到命令时会被当成「没找到」
+const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
+const shipped = [...files(path.join(out, 'dist')), path.join(out, 'server.mjs')]
+const grep = (word) =>
+  shipped
+    .filter((f) => readFileSync(f).includes(word))
+    .map((f) => path.relative(out, f))
+    .join('、')
 for (const word of ['demo-backend', 'demo-assist', '恢复示例数据', '模拟执行', '找到 6 个相关文件']) {
   const hit = grep(word)
   if (hit) throw new Error(`包里混进了演示内容（${word}）：${hit}`)
