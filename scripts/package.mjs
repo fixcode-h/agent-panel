@@ -6,13 +6,23 @@
  * 用法：node scripts/package.mjs [版本号]   版本号默认取 package.json
  */
 import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs'
 import path from 'node:path'
 import { build } from 'esbuild'
 
 const root = path.resolve(import.meta.dirname, '..')
 const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'))
-const version = (process.argv[2] ?? pkg.version).replace(/^v/, '')
+const version = (process.argv.slice(2).find((a) => !a.startsWith('--')) ?? pkg.version).replace(/^v/, '')
 const name = `agent-panel-${version}`
 const outRoot = path.join(root, 'release')
 const out = path.join(outRoot, name)
@@ -22,7 +32,8 @@ rmSync(out, { recursive: true, force: true })
 mkdirSync(out, { recursive: true })
 
 // 1. 正式版前端（不带 --mode demo，演示用的模拟后端不会打进来）
-run('npx', ['vite', 'build'])
+// 直接用 node 跑 vite：Windows 上 npx 是 .cmd，execFileSync 启动不了
+run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'])
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
 // 2. 服务端打成一个文件，依赖全部内联
 await build({
@@ -41,15 +52,14 @@ await build({
 })
 
 // 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里
-const grep = (word) => {
-  try {
-    return execFileSync('grep', ['-rl', word, path.join(out, 'dist'), path.join(out, 'server.mjs')], {
-      encoding: 'utf8',
-    }).trim()
-  } catch {
-    return '' // grep 没找到时退出码是 1
-  }
-}
+// 不用系统的 grep：Windows 上没有，而且找不到命令时会被当成「没找到」
+const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
+const shipped = [...files(path.join(out, 'dist')), path.join(out, 'server.mjs')]
+const grep = (word) =>
+  shipped
+    .filter((f) => readFileSync(f).includes(word))
+    .map((f) => path.relative(out, f))
+    .join('、')
 for (const word of ['demo-backend', 'demo-assist', '恢复示例数据', '模拟执行', '找到 6 个相关文件']) {
   const hit = grep(word)
   if (hit) throw new Error(`包里混进了演示内容（${word}）：${hit}`)
@@ -77,12 +87,11 @@ writeFileSync(
   '#!/bin/sh\n# 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\ncd "$(dirname "$0")" && exec node server.mjs --prod\n',
 )
 chmodSync(path.join(out, 'start.sh'), 0o755)
-writeFileSync(
-  path.join(out, 'start.cmd'),
-  // 前四行不能改：在设置里更新时会覆盖这个文件，而 cmd 是按位置往下读正在执行的脚本的；
-  // 只在出错时暂停，在设置里更新后重启时窗口不会停在「按任意键继续」
-  '@echo off\r\nrem 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\r\ncd /d "%~dp0"\r\nnode server.mjs --prod\r\nif errorlevel 1 pause\r\n',
-)
+// Windows 托盘启动程序：在 CI 的 Windows 机器上编译（见 ci.yml），双击后不弹命令行窗口。
+// 发布时必须带上（--require-tray）；本机出包没有编译过就不放
+const tray = path.join(root, 'build', 'tray', 'AgentPanel.exe')
+if (existsSync(tray)) cpSync(tray, path.join(out, 'AgentPanel.exe'))
+else if (process.argv.includes('--require-tray')) throw new Error('缺少 build/tray/AgentPanel.exe（托盘启动程序）')
 writeFileSync(
   path.join(out, '使用说明.txt'),
   [
@@ -90,8 +99,9 @@ writeFileSync(
     '',
     '1. 安装 Node.js 20 或更新版本：https://nodejs.org',
     '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex（codex）或 Command Code（cmdc）',
-    '3. 启动：Windows 双击 start.cmd；macOS / Linux 运行 ./start.sh（或 node server.mjs --prod）',
-    '4. 浏览器打开 http://127.0.0.1:8787',
+    '3. 启动：Windows 双击 AgentPanel.exe，程序在任务栏右下角的通知区显示图标，不会打开命令行窗口，',
+    '   启动完成后自动用默认浏览器打开面板；右键图标可以重新打开面板、查看运行日志或退出（退出后面板也会停止）。',
+    '   macOS / Linux 运行 ./start.sh（或 node server.mjs --prod），然后浏览器打开 http://127.0.0.1:8787',
     '',
     '数据保存在本目录的 data/ 下。可以在设置的「版本更新」里检查和安装新版本，数据会保留；',
     '手动升级时把旧版本的 data/ 复制到新版本目录即可。',
@@ -101,7 +111,11 @@ writeFileSync(
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
 
-// 4. 压缩
+// 4. 压缩（--no-archive 只生成目录，CI 在 Windows 上试运行托盘程序时用）
+if (process.argv.includes('--no-archive')) {
+  console.log(`已生成：release/${name}`)
+  process.exit(0)
+}
 for (const f of [`${name}.zip`, `${name}.tar.gz`]) rmSync(path.join(outRoot, f), { force: true })
 run('zip', ['-qr', `${name}.zip`, name], outRoot)
 run('tar', ['-czf', `${name}.tar.gz`, name], outRoot)

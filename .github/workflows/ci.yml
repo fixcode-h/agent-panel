@@ -24,8 +24,61 @@ jobs:
       - run: npm run test:e2e
       - run: npm run build
 
+  # Windows 托盘启动程序：用系统自带的 .NET Framework 编译器编译，不需要装别的
+  tray:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译 AgentPanel.exe
+        shell: pwsh
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          New-Item -ItemType Directory -Force build/tray | Out-Null
+          $out = & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
+            /win32icon:scripts\tray\app.ico /out:build\tray\AgentPanel.exe `
+            /r:System.Windows.Forms.dll /r:System.Drawing.dll scripts\tray\AgentPanel.cs 2>&1
+          $code = $LASTEXITCODE
+          # 编译信息写成注解，在检查结果页面直接能看到
+          foreach ($l in $out) { if ("$l" -match 'error') { Write-Output "::error::$l" } else { Write-Output "$l" } }
+          if ($code -ne 0) { exit $code }
+          Get-Item build/tray/AgentPanel.exe | Format-List Name, Length
+      # 在 Windows 上真的跑一遍：托盘程序启动服务、第二次双击直接退出、托盘程序结束后服务跟着结束
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node scripts/package.mjs 0.0.0 --require-tray --no-archive
+      - name: 试运行托盘程序
+        shell: pwsh
+        run: |
+          $dir = Resolve-Path release/agent-panel-0.0.0
+          $exe = Join-Path $dir AgentPanel.exe
+          $log = Join-Path $dir agent-panel.log
+          $server = { Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -like '*server.mjs*' } }
+          $p = Start-Process -FilePath $exe -WorkingDirectory $env:TEMP -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) {
+            Start-Sleep 1
+            try { $ok = (Invoke-WebRequest http://127.0.0.1:8787/ -UseBasicParsing -TimeoutSec 2).StatusCode -eq 200 } catch {}
+          }
+          if (Test-Path $log) { Get-Content $log }
+          if (-not $ok) { Write-Output '::error::托盘程序没有启动服务'; exit 1 }
+          if (-not (& $server)) { Write-Output '::error::没有找到服务进程'; exit 1 }
+          $p2 = Start-Process -FilePath $exe -PassThru
+          if (-not $p2.WaitForExit(15000)) { Write-Output '::error::再次启动时没有直接退出'; exit 1 }
+          Stop-Process -Id $p.Id -Force
+          Start-Sleep 3
+          if (& $server) { Write-Output '::error::托盘程序结束后服务还在运行'; exit 1 }
+          Write-Output '托盘程序试运行通过'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tray
+          path: build/tray/AgentPanel.exe
+          retention-days: 7
+
   release:
-    needs: test
+    needs: [test, tray]
     # dev 分支不出包，只有主干发布
     if: github.ref_name == 'main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
@@ -49,8 +102,12 @@ jobs:
           base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           count=$(git rev-list --count HEAD)
           echo "version=${base}.${count}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: tray
+          path: build/tray
       - name: 出包
-        run: node scripts/package.mjs ${{ steps.ver.outputs.version }}
+        run: node scripts/package.mjs ${{ steps.ver.outputs.version }} --require-tray
       - name: 生成更新说明
         run: node scripts/release-notes.mjs ${{ steps.ver.outputs.version }} main > release/notes.md
       - name: 发布到 Releases

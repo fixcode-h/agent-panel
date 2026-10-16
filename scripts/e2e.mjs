@@ -920,6 +920,26 @@ try {
   assert.equal(await raw('GET', '/projects', { origin: 'http://localhost:5173' }), 200, '本机页面可以访问')
   step('只接受本机页面的请求：拦下外部 Host、外部 Origin 和非 JSON 的写请求')
 
+  // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
+  {
+    const trayPort = port + 1
+    const child = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts', '--prod'], {
+      cwd: root,
+      env: { ...process.env, AGENT_PANEL_DATA: dataDir, PORT: String(trayPort), AGENT_PANEL_TRAY: '1' },
+      stdio: ['pipe', 'pipe', 'inherit'],
+    })
+    let out = ''
+    child.stdout.on('data', (d) => (out += d))
+    const exited = new Promise((r) => child.on('exit', (code) => r(code)))
+    for (let i = 0; i < 100 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
+    assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}`), '托盘模式输出地址')
+    child.stdin.end()
+    const code = await Promise.race([exited, sleep(5000).then(() => 'timeout')])
+    if (code === 'timeout') child.kill()
+    assert.equal(code, 0, '托盘关掉输入后服务退出')
+  }
+  step('Windows 托盘程序：服务启动完成后告诉托盘地址，托盘退出时服务跟着退出')
+
   console.log('\n全部通过')
 } catch (e) {
   console.error(e)
