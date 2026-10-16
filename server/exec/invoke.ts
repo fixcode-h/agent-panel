@@ -17,6 +17,7 @@ export async function invokeCli(o: {
   input: string
   signal?: AbortSignal
   timeoutMs: number
+  idle?: Parameters<typeof runProcess>[0]['idle']
   onEvent: (ev: CliEvent) => void
   /** 能把审批请求交给用户（任务页）；不能时（AI 创建）一律拒绝，免得 CLI 一直等 */
   canAsk?: boolean
@@ -45,6 +46,7 @@ export async function invokeCli(o: {
       env: o.env,
       signal: o.signal,
       timeoutMs: o.timeoutMs,
+      idle: o.idle,
       onSpawn: (io) => session.start(io),
       onLine: (line) => {
         const obj = toJson(line)
@@ -75,6 +77,7 @@ export async function invokeCli(o: {
       },
       signal: o.signal,
       timeoutMs: o.timeoutMs,
+      idle: o.idle,
       onLine: (l) => {
         const obj = toJson(l)
         if (!obj) return
@@ -115,6 +118,7 @@ export async function invokeCli(o: {
     stdin: o.input,
     signal: o.signal,
     timeoutMs: o.timeoutMs,
+    idle: o.idle,
     onLine: (line) => {
       const obj = toJson(line)
       if (obj) for (const ev of parse(obj)) emit(ev)

@@ -106,6 +106,8 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
     AGENT_PANEL_APP_DIR: appDir,
     AGENT_PANEL_VERSION: '0.11.5',
     AGENT_PANEL_NO_RESTART: '1',
+    // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
+    AGENT_PANEL_MINUTE_MS: '1500',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
@@ -686,6 +688,19 @@ try {
   assert.match(netErr.text, /走的是 Command Code 官方服务[\s\S]*me\/fake\/flash/)
   assert.match(netErr.text, /连接中途断开/)
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
+  // 卡住的 CLI：没有输出先提醒一次，再过同样的时间自动停止；输出里看出是没登录，给出登录的方法
+  await call('PUT', '/settings', { ...settings, idleTimeoutMinutes: 1 })
+  let hang = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'HANG' })
+  hang = await waitDone(hang.id)
+  await call('PUT', '/settings', settings)
+  assert.equal(hang.status, 'failed')
+  assert.ok(
+    hang.messages.some((m) => m.role === 'system' && /已经 1 分钟没有任何输出/.test(m.text)),
+    '先提醒一次',
+  )
+  assert.match(hang.messages.at(-1).text, /连续 2 分钟没有任何输出，已停止/)
+  assert.match(hang.messages.at(-1).text, /没有登录[\s\S]*\/login/)
+  step('卡住的 CLI：长时间没有输出先提醒、再自动停止，看出没登录时说明怎么登录')
 
   // ---- 节点入口：开始 / 验收 / 结束，流程节点，引用其他工作流 ----
   const small = await call('POST', '/workflows', {

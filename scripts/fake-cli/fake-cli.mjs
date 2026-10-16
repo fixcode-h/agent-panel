@@ -169,6 +169,12 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
   process.exit(0)
 }
 
+// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）
+if (input.includes('HANG')) {
+  process.stderr.write('Invalid API key · Please run /login\n')
+  await new Promise(() => setInterval(() => {}, 60_000))
+}
+
 if (kind === 'claude') {
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
   out({

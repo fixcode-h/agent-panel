@@ -624,6 +624,8 @@ export const CONTENT_MAX = 1280
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
   stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
+  /** CLI 这么多分钟没有任何输出时提醒，再过同样的时间自动停止；0 表示不检测。比总时长更合适：长任务不会被误杀，卡死的会被发现 */
+  idleTimeoutMinutes: z.number().int().min(0).max(1440).default(15),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),

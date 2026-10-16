@@ -139,9 +139,27 @@ function speedMeter(onIdle: () => void) {
 const NETWORK_ERROR =
   /Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
+const NOT_LOGGED_IN =
+  /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token/i
+
+/** 各个 CLI 登录的方法：在终端里照着做 */
+const loginHow = (cli: string) =>
+  ({
+    claude: t('运行 claude，在里面输入 /login'),
+    codex: t('运行 codex login'),
+    commandcode: t('运行 cmdc，按提示登录'),
+  })[cli] ?? t('运行它并按提示登录')
+
 /** 把常见的 CLI 报错翻译成能照着做的说明，原始输出另外附在后面 */
-export function failureHints(detail: string) {
+export function failureHints(detail: string, cli?: { id: string; name: string }) {
   const hints: string[] = []
+  if (NOT_LOGGED_IN.test(detail))
+    hints.push(
+      t('· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。', {
+        cli: cli?.name ?? 'CLI',
+        how: loginHow(cli?.id ?? ''),
+      }),
+    )
   const byok =
     /"([^"]+)" routes via Command Code; your providers\.json also declares it — use ((?:"[^"]+"(?: or )?)+)/.exec(
       detail,
@@ -357,6 +375,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     ctx.changed()
   }
   const asked: string[] = []
+  const idleMinutes = settings.idleTimeoutMinutes
+  // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
+  const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
 
   const r = await invokeCli({
     cliId,
@@ -368,6 +389,28 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     signal: ctx.signal,
     // 0 表示不限制
     timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,
+    idle: idleMs
+      ? {
+          ms: idleMs,
+          // 在等用户确认或回答时 CLI 本来就没有输出，不算卡住
+          busy: () => task.requests.some((x) => asked.includes(x.id)),
+          onWarn: () => {
+            task.messages.push({
+              id: ctx.newId(),
+              role: 'system',
+              agentId,
+              step,
+              text: t(
+                '{cli} 已经 {n} 分钟没有任何输出，可能卡在登录、网络重连或交互式确认上。再过 {n} 分钟还没有输出会自动停止；也可以现在停止后检查一下。',
+                { cli: def.name, n: idleMinutes },
+              ),
+              tools: [],
+              at: new Date().toISOString(),
+            })
+            ctx.changed(true)
+          },
+        }
+      : undefined,
     onEvent: apply,
     canAsk: true,
   }).finally(() => {
@@ -388,6 +431,19 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   if (r.killed === 'stopped') return { ok: false, stopped: true, error: t('已停止') }
   if (r.killed === 'timeout')
     return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
+  if (r.killed === 'idle') {
+    const detail = [...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
+    return {
+      ok: false,
+      error: [
+        t('{cli} 连续 {n} 分钟没有任何输出，已停止。', { cli: def.name, n: idleMinutes * 2 }),
+        ...failureHints(detail, def),
+        detail ? `\n${t('最后的输出：')}\n${clip(detail, 1500)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }
+  }
   if (r.spawnError)
     return {
       ok: false,
@@ -423,7 +479,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         netRetries + 1,
       )
     }
-    const hints = failureHints(detail)
+    const hints = failureHints(detail, def)
     return {
       ok: false,
       error: [

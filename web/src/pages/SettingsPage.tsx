@@ -735,6 +735,7 @@ function SettingsBody({
 }) {
   const { setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
+  const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
@@ -796,6 +797,8 @@ function SettingsBody({
 
   const minutes = Number(timeout)
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
+  const idleMin = Number(idle)
+  const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const tier = (x: { model: string; effort: string }) => ({ model: x.model.trim(), effort: x.effort })
   const value: Settings = {
     openBrowser,
@@ -803,6 +806,7 @@ function SettingsBody({
     language,
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
+    idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     defaultCli: defCli,
     clis: Object.fromEntries(
       Object.entries(drafts).map(([id, d]) => [
@@ -984,6 +988,26 @@ function SettingsBody({
                     aria-label={t('单个步骤最长运行时间（分钟）')}
                   />
                   {!valid && <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不限制')}</span>}
+                </div>
+              </Row>
+              <Row
+                title={t('没有输出时提醒')}
+                desc={t(
+                  '分钟，填 0 不检测。CLI 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={idle}
+                    onChange={(e) => setIdle(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!idleValid}
+                    className={cn('h-9', !idleValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('没有输出时提醒（分钟）')}
+                  />
+                  {!idleValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不检测')}</span>
+                  )}
                 </div>
               </Row>
               <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>

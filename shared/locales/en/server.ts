@@ -237,4 +237,14 @@ export const EN_SERVER: Record<string, string> = {
   '任务正在执行，等它停下后再处理独立分支':
     'The task is running; wait until it stops before handling its separate branch',
   这个任务没有待处理的独立分支: 'This task has no pending separate branch',
+  '· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。':
+    '· {cli} does not seem to be logged in, or the login has expired. In a terminal, {how}, then come back and click "Continue".',
+  '{cli} 已经 {n} 分钟没有任何输出，可能卡在登录、网络重连或交互式确认上。再过 {n} 分钟还没有输出会自动停止；也可以现在停止后检查一下。':
+    '{cli} has printed nothing for {n} minutes. It may be stuck on a login, a network reconnect or an interactive prompt. It will be stopped if there is still no output after another {n} minutes; you can also stop it now and take a look.',
+  '{cli} 连续 {n} 分钟没有任何输出，已停止。': '{cli} printed nothing for {n} minutes and was stopped.',
+  '最后的输出：': 'Last output:',
+  '运行 claude，在里面输入 /login': 'run claude and type /login',
+  '运行 codex login': 'run codex login',
+  '运行 cmdc，按提示登录': 'run cmdc and follow the login prompt',
+  运行它并按提示登录: 'run it and follow the login prompt',
 }
