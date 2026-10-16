@@ -285,4 +285,7 @@ export const EN_TASKS: Record<string, string> = {
   退回修改: 'Send back',
   '通过，继续': 'Approve and continue',
   '另有 {n} 个已归档': '{n} more archived',
+  '停止这个任务？': 'Stop this task?',
+  '正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。':
+    'The running CLI will be stopped. You can click "Continue" later to pick up where it left off.',
 }

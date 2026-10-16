@@ -55,6 +55,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { TOGGLE_SIDEBAR } from './CommandPalette'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
@@ -140,12 +141,18 @@ function useCollapsed() {
       return false
     }
   })
-  const toggle = () => {
-    try {
-      localStorage.setItem('sidebar', v ? 'open' : 'collapsed')
-    } catch {}
-    set(!v)
-  }
+  const toggle = () =>
+    set((cur) => {
+      try {
+        localStorage.setItem('sidebar', cur ? 'open' : 'collapsed')
+      } catch {}
+      return !cur
+    })
+  // ⌘B 和命令面板发来的切换
+  useEffect(() => {
+    window.addEventListener(TOGGLE_SIDEBAR, toggle)
+    return () => window.removeEventListener(TOGGLE_SIDEBAR, toggle)
+  }, [])
   return [v, toggle] as const
 }
 

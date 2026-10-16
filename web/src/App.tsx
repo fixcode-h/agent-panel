@@ -10,6 +10,7 @@ import { ChatPage } from '@/pages/ChatPage'
 import { SettingsDialog } from '@/pages/SettingsPage'
 import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
+import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 
@@ -77,6 +78,13 @@ function TaskWatcher() {
   return null
 }
 
+/** 命令面板和全局快捷键（要在导航上下文里面） */
+function Shortcuts() {
+  const [open, setOpen] = useState(false)
+  useShortcuts(() => setOpen((o) => !o))
+  return <CommandPalette open={open} onOpenChange={setOpen} />
+}
+
 function ProjectDialog({ open, id, onOpenChange }: { open: boolean; id?: string; onOpenChange: (o: boolean) => void }) {
   const { projects } = useData()
   const project = id ? projects.find((p) => p.id === id) : undefined
@@ -102,6 +110,7 @@ export function App() {
       >
         <div className="flex min-h-full flex-col md:h-full">
           <TaskWatcher />
+          <Shortcuts />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />

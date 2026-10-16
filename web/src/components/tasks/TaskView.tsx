@@ -108,6 +108,9 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const [resuming, setResuming] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   useEscape(panel, () => setPanel(false))
+  // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
+  const [stopAsk, setStopAsk] = useState(false)
+  useEscape(task?.status === 'running' && !panel && !stopAsk, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
   const [focus, setFocus] = useState<{ id: string; at: number }>()
@@ -605,6 +608,17 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
         </aside>
         {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
       </div>
+      <ConfirmDialog
+        open={stopAsk && task.status === 'running'}
+        onOpenChange={setStopAsk}
+        title={t('停止这个任务？')}
+        description={t('正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
+        confirmText={t('停止')}
+        onConfirm={async () => {
+          await stop()
+          setStopAsk(false)
+        }}
+      />
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
