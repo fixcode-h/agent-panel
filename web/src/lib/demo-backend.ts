@@ -36,7 +36,7 @@ import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/ver
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
-import { beginRun, endRun, newTask, withAttachments } from '@shared/task'
+import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -848,7 +848,7 @@ function tasksRoute(
   if (!id) {
     if (method === 'GET') {
       const pid = query.get('projectId')
-      return pid ? tasks.filter((t) => t.projectId === pid) : tasks
+      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks).map(taskSummary)
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }

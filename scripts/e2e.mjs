@@ -49,6 +49,23 @@ for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
 // 旧版本平铺的数据文件，启动时应搬进 config/
 execFileSync('mkdir', ['-p', dataDir])
 writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
+// 旧版本把所有任务放在一个 tasks.json 里，启动后拆成每个任务一个文件
+const legacyAt = '2026-10-01T00:00:00.000Z'
+writeFileSync(
+  path.join(dataDir, 'tasks.json'),
+  JSON.stringify([
+    {
+      id: 'legacy-1',
+      projectId: 'legacy-project',
+      title: '旧任务',
+      mode: 'chat',
+      status: 'done',
+      messages: [{ id: 'm1', role: 'user', text: '旧的要求', at: legacyAt }],
+      createdAt: legacyAt,
+      updatedAt: legacyAt,
+    },
+  ]),
+)
 const relServer = http.createServer((req, res) => {
   const host = `http://127.0.0.1:${relServer.address().port}`
   if (req.url.startsWith('/releases')) {
@@ -299,6 +316,64 @@ try {
     ],
   )
   step('工作流任务：按连线执行，输出、工具、改动（排除任务前的改动）、用量都正确')
+
+  // 列表只给摘要；任务页靠推送（SSE）拿增量，合起来和完整任务一致
+  const summary = (await call('GET', '/tasks')).find((x) => x.id === t.id)
+  assert.equal(summary.messages.length, 1, '列表里只有第一条要求')
+  assert.ok(
+    summary.steps.every((s) => s.output === '' && s.command.length === 0),
+    '列表里不带节点输出',
+  )
+  {
+    const live = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '推送测试' })
+    const res = await fetch(`${base}/tasks/${live.id}/events`)
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    let view = null
+    let patches = 0
+    const t0 = Date.now()
+    while (Date.now() - t0 < 20000) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      let i
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i)
+        buf = buf.slice(i + 2)
+        const ev = /^event: (.*)$/m.exec(block)?.[1]
+        const data = block
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => l.slice(6))
+          .join('\n')
+        if (ev === 'full') view = JSON.parse(data)
+        else if (ev === 'patch') {
+          patches++
+          const p = JSON.parse(data)
+          const msgs = view.messages.slice()
+          for (const m of p.messages) {
+            const k = msgs.findIndex((x) => x.id === m.id)
+            if (k >= 0) msgs[k] = m
+            else msgs.push(m)
+          }
+          view = { ...p.meta, messages: msgs }
+          assert.equal(msgs.length, p.total)
+        }
+      }
+      if (view && view.status !== 'running') break
+    }
+    await reader.cancel()
+    assert.ok(patches > 0, '执行过程中推送了增量')
+    const final = await call('GET', `/tasks/${live.id}`)
+    assert.equal(view.status, final.status)
+    assert.deepEqual(
+      view.messages.map((m) => [m.id, m.text]),
+      final.messages.map((m) => [m.id, m.text]),
+      '增量合起来和完整任务一致',
+    )
+  }
+  step('任务列表只给摘要，任务页通过推送拿增量')
 
   let c = calls()
   const [c1, cp1, cp2, c4] = c
@@ -890,14 +965,19 @@ try {
   // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
   assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
   assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
-  assert.ok(existsSync(path.join(dataDir, 'tasks/tasks.json')), '任务记录在 tasks/ 下')
+  assert.ok(existsSync(path.join(dataDir, 'tasks/items/legacy-1.json')), '旧的 tasks.json 拆成每个任务一个文件')
+  assert.ok(!existsSync(path.join(dataDir, 'tasks/tasks.json')))
+  assert.equal((await call('GET', '/tasks/legacy-1')).messages[0].text, '旧的要求')
   const usage = await call('GET', '/data')
   assert.equal(usage.dir, dataDir)
   const kindOf = (u, k) => u.kinds.find((x) => x.id === k)
   assert.ok(kindOf(usage, 'tasks').bytes > 0 && kindOf(usage, 'uploads').files >= 1 && usage.memory.rss > 0)
+  // 拆分旧任务文件时，原文件备份在缓存里
+  assert.ok(kindOf(usage, 'cache').files >= 1, '旧的 tasks.json 备份在缓存里')
+  const cacheBefore = kindOf(usage, 'cache').bytes
   mkdirSync(path.join(dataDir, 'cache/junk'), { recursive: true })
   writeFileSync(path.join(dataDir, 'cache/junk/x.bin'), 'x'.repeat(100))
-  assert.equal(kindOf(await call('GET', '/data'), 'cache').bytes, 100)
+  assert.equal(kindOf(await call('GET', '/data'), 'cache').bytes, cacheBefore + 100)
   await call('POST', '/data/clear', { kind: 'cache' })
   assert.equal(kindOf(await call('GET', '/data'), 'cache').files, 0, '缓存清理掉了')
   assert.equal(
@@ -912,7 +992,7 @@ try {
     '配置不能清理',
   )
   const backup = await call('GET', '/data/export?kinds=config,projects,tasks')
-  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/tasks.json'] && !backup.files['uploads'])
+  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/items/legacy-1.json'] && !backup.files['uploads'])
   const agentsBefore = await call('GET', '/agents')
   const tasksBefore = (await call('GET', '/tasks')).length
   await call('DELETE', `/agents/${agentsBefore.at(-1).id}`).catch(() => {})

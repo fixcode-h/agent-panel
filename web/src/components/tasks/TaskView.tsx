@@ -17,7 +17,9 @@ import {
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId } from '@shared/flow'
+import { taskSummary } from '@shared/task'
 import { api } from '@/lib/api'
+import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -111,7 +113,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
 
   const apply = (t: Task) => {
     setTask(t)
-    upsertTask(t)
+    // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
+    upsertTask(taskSummary(t))
   }
 
   useEffect(() => {
@@ -122,18 +125,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   }, [taskId])
 
   const running = task?.status === 'running'
-  useEffect(() => {
-    if (!running) return
-    const t = setInterval(
-      () =>
-        api
-          .task(taskId)
-          .then(apply)
-          .catch(() => {}),
-      700,
-    )
-    return () => clearInterval(t)
-  }, [running, taskId])
+  useTaskStream(taskId, running, apply)
 
   // 停留在底部时自动跟随新输出
   useLayoutEffect(() => {

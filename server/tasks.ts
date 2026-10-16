@@ -1,4 +1,5 @@
 import { Hono, type Context } from 'hono'
+import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
@@ -12,12 +13,13 @@ import {
   type TaskData,
   type Workflow,
 } from '../shared/schema.ts'
-import { beginRun, endRun, newTask, withAttachments } from '../shared/task.ts'
+import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitHead, gitNumstat } from './exec/git.ts'
 import { answerRequest, runRealTurn } from './exec/runner.ts'
-import { CHATS_DIR, createCollection } from './store.ts'
+import { CHATS_DIR } from './store.ts'
+import { createTaskStore } from './task-store.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
@@ -31,7 +33,7 @@ export function tasksApi(deps: {
   projects: Lister<Project>
   projectCategories: Lister<ProjectCategory>
 }) {
-  const store = createCollection<TaskData, Task>('tasks.json', Task)
+  const store = createTaskStore()
   type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> }
   const live = new Map<string, Live>()
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
@@ -179,8 +181,57 @@ export function tasksApi(deps: {
 
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
-    const all = (await store.list()).map((t) => live.get(t.id)?.task ?? t)
+    // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢
+    const all = (await store.list()).map((t) => taskSummary(live.get(t.id)?.task ?? t))
     return c.json(pid ? all.filter((t) => t.projectId === pid) : all)
+  })
+
+  /**
+   * 任务的实时推送（SSE）：先发一次完整任务，之后只发有变化的部分：任务本身（不含消息）和新增、变化了的消息。
+   * 页面不用再反复拉整个任务，长任务也不会越跑越卡。
+   */
+  routes.get('/:id/events', async (c) => {
+    const id = c.req.param('id')
+    if (!(await current(id))) return bad(c, '任务不存在', 404)
+    return streamSSE(c, async (stream) => {
+      let closed = false
+      stream.onAbort(() => void (closed = true))
+      let stamps = new Map<string, string>()
+      let meta = ''
+      let beat = Date.now()
+      const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
+      while (!closed) {
+        const t = await current(id)
+        if (!t) {
+          await send('gone', {})
+          break
+        }
+        const { messages, ...rest } = t
+        const m = JSON.stringify(rest)
+        // 有消息被删掉（返工时重跑的节点）就整个重发，其余情况只发新增和变化的消息
+        const ids = new Set(messages.map((x) => x.id))
+        if (!meta || [...stamps.keys()].some((k) => !ids.has(k))) {
+          await send('full', t)
+          stamps = new Map(messages.map((x) => [x.id, messageStamp(x)]))
+          meta = m
+          beat = Date.now()
+        } else {
+          const changed = messages.filter((x) => stamps.get(x.id) !== messageStamp(x))
+          if (changed.length || m !== meta) {
+            await send('patch', { meta: rest, messages: changed, total: messages.length })
+            for (const x of changed) stamps.set(x.id, messageStamp(x))
+            meta = m
+            beat = Date.now()
+          } else if (Date.now() - beat > 15_000) {
+            // 心跳：没有变化时也定期发一点东西，免得连接被当成断开
+            await stream.writeSSE({ event: 'ping', data: '' })
+            beat = Date.now()
+          }
+        }
+        // 执行中 0.2 秒检查一次；没在执行时慢一些，追加要求开始执行后很快就能跟上
+        await stream.sleep(live.has(id) ? 200 : 1000)
+      }
+    })
   })
 
   routes.get('/:id', async (c) => {
