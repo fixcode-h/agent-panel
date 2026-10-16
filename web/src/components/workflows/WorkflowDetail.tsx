@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Crown, GitBranch, Settings2, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Crown, GitBranch, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -9,6 +9,7 @@ import { useAutosave } from '@/lib/useAutosave'
 import { docTemplate } from '@/lib/workflow-doc'
 import { StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input } from '@/components/ui/input'
 import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
@@ -24,15 +25,19 @@ export function WorkflowDetail({
   workflow,
   onDuplicate,
   onDeleted,
+  onOptimized,
 }: {
   workflow: Workflow
   onDuplicate: () => void
   onDeleted: () => void
+  /** AI 优化写回后让页面重新加载草稿 */
+  onOptimized: () => void
 }) {
   const { agents, clis, setWorkflows } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<WorkflowInput>(() => toInput(workflow))
   const [deleting, setDeleting] = useState(false)
+  const [assist, setAssist] = useState(false)
   const [tab, setTab] = useState<'flow' | 'settings'>(() => (workflow.mainAgentId ? 'flow' : 'settings'))
   const valid = !!draft.name.trim()
   const save = useAutosave(
@@ -77,15 +82,27 @@ export function WorkflowDetail({
               </span>
             }
             title={draft.name || '未命名工作流'}
-            meta={isReady(checks) ? <StatusDot tone="success" label="就绪" /> : <StatusDot tone="warning" label="未就绪" />}
+            meta={
+              isReady(checks) ? <StatusDot tone="success" label="就绪" /> : <StatusDot tone="warning" label="未就绪" />
+            }
             subtitle={draft.description || '还没有简介'}
             save={{ ...save, invalid: valid ? undefined : '名称为空，未保存' }}
             actions={
               <>
+                <Button variant="secondary" onClick={() => setAssist(true)} title="让本机 CLI 按你的要求优化">
+                  <Sparkles className="h-4 w-4 text-accent" />
+                  AI 优化
+                </Button>
                 <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
                   <Copy className="h-4 w-4" />
                 </Button>
-                <Button variant="danger-outline" size="icon" aria-label="删除" title="删除" onClick={() => setDeleting(true)}>
+                <Button
+                  variant="danger-outline"
+                  size="icon"
+                  aria-label="删除"
+                  title="删除"
+                  onClick={() => setDeleting(true)}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </>
@@ -125,7 +142,11 @@ export function WorkflowDetail({
             <FormSection title="基本信息">
               <div className="flex flex-wrap gap-4">
                 <Field label="名称" className="flex-[1_1_200px]" error={valid ? undefined : '名称不能为空'}>
-                  <Input value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="例如：Web 功能开发" />
+                  <Input
+                    value={draft.name}
+                    onChange={(e) => set('name', e.target.value)}
+                    placeholder="例如：Web 功能开发"
+                  />
                 </Field>
                 <Field label="简介" className="flex-[2_1_280px]">
                   <Input
@@ -192,7 +213,6 @@ export function WorkflowDetail({
             </section>
 
             <ReadinessCard checks={checks} />
-
           </>
         }
       />
@@ -203,6 +223,7 @@ export function WorkflowDetail({
         description="团队里的 Agent 不会被删除。此操作无法撤销。"
         onConfirm={remove}
       />
+      <AssistDialog open={assist} onOpenChange={setAssist} kind="workflow" target={workflow} onApplied={onOptimized} />
     </>
   )
 }

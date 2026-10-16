@@ -28,7 +28,7 @@ export function tasksApi(deps: {
   projectCategories: Lister<ProjectCategory>
 }) {
   const store = createCollection<TaskData, Task>('tasks.json', Task)
-  const live = new Map<string, { task: Task; stop: boolean; abort: AbortController }>()
+  const live = new Map<string, { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> }>()
 
   // 服务重启时，之前没跑完的任务标记为已停止
   void store.list().then(async (all) => {
@@ -52,7 +52,11 @@ export function tasksApi(deps: {
   async function start(task: Task, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
     const settings = await getSettings()
     const project = await deps.projects.get(task.projectId)
-    const entry = { task: structuredClone(task), stop: false, abort: new AbortController() }
+    const entry: { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> } = {
+      task: structuredClone(task),
+      stop: false,
+      abort: new AbortController(),
+    }
     live.set(task.id, entry)
     // 先同步标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
@@ -96,7 +100,7 @@ export function tasksApi(deps: {
             isGit: snapshot !== null,
           })
         })()
-    run
+    entry.done = run
       .catch((e) => {
         entry.task.status = 'failed'
         entry.task.messages.push({
@@ -145,7 +149,9 @@ export function tasksApi(deps: {
     const agents = await deps.agents.list()
     let workflow: Workflow | undefined
     if (input.mode === 'workflow') {
-      workflow = input.workflowId ? ((await deps.workflows.get(input.workflowId)) ?? undefined) : await projectWorkflow(project)
+      workflow = input.workflowId
+        ? ((await deps.workflows.get(input.workflowId)) ?? undefined)
+        : await projectWorkflow(project)
       if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
     const task = await store.create(newTask(input, workflow, agents, new Date().toISOString(), randomUUID()))
@@ -156,6 +162,9 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
+    const prev = live.get(id)
+    // 刚执行完、还在落盘的任务：等它写完再接着跑
+    if (prev && prev.task.status !== 'running') await prev.done
     if (live.has(id)) return bad(c, '任务正在执行，请等它完成或先停止', 409)
     const task = await store.get(id)
     if (!task) return bad(c, '任务不存在', 404)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, AgentInput } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -11,6 +11,7 @@ import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -22,9 +23,16 @@ import { CommandPreview } from './CommandPreview'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
 
-
 /** 选择项卡片：CLI 选择用 */
-function OptionCard({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
+function OptionCard({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean
+  onClick: () => void
+  children: React.ReactNode
+}) {
   return (
     <button
       type="button"
@@ -40,12 +48,24 @@ function OptionCard({ selected, onClick, children }: { selected: boolean; onClic
   )
 }
 
-export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; onDuplicate: () => void; onDeleted: () => void }) {
+export function AgentDetail({
+  agent,
+  onDuplicate,
+  onDeleted,
+  onOptimized,
+}: {
+  agent: Agent
+  onDuplicate: () => void
+  onDeleted: () => void
+  /** AI 优化写回后让页面重新加载草稿 */
+  onOptimized: () => void
+}) {
   const { clis, categories, workflows, setAgents, settings } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<AgentInput>(() => toInput(agent))
   const [args, setArgs] = useState(() => joinArgs(agent.extraArgs))
   const [deleting, setDeleting] = useState(false)
+  const [assist, setAssist] = useState(false)
 
   const value = { ...draft, extraArgs: splitArgs(args) }
   const valid = !!draft.name.trim()
@@ -111,10 +131,20 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
                   <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
                   启用
                 </label>
+                <Button variant="secondary" onClick={() => setAssist(true)} title="让本机 CLI 按你的要求优化">
+                  <Sparkles className="h-4 w-4 text-accent" />
+                  AI 优化
+                </Button>
                 <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
                   <Copy className="h-4 w-4" />
                 </Button>
-                <Button variant="danger-outline" size="icon" aria-label="删除" title="删除" onClick={() => setDeleting(true)}>
+                <Button
+                  variant="danger-outline"
+                  size="icon"
+                  aria-label="删除"
+                  title="删除"
+                  onClick={() => setDeleting(true)}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </>
@@ -126,7 +156,11 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
             <FormSection title="基本信息">
               <div className="flex flex-wrap gap-4">
                 <Field label="名称" className="flex-[1_1_200px]" error={valid ? undefined : '名称不能为空'}>
-                  <Input value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="例如：前端开发" />
+                  <Input
+                    value={draft.name}
+                    onChange={(e) => set('name', e.target.value)}
+                    placeholder="例如：前端开发"
+                  />
                 </Field>
                 <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
                   <span className="text-xs text-muted">分类</span>
@@ -134,7 +168,11 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
                 </div>
               </div>
               <Field label="简介">
-                <Input value={draft.description} onChange={(e) => set('description', e.target.value)} placeholder="一句话说明它擅长什么" />
+                <Input
+                  value={draft.description}
+                  onChange={(e) => set('description', e.target.value)}
+                  placeholder="一句话说明它擅长什么"
+                />
               </Field>
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">图标</span>
@@ -171,8 +209,14 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
                       <span className="h-8 w-8 shrink-0 rounded-lg" style={{ background: cliColor(c.id) }} />
                       <span className="flex min-w-0 flex-col">
                         <span className="font-medium">{c.name}</span>
-                        <span className={cn('truncate text-xs', c.enabled && c.installed ? 'text-success' : 'text-warning')}>
-                          {!c.enabled ? '已在设置中停用' : c.installed ? `已安装 · ${c.version?.split(' ')[0] ?? ''}` : '本机未检测到'}
+                        <span
+                          className={cn('truncate text-xs', c.enabled && c.installed ? 'text-success' : 'text-warning')}
+                        >
+                          {!c.enabled
+                            ? '已在设置中停用'
+                            : c.installed
+                              ? `已安装 · ${c.version?.split(' ')[0] ?? ''}`
+                              : '本机未检测到'}
                         </span>
                       </span>
                     </OptionCard>
@@ -256,6 +300,7 @@ export function AgentDetail({ agent, onDuplicate, onDeleted }: { agent: Agent; o
         description={usedIn.length ? '它正在被工作流使用，需要先从这些工作流中移除。' : '删除后无法恢复。'}
         onConfirm={remove}
       />
+      <AssistDialog open={assist} onOpenChange={setAssist} kind="agent" target={agent} onApplied={onOptimized} />
     </>
   )
 }

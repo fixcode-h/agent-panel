@@ -101,7 +101,11 @@ function CliCard({
           </p>
         )}
         <div className="flex flex-wrap gap-4">
-          <Field label="可执行文件" className="flex-[2_1_280px]" hint={`留空时从 PATH 查找 ${def.command}；找不到时填完整路径`}>
+          <Field
+            label="可执行文件"
+            className="flex-[2_1_280px]"
+            hint={`留空时从 PATH 查找 ${def.command}；找不到时填完整路径`}
+          >
             <Input
               value={draft.command}
               onChange={(e) => set('command', e.target.value)}
@@ -220,6 +224,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [drafts, setDrafts] = useState(() => toDraft(initial))
   const [detecting, setDetecting] = useState(false)
+  const [assist, setAssist] = useState(initial.assist)
   const demo = !!import.meta.env.VITE_DEMO
 
   const minutes = Number(timeout)
@@ -240,6 +245,7 @@ function SettingsForm({ initial }: { initial: Settings }) {
         },
       ]),
     ),
+    assist: { ...assist, model: assist.model.trim() },
   }
   const save = useAutosave(
     value,
@@ -262,8 +268,18 @@ function SettingsForm({ initial }: { initial: Settings }) {
   }
 
   const modes = [
-    { id: 'real' as const, icon: Play, title: '真实执行', desc: '在项目目录里调用本机 CLI，Agent 会真正读写文件、执行命令' },
-    { id: 'simulate' as const, icon: FlaskConical, title: '模拟执行', desc: '只生成示例输出，不调用 CLI，用来熟悉界面' },
+    {
+      id: 'real' as const,
+      icon: Play,
+      title: '真实执行',
+      desc: '在项目目录里调用本机 CLI，Agent 会真正读写文件、执行命令',
+    },
+    {
+      id: 'simulate' as const,
+      icon: FlaskConical,
+      title: '模拟执行',
+      desc: '只生成示例输出，不调用 CLI，用来熟悉界面',
+    },
   ]
 
   return (
@@ -278,7 +294,9 @@ function SettingsForm({ initial }: { initial: Settings }) {
       <div className="flex max-w-[880px] flex-col gap-7 px-4 pt-6 pb-12 md:px-8 md:pt-7">
         <FormSection title="执行方式">
           {demo && (
-            <p className="-mt-2 text-xs text-warning">在线演示没有本机环境，只能模拟执行；下载到本机运行后可以真实执行。</p>
+            <p className="-mt-2 text-xs text-warning">
+              在线演示没有本机环境，只能模拟执行；下载到本机运行后可以真实执行。
+            </p>
           )}
           <div role="radiogroup" aria-label="执行方式" className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             {modes.map((m) => {
@@ -311,14 +329,19 @@ function SettingsForm({ initial }: { initial: Settings }) {
               )
             })}
           </div>
-          <Field label="单个步骤最长运行时间（分钟）" className="max-w-[260px]" hint="超时后会停止这一步，任务标记为失败">
+          <Field
+            label="单个步骤最长运行时间（分钟）"
+            className="max-w-[260px]"
+            hint="超时后会停止这一步，任务标记为失败"
+          >
             <Input type="number" min={1} max={600} value={timeout} onChange={(e) => setTimeoutMin(e.target.value)} />
           </Field>
         </FormSection>
 
         <FormSection title="CLI">
           <p className="-mt-2 text-xs leading-relaxed text-subtle">
-            每个 Agent 选择用哪个 CLI 运行。这里配置 CLI 本身：在哪里、默认用什么模型、允许做什么，以及额外的参数和环境变量。
+            每个 Agent 选择用哪个 CLI 运行。这里配置 CLI
+            本身：在哪里、默认用什么模型、允许做什么，以及额外的参数和环境变量。
           </p>
           {CLIS.map((def) => (
             <CliCard
@@ -331,6 +354,63 @@ function SettingsForm({ initial }: { initial: Settings }) {
               detecting={detecting}
             />
           ))}
+        </FormSection>
+
+        <FormSection title="AI 创建">
+          <p className="-mt-2 text-xs leading-relaxed text-subtle">
+            在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 会按固定格式输出，面板校验通过后才能应用。
+            下面的规则会加进提示词，例如命名习惯、团队约定。
+          </p>
+          <div className="flex flex-wrap gap-4">
+            <div className="flex flex-[1_1_240px] flex-col gap-1.5">
+              <span className="text-xs text-muted">默认使用的 CLI</span>
+              <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="默认使用的 CLI">
+                {[{ id: '', name: '自动（第一个可用的）' }, ...CLIS].map((c) => (
+                  <button
+                    key={c.id || 'auto'}
+                    role="radio"
+                    aria-checked={assist.cli === c.id}
+                    onClick={() => setAssist({ ...assist, cli: c.id })}
+                    className={cn(
+                      'h-8 cursor-pointer rounded-lg border px-3 text-[13px]',
+                      assist.cli === c.id
+                        ? 'border-accent bg-accent-soft text-accent'
+                        : 'bg-card text-muted hover:text-fg',
+                    )}
+                  >
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Field label="模型" className="flex-[1_1_200px]" hint="留空使用该 CLI 的默认模型">
+              <Input
+                value={assist.model}
+                onChange={(e) => setAssist({ ...assist, model: e.target.value })}
+                placeholder="例如 opus"
+              />
+            </Field>
+          </div>
+          <Field label="创建 Agent 的补充规则">
+            <Textarea
+              rows={4}
+              value={assist.agentRules}
+              onChange={(e) => setAssist({ ...assist, agentRules: e.target.value })}
+              placeholder={
+                '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的 Agent 默认用 Claude Code'
+              }
+              className="font-mono text-[13px]"
+            />
+          </Field>
+          <Field label="创建工作流的补充规则">
+            <Textarea
+              rows={4}
+              value={assist.workflowRules}
+              onChange={(e) => setAssist({ ...assist, workflowRules: e.target.value })}
+              placeholder={'例如：\n- 最后一个阶段必须有代码审查节点\n- 同一阶段最多 3 个并行节点'}
+              className="font-mono text-[13px]"
+            />
+          </Field>
         </FormSection>
       </div>
     </main>

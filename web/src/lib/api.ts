@@ -15,6 +15,7 @@ import type {
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
+import type { AssistInput, AssistJob } from '@shared/assist'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -74,6 +75,10 @@ export const api = {
   sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
+
+  assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),
+  assistJob: (id: string) => request<AssistJob>(`/assist/${id}`),
+  stopAssist: (id: string) => request<AssistJob>(`/assist/${id}/stop`, { method: 'POST' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),

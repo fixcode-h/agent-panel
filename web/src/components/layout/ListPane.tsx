@@ -12,6 +12,7 @@ export function ListPane({
   placeholder,
   children,
   footer,
+  extra,
 }: {
   title: string
   count: number
@@ -21,6 +22,8 @@ export function ListPane({
   placeholder: string
   children: React.ReactNode
   footer?: React.ReactNode
+  /** 新建按钮左边的额外操作 */
+  extra?: React.ReactNode
 }) {
   return (
     <section
@@ -31,10 +34,13 @@ export function ListPane({
         <div className="flex items-center gap-2">
           <h1 className="text-lg font-semibold">{title}</h1>
           <span className="rounded-full border bg-card px-2 text-xs text-muted">{count}</span>
-          <Button size="sm" className="ml-auto" onClick={onNew}>
-            <Plus className="h-4 w-4" />
-            新建
-          </Button>
+          <div className="ml-auto flex items-center gap-1.5">
+            {extra}
+            <Button size="sm" onClick={onNew}>
+              <Plus className="h-4 w-4" />
+              新建
+            </Button>
+          </div>
         </div>
         <label className="relative block">
           <span className="sr-only">搜索</span>
@@ -47,7 +53,9 @@ export function ListPane({
           />
         </label>
       </div>
-      <div className="flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3 md:max-h-none">{children}</div>
+      <div className="flex max-h-[50vh] flex-1 flex-col gap-0.5 overflow-y-auto px-2 pb-3 md:max-h-none">
+        {children}
+      </div>
       {footer && <div className="border-t px-4 pt-3 pb-4">{footer}</div>}
     </section>
   )
@@ -62,7 +70,15 @@ export function ListGroup({ header, children }: { header: React.ReactNode; child
   )
 }
 
-export function GroupHeader({ label, count, actions }: { label: React.ReactNode; count?: number; actions?: React.ReactNode }) {
+export function GroupHeader({
+  label,
+  count,
+  actions,
+}: {
+  label: React.ReactNode
+  count?: number
+  actions?: React.ReactNode
+}) {
   return (
     <div className="flex h-9 items-center gap-1.5 px-2 pt-2 text-xs text-subtle">
       <span className="truncate">{label}</span>

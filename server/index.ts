@@ -18,6 +18,7 @@ import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
 import { createCollection } from './store.ts'
 import { tasksApi } from './tasks.ts'
+import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
@@ -26,7 +27,10 @@ import { inspectDir, listDir, resolvePath } from './fs.ts'
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
 const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
-const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>('project-categories.json', ProjectCategory)
+const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
+  'project-categories.json',
+  ProjectCategory,
+)
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
 
 // 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
@@ -126,10 +130,9 @@ app.put('/agents/:id', async (c) => {
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
-  const used = (await workflows.list()).filter(
-    (w) => w.mainAgentId === id || w.members.some((m) => m.agentId === id),
-  )
-  if (used.length) return bad(c, `正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`, 409)
+  const used = (await workflows.list()).filter((w) => w.mainAgentId === id || w.members.some((m) => m.agentId === id))
+  if (used.length)
+    return bad(c, `正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`, 409)
   return (await agents.remove(id)) ? c.body(null, 204) : bad(c, 'Agent 不存在', 404)
 })
 
@@ -227,6 +230,7 @@ app.delete('/projects/:id', async (c) => {
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
+app.route('/assist', assistApi({ agents, categories, workflows }))
 
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Bot, MoreHorizontal, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { Bot, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import type { Agent, AgentInput, Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -13,6 +13,7 @@ import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/compone
 import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 
 function CategoryHeader({ category, count, onAdd }: { category: Category; count: number; onAdd: () => void }) {
   const { setCategories, setAgents } = useData()
@@ -73,7 +74,13 @@ function CategoryHeader({ category, count, onAdd }: { category: Category; count:
         count={count}
         actions={
           <>
-            <Button variant="ghost" size="icon-sm" aria-label="在此分类新建 Agent" title="在此分类新建 Agent" onClick={onAdd}>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="在此分类新建 Agent"
+              title="在此分类新建 Agent"
+              onClick={onAdd}
+            >
               <Plus className="h-3.5 w-3.5" />
             </Button>
             <Menu>
@@ -112,6 +119,8 @@ export function AgentsPage() {
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
+  const [assist, setAssist] = useState(false)
+  const [rev, setRev] = useState(0)
 
   const selected = agents.find((a) => a.id === route.id) ?? agents[0]
   useEffect(() => {
@@ -120,10 +129,7 @@ export function AgentsPage() {
 
   const q = query.trim().toLowerCase()
   const match = (a: Agent) => !q || `${a.name}${a.description}${a.model}`.toLowerCase().includes(q)
-  const groups = [
-    ...categories.map((c) => ({ category: c as Category | null, id: c.id })),
-    { category: null, id: '' },
-  ]
+  const groups = [...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }]
     .map((g) => ({ ...g, items: agents.filter((a) => a.categoryId === g.id && match(a)) }))
     // 搜索时隐藏空分类；「未分类」为空时也不显示
     .filter((g) => g.items.length || (!q && g.category))
@@ -171,6 +177,12 @@ export function AgentsPage() {
         title="Agent"
         count={agents.length}
         onNew={() => create()}
+        extra={
+          <Button size="sm" variant="secondary" onClick={() => setAssist(true)} title="描述需求，让本机 CLI 生成 Agent">
+            <Sparkles className="h-4 w-4 text-accent" />
+            AI 创建
+          </Button>
+        }
         query={query}
         onQuery={setQuery}
         placeholder="搜索名称、简介或模型"
@@ -178,7 +190,11 @@ export function AgentsPage() {
           <div className="flex flex-col gap-2">
             <div className="flex items-center text-xs text-subtle">
               本机 CLI
-              <button onClick={recheck} disabled={checking} className="ml-auto flex cursor-pointer items-center gap-1 text-accent">
+              <button
+                onClick={recheck}
+                disabled={checking}
+                className="ml-auto flex cursor-pointer items-center gap-1 text-accent"
+              >
                 <RefreshCw className={cn('h-3 w-3', checking && 'animate-spin')} />
                 重新检测
               </button>
@@ -200,7 +216,11 @@ export function AgentsPage() {
             key={g.id || 'none'}
             header={
               g.category ? (
-                <CategoryHeader category={g.category} count={g.items.length} onAdd={() => create({ categoryId: g.id })} />
+                <CategoryHeader
+                  category={g.category}
+                  count={g.items.length}
+                  onAdd={() => create({ categoryId: g.id })}
+                />
               ) : (
                 <GroupHeader label="未分类" count={g.items.length} />
               )
@@ -225,8 +245,9 @@ export function AgentsPage() {
 
       {selected ? (
         <AgentDetail
-          key={selected.id}
+          key={`${selected.id}:${rev}`}
           agent={selected}
+          onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
           onDeleted={() => go({ page: 'agents' })}
         />
@@ -241,7 +262,15 @@ export function AgentsPage() {
           </DetailEmpty>
         )
       )}
+      <AssistDialog
+        open={assist}
+        onOpenChange={setAssist}
+        kind="agent"
+        onApplied={({ agent }) => {
+          setQuery('')
+          if (agent) go({ page: 'agents', id: agent.id })
+        }}
+      />
     </>
   )
 }
-

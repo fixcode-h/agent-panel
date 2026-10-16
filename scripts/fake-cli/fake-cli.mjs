@@ -36,6 +36,28 @@ const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任
 
 for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 30)
 
+// 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
+// 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
+if (input.startsWith('你是「Agent 面板」里的配置助手')) {
+  const pick = (tag) => input.match(new RegExp(`${tag}:(.*)`))?.[1]?.trim()
+  const json = (input.includes('不符合要求') && pick('FAKE_JSON2')) || pick('FAKE_JSON') || '{}'
+  const text = `这是按你的要求生成的配置。\n\n\`\`\`json\n${json}\n\`\`\``
+  if (kind === 'claude') {
+    out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
+    out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text }] } })
+    out({ type: 'result', subtype: 'success', is_error: false, result: text, session_id: session, total_cost_usd: 0, usage: {} })
+  } else if (kind === 'codex') {
+    out({ type: 'thread.started', thread_id: session })
+    out({ type: 'item.completed', item: { id: 'item_0', type: 'agent_message', text } })
+    out({ type: 'turn.completed', usage: { input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 } })
+  } else {
+    out({ type: 'event', event: { type: 'run_start', sessionId: session } })
+    out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
+    out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
+  }
+  process.exit(0)
+}
+
 if (kind === 'claude') {
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
   out({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1', model: 'claude-fake', usage: { input_tokens: 10, cache_read_input_tokens: 12000, cache_creation_input_tokens: 500 } } } })

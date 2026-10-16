@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Workflow as WorkflowIcon } from 'lucide-react'
+import { Plus, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowInput } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -10,11 +10,14 @@ import { Button } from '@/components/ui/button'
 import { ListEmpty, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 
 export function WorkflowsPage() {
   const { loading, workflows, agents, clis, setWorkflows } = useData()
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
+  const [assist, setAssist] = useState(false)
+  const [rev, setRev] = useState(0)
 
   const selected = workflows.find((w) => w.id === route.id) ?? workflows[0]
   useEffect(() => {
@@ -55,6 +58,12 @@ export function WorkflowsPage() {
         title="工作流"
         count={workflows.length}
         onNew={() => create()}
+        extra={
+          <Button size="sm" variant="secondary" onClick={() => setAssist(true)} title="描述需求，让本机 CLI 生成工作流">
+            <Sparkles className="h-4 w-4 text-accent" />
+            AI 创建
+          </Button>
+        }
         query={query}
         onQuery={setQuery}
         placeholder="搜索工作流"
@@ -88,15 +97,16 @@ export function WorkflowsPage() {
 
       {selected ? (
         <WorkflowDetail
-          key={selected.id}
+          key={`${selected.id}:${rev}`}
           workflow={selected}
+          onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
           onDeleted={() => go({ page: 'workflows' })}
         />
       ) : (
         !loading && (
           <DetailEmpty icon={<WorkflowIcon className="h-6 w-6" />} title="创建第一个工作流">
-            <p>工作流把 Agent 组成团队：选一个主 Agent 负责推进，再加几个子 Agent，然后用一份文档写清楚按什么步骤执行。</p>
+            <p>工作流把 Agent 组成团队：选一个主 Agent 负责推进，再加几个子 Agent，然后在流程图里编排执行顺序。</p>
             <Button className="mt-5" onClick={() => create()}>
               <Plus className="h-4 w-4" />
               新建工作流
@@ -104,6 +114,15 @@ export function WorkflowsPage() {
           </DetailEmpty>
         )
       )}
+      <AssistDialog
+        open={assist}
+        onOpenChange={setAssist}
+        kind="workflow"
+        onApplied={({ workflow }) => {
+          setQuery('')
+          if (workflow) go({ page: 'workflows', id: workflow.id })
+        }}
+      />
     </>
   )
 }

@@ -262,5 +262,16 @@ export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止 */
   stepTimeoutMinutes: z.number().int().min(1).max(600).default(60),
   clis: z.record(z.string(), CliSettings).default({}),
+  /** AI 创建 / 优化 Agent 和工作流 */
+  assist: z
+    .object({
+      /** 默认用哪个 CLI；为空时用第一个已安装的 */
+      cli: z.string().default(''),
+      model: z.string().trim().default(''),
+      /** 用户补充的创建规则，会加进提示词 */
+      agentRules: z.string().max(8000).default(''),
+      workflowRules: z.string().max(8000).default(''),
+    })
+    .default({ cli: '', model: '', agentRules: '', workflowRules: '' }),
 })
 export type Settings = z.infer<typeof Settings>

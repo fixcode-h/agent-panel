@@ -191,6 +191,65 @@ try {
   assert.deepEqual(badWf.steps.map((s) => s.status), ['failed', 'pending', 'pending', 'pending'])
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
 
+  // ---- AI 创建 / 优化 ----
+  async function assistDone(job) {
+    for (let i = 0; job.status === 'running'; i++) {
+      if (i > 100) throw new Error('AI 创建超时')
+      await sleep(100)
+      job = await call('GET', `/assist/${job.id}`)
+    }
+    return job
+  }
+  const assist = (kind, text, extra = {}) =>
+    call('POST', '/assist', { kind, targetId: '', cli: 'claude', model: '', messages: [{ role: 'user', text }], ...extra }).then(assistDone)
+  const draftAgent = { name: '审查员', description: '审查改动', cli: 'codex', model: 'gpt-5.6', icon: 'shield', category: '质量', instructions: '## 职责\n审查' }
+  let job = await assist('agent', `要一个审查员\nFAKE_JSON:${JSON.stringify(draftAgent)}`)
+  assert.equal(job.status, 'done', job.error)
+  assert.equal(job.text, '这是按你的要求生成的配置。')
+  assert.equal(job.proposal.agent.cli, 'codex')
+  assert.equal(job.proposal.newCategory, '质量', '不存在的分类标记为新建')
+  c = calls().at(-1)
+  assert.match(c.input, /配置助手[\s\S]*## 已有的 Agent[\s\S]*甲（claude[\s\S]*## 创建规则[\s\S]*## 输出格式/)
+  assert.ok(c.args.includes('--permission-mode') ? c.args.includes('default') : true, '只读权限')
+  assert.notEqual(c.cwd, projectDir, '不在项目目录里运行')
+  // 第一次格式不对，自动让 CLI 修正
+  job = await assist('agent', `FAKE_JSON:${JSON.stringify({ ...draftAgent, cli: 'nope' })}\nFAKE_JSON2:${JSON.stringify(draftAgent)}`)
+  assert.equal(job.status, 'done', job.error)
+  assert.equal(job.attempt, 2)
+  assert.match(calls().at(-1).input, /不符合要求[\s\S]*nope/)
+  // 两次都不对时失败并说明原因
+  job = await assist('agent', `FAKE_JSON:${JSON.stringify({ ...draftAgent, name: '甲' })}`)
+  assert.equal(job.status, 'failed')
+  assert.match(job.error, /两次都没有按格式输出[\s\S]*已经有叫「甲」/)
+  // 优化已有 Agent：把当前配置给 CLI
+  job = await assist('agent', `FAKE_JSON:${JSON.stringify({ ...draftAgent, name: '甲' })}`, { targetId: A.id })
+  assert.equal(job.status, 'done', job.error)
+  assert.match(calls().at(-1).input, /优化一个已有的Agent[\s\S]*## 当前的Agent[\s\S]*你是甲，负责规划/)
+  // 工作流：引用已有 Agent 和新建的 Agent，校验阶段和节点
+  const draftWf = {
+    name: 'AI 流程',
+    description: '',
+    mainAgent: '甲',
+    members: [{ agent: '乙', responsibility: '实现' }],
+    newAgents: [draftAgent],
+    stages: [
+      { title: '开发', nodes: [{ title: '实现', agent: '乙', instructions: '写代码' }, { title: '审查', agent: '审查员', instructions: '审查' }] },
+      { title: '验收', nodes: [{ title: '验收', agent: '', instructions: '' }] },
+    ],
+    document: '# 目标',
+  }
+  job = await assist('workflow', `FAKE_JSON:${JSON.stringify(draftWf)}`, { cli: 'codex' })
+  assert.equal(job.status, 'done', job.error)
+  const w = job.proposal.workflow
+  assert.equal(w.mainAgentId, A.id)
+  assert.deepEqual(w.stages.map((s) => s.nodes.map((n) => n.agentId)), [[B.id, 'new:审查员'], ['']])
+  assert.ok(w.members.some((m) => m.agentId === 'new:审查员'), '节点用到的 Agent 自动加入团队')
+  assert.equal(job.proposal.newAgents[0].ref, 'new:审查员')
+  job = await assist('workflow', `FAKE_JSON:${JSON.stringify({ ...draftWf, mainAgent: '不存在' })}`)
+  assert.equal(job.status, 'failed')
+  assert.match(job.error, /不存在/)
+  step('AI 创建：按格式生成、校验、自动修正一次，优化时带上当前配置，工作流解析 Agent 引用')
+
   // ---- 找不到命令 / 停用 ----
   await call('PUT', '/settings', { ...settings, clis: { ...settings.clis, commandcode: cli({ command: path.join(tmp, 'nope', 'cmdc') }), codex: cli({ enabled: false }) } })
   const clis2 = await call('GET', '/clis?refresh=1')

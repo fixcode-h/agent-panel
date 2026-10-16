@@ -27,6 +27,8 @@ import {
 import { CLIS, getCli } from '@shared/clis'
 import { newTask, runTurn } from '@shared/runner'
 import { flowId } from '@shared/flow'
+import { AssistInput } from '@shared/assist'
+import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 
 const KEY = 'agent-panel-demo-v2'
 
@@ -120,13 +122,53 @@ function seed(): Db {
     instructions:
       '你是这个项目的技术负责人。先阅读工作流文档和需求，把任务拆成可独立验证的小步骤，分派给合适的子 Agent，并在每一步完成后检查结果。',
   })
-  const fe = agent({ name: '前端开发', icon: 'layout', categoryId: dev.id, cli: 'claude', model: 'sonnet', description: '实现 React 页面与交互，保证视觉还原' })
-  const be = agent({ name: '后端开发', icon: 'database', categoryId: dev.id, cli: 'codex', model: 'gpt-5.6', description: '实现 Node API、数据层与本机进程调度' })
-  const qaAgent = agent({ name: '测试工程师', icon: 'test', categoryId: qa.id, cli: 'claude', model: 'sonnet', description: '编写并运行单元测试与端到端测试' })
-  const review = agent({ name: '代码审查', icon: 'shield', categoryId: qa.id, cli: 'claude', model: 'haiku', description: '检查改动的正确性与风格，给出修改建议', enabled: false })
-  const docs = agent({ name: '文档助手', icon: 'doc', cli: 'claude', model: 'haiku', description: '整理 README 和变更说明' })
+  const fe = agent({
+    name: '前端开发',
+    icon: 'layout',
+    categoryId: dev.id,
+    cli: 'claude',
+    model: 'sonnet',
+    description: '实现 React 页面与交互，保证视觉还原',
+  })
+  const be = agent({
+    name: '后端开发',
+    icon: 'database',
+    categoryId: dev.id,
+    cli: 'codex',
+    model: 'gpt-5.6',
+    description: '实现 Node API、数据层与本机进程调度',
+  })
+  const qaAgent = agent({
+    name: '测试工程师',
+    icon: 'test',
+    categoryId: qa.id,
+    cli: 'claude',
+    model: 'sonnet',
+    description: '编写并运行单元测试与端到端测试',
+  })
+  const review = agent({
+    name: '代码审查',
+    icon: 'shield',
+    categoryId: qa.id,
+    cli: 'claude',
+    model: 'haiku',
+    description: '检查改动的正确性与风格，给出修改建议',
+    enabled: false,
+  })
+  const docs = agent({
+    name: '文档助手',
+    icon: 'doc',
+    cli: 'claude',
+    model: 'haiku',
+    description: '整理 README 和变更说明',
+  })
 
-  const node = (title: string, agentId: string, instructions: string): WorkflowNode => ({ id: flowId('nd'), title, agentId, instructions })
+  const node = (title: string, agentId: string, instructions: string): WorkflowNode => ({
+    id: flowId('nd'),
+    title,
+    agentId,
+    instructions,
+  })
   const stage = (title: string, nodes: WorkflowNode[]): WorkflowStage => ({ id: flowId('st'), title, nodes })
   const webFlow: Workflow = {
     ...meta(),
@@ -139,7 +181,9 @@ function seed(): Db {
       { agentId: qaAgent.id, responsibility: '单测与端到端测试' },
     ],
     stages: [
-      stage('分析', [node('分析需求、拆分任务', '', '阅读需求和相关代码，列出要改动的页面、接口和验收标准，并给前后端分好工。')]),
+      stage('分析', [
+        node('分析需求、拆分任务', '', '阅读需求和相关代码，列出要改动的页面、接口和验收标准，并给前后端分好工。'),
+      ]),
       stage('开发', [
         node('实现接口', be.id, '按分析阶段的接口设计实现 API，并补充数据校验。'),
         node('实现页面', fe.id, '按分析阶段约定的接口完成页面与交互，接口没好之前先用假数据。'),
@@ -175,7 +219,12 @@ function seed(): Db {
     ],
     document: '',
   }
-  const web: ProjectCategory = { ...meta(), name: 'Web 应用', description: '前后端分离的网站和后台', workflowId: webFlow.id }
+  const web: ProjectCategory = {
+    ...meta(),
+    name: 'Web 应用',
+    description: '前后端分离的网站和后台',
+    workflowId: webFlow.id,
+  }
   const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
   const project = (o: ProjectInput): Project => ({ ...meta(), ...o })
   return {
@@ -184,10 +233,34 @@ function seed(): Db {
     workflows: [webFlow, bugFlow],
     projectCategories: [web, game],
     projects: [
-      project({ name: '商城前台', description: '面向用户的商城网站', path: '/home/demo/code/web-shop', categoryId: web.id, workflowId: '' }),
-      project({ name: '运营后台', description: '内部运营管理系统', path: '/home/demo/code/admin-console', categoryId: web.id, workflowId: bugFlow.id }),
-      project({ name: '客户端主工程', description: '', path: '/home/demo/code/game-client', categoryId: game.id, workflowId: '' }),
-      project({ name: '旧官网', description: '已经下线的旧站点', path: '/home/demo/code/old-site', categoryId: '', workflowId: '' }),
+      project({
+        name: '商城前台',
+        description: '面向用户的商城网站',
+        path: '/home/demo/code/web-shop',
+        categoryId: web.id,
+        workflowId: '',
+      }),
+      project({
+        name: '运营后台',
+        description: '内部运营管理系统',
+        path: '/home/demo/code/admin-console',
+        categoryId: web.id,
+        workflowId: bugFlow.id,
+      }),
+      project({
+        name: '客户端主工程',
+        description: '',
+        path: '/home/demo/code/game-client',
+        categoryId: game.id,
+        workflowId: '',
+      }),
+      project({
+        name: '旧官网',
+        description: '已经下线的旧站点',
+        path: '/home/demo/code/old-site',
+        categoryId: '',
+        workflowId: '',
+      }),
     ],
   }
 }
@@ -269,9 +342,27 @@ function route(method: string, url: string, body: unknown): unknown {
     // 在线演示只能模拟执行
     if (method === 'PUT') d.settings = { ...parse(Settings, body), execution: 'simulate' }
     persist()
-    return (d.settings ??= { ...Settings.parse({}), execution: 'simulate' })
+    return Settings.parse((d.settings ??= { ...Settings.parse({}), execution: 'simulate' }))
   }
   if (res === 'clis') return clis()
+  if (res === 'assist') {
+    if (method === 'POST' && !id) {
+      const input = parse(AssistInput, body)
+      const target = input.targetId
+        ? (input.kind === 'agent' ? d.agents : d.workflows).find((x) => x.id === input.targetId)
+        : undefined
+      const settings = Settings.parse(d.settings ?? {})
+      return startDemoAssist(input, {
+        agents: d.agents,
+        categories: d.categories,
+        workflows: d.workflows,
+        rules: input.kind === 'agent' ? settings.assist.agentRules : settings.assist.workflowRules,
+        target,
+      })
+    }
+    if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
+    return demoAssistJob(id) ?? fail('找不到这次生成，可能已过期')
+  }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
 
@@ -416,17 +507,34 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
-  const task = create<Task>('tasks', newTask(input, workflow, d.agents, new Date().toISOString(), `demo-${crypto.randomUUID()}`))
+  const task = create<Task>(
+    'tasks',
+    newTask(input, workflow, d.agents, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
+  )
   return { task, done: startTurn(d, task, input.prompt, true, fast) }
 }
 
 function followUp(d: Db, task: Task, text: string, fast = false) {
   if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
-  task.messages.push({ id: `demo-${crypto.randomUUID()}`, role: 'user', agentId: '', step: -1, text, tools: [], at: new Date().toISOString() })
+  task.messages.push({
+    id: `demo-${crypto.randomUUID()}`,
+    role: 'user',
+    agentId: '',
+    step: -1,
+    text,
+    tools: [],
+    at: new Date().toISOString(),
+  })
   return startTurn(d, task, text, false, fast)
 }
 
-function tasksRoute(method: string, id: string | undefined, sub: string | undefined, query: URLSearchParams, body: unknown) {
+function tasksRoute(
+  method: string,
+  id: string | undefined,
+  sub: string | undefined,
+  query: URLSearchParams,
+  body: unknown,
+) {
   const d = load()
   const tasks = (d.tasks ??= [])
   if (!id) {
@@ -464,12 +572,32 @@ async function seedTasks(d: Db) {
     t.messages.forEach((m) => (m.at = shift(m.at)))
   }
   if (admin) {
-    const { task, done } = createTask(d, { projectId: admin.id, mode: 'workflow', workflowId: '', agentId: '', prompt: '订单导出 Excel 时，日期列整体往右错了一列' }, true)
+    const { task, done } = createTask(
+      d,
+      {
+        projectId: admin.id,
+        mode: 'workflow',
+        workflowId: '',
+        agentId: '',
+        prompt: '订单导出 Excel 时，日期列整体往右错了一列',
+      },
+      true,
+    )
     await done
     back(task, 60 * 26)
   }
   if (shop && fe) {
-    const { task, done } = createTask(d, { projectId: shop.id, mode: 'chat', workflowId: '', agentId: fe.id, prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因' }, true)
+    const { task, done } = createTask(
+      d,
+      {
+        projectId: shop.id,
+        mode: 'chat',
+        workflowId: '',
+        agentId: fe.id,
+        prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因',
+      },
+      true,
+    )
     await done
     back(task, 60 * 3)
   }
