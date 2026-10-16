@@ -12,7 +12,7 @@ const greeting = () => {
 /** 首页：参考 Claude 的新对话页，中间一句问候和任务输入框 */
 export function HomePage() {
   const { projects, loading, upsertTask } = useData()
-  const { go } = useNav()
+  const { go, openProject } = useNav()
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col justify-center gap-7 px-4 py-12 md:px-6">
@@ -25,7 +25,7 @@ export function HomePage() {
             <p className="text-[14px] text-muted">
               先添加一个项目：项目就是本机上的一个代码目录，Agent 会在里面执行任务。
             </p>
-            <Button onClick={() => go({ page: 'projects' })}>
+            <Button onClick={() => openProject()}>
               <FolderPlus className="h-4 w-4" />
               添加项目
             </Button>

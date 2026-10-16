@@ -67,7 +67,7 @@ export function useCliDef(id: string | undefined): CliDefinition | undefined {
     models: data.models.map((m) => {
       // 下拉里第二行显示的说明：有展示名用展示名，没有用描述
       const label = (m.label !== m.id ? m.label : m.description) ?? ''
-      return { id: m.id, label, isDefault: m.isDefault, defaultEffort: m.defaultEffort }
+      return { id: m.id, label, isDefault: m.isDefault, defaultEffort: m.defaultEffort, origin: m.origin }
     }),
     efforts: sortEfforts(
       data.efforts.length

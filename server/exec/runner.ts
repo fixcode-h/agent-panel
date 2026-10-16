@@ -15,7 +15,7 @@ import { agentRun, cliSettings } from '../../shared/settings.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli } from './invoke.ts'
-import type { CliEvent } from './parsers.ts'
+import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 
 export interface RealContext {
@@ -33,6 +33,33 @@ export interface RealContext {
   newId: () => string
   /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
   isGit: boolean
+}
+
+/** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
+const replies = new Map<string, (r: AskReply) => void>()
+
+/** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
+export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
+  const fn = replies.get(id)
+  const req = task.requests.find((x) => x.id === id)
+  if (!fn || !req) return false
+  replies.delete(id)
+  task.requests = task.requests.filter((x) => x.id !== id)
+  const what =
+    req.kind === 'question'
+      ? `回答了「${req.title}」：${r.answer ?? ''}`
+      : `${r.allow ? '允许' : '拒绝'}了：${req.title}`
+  task.messages.push({
+    id: newId(),
+    role: 'system',
+    agentId: req.agentId,
+    step: req.step,
+    text: `你${what}`,
+    tools: [],
+    at: new Date().toISOString(),
+  })
+  fn(r)
+  return true
 }
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
@@ -245,9 +272,28 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
       case 'result':
         result = ev
         break
+      case 'ask': {
+        const id = ctx.newId()
+        asked.push(id)
+        replies.set(id, ev.reply)
+        task.requests.push({
+          id,
+          step,
+          agentId,
+          kind: ev.kind,
+          title: ev.title,
+          detail: ev.detail,
+          options: ev.options ?? [],
+          at: new Date().toISOString(),
+        })
+        // 新的请求马上落盘，侧栏的铃铛和任务页立刻能看到
+        ctx.changed(true)
+        return
+      }
     }
     ctx.changed()
   }
+  const asked: string[] = []
 
   const r = await invokeCli({
     cliId,
@@ -259,8 +305,12 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     signal: ctx.signal,
     timeoutMs: settings.stepTimeoutMinutes * 60_000,
     onEvent: apply,
+    canAsk: true,
   }).finally(() => {
     meter.stop()
+    // 进程结束了（完成、停止、超时），还没回答的请求作废
+    for (const id of asked) replies.delete(id)
+    task.requests = task.requests.filter((x) => !asked.includes(x.id))
     if (task.usage.agents[agentId]) task.usage.agents[agentId].tps = 0
   })
 

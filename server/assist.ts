@@ -14,7 +14,7 @@ import {
   type AssistMessage,
 } from '../shared/assist.ts'
 import { getCli } from '../shared/clis.ts'
-import type { Agent, Category, Workflow } from '../shared/schema.ts'
+import type { Agent, Category, TaskMessage, ToolUse, Workflow } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { detectClis } from './detect.ts'
 import { invokeCli } from './exec/invoke.ts'
@@ -71,8 +71,44 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
     await mkdir(cwd, { recursive: true })
     let messages: AssistMessage[] = input.messages
 
+    // 消息流的拼法和任务页一样：思考、工具各自成段，文字接在后面；每一段的文字只保留 JSON 前面的说明
+    const msgs: (TaskMessage & { raw: string })[] = []
+    job.messages = msgs
+    let cur: (typeof msgs)[number] | undefined
+    const toolsById = new Map<string, ToolUse>()
+    const newMsg = () => {
+      cur = {
+        id: randomUUID(),
+        role: 'agent',
+        agentId: '',
+        step: '',
+        text: '',
+        raw: '',
+        tools: [],
+        at: new Date().toISOString(),
+      }
+      msgs.push(cur)
+      return cur
+    }
+    const setRaw = (m: (typeof msgs)[number], raw: string) => {
+      m.raw = raw
+      m.text = raw.split('```')[0].trimEnd()
+    }
+
     for (let attempt = 1; attempt <= 2; attempt++) {
       job.attempt = attempt
+      cur = undefined
+      if (attempt > 1)
+        msgs.push({
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: '格式不对，已让 CLI 修正。',
+          raw: '',
+          tools: [],
+          at: new Date().toISOString(),
+        })
       job.thinking = undefined
       job.tools = undefined
       job.outChars = 0
@@ -95,6 +131,26 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
         onEvent: (ev) => {
+          if (ev.type === 'thinking') {
+            const m = !cur || cur.raw.trim() || cur.tools.length ? newMsg() : cur
+            m.thinking = ev.delta ? (m.thinking ?? '') + ev.text : ev.text
+          } else if (ev.type === 'text_delta') {
+            if (cur || ev.text.trim()) setRaw(cur ?? newMsg(), (cur?.raw ?? '') + ev.text)
+          } else if (ev.type === 'text') {
+            const m = cur ?? newMsg()
+            setRaw(m, m.raw ? `${m.raw.trimEnd()}\n\n${ev.text}` : ev.text)
+          } else if (ev.type === 'tool') {
+            const m = !cur || cur.raw.trim() ? newMsg() : cur
+            m.tools.push(ev.tool)
+            if (ev.id) toolsById.set(ev.id, ev.tool)
+          } else if (ev.type === 'tool_result') {
+            const t = toolsById.get(ev.id)
+            if (t) {
+              if (ev.output) t.output = ev.output
+              if (ev.failed) t.failed = true
+              if (ev.patch) t.input = ev.patch
+            }
+          }
           if (ev.type === 'text_delta') text += ev.text
           else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
           else if (ev.type === 'error') errors.push(ev.message)

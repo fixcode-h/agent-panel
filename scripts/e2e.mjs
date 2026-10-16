@@ -6,7 +6,7 @@
  */
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert/strict'
@@ -365,6 +365,56 @@ try {
   assert.equal(slow.status, 'stopped')
   assert.ok(Date.now() - t0 < 5000, '停止应该很快生效')
   step('停止：进程被结束，任务标记为已停止')
+
+  // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----
+  let half = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'SLOW 中断恢复' })
+  await sleep(800)
+  await call('POST', `/tasks/${half.id}/stop`)
+  half = await waitDone(half.id, 8000)
+  assert.equal(half.status, 'stopped')
+  const cut = half.steps.find((s) => s.interrupted)
+  assert.ok(
+    cut,
+    '正在跑的节点记为被打断 ' + JSON.stringify([half.steps.map((s) => [s.id, s.status, s.interrupted]), half.sessions]),
+  )
+  assert.ok(half.sessions[cut.id], '被打断的节点留着会话')
+  const beforeResume = calls().length
+  await call('POST', `/tasks/${half.id}/resume`)
+  half = await waitDone(half.id, 20000)
+  assert.equal(half.status, 'done', JSON.stringify(half.messages.filter((m) => m.role === 'system')))
+  const cont = calls().slice(beforeResume)[0]
+  assert.match(cont.input, /从中断的地方接着完成本节点/)
+  assert.ok(!half.steps.some((s) => s.interrupted))
+  step('中断恢复：停止后继续执行，被打断的节点续接会话接着做')
+
+  // ---- 权限请求：Claude Code 要确认的命令和问题显示在任务上，用户回答后交回 CLI ----
+  let ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 需要确认' })
+  const waitReq = async () => {
+    for (let i = 0; i < 100; i++) {
+      const t = await call('GET', `/tasks/${ask.id}`)
+      if (t.requests.length) return t.requests[0]
+      await sleep(100)
+    }
+    throw new Error('没有等到请求')
+  }
+  const r1 = await waitReq()
+  assert.equal(r1.kind, 'command')
+  assert.match(r1.title, /rm -rf build/)
+  await call('POST', `/tasks/${ask.id}/requests/${r1.id}`, { allow: true })
+  const r2 = await waitReq()
+  assert.equal(r2.kind, 'question')
+  assert.deepEqual(r2.options, ['SQLite', 'MySQL'])
+  await call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true, answer: 'SQLite' })
+  await assert.rejects(call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true }), /已经结束/)
+  ask = await waitDone(ask.id)
+  assert.equal(ask.status, 'done')
+  assert.equal(ask.requests.length, 0)
+  const [a1, a2] = readLog(log + '.ask').at(-1)
+  assert.equal(a1.behavior, 'allow')
+  assert.equal(a1.updatedInput.command, 'rm -rf build')
+  assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
+  assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
+  step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
 
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })
@@ -841,12 +891,16 @@ try {
   assert.match(ij.log, /added 1 package/)
   assert.match(ij.log, /npm warn/, 'stderr 也记进输出')
   assert.equal(ij.cliStatus.installed, true)
+  assert.equal(ij.update, true, '已经装了，这次是更新')
+  assert.match(ij.cliStatus.version, /9\.9\.9/, '更新后版本号变了')
   let uj = await waitJob((await call('POST', '/clis/codex/uninstall')).id)
   // 假 CLI 不是 npm 装的，卸载后还能找到：要提示用其他方式卸载
   assert.equal(uj.status, 'failed')
-  assert.match(uj.error, /其他方式安装/)
+  assert.match(uj.error, /手动删除/)
   assert.deepEqual(
-    readLog(log + '.npm').map((a) => a.slice(0, 3)),
+    readLog(log + '.npm')
+      .filter((a) => a[0] !== 'prefix' && a[0] !== 'view')
+      .map((a) => a.slice(0, 3)),
     [
       ['install', '-g', '@anthropic-ai/claude-code@latest'],
       ['uninstall', '-g', '@openai/codex'],
@@ -861,7 +915,9 @@ try {
       ['codex', 'failed'],
     ],
   )
-  // 有新版本才显示更新：假 npm 说最新是 9.9.9，假 CLI 是 0.0.1
+  // 有新版本才显示更新：假 npm 说最新是 9.9.9，假 CLI 回到 0.0.1
+  rmSync(log + '.ver', { force: true })
+  await call('GET', '/clis?refresh=1')
   const up = await call('GET', '/clis/claude/update?refresh=1')
   assert.deepEqual([up.current, up.latest, up.available], ['0.0.1', '9.9.9', true])
   // CLI 的顺序按设置排

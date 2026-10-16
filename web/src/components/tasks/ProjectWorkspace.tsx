@@ -1,11 +1,10 @@
-import { ArrowLeft, FolderGit2, GitBranch, Settings2, Workflow as WorkflowIcon } from 'lucide-react'
+import { FolderGit2, GitBranch, Settings2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Project } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { ProjectDetail } from '@/components/projects/ProjectDetail'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { TaskComposer, projectWorkflowId } from './TaskComposer'
 import { TaskStatusIcon } from './TaskStatusIcon'
@@ -14,7 +13,7 @@ import { TaskView } from './TaskView'
 /** 项目首页：参考 Claude Code，上面直接输入新任务，下面是这个项目的任务 */
 function ProjectHome({ project }: { project: Project }) {
   const { tasks, tasksLoaded, workflows, agents, projectCategories, upsertTask } = useData()
-  const { go } = useNav()
+  const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
   const now = useNow(false)
   const list = tasks.filter((t) => t.projectId === project.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
@@ -24,17 +23,7 @@ function ProjectHome({ project }: { project: Project }) {
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="所有项目"
-          title="所有项目"
-          onClick={() => go({ page: 'projects' })}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <span className="text-[13.5px] text-muted">项目</span>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => open('settings')}>
+        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => openProject(project.id)}>
           <Settings2 className="h-4 w-4" />
           项目设置
         </Button>
@@ -121,34 +110,8 @@ function ProjectHome({ project }: { project: Project }) {
   )
 }
 
-/** 点进一个项目后的工作区：项目首页（新建任务 + 任务列表）、任务对话、项目设置 */
-export function ProjectWorkspace({
-  project,
-  sub,
-  onDuplicate,
-}: {
-  project: Project
-  sub?: string
-  onDuplicate: () => void
-}) {
-  const { go } = useNav()
-  if (sub === 'settings')
-    return (
-      <div className="flex min-w-0 flex-1 flex-col md:h-full">
-        <div className="flex h-11 shrink-0 items-center border-b px-3 md:px-5">
-          <button
-            onClick={() => go({ page: 'projects', id: project.id })}
-            className="flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-1 text-[13px] text-muted hover:bg-sel hover:text-fg"
-          >
-            <ArrowLeft className="h-3.5 w-3.5" />
-            返回「{project.name}」
-          </button>
-        </div>
-        <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-          <ProjectDetail project={project} onDuplicate={onDuplicate} onDeleted={() => go({ page: 'projects' })} />
-        </div>
-      </div>
-    )
+/** 点进一个项目后的工作区：项目首页（新建任务 + 任务列表）或任务对话 */
+export function ProjectWorkspace({ project, sub }: { project: Project; sub?: string }) {
   if (sub) return <TaskView key={sub} taskId={sub} project={project} />
   return <ProjectHome project={project} />
 }

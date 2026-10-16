@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquareText } from 'lucide-react'
 import type { StepStatus, Task } from '@shared/schema'
 import { END, START, childSteps, entryFlow, getFlow } from '@shared/flow'
@@ -18,7 +18,16 @@ function combined(list: StepStatus[]): StepStatus | undefined {
 }
 
 /** 任务的流程图：主流程的节点显示执行状态，挂载的流程显示轮次和结论；点节点在下面看它的输出 */
-export function TaskFlow({ task, onOpenChat }: { task: Task; onOpenChat: () => void }) {
+export function TaskFlow({
+  task,
+  focus,
+  onOpenChat,
+}: {
+  task: Task
+  /** 外面（右栏的任务进度）要求选中的节点；at 变了就重新选中 */
+  focus?: { id: string; at: number }
+  onOpenChat: () => void
+}) {
   const { workflows, agents } = useData()
   const { modelOf } = useAgentView()
   const workflow = workflows.find((w) => w.id === task.workflowId)
@@ -31,6 +40,21 @@ export function TaskFlow({ task, onOpenChat }: { task: Task; onOpenChat: () => v
   useEffect(() => {
     if (follow && runningId) setSel(runningId)
   }, [follow, runningId])
+  useEffect(() => {
+    if (!focus) return
+    setSel(focus.id)
+    setFollow(false)
+  }, [focus?.at])
+  // 下面的输出跟着最新内容滚动；往上翻看时不打扰，翻回底部又继续跟随
+  const scroller = useRef<HTMLDivElement>(null)
+  const stick = useRef(true)
+  useLayoutEffect(() => {
+    stick.current = true
+  }, [sel])
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (el && stick.current) el.scrollTop = el.scrollHeight
+  })
 
   const views = useMemo(() => {
     if (!flow || !workflow) return {}
@@ -99,9 +123,16 @@ export function TaskFlow({ task, onOpenChat }: { task: Task; onOpenChat: () => v
         className="flex h-[min(440px,50vh)] shrink-0 border-b bg-panel"
       />
       {step && (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <div className="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-4 py-6 md:px-6">
-            <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} />
+        <div
+          ref={scroller}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          }}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
+          <div className="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-4 pb-6 md:px-6">
+            <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky />
             {!msgs.length && step.status !== 'running' && (
               <p className="text-[13px] text-subtle">
                 {step.status === 'pending'

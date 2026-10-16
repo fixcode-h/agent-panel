@@ -498,7 +498,20 @@ function route(method: string, url: string, body: unknown): unknown {
       const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
       return {
         source: 'builtin',
-        models: def.models.map((m) => ({ id: m.id, label: m.label })),
+        models: [
+          ...def.models.map((m) => ({ id: m.id, label: m.label, isDefault: m.isDefault, origin: 'cli' as const })),
+          // 演示配置文件里接了一个第三方 API，下拉里分成两组
+          ...(id === 'codex'
+            ? [
+                {
+                  id: 'deepseek-v4-pro',
+                  label: 'deepseek-v4-pro',
+                  description: 'profile「deepseek」',
+                  origin: 'config' as const,
+                },
+              ]
+            : []),
+        ],
         efforts: [],
       } satisfies CliModels
     }
@@ -525,6 +538,7 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
+  if (res === 'fs' && id === 'reveal') throw new Error('在线演示不能打开本机目录')
 
   if (res === 'categories') {
     if (method === 'GET') return d.categories
@@ -606,7 +620,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }
 
-  if (res === 'tasks') return tasksRoute(method, id, sub, query, body)
+  if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)
 }
@@ -701,6 +715,7 @@ function tasksRoute(
   sub: string | undefined,
   query: URLSearchParams,
   body: unknown,
+  rid?: string,
 ) {
   const d = load()
   const tasks = (d.tasks ??= [])
@@ -723,6 +738,26 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     void followUp(d, task, parse(FollowUpInput, body).text)
+    return task
+  }
+  // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
+  if (sub === 'requests' && rid) {
+    const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
+    const a = body as { allow: boolean; answer?: string }
+    task.requests = task.requests.filter((r) => r.id !== rid)
+    task.messages.push({
+      id: `demo-${crypto.randomUUID()}`,
+      role: 'system',
+      agentId: req.agentId,
+      step: req.step,
+      text:
+        req.kind === 'question'
+          ? `你回答了「${req.title}」：${a.answer ?? ''}`
+          : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    persist()
     return task
   }
   if (sub === 'resume') {

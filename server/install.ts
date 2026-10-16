@@ -2,15 +2,17 @@ import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { getCli } from '../shared/clis.ts'
-import type { CliInstallJob, CliUpdate } from '../shared/schema.ts'
+import type { CliInstallJob, CliStatus, CliUpdate } from '../shared/schema.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { invalidateModels } from './models.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
+import { brewName, claudeNative, NPM, npmCommandPath } from './cli-source.ts'
+import { getSettings, saveSettings } from './settings.ts'
+import { cliSettings } from '../shared/settings.ts'
+import { rm } from 'node:fs/promises'
 
 const TIMEOUT = 10 * 60_000
 const isWin = process.platform === 'win32'
-// 测试时换成假的 npm
-const NPM = process.env.AGENT_PANEL_NPM || 'npm'
 
 /**
  * 设置里的「安装 / 更新 / 卸载」：用 npm 全局安装或卸载 CLI 的官方包。
@@ -39,36 +41,101 @@ export function installApi() {
   const hint = (job: CliInstallJob, log: string) => {
     if (/EACCES|permission denied|EPERM/i.test(log))
       return isWin
-        ? '没有权限写入 npm 的全局目录。请用管理员身份打开终端运行下面的命令。'
+        ? '没有权限写入安装目录。请用管理员身份打开终端运行下面的命令。'
         : '没有权限写入 npm 的全局目录。可以在终端里用 sudo 运行下面的命令，或者把 npm 的全局目录改到自己的用户目录下。'
     if (/ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network/i.test(log))
       return '连不上 npm 仓库，请检查网络或代理（可以在终端里设置 npm 镜像）后重试。'
     return job.action === 'install' ? '安装失败，详细信息见下面的输出。' : '卸载失败，详细信息见下面的输出。'
   }
 
+  /** 按安装方式决定执行什么：没装时用 npm 安装；已经装了就用它原来的方式更新或卸载 */
+  function plan(
+    job: CliInstallJob,
+    pkg: string,
+    before?: CliStatus,
+  ): { command: string; args: string[]; text: string } | 'native-remove' {
+    const npm = (args: string[]) => ({
+      command: NPM,
+      // npm 默认在下载完之前什么都不输出，http 级别的日志能让页面看到它在下载
+      args: [...args, '--no-fund', '--no-audit', '--loglevel=http'],
+      text: `npm ${args.join(' ')}`,
+    })
+    const install = job.action === 'install'
+    if (!before?.installed) return npm(install ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg])
+    if (before.source === 'native' && before.path)
+      return install ? { command: before.path, args: ['update'], text: 'claude update' } : 'native-remove'
+    if (before.source === 'brew') {
+      const name = brewName(job.cli)
+      const args = [install ? 'upgrade' : 'uninstall', ...name]
+      return { command: 'brew', args, text: `brew ${args.join(' ')}` }
+    }
+    return npm(install ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg])
+  }
+
   async function run(job: CliInstallJob, pkg: string) {
     const append = (t: string) => {
       job.log = (job.log + t).slice(-12000)
     }
-    const args = job.action === 'install' ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg]
-    const r = await runProcess({
-      command: NPM,
-      // npm 默认在下载完之前什么都不输出，http 级别的日志能让页面看到它在下载
-      args: [...args, '--no-fund', '--no-audit', '--loglevel=http'],
-      cwd: homedir(),
-      env: childEnv([]),
-      timeoutMs: TIMEOUT,
-      onLine: (l) => append(l + '\n'),
-      onStderr: append,
-    })
+    const before = (await detectClis(true)).find((c) => c.id === job.cli)
+    job.update = job.action === 'install' && !!before?.installed
+    const how = plan(job, pkg, before)
+    let r: { spawnError?: string; killed?: string | null; code: number | null }
+    if (how === 'native-remove') {
+      // 官方安装脚本装的 Claude Code：删掉命令和版本文件（登录信息和 ~/.claude 里的配置不动）
+      const n = claudeNative()
+      job.command = isWin ? `del "${n.bin}" 并删除 "${n.data}"` : `rm -f ${n.bin} && rm -rf ${n.data}`
+      try {
+        await rm(n.bin, { force: true })
+        await rm(n.data, { recursive: true, force: true })
+        append('已删除\n')
+        r = { code: 0 }
+      } catch (e) {
+        append(`${(e as Error).message}\n`)
+        r = { code: 1 }
+      }
+    } else {
+      job.command = how.text
+      r = await runProcess({
+        command: how.command,
+        args: how.args,
+        cwd: homedir(),
+        env: childEnv([]),
+        timeoutMs: TIMEOUT,
+        onLine: (l) => append(l + '\n'),
+        onStderr: append,
+      })
+    }
     invalidateClis()
     invalidateModels(job.cli)
     latest.delete(job.cli)
-    const status = (await detectClis(true)).find((c) => c.id === job.cli)
+    let status = (await detectClis(true)).find((c) => c.id === job.cli)
+    // npm 装好了新版本，但 PATH 里先找到的是别处装的旧版本：改用 npm 里的这个，否则更新了等于没更新
+    if (
+      job.action === 'install' &&
+      how !== 'native-remove' &&
+      how.command === NPM &&
+      r.code === 0 &&
+      status?.installed &&
+      status.source !== 'npm'
+    ) {
+      const npmPath = await npmCommandPath(status.command)
+      const v = npmPath ? await capture(npmPath, ['--version'], homedir(), childEnv([]), 10_000) : undefined
+      if (npmPath && v?.code === 0 && newer(v.stdout, status.version)) {
+        const settings = await getSettings()
+        const cs = cliSettings(settings, job.cli)
+        await saveSettings({ ...settings, clis: { ...settings.clis, [job.cli]: { ...cs, command: npmPath } } })
+        job.note = `PATH 里先找到的是 ${status.path ?? status.command}（${semver(status.version)?.join('.') ?? '旧版本'}），已改用 npm 安装的 ${npmPath}。`
+        invalidateClis()
+        status = (await detectClis(true)).find((c) => c.id === job.cli)
+      }
+    }
     job.cliStatus = status
     if (r.spawnError) {
       job.status = 'failed'
-      job.error = '没有找到 npm。请先安装 Node.js（https://nodejs.org），它自带 npm。'
+      job.error =
+        how !== 'native-remove' && how.command === 'brew'
+          ? '没有找到 brew。'
+          : '没有找到 npm。请先安装 Node.js（https://nodejs.org），它自带 npm。'
     } else if (r.killed === 'timeout') {
       job.status = 'failed'
       job.error = '超过 10 分钟还没有完成，已停止。可以复制下面的命令到终端里运行。'
@@ -76,12 +143,24 @@ export function installApi() {
       job.status = 'failed'
       job.error = hint(job, job.log)
     } else if (job.action === 'uninstall' && status?.installed) {
-      // npm 卸载成功但命令还在：多半是用官方安装脚本、Homebrew 等其他方式装的
       job.status = 'failed'
-      job.error = `npm 里的包已经移除，但还能找到「${status.command}」，它可能是用其他方式安装的（官方安装脚本、Homebrew 等），请用对应的方式卸载。`
+      job.error = `已经执行了卸载，但还能找到 ${status.path ?? status.command}。它不是 npm 、Homebrew 或官方安装脚本装的，请手动删除这个文件，或用安装它的方式卸载。`
     } else if (job.action === 'install' && !status?.installed) {
       job.status = 'failed'
       job.error = `安装完成，但还找不到「${status?.command ?? pkg}」。可能需要重新打开终端或重启本服务让 PATH 生效，或者在下面填写可执行文件的完整路径。`
+    } else if (
+      job.action === 'install' &&
+      before?.installed &&
+      semver(status?.version)?.join('.') === semver(before.version)?.join('.') &&
+      !job.note
+    ) {
+      // 更新命令成功了，版本却没变：多半是 PATH 里还有另一个旧的
+      const now = await capture(NPM, ['view', pkg, 'version'], homedir(), childEnv([]), 20_000)
+      const v = now.stdout.trim().split('\n').at(-1)?.trim()
+      if (v && newer(v, status?.version)) {
+        job.status = 'failed'
+        job.error = `更新命令执行完了，但运行的 ${status?.path ?? status?.command} 还是 ${semver(status?.version)?.join('.')}。可能还有另一份旧的装在别处，请在下面的「可执行文件」里填新版本的完整路径。`
+      } else job.status = 'done'
     } else job.status = 'done'
   }
 
@@ -96,6 +175,7 @@ export function installApi() {
       cli: def.id,
       action,
       status: 'running',
+      // 实际的命令在开始执行时按安装方式确定
       command: action === 'install' ? `npm install -g ${def.npmPackage}@latest` : `npm uninstall -g ${def.npmPackage}`,
       log: '',
     }

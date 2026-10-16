@@ -2,6 +2,7 @@ import { CLIS } from '../shared/clis.ts'
 import type { CliStatus } from '../shared/schema.ts'
 import { cliSettings, defaultCli, orderClis } from '../shared/settings.ts'
 import { capture, childEnv } from './exec/process.ts'
+import { cliSource, resolveCommand } from './cli-source.ts'
 import { getSettings } from './settings.ts'
 
 const TTL = 30_000
@@ -24,7 +25,11 @@ export async function detectClis(force = false): Promise<CliStatus[]> {
       const r = await capture(cs.command, c.versionArgs, process.cwd(), childEnv(cs.env), 10_000)
       const out = (r.stdout || r.stderr).trim().split('\n')[0] ?? ''
       const installed = !r.spawnError && !r.killed && r.code === 0
+      const env = childEnv(cs.env)
+      const file = installed ? resolveCommand(cs.command, env) : undefined
       return {
+        path: file,
+        source: installed ? await cliSource(c.id, file) : undefined,
         id: c.id,
         name: c.name,
         command: cs.command,

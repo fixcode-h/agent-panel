@@ -6,13 +6,18 @@
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
  * 设置环境变量 FAKE_CLI_LOG 后，每次调用的参数、目录和 stdin 会追加写进这个文件。
  */
-import { appendFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 
 const args = process.argv.slice(2)
 const kind = args[0] === 'app-server' ? 'codex' : args.includes('stream-json') ? 'claude' : 'commandcode'
 if (args.includes('--version')) {
-  console.log(`${kind}-fake 0.0.1`)
+  // 假 npm 「更新」过以后报告新版本
+  let ver = '0.0.1'
+  try {
+    if (process.env.FAKE_CLI_LOG) ver = readFileSync(process.env.FAKE_CLI_LOG + '.ver', 'utf8').trim()
+  } catch {}
+  console.log(`${kind}-fake ${ver}`)
   process.exit(0)
 }
 
@@ -73,7 +78,24 @@ if (args.includes('--list-models')) {
   process.exit(0)
 }
 
-if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
+// Claude Code 用 --input-format stream-json 时，stdin 一行一个 JSON：第一行是任务描述，之后是面板回的 control_response
+const streamIn = kind === 'claude' && args.includes('--input-format')
+const lines = []
+let wake
+if (streamIn) {
+  const rl = (await import('node:readline')).createInterface({ input: process.stdin })
+  rl.on('line', (l) => {
+    lines.push(JSON.parse(l))
+    wake?.()
+  })
+  const next = async () => {
+    while (!lines.length) await new Promise((r) => (wake = r))
+    return lines.shift()
+  }
+  globalThis.nextLine = next
+  const first = await next()
+  input = typeof first.message.content === 'string' ? first.message.content : ''
+} else if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
   const extra = kind === 'codex' ? { resume: appResume, developer } : {}
@@ -87,7 +109,8 @@ if (process.env.FAKE_CLI_LOG) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n')
-const slow = input.includes('SLOW')
+// 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
+const slow = input.includes('SLOW') && !input.includes('上游节点的结果')
 const fail = input.includes('FAIL')
 const resumeIdx = args.indexOf('--resume')
 const session = kind === 'codex' ? appThread : resumeIdx >= 0 ? args[resumeIdx + 1] : randomUUID()
@@ -105,7 +128,10 @@ const verdict = input.includes('最后单独一行写「验收结论')
   : ''
 const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}`
 
-for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 30)
+// 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
+if (slow && kind === 'claude')
+  out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
+for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 150)
 
 // 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
 // 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
@@ -198,6 +224,26 @@ if (kind === 'claude') {
       ],
     },
   })
+  // 任务描述里有 ASK：先请求确认一条命令，再问一个问题，把面板的回答记下来
+  if (input.includes('ASK') && streamIn) {
+    const ask = async (name, toolInput) => {
+      const id = randomUUID()
+      out({
+        type: 'control_request',
+        request_id: id,
+        request: { subtype: 'can_use_tool', tool_name: name, input: toolInput },
+      })
+      for (;;) {
+        const m = await globalThis.nextLine()
+        if (m.type === 'control_response' && m.response.request_id === id) return m.response.response
+      }
+    }
+    const a1 = await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
+    const a2 = await ask('AskUserQuestion', {
+      questions: [{ question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] }],
+    })
+    if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2]) + '\n')
+  }
   out({
     type: 'assistant',
     message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] },

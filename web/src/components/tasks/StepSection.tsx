@@ -40,6 +40,7 @@ export function StepSection({
   msgs,
   teamNames,
   bare,
+  sticky,
 }: {
   task: Task
   rootId: string
@@ -47,6 +48,8 @@ export function StepSection({
   teamNames: Set<string>
   /** 不显示节点标题（外面已经有了） */
   bare?: boolean
+  /** 标题固定在滚动区域顶部（流程视图里只看一个节点时） */
+  sticky?: boolean
 }) {
   const { agents } = useData()
   const now = useNow(task.status === 'running')
@@ -59,7 +62,12 @@ export function StepSection({
   return (
     <section className="flex flex-col gap-3">
       {!bare && (
-        <header className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+        <header
+          className={cn(
+            'flex flex-wrap items-center gap-x-2.5 gap-y-1',
+            sticky && 'sticky top-0 z-10 -mx-1 border-b bg-bg px-1 pt-5 pb-3',
+          )}
+        >
           <StepIcon status={root.status} />
           <span className="min-w-0 truncate text-[14px] font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">

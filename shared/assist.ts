@@ -26,6 +26,7 @@ import {
   type Category,
   type Flow,
   type FlowRef,
+  type TaskMessage,
   type Workflow,
   type WorkflowInput,
 } from './schema.ts'
@@ -145,6 +146,8 @@ export interface AssistJob {
   tools?: string[]
   outChars?: number
   startedAt?: number
+  /** 和任务页一样的消息流：思考、工具调用（可以点开看详情）、说明文字；JSON 部分不在里面 */
+  messages?: TaskMessage[]
 }
 
 export interface AssistContext {

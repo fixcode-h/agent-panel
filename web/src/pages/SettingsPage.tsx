@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
   type LucideIcon,
+  Layers,
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import {
@@ -31,7 +32,14 @@ import {
 import { cliSettings, defaultCli, orderClis, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { cliColor, effortLabel, effortOptions, modelSuggestions } from '@/lib/cli-style'
+import {
+  cliColor,
+  cliDefaultModel,
+  defaultEffortOptions,
+  effortLabel,
+  effortOptions,
+  modelSuggestions,
+} from '@/lib/cli-style'
 import { loadCliModels, useCliDef, useCliModels } from '@/lib/cli-models'
 import { clearInstallJob, resumeInstallJobs, setInstallFinish, startInstall, useInstallJob } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
@@ -44,6 +52,8 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { UpdateSection } from '@/components/settings/UpdateSection'
+import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
+import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 
 const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
@@ -189,7 +199,7 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
   useEffect(() => {
     if (pre.current) pre.current.scrollTop = pre.current.scrollHeight
   }, [job.log, open])
-  const verb = job.action === 'install' ? '安装' : '卸载'
+  const verb = job.action === 'uninstall' ? '卸载' : job.update ? '更新' : '安装'
   return (
     <div
       className={cn(
@@ -225,6 +235,7 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
         )}
       </div>
       {job.error && <p className="px-3.5 pb-2 text-[13px] leading-relaxed text-danger">{job.error}</p>}
+      {job.note && <p className="px-3.5 pb-2 text-[13px] leading-relaxed text-muted">{job.note}</p>}
       {job.status === 'failed' && (
         <p className="flex flex-wrap items-center gap-2 px-3.5 pb-2.5 text-xs text-muted">
           在终端里运行 <CopyText text={job.command} />
@@ -249,12 +260,15 @@ function TierTable({
   def,
   value,
   onChange,
+  readOnly,
 }: {
   def: CliDefinition
   value: CliDraft['tiers']
-  onChange: (v: CliDraft['tiers']) => void
+  onChange?: (v: CliDraft['tiers']) => void
+  /** 只展示：「默认 CLI」里跟随那个 CLI 自己的档位设置 */
+  readOnly?: boolean
 }) {
-  const set = (t: ModelTier, k: 'model' | 'effort', v: string) => onChange({ ...value, [t]: { ...value[t], [k]: v } })
+  const set = (t: ModelTier, k: 'model' | 'effort', v: string) => onChange?.({ ...value, [t]: { ...value[t], [k]: v } })
   return (
     <div className="overflow-hidden rounded-xl border">
       <div className="hidden grid-cols-[120px_1fr_170px] gap-3 border-b bg-field/50 px-3.5 py-2 text-xs text-subtle sm:grid">
@@ -278,21 +292,33 @@ function TierTable({
                 <span className="truncate text-[11px] text-subtle">{t.hint}</span>
               </span>
             </span>
-            <ComboInput
-              aria-label={`${def.name} ${t.label}档模型`}
-              suggestions={modelSuggestions(def)}
-              value={value[t.id].model}
-              onChange={(v) => set(t.id, 'model', v)}
-              placeholder={sug.model}
-              className="h-9 font-mono text-[13px]"
-              spellCheck={false}
-            />
-            <Select
-              aria-label={`${def.name} ${t.label}档思考强度`}
-              value={value[t.id].effort}
-              onChange={(e) => set(t.id, 'effort', e.target.value)}
-              options={effortOptions(def, sug.effort ? `建议 · ${effortLabel(def, sug.effort)}` : '不指定')}
-            />
+            {readOnly ? (
+              <>
+                <span className="truncate font-mono text-[13px]">{value[t.id].model || sug.model}</span>
+                <span className="truncate text-[13px] text-muted">
+                  {(value[t.id].effort || sug.effort) &&
+                    `${value[t.id].effort || sug.effort} · ${effortLabel(def, value[t.id].effort || sug.effort)}`}
+                </span>
+              </>
+            ) : (
+              <>
+                <ComboInput
+                  aria-label={`${def.name} ${t.label}档模型`}
+                  suggestions={modelSuggestions(def)}
+                  value={value[t.id].model}
+                  onChange={(v) => set(t.id, 'model', v)}
+                  placeholder={sug.model}
+                  className="h-9 font-mono text-[13px]"
+                  spellCheck={false}
+                />
+                <Select
+                  aria-label={`${def.name} ${t.label}档思考强度`}
+                  value={value[t.id].effort}
+                  onChange={(e) => set(t.id, 'effort', e.target.value)}
+                  options={effortOptions(def, sug.effort ? `建议 · ${effortLabel(def, sug.effort)}` : '不指定')}
+                />
+              </>
+            )}
           </div>
         )
       })}
@@ -300,7 +326,7 @@ function TierTable({
   )
 }
 
-/** 默认模型：可以是档位、CLI 自己的默认，或者具体模型 */
+/** 默认模型：可以是档位或具体模型；不指定时就是 CLI 自己的默认模型，直接标（默认） */
 function DefaultModel({
   def,
   draft,
@@ -314,6 +340,7 @@ function DefaultModel({
   // 模型可能有几十个，下拉里只放档位，具体模型在下面的输入框里搜索选择
   const [custom, setCustom] = useState(() => !!v && !tierOf(v))
   const tierModel = (t: ModelTier) => draft.tiers[t].model || def.tiers[t].model
+  const cliDefault = cliDefaultModel(def)?.id
   return (
     <div className="flex flex-col gap-2">
       <Select
@@ -326,8 +353,8 @@ function DefaultModel({
           else if (tierOf(v)) onChange('')
         }}
         options={[
+          { value: '', label: cliDefault ? `${cliDefault}（默认）` : '自动（默认）' },
           ...MODEL_TIERS.map((t) => ({ value: `@${t.id}`, label: `${t.label}档 · ${tierModel(t.id)}` })),
-          { value: '', label: 'CLI 自己的默认' },
           { value: '__custom', label: '指定模型…' },
         ]}
       />
@@ -382,7 +409,6 @@ function CliSection({
   status,
   isDefault,
   onChange,
-  onMakeDefault,
   onDetect,
   detecting,
 }: {
@@ -391,7 +417,6 @@ function CliSection({
   status?: CliStatus
   isDefault: boolean
   onChange: (d: CliDraft) => void
-  onMakeDefault: () => void
   onDetect: () => void
   detecting: boolean
 }) {
@@ -532,18 +557,11 @@ function CliSection({
         <Row title="默认思考强度" desc="Agent 和档位都没有指定时使用">
           <Select
             aria-label={`${def.name} 默认思考强度`}
-            value={draft.defaultEffort}
+            value={draft.defaultEffort === cliDefaultModel(full)?.defaultEffort ? '' : draft.defaultEffort}
             onChange={(e) => set('defaultEffort', e.target.value)}
-            options={effortOptions(full, 'CLI 自己的默认')}
+            options={defaultEffortOptions(full, cliDefaultModel(full)?.defaultEffort)}
           />
         </Row>
-        {!isDefault && (
-          <Row title="设为系统默认" desc="Agent 的 CLI 选「系统默认」时使用这个 CLI">
-            <Button variant="secondary" size="sm" onClick={onMakeDefault}>
-              设为默认 CLI
-            </Button>
-          </Row>
-        )}
       </Group>
 
       <Group title="运行">
@@ -646,6 +664,7 @@ interface Section {
 
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: '常规', icon: Settings2 },
+  { id: 'categories', label: '项目分类', icon: Layers },
   { id: 'models', label: '默认 CLI', icon: Cpu },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: 'AI 创建', icon: Sparkles },
@@ -689,8 +708,15 @@ function SettingsBody({
     setInstallFinish((j) => {
       const name = CLIS.find((c) => c.id === j.cli)?.name ?? j.cli
       void Promise.all([refreshClis().catch(() => {}), loadCliModels(j.cli, true).catch(() => {})])
-      if (j.status === 'done') toast.success(`${name} 已${j.action === 'install' ? '安装' : '卸载'}`)
-      else toast.error(`${name} ${j.action === 'install' ? '安装' : '卸载'}失败`)
+      // 服务端改用了 npm 装的那个可执行文件：同步到这里，免得自动保存又改回去
+      if (j.note)
+        void api.settings().then((fresh) => {
+          setSettings(fresh)
+          setDrafts((d) => ({ ...d, [j.cli]: { ...d[j.cli], command: fresh.clis[j.cli]?.command ?? '' } }))
+        })
+      const verb = j.action === 'uninstall' ? '卸载' : j.update ? '更新' : '安装'
+      if (j.status === 'done') toast.success(`${name} 已${verb}`)
+      else toast.error(`${name} ${verb}失败`)
     })
     void resumeInstallJobs()
   }, [refreshClis])
@@ -748,7 +774,7 @@ function SettingsBody({
 
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const statusOf = (id: string) => clis.find((c) => c.id === id)
-  const defDef = CLIS.find((c) => c.id === defCli)!
+  const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -824,12 +850,7 @@ function SettingsBody({
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3 md:px-8 md:pt-7">
           <h2 className="min-w-0 flex-1 truncate font-serif text-[20px] font-semibold">{cur.label}</h2>
           <SaveIndicator {...save} invalid={valid ? undefined : '超时时间需要是 1 到 600 的整数'} />
-          <D.Close
-            aria-label="关闭设置"
-            className="grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg"
-          >
-            <X className="h-4 w-4" />
-          </D.Close>
+          <DialogCloseButton label="关闭设置" />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
           {cur.id === 'general' && (
@@ -912,12 +933,23 @@ function SettingsBody({
                 })}
               </div>
               <Group title={`${defDef.name} 的模型`}>
-                <Row title="三档模型" desc="每个 CLI 都有自己的三档，在左侧对应的 CLI 里也能改。" stack>
-                  <TierTable
-                    def={defDef}
-                    value={drafts[defCli].tiers}
-                    onChange={(v) => setDrafts((ds) => ({ ...ds, [defCli]: { ...ds[defCli], tiers: v } }))}
-                  />
+                <Row
+                  title="三档模型"
+                  desc={
+                    <>
+                      跟随 {defDef.name} 自己的档位设置，要改请到{' '}
+                      <button
+                        className="cursor-pointer text-accent hover:underline"
+                        onClick={() => onSection(`cli:${defCli}`)}
+                      >
+                        {defDef.name}
+                      </button>{' '}
+                      里修改。
+                    </>
+                  }
+                  stack
+                >
+                  <TierTable def={defDef} value={drafts[defCli].tiers} readOnly />
                 </Row>
                 <Row title="默认模型" desc="Agent 没有指定模型时使用">
                   <DefaultModel
@@ -939,13 +971,14 @@ function SettingsBody({
               status={statusOf(cur.cli.id)}
               isDefault={defCli === cur.cli.id}
               onChange={(d) => setDrafts((ds) => ({ ...ds, [cur.cli!.id]: d }))}
-              onMakeDefault={() => setDefCli(cur.cli!.id)}
               onDetect={detect}
               detecting={detecting}
             />
           )}
 
           {cur.id === 'update' && <UpdateSection />}
+
+          {cur.id === 'categories' && <ProjectCategoryList />}
 
           {cur.id === 'assist' && (
             <>

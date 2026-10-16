@@ -247,6 +247,7 @@ export function blankStep(o: Partial<TaskStep> & Pick<TaskStep, 'id' | 'title'>)
     output: '',
     verdict: '',
     rounds: 0,
+    interrupted: false,
     ...o,
   }
 }

@@ -12,7 +12,7 @@ import {
   type AssistJob,
   type WorkflowDraft,
 } from '@shared/assist'
-import type { Agent } from '@shared/schema'
+import type { Agent, TaskMessage } from '@shared/schema'
 
 const ROLES: { re: RegExp; name: string; icon: string; desc: string; duty: string }[] = [
   {
@@ -276,6 +276,25 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`
+  // 消息流和真实 CLI 一样：一段思考 + 一次读取工具，然后是说明文字
+  const at = new Date().toISOString()
+  const tool = {
+    kind: 'read' as const,
+    label: '读取现有的 Agent 和分类',
+    detail: '',
+    input: 'agents.json · categories.json',
+    output: ctx.agents.map((a) => `- ${a.name}`).join('\n') || '（还没有 Agent）',
+  }
+  const msg = (id: string, o: Partial<TaskMessage>): TaskMessage => ({
+    id,
+    role: 'agent',
+    agentId: '',
+    step: '',
+    text: '',
+    tools: [],
+    at,
+    ...o,
+  })
   let i = 0
   let k = 0
   const tick = () => {
@@ -283,11 +302,13 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
     if (k < think.length) {
       k += 3
       job.thinking = think.slice(0, k)
+      job.messages = [msg('m1', { thinking: job.thinking })]
       return void setTimeout(tick, 30)
     }
     i += 4
     job.text = full.slice(0, i)
     job.outChars = i
+    job.messages = [msg('m1', { thinking: think, tools: [tool] }), msg('m2', { text: job.text })]
     if (i < full.length) return void setTimeout(tick, 30)
     const r = resolveProposal(input.kind, gen.draft, ctx)
     if (r.proposal) {

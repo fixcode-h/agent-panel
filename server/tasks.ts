@@ -16,7 +16,7 @@ import { newTask } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitNumstat } from './exec/git.ts'
-import { runRealTurn } from './exec/runner.ts'
+import { answerRequest, runRealTurn } from './exec/runner.ts'
 import { createCollection } from './store.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -38,13 +38,26 @@ export function tasksApi(deps: {
     return entry
   }
 
-  // 服务重启时，之前没跑完的任务标记为已停止
+  // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   void store.list().then(async (all) => {
     for (const t of all.filter((t) => t.status === 'running'))
       await store.update(t.id, {
         ...t,
         status: 'stopped',
-        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending' } : s)),
+        requests: [],
+        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
+        messages: [
+          ...t.messages,
+          {
+            id: randomUUID(),
+            role: 'system',
+            agentId: '',
+            step: '',
+            text: '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
+            tools: [],
+            at: new Date().toISOString(),
+          },
+        ],
       })
   })
 
@@ -202,6 +215,18 @@ export function tasksApi(deps: {
       live.delete(id)
       throw e
     }
+  })
+
+  // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
+  routes.post('/:id/requests/:rid', async (c) => {
+    const e = live.get(c.req.param('id'))
+    const body = z.object({ allow: z.boolean(), answer: z.string().optional() }).safeParse(await c.req.json())
+    if (!body.success) return bad(c, z.prettifyError(body.error))
+    if (!e || !answerRequest(e.task, c.req.param('rid'), body.data, randomUUID))
+      return bad(c, '这个请求已经结束了', 404)
+    e.task.updatedAt = new Date().toISOString()
+    await store.update(e.task.id, e.task)
+    return c.json(e.task)
   })
 
   routes.patch('/:id', async (c) => {

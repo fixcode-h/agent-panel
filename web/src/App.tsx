@@ -7,6 +7,7 @@ import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { HomePage } from '@/pages/HomePage'
 import { SettingsDialog } from '@/pages/SettingsPage'
+import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
 import { Sidebar } from '@/components/layout/Sidebar'
 
@@ -71,14 +72,29 @@ function TaskWatcher() {
   return null
 }
 
+function ProjectDialog({ open, id, onOpenChange }: { open: boolean; id?: string; onOpenChange: (o: boolean) => void }) {
+  const { projects } = useData()
+  const project = id ? projects.find((p) => p.id === id) : undefined
+  // 要打开的项目已经不在了（例如刚被删掉），就不显示
+  return <ProjectSettingsDialog open={open && (!id || !!project)} project={project} onOpenChange={onOpenChange} />
+}
+
 export function App() {
   const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string }>({ open: false })
+  const [project, setProject] = useState<{ open: boolean; id?: string }>({ open: false })
   const [dark, toggleTheme] = useTheme()
 
   return (
     <DataProvider>
-      <NavCtx.Provider value={{ route, go: setRoute, openSettings: (section) => setSettings({ open: true, section }) }}>
+      <NavCtx.Provider
+        value={{
+          route,
+          go: setRoute,
+          openSettings: (section) => setSettings({ open: true, section }),
+          openProject: (id) => setProject({ open: true, id }),
+        }}
+      >
         <div className="flex min-h-full flex-col md:h-full">
           <TaskWatcher />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
@@ -92,6 +108,7 @@ export function App() {
           section={settings.section}
           onOpenChange={(open) => setSettings((s) => ({ ...s, open }))}
         />
+        <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
         <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />
       </NavCtx.Provider>
     </DataProvider>

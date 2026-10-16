@@ -91,6 +91,8 @@ export const api = {
   sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
   resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
+  answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
+    request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
@@ -100,4 +102,5 @@ export const api = {
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
+  revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }
