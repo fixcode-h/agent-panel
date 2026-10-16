@@ -31,7 +31,7 @@ import {
 import { cliSettings, defaultCli, orderClis, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
+import { cliColor, effortLabel, effortOptions, modelSuggestions } from '@/lib/cli-style'
 import { loadCliModels, useCliDef, useCliModels } from '@/lib/cli-models'
 import { clearInstallJob, resumeInstallJobs, setInstallFinish, startInstall, useInstallJob } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
@@ -280,7 +280,7 @@ function TierTable({
             </span>
             <ComboInput
               aria-label={`${def.name} ${t.label}档模型`}
-              suggestions={def.models.map((m) => ({ value: m.id, label: m.label }))}
+              suggestions={modelSuggestions(def)}
               value={value[t.id].model}
               onChange={(v) => set(t.id, 'model', v)}
               placeholder={sug.model}
@@ -335,7 +335,7 @@ function DefaultModel({
         <ComboInput
           autoFocus={!v}
           aria-label="模型名"
-          suggestions={def.models.map((m) => ({ value: m.id, label: m.label }))}
+          suggestions={modelSuggestions(def)}
           value={v}
           onChange={onChange}
           placeholder="选择或填写模型名"
@@ -356,14 +356,23 @@ function ModelSource({ cli, data }: { cli: CliDefinition; data?: CliModels }) {
         正在从本机 {cli.name} 读取可用的模型…
       </p>
     )
+  // 账号登录列出账号能用的全部模型；API 方式列出配置文件里配的模型
+  const how =
+    data.auth === 'account'
+      ? `已用${data.from ? ` ${data.from} ` : '账号'}登录，`
+      : data.auth === 'api'
+        ? `用的是 API 方式，${data.from ? `下面是 ${data.from} 里配置的模型，` : '配置文件里没有写模型，'}`
+        : ''
   const text =
     data.source === 'cli'
-      ? `已从本机 ${cli.name} 读到 ${data.models.length} 个可用模型。`
-      : data.error
-        ? `没能从 ${cli.name} 读到模型列表（${data.error}），下面是内置的建议，也可以直接填写模型名。`
-        : cli.id === 'claude'
-          ? `${cli.name} 没有列出模型的命令，下面是常用的别名和型号，也可以直接填写完整的模型名。`
-          : '下面是内置的建议，也可以直接填写模型名。'
+      ? `${how}已从本机 ${cli.name} 读到 ${data.models.length} 个可用模型。`
+      : data.auth === 'api' && !data.error
+        ? `${how}下面是常用的别名和型号，也可以直接填写模型名。`
+        : data.error
+          ? `没能从 ${cli.name} 读到模型列表（${data.error}），下面是内置的建议，也可以直接填写模型名。`
+          : cli.id === 'claude'
+            ? `${cli.name} 没有列出模型的命令，下面是常用的别名和型号，也可以直接填写完整的模型名。`
+            : '下面是内置的建议，也可以直接填写模型名。'
   return <p className={cn('pt-1 text-xs leading-relaxed', data.error ? 'text-warning' : 'text-subtle')}>{text}</p>
 }
 
@@ -585,7 +594,22 @@ function CliSection({
           />
         </Row>
         <div className="pt-4">
-          <CommandPreview cli={def.id} model="" extraArgs={[]} title="实际调用（任务描述从 stdin 传入）" />
+          <CommandPreview
+            cli={def.id}
+            model=""
+            extraArgs={[]}
+            title="实际调用（任务描述从 stdin 传入）"
+            override={{
+              enabled: draft.enabled,
+              command: draft.command.trim(),
+              defaultModel: draft.defaultModel.trim(),
+              defaultEffort: draft.defaultEffort,
+              tiers: draft.tiers,
+              permission: draft.permission,
+              extraArgs: splitArgs(draft.args),
+              env: textToEnv(draft.envText),
+            }}
+          />
         </div>
       </Group>
     </>
@@ -929,12 +953,16 @@ function SettingsBody({
                 在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。
               </p>
               <Group>
-                <Row title="使用的 CLI" desc="自动时用第一个已安装的 CLI">
+                <Row title="使用的 CLI" desc="默认用「CLI」里设为默认的那个">
                   <Select
                     aria-label="AI 创建使用的 CLI"
-                    value={assist.cli}
-                    onChange={(e) => setAssist({ ...assist, cli: e.target.value })}
-                    options={[{ value: '', label: '自动' }, ...ordered.map((c) => ({ value: c.id, label: c.name }))]}
+                    value={assist.cli || defCli}
+                    // 选回默认的就不单独记，之后换了默认 CLI 会跟着变
+                    onChange={(e) => setAssist({ ...assist, cli: e.target.value === defCli ? '' : e.target.value })}
+                    options={ordered.map((c) => ({
+                      value: c.id,
+                      label: `${c.name}${c.id === defCli ? '（默认）' : ''}`,
+                    }))}
                   />
                 </Row>
                 <Row title="模型" desc="留空使用该 CLI 的默认模型">

@@ -321,7 +321,8 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
               stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
               setScrolled(el.scrollTop > 4)
             }}
-            className="flex-1 overflow-y-auto"
+            // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
+            className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
           >
             {isFlow ? (
               <TaskFlow

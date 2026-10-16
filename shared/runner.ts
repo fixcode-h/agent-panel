@@ -60,7 +60,14 @@ function stepOutput(step: TaskStep, task: Task, prompt: string, agents: Agent[],
       return {
         tools: [
           { kind: 'read', label: 'README.md', detail: '' },
-          { kind: 'search', label: '搜索相关代码', detail: '找到 6 个相关文件' },
+          {
+            kind: 'search',
+            label: '搜索相关代码',
+            detail: '找到 6 个相关文件',
+            input: 'rg -l "feature" --type ts',
+            output:
+              'server/routes/index.ts\nserver/routes/feature.ts\nshared/schema.ts\nweb/src/pages/Detail.tsx\nweb/src/lib/api.ts\ntests/feature.test.ts',
+          },
         ],
         changes: [],
         text:
@@ -76,14 +83,26 @@ function stepOutput(step: TaskStep, task: Task, prompt: string, agents: Agent[],
         tools: [
           { kind: 'read', label: 'server/routes/index.ts', detail: '' },
           { kind: 'edit', label: 'server/routes/feature.ts', detail: '+48 -3' },
-          { kind: 'edit', label: 'shared/schema.ts', detail: '+12' },
-          { kind: 'run', label: 'npm run typecheck', detail: '通过' },
+          {
+            kind: 'edit',
+            label: 'shared/schema.ts',
+            detail: '+4 -1',
+            input:
+              '@@ -12,6 +12,9 @@ export const TaskInput = z.object({\n   title: z.string().trim().min(1),\n-  note: z.string().optional(),\n+  note: z.string().max(500).optional(),\n+  /** 新功能的开关 */\n+  feature: z.boolean().default(false),\n+  tags: z.array(z.string()).max(10).default([]),\n })\n \n export type TaskInput = z.infer<typeof TaskInput>',
+          },
+          {
+            kind: 'run',
+            label: 'npm run typecheck',
+            detail: '通过',
+            input: 'npm run typecheck',
+            output: '> app@1.0.0 typecheck\n> tsc --noEmit',
+          },
         ],
         changes: [
           { path: 'server/routes/feature.ts', add: 48, del: 3 },
-          { path: 'shared/schema.ts', add: 12, del: 0 },
+          { path: 'shared/schema.ts', add: 4, del: 1 },
         ],
-        text: '接口已经实现：新增路由并在 `shared/schema.ts` 里补了入参校验，非法参数会返回 400 和具体原因。类型检查通过。',
+        text: "接口已经实现：新增路由并在 `shared/schema.ts` 里补了入参校验，非法参数会返回 `400` 和具体原因。类型检查通过。\n\n```ts\napp.post('/api/feature', async (c) => {\n  const input = TaskInput.parse(await c.req.json())\n  return c.json(await createFeature(input), 201)\n})\n```\n\n```mermaid\nflowchart LR\n  A[页面] -->|POST /api/feature| B[路由]\n  B --> C{校验}\n  C -->|通过| D[(数据)]\n  C -->|失败| E[400]\n```",
       }
     case 'frontend':
       return {
@@ -102,10 +121,17 @@ function stepOutput(step: TaskStep, task: Task, prompt: string, agents: Agent[],
       return {
         tools: [
           { kind: 'edit', label: 'tests/feature.test.ts', detail: '+40' },
-          { kind: 'run', label: 'npm test', detail: '24 passed' },
+          {
+            kind: 'run',
+            label: 'npm test',
+            detail: '24 passed',
+            input: 'npm test',
+            output:
+              ' ✓ tests/schema.test.ts (8)\n ✓ tests/routes.test.ts (11)\n ✓ tests/feature.test.ts (5)\n\n Test Files  3 passed (3)\n      Tests  24 passed (24)\n   Duration  1.82s',
+          },
         ],
         changes: [{ path: 'tests/feature.test.ts', add: 40, del: 0 }],
-        text: '补了 5 个测试用例，覆盖正常提交、重复提交和参数错误。全部 24 个测试通过。',
+        text: '补了 5 个测试用例，全部 24 个测试通过：\n\n| 用例 | 覆盖的情况 |\n| --- | --- |\n| 正常提交 | 返回 201 和新记录 |\n| 重复提交 | 返回 409 |\n| 参数错误 | 返回 400 和字段说明 |\n\n运行方式：\n\n```bash\nnpm test -- tests/feature.test.ts\n```',
       }
     case 'review':
       return {

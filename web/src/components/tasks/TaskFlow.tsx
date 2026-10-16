@@ -83,7 +83,7 @@ export function TaskFlow({ task, onOpenChat }: { task: Task; onOpenChat: () => v
     : []
 
   return (
-    <div className="flex flex-col">
+    <div className="flex min-h-0 flex-1 flex-col">
       <FlowCanvas
         flow={flow}
         views={views}
@@ -96,27 +96,29 @@ export function TaskFlow({ task, onOpenChat }: { task: Task; onOpenChat: () => v
           setFollow(false)
         }}
         edgeTone={edgeTone}
-        className="flex h-[min(440px,55vh)] border-b bg-panel"
+        className="flex h-[min(440px,50vh)] shrink-0 border-b bg-panel"
       />
       {step && (
-        <div className="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-4 py-6 md:px-6">
-          <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} />
-          {!msgs.length && step.status !== 'running' && (
-            <p className="text-[13px] text-subtle">
-              {step.status === 'pending'
-                ? '这个节点还没开始执行。'
-                : step.status === 'skipped'
-                  ? '没有执行。'
-                  : '没有输出。'}
-            </p>
-          )}
-          <button
-            onClick={onOpenChat}
-            className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
-          >
-            <MessageSquareText className="h-3.5 w-3.5" />
-            在对话中查看完整过程
-          </button>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="mx-auto flex w-full max-w-[780px] flex-col gap-4 px-4 py-6 md:px-6">
+            <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} />
+            {!msgs.length && step.status !== 'running' && (
+              <p className="text-[13px] text-subtle">
+                {step.status === 'pending'
+                  ? '这个节点还没开始执行。'
+                  : step.status === 'skipped'
+                    ? '没有执行。'
+                    : '没有输出。'}
+              </p>
+            )}
+            <button
+              onClick={onOpenChat}
+              className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
+            >
+              <MessageSquareText className="h-3.5 w-3.5" />
+              在对话中查看完整过程
+            </button>
+          </div>
         </div>
       )}
     </div>

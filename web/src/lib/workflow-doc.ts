@@ -1,4 +1,5 @@
 import { marked } from 'marked'
+import hljs from 'highlight.js/lib/common'
 import type { Agent } from '@shared/schema'
 
 /** 工作流说明的模板：目标、规范、完成标准（步骤在流程图里编辑） */
@@ -47,8 +48,28 @@ export function renderDoc(doc: string, teamNames: Set<string>) {
   }
   renderer.image = ({ href, text }) =>
     safe(href) && /^https?:/i.test(href) ? `<img src="${escape(href)}" alt="${escape(text)}">` : escape(text)
+  // 代码块参照 Claude Code：顶部一条语言名和复制按钮，内容按语言高亮；mermaid 先显示源码，渲染组件再换成图
+  renderer.code = ({ text, lang }) => {
+    const name = (lang ?? '').trim().split(/\s+/)[0].toLowerCase()
+    if (name === 'mermaid')
+      return `<div class="md-mermaid" data-src="${escape(text)}"><pre><code>${escape(text)}</code></pre></div>`
+    let body = escape(text)
+    try {
+      if (name && hljs.getLanguage(name)) body = hljs.highlight(text, { language: name, ignoreIllegals: true }).value
+      else if (!name && text.length < 4000) body = hljs.highlightAuto(text).value
+    } catch {
+      // 高亮失败就显示原文
+    }
+    return `<div class="md-code"><div class="md-code-bar"><span>${escape(name || 'text')}</span><button type="button" class="md-copy" data-copy>复制</button></div><pre><code class="hljs">${body}</code></pre></div>`
+  }
   const html = marked.parse(doc, { renderer, async: false, gfm: true, breaks: true }) as string
-  // 只替换标签之外的文本里的 @提及
+  // 只替换标签之外的文本里的 @提及；代码块和行内代码里的 @ 原样保留
+  return html.replace(/(<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>)|[^<]+(?=<|$)|<[^>]*>/g, (part, code) =>
+    code || part.startsWith('<') ? part : mention(part, teamNames),
+  )
+}
+
+function mention(html: string, teamNames: Set<string>) {
   return html.replace(
     /(^|>)([^<]*)/g,
     (_, lead: string, text: string) =>

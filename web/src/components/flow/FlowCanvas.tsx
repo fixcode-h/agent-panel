@@ -28,6 +28,7 @@ import type { Agent, Flow, StepStatus } from '@shared/schema'
 import { END, START, wouldCycle } from '@shared/flow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { cliColor } from '@/lib/cli-style'
 import { StepIcon } from '@/components/tasks/TaskStatusIcon'
 
 export type HookSlot = 'start' | 'review' | 'end'
@@ -40,6 +41,9 @@ export interface NodeView {
   agent?: Agent
   /** Agent 下面的一行：模型或者「主 Agent」 */
   sub: string
+  /** 用的是工作流的主 Agent */
+  main?: boolean
+  model?: string
   /** 流程节点调用的流程名 */
   flowText?: string
   note?: string
@@ -54,48 +58,79 @@ type TermData = { kind: 'start' | 'end'; label: string; sub?: string; status?: S
 
 const ring: Record<StepStatus, string> = {
   pending: '',
-  running: 'ring-2 ring-accent/60 border-accent',
-  done: 'border-success/60',
-  failed: 'ring-2 ring-danger/40 border-danger',
-  skipped: 'opacity-60',
+  running: 'node-running border-accent',
+  done: 'border-success/50',
+  failed: 'ring-2 ring-danger/30 border-danger/70',
+  skipped: 'opacity-55',
 }
 
+/**
+ * 流程图里的一个节点：标题和执行者在上，模型、说明在中间，开始 / 验收 / 结束流程在底部。
+ * 选中只高亮节点自己（主题色描边和柔光），执行中有缓慢呼吸的光晕。
+ */
 const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardData>>) {
   const v = data.view
+  const agent = v.kind === 'agent' ? v.agent : undefined
   return (
     <div
       className={cn(
-        'w-[248px] rounded-[14px] border bg-card text-left shadow-card transition-[box-shadow,border-color]',
+        'group/node w-[264px] overflow-hidden rounded-2xl border bg-card text-left shadow-card transition-[box-shadow,border-color,transform] duration-150',
+        'hover:border-line-strong hover:shadow-pop',
         v.status && ring[v.status],
         v.loose && 'border-dashed opacity-80',
-        selected && 'border-accent shadow-pop ring-2 ring-accent/30',
+        selected && 'node-selected border-accent',
       )}
     >
       <Handle type="target" position={Position.Left} />
-      <div className="flex items-start gap-2.5 px-3 pt-3 pb-2.5">
-        {v.kind === 'agent' && v.agent ? (
-          <AgentAvatar icon={v.agent.icon} cli={v.agent.cli} size="sm" dim={!v.agent.enabled} />
+      <div className="flex items-start gap-2.5 px-3.5 pt-3 pb-2.5">
+        {agent ? (
+          <AgentAvatar icon={agent.icon} cli={agent.cli} size="md" dim={!agent.enabled} />
         ) : (
           <span
             className={cn(
-              'grid h-8 w-8 shrink-0 place-items-center rounded-lg',
+              'grid h-9 w-9 shrink-0 place-items-center rounded-[9px]',
               v.kind === 'flow' ? 'bg-accent-soft text-accent' : 'bg-field text-subtle',
             )}
           >
-            <WorkflowIcon className="h-4 w-4" />
+            <WorkflowIcon className="h-[18px] w-[18px]" />
           </span>
         )}
-        <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px] leading-5 font-medium">{v.title}</span>
-          <span className="truncate text-[11.5px] text-subtle">
-            {v.kind === 'flow' ? `调用流程 · ${v.flowText || '未选择'}` : v.sub}
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-[13.5px] leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] leading-4 text-subtle">
+            {v.kind === 'flow' ? (
+              <span className="truncate">调用流程 · {v.flowText || '未选择'}</span>
+            ) : agent ? (
+              <>
+                <span className="truncate">{agent.name}</span>
+                {v.main && (
+                  <span className="shrink-0 rounded px-1 text-[10.5px] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
+                    主
+                  </span>
+                )}
+                {/* 模型放在同一行，节点高度不变，已经排好的流程图不会重叠 */}
+                {v.model && (
+                  <span className="ml-auto flex min-w-0 shrink items-center gap-1 rounded bg-field px-1 font-mono text-[10.5px] leading-4 text-muted ring-1 ring-line ring-inset">
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cliColor(agent.cli) }} />
+                    <span className="truncate">{v.model}</span>
+                  </span>
+                )}
+              </>
+            ) : (
+              <span className="truncate text-warning">{v.sub}</span>
+            )}
           </span>
         </span>
         {v.status && v.status !== 'pending' && <StepIcon status={v.status} className="mt-0.5" />}
       </div>
-      {v.note && <p className="line-clamp-2 px-3 pb-2.5 text-[11.5px] leading-relaxed text-subtle">{v.note}</p>}
+      {/* 行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */}
+      {v.note && (
+        <div className="px-3.5 pb-3">
+          <p className="line-clamp-2 text-[11.5px] leading-[1.6] text-subtle">{v.note}</p>
+        </div>
+      )}
       {(v.hooks.length > 0 || v.loose) && (
-        <div className="flex flex-wrap gap-1 border-t px-2.5 py-2">
+        <div className="flex flex-wrap gap-1 border-t bg-panel/60 px-3 py-2">
           {v.loose && <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">未连接</span>}
           {v.hooks.map((h) => (
             <span
@@ -103,7 +138,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               title={`${HOOK_LABEL[h.slot]}：${h.label}`}
               className={cn(
                 'inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]',
-                h.slot === 'review' ? 'bg-accent-soft text-accent' : 'bg-field text-muted',
+                h.slot === 'review' ? 'bg-accent-soft text-accent' : 'bg-field text-muted ring-1 ring-line ring-inset',
               )}
             >
               {h.status && h.status !== 'pending' && <StepIcon status={h.status} className="h-3 w-3" />}
@@ -124,8 +159,8 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
   return (
     <div
       className={cn(
-        'flex items-center gap-2 rounded-full border bg-card py-1.5 pr-4 pl-1.5 shadow-card',
-        selected && 'border-accent ring-2 ring-accent/30',
+        'flex items-center gap-2 rounded-full border bg-card py-1.5 pr-4 pl-1.5 shadow-card transition-[box-shadow,border-color] hover:border-line-strong hover:shadow-pop',
+        selected && 'node-selected border-accent',
         data.status && data.status !== 'pending' && ring[data.status],
       )}
     >

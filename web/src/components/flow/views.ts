@@ -30,6 +30,8 @@ export function nodeViews(
         kind: n.kind,
         agent,
         sub: agent ? `${agent.name}${n.agentId ? '' : ' · 主 Agent'} · ${modelOf(agent)}` : '还没有选择主 Agent',
+        main: !n.agentId,
+        model: agent ? modelOf(agent) : undefined,
         flowText: refLabel(n.flow, w, workflows),
         note: plainLine(n.instructions),
         hooks,

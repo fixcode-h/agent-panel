@@ -11,6 +11,15 @@ const cache = new Map<string, CliModels>()
 const pending = new Map<string, Promise<CliModels>>()
 const listeners = new Set<() => void>()
 
+/** 思考强度从低到高的顺序；CLI 返回的顺序不固定 */
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+export const sortEfforts = <T>(list: T[], id: (x: T) => string) =>
+  [...list].sort((a, b) => {
+    const i = EFFORT_ORDER.indexOf(id(a))
+    const j = EFFORT_ORDER.indexOf(id(b))
+    return (i < 0 ? 99 : i) - (j < 0 ? 99 : j)
+  })
+
 /** CLI 新出的思考强度没有中文名时，直接显示原值 */
 const EFFORT_LABELS: Record<string, string> = {
   none: '不思考',
@@ -58,13 +67,16 @@ export function useCliDef(id: string | undefined): CliDefinition | undefined {
     models: data.models.map((m) => {
       // 下拉里第二行显示的说明：有展示名用展示名，没有用描述
       const label = (m.label !== m.id ? m.label : m.description) ?? ''
-      return { id: m.id, label: m.isDefault ? `${label}${label ? ' · ' : ''}CLI 默认` : label }
+      return { id: m.id, label, isDefault: m.isDefault, defaultEffort: m.defaultEffort }
     }),
-    efforts: data.efforts.length
-      ? data.efforts.map((e) => ({
-          id: e,
-          label: EFFORT_LABELS[e] ?? base.efforts.find((x) => x.id === e)?.label ?? e,
-        }))
-      : base.efforts,
+    efforts: sortEfforts(
+      data.efforts.length
+        ? data.efforts.map((e) => ({
+            id: e,
+            label: EFFORT_LABELS[e] ?? base.efforts.find((x) => x.id === e)?.label ?? e,
+          }))
+        : base.efforts,
+      (e) => e.id,
+    ),
   }
 }

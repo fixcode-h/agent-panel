@@ -42,7 +42,7 @@ export interface CliDefinition {
   command: string
   versionArgs: string[]
   /** 模型建议；用户仍可以手填任意模型名 */
-  models: { id: string; label: string }[]
+  models: { id: string; label: string; isDefault?: boolean; defaultEffort?: string }[]
   /** 支持的思考强度（从低到高）；为空表示不支持 */
   efforts: { id: string; label: string }[]
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
@@ -129,7 +129,7 @@ export const CLIS: CliDefinition[] = [
   },
   {
     id: 'codex',
-    name: 'Codex CLI',
+    name: 'Codex',
     command: 'codex',
     versionArgs: ['--version'],
     // 读不到本机 Codex 时的建议；能读到时以 `codex app-server` 返回的为准
@@ -183,7 +183,7 @@ export const CLIS: CliDefinition[] = [
     versionArgs: ['--version'],
     // 完整列表见 cmdc --list-models
     models: [
-      { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash（默认）' },
+      { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash', isDefault: true },
       { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
       { id: 'moonshotai/kimi-k3', label: 'Kimi K3' },
       { id: 'zai-org/glm-5.3', label: 'GLM-5.3' },

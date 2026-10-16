@@ -89,7 +89,7 @@ writeFileSync(
     `Agent 面板 v${version}`,
     '',
     '1. 安装 Node.js 20 或更新版本：https://nodejs.org',
-    '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex CLI（codex）或 Command Code（cmdc）',
+    '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex（codex）或 Command Code（cmdc）',
     '3. 启动：Windows 双击 start.cmd；macOS / Linux 运行 ./start.sh（或 node server.mjs --prod）',
     '4. 浏览器打开 http://127.0.0.1:8787',
     '',

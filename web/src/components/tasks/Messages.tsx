@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Brain, ChevronRight, FileText, Info, PencilLine, Search, Terminal, Wrench } from 'lucide-react'
-import type { TaskMessage, ToolUse } from '@shared/schema'
+import { useEffect, useRef, useState } from 'react'
+import { Brain, ChevronRight, Info } from 'lucide-react'
+import type { TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
+import { ToolRow } from './ToolRow'
+import { Markdown } from './Markdown'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
 
@@ -13,38 +14,11 @@ function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
   return -1
 }
 
-export const toolIcon = {
-  read: FileText,
-  edit: PencilLine,
-  run: Terminal,
-  search: Search,
-  other: Wrench,
-}
-
 export function SystemNote({ text, className }: { text: string; className?: string }) {
   return (
     <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
       <Info className="mt-px h-3.5 w-3.5 shrink-0" />
       <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
-    </div>
-  )
-}
-
-export function ToolRow({ tool }: { tool: ToolUse }) {
-  const Icon = toolIcon[tool.kind]
-  const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
-  return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-field px-2.5 py-1.5 font-mono text-xs text-muted">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-      <span className="min-w-0 flex-1 truncate">{tool.label}</span>
-      {diff ? (
-        <span className="shrink-0">
-          {diff[1] && <span className="text-success">{diff[1]}</span>}{' '}
-          {diff[2] && <span className="text-danger">{diff[2]}</span>}
-        </span>
-      ) : (
-        tool.detail && <span className="shrink-0 text-subtle">{tool.detail}</span>
-      )}
     </div>
   )
 }
@@ -106,7 +80,6 @@ export function AgentMessage({
   const { modelOf } = useAgentView()
   const { agents } = useData()
   const a = agents.find((x) => x.id === m.agentId)
-  const html = useMemo(() => renderDoc(m.text, teamNames), [m.text, teamNames])
   return (
     <div className="flex gap-3">
       {compact ? (
@@ -134,20 +107,27 @@ export function AgentMessage({
             ))}
           </div>
         )}
-        {m.text && (
-          <div
-            className={cn('chat-md [overflow-wrap:anywhere]', live && 'streaming-caret')}
-            dangerouslySetInnerHTML={{ __html: html }}
-          />
-        )}
+        {m.text && <Markdown text={m.text} teamNames={teamNames} live={live} />}
       </div>
     </div>
   )
 }
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
-export function Msgs({ msgs, teamNames, live }: { msgs: TaskMessage[]; teamNames: Set<string>; live?: boolean }) {
+export function Msgs({
+  msgs,
+  teamNames,
+  live,
+  slot,
+}: {
+  msgs: TaskMessage[]
+  teamNames: Set<string>
+  live?: boolean
+  /** 放在第一条 Agent 消息名字下面的内容（展开后的折叠开关） */
+  slot?: React.ReactNode
+}) {
   const lastAgent = lastIndex(msgs, (m) => m.role === 'agent')
+  const firstAgent = msgs.findIndex((m) => m.role === 'agent')
   return (
     <>
       {msgs.map((m, k) =>
@@ -159,6 +139,7 @@ export function Msgs({ msgs, teamNames, live }: { msgs: TaskMessage[]; teamNames
             m={m}
             teamNames={teamNames}
             live={live && k === lastAgent}
+            slot={k === firstAgent ? slot : undefined}
             compact={k > 0 && msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
           />
         ),
@@ -193,10 +174,8 @@ export function FoldedRun({ msgs, teamNames, live }: { msgs: TaskMessage[]; team
   )
   if (open)
     return (
-      <>
-        <div className="pl-[38px]">{toggle}</div>
-        <Msgs msgs={msgs} teamNames={teamNames} />
-      </>
+      // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方
+      <Msgs msgs={msgs} teamNames={teamNames} slot={toggle} />
     )
   // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
   return (

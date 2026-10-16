@@ -1,5 +1,6 @@
 import { SquareTerminal } from 'lucide-react'
 import { getCli } from '@shared/clis'
+import type { Settings } from '@shared/schema'
 import { agentCli, agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -12,6 +13,7 @@ export function CommandPreview({
   extraArgs,
   className,
   title = '命令预览',
+  override,
 }: {
   cli: string
   model: string
@@ -19,9 +21,12 @@ export function CommandPreview({
   extraArgs: string[]
   className?: string
   title?: string
+  /** 设置页还没保存的改动：预览要跟着输入马上变，不等自动保存 */
+  override?: Settings['clis'][string]
 }) {
   const { settings } = useData()
-  const s = settings ?? defaultSettings()
+  const saved = settings ?? defaultSettings()
+  const s = override ? { ...saved, clis: { ...saved.clis, [cli]: override } } : saved
   const id = agentCli({ cli }, s)
   const def = getCli(id)
   if (!def) return null
