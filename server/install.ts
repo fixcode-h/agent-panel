@@ -10,6 +10,7 @@ import { brewName, claudeNative, NPM, npmCommandPath } from './cli-source.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { rm } from 'node:fs/promises'
+import { t } from '../shared/i18n.ts'
 
 const TIMEOUT = 10 * 60_000
 const isWin = process.platform === 'win32'
@@ -41,11 +42,13 @@ export function installApi() {
   const hint = (job: CliInstallJob, log: string) => {
     if (/EACCES|permission denied|EPERM/i.test(log))
       return isWin
-        ? '没有权限写入安装目录。请用管理员身份打开终端运行下面的命令。'
-        : '没有权限写入 npm 的全局目录。可以在终端里用 sudo 运行下面的命令，或者把 npm 的全局目录改到自己的用户目录下。'
+        ? t('没有权限写入安装目录。请用管理员身份打开终端运行下面的命令。')
+        : t(
+            '没有权限写入 npm 的全局目录。可以在终端里用 sudo 运行下面的命令，或者把 npm 的全局目录改到自己的用户目录下。',
+          )
     if (/ENOTFOUND|ETIMEDOUT|ECONNRESET|EAI_AGAIN|network/i.test(log))
-      return '连不上 npm 仓库，请检查网络或代理（可以在终端里设置 npm 镜像）后重试。'
-    return job.action === 'install' ? '安装失败，详细信息见下面的输出。' : '卸载失败，详细信息见下面的输出。'
+      return t('连不上 npm 仓库，请检查网络或代理（可以在终端里设置 npm 镜像）后重试。')
+    return job.action === 'install' ? t('安装失败，详细信息见下面的输出。') : t('卸载失败，详细信息见下面的输出。')
   }
 
   /** 按安装方式决定执行什么：没装时用 npm 安装；已经装了就用它原来的方式更新或卸载 */
@@ -83,11 +86,13 @@ export function installApi() {
     if (how === 'native-remove') {
       // 官方安装脚本装的 Claude Code：删掉命令和版本文件（登录信息和 ~/.claude 里的配置不动）
       const n = claudeNative()
-      job.command = isWin ? `del "${n.bin}" 并删除 "${n.data}"` : `rm -f ${n.bin} && rm -rf ${n.data}`
+      job.command = isWin
+        ? t('del "{bin}" 并删除 "{data}"', { bin: n.bin, data: n.data })
+        : `rm -f ${n.bin} && rm -rf ${n.data}`
       try {
         await rm(n.bin, { force: true })
         await rm(n.data, { recursive: true, force: true })
-        append('已删除\n')
+        append(t('已删除') + '\n')
         r = { code: 0 }
       } catch (e) {
         append(`${(e as Error).message}\n`)
@@ -124,7 +129,11 @@ export function installApi() {
         const settings = await getSettings()
         const cs = cliSettings(settings, job.cli)
         await saveSettings({ ...settings, clis: { ...settings.clis, [job.cli]: { ...cs, command: npmPath } } })
-        job.note = `PATH 里先找到的是 ${status.path ?? status.command}（${semver(status.version)?.join('.') ?? '旧版本'}），已改用 npm 安装的 ${npmPath}。`
+        job.note = t('PATH 里先找到的是 {path}（{version}），已改用 npm 安装的 {npm}。', {
+          path: status.path ?? status.command,
+          version: semver(status.version)?.join('.') ?? t('旧版本'),
+          npm: npmPath,
+        })
         invalidateClis()
         status = (await detectClis(true)).find((c) => c.id === job.cli)
       }
@@ -134,20 +143,26 @@ export function installApi() {
       job.status = 'failed'
       job.error =
         how !== 'native-remove' && how.command === 'brew'
-          ? '没有找到 brew。'
-          : '没有找到 npm。请先安装 Node.js（https://nodejs.org），它自带 npm。'
+          ? t('没有找到 brew。')
+          : t('没有找到 npm。请先安装 Node.js（https://nodejs.org），它自带 npm。')
     } else if (r.killed === 'timeout') {
       job.status = 'failed'
-      job.error = '超过 10 分钟还没有完成，已停止。可以复制下面的命令到终端里运行。'
+      job.error = t('超过 10 分钟还没有完成，已停止。可以复制下面的命令到终端里运行。')
     } else if (r.code !== 0) {
       job.status = 'failed'
       job.error = hint(job, job.log)
     } else if (job.action === 'uninstall' && status?.installed) {
       job.status = 'failed'
-      job.error = `已经执行了卸载，但还能找到 ${status.path ?? status.command}。它不是 npm 、Homebrew 或官方安装脚本装的，请手动删除这个文件，或用安装它的方式卸载。`
+      job.error = t(
+        '已经执行了卸载，但还能找到 {path}。它不是 npm 、Homebrew 或官方安装脚本装的，请手动删除这个文件，或用安装它的方式卸载。',
+        { path: status.path ?? status.command },
+      )
     } else if (job.action === 'install' && !status?.installed) {
       job.status = 'failed'
-      job.error = `安装完成，但还找不到「${status?.command ?? pkg}」。可能需要重新打开终端或重启本服务让 PATH 生效，或者在下面填写可执行文件的完整路径。`
+      job.error = t(
+        '安装完成，但还找不到「{command}」。可能需要重新打开终端或重启本服务让 PATH 生效，或者在下面填写可执行文件的完整路径。',
+        { command: status?.command ?? pkg },
+      )
     } else if (
       job.action === 'install' &&
       before?.installed &&
@@ -159,17 +174,20 @@ export function installApi() {
       const v = now.stdout.trim().split('\n').at(-1)?.trim()
       if (v && newer(v, status?.version)) {
         job.status = 'failed'
-        job.error = `更新命令执行完了，但运行的 ${status?.path ?? status?.command} 还是 ${semver(status?.version)?.join('.')}。可能还有另一份旧的装在别处，请在下面的「可执行文件」里填新版本的完整路径。`
+        job.error = t(
+          '更新命令执行完了，但运行的 {path} 还是 {version}。可能还有另一份旧的装在别处，请在下面的「可执行文件」里填新版本的完整路径。',
+          { path: status?.path ?? status?.command ?? '', version: semver(status?.version)?.join('.') ?? '' },
+        )
       } else job.status = 'done'
     } else job.status = 'done'
   }
 
   routes.post('/:id/:action{install|uninstall}', (c) => {
     const def = getCli(c.req.param('id'))
-    if (!def) return c.json({ error: '未知的 CLI' }, 404)
+    if (!def) return c.json({ error: t('未知的 CLI') }, 404)
     const action = c.req.param('action') as CliInstallJob['action']
     if ([...jobs.values()].some((j) => j.status === 'running'))
-      return c.json({ error: '有一个安装 / 卸载还在进行，请等它完成' }, 409)
+      return c.json({ error: t('有一个安装 / 卸载还在进行，请等它完成') }, 409)
     const job: CliInstallJob = {
       id: randomUUID(),
       cli: def.id,
@@ -189,7 +207,7 @@ export function installApi() {
 
   routes.get('/:id/update', async (c) => {
     const def = getCli(c.req.param('id'))
-    if (!def) return c.json({ error: '未知的 CLI' }, 404)
+    if (!def) return c.json({ error: t('未知的 CLI') }, 404)
     const status = (await detectClis()).find((x) => x.id === def.id)
     let hit = latest.get(def.id)
     if (!hit || c.req.query('refresh') === '1' || Date.now() - hit.at > 30 * 60_000) {
@@ -197,7 +215,7 @@ export function installApi() {
       const v = r.stdout.trim().split('\n').at(-1)?.trim()
       hit = semver(v)
         ? { at: Date.now(), version: v }
-        : { at: Date.now(), error: r.spawnError ?? (r.stderr.trim().split('\n').at(-1) || '查不到最新版本') }
+        : { at: Date.now(), error: r.spawnError ?? (r.stderr.trim().split('\n').at(-1) || t('查不到最新版本')) }
       latest.set(def.id, hit)
     }
     const current = semver(status?.version)?.join('.')
@@ -219,7 +237,7 @@ export function installApi() {
 
   routes.get('/jobs/:jobId', (c) => {
     const job = jobs.get(c.req.param('jobId'))
-    return job ? c.json(job) : c.json({ error: '没有这个操作' }, 404)
+    return job ? c.json(job) : c.json({ error: t('没有这个操作') }, 404)
   })
 
   return routes

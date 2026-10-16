@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
 import { api } from './api'
+import { t } from '@shared/i18n'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {
@@ -108,7 +109,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setWorkflows(w)
         setClis(l)
       })
-      .catch((e) => toast.error(`加载失败：${(e as Error).message}`))
+      .catch((e) => toast.error(t('加载失败：{msg}', { msg: (e as Error).message })))
       .finally(() => setLoading(false))
   }, [])
 

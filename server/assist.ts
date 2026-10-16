@@ -20,6 +20,7 @@ import { detectClis } from './detect.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
+import { t } from '../shared/i18n.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -104,7 +105,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
           role: 'system',
           agentId: '',
           step: '',
-          text: '格式不对，已让 CLI 修正。',
+          text: t('格式不对，已让 CLI 修正。'),
           raw: '',
           tools: [],
           at: new Date().toISOString(),
@@ -163,14 +164,26 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
           job.outChars = text.length
         },
       })
-      if (r.killed === 'stopped') return fail(job, '已停止')
-      if (r.killed === 'timeout') return fail(job, '超过 5 分钟没有完成，已停止')
+      if (r.killed === 'stopped') return fail(job, t('已停止'))
+      if (r.killed === 'timeout') return fail(job, t('超过 5 分钟没有完成，已停止'))
       if (r.spawnError)
-        return fail(job, `${r.spawnError}。请确认已安装 ${def.name}（${def.installHint}），或在设置里填写路径。`)
+        return fail(
+          job,
+          t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
+            error: r.spawnError,
+            cli: def.name,
+            hint: def.installHint,
+          }),
+        )
       if (result ? !result.ok : r.code !== 0)
         return fail(
           job,
-          `${def.name} 执行失败：${[result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')].filter(Boolean).join('\n') || '没有更多信息'}`,
+          t('{cli} 执行失败：{detail}', {
+            cli: def.name,
+            detail:
+              [result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')].filter(Boolean).join('\n') ||
+              t('没有更多信息'),
+          }),
         )
 
       const ex = extractJson(text)
@@ -182,7 +195,8 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         job.status = 'done'
         return
       }
-      if (attempt === 2) return fail(job, `${def.name} 两次都没有按格式输出：${res.error}`)
+      if (attempt === 2)
+        return fail(job, t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error ?? '' }))
       // 把错误告诉 CLI，让它修正一次
       messages = [
         ...messages,
@@ -202,15 +216,16 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       const p = AssistInput.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const input = p.data
-      if (!getCli(input.cli)) return bad(c, `未知的 CLI：${input.cli}`)
+      if (!getCli(input.cli)) return bad(c, t('未知的 CLI：{cli}', { cli: input.cli }))
       if (!cliSettings(await getSettings(), input.cli).enabled)
-        return bad(c, `${getCli(input.cli)!.name} 在设置里被停用了`)
+        return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
       const target = input.targetId
         ? input.kind === 'agent'
           ? await deps.agents.get(input.targetId)
           : await deps.workflows.get(input.targetId)
         : undefined
-      if (input.targetId && !target) return bad(c, `要优化的${input.kind === 'agent' ? ' Agent' : '工作流'}不存在`, 404)
+      if (input.targetId && !target)
+        return bad(c, input.kind === 'agent' ? t('要优化的 Agent 不存在') : t('要优化的工作流不存在'), 404)
       const settings = await getSettings()
       const ctx: AssistContext = {
         agents: await deps.agents.list(),
@@ -239,11 +254,11 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
     })
     .get('/:id', (c) => {
       const j = jobs.get(c.req.param('id'))
-      return j ? c.json(view(j)) : bad(c, '找不到这次生成，可能已过期', 404)
+      return j ? c.json(view(j)) : bad(c, t('找不到这次生成，可能已过期'), 404)
     })
     .post('/:id/stop', (c) => {
       const j = jobs.get(c.req.param('id'))
-      if (!j) return bad(c, '找不到这次生成', 404)
+      if (!j) return bad(c, t('找不到这次生成'), 404)
       j.abort.abort()
       return c.json(view(j))
     })

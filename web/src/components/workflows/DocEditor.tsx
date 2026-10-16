@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { AtSign, Eye, FileText, PencilLine } from 'lucide-react'
 import type { Agent } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -53,19 +54,19 @@ export function DocEditor({
     <div className="overflow-hidden rounded-xl border border-line-strong bg-field">
       <div className="flex flex-wrap items-center gap-2 border-b bg-panel px-2 py-2">
         <div className="flex rounded-lg bg-field p-0.5 ring-1 ring-line">
-          {tab('edit', '编辑', PencilLine)}
-          {tab('preview', '预览', Eye)}
+          {tab('edit', t('编辑'), PencilLine)}
+          {tab('preview', t('预览'), Eye)}
         </div>
         <div className="ml-auto flex items-center gap-1">
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="sm" disabled={mode !== 'edit' || team.length === 0}>
                 <AtSign className="h-3.5 w-3.5" />
-                引用 Agent
+                {t('引用 Agent')}
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[240px]">
-              <div className="px-2.5 pt-1 pb-1.5 text-xs text-subtle">在光标处插入 Agent 名称</div>
+              <div className="px-2.5 pt-1 pb-1.5 text-xs text-subtle">{t('在光标处插入 Agent 名称')}</div>
               {team.map((a) => (
                 <PopoverClose key={a.id} className={menuItem} onClick={() => insert(`@${a.name} `)}>
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" />
@@ -81,17 +82,17 @@ export function DocEditor({
             onClick={() => (value.trim() ? insert(`\n${onTemplate()}`) : onChange(onTemplate()))}
           >
             <FileText className="h-3.5 w-3.5" />
-            插入模板
+            {t('插入模板')}
           </Button>
         </div>
       </div>
       {mode === 'edit' ? (
         <textarea
           ref={ref}
-          aria-label="工作流说明"
+          aria-label={t('工作流说明')}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={'用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。'}
+          placeholder={t('用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。')}
           className={cn(
             fieldClass,
             'block min-h-[420px] resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0',
@@ -102,7 +103,7 @@ export function DocEditor({
           {value.trim() ? (
             <div dangerouslySetInnerHTML={{ __html: renderDoc(value, new Set(team.map((a) => a.name))) }} />
           ) : (
-            <p className="text-subtle">文档还是空的。</p>
+            <p className="text-subtle">{t('文档还是空的。')}</p>
           )}
         </div>
       )}

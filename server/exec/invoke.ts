@@ -2,6 +2,7 @@ import { getCli, type BuildOptions } from '../../shared/clis.ts'
 import { codexAppSession } from './codex-app.ts'
 import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
+import { t } from '../../shared/i18n.ts'
 
 /**
  * 调用一次 CLI，把输出统一成 CliEvent。Claude Code、Command Code 是「stdin 写任务描述 + stdout 一行一个事件」，
@@ -52,7 +53,7 @@ export async function invokeCli(o: {
     })
     // 没等到 turn/completed 就退出了（崩溃、配置错误），算失败
     if (!session.finished && !r.killed && !r.spawnError)
-      o.onEvent({ type: 'result', ok: false, error: 'Codex 没有完成这一轮就退出了' })
+      o.onEvent({ type: 'result', ok: false, error: t('Codex 没有完成这一轮就退出了') })
     return r
   }
 
@@ -128,21 +129,29 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
     const q = input?.questions?.[0] ?? {}
     return {
       kind: 'question',
-      title: str(q.question) || '有一个问题需要你回答',
+      title: str(q.question) || t('有一个问题需要你回答'),
       detail: str(q.header),
       options: (q.options ?? []).map((x: any) => str(x?.label)).filter(Boolean),
     }
   }
   if (name === 'Bash')
-    return { kind: 'command', title: `运行命令：${oneLine(str(input.command))}`, detail: str(input.description) }
+    return {
+      kind: 'command',
+      title: t('运行命令：{cmd}', { cmd: oneLine(str(input.command)) }),
+      detail: str(input.description),
+    }
   if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name))
     return {
       kind: 'file',
-      title: `${name === 'Write' ? '写入' : '修改'}文件：${str(input.file_path || input.notebook_path)}`,
+      title:
+        name === 'Write'
+          ? t('写入文件：{file}', { file: str(input.file_path || input.notebook_path) })
+          : t('修改文件：{file}', { file: str(input.file_path || input.notebook_path) }),
       detail: '',
     }
-  if (name === 'WebFetch') return { kind: 'tool', title: `访问网页：${str(input.url)}`, detail: str(input.prompt) }
-  return { kind: 'tool', title: `使用工具：${name}`, detail: clipDetail(JSON.stringify(input, null, 2)) }
+  if (name === 'WebFetch')
+    return { kind: 'tool', title: t('访问网页：{url}', { url: str(input.url) }), detail: str(input.prompt) }
+  return { kind: 'tool', title: t('使用工具：{name}', { name }), detail: clipDetail(JSON.stringify(input, null, 2)) }
 }
 
 /** 允许时交回给 CLI 的参数：问题要带上用户选的答案 */

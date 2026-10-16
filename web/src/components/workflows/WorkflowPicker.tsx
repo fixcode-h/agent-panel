@@ -1,5 +1,6 @@
 import { Check, ChevronDown, Workflow as WorkflowIcon } from 'lucide-react'
 import { useData } from '@/lib/data'
+import { t } from '@shared/i18n'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
 import { fieldClass } from '@/components/ui/input'
@@ -17,7 +18,7 @@ export function WorkflowPicker({
 }) {
   const { workflows, agents, clis } = useData()
   const current = workflows.find((w) => w.id === value)
-  const mainName = (id: string) => agents.find((a) => a.id === id)?.name ?? '未选主 Agent'
+  const mainName = (id: string) => agents.find((a) => a.id === id)?.name ?? t('未选主 Agent')
   return (
     <Popover>
       <PopoverTrigger className={cn(fieldClass, 'flex h-10 cursor-pointer items-center gap-2 text-left')}>
@@ -42,14 +43,14 @@ export function WorkflowPicker({
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate">{w.name}</span>
                 <span className="truncate text-xs text-subtle">
-                  {mainName(w.mainAgentId)} · {w.members.length} 个子 Agent
+                  {mainName(w.mainAgentId)} · {t('{n} 个子 Agent', { n: w.members.length })}
                 </span>
               </span>
               {w.id === value && <Check className="h-4 w-4 text-accent" />}
             </PopoverClose>
           ))}
           {workflows.length === 0 && (
-            <p className="px-2.5 py-2 text-xs text-subtle">还没有工作流，先去工作流页面创建</p>
+            <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有工作流，先去工作流页面创建')}</p>
           )}
         </div>
       </PopoverContent>

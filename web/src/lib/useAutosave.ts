@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
+import { t } from '@shared/i18n'
 
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
@@ -46,7 +47,7 @@ export function useAutosave<T>(value: T, save: (v: T) => Promise<unknown>, valid
       const l = latest.current
       // 离开页面时补存；失败只能用提示告诉用户，页面已经不在了
       if (l.valid && l.serialized !== baseline.current)
-        l.save(l.value).catch((e) => toast.error(`刚才的修改没有保存：${(e as Error).message}`))
+        l.save(l.value).catch((e) => toast.error(t('刚才的修改没有保存：{error}', { error: (e as Error).message })))
     },
     [],
   )

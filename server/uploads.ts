@@ -7,6 +7,7 @@ import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
 import { capture } from './exec/process.ts'
 import { DATA_DIR } from './store.ts'
 import { resolvePath } from './fs.ts'
+import { t } from '../shared/i18n.ts'
 
 /** 用户上传的附件放在数据目录里，不放进项目目录，免得算进任务的文件改动 */
 export const UPLOADS_DIR = path.join(DATA_DIR, 'uploads')
@@ -25,10 +26,13 @@ export function uploadsApi() {
   const routes = new Hono()
   routes.post('/', async (c) => {
     const p = UploadInput.safeParse(await c.req.json().catch(() => null))
-    if (!p.success) return c.json({ error: '上传的内容不对' }, 400)
+    if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
     const buf = Buffer.from(p.data.data, 'base64')
     if (buf.length > MAX_ATTACHMENT_BYTES)
-      return c.json({ error: `「${p.data.name}」超过 ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB` }, 400)
+      return c.json(
+        { error: t('「{name}」超过 {size} MB', { name: p.data.name, size: MAX_ATTACHMENT_BYTES / 1024 / 1024 }) },
+        400,
+      )
     // 每个文件单独一个目录，保留原文件名，Agent 看到的名字和用户选的一样
     const dir = path.join(UPLOADS_DIR, randomUUID())
     await mkdir(dir, { recursive: true })
@@ -44,9 +48,9 @@ export function uploadsRawApi() {
   const routes = new Hono()
   routes.get('/', async (c) => {
     const file = path.resolve(c.req.query('path') ?? '')
-    if (!file.startsWith(UPLOADS_DIR + path.sep)) return c.json({ error: '不是附件' }, 400)
+    if (!file.startsWith(UPLOADS_DIR + path.sep)) return c.json({ error: t('不是附件') }, 400)
     const buf = await readFile(file).catch(() => null)
-    if (!buf) return c.json({ error: '附件已经不在了' }, 404)
+    if (!buf) return c.json({ error: t('附件已经不在了') }, 404)
     const ext = path.extname(file).slice(1).toLowerCase()
     const type = IMAGE_TYPES[ext] ?? 'application/octet-stream'
     return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' })

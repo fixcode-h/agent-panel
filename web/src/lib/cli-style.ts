@@ -1,4 +1,5 @@
 import type { CliDefinition } from '@shared/clis'
+import { t } from '@shared/i18n'
 /** 每种 CLI 的标识色；新增 CLI 时补一项即可，缺省走 fallback */
 const colors: Record<string, string> = {
   claude: '#c96442',
@@ -17,12 +18,18 @@ export const effortLabel = (def: CliDefinition | undefined, id: string) =>
   def?.efforts.find((e) => e.id === id)?.label ?? id
 /** 模型分两组：CLI 自己提供的（命令读到的或内置的），和配置文件里接的第三方 API */
 export const modelGroup = (def: CliDefinition, m: { origin?: 'cli' | 'config' }) =>
-  m.origin === 'config' ? '配置文件 · 第三方 API' : def.id === 'claude' ? `${def.name} 内置` : `${def.name} 读取`
+  m.origin === 'config'
+    ? CONFIG_GROUP()
+    : def.id === 'claude'
+      ? t('{cli} 内置', { cli: def.name })
+      : t('{cli} 读取', { cli: def.name })
+/** 配置文件里第三方 API 模型的组名；排序时按它认组，不按中文前缀 */
+export const CONFIG_GROUP = () => t('配置文件 · 第三方 API')
 /** 模型建议的说明：CLI 自己的默认模型后面标上（默认） */
 export const modelSuggestions = (def: CliDefinition | undefined) =>
   (def?.models ?? []).map((m) => ({
     value: m.id,
-    label: `${m.label}${m.isDefault ? '（默认）' : ''}`,
+    label: m.isDefault ? t('{name}（默认）', { name: m.label }) : m.label,
     group: modelGroup(def!, m),
   }))
 /** CLI 自己的默认模型和它的默认思考强度 */
@@ -34,10 +41,10 @@ export const cliDefaultModel = (def: CliDefinition) => def.models.find((m) => m.
 export function defaultEffortOptions(def: CliDefinition, defaultId?: string) {
   const opts = def.efforts.map((e) => ({
     value: e.id === defaultId ? '' : e.id,
-    label: `${e.id} · ${e.label}${e.id === defaultId ? '（默认）' : ''}`,
+    label: e.id === defaultId ? t('{name}（默认）', { name: `${e.id} · ${e.label}` }) : `${e.id} · ${e.label}`,
   }))
   if (!defaultId || !def.efforts.some((e) => e.id === defaultId))
-    opts.unshift({ value: '', label: defaultId ? `${defaultId}（默认）` : 'auto · 自动（默认）' })
+    opts.unshift({ value: '', label: defaultId ? t('{name}（默认）', { name: defaultId }) : t('auto · 自动（默认）') })
   return opts
 }
 

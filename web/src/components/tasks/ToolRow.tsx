@@ -3,6 +3,7 @@ import { Bot, ChevronRight, FileText, Globe, PencilLine, Search, Sparkles, Termi
 import type { ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { toolVerb } from '@/lib/tasks'
+import { t } from '@shared/i18n'
 
 export const toolIcon = {
   read: FileText,
@@ -171,7 +172,7 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
           ) : (
             !isDiff && (
               <div className="px-3 py-2 font-sans text-xs text-subtle">
-                {tool.kind === 'read' && !input ? tool.label : '没有输出'}
+                {tool.kind === 'read' && !input ? tool.label : t('没有输出')}
               </div>
             )
           )}

@@ -15,6 +15,7 @@ import {
   type WorkflowInput,
   type WorkflowMember,
 } from './schema.ts'
+import { t } from './i18n.ts'
 
 const rand = () => Math.random().toString(36).slice(2, 10)
 export const flowId = (prefix: 'nd' | 'e' | 'fl') => `${prefix}_${rand()}`
@@ -44,7 +45,7 @@ export const getFlow = (w: Pick<WorkflowInput, 'flows'>, id: string) => w.flows.
 /** 主流程：任务从这里开始 */
 export const entryFlow = (w: Pick<WorkflowInput, 'flows' | 'entryFlowId'>) => getFlow(w, w.entryFlowId) ?? w.flows[0]
 export const flowLabel = (f: Flow, w: Pick<WorkflowInput, 'entryFlowId'>) =>
-  f.name.trim() || (f.id === w.entryFlowId ? '主流程' : '未命名子流程')
+  f.name.trim() || (f.id === w.entryFlowId ? t('主流程') : t('未命名子流程'))
 
 export const preds = (f: Flow, id: string) => f.edges.filter((e) => e.to === id).map((e) => e.from)
 export const succs = (f: Flow, id: string) => f.edges.filter((e) => e.from === id).map((e) => e.to)
@@ -146,7 +147,7 @@ export const edge = (from: string, to: string) => ({ id: flowId('e'), from, to }
 export function flowTemplate(members: { agent: Agent; responsibility: string }[], base: Flow): Flow {
   const n = (title: string, agentId: string, instructions: string) =>
     newNode({ title, agentId, instructions, x: 0, y: 0 })
-  const plan = n('分析需求、拆分任务', '', '阅读需求和相关代码，列出要改动的部分、每个节点的分工和验收标准。')
+  const plan = n(t('分析需求、拆分任务'), '', '阅读需求和相关代码，列出要改动的部分、每个节点的分工和验收标准。')
   const work = members.length
     ? members.map((m) =>
         n(
@@ -155,8 +156,8 @@ export function flowTemplate(members: { agent: Agent; responsibility: string }[]
           '按分析阶段的分工完成自己负责的部分，只改自己负责的文件，完成后说明改了什么。',
         ),
       )
-    : [n('实现', '', '按分析阶段的结论完成改动，并自测。')]
-  const check = n('验收', '', '逐条对照验收标准检查结果，列出没满足的地方。')
+    : [n(t('实现'), '', '按分析阶段的结论完成改动，并自测。')]
+  const check = n(t('验收'), '', '逐条对照验收标准检查结果，列出没满足的地方。')
   return autoLayout({
     ...base,
     nodes: [plan, ...work, check],
@@ -194,9 +195,9 @@ export function refLabel(
   if (!ref) return ''
   if (ref.kind === 'sub') {
     const f = getFlow(w, ref.id)
-    return f ? flowLabel(f, w) : '（流程已删除）'
+    return f ? flowLabel(f, w) : t('（流程已删除）')
   }
-  return workflows.find((x) => x.id === ref.id)?.name ?? '（工作流已删除）'
+  return workflows.find((x) => x.id === ref.id)?.name ?? t('（工作流已删除）')
 }
 
 /** 一个流程直接引用的流程 */
@@ -265,7 +266,7 @@ export function planTask(workflow: Workflow | undefined): { steps: TaskStep[] } 
         flowId: flow.id,
         nodeId: n.id,
         kind: n.kind,
-        title: n.title.trim() || `节点 ${i + 1}`,
+        title: n.title.trim() || t('节点 {n}', { n: i + 1 }),
         agentId: n.kind === 'agent' ? nodeAgent(workflow, n.agentId) : '',
       }),
     ),
@@ -288,7 +289,12 @@ export function stepTree(task: { steps: TaskStep[] }, id: string): TaskStep[] {
 /** 节点属于哪个主流程节点 */
 export const rootStepId = (id: string) => id.split('/')[0]
 
-export const SLOT_LABEL: Record<string, string> = { start: '开始', review: '验收', end: '结束', body: '执行' }
+export const SLOT_LABEL: Record<string, string> = {
+  start: t('开始'),
+  review: t('验收'),
+  end: t('结束'),
+  body: t('执行'),
+}
 
 const stripTitle = (s: string) =>
   s

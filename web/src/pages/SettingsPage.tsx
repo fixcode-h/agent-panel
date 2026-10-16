@@ -34,7 +34,7 @@ import {
   CONTENT_WIDTH,
 } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
-import { LANGS } from '@shared/i18n'
+import { LANGS, t } from '@shared/i18n'
 import { cliSettings, defaultCli, orderClis, tierFallback, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -59,8 +59,8 @@ import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 
 const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
-const textToEnv = (t: string) =>
-  t
+const textToEnv = (text: string) =>
+  text
     .split('\n')
     .map((l) => l.trim())
     .filter((l) => l && !l.startsWith('#') && l.includes('='))
@@ -124,7 +124,7 @@ function CopyText({ text }: { text: string }) {
           .catch(() => {})
       }
       className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border bg-field px-2 py-1 font-mono text-xs text-muted hover:text-fg"
-      title="复制安装命令"
+      title={t('复制安装命令')}
     >
       <span className="truncate">{text}</span>
       {done ? <Check className="h-3 w-3 shrink-0 text-success" /> : <Copy className="h-3 w-3 shrink-0" />}
@@ -149,12 +149,12 @@ function useCliInstaller(def: CliDefinition) {
   }
   // 卸载前提醒：有任务正在用它
   const busy = tasks.some(
-    (t) =>
-      t.status === 'running' &&
+    (task) =>
+      task.status === 'running' &&
       agents.some(
         (a) =>
           (a.cli || (settings ? defaultCli(settings) : '')) === def.id &&
-          t.steps.some((s) => s.agentId === a.id && s.status === 'running'),
+          task.steps.some((s) => s.agentId === a.id && s.status === 'running'),
       ),
   )
   return { job, running, start, clear: () => clearInstallJob(def.id), busy }
@@ -169,7 +169,12 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
   useEffect(() => {
     if (pre.current) pre.current.scrollTop = pre.current.scrollHeight
   }, [job.log, open])
-  const verb = job.action === 'uninstall' ? '卸载' : job.update ? '更新' : '安装'
+  const kind = job.action === 'uninstall' ? 'uninstall' : job.update ? 'update' : 'install'
+  const statusText = {
+    running: { install: t('正在安装…'), update: t('正在更新…'), uninstall: t('正在卸载…') },
+    done: { install: t('安装完成'), update: t('更新完成'), uninstall: t('卸载完成') },
+    failed: { install: t('安装没有成功'), update: t('更新没有成功'), uninstall: t('卸载没有成功') },
+  }[job.status === 'running' ? 'running' : job.status === 'done' ? 'done' : 'failed'][kind]
   return (
     <div
       className={cn(
@@ -185,19 +190,17 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
         ) : (
           <CircleAlert className="h-4 w-4 shrink-0 text-danger" />
         )}
-        <span className="min-w-0 flex-1">
-          {job.status === 'running' ? `正在${verb}…` : job.status === 'done' ? `${verb}完成` : `${verb}没有成功`}
-        </span>
+        <span className="min-w-0 flex-1">{statusText}</span>
         <button
           onClick={() => setOpen((o) => !o)}
           className="cursor-pointer rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-sel hover:text-fg"
         >
-          {open ? '收起输出' : '查看输出'}
+          {open ? t('收起输出') : t('查看输出')}
         </button>
         {job.status !== 'running' && (
           <button
             onClick={onClose}
-            aria-label="关闭"
+            aria-label={t('关闭')}
             className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
           >
             <X className="h-3.5 w-3.5" />
@@ -208,7 +211,7 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
       {job.note && <p className="px-3.5 pb-2 text-[13px] leading-relaxed text-muted">{job.note}</p>}
       {job.status === 'failed' && (
         <p className="flex flex-wrap items-center gap-2 px-3.5 pb-2.5 text-xs text-muted">
-          在终端里运行 <CopyText text={job.command} />
+          {t('在终端里运行')} <CopyText text={job.command} />
         </p>
       )}
       {open && (
@@ -218,7 +221,7 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
         >
           <span className="text-subtle">$ {job.command}</span>
           {'\n'}
-          {job.log || (job.status === 'running' ? '等待输出…' : '没有输出')}
+          {job.log || (job.status === 'running' ? t('等待输出…') : t('没有输出'))}
         </pre>
       )}
     </div>
@@ -241,52 +244,53 @@ function TierTable({
   /** 只展示：「默认 CLI」里跟随那个 CLI 自己的档位设置 */
   readOnly?: boolean
 }) {
-  const set = (t: ModelTier, k: 'model' | 'effort', v: string) => onChange?.({ ...value, [t]: { ...value[t], [k]: v } })
+  const set = (tier: ModelTier, k: 'model' | 'effort', v: string) =>
+    onChange?.({ ...value, [tier]: { ...value[tier], [k]: v } })
   return (
     <div className="overflow-hidden rounded-xl border">
       <div className="hidden grid-cols-[120px_1fr_170px] gap-3 border-b bg-field/50 px-3.5 py-2 text-xs text-subtle sm:grid">
-        <span>档位</span>
-        <span>模型</span>
-        <span>思考强度</span>
+        <span>{t('档位')}</span>
+        <span>{t('模型')}</span>
+        <span>{t('思考强度')}</span>
       </div>
-      {MODEL_TIERS.map((t) => {
-        const sug = { ...def.tiers[t.id], model: tierFallback(def, defaultModel, t.id) }
+      {MODEL_TIERS.map((tr) => {
+        const sug = { ...def.tiers[tr.id], model: tierFallback(def, defaultModel, tr.id) }
         return (
           <div
-            key={t.id}
+            key={tr.id}
             className="grid grid-cols-1 gap-2 border-b px-3.5 py-3 last:border-b-0 sm:grid-cols-[120px_1fr_170px] sm:items-center sm:gap-3"
           >
             <span className="flex items-center gap-2">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
-                {t.label}
+                {tr.label}
               </span>
               <span className="flex min-w-0 flex-col">
-                <span className="text-[13px]">{t.label}档</span>
-                <span className="truncate text-[11px] text-subtle">{t.hint}</span>
+                <span className="text-[13px]">{t('{tier}档', { tier: tr.label })}</span>
+                <span className="truncate text-[11px] text-subtle">{tr.hint}</span>
               </span>
             </span>
             {readOnly ? (
               <>
-                <span className="truncate font-mono text-[13px]">{value[t.id].model || sug.model}</span>
+                <span className="truncate font-mono text-[13px]">{value[tr.id].model || sug.model}</span>
                 <span className="truncate text-[13px] text-muted">
-                  {(value[t.id].effort || sug.effort) &&
-                    `${value[t.id].effort || sug.effort} · ${effortLabel(def, value[t.id].effort || sug.effort)}`}
+                  {(value[tr.id].effort || sug.effort) &&
+                    `${value[tr.id].effort || sug.effort} · ${effortLabel(def, value[tr.id].effort || sug.effort)}`}
                 </span>
               </>
             ) : (
               <>
                 {/* 档位自己的模型下拉不列档位；留空时用的模型标（默认） */}
                 <ModelSelect
-                  aria-label={`${def.name} ${t.label}档模型`}
+                  aria-label={t('{cli} {tier}档模型', { cli: def.name, tier: tr.label })}
                   def={def}
-                  value={value[t.id].model}
-                  onChange={(v) => set(t.id, 'model', v)}
+                  value={value[tr.id].model}
+                  onChange={(v) => set(tr.id, 'model', v)}
                   defaultValue={sug.model}
                 />
                 <Select
-                  aria-label={`${def.name} ${t.label}档思考强度`}
-                  value={value[t.id].effort === sug.effort ? '' : value[t.id].effort}
-                  onChange={(e) => set(t.id, 'effort', e.target.value)}
+                  aria-label={t('{cli} {tier}档思考强度', { cli: def.name, tier: tr.label })}
+                  value={value[tr.id].effort === sug.effort ? '' : value[tr.id].effort}
+                  onChange={(e) => set(tr.id, 'effort', e.target.value)}
                   options={defaultEffortOptions(def, sug.effort)}
                 />
               </>
@@ -319,7 +323,7 @@ function AssistModel({
   }
   return (
     <ModelSelect
-      aria-label="AI 创建使用的模型"
+      aria-label={t('AI 创建使用的模型')}
       def={def}
       value={value}
       onChange={onChange}
@@ -346,17 +350,17 @@ function ReadValue({ children, mono }: { children: React.ReactNode; mono?: boole
 /** 某个 CLI 的默认模型实际是什么：档位换成那一档的模型，没设置时是 CLI 自己的默认 */
 function defaultModelText(def: CliDefinition, d: CliDraft) {
   const v = d.defaultModel
-  const t = tierOf(v)
-  if (t) return `${t.label}档 · ${d.tiers[t.id].model || tierFallback(def, '', t.id)}`
+  const tr = tierOf(v)
+  if (tr) return `${t('{tier}档', { tier: tr.label })} · ${d.tiers[tr.id].model || tierFallback(def, '', tr.id)}`
   if (v) return v
   const m = cliDefaultModel(def)?.id
-  return m ? `${m}（默认）` : '自动（默认）'
+  return m ? m + t('（默认）') : t('自动（默认）')
 }
 
 function defaultEffortText(def: CliDefinition, d: CliDraft) {
   const e = d.defaultEffort || cliDefaultModel(def)?.defaultEffort
-  if (!e) return 'auto · 自动（默认）'
-  return `${e} · ${effortLabel(def, e)}${d.defaultEffort ? '' : '（默认）'}`
+  if (!e) return `auto · ${t('自动（默认）')}`
+  return `${e} · ${effortLabel(def, e)}${d.defaultEffort ? '' : t('（默认）')}`
 }
 
 /** 默认模型：可以是档位或具体模型；不指定时就是 CLI 自己的默认模型，直接标（默认） */
@@ -376,7 +380,7 @@ function DefaultModel({
   }
   return (
     <ModelSelect
-      aria-label={`${def.name} 默认模型`}
+      aria-label={t('{cli} 默认模型', { cli: def.name })}
       def={def}
       value={draft.defaultModel}
       onChange={onChange}
@@ -392,26 +396,33 @@ function ModelSource({ cli, data }: { cli: CliDefinition; data?: CliModels }) {
     return (
       <p className="flex items-center gap-1.5 pt-1 text-xs text-subtle">
         <Loader2 className="h-3 w-3 animate-spin" />
-        正在从本机 {cli.name} 读取可用的模型…
+        {t('正在从本机 {cli} 读取可用的模型…', { cli: cli.name })}
       </p>
     )
   // 账号登录列出账号能用的全部模型；API 方式列出配置文件里配的模型
   const how =
     data.auth === 'account'
-      ? `已用${data.from ? ` ${data.from} ` : '账号'}登录，`
+      ? data.from
+        ? t('已用 {from} 登录，', { from: data.from })
+        : t('已用账号登录，')
       : data.auth === 'api'
-        ? `用的是 API 方式，${data.from ? `下面是 ${data.from} 里配置的模型，` : '配置文件里没有写模型，'}`
+        ? data.from
+          ? t('用的是 API 方式，下面是 {from} 里配置的模型，', { from: data.from })
+          : t('用的是 API 方式，配置文件里没有写模型，')
         : ''
   const text =
     data.source === 'cli'
-      ? `${how}已从本机 ${cli.name} 读到 ${data.models.length} 个可用模型。`
+      ? t('{how}已从本机 {cli} 读到 {n} 个可用模型。', { how, cli: cli.name, n: data.models.length })
       : data.auth === 'api' && !data.error
-        ? `${how}下面是常用的型号，也可以直接填写模型名。`
+        ? how + t('下面是常用的型号，也可以直接填写模型名。')
         : data.error
-          ? `没能从 ${cli.name} 读到模型列表（${data.error}），下面是内置的建议，也可以直接填写模型名。`
+          ? t('没能从 {cli} 读到模型列表（{error}），下面是内置的建议，也可以直接填写模型名。', {
+              cli: cli.name,
+              error: data.error,
+            })
           : cli.id === 'claude'
-            ? `${cli.name} 没有列出模型的命令，下面是常用的型号，也可以直接填写完整的模型名。`
-            : '下面是内置的建议，也可以直接填写模型名。'
+            ? t('{cli} 没有列出模型的命令，下面是常用的型号，也可以直接填写完整的模型名。', { cli: cli.name })
+            : t('下面是内置的建议，也可以直接填写模型名。')
   return <p className={cn('pt-1 text-xs leading-relaxed', data.error ? 'text-warning' : 'text-subtle')}>{text}</p>
 }
 
@@ -465,7 +476,7 @@ function CliSection({
             {def.name}
             {isDefault && (
               <span className="rounded-full bg-accent-soft px-2 py-px text-[11px] font-normal text-accent">
-                系统默认
+                {t('系统默认')}
               </span>
             )}
           </p>
@@ -473,7 +484,11 @@ function CliSection({
             className={cn('truncate text-xs', !status ? 'text-subtle' : ok ? 'text-success' : 'text-warning')}
             title={status?.error}
           >
-            {!status ? '检测中…' : ok ? `已安装 · ${status.version}` : `没有检测到：${status.error ?? ''}`}
+            {!status
+              ? t('检测中…')
+              : ok
+                ? t('已安装 · {version}', { version: status.version ?? '' })
+                : t('没有检测到：{error}', { error: status.error ?? '' })}
           </p>
         </div>
         {status && !ok && (
@@ -483,7 +498,7 @@ function CliSection({
             ) : (
               <Download className="h-3.5 w-3.5" />
             )}
-            安装
+            {t('安装')}
           </Button>
         )}
         {status && ok && (
@@ -492,7 +507,14 @@ function CliSection({
               <Button
                 variant="secondary"
                 size="sm"
-                title={update ? `当前 ${update.current}，npm 上最新是 ${update.latest}` : undefined}
+                title={
+                  update
+                    ? t('当前 {current}，npm 上最新是 {latest}', {
+                        current: update.current ?? '',
+                        latest: update.latest ?? '',
+                      })
+                    : undefined
+                }
                 onClick={() => installer.start('install')}
                 disabled={installer.running}
               >
@@ -501,7 +523,7 @@ function CliSection({
                 ) : (
                   <ArrowUpCircle className="h-3.5 w-3.5" />
                 )}
-                {installer.running ? '更新中' : `更新到 ${update?.latest}`}
+                {installer.running ? t('更新中') : t('更新到 {tag}', { tag: update?.latest ?? '' })}
               </Button>
             )}
             <Button variant="danger-outline" size="sm" onClick={() => setRemoving(true)} disabled={installer.running}>
@@ -510,15 +532,15 @@ function CliSection({
               ) : (
                 <Trash2 className="h-3.5 w-3.5" />
               )}
-              卸载
+              {t('卸载')}
             </Button>
           </>
         )}
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="重新检测"
-          title="重新检测"
+          aria-label={t('重新检测')}
+          title={t('重新检测')}
           onClick={() => {
             onDetect()
             if (ok) void checkUpdate(true)
@@ -527,7 +549,11 @@ function CliSection({
         >
           <RefreshCw className={cn('h-3.5 w-3.5', detecting && 'animate-spin')} />
         </Button>
-        <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} aria-label={`启用 ${def.name}`} />
+        <Switch
+          checked={draft.enabled}
+          onCheckedChange={(v) => set('enabled', v)}
+          aria-label={t('启用 {cli}', { cli: def.name })}
+        />
       </div>
       {installer.job ? (
         <InstallLog key={installer.job.id} job={installer.job} onClose={installer.clear} />
@@ -535,34 +561,36 @@ function CliSection({
         status &&
         !ok && (
           <p className="flex flex-wrap items-center gap-2 pt-3 text-xs text-muted">
-            点「安装」用 npm 安装，或者在终端里运行 <CopyText text={def.installHint} />
-            <span className="text-subtle">自己装好后点右边的刷新重新检测。</span>
+            {t('点「安装」用 npm 安装，或者在终端里运行')} <CopyText text={def.installHint} />
+            <span className="text-subtle">{t('自己装好后点右边的刷新重新检测。')}</span>
           </p>
         )
       )}
       <ConfirmDialog
         open={removing}
         onOpenChange={setRemoving}
-        title={`卸载 ${def.name}？`}
+        title={t('卸载 {cli}？', { cli: def.name })}
         description={
           <>
-            会运行 <code className="font-mono text-[12px]">npm uninstall -g {def.npmPackage}</code>
-            。用这个 CLI 的 Agent 之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。
+            {t('会运行')} <code className="font-mono text-[12px]">npm uninstall -g {def.npmPackage}</code>
+            {t('。用这个 CLI 的 Agent 之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
           </>
         }
-        blocked={installer.busy ? '有任务正在用它执行，请等任务完成或先停止。' : undefined}
-        confirmText="卸载"
+        blocked={installer.busy ? t('有任务正在用它执行，请等任务完成或先停止。') : undefined}
+        confirmText={t('卸载')}
         onConfirm={() => {
           setRemoving(false)
           return installer.start('uninstall')
         }}
       />
 
-      <Group title="模型">
+      <Group title={t('模型')}>
         <ModelSource cli={def} data={models} />
         <Row
-          title="三档模型"
-          desc="Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。"
+          title={t('三档模型')}
+          desc={t(
+            'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。',
+          )}
           stack
         >
           <TierTable
@@ -572,12 +600,12 @@ function CliSection({
             onChange={(v) => set('tiers', v)}
           />
         </Row>
-        <Row title="默认模型" desc="Agent 没有指定模型时使用，可以选一个档位">
+        <Row title={t('默认模型')} desc={t('Agent 没有指定模型时使用，可以选一个档位')}>
           <DefaultModel def={full} draft={draft} onChange={(v) => set('defaultModel', v)} />
         </Row>
-        <Row title="默认思考强度" desc="Agent 和档位都没有指定时使用">
+        <Row title={t('默认思考强度')} desc={t('Agent 和档位都没有指定时使用')}>
           <Select
-            aria-label={`${def.name} 默认思考强度`}
+            aria-label={t('{cli} 默认思考强度', { cli: def.name })}
             value={draft.defaultEffort === cliDefaultModel(full)?.defaultEffort ? '' : draft.defaultEffort}
             onChange={(e) => set('defaultEffort', e.target.value)}
             options={defaultEffortOptions(full, cliDefaultModel(full)?.defaultEffort)}
@@ -585,20 +613,20 @@ function CliSection({
         </Row>
       </Group>
 
-      <Group title="运行">
+      <Group title={t('运行')}>
         <Row
-          title="权限"
-          desc={<span className={cn(/任意命令|不使用沙箱/.test(perm.hint) && 'text-warning')}>{perm.hint}</span>}
+          title={t('权限')}
+          desc={<span className={cn(DANGER_PERMS.includes(perm.id) && 'text-warning')}>{perm.hint}</span>}
           stack
         >
           <Segmented
-            label={`${def.name} 权限`}
+            label={t('{cli} 权限', { cli: def.name })}
             value={perm.id}
             onChange={(v) => set('permission', v)}
             options={def.permissions.map((p) => ({ id: p.id, label: p.label }))}
           />
         </Row>
-        <Row title="可执行文件" desc={`留空时从 PATH 查找 ${def.command}`}>
+        <Row title={t('可执行文件')} desc={t('留空时从 PATH 查找 {command}', { command: def.command })}>
           <Input
             value={draft.command}
             onChange={(e) => set('command', e.target.value)}
@@ -607,16 +635,16 @@ function CliSection({
             spellCheck={false}
           />
         </Row>
-        <Row title="额外参数" desc="每次调用都会追加，Agent 自己的参数排在后面">
+        <Row title={t('额外参数')} desc={t('每次调用都会追加，Agent 自己的参数排在后面')}>
           <Input
             value={draft.args}
             onChange={(e) => set('args', e.target.value)}
-            placeholder="例如 --add-dir ../shared"
+            placeholder={t('例如 --add-dir ../shared')}
             className="h-9 font-mono text-[13px]"
             spellCheck={false}
           />
         </Row>
-        <Row title="环境变量" desc="每行一个 KEY=VALUE，只传给这个 CLI">
+        <Row title={t('环境变量')} desc={t('每行一个 KEY=VALUE，只传给这个 CLI')}>
           <Textarea
             rows={2}
             value={draft.envText}
@@ -637,7 +665,7 @@ function CliSection({
             cli={def.id}
             model=""
             extraArgs={[]}
-            title="实际调用（任务描述从 stdin 传入）"
+            title={t('实际调用（任务描述从 stdin 传入）')}
             override={{
               enabled: draft.enabled,
               command: draft.command.trim(),
@@ -676,6 +704,9 @@ const toDraft = (s: Settings): Record<string, CliDraft> =>
     }),
   )
 
+/** 会跳过确认、不受沙箱限制的权限档，说明文字标成警告色 */
+const DANGER_PERMS = ['bypassPermissions', 'danger-full-access', 'yolo']
+
 interface Section {
   id: string
   label: string
@@ -683,17 +714,14 @@ interface Section {
   cli?: CliDefinition
 }
 
-/** 英文词典补齐后打开 */
-const LANG_READY = false
-
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
-  { id: 'general', label: '常规', icon: Settings2 },
-  { id: 'categories', label: '项目分类', icon: Layers },
-  { id: 'models', label: '默认 CLI', icon: Cpu },
+  { id: 'general', label: t('常规'), icon: Settings2 },
+  { id: 'categories', label: t('项目分类'), icon: Layers },
+  { id: 'models', label: t('默认 CLI'), icon: Cpu },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
-  { id: 'assist', label: 'AI 创建', icon: Sparkles },
-  { id: 'data', label: '数据', icon: HardDrive },
-  { id: 'update', label: '版本更新', icon: ArrowUpCircle },
+  { id: 'assist', label: t('AI 创建'), icon: Sparkles },
+  { id: 'data', label: t('数据'), icon: HardDrive },
+  { id: 'update', label: t('版本更新'), icon: ArrowUpCircle },
 ]
 
 function SettingsBody({
@@ -741,9 +769,23 @@ function SettingsBody({
           setSettings(fresh)
           setDrafts((d) => ({ ...d, [j.cli]: { ...d[j.cli], command: fresh.clis[j.cli]?.command ?? '' } }))
         })
-      const verb = j.action === 'uninstall' ? '卸载' : j.update ? '更新' : '安装'
-      if (j.status === 'done') toast.success(`${name} 已${verb}`)
-      else toast.error(`${name} ${verb}失败`)
+      const kind = j.action === 'uninstall' ? 'uninstall' : j.update ? 'update' : 'install'
+      if (j.status === 'done')
+        toast.success(
+          {
+            install: t('{name} 已安装', { name }),
+            update: t('{name} 已更新', { name }),
+            uninstall: t('{name} 已卸载', { name }),
+          }[kind],
+        )
+      else
+        toast.error(
+          {
+            install: t('{name} 安装失败', { name }),
+            update: t('{name} 更新失败', { name }),
+            uninstall: t('{name} 卸载失败', { name }),
+          }[kind],
+        )
     })
     void resumeInstallJobs()
   }, [refreshClis])
@@ -754,7 +796,7 @@ function SettingsBody({
 
   const minutes = Number(timeout)
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
-  const tier = (t: { model: string; effort: string }) => ({ model: t.model.trim(), effort: t.effort })
+  const tier = (x: { model: string; effort: string }) => ({ model: x.model.trim(), effort: x.effort })
   const value: Settings = {
     openBrowser,
     contentWidth,
@@ -809,10 +851,10 @@ function SettingsBody({
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <nav
-        aria-label="设置分类"
+        aria-label={t('设置分类')}
         className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
       >
-        <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[20px] font-semibold md:block">设置</span>
+        <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[20px] font-semibold md:block">{t('设置')}</span>
         {SECTIONS.filter((s) => !s.cli).map((s) => {
           // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
           const on = s.id === 'models' ? inCli : s.id === cur.id
@@ -833,7 +875,7 @@ function SettingsBody({
               )}
               <span className="truncate">{s.id === 'models' ? 'CLI' : s.label}</span>
               {s.id === 'update' && update && (
-                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="有新版本" />
+                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
               )}
             </button>
           )
@@ -853,14 +895,14 @@ function SettingsBody({
               <div key={s.id} className="contents">
                 {s.cli && !list[i - 1]?.cli && (
                   <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[11px] text-subtle md:flex">
-                    已接入
-                    <span className="text-[10.5px] text-subtle/80">拖动调整顺序</span>
+                    {t('已接入')}
+                    <span className="text-[10.5px] text-subtle/80">{t('拖动调整顺序')}</span>
                   </span>
                 )}
                 <button
                   onClick={() => onSection(s.id)}
                   aria-current={on ? 'page' : undefined}
-                  title={s.cli ? '拖动调整顺序，或按 Alt + ↑ / ↓' : undefined}
+                  title={s.cli ? t('拖动调整顺序，或按 Alt + ↑ / ↓') : undefined}
                   draggable={!!s.cli}
                   onDragStart={(e) => {
                     if (!s.cli) return
@@ -892,7 +934,9 @@ function SettingsBody({
                     s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                   )}
                   <span className="truncate">{s.label}</span>
-                  {s.cli && defCli === s.cli.id && <span className="text-[11px] font-normal text-subtle">默认</span>}
+                  {s.cli && defCli === s.cli.id && (
+                    <span className="text-[11px] font-normal text-subtle">{t('默认')}</span>
+                  )}
                   {s.cli && (
                     <GripVertical className="ml-auto hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
                   )}
@@ -914,8 +958,8 @@ function SettingsBody({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3 md:px-8 md:pt-7">
           <h2 className="min-w-0 flex-1 truncate font-serif text-[20px] font-semibold">{cur.label}</h2>
-          <SaveIndicator {...save} invalid={valid ? undefined : '超时时间需要是 0 到 1440 的整数'} />
-          <DialogCloseButton label="关闭设置" />
+          <SaveIndicator {...save} invalid={valid ? undefined : t('超时时间需要是 0 到 1440 的整数')} />
+          <DialogCloseButton label={t('关闭设置')} />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
           {cur.id === 'general' && (
@@ -923,10 +967,13 @@ function SettingsBody({
               {demo && (
                 <p className="mb-2 flex gap-2.5 rounded-xl border p-3.5 text-[13px] leading-relaxed text-subtle">
                   <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
-                  在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 CLI。
+                  {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 CLI。')}
                 </p>
               )}
-              <Row title="单个步骤最长运行时间" desc="分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。">
+              <Row
+                title={t('单个步骤最长运行时间')}
+                desc={t('分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。')}
+              >
                 <div className="flex flex-col gap-1">
                   <Input
                     inputMode="numeric"
@@ -934,41 +981,36 @@ function SettingsBody({
                     onChange={(e) => setTimeoutMin(e.target.value.replace(/[^\d]/g, ''))}
                     aria-invalid={!valid}
                     className={cn('h-9', !valid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                    aria-label="单个步骤最长运行时间（分钟）"
+                    aria-label={t('单个步骤最长运行时间（分钟）')}
                   />
-                  {!valid && <span className="text-xs text-danger">填 0 到 1440 之间的整数，0 表示不限制</span>}
+                  {!valid && <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不限制')}</span>}
                 </div>
               </Row>
-              {/* 英文翻译补齐之前先不显示语言选项 */}
-              {LANG_READY && (
-                <>
-                  <Row title="语言 · Language" desc="界面显示的语言，切换后页面会重新加载。">
-                    <Select
-                      aria-label="语言"
-                      value={language}
-                      onChange={async (e) => {
-                        const v = e.target.value as Settings['language']
-                        setLanguage(v)
-                        // 文案在页面加载时就定了，保存后重新加载页面
-                        try {
-                          setSettings(await api.saveSettings({ ...value, language: v }))
-                        } catch (err) {
-                          return toast.error((err as Error).message)
-                        }
-                        switchLang(v)
-                      }}
-                      options={[
-                        { value: 'auto', label: '跟随浏览器 · Auto' },
-                        ...LANGS.map((l) => ({ value: l.id, label: l.label })),
-                      ]}
-                      className="w-48"
-                    />
-                  </Row>
-                </>
-              )}
+              <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>
+                <Select
+                  aria-label={t('语言')}
+                  value={language}
+                  onChange={async (e) => {
+                    const v = e.target.value as Settings['language']
+                    setLanguage(v)
+                    // 文案在页面加载时就定了，保存后重新加载页面
+                    try {
+                      setSettings(await api.saveSettings({ ...value, language: v }))
+                    } catch (err) {
+                      return toast.error((err as Error).message)
+                    }
+                    switchLang(v)
+                  }}
+                  options={[
+                    { value: 'auto', label: t('跟随浏览器 · Auto') },
+                    ...LANGS.map((l) => ({ value: l.id, label: l.label })),
+                  ]}
+                  className="w-48"
+                />
+              </Row>
               <Row
-                title="内容宽度"
-                desc="项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。"
+                title={t('内容宽度')}
+                desc={t('项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。')}
               >
                 <div className="flex items-center gap-3">
                   <input
@@ -977,7 +1019,7 @@ function SettingsBody({
                     max={CONTENT_MAX}
                     step={20}
                     value={contentWidth}
-                    aria-label="内容宽度"
+                    aria-label={t('内容宽度')}
                     onChange={(e) => {
                       const w = Number(e.target.value)
                       setContentWidth(w)
@@ -996,25 +1038,31 @@ function SettingsBody({
                         applyContentWidth(CONTENT_WIDTH)
                       }}
                     >
-                      恢复默认
+                      {t('恢复默认')}
                     </Button>
                   )}
                 </div>
               </Row>
               {!demo && (
-                <Row title="启动后打开浏览器" desc="启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。">
-                  <Switch aria-label="启动后打开浏览器" checked={openBrowser} onCheckedChange={setOpenBrowser} />
+                <Row
+                  title={t('启动后打开浏览器')}
+                  desc={t('启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。')}
+                >
+                  <Switch aria-label={t('启动后打开浏览器')} checked={openBrowser} onCheckedChange={setOpenBrowser} />
                 </Row>
               )}
-              <Row title="任务完成时通知我" desc="页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。">
+              <Row
+                title={t('任务完成时通知我')}
+                desc={t('页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。')}
+              >
                 <Switch
-                  aria-label="任务完成时通知我"
+                  aria-label={t('任务完成时通知我')}
                   checked={notify}
                   disabled={!notifySupported()}
                   onCheckedChange={async (on) => {
                     const ok = await setNotify(on)
                     setNotifyOn(ok)
-                    if (on && !ok) toast.error('浏览器没有允许通知，可以在地址栏左侧的网站设置里打开')
+                    if (on && !ok) toast.error(t('浏览器没有允许通知，可以在地址栏左侧的网站设置里打开'))
                   }}
                 />
               </Row>
@@ -1024,37 +1072,44 @@ function SettingsBody({
           {cur.id === 'models' && (
             <>
               <p className="text-[13px] leading-relaxed text-subtle">
-                Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI
-                对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。
+                {t(
+                  'Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。',
+                )}
               </p>
               <Group>
-                <Row title="默认 CLI" desc="Agent 选了「系统默认」或没有指定 CLI 时使用">
+                <Row title={t('默认 CLI')} desc={t('Agent 选了「系统默认」或没有指定 CLI 时使用')}>
                   <Select
-                    aria-label="默认 CLI"
+                    aria-label={t('默认 CLI')}
                     value={defCli}
                     onChange={(e) => setDefCli(e.target.value)}
                     className="w-[240px]"
                     options={ordered.map((c) => {
                       const st = statusOf(c.id)
-                      const note = !st ? '' : !st.enabled ? ' · 已停用' : st.installed ? '' : ' · 未安装'
+                      const note = !st
+                        ? ''
+                        : !st.enabled
+                          ? ` · ${t('已停用')}`
+                          : st.installed
+                            ? ''
+                            : ` · ${t('未安装')}`
                       return { value: c.id, label: c.name + note }
                     })}
                   />
                 </Row>
               </Group>
-              <Group title={`${defDef.name} 的模型`}>
+              <Group title={t('{cli} 的模型', { cli: defDef.name })}>
                 <Row
-                  title="三档模型"
+                  title={t('三档模型')}
                   desc={
                     <>
-                      跟随 {defDef.name} 自己的档位设置，要改请到{' '}
+                      {t('跟随 {cli} 自己的档位设置，要改请到', { cli: defDef.name })}{' '}
                       <button
                         className="cursor-pointer text-accent hover:underline"
                         onClick={() => onSection(`cli:${defCli}`)}
                       >
                         {defDef.name}
                       </button>{' '}
-                      里修改。
+                      {t('里修改。')}
                     </>
                   }
                   stack
@@ -1067,10 +1122,16 @@ function SettingsBody({
                   />
                 </Row>
                 {/* 默认模型和思考强度也只展示，在对应 CLI 里改 */}
-                <Row title="默认模型" desc={`Agent 没有指定模型时使用，跟随 ${defDef.name} 的设置`}>
+                <Row
+                  title={t('默认模型')}
+                  desc={t('Agent 没有指定模型时使用，跟随 {cli} 的设置', { cli: defDef.name })}
+                >
                   <ReadValue mono>{defaultModelText(defDef, drafts[defCli])}</ReadValue>
                 </Row>
-                <Row title="默认思考强度" desc={`Agent 和档位都没有指定时使用，跟随 ${defDef.name} 的设置`}>
+                <Row
+                  title={t('默认思考强度')}
+                  desc={t('Agent 和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
+                >
                   <ReadValue>{defaultEffortText(defDef, drafts[defCli])}</ReadValue>
                 </Row>
               </Group>
@@ -1098,12 +1159,14 @@ function SettingsBody({
           {cur.id === 'assist' && (
             <>
               <p className="text-[13px] leading-relaxed text-subtle">
-                在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。
+                {t(
+                  '在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。',
+                )}
               </p>
               <Group>
-                <Row title="使用的 CLI" desc="默认用「CLI」里设为默认的那个">
+                <Row title={t('使用的 CLI')} desc={t('默认用「CLI」里设为默认的那个')}>
                   <Select
-                    aria-label="AI 创建使用的 CLI"
+                    aria-label={t('AI 创建使用的 CLI')}
                     value={assist.cli || defCli}
                     // 选回默认的就不单独记，之后换了默认 CLI 会跟着变
                     // 换 CLI 时模型名不通用，清空回到那个 CLI 的默认模型
@@ -1112,11 +1175,11 @@ function SettingsBody({
                     }
                     options={ordered.map((c) => ({
                       value: c.id,
-                      label: `${c.name}${c.id === defCli ? '（默认）' : ''}`,
+                      label: `${c.name}${c.id === defCli ? t('（默认）') : ''}`,
                     }))}
                   />
                 </Row>
-                <Row title="模型" desc="默认用这个 CLI 设置里的默认模型">
+                <Row title={t('模型')} desc={t('默认用这个 CLI 设置里的默认模型')}>
                   <AssistModel
                     key={assist.cli || defCli}
                     cli={assist.cli || defCli}
@@ -1125,23 +1188,23 @@ function SettingsBody({
                     onChange={(v) => setAssist({ ...assist, model: v })}
                   />
                 </Row>
-                <Row title="创建 Agent 的补充规则" desc="会加进提示词，例如命名习惯、团队约定" stack>
+                <Row title={t('创建 Agent 的补充规则')} desc={t('会加进提示词，例如命名习惯、团队约定')} stack>
                   <Textarea
                     rows={4}
                     value={assist.agentRules}
                     onChange={(e) => setAssist({ ...assist, agentRules: e.target.value })}
-                    placeholder={
-                      '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的 Agent 默认用 Claude Code'
-                    }
+                    placeholder={t(
+                      '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的 Agent 默认用 Claude Code',
+                    )}
                     className="font-mono text-[13px]"
                   />
                 </Row>
-                <Row title="创建工作流的补充规则" stack>
+                <Row title={t('创建工作流的补充规则')} stack>
                   <Textarea
                     rows={4}
                     value={assist.workflowRules}
                     onChange={(e) => setAssist({ ...assist, workflowRules: e.target.value })}
-                    placeholder={'例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮'}
+                    placeholder={t('例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮')}
                     className="font-mono text-[13px]"
                   />
                 </Row>
@@ -1179,7 +1242,7 @@ export function SettingsDialog({
           onInteractOutside={(e) => e.preventDefault()}
           className="fixed top-1/2 left-1/2 z-50 h-[min(840px,calc(100dvh-2rem))] w-[min(1200px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
-          <D.Title className="sr-only">设置</D.Title>
+          <D.Title className="sr-only">{t('设置')}</D.Title>
           {settings && <SettingsBody initial={settings} section={cur} onSection={setCur} />}
         </D.Content>
       </D.Portal>

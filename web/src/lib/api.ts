@@ -22,6 +22,7 @@ import type {
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { DataKind, DataUsage } from '@shared/data'
 import type { AppReleases, AppUpdateJob } from '@shared/version'
+import { t } from '@shared/i18n'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -35,7 +36,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `请求失败（${res.status}）`)
+    throw new Error(body.error ?? t('请求失败（{status}）', { status: res.status }))
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }

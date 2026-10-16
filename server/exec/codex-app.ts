@@ -1,6 +1,7 @@
 import path from 'node:path'
 import type { BuildOptions } from '../../shared/clis.ts'
 import { clipDetail, codexUsage, oneLine, toolText, type CliEvent } from './parsers.ts'
+import { t } from '../../shared/i18n.ts'
 
 /**
  * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行：`codex exec --json` 只在每一项完成时输出整段文字，
@@ -46,7 +47,10 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
   const sandboxFailed = (why: string): CliEvent[] => [
     {
       type: 'error',
-      message: `Codex 的 Windows 沙箱初始化失败（${why}），命令和改文件都无法执行。可以在终端里运行一次 codex 按提示完成沙箱设置，或在设置里把 Codex 的权限改成「完全访问」。`,
+      message: t(
+        'Codex 的 Windows 沙箱初始化失败（{reason}），命令和改文件都无法执行。可以在终端里运行一次 codex 按提示完成沙箱设置，或在设置里把 Codex 的权限改成「完全访问」。',
+        { reason: why },
+      ),
     },
     ...finish(false),
   ]
@@ -66,16 +70,19 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
       return []
     }
     if (m.id === 11) {
-      if (m.error) return sandboxFailed(String(m.error.message ?? '未知错误'))
+      if (m.error) return sandboxFailed(String(m.error.message ?? t('未知错误')))
       if (m.result?.started === false) startThread()
       return []
     }
     if (m.id === 2) {
       if (m.error) {
-        const msg = String(m.error.message ?? '启动会话失败')
+        const msg = String(m.error.message ?? t('启动会话失败'))
         // 续接失败多半是会话被清理了；带上 thread not found 让上层丢掉旧会话重来
         return [
-          { type: 'error', message: o.resume ? `无法续接之前的会话（thread not found）：${msg}` : msg },
+          {
+            type: 'error',
+            message: o.resume ? t('无法续接之前的会话（thread not found）：{error}', { error: msg }) : msg,
+          },
           ...finish(false),
         ]
       }
@@ -106,8 +113,10 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         {
           type: 'ask',
           kind: 'command',
-          title: cmd ? `运行命令：${oneLine(cmd)}` : '运行一条需要越过沙箱的命令',
-          detail: [p.reason, cmd && clipDetail(cmd), p.cwd && `目录：${p.cwd}`].filter(Boolean).join('\n\n'),
+          title: cmd ? t('运行命令：{cmd}', { cmd: oneLine(cmd) }) : t('运行一条需要越过沙箱的命令'),
+          detail: [p.reason, cmd && clipDetail(cmd), p.cwd && t('目录：{dir}', { dir: p.cwd })]
+            .filter(Boolean)
+            .join('\n\n'),
           reply: (r) =>
             answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
         },
@@ -119,7 +128,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         {
           type: 'ask',
           kind: 'file',
-          title: p.grantRoot ? `允许写入目录：${p.grantRoot}` : '修改沙箱以外的文件',
+          title: p.grantRoot ? t('允许写入目录：{dir}', { dir: p.grantRoot }) : t('修改沙箱以外的文件'),
           detail: String(p.reason ?? ''),
           reply: (r) =>
             answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
@@ -130,12 +139,15 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
     if (m.method === 'item/permissions/requestApproval') {
       const want = p.permissions ?? {}
       const fsPaths = [...(want.fileSystem?.write ?? []), ...(want.fileSystem?.read ?? [])].map(String)
-      const what = [want.network?.enabled && '联网', fsPaths.length && `访问 ${fsPaths.join('、')}`].filter(Boolean)
+      const what = [
+        want.network?.enabled && t('联网'),
+        fsPaths.length && t('访问 {paths}', { paths: fsPaths.join(t('、')) }),
+      ].filter(Boolean)
       return [
         {
           type: 'ask',
           kind: 'command',
-          title: `需要额外权限：${what.join('，') || '越过沙箱'}`,
+          title: t('需要额外权限：{what}', { what: what.join(t('，')) || t('越过沙箱') }),
           detail: String(p.reason ?? ''),
           reply: (r) => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} }),
         },
@@ -164,7 +176,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             tool: {
               kind: 'run',
               label: oneLine(cmd),
-              detail: item.status === 'declined' ? '被拒绝' : code ? `退出码 ${code}` : '',
+              detail: item.status === 'declined' ? t('被拒绝') : code ? t('退出码 {code}', { code }) : '',
               input: clipDetail(cmd),
               output: item.aggregatedOutput ? clipDetail(String(item.aggregatedOutput)) : undefined,
               failed: failed || undefined,
@@ -176,12 +188,12 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         return (item.changes ?? []).map((c: any): CliEvent => {
           const p = rel(o.cwd, c.path)
           const { add, del } = diffStat(c.diff)
-          const kind = { add: '新建', delete: '删除', update: '修改' }[c.kind?.type as string] ?? ''
+          const kind = { add: t('新建'), delete: t('删除'), update: t('修改') }[c.kind?.type as string] ?? ''
           return {
             type: 'tool',
             tool: {
               kind: 'edit',
-              name: c.kind?.type === 'add' ? '写入' : c.kind?.type === 'delete' ? '删除' : undefined,
+              name: c.kind?.type === 'add' ? t('写入') : c.kind?.type === 'delete' ? t('删除') : undefined,
               label: p,
               detail: add || del ? `+${add} -${del}` : kind,
               input: c.diff ? clipDetail(String(c.diff)) : undefined,
@@ -198,7 +210,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
               kind: 'other',
               name: 'MCP',
               label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`,
-              detail: item.error ? '失败' : '',
+              detail: item.error ? t('失败') : '',
               input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
               output: item.error
                 ? clipDetail(toolText(item.error.message ?? item.error))
@@ -215,7 +227,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'other',
-              name: String(item.tool ?? '工具'),
+              name: String(item.tool ?? t('工具')),
               label: '',
               detail: '',
               input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
@@ -225,9 +237,11 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
           },
         ]
       case 'webSearch':
-        return [{ type: 'tool', tool: { kind: 'web', name: '网页搜索', label: String(item.query ?? ''), detail: '' } }]
+        return [
+          { type: 'tool', tool: { kind: 'web', name: t('网页搜索'), label: String(item.query ?? ''), detail: '' } },
+        ]
       case 'imageView':
-        return [{ type: 'tool', tool: { kind: 'read', name: '查看图片', label: rel(o.cwd, item.path), detail: '' } }]
+        return [{ type: 'tool', tool: { kind: 'read', name: t('查看图片'), label: rel(o.cwd, item.path), detail: '' } }]
       default:
         return []
     }
@@ -250,7 +264,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
     switch (m.method) {
       case 'windowsSandbox/setupCompleted':
         if (thread || finished) return []
-        if (m.params?.success === false) return sandboxFailed(String(m.params?.error ?? '未知错误'))
+        if (m.params?.success === false) return sandboxFailed(String(m.params?.error ?? t('未知错误')))
         startThread()
         return []
       case 'item/started':
@@ -295,11 +309,11 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         return p.toModel ? [{ type: 'usage', model: String(p.toModel) }] : []
       case 'error':
         // 会自动重试的错误不算失败
-        return p.willRetry ? [] : [{ type: 'error', message: String(p.error?.message ?? '执行出错') }]
+        return p.willRetry ? [] : [{ type: 'error', message: String(p.error?.message ?? t('执行出错')) }]
       case 'turn/completed': {
-        const t = p.turn ?? {}
-        if (t.status === 'completed') return finish(true)
-        return finish(false, t.error?.message ?? (t.status === 'interrupted' ? '已中断' : '执行失败'))
+        const turn = p.turn ?? {}
+        if (turn.status === 'completed') return finish(true)
+        return finish(false, turn.error?.message ?? (turn.status === 'interrupted' ? t('已中断') : t('执行失败')))
       }
       default:
         return []

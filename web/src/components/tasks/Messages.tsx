@@ -7,6 +7,7 @@ import { ToolRow } from './ToolRow'
 import { Markdown } from './Markdown'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
+import { t } from '@shared/i18n'
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
 function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
@@ -52,7 +53,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-xs text-subtle hover:text-muted"
       >
         <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
-        <span className={cn(live && 'thinking-shimmer')}>{live ? '正在思考…' : '思考过程'}</span>
+        <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
         <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
       </button>
       {shown && (
@@ -108,7 +109,7 @@ export function AgentMessage({
       <div className="flex min-w-0 flex-1 flex-col gap-2">
         {!compact && (
           <div className="flex items-center gap-2 pt-0.5 text-[13px]">
-            <span className="font-medium">{author?.name ?? a?.name ?? '已删除的 Agent'}</span>
+            <span className="font-medium">{author?.name ?? a?.name ?? t('已删除的 Agent')}</span>
             {(author?.model || a) && (
               <span className="font-mono text-xs text-subtle">{author ? author.model : modelOf(a!)}</span>
             )}
@@ -193,7 +194,11 @@ export function FoldedRun({
   if (live || last < 0 || (!tools && !thoughts && !notes))
     return <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} />
 
-  const parts = [thoughts && `思考 ${thoughts} 次`, tools && `${tools} 次工具调用`, notes && `${notes} 段说明`]
+  const parts = [
+    thoughts && t('思考 {n} 次', { n: thoughts }),
+    tools && t('{n} 次工具调用', { n: tools }),
+    notes && t('{n} 段说明', { n: notes }),
+  ]
   const toggle = (
     <button
       onClick={() => setOpen(!open)}
@@ -201,7 +206,7 @@ export function FoldedRun({
       className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-xs text-subtle hover:text-muted"
     >
       <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
-      {open ? '收起过程' : `已完成 · ${parts.filter(Boolean).join(' · ')}`}
+      {open ? t('收起过程') : t('已完成 · {parts}', { parts: parts.filter(Boolean).join(' · ') })}
     </button>
   )
   if (open)

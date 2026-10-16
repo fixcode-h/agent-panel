@@ -7,6 +7,7 @@ import { useAgentView } from '@/lib/agent-view'
 import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/FlowCanvas'
 import { nodeViews } from '@/components/flow/views'
 import { StepSection } from './StepSection'
+import { t } from '@shared/i18n'
 
 /** 一组子节点合起来的状态 */
 function combined(list: StepStatus[]): StepStatus | undefined {
@@ -22,8 +23,11 @@ export function TaskFlow({
   task,
   focus,
   onOpenChat,
+  gutter,
 }: {
   task: Task
+  /** 放在节点输出左边空白处的内容（任务进度），宽度够时才有 */
+  gutter?: React.ReactNode
   /** 外面（右栏的任务进度）要求选中的节点；at 变了就重新选中 */
   focus?: { id: string; at: number }
   onOpenChat: () => void
@@ -78,9 +82,11 @@ export function TaskFlow({
             status: combined(cur.map((k) => k.status)),
             extra:
               h.slot === 'review' && step?.rounds
-                ? `${step.rounds} 轮 · ${step.verdict === 'fail' ? '未通过' : '通过'}`
+                ? step.verdict === 'fail'
+                  ? t('{n} 轮 · 未通过', { n: step.rounds })
+                  : t('{n} 轮 · 通过', { n: step.rounds })
                 : h.slot === 'review' && last
-                  ? `第 ${last} 轮`
+                  ? t('第 {n} 轮', { n: last })
                   : (h.extra ?? undefined),
           }
         }),
@@ -90,7 +96,11 @@ export function TaskFlow({
   }, [flow, workflow, workflows, agents, task])
 
   if (!flow || !workflow)
-    return <p className="px-6 py-10 text-center text-[13px] text-subtle">这个任务的工作流已经删除，无法显示流程图。</p>
+    return (
+      <p className="px-6 py-10 text-center text-[13px] text-subtle">
+        {t('这个任务的工作流已经删除，无法显示流程图。')}
+      </p>
+    )
 
   const status = (id: string) => (id === START ? 'done' : tops.find((s) => s.id === id)?.status)
   const allDone = tops.length > 0 && tops.every((s) => s.status === 'done')
@@ -113,7 +123,7 @@ export function TaskFlow({
       <FlowCanvas
         flow={flow}
         views={views}
-        startSub="任务开始"
+        startSub={t('任务开始')}
         terms={{ start: 'done', end: allDone ? 'done' : undefined }}
         selected={sel}
         onSelect={(id) => {
@@ -125,32 +135,35 @@ export function TaskFlow({
         className="flex h-[min(440px,50vh)] shrink-0 border-b bg-panel"
       />
       {step && (
-        <div
-          ref={scroller}
-          onScroll={(e) => {
-            const el = e.currentTarget
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-          }}
-          className="min-h-0 flex-1 overflow-y-auto"
-        >
-          <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
-            <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky />
-            {!msgs.length && step.status !== 'running' && (
-              <p className="text-[13px] text-subtle">
-                {step.status === 'pending'
-                  ? '这个节点还没开始执行。'
-                  : step.status === 'skipped'
-                    ? '没有执行。'
-                    : '没有输出。'}
-              </p>
-            )}
-            <button
-              onClick={onOpenChat}
-              className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
-            >
-              <MessageSquareText className="h-3.5 w-3.5" />
-              在对话中查看完整过程
-            </button>
+        <div className="relative flex min-h-0 flex-1 flex-col">
+          {gutter}
+          <div
+            ref={scroller}
+            onScroll={(e) => {
+              const el = e.currentTarget
+              stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+            }}
+            className="min-h-0 flex-1 overflow-y-auto"
+          >
+            <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
+              <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky />
+              {!msgs.length && step.status !== 'running' && (
+                <p className="text-[13px] text-subtle">
+                  {step.status === 'pending'
+                    ? t('这个节点还没开始执行。')
+                    : step.status === 'skipped'
+                      ? t('没有执行。')
+                      : t('没有输出。')}
+                </p>
+              )}
+              <button
+                onClick={onOpenChat}
+                className="flex cursor-pointer items-center gap-1 self-start text-xs text-accent hover:underline"
+              >
+                <MessageSquareText className="h-3.5 w-3.5" />
+                {t('在对话中查看完整过程')}
+              </button>
+            </div>
           </div>
         </div>
       )}

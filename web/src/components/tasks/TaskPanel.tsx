@@ -26,7 +26,7 @@ function CommandSection({ task }: { task: Task }) {
   const argv = chatNewer ? task.command : step?.command
   if (!argv?.length) return null
   return (
-    <Section title="启动命令" extra={chatNewer ? undefined : step && stepLabel(step)}>
+    <Section title={t('启动命令')} extra={chatNewer ? undefined : step && stepLabel(step)}>
       <Terminal argv={argv} title={argv[0].split(/[\\/]/).pop()} className="rounded-lg" />
     </Section>
   )
@@ -104,7 +104,7 @@ export function TaskPanel({
         onReverted={(x) => upsertTask(taskSummary(x))}
       />
       <Section
-        title="任务进度"
+        title={t('任务进度')}
         className={progressClass}
         extra={
           task.mode === 'workflow'
@@ -112,7 +112,7 @@ export function TaskPanel({
               ? `${done}/${tops.length}`
               : undefined
             : (task.todos ?? []).length
-              ? `${task.todos.filter((t) => t.status === 'done').length}/${task.todos.length}`
+              ? `${task.todos.filter((td) => td.status === 'done').length}/${task.todos.length}`
               : undefined
         }
       >
@@ -132,7 +132,7 @@ export function TaskPanel({
                       type="button"
                       disabled={!onStep}
                       onClick={() => onStep?.(st.id)}
-                      title={onStep ? '在流程图里查看这一步' : undefined}
+                      title={onStep ? t('在流程图里查看这一步') : undefined}
                       className="-mx-1.5 -my-0.5 flex flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
                     >
                       <span
@@ -151,7 +151,7 @@ export function TaskPanel({
                             {a.name}
                           </span>
                         )}
-                        {st.kind === 'flow' && <span>调用流程</span>}
+                        {st.kind === 'flow' && <span>{t('调用流程')}</span>}
                         {st.rounds > 0 && (
                           <span className={st.verdict === 'fail' ? 'text-warning' : 'text-success'}>
                             {verdictText(st)}
@@ -179,7 +179,7 @@ export function TaskPanel({
                             </span>
                             {k.verdict && (
                               <span className={k.verdict === 'fail' ? 'text-warning' : 'text-success'}>
-                                {k.verdict === 'fail' ? '不通过' : '通过'}
+                                {k.verdict === 'fail' ? t('不通过') : t('通过')}
                               </span>
                             )}
                           </li>
@@ -195,7 +195,7 @@ export function TaskPanel({
           <Todos todos={task.todos} />
         ) : (
           <p className="text-xs leading-relaxed text-subtle">
-            直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。
+            {t('直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。')}
           </p>
         )}
         {task.mode === 'workflow' && (task.todos ?? []).length > 0 && (
@@ -209,9 +209,9 @@ export function TaskPanel({
         <>
           <CommandSection task={task} />
           {task.simulated ? (
-            <Section title="上下文" extra="估算">
+            <Section title={t('上下文')} extra={t('估算')}>
               <div className="mb-1.5 flex items-baseline justify-between text-xs">
-                <span className="font-medium text-fg">已使用 {pct(ctx.used).toFixed(1)}%</span>
+                <span className="font-medium text-fg">{t('已使用 {n}%', { n: pct(ctx.used).toFixed(1) })}</span>
                 <span className="font-mono text-subtle">
                   {fmtTokens(ctx.used)} / {fmtTokens(ctx.window)}
                 </span>
@@ -219,7 +219,7 @@ export function TaskPanel({
               <div
                 className="flex h-1.5 overflow-hidden rounded-full bg-field"
                 role="img"
-                aria-label={`上下文已使用 ${pct(ctx.used).toFixed(1)}%`}
+                aria-label={t('上下文已使用 {n}%', { n: pct(ctx.used).toFixed(1) })}
               >
                 {ctx.parts.map((p) => (
                   <span key={p.key} style={{ width: `${pct(p.tokens)}%`, background: p.color }} />
@@ -236,16 +236,16 @@ export function TaskPanel({
                 ))}
                 <li className="flex items-center gap-2 text-subtle">
                   <span className="h-2 w-2 shrink-0 rounded-[2px] bg-field ring-1 ring-line-strong" />
-                  <span className="flex-1">剩余</span>
+                  <span className="flex-1">{t('剩余')}</span>
                   <span className="font-mono">{fmtTokens(ctx.window - ctx.used)}</span>
                   <span className="w-12 text-right font-mono">{pct(ctx.window - ctx.used).toFixed(1)}%</span>
                 </li>
               </ul>
             </Section>
           ) : (
-            <Section title="上下文" extra="CLI 报告">
+            <Section title={t('上下文')} extra={t('CLI 报告')}>
               {Object.keys(task.usage.agents).length === 0 ? (
-                <p className="text-xs text-subtle">CLI 开始运行后会显示上下文占用。</p>
+                <p className="text-xs text-subtle">{t('CLI 开始运行后会显示上下文占用。')}</p>
               ) : (
                 <ul className="flex flex-col gap-3">
                   {Object.entries(task.usage.agents).map(([id, u]) => {
@@ -255,7 +255,7 @@ export function TaskPanel({
                       <li key={id} className="flex flex-col gap-1.5">
                         <div className="flex items-center gap-2 text-xs">
                           {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
-                          <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? '已删除的 Agent'}</span>
+                          <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? t('已删除的 Agent')}</span>
                           <span className="font-mono text-subtle">
                             {fmtTokens(u.context)} / {fmtTokens(u.window)}
                           </span>
@@ -268,15 +268,15 @@ export function TaskPanel({
                         </div>
                         <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
                           <span>
-                            {u.model || '默认模型'} · 已使用 {p.toFixed(1)}%
+                            {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
                           </span>
                           {u.tps > 0 ? (
                             <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
                           ) : (
                             u.genMs > 3000 &&
                             u.outputTokens > 0 && (
-                              <span title="输出 token ÷ 生成用时">
-                                · 平均 {((u.outputTokens / u.genMs) * 1000).toFixed(1)} token/s
+                              <span title={t('输出 token ÷ 生成用时')}>
+                                · {t('平均 {n} token/s', { n: ((u.outputTokens / u.genMs) * 1000).toFixed(1) })}
                               </span>
                             )
                           )}
@@ -292,7 +292,7 @@ export function TaskPanel({
           {!task.simulated || task.usage.inputTokens > 0 ? <TokenUsage task={task} /> : null}
 
           <Section
-            title="更改"
+            title={t('更改')}
             extra={
               task.changes.length ? (
                 <span className="font-mono">
@@ -320,20 +320,20 @@ export function TaskPanel({
                 ))}
               </ul>
             ) : (
-              <p className="text-xs text-subtle">还没有改动文件。</p>
+              <p className="text-xs text-subtle">{t('还没有改动文件。')}</p>
             )}
           </Section>
 
-          <Section title="环境">
+          <Section title={t('环境')}>
             <ul className="flex flex-col gap-2 text-xs text-muted">
               <li className="flex items-center gap-2">
                 <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 {project ? (
                   <span className="min-w-0 truncate font-mono" title={project.path}>
-                    {project.path || '未选择目录'}
+                    {project.path || t('未选择目录')}
                   </span>
                 ) : (
-                  <span className="min-w-0 truncate">聊天，不在任何项目里</span>
+                  <span className="min-w-0 truncate">{t('聊天，不在任何项目里')}</span>
                 )}
               </li>
               {dir?.gitBranch && (
@@ -346,13 +346,15 @@ export function TaskPanel({
                 {task.mode === 'workflow' ? (
                   <>
                     <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    <span className="truncate">工作流：{workflow?.name ?? '已删除的工作流'}</span>
+                    <span className="truncate">
+                      {t('工作流：{name}', { name: workflow?.name ?? t('已删除的工作流') })}
+                    </span>
                   </>
                 ) : (
                   <>
                     <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
                     <span className="truncate">
-                      对话：{chatAgent?.name ?? '已删除的 Agent'}
+                      {t('对话：{name}', { name: chatAgent?.name ?? t('已删除的 Agent') })}
                       {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
                     </span>
                   </>
@@ -373,32 +375,35 @@ function TokenUsage({ task }: { task: Task }) {
   const rate = cacheRate(task)
   const tps = Object.values(u.agents).reduce((n, a) => n + (a.tps ?? 0), 0)
   const rows: [string, string, string?][] = [
-    ['输入', fmtTokens(u.inputTokens)],
-    ['输出', fmtTokens(u.outputTokens)],
-    ['缓存命中', fmtTokens(u.cacheReadTokens ?? 0)],
-    ['缓存写入', fmtTokens(u.cacheWriteTokens ?? 0)],
-    ['未命中缓存', fmtTokens(Math.max(0, u.inputTokens - (u.cacheReadTokens ?? 0)))],
+    [t('输入'), fmtTokens(u.inputTokens)],
+    [t('输出'), fmtTokens(u.outputTokens)],
+    [t('缓存命中'), fmtTokens(u.cacheReadTokens ?? 0)],
+    [t('缓存写入'), fmtTokens(u.cacheWriteTokens ?? 0)],
+    [t('未命中缓存'), fmtTokens(Math.max(0, u.inputTokens - (u.cacheReadTokens ?? 0)))],
   ]
   return (
     <Section
-      title="Token 用量"
+      title={t('Token 用量')}
       extra={tps > 0 ? <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span> : undefined}
     >
       {total === 0 ? (
-        <p className="text-xs text-subtle">CLI 报告用量后会显示在这里。</p>
+        <p className="text-xs text-subtle">{t('CLI 报告用量后会显示在这里。')}</p>
       ) : (
         <div className="flex flex-col gap-2.5">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-lg font-semibold tabular-nums">{fmtTokens(total)}</span>
-            <span className="text-xs text-subtle">累计 token</span>
+            <span className="text-xs text-subtle">{t('累计 token')}</span>
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between text-xs">
               {/* 整个任务所有调用累加：读缓存的输入 ÷ 全部输入，不是最后一次请求的 */}
-              <span className="text-muted">缓存命中率 · 累计</span>
+              <span className="text-muted">{t('缓存命中率 · 累计')}</span>
               <span
                 className="font-mono font-medium tabular-nums"
-                title={`读缓存 ${fmtTokens(task.usage.cacheReadTokens ?? 0)} / 输入 ${fmtTokens(task.usage.inputTokens)}`}
+                title={t('读缓存 {hit} / 输入 {input}', {
+                  hit: fmtTokens(task.usage.cacheReadTokens ?? 0),
+                  input: fmtTokens(task.usage.inputTokens),
+                })}
               >
                 {(rate * 100).toFixed(1)}%
               </span>
@@ -406,7 +411,7 @@ function TokenUsage({ task }: { task: Task }) {
             <div
               className="h-1.5 overflow-hidden rounded-full bg-field"
               role="img"
-              aria-label={`缓存命中率 ${(rate * 100).toFixed(1)}%`}
+              aria-label={t('缓存命中率 {n}%', { n: (rate * 100).toFixed(1) })}
             >
               <span className="block h-full rounded-full bg-success" style={{ width: `${rate * 100}%` }} />
             </div>
@@ -420,7 +425,7 @@ function TokenUsage({ task }: { task: Task }) {
             ))}
             {u.costUsd > 0 && (
               <div className="flex items-baseline justify-between gap-2">
-                <dt className="text-subtle">费用</dt>
+                <dt className="text-subtle">{t('费用')}</dt>
                 <dd className="font-mono text-muted tabular-nums">${u.costUsd.toFixed(3)}</dd>
               </div>
             )}
@@ -434,24 +439,28 @@ function TokenUsage({ task }: { task: Task }) {
 /** CLI 的待办清单 / 计划；工作流里注明是哪个 Agent 的 */
 function Todos({ todos, byAgent }: { todos: TaskTodo[]; byAgent?: Map<string, { name: string }> }) {
   const groups = new Map<string, TaskTodo[]>()
-  for (const t of todos) groups.set(t.agentId, [...(groups.get(t.agentId) ?? []), t])
+  for (const td of todos) groups.set(td.agentId, [...(groups.get(td.agentId) ?? []), td])
   return (
     <div className="flex flex-col gap-2.5">
       {[...groups].map(([id, list]) => (
         <div key={id} className="flex flex-col gap-1">
-          {byAgent && <span className="text-[11px] text-subtle">{byAgent.get(id)?.name ?? 'Agent'} 的待办</span>}
+          {byAgent && (
+            <span className="text-[11px] text-subtle">
+              {t('{name} 的待办', { name: byAgent.get(id)?.name ?? 'Agent' })}
+            </span>
+          )}
           <ul className="flex flex-col gap-1">
-            {list.map((t, i) => (
+            {list.map((td, i) => (
               <li key={i} className="flex items-start gap-2 text-xs">
-                <StepIcon status={t.status} className="mt-px h-3.5 w-3.5" />
+                <StepIcon status={td.status} className="mt-px h-3.5 w-3.5" />
                 <span
                   className={cn(
                     'min-w-0 flex-1 [overflow-wrap:anywhere]',
-                    t.status === 'done' ? 'text-subtle line-through decoration-line-strong' : 'text-fg',
-                    t.status === 'running' && 'font-medium',
+                    td.status === 'done' ? 'text-subtle line-through decoration-line-strong' : 'text-fg',
+                    td.status === 'running' && 'font-medium',
                   )}
                 >
-                  {t.text}
+                  {td.text}
                 </span>
               </li>
             ))}

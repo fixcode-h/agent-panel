@@ -1,21 +1,22 @@
 import type { Agent, Task, TaskStatus, TaskStep, ToolUse, Workflow } from '@shared/schema'
 import { SLOT_LABEL } from '@shared/flow'
+import { getLang, t } from '@shared/i18n'
 
 export const statusLabel: Record<TaskStatus, string> = {
-  running: '执行中',
-  done: '已完成',
-  stopped: '已暂停',
-  failed: '失败',
+  running: t('执行中'),
+  done: t('已完成'),
+  stopped: t('已暂停'),
+  failed: t('失败'),
 }
 
 /** 「3 分钟前」这类相对时间 */
 export function timeAgo(iso: string, now = Date.now()) {
   const s = Math.max(0, (now - new Date(iso).getTime()) / 1000)
-  if (s < 60) return '刚刚'
-  if (s < 3600) return `${Math.floor(s / 60)} 分钟前`
-  if (s < 86400) return `${Math.floor(s / 3600)} 小时前`
-  if (s < 86400 * 30) return `${Math.floor(s / 86400)} 天前`
-  return new Date(iso).toLocaleDateString('zh-CN')
+  if (s < 60) return t('刚刚')
+  if (s < 3600) return t('{n} 分钟前', { n: Math.floor(s / 60) })
+  if (s < 86400) return t('{n} 小时前', { n: Math.floor(s / 3600) })
+  if (s < 86400 * 30) return t('{n} 天前', { n: Math.floor(s / 86400) })
+  return new Date(iso).toLocaleDateString(getLang() === 'en' ? 'en-US' : 'zh-CN')
 }
 
 /** 粗略估算 token：中日韩字符约 1 个，其他字符约 4 个一个 */
@@ -48,22 +49,22 @@ export function contextUsage(task: Task, workflow: Workflow | undefined, agents:
   const team = task.mode === 'chat' ? [task.agentId] : [...new Set(task.steps.map((s) => s.agentId))]
   const byId = new Map(agents.map((a) => [a.id, a]))
   const parts: ContextPart[] = [
-    { key: 'doc', label: '工作流文档', tokens: estimateTokens(workflow?.document ?? ''), color: 'var(--accent)' },
+    { key: 'doc', label: t('工作流文档'), tokens: estimateTokens(workflow?.document ?? ''), color: 'var(--accent)' },
     {
       key: 'role',
-      label: '角色设定',
+      label: t('角色设定'),
       tokens: team.reduce((n, id) => n + estimateTokens(byId.get(id)?.instructions ?? ''), 0),
       color: '#3b82f6',
     },
     {
       key: 'msg',
-      label: '对话消息',
+      label: t('对话消息'),
       tokens: task.messages.reduce((n, m) => n + estimateTokens(m.text), 0),
       color: '#10b981',
     },
     {
       key: 'tool',
-      label: '工具结果',
+      label: t('工具结果'),
       tokens: task.messages.reduce((n, m) => n + m.tools.reduce((k, t) => k + TOOL_TOKENS[t.kind], 0), 0),
       color: '#f59e0b',
     },
@@ -113,18 +114,30 @@ const VERB: Record<ToolUse['kind'], string> = {
   other: '',
 }
 
+/** 显示用的默认动作名；VERB 保留中文原文，用来识别旧数据 label 里已经带的动作 */
+const VERB_TEXT: Record<ToolUse['kind'], string> = {
+  read: t('读取'),
+  edit: t('编辑'),
+  run: t('运行命令'),
+  search: t('搜索'),
+  web: t('网页'),
+  skill: t('技能'),
+  agent: t('子任务'),
+  other: '',
+}
+
 /** 工具调用的动作名；旧数据的 label 里已经带了动作（「搜索 xxx」「子任务：xxx」）就不再重复 */
 export function toolVerb(tool: ToolUse) {
   const v = tool.name ?? VERB[tool.kind]
   if (!v || tool.label.startsWith(v) || /^(网页搜索|查找文件|子任务：)/.test(tool.label)) return ''
-  return v
+  return tool.name ?? VERB_TEXT[tool.kind]
 }
 
 /** 「正在做什么」的一句话 */
 export function currentActivity(a: ReturnType<typeof stepActivity>) {
-  if (a.last?.text.trim()) return `正在输出：${plainLine(a.last.text, true)}`
+  if (a.last?.text.trim()) return t('正在输出：{text}', { text: plainLine(a.last.text, true) })
   if (a.lastTool) return `${toolVerb(a.lastTool)} ${a.lastTool.label}`.trim()
-  return '正在启动 CLI…'
+  return t('正在启动 CLI…')
 }
 
 /** 去掉 Markdown 记号后的第一行（last = 取最后一行） */
@@ -143,9 +156,9 @@ export function plainLine(text: string, last = false) {
 
 export function fmtDuration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000))
-  if (s < 60) return `${s} 秒`
-  if (s < 3600) return `${Math.floor(s / 60)} 分 ${String(s % 60).padStart(2, '0')} 秒`
-  return `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`
+  if (s < 60) return t('{s} 秒', { s })
+  if (s < 3600) return t('{m} 分 {s} 秒', { m: Math.floor(s / 60), s: String(s % 60).padStart(2, '0') })
+  return t('{h} 小时 {m} 分', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) })
 }
 
 export function stepDuration(step: { startedAt: string; endedAt: string; status: string }, now: number) {
@@ -158,7 +171,7 @@ export function stepDuration(step: { startedAt: string; endedAt: string; status:
 /** 子节点的说明：「验收 第 2 轮 · 审查改动」 */
 export function stepLabel(s: TaskStep) {
   if (!s.parentId) return s.title
-  return `${SLOT_LABEL[s.slot] ?? ''}${s.round ? ` 第 ${s.round} 轮` : ''} · ${s.title}`
+  return `${SLOT_LABEL[s.slot] ?? ''}${s.round ? t(' 第 {n} 轮', { n: s.round }) : ''} · ${s.title}`
 }
 
 /** 节点在第几层：主流程节点是 0 */
@@ -167,5 +180,5 @@ export const stepDepth = (s: TaskStep) => (s.id.split('/').length - 1) / 2
 /** 验收情况：「验收 2 轮 · 通过」 */
 export function verdictText(s: TaskStep) {
   if (!s.rounds) return ''
-  return `验收 ${s.rounds} 轮 · ${s.verdict === 'fail' ? '未通过' : '通过'}`
+  return s.verdict === 'fail' ? t('验收 {n} 轮 · 未通过', { n: s.rounds }) : t('验收 {n} 轮 · 通过', { n: s.rounds })
 }

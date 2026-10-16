@@ -1,5 +1,6 @@
 import { ArrowUpRight, Crown } from 'lucide-react'
 import type { Workflow } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { StatusDot } from '@/components/ui/badge'
@@ -12,8 +13,8 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
   if (!workflow)
     return (
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-1 text-[13px] font-semibold">工作流</h3>
-        <p className="text-xs text-subtle">还没有指定工作流。</p>
+        <h3 className="mb-1 text-[13px] font-semibold">{t('工作流')}</h3>
+        <p className="text-xs text-subtle">{t('还没有指定工作流。')}</p>
       </section>
     )
   const byId = new Map(agents.map((a) => [a.id, a]))
@@ -22,7 +23,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold">工作流</h3>
+        <h3 className="text-[13px] font-semibold">{t('工作流')}</h3>
         {source && <span className="text-xs text-subtle">{source}</span>}
       </div>
       <button
@@ -32,9 +33,9 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[13px] font-medium">{workflow.name}</span>
           {isReady(workflowChecks(workflow, agents, clis, workflows)) ? (
-            <StatusDot tone="success" label="就绪" />
+            <StatusDot tone="success" label={t('就绪')} />
           ) : (
-            <StatusDot tone="warning" label="未就绪，点开查看" />
+            <StatusDot tone="warning" label={t('未就绪，点开查看')} />
           )}
         </span>
         <ArrowUpRight className="h-4 w-4 text-subtle" />

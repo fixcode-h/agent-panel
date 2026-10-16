@@ -33,6 +33,10 @@ import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from './AgentAvatar'
 import { CategoryPicker } from './CategoryPicker'
 import { CommandPreview } from './CommandPreview'
+import { t } from '@shared/i18n'
+
+// 会改文件、执行任意命令、不用沙箱的权限，界面上标成警告色
+const DANGER_PERMS = ['bypassPermissions', 'danger-full-access', 'yolo']
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
 
@@ -101,11 +105,14 @@ export function AgentDetail({
   const builtin = agent.id === DEFAULT_AGENT_ID
   // 模型只能选三档；以前存的具体模型名单独列一项，换成档位后就不再出现
   const tierOptions = [
-    ...MODEL_TIERS.map((t) => ({ value: `@${t.id}`, label: `${t.label}档 · ${cs.tiers[t.id].model || '自动'}` })),
+    ...MODEL_TIERS.map((m) => ({
+      value: `@${m.id}`,
+      label: t('{tier}档 · {model}', { tier: m.label, model: cs.tiers[m.id].model || t('自动') }),
+    })),
     ...(draft.model && !tierOf(draft.model)
-      ? [{ value: draft.model, label: `${draft.model}（旧设置，请换成档位）` }]
+      ? [{ value: draft.model, label: t('{model}（旧设置，请换成档位）', { model: draft.model }) }]
       : !draft.model
-        ? [{ value: '', label: `默认模型 · ${usedModel || '自动'}（旧设置，请换成档位）` }]
+        ? [{ value: '', label: t('默认模型 · {model}（旧设置，请换成档位）', { model: usedModel || t('自动') }) }]
         : []),
   ]
   const live = { ...agent, ...value }
@@ -116,11 +123,11 @@ export function AgentDetail({
       w,
       role:
         w.mainAgentId === agent.id
-          ? '主 Agent'
+          ? t('主 Agent')
           : w.members.some((m) => m.agentId === agent.id)
-            ? '子 Agent'
+            ? t('子 Agent')
             : w.flows.some((f) => f.nodes.some((n) => n.agentId === agent.id))
-              ? '节点执行者'
+              ? t('节点执行者')
               : '',
     }))
     .filter((x) => x.role)
@@ -129,7 +136,7 @@ export function AgentDetail({
     try {
       await api.deleteAgent(agent.id)
       setAgents((as) => as.filter((a) => a.id !== agent.id))
-      toast.success(`已删除「${agent.name}」`)
+      toast.success(t('已删除「{name}」', { name: agent.name }))
       onDeleted()
     } catch (e) {
       toast.error((e as Error).message)
@@ -144,42 +151,48 @@ export function AgentDetail({
         header={
           <DetailHeader
             leading={<AgentAvatar icon={draft.icon} cli={draft.cli} size="lg" dim={!draft.enabled} />}
-            title={draft.name || '未命名 Agent'}
+            title={draft.name || t('未命名 Agent')}
             meta={
               <>
-                <Badge>{builtin ? '默认' : (category?.name ?? '未分类')}</Badge>
+                <Badge>{builtin ? t('默认') : (category?.name ?? t('未分类'))}</Badge>
                 {!draft.enabled ? (
-                  <StatusDot tone="muted" label="已停用" />
+                  <StatusDot tone="muted" label={t('已停用')} />
                 ) : isReady(checks) ? (
-                  <StatusDot tone="success" label="就绪" />
+                  <StatusDot tone="success" label={t('就绪')} />
                 ) : (
-                  <StatusDot tone="warning" label="CLI 未安装" />
+                  <StatusDot tone="warning" label={t('CLI 未安装')} />
                 )}
               </>
             }
-            subtitle={draft.description || '还没有简介'}
-            save={{ ...save, invalid: valid ? undefined : '名称为空，未保存' }}
+            subtitle={draft.description || t('还没有简介')}
+            save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
             actions={
               <>
                 {!builtin && (
                   <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[13px] text-muted">
                     <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
-                    启用
+                    {t('启用')}
                   </label>
                 )}
-                <Button variant="secondary" onClick={() => setAssist(true)} title="让本机 CLI 按你的要求优化">
+                <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
                   <Sparkles className="h-4 w-4 text-accent" />
-                  AI 优化
+                  {t('AI 优化')}
                 </Button>
-                <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label={t('复制一份')}
+                  title={t('复制一份')}
+                  onClick={onDuplicate}
+                >
                   <Copy className="h-4 w-4" />
                 </Button>
                 {!builtin && (
                   <Button
                     variant="danger-outline"
                     size="icon"
-                    aria-label="删除"
-                    title="删除"
+                    aria-label={t('删除')}
+                    title={t('删除')}
                     onClick={() => setDeleting(true)}
                   >
                     <Trash2 className="h-4 w-4" />
@@ -191,31 +204,31 @@ export function AgentDetail({
         }
         form={
           <>
-            <FormSection title="基本信息">
+            <FormSection title={t('基本信息')}>
               <div className="flex flex-wrap gap-4">
-                <Field label="名称" className="flex-[1_1_200px]" error={valid ? undefined : '名称不能为空'}>
+                <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
                   <Input
                     value={draft.name}
                     onChange={(e) => set('name', e.target.value)}
-                    placeholder="例如：前端开发"
+                    placeholder={t('例如：前端开发')}
                   />
                 </Field>
                 {!builtin && (
                   <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                    <span className="text-xs text-muted">分类</span>
+                    <span className="text-xs text-muted">{t('分类')}</span>
                     <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
                   </div>
                 )}
               </div>
-              <Field label="简介">
+              <Field label={t('简介')}>
                 <Input
                   value={draft.description}
                   onChange={(e) => set('description', e.target.value)}
-                  placeholder="一句话说明它擅长什么"
+                  placeholder={t('一句话说明它擅长什么')}
                 />
               </Field>
               <div className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted">图标</span>
+                <span className="text-xs text-muted">{t('图标')}</span>
                 <div className="flex flex-wrap gap-1.5">
                   {AGENT_ICONS.map(({ id, label, icon: Icon }) => (
                     <button
@@ -236,23 +249,28 @@ export function AgentDetail({
               </div>
             </FormSection>
 
-            <FormSection title="运行环境">
+            <FormSection title={t('运行环境')}>
               {builtin ? (
                 <p className="rounded-lg border bg-field px-3 py-2.5 text-[13px] leading-relaxed text-muted">
-                  自带的默认 Agent 固定使用默认 CLI（现在是 {clis.find((c) => c.id === defCli)?.name ?? defCli}
-                  ）的默认模型
-                  <span className="mx-1 font-mono text-fg">{usedModel || '自动'}</span>
-                  和思考强度
-                  <span className="mx-1 font-mono text-fg">{defEffort || '自动'}</span>
-                  ，在设置里换默认 CLI 或默认模型时跟着变。对话时可以在输入框旁边临时换模型和思考强度。
+                  {t('自带的默认 Agent 固定使用默认 CLI（现在是 {cli}）的默认模型', {
+                    cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                  })}
+                  <span className="mx-1 font-mono text-fg">{usedModel || t('自动')}</span>
+                  {t('和思考强度')}
+                  <span className="mx-1 font-mono text-fg">{defEffort || t('自动')}</span>
+                  {t('，在设置里换默认 CLI 或默认模型时跟着变。对话时可以在输入框旁边临时换模型和思考强度。')}
                 </p>
               ) : (
                 <>
                   <Checkbox
                     checked={follow}
                     onChange={(v) => pickCli(v ? '' : defCli)}
-                    label={`跟随默认 CLI（现在是 ${clis.find((c) => c.id === defCli)?.name ?? defCli}）`}
-                    hint="在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。"
+                    label={t('跟随默认 CLI（现在是 {cli}）', {
+                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                    })}
+                    hint={t(
+                      '在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
+                    )}
                   />
                   <div className="flex flex-wrap gap-4">
                     <Field label="CLI" className="flex-[1_1_220px]">
@@ -263,15 +281,19 @@ export function AgentDetail({
                         onChange={(e) => pickCli(e.target.value)}
                         options={clis.map((c) => ({
                           value: c.id,
-                          label: `${c.name}${c.id === defCli ? '（默认）' : ''}${
-                            !c.enabled ? ' · 已停用' : c.installed ? '' : ' · 未安装'
-                          }`,
+                          label:
+                            (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
+                            (!c.enabled ? ` · ${t('已停用')}` : c.installed ? '' : ` · ${t('未安装')}`),
                         }))}
                       />
                     </Field>
-                    <Field label="模型" className="flex-[2_1_280px]" hint="三档对应的模型在设置里每个 CLI 下配置">
+                    <Field
+                      label={t('模型')}
+                      className="flex-[2_1_280px]"
+                      hint={t('三档对应的模型在设置里每个 CLI 下配置')}
+                    >
                       <Select
-                        aria-label="模型"
+                        aria-label={t('模型')}
                         value={draft.model}
                         onChange={(e) => set('model', e.target.value)}
                         options={tierOptions}
@@ -281,12 +303,12 @@ export function AgentDetail({
                   </div>
                   {cliDef && (
                     <Field
-                      label="思考强度"
-                      hint="越高想得越久、越慢。选档位时默认用档位的思考强度。"
+                      label={t('思考强度')}
+                      hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
                       className="max-w-[320px]"
                     >
                       <Select
-                        aria-label="思考强度"
+                        aria-label={t('思考强度')}
                         value={draft.effort === defEffort ? '' : draft.effort}
                         onChange={(e) => set('effort', e.target.value)}
                         options={defaultEffortOptions(cliDef, defEffort)}
@@ -297,20 +319,27 @@ export function AgentDetail({
               )}
               {cliDef && (
                 <Field
-                  label="权限"
+                  label={t('权限')}
                   hint={
-                    <span className={cn(/任意命令|不使用沙箱/.test(perm.hint) && 'text-warning')}>{perm.hint}</span>
+                    <span
+                      className={cn(
+                        // 按权限 id 判断，提示文字翻译成英文后正则就匹配不上了
+                        (DANGER_PERMS.includes(perm.id) || /任意命令|不使用沙箱/.test(perm.hint)) && 'text-warning',
+                      )}
+                    >
+                      {perm.hint}
+                    </span>
                   }
                 >
                   <div>
                     <Segmented
-                      label="权限"
+                      label={t('权限')}
                       // CLI 设置里的权限标（默认），选它就是跟随设置
                       value={perm.id === cs.permission ? '' : perm.id}
                       onChange={(v) => set('permission', v)}
                       options={cliDef.permissions.map((p) => ({
                         id: p.id === cs.permission ? '' : p.id,
-                        label: `${p.label}${p.id === cs.permission ? '（默认）' : ''}`,
+                        label: p.id === cs.permission ? t('{name}（默认）', { name: p.label }) : p.label,
                       }))}
                     />
                   </div>
@@ -318,20 +347,20 @@ export function AgentDetail({
               )}
             </FormSection>
 
-            <FormSection title="行为">
-              <Field label="角色设定" hint="执行任务时会作为前置说明交给这个 Agent。">
+            <FormSection title={t('行为')}>
+              <Field label={t('角色设定')} hint={t('执行任务时会作为前置说明交给这个 Agent。')}>
                 <Textarea
                   rows={5}
                   value={draft.instructions}
                   onChange={(e) => set('instructions', e.target.value)}
-                  placeholder="例如：你是资深前端工程师，负责按照设计稿实现页面，完成后运行测试并汇报结果。"
+                  placeholder={t('例如：你是资深前端工程师，负责按照设计稿实现页面，完成后运行测试并汇报结果。')}
                 />
               </Field>
-              <Field label="额外参数" hint="追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。">
+              <Field label={t('额外参数')} hint={t('追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。')}>
                 <Input
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
-                  placeholder="例如：--add-dir ../shared"
+                  placeholder={t('例如：--add-dir ../shared')}
                   className="font-mono text-[13px]"
                 />
               </Field>
@@ -349,8 +378,8 @@ export function AgentDetail({
             />
             <ReadinessCard checks={checks} />
             <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
-              <h3 className="text-[13px] font-semibold">所在工作流</h3>
-              {usedIn.length === 0 && <p className="text-xs text-subtle">还没有工作流使用它。</p>}
+              <h3 className="text-[13px] font-semibold">{t('所在工作流')}</h3>
+              {usedIn.length === 0 && <p className="text-xs text-subtle">{t('还没有工作流使用它。')}</p>}
               {usedIn.map(({ w, role }) => (
                 <button
                   key={w.id}
@@ -359,7 +388,7 @@ export function AgentDetail({
                 >
                   <WorkflowIcon className="h-4 w-4 text-subtle" />
                   <span className="flex-1 truncate">{w.name}</span>
-                  <Badge tone={role === '主 Agent' ? 'accent' : 'neutral'}>{role}</Badge>
+                  <Badge tone={role === t('主 Agent') ? 'accent' : 'neutral'}>{role}</Badge>
                 </button>
               ))}
             </section>
@@ -369,11 +398,13 @@ export function AgentDetail({
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`删除「${agent.name}」？`}
-        description="删除后无法恢复。"
+        title={t('删除「{name}」？', { name: agent.name })}
+        description={t('删除后无法恢复。')}
         blocked={
           usedIn.length
-            ? `它正在被工作流 ${usedIn.map(({ w }) => `「${w.name}」`).join('、')} 使用，需要先从这些工作流中移除才能删除。`
+            ? t('它正在被工作流 {names} 使用，需要先从这些工作流中移除才能删除。', {
+                names: usedIn.map(({ w }) => t('「{name}」', { name: w.name })).join(t('、')),
+              })
             : undefined
         }
         onConfirm={remove}

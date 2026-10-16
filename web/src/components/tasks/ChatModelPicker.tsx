@@ -7,6 +7,7 @@ import { defaultEffortOptions } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { modelOptions } from '@/components/agents/ModelSelect'
+import { t } from '@shared/i18n'
 
 type Opt = { value: string; label: string; group?: string }
 
@@ -26,7 +27,7 @@ function ChipSelect({
 }) {
   const cur = options.find((o) => o.value === value) ?? options[0]
   // 按钮上不要「（默认）」后缀，太长；列表里还标着
-  const text = (cur?.label ?? '').replace(/（默认）$/, '')
+  const text = (cur?.label ?? '').replace(/（默认）$| \(default\)$/, '')
   return (
     <Popover>
       <PopoverTrigger
@@ -85,7 +86,7 @@ export function ChatModelPicker({
   return (
     <div className="flex min-w-0 items-center">
       <ChipSelect
-        title="模型"
+        title={t('模型')}
         value={model === base.model ? '' : model}
         options={models}
         onChange={(m) => onChange({ model: m, effort })}
@@ -93,7 +94,7 @@ export function ChatModelPicker({
       />
       {efforts.length > 0 && (
         <ChipSelect
-          title="思考强度"
+          title={t('思考强度')}
           value={efforts.some((e) => e.value === effort) ? effort : ''}
           options={efforts}
           onChange={(e) => onChange({ model, effort: e })}

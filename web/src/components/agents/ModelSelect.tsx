@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
-import { modelGroup } from '@/lib/cli-style'
+import { CONFIG_GROUP, modelGroup } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Input, Select } from '@/components/ui/input'
+import { t } from '@shared/i18n'
 
 type Tiers = Record<ModelTier, { model: string; effort?: string }>
 const CUSTOM = '__custom'
@@ -18,10 +19,10 @@ export function modelOptions(
 ): { value: string; label: string; group?: string }[] {
   const opts: { value: string; label: string; group?: string }[] = [
     ...(o.tiers
-      ? MODEL_TIERS.map((t) => ({
-          value: `@${t.id}`,
-          label: `${t.label}档 · ${o.tiers![t.id].model || '自动'}`,
-          group: '档位',
+      ? MODEL_TIERS.map((m) => ({
+          value: `@${m.id}`,
+          label: t('{tier}档 · {model}', { tier: m.label, model: o.tiers![m.id].model || t('自动') }),
+          group: t('档位'),
         }))
       : []),
     ...def.models.map((m) => ({ value: m.id, label: m.id, group: modelGroup(def, m) })),
@@ -29,14 +30,14 @@ export function modelOptions(
   // 组按固定顺序：档位、CLI 读取、配置文件
   opts.sort((a, b) => rank(a.group) - rank(b.group))
   for (const v of [o.defaultValue, ...(o.extra ?? [])])
-    if (v && !opts.some((x) => x.value === v)) opts.push({ value: v, label: v, group: '其他' })
+    if (v && !opts.some((x) => x.value === v)) opts.push({ value: v, label: v, group: t('其他') })
   const d = o.defaultValue
   return [
-    ...(d ? [] : [{ value: '', label: '自动（默认）' }]),
-    ...opts.map((x) => (d && x.value === d ? { ...x, value: '', label: `${x.label}（默认）` } : x)),
+    ...(d ? [] : [{ value: '', label: t('自动（默认）') }]),
+    ...opts.map((x) => (d && x.value === d ? { ...x, value: '', label: t('{name}（默认）', { name: x.label }) } : x)),
   ]
 }
-const rank = (g?: string) => (g === '档位' ? 0 : g?.startsWith('配置文件') ? 2 : g === '其他' ? 3 : 1)
+const rank = (g?: string) => (g === t('档位') ? 0 : g === CONFIG_GROUP() ? 2 : g === t('其他') ? 3 : 1)
 
 /** 模型下拉；列表里没有的模型选「其他模型…」后自己填 */
 export function ModelSelect({
@@ -66,23 +67,23 @@ export function ModelSelect({
   return (
     <div className={cn('flex min-w-0 flex-col gap-2', className)}>
       <Select
-        aria-label={ariaLabel ?? `${def.name} 模型`}
+        aria-label={ariaLabel ?? t('{cli} 模型', { cli: def.name })}
         value={shown}
         onChange={(e) => {
           const v = e.target.value
           setCustom(v === CUSTOM)
           if (v !== CUSTOM) onChange(v)
         }}
-        options={[...options, { value: CUSTOM, label: '其他模型…', group: '其他' }]}
+        options={[...options, { value: CUSTOM, label: t('其他模型…'), group: t('其他') }]}
         className="font-mono text-[13px]"
       />
       {custom && (
         <Input
           autoFocus
-          aria-label="模型名"
+          aria-label={t('模型名')}
           value={value}
           onChange={(e) => onChange(e.target.value.trim())}
-          placeholder="填写完整的模型名"
+          placeholder={t('填写完整的模型名')}
           className="h-9 font-mono text-[13px]"
           spellCheck={false}
         />

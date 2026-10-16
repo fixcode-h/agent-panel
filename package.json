@@ -10,7 +10,7 @@
     "dev:web": "vite",
     "build": "vite build",
     "start": "tsx server/index.ts --prod",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && node scripts/i18n-check.mjs",
     "test:e2e": "node scripts/e2e.mjs",
     "package": "node scripts/package.mjs"
   },

@@ -34,6 +34,7 @@ import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
+import { t } from '../shared/i18n.ts'
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
@@ -74,21 +75,21 @@ const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
 const hostOf = (h: string) => (h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0]).toLowerCase()
 app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
-  if (!LOCAL_HOSTS.has(hostOf(host))) return c.json({ error: '只接受来自本机的访问' }, 403)
+  if (!LOCAL_HOSTS.has(hostOf(host))) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
   if (origin !== undefined) {
     let ok = false
     try {
       ok = LOCAL_HOSTS.has(new URL(origin).hostname.toLowerCase())
     } catch {}
-    if (!ok) return c.json({ error: '不接受其他网站发来的请求' }, 403)
+    if (!ok) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   }
-  if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: '不接受其他网站发来的请求' }, 403)
+  if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   if (
     !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
     !/application\/json/i.test(c.req.header('content-type') ?? '')
   )
-    return c.json({ error: '请求必须是 JSON' }, 415)
+    return c.json({ error: t('请求必须是 JSON') }, 415)
   await next()
 })
 
@@ -97,8 +98,8 @@ const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json
 async function parseAgent(body: unknown) {
   const p = AgentInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  if (p.data.cli && !getCli(p.data.cli)) return { error: `未知的 CLI：${p.data.cli}` }
-  if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: '分类不存在' }
+  if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 CLI：{cli}', { cli: p.data.cli }) }
+  if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   return { data: p.data }
 }
 
@@ -107,17 +108,18 @@ async function parseWorkflow(body: unknown, selfId = '') {
   if (!p.success) return { error: z.prettifyError(p.error) }
   const wf = p.data
   const ids = new Set((await agents.list()).map((a) => a.id))
-  if (wf.mainAgentId && !ids.has(wf.mainAgentId)) return { error: '主 Agent 不存在' }
+  if (wf.mainAgentId && !ids.has(wf.mainAgentId)) return { error: t('主 Agent 不存在') }
   // 去掉不存在的、重复的成员，以及和主 Agent 相同的成员
   const seen = new Set<string>([wf.mainAgentId])
   wf.members = wf.members.filter((m) => ids.has(m.agentId) && !seen.has(m.agentId) && seen.add(m.agentId))
-  if (!wf.flows.length) return { error: '工作流至少要有一个流程' }
+  if (!wf.flows.length) return { error: t('工作流至少要有一个流程') }
   if (!wf.flows.some((f) => f.id === wf.entryFlowId)) wf.entryFlowId = wf.flows[0].id
-  if (new Set(wf.flows.map((f) => f.id)).size !== wf.flows.length) return { error: '流程 id 重复' }
+  if (new Set(wf.flows.map((f) => f.id)).size !== wf.flows.length) return { error: t('流程 id 重复') }
   for (const f of wf.flows) {
     const nodeIds = new Set(f.nodes.map((n) => n.id))
-    if (nodeIds.size !== f.nodes.length) return { error: `流程「${f.name}」里有重复的节点 id` }
-    if (nodeIds.has(START) || nodeIds.has(END)) return { error: `流程「${f.name}」的节点 id 不能是 start / end` }
+    if (nodeIds.size !== f.nodes.length) return { error: t('流程「{flow}」里有重复的节点 id', { flow: f.name }) }
+    if (nodeIds.has(START) || nodeIds.has(END))
+      return { error: t('流程「{flow}」的节点 id 不能是 start / end', { flow: f.name }) }
     // 节点指定的 Agent 不存在时改由主 Agent 执行
     for (const n of f.nodes) if (n.agentId && !ids.has(n.agentId)) n.agentId = ''
     // 去掉悬空、重复、方向不对的连线
@@ -133,13 +135,16 @@ async function parseWorkflow(body: unknown, selfId = '') {
       return ok
     })
     const cyc = cycleIn(f)
-    if (cyc) return { error: `流程「${f.name}」里的节点连成了环：${cyc}，执行时会一直等不到上游` }
+    if (cyc)
+      return {
+        error: t('流程「{flow}」里的节点连成了环：{cycle}，执行时会一直等不到上游', { flow: f.name, cycle: cyc }),
+      }
   }
   const cycle = findRefCycle(
     { ...wf, id: selfId || '__new__', createdAt: '', updatedAt: '' },
     (await workflows.list()).filter((x) => x.id !== selfId),
   )
-  if (cycle) return { error: `流程之间循环调用：${cycle.join(' → ')}` }
+  if (cycle) return { error: t('流程之间循环调用：{cycle}', { cycle: cycle.join(' → ') }) }
   return { data: wf }
 }
 
@@ -188,7 +193,7 @@ async function parseCategory(body: unknown, selfId?: string) {
   const p = CategoryInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   const dup = (await categories.list()).some((x) => x.name === p.data.name && x.id !== selfId)
-  return dup ? { error: `分类「${p.data.name}」已存在` } : { data: p.data }
+  return dup ? { error: t('分类「{name}」已存在', { name: p.data.name }) } : { data: p.data }
 }
 
 app.post('/categories', async (c) => {
@@ -201,13 +206,13 @@ app.put('/categories/:id', async (c) => {
   const r = await parseCategory(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
   const x = await categories.update(id, r.data!)
-  return x ? c.json(x) : bad(c, '分类不存在', 404)
+  return x ? c.json(x) : bad(c, t('分类不存在'), 404)
 })
 
 // 删除分类时，其中的 Agent 变为未分类
 app.delete('/categories/:id', async (c) => {
   const id = c.req.param('id')
-  if (!(await categories.remove(id))) return bad(c, '分类不存在', 404)
+  if (!(await categories.remove(id))) return bad(c, t('分类不存在'), 404)
   for (const a of await agents.list()) {
     if (a.categoryId === id) await agents.update(a.id, { ...a, categoryId: '' })
   }
@@ -229,12 +234,12 @@ app.put('/agents/:id', async (c) => {
   // 默认 Agent 的 CLI、模型、思考强度固定跟随默认 CLI，只能改名称、角色设定这些
   if (id === DEFAULT_AGENT_ID) Object.assign(r.data!, { cli: '', model: '', effort: '', enabled: true })
   const a = await agents.update(id, r.data!)
-  return a ? c.json(a) : bad(c, 'Agent 不存在', 404)
+  return a ? c.json(a) : bad(c, t('Agent 不存在'), 404)
 })
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
-  if (id === DEFAULT_AGENT_ID) return bad(c, '默认 Agent 是自带的，不能删除', 409)
+  if (id === DEFAULT_AGENT_ID) return bad(c, t('默认 Agent 是自带的，不能删除'), 409)
   const used = (await workflows.list()).filter(
     (w) =>
       w.mainAgentId === id ||
@@ -242,8 +247,14 @@ app.delete('/agents/:id', async (c) => {
       w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
   )
   if (used.length)
-    return bad(c, `正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`, 409)
-  return (await agents.remove(id)) ? c.body(null, 204) : bad(c, 'Agent 不存在', 404)
+    return bad(
+      c,
+      t('正在被工作流使用：{names}，请先从工作流中移除', {
+        names: used.map((w) => t('「{name}」', { name: w.name })).join(t('、')),
+      }),
+      409,
+    )
+  return (await agents.remove(id)) ? c.body(null, 204) : bad(c, t('Agent 不存在'), 404)
 })
 
 // ---- 工作流 ----
@@ -258,17 +269,19 @@ app.put('/workflows/:id', async (c) => {
   const r = await parseWorkflow(await c.req.json(), c.req.param('id'))
   if (r.error) return bad(c, r.error)
   const w = await workflows.update(c.req.param('id'), r.data!)
-  return w ? c.json(w) : bad(c, '工作流不存在', 404)
+  return w ? c.json(w) : bad(c, t('工作流不存在'), 404)
 })
 
 app.delete('/workflows/:id', async (c) => {
   const id = c.req.param('id')
   const users = [
-    ...(await projectCategories.list()).filter((x) => x.workflowId === id).map((x) => `项目分类「${x.name}」`),
-    ...(await projects.list()).filter((x) => x.workflowId === id).map((x) => `项目「${x.name}」`),
+    ...(await projectCategories.list())
+      .filter((x) => x.workflowId === id)
+      .map((x) => t('项目分类「{name}」', { name: x.name })),
+    ...(await projects.list()).filter((x) => x.workflowId === id).map((x) => t('项目「{name}」', { name: x.name })),
   ]
-  if (users.length) return bad(c, `正在被使用：${users.join('、')}，请先改用其他工作流`, 409)
-  return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, '工作流不存在', 404)
+  if (users.length) return bad(c, t('正在被使用：{names}，请先改用其他工作流', { names: users.join(t('、')) }), 409)
+  return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, t('工作流不存在'), 404)
 })
 
 // ---- 项目分类 ----
@@ -276,8 +289,8 @@ async function parseProjectCategory(body: unknown, selfId?: string) {
   const p = ProjectCategoryInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   if ((await projectCategories.list()).some((x) => x.name === p.data.name && x.id !== selfId))
-    return { error: `分类「${p.data.name}」已存在` }
-  if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: '工作流不存在' }
+    return { error: t('分类「{name}」已存在', { name: p.data.name }) }
+  if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   return { data: p.data }
 }
 
@@ -293,13 +306,13 @@ app.put('/project-categories/:id', async (c) => {
   const r = await parseProjectCategory(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
   const x = await projectCategories.update(id, r.data!)
-  return x ? c.json(x) : bad(c, '分类不存在', 404)
+  return x ? c.json(x) : bad(c, t('分类不存在'), 404)
 })
 
 // 删除分类时，其中的项目变为未分类
 app.delete('/project-categories/:id', async (c) => {
   const id = c.req.param('id')
-  if (!(await projectCategories.remove(id))) return bad(c, '分类不存在', 404)
+  if (!(await projectCategories.remove(id))) return bad(c, t('分类不存在'), 404)
   for (const p of await projects.list()) {
     if (p.categoryId === id) await projects.update(p.id, { ...p, categoryId: '' })
   }
@@ -310,8 +323,8 @@ app.delete('/project-categories/:id', async (c) => {
 async function parseProject(body: unknown) {
   const p = ProjectInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: '项目分类不存在' }
-  if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: '工作流不存在' }
+  if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
+  if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   if (p.data.path) p.data.path = resolvePath(p.data.path)
   return { data: p.data }
 }
@@ -327,12 +340,12 @@ app.put('/projects/:id', async (c) => {
   const r = await parseProject(await c.req.json())
   if (r.error) return bad(c, r.error)
   const x = await projects.update(c.req.param('id'), r.data!)
-  return x ? c.json(x) : bad(c, '项目不存在', 404)
+  return x ? c.json(x) : bad(c, t('项目不存在'), 404)
 })
 
 app.delete('/projects/:id', async (c) => {
   const id = c.req.param('id')
-  if (!(await projects.remove(id))) return bad(c, '项目不存在', 404)
+  if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
   await tasks.removeByProject(id)
   return c.body(null, 204)
 })
@@ -347,11 +360,11 @@ app.route('/uploads/raw', uploadsRawApi())
 app.route('/uploads', uploadsApi())
 app.get('/projects/:id/files', async (c) => {
   const p = await projects.get(c.req.param('id'))
-  if (!p?.path) return bad(c, '这个项目还没有选择目录')
+  if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
   try {
     return c.json(await searchProjectFiles(p.path, c.req.query('q') ?? ''))
   } catch (e) {
-    return bad(c, `无法读取项目文件：${(e as Error).message}`)
+    return bad(c, t('无法读取项目文件：{error}', { error: (e as Error).message }))
   }
 })
 
@@ -362,12 +375,12 @@ app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') 
 app.post('/fs/reveal', async (c) => {
   const { projectId } = (await c.req.json().catch(() => ({}))) as { projectId?: string }
   const p = (await projects.list()).find((x) => x.id === projectId)
-  if (!p?.path) return bad(c, '这个项目还没有选择目录')
+  if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
   const dir = resolvePath(p.path)
   const ok = await stat(dir)
     .then((s) => s.isDirectory())
     .catch(() => false)
-  if (!ok) return bad(c, `目录不存在：${dir}`)
+  if (!ok) return bad(c, t('目录不存在：{dir}', { dir }))
   revealDir(dir)
   return c.json({ ok: true })
 })
@@ -376,7 +389,7 @@ app.get('/fs/list', async (c) => {
   try {
     return c.json(await listDir(c.req.query('path') ?? ''))
   } catch (e) {
-    return bad(c, `无法读取目录：${(e as Error).message}`)
+    return bad(c, t('无法读取目录：{error}', { error: (e as Error).message }))
   }
 })
 

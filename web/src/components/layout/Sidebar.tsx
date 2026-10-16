@@ -52,6 +52,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
+import { t } from '@shared/i18n'
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -77,7 +78,7 @@ export function Logo({ className }: { className?: string }) {
 
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'agents', label: 'Agent', icon: Bot },
-  { id: 'workflows', label: '工作流', icon: Workflow },
+  { id: 'workflows', label: t('工作流'), icon: Workflow },
 ]
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
@@ -88,8 +89,8 @@ function shortTime(iso: string) {
   // 跨夏令时的那天相差 23 / 25 小时，取整
   const diff = Math.round((today.getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000)
   if (diff <= 0) return d.toTimeString().slice(0, 5)
-  if (diff === 1) return '昨天'
-  if (diff < 7) return `${diff} 天前`
+  if (diff === 1) return t('昨天')
+  if (diff < 7) return t('{n} 天前', { n: diff })
   return `${d.getMonth() + 1}/${d.getDate()}`
 }
 
@@ -202,20 +203,20 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
   const modes = [
     {
       id: 'chat',
-      label: 'Chat 模式：直接聊天，不用选项目',
+      label: t('Chat 模式：直接聊天，不用选项目'),
       icon: MessagesSquare,
       on: chat,
       to: { page: 'chat' } as Route,
     },
-    { id: 'agent', label: 'Agent 模式：在项目里执行任务和工作流', icon: Code2, on: !chat, to: lastAgentRoute },
+    { id: 'agent', label: t('Agent 模式：在项目里执行任务和工作流'), icon: Code2, on: !chat, to: lastAgentRoute },
   ]
   if (narrow) {
     const other = modes.find((m) => !m.on)!
     return (
       <button
         onClick={() => go(other.to)}
-        aria-label={`切换到${other.label}`}
-        title={`切换到${other.label}`}
+        aria-label={t('切换到{mode}', { mode: other.label })}
+        title={t('切换到{mode}', { mode: other.label })}
         className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg"
       >
         <other.icon className="h-[17px] w-[17px]" strokeWidth={1.8} />
@@ -223,7 +224,11 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     )
   }
   return (
-    <div role="radiogroup" aria-label="模式" className="flex shrink-0 items-center gap-0.5 rounded-lg border p-0.5">
+    <div
+      role="radiogroup"
+      aria-label={t('模式')}
+      className="flex shrink-0 items-center gap-0.5 rounded-lg border p-0.5"
+    >
       {modes.map((m) => (
         <button
           key={m.id}
@@ -249,7 +254,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
  * 暂停和继续同一时间只显示能用的那个。
  */
 function TaskRow({
-  task: t,
+  task,
   active,
   onOpen,
   onDeleted,
@@ -262,24 +267,24 @@ function TaskRow({
   className?: string
 }) {
   const { removeTask, upsertTask } = useData()
-  const control = useTaskControl(t)
+  const control = useTaskControl(task)
   const [renaming, setRenaming] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const chat = !t.projectId
+  const chat = !task.projectId
   const rename = async (title: string) => {
     setRenaming(false)
     title = title.trim()
-    if (!title || title === t.title) return
+    if (!title || title === task.title) return
     try {
-      upsertTask(await api.renameTask(t.id, title))
+      upsertTask(await api.renameTask(task.id, title))
     } catch (e) {
       toast.error((e as Error).message)
     }
   }
   const remove = async () => {
     try {
-      await api.deleteTask(t.id)
-      removeTask(t.id)
+      await api.deleteTask(task.id)
+      removeTask(task.id)
       onDeleted()
     } catch (e) {
       toast.error((e as Error).message)
@@ -291,8 +296,8 @@ function TaskRow({
     return (
       <input
         autoFocus
-        aria-label={chat ? '聊天标题' : '任务标题'}
-        defaultValue={t.title}
+        aria-label={chat ? t('聊天标题') : t('任务标题')}
+        defaultValue={task.title}
         maxLength={80}
         onFocus={(e) => e.currentTarget.select()}
         onBlur={(e) => rename(e.currentTarget.value)}
@@ -310,24 +315,24 @@ function TaskRow({
           <button
             onClick={onOpen}
             aria-current={active || undefined}
-            title={t.title}
+            title={task.title}
             className={cn(
               'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg text-left text-[13px] transition-colors',
               active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
               className,
             )}
           >
-            {t.requests?.length ? (
+            {task.requests?.length ? (
               // Agent 在等你确认操作或回答问题
               <BellRing
-                aria-label="需要你处理"
+                aria-label={t('需要你处理')}
                 className="h-3.5 w-3.5 shrink-0 animate-[bell_1.6s_ease-in-out_infinite] text-warning"
               />
-            ) : t.status === 'running' || t.status === 'failed' ? (
-              <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
+            ) : task.status === 'running' || task.status === 'failed' ? (
+              <TaskStatusIcon status={task.status} className="h-3.5 w-3.5" />
             ) : null}
-            <span className="min-w-0 flex-1 truncate">{t.title}</span>
-            <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(t.updatedAt)}</span>
+            <span className="min-w-0 flex-1 truncate">{task.title}</span>
+            <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(task.updatedAt)}</span>
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -342,20 +347,20 @@ function TaskRow({
           )}
           <ContextMenuItem onSelect={() => setRenaming(true)}>
             <PencilLine className="h-4 w-4" />
-            重命名
+            {t('重命名')}
           </ContextMenuItem>
           <ContextMenuSeparator />
           <ContextMenuItem danger onSelect={() => setDeleting(true)}>
             <Trash2 className="h-4 w-4" />
-            删除
+            {t('删除')}
           </ContextMenuItem>
         </ContextMenuContent>
       </ContextMenu>
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`删除「${t.title}」？`}
-        description={chat ? '这次聊天的记录会一起删除。' : '任务的记录会一起删除，项目里的文件不受影响。'}
+        title={t('删除「{name}」？', { name: task.title })}
+        description={chat ? t('这次聊天的记录会一起删除。') : t('任务的记录会一起删除，项目里的文件不受影响。')}
         onConfirm={remove}
       />
     </>
@@ -369,8 +374,8 @@ function ChatList() {
   const chats = tasks.filter((t) => !t.projectId).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   return (
     <div className="mt-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
-      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">最近</p>
-      {chats.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">还没有聊天。</p>}
+      <p className="flex h-7 shrink-0 items-center px-2.5 text-xs text-subtle">{t('最近')}</p>
+      {chats.length === 0 && <p className="px-2.5 py-1 text-xs text-subtle">{t('还没有聊天。')}</p>}
       <div className="flex flex-col gap-px">
         {chats.map((t) => (
           <TaskRow
@@ -412,7 +417,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const groups: [string, Task[]][] = [...projects]
     .sort((a, b) => last(b).localeCompare(last(a)))
     .map((p) => [p.id, byProject.get(p.id) ?? []])
-  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? '已删除的项目'
+  const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? t('已删除的项目')
   const allOpen = !folded.has(ALL)
   // 右键菜单里的重命名就地改名，删除先确认
   const [renaming, setRenaming] = useState('')
@@ -434,7 +439,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       await api.deleteProject(p.id)
       setProjects((ps) => ps.filter((x) => x.id !== p.id))
       void reloadTasks()
-      toast.success(`已删除「${p.name}」`)
+      toast.success(t('已删除「{name}」', { name: p.name }))
       if (route.page === 'projects' && route.id === p.id) go({ page: 'home' })
     } catch (e) {
       toast.error((e as Error).message)
@@ -443,7 +448,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     }
   }
   const reveal = (p: Project) => {
-    if (!p.path) return toast.error('这个项目还没有选择本地目录')
+    if (!p.path) return toast.error(t('这个项目还没有选择本地目录'))
     api.revealProject(p.id).catch((e) => toast.error((e as Error).message))
   }
 
@@ -453,7 +458,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         {!narrow && (
           <button onClick={() => go({ page: 'home' })} className="flex min-w-0 cursor-pointer items-center gap-2.5">
             <Logo />
-            <span className="truncate font-serif text-[16px] font-semibold tracking-tight">Agent 面板</span>
+            <span className="truncate font-serif text-[16px] font-semibold tracking-tight">{t('Agent 面板')}</span>
           </button>
         )}
         {!narrow && (
@@ -463,8 +468,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         )}
         <button
           onClick={toggleCollapsed}
-          aria-label={narrow ? '展开侧栏' : '收起侧栏'}
-          title={narrow ? '展开侧栏' : '收起侧栏'}
+          aria-label={narrow ? t('展开侧栏') : t('收起侧栏')}
+          title={narrow ? t('展开侧栏') : t('收起侧栏')}
           className={cn(
             'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid',
             narrow && 'ml-auto',
@@ -474,12 +479,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         </button>
       </div>
 
-      <nav aria-label="主导航" className={cn('flex flex-col gap-0.5 px-2', narrow && 'items-center')}>
+      <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2', narrow && 'items-center')}>
         {narrow && <ModeSwitch narrow />}
         {chatMode ? (
           <Row
             icon={Plus}
-            label="新建聊天"
+            label={t('新建聊天')}
             collapsed={narrow}
             on={!route.id}
             onClick={() => go({ page: 'chat' })}
@@ -489,7 +494,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <>
             <Row
               icon={Plus}
-              label="新建任务"
+              label={t('新建任务')}
               collapsed={narrow}
               on={route.page === 'home'}
               onClick={() => go({ page: 'home' })}
@@ -523,14 +528,14 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               aria-expanded={allOpen}
               className="flex cursor-pointer items-center gap-1 text-xs text-subtle hover:text-fg"
             >
-              项目
+              {t('项目')}
               <ChevronDown className={cn('h-3 w-3 transition-transform', !allOpen && '-rotate-90')} />
             </button>
             <Menu>
               <MenuTrigger asChild>
                 <button
-                  aria-label="项目菜单"
-                  title="更多"
+                  aria-label={t('项目菜单')}
+                  title={t('更多')}
                   className="ml-auto grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
                 >
                   <MoreHorizontal className="h-3.5 w-3.5" />
@@ -539,26 +544,26 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               <MenuContent align="end">
                 <MenuItem onSelect={() => openProject()}>
                   <FolderPlus className="h-4 w-4" />
-                  新建项目
+                  {t('新建项目')}
                 </MenuItem>
                 <MenuItem onSelect={() => openSettings('categories')}>
                   <Layers className="h-4 w-4" />
-                  管理项目分类
+                  {t('管理项目分类')}
                 </MenuItem>
                 <MenuItem onSelect={() => setFolded(new Set())}>
                   <ChevronsUpDown className="h-4 w-4" />
-                  全部展开
+                  {t('全部展开')}
                 </MenuItem>
                 <MenuItem onSelect={() => setFolded(new Set(projects.map((p) => p.id)))}>
                   <ChevronsDownUp className="h-4 w-4" />
-                  全部收起
+                  {t('全部收起')}
                 </MenuItem>
               </MenuContent>
             </Menu>
             <button
               onClick={() => openProject()}
-              aria-label="新建项目"
-              title="新建项目"
+              aria-label={t('新建项目')}
+              title={t('新建项目')}
               className="grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -566,7 +571,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           </div>
           {allOpen && projects.length === 0 && (
             <p className="px-2.5 pt-1 text-xs leading-relaxed text-subtle">
-              还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。
+              {t('还没有项目。点右边的 + 添加一个本机目录，再在项目里新建对话。')}
             </p>
           )}
           {allOpen &&
@@ -592,7 +597,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         <button
                           onClick={() => toggleFolded(pid)}
                           aria-expanded={open}
-                          aria-label={open ? '收起' : '展开'}
+                          aria-label={open ? t('收起') : t('展开')}
                           disabled={!ts.length}
                           className={cn(
                             'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg',
@@ -605,7 +610,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           <input
                             autoFocus
                             defaultValue={p.name}
-                            aria-label="项目名称"
+                            aria-label={t('项目名称')}
                             onFocus={(e) => e.target.select()}
                             onBlur={(e) => rename(p, e.target.value)}
                             onKeyDown={(e) => {
@@ -620,7 +625,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         ) : (
                           <button
                             onClick={() => go({ page: 'projects', id: pid })}
-                            title={`打开项目「${projectName(pid)}」，右键查看更多操作`}
+                            title={t('打开项目「{name}」，右键查看更多操作', { name: projectName(pid) })}
                             className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 text-left"
                           >
                             {open ? (
@@ -632,11 +637,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           </button>
                         )}
                         {!open && ts.some((t) => t.requests?.length) && (
-                          <BellRing aria-label="有对话需要你处理" className="h-3.5 w-3.5 shrink-0 text-warning" />
+                          <BellRing aria-label={t('有对话需要你处理')} className="h-3.5 w-3.5 shrink-0 text-warning" />
                         )}
                         {running > 0 ? (
                           <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10.5px] leading-[18px] font-medium text-accent group-hover/proj:hidden">
-                            {running} 个执行中
+                            {t('{n} 个执行中', { n: running })}
                           </span>
                         ) : (
                           ts.length > 0 && (
@@ -647,8 +652,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         )}
                         <button
                           onClick={() => go({ page: 'projects', id: pid })}
-                          aria-label={`在「${projectName(pid)}」新建对话`}
-                          title="新建对话"
+                          aria-label={t('在「{name}」新建对话', { name: projectName(pid) })}
+                          title={t('新建对话')}
                           // 还没有对话的项目一直显示 +，有对话的鼠标移上去才显示
                           className={cn(
                             ts.length ? 'hidden' : 'grid opacity-60',
@@ -662,26 +667,26 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     <ContextMenuContent>
                       <ContextMenuItem onSelect={() => go({ page: 'projects', id: pid })}>
                         <MessageSquarePlus className="h-4 w-4" />
-                        新建对话
+                        {t('新建对话')}
                       </ContextMenuItem>
                       <ContextMenuItem onSelect={() => openProject(pid)}>
                         <Settings2 className="h-4 w-4" />
-                        项目设置
+                        {t('项目设置')}
                       </ContextMenuItem>
                       {!import.meta.env.VITE_DEMO && (
                         <ContextMenuItem disabled={!p.path} onSelect={() => reveal(p)}>
                           <FolderSearch className="h-4 w-4" />
-                          在文件夹中打开
+                          {t('在文件夹中打开')}
                         </ContextMenuItem>
                       )}
                       <ContextMenuItem onSelect={() => setRenaming(pid)}>
                         <PencilLine className="h-4 w-4" />
-                        重命名
+                        {t('重命名')}
                       </ContextMenuItem>
                       <ContextMenuSeparator />
                       <ContextMenuItem danger onSelect={() => setDeleting(p)}>
                         <Trash2 className="h-4 w-4" />
-                        删除
+                        {t('删除')}
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
@@ -710,7 +715,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           }
                           className="h-7 cursor-pointer rounded-lg px-2 text-left text-xs text-subtle hover:bg-sel/70 hover:text-fg"
                         >
-                          {more.has(pid) ? '收起' : `显示全部 ${ts.length} 个`}
+                          {more.has(pid) ? t('收起') : t('显示全部 {n} 个', { n: ts.length })}
                         </button>
                       )}
                     </div>
@@ -726,9 +731,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <div className={cn('flex shrink-0 items-center gap-1 border-t px-2 py-2', narrow && 'flex-col')}>
         <Row
           icon={Settings}
-          label="设置"
+          label={t('设置')}
           collapsed={narrow}
-          badge={update ? '有新版本' : undefined}
+          badge={update ? t('有新版本') : undefined}
           onClick={() => {
             setMobileOpen(false)
             openSettings(update ? 'update' : undefined)
@@ -737,8 +742,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         />
         <button
           onClick={onToggleTheme}
-          aria-label={dark ? '切换到浅色' : '切换到深色'}
-          title={dark ? '切换到浅色' : '切换到深色'}
+          aria-label={dark ? t('切换到浅色') : t('切换到深色')}
+          title={dark ? t('切换到浅色') : t('切换到深色')}
           className="grid h-9 w-9 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg"
         >
           {dark ? (
@@ -757,13 +762,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <div className="flex h-12 shrink-0 items-center gap-2 border-b bg-rail px-3 md:hidden">
         <button
           onClick={() => setMobileOpen(true)}
-          aria-label="打开菜单"
+          aria-label={t('打开菜单')}
           className="grid h-9 w-9 cursor-pointer place-items-center rounded-lg text-muted hover:bg-sel"
         >
           <MenuIcon className="h-5 w-5" />
         </button>
         <Logo />
-        <span className="font-serif text-[15px] font-semibold">Agent 面板</span>
+        <span className="font-serif text-[15px] font-semibold">{t('Agent 面板')}</span>
       </div>
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">
@@ -771,13 +776,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <aside
             role="dialog"
             aria-modal="true"
-            aria-label="菜单"
+            aria-label={t('菜单')}
             className="absolute inset-y-0 left-0 flex w-[280px] max-w-[85vw] flex-col bg-rail shadow-pop"
           >
             <button
               autoFocus
               onClick={() => setMobileOpen(false)}
-              aria-label="关闭菜单"
+              aria-label={t('关闭菜单')}
               className="absolute top-3 right-3 z-10 grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel"
             >
               <X className="h-4 w-4" />
@@ -787,7 +792,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         </div>
       )}
       <aside
-        aria-label="侧栏"
+        aria-label={t('侧栏')}
         className={cn(
           'hidden shrink-0 flex-col border-r bg-rail transition-[width] duration-200 md:flex',
           collapsed ? 'w-[56px]' : 'w-[264px]',
@@ -798,8 +803,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(undefined)}
-        title={`删除「${deleting?.name ?? ''}」？`}
-        description="会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。"
+        title={t('删除「{name}」？', { name: deleting?.name ?? '' })}
+        description={t('会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。')}
         onConfirm={() => deleting && remove(deleting)}
       />
     </>

@@ -97,6 +97,8 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
   env: {
     ...process.env,
     AGENT_PANEL_DATA: dataDir,
+    // 断言里用的是中文提示，固定用中文界面跑
+    LANG: 'zh_CN.UTF-8',
     PORT: String(port),
     FAKE_CLI_LOG: log,
     AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
@@ -1405,6 +1407,7 @@ try {
       cwd: root,
       env: {
         ...process.env,
+        LANG: 'zh_CN.UTF-8',
         AGENT_PANEL_DATA: dataDir,
         PORT: String(trayPort),
         AGENT_PANEL_TRAY: '1',

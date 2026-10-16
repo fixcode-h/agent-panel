@@ -1,5 +1,6 @@
 import { ArrowDown, ArrowUp, Crown, Plus, ArrowLeftRight, X } from 'lucide-react'
 import type { Agent, WorkflowMember } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -52,8 +53,9 @@ export function TeamEditor({
     <>
       <div className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5 text-xs text-muted">
-          <Crown className="h-3.5 w-3.5 text-accent" />主 Agent
-          <span className="text-subtle">· 按文档推进，把步骤分派给子 Agent，并验收结果</span>
+          <Crown className="h-3.5 w-3.5 text-accent" />
+          {t('主 Agent')}
+          <span className="text-subtle">· {t('按文档推进，把步骤分派给子 Agent，并验收结果')}</span>
         </span>
         {main ? (
           <div className="flex items-center gap-3 rounded-[10px] border border-accent/50 bg-accent-soft p-3">
@@ -61,7 +63,7 @@ export function TeamEditor({
             <AgentPicker exclude={used} onPick={(a) => onMainChange(a.id)} align="end">
               <Button variant="secondary" size="sm" className="ml-auto">
                 <ArrowLeftRight className="h-3.5 w-3.5" />
-                更换
+                {t('更换')}
               </Button>
             </AgentPicker>
           </div>
@@ -69,7 +71,7 @@ export function TeamEditor({
           <AgentPicker exclude={used} onPick={(a) => onMainChange(a.id)}>
             <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[13px] text-accent hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
-              选择主 Agent
+              {t('选择主 Agent')}
             </button>
           </AgentPicker>
         )}
@@ -77,7 +79,8 @@ export function TeamEditor({
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted">
-          子 Agent <span className="text-subtle">· 按执行顺序排列，可以写清楚它在这个工作流里负责什么</span>
+          {t('子 Agent')}{' '}
+          <span className="text-subtle">· {t('按执行顺序排列，可以写清楚它在这个工作流里负责什么')}</span>
         </span>
         <ol className="flex flex-col gap-2">
           {members.map((m, i) => {
@@ -93,17 +96,17 @@ export function TeamEditor({
                   <AgentLine agent={a} />
                 </span>
                 <input
-                  aria-label={`${a.name} 的职责`}
+                  aria-label={t('{name} 的职责', { name: a.name })}
                   value={m.responsibility}
                   onChange={(e) => update(i, e.target.value)}
-                  placeholder="在这个工作流中负责…"
+                  placeholder={t('在这个工作流中负责…')}
                   className="order-last col-span-2 col-start-2 h-9 min-w-0 rounded-lg lg:order-none lg:col-span-1 lg:col-start-auto border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
                 />
                 <span className="flex items-center">
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="上移"
+                    aria-label={t('上移')}
                     disabled={i === 0}
                     onClick={() => move(i, -1)}
                   >
@@ -112,7 +115,7 @@ export function TeamEditor({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="下移"
+                    aria-label={t('下移')}
                     disabled={i === members.length - 1}
                     onClick={() => move(i, 1)}
                   >
@@ -121,7 +124,7 @@ export function TeamEditor({
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    aria-label="移出团队"
+                    aria-label={t('移出团队')}
                     className="hover:text-danger"
                     onClick={() => onMembersChange(members.filter((_, j) => j !== i))}
                   >
@@ -142,7 +145,7 @@ export function TeamEditor({
             )}
           >
             <Plus className="h-4 w-4" />
-            添加子 Agent
+            {t('添加子 Agent')}
           </button>
         </AgentPicker>
       </div>

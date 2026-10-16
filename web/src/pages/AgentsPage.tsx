@@ -15,6 +15,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { useAgentView } from '@/lib/agent-view'
+import { t } from '@shared/i18n'
 
 /** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
 const DEFAULT_GROUP = '#default'
@@ -43,7 +44,7 @@ function CategoryHeader({ category, count, onAdd }: { category: Category; count:
       await api.deleteCategory(category.id)
       setCategories((cs) => cs.filter((x) => x.id !== category.id))
       setAgents((as) => as.map((a) => (a.categoryId === category.id ? { ...a, categoryId: '' } : a)))
-      toast.success(`已删除分类「${category.name}」`)
+      toast.success(t('已删除分类「{name}」', { name: category.name }))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -55,7 +56,7 @@ function CategoryHeader({ category, count, onAdd }: { category: Category; count:
       <div className="flex h-9 items-center px-2 pt-2">
         <input
           autoFocus
-          aria-label="分类名称"
+          aria-label={t('分类名称')}
           value={name}
           onChange={(e) => setName(e.target.value)}
           onBlur={rename}
@@ -81,26 +82,26 @@ function CategoryHeader({ category, count, onAdd }: { category: Category; count:
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="在此分类新建 Agent"
-              title="在此分类新建 Agent"
+              aria-label={t('在此分类新建 Agent')}
+              title={t('在此分类新建 Agent')}
               onClick={onAdd}
             >
               <Plus className="h-3.5 w-3.5" />
             </Button>
             <Menu>
               <MenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label="分类操作" title="分类操作">
+                <Button variant="ghost" size="icon-sm" aria-label={t('分类操作')} title={t('分类操作')}>
                   <MoreHorizontal className="h-3.5 w-3.5" />
                 </Button>
               </MenuTrigger>
               <MenuContent>
                 <MenuItem onSelect={() => setEditing(true)}>
                   <Pencil className="h-3.5 w-3.5" />
-                  重命名
+                  {t('重命名')}
                 </MenuItem>
                 <MenuItem danger onSelect={() => setDeleting(true)}>
                   <Trash2 className="h-3.5 w-3.5" />
-                  删除分类
+                  {t('删除分类')}
                 </MenuItem>
               </MenuContent>
             </Menu>
@@ -110,8 +111,8 @@ function CategoryHeader({ category, count, onAdd }: { category: Category; count:
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`删除分类「${category.name}」？`}
-        description="分类里的 Agent 不会被删除，会移到「未分类」。"
+        title={t('删除分类「{name}」？', { name: category.name })}
+        description={t('分类里的 Agent 不会被删除，会移到「未分类」。')}
         onConfirm={remove}
       />
     </>
@@ -153,7 +154,7 @@ export function AgentsPage() {
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
       const a = await api.createAgent({
-        name: '新 Agent',
+        name: t('新 Agent'),
         description: '',
         cli: '',
         model: '@medium',
@@ -176,13 +177,13 @@ export function AgentsPage() {
 
   const duplicate = (a: Agent) => {
     const { id, createdAt, updatedAt, ...rest } = a
-    create({ ...rest, name: `${a.name} 副本` })
+    create({ ...rest, name: t('{name} 副本', { name: a.name }) })
   }
 
   const recheck = async () => {
     setChecking(true)
     await refreshClis()
-      .catch((e) => toast.error(`检测失败：${(e as Error).message}`))
+      .catch((e) => toast.error(t('检测失败：{error}', { error: (e as Error).message })))
       .finally(() => setChecking(false))
   }
 
@@ -198,25 +199,30 @@ export function AgentsPage() {
         count={agents.length}
         onNew={() => create()}
         extra={
-          <Button size="sm" variant="secondary" onClick={() => setAssist(true)} title="描述需求，让本机 CLI 生成 Agent">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setAssist(true)}
+            title={t('描述需求，让本机 CLI 生成 Agent')}
+          >
             <Sparkles className="h-4 w-4 text-accent" />
-            AI 创建
+            {t('AI 创建')}
           </Button>
         }
         query={query}
         onQuery={setQuery}
-        placeholder="搜索名称、简介或模型"
+        placeholder={t('搜索名称、简介或模型')}
         footer={
           <div className="flex flex-col gap-2">
             <div className="flex items-center text-xs text-subtle">
-              本机 CLI
+              {t('本机 CLI')}
               <button
                 onClick={recheck}
                 disabled={checking}
                 className="ml-auto flex cursor-pointer items-center gap-1 text-accent"
               >
                 <RefreshCw className={cn('h-3 w-3', checking && 'animate-spin')} />
-                重新检测
+                {t('重新检测')}
               </button>
             </div>
             {clis.map((c) => (
@@ -224,7 +230,7 @@ export function AgentsPage() {
                 <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(c.id) }} />
                 {c.name}
                 <span className={cn('ml-auto text-xs', c.installed ? 'text-success' : 'text-warning')}>
-                  {c.installed ? `可用 · ${shortVersion(c.version)}` : '未安装'}
+                  {c.installed ? t('可用 · {version}', { version: shortVersion(c.version) }) : t('未安装')}
                 </span>
               </div>
             ))}
@@ -242,7 +248,7 @@ export function AgentsPage() {
                   onAdd={() => create({ categoryId: g.id })}
                 />
               ) : (
-                <GroupHeader label={g.id === DEFAULT_GROUP ? '默认' : '未分类'} count={g.items.length} />
+                <GroupHeader label={g.id === DEFAULT_GROUP ? t('默认') : t('未分类')} count={g.items.length} />
               )
             }
           >
@@ -259,7 +265,7 @@ export function AgentsPage() {
                   <>
                     <ContextMenuItem onSelect={() => duplicate(a)}>
                       <Copy className="h-4 w-4" />
-                      复制
+                      {t('复制一份')}
                     </ContextMenuItem>
                     <ContextMenuSeparator />
                     <ContextMenuItem
@@ -271,16 +277,16 @@ export function AgentsPage() {
                       }}
                     >
                       <Trash2 className="h-4 w-4" />
-                      删除
+                      {t('删除')}
                     </ContextMenuItem>
                   </>
                 }
               />
             ))}
-            {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">这个分类还没有 Agent</p>}
+            {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">{t('这个分类还没有 Agent')}</p>}
           </ListGroup>
         ))}
-        {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>没有匹配的 Agent</ListEmpty>}
+        {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的 Agent')}</ListEmpty>}
       </ListPane>
 
       {selected ? (
@@ -294,11 +300,11 @@ export function AgentsPage() {
         />
       ) : (
         !loading && (
-          <DetailEmpty icon={<Bot className="h-6 w-6" />} title="创建第一个 Agent">
-            <p>Agent 是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。</p>
+          <DetailEmpty icon={<Bot className="h-6 w-6" />} title={t('创建第一个 Agent')}>
+            <p>{t('Agent 是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。')}</p>
             <Button className="mt-5" onClick={() => create()}>
               <Plus className="h-4 w-4" />
-              新建 Agent
+              {t('新建 Agent')}
             </Button>
           </DetailEmpty>
         )

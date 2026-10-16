@@ -4,6 +4,7 @@ import { cliSettings, defaultCli, orderClis } from '../shared/settings.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { cliSource, resolveCommand } from './cli-source.ts'
 import { getSettings } from './settings.ts'
+import { t } from '../shared/i18n.ts'
 
 const TTL = 30_000
 let cached: { at: number; data: CliStatus[] } | null = null
@@ -36,7 +37,9 @@ export async function detectClis(force = false): Promise<CliStatus[]> {
         enabled: cs.enabled,
         installed,
         version: installed ? out : undefined,
-        error: installed ? undefined : (r.spawnError ?? (r.killed ? '检测超时' : out || `退出码 ${r.code}`)),
+        error: installed
+          ? undefined
+          : (r.spawnError ?? (r.killed ? t('检测超时') : out || t('退出码 {code}', { code: String(r.code) }))),
         models: c.models,
         docsUrl: c.docsUrl,
       }

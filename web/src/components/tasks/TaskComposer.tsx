@@ -13,6 +13,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { ChatModelPicker } from './ChatModelPicker'
 import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMention } from './Attachments'
+import { t } from '@shared/i18n'
 
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
@@ -130,7 +131,7 @@ export function TaskComposer({
         {drop.over && <DropHint />}
         <AttachmentChips items={files.items} onRemove={files.remove} />
         <label htmlFor="task-prompt" className="sr-only">
-          任务描述
+          {t('任务描述')}
         </label>
         <textarea
           ref={ta}
@@ -153,7 +154,9 @@ export function TaskComposer({
               start()
             }
           }}
-          placeholder={effMode === 'workflow' ? '描述要做的事，Agent 会按工作流分工完成' : '想问什么，或者让它做什么'}
+          placeholder={
+            effMode === 'workflow' ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')
+          }
           className="block max-h-80 min-h-[84px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
         />
         {loading ? (
@@ -169,9 +172,9 @@ export function TaskComposer({
             <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
             {!fixed && !standalone && (
               <Popover>
-                <PopoverTrigger className={chip} title="在哪个项目里执行">
+                <PopoverTrigger className={chip} title={t('在哪个项目里执行')}>
                   <FolderGit2 className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{project?.name ?? '选择项目'}</span>
+                  <span className="truncate">{project?.name ?? t('选择项目')}</span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </PopoverTrigger>
                 <PopoverContent className="w-[280px]">
@@ -181,13 +184,17 @@ export function TaskComposer({
                         <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate">{p.name}</span>
-                          <span className="truncate font-mono text-[11px] text-subtle">{p.path || '未选择目录'}</span>
+                          <span className="truncate font-mono text-[11px] text-subtle">
+                            {p.path || t('未选择目录')}
+                          </span>
                         </span>
                         {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
                       </PopoverClose>
                     ))}
                     {projects.length === 0 && (
-                      <p className="px-2.5 py-2 text-xs text-subtle">还没有项目，先在「项目」里添加一个本机目录</p>
+                      <p className="px-2.5 py-2 text-xs text-subtle">
+                        {t('还没有项目，先在「项目」里添加一个本机目录')}
+                      </p>
                     )}
                   </div>
                 </PopoverContent>
@@ -195,11 +202,15 @@ export function TaskComposer({
             )}
 
             {!standalone && (
-              <div role="radiogroup" aria-label="执行方式" className="flex items-center rounded-lg bg-field/60 p-0.5">
+              <div
+                role="radiogroup"
+                aria-label={t('选择执行方式')}
+                className="flex items-center rounded-lg bg-field/60 p-0.5"
+              >
                 {(
                   [
-                    { id: 'workflow', label: '工作流', icon: WorkflowIcon },
-                    { id: 'chat', label: '对话', icon: MessageSquare },
+                    { id: 'workflow', label: t('工作流'), icon: WorkflowIcon },
+                    { id: 'chat', label: t('对话'), icon: MessageSquare },
                   ] as const
                 ).map((m) => (
                   <button
@@ -221,9 +232,9 @@ export function TaskComposer({
 
             {effMode === 'workflow' ? (
               <Popover>
-                <PopoverTrigger className={chip} title="执行的工作流">
-                  <span className="truncate">{workflow?.name ?? '选择工作流'}</span>
-                  {workflow && <span className="shrink-0 text-xs text-subtle">{nodes} 个节点</span>}
+                <PopoverTrigger className={chip} title={t('执行的工作流')}>
+                  <span className="truncate">{workflow?.name ?? t('选择工作流')}</span>
+                  {workflow && <span className="shrink-0 text-xs text-subtle">{t('{n} 个节点', { n: nodes })}</span>}
                   <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                 </PopoverTrigger>
                 <PopoverContent className="w-[280px]">
@@ -239,14 +250,14 @@ export function TaskComposer({
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate">{w.name}</span>
                           <span className="truncate text-xs text-subtle">
-                            {w.id === defaultWf ? '项目默认 · ' : ''}
-                            {topoOrder(entryFlow(w)).length} 个节点
+                            {w.id === defaultWf ? t('项目默认 · ') : ''}
+                            {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
                           </span>
                         </span>
                         {w.id === workflow?.id && <Check className="h-4 w-4 text-accent" />}
                       </PopoverClose>
                     ))}
-                    {workflows.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">还没有工作流</p>}
+                    {workflows.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有工作流')}</p>}
                   </div>
                 </PopoverContent>
               </Popover>
@@ -255,7 +266,7 @@ export function TaskComposer({
                 <AgentPicker onPick={(a) => pickAgent(a.id)} align="start">
                   <button
                     className={chip}
-                    title={agent && !isDefault ? `${agent.name} · ${modelOf(agent)}` : '对话的 Agent'}
+                    title={agent && !isDefault ? `${agent.name} · ${modelOf(agent)}` : t('对话的 Agent')}
                   >
                     {agent ? (
                       <>
@@ -263,7 +274,7 @@ export function TaskComposer({
                         <span className="truncate">{agent.name}</span>
                       </>
                     ) : (
-                      <span>选择 Agent</span>
+                      <span>{t('选择 Agent')}</span>
                     )}
                     <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
                   </button>
@@ -275,8 +286,8 @@ export function TaskComposer({
             <button
               onClick={start}
               disabled={!canStart}
-              aria-label="开始执行"
-              title="开始执行（Enter）"
+              aria-label={t('开始执行')}
+              title={t('开始执行（Enter）')}
               className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
             >
               <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
@@ -286,7 +297,7 @@ export function TaskComposer({
       </div>
       {notReady && (
         <p className="px-1 text-xs text-warning">
-          工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。
+          {t('工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。')}
         </p>
       )}
     </div>
@@ -297,7 +308,7 @@ export function TaskComposer({
 export function DropHint() {
   return (
     <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[13px] text-accent">
-      松开鼠标，把文件附到要求里
+      {t('松开鼠标，把文件附到要求里')}
     </div>
   )
 }

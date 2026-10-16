@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, Input } from '@/components/ui/input'
 import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
+import { t } from '@shared/i18n'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: ProjectCategory): ProjectCategoryInput => rest
 
@@ -16,7 +17,7 @@ const toInput = ({ id, createdAt, updatedAt, ...rest }: ProjectCategory): Projec
 export function ProjectCategoryList() {
   const { projectCategories, setProjectCategories } = useData()
   const create = async () => {
-    const base = '新分类'
+    const base = t('新分类')
     let name = base
     for (let i = 2; projectCategories.some((c) => c.name === name); i++) name = `${base} ${i}`
     try {
@@ -29,10 +30,12 @@ export function ProjectCategoryList() {
   return (
     <div className="flex flex-col gap-3">
       <p className="text-[13px] leading-relaxed text-subtle">
-        项目选了分类后默认使用分类的工作流；项目也可以在项目设置里单独指定。
+        {t('项目选了分类后默认使用分类的工作流；项目也可以在项目设置里单独指定。')}
       </p>
       {projectCategories.length === 0 && (
-        <p className="rounded-xl border border-dashed p-6 text-center text-[13px] text-subtle">还没有项目分类。</p>
+        <p className="rounded-xl border border-dashed p-6 text-center text-[13px] text-subtle">
+          {t('还没有项目分类。')}
+        </p>
       )}
       {projectCategories.map((c) => (
         <CategoryRow key={c.id} category={c} />
@@ -40,7 +43,7 @@ export function ProjectCategoryList() {
       <div>
         <Button variant="secondary" size="sm" onClick={create}>
           <Plus className="h-3.5 w-3.5" />
-          新建分类
+          {t('新建分类')}
         </Button>
       </div>
     </div>
@@ -69,7 +72,7 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
       await api.deleteProjectCategory(category.id)
       setProjectCategories((cs) => cs.filter((c) => c.id !== category.id))
       setProjects((ps) => ps.map((p) => (p.categoryId === category.id ? { ...p, categoryId: '' } : p)))
-      toast.success(`已删除分类「${category.name}」`)
+      toast.success(t('已删除分类「{name}」', { name: category.name }))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -81,13 +84,13 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.8} />
-        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{draft.name || '未命名分类'}</span>
-        <span className="shrink-0 text-xs text-subtle">{members} 个项目</span>
+        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{draft.name || t('未命名分类')}</span>
+        <span className="shrink-0 text-xs text-subtle">{t('{n} 个项目', { n: members })}</span>
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label={`删除分类「${category.name}」`}
-          title="删除分类"
+          aria-label={t('删除分类「{name}」', { name: category.name })}
+          title={t('删除分类')}
           className="hover:text-danger"
           onClick={() => setDeleting(true)}
         >
@@ -95,27 +98,27 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
         </Button>
       </div>
       <div className="flex flex-wrap gap-3">
-        <Field label="名称" className="flex-[1_1_160px]" error={valid ? undefined : '名称不能为空'}>
+        <Field label={t('名称')} className="flex-[1_1_160px]" error={valid ? undefined : t('名称不能为空')}>
           <Input className="h-9" value={draft.name} onChange={(e) => set('name', e.target.value)} />
         </Field>
-        <Field label="简介" className="flex-[2_1_220px]">
+        <Field label={t('简介')} className="flex-[2_1_220px]">
           <Input
             className="h-9"
             value={draft.description}
             onChange={(e) => set('description', e.target.value)}
-            placeholder="哪类项目归到这里"
+            placeholder={t('哪类项目归到这里')}
           />
         </Field>
       </div>
       <div className="flex flex-col gap-1.5">
-        <span className="text-xs text-muted">默认工作流</span>
-        <WorkflowPicker value={draft.workflowId} onChange={(id) => set('workflowId', id)} emptyLabel="不指定" />
+        <span className="text-xs text-muted">{t('默认工作流')}</span>
+        <WorkflowPicker value={draft.workflowId} onChange={(id) => set('workflowId', id)} emptyLabel={t('不指定')} />
       </div>
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`删除分类「${category.name}」？`}
-        description="分类里的项目不会被删除，会变成未分类。"
+        title={t('删除分类「{name}」？', { name: category.name })}
+        description={t('分类里的项目不会被删除，会变成未分类。')}
         onConfirm={remove}
       />
     </section>

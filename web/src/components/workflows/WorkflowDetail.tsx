@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import { Copy, Crown, Download, GitBranch, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import { exportWorkflow } from '@/lib/transfer'
 import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
@@ -39,8 +40,10 @@ export function WorkflowDetail({
 }) {
   const { agents, clis, workflows, setWorkflows, projects, projectCategories } = useData()
   const usedBy = [
-    ...projectCategories.filter((c) => c.workflowId === workflow.id).map((c) => `项目分类「${c.name}」`),
-    ...projects.filter((p) => p.workflowId === workflow.id).map((p) => `项目「${p.name}」`),
+    ...projectCategories
+      .filter((c) => c.workflowId === workflow.id)
+      .map((c) => t('项目分类「{name}」', { name: c.name })),
+    ...projects.filter((p) => p.workflowId === workflow.id).map((p) => t('项目「{name}」', { name: p.name })),
   ]
   const { go } = useNav()
   const [draft, setDraft] = useState<WorkflowInput>(() => toInput(workflow))
@@ -73,7 +76,7 @@ export function WorkflowDetail({
     try {
       await api.deleteWorkflow(workflow.id)
       setWorkflows((ws) => ws.filter((w) => w.id !== workflow.id))
-      toast.success(`已删除「${workflow.name}」`)
+      toast.success(t('已删除「{name}」', { name: workflow.name }))
       onDeleted()
     } catch (e) {
       toast.error((e as Error).message)
@@ -92,26 +95,36 @@ export function WorkflowDetail({
                 <WorkflowIcon className="h-6 w-6" strokeWidth={1.8} />
               </span>
             }
-            title={draft.name || '未命名工作流'}
+            title={draft.name || t('未命名工作流')}
             meta={
-              isReady(checks) ? <StatusDot tone="success" label="就绪" /> : <StatusDot tone="warning" label="未就绪" />
+              isReady(checks) ? (
+                <StatusDot tone="success" label={t('就绪')} />
+              ) : (
+                <StatusDot tone="warning" label={t('未就绪')} />
+              )
             }
-            subtitle={draft.description || '还没有简介'}
-            save={{ ...save, invalid: valid ? undefined : '名称为空，未保存' }}
+            subtitle={draft.description || t('还没有简介')}
+            save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
             actions={
               <>
-                <Button variant="secondary" onClick={() => setAssist(true)} title="让本机 CLI 按你的要求优化">
+                <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
                   <Sparkles className="h-4 w-4 text-accent" />
-                  AI 优化
+                  {t('AI 优化')}
                 </Button>
-                <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
+                <Button
+                  variant="secondary"
+                  size="icon"
+                  aria-label={t('复制一份')}
+                  title={t('复制一份')}
+                  onClick={onDuplicate}
+                >
                   <Copy className="h-4 w-4" />
                 </Button>
                 <Button
                   variant="secondary"
                   size="icon"
-                  aria-label="导出"
-                  title="导出成文件（连同用到的 Agent），可以在别的电脑上导入"
+                  aria-label={t('导出')}
+                  title={t('导出成文件（连同用到的 Agent），可以在别的电脑上导入')}
                   onClick={() => exportWorkflow({ ...workflow, ...draft }, agents)}
                 >
                   <Download className="h-4 w-4" />
@@ -119,8 +132,8 @@ export function WorkflowDetail({
                 <Button
                   variant="danger-outline"
                   size="icon"
-                  aria-label="删除"
-                  title="删除"
+                  aria-label={t('删除')}
+                  title={t('删除')}
                   onClick={() => setDeleting(true)}
                 >
                   <Trash2 className="h-4 w-4" />
@@ -136,11 +149,11 @@ export function WorkflowDetail({
             items={[
               {
                 id: 'flow',
-                label: '流程图',
+                label: t('流程图'),
                 icon: GitBranch,
                 extra: <span className="font-mono text-xs font-normal text-subtle">{nodeCount}</span>,
               },
-              { id: 'settings', label: '团队与说明', icon: Settings2 },
+              { id: 'settings', label: t('团队与说明'), icon: Settings2 },
             ]}
           />
         }
@@ -159,26 +172,26 @@ export function WorkflowDetail({
         }
         form={
           <>
-            <FormSection title="基本信息">
+            <FormSection title={t('基本信息')}>
               <div className="flex flex-wrap gap-4">
-                <Field label="名称" className="flex-[1_1_200px]" error={valid ? undefined : '名称不能为空'}>
+                <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
                   <Input
                     value={draft.name}
                     onChange={(e) => set('name', e.target.value)}
-                    placeholder="例如：Web 功能开发"
+                    placeholder={t('例如：Web 功能开发')}
                   />
                 </Field>
-                <Field label="简介" className="flex-[2_1_280px]">
+                <Field label={t('简介')} className="flex-[2_1_280px]">
                   <Input
                     value={draft.description}
                     onChange={(e) => set('description', e.target.value)}
-                    placeholder="适合什么样的任务"
+                    placeholder={t('适合什么样的任务')}
                   />
                 </Field>
               </div>
             </FormSection>
 
-            <FormSection title="团队">
+            <FormSection title={t('团队')}>
               <TeamEditor
                 mainAgentId={draft.mainAgentId}
                 members={draft.members}
@@ -187,14 +200,16 @@ export function WorkflowDetail({
               />
             </FormSection>
 
-            <FormSection title="工作流说明">
+            <FormSection title={t('工作流说明')}>
               <p className="-mt-2 text-xs leading-relaxed text-subtle">
-                写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给 Agent；具体每一步做什么在「流程图」里编辑。
+                {t(
+                  '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给 Agent；具体每一步做什么在「流程图」里编辑。',
+                )}
               </p>
               <DocEditor
                 value={draft.document}
                 onChange={(v) => set('document', v)}
-                team={[...(main ? [main] : []), ...team.map((t) => t.agent)]}
+                team={[...(main ? [main] : []), ...team.map((m) => m.agent)]}
                 onTemplate={() => docTemplate(main, team)}
               />
             </FormSection>
@@ -203,7 +218,7 @@ export function WorkflowDetail({
         aside={
           <>
             <section className="rounded-xl border bg-card p-4">
-              <h3 className="mb-3 text-[13px] font-semibold">团队结构</h3>
+              <h3 className="mb-3 text-[13px] font-semibold">{t('团队结构')}</h3>
               {main ? (
                 <button
                   onClick={() => go({ page: 'agents', id: main.id })}
@@ -214,7 +229,7 @@ export function WorkflowDetail({
                   <Crown className="h-3.5 w-3.5 text-accent" />
                 </button>
               ) : (
-                <p className="rounded-lg border border-dashed p-2 text-xs text-subtle">还没有主 Agent</p>
+                <p className="rounded-lg border border-dashed p-2 text-xs text-subtle">{t('还没有主 Agent')}</p>
               )}
               <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-line-strong pt-1 pl-3">
                 {team.map(({ agent: a, responsibility }) => (
@@ -228,7 +243,7 @@ export function WorkflowDetail({
                     <span className="truncate">{a.name}</span>
                   </button>
                 ))}
-                {team.length === 0 && <p className="px-2 py-1.5 text-xs text-subtle">还没有子 Agent</p>}
+                {team.length === 0 && <p className="px-2 py-1.5 text-xs text-subtle">{t('还没有子 Agent')}</p>}
               </div>
             </section>
 
@@ -239,9 +254,11 @@ export function WorkflowDetail({
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`删除「${workflow.name}」？`}
-        description="团队里的 Agent 不会被删除。此操作无法撤销。"
-        blocked={usedBy.length ? `正在被 ${usedBy.join('、')} 使用，请先改用其他工作流。` : undefined}
+        title={t('删除「{name}」？', { name: workflow.name })}
+        description={t('团队里的 Agent 不会被删除。此操作无法撤销。')}
+        blocked={
+          usedBy.length ? t('正在被 {list} 使用，请先改用其他工作流。', { list: usedBy.join(t('、')) }) : undefined
+        }
         onConfirm={remove}
       />
       <AssistDialog open={assist} onOpenChange={setAssist} kind="workflow" target={workflow} onApplied={onOptimized} />

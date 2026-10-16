@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
@@ -77,7 +78,7 @@ export function Markdown({
           const { svg } = await mermaid.render(`md-mermaid-${++seq}`, src)
           if (cancelled) return
           box.dataset.done = '1'
-          box.innerHTML = `<div class="md-mermaid-svg">${svg}</div><details><summary>源码</summary><pre><code>${escape(src)}</code></pre></details>`
+          box.innerHTML = `<div class="md-mermaid-svg">${svg}</div><details><summary>${t('源码')}</summary><pre><code>${escape(src)}</code></pre></details>`
         } catch {
           // 语法不对的图保持显示源码
           box.dataset.done = 'error'
@@ -95,8 +96,8 @@ export function Markdown({
     if (!btn) return
     const code = btn.closest('.md-code')?.querySelector('code')?.textContent ?? ''
     void navigator.clipboard?.writeText(code).then(() => {
-      btn.textContent = '已复制'
-      setTimeout(() => (btn.textContent = '复制'), 1500)
+      btn.textContent = t('已复制')
+      setTimeout(() => (btn.textContent = t('复制')), 1500)
     })
   }
 

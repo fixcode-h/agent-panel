@@ -1,6 +1,7 @@
 import { spawn as nodeSpawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
+import { t } from '../../shared/i18n.ts'
 
 const isWin = process.platform === 'win32'
 
@@ -93,7 +94,7 @@ export function runProcess(o: {
     const timer = setTimeout(() => stop('timeout'), o.timeoutMs || 2 ** 31 - 1)
 
     child.on('error', (e: NodeJS.ErrnoException) =>
-      done({ code: null, spawnError: e.code === 'ENOENT' ? `找不到命令「${o.command}」` : e.message }),
+      done({ code: null, spawnError: e.code === 'ENOENT' ? t('找不到命令「{cmd}」', { cmd: o.command }) : e.message }),
     )
     child.stderr!.setEncoding('utf8')
     child.stderr!.on('data', (d: string) => {
@@ -105,7 +106,7 @@ export function runProcess(o: {
       try {
         o.onLine?.(line)
       } catch (e) {
-        stderr += `\n[解析输出出错] ${(e as Error).message}`
+        stderr += `\n[${t('解析输出出错')}] ${(e as Error).message}`
       }
     })
     child.on('close', (code) => {

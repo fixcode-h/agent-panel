@@ -1,11 +1,12 @@
 import { Check, Info, TriangleAlert } from 'lucide-react'
 import type { Check as CheckItem } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 export function ReadinessCard({ checks }: { checks: CheckItem[] }) {
   return (
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
-      <h3 className="text-[13px] font-semibold">就绪检查</h3>
+      <h3 className="text-[13px] font-semibold">{t('就绪检查')}</h3>
       {checks.map((c) => {
         const Icon = c.ok ? Check : c.optional ? Info : TriangleAlert
         return (

@@ -10,7 +10,10 @@
   前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。不用 Python。
 - 数据是 `data/` 下的 JSON 文件。
 - 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现 `web/src/lib/demo-backend.ts`、`demo-assist.ts`。
-- 界面参考 Claude Code 的风格，视觉质量很重要；所有界面文字用中文。
+- 界面参考 Claude Code 的风格，视觉质量很重要。
+- 界面支持中文和英文：文案用 `t('中文原文')`（`shared/i18n.ts`，中文原文就是键，插值写 `t('共 {n} 个', { n })`），
+  英文写在 `shared/locales/en/` 下对应的文件里。`npm run typecheck` 会跑 `scripts/i18n-check.mjs`，有漏翻的就失败。
+  发给 Agent 的提示词、注释、演示数据不翻译。
 
 ## 常用命令
 

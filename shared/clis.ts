@@ -7,6 +7,7 @@
  * 所有 CLI 都用「非交互 + 结构化输出」模式运行，任务描述通过 stdin 传入，
  * 避免长文本、换行和引号在不同系统的命令行里转义出错。
  */
+import { t } from './i18n.ts'
 export interface PermissionOption {
   id: string
   label: string
@@ -32,9 +33,9 @@ export type ModelTier = 'high' | 'medium' | 'low'
 
 /** 模型档位：Agent 可以只选档位，执行时换成当前 CLI 在设置里对应的模型 */
 export const MODEL_TIERS: { id: ModelTier; label: string; hint: string }[] = [
-  { id: 'high', label: '高', hint: '复杂任务、架构设计' },
-  { id: 'medium', label: '中', hint: '日常开发' },
-  { id: 'low', label: '低', hint: '简单改动、速度优先' },
+  { id: 'high', label: t('高'), hint: t('复杂任务、架构设计') },
+  { id: 'medium', label: t('中'), hint: t('日常开发') },
+  { id: 'low', label: t('低'), hint: t('简单改动、速度优先') },
 ]
 
 export interface CliDefinition {
@@ -87,17 +88,21 @@ export const CLIS: CliDefinition[] = [
       { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
     ],
     permissions: [
-      { id: 'acceptEdits', label: '自动接受改文件', hint: '可以直接读写文件；需要审批的命令会在任务页上请你确认' },
-      { id: 'bypassPermissions', label: '跳过所有确认', hint: '可以执行任意命令，只在信任的项目里用' },
-      { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
-      { id: 'default', label: '逐项确认', hint: '改文件和需要审批的命令都会在任务页上请你确认' },
+      {
+        id: 'acceptEdits',
+        label: t('自动接受改文件'),
+        hint: t('可以直接读写文件；需要审批的命令会在任务页上请你确认'),
+      },
+      { id: 'bypassPermissions', label: t('跳过所有确认'), hint: t('可以执行任意命令，只在信任的项目里用') },
+      { id: 'plan', label: t('只读规划'), hint: t('只分析和出方案，不改文件') },
+      { id: 'default', label: t('逐项确认'), hint: t('改文件和需要审批的命令都会在任务页上请你确认') },
     ],
     efforts: [
-      { id: 'low', label: '低' },
-      { id: 'medium', label: '中' },
-      { id: 'high', label: '高' },
-      { id: 'xhigh', label: '很高' },
-      { id: 'max', label: '最高' },
+      { id: 'low', label: t('低') },
+      { id: 'medium', label: t('中') },
+      { id: 'high', label: t('高') },
+      { id: 'xhigh', label: t('很高') },
+      { id: 'max', label: t('最高') },
     ],
     tiers: {
       high: { model: 'claude-opus-5-5', effort: 'high' },
@@ -147,18 +152,18 @@ export const CLIS: CliDefinition[] = [
     permissions: [
       {
         id: 'workspace-write',
-        label: '可写项目目录',
-        hint: '沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认',
+        label: t('可写项目目录'),
+        hint: t('沙箱内运行，可以改项目目录里的文件；需要越过沙箱时在任务页上请你确认'),
       },
-      { id: 'read-only', label: '只读', hint: '只能读文件和跑只读命令' },
-      { id: 'danger-full-access', label: '完全访问', hint: '不使用沙箱、不确认，只在信任的项目里用' },
+      { id: 'read-only', label: t('只读'), hint: t('只能读文件和跑只读命令') },
+      { id: 'danger-full-access', label: t('完全访问'), hint: t('不使用沙箱、不确认，只在信任的项目里用') },
     ],
     efforts: [
-      { id: 'low', label: '低' },
-      { id: 'medium', label: '中' },
-      { id: 'high', label: '高' },
-      { id: 'xhigh', label: '很高' },
-      { id: 'max', label: '最高' },
+      { id: 'low', label: t('低') },
+      { id: 'medium', label: t('中') },
+      { id: 'high', label: t('高') },
+      { id: 'xhigh', label: t('很高') },
+      { id: 'max', label: t('最高') },
     ],
     tiers: {
       high: { model: 'gpt-6-astra', effort: 'high' },
@@ -203,18 +208,20 @@ export const CLIS: CliDefinition[] = [
     permissions: [
       {
         id: 'accept-edits',
-        label: '自动接受改文件',
-        hint: 'Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」',
+        label: t('自动接受改文件'),
+        hint: t(
+          'Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」',
+        ),
       },
-      { id: 'yolo', label: '跳过所有确认', hint: '可以改文件、执行任意命令，只在信任的项目里用' },
-      { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
-      { id: 'standard', label: '标准', hint: '非交互执行时改文件和跑命令都会被拦下' },
+      { id: 'yolo', label: t('跳过所有确认'), hint: t('可以改文件、执行任意命令，只在信任的项目里用') },
+      { id: 'plan', label: t('只读规划'), hint: t('只分析和出方案，不改文件') },
+      { id: 'standard', label: t('标准'), hint: t('非交互执行时改文件和跑命令都会被拦下') },
     ],
     // 思考强度是否生效取决于模型
     efforts: [
-      { id: 'low', label: '低' },
-      { id: 'medium', label: '中' },
-      { id: 'high', label: '高' },
+      { id: 'low', label: t('低') },
+      { id: 'medium', label: t('中') },
+      { id: 'high', label: t('高') },
     ],
     tiers: {
       high: { model: 'claude-sonnet-5-5', effort: 'high' },
@@ -260,4 +267,4 @@ export function previewCommand(command: string, args: string[]): string {
 export const quoteArg = (t: string) => (/[\s"]/.test(t) ? JSON.stringify(t) : t)
 
 /** 复制出来的完整命令：任务描述通过 stdin 传入，所以写成管道形式 */
-export const commandText = (argv: string[]) => `echo "<任务描述>" | ${argv.map(quoteArg).join(' ')}`
+export const commandText = (argv: string[]) => `echo "${t('<任务描述>')}" | ${argv.map(quoteArg).join(' ')}`

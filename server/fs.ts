@@ -2,6 +2,7 @@ import { access, readdir, readFile, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { DirInfo, DirListing } from '../shared/schema.ts'
+import { t } from '../shared/i18n.ts'
 
 /** 支持 ~ 开头的路径 */
 export function resolvePath(p: string) {
@@ -51,7 +52,7 @@ let driveCache: { at: number; list: { name: string; path: string }[] } | null = 
 
 /** Windows 上逐个试 A: 到 Z:，没有现成的接口能列盘符；结果缓存 10 秒，插拔 U 盘后很快能看到 */
 async function roots() {
-  const home = { name: '主目录', path: os.homedir() }
+  const home = { name: t('主目录'), path: os.homedir() }
   if (process.platform !== 'win32') return [home, { name: '/', path: '/' }]
   if (!driveCache || Date.now() - driveCache.at > 10_000) {
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('')

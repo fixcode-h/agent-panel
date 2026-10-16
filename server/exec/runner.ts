@@ -20,6 +20,7 @@ import { gitChanges } from './git.ts'
 import { invokeCli } from './invoke.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
+import { t } from '../../shared/i18n.ts'
 
 export interface RealContext {
   task: Task
@@ -50,14 +51,16 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   task.requests = task.requests.filter((x) => x.id !== id)
   const what =
     req.kind === 'question'
-      ? `回答了「${req.title}」：${r.answer ?? ''}`
-      : `${r.allow ? '允许' : '拒绝'}了：${req.title}`
+      ? t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answer ?? '' })
+      : r.allow
+        ? t('你允许了：{title}', { title: req.title })
+        : t('你拒绝了：{title}', { title: req.title })
   task.messages.push({
     id: newId(),
     role: 'system',
     agentId: req.agentId,
     step: req.step,
-    text: `你${what}`,
+    text: what,
     tools: [],
     at: new Date().toISOString(),
   })
@@ -144,14 +147,19 @@ export function failureHints(detail: string) {
       detail,
     )
   if (byok) {
-    const alt = [...byok[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(' 或 ')
+    const alt = [...byok[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(t(' 或 '))
     hints.push(
-      `· 模型「${byok[1]}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「${alt}」（模型下拉的「配置文件」分组里）。`,
+      t(
+        '· 模型「{model}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「{alt}」（模型下拉的「配置文件」分组里）。',
+        { model: byok[1], alt },
+      ),
     )
   }
   if (NETWORK_ERROR.test(detail))
     hints.push(
-      '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+      t(
+        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+      ),
     )
   return hints
 }
@@ -162,18 +170,18 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
   const found = ctx.agents.find((a) => a.id === agentId)
-  if (!found) return { ok: false, error: '找不到执行这一步的 Agent，可能已被删除' }
+  if (!found) return { ok: false, error: t('找不到执行这一步的 Agent，可能已被删除') }
   const agent = withTaskModel(found, task)
   const run = agentRun(agent, settings)
   const cliId = run.cli
   const def = getCli(cliId)
-  if (!def) return { ok: false, error: `未知的 CLI：${cliId}` }
+  if (!def) return { ok: false, error: t('未知的 CLI：{cli}', { cli: cliId }) }
   const cs = cliSettings(settings, cliId)
-  if (!cs.enabled) return { ok: false, error: `${def.name} 在设置里被停用了` }
-  if (!agent.enabled) return { ok: false, error: `Agent「${agent.name}」已停用` }
+  if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
+  if (!agent.enabled) return { ok: false, error: t('Agent「{name}」已停用', { name: agent.name }) }
   const cwd = project.path
   const dir = await stat(cwd).catch(() => null)
-  if (!dir?.isDirectory()) return { ok: false, error: `项目目录不存在：${cwd || '（未设置）'}` }
+  if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
 
   const model = run.model
   const resume = task.sessions[sessionKey]
@@ -194,7 +202,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
   const argv = [
     cs.command,
-    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? '<角色设定>' : a)),
+    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? t('<角色设定>') : a)),
   ]
   const owner = step ? task.steps.find((s) => s.id === step) : undefined
   if (owner) owner.command = argv
@@ -377,12 +385,17 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   }
   ctx.changed(true)
 
-  if (r.killed === 'stopped') return { ok: false, stopped: true, error: '已停止' }
-  if (r.killed === 'timeout') return { ok: false, error: `超过 ${settings.stepTimeoutMinutes} 分钟没有完成，已停止` }
+  if (r.killed === 'stopped') return { ok: false, stopped: true, error: t('已停止') }
+  if (r.killed === 'timeout')
+    return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
   if (r.spawnError)
     return {
       ok: false,
-      error: `${r.spawnError}。请确认已安装 ${def.name}（${def.installHint}），或在设置里填写可执行文件的完整路径。`,
+      error: t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。', {
+        error: r.spawnError,
+        cli: def.name,
+        hint: def.installHint,
+      }),
     }
   const failed = result ? !result.ok : r.code !== 0
   if (failed) {
@@ -414,9 +427,21 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     return {
       ok: false,
       error: [
-        `${def.name} 执行失败${r.code !== null && r.code !== 0 ? `（退出码 ${r.code}）` : ''}${netRetries ? `，自动续接 ${netRetries} 次后仍然失败` : ''}：`,
+        r.code !== null && r.code !== 0
+          ? netRetries
+            ? t('{cli} 执行失败（退出码 {code}），自动续接 {n} 次后仍然失败：', {
+                cli: def.name,
+                code: r.code,
+                n: netRetries,
+              })
+            : t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
+          : netRetries
+            ? t('{cli} 执行失败，自动续接 {n} 次后仍然失败：', { cli: def.name, n: netRetries })
+            : t('{cli} 执行失败：', { cli: def.name }),
         ...hints,
-        hints.length ? `\n原始输出：\n${clip(detail || '没有更多信息', 1500)}` : clip(detail || '没有更多信息', 1500),
+        hints.length
+          ? `\n${t('原始输出：')}\n${clip(detail || t('没有更多信息'), 1500)}`
+          : clip(detail || t('没有更多信息'), 1500),
       ].join('\n'),
     }
   }

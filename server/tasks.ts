@@ -24,6 +24,7 @@ import { createTaskStore } from './task-store.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
+import { t } from '../shared/i18n.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -46,24 +47,27 @@ export function tasksApi(deps: {
 
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   void store.list().then(async (all) => {
-    for (const t of all.filter((t) => t.status === 'running'))
-      await store.update(t.id, {
-        ...t,
+    for (const task of all.filter((task) => task.status === 'running'))
+      await store.update(task.id, {
+        ...task,
         status: 'stopped',
         requests: [],
         // 中断前最后一次落盘的时间当作这一轮的结束
         runMs:
-          (t.runMs ?? 0) + (t.runStartedAt ? Math.max(0, Date.parse(t.updatedAt) - Date.parse(t.runStartedAt)) : 0),
+          (task.runMs ?? 0) +
+          (task.runStartedAt ? Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.runStartedAt)) : 0),
         runStartedAt: '',
-        steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
+        steps: task.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
         messages: [
-          ...t.messages,
+          ...task.messages,
           {
             id: randomUUID(),
             role: 'system',
             agentId: '',
             step: '',
-            text: '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
+            text: t(
+              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
+            ),
             tools: [],
             at: new Date().toISOString(),
           },
@@ -74,7 +78,7 @@ export function tasksApi(deps: {
   /** Chat 模式的聊天在数据目录里各有一个空的工作目录，不碰任何项目 */
   const chatProject = (dir: string): Project => ({
     id: '',
-    name: '聊天',
+    name: t('聊天'),
     description: '',
     path: dir,
     categoryId: '',
@@ -131,7 +135,7 @@ export function tasksApi(deps: {
     }
     const run = (async () => {
       // 项目被删掉后任务还在，这时没有目录可以执行
-      if (!project) throw new Error('任务所属的项目已经不存在')
+      if (!project) throw new Error(t('任务所属的项目已经不存在'))
       if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
       const snapshot = await gitNumstat(project.path, entry.task.baseRef).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
@@ -158,7 +162,7 @@ export function tasksApi(deps: {
           role: 'system',
           agentId: '',
           step: '',
-          text: `执行出错：${(e as Error).message}`,
+          text: t('执行出错：{error}', { error: (e as Error).message }),
           tools: [],
           at: new Date().toISOString(),
         })
@@ -236,8 +240,8 @@ export function tasksApi(deps: {
   })
 
   routes.get('/:id', async (c) => {
-    const t = await current(c.req.param('id'))
-    return t ? c.json(t) : bad(c, '任务不存在', 404)
+    const task = await current(c.req.param('id'))
+    return task ? c.json(task) : bad(c, t('任务不存在'), 404)
   })
 
   routes.post('/', async (c) => {
@@ -245,17 +249,17 @@ export function tasksApi(deps: {
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const input = p.data
     // 没有项目的是 Chat 模式的聊天，只能直接对话
-    if (!input.projectId && input.mode !== 'chat') return bad(c, '缺少项目')
+    if (!input.projectId && input.mode !== 'chat') return bad(c, t('缺少项目'))
     const project = input.projectId ? await deps.projects.get(input.projectId) : chatProject('')
-    if (!project) return bad(c, '项目不存在', 404)
+    if (!project) return bad(c, t('项目不存在'), 404)
     const agents = await deps.agents.list()
     let workflow: Workflow | undefined
     if (input.mode === 'workflow') {
       workflow = input.workflowId
         ? ((await deps.workflows.get(input.workflowId)) ?? undefined)
         : await projectWorkflow(project)
-      if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
-    } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
+      if (!workflow) return bad(c, t('项目还没有指定工作流，请选择一个工作流或改用直接对话'))
+    } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
     const snapshot = workflow ? workflowClosure(workflow, await deps.workflows.list()) : []
     const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot))
     return c.json(await start(reserve(task), withAttachments(input.prompt, input.attachments), true, agents), 201)
@@ -268,9 +272,9 @@ export function tasksApi(deps: {
     const prev = live.get(id)
     // 刚执行完、还在落盘的任务：等它写完再接着跑
     if (prev && prev.task.status !== 'running') await prev.done
-    if (live.has(id)) return bad(c, '任务正在执行，请等它完成或先停止', 409)
+    if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     const task = await store.get(id)
-    if (!task) return bad(c, '任务不存在', 404)
+    if (!task) return bad(c, t('任务不存在'), 404)
     const entry = reserve(task)
     const next = entry.task
     next.messages.push({
@@ -298,16 +302,16 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     const prev = live.get(id)
     if (prev && prev.task.status !== 'running') await prev.done
-    if (live.has(id)) return bad(c, '任务正在执行', 409)
+    if (live.has(id)) return bad(c, t('任务正在执行'), 409)
     const task = await store.get(id)
-    if (!task) return bad(c, '任务不存在', 404)
-    if (task.status !== 'failed' && task.status !== 'stopped') return bad(c, '只有失败或停止的任务可以继续')
+    if (!task) return bad(c, t('任务不存在'), 404)
+    if (task.status !== 'failed' && task.status !== 'stopped') return bad(c, t('只有失败或停止的任务可以继续'))
     // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
     const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
     let fresh: Workflow | undefined
     if (latest && task.workflowId) {
       fresh = (await deps.workflows.get(task.workflowId)) ?? undefined
-      if (!fresh) return bad(c, '工作流已经被删除，只能按任务创建时的工作流继续')
+      if (!fresh) return bad(c, t('工作流已经被删除，只能按任务创建时的工作流继续'))
     }
     const entry = reserve(task)
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
@@ -376,7 +380,7 @@ export function tasksApi(deps: {
     const body = z.object({ allow: z.boolean(), answer: z.string().optional() }).safeParse(await c.req.json())
     if (!body.success) return bad(c, z.prettifyError(body.error))
     if (!e || !answerRequest(e.task, c.req.param('rid'), body.data, randomUUID))
-      return bad(c, '这个请求已经结束了', 404)
+      return bad(c, t('这个请求已经结束了'), 404)
     e.task.updatedAt = new Date().toISOString()
     await store.update(e.task.id, e.task)
     return c.json(e.task)
@@ -392,7 +396,7 @@ export function tasksApi(deps: {
       return c.json(e.task)
     }
     const task = await store.get(id)
-    if (!task) return bad(c, '任务不存在', 404)
+    if (!task) return bad(c, t('任务不存在'), 404)
     return c.json(await store.update(id, { ...task, ...p.data }))
   })
 
@@ -406,7 +410,7 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     stopTask(id)
     const task = await store.get(id)
-    if (!task || !(await store.remove(id))) return bad(c, '任务不存在', 404)
+    if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
     await dropUploads([task])
     // 聊天的工作目录跟着删掉
     await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})

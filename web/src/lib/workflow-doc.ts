@@ -1,6 +1,7 @@
 import { marked } from 'marked'
 import hljs from 'highlight.js/lib/common'
 import type { Agent } from '@shared/schema'
+import { t } from '@shared/i18n'
 
 /** 工作流说明的模板：目标、规范、完成标准（步骤在流程图里编辑） */
 export function docTemplate(main: Agent | undefined, members: { agent: Agent; responsibility: string }[]) {
@@ -43,8 +44,8 @@ export function renderDoc(doc: string, teamNames: Set<string>) {
   renderer.link = function ({ href, title, tokens }) {
     const text = this.parser.parseInline(tokens)
     if (!safe(href)) return text
-    const t = title ? ` title="${escape(title)}"` : ''
-    return `<a href="${escape(href)}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`
+    const ttl = title ? ` title="${escape(title)}"` : ''
+    return `<a href="${escape(href)}"${ttl} target="_blank" rel="noopener noreferrer">${text}</a>`
   }
   renderer.image = ({ href, text }) =>
     safe(href) && /^https?:/i.test(href) ? `<img src="${escape(href)}" alt="${escape(text)}">` : escape(text)
@@ -60,7 +61,7 @@ export function renderDoc(doc: string, teamNames: Set<string>) {
     } catch {
       // 高亮失败就显示原文
     }
-    return `<div class="md-code"><div class="md-code-bar"><span>${escape(name || 'text')}</span><button type="button" class="md-copy" data-copy>复制</button></div><pre><code class="hljs">${body}</code></pre></div>`
+    return `<div class="md-code"><div class="md-code-bar"><span>${escape(name || 'text')}</span><button type="button" class="md-copy" data-copy>${t('复制')}</button></div><pre><code class="hljs">${body}</code></pre></div>`
   }
   const html = marked.parse(doc, { renderer, async: false, gfm: true, breaks: true }) as string
   // 只替换标签之外的文本里的 @提及；代码块和行内代码里的 @ 原样保留

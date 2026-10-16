@@ -7,6 +7,7 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { t } from '@shared/i18n'
 
 const ICONS = { command: SquareTerminal, file: FilePen, tool: Wrench, question: MessageCircleQuestion }
 
@@ -39,12 +40,12 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
   return (
     <div
       role="alertdialog"
-      aria-label={req.kind === 'question' ? 'Agent 的问题' : 'Agent 请求确认'}
+      aria-label={req.kind === 'question' ? t('Agent 的问题') : t('Agent 请求确认')}
       className="mx-auto mb-2 max-w-(--content-w) overflow-hidden rounded-2xl border border-warning/50 bg-card shadow-card animate-[pop-in_160ms_ease-out]"
     >
       <div className="flex items-center gap-2 border-b border-warning/25 bg-warning/8 px-4 py-2 text-xs">
         <BellRing className="h-3.5 w-3.5 text-warning" />
-        <span className="font-medium text-warning">{req.kind === 'question' ? '需要你回答' : '需要你确认'}</span>
+        <span className="font-medium text-warning">{req.kind === 'question' ? t('需要你回答') : t('需要你确认')}</span>
         {a && (
           <span className="flex min-w-0 items-center gap-1.5 text-muted">
             <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
@@ -52,7 +53,7 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
           </span>
         )}
         {task.requests.length > 1 && (
-          <span className="ml-auto shrink-0 text-subtle">还有 {task.requests.length - 1} 个</span>
+          <span className="ml-auto shrink-0 text-subtle">{t('还有 {n} 个', { n: task.requests.length - 1 })}</span>
         )}
       </div>
       <div className="flex flex-col gap-3 px-4 py-3">
@@ -94,17 +95,17 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
               <input
                 value={answer}
                 onChange={(e) => setAnswer(e.target.value)}
-                placeholder={req.options.length ? '或者自己填写回答' : '填写回答'}
-                aria-label="回答"
+                placeholder={req.options.length ? t('或者自己填写回答') : t('填写回答')}
+                aria-label={t('回答')}
                 className="h-8 min-w-0 flex-1 rounded-lg border border-line-strong bg-field px-3 text-[13px] outline-none focus:border-accent"
               />
               <Button size="sm" type="submit" disabled={!answer.trim() || !!busy}>
                 {spin('text')}
-                回答
+                {t('回答')}
               </Button>
               <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => send('skip', false)}>
                 {spin('skip')}
-                不回答
+                {t('不回答')}
               </Button>
             </form>
           </div>
@@ -112,11 +113,11 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => send('deny', false)}>
               {spin('deny')}
-              拒绝
+              {t('拒绝')}
             </Button>
             <Button size="sm" disabled={!!busy} onClick={() => send('allow', true)}>
               {spin('allow')}
-              允许
+              {t('允许')}
             </Button>
           </div>
         )}

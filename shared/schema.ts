@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import { t } from './i18n.ts'
 
 /**
  * Agent：一个可复用的「CLI + 模型 + 角色设定」组合。
  * 主 / 子 Agent 不在这里区分，而是在工作流里指定。
  */
 export const AgentInput = z.object({
-  name: z.string().trim().min(1, '名称不能为空').max(40),
+  name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 为空表示使用设置里的默认 CLI */
   cli: z.string().default(''),
@@ -41,8 +42,8 @@ export const defaultAgent = (): Agent => {
   const at = new Date(0).toISOString()
   return {
     ...AgentInput.parse({
-      name: '默认 Agent',
-      description: '使用默认 CLI 的默认模型和思考强度，对话时可以临时调整',
+      name: t('默认 Agent'),
+      description: t('使用默认 CLI 的默认模型和思考强度，对话时可以临时调整'),
       icon: 'sparkles',
     }),
     id: DEFAULT_AGENT_ID,
@@ -53,7 +54,7 @@ export const defaultAgent = (): Agent => {
 
 /** Agent 分类，例如「开发」「测试」「文档」，只用于组织列表 */
 export const CategoryInput = z.object({
-  name: z.string().trim().min(1, '分类名不能为空').max(20),
+  name: z.string().trim().min(1, t('分类名不能为空')).max(20),
 })
 export type CategoryInput = z.infer<typeof CategoryInput>
 
@@ -163,7 +164,7 @@ export function stagesToFlow(stages: { title?: string; nodes?: Record<string, un
   for (const p of prev) if (p !== START || !cols.length) edges.push({ id: `e_${rid()}`, from: p, to: END })
   return {
     id: 'main',
-    name: '主流程',
+    name: t('主流程'),
     nodes,
     edges: cols.length ? edges : [],
     startPos: { x: 0, y: 0 },
@@ -187,7 +188,7 @@ function migrateWorkflow(v: unknown) {
  * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
 const WorkflowFields = z.object({
-  name: z.string().trim().min(1, '名称不能为空').max(40),
+  name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 主 Agent；为空表示还没选 */
   mainAgentId: z.string().default(''),
@@ -289,7 +290,7 @@ export interface CliModels {
 
 /** 项目分类：同一类项目共用一个默认工作流，例如「Web 应用」「游戏客户端」 */
 export const ProjectCategoryInput = z.object({
-  name: z.string().trim().min(1, '分类名不能为空').max(20),
+  name: z.string().trim().min(1, t('分类名不能为空')).max(20),
   description: z.string().trim().max(200).default(''),
   /** 默认工作流；为空表示还没指定 */
   workflowId: z.string().default(''),
@@ -301,7 +302,7 @@ export type ProjectCategory = z.infer<typeof ProjectCategory>
 
 /** 项目：本机上的一个目录，Agent 会在这个目录里按工作流执行任务 */
 export const ProjectInput = z.object({
-  name: z.string().trim().min(1, '名称不能为空').max(40),
+  name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 本机绝对路径 */
   path: z.string().trim().default(''),
@@ -365,17 +366,17 @@ export const NewTaskInput = z.object({
   /** chat 模式用默认 Agent 时临时选的模型和思考强度；为空跟随默认 CLI 的设置 */
   model: z.string().trim().max(200).default(''),
   effort: z.string().trim().max(40).default(''),
-  prompt: z.string().trim().min(1, '请描述任务').max(20000),
+  prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
 export const FollowUpInput = z.object({
-  text: z.string().trim().min(1, '内容不能为空').max(20000),
+  text: z.string().trim().min(1, t('内容不能为空')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
 })
 /** 可以直接修改的任务字段 */
-export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不能为空').max(80) }).partial()
+export const TaskPatch = z.object({ title: z.string().trim().min(1, t('标题不能为空')).max(80) }).partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({

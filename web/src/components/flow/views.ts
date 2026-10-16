@@ -1,4 +1,5 @@
 import type { Agent, Flow, FlowRef, Workflow, WorkflowInput } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { flowLabel, nodeAgent, reachable, refLabel } from '@shared/flow'
 import { plainLine } from '@/lib/tasks'
 import type { HookSlot, NodeView } from './FlowCanvas'
@@ -23,13 +24,15 @@ export function nodeViews(
         .map((s) => ({
           slot: s,
           label: refLabel(n.hooks[s], w, workflows),
-          extra: s === 'review' ? `≤${n.hooks.maxRounds} 轮` : undefined,
+          extra: s === 'review' ? t('≤{n} 轮', { n: n.hooks.maxRounds }) : undefined,
         }))
       const view: NodeView = {
-        title: n.title.trim() || (n.kind === 'flow' ? '调用流程' : '未命名节点'),
+        title: n.title.trim() || (n.kind === 'flow' ? t('调用流程') : t('未命名节点')),
         kind: n.kind,
         agent,
-        sub: agent ? `${agent.name}${n.agentId ? '' : ' · 主 Agent'} · ${modelOf(agent)}` : '还没有选择主 Agent',
+        sub: agent
+          ? `${agent.name}${n.agentId ? '' : ` · ${t('主 Agent')}`} · ${modelOf(agent)}`
+          : t('还没有选择主 Agent'),
         main: !n.agentId,
         model: agent ? modelOf(agent) : undefined,
         flowText: refLabel(n.flow, w, workflows),
@@ -53,15 +56,15 @@ export function refOptions(
   w: Pick<WorkflowInput, 'flows' | 'entryFlowId'> & { id: string },
   workflows: Pick<Workflow, 'id' | 'name'>[],
   currentFlowId: string,
-  empty = '不配置',
+  empty = t('不配置'),
 ) {
   return [
     { value: '', label: empty },
     ...w.flows
       .filter((f) => f.id !== currentFlowId)
-      .map((f) => ({ value: `sub:${f.id}`, label: flowLabel(f, w), group: '这个工作流的流程' })),
+      .map((f) => ({ value: `sub:${f.id}`, label: flowLabel(f, w), group: t('这个工作流的流程') })),
     ...workflows
       .filter((x) => x.id !== w.id)
-      .map((x) => ({ value: `workflow:${x.id}`, label: x.name, group: '其他工作流' })),
+      .map((x) => ({ value: `workflow:${x.id}`, label: x.name, group: t('其他工作流') })),
   ]
 }
