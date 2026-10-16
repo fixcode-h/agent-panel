@@ -317,6 +317,20 @@ export interface DirListing {
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
 export const TaskMode = z.enum(['workflow', 'chat'])
+
+/** 用户随要求附上的文件或图片：上传后存在面板的数据目录里，执行时把路径告诉 Agent，由 CLI 自己读取 */
+export const Attachment = z.object({
+  name: z.string().min(1).max(200),
+  /** 本机绝对路径 */
+  path: z.string().min(1),
+  size: z.number().int().min(0),
+  mime: z.string().default(''),
+})
+export type Attachment = z.infer<typeof Attachment>
+/** 一次最多附上的文件数 */
+export const MAX_ATTACHMENTS = 10
+/** 单个附件的大小上限（字节） */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
@@ -327,10 +341,14 @@ export const NewTaskInput = z.object({
   /** chat 模式：对话的 Agent */
   agentId: z.string().default(''),
   prompt: z.string().trim().min(1, '请描述任务').max(20000),
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
-export const FollowUpInput = z.object({ text: z.string().trim().min(1, '内容不能为空').max(20000) })
+export const FollowUpInput = z.object({
+  text: z.string().trim().min(1, '内容不能为空').max(20000),
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+})
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不能为空').max(80) }).partial()
 
@@ -358,6 +376,8 @@ export const TaskMessage = z.object({
   tools: z.array(ToolUse).default([]),
   /** 生成这段回复前的思考过程（CLI 给出的思考或推理摘要） */
   thinking: z.string().optional(),
+  /** 用户消息附上的文件和图片 */
+  attachments: z.array(Attachment).optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>

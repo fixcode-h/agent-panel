@@ -669,6 +669,41 @@ try {
   pk = calls().at(-1).args
   assert.equal(pk[pk.indexOf('--permission-mode') + 1], 'acceptEdits', 'CLI 不支持的权限跟随设置')
   await call('PUT', '/settings', settings)
+
+  // ---- 附件和 @ 引用项目文件 ----
+  const att = await call('POST', '/uploads', {
+    name: '截图.png',
+    mime: 'image/png',
+    data: Buffer.from('png!').toString('base64'),
+  })
+  assert.equal(att.size, 4)
+  assert.ok(att.path.startsWith(path.join(dataDir, 'uploads')), '附件存在数据目录里')
+  const rawRes = await fetch(`${base}/uploads/raw?path=${encodeURIComponent(att.path)}`)
+  assert.equal(rawRes.headers.get('content-type'), 'image/png')
+  assert.equal(await rawRes.text(), 'png!')
+  assert.equal(
+    (await fetch(`${base}/uploads/raw?path=${encodeURIComponent(path.join(projectDir, 'README.md'))}`)).status,
+    400,
+    '不能读附件目录以外的文件',
+  )
+  let tAtt = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: L.id,
+    prompt: '看看这张图',
+    attachments: [att],
+  })
+  tAtt = await waitDone(tAtt.id)
+  assert.deepEqual(
+    tAtt.messages[0].attachments.map((a) => a.name),
+    ['截图.png'],
+  )
+  assert.equal(tAtt.messages[0].text, '看看这张图', '附件不写进消息正文')
+  const kAtt = calls().at(-1)
+  assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
+  assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
+  assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
+  step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件')
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {
     name: '旧格式',

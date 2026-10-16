@@ -5,6 +5,7 @@
 import { z } from 'zod'
 import {
   Agent,
+  Attachment,
   AgentInput,
   Category,
   CategoryInput,
@@ -32,7 +33,7 @@ import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/ver
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
-import { newTask } from '@shared/task'
+import { newTask, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -464,6 +465,31 @@ function cliAction(id: string, action: CliInstallJob['action']) {
   return job
 }
 
+/** 演示上传的附件内容（data URL），刷新页面后就没了 */
+export const demoUploads = new Map<string, string>()
+
+/** 演示项目里的文件，输入 @ 时从这里找 */
+const DEMO_FILES = [
+  'package.json',
+  'README.md',
+  'vite.config.ts',
+  'src/main.tsx',
+  'src/App.tsx',
+  'src/api/cart.ts',
+  'src/api/orders.ts',
+  'src/api/products.ts',
+  'src/components/CartBadge.tsx',
+  'src/components/ProductCard.tsx',
+  'src/components/RestockButton.tsx',
+  'src/pages/Login.tsx',
+  'src/pages/OrderList.tsx',
+  'src/pages/ProductDetail.tsx',
+  'src/store/cart.ts',
+  'src/utils/date.ts',
+  'src/utils/format.ts',
+  'tests/cart.test.ts',
+]
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -535,6 +561,22 @@ function route(method: string, url: string, body: unknown): unknown {
     }
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
     return demoAssistJob(id) ?? fail('找不到这次生成，可能已过期')
+  }
+  // 附件：演示没有本机磁盘，内容留在页面内存里给缩略图用，路径是假的
+  if (res === 'uploads' && method === 'POST') {
+    const u = body as { name: string; mime: string; data: string }
+    const a: Attachment = {
+      name: u.name,
+      path: `/demo/uploads/${crypto.randomUUID()}/${u.name}`,
+      size: Math.floor((u.data.length * 3) / 4),
+      mime: u.mime,
+    }
+    demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
+    return a
+  }
+  if (res === 'projects' && id && sub === 'files') {
+    const q = (query.get('q') ?? '').toLowerCase()
+    return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
@@ -692,10 +734,10 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     ...newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
     simulated: true,
   })
-  return { task, done: startTurn(d, task, input.prompt, true, fast) }
+  return { task, done: startTurn(d, task, withAttachments(input.prompt, input.attachments), true, fast) }
 }
 
-function followUp(d: Db, task: Task, text: string, fast = false) {
+function followUp(d: Db, task: Task, text: string, fast = false, attachments: Attachment[] = []) {
   if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
   task.messages.push({
     id: `demo-${crypto.randomUUID()}`,
@@ -704,9 +746,10 @@ function followUp(d: Db, task: Task, text: string, fast = false) {
     step: '',
     text,
     tools: [],
+    ...(attachments.length ? { attachments } : {}),
     at: new Date().toISOString(),
   })
-  return startTurn(d, task, text, false, fast)
+  return startTurn(d, task, withAttachments(text, attachments), false, fast)
 }
 
 function tasksRoute(
@@ -737,7 +780,8 @@ function tasksRoute(
     return task
   }
   if (sub === 'messages') {
-    void followUp(d, task, parse(FollowUpInput, body).text)
+    const f = parse(FollowUpInput, body)
+    void followUp(d, task, f.text, false, f.attachments)
     return task
   }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
@@ -794,6 +838,7 @@ async function seedTasks(d: Db) {
         workflowId: '',
         agentId: '',
         prompt: '订单导出 Excel 时，日期列整体往右错了一列',
+        attachments: [],
       },
       true,
     )
@@ -809,6 +854,7 @@ async function seedTasks(d: Db) {
         workflowId: '',
         agentId: fe.id,
         prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因',
+        attachments: [],
       },
       true,
     )
@@ -824,6 +870,7 @@ async function seedTasks(d: Db) {
         workflowId: '',
         agentId: '',
         prompt: '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手机号，到货时发短信通知。',
+        attachments: [],
       },
       true,
     )

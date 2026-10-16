@@ -12,7 +12,7 @@ import {
   type TaskData,
   type Workflow,
 } from '../shared/schema.ts'
-import { newTask } from '../shared/task.ts'
+import { newTask, withAttachments } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitNumstat } from './exec/git.ts'
@@ -164,7 +164,10 @@ export function tasksApi(deps: {
       if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
     const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID()))
-    return c.json(await start(reserve(task), input.prompt, true, workflow, agents), 201)
+    return c.json(
+      await start(reserve(task), withAttachments(input.prompt, input.attachments), true, workflow, agents),
+      201,
+    )
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -186,11 +189,14 @@ export function tasksApi(deps: {
       step: '',
       text: p.data.text,
       tools: [],
+      ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
       at: new Date().toISOString(),
     })
     try {
       const workflow = next.workflowId ? ((await deps.workflows.get(next.workflowId)) ?? undefined) : undefined
-      return c.json(await start(entry, p.data.text, false, workflow, await deps.agents.list()))
+      return c.json(
+        await start(entry, withAttachments(p.data.text, p.data.attachments), false, workflow, await deps.agents.list()),
+      )
     } catch (e) {
       live.delete(id)
       throw e
@@ -210,7 +216,16 @@ export function tasksApi(deps: {
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
       const workflow = task.workflowId ? ((await deps.workflows.get(task.workflowId)) ?? undefined) : undefined
-      return c.json(await start(entry, users.at(-1)?.text ?? '', false, workflow, await deps.agents.list()))
+      const last = users.at(-1)
+      return c.json(
+        await start(
+          entry,
+          withAttachments(last?.text ?? '', last?.attachments),
+          false,
+          workflow,
+          await deps.agents.list(),
+        ),
+      )
     } catch (e) {
       live.delete(id)
       throw e

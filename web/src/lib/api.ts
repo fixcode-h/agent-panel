@@ -1,4 +1,5 @@
 import type {
+  Attachment,
   CliInstallJob,
   CliModels,
   CliUpdate,
@@ -88,7 +89,11 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = []) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments })),
+  upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
+  projectFiles: (projectId: string, q: string) =>
+    request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
   resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>

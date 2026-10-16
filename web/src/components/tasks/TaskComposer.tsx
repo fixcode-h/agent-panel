@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
+import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMention } from './Attachments'
 
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
@@ -58,13 +59,18 @@ export function TaskComposer({
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
+  const files = useAttachments()
+  const drop = useDropPaste(files.add)
+  const mention = useFileMention(project?.id, prompt, setPrompt, ta)
 
   const workflow = workflows.find((w) => w.id === (workflowId || defaultWf))
-  const effMode: TaskMode = mode || (workflow ? 'workflow' : 'chat')
+  // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
+  const effMode: TaskMode = mode || 'workflow'
   const agent = agents.find((a) => a.id === agentId) ?? agents.find((a) => a.enabled)
   const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0
   const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
-  const canStart = !!project && !!prompt.trim() && (effMode === 'workflow' ? !!workflow : !!agent) && !busy
+  const canStart =
+    !!project && !!prompt.trim() && (effMode === 'workflow' ? !!workflow : !!agent) && !busy && !files.uploading
 
   const start = async () => {
     if (!canStart) return
@@ -80,9 +86,11 @@ export function TaskComposer({
           workflowId: effMode === 'workflow' ? workflow!.id : '',
           agentId: effMode === 'chat' ? agent!.id : '',
           prompt,
+          attachments: files.attachments,
         }),
       )
       setPrompt('')
+      files.clear()
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -92,7 +100,16 @@ export function TaskComposer({
 
   return (
     <div className="flex flex-col gap-3">
-      <div className="rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop">
+      <div
+        {...drop.container}
+        className={cn(
+          'relative rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop',
+          drop.over && 'border-accent ring-2 ring-accent/25',
+        )}
+      >
+        {mention.menu}
+        {drop.over && <DropHint />}
+        <AttachmentChips items={files.items} onRemove={files.remove} />
         <label htmlFor="task-prompt" className="sr-only">
           任务描述
         </label>
@@ -106,8 +123,12 @@ export function TaskComposer({
             setPrompt(e.target.value)
             e.target.style.height = 'auto'
             e.target.style.height = `${Math.min(e.target.scrollHeight, 320)}px`
+            mention.sync()
           }}
+          onSelect={mention.sync}
+          onPaste={drop.onPaste}
           onKeyDown={(e) => {
+            if (mention.onKeyDown(e)) return
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               start()
@@ -126,6 +147,7 @@ export function TaskComposer({
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
+            <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
             {!fixed && (
               <Popover>
                 <PopoverTrigger className={chip} title="在哪个项目里执行">
@@ -259,6 +281,15 @@ export function TaskComposer({
           ))}
         </div>
       )}
+    </div>
+  )
+}
+
+/** 拖文件进来时盖在输入框上的提示 */
+export function DropHint() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[13px] text-accent">
+      松开鼠标，把文件附到要求里
     </div>
   )
 }

@@ -28,6 +28,7 @@ import { cleanupOldTray, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
+import { cleanupUploads, searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
@@ -329,6 +330,19 @@ const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
 app.route('/assist', assistApi({ agents, categories, workflows }))
 
+// ---- 附件和 @ 引用的项目文件 ----
+app.route('/uploads/raw', uploadsRawApi())
+app.route('/uploads', uploadsApi())
+app.get('/projects/:id/files', async (c) => {
+  const p = await projects.get(c.req.param('id'))
+  if (!p?.path) return bad(c, '这个项目还没有选择目录')
+  try {
+    return c.json(await searchProjectFiles(p.path, c.req.query('q') ?? ''))
+  } catch (e) {
+    return bad(c, `无法读取项目文件：${(e as Error).message}`)
+  }
+})
+
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
 
@@ -391,6 +405,7 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
 })
 if (tray) {
   cleanupOldTray()
+  void cleanupUploads()
   // 托盘程序退出时会关掉服务的输入：收尾后退出（还在跑的 CLI 由托盘程序一起结束）
   process.stdin.on('end', () => {
     server.close()

@@ -24,6 +24,8 @@ export interface BuildOptions {
   /** 追加的系统提示词（只有支持的 CLI 会用到，其余拼进任务描述） */
   systemPrompt?: string
   maxTurns?: number
+  /** 工作目录之外还允许读写的目录（例如附件所在的目录） */
+  addDirs?: string[]
 }
 
 export type ModelTier = 'high' | 'medium' | 'low'
@@ -122,6 +124,7 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.resume, '--resume', o.resume!),
       ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
+      ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
       ...o.extraArgs,
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',

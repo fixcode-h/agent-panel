@@ -12,6 +12,7 @@ import type {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
+import { UPLOADS_DIR } from '../uploads.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli } from './invoke.ts'
@@ -157,6 +158,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     resume,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
+    // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
+    addDirs: task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : undefined,
   }
 
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
