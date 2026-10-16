@@ -191,6 +191,15 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     addDirs: task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : undefined,
   }
 
+  // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
+  const argv = [
+    cs.command,
+    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? '<角色设定>' : a)),
+  ]
+  const owner = step ? task.steps.find((s) => s.id === step) : undefined
+  if (owner) owner.command = argv
+  else task.command = argv
+
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
   const mine: TaskMessage[] = []
   let cur: TaskMessage | undefined

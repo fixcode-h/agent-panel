@@ -4,7 +4,7 @@ import { Bot, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from '
 import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
-import { cliColor } from '@/lib/cli-style'
+import { cliColor, shortVersion } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -222,7 +222,7 @@ export function AgentsPage() {
                 <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(c.id) }} />
                 {c.name}
                 <span className={cn('ml-auto text-xs', c.installed ? 'text-success' : 'text-warning')}>
-                  {c.installed ? `可用 · ${c.version?.split(' ')[0]}` : '未安装'}
+                  {c.installed ? `可用 · ${shortVersion(c.version)}` : '未安装'}
                 </span>
               </div>
             ))}

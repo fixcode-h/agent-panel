@@ -255,3 +255,9 @@ const quote = (a: string) => (/[\s"'<>|&]/.test(a) || a === '' ? JSON.stringify(
 export function previewCommand(command: string, args: string[]): string {
   return [quote(command), ...args.map(quote)].join(' ')
 }
+
+/** 命令行里的一个参数：有空白或引号时加引号 */
+export const quoteArg = (t: string) => (/[\s"]/.test(t) ? JSON.stringify(t) : t)
+
+/** 复制出来的完整命令：任务描述通过 stdin 传入，所以写成管道形式 */
+export const commandText = (argv: string[]) => `echo "<任务描述>" | ${argv.map(quoteArg).join(' ')}`

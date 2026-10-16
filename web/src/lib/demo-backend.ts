@@ -780,6 +780,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
   const done = runTurn({
     task,
     agents: d.agents,
+    settings: d.settings,
     workflows: d.workflows,
     workflow: d.workflows.find((w) => w.id === task.workflowId),
     prompt,

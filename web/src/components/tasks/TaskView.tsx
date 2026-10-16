@@ -220,11 +220,29 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   const isFlow = task.mode === 'workflow' && view === 'flow'
+  // 点了任务进度里的某一步：切到流程图并定位到那一步
+  const openStep =
+    task.mode === 'workflow'
+      ? (id: string) => {
+          setView('flow')
+          setFocus({ id, at: Date.now() })
+          setPanel(false)
+        }
+      : undefined
   const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim()
 
   return (
     <>
       <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
+        {/* 很宽的屏幕上任务进度单独放在左边，一边看对话一边看进度；窄一些时还在右栏里 */}
+        {task.mode === 'workflow' && tops.length > 0 && (
+          <aside
+            aria-label="任务进度"
+            className="hidden w-[260px] shrink-0 flex-col overflow-y-auto border-r bg-rail p-3 2xl:flex"
+          >
+            <TaskPanel task={task} project={project} workflow={workflow} only="progress" onStep={openStep} />
+          </aside>
+        )}
         <main className="flex min-w-0 flex-1 flex-col md:h-full">
           <header
             className={cn(
@@ -515,15 +533,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
             task={task}
             project={project}
             workflow={workflow}
-            onStep={
-              task.mode === 'workflow'
-                ? (id) => {
-                    setView('flow')
-                    setFocus({ id, at: Date.now() })
-                    setPanel(false)
-                  }
-                : undefined
-            }
+            onStep={openStep}
+            progressClass={task.mode === 'workflow' && tops.length > 0 ? '2xl:hidden' : undefined}
           />
         </aside>
         {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}

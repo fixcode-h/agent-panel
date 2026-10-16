@@ -47,6 +47,7 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now
     changes: [],
     simulated: false,
     sessions: {},
+    command: [],
     usage: { agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
     todos: [],
     baseline: {},

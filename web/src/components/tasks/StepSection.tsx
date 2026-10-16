@@ -1,4 +1,4 @@
-import { Loader2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Loader2, SquareTerminal, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { parseVerdict } from '@shared/engine'
 import { useData } from '@/lib/data'
@@ -9,6 +9,30 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FoldedRun, SystemNote } from './Messages'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
+import { Terminal } from '@/components/agents/CommandPreview'
+
+/** 节点标题旁的小按钮：看这个节点的 Agent 是用什么命令启动的，可以复制出来自己跑 */
+function StepCommand({ argv, className }: { argv: string[]; className?: string }) {
+  if (!argv.length) return null
+  return (
+    <Popover>
+      <PopoverTrigger
+        title="查看启动命令"
+        aria-label="查看启动命令"
+        className={cn(
+          'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
+          className,
+        )}
+      >
+        <SquareTerminal className="h-3.5 w-3.5" />
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-[min(560px,90vw)] p-0">
+        <Terminal argv={argv} title="启动命令" className="rounded-[inherit] border-0" />
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export { SystemNote }
 
@@ -95,7 +119,10 @@ export function StepSection({
               {vt}
             </span>
           )}
-          {time && <span className="ml-auto font-mono text-[11px] text-subtle">{time}</span>}
+          <span className="ml-auto flex items-center gap-1.5">
+            {time && <span className="font-mono text-[11px] text-subtle">{time}</span>}
+            <StepCommand argv={root.command} />
+          </span>
         </header>
       )}
       <div className={cn('flex flex-col gap-4', !bare && 'ml-[7px] border-l pl-5')}>
@@ -117,10 +144,12 @@ export function StepSection({
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {s && <StepIcon status={s.status} className="h-3.5 w-3.5" />}
                 <span className="min-w-0 truncate font-medium text-muted">{s ? stepLabel(s) : '子流程'}</span>
+                {s && <StepCommand argv={s.command} className="-my-1 ml-auto" />}
                 {v && (
                   <span
                     className={cn(
-                      'ml-auto rounded-full px-2 py-px text-[11px]',
+                      'rounded-full px-2 py-px text-[11px]',
+                      !s?.command.length && 'ml-auto',
                       v === 'fail' ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
                     )}
                   >
