@@ -31,6 +31,47 @@ git('add', '.')
 git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'init')
 writeFileSync(path.join(projectDir, 'pre.txt'), 'changed before the task\n')
 
+// 假的 GitHub Releases：三个版本，包是现做的 tar.gz，用来测试设置里的版本更新
+const appDir = path.join(tmp, 'app')
+const relDir = path.join(tmp, 'releases')
+execFileSync('mkdir', ['-p', path.join(appDir, 'dist'), path.join(appDir, 'data'), relDir])
+writeFileSync(path.join(appDir, 'server.mjs'), '// old\n')
+writeFileSync(path.join(appDir, 'dist/old.html'), 'old')
+writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
+for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
+  const d = path.join(relDir, `agent-panel-${v}`)
+  execFileSync('mkdir', ['-p', path.join(d, 'dist')])
+  writeFileSync(path.join(d, 'server.mjs'), `// new ${v}\n`)
+  writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
+  writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
+  execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
+}
+const relServer = http.createServer((req, res) => {
+  const host = `http://127.0.0.1:${relServer.address().port}`
+  if (req.url.startsWith('/releases')) {
+    res.setHeader('content-type', 'application/json')
+    const rel = (v, pre, day) => ({
+      tag_name: `v${v}`,
+      prerelease: pre,
+      draft: false,
+      published_at: `2026-10-${day}T00:00:00Z`,
+      body: `## 新功能\n- **${v}** — 说明`,
+      html_url: `${host}/r/${v}`,
+      assets: [
+        { name: `agent-panel-${v}.tar.gz`, browser_download_url: `${host}/dl/agent-panel-${v}.tar.gz`, size: 100 },
+        { name: `agent-panel-${v}.zip`, browser_download_url: `${host}/dl/agent-panel-${v}.zip`, size: 100 },
+      ],
+    })
+    res.end(JSON.stringify([rel('0.11.9-dev', true, 16), rel('0.11.8', false, 15), rel('0.11.4', false, 10)]))
+  } else if (req.url.startsWith('/dl/') && existsSync(path.join(relDir, req.url.slice(4)))) {
+    res.end(readFileSync(path.join(relDir, req.url.slice(4))))
+  } else {
+    res.statusCode = 404
+    res.end()
+  }
+})
+await new Promise((r) => relServer.listen(0, '127.0.0.1', r))
+
 const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
   cwd: root,
   env: {
@@ -39,10 +80,17 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
     PORT: String(port),
     FAKE_CLI_LOG: log,
     AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
+    AGENT_PANEL_RELEASES_URL: `http://127.0.0.1:${relServer.address().port}/releases`,
+    AGENT_PANEL_APP_DIR: appDir,
+    AGENT_PANEL_VERSION: '0.11.5',
+    AGENT_PANEL_NO_RESTART: '1',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
-const stop = () => server.kill()
+const stop = () => {
+  server.kill()
+  relServer.close()
+}
 process.on('exit', stop)
 
 const call = async (method, url, body) => {
@@ -824,6 +872,32 @@ try {
   )
   await call('PUT', '/settings', settings)
   step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')
+
+  // ---- 版本更新 ----
+  const rels = await call('GET', '/app/releases?refresh=1')
+  assert.equal(rels.current, '0.11.5')
+  assert.equal(rels.packaged, true)
+  assert.deepEqual(
+    rels.releases.map((r) => [r.tag, r.prerelease]),
+    [
+      ['v0.11.9-dev', true],
+      ['v0.11.8', false],
+      ['v0.11.4', false],
+    ],
+  )
+  assert.equal(rels.update.tag, 'v0.11.8', '正式版只提示更新的正式版')
+  await assert.rejects(call('POST', '/app/install', { tag: 'v9.9.9' }), /找不到版本/)
+  let aj = await call('POST', '/app/install', { tag: 'v0.11.9-dev' })
+  for (let i = 0; aj.status === 'running' && i < 100; i++) {
+    await sleep(100)
+    aj = await call('GET', `/app/install/${aj.id}`)
+  }
+  assert.equal(aj.status, 'done', aj.error)
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
+  assert.ok(existsSync(path.join(appDir, 'dist/index.html')) && !existsSync(path.join(appDir, 'dist/old.html')))
+  assert.equal(readFileSync(path.join(appDir, 'data/keep.json'), 'utf8'), '{"keep":true}', '数据不能动')
+  assert.ok(!existsSync(path.join(appDir, 'dist.old')) && !existsSync(path.join(appDir, 'dist.next')))
+  step('版本更新：读取 GitHub 上的包、判断有没有新版本，下载切换后替换程序文件、保留数据')
 
   // ---- 只接受本机页面的请求 ----
   const raw = (method, url, headers, body) =>

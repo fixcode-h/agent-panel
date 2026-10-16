@@ -255,3 +255,9 @@ body,
   animation: shimmer 1.6s linear infinite;
 }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+/* 设置里的版本更新说明：标题小一号，和正文拉开 */
+.release-notes h1 { @apply mb-1 text-[14px] font-semibold; }
+.release-notes h2,
+.release-notes h3 { @apply mt-3 mb-1 text-[13px] font-semibold text-fg first:mt-0; }
+.release-notes ul { @apply my-1; }

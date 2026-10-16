@@ -43,6 +43,8 @@ import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { CommandPreview } from '@/components/agents/CommandPreview'
+import { UpdateSection } from '@/components/settings/UpdateSection'
+import { useAppUpdate } from '@/lib/app-update'
 
 const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
 const textToEnv = (t: string) =>
@@ -623,6 +625,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'models', label: '默认 CLI', icon: Cpu },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: 'AI 创建', icon: Sparkles },
+  { id: 'update', label: '版本更新', icon: ArrowUpCircle },
 ]
 
 function SettingsBody({
@@ -656,6 +659,7 @@ function SettingsBody({
   const [assist, setAssist] = useState(initial.assist)
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const demo = !!import.meta.env.VITE_DEMO
+  const update = useAppUpdate().data?.update
   // 安装 / 卸载结束后重新检测，并提示结果；进度在 cli-install 里，切换页面不会丢
   useEffect(() => {
     setInstallFinish((j) => {
@@ -775,6 +779,9 @@ function SettingsBody({
                   s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                 )}
                 <span className="truncate">{s.label}</span>
+                {s.id === 'update' && update && (
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="有新版本" />
+                )}
                 {st && (
                   <span
                     className={cn(
@@ -913,6 +920,8 @@ function SettingsBody({
               detecting={detecting}
             />
           )}
+
+          {cur.id === 'update' && <UpdateSection />}
 
           {cur.id === 'assist' && (
             <>

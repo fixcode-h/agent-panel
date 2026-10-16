@@ -23,6 +23,7 @@ import { detectClis, invalidateClis } from './detect.ts'
 import { installApi } from './install.ts'
 import { openBrowser } from './open.ts'
 import { modelsApi } from './models.ts'
+import { restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
@@ -338,6 +339,15 @@ app.get('/fs/list', async (c) => {
   }
 })
 
+app.route(
+  '/app',
+  updateApi({
+    running: () => tasks.running(),
+    // server 在下面才创建，重启时一定已经有了
+    restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
+  }),
+)
+
 const root = new Hono()
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
@@ -348,19 +358,21 @@ if (prod) {
 }
 
 const port = Number(process.env.PORT ?? 8787)
+// 更新后重启出来的进程：不再打开浏览器（页面已经开着），端口被旧进程占着时重试
+const restarted = !!process.env.AGENT_PANEL_RESTARTED
+delete process.env.AGENT_PANEL_RESTARTED
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网
-serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
+const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
   const url = `http://127.0.0.1:${port}`
   console.log(`Agent 面板服务已启动: ${url}`)
-  if (prod && (await getSettings()).openBrowser) openBrowser(url)
+  if (prod && !restarted && (await getSettings()).openBrowser) openBrowser(url)
 })
-
-// 退出前停掉正在执行的 CLI（它们在独立的进程组里，不会随服务一起退出），并把任务状态落盘
-let exiting = false
-for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const)
-  process.on(sig, async () => {
-    if (exiting) return process.exit(1)
-    exiting = true
-    await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
-    process.exit(0)
-  })
+let retries = 0
+server.on('error', (e: NodeJS.ErrnoException) => {
+  if (e.code === 'EADDRINUSE' && restarted && retries++ < 20) {
+    setTimeout(() => server.listen(port, '127.0.0.1'), 500)
+    return
+  }
+  console.error(e.code === 'EADDRINUSE' ? `端口 ${port} 已被占用，可以用环境变量 PORT 换一个端口` : e.message)
+  process.exit(1)
+})

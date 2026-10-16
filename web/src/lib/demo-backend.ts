@@ -28,6 +28,7 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
+import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
@@ -619,6 +620,7 @@ export async function handle(method: string, url: string, body: unknown) {
     await seedTasks(d)
     persist()
   }
+  if (url.startsWith('/app/')) return demoApp(url)
   const result = route(method, url, body)
   // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新
   return result === undefined ? undefined : JSON.parse(JSON.stringify(result))
@@ -794,4 +796,50 @@ async function seedTasks(d: Db) {
     await followUp(d, task, '按钮文案改成「到货通知我」，已经登记过的用户显示「已登记」并置灰。', true)
     back(task, 25)
   }
+}
+
+/**
+ * 版本更新：在线演示直接从浏览器读 GitHub Releases（接口允许跨域）。演示部署的是 dev 分支，
+ * 当作最新的预览版；不能安装。
+ */
+async function demoApp(url: string): Promise<unknown> {
+  if (url.startsWith('/app/install')) fail('在线演示不能安装，可以下载包到本机运行')
+  let list: AppRelease[] = []
+  try {
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)
+    if (!res.ok) throw new Error(`GitHub 返回 ${res.status}`)
+    list = ((await res.json()) as any[])
+      .filter((r) => !r.draft)
+      .map((r) => {
+        const asset = (ext: string) => (r.assets ?? []).find((a: any) => String(a.name).endsWith(ext))
+        return {
+          tag: r.tag_name,
+          version: String(r.tag_name).replace(/^v/, ''),
+          prerelease: !!r.prerelease,
+          publishedAt: r.published_at ?? '',
+          notes: r.body ?? '',
+          url: r.html_url ?? '',
+          tarUrl: asset('.tar.gz')?.browser_download_url ?? '',
+          zipUrl: asset('.zip')?.browser_download_url ?? '',
+          size: asset('.tar.gz')?.size ?? 0,
+        }
+      })
+      .filter((r) => r.tarUrl)
+      .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
+  } catch (e) {
+    return {
+      current: '',
+      packaged: false,
+      releases: [],
+      error: `检查更新失败：${(e as Error).message}`,
+    } satisfies AppReleases
+  }
+  const current = list.find((r) => r.prerelease)?.version ?? list[0]?.version ?? ''
+  if (url.startsWith('/app/version')) return { current, packaged: false }
+  return {
+    current,
+    packaged: false,
+    releases: list.slice(0, 5),
+    update: pickUpdate(current, list),
+  } satisfies AppReleases
 }

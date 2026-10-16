@@ -19,6 +19,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { AppReleases, AppUpdateJob } from '@shared/version'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -50,6 +51,11 @@ export const api = {
   cliUpdate: (id: string, refresh = false) => request<CliUpdate>(`/clis/${id}/update${refresh ? '?refresh=1' : ''}`),
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
+
+  appVersion: () => request<{ current: string; packaged: boolean }>('/app/version'),
+  appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
+  appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
+  appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string) => request<Category>('/categories', json('POST', { name })),

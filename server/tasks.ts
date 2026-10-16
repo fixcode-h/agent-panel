@@ -232,6 +232,8 @@ export function tasksApi(deps: {
 
   return {
     routes,
+    /** 正在执行的任务数；更新面板前要等它们结束 */
+    running: () => live.size,
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     stopAll() {
       for (const id of live.keys()) stopTask(id)
