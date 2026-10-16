@@ -8,6 +8,7 @@ import {
   NewTaskInput,
   Task,
   type Agent,
+  type Attachment,
   type Project,
   type ProjectCategory,
   type TaskData,
@@ -38,6 +39,8 @@ export function tasksApi(deps: {
   const store = createTaskStore()
   type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> }
   const live = new Map<string, Live>()
+  /** 服务正在退出：不再接着处理排队的要求 */
+  let shuttingDown = false
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
   const reserve = (task: Task): Live => {
     const entry: Live = { task: structuredClone(task), stop: false, abort: new AbortController() }
@@ -171,8 +174,44 @@ export function tasksApi(deps: {
         endRun(entry.task)
         await flush()
         live.delete(task.id)
+        // 这一轮顺利完成：接着处理排队的要求；失败或暂停时留着，等用户决定
+        if (entry.task.status === 'done' && entry.task.queue.length && !shuttingDown)
+          void followUp(task.id).catch((e) => console.error(`处理排队的要求失败：${(e as Error).message}`))
       })
     return entry.task
+  }
+
+  /** 发一条追加要求：没给内容时取排队的第一条 */
+  async function followUp(id: string, msg?: { text: string; attachments: Attachment[] }) {
+    const task = await store.get(id)
+    if (!task) throw new Error('任务不存在')
+    const entry = reserve(task)
+    const next = entry.task
+    let m = msg
+    if (!m) {
+      const q = next.queue.shift()
+      if (!q) {
+        live.delete(id)
+        return next
+      }
+      m = q
+    }
+    next.messages.push({
+      id: randomUUID(),
+      role: 'user',
+      agentId: '',
+      step: '',
+      text: m.text,
+      tools: [],
+      ...(m.attachments.length ? { attachments: m.attachments } : {}),
+      at: new Date().toISOString(),
+    })
+    try {
+      return await start(entry, withAttachments(m.text, m.attachments), false, await deps.agents.list())
+    } catch (e) {
+      live.delete(id)
+      throw e
+    }
   }
 
   const stopTask = (id: string) => {
@@ -197,7 +236,7 @@ export function tasksApi(deps: {
    */
   routes.get('/:id/events', async (c) => {
     const id = c.req.param('id')
-    if (!(await current(id))) return bad(c, '任务不存在', 404)
+    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
     return streamSSE(c, async (stream) => {
       let closed = false
       stream.onAbort(() => void (closed = true))
@@ -269,32 +308,36 @@ export function tasksApi(deps: {
     const id = c.req.param('id')
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
-    const prev = live.get(id)
-    // 刚执行完、还在落盘的任务：等它写完再接着跑
-    if (prev && prev.task.status !== 'running') await prev.done
-    if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
-    const task = await store.get(id)
-    if (!task) return bad(c, t('任务不存在'), 404)
-    const entry = reserve(task)
-    const next = entry.task
-    next.messages.push({
-      id: randomUUID(),
-      role: 'user',
-      agentId: '',
-      step: '',
-      text: p.data.text,
-      tools: [],
-      ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
-      at: new Date().toISOString(),
-    })
-    try {
-      return c.json(
-        await start(entry, withAttachments(p.data.text, p.data.attachments), false, await deps.agents.list()),
-      )
-    } catch (e) {
-      live.delete(id)
-      throw e
+    const { text, attachments, interrupt } = p.data
+    let prev = live.get(id)
+    if (prev?.task.status === 'running') {
+      if (!interrupt) {
+        // 执行中：先排队，这一轮完成后自动接着处理
+        prev.task.queue.push({ id: randomUUID(), text, attachments, at: new Date().toISOString() })
+        prev.task.updatedAt = new Date().toISOString()
+        await store.update(id, prev.task)
+        return c.json(prev.task)
+      }
+      // 打断：停下当前这一轮再发。停下后任务是「已暂停」，排队的要求不会自动跑
+      stopTask(id)
     }
+    // 刚执行完、还在落盘的任务：等它写完再接着跑
+    prev = live.get(id)
+    if (prev) await prev.done
+    if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+    return c.json(await followUp(id, { text, attachments }))
+  })
+
+  // 撤回一条排队的要求
+  routes.delete('/:id/queue/:qid', async (c) => {
+    const id = c.req.param('id')
+    const tk = live.get(id)?.task ?? (await store.get(id))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const qid = c.req.param('qid')
+    if (!tk.queue.some((q) => q.id === qid)) return bad(c, t('这条要求已经开始处理了'), 404)
+    tk.queue = tk.queue.filter((q) => q.id !== qid)
+    tk.updatedAt = new Date().toISOString()
+    return c.json(await store.update(id, tk))
   })
 
   // 失败或停止后继续：不加新消息，从没完成的节点接着跑；工作流已完成时重做最后一条要求
@@ -331,22 +374,22 @@ export function tasksApi(deps: {
   })
 
   /** 任务的工作目录：项目目录，聊天是它自己的目录 */
-  const taskDir = async (t: Task) =>
-    t.projectId ? ((await deps.projects.get(t.projectId))?.path ?? '') : path.join(CHATS_DIR, t.id)
+  const taskDir = async (tk: Task) =>
+    tk.projectId ? ((await deps.projects.get(tk.projectId))?.path ?? '') : path.join(CHATS_DIR, tk.id)
 
   // 一个改动文件的差异：git 仓库和任务开始时的提交比；不是仓库时拼出 Agent 改这个文件时给出的改动
   routes.get('/:id/diff', async (c) => {
-    const t = await current(c.req.param('id'))
-    if (!t) return bad(c, '任务不存在', 404)
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
     const file = c.req.query('path') ?? ''
-    if (!t.changes.some((x) => x.path === file)) return bad(c, '这个文件不在任务的改动里')
-    const dir = await taskDir(t)
-    const isGit = !!dir && (await gitNumstat(dir, t.baseRef).catch(() => null)) !== null
+    if (!tk.changes.some((x) => x.path === file)) return bad(c, t('这个文件不在任务的改动里'))
+    const dir = await taskDir(tk)
+    const isGit = !!dir && (await gitNumstat(dir, tk.baseRef).catch(() => null)) !== null
     if (isGit) {
-      const diff = await gitFileDiff(dir, t.baseRef, file)
-      return c.json({ path: file, dir, diff, git: true, before: file in t.baseline })
+      const diff = await gitFileDiff(dir, tk.baseRef, file)
+      return c.json({ path: file, dir, diff, git: true, before: file in tk.baseline })
     }
-    const patches = t.messages
+    const patches = tk.messages
       .flatMap((m) => m.tools)
       .filter((x) => x.kind === 'edit' && x.label === file && x.input)
       .map((x) => x.input!)
@@ -356,22 +399,23 @@ export function tasksApi(deps: {
   // 撤销一个文件的改动：恢复成任务开始时的样子
   routes.post('/:id/revert', async (c) => {
     const id = c.req.param('id')
-    if (live.has(id)) return bad(c, '任务正在执行，等它停下后再撤销', 409)
-    const t = await store.get(id)
-    if (!t) return bad(c, '任务不存在', 404)
+    if (live.has(id)) return bad(c, t('任务正在执行，等它停下后再撤销'), 409)
+    const tk = await store.get(id)
+    if (!tk) return bad(c, t('任务不存在'), 404)
     const { path: file } = (await c.req.json().catch(() => ({}))) as { path?: string }
-    if (!file || !t.changes.some((x) => x.path === file)) return bad(c, '这个文件不在任务的改动里')
-    const dir = await taskDir(t)
-    if (!dir || (await gitNumstat(dir, t.baseRef).catch(() => null)) === null)
-      return bad(c, '项目不是 git 仓库，没法知道改动前的内容，不能自动撤销')
-    if (file in t.baseline) return bad(c, '这个文件在任务开始前就有没提交的改动，撤销会一起丢掉，请在编辑器里手动处理')
+    if (!file || !tk.changes.some((x) => x.path === file)) return bad(c, t('这个文件不在任务的改动里'))
+    const dir = await taskDir(tk)
+    if (!dir || (await gitNumstat(dir, tk.baseRef).catch(() => null)) === null)
+      return bad(c, t('项目不是 git 仓库，没法知道改动前的内容，不能自动撤销'))
+    if (file in tk.baseline)
+      return bad(c, t('这个文件在任务开始前就有没提交的改动，撤销会一起丢掉，请在编辑器里手动处理'))
     try {
-      await gitRevertFile(dir, t.baseRef, file)
+      await gitRevertFile(dir, tk.baseRef, file)
     } catch (e) {
-      return bad(c, `撤销失败：${(e as Error).message}`)
+      return bad(c, t('撤销失败：{error}', { error: (e as Error).message }))
     }
-    const changes = (await gitChanges(dir, t.baseline, t.baseRef).catch(() => null)) ?? t.changes
-    return c.json(await store.update(id, { ...t, changes }))
+    const changes = (await gitChanges(dir, tk.baseline, tk.baseRef).catch(() => null)) ?? tk.changes
+    return c.json(await store.update(id, { ...tk, changes }))
   })
 
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
@@ -423,6 +467,7 @@ export function tasksApi(deps: {
     running: () => live.size,
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     stopAll() {
+      shuttingDown = true
       for (const id of live.keys()) stopTask(id)
       return Promise.allSettled([...live.values()].map((e) => e.done))
     },

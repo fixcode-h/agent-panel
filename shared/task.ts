@@ -71,6 +71,7 @@ export function newTask(
     workflows: wf ? snapshot : [],
     workflowName: wf?.name ?? '',
     requests: [],
+    queue: [],
   }
 }
 

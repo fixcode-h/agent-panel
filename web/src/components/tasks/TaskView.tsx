@@ -15,6 +15,8 @@ import {
   Pause,
   Trash2,
   X,
+  Zap,
+  ListPlus,
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId, taskWorkflows } from '@shared/flow'
@@ -163,12 +165,13 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       </main>
     )
 
-  const send = async () => {
-    if (!text.trim() || running || sending || files.uploading) return
+  // 执行中也能发：默认排队，这一轮完成后自动处理；interrupt 先停下当前这一轮再发
+  const send = async (interrupt = false) => {
+    if (!text.trim() || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
-      apply(await api.sendMessage(task.id, text, files.attachments))
+      apply(await api.sendMessage(task.id, text, files.attachments, running && interrupt))
       setText('')
       files.clear()
       setTimeout(
@@ -441,6 +444,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
             <RequestCard task={task} onAnswered={apply} />
+            <QueuedList task={task} onChange={apply} />
             <div
               {...drop.container}
               className={cn(
@@ -469,10 +473,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   if (mention.onKeyDown(e)) return
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
-                    send()
+                    // 执行中按 Ctrl/⌘ + Enter：打断当前这一轮，马上处理这条
+                    send(e.metaKey || e.ctrlKey)
                   }
                 }}
-                placeholder={running ? t('执行中，完成后可以继续输入要求') : t('继续输入要求')}
+                placeholder={running ? t('执行中也可以输入，这一轮完成后接着处理') : t('继续输入要求')}
                 className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
@@ -491,10 +496,39 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                       : t('发给 {name}', { name: chatAgent?.name ?? 'Agent' })}
                 </span>
                 {running ? (
-                  <Button size="sm" variant="secondary" className="ml-auto rounded-lg" onClick={stop}>
-                    <Pause className="h-3.5 w-3.5" />
-                    {t('暂停')}
-                  </Button>
+                  <>
+                    {text.trim() ? (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="ml-auto rounded-lg"
+                          disabled={sending}
+                          title={t('停下当前这一轮，马上处理这条（Ctrl/⌘ + Enter）')}
+                          onClick={() => send(true)}
+                        >
+                          <Zap className="h-3.5 w-3.5" />
+                          {t('打断并发送')}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="rounded-lg"
+                          disabled={sending}
+                          title={t('这一轮完成后接着处理（Enter）')}
+                          onClick={() => send()}
+                        >
+                          <ListPlus className="h-3.5 w-3.5" />
+                          {t('排队')}
+                        </Button>
+                      </>
+                    ) : (
+                      <Button size="sm" variant="secondary" className="ml-auto rounded-lg" onClick={stop}>
+                        <Pause className="h-3.5 w-3.5" />
+                        {t('暂停')}
+                      </Button>
+                    )}
+                  </>
                 ) : (
                   <>
                     {canResume && (
@@ -522,7 +556,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                       aria-label={t('发送')}
                       title={t('发送（Enter）')}
                       disabled={!text.trim() || sending}
-                      onClick={send}
+                      onClick={() => send()}
                       className={cn(
                         'grid h-8 w-8',
                         !canResume && 'ml-auto',
@@ -578,5 +612,43 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
         onConfirm={remove}
       />
     </>
+  )
+}
+
+/** 执行中排队的要求：这一轮完成后按顺序处理，处理前可以撤回 */
+function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
+  if (!task.queue.length) return null
+  const paused = task.status !== 'running'
+  return (
+    <ul className="mx-auto mb-2 flex max-w-(--content-w) flex-col gap-1.5">
+      {task.queue.map((q, i) => (
+        <li
+          key={q.id}
+          className="flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[13px]"
+        >
+          <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
+          <span className="min-w-0 flex-1 truncate" title={q.text}>
+            {q.text}
+          </span>
+          <span className="shrink-0 text-xs text-subtle">
+            {paused ? t('排队中 · 任务没在执行，点「继续执行」后处理') : i === 0 ? t('下一条') : t('排队中')}
+          </span>
+          <button
+            type="button"
+            aria-label={t('撤回')}
+            title={t('撤回这条要求')}
+            onClick={() =>
+              api
+                .unqueue(task.id, q.id)
+                .then(onChange)
+                .catch((e) => toast.error((e as Error).message))
+            }
+            className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </li>
+      ))}
+    </ul>
   )
 }

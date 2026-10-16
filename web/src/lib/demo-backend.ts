@@ -764,7 +764,7 @@ export async function handle(method: string, url: string, body: unknown) {
 export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project }
 
 // ---- 任务 ----
-const live = new Map<string, { stop: boolean }>()
+const live = new Map<string, { stop: boolean; done?: Promise<unknown> }>()
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function projectWorkflow(d: Db, p: Project) {
@@ -773,7 +773,7 @@ function projectWorkflow(d: Db, p: Project) {
 }
 
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
-  const entry = { stop: false }
+  const entry: { stop: boolean; done?: Promise<unknown> } = { stop: false }
   live.set(task.id, entry)
   beginRun(task)
   let last = 0
@@ -799,7 +799,11 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     endRun(task)
     live.delete(task.id)
     persist()
+    // 和正式版一样：这一轮完成后接着处理排队的要求
+    const q = task.status === 'done' ? (task.queue ??= []).shift() : undefined
+    if (q) void followUp(d, task, q.text, fast, q.attachments)
   })
+  entry.done = done
   return done
 }
 
@@ -867,8 +871,29 @@ function tasksRoute(
     if (live.has(id)) live.get(id)!.stop = true
     return task
   }
+  if (sub === 'queue' && method === 'DELETE') {
+    task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
+    persist()
+    return task
+  }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
+    const cur = live.get(task.id)
+    if (cur && !f.interrupt) {
+      ;(task.queue ??= []).push({
+        id: `demo-${crypto.randomUUID()}`,
+        text: f.text,
+        attachments: f.attachments,
+        at: new Date().toISOString(),
+      })
+      persist()
+      return task
+    }
+    if (cur) {
+      cur.stop = true
+      void cur.done?.finally(() => followUp(d, task, f.text, false, f.attachments))
+      return task
+    }
     void followUp(d, task, f.text, false, f.attachments)
     return task
   }

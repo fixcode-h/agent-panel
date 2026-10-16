@@ -91,8 +91,9 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  sendMessage: (id: string, text: string, attachments: Attachment[] = []) =>
-    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
+  unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),

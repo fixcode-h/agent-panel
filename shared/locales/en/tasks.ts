@@ -183,7 +183,6 @@ export const EN_TASKS: Record<string, string> = {
   '{name} 正在处理': '{name} is working',
   '主 Agent': 'Main Agent',
   继续输入要求: 'Add a follow-up',
-  '执行中，完成后可以继续输入要求': 'Running. You can add a follow-up once it finishes',
   '{n} 个节点同时执行中': '{n} steps running in parallel',
   '执行中，可以随时暂停': 'Running. You can pause at any time',
   '由主 Agent {name} 处理追加要求': 'Follow-ups are handled by the main Agent {name}',
@@ -246,4 +245,16 @@ export const EN_TASKS: Record<string, string> = {
     'This file had uncommitted changes before the task started, and reverting would discard them too. Please handle it in your editor.',
   撤销: 'Revert',
   '查看「{path}」的改动': 'View changes to "{path}"',
+  // 执行中排队、打断
+  '执行中也可以输入，这一轮完成后接着处理': 'You can type while it runs; it will be handled after this turn',
+  '停下当前这一轮，马上处理这条（Ctrl/⌘ + Enter）': 'Stop this turn and handle this now (Ctrl/⌘ + Enter)',
+  打断并发送: 'Interrupt & send',
+  '这一轮完成后接着处理（Enter）': 'Handle after this turn (Enter)',
+  排队: 'Queue',
+  '排队中 · 任务没在执行，点「继续执行」后处理':
+    'Queued · the task is not running; it will be handled after you resume',
+  下一条: 'Next',
+  排队中: 'Queued',
+  撤回: 'Withdraw',
+  撤回这条要求: 'Withdraw this message',
 }

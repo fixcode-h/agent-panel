@@ -374,7 +374,17 @@ export type NewTaskInput = z.infer<typeof NewTaskInput>
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** 任务正在执行时：true 先停下当前这一轮再发送；否则排队，这一轮完成后自动接着处理 */
+  interrupt: z.boolean().default(false),
 })
+/** 执行中发来、排队等这一轮完成后再处理的要求 */
+export const QueuedMessage = z.object({
+  id: z.string(),
+  text: z.string(),
+  attachments: z.array(Attachment).default([]),
+  at: z.string(),
+})
+export type QueuedMessage = z.infer<typeof QueuedMessage>
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z.object({ title: z.string().trim().min(1, t('标题不能为空')).max(80) }).partial()
 
@@ -539,6 +549,8 @@ export const TaskData = z.object({
   baseRef: z.string().default(''),
   /** 正在等用户确认的请求 */
   requests: z.array(TaskRequest).default([]),
+  /** 执行中排队的要求：这一轮完成后按顺序处理；失败或暂停时留着，由用户决定 */
+  queue: z.array(QueuedMessage).default([]),
 })
 export type TaskData = z.infer<typeof TaskData>
 

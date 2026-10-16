@@ -217,4 +217,15 @@ export const EN_SERVER: Record<string, string> = {
   附件已经不在了: 'The attachment no longer exists',
   '工作流已经被删除，只能按任务创建时的工作流继续':
     'The workflow was deleted; you can only resume with the workflow the task was created with',
+  这条要求已经开始处理了: 'This message is already being handled',
+  这个文件不在任务的改动里: "This file is not among the task's changes",
+  '任务正在执行，等它停下后再撤销': 'The task is running; revert after it stops',
+  '项目不是 git 仓库，没法知道改动前的内容，不能自动撤销':
+    'The project is not a git repository, so the original content is unknown and the change cannot be reverted automatically',
+  '这个文件在任务开始前就有没提交的改动，撤销会一起丢掉，请在编辑器里手动处理':
+    'This file had uncommitted changes before the task started, and reverting would discard them too. Please handle it in your editor',
+  '撤销失败：{error}': 'Revert failed: {error}',
+  文件不在项目目录里: 'The file is not inside the project directory',
+  恢复失败: 'Restore failed',
+  '…（差异太长，只显示前面一部分）': '… (the diff is too long; only the beginning is shown)',
 }

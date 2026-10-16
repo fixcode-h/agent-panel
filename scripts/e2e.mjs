@@ -544,6 +544,53 @@ try {
   assert.ok(Date.now() - t0 < 5000, '停止应该很快生效')
   step('停止：进程被结束，任务标记为已停止')
 
+  // ---- 执行中发消息：默认排队，这一轮完成后接着处理；可以撤回；打断时停下当前这一轮马上处理 ----
+  {
+    let q = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SLOW 排队测试',
+    })
+    await sleep(300)
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第一条' })
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第二条' })
+    assert.deepEqual(
+      q.queue.map((x) => x.text),
+      ['排队的第一条', '排队的第二条'],
+    )
+    assert.equal(q.status, 'running')
+    q = await call('DELETE', `/tasks/${q.id}/queue/${q.queue[1].id}`)
+    assert.equal(q.queue.length, 1, '撤回一条')
+    // 等两轮都跑完（第一轮慢，第二轮是排队的那条）
+    for (let i = 0; i < 100; i++) {
+      q = await call('GET', `/tasks/${q.id}`)
+      if (q.status !== 'running' && !q.queue.length) break
+      await sleep(200)
+    }
+    assert.equal(q.status, 'done')
+    assert.deepEqual(
+      q.messages.filter((m) => m.role === 'user').map((m) => m.text),
+      ['SLOW 排队测试', '排队的第一条'],
+      '排队的要求在这一轮完成后接着处理，撤回的不处理',
+    )
+    // 打断：停下当前这一轮马上处理
+    let r = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SLOW 打断测试',
+    })
+    await sleep(500)
+    const t0 = Date.now()
+    r = await call('POST', `/tasks/${r.id}/messages`, { text: '马上改做这个', interrupt: true })
+    r = await waitDone(r.id, 10000)
+    assert.ok(Date.now() - t0 < 8000, '打断后很快处理新的要求')
+    assert.equal(r.status, 'done')
+    assert.equal(r.messages.filter((m) => m.role === 'user').at(-1).text, '马上改做这个')
+  }
+  step('执行中发消息：默认排队、可以撤回，这一轮完成后接着处理；也可以打断马上处理')
+
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----
   let half = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'SLOW 中断恢复' })
   await sleep(800)

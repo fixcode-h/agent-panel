@@ -2,6 +2,7 @@ import { readFile, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { FileChange } from '../../shared/schema.ts'
 import { capture } from './process.ts'
+import { t } from '../../shared/i18n.ts'
 import { lines } from './parsers.ts'
 
 const git = (cwd: string, ...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd)
@@ -73,7 +74,7 @@ export async function gitFileDiff(cwd: string, ref: string, file: string) {
     const tracked = (await git(cwd, 'ls-files', '--error-unmatch', '--', file)).code === 0
     if (!tracked) out = (await git(cwd, 'diff', '--no-color', '--no-index', '--', '/dev/null', file)).stdout
   }
-  return out.length > MAX_DIFF ? `${out.slice(0, MAX_DIFF)}\n…（差异太长，只显示前面一部分）` : out
+  return out.length > MAX_DIFF ? `${out.slice(0, MAX_DIFF)}\n${t('…（差异太长，只显示前面一部分）')}` : out
 }
 
 /**
@@ -83,11 +84,11 @@ export async function gitFileDiff(cwd: string, ref: string, file: string) {
 export async function gitRevertFile(cwd: string, ref: string, file: string) {
   const base = await baseOf(cwd, ref)
   const full = path.resolve(cwd, file)
-  if (!full.startsWith(path.resolve(cwd) + path.sep)) throw new Error('文件不在项目目录里')
+  if (!full.startsWith(path.resolve(cwd) + path.sep)) throw new Error(t('文件不在项目目录里'))
   const existed = base && (await git(cwd, 'cat-file', '-e', `${base}:${file}`)).code === 0
   if (existed) {
     const r = await git(cwd, 'checkout', base, '--', file)
-    if (r.code !== 0) throw new Error(r.stderr.trim() || '恢复失败')
+    if (r.code !== 0) throw new Error(r.stderr.trim() || t('恢复失败'))
     // checkout 会把文件放进暂存区，和开始时一样不留暂存
     await git(cwd, 'reset', '-q', '--', file)
   } else {
