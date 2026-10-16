@@ -32,6 +32,7 @@ export function WorkflowsPage() {
         description: '',
         mainAgentId: '',
         members: [],
+        stages: [],
         document: '',
         ...input,
       })

@@ -1,21 +1,22 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Crown, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Crown, GitBranch, Settings2, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
-import { docOutline, docTemplate } from '@/lib/workflow-doc'
+import { docTemplate } from '@/lib/workflow-doc'
 import { StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input } from '@/components/ui/input'
-import { Detail, DetailHeader } from '@/components/layout/Detail'
+import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { TeamEditor } from './TeamEditor'
 import { DocEditor } from './DocEditor'
+import { FlowEditor } from '@/components/flow/FlowEditor'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Workflow): WorkflowInput => rest
 
@@ -32,6 +33,7 @@ export function WorkflowDetail({
   const { go } = useNav()
   const [draft, setDraft] = useState<WorkflowInput>(() => toInput(workflow))
   const [deleting, setDeleting] = useState(false)
+  const [tab, setTab] = useState<'flow' | 'settings'>(() => (workflow.mainAgentId ? 'flow' : 'settings'))
   const valid = !!draft.name.trim()
   const save = useAutosave(
     draft,
@@ -49,7 +51,7 @@ export function WorkflowDetail({
     .map((m) => ({ agent: byId.get(m.agentId), responsibility: m.responsibility }))
     .filter((m): m is { agent: Agent; responsibility: string } => !!m.agent)
   const checks = workflowChecks({ ...workflow, ...draft }, agents, clis)
-  const outline = docOutline(draft.document)
+  const nodeCount = draft.stages.reduce((n, s) => n + s.nodes.length, 0)
 
   const remove = async () => {
     try {
@@ -90,6 +92,34 @@ export function WorkflowDetail({
             }
           />
         }
+        tabs={
+          <DetailTabs
+            value={tab}
+            onChange={setTab}
+            items={[
+              {
+                id: 'flow',
+                label: '流程图',
+                icon: GitBranch,
+                extra: <span className="font-mono text-xs font-normal text-subtle">{nodeCount}</span>,
+              },
+              { id: 'settings', label: '团队与说明', icon: Settings2 },
+            ]}
+          />
+        }
+        body={
+          tab === 'flow' ? (
+            <div className="px-4 pt-5 pb-10 md:px-8">
+              <FlowEditor
+                stages={draft.stages}
+                onChange={(s) => set('stages', s)}
+                main={main}
+                team={team}
+                overview={<ReadinessCard checks={checks} />}
+              />
+            </div>
+          ) : undefined
+        }
         form={
           <>
             <FormSection title="基本信息">
@@ -116,9 +146,9 @@ export function WorkflowDetail({
               />
             </FormSection>
 
-            <FormSection title="工作流文档">
+            <FormSection title="工作流说明">
               <p className="-mt-2 text-xs leading-relaxed text-subtle">
-                主 Agent 会按这份文档一步步执行。用 Markdown 写步骤，用 @名称 指定每一步交给谁；没有指定的步骤由主 Agent 自己完成。
+                写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给 Agent；具体每一步做什么在「流程图」里编辑。
               </p>
               <DocEditor
                 value={draft.document}
@@ -163,21 +193,6 @@ export function WorkflowDetail({
 
             <ReadinessCard checks={checks} />
 
-            {outline.length > 0 && (
-              <section className="rounded-xl border bg-card p-4">
-                <h3 className="mb-2 text-[13px] font-semibold">文档大纲</h3>
-                <ul className="flex flex-col gap-1">
-                  {outline.map((h, i) => (
-                    <li
-                      key={i}
-                      className={h.level === 1 ? 'text-[13px] font-medium' : 'truncate pl-3 text-xs text-muted'}
-                    >
-                      {h.text}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
           </>
         }
       />

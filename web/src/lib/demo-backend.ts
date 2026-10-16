@@ -14,6 +14,8 @@ import {
   ProjectInput,
   Workflow,
   WorkflowInput,
+  WorkflowNode,
+  WorkflowStage,
   FollowUpInput,
   NewTaskInput,
   Settings,
@@ -24,8 +26,9 @@ import {
 } from '@shared/schema'
 import { CLIS, getCli } from '@shared/clis'
 import { newTask, runTurn } from '@shared/runner'
+import { flowId } from '@shared/flow'
 
-const KEY = 'agent-panel-demo-v1'
+const KEY = 'agent-panel-demo-v2'
 
 interface Db {
   agents: Agent[]
@@ -123,6 +126,8 @@ function seed(): Db {
   const review = agent({ name: '代码审查', icon: 'shield', categoryId: qa.id, cli: 'claude', model: 'haiku', description: '检查改动的正确性与风格，给出修改建议', enabled: false })
   const docs = agent({ name: '文档助手', icon: 'doc', cli: 'claude', model: 'haiku', description: '整理 README 和变更说明' })
 
+  const node = (title: string, agentId: string, instructions: string): WorkflowNode => ({ id: flowId('nd'), title, agentId, instructions })
+  const stage = (title: string, nodes: WorkflowNode[]): WorkflowStage => ({ id: flowId('st'), title, nodes })
   const webFlow: Workflow = {
     ...meta(),
     name: 'Web 功能开发',
@@ -133,24 +138,24 @@ function seed(): Db {
       { agentId: fe.id, responsibility: '页面与交互' },
       { agentId: qaAgent.id, responsibility: '单测与端到端测试' },
     ],
+    stages: [
+      stage('分析', [node('分析需求、拆分任务', '', '阅读需求和相关代码，列出要改动的页面、接口和验收标准，并给前后端分好工。')]),
+      stage('开发', [
+        node('实现接口', be.id, '按分析阶段的接口设计实现 API，并补充数据校验。'),
+        node('实现页面', fe.id, '按分析阶段约定的接口完成页面与交互，接口没好之前先用假数据。'),
+      ]),
+      stage('测试', [
+        node('单元测试', qaAgent.id, '为新增的接口和组件补充单元测试并运行。'),
+        node('端到端测试', qaAgent.id, '跑一遍主要流程的端到端测试，失败时附上日志。'),
+      ]),
+      stage('验收', [node('验收', '', '逐条对照验收标准检查结果，列出没满足的地方。')]),
+    ],
     document: `# 目标
 根据用户描述，在现有 Web 项目里完成一个新功能，并保证测试通过。
 
-# 步骤
-## 1. 分析需求、拆分任务 @架构师
-阅读需求和相关代码，列出要改动的页面、接口和验收标准。
-
-## 2. 实现接口 @后端开发
-按第 1 步的接口设计实现 API，并补充数据校验。
-
-## 3. 实现页面 @前端开发
-对接第 2 步的接口，完成页面与交互。
-
-## 4. 测试 @测试工程师
-运行单元测试和端到端测试，失败时附上日志退回对应步骤。
-
-## 5. 验收 @架构师
-逐条对照验收标准检查结果。
+# 规范
+- 接口改动同步更新 \`shared/schema.ts\` 里的类型
+- 新增页面要适配移动端
 
 # 完成标准
 - 验收标准逐条满足
@@ -163,6 +168,11 @@ function seed(): Db {
     description: '复现、定位并修复缺陷',
     mainAgentId: arch.id,
     members: [{ agentId: qaAgent.id, responsibility: '复现问题' }],
+    stages: [
+      stage('复现', [node('复现问题', qaAgent.id, '按描述复现问题，写一个能稳定失败的测试。')]),
+      stage('修复', [node('定位并修复', '', '找到原因并修复，让上一步的测试通过。')]),
+      stage('回归', [node('回归测试', qaAgent.id, '运行全部测试，确认没有引入新问题。')]),
+    ],
     document: '',
   }
   const web: ProjectCategory = { ...meta(), name: 'Web 应用', description: '前后端分离的网站和后台', workflowId: webFlow.id }

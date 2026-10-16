@@ -1,8 +1,9 @@
 /**
- * 任务执行。目前是「模拟执行」：按工作流步骤生成示例输出，用来把任务页面的交互跑通。
- * 本机服务和在线演示共用这份逻辑；之后接入真实 CLI 时，只需要替换 runTurn 的实现。
+ * 模拟执行：按工作流节点生成示例输出，不调用 CLI。
+ * 设置里选了「模拟执行」时由本机服务使用；在线演示始终使用它。真实执行见 server/exec/runner.ts。
  */
 import type { Agent, FileChange, NewTaskInput, Task, TaskData, TaskMessage, TaskStep, ToolUse, Workflow } from './schema.ts'
+import { planTask, taskStages } from './flow.ts'
 
 export interface RunContext {
   task: Task
@@ -19,32 +20,8 @@ export interface RunContext {
   newId: () => string
 }
 
-const strip = (s: string) => s.replace(/^\d+\s*[.、．]\s*/, '').replace(/@\S+/g, '').trim()
-
-/** 从工作流文档的二级标题里拆出步骤；文档没写步骤时按团队生成默认步骤 */
-export function planSteps(workflow: Workflow | undefined, agents: Agent[]): TaskStep[] {
-  if (!workflow) return []
-  const byId = new Map(agents.map((a) => [a.id, a]))
-  const team = [workflow.mainAgentId, ...workflow.members.map((m) => m.agentId)]
-    .map((id) => byId.get(id))
-    .filter(Boolean) as Agent[]
-  const main = workflow.mainAgentId
-  const headings = [...workflow.document.matchAll(/^##\s+(.+)$/gm)].map((m) => m[1].trim())
-  if (headings.length)
-    return headings.map((h) => {
-      const who = team.find((a) => h.includes(`@${a.name}`))
-      return { title: strip(h) || h, agentId: who?.id ?? main, status: 'pending' }
-    })
-  return [
-    { title: '分析需求、拆分任务', agentId: main, status: 'pending' },
-    ...workflow.members.map((m) => ({
-      title: m.responsibility || byId.get(m.agentId)?.description || byId.get(m.agentId)?.name || '执行',
-      agentId: m.agentId,
-      status: 'pending' as const,
-    })),
-    { title: '验收', agentId: main, status: 'pending' },
-  ]
-}
+/** 兼容旧调用：只要节点列表 */
+export const planSteps = (workflow: Workflow | undefined, agents: Agent[]) => planTask(workflow, agents).steps
 
 export function taskTitle(prompt: string) {
   const line = prompt.trim().split('\n')[0]
@@ -60,7 +37,7 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, age
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
     status: 'running',
-    steps: input.mode === 'workflow' ? planSteps(workflow, agents) : [],
+    ...(input.mode === 'workflow' ? planTask(workflow, agents) : { stages: [], steps: [] }),
     messages: [{ id, role: 'user', agentId: '', step: -1, text: input.prompt.trim(), tools: [], at: now }],
     changes: [],
     simulated: true,
@@ -94,7 +71,7 @@ function stepOutput(step: TaskStep, index: number, task: Task, prompt: string, a
   const need = origin.length > 60 ? origin.slice(0, 60) + '…' : origin
   switch (kindOf(step.title)) {
     case 'plan': {
-      const rest = task.steps.slice(index + 1)
+      const rest = task.steps.filter((s) => s.stage > step.stage)
       return {
         tools: [
           { kind: 'read', label: 'README.md', detail: '' },
@@ -104,7 +81,9 @@ function stepOutput(step: TaskStep, index: number, task: Task, prompt: string, a
         text:
           `需求：${need}\n\n已经读过项目结构和相关代码，拆分如下：\n\n` +
           (rest.length
-            ? rest.map((s, i) => `${i + 1}. **${s.title}**，交给 @${name(s.agentId)}`).join('\n')
+            ? rest
+                .map((s, i) => `${i + 1}. **${s.title}**，交给 @${name(s.agentId)}${task.steps.filter((x) => x.stage === s.stage).length > 1 ? '（并行）' : ''}`)
+                .join('\n')
             : '1. 直接实现并自测') +
           `\n\n验收标准：功能可用、已有测试不回归、新增逻辑有测试覆盖。`,
       }
@@ -207,17 +186,30 @@ export async function runTurn(ctx: RunContext) {
   ctx.changed(true)
 
   if (task.mode === 'workflow' && task.steps.some((s) => s.status !== 'done')) {
-    // 工作流还没跑完（第一轮，或上次被停止）：从没完成的步骤继续
-    for (let i = 0; i < task.steps.length; i++) {
-      const step = task.steps[i]
-      if (step.status === 'done') continue
-      step.status = 'running'
+    // 工作流还没跑完（第一轮，或上次被停止）：按阶段推进，阶段内的节点同时执行
+    for (const stage of taskStages(task)) {
+      const todo = stage.steps.filter(({ step }) => step.status !== 'done')
+      if (!todo.length) continue
+      for (const { step } of todo) {
+        step.status = 'running'
+        step.startedAt = new Date().toISOString()
+        step.endedAt = ''
+      }
       ctx.changed(true)
-      await ctx.sleep(300)
-      const ok = !ctx.stopped() && (await speak(ctx, step.agentId, i, stepOutput(step, i, task, ctx.prompt, ctx.agents)))
-      if (!ok) return finishStopped(ctx)
-      step.status = 'done'
-      ctx.changed(true)
+      const results = await Promise.all(
+        todo.map(async ({ step, i }, k) => {
+          // 并行节点错开一点开始，输出看起来更自然
+          await ctx.sleep(300 + k * 500)
+          const ok = !ctx.stopped() && (await speak(ctx, step.agentId, i, stepOutput(step, i, task, ctx.prompt, ctx.agents)))
+          if (ok) {
+            step.status = 'done'
+            step.endedAt = new Date().toISOString()
+            ctx.changed(true)
+          }
+          return ok
+        }),
+      )
+      if (results.some((ok) => !ok)) return finishStopped(ctx)
     }
   } else {
     const who = task.mode === 'chat' ? task.agentId : (ctx.workflow?.mainAgentId ?? task.steps[0]?.agentId ?? '')
@@ -245,7 +237,11 @@ export async function runTurn(ctx: RunContext) {
 }
 
 function finishStopped(ctx: RunContext) {
-  for (const s of ctx.task.steps) if (s.status === 'running') s.status = 'pending'
+  for (const s of ctx.task.steps)
+    if (s.status === 'running') {
+      s.status = 'pending'
+      s.endedAt = new Date().toISOString()
+    }
   system(ctx, '已停止。可以在下面输入新的要求继续。')
   ctx.task.status = 'stopped'
   ctx.changed(true)

@@ -4,21 +4,64 @@ import type { SaveStatus } from '@/lib/useAutosave'
 /** 右侧详情：头部 + 两栏内容（表单 / 辅助信息） */
 export function Detail({
   header,
+  tabs,
+  body,
   form,
   aside,
 }: {
   header: React.ReactNode
-  form: React.ReactNode
-  aside: React.ReactNode
+  /** 头部下面的标签栏 */
+  tabs?: React.ReactNode
+  /** 传了就整块替换下面的两栏内容（例如全宽的流程图） */
+  body?: React.ReactNode
+  form?: React.ReactNode
+  aside?: React.ReactNode
 }) {
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       {header}
-      <div className="flex flex-wrap items-start gap-8 px-4 pt-6 pb-10 md:px-8 md:pt-7">
-        <div className="flex max-w-[760px] min-w-0 flex-[999_1_440px] flex-col gap-7">{form}</div>
-        <aside className="flex max-w-[380px] min-w-0 flex-[1_1_280px] flex-col gap-4 xl:sticky xl:top-7">{aside}</aside>
-      </div>
+      {tabs}
+      {body ?? (
+        <div className="flex flex-wrap items-start gap-8 px-4 pt-6 pb-10 md:px-8 md:pt-7">
+          <div className="flex max-w-[760px] min-w-0 flex-[999_1_440px] flex-col gap-7">{form}</div>
+          <aside className="flex max-w-[380px] min-w-0 flex-[1_1_280px] flex-col gap-4 xl:sticky xl:top-7">{aside}</aside>
+        </div>
+      )}
     </main>
+  )
+}
+
+/** 详情页头部下面的标签栏 */
+export function DetailTabs<T extends string>({
+  value,
+  onChange,
+  items,
+}: {
+  value: T
+  onChange: (v: T) => void
+  items: { id: T; label: string; icon: React.ComponentType<{ className?: string }>; extra?: React.ReactNode }[]
+}) {
+  return (
+    <div role="tablist" className="flex gap-1 border-b bg-bg px-4 md:px-8">
+      {items.map(({ id, label, icon: Icon, extra }) => (
+        <button
+          key={id}
+          role="tab"
+          aria-selected={value === id}
+          onClick={() => onChange(id)}
+          className={
+            'relative flex h-10 cursor-pointer items-center gap-1.5 px-2.5 text-[13px] font-medium ' +
+            (value === id
+              ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
+              : 'text-muted hover:text-fg')
+          }
+        >
+          <Icon className="h-4 w-4" />
+          {label}
+          {extra}
+        </button>
+      ))}
+    </div>
   )
 }
 

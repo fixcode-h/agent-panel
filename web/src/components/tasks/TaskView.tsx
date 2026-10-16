@@ -2,80 +2,138 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUp,
-  FileText,
   FlaskConical,
+  GitBranch,
   Info,
   Loader2,
+  MessageSquareText,
   PanelRight,
-  PencilLine,
-  Search,
   Square,
-  Terminal,
   Trash2,
-  Wrench,
   X,
 } from 'lucide-react'
-import type { Project, Task, TaskMessage, ToolUse } from '@shared/schema'
+import type { Project, Task, TaskMessage } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { AgentMessage } from './Messages'
+import { TaskFlow, StepStatusIcon } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
 import { TaskStatusIcon } from './TaskStatusIcon'
 
-const toolIcon = { read: FileText, edit: PencilLine, run: Terminal, search: Search, other: Wrench }
+type Block =
+  | { kind: 'msg'; m: TaskMessage }
+  | {
+      kind: 'stage'
+      stage: number
+      key: string
+      byStep: Map<number, TaskMessage[]>
+    }
 
-function ToolRow({ tool }: { tool: ToolUse }) {
-  const Icon = toolIcon[tool.kind]
-  const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
+/** 把消息分段：同一阶段的节点消息归到一起，并行节点的输出不会交错在一起 */
+function toBlocks(task: Task): Block[] {
+  const blocks: Block[] = []
+  for (const m of task.messages) {
+    const step = m.role === 'agent' && m.step >= 0 ? task.steps[m.step] : undefined
+    if (!step) {
+      blocks.push({ kind: 'msg', m })
+      continue
+    }
+    let b = blocks.at(-1)
+    if (b?.kind !== 'stage' || b.stage !== step.stage) {
+      b = { kind: 'stage', stage: step.stage, key: m.id, byStep: new Map() }
+      blocks.push(b)
+    }
+    const list = b.byStep.get(m.step) ?? []
+    list.push(m)
+    b.byStep.set(m.step, list)
+  }
+  return blocks
+}
+
+function Divider({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex min-w-0 items-center gap-2 rounded-lg border bg-field px-2.5 py-1.5 font-mono text-xs text-muted">
-      <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-      <span className="min-w-0 flex-1 truncate">{tool.label}</span>
-      {diff ? (
-        <span className="shrink-0">
-          {diff[1] && <span className="text-success">{diff[1]}</span>} {diff[2] && <span className="text-danger">{diff[2]}</span>}
-        </span>
-      ) : (
-        tool.detail && <span className="shrink-0 text-subtle">{tool.detail}</span>
-      )}
+    <div className="flex items-center gap-3 text-xs text-subtle">
+      <span className="h-px flex-1 bg-line" />
+      <span className="flex items-center gap-1.5">{children}</span>
+      <span className="h-px flex-1 bg-line" />
     </div>
   )
 }
 
-function AgentMessage({ m, teamNames, compact }: { m: TaskMessage; teamNames: Set<string>; compact?: boolean }) {
-  const { agents } = useData()
-  const a = agents.find((x) => x.id === m.agentId)
-  const html = useMemo(() => renderDoc(m.text, teamNames), [m.text, teamNames])
+function MessageList({ msgs, teamNames }: { msgs: TaskMessage[]; teamNames: Set<string> }) {
   return (
-    <div className="flex gap-3">
-      {compact ? (
-        <span className="w-[26px] shrink-0" />
-      ) : a ? (
-        <AgentAvatar icon={a.icon} cli={a.cli} size="sm" />
-      ) : (
-        <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />
-      )}
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        {!compact && (
-          <div className="flex items-center gap-2 pt-0.5 text-[13px]">
-            <span className="font-medium">{a?.name ?? '已删除的 Agent'}</span>
-            {a?.model && <span className="font-mono text-xs text-subtle">{a.model}</span>}
+    <>
+      {msgs.map((m, k) => {
+        const compact = k > 0 && msgs[k - 1].agentId === m.agentId
+        return (
+          <div key={m.id} className={cn(compact && '-mt-2')}>
+            <AgentMessage m={m} teamNames={teamNames} compact={compact} />
           </div>
-        )}
-        {m.tools.length > 0 && (
-          <div className="flex flex-col gap-1">
-            {m.tools.map((t, i) => (
-              <ToolRow key={i} tool={t} />
-            ))}
-          </div>
-        )}
-        {m.text && <div className="chat-md [overflow-wrap:anywhere]" dangerouslySetInnerHTML={{ __html: html }} />}
+        )
+      })}
+    </>
+  )
+}
+
+function StageBlock({
+  task,
+  block,
+  last,
+  teamNames,
+}: {
+  task: Task
+  block: Extract<Block, { kind: 'stage' }>
+  last: boolean
+  teamNames: Set<string>
+}) {
+  const { agents } = useData()
+  const stageCount = new Set(task.steps.map((s) => s.stage)).size
+  const inStage = task.steps.map((s, i) => ({ s, i })).filter((x) => x.s.stage === block.stage)
+  // 最后一段里还没输出的并行节点也显示出来
+  const shown = inStage.filter((x) => block.byStep.has(x.i) || (last && x.s.status === 'running'))
+  const title = task.stages[block.stage]?.title ?? `阶段 ${block.stage + 1}`
+  if (inStage.length <= 1)
+    return (
+      <div className="flex flex-col gap-5">
+        <Divider>
+          阶段 {block.stage + 1}/{stageCount} · {inStage[0]?.s.title ?? title}
+        </Divider>
+        <MessageList msgs={[...block.byStep.values()].flat()} teamNames={teamNames} />
       </div>
+    )
+  return (
+    <div className="flex flex-col gap-3">
+      <Divider>
+        <GitBranch className="h-3.5 w-3.5 rotate-90" />
+        阶段 {block.stage + 1}/{stageCount} · {title} · 并行 {inStage.length} 个节点
+      </Divider>
+      {shown.map(({ s, i }) => {
+        const a = agents.find((x) => x.id === s.agentId)
+        const msgs = block.byStep.get(i) ?? []
+        return (
+          <section key={i} className="rounded-xl border bg-panel">
+            <header className="flex items-center gap-2 border-b px-3.5 py-2 text-[13px]">
+              <StepStatusIcon status={s.status} />
+              <span className="min-w-0 flex-1 truncate font-medium">{s.title}</span>
+              <span className="truncate text-xs text-subtle">{a?.name}</span>
+            </header>
+            <div className="flex flex-col gap-4 px-3.5 py-3.5">
+              {msgs.length ? (
+                <MessageList msgs={msgs} teamNames={teamNames} />
+              ) : (
+                <span className="flex items-center gap-2 text-xs text-subtle">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  正在启动…
+                </span>
+              )}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }
@@ -98,6 +156,7 @@ export function TaskView({
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [view, setView] = useState<'chat' | 'flow'>('chat')
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -131,8 +190,8 @@ export function TaskView({
   // 停留在底部时自动跟随新输出
   useLayoutEffect(() => {
     const el = scroller.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [task])
+    if (el && stick.current && view === 'chat') el.scrollTop = el.scrollHeight
+  }, [task, view])
 
   const workflow = workflows.find((w) => w.id === task?.workflowId)
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
@@ -185,13 +244,12 @@ export function TaskView({
     }
   }
 
-  const runningStep = task.steps.find((s) => s.status === 'running')
+  const runningSteps = task.steps.filter((s) => s.status === 'running')
   const lastAgent = [...task.messages].reverse().find((m) => m.role === 'agent')
-  const busyAgent = agents.find((a) => a.id === (runningStep?.agentId ?? lastAgent?.agentId))
+  const busyAgent = agents.find((a) => a.id === (runningSteps[0]?.agentId ?? lastAgent?.agentId))
   const chatAgent = agents.find((a) => a.id === task.agentId)
-  let prevStep = -1
-  // 同一个 Agent 在同一步里连续的消息只显示一次头像和名字
-  let prevSpeaker = ''
+  const blocks = toBlocks(task)
+  const isFlow = task.mode === 'workflow' && view === 'flow'
 
   return (
     <>
@@ -200,9 +258,39 @@ export function TaskView({
           <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-bg px-4 py-3 md:px-6">
             <TaskStatusIcon status={task.status} />
             <h2 className="min-w-0 flex-[1_1_200px] truncate text-[15px] font-semibold">{task.title}</h2>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {task.mode === 'workflow' && (
+                <div className="flex rounded-lg bg-field p-0.5 ring-1 ring-line" role="tablist" aria-label="视图">
+                  {(
+                    [
+                      ['chat', '对话', MessageSquareText],
+                      ['flow', '流程图', GitBranch],
+                    ] as const
+                  ).map(([v, label, Icon]) => (
+                    <button
+                      key={v}
+                      role="tab"
+                      aria-selected={view === v}
+                      onClick={() => {
+                        setView(v)
+                        stick.current = v === 'chat'
+                        if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
+                      }}
+                      className={cn(
+                        'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
+                        view === v ? 'bg-card text-fg shadow-card ring-1 ring-line-strong' : 'text-muted hover:text-fg',
+                      )}
+                    >
+                      <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              )}
               <Badge>
-                {task.mode === 'workflow' ? `工作流 · ${workflow?.name ?? '已删除'}` : `对话 · ${chatAgent?.name ?? '已删除'}`}
+                {task.mode === 'workflow'
+                  ? `工作流 · ${workflow?.name ?? '已删除'}`
+                  : `对话 · ${chatAgent?.name ?? '已删除'}`}
               </Badge>
               {task.simulated && (
                 <Badge tone="warning" title="还没有真正调用 CLI，输出是示例">
@@ -220,7 +308,13 @@ export function TaskView({
               >
                 <PanelRight className="h-4 w-4" />
               </Button>
-              <Button variant="ghost" size="icon-sm" aria-label="删除任务" title="删除任务" onClick={() => setDeleting(true)}>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label="删除任务"
+                title="删除任务"
+                onClick={() => setDeleting(true)}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             </div>
@@ -234,51 +328,57 @@ export function TaskView({
             }}
             className="flex-1 overflow-y-auto"
           >
-            <div className="mx-auto flex max-w-[780px] flex-col gap-5 px-4 py-6 md:px-6">
-              {task.messages.map((m) => {
-                // 进入新步骤时插一条分隔线
-                let stepHeader
-                const speaker = m.role === 'agent' ? `${m.agentId}:${m.step}` : ''
-                const compact = !!speaker && speaker === prevSpeaker
-                prevSpeaker = speaker
-                if (m.role === 'agent') {
-                  if (m.step >= 0 && m.step !== prevStep) stepHeader = task.steps[m.step]
-                  prevStep = m.step
-                }
-                return (
-                  <div key={m.id} className={cn('flex flex-col gap-5', compact && '-mt-3')}>
-                    {stepHeader && (
-                      <div className="flex items-center gap-3 text-xs text-subtle">
-                        <span className="h-px flex-1 bg-line" />
-                        <span>
-                          步骤 {m.step + 1}/{task.steps.length} · {stepHeader.title}
-                        </span>
-                        <span className="h-px flex-1 bg-line" />
-                      </div>
-                    )}
-                    {m.role === 'user' ? (
-                      <div className="ml-auto max-w-[85%] rounded-2xl rounded-br-md border bg-sel px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
-                        {m.text}
-                      </div>
-                    ) : m.role === 'system' ? (
-                      <div className="flex items-center justify-center gap-1.5 text-center text-xs text-subtle">
-                        <Info className="h-3.5 w-3.5 shrink-0" />
-                        {m.text}
-                      </div>
-                    ) : (
-                      <AgentMessage m={m} teamNames={teamNames} compact={compact} />
-                    )}
+            {isFlow ? (
+              <TaskFlow
+                task={task}
+                onOpenChat={() => {
+                  stick.current = true
+                  setView('chat')
+                }}
+              />
+            ) : (
+              <div className="mx-auto flex max-w-[780px] flex-col gap-5 px-4 py-6 md:px-6">
+                {blocks.map((b, k) =>
+                  b.kind === 'stage' ? (
+                    <StageBlock
+                      key={b.key}
+                      task={task}
+                      block={b}
+                      last={k === blocks.length - 1}
+                      teamNames={teamNames}
+                    />
+                  ) : b.m.role === 'user' ? (
+                    <div
+                      key={b.m.id}
+                      className="ml-auto max-w-[85%] rounded-2xl rounded-br-md border bg-sel px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
+                    >
+                      {b.m.text}
+                    </div>
+                  ) : b.m.role === 'system' ? (
+                    <div
+                      key={b.m.id}
+                      className="flex items-start justify-center gap-1.5 text-center text-xs whitespace-pre-wrap text-subtle"
+                    >
+                      <Info className="mt-px h-3.5 w-3.5 shrink-0" />
+                      {b.m.text}
+                    </div>
+                  ) : (
+                    <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
+                  ),
+                )}
+                {running && (
+                  <div className="flex items-center gap-2 text-[13px] text-muted">
+                    <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                    {runningSteps.length > 1
+                      ? `${runningSteps.length} 个节点正在并行执行`
+                      : busyAgent
+                        ? `${busyAgent.name} 正在执行`
+                        : '正在执行'}
+                    {runningSteps.length === 1 && <span className="text-subtle">· {runningSteps[0].title}</span>}
                   </div>
-                )
-              })}
-              {running && (
-                <div className="flex items-center gap-2 text-[13px] text-muted">
-                  <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                  {busyAgent ? `${busyAgent.name} 正在执行` : '正在执行'}
-                  {runningStep && <span className="text-subtle">· {runningStep.title}</span>}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="px-4 pt-1 pb-4 md:px-6 md:pb-5">
@@ -297,7 +397,9 @@ export function TaskView({
                     send()
                   }
                 }}
-                placeholder={running ? '执行中，完成后可以继续输入要求' : '继续输入要求，Enter 发送，Shift + Enter 换行'}
+                placeholder={
+                  running ? '执行中，完成后可以继续输入要求' : '继续输入要求，Enter 发送，Shift + Enter 换行'
+                }
                 className="block max-h-48 w-full resize-none bg-transparent focus-visible:outline-none px-4 pt-3 text-[14px] leading-relaxed outline-none placeholder:text-subtle"
               />
               <div className="flex items-center gap-2 px-3 pb-2.5">
@@ -308,8 +410,8 @@ export function TaskView({
                       ? task.steps.every((s) => s.status === 'done')
                         ? `由主 Agent ${agents.find((a) => a.id === workflow?.mainAgentId)?.name ?? ''} 处理追加要求`
                         : task.status === 'failed'
-                          ? '会从失败的步骤重新执行'
-                          : '会从没完成的步骤继续执行'
+                          ? '会从失败的节点重新执行'
+                          : '会从没完成的节点继续执行'
                       : `发给 ${chatAgent?.name ?? 'Agent'}`}
                 </span>
                 {running ? (
@@ -318,7 +420,13 @@ export function TaskView({
                     停止
                   </Button>
                 ) : (
-                  <Button size="icon-sm" className="ml-auto" aria-label="发送" disabled={!text.trim() || sending} onClick={send}>
+                  <Button
+                    size="icon-sm"
+                    className="ml-auto"
+                    aria-label="发送"
+                    disabled={!text.trim() || sending}
+                    onClick={send}
+                  >
                     <ArrowUp className="h-4 w-4" />
                   </Button>
                 )}

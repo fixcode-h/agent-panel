@@ -63,3 +63,48 @@ export function contextUsage(task: Task, workflow: Workflow | undefined, agents:
 }
 
 export const fmtTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
+
+/** 某个节点的执行情况：操作次数、改动文件数、当前在做什么、输出 */
+export function stepActivity(task: Task, i: number) {
+  const msgs = task.messages.filter((m) => m.role === 'agent' && m.step === i)
+  const tools = msgs.flatMap((m) => m.tools)
+  const files = new Set(tools.filter((t) => t.kind === 'edit').map((t) => t.label))
+  const last = msgs.at(-1)
+  const text = msgs
+    .map((m) => m.text)
+    .filter(Boolean)
+    .join('\n\n')
+  return { msgs, tools: tools.length, files: files.size, last, lastTool: last?.tools.at(-1), text }
+}
+
+const VERB = { read: '读取', edit: '修改', run: '运行', search: '', other: '' } as const
+
+/** 「正在做什么」的一句话 */
+export function currentActivity(a: ReturnType<typeof stepActivity>) {
+  if (a.last?.text.trim()) return `正在输出：${plainLine(a.last.text, true)}`
+  if (a.lastTool) return `${VERB[a.lastTool.kind]} ${a.lastTool.label}`.trim()
+  return '正在启动 CLI…'
+}
+
+/** 去掉 Markdown 记号后的第一行（last = 取最后一行） */
+export function plainLine(text: string, last = false) {
+  const lines = text
+    .split('\n')
+    .map((l) => l.replace(/^[#>*\-\d.\s]+/, '').replace(/[*`_]/g, '').trim())
+    .filter(Boolean)
+  return (last ? lines.at(-1) : lines[0]) ?? ''
+}
+
+export function fmtDuration(ms: number) {
+  const s = Math.max(0, Math.round(ms / 1000))
+  if (s < 60) return `${s} 秒`
+  if (s < 3600) return `${Math.floor(s / 60)} 分 ${String(s % 60).padStart(2, '0')} 秒`
+  return `${Math.floor(s / 3600)} 小时 ${Math.floor((s % 3600) / 60)} 分`
+}
+
+export function stepDuration(step: { startedAt: string; endedAt: string; status: string }, now: number) {
+  if (!step.startedAt) return ''
+  const end = step.endedAt ? new Date(step.endedAt).getTime() : step.status === 'running' ? now : 0
+  const ms = end - new Date(step.startedAt).getTime()
+  return end && ms >= 1000 ? fmtDuration(ms) : ''
+}

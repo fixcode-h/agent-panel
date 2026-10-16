@@ -131,3 +131,19 @@ body {
   from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
   to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
+
+/* 流程图连线：执行中的连线显示流动的虚线 */
+@keyframes flow-dash {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+.edge-active {
+  stroke-dasharray: 6 4;
+  animation: flow-dash 0.9s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .edge-active {
+    animation: none;
+  }
+}

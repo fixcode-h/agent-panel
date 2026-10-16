@@ -24,41 +24,53 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
   ]
 }
 
-/** 文档里的 @提及：@ 后面到空白或标点为止 */
-export function parseMentions(doc: string): string[] {
-  return [...new Set([...doc.matchAll(/@([^\s@#，。、,.;；:：()（）\[\]【】]+)/g)].map((m) => m[1]))]
-}
-
 export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]): Check[] {
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(w.mainAgentId)
   const team = [main, ...w.members.map((m) => byId.get(m.agentId))].filter(Boolean) as Agent[]
-  const teamNames = new Set(team.map((a) => a.name))
-  const mentions = parseMentions(w.document)
-  const unknown = mentions.filter((m) => !teamNames.has(m))
-  const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !mentions.includes(a.name)) as Agent[]
+  const teamIds = new Set(team.map((a) => a.id))
+  const nodes = w.stages.flatMap((s) => s.nodes)
+  const outside = [...new Set(nodes.filter((n) => n.agentId && !teamIds.has(n.agentId)).map((n) => n.title || '未命名节点'))]
+  const emptyStages = w.stages.filter((s) => !s.nodes.length).length
+  const used = new Set(nodes.map((n) => n.agentId))
+  const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !used.has(a.id)) as Agent[]
   const notRunnable = team.filter((a) => {
     const c = clis.find((x) => x.id === a.cli)
     return !a.enabled || !c?.installed || !c.enabled
   })
+  const parallel = w.stages.filter((s) => s.nodes.length > 1).length
 
   return [
-    { ok: !!main, label: '已选择主 Agent', hint: main ? main.name : '主 Agent 负责按文档推进并分派步骤' },
+    { ok: !!main, label: '已选择主 Agent', hint: main ? main.name : '主 Agent 执行没指定 Agent 的节点，并处理追加要求' },
     {
       ok: notRunnable.length === 0,
       label: '团队成员都可运行',
       hint: notRunnable.length ? `${notRunnable.map((a) => a.name).join('、')} 已停用或 CLI 未安装` : `共 ${team.length} 个 Agent`,
     },
-    { ok: !!w.document.trim(), label: '已写工作流文档', hint: w.document.trim() ? `共 ${w.document.trim().length} 字` : '写清楚按什么步骤执行' },
     {
-      ok: unknown.length === 0,
-      label: '文档引用的 Agent 都在团队中',
-      hint: unknown.length ? `不在团队中：${unknown.map((n) => '@' + n).join('、')}` : '用 @名称 指定步骤由谁执行',
+      ok: nodes.length > 0 && emptyStages === 0,
+      label: '已设计流程',
+      hint: !nodes.length
+        ? '在流程图里添加阶段和节点'
+        : emptyStages
+          ? `有 ${emptyStages} 个阶段还没有节点`
+          : `${w.stages.length} 个阶段、${nodes.length} 个节点${parallel ? `，${parallel} 个阶段并行` : ''}`,
+    },
+    {
+      ok: outside.length === 0,
+      label: '节点的 Agent 都在团队中',
+      hint: outside.length ? `这些节点的 Agent 不在团队里：${outside.join('、')}` : '没指定 Agent 的节点由主 Agent 执行',
     },
     {
       ok: unassigned.length === 0,
-      label: '每个子 Agent 都有分派',
-      hint: unassigned.length ? `文档里没提到：${unassigned.map((a) => a.name).join('、')}` : '子 Agent 都在文档中出现',
+      label: '每个子 Agent 都有节点',
+      hint: unassigned.length ? `没有分到节点：${unassigned.map((a) => a.name).join('、')}` : '子 Agent 都参与了流程',
+      optional: true,
+    },
+    {
+      ok: !!w.document.trim(),
+      label: '已写工作流说明',
+      hint: w.document.trim() ? `共 ${w.document.trim().length} 字` : '写清楚目标、规范和完成标准，每个节点都会看到',
       optional: true,
     },
   ]

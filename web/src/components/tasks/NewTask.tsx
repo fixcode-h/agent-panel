@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, ChevronDown, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
+import { ArrowUp, ChevronDown, ChevronRight, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Project, Task, TaskMode } from '@shared/schema'
-import { planSteps } from '@shared/runner'
+import { planTask, taskStages } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
@@ -16,7 +16,8 @@ import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
 /** 新建任务：选择按工作流执行还是直接和某个 Agent 对话，再描述要做的事 */
 export function NewTask({ project, onCreated }: { project: Project; onCreated: (t: Task) => void }) {
   const { workflows, agents, clis, projectCategories } = useData()
-  const projectWorkflowId = project.workflowId || projectCategories.find((c) => c.id === project.categoryId)?.workflowId || ''
+  const projectWorkflowId =
+    project.workflowId || projectCategories.find((c) => c.id === project.categoryId)?.workflowId || ''
   const projectWorkflow = workflows.find((w) => w.id === projectWorkflowId)
   const [mode, setMode] = useState<TaskMode>(projectWorkflow ? 'workflow' : 'chat')
   const [workflowId, setWorkflowId] = useState('')
@@ -25,7 +26,7 @@ export function NewTask({ project, onCreated }: { project: Project; onCreated: (
   const [busy, setBusy] = useState(false)
 
   const workflow = workflows.find((w) => w.id === (workflowId || projectWorkflowId))
-  const steps = planSteps(workflow, agents)
+  const plan = planTask(workflow, agents)
   const agent = agents.find((a) => a.id === agentId)
   const notReady = mode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis))
   const canStart = !!prompt.trim() && (mode === 'workflow' ? !!workflow : !!agent) && !busy
@@ -34,7 +35,15 @@ export function NewTask({ project, onCreated }: { project: Project; onCreated: (
     if (!canStart) return
     setBusy(true)
     try {
-      onCreated(await api.createTask({ projectId: project.id, mode, workflowId, agentId, prompt }))
+      onCreated(
+        await api.createTask({
+          projectId: project.id,
+          mode,
+          workflowId,
+          agentId,
+          prompt,
+        }),
+      )
     } catch (e) {
       toast.error((e as Error).message)
       setBusy(false)
@@ -42,8 +51,18 @@ export function NewTask({ project, onCreated }: { project: Project; onCreated: (
   }
 
   const modes = [
-    { id: 'workflow' as const, icon: WorkflowIcon, title: '按工作流执行', desc: '主 Agent 按工作流文档逐步推进，把步骤分派给子 Agent' },
-    { id: 'chat' as const, icon: MessageSquare, title: '直接对话', desc: '和一个 Agent 一问一答，随时可以让它动手修改' },
+    {
+      id: 'workflow' as const,
+      icon: WorkflowIcon,
+      title: '按工作流执行',
+      desc: '主 Agent 按工作流文档逐步推进，把步骤分派给子 Agent',
+    },
+    {
+      id: 'chat' as const,
+      icon: MessageSquare,
+      title: '直接对话',
+      desc: '和一个 Agent 一问一答，随时可以让它动手修改',
+    },
   ]
 
   return (
@@ -71,7 +90,12 @@ export function NewTask({ project, onCreated }: { project: Project; onCreated: (
                   on ? 'border-accent bg-accent-soft' : 'bg-card hover:border-line-strong',
                 )}
               >
-                <span className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg', on ? 'bg-accent text-white' : 'bg-field text-muted')}>
+                <span
+                  className={cn(
+                    'grid h-8 w-8 shrink-0 place-items-center rounded-lg',
+                    on ? 'bg-accent text-white' : 'bg-field text-muted',
+                  )}
+                >
                   <m.icon className="h-4 w-4" />
                 </span>
                 <span className="flex min-w-0 flex-col gap-0.5">
@@ -91,23 +115,39 @@ export function NewTask({ project, onCreated }: { project: Project; onCreated: (
               onChange={setWorkflowId}
               emptyLabel={projectWorkflow ? `使用项目工作流：${projectWorkflow.name}` : '项目还没有指定工作流，请选择'}
             />
-            {steps.length > 0 && (
-              <ol className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted">
-                {steps.map((s, i) => {
-                  const a = agents.find((x) => x.id === s.agentId)
-                  return (
-                    <li key={i} className="flex items-center gap-1.5 rounded-full border bg-card py-0.5 pr-2.5 pl-1">
-                      {a ? <AgentAvatar icon={a.icon} cli={a.cli} size="xs" /> : <span className="w-1" />}
-                      <span>
-                        {i + 1}. {s.title}
-                      </span>
-                    </li>
-                  )
-                })}
+            {plan.steps.length > 0 && (
+              <ol className="flex flex-wrap items-center gap-1.5 pt-1 text-xs text-muted" aria-label="执行流程">
+                {taskStages(plan).map((st, si, all) => (
+                  <li key={st.index} className="flex items-center gap-1.5">
+                    <span
+                      className={cn(
+                        'flex flex-col gap-1',
+                        st.steps.length > 1 && 'rounded-xl border border-dashed border-line-strong p-1',
+                      )}
+                      title={st.steps.length > 1 ? `${st.title}：${st.steps.length} 个节点并行` : undefined}
+                    >
+                      {st.steps.map(({ step: s }) => {
+                        const a = agents.find((x) => x.id === s.agentId)
+                        return (
+                          <span
+                            key={s.id}
+                            className="flex items-center gap-1.5 rounded-full border bg-card py-0.5 pr-2.5 pl-1"
+                          >
+                            {a ? <AgentAvatar icon={a.icon} cli={a.cli} size="xs" /> : <span className="w-1" />}
+                            {s.title}
+                          </span>
+                        )
+                      })}
+                    </span>
+                    {si < all.length - 1 && <ChevronRight className="h-3.5 w-3.5 text-subtle" />}
+                  </li>
+                ))}
               </ol>
             )}
             {notReady && (
-              <p className="text-xs text-warning">工作流还没就绪，可以先去工作流页面看看未通过的检查。当前是模拟执行，不影响试用。</p>
+              <p className="text-xs text-warning">
+                工作流还没就绪，执行可能会失败，可以先去工作流页面看看未通过的检查。
+              </p>
             )}
           </div>
         ) : (

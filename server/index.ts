@@ -15,6 +15,7 @@ import {
   WorkflowInput,
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
+import { migrateDocSteps } from '../shared/flow.ts'
 import { createCollection } from './store.ts'
 import { tasksApi } from './tasks.ts'
 import { detectClis, invalidateClis } from './detect.ts'
@@ -27,6 +28,16 @@ const categories = createCollection<CategoryInput, Category>('categories.json', 
 const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>('project-categories.json', ProjectCategory)
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
+
+// 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
+for (const w of await workflows.list()) {
+  if (w.stages.length || !/^##\s/m.test(w.document)) continue
+  const m = migrateDocSteps(w, await agents.list())
+  if (m.stages.length) {
+    const { id, createdAt, updatedAt, ...input } = w
+    await workflows.update(id, { ...input, ...m })
+  }
+}
 
 const app = new Hono().basePath('/api')
 

@@ -18,7 +18,12 @@ if (args.includes('--version')) {
 
 let input = ''
 for await (const chunk of process.stdin) input += chunk
-if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG, JSON.stringify({ kind, args, cwd: process.cwd(), input }) + '\n')
+if (process.env.FAKE_CLI_LOG) {
+  const log = process.env.FAKE_CLI_LOG
+  appendFileSync(log, JSON.stringify({ kind, args, cwd: process.cwd(), input, pid: process.pid, start: Date.now() }) + '\n')
+  // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
+  process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
+}
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n')

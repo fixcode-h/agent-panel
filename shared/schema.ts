@@ -42,9 +42,31 @@ export const WorkflowMember = z.object({
 })
 export type WorkflowMember = z.infer<typeof WorkflowMember>
 
+/** 流程里的一个节点：交给某个 Agent 完成的一件事 */
+export const WorkflowNode = z.object({
+  id: z.string().min(1),
+  title: z.string().trim().max(60).default(''),
+  /** 执行的 Agent；为空表示由主 Agent 执行 */
+  agentId: z.string().default(''),
+  /** 这个节点要做什么、产出什么（Markdown） */
+  instructions: z.string().max(20000).default(''),
+})
+export type WorkflowNode = z.infer<typeof WorkflowNode>
+
 /**
- * 工作流：指定一个主 Agent 和若干子 Agent，再用一份 Markdown 文档描述执行步骤。
- * 项目分类会选择一个工作流，执行时主 Agent 按文档逐步推进，并把步骤分派给子 Agent。
+ * 阶段：流程按阶段从左到右依次执行，同一阶段里的节点并行执行，
+ * 全部完成后才进入下一阶段（类似 CI 的 stage / job）。
+ */
+export const WorkflowStage = z.object({
+  id: z.string().min(1),
+  title: z.string().trim().max(40).default(''),
+  nodes: z.array(WorkflowNode).default([]),
+})
+export type WorkflowStage = z.infer<typeof WorkflowStage>
+
+/**
+ * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
+ * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
 export const WorkflowInput = z.object({
   name: z.string().trim().min(1, '名称不能为空').max(40),
@@ -52,7 +74,9 @@ export const WorkflowInput = z.object({
   /** 主 Agent；为空表示还没选 */
   mainAgentId: z.string().default(''),
   members: z.array(WorkflowMember).default([]),
-  /** 工作流文档（Markdown），可以用 @Agent名称 指定某一步由谁执行 */
+  /** 流程：阶段从左到右执行，阶段内的节点并行 */
+  stages: z.array(WorkflowStage).max(30).default([]),
+  /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
 })
 export type WorkflowInput = z.infer<typeof WorkflowInput>
@@ -119,7 +143,7 @@ export interface DirListing {
 
 /**
  * 任务：在某个项目里执行的一次工作。
- * - workflow：按工作流执行，主 Agent 按文档步骤推进，步骤分派给子 Agent
+ * - workflow：按工作流的流程图执行，阶段依次推进，阶段内的节点并行
  * - chat：直接和一个 Agent 对话
  * 创建后用户可以继续追加要求，每次追加会触发新一轮执行。
  */
@@ -151,7 +175,7 @@ export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
   agentId: z.string().default(''),
-  /** 属于第几个步骤；-1 表示不属于任何步骤（追问、对话） */
+  /** 属于 task.steps 的第几个节点；-1 表示不属于任何节点（追问、对话） */
   step: z.number().int().default(-1),
   text: z.string().default(''),
   tools: z.array(ToolUse).default([]),
@@ -160,9 +184,15 @@ export const TaskMessage = z.object({
 export type TaskMessage = z.infer<typeof TaskMessage>
 
 export const TaskStep = z.object({
+  /** 对应工作流节点的 id，也用作这个节点在 CLI 里的会话键 */
+  id: z.string(),
+  /** 所在阶段（task.stages 的下标）；同一阶段的节点并行执行 */
+  stage: z.number().int(),
   title: z.string(),
   agentId: z.string().default(''),
   status: z.enum(['pending', 'running', 'done', 'failed', 'skipped']).default('pending'),
+  startedAt: z.string().default(''),
+  endedAt: z.string().default(''),
 })
 export type TaskStep = z.infer<typeof TaskStep>
 
@@ -179,12 +209,17 @@ export const TaskData = z.object({
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   status: TaskStatus,
-  steps: z.array(TaskStep).default([]),
+  stages: z.array(z.object({ title: z.string() })).default([]),
+  /** 所有节点，按阶段顺序排列；旧数据没有阶段时每一步各自是一个阶段 */
+  steps: z.preprocess(
+    (v) => (Array.isArray(v) ? v.map((s, i) => ({ id: `s${i}`, stage: i, ...s })) : v),
+    z.array(TaskStep).default([]),
+  ),
   messages: z.array(TaskMessage).default([]),
   changes: z.array(FileChange).default([]),
   /** 模拟执行（设置里选了模拟，或在线演示） */
   simulated: z.boolean().default(true),
-  /** 每个 Agent 在 CLI 里的会话 id，用于续接 */
+  /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
   /** 用量：每个 Agent 最近一次的上下文占用，以及累计 token 和费用 */
   usage: z

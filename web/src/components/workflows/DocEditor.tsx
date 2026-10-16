@@ -65,7 +65,7 @@ export function DocEditor({
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[240px]">
-              <div className="px-2.5 pt-1 pb-1.5 text-xs text-subtle">在光标处插入，表示这一步由谁执行</div>
+              <div className="px-2.5 pt-1 pb-1.5 text-xs text-subtle">在光标处插入 Agent 名称</div>
               {team.map((a) => (
                 <PopoverClose key={a.id} className={menuItem} onClick={() => insert(`@${a.name} `)}>
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" />
@@ -88,10 +88,10 @@ export function DocEditor({
       {mode === 'edit' ? (
         <textarea
           ref={ref}
-          aria-label="工作流文档"
+          aria-label="工作流说明"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={'用 Markdown 写清楚执行步骤，用 @Agent名称 指定每一步由谁做。\n不知道怎么写可以先点右上角「插入模板」。'}
+          placeholder={'用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。'}
           className={cn(fieldClass, 'block min-h-[420px] resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0')}
         />
       ) : (

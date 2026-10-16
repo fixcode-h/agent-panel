@@ -1,20 +1,13 @@
 import { useState } from 'react'
-import {
-  ChevronDown,
-  Circle,
-  CircleCheck,
-  FolderOpen,
-  GitBranch,
-  Loader2,
-  MessageSquare,
-  Workflow as WorkflowIcon,
-} from 'lucide-react'
+import { ChevronDown, FolderOpen, GitBranch, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Project, Task, Workflow } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { contextUsage, fmtTokens } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
+import { taskStages } from '@shared/flow'
+import { StepStatusIcon } from './TaskFlow'
 
 function Section({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
   const [open, setOpen] = useState(true)
@@ -40,6 +33,7 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
   const dir = useDirInfo(project.path)
   const byId = new Map(agents.map((a) => [a.id, a]))
   const done = task.steps.filter((s) => s.status === 'done').length
+  const stages = taskStages(task)
   const ctx = contextUsage(task, workflow, agents)
   const pct = (n: number) => (n / ctx.window) * 100
   const add = task.changes.reduce((n, c) => n + c.add, 0)
@@ -54,35 +48,65 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
       >
         {task.mode === 'workflow' ? (
           <ol className="flex flex-col">
-            {task.steps.map((s, i) => {
-              const a = byId.get(s.agentId)
+            {stages.map((st, si) => {
+              const status = st.steps.some((x) => x.step.status === 'failed')
+                ? 'failed'
+                : st.steps.every((x) => x.step.status === 'done')
+                  ? 'done'
+                  : st.steps.some((x) => x.step.status === 'running')
+                    ? 'running'
+                    : 'pending'
               return (
-                <li key={i} className="relative flex gap-2.5 pb-3 last:pb-0">
-                  {i < task.steps.length - 1 && <span className="absolute top-5 bottom-0 left-[7px] w-px bg-line-strong" />}
+                <li key={st.index} className="relative flex gap-2.5 pb-3 last:pb-0">
+                  {si < stages.length - 1 && (
+                    <span className="absolute top-5 bottom-0 left-[7px] w-px bg-line-strong" />
+                  )}
                   <span className="relative mt-0.5 bg-card">
-                    {s.status === 'done' ? (
-                      <CircleCheck className="h-4 w-4 text-success" />
-                    ) : s.status === 'running' ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                    ) : (
-                      <Circle className="h-4 w-4 text-subtle" />
-                    )}
+                    <StepStatusIcon status={status} />
                   </span>
-                  <span className="flex min-w-0 flex-col gap-0.5">
+                  <span className="flex min-w-0 flex-1 flex-col gap-1">
                     <span
                       className={cn(
                         'text-[13px]',
-                        s.status === 'pending' ? 'text-muted' : 'text-fg',
-                        s.status === 'running' && 'font-medium',
+                        status === 'pending' ? 'text-muted' : 'text-fg',
+                        status === 'running' && 'font-medium',
                       )}
                     >
-                      {s.title}
+                      {st.steps.length > 1 ? st.title : st.steps[0].step.title}
+                      {st.steps.length > 1 && (
+                        <span className="ml-1.5 text-xs font-normal text-subtle">并行 {st.steps.length}</span>
+                      )}
                     </span>
-                    {a && (
-                      <span className="flex items-center gap-1.5 text-xs text-subtle">
-                        <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
-                        {a.name}
-                      </span>
+                    {st.steps.length > 1 ? (
+                      <ul className="flex flex-col gap-1 border-l border-line-strong pl-2.5">
+                        {st.steps.map(({ step: s }) => {
+                          const a = byId.get(s.agentId)
+                          return (
+                            <li key={s.id} className="flex items-center gap-1.5 text-xs">
+                              <StepStatusIcon status={s.status} className="h-3.5 w-3.5" />
+                              <span
+                                className={cn(
+                                  'min-w-0 flex-1 truncate',
+                                  s.status === 'pending' ? 'text-subtle' : 'text-muted',
+                                )}
+                              >
+                                {s.title}
+                              </span>
+                              {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    ) : (
+                      (() => {
+                        const a = byId.get(st.steps[0].step.agentId)
+                        return a ? (
+                          <span className="flex items-center gap-1.5 text-xs text-subtle">
+                            <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
+                            {a.name}
+                          </span>
+                        ) : null
+                      })()
                     )}
                   </span>
                 </li>
