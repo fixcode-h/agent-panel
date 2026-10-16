@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, SquareTerminal } from 'lucide-react'
 import { commandText, getCli, quoteArg } from '@shared/clis'
@@ -72,6 +72,9 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
+/** 短参数整段不断行，超长的参数允许在任意位置断开，免得撑出横向滚动 */
+const wrapClass = (a: string) => (a.length > 32 ? '[overflow-wrap:anywhere]' : 'whitespace-nowrap')
+
 /** 仿终端显示一条命令（第一个是可执行文件），右上角可以复制 */
 export function Terminal({
   argv,
@@ -91,15 +94,17 @@ export function Terminal({
         {title}
         <CopyButton text={commandText(argv)} />
       </div>
-      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] select-text [overflow-wrap:anywhere]">
+      {/* 只在参数之间换行：参数里的「-」也是浏览器默认的断行点，不禁掉的话「--verbose」会被拆成两行；
+          特别长的单个参数（路径、JSON）才在中间断开 */}
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] select-text">
         <span className="text-[#5fd39a]">$ </span>
-        <span className="text-[#f2c46d]">echo "{t('<任务描述>')}" </span>
+        <span className="whitespace-nowrap text-[#f2c46d]">echo "{t('<任务描述>')}"</span>{' '}
         <span className="text-[#8c909a]">| </span>
-        <span className="text-[#b9aeff]">{quoteArg(cmd ?? '')} </span>
+        <span className={cn('text-[#b9aeff]', wrapClass(cmd ?? ''))}>{quoteArg(cmd ?? '')}</span>{' '}
         {args.map((a, i) => (
-          <span key={i} className={color(a)}>
-            {quoteArg(a)}{' '}
-          </span>
+          <Fragment key={i}>
+            <span className={cn(color(a), wrapClass(a))}>{quoteArg(a)}</span>{' '}
+          </Fragment>
         ))}
       </p>
     </section>

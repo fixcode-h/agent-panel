@@ -217,4 +217,8 @@ export const EN_FLOW: Record<string, string> = {
   'token（千）': 'Tokens (thousands)',
   '输入和输出 token 合计': 'Input and output tokens combined',
   不限: 'No limit',
+  收起工作流列表: 'Hide workflow list',
+  显示工作流列表: 'Show workflow list',
+  收起属性栏: 'Hide properties panel',
+  显示属性栏: 'Show properties panel',
 }

@@ -8,6 +8,10 @@ import {
   Maximize2,
   Minimize2,
   MousePointerClick,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
   Plus,
   Sparkles,
   Trash2,
@@ -367,17 +371,24 @@ function Editor({
   main,
   team,
   checks,
+  list,
 }: {
   w: W
   onChange: (p: Partial<WorkflowInput>) => void
   main?: Agent
   team: Team
   checks: Check[]
+  list?: { open: boolean; toggle: () => void }
 }) {
   const { agents, workflows } = useData()
   const { modelOf } = useAgentView()
   const [flowId, setFlowId] = useState(() => entryFlow(w).id)
   const [selected, setSelected] = useState('')
+  // 右边的属性栏可以收起，把宽度让给画布；选中节点或连线时自动打开
+  const [inspector, setInspector] = useState(true)
+  useEffect(() => {
+    if (selected && selected !== START && selected !== END) setInspector(true)
+  }, [selected])
   // 全屏编辑：画布占满窗口
   const [full, setFull] = useState(false)
   useEffect(() => {
@@ -466,6 +477,18 @@ function Editor({
     <div className={cn('flex min-h-0 flex-1 flex-col lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-1.5 border-b bg-bg px-3 py-2 md:px-5">
+          {list && !full && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="hidden md:inline-flex"
+              onClick={list.toggle}
+              aria-label={list.open ? t('收起工作流列表') : t('显示工作流列表')}
+              title={list.open ? t('收起工作流列表') : t('显示工作流列表')}
+            >
+              {list.open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
+            </Button>
+          )}
           <div role="tablist" aria-label={t('流程')} className="flex min-w-0 flex-wrap items-center gap-1">
             {w.flows.map((f) => {
               const on = f.id === flow.id
@@ -533,6 +556,19 @@ function Editor({
               title={full ? t('退出全屏（Esc）') : t('全屏编辑')}
             >
               {full ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="hidden lg:inline-flex"
+              onClick={() => {
+                setInspector(!inspector)
+                fit()
+              }}
+              aria-label={inspector ? t('收起属性栏') : t('显示属性栏')}
+              title={inspector ? t('收起属性栏') : t('显示属性栏')}
+            >
+              {inspector ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
             </Button>
           </div>
         </div>
@@ -663,7 +699,10 @@ function Editor({
       </div>
       <aside
         aria-label={t('属性')}
-        className="shrink-0 overflow-y-auto border-t bg-bg lg:w-[320px] lg:border-t-0 lg:border-l"
+        className={cn(
+          'shrink-0 overflow-y-auto border-t bg-bg lg:w-[320px] lg:border-t-0 lg:border-l',
+          !inspector && 'lg:hidden',
+        )}
       >
         {node ? (
           <NodeInspector
@@ -770,6 +809,7 @@ export function FlowEditor(props: {
   main?: Agent
   team: Team
   checks: Check[]
+  list?: { open: boolean; toggle: () => void }
 }) {
   return (
     <ReactFlowProvider>

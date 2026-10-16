@@ -78,6 +78,9 @@ export function WorkflowsPage() {
 
   // 列表右键「删除」：先选中那个工作流，再让详情页弹出删除确认（被项目使用时不能删的检查在详情页里）
   const [delReq, setDelReq] = useState<{ id: string; at: number }>()
+  // 编辑流程图时默认收起工作流列表，把宽度让给画布；工具栏上可以再打开
+  const [editingFlow, setEditingFlow] = useState(false)
+  const [listOpen, setListOpen] = useState(false)
 
   const duplicate = (w: Workflow) => {
     const { id, createdAt, updatedAt, ...rest } = w
@@ -87,6 +90,7 @@ export function WorkflowsPage() {
   return (
     <>
       <ListPane
+        collapsed={editingFlow && !listOpen}
         title={t('工作流')}
         count={workflows.length}
         onNew={() => create()}
@@ -175,6 +179,8 @@ export function WorkflowsPage() {
           onDuplicate={() => duplicate(selected)}
           deleteSignal={delReq?.id === selected.id ? delReq.at : 0}
           onDeleted={() => go({ page: 'workflows' })}
+          onFlowTab={setEditingFlow}
+          list={{ open: listOpen, toggle: () => setListOpen((o) => !o) }}
         />
       ) : (
         !loading && (

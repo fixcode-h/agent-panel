@@ -15,6 +15,7 @@ export function ListPane({
   children,
   footer,
   extra,
+  collapsed,
 }: {
   title: string
   count: number
@@ -26,11 +27,16 @@ export function ListPane({
   footer?: React.ReactNode
   /** 新建按钮左边的额外操作 */
   extra?: React.ReactNode
+  /** 宽屏上收起（例如编辑流程图时把位置让给画布）；窄屏上列表在上方，不收 */
+  collapsed?: boolean
 }) {
   return (
     <section
       aria-label={t('{title}列表', { title })}
-      className="flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]"
+      className={cn(
+        'flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]',
+        collapsed && 'md:hidden',
+      )}
     >
       <div className="flex flex-col gap-3 px-4 pt-5 pb-3">
         <div className="flex items-center gap-2">

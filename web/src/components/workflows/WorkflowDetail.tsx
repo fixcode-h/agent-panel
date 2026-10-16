@@ -29,6 +29,8 @@ export function WorkflowDetail({
   onDeleted,
   deleteSignal = 0,
   onOptimized,
+  onFlowTab,
+  list,
 }: {
   workflow: Workflow
   onDuplicate: () => void
@@ -37,6 +39,10 @@ export function WorkflowDetail({
   deleteSignal?: number
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
+  /** 切到 / 离开流程图：页面据此收起工作流列表 */
+  onFlowTab?: (flow: boolean) => void
+  /** 工作流列表的收起状态，流程图工具栏上可以切换 */
+  list?: { open: boolean; toggle: () => void }
 }) {
   const { agents, clis, workflows, setWorkflows, projects, projectCategories } = useData()
   const usedBy = [
@@ -53,6 +59,10 @@ export function WorkflowDetail({
   }, [deleteSignal])
   const [assist, setAssist] = useState(false)
   const [tab, setTab] = useState<'flow' | 'settings'>(() => (workflow.mainAgentId ? 'flow' : 'settings'))
+  useEffect(() => {
+    onFlowTab?.(tab === 'flow')
+    return () => onFlowTab?.(false)
+  }, [tab])
   const valid = !!draft.name.trim()
   const save = useAutosave(
     draft,
@@ -166,6 +176,7 @@ export function WorkflowDetail({
                 main={main}
                 team={team}
                 checks={checks}
+                list={list}
               />
             </div>
           ) : undefined
