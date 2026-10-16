@@ -65,7 +65,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
     const settings = await getSettings()
     const def = getCli(input.cli)!
     const cs = cliSettings(settings, input.cli)
-    const run = agentRun({ cli: input.cli, model: input.model }, settings)
+    const run = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
     const installed = (await detectClis()).filter((c) => c.installed && c.enabled).map((c) => c.id)
     const cwd = path.join(tmpdir(), 'agent-panel-assist')
     await mkdir(cwd, { recursive: true })
@@ -73,6 +73,9 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
 
     for (let attempt = 1; attempt <= 2; attempt++) {
       job.attempt = attempt
+      job.thinking = undefined
+      job.tools = undefined
+      job.outChars = 0
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
@@ -104,10 +107,14 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
             if (ev.type === 'text_delta') text += ev.text
             else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
             else if (ev.type === 'error') errors.push(ev.message)
+            else if (ev.type === 'thinking')
+              job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
+            else if (ev.type === 'tool') job.tools = [...(job.tools ?? []), ev.tool.label].slice(-5)
             else if (ev.type === 'result') result = ev
           }
-          // 执行中只显示说明部分，JSON 写到一半时不显示
+          // 执行中只显示说明部分，JSON 写到一半时不显示，只显示写了多少
           job.text = text.split('```')[0].trim()
+          job.outChars = text.length
         },
       })
       if (r.killed === 'stopped') return fail(job, '已停止')
@@ -174,6 +181,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         status: 'running' as const,
         text: '',
         attempt: 1,
+        startedAt: Date.now(),
         abort: new AbortController(),
         at: Date.now(),
       }

@@ -3,10 +3,13 @@ import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import { ArrowUp, Check, CircleAlert, Crown, Loader2, Sparkles, Square, Wand2, X } from 'lucide-react'
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
-import { CLIS } from '@shared/clis'
-import type { Agent, AgentInput, Workflow } from '@shared/schema'
+import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
+import { agentRun, cliSettings, orderClis } from '@shared/settings'
+import type { Agent, AgentInput, Settings, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
-import { cliColor } from '@/lib/cli-style'
+import { cliColor, effortLabel } from '@/lib/cli-style'
+import { useCliDef } from '@/lib/cli-models'
+import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -167,6 +170,120 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
   )
 }
 
+/** 生成中：流式显示思考过程、说明文字、用到的工具和已写的字数，加上已用时间 */
+function JobProgress({ job, cliName }: { job: AssistJob; cliName: string }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [])
+  const secs = job.startedAt ? Math.max(0, Math.round((now - job.startedAt) / 1000)) : 0
+  const writingJson = (job.outChars ?? 0) > job.text.length + 20
+  const phase =
+    job.attempt > 1
+      ? '格式不对，正在让 CLI 修正'
+      : writingJson
+        ? `正在写配置（已写 ${(job.outChars ?? 0).toLocaleString()} 字）`
+        : job.text
+          ? '正在写说明'
+          : job.thinking
+            ? '正在思考'
+            : `${cliName} 正在生成`
+  const thinking = job.thinking?.trim()
+  return (
+    <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
+      {thinking && (
+        <p className="line-clamp-4 border-l-2 border-line-strong pl-2.5 text-xs whitespace-pre-wrap text-subtle italic">
+          {thinking.length > 400 ? '…' + thinking.slice(-400) : thinking}
+        </p>
+      )}
+      {job.text && <p className="whitespace-pre-wrap">{job.text}</p>}
+      {!!job.tools?.length && (
+        <ul className="flex flex-col gap-0.5 text-xs text-subtle">
+          {job.tools.map((t, i) => (
+            <li key={i} className="truncate font-mono">
+              · {t}
+            </li>
+          ))}
+        </ul>
+      )}
+      <span className="flex items-center gap-2 text-xs text-subtle">
+        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+        {phase}…<span className="tabular-nums">{secs} 秒</span>
+      </span>
+    </div>
+  )
+}
+
+/** 输入框下面的模型、思考强度：显示这次实际会用的值，选了就只对这次生成生效 */
+function RunPicker({
+  def,
+  settings,
+  model,
+  effort,
+  onModel,
+  onEffort,
+  disabled,
+}: {
+  def: CliDefinition
+  settings: Settings
+  model: string
+  effort: string
+  onModel: (v: string) => void
+  onEffort: (v: string) => void
+  disabled?: boolean
+}) {
+  const cs = cliSettings(settings, def.id)
+  const run = agentRun({ cli: def.id, model, effort }, settings)
+  // 「默认」显示设置里会用到的具体模型，档位也换成具体模型
+  const base = agentRun({ cli: def.id, model: '' }, settings)
+  const tierRun = (t: ModelTier) => agentRun({ cli: def.id, model: `@${t}` }, settings)
+  const modelOptions = [
+    { value: '', label: base.model ? `默认 · ${base.model}` : '默认模型' },
+    ...MODEL_TIERS.map((t) => ({
+      value: `@${t.id}`,
+      label: `${t.label}档 · ${tierRun(t.id).model || 'CLI 默认'}`,
+      group: '档位',
+    })),
+    ...def.models.map((m) => ({ value: m.id, label: m.id, group: '模型' })),
+  ]
+  if (model && !modelOptions.some((o) => o.value === model))
+    modelOptions.push({ value: model, label: model, group: '模型' })
+  // 思考强度「跟随」时显示跟着模型或档位得到的值
+  const follow = agentRun({ cli: def.id, model }, settings).effort
+  const compact =
+    'h-7 w-auto max-w-[170px] gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
+  return (
+    <div
+      className="flex min-w-0 items-center gap-0.5"
+      title={`这次用 ${run.model || 'CLI 默认模型'}${run.effort ? ` · ${effortLabel(def, run.effort)}` : ''}`}
+    >
+      <Select
+        aria-label="模型"
+        value={model}
+        onChange={(e) => onModel(e.target.value)}
+        options={modelOptions}
+        disabled={disabled}
+        className={cn(compact, 'font-mono')}
+      />
+      {def.efforts.length > 0 && (
+        <Select
+          aria-label="思考强度"
+          value={effort}
+          onChange={(e) => onEffort(e.target.value)}
+          disabled={disabled}
+          className={compact}
+          options={[
+            { value: '', label: follow ? `思考 · ${effortLabel(def, follow)}` : '思考 · CLI 默认' },
+            ...def.efforts.map((e) => ({ value: e.id, label: `思考 · ${e.label}` })),
+          ]}
+        />
+      )}
+      {!cs.enabled && <span className="text-[11px] text-warning">已停用</span>}
+    </div>
+  )
+}
+
 /**
  * 用本机 CLI 对话生成 / 优化 Agent 或工作流。左边对话，右边预览最新的结果，确认后应用。
  */
@@ -187,6 +304,15 @@ export function AssistDialog({
   const { clis, settings, categories, setAgents, setCategories, setWorkflows } = useData()
   const usable = clis.filter((c) => c.installed && c.enabled)
   const [cli, setCli] = useState('')
+  // 这次生成用的模型和思考强度：默认跟设置走，可以在输入框下面临时调整
+  const [model, setModel] = useState('')
+  const [effort, setEffort] = useState('')
+  const cliDef = useCliDef(cli)
+  const pickCli = (id: string) => {
+    setCli(id)
+    setModel(id === settings?.assist.cli ? (settings?.assist.model ?? '') : '')
+    setEffort('')
+  }
   const [turns, setTurns] = useState<Turn[]>([])
   const [text, setText] = useState('')
   const [job, setJob] = useState<AssistJob | null>(null)
@@ -201,7 +327,7 @@ export function AssistDialog({
     setText('')
     setJob(null)
     const pref = settings?.assist.cli
-    setCli(usable.find((c) => c.id === pref)?.id ?? usable[0]?.id ?? pref ?? CLIS[0].id)
+    pickCli(usable.find((c) => c.id === pref)?.id ?? usable[0]?.id ?? pref ?? CLIS[0].id)
   }, [open])
 
   // 生成中轮询
@@ -263,7 +389,8 @@ export function AssistDialog({
           kind,
           targetId: target?.id ?? '',
           cli,
-          model: cli === settings?.assist.cli ? settings.assist.model : '',
+          model,
+          effort,
           messages: next.map(({ role, text }) => ({ role, text })),
         }),
       )
@@ -341,13 +468,13 @@ export function AssistDialog({
             <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[460px] md:border-r md:border-b-0">
               <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
                 <span className="mr-1 text-xs text-subtle">使用</span>
-                {CLIS.map((c) => {
+                {orderClis(CLIS, settings?.cliOrder ?? []).map((c) => {
                   const st = clis.find((x) => x.id === c.id)
                   const ok = !!st?.installed && st.enabled
                   return (
                     <button
                       key={c.id}
-                      onClick={() => setCli(c.id)}
+                      onClick={() => pickCli(c.id)}
                       aria-pressed={cli === c.id}
                       disabled={running}
                       title={ok ? st?.version : '未安装或已停用'}
@@ -409,17 +536,7 @@ export function AssistDialog({
                     </div>
                   ),
                 )}
-                {job && (
-                  <div className="flex flex-col gap-1.5 text-[13px] leading-relaxed">
-                    {job.text && <p className="whitespace-pre-wrap">{job.text}</p>}
-                    <span className="flex items-center gap-2 text-xs text-subtle">
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-                      {job.attempt > 1
-                        ? '格式不对，正在让 CLI 修正…'
-                        : `${CLIS.find((c) => c.id === cli)?.name} 正在生成…`}
-                    </span>
-                  </div>
-                )}
+                {job && <JobProgress job={job} cliName={CLIS.find((c) => c.id === cli)?.name ?? cli} />}
               </div>
               <div className="p-3">
                 <div className="rounded-xl border border-line-strong bg-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">
@@ -438,7 +555,18 @@ export function AssistDialog({
                     className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
                   />
                   <div className="flex items-center px-2.5 pb-2">
-                    <span className="text-[11px] text-subtle">Enter 发送</span>
+                    {settings && cliDef && (
+                      <RunPicker
+                        def={cliDef}
+                        settings={settings}
+                        model={model}
+                        effort={effort}
+                        onModel={setModel}
+                        onEffort={setEffort}
+                        disabled={running}
+                      />
+                    )}
+                    <span className="ml-2 hidden text-[11px] text-subtle sm:inline">Enter 发送</span>
                     {running ? (
                       <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
                         <Square className="h-3 w-3 fill-current" />

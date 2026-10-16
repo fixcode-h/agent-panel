@@ -269,15 +269,25 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
     status: 'running',
     text: '',
     attempt: 1,
+    startedAt: Date.now(),
   }
   jobs.set(job.id, job)
   const gen = input.kind === 'agent' ? agentDraft(text, ctx) : workflowDraft(text, ctx)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
+  // 先演示一段「思考」，再逐字输出说明，最后是 JSON
+  const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`
   let i = 0
+  let k = 0
   const tick = () => {
     if (job.status !== 'running') return
+    if (k < think.length) {
+      k += 3
+      job.thinking = think.slice(0, k)
+      return void setTimeout(tick, 30)
+    }
     i += 4
     job.text = full.slice(0, i)
+    job.outChars = i
     if (i < full.length) return void setTimeout(tick, 30)
     const r = resolveProposal(input.kind, gen.draft, ctx)
     if (r.proposal) {

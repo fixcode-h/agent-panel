@@ -7,6 +7,8 @@ export type CliEvent =
   | { type: 'text_delta'; text: string }
   /** 一整段文字（没有流式增量时使用） */
   | { type: 'text'; text: string }
+  /** 思考过程：Claude 是增量，Codex 是一段段的推理摘要 */
+  | { type: 'thinking'; text: string; delta?: boolean }
   | { type: 'tool'; tool: ToolUse; file?: { path: string; add: number; del: number } }
   | { type: 'usage'; context?: number; model?: string; addInput?: number; addOutput?: number; addCost?: number }
   | { type: 'error'; message: string }
@@ -98,6 +100,8 @@ export function claudeParser(cwd: string): Parser {
           })
       } else if (e.type === 'content_block_start' && e.content_block?.type === 'text' && textInMsg) {
         out.push({ type: 'text_delta', text: '\n\n' })
+      } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta') {
+        out.push({ type: 'thinking', text: e.delta.thinking ?? '', delta: true })
       } else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta') {
         streamed.add(msgId)
         textInMsg = true
@@ -145,6 +149,7 @@ export function codexParser(cwd: string): Parser {
     else if (o.type === 'item.completed') {
       if ((type === 'agent_message' || type === 'assistant_message') && item.text)
         out.push({ type: 'text', text: item.text })
+      else if (type === 'reasoning' && item.text) out.push({ type: 'thinking', text: item.text })
       else if (type === 'command_execution') {
         const code = item.exit_code
         out.push({

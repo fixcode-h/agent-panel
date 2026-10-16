@@ -215,6 +215,16 @@ export interface CliInstallJob {
   cliStatus?: CliStatus
 }
 
+/** 已安装版本和 npm 上的最新版本 */
+export interface CliUpdate {
+  current?: string
+  latest?: string
+  /** 有更新的版本可以装 */
+  available: boolean
+  /** 查不到最新版本的原因（没网等），这时不显示更新按钮 */
+  error?: string
+}
+
 /** 从本机 CLI 读到的模型 */
 export interface CliModel {
   id: string
@@ -449,6 +459,8 @@ export const Settings = z.object({
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
+  /** CLI 的显示顺序（设置侧栏、默认 CLI、Agent 的 CLI 选项）；没列出的排在后面 */
+  cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
   /** AI 创建 / 优化 Agent 和工作流 */

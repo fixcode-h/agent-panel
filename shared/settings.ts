@@ -22,6 +22,15 @@ export function cliSettings(settings: Settings, cliId: string): CliSettings & { 
 /** 系统默认 CLI；设置里的值无效时用第一个 */
 export const defaultCli = (settings: Settings) => (getCli(settings.defaultCli) ? settings.defaultCli : CLIS[0].id)
 
+/** 按设置里的顺序排列 CLI；新加的、没排过的 CLI 按内置顺序跟在后面 */
+export function orderClis<T extends { id: string }>(list: T[], order: string[]): T[] {
+  const rank = (id: string) => {
+    const i = order.indexOf(id)
+    return i < 0 ? order.length + CLIS.findIndex((c) => c.id === id) : i
+  }
+  return [...list].sort((a, b) => rank(a.id) - rank(b.id))
+}
+
 export const tierToken = (t: ModelTier) => `@${t}`
 /** 模型字段是档位时返回档位 */
 export const tierOf = (model: string) => MODEL_TIERS.find((t) => model === `@${t.id}`)

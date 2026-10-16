@@ -23,12 +23,13 @@ import {
   type Task,
   type CliInstallJob,
   type CliModels,
+  type CliUpdate,
   type CliStatus,
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
 import { CLIS, getCli } from '@shared/clis'
-import { defaultCli } from '@shared/settings'
+import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
 import { newTask } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
@@ -397,11 +398,13 @@ const VERSIONS: Record<string, string> = {
   codex: 'codex-cli 0.150.0',
   commandcode: 'command-code 1.8.2',
 }
+// npm 上的「最新版本」：Claude Code 演示有更新可装
+const LATEST: Record<string, string> = { claude: '2.1.301', codex: '0.150.0', commandcode: '1.8.2' }
 
 function clis(): CliStatus[] {
   const d = load()
   const s = d.settings
-  return CLIS.map((c) => {
+  return orderClis(CLIS, s?.cliOrder ?? []).map((c) => {
     const installed = d.installed?.[c.id] ?? c.id === 'claude'
     return {
       id: c.id,
@@ -449,6 +452,7 @@ function cliAction(id: string, action: CliInstallJob['action']) {
         if (i < lines.length - 1) return
         const d = load()
         d.installed = { ...d.installed, [id]: action === 'install' }
+        if (action === 'install') VERSIONS[id] = VERSIONS[id].replace(/\d+\.\d+\.\d+/, LATEST[id])
         persist()
         job.cliStatus = clis().find((c) => c.id === id)
         job.status = 'done'
@@ -472,8 +476,22 @@ function route(method: string, url: string, body: unknown): unknown {
     return Settings.parse((d.settings ??= Settings.parse({})))
   }
   if (res === 'clis') {
+    if (id === 'jobs' && !sub) {
+      const latest = new Map<string, CliInstallJob>()
+      for (const j of installJobs.values()) latest.set(j.cli, j)
+      return [...latest.values()]
+    }
     if (id === 'jobs') return installJobs.get(sub ?? '') ?? fail('没有这个操作')
     if (id && (sub === 'install' || sub === 'uninstall')) return cliAction(id, sub)
+    if (id && sub === 'update') {
+      const cur = clis().find((c) => c.id === id)
+      const current = /\d+\.\d+\.\d+/.exec(cur?.version ?? '')?.[0]
+      return {
+        current,
+        latest: LATEST[id],
+        available: !!cur?.installed && !!current && current !== LATEST[id],
+      } satisfies CliUpdate
+    }
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
       const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)

@@ -33,14 +33,24 @@ writeFileSync(path.join(projectDir, 'pre.txt'), 'changed before the task\n')
 
 const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
   cwd: root,
-  env: { ...process.env, AGENT_PANEL_DATA: dataDir, PORT: String(port), FAKE_CLI_LOG: log, AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs') },
+  env: {
+    ...process.env,
+    AGENT_PANEL_DATA: dataDir,
+    PORT: String(port),
+    FAKE_CLI_LOG: log,
+    AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
+  },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
 const stop = () => server.kill()
 process.on('exit', stop)
 
 const call = async (method, url, body) => {
-  const r = await fetch(base + url, { method, headers: { 'content-type': 'application/json' }, body: body && JSON.stringify(body) })
+  const r = await fetch(base + url, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: body && JSON.stringify(body),
+  })
   const j = r.status === 204 ? null : await r.json()
   if (!r.ok) throw new Error(`${method} ${url} -> ${r.status} ${JSON.stringify(j)}`)
   return j
@@ -55,7 +65,13 @@ async function waitDone(id, timeout = 20000) {
     await sleep(150)
   }
 }
-const readLog = (f) => (existsSync(f) ? readFileSync(f, 'utf8').trim().split('\n').map((l) => JSON.parse(l)) : [])
+const readLog = (f) =>
+  existsSync(f)
+    ? readFileSync(f, 'utf8')
+        .trim()
+        .split('\n')
+        .map((l) => JSON.parse(l))
+    : []
 const calls = () => {
   const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
   return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
@@ -73,19 +89,55 @@ for (let i = 0; ; i++) {
 }
 
 try {
-  const cli = (extra = {}) => ({ enabled: true, command: fake, defaultModel: '', permission: '', extraArgs: [], env: [{ key: 'FOO', value: 'bar' }], ...extra })
-  const settings = { stepTimeoutMinutes: 5, clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli() } }
+  const cli = (extra = {}) => ({
+    enabled: true,
+    command: fake,
+    defaultModel: '',
+    permission: '',
+    extraArgs: [],
+    env: [{ key: 'FOO', value: 'bar' }],
+    ...extra,
+  })
+  const settings = {
+    stepTimeoutMinutes: 5,
+    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli() },
+  }
   await call('PUT', '/settings', settings)
   const clis = await call('GET', '/clis?refresh=1')
-  assert.deepEqual(clis.map((c) => [c.id, c.installed]), [['claude', true], ['codex', true], ['commandcode', true]])
+  assert.deepEqual(
+    clis.map((c) => [c.id, c.installed]),
+    [
+      ['claude', true],
+      ['codex', true],
+      ['commandcode', true],
+    ],
+  )
   assert.match(clis[1].version, /fake 0.0.1/)
   step('设置保存，三个 CLI 都能检测到')
 
-  const agent = (o) => call('POST', '/agents', { description: '', model: '', icon: 'bot', categoryId: '', instructions: '', extraArgs: [], enabled: true, ...o })
+  const agent = (o) =>
+    call('POST', '/agents', {
+      description: '',
+      model: '',
+      icon: 'bot',
+      categoryId: '',
+      instructions: '',
+      extraArgs: [],
+      enabled: true,
+      ...o,
+    })
   const A = await agent({ name: '甲', cli: 'claude', instructions: '你是甲，负责规划。' })
   const B = await agent({ name: '乙', cli: 'codex', model: 'gpt-5.6', instructions: '你是乙，负责实现。' })
   const C = await agent({ name: '丙', cli: 'commandcode', extraArgs: ['--effort', 'low'] })
-  const node = (id, title, agentId, instructions, more = {}) => ({ id, title, agentId, instructions, x: 0, y: 0, ...more })
+  const node = (id, title, agentId, instructions, more = {}) => ({
+    id,
+    title,
+    agentId,
+    instructions,
+    x: 0,
+    y: 0,
+    ...more,
+  })
   let eid = 0
   const edges = (...pairs) => pairs.map(([from, to]) => ({ id: `e${++eid}`, from, to }))
   const flow = (id, name, nodes, es) => ({ id, name, nodes, edges: edges(...es) })
@@ -93,16 +145,41 @@ try {
     name: '三阶段',
     description: '',
     mainAgentId: A.id,
-    members: [{ agentId: B.id, responsibility: '' }, { agentId: C.id, responsibility: '' }],
+    members: [
+      { agentId: B.id, responsibility: '' },
+      { agentId: C.id, responsibility: '' },
+    ],
     flows: [
-      flow('main', '主流程', [node('n1', '分析', '', '先分析。'), node('n2', '实现', B.id, '写代码。'), node('n3', '文档', C.id, '写文档。'), node('n4', '验收', '', '检查结果。'), node('n5', '没连上', '', '')], [
-        ['start', 'n1'], ['n1', 'n2'], ['n1', 'n3'], ['n2', 'n4'], ['n3', 'n4'], ['n4', 'end'],
-      ]),
+      flow(
+        'main',
+        '主流程',
+        [
+          node('n1', '分析', '', '先分析。'),
+          node('n2', '实现', B.id, '写代码。'),
+          node('n3', '文档', C.id, '写文档。'),
+          node('n4', '验收', '', '检查结果。'),
+          node('n5', '没连上', '', ''),
+        ],
+        [
+          ['start', 'n1'],
+          ['n1', 'n2'],
+          ['n1', 'n3'],
+          ['n2', 'n4'],
+          ['n3', 'n4'],
+          ['n4', 'end'],
+        ],
+      ),
     ],
     entryFlowId: 'main',
     document: '# 目标\n测试\n',
   })
-  const project = await call('POST', '/projects', { name: '测试项目', description: '', path: projectDir, categoryId: '', workflowId: wf.id })
+  const project = await call('POST', '/projects', {
+    name: '测试项目',
+    description: '',
+    path: projectDir,
+    categoryId: '',
+    workflowId: wf.id,
+  })
 
   // ---- 工作流任务 ----
   let t = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '做一个新功能' })
@@ -110,9 +187,22 @@ try {
   t = await waitDone(t.id)
   assert.equal(t.status, 'done', JSON.stringify(t.messages.filter((m) => m.role === 'system')))
   assert.equal(t.simulated, false)
-  assert.deepEqual(t.steps.map((s) => [s.id, s.status]), [['n1', 'done'], ['n2', 'done'], ['n3', 'done'], ['n4', 'done']], '没连到开始的节点不执行')
+  assert.deepEqual(
+    t.steps.map((s) => [s.id, s.status]),
+    [
+      ['n1', 'done'],
+      ['n2', 'done'],
+      ['n3', 'done'],
+      ['n4', 'done'],
+    ],
+    '没连到开始的节点不执行',
+  )
   assert.ok(t.steps.every((s) => s.startedAt && s.endedAt))
-  for (const who of [A, B, C]) assert.ok(t.messages.some((m) => m.agentId === who.id && m.text.includes('的回复')), `${who.name} 没有输出文字`)
+  for (const who of [A, B, C])
+    assert.ok(
+      t.messages.some((m) => m.agentId === who.id && m.text.includes('的回复')),
+      `${who.name} 没有输出文字`,
+    )
   const kinds = new Set(t.messages.flatMap((m) => m.tools.map((x) => x.kind)))
   for (const k of ['read', 'edit', 'run']) assert.ok(kinds.has(k), `缺少工具类型 ${k}`)
   const changed = t.changes.map((c) => c.path).sort()
@@ -158,13 +248,21 @@ try {
   assert.equal(t.status, 'done')
   c = calls().at(-1)
   assert.equal(c.kind, 'claude')
-  assert.ok(c.args.includes('--resume') && c.args.includes(t.sessions.n4), '追加要求应该续接主 Agent 最后执行的节点的会话')
+  assert.ok(
+    c.args.includes('--resume') && c.args.includes(t.sessions.n4),
+    '追加要求应该续接主 Agent 最后执行的节点的会话',
+  )
   assert.equal(t.sessions[A.id], t.sessions.n4)
   assert.match(c.input, /按钮改成红色/)
   step('追加要求：由主 Agent 续接会话处理')
 
   // ---- 对话任务 ----
-  let chat = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: C.id, prompt: '解释一下项目结构' })
+  let chat = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: C.id,
+    prompt: '解释一下项目结构',
+  })
   chat = await waitDone(chat.id)
   assert.equal(chat.status, 'done')
   assert.equal(calls().at(-1).input, '解释一下项目结构')
@@ -192,24 +290,88 @@ try {
   let badWf = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'FAIL 工作流' })
   badWf = await waitDone(badWf.id)
   assert.equal(badWf.status, 'failed')
-  assert.deepEqual(badWf.steps.map((s) => s.status), ['failed', 'pending', 'pending', 'pending'])
+  assert.deepEqual(
+    badWf.steps.map((s) => s.status),
+    ['failed', 'pending', 'pending', 'pending'],
+  )
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
 
   // ---- 节点入口：开始 / 验收 / 结束，流程节点，引用其他工作流 ----
   const small = await call('POST', '/workflows', {
-    name: '小流程', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
-    flows: [flow('main', '', [node('s', '小流程节点', '', '小流程要做的事。')], [['start', 's'], ['s', 'end']])],
+    name: '小流程',
+    mainAgentId: A.id,
+    members: [],
+    entryFlowId: 'main',
+    document: '',
+    flows: [
+      flow(
+        'main',
+        '',
+        [node('s', '小流程节点', '', '小流程要做的事。')],
+        [
+          ['start', 's'],
+          ['s', 'end'],
+        ],
+      ),
+    ],
   })
   const hooked = await call('POST', '/workflows', {
-    name: '带入口', mainAgentId: A.id, members: [{ agentId: B.id, responsibility: '' }, { agentId: C.id, responsibility: '' }], entryFlowId: 'main', document: '',
+    name: '带入口',
+    mainAgentId: A.id,
+    members: [
+      { agentId: B.id, responsibility: '' },
+      { agentId: C.id, responsibility: '' },
+    ],
+    entryFlowId: 'main',
+    document: '',
     flows: [
-      flow('main', '主流程', [
-        node('x', '实现功能', B.id, '实现它。', { hooks: { start: { kind: 'sub', id: 'prep' }, review: { kind: 'sub', id: 'rv' }, end: { kind: 'sub', id: 'post' }, maxRounds: 3 } }),
-        node('y', '跑小流程', '', '', { kind: 'flow', flow: { kind: 'workflow', id: small.id } }),
-      ], [['start', 'x'], ['x', 'y'], ['y', 'end']]),
-      flow('prep', '准备', [node('p', '收集资料', C.id, '收集资料。')], [['start', 'p'], ['p', 'end']]),
-      flow('rv', '验收', [node('r', '审查', '', '审查改动。')], [['start', 'r'], ['r', 'end']]),
-      flow('post', '收尾', [node('q', '写说明', C.id, '写变更说明。')], [['start', 'q'], ['q', 'end']]),
+      flow(
+        'main',
+        '主流程',
+        [
+          node('x', '实现功能', B.id, '实现它。', {
+            hooks: {
+              start: { kind: 'sub', id: 'prep' },
+              review: { kind: 'sub', id: 'rv' },
+              end: { kind: 'sub', id: 'post' },
+              maxRounds: 3,
+            },
+          }),
+          node('y', '跑小流程', '', '', { kind: 'flow', flow: { kind: 'workflow', id: small.id } }),
+        ],
+        [
+          ['start', 'x'],
+          ['x', 'y'],
+          ['y', 'end'],
+        ],
+      ),
+      flow(
+        'prep',
+        '准备',
+        [node('p', '收集资料', C.id, '收集资料。')],
+        [
+          ['start', 'p'],
+          ['p', 'end'],
+        ],
+      ),
+      flow(
+        'rv',
+        '验收',
+        [node('r', '审查', '', '审查改动。')],
+        [
+          ['start', 'r'],
+          ['r', 'end'],
+        ],
+      ),
+      flow(
+        'post',
+        '收尾',
+        [node('q', '写说明', C.id, '写变更说明。')],
+        [
+          ['start', 'q'],
+          ['q', 'end'],
+        ],
+      ),
     ],
   })
   await call('PUT', `/projects/${project.id}`, { ...project, workflowId: hooked.id })
@@ -217,15 +379,27 @@ try {
   let h = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '带入口的任务' })
   h = await waitDone(h.id)
   assert.equal(h.status, 'done', JSON.stringify(h.messages.filter((m) => m.role === 'system')))
-  assert.deepEqual(h.steps.map((s) => [s.id, s.status]), [
-    ['x', 'done'], ['y', 'done'], ['x/start/p', 'done'], ['x/review.1/r', 'done'], ['x/review.2/r', 'done'], ['x/end/q', 'done'], ['y/body/s', 'done'],
-  ])
+  assert.deepEqual(
+    h.steps.map((s) => [s.id, s.status]),
+    [
+      ['x', 'done'],
+      ['y', 'done'],
+      ['x/start/p', 'done'],
+      ['x/review.1/r', 'done'],
+      ['x/review.2/r', 'done'],
+      ['x/end/q', 'done'],
+      ['y/body/s', 'done'],
+    ],
+  )
   const x = h.steps.find((s) => s.id === 'x')
   assert.equal(x.rounds, 2)
   assert.equal(x.verdict, 'pass')
   assert.match(x.output, /结束流程的结果/)
   const hc = calls().slice(before2)
-  assert.deepEqual(hc.map((k) => k.kind), ['commandcode', 'codex', 'claude', 'codex', 'claude', 'commandcode', 'claude'])
+  assert.deepEqual(
+    hc.map((k) => k.kind),
+    ['commandcode', 'codex', 'claude', 'codex', 'claude', 'commandcode', 'claude'],
+  )
   assert.match(hc[1].input, /开始流程的结果[\s\S]*的回复/)
   assert.match(hc[2].input, /实现功能」的验收流程（第 1 轮验收）[\s\S]*验收结论/)
   assert.ok(hc[3].args.includes('resume'), '验收不通过后续接节点的会话继续完善')
@@ -233,26 +407,73 @@ try {
   assert.match(hc[4].input, /第 2 轮验收/)
   assert.match(hc[6].input, /工作流「小流程」[\s\S]*上游节点的结果|工作流「小流程」[\s\S]*## 输入/)
   assert.ok(h.messages.some((m) => m.role === 'system' && /第 1 轮验收未通过/.test(m.text)))
-  assert.ok(h.messages.some((m) => m.step === 'x/review.1/r'), '子节点的消息记在子节点上')
+  assert.ok(
+    h.messages.some((m) => m.step === 'x/review.1/r'),
+    '子节点的消息记在子节点上',
+  )
   // 验收轮数用完仍不通过时节点失败
-  await call('PUT', `/workflows/${hooked.id}`, { ...hooked, flows: hooked.flows.map((f) => f.id !== 'main' ? f : { ...f, nodes: f.nodes.map((n) => n.id === 'x' ? { ...n, hooks: { ...n.hooks, start: null, end: null, maxRounds: 1 } } : n) }) })
+  await call('PUT', `/workflows/${hooked.id}`, {
+    ...hooked,
+    flows: hooked.flows.map((f) =>
+      f.id !== 'main'
+        ? f
+        : {
+            ...f,
+            nodes: f.nodes.map((n) =>
+              n.id === 'x' ? { ...n, hooks: { ...n.hooks, start: null, end: null, maxRounds: 1 } } : n,
+            ),
+          },
+    ),
+  })
   let h2 = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '只验收一轮' })
   h2 = await waitDone(h2.id)
   assert.equal(h2.status, 'failed')
   assert.match(h2.messages.at(-1).text, /验收 1 轮仍未通过/)
-  assert.deepEqual(h2.steps.filter((s) => !s.parentId).map((s) => s.status), ['failed', 'pending'])
+  assert.deepEqual(
+    h2.steps.filter((s) => !s.parentId).map((s) => s.status),
+    ['failed', 'pending'],
+  )
   // 保存时拦下有问题的流程图：自己调用自己、节点连成环
   await assert.rejects(
     call('POST', '/workflows', {
-      name: '自引用', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
-      flows: [flow('main', '', [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })], [['start', 'z'], ['z', 'end']])],
+      name: '自引用',
+      mainAgentId: A.id,
+      members: [],
+      entryFlowId: 'main',
+      document: '',
+      flows: [
+        flow(
+          'main',
+          '',
+          [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })],
+          [
+            ['start', 'z'],
+            ['z', 'end'],
+          ],
+        ),
+      ],
     }),
     /循环调用/,
   )
   await assert.rejects(
     call('POST', '/workflows', {
-      name: '成环', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
-      flows: [flow('main', '', [node('p', '甲', ''), node('q', '乙', '')], [['start', 'p'], ['p', 'q'], ['q', 'p']])],
+      name: '成环',
+      mainAgentId: A.id,
+      members: [],
+      entryFlowId: 'main',
+      document: '',
+      flows: [
+        flow(
+          'main',
+          '',
+          [node('p', '甲', ''), node('q', '乙', '')],
+          [
+            ['start', 'p'],
+            ['p', 'q'],
+            ['q', 'p'],
+          ],
+        ),
+      ],
     }),
     /连成了环/,
   )
@@ -260,11 +481,18 @@ try {
   step('节点入口：开始流程的结果交给节点，验收不通过退回完善、轮数用完失败，结束流程、流程节点、引用其他工作流都能执行')
 
   // ---- 系统默认 CLI 和模型档位 ----
-  await call('PUT', '/settings', { ...settings, defaultCli: 'codex', clis: { ...settings.clis, codex: cli({ tiers: { high: 'gpt-top', medium: '', low: '' } }) } })
+  await call('PUT', '/settings', {
+    ...settings,
+    defaultCli: 'codex',
+    clis: { ...settings.clis, codex: cli({ tiers: { high: 'gpt-top', medium: '', low: '' } }) },
+  })
   const D = await agent({ name: '默认', cli: '', model: '@high' })
   const L = await agent({ name: '低档', cli: 'claude', model: '@low' })
   assert.equal((await call('GET', '/clis')).find((x) => x.isDefault).id, 'codex')
-  for (const [ag, kind, flag, model] of [[D, 'codex', '-m', 'gpt-top'], [L, 'claude', '--model', 'haiku']]) {
+  for (const [ag, kind, flag, model] of [
+    [D, 'codex', '-m', 'gpt-top'],
+    [L, 'claude', '--model', 'haiku'],
+  ]) {
     let t2 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: ag.id, prompt: '档位' })
     t2 = await waitDone(t2.id)
     assert.equal(t2.status, 'done', JSON.stringify(t2.messages.at(-1)))
@@ -282,11 +510,30 @@ try {
   await call('PUT', '/settings', settings)
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {
-    name: '旧格式', mainAgentId: A.id, members: [], document: '',
-    stages: [{ id: 's1', title: '', nodes: [{ id: 'o1', title: '一' }] }, { id: 's2', title: '', nodes: [{ id: 'o2', title: '二' }, { id: 'o3', title: '三' }] }],
+    name: '旧格式',
+    mainAgentId: A.id,
+    members: [],
+    document: '',
+    stages: [
+      { id: 's1', title: '', nodes: [{ id: 'o1', title: '一' }] },
+      {
+        id: 's2',
+        title: '',
+        nodes: [
+          { id: 'o2', title: '二' },
+          { id: 'o3', title: '三' },
+        ],
+      },
+    ],
   })
   assert.equal(old.flows.length, 1)
-  assert.deepEqual(old.flows[0].edges.map((e) => `${e.from}>${e.to}`).sort(), ['o1>o2', 'o1>o3', 'o2>end', 'o3>end', 'start>o1'])
+  assert.deepEqual(old.flows[0].edges.map((e) => `${e.from}>${e.to}`).sort(), [
+    'o1>o2',
+    'o1>o3',
+    'o2>end',
+    'o3>end',
+    'start>o1',
+  ])
   step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型和思考强度；旧格式工作流自动转换')
 
   // ---- AI 创建 / 优化 ----
@@ -299,8 +546,23 @@ try {
     return job
   }
   const assist = (kind, text, extra = {}) =>
-    call('POST', '/assist', { kind, targetId: '', cli: 'claude', model: '', messages: [{ role: 'user', text }], ...extra }).then(assistDone)
-  const draftAgent = { name: '审查员', description: '审查改动', cli: 'codex', model: 'gpt-5.6', icon: 'shield', category: '质量', instructions: '## 职责\n审查' }
+    call('POST', '/assist', {
+      kind,
+      targetId: '',
+      cli: 'claude',
+      model: '',
+      messages: [{ role: 'user', text }],
+      ...extra,
+    }).then(assistDone)
+  const draftAgent = {
+    name: '审查员',
+    description: '审查改动',
+    cli: 'codex',
+    model: 'gpt-5.6',
+    icon: 'shield',
+    category: '质量',
+    instructions: '## 职责\n审查',
+  }
   let job = await assist('agent', `要一个审查员\nFAKE_JSON:${JSON.stringify(draftAgent)}`)
   assert.equal(job.status, 'done', job.error)
   assert.equal(job.text, '这是按你的要求生成的配置。')
@@ -311,7 +573,10 @@ try {
   assert.ok(c.args.includes('--permission-mode') ? c.args.includes('default') : true, '只读权限')
   assert.notEqual(c.cwd, projectDir, '不在项目目录里运行')
   // 第一次格式不对，自动让 CLI 修正
-  job = await assist('agent', `FAKE_JSON:${JSON.stringify({ ...draftAgent, cli: 'nope' })}\nFAKE_JSON2:${JSON.stringify(draftAgent)}`)
+  job = await assist(
+    'agent',
+    `FAKE_JSON:${JSON.stringify({ ...draftAgent, cli: 'nope' })}\nFAKE_JSON2:${JSON.stringify(draftAgent)}`,
+  )
   assert.equal(job.status, 'done', job.error)
   assert.equal(job.attempt, 2)
   assert.match(calls().at(-1).input, /不符合要求[\s\S]*nope/)
@@ -332,16 +597,31 @@ try {
     newAgents: [draftAgent],
     flows: [
       {
-        name: '主流程', main: true,
+        name: '主流程',
+        main: true,
         nodes: [
           { key: 'a', title: '实现', agent: '乙', instructions: '写代码', review: '复核' },
           { key: 'b', title: '审查', agent: '审查员', instructions: '审查' },
           { key: 'c', title: '验收', agent: '', instructions: '' },
           { key: 'd', title: '跑小流程', flow: '小流程' },
         ],
-        edges: [['start', 'a'], ['start', 'b'], ['a', 'c'], ['b', 'c'], ['c', 'd'], ['d', 'end']],
+        edges: [
+          ['start', 'a'],
+          ['start', 'b'],
+          ['a', 'c'],
+          ['b', 'c'],
+          ['c', 'd'],
+          ['d', 'end'],
+        ],
       },
-      { name: '复核', nodes: [{ key: 'r', title: '复核', agent: '甲' }], edges: [['start', 'r'], ['r', 'end']] },
+      {
+        name: '复核',
+        nodes: [{ key: 'r', title: '复核', agent: '甲' }],
+        edges: [
+          ['start', 'r'],
+          ['r', 'end'],
+        ],
+      },
     ],
     document: '# 目标',
   }
@@ -352,24 +632,49 @@ try {
   assert.equal(w.flows.length, 2)
   assert.equal(w.entryFlowId, w.flows[0].id)
   const mf = w.flows[0]
-  assert.deepEqual(mf.nodes.map((n) => n.agentId), [B.id, 'new:审查员', '', ''])
+  assert.deepEqual(
+    mf.nodes.map((n) => n.agentId),
+    [B.id, 'new:审查员', '', ''],
+  )
   assert.deepEqual(mf.nodes[0].hooks.review, { kind: 'sub', id: w.flows[1].id })
   assert.deepEqual(mf.nodes[3].flow, { kind: 'workflow', id: small.id })
   assert.equal(mf.edges.length, 6)
   assert.ok(mf.nodes[2].x > mf.nodes[0].x, '自动排列：下游节点在右边')
-  assert.ok(w.members.some((m) => m.agentId === 'new:审查员'), '节点用到的 Agent 自动加入团队')
+  assert.ok(
+    w.members.some((m) => m.agentId === 'new:审查员'),
+    '节点用到的 Agent 自动加入团队',
+  )
   assert.equal(job.proposal.newAgents[0].ref, 'new:审查员')
   job = await assist('workflow', `FAKE_JSON:${JSON.stringify({ ...draftWf, mainAgent: '不存在' })}`)
   assert.equal(job.status, 'failed')
   assert.match(job.error, /不存在/)
-  const badFlow = { ...draftWf, flows: [{ ...draftWf.flows[0], edges: [['start', 'a'], ['a', 'c'], ['c', 'a']] }] }
+  const badFlow = {
+    ...draftWf,
+    flows: [
+      {
+        ...draftWf.flows[0],
+        edges: [
+          ['start', 'a'],
+          ['a', 'c'],
+          ['c', 'a'],
+        ],
+      },
+    ],
+  }
   job = await assist('workflow', `FAKE_JSON:${JSON.stringify(badFlow)}`)
   assert.equal(job.status, 'failed')
   assert.match(job.error, /形成了环[\s\S]*没有从 start 连过来|没有从 start 连过来[\s\S]*形成了环|形成了环/)
   step('AI 创建：按格式生成、校验、自动修正一次，优化时带上当前配置，工作流解析 Agent 引用')
 
   // ---- 找不到命令 / 停用 ----
-  await call('PUT', '/settings', { ...settings, clis: { ...settings.clis, commandcode: cli({ command: path.join(tmp, 'nope', 'cmdc') }), codex: cli({ enabled: false }) } })
+  await call('PUT', '/settings', {
+    ...settings,
+    clis: {
+      ...settings.clis,
+      commandcode: cli({ command: path.join(tmp, 'nope', 'cmdc') }),
+      codex: cli({ enabled: false }),
+    },
+  })
   const clis2 = await call('GET', '/clis?refresh=1')
   assert.equal(clis2.find((x) => x.id === 'commandcode').installed, false)
   let missing = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: C.id, prompt: 'hi' })
@@ -386,10 +691,21 @@ try {
   await call('PUT', '/settings', settings)
   const cm = await call('GET', '/clis/codex/models?refresh=1')
   assert.equal(cm.source, 'cli')
-  assert.deepEqual(cm.models.map((m) => m.id), ['fake-pro', 'fake-mini'], '隐藏的模型不列出')
+  assert.deepEqual(
+    cm.models.map((m) => m.id),
+    ['fake-pro', 'fake-mini'],
+    '隐藏的模型不列出',
+  )
   assert.deepEqual(cm.efforts, ['low', 'high', 'ultra'])
   const mm = await call('GET', '/clis/commandcode/models?refresh=1')
-  assert.deepEqual(mm.models.map((m) => [m.id, m.group]), [['fake/flash', 'Open Source'], ['fake/pro', 'Open Source'], ['gpt-fake', 'OpenAI']])
+  assert.deepEqual(
+    mm.models.map((m) => [m.id, m.group]),
+    [
+      ['fake/flash', 'Open Source'],
+      ['fake/pro', 'Open Source'],
+      ['gpt-fake', 'OpenAI'],
+    ],
+  )
   assert.equal(mm.models[0].isDefault, true)
   const cl = await call('GET', '/clis/claude/models')
   assert.equal(cl.source, 'builtin')
@@ -445,11 +761,32 @@ try {
   // 假 CLI 不是 npm 装的，卸载后还能找到：要提示用其他方式卸载
   assert.equal(uj.status, 'failed')
   assert.match(uj.error, /其他方式安装/)
-  assert.deepEqual(readLog(log + '.npm').map((a) => a.slice(0, 3)), [
-    ['install', '-g', '@anthropic-ai/claude-code@latest'],
-    ['uninstall', '-g', '@openai/codex'],
-  ])
+  assert.deepEqual(
+    readLog(log + '.npm').map((a) => a.slice(0, 3)),
+    [
+      ['install', '-g', '@anthropic-ai/claude-code@latest'],
+      ['uninstall', '-g', '@openai/codex'],
+    ],
+  )
   await assert.rejects(call('POST', '/clis/nope/install'), /未知的 CLI/)
+  // 切走再回来能找到最近一次操作
+  assert.deepEqual(
+    (await call('GET', '/clis/jobs')).map((j) => [j.cli, j.status]),
+    [
+      ['claude', 'done'],
+      ['codex', 'failed'],
+    ],
+  )
+  // 有新版本才显示更新：假 npm 说最新是 9.9.9，假 CLI 是 0.0.1
+  const up = await call('GET', '/clis/claude/update?refresh=1')
+  assert.deepEqual([up.current, up.latest, up.available], ['0.0.1', '9.9.9', true])
+  // CLI 的顺序按设置排
+  await call('PUT', '/settings', { ...settings, cliOrder: ['commandcode', 'claude'] })
+  assert.deepEqual(
+    (await call('GET', '/clis')).map((c) => c.id),
+    ['commandcode', 'claude', 'codex'],
+  )
+  await call('PUT', '/settings', settings)
   step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')
 
   // ---- 只接受本机页面的请求 ----
@@ -463,7 +800,11 @@ try {
       req.on('error', reject)
       req.end(body)
     })
-  assert.equal(await raw('GET', '/projects', { host: 'evil.example:' + new URL(base).port }), 403, 'DNS 重绑定：外部域名的 Host')
+  assert.equal(
+    await raw('GET', '/projects', { host: 'evil.example:' + new URL(base).port }),
+    403,
+    'DNS 重绑定：外部域名的 Host',
+  )
   assert.equal(await raw('GET', '/projects', { origin: 'https://evil.example' }), 403, '外部网站的 Origin')
   assert.equal(await raw('POST', '/assist', { 'content-type': 'text/plain' }, '{}'), 415, '不是 JSON 的写请求')
   assert.equal(await raw('GET', '/projects', { origin: 'http://localhost:5173' }), 200, '本机页面可以访问')

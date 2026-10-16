@@ -1,6 +1,7 @@
 import type {
   CliInstallJob,
   CliModels,
+  CliUpdate,
   Agent,
   AgentInput,
   Category,
@@ -46,6 +47,8 @@ export const api = {
   cliAction: (id: string, action: 'install' | 'uninstall') =>
     request<CliInstallJob>(`/clis/${id}/${action}`, { method: 'POST' }),
   cliJob: (jobId: string) => request<CliInstallJob>(`/clis/jobs/${jobId}`),
+  cliUpdate: (id: string, refresh = false) => request<CliUpdate>(`/clis/${id}/update${refresh ? '?refresh=1' : ''}`),
+  cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
 
   categories: () => request<Category[]>('/categories'),

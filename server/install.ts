@@ -2,10 +2,10 @@ import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { homedir } from 'node:os'
 import { getCli } from '../shared/clis.ts'
-import type { CliInstallJob } from '../shared/schema.ts'
+import type { CliInstallJob, CliUpdate } from '../shared/schema.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { invalidateModels } from './models.ts'
-import { childEnv, runProcess } from './exec/process.ts'
+import { capture, childEnv, runProcess } from './exec/process.ts'
 
 const TIMEOUT = 10 * 60_000
 const isWin = process.platform === 'win32'
@@ -16,8 +16,24 @@ const NPM = process.env.AGENT_PANEL_NPM || 'npm'
  * 设置里的「安装 / 更新 / 卸载」：用 npm 全局安装或卸载 CLI 的官方包。
  * 命令和包名都是固定的，不拼接用户输入。npm 的输出实时记下来给页面显示。
  */
+/** 版本号里取出 x.y.z，例如「2.1.301 (Claude Code)」「codex-cli 0.163.0」 */
+export const semver = (s?: string) =>
+  /(\d+)\.(\d+)\.(\d+)/
+    .exec(s ?? '')
+    ?.slice(1)
+    .map(Number)
+export const newer = (a?: string, b?: string) => {
+  const x = semver(a)
+  const y = semver(b)
+  if (!x || !y) return false
+  for (let i = 0; i < 3; i++) if (x[i] !== y[i]) return x[i] > y[i]
+  return false
+}
+
 export function installApi() {
   const jobs = new Map<string, CliInstallJob>()
+  // npm 上的最新版本，缓存 30 分钟；装完、点「重新检测」时重新查
+  const latest = new Map<string, { at: number; version?: string; error?: string }>()
   const routes = new Hono()
 
   const hint = (job: CliInstallJob, log: string) => {
@@ -37,7 +53,8 @@ export function installApi() {
     const args = job.action === 'install' ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg]
     const r = await runProcess({
       command: NPM,
-      args: [...args, '--no-fund', '--no-audit'],
+      // npm 默认在下载完之前什么都不输出，http 级别的日志能让页面看到它在下载
+      args: [...args, '--no-fund', '--no-audit', '--loglevel=http'],
       cwd: homedir(),
       env: childEnv([]),
       timeoutMs: TIMEOUT,
@@ -46,6 +63,7 @@ export function installApi() {
     })
     invalidateClis()
     invalidateModels(job.cli)
+    latest.delete(job.cli)
     const status = (await detectClis(true)).find((c) => c.id === job.cli)
     job.cliStatus = status
     if (r.spawnError) {
@@ -87,6 +105,36 @@ export function installApi() {
       job.error = (e as Error).message
     })
     return c.json(job, 202)
+  })
+
+  routes.get('/:id/update', async (c) => {
+    const def = getCli(c.req.param('id'))
+    if (!def) return c.json({ error: '未知的 CLI' }, 404)
+    const status = (await detectClis()).find((x) => x.id === def.id)
+    let hit = latest.get(def.id)
+    if (!hit || c.req.query('refresh') === '1' || Date.now() - hit.at > 30 * 60_000) {
+      const r = await capture(NPM, ['view', def.npmPackage, 'version'], homedir(), childEnv([]), 20_000)
+      const v = r.stdout.trim().split('\n').at(-1)?.trim()
+      hit = semver(v)
+        ? { at: Date.now(), version: v }
+        : { at: Date.now(), error: r.spawnError ?? (r.stderr.trim().split('\n').at(-1) || '查不到最新版本') }
+      latest.set(def.id, hit)
+    }
+    const current = semver(status?.version)?.join('.')
+    const res: CliUpdate = {
+      current,
+      latest: hit.version,
+      available: !!status?.installed && newer(hit.version, current),
+      error: hit.error,
+    }
+    return c.json(res)
+  })
+
+  // 每个 CLI 最近一次操作：页面切走再回来、或刷新后，用它接着显示进度
+  routes.get('/jobs', (c) => {
+    const latest = new Map<string, CliInstallJob>()
+    for (const j of jobs.values()) latest.set(j.cli, j)
+    return c.json([...latest.values()])
   })
 
   routes.get('/jobs/:jobId', (c) => {
