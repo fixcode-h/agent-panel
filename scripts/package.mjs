@@ -85,7 +85,23 @@ writeFileSync(
 )
 writeFileSync(
   path.join(out, 'start.sh'),
-  '#!/bin/sh\n# 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\ncd "$(dirname "$0")" && exec node server.mjs --prod\n',
+  [
+    '#!/bin/sh',
+    '# 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787',
+    'cd "$(dirname "$0")" || exit 1',
+    // 没装 Node 或版本太旧时直接说清楚，不让用户对着一串报错猜
+    'if ! command -v node >/dev/null 2>&1; then',
+    '  echo "没有找到 Node.js。Agent 面板需要 Node.js 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    '  exit 1',
+    'fi',
+    'major=$(node -p "process.versions.node.split(\'.\')[0]" 2>/dev/null || echo 0)',
+    'if [ "$major" -lt 20 ] 2>/dev/null; then',
+    '  echo "Node.js 版本太旧（$(node -v)），需要 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    '  exit 1',
+    'fi',
+    'exec node server.mjs --prod "$@"',
+    '',
+  ].join('\n'),
 )
 chmodSync(path.join(out, 'start.sh'), 0o755)
 // Windows 托盘启动程序：在 CI 的 Windows 机器上编译（见 ci.yml），双击后不弹命令行窗口。
@@ -103,6 +119,8 @@ writeFileSync(
     '3. 启动：Windows 双击 AgentPanel.exe，程序在任务栏右下角的通知区显示图标，不会打开命令行窗口，',
     '   启动完成后自动用默认浏览器打开面板；右键图标可以重新打开面板、查看运行日志或退出（退出后面板也会停止）。',
     '   macOS / Linux 运行 ./start.sh（或 node server.mjs --prod），然后浏览器打开 http://127.0.0.1:8787',
+    '   Windows 第一次双击时如果提示「Windows 已保护你的电脑」：托盘程序没有购买代码签名证书，',
+    '   点「更多信息」→「仍要运行」即可，之后不会再提示。',
     '',
     '数据保存在用户目录的 .agent-panel 下（Windows 是 C:\\Users\\<用户名>\\.agent-panel），升级、重新解压都不会丢；',
     '设置的「数据」里可以查看占用、清理，以及导出 / 导入数据，换电脑时用来迁移。',
