@@ -34,10 +34,13 @@ jobs:
         run: |
           $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
           New-Item -ItemType Directory -Force build/tray | Out-Null
-          & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
+          $out = & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
             /win32icon:scripts/tray/app.ico /out:build/tray/AgentPanel.exe `
-            /r:System.Windows.Forms.dll /r:System.Drawing.dll scripts/tray/AgentPanel.cs
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            /r:System.Windows.Forms.dll /r:System.Drawing.dll scripts/tray/AgentPanel.cs 2>&1
+          $code = $LASTEXITCODE
+          # 编译信息写成注解，在检查结果页面直接能看到
+          foreach ($l in $out) { if ("$l" -match 'error') { Write-Output "::error::$l" } else { Write-Output "$l" } }
+          if ($code -ne 0) { exit $code }
           Get-Item build/tray/AgentPanel.exe | Format-List Name, Length
       - uses: actions/upload-artifact@v4
         with:
