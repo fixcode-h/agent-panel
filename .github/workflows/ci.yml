@@ -1,6 +1,6 @@
-# 每次推送：先检查（类型、端到端测试、构建），通过后出包并发布到 GitHub Releases。
-# - 推送到 dev：发布预览版（Pre-release），标签 v<主>.<次>.<提交数>-dev
-# - 推送到 main（只在用户明确要求合并到主干时才会发生）：发布正式版（Latest），标签 v<主>.<次>.<提交数>
+# 每次推送都检查（类型、端到端测试、构建）。
+# 只有推送到 main（用户明确要求合并到主干时才会发生）才出包并发布正式版（Latest），标签 v<主>.<次>.<提交数>；
+# 推送到 dev 只检查，不出包。
 # 包里是正式版前端 + 打成单文件的服务端，不含在线演示的模拟后端。
 name: 检查与出包
 
@@ -26,7 +26,8 @@ jobs:
 
   release:
     needs: test
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # dev 分支不出包，只有主干发布
+    if: github.ref_name == 'main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -47,34 +48,25 @@ jobs:
         run: |
           base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           count=$(git rev-list --count HEAD)
-          if [ "${GITHUB_REF_NAME}" = "main" ]; then
-            echo "version=${base}.${count}" >> "$GITHUB_OUTPUT"
-            echo "channel=main" >> "$GITHUB_OUTPUT"
-          else
-            echo "version=${base}.${count}-dev" >> "$GITHUB_OUTPUT"
-            echo "channel=dev" >> "$GITHUB_OUTPUT"
-          fi
+          echo "version=${base}.${count}" >> "$GITHUB_OUTPUT"
       - name: 出包
         run: node scripts/package.mjs ${{ steps.ver.outputs.version }}
       - name: 生成更新说明
-        run: node scripts/release-notes.mjs ${{ steps.ver.outputs.version }} ${{ steps.ver.outputs.channel }} > release/notes.md
+        run: node scripts/release-notes.mjs ${{ steps.ver.outputs.version }} main > release/notes.md
       - name: 发布到 Releases
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.ver.outputs.version }}
-          CHANNEL: ${{ steps.ver.outputs.channel }}
         run: |
           tag="v${VERSION}"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "版本 $tag 已经发布过，跳过"
             exit 0
           fi
-          flags="--latest"
-          if [ "$CHANNEL" = "dev" ]; then flags="--prerelease --latest=false"; fi
           gh release create "$tag" \
             "release/agent-panel-${VERSION}.zip" \
             "release/agent-panel-${VERSION}.tar.gz" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
             --notes-file release/notes.md \
-            $flags
+            --latest

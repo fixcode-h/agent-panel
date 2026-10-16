@@ -799,8 +799,7 @@ async function seedTasks(d: Db) {
 }
 
 /**
- * 版本更新：在线演示直接从浏览器读 GitHub Releases（接口允许跨域）。演示部署的是 dev 分支，
- * 当作最新的预览版；不能安装。
+ * 版本更新：在线演示直接从浏览器读 GitHub Releases（接口允许跨域），当作最新发布的版本；不能安装。
  */
 async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/install')) fail('在线演示不能安装，可以下载包到本机运行')
@@ -834,7 +833,7 @@ async function demoApp(url: string): Promise<unknown> {
       error: `检查更新失败：${(e as Error).message}`,
     } satisfies AppReleases
   }
-  const current = list.find((r) => r.prerelease)?.version ?? list[0]?.version ?? ''
+  const current = list[0]?.version ?? ''
   if (url.startsWith('/app/version')) return { current, packaged: false }
   return {
     current,
