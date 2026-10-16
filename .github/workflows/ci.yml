@@ -1,4 +1,4 @@
-# 检查：类型、CLI 输出解析、端到端测试、构建，以及在 Windows 上编译并试运行托盘程序。
+# 检查：类型、CLI 输出解析、端到端测试、构建、界面截图，以及在 Windows 上编译并试运行托盘程序。
 # 推送到 dev 和 PR 时运行，只检查不出包；主干的出包流程（release.yml）也调用它，检查通过后再出包。
 name: 检查
 
@@ -23,6 +23,26 @@ jobs:
       - run: npm run test:unit
       - run: npm run test:e2e
       - run: npm run build
+
+  # 界面检查：打开在线演示版走一遍常用页面，没有报错、没有横向滚动；截图作为附件上传，改界面时可以下载对比
+  ui:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npx vite build --mode demo
+      - run: node scripts/ui-check.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-shots
+          path: ui-shots/
+          retention-days: 7
 
   # Windows 托盘启动程序：用系统自带的 .NET Framework 编译器编译，不需要装别的
   tray:
