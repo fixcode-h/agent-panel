@@ -1,3 +1,5 @@
+// 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
+import './lang.ts'
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'

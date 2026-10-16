@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Crown, Download, GitBranch, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import { exportWorkflow } from '@/lib/transfer'
@@ -26,11 +26,14 @@ export function WorkflowDetail({
   workflow,
   onDuplicate,
   onDeleted,
+  deleteSignal = 0,
   onOptimized,
 }: {
   workflow: Workflow
   onDuplicate: () => void
   onDeleted: () => void
+  /** 列表右键「删除」时变化，打开删除确认 */
+  deleteSignal?: number
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
@@ -42,6 +45,9 @@ export function WorkflowDetail({
   const { go } = useNav()
   const [draft, setDraft] = useState<WorkflowInput>(() => toInput(workflow))
   const [deleting, setDeleting] = useState(false)
+  useEffect(() => {
+    if (deleteSignal) setDeleting(true)
+  }, [deleteSignal])
   const [assist, setAssist] = useState(false)
   const [tab, setTab] = useState<'flow' | 'settings'>(() => (workflow.mainAgentId ? 'flow' : 'settings'))
   const valid = !!draft.name.trim()

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import type { Agent } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Agent } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from './AgentAvatar'
@@ -21,9 +21,13 @@ export function AgentPicker({
   const { agents, categories } = useData()
   const [q, setQ] = useState('')
   const pool = agents.filter((a) => !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()))
-  const groups = [...categories.map((c) => ({ id: c.id, name: c.name })), { id: '', name: '未分类' }]
-    .map((g) => ({ ...g, items: pool.filter((a) => a.categoryId === g.id) }))
-    .filter((g) => g.items.length)
+  const groups = [
+    { id: DEFAULT_AGENT_ID, name: '默认', items: pool.filter((a) => a.id === DEFAULT_AGENT_ID) },
+    ...[...categories.map((c) => ({ id: c.id, name: c.name })), { id: '', name: '未分类' }].map((g) => ({
+      ...g,
+      items: pool.filter((a) => a.id !== DEFAULT_AGENT_ID && a.categoryId === g.id),
+    })),
+  ].filter((g) => g.items.length)
 
   return (
     <Popover onOpenChange={(o) => o && setQ('')}>

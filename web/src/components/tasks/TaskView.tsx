@@ -11,7 +11,7 @@ import {
   PanelRight,
   Pencil,
   RotateCw,
-  Square,
+  Pause,
   Trash2,
   X,
 } from 'lucide-react'
@@ -85,7 +85,8 @@ function toBlocks(task: Task): Block[] {
 }
 
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
-export function TaskView({ taskId, project }: { taskId: string; project: Project }) {
+/** project 为空时是 Chat 模式的聊天，不属于任何项目 */
+export function TaskView({ taskId, project }: { taskId: string; project?: Project }) {
   const { agents, workflows, upsertTask, removeTask } = useData()
   const { go } = useNav()
   const [task, setTask] = useState<Task | null>(null)
@@ -94,7 +95,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments()
   const drop = useDropPaste(files.add)
-  const mention = useFileMention(project.id, text, setText, followTa)
+  const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -205,7 +206,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
       await api.deleteTask(task.id)
       removeTask(task.id)
       toast.success('已删除任务')
-      go({ page: 'projects', id: project.id })
+      go(project ? { page: 'projects', id: project.id } : { page: 'chat' })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -219,11 +220,29 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   const isFlow = task.mode === 'workflow' && view === 'flow'
+  // 点了任务进度里的某一步：切到流程图并定位到那一步
+  const openStep =
+    task.mode === 'workflow'
+      ? (id: string) => {
+          setView('flow')
+          setFocus({ id, at: Date.now() })
+          setPanel(false)
+        }
+      : undefined
   const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim()
 
   return (
     <>
       <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
+        {/* 很宽的屏幕上任务进度单独放在左边，一边看对话一边看进度；窄一些时还在右栏里 */}
+        {task.mode === 'workflow' && tops.length > 0 && (
+          <aside
+            aria-label="任务进度"
+            className="hidden w-[260px] shrink-0 flex-col overflow-y-auto border-r bg-rail p-3 2xl:flex"
+          >
+            <TaskPanel task={task} project={project} workflow={workflow} only="progress" onStep={openStep} />
+          </aside>
+        )}
         <main className="flex min-w-0 flex-1 flex-col md:h-full">
           <header
             className={cn(
@@ -233,10 +252,10 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
           >
             <nav aria-label="位置" className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
               <button
-                onClick={() => go({ page: 'projects', id: project.id })}
+                onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
                 className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
               >
-                {project.name}
+                {project?.name ?? '聊天'}
               </button>
               <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
               <TaskStatusIcon status={task.status} className="ml-1" />
@@ -372,7 +391,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                       </div>
                     </div>
                   ) : b.m.role === 'system' ? (
-                    <SystemNote key={b.m.id} text={b.m.text} className="justify-center text-center" />
+                    <SystemNote key={b.m.id} text={b.m.text} error={b.m.error} className="justify-center text-center" />
                   ) : (
                     <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
                   ),
@@ -437,7 +456,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                   {running
                     ? tops.filter((s) => s.status === 'running').length > 1
                       ? `${tops.filter((s) => s.status === 'running').length} 个节点同时执行中`
-                      : '执行中，可以随时停止'
+                      : '执行中，可以随时暂停'
                     : task.mode === 'workflow'
                       ? tops.every((s) => s.status === 'done')
                         ? `由主 Agent ${mainAgent?.name ?? ''} 处理追加要求`
@@ -448,8 +467,8 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                 </span>
                 {running ? (
                   <Button size="sm" variant="secondary" className="ml-auto rounded-lg" onClick={stop}>
-                    <Square className="h-3 w-3 fill-current" />
-                    停止
+                    <Pause className="h-3.5 w-3.5" />
+                    暂停
                   </Button>
                 ) : (
                   <>
@@ -514,15 +533,8 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
             task={task}
             project={project}
             workflow={workflow}
-            onStep={
-              task.mode === 'workflow'
-                ? (id) => {
-                    setView('flow')
-                    setFocus({ id, at: Date.now() })
-                    setPanel(false)
-                  }
-                : undefined
-            }
+            onStep={openStep}
+            progressClass={task.mode === 'workflow' && tops.length > 0 ? '2xl:hidden' : undefined}
           />
         </aside>
         {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}

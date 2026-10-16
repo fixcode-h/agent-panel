@@ -40,3 +40,6 @@ export function defaultEffortOptions(def: CliDefinition, defaultId?: string) {
     opts.unshift({ value: '', label: defaultId ? `${defaultId}（默认）` : 'auto · 自动（默认）' })
   return opts
 }
+
+/** CLI 输出的版本信息里只取版本号：Codex 输出「codex-cli 0.46.0」，Claude Code 输出「2.1.3 (Claude Code)」 */
+export const shortVersion = (v?: string) => v?.match(/\d+\.\d+[\w.+-]*/)?.[0] ?? v?.split(' ')[0] ?? ''

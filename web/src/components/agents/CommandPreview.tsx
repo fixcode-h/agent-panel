@@ -1,5 +1,7 @@
-import { SquareTerminal } from 'lucide-react'
-import { getCli } from '@shared/clis'
+import { useState } from 'react'
+import { toast } from 'sonner'
+import { Check, Copy, SquareTerminal } from 'lucide-react'
+import { commandText, getCli, quoteArg } from '@shared/clis'
 import type { Settings } from '@shared/schema'
 import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { useData } from '@/lib/data'
@@ -41,21 +43,61 @@ export function CommandPreview({
     permission: agentPermission({ cli, permission }, s),
     extraArgs: [...cs.extraArgs, ...extraArgs],
   })
+  return <Terminal argv={[cs.command, ...args]} title={title} className={className} />
+}
+
+/** 复制按钮：复制后短暂显示「已复制」 */
+function CopyButton({ text }: { text: string }) {
+  const [done, setDone] = useState(false)
+  return (
+    <button
+      type="button"
+      onClick={() =>
+        navigator.clipboard
+          ?.writeText(text)
+          .then(() => {
+            setDone(true)
+            setTimeout(() => setDone(false), 1500)
+          })
+          .catch(() => toast.error('复制失败，可以手动选中命令复制'))
+      }
+      title="复制命令"
+      aria-label="复制命令"
+      className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[#8c909a] transition-colors hover:bg-[#1e2026] hover:text-[#d9dbe0]"
+    >
+      {done ? <Check className="h-3.5 w-3.5 text-[#5fd39a]" /> : <Copy className="h-3.5 w-3.5" />}
+      {done ? '已复制' : '复制'}
+    </button>
+  )
+}
+
+/** 仿终端显示一条命令（第一个是可执行文件），右上角可以复制 */
+export function Terminal({
+  argv,
+  title = '命令预览',
+  className,
+}: {
+  argv: string[]
+  title?: string
+  className?: string
+}) {
+  const [cmd, ...args] = argv
   const color = (t: string) => (t.startsWith('-') ? 'text-[#7cc4fa]' : 'text-[#d9dbe0]')
   return (
     <section className={cn('overflow-hidden rounded-xl border border-[#23252c] bg-[#0b0c0f]', className)}>
-      <div className="flex items-center gap-1.5 border-b border-[#1e2026] px-3.5 py-2.5 text-xs text-[#8c909a]">
+      <div className="flex items-center gap-1.5 border-b border-[#1e2026] px-3.5 py-2 text-xs text-[#8c909a]">
         <SquareTerminal className="h-3.5 w-3.5" />
         {title}
+        <CopyButton text={commandText(argv)} />
       </div>
-      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] [overflow-wrap:anywhere]">
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] select-text [overflow-wrap:anywhere]">
         <span className="text-[#5fd39a]">$ </span>
         <span className="text-[#f2c46d]">echo "&lt;任务描述&gt;" </span>
         <span className="text-[#8c909a]">| </span>
-        <span className="text-[#b9aeff]">{/\s/.test(cs.command) ? JSON.stringify(cs.command) : cs.command} </span>
+        <span className="text-[#b9aeff]">{quoteArg(cmd ?? '')} </span>
         {args.map((t, i) => (
           <span key={i} className={color(t)}>
-            {/[\s"]/.test(t) ? JSON.stringify(t) : t}{' '}
+            {quoteArg(t)}{' '}
           </span>
         ))}
       </p>

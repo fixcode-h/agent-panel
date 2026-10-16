@@ -97,8 +97,9 @@ npm run test:e2e   # 用 scripts/fake-cli 模拟三种 CLI 的输出，走完整
 开始 / 验收 / 结束流程（验收不通过退回、轮数用完失败）、流程节点、引用其他工作流、循环嵌套、思考强度、
 续接会话、对话任务、停止、失败、系统默认 CLI 和模型档位、AI 创建（格式校验、自动修正、优化、工作流引用解析）、找不到命令、CLI 停用、读取模型列表、安装 / 卸载 CLI。
 
-GitHub Actions：`.github/workflows/ci.yml` 在每次推送和 PR 时跑类型检查、端到端测试和构建；
-`.github/workflows/pages.yml` 在推送到 main 时构建在线演示版并发布到 GitHub Pages
+GitHub Actions：`.github/workflows/ci.yml` 在推送到 dev 和 PR 时跑类型检查、端到端测试和构建；
+`.github/workflows/release.yml` 只在推送到 main 时运行，先跑同样的检查再出包发布；
+`.github/workflows/pages.yml` 在 dev 检查通过后构建在线演示版并发布到 GitHub Pages
 （首次需要在仓库 Settings → Pages 把 Source 设为 GitHub Actions）。
 
 ## 技术栈

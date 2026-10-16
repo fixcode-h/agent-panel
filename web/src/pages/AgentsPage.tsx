@@ -1,20 +1,23 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Bot, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
-import type { Agent, AgentInput, Category } from '@shared/schema'
+import { Bot, Copy, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
-import { cliColor } from '@/lib/cli-style'
+import { cliColor, shortVersion } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { ContextMenuItem, ContextMenuSeparator, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { useAgentView } from '@/lib/agent-view'
+
+/** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
+const DEFAULT_GROUP = '#default'
 
 function CategoryHeader({ category, count, onAdd }: { category: Category; count: number; onAdd: () => void }) {
   const { setCategories, setAgents } = useData()
@@ -123,6 +126,8 @@ export function AgentsPage() {
   const [checking, setChecking] = useState(false)
   const [assist, setAssist] = useState(false)
   const [rev, setRev] = useState(0)
+  // 列表右键「删除」：先选中那个 Agent，再让详情页弹出删除确认（确认框和被引用的检查都在详情页里）
+  const [delReq, setDelReq] = useState<{ id: string; at: number }>()
 
   const selected = agents.find((a) => a.id === route.id) ?? agents[0]
   useEffect(() => {
@@ -131,9 +136,18 @@ export function AgentsPage() {
 
   const q = query.trim().toLowerCase()
   const match = (a: Agent) => !q || `${a.name}${a.description}${modelOf(a)}`.toLowerCase().includes(q)
-  const groups = [...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }]
-    .map((g) => ({ ...g, items: agents.filter((a) => a.categoryId === g.id && match(a)) }))
-    // 搜索时隐藏空分类；「未分类」为空时也不显示
+  // 自带的默认 Agent 单独放在最上面的「默认」分类，不跟着用户的分类走
+  const groups = [
+    {
+      category: null as Category | null,
+      id: DEFAULT_GROUP,
+      items: agents.filter((a) => a.id === DEFAULT_AGENT_ID && match(a)),
+    },
+    ...[...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }].map(
+      (g) => ({ ...g, items: agents.filter((a) => a.id !== DEFAULT_AGENT_ID && a.categoryId === g.id && match(a)) }),
+    ),
+  ]
+    // 搜索时隐藏空分类；「默认」「未分类」为空时也不显示
     .filter((g) => g.items.length || (!q && g.category))
 
   const create = async (input: Partial<AgentInput> = {}) => {
@@ -144,7 +158,7 @@ export function AgentsPage() {
         cli: '',
         model: '@medium',
         effort: '',
-        categoryId: selected?.categoryId ?? '',
+        categoryId: selected?.id === DEFAULT_AGENT_ID ? '' : (selected?.categoryId ?? ''),
         icon: 'bot',
         instructions: '',
         permission: '',
@@ -210,7 +224,7 @@ export function AgentsPage() {
                 <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(c.id) }} />
                 {c.name}
                 <span className={cn('ml-auto text-xs', c.installed ? 'text-success' : 'text-warning')}>
-                  {c.installed ? `可用 · ${c.version?.split(' ')[0]}` : '未安装'}
+                  {c.installed ? `可用 · ${shortVersion(c.version)}` : '未安装'}
                 </span>
               </div>
             ))}
@@ -228,7 +242,7 @@ export function AgentsPage() {
                   onAdd={() => create({ categoryId: g.id })}
                 />
               ) : (
-                <GroupHeader label="未分类" count={g.items.length} />
+                <GroupHeader label={g.id === DEFAULT_GROUP ? '默认' : '未分类'} count={g.items.length} />
               )
             }
           >
@@ -241,6 +255,26 @@ export function AgentsPage() {
                 title={a.name}
                 subtitle={`${cliName(a)} · ${modelOf(a)}`}
                 trailing={<span className={cn('h-2 w-2 shrink-0 rounded-full', status(a))} />}
+                menu={
+                  <>
+                    <ContextMenuItem onSelect={() => duplicate(a)}>
+                      <Copy className="h-4 w-4" />
+                      复制
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      danger
+                      disabled={a.id === DEFAULT_AGENT_ID}
+                      onSelect={() => {
+                        go({ page: 'agents', id: a.id })
+                        setDelReq({ id: a.id, at: Date.now() })
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      删除
+                    </ContextMenuItem>
+                  </>
+                }
               />
             ))}
             {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">这个分类还没有 Agent</p>}
@@ -255,6 +289,7 @@ export function AgentsPage() {
           agent={selected}
           onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
+          deleteSignal={delReq?.id === selected.id ? delReq.at : 0}
           onDeleted={() => go({ page: 'agents' })}
         />
       ) : (

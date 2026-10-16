@@ -1,14 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Sparkles, Upload, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Download, Plus, Sparkles, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowInput } from '@shared/schema'
 import { newFlow } from '@shared/flow'
 import { api } from '@/lib/api'
-import { importWorkflow } from '@/lib/transfer'
+import { exportWorkflow, importWorkflow } from '@/lib/transfer'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
 import { ListEmpty, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
@@ -67,6 +68,9 @@ export function WorkflowsPage() {
       toast.error((err as Error).message)
     }
   }
+
+  // 列表右键「删除」：先选中那个工作流，再让详情页弹出删除确认（被项目使用时不能删的检查在详情页里）
+  const [delReq, setDelReq] = useState<{ id: string; at: number }>()
 
   const duplicate = (w: Workflow) => {
     const { id, createdAt, updatedAt, ...rest } = w
@@ -127,6 +131,29 @@ export function WorkflowsPage() {
                 )}
               />
             }
+            menu={
+              <>
+                <ContextMenuItem onSelect={() => duplicate(w)}>
+                  <Copy className="h-4 w-4" />
+                  复制
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => exportWorkflow(w, agents)}>
+                  <Download className="h-4 w-4" />
+                  导出
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  danger
+                  onSelect={() => {
+                    go({ page: 'workflows', id: w.id })
+                    setDelReq({ id: w.id, at: Date.now() })
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  删除
+                </ContextMenuItem>
+              </>
+            }
           />
         ))}
         {!loading && workflows.length > 0 && list.length === 0 && <ListEmpty>没有匹配的工作流</ListEmpty>}
@@ -139,6 +166,7 @@ export function WorkflowsPage() {
           workflow={selected}
           onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
+          deleteSignal={delReq?.id === selected.id ? delReq.at : 0}
           onDeleted={() => go({ page: 'workflows' })}
         />
       ) : (

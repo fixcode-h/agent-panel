@@ -20,6 +20,7 @@ import {
   type LucideIcon,
   Layers,
   HardDrive,
+  GripVertical,
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import {
@@ -29,9 +30,11 @@ import {
   type CliUpdate,
   type CliStatus,
   type Settings,
+  CONTENT_MAX,
   CONTENT_WIDTH,
 } from '@shared/schema'
-import { applyContentWidth } from '@/lib/data'
+import { applyContentWidth, switchLang } from '@/lib/data'
+import { LANGS } from '@shared/i18n'
 import { cliSettings, defaultCli, orderClis, tierFallback, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -680,6 +683,9 @@ interface Section {
   cli?: CliDefinition
 }
 
+/** 英文词典补齐后打开 */
+const LANG_READY = false
+
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: '常规', icon: Settings2 },
   { id: 'categories', label: '项目分类', icon: Layers },
@@ -704,6 +710,7 @@ function SettingsBody({
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
+  const [language, setLanguage] = useState(initial.language)
   const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
   const ordered = orderClis(CLIS, cliOrder)
   const SECTIONS = sectionsFor(ordered)
@@ -751,6 +758,7 @@ function SettingsBody({
   const value: Settings = {
     openBrowser,
     contentWidth,
+    language,
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     defaultCli: defCli,
@@ -795,6 +803,7 @@ function SettingsBody({
 
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const statusOf = (id: string) => clis.find((c) => c.id === id)
+  const inCli = cur.id === 'models' || !!cur.cli
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
 
   return (
@@ -804,68 +813,103 @@ function SettingsBody({
         className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
       >
         <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[20px] font-semibold md:block">设置</span>
-        {SECTIONS.map((s, i) => {
-          const on = s.id === cur.id
-          const st = s.cli && statusOf(s.cli.id)
+        {SECTIONS.filter((s) => !s.cli).map((s) => {
+          // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
+          const on = s.id === 'models' ? inCli : s.id === cur.id
           return (
-            <div key={s.id} className="contents">
-              {s.cli && !SECTIONS[i - 1]?.cli && (
-                <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[11px] text-subtle md:flex">
-                  CLI
-                  <span className="text-[10.5px] text-subtle/80">拖动调整顺序</span>
-                </span>
+            <button
+              key={s.id}
+              onClick={() => onSection(s.id)}
+              aria-current={on ? 'page' : undefined}
+              className={cn(
+                'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
+                on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
               )}
-              <button
-                onClick={() => onSection(s.id)}
-                aria-current={on ? 'page' : undefined}
-                title={s.cli ? '拖动调整顺序，或按 Alt + ↑ / ↓' : undefined}
-                draggable={!!s.cli}
-                onDragStart={(e) => {
-                  if (!s.cli) return
-                  e.dataTransfer.effectAllowed = 'move'
-                  e.dataTransfer.setData('text/plain', s.cli.id)
-                  setDragging(s.cli.id)
-                }}
-                onDragOver={(e) => {
-                  if (!dragging || !s.cli) return
-                  e.preventDefault()
-                  if (s.cli.id !== dragging) moveCli(dragging, cliOrder.indexOf(s.cli.id))
-                }}
-                onDrop={(e) => e.preventDefault()}
-                onDragEnd={() => setDragging('')}
-                onKeyDown={(e) => {
-                  if (!s.cli || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
-                  e.preventDefault()
-                  moveCli(s.cli.id, cliOrder.indexOf(s.cli.id) + (e.key === 'ArrowUp' ? -1 : 1))
-                }}
-                className={cn(
-                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
-                  on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
-                  s.cli && dragging === s.cli.id && 'opacity-50',
-                )}
-              >
-                {s.cli ? (
-                  <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
-                ) : (
-                  s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-                )}
-                <span className="truncate">{s.label}</span>
-                {s.id === 'update' && update && (
-                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="有新版本" />
-                )}
-                {st && (
-                  <span
-                    className={cn(
-                      'ml-auto hidden h-1.5 w-1.5 shrink-0 rounded-full md:block',
-                      !st.enabled ? 'bg-line-strong' : st.installed ? 'bg-success' : 'bg-warning',
-                    )}
-                  />
-                )}
-              </button>
-            </div>
+            >
+              {s.id === 'models' ? (
+                <SquareTerminal className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+              ) : (
+                s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+              )}
+              <span className="truncate">{s.id === 'models' ? 'CLI' : s.label}</span>
+              {s.id === 'update' && update && (
+                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title="有新版本" />
+              )}
+            </button>
           )
         })}
       </nav>
+
+      {inCli && (
+        // CLI 的二级列表：默认 CLI 和各个 CLI，CLI 可以拖动调整顺序（新建 Agent、下拉框里也按这个顺序）
+        <nav
+          aria-label="CLI"
+          className="flex shrink-0 gap-0.5 overflow-x-auto border-b p-2 md:w-[232px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3 md:pt-6"
+        >
+          {SECTIONS.filter((s) => s.id === 'models' || s.cli).map((s, i, list) => {
+            const on = s.id === cur.id
+            const st = s.cli && statusOf(s.cli.id)
+            return (
+              <div key={s.id} className="contents">
+                {s.cli && !list[i - 1]?.cli && (
+                  <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[11px] text-subtle md:flex">
+                    已接入
+                    <span className="text-[10.5px] text-subtle/80">拖动调整顺序</span>
+                  </span>
+                )}
+                <button
+                  onClick={() => onSection(s.id)}
+                  aria-current={on ? 'page' : undefined}
+                  title={s.cli ? '拖动调整顺序，或按 Alt + ↑ / ↓' : undefined}
+                  draggable={!!s.cli}
+                  onDragStart={(e) => {
+                    if (!s.cli) return
+                    e.dataTransfer.effectAllowed = 'move'
+                    e.dataTransfer.setData('text/plain', s.cli.id)
+                    setDragging(s.cli.id)
+                  }}
+                  onDragOver={(e) => {
+                    if (!dragging || !s.cli) return
+                    e.preventDefault()
+                    if (s.cli.id !== dragging) moveCli(dragging, cliOrder.indexOf(s.cli.id))
+                  }}
+                  onDrop={(e) => e.preventDefault()}
+                  onDragEnd={() => setDragging('')}
+                  onKeyDown={(e) => {
+                    if (!s.cli || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
+                    e.preventDefault()
+                    moveCli(s.cli.id, cliOrder.indexOf(s.cli.id) + (e.key === 'ArrowUp' ? -1 : 1))
+                  }}
+                  className={cn(
+                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
+                    on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                    s.cli && dragging === s.cli.id && 'opacity-50',
+                  )}
+                >
+                  {s.cli ? (
+                    <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(s.cli.id) }} />
+                  ) : (
+                    s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                  )}
+                  <span className="truncate">{s.label}</span>
+                  {s.cli && defCli === s.cli.id && <span className="text-[11px] font-normal text-subtle">默认</span>}
+                  {s.cli && (
+                    <GripVertical className="ml-auto hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
+                  )}
+                  {st && (
+                    <span
+                      className={cn(
+                        'hidden h-1.5 w-1.5 shrink-0 rounded-full md:block',
+                        !st.enabled ? 'bg-line-strong' : st.installed ? 'bg-success' : 'bg-warning',
+                      )}
+                    />
+                  )}
+                </button>
+              </div>
+            )
+          })}
+        </nav>
+      )}
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3 md:px-8 md:pt-7">
@@ -895,6 +939,33 @@ function SettingsBody({
                   {!valid && <span className="text-xs text-danger">填 0 到 1440 之间的整数，0 表示不限制</span>}
                 </div>
               </Row>
+              {/* 英文翻译补齐之前先不显示语言选项 */}
+              {LANG_READY && (
+                <>
+                  <Row title="语言 · Language" desc="界面显示的语言，切换后页面会重新加载。">
+                    <Select
+                      aria-label="语言"
+                      value={language}
+                      onChange={async (e) => {
+                        const v = e.target.value as Settings['language']
+                        setLanguage(v)
+                        // 文案在页面加载时就定了，保存后重新加载页面
+                        try {
+                          setSettings(await api.saveSettings({ ...value, language: v }))
+                        } catch (err) {
+                          return toast.error((err as Error).message)
+                        }
+                        switchLang(v)
+                      }}
+                      options={[
+                        { value: 'auto', label: '跟随浏览器 · Auto' },
+                        ...LANGS.map((l) => ({ value: l.id, label: l.label })),
+                      ]}
+                      className="w-48"
+                    />
+                  </Row>
+                </>
+              )}
               <Row
                 title="内容宽度"
                 desc="项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。"
@@ -903,7 +974,7 @@ function SettingsBody({
                   <input
                     type="range"
                     min={640}
-                    max={1600}
+                    max={CONTENT_MAX}
                     step={20}
                     value={contentWidth}
                     aria-label="内容宽度"
@@ -956,38 +1027,21 @@ function SettingsBody({
                 Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI
                 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。
               </p>
-              <div role="radiogroup" aria-label="默认 CLI" className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
-                {ordered.map((c) => {
-                  const on = defCli === c.id
-                  const st = statusOf(c.id)
-                  return (
-                    <button
-                      key={c.id}
-                      role="radio"
-                      aria-checked={on}
-                      onClick={() => setDefCli(c.id)}
-                      className={cn(
-                        'flex cursor-pointer items-center gap-2.5 rounded-xl border p-3 text-left transition-colors',
-                        on ? 'border-accent bg-accent-soft' : 'hover:border-line-strong',
-                      )}
-                    >
-                      <span className="h-7 w-7 shrink-0 rounded-[7px]" style={{ background: cliColor(c.id) }} />
-                      <span className="flex min-w-0 flex-col">
-                        <span className={cn('text-[13px] font-medium', on && 'text-accent')}>{c.name}</span>
-                        <span
-                          className={cn(
-                            'truncate text-xs',
-                            !st ? 'text-subtle' : st.installed ? 'text-success' : 'text-warning',
-                          )}
-                        >
-                          {!st ? '检测中…' : !st.enabled ? '已停用' : st.installed ? '已安装' : '未安装'}
-                        </span>
-                      </span>
-                      {on && <Check className="ml-auto h-4 w-4 shrink-0 text-accent" />}
-                    </button>
-                  )
-                })}
-              </div>
+              <Group>
+                <Row title="默认 CLI" desc="Agent 选了「系统默认」或没有指定 CLI 时使用">
+                  <Select
+                    aria-label="默认 CLI"
+                    value={defCli}
+                    onChange={(e) => setDefCli(e.target.value)}
+                    className="w-[240px]"
+                    options={ordered.map((c) => {
+                      const st = statusOf(c.id)
+                      const note = !st ? '' : !st.enabled ? ' · 已停用' : st.installed ? '' : ' · 未安装'
+                      return { value: c.id, label: c.name + note }
+                    })}
+                  />
+                </Row>
+              </Group>
               <Group title={`${defDef.name} 的模型`}>
                 <Row
                   title="三档模型"
@@ -1123,7 +1177,7 @@ export function SettingsDialog({
           aria-describedby={undefined}
           // 点设置外面的空白处不关闭，避免改到一半误关；用右上角的关闭按钮或 Esc 关闭
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 h-[min(720px,calc(100dvh-2rem))] w-[min(980px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
+          className="fixed top-1/2 left-1/2 z-50 h-[min(840px,calc(100dvh-2rem))] w-[min(1200px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <D.Title className="sr-only">设置</D.Title>
           {settings && <SettingsBody initial={settings} section={cur} onSection={setCur} />}

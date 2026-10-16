@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, Info } from 'lucide-react'
+import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
 import type { TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -14,7 +14,18 @@ function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
   return -1
 }
 
-export function SystemNote({ text, className }: { text: string; className?: string }) {
+export function SystemNote({ text, error, className }: { text: string; error?: boolean; className?: string }) {
+  // 错误用醒目的卡片、左对齐：多行的 CLI 报错居中排时很难读
+  if (error)
+    return (
+      <div
+        role="alert"
+        className="flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg"
+      >
+        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+        <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
+      </div>
+    )
   return (
     <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
       <Info className="mt-px h-3.5 w-3.5 shrink-0" />
@@ -141,7 +152,7 @@ export function Msgs({
     <>
       {msgs.map((m, k) =>
         m.role === 'system' ? (
-          <SystemNote key={m.id} text={m.text} />
+          <SystemNote key={m.id} text={m.text} error={m.error} />
         ) : (
           <AgentMessage
             key={m.id}
@@ -201,7 +212,7 @@ export function FoldedRun({
   // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
   return (
     <>
-      {msgs.slice(0, last).map((m) => m.role === 'system' && <SystemNote key={m.id} text={m.text} />)}
+      {msgs.slice(0, last).map((m) => m.role === 'system' && <SystemNote key={m.id} text={m.text} error={m.error} />)}
       <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} />
       <Msgs msgs={msgs.slice(last + 1)} teamNames={teamNames} author={author} />
     </>

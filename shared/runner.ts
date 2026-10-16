@@ -12,7 +12,10 @@ import type {
   TaskStep,
   ToolUse,
   Workflow,
+  Settings,
 } from './schema.ts'
+import { getCli } from './clis.ts'
+import { agentPermission, agentRun, cliSettings, defaultSettings } from './settings.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
 
 export interface RunContext {
@@ -29,6 +32,33 @@ export interface RunContext {
   /** task 被原地修改后调用；flush 表示到了值得落盘的节点 */
   changed: (flush?: boolean) => void
   newId: () => string
+  /** 用来生成节点里显示的启动命令，和真实执行时拼的一样 */
+  settings?: Settings
+}
+
+/** 和真实执行一样记下启动命令，演示里也能看到、复制 */
+function recordCommand(ctx: RunContext, call: AgentCall) {
+  const agent = ctx.agents.find((a) => a.id === call.agentId)
+  if (!agent) return
+  const s = ctx.settings ?? defaultSettings()
+  const run = agentRun(agent, s)
+  const def = getCli(run.cli)
+  if (!def) return
+  const cs = cliSettings(s, run.cli)
+  const argv = [
+    cs.command,
+    ...def.buildArgs({
+      model: run.model,
+      effort: run.effort,
+      permission: agentPermission(agent, s),
+      extraArgs: [...cs.extraArgs, ...agent.extraArgs],
+      resume: ctx.task.sessions[call.sessionKey],
+      systemPrompt: def.systemPromptFlag && agent.instructions.trim() ? '<角色设定>' : undefined,
+    }),
+  ]
+  const owner = call.step && ctx.task.steps.find((x) => x.id === call.step!.id)
+  if (owner) owner.command = argv
+  else ctx.task.command = argv
 }
 
 // ---- 模拟输出 ----
@@ -246,6 +276,7 @@ async function speak(ctx: RunContext, agentId: string, step: string, out: Output
 /** 模拟调用一个 Agent */
 async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult> {
   const { task } = ctx
+  recordCommand(ctx, call)
   await ctx.sleep(300 + Math.random() * 500)
   if (ctx.stopped()) return { ok: false, stopped: true, error: '已停止' }
   let out: Output

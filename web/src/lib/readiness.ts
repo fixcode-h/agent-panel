@@ -1,3 +1,4 @@
+import { shortVersion } from './cli-style'
 import type { Agent, CliStatus, DirInfo, Workflow } from '@shared/schema'
 import { entryFlow, findRefCycle, flowLabel, getFlow, reachable, refsOf, topoOrder } from '@shared/flow'
 
@@ -26,7 +27,7 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
         : !cli.enabled
           ? `${cli.name} 已在设置中停用`
           : cli.installed
-            ? `${cli.name} ${cli.version?.split(' ')[0] ?? ''}`
+            ? `${cli.name} ${shortVersion(cli.version)}`
             : `没有找到 ${cli.command}，安装后或在设置里填写路径`,
     },
     { ok: a.enabled, label: '已启用', hint: a.enabled ? '可以被工作流调用' : '停用后工作流不会调用它' },

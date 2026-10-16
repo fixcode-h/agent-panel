@@ -7,7 +7,7 @@ export const DATA_KINDS = [
     hint: '添加的项目（不会动项目目录里的文件）；清理时任务记录一起清掉',
     clearable: true,
   },
-  { id: 'tasks', label: '任务记录', hint: '执行过的工作流和对话，包括输出和用量', clearable: true },
+  { id: 'tasks', label: '任务记录', hint: '执行过的工作流、对话和聊天，包括输出和用量', clearable: true },
   { id: 'uploads', label: '附件', hint: '任务里附上的文件和图片', clearable: true },
   { id: 'cache', label: '缓存', hint: '下载的更新包、损坏文件的备份，可以随时清理', clearable: true },
 ] as const

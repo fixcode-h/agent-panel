@@ -17,15 +17,6 @@ import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMenti
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
-const EXAMPLES = {
-  workflow: [
-    '商品详情页增加「到货提醒」，缺货时显示按钮，到货后短信通知',
-    '给订单列表加上按状态筛选和分页',
-    '把登录页改成支持手机号验证码登录',
-  ],
-  chat: ['购物车角标偶尔不刷新，帮我找找原因', '解释一下这个项目的目录结构', '帮我给 utils 里的函数补上单元测试'],
-}
-
 export function projectWorkflowId(p: Project | undefined, cats: { id: string; workflowId: string }[]) {
   return p ? p.workflowId || cats.find((c) => c.id === p.categoryId)?.workflowId || '' : ''
 }
@@ -38,10 +29,13 @@ export function TaskComposer({
   project: fixed,
   onCreated,
   autoFocus,
+  standalone,
 }: {
   project?: Project
   onCreated: (t: Task) => void
   autoFocus?: boolean
+  /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
+  standalone?: boolean
 }) {
   const { workflows, agents, clis, projects, projectCategories, loading } = useData()
   const { modelOf } = useAgentView()
@@ -52,7 +46,7 @@ export function TaskComposer({
       return fixed?.id ?? ''
     }
   })
-  const project = fixed ?? projects.find((p) => p.id === projectId) ?? projects[0]
+  const project = standalone ? undefined : (fixed ?? projects.find((p) => p.id === projectId) ?? projects[0])
   const defaultWf = projectWorkflowId(project, projectCategories)
   const [mode, setMode] = useState<TaskMode | ''>('')
   const [workflowId, setWorkflowId] = useState('')
@@ -80,7 +74,7 @@ export function TaskComposer({
 
   const workflow = workflows.find((w) => w.id === (workflowId || defaultWf))
   // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
-  const effMode: TaskMode = mode || 'workflow'
+  const effMode: TaskMode = standalone ? 'chat' : mode || 'workflow'
   const agent =
     agents.find((a) => a.id === agentId && a.enabled) ??
     agents.find((a) => a.id === DEFAULT_AGENT_ID) ??
@@ -89,18 +83,22 @@ export function TaskComposer({
   const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0
   const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
   const canStart =
-    !!project && !!prompt.trim() && (effMode === 'workflow' ? !!workflow : !!agent) && !busy && !files.uploading
+    (standalone || !!project) &&
+    !!prompt.trim() &&
+    (effMode === 'workflow' ? !!workflow : !!agent) &&
+    !busy &&
+    !files.uploading
 
   const start = async () => {
     if (!canStart) return
     setBusy(true)
     try {
       try {
-        localStorage.setItem('last-project', project!.id)
+        if (project) localStorage.setItem('last-project', project.id)
       } catch {}
       onCreated(
         await api.createTask({
-          projectId: project!.id,
+          projectId: project?.id ?? '',
           mode: effMode,
           workflowId: effMode === 'workflow' ? workflow!.id : '',
           agentId: effMode === 'chat' ? agent!.id : '',
@@ -169,7 +167,7 @@ export function TaskComposer({
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
             <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
-            {!fixed && (
+            {!fixed && !standalone && (
               <Popover>
                 <PopoverTrigger className={chip} title="在哪个项目里执行">
                   <FolderGit2 className="h-4 w-4 shrink-0" />
@@ -196,28 +194,30 @@ export function TaskComposer({
               </Popover>
             )}
 
-            <div role="radiogroup" aria-label="执行方式" className="flex items-center rounded-lg bg-field/60 p-0.5">
-              {(
-                [
-                  { id: 'workflow', label: '工作流', icon: WorkflowIcon },
-                  { id: 'chat', label: '对话', icon: MessageSquare },
-                ] as const
-              ).map((m) => (
-                <button
-                  key={m.id}
-                  role="radio"
-                  aria-checked={effMode === m.id}
-                  onClick={() => setMode(m.id)}
-                  className={cn(
-                    'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
-                    effMode === m.id ? 'bg-card text-fg shadow-card' : 'text-subtle hover:text-fg',
-                  )}
-                >
-                  <m.icon className="h-3.5 w-3.5" />
-                  {m.label}
-                </button>
-              ))}
-            </div>
+            {!standalone && (
+              <div role="radiogroup" aria-label="执行方式" className="flex items-center rounded-lg bg-field/60 p-0.5">
+                {(
+                  [
+                    { id: 'workflow', label: '工作流', icon: WorkflowIcon },
+                    { id: 'chat', label: '对话', icon: MessageSquare },
+                  ] as const
+                ).map((m) => (
+                  <button
+                    key={m.id}
+                    role="radio"
+                    aria-checked={effMode === m.id}
+                    onClick={() => setMode(m.id)}
+                    className={cn(
+                      'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
+                      effMode === m.id ? 'bg-card text-fg shadow-card' : 'text-subtle hover:text-fg',
+                    )}
+                  >
+                    <m.icon className="h-3.5 w-3.5" />
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            )}
 
             {effMode === 'workflow' ? (
               <Popover>
@@ -288,22 +288,6 @@ export function TaskComposer({
         <p className="px-1 text-xs text-warning">
           工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。
         </p>
-      )}
-      {!prompt && !loading && (
-        <div className="flex flex-wrap gap-2 px-0.5">
-          {EXAMPLES[effMode].map((e) => (
-            <button
-              key={e}
-              onClick={() => {
-                setPrompt(e)
-                ta.current?.focus()
-              }}
-              className="max-w-full cursor-pointer truncate rounded-lg border px-3 py-1.5 text-[12.5px] text-subtle transition-colors hover:border-line-strong hover:text-fg"
-            >
-              {e}
-            </button>
-          ))}
-        </div>
       )}
     </div>
   )

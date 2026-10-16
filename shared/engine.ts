@@ -36,7 +36,7 @@ import {
 export type AgentResult =
   | { ok: true; text: string }
   /** stopped：用户停止；halted：别的节点失败了，这里没再继续（节点保持待执行，续跑时重来） */
-  | { ok: false; stopped?: boolean; halted?: boolean; error: string }
+  | { ok: false; stopped?: boolean; halted?: boolean; error: string; reported?: boolean }
 type Fail = Extract<AgentResult, { ok: false }>
 
 export interface AgentCall {
@@ -97,8 +97,17 @@ export function parseVerdict(text: string): 'pass' | 'fail' | '' {
   return ''
 }
 
-export function system(host: EngineHost, text: string, step = '') {
-  host.task.messages.push({ id: host.newId(), role: 'system', agentId: '', step, text, tools: [], at: now() })
+export function system(host: EngineHost, text: string, step = '', error = false) {
+  host.task.messages.push({
+    id: host.newId(),
+    role: 'system',
+    agentId: '',
+    step,
+    text,
+    tools: [],
+    ...(error && { error }),
+    at: now(),
+  })
 }
 
 function userRequests(task: Task) {
@@ -221,6 +230,11 @@ async function runNode(
     step.interrupted = !!r.stopped && !!host.task.sessions[step.id]
     if (r.stopped || r.halted) step.startedAt = ''
     step.endedAt = now()
+    // 错误写进出错的节点里，打开节点就能看到；外层节点和整个任务的结尾只提一句，不重复整段
+    if (!r.stopped && !r.halted && !r.reported) {
+      system(host, r.error || '执行失败', step.id, true)
+      r = { ...r, reported: true }
+    }
     host.changed(true)
     return r
   }
@@ -376,7 +390,9 @@ async function runFlow(host: EngineHost, inv: Invocation): Promise<FlowResult> {
     const real = failures.filter((f) => !f.halted && !f.stopped)
     if (stopped) return stopped
     if (!real.length) return failures[0]
-    return real.length === 1 ? real[0] : { ok: false, error: real.map((f) => f.error).join('\n\n') }
+    return real.length === 1
+      ? real[0]
+      : { ok: false, error: real.map((f) => f.error).join('\n\n'), reported: real.every((f) => f.reported) }
   }
   // 别处失败后这里没跑完：不能当成功返回
   if (host.halted && nodes.some((n) => !outputs.has(n.id))) return { ok: false, halted: true, error: '' }
@@ -411,7 +427,18 @@ function finish(host: EngineHost, r: Fail) {
       s.interrupted = !!r.stopped
       s.endedAt = now()
     }
-  system(host, r.stopped ? '已停止。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。' : r.error || '执行失败')
+  if (r.stopped) system(host, '已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
+  else {
+    const failed = host.task.steps.filter((s) => s.status === 'failed' && !s.parentId).map((s) => `「${s.title}」`)
+    system(
+      host,
+      r.reported
+        ? `${failed.join('、') || '有节点'}执行失败，原因见节点里的错误。可以点「继续执行」重试，或者在下面输入新的要求。`
+        : r.error || '执行失败',
+      '',
+      true,
+    )
+  }
   host.task.status = r.stopped ? 'stopped' : 'failed'
   host.changed(true)
 }

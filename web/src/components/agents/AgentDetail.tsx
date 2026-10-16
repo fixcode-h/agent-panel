@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Agent, type AgentInput } from '@shared/schema'
@@ -40,11 +40,14 @@ export function AgentDetail({
   agent,
   onDuplicate,
   onDeleted,
+  deleteSignal = 0,
   onOptimized,
 }: {
   agent: Agent
   onDuplicate: () => void
   onDeleted: () => void
+  /** 列表右键「删除」时变化，打开删除确认 */
+  deleteSignal?: number
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
@@ -53,6 +56,9 @@ export function AgentDetail({
   const [draft, setDraft] = useState<AgentInput>(() => toInput(agent))
   const [args, setArgs] = useState(() => joinArgs(agent.extraArgs))
   const [deleting, setDeleting] = useState(false)
+  useEffect(() => {
+    if (deleteSignal) setDeleting(true)
+  }, [deleteSignal])
   const [assist, setAssist] = useState(false)
 
   const value = { ...draft, extraArgs: splitArgs(args) }
@@ -141,7 +147,7 @@ export function AgentDetail({
             title={draft.name || '未命名 Agent'}
             meta={
               <>
-                <Badge>{category?.name ?? '未分类'}</Badge>
+                <Badge>{builtin ? '默认' : (category?.name ?? '未分类')}</Badge>
                 {!draft.enabled ? (
                   <StatusDot tone="muted" label="已停用" />
                 ) : isReady(checks) ? (
@@ -194,10 +200,12 @@ export function AgentDetail({
                     placeholder="例如：前端开发"
                   />
                 </Field>
-                <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                  <span className="text-xs text-muted">分类</span>
-                  <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
-                </div>
+                {!builtin && (
+                  <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                    <span className="text-xs text-muted">分类</span>
+                    <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
+                  </div>
+                )}
               </div>
               <Field label="简介">
                 <Input

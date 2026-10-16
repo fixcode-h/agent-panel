@@ -780,6 +780,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
   const done = runTurn({
     task,
     agents: d.agents,
+    settings: d.settings,
     workflows: d.workflows,
     workflow: d.workflows.find((w) => w.id === task.workflowId),
     prompt,
@@ -804,9 +805,11 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
 }
 
 function createTask(d: Db, input: NewTaskInput, fast = false) {
-  const project = d.projects.find((p) => p.id === input.projectId) ?? fail('项目不存在')
+  // 没有项目的是 Chat 模式的聊天，只能直接对话
+  if (!input.projectId && input.mode !== 'chat') fail('缺少项目')
+  const project = input.projectId ? (d.projects.find((p) => p.id === input.projectId) ?? fail('项目不存在')) : undefined
   let workflow: Workflow | undefined
-  if (input.mode === 'workflow') {
+  if (input.mode === 'workflow' && project) {
     workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')

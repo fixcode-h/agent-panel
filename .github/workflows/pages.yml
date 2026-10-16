@@ -1,11 +1,11 @@
-# 在线演示：dev 分支每次「检查与出包」通过后，构建演示版（浏览器内模拟后端）并发布到 GitHub Pages。
+# 在线演示：dev 分支每次「检查」通过后，构建演示版（浏览器内模拟后端）并发布到 GitHub Pages。
 # 用 workflow_run 触发，部署时的分支是默认分支，满足 github-pages 环境只允许默认分支部署的限制；
 # 构建的内容取自 dev 分支触发那次检查的提交。
 name: 在线预览
 
 on:
   workflow_run:
-    workflows: [检查与出包]
+    workflows: [检查]
     types: [completed]
     branches: [dev]
   workflow_dispatch:

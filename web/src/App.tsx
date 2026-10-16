@@ -6,6 +6,7 @@ import { AgentsPage } from '@/pages/AgentsPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { HomePage } from '@/pages/HomePage'
+import { ChatPage } from '@/pages/ChatPage'
 import { SettingsDialog } from '@/pages/SettingsPage'
 import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
@@ -17,6 +18,7 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   projects: () => <ProjectsPage />,
   agents: () => <AgentsPage />,
   workflows: () => <WorkflowsPage />,
+  chat: () => <ChatPage />,
 }
 
 function useTheme() {
@@ -68,7 +70,9 @@ function useHashRoute() {
 function TaskWatcher() {
   const { tasks } = useData()
   const { go } = useNav()
-  useTaskNotifications(tasks, (t) => go({ page: 'projects', id: t.projectId, sub: t.id }))
+  useTaskNotifications(tasks, (t) =>
+    go(t.projectId ? { page: 'projects', id: t.projectId, sub: t.id } : { page: 'chat', id: t.id }),
+  )
   return null
 }
 

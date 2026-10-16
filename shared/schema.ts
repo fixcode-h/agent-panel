@@ -355,7 +355,8 @@ export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
-  projectId: z.string().min(1, '缺少项目'),
+  /** 为空表示 Chat 模式的聊天：不属于任何项目，只能直接对话 */
+  projectId: z.string().default(''),
   mode: TaskMode,
   /** workflow 模式：为空时用项目的工作流 */
   workflowId: z.string().default(''),
@@ -405,6 +406,8 @@ export const TaskMessage = z.object({
   thinking: z.string().optional(),
   /** 用户消息附上的文件和图片 */
   attachments: z.array(Attachment).optional(),
+  /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
+  error: z.boolean().optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -441,6 +444,8 @@ export const TaskStep = z.object({
   rounds: z.number().int().default(0),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
+  /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
+  command: z.array(z.string()).default([]),
 })
 export type TaskStep = z.infer<typeof TaskStep>
 
@@ -505,6 +510,8 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
+  /** 不属于节点的调用（对话、追加要求）最近一次启动 Agent 用的命令 */
+  command: z.array(z.string()).default([]),
   /** 用量：每个 Agent 最近一次的上下文占用和实时速度，以及累计 token 和费用 */
   usage: z
     .object({
@@ -576,7 +583,8 @@ export const CliSettings = z.object({
 export type CliSettings = z.infer<typeof CliSettings>
 
 /** 内容区默认宽度 */
-export const CONTENT_WIDTH = 880
+export const CONTENT_WIDTH = 1000
+export const CONTENT_MAX = 1280
 
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
@@ -589,7 +597,12 @@ export const Settings = z.object({
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
-  contentWidth: z.number().int().min(640).max(1600).default(CONTENT_WIDTH),
+  /** 最宽 1280：再宽两边的任务进度、右栏会被挤得太窄；以前存的更大的值收到上限 */
+  contentWidth: z
+    .preprocess((v) => (typeof v === 'number' ? Math.min(CONTENT_MAX, Math.max(640, v)) : v), z.number().int())
+    .default(CONTENT_WIDTH),
+  /** 界面语言：auto 跟随浏览器 */
+  language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

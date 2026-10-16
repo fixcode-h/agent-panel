@@ -3,6 +3,17 @@ import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
 import { api } from './api'
 
+/** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
+export function switchLang(setting: string) {
+  try {
+    if ((localStorage.getItem('lang') ?? 'auto') === setting) return
+    localStorage.setItem('lang', setting)
+  } catch {
+    return
+  }
+  location.reload()
+}
+
 /** 内容区宽度用 CSS 变量，项目首页、任务页、流程视图里的 max-w-(--content-w) 都跟着它 */
 export function applyContentWidth(w: number | undefined) {
   if (w) document.documentElement.style.setProperty('--content-w', `${w}px`)
@@ -45,6 +56,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   useEffect(() => applyContentWidth(settings?.contentWidth), [settings?.contentWidth])
+  // 设置里的语言和浏览器记的不一样（例如在别的浏览器里改过）：以设置为准
+  useEffect(() => {
+    if (settings) switchLang(settings.language)
+  }, [settings?.language])
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksLoaded, setTasksLoaded] = useState(false)
 
@@ -138,7 +153,7 @@ export function useData() {
 }
 
 /** 当前页面和选中项；用于跨页面跳转，例如从 Agent 跳到使用它的工作流 */
-export type PageId = 'home' | 'agents' | 'workflows' | 'projects'
+export type PageId = 'home' | 'agents' | 'workflows' | 'projects' | 'chat'
 export interface Route {
   page: PageId
   id?: string

@@ -9,11 +9,40 @@ import { useDirInfo } from '@/components/projects/DirPicker'
 import { stepTree, topSteps } from '@shared/flow'
 import { StepIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
+import { Terminal } from '@/components/agents/CommandPreview'
 
-function Section({ title, extra, children }: { title: string; extra?: React.ReactNode; children: React.ReactNode }) {
+/**
+ * 启动命令：正在执行的节点用的命令；没有在执行的节点时是最近启动的那次。
+ * 对话和追加要求不属于节点，用任务上记的那条。复制出来可以自己在终端里跑一遍排查问题。
+ */
+function CommandSection({ task }: { task: Task }) {
+  const live = task.steps.find((s) => s.status === 'running' && s.command.length)
+  const last = [...task.steps].filter((s) => s.command.length).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+  const step = live ?? last
+  const chatNewer = task.command.length && (!step || task.mode === 'chat')
+  const argv = chatNewer ? task.command : step?.command
+  if (!argv?.length) return null
+  return (
+    <Section title="启动命令" extra={chatNewer ? undefined : step && stepLabel(step)}>
+      <Terminal argv={argv} title={argv[0].split(/[\\/]/).pop()} className="rounded-lg" />
+    </Section>
+  )
+}
+
+function Section({
+  title,
+  extra,
+  className,
+  children,
+}: {
+  title: string
+  extra?: React.ReactNode
+  className?: string
+  children: React.ReactNode
+}) {
   const [open, setOpen] = useState(true)
   return (
-    <section className="rounded-xl border bg-card">
+    <section className={cn('rounded-xl border bg-card', className)}>
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
@@ -35,16 +64,23 @@ export function TaskPanel({
   project,
   workflow,
   onStep,
+  only,
+  progressClass,
 }: {
   task: Task
-  project: Project
+  /** 只显示任务进度（宽屏时任务进度单独放在左边） */
+  only?: 'progress'
+  /** 任务进度这一块的额外样式：宽屏时右栏里藏起来，免得和左边重复 */
+  progressClass?: string
+  /** Chat 模式的聊天没有项目 */
+  project?: Project
   workflow?: Workflow
   /** 点了任务进度里的某一步 */
   onStep?: (id: string) => void
 }) {
   const { modelOf } = useAgentView()
   const { agents } = useData()
-  const dir = useDirInfo(project.path)
+  const dir = useDirInfo(project?.path ?? '')
   const byId = new Map(agents.map((a) => [a.id, a]))
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
@@ -58,6 +94,7 @@ export function TaskPanel({
     <div className="flex flex-col gap-3">
       <Section
         title="任务进度"
+        className={progressClass}
         extra={
           task.mode === 'workflow'
             ? tops.length
@@ -157,148 +194,157 @@ export function TaskPanel({
         )}
       </Section>
 
-      {task.simulated ? (
-        <Section title="上下文" extra="估算">
-          <div className="mb-1.5 flex items-baseline justify-between text-xs">
-            <span className="font-medium text-fg">已使用 {pct(ctx.used).toFixed(1)}%</span>
-            <span className="font-mono text-subtle">
-              {fmtTokens(ctx.used)} / {fmtTokens(ctx.window)}
-            </span>
-          </div>
-          <div
-            className="flex h-1.5 overflow-hidden rounded-full bg-field"
-            role="img"
-            aria-label={`上下文已使用 ${pct(ctx.used).toFixed(1)}%`}
-          >
-            {ctx.parts.map((p) => (
-              <span key={p.key} style={{ width: `${pct(p.tokens)}%`, background: p.color }} />
-            ))}
-          </div>
-          <ul className="mt-2.5 flex flex-col gap-1.5 text-xs">
-            {ctx.parts.map((p) => (
-              <li key={p.key} className="flex items-center gap-2 text-muted">
-                <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
-                <span className="flex-1">{p.label}</span>
-                <span className="font-mono text-subtle">{fmtTokens(p.tokens)}</span>
-                <span className="w-12 text-right font-mono">{pct(p.tokens).toFixed(1)}%</span>
-              </li>
-            ))}
-            <li className="flex items-center gap-2 text-subtle">
-              <span className="h-2 w-2 shrink-0 rounded-[2px] bg-field ring-1 ring-line-strong" />
-              <span className="flex-1">剩余</span>
-              <span className="font-mono">{fmtTokens(ctx.window - ctx.used)}</span>
-              <span className="w-12 text-right font-mono">{pct(ctx.window - ctx.used).toFixed(1)}%</span>
-            </li>
-          </ul>
-        </Section>
-      ) : (
-        <Section title="上下文" extra="CLI 报告">
-          {Object.keys(task.usage.agents).length === 0 ? (
-            <p className="text-xs text-subtle">CLI 开始运行后会显示上下文占用。</p>
-          ) : (
-            <ul className="flex flex-col gap-3">
-              {Object.entries(task.usage.agents).map(([id, u]) => {
-                const a = byId.get(id)
-                const p = Math.min(100, (u.context / u.window) * 100)
-                return (
-                  <li key={id} className="flex flex-col gap-1.5">
-                    <div className="flex items-center gap-2 text-xs">
-                      {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
-                      <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? '已删除的 Agent'}</span>
-                      <span className="font-mono text-subtle">
-                        {fmtTokens(u.context)} / {fmtTokens(u.window)}
-                      </span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-field">
-                      <span
-                        className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
-                        style={{ width: `${Math.max(p, 1)}%` }}
-                      />
-                    </div>
-                    <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
-                      <span>
-                        {u.model || '默认模型'} · 已使用 {p.toFixed(1)}%
-                      </span>
-                      {u.tps > 0 ? (
-                        <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
-                      ) : (
-                        u.genMs > 3000 &&
-                        u.outputTokens > 0 && (
-                          <span title="输出 token ÷ 生成用时">
-                            · 平均 {((u.outputTokens / u.genMs) * 1000).toFixed(1)} token/s
-                          </span>
-                        )
-                      )}
-                    </span>
+      {only !== 'progress' && (
+        <>
+          <CommandSection task={task} />
+          {task.simulated ? (
+            <Section title="上下文" extra="估算">
+              <div className="mb-1.5 flex items-baseline justify-between text-xs">
+                <span className="font-medium text-fg">已使用 {pct(ctx.used).toFixed(1)}%</span>
+                <span className="font-mono text-subtle">
+                  {fmtTokens(ctx.used)} / {fmtTokens(ctx.window)}
+                </span>
+              </div>
+              <div
+                className="flex h-1.5 overflow-hidden rounded-full bg-field"
+                role="img"
+                aria-label={`上下文已使用 ${pct(ctx.used).toFixed(1)}%`}
+              >
+                {ctx.parts.map((p) => (
+                  <span key={p.key} style={{ width: `${pct(p.tokens)}%`, background: p.color }} />
+                ))}
+              </div>
+              <ul className="mt-2.5 flex flex-col gap-1.5 text-xs">
+                {ctx.parts.map((p) => (
+                  <li key={p.key} className="flex items-center gap-2 text-muted">
+                    <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: p.color }} />
+                    <span className="flex-1">{p.label}</span>
+                    <span className="font-mono text-subtle">{fmtTokens(p.tokens)}</span>
+                    <span className="w-12 text-right font-mono">{pct(p.tokens).toFixed(1)}%</span>
                   </li>
-                )
-              })}
-            </ul>
+                ))}
+                <li className="flex items-center gap-2 text-subtle">
+                  <span className="h-2 w-2 shrink-0 rounded-[2px] bg-field ring-1 ring-line-strong" />
+                  <span className="flex-1">剩余</span>
+                  <span className="font-mono">{fmtTokens(ctx.window - ctx.used)}</span>
+                  <span className="w-12 text-right font-mono">{pct(ctx.window - ctx.used).toFixed(1)}%</span>
+                </li>
+              </ul>
+            </Section>
+          ) : (
+            <Section title="上下文" extra="CLI 报告">
+              {Object.keys(task.usage.agents).length === 0 ? (
+                <p className="text-xs text-subtle">CLI 开始运行后会显示上下文占用。</p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {Object.entries(task.usage.agents).map(([id, u]) => {
+                    const a = byId.get(id)
+                    const p = Math.min(100, (u.context / u.window) * 100)
+                    return (
+                      <li key={id} className="flex flex-col gap-1.5">
+                        <div className="flex items-center gap-2 text-xs">
+                          {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
+                          <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? '已删除的 Agent'}</span>
+                          <span className="font-mono text-subtle">
+                            {fmtTokens(u.context)} / {fmtTokens(u.window)}
+                          </span>
+                        </div>
+                        <div className="h-1.5 overflow-hidden rounded-full bg-field">
+                          <span
+                            className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
+                            style={{ width: `${Math.max(p, 1)}%` }}
+                          />
+                        </div>
+                        <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
+                          <span>
+                            {u.model || '默认模型'} · 已使用 {p.toFixed(1)}%
+                          </span>
+                          {u.tps > 0 ? (
+                            <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
+                          ) : (
+                            u.genMs > 3000 &&
+                            u.outputTokens > 0 && (
+                              <span title="输出 token ÷ 生成用时">
+                                · 平均 {((u.outputTokens / u.genMs) * 1000).toFixed(1)} token/s
+                              </span>
+                            )
+                          )}
+                        </span>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+            </Section>
           )}
-        </Section>
-      )}
 
-      {!task.simulated || task.usage.inputTokens > 0 ? <TokenUsage task={task} /> : null}
+          {!task.simulated || task.usage.inputTokens > 0 ? <TokenUsage task={task} /> : null}
 
-      <Section
-        title="更改"
-        extra={
-          task.changes.length ? (
-            <span className="font-mono">
-              <span className="text-success">+{add}</span> <span className="text-danger">-{del}</span>
-            </span>
-          ) : undefined
-        }
-      >
-        {task.changes.length ? (
-          <ul className="flex flex-col gap-1">
-            {task.changes.map((c) => (
-              <li key={c.path} className="flex items-center gap-2 font-mono text-xs">
-                <span className="min-w-0 flex-1 truncate text-muted" title={c.path}>
-                  {c.path}
+          <Section
+            title="更改"
+            extra={
+              task.changes.length ? (
+                <span className="font-mono">
+                  <span className="text-success">+{add}</span> <span className="text-danger">-{del}</span>
                 </span>
-                <span className="shrink-0 text-success">+{c.add}</span>
-                <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-xs text-subtle">还没有改动文件。</p>
-        )}
-      </Section>
-
-      <Section title="环境">
-        <ul className="flex flex-col gap-2 text-xs text-muted">
-          <li className="flex items-center gap-2">
-            <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className="min-w-0 truncate font-mono" title={project.path}>
-              {project.path || '未选择目录'}
-            </span>
-          </li>
-          {dir?.gitBranch && (
-            <li className="flex items-center gap-2">
-              <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
-              <span className="truncate font-mono">{dir.gitBranch}</span>
-            </li>
-          )}
-          <li className="flex items-center gap-2">
-            {task.mode === 'workflow' ? (
-              <>
-                <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                <span className="truncate">工作流：{workflow?.name ?? '已删除的工作流'}</span>
-              </>
+              ) : undefined
+            }
+          >
+            {task.changes.length ? (
+              <ul className="flex flex-col gap-1">
+                {task.changes.map((c) => (
+                  <li key={c.path} className="flex items-center gap-2 font-mono text-xs">
+                    <span className="min-w-0 flex-1 truncate text-muted" title={c.path}>
+                      {c.path}
+                    </span>
+                    <span className="shrink-0 text-success">+{c.add}</span>
+                    <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
+                  </li>
+                ))}
+              </ul>
             ) : (
-              <>
-                <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                <span className="truncate">
-                  对话：{chatAgent?.name ?? '已删除的 Agent'}
-                  {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
-                </span>
-              </>
+              <p className="text-xs text-subtle">还没有改动文件。</p>
             )}
-          </li>
-        </ul>
-      </Section>
+          </Section>
+
+          <Section title="环境">
+            <ul className="flex flex-col gap-2 text-xs text-muted">
+              <li className="flex items-center gap-2">
+                <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                {project ? (
+                  <span className="min-w-0 truncate font-mono" title={project.path}>
+                    {project.path || '未选择目录'}
+                  </span>
+                ) : (
+                  <span className="min-w-0 truncate">聊天，不在任何项目里</span>
+                )}
+              </li>
+              {dir?.gitBranch && (
+                <li className="flex items-center gap-2">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                  <span className="truncate font-mono">{dir.gitBranch}</span>
+                </li>
+              )}
+              <li className="flex items-center gap-2">
+                {task.mode === 'workflow' ? (
+                  <>
+                    <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                    <span className="truncate">工作流：{workflow?.name ?? '已删除的工作流'}</span>
+                  </>
+                ) : (
+                  <>
+                    <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                    <span className="truncate">
+                      对话：{chatAgent?.name ?? '已删除的 Agent'}
+                      {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
+                    </span>
+                  </>
+                )}
+              </li>
+            </ul>
+          </Section>
+        </>
+      )}
     </div>
   )
 }

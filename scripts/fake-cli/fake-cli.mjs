@@ -6,7 +6,9 @@
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
  * 设置环境变量 FAKE_CLI_LOG 后，每次调用的参数、目录和 stdin 会追加写进这个文件。
  */
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 
 const args = process.argv.slice(2)
@@ -325,6 +327,15 @@ if (kind === 'claude') {
 } else {
   const ev = (e) => out({ type: 'event', event: e })
   ev({ type: 'run_start', sessionId: session })
+  // NETFAIL：像真的 Command Code 一样连接中途断开，退出码 6；NETDOWN 每次都断（续接也断）
+  const downMark = path.join(tmpdir(), `fake-netdown-${session}`)
+  if (input.includes('NETDOWN')) writeFileSync(downMark, '')
+  if (existsSync(downMark) || (input.includes('NETFAIL') && resumeIdx < 0)) {
+    process.stderr.write(
+      'Note: "fake/flash" routes via Command Code; your providers.json also declares it — use "me/fake/flash" to route there instead.\nError: Unable to connect to the API. Please check your network connection.\nStream connection failed mid-response: terminated\n',
+    )
+    process.exit(6)
+  }
   ev({ type: 'message_start' })
   ev({ type: 'thinking_start' })
   ev({ type: 'thinking_delta', delta: '想想先读哪个文件' })
