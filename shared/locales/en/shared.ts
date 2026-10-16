@@ -122,4 +122,9 @@ export const EN_SHARED: Record<string, string> = {
   '工作流不存在，可能已被删除': 'The workflow does not exist. It may have been deleted',
   '没有可以回答的 Agent，请先给工作流选择主 Agent':
     'No Agent is available to respond. Choose a main Agent for the workflow first',
+  '这次执行已经花了 ${used}，达到工作流设定的上限 ${limit}，已暂停。点「继续执行」会再给一份同样的额度。':
+    'This run has spent ${used}, reaching the workflow limit of ${limit}, so it is paused. Click "Continue" to grant the same amount again.',
+  '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':
+    'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
+  '「{title}」没有写「结论」，按通过处理。': '"{title}" did not state a verdict; treating it as a pass.',
 }

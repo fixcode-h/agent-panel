@@ -88,6 +88,8 @@ export const NodeHooks = z.object({
   end: FlowRef.nullable().default(null),
   /** 验收最多几轮，超过仍不通过时节点失败 */
   maxRounds: z.number().int().min(1).max(10).default(3),
+  /** 完成后等用户确认：用户看过结果点「通过」才往下走，退回时带着意见让节点继续完善 */
+  confirm: z.boolean().optional(),
 })
 export type NodeHooks = z.infer<typeof NodeHooks>
 
@@ -109,8 +111,16 @@ export const FlowNode = z.object({
 })
 export type FlowNode = z.infer<typeof FlowNode>
 
-/** 连线：from 执行完才会执行 to；START / END 表示流程的开始和结束 */
-export const FlowEdge = z.object({ id: z.string().min(1), from: z.string().min(1), to: z.string().min(1) })
+/**
+ * 连线：from 执行完才会执行 to；START / END 表示流程的开始和结束。
+ * when 是条件：pass / fail 时只在 from 的结论是「通过」/「不通过」时走这条线，没走的分支整段跳过
+ */
+export const FlowEdge = z.object({
+  id: z.string().min(1),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  when: z.enum(['', 'pass', 'fail']).optional(),
+})
 export type FlowEdge = z.infer<typeof FlowEdge>
 
 export const START = 'start'
@@ -198,6 +208,9 @@ const WorkflowFields = z.object({
   entryFlowId: z.string().default('main'),
   /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
+  /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
+  budgetUsd: z.number().min(0).max(100000).optional(),
+  budgetTokens: z.number().int().min(0).optional(),
 })
 export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
 export type WorkflowInput = z.infer<typeof WorkflowFields>
@@ -467,6 +480,8 @@ export const TaskStep = z.object({
   verdict: z.enum(['', 'pass', 'fail']).default(''),
   /** 已经验收了几轮 */
   rounds: z.number().int().default(0),
+  /** 节点自己给出的结论（有条件连线时要求写）：决定走哪条线 */
+  branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
@@ -504,7 +519,8 @@ export const TaskRequest = z.object({
   id: z.string(),
   step: z.string().default(''),
   agentId: z.string().default(''),
-  kind: z.enum(['command', 'file', 'tool', 'question']),
+  /** confirm：工作流节点完成后等用户确认结果 */
+  kind: z.enum(['command', 'file', 'tool', 'question', 'confirm']),
   title: z.string(),
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */
@@ -567,6 +583,8 @@ export const TaskData = z.object({
   worktree: TaskWorktree.nullable().default(null),
   /** 执行中排队的要求：这一轮完成后按顺序处理；失败或暂停时留着，由用户决定 */
   queue: z.array(QueuedMessage).default([]),
+  /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
+  budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
 })
 export type TaskData = z.infer<typeof TaskData>
 

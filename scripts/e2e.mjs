@@ -663,6 +663,114 @@ try {
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
 
+  // ---- 工作流的条件连线、完成后等我确认、预算上限 ----
+  const wfBranch = await call('POST', '/workflows', {
+    name: '条件分支',
+    description: '',
+    mainAgentId: A.id,
+    members: [],
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          node('t', '测试', '', '跑测试。', { hooks: { confirm: true } }),
+          node('ok', '发布', '', '发布。'),
+          node('fix', '修复', '', '修复失败的测试。'),
+          node('after', '收尾', '', '收尾。'),
+        ],
+        edges: [
+          { id: 'e1', from: 'start', to: 't' },
+          { id: 'e2', from: 't', to: 'ok', when: 'pass' },
+          { id: 'e3', from: 't', to: 'fix', when: 'fail' },
+          { id: 'e4', from: 'ok', to: 'after' },
+          { id: 'e5', from: 'fix', to: 'end' },
+          { id: 'e6', from: 'after', to: 'end' },
+        ],
+      },
+    ],
+    entryFlowId: 'main',
+    document: '',
+  })
+  const nBranch = calls().length
+  let br = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'workflow',
+    workflowId: wfBranch.id,
+    prompt: 'BRANCHNO 跑一遍',
+  })
+  const waitConfirm = async (id) => {
+    for (let i = 0; i < 100; i++) {
+      const tk = await call('GET', `/tasks/${id}`)
+      if (tk.requests.length) return tk.requests[0]
+      await sleep(100)
+    }
+    throw new Error('没有等到确认')
+  }
+  const cf1 = await waitConfirm(br.id)
+  assert.equal(cf1.kind, 'confirm')
+  assert.match(cf1.title, /「测试」完成了/)
+  assert.match(cf1.detail, /结论：不通过/, '确认卡片上是节点的结果')
+  await call('POST', `/tasks/${br.id}/requests/${cf1.id}`, { allow: false, answer: '多跑一遍集成测试 BRANCHNO' })
+  const cf2 = await waitConfirm(br.id)
+  const redo = calls().slice(nBranch).at(-1)
+  assert.match(redo.input, /用户看了结果，要求修改：\n多跑一遍集成测试 BRANCHNO/, '退回的意见交回节点')
+  assert.match(redo.input, /结论：通过」或「结论：不通过/, '返工后同样要给出结论')
+  await call('POST', `/tasks/${br.id}/requests/${cf2.id}`, { allow: true })
+  br = await waitDone(br.id)
+  assert.equal(br.status, 'done', JSON.stringify(br.messages.filter((m) => m.role === 'system')))
+  const byNode = (id) => br.steps.find((s) => s.nodeId === id)
+  assert.equal(byNode('t').branch, 'fail')
+  assert.equal(byNode('fix').status, 'done', '结论不通过：走修复')
+  assert.equal(byNode('ok').status, 'skipped', '没走到的分支跳过')
+  assert.equal(byNode('after').status, 'skipped', '跳过的节点后面的也跳过')
+  const first = calls()[nBranch]
+  assert.match(first.input, /通过时接着做「发布」；不通过时接着做「修复」/)
+  assert.ok(br.messages.some((m) => /你退回了「测试」：多跑一遍集成测试 BRANCHNO/.test(m.text)))
+  assert.ok(br.messages.some((m) => /你确认了「测试」的结果/.test(m.text)))
+
+  // 预算：第一个节点用掉的 token 超过上限，第二个节点开始前暂停；继续执行再给一份额度
+  const wfBudget = await call('POST', '/workflows', {
+    name: '有预算',
+    description: '',
+    mainAgentId: A.id,
+    members: [],
+    budgetTokens: 1,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [node('a', '一', '', '做一。'), node('b', '二', '', '做二。')],
+        edges: [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'a', to: 'b' },
+          { id: 'e3', from: 'b', to: 'end' },
+        ],
+      },
+    ],
+    entryFlowId: 'main',
+    document: '',
+  })
+  let bud = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'workflow',
+    workflowId: wfBudget.id,
+    prompt: '省着点',
+  })
+  bud = await waitDone(bud.id)
+  assert.equal(bud.status, 'stopped')
+  assert.match(bud.messages.at(-1).text, /达到工作流设定的上限 1，已暂停/)
+  assert.equal(bud.steps.find((s) => s.nodeId === 'a').status, 'done')
+  assert.notEqual(bud.steps.find((s) => s.nodeId === 'b')?.status, 'done')
+  await call('POST', `/tasks/${bud.id}/resume`, {})
+  bud = await waitDone(bud.id)
+  assert.equal(bud.status, 'done', '继续执行时重新给一份额度')
+  await call('DELETE', `/tasks/${br.id}`)
+  await call('DELETE', `/tasks/${bud.id}`)
+  await call('DELETE', `/workflows/${wfBranch.id}`)
+  await call('DELETE', `/workflows/${wfBudget.id}`)
+  step('工作流：条件连线按结论选路，完成后等我确认（可以退回），超过预算上限暂停')
+
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })
   bad = await waitDone(bad.id)

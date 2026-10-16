@@ -342,10 +342,15 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       { text: '阅读实现', status: 'done', agentId: call.agentId },
       { text: '整理回答', status: 'running', agentId: call.agentId },
     ]
+  // 后面有条件连线的节点要给出结论；演示里一律通过
+  if (call.deciding && !/结论[:：]/.test(out.text)) out = { ...out, text: `${out.text}\n\n结论：通过` }
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
 }
+
+/** 在线演示里用户对「完成后等我确认」的回答：请求 id → 决定（演示后端回答请求时写进来） */
+export const simAnswers = new Map<string, { allow: boolean; answer?: string }>()
 
 /** 执行一轮（模拟） */
 export async function runTurn(ctx: RunContext) {
@@ -358,6 +363,30 @@ export async function runTurn(ctx: RunContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call: AgentCall) => fakeAgent(ctx, call),
+    confirm: async (step: TaskStep, text: string) => {
+      const id = ctx.newId()
+      ;(ctx.task.requests ??= []).push({
+        id,
+        step: step.id,
+        agentId: step.agentId,
+        kind: 'confirm' as const,
+        title: `「${step.title}」完成了，看一下结果再继续`,
+        detail: text.length > 6000 ? text.slice(0, 6000) + '…' : text,
+        options: [],
+        at: new Date().toISOString(),
+      })
+      ctx.changed(true)
+      while (ctx.task.requests.some((r) => r.id === id)) {
+        if (ctx.stopped()) {
+          ctx.task.requests = ctx.task.requests.filter((r) => r.id !== id)
+          return null
+        }
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      const a = simAnswers.get(id) ?? { allow: true }
+      simAnswers.delete(id)
+      return a
+    },
   }
   if (ctx.first) system(host, '模拟执行：还没有真正调用 CLI，下面是示例输出，用来预览任务的执行过程。')
   await runEngineTurn(host)

@@ -36,6 +36,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { menuItem } from '@/components/ui/menu'
+import { Switch } from '@/components/ui/switch'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { FlowCanvas, HOOK_LABEL, smartFit, type HookSlot } from './FlowCanvas'
@@ -217,6 +218,22 @@ function NodeInspector({
           </p>
         )}
       </section>
+
+      <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5">
+        <span className="flex flex-1 flex-col gap-0.5">
+          <span className="text-[13px] font-semibold">{t('完成后等我确认')}</span>
+          <span className="text-[11.5px] leading-relaxed text-subtle">
+            {t(
+              '节点做完（验收通过）后暂停，在任务页上看过结果点「通过」才往下走；退回时写上意见，节点按意见继续完善。',
+            )}
+          </span>
+        </span>
+        <Switch
+          checked={!!node.hooks.confirm}
+          onCheckedChange={(v) => setNode({ hooks: { ...node.hooks, confirm: v } })}
+          aria-label={t('完成后等我确认')}
+        />
+      </label>
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-subtle">{t('上游')}</dt>
@@ -665,6 +682,35 @@ function Editor({
             <p className="text-[13px] leading-relaxed text-muted">
               {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
             </p>
+            {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  hint={t(
+                    '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
+                    { from: name(selEdge.from) },
+                  )}
+                >
+                  {t('条件')}
+                </Label>
+                <Select
+                  aria-label={t('条件')}
+                  value={selEdge.when ?? ''}
+                  onChange={(e) =>
+                    setFlow({
+                      ...flow,
+                      edges: flow.edges.map((x) =>
+                        x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
+                      ),
+                    })
+                  }
+                  options={[
+                    { value: '', label: t('总是') },
+                    { value: 'pass', label: t('结论是「通过」时') },
+                    { value: 'fail', label: t('结论是「不通过」时') },
+                  ]}
+                />
+              </div>
+            )}
             <Button
               variant="danger-outline"
               className="self-start"

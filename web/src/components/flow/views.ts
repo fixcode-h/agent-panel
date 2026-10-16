@@ -39,6 +39,7 @@ export function nodeViews(
         note: plainLine(n.instructions),
         hooks,
         loose: !live.has(n.id),
+        confirm: !!n.hooks.confirm,
       }
       return [n.id, view]
     }),

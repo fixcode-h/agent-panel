@@ -45,6 +45,8 @@ export interface RealContext {
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
 const replies = new Map<string, (r: AskReply) => void>()
 
+const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
+
 /** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
 export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
   const fn = replies.get(id)
@@ -53,11 +55,15 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   replies.delete(id)
   task.requests = task.requests.filter((x) => x.id !== id)
   const what =
-    req.kind === 'question'
-      ? t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answer ?? '' })
-      : r.allow
-        ? t('你允许了：{title}', { title: req.title })
-        : t('你拒绝了：{title}', { title: req.title })
+    req.kind === 'confirm'
+      ? r.allow
+        ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })
+        : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
+      : req.kind === 'question'
+        ? t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answer ?? '' })
+        : r.allow
+          ? t('你允许了：{title}', { title: req.title })
+          : t('你拒绝了：{title}', { title: req.title })
   task.messages.push({
     id: newId(),
     role: 'system',
@@ -523,6 +529,36 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, call),
+    confirm: (step, text) =>
+      new Promise((resolve) => {
+        const { task, signal } = ctx
+        if (signal.aborted) return resolve(null)
+        const id = ctx.newId()
+        const done = (r: { allow: boolean; answer?: string } | null) => {
+          signal.removeEventListener('abort', onAbort)
+          replies.delete(id)
+          task.requests = task.requests.filter((x) => x.id !== id)
+          resolve(r)
+        }
+        // 停止任务时不再等，节点停在这里，继续执行时重新确认
+        const onAbort = () => {
+          done(null)
+          ctx.changed(true)
+        }
+        signal.addEventListener('abort', onAbort)
+        replies.set(id, (r) => done(r))
+        task.requests.push({
+          id,
+          step: step.id,
+          agentId: step.agentId,
+          kind: 'confirm',
+          title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
+          detail: clip(text, 6000),
+          options: [],
+          at: new Date().toISOString(),
+        })
+        ctx.changed(true)
+      }),
     saveHandoff: async (step, text) => {
       const dir = path.join(HANDOFF_DIR, ctx.task.id)
       await mkdir(dir, { recursive: true })

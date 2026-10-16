@@ -200,6 +200,29 @@ export function WorkflowDetail({
               />
             </FormSection>
 
+            <FormSection title={t('预算上限')}>
+              <p className="-mt-2 text-xs leading-relaxed text-subtle">
+                {t(
+                  '每次执行（新建任务、继续执行、追加要求）超过上限就暂停，免得验收来回循环一直花钱。点「继续执行」会再给一份同样的额度。留空表示不限。',
+                )}
+              </p>
+              <div className="flex flex-wrap gap-4">
+                <Field
+                  label={t('花费（美元）')}
+                  className="flex-[1_1_180px]"
+                  hint={t('Codex 不报告花费，用 token 上限')}
+                >
+                  <BudgetInput value={draft.budgetUsd} decimals onChange={(v) => set('budgetUsd', v)} />
+                </Field>
+                <Field label={t('token（千）')} className="flex-[1_1_180px]" hint={t('输入和输出 token 合计')}>
+                  <BudgetInput
+                    value={draft.budgetTokens ? draft.budgetTokens / 1000 : 0}
+                    onChange={(v) => set('budgetTokens', Math.round(v * 1000))}
+                  />
+                </Field>
+              </div>
+            </FormSection>
+
             <FormSection title={t('工作流说明')}>
               <p className="-mt-2 text-xs leading-relaxed text-subtle">
                 {t(
@@ -263,5 +286,31 @@ export function WorkflowDetail({
       />
       <AssistDialog open={assist} onOpenChange={setAssist} kind="workflow" target={workflow} onApplied={onOptimized} />
     </>
+  )
+}
+
+/** 预算的数字输入：空着表示不限（存 0） */
+function BudgetInput({
+  value,
+  decimals,
+  onChange,
+}: {
+  value: number | undefined
+  decimals?: boolean
+  onChange: (v: number) => void
+}) {
+  const [text, setText] = useState(value ? String(value) : '')
+  return (
+    <Input
+      inputMode="decimal"
+      value={text}
+      placeholder={t('不限')}
+      onChange={(e) => {
+        const v = e.target.value.replace(decimals ? /[^\d.]/g : /[^\d]/g, '')
+        setText(v)
+        const n = Number(v)
+        if (Number.isFinite(n)) onChange(n)
+      }}
+    />
   )
 }

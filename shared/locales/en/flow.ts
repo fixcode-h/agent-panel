@@ -199,4 +199,22 @@ export const EN_FLOW: Record<string, string> = {
   文件里的工作流格式不对: 'The workflow in the file is invalid',
   '{name}（导入 {n}）': '{name} (imported {n})',
   '{name}（导入）': '{name} (imported)',
+  等我确认: 'Needs my OK',
+  完成后等我确认: 'Wait for my OK when done',
+  '节点做完（验收通过）后暂停，在任务页上看过结果点「通过」才往下走；退回时写上意见，节点按意见继续完善。':
+    'After the node finishes (and passes review) the task pauses. It moves on once you check the result on the task page and approve; if you send it back with comments, the node keeps improving based on them.',
+  '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。':
+    'With a condition, "{from}" must end with a verdict (pass / fail) and only the matching lines are followed; nodes that are not reached are skipped. For example, route to a fix node when tests fail.',
+  条件: 'Condition',
+  总是: 'Always',
+  '结论是「通过」时': 'When the verdict is "pass"',
+  '结论是「不通过」时': 'When the verdict is "fail"',
+  预算上限: 'Budget limit',
+  '每次执行（新建任务、继续执行、追加要求）超过上限就暂停，免得验收来回循环一直花钱。点「继续执行」会再给一份同样的额度。留空表示不限。':
+    'Each run (a new task, a resume or a follow-up) pauses when it goes over the limit, so review loops can\'t keep spending. Clicking "Continue" grants the same amount again. Leave empty for no limit.',
+  '花费（美元）': 'Cost (USD)',
+  'Codex 不报告花费，用 token 上限': "Codex doesn't report cost; use the token limit",
+  'token（千）': 'Tokens (thousands)',
+  '输入和输出 token 合计': 'Input and output tokens combined',
+  不限: 'No limit',
 }

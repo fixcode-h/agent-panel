@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { BellRing, FilePen, Loader2, MessageCircleQuestion, SquareTerminal, Wrench } from 'lucide-react'
+import { BellRing, ClipboardCheck, FilePen, Loader2, MessageCircleQuestion, SquareTerminal, Wrench } from 'lucide-react'
 import type { Task, TaskRequest } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -9,7 +9,13 @@ import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { t } from '@shared/i18n'
 
-const ICONS = { command: SquareTerminal, file: FilePen, tool: Wrench, question: MessageCircleQuestion }
+const ICONS = {
+  command: SquareTerminal,
+  file: FilePen,
+  tool: Wrench,
+  question: MessageCircleQuestion,
+  confirm: ClipboardCheck,
+}
 
 /**
  * Agent 等你确认的操作或问题，贴在输入框上方。一次处理一个，回答后 CLI 接着执行；
@@ -69,11 +75,50 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
           </span>
         </div>
         {req.detail && (
-          <pre className="max-h-40 overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-muted">
+          <pre
+            className={cn(
+              'overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-muted',
+              req.kind === 'confirm' ? 'max-h-72' : 'max-h-40',
+            )}
+          >
             {req.detail}
           </pre>
         )}
-        {req.kind === 'question' ? (
+        {req.kind === 'confirm' ? (
+          // 工作流节点完成后等你确认：通过就往下走，退回时写上要改的地方，节点按意见继续完善
+          <form
+            className="flex flex-col gap-2"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void send('allow', true)
+            }}
+          >
+            <textarea
+              value={answer}
+              onChange={(e) => setAnswer(e.target.value)}
+              rows={2}
+              placeholder={t('要退回修改时，写上要改的地方')}
+              aria-label={t('退回意见')}
+              className="min-w-0 resize-none rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] outline-none focus:border-accent"
+            />
+            <div className="flex justify-end gap-2">
+              <Button
+                size="sm"
+                variant="secondary"
+                disabled={!!busy || !answer.trim()}
+                title={answer.trim() ? undefined : t('先写上要改的地方')}
+                onClick={() => send('deny', false, answer.trim())}
+              >
+                {spin('deny')}
+                {t('退回修改')}
+              </Button>
+              <Button size="sm" type="submit" disabled={!!busy}>
+                {spin('allow')}
+                {t('通过，继续')}
+              </Button>
+            </div>
+          </form>
+        ) : req.kind === 'question' ? (
           <div className="flex flex-col gap-2">
             {req.options.length > 0 && (
               <div className="flex flex-wrap gap-2">

@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BaseEdge,
+  EdgeLabelRenderer,
   Background,
   BackgroundVariant,
   Controls,
@@ -25,7 +26,7 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { CircleStop, Play, Workflow as WorkflowIcon } from 'lucide-react'
+import { CircleStop, Play, UserCheck, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, Flow, StepStatus } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { END, START, wouldCycle } from '@shared/flow'
@@ -54,6 +55,8 @@ export interface NodeView {
   status?: StepStatus
   /** 没有从开始连到，不会执行 */
   loose?: boolean
+  /** 完成后等用户确认 */
+  confirm?: boolean
 }
 
 type CardData = { view: NodeView }
@@ -134,7 +137,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           <p className="line-clamp-2 text-[11.5px] leading-[1.6] text-subtle">{v.note}</p>
         </div>
       )}
-      {(v.hooks.length > 0 || v.loose) && (
+      {(v.hooks.length > 0 || v.loose || v.confirm) && (
         <div className="flex flex-wrap gap-1 border-t bg-panel/60 px-3 py-2">
           {v.loose && (
             <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">{t('未连接')}</span>
@@ -154,6 +157,12 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               {h.extra && <span className="shrink-0 opacity-75">{h.extra}</span>}
             </span>
           ))}
+          {v.confirm && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">
+              <UserCheck className="h-3 w-3" />
+              {t('等我确认')}
+            </span>
+          )}
         </div>
       )}
       <Handle type="source" position={Position.Right} />
@@ -235,10 +244,32 @@ const FlowEdge = memo(function FlowEdge({
   markerEnd,
   style,
   interactionWidth,
+  data,
 }: EdgeProps) {
   const dx = Math.max(Math.abs(targetX - sourceX) * 0.5, 40)
   const path = `M${sourceX},${sourceY} C${sourceX + dx},${sourceY} ${targetX - dx},${targetY} ${targetX},${targetY}`
-  return <BaseEdge path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+  const when = (data as { when?: string } | undefined)?.when
+  return (
+    <>
+      <BaseEdge path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+      {when && (
+        // 有条件的线在中间标出走这条线的结论
+        <EdgeLabelRenderer>
+          <span
+            className={cn(
+              'nodrag nopan pointer-events-none absolute rounded-full border bg-card px-1.5 py-px text-[11px] leading-4 shadow-card',
+              when === 'pass' ? 'border-success/40 text-success' : 'border-danger/40 text-danger',
+            )}
+            style={{
+              transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
+            }}
+          >
+            {when === 'pass' ? t('通过') : t('不通过')}
+          </span>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
 })
 const edgeTypes = { flow: FlowEdge }
 
@@ -348,6 +379,7 @@ export function FlowCanvas({
       source: e.from,
       target: e.to,
       selected: selected === `edge:${e.id}`,
+      data: { when: e.when ?? '' },
       className: tone === 'active' ? 'edge-active' : undefined,
       style: color ? { stroke: color, strokeWidth: 2 } : undefined,
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, ...(color && { color }) },

@@ -35,7 +35,7 @@ import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
-import { runTurn } from '@shared/runner'
+import { runTurn, simAnswers } from '@shared/runner'
 import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
@@ -910,6 +910,7 @@ function tasksRoute(
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
     const a = body as { allow: boolean; answer?: string }
+    simAnswers.set(rid, a)
     task.requests = task.requests.filter((r) => r.id !== rid)
     task.messages.push({
       id: `demo-${crypto.randomUUID()}`,
@@ -917,9 +918,13 @@ function tasksRoute(
       agentId: req.agentId,
       step: req.step,
       text:
-        req.kind === 'question'
-          ? `你回答了「${req.title}」：${a.answer ?? ''}`
-          : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
+        req.kind === 'confirm'
+          ? a.allow
+            ? `你确认了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」的结果，接着往下执行`
+            : `你退回了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」：${a.answer ?? ''}`
+          : req.kind === 'question'
+            ? `你回答了「${req.title}」：${a.answer ?? ''}`
+            : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
       tools: [],
       at: new Date().toISOString(),
     })

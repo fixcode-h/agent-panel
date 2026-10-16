@@ -279,4 +279,9 @@ export const EN_TASKS: Record<string, string> = {
   '会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。':
     'Deletes the task branch and its working directory, losing all changes in it. The project directory is not affected.',
   合并: 'Merge',
+  '要退回修改时，写上要改的地方': 'To send it back, describe what to change',
+  退回意见: 'Comments for changes',
+  先写上要改的地方: 'Describe what to change first',
+  退回修改: 'Send back',
+  '通过，继续': 'Approve and continue',
 }
