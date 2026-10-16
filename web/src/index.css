@@ -4,6 +4,7 @@
 
 /* 设计 token：改主题只需要改这里。配色参考 Claude：暖灰底色、陶土橙强调色 */
 :root {
+  color-scheme: light;
   --bg: #faf9f5;
   --rail: #f3f1ea;
   --panel: #f6f5f0;
@@ -25,6 +26,7 @@
   --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
 }
 .dark {
+  color-scheme: dark;
   --bg: #262624;
   --rail: #1f1e1d;
   --panel: #232321;
@@ -83,6 +85,12 @@ body,
   }
   * {
     @apply border-line;
+  }
+  /* 原生下拉框的弹出列表跟随主题 */
+  option,
+  optgroup {
+    background-color: var(--card);
+    color: var(--fg);
   }
   :focus-visible {
     outline: 2px solid var(--accent);
