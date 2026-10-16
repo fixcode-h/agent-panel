@@ -35,11 +35,16 @@ const projects = createCollection<ProjectInput, Project>('projects.json', Projec
 
 // 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
 for (const w of await workflows.list()) {
-  if (w.stages.length || !/^##\s/m.test(w.document)) continue
+  if (w.flows.some((f) => f.nodes.length) || !/^##\s/m.test(w.document)) continue
   const m = migrateDocSteps(w, await agents.list())
-  if (m.stages.length) {
+  if (m) {
     const { id, createdAt, updatedAt, ...input } = w
-    await workflows.update(id, { ...input, ...m })
+    await workflows.update(id, {
+      ...input,
+      flows: [m.flow, ...w.flows.slice(1)],
+      entryFlowId: m.flow.id,
+      document: m.document,
+    })
   }
 }
 

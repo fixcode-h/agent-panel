@@ -14,7 +14,13 @@ import { WorkflowSummary } from '@/components/workflows/WorkflowSummary'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: ProjectCategory): ProjectCategoryInput => rest
 
-export function ProjectCategoryDetail({ category, onNewProject }: { category: ProjectCategory; onNewProject: () => void }) {
+export function ProjectCategoryDetail({
+  category,
+  onNewProject,
+}: {
+  category: ProjectCategory
+  onNewProject: () => void
+}) {
   const { projects, workflows, setProjectCategories, setProjects } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<ProjectCategoryInput>(() => toInput(category))
@@ -28,7 +34,8 @@ export function ProjectCategoryDetail({ category, onNewProject }: { category: Pr
     },
     valid,
   )
-  const set = <K extends keyof ProjectCategoryInput>(k: K, v: ProjectCategoryInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
+  const set = <K extends keyof ProjectCategoryInput>(k: K, v: ProjectCategoryInput[K]) =>
+    setDraft((d) => ({ ...d, [k]: v }))
   const members = projects.filter((p) => p.categoryId === category.id)
   const workflow = workflows.find((w) => w.id === draft.workflowId)
 
@@ -61,7 +68,13 @@ export function ProjectCategoryDetail({ category, onNewProject }: { category: Pr
             subtitle={draft.description || '还没有简介'}
             save={{ ...save, invalid: valid ? undefined : '名称为空，未保存' }}
             actions={
-              <Button variant="danger-outline" size="icon" aria-label="删除分类" title="删除分类" onClick={() => setDeleting(true)}>
+              <Button
+                variant="danger-outline"
+                size="icon"
+                aria-label="删除分类"
+                title="删除分类"
+                onClick={() => setDeleting(true)}
+              >
                 <Trash2 className="h-4 w-4" />
               </Button>
             }
@@ -86,9 +99,7 @@ export function ProjectCategoryDetail({ category, onNewProject }: { category: Pr
             <FormSection title="默认工作流">
               <div className="flex flex-col gap-1.5">
                 <WorkflowPicker value={draft.workflowId} onChange={(id) => set('workflowId', id)} emptyLabel="不指定" />
-                <span className="text-xs text-subtle">
-                  这个分类下的项目默认使用它；项目也可以单独指定别的工作流。
-                </span>
+                <span className="text-xs text-subtle">这个分类下的项目默认使用它；项目也可以单独指定别的工作流。</span>
               </div>
             </FormSection>
             <FormSection

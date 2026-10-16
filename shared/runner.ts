@@ -2,12 +2,24 @@
  * 模拟执行：按工作流节点生成示例输出，不调用 CLI。
  * 设置里选了「模拟执行」时由本机服务使用；在线演示始终使用它。真实执行见 server/exec/runner.ts。
  */
-import type { Agent, FileChange, NewTaskInput, Task, TaskData, TaskMessage, TaskStep, ToolUse, Workflow } from './schema.ts'
-import { planTask, taskStages } from './flow.ts'
+import type {
+  Agent,
+  FileChange,
+  NewTaskInput,
+  Task,
+  TaskData,
+  TaskMessage,
+  TaskStep,
+  ToolUse,
+  Workflow,
+} from './schema.ts'
+import { planTask } from './flow.ts'
+import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
 
 export interface RunContext {
   task: Task
   agents: Agent[]
+  workflows: Workflow[]
   workflow?: Workflow
   /** 本轮的用户输入 */
   prompt: string
@@ -20,16 +32,13 @@ export interface RunContext {
   newId: () => string
 }
 
-/** 兼容旧调用：只要节点列表 */
-export const planSteps = (workflow: Workflow | undefined, agents: Agent[]) => planTask(workflow, agents).steps
-
 export function taskTitle(prompt: string) {
   const line = prompt.trim().split('\n')[0]
   return line.length > 32 ? line.slice(0, 32) + '…' : line
 }
 
 /** 新建任务的初始数据 */
-export function newTask(input: NewTaskInput, workflow: Workflow | undefined, agents: Agent[], now: string, id: string): TaskData {
+export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now: string, id: string): TaskData {
   return {
     projectId: input.projectId,
     title: taskTitle(input.prompt),
@@ -37,8 +46,8 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, age
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
     status: 'running',
-    ...(input.mode === 'workflow' ? planTask(workflow, agents) : { stages: [], steps: [] }),
-    messages: [{ id, role: 'user', agentId: '', step: -1, text: input.prompt.trim(), tools: [], at: now }],
+    ...(input.mode === 'workflow' ? planTask(workflow) : { steps: [] }),
+    messages: [{ id, role: 'user', agentId: '', step: '', text: input.prompt.trim(), tools: [], at: now }],
     changes: [],
     simulated: true,
     sessions: {},
@@ -65,13 +74,14 @@ interface Output {
   text: string
 }
 
-function stepOutput(step: TaskStep, index: number, task: Task, prompt: string, agents: Agent[]): Output {
+function stepOutput(step: TaskStep, task: Task, prompt: string, agents: Agent[], reviewing: boolean): Output {
+  if (reviewing) return reviewOutput(step)
   const name = (id: string) => agents.find((a) => a.id === id)?.name ?? '未知 Agent'
   const origin = task.messages.find((m) => m.role === 'user')?.text ?? prompt
   const need = origin.length > 60 ? origin.slice(0, 60) + '…' : origin
   switch (kindOf(step.title)) {
     case 'plan': {
-      const rest = task.steps.filter((s) => s.stage > step.stage)
+      const rest = task.steps.filter((s) => s.parentId === step.parentId && s.id !== step.id && s.status === 'pending')
       return {
         tools: [
           { kind: 'read', label: 'README.md', detail: '' },
@@ -81,9 +91,7 @@ function stepOutput(step: TaskStep, index: number, task: Task, prompt: string, a
         text:
           `需求：${need}\n\n已经读过项目结构和相关代码，拆分如下：\n\n` +
           (rest.length
-            ? rest
-                .map((s, i) => `${i + 1}. **${s.title}**，交给 @${name(s.agentId)}${task.steps.filter((x) => x.stage === s.stage).length > 1 ? '（并行）' : ''}`)
-                .join('\n')
+            ? rest.map((s, i) => `${i + 1}. **${s.title}**，交给 @${name(s.agentId)}`).join('\n')
             : '1. 直接实现并自测') +
           `\n\n验收标准：功能可用、已有测试不回归、新增逻辑有测试覆盖。`,
       }
@@ -142,6 +150,21 @@ function stepOutput(step: TaskStep, index: number, task: Task, prompt: string, a
   }
 }
 
+/** 模拟验收：第一轮不通过，之后通过，用来演示退回完善的过程 */
+function reviewOutput(step: TaskStep): Output {
+  const fail = step.round === 1
+  return {
+    tools: [
+      { kind: 'run', label: 'git diff --stat', detail: '3 个文件' },
+      { kind: 'run', label: 'npm test', detail: fail ? '1 failed, 23 passed' : '24 passed' },
+    ],
+    changes: [],
+    text: fail
+      ? '检查了改动和测试结果：\n\n- 主要功能已实现 ✓\n- 重复提交时没有给出提示 ✗\n- 新增逻辑缺少失败场景的测试 ✗\n\n验收结论：不通过'
+      : '复查了上一轮提出的问题：\n\n- 重复提交已有提示 ✓\n- 补上了失败场景的测试 ✓\n\n验收结论：通过',
+  }
+}
+
 function mergeChanges(into: FileChange[], add: FileChange[]) {
   for (const c of add) {
     const old = into.find((x) => x.path === c.path)
@@ -153,8 +176,16 @@ function mergeChanges(into: FileChange[], add: FileChange[]) {
 }
 
 /** 一条 Agent 消息：先逐个出现工具调用，再逐段输出文字 */
-async function speak(ctx: RunContext, agentId: string, step: number, out: Output) {
-  const msg: TaskMessage = { id: ctx.newId(), role: 'agent', agentId, step, text: '', tools: [], at: new Date().toISOString() }
+async function speak(ctx: RunContext, agentId: string, step: string, out: Output) {
+  const msg: TaskMessage = {
+    id: ctx.newId(),
+    role: 'agent',
+    agentId,
+    step,
+    text: '',
+    tools: [],
+    at: new Date().toISOString(),
+  }
   ctx.task.messages.push(msg)
   ctx.changed()
   for (const t of out.tools) {
@@ -174,48 +205,32 @@ async function speak(ctx: RunContext, agentId: string, step: number, out: Output
   return true
 }
 
-function system(ctx: RunContext, text: string) {
-  ctx.task.messages.push({ id: ctx.newId(), role: 'system', agentId: '', step: -1, text, tools: [], at: new Date().toISOString() })
-}
-
-/** 执行一轮：第一轮按步骤跑完整个工作流；之后的追问由主 Agent（或对话的 Agent）回答 */
-export async function runTurn(ctx: RunContext) {
+/** 模拟调用一个 Agent */
+async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult> {
   const { task } = ctx
-  task.status = 'running'
-  if (ctx.first) system(ctx, '模拟执行：还没有真正调用 CLI，下面是示例输出，用来预览任务的执行过程。')
-  ctx.changed(true)
-
-  if (task.mode === 'workflow' && task.steps.some((s) => s.status !== 'done')) {
-    // 工作流还没跑完（第一轮，或上次被停止）：按阶段推进，阶段内的节点同时执行
-    for (const stage of taskStages(task)) {
-      const todo = stage.steps.filter(({ step }) => step.status !== 'done')
-      if (!todo.length) continue
-      for (const { step } of todo) {
-        step.status = 'running'
-        step.startedAt = new Date().toISOString()
-        step.endedAt = ''
-      }
-      ctx.changed(true)
-      const results = await Promise.all(
-        todo.map(async ({ step, i }, k) => {
-          // 并行节点错开一点开始，输出看起来更自然
-          await ctx.sleep(300 + k * 500)
-          const ok = !ctx.stopped() && (await speak(ctx, step.agentId, i, stepOutput(step, i, task, ctx.prompt, ctx.agents)))
-          if (ok) {
-            step.status = 'done'
-            step.endedAt = new Date().toISOString()
-            ctx.changed(true)
-          }
-          return ok
-        }),
-      )
-      if (results.some((ok) => !ok)) return finishStopped(ctx)
-    }
+  await ctx.sleep(300 + Math.random() * 500)
+  if (ctx.stopped()) return { ok: false, stopped: true, error: '已停止' }
+  let out: Output
+  if (call.step) {
+    const fixing = call.prompt.startsWith('验收没有通过')
+    out = fixing
+      ? {
+          tools: [
+            { kind: 'edit', label: 'web/src/components/FeatureButton.tsx', detail: '+12 -2' },
+            { kind: 'edit', label: 'tests/feature.test.ts', detail: '+18' },
+            { kind: 'run', label: 'npm test', detail: '24 passed' },
+          ],
+          changes: [
+            { path: 'web/src/components/FeatureButton.tsx', add: 12, del: 2 },
+            { path: 'tests/feature.test.ts', add: 18, del: 0 },
+          ],
+          text: '按验收意见修改：重复提交时按钮进入禁用状态并提示「正在提交」，补了失败场景的测试，全部测试通过。',
+        }
+      : stepOutput(call.step, task, ctx.prompt, ctx.agents, !!call.reviewing)
   } else {
-    const who = task.mode === 'chat' ? task.agentId : (ctx.workflow?.mainAgentId ?? task.steps[0]?.agentId ?? '')
     const need = ctx.prompt.length > 80 ? ctx.prompt.slice(0, 80) + '…' : ctx.prompt
     const last = [...task.changes].reverse().find((c) => !/test/.test(c.path))?.path ?? task.changes.at(-1)?.path
-    const out: Output = ctx.first
+    out = ctx.first
       ? {
           tools: [
             { kind: 'search', label: '搜索相关代码', detail: '找到 4 个相关文件' },
@@ -229,20 +244,23 @@ export async function runTurn(ctx: RunContext) {
           changes: [{ path: last ?? 'src/index.ts', add: 6, del: 4 }],
           text: `收到：「${need}」\n\n已经按要求调整，改动在 \`${last ?? 'src/index.ts'}\`。还有需要修改的地方可以继续说。`,
         }
-    await ctx.sleep(300)
-    if (ctx.stopped() || !(await speak(ctx, who, -1, out))) return finishStopped(ctx)
   }
-  task.status = 'done'
-  ctx.changed(true)
+  const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
+  return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
 }
 
-function finishStopped(ctx: RunContext) {
-  for (const s of ctx.task.steps)
-    if (s.status === 'running') {
-      s.status = 'pending'
-      s.endedAt = new Date().toISOString()
-    }
-  system(ctx, '已停止。可以在下面输入新的要求继续。')
-  ctx.task.status = 'stopped'
-  ctx.changed(true)
+/** 执行一轮（模拟） */
+export async function runTurn(ctx: RunContext) {
+  const host = {
+    task: ctx.task,
+    agents: ctx.agents,
+    workflows: ctx.workflows,
+    workflow: ctx.workflow,
+    prompt: ctx.prompt,
+    changed: ctx.changed,
+    newId: ctx.newId,
+    runAgent: (call: AgentCall) => fakeAgent(ctx, call),
+  }
+  if (ctx.first) system(host, '模拟执行：还没有真正调用 CLI，下面是示例输出，用来预览任务的执行过程。')
+  await runEngineTurn(host)
 }

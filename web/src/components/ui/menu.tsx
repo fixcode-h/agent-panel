@@ -3,7 +3,7 @@ import * as P from '@radix-ui/react-popover'
 import { cn } from '@/lib/utils'
 
 export const popoverPanel =
-  'z-50 min-w-[220px] overflow-hidden rounded-xl border border-line-strong bg-card p-1 shadow-2xl animate-[fade-in_120ms_ease-out]'
+  'z-50 min-w-[220px] overflow-hidden rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]'
 export const menuItem =
   'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] outline-none ' +
   'data-[highlighted]:bg-sel data-[disabled]:pointer-events-none data-[disabled]:opacity-50 hover:bg-sel'

@@ -24,7 +24,9 @@ export function Detail({
       {body ?? (
         <div className="flex flex-wrap items-start gap-8 px-4 pt-6 pb-10 md:px-8 md:pt-7">
           <div className="flex max-w-[760px] min-w-0 flex-[999_1_440px] flex-col gap-7">{form}</div>
-          <aside className="flex max-w-[380px] min-w-0 flex-[1_1_280px] flex-col gap-4 xl:sticky xl:top-7">{aside}</aside>
+          <aside className="flex max-w-[380px] min-w-0 flex-[1_1_280px] flex-col gap-4 xl:sticky xl:top-7">
+            {aside}
+          </aside>
         </div>
       )}
     </main>
@@ -128,7 +130,15 @@ export function SaveIndicator({ status, error, invalid }: { status: SaveStatus; 
   )
 }
 
-export function DetailEmpty({ icon, title, children }: { icon: React.ReactNode; title: string; children?: React.ReactNode }) {
+export function DetailEmpty({
+  icon,
+  title,
+  children,
+}: {
+  icon: React.ReactNode
+  title: string
+  children?: React.ReactNode
+}) {
   return (
     <main className="flex min-h-[420px] flex-1 items-center justify-center p-8">
       <div className="flex max-w-sm flex-col items-center text-center">

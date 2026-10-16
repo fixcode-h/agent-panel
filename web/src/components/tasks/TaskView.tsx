@@ -2,155 +2,70 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUp,
+  ChevronRight,
   FlaskConical,
   GitBranch,
-  Info,
   Loader2,
   MessageSquareText,
+  MoreHorizontal,
   PanelRight,
   Square,
   Trash2,
   X,
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
+import { rootStepId } from '@shared/flow'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
+import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { AgentMessage } from './Messages'
-import { TaskFlow, StepStatusIcon } from './TaskFlow'
+import { StepSection, SystemNote } from './StepSection'
+import { TaskFlow } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
 import { TaskStatusIcon } from './TaskStatusIcon'
 
 type Block =
   | { kind: 'msg'; m: TaskMessage }
-  | {
-      kind: 'stage'
-      stage: number
-      key: string
-      byStep: Map<number, TaskMessage[]>
-    }
+  | { kind: 'steps'; key: string; roots: string[]; byRoot: Map<string, TaskMessage[]> }
 
-/** 把消息分段：同一阶段的节点消息归到一起，并行节点的输出不会交错在一起 */
+/** 把消息分段：连续的节点输出归到一段，段里再按主流程节点分开，同时执行的节点输出不会交错 */
 function toBlocks(task: Task): Block[] {
   const blocks: Block[] = []
   for (const m of task.messages) {
-    const step = m.role === 'agent' && m.step >= 0 ? task.steps[m.step] : undefined
-    if (!step) {
+    if (!m.step || m.role === 'user') {
       blocks.push({ kind: 'msg', m })
       continue
     }
     let b = blocks.at(-1)
-    if (b?.kind !== 'stage' || b.stage !== step.stage) {
-      b = { kind: 'stage', stage: step.stage, key: m.id, byStep: new Map() }
+    if (b?.kind !== 'steps') {
+      b = { kind: 'steps', key: m.id, roots: [], byRoot: new Map() }
       blocks.push(b)
     }
-    const list = b.byStep.get(m.step) ?? []
-    list.push(m)
-    b.byStep.set(m.step, list)
+    const root = rootStepId(m.step)
+    if (!b.byRoot.has(root)) (b.roots.push(root), b.byRoot.set(root, []))
+    b.byRoot.get(root)!.push(m)
+  }
+  // 正在执行但还没有输出的节点也显示出来
+  if (task.status === 'running') {
+    const running = task.steps.filter((s) => !s.parentId && s.status === 'running')
+    let b = blocks.at(-1)
+    if (running.length && b?.kind !== 'steps') {
+      b = { kind: 'steps', key: 'live', roots: [], byRoot: new Map() }
+      blocks.push(b)
+    }
+    if (b?.kind === 'steps')
+      for (const s of running) if (!b.byRoot.has(s.id)) (b.roots.push(s.id), b.byRoot.set(s.id, []))
   }
   return blocks
 }
 
-function Divider({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex items-center gap-3 text-xs text-subtle">
-      <span className="h-px flex-1 bg-line" />
-      <span className="flex items-center gap-1.5">{children}</span>
-      <span className="h-px flex-1 bg-line" />
-    </div>
-  )
-}
-
-function MessageList({ msgs, teamNames }: { msgs: TaskMessage[]; teamNames: Set<string> }) {
-  return (
-    <>
-      {msgs.map((m, k) => {
-        const compact = k > 0 && msgs[k - 1].agentId === m.agentId
-        return (
-          <div key={m.id} className={cn(compact && '-mt-2')}>
-            <AgentMessage m={m} teamNames={teamNames} compact={compact} />
-          </div>
-        )
-      })}
-    </>
-  )
-}
-
-function StageBlock({
-  task,
-  block,
-  last,
-  teamNames,
-}: {
-  task: Task
-  block: Extract<Block, { kind: 'stage' }>
-  last: boolean
-  teamNames: Set<string>
-}) {
-  const { agents } = useData()
-  const stageCount = new Set(task.steps.map((s) => s.stage)).size
-  const inStage = task.steps.map((s, i) => ({ s, i })).filter((x) => x.s.stage === block.stage)
-  // 最后一段里还没输出的并行节点也显示出来
-  const shown = inStage.filter((x) => block.byStep.has(x.i) || (last && x.s.status === 'running'))
-  const title = task.stages[block.stage]?.title ?? `阶段 ${block.stage + 1}`
-  if (inStage.length <= 1)
-    return (
-      <div className="flex flex-col gap-5">
-        <Divider>
-          阶段 {block.stage + 1}/{stageCount} · {inStage[0]?.s.title ?? title}
-        </Divider>
-        <MessageList msgs={[...block.byStep.values()].flat()} teamNames={teamNames} />
-      </div>
-    )
-  return (
-    <div className="flex flex-col gap-3">
-      <Divider>
-        <GitBranch className="h-3.5 w-3.5 rotate-90" />
-        阶段 {block.stage + 1}/{stageCount} · {title} · 并行 {inStage.length} 个节点
-      </Divider>
-      {shown.map(({ s, i }) => {
-        const a = agents.find((x) => x.id === s.agentId)
-        const msgs = block.byStep.get(i) ?? []
-        return (
-          <section key={i} className="rounded-xl border bg-panel">
-            <header className="flex items-center gap-2 border-b px-3.5 py-2 text-[13px]">
-              <StepStatusIcon status={s.status} />
-              <span className="min-w-0 flex-1 truncate font-medium">{s.title}</span>
-              <span className="truncate text-xs text-subtle">{a?.name}</span>
-            </header>
-            <div className="flex flex-col gap-4 px-3.5 py-3.5">
-              {msgs.length ? (
-                <MessageList msgs={msgs} teamNames={teamNames} />
-              ) : (
-                <span className="flex items-center gap-2 text-xs text-subtle">
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  正在启动…
-                </span>
-              )}
-            </div>
-          </section>
-        )
-      })}
-    </div>
-  )
-}
-
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
-export function TaskView({
-  taskId,
-  project,
-  onChange,
-  onDeleted,
-}: {
-  taskId: string
-  project: Project
-  onChange: (t: Task) => void
-  onDeleted: () => void
-}) {
-  const { agents, workflows } = useData()
+export function TaskView({ taskId, project }: { taskId: string; project: Project }) {
+  const { agents, workflows, upsertTask, removeTask } = useData()
+  const { go } = useNav()
   const [task, setTask] = useState<Task | null>(null)
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -162,7 +77,7 @@ export function TaskView({
 
   const apply = (t: Task) => {
     setTask(t)
-    onChange(t)
+    upsertTask(t)
   }
 
   useEffect(() => {
@@ -172,7 +87,6 @@ export function TaskView({
       .catch((e) => toast.error((e as Error).message))
   }, [taskId])
 
-  // 执行中时轮询；真实执行接入后可以换成服务端推送
   const running = task?.status === 'running'
   useEffect(() => {
     if (!running) return
@@ -210,7 +124,6 @@ export function TaskView({
     try {
       apply(await api.sendMessage(task.id, text))
       setText('')
-      // 发送后马上拉一次，让「执行中」尽快出现
       setTimeout(
         () =>
           api
@@ -235,8 +148,9 @@ export function TaskView({
   const remove = async () => {
     try {
       await api.deleteTask(task.id)
+      removeTask(task.id)
       toast.success('已删除任务')
-      onDeleted()
+      go({ page: 'projects', id: project.id })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -244,10 +158,10 @@ export function TaskView({
     }
   }
 
+  const tops = task.steps.filter((s) => !s.parentId)
   const runningSteps = task.steps.filter((s) => s.status === 'running')
-  const lastAgent = [...task.messages].reverse().find((m) => m.role === 'agent')
-  const busyAgent = agents.find((a) => a.id === (runningSteps[0]?.agentId ?? lastAgent?.agentId))
   const chatAgent = agents.find((a) => a.id === task.agentId)
+  const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   const isFlow = task.mode === 'workflow' && view === 'flow'
 
@@ -255,69 +169,79 @@ export function TaskView({
     <>
       <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
         <main className="flex min-w-0 flex-1 flex-col md:h-full">
-          <header className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b bg-bg px-4 py-3 md:px-6">
-            <TaskStatusIcon status={task.status} />
-            <h2 className="min-w-0 flex-[1_1_200px] truncate text-[15px] font-semibold">{task.title}</h2>
-            <div className="flex flex-wrap items-center gap-2">
-              {task.mode === 'workflow' && (
-                <div className="flex rounded-lg bg-field p-0.5 ring-1 ring-line" role="tablist" aria-label="视图">
-                  {(
-                    [
-                      ['chat', '对话', MessageSquareText],
-                      ['flow', '流程图', GitBranch],
-                    ] as const
-                  ).map(([v, label, Icon]) => (
-                    <button
-                      key={v}
-                      role="tab"
-                      aria-selected={view === v}
-                      onClick={() => {
-                        setView(v)
-                        stick.current = v === 'chat'
-                        if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
-                      }}
-                      className={cn(
-                        'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
-                        view === v ? 'bg-card text-fg shadow-card ring-1 ring-line-strong' : 'text-muted hover:text-fg',
-                      )}
-                    >
-                      <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <Badge>
-                {task.mode === 'workflow'
-                  ? `工作流 · ${workflow?.name ?? '已删除'}`
-                  : `对话 · ${chatAgent?.name ?? '已删除'}`}
-              </Badge>
+          <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
+            <nav aria-label="位置" className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
+              <button
+                onClick={() => go({ page: 'projects', id: project.id })}
+                className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
+              >
+                {project.name}
+              </button>
+              <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
+              <TaskStatusIcon status={task.status} className="ml-1" />
+              <h2 className="min-w-0 truncate px-1 font-medium">{task.title}</h2>
               {task.simulated && (
-                <Badge tone="warning" title="还没有真正调用 CLI，输出是示例">
+                <span
+                  title="没有真正调用 CLI，输出是示例"
+                  className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[11px] text-warning md:inline-flex"
+                >
                   <FlaskConical className="h-3 w-3" />
-                  模拟执行
-                </Badge>
+                  模拟
+                </span>
               )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="xl:hidden"
-                aria-label="显示任务面板"
-                title="任务进度、上下文和更改"
-                onClick={() => setPanel(true)}
-              >
-                <PanelRight className="h-4 w-4" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="删除任务"
-                title="删除任务"
-                onClick={() => setDeleting(true)}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
-            </div>
+            </nav>
+            {task.mode === 'workflow' && (
+              <div className="flex shrink-0 rounded-lg bg-field p-0.5" role="tablist" aria-label="视图">
+                {(
+                  [
+                    ['chat', '对话', MessageSquareText],
+                    ['flow', '流程图', GitBranch],
+                  ] as const
+                ).map(([v, label, Icon]) => (
+                  <button
+                    key={v}
+                    role="tab"
+                    aria-label={label}
+                    aria-selected={view === v}
+                    onClick={() => {
+                      setView(v)
+                      stick.current = v === 'chat'
+                      if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
+                    }}
+                    className={cn(
+                      'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
+                      view === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                    )}
+                  >
+                    <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
+                    <span className="hidden sm:inline">{label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="xl:hidden"
+              aria-label="显示任务面板"
+              title="任务进度、上下文和更改"
+              onClick={() => setPanel(true)}
+            >
+              <PanelRight className="h-4 w-4" />
+            </Button>
+            <Menu>
+              <MenuTrigger asChild>
+                <Button variant="ghost" size="icon-sm" aria-label="更多操作">
+                  <MoreHorizontal className="h-4 w-4" />
+                </Button>
+              </MenuTrigger>
+              <MenuContent>
+                <MenuItem danger onSelect={() => setDeleting(true)}>
+                  <Trash2 className="h-4 w-4" />
+                  删除任务
+                </MenuItem>
+              </MenuContent>
+            </Menu>
           </header>
 
           <div
@@ -337,52 +261,45 @@ export function TaskView({
                 }}
               />
             ) : (
-              <div className="mx-auto flex max-w-[780px] flex-col gap-5 px-4 py-6 md:px-6">
-                {blocks.map((b, k) =>
-                  b.kind === 'stage' ? (
-                    <StageBlock
-                      key={b.key}
-                      task={task}
-                      block={b}
-                      last={k === blocks.length - 1}
-                      teamNames={teamNames}
-                    />
+              <div className="mx-auto flex max-w-[760px] flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
+                {blocks.map((b) =>
+                  b.kind === 'steps' ? (
+                    <div key={b.key} className="flex flex-col gap-7">
+                      {b.roots.map((r) => (
+                        <StepSection key={r} task={task} rootId={r} msgs={b.byRoot.get(r)!} teamNames={teamNames} />
+                      ))}
+                    </div>
                   ) : b.m.role === 'user' ? (
                     <div
                       key={b.m.id}
-                      className="ml-auto max-w-[85%] rounded-2xl rounded-br-md border bg-sel px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
+                      className="ml-auto max-w-[85%] rounded-2xl bg-sel px-4 py-2.5 text-[14.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]"
                     >
                       {b.m.text}
                     </div>
                   ) : b.m.role === 'system' ? (
-                    <div
-                      key={b.m.id}
-                      className="flex items-start justify-center gap-1.5 text-center text-xs whitespace-pre-wrap text-subtle"
-                    >
-                      <Info className="mt-px h-3.5 w-3.5 shrink-0" />
-                      {b.m.text}
-                    </div>
+                    <SystemNote key={b.m.id} text={b.m.text} className="justify-center text-center" />
                   ) : (
                     <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
                   ),
                 )}
-                {running && (
+                {running && task.mode === 'chat' && (
                   <div className="flex items-center gap-2 text-[13px] text-muted">
                     <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                    {runningSteps.length > 1
-                      ? `${runningSteps.length} 个节点正在并行执行`
-                      : busyAgent
-                        ? `${busyAgent.name} 正在执行`
-                        : '正在执行'}
-                    {runningSteps.length === 1 && <span className="text-subtle">· {runningSteps[0].title}</span>}
+                    {chatAgent?.name ?? 'Agent'} 正在回复
+                  </div>
+                )}
+                {running && task.mode === 'workflow' && runningSteps.length === 0 && (
+                  <div className="flex items-center gap-2 text-[13px] text-muted">
+                    <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                    {mainAgent?.name ?? '主 Agent'} 正在处理
                   </div>
                 )}
               </div>
             )}
           </div>
 
-          <div className="px-4 pt-1 pb-4 md:px-6 md:pb-5">
-            <div className="mx-auto max-w-[780px] rounded-2xl border border-line-strong bg-card shadow-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">
+          <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
+            <div className="mx-auto max-w-[760px] rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop">
               <label htmlFor="follow-up" className="sr-only">
                 继续输入要求
               </label>
@@ -397,38 +314,38 @@ export function TaskView({
                     send()
                   }
                 }}
-                placeholder={
-                  running ? '执行中，完成后可以继续输入要求' : '继续输入要求，Enter 发送，Shift + Enter 换行'
-                }
-                className="block max-h-48 w-full resize-none bg-transparent focus-visible:outline-none px-4 pt-3 text-[14px] leading-relaxed outline-none placeholder:text-subtle"
+                placeholder={running ? '执行中，完成后可以继续输入要求' : '继续输入要求'}
+                className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-2 px-3 pb-2.5">
-                <span className="truncate text-xs text-subtle">
+                <span className="min-w-0 truncate pl-1 text-xs text-subtle">
                   {running
-                    ? '执行中，可以随时停止'
+                    ? runningSteps.length > 1
+                      ? `${tops.filter((s) => s.status === 'running').length} 个节点同时执行中`
+                      : '执行中，可以随时停止'
                     : task.mode === 'workflow'
-                      ? task.steps.every((s) => s.status === 'done')
-                        ? `由主 Agent ${agents.find((a) => a.id === workflow?.mainAgentId)?.name ?? ''} 处理追加要求`
+                      ? tops.every((s) => s.status === 'done')
+                        ? `由主 Agent ${mainAgent?.name ?? ''} 处理追加要求`
                         : task.status === 'failed'
                           ? '会从失败的节点重新执行'
                           : '会从没完成的节点继续执行'
                       : `发给 ${chatAgent?.name ?? 'Agent'}`}
                 </span>
                 {running ? (
-                  <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                  <Button size="sm" variant="secondary" className="ml-auto rounded-lg" onClick={stop}>
+                    <Square className="h-3 w-3 fill-current" />
                     停止
                   </Button>
                 ) : (
-                  <Button
-                    size="icon-sm"
-                    className="ml-auto"
+                  <button
                     aria-label="发送"
+                    title="发送（Enter）"
                     disabled={!text.trim() || sending}
                     onClick={send}
+                    className="ml-auto grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg bg-accent text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    <ArrowUp className="h-4 w-4" />
-                  </Button>
+                    <ArrowUp className="h-4 w-4" strokeWidth={2.4} />
+                  </button>
                 )}
               </div>
             </div>
@@ -436,9 +353,10 @@ export function TaskView({
         </main>
 
         <aside
+          aria-label="任务面板"
           className={cn(
-            'w-[320px] shrink-0 flex-col overflow-y-auto border-l bg-panel p-3',
-            panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-2xl' : 'hidden',
+            'w-[320px] shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
+            panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
             'xl:static xl:z-auto xl:flex xl:h-full xl:shadow-none',
           )}
         >

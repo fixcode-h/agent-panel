@@ -69,6 +69,7 @@ export const api = {
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
+  allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),

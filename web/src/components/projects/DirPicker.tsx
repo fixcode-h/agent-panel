@@ -8,7 +8,12 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 /** 在服务端（也就是本机）浏览目录并选中一个 */
-function DirBrowser({ open, start, onOpenChange, onPick }: {
+function DirBrowser({
+  open,
+  start,
+  onOpenChange,
+  onPick,
+}: {
   open: boolean
   start: string
   onOpenChange: (o: boolean) => void
@@ -66,7 +71,12 @@ function DirBrowser({ open, start, onOpenChange, onPick }: {
             >
               <ArrowUp className="h-4 w-4" />
             </Button>
-            <Input value={jump} onChange={(e) => setJump(e.target.value)} className="h-9 font-mono text-[12.5px]" aria-label="路径" />
+            <Input
+              value={jump}
+              onChange={(e) => setJump(e.target.value)}
+              className="h-9 font-mono text-[12.5px]"
+              aria-label="路径"
+            />
           </form>
           <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
             {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
@@ -108,13 +118,28 @@ export function useDirInfo(path: string) {
   const [info, setInfo] = useState<DirInfo | null>(null)
   useEffect(() => {
     if (!path.trim()) return setInfo(null)
-    const t = setTimeout(() => api.inspectDir(path).then(setInfo).catch(() => setInfo(null)), 400)
+    const t = setTimeout(
+      () =>
+        api
+          .inspectDir(path)
+          .then(setInfo)
+          .catch(() => setInfo(null)),
+      400,
+    )
     return () => clearTimeout(t)
   }, [path])
   return info
 }
 
-export function DirPicker({ value, onChange, info }: { value: string; onChange: (p: string) => void; info: DirInfo | null }) {
+export function DirPicker({
+  value,
+  onChange,
+  info,
+}: {
+  value: string
+  onChange: (p: string) => void
+  info: DirInfo | null
+}) {
   const [browsing, setBrowsing] = useState(false)
   return (
     <div className="flex flex-col gap-1.5">

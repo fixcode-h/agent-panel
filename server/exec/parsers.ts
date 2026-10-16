@@ -15,7 +15,8 @@ export type CliEvent =
 export type Parser = (obj: any) => CliEvent[]
 
 /** 文本的行数（末尾换行不算多一行） */
-export const lines = (s: unknown) => (typeof s === 'string' && s ? s.split('\n').length - (s.endsWith('\n') ? 1 : 0) : 0)
+export const lines = (s: unknown) =>
+  typeof s === 'string' && s ? s.split('\n').length - (s.endsWith('\n') ? 1 : 0) : 0
 const oneLine = (s: string, n = 120) => {
   const t = s.replace(/\s+/g, ' ').trim()
   return t.length > n ? t.slice(0, n) + '…' : t
@@ -43,7 +44,11 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       const edits: any[] = input?.edits ?? [input]
       const add = edits.reduce((n, e) => n + lines(e?.new_string ?? e?.new_source), 0)
       const del = edits.reduce((n, e) => n + lines(e?.old_string), 0)
-      return { type: 'tool', tool: { kind: 'edit', label: file, detail: `+${add} -${del}` }, file: { path: file, add, del } }
+      return {
+        type: 'tool',
+        tool: { kind: 'edit', label: file, detail: `+${add} -${del}` },
+        file: { path: file, add, del },
+      }
     }
     case 'Bash':
       return { type: 'tool', tool: { kind: 'run', label: oneLine(String(input?.command ?? '')), detail: '' } }
@@ -138,7 +143,8 @@ export function codexParser(cwd: string): Parser {
     const type = item.type ?? item.item_type
     if (o.type === 'thread.started' && o.thread_id) out.push({ type: 'session', id: o.thread_id })
     else if (o.type === 'item.completed') {
-      if ((type === 'agent_message' || type === 'assistant_message') && item.text) out.push({ type: 'text', text: item.text })
+      if ((type === 'agent_message' || type === 'assistant_message') && item.text)
+        out.push({ type: 'text', text: item.text })
       else if (type === 'command_execution') {
         const code = item.exit_code
         out.push({
@@ -152,13 +158,21 @@ export function codexParser(cwd: string): Parser {
           out.push({ type: 'tool', tool: { kind: 'edit', label: p, detail: kind }, file: { path: p, add: 0, del: 0 } })
         }
       } else if (type === 'mcp_tool_call')
-        out.push({ type: 'tool', tool: { kind: 'other', label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`, detail: '' } })
+        out.push({
+          type: 'tool',
+          tool: { kind: 'other', label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`, detail: '' },
+        })
       else if (type === 'web_search')
         out.push({ type: 'tool', tool: { kind: 'search', label: `网页搜索 ${item.query ?? ''}`, detail: '' } })
       else if (type === 'error' && item.message) out.push({ type: 'error', message: item.message })
     } else if (o.type === 'turn.completed' && o.usage) {
       const u = o.usage
-      out.push({ type: 'usage', context: u.input_tokens ?? 0, addInput: u.input_tokens ?? 0, addOutput: u.output_tokens ?? 0 })
+      out.push({
+        type: 'usage',
+        context: u.input_tokens ?? 0,
+        addInput: u.input_tokens ?? 0,
+        addOutput: u.output_tokens ?? 0,
+      })
     } else if (o.type === 'turn.failed') out.push({ type: 'error', message: o.error?.message ?? '执行失败' })
     else if (o.type === 'error' && o.message) out.push({ type: 'error', message: o.message })
     return out
@@ -180,7 +194,10 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
   }
   if (/read|view|cat|open/.test(n)) return { type: 'tool', tool: { kind: 'read', label: file || name, detail: '' } }
   if (/bash|shell|exec|command|terminal|run/.test(n))
-    return { type: 'tool', tool: { kind: 'run', label: oneLine(String(input?.command ?? input?.cmd ?? name)), detail: '' } }
+    return {
+      type: 'tool',
+      tool: { kind: 'run', label: oneLine(String(input?.command ?? input?.cmd ?? name)), detail: '' },
+    }
   if (/grep|glob|search|find|list|ls/.test(n))
     return {
       type: 'tool',
@@ -214,7 +231,8 @@ export function commandCodeParser(cwd: string): Parser {
         const input = (u.inputTokens ?? 0) + (u.cacheReadTokens ?? 0) + (u.cacheWriteTokens ?? 0)
         out.push({ type: 'usage', context: input, model: e.model, addInput: input, addOutput: u.outputTokens ?? 0 })
       } else if (e.type === 'notice' && e.level === 'warning') out.push({ type: 'error', message: e.message })
-      else if (e.type === 'run_error') out.push({ type: 'error', message: e.error?.message ?? String(e.error ?? '执行失败') })
+      else if (e.type === 'run_error')
+        out.push({ type: 'error', message: e.error?.message ?? String(e.error ?? '执行失败') })
     } else if (o.type === 'result') {
       if (o.sessionId) out.push({ type: 'session', id: o.sessionId })
       const ok = o.subtype === 'success'

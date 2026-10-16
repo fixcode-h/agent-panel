@@ -17,11 +17,18 @@ export function DemoBanner() {
         <b className="font-medium">在线演示</b>
         <span className="text-subtle">：数据只存在你的浏览器里，CLI 和本机目录是模拟的。</span>
       </span>
-      <button onClick={reset} className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-accent hover:bg-accent-soft">
+      <button
+        onClick={reset}
+        className="inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 text-accent hover:bg-accent-soft"
+      >
         <RotateCcw className="h-3.5 w-3.5" />
         恢复示例数据
       </button>
-      <button onClick={() => setOpen(false)} aria-label="关闭提示" className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg">
+      <button
+        onClick={() => setOpen(false)}
+        aria-label="关闭提示"
+        className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:text-fg"
+      >
         <X className="h-4 w-4" />
       </button>
     </div>

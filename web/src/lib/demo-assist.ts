@@ -112,40 +112,83 @@ function agentDraft(text: string, ctx: AssistContext): { draft: AgentDraft; note
   }
 }
 
+type DraftFlow = WorkflowDraft['flows'][number]
+type DraftNode = DraftFlow['nodes'][number]
+const dn = (
+  key: string,
+  title: string,
+  agent: string,
+  instructions: string,
+  o: Partial<DraftNode> = {},
+): DraftNode => ({
+  key,
+  title,
+  agent,
+  flow: '',
+  instructions,
+  start: '',
+  review: '',
+  end: '',
+  maxRounds: 3,
+  ...o,
+})
+const reviewFlow = (agent: string): DraftFlow => ({
+  name: '代码审查',
+  main: false,
+  description: '检查改动的正确性、可读性和测试覆盖，给出通过或不通过',
+  nodes: [dn('check', '审查改动', agent, '逐个查看改动的文件，列出必须修改的问题。')],
+  edges: [
+    ['start', 'check'],
+    ['check', 'end'],
+  ],
+})
+
 function workflowDraft(text: string, ctx: AssistContext): { draft: WorkflowDraft; note: string } {
   if (ctx.target) {
-    const d = workflowToDraft(ctx.target as never, ctx.agents)
-    const review = ctx.agents.find((a) => /审查/.test(a.name))
-    const wantsReview = /审查|review/i.test(text) && review
-    const stages = wantsReview
-      ? [
-          ...d.stages.slice(0, -1),
-          {
-            title: '审查',
-            nodes: [{ title: '代码审查', agent: review!.name, instructions: '审查本次改动，列出必须修改的问题。' }],
-          },
-          ...d.stages.slice(-1),
-        ]
-      : d.stages.map((s, i) =>
-          i === d.stages.length - 1
-            ? {
-                ...s,
-                nodes: s.nodes.map((n) => ({ ...n, instructions: `${n.instructions}\n\n另外：${text.trim()}`.trim() })),
-              }
-            : s,
-        )
+    const d = workflowToDraft(ctx.target as never, ctx.agents, ctx.workflows)
+    const reviewer = ctx.agents.find((a) => /审查/.test(a.name))
+    const wantsReview = /审查|review/i.test(text)
+    const main = d.flows.find((f) => f.main) ?? d.flows[0]
+    if (wantsReview) {
+      const has = d.flows.some((f) => f.name === '代码审查')
+      const targets = main.nodes.filter((n) => n.agent && !/测试/.test(n.agent))
+      const pick = targets.length ? targets : main.nodes.slice(0, -1)
+      const flows = [
+        ...d.flows.map((f) =>
+          f === main
+            ? { ...f, nodes: f.nodes.map((n) => (pick.includes(n) ? { ...n, review: '代码审查', maxRounds: 2 } : n)) }
+            : f,
+        ),
+        ...(has ? [] : [reviewFlow(reviewer?.name ?? '')]),
+      ]
+      return {
+        draft: {
+          ...d,
+          members:
+            reviewer && !d.members.some((m) => m.agent === reviewer.name) && reviewer.name !== d.mainAgent
+              ? [...d.members, { agent: reviewer.name, responsibility: '代码审查' }]
+              : d.members,
+          flows,
+        },
+        note: `加了「代码审查」子流程，挂在${pick.map((n) => `「${n.title}」`).join('、')}的验收上：审查不通过会把意见交回节点修改，最多 2 轮。`,
+      }
+    }
+    const last = main.nodes.at(-1)
     return {
       draft: {
         ...d,
-        members:
-          wantsReview && !d.members.some((m) => m.agent === review!.name)
-            ? [...d.members, { agent: review!.name, responsibility: '代码审查' }]
-            : d.members,
-        stages,
+        flows: d.flows.map((f) =>
+          f === main
+            ? {
+                ...f,
+                nodes: f.nodes.map((n) =>
+                  n === last ? { ...n, instructions: `${n.instructions}\n\n另外：${text.trim()}`.trim() } : n,
+                ),
+              }
+            : f,
+        ),
       },
-      note: wantsReview
-        ? `在验收前加了一个「审查」阶段，由「${review!.name}」执行。`
-        : '把你的要求加进了最后一个阶段的节点说明。',
+      note: last ? `把你的要求加进了「${last.title}」节点的说明。` : '流程里还没有节点，没有改动。',
     }
   }
   const enabled = ctx.agents.filter((a) => a.enabled)
@@ -171,40 +214,35 @@ function workflowDraft(text: string, ctx: AssistContext): { draft: WorkflowDraft
     })
   }
   const mainName = main?.name ?? '架构师'
-  const stages: WorkflowDraft['stages'] = [
-    {
-      title: '分析',
-      nodes: [
-        {
-          title: bug ? '复现并定位问题' : '分析需求、拆分任务',
-          agent: '',
-          instructions: '阅读需求和相关代码，写出分工和验收标准。',
-        },
-      ],
-    },
-    {
-      title: bug ? '修复' : '开发',
-      nodes: builders.length
-        ? builders.map((a) => ({
-            title: a.description.split('，')[0] || a.name,
-            agent: a.name,
-            instructions: `负责${a.description || '自己擅长的部分'}，只改自己负责的文件。`,
-          }))
-        : [{ title: '实现', agent: '', instructions: '按分析阶段的结论完成改动。' }],
-    },
-    ...(testers.length
-      ? [
+  const build = builders.length
+    ? builders.map((a, i) =>
+        dn(
+          `b${i}`,
+          a.description.split('，')[0] || a.name,
+          a.name,
+          `负责${a.description || '自己擅长的部分'}，只改自己负责的文件。`,
           {
-            title: '测试',
-            nodes: testers.map((a) => ({
-              title: '运行测试',
-              agent: a.name,
-              instructions: '补充并运行测试，失败时附上日志。',
-            })),
+            review: '代码审查',
           },
-        ]
-      : []),
-    { title: '验收', nodes: [{ title: '验收', agent: '', instructions: '逐条对照验收标准检查结果。' }] },
+        ),
+      )
+    : [dn('b0', '实现', '', '按分析阶段的结论完成改动。', { review: '代码审查' })]
+  const test = testers.map((a) => dn('test', '运行测试', a.name, '补充并运行测试，失败时附上日志。'))
+  const nodes = [
+    dn('plan', bug ? '复现并定位问题' : '分析需求、拆分任务', '', '阅读需求和相关代码，写出分工和验收标准。'),
+    ...build,
+    ...test,
+    dn('check', '验收', '', '逐条对照验收标准检查结果。'),
+  ]
+  const after = test.length ? 'test' : 'check'
+  const edges: [string, string][] = [
+    ['start', 'plan'],
+    ...build.flatMap((b): [string, string][] => [
+      ['plan', b.key],
+      [b.key, after],
+    ]),
+    ...(test.length ? ([['test', 'check']] as [string, string][]) : []),
+    ['check', 'end'],
   ]
   return {
     draft: {
@@ -213,10 +251,10 @@ function workflowDraft(text: string, ctx: AssistContext): { draft: WorkflowDraft
       mainAgent: mainName,
       members: [...builders, ...testers].map((a) => ({ agent: a.name, responsibility: a.description })),
       newAgents,
-      stages,
+      flows: [{ name: '主流程', main: true, description: '', nodes, edges }, reviewFlow('')],
       document: `# 目标\n${text.trim()}\n\n# 规范\n- 只改和任务相关的文件\n- 改动后运行已有测试\n\n# 完成标准\n- 验收标准逐条满足\n- 测试全部通过\n`,
     },
-    note: `设计了「${name}」：${mainName} 先分析，${builders.length > 1 ? `${builders.map((a) => a.name).join('、')} 并行开发` : '然后实现'}${testers.length ? '，再测试' : ''}，最后验收。`,
+    note: `设计了「${name}」：${mainName} 先分析，${builders.length > 1 ? `${builders.map((a) => a.name).join('、')} 同时开发` : '然后实现'}，每个开发节点完成后走「代码审查」子流程验收${testers.length ? '，再测试' : ''}，最后验收。`,
   }
 }
 

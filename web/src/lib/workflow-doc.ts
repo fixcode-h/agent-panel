@@ -38,10 +38,13 @@ export function renderDoc(doc: string, teamNames: Set<string>) {
   renderer.html = ({ text }) => escape(text)
   const html = marked.parse(doc, { renderer, async: false, gfm: true, breaks: true }) as string
   // 只替换标签之外的文本里的 @提及
-  return html.replace(/(^|>)([^<]*)/g, (_, lead: string, text: string) =>
-    lead +
-    text.replace(/@([^\s@#，。、,.;；:：()（）\[\]【】<>&]+)/g, (_m, name: string) =>
-      `<span class="mention${teamNames.has(name) ? '' : ' unknown'}">@${name}</span>`,
-    ),
+  return html.replace(
+    /(^|>)([^<]*)/g,
+    (_, lead: string, text: string) =>
+      lead +
+      text.replace(
+        /@([^\s@#，。、,.;；:：()（）\[\]【】<>&]+)/g,
+        (_m, name: string) => `<span class="mention${teamNames.has(name) ? '' : ' unknown'}">@${name}</span>`,
+      ),
   )
 }

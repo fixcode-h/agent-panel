@@ -33,7 +33,7 @@ export function WorkflowDetail({
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
-  const { agents, clis, setWorkflows } = useData()
+  const { agents, clis, workflows, setWorkflows } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<WorkflowInput>(() => toInput(workflow))
   const [deleting, setDeleting] = useState(false)
@@ -55,8 +55,8 @@ export function WorkflowDetail({
   const team = draft.members
     .map((m) => ({ agent: byId.get(m.agentId), responsibility: m.responsibility }))
     .filter((m): m is { agent: Agent; responsibility: string } => !!m.agent)
-  const checks = workflowChecks({ ...workflow, ...draft }, agents, clis)
-  const nodeCount = draft.stages.reduce((n, s) => n + s.nodes.length, 0)
+  const checks = workflowChecks({ ...workflow, ...draft }, agents, clis, workflows)
+  const nodeCount = draft.flows.reduce((n, f) => n + f.nodes.length, 0)
 
   const remove = async () => {
     try {
@@ -126,13 +126,13 @@ export function WorkflowDetail({
         }
         body={
           tab === 'flow' ? (
-            <div className="px-4 pt-5 pb-10 md:px-8">
+            <div className="flex min-h-0 flex-1 flex-col">
               <FlowEditor
-                stages={draft.stages}
-                onChange={(s) => set('stages', s)}
+                w={{ ...draft, id: workflow.id }}
+                onChange={(p) => setDraft((d) => ({ ...d, ...p }))}
                 main={main}
                 team={team}
-                overview={<ReadinessCard checks={checks} />}
+                checks={checks}
               />
             </div>
           ) : undefined

@@ -75,6 +75,7 @@ export function tasksApi(deps: {
       ? runTurn({
           task: entry.task,
           agents,
+          workflows: await deps.workflows.list(),
           workflow,
           prompt,
           first,
@@ -89,6 +90,7 @@ export function tasksApi(deps: {
           await runRealTurn({
             task: entry.task,
             agents,
+            workflows: await deps.workflows.list(),
             workflow,
             project,
             settings,
@@ -107,7 +109,7 @@ export function tasksApi(deps: {
           id: randomUUID(),
           role: 'system',
           agentId: '',
-          step: -1,
+          step: '',
           text: `执行出错：${(e as Error).message}`,
           tools: [],
           at: new Date().toISOString(),
@@ -154,7 +156,7 @@ export function tasksApi(deps: {
         : await projectWorkflow(project)
       if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
-    const task = await store.create(newTask(input, workflow, agents, new Date().toISOString(), randomUUID()))
+    const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID()))
     return c.json(await start(task, input.prompt, true, workflow, agents), 201)
   })
 
@@ -173,7 +175,7 @@ export function tasksApi(deps: {
       id: randomUUID(),
       role: 'user',
       agentId: '',
-      step: -1,
+      step: '',
       text: p.data.text,
       tools: [],
       at: new Date().toISOString(),

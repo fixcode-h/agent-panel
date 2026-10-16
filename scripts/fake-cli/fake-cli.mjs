@@ -32,7 +32,8 @@ const fail = input.includes('FAIL')
 const resumeIdx = kind === 'codex' ? args.indexOf('resume') : args.indexOf('--resume')
 const session = resumeIdx >= 0 ? args[resumeIdx + 1] : randomUUID()
 const file = `${kind}-output.txt`
-const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。`
+const verdict = input.includes('最后单独一行写「验收结论') ? (input.includes('第 1 轮验收') ? '\n验收结论：不通过' : '\n验收结论：通过') : ''
+const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}`
 
 for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 30)
 

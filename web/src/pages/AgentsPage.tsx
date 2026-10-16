@@ -143,6 +143,7 @@ export function AgentsPage() {
         description: '',
         cli: '',
         model: '@medium',
+        effort: '',
         categoryId: selected?.categoryId ?? '',
         icon: 'bot',
         instructions: '',

@@ -1,4 +1,5 @@
-import type { Agent, Task, TaskStatus, Workflow } from '@shared/schema'
+import type { Agent, Task, TaskStatus, TaskStep, Workflow } from '@shared/schema'
+import { SLOT_LABEL } from '@shared/flow'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: '执行中',
@@ -64,9 +65,11 @@ export function contextUsage(task: Task, workflow: Workflow | undefined, agents:
 
 export const fmtTokens = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 
-/** 某个节点的执行情况：操作次数、改动文件数、当前在做什么、输出 */
-export function stepActivity(task: Task, i: number) {
-  const msgs = task.messages.filter((m) => m.role === 'agent' && m.step === i)
+/** 某个节点的执行情况：操作次数、改动文件数、当前在做什么、输出；deep 时包括开始、验收、结束等子节点 */
+export function stepActivity(task: Task, id: string, deep = false) {
+  const msgs = task.messages.filter(
+    (m) => m.role === 'agent' && (m.step === id || (deep && m.step.startsWith(id + '/'))),
+  )
   const tools = msgs.flatMap((m) => m.tools)
   const files = new Set(tools.filter((t) => t.kind === 'edit').map((t) => t.label))
   const last = msgs.at(-1)
@@ -90,7 +93,12 @@ export function currentActivity(a: ReturnType<typeof stepActivity>) {
 export function plainLine(text: string, last = false) {
   const lines = text
     .split('\n')
-    .map((l) => l.replace(/^[#>*\-\d.\s]+/, '').replace(/[*`_]/g, '').trim())
+    .map((l) =>
+      l
+        .replace(/^[#>*\-\d.\s]+/, '')
+        .replace(/[*`_]/g, '')
+        .trim(),
+    )
     .filter(Boolean)
   return (last ? lines.at(-1) : lines[0]) ?? ''
 }
@@ -107,4 +115,19 @@ export function stepDuration(step: { startedAt: string; endedAt: string; status:
   const end = step.endedAt ? new Date(step.endedAt).getTime() : step.status === 'running' ? now : 0
   const ms = end - new Date(step.startedAt).getTime()
   return end && ms >= 1000 ? fmtDuration(ms) : ''
+}
+
+/** 子节点的说明：「验收 第 2 轮 · 审查改动」 */
+export function stepLabel(s: TaskStep) {
+  if (!s.parentId) return s.title
+  return `${SLOT_LABEL[s.slot] ?? ''}${s.round ? ` 第 ${s.round} 轮` : ''} · ${s.title}`
+}
+
+/** 节点在第几层：主流程节点是 0 */
+export const stepDepth = (s: TaskStep) => (s.id.split('/').length - 1) / 2
+
+/** 验收情况：「验收 2 轮 · 通过」 */
+export function verdictText(s: TaskStep) {
+  if (!s.rounds) return ''
+  return `验收 ${s.rounds} 轮 · ${s.verdict === 'fail' ? '未通过' : '通过'}`
 }

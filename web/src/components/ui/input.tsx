@@ -1,4 +1,4 @@
-import { forwardRef, type InputHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { forwardRef, type InputHTMLAttributes, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { cn } from '@/lib/utils'
 
 export const fieldClass =
@@ -16,6 +16,48 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<H
   ),
 )
 Textarea.displayName = 'Textarea'
+
+const selectArrow =
+  "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E\")"
+
+/** 原生下拉框，样式和输入框一致 */
+export function Select({
+  options,
+  className,
+  style,
+  ...props
+}: Omit<SelectHTMLAttributes<HTMLSelectElement>, 'children'> & {
+  /** 带 group 的选项按组放进 optgroup */
+  options: { value: string; label: string; group?: string }[]
+}) {
+  const groups = [...new Set(options.map((o) => o.group ?? ''))]
+  const opt = (o: { value: string; label: string }) => (
+    <option key={o.value} value={o.value}>
+      {o.label}
+    </option>
+  )
+  return (
+    <select
+      className={cn(
+        fieldClass,
+        'h-9 cursor-pointer appearance-none bg-[length:14px] bg-[right_10px_center] bg-no-repeat pr-8',
+        className,
+      )}
+      style={{ backgroundImage: selectArrow, ...style }}
+      {...props}
+    >
+      {groups.map((g) =>
+        g ? (
+          <optgroup key={g} label={g}>
+            {options.filter((o) => o.group === g).map(opt)}
+          </optgroup>
+        ) : (
+          options.filter((o) => !o.group).map(opt)
+        ),
+      )}
+    </select>
+  )
+}
 
 export function Field({
   label,

@@ -15,6 +15,8 @@ export interface PermissionOption {
 
 export interface BuildOptions {
   model: string
+  /** 思考强度，取值见各 CLI 的 efforts；为空不传 */
+  effort?: string
   permission: string
   extraArgs: string[]
   /** 续接的会话 id；为空表示新会话 */
@@ -41,8 +43,10 @@ export interface CliDefinition {
   versionArgs: string[]
   /** 模型建议；用户仍可以手填任意模型名 */
   models: { id: string; label: string }[]
-  /** 高 / 中 / 低三档默认对应的模型，设置里可以改 */
-  tiers: Record<ModelTier, string>
+  /** 支持的思考强度（从低到高）；为空表示不支持 */
+  efforts: { id: string; label: string }[]
+  /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
+  tiers: Record<ModelTier, { model: string; effort: string }>
   permissions: PermissionOption[]
   defaultPermission: string
   /** 是否支持 --append-system-prompt 这类参数 */
@@ -75,7 +79,18 @@ export const CLIS: CliDefinition[] = [
       { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
       { id: 'default', label: '默认', hint: '非交互模式下需要审批的操作都会被拒绝' },
     ],
-    tiers: { high: 'opus', medium: 'sonnet', low: 'haiku' },
+    efforts: [
+      { id: 'low', label: '低' },
+      { id: 'medium', label: '中' },
+      { id: 'high', label: '高' },
+      { id: 'xhigh', label: '很高' },
+      { id: 'max', label: '最高' },
+    ],
+    tiers: {
+      high: { model: 'opus', effort: 'high' },
+      medium: { model: 'sonnet', effort: 'medium' },
+      low: { model: 'haiku', effort: 'low' },
+    },
     defaultPermission: 'acceptEdits',
     systemPromptFlag: true,
     buildArgs: (o) => [
@@ -85,6 +100,7 @@ export const CLIS: CliDefinition[] = [
       '--verbose',
       '--include-partial-messages',
       ...opt(o.model, '--model', o.model),
+      ...opt(o.effort, '--effort', o.effort!),
       ...(o.permission === 'bypassPermissions'
         ? ['--dangerously-skip-permissions']
         : opt(o.permission && o.permission !== 'default', '--permission-mode', o.permission)),
@@ -111,7 +127,18 @@ export const CLIS: CliDefinition[] = [
       { id: 'read-only', label: '只读', hint: '只能读文件和跑只读命令' },
       { id: 'danger-full-access', label: '完全访问', hint: '不使用沙箱、不确认，只在信任的项目里用' },
     ],
-    tiers: { high: 'gpt-5.6', medium: 'gpt-5.5', low: 'gpt-5.3-codex' },
+    efforts: [
+      { id: 'minimal', label: '最低' },
+      { id: 'low', label: '低' },
+      { id: 'medium', label: '中' },
+      { id: 'high', label: '高' },
+      { id: 'xhigh', label: '很高' },
+    ],
+    tiers: {
+      high: { model: 'gpt-5.6', effort: 'high' },
+      medium: { model: 'gpt-5.5', effort: 'medium' },
+      low: { model: 'gpt-5.3-codex', effort: 'low' },
+    },
     defaultPermission: 'workspace-write',
     systemPromptFlag: false,
     // resume 子命令不支持 -s，沙箱统一用 -c 配置
@@ -121,6 +148,7 @@ export const CLIS: CliDefinition[] = [
       '--json',
       '--skip-git-repo-check',
       ...opt(o.model, '-m', o.model),
+      ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
       ...(o.permission === 'danger-full-access'
         ? ['--dangerously-bypass-approvals-and-sandbox']
         : ['-c', `sandbox_mode="${o.permission || 'workspace-write'}"`]),
@@ -151,7 +179,17 @@ export const CLIS: CliDefinition[] = [
       { id: 'plan', label: '只读规划', hint: '只分析和出方案，不改文件' },
       { id: 'standard', label: '标准', hint: '非交互模式下需要审批的操作都会被拒绝' },
     ],
-    tiers: { high: 'claude-sonnet-5-5', medium: 'deepseek/deepseek-v4-pro', low: 'deepseek/deepseek-v4-flash' },
+    // 思考强度是否生效取决于模型
+    efforts: [
+      { id: 'low', label: '低' },
+      { id: 'medium', label: '中' },
+      { id: 'high', label: '高' },
+    ],
+    tiers: {
+      high: { model: 'claude-sonnet-5-5', effort: 'high' },
+      medium: { model: 'deepseek/deepseek-v4-pro', effort: '' },
+      low: { model: 'deepseek/deepseek-v4-flash', effort: '' },
+    },
     defaultPermission: 'accept-edits',
     systemPromptFlag: false,
     buildArgs: (o) => [
@@ -162,6 +200,7 @@ export const CLIS: CliDefinition[] = [
       '--trust',
       '--no-auto-update',
       ...opt(o.model, '-m', o.model),
+      ...opt(o.effort, '--effort', o.effort!),
       ...opt(o.permission, '--permission-mode', o.permission),
       ...opt(o.resume, '--resume', o.resume!),
       '--max-turns',

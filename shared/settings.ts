@@ -7,15 +7,15 @@ export const defaultSettings = (): Settings => Settings.parse({})
 export function cliSettings(settings: Settings, cliId: string): CliSettings & { command: string; permission: string } {
   const def = getCli(cliId)
   const s = CliSettings.parse(settings.clis[cliId] ?? {})
+  const tier = (t: ModelTier) => ({
+    model: s.tiers[t].model || def?.tiers[t].model || '',
+    effort: s.tiers[t].effort || def?.tiers[t].effort || '',
+  })
   return {
     ...s,
     command: s.command || def?.command || cliId,
     permission: s.permission || def?.defaultPermission || '',
-    tiers: {
-      high: s.tiers.high || def?.tiers.high || '',
-      medium: s.tiers.medium || def?.tiers.medium || '',
-      low: s.tiers.low || def?.tiers.low || '',
-    },
+    tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
   }
 }
 
@@ -29,16 +29,27 @@ export const tierOf = (model: string) => MODEL_TIERS.find((t) => model === `@${t
 /** Agent 实际使用的 CLI：没选时用系统默认 */
 export const agentCli = (a: { cli: string }, settings: Settings) => a.cli || defaultCli(settings)
 
-/** Agent 实际传给 CLI 的模型：档位换成对应模型，为空用 CLI 的默认模型（仍为空则不传） */
-export function agentModel(a: { cli: string; model: string }, settings: Settings) {
-  const cs = cliSettings(settings, agentCli(a, settings))
-  const t = tierOf(a.model)
-  return t ? cs.tiers[t.id] : a.model || cs.defaultModel
+/**
+ * Agent 实际传给 CLI 的模型和思考强度：
+ * 模型为空时用 CLI 的默认模型（也可以是档位）；档位换成设置里对应的模型；
+ * 思考强度依次取 Agent 自己的、档位的、CLI 默认的。
+ */
+export function agentRun(a: { cli: string; model: string; effort?: string }, settings: Settings) {
+  const cli = agentCli(a, settings)
+  const cs = cliSettings(settings, cli)
+  const pick = a.model || cs.defaultModel
+  const t = tierOf(pick)
+  const model = t ? cs.tiers[t.id].model : pick
+  const effort = a.effort || (t ? cs.tiers[t.id].effort : '') || cs.defaultEffort
+  return { cli, model, effort, tier: t }
 }
 
-/** 列表里显示的模型：「中档 · sonnet」「opus」「默认模型」 */
-export function modelText(a: { cli: string; model: string }, settings: Settings) {
+export const agentModel = (a: { cli: string; model: string }, settings: Settings) => agentRun(a, settings).model
+
+/** 列表里显示的模型：「中档 · sonnet」「opus」「默认 · sonnet」 */
+export function modelText(a: { cli: string; model: string; effort?: string }, settings: Settings) {
+  const r = agentRun(a, settings)
   const t = tierOf(a.model)
-  const m = agentModel(a, settings)
-  return t ? `${t.label}档${m ? ` · ${m}` : ''}` : a.model || (m ? `默认 · ${m}` : '默认模型')
+  const m = r.model || 'CLI 默认'
+  return t ? `${t.label}档 · ${m}` : a.model ? m : `默认 · ${m}`
 }

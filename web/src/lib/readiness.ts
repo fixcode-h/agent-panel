@@ -1,4 +1,5 @@
 import type { Agent, CliStatus, DirInfo, Workflow } from '@shared/schema'
+import { entryFlow, findRefCycle, flowLabel, getFlow, reachable, refsOf, topoOrder } from '@shared/flow'
 
 export interface Check {
   ok: boolean
@@ -44,23 +45,43 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
   ]
 }
 
-export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]): Check[] {
+export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], workflows: Workflow[] = []): Check[] {
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(w.mainAgentId)
   const team = [main, ...w.members.map((m) => byId.get(m.agentId))].filter(Boolean) as Agent[]
   const teamIds = new Set(team.map((a) => a.id))
-  const nodes = w.stages.flatMap((s) => s.nodes)
+  const nodes = w.flows.flatMap((f) => f.nodes)
   const outside = [
-    ...new Set(nodes.filter((n) => n.agentId && !teamIds.has(n.agentId)).map((n) => n.title || '未命名节点')),
+    ...new Set(
+      nodes
+        .filter((n) => n.kind === 'agent' && n.agentId && !teamIds.has(n.agentId))
+        .map((n) => n.title || '未命名节点'),
+    ),
   ]
-  const emptyStages = w.stages.filter((s) => !s.nodes.length).length
   const used = new Set(nodes.map((n) => n.agentId))
   const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !used.has(a.id)) as Agent[]
   const notRunnable = team.filter((a) => {
     const c = cliFor(a, clis)
     return !a.enabled || !c?.installed || !c.enabled
   })
-  const parallel = w.stages.filter((s) => s.nodes.length > 1).length
+  const entry = entryFlow(w)
+  const live = topoOrder(entry)
+  const loose = w.flows.flatMap((f) => {
+    const r = reachable(f)
+    return f.nodes.filter((n) => !r.has(n.id)).map((n) => `${flowLabel(f, w)} · ${n.title || '未命名节点'}`)
+  })
+  const emptyFlowNode = nodes.filter((n) => n.kind === 'flow' && !n.flow).map((n) => n.title || '未命名节点')
+  const all = workflows.some((x) => x.id === w.id) ? workflows.map((x) => (x.id === w.id ? w : x)) : [w, ...workflows]
+  const cycle = findRefCycle(w, all)
+  const broken = w.flows.flatMap((f) =>
+    refsOf(f)
+      .filter((r) =>
+        r.kind === 'sub' ? !getFlow(w, r.id) : workflows.length > 0 && !workflows.some((x) => x.id === r.id),
+      )
+      .map(() => flowLabel(f, w)),
+  )
+  const hooks = nodes.filter((n) => n.hooks.review).length
+  const subs = w.flows.length - 1
 
   return [
     {
@@ -76,13 +97,22 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]):
         : `共 ${team.length} 个 Agent`,
     },
     {
-      ok: nodes.length > 0 && emptyStages === 0,
+      ok: live.length > 0 && emptyFlowNode.length === 0,
       label: '已设计流程',
-      hint: !nodes.length
-        ? '在流程图里添加阶段和节点'
-        : emptyStages
-          ? `有 ${emptyStages} 个阶段还没有节点`
-          : `${w.stages.length} 个阶段、${nodes.length} 个节点${parallel ? `，${parallel} 个阶段并行` : ''}`,
+      hint: !live.length
+        ? `从「开始」连一条线到${flowLabel(entry, w)}的第一个节点`
+        : emptyFlowNode.length
+          ? `这些流程节点还没选流程：${emptyFlowNode.join('、')}`
+          : `${live.length} 个节点${subs ? `、${subs} 个子流程` : ''}${hooks ? `，${hooks} 个节点带验收` : ''}`,
+    },
+    {
+      ok: !cycle && broken.length === 0,
+      label: '流程引用正常',
+      hint: cycle
+        ? `流程循环调用：${cycle.join(' → ')}`
+        : broken.length
+          ? `${[...new Set(broken)].join('、')} 引用的流程已经删除`
+          : '没有循环调用',
     },
     {
       ok: outside.length === 0,
@@ -90,6 +120,12 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[]):
       hint: outside.length
         ? `这些节点的 Agent 不在团队里：${outside.join('、')}`
         : '没指定 Agent 的节点由主 Agent 执行',
+    },
+    {
+      ok: loose.length === 0,
+      label: '节点都已连上',
+      hint: loose.length ? `没有从开始连到、不会执行：${loose.slice(0, 4).join('、')}` : '所有节点都会执行',
+      optional: true,
     },
     {
       ok: unassigned.length === 0,

@@ -7,7 +7,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 
 /** 侧栏里的工作流摘要：名称、团队、是否就绪，点击跳到工作流 */
 export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; source?: string }) {
-  const { agents, clis } = useData()
+  const { agents, clis, workflows } = useData()
   const { go } = useNav()
   if (!workflow)
     return (
@@ -31,7 +31,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
       >
         <span className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-[13px] font-medium">{workflow.name}</span>
-          {isReady(workflowChecks(workflow, agents, clis)) ? (
+          {isReady(workflowChecks(workflow, agents, clis, workflows)) ? (
             <StatusDot tone="success" label="就绪" />
           ) : (
             <StatusDot tone="warning" label="未就绪，点开查看" />

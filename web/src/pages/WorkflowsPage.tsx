@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Plus, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowInput } from '@shared/schema'
+import { newFlow } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
@@ -35,7 +36,8 @@ export function WorkflowsPage() {
         description: '',
         mainAgentId: '',
         members: [],
-        stages: [],
+        flows: [newFlow('主流程', 'main')],
+        entryFlowId: 'main',
         document: '',
         ...input,
       })
@@ -85,7 +87,7 @@ export function WorkflowsPage() {
               <span
                 className={cn(
                   'h-2 w-2 shrink-0 rounded-full',
-                  isReady(workflowChecks(w, agents, clis)) ? 'bg-success' : 'bg-warning',
+                  isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',
                 )}
               />
             }

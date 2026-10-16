@@ -1,0 +1,412 @@
+/**
+ * 执行引擎：按流程图调度节点，真实执行和模拟执行共用。
+ *
+ * - 从「开始」出发，一个节点的上游全部完成后才执行，没有依赖关系的节点同时执行
+ * - 节点可以挂三个流程入口：开始（结果作为初始资料）、验收（不通过就把意见交回节点继续完善）、
+ *   结束（结果并入节点输出）；也可以整个节点就是执行另一个流程
+ * - 每个节点在 task.steps 里有一条记录，id 是路径（`n1/review.2/n5`），也用作 CLI 会话键；
+ *   续跑时已完成的节点直接复用输出
+ *
+ * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
+ */
+import {
+  END,
+  START,
+  type Agent,
+  type Flow,
+  type FlowNode,
+  type FlowRef,
+  type Task,
+  type TaskStep,
+  type Workflow,
+} from './schema.ts'
+import {
+  SLOT_LABEL,
+  blankStep,
+  flowLabel,
+  nodeAgent,
+  parallelTo,
+  preds,
+  reachable,
+  resolveRef,
+  stepTree,
+  topSteps,
+} from './flow.ts'
+
+export type AgentResult = { ok: true; text: string } | { ok: false; stopped?: boolean; error: string }
+type Fail = Extract<AgentResult, { ok: false }>
+
+export interface AgentCall {
+  /** 所属节点；追加要求和对话没有节点 */
+  step?: TaskStep
+  agentId: string
+  prompt: string
+  /** CLI 会话键：节点用节点 id，对话和追加要求用 Agent id */
+  sessionKey: string
+  /** 这次调用是在验收（模拟执行据此给出验收结论） */
+  reviewing?: boolean
+}
+
+export interface EngineHost {
+  task: Task
+  agents: Agent[]
+  /** 所有工作流（节点可以引用其他工作流） */
+  workflows: Workflow[]
+  workflow?: Workflow
+  /** 本轮的用户输入 */
+  prompt: string
+  changed: (flush?: boolean) => void
+  newId: () => string
+  runAgent: (call: AgentCall) => Promise<AgentResult>
+}
+
+const MAX_DEPTH = 6
+const MAX_OUTPUT = 4000
+const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
+const now = () => new Date().toISOString()
+
+/** 一次流程调用：在哪个工作流的哪个流程，挂在哪个节点的哪个入口下 */
+interface Invocation {
+  workflow: Workflow
+  flow: Flow
+  parentId: string
+  slot: TaskStep['slot']
+  round: number
+  /** 流程的输入：主流程是用户需求，入口流程是发起节点交过来的资料 */
+  input: string
+  /** 入口流程的发起节点标题 */
+  owner?: string
+  depth: number
+}
+
+type FlowResult = { ok: true; output: string } | Fail
+
+/** 从验收输出里读结论；没写结论时视为通过 */
+export function parseVerdict(text: string): 'pass' | 'fail' | '' {
+  const all = [...text.matchAll(/验收结论\s*[:：]\s*\**\s*(不通过|通过)/g)]
+  if (all.length) return all.at(-1)![1] === '通过' ? 'pass' : 'fail'
+  const en = [...text.matchAll(/verdict\s*[:：]\s*(pass|fail)/gi)]
+  if (en.length) return en.at(-1)![1].toLowerCase() === 'pass' ? 'pass' : 'fail'
+  return ''
+}
+
+export function system(host: EngineHost, text: string, step = '') {
+  host.task.messages.push({ id: host.newId(), role: 'system', agentId: '', step, text, tools: [], at: now() })
+}
+
+function userRequests(task: Task) {
+  const users = task.messages.filter((m) => m.role === 'user' && !m.step).map((m) => m.text)
+  return { original: users[0] ?? '', extra: users.slice(1) }
+}
+
+const stepPath = (inv: Invocation, nodeId: string) =>
+  inv.parentId ? `${inv.parentId}/${inv.slot}${inv.round ? `.${inv.round}` : ''}/${nodeId}` : nodeId
+
+function ensureStep(host: EngineHost, inv: Invocation, node: FlowNode, index: number): TaskStep {
+  const id = stepPath(inv, node.id)
+  let step = host.task.steps.find((s) => s.id === id)
+  if (!step) {
+    step = blankStep({
+      id,
+      parentId: inv.parentId,
+      slot: inv.parentId ? inv.slot : '',
+      round: inv.round,
+      workflowId: inv.workflow.id,
+      flowId: inv.flow.id,
+      nodeId: node.id,
+      kind: node.kind,
+      title: node.title.trim() || `节点 ${index + 1}`,
+      agentId: node.kind === 'agent' ? nodeAgent(inv.workflow, node.agentId) : '',
+    })
+    host.task.steps.push(step)
+  }
+  return step
+}
+
+/** 删掉某个节点下面指定入口的子节点和它们的消息（节点重跑时验收、结束要重新来） */
+function dropChildren(host: EngineHost, step: TaskStep, slots: TaskStep['slot'][]) {
+  const drop = new Set(
+    stepTree(host.task, step.id)
+      .filter((s) => slots.includes(s.id.slice(step.id.length + 1).split(/[./]/)[0] as TaskStep['slot']))
+      .map((s) => s.id),
+  )
+  if (!drop.size) return
+  host.task.steps = host.task.steps.filter((s) => !drop.has(s.id))
+  host.task.messages = host.task.messages.filter((m) => !drop.has(m.step))
+}
+
+function nodePrompt(host: EngineHost, inv: Invocation, node: FlowNode, step: TaskStep, input: string, start: string) {
+  const { original, extra } = userRequests(host.task)
+  const name = (id: string) => host.agents.find((a) => a.id === id)?.name ?? '主 Agent'
+  const siblings = parallelTo(inv.flow, node.id)
+  const reviewing = inv.slot === 'review'
+  return [
+    `你正在执行工作流「${inv.workflow.name}」里流程「${flowLabel(inv.flow, inv.workflow)}」的节点：${step.title}`,
+    inv.owner
+      ? `这个流程是节点「${inv.owner}」的${SLOT_LABEL[inv.slot]}流程${reviewing ? `（第 ${inv.round} 轮验收）` : ''}。`
+      : '',
+    `## 用户需求\n${original}`,
+    extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
+    inv.workflow.document.trim() ? `## 工作流说明\n${inv.workflow.document.trim()}` : '',
+    node.instructions.trim() ? `## 本节点要做的事\n${node.instructions.trim()}` : '',
+    start ? `## 开始流程的结果（作为本节点的初始资料）\n${start}` : '',
+    input ? `## 输入\n${input}` : '',
+    siblings.length
+      ? `## 同时进行的节点\n下面这些节点可能和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings
+          .map((s) => `- ${s.title || '未命名节点'}（${name(nodeAgent(inv.workflow, s.agentId))}）`)
+          .join('\n')}`
+      : '',
+    `## 要求\n只完成本节点「${step.title}」，不要做其他节点的工作。完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。`,
+    reviewing
+      ? '你在验收上面「输入」里的结果。逐条检查，不通过时列出必须修改的地方。最后单独一行写「验收结论：通过」或「验收结论：不通过」。'
+      : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** 执行一个节点（含开始、验收、结束入口） */
+async function runNode(
+  host: EngineHost,
+  inv: Invocation,
+  node: FlowNode,
+  index: number,
+  outputs: Map<string, { title: string; text: string }>,
+): Promise<FlowResult> {
+  const step = ensureStep(host, inv, node, index)
+  if (step.status === 'done') return { ok: true, output: step.output }
+  // 重跑：验收和结束要重新来，开始流程已完成的部分可以复用
+  dropChildren(host, step, ['review', 'end'])
+  step.status = 'running'
+  step.startedAt = now()
+  step.endedAt = ''
+  step.verdict = ''
+  step.rounds = 0
+  host.changed(true)
+
+  const ups = preds(inv.flow, node.id)
+  const upstream = ups
+    .filter((p) => p !== START)
+    .map((p) => outputs.get(p))
+    .filter(Boolean)
+    .map((o) => `### ${o!.title}\n${o!.text || '（没有文字输出）'}`)
+  const input = [
+    ups.includes(START) && inv.input ? inv.input : '',
+    upstream.length ? `上游节点的结果：\n\n${upstream.join('\n\n')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+  const sub = (ref: FlowRef | null, slot: TaskStep['slot'], round: number, subInput: string) =>
+    runRef(host, inv, ref, { parentId: step.id, slot, round, input: subInput, owner: step.title })
+
+  const fail = (r: Fail): FlowResult => {
+    step.status = r.stopped ? 'pending' : 'failed'
+    step.endedAt = now()
+    host.changed(true)
+    return r
+  }
+
+  // 开始流程
+  let start = ''
+  if (node.hooks.start) {
+    const r = await sub(
+      node.hooks.start,
+      'start',
+      0,
+      [`节点「${step.title}」准备开始。`, node.instructions.trim(), input].filter(Boolean).join('\n\n'),
+    )
+    if (!r.ok) return fail({ ...r, error: r.stopped ? r.error : `「${step.title}」的开始流程失败：${r.error}` })
+    start = r.output
+  }
+
+  // 节点本身
+  const body = async (round: number, extra: string): Promise<AgentResult> => {
+    if (node.kind === 'flow') {
+      const r = await sub(
+        node.flow,
+        'body',
+        round,
+        [input, start ? `开始流程的结果：\n${start}` : '', extra].filter(Boolean).join('\n\n'),
+      )
+      return r.ok ? { ok: true, text: r.output } : r
+    }
+    if (!step.agentId) return { ok: false, error: `「${step.title}」没有可执行的 Agent，请先给工作流选择主 Agent` }
+    return host.runAgent({
+      step,
+      agentId: step.agentId,
+      prompt: extra || nodePrompt(host, inv, node, step, input, start),
+      sessionKey: step.id,
+      reviewing: inv.slot === 'review',
+    })
+  }
+  let r = await body(0, '')
+  if (!r.ok) return fail(r)
+  let text = r.text
+
+  // 验收：不通过就把意见交回节点，最多 maxRounds 轮
+  if (node.hooks.review) {
+    for (let round = 1; ; round++) {
+      const rv = await sub(
+        node.hooks.review,
+        'review',
+        round,
+        `被验收的节点：${step.title}\n\n## 这个节点要做的事\n${node.instructions.trim() || '（没有写）'}\n\n## 它的结果\n${text || '（没有文字输出）'}`,
+      )
+      if (!rv.ok) return fail({ ...rv, error: rv.stopped ? rv.error : `「${step.title}」的验收流程失败：${rv.error}` })
+      const verdict = parseVerdict(rv.output)
+      step.rounds = round
+      step.verdict = verdict === 'fail' ? 'fail' : 'pass'
+      if (!verdict) system(host, `「${step.title}」的验收流程没有写「验收结论」，按通过处理。`, step.id)
+      host.changed(true)
+      if (verdict !== 'fail') break
+      if (round >= node.hooks.maxRounds)
+        return fail({
+          ok: false,
+          error: `「${step.title}」验收 ${round} 轮仍未通过。最后一轮的意见：\n${clip(rv.output, 1500)}`,
+        })
+      system(host, `「${step.title}」第 ${round} 轮验收未通过，已把意见交回节点继续完善。`, step.id)
+      const feedback = `验收没有通过（第 ${round} 轮）。验收意见：\n${rv.output}\n\n请按意见继续完善本节点「${step.title}」的工作，完成后同样简要总结。`
+      r = await body(round + 1, node.kind === 'flow' ? `上一轮的结果没有通过验收，意见：\n${rv.output}` : feedback)
+      if (!r.ok) return fail(r)
+      text = r.text
+    }
+  }
+
+  // 结束流程
+  if (node.hooks.end) {
+    const e = await sub(
+      node.hooks.end,
+      'end',
+      0,
+      `节点「${step.title}」已完成，它的结果：\n${text || '（没有文字输出）'}`,
+    )
+    if (!e.ok) return fail({ ...e, error: e.stopped ? e.error : `「${step.title}」的结束流程失败：${e.error}` })
+    if (e.output) text = `${text}\n\n结束流程的结果：\n${e.output}`
+  }
+
+  step.output = clip(text, MAX_OUTPUT)
+  step.status = 'done'
+  step.endedAt = now()
+  host.changed(true)
+  return { ok: true, output: step.output }
+}
+
+/** 执行引用的流程 */
+async function runRef(
+  host: EngineHost,
+  from: Invocation,
+  ref: FlowRef | null,
+  o: Pick<Invocation, 'parentId' | 'slot' | 'round' | 'input' | 'owner'>,
+): Promise<FlowResult> {
+  const t = resolveRef(ref, from.workflow, host.workflows)
+  if (!t) return { ok: false, error: '引用的流程不存在，可能已被删除' }
+  if (from.depth >= MAX_DEPTH) return { ok: false, error: `流程嵌套超过 ${MAX_DEPTH} 层，请检查是否循环引用` }
+  return runFlow(host, { ...o, workflow: t.workflow, flow: t.flow, depth: from.depth + 1 })
+}
+
+/** 按连线执行一个流程，返回连到「结束」的节点的输出 */
+async function runFlow(host: EngineHost, inv: Invocation): Promise<FlowResult> {
+  const live = reachable(inv.flow)
+  const nodes = inv.flow.nodes.filter((n) => live.has(n.id))
+  if (!nodes.length) return { ok: true, output: '' }
+  const outputs = new Map<string, { title: string; text: string }>()
+  const started = new Set<string>()
+  const running = new Map<string, Promise<void>>()
+  const failures: Fail[] = []
+
+  const ready = () =>
+    nodes.filter(
+      (n) =>
+        !started.has(n.id) &&
+        preds(inv.flow, n.id)
+          .filter((p) => p === START || live.has(p))
+          .every((p) => p === START || outputs.has(p)),
+    )
+
+  for (;;) {
+    if (!failures.length)
+      for (const n of ready()) {
+        started.add(n.id)
+        const idx = inv.flow.nodes.indexOf(n)
+        running.set(
+          n.id,
+          runNode(host, inv, n, idx, outputs).then((r) => {
+            running.delete(n.id)
+            if (r.ok) outputs.set(n.id, { title: n.title.trim() || `节点 ${idx + 1}`, text: r.output })
+            else failures.push(r)
+          }),
+        )
+      }
+    if (!running.size) break
+    await Promise.race(running.values())
+  }
+
+  if (failures.length) {
+    const stopped = failures.find((f) => f.stopped)
+    return (
+      stopped ?? (failures.length === 1 ? failures[0] : { ok: false, error: failures.map((f) => f.error).join('\n\n') })
+    )
+  }
+  const ends = inv.flow.edges.filter((e) => e.to === END && outputs.has(e.from)).map((e) => e.from)
+  const sinks = ends.length
+    ? ends
+    : nodes.filter((n) => !inv.flow.edges.some((e) => e.from === n.id && live.has(e.to))).map((n) => n.id)
+  const out = sinks.map((id) => outputs.get(id)!).filter(Boolean)
+  return {
+    ok: true,
+    output: out.length === 1 ? out[0].text : out.map((o) => `### ${o.title}\n${o.text}`).join('\n\n'),
+  }
+}
+
+function followUpPrompt(host: EngineHost) {
+  const { original } = userRequests(host.task)
+  if (host.task.mode === 'chat') return host.prompt
+  return [
+    `用户对任务「${host.task.title}」提出了追加要求：\n${host.prompt}`,
+    `## 任务的原始需求\n${original}`,
+    host.workflow?.document.trim() ? `## 工作流说明\n${host.workflow.document.trim()}` : '',
+    '工作流的各个节点已经完成。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+function finish(host: EngineHost, r: Fail) {
+  for (const s of host.task.steps)
+    if (s.status === 'running') {
+      s.status = r.stopped ? 'pending' : 'failed'
+      s.endedAt = now()
+    }
+  system(host, r.stopped ? '已停止。可以在下面输入新的要求继续。' : r.error)
+  host.task.status = r.stopped ? 'stopped' : 'failed'
+  host.changed(true)
+}
+
+/** 执行一轮：工作流还没跑完时按流程图执行；跑完后由主 Agent 处理追加要求；对话模式直接发给对应 Agent */
+export async function runEngineTurn(host: EngineHost) {
+  const { task } = host
+  task.status = 'running'
+  host.changed(true)
+
+  const unfinished = topSteps(task).some((s) => s.status !== 'done')
+  if (task.mode === 'workflow' && host.workflow && unfinished) {
+    const wf = host.workflow
+    const flow = wf.flows.find((f) => f.id === (task.steps[0]?.flowId || wf.entryFlowId)) ?? wf.flows[0]
+    const r = await runFlow(host, { workflow: wf, flow, parentId: '', slot: '', round: 0, input: '', depth: 0 })
+    if (!r.ok) return finish(host, r)
+  } else if (task.mode === 'workflow' && unfinished) {
+    return finish(host, { ok: false, error: '工作流不存在，可能已被删除' })
+  } else {
+    const who = task.mode === 'chat' ? task.agentId : (host.workflow?.mainAgentId ?? topSteps(task)[0]?.agentId ?? '')
+    // 追加要求：续接主 Agent 最近执行过的节点的会话，带上它之前的上下文
+    if (task.mode === 'workflow' && !task.sessions[who]) {
+      const last = [...task.steps].reverse().find((s) => s.agentId === who && task.sessions[s.id])
+      if (last) task.sessions[who] = task.sessions[last.id]
+    }
+    if (!who) return finish(host, { ok: false, error: '没有可以回答的 Agent，请先给工作流选择主 Agent' })
+    const r = await host.runAgent({ agentId: who, prompt: followUpPrompt(host), sessionKey: who })
+    if (!r.ok) return finish(host, r)
+  }
+  task.status = 'done'
+  host.changed(true)
+}

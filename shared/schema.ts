@@ -11,6 +11,8 @@ export const AgentInput = z.object({
   cli: z.string().default(''),
   /** 具体模型名；@high / @medium / @low 表示档位；为空用 CLI 的默认模型 */
   model: z.string().trim().default(''),
+  /** 思考强度；为空时跟随档位或 CLI 的默认设置 */
+  effort: z.string().trim().default(''),
   /** 所属分类；为空表示未分类 */
   categoryId: z.string().default(''),
   /** 卡片上显示的图标，可选值见 web/src/lib/agent-icons.ts */
@@ -44,47 +46,142 @@ export const WorkflowMember = z.object({
 })
 export type WorkflowMember = z.infer<typeof WorkflowMember>
 
-/** 流程里的一个节点：交给某个 Agent 完成的一件事 */
-export const WorkflowNode = z.object({
+/**
+ * 引用一个流程：sub 是同一工作流里的另一个流程（按 id），workflow 是另一个工作流（执行它的主流程）。
+ * 节点的开始 / 验收 / 结束入口和「流程节点」都用它。
+ */
+export const FlowRef = z.object({
+  kind: z.enum(['sub', 'workflow']),
+  id: z.string().min(1),
+})
+export type FlowRef = z.infer<typeof FlowRef>
+
+/** 节点上可以挂的三个流程入口 */
+export const NodeHooks = z.object({
+  /** 开始前执行，结果作为这个节点的初始资料 */
+  start: FlowRef.nullable().default(null),
+  /** 节点完成后执行验收；不通过就把意见交回节点继续完善 */
+  review: FlowRef.nullable().default(null),
+  /** 验收通过后执行，结果并入这个节点的输出 */
+  end: FlowRef.nullable().default(null),
+  /** 验收最多几轮，超过仍不通过时节点失败 */
+  maxRounds: z.number().int().min(1).max(10).default(3),
+})
+export type NodeHooks = z.infer<typeof NodeHooks>
+
+/** 流程里的一个节点：交给某个 Agent 完成的一件事，或者执行另一个流程 */
+export const FlowNode = z.object({
   id: z.string().min(1),
   title: z.string().trim().max(60).default(''),
+  /** agent：由 Agent 执行；flow：执行引用的流程 */
+  kind: z.enum(['agent', 'flow']).default('agent'),
   /** 执行的 Agent；为空表示由主 Agent 执行 */
   agentId: z.string().default(''),
+  /** kind 为 flow 时执行的流程 */
+  flow: FlowRef.nullable().default(null),
   /** 这个节点要做什么、产出什么（Markdown） */
   instructions: z.string().max(20000).default(''),
+  x: z.number().default(0),
+  y: z.number().default(0),
+  hooks: NodeHooks.default({ start: null, review: null, end: null, maxRounds: 3 }),
 })
-export type WorkflowNode = z.infer<typeof WorkflowNode>
+export type FlowNode = z.infer<typeof FlowNode>
+
+/** 连线：from 执行完才会执行 to；START / END 表示流程的开始和结束 */
+export const FlowEdge = z.object({ id: z.string().min(1), from: z.string().min(1), to: z.string().min(1) })
+export type FlowEdge = z.infer<typeof FlowEdge>
+
+export const START = 'start'
+export const END = 'end'
 
 /**
- * 阶段：流程按阶段从左到右依次执行，同一阶段里的节点并行执行，
- * 全部完成后才进入下一阶段（类似 CI 的 stage / job）。
+ * 流程：节点和连线组成的有向图，自由摆放。从「开始」出发，一个节点的上游全部完成后才执行它，
+ * 没有依赖关系的节点同时执行。一个工作流可以有多个流程，其中一个是主流程（任务从这里开始），
+ * 其余是子流程，供节点的开始 / 验收 / 结束入口或流程节点调用。
  */
-export const WorkflowStage = z.object({
+export const Flow = z.object({
   id: z.string().min(1),
-  title: z.string().trim().max(40).default(''),
-  nodes: z.array(WorkflowNode).default([]),
+  name: z.string().trim().max(40).default(''),
+  description: z.string().trim().max(200).default(''),
+  nodes: z.array(FlowNode).max(100).default([]),
+  edges: z.array(FlowEdge).max(400).default([]),
+  /** 开始、结束两个端点在画布上的位置 */
+  startPos: z.object({ x: z.number(), y: z.number() }).default({ x: 0, y: 0 }),
+  endPos: z.object({ x: z.number(), y: z.number() }).default({ x: 600, y: 0 }),
 })
-export type WorkflowStage = z.infer<typeof WorkflowStage>
+export type Flow = z.infer<typeof Flow>
+
+const rid = () => Math.random().toString(36).slice(2, 10)
+
+/**
+ * 旧版的「阶段」流程（阶段依次执行、阶段内并行）转换成连线：
+ * 每个阶段的节点连到下一阶段的所有节点，位置按阶段排成列。
+ */
+export function stagesToFlow(stages: { title?: string; nodes?: Record<string, unknown>[] }[]) {
+  const cols = stages.filter((s) => s.nodes?.length)
+  const nodes: Record<string, unknown>[] = []
+  const edges: { id: string; from: string; to: string }[] = []
+  let prev: string[] = [START]
+  const COL = 300
+  const ROW = 150
+  cols.forEach((c, ci) => {
+    const ids: string[] = []
+    c.nodes!.forEach((n, ni) => {
+      const id = String(n.id ?? `nd_${rid()}`)
+      ids.push(id)
+      nodes.push({
+        ...n,
+        id,
+        x: 240 + ci * COL,
+        y: (ni - (c.nodes!.length - 1) / 2) * ROW,
+      })
+      for (const p of prev) edges.push({ id: `e_${rid()}`, from: p, to: id })
+    })
+    prev = ids
+  })
+  for (const p of prev) if (p !== START || !cols.length) edges.push({ id: `e_${rid()}`, from: p, to: END })
+  return {
+    id: 'main',
+    name: '主流程',
+    nodes,
+    edges: cols.length ? edges : [],
+    startPos: { x: 0, y: 0 },
+    endPos: { x: 240 + cols.length * COL, y: 0 },
+    description: '',
+  }
+}
+
+/** 读旧数据时把阶段转换成流程 */
+function migrateWorkflow(v: unknown) {
+  if (!v || typeof v !== 'object') return v
+  const w = v as Record<string, unknown>
+  if (Array.isArray(w.flows) && w.flows.length) return w
+  const stages = Array.isArray(w.stages) ? (w.stages as { nodes?: Record<string, unknown>[] }[]) : []
+  const { stages: _, ...rest } = w
+  return { ...rest, flows: [stagesToFlow(stages)], entryFlowId: 'main' }
+}
 
 /**
  * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
  * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
-export const WorkflowInput = z.object({
+const WorkflowFields = z.object({
   name: z.string().trim().min(1, '名称不能为空').max(40),
   description: z.string().trim().max(200).default(''),
   /** 主 Agent；为空表示还没选 */
   mainAgentId: z.string().default(''),
   members: z.array(WorkflowMember).default([]),
-  /** 流程：阶段从左到右执行，阶段内的节点并行 */
-  stages: z.array(WorkflowStage).max(30).default([]),
+  /** 流程：第一个默认是主流程；entryFlowId 指定任务从哪个流程开始 */
+  flows: z.array(Flow).min(1).max(20),
+  entryFlowId: z.string().default('main'),
   /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
 })
-export type WorkflowInput = z.infer<typeof WorkflowInput>
+export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
+export type WorkflowInput = z.infer<typeof WorkflowFields>
 
-export const Workflow = WorkflowInput.extend(Meta.shape)
-export type Workflow = z.infer<typeof Workflow>
+export const Workflow = z.preprocess(migrateWorkflow, WorkflowFields.extend(Meta.shape))
+export type Workflow = z.infer<typeof WorkflowFields> & z.infer<typeof Meta>
 
 export interface CliStatus {
   id: string
@@ -179,24 +276,44 @@ export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
   agentId: z.string().default(''),
-  /** 属于 task.steps 的第几个节点；-1 表示不属于任何节点（追问、对话） */
-  step: z.number().int().default(-1),
+  /** 属于哪个任务节点（task.steps 的 id）；为空表示不属于任何节点（追问、对话） */
+  step: z.string().default(''),
   text: z.string().default(''),
   tools: z.array(ToolUse).default([]),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
 
+export const StepStatus = z.enum(['pending', 'running', 'done', 'failed', 'skipped'])
+export type StepStatus = z.infer<typeof StepStatus>
+
+/**
+ * 任务里执行过（或将要执行）的一个节点。主流程的节点在任务创建时就列出来；
+ * 节点的开始 / 验收 / 结束流程、流程节点里的子节点在执行时才加进来，用 parentId 挂在发起它的节点下。
+ */
 export const TaskStep = z.object({
-  /** 对应工作流节点的 id，也用作这个节点在 CLI 里的会话键 */
+  /** 路径形式的唯一 id，也是 CLI 会话键：主流程节点就是节点 id，子节点形如 `n1/review.2/n5` */
   id: z.string(),
-  /** 所在阶段（task.stages 的下标）；同一阶段的节点并行执行 */
-  stage: z.number().int(),
+  parentId: z.string().default(''),
+  /** 在父节点里的位置：start / review / end 是三个入口，body 是流程节点执行的流程 */
+  slot: z.enum(['', 'start', 'review', 'end', 'body']).default(''),
+  /** 验收的第几轮（从 1 开始）；不是验收流程里的节点为 0 */
+  round: z.number().int().default(0),
+  workflowId: z.string().default(''),
+  flowId: z.string().default(''),
+  nodeId: z.string().default(''),
+  kind: z.enum(['agent', 'flow']).default('agent'),
   title: z.string(),
   agentId: z.string().default(''),
-  status: z.enum(['pending', 'running', 'done', 'failed', 'skipped']).default('pending'),
+  status: StepStatus.default('pending'),
   startedAt: z.string().default(''),
   endedAt: z.string().default(''),
+  /** 节点的最终输出（交给下游节点），续跑时直接复用 */
+  output: z.string().default(''),
+  /** 验收结果；节点上记录最后一轮的结论 */
+  verdict: z.enum(['', 'pass', 'fail']).default(''),
+  /** 已经验收了几轮 */
+  rounds: z.number().int().default(0),
 })
 export type TaskStep = z.infer<typeof TaskStep>
 
@@ -213,12 +330,8 @@ export const TaskData = z.object({
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   status: TaskStatus,
-  stages: z.array(z.object({ title: z.string() })).default([]),
-  /** 所有节点，按阶段顺序排列；旧数据没有阶段时每一步各自是一个阶段 */
-  steps: z.preprocess(
-    (v) => (Array.isArray(v) ? v.map((s, i) => ({ id: `s${i}`, stage: i, ...s })) : v),
-    z.array(TaskStep).default([]),
-  ),
+  /** 所有节点：主流程的节点按执行顺序排在前面，执行中产生的子节点追加在后面 */
+  steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
   changes: z.array(FileChange).default([]),
   /** 模拟执行（设置里选了模拟，或在线演示） */
@@ -241,24 +354,44 @@ export const TaskData = z.object({
 })
 export type TaskData = z.infer<typeof TaskData>
 
-export const Task = TaskData.extend(Meta.shape)
-export type Task = z.infer<typeof Task>
+/** 旧任务的消息用节点下标记录所属节点，换成节点 id */
+function migrateTask(v: unknown) {
+  if (!v || typeof v !== 'object') return v
+  const t = v as { steps?: { id?: string }[]; messages?: { step?: unknown }[] }
+  const steps = (t.steps ?? []).map((s, i) => ({
+    ...s,
+    id: s.id ?? `s${i}`,
+    nodeId: (s as any).nodeId ?? s.id ?? `s${i}`,
+  }))
+  const messages = (t.messages ?? []).map((m) =>
+    typeof m.step === 'number' ? { ...m, step: m.step >= 0 ? (steps[m.step]?.id ?? '') : '' } : m,
+  )
+  return { ...t, steps, messages }
+}
+
+export const Task = z.preprocess(migrateTask, TaskData.extend(Meta.shape))
+export type Task = z.infer<typeof TaskData> & z.infer<typeof Meta>
+
+/** 一个档位：模型和思考强度；旧数据只有模型名 */
+export const TierSetting = z.preprocess(
+  (v) => (typeof v === 'string' ? { model: v } : (v ?? {})),
+  z.object({ model: z.string().trim().default(''), effort: z.string().trim().default('') }),
+)
+export type TierSetting = z.infer<typeof TierSetting>
 
 /** 单个 CLI 的本机设置 */
 export const CliSettings = z.object({
   enabled: z.boolean().default(true),
   /** 可执行文件；为空时用默认命令名（从 PATH 查找） */
   command: z.string().trim().default(''),
-  /** Agent 没有指定模型时使用 */
+  /** Agent 没有指定模型时使用；可以是具体模型，也可以是档位 @high / @medium / @low */
   defaultModel: z.string().trim().default(''),
-  /** 高 / 中 / 低三档对应的模型；为空用内置的建议值 */
+  /** Agent 和档位都没指定思考强度时使用；为空不传 */
+  defaultEffort: z.string().trim().default(''),
+  /** 高 / 中 / 低三档对应的模型和思考强度；为空用内置的建议值 */
   tiers: z
-    .object({
-      high: z.string().trim().default(''),
-      medium: z.string().trim().default(''),
-      low: z.string().trim().default(''),
-    })
-    .default({ high: '', medium: '', low: '' }),
+    .object({ high: TierSetting, medium: TierSetting, low: TierSetting })
+    .default({ high: { model: '', effort: '' }, medium: { model: '', effort: '' }, low: { model: '', effort: '' } }),
   /** 权限模式，取值见 shared/clis.ts 里各 CLI 的 permissions */
   permission: z.string().default(''),
   /** 每次调用都追加的参数 */

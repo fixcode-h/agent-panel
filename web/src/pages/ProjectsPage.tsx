@@ -67,7 +67,9 @@ export function ProjectsPage() {
 
   // 点进项目后整个页面换成项目工作区（任务列表 + 任务对话）
   if (selected)
-    return <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} onDuplicate={() => duplicate(selected)} />
+    return (
+      <ProjectWorkspace key={selected.id} project={selected} sub={route.sub} onDuplicate={() => duplicate(selected)} />
+    )
 
   return (
     <>
@@ -139,7 +141,9 @@ export function ProjectsPage() {
                 title={p.name}
                 subtitle={p.path || '未选择目录'}
                 trailing={
-                  <span className="max-w-24 shrink-0 truncate text-xs text-subtle">{effectiveWorkflow(p)?.name ?? '无工作流'}</span>
+                  <span className="max-w-24 shrink-0 truncate text-xs text-subtle">
+                    {effectiveWorkflow(p)?.name ?? '无工作流'}
+                  </span>
                 }
               />
             ))}
@@ -157,12 +161,17 @@ export function ProjectsPage() {
         />
       ) : projects.length > 0 ? (
         <DetailEmpty icon={<FolderGit2 className="h-6 w-6" />} title="选择一个项目">
-          <p>点开项目可以查看它的任务，或者新建任务让 Agent 按工作流执行。项目的目录和工作流在项目里的「设置」中修改。</p>
+          <p>
+            点开项目可以查看它的任务，或者新建任务让 Agent 按工作流执行。项目的目录和工作流在项目里的「设置」中修改。
+          </p>
         </DetailEmpty>
       ) : (
         !loading && (
           <DetailEmpty icon={<FolderGit2 className="h-6 w-6" />} title="添加第一个项目">
-            <p>项目是本机上的一个目录。给项目选一个分类，分类指定默认工作流，之后就可以在项目里描述任务，让 Agent 按工作流执行。</p>
+            <p>
+              项目是本机上的一个目录。给项目选一个分类，分类指定默认工作流，之后就可以在项目里描述任务，让 Agent
+              按工作流执行。
+            </p>
             <Button className="mt-5" onClick={() => create()}>
               <Plus className="h-4 w-4" />
               新建项目

@@ -3,11 +3,11 @@ import { toast } from 'sonner'
 import { Copy, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, AgentInput } from '@shared/schema'
 import { MODEL_TIERS, getCli } from '@shared/clis'
-import { agentCli, cliSettings, defaultSettings, tierOf, tierToken } from '@shared/settings'
+import { agentCli, agentRun, cliSettings, defaultSettings, tierOf, tierToken } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
-import { cliColor } from '@/lib/cli-style'
+import { cliColor, effortLabel, effortOptions } from '@/lib/cli-style'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
@@ -15,7 +15,7 @@ import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
+import { Field, FormSection, Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Detail, DetailHeader } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
@@ -86,10 +86,13 @@ export function AgentDetail({
   const cli = clis.find((c) => c.id === cliId)
   const cs = cliSettings(s, cliId)
   const defaultModel = cs.defaultModel
+  const cliDef = getCli(cliId)
+  // 不看 Agent 自己的思考强度，得到「跟随设置」时的值
+  const run = agentRun({ ...draft, effort: '' }, s)
   const tier = tierOf(draft.model)
   // 换 CLI 时保留档位，具体模型名不通用所以清空
   const pickCli = (id: string) =>
-    draft.cli !== id && setDraft((d) => ({ ...d, cli: id, model: tierOf(d.model) ? d.model : '' }))
+    draft.cli !== id && setDraft((d) => ({ ...d, cli: id, model: tierOf(d.model) ? d.model : '', effort: '' }))
   const live = { ...agent, ...value }
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
@@ -264,7 +267,10 @@ export function AgentDetail({
                           {t.label}档 <span className="font-normal text-subtle">· {t.hint}</span>
                         </span>
                         <span className="w-full truncate font-mono text-xs text-muted">
-                          {cs.tiers[t.id] || 'CLI 默认'}
+                          {cs.tiers[t.id].model || 'CLI 默认'}
+                          {cs.tiers[t.id].effort && (
+                            <span className="text-subtle"> · {effortLabel(cliDef, cs.tiers[t.id].effort)}</span>
+                          )}
                         </span>
                       </button>
                     )
@@ -280,7 +286,7 @@ export function AgentDetail({
                   onChange={(e) => set('model', e.target.value)}
                   placeholder={
                     tier
-                      ? `已选${tier.label}档：${cs.tiers[tier.id]}，填写会改为指定模型`
+                      ? `已选${tier.label}档：${cs.tiers[tier.id].model}，填写会改为指定模型`
                       : defaultModel
                         ? `留空使用设置里的默认模型：${defaultModel}`
                         : '留空使用 CLI 默认模型'
@@ -306,6 +312,22 @@ export function AgentDetail({
                   ))}
                 </div>
               )}
+              {cliDef && (
+                <Field
+                  label="思考强度"
+                  hint="越高想得越久、越慢。不指定时用档位的设置，再没有就用 CLI 的默认。"
+                  className="max-w-[320px]"
+                >
+                  <Select
+                    value={draft.effort}
+                    onChange={(e) => set('effort', e.target.value)}
+                    options={effortOptions(
+                      cliDef,
+                      run.effort ? `跟随设置 · ${effortLabel(cliDef, run.effort)}` : '跟随设置 · CLI 默认',
+                    )}
+                  />
+                </Field>
+              )}
             </FormSection>
 
             <FormSection title="行为">
@@ -330,7 +352,7 @@ export function AgentDetail({
         }
         aside={
           <>
-            <CommandPreview cli={draft.cli} model={draft.model} extraArgs={value.extraArgs} />
+            <CommandPreview cli={draft.cli} model={draft.model} effort={draft.effort} extraArgs={value.extraArgs} />
             <ReadinessCard checks={checks} />
             <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
               <h3 className="text-[13px] font-semibold">所在工作流</h3>

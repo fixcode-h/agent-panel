@@ -19,7 +19,15 @@ import { DirPicker, useDirInfo } from './DirPicker'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
 
-export function ProjectDetail({ project, onDuplicate, onDeleted }: { project: Project; onDuplicate: () => void; onDeleted: () => void }) {
+export function ProjectDetail({
+  project,
+  onDuplicate,
+  onDeleted,
+}: {
+  project: Project
+  onDuplicate: () => void
+  onDeleted: () => void
+}) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis } = useData()
   const { go } = useNav()
   const [draft, setDraft] = useState<ProjectInput>(() => toInput(project))
@@ -68,7 +76,11 @@ export function ProjectDetail({ project, onDuplicate, onDeleted }: { project: Pr
             meta={
               <>
                 <Badge>{category?.name ?? '未分类'}</Badge>
-                {isReady(checks) ? <StatusDot tone="success" label="就绪" /> : <StatusDot tone="warning" label="未就绪" />}
+                {isReady(checks) ? (
+                  <StatusDot tone="success" label="就绪" />
+                ) : (
+                  <StatusDot tone="warning" label="未就绪" />
+                )}
               </>
             }
             subtitle={draft.path || '还没有选择本地目录'}
@@ -78,7 +90,13 @@ export function ProjectDetail({ project, onDuplicate, onDeleted }: { project: Pr
                 <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
                   <Copy className="h-4 w-4" />
                 </Button>
-                <Button variant="danger-outline" size="icon" aria-label="删除" title="删除" onClick={() => setDeleting(true)}>
+                <Button
+                  variant="danger-outline"
+                  size="icon"
+                  aria-label="删除"
+                  title="删除"
+                  onClick={() => setDeleting(true)}
+                >
                   <Trash2 className="h-4 w-4" />
                 </Button>
               </>
@@ -90,7 +108,11 @@ export function ProjectDetail({ project, onDuplicate, onDeleted }: { project: Pr
             <FormSection title="基本信息">
               <div className="flex flex-wrap gap-4">
                 <Field label="名称" className="flex-[1_1_200px]" error={valid ? undefined : '名称不能为空'}>
-                  <Input value={draft.name} onChange={(e) => set('name', e.target.value)} placeholder="例如：官网前端" />
+                  <Input
+                    value={draft.name}
+                    onChange={(e) => set('name', e.target.value)}
+                    placeholder="例如：官网前端"
+                  />
                 </Field>
                 <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
                   <span className="text-xs text-muted">项目分类</span>
@@ -128,22 +150,22 @@ export function ProjectDetail({ project, onDuplicate, onDeleted }: { project: Pr
                   emptyLabel={inherited ? `使用分类默认：${inherited.name}` : '使用分类默认（分类还没有指定）'}
                 />
                 <span className="text-xs text-subtle">
-                  {own
-                    ? '这个项目单独指定了工作流，不受分类默认的影响。'
-                    : category
-                      ? (
-                          <>
-                            跟随项目分类「
-                            <button
-                              className="cursor-pointer text-accent hover:underline"
-                              onClick={() => go({ page: 'projects', id: `cat:${category.id}` })}
-                            >
-                              {category.name}
-                            </button>
-                            」的默认工作流，修改分类后这里会一起变化。
-                          </>
-                        )
-                      : '项目没有分类，需要在这里单独指定工作流。'}
+                  {own ? (
+                    '这个项目单独指定了工作流，不受分类默认的影响。'
+                  ) : category ? (
+                    <>
+                      跟随项目分类「
+                      <button
+                        className="cursor-pointer text-accent hover:underline"
+                        onClick={() => go({ page: 'projects', id: `cat:${category.id}` })}
+                      >
+                        {category.name}
+                      </button>
+                      」的默认工作流，修改分类后这里会一起变化。
+                    </>
+                  ) : (
+                    '项目没有分类，需要在这里单独指定工作流。'
+                  )}
                 </span>
               </div>
             </FormSection>
@@ -152,7 +174,10 @@ export function ProjectDetail({ project, onDuplicate, onDeleted }: { project: Pr
         aside={
           <>
             <ReadinessCard checks={checks} />
-            <WorkflowSummary workflow={workflow} source={own ? '项目单独指定' : workflow ? '来自分类默认' : undefined} />
+            <WorkflowSummary
+              workflow={workflow}
+              source={own ? '项目单独指定' : workflow ? '来自分类默认' : undefined}
+            />
           </>
         }
       />

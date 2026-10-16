@@ -84,17 +84,21 @@ try {
   const A = await agent({ name: '甲', cli: 'claude', instructions: '你是甲，负责规划。' })
   const B = await agent({ name: '乙', cli: 'codex', model: 'gpt-5.6', instructions: '你是乙，负责实现。' })
   const C = await agent({ name: '丙', cli: 'commandcode', extraArgs: ['--effort', 'low'] })
-  const node = (id, title, agentId, instructions) => ({ id, title, agentId, instructions })
+  const node = (id, title, agentId, instructions, more = {}) => ({ id, title, agentId, instructions, x: 0, y: 0, ...more })
+  let eid = 0
+  const edges = (...pairs) => pairs.map(([from, to]) => ({ id: `e${++eid}`, from, to }))
+  const flow = (id, name, nodes, es) => ({ id, name, nodes, edges: edges(...es) })
   const wf = await call('POST', '/workflows', {
     name: '三阶段',
     description: '',
     mainAgentId: A.id,
     members: [{ agentId: B.id, responsibility: '' }, { agentId: C.id, responsibility: '' }],
-    stages: [
-      { id: 'st1', title: '分析', nodes: [node('n1', '分析', '', '先分析。')] },
-      { id: 'st2', title: '开发', nodes: [node('n2', '实现', B.id, '写代码。'), node('n3', '文档', C.id, '写文档。')] },
-      { id: 'st3', title: '验收', nodes: [node('n4', '验收', '', '检查结果。')] },
+    flows: [
+      flow('main', '主流程', [node('n1', '分析', '', '先分析。'), node('n2', '实现', B.id, '写代码。'), node('n3', '文档', C.id, '写文档。'), node('n4', '验收', '', '检查结果。'), node('n5', '没连上', '', '')], [
+        ['start', 'n1'], ['n1', 'n2'], ['n1', 'n3'], ['n2', 'n4'], ['n3', 'n4'], ['n4', 'end'],
+      ]),
     ],
+    entryFlowId: 'main',
     document: '# 目标\n测试\n',
   })
   const project = await call('POST', '/projects', { name: '测试项目', description: '', path: projectDir, categoryId: '', workflowId: wf.id })
@@ -105,8 +109,7 @@ try {
   t = await waitDone(t.id)
   assert.equal(t.status, 'done', JSON.stringify(t.messages.filter((m) => m.role === 'system')))
   assert.equal(t.simulated, false)
-  assert.deepEqual(t.stages.map((s) => s.title), ['分析', '开发', '验收'])
-  assert.deepEqual(t.steps.map((s) => [s.id, s.stage, s.status]), [['n1', 0, 'done'], ['n2', 1, 'done'], ['n3', 1, 'done'], ['n4', 2, 'done']])
+  assert.deepEqual(t.steps.map((s) => [s.id, s.status]), [['n1', 'done'], ['n2', 'done'], ['n3', 'done'], ['n4', 'done']], '没连到开始的节点不执行')
   assert.ok(t.steps.every((s) => s.startedAt && s.endedAt))
   for (const who of [A, B, C]) assert.ok(t.messages.some((m) => m.agentId === who.id && m.text.includes('的回复')), `${who.name} 没有输出文字`)
   const kinds = new Set(t.messages.flatMap((m) => m.tools.map((x) => x.kind)))
@@ -118,7 +121,7 @@ try {
   assert.equal(Object.keys(t.usage.agents).length, 3)
   assert.equal(t.usage.agents[A.id].context, 13020)
   assert.ok(Math.abs(t.usage.costUsd - 0.0246) < 1e-9)
-  step('工作流任务：三个阶段依次执行，输出、工具、改动（排除任务前的改动）、用量都正确')
+  step('工作流任务：按连线执行，输出、工具、改动（排除任务前的改动）、用量都正确')
 
   let c = calls()
   const [c1, cp1, cp2, c4] = c
@@ -127,26 +130,26 @@ try {
   assert.ok(c1.args.includes('--append-system-prompt') && c1.args.includes('你是甲，负责规划。'))
   assert.ok(c1.args.includes('--model') && c1.args.includes('sonnet'), 'Agent 没写模型时应使用设置里的默认模型')
   assert.ok(c1.args.includes('--permission-mode') && c1.args.includes('acceptEdits'))
-  assert.match(c1.input, /第 1\/3 阶段「分析」/)
+  assert.match(c1.input, /流程「主流程」的节点：分析/)
   assert.match(c1.input, /## 本节点要做的事\n先分析。/)
   assert.doesNotMatch(c1.input, /同时进行的节点/)
   const c2 = [cp1, cp2].find((x) => x.kind === 'codex')
   const c3 = [cp1, cp2].find((x) => x.kind === 'commandcode')
   assert.ok(c2 && c3, '开发阶段应该调用 Codex 和 Command Code')
   assert.ok(c2.start < c3.end && c3.start < c2.end, '同一阶段的两个节点应该同时运行')
-  assert.ok(Math.min(c2.start, c3.start) >= c1.end, '开发阶段要等分析阶段结束')
-  assert.ok(c4.start >= Math.max(c2.end, c3.end), '验收阶段要等开发阶段的节点都结束')
+  assert.ok(Math.min(c2.start, c3.start) >= c1.end, '下游节点要等上游结束')
+  assert.ok(c4.start >= Math.max(c2.end, c3.end), '有两个上游的节点要等两个都结束')
   assert.ok(c2.input.startsWith('## 你的角色\n你是乙'), 'Codex 不支持系统提示参数，角色应拼进任务描述')
-  assert.match(c2.input, /之前阶段的结果[\s\S]*甲/)
+  assert.match(c2.input, /上游节点的结果[\s\S]*### 分析/)
   assert.match(c2.input, /同时进行的节点[\s\S]*文档（丙）/)
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)
   assert.ok(c2.args.includes('-m') && c2.args.includes('gpt-5.6'))
   assert.equal(c2.args.at(-1), '-')
   assert.ok(c3.args.includes('--effort') && c3.args.includes('low'))
   assert.equal(c4.kind, 'claude')
-  assert.match(c4.input, /之前阶段的结果[\s\S]*实现（乙）[\s\S]*文档（丙）/)
+  assert.match(c4.input, /上游节点的结果[\s\S]*### 实现[\s\S]*### 文档/)
   assert.ok(!c4.args.includes('--resume'), '不同节点用各自的新会话')
-  step('调用参数：模型、权限、角色设定、前序结果、并行节点、工作目录都对；并行节点同时运行')
+  step('调用参数：模型、权限、角色设定、上游结果、同时进行的节点、工作目录都对；没有依赖的节点同时运行')
 
   // ---- 追加要求：主 Agent 续接会话 ----
   await call('POST', `/tasks/${t.id}/messages`, { text: '按钮改成红色' })
@@ -191,6 +194,65 @@ try {
   assert.deepEqual(badWf.steps.map((s) => s.status), ['failed', 'pending', 'pending', 'pending'])
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
 
+  // ---- 节点入口：开始 / 验收 / 结束，流程节点，引用其他工作流 ----
+  const small = await call('POST', '/workflows', {
+    name: '小流程', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
+    flows: [flow('main', '', [node('s', '小流程节点', '', '小流程要做的事。')], [['start', 's'], ['s', 'end']])],
+  })
+  const hooked = await call('POST', '/workflows', {
+    name: '带入口', mainAgentId: A.id, members: [{ agentId: B.id, responsibility: '' }, { agentId: C.id, responsibility: '' }], entryFlowId: 'main', document: '',
+    flows: [
+      flow('main', '主流程', [
+        node('x', '实现功能', B.id, '实现它。', { hooks: { start: { kind: 'sub', id: 'prep' }, review: { kind: 'sub', id: 'rv' }, end: { kind: 'sub', id: 'post' }, maxRounds: 3 } }),
+        node('y', '跑小流程', '', '', { kind: 'flow', flow: { kind: 'workflow', id: small.id } }),
+      ], [['start', 'x'], ['x', 'y'], ['y', 'end']]),
+      flow('prep', '准备', [node('p', '收集资料', C.id, '收集资料。')], [['start', 'p'], ['p', 'end']]),
+      flow('rv', '验收', [node('r', '审查', '', '审查改动。')], [['start', 'r'], ['r', 'end']]),
+      flow('post', '收尾', [node('q', '写说明', C.id, '写变更说明。')], [['start', 'q'], ['q', 'end']]),
+    ],
+  })
+  await call('PUT', `/projects/${project.id}`, { ...project, workflowId: hooked.id })
+  const before2 = calls().length
+  let h = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '带入口的任务' })
+  h = await waitDone(h.id)
+  assert.equal(h.status, 'done', JSON.stringify(h.messages.filter((m) => m.role === 'system')))
+  assert.deepEqual(h.steps.map((s) => [s.id, s.status]), [
+    ['x', 'done'], ['y', 'done'], ['x/start/p', 'done'], ['x/review.1/r', 'done'], ['x/review.2/r', 'done'], ['x/end/q', 'done'], ['y/body/s', 'done'],
+  ])
+  const x = h.steps.find((s) => s.id === 'x')
+  assert.equal(x.rounds, 2)
+  assert.equal(x.verdict, 'pass')
+  assert.match(x.output, /结束流程的结果/)
+  const hc = calls().slice(before2)
+  assert.deepEqual(hc.map((k) => k.kind), ['commandcode', 'codex', 'claude', 'codex', 'claude', 'commandcode', 'claude'])
+  assert.match(hc[1].input, /开始流程的结果[\s\S]*的回复/)
+  assert.match(hc[2].input, /实现功能」的验收流程（第 1 轮验收）[\s\S]*验收结论/)
+  assert.ok(hc[3].args.includes('resume'), '验收不通过后续接节点的会话继续完善')
+  assert.match(hc[3].input, /验收没有通过（第 1 轮）[\s\S]*验收结论：不通过/)
+  assert.match(hc[4].input, /第 2 轮验收/)
+  assert.match(hc[6].input, /工作流「小流程」[\s\S]*上游节点的结果|工作流「小流程」[\s\S]*## 输入/)
+  assert.ok(h.messages.some((m) => m.role === 'system' && /第 1 轮验收未通过/.test(m.text)))
+  assert.ok(h.messages.some((m) => m.step === 'x/review.1/r'), '子节点的消息记在子节点上')
+  // 验收轮数用完仍不通过时节点失败
+  await call('PUT', `/workflows/${hooked.id}`, { ...hooked, flows: hooked.flows.map((f) => f.id !== 'main' ? f : { ...f, nodes: f.nodes.map((n) => n.id === 'x' ? { ...n, hooks: { ...n.hooks, start: null, end: null, maxRounds: 1 } } : n) }) })
+  let h2 = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '只验收一轮' })
+  h2 = await waitDone(h2.id)
+  assert.equal(h2.status, 'failed')
+  assert.match(h2.messages.at(-1).text, /验收 1 轮仍未通过/)
+  assert.deepEqual(h2.steps.filter((s) => !s.parentId).map((s) => s.status), ['failed', 'pending'])
+  // 循环引用：自己引用自己时给出提示
+  const loop = await call('POST', '/workflows', {
+    name: '自引用', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
+    flows: [flow('main', '', [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })], [['start', 'z'], ['z', 'end']])],
+  })
+  await call('PUT', `/projects/${project.id}`, { ...project, workflowId: loop.id })
+  let lp = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '套娃' })
+  lp = await waitDone(lp.id)
+  assert.equal(lp.status, 'failed')
+  assert.match(lp.messages.at(-1).text, /嵌套超过/)
+  await call('PUT', `/projects/${project.id}`, { ...project, workflowId: wf.id })
+  step('节点入口：开始流程的结果交给节点，验收不通过退回完善、轮数用完失败，结束流程、流程节点、引用其他工作流都能执行')
+
   // ---- 系统默认 CLI 和模型档位 ----
   await call('PUT', '/settings', { ...settings, defaultCli: 'codex', clis: { ...settings.clis, codex: cli({ tiers: { high: 'gpt-top', medium: '', low: '' } }) } })
   const D = await agent({ name: '默认', cli: '', model: '@high' })
@@ -203,6 +265,8 @@ try {
     const k = calls().at(-1)
     assert.equal(k.kind, kind)
     assert.equal(k.args[k.args.indexOf(flag) + 1], model)
+    if (kind === 'codex') assert.ok(k.args.includes('model_reasoning_effort="high"'), '档位带上思考强度')
+    else assert.equal(k.args[k.args.indexOf('--effort') + 1], 'low')
   }
   // 中档没填时用内置建议值
   await call('PUT', '/agents/' + D.id, { ...D, model: '@medium' })
@@ -210,7 +274,14 @@ try {
   t3 = await waitDone(t3.id)
   assert.equal(calls().at(-1).args[calls().at(-1).args.indexOf('-m') + 1], 'gpt-5.5')
   await call('PUT', '/settings', settings)
-  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型')
+  // 旧格式（阶段）的工作流自动转换成连线
+  const old = await call('POST', '/workflows', {
+    name: '旧格式', mainAgentId: A.id, members: [], document: '',
+    stages: [{ id: 's1', title: '', nodes: [{ id: 'o1', title: '一' }] }, { id: 's2', title: '', nodes: [{ id: 'o2', title: '二' }, { id: 'o3', title: '三' }] }],
+  })
+  assert.equal(old.flows.length, 1)
+  assert.deepEqual(old.flows[0].edges.map((e) => `${e.from}>${e.to}`).sort(), ['o1>o2', 'o1>o3', 'o2>end', 'o3>end', 'start>o1'])
+  step('系统默认 CLI 和模型档位：执行时换成设置里的 CLI 和对应模型和思考强度；旧格式工作流自动转换')
 
   // ---- AI 创建 / 优化 ----
   async function assistDone(job) {
@@ -253,9 +324,18 @@ try {
     mainAgent: '甲',
     members: [{ agent: '乙', responsibility: '实现' }],
     newAgents: [draftAgent],
-    stages: [
-      { title: '开发', nodes: [{ title: '实现', agent: '乙', instructions: '写代码' }, { title: '审查', agent: '审查员', instructions: '审查' }] },
-      { title: '验收', nodes: [{ title: '验收', agent: '', instructions: '' }] },
+    flows: [
+      {
+        name: '主流程', main: true,
+        nodes: [
+          { key: 'a', title: '实现', agent: '乙', instructions: '写代码', review: '复核' },
+          { key: 'b', title: '审查', agent: '审查员', instructions: '审查' },
+          { key: 'c', title: '验收', agent: '', instructions: '' },
+          { key: 'd', title: '跑小流程', flow: '小流程' },
+        ],
+        edges: [['start', 'a'], ['start', 'b'], ['a', 'c'], ['b', 'c'], ['c', 'd'], ['d', 'end']],
+      },
+      { name: '复核', nodes: [{ key: 'r', title: '复核', agent: '甲' }], edges: [['start', 'r'], ['r', 'end']] },
     ],
     document: '# 目标',
   }
@@ -263,12 +343,23 @@ try {
   assert.equal(job.status, 'done', job.error)
   const w = job.proposal.workflow
   assert.equal(w.mainAgentId, A.id)
-  assert.deepEqual(w.stages.map((s) => s.nodes.map((n) => n.agentId)), [[B.id, 'new:审查员'], ['']])
+  assert.equal(w.flows.length, 2)
+  assert.equal(w.entryFlowId, w.flows[0].id)
+  const mf = w.flows[0]
+  assert.deepEqual(mf.nodes.map((n) => n.agentId), [B.id, 'new:审查员', '', ''])
+  assert.deepEqual(mf.nodes[0].hooks.review, { kind: 'sub', id: w.flows[1].id })
+  assert.deepEqual(mf.nodes[3].flow, { kind: 'workflow', id: small.id })
+  assert.equal(mf.edges.length, 6)
+  assert.ok(mf.nodes[2].x > mf.nodes[0].x, '自动排列：下游节点在右边')
   assert.ok(w.members.some((m) => m.agentId === 'new:审查员'), '节点用到的 Agent 自动加入团队')
   assert.equal(job.proposal.newAgents[0].ref, 'new:审查员')
   job = await assist('workflow', `FAKE_JSON:${JSON.stringify({ ...draftWf, mainAgent: '不存在' })}`)
   assert.equal(job.status, 'failed')
   assert.match(job.error, /不存在/)
+  const badFlow = { ...draftWf, flows: [{ ...draftWf.flows[0], edges: [['start', 'a'], ['a', 'c'], ['c', 'a']] }] }
+  job = await assist('workflow', `FAKE_JSON:${JSON.stringify(badFlow)}`)
+  assert.equal(job.status, 'failed')
+  assert.match(job.error, /形成了环[\s\S]*没有从 start 连过来|没有从 start 连过来[\s\S]*形成了环|形成了环/)
   step('AI 创建：按格式生成、校验、自动修正一次，优化时带上当前配置，工作流解析 Agent 引用')
 
   // ---- 找不到命令 / 停用 ----

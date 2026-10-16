@@ -13,7 +13,9 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { Pipeline, type PipelineColumn } from '@/components/flow/Pipeline'
+import { FlowCanvas } from '@/components/flow/FlowCanvas'
+import { nodeViews } from '@/components/flow/views'
+import { entryFlow, flowLabel, getFlow } from '@shared/flow'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string }
 
@@ -79,45 +81,18 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
 }
 
 function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) {
-  const { agents } = useData()
+  const { agents, workflows } = useData()
+  const { modelOf } = useAgentView()
   const w = p.workflow
   const who = (id: string) => {
     const a = agents.find((x) => x.id === id) ?? p.newAgents.find((x) => x.ref === id)
     return a ? { ...a, isNew: id.startsWith('new:') } : undefined
   }
   const main = who(w.mainAgentId)
-  const columns: PipelineColumn[] = w.stages.map((s, si) => ({
-    key: s.id,
-    width: 184,
-    header: (
-      <div className="flex h-7 items-center gap-1.5 border-b pb-1 text-xs font-semibold">
-        <span className="grid h-4 min-w-4 place-items-center rounded bg-field px-1 font-mono text-[10px] text-subtle ring-1 ring-line">
-          {si + 1}
-        </span>
-        <span className="truncate">{s.title || `阶段 ${si + 1}`}</span>
-        {s.nodes.length > 1 && <span className="ml-auto text-[10px] font-normal text-accent">并行</span>}
-      </div>
-    ),
-    items: s.nodes.map((n) => {
-      const a = who(n.agentId || w.mainAgentId)
-      return {
-        key: n.id,
-        node: (
-          <div
-            className="flex flex-col gap-1 rounded-lg border border-line-strong bg-card p-2.5"
-            title={n.instructions}
-          >
-            <span className="truncate text-xs font-medium">{n.title}</span>
-            <span className="flex items-center gap-1.5 truncate text-[11px] text-subtle">
-              {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
-              {a?.name}
-              {a?.isNew && <span className="text-accent">新</span>}
-            </span>
-          </div>
-        ),
-      }
-    }),
-  }))
+  const pool = [...agents, ...p.newAgents.map((a): Agent => ({ ...a, id: a.ref, createdAt: '', updatedAt: '' }))]
+  const [fid, setFid] = useState(w.entryFlowId)
+  const flow = getFlow(w, fid) ?? entryFlow(w)
+  const views = nodeViews(flow, w, workflows, pool, modelOf)
   return (
     <div className="flex flex-col gap-4">
       <div>
@@ -146,10 +121,35 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
             </span>
           ))}
       </div>
-      <Pipeline
-        columns={columns}
-        className="rounded-xl border bg-panel p-3 [background-image:radial-gradient(var(--line)_1px,transparent_1px)] [background-size:14px_14px]"
-      />
+      <div className="overflow-hidden rounded-xl border">
+        {w.flows.length > 1 && (
+          <div role="tablist" className="flex flex-wrap gap-1 border-b p-1.5">
+            {w.flows.map((f) => (
+              <button
+                key={f.id}
+                role="tab"
+                aria-selected={f.id === flow.id}
+                onClick={() => setFid(f.id)}
+                className={cn(
+                  'h-7 cursor-pointer rounded-md px-2.5 text-xs',
+                  f.id === flow.id ? 'bg-sel font-medium text-fg' : 'text-muted hover:text-fg',
+                )}
+              >
+                {flowLabel(f, w)}
+              </button>
+            ))}
+          </div>
+        )}
+        <FlowCanvas
+          key={flow.id}
+          flow={flow}
+          views={views}
+          startSub={flow.id === w.entryFlowId ? '主流程' : '子流程'}
+          selected=""
+          onSelect={() => {}}
+          className="flex h-[360px] bg-panel"
+        />
+      </div>
       {p.newAgents.length > 0 && (
         <p className="text-xs text-muted">
           应用时会先创建 {p.newAgents.length} 个新 Agent：{p.newAgents.map((a) => a.name).join('、')}。

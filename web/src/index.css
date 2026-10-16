@@ -2,46 +2,48 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* 设计 token：改主题只需要改这里 */
+/* 设计 token：改主题只需要改这里。配色参考 Claude：暖灰底色、陶土橙强调色 */
 :root {
-  --bg: #f6f6f7;
-  --rail: #ededef;
-  --panel: #fbfbfc;
+  --bg: #faf9f5;
+  --rail: #f3f1ea;
+  --panel: #f6f5f0;
   --card: #ffffff;
   --field: #ffffff;
-  --line: #e4e5e8;
-  --line-strong: #d3d5da;
-  --fg: #17181c;
-  --muted: #575b64;
-  --subtle: #7a7e87;
-  --sel: #ffffff;
-  --sel-line: #d3d5da;
-  --accent: #5b4bdb;
-  --accent-soft: rgb(91 75 219 / 0.12);
-  --success: #1e8a5a;
-  --warning: #a86a10;
-  --danger: #c8392c;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  --line: #e7e4da;
+  --line-strong: #d5d1c4;
+  --fg: #1f1e1c;
+  --muted: #55534d;
+  --subtle: #87857c;
+  --sel: #ebe8df;
+  --sel-line: #d5d1c4;
+  --accent: #c6613f;
+  --accent-soft: rgb(198 97 63 / 0.11);
+  --success: #3d8a5a;
+  --warning: #a4660f;
+  --danger: #bf3b2c;
+  --shadow: 0 1px 2px rgb(60 50 30 / 0.06), 0 0 0 0.5px rgb(60 50 30 / 0.04);
+  --shadow-pop: 0 10px 30px -10px rgb(60 50 30 / 0.25), 0 0 0 0.5px rgb(60 50 30 / 0.08);
 }
 .dark {
-  --bg: #0e0f12;
-  --rail: #0a0b0d;
-  --panel: #121317;
-  --card: #17191e;
-  --field: #0f1013;
-  --line: #23252c;
-  --line-strong: #30333b;
-  --fg: #ecedef;
-  --muted: #a3a6ae;
-  --subtle: #767a84;
-  --sel: #1c1e25;
-  --sel-line: #30333b;
-  --accent: #7c6cf2;
-  --accent-soft: rgb(124 108 242 / 0.16);
-  --success: #4cc38a;
-  --warning: #e5a84b;
-  --danger: #ef6a5e;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.3);
+  --bg: #262624;
+  --rail: #1f1e1d;
+  --panel: #232321;
+  --card: #30302e;
+  --field: #2b2b29;
+  --line: #3b3a37;
+  --line-strong: #4a4945;
+  --fg: #f5f4ef;
+  --muted: #c3c1b8;
+  --subtle: #96948b;
+  --sel: #353532;
+  --sel-line: #4a4945;
+  --accent: #d97757;
+  --accent-soft: rgb(217 119 87 / 0.15);
+  --success: #6fbf8b;
+  --warning: #e3a752;
+  --danger: #ec7a64;
+  --shadow: 0 1px 2px rgb(0 0 0 / 0.25);
+  --shadow-pop: 0 12px 36px -8px rgb(0 0 0 / 0.55), 0 0 0 0.5px rgb(255 255 255 / 0.06);
 }
 
 @theme inline {
@@ -63,7 +65,9 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --shadow-card: var(--shadow);
+  --shadow-pop: var(--shadow-pop);
   --font-sans: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
   --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace;
 }
 
@@ -72,11 +76,18 @@ body,
 #root {
   height: 100%;
 }
-body {
-  @apply bg-bg text-fg font-sans text-sm antialiased;
-}
-* {
-  @apply border-line;
+/* 放进 base 层，组件上的工具类（边框色、outline）才能覆盖它们 */
+@layer base {
+  body {
+    @apply bg-bg text-fg font-sans text-sm antialiased;
+  }
+  * {
+    @apply border-line;
+  }
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 }
 ::selection {
   background: var(--accent-soft);
@@ -90,10 +101,6 @@ body {
   border-radius: 999px;
   border: 3px solid transparent;
   background-clip: content-box;
-}
-:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 /* 预览工作流文档 */
@@ -146,4 +153,61 @@ body {
   .edge-active {
     animation: none;
   }
+}
+
+/* 流程图画布（@xyflow/react）：跟随主题色 */
+.react-flow {
+  --xy-background-color: transparent;
+  --xy-background-pattern-color: var(--line-strong);
+  --xy-edge-stroke: var(--subtle);
+  --xy-edge-stroke-selected: var(--accent);
+  --xy-edge-stroke-width: 1.5;
+  --xy-connectionline-stroke: var(--accent);
+  --xy-connectionline-stroke-width: 1.5;
+  --xy-handle-background-color: var(--card);
+  --xy-handle-border-color: var(--subtle);
+  --xy-selection-background-color: var(--accent-soft);
+  --xy-selection-border: 1px dashed var(--accent);
+  --xy-controls-button-background-color: var(--card);
+  --xy-controls-button-background-color-hover: var(--sel);
+  --xy-controls-button-color: var(--muted);
+  --xy-controls-button-color-hover: var(--fg);
+  --xy-controls-button-border-color: var(--line);
+  --xy-controls-box-shadow: var(--shadow-pop);
+  --xy-minimap-background-color: var(--card);
+  --xy-minimap-mask-background-color: rgb(0 0 0 / 0.06);
+  --xy-attribution-background-color: transparent;
+}
+.react-flow__node {
+  cursor: grab;
+}
+.react-flow.read-only .react-flow__node {
+  cursor: pointer;
+}
+.react-flow__handle {
+  width: 10px;
+  height: 10px;
+  border-width: 1.5px;
+  transition: transform 120ms, border-color 120ms, background-color 120ms;
+}
+.react-flow__handle:hover,
+.react-flow__handle.connectingto {
+  transform: translate(var(--tx, 0), -50%) scale(1.35);
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.react-flow__handle-left { --tx: -50%; }
+.react-flow__handle-right { --tx: 50%; }
+.react-flow.read-only .react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+}
+.react-flow__edge.selected .react-flow__edge-path,
+.react-flow__edge:focus .react-flow__edge-path {
+  stroke-width: 2.25;
+}
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+  border: 1px solid var(--line);
 }

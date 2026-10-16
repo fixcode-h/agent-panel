@@ -92,7 +92,10 @@ export function DocEditor({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={'用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。'}
-          className={cn(fieldClass, 'block min-h-[420px] resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0')}
+          className={cn(
+            fieldClass,
+            'block min-h-[420px] resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0',
+          )}
         />
       ) : (
         <div className="doc-preview min-h-[420px] px-5 py-4">

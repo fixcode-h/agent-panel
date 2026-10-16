@@ -1,6 +1,6 @@
 import { SquareTerminal } from 'lucide-react'
 import { getCli } from '@shared/clis'
-import { agentCli, agentModel, cliSettings, defaultSettings } from '@shared/settings'
+import { agentCli, agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 
@@ -8,12 +8,14 @@ import { cn } from '@/lib/utils'
 export function CommandPreview({
   cli,
   model,
+  effort = '',
   extraArgs,
   className,
   title = '命令预览',
 }: {
   cli: string
   model: string
+  effort?: string
   extraArgs: string[]
   className?: string
   title?: string
@@ -24,8 +26,10 @@ export function CommandPreview({
   const def = getCli(id)
   if (!def) return null
   const cs = cliSettings(s, id)
+  const run = agentRun({ cli, model, effort }, s)
   const args = def.buildArgs({
-    model: agentModel({ cli, model }, s),
+    model: run.model,
+    effort: run.effort,
     permission: cs.permission,
     extraArgs: [...cs.extraArgs, ...extraArgs],
   })

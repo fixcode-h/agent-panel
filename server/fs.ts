@@ -24,7 +24,12 @@ export async function inspectDir(p: string): Promise<DirInfo> {
   const full = resolvePath(p)
   try {
     const s = await stat(full)
-    return { path: full, exists: true, isDir: s.isDirectory(), gitBranch: s.isDirectory() ? await gitBranch(full) : null }
+    return {
+      path: full,
+      exists: true,
+      isDir: s.isDirectory(),
+      gitBranch: s.isDirectory() ? await gitBranch(full) : null,
+    }
   } catch {
     return { path: full, exists: false, isDir: false, gitBranch: null }
   }

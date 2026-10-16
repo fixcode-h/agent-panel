@@ -36,7 +36,7 @@ export function WorkflowPicker({
               <span
                 className={cn(
                   'h-2 w-2 shrink-0 rounded-full',
-                  isReady(workflowChecks(w, agents, clis)) ? 'bg-success' : 'bg-warning',
+                  isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',
                 )}
               />
               <span className="flex min-w-0 flex-1 flex-col">
@@ -48,7 +48,9 @@ export function WorkflowPicker({
               {w.id === value && <Check className="h-4 w-4 text-accent" />}
             </PopoverClose>
           ))}
-          {workflows.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">还没有工作流，先去工作流页面创建</p>}
+          {workflows.length === 0 && (
+            <p className="px-2.5 py-2 text-xs text-subtle">还没有工作流，先去工作流页面创建</p>
+          )}
         </div>
       </PopoverContent>
     </Popover>

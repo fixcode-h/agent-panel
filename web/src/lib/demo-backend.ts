@@ -14,8 +14,8 @@ import {
   ProjectInput,
   Workflow,
   WorkflowInput,
-  WorkflowNode,
-  WorkflowStage,
+  type Flow,
+  type FlowNode,
   FollowUpInput,
   NewTaskInput,
   Settings,
@@ -27,11 +27,11 @@ import {
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli } from '@shared/settings'
 import { newTask, runTurn } from '@shared/runner'
-import { flowId } from '@shared/flow'
+import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 
-const KEY = 'agent-panel-demo-v2'
+const KEY = 'agent-panel-demo-v3'
 
 interface Db {
   agents: Agent[]
@@ -135,8 +135,9 @@ function seed(): Db {
     name: '后端开发',
     icon: 'database',
     categoryId: dev.id,
-    cli: 'codex',
-    model: 'gpt-5.6',
+    cli: '',
+    model: '@high',
+    effort: 'xhigh',
     description: '实现 Node API、数据层与本机进程调度',
   })
   const qaAgent = agent({
@@ -164,13 +165,73 @@ function seed(): Db {
     description: '整理 README 和变更说明',
   })
 
-  const node = (title: string, agentId: string, instructions: string): WorkflowNode => ({
-    id: flowId('nd'),
-    title,
-    agentId,
-    instructions,
-  })
-  const stage = (title: string, nodes: WorkflowNode[]): WorkflowStage => ({ id: flowId('st'), title, nodes })
+  const node = (title: string, agentId: string, instructions: string, hooks: Partial<FlowNode['hooks']> = {}) =>
+    newNode({
+      title,
+      agentId,
+      instructions,
+      x: 0,
+      y: 0,
+      hooks: { start: null, review: null, end: null, maxRounds: 3, ...hooks },
+    })
+  /** 按连线组成流程，位置自动排列；links 用节点下标，-1 表示开始 / 结束 */
+  const graph = (f: Flow, nodes: FlowNode[], links: [number, number][]): Flow =>
+    autoLayout({
+      ...f,
+      nodes,
+      edges: links.map(([a, b]) => edge(a < 0 ? START : nodes[a].id, b < 0 ? END : nodes[b].id)),
+    })
+
+  const reviewFlow = graph(
+    { ...newFlow('代码审查'), description: '检查改动的正确性、可读性和测试覆盖，给出通过或不通过' },
+    [
+      node(
+        '审查改动',
+        '',
+        '逐个查看上游节点改动的文件：逻辑是否正确、边界情况、命名和风格是否符合项目约定、有没有补测试。列出必须修改的问题。',
+      ),
+    ],
+    [
+      [-1, 0],
+      [0, -1],
+    ],
+  )
+  const ctxFlow = graph(
+    { ...newFlow('收集上下文'), description: '找出和需求相关的代码、接口和历史改动' },
+    [node('查找相关代码', '', '根据需求搜索相关的页面、接口和数据结构，列出文件路径和关键函数，供后续节点参考。')],
+    [
+      [-1, 0],
+      [0, -1],
+    ],
+  )
+  const reviewRef = { kind: 'sub' as const, id: reviewFlow.id }
+  const webMain = graph(
+    newFlow('主流程', 'main'),
+    [
+      node('分析需求、拆分任务', '', '阅读需求和相关代码，列出要改动的页面、接口和验收标准，并给前后端分好工。', {
+        start: { kind: 'sub', id: ctxFlow.id },
+      }),
+      node('实现接口', be.id, '按分析阶段的接口设计实现 API，并补充数据校验。', { review: reviewRef }),
+      node('实现页面', fe.id, '按分析阶段约定的接口完成页面与交互，接口没好之前先用假数据。', {
+        review: reviewRef,
+      }),
+      node('单元测试', qaAgent.id, '为新增的接口和组件补充单元测试并运行。'),
+      node('端到端测试', qaAgent.id, '跑一遍主要流程的端到端测试，失败时附上日志。'),
+      node('验收', '', '逐条对照验收标准检查结果，列出没满足的地方。'),
+    ],
+    [
+      [-1, 0],
+      [0, 1],
+      [0, 2],
+      [1, 3],
+      [2, 3],
+      [1, 4],
+      [2, 4],
+      [3, 5],
+      [4, 5],
+      [5, -1],
+    ],
+  )
   const webFlow: Workflow = {
     ...meta(),
     name: 'Web 功能开发',
@@ -181,20 +242,8 @@ function seed(): Db {
       { agentId: fe.id, responsibility: '页面与交互' },
       { agentId: qaAgent.id, responsibility: '单测与端到端测试' },
     ],
-    stages: [
-      stage('分析', [
-        node('分析需求、拆分任务', '', '阅读需求和相关代码，列出要改动的页面、接口和验收标准，并给前后端分好工。'),
-      ]),
-      stage('开发', [
-        node('实现接口', be.id, '按分析阶段的接口设计实现 API，并补充数据校验。'),
-        node('实现页面', fe.id, '按分析阶段约定的接口完成页面与交互，接口没好之前先用假数据。'),
-      ]),
-      stage('测试', [
-        node('单元测试', qaAgent.id, '为新增的接口和组件补充单元测试并运行。'),
-        node('端到端测试', qaAgent.id, '跑一遍主要流程的端到端测试，失败时附上日志。'),
-      ]),
-      stage('验收', [node('验收', '', '逐条对照验收标准检查结果，列出没满足的地方。')]),
-    ],
+    flows: [webMain, reviewFlow, ctxFlow],
+    entryFlowId: 'main',
     document: `# 目标
 根据用户描述，在现有 Web 项目里完成一个新功能，并保证测试通过。
 
@@ -213,11 +262,23 @@ function seed(): Db {
     description: '复现、定位并修复缺陷',
     mainAgentId: arch.id,
     members: [{ agentId: qaAgent.id, responsibility: '复现问题' }],
-    stages: [
-      stage('复现', [node('复现问题', qaAgent.id, '按描述复现问题，写一个能稳定失败的测试。')]),
-      stage('修复', [node('定位并修复', '', '找到原因并修复，让上一步的测试通过。')]),
-      stage('回归', [node('回归测试', qaAgent.id, '运行全部测试，确认没有引入新问题。')]),
+    flows: [
+      graph(
+        newFlow('主流程', 'main'),
+        [
+          node('复现问题', qaAgent.id, '按描述复现问题，写一个能稳定失败的测试。'),
+          node('定位并修复', '', '找到原因并修复，让上一步的测试通过。'),
+          node('回归测试', qaAgent.id, '运行全部测试，确认没有引入新问题。'),
+        ],
+        [
+          [-1, 0],
+          [0, 1],
+          [1, 2],
+          [2, -1],
+        ],
+      ),
     ],
+    entryFlowId: 'main',
     document: '',
   }
   const web: ProjectCategory = {
@@ -482,6 +543,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
   const done = runTurn({
     task,
     agents: d.agents,
+    workflows: d.workflows,
     workflow: d.workflows.find((w) => w.id === task.workflowId),
     prompt,
     first,
@@ -510,10 +572,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
-  const task = create<Task>(
-    'tasks',
-    newTask(input, workflow, d.agents, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
-  )
+  const task = create<Task>('tasks', newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`))
   return { task, done: startTurn(d, task, input.prompt, true, fast) }
 }
 
@@ -523,7 +582,7 @@ function followUp(d: Db, task: Task, text: string, fast = false) {
     id: `demo-${crypto.randomUUID()}`,
     role: 'user',
     agentId: '',
-    step: -1,
+    step: '',
     text,
     tools: [],
     at: new Date().toISOString(),
