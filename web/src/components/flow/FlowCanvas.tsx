@@ -8,6 +8,7 @@ import {
   MarkerType,
   Position,
   ReactFlow,
+  SelectionMode,
   applyNodeChanges,
   getNodesBounds,
   useNodesInitialized,
@@ -241,7 +242,7 @@ export function FlowCanvas({
   )
 
   // xyflow 需要保留节点的尺寸等内部状态，所以节点放在本地 state 里，内容变了再合并
-  const [nodes, setNodes] = useState<Node[]>(built)
+  const [nodes, setNodes] = useState<Node[]>(() => built.map((n) => ({ ...n, selected: n.id === selected })))
   useEffect(
     () =>
       setNodes((prev) => {
@@ -249,13 +250,32 @@ export function FlowCanvas({
         return built.map((n) => {
           const p = old.get(n.id)
           return p
-            ? { ...n, measured: p.measured, dragging: p.dragging, position: p.dragging ? p.position : n.position }
+            ? {
+                ...n,
+                measured: p.measured,
+                dragging: p.dragging,
+                selected: p.selected,
+                position: p.dragging ? p.position : n.position,
+              }
             : n
         })
       }),
     [built],
   )
-  const shown = nodes.map((n) => (n.selected === (n.id === selected) ? n : { ...n, selected: n.id === selected }))
+  // 节点的选中状态由画布自己管（框选能选中多个），只把「选中了哪一个」报给外面；
+  // reported 记住报出去的值，外面改了选中（例如点了侧栏）才同步回画布
+  const reported = useRef(selected)
+  const report = (id: string) => {
+    reported.current = id
+    onSelect(id)
+  }
+  useEffect(() => {
+    if (selected === reported.current) return
+    reported.current = selected
+    setNodes((ns) => ns.map((n) => (n.selected === (n.id === selected) ? n : { ...n, selected: n.id === selected })))
+  }, [selected])
+  // 正在框选时不处理连线的选中，否则框住的连线会抢走选中
+  const boxing = useRef(false)
 
   const edges: Edge[] = flow.edges.map((e) => {
     const tone = edgeTone?.(e.from, e.to) ?? 'idle'
@@ -280,7 +300,8 @@ export function FlowCanvas({
         : { ...f, nodes: f.nodes.map((n) => (n.id === id ? { ...n, x: Math.round(p.x), y: Math.round(p.y) } : n)) }
 
   const onNodesChange = (changes: NodeChange[]) => {
-    setNodes((ns) => applyNodeChanges(changes, ns))
+    const next = applyNodeChanges(changes, nodes)
+    setNodes(next)
     let f = flow
     let changed = false
     for (const c of changes) {
@@ -294,8 +315,14 @@ export function FlowCanvas({
           edges: f.edges.filter((e) => e.from !== c.id && e.to !== c.id),
         }
         changed = true
-        if (selected === c.id) onSelect('')
-      } else if (c.type === 'select' && c.selected) onSelect(c.id)
+        if (selected === c.id) report('')
+      }
+    }
+    if (changes.some((c) => c.type === 'select')) {
+      // 选中一个时显示它的设置；框选了多个时不显示单个节点的设置
+      const picked = next.filter((n) => n.selected).map((n) => n.id)
+      if (picked.length === 1) report(picked[0])
+      else if (picked.length > 1) report('')
     }
     if (changed) onChange?.(f)
   }
@@ -304,11 +331,11 @@ export function FlowCanvas({
     let f = flow
     let changed = false
     for (const c of changes) {
-      if (c.type === 'select' && c.selected) onSelect(`edge:${c.id}`)
+      if (c.type === 'select' && c.selected && !boxing.current) report(`edge:${c.id}`)
       else if (c.type === 'remove' && editable) {
         f = { ...f, edges: f.edges.filter((e) => e.id !== c.id) }
         changed = true
-        if (selected === `edge:${c.id}`) onSelect('')
+        if (selected === `edge:${c.id}`) report('')
       }
     }
     if (changed) onChange?.(f)
@@ -333,9 +360,10 @@ export function FlowCanvas({
   }
 
   return (
-    <div className={cn('relative min-h-0', className)}>
+    // 右键用来拖动画布，不弹浏览器菜单
+    <div className={cn('relative min-h-0', className)} onContextMenu={(e) => e.preventDefault()}>
       <ReactFlow
-        nodes={shown}
+        nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
         onNodesChange={onNodesChange}
@@ -358,7 +386,14 @@ export function FlowCanvas({
           })
         }}
         isValidConnection={(c) => !check(c)}
-        onPaneClick={() => onSelect('')}
+        onPaneClick={() => report('')}
+        // 鼠标：左键点选、按住拖动节点；左键在空白处拖出选框，框住的节点可以一起拖；右键（或中键）按住拖动画布。
+        // 只读时没有编辑，左键也可以拖动画布
+        panOnDrag={editable ? [1, 2] : true}
+        selectionOnDrag={!!editable}
+        selectionMode={SelectionMode.Partial}
+        onSelectionStart={() => (boxing.current = true)}
+        onSelectionEnd={() => (boxing.current = false)}
         nodesDraggable={!!editable}
         nodesConnectable={!!editable}
         edgesFocusable={!!editable}
