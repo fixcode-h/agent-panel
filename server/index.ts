@@ -21,7 +21,7 @@ import {
   WorkflowInput,
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
-import { END, START, findRefCycle, migrateDocSteps } from '../shared/flow.ts'
+import { migrateDocSteps } from '../shared/flow.ts'
 import { createCollection, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
@@ -36,6 +36,7 @@ import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
+import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -111,69 +112,9 @@ async function parseAgent(body: unknown) {
 async function parseWorkflow(body: unknown, selfId = '') {
   const p = WorkflowInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  const wf = p.data
   const ids = new Set((await agents.list()).map((a) => a.id))
-  if (wf.mainAgentId && !ids.has(wf.mainAgentId)) return { error: t('主 Agent 不存在') }
-  // 去掉不存在的、重复的成员，以及和主 Agent 相同的成员
-  const seen = new Set<string>([wf.mainAgentId])
-  wf.members = wf.members.filter((m) => ids.has(m.agentId) && !seen.has(m.agentId) && seen.add(m.agentId))
-  if (!wf.flows.length) return { error: t('工作流至少要有一个流程') }
-  if (!wf.flows.some((f) => f.id === wf.entryFlowId)) wf.entryFlowId = wf.flows[0].id
-  if (new Set(wf.flows.map((f) => f.id)).size !== wf.flows.length) return { error: t('流程 id 重复') }
-  for (const f of wf.flows) {
-    const nodeIds = new Set(f.nodes.map((n) => n.id))
-    if (nodeIds.size !== f.nodes.length) return { error: t('流程「{flow}」里有重复的节点 id', { flow: f.name }) }
-    if (nodeIds.has(START) || nodeIds.has(END))
-      return { error: t('流程「{flow}」的节点 id 不能是 start / end', { flow: f.name }) }
-    // 节点指定的 Agent 不存在时改由主 Agent 执行
-    for (const n of f.nodes) if (n.agentId && !ids.has(n.agentId)) n.agentId = ''
-    // 去掉悬空、重复、方向不对的连线
-    const keys = new Set<string>()
-    f.edges = f.edges.filter((e) => {
-      const k = `${e.from}>${e.to}`
-      const ok =
-        (e.from === START || nodeIds.has(e.from)) &&
-        (e.to === END || nodeIds.has(e.to)) &&
-        e.from !== e.to &&
-        !keys.has(k)
-      keys.add(k)
-      return ok
-    })
-    const cyc = cycleIn(f)
-    if (cyc)
-      return {
-        error: t('流程「{flow}」里的节点连成了环：{cycle}，执行时会一直等不到上游', { flow: f.name, cycle: cyc }),
-      }
-  }
-  const cycle = findRefCycle(
-    { ...wf, id: selfId || '__new__', createdAt: '', updatedAt: '' },
-    (await workflows.list()).filter((x) => x.id !== selfId),
-  )
-  if (cycle) return { error: t('流程之间循环调用：{cycle}', { cycle: cycle.join(' → ') }) }
-  return { data: wf }
-}
-
-/** 流程图里有没有环；有就返回环上的节点名 */
-function cycleIn(f: { nodes: { id: string; title: string }[]; edges: { from: string; to: string }[] }) {
-  const state = new Map<string, 1 | 2>()
-  const name = (id: string) => f.nodes.find((n) => n.id === id)?.title.trim() || id
-  const visit = (id: string, path: string[]): string | null => {
-    if (state.get(id) === 2) return null
-    if (state.get(id) === 1) return [...path.slice(path.indexOf(id)), id].map(name).join(' → ')
-    state.set(id, 1)
-    for (const e of f.edges)
-      if (e.from === id) {
-        const c = visit(e.to, [...path, id])
-        if (c) return c
-      }
-    state.set(id, 2)
-    return null
-  }
-  for (const n of f.nodes) {
-    const c = visit(n.id, [])
-    if (c) return c
-  }
-  return null
+  const error = checkWorkflow(p.data, ids, await workflows.list(), selfId)
+  return error ? { error } : { data: p.data }
 }
 
 app.get('/health', (c) => c.json({ ok: true }))
@@ -246,21 +187,8 @@ app.put('/agents/:id', async (c) => {
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
-  if (id === DEFAULT_AGENT_ID) return bad(c, t('默认 Agent 是自带的，不能删除'), 409)
-  const used = (await workflows.list()).filter(
-    (w) =>
-      w.mainAgentId === id ||
-      w.members.some((m) => m.agentId === id) ||
-      w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
-  )
-  if (used.length)
-    return bad(
-      c,
-      t('正在被工作流使用：{names}，请先从工作流中移除', {
-        names: used.map((w) => t('「{name}」', { name: w.name })).join(t('、')),
-      }),
-      409,
-    )
+  const err = agentDeleteError(id, await workflows.list())
+  if (err) return bad(c, err, 409)
   return (await agents.remove(id)) ? c.body(null, 204) : bad(c, t('Agent 不存在'), 404)
 })
 
@@ -281,13 +209,8 @@ app.put('/workflows/:id', async (c) => {
 
 app.delete('/workflows/:id', async (c) => {
   const id = c.req.param('id')
-  const users = [
-    ...(await projectCategories.list())
-      .filter((x) => x.workflowId === id)
-      .map((x) => t('项目分类「{name}」', { name: x.name })),
-    ...(await projects.list()).filter((x) => x.workflowId === id).map((x) => t('项目「{name}」', { name: x.name })),
-  ]
-  if (users.length) return bad(c, t('正在被使用：{names}，请先改用其他工作流', { names: users.join(t('、')) }), 409)
+  const err = workflowDeleteError(id, await projectCategories.list(), await projects.list())
+  if (err) return bad(c, err, 409)
   return (await workflows.remove(id)) ? c.body(null, 204) : bad(c, t('工作流不存在'), 404)
 })
 

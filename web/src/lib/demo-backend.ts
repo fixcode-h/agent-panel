@@ -40,6 +40,7 @@ import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
+import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -674,14 +675,8 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
-      if (id === DEFAULT_AGENT_ID) fail('默认 Agent 是自带的，不能删除')
-      const used = d.workflows.filter(
-        (w) =>
-          w.mainAgentId === id ||
-          w.members.some((m) => m.agentId === id) ||
-          w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
-      )
-      if (used.length) fail(`正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`)
+      const err = agentDeleteError(id, d.workflows)
+      if (err) fail(err)
       remove('agents', id, 'Agent 不存在')
       return undefined
     }
@@ -695,19 +690,15 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'workflows') {
     if (method === 'GET') return d.workflows
     if (method === 'DELETE') {
-      const users = [
-        ...d.projectCategories.filter((x) => x.workflowId === id).map((x) => `项目分类「${x.name}」`),
-        ...d.projects.filter((x) => x.workflowId === id).map((x) => `项目「${x.name}」`),
-      ]
-      if (users.length) fail(`正在被使用：${users.join('、')}，请先改用其他工作流`)
+      const err = workflowDeleteError(id, d.projectCategories, d.projects)
+      if (err) fail(err)
       remove('workflows', id, '工作流不存在')
       return undefined
     }
     const wf = parse(WorkflowInput, body)
-    const ids = new Set(d.agents.map((a) => a.id))
-    if (wf.mainAgentId && !ids.has(wf.mainAgentId)) fail('主 Agent 不存在')
-    const seen = new Set<string>([wf.mainAgentId])
-    wf.members = wf.members.filter((m) => ids.has(m.agentId) && !seen.has(m.agentId) && !!seen.add(m.agentId))
+    // 和服务端同一套检查：成员、连线、环、流程之间的循环调用
+    const err = checkWorkflow(wf, new Set(d.agents.map((a) => a.id)), d.workflows, method === 'POST' ? '' : id)
+    if (err) fail(err)
     return method === 'POST' ? create('workflows', wf) : update('workflows', id, wf, '工作流不存在')
   }
 
