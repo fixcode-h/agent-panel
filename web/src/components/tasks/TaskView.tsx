@@ -16,8 +16,9 @@ import {
   X,
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
-import { rootStepId } from '@shared/flow'
+import { rootStepId, taskWorkflows } from '@shared/flow'
 import { taskSummary } from '@shared/task'
+import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -133,7 +134,10 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
     if (el && stick.current && view === 'chat') el.scrollTop = el.scrollHeight
   }, [task, view])
 
-  const workflow = workflows.find((w) => w.id === task?.workflowId)
+  // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
+  const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
+  const latestWf = workflows.find((w) => w.id === task?.workflowId)
+  const wfChanged = !!task?.workflows.length && !!latestWf && latestWf.updatedAt !== workflow?.updatedAt
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
 
   if (!task)
@@ -172,11 +176,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       toast.error((e as Error).message)
     }
   }
-  const resume = async () => {
+  const resume = async (latest = false) => {
     setResuming(true)
     stick.current = true
     try {
-      apply(await api.resumeTask(task.id))
+      apply(await api.resumeTask(task.id, latest))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -335,6 +339,12 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   <Pencil className="h-4 w-4" />
                   重命名
                 </MenuItem>
+                {wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
+                  <MenuItem onSelect={() => resume(true)}>
+                    <RotateCw className="h-4 w-4" />
+                    {t('按最新的工作流继续')}
+                  </MenuItem>
+                )}
                 <MenuItem danger onSelect={() => setDeleting(true)}>
                   <Trash2 className="h-4 w-4" />
                   删除任务
@@ -470,7 +480,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                         variant="secondary"
                         className="ml-auto rounded-lg"
                         disabled={resuming}
-                        onClick={resume}
+                        onClick={() => resume()}
                         title={
                           task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
                             ? '从没完成的节点继续执行'

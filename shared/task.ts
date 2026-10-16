@@ -26,7 +26,15 @@ export function withAttachments(prompt: string, attachments: Attachment[] | unde
 }
 
 /** 新建任务的初始数据 */
-export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now: string, id: string): TaskData {
+export function newTask(
+  input: NewTaskInput,
+  workflow: Workflow | undefined,
+  now: string,
+  id: string,
+  /** 存进任务的工作流（连同引用的其他工作流），见 workflowClosure */
+  snapshot: Workflow[] = workflow ? [workflow] : [],
+): TaskData {
+  const wf = input.mode === 'workflow' ? workflow : undefined
   return {
     projectId: input.projectId,
     title: taskTitle(input.prompt),
@@ -60,6 +68,8 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now
     todos: [],
     baseline: {},
     baseRef: '',
+    workflows: wf ? snapshot : [],
+    workflowName: wf?.name ?? '',
     requests: [],
   }
 }
@@ -107,6 +117,8 @@ export function taskSummary(t: Task): Task {
     baseline: {},
     sessions: {},
     command: [],
+    workflows: [],
+    workflowName: t.workflowName || t.workflows.find((w) => w.id === t.workflowId)?.name || '',
   }
 }
 

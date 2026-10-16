@@ -341,3 +341,41 @@ export function migrateDocSteps(
     .trim()
   return { flow: stagesToFlow(stages) as Flow, document: left ? left + '\n' : '' }
 }
+
+/** 工作流连同它引用的其他工作流（递归）；任务创建时把这些存一份，之后改动或删除工作流不影响这个任务 */
+export function workflowClosure(w: Workflow, workflows: Workflow[]): Workflow[] {
+  const out = new Map<string, Workflow>([[w.id, w]])
+  const queue = [w]
+  while (queue.length) {
+    const cur = queue.shift()!
+    for (const f of cur.flows)
+      for (const r of refsOf(f)) {
+        if (r.kind !== 'workflow' || out.has(r.id)) continue
+        const other = workflows.find((x) => x.id === r.id)
+        if (other) {
+          out.set(other.id, other)
+          queue.push(other)
+        }
+      }
+  }
+  return [...out.values()]
+}
+
+/**
+ * 任务用的工作流：优先用任务创建时存下的那份，旧任务没有时用现在的。
+ * 返回执行的工作流和引用解析用的全部工作流。
+ */
+export function taskWorkflows(
+  task: { workflowId: string; workflows?: Workflow[] },
+  current: Workflow[],
+): { workflow: Workflow | undefined; workflows: Workflow[] } {
+  const snap = task.workflows ?? []
+  if (snap.length) {
+    const ids = new Set(snap.map((w) => w.id))
+    return {
+      workflow: snap.find((w) => w.id === task.workflowId),
+      workflows: [...snap, ...current.filter((w) => !ids.has(w.id))],
+    }
+  }
+  return { workflow: current.find((w) => w.id === task.workflowId), workflows: current }
+}

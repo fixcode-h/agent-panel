@@ -96,7 +96,7 @@ function ProjectHome({ project }: { project: Project }) {
                         <span className="truncate text-[14px]">{t.title}</span>
                         <span className="truncate text-xs text-subtle">
                           {t.mode === 'workflow'
-                            ? `${w?.name ?? '工作流已删除'}${tops.length ? ` · ${done}/${tops.length} 个节点` : ''}`
+                            ? `${t.workflowName || w?.name || '工作流已删除'}${tops.length ? ` · ${done}/${tops.length} 个节点` : ''}`
                             : `对话 · ${a?.name ?? 'Agent 已删除'}`}
                         </span>
                         <TaskStats task={t} now={now} />

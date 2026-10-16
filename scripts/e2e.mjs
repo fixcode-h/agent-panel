@@ -375,6 +375,23 @@ try {
   }
   step('任务列表只给摘要，任务页通过推送拿增量')
 
+  // 任务存下创建时的工作流：之后改了工作流，老任务的记录不变；继续执行时可以选择改用新的
+  {
+    assert.equal(t.workflows[0]?.id, wf.id, '任务存下了工作流')
+    assert.equal(summary.workflowName, wf.name, '列表里有工作流名字')
+    const cur = await call('GET', `/workflows`).then((l) => l.find((x) => x.id === wf.id))
+    const { id, createdAt, updatedAt, ...input } = cur
+    const renamed = {
+      ...input,
+      flows: input.flows.map((f) => ({ ...f, nodes: f.nodes.map((n) => ({ ...n, title: `${n.title}（新）` })) })),
+    }
+    await call('PUT', `/workflows/${wf.id}`, renamed)
+    const again = await call('GET', `/tasks/${t.id}`)
+    assert.ok(!again.workflows[0].flows[0].nodes.some((n) => n.title.endsWith('（新）')), '老任务的工作流不跟着改')
+    await call('PUT', `/workflows/${wf.id}`, input)
+  }
+  step('任务存下创建时的工作流，之后改工作流不影响老任务')
+
   let c = calls()
   const [c1, cp1, cp2, c4] = c
   assert.equal(c1.kind, 'claude')

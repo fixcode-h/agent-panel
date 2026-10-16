@@ -11,6 +11,7 @@ import { SettingsDialog } from '@/pages/SettingsPage'
 import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
 const PAGES: Record<Route['page'], () => React.ReactNode> = {
@@ -104,7 +105,10 @@ export function App() {
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
-            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">{PAGES[route.page]()}</div>
+            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
+              {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
+              <ErrorBoundary resetKey={toHash(route)}>{PAGES[route.page]()}</ErrorBoundary>
+            </div>
           </div>
         </div>
         <SettingsDialog

@@ -96,7 +96,7 @@ export const api = {
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
-  resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
+  resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),

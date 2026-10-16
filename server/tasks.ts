@@ -13,6 +13,7 @@ import {
   type TaskData,
   type Workflow,
 } from '../shared/schema.ts'
+import { taskWorkflows, workflowClosure } from '../shared/flow.ts'
 import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
@@ -105,7 +106,7 @@ export function tasksApi(deps: {
     return id ? ((await deps.workflows.get(id)) ?? undefined) : undefined
   }
 
-  async function start(entry: Live, prompt: string, first: boolean, workflow: Workflow | undefined, agents: Agent[]) {
+  async function start(entry: Live, prompt: string, first: boolean, agents: Agent[]) {
     const task = entry.task
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
@@ -137,8 +138,8 @@ export function tasksApi(deps: {
       await runRealTurn({
         task: entry.task,
         agents,
-        workflows: await deps.workflows.list(),
-        workflow,
+        // 用任务创建时存下的工作流：之后改了、删了工作流都不影响这个任务
+        ...taskWorkflows(entry.task, await deps.workflows.list()),
         project,
         settings,
         clis: await detectClis(),
@@ -255,11 +256,9 @@ export function tasksApi(deps: {
         : await projectWorkflow(project)
       if (!workflow) return bad(c, '项目还没有指定工作流，请选择一个工作流或改用直接对话')
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, '请选择对话的 Agent')
-    const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID()))
-    return c.json(
-      await start(reserve(task), withAttachments(input.prompt, input.attachments), true, workflow, agents),
-      201,
-    )
+    const snapshot = workflow ? workflowClosure(workflow, await deps.workflows.list()) : []
+    const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot))
+    return c.json(await start(reserve(task), withAttachments(input.prompt, input.attachments), true, agents), 201)
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -285,9 +284,8 @@ export function tasksApi(deps: {
       at: new Date().toISOString(),
     })
     try {
-      const workflow = next.workflowId ? ((await deps.workflows.get(next.workflowId)) ?? undefined) : undefined
       return c.json(
-        await start(entry, withAttachments(p.data.text, p.data.attachments), false, workflow, await deps.agents.list()),
+        await start(entry, withAttachments(p.data.text, p.data.attachments), false, await deps.agents.list()),
       )
     } catch (e) {
       live.delete(id)
@@ -304,19 +302,23 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     if (!task) return bad(c, '任务不存在', 404)
     if (task.status !== 'failed' && task.status !== 'stopped') return bad(c, '只有失败或停止的任务可以继续')
+    // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
+    const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
+    let fresh: Workflow | undefined
+    if (latest && task.workflowId) {
+      fresh = (await deps.workflows.get(task.workflowId)) ?? undefined
+      if (!fresh) return bad(c, '工作流已经被删除，只能按任务创建时的工作流继续')
+    }
     const entry = reserve(task)
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
-      const workflow = task.workflowId ? ((await deps.workflows.get(task.workflowId)) ?? undefined) : undefined
+      if (fresh) {
+        entry.task.workflows = workflowClosure(fresh, await deps.workflows.list())
+        entry.task.workflowName = fresh.name
+      }
       const last = users.at(-1)
       return c.json(
-        await start(
-          entry,
-          withAttachments(last?.text ?? '', last?.attachments),
-          false,
-          workflow,
-          await deps.agents.list(),
-        ),
+        await start(entry, withAttachments(last?.text ?? '', last?.attachments), false, await deps.agents.list()),
       )
     } catch (e) {
       live.delete(id)

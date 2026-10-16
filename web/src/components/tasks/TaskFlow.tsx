@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquareText } from 'lucide-react'
 import type { StepStatus, Task } from '@shared/schema'
-import { END, START, childSteps, entryFlow, getFlow } from '@shared/flow'
+import { END, START, childSteps, entryFlow, getFlow, taskWorkflows } from '@shared/flow'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
 import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/FlowCanvas'
@@ -28,9 +28,11 @@ export function TaskFlow({
   focus?: { id: string; at: number }
   onOpenChat: () => void
 }) {
-  const { workflows, agents } = useData()
+  const data = useData()
+  const { agents } = data
   const { modelOf } = useAgentView()
-  const workflow = workflows.find((w) => w.id === task.workflowId)
+  // 用任务创建时存下的工作流画图，之后改了工作流也和执行记录对得上
+  const { workflow, workflows } = taskWorkflows(task, data.workflows)
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const tops = task.steps.filter((s) => !s.parentId)
   const flow = workflow ? (getFlow(workflow, tops[0]?.flowId ?? '') ?? entryFlow(workflow)) : undefined

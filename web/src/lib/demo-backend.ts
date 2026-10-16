@@ -37,7 +37,7 @@ import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
 import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared/task'
-import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
+import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 
@@ -781,8 +781,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     task,
     agents: d.agents,
     settings: d.settings,
-    workflows: d.workflows,
-    workflow: d.workflows.find((w) => w.id === task.workflowId),
+    ...taskWorkflows(task, d.workflows),
     prompt,
     first,
     sleep: fast ? async () => {} : sleep,
@@ -814,7 +813,13 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
   const task = create<Task>('tasks', {
-    ...newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
+    ...newTask(
+      input,
+      workflow,
+      new Date().toISOString(),
+      `demo-${crypto.randomUUID()}`,
+      workflow ? workflowClosure(workflow, d.workflows) : [],
+    ),
     simulated: true,
   })
   return { task, done: startTurn(d, task, withAttachments(input.prompt, input.attachments), true, fast) }
@@ -890,6 +895,12 @@ function tasksRoute(
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行')
     if (task.status !== 'failed' && task.status !== 'stopped') fail('只有失败或停止的任务可以继续')
+    if ((body as { latest?: boolean } | undefined)?.latest && task.workflowId) {
+      const fresh =
+        d.workflows.find((w) => w.id === task.workflowId) ?? fail('工作流已经被删除，只能按任务创建时的工作流继续')
+      task.workflows = workflowClosure(fresh, d.workflows)
+      task.workflowName = fresh.name
+    }
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     void startTurn(d, task, users.at(-1)?.text ?? '', false)
     return task
