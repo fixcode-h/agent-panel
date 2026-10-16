@@ -29,7 +29,18 @@ function Section({ title, extra, children }: { title: string; extra?: React.Reac
 }
 
 /** 任务页右栏：任务进度、上下文、更改、环境，参考 Claude Code 的会话侧栏 */
-export function TaskPanel({ task, project, workflow }: { task: Task; project: Project; workflow?: Workflow }) {
+export function TaskPanel({
+  task,
+  project,
+  workflow,
+  onStep,
+}: {
+  task: Task
+  project: Project
+  workflow?: Workflow
+  /** 点了任务进度里的某一步 */
+  onStep?: (id: string) => void
+}) {
   const { modelOf } = useAgentView()
   const { agents } = useData()
   const dir = useDirInfo(project.path)
@@ -68,29 +79,37 @@ export function TaskPanel({ task, project, workflow }: { task: Task; project: Pr
                     <StepIcon status={st.status} />
                   </span>
                   <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <span
-                      className={cn(
-                        'text-[13px]',
-                        st.status === 'pending' ? 'text-muted' : 'text-fg',
-                        st.status === 'running' && 'font-medium',
-                      )}
+                    <button
+                      type="button"
+                      disabled={!onStep}
+                      onClick={() => onStep?.(st.id)}
+                      title={onStep ? '在流程图里查看这一步' : undefined}
+                      className="-mx-1.5 -my-0.5 flex flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
                     >
-                      {st.title}
-                    </span>
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
-                      {a && (
-                        <span className="flex items-center gap-1.5">
-                          <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
-                          {a.name}
-                        </span>
-                      )}
-                      {st.kind === 'flow' && <span>调用流程</span>}
-                      {st.rounds > 0 && (
-                        <span className={st.verdict === 'fail' ? 'text-warning' : 'text-success'}>
-                          {verdictText(st)}
-                        </span>
-                      )}
-                    </span>
+                      <span
+                        className={cn(
+                          'text-[13px]',
+                          st.status === 'pending' ? 'text-muted' : 'text-fg',
+                          st.status === 'running' && 'font-medium',
+                        )}
+                      >
+                        {st.title}
+                      </span>
+                      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
+                        {a && (
+                          <span className="flex items-center gap-1.5">
+                            <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
+                            {a.name}
+                          </span>
+                        )}
+                        {st.kind === 'flow' && <span>调用流程</span>}
+                        {st.rounds > 0 && (
+                          <span className={st.verdict === 'fail' ? 'text-warning' : 'text-success'}>
+                            {verdictText(st)}
+                          </span>
+                        )}
+                      </span>
+                    </button>
                     {kids.length > 0 && (
                       <ul className="mt-0.5 flex flex-col gap-1 border-l border-line-strong pl-2.5">
                         {kids.map((k) => (

@@ -23,8 +23,8 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
   const overrides = {
     cwd: o.cwd,
     model: o.model || undefined,
-    // 面板里没法逐条审批，和 codex exec 一样不询问：越过沙箱的操作直接失败，由模型自己换办法
-    approvalPolicy: 'never',
+    // 需要越过沙箱时由 Codex 发来审批请求，任务页上弹出让用户确认；完全访问时不会有审批
+    approvalPolicy: sandbox === 'danger-full-access' ? 'never' : 'on-request',
     sandbox,
     developerInstructions: o.systemPrompt || undefined,
   }
@@ -95,16 +95,39 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
     return []
   }
 
-  /** app-server 发来的请求：审批一律拒绝（approvalPolicy 已是 never，正常不会来），其余回不支持 */
-  function onRequest(m: any) {
-    const decline: Record<string, unknown> = {
-      'item/commandExecution/requestApproval': { decision: 'decline' },
-      'item/fileChange/requestApproval': { decision: 'decline' },
-      applyPatchApproval: { decision: 'abort' },
-      execCommandApproval: { decision: 'abort' },
+  /** app-server 发来的请求：命令和改文件的审批交给用户确认，其余回不支持 */
+  function onRequest(m: any): CliEvent[] {
+    const p = m.params ?? {}
+    const answer = (result: unknown) => send({ id: m.id, result })
+    if (m.method === 'item/commandExecution/requestApproval' || m.method === 'execCommandApproval') {
+      const legacy = m.method === 'execCommandApproval'
+      const cmd = unwrapShell(p.command ?? '')
+      return [
+        {
+          type: 'ask',
+          kind: 'command',
+          title: cmd ? `运行命令：${oneLine(cmd)}` : '运行一条需要越过沙箱的命令',
+          detail: [p.reason, cmd && clipDetail(cmd), p.cwd && `目录：${p.cwd}`].filter(Boolean).join('\n\n'),
+          reply: (r) =>
+            answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+        },
+      ]
     }
-    if (decline[m.method]) send({ id: m.id, result: decline[m.method] })
-    else send({ id: m.id, error: { code: -32601, message: `面板不支持 ${m.method}` } })
+    if (m.method === 'item/fileChange/requestApproval' || m.method === 'applyPatchApproval') {
+      const legacy = m.method === 'applyPatchApproval'
+      return [
+        {
+          type: 'ask',
+          kind: 'file',
+          title: p.grantRoot ? `允许写入目录：${p.grantRoot}` : '修改沙箱以外的文件',
+          detail: String(p.reason ?? ''),
+          reply: (r) =>
+            answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+        },
+      ]
+    }
+    send({ id: m.id, error: { code: -32601, message: `面板不支持 ${m.method}` } })
+    return []
   }
 
   function onItem(item: any): CliEvent[] {
@@ -271,10 +294,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
       send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } })
     },
     handle(m: any): CliEvent[] {
-      if (m.id !== undefined && m.method) {
-        onRequest(m)
-        return []
-      }
+      if (m.id !== undefined && m.method) return onRequest(m)
       if (m.id !== undefined) return onResponse(m)
       if (m.method) return onNotification(m)
       return []

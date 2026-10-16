@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
+  BellRing,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -397,6 +398,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                             <span className="min-w-0 flex-1 truncate font-medium">{projectName(pid)}</span>
                           </button>
                         )}
+                        {!open && ts.some((t) => t.requests?.length) && (
+                          <BellRing aria-label="有对话需要你处理" className="h-3.5 w-3.5 shrink-0 text-warning" />
+                        )}
                         {running > 0 ? (
                           <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10.5px] leading-[18px] font-medium text-accent group-hover/proj:hidden">
                             {running} 个执行中
@@ -463,7 +467,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                               on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
                             )}
                           >
-                            {t.status === 'running' || t.status === 'failed' ? (
+                            {t.requests?.length ? (
+                              // Agent 在等你确认操作或回答问题
+                              <BellRing
+                                aria-label="需要你处理"
+                                className="h-3.5 w-3.5 shrink-0 animate-[bell_1.6s_ease-in-out_infinite] text-warning"
+                              />
+                            ) : t.status === 'running' || t.status === 'failed' ? (
                               <TaskStatusIcon status={t.status} className="h-3.5 w-3.5" />
                             ) : null}
                             <span className="min-w-0 flex-1 truncate">{t.title}</span>

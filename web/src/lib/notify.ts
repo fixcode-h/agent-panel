@@ -29,6 +29,7 @@ const TEXT: Record<string, string> = { done: '已完成', failed: '失败了', s
  */
 export function useTaskNotifications(tasks: Task[], open: (t: Task) => void) {
   const prev = useRef(new Map<string, string>())
+  const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
   useEffect(() => {
@@ -37,7 +38,25 @@ export function useTaskNotifications(tasks: Task[], open: (t: Task) => void) {
     prev.current = next
     const running = tasks.filter((t) => t.status === 'running').length
     document.title = running ? `(${running}) Agent 面板` : 'Agent 面板'
+    // 新出现的确认请求：页面不在前台时也通知
+    const reqs = new Set(tasks.flatMap((t) => (t.requests ?? []).map((r) => r.id)))
+    const fresh = tasks.filter((t) => (t.requests ?? []).some((r) => !asked.current.has(r.id)))
+    const first = !asked.current.size && !before.size
+    asked.current = reqs
     if (!before.size || !document.hidden || !notifyEnabled()) return
+    if (!first)
+      for (const t of fresh)
+        try {
+          const n = new Notification('Agent 需要你确认', {
+            body: `${t.title}：${t.requests[0].title}`,
+            tag: `ask:${t.id}`,
+          })
+          n.onclick = () => {
+            window.focus()
+            openRef.current(t)
+            n.close()
+          }
+        } catch {}
     for (const t of tasks) {
       if (before.get(t.id) !== 'running' || t.status === 'running' || !TEXT[t.status]) continue
       try {

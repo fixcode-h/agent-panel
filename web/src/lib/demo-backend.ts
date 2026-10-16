@@ -620,7 +620,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }
 
-  if (res === 'tasks') return tasksRoute(method, id, sub, query, body)
+  if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)
 }
@@ -715,6 +715,7 @@ function tasksRoute(
   sub: string | undefined,
   query: URLSearchParams,
   body: unknown,
+  rid?: string,
 ) {
   const d = load()
   const tasks = (d.tasks ??= [])
@@ -737,6 +738,26 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     void followUp(d, task, parse(FollowUpInput, body).text)
+    return task
+  }
+  // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
+  if (sub === 'requests' && rid) {
+    const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
+    const a = body as { allow: boolean; answer?: string }
+    task.requests = task.requests.filter((r) => r.id !== rid)
+    task.messages.push({
+      id: `demo-${crypto.randomUUID()}`,
+      role: 'system',
+      agentId: req.agentId,
+      step: req.step,
+      text:
+        req.kind === 'question'
+          ? `你回答了「${req.title}」：${a.answer ?? ''}`
+          : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    persist()
     return task
   }
   if (sub === 'resume') {

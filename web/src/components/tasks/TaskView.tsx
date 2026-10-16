@@ -29,6 +29,7 @@ import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskFlow } from './TaskFlow'
 import { TaskPanel } from './TaskPanel'
+import { RequestCard } from './RequestCard'
 import { TaskStatusIcon } from './TaskStatusIcon'
 
 type Block =
@@ -88,6 +89,8 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
   const [scrolled, setScrolled] = useState(false)
   useEscape(panel, () => setPanel(false))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
+  // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
+  const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
 
@@ -327,6 +330,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
             {isFlow ? (
               <TaskFlow
                 task={task}
+                focus={focus}
                 onOpenChat={() => {
                   stick.current = true
                   setView('chat')
@@ -377,6 +381,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
           </div>
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
+            <RequestCard task={task} onAnswered={apply} />
             <div className="mx-auto max-w-[760px] rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop">
               <label htmlFor="follow-up" className="sr-only">
                 继续输入要求
@@ -473,7 +478,20 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
               </Button>
             </div>
           )}
-          <TaskPanel task={task} project={project} workflow={workflow} />
+          <TaskPanel
+            task={task}
+            project={project}
+            workflow={workflow}
+            onStep={
+              task.mode === 'workflow'
+                ? (id) => {
+                    setView('flow')
+                    setFocus({ id, at: Date.now() })
+                    setPanel(false)
+                  }
+                : undefined
+            }
+          />
         </aside>
         {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
       </div>

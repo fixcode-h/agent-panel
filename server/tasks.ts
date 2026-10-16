@@ -16,7 +16,7 @@ import { newTask } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitNumstat } from './exec/git.ts'
-import { runRealTurn } from './exec/runner.ts'
+import { answerRequest, runRealTurn } from './exec/runner.ts'
 import { createCollection } from './store.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -44,6 +44,7 @@ export function tasksApi(deps: {
       await store.update(t.id, {
         ...t,
         status: 'stopped',
+        requests: [],
         steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
         messages: [
           ...t.messages,
@@ -214,6 +215,18 @@ export function tasksApi(deps: {
       live.delete(id)
       throw e
     }
+  })
+
+  // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
+  routes.post('/:id/requests/:rid', async (c) => {
+    const e = live.get(c.req.param('id'))
+    const body = z.object({ allow: z.boolean(), answer: z.string().optional() }).safeParse(await c.req.json())
+    if (!body.success) return bad(c, z.prettifyError(body.error))
+    if (!e || !answerRequest(e.task, c.req.param('rid'), body.data, randomUUID))
+      return bad(c, '这个请求已经结束了', 404)
+    e.task.updatedAt = new Date().toISOString()
+    await store.update(e.task.id, e.task)
+    return c.json(e.task)
   })
 
   routes.patch('/:id', async (c) => {

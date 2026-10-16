@@ -31,6 +31,17 @@ export type CliEvent =
   | { type: 'todos'; todos: { text: string; status: 'pending' | 'running' | 'done' }[] }
   | { type: 'error'; message: string }
   | { type: 'result'; ok: boolean; error?: string }
+  /** CLI 要用户确认（权限不够的命令、改文件）或回答问题；reply 把用户的选择交回给 CLI */
+  | {
+      type: 'ask'
+      kind: 'command' | 'file' | 'tool' | 'question'
+      title: string
+      detail: string
+      options?: string[]
+      reply: (r: AskReply) => void
+    }
+
+export type AskReply = { allow: boolean; answer?: string }
 
 export type Parser = (obj: any) => CliEvent[]
 

@@ -387,6 +387,35 @@ try {
   assert.ok(!half.steps.some((s) => s.interrupted))
   step('中断恢复：停止后继续执行，被打断的节点续接会话接着做')
 
+  // ---- 权限请求：Claude Code 要确认的命令和问题显示在任务上，用户回答后交回 CLI ----
+  let ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 需要确认' })
+  const waitReq = async () => {
+    for (let i = 0; i < 100; i++) {
+      const t = await call('GET', `/tasks/${ask.id}`)
+      if (t.requests.length) return t.requests[0]
+      await sleep(100)
+    }
+    throw new Error('没有等到请求')
+  }
+  const r1 = await waitReq()
+  assert.equal(r1.kind, 'command')
+  assert.match(r1.title, /rm -rf build/)
+  await call('POST', `/tasks/${ask.id}/requests/${r1.id}`, { allow: true })
+  const r2 = await waitReq()
+  assert.equal(r2.kind, 'question')
+  assert.deepEqual(r2.options, ['SQLite', 'MySQL'])
+  await call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true, answer: 'SQLite' })
+  await assert.rejects(call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true }), /已经结束/)
+  ask = await waitDone(ask.id)
+  assert.equal(ask.status, 'done')
+  assert.equal(ask.requests.length, 0)
+  const [a1, a2] = readLog(log + '.ask').at(-1)
+  assert.equal(a1.behavior, 'allow')
+  assert.equal(a1.updatedInput.command, 'rm -rf build')
+  assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
+  assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
+  step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
+
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })
   bad = await waitDone(bad.id)

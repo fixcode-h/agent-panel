@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
+  BaseEdge,
   Background,
   BackgroundVariant,
   Controls,
@@ -18,6 +19,7 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeProps,
   type Node,
   type NodeChange,
   type NodeProps,
@@ -216,6 +218,25 @@ function AutoFit() {
   return null
 }
 
+/**
+ * 连线：从右边水平出发、水平进入左边。React Flow 默认的曲线按两端距离算弯曲程度，
+ * 节点挨得很近时几乎是一条斜线，箭头也跟着歪；这里控制点至少离端点 40px，近了也是平着进出。
+ */
+const FlowEdge = memo(function FlowEdge({
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  markerEnd,
+  style,
+  interactionWidth,
+}: EdgeProps) {
+  const dx = Math.max(Math.abs(targetX - sourceX) * 0.5, 40)
+  const path = `M${sourceX},${sourceY} C${sourceX + dx},${sourceY} ${targetX - dx},${targetY} ${targetX},${targetY}`
+  return <BaseEdge path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+})
+const edgeTypes = { flow: FlowEdge }
+
 export type EdgeTone = 'idle' | 'active' | 'done'
 
 export function FlowCanvas({
@@ -318,6 +339,7 @@ export function FlowCanvas({
     const color = tone === 'done' ? '#4f9a6b' : tone === 'active' ? '#d97757' : undefined
     return {
       id: e.id,
+      type: 'flow',
       source: e.from,
       target: e.to,
       selected: selected === `edge:${e.id}`,
@@ -439,7 +461,8 @@ export function FlowCanvas({
         minZoom={0.3}
         maxZoom={1.6}
         proOptions={{ hideAttribution: true }}
-        defaultEdgeOptions={{ type: 'default' }}
+        defaultEdgeOptions={{ type: 'flow' }}
+        edgeTypes={edgeTypes}
         connectionRadius={28}
         className={cn(!editable && 'read-only')}
       >

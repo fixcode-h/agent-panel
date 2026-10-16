@@ -420,6 +420,20 @@ export const TaskTodo = z.object({
 })
 export type TaskTodo = z.infer<typeof TaskTodo>
 
+/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；在任务页输入框上方显示 */
+export const TaskRequest = z.object({
+  id: z.string(),
+  step: z.string().default(''),
+  agentId: z.string().default(''),
+  kind: z.enum(['command', 'file', 'tool', 'question']),
+  title: z.string(),
+  detail: z.string().default(''),
+  /** 问题的选项；也可以自己填 */
+  options: z.array(z.string()).default([]),
+  at: z.string(),
+})
+export type TaskRequest = z.infer<typeof TaskRequest>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
@@ -453,6 +467,8 @@ export const TaskData = z.object({
   todos: z.array(TaskTodo).default([]),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
+  /** 正在等用户确认的请求 */
+  requests: z.array(TaskRequest).default([]),
 })
 export type TaskData = z.infer<typeof TaskData>
 

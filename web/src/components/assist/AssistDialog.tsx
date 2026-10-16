@@ -5,7 +5,7 @@ import { ArrowUp, Check, CircleAlert, Crown, Loader2, Sparkles, Square, Wand2, X
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
-import type { Agent, AgentInput, Settings, Workflow } from '@shared/schema'
+import type { Agent, AgentInput, Settings, TaskMessage, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cliColor, effortLabel, modelGroup } from '@/lib/cli-style'
 import { sortEfforts, useCliDef } from '@/lib/cli-models'
@@ -17,10 +17,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
+import { FoldedRun, type Author } from '@/components/tasks/Messages'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
 
-type Turn = AssistMessage & { proposal?: Proposal; error?: string }
+type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
 
 const EXAMPLES: Record<AssistKind, string[]> = {
   agent: [
@@ -171,7 +172,17 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
 }
 
 /** 生成中：流式显示思考过程、说明文字、用到的工具和已写的字数，加上已用时间 */
-function JobProgress({ job, cliName }: { job: AssistJob; cliName: string }) {
+function JobProgress({
+  job,
+  cliName,
+  author,
+  teamNames,
+}: {
+  job: AssistJob
+  cliName: string
+  author: Author
+  teamNames: Set<string>
+}) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000)
@@ -189,24 +200,10 @@ function JobProgress({ job, cliName }: { job: AssistJob; cliName: string }) {
           : job.thinking
             ? '正在思考'
             : `${cliName} 正在生成`
-  const thinking = job.thinking?.trim()
   return (
     <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
-      {thinking && (
-        <p className="line-clamp-4 border-l-2 border-line-strong pl-2.5 text-xs whitespace-pre-wrap text-subtle italic">
-          {thinking.length > 400 ? '…' + thinking.slice(-400) : thinking}
-        </p>
-      )}
-      {job.text && <p className="whitespace-pre-wrap">{job.text}</p>}
-      {!!job.tools?.length && (
-        <ul className="flex flex-col gap-0.5 text-xs text-subtle">
-          {job.tools.map((t, i) => (
-            <li key={i} className="truncate font-mono">
-              · {t}
-            </li>
-          ))}
-        </ul>
-      )}
+      {/* 和任务页同一套消息流：思考可以折叠，工具调用点开看详情 */}
+      {!!job.messages?.length && <FoldedRun msgs={job.messages} teamNames={teamNames} live author={author} />}
       <span className="flex items-center gap-2 text-xs text-subtle">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
         {phase}…<span className="tabular-nums">{secs} 秒</span>
@@ -316,13 +313,16 @@ export function AssistDialog({
   target?: Agent | Workflow
   onApplied: (r: { agent?: Agent; workflow?: Workflow }) => void
 }) {
-  const { clis, settings, categories, setAgents, setCategories, setWorkflows } = useData()
+  const { clis, settings, categories, agents, setAgents, setCategories, setWorkflows } = useData()
+  const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const usable = clis.filter((c) => c.installed && c.enabled)
   const [cli, setCli] = useState('')
   // 这次生成用的模型和思考强度：默认跟设置走，可以在输入框下面临时调整
   const [model, setModel] = useState('')
   const [effort, setEffort] = useState('')
   const cliDef = useCliDef(cli)
+  // 消息流里的「说话人」就是这次用的 CLI
+  const author: Author = { name: CLIS.find((c) => c.id === cli)?.name ?? cli, cli, icon: 'sparkles' }
   const pickCli = (id: string) => {
     setCli(id)
     setModel(id === settings?.assist.cli ? (settings?.assist.model ?? '') : '')
@@ -369,6 +369,7 @@ export function AssistDialog({
             text: j.text + (j.raw ? `\n\n\`\`\`json\n${j.raw}\n\`\`\`` : ''),
             proposal: j.proposal,
             error: j.error,
+            msgs: j.messages,
           },
         ])
         setJob(null)
@@ -389,7 +390,7 @@ export function AssistDialog({
   useEffect(() => {
     const el = scroller.current
     if (el) el.scrollTop = el.scrollHeight
-  }, [turns, job?.text])
+  }, [turns, job?.text, job?.messages?.length, job?.outChars])
 
   const latest = useMemo(() => [...turns].reverse().find((t) => t.proposal)?.proposal, [turns])
   const running = !!job
@@ -535,8 +536,12 @@ export function AssistDialog({
                       {t.text}
                     </div>
                   ) : (
-                    <div key={i} className="flex flex-col gap-1.5 text-[13px] leading-relaxed">
-                      {t.text && <p className="whitespace-pre-wrap">{t.text.split('```')[0].trim()}</p>}
+                    <div key={i} className="flex flex-col gap-2 text-[13px] leading-relaxed">
+                      {t.msgs?.length ? (
+                        <FoldedRun msgs={t.msgs} teamNames={teamNames} author={author} />
+                      ) : (
+                        t.text && <p className="whitespace-pre-wrap">{t.text.split('```')[0].trim()}</p>
+                      )}
                       {t.proposal && (
                         <span className="flex items-center gap-1.5 text-xs text-success">
                           <Check className="h-3.5 w-3.5" />
@@ -552,7 +557,14 @@ export function AssistDialog({
                     </div>
                   ),
                 )}
-                {job && <JobProgress job={job} cliName={CLIS.find((c) => c.id === cli)?.name ?? cli} />}
+                {job && (
+                  <JobProgress
+                    job={job}
+                    cliName={CLIS.find((c) => c.id === cli)?.name ?? cli}
+                    author={author}
+                    teamNames={teamNames}
+                  />
+                )}
               </div>
               <div className="p-3">
                 <div className="rounded-xl border border-line-strong bg-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">

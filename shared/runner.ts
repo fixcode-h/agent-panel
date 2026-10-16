@@ -283,6 +283,28 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
           text: `收到：「${need}」\n\n已经按要求调整，改动在 \`${last ?? 'src/index.ts'}\`。还有需要修改的地方可以继续说。`,
         }
   }
+  // 演示权限请求：对话里提到「安装」时，先请你确认一条命令，确认后才接着输出
+  if (!call.step && /安装|install/i.test(ctx.prompt)) {
+    const id = ctx.newId()
+    ;(task.requests ??= []).push({
+      id,
+      step: '',
+      agentId: call.agentId,
+      kind: 'command',
+      title: '运行命令：npm install --save dayjs',
+      detail: '安装日期处理库（在线演示，不会真的执行）',
+      options: [],
+      at: new Date().toISOString(),
+    })
+    ctx.changed(true)
+    while (task.requests.some((r) => r.id === id)) {
+      if (ctx.stopped()) {
+        task.requests = task.requests.filter((r) => r.id !== id)
+        return { ok: false, stopped: true, error: '已停止' }
+      }
+      await new Promise((r) => setTimeout(r, 300))
+    }
+  }
   if (!call.step && ctx.first)
     task.todos = [
       { text: '搜索相关代码', status: 'done', agentId: call.agentId },

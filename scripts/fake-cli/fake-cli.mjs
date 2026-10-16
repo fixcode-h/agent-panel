@@ -78,7 +78,24 @@ if (args.includes('--list-models')) {
   process.exit(0)
 }
 
-if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
+// Claude Code 用 --input-format stream-json 时，stdin 一行一个 JSON：第一行是任务描述，之后是面板回的 control_response
+const streamIn = kind === 'claude' && args.includes('--input-format')
+const lines = []
+let wake
+if (streamIn) {
+  const rl = (await import('node:readline')).createInterface({ input: process.stdin })
+  rl.on('line', (l) => {
+    lines.push(JSON.parse(l))
+    wake?.()
+  })
+  const next = async () => {
+    while (!lines.length) await new Promise((r) => (wake = r))
+    return lines.shift()
+  }
+  globalThis.nextLine = next
+  const first = await next()
+  input = typeof first.message.content === 'string' ? first.message.content : ''
+} else if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
   const extra = kind === 'codex' ? { resume: appResume, developer } : {}
@@ -207,6 +224,26 @@ if (kind === 'claude') {
       ],
     },
   })
+  // 任务描述里有 ASK：先请求确认一条命令，再问一个问题，把面板的回答记下来
+  if (input.includes('ASK') && streamIn) {
+    const ask = async (name, toolInput) => {
+      const id = randomUUID()
+      out({
+        type: 'control_request',
+        request_id: id,
+        request: { subtype: 'can_use_tool', tool_name: name, input: toolInput },
+      })
+      for (;;) {
+        const m = await globalThis.nextLine()
+        if (m.type === 'control_response' && m.response.request_id === id) return m.response.response
+      }
+    }
+    const a1 = await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
+    const a2 = await ask('AskUserQuestion', {
+      questions: [{ question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] }],
+    })
+    if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2]) + '\n')
+  }
   out({
     type: 'assistant',
     message: { id: 'm1', content: [{ type: 'tool_use', id: 't3', name: 'Bash', input: { command: 'npm test' } }] },
