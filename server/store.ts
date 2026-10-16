@@ -1,9 +1,50 @@
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
 import type { z } from 'zod'
 
-const DATA_DIR = process.env.AGENT_PANEL_DATA ?? path.resolve('data')
+export const DATA_DIR = process.env.AGENT_PANEL_DATA ?? path.resolve('data')
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * 原子写 JSON：先写唯一的临时文件再改名。Windows 上杀毒软件、索引服务短暂占用文件时改名会报 EPERM / EBUSY，重试几次。
+ */
+export async function writeJsonAtomic(file: string, data: unknown) {
+  await mkdir(path.dirname(file), { recursive: true })
+  const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
+  await writeFile(tmp, JSON.stringify(data, null, 2), 'utf8')
+  for (let i = 0; ; i++) {
+    try {
+      return await rename(tmp, file)
+    } catch (err: any) {
+      if (i >= 5 || !['EPERM', 'EBUSY', 'EACCES'].includes(err?.code)) {
+        await unlink(tmp).catch(() => {})
+        throw err
+      }
+      await sleep(50 * 2 ** i)
+    }
+  }
+}
+
+/** 读 JSON 文件；文件损坏时改名备份，当作不存在，不让整个服务起不来 */
+export async function readJson(file: string): Promise<unknown | undefined> {
+  let text: string
+  try {
+    text = await readFile(file, 'utf8')
+  } catch (err: any) {
+    if (err?.code === 'ENOENT') return undefined
+    throw err
+  }
+  try {
+    return JSON.parse(text)
+  } catch {
+    const backup = `${file}.broken-${Date.now()}`
+    await rename(file, backup).catch(() => {})
+    console.error(`数据文件损坏，已备份为 ${backup}，按空数据处理`)
+    return undefined
+  }
+}
 
 type Entity = { id: string; createdAt: string; updatedAt: string }
 
@@ -18,25 +59,17 @@ export function createCollection<I extends object, T extends I & Entity>(file: s
 
   async function list(): Promise<T[]> {
     if (cache) return cache
-    try {
-      const raw = JSON.parse(await readFile(FILE, 'utf8'))
-      cache = (raw as unknown[]).map((r) => schema.parse(r))
-    } catch (err: any) {
-      if (err?.code !== 'ENOENT') throw err
-      cache = []
-    }
+    const raw = await readJson(FILE)
+    cache = Array.isArray(raw) ? raw.map((r) => schema.parse(r)) : []
     return cache
   }
 
   function persist(items: T[]) {
     cache = items
-    writing = writing.then(async () => {
-      await mkdir(DATA_DIR, { recursive: true })
-      const tmp = `${FILE}.${process.pid}.tmp`
-      await writeFile(tmp, JSON.stringify(items, null, 2), 'utf8')
-      await rename(tmp, FILE)
-    })
-    return writing
+    // 前一次写失败不能拖垮后面的写入：每次都接在「无论成败」之后
+    const next = writing.catch(() => {}).then(() => writeJsonAtomic(FILE, items))
+    writing = next
+    return next
   }
 
   return {

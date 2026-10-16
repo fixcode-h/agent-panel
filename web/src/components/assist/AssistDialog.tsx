@@ -192,7 +192,8 @@ export function AssistDialog({
   const [job, setJob] = useState<AssistJob | null>(null)
   const [applying, setApplying] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
-  const what = kind === 'agent' ? 'Agent' : '工作流'
+  // 中文和英文之间留空格：「创建 Agent」「生成的 Agent 会…」
+  const what = kind === 'agent' ? ' Agent ' : '工作流'
 
   useEffect(() => {
     if (!open) return
@@ -206,29 +207,42 @@ export function AssistDialog({
   // 生成中轮询
   useEffect(() => {
     if (!job || job.status !== 'running') return
-    const t = setInterval(async () => {
+    // 一次请求回来再发下一次；卸载或任务结束后到达的旧响应直接丢掉，不会重复追加或把结束的任务恢复成进行中
+    let alive = true
+    let t: ReturnType<typeof setTimeout>
+    const poll = async () => {
       try {
         const j = await api.assistJob(job.id)
-        setJob(j)
-        if (j.status !== 'running') {
-          setTurns((ts) => [
-            ...ts,
-            {
-              role: 'assistant',
-              text: j.text + (j.raw ? `\n\n\`\`\`json\n${j.raw}\n\`\`\`` : ''),
-              proposal: j.proposal,
-              error: j.error,
-            },
-          ])
-          setJob(null)
+        if (!alive) return
+        if (j.status === 'running') {
+          setJob(j)
+          t = setTimeout(poll, 600)
+          return
         }
+        alive = false
+        setTurns((ts) => [
+          ...ts,
+          {
+            role: 'assistant',
+            text: j.text + (j.raw ? `\n\n\`\`\`json\n${j.raw}\n\`\`\`` : ''),
+            proposal: j.proposal,
+            error: j.error,
+          },
+        ])
+        setJob(null)
       } catch (e) {
+        if (!alive) return
+        alive = false
         toast.error((e as Error).message)
         setJob(null)
       }
-    }, 600)
-    return () => clearInterval(t)
-  }, [job?.id, job?.status])
+    }
+    t = setTimeout(poll, 600)
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [job?.id, job?.status === 'running'])
 
   useEffect(() => {
     const el = scroller.current
@@ -305,10 +319,10 @@ export function AssistDialog({
             </span>
             <div className="min-w-0 flex-1">
               <D.Title className="truncate text-[15px] font-semibold">
-                {target ? `用 AI 优化「${target.name}」` : `用 AI 创建${what}`}
+                {target ? `用 AI 优化「${target.name}」` : `用 AI 创建${what.trimEnd()}`}
               </D.Title>
               <D.Description className="truncate text-xs text-subtle">
-                本机 CLI 按固定格式生成{what}，校验通过后在右侧预览，确认再应用
+                本机 CLI 按固定格式生成{what.trimEnd()}，校验通过后在右侧预览，确认再应用
               </D.Description>
             </div>
             <Button
@@ -355,7 +369,7 @@ export function AssistDialog({
                     <p className="text-[13px] text-muted">
                       {target
                         ? `说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。`
-                        : `描述你想要的${what}，越具体越好。可以从下面的例子开始：`}
+                        : `描述你想要的${what.trimEnd()}，越具体越好。可以从下面的例子开始：`}
                     </p>
                     {!target &&
                       EXAMPLES[kind].map((e) => (
@@ -420,7 +434,7 @@ export function AssistDialog({
                         send()
                       }
                     }}
-                    placeholder={latest ? '继续说要改的地方' : `描述你想要的${what}`}
+                    placeholder={latest ? '继续说要改的地方' : `描述你想要的${what.trimEnd()}`}
                     className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
                   />
                   <div className="flex items-center px-2.5 pb-2">
@@ -472,7 +486,7 @@ export function AssistDialog({
                 </span>
                 <Button className="ml-auto" disabled={!latest || running || applying} onClick={apply}>
                   {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {target ? '应用修改' : `创建${what}`}
+                  {target ? '应用修改' : `创建${what.trimEnd()}`}
                 </Button>
               </footer>
             </section>

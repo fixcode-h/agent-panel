@@ -4,6 +4,7 @@
  *
  * 运行：npm run test:e2e（需要 git；假 CLI 依赖 shebang，只能在 macOS / Linux 上跑）
  */
+import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -32,7 +33,7 @@ writeFileSync(path.join(projectDir, 'pre.txt'), 'changed before the task\n')
 
 const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts'], {
   cwd: root,
-  env: { ...process.env, AGENT_PANEL_DATA: dataDir, PORT: String(port), FAKE_CLI_LOG: log },
+  env: { ...process.env, AGENT_PANEL_DATA: dataDir, PORT: String(port), FAKE_CLI_LOG: log, AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs') },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
 const stop = () => server.kill()
@@ -73,7 +74,7 @@ for (let i = 0; ; i++) {
 
 try {
   const cli = (extra = {}) => ({ enabled: true, command: fake, defaultModel: '', permission: '', extraArgs: [], env: [{ key: 'FOO', value: 'bar' }], ...extra })
-  const settings = { execution: 'real', stepTimeoutMinutes: 5, clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli() } }
+  const settings = { stepTimeoutMinutes: 5, clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli() } }
   await call('PUT', '/settings', settings)
   const clis = await call('GET', '/clis?refresh=1')
   assert.deepEqual(clis.map((c) => [c.id, c.installed]), [['claude', true], ['codex', true], ['commandcode', true]])
@@ -240,16 +241,21 @@ try {
   assert.equal(h2.status, 'failed')
   assert.match(h2.messages.at(-1).text, /验收 1 轮仍未通过/)
   assert.deepEqual(h2.steps.filter((s) => !s.parentId).map((s) => s.status), ['failed', 'pending'])
-  // 循环引用：自己引用自己时给出提示
-  const loop = await call('POST', '/workflows', {
-    name: '自引用', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
-    flows: [flow('main', '', [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })], [['start', 'z'], ['z', 'end']])],
-  })
-  await call('PUT', `/projects/${project.id}`, { ...project, workflowId: loop.id })
-  let lp = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '套娃' })
-  lp = await waitDone(lp.id)
-  assert.equal(lp.status, 'failed')
-  assert.match(lp.messages.at(-1).text, /嵌套超过/)
+  // 保存时拦下有问题的流程图：自己调用自己、节点连成环
+  await assert.rejects(
+    call('POST', '/workflows', {
+      name: '自引用', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
+      flows: [flow('main', '', [node('z', '套娃', '', '', { kind: 'flow', flow: { kind: 'sub', id: 'main' } })], [['start', 'z'], ['z', 'end']])],
+    }),
+    /循环调用/,
+  )
+  await assert.rejects(
+    call('POST', '/workflows', {
+      name: '成环', mainAgentId: A.id, members: [], entryFlowId: 'main', document: '',
+      flows: [flow('main', '', [node('p', '甲', ''), node('q', '乙', '')], [['start', 'p'], ['p', 'q'], ['q', 'p']])],
+    }),
+    /连成了环/,
+  )
   await call('PUT', `/projects/${project.id}`, { ...project, workflowId: wf.id })
   step('节点入口：开始流程的结果交给节点，验收不通过退回完善、轮数用完失败，结束流程、流程节点、引用其他工作流都能执行')
 
@@ -272,7 +278,7 @@ try {
   await call('PUT', '/agents/' + D.id, { ...D, model: '@medium' })
   let t3 = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: D.id, prompt: '档位' })
   t3 = await waitDone(t3.id)
-  assert.equal(calls().at(-1).args[calls().at(-1).args.indexOf('-m') + 1], 'gpt-5.5')
+  assert.equal(calls().at(-1).args[calls().at(-1).args.indexOf('-m') + 1], 'gpt-6.1-sol')
   await call('PUT', '/settings', settings)
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {
@@ -376,15 +382,91 @@ try {
   assert.match(disabled.messages.at(-1).text, /停用/)
   step('找不到命令、CLI 被停用时给出明确提示')
 
-  // ---- 模拟执行 ----
+  // 从本机 CLI 读取模型列表
+  await call('PUT', '/settings', settings)
+  const cm = await call('GET', '/clis/codex/models?refresh=1')
+  assert.equal(cm.source, 'cli')
+  assert.deepEqual(cm.models.map((m) => m.id), ['fake-pro', 'fake-mini'], '隐藏的模型不列出')
+  assert.deepEqual(cm.efforts, ['low', 'high', 'ultra'])
+  const mm = await call('GET', '/clis/commandcode/models?refresh=1')
+  assert.deepEqual(mm.models.map((m) => [m.id, m.group]), [['fake/flash', 'Open Source'], ['fake/pro', 'Open Source'], ['gpt-fake', 'OpenAI']])
+  assert.equal(mm.models[0].isDefault, true)
+  const cl = await call('GET', '/clis/claude/models')
+  assert.equal(cl.source, 'builtin')
+  assert.ok(cl.models.some((m) => m.id === 'opus'))
+  step('从本机 CLI 读取模型列表：Codex 走 app-server，Command Code 走 --list-models')
+
+  // 目录浏览带上快速入口（Windows 上是各个盘符）
+  const listing = await call('GET', `/fs/list?path=${encodeURIComponent(tmp)}`)
+  assert.ok(listing.roots.length >= 2 && listing.roots[0].name === '主目录')
+  step('目录浏览列出主目录和磁盘')
+
+  // ---- 正式版没有模拟执行：旧设置里的 execution 会被忽略，任务一律真实调用 CLI ----
   await call('PUT', '/settings', { ...settings, execution: 'simulate' })
-  let sim = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '模拟一下' })
+  assert.equal((await call('GET', '/settings')).execution, undefined)
+  let sim = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '真实执行' })
   const before = calls().length
   sim = await waitDone(sim.id)
   assert.equal(sim.status, 'done')
-  assert.equal(sim.simulated, true)
-  assert.equal(calls().length, before, '模拟执行不应调用 CLI')
-  step('模拟执行：不调用 CLI')
+  assert.equal(sim.simulated, false)
+  assert.ok(calls().length > before, '任务应当调用 CLI')
+  step('没有模拟执行：任务总是调用本机 CLI')
+
+  // 重命名；停止后继续执行
+  assert.equal((await call('PATCH', `/tasks/${sim.id}`, { title: '新标题' })).title, '新标题')
+  let rs = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '停一下再继续' })
+  await call('POST', `/tasks/${rs.id}/stop`)
+  rs = await waitDone(rs.id)
+  assert.equal(rs.status, 'stopped')
+  await call('POST', `/tasks/${rs.id}/resume`)
+  rs = await waitDone(rs.id)
+  assert.equal(rs.status, 'done')
+  assert.equal(rs.messages.filter((m) => m.role === 'user').length, 1, '继续执行不会新增用户消息')
+  await assert.rejects(call('POST', `/tasks/${rs.id}/resume`), /只有失败或停止/)
+  step('重命名任务；停止后继续执行')
+
+  // ---- 在设置里安装 / 卸载 CLI ----
+  const waitJob = async (id) => {
+    for (;;) {
+      const j = await call('GET', `/clis/jobs/${id}`)
+      if (j.status !== 'running') return j
+      await sleep(100)
+    }
+  }
+  let ij = await call('POST', '/clis/claude/install')
+  assert.equal(ij.command, 'npm install -g @anthropic-ai/claude-code@latest')
+  ij = await waitJob(ij.id)
+  assert.equal(ij.status, 'done', ij.error)
+  assert.match(ij.log, /added 1 package/)
+  assert.match(ij.log, /npm warn/, 'stderr 也记进输出')
+  assert.equal(ij.cliStatus.installed, true)
+  let uj = await waitJob((await call('POST', '/clis/codex/uninstall')).id)
+  // 假 CLI 不是 npm 装的，卸载后还能找到：要提示用其他方式卸载
+  assert.equal(uj.status, 'failed')
+  assert.match(uj.error, /其他方式安装/)
+  assert.deepEqual(readLog(log + '.npm').map((a) => a.slice(0, 3)), [
+    ['install', '-g', '@anthropic-ai/claude-code@latest'],
+    ['uninstall', '-g', '@openai/codex'],
+  ])
+  await assert.rejects(call('POST', '/clis/nope/install'), /未知的 CLI/)
+  step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')
+
+  // ---- 只接受本机页面的请求 ----
+  const raw = (method, url, headers, body) =>
+    new Promise((resolve, reject) => {
+      const u = new URL(base + url)
+      const req = http.request({ host: u.hostname, port: u.port, path: u.pathname, method, headers }, (res) => {
+        res.resume()
+        resolve(res.statusCode)
+      })
+      req.on('error', reject)
+      req.end(body)
+    })
+  assert.equal(await raw('GET', '/projects', { host: 'evil.example:' + new URL(base).port }), 403, 'DNS 重绑定：外部域名的 Host')
+  assert.equal(await raw('GET', '/projects', { origin: 'https://evil.example' }), 403, '外部网站的 Origin')
+  assert.equal(await raw('POST', '/assist', { 'content-type': 'text/plain' }, '{}'), 415, '不是 JSON 的写请求')
+  assert.equal(await raw('GET', '/projects', { origin: 'http://localhost:5173' }), 200, '本机页面可以访问')
+  step('只接受本机页面的请求：拦下外部 Host、外部 Origin 和非 JSON 的写请求')
 
   console.log('\n全部通过')
 } catch (e) {

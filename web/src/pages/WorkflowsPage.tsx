@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Plus, Sparkles, Workflow as WorkflowIcon } from 'lucide-react'
+import { Plus, Sparkles, Upload, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Workflow, WorkflowInput } from '@shared/schema'
 import { newFlow } from '@shared/flow'
 import { api } from '@/lib/api'
+import { importWorkflow } from '@/lib/transfer'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
@@ -14,7 +15,7 @@ import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
 export function WorkflowsPage() {
-  const { loading, workflows, agents, clis, setWorkflows } = useData()
+  const { loading, workflows, agents, clis, setWorkflows, setAgents } = useData()
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
   const [assist, setAssist] = useState(false)
@@ -49,6 +50,24 @@ export function WorkflowsPage() {
     }
   }
 
+  const file = useRef<HTMLInputElement>(null)
+  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try {
+      const { workflow, created } = await importWorkflow(await f.text(), agents, workflows)
+      if (created.length) setAgents((as) => [...as, ...created])
+      setWorkflows((ws) => [...ws, workflow])
+      go({ page: 'workflows', id: workflow.id })
+      toast.success(
+        `已导入「${workflow.name}」${created.length ? `，新建了 ${created.length} 个 Agent：${created.map((a) => a.name).join('、')}` : ''}`,
+      )
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
+
   const duplicate = (w: Workflow) => {
     const { id, createdAt, updatedAt, ...rest } = w
     create({ ...rest, name: `${w.name} 副本` })
@@ -61,10 +80,27 @@ export function WorkflowsPage() {
         count={workflows.length}
         onNew={() => create()}
         extra={
-          <Button size="sm" variant="secondary" onClick={() => setAssist(true)} title="描述需求，让本机 CLI 生成工作流">
-            <Sparkles className="h-4 w-4 text-accent" />
-            AI 创建
-          </Button>
+          <>
+            <Button
+              size="icon-sm"
+              variant="secondary"
+              aria-label="导入工作流"
+              title="导入工作流文件"
+              onClick={() => file.current?.click()}
+            >
+              <Upload className="h-4 w-4" />
+            </Button>
+            <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setAssist(true)}
+              title="描述需求，让本机 CLI 生成工作流"
+            >
+              <Sparkles className="h-4 w-4 text-accent" />
+              AI 创建
+            </Button>
+          </>
         }
         query={query}
         onQuery={setQuery}

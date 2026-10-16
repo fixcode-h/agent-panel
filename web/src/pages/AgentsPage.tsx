@@ -166,7 +166,9 @@ export function AgentsPage() {
 
   const recheck = async () => {
     setChecking(true)
-    await refreshClis().finally(() => setChecking(false))
+    await refreshClis()
+      .catch((e) => toast.error(`检测失败：${(e as Error).message}`))
+      .finally(() => setChecking(false))
   }
 
   const status = (a: Agent) => {

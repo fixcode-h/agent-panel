@@ -1,4 +1,6 @@
 import type {
+  CliInstallJob,
+  CliModels,
   Agent,
   AgentInput,
   Category,
@@ -41,6 +43,10 @@ export const api = {
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
 
   clis: (refresh = false) => request<CliStatus[]>(`/clis${refresh ? '?refresh=1' : ''}`),
+  cliAction: (id: string, action: 'install' | 'uninstall') =>
+    request<CliInstallJob>(`/clis/${id}/${action}`, { method: 'POST' }),
+  cliJob: (jobId: string) => request<CliInstallJob>(`/clis/jobs/${jobId}`),
+  cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string) => request<Category>('/categories', json('POST', { name })),
@@ -75,6 +81,8 @@ export const api = {
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   sendMessage: (id: string, text: string) => request<Task>(`/tasks/${id}/messages`, json('POST', { text })),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
+  resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
+  renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),

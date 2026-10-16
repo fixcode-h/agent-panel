@@ -50,6 +50,10 @@ export function runProcess(o: {
   signal?: AbortSignal
   timeoutMs?: number
   onLine?: (line: string) => void
+  /** stderr 按块回调（npm 的进度、警告都写在 stderr） */
+  onStderr?: (text: string) => void
+  /** 写完 stdin 后不关闭：codex app-server 这类服务一读到 EOF 就退出，要等拿到回复再停掉它 */
+  keepStdinOpen?: boolean
 }): Promise<ProcessResult> {
   return new Promise((resolve) => {
     let killed: ProcessResult['killed'] = null
@@ -92,6 +96,7 @@ export function runProcess(o: {
     child.stderr!.setEncoding('utf8')
     child.stderr!.on('data', (d: string) => {
       stderr = (stderr + d).slice(-16000)
+      o.onStderr?.(d)
     })
     const rl = createInterface({ input: child.stdout! })
     rl.on('line', (line) => {
@@ -107,7 +112,8 @@ export function runProcess(o: {
     })
 
     child.stdin!.on('error', () => {})
-    child.stdin!.end(o.stdin ?? '')
+    if (o.keepStdinOpen) child.stdin!.write(o.stdin ?? '')
+    else child.stdin!.end(o.stdin ?? '')
   })
 }
 

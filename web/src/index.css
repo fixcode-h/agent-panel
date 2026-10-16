@@ -14,7 +14,7 @@
   --line-strong: #d5d1c4;
   --fg: #1f1e1c;
   --muted: #55534d;
-  --subtle: #87857c;
+  --subtle: #6f6d65;
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --accent: #c6613f;
@@ -215,6 +215,16 @@ body,
 .react-flow__edge:focus .react-flow__edge-path {
   stroke-width: 2.25;
 }
+/* 框选的选框、选中多个节点后的外框：用主题色，不用 xyflow 默认的蓝色 */
+.react-flow__selection,
+.react-flow__nodesselection-rect {
+  background: color-mix(in oklab, var(--accent) 8%, transparent);
+  border: 1px dashed color-mix(in oklab, var(--accent) 70%, transparent);
+  border-radius: 6px;
+}
+.react-flow__pane.selection { cursor: crosshair; }
+.react-flow__pane.draggable { cursor: default; }
+.react-flow__pane.dragging { cursor: grabbing; }
 .react-flow__controls {
   border-radius: 10px;
   overflow: hidden;

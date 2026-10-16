@@ -15,11 +15,13 @@ import {
   WorkflowInput,
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
-import { migrateDocSteps } from '../shared/flow.ts'
+import { END, START, findRefCycle, migrateDocSteps } from '../shared/flow.ts'
 import { createCollection } from './store.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
+import { installApi } from './install.ts'
+import { modelsApi } from './models.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
@@ -50,6 +52,34 @@ for (const w of await workflows.list()) {
 
 const app = new Hono().basePath('/api')
 
+/**
+ * 只接受本机页面的请求。只监听 127.0.0.1 还不够：
+ * - DNS 重绑定：恶意网页把自己的域名解析到 127.0.0.1，就能以「同源」身份调用接口 → 检查 Host
+ * - 跨站请求：任意网页都能向 127.0.0.1 发 text/plain 的 POST（不触发预检）→ 检查 Origin，写操作必须是 JSON
+ * 这些接口能启动本机 CLI、读写目录，被外部网页调用等于远程执行命令。
+ */
+const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
+const hostOf = (h: string) => (h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0]).toLowerCase()
+app.use('*', async (c, next) => {
+  const host = c.req.header('host') ?? ''
+  if (!LOCAL_HOSTS.has(hostOf(host))) return c.json({ error: '只接受来自本机的访问' }, 403)
+  const origin = c.req.header('origin')
+  if (origin !== undefined) {
+    let ok = false
+    try {
+      ok = LOCAL_HOSTS.has(new URL(origin).hostname.toLowerCase())
+    } catch {}
+    if (!ok) return c.json({ error: '不接受其他网站发来的请求' }, 403)
+  }
+  if (c.req.header('sec-fetch-site') === 'cross-site') return c.json({ error: '不接受其他网站发来的请求' }, 403)
+  if (
+    !['GET', 'HEAD', 'OPTIONS'].includes(c.req.method) &&
+    !/application\/json/i.test(c.req.header('content-type') ?? '')
+  )
+    return c.json({ error: '请求必须是 JSON' }, 415)
+  await next()
+})
+
 const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
 async function parseAgent(body: unknown) {
@@ -60,7 +90,7 @@ async function parseAgent(body: unknown) {
   return { data: p.data }
 }
 
-async function parseWorkflow(body: unknown) {
+async function parseWorkflow(body: unknown, selfId = '') {
   const p = WorkflowInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   const wf = p.data
@@ -69,7 +99,59 @@ async function parseWorkflow(body: unknown) {
   // 去掉不存在的、重复的成员，以及和主 Agent 相同的成员
   const seen = new Set<string>([wf.mainAgentId])
   wf.members = wf.members.filter((m) => ids.has(m.agentId) && !seen.has(m.agentId) && seen.add(m.agentId))
+  if (!wf.flows.length) return { error: '工作流至少要有一个流程' }
+  if (!wf.flows.some((f) => f.id === wf.entryFlowId)) wf.entryFlowId = wf.flows[0].id
+  if (new Set(wf.flows.map((f) => f.id)).size !== wf.flows.length) return { error: '流程 id 重复' }
+  for (const f of wf.flows) {
+    const nodeIds = new Set(f.nodes.map((n) => n.id))
+    if (nodeIds.size !== f.nodes.length) return { error: `流程「${f.name}」里有重复的节点 id` }
+    if (nodeIds.has(START) || nodeIds.has(END)) return { error: `流程「${f.name}」的节点 id 不能是 start / end` }
+    // 节点指定的 Agent 不存在时改由主 Agent 执行
+    for (const n of f.nodes) if (n.agentId && !ids.has(n.agentId)) n.agentId = ''
+    // 去掉悬空、重复、方向不对的连线
+    const keys = new Set<string>()
+    f.edges = f.edges.filter((e) => {
+      const k = `${e.from}>${e.to}`
+      const ok =
+        (e.from === START || nodeIds.has(e.from)) &&
+        (e.to === END || nodeIds.has(e.to)) &&
+        e.from !== e.to &&
+        !keys.has(k)
+      keys.add(k)
+      return ok
+    })
+    const cyc = cycleIn(f)
+    if (cyc) return { error: `流程「${f.name}」里的节点连成了环：${cyc}，执行时会一直等不到上游` }
+  }
+  const cycle = findRefCycle(
+    { ...wf, id: selfId || '__new__', createdAt: '', updatedAt: '' },
+    (await workflows.list()).filter((x) => x.id !== selfId),
+  )
+  if (cycle) return { error: `流程之间循环调用：${cycle.join(' → ')}` }
   return { data: wf }
+}
+
+/** 流程图里有没有环；有就返回环上的节点名 */
+function cycleIn(f: { nodes: { id: string; title: string }[]; edges: { from: string; to: string }[] }) {
+  const state = new Map<string, 1 | 2>()
+  const name = (id: string) => f.nodes.find((n) => n.id === id)?.title.trim() || id
+  const visit = (id: string, path: string[]): string | null => {
+    if (state.get(id) === 2) return null
+    if (state.get(id) === 1) return [...path.slice(path.indexOf(id)), id].map(name).join(' → ')
+    state.set(id, 1)
+    for (const e of f.edges)
+      if (e.from === id) {
+        const c = visit(e.to, [...path, id])
+        if (c) return c
+      }
+    state.set(id, 2)
+    return null
+  }
+  for (const n of f.nodes) {
+    const c = visit(n.id, [])
+    if (c) return c
+  }
+  return null
 }
 
 app.get('/health', (c) => c.json({ ok: true }))
@@ -84,6 +166,8 @@ app.put('/settings', async (c) => {
 })
 
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
+app.route('/clis', installApi())
+app.route('/clis', modelsApi())
 
 // ---- 分类 ----
 app.get('/categories', async (c) => c.json(await categories.list()))
@@ -135,7 +219,12 @@ app.put('/agents/:id', async (c) => {
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
-  const used = (await workflows.list()).filter((w) => w.mainAgentId === id || w.members.some((m) => m.agentId === id))
+  const used = (await workflows.list()).filter(
+    (w) =>
+      w.mainAgentId === id ||
+      w.members.some((m) => m.agentId === id) ||
+      w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
+  )
   if (used.length)
     return bad(c, `正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`, 409)
   return (await agents.remove(id)) ? c.body(null, 204) : bad(c, 'Agent 不存在', 404)
@@ -150,7 +239,7 @@ app.post('/workflows', async (c) => {
 })
 
 app.put('/workflows/:id', async (c) => {
-  const r = await parseWorkflow(await c.req.json())
+  const r = await parseWorkflow(await c.req.json(), c.req.param('id'))
   if (r.error) return bad(c, r.error)
   const w = await workflows.update(c.req.param('id'), r.data!)
   return w ? c.json(w) : bad(c, '工作流不存在', 404)
@@ -261,3 +350,13 @@ const port = Number(process.env.PORT ?? 8787)
 serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, () => {
   console.log(`Agent 面板服务已启动: http://127.0.0.1:${port}`)
 })
+
+// 退出前停掉正在执行的 CLI（它们在独立的进程组里，不会随服务一起退出），并把任务状态落盘
+let exiting = false
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const)
+  process.on(sig, async () => {
+    if (exiting) return process.exit(1)
+    exiting = true
+    await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
+    process.exit(0)
+  })

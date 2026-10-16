@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
-import { DataProvider, NavCtx, type Route } from '@/lib/data'
+import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
+import { useTaskNotifications } from '@/lib/notify'
 import { AgentsPage } from '@/pages/AgentsPage'
 import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
@@ -30,8 +31,48 @@ function useTheme() {
   return [dark, toggle] as const
 }
 
+/** 地址栏用 hash 记录位置（#/projects/<id>/<sub>），刷新、前进后退、复制链接都能回到同一页 */
+function parseHash(): Route {
+  const [page, id, sub] = location.hash.replace(/^#\/?/, '').split('/').map(decodeURIComponent)
+  return page && page in PAGES
+    ? { page: page as Route['page'], id: id || undefined, sub: sub || undefined }
+    : { page: 'home' }
+}
+const toHash = (r: Route) =>
+  '#/' +
+  [r.page, r.id, r.sub]
+    .filter(Boolean)
+    .map((x) => encodeURIComponent(x!))
+    .join('/')
+
+function useHashRoute() {
+  const [route, setRoute] = useState<Route>(parseHash)
+  useEffect(() => {
+    const on = () => setRoute(parseHash())
+    window.addEventListener('hashchange', on)
+    return () => window.removeEventListener('hashchange', on)
+  }, [])
+  const go = (r: Route) => {
+    const h = toHash(r)
+    if (h === location.hash) return
+    // 页面自动选中第一项这类跳转不该多出一条历史记录
+    const replace = r.page === route.page && !route.id
+    history[replace ? 'replaceState' : 'pushState'](null, '', h)
+    setRoute(r)
+  }
+  return [route, go] as const
+}
+
+/** 任务完成通知和标签页标题 */
+function TaskWatcher() {
+  const { tasks } = useData()
+  const { go } = useNav()
+  useTaskNotifications(tasks, (t) => go({ page: 'projects', id: t.projectId, sub: t.id }))
+  return null
+}
+
 export function App() {
-  const [route, setRoute] = useState<Route>({ page: 'home' })
+  const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string }>({ open: false })
   const [dark, toggleTheme] = useTheme()
 
@@ -39,6 +80,7 @@ export function App() {
     <DataProvider>
       <NavCtx.Provider value={{ route, go: setRoute, openSettings: (section) => setSettings({ open: true, section }) }}>
         <div className="flex min-h-full flex-col md:h-full">
+          <TaskWatcher />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />

@@ -200,6 +200,44 @@ export interface CliStatus {
   docsUrl: string
 }
 
+/** 在设置里安装 / 卸载 CLI 的一次操作 */
+export interface CliInstallJob {
+  id: string
+  cli: string
+  action: 'install' | 'uninstall'
+  status: 'running' | 'done' | 'failed'
+  /** 实际执行的命令，失败时用户可以复制到终端自己运行 */
+  command: string
+  /** npm 的输出（只保留最后一段） */
+  log: string
+  error?: string
+  /** 完成后重新检测到的状态 */
+  cliStatus?: CliStatus
+}
+
+/** 从本机 CLI 读到的模型 */
+export interface CliModel {
+  id: string
+  label: string
+  description?: string
+  /** 支持的思考强度；不知道时省略 */
+  efforts?: string[]
+  /** CLI 自己的默认模型 */
+  isDefault?: boolean
+  /** 分组，例如 Command Code 的「Open Source」「Google」 */
+  group?: string
+}
+
+export interface CliModels {
+  /** cli：从本机 CLI 读到；builtin：读不到时用内置的建议列表 */
+  source: 'cli' | 'builtin'
+  models: CliModel[]
+  /** 这个 CLI 所有模型支持的思考强度的并集；空表示沿用内置列表 */
+  efforts: string[]
+  /** 读取失败的原因（这时 models 是内置列表） */
+  error?: string
+}
+
 /** 项目分类：同一类项目共用一个默认工作流，例如「Web 应用」「游戏客户端」 */
 export const ProjectCategoryInput = z.object({
   name: z.string().trim().min(1, '分类名不能为空').max(20),
@@ -240,6 +278,8 @@ export interface DirListing {
   path: string
   parent: string | null
   dirs: { name: string; path: string }[]
+  /** 快速入口：Windows 上是各个盘符，其他系统是主目录和根目录 */
+  roots?: { name: string; path: string }[]
 }
 
 /**
@@ -263,6 +303,8 @@ export const NewTaskInput = z.object({
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
 export const FollowUpInput = z.object({ text: z.string().trim().min(1, '内容不能为空').max(20000) })
+/** 可以直接修改的任务字段 */
+export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不能为空').max(80) }).partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
@@ -334,7 +376,7 @@ export const TaskData = z.object({
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
   changes: z.array(FileChange).default([]),
-  /** 模拟执行（设置里选了模拟，或在线演示） */
+  /** 在线演示里的任务，输出是示例 */
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
@@ -402,8 +444,6 @@ export const CliSettings = z.object({
 export type CliSettings = z.infer<typeof CliSettings>
 
 export const Settings = z.object({
-  /** real：真正调用本机 CLI；simulate：只生成示例输出，用来熟悉界面 */
-  execution: z.enum(['real', 'simulate']).default('real'),
   /** 单个步骤最长运行时间（分钟），超时会停止 */
   stepTimeoutMinutes: z.number().int().min(1).max(600).default(60),
   /** Agent 选「系统默认」时使用的 CLI */

@@ -1,3 +1,4 @@
+import { cn } from '@/lib/utils'
 import { Check, CircleAlert, Loader2 } from 'lucide-react'
 import type { SaveStatus } from '@/lib/useAutosave'
 
@@ -134,13 +135,16 @@ export function DetailEmpty({
   icon,
   title,
   children,
+  desktopOnly,
 }: {
   icon: React.ReactNode
   title: string
   children?: React.ReactNode
+  /** 只是「请在左边选一项」的提示：手机上列表已经占满屏幕，不再显示 */
+  desktopOnly?: boolean
 }) {
   return (
-    <main className="flex min-h-[420px] flex-1 items-center justify-center p-8">
+    <main className={cn('flex min-h-[420px] flex-1 items-center justify-center p-8', desktopOnly && 'hidden md:flex')}>
       <div className="flex max-w-sm flex-col items-center text-center">
         <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</div>
         <h2 className="mt-4 text-base font-semibold">{title}</h2>

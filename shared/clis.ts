@@ -54,6 +54,8 @@ export interface CliDefinition {
   /** 非交互执行的参数（不含任务描述，任务描述走 stdin） */
   buildArgs: (o: BuildOptions) => string[]
   installHint: string
+  /** 用 npm 全局安装的包名；设置里的「安装 / 卸载」按钮用它 */
+  npmPackage: string
   docsUrl: string
 }
 
@@ -69,6 +71,7 @@ export const CLIS: CliDefinition[] = [
       { id: 'opus', label: 'Opus（别名，跟随最新）' },
       { id: 'sonnet', label: 'Sonnet（别名，跟随最新）' },
       { id: 'haiku', label: 'Haiku（别名，跟随最新）' },
+      { id: 'claude-fable-5-1', label: 'Claude Fable 5.1' },
       { id: 'claude-opus-5-5', label: 'Claude Opus 5.5' },
       { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
       { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5' },
@@ -110,6 +113,7 @@ export const CLIS: CliDefinition[] = [
       ...o.extraArgs,
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',
+    npmPackage: '@anthropic-ai/claude-code',
     docsUrl: 'https://code.claude.com/docs',
   },
   {
@@ -117,10 +121,12 @@ export const CLIS: CliDefinition[] = [
     name: 'Codex CLI',
     command: 'codex',
     versionArgs: ['--version'],
+    // 读不到本机 Codex 时的建议；能读到时以 `codex app-server` 返回的为准
     models: [
-      { id: 'gpt-5.6', label: 'GPT-5.6' },
-      { id: 'gpt-5.5', label: 'GPT-5.5' },
-      { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex' },
+      { id: 'gpt-6.1-sol', label: 'GPT-6.1-Sol' },
+      { id: 'gpt-6-astra', label: 'GPT-6-Astra' },
+      { id: 'gpt-6-sol', label: 'GPT-6-Sol' },
+      { id: 'gpt-6-luna', label: 'GPT-6-Luna' },
     ],
     permissions: [
       { id: 'workspace-write', label: '可写项目目录', hint: '沙箱内运行，只能改项目目录里的文件' },
@@ -128,16 +134,16 @@ export const CLIS: CliDefinition[] = [
       { id: 'danger-full-access', label: '完全访问', hint: '不使用沙箱、不确认，只在信任的项目里用' },
     ],
     efforts: [
-      { id: 'minimal', label: '最低' },
       { id: 'low', label: '低' },
       { id: 'medium', label: '中' },
       { id: 'high', label: '高' },
       { id: 'xhigh', label: '很高' },
+      { id: 'max', label: '最高' },
     ],
     tiers: {
-      high: { model: 'gpt-5.6', effort: 'high' },
-      medium: { model: 'gpt-5.5', effort: 'medium' },
-      low: { model: 'gpt-5.3-codex', effort: 'low' },
+      high: { model: 'gpt-6-astra', effort: 'high' },
+      medium: { model: 'gpt-6.1-sol', effort: 'medium' },
+      low: { model: 'gpt-6-luna', effort: 'low' },
     },
     defaultPermission: 'workspace-write',
     systemPromptFlag: false,
@@ -156,6 +162,7 @@ export const CLIS: CliDefinition[] = [
       '-',
     ],
     installHint: 'npm install -g @openai/codex',
+    npmPackage: '@openai/codex',
     docsUrl: 'https://github.com/openai/codex',
   },
   {
@@ -208,6 +215,7 @@ export const CLIS: CliDefinition[] = [
       ...o.extraArgs,
     ],
     installHint: 'npm install -g command-code',
+    npmPackage: 'command-code',
     docsUrl: 'https://www.npmjs.com/package/command-code',
   },
 ]

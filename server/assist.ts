@@ -15,7 +15,7 @@ import {
 } from '../shared/assist.ts'
 import { getCli } from '../shared/clis.ts'
 import type { Agent, Category, Workflow } from '../shared/schema.ts'
-import { cliSettings, defaultCli } from '../shared/settings.ts'
+import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { detectClis } from './detect.ts'
 import { parserFor } from './exec/parsers.ts'
 import { childEnv, runProcess } from './exec/process.ts'
@@ -23,8 +23,31 @@ import { getSettings } from './settings.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
-/** 生成配置时只需要回答，不需要改文件：每个 CLI 用最保守的权限 */
+/**
+ * 生成配置时只需要回答，不需要改文件。Claude Code 和 Command Code 的默认 / 标准模式在非交互运行时会拒绝所有需要审批的操作
+ * （改文件、执行命令），等于只读；不用 plan 模式，因为它可能把回答放进「退出规划」的工具调用里，读不到文字。
+ */
 const READ_ONLY: Record<string, string> = { claude: 'default', codex: 'read-only', commandcode: 'standard' }
+
+/** 设置里的额外参数可能放宽权限（跳过确认、换沙箱），生成配置时去掉，保证只读 */
+function safeArgs(args: string[]) {
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]
+    if (/^--(dangerously-|yolo|full-auto|bypass)/.test(a)) continue
+    if (/^(--permission-mode|--sandbox|-s)$/.test(a)) {
+      i++
+      continue
+    }
+    if (/^--(permission-mode|sandbox)=/.test(a)) continue
+    if (a === '-c' && /^sandbox_mode|^approval_policy/.test(args[i + 1] ?? '')) {
+      i++
+      continue
+    }
+    out.push(a)
+  }
+  return out
+}
 const TIMEOUT = 5 * 60_000
 
 /** AI 创建 / 优化 Agent 和工作流：调用本机 CLI 生成，校验格式，不合格时让 CLI 自己修正一次 */
@@ -42,6 +65,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
     const settings = await getSettings()
     const def = getCli(input.cli)!
     const cs = cliSettings(settings, input.cli)
+    const run = agentRun({ cli: input.cli, model: input.model }, settings)
     const installed = (await detectClis()).filter((c) => c.installed && c.enabled).map((c) => c.id)
     const cwd = path.join(tmpdir(), 'agent-panel-assist')
     await mkdir(cwd, { recursive: true })
@@ -56,9 +80,11 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       const r = await runProcess({
         command: cs.command,
         args: def.buildArgs({
-          model: input.model || cs.defaultModel,
+          // 默认模型可能是「@high」这样的档位，要换成具体模型和思考强度
+          model: run.model,
+          effort: run.effort,
           permission: READ_ONLY[input.cli] ?? cs.permission,
-          extraArgs: cs.extraArgs,
+          extraArgs: safeArgs(cs.extraArgs),
         }),
         cwd,
         env: childEnv(cs.env),

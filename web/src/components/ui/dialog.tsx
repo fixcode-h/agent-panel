@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
+import { Loader2 } from 'lucide-react'
 import { Button } from './button'
 
 /** 确认对话框，用于删除等不可撤销的操作 */
@@ -9,14 +11,28 @@ export function ConfirmDialog({
   confirmText = '删除',
   onConfirm,
   onOpenChange,
+  blocked,
 }: {
   open: boolean
   title: string
   description?: React.ReactNode
   confirmText?: string
-  onConfirm: () => void
+  /** 返回 Promise 时，执行期间按钮显示进行中，不能重复点击 */
+  onConfirm: () => unknown
   onOpenChange: (open: boolean) => void
+  /** 现在不能执行的原因（例如还在被使用）；有值时只显示原因，不提供确认按钮 */
+  blocked?: string
 }) {
+  const [pending, setPending] = useState(false)
+  const confirm = async () => {
+    if (pending) return
+    setPending(true)
+    try {
+      await onConfirm()
+    } finally {
+      setPending(false)
+    }
+  }
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
@@ -26,13 +42,21 @@ export function ConfirmDialog({
           {description && (
             <D.Description className="mt-1.5 text-[13px] leading-relaxed text-muted">{description}</D.Description>
           )}
+          {blocked && (
+            <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-[13px] leading-relaxed text-warning">
+              {blocked}
+            </p>
+          )}
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              取消
+              {blocked ? '知道了' : '取消'}
             </Button>
-            <Button variant="danger" onClick={onConfirm}>
-              {confirmText}
-            </Button>
+            {!blocked && (
+              <Button variant="danger" disabled={pending} onClick={confirm}>
+                {pending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                {confirmText}
+              </Button>
+            )}
           </div>
         </D.Content>
       </D.Portal>

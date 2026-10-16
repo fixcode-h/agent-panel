@@ -36,6 +36,17 @@ const escape = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)}
 export function renderDoc(doc: string, teamNames: Set<string>) {
   const renderer = new marked.Renderer()
   renderer.html = ({ text }) => escape(text)
+  // Agent 输出也走这里：只放行 http(s)、mailto 和相对链接，javascript: 之类的链接当普通文字显示
+  const safe = (href: string) =>
+    /^(https?:|mailto:|#|\/|\.{0,2}\/)/i.test(href.trim()) || !/^[a-z][\w+.-]*:/i.test(href.trim())
+  renderer.link = function ({ href, title, tokens }) {
+    const text = this.parser.parseInline(tokens)
+    if (!safe(href)) return text
+    const t = title ? ` title="${escape(title)}"` : ''
+    return `<a href="${escape(href)}"${t} target="_blank" rel="noopener noreferrer">${text}</a>`
+  }
+  renderer.image = ({ href, text }) =>
+    safe(href) && /^https?:/i.test(href) ? `<img src="${escape(href)}" alt="${escape(text)}">` : escape(text)
   const html = marked.parse(doc, { renderer, async: false, gfm: true, breaks: true }) as string
   // 只替换标签之外的文本里的 @提及
   return html.replace(

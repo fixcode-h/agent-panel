@@ -17,16 +17,20 @@ import {
   type Flow,
   type FlowNode,
   FollowUpInput,
+  TaskPatch,
   NewTaskInput,
   Settings,
   type Task,
+  type CliInstallJob,
+  type CliModels,
   type CliStatus,
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli } from '@shared/settings'
-import { newTask, runTurn } from '@shared/runner'
+import { runTurn } from '@shared/runner'
+import { newTask } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -42,6 +46,8 @@ interface Db {
   /** 旧版本的演示数据没有这一项，首次访问时补上示例任务 */
   tasks?: Task[]
   settings?: Settings
+  /** 在线演示里模拟安装 / 卸载后的 CLI 状态 */
+  installed?: Record<string, boolean>
 }
 
 class HttpError extends Error {}
@@ -96,7 +102,15 @@ function listDir(p: string): DirListing {
     .sort((a, b) => a.name.localeCompare(b.name))
   if (path === '/') dirs.push({ name: 'home', path: '/home' })
   const parent = path === '/' ? null : path.slice(0, path.lastIndexOf('/')) || '/'
-  return { path, parent, dirs }
+  return {
+    path,
+    parent,
+    dirs,
+    roots: [
+      { name: '主目录', path: HOME },
+      { name: '/', path: '/' },
+    ],
+  }
 }
 TREE['/home'] = {}
 
@@ -378,20 +392,71 @@ function parse<S extends z.ZodType>(schema: S, body: unknown): z.infer<S> {
   return p.data as z.infer<S>
 }
 
+const VERSIONS: Record<string, string> = {
+  claude: '2.1.300 (Claude Code)',
+  codex: 'codex-cli 0.150.0',
+  commandcode: 'command-code 1.8.2',
+}
+
 function clis(): CliStatus[] {
-  const s = load().settings
-  return CLIS.map((c) => ({
-    id: c.id,
-    name: c.name,
-    command: s?.clis[c.id]?.command || c.command,
-    enabled: s?.clis[c.id]?.enabled ?? true,
-    installed: c.id === 'claude',
-    isDefault: c.id === (s ? defaultCli(s) : 'claude'),
-    version: c.id === 'claude' ? '2.1.300 (Claude Code)' : undefined,
-    error: c.id === 'claude' ? undefined : '在线演示：模拟为未安装',
-    models: c.models,
-    docsUrl: c.docsUrl,
-  }))
+  const d = load()
+  const s = d.settings
+  return CLIS.map((c) => {
+    const installed = d.installed?.[c.id] ?? c.id === 'claude'
+    return {
+      id: c.id,
+      name: c.name,
+      command: s?.clis[c.id]?.command || c.command,
+      enabled: s?.clis[c.id]?.enabled ?? true,
+      installed,
+      isDefault: c.id === (s ? defaultCli(s) : 'claude'),
+      version: installed ? VERSIONS[c.id] : undefined,
+      error: installed ? undefined : '在线演示：模拟为未安装',
+      models: c.models,
+      docsUrl: c.docsUrl,
+    }
+  })
+}
+
+// 模拟安装 / 卸载：几秒内逐行输出，然后切换安装状态
+const installJobs = new Map<string, CliInstallJob>()
+function cliAction(id: string, action: CliInstallJob['action']) {
+  const def = getCli(id) ?? fail('未知的 CLI')
+  if ([...installJobs.values()].some((j) => j.status === 'running')) fail('有一个安装 / 卸载还在进行，请等它完成')
+  const job: CliInstallJob = {
+    id: `demo-${crypto.randomUUID()}`,
+    cli: id,
+    action,
+    status: 'running',
+    command: action === 'install' ? `npm install -g ${def.npmPackage}@latest` : `npm uninstall -g ${def.npmPackage}`,
+    log: '',
+  }
+  installJobs.set(job.id, job)
+  const lines =
+    action === 'install'
+      ? [
+          '（在线演示：模拟安装，不会真的执行 npm）',
+          `npm http fetch GET 200 https://registry.npmjs.org/${def.npmPackage}`,
+          'npm warn deprecated node-domexception@1.0.0',
+          '',
+          `added 3 packages in 2s`,
+        ]
+      : ['（在线演示：模拟卸载，不会真的执行 npm）', '', 'removed 3 packages in 1s']
+  lines.forEach((l, i) =>
+    setTimeout(
+      () => {
+        job.log += l + '\n'
+        if (i < lines.length - 1) return
+        const d = load()
+        d.installed = { ...d.installed, [id]: action === 'install' }
+        persist()
+        job.cliStatus = clis().find((c) => c.id === id)
+        job.status = 'done'
+      },
+      500 * (i + 1),
+    ),
+  )
+  return job
 }
 
 function route(method: string, url: string, body: unknown): unknown {
@@ -402,12 +467,24 @@ function route(method: string, url: string, body: unknown): unknown {
   const [res, id, sub] = seg
 
   if (res === 'settings') {
-    // 在线演示只能模拟执行
-    if (method === 'PUT') d.settings = { ...parse(Settings, body), execution: 'simulate' }
+    if (method === 'PUT') d.settings = parse(Settings, body)
     persist()
-    return Settings.parse((d.settings ??= { ...Settings.parse({}), execution: 'simulate' }))
+    return Settings.parse((d.settings ??= Settings.parse({})))
   }
-  if (res === 'clis') return clis()
+  if (res === 'clis') {
+    if (id === 'jobs') return installJobs.get(sub ?? '') ?? fail('没有这个操作')
+    if (id && (sub === 'install' || sub === 'uninstall')) return cliAction(id, sub)
+    if (id && sub === 'models') {
+      // 演示没有本机 CLI，给出内置的建议列表
+      const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
+      return {
+        source: 'builtin',
+        models: def.models.map((m) => ({ id: m.id, label: m.label })),
+        efforts: [],
+      } satisfies CliModels
+    }
+    return clis()
+  }
   if (res === 'assist') {
     if (method === 'POST' && !id) {
       const input = parse(AssistInput, body)
@@ -446,13 +523,18 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
-      const used = d.workflows.filter((w) => w.mainAgentId === id || w.members.some((m) => m.agentId === id))
+      const used = d.workflows.filter(
+        (w) =>
+          w.mainAgentId === id ||
+          w.members.some((m) => m.agentId === id) ||
+          w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
+      )
       if (used.length) fail(`正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`)
       remove('agents', id, 'Agent 不存在')
       return undefined
     }
     const input = parse(AgentInput, body)
-    if (!getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
+    if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     return method === 'POST' ? create('agents', input) : update('agents', id, input, 'Agent 不存在')
   }
@@ -572,7 +654,10 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
-  const task = create<Task>('tasks', newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`))
+  const task = create<Task>('tasks', {
+    ...newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
+    simulated: true,
+  })
   return { task, done: startTurn(d, task, input.prompt, true, fast) }
 }
 
@@ -618,6 +703,18 @@ function tasksRoute(
   }
   if (sub === 'messages') {
     void followUp(d, task, parse(FollowUpInput, body).text)
+    return task
+  }
+  if (sub === 'resume') {
+    if (live.has(task.id)) fail('任务正在执行')
+    if (task.status !== 'failed' && task.status !== 'stopped') fail('只有失败或停止的任务可以继续')
+    const users = task.messages.filter((m) => m.role === 'user' && !m.step)
+    void startTurn(d, task, users.at(-1)?.text ?? '', false)
+    return task
+  }
+  if (method === 'PATCH') {
+    Object.assign(task, parse(TaskPatch, body))
+    persist()
     return task
   }
   return task

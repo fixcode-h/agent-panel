@@ -1,11 +1,24 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ArrowUp, Folder, FolderOpen, GitBranch, Loader2, X } from 'lucide-react'
+import { ArrowUp, Folder, FolderOpen, GitBranch, HardDrive, House, Loader2, X } from 'lucide-react'
 import type { DirInfo, DirListing } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+
+/** 找出包含 p 的最长的入口路径；Windows 盘符不区分大小写 */
+function bestRoot(roots: { path: string }[], p: string) {
+  const norm = (x: string) => x.replace(/[\\/]+$/, '').toLowerCase()
+  const target = norm(p)
+  let best = ''
+  for (const r of roots) {
+    const root = norm(r.path)
+    const inside = target === root || target.startsWith(root + '/') || target.startsWith(root + '\\') || root === ''
+    if (inside && r.path.length > best.length) best = r.path
+  }
+  return best
+}
 
 /** 在服务端（也就是本机）浏览目录并选中一个 */
 function DirBrowser({
@@ -32,6 +45,8 @@ function DirBrowser({
       setJump(l.path)
       setError('')
     } catch (e) {
+      // 跳转失败时不能再停留在旧目录上，否则「选择此目录」会选中旧目录
+      setListing(null)
       setError((e as Error).message)
     } finally {
       setLoading(false)
@@ -78,6 +93,31 @@ function DirBrowser({
               aria-label="路径"
             />
           </form>
+          {listing?.roots && listing.roots.length > 0 && (
+            <nav aria-label="磁盘和常用位置" className="flex flex-wrap gap-1.5 border-b px-5 py-2.5">
+              {listing.roots.map((r, i) => {
+                // 当前路径落在哪个盘 / 位置下就高亮哪个；主目录优先于它所在的盘
+                const cur = bestRoot(listing.roots!, listing.path) === r.path
+                const Icon = i === 0 ? House : HardDrive
+                return (
+                  <button
+                    key={r.path}
+                    type="button"
+                    onClick={() => go(r.path)}
+                    aria-current={cur ? 'location' : undefined}
+                    title={r.path}
+                    className={cn(
+                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] transition-colors',
+                      cur ? 'border-accent/50 bg-accent/12 text-fg' : 'text-muted hover:bg-sel hover:text-fg',
+                    )}
+                  >
+                    <Icon className={cn('h-3.5 w-3.5', cur ? 'text-accent' : 'text-subtle')} />
+                    {r.name}
+                  </button>
+                )
+              })}
+            </nav>
+          )}
           <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
             {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
             {error && <p className="px-3 py-2 text-[13px] text-danger">{error}</p>}
@@ -113,22 +153,42 @@ function DirBrowser({
   )
 }
 
-/** 检测路径：停止输入 400ms 后请求一次 */
-export function useDirInfo(path: string) {
-  const [info, setInfo] = useState<DirInfo | null>(null)
+const dirCache = new Map<string, DirInfo | null>()
+
+/**
+ * 检测路径：停止输入 400ms 后请求一次。
+ * 返回 undefined 表示还在检查（不要当成「目录不存在」），null 表示没有路径或检查失败；
+ * 结果只对应当前路径，改路径时不会继续显示旧路径的结果。
+ */
+export function useDirInfo(path: string): DirInfo | null | undefined {
+  const key = path.trim()
+  const [state, setState] = useState<{ key: string; info: DirInfo | null }>(() => ({
+    key,
+    info: dirCache.get(key) ?? null,
+  }))
   useEffect(() => {
-    if (!path.trim()) return setInfo(null)
+    if (!key) return
+    let alive = true
     const t = setTimeout(
       () =>
         api
-          .inspectDir(path)
-          .then(setInfo)
-          .catch(() => setInfo(null)),
-      400,
+          .inspectDir(key)
+          .then((info) => info)
+          .catch(() => null)
+          .then((info) => {
+            dirCache.set(key, info)
+            if (alive) setState({ key, info })
+          }),
+      dirCache.has(key) ? 0 : 400,
     )
-    return () => clearTimeout(t)
-  }, [path])
-  return info
+    return () => {
+      alive = false
+      clearTimeout(t)
+    }
+  }, [key])
+  if (!key) return null
+  if (state.key === key) return state.info
+  return dirCache.has(key) ? dirCache.get(key)! : undefined
 }
 
 export function DirPicker({
@@ -138,7 +198,7 @@ export function DirPicker({
 }: {
   value: string
   onChange: (p: string) => void
-  info: DirInfo | null
+  info: DirInfo | null | undefined
 }) {
   const [browsing, setBrowsing] = useState(false)
   return (
@@ -157,6 +217,12 @@ export function DirPicker({
           浏览
         </Button>
       </div>
+      {value.trim() && info === undefined && (
+        <span className="flex items-center gap-1.5 text-xs text-subtle">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          正在检查目录…
+        </span>
+      )}
       {value.trim() && info && (
         <span
           className={cn(
