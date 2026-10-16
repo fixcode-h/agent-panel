@@ -143,8 +143,9 @@ body,
 
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes pop-in {
-  from { opacity: 0; transform: translate(-50%, -48%) scale(0.97); }
-  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  /* 居中靠 Tailwind 的 translate 属性，这里只动 transform，两者叠加，不会把弹窗挪到左上角 */
+  from { opacity: 0; transform: translateY(8px) scale(0.97); }
+  to { opacity: 1; transform: none; }
 }
 
 /* 流程图连线：执行中的连线显示流动的虚线 */
