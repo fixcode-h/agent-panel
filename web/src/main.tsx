@@ -2,6 +2,9 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import './index.css'
+import { getLang } from '@shared/i18n'
+
+document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
 
 if (!import.meta.env.VITE_DEMO) void import('./fonts.css')
 else {
