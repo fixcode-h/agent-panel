@@ -127,12 +127,19 @@ function rel(cwd: string, p: unknown) {
 // ---- Claude Code：--output-format stream-json --verbose --include-partial-messages ----
 function claudeTool(name: string, input: any, cwd: string): CliEvent {
   const file = rel(cwd, input?.file_path ?? input?.notebook_path ?? input?.path)
+  const tool = (t: Omit<ToolUse, 'detail'> & { detail?: string }): Extract<CliEvent, { type: 'tool' }> => ({
+    type: 'tool',
+    tool: { detail: '', ...t },
+  })
   switch (name) {
     case 'Read':
-      return { type: 'tool', tool: { kind: 'read', label: file, detail: '' } }
+      return tool({ kind: 'read', label: file })
     case 'Write': {
       const add = lines(input?.content)
-      return { type: 'tool', tool: { kind: 'edit', label: file, detail: `+${add}` }, file: { path: file, add, del: 0 } }
+      return {
+        ...tool({ kind: 'edit', name: '写入', label: file, detail: `+${add}` }),
+        file: { path: file, add, del: 0 },
+      }
     }
     case 'Edit':
     case 'MultiEdit':
@@ -140,35 +147,44 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       const edits: any[] = input?.edits ?? [input]
       const add = edits.reduce((n, e) => n + lines(e?.new_string ?? e?.new_source), 0)
       const del = edits.reduce((n, e) => n + lines(e?.old_string), 0)
-      return {
-        type: 'tool',
-        tool: { kind: 'edit', label: file, detail: `+${add} -${del}` },
-        file: { path: file, add, del },
-      }
+      return { ...tool({ kind: 'edit', label: file, detail: `+${add} -${del}` }), file: { path: file, add, del } }
     }
     case 'Bash':
-      return { type: 'tool', tool: { kind: 'run', label: oneLine(String(input?.command ?? '')), detail: '' } }
+      return tool({ kind: 'run', label: oneLine(String(input?.command ?? '')) })
     case 'Grep':
+      return tool({ kind: 'search', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'Glob':
-      return {
-        type: 'tool',
-        tool: { kind: 'search', label: `${name === 'Grep' ? '搜索' : '查找文件'} ${input?.pattern ?? ''}`, detail: '' },
-      }
+      return tool({ kind: 'search', name: '查找文件', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'WebSearch':
-      return { type: 'tool', tool: { kind: 'search', label: `网页搜索 ${input?.query ?? ''}`, detail: '' } }
+      return tool({ kind: 'web', name: '网页搜索', label: String(input?.query ?? '') })
     case 'WebFetch':
-      return { type: 'tool', tool: { kind: 'read', label: String(input?.url ?? ''), detail: '' } }
+      return tool({ kind: 'web', name: '打开网页', label: String(input?.url ?? '') })
     case 'TodoWrite':
-      return { type: 'tool', tool: { kind: 'other', label: '更新待办清单', detail: `${input?.todos?.length ?? 0} 项` } }
+      return tool({ kind: 'other', name: '待办', label: '更新待办清单', detail: `${input?.todos?.length ?? 0} 项` })
     case 'Task':
     case 'Agent':
-      return {
-        type: 'tool',
-        tool: { kind: 'other', label: `子任务：${input?.description ?? ''}`, detail: input?.subagent_type ?? '' },
-      }
+      return tool({ kind: 'agent', label: String(input?.description ?? ''), detail: input?.subagent_type ?? '' })
+    case 'Skill':
+      return tool({
+        kind: 'skill',
+        label: String(input?.skill ?? input?.name ?? ''),
+        detail: oneLine(String(input?.args ?? ''), 60),
+      })
+    case 'SlashCommand':
+      return tool({ kind: 'other', name: '命令', label: oneLine(String(input?.command ?? '')) })
     default:
-      return { type: 'tool', tool: { kind: 'other', label: name, detail: '' } }
+      return otherTool(name, input)
   }
+}
+
+const searchLabel = (pattern: unknown, where: string) => `${pattern ?? ''}${where ? ` · ${where}` : ''}`
+
+/** 没有专门处理的工具：MCP 工具拆出服务名，其他的用工具名，后面跟第一个参数，和 Claude Code 的「工具名(参数)」一样 */
+function otherTool(name: string, input: any): CliEvent {
+  const mcp = /^mcp__(.+?)__(.+)$/.exec(name)
+  const first = Object.values(input ?? {}).find((v) => typeof v === 'string' && v.trim()) as string | undefined
+  if (mcp) return { type: 'tool', tool: { kind: 'other', name: 'MCP', label: `${mcp[1]} · ${mcp[2]}`, detail: '' } }
+  return { type: 'tool', tool: { kind: 'other', name, label: first ? oneLine(first, 80) : '', detail: '' } }
 }
 
 /** Claude 的 usage：input_tokens 不含缓存，要加上缓存读写才是完整输入 */
@@ -296,12 +312,30 @@ export function codexUsage(delta: Record<string, number>, last: Record<string, n
 function genericTool(name: string, input: any, cwd: string): CliEvent {
   const n = name.toLowerCase()
   const file = rel(cwd, input?.path ?? input?.file_path ?? input?.filePath ?? input?.file)
+  if (/skill/.test(n))
+    return {
+      type: 'tool',
+      tool: {
+        kind: 'skill',
+        label: String(input?.name ?? input?.skill ?? input?.skill_name ?? ''),
+        detail: oneLine(String(input?.arguments ?? input?.args ?? ''), 60),
+      },
+    }
+  if (/web_?search/.test(n))
+    return { type: 'tool', tool: { kind: 'web', name: '网页搜索', label: String(input?.query ?? ''), detail: '' } }
+  if (/fetch|url|browse/.test(n))
+    return { type: 'tool', tool: { kind: 'web', name: '打开网页', label: String(input?.url ?? ''), detail: '' } }
   if (/write|edit|patch|replace|create_file/.test(n)) {
     const add = lines(input?.content ?? input?.new_string ?? input?.newString ?? input?.new_str)
     const del = lines(input?.old_string ?? input?.oldString ?? input?.old_str)
     return {
       type: 'tool',
-      tool: { kind: 'edit', label: file || name, detail: add || del ? `+${add} -${del}` : '' },
+      tool: {
+        kind: 'edit',
+        name: /write|create/.test(n) ? '写入' : undefined,
+        label: file || name,
+        detail: add || del ? `+${add} -${del}` : '',
+      },
       file: file ? { path: file, add, del } : undefined,
     }
   }
@@ -314,9 +348,20 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
   if (/grep|glob|search|find|list|ls/.test(n))
     return {
       type: 'tool',
-      tool: { kind: 'search', label: `${name} ${input?.pattern ?? input?.query ?? file ?? ''}`.trim(), detail: '' },
+      tool: {
+        kind: 'search',
+        name: /glob|find|list|ls/.test(n) ? '查找文件' : undefined,
+        label: String(input?.pattern ?? input?.query ?? file ?? ''),
+        detail: '',
+      },
     }
-  return { type: 'tool', tool: { kind: 'other', label: name, detail: '' } }
+  if (/todo/.test(n)) return { type: 'tool', tool: { kind: 'other', name: '待办', label: '更新待办清单', detail: '' } }
+  if (/task|agent/.test(n))
+    return {
+      type: 'tool',
+      tool: { kind: 'agent', label: String(input?.description ?? input?.prompt ?? '').slice(0, 80), detail: '' },
+    }
+  return otherTool(name, input)
 }
 
 export function commandCodeParser(cwd: string): Parser {

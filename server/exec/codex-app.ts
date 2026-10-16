@@ -166,6 +166,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'edit',
+              name: c.kind?.type === 'add' ? '写入' : c.kind?.type === 'delete' ? '删除' : undefined,
               label: p,
               detail: add || del ? `+${add} -${del}` : kind,
               input: c.diff ? clipDetail(String(c.diff)) : undefined,
@@ -180,6 +181,7 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'other',
+              name: 'MCP',
               label: `${item.server ?? 'mcp'} · ${item.tool ?? ''}`,
               detail: item.error ? '失败' : '',
               input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
@@ -198,7 +200,8 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
             type: 'tool',
             tool: {
               kind: 'other',
-              label: String(item.tool ?? '工具'),
+              name: String(item.tool ?? '工具'),
+              label: '',
               detail: '',
               input: item.arguments ? clipDetail(JSON.stringify(item.arguments, null, 2)) : undefined,
               output: item.contentItems ? clipDetail(toolText(item.contentItems)) : undefined,
@@ -207,9 +210,9 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
           },
         ]
       case 'webSearch':
-        return [{ type: 'tool', tool: { kind: 'search', label: `网页搜索 ${item.query ?? ''}`.trim(), detail: '' } }]
+        return [{ type: 'tool', tool: { kind: 'web', name: '网页搜索', label: String(item.query ?? ''), detail: '' } }]
       case 'imageView':
-        return [{ type: 'tool', tool: { kind: 'read', label: rel(o.cwd, item.path), detail: '' } }]
+        return [{ type: 'tool', tool: { kind: 'read', name: '查看图片', label: rel(o.cwd, item.path), detail: '' } }]
       default:
         return []
     }

@@ -354,7 +354,10 @@ export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不�
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
-  kind: z.enum(['read', 'edit', 'run', 'search', 'other']),
+  kind: z.enum(['read', 'edit', 'run', 'search', 'web', 'skill', 'agent', 'other']),
+  /** 动作名，显示在最前面，例如「读取」「技能」「MCP」；为空时按 kind 给默认的 */
+  name: z.string().optional(),
+  /** 动作的对象：文件、命令、技能名、搜索词 */
   label: z.string(),
   detail: z.string().default(''),
   /** 点开工具调用时显示：完整命令、参数或改动内容 */

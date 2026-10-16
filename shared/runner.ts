@@ -62,7 +62,7 @@ function stepOutput(step: TaskStep, task: Task, prompt: string, agents: Agent[],
           { kind: 'read', label: 'README.md', detail: '' },
           {
             kind: 'search',
-            label: '搜索相关代码',
+            label: 'feature · *.ts',
             detail: '找到 6 个相关文件',
             input: 'rg -l "feature" --type ts',
             output:
@@ -271,7 +271,7 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
     out = ctx.first
       ? {
           tools: [
-            { kind: 'search', label: '搜索相关代码', detail: '找到 4 个相关文件' },
+            { kind: 'search', label: 'cart', detail: '找到 4 个相关文件' },
             { kind: 'read', label: 'src/store/cart.ts', detail: '' },
           ],
           changes: [],

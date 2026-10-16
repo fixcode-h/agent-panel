@@ -1,4 +1,4 @@
-import type { Agent, Task, TaskStatus, TaskStep, Workflow } from '@shared/schema'
+import type { Agent, Task, TaskStatus, TaskStep, ToolUse, Workflow } from '@shared/schema'
 import { SLOT_LABEL } from '@shared/flow'
 
 export const statusLabel: Record<TaskStatus, string> = {
@@ -25,7 +25,16 @@ export function estimateTokens(text: string) {
 }
 
 /** 每次读文件、跑命令带回的内容，按经验值估算 */
-const TOOL_TOKENS = { read: 1800, search: 600, run: 900, edit: 400, other: 300 } as const
+const TOOL_TOKENS: Record<ToolUse['kind'], number> = {
+  read: 1800,
+  search: 600,
+  run: 900,
+  edit: 400,
+  web: 1500,
+  skill: 1200,
+  agent: 800,
+  other: 300,
+}
 
 export interface ContextPart {
   key: string
@@ -92,12 +101,29 @@ export function stepActivity(task: Task, id: string, deep = false) {
   return { msgs, tools: tools.length, files: files.size, last, lastTool: last?.tools.at(-1), text }
 }
 
-const VERB = { read: '读取', edit: '修改', run: '运行', search: '', other: '' } as const
+/** 没写动作名时按类型给的默认动作，参照 Claude Code 的 Read / Update / Bash / Search / Skill */
+const VERB: Record<ToolUse['kind'], string> = {
+  read: '读取',
+  edit: '编辑',
+  run: '运行',
+  search: '搜索',
+  web: '网页',
+  skill: '技能',
+  agent: '子任务',
+  other: '',
+}
+
+/** 工具调用的动作名；旧数据的 label 里已经带了动作（「搜索 xxx」「子任务：xxx」）就不再重复 */
+export function toolVerb(tool: ToolUse) {
+  const v = tool.name ?? VERB[tool.kind]
+  if (!v || tool.label.startsWith(v) || /^(网页搜索|查找文件|子任务：)/.test(tool.label)) return ''
+  return v
+}
 
 /** 「正在做什么」的一句话 */
 export function currentActivity(a: ReturnType<typeof stepActivity>) {
   if (a.last?.text.trim()) return `正在输出：${plainLine(a.last.text, true)}`
-  if (a.lastTool) return `${VERB[a.lastTool.kind]} ${a.lastTool.label}`.trim()
+  if (a.lastTool) return `${toolVerb(a.lastTool)} ${a.lastTool.label}`.trim()
   return '正在启动 CLI…'
 }
 
