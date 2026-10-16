@@ -21,6 +21,7 @@ import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { installApi } from './install.ts'
+import { openBrowser } from './open.ts'
 import { modelsApi } from './models.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
@@ -340,15 +341,18 @@ app.get('/fs/list', async (c) => {
 const root = new Hono()
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
-if (process.env.NODE_ENV === 'production' || process.argv.includes('--prod')) {
+const prod = process.env.NODE_ENV === 'production' || process.argv.includes('--prod')
+if (prod) {
   root.use('/*', serveStatic({ root: './dist' }))
   root.get('*', serveStatic({ path: './dist/index.html' }))
 }
 
 const port = Number(process.env.PORT ?? 8787)
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网
-serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, () => {
-  console.log(`Agent 面板服务已启动: http://127.0.0.1:${port}`)
+serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
+  const url = `http://127.0.0.1:${port}`
+  console.log(`Agent 面板服务已启动: ${url}`)
+  if (prod && (await getSettings()).openBrowser) openBrowser(url)
 })
 
 // 退出前停掉正在执行的 CLI（它们在独立的进程组里，不会随服务一起退出），并把任务状态落盘

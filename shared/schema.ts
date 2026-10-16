@@ -449,6 +449,8 @@ export const Settings = z.object({
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
+  /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
+  openBrowser: z.boolean().default(true),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

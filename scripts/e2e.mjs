@@ -404,6 +404,7 @@ try {
   // ---- 正式版没有模拟执行：旧设置里的 execution 会被忽略，任务一律真实调用 CLI ----
   await call('PUT', '/settings', { ...settings, execution: 'simulate' })
   assert.equal((await call('GET', '/settings')).execution, undefined)
+  assert.equal((await call('GET', '/settings')).openBrowser, true, '默认启动后打开浏览器')
   let sim = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '真实执行' })
   const before = calls().length
   sim = await waitDone(sim.id)

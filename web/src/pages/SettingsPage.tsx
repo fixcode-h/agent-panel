@@ -637,6 +637,7 @@ function SettingsBody({
   const { setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [notify, setNotifyOn] = useState(notifyEnabled)
+  const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [drafts, setDrafts] = useState(() => toDraft(initial))
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
@@ -651,6 +652,7 @@ function SettingsBody({
   const valid = Number.isInteger(minutes) && minutes >= 1 && minutes <= 600
   const tier = (t: { model: string; effort: string }) => ({ model: t.model.trim(), effort: t.effort })
   const value: Settings = {
+    openBrowser,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     defaultCli: defCli,
     clis: Object.fromEntries(
@@ -772,6 +774,11 @@ function SettingsBody({
                   {!valid && <span className="text-xs text-danger">填 1 到 600 之间的整数</span>}
                 </div>
               </Row>
+              {!demo && (
+                <Row title="启动后打开浏览器" desc="启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。">
+                  <Switch aria-label="启动后打开浏览器" checked={openBrowser} onCheckedChange={setOpenBrowser} />
+                </Row>
+              )}
               <Row title="任务完成时通知我" desc="页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。">
                 <Switch
                   aria-label="任务完成时通知我"
