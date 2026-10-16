@@ -29,6 +29,7 @@ import {
   type DirInfo,
   type DirListing,
 } from '@shared/schema'
+import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
@@ -359,6 +360,75 @@ function persist() {
   } catch {}
 }
 
+// ---- 设置里的「数据」：演示没有用户目录，按浏览器里存的演示数据估算占用，导入导出用同样的备份格式 ----
+const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) => Record<string, unknown>> = {
+  config: (d) => ({
+    'settings.json': d.settings ?? Settings.parse({}),
+    'config/agents.json': d.agents,
+    'config/categories.json': d.categories,
+    'config/workflows.json': d.workflows,
+    'config/project-categories.json': d.projectCategories,
+  }),
+  projects: (d) => ({ 'projects/projects.json': d.projects }),
+  tasks: (d) => ({ 'tasks/tasks.json': d.tasks ?? [] }),
+}
+const utf8ToB64 = (s: string) => btoa(String.fromCharCode(...new TextEncoder().encode(s)))
+const b64ToUtf8 = (b: string) => new TextDecoder().decode(Uint8Array.from(atob(b), (c) => c.charCodeAt(0)))
+
+function demoData(d: Db, action: string | undefined, method: string, body: unknown, query: URLSearchParams): unknown {
+  if (!action && method === 'GET') {
+    const kinds = DATA_KINDS.map((k) => {
+      if (k.id === 'uploads') {
+        const sizes = [...demoUploads.values()].map((u) => Math.floor((u.length * 3) / 4))
+        return { id: k.id, files: sizes.length, bytes: sizes.reduce((a, b) => a + b, 0) }
+      }
+      if (k.id === 'cache') return { id: k.id, files: 0, bytes: 0 }
+      const files = Object.values(DEMO_DATA_FILES[k.id](d))
+      return { id: k.id, files: files.length, bytes: files.reduce<number>((n, v) => n + JSON.stringify(v).length, 0) }
+    })
+    const heap = (performance as { memory?: { usedJSHeapSize: number } }).memory?.usedJSHeapSize ?? 0
+    return { dir: '~/.agent-panel（在线演示，数据存在浏览器里）', kinds, memory: { rss: heap, heapUsed: heap } }
+  }
+  if (action === 'reveal') fail('在线演示不能打开本机目录')
+  if (action === 'clear') {
+    const k = (body as { kind: DataKind }).kind
+    if (k === 'projects') d.projects = []
+    if (k === 'projects' || k === 'tasks') d.tasks = []
+    if (k === 'uploads') demoUploads.clear()
+    persist()
+    return { ok: true }
+  }
+  if (action === 'export') {
+    const kinds = (query.get('kinds') ?? '')
+      .split(',')
+      .filter((k): k is keyof typeof DEMO_DATA_FILES => k in DEMO_DATA_FILES)
+    if (!kinds.length) fail('请选择要导出的数据')
+    const files: Record<string, string> = {}
+    for (const k of kinds)
+      for (const [rel, v] of Object.entries(DEMO_DATA_FILES[k](d))) files[rel] = utf8ToB64(JSON.stringify(v, null, 2))
+    return { app: 'agent-panel', version: 1, exportedAt: new Date().toISOString(), kinds, files }
+  }
+  if (action === 'import') {
+    const b = body as { app?: string; kinds?: DataKind[]; files?: Record<string, string> }
+    if (b?.app !== 'agent-panel' || !b.files || !Array.isArray(b.kinds)) fail('不是 Agent 面板导出的数据文件')
+    const kinds = b.kinds ?? []
+    const files = b.files ?? {}
+    const get = (rel: string) => (files[rel] ? JSON.parse(b64ToUtf8(files[rel])) : undefined)
+    if (kinds.includes('config')) {
+      d.settings = Settings.parse(get('settings.json') ?? {})
+      d.agents = get('config/agents.json') ?? []
+      d.categories = get('config/categories.json') ?? []
+      d.workflows = get('config/workflows.json') ?? []
+      d.projectCategories = get('config/project-categories.json') ?? []
+    }
+    if (kinds.includes('projects')) d.projects = get('projects/projects.json') ?? []
+    if (kinds.includes('tasks')) d.tasks = get('tasks/tasks.json') ?? []
+    persist()
+    return { ok: true, kinds, files: Object.keys(files).length }
+  }
+  fail('不支持的操作')
+}
+
 /** 清空演示数据，恢复示例 */
 export function resetDemo() {
   db = seed()
@@ -574,6 +644,7 @@ function route(method: string, url: string, body: unknown): unknown {
     demoUploads.set(a.path, `data:${u.mime || 'application/octet-stream'};base64,${u.data}`)
     return a
   }
+  if (res === 'data') return demoData(d, id, method, body, query)
   if (res === 'projects' && id && sub === 'files') {
     const q = (query.get('q') ?? '').toLowerCase()
     return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)

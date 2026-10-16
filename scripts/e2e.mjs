@@ -6,7 +6,7 @@
  */
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import assert from 'node:assert/strict'
@@ -46,6 +46,9 @@ for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
   execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
 }
+// 旧版本平铺的数据文件，启动时应搬进 config/
+execFileSync('mkdir', ['-p', dataDir])
+writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
 const relServer = http.createServer((req, res) => {
   const host = `http://127.0.0.1:${relServer.address().port}`
   if (req.url.startsWith('/releases')) {
@@ -723,6 +726,59 @@ try {
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
   step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件')
+  // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
+  assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
+  assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
+  assert.ok(existsSync(path.join(dataDir, 'tasks/tasks.json')), '任务记录在 tasks/ 下')
+  const usage = await call('GET', '/data')
+  assert.equal(usage.dir, dataDir)
+  const kindOf = (u, k) => u.kinds.find((x) => x.id === k)
+  assert.ok(kindOf(usage, 'tasks').bytes > 0 && kindOf(usage, 'uploads').files >= 1 && usage.memory.rss > 0)
+  mkdirSync(path.join(dataDir, 'cache/junk'), { recursive: true })
+  writeFileSync(path.join(dataDir, 'cache/junk/x.bin'), 'x'.repeat(100))
+  assert.equal(kindOf(await call('GET', '/data'), 'cache').bytes, 100)
+  await call('POST', '/data/clear', { kind: 'cache' })
+  assert.equal(kindOf(await call('GET', '/data'), 'cache').files, 0, '缓存清理掉了')
+  assert.equal(
+    (
+      await fetch(`${base}/data/clear`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{"kind":"config"}',
+      })
+    ).status,
+    400,
+    '配置不能清理',
+  )
+  const backup = await call('GET', '/data/export?kinds=config,projects,tasks')
+  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/tasks.json'] && !backup.files['uploads'])
+  const agentsBefore = await call('GET', '/agents')
+  const tasksBefore = (await call('GET', '/tasks')).length
+  await call('DELETE', `/agents/${agentsBefore.at(-1).id}`).catch(() => {})
+  await call('POST', '/data/clear', { kind: 'tasks' })
+  assert.equal((await call('GET', '/tasks')).length, 0, '清理任务记录后马上生效')
+  const imported = await call('POST', '/data/import', backup)
+  assert.equal(imported.files, Object.keys(backup.files).length)
+  assert.deepEqual(
+    (await call('GET', '/agents')).map((a) => a.id),
+    agentsBefore.map((a) => a.id),
+    '导入后 Agent 恢复',
+  )
+  assert.equal((await call('GET', '/tasks')).length, tasksBefore, '导入后任务记录恢复')
+  const evil = { ...backup, kinds: ['tasks'], files: { '../escape.json': 'e30=' } }
+  assert.equal(
+    (
+      await fetch(`${base}/data/import`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(evil),
+      })
+    ).status,
+    400,
+    '不能写到数据目录外',
+  )
+  assert.ok(!existsSync(path.join(tmp, 'escape.json')))
+  step('数据目录：旧文件迁移、占用统计、清理、导出导入')
   // 旧格式（阶段）的工作流自动转换成连线
   const old = await call('POST', '/workflows', {
     name: '旧格式',

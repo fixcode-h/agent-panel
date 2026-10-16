@@ -3,8 +3,8 @@ import { spawn } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream, existsSync, readFileSync } from 'node:fs'
 import { chmod, cp, mkdir, mkdtemp, readdir, rename, rm } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
 import path from 'node:path'
+import { CACHE_DIR } from './store.ts'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type AppUpdateJob } from '../shared/version.ts'
 import { capture } from './exec/process.ts'
 
@@ -73,7 +73,9 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
 
   async function install(job: AppUpdateJob, rel: AppRelease) {
     const dir = appDir()
-    const work = await mkdtemp(path.join(tmpdir(), 'agent-panel-update-'))
+    // 下载的包放在数据目录的缓存里，设置的「数据」里能看到占用、可以清理
+    await mkdir(path.join(CACHE_DIR, 'updates'), { recursive: true })
+    const work = await mkdtemp(path.join(CACHE_DIR, 'updates', 'update-'))
     try {
       // 1. 下载
       job.phase = '下载中'

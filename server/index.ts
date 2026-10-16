@@ -17,7 +17,8 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { END, START, findRefCycle, migrateDocSteps } from '../shared/flow.ts'
-import { createCollection } from './store.ts'
+import { createCollection, migrateDataDir } from './store.ts'
+import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { detectClis, invalidateClis } from './detect.ts'
@@ -29,6 +30,9 @@ import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
 import { cleanupUploads, searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
+
+// 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
+migrateDataDir()
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
@@ -368,6 +372,8 @@ app.get('/fs/list', async (c) => {
   }
 })
 
+app.route('/data', dataApi({ running: () => tasks.running() }))
+
 app.route(
   '/app',
   updateApi({
@@ -376,6 +382,8 @@ app.route(
     restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   }),
 )
+
+void cleanupUploads()
 
 const root = new Hono()
 root.route('/', app)
@@ -405,7 +413,6 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
 })
 if (tray) {
   cleanupOldTray()
-  void cleanupUploads()
   // 托盘程序退出时会关掉服务的输入：收尾后退出（还在跑的 CLI 由托盘程序一起结束）
   process.stdin.on('end', () => {
     server.close()

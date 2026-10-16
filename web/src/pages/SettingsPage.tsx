@@ -19,6 +19,7 @@ import {
   X,
   type LucideIcon,
   Layers,
+  HardDrive,
 } from 'lucide-react'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import {
@@ -46,6 +47,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { UpdateSection } from '@/components/settings/UpdateSection'
+import { DataSection } from '@/components/settings/DataSection'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
@@ -682,6 +684,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'models', label: '默认 CLI', icon: Cpu },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: 'AI 创建', icon: Sparkles },
+  { id: 'data', label: '数据', icon: HardDrive },
   { id: 'update', label: '版本更新', icon: ArrowUpCircle },
 ]
 
@@ -994,6 +997,7 @@ function SettingsBody({
             />
           )}
 
+          {cur.id === 'data' && <DataSection />}
           {cur.id === 'update' && <UpdateSection />}
 
           {cur.id === 'categories' && <ProjectCategoryList />}
