@@ -17,7 +17,7 @@ import { taskWorkflows, workflowClosure } from '../shared/flow.ts'
 import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
-import { gitHead, gitNumstat } from './exec/git.ts'
+import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
 import { answerRequest, runRealTurn } from './exec/runner.ts'
 import { CHATS_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
@@ -324,6 +324,50 @@ export function tasksApi(deps: {
       live.delete(id)
       throw e
     }
+  })
+
+  /** 任务的工作目录：项目目录，聊天是它自己的目录 */
+  const taskDir = async (t: Task) =>
+    t.projectId ? ((await deps.projects.get(t.projectId))?.path ?? '') : path.join(CHATS_DIR, t.id)
+
+  // 一个改动文件的差异：git 仓库和任务开始时的提交比；不是仓库时拼出 Agent 改这个文件时给出的改动
+  routes.get('/:id/diff', async (c) => {
+    const t = await current(c.req.param('id'))
+    if (!t) return bad(c, '任务不存在', 404)
+    const file = c.req.query('path') ?? ''
+    if (!t.changes.some((x) => x.path === file)) return bad(c, '这个文件不在任务的改动里')
+    const dir = await taskDir(t)
+    const isGit = !!dir && (await gitNumstat(dir, t.baseRef).catch(() => null)) !== null
+    if (isGit) {
+      const diff = await gitFileDiff(dir, t.baseRef, file)
+      return c.json({ path: file, dir, diff, git: true, before: file in t.baseline })
+    }
+    const patches = t.messages
+      .flatMap((m) => m.tools)
+      .filter((x) => x.kind === 'edit' && x.label === file && x.input)
+      .map((x) => x.input!)
+    return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
+  })
+
+  // 撤销一个文件的改动：恢复成任务开始时的样子
+  routes.post('/:id/revert', async (c) => {
+    const id = c.req.param('id')
+    if (live.has(id)) return bad(c, '任务正在执行，等它停下后再撤销', 409)
+    const t = await store.get(id)
+    if (!t) return bad(c, '任务不存在', 404)
+    const { path: file } = (await c.req.json().catch(() => ({}))) as { path?: string }
+    if (!file || !t.changes.some((x) => x.path === file)) return bad(c, '这个文件不在任务的改动里')
+    const dir = await taskDir(t)
+    if (!dir || (await gitNumstat(dir, t.baseRef).catch(() => null)) === null)
+      return bad(c, '项目不是 git 仓库，没法知道改动前的内容，不能自动撤销')
+    if (file in t.baseline) return bad(c, '这个文件在任务开始前就有没提交的改动，撤销会一起丢掉，请在编辑器里手动处理')
+    try {
+      await gitRevertFile(dir, t.baseRef, file)
+    } catch (e) {
+      return bad(c, `撤销失败：${(e as Error).message}`)
+    }
+    const changes = (await gitChanges(dir, t.baseline, t.baseRef).catch(() => null)) ?? t.changes
+    return c.json(await store.update(id, { ...t, changes }))
   })
 
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题

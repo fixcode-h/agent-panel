@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readFile, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import type { FileChange } from '../../shared/schema.ts'
 import { capture } from './process.ts'
@@ -54,4 +54,46 @@ export async function gitChanges(
       const [add, del] = v.split('/').map(Number)
       return { path: p, add, del }
     })
+}
+
+const MAX_DIFF = 400_000
+
+/** 起点：任务开始时的提交还在就用它，否则用当前提交 */
+async function baseOf(cwd: string, ref: string) {
+  if (ref && (await git(cwd, 'cat-file', '-e', `${ref}^{commit}`)).code === 0) return ref
+  return (await git(cwd, 'rev-parse', '--verify', 'HEAD')).code === 0 ? 'HEAD' : ''
+}
+
+/** 一个文件和任务开始时相比的差异（unified diff）；新文件和整个文件都是新增 */
+export async function gitFileDiff(cwd: string, ref: string, file: string) {
+  const base = await baseOf(cwd, ref)
+  let out = base ? (await git(cwd, 'diff', '--no-color', base, '--', file)).stdout : ''
+  if (!out.trim()) {
+    // 没跟踪的新文件：和空文件比
+    const tracked = (await git(cwd, 'ls-files', '--error-unmatch', '--', file)).code === 0
+    if (!tracked) out = (await git(cwd, 'diff', '--no-color', '--no-index', '--', '/dev/null', file)).stdout
+  }
+  return out.length > MAX_DIFF ? `${out.slice(0, MAX_DIFF)}\n…（差异太长，只显示前面一部分）` : out
+}
+
+/**
+ * 把一个文件恢复成任务开始时的样子：开始时就有的文件取回那时的内容，任务里新建的直接删掉。
+ * 任务开始前就有未提交改动的文件不能恢复（那些改动没有保存过，恢复会一起丢掉），由调用方拦住。
+ */
+export async function gitRevertFile(cwd: string, ref: string, file: string) {
+  const base = await baseOf(cwd, ref)
+  const full = path.resolve(cwd, file)
+  if (!full.startsWith(path.resolve(cwd) + path.sep)) throw new Error('文件不在项目目录里')
+  const existed = base && (await git(cwd, 'cat-file', '-e', `${base}:${file}`)).code === 0
+  if (existed) {
+    const r = await git(cwd, 'checkout', base, '--', file)
+    if (r.code !== 0) throw new Error(r.stderr.trim() || '恢复失败')
+    // checkout 会把文件放进暂存区，和开始时一样不留暂存
+    await git(cwd, 'reset', '-q', '--', file)
+  } else {
+    await git(cwd, 'rm', '-q', '--cached', '--ignore-unmatch', '--', file)
+    await unlink(full).catch((e) => {
+      if (e?.code !== 'ENOENT') throw e
+    })
+  }
 }

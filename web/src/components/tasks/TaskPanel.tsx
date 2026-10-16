@@ -10,6 +10,9 @@ import { stepTree, topSteps } from '@shared/flow'
 import { StepIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
 import { Terminal } from '@/components/agents/CommandPreview'
+import { t } from '@shared/i18n'
+import { taskSummary } from '@shared/task'
+import { DiffDialog } from './DiffDialog'
 
 /**
  * 启动命令：正在执行的节点用的命令；没有在执行的节点时是最近启动的那次。
@@ -89,9 +92,17 @@ export function TaskPanel({
   const add = task.changes.reduce((n, c) => n + c.add, 0)
   const del = task.changes.reduce((n, c) => n + c.del, 0)
   const chatAgent = byId.get(task.agentId)
+  const { upsertTask } = useData()
+  const [diffPath, setDiffPath] = useState<string | null>(null)
 
   return (
     <div className="flex flex-col gap-3">
+      <DiffDialog
+        task={task}
+        path={diffPath}
+        onOpenChange={(o) => !o && setDiffPath(null)}
+        onReverted={(x) => upsertTask(taskSummary(x))}
+      />
       <Section
         title="任务进度"
         className={progressClass}
@@ -285,7 +296,8 @@ export function TaskPanel({
             extra={
               task.changes.length ? (
                 <span className="font-mono">
-                  <span className="text-success">+{add}</span> <span className="text-danger">-{del}</span>
+                  <span className="text-success">+{add}</span>
+                  {del > 0 && <span className="text-danger"> -{del}</span>}
                 </span>
               ) : undefined
             }
@@ -293,12 +305,17 @@ export function TaskPanel({
             {task.changes.length ? (
               <ul className="flex flex-col gap-1">
                 {task.changes.map((c) => (
-                  <li key={c.path} className="flex items-center gap-2 font-mono text-xs">
-                    <span className="min-w-0 flex-1 truncate text-muted" title={c.path}>
-                      {c.path}
-                    </span>
-                    <span className="shrink-0 text-success">+{c.add}</span>
-                    <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
+                  <li key={c.path}>
+                    <button
+                      type="button"
+                      onClick={() => setDiffPath(c.path)}
+                      title={t('查看「{path}」的改动', { path: c.path })}
+                      className="-mx-1.5 flex w-[calc(100%+0.75rem)] cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left font-mono text-xs transition-colors hover:bg-sel"
+                    >
+                      <span className="min-w-0 flex-1 truncate text-muted">{c.path}</span>
+                      <span className="shrink-0 text-success">+{c.add}</span>
+                      <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
+                    </button>
                   </li>
                 ))}
               </ul>

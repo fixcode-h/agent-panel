@@ -892,6 +892,16 @@ function tasksRoute(
     persist()
     return task
   }
+  // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
+  if (sub === 'diff') {
+    const file = query.get('path') ?? ''
+    const diff = task.messages
+      .flatMap((m) => m.tools)
+      .filter((x) => x.kind === 'edit' && x.label === file && x.input)
+      .map((x) => x.input)
+      .join('\n')
+    return { path: file, dir: '', diff, git: false, before: false }
+  }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行')
     if (task.status !== 'failed' && task.status !== 'stopped') fail('只有失败或停止的任务可以继续')

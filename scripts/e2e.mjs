@@ -968,6 +968,20 @@ try {
     { path: 'committed.txt', add: 3, del: 0 },
     '提交了的改动仍然统计在内 ' + JSON.stringify(tCommit.changes),
   )
+  // 看一个文件的差异，撤销它的改动（恢复成任务开始时的样子）
+  const d = await call('GET', `/tasks/${tCommit.id}/diff?path=committed.txt`)
+  assert.ok(d.git && /\+one\n\+two\n\+three/.test(d.diff), '差异里有新增的行 ' + d.diff)
+  const reverted = await call('POST', `/tasks/${tCommit.id}/revert`, { path: 'committed.txt' })
+  assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '任务里新建的文件撤销后删掉')
+  assert.ok(!reverted.changes.some((c) => c.path === 'committed.txt'), '撤销后不再算在改动里')
+  assert.match(
+    await fetch(`${base}/tasks/${tCommit.id}/revert`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: '../outside.txt' }),
+    }).then((r) => r.text()),
+    /不在任务的改动里/,
+  )
   // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
   const attDir = path.dirname(att.path)
   await call('DELETE', `/tasks/${tAtt.id}`)
