@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Agent, type AgentInput } from '@shared/schema'
@@ -40,11 +40,14 @@ export function AgentDetail({
   agent,
   onDuplicate,
   onDeleted,
+  deleteSignal = 0,
   onOptimized,
 }: {
   agent: Agent
   onDuplicate: () => void
   onDeleted: () => void
+  /** 列表右键「删除」时变化，打开删除确认 */
+  deleteSignal?: number
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
@@ -53,6 +56,9 @@ export function AgentDetail({
   const [draft, setDraft] = useState<AgentInput>(() => toInput(agent))
   const [args, setArgs] = useState(() => joinArgs(agent.extraArgs))
   const [deleting, setDeleting] = useState(false)
+  useEffect(() => {
+    if (deleteSignal) setDeleting(true)
+  }, [deleteSignal])
   const [assist, setAssist] = useState(false)
 
   const value = { ...draft, extraArgs: splitArgs(args) }

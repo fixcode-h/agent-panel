@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Bot, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Bot, Copy, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -8,7 +8,7 @@ import { cliColor, shortVersion } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { ContextMenuItem, ContextMenuSeparator, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -126,6 +126,8 @@ export function AgentsPage() {
   const [checking, setChecking] = useState(false)
   const [assist, setAssist] = useState(false)
   const [rev, setRev] = useState(0)
+  // 列表右键「删除」：先选中那个 Agent，再让详情页弹出删除确认（确认框和被引用的检查都在详情页里）
+  const [delReq, setDelReq] = useState<{ id: string; at: number }>()
 
   const selected = agents.find((a) => a.id === route.id) ?? agents[0]
   useEffect(() => {
@@ -253,6 +255,26 @@ export function AgentsPage() {
                 title={a.name}
                 subtitle={`${cliName(a)} · ${modelOf(a)}`}
                 trailing={<span className={cn('h-2 w-2 shrink-0 rounded-full', status(a))} />}
+                menu={
+                  <>
+                    <ContextMenuItem onSelect={() => duplicate(a)}>
+                      <Copy className="h-4 w-4" />
+                      复制
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      danger
+                      disabled={a.id === DEFAULT_AGENT_ID}
+                      onSelect={() => {
+                        go({ page: 'agents', id: a.id })
+                        setDelReq({ id: a.id, at: Date.now() })
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      删除
+                    </ContextMenuItem>
+                  </>
+                }
               />
             ))}
             {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">这个分类还没有 Agent</p>}
@@ -267,6 +289,7 @@ export function AgentsPage() {
           agent={selected}
           onOptimized={() => setRev((r) => r + 1)}
           onDuplicate={() => duplicate(selected)}
+          deleteSignal={delReq?.id === selected.id ? delReq.at : 0}
           onDeleted={() => go({ page: 'agents' })}
         />
       ) : (

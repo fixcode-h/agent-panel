@@ -1,3 +1,4 @@
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -100,8 +101,11 @@ export function ListItem({
   subtitle,
   trailing,
   monoSubtitle = true,
+  menu,
 }: {
   monoSubtitle?: boolean
+  /** 右键菜单的菜单项 */
+  menu?: React.ReactNode
   selected: boolean
   onClick: () => void
   leading: React.ReactNode
@@ -109,7 +113,7 @@ export function ListItem({
   subtitle: React.ReactNode
   trailing?: React.ReactNode
 }) {
-  return (
+  const item = (
     <button
       onClick={onClick}
       aria-current={selected || undefined}
@@ -125,6 +129,13 @@ export function ListItem({
       </span>
       {trailing}
     </button>
+  )
+  if (!menu) return item
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{item}</ContextMenuTrigger>
+      <ContextMenuContent>{menu}</ContextMenuContent>
+    </ContextMenu>
   )
 }
 
