@@ -72,8 +72,7 @@ if (prev) {
 
 const dedupe = (list) => [...new Set(list)]
 const out = [`## Agent 面板 v${version} ${channel === 'dev' ? '预览版' : '更新'}`, '']
-if (channel === 'dev')
-  out.push('> dev 分支的开发中版本，功能可能还不稳定。正式版在合并到主干后发布。', '')
+if (channel === 'dev') out.push('> dev 分支的开发中版本，功能可能还不稳定。正式版在合并到主干后发布。', '')
 for (const [title, list] of Object.entries(sections)) {
   if (!list.length) continue
   out.push(`### ${title}`, '', ...dedupe(list).map((l) => `- ${l}`), '')
@@ -83,12 +82,16 @@ const name = `agent-panel-${version}`
 out.push(
   '### 下载',
   '',
-  `- Windows — \`${name}.zip\`，解压后双击 \`start.cmd\``,
+  `- Windows — \`${name}.zip\`，解压后双击 \`AgentPanel.exe\`（不弹命令行窗口，图标在任务栏通知区，右键可以退出）`,
   `- macOS / Linux — \`${name}.tar.gz\`，解压后运行 \`./start.sh\``,
   '',
-  '需要 Node.js 20+，以及至少一个已登录的 CLI（Claude Code、Codex 或 Command Code）。启动后浏览器打开 http://127.0.0.1:8787 。',
+  '需要 Node.js 20+，以及至少一个已登录的 CLI（Claude Code、Codex 或 Command Code）。启动后会自动用浏览器打开 http://127.0.0.1:8787 。',
   '升级时把旧版本目录里的 `data/` 复制到新版本目录即可保留配置和任务。',
   '',
 )
-if (prev) out.push(`完整改动：[${prev}...v${version}](https://github.com/${process.env.GITHUB_REPOSITORY ?? 'fixcode-h/agent-panel'}/compare/${prev}...v${version})`, '')
+if (prev)
+  out.push(
+    `完整改动：[${prev}...v${version}](https://github.com/${process.env.GITHUB_REPOSITORY ?? 'fixcode-h/agent-panel'}/compare/${prev}...v${version})`,
+    '',
+  )
 process.stdout.write(out.join('\n'))

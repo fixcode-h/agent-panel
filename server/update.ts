@@ -29,7 +29,11 @@ function currentVersion() {
 const API = () => process.env.AGENT_PANEL_RELEASES_URL ?? `https://api.github.com/repos/${REPO}/releases`
 
 /** 包里会被替换的文件；data/ 等其他内容不动 */
-const FILES = ['server.mjs', 'package.json', 'start.sh', 'start.cmd', 'README.md', '使用说明.txt']
+const FILES = ['server.mjs', 'package.json', 'start.sh', 'README.md', '使用说明.txt']
+/** 托盘程序约定的「请重启我」退出码，和 scripts/tray/AgentPanel.cs 里的 RestartCode 一致 */
+export const TRAY_RESTART = 75
+/** Windows 托盘启动程序：正在运行时不能覆盖，但可以改名，所以先挪开再放新的 */
+const TRAY_EXE = 'AgentPanel.exe'
 
 /** 版本更新：对比 GitHub Releases 上的包，下载后替换当前目录里的程序文件并重启 */
 export function updateApi(deps: { running: () => number; restart: () => void }) {
@@ -106,6 +110,15 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
       if (existsSync(dist)) await rename(dist, old)
       await rename(next, dist)
       for (const f of FILES) if (existsSync(path.join(src, f))) await cp(path.join(src, f), path.join(dir, f))
+      if (existsSync(path.join(src, TRAY_EXE))) {
+        const exe = path.join(dir, TRAY_EXE)
+        const moved = `${exe}.old`
+        await rm(moved, { force: true }).catch(() => {})
+        if (existsSync(exe)) await rename(exe, moved)
+        await cp(path.join(src, TRAY_EXE), exe)
+      }
+      // 换成托盘程序后不再需要命令行启动文件
+      if (existsSync(path.join(dir, TRAY_EXE))) await rm(path.join(dir, 'start.cmd'), { force: true }).catch(() => {})
       if (existsSync(path.join(dir, 'start.sh'))) await chmod(path.join(dir, 'start.sh'), 0o755).catch(() => {})
       await rm(old, { recursive: true, force: true }).catch(() => {})
 
@@ -167,8 +180,18 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
  * 重启：关掉监听，用同样的参数启动新的服务进程（共用当前的终端窗口），然后退出。
  * 新进程起来时端口可能还没释放，它会重试几次（见 index.ts）。
  */
+/** 上次更新时挪开的旧托盘程序：托盘重新启动后就不再占用，可以删掉 */
+export function cleanupOldTray(dir = process.cwd()) {
+  void rm(path.join(dir, `${TRAY_EXE}.old`), { force: true }).catch(() => {})
+}
+
 export function restartProcess(close: () => void) {
   close()
+  // 由托盘程序启动时交给它重启：退出码 75 表示要重启，托盘会用同样的方式再启动一次
+  if (process.env.AGENT_PANEL_TRAY) {
+    setTimeout(() => process.exit(TRAY_RESTART), 200)
+    return
+  }
   const child = spawn(process.execPath, [...process.execArgv, ...process.argv.slice(1)], {
     cwd: process.cwd(),
     env: { ...process.env, AGENT_PANEL_RESTARTED: '1' },

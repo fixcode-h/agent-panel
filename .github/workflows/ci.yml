@@ -24,8 +24,29 @@ jobs:
       - run: npm run test:e2e
       - run: npm run build
 
+  # Windows 托盘启动程序：用系统自带的 .NET Framework 编译器编译，不需要装别的
+  tray:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: 编译 AgentPanel.exe
+        shell: pwsh
+        run: |
+          $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          New-Item -ItemType Directory -Force build/tray | Out-Null
+          & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
+            /win32icon:scripts/tray/app.ico /out:build/tray/AgentPanel.exe `
+            /r:System.Windows.Forms.dll /r:System.Drawing.dll scripts/tray/AgentPanel.cs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item build/tray/AgentPanel.exe | Format-List Name, Length
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tray
+          path: build/tray/AgentPanel.exe
+          retention-days: 7
+
   release:
-    needs: test
+    needs: [test, tray]
     # dev 分支不出包，只有主干发布
     if: github.ref_name == 'main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
@@ -49,8 +70,12 @@ jobs:
           base=$(node -p "require('./package.json').version.split('.').slice(0,2).join('.')")
           count=$(git rev-list --count HEAD)
           echo "version=${base}.${count}" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v4
+        with:
+          name: tray
+          path: build/tray
       - name: 出包
-        run: node scripts/package.mjs ${{ steps.ver.outputs.version }}
+        run: node scripts/package.mjs ${{ steps.ver.outputs.version }} --require-tray
       - name: 生成更新说明
         run: node scripts/release-notes.mjs ${{ steps.ver.outputs.version }} main > release/notes.md
       - name: 发布到 Releases

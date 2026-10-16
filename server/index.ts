@@ -23,7 +23,7 @@ import { detectClis, invalidateClis } from './detect.ts'
 import { installApi } from './install.ts'
 import { openBrowser } from './open.ts'
 import { modelsApi } from './models.ts'
-import { restartProcess, updateApi } from './update.ts'
+import { cleanupOldTray, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
@@ -360,13 +360,29 @@ if (prod) {
 const port = Number(process.env.PORT ?? 8787)
 // 更新后重启出来的进程：不再打开浏览器（页面已经开着），端口被旧进程占着时重试
 const restarted = !!process.env.AGENT_PANEL_RESTARTED
+// 由 Windows 托盘程序（AgentPanel.exe）启动
+const tray = !!process.env.AGENT_PANEL_TRAY
 delete process.env.AGENT_PANEL_RESTARTED
 // 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
   const url = `http://127.0.0.1:${port}`
   console.log(`Agent 面板服务已启动: ${url}`)
-  if (prod && !restarted && (await getSettings()).openBrowser) openBrowser(url)
+  const open = prod && !restarted && (await getSettings()).openBrowser
+  if (tray) {
+    // 托盘程序读这两行：显示地址，并由它打开浏览器（服务自己打开会经过 cmd）
+    console.log(`AGENT_PANEL_READY ${url}`)
+    if (open) console.log(`AGENT_PANEL_OPEN ${url}`)
+  } else if (open) openBrowser(url)
 })
+if (tray) {
+  cleanupOldTray()
+  // 托盘程序退出时会关掉服务的输入：收尾后退出（还在跑的 CLI 由托盘程序一起结束）
+  process.stdin.on('end', () => {
+    server.close()
+    setTimeout(() => process.exit(0), 300)
+  })
+  process.stdin.resume()
+}
 let retries = 0
 server.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EADDRINUSE' && restarted && retries++ < 20) {
