@@ -15,7 +15,7 @@ export function HomePage() {
   const { go, openProject } = useNav()
   return (
     <main className="flex min-w-0 flex-1 flex-col overflow-y-auto">
-      <div className="mx-auto flex w-full max-w-[720px] flex-1 flex-col justify-center gap-7 px-4 py-12 md:px-6">
+      <div className="mx-auto flex w-full max-w-(--content-w) flex-1 flex-col justify-center gap-7 px-4 py-12 md:px-6">
         <h1 className="flex items-center justify-center gap-3 text-center font-serif text-[28px] font-semibold tracking-tight text-fg md:text-[34px]">
           <Logo className="h-9 w-9 rounded-xl [&>svg]:h-5 [&>svg]:w-5" />
           {greeting()}，今天要做什么？

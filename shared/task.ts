@@ -1,5 +1,5 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
-import type { Attachment, NewTaskInput, TaskData, Workflow } from './schema.ts'
+import { DEFAULT_AGENT_ID, type Attachment, type NewTaskInput, type TaskData, type Workflow } from './schema.ts'
 import { planTask } from './flow.ts'
 
 export function taskTitle(prompt: string) {
@@ -25,7 +25,12 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now
     mode: input.mode,
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
+    // 只有默认 Agent 能在对话时临时换模型；其他 Agent 用自己配置的档位
+    model: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.model ?? '') : '',
+    effort: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.effort ?? '') : '',
     status: 'running',
+    runMs: 0,
+    runStartedAt: now,
     ...(input.mode === 'workflow' ? planTask(workflow) : { steps: [] }),
     messages: [
       {
@@ -47,4 +52,33 @@ export function newTask(input: NewTaskInput, workflow: Workflow | undefined, now
     baseline: {},
     requests: [],
   }
+}
+
+/** 开始一轮执行：记下开始时间，结束时累加进 runMs */
+export function beginRun(task: { runStartedAt: string }, now = new Date()) {
+  task.runStartedAt = now.toISOString()
+}
+export function endRun(task: { runMs: number; runStartedAt: string }, now = new Date()) {
+  if (task.runStartedAt) task.runMs += Math.max(0, now.getTime() - Date.parse(task.runStartedAt))
+  task.runStartedAt = ''
+}
+
+/** 任务执行了多久（毫秒）：已完成的几轮加上正在执行的这一轮；旧任务没有记录时按创建到最后更新估算 */
+export function taskDuration(
+  task: { status: string; runMs?: number; runStartedAt?: string; createdAt: string; updatedAt: string },
+  now = Date.now(),
+) {
+  const live = task.status === 'running' && task.runStartedAt ? Math.max(0, now - Date.parse(task.runStartedAt)) : 0
+  const ms = (task.runMs ?? 0) + live
+  if (ms > 0 || task.status === 'running') return ms
+  return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
+}
+
+/** 对话任务给默认 Agent 临时选的模型和思考强度 */
+export function withTaskModel<A extends { id: string; model: string; effort: string }>(
+  agent: A,
+  task: { mode: string; agentId: string; model?: string; effort?: string },
+): A {
+  if (task.mode !== 'chat' || task.agentId !== agent.id || agent.id !== DEFAULT_AGENT_ID) return agent
+  return { ...agent, model: task.model || agent.model, effort: task.effort || agent.effort }
 }

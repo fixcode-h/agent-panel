@@ -1,7 +1,18 @@
-import { FolderGit2, GitBranch, Settings2, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Project } from '@shared/schema'
+import {
+  ArrowDown,
+  ArrowUp,
+  Clock,
+  Coins,
+  DatabaseZap,
+  FolderGit2,
+  GitBranch,
+  Settings2,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
+import type { Project, Task } from '@shared/schema'
+import { taskDuration } from '@shared/task'
 import { useData, useNav } from '@/lib/data'
-import { statusLabel, timeAgo } from '@/lib/tasks'
+import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -15,8 +26,9 @@ function ProjectHome({ project }: { project: Project }) {
   const { tasks, tasksLoaded, workflows, agents, projectCategories, upsertTask } = useData()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
-  const now = useNow(false)
   const list = tasks.filter((t) => t.projectId === project.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  // 有任务在执行时每秒刷新，耗时跟着走
+  const now = useNow(list.some((t) => t.status === 'running'))
   const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
 
@@ -28,7 +40,7 @@ function ProjectHome({ project }: { project: Project }) {
           项目设置
         </Button>
       </header>
-      <div className="mx-auto flex w-full max-w-[760px] flex-col gap-8 px-4 pt-6 pb-16 md:px-6 md:pt-12">
+      <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-16 md:px-6 md:pt-12">
         <div className="flex flex-col gap-2">
           <h1 className="flex items-center gap-3 font-serif text-[28px] leading-tight font-semibold tracking-tight">
             <FolderGit2 className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
@@ -85,6 +97,7 @@ function ProjectHome({ project }: { project: Project }) {
                             ? `${w?.name ?? '工作流已删除'}${tops.length ? ` · ${done}/${tops.length} 个节点` : ''}`
                             : `对话 · ${a?.name ?? 'Agent 已删除'}`}
                         </span>
+                        <TaskStats task={t} now={now} />
                       </span>
                       <span
                         className={cn(
@@ -107,6 +120,50 @@ function ProjectHome({ project }: { project: Project }) {
         </section>
       </div>
     </main>
+  )
+}
+
+/** 任务列表里的一行用量：执行时间、Token 总数、输入、输出、缓存命中 */
+function TaskStats({ task, now }: { task: Task; now: number }) {
+  const u = task.usage
+  const ms = taskDuration(task, now)
+  const total = u.inputTokens + u.outputTokens
+  if (!ms && !total) return null
+  const rate = cacheRate(task)
+  const item = 'flex items-center gap-1 whitespace-nowrap'
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[11.5px] text-subtle tabular-nums">
+      {ms > 0 && (
+        <span className={item} title="执行时间（不含等待继续对话的时间）">
+          <Clock className="h-3 w-3" />
+          {fmtDuration(ms)}
+        </span>
+      )}
+      {total > 0 && (
+        <>
+          <span className={item} title="Token 总数（输入 + 输出）">
+            <Coins className="h-3 w-3" />
+            {fmtTokens(total)}
+          </span>
+          <span className={item} title="输入 Token（含缓存命中）">
+            <ArrowUp className="h-3 w-3" />
+            输入 {fmtTokens(u.inputTokens)}
+          </span>
+          <span className={item} title="输出 Token">
+            <ArrowDown className="h-3 w-3" />
+            输出 {fmtTokens(u.outputTokens)}
+          </span>
+          <span
+            className={item}
+            title={`缓存命中 ${fmtTokens(u.cacheReadTokens ?? 0)} / 输入 ${fmtTokens(u.inputTokens)}`}
+          >
+            <DatabaseZap className="h-3 w-3" />
+            缓存命中 {fmtTokens(u.cacheReadTokens ?? 0)}
+            <span className={cn(rate >= 0.5 ? 'text-success' : '')}>（{(rate * 100).toFixed(0)}%）</span>
+          </span>
+        </>
+      )}
+    </span>
   )
 }
 

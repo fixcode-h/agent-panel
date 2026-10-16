@@ -12,7 +12,7 @@ import {
   type TaskData,
   type Workflow,
 } from '../shared/schema.ts'
-import { newTask, withAttachments } from '../shared/task.ts'
+import { beginRun, endRun, newTask, withAttachments } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitNumstat } from './exec/git.ts'
@@ -45,6 +45,10 @@ export function tasksApi(deps: {
         ...t,
         status: 'stopped',
         requests: [],
+        // 中断前最后一次落盘的时间当作这一轮的结束
+        runMs:
+          (t.runMs ?? 0) + (t.runStartedAt ? Math.max(0, Date.parse(t.updatedAt) - Date.parse(t.runStartedAt)) : 0),
+        runStartedAt: '',
         steps: t.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
         messages: [
           ...t.messages,
@@ -74,6 +78,7 @@ export function tasksApi(deps: {
     const task = entry.task
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
+    beginRun(entry.task)
     const [settings, project] = await Promise.all([getSettings(), deps.projects.get(task.projectId)]).catch((e) => {
       live.delete(task.id)
       throw e
@@ -123,6 +128,7 @@ export function tasksApi(deps: {
         })
       })
       .finally(async () => {
+        endRun(entry.task)
         await flush()
         live.delete(task.id)
       })

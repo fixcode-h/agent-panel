@@ -29,7 +29,9 @@ import {
   type CliUpdate,
   type CliStatus,
   type Settings,
+  CONTENT_WIDTH,
 } from '@shared/schema'
+import { applyContentWidth } from '@/lib/data'
 import { cliSettings, defaultCli, orderClis, tierFallback, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -701,6 +703,7 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
+  const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
   const ordered = orderClis(CLIS, cliOrder)
   const SECTIONS = sectionsFor(ordered)
@@ -747,6 +750,7 @@ function SettingsBody({
   const tier = (t: { model: string; effort: string }) => ({ model: t.model.trim(), effort: t.effort })
   const value: Settings = {
     openBrowser,
+    contentWidth,
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     defaultCli: defCli,
@@ -866,7 +870,7 @@ function SettingsBody({
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3 md:px-8 md:pt-7">
           <h2 className="min-w-0 flex-1 truncate font-serif text-[20px] font-semibold">{cur.label}</h2>
-          <SaveIndicator {...save} invalid={valid ? undefined : '超时时间需要是 1 到 600 的整数'} />
+          <SaveIndicator {...save} invalid={valid ? undefined : '超时时间需要是 0 到 1440 的整数'} />
           <DialogCloseButton label="关闭设置" />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
@@ -889,6 +893,41 @@ function SettingsBody({
                     aria-label="单个步骤最长运行时间（分钟）"
                   />
                   {!valid && <span className="text-xs text-danger">填 0 到 1440 之间的整数，0 表示不限制</span>}
+                </div>
+              </Row>
+              <Row
+                title="内容宽度"
+                desc="项目首页的输入框和任务列表、任务页的对话和工作流节点都用这个宽度，窗口窄时自动缩小。"
+              >
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={640}
+                    max={1600}
+                    step={20}
+                    value={contentWidth}
+                    aria-label="内容宽度"
+                    onChange={(e) => {
+                      const w = Number(e.target.value)
+                      setContentWidth(w)
+                      // 拖动时立即生效，不用等保存
+                      applyContentWidth(w)
+                    }}
+                    className="w-40 cursor-pointer accent-[var(--color-accent)]"
+                  />
+                  <span className="w-14 font-mono text-[13px] text-muted tabular-nums">{contentWidth}px</span>
+                  {contentWidth !== CONTENT_WIDTH && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setContentWidth(CONTENT_WIDTH)
+                        applyContentWidth(CONTENT_WIDTH)
+                      }}
+                    >
+                      恢复默认
+                    </Button>
+                  )}
                 </div>
               </Row>
               {!demo && (

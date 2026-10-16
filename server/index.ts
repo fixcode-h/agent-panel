@@ -5,6 +5,8 @@ import { stat } from 'node:fs/promises'
 import { z } from 'zod'
 import {
   Agent,
+  DEFAULT_AGENT_ID,
+  defaultAgent,
   AgentInput,
   Category,
   CategoryInput,
@@ -34,7 +36,7 @@ import { cleanupUploads, searchProjectFiles, uploadsApi, uploadsRawApi } from '.
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
 
-const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
+const agents = createCollection<AgentInput, Agent>('agents.json', Agent, () => [defaultAgent()])
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
 const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
@@ -221,12 +223,16 @@ app.post('/agents', async (c) => {
 app.put('/agents/:id', async (c) => {
   const r = await parseAgent(await c.req.json())
   if (r.error) return bad(c, r.error)
-  const a = await agents.update(c.req.param('id'), r.data!)
+  const id = c.req.param('id')
+  // 默认 Agent 的 CLI、模型、思考强度固定跟随默认 CLI，只能改名称、角色设定这些
+  if (id === DEFAULT_AGENT_ID) Object.assign(r.data!, { cli: '', model: '', effort: '', enabled: true })
+  const a = await agents.update(id, r.data!)
   return a ? c.json(a) : bad(c, 'Agent 不存在', 404)
 })
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
+  if (id === DEFAULT_AGENT_ID) return bad(c, '默认 Agent 是自带的，不能删除', 409)
   const used = (await workflows.list()).filter(
     (w) =>
       w.mainAgentId === id ||

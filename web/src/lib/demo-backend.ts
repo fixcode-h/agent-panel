@@ -5,6 +5,8 @@
 import { z } from 'zod'
 import {
   Agent,
+  DEFAULT_AGENT_ID,
+  defaultAgent,
   Attachment,
   AgentInput,
   Category,
@@ -34,7 +36,7 @@ import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/ver
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn } from '@shared/runner'
-import { newTask, withAttachments } from '@shared/task'
+import { beginRun, endRun, newTask, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -352,7 +354,10 @@ function load(): Db {
     const raw = localStorage.getItem(KEY)
     if (raw) db = JSON.parse(raw) as Db
   } catch {}
-  return (db ??= seed())
+  db ??= seed()
+  // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
+  if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
+  return db
 }
 function persist() {
   try {
@@ -669,6 +674,7 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
+      if (id === DEFAULT_AGENT_ID) fail('默认 Agent 是自带的，不能删除')
       const used = d.workflows.filter(
         (w) =>
           w.mainAgentId === id ||
@@ -682,6 +688,7 @@ function route(method: string, url: string, body: unknown): unknown {
     const input = parse(AgentInput, body)
     if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
+    if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
     return method === 'POST' ? create('agents', input) : update('agents', id, input, 'Agent 不存在')
   }
 
@@ -768,6 +775,7 @@ function projectWorkflow(d: Db, p: Project) {
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
   const entry = { stop: false }
   live.set(task.id, entry)
+  beginRun(task)
   let last = 0
   const done = runTurn({
     task,
@@ -788,6 +796,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     },
     newId: () => `demo-${crypto.randomUUID()}`,
   }).finally(() => {
+    endRun(task)
     live.delete(task.id)
     persist()
   })
@@ -899,6 +908,8 @@ async function seedTasks(d: Db) {
     t.createdAt = shift(t.createdAt)
     t.updatedAt = shift(t.updatedAt)
     t.messages.forEach((m) => (m.at = shift(m.at)))
+    // 示例任务是瞬间跑完的，给一个像样的执行时长
+    if (t.status !== 'running') t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
   }
   if (admin) {
     const { task, done } = createTask(
@@ -910,6 +921,8 @@ async function seedTasks(d: Db) {
         agentId: '',
         prompt: '订单导出 Excel 时，日期列整体往右错了一列',
         attachments: [],
+        model: '',
+        effort: '',
       },
       true,
     )
@@ -926,6 +939,8 @@ async function seedTasks(d: Db) {
         agentId: fe.id,
         prompt: '购物车右上角的数量角标偶尔不刷新，帮我看看原因',
         attachments: [],
+        model: '',
+        effort: '',
       },
       true,
     )
@@ -942,6 +957,8 @@ async function seedTasks(d: Db) {
         agentId: '',
         prompt: '商品详情页增加「到货提醒」：商品缺货时显示按钮，用户点击后登记手机号，到货时发短信通知。',
         attachments: [],
+        model: '',
+        effort: '',
       },
       true,
     )

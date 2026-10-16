@@ -3,6 +3,11 @@ import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
 import { api } from './api'
 
+/** 内容区宽度用 CSS 变量，项目首页、任务页、流程视图里的 max-w-(--content-w) 都跟着它 */
+export function applyContentWidth(w: number | undefined) {
+  if (w) document.documentElement.style.setProperty('--content-w', `${w}px`)
+}
+
 interface Data {
   loading: boolean
   agents: Agent[]
@@ -39,6 +44,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = useState<Project[]>([])
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
+  useEffect(() => applyContentWidth(settings?.contentWidth), [settings?.contentWidth])
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksLoaded, setTasksLoaded] = useState(false)
 

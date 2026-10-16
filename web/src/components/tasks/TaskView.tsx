@@ -352,7 +352,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                 }}
               />
             ) : (
-              <div className="mx-auto flex max-w-[760px] flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
+              <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
                 {blocks.map((b, bi) =>
                   b.kind === 'turn' ? (
                     <div key={b.key} className="flex flex-col gap-4">
@@ -400,7 +400,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
             <div
               {...drop.container}
               className={cn(
-                'relative mx-auto max-w-[760px] rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop',
+                'relative mx-auto max-w-(--content-w) rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop',
                 drop.over && 'border-accent ring-2 ring-accent/25',
               )}
             >

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Agent, AgentInput } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Agent, type AgentInput } from '@shared/schema'
 import { getCli, MODEL_TIERS } from '@shared/clis'
 import {
   agentCli,
@@ -92,6 +92,7 @@ export function AgentDetail({
       permission: '',
     }))
   const follow = !draft.cli
+  const builtin = agent.id === DEFAULT_AGENT_ID
   // 模型只能选三档；以前存的具体模型名单独列一项，换成档位后就不再出现
   const tierOptions = [
     ...MODEL_TIERS.map((t) => ({ value: `@${t.id}`, label: `${t.label}档 · ${cs.tiers[t.id].model || '自动'}` })),
@@ -154,10 +155,12 @@ export function AgentDetail({
             save={{ ...save, invalid: valid ? undefined : '名称为空，未保存' }}
             actions={
               <>
-                <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[13px] text-muted">
-                  <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
-                  启用
-                </label>
+                {!builtin && (
+                  <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[13px] text-muted">
+                    <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
+                    启用
+                  </label>
+                )}
                 <Button variant="secondary" onClick={() => setAssist(true)} title="让本机 CLI 按你的要求优化">
                   <Sparkles className="h-4 w-4 text-accent" />
                   AI 优化
@@ -165,15 +168,17 @@ export function AgentDetail({
                 <Button variant="secondary" size="icon" aria-label="复制" title="复制" onClick={onDuplicate}>
                   <Copy className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="danger-outline"
-                  size="icon"
-                  aria-label="删除"
-                  title="删除"
-                  onClick={() => setDeleting(true)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {!builtin && (
+                  <Button
+                    variant="danger-outline"
+                    size="icon"
+                    aria-label="删除"
+                    title="删除"
+                    onClick={() => setDeleting(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </>
             }
           />
@@ -224,50 +229,63 @@ export function AgentDetail({
             </FormSection>
 
             <FormSection title="运行环境">
-              <Checkbox
-                checked={follow}
-                onChange={(v) => pickCli(v ? '' : defCli)}
-                label={`跟随默认 CLI（现在是 ${clis.find((c) => c.id === defCli)?.name ?? defCli}）`}
-                hint="在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。"
-              />
-              <div className="flex flex-wrap gap-4">
-                <Field label="CLI" className="flex-[1_1_220px]">
-                  <Select
-                    aria-label="CLI"
-                    value={cliId}
-                    disabled={follow}
-                    onChange={(e) => pickCli(e.target.value)}
-                    options={clis.map((c) => ({
-                      value: c.id,
-                      label: `${c.name}${c.id === defCli ? '（默认）' : ''}${
-                        !c.enabled ? ' · 已停用' : c.installed ? '' : ' · 未安装'
-                      }`,
-                    }))}
+              {builtin ? (
+                <p className="rounded-lg border bg-field px-3 py-2.5 text-[13px] leading-relaxed text-muted">
+                  自带的默认 Agent 固定使用默认 CLI（现在是 {clis.find((c) => c.id === defCli)?.name ?? defCli}
+                  ）的默认模型
+                  <span className="mx-1 font-mono text-fg">{usedModel || '自动'}</span>
+                  和思考强度
+                  <span className="mx-1 font-mono text-fg">{defEffort || '自动'}</span>
+                  ，在设置里换默认 CLI 或默认模型时跟着变。对话时可以在输入框旁边临时换模型和思考强度。
+                </p>
+              ) : (
+                <>
+                  <Checkbox
+                    checked={follow}
+                    onChange={(v) => pickCli(v ? '' : defCli)}
+                    label={`跟随默认 CLI（现在是 ${clis.find((c) => c.id === defCli)?.name ?? defCli}）`}
+                    hint="在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。"
                   />
-                </Field>
-                <Field label="模型" className="flex-[2_1_280px]" hint="三档对应的模型在设置里每个 CLI 下配置">
-                  <Select
-                    aria-label="模型"
-                    value={draft.model}
-                    onChange={(e) => set('model', e.target.value)}
-                    options={tierOptions}
-                    className="font-mono text-[13px]"
-                  />
-                </Field>
-              </div>
-              {cliDef && (
-                <Field
-                  label="思考强度"
-                  hint="越高想得越久、越慢。选档位时默认用档位的思考强度。"
-                  className="max-w-[320px]"
-                >
-                  <Select
-                    aria-label="思考强度"
-                    value={draft.effort === defEffort ? '' : draft.effort}
-                    onChange={(e) => set('effort', e.target.value)}
-                    options={defaultEffortOptions(cliDef, defEffort)}
-                  />
-                </Field>
+                  <div className="flex flex-wrap gap-4">
+                    <Field label="CLI" className="flex-[1_1_220px]">
+                      <Select
+                        aria-label="CLI"
+                        value={cliId}
+                        disabled={follow}
+                        onChange={(e) => pickCli(e.target.value)}
+                        options={clis.map((c) => ({
+                          value: c.id,
+                          label: `${c.name}${c.id === defCli ? '（默认）' : ''}${
+                            !c.enabled ? ' · 已停用' : c.installed ? '' : ' · 未安装'
+                          }`,
+                        }))}
+                      />
+                    </Field>
+                    <Field label="模型" className="flex-[2_1_280px]" hint="三档对应的模型在设置里每个 CLI 下配置">
+                      <Select
+                        aria-label="模型"
+                        value={draft.model}
+                        onChange={(e) => set('model', e.target.value)}
+                        options={tierOptions}
+                        className="font-mono text-[13px]"
+                      />
+                    </Field>
+                  </div>
+                  {cliDef && (
+                    <Field
+                      label="思考强度"
+                      hint="越高想得越久、越慢。选档位时默认用档位的思考强度。"
+                      className="max-w-[320px]"
+                    >
+                      <Select
+                        aria-label="思考强度"
+                        value={draft.effort === defEffort ? '' : draft.effort}
+                        onChange={(e) => set('effort', e.target.value)}
+                        options={defaultEffortOptions(cliDef, defEffort)}
+                      />
+                    </Field>
+                  )}
+                </>
               )}
               {cliDef && (
                 <Field

@@ -32,6 +32,25 @@ const Meta = z.object({ id: z.string(), createdAt: z.string(), updatedAt: z.stri
 export const Agent = AgentInput.extend(Meta.shape)
 export type Agent = z.infer<typeof Agent>
 
+/**
+ * 自带的默认 Agent：不能删除，CLI、模型、思考强度固定跟随设置里的默认 CLI，
+ * 对话时可以在输入框旁边临时换模型和思考强度。新建的对话没选过 Agent 时用它。
+ */
+export const DEFAULT_AGENT_ID = 'default-agent'
+export const defaultAgent = (): Agent => {
+  const at = new Date(0).toISOString()
+  return {
+    ...AgentInput.parse({
+      name: '默认 Agent',
+      description: '使用默认 CLI 的默认模型和思考强度，对话时可以临时调整',
+      icon: 'sparkles',
+    }),
+    id: DEFAULT_AGENT_ID,
+    createdAt: at,
+    updatedAt: at,
+  }
+}
+
 /** Agent 分类，例如「开发」「测试」「文档」，只用于组织列表 */
 export const CategoryInput = z.object({
   name: z.string().trim().min(1, '分类名不能为空').max(20),
@@ -342,6 +361,9 @@ export const NewTaskInput = z.object({
   workflowId: z.string().default(''),
   /** chat 模式：对话的 Agent */
   agentId: z.string().default(''),
+  /** chat 模式用默认 Agent 时临时选的模型和思考强度；为空跟随默认 CLI 的设置 */
+  model: z.string().trim().max(200).default(''),
+  effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, '请描述任务').max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
 })
@@ -467,7 +489,14 @@ export const TaskData = z.object({
   mode: TaskMode,
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
+  /** 对话时给默认 Agent 临时选的模型和思考强度，继续对话也用它 */
+  model: z.string().default(''),
+  effort: z.string().default(''),
   status: TaskStatus,
+  /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
+  runMs: z.number().default(0),
+  /** 这一轮开始执行的时间；没在执行时为空 */
+  runStartedAt: z.string().default(''),
   /** 所有节点：主流程的节点按执行顺序排在前面，执行中产生的子节点追加在后面 */
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),
@@ -546,6 +575,9 @@ export const CliSettings = z.object({
 })
 export type CliSettings = z.infer<typeof CliSettings>
 
+/** 内容区默认宽度 */
+export const CONTENT_WIDTH = 880
+
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
   stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
@@ -556,6 +588,8 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
+  /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
+  contentWidth: z.number().int().min(640).max(1600).default(CONTENT_WIDTH),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

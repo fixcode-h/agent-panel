@@ -117,7 +117,12 @@ type Entity = { id: string; createdAt: string; updatedAt: string }
  * 一个 JSON 文件就是一个集合。读一次后缓存在内存里，
  * 写入串行化并先写临时文件再改名，避免并发写坏文件。
  */
-export function createCollection<I extends object, T extends I & Entity>(file: string, schema: z.ZodType<T>) {
+export function createCollection<I extends object, T extends I & Entity>(
+  file: string,
+  schema: z.ZodType<T>,
+  /** 必须存在的条目（例如自带的默认 Agent）：读到的数据里没有就补上，清理、导入后也一样 */
+  builtin: () => T[] = () => [],
+) {
   const FILE = dataPath(file)
   let cache: T[] | null = null
   let writing = Promise.resolve()
@@ -126,7 +131,10 @@ export function createCollection<I extends object, T extends I & Entity>(file: s
   async function list(): Promise<T[]> {
     if (cache) return cache
     const raw = await readJson(FILE)
-    cache = Array.isArray(raw) ? raw.map((r) => schema.parse(r)) : []
+    const items = Array.isArray(raw) ? raw.map((r) => schema.parse(r)) : []
+    const missing = builtin().filter((b) => !items.some((x) => x.id === b.id))
+    cache = [...missing, ...items]
+    if (missing.length) void persist(cache)
     return cache
   }
 

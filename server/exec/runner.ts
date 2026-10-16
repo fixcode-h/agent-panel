@@ -12,6 +12,7 @@ import type {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
+import { withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
@@ -137,8 +138,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
-  const agent = ctx.agents.find((a) => a.id === agentId)
-  if (!agent) return { ok: false, error: '找不到执行这一步的 Agent，可能已被删除' }
+  const found = ctx.agents.find((a) => a.id === agentId)
+  if (!found) return { ok: false, error: '找不到执行这一步的 Agent，可能已被删除' }
+  const agent = withTaskModel(found, task)
   const run = agentRun(agent, settings)
   const cliId = run.cli
   const def = getCli(cliId)

@@ -365,6 +365,56 @@ try {
   assert.ok(c.args.includes('--resume') && c.args.includes(chat.sessions[C.id]))
   step('对话任务：直接发给选中的 Agent，继续对话会续接会话')
 
+  // ---- 自带的默认 Agent ----
+  const allAgents = await call('GET', '/agents')
+  const def = allAgents.find((x) => x.id === 'default-agent')
+  assert.ok(def && def.cli === '' && def.model === '', '自带默认 Agent，跟随默认 CLI 的默认模型')
+  assert.equal(
+    (await fetch(`${base}/agents/default-agent`, { method: 'DELETE', headers: { 'content-type': 'application/json' } }))
+      .status,
+    409,
+    '默认 Agent 不能删除',
+  )
+  const renamed = await call('PUT', '/agents/default-agent', { ...def, name: '助手', cli: 'codex', model: '@high' })
+  assert.deepEqual(
+    [renamed.name, renamed.cli, renamed.model],
+    ['助手', '', ''],
+    '默认 Agent 只能改名称这些，模型固定跟随默认',
+  )
+  await call('PUT', '/agents/default-agent', def)
+  let dc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '默认' })
+  dc = await waitDone(dc.id)
+  c = calls().at(-1)
+  assert.equal(c.kind, 'claude')
+  assert.equal(c.args[c.args.indexOf('--model') + 1], 'sonnet', '用默认 CLI 的默认模型')
+  assert.ok(dc.runMs > 0 && !dc.runStartedAt, '记下执行时间')
+  dc = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    model: 'claude-opus-5-5',
+    effort: 'high',
+    prompt: '换模型',
+  })
+  dc = await waitDone(dc.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--model') + 1], 'claude-opus-5-5', '对话时临时换的模型')
+  assert.equal(c.args[c.args.indexOf('--effort') + 1], 'high')
+  await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
+  await waitDone(dc.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--model') + 1], 'claude-opus-5-5', '继续对话也用临时换的模型')
+  const other = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: C.id,
+    model: 'x',
+    prompt: '别的',
+  })
+  assert.equal(other.model, '', '其他 Agent 不接受临时模型')
+  await waitDone(other.id)
+  step('默认 Agent：跟随默认 CLI，不能删除，对话时可以临时换模型和思考强度；任务记录执行时间')
+
   // ---- 停止 ----
   let slow = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'SLOW 慢慢来' })
   await sleep(800)

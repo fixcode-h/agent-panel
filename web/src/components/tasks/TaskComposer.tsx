@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowUp, Check, ChevronDown, FolderGit2, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Project, Task, TaskMode } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMode } from '@shared/schema'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
+import { ChatModelPicker } from './ChatModelPicker'
 import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMention } from './Attachments'
 
 export const chip =
@@ -55,7 +56,21 @@ export function TaskComposer({
   const defaultWf = projectWorkflowId(project, projectCategories)
   const [mode, setMode] = useState<TaskMode | ''>('')
   const [workflowId, setWorkflowId] = useState('')
-  const [agentId, setAgentId] = useState(() => agents.find((a) => a.enabled)?.id ?? '')
+  // 对话默认用自带的默认 Agent；用户主动选过别的就记住
+  const [agentId, setAgentId] = useState(() => {
+    try {
+      return localStorage.getItem('last-chat-agent') || DEFAULT_AGENT_ID
+    } catch {
+      return DEFAULT_AGENT_ID
+    }
+  })
+  const pickAgent = (id: string) => {
+    setAgentId(id)
+    try {
+      localStorage.setItem('last-chat-agent', id)
+    } catch {}
+  }
+  const [chatModel, setChatModel] = useState({ model: '', effort: '' })
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
@@ -66,7 +81,11 @@ export function TaskComposer({
   const workflow = workflows.find((w) => w.id === (workflowId || defaultWf))
   // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
   const effMode: TaskMode = mode || 'workflow'
-  const agent = agents.find((a) => a.id === agentId) ?? agents.find((a) => a.enabled)
+  const agent =
+    agents.find((a) => a.id === agentId && a.enabled) ??
+    agents.find((a) => a.id === DEFAULT_AGENT_ID) ??
+    agents.find((a) => a.enabled)
+  const isDefault = agent?.id === DEFAULT_AGENT_ID
   const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0
   const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
   const canStart =
@@ -85,6 +104,8 @@ export function TaskComposer({
           mode: effMode,
           workflowId: effMode === 'workflow' ? workflow!.id : '',
           agentId: effMode === 'chat' ? agent!.id : '',
+          model: effMode === 'chat' && isDefault ? chatModel.model : '',
+          effort: effMode === 'chat' && isDefault ? chatModel.effort : '',
           prompt,
           attachments: files.attachments,
         }),
@@ -230,22 +251,25 @@ export function TaskComposer({
                 </PopoverContent>
               </Popover>
             ) : (
-              <AgentPicker onPick={(a) => setAgentId(a.id)} align="start">
-                <button className={chip} title="对话的 Agent">
-                  {agent ? (
-                    <>
-                      <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" dim={!agent.enabled} />
-                      <span className="truncate">{agent.name}</span>
-                      <span className="hidden truncate font-mono text-[11px] text-subtle sm:inline">
-                        {modelOf(agent)}
-                      </span>
-                    </>
-                  ) : (
-                    <span>选择 Agent</span>
-                  )}
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                </button>
-              </AgentPicker>
+              <div className="flex min-w-0 items-center gap-0.5">
+                <AgentPicker onPick={(a) => pickAgent(a.id)} align="start">
+                  <button
+                    className={chip}
+                    title={agent && !isDefault ? `${agent.name} · ${modelOf(agent)}` : '对话的 Agent'}
+                  >
+                    {agent ? (
+                      <>
+                        <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" dim={!agent.enabled} />
+                        <span className="truncate">{agent.name}</span>
+                      </>
+                    ) : (
+                      <span>选择 Agent</span>
+                    )}
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </button>
+                </AgentPicker>
+                {isDefault && <ChatModelPicker {...chatModel} onChange={setChatModel} />}
+              </div>
             )}
 
             <button

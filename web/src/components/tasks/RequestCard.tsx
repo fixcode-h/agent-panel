@@ -40,7 +40,7 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
     <div
       role="alertdialog"
       aria-label={req.kind === 'question' ? 'Agent 的问题' : 'Agent 请求确认'}
-      className="mx-auto mb-2 max-w-[760px] overflow-hidden rounded-2xl border border-warning/50 bg-card shadow-card animate-[pop-in_160ms_ease-out]"
+      className="mx-auto mb-2 max-w-(--content-w) overflow-hidden rounded-2xl border border-warning/50 bg-card shadow-card animate-[pop-in_160ms_ease-out]"
     >
       <div className="flex items-center gap-2 border-b border-warning/25 bg-warning/8 px-4 py-2 text-xs">
         <BellRing className="h-3.5 w-3.5 text-warning" />
