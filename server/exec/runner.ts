@@ -11,7 +11,7 @@ import type {
   Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
-import { agentRun, cliSettings } from '../../shared/settings.ts'
+import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli } from './invoke.ts'
@@ -153,7 +153,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
   const build = {
     model,
     effort: run.effort,
-    permission: cs.permission,
+    permission: agentPermission(agent, settings),
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     resume,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,

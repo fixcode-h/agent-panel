@@ -19,7 +19,9 @@ export const AgentInput = z.object({
   icon: z.string().default('bot'),
   /** 角色设定 / 系统提示词，执行时会拼在任务前面 */
   instructions: z.string().max(8000).default(''),
-  /** 追加给 CLI 的参数，例如 --permission-mode acceptEdits */
+  /** 权限模式，取值见 shared/clis.ts 里各 CLI 的 permissions；为空跟随 CLI 设置 */
+  permission: z.string().default(''),
+  /** 追加给 CLI 的参数，例如 --add-dir ../shared */
   extraArgs: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
 })

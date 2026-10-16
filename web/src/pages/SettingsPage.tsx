@@ -32,26 +32,21 @@ import {
 import { cliSettings, defaultCli, orderClis, tierOf } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import {
-  cliColor,
-  cliDefaultModel,
-  defaultEffortOptions,
-  effortLabel,
-  effortOptions,
-  modelSuggestions,
-} from '@/lib/cli-style'
+import { cliColor, cliDefaultModel, defaultEffortOptions, effortLabel } from '@/lib/cli-style'
 import { loadCliModels, useCliDef, useCliModels } from '@/lib/cli-models'
 import { clearInstallJob, resumeInstallJobs, setInstallFinish, startInstall, useInstallJob } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { ComboInput, Input, Select, Textarea } from '@/components/ui/input'
+import { Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
+import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { UpdateSection } from '@/components/settings/UpdateSection'
+import { ModelSelect } from '@/components/agents/ModelSelect'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
@@ -104,38 +99,6 @@ function Group({ title, children }: { title?: string; children: React.ReactNode 
       {title && <h3 className="pt-6 pb-1 text-xs font-medium text-subtle">{title}</h3>}
       {children}
     </section>
-  )
-}
-
-function Segmented<T extends string>({
-  value,
-  onChange,
-  options,
-  label,
-}: {
-  value: T
-  onChange: (v: T) => void
-  options: { id: T; label: string; disabled?: boolean }[]
-  label: string
-}) {
-  return (
-    <div role="radiogroup" aria-label={label} className="inline-flex max-w-full flex-wrap rounded-lg bg-field p-0.5">
-      {options.map((o) => (
-        <button
-          key={o.id}
-          role="radio"
-          aria-checked={value === o.id}
-          disabled={o.disabled}
-          onClick={() => onChange(o.id)}
-          className={cn(
-            'h-8 cursor-pointer rounded-md px-3 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
-            value === o.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
   )
 }
 
@@ -302,20 +265,19 @@ function TierTable({
               </>
             ) : (
               <>
-                <ComboInput
+                {/* 档位自己的模型下拉不列档位；留空是内置的建议值，标（默认） */}
+                <ModelSelect
                   aria-label={`${def.name} ${t.label}档模型`}
-                  suggestions={modelSuggestions(def)}
+                  def={def}
                   value={value[t.id].model}
                   onChange={(v) => set(t.id, 'model', v)}
-                  placeholder={sug.model}
-                  className="h-9 font-mono text-[13px]"
-                  spellCheck={false}
+                  defaultValue={sug.model}
                 />
                 <Select
                   aria-label={`${def.name} ${t.label}档思考强度`}
-                  value={value[t.id].effort}
+                  value={value[t.id].effort === sug.effort ? '' : value[t.id].effort}
                   onChange={(e) => set(t.id, 'effort', e.target.value)}
-                  options={effortOptions(def, sug.effort ? `建议 · ${effortLabel(def, sug.effort)}` : '不指定')}
+                  options={defaultEffortOptions(def, sug.effort)}
                 />
               </>
             )}
@@ -366,41 +328,20 @@ function DefaultModel({
   draft: CliDraft
   onChange: (v: string) => void
 }) {
-  const v = draft.defaultModel
-  // 模型可能有几十个，下拉里只放档位，具体模型在下面的输入框里搜索选择
-  const [custom, setCustom] = useState(() => !!v && !tierOf(v))
-  const tierModel = (t: ModelTier) => draft.tiers[t].model || def.tiers[t].model
-  const cliDefault = cliDefaultModel(def)?.id
+  const tiers = {
+    high: { model: draft.tiers.high.model || def.tiers.high.model },
+    medium: { model: draft.tiers.medium.model || def.tiers.medium.model },
+    low: { model: draft.tiers.low.model || def.tiers.low.model },
+  }
   return (
-    <div className="flex flex-col gap-2">
-      <Select
-        aria-label={`${def.name} 默认模型`}
-        value={custom ? '__custom' : v}
-        onChange={(e) => {
-          const x = e.target.value
-          setCustom(x === '__custom')
-          if (x !== '__custom') onChange(x)
-          else if (tierOf(v)) onChange('')
-        }}
-        options={[
-          { value: '', label: cliDefault ? `${cliDefault}（默认）` : '自动（默认）' },
-          ...MODEL_TIERS.map((t) => ({ value: `@${t.id}`, label: `${t.label}档 · ${tierModel(t.id)}` })),
-          { value: '__custom', label: '指定模型…' },
-        ]}
-      />
-      {custom && (
-        <ComboInput
-          autoFocus={!v}
-          aria-label="模型名"
-          suggestions={modelSuggestions(def)}
-          value={v}
-          onChange={onChange}
-          placeholder="选择或填写模型名"
-          className="h-9 font-mono text-[13px]"
-          spellCheck={false}
-        />
-      )}
-    </div>
+    <ModelSelect
+      aria-label={`${def.name} 默认模型`}
+      def={def}
+      value={draft.defaultModel}
+      onChange={onChange}
+      tiers={tiers}
+      defaultValue={cliDefaultModel(def)?.id ?? ''}
+    />
   )
 }
 

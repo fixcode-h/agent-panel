@@ -147,6 +147,7 @@ export function AgentsPage() {
         categoryId: selected?.categoryId ?? '',
         icon: 'bot',
         instructions: '',
+        permission: '',
         extraArgs: [],
         enabled: true,
         ...input,
