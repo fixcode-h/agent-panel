@@ -487,6 +487,38 @@ try {
     badWf.steps.map((s) => s.status),
     ['failed', 'pending', 'pending', 'pending'],
   )
+  const failedStep = badWf.steps.find((s) => s.status === 'failed')
+  const stepErr = badWf.messages.find((m) => m.step === failedStep.id && m.role === 'system')
+  assert.ok(stepErr?.error && /模拟的失败/.test(stepErr.text), '错误写进失败的节点里')
+  const tail = badWf.messages.at(-1)
+  assert.ok(
+    tail.error && /原因见节点里的错误/.test(tail.text) && !/模拟的失败/.test(tail.text),
+    '结尾只提一句，不重复整段',
+  )
+  // 连接中途断开：有会话就自动续接；一直断就给出能照着做的说明
+  let net = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: C.id,
+    prompt: 'NETFAIL 写个大文件',
+  })
+  net = await waitDone(net.id)
+  assert.equal(net.status, 'done', '断开后自动续接完成')
+  c = calls().at(-1)
+  assert.ok(c.args.includes('--resume') && /连接中断了/.test(c.input))
+  net = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: C.id,
+    prompt: 'NETDOWN 写个大文件',
+  })
+  net = await waitDone(net.id)
+  assert.equal(net.status, 'failed')
+  const netErr = net.messages.at(-1)
+  assert.ok(netErr.error)
+  assert.match(netErr.text, /续接 2 次后仍然失败/)
+  assert.match(netErr.text, /走的是 Command Code 官方服务[\s\S]*me\/fake\/flash/)
+  assert.match(netErr.text, /连接中途断开/)
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
 
   // ---- 节点入口：开始 / 验收 / 结束，流程节点，引用其他工作流 ----
@@ -621,7 +653,13 @@ try {
   let h2 = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '只验收一轮' })
   h2 = await waitDone(h2.id)
   assert.equal(h2.status, 'failed')
-  assert.match(h2.messages.at(-1).text, /验收 1 轮仍未通过/)
+  assert.match(
+    h2.messages
+      .filter((m) => m.error)
+      .map((m) => m.text)
+      .join('\n'),
+    /验收 1 轮仍未通过/,
+  )
   assert.deepEqual(
     h2.steps.filter((s) => !s.parentId).map((s) => s.status),
     ['failed', 'pending'],
@@ -1025,11 +1063,23 @@ try {
   let missing = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: C.id, prompt: 'hi' })
   missing = await waitDone(missing.id)
   assert.equal(missing.status, 'failed')
-  assert.match(missing.messages.at(-1).text, /找不到命令[\s\S]*npm install -g command-code/)
+  assert.match(
+    missing.messages
+      .filter((m) => m.error)
+      .map((m) => m.text)
+      .join('\n'),
+    /找不到命令[\s\S]*npm install -g command-code/,
+  )
   let disabled = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'hi' })
   disabled = await waitDone(disabled.id)
   assert.equal(disabled.status, 'failed')
-  assert.match(disabled.messages.at(-1).text, /停用/)
+  assert.match(
+    disabled.messages
+      .filter((m) => m.error)
+      .map((m) => m.text)
+      .join('\n'),
+    /停用/,
+  )
   step('找不到命令、CLI 被停用时给出明确提示')
 
   // 从本机 CLI 读取模型列表

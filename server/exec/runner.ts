@@ -133,8 +133,31 @@ function speedMeter(onIdle: () => void) {
   }
 }
 
+const NETWORK_ERROR =
+  /Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+
+/** 把常见的 CLI 报错翻译成能照着做的说明，原始输出另外附在后面 */
+export function failureHints(detail: string) {
+  const hints: string[] = []
+  const byok =
+    /"([^"]+)" routes via Command Code; your providers\.json also declares it — use ((?:"[^"]+"(?: or )?)+)/.exec(
+      detail,
+    )
+  if (byok) {
+    const alt = [...byok[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(' 或 ')
+    hints.push(
+      `· 模型「${byok[1]}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「${alt}」（模型下拉的「配置文件」分组里）。`,
+    )
+  }
+  if (NETWORK_ERROR.test(detail))
+    hints.push(
+      '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+    )
+  return hints
+}
+
 /** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
-async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Promise<AgentResult> {
+async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netRetries = 0): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
@@ -367,9 +390,25 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false): Pro
       // 新会话没有之前的上下文，要用完整提示
       return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
     }
+    // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次
+    const session = task.sessions[sessionKey]
+    if (NETWORK_ERROR.test(detail) && session && netRetries < 2 && !ctx.signal.aborted) {
+      ctx.changed(true)
+      return runAgent(
+        ctx,
+        { ...call, prompt: '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' },
+        retried,
+        netRetries + 1,
+      )
+    }
+    const hints = failureHints(detail)
     return {
       ok: false,
-      error: `${def.name} 执行失败${r.code !== null && r.code !== 0 ? `（退出码 ${r.code}）` : ''}：${clip(detail || '没有更多信息', 1500)}`,
+      error: [
+        `${def.name} 执行失败${r.code !== null && r.code !== 0 ? `（退出码 ${r.code}）` : ''}${netRetries ? `，自动续接 ${netRetries} 次后仍然失败` : ''}：`,
+        ...hints,
+        hints.length ? `\n原始输出：\n${clip(detail || '没有更多信息', 1500)}` : clip(detail || '没有更多信息', 1500),
+      ].join('\n'),
     }
   }
   return { ok: true, text: texts.join('\n\n') }

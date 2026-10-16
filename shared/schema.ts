@@ -405,6 +405,8 @@ export const TaskMessage = z.object({
   thinking: z.string().optional(),
   /** 用户消息附上的文件和图片 */
   attachments: z.array(Attachment).optional(),
+  /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
+  error: z.boolean().optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -576,7 +578,7 @@ export const CliSettings = z.object({
 export type CliSettings = z.infer<typeof CliSettings>
 
 /** 内容区默认宽度 */
-export const CONTENT_WIDTH = 880
+export const CONTENT_WIDTH = 1000
 
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */

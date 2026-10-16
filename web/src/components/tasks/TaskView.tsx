@@ -372,7 +372,7 @@ export function TaskView({ taskId, project }: { taskId: string; project: Project
                       </div>
                     </div>
                   ) : b.m.role === 'system' ? (
-                    <SystemNote key={b.m.id} text={b.m.text} className="justify-center text-center" />
+                    <SystemNote key={b.m.id} text={b.m.text} error={b.m.error} className="justify-center text-center" />
                   ) : (
                     <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
                   ),
