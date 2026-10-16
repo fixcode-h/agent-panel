@@ -22,6 +22,7 @@ import type {
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { DataKind, DataUsage } from '@shared/data'
 import type { AppReleases, AppUpdateJob } from '@shared/version'
+import { t } from '@shared/i18n'
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -35,7 +36,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? `请求失败（${res.status}）`)
+    throw new Error(body.error ?? t('请求失败（{status}）', { status: res.status }))
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }
@@ -54,10 +55,11 @@ export const api = {
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
 
-  appVersion: () => request<{ current: string; packaged: boolean }>('/app/version'),
+  appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
+  appRollback: () => request<{ version: string }>('/app/rollback', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string) => request<Category>('/categories', json('POST', { name })),
@@ -90,16 +92,30 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  sendMessage: (id: string, text: string, attachments: Attachment[] = []) =>
-    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
+  unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
-  resumeTask: (id: string) => request<Task>(`/tasks/${id}/resume`, { method: 'POST' }),
+  resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
+  taskDiff: (id: string, path: string) =>
+    request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(
+      `/tasks/${id}/diff?path=${encodeURIComponent(path)}`,
+    ),
+  taskFile: (id: string, path: string) =>
+    request<{ path: string; dir: string; exists: boolean; binary?: boolean; content: string; truncated: boolean }>(
+      `/tasks/${id}/file?path=${encodeURIComponent(path)}`,
+    ),
+  revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
+  /** 独立分支：合并进项目当前的分支，或丢弃 */
+  finishWorktree: (id: string, merge: boolean) =>
+    request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
+  archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),

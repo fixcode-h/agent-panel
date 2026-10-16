@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { DATA_KINDS, type DataKind, type DataUsage } from '../shared/data.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
 import { revealDir } from './open.ts'
+import { t } from '../shared/i18n.ts'
 
 /** 每类数据包含数据目录里的哪些路径（相对路径，目录或文件） */
 const PATHS: Record<DataKind, string[]> = {
@@ -48,7 +49,7 @@ function allowed(rel: string, kinds: DataKind[]) {
 
 export function dataApi(deps: { running: () => number }) {
   const routes = new Hono()
-  const busy = () => (deps.running() ? '有任务正在执行，等它们结束后再操作' : '')
+  const busy = () => (deps.running() ? t('有任务正在执行，等它们结束后再操作') : '')
 
   routes.get('/', async (c) => {
     const kinds = await Promise.all(
@@ -69,7 +70,7 @@ export function dataApi(deps: { running: () => number }) {
 
   routes.post('/clear', async (c) => {
     const body = z.object({ kind: z.enum(['projects', 'tasks', 'uploads', 'cache']) }).safeParse(await c.req.json())
-    if (!body.success) return c.json({ error: '这类数据不能清理' }, 400)
+    if (!body.success) return c.json({ error: t('这类数据不能清理') }, 400)
     if (busy()) return c.json({ error: busy() }, 409)
     const k = body.data.kind
     // 清理项目时任务记录也一起清掉，否则任务挂在不存在的项目下
@@ -85,7 +86,7 @@ export function dataApi(deps: { running: () => number }) {
     const kinds = (c.req.query('kinds') ?? '')
       .split(',')
       .filter((k): k is DataKind => DATA_KINDS.some((x) => x.id === k && x.id !== 'cache'))
-    if (!kinds.length) return c.json({ error: '请选择要导出的数据' }, 400)
+    if (!kinds.length) return c.json({ error: t('请选择要导出的数据') }, 400)
     const out: Record<string, string> = {}
     for (const k of kinds)
       for (const f of await kindFiles(k))
@@ -103,11 +104,11 @@ export function dataApi(deps: { running: () => number }) {
   // 导入：备份里包含的每类数据整体替换成备份里的
   routes.post('/import', async (c) => {
     const p = Backup.safeParse(await c.req.json().catch(() => null))
-    if (!p.success) return c.json({ error: '不是 Agent 面板导出的数据文件' }, 400)
+    if (!p.success) return c.json({ error: t('不是 Agent 面板导出的数据文件') }, 400)
     if (busy()) return c.json({ error: busy() }, 409)
     const { kinds, files: fs } = p.data
     const bad = Object.keys(fs).find((r) => !allowed(r, kinds))
-    if (bad) return c.json({ error: `数据文件里有不认识的路径：${bad}` }, 400)
+    if (bad) return c.json({ error: t('数据文件里有不认识的路径：{path}', { path: bad }) }, 400)
     for (const k of kinds) for (const r of PATHS[k]) await rm(path.join(DATA_DIR, r), { recursive: true, force: true })
     for (const [rel, b64] of Object.entries(fs)) {
       const full = path.join(DATA_DIR, ...rel.split('/'))

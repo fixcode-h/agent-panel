@@ -21,13 +21,17 @@ import { TaskComposer, projectWorkflowId } from './TaskComposer'
 import { TaskControlButton } from './TaskControl'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { TaskView } from './TaskView'
+import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面直接输入新任务，下面是这个项目的任务 */
 function ProjectHome({ project }: { project: Project }) {
   const { tasks, tasksLoaded, workflows, agents, projectCategories, upsertTask } = useData()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
-  const list = tasks.filter((t) => t.projectId === project.id).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）
+  const all = tasks.filter((t) => t.projectId === project.id)
+  const archived = all.filter((t) => t.archived).length
+  const list = all.filter((t) => !t.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
   // 有任务在执行时每秒刷新，耗时跟着走
   const now = useNow(list.some((t) => t.status === 'running'))
   const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))
@@ -38,7 +42,7 @@ function ProjectHome({ project }: { project: Project }) {
       <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
         <Button variant="ghost" size="sm" className="ml-auto" onClick={() => openProject(project.id)}>
           <Settings2 className="h-4 w-4" />
-          项目设置
+          {t('项目设置')}
         </Button>
       </header>
       <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-16 md:px-6 md:pt-12">
@@ -48,7 +52,7 @@ function ProjectHome({ project }: { project: Project }) {
             <span className="min-w-0 truncate">{project.name}</span>
           </h1>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-subtle">
-            <span className="max-w-full truncate font-mono">{project.path || '还没有选择目录'}</span>
+            <span className="max-w-full truncate font-mono">{project.path || t('还没有选择目录')}</span>
             {dir?.gitBranch && (
               <span className="flex items-center gap-1">
                 <GitBranch className="h-3.5 w-3.5" />
@@ -57,7 +61,7 @@ function ProjectHome({ project }: { project: Project }) {
             )}
             <span className="flex items-center gap-1">
               <WorkflowIcon className="h-3.5 w-3.5" />
-              {wf?.name ?? '没有默认工作流'}
+              {wf?.name ?? t('没有默认工作流')}
             </span>
           </p>
         </div>
@@ -65,56 +69,59 @@ function ProjectHome({ project }: { project: Project }) {
         <TaskComposer
           project={project}
           autoFocus
-          onCreated={(t) => {
-            upsertTask(t)
-            open(t.id)
+          onCreated={(created) => {
+            upsertTask(created)
+            open(created.id)
           }}
         />
 
         <section className="flex flex-col">
-          <h2 className="mb-2 px-1 text-xs font-medium text-subtle">任务 · {list.length}</h2>
+          <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
+            <span className="flex-1">{t('任务 · {n}', { n: list.length })}</span>
+            {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
+          </h2>
           {list.length === 0 && tasksLoaded ? (
             <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[13px] text-subtle">
-              还没有任务。在上面描述要做的事，Agent 会按工作流完成。
+              {t('还没有任务。在上面描述要做的事，Agent 会按工作流完成。')}
             </p>
           ) : (
             <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
-              {list.map((t) => {
-                const a = agents.find((x) => x.id === t.agentId)
-                const w = workflows.find((x) => x.id === t.workflowId)
-                const tops = t.steps.filter((s) => !s.parentId)
+              {list.map((tk) => {
+                const a = agents.find((x) => x.id === tk.agentId)
+                const w = workflows.find((x) => x.id === tk.workflowId)
+                const tops = tk.steps.filter((s) => !s.parentId)
                 const done = tops.filter((s) => s.status === 'done').length
                 return (
                   // 暂停 / 继续按钮不能套在整行的按钮里，放在行的右边
-                  <li key={t.id} className="flex items-center transition-colors hover:bg-sel/60">
+                  <li key={tk.id} className="flex items-center transition-colors hover:bg-sel/60">
                     <button
-                      onClick={() => open(t.id)}
+                      onClick={() => open(tk.id)}
                       className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
                     >
-                      <TaskStatusIcon status={t.status} />
+                      <TaskStatusIcon status={tk.status} />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-[14px]">{t.title}</span>
+                        <span className="truncate text-[14px]">{tk.title}</span>
                         <span className="truncate text-xs text-subtle">
-                          {t.mode === 'workflow'
-                            ? `${w?.name ?? '工作流已删除'}${tops.length ? ` · ${done}/${tops.length} 个节点` : ''}`
-                            : `对话 · ${a?.name ?? 'Agent 已删除'}`}
+                          {tk.mode === 'workflow'
+                            ? `${tk.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
+                            : t('对话 · {name}', { name: a?.name ?? t('Agent 已删除') })}
                         </span>
-                        <TaskStats task={t} now={now} />
+                        <TaskStats task={tk} now={now} />
                       </span>
                       <span
                         className={cn(
                           'hidden shrink-0 text-xs sm:block',
-                          t.status === 'failed'
+                          tk.status === 'failed'
                             ? 'text-danger'
-                            : t.status === 'running'
+                            : tk.status === 'running'
                               ? 'text-accent'
                               : 'text-subtle',
                         )}
                       >
-                        {t.status === 'done' ? timeAgo(t.updatedAt, now) : statusLabel[t.status]}
+                        {tk.status === 'done' ? timeAgo(tk.updatedAt, now) : statusLabel[tk.status]}
                       </span>
                     </button>
-                    <TaskControlButton task={t} className="mr-4" />
+                    <TaskControlButton task={tk} className="mr-4" />
                   </li>
                 )
               })}
@@ -137,32 +144,37 @@ function TaskStats({ task, now }: { task: Task; now: number }) {
   return (
     <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[11.5px] text-subtle tabular-nums">
       {ms > 0 && (
-        <span className={item} title="执行时间（不含等待继续对话的时间）">
+        <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
           <Clock className="h-3 w-3" />
           {fmtDuration(ms)}
         </span>
       )}
       {total > 0 && (
         <>
-          <span className={item} title="Token 总数（输入 + 输出）">
+          <span className={item} title={t('Token 总数（输入 + 输出）')}>
             <Coins className="h-3 w-3" />
             {fmtTokens(total)}
           </span>
-          <span className={item} title="输入 Token（含缓存命中）">
+          <span className={item} title={t('输入 Token（含缓存命中）')}>
             <ArrowUp className="h-3 w-3" />
-            输入 {fmtTokens(u.inputTokens)}
+            {t('输入 {n}', { n: fmtTokens(u.inputTokens) })}
           </span>
-          <span className={item} title="输出 Token">
+          <span className={item} title={t('输出 Token')}>
             <ArrowDown className="h-3 w-3" />
-            输出 {fmtTokens(u.outputTokens)}
+            {t('输出 {n}', { n: fmtTokens(u.outputTokens) })}
           </span>
           <span
             className={item}
-            title={`缓存命中 ${fmtTokens(u.cacheReadTokens ?? 0)} / 输入 ${fmtTokens(u.inputTokens)}`}
+            title={t('缓存命中 {hit} / 输入 {input}', {
+              hit: fmtTokens(u.cacheReadTokens ?? 0),
+              input: fmtTokens(u.inputTokens),
+            })}
           >
             <DatabaseZap className="h-3 w-3" />
-            缓存命中 {fmtTokens(u.cacheReadTokens ?? 0)}
-            <span className={cn(rate >= 0.5 ? 'text-success' : '')}>（{(rate * 100).toFixed(0)}%）</span>
+            {t('缓存命中 {n}', { n: fmtTokens(u.cacheReadTokens ?? 0) })}
+            <span className={cn(rate >= 0.5 ? 'text-success' : '')}>
+              {t('（{n}%）', { n: (rate * 100).toFixed(0) })}
+            </span>
           </span>
         </>
       )}

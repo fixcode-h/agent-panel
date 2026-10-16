@@ -1,6 +1,7 @@
 import { cn } from '@/lib/utils'
 import { Check, CircleAlert, Loader2 } from 'lucide-react'
 import type { SaveStatus } from '@/lib/useAutosave'
+import { t } from '@shared/i18n'
 
 /** 右侧详情：头部 + 两栏内容（表单 / 辅助信息） */
 export function Detail({
@@ -113,20 +114,20 @@ export function SaveIndicator({ status, error, invalid }: { status: SaveStatus; 
     return (
       <span className="flex max-w-60 items-center gap-1.5 truncate text-xs text-danger" title={error}>
         <CircleAlert className="h-3.5 w-3.5 shrink-0" />
-        保存失败：{error}
+        {t('保存失败：{error}', { error })}
       </span>
     )
   if (status === 'pending' || status === 'saving')
     return (
       <span className="flex items-center gap-1.5 text-xs text-subtle">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        保存中
+        {t('保存中')}
       </span>
     )
   return (
     <span className="flex items-center gap-1.5 text-xs text-subtle">
       <Check className="h-3.5 w-3.5" />
-      已自动保存
+      {t('已自动保存')}
     </span>
   )
 }

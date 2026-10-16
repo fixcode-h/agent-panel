@@ -16,6 +16,8 @@ export interface AppRelease {
   /** 包的下载地址（tar.gz 和 zip） */
   tarUrl: string
   zipUrl: string
+  /** 包的 SHA256 校验文件；早期的包没有 */
+  sumsUrl?: string
   size: number
 }
 
@@ -24,6 +26,8 @@ export interface AppReleases {
   current: string
   /** 是否从发布的包运行；只有包能在设置里更新 */
   packaged: boolean
+  /** 更新前留下的上一个版本，可以退回；没有时为空 */
+  previous?: string
   /** 最近的几个包，新的在前 */
   releases: AppRelease[]
   /** 比当前新的包（正式版只看正式版，预览版看全部） */

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { getCli, type CliDefinition } from '@shared/clis'
 import type { CliModels } from '@shared/schema'
 import { api } from './api'
+import { t } from '@shared/i18n'
 
 /**
  * 本机 CLI 实际支持的模型：从服务端读一次，所有页面共用。
@@ -22,14 +23,14 @@ export const sortEfforts = <T>(list: T[], id: (x: T) => string) =>
 
 /** CLI 新出的思考强度没有中文名时，直接显示原值 */
 const EFFORT_LABELS: Record<string, string> = {
-  none: '不思考',
-  minimal: '最低',
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '很高',
-  max: '最高',
-  ultra: '极限',
+  none: t('不思考'),
+  minimal: t('最低'),
+  low: t('低'),
+  medium: t('中'),
+  high: t('高'),
+  xhigh: t('很高'),
+  max: t('最高'),
+  ultra: t('极限'),
 }
 
 export function loadCliModels(id: string, refresh = false) {

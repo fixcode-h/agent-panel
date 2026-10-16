@@ -1,13 +1,14 @@
 import { spawn as nodeSpawn } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
+import { t } from '../../shared/i18n.ts'
 
 const isWin = process.platform === 'win32'
 
 export interface ProcessResult {
   code: number | null
-  /** 被停止或超时 */
-  killed: 'stopped' | 'timeout' | null
+  /** 被停止、超时，或太久没有输出 */
+  killed: 'stopped' | 'timeout' | 'idle' | null
   /** 启动失败（例如找不到命令） */
   spawnError?: string
   stderr: string
@@ -49,6 +50,8 @@ export function runProcess(o: {
   stdin?: string
   signal?: AbortSignal
   timeoutMs?: number
+  /** 空闲检测：ms 没有任何输出先提醒（onWarn），再过 ms 还没有就停掉；busy() 为真时（例如在等用户确认）不算空闲 */
+  idle?: { ms: number; onWarn?: () => void; busy?: () => boolean }
   onLine?: (line: string) => void
   /** stderr 按块回调（npm 的进度、警告都写在 stderr） */
   onStderr?: (text: string) => void
@@ -65,6 +68,7 @@ export function runProcess(o: {
       if (settled) return
       settled = true
       clearTimeout(timer)
+      clearInterval(idleTimer)
       o.signal?.removeEventListener('abort', onAbort)
       resolve({ ...r, killed, stderr: stderr.slice(-4000) })
     }
@@ -82,7 +86,7 @@ export function runProcess(o: {
       return resolve({ code: null, killed: null, spawnError: (e as Error).message, stderr: '' })
     }
 
-    const stop = (why: 'stopped' | 'timeout') => {
+    const stop = (why: 'stopped' | 'timeout' | 'idle') => {
       if (killed || settled) return
       killed = why
       if (child.pid) killTree(child.pid)
@@ -91,21 +95,42 @@ export function runProcess(o: {
     o.signal?.addEventListener('abort', onAbort)
     if (o.signal?.aborted) stop('stopped')
     const timer = setTimeout(() => stop('timeout'), o.timeoutMs || 2 ** 31 - 1)
+    let lastOutput = Date.now()
+    let warned = false
+    const active = () => {
+      lastOutput = Date.now()
+      warned = false
+    }
+    const idleMs = o.idle?.ms ?? 0
+    const idleTimer = setInterval(
+      () => {
+        if (o.idle?.busy?.()) return active()
+        const quiet = Date.now() - lastOutput
+        if (quiet >= idleMs * 2) stop('idle')
+        else if (quiet >= idleMs && !warned) {
+          warned = true
+          o.idle?.onWarn?.()
+        }
+      },
+      idleMs ? Math.min(30_000, Math.max(50, idleMs / 4)) : 2 ** 31 - 1,
+    )
 
     child.on('error', (e: NodeJS.ErrnoException) =>
-      done({ code: null, spawnError: e.code === 'ENOENT' ? `找不到命令「${o.command}」` : e.message }),
+      done({ code: null, spawnError: e.code === 'ENOENT' ? t('找不到命令「{cmd}」', { cmd: o.command }) : e.message }),
     )
     child.stderr!.setEncoding('utf8')
     child.stderr!.on('data', (d: string) => {
       stderr = (stderr + d).slice(-16000)
+      active()
       o.onStderr?.(d)
     })
     const rl = createInterface({ input: child.stdout! })
     rl.on('line', (line) => {
+      active()
       try {
         o.onLine?.(line)
       } catch (e) {
-        stderr += `\n[解析输出出错] ${(e as Error).message}`
+        stderr += `\n[${t('解析输出出错')}] ${(e as Error).message}`
       }
     })
     child.on('close', (code) => {

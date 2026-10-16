@@ -5,6 +5,7 @@ import type { Task } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 /**
  * 任务的暂停 / 继续：执行中只能暂停，暂停（停止）或失败后只能继续，所以同一时间只给一个动作。
@@ -26,7 +27,7 @@ export function useTaskControl(task: Task) {
       setBusy(false)
     }
   }
-  return { action, busy, run, label: action === 'pause' ? '暂停' : '继续' }
+  return { action, busy, run, label: action === 'pause' ? t('暂停') : t('继续') }
 }
 
 /** 列表行尾的小按钮：执行中显示暂停，暂停或失败后显示继续，完成的任务不显示 */
@@ -42,7 +43,7 @@ export function TaskControlButton({ task, className }: { task: Task; className?:
         run()
       }}
       disabled={busy}
-      title={action === 'pause' ? '暂停任务，之后可以继续' : '从没完成的地方继续执行'}
+      title={action === 'pause' ? t('暂停任务，之后可以继续') : t('从没完成的地方继续执行')}
       aria-label={label}
       className={cn(
         'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-lg border px-2 text-xs text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60',

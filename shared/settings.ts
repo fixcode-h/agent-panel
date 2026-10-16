@@ -1,3 +1,4 @@
+import { t } from './i18n.ts'
 import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
 import { CliSettings, Settings } from './schema.ts'
 
@@ -78,7 +79,12 @@ export const agentModel = (a: { cli: string; model: string }, settings: Settings
 /** 列表里显示的模型：「中档 · sonnet」「opus」「默认 · sonnet」 */
 export function modelText(a: { cli: string; model: string; effort?: string }, settings: Settings) {
   const r = agentRun(a, settings)
-  const t = tierOf(a.model)
-  const m = r.model || 'CLI 默认'
-  return t ? `${t.label}档 · ${m}` : a.model ? m : `默认 · ${m}`
+  const tier = tierOf(a.model)
+  const m = r.model || t('CLI 默认')
+  return tier
+    ? t('{tier}档 · {model}', { tier: tier.label, model: m })
+    : a.model
+      ? m
+      : // 没选模型：直接写实际用的模型，CLI 名后面已经标了（默认），这里不再重复「默认」
+        r.model || t('默认模型')
 }

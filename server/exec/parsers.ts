@@ -1,5 +1,6 @@
 import path from 'node:path'
 import type { ToolUse } from '../../shared/schema.ts'
+import { t } from '../../shared/i18n.ts'
 
 /** 各 CLI 的输出统一成这几种事件 */
 export type CliEvent =
@@ -51,7 +52,9 @@ export const lines = (s: unknown) =>
 /** 工具详情最多保留的字数：命令输出可能很长，任务文件不能无限变大 */
 const MAX_DETAIL = 8000
 export const clipDetail = (s: string) =>
-  s.length > MAX_DETAIL ? `${s.slice(0, MAX_DETAIL)}\n…（还有 ${s.length - MAX_DETAIL} 个字符没有显示）` : s
+  s.length > MAX_DETAIL
+    ? `${s.slice(0, MAX_DETAIL)}\n…` + t('（还有 {n} 个字符没有显示）', { n: s.length - MAX_DETAIL })
+    : s
 
 /** 工具输出可能是字符串，也可能是 [{type:'text', text}] 这样的内容块 */
 export function toolText(c: unknown): string {
@@ -137,7 +140,7 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
     case 'Write': {
       const add = lines(input?.content)
       return {
-        ...tool({ kind: 'edit', name: '写入', label: file, detail: `+${add}` }),
+        ...tool({ kind: 'edit', name: t('写入'), label: file, detail: `+${add}` }),
         file: { path: file, add, del: 0 },
       }
     }
@@ -154,13 +157,18 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
     case 'Grep':
       return tool({ kind: 'search', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'Glob':
-      return tool({ kind: 'search', name: '查找文件', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
+      return tool({ kind: 'search', name: t('查找文件'), label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
     case 'WebSearch':
-      return tool({ kind: 'web', name: '网页搜索', label: String(input?.query ?? '') })
+      return tool({ kind: 'web', name: t('网页搜索'), label: String(input?.query ?? '') })
     case 'WebFetch':
-      return tool({ kind: 'web', name: '打开网页', label: String(input?.url ?? '') })
+      return tool({ kind: 'web', name: t('打开网页'), label: String(input?.url ?? '') })
     case 'TodoWrite':
-      return tool({ kind: 'other', name: '待办', label: '更新待办清单', detail: `${input?.todos?.length ?? 0} 项` })
+      return tool({
+        kind: 'other',
+        name: t('待办'),
+        label: t('更新待办清单'),
+        detail: t('{n} 项', { n: input?.todos?.length ?? 0 }),
+      })
     case 'Task':
     case 'Agent':
       return tool({ kind: 'agent', label: String(input?.description ?? ''), detail: input?.subagent_type ?? '' })
@@ -171,7 +179,7 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
         detail: oneLine(String(input?.args ?? ''), 60),
       })
     case 'SlashCommand':
-      return tool({ kind: 'other', name: '命令', label: oneLine(String(input?.command ?? '')) })
+      return tool({ kind: 'other', name: t('命令'), label: oneLine(String(input?.command ?? '')) })
     default:
       return otherTool(name, input)
   }
@@ -291,7 +299,7 @@ export function claudeParser(cwd: string): Parser {
       out.push({
         type: 'result',
         ok,
-        error: ok ? undefined : String(o.result || o.errors?.join('\n') || o.subtype || '执行失败'),
+        error: ok ? undefined : String(o.result || o.errors?.join('\n') || o.subtype || t('执行失败')),
       })
     }
     return out
@@ -325,9 +333,9 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
       },
     }
   if (/web_?search/.test(n))
-    return { type: 'tool', tool: { kind: 'web', name: '网页搜索', label: String(input?.query ?? ''), detail: '' } }
+    return { type: 'tool', tool: { kind: 'web', name: t('网页搜索'), label: String(input?.query ?? ''), detail: '' } }
   if (/fetch|url|browse/.test(n))
-    return { type: 'tool', tool: { kind: 'web', name: '打开网页', label: String(input?.url ?? ''), detail: '' } }
+    return { type: 'tool', tool: { kind: 'web', name: t('打开网页'), label: String(input?.url ?? ''), detail: '' } }
   if (/write|edit|patch|replace|create_file/.test(n)) {
     const add = lines(input?.content ?? input?.new_string ?? input?.newString ?? input?.new_str)
     const del = lines(input?.old_string ?? input?.oldString ?? input?.old_str)
@@ -335,7 +343,7 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
       type: 'tool',
       tool: {
         kind: 'edit',
-        name: /write|create/.test(n) ? '写入' : undefined,
+        name: /write|create/.test(n) ? t('写入') : undefined,
         label: file || name,
         detail: add || del ? `+${add} -${del}` : '',
       },
@@ -353,12 +361,13 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
       type: 'tool',
       tool: {
         kind: 'search',
-        name: /glob|find|list|ls/.test(n) ? '查找文件' : undefined,
+        name: /glob|find|list|ls/.test(n) ? t('查找文件') : undefined,
         label: String(input?.pattern ?? input?.query ?? file ?? ''),
         detail: '',
       },
     }
-  if (/todo/.test(n)) return { type: 'tool', tool: { kind: 'other', name: '待办', label: '更新待办清单', detail: '' } }
+  if (/todo/.test(n))
+    return { type: 'tool', tool: { kind: 'other', name: t('待办'), label: t('更新待办清单'), detail: '' } }
   if (/task|agent/.test(n))
     return {
       type: 'tool',
@@ -434,7 +443,7 @@ export function commandCodeParser(cwd: string): Parser {
         })
       } else if (e.type === 'notice' && e.level === 'warning') out.push({ type: 'error', message: e.message })
       else if (e.type === 'run_error')
-        out.push({ type: 'error', message: e.error?.message ?? String(e.error ?? '执行失败') })
+        out.push({ type: 'error', message: e.error?.message ?? String(e.error ?? t('执行失败')) })
     } else if (o.type === 'result') {
       if (o.sessionId) out.push({ type: 'session', id: o.sessionId })
       const ok = o.subtype === 'success'

@@ -2,6 +2,7 @@ import { Circle, CircleCheck, CircleSlash, CircleX, Loader2, PauseCircle } from 
 import type { StepStatus, TaskStatus } from '@shared/schema'
 import { statusLabel } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 export function TaskStatusIcon({ status, className }: { status: TaskStatus; className?: string }) {
   const c = cn('h-4 w-4 shrink-0', className)
@@ -13,11 +14,11 @@ export function TaskStatusIcon({ status, className }: { status: TaskStatus; clas
 }
 
 const STEP_LABEL: Record<StepStatus, string> = {
-  pending: '等待',
-  running: '执行中',
-  done: '完成',
-  failed: '失败',
-  skipped: '跳过',
+  pending: t('等待'),
+  running: t('执行中'),
+  done: t('完成'),
+  failed: t('失败'),
+  skipped: t('跳过'),
 }
 
 /** 节点状态图标：等待中是空心圆 */

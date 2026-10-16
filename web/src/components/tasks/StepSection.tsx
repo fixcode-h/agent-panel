@@ -11,6 +11,7 @@ import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { Terminal } from '@/components/agents/CommandPreview'
+import { t } from '@shared/i18n'
 
 /** 节点标题旁的小按钮：看这个节点的 Agent 是用什么命令启动的，可以复制出来自己跑 */
 function StepCommand({ argv, className }: { argv: string[]; className?: string }) {
@@ -18,8 +19,8 @@ function StepCommand({ argv, className }: { argv: string[]; className?: string }
   return (
     <Popover>
       <PopoverTrigger
-        title="查看启动命令"
-        aria-label="查看启动命令"
+        title={t('查看启动命令')}
+        aria-label={t('查看启动命令')}
         className={cn(
           'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
           className,
@@ -28,7 +29,7 @@ function StepCommand({ argv, className }: { argv: string[]; className?: string }
         <SquareTerminal className="h-3.5 w-3.5" />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[min(560px,90vw)] p-0">
-        <Terminal argv={argv} title="启动命令" className="rounded-[inherit] border-0" />
+        <Terminal argv={argv} title={t('启动命令')} className="rounded-[inherit] border-0" />
       </PopoverContent>
     </Popover>
   )
@@ -98,7 +99,7 @@ export function StepSection({
             {root.kind === 'flow' ? (
               <>
                 <WorkflowIcon className="h-3.5 w-3.5" />
-                调用流程
+                {t('调用流程')}
               </>
             ) : (
               a && (
@@ -143,7 +144,7 @@ export function StepSection({
             <div key={i} className="flex flex-col gap-3 rounded-xl border bg-panel px-3.5 py-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {s && <StepIcon status={s.status} className="h-3.5 w-3.5" />}
-                <span className="min-w-0 truncate font-medium text-muted">{s ? stepLabel(s) : '子流程'}</span>
+                <span className="min-w-0 truncate font-medium text-muted">{s ? stepLabel(s) : t('子流程')}</span>
                 {s && <StepCommand argv={s.command} className="-my-1 ml-auto" />}
                 {v && (
                   <span
@@ -153,7 +154,7 @@ export function StepSection({
                       v === 'fail' ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
                     )}
                   >
-                    {v === 'fail' ? '不通过' : '通过'}
+                    {v === 'fail' ? t('不通过') : t('通过')}
                   </span>
                 )}
               </div>
@@ -164,7 +165,7 @@ export function StepSection({
         {root.status === 'running' && (
           <span className="flex items-center gap-2 text-xs text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-            {msgs.length ? '执行中…' : '正在启动…'}
+            {msgs.length ? t('执行中…') : t('正在启动…')}
             <LiveStats task={task} agentIds={running(task, rootId)} />
           </span>
         )}

@@ -21,27 +21,28 @@ import { FoldedRun, type Author } from '@/components/tasks/Messages'
 import { modelOptions } from '@/components/agents/ModelSelect'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
+import { t } from '@shared/i18n'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
 
 const EXAMPLES: Record<AssistKind, string[]> = {
   agent: [
-    '一个专门写 Playwright 端到端测试的 Agent，用 Claude Code',
-    '负责代码审查的 Agent，重点看安全和性能问题',
-    '帮我写 Go 后端接口的 Agent，用 Codex',
+    t('一个专门写 Playwright 端到端测试的 Agent，用 Claude Code'),
+    t('负责代码审查的 Agent，重点看安全和性能问题'),
+    t('帮我写 Go 后端接口的 Agent，用 Codex'),
   ],
   workflow: [
-    'Web 功能开发：先分析需求，前后端并行开发，然后测试和代码审查，最后验收',
-    'Bug 修复：复现问题、定位修复、回归测试',
-    '文档更新：并行整理 README 和接口文档，再统一校对',
+    t('Web 功能开发：先分析需求，前后端并行开发，然后测试和代码审查，最后验收'),
+    t('Bug 修复：复现问题、定位修复、回归测试'),
+    t('文档更新：并行整理 README 和接口文档，再统一校对'),
   ],
 }
 
 function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; before?: Agent; newCategory: string }) {
   const { categories } = useData()
-  const { cliOf, cliName, modelOf } = useAgentView()
+  const { cliOf, modelOf } = useAgentView()
   const changed = (k: keyof AgentInput) => before && JSON.stringify(before[k]) !== JSON.stringify(agent[k])
-  const tag = (k: keyof AgentInput) => (changed(k) ? <Badge tone="accent">已修改</Badge> : null)
+  const tag = (k: keyof AgentInput) => (changed(k) ? <Badge tone="accent">{t('已修改')}</Badge> : null)
   const cat = newCategory || categories.find((c) => c.id === agent.categoryId)?.name
   return (
     <div className="flex flex-col gap-4">
@@ -53,7 +54,7 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
             {tag('name')}
           </div>
           <p className="text-[13px] text-muted">
-            {agent.description || '没有简介'} {tag('description')}
+            {agent.description || t('没有简介')} {tag('description')}
           </p>
         </div>
       </div>
@@ -63,22 +64,24 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
           <span className="h-2 w-2 rounded-full" style={{ background: cliColor(cliOf(agent)) }} />
           {agent.cli
             ? CLIS.find((c) => c.id === agent.cli)?.name
-            : `系统默认（${cliName(agent).replace('（默认）', '')}）`}{' '}
+            : t('系统默认（{cli}）', { cli: CLIS.find((c) => c.id === cliOf(agent))?.name ?? cliOf(agent) })}{' '}
           {tag('cli')}
         </dd>
-        <dt className="text-subtle">模型</dt>
+        <dt className="text-subtle">{t('模型')}</dt>
         <dd className="font-mono text-xs">
           {modelOf(agent)} {tag('model')}
         </dd>
-        <dt className="text-subtle">分类</dt>
+        <dt className="text-subtle">{t('分类')}</dt>
         <dd>
-          {cat || '未分类'} {newCategory && <Badge>新建</Badge>} {tag('categoryId')}
+          {cat || t('未分类')} {newCategory && <Badge>{t('新建')}</Badge>} {tag('categoryId')}
         </dd>
       </dl>
       <div className="flex flex-col gap-1.5">
-        <span className="flex items-center gap-2 text-xs text-muted">角色设定 {tag('instructions')}</span>
+        <span className="flex items-center gap-2 text-xs text-muted">
+          {t('角色设定')} {tag('instructions')}
+        </span>
         <pre className="max-h-[340px] overflow-auto rounded-lg border bg-field p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg">
-          {agent.instructions || '（空）'}
+          {agent.instructions || t('（空）')}
         </pre>
       </div>
     </div>
@@ -102,11 +105,11 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
     <div className="flex flex-col gap-4">
       <div>
         <div className="text-[16px] font-semibold">{w.name}</div>
-        <p className="text-[13px] text-muted">{w.description || '没有简介'}</p>
+        <p className="text-[13px] text-muted">{w.description || t('没有简介')}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {[
-          main && { a: main, role: '主 Agent' },
+          main && { a: main, role: t('主 Agent') },
           ...w.members.map((m) => ({ a: who(m.agentId), role: m.responsibility })),
         ]
           .filter((x): x is { a: NonNullable<ReturnType<typeof who>>; role: string } => !!x && !!x.a)
@@ -122,7 +125,7 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
               <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
               {a.name}
               {i === 0 && <Crown className="h-3 w-3 text-accent" />}
-              {a.isNew && <span className="text-[11px] text-accent">新建</span>}
+              {a.isNew && <span className="text-[11px] text-accent">{t('新建')}</span>}
             </span>
           ))}
       </div>
@@ -149,7 +152,7 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
           key={flow.id}
           flow={flow}
           views={views}
-          startSub={flow.id === w.entryFlowId ? '主流程' : '子流程'}
+          startSub={flow.id === w.entryFlowId ? t('主流程') : t('子流程')}
           selected=""
           onSelect={() => {}}
           className="flex h-[360px] bg-panel"
@@ -157,12 +160,15 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
       </div>
       {p.newAgents.length > 0 && (
         <p className="text-xs text-muted">
-          应用时会先创建 {p.newAgents.length} 个新 Agent：{p.newAgents.map((a) => a.name).join('、')}。
+          {t('应用时会先创建 {n} 个新 Agent：{names}。', {
+            n: p.newAgents.length,
+            names: p.newAgents.map((a) => a.name).join(t('、')),
+          })}
         </p>
       )}
       {w.document.trim() && (
         <details className="rounded-lg border bg-field">
-          <summary className="cursor-pointer px-3 py-2 text-xs text-muted">工作流说明</summary>
+          <summary className="cursor-pointer px-3 py-2 text-xs text-muted">{t('工作流说明')}</summary>
           <pre className="max-h-[260px] overflow-auto border-t px-3 py-2 font-mono text-xs leading-relaxed whitespace-pre-wrap">
             {w.document}
           </pre>
@@ -186,28 +192,28 @@ function JobProgress({
 }) {
   const [now, setNow] = useState(Date.now())
   useEffect(() => {
-    const t = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(t)
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
   }, [])
   const secs = job.startedAt ? Math.max(0, Math.round((now - job.startedAt) / 1000)) : 0
   const writingJson = (job.outChars ?? 0) > job.text.length + 20
   const phase =
     job.attempt > 1
-      ? '格式不对，正在让 CLI 修正'
+      ? t('格式不对，正在让 CLI 修正')
       : writingJson
-        ? `正在写配置（已写 ${(job.outChars ?? 0).toLocaleString()} 字）`
+        ? t('正在写配置（已写 {n} 字）', { n: (job.outChars ?? 0).toLocaleString() })
         : job.text
-          ? '正在写说明'
+          ? t('正在写说明')
           : job.thinking
-            ? '正在思考'
-            : `${cliName} 正在生成`
+            ? t('正在思考')
+            : t('{cli} 正在生成', { cli: cliName })
   return (
     <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
       {/* 和任务页同一套消息流：思考可以折叠，工具调用点开看详情 */}
       {!!job.messages?.length && <FoldedRun msgs={job.messages} teamNames={teamNames} live author={author} />}
       <span className="flex items-center gap-2 text-xs text-subtle">
         <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-        {phase}…<span className="tabular-nums">{secs} 秒</span>
+        {phase}…<span className="tabular-nums">{t('{n} 秒', { n: secs })}</span>
       </span>
     </div>
   )
@@ -236,10 +242,10 @@ function RunPicker({
   // 不单独放「默认」选项：默认会用到的那个模型直接选中，后面标上（默认）
   const base = agentRun({ cli: def.id, model: '' }, settings)
   const defaultModel = base.model || def.models.find((m) => m.isDefault)?.id || ''
-  const tierRun = (t: ModelTier) => agentRun({ cli: def.id, model: `@${t}` }, settings)
+  const tierRun = (tier: ModelTier) => agentRun({ cli: def.id, model: `@${tier}` }, settings)
   // 和 Agent、设置里的模型下拉同一套：档位、CLI 读取、配置文件三组，默认的那项标（默认）
   const defaultPick = cs.defaultModel || def.models.find((m) => m.isDefault)?.id || ''
-  const tierRuns = Object.fromEntries(MODEL_TIERS.map((t) => [t.id, { model: tierRun(t.id).model }])) as Record<
+  const tierRuns = Object.fromEntries(MODEL_TIERS.map((m) => [m.id, { model: tierRun(m.id).model }])) as Record<
     ModelTier,
     { model: string }
   >
@@ -254,10 +260,13 @@ function RunPicker({
   return (
     <div
       className="flex min-w-0 items-center gap-0.5"
-      title={`这次用 ${run.model || defaultModel || 'CLI 自动选择的模型'}${run.effort ? ` · ${effortLabel(def, run.effort)}` : ''}`}
+      title={
+        t('这次用 {model}', { model: run.model || defaultModel || t('CLI 自动选择的模型') }) +
+        (run.effort ? ` · ${effortLabel(def, run.effort)}` : '')
+      }
     >
       <Select
-        aria-label="模型"
+        aria-label={t('模型')}
         value={model === defaultPick ? '' : model}
         // 选默认的那项就是留空，之后设置里改了默认也会跟着变
         onChange={(e) => onModel(e.target.value)}
@@ -268,7 +277,7 @@ function RunPicker({
       />
       {def.efforts.length > 0 && (
         <Select
-          aria-label="思考强度"
+          aria-label={t('思考强度')}
           value={effort === defaultEffort ? '' : effort}
           onChange={(e) => onEffort(e.target.value)}
           disabled={disabled}
@@ -276,7 +285,7 @@ function RunPicker({
           options={effortOpts}
         />
       )}
-      {!cs.enabled && <span className="text-[11px] text-warning">已停用</span>}
+      {!cs.enabled && <span className="text-[11px] text-warning">{t('已停用')}</span>}
     </div>
   )
 }
@@ -318,8 +327,25 @@ export function AssistDialog({
   const [job, setJob] = useState<AssistJob | null>(null)
   const [applying, setApplying] = useState(false)
   const scroller = useRef<HTMLDivElement>(null)
-  // 中文和英文之间留空格：「创建 Agent」「生成的 Agent 会…」
-  const what = kind === 'agent' ? ' Agent ' : '工作流'
+  // Agent 和工作流各用整句文案，英文语序和中文不同，不拼接
+  const L =
+    kind === 'agent'
+      ? {
+          create: t('用 AI 创建 Agent'),
+          desc: t('本机 CLI 按固定格式生成 Agent，校验通过后在右侧预览，确认再应用'),
+          intro: t('描述你想要的 Agent，越具体越好。可以从下面的例子开始：'),
+          placeholder: t('描述你想要的 Agent'),
+          empty: t('生成的 Agent 会显示在这里'),
+          button: t('创建 Agent'),
+        }
+      : {
+          create: t('用 AI 创建工作流'),
+          desc: t('本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+          intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+          placeholder: t('描述你想要的工作流'),
+          empty: t('生成的工作流会显示在这里'),
+          button: t('创建工作流'),
+        }
 
   useEffect(() => {
     if (!open) return
@@ -329,10 +355,14 @@ export function AssistDialog({
     // 没单独指定时用设置里的默认 CLI
     const pref = settings?.assist.cli || (settings ? defaultCli(settings) : '')
     pickCli(usable.find((c) => c.id === pref)?.id ?? usable[0]?.id ?? pref ?? CLIS[0].id)
+    // 打开时按当时的设置选一次 CLI，之后用户自己选的不被覆盖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   // 生成中轮询
   useEffect(() => {
+    // 只在换了任务或运行状态变化时重新开始轮询
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     if (!job || job.status !== 'running') return
     // 一次请求回来再发下一次；卸载或任务结束后到达的旧响应直接丢掉，不会重复追加或把结束的任务恢复成进行中
     let alive = true
@@ -370,6 +400,8 @@ export function AssistDialog({
       alive = false
       clearTimeout(t)
     }
+    // 依赖写成「是否在运行」：状态从 running 变成别的时停掉轮询
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [job?.id, job?.status === 'running'])
 
   useEffect(() => {
@@ -419,13 +451,14 @@ export function AssistDialog({
       if (r.agent) {
         const a = target ? await api.updateAgent(target.id, r.agent) : await api.createAgent(r.agent)
         setAgents((as) => (target ? as.map((x) => (x.id === a.id ? a : x)) : [...as, a]))
-        toast.success(target ? `已更新「${a.name}」` : `已创建「${a.name}」`)
+        toast.success(target ? t('已更新「{name}」', { name: a.name }) : t('已创建「{name}」', { name: a.name }))
         onApplied({ agent: a })
       } else if (r.workflow) {
         const w = target ? await api.updateWorkflow(target.id, r.workflow) : await api.createWorkflow(r.workflow)
         setWorkflows((ws) => (target ? ws.map((x) => (x.id === w.id ? w : x)) : [...ws, w]))
         toast.success(
-          `${target ? '已更新' : '已创建'}「${w.name}」${r.created.length ? `，并新建了 ${r.created.length} 个 Agent` : ''}`,
+          (target ? t('已更新「{name}」', { name: w.name }) : t('已创建「{name}」', { name: w.name })) +
+            (r.created.length ? t('，并新建了 {n} 个 Agent', { n: r.created.length }) : ''),
         )
         onApplied({ workflow: w })
       }
@@ -448,16 +481,14 @@ export function AssistDialog({
             </span>
             <div className="min-w-0 flex-1">
               <D.Title className="truncate text-[15px] font-semibold">
-                {target ? `用 AI 优化「${target.name}」` : `用 AI 创建${what.trimEnd()}`}
+                {target ? t('用 AI 优化「{name}」', { name: target.name }) : L.create}
               </D.Title>
-              <D.Description className="truncate text-xs text-subtle">
-                本机 CLI 按固定格式生成{what.trimEnd()}，校验通过后在右侧预览，确认再应用
-              </D.Description>
+              <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
             </div>
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="关闭"
+              aria-label={t('关闭')}
               disabled={running}
               onClick={() => onOpenChange(false)}
             >
@@ -469,7 +500,7 @@ export function AssistDialog({
             {/* 对话 */}
             <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
               <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
-                <span className="mr-1 text-xs text-subtle">使用</span>
+                <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
                 {orderClis(CLIS, settings?.cliOrder ?? []).map((c) => {
                   const st = clis.find((x) => x.id === c.id)
                   const ok = !!st?.installed && st.enabled
@@ -479,7 +510,7 @@ export function AssistDialog({
                       onClick={() => pickCli(c.id)}
                       aria-pressed={cli === c.id}
                       disabled={running}
-                      title={ok ? st?.version : '未安装或已停用'}
+                      title={ok ? st?.version : t('未安装或已停用')}
                       className={cn(
                         'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs',
                         cli === c.id ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:text-fg',
@@ -496,9 +527,7 @@ export function AssistDialog({
                 {turns.length === 0 && !running && (
                   <div className="flex flex-col gap-2">
                     <p className="text-[13px] text-muted">
-                      {target
-                        ? `说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。`
-                        : `描述你想要的${what.trimEnd()}，越具体越好。可以从下面的例子开始：`}
+                      {target ? t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。') : L.intro}
                     </p>
                     {!target &&
                       EXAMPLES[kind].map((e) => (
@@ -512,31 +541,31 @@ export function AssistDialog({
                       ))}
                   </div>
                 )}
-                {turns.map((t, i) =>
-                  t.role === 'user' ? (
+                {turns.map((turn, i) =>
+                  turn.role === 'user' ? (
                     <div
                       key={i}
                       className="ml-auto max-w-[88%] rounded-2xl rounded-br-md border bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap"
                     >
-                      {t.text}
+                      {turn.text}
                     </div>
                   ) : (
                     <div key={i} className="flex flex-col gap-2 text-[13px] leading-relaxed">
-                      {t.msgs?.length ? (
-                        <FoldedRun msgs={t.msgs} teamNames={teamNames} author={author} />
+                      {turn.msgs?.length ? (
+                        <FoldedRun msgs={turn.msgs} teamNames={teamNames} author={author} />
                       ) : (
-                        t.text && <p className="whitespace-pre-wrap">{t.text.split('```')[0].trim()}</p>
+                        turn.text && <p className="whitespace-pre-wrap">{turn.text.split('```')[0].trim()}</p>
                       )}
-                      {t.proposal && (
+                      {turn.proposal && (
                         <span className="flex items-center gap-1.5 text-xs text-success">
                           <Check className="h-3.5 w-3.5" />
-                          格式校验通过，右侧是预览
+                          {t('格式校验通过，右侧是预览')}
                         </span>
                       )}
-                      {t.error && (
+                      {turn.error && (
                         <span className="flex items-start gap-1.5 text-xs text-danger whitespace-pre-wrap">
                           <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
-                          {t.error}
+                          {turn.error}
                         </span>
                       )}
                     </div>
@@ -556,7 +585,7 @@ export function AssistDialog({
                   <textarea
                     rows={2}
                     value={text}
-                    aria-label="描述"
+                    aria-label={t('描述')}
                     onChange={(e) => setText(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -564,7 +593,7 @@ export function AssistDialog({
                         send()
                       }
                     }}
-                    placeholder={latest ? '继续说要改的地方' : `描述你想要的${what.trimEnd()}`}
+                    placeholder={latest ? t('继续说要改的地方') : L.placeholder}
                     className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
                   />
                   <div className="flex items-center px-2.5 pb-2">
@@ -579,17 +608,17 @@ export function AssistDialog({
                         disabled={running}
                       />
                     )}
-                    <span className="ml-2 hidden shrink-0 text-[11px] text-subtle sm:inline">Enter 发送</span>
+                    <span className="ml-2 hidden shrink-0 text-[11px] text-subtle sm:inline">{t('Enter 发送')}</span>
                     {running ? (
                       <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
                         <Square className="h-3 w-3 fill-current" />
-                        停止
+                        {t('停止')}
                       </Button>
                     ) : (
                       <Button
                         size="icon-sm"
                         className="ml-auto"
-                        aria-label="发送"
+                        aria-label={t('发送')}
                         disabled={!text.trim()}
                         onClick={() => send()}
                       >
@@ -617,17 +646,17 @@ export function AssistDialog({
                 ) : (
                   <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
                     <Sparkles className="h-6 w-6" />
-                    <p className="text-[13px]">生成的{what}会显示在这里</p>
+                    <p className="text-[13px]">{L.empty}</p>
                   </div>
                 )}
               </div>
               <footer className="flex items-center gap-2 border-t px-5 py-3">
                 <span className="text-xs text-subtle">
-                  {latest ? (target ? '应用后会覆盖当前内容' : '可以继续对话修改，满意后再创建') : ''}
+                  {latest ? (target ? t('应用后会覆盖当前内容') : t('可以继续对话修改，满意后再创建')) : ''}
                 </span>
                 <Button className="ml-auto" disabled={!latest || running || applying} onClick={apply}>
                   {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {target ? '应用修改' : `创建${what.trimEnd()}`}
+                  {target ? t('应用修改') : L.button}
                 </Button>
               </footer>
             </section>

@@ -3,6 +3,7 @@ import * as S from '@radix-ui/react-select'
 import * as P from '@radix-ui/react-popover'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 export const fieldClass =
   'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
@@ -166,7 +167,7 @@ export function ComboInput({
           <button
             type="button"
             tabIndex={-1}
-            aria-label="展开建议"
+            aria-label={t('展开建议')}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
               setTyped(false)

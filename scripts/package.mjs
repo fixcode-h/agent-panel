@@ -17,6 +17,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import { build } from 'esbuild'
 
@@ -84,9 +85,28 @@ writeFileSync(
 )
 writeFileSync(
   path.join(out, 'start.sh'),
-  '#!/bin/sh\n# 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787\ncd "$(dirname "$0")" && exec node server.mjs --prod\n',
+  [
+    '#!/bin/sh',
+    '# 启动 Agent 面板，浏览器打开 http://127.0.0.1:8787',
+    'cd "$(dirname "$0")" || exit 1',
+    // 没装 Node 或版本太旧时直接说清楚，不让用户对着一串报错猜
+    'if ! command -v node >/dev/null 2>&1; then',
+    '  echo "没有找到 Node.js。Agent 面板需要 Node.js 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    '  exit 1',
+    'fi',
+    'major=$(node -p "process.versions.node.split(\'.\')[0]" 2>/dev/null || echo 0)',
+    'if [ "$major" -lt 20 ] 2>/dev/null; then',
+    '  echo "Node.js 版本太旧（$(node -v)），需要 20 或更新的版本：https://nodejs.org/zh-cn/download" >&2',
+    '  exit 1',
+    'fi',
+    'exec node server.mjs --prod "$@"',
+    '',
+  ].join('\n'),
 )
 chmodSync(path.join(out, 'start.sh'), 0o755)
+// macOS / Linux 装成开机自动运行的后台服务（launchd / systemd），和 Windows 的托盘程序对应
+cpSync(path.join(root, 'scripts', 'service', 'install-service.sh'), path.join(out, 'install-service.sh'))
+chmodSync(path.join(out, 'install-service.sh'), 0o755)
 // Windows 托盘启动程序：在 CI 的 Windows 机器上编译（见 ci.yml），双击后不弹命令行窗口。
 // 发布时必须带上（--require-tray）；本机出包没有编译过就不放
 const tray = path.join(root, 'build', 'tray', 'AgentPanel.exe')
@@ -101,7 +121,10 @@ writeFileSync(
     '2. 至少安装并登录一个 CLI：Claude Code（claude）、Codex（codex）或 Command Code（cmdc）',
     '3. 启动：Windows 双击 AgentPanel.exe，程序在任务栏右下角的通知区显示图标，不会打开命令行窗口，',
     '   启动完成后自动用默认浏览器打开面板；右键图标可以重新打开面板、查看运行日志或退出（退出后面板也会停止）。',
-    '   macOS / Linux 运行 ./start.sh（或 node server.mjs --prod），然后浏览器打开 http://127.0.0.1:8787',
+    '   macOS / Linux 运行 ./start.sh（或 node server.mjs --prod），然后浏览器打开 http://127.0.0.1:8787；',
+    '   想开机自动在后台运行、不用一直开着终端，运行一次 ./install-service.sh（移除：./install-service.sh uninstall）。',
+    '   Windows 第一次双击时如果提示「Windows 已保护你的电脑」：托盘程序没有购买代码签名证书，',
+    '   点「更多信息」→「仍要运行」即可，之后不会再提示。',
     '',
     '数据保存在用户目录的 .agent-panel 下（Windows 是 C:\\Users\\<用户名>\\.agent-panel），升级、重新解压都不会丢；',
     '设置的「数据」里可以查看占用、清理，以及导出 / 导入数据，换电脑时用来迁移。',
@@ -112,6 +135,9 @@ writeFileSync(
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
 
+// 打好的服务端要能直接加载（更新时新版本也是这样试跑的）
+run(process.execPath, [path.join(out, 'server.mjs'), '--self-check'], out)
+
 // 4. 压缩（--no-archive 只生成目录，CI 在 Windows 上试运行托盘程序时用）
 if (process.argv.includes('--no-archive')) {
   console.log(`已生成：release/${name}`)
@@ -121,4 +147,12 @@ for (const f of [`${name}.zip`, `${name}.tar.gz`]) rmSync(path.join(outRoot, f),
 run('zip', ['-qr', `${name}.zip`, name], outRoot)
 run('tar', ['-czf', `${name}.tar.gz`, name], outRoot)
 if (!existsSync(path.join(outRoot, `${name}.zip`))) throw new Error('压缩失败')
-console.log(`已出包：release/${name}.zip、release/${name}.tar.gz`)
+// 校验文件和包一起发布：设置里更新时先对哈希，下载不完整就不装
+const sums = [`${name}.zip`, `${name}.tar.gz`].map(
+  (f) =>
+    `${createHash('sha256')
+      .update(readFileSync(path.join(outRoot, f)))
+      .digest('hex')}  ${f}`,
+)
+writeFileSync(path.join(outRoot, 'SHA256SUMS'), sums.join('\n') + '\n')
+console.log(`已出包：release/${name}.zip、release/${name}.tar.gz、release/SHA256SUMS`)

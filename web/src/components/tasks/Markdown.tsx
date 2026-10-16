@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
+import { linkPaths, parsePath, useFileOpen } from './FileDialog'
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
@@ -59,7 +61,13 @@ export function Markdown({
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
-  const html = useMemo(() => renderDoc(text, teamNames), [text, teamNames])
+  const openFile = useFileOpen()
+  // 在任务页里时，像文件路径的行内代码可以点开看文件
+  const canOpen = !!openFile
+  const html = useMemo(() => {
+    const h = renderDoc(text, teamNames)
+    return canOpen ? linkPaths(h) : h
+  }, [text, teamNames, canOpen])
 
   useEffect(() => {
     const root = ref.current
@@ -77,7 +85,7 @@ export function Markdown({
           const { svg } = await mermaid.render(`md-mermaid-${++seq}`, src)
           if (cancelled) return
           box.dataset.done = '1'
-          box.innerHTML = `<div class="md-mermaid-svg">${svg}</div><details><summary>源码</summary><pre><code>${escape(src)}</code></pre></details>`
+          box.innerHTML = `<div class="md-mermaid-svg">${svg}</div><details><summary>${t('源码')}</summary><pre><code>${escape(src)}</code></pre></details>`
         } catch {
           // 语法不对的图保持显示源码
           box.dataset.done = 'error'
@@ -91,12 +99,18 @@ export function Markdown({
 
   // 复制按钮是渲染出来的 HTML，用事件委托处理
   const onClick = (e: React.MouseEvent) => {
+    const file = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
+    if (file && openFile) {
+      const p = parsePath(file.textContent ?? '')
+      if (p) openFile(p.path, p.line)
+      return
+    }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')
     if (!btn) return
     const code = btn.closest('.md-code')?.querySelector('code')?.textContent ?? ''
     void navigator.clipboard?.writeText(code).then(() => {
-      btn.textContent = '已复制'
-      setTimeout(() => (btn.textContent = '复制'), 1500)
+      btn.textContent = t('已复制')
+      setTimeout(() => (btn.textContent = t('复制')), 1500)
     })
   }
 
@@ -104,6 +118,9 @@ export function Markdown({
     <div
       ref={ref}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && (e.target as HTMLElement).dataset.path) onClick(e as unknown as React.MouseEvent)
+      }}
       className={cn('chat-md [overflow-wrap:anywhere]', live && 'streaming-caret', className)}
       dangerouslySetInnerHTML={{ __html: html }}
     />

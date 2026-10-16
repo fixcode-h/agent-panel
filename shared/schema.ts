@@ -1,11 +1,12 @@
 import { z } from 'zod'
+import { t } from './i18n.ts'
 
 /**
  * Agent：一个可复用的「CLI + 模型 + 角色设定」组合。
  * 主 / 子 Agent 不在这里区分，而是在工作流里指定。
  */
 export const AgentInput = z.object({
-  name: z.string().trim().min(1, '名称不能为空').max(40),
+  name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 为空表示使用设置里的默认 CLI */
   cli: z.string().default(''),
@@ -41,8 +42,8 @@ export const defaultAgent = (): Agent => {
   const at = new Date(0).toISOString()
   return {
     ...AgentInput.parse({
-      name: '默认 Agent',
-      description: '使用默认 CLI 的默认模型和思考强度，对话时可以临时调整',
+      name: t('默认 Agent'),
+      description: t('使用默认 CLI 的默认模型和思考强度，对话时可以临时调整'),
       icon: 'sparkles',
     }),
     id: DEFAULT_AGENT_ID,
@@ -53,7 +54,7 @@ export const defaultAgent = (): Agent => {
 
 /** Agent 分类，例如「开发」「测试」「文档」，只用于组织列表 */
 export const CategoryInput = z.object({
-  name: z.string().trim().min(1, '分类名不能为空').max(20),
+  name: z.string().trim().min(1, t('分类名不能为空')).max(20),
 })
 export type CategoryInput = z.infer<typeof CategoryInput>
 
@@ -87,6 +88,8 @@ export const NodeHooks = z.object({
   end: FlowRef.nullable().default(null),
   /** 验收最多几轮，超过仍不通过时节点失败 */
   maxRounds: z.number().int().min(1).max(10).default(3),
+  /** 完成后等用户确认：用户看过结果点「通过」才往下走，退回时带着意见让节点继续完善 */
+  confirm: z.boolean().optional(),
 })
 export type NodeHooks = z.infer<typeof NodeHooks>
 
@@ -108,8 +111,16 @@ export const FlowNode = z.object({
 })
 export type FlowNode = z.infer<typeof FlowNode>
 
-/** 连线：from 执行完才会执行 to；START / END 表示流程的开始和结束 */
-export const FlowEdge = z.object({ id: z.string().min(1), from: z.string().min(1), to: z.string().min(1) })
+/**
+ * 连线：from 执行完才会执行 to；START / END 表示流程的开始和结束。
+ * when 是条件：pass / fail 时只在 from 的结论是「通过」/「不通过」时走这条线，没走的分支整段跳过
+ */
+export const FlowEdge = z.object({
+  id: z.string().min(1),
+  from: z.string().min(1),
+  to: z.string().min(1),
+  when: z.enum(['', 'pass', 'fail']).optional(),
+})
 export type FlowEdge = z.infer<typeof FlowEdge>
 
 export const START = 'start'
@@ -163,7 +174,7 @@ export function stagesToFlow(stages: { title?: string; nodes?: Record<string, un
   for (const p of prev) if (p !== START || !cols.length) edges.push({ id: `e_${rid()}`, from: p, to: END })
   return {
     id: 'main',
-    name: '主流程',
+    name: t('主流程'),
     nodes,
     edges: cols.length ? edges : [],
     startPos: { x: 0, y: 0 },
@@ -187,7 +198,7 @@ function migrateWorkflow(v: unknown) {
  * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
 const WorkflowFields = z.object({
-  name: z.string().trim().min(1, '名称不能为空').max(40),
+  name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 主 Agent；为空表示还没选 */
   mainAgentId: z.string().default(''),
@@ -197,6 +208,9 @@ const WorkflowFields = z.object({
   entryFlowId: z.string().default('main'),
   /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
+  /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
+  budgetUsd: z.number().min(0).max(100000).optional(),
+  budgetTokens: z.number().int().min(0).optional(),
 })
 export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
 export type WorkflowInput = z.infer<typeof WorkflowFields>
@@ -289,7 +303,7 @@ export interface CliModels {
 
 /** 项目分类：同一类项目共用一个默认工作流，例如「Web 应用」「游戏客户端」 */
 export const ProjectCategoryInput = z.object({
-  name: z.string().trim().min(1, '分类名不能为空').max(20),
+  name: z.string().trim().min(1, t('分类名不能为空')).max(20),
   description: z.string().trim().max(200).default(''),
   /** 默认工作流；为空表示还没指定 */
   workflowId: z.string().default(''),
@@ -301,7 +315,7 @@ export type ProjectCategory = z.infer<typeof ProjectCategory>
 
 /** 项目：本机上的一个目录，Agent 会在这个目录里按工作流执行任务 */
 export const ProjectInput = z.object({
-  name: z.string().trim().min(1, '名称不能为空').max(40),
+  name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 本机绝对路径 */
   path: z.string().trim().default(''),
@@ -365,17 +379,43 @@ export const NewTaskInput = z.object({
   /** chat 模式用默认 Agent 时临时选的模型和思考强度；为空跟随默认 CLI 的设置 */
   model: z.string().trim().max(200).default(''),
   effort: z.string().trim().max(40).default(''),
-  prompt: z.string().trim().min(1, '请描述任务').max(20000),
+  prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以 */
+  isolate: z.boolean().default(false),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
-export const FollowUpInput = z.object({
-  text: z.string().trim().min(1, '内容不能为空').max(20000),
-  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+/** 任务的独立分支：Agent 在这个目录里改，做完后合并回项目或丢弃 */
+export const TaskWorktree = z.object({
+  path: z.string(),
+  branch: z.string(),
+  /** 创建时项目所在的分支，界面上提示合并到哪里 */
+  baseBranch: z.string().default(''),
+  state: z.enum(['active', 'merged', 'discarded']).default('active'),
+  /** 合并、丢弃的结果说明（合并到了哪个分支） */
+  note: z.string().default(''),
 })
+export type TaskWorktree = z.infer<typeof TaskWorktree>
+
+export const FollowUpInput = z.object({
+  text: z.string().trim().min(1, t('内容不能为空')).max(20000),
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** 任务正在执行时：true 先停下当前这一轮再发送；否则排队，这一轮完成后自动接着处理 */
+  interrupt: z.boolean().default(false),
+})
+/** 执行中发来、排队等这一轮完成后再处理的要求 */
+export const QueuedMessage = z.object({
+  id: z.string(),
+  text: z.string(),
+  attachments: z.array(Attachment).default([]),
+  at: z.string(),
+})
+export type QueuedMessage = z.infer<typeof QueuedMessage>
 /** 可以直接修改的任务字段 */
-export const TaskPatch = z.object({ title: z.string().trim().min(1, '标题不能为空').max(80) }).partial()
+export const TaskPatch = z
+  .object({ title: z.string().trim().min(1, t('标题不能为空')).max(80), archived: z.boolean() })
+  .partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
@@ -442,6 +482,8 @@ export const TaskStep = z.object({
   verdict: z.enum(['', 'pass', 'fail']).default(''),
   /** 已经验收了几轮 */
   rounds: z.number().int().default(0),
+  /** 节点自己给出的结论（有条件连线时要求写）：决定走哪条线 */
+  branch: z.enum(['', 'pass', 'fail']).optional(),
   /** 执行到一半被停止或面板重启打断；继续执行时续接这个节点的 CLI 会话，从中断的地方接着做 */
   interrupted: z.boolean().default(false),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
@@ -479,7 +521,8 @@ export const TaskRequest = z.object({
   id: z.string(),
   step: z.string().default(''),
   agentId: z.string().default(''),
-  kind: z.enum(['command', 'file', 'tool', 'question']),
+  /** confirm：工作流节点完成后等用户确认结果 */
+  kind: z.enum(['command', 'file', 'tool', 'question', 'confirm']),
   title: z.string(),
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */
@@ -530,8 +573,22 @@ export const TaskData = z.object({
   todos: z.array(TaskTodo).default([]),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
+  /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */
+  workflows: z.array(Workflow).default([]),
+  /** 工作流的名字，列表里显示（摘要不带上面的完整工作流） */
+  workflowName: z.string().default(''),
+  /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */
+  baseRef: z.string().default(''),
   /** 正在等用户确认的请求 */
   requests: z.array(TaskRequest).default([]),
+  /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
+  worktree: TaskWorktree.nullable().default(null),
+  /** 执行中排队的要求：这一轮完成后按顺序处理；失败或暂停时留着，由用户决定 */
+  queue: z.array(QueuedMessage).default([]),
+  /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
+  budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
+  /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
+  archived: z.boolean().optional(),
 })
 export type TaskData = z.infer<typeof TaskData>
 
@@ -589,6 +646,8 @@ export const CONTENT_MAX = 1280
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
   stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
+  /** CLI 这么多分钟没有任何输出时提醒，再过同样的时间自动停止；0 表示不检测。比总时长更合适：长任务不会被误杀，卡死的会被发现 */
+  idleTimeoutMinutes: z.number().int().min(0).max(1440).default(15),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
@@ -596,6 +655,8 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
+  /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
+  requireToken: z.boolean().default(false),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
   /** 最宽 1280：再宽两边的任务进度、右栏会被挤得太窄；以前存的更大的值收到上限 */
   contentWidth: z

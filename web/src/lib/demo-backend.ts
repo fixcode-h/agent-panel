@@ -35,11 +35,12 @@ import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
-import { runTurn } from '@shared/runner'
-import { beginRun, endRun, newTask, withAttachments } from '@shared/task'
-import { END, START, autoLayout, edge, newFlow, newNode } from '@shared/flow'
+import { runTurn, simAnswers } from '@shared/runner'
+import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared/task'
+import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
+import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 
 const KEY = 'agent-panel-demo-v3'
 
@@ -674,14 +675,8 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
-      if (id === DEFAULT_AGENT_ID) fail('默认 Agent 是自带的，不能删除')
-      const used = d.workflows.filter(
-        (w) =>
-          w.mainAgentId === id ||
-          w.members.some((m) => m.agentId === id) ||
-          w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
-      )
-      if (used.length) fail(`正在被工作流使用：${used.map((w) => `「${w.name}」`).join('、')}，请先从工作流中移除`)
+      const err = agentDeleteError(id, d.workflows)
+      if (err) fail(err)
       remove('agents', id, 'Agent 不存在')
       return undefined
     }
@@ -695,19 +690,15 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'workflows') {
     if (method === 'GET') return d.workflows
     if (method === 'DELETE') {
-      const users = [
-        ...d.projectCategories.filter((x) => x.workflowId === id).map((x) => `项目分类「${x.name}」`),
-        ...d.projects.filter((x) => x.workflowId === id).map((x) => `项目「${x.name}」`),
-      ]
-      if (users.length) fail(`正在被使用：${users.join('、')}，请先改用其他工作流`)
+      const err = workflowDeleteError(id, d.projectCategories, d.projects)
+      if (err) fail(err)
       remove('workflows', id, '工作流不存在')
       return undefined
     }
     const wf = parse(WorkflowInput, body)
-    const ids = new Set(d.agents.map((a) => a.id))
-    if (wf.mainAgentId && !ids.has(wf.mainAgentId)) fail('主 Agent 不存在')
-    const seen = new Set<string>([wf.mainAgentId])
-    wf.members = wf.members.filter((m) => ids.has(m.agentId) && !seen.has(m.agentId) && !!seen.add(m.agentId))
+    // 和服务端同一套检查：成员、连线、环、流程之间的循环调用
+    const err = checkWorkflow(wf, new Set(d.agents.map((a) => a.id)), d.workflows, method === 'POST' ? '' : id)
+    if (err) fail(err)
     return method === 'POST' ? create('workflows', wf) : update('workflows', id, wf, '工作流不存在')
   }
 
@@ -764,7 +755,7 @@ export async function handle(method: string, url: string, body: unknown) {
 export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project }
 
 // ---- 任务 ----
-const live = new Map<string, { stop: boolean }>()
+const live = new Map<string, { stop: boolean; done?: Promise<unknown> }>()
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function projectWorkflow(d: Db, p: Project) {
@@ -773,7 +764,7 @@ function projectWorkflow(d: Db, p: Project) {
 }
 
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
-  const entry = { stop: false }
+  const entry: { stop: boolean; done?: Promise<unknown> } = { stop: false }
   live.set(task.id, entry)
   beginRun(task)
   let last = 0
@@ -781,8 +772,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     task,
     agents: d.agents,
     settings: d.settings,
-    workflows: d.workflows,
-    workflow: d.workflows.find((w) => w.id === task.workflowId),
+    ...taskWorkflows(task, d.workflows),
     prompt,
     first,
     sleep: fast ? async () => {} : sleep,
@@ -800,7 +790,11 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     endRun(task)
     live.delete(task.id)
     persist()
+    // 和正式版一样：这一轮完成后接着处理排队的要求
+    const q = task.status === 'done' ? (task.queue ??= []).shift() : undefined
+    if (q) void followUp(d, task, q.text, fast, q.attachments)
   })
+  entry.done = done
   return done
 }
 
@@ -814,9 +808,24 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
   const task = create<Task>('tasks', {
-    ...newTask(input, workflow, new Date().toISOString(), `demo-${crypto.randomUUID()}`),
+    ...newTask(
+      input,
+      workflow,
+      new Date().toISOString(),
+      `demo-${crypto.randomUUID()}`,
+      workflow ? workflowClosure(workflow, d.workflows) : [],
+    ),
     simulated: true,
   })
+  // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃
+  if (input.isolate && project)
+    task.worktree = {
+      path: '',
+      branch: `agent-panel/${task.id.slice(5, 13)}`,
+      baseBranch: 'main',
+      state: 'active',
+      note: '',
+    }
   return { task, done: startTurn(d, task, withAttachments(input.prompt, input.attachments), true, fast) }
 }
 
@@ -848,7 +857,7 @@ function tasksRoute(
   if (!id) {
     if (method === 'GET') {
       const pid = query.get('projectId')
-      return pid ? tasks.filter((t) => t.projectId === pid) : tasks
+      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks).map(taskSummary)
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
@@ -862,8 +871,29 @@ function tasksRoute(
     if (live.has(id)) live.get(id)!.stop = true
     return task
   }
+  if (sub === 'queue' && method === 'DELETE') {
+    task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
+    persist()
+    return task
+  }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
+    const cur = live.get(task.id)
+    if (cur && !f.interrupt) {
+      ;(task.queue ??= []).push({
+        id: `demo-${crypto.randomUUID()}`,
+        text: f.text,
+        attachments: f.attachments,
+        at: new Date().toISOString(),
+      })
+      persist()
+      return task
+    }
+    if (cur) {
+      cur.stop = true
+      void cur.done?.finally(() => followUp(d, task, f.text, false, f.attachments))
+      return task
+    }
     void followUp(d, task, f.text, false, f.attachments)
     return task
   }
@@ -871,6 +901,7 @@ function tasksRoute(
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
     const a = body as { allow: boolean; answer?: string }
+    simAnswers.set(rid, a)
     task.requests = task.requests.filter((r) => r.id !== rid)
     task.messages.push({
       id: `demo-${crypto.randomUUID()}`,
@@ -878,18 +909,48 @@ function tasksRoute(
       agentId: req.agentId,
       step: req.step,
       text:
-        req.kind === 'question'
-          ? `你回答了「${req.title}」：${a.answer ?? ''}`
-          : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
+        req.kind === 'confirm'
+          ? a.allow
+            ? `你确认了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」的结果，接着往下执行`
+            : `你退回了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」：${a.answer ?? ''}`
+          : req.kind === 'question'
+            ? `你回答了「${req.title}」：${a.answer ?? ''}`
+            : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
       tools: [],
       at: new Date().toISOString(),
     })
     persist()
     return task
   }
+  if (sub === 'worktree' && task.worktree) {
+    if (live.has(task.id)) fail('任务正在执行，等它停下后再处理独立分支')
+    const merge = rid === 'merge'
+    task.worktree = { ...task.worktree, state: merge ? 'merged' : 'discarded', note: merge ? 'main' : '' }
+    persist()
+    return task
+  }
+  // 演示里没有真的项目目录，看不到文件内容
+  if (sub === 'file')
+    return { path: query.get('path') ?? '', dir: '', exists: false, content: '', truncated: false, demo: true }
+  // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
+  if (sub === 'diff') {
+    const file = query.get('path') ?? ''
+    const diff = task.messages
+      .flatMap((m) => m.tools)
+      .filter((x) => x.kind === 'edit' && x.label === file && x.input)
+      .map((x) => x.input)
+      .join('\n')
+    return { path: file, dir: '', diff, git: false, before: false }
+  }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行')
     if (task.status !== 'failed' && task.status !== 'stopped') fail('只有失败或停止的任务可以继续')
+    if ((body as { latest?: boolean } | undefined)?.latest && task.workflowId) {
+      const fresh =
+        d.workflows.find((w) => w.id === task.workflowId) ?? fail('工作流已经被删除，只能按任务创建时的工作流继续')
+      task.workflows = workflowClosure(fresh, d.workflows)
+      task.workflowName = fresh.name
+    }
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     void startTurn(d, task, users.at(-1)?.text ?? '', false)
     return task
@@ -926,6 +987,7 @@ async function seedTasks(d: Db) {
         attachments: [],
         model: '',
         effort: '',
+        isolate: false,
       },
       true,
     )
@@ -944,6 +1006,7 @@ async function seedTasks(d: Db) {
         attachments: [],
         model: '',
         effort: '',
+        isolate: false,
       },
       true,
     )
@@ -962,6 +1025,7 @@ async function seedTasks(d: Db) {
         attachments: [],
         model: '',
         effort: '',
+        isolate: false,
       },
       true,
     )
@@ -975,7 +1039,7 @@ async function seedTasks(d: Db) {
  * 版本更新：在线演示直接从浏览器读 GitHub Releases（接口允许跨域），当作最新发布的版本；不能安装。
  */
 async function demoApp(url: string): Promise<unknown> {
-  if (url.startsWith('/app/install')) fail('在线演示不能安装，可以下载包到本机运行')
+  if (url.startsWith('/app/install') || url.startsWith('/app/rollback')) fail('在线演示不能安装，可以下载包到本机运行')
   let list: AppRelease[] = []
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)

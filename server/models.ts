@@ -9,6 +9,7 @@ import { cliSettings } from '../shared/settings.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 import { resolveCommand } from './cli-source.ts'
+import { t } from '../shared/i18n.ts'
 
 /**
  * 从本机 CLI 读取可用的模型：内置列表跟不上 CLI 的更新，也不知道用户账号能用哪些模型。
@@ -71,7 +72,7 @@ async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Pic
       if (msg.id === 2) got.account = msg.error ? null : (msg.result ?? null)
       else if (msg.id === 3) got.config = msg.error ? null : (msg.result?.config ?? null)
       else if (msg.id === 1) {
-        if (msg.error) rpcError = msg.error.message ?? '未知错误'
+        if (msg.error) rpcError = msg.error.message ?? t('未知错误')
         else
           got.list = (msg.result?.data ?? [])
             .map((x: unknown) => x as Record<string, any>)
@@ -104,12 +105,12 @@ async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Pic
       // 用 API / 自定义接口时 model/list 只是内置预设，配置文件里的排前面
       models: api ? [...configured, ...listed] : [...listed, ...configured],
       auth: account?.type === 'chatgpt' ? 'account' : api ? 'api' : undefined,
-      from: account?.type === 'chatgpt' ? 'ChatGPT 账号' : configured.length ? 'config.toml' : undefined,
+      from: account?.type === 'chatgpt' ? t('ChatGPT 账号') : configured.length ? 'config.toml' : undefined,
     }
-  if (rpcError) throw new Error(`Codex 返回错误：${rpcError}`)
+  if (rpcError) throw new Error(t('Codex 返回错误：{error}', { error: rpcError }))
   if (r.spawnError) throw new Error(r.spawnError)
-  if (r.killed === 'timeout') throw new Error('Codex 没有在 20 秒内返回模型列表')
-  throw new Error(r.stderr.trim().split('\n').at(-1) || `Codex 退出了（退出码 ${r.code}）`)
+  if (r.killed === 'timeout') throw new Error(t('Codex 没有在 20 秒内返回模型列表'))
+  throw new Error(r.stderr.trim().split('\n').at(-1) || t('Codex 退出了（退出码 {code}）', { code: String(r.code) }))
 }
 
 /** config.toml 里配的模型：顶层 model 是默认，其次 review_model 和各 profile 的 model */
@@ -121,12 +122,12 @@ export function codexConfigured(config: any): CliModel[] {
     out.push({
       id: config.model,
       label: config.model,
-      description: '默认模型（config.toml）',
+      description: t('默认模型（config.toml）'),
       isDefault: true,
       defaultEffort: effort,
     })
   if (typeof config.review_model === 'string' && config.review_model)
-    out.push({ id: config.review_model, label: config.review_model, description: '审查用的模型（review_model）' })
+    out.push({ id: config.review_model, label: config.review_model, description: t('审查用的模型（review_model）') })
   for (const [name, p] of Object.entries((config.profiles ?? {}) as Record<string, any>))
     if (p && typeof p.model === 'string' && p.model)
       out.push({
@@ -178,7 +179,7 @@ async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promi
   })
   if (!models.length) {
     if (r.spawnError) throw new Error(r.spawnError)
-    throw new Error((r.stderr || r.stdout).trim().split('\n').at(-1) || `退出码 ${r.code}`)
+    throw new Error((r.stderr || r.stdout).trim().split('\n').at(-1) || t('退出码 {code}', { code: String(r.code) }))
   }
   const status = (st?.stdout ?? '') + (st?.stderr ?? '')
   const loggedOut = /not authenticated|not logged in|未登录/i.test(status)
@@ -189,7 +190,7 @@ async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promi
     return {
       models: tagged,
       auth: st && !st.spawnError && st.code === 0 ? 'account' : undefined,
-      from: 'Command Code 账号',
+      from: t('Command Code 账号'),
     }
   // 没登录只能用 BYOK；没接 BYOK 时还是给出全部，否则下拉是空的，真正执行时 CLI 会提示登录
   return byok.length ? { models: byok, auth: 'api', from: 'providers.json' } : { models: tagged, auth: 'api' }
@@ -277,10 +278,10 @@ const realpathSafe = (p: string) => {
 async function claudeConfigured(env: NodeJS.ProcessEnv): Promise<CliModel[]> {
   const found: CliModel[] = []
   const keys: [string, string][] = [
-    ['ANTHROPIC_MODEL', '环境变量 ANTHROPIC_MODEL'],
-    ['ANTHROPIC_DEFAULT_OPUS_MODEL', 'opus 对应的模型'],
-    ['ANTHROPIC_DEFAULT_SONNET_MODEL', 'sonnet 对应的模型'],
-    ['ANTHROPIC_DEFAULT_HAIKU_MODEL', 'haiku 对应的模型'],
+    ['ANTHROPIC_MODEL', t('环境变量 ANTHROPIC_MODEL')],
+    ['ANTHROPIC_DEFAULT_OPUS_MODEL', t('opus 对应的模型')],
+    ['ANTHROPIC_DEFAULT_SONNET_MODEL', t('sonnet 对应的模型')],
+    ['ANTHROPIC_DEFAULT_HAIKU_MODEL', t('haiku 对应的模型')],
   ]
   let settingsEnv: Record<string, string> = {}
   try {
@@ -288,7 +289,7 @@ async function claudeConfigured(env: NodeJS.ProcessEnv): Promise<CliModel[]> {
     const s = JSON.parse(await readFile(path.join(dir, 'settings.json'), 'utf8'))
     settingsEnv = s.env ?? {}
     if (typeof s.model === 'string' && s.model)
-      found.push({ id: s.model, label: s.model, description: 'settings.json 里的默认模型', isDefault: true })
+      found.push({ id: s.model, label: s.model, description: t('settings.json 里的默认模型'), isDefault: true })
   } catch {}
   for (const [k, desc] of keys) {
     const v = env[k] || settingsEnv[k]
@@ -315,7 +316,7 @@ async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'acc
 
 export async function cliModels(id: string, refresh = false): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
-  if (!def) throw new Error(`未知的 CLI：${id}`)
+  if (!def) throw new Error(t('未知的 CLI：{cli}', { cli: id }))
   const hit = cache.get(id)
   if (!refresh && hit && Date.now() - hit.at < TTL) return hit.data
   const cs = cliSettings(await getSettings(), id)
@@ -333,7 +334,7 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
       if (configured.some((m) => m.isDefault)) base.forEach((m) => delete m.isDefault)
       data =
         auth === 'api' && configured.length
-          ? { source: 'cli', models: [...configured, ...base], efforts: [], auth, from: 'settings.json / 环境变量' }
+          ? { source: 'cli', models: [...configured, ...base], efforts: [], auth, from: t('settings.json / 环境变量') }
           : { source: 'builtin', models: [...base, ...configured], efforts: [], auth }
     }
   } catch (e) {
@@ -361,7 +362,7 @@ export const invalidateModels = (id?: string) => (id ? cache.delete(id) : cache.
 export function modelsApi() {
   return new Hono().get('/:id/models', async (c) => {
     const id = c.req.param('id')
-    if (!CLIS.some((x) => x.id === id)) return c.json({ error: `未知的 CLI：${id}` }, 404)
+    if (!CLIS.some((x) => x.id === id)) return c.json({ error: t('未知的 CLI：{cli}', { cli: id }) }, 404)
     return c.json(await cliModels(id, c.req.query('refresh') === '1'))
   })
 }

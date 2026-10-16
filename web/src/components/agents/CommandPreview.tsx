@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Copy, SquareTerminal } from 'lucide-react'
 import { commandText, getCli, quoteArg } from '@shared/clis'
@@ -6,6 +6,7 @@ import type { Settings } from '@shared/schema'
 import { agentCli, agentPermission, agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 /** 仿终端的命令预览，固定深色。任务描述通过 stdin 传入，所以写成管道形式 */
 export function CommandPreview({
@@ -15,7 +16,7 @@ export function CommandPreview({
   permission = '',
   extraArgs,
   className,
-  title = '命令预览',
+  title = t('命令预览'),
   override,
 }: {
   cli: string
@@ -59,22 +60,25 @@ function CopyButton({ text }: { text: string }) {
             setDone(true)
             setTimeout(() => setDone(false), 1500)
           })
-          .catch(() => toast.error('复制失败，可以手动选中命令复制'))
+          .catch(() => toast.error(t('复制失败，可以手动选中命令复制')))
       }
-      title="复制命令"
-      aria-label="复制命令"
+      title={t('复制命令')}
+      aria-label={t('复制命令')}
       className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[#8c909a] transition-colors hover:bg-[#1e2026] hover:text-[#d9dbe0]"
     >
       {done ? <Check className="h-3.5 w-3.5 text-[#5fd39a]" /> : <Copy className="h-3.5 w-3.5" />}
-      {done ? '已复制' : '复制'}
+      {done ? t('已复制') : t('复制')}
     </button>
   )
 }
 
+/** 短参数整段不断行，超长的参数允许在任意位置断开，免得撑出横向滚动 */
+const wrapClass = (a: string) => (a.length > 32 ? '[overflow-wrap:anywhere]' : 'whitespace-nowrap')
+
 /** 仿终端显示一条命令（第一个是可执行文件），右上角可以复制 */
 export function Terminal({
   argv,
-  title = '命令预览',
+  title = t('命令预览'),
   className,
 }: {
   argv: string[]
@@ -82,7 +86,7 @@ export function Terminal({
   className?: string
 }) {
   const [cmd, ...args] = argv
-  const color = (t: string) => (t.startsWith('-') ? 'text-[#7cc4fa]' : 'text-[#d9dbe0]')
+  const color = (a: string) => (a.startsWith('-') ? 'text-[#7cc4fa]' : 'text-[#d9dbe0]')
   return (
     <section className={cn('overflow-hidden rounded-xl border border-[#23252c] bg-[#0b0c0f]', className)}>
       <div className="flex items-center gap-1.5 border-b border-[#1e2026] px-3.5 py-2 text-xs text-[#8c909a]">
@@ -90,15 +94,17 @@ export function Terminal({
         {title}
         <CopyButton text={commandText(argv)} />
       </div>
-      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] select-text [overflow-wrap:anywhere]">
+      {/* 只在参数之间换行：参数里的「-」也是浏览器默认的断行点，不禁掉的话「--verbose」会被拆成两行；
+          特别长的单个参数（路径、JSON）才在中间断开 */}
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] select-text">
         <span className="text-[#5fd39a]">$ </span>
-        <span className="text-[#f2c46d]">echo "&lt;任务描述&gt;" </span>
+        <span className="whitespace-nowrap text-[#f2c46d]">echo "{t('<任务描述>')}"</span>{' '}
         <span className="text-[#8c909a]">| </span>
-        <span className="text-[#b9aeff]">{quoteArg(cmd ?? '')} </span>
-        {args.map((t, i) => (
-          <span key={i} className={color(t)}>
-            {quoteArg(t)}{' '}
-          </span>
+        <span className={cn('text-[#b9aeff]', wrapClass(cmd ?? ''))}>{quoteArg(cmd ?? '')}</span>{' '}
+        {args.map((a, i) => (
+          <Fragment key={i}>
+            <span className={cn(color(a), wrapClass(a))}>{quoteArg(a)}</span>{' '}
+          </Fragment>
         ))}
       </p>
     </section>

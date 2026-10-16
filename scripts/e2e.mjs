@@ -8,6 +8,7 @@ import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
+import { createHash } from 'node:crypto'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -41,14 +42,37 @@ writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
 for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   const d = path.join(relDir, `agent-panel-${v}`)
   execFileSync('mkdir', ['-p', path.join(d, 'dist')])
-  writeFileSync(path.join(d, 'server.mjs'), `// new ${v}\n`)
+  // 0.11.8 的服务端加载就出错：更新时试跑不通过，要退回原来的版本
+  writeFileSync(path.join(d, 'server.mjs'), v === '0.11.8' ? 'process.exit(3)\n' : `// new ${v}\n`)
   writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
   writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
   execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
+  // 校验文件：0.11.4 的哈希故意写错
+  const hash = createHash('sha256')
+    .update(readFileSync(`${d}.tar.gz`))
+    .digest('hex')
+  writeFileSync(`${d}.sums`, `${v === '0.11.4' ? '0'.repeat(64) : hash}  agent-panel-${v}.tar.gz\n`)
 }
 // 旧版本平铺的数据文件，启动时应搬进 config/
 execFileSync('mkdir', ['-p', dataDir])
 writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
+// 旧版本把所有任务放在一个 tasks.json 里，启动后拆成每个任务一个文件
+const legacyAt = '2026-10-01T00:00:00.000Z'
+writeFileSync(
+  path.join(dataDir, 'tasks.json'),
+  JSON.stringify([
+    {
+      id: 'legacy-1',
+      projectId: 'legacy-project',
+      title: '旧任务',
+      mode: 'chat',
+      status: 'done',
+      messages: [{ id: 'm1', role: 'user', text: '旧的要求', at: legacyAt }],
+      createdAt: legacyAt,
+      updatedAt: legacyAt,
+    },
+  ]),
+)
 const relServer = http.createServer((req, res) => {
   const host = `http://127.0.0.1:${relServer.address().port}`
   if (req.url.startsWith('/releases')) {
@@ -63,6 +87,7 @@ const relServer = http.createServer((req, res) => {
       assets: [
         { name: `agent-panel-${v}.tar.gz`, browser_download_url: `${host}/dl/agent-panel-${v}.tar.gz`, size: 100 },
         { name: `agent-panel-${v}.zip`, browser_download_url: `${host}/dl/agent-panel-${v}.zip`, size: 100 },
+        { name: 'SHA256SUMS', browser_download_url: `${host}/dl/agent-panel-${v}.sums`, size: 100 },
       ],
     })
     res.end(JSON.stringify([rel('0.11.9-dev', true, 16), rel('0.11.8', false, 15), rel('0.11.4', false, 10)]))
@@ -80,6 +105,8 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
   env: {
     ...process.env,
     AGENT_PANEL_DATA: dataDir,
+    // 断言里用的是中文提示，固定用中文界面跑
+    LANG: 'zh_CN.UTF-8',
     PORT: String(port),
     FAKE_CLI_LOG: log,
     AGENT_PANEL_NPM: path.join(root, 'scripts/fake-cli/fake-npm.mjs'),
@@ -87,6 +114,8 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
     AGENT_PANEL_APP_DIR: appDir,
     AGENT_PANEL_VERSION: '0.11.5',
     AGENT_PANEL_NO_RESTART: '1',
+    // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
+    AGENT_PANEL_MINUTE_MS: '1500',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
@@ -300,6 +329,86 @@ try {
   )
   step('工作流任务：按连线执行，输出、工具、改动（排除任务前的改动）、用量都正确')
 
+  // 列表只给摘要；任务页靠推送（SSE）拿增量，合起来和完整任务一致
+  const summary = (await call('GET', '/tasks')).find((x) => x.id === t.id)
+  assert.equal(summary.messages.length, 1, '列表里只有第一条要求')
+  assert.ok(
+    summary.steps.every((s) => s.output === '' && s.command.length === 0),
+    '列表里不带节点输出',
+  )
+  {
+    const live = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: '推送测试' })
+    const res = await fetch(`${base}/tasks/${live.id}/events`)
+    const reader = res.body.getReader()
+    const dec = new TextDecoder()
+    let buf = ''
+    let view = null
+    let patches = 0
+    const t0 = Date.now()
+    while (Date.now() - t0 < 20000) {
+      const { value, done } = await reader.read()
+      if (done) break
+      buf += dec.decode(value, { stream: true })
+      let i
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const block = buf.slice(0, i)
+        buf = buf.slice(i + 2)
+        const ev = /^event: (.*)$/m.exec(block)?.[1]
+        const data = block
+          .split('\n')
+          .filter((l) => l.startsWith('data: '))
+          .map((l) => l.slice(6))
+          .join('\n')
+        if (ev === 'full') view = JSON.parse(data)
+        else if (ev === 'patch') {
+          patches++
+          const p = JSON.parse(data)
+          const msgs = view.messages.slice()
+          for (const m of p.messages) {
+            const k = msgs.findIndex((x) => x.id === m.id)
+            if (k >= 0) msgs[k] = m
+            else msgs.push(m)
+          }
+          view = { ...p.meta, messages: msgs }
+          assert.equal(msgs.length, p.total)
+        }
+      }
+      if (view && view.status !== 'running') break
+    }
+    await reader.cancel()
+    assert.ok(patches > 0, '执行过程中推送了增量')
+    const final = await call('GET', `/tasks/${live.id}`)
+    assert.equal(view.status, final.status)
+    assert.deepEqual(
+      view.messages.map((m) => [m.id, m.text]),
+      final.messages.map((m) => [m.id, m.text]),
+      '增量合起来和完整任务一致',
+    )
+  }
+  // 归档：只是打个标记，列表里带着，取消归档后恢复
+  const arch = await call('PATCH', `/tasks/${t.id}`, { archived: true })
+  assert.equal(arch.archived, true)
+  assert.equal((await call('GET', '/tasks')).find((x) => x.id === t.id).archived, true)
+  await call('PATCH', `/tasks/${t.id}`, { archived: false })
+  step('任务列表只给摘要，任务页通过推送拿增量；可以归档')
+
+  // 任务存下创建时的工作流：之后改了工作流，老任务的记录不变；继续执行时可以选择改用新的
+  {
+    assert.equal(t.workflows[0]?.id, wf.id, '任务存下了工作流')
+    assert.equal(summary.workflowName, wf.name, '列表里有工作流名字')
+    const cur = await call('GET', `/workflows`).then((l) => l.find((x) => x.id === wf.id))
+    const { id, createdAt, updatedAt, ...input } = cur
+    const renamed = {
+      ...input,
+      flows: input.flows.map((f) => ({ ...f, nodes: f.nodes.map((n) => ({ ...n, title: `${n.title}（新）` })) })),
+    }
+    await call('PUT', `/workflows/${wf.id}`, renamed)
+    const again = await call('GET', `/tasks/${t.id}`)
+    assert.ok(!again.workflows[0].flows[0].nodes.some((n) => n.title.endsWith('（新）')), '老任务的工作流不跟着改')
+    await call('PUT', `/workflows/${wf.id}`, input)
+  }
+  step('任务存下创建时的工作流，之后改工作流不影响老任务')
+
   let c = calls()
   const [c1, cp1, cp2, c4] = c
   assert.equal(c1.kind, 'claude')
@@ -334,6 +443,26 @@ try {
   assert.match(c4.input, /上游节点的结果[\s\S]*### 实现[\s\S]*### 文档/)
   assert.ok(!c4.args.includes('--resume'), '不同节点用各自的新会话')
   step('调用参数：模型、权限、角色设定、上游结果、同时进行的节点、工作目录都对；没有依赖的节点同时运行')
+
+  // 上游的结果太长：交给下游的只放开头，完整内容存成文件，下游的 CLI 能读到那个目录
+  const nLong = calls().length
+  let tLong = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'LONGOUT 写个详细方案' })
+  tLong = await waitDone(tLong.id)
+  assert.equal(tLong.status, 'done')
+  const down = calls()
+    .slice(nLong)
+    .find((x) => x.kind === 'codex')
+  const handoff = /完整内容在文件 (\S+?\.md)/.exec(down.input)?.[1]
+  assert.ok(handoff && existsSync(handoff), '下游拿到完整结果的文件路径 ' + down.input.slice(-300))
+  assert.ok(readFileSync(handoff, 'utf8').includes('很长的方案。'.repeat(1000) + '结尾'), '文件里是完整结果')
+  assert.ok(!down.input.includes('结尾'), '提示里只放开头')
+  const cLong = calls()
+    .slice(nLong)
+    .find((x) => x.kind === 'claude' && x.input.includes('上游节点的结果'))
+  assert.ok(cLong.args.includes(path.dirname(handoff)), 'Claude Code 能读交接文件的目录')
+  await call('DELETE', `/tasks/${tLong.id}`)
+  assert.ok(!existsSync(path.dirname(handoff)), '删除任务时删掉交接文件')
+  step('节点交接：上游结果太长时完整内容存成文件，下游按路径去读')
 
   // ---- 追加要求：主 Agent 续接会话 ----
   await call('POST', `/tasks/${t.id}/messages`, { text: '按钮改成红色' })
@@ -450,6 +579,53 @@ try {
   assert.ok(Date.now() - t0 < 5000, '停止应该很快生效')
   step('停止：进程被结束，任务标记为已停止')
 
+  // ---- 执行中发消息：默认排队，这一轮完成后接着处理；可以撤回；打断时停下当前这一轮马上处理 ----
+  {
+    let q = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SLOW 排队测试',
+    })
+    await sleep(300)
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第一条' })
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第二条' })
+    assert.deepEqual(
+      q.queue.map((x) => x.text),
+      ['排队的第一条', '排队的第二条'],
+    )
+    assert.equal(q.status, 'running')
+    q = await call('DELETE', `/tasks/${q.id}/queue/${q.queue[1].id}`)
+    assert.equal(q.queue.length, 1, '撤回一条')
+    // 等两轮都跑完（第一轮慢，第二轮是排队的那条）
+    for (let i = 0; i < 100; i++) {
+      q = await call('GET', `/tasks/${q.id}`)
+      if (q.status !== 'running' && !q.queue.length) break
+      await sleep(200)
+    }
+    assert.equal(q.status, 'done')
+    assert.deepEqual(
+      q.messages.filter((m) => m.role === 'user').map((m) => m.text),
+      ['SLOW 排队测试', '排队的第一条'],
+      '排队的要求在这一轮完成后接着处理，撤回的不处理',
+    )
+    // 打断：停下当前这一轮马上处理
+    let r = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      prompt: 'SLOW 打断测试',
+    })
+    await sleep(500)
+    const t0 = Date.now()
+    r = await call('POST', `/tasks/${r.id}/messages`, { text: '马上改做这个', interrupt: true })
+    r = await waitDone(r.id, 10000)
+    assert.ok(Date.now() - t0 < 8000, '打断后很快处理新的要求')
+    assert.equal(r.status, 'done')
+    assert.equal(r.messages.filter((m) => m.role === 'user').at(-1).text, '马上改做这个')
+  }
+  step('执行中发消息：默认排队、可以撤回，这一轮完成后接着处理；也可以打断马上处理')
+
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----
   let half = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'SLOW 中断恢复' })
   await sleep(800)
@@ -500,6 +676,114 @@ try {
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
 
+  // ---- 工作流的条件连线、完成后等我确认、预算上限 ----
+  const wfBranch = await call('POST', '/workflows', {
+    name: '条件分支',
+    description: '',
+    mainAgentId: A.id,
+    members: [],
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          node('t', '测试', '', '跑测试。', { hooks: { confirm: true } }),
+          node('ok', '发布', '', '发布。'),
+          node('fix', '修复', '', '修复失败的测试。'),
+          node('after', '收尾', '', '收尾。'),
+        ],
+        edges: [
+          { id: 'e1', from: 'start', to: 't' },
+          { id: 'e2', from: 't', to: 'ok', when: 'pass' },
+          { id: 'e3', from: 't', to: 'fix', when: 'fail' },
+          { id: 'e4', from: 'ok', to: 'after' },
+          { id: 'e5', from: 'fix', to: 'end' },
+          { id: 'e6', from: 'after', to: 'end' },
+        ],
+      },
+    ],
+    entryFlowId: 'main',
+    document: '',
+  })
+  const nBranch = calls().length
+  let br = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'workflow',
+    workflowId: wfBranch.id,
+    prompt: 'BRANCHNO 跑一遍',
+  })
+  const waitConfirm = async (id) => {
+    for (let i = 0; i < 100; i++) {
+      const tk = await call('GET', `/tasks/${id}`)
+      if (tk.requests.length) return tk.requests[0]
+      await sleep(100)
+    }
+    throw new Error('没有等到确认')
+  }
+  const cf1 = await waitConfirm(br.id)
+  assert.equal(cf1.kind, 'confirm')
+  assert.match(cf1.title, /「测试」完成了/)
+  assert.match(cf1.detail, /结论：不通过/, '确认卡片上是节点的结果')
+  await call('POST', `/tasks/${br.id}/requests/${cf1.id}`, { allow: false, answer: '多跑一遍集成测试 BRANCHNO' })
+  const cf2 = await waitConfirm(br.id)
+  const redo = calls().slice(nBranch).at(-1)
+  assert.match(redo.input, /用户看了结果，要求修改：\n多跑一遍集成测试 BRANCHNO/, '退回的意见交回节点')
+  assert.match(redo.input, /结论：通过」或「结论：不通过/, '返工后同样要给出结论')
+  await call('POST', `/tasks/${br.id}/requests/${cf2.id}`, { allow: true })
+  br = await waitDone(br.id)
+  assert.equal(br.status, 'done', JSON.stringify(br.messages.filter((m) => m.role === 'system')))
+  const byNode = (id) => br.steps.find((s) => s.nodeId === id)
+  assert.equal(byNode('t').branch, 'fail')
+  assert.equal(byNode('fix').status, 'done', '结论不通过：走修复')
+  assert.equal(byNode('ok').status, 'skipped', '没走到的分支跳过')
+  assert.equal(byNode('after').status, 'skipped', '跳过的节点后面的也跳过')
+  const first = calls()[nBranch]
+  assert.match(first.input, /通过时接着做「发布」；不通过时接着做「修复」/)
+  assert.ok(br.messages.some((m) => /你退回了「测试」：多跑一遍集成测试 BRANCHNO/.test(m.text)))
+  assert.ok(br.messages.some((m) => /你确认了「测试」的结果/.test(m.text)))
+
+  // 预算：第一个节点用掉的 token 超过上限，第二个节点开始前暂停；继续执行再给一份额度
+  const wfBudget = await call('POST', '/workflows', {
+    name: '有预算',
+    description: '',
+    mainAgentId: A.id,
+    members: [],
+    budgetTokens: 1,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [node('a', '一', '', '做一。'), node('b', '二', '', '做二。')],
+        edges: [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'a', to: 'b' },
+          { id: 'e3', from: 'b', to: 'end' },
+        ],
+      },
+    ],
+    entryFlowId: 'main',
+    document: '',
+  })
+  let bud = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'workflow',
+    workflowId: wfBudget.id,
+    prompt: '省着点',
+  })
+  bud = await waitDone(bud.id)
+  assert.equal(bud.status, 'stopped')
+  assert.match(bud.messages.at(-1).text, /达到工作流设定的上限 1，已暂停/)
+  assert.equal(bud.steps.find((s) => s.nodeId === 'a').status, 'done')
+  assert.notEqual(bud.steps.find((s) => s.nodeId === 'b')?.status, 'done')
+  await call('POST', `/tasks/${bud.id}/resume`, {})
+  bud = await waitDone(bud.id)
+  assert.equal(bud.status, 'done', '继续执行时重新给一份额度')
+  await call('DELETE', `/tasks/${br.id}`)
+  await call('DELETE', `/tasks/${bud.id}`)
+  await call('DELETE', `/workflows/${wfBranch.id}`)
+  await call('DELETE', `/workflows/${wfBudget.id}`)
+  step('工作流：条件连线按结论选路，完成后等我确认（可以退回），超过预算上限暂停')
+
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })
   bad = await waitDone(bad.id)
@@ -545,6 +829,19 @@ try {
   assert.match(netErr.text, /走的是 Command Code 官方服务[\s\S]*me\/fake\/flash/)
   assert.match(netErr.text, /连接中途断开/)
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
+  // 卡住的 CLI：没有输出先提醒一次，再过同样的时间自动停止；输出里看出是没登录，给出登录的方法
+  await call('PUT', '/settings', { ...settings, idleTimeoutMinutes: 1 })
+  let hang = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'HANG' })
+  hang = await waitDone(hang.id)
+  await call('PUT', '/settings', settings)
+  assert.equal(hang.status, 'failed')
+  assert.ok(
+    hang.messages.some((m) => m.role === 'system' && /已经 1 分钟没有任何输出/.test(m.text)),
+    '先提醒一次',
+  )
+  assert.match(hang.messages.at(-1).text, /连续 2 分钟没有任何输出，已停止/)
+  assert.match(hang.messages.at(-1).text, /没有登录[\s\S]*\/login/)
+  step('卡住的 CLI：长时间没有输出先提醒、再自动停止，看出没登录时说明怎么登录')
 
   // ---- 节点入口：开始 / 验收 / 结束，流程节点，引用其他工作流 ----
   const small = await call('POST', '/workflows', {
@@ -862,18 +1159,128 @@ try {
   assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
-  step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件')
+  // Agent 自己提交了改动：仍然算在任务的更改里（和任务开始时的提交比）
+  let tCommit = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'COMMIT 改完提交',
+  })
+  tCommit = await waitDone(tCommit.id)
+  assert.ok(tCommit.baseRef, '记下任务开始时的提交')
+  assert.deepEqual(
+    tCommit.changes.find((c) => c.path === 'committed.txt'),
+    { path: 'committed.txt', add: 3, del: 0 },
+    '提交了的改动仍然统计在内 ' + JSON.stringify(tCommit.changes),
+  )
+  // 看一个文件的差异，撤销它的改动（恢复成任务开始时的样子）
+  const d = await call('GET', `/tasks/${tCommit.id}/diff?path=committed.txt`)
+  assert.ok(d.git && /\+one\n\+two\n\+three/.test(d.diff), '差异里有新增的行 ' + d.diff)
+  const reverted = await call('POST', `/tasks/${tCommit.id}/revert`, { path: 'committed.txt' })
+  assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '任务里新建的文件撤销后删掉')
+  assert.ok(!reverted.changes.some((c) => c.path === 'committed.txt'), '撤销后不再算在改动里')
+  assert.match(
+    await fetch(`${base}/tasks/${tCommit.id}/revert`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ path: '../outside.txt' }),
+    }).then((r) => r.text()),
+    /不在任务的改动里/,
+  )
+  // 独立分支：在任务自己的 git worktree 里改，项目目录不动；合并后改动才进项目，丢弃则什么都不留
+  // 先退掉上面 Agent 自己做的提交，让项目回到干净的起点（committed.txt 已经撤销掉了）
+  git('reset', '-q', '--keep', 'HEAD~1')
+  let tIso = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'COMMIT 在独立分支上改',
+    isolate: true,
+  })
+  assert.equal(tIso.worktree?.state, 'active', '建了独立分支')
+  tIso = await waitDone(tIso.id)
+  assert.ok(existsSync(path.join(tIso.worktree.path, 'committed.txt')), 'Agent 在独立目录里改')
+  assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '项目目录没被改动')
+  assert.ok(
+    tIso.changes.some((c) => c.path === 'committed.txt'),
+    '改动按独立目录统计',
+  )
+  assert.match((await call('GET', `/tasks/${tIso.id}/diff?path=committed.txt`)).diff, /\+one/)
+  writeFileSync(path.join(tIso.worktree.path, 'later.txt'), 'not committed yet\n')
+  // 项目里有个没跟踪的同名文件挡着：合并失败，项目和独立分支都保持原样
+  const blocker = path.join(projectDir, 'claude-output.txt')
+  const blockerText = readFileSync(blocker, 'utf8')
+  const blocked = await fetch(`${base}/tasks/${tIso.id}/worktree/merge`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  })
+  assert.equal(blocked.status, 409)
+  assert.match((await blocked.json()).error, /claude-output\.txt/, '说明是哪个文件挡住了')
+  assert.equal((await call('GET', `/tasks/${tIso.id}`)).worktree.state, 'active', '合并失败时独立分支还在')
+  assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '合并失败时项目目录没被改动')
+  rmSync(blocker)
+  const merged = await call('POST', `/tasks/${tIso.id}/worktree/merge`)
+  assert.equal(merged.worktree.state, 'merged')
+  assert.ok(existsSync(path.join(projectDir, 'committed.txt')), '合并后改动进了项目目录')
+  assert.ok(existsSync(path.join(projectDir, 'later.txt')), '没提交的改动合并前先提交')
+  assert.equal(
+    readFileSync(path.join(projectDir, 'pre.txt'), 'utf8'),
+    'changed before the task\n',
+    '项目里原有的改动保留',
+  )
+  assert.ok(!existsSync(tIso.worktree.path), '合并后删掉独立目录')
+  assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '合并后删掉任务分支')
+  // 退回合并前，免得影响后面的测试（--keep 保留 pre.txt 的未提交改动）
+  git('reset', '-q', '--keep', 'HEAD~1')
+  writeFileSync(blocker, blockerText)
+  let tDrop = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'COMMIT 这个不要了',
+    isolate: true,
+  })
+  tDrop = await waitDone(tDrop.id)
+  const dropped = await call('POST', `/tasks/${tDrop.id}/worktree/discard`)
+  assert.equal(dropped.worktree.state, 'discarded')
+  assert.ok(!existsSync(tDrop.worktree.path) && !existsSync(path.join(projectDir, 'committed.txt')), '丢弃后什么都不留')
+  assert.equal(git('branch', '--list', tDrop.worktree.branch).toString().trim(), '', '丢弃时删掉任务分支')
+  await call('DELETE', `/tasks/${tIso.id}`)
+  await call('DELETE', `/tasks/${tDrop.id}`)
+  step('独立分支：任务在 git worktree 里执行，合并或丢弃后清理分支和目录')
+  // Agent 输出里提到的文件可以点开看：只能读项目目录里的
+  const rd = await call('GET', `/tasks/${tCommit.id}/file?path=README.md`)
+  assert.equal(rd.content, '# demo\n')
+  assert.equal((await call('GET', `/tasks/${tCommit.id}/file?path=nope.ts`)).exists, false)
+  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file?path=../../etc/passwd`)).status, 400)
+  // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
+  const attDir = path.dirname(att.path)
+  await call('DELETE', `/tasks/${tAtt.id}`)
+  assert.ok(!existsSync(attDir), '删除任务时删掉它的附件')
+  // 再传一个还没发出去的附件，后面数据目录的统计要用
+  await call('POST', '/uploads', {
+    name: '草稿.txt',
+    mime: 'text/plain',
+    data: Buffer.from('draft').toString('base64'),
+  })
+  step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件；删除任务时一起删掉')
   // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
   assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
   assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
-  assert.ok(existsSync(path.join(dataDir, 'tasks/tasks.json')), '任务记录在 tasks/ 下')
+  assert.ok(existsSync(path.join(dataDir, 'tasks/items/legacy-1.json')), '旧的 tasks.json 拆成每个任务一个文件')
+  assert.ok(!existsSync(path.join(dataDir, 'tasks/tasks.json')))
+  assert.equal((await call('GET', '/tasks/legacy-1')).messages[0].text, '旧的要求')
   const usage = await call('GET', '/data')
   assert.equal(usage.dir, dataDir)
   const kindOf = (u, k) => u.kinds.find((x) => x.id === k)
   assert.ok(kindOf(usage, 'tasks').bytes > 0 && kindOf(usage, 'uploads').files >= 1 && usage.memory.rss > 0)
+  // 拆分旧任务文件时，原文件备份在缓存里
+  assert.ok(kindOf(usage, 'cache').files >= 1, '旧的 tasks.json 备份在缓存里')
+  const cacheBefore = kindOf(usage, 'cache').bytes
   mkdirSync(path.join(dataDir, 'cache/junk'), { recursive: true })
   writeFileSync(path.join(dataDir, 'cache/junk/x.bin'), 'x'.repeat(100))
-  assert.equal(kindOf(await call('GET', '/data'), 'cache').bytes, 100)
+  assert.equal(kindOf(await call('GET', '/data'), 'cache').bytes, cacheBefore + 100)
   await call('POST', '/data/clear', { kind: 'cache' })
   assert.equal(kindOf(await call('GET', '/data'), 'cache').files, 0, '缓存清理掉了')
   assert.equal(
@@ -888,7 +1295,7 @@ try {
     '配置不能清理',
   )
   const backup = await call('GET', '/data/export?kinds=config,projects,tasks')
-  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/tasks.json'] && !backup.files['uploads'])
+  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/items/legacy-1.json'] && !backup.files['uploads'])
   const agentsBefore = await call('GET', '/agents')
   const tasksBefore = (await call('GET', '/tasks')).length
   await call('DELETE', `/agents/${agentsBefore.at(-1).id}`).catch(() => {})
@@ -1230,17 +1637,38 @@ try {
   )
   assert.equal(rels.update.tag, 'v0.11.8', '正式版只提示更新的正式版')
   await assert.rejects(call('POST', '/app/install', { tag: 'v9.9.9' }), /找不到版本/)
-  let aj = await call('POST', '/app/install', { tag: 'v0.11.9-dev' })
-  for (let i = 0; aj.status === 'running' && i < 100; i++) {
-    await sleep(100)
-    aj = await call('GET', `/app/install/${aj.id}`)
+  const installJob = async (tag) => {
+    let j = await call('POST', '/app/install', { tag })
+    for (let i = 0; j.status === 'running' && i < 150; i++) {
+      await sleep(100)
+      j = await call('GET', `/app/install/${j.id}`)
+    }
+    return j
   }
+  // 哈希对不上：不装，程序文件不动
+  let aj = await installJob('v0.11.4')
+  assert.equal(aj.status, 'failed')
+  assert.match(aj.error, /校验不通过/)
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
+  // 新的服务端加载不了：自动换回原来的文件
+  aj = await installJob('v0.11.8')
+  assert.equal(aj.status, 'failed')
+  assert.match(aj.error, /退回原来的版本/)
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
+  assert.ok(existsSync(path.join(appDir, 'dist/old.html')), '前端也换回来')
+  aj = await installJob('v0.11.9-dev')
   assert.equal(aj.status, 'done', aj.error)
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
   assert.ok(existsSync(path.join(appDir, 'dist/index.html')) && !existsSync(path.join(appDir, 'dist/old.html')))
   assert.equal(readFileSync(path.join(appDir, 'data/keep.json'), 'utf8'), '{"keep":true}', '数据不能动')
   assert.ok(!existsSync(path.join(appDir, 'dist.old')) && !existsSync(path.join(appDir, 'dist.next')))
-  step('版本更新：读取 GitHub 上的包、判断有没有新版本，下载切换后替换程序文件、保留数据')
+  // 回到上一个版本：和当前版本互换，换完还能再换回来
+  assert.equal((await call('GET', '/app/version')).previous, '0.11.5')
+  assert.deepEqual(await call('POST', '/app/rollback'), { version: '0.11.5' })
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
+  assert.ok(existsSync(path.join(appDir, 'dist/old.html')))
+  assert.equal(readFileSync(path.join(dataDir, 'cache/updates/previous/server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
+  step('版本更新：读取 GitHub 上的包、校验哈希，替换程序文件、保留数据；新版本加载不了自动退回，也能手动回到上一个版本')
 
   // ---- 只接受本机页面的请求 ----
   const raw = (method, url, headers, body) =>
@@ -1263,25 +1691,76 @@ try {
   assert.equal(await raw('GET', '/projects', { origin: 'http://localhost:5173' }), 200, '本机页面可以访问')
   step('只接受本机页面的请求：拦下外部 Host、外部 Origin 和非 JSON 的写请求')
 
+  // ---- 访问令牌 ----
+  {
+    const token = readFileSync(path.join(dataDir, 'access-token'), 'utf8').trim()
+    const json = { 'content-type': 'application/json' }
+    const cur = await call('GET', '/settings')
+    const on = await fetch(base + '/settings', {
+      method: 'PUT',
+      headers: json,
+      body: JSON.stringify({ ...cur, requireToken: true }),
+    })
+    const cookie = (on.headers.get('set-cookie') ?? '').split(';')[0]
+    assert.equal(cookie, `agent_panel_token=${token}`, '打开令牌的浏览器拿到 Cookie')
+    assert.equal((await fetch(base + '/projects')).status, 401, '没带令牌被拒绝')
+    assert.equal((await fetch(base + '/projects', { headers: { cookie } })).status, 200)
+    // 带令牌的地址：发 Cookie 后跳到去掉令牌的地址
+    const r = await fetch(base.replace('/api', '') + `/tasks?token=${token}&x=1`, { redirect: 'manual' })
+    assert.equal(r.status, 302)
+    assert.equal(r.headers.get('location'), '/tasks?x=1')
+    assert.match(r.headers.get('set-cookie') ?? '', /agent_panel_token=/)
+    assert.equal((await fetch(base.replace('/api', '') + '/?token=wrong', { redirect: 'manual' })).status, 401)
+    await fetch(base + '/settings', { method: 'PUT', headers: { ...json, cookie }, body: JSON.stringify(cur) })
+    assert.equal((await fetch(base + '/projects')).status, 200, '关掉后不再要求')
+  }
+  step('访问令牌：打开后没带令牌的请求被拒绝，用带令牌的地址打开的浏览器拿到 Cookie')
+
   // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
   {
     const trayPort = port + 1
     const child = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts', '--prod'], {
       cwd: root,
-      env: { ...process.env, AGENT_PANEL_DATA: dataDir, PORT: String(trayPort), AGENT_PANEL_TRAY: '1' },
+      env: {
+        ...process.env,
+        LANG: 'zh_CN.UTF-8',
+        AGENT_PANEL_DATA: dataDir,
+        PORT: String(trayPort),
+        AGENT_PANEL_TRAY: '1',
+        FAKE_CLI_LOG: log,
+      },
       stdio: ['pipe', 'pipe', 'inherit'],
     })
     let out = ''
     child.stdout.on('data', (d) => (out += d))
     const exited = new Promise((r) => child.on('exit', (code) => r(code)))
     for (let i = 0; i < 100 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
-    assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}`), '托盘模式输出地址')
+    assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}/?token=`), '托盘模式输出带令牌的地址')
+    // 退出时还有 CLI 在跑：要一起停掉，不能留在后台继续改项目
+    const n = calls().length
+    await fetch(`http://127.0.0.1:${trayPort}/api/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'SLOW 退出时停掉' }),
+    })
+    for (let i = 0; i < 50 && calls().length === n; i++) await sleep(100)
+    const cliPid = calls().at(-1).pid
     child.stdin.end()
-    const code = await Promise.race([exited, sleep(5000).then(() => 'timeout')])
+    const code = await Promise.race([exited, sleep(8000).then(() => 'timeout')])
     if (code === 'timeout') child.kill()
     assert.equal(code, 0, '托盘关掉输入后服务退出')
+    await sleep(300)
+    const alive = (() => {
+      try {
+        process.kill(cliPid, 0)
+        return true
+      } catch {
+        return false
+      }
+    })()
+    assert.ok(!alive, '服务退出时正在执行的 CLI 也被结束')
   }
-  step('Windows 托盘程序：服务启动完成后告诉托盘地址，托盘退出时服务跟着退出')
+  step('Windows 托盘程序：服务启动完成后告诉托盘地址，托盘退出时服务和正在执行的 CLI 一起退出')
 
   console.log('\n全部通过')
 } catch (e) {

@@ -4,6 +4,7 @@ import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from './AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
+import { t } from '@shared/i18n'
 
 /** 从已有 Agent 中选一个，按分类分组，可搜索 */
 export function AgentPicker({
@@ -22,8 +23,8 @@ export function AgentPicker({
   const [q, setQ] = useState('')
   const pool = agents.filter((a) => !exclude.includes(a.id) && a.name.toLowerCase().includes(q.trim().toLowerCase()))
   const groups = [
-    { id: DEFAULT_AGENT_ID, name: '默认', items: pool.filter((a) => a.id === DEFAULT_AGENT_ID) },
-    ...[...categories.map((c) => ({ id: c.id, name: c.name })), { id: '', name: '未分类' }].map((g) => ({
+    { id: DEFAULT_AGENT_ID, name: t('默认'), items: pool.filter((a) => a.id === DEFAULT_AGENT_ID) },
+    ...[...categories.map((c) => ({ id: c.id, name: c.name })), { id: '', name: t('未分类') }].map((g) => ({
       ...g,
       items: pool.filter((a) => a.id !== DEFAULT_AGENT_ID && a.categoryId === g.id),
     })),
@@ -37,7 +38,7 @@ export function AgentPicker({
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder="搜索 Agent"
+          placeholder={t('搜索 Agent')}
           className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[13px] outline-none placeholder:text-subtle"
         />
         <div className="max-h-72 overflow-y-auto">
@@ -56,7 +57,7 @@ export function AgentPicker({
             </div>
           ))}
           {groups.length === 0 && (
-            <p className="px-2.5 py-3 text-xs text-subtle">没有可选的 Agent，先去 Agent 页面创建</p>
+            <p className="px-2.5 py-3 text-xs text-subtle">{t('没有可选的 Agent，先去 Agent 页面创建')}</p>
           )}
         </div>
       </PopoverContent>

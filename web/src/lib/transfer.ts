@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { AgentInput, WorkflowInput, type Agent, type Workflow } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { api } from './api'
 
 /**
@@ -47,17 +48,17 @@ export async function importWorkflow(text: string, agents: Agent[], workflows: W
   try {
     raw = JSON.parse(text)
   } catch {
-    throw new Error('不是有效的 JSON 文件')
+    throw new Error(t('不是有效的 JSON 文件'))
   }
   const b = Bundle.safeParse(raw)
-  if (!b.success) throw new Error('这不是 Agent 面板导出的工作流文件')
+  if (!b.success) throw new Error(t('这不是 Agent 面板导出的工作流文件'))
 
   // Agent：同名复用，否则新建；记下旧 id → 新 id
   const map = new Map<string, string>()
   const created: Agent[] = []
   for (const x of b.data.agents) {
     const input = AgentInput.safeParse({ ...x, categoryId: '' })
-    if (!input.success) throw new Error(`文件里的 Agent「${String(x.name ?? x.id)}」格式不对`)
+    if (!input.success) throw new Error(t('文件里的 Agent「{name}」格式不对', { name: String(x.name ?? x.id) }))
     const same = [...agents, ...created].find((a) => a.name === input.data.name)
     if (same) map.set(x.id, same.id)
     else {
@@ -67,11 +68,12 @@ export async function importWorkflow(text: string, agents: Agent[], workflows: W
     }
   }
   const w = WorkflowInput.safeParse(b.data.workflow)
-  if (!w.success) throw new Error('文件里的工作流格式不对')
+  if (!w.success) throw new Error(t('文件里的工作流格式不对'))
   const re = (id: string) => (id ? (map.get(id) ?? '') : '')
   const names = new Set(workflows.map((x) => x.name))
   let name = w.data.name
-  for (let i = 1; names.has(name); i++) name = `${w.data.name}（导入${i > 1 ? ` ${i}` : ''}）`
+  for (let i = 1; names.has(name); i++)
+    name = i > 1 ? t('{name}（导入 {n}）', { name: w.data.name, n: i }) : t('{name}（导入）', { name: w.data.name })
   const workflow = await api.createWorkflow({
     ...w.data,
     name,

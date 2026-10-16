@@ -1,6 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import {
   BaseEdge,
+  EdgeLabelRenderer,
   Background,
   BackgroundVariant,
   Controls,
@@ -25,8 +26,9 @@ import {
   type NodeProps,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
-import { CircleStop, Play, Workflow as WorkflowIcon } from 'lucide-react'
+import { CircleStop, Play, UserCheck, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Agent, Flow, StepStatus } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { END, START, wouldCycle } from '@shared/flow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -34,7 +36,7 @@ import { cliColor } from '@/lib/cli-style'
 import { StepIcon } from '@/components/tasks/TaskStatusIcon'
 
 export type HookSlot = 'start' | 'review' | 'end'
-export const HOOK_LABEL: Record<HookSlot, string> = { start: '开始', review: '验收', end: '结束' }
+export const HOOK_LABEL: Record<HookSlot, string> = { start: t('开始'), review: t('验收'), end: t('结束') }
 
 /** 画布上一个节点要显示的内容，由调用方算好 */
 export interface NodeView {
@@ -53,6 +55,8 @@ export interface NodeView {
   status?: StepStatus
   /** 没有从开始连到，不会执行 */
   loose?: boolean
+  /** 完成后等用户确认 */
+  confirm?: boolean
 }
 
 type CardData = { view: NodeView }
@@ -101,13 +105,15 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           <span className="truncate text-[13.5px] leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
           <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] leading-4 text-subtle">
             {v.kind === 'flow' ? (
-              <span className="truncate">调用流程 · {v.flowText || '未选择'}</span>
+              <span className="truncate">
+                {t('调用流程')} · {v.flowText || t('未选择')}
+              </span>
             ) : agent ? (
               <>
                 <span className="truncate">{agent.name}</span>
                 {v.main && (
                   <span className="shrink-0 rounded px-1 text-[10.5px] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
-                    主
+                    {t('主')}
                   </span>
                 )}
                 {/* 模型放在同一行，节点高度不变，已经排好的流程图不会重叠 */}
@@ -131,13 +137,15 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           <p className="line-clamp-2 text-[11.5px] leading-[1.6] text-subtle">{v.note}</p>
         </div>
       )}
-      {(v.hooks.length > 0 || v.loose) && (
+      {(v.hooks.length > 0 || v.loose || v.confirm) && (
         <div className="flex flex-wrap gap-1 border-t bg-panel/60 px-3 py-2">
-          {v.loose && <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">未连接</span>}
+          {v.loose && (
+            <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">{t('未连接')}</span>
+          )}
           {v.hooks.map((h) => (
             <span
               key={h.slot}
-              title={`${HOOK_LABEL[h.slot]}：${h.label}`}
+              title={t('{slot}：{label}', { slot: HOOK_LABEL[h.slot], label: h.label })}
               className={cn(
                 'inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]',
                 h.slot === 'review' ? 'bg-accent-soft text-accent' : 'bg-field text-muted ring-1 ring-line ring-inset',
@@ -149,6 +157,12 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               {h.extra && <span className="shrink-0 opacity-75">{h.extra}</span>}
             </span>
           ))}
+          {v.confirm && (
+            <span className="inline-flex items-center gap-1 rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">
+              <UserCheck className="h-3 w-3" />
+              {t('等我确认')}
+            </span>
+          )}
         </div>
       )}
       <Handle type="source" position={Position.Right} />
@@ -214,6 +228,8 @@ function AutoFit() {
     if (!ready || done.current) return
     done.current = true
     smartFit(rf, dom)
+    // 节点第一次量好尺寸时适配一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [ready])
   return null
 }
@@ -230,10 +246,32 @@ const FlowEdge = memo(function FlowEdge({
   markerEnd,
   style,
   interactionWidth,
+  data,
 }: EdgeProps) {
   const dx = Math.max(Math.abs(targetX - sourceX) * 0.5, 40)
   const path = `M${sourceX},${sourceY} C${sourceX + dx},${sourceY} ${targetX - dx},${targetY} ${targetX},${targetY}`
-  return <BaseEdge path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+  const when = (data as { when?: string } | undefined)?.when
+  return (
+    <>
+      <BaseEdge path={path} markerEnd={markerEnd} style={style} interactionWidth={interactionWidth} />
+      {when && (
+        // 有条件的线在中间标出走这条线的结论
+        <EdgeLabelRenderer>
+          <span
+            className={cn(
+              'nodrag nopan pointer-events-none absolute rounded-full border bg-card px-1.5 py-px text-[11px] leading-4 shadow-card',
+              when === 'pass' ? 'border-success/40 text-success' : 'border-danger/40 text-danger',
+            )}
+            style={{
+              transform: `translate(-50%, -50%) translate(${(sourceX + targetX) / 2}px, ${(sourceY + targetY) / 2}px)`,
+            }}
+          >
+            {when === 'pass' ? t('通过') : t('不通过')}
+          </span>
+        </EdgeLabelRenderer>
+      )}
+    </>
+  )
 })
 const edgeTypes = { flow: FlowEdge }
 
@@ -276,7 +314,7 @@ export function FlowCanvas({
         type: 'term',
         position: flow.startPos,
         deletable: false,
-        data: { kind: 'start', label: '开始', sub: startSub, status: terms?.start } satisfies TermData,
+        data: { kind: 'start', label: t('开始'), sub: startSub, status: terms?.start } satisfies TermData,
       },
       ...flow.nodes.map(
         (n): Node => ({
@@ -291,7 +329,7 @@ export function FlowCanvas({
         type: 'term',
         position: flow.endPos,
         deletable: false,
-        data: { kind: 'end', label: '结束', status: terms?.end } satisfies TermData,
+        data: { kind: 'end', label: t('结束'), status: terms?.end } satisfies TermData,
       },
     ],
     [flow, views, startSub, terms?.start, terms?.end],
@@ -343,6 +381,7 @@ export function FlowCanvas({
       source: e.from,
       target: e.to,
       selected: selected === `edge:${e.id}`,
+      data: { when: e.when ?? '' },
       className: tone === 'active' ? 'edge-active' : undefined,
       style: color ? { stroke: color, strokeWidth: 2 } : undefined,
       markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, ...(color && { color }) },
@@ -399,11 +438,11 @@ export function FlowCanvas({
   }
 
   const check = (c: Connection | Edge): string => {
-    if (!c.source || !c.target) return '无效的连线'
-    if (c.source === END || c.target === START) return '开始只能连出，结束只能连入'
-    if (c.source === c.target) return '不能连到自己'
-    if (flow.edges.some((e) => e.from === c.source && e.to === c.target)) return '已经有这条线了'
-    if (wouldCycle(flow, c.source, c.target)) return '这条线会形成循环；需要反复修改时，用节点的「验收」流程'
+    if (!c.source || !c.target) return t('无效的连线')
+    if (c.source === END || c.target === START) return t('开始只能连出，结束只能连入')
+    if (c.source === c.target) return t('不能连到自己')
+    if (flow.edges.some((e) => e.from === c.source && e.to === c.target)) return t('已经有这条线了')
+    if (wouldCycle(flow, c.source, c.target)) return t('这条线会形成循环；需要反复修改时，用节点的「验收」流程')
     return ''
   }
 
@@ -474,7 +513,7 @@ export function FlowCanvas({
             pannable
             zoomable
             position="bottom-right"
-            ariaLabel="小地图"
+            ariaLabel={t('小地图')}
             className="!m-3 hidden overflow-hidden rounded-lg border !bg-card sm:block"
             style={{ width: 150, height: 96 }}
             maskColor="color-mix(in oklab, var(--bg) 70%, transparent)"

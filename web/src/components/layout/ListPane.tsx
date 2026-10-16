@@ -2,6 +2,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/component
 import { Plus, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
 
 /** 中间的列表栏：标题、新建按钮、搜索框、列表和底部信息 */
 export function ListPane({
@@ -14,6 +15,7 @@ export function ListPane({
   children,
   footer,
   extra,
+  collapsed,
 }: {
   title: string
   count: number
@@ -25,11 +27,16 @@ export function ListPane({
   footer?: React.ReactNode
   /** 新建按钮左边的额外操作 */
   extra?: React.ReactNode
+  /** 宽屏上收起（例如编辑流程图时把位置让给画布）；窄屏上列表在上方，不收 */
+  collapsed?: boolean
 }) {
   return (
     <section
-      aria-label={`${title}列表`}
-      className="flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]"
+      aria-label={t('{title}列表', { title })}
+      className={cn(
+        'flex w-full shrink-0 flex-col border-b bg-panel md:h-full md:w-[300px] md:border-r md:border-b-0 lg:w-[320px]',
+        collapsed && 'md:hidden',
+      )}
     >
       <div className="flex flex-col gap-3 px-4 pt-5 pb-3">
         <div className="flex items-center gap-2">
@@ -39,12 +46,12 @@ export function ListPane({
             {extra}
             <Button size="sm" onClick={onNew}>
               <Plus className="h-4 w-4" />
-              新建
+              {t('新建')}
             </Button>
           </div>
         </div>
         <label className="relative block">
-          <span className="sr-only">搜索</span>
+          <span className="sr-only">{t('搜索')}</span>
           <Search className="pointer-events-none absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-subtle" />
           <input
             value={query}

@@ -1,0 +1,20 @@
+{"type":"event","event":{"type":"run_start","sessionId":"sess-cmdc-1"}}
+{"type":"event","event":{"type":"model_request_start","model":"claude-sonnet-4-5"}}
+{"type":"event","event":{"type":"thinking_start"}}
+{"type":"event","event":{"type":"thinking_delta","delta":"先找角标组件。"}}
+{"type":"event","event":{"type":"thinking_end","text":"先找角标组件。"}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"text_delta","delta":"我来改一下"}}
+{"type":"event","event":{"type":"text_delta","delta":"角标组件。"}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"text","text":"我来改一下角标组件。"}]}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_1","toolName":"read_file","input":{"path":"/work/shop/src/CartBadge.tsx"}}}
+{"type":"event","event":{"type":"tool_completed","toolCallId":"call_1","result":"export function CartBadge() {}"}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_2","toolName":"edit_file","input":{"path":"/work/shop/src/CartBadge.tsx","old_str":"a","new_str":"b\nc"}}}
+{"type":"event","event":{"type":"tool_completed","toolCallId":"call_2","result":{"ok":true}}}
+{"type":"event","event":{"type":"tool_queued","toolCallId":"call_3","toolName":"run_command","input":{"command":"npm test"}}}
+{"type":"event","event":{"type":"tool_errored","toolCallId":"call_3","error":"1 test failed"}}
+{"type":"event","event":{"type":"model_request_end","model":"claude-sonnet-4-5","usage":{"inputTokens":12000,"outputTokens":300,"cacheReadTokens":9000,"cacheWriteTokens":1000}}}
+{"type":"event","event":{"type":"message_start"}}
+{"type":"event","event":{"type":"message_end","content":[{"type":"text","text":"测试还有一个没过。"}]}}
+{"type":"event","event":{"type":"model_request_end","model":"claude-sonnet-4-5","usage":{"inputTokens":200,"outputTokens":50,"cacheReadTokens":12000,"cacheWriteTokens":0}}}
+{"type":"result","subtype":"success","sessionId":"sess-cmdc-1"}

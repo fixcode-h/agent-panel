@@ -83,10 +83,11 @@ out.push(
   '### 下载',
   '',
   `- Windows — \`${name}.zip\`，解压后双击 \`AgentPanel.exe\`（不弹命令行窗口，图标在任务栏通知区，右键可以退出）`,
-  `- macOS / Linux — \`${name}.tar.gz\`，解压后运行 \`./start.sh\``,
+  `- macOS / Linux — \`${name}.tar.gz\`，解压后运行 \`./start.sh\`；运行一次 \`./install-service.sh\` 可以开机自动在后台运行`,
   '',
   '需要 Node.js 20+，以及至少一个已登录的 CLI（Claude Code、Codex 或 Command Code）。启动后会自动用浏览器打开 http://127.0.0.1:8787 。',
-  '升级时把旧版本目录里的 `data/` 复制到新版本目录即可保留配置和任务。',
+  'Windows 第一次运行时如果提示「Windows 已保护你的电脑」：托盘程序没有代码签名，点「更多信息」→「仍要运行」即可。',
+  '已经装过的可以在面板的「设置 · 版本更新」里直接更新，数据保存在用户目录的 `.agent-panel` 下，不会丢；包的 SHA256 在 `SHA256SUMS` 里。',
   '',
 )
 if (prev)

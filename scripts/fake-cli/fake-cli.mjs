@@ -10,6 +10,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
 const kind = args[0] === 'app-server' ? 'codex' : args.includes('stream-json') ? 'claude' : 'commandcode'
@@ -130,7 +131,14 @@ const verdict = input.includes('最后单独一行写「验收结论')
     ? '\n验收结论：不通过'
     : '\n验收结论：通过'
   : ''
-const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}`
+// LONGOUT：第一个节点输出一份很长的结果（测试交接内容超过上限时存成文件）
+const long =
+  input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
+// 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」
+const branch = input.includes('「结论：通过」或「结论：不通过」')
+  ? `\n结论：${input.includes('BRANCHNO') ? '不通过' : '通过'}`
+  : ''
+const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${long}`
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
@@ -166,6 +174,12 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
     out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
   }
   process.exit(0)
+}
+
+// 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）
+if (input.includes('HANG')) {
+  process.stderr.write('Invalid API key · Please run /login\n')
+  await new Promise(() => setInterval(() => {}, 60_000))
 }
 
 if (kind === 'claude') {
@@ -214,6 +228,13 @@ if (kind === 'claude') {
   })
   out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 40 } } })
   writeFileSync(file, 'line1\nline2\n')
+  // 任务里有 COMMIT 时像真的 Agent 一样自己提交一次（测试提交后改动仍然统计在内）
+  if (input.includes('COMMIT')) {
+    writeFileSync('committed.txt', 'one\ntwo\nthree\n')
+    const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
+    g('add', 'committed.txt')
+    g('commit', '-qm', 'agent commit')
+  }
   out({
     type: 'assistant',
     message: {

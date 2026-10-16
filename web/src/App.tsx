@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react'
+import { Suspense, lazy, useEffect, useState } from 'react'
 import { Toaster } from 'sonner'
 import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
-import { AgentsPage } from '@/pages/AgentsPage'
-import { WorkflowsPage } from '@/pages/WorkflowsPage'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { HomePage } from '@/pages/HomePage'
 import { ChatPage } from '@/pages/ChatPage'
-import { SettingsDialog } from '@/pages/SettingsPage'
 import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
+import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { ErrorBoundary } from '@/components/ui/error-boundary'
+
+// 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
+const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
+const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })))
+const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
 const PAGES: Record<Route['page'], () => React.ReactNode> = {
@@ -76,6 +80,13 @@ function TaskWatcher() {
   return null
 }
 
+/** 命令面板和全局快捷键（要在导航上下文里面） */
+function Shortcuts() {
+  const [open, setOpen] = useState(false)
+  useShortcuts(() => setOpen((o) => !o))
+  return <CommandPalette open={open} onOpenChange={setOpen} />
+}
+
 function ProjectDialog({ open, id, onOpenChange }: { open: boolean; id?: string; onOpenChange: (o: boolean) => void }) {
   const { projects } = useData()
   const project = id ? projects.find((p) => p.id === id) : undefined
@@ -85,7 +96,7 @@ function ProjectDialog({ open, id, onOpenChange }: { open: boolean; id?: string;
 
 export function App() {
   const [route, setRoute] = useHashRoute()
-  const [settings, setSettings] = useState<{ open: boolean; section?: string }>({ open: false })
+  const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
   const [project, setProject] = useState<{ open: boolean; id?: string }>({ open: false })
   const [dark, toggleTheme] = useTheme()
 
@@ -95,23 +106,34 @@ export function App() {
         value={{
           route,
           go: setRoute,
-          openSettings: (section) => setSettings({ open: true, section }),
+          openSettings: (section) => setSettings({ open: true, section, loaded: true }),
           openProject: (id) => setProject({ open: true, id }),
         }}
       >
         <div className="flex min-h-full flex-col md:h-full">
           <TaskWatcher />
+          <Shortcuts />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
-            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">{PAGES[route.page]()}</div>
+            <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">
+              {/* 页面出错时只影响这一块，侧栏照常可用；切到别的页面自动恢复 */}
+              <ErrorBoundary resetKey={toHash(route)}>
+                <Suspense fallback={null}>{PAGES[route.page]()}</Suspense>
+              </ErrorBoundary>
+            </div>
           </div>
         </div>
-        <SettingsDialog
-          open={settings.open}
-          section={settings.section}
-          onOpenChange={(open) => setSettings((s) => ({ ...s, open }))}
-        />
+        {/* 第一次打开设置时才加载；之后一直挂着，关闭动画照常 */}
+        {settings.loaded && (
+          <Suspense fallback={null}>
+            <SettingsDialog
+              open={settings.open}
+              section={settings.section}
+              onOpenChange={(open) => setSettings((s) => ({ ...s, open }))}
+            />
+          </Suspense>
+        )}
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
         <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />
       </NavCtx.Provider>

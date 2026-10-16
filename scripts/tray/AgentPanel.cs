@@ -96,6 +96,15 @@ class Tray : ApplicationContext
             Exit();
             return;
         }
+        int major = NodeMajor(nodePath);
+        if (major > 0 && major < 20)
+        {
+            if (MessageBox.Show("找到的 Node.js 版本太旧（v" + major + "），Agent 面板需要 Node.js 20 或更新的版本。\n\n要打开 Node.js 的下载页面吗？",
+                    "Agent 面板", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                OpenUrl("https://nodejs.org/zh-cn/download");
+            Exit();
+            return;
+        }
         if (!File.Exists(Path.Combine(dir, "server.mjs")))
         {
             MessageBox.Show("程序目录里缺少 server.mjs，请重新下载完整的安装包并解压。", "Agent 面板",
@@ -139,6 +148,29 @@ class Tray : ApplicationContext
             catch { }
         }
         return null;
+    }
+
+    /** Node.js 的主版本号；读不出来时返回 0，照常启动，由服务自己报错 */
+    static int NodeMajor(string nodePath)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo(nodePath, "-p process.versions.node.split('.')[0]");
+            psi.UseShellExecute = false;
+            psi.CreateNoWindow = true;
+            psi.RedirectStandardOutput = true;
+            using (var p = Process.Start(psi))
+            {
+                string o = p.StandardOutput.ReadToEnd();
+                if (!p.WaitForExit(10000)) return 0;
+                int v;
+                return int.TryParse(o.Trim(), out v) ? v : 0;
+            }
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     void Start(string nodePath, bool restarted)
@@ -219,7 +251,9 @@ class Tray : ApplicationContext
     {
         url = u;
         openItem.Enabled = true;
-        string text = "Agent 面板 · " + u;
+        // 地址里带着访问令牌，提示文字里不显示
+        int q = u.IndexOf('?');
+        string text = "Agent 面板 · " + (q >= 0 ? u.Substring(0, q) : u);
         icon.Text = text.Length > 63 ? text.Substring(0, 63) : text;
         try { File.WriteAllText(Path.Combine(dir, ".agent-panel-url"), u); } catch { }
     }

@@ -2,13 +2,14 @@ import { useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { Loader2 } from 'lucide-react'
 import { Button } from './button'
+import { t } from '@shared/i18n'
 
 /** 确认对话框，用于删除等不可撤销的操作 */
 export function ConfirmDialog({
   open,
   title,
   description,
-  confirmText = '删除',
+  confirmText = t('删除'),
   onConfirm,
   onOpenChange,
   blocked,
@@ -49,7 +50,7 @@ export function ConfirmDialog({
           )}
           <div className="mt-6 flex justify-end gap-2">
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              {blocked ? '知道了' : '取消'}
+              {blocked ? t('知道了') : t('取消')}
             </Button>
             {!blocked && (
               <Button variant="danger" disabled={pending} onClick={confirm}>

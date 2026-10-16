@@ -6,6 +6,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { t } from '@shared/i18n'
 
 /** 找出包含 p 的最长的入口路径；Windows 盘符不区分大小写 */
 function bestRoot(roots: { path: string }[], p: string) {
@@ -55,6 +56,8 @@ function DirBrowser({
 
   useEffect(() => {
     if (open) go(start)
+    // 打开时跳到起始目录，之后由用户浏览
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
   return (
@@ -63,9 +66,9 @@ function DirBrowser({
         <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
         <D.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none">
           <div className="flex items-center gap-3 border-b px-5 py-4">
-            <D.Title className="text-[15px] font-semibold">选择项目目录</D.Title>
-            <D.Description className="sr-only">浏览本机目录，选中项目所在的文件夹</D.Description>
-            <D.Close className="ml-auto rounded-md p-1 text-muted hover:bg-sel hover:text-fg" aria-label="关闭">
+            <D.Title className="text-[15px] font-semibold">{t('选择项目目录')}</D.Title>
+            <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
+            <D.Close className="ml-auto rounded-md p-1 text-muted hover:bg-sel hover:text-fg" aria-label={t('关闭')}>
               <X className="h-4 w-4" />
             </D.Close>
           </div>
@@ -79,8 +82,8 @@ function DirBrowser({
             <Button
               variant="secondary"
               size="icon"
-              aria-label="上一级"
-              title="上一级"
+              aria-label={t('上一级')}
+              title={t('上一级')}
               disabled={!listing?.parent}
               onClick={() => listing?.parent && go(listing.parent)}
             >
@@ -90,11 +93,11 @@ function DirBrowser({
               value={jump}
               onChange={(e) => setJump(e.target.value)}
               className="h-9 font-mono text-[12.5px]"
-              aria-label="路径"
+              aria-label={t('路径')}
             />
           </form>
           {listing?.roots && listing.roots.length > 0 && (
-            <nav aria-label="磁盘和常用位置" className="flex flex-wrap gap-1.5 border-b px-5 py-2.5">
+            <nav aria-label={t('磁盘和常用位置')} className="flex flex-wrap gap-1.5 border-b px-5 py-2.5">
               {listing.roots.map((r, i) => {
                 // 当前路径落在哪个盘 / 位置下就高亮哪个；主目录优先于它所在的盘
                 const cur = bestRoot(listing.roots!, listing.path) === r.path
@@ -133,7 +136,7 @@ function DirBrowser({
               </button>
             ))}
             {listing && listing.dirs.length === 0 && !error && (
-              <p className="px-3 py-8 text-center text-[13px] text-subtle">这个目录下没有子目录</p>
+              <p className="px-3 py-8 text-center text-[13px] text-subtle">{t('这个目录下没有子目录')}</p>
             )}
           </div>
           <div className="flex items-center gap-2 border-t bg-panel px-5 py-3">
@@ -141,10 +144,10 @@ function DirBrowser({
               {listing?.path}
             </span>
             <Button variant="secondary" onClick={() => onOpenChange(false)}>
-              取消
+              {t('取消')}
             </Button>
             <Button disabled={!listing} onClick={() => listing && onPick(listing.path)}>
-              选择此目录
+              {t('选择此目录')}
             </Button>
           </div>
         </D.Content>
@@ -203,24 +206,24 @@ export function DirPicker({
   const [browsing, setBrowsing] = useState(false)
   return (
     <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted">本地目录</span>
+      <span className="text-xs text-muted">{t('本地目录')}</span>
       <div className="flex gap-2">
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder="例如 ~/code/my-app"
+          placeholder={t('例如 ~/code/my-app')}
           className="font-mono text-[13px]"
-          aria-label="本地目录"
+          aria-label={t('本地目录')}
         />
         <Button variant="secondary" className="h-10" onClick={() => setBrowsing(true)}>
           <FolderOpen className="h-4 w-4" />
-          浏览
+          {t('浏览')}
         </Button>
       </div>
       {value.trim() && info === undefined && (
         <span className="flex items-center gap-1.5 text-xs text-subtle">
           <Loader2 className="h-3 w-3 animate-spin" />
-          正在检查目录…
+          {t('正在检查目录…')}
         </span>
       )}
       {value.trim() && info && (
@@ -230,7 +233,7 @@ export function DirPicker({
             info.exists && info.isDir ? 'text-success' : 'text-warning',
           )}
         >
-          {!info.exists ? '目录不存在' : !info.isDir ? '这是一个文件，不是目录' : '目录存在'}
+          {!info.exists ? t('目录不存在') : !info.isDir ? t('这是一个文件，不是目录') : t('目录存在')}
           {info.gitBranch && (
             <span className="ml-1 inline-flex items-center gap-1 text-muted">
               <GitBranch className="h-3 w-3" />
@@ -240,7 +243,7 @@ export function DirPicker({
           {info.exists && info.path !== value.trim() && <span className="truncate text-subtle">· {info.path}</span>}
         </span>
       )}
-      {!value.trim() && <span className="text-xs text-subtle">Agent 会在这个目录里执行任务。</span>}
+      {!value.trim() && <span className="text-xs text-subtle">{t('Agent 会在这个目录里执行任务。')}</span>}
       <DirBrowser
         open={browsing}
         start={info?.exists && info.isDir ? info.path : ''}

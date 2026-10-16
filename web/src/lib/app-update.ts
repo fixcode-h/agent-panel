@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react'
 import type { AppReleases, AppUpdateJob } from '@shared/version'
 import { api } from './api'
+import { t } from '@shared/i18n'
 
 /**
  * 面板版本更新的全局状态：打开页面时检查一次（服务端缓存 10 分钟），侧栏的「设置」和设置里的「版本更新」共用；
@@ -58,10 +59,19 @@ export async function installRelease(tag: string) {
     job = await api.appInstallJob(job.id)
     set({ job })
   }
-  if (job.status === 'failed') throw new Error(job.error ?? '更新失败')
-  const version = tag.replace(/^v/, '')
+  if (job.status === 'failed') throw new Error(job.error ?? t('更新失败'))
+  await waitRestart(tag.replace(/^v/, ''))
+}
+
+/** 回到更新前的版本：服务端换回程序文件后重启 */
+export async function rollbackRelease() {
+  const { version } = await api.appRollback()
+  await waitRestart(version)
+}
+
+/** 重启要几秒；新服务起来、版本对上后刷新页面加载对应的前端 */
+async function waitRestart(version: string) {
   set({ restarting: version })
-  // 重启要几秒；新服务起来、版本对上后刷新页面加载新的前端
   for (let i = 0; i < 90; i++) {
     await sleep(1000)
     const v = await api.appVersion().catch(() => null)
@@ -71,7 +81,7 @@ export async function installRelease(tag: string) {
     }
   }
   set({ restarting: undefined })
-  throw new Error('新版本已经装好，但服务没有自动重启成功，请手动重新启动面板')
+  throw new Error(t('新版本已经装好，但服务没有自动重启成功，请手动重新启动面板'))
 }
 
 export const clearUpdateJob = () => set({ job: undefined })

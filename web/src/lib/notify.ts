@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { Task } from '@shared/schema'
+import { t } from '@shared/i18n'
 
 const KEY = 'notify-task-done'
 
@@ -21,49 +22,49 @@ export async function setNotify(on: boolean) {
   return p === 'granted'
 }
 
-const TEXT: Record<string, string> = { done: '已完成', failed: '失败了', stopped: '已暂停' }
+const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('任务失败了'), stopped: t('任务已暂停') }
 
 /**
  * 任务从执行中变成完成 / 失败时：页面不在前台就发系统通知；标签页标题显示正在执行的任务数。
  * 跑很久的工作流不用一直盯着页面。
  */
-export function useTaskNotifications(tasks: Task[], open: (t: Task) => void) {
+export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) {
   const prev = useRef(new Map<string, string>())
   const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
   useEffect(() => {
     const before = prev.current
-    const next = new Map(tasks.map((t) => [t.id, t.status]))
+    const next = new Map(tasks.map((task) => [task.id, task.status]))
     prev.current = next
-    const running = tasks.filter((t) => t.status === 'running').length
-    document.title = running ? `(${running}) Agent 面板` : 'Agent 面板'
+    const running = tasks.filter((task) => task.status === 'running').length
+    document.title = running ? `(${running}) ${t('Agent 面板')}` : t('Agent 面板')
     // 新出现的确认请求：页面不在前台时也通知
-    const reqs = new Set(tasks.flatMap((t) => (t.requests ?? []).map((r) => r.id)))
-    const fresh = tasks.filter((t) => (t.requests ?? []).some((r) => !asked.current.has(r.id)))
+    const reqs = new Set(tasks.flatMap((task) => (task.requests ?? []).map((r) => r.id)))
+    const fresh = tasks.filter((task) => (task.requests ?? []).some((r) => !asked.current.has(r.id)))
     const first = !asked.current.size && !before.size
     asked.current = reqs
     if (!before.size || !document.hidden || !notifyEnabled()) return
     if (!first)
-      for (const t of fresh)
+      for (const task of fresh)
         try {
-          const n = new Notification('Agent 需要你确认', {
-            body: `${t.title}：${t.requests[0].title}`,
-            tag: `ask:${t.id}`,
+          const n = new Notification(t('Agent 需要你确认'), {
+            body: t('{task}：{request}', { task: task.title, request: task.requests[0].title }),
+            tag: `ask:${task.id}`,
           })
           n.onclick = () => {
             window.focus()
-            openRef.current(t)
+            openRef.current(task)
             n.close()
           }
         } catch {}
-    for (const t of tasks) {
-      if (before.get(t.id) !== 'running' || t.status === 'running' || !TEXT[t.status]) continue
+    for (const task of tasks) {
+      if (before.get(task.id) !== 'running' || task.status === 'running' || !TEXT[task.status]) continue
       try {
-        const n = new Notification(`任务${TEXT[t.status]}`, { body: t.title, tag: t.id })
+        const n = new Notification(TEXT[task.status], { body: task.title, tag: task.id })
         n.onclick = () => {
           window.focus()
-          openRef.current(t)
+          openRef.current(task)
           n.close()
         }
       } catch {

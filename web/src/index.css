@@ -233,6 +233,13 @@ body,
   background: var(--code-chip);
   color: var(--code-chip-fg);
 }
+/* 能点开的文件路径：鼠标移上去带下划线，像链接一样 */
+.chat-md code.md-path {
+  @apply cursor-pointer transition-colors;
+}
+.chat-md code.md-path:hover {
+  @apply border-accent/50 text-accent underline decoration-accent/40 underline-offset-2;
+}
 /* 代码块：一张卡片，顶部语言名和复制按钮 */
 .chat-md .md-code {
   @apply my-3 overflow-hidden rounded-xl border;

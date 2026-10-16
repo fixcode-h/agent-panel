@@ -1,4 +1,6 @@
-import { stat } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdir, stat, writeFile } from 'node:fs/promises'
+import path from 'node:path'
 import type {
   Agent,
   AgentUsage,
@@ -14,12 +16,14 @@ import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
 import { withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
+import { HANDOFF_DIR } from '../store.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli } from './invoke.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
+import { t } from '../../shared/i18n.ts'
 
 export interface RealContext {
   task: Task
@@ -41,6 +45,8 @@ export interface RealContext {
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
 const replies = new Map<string, (r: AskReply) => void>()
 
+const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
+
 /** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
 export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
   const fn = replies.get(id)
@@ -49,15 +55,21 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
   replies.delete(id)
   task.requests = task.requests.filter((x) => x.id !== id)
   const what =
-    req.kind === 'question'
-      ? `回答了「${req.title}」：${r.answer ?? ''}`
-      : `${r.allow ? '允许' : '拒绝'}了：${req.title}`
+    req.kind === 'confirm'
+      ? r.allow
+        ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })
+        : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
+      : req.kind === 'question'
+        ? t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answer ?? '' })
+        : r.allow
+          ? t('你允许了：{title}', { title: req.title })
+          : t('你拒绝了：{title}', { title: req.title })
   task.messages.push({
     id: newId(),
     role: 'system',
     agentId: req.agentId,
     step: req.step,
-    text: `你${what}`,
+    text: what,
     tools: [],
     at: new Date().toISOString(),
   })
@@ -136,22 +148,45 @@ function speedMeter(onIdle: () => void) {
 const NETWORK_ERROR =
   /Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
+const NOT_LOGGED_IN =
+  /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token/i
+
+/** 各个 CLI 登录的方法：在终端里照着做 */
+const loginHow = (cli: string) =>
+  ({
+    claude: t('运行 claude，在里面输入 /login'),
+    codex: t('运行 codex login'),
+    commandcode: t('运行 cmdc，按提示登录'),
+  })[cli] ?? t('运行它并按提示登录')
+
 /** 把常见的 CLI 报错翻译成能照着做的说明，原始输出另外附在后面 */
-export function failureHints(detail: string) {
+export function failureHints(detail: string, cli?: { id: string; name: string }) {
   const hints: string[] = []
+  if (NOT_LOGGED_IN.test(detail))
+    hints.push(
+      t('· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。', {
+        cli: cli?.name ?? 'CLI',
+        how: loginHow(cli?.id ?? ''),
+      }),
+    )
   const byok =
     /"([^"]+)" routes via Command Code; your providers\.json also declares it — use ((?:"[^"]+"(?: or )?)+)/.exec(
       detail,
     )
   if (byok) {
-    const alt = [...byok[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(' 或 ')
+    const alt = [...byok[2].matchAll(/"([^"]+)"/g)].map((m) => m[1]).join(t(' 或 '))
     hints.push(
-      `· 模型「${byok[1]}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「${alt}」（模型下拉的「配置文件」分组里）。`,
+      t(
+        '· 模型「{model}」走的是 Command Code 官方服务，不是你在 providers.json 里接的接口。想用自己的接口，请把模型换成「{alt}」（模型下拉的「配置文件」分组里）。',
+        { model: byok[1], alt },
+      ),
     )
   }
   if (NETWORK_ERROR.test(detail))
     hints.push(
-      '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+      t(
+        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+      ),
     )
   return hints
 }
@@ -162,18 +197,18 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
   const found = ctx.agents.find((a) => a.id === agentId)
-  if (!found) return { ok: false, error: '找不到执行这一步的 Agent，可能已被删除' }
+  if (!found) return { ok: false, error: t('找不到执行这一步的 Agent，可能已被删除') }
   const agent = withTaskModel(found, task)
   const run = agentRun(agent, settings)
   const cliId = run.cli
   const def = getCli(cliId)
-  if (!def) return { ok: false, error: `未知的 CLI：${cliId}` }
+  if (!def) return { ok: false, error: t('未知的 CLI：{cli}', { cli: cliId }) }
   const cs = cliSettings(settings, cliId)
-  if (!cs.enabled) return { ok: false, error: `${def.name} 在设置里被停用了` }
-  if (!agent.enabled) return { ok: false, error: `Agent「${agent.name}」已停用` }
+  if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
+  if (!agent.enabled) return { ok: false, error: t('Agent「{name}」已停用', { name: agent.name }) }
   const cwd = project.path
   const dir = await stat(cwd).catch(() => null)
-  if (!dir?.isDirectory()) return { ok: false, error: `项目目录不存在：${cwd || '（未设置）'}` }
+  if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
 
   const model = run.model
   const resume = task.sessions[sessionKey]
@@ -188,13 +223,17 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     resume,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
-    addDirs: task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : undefined,
+    // 节点交接的完整结果也在数据目录里
+    addDirs: [
+      ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
+      ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
+    ],
   }
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
   const argv = [
     cs.command,
-    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? '<角色设定>' : a)),
+    ...def.buildArgs(build).map((a) => (build.systemPrompt && a === build.systemPrompt ? t('<角色设定>') : a)),
   ]
   const owner = step ? task.steps.find((s) => s.id === step) : undefined
   if (owner) owner.command = argv
@@ -349,6 +388,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     ctx.changed()
   }
   const asked: string[] = []
+  const idleMinutes = settings.idleTimeoutMinutes
+  // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
+  const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
 
   const r = await invokeCli({
     cliId,
@@ -360,6 +402,28 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     signal: ctx.signal,
     // 0 表示不限制
     timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,
+    idle: idleMs
+      ? {
+          ms: idleMs,
+          // 在等用户确认或回答时 CLI 本来就没有输出，不算卡住
+          busy: () => task.requests.some((x) => asked.includes(x.id)),
+          onWarn: () => {
+            task.messages.push({
+              id: ctx.newId(),
+              role: 'system',
+              agentId,
+              step,
+              text: t(
+                '{cli} 已经 {n} 分钟没有任何输出，可能卡在登录、网络重连或交互式确认上。再过 {n} 分钟还没有输出会自动停止；也可以现在停止后检查一下。',
+                { cli: def.name, n: idleMinutes },
+              ),
+              tools: [],
+              at: new Date().toISOString(),
+            })
+            ctx.changed(true)
+          },
+        }
+      : undefined,
     onEvent: apply,
     canAsk: true,
   }).finally(() => {
@@ -372,17 +436,35 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
 
   for (const m of mine) if (m.text) texts.push(m.text)
   if (ctx.isGit) {
-    const changes = await gitChanges(cwd, task.baseline).catch(() => null)
+    const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
     if (changes) task.changes = changes
   }
   ctx.changed(true)
 
-  if (r.killed === 'stopped') return { ok: false, stopped: true, error: '已停止' }
-  if (r.killed === 'timeout') return { ok: false, error: `超过 ${settings.stepTimeoutMinutes} 分钟没有完成，已停止` }
+  if (r.killed === 'stopped') return { ok: false, stopped: true, error: t('已停止') }
+  if (r.killed === 'timeout')
+    return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
+  if (r.killed === 'idle') {
+    const detail = [...errors, r.stderr.trim().split('\n').slice(-6).join('\n')].filter(Boolean).join('\n')
+    return {
+      ok: false,
+      error: [
+        t('{cli} 连续 {n} 分钟没有任何输出，已停止。', { cli: def.name, n: idleMinutes * 2 }),
+        ...failureHints(detail, def),
+        detail ? `\n${t('最后的输出：')}\n${clip(detail, 1500)}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n'),
+    }
+  }
   if (r.spawnError)
     return {
       ok: false,
-      error: `${r.spawnError}。请确认已安装 ${def.name}（${def.installHint}），或在设置里填写可执行文件的完整路径。`,
+      error: t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。', {
+        error: r.spawnError,
+        cli: def.name,
+        hint: def.installHint,
+      }),
     }
   const failed = result ? !result.ok : r.code !== 0
   if (failed) {
@@ -410,13 +492,25 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         netRetries + 1,
       )
     }
-    const hints = failureHints(detail)
+    const hints = failureHints(detail, def)
     return {
       ok: false,
       error: [
-        `${def.name} 执行失败${r.code !== null && r.code !== 0 ? `（退出码 ${r.code}）` : ''}${netRetries ? `，自动续接 ${netRetries} 次后仍然失败` : ''}：`,
+        r.code !== null && r.code !== 0
+          ? netRetries
+            ? t('{cli} 执行失败（退出码 {code}），自动续接 {n} 次后仍然失败：', {
+                cli: def.name,
+                code: r.code,
+                n: netRetries,
+              })
+            : t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
+          : netRetries
+            ? t('{cli} 执行失败，自动续接 {n} 次后仍然失败：', { cli: def.name, n: netRetries })
+            : t('{cli} 执行失败：', { cli: def.name }),
         ...hints,
-        hints.length ? `\n原始输出：\n${clip(detail || '没有更多信息', 1500)}` : clip(detail || '没有更多信息', 1500),
+        hints.length
+          ? `\n${t('原始输出：')}\n${clip(detail || t('没有更多信息'), 1500)}`
+          : clip(detail || t('没有更多信息'), 1500),
       ].join('\n'),
     }
   }
@@ -435,5 +529,42 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, call),
+    confirm: (step, text) =>
+      new Promise((resolve) => {
+        const { task, signal } = ctx
+        if (signal.aborted) return resolve(null)
+        const id = ctx.newId()
+        const done = (r: { allow: boolean; answer?: string } | null) => {
+          signal.removeEventListener('abort', onAbort)
+          replies.delete(id)
+          task.requests = task.requests.filter((x) => x.id !== id)
+          resolve(r)
+        }
+        // 停止任务时不再等，节点停在这里，继续执行时重新确认
+        const onAbort = () => {
+          done(null)
+          ctx.changed(true)
+        }
+        signal.addEventListener('abort', onAbort)
+        replies.set(id, (r) => done(r))
+        task.requests.push({
+          id,
+          step: step.id,
+          agentId: step.agentId,
+          kind: 'confirm',
+          title: t('「{title}」完成了，看一下结果再继续', { title: step.title }),
+          detail: clip(text, 6000),
+          options: [],
+          at: new Date().toISOString(),
+        })
+        ctx.changed(true)
+      }),
+    saveHandoff: async (step, text) => {
+      const dir = path.join(HANDOFF_DIR, ctx.task.id)
+      await mkdir(dir, { recursive: true })
+      const file = path.join(dir, `${step.id}.md`)
+      await writeFile(file, `# ${step.title}\n\n${text}\n`)
+      return file
+    },
   })
 }

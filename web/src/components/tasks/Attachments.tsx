@@ -5,6 +5,7 @@ import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { t } from '@shared/i18n'
 
 /** 输入框里正在上传或已经上传好的一个附件 */
 interface Item {
@@ -48,17 +49,17 @@ export function useAttachments() {
 
   const add = useCallback(async (files: File[]) => {
     const room = MAX_ATTACHMENTS - count.current
-    if (files.length > room) toast.error(`一次最多附上 ${MAX_ATTACHMENTS} 个文件`)
+    if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     for (const f of files.slice(0, Math.max(room, 0))) {
       if (f.size > MAX_ATTACHMENT_BYTES) {
-        toast.error(`「${f.name}」超过 ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB`)
+        toast.error(t('「{name}」超过 {n} MB', { name: f.name, n: MAX_ATTACHMENT_BYTES / 1024 / 1024 }))
         continue
       }
       // 粘贴的截图没有像样的文件名
       const name =
         f.name && f.name !== 'image.png'
           ? f.name
-          : `截图-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
+          : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
       const key = crypto.randomUUID()
       const preview = isImage(f.type, name) ? URL.createObjectURL(f) : undefined
       setItems((xs) => [...xs, { key, name, mime: f.type, size: f.size, preview }])
@@ -66,7 +67,7 @@ export function useAttachments() {
         const done = await api.upload({ name, mime: f.type, data: await readBase64(f) })
         setItems((xs) => xs.map((x) => (x.key === key ? { ...x, done } : x)))
       } catch (e) {
-        toast.error(`「${name}」上传失败：${(e as Error).message}`)
+        toast.error(t('「{name}」上传失败：{error}', { name, error: (e as Error).message }))
         setItems((xs) => xs.filter((x) => x.key !== key))
       }
     }
@@ -142,12 +143,12 @@ export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: 
             <span className="truncate text-[12.5px]">{x.name}</span>
             <span className="flex items-center gap-1 text-[11px] text-subtle">
               {!x.done && <Loader2 className="h-3 w-3 animate-spin" />}
-              {x.done ? formatSize(x.size) : '上传中'}
+              {x.done ? formatSize(x.size) : t('上传中')}
             </span>
           </span>
           <button
             type="button"
-            aria-label={`移除 ${x.name}`}
+            aria-label={t('移除 {name}', { name: x.name })}
             onClick={() => onRemove(x.key)}
             className="absolute -top-1.5 -right-1.5 grid h-5 w-5 cursor-pointer place-items-center rounded-full border bg-card text-muted opacity-0 shadow-card transition group-hover:opacity-100 hover:text-fg focus-visible:opacity-100"
           >
@@ -221,8 +222,8 @@ export function AttachMenu({
       />
       <Popover>
         <PopoverTrigger
-          aria-label="添加文件、图片或引用"
-          title="添加文件、图片或引用"
+          aria-label={t('添加文件、图片或引用')}
+          title={t('添加文件、图片或引用')}
           className={cn(
             'grid h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel',
             className,
@@ -233,12 +234,12 @@ export function AttachMenu({
         <PopoverContent align="start" className="w-[260px]">
           <PopoverClose className={menuItem} onClick={() => input.current?.click()}>
             <Paperclip className="h-4 w-4 shrink-0 text-subtle" />
-            <span className="flex-1">上传文件或图片</span>
-            <span className="text-[11px] text-subtle">可粘贴 / 拖入</span>
+            <span className="flex-1">{t('上传文件或图片')}</span>
+            <span className="text-[11px] text-subtle">{t('可粘贴 / 拖入')}</span>
           </PopoverClose>
           <PopoverClose className={menuItem} disabled={!canMention} onClick={onMention}>
             <AtSign className="h-4 w-4 shrink-0 text-subtle" />
-            <span className="flex-1">引用项目文件</span>
+            <span className="flex-1">{t('引用项目文件')}</span>
             <span className="font-mono text-[11px] text-subtle">@</span>
           </PopoverClose>
         </PopoverContent>
@@ -350,10 +351,10 @@ export function useFileMention(
   const menu = open ? (
     <div
       role="listbox"
-      aria-label="项目文件"
+      aria-label={t('项目文件')}
       className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-72 overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop"
     >
-      <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">项目文件 · ↑↓ 选择，回车确认</div>
+      <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
       {files.map((f, i) => {
         const cut = f.lastIndexOf('/')
         return (

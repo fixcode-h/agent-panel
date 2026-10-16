@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
 import { api } from './api'
+import { t } from '@shared/i18n'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
 export function switchLang(setting: string) {
@@ -59,6 +60,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   // 设置里的语言和浏览器记的不一样（例如在别的浏览器里改过）：以设置为准
   useEffect(() => {
     if (settings) switchLang(settings.language)
+    // 只在语言设置变化时切换
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [settings?.language])
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksLoaded, setTasksLoaded] = useState(false)
@@ -74,6 +77,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [])
   useEffect(() => {
     void reloadTasks()
+    // 启动时取一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   // 有执行中的任务时定期刷新状态
   const anyRunning = tasks.some((t) => t.status === 'running')
@@ -81,6 +86,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!anyRunning) return
     const t = setInterval(() => void reloadTasks().catch(() => {}), 2500)
     return () => clearInterval(t)
+    // 有任务在执行时才定时刷新
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [anyRunning])
   const upsertTask = useCallback(
     (t: Task) =>
@@ -108,7 +115,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setWorkflows(w)
         setClis(l)
       })
-      .catch((e) => toast.error(`加载失败：${(e as Error).message}`))
+      .catch((e) => toast.error(t('加载失败：{msg}', { msg: (e as Error).message })))
       .finally(() => setLoading(false))
   }, [])
 

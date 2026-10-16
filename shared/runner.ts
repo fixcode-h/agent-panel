@@ -2,18 +2,7 @@
  * 模拟执行：按工作流节点生成示例输出，不调用 CLI。
  * 只给在线演示用，正式版不会打包进去。真实执行见 server/exec/runner.ts。
  */
-import type {
-  Agent,
-  FileChange,
-  NewTaskInput,
-  Task,
-  TaskData,
-  TaskMessage,
-  TaskStep,
-  ToolUse,
-  Workflow,
-  Settings,
-} from './schema.ts'
+import type { Agent, FileChange, Task, TaskMessage, TaskStep, ToolUse, Workflow, Settings } from './schema.ts'
 import { getCli } from './clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultSettings } from './settings.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
@@ -229,8 +218,12 @@ function fakeUsage(ctx: RunContext, agentId: string, text: string) {
   a.outputTokens += out
 }
 
-const agent = (ctx: RunContext, id: string) =>
-  (ctx.task.usage.agents[id] ??= { context: 0, window: 200_000, model: '', tps: 0, outputTokens: 0, genMs: 0 })
+const agent = (ctx: RunContext, id: string) => {
+  // 和真实执行一样记下实际用的模型，右栏「上下文」里显示
+  const a = ctx.agents.find((x) => x.id === id)
+  const model = a ? agentRun(a, ctx.settings ?? defaultSettings()).model : ''
+  return (ctx.task.usage.agents[id] ??= { context: 0, window: 200_000, model, tps: 0, outputTokens: 0, genMs: 0 })
+}
 
 /** 一条 Agent 消息：先思考，再逐个出现工具调用，最后逐段输出文字；输出时显示模拟的速度 */
 async function speak(ctx: RunContext, agentId: string, step: string, out: Output) {
@@ -342,10 +335,15 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       { text: '阅读实现', status: 'done', agentId: call.agentId },
       { text: '整理回答', status: 'running', agentId: call.agentId },
     ]
+  // 后面有条件连线的节点要给出结论；演示里一律通过
+  if (call.deciding && !/结论[:：]/.test(out.text)) out = { ...out, text: `${out.text}\n\n结论：通过` }
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
 }
+
+/** 在线演示里用户对「完成后等我确认」的回答：请求 id → 决定（演示后端回答请求时写进来） */
+export const simAnswers = new Map<string, { allow: boolean; answer?: string }>()
 
 /** 执行一轮（模拟） */
 export async function runTurn(ctx: RunContext) {
@@ -358,6 +356,30 @@ export async function runTurn(ctx: RunContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call: AgentCall) => fakeAgent(ctx, call),
+    confirm: async (step: TaskStep, text: string) => {
+      const id = ctx.newId()
+      ;(ctx.task.requests ??= []).push({
+        id,
+        step: step.id,
+        agentId: step.agentId,
+        kind: 'confirm' as const,
+        title: `「${step.title}」完成了，看一下结果再继续`,
+        detail: text.length > 6000 ? text.slice(0, 6000) + '…' : text,
+        options: [],
+        at: new Date().toISOString(),
+      })
+      ctx.changed(true)
+      while (ctx.task.requests.some((r) => r.id === id)) {
+        if (ctx.stopped()) {
+          ctx.task.requests = ctx.task.requests.filter((r) => r.id !== id)
+          return null
+        }
+        await new Promise((r) => setTimeout(r, 300))
+      }
+      const a = simAnswers.get(id) ?? { allow: true }
+      simAnswers.delete(id)
+      return a
+    },
   }
   if (ctx.first) system(host, '模拟执行：还没有真正调用 CLI，下面是示例输出，用来预览任务的执行过程。')
   await runEngineTurn(host)
