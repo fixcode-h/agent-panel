@@ -530,6 +530,8 @@ export const TaskData = z.object({
   todos: z.array(TaskTodo).default([]),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
+  /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */
+  baseRef: z.string().default(''),
   /** 正在等用户确认的请求 */
   requests: z.array(TaskRequest).default([]),
 })

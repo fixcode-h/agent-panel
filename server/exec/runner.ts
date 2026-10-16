@@ -372,7 +372,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
 
   for (const m of mine) if (m.text) texts.push(m.text)
   if (ctx.isGit) {
-    const changes = await gitChanges(cwd, task.baseline).catch(() => null)
+    const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
     if (changes) task.changes = changes
   }
   ctx.changed(true)

@@ -10,6 +10,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
 const kind = args[0] === 'app-server' ? 'codex' : args.includes('stream-json') ? 'claude' : 'commandcode'
@@ -214,6 +215,13 @@ if (kind === 'claude') {
   })
   out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 40 } } })
   writeFileSync(file, 'line1\nline2\n')
+  // 任务里有 COMMIT 时像真的 Agent 一样自己提交一次（测试提交后改动仍然统计在内）
+  if (input.includes('COMMIT')) {
+    writeFileSync('committed.txt', 'one\ntwo\nthree\n')
+    const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
+    g('add', 'committed.txt')
+    g('commit', '-qm', 'agent commit')
+  }
   out({
     type: 'assistant',
     message: {

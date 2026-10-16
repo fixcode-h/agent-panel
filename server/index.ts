@@ -33,7 +33,7 @@ import { cleanupOldTray, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
-import { cleanupUploads, searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
+import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
@@ -391,7 +391,7 @@ app.route(
   }),
 )
 
-void cleanupUploads()
+void tasks.cleanupUploads()
 
 const root = new Hono()
 root.route('/', app)
@@ -419,13 +419,23 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
     if (open) console.log(`AGENT_PANEL_OPEN ${url}`)
   } else if (open) openBrowser(url)
 })
+/**
+ * 退出前停掉正在执行的 CLI，并把任务状态落盘。macOS / Linux 上 CLI 跑在独立的进程组里，
+ * 服务退出时不会跟着结束，不停掉的话会在后台继续改项目。最多等 5 秒。
+ */
+let exiting = false
+async function shutdown(code = 0) {
+  if (exiting) return process.exit(1)
+  exiting = true
+  server.close()
+  await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
+  process.exit(code)
+}
+for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => void shutdown())
 if (tray) {
   cleanupOldTray()
-  // 托盘程序退出时会关掉服务的输入：收尾后退出（还在跑的 CLI 由托盘程序一起结束）
-  process.stdin.on('end', () => {
-    server.close()
-    setTimeout(() => process.exit(0), 300)
-  })
+  // 托盘程序退出时会关掉服务的输入：停掉 CLI、收尾后退出
+  process.stdin.on('end', () => void shutdown())
   process.stdin.resume()
 }
 let retries = 0

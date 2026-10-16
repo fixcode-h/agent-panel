@@ -15,10 +15,11 @@ import {
 import { beginRun, endRun, newTask, withAttachments } from '../shared/task.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
-import { gitNumstat } from './exec/git.ts'
+import { gitHead, gitNumstat } from './exec/git.ts'
 import { answerRequest, runRealTurn } from './exec/runner.ts'
 import { CHATS_DIR, createCollection } from './store.ts'
 import { mkdir, rm } from 'node:fs/promises'
+import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -84,6 +85,15 @@ export function tasksApi(deps: {
     return chatProject(dir)
   }
 
+  /** 任务引用的附件目录 */
+  const uploadDirs = (t: Task) =>
+    new Set(t.messages.flatMap((m) => (m.attachments ?? []).map((a) => uploadDirOf(a.path)).filter(Boolean)))
+  /** 删除任务后，删掉只有这些任务在用的附件 */
+  async function dropUploads(removed: Task[]) {
+    const keep = new Set((await store.list()).flatMap((t) => [...uploadDirs(t)]))
+    await removeUploads(removed.flatMap((t) => [...uploadDirs(t)]).filter((d) => !keep.has(d)))
+  }
+
   const current = async (id: string) => live.get(id)?.task ?? (await store.get(id))
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
@@ -119,7 +129,8 @@ export function tasksApi(deps: {
     const run = (async () => {
       // 项目被删掉后任务还在，这时没有目录可以执行
       if (!project) throw new Error('任务所属的项目已经不存在')
-      const snapshot = await gitNumstat(project.path).catch(() => null)
+      if (first) entry.task.baseRef = await gitHead(project.path).catch(() => '')
+      const snapshot = await gitNumstat(project.path, entry.task.baseRef).catch(() => null)
       if (first) entry.task.baseline = snapshot ?? {}
       await runRealTurn({
         task: entry.task,
@@ -297,7 +308,9 @@ export function tasksApi(deps: {
   routes.delete('/:id', async (c) => {
     const id = c.req.param('id')
     stopTask(id)
-    if (!(await store.remove(id))) return bad(c, '任务不存在', 404)
+    const task = await store.get(id)
+    if (!task || !(await store.remove(id))) return bad(c, '任务不存在', 404)
+    await dropUploads([task])
     // 聊天的工作目录跟着删掉
     await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})
     return c.body(null, 204)
@@ -313,10 +326,16 @@ export function tasksApi(deps: {
       return Promise.allSettled([...live.values()].map((e) => e.done))
     },
     async removeByProject(projectId: string) {
-      for (const t of (await store.list()).filter((t) => t.projectId === projectId)) {
+      const removed = (await store.list()).filter((t) => t.projectId === projectId)
+      for (const t of removed) {
         stopTask(t.id)
         await store.remove(t.id)
       }
+      await dropUploads(removed)
+    },
+    /** 启动时清理没有任务在用的附件 */
+    async cleanupUploads() {
+      await cleanupUploads(new Set((await store.list()).flatMap((t) => [...uploadDirs(t)])))
     },
   }
 }

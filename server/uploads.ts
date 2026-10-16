@@ -62,15 +62,31 @@ const IMAGE_TYPES: Record<string, string> = {
   bmp: 'image/bmp',
 }
 
-/** 清理很久以前的附件：任务早就跑完了，留着只占空间 */
-export async function cleanupUploads(maxAgeDays = 30) {
+/** 附件所在的目录（每个附件单独一个目录）；不是附件时返回空 */
+export function uploadDirOf(file: string) {
+  const full = path.resolve(file)
+  if (!full.startsWith(UPLOADS_DIR + path.sep)) return ''
+  return path.join(UPLOADS_DIR, full.slice(UPLOADS_DIR.length + 1).split(path.sep)[0])
+}
+
+/**
+ * 清理没有任务在用的附件。不按时间删：老任务还在时它的截图、文件也要留着，继续执行时 Agent 还要读。
+ * 刚上传、还没发出去的附件也没有任务引用，所以只删一天以前的。
+ */
+export async function cleanupUploads(referenced: Set<string>, graceMs = 86_400_000) {
   const dirs = await readdir(UPLOADS_DIR).catch(() => [])
-  const cutoff = Date.now() - maxAgeDays * 86_400_000
+  const cutoff = Date.now() - graceMs
   for (const d of dirs) {
     const full = path.join(UPLOADS_DIR, d)
+    if (referenced.has(full)) continue
     const s = await stat(full).catch(() => null)
     if (s && s.mtimeMs < cutoff) await rm(full, { recursive: true, force: true }).catch(() => {})
   }
+}
+
+/** 删掉这些附件目录（删除任务时用；调用方保证别的任务没在用） */
+export async function removeUploads(dirs: Iterable<string>) {
+  for (const d of dirs) if (d) await rm(d, { recursive: true, force: true }).catch(() => {})
 }
 
 const SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '.next', 'target', 'Binaries', 'Intermediate'])

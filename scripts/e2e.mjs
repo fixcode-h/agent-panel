@@ -862,7 +862,31 @@ try {
   assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
-  step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件')
+  // Agent 自己提交了改动：仍然算在任务的更改里（和任务开始时的提交比）
+  let tCommit = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'COMMIT 改完提交',
+  })
+  tCommit = await waitDone(tCommit.id)
+  assert.ok(tCommit.baseRef, '记下任务开始时的提交')
+  assert.deepEqual(
+    tCommit.changes.find((c) => c.path === 'committed.txt'),
+    { path: 'committed.txt', add: 3, del: 0 },
+    '提交了的改动仍然统计在内 ' + JSON.stringify(tCommit.changes),
+  )
+  // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
+  const attDir = path.dirname(att.path)
+  await call('DELETE', `/tasks/${tAtt.id}`)
+  assert.ok(!existsSync(attDir), '删除任务时删掉它的附件')
+  // 再传一个还没发出去的附件，后面数据目录的统计要用
+  await call('POST', '/uploads', {
+    name: '草稿.txt',
+    mime: 'text/plain',
+    data: Buffer.from('draft').toString('base64'),
+  })
+  step('附件：上传到数据目录、交给 Agent 读取；@ 能搜到项目里的文件；删除任务时一起删掉')
   // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
   assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
   assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
@@ -1268,7 +1292,13 @@ try {
     const trayPort = port + 1
     const child = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts', '--prod'], {
       cwd: root,
-      env: { ...process.env, AGENT_PANEL_DATA: dataDir, PORT: String(trayPort), AGENT_PANEL_TRAY: '1' },
+      env: {
+        ...process.env,
+        AGENT_PANEL_DATA: dataDir,
+        PORT: String(trayPort),
+        AGENT_PANEL_TRAY: '1',
+        FAKE_CLI_LOG: log,
+      },
       stdio: ['pipe', 'pipe', 'inherit'],
     })
     let out = ''
@@ -1276,12 +1306,31 @@ try {
     const exited = new Promise((r) => child.on('exit', (code) => r(code)))
     for (let i = 0; i < 100 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
     assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}`), '托盘模式输出地址')
+    // 退出时还有 CLI 在跑：要一起停掉，不能留在后台继续改项目
+    const n = calls().length
+    await fetch(`http://127.0.0.1:${trayPort}/api/tasks`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'SLOW 退出时停掉' }),
+    })
+    for (let i = 0; i < 50 && calls().length === n; i++) await sleep(100)
+    const cliPid = calls().at(-1).pid
     child.stdin.end()
-    const code = await Promise.race([exited, sleep(5000).then(() => 'timeout')])
+    const code = await Promise.race([exited, sleep(8000).then(() => 'timeout')])
     if (code === 'timeout') child.kill()
     assert.equal(code, 0, '托盘关掉输入后服务退出')
+    await sleep(300)
+    const alive = (() => {
+      try {
+        process.kill(cliPid, 0)
+        return true
+      } catch {
+        return false
+      }
+    })()
+    assert.ok(!alive, '服务退出时正在执行的 CLI 也被结束')
   }
-  step('Windows 托盘程序：服务启动完成后告诉托盘地址，托盘退出时服务跟着退出')
+  step('Windows 托盘程序：服务启动完成后告诉托盘地址，托盘退出时服务和正在执行的 CLI 一起退出')
 
   console.log('\n全部通过')
 } catch (e) {
