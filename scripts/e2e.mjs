@@ -1031,6 +1031,68 @@ try {
     }).then((r) => r.text()),
     /不在任务的改动里/,
   )
+  // 独立分支：在任务自己的 git worktree 里改，项目目录不动；合并后改动才进项目，丢弃则什么都不留
+  // 先退掉上面 Agent 自己做的提交，让项目回到干净的起点（committed.txt 已经撤销掉了）
+  git('reset', '-q', '--keep', 'HEAD~1')
+  let tIso = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'COMMIT 在独立分支上改',
+    isolate: true,
+  })
+  assert.equal(tIso.worktree?.state, 'active', '建了独立分支')
+  tIso = await waitDone(tIso.id)
+  assert.ok(existsSync(path.join(tIso.worktree.path, 'committed.txt')), 'Agent 在独立目录里改')
+  assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '项目目录没被改动')
+  assert.ok(
+    tIso.changes.some((c) => c.path === 'committed.txt'),
+    '改动按独立目录统计',
+  )
+  assert.match((await call('GET', `/tasks/${tIso.id}/diff?path=committed.txt`)).diff, /\+one/)
+  writeFileSync(path.join(tIso.worktree.path, 'later.txt'), 'not committed yet\n')
+  // 项目里有个没跟踪的同名文件挡着：合并失败，项目和独立分支都保持原样
+  const blocker = path.join(projectDir, 'claude-output.txt')
+  const blockerText = readFileSync(blocker, 'utf8')
+  const blocked = await fetch(`${base}/tasks/${tIso.id}/worktree/merge`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{}',
+  })
+  assert.equal(blocked.status, 409)
+  assert.match((await blocked.json()).error, /claude-output\.txt/, '说明是哪个文件挡住了')
+  assert.equal((await call('GET', `/tasks/${tIso.id}`)).worktree.state, 'active', '合并失败时独立分支还在')
+  assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '合并失败时项目目录没被改动')
+  rmSync(blocker)
+  const merged = await call('POST', `/tasks/${tIso.id}/worktree/merge`)
+  assert.equal(merged.worktree.state, 'merged')
+  assert.ok(existsSync(path.join(projectDir, 'committed.txt')), '合并后改动进了项目目录')
+  assert.ok(existsSync(path.join(projectDir, 'later.txt')), '没提交的改动合并前先提交')
+  assert.equal(
+    readFileSync(path.join(projectDir, 'pre.txt'), 'utf8'),
+    'changed before the task\n',
+    '项目里原有的改动保留',
+  )
+  assert.ok(!existsSync(tIso.worktree.path), '合并后删掉独立目录')
+  assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '合并后删掉任务分支')
+  // 退回合并前，免得影响后面的测试（--keep 保留 pre.txt 的未提交改动）
+  git('reset', '-q', '--keep', 'HEAD~1')
+  writeFileSync(blocker, blockerText)
+  let tDrop = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'COMMIT 这个不要了',
+    isolate: true,
+  })
+  tDrop = await waitDone(tDrop.id)
+  const dropped = await call('POST', `/tasks/${tDrop.id}/worktree/discard`)
+  assert.equal(dropped.worktree.state, 'discarded')
+  assert.ok(!existsSync(tDrop.worktree.path) && !existsSync(path.join(projectDir, 'committed.txt')), '丢弃后什么都不留')
+  assert.equal(git('branch', '--list', tDrop.worktree.branch).toString().trim(), '', '丢弃时删掉任务分支')
+  await call('DELETE', `/tasks/${tIso.id}`)
+  await call('DELETE', `/tasks/${tDrop.id}`)
+  step('独立分支：任务在 git worktree 里执行，合并或丢弃后清理分支和目录')
   // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
   const attDir = path.dirname(att.path)
   await call('DELETE', `/tasks/${tAtt.id}`)

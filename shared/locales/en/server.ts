@@ -228,4 +228,13 @@ export const EN_SERVER: Record<string, string> = {
   文件不在项目目录里: 'The file is not inside the project directory',
   恢复失败: 'Restore failed',
   '…（差异太长，只显示前面一部分）': '… (the diff is too long; only the beginning is shown)',
+  '项目不是 git 仓库，不能用独立分支执行': 'The project is not a git repository, so it cannot run on a separate branch',
+  '项目还没有任何提交，不能用独立分支执行': 'The project has no commits yet, so it cannot run on a separate branch',
+  创建独立分支失败: 'Failed to create the separate branch',
+  提交改动失败: 'Failed to commit the changes',
+  '合并到「{branch}」时有冲突或项目目录里有未提交的改动挡住了，项目目录没有改动。可以在项目里手动合并分支 {name}。':
+    'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in the project; the project directory was not changed. You can merge branch {name} manually in the project.',
+  '任务正在执行，等它停下后再处理独立分支':
+    'The task is running; wait until it stops before handling its separate branch',
+  这个任务没有待处理的独立分支: 'This task has no pending separate branch',
 }

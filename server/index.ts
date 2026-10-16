@@ -345,8 +345,9 @@ app.put('/projects/:id', async (c) => {
 
 app.delete('/projects/:id', async (c) => {
   const id = c.req.param('id')
+  const repo = (await projects.get(id))?.path
   if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
-  await tasks.removeByProject(id)
+  await tasks.removeByProject(id, repo)
   return c.body(null, 204)
 })
 

@@ -444,6 +444,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
             <RequestCard task={task} onAnswered={apply} />
+            <WorktreeBar task={task} onChange={apply} />
             <QueuedList task={task} onChange={apply} />
             <div
               {...drop.container}
@@ -650,5 +651,62 @@ function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => voi
         </li>
       ))}
     </ul>
+  )
+}
+
+/** 独立分支执行的任务：停下后可以把改动合并进项目，或者整个丢弃 */
+function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
+  const [asking, setAsking] = useState<'merge' | 'discard' | null>(null)
+  const wt = task.worktree
+  if (!wt) return null
+  const running = task.status === 'running'
+  const target = wt.baseBranch || t('项目当前的分支')
+  const finish = (merge: boolean) =>
+    api
+      .finishWorktree(task.id, merge)
+      .then((x) => {
+        onChange(x)
+        setAsking(null)
+        toast.success(merge ? t('已合并到「{branch}」', { branch: x.worktree?.note || target }) : t('已丢弃独立分支'))
+      })
+      .catch((e) => {
+        setAsking(null)
+        toast.error((e as Error).message)
+      })
+  return (
+    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[13px]">
+      <GitBranch className={cn('h-3.5 w-3.5 shrink-0', wt.state === 'active' ? 'text-accent' : 'text-subtle')} />
+      <span className="min-w-0 flex-1 text-muted">
+        {wt.state === 'merged'
+          ? t('独立分支已合并到「{branch}」', { branch: wt.note || target })
+          : wt.state === 'discarded'
+            ? t('独立分支已丢弃，项目目录没有改动')
+            : running
+              ? t('在独立分支 {name} 上执行，不改动项目目录', { name: wt.branch })
+              : t('改动在独立分支 {name} 上，还没进项目目录', { name: wt.branch })}
+      </span>
+      {wt.state === 'active' && !running && (
+        <span className="flex shrink-0 items-center gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setAsking('discard')}>
+            {t('丢弃')}
+          </Button>
+          <Button size="sm" onClick={() => setAsking('merge')}>
+            {t('合并到「{branch}」', { branch: target })}
+          </Button>
+        </span>
+      )}
+      <ConfirmDialog
+        open={!!asking}
+        onOpenChange={(o) => !o && setAsking(null)}
+        title={asking === 'merge' ? t('把改动合并到「{branch}」？', { branch: target }) : t('丢弃独立分支？')}
+        description={
+          asking === 'merge'
+            ? t('没提交的改动会先提交到任务分支，再合并进项目目录当前的分支。有冲突时不会改动项目目录。')
+            : t('会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。')
+        }
+        confirmText={asking === 'merge' ? t('合并') : t('丢弃')}
+        onConfirm={() => finish(asking === 'merge')}
+      />
+    </div>
   )
 }

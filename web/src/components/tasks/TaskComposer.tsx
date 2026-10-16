@@ -1,6 +1,14 @@
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, Check, ChevronDown, FolderGit2, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
+import {
+  ArrowUp,
+  Check,
+  ChevronDown,
+  FolderGit2,
+  GitBranch,
+  MessageSquare,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMode } from '@shared/schema'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
@@ -11,6 +19,7 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
+import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker } from './ChatModelPicker'
 import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMention } from './Attachments'
 import { t } from '@shared/i18n'
@@ -38,7 +47,7 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { workflows, agents, clis, projects, projectCategories, loading } = useData()
+  const { workflows, agents, clis, projects, projectCategories, tasks, loading } = useData()
   const { modelOf } = useAgentView()
   const [projectId, setProjectId] = useState(() => {
     try {
@@ -68,10 +77,16 @@ export function TaskComposer({
   const [chatModel, setChatModel] = useState({ model: '', effort: '' })
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
+  const [isolate, setIsolate] = useState(false)
   const ta = useRef<HTMLTextAreaElement>(null)
   const files = useAttachments()
   const drop = useDropPaste(files.add)
   const mention = useFileMention(project?.id, prompt, setPrompt, ta)
+
+  // 独立分支要靠 git worktree，只有 git 仓库能用
+  const dir = useDirInfo(project?.path ?? '')
+  const canIsolate = !!project && !!dir?.gitBranch
+  const busyProject = !!project && tasks.some((x) => x.projectId === project.id && x.status === 'running')
 
   const workflow = workflows.find((w) => w.id === (workflowId || defaultWf))
   // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
@@ -107,6 +122,7 @@ export function TaskComposer({
           effort: effMode === 'chat' && isDefault ? chatModel.effort : '',
           prompt,
           attachments: files.attachments,
+          isolate: canIsolate && isolate,
         }),
       )
       setPrompt('')
@@ -283,6 +299,19 @@ export function TaskComposer({
               </div>
             )}
 
+            {canIsolate && (
+              <button
+                role="switch"
+                aria-checked={isolate}
+                onClick={() => setIsolate((v) => !v)}
+                title={t('在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃')}
+                className={cn(chip, isolate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}
+              >
+                <GitBranch className="h-4 w-4 shrink-0" />
+                <span className="truncate">{t('独立分支')}</span>
+              </button>
+            )}
+
             <button
               onClick={start}
               disabled={!canStart}
@@ -295,6 +324,11 @@ export function TaskComposer({
           </div>
         )}
       </div>
+      {busyProject && canIsolate && !isolate && (
+        <p className="px-1 text-xs text-subtle">
+          {t('这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。')}
+        </p>
+      )}
       {notReady && (
         <p className="px-1 text-xs text-warning">
           {t('工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。')}

@@ -22,10 +22,14 @@ import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './e
 import { answerRequest, runRealTurn } from './exec/runner.ts'
 import { CHATS_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
+import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 import { t } from '../shared/i18n.ts'
+
+/** 任务还在用自己的独立分支（没合并也没丢弃） */
+const isolated = (tk: Task) => tk.worktree?.state === 'active'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -118,13 +122,15 @@ export function tasksApi(deps: {
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
     beginRun(entry.task)
-    const [settings, project] = await Promise.all([
+    const [settings, found] = await Promise.all([
       getSettings(),
       task.projectId ? deps.projects.get(task.projectId) : chatWorkspace(task.id),
     ]).catch((e) => {
       live.delete(task.id)
       throw e
     })
+    // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录
+    const project = found && isolated(task) ? { ...found, path: task.worktree!.path } : found
     let last = 0
     const flush = () =>
       store.update(task.id, entry.task).catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
@@ -300,7 +306,15 @@ export function tasksApi(deps: {
       if (!workflow) return bad(c, t('项目还没有指定工作流，请选择一个工作流或改用直接对话'))
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
     const snapshot = workflow ? workflowClosure(workflow, await deps.workflows.list()) : []
-    const task = await store.create(newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot))
+    const draft = { ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot), id: randomUUID() }
+    if (input.isolate && input.projectId) {
+      try {
+        draft.worktree = await createWorktree(project.path, draft.id, draft.title)
+      } catch (e) {
+        return bad(c, (e as Error).message)
+      }
+    }
+    const task = await store.create(draft)
     return c.json(await start(reserve(task), withAttachments(input.prompt, input.attachments), true, agents), 201)
   })
 
@@ -375,7 +389,43 @@ export function tasksApi(deps: {
 
   /** 任务的工作目录：项目目录，聊天是它自己的目录 */
   const taskDir = async (tk: Task) =>
-    tk.projectId ? ((await deps.projects.get(tk.projectId))?.path ?? '') : path.join(CHATS_DIR, tk.id)
+    isolated(tk)
+      ? tk.worktree!.path
+      : tk.projectId
+        ? ((await deps.projects.get(tk.projectId))?.path ?? '')
+        : path.join(CHATS_DIR, tk.id)
+
+  /** 合并或丢弃独立分支：只在任务停下时做，免得 Agent 还在往里写 */
+  async function finishWorktree(c: Context, merge: boolean) {
+    const id = c.req.param('id')!
+    if (live.has(id)) return bad(c, t('任务正在执行，等它停下后再处理独立分支'), 409)
+    const tk = await store.get(id)
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    if (!isolated(tk)) return bad(c, t('这个任务没有待处理的独立分支'))
+    const project = await deps.projects.get(tk.projectId)
+    if (!project) return bad(c, t('任务所属的项目已经不存在'))
+    const wt = tk.worktree!
+    try {
+      if (merge) {
+        const target = await mergeWorktree(project.path, wt, `Agent 面板：${tk.title}`)
+        return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'merged', note: target } }))
+      }
+      await removeWorktree(project.path, wt, true)
+      return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'discarded', note: '' } }))
+    } catch (e) {
+      return bad(c, (e as Error).message, 409)
+    }
+  }
+  routes.post('/:id/worktree/merge', (c) => finishWorktree(c, true))
+  routes.post('/:id/worktree/discard', (c) => finishWorktree(c, false))
+
+  /** 删除任务时，没合并的独立分支一起清掉，免得数据目录里越积越多 */
+  async function dropWorktree(tk: Task, repo?: string) {
+    if (!isolated(tk)) return
+    repo ??= (await deps.projects.get(tk.projectId))?.path
+    if (repo) await removeWorktree(repo, tk.worktree!, true).catch(() => {})
+    else await rm(tk.worktree!.path, { recursive: true, force: true }).catch(() => {})
+  }
 
   // 一个改动文件的差异：git 仓库和任务开始时的提交比；不是仓库时拼出 Agent 改这个文件时给出的改动
   routes.get('/:id/diff', async (c) => {
@@ -437,6 +487,8 @@ export function tasksApi(deps: {
     const e = live.get(id)
     if (e) {
       Object.assign(e.task, p.data)
+      // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
+      await store.update(id, e.task)
       return c.json(e.task)
     }
     const task = await store.get(id)
@@ -456,6 +508,7 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
     await dropUploads([task])
+    await dropWorktree(task)
     // 聊天的工作目录跟着删掉
     await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})
     return c.body(null, 204)
@@ -471,11 +524,13 @@ export function tasksApi(deps: {
       for (const id of live.keys()) stopTask(id)
       return Promise.allSettled([...live.values()].map((e) => e.done))
     },
-    async removeByProject(projectId: string) {
+    /** repo：项目目录。项目已经删掉了，要靠它清理任务的独立分支 */
+    async removeByProject(projectId: string, repo?: string) {
       const removed = (await store.list()).filter((t) => t.projectId === projectId)
       for (const t of removed) {
         stopTask(t.id)
         await store.remove(t.id)
+        await dropWorktree(t, repo)
       }
       await dropUploads(removed)
     },

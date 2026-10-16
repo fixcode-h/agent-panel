@@ -826,6 +826,15 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     ),
     simulated: true,
   })
+  // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃
+  if (input.isolate && project)
+    task.worktree = {
+      path: '',
+      branch: `agent-panel/${task.id.slice(5, 13)}`,
+      baseBranch: 'main',
+      state: 'active',
+      note: '',
+    }
   return { task, done: startTurn(d, task, withAttachments(input.prompt, input.attachments), true, fast) }
 }
 
@@ -917,6 +926,13 @@ function tasksRoute(
     persist()
     return task
   }
+  if (sub === 'worktree' && task.worktree) {
+    if (live.has(task.id)) fail('任务正在执行，等它停下后再处理独立分支')
+    const merge = rid === 'merge'
+    task.worktree = { ...task.worktree, state: merge ? 'merged' : 'discarded', note: merge ? 'main' : '' }
+    persist()
+    return task
+  }
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''
@@ -972,6 +988,7 @@ async function seedTasks(d: Db) {
         attachments: [],
         model: '',
         effort: '',
+        isolate: false,
       },
       true,
     )
@@ -990,6 +1007,7 @@ async function seedTasks(d: Db) {
         attachments: [],
         model: '',
         effort: '',
+        isolate: false,
       },
       true,
     )
@@ -1008,6 +1026,7 @@ async function seedTasks(d: Db) {
         attachments: [],
         model: '',
         effort: '',
+        isolate: false,
       },
       true,
     )

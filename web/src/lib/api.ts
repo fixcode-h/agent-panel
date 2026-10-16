@@ -104,6 +104,9 @@ export const api = {
       `/tasks/${id}/diff?path=${encodeURIComponent(path)}`,
     ),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
+  /** 独立分支：合并进项目当前的分支，或丢弃 */
+  finishWorktree: (id: string, merge: boolean) =>
+    request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),

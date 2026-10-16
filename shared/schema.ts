@@ -368,8 +368,22 @@ export const NewTaskInput = z.object({
   effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以 */
+  isolate: z.boolean().default(false),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
+
+/** 任务的独立分支：Agent 在这个目录里改，做完后合并回项目或丢弃 */
+export const TaskWorktree = z.object({
+  path: z.string(),
+  branch: z.string(),
+  /** 创建时项目所在的分支，界面上提示合并到哪里 */
+  baseBranch: z.string().default(''),
+  state: z.enum(['active', 'merged', 'discarded']).default('active'),
+  /** 合并、丢弃的结果说明（合并到了哪个分支） */
+  note: z.string().default(''),
+})
+export type TaskWorktree = z.infer<typeof TaskWorktree>
 
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
@@ -549,6 +563,8 @@ export const TaskData = z.object({
   baseRef: z.string().default(''),
   /** 正在等用户确认的请求 */
   requests: z.array(TaskRequest).default([]),
+  /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
+  worktree: TaskWorktree.nullable().default(null),
   /** 执行中排队的要求：这一轮完成后按顺序处理；失败或暂停时留着，由用户决定 */
   queue: z.array(QueuedMessage).default([]),
 })

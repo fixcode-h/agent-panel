@@ -72,6 +72,7 @@ export function newTask(
     workflowName: wf?.name ?? '',
     requests: [],
     queue: [],
+    worktree: null,
   }
 }
 

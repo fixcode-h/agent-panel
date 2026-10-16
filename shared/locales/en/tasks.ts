@@ -257,4 +257,26 @@ export const EN_TASKS: Record<string, string> = {
   排队中: 'Queued',
   撤回: 'Withdraw',
   撤回这条要求: 'Withdraw this message',
+  '在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃':
+    'Run on a separate git branch and directory without touching the project; merge or discard when done',
+  独立分支: 'Separate branch',
+  '这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。':
+    'A task is already running in this project. Two tasks editing one directory can overwrite each other; turn on "Separate branch" to keep them apart.',
+  项目当前的分支: "the project's current branch",
+  '已合并到「{branch}」': 'Merged into "{branch}"',
+  已丢弃独立分支: 'Separate branch discarded',
+  '独立分支已合并到「{branch}」': 'Separate branch merged into "{branch}"',
+  '独立分支已丢弃，项目目录没有改动': 'Separate branch discarded; the project directory was not changed',
+  '在独立分支 {name} 上执行，不改动项目目录': 'Running on separate branch {name}; the project directory is untouched',
+  '改动在独立分支 {name} 上，还没进项目目录':
+    'Changes are on separate branch {name} and not yet in the project directory',
+  丢弃: 'Discard',
+  '合并到「{branch}」': 'Merge into "{branch}"',
+  '把改动合并到「{branch}」？': 'Merge the changes into "{branch}"?',
+  '丢弃独立分支？': 'Discard the separate branch?',
+  '没提交的改动会先提交到任务分支，再合并进项目目录当前的分支。有冲突时不会改动项目目录。':
+    "Uncommitted changes are committed to the task branch first, then merged into the project's current branch. On a conflict the project directory is left unchanged.",
+  '会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。':
+    'Deletes the task branch and its working directory, losing all changes in it. The project directory is not affected.',
+  合并: 'Merge',
 }
