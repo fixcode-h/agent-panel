@@ -295,6 +295,49 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
   process.exit(0)
 }
 
+// UI 设计的对话：回说明 + JSON。JSON 由用户要求里最后一个 FAKE_DESIGN: 指定（一行），
+// 收到「不符合要求」的重试提示后改用 FAKE_DESIGN2:，用来测试自动修正
+if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex') {
+  const pick = (tag) => [...input.matchAll(new RegExp(`${tag}:(.*)`, 'g'))].at(-1)?.[1]?.trim()
+  const json = (input.includes('不符合要求') && pick('FAKE_DESIGN2')) || pick('FAKE_DESIGN') || '{}'
+  const text = `按你的要求搭好了界面。\n\n\`\`\`json\n${json}\n\`\`\``
+  for (const part of text.match(/[\s\S]{1,40}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
+  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
+  codexDone('completed')
+}
+// Codex 的 image_gen：每张图一个 imageGeneration 条目，第一张写到 savedPath，其余只给 base64；
+// 描述里有 IMGFAIL 时报生成失败
+if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
+  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+  const n = Number(input.match(/生成 (\d+) 张图片/)?.[1] ?? 1)
+  for (let i = 0; i < n; i++) {
+    const id = `ig${i}`
+    if (input.includes('IMGFAIL')) {
+      note('item/completed', {
+        item: { id, type: 'imageGeneration', status: 'failed', failure: { message: '内容不符合政策' } },
+      })
+      continue
+    }
+    let savedPath
+    if (i === 0) {
+      savedPath = `${process.cwd()}/fake-${process.pid}.png`
+      writeFileSync(savedPath, Buffer.from(png, 'base64'))
+    }
+    note('item/started', { item: { id, type: 'imageGeneration', status: 'inProgress', revisedPrompt: 'a button' } })
+    note('item/completed', {
+      item: {
+        id,
+        type: 'imageGeneration',
+        status: 'completed',
+        revisedPrompt: 'a button',
+        result: savedPath ? '' : png,
+        savedPath,
+      },
+    })
+  }
+  codexDone('completed')
+}
+
 // 像没登录的 CLI 一样报一句错，然后一直卡着不输出（测试空闲超时）
 if (input.includes('HANG')) {
   process.stderr.write('Invalid API key · Please run /login\n')

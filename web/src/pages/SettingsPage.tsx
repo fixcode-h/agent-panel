@@ -97,6 +97,7 @@ function SettingsBody({
   const [drafts, setDrafts] = useState(() => toDraft(initial))
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
+  const [imageGen, setImageGen] = useState(initial.imageGen)
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const demo = !!import.meta.env.VITE_DEMO
   const update = useAppUpdate().data?.update
@@ -171,6 +172,7 @@ function SettingsBody({
       ]),
     ),
     assist: { ...assist, model: assist.model.trim() },
+    imageGen: { ...imageGen, model: imageGen.model.trim() },
   }
   const save = useAutosave(
     value,
@@ -538,6 +540,49 @@ function SettingsBody({
                   desc={t('Agent 和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
                 >
                   <ReadValue>{defaultEffortText(defDef, drafts[defCli])}</ReadValue>
+                </Row>
+              </Group>
+              <Group title={t('图片生成')}>
+                <Row
+                  title={t('图片生成 CLI')}
+                  desc={t(
+                    'UI 设计里生成图片时使用。目前只有 Codex 内置了生图工具，用 ChatGPT 账号登录即可，不需要 API Key。',
+                  )}
+                >
+                  <Select
+                    aria-label={t('图片生成 CLI')}
+                    value={imageGen.cli}
+                    onChange={(e) => setImageGen({ ...imageGen, cli: e.target.value, model: '' })}
+                    className="w-[240px]"
+                    options={ordered
+                      .filter((c) => {
+                        const st = statusOf(c.id)
+                        return c.images && (!st || (st.installed && st.enabled) || c.id === imageGen.cli)
+                      })
+                      .map((c) => {
+                        const st = statusOf(c.id)
+                        const note = !st
+                          ? ''
+                          : !st.installed
+                            ? ` · ${t('未安装')}`
+                            : !st.enabled
+                              ? ` · ${t('已停用')}`
+                              : ''
+                        return { value: c.id, label: c.name + note }
+                      })}
+                  />
+                </Row>
+                <Row title={t('图片生成模型')} desc={t('调用生图工具的模型，不选时用这个 CLI 的高档模型')}>
+                  <div className="w-[240px]">
+                    <AssistModel
+                      cli={imageGen.cli}
+                      draft={drafts[imageGen.cli]}
+                      value={imageGen.model}
+                      onChange={(model) => setImageGen({ ...imageGen, model })}
+                      label={t('图片生成模型')}
+                      fallback="@high"
+                    />
+                  </div>
                 </Row>
               </Group>
             </>

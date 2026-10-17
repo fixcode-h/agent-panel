@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font:
+          13px/1.6 system-ui,
+          sans-serif;
+        width: 260px;
+        margin: 0;
+        padding: 14px;
+        color: #2b2a27;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin: 6px 0;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #bbb;
+      }
+      .ok .dot {
+        background: #2e9e5b;
+      }
+      input {
+        width: 72px;
+        padding: 3px 6px;
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        font: inherit;
+      }
+      p {
+        color: #77736a;
+        margin: 8px 0 0;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Agent 面板 · 网页生图</h1>
+    <div class="row" id="state"><span class="dot"></span><span id="text">正在连接…</span></div>
+    <div class="row">面板端口 <input id="port" inputmode="numeric" placeholder="8787" /></div>
+    <p id="tabs"></p>
+    <p>只会读取 Gemini 和 ChatGPT 的标签页，在面板的 UI 设计里选择用哪个标签页生成图片。</p>
+    <script src="popup.js"></script>
+  </body>
+</html>

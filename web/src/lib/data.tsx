@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
+import type { DesignMeta } from '@shared/design'
 import { api } from './api'
 import { t } from '@shared/i18n'
 
@@ -32,6 +33,10 @@ interface Data {
   /** 所有项目的任务（侧栏的最近任务、项目工作区共用） */
   tasks: Task[]
   tasksLoaded: boolean
+  /** UI 设计（和任务分开） */
+  designs: DesignMeta[]
+  setDesigns: React.Dispatch<React.SetStateAction<DesignMeta[]>>
+  reloadDesigns: () => Promise<void>
   upsertTask: (t: Task) => void
   removeTask: (id: string) => void
   reloadTasks: () => Promise<void>
@@ -66,6 +71,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [settings?.language])
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksLoaded, setTasksLoaded] = useState(false)
+  const [designs, setDesigns] = useState<DesignMeta[]>([])
+  const reloadDesigns = useCallback(async () => {
+    try {
+      setDesigns(await api.designs())
+    } catch {
+      // 连不上时保留现有列表
+    }
+  }, [])
+  useEffect(() => {
+    void reloadDesigns()
+  }, [reloadDesigns])
 
   const reloadTasks = useCallback(async () => {
     try {
@@ -140,6 +156,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         settings,
         tasks,
         tasksLoaded,
+        designs,
+        setDesigns,
+        reloadDesigns,
         upsertTask,
         removeTask,
         reloadTasks,
@@ -164,7 +183,7 @@ export function useData() {
 }
 
 /** 当前页面和选中项；用于跨页面跳转，例如从 Agent 跳到使用它的工作流 */
-export type PageId = 'home' | 'agents' | 'workflows' | 'projects' | 'chat'
+export type PageId = 'home' | 'agents' | 'workflows' | 'projects' | 'chat' | 'design'
 export interface Route {
   page: PageId
   id?: string

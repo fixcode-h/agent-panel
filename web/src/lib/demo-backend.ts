@@ -43,6 +43,7 @@ import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflow
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
+import { demoDesigns, demoGenerate } from './demo-design'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 
 const KEY = 'agent-panel-demo-v3'
@@ -801,6 +802,10 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }
 
+  if (res === 'designs')
+    return seg[2] === 'images' && seg[4] === 'generate'
+      ? demoGenerate(id, seg[3], body ?? {})
+      : demoDesigns(method, id, sub, body ?? {}, d.projects)
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)

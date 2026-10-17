@@ -134,6 +134,8 @@ writeFileSync(
   ].join('\n'),
 )
 cpSync(path.join(root, 'README.md'), path.join(out, 'README.md'))
+// 浏览器扩展：UI 设计里用已登录的 Gemini / ChatGPT 网页生成图片，在浏览器里「加载已解压的扩展程序」选这个目录
+cpSync(path.join(root, 'extension'), path.join(out, 'extension'), { recursive: true })
 
 // 打好的服务端要能直接加载（更新时新版本也是这样试跑的）
 run(process.execPath, [path.join(out, 'server.mjs'), '--self-check'], out)
