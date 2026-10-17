@@ -571,9 +571,20 @@ function Designer({ id }: { id: string }) {
   }
 
   const send = async (text: string) => {
+    // 标注随这条消息一起发出，发出后从效果图上清掉
+    const annotations = doc.annotations
+    const next = { ...doc, annotations: [] }
     try {
-      ed.absorb(await api.saveDesign(id, doc))
-      ed.absorb(await api.designChat(id, { text, source, count }))
+      ed.absorb(await api.saveDesign(id, next))
+      ed.absorb(
+        await api.designChat(id, {
+          text: text.trim() || t('按标注修改'),
+          source,
+          count,
+          annotations,
+        }),
+      )
+      if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -707,6 +718,9 @@ function Designer({ id }: { id: string }) {
             if (wid) setTab('tree')
           }}
           onMove={onMove}
+          annotations={doc.annotations}
+          onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
+          target={target}
         />
 
         <aside className="flex w-[300px] shrink-0 flex-col border-l bg-card">
@@ -830,6 +844,10 @@ function Designer({ id }: { id: string }) {
               onCount={setCount}
               onSend={send}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+              annotations={doc.annotations}
+              onRemoveAnnotation={(aid) =>
+                ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)
+              }
             />
           </aside>
         )}

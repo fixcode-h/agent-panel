@@ -295,7 +295,7 @@ ${prompt}`,
         },
         cwd,
         env: childEnv(cs.env),
-        input: buildDesignPrompt(cache.get(d.id)!, history, input.text) + extra,
+        input: buildDesignPrompt(cache.get(d.id)!, history, input.text, input.annotations) + extra,
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
         onEvent: (ev) => {
@@ -467,6 +467,7 @@ ${prompt}`,
         root: emptyRoot(),
         components: [],
         images: [],
+        annotations: [],
         messages: [],
         rev: 0,
         createdAt: at,
@@ -511,6 +512,7 @@ ${prompt}`,
         root: normalizeTree(doc.root),
         components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,
+        annotations: doc.annotations,
       })
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
@@ -593,7 +595,13 @@ ${prompt}`,
       const settings = await getSettings()
       if (!cliSettings(settings, defaultCli(settings)).enabled)
         return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(defaultCli(settings))!.name }))
-      d.messages.push({ id: randomUUID(), role: 'user', text: p.data.text, at: now() })
+      d.messages.push({
+        id: randomUUID(),
+        role: 'user',
+        text: p.data.text,
+        at: now(),
+        ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
+      })
       await save(d)
       startJob(d, async (job) => {
         const ids = await chat(d, p.data, job)

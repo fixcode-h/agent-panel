@@ -495,6 +495,7 @@ function seed() {
     style: tpl.style,
     root: normalizeTree(tpl.root),
     components: [],
+    annotations: [],
     images: tpl.images.map((i) =>
       DesignImage.parse({
         ...i,
@@ -630,6 +631,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       root: emptyRoot(),
       components: [],
       images: [],
+      annotations: [],
       messages: [],
       rev: 0,
       createdAt: at,
@@ -664,6 +666,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
         : i
     })
     Object.assign(d, {
+      annotations: body.annotations ?? [],
       title: body.title,
       designSize: body.designSize,
       style: body.style,
@@ -675,7 +678,13 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
   }
   if (sub === 'chat') {
     if (d.job?.status === 'running') fail('正在处理上一个请求，等它完成或先停止')
-    d.messages.push({ id: randomId(), role: 'user', text: body.text, at: now() })
+    d.messages.push({
+      id: randomId(),
+      role: 'user',
+      text: body.text,
+      at: now(),
+      ...(body.annotations?.length ? { annotations: body.annotations } : {}),
+    })
     void runChat(d, body.text, body.source, body.count ?? 1)
     return d
   }

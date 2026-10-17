@@ -51,6 +51,26 @@ export const DesignImage = z.object({
 })
 export type DesignImage = z.infer<typeof DesignImage>
 
+/**
+ * 标注：在效果图上圈出要改的地方，发给 AI 时一起带上。坐标是设计稿像素。
+ * kind 是标注的意思：修改、在这里新增、删掉、保持不变（参考）；shape 是画法。
+ */
+export const ANNOTATION_KINDS = ['change', 'add', 'remove', 'keep'] as const
+export type AnnotationKind = (typeof ANNOTATION_KINDS)[number]
+export const Annotation = z.object({
+  id: z.string(),
+  kind: z.enum(ANNOTATION_KINDS).default('change'),
+  shape: z.enum(['rect', 'arrow', 'pen', 'pin']),
+  /** rect：[x, y, w, h]；arrow：[x1, y1, x2, y2]（箭头指向第二个点）；pen：[x, y, x, y, …]；pin：[x, y] */
+  points: z.array(z.number()).max(4000),
+  note: z.string().max(2000).default(''),
+  /** 标在哪棵树上：空是主界面，否则是子控件名 */
+  target: z.string().default(''),
+  /** 标注范围里的控件名，给 AI 定位用 */
+  widgets: z.array(z.string()).max(20).default([]),
+})
+export type Annotation = z.infer<typeof Annotation>
+
 export const DesignMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -60,6 +80,8 @@ export const DesignMessage = z.object({
   images: z.array(z.string()).optional(),
   run: z.object({ cli: z.string(), model: z.string(), effort: z.string() }).optional(),
   error: z.boolean().optional(),
+  /** 用户这条消息带的标注 */
+  annotations: z.array(Annotation).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -77,6 +99,8 @@ export const DesignDoc = z.object({
   root: z.any(),
   components: z.array(ComponentSchema).default([]),
   images: z.array(DesignImage).default([]),
+  /** 还没发给 AI 的标注 */
+  annotations: z.array(Annotation).max(200).default([]),
 })
 export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components'> & {
   root: Widget
@@ -144,6 +168,8 @@ export const DesignChatInput = z.object({
   source: ImageSource.default({ kind: 'cli' }),
   /** 每张图生成几版备选 */
   count: z.number().int().min(1).max(4).default(1),
+  /** 这次一起发的标注 */
+  annotations: z.array(Annotation).max(200).default([]),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
 
@@ -230,7 +256,7 @@ const UMG_NOTES = `## 插槽（Slot）和常用属性（名字和取值都和 UE
 - ScaleBox：Stretch(None|Fill|ScaleToFit|ScaleToFitX|ScaleToFitY|ScaleToFill|UserSpecified)
 - 所有控件：Visibility(Visible|Collapsed|Hidden|HitTestInvisible|SelfHitTestInvisible)、RenderOpacity、RenderTransform{"Translation","Scale","Angle"}`
 
-export function buildDesignPrompt(d: Design, history: DesignMessage[], request: string) {
+export function buildDesignPrompt(d: Design, history: DesignMessage[], request: string, annotations?: Annotation[]) {
   const imgs = d.images.map((i) => ({
     id: i.id,
     name: i.name,
@@ -279,7 +305,7 @@ ${imgs.length ? JSON.stringify(imgs) : '（没有）'}
 ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
-
+${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 ## 输出格式
 先用一两句中文说明你做了什么，然后输出一个 \`\`\`json 代码块：
 {
@@ -325,6 +351,46 @@ export function resolveDesignResult(
   errors.push(...unknown(r.root, []), ...(r.components ?? []).flatMap((c) => unknown(c.Root, [])))
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
   return { result: r, root, components }
+}
+
+export const ANNOTATION_LABEL: Record<AnnotationKind, string> = {
+  change: '修改',
+  add: '新增',
+  remove: '删除',
+  keep: '保持不变',
+}
+
+/** 标注的范围（设计稿像素）：画笔取外框，图钉和箭头取指向的点 */
+export function annotationBox(a: Pick<Annotation, 'shape' | 'points'>) {
+  const p = a.points
+  if (a.shape === 'rect') return { x: p[0], y: p[1], w: p[2], h: p[3] }
+  if (a.shape === 'pin') return { x: p[0], y: p[1], w: 0, h: 0 }
+  if (a.shape === 'arrow') return { x: p[2], y: p[3], w: 0, h: 0 }
+  const xs = p.filter((_, i) => i % 2 === 0)
+  const ys = p.filter((_, i) => i % 2 === 1)
+  const x = Math.min(...xs)
+  const y = Math.min(...ys)
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y }
+}
+
+/** 发给 AI 的标注说明：编号、意思、位置、范围里的控件和用户写的说明 */
+export function annotationText(list: Annotation[], size: { X: number; Y: number }) {
+  const shape = { rect: '框选', arrow: '箭头指向', pen: '圈画', pin: '标记点' }
+  const lines = list.map((a, i) => {
+    const b = annotationBox(a)
+    const r = (n: number) => Math.round(n)
+    const where = b.w || b.h ? `范围 x=${r(b.x)} y=${r(b.y)} 宽=${r(b.w)} 高=${r(b.h)}` : `位置 x=${r(b.x)} y=${r(b.y)}`
+    return [
+      `${i + 1}.【${ANNOTATION_LABEL[a.kind]}】${shape[a.shape]}，${a.target ? `在子控件 ${a.target} 里，` : ''}${where}`,
+      a.widgets.length ? `   涉及的控件：${a.widgets.join('、')}` : '',
+      a.note.trim() ? `   说明：${a.note.trim()}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  })
+  return `## 用户在效果图上的标注
+坐标是设计稿像素（左上角为原点，设计稿 ${size.X}×${size.Y}）。「修改」是要改这里，「新增」是在这里加东西，「删除」是去掉这里的内容，「保持不变」是这部分不要动、可以作为参考。按编号逐条处理，回复里简单说明每条怎么改的。
+${lines.join('\n')}`
 }
 
 /**

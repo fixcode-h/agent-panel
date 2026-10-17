@@ -1989,6 +1989,32 @@ try {
     assert.ok(existsSync(path.join(dir, 'WBP_MainMenu.umg.json')))
     assert.ok(existsSync(path.join(dir, 'Textures/T_ButtonFrame.png')))
     rmSync(path.join(projectDir, 'UI'), { recursive: true, force: true })
+    // 标注随消息发给 AI：编号、意思、范围、涉及的控件和说明
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: '按标注改 FAKE_DESIGN:{"reply":"改好了"}',
+      source: { kind: 'none' },
+      annotations: [
+        {
+          id: 'a1',
+          kind: 'change',
+          shape: 'rect',
+          points: [10, 20, 300, 100],
+          note: '按钮换成金色',
+          target: '',
+          widgets: ['Buttons'],
+        },
+      ],
+    })
+    d = await waitJob(design.id)
+    const asked = calls()
+      .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
+      .at(-1).input
+    assert.match(
+      asked,
+      /用户在效果图上的标注[\s\S]*1\.【修改】框选，范围 x=10 y=20 宽=300 高=100\n {3}涉及的控件：Buttons\n {3}说明：按钮换成金色/,
+    )
+    assert.equal(d.messages.at(-2).annotations[0].note, '按钮换成金色')
+    assert.equal(d.messages.at(-1).text, '改好了')
     step('UI 设计：AI 搭控件树（自动修正一次）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开')
 
     // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge

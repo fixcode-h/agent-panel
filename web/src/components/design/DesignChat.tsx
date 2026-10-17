@@ -10,9 +10,10 @@ import {
   Loader2,
   Sparkles,
   Square,
+  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
+import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
 import { agentRun, defaultCli } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -23,6 +24,7 @@ import { Select } from '@/components/ui/input'
 import { Markdown } from '@/components/tasks/Markdown'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
+import { KIND_COLOR, kindLabel } from './Annotations'
 import { t } from '@shared/i18n'
 
 const NO_NAMES = new Set<string>()
@@ -352,6 +354,8 @@ export function DesignChat({
   onCount,
   onSend,
   onStop,
+  annotations = [],
+  onRemoveAnnotation,
 }: {
   messages: DesignMessage[]
   job: DesignJob | null | undefined
@@ -362,6 +366,9 @@ export function DesignChat({
   onCount: (n: number) => void
   onSend: (text: string) => Promise<boolean>
   onStop: () => void
+  /** 效果图上还没发出去的标注，发送时一起带上 */
+  annotations?: Annotation[]
+  onRemoveAnnotation?: (id: string) => void
 }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -383,7 +390,8 @@ export function DesignChat({
 
   const send = async () => {
     const v = text.trim()
-    if (!v || running || sending) return
+    // 只有标注、没写文字也能发：按标注改
+    if ((!v && !annotations.length) || running || sending) return
     setSending(true)
     try {
       if (await onSend(v)) setText('')
@@ -432,6 +440,37 @@ export function DesignChat({
       </div>
       <div className="shrink-0 px-3 pb-3">
         <div className="rounded-2xl border border-line-strong bg-field shadow-card focus-within:border-accent/60">
+          {annotations.length > 0 && (
+            <div className="flex flex-wrap gap-1 border-b px-2.5 pt-2.5 pb-2">
+              {annotations.map((a, i) => (
+                <span
+                  key={a.id}
+                  title={[a.widgets.join('、'), a.note].filter(Boolean).join('\n')}
+                  className="group flex max-w-full items-center gap-1.5 rounded-md border bg-card py-0.5 pr-1 pl-1 text-[11.5px] text-muted"
+                >
+                  <span
+                    className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+                    style={{ background: KIND_COLOR[a.kind] }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="shrink-0">{kindLabel(a.kind)}</span>
+                  {(a.note || a.widgets[0]) && (
+                    <span className="max-w-[140px] truncate text-subtle">{a.note || a.widgets[0]}</span>
+                  )}
+                  {onRemoveAnnotation && (
+                    <button
+                      onClick={() => onRemoveAnnotation(a.id)}
+                      aria-label={t('删除标注')}
+                      className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-fg"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </span>
+              ))}
+            </div>
+          )}
           <textarea
             ref={box}
             value={text}
@@ -444,7 +483,13 @@ export function DesignChat({
             }}
             disabled={disabled}
             rows={2}
-            placeholder={running ? t('AI 正在处理，完成后可以继续说') : t('描述界面，或者说要改哪里…')}
+            placeholder={
+              running
+                ? t('AI 正在处理，完成后可以继续说')
+                : annotations.length
+                  ? t('补充说明，或直接发送让 AI 按标注修改')
+                  : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
+            }
             aria-label={t('告诉 AI 要做什么')}
             className="block max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13.5px] leading-relaxed outline-none placeholder:text-subtle"
           />
@@ -472,7 +517,7 @@ export function DesignChat({
             ) : (
               <button
                 onClick={() => void send()}
-                disabled={!text.trim() || sending || disabled}
+                disabled={(!text.trim() && !annotations.length) || sending || disabled}
                 aria-label={t('发送')}
                 title={t('发送（Enter）')}
                 className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
@@ -493,6 +538,25 @@ function ChatMessage({ msg }: { msg: DesignMessage }) {
     return (
       <div className="ml-8 self-end rounded-2xl rounded-br-md bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
         {msg.text}
+        {!!msg.annotations?.length && (
+          <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
+            {msg.annotations.map((a, i) => (
+              <span key={a.id} className="flex items-center gap-1.5">
+                <span
+                  className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+                  style={{ background: KIND_COLOR[a.kind] }}
+                >
+                  {i + 1}
+                </span>
+                <span className="truncate">
+                  {kindLabel(a.kind)}
+                  {a.widgets.length ? ` · ${a.widgets.slice(0, 3).join('、')}` : ''}
+                  {a.note ? ` · ${a.note}` : ''}
+                </span>
+              </span>
+            ))}
+          </span>
+        )}
       </div>
     )
   if (msg.role === 'system')
