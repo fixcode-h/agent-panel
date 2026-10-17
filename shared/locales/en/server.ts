@@ -277,4 +277,8 @@ export const EN_SERVER: Record<string, string> = {
     '{error}. Using proxy {proxy}; make sure it can reach GitHub.',
   '{error}。访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
     "{error}. If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
+  '{cli} 没有按格式给出新的文件内容，可以再试一次':
+    "{cli} didn't return the new file content in the expected format; try again",
+  '找不到这次优化，可能已过期': "Can't find this optimization; it may have expired",
+  找不到这次优化: "Can't find this optimization",
 }

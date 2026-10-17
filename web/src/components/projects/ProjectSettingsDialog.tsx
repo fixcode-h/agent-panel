@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { Loader2, Trash2, X } from 'lucide-react'
+import { FileText, Loader2, Settings2, Trash2, X } from 'lucide-react'
 import type { Project, ProjectInput } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -14,6 +14,12 @@ import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
+import { CLIS } from '@shared/clis'
+import { CLI_DOCS, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
+import { orderClis } from '@shared/settings'
+import { cliColor } from '@/lib/cli-style'
+import { cn } from '@/lib/utils'
+import { DocPage } from './ProjectDocs'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
 const folderName = (p: string) =>
@@ -57,7 +63,7 @@ export function ProjectSettingsDialog({
           aria-describedby={undefined}
           // 改到一半点到外面不关闭，免得白填
           onInteractOutside={(e) => e.preventDefault()}
-          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(820px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
+          className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           {open && <Body key={project?.id ?? 'new'} project={project} onClose={() => onOpenChange(false)} />}
         </D.Content>
@@ -86,6 +92,29 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const inherited = workflows.find((w) => w.id === category?.workflowId)
   const own = workflows.find((w) => w.id === draft.workflowId)
   const checks = projectChecks(draft, dir, own ?? inherited, agents, clis)
+  const { settings } = useData()
+
+  // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
+  const [section, setSection] = useState('general')
+  const [docs, setDocs] = useState<ProjectDocs | null>(null)
+  const [docError, setDocError] = useState('')
+  const [docDrafts, setDocDrafts] = useState<Partial<Record<DocFile, string>>>({})
+  // 说明文件按保存过的目录读；目录改了要先确认保存，免得读写到旧目录
+  const docsReady = !!project && !!project.path && draft.path.trim() === project.path
+  useEffect(() => {
+    if (!project || !project.path) return
+    api
+      .projectDocs(project.id)
+      .then(setDocs)
+      .catch((e) => setDocError((e as Error).message))
+  }, [project])
+  const docOf = (f: DocFile) => docs?.files.find((d) => d.path === f)
+  const changedDocs = (Object.entries(docDrafts) as [DocFile, string][]).filter(
+    ([f, c]) => c !== (docOf(f)?.content ?? '') && (docOf(f)?.exists || c.trim()),
+  )
+  const isChanged = (files: DocFile[]) => changedDocs.some(([f]) => files.includes(f))
+  const hasDoc = (files: DocFile[]) => files.some((f) => docOf(f)?.exists)
+  const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter((c) => CLI_DOCS[c.id])
 
   const confirm = async () => {
     if (!valid || saving) return
@@ -93,6 +122,8 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
     try {
       const input = { ...draft, name: draft.name.trim() }
       if (project) {
+        // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
+        for (const [f, c] of changedDocs) await api.saveProjectDoc(project.id, f, c)
         const saved = await api.updateProject(project.id, input)
         setProjects((ps) => ps.map((p) => (p.id === saved.id ? saved : p)))
         toast.success(t('项目设置已保存'))
@@ -135,91 +166,200 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         <DialogCloseButton />
       </header>
 
-      <form
-        id="project-settings"
-        onSubmit={(e) => {
-          e.preventDefault()
-          void confirm()
-        }}
-        className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
-      >
-        <div className="flex min-w-0 flex-1 flex-col gap-7">
-          <FormSection title={t('基本信息')}>
-            <div className="flex flex-wrap gap-4">
-              <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
-                <Input
-                  autoFocus={!project}
-                  value={draft.name}
-                  onChange={(e) => set('name', e.target.value)}
-                  placeholder={t('例如：官网前端')}
-                />
-              </Field>
-              <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                <span className="text-xs text-muted">{t('分类')}</span>
-                <CategoryPicker
-                  value={draft.categoryId}
-                  onChange={(id) => set('categoryId', id)}
-                  options={projectCategories}
-                  onCreate={async (name) => {
-                    const c = await api.createProjectCategory({ name, description: '', workflowId: '' })
-                    setProjectCategories((cs) => [...cs, c])
-                    return c
-                  }}
-                />
-              </div>
-            </div>
-            <Field label={t('简介')}>
-              <Input
-                value={draft.description}
-                onChange={(e) => set('description', e.target.value)}
-                placeholder={t('这个项目是做什么的')}
-              />
-            </Field>
-          </FormSection>
-
-          <FormSection title={t('本地目录')}>
-            <DirPicker value={draft.path} onChange={pickDir} info={dir} />
-          </FormSection>
-
-          <FormSection title={t('工作流')}>
-            <div className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted">{t('执行任务时使用的工作流')}</span>
-              <WorkflowPicker
-                value={draft.workflowId}
-                onChange={(id) => set('workflowId', id)}
-                emptyLabel={
-                  inherited ? t('使用分类默认：{name}', { name: inherited.name }) : t('使用分类默认（分类还没有指定）')
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <nav
+          aria-label={t('项目设置分类')}
+          className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[244px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
+        >
+          <NavItem on={section === 'general'} onClick={() => setSection('general')}>
+            <Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('常规')}
+          </NavItem>
+          <NavItem
+            on={section === 'doc'}
+            onClick={() => setSection('doc')}
+            dot={isChanged([SHARED_DOC, 'AGENT.md'])}
+            hint={hasDoc([SHARED_DOC]) ? SHARED_DOC : undefined}
+          >
+            <FileText className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('项目说明')}
+          </NavItem>
+          <span className="hidden px-2.5 pt-4 pb-1 text-[11px] text-subtle md:block">{t('各个 CLI 读的说明')}</span>
+          {cliPages.map((c) => (
+            <NavItem
+              key={c.id}
+              on={section === `cli:${c.id}`}
+              onClick={() => setSection(`cli:${c.id}`)}
+              dot={isChanged(CLI_DOCS[c.id])}
+              hint={CLI_DOCS[c.id].find((f) => docOf(f)?.exists)}
+            >
+              <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(c.id) }} />
+              {c.name}
+            </NavItem>
+          ))}
+        </nav>
+        {section !== 'general' ? (
+          <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
+            {!docsReady || !docs ? (
+              <p className="text-[13px] leading-relaxed text-subtle">
+                {!project
+                  ? t('先创建项目，再编辑项目里的说明文件。')
+                  : !project.path || draft.path.trim() !== project.path
+                    ? t('本地目录改了，先点「确认」保存，再编辑新目录里的说明文件。')
+                    : docError || t('正在读取…')}
+              </p>
+            ) : section === 'doc' ? (
+              <DocPage
+                key="doc"
+                projectId={project!.id}
+                title={t('项目说明')}
+                desc={t(
+                  'AGENTS.md 放在项目根目录，Codex 和 Command Code 每次启动都会读它，写这个项目的约定、常用命令和注意事项。Claude Code 读的是 CLAUDE.md，可以在左边的 Claude Code 里编辑，或在 CLAUDE.md 里写一行 @AGENTS.md 引用它。',
+                )}
+                files={[SHARED_DOC]}
+                docs={docs.files}
+                drafts={docDrafts}
+                onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
+                note={
+                  docOf('AGENT.md')?.exists &&
+                  !docOf(SHARED_DOC)?.exists && (
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-[13px]">
+                      <span className="min-w-0 flex-1">
+                        {t('检测到 AGENT.md，但各个 CLI 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
+                      </span>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => setDocDrafts((d) => ({ ...d, [SHARED_DOC]: docOf('AGENT.md')!.content }))}
+                      >
+                        {t('复制到 AGENTS.md')}
+                      </Button>
+                    </div>
+                  )
                 }
               />
-              <span className="text-xs text-subtle">
-                {own ? (
-                  t('这个项目单独指定了工作流，不受分类默认的影响。')
-                ) : category ? (
-                  <>
-                    {t('跟随项目分类「{name}」的默认工作流，分类可以在', { name: category.name })}
-                    <button
-                      type="button"
-                      className="cursor-pointer text-accent hover:underline"
-                      onClick={() => {
-                        onClose()
-                        openSettings('categories')
+            ) : (
+              (() => {
+                const id = section.slice(4)
+                const name = CLIS.find((c) => c.id === id)?.name ?? id
+                const files = CLI_DOCS[id] ?? []
+                return (
+                  <DocPage
+                    key={section}
+                    projectId={project!.id}
+                    title={name}
+                    desc={
+                      id === 'claude'
+                        ? t(
+                            'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
+                          )
+                        : id === 'codex'
+                          ? t(
+                              'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。',
+                            )
+                          : t(
+                              'Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。',
+                            )
+                    }
+                    files={files}
+                    docs={docs.files}
+                    drafts={docDrafts}
+                    onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
+                  />
+                )
+              })()
+            )}
+          </div>
+        ) : (
+          <form
+            id="project-settings"
+            onSubmit={(e) => {
+              e.preventDefault()
+              void confirm()
+            }}
+            className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
+          >
+            <div className="flex min-w-0 flex-1 flex-col gap-7">
+              <FormSection title={t('基本信息')}>
+                <div className="flex flex-wrap gap-4">
+                  <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
+                    <Input
+                      autoFocus={!project}
+                      value={draft.name}
+                      onChange={(e) => set('name', e.target.value)}
+                      placeholder={t('例如：官网前端')}
+                    />
+                  </Field>
+                  <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                    <span className="text-xs text-muted">{t('分类')}</span>
+                    <CategoryPicker
+                      value={draft.categoryId}
+                      onChange={(id) => set('categoryId', id)}
+                      options={projectCategories}
+                      onCreate={async (name) => {
+                        const c = await api.createProjectCategory({ name, description: '', workflowId: '' })
+                        setProjectCategories((cs) => [...cs, c])
+                        return c
                       }}
-                    >
-                      {t('设置 · 项目分类')}
-                    </button>
-                    {t('中修改。')}
-                  </>
-                ) : (
-                  t('项目没有分类，需要在这里单独指定工作流。')
-                )}
-              </span>
+                    />
+                  </div>
+                </div>
+                <Field label={t('简介')}>
+                  <Input
+                    value={draft.description}
+                    onChange={(e) => set('description', e.target.value)}
+                    placeholder={t('这个项目是做什么的')}
+                  />
+                </Field>
+              </FormSection>
+
+              <FormSection title={t('本地目录')}>
+                <DirPicker value={draft.path} onChange={pickDir} info={dir} />
+              </FormSection>
+
+              <FormSection title={t('工作流')}>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('执行任务时使用的工作流')}</span>
+                  <WorkflowPicker
+                    value={draft.workflowId}
+                    onChange={(id) => set('workflowId', id)}
+                    emptyLabel={
+                      inherited
+                        ? t('使用分类默认：{name}', { name: inherited.name })
+                        : t('使用分类默认（分类还没有指定）')
+                    }
+                  />
+                  <span className="text-xs text-subtle">
+                    {own ? (
+                      t('这个项目单独指定了工作流，不受分类默认的影响。')
+                    ) : category ? (
+                      <>
+                        {t('跟随项目分类「{name}」的默认工作流，分类可以在', { name: category.name })}
+                        <button
+                          type="button"
+                          className="cursor-pointer text-accent hover:underline"
+                          onClick={() => {
+                            onClose()
+                            openSettings('categories')
+                          }}
+                        >
+                          {t('设置 · 项目分类')}
+                        </button>
+                        {t('中修改。')}
+                      </>
+                    ) : (
+                      t('项目没有分类，需要在这里单独指定工作流。')
+                    )}
+                  </span>
+                </div>
+              </FormSection>
             </div>
-          </FormSection>
-        </div>
-        <aside className="flex shrink-0 flex-col gap-4 md:w-[260px]">
-          <ReadinessCard checks={checks} />
-        </aside>
-      </form>
+            <aside className="flex shrink-0 flex-col gap-4 md:w-[260px]">
+              <ReadinessCard checks={checks} />
+            </aside>
+          </form>
+        )}
+      </div>
 
       <footer className="flex shrink-0 items-center gap-2 border-t bg-panel/60 px-6 py-3.5">
         {project && (
@@ -232,10 +372,14 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             {t('删除项目')}
           </Button>
         )}
-        <Button variant="secondary" className="ml-auto" onClick={onClose}>
+        <span className="ml-auto" />
+        <Button variant="secondary" onClick={onClose}>
           {t('取消')}
         </Button>
-        <Button type="submit" form="project-settings" disabled={!valid || saving}>
+        {changedDocs.length > 0 && (
+          <span className="text-xs text-subtle">{t('{n} 个说明文件有改动', { n: changedDocs.length })}</span>
+        )}
+        <Button onClick={() => void confirm()} disabled={!valid || saving}>
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {project ? t('确认') : t('创建')}
         </Button>
@@ -251,5 +395,46 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         />
       )}
     </>
+  )
+}
+
+function NavItem({
+  on,
+  onClick,
+  dot,
+  hint,
+  children,
+}: {
+  on: boolean
+  onClick: () => void
+  /** 有没保存的改动 */
+  dot?: boolean
+  /** 右边的小字：用的是哪个文件 */
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-current={on ? 'page' : undefined}
+      className={cn(
+        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
+        on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+      )}
+    >
+      {children}
+      {hint && (
+        <span className="ml-auto hidden truncate font-mono text-[10.5px] font-normal text-subtle md:inline">
+          {hint}
+        </span>
+      )}
+      {dot && (
+        <span
+          className={cn('h-1.5 w-1.5 shrink-0 rounded-full bg-accent', !hint && 'ml-auto')}
+          title={t('有未保存的改动')}
+        />
+      )}
+    </button>
   )
 }

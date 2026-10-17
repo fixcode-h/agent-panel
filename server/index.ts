@@ -26,6 +26,7 @@ import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
+import { docsApi } from './docs.ts'
 import { detectClis, invalidateClis } from './detect.ts'
 import { installApi } from './install.ts'
 import { openBrowser, revealDir } from './open.ts'
@@ -287,6 +288,9 @@ app.delete('/projects/:id', async (c) => {
 const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
 app.route('/assist', assistApi({ agents, categories, workflows }))
+const docs = docsApi({ projects })
+app.route('/project-docs', docs.routes)
+app.route('/doc-jobs', docs.jobRoutes)
 
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())

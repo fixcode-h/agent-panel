@@ -19,6 +19,8 @@ async function getMermaid() {
     const v = (k: string) => css.getPropertyValue(k).trim()
     mermaid.initialize({
       startOnLoad: false,
+      // 语法错误时不要在页面最底下画一张「Syntax error」的图（会把页面撑出一大截空白）
+      suppressErrorRendering: true,
       securityLevel: 'strict',
       theme: 'base',
       fontFamily: getComputedStyle(document.body).fontFamily,
@@ -81,14 +83,21 @@ export function Markdown({
       for (const box of boxes) {
         if (cancelled) return
         const src = box.dataset.src ?? ''
+        const id = `md-mermaid-${++seq}`
         try {
-          const { svg } = await mermaid.render(`md-mermaid-${++seq}`, src)
+          const { svg } = await mermaid.render(id, src)
           if (cancelled) return
           box.dataset.done = '1'
           box.innerHTML = `<div class="md-mermaid-svg">${svg}</div><details><summary>${t('源码')}</summary><pre><code>${escape(src)}</code></pre></details>`
-        } catch {
-          // 语法不对的图保持显示源码
+        } catch (e) {
+          // 语法不对的图按普通代码块显示源码，标出画不出来的原因
           box.dataset.done = 'error'
+          const why = String((e as Error)?.message ?? '').split('\n')[0]
+          box.innerHTML = `<div class="md-code"><div class="md-code-bar"><span>mermaid · ${escape(t('图的语法有误，显示源码'))}</span><button type="button" class="md-copy" data-copy>${t('复制')}</button></div><pre><code title="${escape(why)}">${escape(src)}</code></pre></div>`
+        } finally {
+          // 出错时 mermaid 会把临时节点留在 body 末尾，清掉
+          document.getElementById(id)?.remove()
+          document.getElementById(`d${id}`)?.remove()
         }
       }
     })()

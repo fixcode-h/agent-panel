@@ -22,6 +22,7 @@ export const EN_TASKS: Record<string, string> = {
 
   // Markdown、消息
   源码: 'Source',
+  '图的语法有误，显示源码': 'diagram has a syntax error, showing source',
   已复制: 'Copied',
   复制: 'Copy',
   '正在思考…': 'Thinking…',

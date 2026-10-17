@@ -1691,6 +1691,37 @@ try {
   assert.equal(readFileSync(path.join(dataDir, 'cache/updates/previous/server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
   step('版本更新：读取 GitHub 上的包、校验哈希，替换程序文件、保留数据；新版本加载不了自动退回，也能手动回到上一个版本')
 
+  // ---- 项目说明文件：读、写（只认白名单里的文件名）、AI 优化 ----
+  {
+    let docs = await call('GET', `/project-docs/${project.id}`)
+    assert.equal(docs.dir, projectDir)
+    assert.ok(docs.files.some((f) => f.path === 'AGENTS.md' && !f.exists))
+    const saved = await call('PUT', `/project-docs/${project.id}`, { path: '.claude/CLAUDE.md', content: '# 约定\n' })
+    assert.equal(saved.exists, true)
+    assert.equal(readFileSync(path.join(projectDir, '.claude/CLAUDE.md'), 'utf8'), '# 约定\n')
+    await assert.rejects(call('PUT', `/project-docs/${project.id}`, { path: '../x.md', content: 'x' }), /400/)
+    assert.ok(!existsSync(path.join(projectDir, '../x.md')), '不能写到白名单外')
+    let job = await call('POST', `/project-docs/${project.id}/optimize`, {
+      path: 'AGENTS.md',
+      content: '# 项目\n',
+      cli: 'commandcode',
+    })
+    for (let i = 0; job.status === 'running' && i < 100; i++) {
+      await sleep(100)
+      job = await call('GET', `/doc-jobs/${job.id}`)
+    }
+    assert.equal(job.status, 'done', job.error)
+    assert.equal(job.text, '补上了常用命令。')
+    assert.ok(
+      job.result.startsWith('# 项目\n') && job.result.includes('## 常用命令\n\n```bash\nnpm test\n```'),
+      job.result,
+    )
+    docs = await call('GET', `/project-docs/${project.id}`)
+    assert.ok(!docs.files.find((f) => f.path === 'AGENTS.md').exists, '优化不直接写文件')
+    rmSync(path.join(projectDir, '.claude'), { recursive: true })
+    step('项目说明文件：读写、拒绝白名单外的路径、AI 优化')
+  }
+
   // ---- 只接受本机页面的请求 ----
   const raw = (method, url, headers, body) =>
     new Promise((resolve, reject) => {

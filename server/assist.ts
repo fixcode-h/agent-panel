@@ -28,10 +28,10 @@ type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
  * 生成配置时只需要回答，不需要改文件。Claude Code 和 Command Code 的默认 / 标准模式在非交互运行时会拒绝所有需要审批的操作
  * （改文件、执行命令），等于只读；不用 plan 模式，因为它可能把回答放进「退出规划」的工具调用里，读不到文字。
  */
-const READ_ONLY: Record<string, string> = { claude: 'default', codex: 'read-only', commandcode: 'standard' }
+export const READ_ONLY: Record<string, string> = { claude: 'default', codex: 'read-only', commandcode: 'standard' }
 
 /** 设置里的额外参数可能放宽权限（跳过确认、换沙箱），生成配置时去掉，保证只读 */
-function safeArgs(args: string[]) {
+export function safeArgs(args: string[]) {
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
