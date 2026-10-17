@@ -6,7 +6,7 @@
  */
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
 import path from 'node:path'
@@ -39,6 +39,10 @@ execFileSync('mkdir', ['-p', path.join(appDir, 'dist'), path.join(appDir, 'data'
 writeFileSync(path.join(appDir, 'server.mjs'), '// old\n')
 writeFileSync(path.join(appDir, 'dist/old.html'), 'old')
 writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
+// Windows 托盘程序：上次更新挪开的 AgentPanel.exe.old 还在运行，删不掉也不能被覆盖（这里用非空目录模拟）
+writeFileSync(path.join(appDir, 'AgentPanel.exe'), 'tray-old')
+execFileSync('mkdir', ['-p', path.join(appDir, 'AgentPanel.exe.old')])
+writeFileSync(path.join(appDir, 'AgentPanel.exe.old', 'busy'), '')
 for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   const d = path.join(relDir, `agent-panel-${v}`)
   execFileSync('mkdir', ['-p', path.join(d, 'dist')])
@@ -46,6 +50,7 @@ for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   writeFileSync(path.join(d, 'server.mjs'), v === '0.11.8' ? 'process.exit(3)\n' : `// new ${v}\n`)
   writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
   writeFileSync(path.join(d, 'start.sh'), '#!/bin/sh\n')
+  writeFileSync(path.join(d, 'AgentPanel.exe'), `tray-${v}`)
   execFileSync('tar', ['-czf', `${d}.tar.gz`, `agent-panel-${v}`], { cwd: relDir })
   // 校验文件：0.11.4 的哈希故意写错
   const hash = createHash('sha256')
@@ -1991,6 +1996,11 @@ try {
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
   assert.ok(existsSync(path.join(appDir, 'dist/index.html')) && !existsSync(path.join(appDir, 'dist/old.html')))
   assert.equal(readFileSync(path.join(appDir, 'data/keep.json'), 'utf8'), '{"keep":true}', '数据不能动')
+  assert.equal(readFileSync(path.join(appDir, 'AgentPanel.exe'), 'utf8'), 'tray-0.11.9-dev', '托盘程序换成新的')
+  assert.ok(
+    readdirSync(appDir).some((n) => n.startsWith('AgentPanel.exe.old-')),
+    '上次挪开的旧托盘程序还被占用时，挪到新名字',
+  )
   assert.ok(!existsSync(path.join(appDir, 'dist.old')) && !existsSync(path.join(appDir, 'dist.next')))
   // 回到上一个版本：和当前版本互换，换完还能再换回来
   assert.equal((await call('GET', '/app/version')).previous, '0.11.5')
