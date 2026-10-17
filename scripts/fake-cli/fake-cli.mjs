@@ -305,6 +305,18 @@ if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex') {
   note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
   codexDone('completed')
 }
+// UI 项目提示词：生成时给两条，翻译时把每条中文原样配上 EN: 前缀
+if (input.startsWith('你在帮用户整理游戏 UI 生图用的提示词') && kind === 'codex') {
+  const items = input.includes('翻译成给生图 AI 用的英文')
+    ? JSON.parse(input.match(/条数和顺序不变：\n(.*)/)[1]).map((x) => ({ ...x, en: `EN:${x.zh}` }))
+    : [
+        { category: 'style', zh: '蒸汽朋克', en: 'steampunk' },
+        { category: 'material', zh: '黄铜齿轮', en: 'brass gears' },
+      ]
+  const text = `\`\`\`json\n${JSON.stringify({ prompts: items })}\n\`\`\``
+  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
+  codexDone('completed')
+}
 // Codex 的 image_gen：每张图一个 imageGeneration 条目，第一张写到 savedPath，其余只给 base64；
 // 描述里有 IMGFAIL 时报生成失败
 if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {

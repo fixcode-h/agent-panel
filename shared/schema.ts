@@ -752,8 +752,14 @@ export const Settings = z.object({
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /** UI 设计里生成图片用的 CLI 和模型（目前只有 Codex 内置了生图工具）；模型为空用这个 CLI 的高档 */
   imageGen: z
-    .object({ cli: z.string().default('codex'), model: z.string().trim().default(''), effort: z.string().default('') })
-    .default({ cli: 'codex', model: '', effort: '' }),
+    .object({
+      cli: z.string().default('codex'),
+      model: z.string().trim().default(''),
+      effort: z.string().default(''),
+      /** 同时生成几张图：每张图单独开一个会话（CLI 进程或浏览器里的新对话），最多 10 个 */
+      concurrency: z.number().int().min(1).max(10).catch(4).default(4),
+    })
+    .default({ cli: 'codex', model: '', effort: '', concurrency: 4 }),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

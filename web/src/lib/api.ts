@@ -30,8 +30,11 @@ import type {
   DesignJob,
   DesignMeta,
   DesignProject,
+  DesignProjectInput,
   ImageSource,
   NewDesignInput,
+  ProjectPrompt,
+  PromptAiInput,
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage } from '@shared/data'
@@ -178,9 +181,8 @@ export const api = {
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
   designs: () => request<DesignMeta[]>('/designs'),
   designProjects: () => request<DesignProject[]>('/designs/projects'),
-  createDesignProject: (input: { name: string; path: string }) =>
-    request<DesignProject>('/designs/projects', json('POST', input)),
-  updateDesignProject: (id: string, input: { name: string; path: string }) =>
+  createDesignProject: (input: DesignProjectInput) => request<DesignProject>('/designs/projects', json('POST', input)),
+  updateDesignProject: (id: string, input: Partial<DesignProjectInput>) =>
     request<DesignProject>(`/designs/projects/${id}`, json('PUT', input)),
   deleteDesignProject: (id: string) => request<void>(`/designs/projects/${id}`, { method: 'DELETE' }),
   design: (id: string) => request<DesignFull>(`/designs/${id}`),
@@ -198,6 +200,8 @@ export const api = {
     request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
   browserStatus: () => request<BrowserStatus>('/designs/browser'),
+  promptAi: (input: Partial<PromptAiInput>) =>
+    request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
   installExtension: (browser: string) =>
     request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),

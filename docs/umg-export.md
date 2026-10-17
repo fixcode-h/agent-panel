@@ -47,7 +47,9 @@ UI 设计页「导出」得到的数据，用来在 UE5 里生成 Widget Bluepri
 }
 ```
 
-支持的类型：CanvasPanel、Overlay、HorizontalBox、VerticalBox、UniformGridPanel、WrapBox、ScrollBox、SizeBox、ScaleBox、Border、WidgetSwitcher、Spacer、Image、TextBlock、Button、CheckBox、ProgressBar、Slider、EditableTextBox、UserWidget。
+支持的类型：CanvasPanel、Overlay、HorizontalBox、VerticalBox、UniformGridPanel、WrapBox、ScrollBox、SizeBox、ScaleBox、Border、WidgetSwitcher、ListView、TileView、DynamicEntryBox、Spacer、Image、TextBlock、Button、CheckBox、ProgressBar、Slider、EditableTextBox、UserWidget。
+
+ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成的，导出数据里没有 `Children`；`Properties.EntryWidgetClass` 是条目用的子控件名（`UserWidgets` 里的一个），导入时设成对应的 Widget Blueprint，`NumDesignerPreviewEntries` 是设计器里预览几条。
 
 ## 取值约定
 

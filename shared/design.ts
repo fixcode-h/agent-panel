@@ -11,6 +11,7 @@ import {
   type Margin,
   type Widget,
 } from './umg.ts'
+import type { ToolUse } from './schema.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -132,12 +133,107 @@ export type DesignMeta = Pick<Design, 'id' | 'projectId' | 'kind' | 'title' | 'c
 }
 
 /**
+ * 项目提示词：按分类管理，界面上显示中文，发给生图 AI 时用英文（en）。
+ * 关掉 enabled 的先不用，但留着方便再打开
+ */
+export const PROMPT_CATEGORIES = ['style', 'color', 'material', 'light', 'layout', 'avoid'] as const
+export type PromptCategory = (typeof PROMPT_CATEGORIES)[number]
+export const PROMPT_CATEGORY_LABEL: Record<PromptCategory, string> = {
+  style: '画风',
+  color: '色彩',
+  material: '材质',
+  light: '光影',
+  layout: '构图',
+  avoid: '避免',
+}
+/** 发给生图 AI 时每个分类的英文开头 */
+const PROMPT_CATEGORY_EN: Record<PromptCategory, string> = {
+  style: 'Art style',
+  color: 'Color palette',
+  material: 'Materials and textures',
+  light: 'Lighting',
+  layout: 'Composition',
+  avoid: 'Avoid',
+}
+export const ProjectPrompt = z.object({
+  id: z.string(),
+  category: z.enum(PROMPT_CATEGORIES).catch('style'),
+  zh: z.string().trim().min(1).max(500),
+  en: z.string().trim().max(1000).default(''),
+  enabled: z.boolean().default(true),
+})
+export type ProjectPrompt = z.infer<typeof ProjectPrompt>
+
+/** 项目提示词换成发给生图 AI 的英文：按分类一行；没有英文的用中文顶上 */
+export function projectPromptText(prompts: ProjectPrompt[]) {
+  return PROMPT_CATEGORIES.map((c) => {
+    const list = prompts.filter((p) => p.enabled && p.category === c).map((p) => p.en || p.zh)
+    return list.length ? `${PROMPT_CATEGORY_EN[c]}: ${list.join(', ')}` : ''
+  })
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** 给设计 AI 看的项目提示词：中文和英文都给，方便它理解 */
+function projectPromptBrief(prompts: ProjectPrompt[]) {
+  return PROMPT_CATEGORIES.map((c) => {
+    const list = prompts.filter((p) => p.enabled && p.category === c).map((p) => (p.en ? `${p.zh}（${p.en}）` : p.zh))
+    return list.length ? `- ${PROMPT_CATEGORY_LABEL[c]}：${list.join('；')}` : ''
+  })
+    .filter(Boolean)
+    .join('\n')
+}
+
+/** AI 生成或翻译出来的提示词 */
+export const AiPrompts = z.object({
+  prompts: z
+    .array(
+      z.object({ category: z.enum(PROMPT_CATEGORIES).catch('style'), zh: z.string().min(1), en: z.string().min(1) }),
+    )
+    .max(40),
+})
+export const PromptAiInput = z.object({
+  /** generate：按描述生成一组；translate：把 items 里的中文整理、翻译成英文 */
+  mode: z.enum(['generate', 'translate']).default('generate'),
+  text: z.string().trim().max(4000).default(''),
+  items: z
+    .array(z.object({ category: z.enum(PROMPT_CATEGORIES).catch('style'), zh: z.string().max(500) }))
+    .max(40)
+    .default([]),
+  /** 已经有的提示词，生成时避开重复 */
+  existing: z.array(z.string().max(500)).max(300).default([]),
+})
+export type PromptAiInput = z.infer<typeof PromptAiInput>
+
+export function buildPromptAiPrompt(input: PromptAiInput) {
+  const cats = PROMPT_CATEGORIES.map((c) => `${c}（${PROMPT_CATEGORY_LABEL[c]}）`).join('、')
+  const task =
+    input.mode === 'translate'
+      ? `把下面每条中文提示词翻译成给生图 AI 用的英文（简短的词组，不要句子），分类不对的帮忙改正，条数和顺序不变：
+${JSON.stringify(input.items)}`
+      : `用户在为一个游戏的 UI 定美术风格，按用户的描述整理出一组提示词，每条一个要点（例如一种画风、一组配色、一种材质），一般 6 到 15 条，分到合适的分类里。
+用户的描述：
+${input.text}
+${input.existing.length ? `\n项目里已经有这些提示词，不要重复：\n${input.existing.join('、')}\n` : ''}`
+  return `你在帮用户整理游戏 UI 生图用的提示词。${task}
+
+分类只能用：${cats}。avoid 写不想要的东西（例如文字、水印、照片写实感）。
+zh 是给用户看的中文（简短，几个字到一句话），en 是发给生图 AI 的英文（简短的词组）。
+
+只输出一个 \`\`\`json 代码块：
+{"prompts":[{"category":"style","zh":"暗黑奇幻","en":"dark fantasy"}]}
+不要修改文件、不要运行命令。`
+}
+
+/**
  * UI 设计自己的项目：和 Agent 的项目分开，互不影响。path 是可选的本机目录，「导出到项目目录」写到这里
  */
 export const DesignProject = z.object({
   id: z.string(),
   name: z.string(),
   path: z.string().default(''),
+  /** 项目级的提示词：这个项目里所有设计、所有图片都带上，保证整个游戏美术风格统一 */
+  prompts: z.array(ProjectPrompt).max(300).default([]),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -145,7 +241,9 @@ export type DesignProject = z.infer<typeof DesignProject>
 export const DesignProjectInput = z.object({
   name: z.string().trim().min(1).max(100),
   path: z.string().trim().max(1000).default(''),
+  prompts: z.array(ProjectPrompt).max(300).default([]),
 })
+export type DesignProjectInput = z.input<typeof DesignProjectInput>
 
 export const NewDesignInput = z.object({
   projectId: z.string().min(1),
@@ -170,6 +268,10 @@ export const DesignChatInput = z.object({
   count: z.number().int().min(1).max(4).default(1),
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
+  /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */
+  run: z
+    .object({ cli: z.string().max(40), model: z.string().max(200).default(''), effort: z.string().max(40).default('') })
+    .optional(),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
 
@@ -180,13 +282,31 @@ export const GenerateImageInput = z.object({
   prompt: z.string().max(4000).optional(),
 })
 
+/** 生成图片时每张图的进度 */
+export interface ImageJobItem {
+  id: string
+  name: string
+  status: 'waiting' | 'generating' | 'done' | 'failed'
+  /** 浏览器里的进度说明，或失败原因 */
+  text?: string
+  /** 已经取回几版 / 要几版 */
+  got: number
+  want: number
+}
+
 export interface DesignJob {
   status: 'running' | 'done' | 'failed'
   /** design：AI 在改结构；images：在生成图片 */
   phase: 'design' | 'images'
+  /** 正在说的话（JSON 之前的说明） */
   text: string
   thinking?: string
-  tools?: string[]
+  /** 这一轮的工具调用，和 Agent 的输出一样显示 */
+  tools?: ToolUse[]
+  /** 这次对话用的 CLI、模型和思考强度 */
+  run?: { cli: string; model: string; effort: string }
+  /** 生成图片的进度 */
+  images?: ImageJobItem[]
   outChars: number
   attempt: number
   error?: string
@@ -253,10 +373,20 @@ const UMG_NOTES = `## 插槽（Slot）和常用属性（名字和取值都和 UE
 - Slider：Value、MinValue、MaxValue、Orientation、WidgetStyle{"NormalBarImage","NormalThumbImage"}
 - CheckBox：CheckedState(Unchecked|Checked)、WidgetStyle{"UncheckedImage","CheckedImage"}
 - SizeBox：WidthOverride、HeightOverride（0 表示不限制）、Min/MaxDesiredWidth/Height
+- ListView：EntryWidgetClass（子控件名）、NumDesignerPreviewEntries、Orientation、EntrySpacing、SelectionMode(None|Single|SingleToggle|Multi)
+- TileView：EntryWidgetClass、NumDesignerPreviewEntries、EntryWidth、EntryHeight、Orientation、TileAlignment(EvenlyDistributed|EvenlySize|EvenlyWide|Left|Right|Center|Fill)
+- DynamicEntryBox：EntryWidgetClass、NumDesignerPreviewEntries、EntryBoxType(Horizontal|Vertical|Wrap|VerticalWrap|Overlay)、EntrySpacing{"X","Y"}
 - ScaleBox：Stretch(None|Fill|ScaleToFit|ScaleToFitX|ScaleToFitY|ScaleToFill|UserSpecified)
 - 所有控件：Visibility(Visible|Collapsed|Hidden|HitTestInvisible|SelfHitTestInvisible)、RenderOpacity、RenderTransform{"Translation","Scale","Angle"}`
 
-export function buildDesignPrompt(d: Design, history: DesignMessage[], request: string, annotations?: Annotation[]) {
+export function buildDesignPrompt(
+  d: Design,
+  history: DesignMessage[],
+  request: string,
+  annotations?: Annotation[],
+  project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
+) {
+  const brief = project ? projectPromptBrief(project.prompts) : ''
   const imgs = d.images.map((i) => ({
     id: i.id,
     name: i.name,
@@ -287,6 +417,7 @@ ${UMG_NOTES}
 - 一张图只画一个元素（例如只画按钮底图，不带文字；高亮框单独一张），这样在 UE 里能分别替换和复用。按钮的 Normal / Hovered / Pressed 可以各一张图，也可以共用一张再用 TintColor 区分。
 - 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
 - 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
+- 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定、设计时就确定的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox / UniformGridPanel 直接放子控件。
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 图片的 prompt 用英文写清楚画什么、什么风格、什么颜色，不要包含文字；尺寸写在 width / height（像素，按界面上的显示尺寸）。
@@ -294,7 +425,7 @@ ${UMG_NOTES}
 - 用户只是提问、不需要改设计时，只回答，JSON 里只写 reply。
 
 ## 当前设计
-美术风格：${d.style || '（还没定）'}
+${brief ? `项目提示词（整个项目统一的美术要求，生成每张图时会自动带上英文版，图片的 prompt 里不用重复，但设计要符合）：\n${brief}\n这个界面额外的风格补充：${d.style || '（没有）'}` : `美术风格：${d.style || '（还没定）'}`}${project?.images.length ? `\n项目里其他界面已有的图片（新图片要和它们风格一致，可以复用相同的描述方式）：\n${project.images.map((i) => `- ${i.name}：${i.prompt}`).join('\n')}` : ''}
 设计稿尺寸：${d.designSize.X}×${d.designSize.Y}
 控件树：
 ${JSON.stringify(compactTree(d.root))}
@@ -310,7 +441,7 @@ ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 先用一两句中文说明你做了什么，然后输出一个 \`\`\`json 代码块：
 {
   "reply": "给用户看的说明（中文）",
-  "style": "整体美术风格（英文，生成每张图时都会带上；不改就不写）",
+  "style": "${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突；没有就不写）' : '整体美术风格（英文，生成每张图时都会带上；不改就不写）'}",
   "designSize": {"X":1920,"Y":1080}（不改就不写）,
   "root": { 完整的控件树（改了结构就写完整的树；没改就不写） },
   "components": [{"Name":"WBP_ItemSlot","DesignSize":{"X":96,"Y":96},"Root":{…}}]（写了就是完整的子控件列表）,
@@ -344,6 +475,11 @@ export function resolveDesignResult(
   const unknown = (w: any, out: string[]): string[] => {
     if (w && typeof w === 'object') {
       if (w.Type && !WIDGETS[w.Type as WidgetType]) out.push(`未知的控件类型 ${w.Type}（${w.Name ?? ''}）`)
+      // normalizeTree 会丢掉列表控件下的子控件，这里提醒 AI 改用条目子控件
+      else if (WIDGETS[w.Type as WidgetType]?.entries && Array.isArray(w.Children) && w.Children.length)
+        out.push(
+          `${w.Type} 的条目是运行时生成的，不能预先放子控件（${w.Name ?? ''}）：把条目做成子控件，写在 Properties.EntryWidgetClass 里`,
+        )
       for (const c of Array.isArray(w.Children) ? w.Children : []) unknown(c, out)
     }
     return out
@@ -401,11 +537,14 @@ export function imagePrompt(
   img: Pick<DesignImage, 'prompt' | 'width' | 'height' | 'transparent' | 'nineSlice'>,
   style: string,
   chroma: boolean,
+  /** 项目提示词的英文（projectPromptText），整个项目统一 */
+  projectStyle = '',
 ) {
   const ratio = aspect(img.width, img.height)
   const parts = [
     `Game UI asset: ${img.prompt.trim()}`,
-    style ? `Art style: ${style.trim()}` : '',
+    projectStyle.trim(),
+    style ? `${projectStyle.trim() ? 'Additional style for this screen' : 'Art style'}: ${style.trim()}` : '',
     `Aspect ratio ${ratio} (about ${img.width}x${img.height} px). One single isolated UI element, centered, filling the canvas, no text, no watermark, no mockup or screen around it.`,
     img.nineSlice
       ? 'It will be stretched as a 9-slice: keep the corners decorated and the edges and center plain and uniform.'

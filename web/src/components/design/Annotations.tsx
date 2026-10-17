@@ -11,6 +11,7 @@ import {
   Trash2,
   X,
   type LucideIcon,
+  Play,
 } from 'lucide-react'
 import { ANNOTATION_KINDS, annotationBox, type Annotation, type AnnotationKind } from '@shared/design'
 import { walk, type Widget } from '@shared/umg'
@@ -21,7 +22,7 @@ import { t } from '@shared/i18n'
  * 标注：在效果图上框选、画箭头、圈画、打点，标出要改的地方，再在 AI 对话里一起发出去。
  * 颜色表示意思：红色修改、蓝色新增、橙色删除、绿色保持不变。
  */
-export type Tool = 'select' | 'hand' | 'rect' | 'arrow' | 'pen' | 'pin'
+export type Tool = 'select' | 'hand' | 'play' | 'rect' | 'arrow' | 'pen' | 'pin'
 
 export const KIND_COLOR: Record<AnnotationKind, string> = {
   change: '#f43f5e',
@@ -41,13 +42,14 @@ const KIND_HINT: Record<AnnotationKind, string> = {
 const TOOLS: { id: Tool; icon: LucideIcon; label: string; key: string }[] = [
   { id: 'select', icon: MousePointer2, label: t('选择'), key: 'V' },
   { id: 'hand', icon: Hand, label: t('拖动画布'), key: 'H' },
+  { id: 'play', icon: Play, label: t('运行模式：像游戏里一样点按钮看效果'), key: 'G' },
   { id: 'rect', icon: Square, label: t('框选标注'), key: 'R' },
   { id: 'arrow', icon: MoveUpRight, label: t('箭头标注'), key: 'A' },
   { id: 'pen', icon: PenLine, label: t('画笔标注'), key: 'P' },
   { id: 'pin', icon: MapPin, label: t('打点标注'), key: 'T' },
 ]
 export const TOOL_KEYS: Record<string, Tool> = Object.fromEntries(TOOLS.map((x) => [x.key.toLowerCase(), x.id]))
-export const isMarkTool = (tool: Tool) => tool !== 'select' && tool !== 'hand'
+export const isMarkTool = (tool: Tool) => tool !== 'select' && tool !== 'hand' && tool !== 'play'
 
 /** 效果区上方的工具栏 */
 export function AnnotationToolbar({
@@ -77,7 +79,7 @@ export function AnnotationToolbar({
     >
       {TOOLS.map((x, i) => (
         <span key={x.id} className="flex items-center">
-          {i === 2 && <Sep />}
+          {i === 3 && <Sep />}
           <ToolButton label={`${x.label} (${x.key})`} on={tool === x.id} onClick={() => onTool(x.id)}>
             <x.icon className="h-4 w-4" strokeWidth={1.8} />
           </ToolButton>

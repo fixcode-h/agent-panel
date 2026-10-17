@@ -15,12 +15,17 @@ import {
   DesignImage,
   GenerateImageInput,
   NewDesignInput,
+  AiPrompts,
+  PromptAiInput,
+  buildPromptAiPrompt,
   buildDesignPrompt,
   emptyRoot,
   imagePrompt,
+  projectPromptText,
   resolveDesignResult,
   type DesignJob,
   type DesignMeta,
+  type ImageJobItem,
   type ImageSource,
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
@@ -28,7 +33,7 @@ import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { exportDesign, normalizeTree, uniqueName } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 import { READ_ONLY, safeArgs } from './assist.ts'
-import { browserGenerate, browserStatus } from './bridge.ts'
+import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -92,7 +97,14 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       for (const pid of new Set([...cache.values()].map((d) => d.projectId))) {
         const old = await deps.projects.get(pid)
         const at = now()
-        projects.push({ id: pid, name: old?.name ?? t('未分类'), path: old?.path ?? '', createdAt: at, updatedAt: at })
+        projects.push({
+          id: pid,
+          name: old?.name ?? t('未分类'),
+          path: old?.path ?? '',
+          prompts: [],
+          createdAt: at,
+          updatedAt: at,
+        })
       }
       await saveProjects()
     }
@@ -133,7 +145,25 @@ export function designsApi(deps: { projects: Lister<Project> }) {
 
   // ---- 生成图片 ----
 
-  async function generateOne(d: Design, img: DesignImage, source: ImageSource, count: number, job: Job) {
+  /** 项目提示词的英文：这个项目里每张图都带上 */
+  async function projectStyle(d: Design) {
+    const p = (await loadProjects()).find((x) => x.id === d.projectId)
+    return projectPromptText(p?.prompts ?? [])
+  }
+
+  /**
+   * 生成一张图：每取回一版就存下来、马上换到设计里（页面轮询时就能看到），不等这张图的几版全部生成完。
+   * 第一版到了就选中它，之后的几版作为备选
+   */
+  async function generateOne(
+    d: Design,
+    img: DesignImage,
+    source: ImageSource,
+    count: number,
+    style: string,
+    job: Job,
+    item: ImageJobItem,
+  ) {
     const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
     const set = (patch: Partial<DesignImage>) => {
       const dd = cache.get(d.id)!
@@ -141,36 +171,55 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       void save(dd)
     }
     set({ status: 'generating', error: undefined })
+    item.status = 'generating'
+    let first = -1
+    let chain = Promise.resolve()
+    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
+    const add = (buf: Buffer) => {
+      chain = chain
+        .then(async () => {
+          const s = await storeImage(cache.get(d.id)!, buf)
+          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
+          if (first < 0) first = variants.length - 1
+          set({ variants, selected: first })
+          item.got++
+        })
+        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
+    }
     try {
-      const bufs =
+      const rest =
         source.kind === 'browser'
           ? await browserGenerate(
               {
                 tabId: source.tabId,
-                prompt: imagePrompt(img, d.style, img.transparent),
+                prompt: imagePrompt(img, cache.get(d.id)!.style, img.transparent, style),
                 count,
                 chroma: img.transparent,
-                onProgress: (text) => (job.text = `${img.name}：${text}`),
+                onProgress: (text) => (item.text = text),
+                onImage: add,
               },
               job.abort.signal,
             )
-          : await cliGenerate(imagePrompt(img, d.style, false), count, job)
-      const added = []
-      for (const b of bufs) {
-        const s = await storeImage(cache.get(d.id)!, b)
-        added.push({ ...s, source: source.kind === 'browser' ? ('browser' as const) : ('cli' as const), at: now() })
-      }
-      const before = cur()?.variants.length ?? 0
-      // 新生成的这版默认选中
-      set({ status: 'idle', variants: [...(cur()?.variants ?? []), ...added], selected: before })
+          : await cliGenerate(imagePrompt(img, cache.get(d.id)!.style, false, style), count, job, add)
+      for (const b of rest) add(b)
+      await chain
+      if (!item.got) throw new Error(t('没有取到图片'))
+      set({ status: 'idle' })
+      item.status = 'done'
+      item.text = undefined
     } catch (e) {
-      set({ status: 'failed', error: (e as Error).message })
+      await chain
+      const msg = (e as Error).message
+      // 已经取回的几版留着能用，只是没生成全
+      set(item.got ? { status: 'idle' } : { status: 'failed', error: msg })
+      item.status = 'failed'
+      item.text = msg
       throw e
     }
   }
 
-  /** 用设置里的图片 CLI（Codex 的 image_gen）生成，返回图片数据 */
-  async function cliGenerate(prompt: string, count: number, job: Job): Promise<Buffer[]> {
+  /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
+  async function cliGenerate(prompt: string, count: number, job: Job, onImage: (b: Buffer) => void): Promise<Buffer[]> {
     const settings = await getSettings()
     const cliId = settings.imageGen.cli || 'codex'
     const def = getCli(cliId)
@@ -184,8 +233,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     )
     const cwd = path.join(tmpdir(), 'agent-panel-images')
     await mkdir(cwd, { recursive: true })
-    const out: Buffer[] = []
-    // 图片文件要等 CLI 写完才读，收集起来最后一起等
+    let got = 0
+    // 图片文件可能还没写完，读到了再交出去；最后等所有读取结束
     const reads: Promise<void>[] = []
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
@@ -212,7 +261,13 @@ ${prompt}`,
           else if (ev.path || ev.data) {
             const b64 = ev.data ? Buffer.from(ev.data, 'base64') : null
             const read = ev.path ? readFile(ev.path).catch(() => b64) : Promise.resolve(b64)
-            reads.push(read.then((b) => void (b?.length && out.push(b))))
+            reads.push(
+              read.then((b) => {
+                if (!b?.length) return
+                got++
+                onImage(b)
+              }),
+            )
           }
         } else if (ev.type === 'error') errors.push(ev.message)
         else if (ev.type === 'result') result = ev
@@ -223,7 +278,7 @@ ${prompt}`,
     if (r.killed === 'stopped') throw new Error(t('已停止'))
     if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有生成完，已停止'))
     if (r.spawnError) throw new Error(t('{error}。请确认已安装 {cli}', { error: r.spawnError, cli: def.name }))
-    if (!out.length)
+    if (!got)
       throw new Error(
         [
           t('{cli} 没有生成图片', { cli: def.name }),
@@ -234,21 +289,29 @@ ${prompt}`,
           .filter(Boolean)
           .join('：'),
       )
-    return out
+    return []
   }
   async function generateImages(d: Design, ids: string[], source: ImageSource, count: number, job: Job) {
     job.phase = 'images'
+    // 进入生成图片阶段：对话的说明已经成了一条消息，不再显示
+    job.text = ''
+    job.thinking = undefined
+    job.tools = undefined
     const list = ids.map((id) => d.images.find((i) => i.id === id)).filter(Boolean) as DesignImage[]
-    // 浏览器只有一个标签页，一张张来；CLI 同时跑两个
-    const width = source.kind === 'browser' ? 1 : 2
+    const items: ImageJobItem[] = list.map((i) => ({ id: i.id, name: i.name, status: 'waiting', got: 0, want: count }))
+    job.images = items
+    const style = await projectStyle(d)
+    // 每张图单独一个会话（CLI 进程或浏览器里的新对话），同时跑的个数在设置里调；旧版扩展只能一张张来
+    const settings = await getSettings()
+    const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
     const failed: string[] = []
     let next = 0
     const worker = async () => {
       while (next < list.length && !job.abort.signal.aborted) {
-        const img = list[next++]
-        job.text = t('正在生成 {name}（{i}/{n}）', { name: img.name, i: next, n: list.length })
+        const k = next++
+        const img = list[k]
         try {
-          await generateOne(cache.get(d.id)!, img, source, count, job)
+          await generateOne(cache.get(d.id)!, img, source, count, style, job, items[k])
         } catch (e) {
           failed.push(`${img.name}：${(e as Error).message}`)
         }
@@ -264,16 +327,40 @@ ${prompt}`,
 
   // ---- AI 对话 ----
 
+  /** 对话用的 CLI：页面选的（装好且没停用时），否则默认 CLI 的高档模型 */
+  function chatRun(settings: Awaited<ReturnType<typeof getSettings>>, pick?: DesignChatInput['run']) {
+    if (pick?.cli && getCli(pick.cli) && cliSettings(settings, pick.cli).enabled) {
+      const run = agentRun({ cli: pick.cli, model: pick.model, effort: pick.effort }, settings)
+      return { cli: pick.cli, model: run.model, effort: run.effort }
+    }
+    const cli = defaultCli(settings)
+    const run = agentRun({ cli, model: '@high' }, settings)
+    return { cli, model: run.model, effort: run.effort }
+  }
+
+  /** 项目提示词和项目里其他设计已有的图片，给设计 AI 参考，保持整个项目风格一致 */
+  async function projectContext(d: Design) {
+    const p = (await loadProjects()).find((x) => x.id === d.projectId)
+    const images = [...cache.values()]
+      .filter((x) => x.projectId === d.projectId && x.id !== d.id)
+      .flatMap((x) =>
+        x.images.filter((i) => i.variants.length && i.prompt).map((i) => ({ name: i.name, prompt: i.prompt })),
+      )
+      .slice(0, 30)
+    return { prompts: p?.prompts ?? [], images }
+  }
+
   async function chat(d: Design, input: z.infer<typeof DesignChatInput>, job: Job) {
     const settings = await getSettings()
-    const cliId = defaultCli(settings)
+    const run = chatRun(settings, input.run)
+    const cliId = run.cli
     const def = getCli(cliId)!
     const cs = cliSettings(settings, cliId)
-    // 对话用默认 CLI 的高档模型
-    const run = agentRun({ cli: cliId, model: '@high' }, settings)
+    job.run = run
     const cwd = path.join(tmpdir(), 'agent-panel-design')
     await mkdir(cwd, { recursive: true })
     const history = d.messages.slice(0, -1)
+    const project = await projectContext(d)
     let extra = ''
     for (let attempt = 1; attempt <= 2; attempt++) {
       job.attempt = attempt
@@ -281,6 +368,8 @@ ${prompt}`,
       job.thinking = undefined
       job.tools = undefined
       job.outChars = 0
+      // 工具调用的 id → 在 job.tools 里的位置，结果回来时更新那一条
+      const toolAt = new Map<string, number>()
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
@@ -295,7 +384,7 @@ ${prompt}`,
         },
         cwd,
         env: childEnv(cs.env),
-        input: buildDesignPrompt(cache.get(d.id)!, history, input.text, input.annotations) + extra,
+        input: buildDesignPrompt(cache.get(d.id)!, history, input.text, input.annotations, project) + extra,
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
         onEvent: (ev) => {
@@ -303,8 +392,23 @@ ${prompt}`,
           else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
           else if (ev.type === 'thinking')
             job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
-          else if (ev.type === 'tool') job.tools = [...(job.tools ?? []), ev.tool.label].slice(-5)
-          else if (ev.type === 'error') errors.push(ev.message)
+          else if (ev.type === 'tool') {
+            const tools = [...(job.tools ?? []), { ...ev.tool, running: !!ev.id }]
+            if (ev.id) toolAt.set(ev.id, tools.length - 1)
+            job.tools = tools
+          } else if (ev.type === 'tool_delta' || ev.type === 'tool_result') {
+            const i = toolAt.get(ev.id)
+            if (i !== undefined && job.tools?.[i]) {
+              const cur = job.tools[i]
+              job.tools = job.tools.map((x, k) =>
+                k !== i
+                  ? x
+                  : ev.type === 'tool_delta'
+                    ? { ...x, output: ((cur.output ?? '') + ev.text).slice(-4000) }
+                    : { ...x, output: ev.output.slice(-4000), failed: ev.failed, running: false },
+              )
+            }
+          } else if (ev.type === 'error') errors.push(ev.message)
           else if (ev.type === 'result') result = ev
           job.text = text.split('```')[0].trim()
           job.outChars = text.length
@@ -363,7 +467,7 @@ ${prompt}`,
           text: r2.reply || ex.rest || t('改好了。'),
           at: now(),
           images: ids.length ? ids : undefined,
-          run: { cli: cliId, model: run.model, effort: run.effort },
+          run,
         })
         await save(cur)
         return ids
@@ -372,6 +476,63 @@ ${prompt}`,
       extra = `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${res.error}\n请修正后重新输出完整的说明和 JSON。`
     }
     return []
+  }
+
+  /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
+  async function promptAi(input: PromptAiInput, signal: AbortSignal) {
+    const settings = await getSettings()
+    const run = chatRun(settings)
+    const def = getCli(run.cli)!
+    const cs = cliSettings(settings, run.cli)
+    if (!cs.enabled) throw new Error(t('{cli} 在设置里被停用了', { cli: def.name }))
+    const cwd = path.join(tmpdir(), 'agent-panel-design')
+    await mkdir(cwd, { recursive: true })
+    let extra = ''
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      let text = ''
+      const errors: string[] = []
+      let result: { ok: boolean; error?: string } | undefined
+      const r = await invokeCli({
+        cliId: run.cli,
+        command: cs.command,
+        build: {
+          model: run.model,
+          effort: run.effort,
+          permission: READ_ONLY[run.cli] ?? cs.permission,
+          extraArgs: safeArgs(cs.extraArgs),
+        },
+        cwd,
+        env: childEnv(cs.env),
+        input: buildPromptAiPrompt(input) + extra,
+        signal,
+        timeoutMs: 5 * 60_000,
+        onEvent: (ev) => {
+          if (ev.type === 'text_delta') text += ev.text
+          else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
+          else if (ev.type === 'error') errors.push(ev.message)
+          else if (ev.type === 'result') result = ev
+        },
+      })
+      if (r.killed === 'stopped') throw new Error(t('已停止'))
+      if (r.killed === 'timeout') throw new Error(t('超过 5 分钟没有完成，已停止'))
+      if (r.spawnError) throw new Error(t('{error}。请确认已安装 {cli}', { error: r.spawnError, cli: def.name }))
+      if (result ? !result.ok : r.code !== 0)
+        throw new Error(
+          t('{cli} 执行失败：{detail}', {
+            cli: def.name,
+            detail: [result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')]
+              .filter(Boolean)
+              .join('\n'),
+          }),
+        )
+      const ex = extractJson(text)
+      const parsed = ex.error ? undefined : AiPrompts.safeParse(ex.json)
+      if (parsed?.success) return parsed.data
+      const why = ex.error ?? (parsed ? z.prettifyError(parsed.error) : '')
+      if (attempt === 2) throw new Error(t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: why }))
+      extra = `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${why}\n请重新输出。`
+    }
+    return { prompts: [] }
   }
 
   function startJob(d: Design, fn: (job: Job) => Promise<void>) {
@@ -424,12 +585,16 @@ ${prompt}`,
       await saveProjects()
       return c.json(item, 201)
     })
+    // 只改传了的字段：改名时不会把提示词清掉
     .put('/projects/:pid', async (c) => {
-      const p = DesignProjectInput.safeParse(await c.req.json().catch(() => ({})))
+      const body = await c.req.json().catch(() => ({}))
+      const p = DesignProjectInput.partial().safeParse(body)
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const item = (await loadProjects()).find((x) => x.id === c.req.param('pid'))
       if (!item) return bad(c, t('项目不存在'), 404)
-      Object.assign(item, p.data, { updatedAt: now() })
+      // 默认值会补上没传的字段，只取请求里有的
+      const patch = Object.fromEntries(Object.entries(p.data).filter(([k]) => k in (body as object)))
+      Object.assign(item, patch, { updatedAt: now() })
       await saveProjects()
       return c.json(item)
     })
@@ -477,6 +642,17 @@ ${prompt}`,
       return c.json(d, 201)
     })
     .get('/browser', (c) => c.json(browserStatus()))
+    // 项目提示词：按用户的描述生成一组，或者把用户写的中文翻译成英文
+    .post('/prompts/ai', async (c) => {
+      const p = PromptAiInput.safeParse(await c.req.json().catch(() => ({})))
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      if (p.data.mode === 'generate' ? !p.data.text : !p.data.items.length) return bad(c, t('没有要处理的内容'))
+      try {
+        return c.json(await promptAi(p.data, c.req.raw.signal))
+      } catch (e) {
+        return bad(c, (e as Error).message)
+      }
+    })
     .get('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       return d ? c.json({ ...d, job: view(jobs.get(d.id)) }) : bad(c, t('设计不存在'), 404)
@@ -593,8 +769,8 @@ ${prompt}`,
       const p = DesignChatInput.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const settings = await getSettings()
-      if (!cliSettings(settings, defaultCli(settings)).enabled)
-        return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(defaultCli(settings))!.name }))
+      const cli = chatRun(settings, p.data.run).cli
+      if (!cliSettings(settings, cli).enabled) return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(cli)!.name }))
       d.messages.push({
         id: randomUUID(),
         role: 'user',

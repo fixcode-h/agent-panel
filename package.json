@@ -1,6 +1,6 @@
 {
   "name": "agent-panel",
-  "version": "0.20.0",
+  "version": "0.21.0",
   "private": true,
   "type": "module",
   "description": "本机 Agent 任务面板：按项目分类编排 Codex / Claude Code 等本地 Agent",

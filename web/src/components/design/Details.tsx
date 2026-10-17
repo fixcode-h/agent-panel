@@ -3,6 +3,7 @@ import { ChevronDown } from 'lucide-react'
 import { WIDGETS, type SlotType, type Widget, type WidgetType } from '@shared/umg'
 import type { DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
+import { Select } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 import {
@@ -21,7 +22,7 @@ import {
 } from './fields'
 import { WIDGET_ICON } from './Hierarchy'
 
-type Kind = 'num' | 'text' | 'textarea' | 'color' | 'enum' | 'bool' | 'vec2' | 'margin' | 'brush'
+type Kind = 'num' | 'text' | 'textarea' | 'color' | 'enum' | 'bool' | 'vec2' | 'margin' | 'brush' | 'component'
 interface Spec {
   path: string
   kind: Kind
@@ -117,6 +118,30 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('ScrollBarVisibility', 'enum', { options: ['Visible', 'Collapsed', 'Hidden'] }),
   ],
   WidgetSwitcher: [F('ActiveWidgetIndex', 'num', { min: 0 })],
+  ListView: [
+    F('EntryWidgetClass', 'component'),
+    F('NumDesignerPreviewEntries', 'num', { min: 0, max: 50 }),
+    F('Orientation', 'enum', { options: ORIENT }),
+    F('EntrySpacing', 'num', { min: 0 }),
+    F('SelectionMode', 'enum', { options: ['None', 'Single', 'SingleToggle', 'Multi'] }),
+  ],
+  TileView: [
+    F('EntryWidgetClass', 'component'),
+    F('NumDesignerPreviewEntries', 'num', { min: 0, max: 50 }),
+    F('EntryWidth', 'num', { min: 1 }),
+    F('EntryHeight', 'num', { min: 1 }),
+    F('Orientation', 'enum', { options: ORIENT }),
+    F('TileAlignment', 'enum', {
+      options: ['EvenlyDistributed', 'EvenlySize', 'EvenlyWide', 'Left', 'Right', 'Center', 'Fill'],
+    }),
+    F('SelectionMode', 'enum', { options: ['None', 'Single', 'SingleToggle', 'Multi'] }),
+  ],
+  DynamicEntryBox: [
+    F('EntryWidgetClass', 'component'),
+    F('NumDesignerPreviewEntries', 'num', { min: 0, max: 50 }),
+    F('EntryBoxType', 'enum', { options: ['Horizontal', 'Vertical', 'Wrap', 'VerticalWrap', 'Overlay'] }),
+    F('EntrySpacing', 'vec2'),
+  ],
   Spacer: [F('Size', 'vec2')],
 }
 
@@ -343,6 +368,18 @@ export function Details({
         break
       case 'margin':
         input = <MarginInput value={v} onChange={(x) => set(s.path, x)} />
+        break
+      case 'component':
+        input = (
+          <Select
+            aria-label={label}
+            value={String(v ?? '')}
+            placeholder={components.length ? t('选择子控件') : t('先提取一个子控件')}
+            onChange={(e) => set(s.path, e.target.value)}
+            options={components.map((c) => ({ value: c, label: c }))}
+            className="h-7 rounded-md px-2 text-[12px]"
+          />
+        )
         break
       case 'brush':
         return (

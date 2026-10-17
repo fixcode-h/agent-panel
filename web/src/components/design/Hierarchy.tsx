@@ -21,6 +21,9 @@ import {
   Grid3x3,
   Image as ImageIcon,
   Layers,
+  LayoutGrid,
+  List,
+  ListPlus,
   PackagePlus,
   Plus,
   Puzzle,
@@ -79,6 +82,9 @@ export const WIDGET_ICON: Record<WidgetType, LucideIcon> = {
   ScaleBox: Expand,
   Border: Square,
   WidgetSwitcher: GalleryHorizontal,
+  ListView: List,
+  TileView: LayoutGrid,
+  DynamicEntryBox: ListPlus,
   Spacer: Space,
   Image: ImageIcon,
   TextBlock: Type,
@@ -92,6 +98,7 @@ export const WIDGET_ICON: Record<WidgetType, LucideIcon> = {
 
 const GROUPS: { id: WidgetGroup; label: string }[] = [
   { id: 'panel', label: t('面板') },
+  { id: 'list', label: t('列表（运行时生成）') },
   { id: 'common', label: t('常用') },
   { id: 'input', label: t('输入') },
 ]
@@ -333,6 +340,15 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                     {w.Name}
                     {w.Type === 'UserWidget' && w.Class && (
                       <span className="ml-1.5 text-[11px] text-subtle">{w.Class}</span>
+                    )}
+                    {WIDGETS[w.Type]?.entries && (
+                      <span
+                        className="ml-1.5 text-[11px] text-subtle"
+                        title={t('条目在游戏运行时按数据生成，设计器里只是预览')}
+                      >
+                        {w.Properties?.EntryWidgetClass || t('未选条目')} ×
+                        {w.Properties?.NumDesignerPreviewEntries ?? 0}
+                      </span>
                     )}
                   </span>
                 )}
