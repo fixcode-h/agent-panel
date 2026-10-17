@@ -6,10 +6,13 @@ import {
   ChevronRight,
   FlaskConical,
   GitBranch,
+  GitFork,
   Loader2,
+  MessageSquarePlus,
   MessageSquareText,
   MoreHorizontal,
   PanelRight,
+  Undo2,
   Pencil,
   RotateCw,
   Pause,
@@ -21,7 +24,9 @@ import {
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId, taskWorkflows } from '@shared/flow'
-import { chatName, taskSummary } from '@shared/task'
+import { chatName, taskSummary, withTaskModel } from '@shared/task'
+import { agentRun, defaultSettings } from '@shared/settings'
+import { STEER_CLIS } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -99,7 +104,7 @@ function toBlocks(task: Task): Block[] {
 const BLOCK_LIMIT = 30
 
 export function TaskView({ taskId, project }: { taskId: string; project?: Project }) {
-  const { agents, workflows, upsertTask, removeTask } = useData()
+  const { agents, workflows, settings, upsertTask, removeTask } = useData()
   const { go } = useNav()
   const [task, setTask] = useState<Task | null>(null)
   const [text, setText] = useState('')
@@ -150,6 +155,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [!task])
   const stick = useRef(true)
+  const [rewindAsk, setRewindAsk] = useState('')
 
   const apply = (next: Task) => {
     setTask(next)
@@ -188,13 +194,21 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       </main>
     )
 
-  // 执行中也能发：默认排队，这一轮完成后自动处理；interrupt 先停下当前这一轮再发
-  const send = async (interrupt = false) => {
+  // 执行中也能发：插话（交给正在跑的这一轮，CLI 支持时默认）、排队（这一轮完成后处理）、打断（先停下这一轮再发）
+  const send = async (how: 'steer' | 'queue' | 'interrupt' = canSteer ? 'steer' : 'queue') => {
     if (!text.trim() || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
-      apply(await api.sendMessage(task.id, text, files.attachments, running && interrupt))
+      const r = await api.sendMessage(
+        task.id,
+        text,
+        files.attachments,
+        running && how === 'interrupt',
+        running && how === 'steer',
+      )
+      if (running && how === 'steer' && r.queue.length > task.queue.length) toast(t('这一轮刚好结束，已改成排队'))
+      apply(r)
       setText('')
       files.clear()
       setTimeout(
@@ -209,6 +223,17 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       toast.error((e as Error).message)
     } finally {
       setSending(false)
+    }
+  }
+  const firstUser = task.messages.find((m) => m.role === 'user')?.id
+  const fork = async (messageId: string) => {
+    try {
+      const f = await api.forkTask(task.id, messageId)
+      upsertTask(taskSummary(f))
+      toast.success(t('已分叉成新的对话'))
+      go(f.projectId ? { page: 'projects', id: f.projectId, sub: f.id } : { page: 'chat', id: f.id })
+    } catch (e) {
+      toast.error((e as Error).message)
     }
   }
   const stop = async () => {
@@ -255,6 +280,9 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const tops = task.steps.filter((s) => !s.parentId)
   const runningSteps = task.steps.filter((s) => s.status === 'running')
   const chatAgent = agents.find((a) => a.id === task.agentId)
+  // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
+  const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
+  const canSteer = running && task.mode === 'chat' && STEER_CLIS.includes(chatCli)
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
@@ -475,11 +503,34 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                         ))}
                       </div>
                     ) : b.m.role === 'user' ? (
-                      <div key={b.m.id} className="ml-auto flex max-w-[85%] flex-col items-end gap-2">
+                      <div key={b.m.id} className="group/user ml-auto flex max-w-[85%] flex-col items-end gap-2">
                         {!!b.m.attachments?.length && <MessageAttachments items={b.m.attachments} />}
                         <div className="rounded-2xl bg-sel px-4 py-2.5 text-[14.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">
                           {b.m.text}
                         </div>
+                        {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
+                        {task.mode === 'chat' && !running && (
+                          <div className="-mt-1 flex gap-0.5 opacity-0 transition-opacity group-hover/user:opacity-100 focus-within:opacity-100">
+                            <button
+                              className={msgAction}
+                              title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
+                              aria-label={t('从这里分叉')}
+                              onClick={() => fork(b.m.id)}
+                            >
+                              <GitFork className="h-3.5 w-3.5" />
+                            </button>
+                            {b.m.id !== firstUser && (
+                              <button
+                                className={msgAction}
+                                title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
+                                aria-label={t('撤回到这里')}
+                                onClick={() => setRewindAsk(b.m.id)}
+                              >
+                                <Undo2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     ) : b.m.role === 'system' ? (
                       <SystemNote
@@ -555,10 +606,16 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     // 执行中按 Ctrl/⌘ + Enter：打断当前这一轮，马上处理这条
-                    send(e.metaKey || e.ctrlKey)
+                    send(e.metaKey || e.ctrlKey ? 'interrupt' : undefined)
                   }
                 }}
-                placeholder={running ? t('执行中也可以输入，这一轮完成后接着处理') : t('继续输入要求')}
+                placeholder={
+                  !running
+                    ? t('继续输入要求')
+                    : canSteer
+                      ? t('执行中也可以输入，直接补充给正在做的这一轮')
+                      : t('执行中也可以输入，这一轮完成后接着处理')
+                }
                 className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
@@ -586,22 +643,35 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                           className="ml-auto rounded-lg"
                           disabled={sending}
                           title={t('停下当前这一轮，马上处理这条（Ctrl/⌘ + Enter）')}
-                          onClick={() => send(true)}
+                          onClick={() => send('interrupt')}
                         >
                           <Zap className="h-3.5 w-3.5" />
                           {t('打断并发送')}
                         </Button>
                         <Button
                           size="sm"
-                          variant="secondary"
+                          variant={canSteer ? 'ghost' : 'secondary'}
                           className="rounded-lg"
                           disabled={sending}
-                          title={t('这一轮完成后接着处理（Enter）')}
-                          onClick={() => send()}
+                          title={canSteer ? t('这一轮完成后接着处理') : t('这一轮完成后接着处理（Enter）')}
+                          onClick={() => send('queue')}
                         >
                           <ListPlus className="h-3.5 w-3.5" />
                           {t('排队')}
                         </Button>
+                        {canSteer && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="rounded-lg"
+                            disabled={sending}
+                            title={t('不停下，直接补充给正在做的这一轮（Enter）')}
+                            onClick={() => send('steer')}
+                          >
+                            <MessageSquarePlus className="h-3.5 w-3.5" />
+                            {t('插话')}
+                          </Button>
+                        )}
                       </>
                     ) : (
                       <Button size="sm" variant="secondary" className="ml-auto rounded-lg" onClick={stop}>
@@ -682,6 +752,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
             onStep={openStep}
             progressClass={progressCard ? 'hidden' : undefined}
             node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+            onTask={apply}
           />
         </aside>
         {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
@@ -698,6 +769,26 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
         }}
       />
       <ConfirmDialog
+        open={!!rewindAsk}
+        onOpenChange={(o) => !o && setRewindAsk('')}
+        title={t('撤回到这条消息？')}
+        description={t(
+          '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
+        )}
+        confirmText={t('撤回')}
+        onConfirm={async () => {
+          try {
+            const r = await api.rewindTask(task.id, rewindAsk)
+            apply(r.task)
+            setText(r.text)
+            setRewindAsk('')
+            followTa.current?.focus()
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+      />
+      <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
         title={t('删除任务「{title}」？', { title: task.title })}
@@ -708,6 +799,10 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
     </FileOpenCtx.Provider>
   )
 }
+
+/** 用户消息下面的小按钮（分叉、撤回） */
+const msgAction =
+  'grid h-6 w-6 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg'
 
 /** 执行中排队的要求：这一轮完成后按顺序处理，处理前可以撤回 */
 function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {

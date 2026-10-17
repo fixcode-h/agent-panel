@@ -165,6 +165,8 @@ function SettingsBody({
           permission: d.permission,
           extraArgs: splitArgs(d.args),
           env: textToEnv(d.envText),
+          showLimits: d.showLimits,
+          autoCompact: d.autoCompact,
         },
       ]),
     ),

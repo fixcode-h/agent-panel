@@ -281,4 +281,18 @@ export const EN_SERVER: Record<string, string> = {
     "{cli} didn't return the new file content in the expected format; try again",
   '找不到这次优化，可能已过期': "Can't find this optimization; it may have expired",
   找不到这次优化: "Can't find this optimization",
+  'Codex 没有返回': "Codex didn't respond",
+  已压缩上下文: 'Context compacted',
+  '已压缩上下文：下一轮会开新的会话，带上这份摘要':
+    'Context compacted: the next turn starts a new session with this summary',
+  '上下文占用达到 {n}%，自动压缩': 'Context usage reached {n}%, compacting automatically',
+  '自动压缩失败：{error}': 'Auto-compact failed: {error}',
+  只有对话任务可以这样做: 'Only chat tasks can do this',
+  找不到这条消息: "Can't find this message",
+  '第一条消息不能撤回，可以新建一个对话': "The first message can't be rewound. Start a new chat instead",
+  '{title}（分叉）': '{title} (fork)',
+  '还没有会话，不需要压缩': 'No session yet, nothing to compact',
+  '项目不是 git 仓库，没法审查改动': "The project isn't a git repository, so changes can't be reviewed",
+  '审查相对 {branch} 的改动': 'Review changes against {branch}',
+  审查还没提交的改动: 'Review uncommitted changes',
 }

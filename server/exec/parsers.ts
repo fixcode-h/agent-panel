@@ -1,5 +1,5 @@
 import path from 'node:path'
-import type { ToolUse } from '../../shared/schema.ts'
+import type { CliLimits, ToolUse } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
 
 /** 各 CLI 的输出统一成这几种事件 */
@@ -12,8 +12,18 @@ export type CliEvent =
   | { type: 'thinking'; text: string; delta?: boolean }
   /** id 用来把之后的 tool_result 对应到这次调用 */
   | { type: 'tool'; tool: ToolUse; file?: { path: string; add: number; del: number }; id?: string }
+  /** 还在执行的工具新输出的一段（命令的输出边跑边显示） */
+  | { type: 'tool_delta'; id: string; text: string }
+  /** CLI 改了文件（还没有逐个文件的统计），面板去 git 里重新读一次改动 */
+  | { type: 'files_changed' }
+  /** 这一轮在 CLI 会话里的位置：Codex 的 turn id，Claude Code 最后一条回复的 uuid；分叉、撤回时用 */
+  | { type: 'turn'; id?: string; end?: string }
+  /** 账号额度有了新数据 */
+  | { type: 'limits'; limits: CliLimits }
+  /** 上下文压缩完了；context 是压缩后的占用（知道时） */
+  | { type: 'compacted'; context?: number }
   /** patch：改文件的工具给出的 unified diff，用来替换调用时记下的改前改后 */
-  | { type: 'tool_result'; id: string; output: string; failed?: boolean; patch?: string }
+  | { type: 'tool_result'; id: string; output: string; failed?: boolean; patch?: string; detail?: string }
   /**
    * 用量。context 是当前上下文占用；add* 是这次新增的 token：输入都按「含缓存」计，缓存命中、缓存写入是输入里的一部分
    */
@@ -253,8 +263,14 @@ export function claudeParser(cwd: string): Parser {
         textInMsg = true
         out.push({ type: 'text_delta', text: e.delta.text ?? '' })
       }
+    } else if (o.type === 'system' && o.subtype === 'compact_boundary') {
+      out.push({ type: 'compacted' })
+    } else if (o.type === 'rate_limit_event' && o.rate_limit_info) {
+      const l = claudeLimits(o.rate_limit_info)
+      if (l) out.push({ type: 'limits', limits: l })
     } else if (o.type === 'assistant' && o.message) {
       const id = o.message.id ?? ''
+      if (typeof o.uuid === 'string' && !o.parent_tool_use_id) out.push({ type: 'turn', end: o.uuid })
       for (const b of o.message.content ?? []) {
         if (b.type === 'text' && b.text && !streamed.has(id)) out.push({ type: 'text', text: b.text })
         if (b.type === 'tool_use') {
@@ -303,6 +319,56 @@ export function claudeParser(cwd: string): Parser {
       })
     }
     return out
+  }
+}
+
+/** Claude Code 的 rate_limit_event：utilization 是 0~1 的比例，resetsAt 是秒 */
+export function claudeLimits(info: any): CliLimits | undefined {
+  const names: Record<string, number> = {
+    five_hour: 300,
+    seven_day: 10080,
+    seven_day_opus: 10080,
+    seven_day_sonnet: 10080,
+  }
+  const windows: CliLimits['windows'] = []
+  for (const [id, w] of Object.entries((info?.unifiedWindows ?? {}) as Record<string, any>))
+    if (w && typeof w.utilization === 'number')
+      windows.push({
+        id,
+        usedPercent: Math.round(w.utilization * 1000) / 10,
+        resetsAt: w.resetsAt ? w.resetsAt * 1000 : undefined,
+        minutes: names[id],
+      })
+  // 旧版本只有当前起限制作用的那个窗口
+  if (!windows.length && typeof info?.utilization === 'number' && info.rateLimitType)
+    windows.push({
+      id: String(info.rateLimitType),
+      usedPercent: Math.round(info.utilization * 1000) / 10,
+      resetsAt: info.resetsAt ? info.resetsAt * 1000 : undefined,
+      minutes: names[info.rateLimitType],
+    })
+  if (!windows.length && info?.status !== 'rejected') return undefined
+  return { windows, limited: info?.status === 'rejected' || undefined, at: new Date().toISOString() }
+}
+
+/** Codex 的额度快照：primary 是短窗口（5 小时），secondary 是长窗口（每周），resetsAt 是秒 */
+export function codexLimits(snap: any): CliLimits | undefined {
+  if (!snap) return undefined
+  const windows: CliLimits['windows'] = []
+  for (const w of [snap.primary, snap.secondary])
+    if (w && typeof w.usedPercent === 'number')
+      windows.push({
+        id: w.windowDurationMins >= 1440 ? 'seven_day' : w.windowDurationMins ? 'five_hour' : 'window',
+        usedPercent: w.usedPercent,
+        resetsAt: w.resetsAt ? w.resetsAt * 1000 : undefined,
+        minutes: w.windowDurationMins ?? undefined,
+      })
+  if (!windows.length) return undefined
+  return {
+    windows,
+    plan: snap.planType ?? undefined,
+    limited: !!snap.rateLimitReachedType || undefined,
+    at: new Date().toISOString(),
   }
 }
 

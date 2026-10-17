@@ -1,8 +1,18 @@
+import { randomUUID } from 'node:crypto'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
 import { codexAppSession } from './codex-app.ts'
 import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
+
+/** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
+export interface CliControl {
+  steer: (text: string) => Promise<boolean>
+  interrupt: () => boolean
+}
+
+/** 中断后等 CLI 自己收尾的时间，超过就直接结束进程 */
+const INTERRUPT_GRACE_MS = 8000
 
 /**
  * 调用一次 CLI，把输出统一成 CliEvent。Claude Code、Command Code 是「stdin 写任务描述 + stdout 一行一个事件」，
@@ -21,8 +31,36 @@ export async function invokeCli(o: {
   onEvent: (ev: CliEvent) => void
   /** 能把审批请求交给用户（任务页）；不能时（AI 创建）一律拒绝，免得 CLI 一直等 */
   canAsk?: boolean
+  /** 拿到执行中控制 CLI 的方法 */
+  onControl?: (c: CliControl) => void
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
+  // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
+  let control: CliControl = { steer: async () => false, interrupt: () => false }
+  const setControl = (c: CliControl) => {
+    control = c
+    o.onControl?.(c)
+  }
+  const hard = new AbortController()
+  const onStop = () => {
+    if (!control.interrupt()) return hard.abort()
+    setTimeout(() => hard.abort(), INTERRUPT_GRACE_MS).unref?.()
+  }
+  if (o.signal?.aborted) hard.abort()
+  else o.signal?.addEventListener('abort', onStop, { once: true })
+  try {
+    return await invoke(o, def, setControl, hard.signal)
+  } finally {
+    o.signal?.removeEventListener('abort', onStop)
+  }
+}
+
+async function invoke(
+  o: Parameters<typeof invokeCli>[0],
+  def: NonNullable<ReturnType<typeof getCli>>,
+  setControl: (c: CliControl) => void,
+  signal: AbortSignal,
+): Promise<ProcessResult> {
   const args = def.buildArgs(o.build)
   const toJson = (line: string) => {
     const t = line.trim()
@@ -39,12 +77,13 @@ export async function invokeCli(o: {
 
   if (o.cliId === 'codex') {
     const session = codexAppSession({ ...o.build, cwd: o.cwd, input: o.input })
+    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
     const r = await runProcess({
       command: o.command,
       args,
       cwd: o.cwd,
       env: o.env,
-      signal: o.signal,
+      signal,
       timeoutMs: o.timeoutMs,
       idle: o.idle,
       onSpawn: (io) => session.start(io),
@@ -62,10 +101,31 @@ export async function invokeCli(o: {
   const parse = parserFor(o.cliId, o.cwd)
 
   // Claude Code 的控制协议：任务描述是 stdin 上的一条 user 消息，审批请求是 control_request（can_use_tool），
-  // 回 control_response；stdin 要一直开着，收到 result 再关掉，CLI 读到 EOF 退出
-  if (args.includes('--permission-prompt-tool')) {
+  // 回 control_response；stdin 要一直开着，收到 result 再关掉，CLI 读到 EOF 退出。
+  // 执行中插话是再写一条 user 消息（priority next：在这一轮里接着处理），中断是 control_request（interrupt）
+  if (args.includes('--input-format')) {
     let io: { write: (s: string) => void; end: () => void } | undefined
     const line = (m: object) => io?.write(JSON.stringify(m) + '\n')
+    let ended = false
+    let steered = false
+    let closeTimer: ReturnType<typeof setTimeout> | undefined
+    const close = () => {
+      ended = true
+      io?.end()
+    }
+    setControl({
+      steer: async (text) => {
+        if (ended || !io) return false
+        steered = true
+        line({ type: 'user', message: { role: 'user', content: text }, priority: 'next', parent_tool_use_id: null })
+        return true
+      },
+      interrupt: () => {
+        if (ended || !io) return false
+        line({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })
+        return true
+      },
+    })
     return runProcess({
       command: o.command,
       args,
@@ -75,12 +135,18 @@ export async function invokeCli(o: {
         io = w
         line({ type: 'user', message: { role: 'user', content: o.input } })
       },
-      signal: o.signal,
+      signal,
       timeoutMs: o.timeoutMs,
       idle: o.idle,
       onLine: (l) => {
         const obj = toJson(l)
         if (!obj) return
+        // 插过话：这一轮结束后 CLI 可能接着处理插进来的要求，有新输出就先不关
+        if (closeTimer && obj.type !== 'control_response') {
+          clearTimeout(closeTimer)
+          closeTimer = undefined
+        }
+        if (obj.type === 'control_response') return
         if (obj.type === 'control_request') {
           const respond = (response: object) =>
             line({ type: 'control_response', response: { subtype: 'success', request_id: obj.request_id, response } })
@@ -104,7 +170,7 @@ export async function invokeCli(o: {
         }
         for (const ev of parse(obj)) {
           emit(ev)
-          if (ev.type === 'result') setTimeout(() => io?.end(), 0)
+          if (ev.type === 'result') closeTimer = setTimeout(close, steered ? 2500 : 0)
         }
       },
     })
@@ -116,7 +182,7 @@ export async function invokeCli(o: {
     cwd: o.cwd,
     env: o.env,
     stdin: o.input,
-    signal: o.signal,
+    signal,
     timeoutMs: o.timeoutMs,
     idle: o.idle,
     onLine: (line) => {

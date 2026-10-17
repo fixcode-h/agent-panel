@@ -1,18 +1,32 @@
 import path from 'node:path'
 import type { BuildOptions } from '../../shared/clis.ts'
-import { clipDetail, codexUsage, oneLine, toolText, type CliEvent } from './parsers.ts'
+import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type CliEvent } from './parsers.ts'
 import { t } from '../../shared/i18n.ts'
 
 /**
  * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行：`codex exec --json` 只在每一项完成时输出整段文字，
  * 看不到流式输出和实时用量；app-server 会逐字推送回复、推理摘要、token 用量和计划。
  *
- * 流程：initialize → thread/start（续接时 thread/resume）→ turn/start → 收通知直到 turn/completed，然后关掉 stdin 让它退出。
+ * 流程：initialize → thread/start（续接时 thread/resume，分叉时 thread/fork）→ turn/start（压缩时 thread/compact/start，
+ * 审查时 review/start）→ 收通知直到 turn/completed，然后关掉 stdin 让它退出。执行中可以插话（turn/steer）和中断（turn/interrupt）。
  */
 export function codexAppSession(o: BuildOptions & { cwd: string; input: string; platform?: string }) {
   let io: { write: (s: string) => void; end: () => void } | undefined
   let thread = ''
+  let turnId = ''
   let finished = false
+  // 插话、中断这类中途发的请求：id → 收到回答时的处理
+  let nextId = 100
+  const pending = new Map<number, (m: any) => void>()
+  const call = (method: string, params: object) =>
+    new Promise<any>((resolve) => {
+      const id = nextId++
+      pending.set(id, resolve)
+      send({ id, method, params })
+    })
+  // 命令开始时就显示出来，输出边跑边追加；已经显示过的命令完成时只更新结果
+  const startedCmds = new Set<string>()
+  const review = o.op?.kind === 'review'
   // 回复和推理摘要是否已经流式输出过：输出过的在 item/completed 时不再重复整段
   const streamed = new Set<string>()
   let textSeen = false
@@ -39,8 +53,20 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
   }
 
   const startThread = () => {
-    if (o.resume) send({ id: 2, method: 'thread/resume', params: { threadId: o.resume, ...overrides } })
+    if (o.resume && o.fork)
+      send({
+        id: 2,
+        method: 'thread/fork',
+        params: { threadId: o.resume, lastTurnId: o.fork.turnId || undefined, ...overrides },
+      })
+    else if (o.resume) send({ id: 2, method: 'thread/resume', params: { threadId: o.resume, ...overrides } })
     else send({ id: 2, method: 'thread/start', params: overrides })
+  }
+  const reviewTarget = () => {
+    const tg = o.op?.kind === 'review' ? o.op.target : { type: 'uncommitted' as const }
+    if (tg.type === 'base') return { type: 'baseBranch', branch: tg.branch }
+    if (tg.type === 'custom') return { type: 'custom', instructions: tg.instructions }
+    return { type: 'uncommittedChanges' }
   }
   // Windows 上沙箱要先初始化一次（Codex 自己的界面会弹提示），没初始化时每条命令都报 helper_unknown_error
   const needsWinSandbox = (o.platform ?? process.platform) === 'win32' && sandbox !== 'danger-full-access'
@@ -56,6 +82,12 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
   ]
 
   function onResponse(m: any): CliEvent[] {
+    const waiter = pending.get(m.id)
+    if (waiter) {
+      pending.delete(m.id)
+      waiter(m)
+      return []
+    }
     if (m.id === 1) {
       send({ method: 'initialized' })
       if (needsWinSandbox) send({ id: 10, method: 'windowsSandbox/readiness', params: {} })
@@ -87,18 +119,30 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         ]
       }
       thread = m.result?.thread?.id ?? o.resume ?? ''
-      send({
-        id: 3,
-        method: 'turn/start',
-        params: {
-          threadId: thread,
-          input: [{ type: 'text', text: o.input, text_elements: [] }],
-          effort: o.effort || undefined,
-        },
-      })
+      if (o.op?.kind === 'compact') send({ id: 3, method: 'thread/compact/start', params: { threadId: thread } })
+      else if (review)
+        send({
+          id: 3,
+          method: 'review/start',
+          params: { threadId: thread, target: reviewTarget(), delivery: 'inline' },
+        })
+      else
+        send({
+          id: 3,
+          method: 'turn/start',
+          params: {
+            threadId: thread,
+            input: [{ type: 'text', text: o.input, text_elements: [] }],
+            effort: o.effort || undefined,
+          },
+        })
       return thread ? [{ type: 'session', id: thread }] : []
     }
     if (m.id === 3 && m.error) return [{ type: 'error', message: String(m.error.message) }, ...finish(false)]
+    if (m.id === 3 && m.result?.turn?.id) {
+      turnId = m.result.turn.id
+      return [{ type: 'turn', id: turnId }]
+    }
     return []
   }
 
@@ -160,7 +204,13 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
   function onItem(item: any): CliEvent[] {
     switch (item?.type) {
       case 'agentMessage':
+        // 审查时审查员的原始输出不显示，结果在 exitedReviewMode 里
+        if (review) return []
         return !streamed.has(item.id) && item.text ? [{ type: 'text', text: item.text }] : []
+      case 'exitedReviewMode':
+        return item.review ? [{ type: 'text', text: String(item.review) }] : []
+      case 'contextCompaction':
+        return [{ type: 'compacted' }]
       case 'reasoning': {
         const parts: string[] = item.summary?.length ? item.summary : (item.content ?? [])
         const text = parts.join('\n\n')
@@ -170,13 +220,24 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         const code = item.exitCode
         const cmd = unwrapShell(item.command)
         const failed = item.status === 'failed' || item.status === 'declined' || (code !== null && code !== 0)
+        const detail = item.status === 'declined' ? t('被拒绝') : code ? t('退出码 {code}', { code }) : ''
+        if (startedCmds.has(item.id))
+          return [
+            {
+              type: 'tool_result',
+              id: item.id,
+              output: item.aggregatedOutput ? clipDetail(String(item.aggregatedOutput)) : '',
+              failed: failed || undefined,
+              detail,
+            },
+          ]
         return [
           {
             type: 'tool',
             tool: {
               kind: 'run',
               label: oneLine(cmd),
-              detail: item.status === 'declined' ? t('被拒绝') : code ? t('退出码 {code}', { code }) : '',
+              detail,
               input: clipDetail(cmd),
               output: item.aggregatedOutput ? clipDetail(String(item.aggregatedOutput)) : undefined,
               failed: failed || undefined,
@@ -269,10 +330,35 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         return []
       case 'item/started':
         // 新的一段回复开始，之前的段落要和它分开
-        if (p.item?.type === 'agentMessage' && textSeen) return [{ type: 'text_delta', text: '\n\n' }]
+        if (p.item?.type === 'agentMessage' && textSeen && !review) return [{ type: 'text_delta', text: '\n\n' }]
+        if (p.item?.type === 'commandExecution' && p.item.id) {
+          startedCmds.add(p.item.id)
+          const cmd = unwrapShell(p.item.command)
+          return [
+            {
+              type: 'tool',
+              id: p.item.id,
+              tool: { kind: 'run', label: oneLine(cmd), detail: '', input: clipDetail(cmd), running: true },
+            },
+          ]
+        }
         return []
+      case 'item/commandExecution/outputDelta':
+        return p.itemId && p.delta ? [{ type: 'tool_delta', id: p.itemId, text: String(p.delta) }] : []
+      case 'turn/diff/updated':
+        return [{ type: 'files_changed' }]
+      case 'account/rateLimits/updated': {
+        const l = codexLimits(p.rateLimits)
+        return l ? [{ type: 'limits', limits: l }] : []
+      }
+      case 'thread/compacted':
+        return [{ type: 'compacted' }]
+      case 'turn/started':
+        if (!p.turn?.id || p.turn.id === turnId) return []
+        turnId = p.turn.id
+        return [{ type: 'turn', id: turnId }]
       case 'item/agentMessage/delta': {
-        if (!p.delta) return []
+        if (!p.delta || review) return []
         streamed.add(p.itemId)
         textSeen = true
         return [{ type: 'text_delta', text: p.delta }]
@@ -321,6 +407,22 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
   }
 
   return {
+    /** 插话：把一段要求交给正在跑的这一轮；没在跑或 Codex 拒绝时返回 false，由上层排队 */
+    async steer(text: string) {
+      if (finished || !thread || !turnId || review || o.op) return false
+      const r = await call('turn/steer', {
+        threadId: thread,
+        input: [{ type: 'text', text, text_elements: [] }],
+        expectedTurnId: turnId,
+      })
+      return !r.error
+    },
+    /** 中断这一轮：Codex 会把已经做的保存在会话里，回 turn/completed（interrupted） */
+    interrupt() {
+      if (finished || !thread || !turnId) return false
+      void call('turn/interrupt', { threadId: thread, turnId })
+      return true
+    },
     start(w: typeof io) {
       io = w
       send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } })

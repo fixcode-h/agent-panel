@@ -621,6 +621,200 @@ try {
   assert.ok(Date.now() - t0 < 5000, '停止应该很快生效')
   step('停止：进程被结束，任务标记为已停止')
 
+  // ---- 插话：Codex 用 turn/steer、Claude Code 写进 stdin，交给正在跑的这一轮；Command Code 不支持，改成排队 ----
+  {
+    const steerLog = () => readLog(`${log}.steer`)
+    const chatWith = (extra, prompt) =>
+      call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: 'default-agent', prompt, ...extra })
+    let a = await chatWith({ cli: 'codex' }, 'SLOW 插话 codex')
+    let b = await chatWith({ cli: 'claude' }, 'SLOW 插话 claude')
+    let q = await chatWith({ cli: 'commandcode' }, 'SLOW 插话 cmd')
+    await sleep(1200)
+    a = await call('POST', `/tasks/${a.id}/messages`, { text: '顺便看看测试', steer: true })
+    b = await call('POST', `/tasks/${b.id}/messages`, { text: '也看看文档', steer: true })
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队吧', steer: true })
+    assert.equal(a.queue.length, 0, '插话不排队')
+    assert.ok(
+      a.messages.some((m) => m.role === 'user' && m.text === '顺便看看测试'),
+      '插话的内容马上出现在对话里',
+    )
+    assert.deepEqual(
+      q.queue.map((x) => x.text),
+      ['排队吧'],
+      '不支持插话的 CLI 改成排队',
+    )
+    await call('DELETE', `/tasks/${q.id}/queue/${q.queue[0].id}`)
+    a = await waitDone(a.id)
+    b = await waitDone(b.id)
+    await waitDone(q.id)
+    assert.equal(a.status, 'done')
+    assert.equal(b.status, 'done')
+    const sl = steerLog()
+    assert.ok(
+      sl.some((x) => x.kind === 'codex' && x.steered.includes('顺便看看测试')),
+      'Codex 收到了插话',
+    )
+    assert.ok(
+      sl.some((x) => x.kind === 'claude' && x.steered.includes('也看看文档')),
+      'Claude Code 收到了插话',
+    )
+    const at = a.messages.findIndex((m) => m.text === '顺便看看测试')
+    assert.ok(
+      a.messages.slice(at + 1).some((m) => m.role === 'agent' && m.text.includes('codex 的回复')),
+      '插话之后的输出排在插话后面',
+    )
+    // 命令的输出边跑边显示，完成后不再是执行中
+    const run = a.messages.flatMap((m) => m.tools).find((x) => x.kind === 'run')
+    assert.equal(run.output, 'total 8\nREADME.md\n')
+    assert.ok(!run.running)
+    step('插话：Codex、Claude Code 交给正在跑的这一轮，Command Code 改成排队；命令输出边跑边显示')
+
+    // ---- 额度：Codex 主动查，Claude Code 用执行时收到的 ----
+    const cl = await call('GET', '/clis/codex/limits')
+    assert.deepEqual(
+      cl.windows.map((w) => [w.id, w.usedPercent]),
+      [
+        ['five_hour', 42],
+        ['seven_day', 7],
+      ],
+    )
+    assert.equal(cl.plan, 'plus')
+    const al = await call('GET', '/clis/claude/limits')
+    assert.deepEqual(
+      al.windows.map((w) => [w.id, w.usedPercent]),
+      [
+        ['five_hour', 25],
+        ['seven_day', 50],
+      ],
+    )
+    const sk = await call('GET', `/clis/codex/skills?projectId=${project.id}`)
+    assert.deepEqual(
+      sk.map((x) => x.name),
+      ['fake-skill'],
+    )
+    assert.ok(Array.isArray(await call('GET', '/clis/claude/skills')))
+    step('额度：Codex 读 account/rateLimits，Claude Code 用 rate_limit_event；Skill 列表')
+
+    // ---- 压缩上下文 ----
+    await call('POST', `/tasks/${a.id}/compact`)
+    a = await waitDone(a.id)
+    assert.equal(calls().at(-1).op, 'compact', 'Codex 用 thread/compact/start')
+    assert.ok(a.messages.some((m) => m.role === 'system' && m.text === '已压缩上下文'))
+    await call('POST', `/tasks/${b.id}/compact`)
+    b = await waitDone(b.id)
+    assert.equal(calls().at(-1).input, '/compact', 'Claude Code 用 /compact')
+    assert.ok(b.messages.some((m) => m.role === 'system' && m.text === '已压缩上下文'))
+    let cc = await chatWith({ cli: 'commandcode' }, '第一件事')
+    cc = await waitDone(cc.id)
+    await call('POST', `/tasks/${cc.id}/compact`)
+    cc = await waitDone(cc.id)
+    assert.ok(calls().at(-1).input.includes('整理成一份摘要'), 'Command Code 写摘要')
+    await call('POST', `/tasks/${cc.id}/messages`, { text: '接着做' })
+    cc = await waitDone(cc.id)
+    let c = calls().at(-1)
+    assert.ok(!c.args.includes('--resume'), '压缩后开新会话')
+    assert.ok(c.input.includes('之前对话的摘要') && c.input.includes('接着做'), '新会话带上摘要')
+    step('压缩上下文：Codex 用 thread/compact/start，Claude Code 用 /compact，Command Code 写摘要后开新会话')
+
+    // ---- 审查改动 ----
+    await call('POST', `/tasks/${a.id}/review`)
+    a = await waitDone(a.id)
+    c = calls().at(-1)
+    assert.equal(c.op, 'review')
+    assert.deepEqual(c.reviewTarget, { type: 'uncommittedChanges' })
+    assert.equal(a.messages.at(-1).text, '审查结论：没有发现问题。', '只显示审查结论')
+    await call('POST', `/tasks/${b.id}/review`, { base: 'main' })
+    b = await waitDone(b.id)
+    assert.ok(calls().at(-1).input.includes('请审查当前分支相对 main 的改动'))
+    step('审查改动：Codex 用审查模式，其他 CLI 按审查的要求跑一轮')
+
+    // ---- 分叉、撤回 ----
+    let f = await chatWith({ cli: 'claude' }, '第一问')
+    f = await waitDone(f.id)
+    await call('POST', `/tasks/${f.id}/messages`, { text: '第二问' })
+    f = await waitDone(f.id)
+    const [u1, u2] = f.messages.filter((m) => m.role === 'user')
+    assert.ok(u1.turn?.end && u2.turn?.end, 'Claude Code 的每一轮记下最后一条回复的 uuid')
+    let fk = await call('POST', `/tasks/${f.id}/fork`, { messageId: u1.id })
+    assert.deepEqual(
+      fk.messages.filter((m) => m.role === 'user').map((m) => m.text),
+      ['第一问'],
+      '分叉只带到这条消息和它的回复',
+    )
+    await call('POST', `/tasks/${fk.id}/messages`, { text: '分叉后' })
+    fk = await waitDone(fk.id)
+    c = calls().at(-1)
+    const argAt = (k) => c.args[c.args.indexOf(k) + 1]
+    assert.equal(argAt('--resume'), u1.turn.session)
+    assert.ok(c.args.includes('--fork-session'))
+    assert.equal(argAt('--resume-session-at'), u1.turn.end, '从第一轮的最后一条回复截断')
+    assert.ok(!fk.rewind, '分叉后接上了新会话')
+    const rw = await call('POST', `/tasks/${f.id}/rewind`, { messageId: u2.id })
+    assert.equal(rw.text, '第二问', '撤回的内容交回去方便改')
+    assert.deepEqual(
+      rw.task.messages.filter((m) => m.role === 'user').map((m) => m.text),
+      ['第一问'],
+    )
+    await call('POST', `/tasks/${f.id}/messages`, { text: '改过的第二问' })
+    await waitDone(f.id)
+    c = calls().at(-1)
+    assert.equal(argAt('--resume-session-at'), u1.turn.end)
+    // Codex：thread/fork 带上那一轮的 turn id
+    let g = await chatWith({ cli: 'codex' }, '问 codex')
+    g = await waitDone(g.id)
+    const gu = g.messages.find((m) => m.role === 'user')
+    assert.equal(gu.turn.id, 't1')
+    const gk = await call('POST', `/tasks/${g.id}/fork`, { messageId: gu.id })
+    await call('POST', `/tasks/${gk.id}/messages`, { text: '分叉后' })
+    await waitDone(gk.id)
+    assert.deepEqual(calls().at(-1).fork, { from: gu.turn.session, lastTurnId: 't1' })
+    // Command Code：截在中间时开新会话，把留下的对话带上
+    let h = await chatWith({ cli: 'commandcode' }, '甲问题')
+    h = await waitDone(h.id)
+    await call('POST', `/tasks/${h.id}/messages`, { text: '乙问题' })
+    h = await waitDone(h.id)
+    const hu = h.messages.filter((m) => m.role === 'user')
+    await call('POST', `/tasks/${h.id}/rewind`, { messageId: hu[1].id })
+    await call('POST', `/tasks/${h.id}/messages`, { text: '丙问题' })
+    await waitDone(h.id)
+    c = calls().at(-1)
+    assert.ok(!c.args.includes('--resume'))
+    assert.ok(c.input.includes('之前的对话') && c.input.includes('甲问题') && !c.input.includes('乙问题'))
+    // 从最后一轮分叉可以直接用 --fork-session
+    const hk = await call('POST', `/tasks/${h.id}/fork`, {
+      messageId: (await call('GET', `/tasks/${h.id}`)).messages.filter((m) => m.role === 'user').at(-1).id,
+    })
+    await call('POST', `/tasks/${hk.id}/messages`, { text: '丁问题' })
+    await waitDone(hk.id)
+    c = calls().at(-1)
+    assert.ok(c.args.includes('--resume') && c.args.includes('--fork-session'))
+    step(
+      '对话分叉、撤回：Claude Code 用 --resume-session-at，Codex 用 thread/fork，Command Code 截不了时带上之前的对话',
+    )
+
+    // ---- 自动压缩阈值：Claude Code 用环境变量，Codex 换算成 token 数 ----
+    await call('PUT', '/settings', {
+      ...settings,
+      clis: {
+        ...settings.clis,
+        claude: cli({ defaultModel: 'sonnet', autoCompact: 70 }),
+        codex: cli({ autoCompact: 50 }),
+      },
+    })
+    let z1 = await chatWith({ cli: 'claude' }, '自动压缩')
+    await waitDone(z1.id)
+    assert.equal(calls().at(-1).compactPct, '70')
+    let z2 = await chatWith({ cli: 'codex' }, '自动压缩')
+    await waitDone(z2.id)
+    assert.ok(
+      calls()
+        .at(-1)
+        .args.some((x) => /^model_auto_compact_token_limit=\d+$/.test(x)),
+    )
+    await call('PUT', '/settings', settings)
+    step('自动压缩阈值：Claude Code 用 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE，Codex 用 model_auto_compact_token_limit')
+  }
+
   // ---- 执行中发消息：默认排队，这一轮完成后接着处理；可以撤回；打断时停下当前这一轮马上处理 ----
   {
     let q = await call('POST', '/tasks', {

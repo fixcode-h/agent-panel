@@ -218,6 +218,26 @@ export type WorkflowInput = z.infer<typeof WorkflowFields>
 export const Workflow = z.preprocess(migrateWorkflow, WorkflowFields.extend(Meta.shape))
 export type Workflow = z.infer<typeof WorkflowFields> & z.infer<typeof Meta>
 
+/** 账号额度：每个时间窗口用了多少（百分比）和什么时候重置 */
+export interface CliLimits {
+  windows: { id: string; usedPercent: number; resetsAt?: number; minutes?: number }[]
+  /** 套餐或计费方式，例如 plus、pro */
+  plan?: string
+  /** 已经用完：正在被限流 */
+  limited?: boolean
+  at: string
+}
+
+/** CLI 加载的 Skill */
+export interface CliSkill {
+  name: string
+  description: string
+  /** 用户目录、项目目录、插件、系统自带 */
+  scope: string
+  path: string
+  enabled: boolean
+}
+
 export interface CliStatus {
   id: string
   name: string
@@ -404,6 +424,8 @@ export const FollowUpInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则排队，这一轮完成后自动接着处理 */
   interrupt: z.boolean().default(false),
+  /** 任务正在执行时：插话，直接交给正在跑的 CLI，不停下这一轮；CLI 不支持时排队 */
+  steer: z.boolean().default(false),
 })
 /** 执行中发来、排队等这一轮完成后再处理的要求 */
 export const QueuedMessage = z.object({
@@ -432,6 +454,8 @@ export const ToolUse = z.object({
   output: z.string().optional(),
   /** 工具执行失败 */
   failed: z.boolean().optional(),
+  /** 还在执行（命令的输出会边跑边更新） */
+  running: z.boolean().optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
@@ -449,6 +473,16 @@ export const TaskMessage = z.object({
   attachments: z.array(Attachment).optional(),
   /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
   error: z.boolean().optional(),
+  /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */
+  turn: z
+    .object({
+      session: z.string(),
+      /** Codex 的 turn id */
+      id: z.string().default(''),
+      /** Claude Code 这一轮最后一条回复的 uuid（--resume-session-at 用） */
+      end: z.string().default(''),
+    })
+    .optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -572,6 +606,20 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
+  /**
+   * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
+   * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话
+   */
+  rewind: z
+    .object({
+      session: z.string(),
+      through: z.object({ session: z.string(), id: z.string().default(''), end: z.string().default('') }).nullable(),
+      /** through 是不是这个会话的最后一轮（Command Code 只能从最后分叉） */
+      latest: z.boolean().default(false),
+      /** 压缩上下文时 CLI 写的摘要（不能压缩会话的 CLI 开新会话时带上） */
+      summary: z.string().optional(),
+    })
+    .optional(),
   /** 不属于节点的调用（对话、追加要求）最近一次启动 Agent 用的命令 */
   command: z.array(z.string()).default([]),
   /** 用量：每个 Agent 最近一次的上下文占用和实时速度，以及累计 token 和费用 */
@@ -655,6 +703,10 @@ export const CliSettings = z.object({
   extraArgs: z.array(z.string()).default([]),
   /** 追加的环境变量，例如 API Key、代理 */
   env: z.array(z.object({ key: z.string().trim(), value: z.string() })).default([]),
+  /** 在任务页和设置里显示账号额度（5 小时、每周用了多少） */
+  showLimits: z.boolean().default(false),
+  /** 上下文占用达到这个百分比时自动压缩；0 表示用 CLI 自己的规则 */
+  autoCompact: z.number().int().min(0).max(100).default(0),
 })
 export type CliSettings = z.infer<typeof CliSettings>
 

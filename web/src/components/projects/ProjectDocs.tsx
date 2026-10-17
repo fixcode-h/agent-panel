@@ -28,6 +28,7 @@ export function DocPage({
   drafts,
   onDraft,
   note,
+  extra,
 }: {
   projectId: string
   title: string
@@ -38,6 +39,8 @@ export function DocPage({
   onDraft: (path: DocFile, content: string) => void
   /** 页面顶部的提示（例如检测到 AGENT.md） */
   note?: React.ReactNode
+  /** 编辑框下面的其他内容（例如这个 CLI 的 Skill） */
+  extra?: React.ReactNode
 }) {
   const docOf = (f: DocFile) => docs.find((d) => d.path === f)
   // 默认打开已经存在的第一个文件，都没有就是第一个（保存时新建）
@@ -157,6 +160,7 @@ export function DocPage({
           </div>
         )}
       </div>
+      {extra}
     </div>
   )
 }

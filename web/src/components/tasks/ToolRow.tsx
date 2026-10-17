@@ -1,5 +1,16 @@
 import { useMemo, useState } from 'react'
-import { Bot, ChevronRight, FileText, Globe, PencilLine, Search, Sparkles, Terminal, Wrench } from 'lucide-react'
+import {
+  Bot,
+  ChevronRight,
+  FileText,
+  Globe,
+  Loader2,
+  PencilLine,
+  Search,
+  Sparkles,
+  Terminal,
+  Wrench,
+} from 'lucide-react'
 import type { ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { toolVerb } from '@/lib/tasks'
@@ -136,7 +147,12 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
         aria-expanded={open}
         className="group flex w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-muted hover:text-fg"
       >
-        <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
+        {/* 命令还在跑：转圈代替图标，输出边跑边追加，点开能看到 */}
+        {tool.running ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        ) : (
+          <Icon className={cn('h-3.5 w-3.5 shrink-0', tool.failed ? 'text-danger' : 'text-subtle')} />
+        )}
         <span className="min-w-0 flex-1 truncate">
           {verb && <span className="mr-1.5 font-sans font-medium text-fg/80">{verb}</span>}
           {tool.label}

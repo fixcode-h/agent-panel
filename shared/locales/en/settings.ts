@@ -259,4 +259,48 @@ export const EN_SETTINGS: Record<string, string> = {
   网络代理: 'Network proxy',
   '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时用环境变量 HTTPS_PROXY。':
     "Used to check for and download updates. If GitHub isn't reachable, enter your local proxy address; when empty, the HTTPS_PROXY environment variable is used.",
+  '{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的':
+    'Skills {cli} can use in this project, including those in your user folder and in the project',
+  '5 小时': '5 hours',
+  每周: 'Weekly',
+  '每周 · Opus': 'Weekly · Opus',
+  '每周 · Sonnet': 'Weekly · Sonnet',
+  '每周（含超额）': 'Weekly (incl. overage)',
+  '{n} 分钟': '{n} min',
+  已重置: 'Reset',
+  '{n} 分钟后重置': 'Resets in {n} min',
+  '{n} 小时后重置': 'Resets in {n} h',
+  '{date} 重置': 'Resets {date}',
+  '已用 {n}%': '{n}% used',
+  '额度已经用完，等重置后才能继续用': 'Limit reached. You can continue after it resets',
+  '读取失败：{error}': 'Failed to load: {error}',
+  '读取中…': 'Loading…',
+  'Claude Code 在执行时才报告额度，跑过一次任务后这里会显示':
+    'Claude Code reports usage limits only while running. They will show here after a task has run',
+  '没有读到额度（用 API Key 登录时没有额度限制）':
+    'No usage limits found (there are none when signed in with an API key)',
+  '套餐：{plan}': 'Plan: {plan}',
+  刷新: 'Refresh',
+  自动压缩上下文: 'Auto-compact context',
+  '上下文占用达到这个比例时，对话结束一轮后自动压缩（写一份摘要，下一轮开新会话带上）':
+    'When context usage reaches this level, compact after the turn ends (write a summary and start a new session with it next turn)',
+  上下文占用达到这个比例时自动压缩: 'Compact automatically when context usage reaches this level',
+  '{cli} 自动压缩': '{cli} auto-compact',
+  '按 CLI 自己的规则': "CLI's own rule",
+  额度: 'Usage limits',
+  显示额度: 'Show usage limits',
+  '在这里和任务页右栏显示账号的 5 小时、每周额度用了多少':
+    'Show how much of the 5-hour and weekly limits is used, here and in the task side panel',
+  '显示 {cli} 的额度': 'Show {cli} usage limits',
+  'Codex 加载的 Skill（用户目录、系统自带和插件里的）':
+    'Skills Codex loads (from your user folder, built-in and plugins)',
+  '~/.claude/skills 和已装插件里的 Skill；项目里的在项目设置里看':
+    'Skills in ~/.claude/skills and installed plugins. Project skills are in project settings',
+  '~/.commandcode/skills、~/.agents/skills 里的 Skill': 'Skills in ~/.commandcode/skills and ~/.agents/skills',
+  用户: 'User',
+  插件: 'Plugin',
+  自带: 'Built-in',
+  管理员: 'Admin',
+  '共 {n} 个': '{n} total',
+  '还没有装 Skill': 'No skills installed yet',
 }

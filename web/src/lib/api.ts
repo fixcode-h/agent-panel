@@ -1,6 +1,8 @@
 import type {
   Attachment,
   CliInstallJob,
+  CliLimits,
+  CliSkill,
   CliModels,
   CliUpdate,
   Agent,
@@ -55,6 +57,9 @@ export const api = {
   cliUpdate: (id: string, refresh = false) => request<CliUpdate>(`/clis/${id}/update${refresh ? '?refresh=1' : ''}`),
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
+  cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
+  cliSkills: (id: string, projectId = '') =>
+    request<CliSkill[]>(`/clis/${id}/skills${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
@@ -93,8 +98,17 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
-    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, steer = false) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt, steer })),
+  /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
+  rewindTask: (id: string, messageId: string) =>
+    request<{ task: Task; text: string; attachments: Attachment[] }>(
+      `/tasks/${id}/rewind`,
+      json('POST', { messageId }),
+    ),
+  forkTask: (id: string, messageId: string) => request<Task>(`/tasks/${id}/fork`, json('POST', { messageId })),
+  compactTask: (id: string) => request<Task>(`/tasks/${id}/compact`, json('POST', {})),
+  reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
   unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
   projectFiles: (projectId: string, q: string) =>

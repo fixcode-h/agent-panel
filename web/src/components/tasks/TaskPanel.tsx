@@ -1,5 +1,19 @@
 import { useState } from 'react'
-import { ChevronDown, FolderOpen, GitBranch, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
+import {
+  ChevronDown,
+  FolderOpen,
+  GitBranch,
+  Loader2,
+  MessageSquare,
+  ScanSearch,
+  Shrink,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
+import { toast } from 'sonner'
+import { api } from '@/lib/api'
+import { getCli } from '@shared/clis'
+import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
+import { LimitBars, LIMIT_CLIS, useCliLimits } from '@/components/settings/CliLimits'
 import type { FileChange, Project, StepUsage, Task, TaskStep, TaskTodo, Workflow } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
@@ -13,6 +27,48 @@ import { Terminal } from '@/components/agents/CommandPreview'
 import { t } from '@shared/i18n'
 import { chatName, mergeChanges, taskSummary, withTaskModel } from '@shared/task'
 import { DiffDialog } from './DiffDialog'
+
+/** 右栏块里的小操作（压缩上下文、审查改动） */
+const panelAction =
+  'mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60'
+
+/** 任务用到的 CLI 里打开了「显示额度」的，每个显示一组额度 */
+function LimitsSection({ task }: { task: Task }) {
+  const { agents, settings } = useData()
+  const s = settings ?? defaultSettings()
+  const ids = new Set<string>()
+  for (const id of [task.agentId, ...Object.keys(task.usage.agents)]) {
+    const a = agents.find((x) => x.id === id)
+    if (a) ids.add(agentRun(withTaskModel(a, task), s).cli)
+  }
+  const shown = [...ids].filter((c) => LIMIT_CLIS.includes(c) && cliSettings(s, c).showLimits)
+  if (!shown.length) return null
+  return (
+    <Section title={t('额度')}>
+      <div className="flex flex-col gap-4">
+        {shown.map((c) => (
+          <CliLimitRows key={c} cli={c} named={shown.length > 1} />
+        ))}
+      </div>
+    </Section>
+  )
+}
+
+function CliLimitRows({ cli, named }: { cli: string; named: boolean }) {
+  const { data, error } = useCliLimits(cli, true)
+  return (
+    <div className="flex flex-col gap-2">
+      {named && <p className="text-[12px] font-medium">{getCli(cli)?.name}</p>}
+      {data?.windows.length ? (
+        <LimitBars data={data} compact />
+      ) : (
+        <p className="text-xs text-subtle">
+          {error ? t('读取失败：{error}', { error }) : cli === 'claude' ? t('执行后会显示') : t('读取中…')}
+        </p>
+      )}
+    </div>
+  )
+}
 
 /**
  * 启动命令：点了流程节点时是这个节点最近一次启动的命令（调用流程的节点看它里面最近启动的）；
@@ -78,8 +134,11 @@ export function TaskPanel({
   only,
   progressClass,
   node,
+  onTask,
 }: {
   task: Task
+  /** 压缩、审查开始后把新的任务状态交回页面 */
+  onTask?: (t: Task) => void
   /** 只显示任务进度（宽屏时任务进度单独放在左边） */
   only?: 'progress'
   /** 任务进度这一块的额外样式：宽屏时右栏里藏起来，免得和左边重复 */
@@ -95,6 +154,19 @@ export function TaskPanel({
   const { modelOf } = useAgentView()
   const { agents } = useData()
   const dir = useDirInfo(project?.path ?? '')
+  const [busy, setBusy] = useState<'' | 'compact' | 'review'>('')
+  const act = async (what: 'compact' | 'review') => {
+    setBusy(what)
+    try {
+      const next = what === 'compact' ? await api.compactTask(task.id) : await api.reviewTask(task.id)
+      onTask?.(next)
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+  const idle = task.status !== 'running'
   const byId = new Map(agents.map((a) => [a.id, a]))
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
@@ -278,7 +350,24 @@ export function TaskPanel({
                 ))}
               </ul>
             )}
+            {/* 对话停着时可以手动压缩：上下文快满、话题换了的时候 */}
+            {!workflowMode && !scope && idle && !task.simulated && Object.keys(task.sessions).length > 0 && (
+              <button
+                onClick={() => act('compact')}
+                disabled={!!busy}
+                title={t('让 CLI 把之前的对话压缩成摘要，腾出上下文')}
+                className={panelAction}
+              >
+                {busy === 'compact' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Shrink className="h-3.5 w-3.5" />
+                )}
+                {t('压缩上下文')}
+              </button>
+            )}
           </Section>
+          {!scope && <LimitsSection task={task} />}
 
           {scope ? (
             <TokenUsage
@@ -328,6 +417,22 @@ export function TaskPanel({
                 </ul>
               ) : (
                 <p className="text-xs text-subtle">{scope ? t('这个节点没有改动文件。') : t('还没有改动文件。')}</p>
+              )}
+              {/* 让 CLI 只读地审查一遍改动：Codex 用自己的审查模式 */}
+              {!scope && idle && !task.simulated && !!dir?.gitBranch && changes.length > 0 && (
+                <button
+                  onClick={() => act('review')}
+                  disabled={!!busy}
+                  title={t('让 CLI 审查还没提交的改动，只列问题，不改文件')}
+                  className={panelAction}
+                >
+                  {busy === 'review' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <ScanSearch className="h-3.5 w-3.5" />
+                  )}
+                  {t('审查改动')}
+                </button>
               )}
             </Section>
           )}

@@ -1,3 +1,4 @@
+import { CliSkills } from '@/components/settings/CliSkills'
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
@@ -265,6 +266,15 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                     docs={docs.files}
                     drafts={docDrafts}
                     onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
+                    extra={
+                      <section className="flex flex-col gap-2 pt-6">
+                        <h3 className="text-[13px] font-medium">Skills</h3>
+                        <p className="text-[12px] text-muted">
+                          {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
+                        </p>
+                        <CliSkills key={id} cli={id} projectId={project!.id} />
+                      </section>
+                    }
                   />
                 )
               })()
