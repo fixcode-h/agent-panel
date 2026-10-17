@@ -28,6 +28,7 @@ import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
+import { designMcpApi } from './design-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
@@ -350,6 +351,8 @@ app.post('/designs/browser/install', async (c) => {
 })
 app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())
+// AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
+app.route('/mcp', designMcpApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)

@@ -2095,8 +2095,26 @@ try {
       .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
       .at(-1).input
     assert.match(retryAsk, /ops\[0\]：主界面里没有叫 Nope 的控件/)
+    // 用设计工具（MCP）改：CLI 调 edit / check，回复里只写说明
+    const mcpOps = [{ op: 'rename', target: 'Txt_Ver', name: 'Txt_Version' }]
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `用工具改 FAKE_MCP:${JSON.stringify(mcpOps)}`,
+      source: { kind: 'none' },
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    assert.equal(d.root.Children[1].Children.at(-1).Name, 'Txt_Version', '工具里的改动存下来了')
+    assert.equal(d.messages.at(-1).text, '工具改好了')
+    const mcpAsk = calls()
+      .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
+      .at(-1)
+    assert.match(mcpAsk.input, /用 design 工具改设计/, '有工具时提示词让 AI 优先用工具')
+    assert.ok(
+      (mcpAsk.args ?? []).some((x) => /^mcp_servers\.design\.url=/.test(x)),
+      '把工具地址传给 Codex',
+    )
     step(
-      'UI 设计：AI 搭控件树（自动修正一次）、一步步改（ops）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开',
+      'UI 设计：AI 搭控件树（自动修正一次）、一步步改（ops 和设计工具）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开',
     )
 
     // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge
