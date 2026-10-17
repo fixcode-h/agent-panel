@@ -61,7 +61,10 @@ export function AnnotationToolbar({
   visible,
   onToggleVisible,
   onClear,
+  tools,
 }: {
+  /** 只列出这些工具（看大图时只要标注工具和选择） */
+  tools?: Tool[]
   tool: Tool
   onTool: (t: Tool) => void
   kind: AnnotationKind
@@ -77,9 +80,9 @@ export function AnnotationToolbar({
       aria-label={t('标注工具')}
       className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop backdrop-blur"
     >
-      {TOOLS.map((x, i) => (
+      {TOOLS.filter((x) => !tools || tools.includes(x.id)).map((x, i, list) => (
         <span key={x.id} className="flex items-center">
-          {i === 3 && <Sep />}
+          {i > 0 && isMarkTool(x.id) && !isMarkTool(list[i - 1].id) && <Sep />}
           <ToolButton label={`${x.label} (${x.key})`} on={tool === x.id} onClick={() => onTool(x.id)}>
             <x.icon className="h-4 w-4" strokeWidth={1.8} />
           </ToolButton>
@@ -491,6 +494,41 @@ function AnnotationEditor({
         </button>
         <span className="ml-auto text-[11px] text-subtle">{t('回车保存')}</span>
       </div>
+    </div>
+  )
+}
+
+/** 还没发出去的标注，一个个小标签列在输入框上面：编号、意思、说明，可以单独删掉 */
+export function AnnotationChips({ list, onRemove }: { list: Annotation[]; onRemove?: (id: string) => void }) {
+  return (
+    <div className="flex flex-wrap gap-1">
+      {list.map((a, i) => (
+        <span
+          key={a.id}
+          title={[a.widgets.join('、'), a.note].filter(Boolean).join('\n')}
+          className="group flex max-w-full items-center gap-1.5 rounded-md border bg-card py-0.5 pr-1 pl-1 text-[11.5px] text-muted"
+        >
+          <span
+            className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+            style={{ background: KIND_COLOR[a.kind] }}
+          >
+            {i + 1}
+          </span>
+          <span className="shrink-0">{kindLabel(a.kind)}</span>
+          {(a.note || a.widgets[0]) && (
+            <span className="max-w-[140px] truncate text-subtle">{a.note || a.widgets[0]}</span>
+          )}
+          {onRemove && (
+            <button
+              onClick={() => onRemove(a.id)}
+              aria-label={t('删除标注')}
+              className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-fg"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </span>
+      ))}
     </div>
   )
 }

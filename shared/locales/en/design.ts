@@ -142,6 +142,15 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  '修改意见（这次生成用）': 'Change notes (for this generation)',
+  在大图上标记: 'Mark up on the large view',
+  修改意见: 'Change notes',
+  '哪里不满意、要怎么改，不用改上面的描述': 'What to change and how. No need to edit the description above',
+  按意见重新生成: 'Regenerate with notes',
+  按图上的标记和修改意见重新生成: 'Regenerate using the marks on the image and the change notes',
+  按标记重新生成: 'Regenerate with marks',
+  '选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再点「按标记重新生成」':
+    'Pick box, arrow, pen or pin above, mark what to change on the image, then click “Regenerate with marks”',
   控件: 'Widgets',
   '这个项目里还没有子控件。让 AI 把重复的部分（列表项、格子、按钮）做成子控件，就会出现在这里。':
     'No widgets in this project yet. Ask the AI to turn repeated parts (list items, slots, buttons) into widgets and they show up here.',

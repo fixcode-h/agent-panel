@@ -12,7 +12,6 @@ import {
   RefreshCw,
   Sparkles,
   Square,
-  X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { extensionSelfReload } from '@shared/design'
@@ -27,7 +26,7 @@ import { AgentMessage, PendingAuthor, SystemNote } from '@/components/tasks/Mess
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
-import { KIND_COLOR, kindLabel } from './Annotations'
+import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
 import { t } from '@shared/i18n'
 
 const NO_NAMES = new Set<string>()
@@ -514,34 +513,8 @@ export function DesignChat({
         </div>
         <div className="rounded-2xl border border-line-strong bg-field shadow-card focus-within:border-accent/60">
           {annotations.length > 0 && (
-            <div className="flex flex-wrap gap-1 border-b px-2.5 pt-2.5 pb-2">
-              {annotations.map((a, i) => (
-                <span
-                  key={a.id}
-                  title={[a.widgets.join('、'), a.note].filter(Boolean).join('\n')}
-                  className="group flex max-w-full items-center gap-1.5 rounded-md border bg-card py-0.5 pr-1 pl-1 text-[11.5px] text-muted"
-                >
-                  <span
-                    className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
-                    style={{ background: KIND_COLOR[a.kind] }}
-                  >
-                    {i + 1}
-                  </span>
-                  <span className="shrink-0">{kindLabel(a.kind)}</span>
-                  {(a.note || a.widgets[0]) && (
-                    <span className="max-w-[140px] truncate text-subtle">{a.note || a.widgets[0]}</span>
-                  )}
-                  {onRemoveAnnotation && (
-                    <button
-                      onClick={() => onRemoveAnnotation(a.id)}
-                      aria-label={t('删除标注')}
-                      className="grid h-4 w-4 cursor-pointer place-items-center rounded text-subtle hover:text-fg"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  )}
-                </span>
-              ))}
+            <div className="border-b px-2.5 pt-2.5 pb-2">
+              <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
             </div>
           )}
           <textarea

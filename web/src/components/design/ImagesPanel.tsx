@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { AlertCircle, ImagePlus, Loader2, RefreshCw, Trash2, Upload, X } from 'lucide-react'
-import type { DesignImage } from '@shared/design'
+import type { Annotation, AnnotationKind, DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
 import { t } from '@shared/i18n'
 import { FieldRow, MarginInput, NumInput, TextInput, Thumb } from './fields'
+import { AnnotationChips, AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
 
 export const readFile = (f: File) =>
   new Promise<string>((res, rej) => {
@@ -115,7 +116,20 @@ export function ImageDetails({
   onDelete,
   canGenerate,
   sourceLabel,
+  feedback,
+  onFeedback,
+  marks,
+  onMarks,
+  onPreview,
 }: {
+  /** 这次生成的修改意见（不改描述，只用在下一次生成） */
+  feedback: string
+  onFeedback: (v: string) => void
+  /** 在大图上画的修改标记 */
+  marks: Annotation[]
+  onMarks: (list: Annotation[]) => void
+  /** 打开大图预览（在图上画标记） */
+  onPreview: () => void
   image: DesignImage
   url: (file: string) => string
   onChange: (img: DesignImage, key: string) => void
@@ -202,6 +216,28 @@ export function ImageDetails({
             onChange={(prompt) => set({ prompt }, 'prompt')}
           />
         </div>
+        <div className="px-3 pt-2.5">
+          <div className="mb-1 flex items-center gap-2">
+            <p className="text-[12px] text-subtle">{t('修改意见（这次生成用）')}</p>
+            {image.variants.length > 0 && (
+              <button onClick={onPreview} className="ml-auto cursor-pointer text-[11.5px] text-accent hover:underline">
+                {t('在大图上标记')}
+              </button>
+            )}
+          </div>
+          {marks.length > 0 && (
+            <div className="mb-1.5">
+              <AnnotationChips list={marks} onRemove={(id) => onMarks(marks.filter((m) => m.id !== id))} />
+            </div>
+          )}
+          <TextInput
+            label={t('修改意见')}
+            multiline
+            placeholder={t('哪里不满意、要怎么改，不用改上面的描述')}
+            value={feedback}
+            onChange={onFeedback}
+          />
+        </div>
         <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-3">
           <Button
             size="sm"
@@ -210,7 +246,7 @@ export function ImageDetails({
             title={sourceLabel}
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {image.variants.length ? t('再生成') : t('生成')}
+            {feedback.trim() || marks.length ? t('按意见重新生成') : image.variants.length ? t('再生成') : t('生成')}
           </Button>
           <input
             ref={input}
@@ -238,45 +274,153 @@ export function ImageDetails({
 export const CHECKER =
   'bg-[#fff] bg-[length:16px_16px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]'
 
-/** 盖在画布区域上的大图预览：点空白处、关闭按钮或按 Esc 关掉 */
-export function ImagePreview({ image, src, onClose }: { image: DesignImage; src: string; onClose: () => void }) {
+/** 盖在画布区域上的大图预览：可以在图上画修改标记，直接重新生成；点空白处、关闭按钮或按 Esc 关掉 */
+export function ImagePreview({
+  image,
+  src,
+  marks,
+  onMarks,
+  onRegenerate,
+  canGenerate,
+  onClose,
+}: {
+  image: DesignImage
+  src: string
+  /** 图上的修改标记，坐标是这一版图片的像素 */
+  marks: Annotation[]
+  onMarks: (list: Annotation[]) => void
+  onRegenerate: () => void
+  canGenerate: boolean
+  onClose: () => void
+}) {
+  const [tool, setTool] = useState<Tool>('select')
+  const [kind, setKind] = useState<AnnotationKind>('change')
+  const [active, setActive] = useState('')
+  const [shown, setShown] = useState(true)
+  const img = useRef<HTMLImageElement>(null)
+  const [scale, setScale] = useState(0)
+  const v = image.variants[image.selected] ?? image.variants.at(-1)
+  const size = { X: v?.width || image.width, Y: v?.height || image.height }
+  const busy = image.status === 'generating' || image.status === 'pending'
   useEffect(() => {
-    const on = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const on = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest('input, textarea')) return
+      if (e.key !== 'Escape') return
+      // 先退出标注工具、关掉正在写的说明，再按一次才关掉预览
+      if (active) setActive('')
+      else if (tool !== 'select') setTool('select')
+      else onClose()
+    }
     window.addEventListener('keydown', on)
     return () => window.removeEventListener('keydown', on)
-  }, [onClose])
-  const v = image.variants[image.selected] ?? image.variants.at(-1)
+  }, [onClose, tool, active])
+  useLayoutEffect(() => {
+    const el = img.current
+    if (!el) return
+    const fit = () => setScale(el.clientWidth / size.X)
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [size.X, src])
   return (
     <div
       role="dialog"
       aria-label={image.name}
-      onClick={onClose}
+      onClick={(e) => e.target === e.currentTarget && tool === 'select' && !active && onClose()}
       className="absolute inset-0 z-30 flex flex-col bg-[#18181a]/95 animate-[fade-in_120ms_ease-out]"
     >
-      <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-[12px] text-white/80">
+      <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-[12px] text-white/80">
         <span className="font-mono font-medium text-white">{image.name}</span>
-        {v && (
-          <span className="font-mono text-white/50">
-            {v.width}×{v.height}
-            {image.variants.length > 1 && ` · ${image.selected + 1}/${image.variants.length}`}
-          </span>
-        )}
+        <span className="font-mono text-white/50">
+          {size.X}×{size.Y}
+          {image.variants.length > 1 && ` · ${image.selected + 1}/${image.variants.length}`}
+        </span>
+        <span className="flex-1" />
+        <Button
+          size="sm"
+          onClick={onRegenerate}
+          disabled={!canGenerate || busy}
+          title={marks.length ? t('按图上的标记和修改意见重新生成') : undefined}
+        >
+          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          {marks.length ? t('按标记重新生成') : t('重新生成')}
+        </Button>
         <button
           onClick={onClose}
           aria-label={t('关闭预览')}
-          className="ml-auto grid h-7 w-7 cursor-pointer place-items-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
+          className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
-      <div className="grid min-h-0 flex-1 place-items-center p-6">
-        <img
-          src={src}
-          alt={image.name}
-          onClick={(e) => e.stopPropagation()}
-          className={cn('max-h-full max-w-full object-contain shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]', CHECKER)}
+      <div className="flex shrink-0 justify-center px-3 pb-2">
+        <AnnotationToolbar
+          tools={['select', 'rect', 'arrow', 'pen', 'pin']}
+          tool={tool}
+          onTool={(x) => {
+            setTool(x)
+            if (isMarkTool(x)) setShown(true)
+          }}
+          kind={kind}
+          onKind={(k) => {
+            setKind(k)
+            if (!isMarkTool(tool)) setTool('rect')
+          }}
+          count={marks.length}
+          visible={shown}
+          onToggleVisible={() => setShown((x) => !x)}
+          onClear={() => {
+            onMarks([])
+            setActive('')
+          }}
         />
       </div>
+      <div
+        className="grid min-h-0 flex-1 place-items-center overflow-hidden p-6"
+        onClick={(e) => e.target === e.currentTarget && tool === 'select' && !active && onClose()}
+      >
+        <div className="relative max-h-full max-w-full">
+          <img
+            ref={img}
+            src={src}
+            alt={image.name}
+            draggable={false}
+            className={cn(
+              'block max-h-[calc(100dvh-220px)] max-w-full object-contain shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]',
+              CHECKER,
+            )}
+          />
+          {scale > 0 && (
+            <AnnotationLayer
+              size={size}
+              scale={scale}
+              tool={tool}
+              kind={kind}
+              list={marks}
+              visible={shown}
+              active={active}
+              onActive={setActive}
+              onCreate={(a) => {
+                const mark: Annotation = { ...a, id: crypto.randomUUID(), note: '', target: '', widgets: [] }
+                onMarks([...marks, mark])
+                // 画完马上写说明
+                setActive(mark.id)
+              }}
+              onChange={(a) => onMarks(marks.map((x) => (x.id === a.id ? a : x)))}
+              onRemove={(id) => {
+                onMarks(marks.filter((x) => x.id !== id))
+                setActive('')
+              }}
+            />
+          )}
+        </div>
+      </div>
+      {!marks.length && (
+        <p className="pointer-events-none shrink-0 pb-3 text-center text-[11.5px] text-white/40">
+          {t('选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再点「按标记重新生成」')}
+        </p>
+      )}
     </div>
   )
 }

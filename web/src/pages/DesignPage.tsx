@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ChevronDown,
@@ -15,7 +15,7 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react'
-import type { DesignDoc, DesignImage, ImageSource } from '@shared/design'
+import { imageRevisionText, type Annotation, type DesignDoc, type DesignImage, type ImageSource } from '@shared/design'
 import {
   WIDGETS,
   allNames,
@@ -258,6 +258,17 @@ function Designer({ id }: { id: string }) {
   const [imageSel, setImageSel] = useState('')
   /** 双击图片后在画布区域放大预览的图片 */
   const [preview, setPreview] = useState('')
+  /**
+   * 每张图这次生成的修改意见和图上的标记：不改描述，只跟着下一次生成发出去，发出去后清掉。
+   * 同时记在 ref 里：输入框失去焦点时才交上来，紧接着点生成按钮时要拿到最新的
+   */
+  const [revise, setRevise] = useState<Record<string, { feedback: string; marks: Annotation[] }>>({})
+  const reviseRef = useRef(revise)
+  const updateRevise = (imgId: string, patch: Partial<{ feedback: string; marks: Annotation[] }>) => {
+    const cur = reviseRef.current[imgId] ?? { feedback: '', marks: [] }
+    reviseRef.current = { ...reviseRef.current, [imgId]: { ...cur, ...patch } }
+    setRevise(reviseRef.current)
+  }
   const [chatOpen, setChatOpen] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [source, setSourceState] = useState<ImageSource>(() => {
@@ -573,10 +584,17 @@ function Designer({ id }: { id: string }) {
 
   const generate = async (img: DesignImage) => {
     if (source.kind === 'none') return toast.error(t('先在对话框下面选生成图片的方式'))
+    const r = reviseRef.current[img.id]
+    const v = img.variants[img.selected] ?? img.variants.at(-1)
+    const revision = r
+      ? imageRevisionText(r.feedback, r.marks, { X: v?.width || img.width, Y: v?.height || img.height })
+      : ''
     try {
       // 先保存当前的描述和尺寸，服务端按保存的生成
       ed.absorb(await api.saveDesign(id, doc))
-      ed.absorb(await api.generateDesignImage(id, img.id, { source, count }))
+      ed.absorb(await api.generateDesignImage(id, img.id, { source, count, revision: revision || undefined }))
+      // 修改意见已经跟着这次生成发出去了
+      if (r) updateRevise(img.id, { feedback: '', marks: [] })
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -747,7 +765,17 @@ function Designer({ id }: { id: string }) {
           {(() => {
             const img = preview ? doc.images.find((i) => i.id === preview) : undefined
             const src = img && imageUrl(img)
-            return img && src ? <ImagePreview image={img} src={src} onClose={() => setPreview('')} /> : null
+            return img && src ? (
+              <ImagePreview
+                image={img}
+                src={src}
+                marks={revise[img.id]?.marks ?? []}
+                onMarks={(marks) => updateRevise(img.id, { marks })}
+                onRegenerate={() => void generate(img)}
+                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
+                onClose={() => setPreview('')}
+              />
+            ) : null
           })()}
         </div>
 
@@ -870,6 +898,11 @@ function Designer({ id }: { id: string }) {
                 // 正在生成别的图时也能点：排进这一轮的队列；AI 还在改设计时不行
                 canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
                 sourceLabel={sourceLabel}
+                feedback={revise[selImage.id]?.feedback ?? ''}
+                onFeedback={(feedback) => updateRevise(selImage.id, { feedback })}
+                marks={revise[selImage.id]?.marks ?? []}
+                onMarks={(marks) => updateRevise(selImage.id, { marks })}
+                onPreview={() => setPreview(selImage.id)}
               />
             ) : (
               <p className="px-4 py-6 text-center text-[12px] leading-relaxed text-subtle">

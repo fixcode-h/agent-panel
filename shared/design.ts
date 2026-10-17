@@ -283,6 +283,8 @@ export const GenerateImageInput = z.object({
   count: z.number().int().min(1).max(4).default(1),
   /** 换一个描述再生成 */
   prompt: z.string().max(4000).optional(),
+  /** 这一次的修改意见（用户写的和在图上标的，见 imageRevisionText），只用在这一次生成 */
+  revision: z.string().max(8000).optional(),
 })
 
 /** 生成图片时每张图的进度 */
@@ -497,6 +499,13 @@ export function resolveDesignResult(
     return out
   }
   errors.push(...unknown(r.root, []), ...(r.components ?? []).flatMap((c) => unknown(c.Root, [])))
+  // 列出来的图都要用在控件上：只列图不引用，图生成完了效果图上也看不到
+  const used = usedImages([root ?? d.root, ...(components ?? d.components).map((c) => c.Root)])
+  const unused = r.images.filter((i) => !used.has(i.id)).map((i) => i.id)
+  if (unused.length)
+    errors.push(
+      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal 等），并写出完整的 root / components`,
+    )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
   return { result: r, root, components }
 }
@@ -568,6 +577,31 @@ export function imagePrompt(
       : '',
   ]
   return parts.filter(Boolean).join('\n')
+}
+
+/**
+ * 图片的修改意见：用户写的意见和在大图上画的标记，拼成英文加在生成描述后面。
+ * 位置用图片宽高的百分比，生成模型不管出图多大都能对上
+ */
+export function imageRevisionText(feedback: string, marks: Annotation[], size: { X: number; Y: number }) {
+  const verb = { change: 'Change', add: 'Add something', remove: 'Remove', keep: 'Keep unchanged' }
+  const pct = (v: number, max: number) => `${Math.round((v / Math.max(1, max)) * 100)}%`
+  const lines = marks.map((a, i) => {
+    const b = annotationBox(a)
+    const where =
+      b.w || b.h
+        ? `the area x ${pct(b.x, size.X)}–${pct(b.x + b.w, size.X)}, y ${pct(b.y, size.Y)}–${pct(b.y + b.h, size.Y)}`
+        : `around x ${pct(b.x, size.X)}, y ${pct(b.y, size.Y)}`
+    return `${i + 1}. ${verb[a.kind]} at ${where} (from the top-left corner)${a.note.trim() ? `: ${a.note.trim()}` : ''}`
+  })
+  if (!feedback.trim() && !lines.length) return ''
+  return [
+    'Requested changes compared with the previous version (keep everything else as described):',
+    feedback.trim(),
+    ...lines,
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 function aspect(w: number, h: number) {

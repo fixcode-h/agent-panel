@@ -58,7 +58,7 @@ type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
 type Job = DesignJob & {
   abort: AbortController
   /** 生成图片时：把一张图排进这一轮的队列（点了「重试」或「再生成」）；不在生成图片时没有 */
-  enqueue?: (img: DesignImage) => void
+  enqueue?: (img: DesignImage, revision?: string) => void
 }
 
 const now = () => new Date().toISOString()
@@ -157,6 +157,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
 
   // ---- 生成图片 ----
 
+  const withRevision = (prompt: string, revision: string) =>
+    revision.trim() ? `${prompt}\n\n${revision.trim()}` : prompt
+
   /** 项目提示词的英文：这个项目里每张图都带上 */
   async function projectStyle(d: Design) {
     const p = (await loadProjects()).find((x) => x.id === d.projectId)
@@ -175,6 +178,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     style: string,
     job: Job,
     item: ImageJobItem,
+    /** 这一次的修改意见，加在描述后面 */
+    revision = '',
   ) {
     const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
     const set = (patch: Partial<DesignImage>) => {
@@ -204,7 +209,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           ? await browserGenerate(
               {
                 tabId: source.tabId,
-                prompt: imagePrompt(img, cache.get(d.id)!.style, img.transparent, style),
+                prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style), revision),
                 count,
                 chroma: img.transparent,
                 concurrency: (await getSettings()).imageGen.concurrency,
@@ -213,7 +218,12 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               },
               job.abort.signal,
             )
-          : await cliGenerate(imagePrompt(img, cache.get(d.id)!.style, false, style), count, job, add)
+          : await cliGenerate(
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, false, style), revision),
+              count,
+              job,
+              add,
+            )
       for (const b of rest) add(b)
       await chain
       if (!item.got) throw new Error(t('没有取到图片'))
@@ -304,7 +314,15 @@ ${prompt}`,
       )
     return []
   }
-  async function generateImages(d: Design, ids: string[], source: ImageSource, count: number, job: Job) {
+  async function generateImages(
+    d: Design,
+    ids: string[],
+    source: ImageSource,
+    count: number,
+    job: Job,
+    /** 图片 id → 这一次的修改意见 */
+    revisions: Record<string, string> = {},
+  ) {
     job.phase = 'images'
     // 进入生成图片阶段：对话的说明已经成了一条消息，不再显示
     job.text = ''
@@ -320,13 +338,13 @@ ${prompt}`,
     const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
-    const queue = list.map((img, k) => ({ img, item: items[k] }))
+    const queue = list.map((img, k) => ({ img, item: items[k], revision: revisions[img.id] ?? '' }))
     let next = 0
     const worker = async () => {
       while (next < queue.length && !job.abort.signal.aborted) {
-        const { img, item } = queue[next++]
+        const { img, item, revision } = queue[next++]
         try {
-          await generateOne(cache.get(d.id)!, img, source, count, style, job, item)
+          await generateOne(cache.get(d.id)!, img, source, count, style, job, item, revision)
           failed.delete(img.id)
         } catch (e) {
           failed.set(img.id, `${img.name}：${(e as Error).message}`)
@@ -340,12 +358,12 @@ ${prompt}`,
     }
     for (let i = 0; i < Math.min(width, queue.length); i++) spawn()
     // 重试、再生成：排到队尾，有空着的位置就马上开始。已经在排队或正在生成的不重复排
-    job.enqueue = (img) => {
+    job.enqueue = (img, revision = '') => {
       let item = items.find((x) => x.id === img.id)
       if (item?.status === 'waiting' || item?.status === 'generating') return
       if (item) Object.assign(item, { status: 'waiting', got: 0, text: undefined })
       else items.push((item = { id: img.id, name: img.name, status: 'waiting', got: 0, want: count }))
-      queue.push({ img, item })
+      queue.push({ img, item, revision })
       if (workers.size < width) spawn()
     }
     while (workers.size) await Promise.all([...workers])
@@ -817,13 +835,15 @@ ${prompt}`,
         img.status = 'pending'
         img.error = undefined
         await save(d)
-        running.enqueue(img)
+        running.enqueue(img, p.data.revision)
         return c.json({ ...d, job: view(running) })
       }
       img.status = 'pending'
       await save(d)
       startJob(d, async (job) => {
-        const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job)
+        const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job, {
+          [img.id]: p.data.revision ?? '',
+        })
         if (failed.length) throw new Error(failed.join('\n'))
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })

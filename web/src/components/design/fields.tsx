@@ -98,11 +98,13 @@ export function TextInput({
   onChange,
   multiline,
   label,
+  placeholder,
 }: {
   value: string
   onChange: (v: string) => void
   multiline?: boolean
   label: string
+  placeholder?: string
 }) {
   const [text, setText] = useState(value ?? '')
   useEffect(() => setText(value ?? ''), [value])
@@ -125,6 +127,7 @@ export function TextInput({
     <Tag
       ref={ref}
       aria-label={label}
+      placeholder={placeholder}
       value={text}
       rows={multiline ? 2 : undefined}
       onChange={(e: any) => setText(e.target.value)}
