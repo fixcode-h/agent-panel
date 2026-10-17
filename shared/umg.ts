@@ -46,7 +46,7 @@ export interface Component {
 }
 
 export type ChildRule = 'many' | 'one' | 'none'
-export type WidgetGroup = 'panel' | 'common' | 'input' | 'user'
+export type WidgetGroup = 'panel' | 'list' | 'common' | 'input' | 'user'
 
 export const WIDGET_TYPES = [
   'CanvasPanel',
@@ -60,6 +60,9 @@ export const WIDGET_TYPES = [
   'ScaleBox',
   'Border',
   'WidgetSwitcher',
+  'ListView',
+  'TileView',
+  'DynamicEntryBox',
   'Spacer',
   'Image',
   'TextBlock',
@@ -94,6 +97,11 @@ export interface WidgetDef {
   defaults: () => Record<string, any>
   /** 给 AI 的一句话说明 */
   hint: string
+  /**
+   * 运行时才填内容的列表（ListView、TileView、DynamicEntryBox）：设计时不放子控件，
+   * 条目用 EntryWidgetClass 指定的子控件，设计器里按 NumDesignerPreviewEntries 预览几条
+   */
+  entries?: boolean
 }
 
 export type SlotType =
@@ -126,11 +134,18 @@ export const WIDGETS: Record<WidgetType, WidgetDef> = {
   Overlay: W('Overlay', 'panel', 'many', 'OverlaySlot', '叠放：子控件一层层叠在一起，按对齐方式摆放'),
   HorizontalBox: W('HorizontalBox', 'panel', 'many', 'HorizontalBoxSlot', '横向排列'),
   VerticalBox: W('VerticalBox', 'panel', 'many', 'VerticalBoxSlot', '纵向排列'),
-  UniformGridPanel: W('UniformGridPanel', 'panel', 'many', 'UniformGridSlot', '等大网格（背包格子、技能栏）', () => ({
-    SlotPadding: margin(0),
-    MinDesiredSlotWidth: 0,
-    MinDesiredSlotHeight: 0,
-  })),
+  UniformGridPanel: W(
+    'UniformGridPanel',
+    'panel',
+    'many',
+    'UniformGridSlot',
+    '等大网格，格子数量设计时就固定（技能栏）；运行时才知道数量的背包格子用 TileView',
+    () => ({
+      SlotPadding: margin(0),
+      MinDesiredSlotWidth: 0,
+      MinDesiredSlotHeight: 0,
+    }),
+  ),
   WrapBox: W('WrapBox', 'panel', 'many', 'WrapBoxSlot', '自动换行排列', () => ({
     InnerSlotPadding: { X: 0, Y: 0 },
     Orientation: 'Orient_Horizontal',
@@ -159,6 +174,60 @@ export const WIDGETS: Record<WidgetType, WidgetDef> = {
   WidgetSwitcher: W('WidgetSwitcher', 'panel', 'many', 'WidgetSwitcherSlot', '多页切换，只显示一个子控件', () => ({
     ActiveWidgetIndex: 0,
   })),
+  ListView: {
+    ...W(
+      'ListView',
+      'list',
+      'none',
+      undefined,
+      '运行时按数据生成条目的滚动列表（任务、邮件、排行榜）：不放子控件，EntryWidgetClass 指定条目用的子控件',
+      () => ({
+        EntryWidgetClass: '',
+        NumDesignerPreviewEntries: 5,
+        Orientation: 'Orient_Vertical',
+        EntrySpacing: 0,
+        SelectionMode: 'Single',
+      }),
+    ),
+    entries: true,
+  },
+  TileView: {
+    ...W(
+      'TileView',
+      'list',
+      'none',
+      undefined,
+      '运行时按数据生成的等大格子（背包、商店、图鉴）：不放子控件，EntryWidgetClass 指定格子用的子控件，EntryWidth / EntryHeight 是格子大小',
+      () => ({
+        EntryWidgetClass: '',
+        NumDesignerPreviewEntries: 12,
+        Orientation: 'Orient_Vertical',
+        EntryWidth: 128,
+        EntryHeight: 128,
+        TileAlignment: 'EvenlyDistributed',
+        SelectionMode: 'Single',
+      }),
+    ),
+    entries: true,
+  },
+  DynamicEntryBox: {
+    ...W(
+      'DynamicEntryBox',
+      'list',
+      'none',
+      undefined,
+      '运行时生成数量不定、不需要滚动的条目（Buff 图标、星级、页签）：不放子控件，EntryWidgetClass 指定条目用的子控件',
+      () => ({
+        EntryWidgetClass: '',
+        NumDesignerPreviewEntries: 3,
+        EntryBoxType: 'Horizontal',
+        EntrySpacing: { X: 0, Y: 0 },
+        EntryHorizontalAlignment: 'HAlign_Fill',
+        EntryVerticalAlignment: 'VAlign_Fill',
+      }),
+    ),
+    entries: true,
+  },
   Spacer: W('Spacer', 'panel', 'none', undefined, '占位留空', () => ({ Size: { X: 16, Y: 16 } })),
   Image: W('Image', 'common', 'none', undefined, '显示一张图片（图标、高亮框、装饰）', () => ({
     Brush: brush(),
@@ -427,9 +496,22 @@ export function wrapWidget(
   return { root: id === root.id ? wrapper : mapWidget(root, id, () => wrapper), id: wrapper.id }
 }
 
+/**
+ * 预先摆好的子控件都是同一个子控件（背包里的一排格子）时，换成运行时列表用的条目类；
+ * 不是的话返回 undefined，不能换成列表
+ */
+export function entryClassOf(w: Widget): string | undefined {
+  const kids = w.Children ?? []
+  if (!kids.length) return ''
+  const cls = kids[0].Type === 'UserWidget' ? kids[0].Class : undefined
+  return cls && kids.every((k) => k.Type === 'UserWidget' && k.Class === cls) ? cls : undefined
+}
+
 /** 能不能把 w 替换成 type：子控件要放得下 */
 export function canReplace(w: Widget, type: WidgetType) {
   if (w.Type === type || type === 'UserWidget') return false
+  // 换成运行时列表：子控件要都是同一个子控件，换完后用它当条目
+  if (WIDGETS[type].entries) return entryClassOf(w) !== undefined
   const n = w.Children?.length ?? 0
   const rule = WIDGETS[type].children
   return rule === 'many' || (rule === 'one' ? n <= 1 : n === 0)
@@ -445,12 +527,16 @@ export function replaceWidget(root: Widget, id: string, type: WidgetType): Widge
         .map((k) => [k, w.Properties[k]]),
     )
     const def = WIDGETS[type]
+    const entry =
+      def.entries && w.Children?.length
+        ? { EntryWidgetClass: entryClassOf(w), NumDesignerPreviewEntries: w.Children.length }
+        : {}
     return {
       id: w.id,
       Type: type,
       Name: w.Name,
       ...(w.Slot ? { Slot: w.Slot } : {}),
-      Properties: { ...COMMON_PROPS(), ...def.defaults(), ...common },
+      Properties: { ...COMMON_PROPS(), ...def.defaults(), ...common, ...entry },
       ...(def.children !== 'none'
         ? { Children: (w.Children ?? []).map((c) => ({ ...c, Slot: adaptSlot(c.Slot, def.slot) })) }
         : {}),
@@ -523,6 +609,12 @@ export function checkTree(root: Widget, components: string[], images: Set<string
     if (def.children === 'one' && n > 1) errors.push(`${w.Type} 只能有一个子控件（${w.Name}）`)
     if (w.Type === 'UserWidget' && !components.includes(w.Class ?? ''))
       errors.push(`UserWidget ${w.Name} 引用的子控件 ${w.Class ?? '（空）'} 不存在`)
+    if (def.entries && n)
+      errors.push(
+        `${w.Type} 的条目是运行时生成的，不能预先放子控件（${w.Name}）：把条目做成子控件，写在 EntryWidgetClass 里`,
+      )
+    const entry = def.entries ? String(w.Properties?.EntryWidgetClass ?? '') : ''
+    if (entry && !components.includes(entry)) errors.push(`${w.Name} 的 EntryWidgetClass 引用的子控件 ${entry} 不存在`)
     if (p && !WIDGETS[p.Type]?.slot) errors.push(`${p.Type} 不能放子控件（${w.Name}）`)
   })
   for (const id of usedImages([root])) if (!images.has(id)) errors.push(`引用了不存在的图片 img:${id}`)

@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowUp,
   Check,
+  ChevronDown,
   Download,
   ExternalLink,
   FolderOpen,
@@ -14,14 +15,14 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
-import { agentRun, defaultCli } from '@shared/settings'
+import type { TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
-import { cliColor, effortLabel } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
-import { Markdown } from '@/components/tasks/Markdown'
+import { AgentMessage, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { KIND_COLOR, kindLabel } from './Annotations'
@@ -316,33 +317,42 @@ function Step({ n, done, title, children }: { n: number; done: boolean; title: s
   )
 }
 
-/** 对话用的 CLI 和模型：默认 CLI 的高档 */
-function useChatModel() {
-  const { settings } = useData()
-  const cli = settings ? defaultCli(settings) : 'claude'
-  const def = useCliDef(cli)
-  if (!settings || !def) return undefined
-  const run = agentRun({ cli, model: '@high' }, settings)
-  return { def, model: run.model, effort: run.effort }
+const RUN_KEY = 'design-chat-run'
+
+/** 对话用的 CLI、模型和思考强度：记在本机，下次打开还是这个 */
+function useStoredRun() {
+  const [run, setRun] = useState<ChatRun>(() => {
+    try {
+      const v = JSON.parse(localStorage.getItem(RUN_KEY) ?? 'null')
+      if (v && typeof v.cli === 'string') return { cli: v.cli, model: v.model ?? '', effort: v.effort ?? '' }
+    } catch {}
+    return { cli: '', model: '', effort: '' }
+  })
+  const set = (v: ChatRun) => {
+    setRun(v)
+    try {
+      localStorage.setItem(RUN_KEY, JSON.stringify(v))
+    } catch {}
+  }
+  return [run, set] as const
 }
 
-/** 对话用的 CLI 和模型，放在对话栏标题右边（输入框下面放不下） */
-export function ChatModelLabel() {
-  const m = useChatModel()
-  if (!m) return null
-  return (
-    <span
-      title={t('对话用默认 CLI 的高档模型，在设置里修改')}
-      className="flex min-w-0 items-center gap-1.5 text-[11.5px] font-normal text-subtle"
-    >
-      <span className="h-2 w-2 shrink-0 rounded-[3px]" style={{ background: cliColor(m.def.id) }} />
-      <span className="truncate">
-        {m.def.name} · {m.model || t('默认模型')}
-        {m.effort ? ` · ${m.effort}` : ''}
-      </span>
-    </span>
-  )
-}
+/** 设计消息换成 Agent 输出用的消息格式，和 Agent 对话显示得一样 */
+const asTaskMessage = (
+  id: string,
+  text: string,
+  at: string,
+  live?: { thinking?: string; tools?: ToolUse[] },
+): TaskMessage => ({
+  id,
+  role: 'agent',
+  agentId: '',
+  step: '',
+  text,
+  tools: live?.tools ?? [],
+  thinking: live?.thinking,
+  at,
+})
 
 export function DesignChat({
   messages,
@@ -364,7 +374,7 @@ export function DesignChat({
   onSource: (s: ImageSource) => void
   count: number
   onCount: (n: number) => void
-  onSend: (text: string) => Promise<boolean>
+  onSend: (text: string, run: ChatRun) => Promise<boolean>
   onStop: () => void
   /** 效果图上还没发出去的标注，发送时一起带上 */
   annotations?: Annotation[]
@@ -372,15 +382,19 @@ export function DesignChat({
 }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const [pick, setPick] = useStoredRun()
+  const { run } = useChatRun(pick)
   const list = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
   const running = job?.status === 'running'
+  const designing = running && job?.phase === 'design'
 
-  // 新消息、进度变化时滚到底
+  // 新消息、输出变化时滚到底（用户往上翻看时不打扰）
+  const stick = useRef(true)
   useLayoutEffect(() => {
     const el = list.current
-    if (el) el.scrollTop = el.scrollHeight
-  }, [messages.length, job?.text, job?.phase, running])
+    if (el && stick.current) el.scrollTop = el.scrollHeight
+  }, [messages.length, job?.text, job?.thinking, job?.tools?.length, job?.phase, running])
   useLayoutEffect(() => {
     const el = box.current
     if (!el) return
@@ -393,8 +407,9 @@ export function DesignChat({
     // 只有标注、没写文字也能发：按标注改
     if ((!v && !annotations.length) || running || sending) return
     setSending(true)
+    stick.current = true
     try {
-      if (await onSend(v)) setText('')
+      if (await onSend(v, run)) setText('')
     } finally {
       setSending(false)
     }
@@ -402,7 +417,14 @@ export function DesignChat({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div
+        ref={list}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
+        }}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+      >
         {!messages.length && !running && (
           <div className="mt-6 flex flex-col items-center gap-3 px-2 text-center">
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent">
@@ -431,14 +453,18 @@ export function DesignChat({
             </div>
           </div>
         )}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-5">
           {messages.map((msg) => (
             <ChatMessage key={msg.id} msg={msg} />
           ))}
-          {running && job && <JobProgress job={job} />}
+          {designing && job && <LiveReply job={job} />}
         </div>
       </div>
-      <div className="shrink-0 px-3 pb-3">
+      <div className="relative shrink-0 px-3 pb-3">
+        {running && job && <JobProgress job={job} />}
+        <div className="flex min-w-0 items-center pb-1">
+          <ChatModelPicker value={pick} onChange={setPick} />
+        </div>
         <div className="rounded-2xl border border-line-strong bg-field shadow-card focus-within:border-accent/60">
           {annotations.length > 0 && (
             <div className="flex flex-wrap gap-1 border-b px-2.5 pt-2.5 pb-2">
@@ -533,7 +559,7 @@ export function DesignChat({
 }
 
 function ChatMessage({ msg }: { msg: DesignMessage }) {
-  const def = useCliDef(msg.run?.cli)
+  const author = useRunAuthor(msg.run as ChatRun | undefined)
   if (msg.role === 'user')
     return (
       <div className="ml-8 self-end rounded-2xl rounded-br-md bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
@@ -559,55 +585,129 @@ function ChatMessage({ msg }: { msg: DesignMessage }) {
         )}
       </div>
     )
-  if (msg.role === 'system')
-    return (
-      <div className="flex gap-2 rounded-xl border border-danger/30 bg-danger/5 px-3 py-2 text-[12.5px] leading-relaxed text-danger">
-        <span className="flex h-[1.625em] shrink-0 items-center">
-          <AlertCircle className="h-3.5 w-3.5" />
-        </span>
-        <span className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere]">{msg.text}</span>
-      </div>
-    )
+  if (msg.role === 'system') return <SystemNote text={msg.text} error={msg.error} />
   return (
-    <div className="flex flex-col gap-1">
-      {msg.run && def && (
-        <span className="flex items-center gap-1.5 text-[11px] text-subtle">
-          <span className="h-2 w-2 rounded-[3px]" style={{ background: cliColor(def.id) }} />
-          {def.name} · {msg.run.model}
-          {msg.run.effort ? ` · ${msg.run.effort} · ${effortLabel(def, msg.run.effort)}` : ''}
-        </span>
-      )}
-      <Markdown text={msg.text} teamNames={NO_NAMES} className="text-[13px]" />
+    <div className="flex flex-col gap-1.5">
+      <AgentMessage
+        m={asTaskMessage(msg.id, msg.text, msg.at)}
+        teamNames={NO_NAMES}
+        author={author ?? { name: t('AI'), cli: '', icon: 'sparkles' }}
+      />
       {!!msg.images?.length && (
-        <span className="text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>
+        <span className="pl-[38px] text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>
       )}
     </div>
   )
 }
 
+/** 正在输出的回复：思考、工具调用和说明边出边显示，和 Agent 的输出一样 */
+function LiveReply({ job }: { job: DesignJob }) {
+  const author = useRunAuthor(job.run as ChatRun | undefined) ?? { name: t('AI'), cli: '', icon: 'sparkles' }
+  const writingJson = job.outChars > job.text.length + 20
+  const empty = !job.text && !job.thinking?.trim() && !job.tools?.length
+  return (
+    <div className="flex flex-col gap-1.5">
+      {empty ? (
+        <PendingAuthor author={author}>
+          <span className="thinking-shimmer text-[12.5px] text-subtle">{t('正在思考…')}</span>
+        </PendingAuthor>
+      ) : (
+        <AgentMessage
+          m={asTaskMessage('live', job.text, '', { thinking: job.thinking, tools: job.tools })}
+          teamNames={NO_NAMES}
+          author={author}
+          live
+        />
+      )}
+      {writingJson && (
+        <span className="flex items-center gap-1.5 pl-[38px] text-[11.5px] text-subtle">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {job.attempt > 1
+            ? t('格式不对，正在修正（已输出 {n} 个字符）', { n: job.outChars })
+            : t('正在写控件树和图片清单（已输出 {n} 个字符）', { n: job.outChars })}
+        </span>
+      )}
+    </div>
+  )
+}
+
+/** 固定在输入框上方的进度：设计时是一行状态，生成图片时是每张图的进度 */
 function JobProgress({ job }: { job: DesignJob }) {
   const [, tick] = useState(0)
+  const [open, setOpen] = useState(true)
   useEffect(() => {
     const timer = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(timer)
   }, [])
   const sec = Math.round((Date.now() - job.startedAt) / 1000)
+  const items = job.phase === 'images' ? (job.images ?? []) : []
+  const done = items.filter((i) => i.status === 'done' || i.status === 'failed').length
+  const want = items.reduce((n, i) => n + i.want, 0)
+  const got = items.reduce((n, i) => n + Math.min(i.got, i.want), 0)
+  const active = items.filter((i) => i.status === 'generating')
   return (
-    <div className="flex flex-col gap-1.5 rounded-xl border bg-panel px-3 py-2.5 text-[12.5px]">
-      <span className="flex items-center gap-2 font-medium text-muted">
-        <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-        {job.phase === 'images' ? t('正在生成图片') : job.attempt > 1 ? t('格式不对，正在修正') : t('正在设计')}
-        <span className="ml-auto font-mono text-[11px] font-normal text-subtle tabular-nums">{sec}s</span>
-      </span>
-      {job.phase === 'design' && job.thinking && !job.text && (
-        <p className="line-clamp-3 text-[12px] leading-relaxed text-subtle italic">{job.thinking.slice(-300)}</p>
+    <div className="mb-2 flex flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-[12.5px] shadow-card">
+      <button
+        onClick={() => setOpen(!open)}
+        disabled={!items.length}
+        aria-expanded={items.length ? open : undefined}
+        className="flex cursor-pointer items-center gap-2 font-medium text-muted disabled:cursor-default"
+      >
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        <span className="min-w-0 truncate">
+          {job.phase === 'images'
+            ? t('正在生成图片 {i}/{n}', { i: done, n: items.length })
+            : job.attempt > 1
+              ? t('格式不对，正在修正')
+              : t('正在设计')}
+        </span>
+        <span className="ml-auto shrink-0 font-mono text-[11px] font-normal text-subtle tabular-nums">{sec}s</span>
+        {items.length > 0 && (
+          <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', !open && '-rotate-90')} />
+        )}
+      </button>
+      {items.length > 0 && (
+        <div className="h-1 overflow-hidden rounded-full bg-sel">
+          <div
+            className="h-full rounded-full bg-accent transition-[width] duration-500"
+            style={{ width: `${want ? Math.max(4, (got / want) * 100) : 0}%` }}
+          />
+        </div>
       )}
-      {job.text && (
-        <p className="line-clamp-4 text-[12px] leading-relaxed whitespace-pre-wrap text-muted">{job.text}</p>
+      {open && items.length > 0 && (
+        <ul className="flex max-h-36 flex-col gap-1 overflow-y-auto">
+          {items.map((i) => (
+            <li key={i.id} className="flex min-w-0 items-center gap-2 text-[12px]">
+              {i.status === 'done' ? (
+                <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+              ) : i.status === 'failed' ? (
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger" />
+              ) : i.status === 'generating' ? (
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+              ) : (
+                <span className="grid h-3.5 w-3.5 shrink-0 place-items-center">
+                  <span className="h-1.5 w-1.5 rounded-full bg-line-strong" />
+                </span>
+              )}
+              <span className={cn('shrink-0 font-mono', i.status === 'waiting' ? 'text-subtle' : 'text-fg')}>
+                {i.name}
+              </span>
+              <span
+                className={cn('min-w-0 flex-1 truncate', i.status === 'failed' ? 'text-danger' : 'text-subtle')}
+                title={i.text}
+              >
+                {i.text ?? ''}
+              </span>
+              {i.want > 1 && (
+                <span className="shrink-0 font-mono text-[11px] text-subtle tabular-nums">
+                  {i.got}/{i.want}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
-      {job.phase === 'design' && job.outChars > 0 && !job.text && (
-        <p className="text-[11.5px] text-subtle">{t('已输出 {n} 个字符', { n: job.outChars })}</p>
-      )}
+      {!open && active[0]?.text && <p className="truncate text-[11.5px] text-subtle">{active[0].text}</p>}
     </div>
   )
 }

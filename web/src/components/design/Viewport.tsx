@@ -161,7 +161,8 @@ export function Viewport({
     window.addEventListener('pointerup', up)
   }
 
-  const ctx = { images, components: new Map(components.map((c) => [c.Name, c])), interactive: true, depth: 0 }
+  const play = tool === 'play'
+  const ctx = { images, components: new Map(components.map((c) => [c.Name, c])), interactive: true, depth: 0, play }
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#18181a]">
@@ -202,7 +203,7 @@ export function Viewport({
             >
               <UmgNode w={root} ctx={ctx} />
             </div>
-            {box && (
+            {box && !play && (
               <div
                 className="pointer-events-none absolute"
                 style={{ left: box.x * scale, top: box.y * scale, width: box.w * scale, height: box.h * scale }}
@@ -231,7 +232,7 @@ export function Viewport({
               tool={tool}
               kind={kind}
               list={marks}
-              visible={showMarks}
+              visible={showMarks && !play}
               active={activeMark}
               onActive={setActiveMark}
               onCreate={(a) => {
@@ -276,6 +277,14 @@ export function Viewport({
           }}
         />
       </div>
+      {play && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+          <span className="flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-[11.5px] text-emerald-200 shadow-pop">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
+            {t('运行模式 · 按 Esc 退出')}
+          </span>
+        </div>
+      )}
       <div className="pointer-events-none absolute right-3 bottom-3 flex items-center gap-2">
         <span className="rounded-md bg-black/50 px-2 py-1 font-mono text-[11px] text-white/60">
           {size.X} × {size.Y}

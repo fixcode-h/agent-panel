@@ -40,8 +40,11 @@ export function Select({
   onChange,
   disabled,
   id,
+  placeholder,
   'aria-label': ariaLabel,
 }: {
+  /** 没选时显示的提示 */
+  placeholder?: string
   /** 带 group 的选项按组显示 */
   options: { value: string; label: string; group?: string }[]
   value: string
@@ -64,7 +67,9 @@ export function Select({
           className,
         )}
       >
-        <span className={cn('min-w-0 truncate', !current && 'text-subtle')}>{current?.label ?? value}</span>
+        <span className={cn('min-w-0 truncate', !current && 'text-subtle')}>
+          {current?.label ?? (value || placeholder)}
+        </span>
         <S.Icon>
           <ChevronDown className="h-3.5 w-3.5 shrink-0 text-subtle" />
         </S.Icon>

@@ -1834,6 +1834,31 @@ try {
       (await call('GET', '/designs/projects')).map((p) => p.name),
       ['Game'],
     )
+    // 项目提示词：只改名字时不会清掉提示词；AI 生成、翻译
+    await call('PUT', `/designs/projects/${uiProject.id}`, {
+      prompts: [
+        { id: 'p1', category: 'style', zh: '暗黑奇幻', en: 'grim castle style', enabled: true },
+        { id: 'p2', category: 'avoid', zh: '不要文字', en: 'no text', enabled: true },
+        { id: 'p3', category: 'color', zh: '大红色', en: 'bright red', enabled: false },
+      ],
+    })
+    await call('PUT', `/designs/projects/${uiProject.id}`, { name: 'Game' })
+    assert.equal((await call('GET', '/designs/projects'))[0].prompts.length, 3, '改名不影响提示词')
+    const gen = await call('POST', '/designs/prompts/ai', { mode: 'generate', text: '蒸汽朋克风' })
+    assert.deepEqual(
+      gen.prompts.map((p) => [p.category, p.zh, p.en]),
+      [
+        ['style', '蒸汽朋克', 'steampunk'],
+        ['material', '黄铜齿轮', 'brass gears'],
+      ],
+    )
+    const tr = await call('POST', '/designs/prompts/ai', {
+      mode: 'translate',
+      items: [{ category: 'light', zh: '柔和顶光' }],
+    })
+    assert.deepEqual(tr.prompts[0], { category: 'light', zh: '柔和顶光', en: 'EN:柔和顶光' })
+    await assert.rejects(call('POST', '/designs/prompts/ai', { mode: 'generate', text: '' }), /没有要处理的内容/)
+    step('UI 项目提示词：按分类保存，AI 生成和翻译')
     const design = await call('POST', '/designs', {
       projectId: uiProject.id,
       kind: 'game',
@@ -1937,6 +1962,24 @@ try {
     assert.equal(agentMsg.run.cli, 'codex')
     const prompts = calls().filter((c) => c.kind === 'codex' && /image_gen/.test(c.stdin ?? c.input ?? ''))
     assert.ok(prompts.length >= 2, '生图交给 Codex 的 image_gen')
+    const imgInput = prompts.at(-1).stdin ?? prompts.at(-1).input
+    assert.match(imgInput, /Art style: grim castle style/, '生图带上项目提示词的英文')
+    assert.match(imgInput, /Avoid: no text/)
+    assert.doesNotMatch(imgInput, /bright red/, '停用的提示词不带')
+    assert.match(imgInput, /Additional style for this screen: dark fantasy/)
+    const designInput = calls()
+      .filter((c) => /你是游戏 UI 设计助手/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.match(designInput.stdin ?? designInput.input, /暗黑奇幻（grim castle style）/, '设计 AI 看得到项目提示词')
+    assert.deepEqual(
+      d.job.images.map((i) => [i.id, i.status, i.got, i.want]),
+      [
+        ['bg', 'done', 2, 2],
+        ['frame', 'done', 2, 2],
+      ],
+      '每张图的生成进度',
+    )
+    assert.equal(d.job.run.cli, 'codex')
     assert.equal((await call('GET', '/tasks')).length, tasksBefore, '设计不出现在任务列表里')
 
     // 图片文件能取到；生成失败把错误显示在图片上
@@ -2070,12 +2113,24 @@ try {
       count: 2,
     })
     const cmd = (await (await bridge('GET', '/poll')).json()).cmd
-    assert.deepEqual([cmd.type, cmd.tabId, cmd.count, cmd.chroma], ['generate', '7', 2, true])
+    assert.deepEqual([cmd.type, cmd.tabId, cmd.count, cmd.chroma, cmd.newChat], ['generate', '7', 2, true, true])
     assert.match(cmd.prompt, /#00FF00/, '透明图让网页画纯绿底，扩展再抠掉')
     await bridge('POST', '/progress', { id: cmd.id, text: '等待生成' })
     const png =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
-    await bridge('POST', '/result', { id: cmd.id, ok: true, images: [{ data: png }, { data: png }] })
+    // 新版扩展取到一张就先交一张：还在生成时设计里已经有这一版
+    await bridge('POST', '/image', { id: cmd.id, data: png })
+    for (let i = 0; i < 50; i++) {
+      const cur = await call('GET', `/designs/${design.id}`)
+      if (cur.images.find((x) => x.id === 'frame').variants.length === 3) break
+      await sleep(50)
+    }
+    const mid = await call('GET', `/designs/${design.id}`)
+    assert.equal(mid.job.status, 'running')
+    assert.equal(mid.images.find((x) => x.id === 'frame').variants.length, 3, '先交的一张马上放进设计')
+    assert.equal(mid.images.find((x) => x.id === 'frame').selected, 2, '第一张到了就选中')
+    assert.equal(mid.job.images[0].text, '等待生成')
+    await bridge('POST', '/result', { id: cmd.id, ok: true, images: [{ data: png }], streamed: 1 })
     d = await waitJob(design.id)
     assert.equal(d.job.status, 'done')
     const f2 = d.images.find((i) => i.id === 'frame')

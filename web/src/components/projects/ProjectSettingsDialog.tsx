@@ -408,7 +408,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   )
 }
 
-function NavItem({
+export function NavItem({
   on,
   onClick,
   dot,

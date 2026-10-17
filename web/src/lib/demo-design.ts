@@ -12,7 +12,6 @@ import {
   type ImageSource,
 } from '@shared/design'
 import { normalizeTree, type Widget } from '@shared/umg'
-import { t } from '@shared/i18n'
 
 type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
@@ -468,6 +467,14 @@ const metaOf = (d: Full): DesignMeta => ({
 })
 
 let seeded = false
+const DEMO_EN: Record<string, string> = {
+  像素风: 'pixel art',
+  赛博朋克: 'cyberpunk',
+  卡通: 'cartoon',
+  写实: 'realistic',
+  中国风: 'Chinese traditional style',
+  水墨: 'ink wash painting',
+}
 /** 演示一开始就有一个做好的主菜单，打开就能看到效果 */
 // UI 设计自己的项目，和 Agent 的项目分开
 const DEMO_PROJECT = 'demo-ui-project'
@@ -481,6 +488,15 @@ function seed() {
     id: DEMO_PROJECT,
     name: '暗夜远征',
     path: '/home/demo/code/game-client',
+    prompts: [
+      { id: 'p1', category: 'style', zh: '暗黑奇幻', en: 'dark fantasy', enabled: true },
+      { id: 'p2', category: 'style', zh: '手绘质感的游戏 UI', en: 'hand-painted game UI', enabled: true },
+      { id: 'p3', category: 'color', zh: '深色底配暗金色描边', en: 'dark base with antique gold trim', enabled: true },
+      { id: 'p4', category: 'material', zh: '雕刻的石材', en: 'carved stone', enabled: true },
+      { id: 'p5', category: 'material', zh: '发光的符文', en: 'glowing runes', enabled: false },
+      { id: 'p6', category: 'light', zh: '边缘微微发光', en: 'subtle rim glow', enabled: true },
+      { id: 'p7', category: 'avoid', zh: '不要文字和水印', en: 'no text, no watermark', enabled: true },
+    ],
     createdAt: now(),
     updatedAt: now(),
   })
@@ -526,10 +542,29 @@ function seed() {
   designs.set(d.id, d)
 }
 
-async function runChat(d: Full, text: string, source: ImageSource, count: number) {
-  const job: Job = { status: 'running', phase: 'design', text: '', outChars: 0, attempt: 1, startedAt: Date.now() }
+async function runChat(
+  d: Full,
+  text: string,
+  source: ImageSource,
+  count: number,
+  run = { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' },
+) {
+  const job: Job = {
+    status: 'running',
+    phase: 'design',
+    text: '',
+    outChars: 0,
+    attempt: 1,
+    startedAt: Date.now(),
+    run,
+  }
   d.job = job
   const tpl = /背包|物品|inventory/i.test(text) ? inventoryTemplate() : menuTemplate()
+  // 演示流式输出：先思考，再说明
+  for (const ch of '先看一下现在的控件树和图片，再按要求调整布局、列出需要的图片。'.match(/.{1,3}/g) ?? []) {
+    await sleep(40)
+    job.thinking = (job.thinking ?? '') + ch
+  }
   for (const ch of tpl.reply.match(/.{1,4}/g) ?? []) {
     await sleep(60)
     job.text += ch
@@ -551,7 +586,7 @@ async function runChat(d: Full, text: string, source: ImageSource, count: number
     text: tpl.reply,
     at: now(),
     images: tpl.images.map((i) => i.id),
-    run: { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' },
+    run,
   })
   d.updatedAt = now()
   if (source.kind !== 'none')
@@ -566,24 +601,43 @@ async function runChat(d: Full, text: string, source: ImageSource, count: number
 
 async function genImages(d: Full, ids: string[], count: number, job: Job) {
   job.phase = 'images'
-  for (const [n, id] of ids.entries()) {
+  job.text = ''
+  job.thinking = undefined
+  const items = ids.map((id) => {
     const im = d.images.find((i) => i.id === id)
-    if (!im) continue
-    im.status = 'generating'
-    job.text = t('正在生成 {name}（{i}/{n}）', { name: im.name, i: n + 1, n: ids.length })
-    await sleep(500)
-    const before = im.variants.length
-    for (let k = 0; k < count; k++)
-      im.variants.push({
-        file: draw(id, im.width, im.height),
-        source: 'cli',
-        width: im.width,
-        height: im.height,
-        at: now(),
-      })
-    im.selected = before
-    im.status = 'idle'
+    return { id, name: im?.name ?? id, status: 'waiting' as const, got: 0, want: count }
+  })
+  job.images = items
+  // 和真实的一样：每张图单独一个会话，同时生成 4 张
+  let next = 0
+  const worker = async () => {
+    while (next < ids.length) {
+      const n = next++
+      const id = ids[n]
+      const im = d.images.find((i) => i.id === id)
+      const item = items[n] as import('@shared/design').ImageJobItem
+      if (!im) continue
+      im.status = 'generating'
+      item.status = 'generating'
+      const before = im.variants.length
+      // 每生成一版就放进设计里
+      for (let k = 0; k < count; k++) {
+        await sleep(700 + Math.random() * 600)
+        im.variants.push({
+          file: draw(id, im.width, im.height),
+          source: 'cli',
+          width: im.width,
+          height: im.height,
+          at: now(),
+        })
+        im.selected = before
+        item.got++
+      }
+      item.status = 'done'
+      im.status = 'idle'
+    }
   }
+  await Promise.all(Array.from({ length: 4 }, worker))
 }
 
 export function demoDesigns(method: string, id: string | undefined, sub: string | undefined, body: any): unknown {
@@ -592,7 +646,14 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     if (!sub) {
       if (method === 'GET') return projectList
       const at = now()
-      const p: DesignProject = { id: randomId(), name: body.name, path: body.path ?? '', createdAt: at, updatedAt: at }
+      const p: DesignProject = {
+        id: randomId(),
+        name: body.name,
+        path: body.path ?? '',
+        prompts: body.prompts ?? [],
+        createdAt: at,
+        updatedAt: at,
+      }
       projectList.push(p)
       return p
     }
@@ -602,7 +663,30 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       for (const d of [...designs.values()]) if (d.projectId === sub) designs.delete(d.id)
       return undefined
     }
-    return Object.assign(p, { name: body.name, path: body.path ?? '', updatedAt: now() })
+    return Object.assign(p, body, { updatedAt: now() })
+  }
+  // 在线演示没有 CLI：生成时给一组固定的提示词，翻译时查几个常见词
+  if (id === 'prompts') {
+    if (body.mode === 'translate')
+      return {
+        prompts: (body.items ?? []).map((x: { category: string; zh: string }) => ({
+          category: x.category,
+          zh: x.zh,
+          en: DEMO_EN[x.zh] ?? x.zh,
+        })),
+      }
+    return {
+      prompts: [
+        { category: 'style', zh: '日式动漫风格', en: 'Japanese anime style' },
+        { category: 'style', zh: '扁平化图标', en: 'flat icon design' },
+        { category: 'color', zh: '明亮的高饱和配色', en: 'bright saturated colors' },
+        { category: 'color', zh: '蓝白主色调', en: 'blue and white color scheme' },
+        { category: 'material', zh: '光滑的玻璃质感', en: 'glossy glass material' },
+        { category: 'light', zh: '柔和的顶光', en: 'soft top lighting' },
+        { category: 'layout', zh: '元素居中，四周留白', en: 'centered with even padding' },
+        { category: 'avoid', zh: '不要写实照片感', en: 'not photorealistic' },
+      ].filter((x) => !(body.existing ?? []).includes(x.zh)),
+    }
   }
   if (id === 'browser') {
     if (sub === 'reveal' || sub === 'install') fail('在线演示不能打开本机的浏览器和目录')
@@ -685,7 +769,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       at: now(),
       ...(body.annotations?.length ? { annotations: body.annotations } : {}),
     })
-    void runChat(d, body.text, body.source, body.count ?? 1)
+    void runChat(d, body.text, body.source, body.count ?? 1, body.run)
     return d
   }
   if (sub === 'copy') {

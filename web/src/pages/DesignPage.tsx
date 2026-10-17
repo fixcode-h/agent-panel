@@ -59,7 +59,9 @@ import { Viewport } from '@/components/design/Viewport'
 import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagesPanel, readFile } from '@/components/design/ImagesPanel'
-import { ChatModelLabel, DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
+import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
@@ -231,6 +233,9 @@ const NEW_SIZE: Partial<Record<WidgetType, [number, number]>> = {
   SizeBox: [200, 100],
   ScaleBox: [200, 100],
   WidgetSwitcher: [300, 200],
+  ListView: [400, 500],
+  TileView: [560, 420],
+  DynamicEntryBox: [300, 64],
   Spacer: [32, 32],
   UserWidget: [128, 128],
 }
@@ -266,6 +271,10 @@ function Designer({ id }: { id: string }) {
     } catch {}
   }
   const [count, setCount] = useState(1)
+  const [promptsOpen, setPromptsOpen] = useState(false)
+  // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
+  const treePane = usePaneWidth('design-tree', 300, 220, 560)
+  const chatPane = usePaneWidth('design-chat', 380, 300, 720)
 
   const tree = doc ? treeOf(doc, target) : undefined
   // 子控件被删掉或改名了：回到主界面
@@ -570,7 +579,7 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  const send = async (text: string) => {
+  const send = async (text: string, run: ChatRun) => {
     // 标注随这条消息一起发出，发出后从效果图上清掉
     const annotations = doc.annotations
     const next = { ...doc, annotations: [] }
@@ -582,6 +591,7 @@ function Designer({ id }: { id: string }) {
           source,
           count,
           annotations,
+          run,
         }),
       )
       if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
@@ -629,7 +639,15 @@ function Designer({ id }: { id: string }) {
         />
         <SaveIndicator status={ed.save.status} error={ed.save.error} />
         <span className="flex-1" />
-        <StyleButton value={doc.style} onChange={(style) => ed.change((d) => ({ ...d, style }), 'style')} />
+        <StyleButton
+          value={doc.style}
+          onChange={(style) => ed.change((d) => ({ ...d, style }), 'style')}
+          prompts={project?.prompts.filter((p) => p.enabled).length ?? 0}
+          onPrompts={() => setPromptsOpen(true)}
+        />
+        {project && (
+          <DesignProjectDialog open={promptsOpen} onOpenChange={setPromptsOpen} project={project} section="prompts" />
+        )}
         <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
         <div className="flex items-center">
           <Button
@@ -723,7 +741,8 @@ function Designer({ id }: { id: string }) {
           target={target}
         />
 
-        <aside className="flex w-[300px] shrink-0 flex-col border-l bg-card">
+        <aside style={{ width: treePane.width }} className="relative flex shrink-0 flex-col border-l bg-card">
+          <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
           <div role="tablist" className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
             {(['tree', 'images'] as const).map((k) => (
               <button
@@ -828,12 +847,10 @@ function Designer({ id }: { id: string }) {
         </aside>
 
         {chatOpen && (
-          <aside className="flex w-[360px] shrink-0 flex-col border-l bg-bg">
+          <aside style={{ width: chatPane.width }} className="relative flex shrink-0 flex-col border-l bg-bg">
+            <ResizeHandle pane={chatPane} label={t('拖动调整 AI 对话的宽度')} />
             <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-[12.5px] font-medium text-muted">
               <span className="shrink-0">{t('AI 对话')}</span>
-              <span className="ml-auto flex min-w-0">
-                <ChatModelLabel />
-              </span>
             </div>
             <DesignChat
               messages={server.messages}
@@ -922,8 +939,19 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
   )
 }
 
-/** 整体美术风格：生成每张图时都会带上 */
-function StyleButton({ value, onChange }: { value: string; onChange: (s: string) => void }) {
+/** 美术风格：项目提示词（整个项目共用）和这个界面自己的补充，生成每张图时都会带上 */
+function StyleButton({
+  value,
+  onChange,
+  prompts,
+  onPrompts,
+}: {
+  value: string
+  onChange: (s: string) => void
+  /** 项目里启用的提示词条数 */
+  prompts: number
+  onPrompts: () => void
+}) {
   const [text, setText] = useState(value)
   return (
     <Popover onOpenChange={(o) => (o ? setText(value) : text !== value && onChange(text))}>
@@ -933,13 +961,28 @@ function StyleButton({ value, onChange }: { value: string; onChange: (s: string)
           title={value || t('美术风格')}
         >
           <PaletteIcon className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate">{value || t('美术风格')}</span>
+          <span className="truncate">
+            {value || (prompts ? t('项目风格 · {n} 条', { n: prompts }) : t('美术风格'))}
+          </span>
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[320px] p-3">
-        <p className="mb-1 text-[12px] font-medium">{t('美术风格')}</p>
+      <PopoverContent align="end" className="w-[340px] p-3">
+        <div className="mb-3 flex items-start gap-2 rounded-lg border bg-panel/60 px-2.5 py-2">
+          <div className="min-w-0 flex-1">
+            <p className="text-[12px] font-medium">{t('项目美术提示词')}</p>
+            <p className="mt-0.5 text-[11.5px] leading-relaxed text-subtle">
+              {prompts
+                ? t('{n} 条启用中，项目里所有界面共用', { n: prompts })
+                : t('还没有设置。设置后项目里所有界面风格统一')}
+            </p>
+          </div>
+          <Button size="sm" variant="secondary" onClick={onPrompts}>
+            {prompts ? t('管理') : t('设置')}
+          </Button>
+        </div>
+        <p className="mb-1 text-[12px] font-medium">{t('这个界面的补充风格')}</p>
         <p className="mb-2 text-[11.5px] leading-relaxed text-subtle">
-          {t('生成每张图时都会带上，让整套界面风格一致。AI 对话时也会帮你定。')}
+          {t('只对这个界面生效，加在项目提示词后面。AI 对话时也会帮你定。')}
         </p>
         <Textarea
           value={text}

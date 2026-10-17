@@ -11,10 +11,11 @@ import {
   Plus,
   Settings2,
   Trash2,
+  Palette,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { DesignMeta, DesignProject } from '@shared/design'
-import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
+import { DesignProjectDialog, type DesignProjectSection } from '@/components/design/DesignProjectDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -42,6 +43,7 @@ export function DesignList() {
   const [deleting, setDeleting] = useState<DesignMeta>()
   // 新建（null）或编辑项目；undefined 表示没打开
   const [editing, setEditing] = useState<DesignProject | null>()
+  const [section, setSection] = useState<DesignProjectSection>('general')
   const [removingProject, setRemovingProject] = useState<DesignProject>()
   const byProject = new Map<string, DesignMeta[]>()
   for (const d of [...designs].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)))
@@ -206,9 +208,13 @@ export function DesignList() {
                   <Plus className="h-4 w-4" />
                   {t('新建设计')}
                 </ContextMenuItem>
-                <ContextMenuItem onSelect={() => setEditing(p)}>
+                <ContextMenuItem onSelect={() => (setSection('general'), setEditing(p))}>
                   <Settings2 className="h-4 w-4" />
-                  {t('编辑项目')}
+                  {t('项目设置')}
+                </ContextMenuItem>
+                <ContextMenuItem onSelect={() => (setSection('prompts'), setEditing(p))}>
+                  <Palette className="h-4 w-4" />
+                  {t('美术提示词')}
                 </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem danger onSelect={() => setRemovingProject(p)}>
@@ -306,6 +312,7 @@ export function DesignList() {
         open={editing !== undefined}
         onOpenChange={(o) => !o && setEditing(undefined)}
         project={editing ?? undefined}
+        section={editing ? section : 'general'}
         onSaved={(np) => !editing && go({ page: 'design', id: 'new', sub: np.id })}
       />
       <ConfirmDialog

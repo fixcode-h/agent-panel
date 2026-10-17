@@ -584,6 +584,23 @@ function SettingsBody({
                     />
                   </div>
                 </Row>
+                <Row
+                  title={t('同时生成几张')}
+                  desc={t(
+                    '每张图单独开一个会话生成（CLI 进程，或浏览器里新开的 Gemini / ChatGPT 对话），最多同时开这么多个。',
+                  )}
+                >
+                  <Select
+                    aria-label={t('同时生成几张')}
+                    value={String(imageGen.concurrency)}
+                    onChange={(e) => setImageGen({ ...imageGen, concurrency: Number(e.target.value) })}
+                    className="w-[240px]"
+                    options={Array.from({ length: 10 }, (_, i) => ({
+                      value: String(i + 1),
+                      label: i + 1 === 4 ? t('{n} 个（默认）', { n: i + 1 }) : t('{n} 个', { n: i + 1 }),
+                    }))}
+                  />
+                </Row>
               </Group>
             </>
           )}

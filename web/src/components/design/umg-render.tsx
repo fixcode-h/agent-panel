@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type ReactNode } from 'react'
+import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   WIDGETS,
   cssColor,
@@ -29,6 +29,8 @@ export interface RenderCtx {
   interactive: boolean
   /** 防止子控件互相引用死循环 */
   depth: number
+  /** 运行模式：像游戏里一样能点按钮、勾选、拖滑块、输入文字，只改预览不改设计 */
+  play?: boolean
 }
 
 const H_JUSTIFY: Record<string, string> = {
@@ -242,6 +244,16 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
   const p = w.Properties ?? {}
   const [hover, setHover] = useState(false)
   const [press, setPress] = useState(false)
+  // 运行模式里临时改的状态（勾选、滑块的值、输入的文字），退出运行模式就丢掉
+  const [live, setLive] = useState<{ checked?: boolean; value?: number; text?: string }>({})
+  const play = !!ctx.play
+  useEffect(() => {
+    if (!play) {
+      setLive({})
+      setHover(false)
+      setPress(false)
+    }
+  }, [play])
   const base: CSSProperties = {
     position: 'relative',
     boxSizing: 'border-box',
@@ -328,11 +340,13 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
       return el({ display: 'flex', ...brushStyle(p.Background, ctx, p.BrushColor) }, <Children w={w} ctx={ctx} />)
     case 'Button': {
       const ws = p.WidgetStyle ?? {}
-      const state = p.bIsEnabled === false ? 'Disabled' : press ? 'Pressed' : hover ? 'Hovered' : 'Normal'
+      const state =
+        p.bIsEnabled === false ? 'Disabled' : play && press ? 'Pressed' : play && hover ? 'Hovered' : 'Normal'
       return el(
         {
           display: 'flex',
           padding: pad(state === 'Pressed' ? ws.PressedPadding : ws.NormalPadding),
+          cursor: play && p.bIsEnabled !== false ? 'pointer' : undefined,
           ...brushStyle(ws[state], ctx, p.BackgroundColor),
         },
         <Children w={w} ctx={ctx} />,
@@ -349,16 +363,17 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
     }
     case 'CheckBox': {
       const ws = p.WidgetStyle ?? {}
-      const on = p.CheckedState === 'Checked'
+      const on = play && live.checked !== undefined ? live.checked : p.CheckedState === 'Checked'
       const b: Brush = on ? ws.CheckedImage : ws.UncheckedImage
       return el(
-        { display: 'flex', alignItems: 'center', gap: 6 },
+        { display: 'flex', alignItems: 'center', gap: 6, cursor: play ? 'pointer' : undefined },
         <>
           <span
             style={{ width: b?.ImageSize?.X ?? 24, height: b?.ImageSize?.Y ?? 24, flex: 'none', ...brushStyle(b, ctx) }}
           />
           <Children w={w} ctx={ctx} />
         </>,
+        play && p.bIsEnabled !== false ? { onClick: () => setLive((l) => ({ ...l, checked: !on })) } : undefined,
       )
     }
     case 'Spacer':
@@ -422,13 +437,23 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
     }
     case 'Slider': {
       const ws = p.WidgetStyle ?? {}
-      const v = (Number(p.Value ?? 0) - (p.MinValue ?? 0)) / ((p.MaxValue ?? 1) - (p.MinValue ?? 0) || 1)
+      const min = Number(p.MinValue ?? 0)
+      const range = Number(p.MaxValue ?? 1) - min || 1
+      const v = play && live.value !== undefined ? live.value : (Number(p.Value ?? 0) - min) / range
       const th: Brush | undefined = ws.NormalThumbImage
       const vert = p.Orientation === 'Orient_Vertical'
+      // 运行模式里按住拖动改值（0~1 的比例）
+      const slide = (e: React.PointerEvent<HTMLElement>) => {
+        const r = e.currentTarget.getBoundingClientRect()
+        const k = vert ? 1 - (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width
+        setLive((l) => ({ ...l, value: Math.max(0, Math.min(1, k)) }))
+      }
       return el(
         {
           width: fillX ? undefined : vert ? (th?.ImageSize?.X ?? 16) : 160,
           height: fillY ? undefined : vert ? 160 : (th?.ImageSize?.Y ?? 16),
+          cursor: play ? 'pointer' : undefined,
+          touchAction: play ? 'none' : undefined,
         },
         <>
           <span
@@ -464,10 +489,40 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
             }}
           />
         </>,
+        play
+          ? {
+              onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+                e.currentTarget.setPointerCapture(e.pointerId)
+                slide(e)
+              },
+              onPointerMove: (e: React.PointerEvent<HTMLElement>) => e.buttons === 1 && slide(e),
+            }
+          : undefined,
       )
     }
     case 'EditableTextBox': {
       const f = p.Font ?? {}
+      if (play)
+        return el(
+          {
+            display: 'flex',
+            alignItems: 'center',
+            padding: '4px 8px',
+            minWidth: fillX ? 0 : 160,
+            ...brushStyle(p.WidgetStyle?.BackgroundImageNormal, ctx),
+          },
+          <input
+            value={live.text ?? String(p.Text ?? '')}
+            placeholder={String(p.HintText ?? '')}
+            onChange={(e) => setLive((l) => ({ ...l, text: e.target.value }))}
+            style={{
+              all: 'unset',
+              width: '100%',
+              color: cssColor(p.ForegroundColor),
+              fontSize: fontPx(f.Size ?? 18),
+            }}
+          />,
+        )
       return el(
         {
           display: 'flex',
@@ -479,6 +534,65 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
           ...brushStyle(p.WidgetStyle?.BackgroundImageNormal, ctx),
         },
         String(p.Text || p.HintText || ''),
+      )
+    }
+    case 'ListView':
+    case 'TileView':
+    case 'DynamicEntryBox': {
+      // 条目是运行时生成的：按 NumDesignerPreviewEntries 预览几条，和 UE 设计器一样
+      const comp = ctx.components.get(String(p.EntryWidgetClass ?? ''))
+      const n = Math.max(0, Math.min(50, Number(p.NumDesignerPreviewEntries) || 0))
+      if (!comp || ctx.depth > 6 || !n)
+        return el(
+          {
+            width: fillX ? undefined : 200,
+            height: fillY ? undefined : 120,
+            outline: '1px dashed #60a5fa99',
+            display: 'grid',
+            placeItems: 'center',
+            fontSize: 11,
+            color: '#60a5fa',
+          },
+          `${w.Type}${p.EntryWidgetClass ? ` · ${p.EntryWidgetClass}` : ''}`,
+        )
+      const tile = w.Type === 'TileView'
+      const vertical =
+        w.Type === 'DynamicEntryBox' ? /Vertical/.test(p.EntryBoxType) : p.Orientation !== 'Orient_Horizontal'
+      const wrap = tile || /Wrap/.test(p.EntryBoxType ?? '')
+      const gap =
+        w.Type === 'ListView'
+          ? `${p.EntrySpacing ?? 0}px`
+          : w.Type === 'DynamicEntryBox'
+            ? `${p.EntrySpacing?.Y ?? 0}px ${p.EntrySpacing?.X ?? 0}px`
+            : '0'
+      const sub = { ...ctx, interactive: false, depth: ctx.depth + 1 }
+      return el(
+        {
+          display: p.EntryBoxType === 'Overlay' ? 'grid' : 'flex',
+          gridTemplate: p.EntryBoxType === 'Overlay' ? '100% / 100%' : undefined,
+          // TileView 竖着滚动时格子横着排满再换行
+          flexDirection: tile ? (vertical ? 'row' : 'column') : vertical ? 'column' : 'row',
+          flexWrap: wrap ? 'wrap' : 'nowrap',
+          alignContent: 'flex-start',
+          justifyContent: tile && p.TileAlignment === 'EvenlyDistributed' ? 'space-evenly' : undefined,
+          gap,
+          // 运行模式里列表能滚动
+          overflow: w.Type === 'DynamicEntryBox' ? 'visible' : play ? 'auto' : 'hidden',
+        },
+        Array.from({ length: n }, (_, i) => (
+          <div
+            key={i}
+            style={{
+              display: 'flex',
+              flex: '0 0 auto',
+              width: tile ? p.EntryWidth : vertical && w.Type === 'ListView' ? '100%' : comp.DesignSize.X,
+              height: tile ? p.EntryHeight : !vertical && w.Type === 'ListView' ? '100%' : comp.DesignSize.Y,
+              gridArea: p.EntryBoxType === 'Overlay' ? '1 / 1' : undefined,
+            }}
+          >
+            <UmgNode w={comp.Root} ctx={sub} />
+          </div>
+        )),
       )
     }
     case 'UserWidget': {

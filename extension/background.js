@@ -9,7 +9,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
 let state = { connected: false, error: '', tabs: 0 }
 let polling = false
-let busy = false
+// 正在处理的指令数：每张图在新对话里生成，可以同时处理好几个
+let active = 0
 
 async function base() {
   const { port } = await chrome.storage.local.get('port')
@@ -26,8 +27,11 @@ async function post(path, body) {
   return r.json()
 }
 
+// 为生成图片新开的标签页：不报给面板，免得出现在标签页列表里
+const generating = new Set()
+
 async function listTabs() {
-  const tabs = await chrome.tabs.query({ url: SITES })
+  const tabs = (await chrome.tabs.query({ url: SITES })).filter((t) => !generating.has(t.id))
   return tabs.map((t) => ({ id: String(t.id), title: t.title ?? '', url: t.url ?? '' }))
 }
 
@@ -54,7 +58,7 @@ async function loop() {
   try {
     for (;;) {
       await hello()
-      if (!state.tabs && !busy) break
+      if (!state.tabs && !active) break
       if (!state.connected) {
         await sleep(4000)
         continue
@@ -91,12 +95,56 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     })
     return true
   }
+  // 标签页在后台发不出描述：切到前面发，发完切回原来的标签页。同时只切一个，免得几个对话抢着切
+  if (msg?.type === 'focus' && sender.tab?.id !== undefined) {
+    void focusTab(sender.tab).then(
+      () => reply(true),
+      () => reply(false),
+    )
+    return true
+  }
+  if (msg?.type === 'unfocus' && sender.tab?.id !== undefined) {
+    void unfocusTab(sender.tab.id)
+    return false
+  }
+  // 标签页里每取到一张图就先交给面板，不等全部生成完
+  if (msg?.type === 'image' && msg.id && msg.img) {
+    const st = streamed.get(msg.id)
+    if (st && !st.sent.has(msg.index)) {
+      st.sent.add(msg.index)
+      st.tasks.push(sendImage(msg.id, msg.img, st.chroma).catch(() => st.sent.delete(msg.index)))
+    }
+  }
   // 标签页里的进度转给面板
   if (msg?.type === 'progress' && msg.id) {
     void post('progress', { id: msg.id, text: msg.text }).catch(() => {})
   }
   return false
 })
+
+let focusLock = Promise.resolve()
+const focusRelease = new Map()
+
+async function focusTab(tab) {
+  let release
+  const mine = new Promise((r) => (release = r))
+  const wait = focusLock
+  focusLock = focusLock.then(() => mine)
+  await wait
+  const [cur] = await chrome.tabs.query({ active: true, windowId: tab.windowId })
+  focusRelease.set(tab.id, { release, prev: cur?.id })
+  // 最多占 20 秒，标签页没发 unfocus 也会放开
+  setTimeout(() => void unfocusTab(tab.id), 20_000)
+  await chrome.tabs.update(tab.id, { active: true })
+}
+
+async function unfocusTab(tabId) {
+  const f = focusRelease.get(tabId)
+  if (!f) return
+  focusRelease.delete(tabId)
+  if (f.prev !== undefined && f.prev !== tabId) await chrome.tabs.update(f.prev, { active: true }).catch(() => {})
+  f.release()
+}
 
 /** 页面是在扩展装好之前打开的，里面没有 content.js：补注入一次 */
 async function ensureContent(tabId) {
@@ -107,11 +155,62 @@ async function ensureContent(tabId) {
   await chrome.scripting.executeScript({ target: { tabId }, files: ['content.js'] })
 }
 
+/** 每个指令已经单独交过的图片（按序号），最后的结果里不再重复交 */
+const streamed = new Map()
+
+async function sendImage(id, img, chroma) {
+  const blob = img.data ? await (await fetch(img.data)).blob() : await download(img.src)
+  await post('image', { id, data: await toPng(blob, chroma) })
+}
+
+/** 新对话的地址：Gemini 保留多账号的 /u/<n> 前缀 */
+function newChatUrl(url) {
+  const u = new URL(url)
+  if (u.hostname === 'gemini.google.com') {
+    const acc = u.pathname.match(/^\/u\/\d+/)?.[0] ?? ''
+    return `${u.origin}${acc}/app`
+  }
+  return `${u.origin}/`
+}
+
+/** 等标签页加载完 */
+function waitLoaded(tabId) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer)
+      chrome.tabs.onUpdated.removeListener(on)
+      resolve()
+    }
+    const on = (id, info) => id === tabId && info.status === 'complete' && done()
+    const timer = setTimeout(done, 30_000)
+    chrome.tabs.onUpdated.addListener(on)
+    chrome.tabs.get(tabId).then((t) => t.status === 'complete' && done(), done)
+  })
+}
+
 async function handle(cmd) {
-  busy = true
+  active++
+  const st = { sent: new Set(), tasks: [], chroma: cmd.chroma }
+  streamed.set(cmd.id, st)
+  // 每张图在选中标签页旁边新开一个对话，不在同一个对话里排队；生成完关掉，失败的留着方便查看
+  let opened
   try {
     await post('progress', { id: cmd.id, text: '已收到，准备在网页里生成' })
-    const tabId = Number(cmd.tabId)
+    let tabId = Number(cmd.tabId)
+    if (cmd.newChat) {
+      const src = await chrome.tabs.get(tabId)
+      const tab = await chrome.tabs.create({
+        url: newChatUrl(src.url),
+        windowId: src.windowId,
+        index: src.index + 1,
+        active: false,
+      })
+      opened = tab.id
+      generating.add(tab.id)
+      tabId = tab.id
+      await post('progress', { id: cmd.id, text: '已打开新对话' })
+      await waitLoaded(tabId)
+    }
     await ensureContent(tabId)
     const res = await chrome.tabs.sendMessage(tabId, {
       type: 'generate',
@@ -120,16 +219,21 @@ async function handle(cmd) {
       count: cmd.count,
     })
     if (!res || res.error) throw new Error(res?.error || '网页没有回应，刷新一下那个标签页再试')
+    await Promise.all(st.tasks)
     const images = []
-    for (const img of res.images) {
+    for (const [i, img] of res.images.entries()) {
+      if (st.sent.has(i)) continue
       const blob = img.data ? await (await fetch(img.data)).blob() : await download(img.src)
       images.push({ data: await toPng(blob, cmd.chroma) })
     }
-    await post('result', { id: cmd.id, ok: true, images })
+    await post('result', { id: cmd.id, ok: true, images, streamed: st.sent.size })
+    if (opened) await chrome.tabs.remove(opened).catch(() => {})
   } catch (e) {
     await post('result', { id: cmd.id, ok: false, error: String(e?.message ?? e) }).catch(() => {})
   } finally {
-    busy = false
+    streamed.delete(cmd.id)
+    if (opened) generating.delete(opened)
+    active--
   }
 }
 

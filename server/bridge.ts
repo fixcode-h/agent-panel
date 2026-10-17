@@ -33,12 +33,18 @@ interface Command {
   count: number
   /** 抠掉纯绿底（网页版做不出透明背景时） */
   chroma: boolean
+  /** 在选中的标签页旁边新开一个对话生成（1.1 起的扩展支持，可以同时生成好几张） */
+  newChat: boolean
 }
 interface Pending {
   cmd: Command
   resolve: (imgs: Buffer[]) => void
   reject: (e: Error) => void
   onProgress?: (text: string) => void
+  /** 扩展每取到一张图就先交一张（新版扩展） */
+  onImage?: (img: Buffer) => void
+  /** 已经单独交过的张数 */
+  streamed: number
   /** 扩展取走指令的时间；取走后一直没有回音就重新排队（扩展的后台可能被浏览器休眠了） */
   taken?: number
   acked?: boolean
@@ -185,9 +191,22 @@ setInterval(() => {
   dispatch()
 }, 5000).unref()
 
-/** 在浏览器标签页里生成图片；返回取回的图片（PNG） */
+/** 扩展能不能每张图新开对话、同时生成好几张：1.1 之前的版本只会在选中的标签页里一张张来 */
+export function browserParallel() {
+  const [major, minor] = extVersion.split('.').map(Number)
+  return major > 1 || (major === 1 && minor >= 1)
+}
+
+/** 在浏览器标签页里生成图片：每取到一张就交给 onImage，返回最后才交来的图片（旧版扩展一次全交） */
 export function browserGenerate(
-  o: { tabId: string; prompt: string; count: number; chroma: boolean; onProgress?: (text: string) => void },
+  o: {
+    tabId: string
+    prompt: string
+    count: number
+    chroma: boolean
+    onProgress?: (text: string) => void
+    onImage?: (img: Buffer) => void
+  },
   signal?: AbortSignal,
 ): Promise<Buffer[]> {
   if (Date.now() - lastSeen > ONLINE_MS)
@@ -202,8 +221,9 @@ export function browserGenerate(
       prompt: o.prompt,
       count: o.count,
       chroma: o.chroma,
+      newChat: true,
     }
-    const p: Pending = { cmd, resolve, reject, onProgress: o.onProgress }
+    const p: Pending = { cmd, resolve, reject, onProgress: o.onProgress, onImage: o.onImage, streamed: 0 }
     const done = () => {
       pending.delete(cmd.id)
       const i = queue.indexOf(p)
@@ -267,6 +287,16 @@ export function bridgeApi() {
         }
         return c.json({ ok: !!p })
       })
+      .post('/image', async (c) => {
+        const body = (await c.req.json().catch(() => ({}))) as { id?: string; data?: string }
+        const p = pending.get(String(body.id))
+        const b64 = String(body.data ?? '').replace(/^data:[^,]*,/, '')
+        if (!p || !b64) return c.json({ ok: false })
+        p.acked = true
+        p.streamed++
+        p.onImage?.(Buffer.from(b64, 'base64'))
+        return c.json({ ok: true })
+      })
       .post('/result', async (c) => {
         const body = (await c.req.json().catch(() => ({}))) as {
           id?: string
@@ -284,7 +314,7 @@ export function bridgeApi() {
             .map((i) => String(i.data ?? '').replace(/^data:[^,]*,/, ''))
             .filter(Boolean)
             .map((b64) => Buffer.from(b64, 'base64'))
-          if (!imgs.length) p.reject(new Error(t('浏览器里没有取到图片')))
+          if (!imgs.length && !p.streamed) p.reject(new Error(t('浏览器里没有取到图片')))
           else p.resolve(imgs)
         }
         return c.json({ ok: true })
