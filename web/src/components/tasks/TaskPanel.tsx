@@ -11,7 +11,7 @@ import { StepIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
 import { Terminal } from '@/components/agents/CommandPreview'
 import { t } from '@shared/i18n'
-import { mergeChanges, taskSummary } from '@shared/task'
+import { chatName, mergeChanges, taskSummary, withTaskModel } from '@shared/task'
 import { DiffDialog } from './DiffDialog'
 
 /**
@@ -117,7 +117,9 @@ export function TaskPanel({
       })
     : []
   const nodeTag = node && <span className="block max-w-[150px] truncate">{node.title}</span>
-  const chatAgent = byId.get(task.agentId)
+  const found = byId.get(task.agentId)
+  // 对话里选的 CLI、模型盖在默认 Agent 上，显示实际用的
+  const chatAgent = found && withTaskModel(found, task)
   const { upsertTask } = useData()
   const [diffPath, setDiffPath] = useState<string | null>(null)
 
@@ -360,7 +362,7 @@ export function TaskPanel({
                   <>
                     <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
                     <span className="truncate">
-                      {t('对话：{name}', { name: chatAgent?.name ?? t('已删除的 Agent') })}
+                      {t('对话：{name}', { name: chatName(chatAgent, task) || t('已删除的 Agent') })}
                       {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
                     </span>
                   </>

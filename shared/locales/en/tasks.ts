@@ -95,8 +95,8 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个节点': '{n} nodes',
   '项目默认 · ': 'Project default · ',
   还没有工作流: 'No workflows yet',
-  '对话的 Agent': 'Agent to chat with',
-  '选择 Agent': 'Select Agent',
+  '对话用的 CLI': 'CLI to chat with',
+  '没有可用的 CLI': 'No CLI available',
   开始执行: 'Start',
   '开始执行（Enter）': 'Start (Enter)',
   '工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。':

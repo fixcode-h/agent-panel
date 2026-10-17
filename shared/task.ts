@@ -10,6 +10,7 @@ import {
   type TaskMessage,
   type Workflow,
 } from './schema.ts'
+import { getCli } from './clis.ts'
 import { planTask } from './flow.ts'
 
 export function taskTitle(prompt: string) {
@@ -43,7 +44,8 @@ export function newTask(
     mode: input.mode,
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
-    // 只有默认 Agent 能在对话时临时换模型；其他 Agent 用自己配置的档位
+    // 只有默认 Agent 能在对话时选 CLI 和模型；其他 Agent 用自己配置的
+    cli: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.cli ?? '') : '',
     model: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.effort ?? '') : '',
     status: 'running',
@@ -98,13 +100,27 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
-/** 对话任务给默认 Agent 临时选的模型和思考强度 */
-export function withTaskModel<A extends { id: string; model: string; effort: string }>(
+/** 对话里显示的名字：用默认 Agent 选了 CLI 的对话显示 CLI 的名字（用户选的就是 CLI） */
+export function chatName(agent: { id: string; name: string } | undefined, task: { cli?: string }) {
+  if (!agent) return ''
+  return (agent.id === DEFAULT_AGENT_ID && task.cli && getCli(task.cli)?.name) || agent.name
+}
+
+/** 对话任务给默认 Agent 选的 CLI、模型和思考强度 */
+export function withTaskModel<A extends { id: string; cli: string; model: string; effort: string }>(
   agent: A,
-  task: { mode: string; agentId: string; model?: string; effort?: string },
+  task: { mode: string; agentId: string; cli?: string; model?: string; effort?: string },
 ): A {
   if (task.mode !== 'chat' || task.agentId !== agent.id || agent.id !== DEFAULT_AGENT_ID) return agent
-  return { ...agent, model: task.model || agent.model, effort: task.effort || agent.effort }
+  // 换了 CLI 时不能沿用默认 Agent 原来的模型（那是另一个 CLI 的）
+  const cli = task.cli || agent.cli
+  const same = cli === agent.cli
+  return {
+    ...agent,
+    cli,
+    model: task.model || (same ? agent.model : ''),
+    effort: task.effort || (same ? agent.effort : ''),
+  }
 }
 
 /**
