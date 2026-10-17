@@ -308,6 +308,8 @@ export interface DesignJob {
   /** 生成图片的进度 */
   images?: ImageJobItem[]
   outChars: number
+  /** 正在写的控件树和图片清单（JSON 的最后一段），边写边显示 */
+  out?: string
   attempt: number
   error?: string
   startedAt: number

@@ -568,7 +568,14 @@ async function runChat(
   for (const ch of tpl.reply.match(/.{1,4}/g) ?? []) {
     await sleep(60)
     job.text += ch
-    job.outChars += 40
+    job.outChars += 4
+  }
+  // 演示边写边显示 JSON
+  const json = JSON.stringify({ root: tpl.root, images: tpl.images }, null, 2)
+  for (let i = 0; i < json.length; i += 160) {
+    await sleep(30)
+    job.out = json.slice(Math.max(0, i + 160 - 3000), i + 160)
+    job.outChars = job.text.length + i + 160
   }
   d.root = normalizeTree(tpl.root)
   d.components = tpl.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) }))
@@ -602,6 +609,7 @@ async function runChat(
 async function genImages(d: Full, ids: string[], count: number, job: Job) {
   job.phase = 'images'
   job.text = ''
+  job.out = undefined
   job.thinking = undefined
   const items = ids.map((id) => {
     const im = d.images.find((i) => i.id === id)

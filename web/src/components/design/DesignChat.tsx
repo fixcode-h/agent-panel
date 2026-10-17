@@ -619,13 +619,40 @@ function LiveReply({ job }: { job: DesignJob }) {
           live
         />
       )}
-      {writingJson && (
-        <span className="flex items-center gap-1.5 pl-[38px] text-[11.5px] text-subtle">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          {job.attempt > 1
-            ? t('格式不对，正在修正（已输出 {n} 个字符）', { n: job.outChars })
-            : t('正在写控件树和图片清单（已输出 {n} 个字符）', { n: job.outChars })}
+      {writingJson && <LiveOutput job={job} />}
+    </div>
+  )
+}
+
+/** 正在写的控件树和图片清单：像 Claude Code 写文件一样边写边显示，自动滚到最新的地方 */
+function LiveOutput({ job }: { job: DesignJob }) {
+  const box = useRef<HTMLPreElement>(null)
+  const [follow, setFollow] = useState(true)
+  useLayoutEffect(() => {
+    if (follow && box.current) box.current.scrollTop = box.current.scrollHeight
+  }, [job.out, follow])
+  return (
+    <div className="ml-[38px] min-w-0 overflow-hidden rounded-lg border bg-field">
+      <div className="flex items-center gap-2 px-2.5 py-1.5 font-mono text-xs text-muted">
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        <span className="min-w-0 flex-1 truncate">
+          <span className="mr-1.5 font-sans font-medium text-fg/80">{job.attempt > 1 ? t('修正格式') : t('写入')}</span>
+          {t('控件树和图片清单')}
         </span>
+        <span className="shrink-0 text-subtle tabular-nums">{t('{n} 个字符', { n: job.outChars })}</span>
+      </div>
+      {job.out && (
+        <pre
+          ref={box}
+          // 用户往上翻时不再自动滚动，翻回底部再跟随
+          onScroll={(e) => {
+            const el = e.currentTarget
+            setFollow(el.scrollHeight - el.scrollTop - el.clientHeight < 24)
+          }}
+          className="max-h-[220px] overflow-auto border-t bg-card/60 px-3 py-2 font-mono text-[11.5px] leading-[1.6] whitespace-pre-wrap text-fg/80 [overflow-wrap:anywhere]"
+        >
+          {job.out}
+        </pre>
       )}
     </div>
   )

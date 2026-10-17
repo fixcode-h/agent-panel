@@ -1,5 +1,5 @@
-// 运行在 Gemini / ChatGPT 页面里：收到后台的「生成图片」指令后，在输入框里写描述、发送、
-// 等这一轮回复结束、找出新出现的图片，把图片（能直接读的读成 data URL，否则给地址）交回后台。
+// 运行在 Gemini / ChatGPT 页面里，听后台的三种指令：submit 在新对话里写描述并发送，返回对话地址；
+// check 看当前对话里新出现的图片（能直接读的读成 data URL，否则给地址）；more 在这个对话里再要一版。
 // 网页改版后选择器可能失效：每个都准备了几种写法，最后退到通用的判断（可编辑的输入框、aria-label 含 Stop 的按钮）。
 
 if (!window.__agentPanelContent) {
@@ -66,7 +66,6 @@ if (!window.__agentPanelContent) {
       if (img.closest('[data-message-author-role="user"], user-query')) return false
       return true
     })
-  const keyOf = (img) => img.currentSrc || img.src
 
   async function typeInto(el, text) {
     el.focus()
@@ -151,39 +150,6 @@ if (!window.__agentPanelContent) {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
   }
 
-  /** 等这一轮回复结束：出现过「停止」按钮后它消失，或者有新图片且一段时间没有变化 */
-  async function waitRound(before, progress) {
-    const start = Date.now()
-    let sawBusy = false
-    let quietSince = 0
-    let lastCount = -1
-    while (Date.now() - start < 5 * 60_000) {
-      await sleep(1000)
-      const b = busy()
-      if (b) sawBusy = true
-      const fresh = candidates().filter((img) => !before.has(keyOf(img)))
-      if (fresh.length !== lastCount) {
-        lastCount = fresh.length
-        quietSince = Date.now()
-      }
-      const sec = Math.round((Date.now() - start) / 1000)
-      if (sec % 10 === 0) progress(`等待网页生成（${sec} 秒）`)
-      // 结束了：不忙、有新图、图片 3 秒没变（ChatGPT 会先出模糊的预览图再换成清晰的）
-      if (!b && fresh.length && Date.now() - quietSince > 3000) return fresh
-      // 回复结束了却没有图：多半是被拒绝或需要会员
-      if (!b && sawBusy && !fresh.length && Date.now() - start > 8000) {
-        await sleep(3000)
-        const again = candidates().filter((img) => !before.has(keyOf(img)))
-        if (again.length) return again
-        throw new Error('这一轮回复结束了，但没有出现图片。请看一下网页上的回复（可能被拒绝，或这个账号不能生成图片）')
-      }
-      // 描述已经确认发出去了：看不到「停止」按钮（网页改版）时也接着等图片，只在很久都没动静时报错
-      if (!b && !sawBusy && Date.now() - start > 3 * 60_000 && !fresh.length)
-        throw new Error('描述发出去了，但 3 分钟内网页上没有出现回复或图片，请看一下那个标签页')
-    }
-    throw new Error('等了 5 分钟还没生成完')
-  }
-
   /** 能在页面里直接读的图片读成 data URL（blob:、同源），其余把地址交给后台下载 */
   async function grab(img) {
     const src = img.currentSrc || img.src
@@ -202,29 +168,69 @@ if (!window.__agentPanelContent) {
     return { src }
   }
 
-  async function generate(msg) {
+  /** 这个对话里的图还不够几版：在同一个对话里再要一张 */
+  async function more(msg) {
     const progress = (text) => chrome.runtime.sendMessage({ type: 'progress', id: msg.id, text }).catch(() => {})
-    const out = []
-    for (let i = 0; i < msg.count; i++) {
-      if (busy()) throw new Error('这个标签页正在回复别的内容，等它结束后再试')
-      const before = new Set(candidates().map(keyOf))
-      const text =
-        i === 0
-          ? `Please generate an image (use your image generation tool, output the image only):\n\n${msg.prompt}`
-          : 'Generate one more variation of the same image with exactly the same requirements.'
-      progress(msg.count > 1 ? `发送第 ${i + 1}/${msg.count} 张的描述` : '发送描述')
-      await send(text, progress)
-      const fresh = await waitRound(before, progress)
-      // 一轮可能出多张图，都收下
-      for (const img of fresh) {
-        const g = await grab(img)
-        out.push(g)
-        // 取到一张就先交出去，面板马上能放进设计里
-        chrome.runtime.sendMessage({ type: 'image', id: msg.id, index: out.length - 1, img: g }).catch(() => {})
-      }
-      if (out.length >= msg.count) break
+    await send('Generate one more variation of the same image with exactly the same requirements.', progress)
+  }
+
+  /** 对话自己的地址（左边对话列表里那一项）：Gemini 是 /app/<id>，ChatGPT 是 /c/<id> */
+  const convUrl = () =>
+    (site === 'gemini' ? /\/app\/[\w-]{6,}/ : /\/c\/[\w-]{6,}/).test(location.pathname) ? location.href : ''
+
+  const REPLY = {
+    gemini: ['model-response', 'message-content'],
+    chatgpt: ['[data-message-author-role="assistant"]'],
+  }
+  const replies = () => {
+    for (const sel of REPLY[site]) {
+      const list = document.querySelectorAll(sel)
+      if (list.length) return [...list]
     }
-    return out.slice(0, Math.max(msg.count, 1))
+    return []
+  }
+
+  /** 在新对话里发描述，等对话有了自己的地址就返回；图在网页那边接着生成，后台切去开下一个对话 */
+  async function startChat(msg) {
+    const progress = (text) => chrome.runtime.sendMessage({ type: 'progress', id: msg.id, text }).catch(() => {})
+    progress('在新对话里发送描述')
+    await send(
+      `Please generate an image (use your image generation tool, output the image only):\n\n${msg.prompt}`,
+      progress,
+    )
+    for (let i = 0; i < 60; i++) {
+      const url = convUrl()
+      if (url) return { url }
+      await sleep(500)
+    }
+    throw new Error('描述发出去了，但网页没有生成新的对话，请看一下那个标签页')
+  }
+
+  /**
+   * 看一下当前对话的结果：跳过已经取过的 skip 张，把新出现的图交回去。
+   * 刚打开对话时内容要一会儿才渲染出来；图片数量 2.5 秒不变、也不在回复中才算出齐
+   */
+  async function check(msg) {
+    const start = Date.now()
+    while (Date.now() - start < 15_000 && !replies().length && !candidates().length) await sleep(500)
+    let last = -1
+    let quiet = Date.now()
+    while (Date.now() - start < 30_000) {
+      const n = candidates().length
+      if (n !== last) {
+        last = n
+        quiet = Date.now()
+      }
+      if (busy() && n <= msg.skip) break
+      if (!busy() && Date.now() - quiet > 2500) break
+      await sleep(500)
+    }
+    const fresh = candidates().slice(msg.skip)
+    const images = []
+    for (const img of fresh) images.push(await grab(img))
+    const r = replies()
+    const text = (r[r.length - 1]?.innerText ?? '').trim()
+    return { busy: busy(), images, replied: !!text, text: text.slice(0, 200) }
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
@@ -232,9 +238,10 @@ if (!window.__agentPanelContent) {
       reply({ ok: true, site })
       return false
     }
-    if (msg?.type === 'generate') {
-      generate(msg)
-        .then((images) => reply({ images }))
+    const run = { submit: startChat, check, more }[msg?.type]
+    if (run) {
+      run(msg)
+        .then((r) => reply(r ?? {}))
         .catch((e) => reply({ error: String(e?.message ?? e) }))
       return true
     }
