@@ -19,6 +19,7 @@ import type { DesignDoc, DesignImage, ImageSource } from '@shared/design'
 import {
   WIDGETS,
   allNames,
+  canAddChild,
   cloneWidget,
   defaultSlot,
   exportDesign,
@@ -29,7 +30,9 @@ import {
   moveWidget,
   newWidget,
   removeWidget,
+  replaceWidget,
   uniqueName,
+  wrapWidget,
   usedImages,
   type Widget,
   type WidgetType,
@@ -234,6 +237,9 @@ const NEW_SIZE: Partial<Record<WidgetType, [number, number]>> = {
 
 const SOURCE_KEY = 'design-image-source'
 
+// 复制的控件：放在模块里，切换到别的设计也能粘贴
+let clipboard: Widget | null = null
+
 function Designer({ id }: { id: string }) {
   const ed = useDesignEditor(id)
   const { designProjects: projects, setDesigns } = useData()
@@ -241,6 +247,7 @@ function Designer({ id }: { id: string }) {
   const { doc, server } = ed
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
+  const [hasClip, setHasClip] = useState(!!clipboard)
   const [tab, setTab] = useState<'tree' | 'images'>('tree')
   const [imageSel, setImageSel] = useState('')
   const [chatOpen, setChatOpen] = useState(true)
@@ -292,9 +299,9 @@ function Designer({ id }: { id: string }) {
       return n === r ? d : setTree(d, target, n)
     }, key)
 
-  const addWidget = (type: WidgetType, cls?: string) => {
+  const addWidget = (type: WidgetType, cls?: string, into?: string) => {
     if (!tree || !doc) return
-    const sel = selected ? findWidget(tree, selected) : undefined
+    const sel = (into ?? selected) ? findWidget(tree, into ?? selected) : undefined
     let parent =
       sel && WIDGETS[sel.Type].children !== 'none' && (WIDGETS[sel.Type].children === 'many' || !sel.Children?.length)
         ? sel
@@ -373,6 +380,48 @@ function Designer({ id }: { id: string }) {
           },
         })),
       ),
+    copy: (wid) => {
+      const w = tree && findWidget(tree, wid)
+      if (!w) return
+      clipboard = structuredClone(w)
+      setHasClip(true)
+    },
+    cut: (wid) => {
+      actions.copy(wid)
+      actions.remove(wid)
+    },
+    canPaste: hasClip,
+    paste: (wid) => {
+      if (!tree || !clipboard) return
+      const target = findWidget(tree, wid)
+      if (!target) return
+      const into = canAddChild(target)
+      const parent = into ? target : findParent(tree, wid)
+      if (!parent || !canAddChild(parent))
+        return toast.error(t('{name} 里不能再放控件了', { name: (parent ?? target).Name }))
+      const c = cloneWidget(clipboard, allNames(tree))
+      const index = into ? undefined : parent.Children!.findIndex((x) => x.id === wid) + 1
+      editTree((r) => insertWidget(r, parent.id, c, index))
+      setSelected(c.id)
+    },
+    addChild: (pid, type, cls) => addWidget(type, cls, pid),
+    wrap: (wid, type) => {
+      if (!tree) return
+      const res = wrapWidget(tree, wid, type, allNames(tree))
+      // 新面板的 id 是随机的，树没变时直接用算好的结果，才能选中它
+      editTree((r) => (r === tree ? res.root : wrapWidget(r, wid, type, allNames(r)).root))
+      setSelected(res.id)
+    },
+    replace: (wid, type) => editTree((r) => replaceWidget(r, wid, type)),
+    shift: (wid, delta) => {
+      if (!tree) return
+      const p = findParent(tree, wid)
+      if (!p) return
+      const from = p.Children!.findIndex((c) => c.id === wid)
+      // moveWidget 往后挪时会先减一，所以下移要给 from + 2
+      editTree((r) => moveWidget(r, wid, p.id, delta > 0 ? from + 2 : Math.max(0, from - 1)))
+    },
+    components: doc?.components.filter((c) => c.Name !== target).map((c) => c.Name) ?? [],
     extract: (wid) => {
       if (!tree || !doc) return
       const w = findWidget(tree, wid)
@@ -442,6 +491,15 @@ function Designer({ id }: { id: string }) {
       } else if (mod && e.key.toLowerCase() === 'd' && selected) {
         e.preventDefault()
         actions.duplicate(selected)
+      } else if (mod && e.key.toLowerCase() === 'c' && selected && !window.getSelection()?.toString()) {
+        e.preventDefault()
+        actions.copy(selected)
+      } else if (mod && e.key.toLowerCase() === 'x' && selected && tree && selected !== tree.id) {
+        e.preventDefault()
+        actions.cut(selected)
+      } else if (mod && e.key.toLowerCase() === 'v' && clipboard && tree) {
+        e.preventDefault()
+        actions.paste(selected || tree.id)
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected && tree && selected !== tree.id) {
         e.preventDefault()
         actions.remove(selected)

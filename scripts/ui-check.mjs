@@ -80,6 +80,12 @@ try {
   await check(p, 'Agent', ['命令预览'])
   await p.goto(base + '#/design/demo-design-menu')
   await check(p, 'UI设计', ['控件树', 'AI 对话', 'StartGroup'])
+  // 控件树右键菜单和二级菜单
+  await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
+  await p.getByRole('menuitem', { name: '包裹为' }).hover()
+  await check(p, 'UI设计-右键菜单', ['创建副本', 'SizeBox'])
+  await p.keyboard.press('Escape')
+  await p.keyboard.press('Escape')
   await p.getByRole('tab', { name: /图片/ }).click()
   await check(p, 'UI设计-图片')
   await p.goto(base + '#/design/new')

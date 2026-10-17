@@ -215,4 +215,12 @@ export const EN_DESIGN: Record<string, string> = {
   '设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。':
     'Designs live in UI projects (separate from Agent projects). Create one first, usually one per game.',
   '新建 UI 项目…': 'New UI project…',
+  剪切: 'Cut',
+  粘贴到里面: 'Paste inside',
+  粘贴到后面: 'Paste after',
+  创建副本: 'Duplicate',
+  添加子控件: 'Add child',
+  包裹为: 'Wrap with',
+  替换为: 'Replace with',
+  选中父控件: 'Select parent',
 }
