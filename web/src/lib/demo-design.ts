@@ -3,7 +3,14 @@
  * AI 对话按关键词套用示例界面（主菜单 / 背包），图片用 canvas 画出示意图，模拟「生成」的过程。
  */
 const randomId = () => crypto.randomUUID()
-import { DesignImage, emptyRoot, type Design, type DesignMeta, type DesignProject, type ImageSource } from '@shared/design'
+import {
+  DesignImage,
+  emptyRoot,
+  type Design,
+  type DesignMeta,
+  type DesignProject,
+  type ImageSource,
+} from '@shared/design'
 import { normalizeTree, type Widget } from '@shared/umg'
 import { t } from '@shared/i18n'
 
@@ -578,12 +585,7 @@ async function genImages(d: Full, ids: string[], count: number, job: Job) {
   }
 }
 
-export function demoDesigns(
-  method: string,
-  id: string | undefined,
-  sub: string | undefined,
-  body: any,
-): unknown {
+export function demoDesigns(method: string, id: string | undefined, sub: string | undefined, body: any): unknown {
   seed()
   if (id === 'projects') {
     if (!sub) {
