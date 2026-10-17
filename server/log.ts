@@ -1,20 +1,30 @@
 /**
- * 运行日志：所有报错和关键事件写进数据目录下的 logs/ 文件夹，出了问题把日志文件发出来就能查。
+ * 运行日志：所有报错和关键事件写进程序目录（server.mjs 所在的目录，从源码运行时是仓库根目录）下的 logs/，
+ * 出了问题把日志文件发出来就能查。程序目录写不进去时（例如装在只读的目录里）改写到数据目录下的 logs/。
  *
- *   ~/.agent-panel/logs/
+ *   <程序目录>/logs/
  *     agent-panel-20261017-090129-38148.log     每次启动一个新文件（启动时间 + 进程号）
  *     agent-panel-20261017-090129-38148.2.log   同一次运行写满 5 MB 换下一个
  *
  * 只保留最近 30 个文件、合计不超过 100 MB，旧的启动时删掉。
  * 第一次写日志时才建文件：`--self-check` 这种只加载一下就退出的运行不会留下空文件。
- * 不引用 store.ts（store 自己也要写日志），数据目录按同样的规则算。
+ * 不引用 store.ts、update.ts（它们自己也要写日志），程序目录和数据目录按同样的规则算。
  */
 import { appendFileSync, mkdirSync, readdirSync, statSync, unlinkSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { format, inspect } from 'node:util'
 
-export const LOG_DIR = path.join(process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel'), 'logs')
+declare const __APP_VERSION__: string | undefined
+/** 程序目录：和 update.ts 的 appDir 一样，出包后是 server.mjs 所在目录 */
+const programDir =
+  process.env.AGENT_PANEL_APP_DIR ??
+  (typeof __APP_VERSION__ === 'string' ? path.dirname(fileURLToPath(import.meta.url)) : process.cwd())
+const FALLBACK_DIR = path.join(process.env.AGENT_PANEL_DATA ?? path.join(homedir(), '.agent-panel'), 'logs')
+let dir = path.join(programDir, 'logs')
+/** 日志所在的目录 */
+export const logDir = () => dir
 const MAX_FILE = 5 * 1024 * 1024
 const KEEP_FILES = 30
 const KEEP_BYTES = 100 * 1024 * 1024
@@ -40,10 +50,10 @@ function stamp(d = new Date()) {
 /** 删掉旧日志：按修改时间保留最近的，当前这次运行的不删 */
 function prune() {
   try {
-    const all = readdirSync(LOG_DIR)
+    const all = readdirSync(dir)
       .filter((f) => f.endsWith('.log') && !f.startsWith(base))
       .map((f) => {
-        const p = path.join(LOG_DIR, f)
+        const p = path.join(dir, f)
         const s = statSync(p)
         return { p, at: s.mtimeMs, size: s.size }
       })
@@ -57,9 +67,16 @@ function prune() {
 }
 
 function open() {
-  mkdirSync(LOG_DIR, { recursive: true })
+  try {
+    mkdirSync(dir, { recursive: true })
+    if (!file) appendFileSync(path.join(dir, `${base}.log`), '')
+  } catch (e) {
+    if (dir === FALLBACK_DIR) throw e
+    dir = FALLBACK_DIR
+    mkdirSync(dir, { recursive: true })
+  }
   if (!file) prune()
-  file = path.join(LOG_DIR, part === 1 ? `${base}.log` : `${base}.${part}.log`)
+  file = path.join(dir, part === 1 ? `${base}.log` : `${base}.${part}.log`)
   size = 0
   const head = [
     `# Agent 面板运行日志${part > 1 ? `（第 ${part} 部分）` : ''}`,

@@ -1130,10 +1130,10 @@ try {
   )
   assert.match(netErr.text, /走的是 Command Code 官方服务[\s\S]*me\/fake\/flash/)
   assert.match(netErr.text, /连接中途断开/)
-  // 运行日志：数据目录的 logs/ 里，这次启动一个文件，记下了启动、CLI 的命令和断开重试
+  // 运行日志：程序目录的 logs/ 里，这次启动一个文件，记下了启动、CLI 的命令和断开重试
   const logUsage = await call('GET', '/data')
   assert.ok(
-    logUsage.logs?.current && logUsage.logs.current.startsWith(path.join(dataDir, 'logs')),
+    logUsage.logs?.current && logUsage.logs.current.startsWith(path.join(appDir, 'logs')),
     '日志在单独的文件夹里',
   )
   const logText = readFileSync(logUsage.logs.current, 'utf8')

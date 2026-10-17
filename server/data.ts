@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { DATA_KINDS, type DataKind, type DataUsage } from '../shared/data.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
 import { revealDir } from './open.ts'
-import { LOG_DIR, logFile } from './log.ts'
+import { logDir, logFile } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
 /** 每类数据包含数据目录里的哪些路径（相对路径，目录或文件） */
@@ -60,10 +60,10 @@ export function dataApi(deps: { running: () => number }) {
       }),
     )
     const m = process.memoryUsage()
-    const logs = await readdir(LOG_DIR).catch(() => [] as string[])
+    const logs = await readdir(logDir()).catch(() => [] as string[])
     const sizes = await Promise.all(
       logs.map((f) =>
-        stat(path.join(LOG_DIR, f)).then(
+        stat(path.join(logDir(), f)).then(
           (s) => s.size,
           () => 0,
         ),
@@ -72,7 +72,7 @@ export function dataApi(deps: { running: () => number }) {
     return c.json({
       dir: DATA_DIR,
       kinds,
-      logs: { dir: LOG_DIR, current: logFile(), files: logs.length, bytes: sizes.reduce((a, b) => a + b, 0) },
+      logs: { dir: logDir(), current: logFile(), files: logs.length, bytes: sizes.reduce((a, b) => a + b, 0) },
       memory: { rss: m.rss, heapUsed: m.heapUsed },
     } satisfies DataUsage)
   })
@@ -84,8 +84,8 @@ export function dataApi(deps: { running: () => number }) {
   })
 
   routes.post('/reveal-logs', async (c) => {
-    await mkdir(LOG_DIR, { recursive: true })
-    revealDir(LOG_DIR)
+    await mkdir(logDir(), { recursive: true })
+    revealDir(logDir())
     return c.json({ ok: true })
   })
 
