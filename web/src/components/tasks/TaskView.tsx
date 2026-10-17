@@ -21,11 +21,12 @@ import {
   ListPlus,
   ArrowDown,
 } from 'lucide-react'
-import type { Project, Task, TaskMessage } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage } from '@shared/schema'
+import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { rootStepId, taskWorkflows } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultSettings } from '@shared/settings'
-import { STEER_CLIS } from '@shared/clis'
+import { STEER_CLIS, getCli } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -277,6 +278,19 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
   const canSteer = running && (task.mode === 'workflow' || STEER_CLIS.includes(chatCli))
+  // 用默认 Agent 的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换，下一轮生效
+  const byCli = task.mode === 'chat' && task.agentId === DEFAULT_AGENT_ID
+  const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
+  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || 'Agent'
+  const changeRun = async (v: ChatRun) => {
+    setTask({ ...task, ...v })
+    try {
+      apply(await api.setChatRun(task.id, v))
+      if (running) toast(t('改好了，下一轮回复开始生效'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
@@ -477,10 +491,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   {blocks.slice(hidden).map((b, i) =>
                     b.kind === 'turn' ? (
                       <div key={b.key} className="flex flex-col gap-4">
-                        <FoldedRun
+                        <ChatTurn
                           msgs={b.msgs}
                           teamNames={teamNames}
                           live={running && i + hidden === blocks.length - 1}
+                          fallback={byCli ? chatRun : undefined}
                         />
                       </div>
                     ) : b.kind === 'steps' ? (
@@ -540,7 +555,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   {running && task.mode === 'chat' && (
                     <div className="flex items-center gap-2 text-[13px] text-muted">
                       <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                      {t('{name} 正在回复', { name: chatName(chatAgent, task) || 'Agent' })}
+                      {t('{name} 正在回复', { name: chatLabel })}
                       <LiveStats task={task} agentIds={[task.agentId]} />
                     </div>
                   )}
@@ -613,19 +628,23 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
                 <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
-                <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-                  {running
-                    ? tops.filter((s) => s.status === 'running').length > 1
-                      ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
-                      : t('执行中，可以随时暂停')
-                    : task.mode === 'workflow'
-                      ? tops.every((s) => s.status === 'done')
-                        ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
-                        : task.status === 'failed'
-                          ? t('会从失败的节点重新执行')
-                          : t('会从没完成的节点继续执行')
-                      : t('发给 {name}', { name: chatName(chatAgent, task) || 'Agent' })}
-                </span>
+                {byCli ? (
+                  <ChatModelPicker value={chatRun} onChange={changeRun} />
+                ) : (
+                  <span className="min-w-0 truncate pl-1 text-xs text-subtle">
+                    {running
+                      ? tops.filter((s) => s.status === 'running').length > 1
+                        ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
+                        : t('执行中，可以随时暂停')
+                      : task.mode === 'workflow'
+                        ? tops.every((s) => s.status === 'done')
+                          ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                          : task.status === 'failed'
+                            ? t('会从失败的节点重新执行')
+                            : t('会从没完成的节点继续执行')
+                        : t('发给 {name}', { name: chatLabel })}
+                  </span>
+                )}
                 {running ? (
                   <>
                     {text.trim() ? (
@@ -879,4 +898,22 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
       />
     </div>
   )
+}
+
+/** 对话的一轮回复：署名用这条回复记下的 CLI 和模型；以前的回复没记，用对话现在的设置 */
+function ChatTurn({
+  msgs,
+  teamNames,
+  live,
+  fallback,
+}: {
+  msgs: TaskMessage[]
+  teamNames: Set<string>
+  live: boolean
+  fallback?: ChatRun
+}) {
+  const run = msgs.find((m) => m.run)?.run
+  const cur = useChatRun(fallback ?? { cli: '', model: '', effort: '' }).run
+  const author = useRunAuthor(fallback ? (run ?? cur) : undefined)
+  return <FoldedRun msgs={msgs} teamNames={teamNames} live={live} author={author} />
 }

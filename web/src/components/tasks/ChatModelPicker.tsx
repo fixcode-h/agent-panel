@@ -98,6 +98,20 @@ function effortDefault(def: CliDefinition, model: string, configured: string) {
   return ids[Math.floor(ids.length / 2)]
 }
 
+/** 对话里一条回复的署名：CLI 名字，模型和思考强度（没记模型时是 CLI 自己的默认模型） */
+export function useRunAuthor(run: ChatRun | undefined) {
+  const def = useCliDef(run?.cli || undefined)
+  if (!run || !def) return undefined
+  const model = run.model || def.models.find((m) => m.isDefault)?.id || ''
+  const effort = def.efforts.find((e) => e.id === run.effort)
+  return {
+    name: def.name,
+    cli: def.id,
+    icon: 'sparkles',
+    model: [model, effort && (effort.label ? `${effort.id} · ${effort.label}` : effort.id)].filter(Boolean).join(' · '),
+  }
+}
+
 /** 对话时选 CLI、模型和思考强度；都是实际的值，默认的标「（默认）」 */
 export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)

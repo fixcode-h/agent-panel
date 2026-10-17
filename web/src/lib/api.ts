@@ -131,6 +131,8 @@ export const api = {
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
+  setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
+    request<Task>(`/tasks/${id}`, json('PATCH', run)),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),

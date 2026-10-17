@@ -903,6 +903,37 @@ try {
   }
   step('工作流执行中补充信息：交给正在跑的节点，接着当前的任务做')
 
+  // ---- 对话中途换 CLI 和模型：下一轮生效；换了 CLI 开新会话，把之前的对话带过去；每条回复记下自己用的 CLI ----
+  {
+    let c = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'codex',
+      prompt: '记住暗号是蓝鲸',
+    })
+    c = await waitDone(c.id)
+    assert.equal(c.messages.findLast((m) => m.role === 'agent').run?.cli, 'codex')
+    c = await call('PATCH', `/tasks/${c.id}`, { cli: 'claude', model: '', effort: '' })
+    assert.equal(c.cli, 'claude')
+    const before = calls().length
+    await call('POST', `/tasks/${c.id}/messages`, { text: '暗号是什么' })
+    c = await waitDone(c.id)
+    assert.equal(c.status, 'done')
+    const next = calls().slice(before)[0]
+    assert.equal(next.kind, 'claude', '换了 CLI 后下一轮用新的 CLI')
+    assert.ok(!next.args.includes('--resume'), '换了 CLI 开新会话')
+    assert.match(next.input, /之前的对话[\s\S]*蓝鲸/, '把之前的对话带给新会话')
+    assert.equal(c.messages.findLast((m) => m.role === 'agent').run?.cli, 'claude')
+    const bad = await fetch(`${base}/tasks/${t.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ cli: 'claude' }),
+    })
+    assert.equal(bad.status, 400, '工作流任务不能换 CLI')
+  }
+  step('对话中途换 CLI：下一轮生效，开新会话并带上之前的对话')
+
   // ---- 权限请求：Claude Code 要确认的命令和问题显示在任务上，用户回答后交回 CLI ----
   let ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 需要确认' })
   const waitReq = async () => {

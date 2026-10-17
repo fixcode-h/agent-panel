@@ -439,7 +439,14 @@ export const QueuedMessage = z.object({
 export type QueuedMessage = z.infer<typeof QueuedMessage>
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z
-  .object({ title: z.string().trim().min(1, t('标题不能为空')).max(80), archived: z.boolean() })
+  .object({
+    title: z.string().trim().min(1, t('标题不能为空')).max(80),
+    archived: z.boolean(),
+    // 对话用的 CLI、模型和思考强度，执行中也能改，下一轮生效
+    cli: z.string().trim().max(40),
+    model: z.string().trim().max(200),
+    effort: z.string().trim().max(40),
+  })
   .partial()
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
@@ -485,6 +492,8 @@ export const TaskMessage = z.object({
       end: z.string().default(''),
     })
     .optional(),
+  /** 对话里这条回复用的 CLI、模型和思考强度：对话中途可以换，每条记自己的 */
+  run: z.object({ cli: z.string(), model: z.string().default(''), effort: z.string().default('') }).optional(),
   at: z.string(),
 })
 export type TaskMessage = z.infer<typeof TaskMessage>
@@ -608,6 +617,8 @@ export const TaskData = z.object({
   simulated: z.boolean().default(true),
   /** CLI 会话 id，用于续接：工作流节点按节点 id 记，对话和追加要求按 Agent id 记 */
   sessions: z.record(z.string(), z.string()).default({}),
+  /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
+  sessionCli: z.string().optional(),
   /**
    * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
    * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话

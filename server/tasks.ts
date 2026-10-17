@@ -14,7 +14,8 @@ import {
   type Workflow,
 } from '../shared/schema.ts'
 import { taskWorkflows, workflowClosure } from '../shared/flow.ts'
-import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments } from '../shared/task.ts'
+import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments, withTaskModel } from '../shared/task.ts'
+import { agentRun } from '../shared/settings.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
@@ -552,15 +553,22 @@ export function tasksApi(deps: {
     const p = TaskPatch.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const e = live.get(id)
+    const cur = e?.task ?? (await store.get(id))
+    if (!cur) return bad(c, t('任务不存在'), 404)
+    if ((p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined) && cur.mode !== 'chat')
+      return bad(c, t('只有对话任务可以这样做'))
+    // 换 CLI 前记下会话是哪个 CLI 的（以前的任务没记），下一轮才知道要开新会话
+    if (p.data.cli !== undefined && !cur.sessionCli && cur.sessions[cur.agentId]) {
+      const agent = (await deps.agents.list()).find((a) => a.id === cur.agentId)
+      if (agent) cur.sessionCli = agentRun(withTaskModel(agent, cur), await getSettings()).cli
+    }
     if (e) {
       Object.assign(e.task, p.data)
       // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
       await store.update(id, e.task)
       return c.json(e.task)
     }
-    const task = await store.get(id)
-    if (!task) return bad(c, t('任务不存在'), 404)
-    return c.json(await store.update(id, { ...task, ...p.data }))
+    return c.json(await store.update(id, { ...cur, ...p.data }))
   })
 
   /** 停着的对话任务（没在执行）：分叉、撤回、压缩、审查都要先停下 */

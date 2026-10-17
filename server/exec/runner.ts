@@ -297,13 +297,19 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // 触发这一轮的用户消息：结束后在它上面记下这一轮在 CLI 会话里的位置
   const asker = chat && !op ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
-  if (rewind) {
-    const th = rewind.through
+  // 对话中途换了 CLI：原来的会话是另一个 CLI 的，接不上，开新会话把之前的对话带过去
+  const switched = chat && !!task.sessionCli && task.sessionCli !== cliId
+  if (switched) resume = undefined
+  if (rewind || switched) {
+    const th = rewind?.through ?? null
     resume = undefined
-    if (rewind.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
-    else if (th && cliId === 'codex' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
+    if (rewind?.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
+    else if (switched) {
+      const upto = asker ? task.messages.indexOf(asker) : task.messages.length
+      carry = `## 之前的对话\n${transcript(task, upto)}`
+    } else if (th && cliId === 'codex' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
     else if (th && cliId === 'claude' && th.end) [resume, fork] = [th.session, { end: th.end }]
-    else if (th && rewind.latest) [resume, fork] = [th.session, {}]
+    else if (th && rewind?.latest) [resume, fork] = [th.session, {}]
     else if (th) {
       // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上
       const upto = asker ? task.messages.indexOf(asker) : task.messages.length
@@ -373,7 +379,17 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const errors: string[] = []
   let result: { ok: boolean; error?: string } | undefined
   const newMsg = () => {
-    cur = { id: ctx.newId(), role: 'agent', agentId, step, text: '', tools: [], at: new Date().toISOString() }
+    cur = {
+      id: ctx.newId(),
+      role: 'agent',
+      agentId,
+      step,
+      text: '',
+      tools: [],
+      // 对话中途可以换 CLI 和模型，每条回复记下自己用的
+      ...(chat ? { run: { cli: cliId, model, effort: run.effort } } : {}),
+      at: new Date().toISOString(),
+    }
     task.messages.push(cur)
     mine.push(cur)
     return cur
@@ -434,6 +450,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
+        if (chat) task.sessionCli = cliId
         break
       case 'thinking': {
         // 思考属于接下来的那段回复：当前消息已经有文字或工具时另起一条
