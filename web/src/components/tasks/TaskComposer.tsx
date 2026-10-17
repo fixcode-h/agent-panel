@@ -186,37 +186,6 @@ export function TaskComposer({
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
             <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
-            {!fixed && !standalone && (
-              <Popover>
-                <PopoverTrigger className={chip} title={t('在哪个项目里执行')}>
-                  <FolderGit2 className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{project?.name ?? t('选择项目')}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                </PopoverTrigger>
-                <PopoverContent className="w-[280px]">
-                  <div className="max-h-72 overflow-y-auto">
-                    {projects.map((p) => (
-                      <PopoverClose key={p.id} className={menuItem} onClick={() => setProjectId(p.id)}>
-                        <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate">{p.name}</span>
-                          <span className="truncate font-mono text-[11px] text-subtle">
-                            {p.path || t('未选择目录')}
-                          </span>
-                        </span>
-                        {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
-                      </PopoverClose>
-                    ))}
-                    {projects.length === 0 && (
-                      <p className="px-2.5 py-2 text-xs text-subtle">
-                        {t('还没有项目，先在「项目」里添加一个本机目录')}
-                      </p>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-
             {!standalone && (
               <div
                 role="radiogroup"
@@ -299,19 +268,6 @@ export function TaskComposer({
               </div>
             )}
 
-            {canIsolate && (
-              <button
-                role="switch"
-                aria-checked={isolate}
-                onClick={() => setIsolate((v) => !v)}
-                title={t('在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃')}
-                className={cn(chip, isolate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}
-              >
-                <GitBranch className="h-4 w-4 shrink-0" />
-                <span className="truncate">{t('独立分支')}</span>
-              </button>
-            )}
-
             <button
               onClick={start}
               disabled={!canStart}
@@ -324,6 +280,49 @@ export function TaskComposer({
           </div>
         )}
       </div>
+      {/* 在哪里执行（项目、独立分支）放在输入框外面左下角，和「怎么执行」分开 */}
+      {!loading && ((!fixed && !standalone) || canIsolate) && (
+        <div className="-mt-2 flex flex-wrap items-center gap-1 px-1">
+          {!fixed && !standalone && (
+            <Popover>
+              <PopoverTrigger className={chip} title={t('在哪个项目里执行')}>
+                <FolderGit2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{project?.name ?? t('选择项目')}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px]">
+                <div className="max-h-72 overflow-y-auto">
+                  {projects.map((p) => (
+                    <PopoverClose key={p.id} className={menuItem} onClick={() => setProjectId(p.id)}>
+                      <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate">{p.name}</span>
+                        <span className="truncate font-mono text-[11px] text-subtle">{p.path || t('未选择目录')}</span>
+                      </span>
+                      {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
+                    </PopoverClose>
+                  ))}
+                  {projects.length === 0 && (
+                    <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有项目，先在「项目」里添加一个本机目录')}</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {canIsolate && (
+            <button
+              role="switch"
+              aria-checked={isolate}
+              onClick={() => setIsolate((v) => !v)}
+              title={t('在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃')}
+              className={cn(chip, isolate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}
+            >
+              <GitBranch className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('独立分支')}</span>
+            </button>
+          )}
+        </div>
+      )}
       {busyProject && canIsolate && !isolate && (
         <p className="px-1 text-xs text-subtle">
           {t('这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。')}
