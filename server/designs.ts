@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
+import { applyOps, streamedOps, type OpsState } from '../shared/design-ops.ts'
 import { getCli } from '../shared/clis.ts'
 import {
   Design,
@@ -327,6 +328,7 @@ ${prompt}`,
   ) {
     job.phase = 'images'
     // 进入生成图片阶段：对话的说明已经成了一条消息，不再显示
+    job.preview = undefined
     job.text = ''
     job.thinking = undefined
     job.tools = undefined
@@ -421,6 +423,11 @@ ${prompt}`,
       job.tools = undefined
       job.outChars = 0
       job.out = undefined
+      job.preview = undefined
+      // AI 一步步改（ops）时边收边应用到一份副本上，页面上实时看到改动；最后整体检查通过才真正存下
+      const base = cache.get(d.id)!
+      let applied = 0
+      let preview: OpsState = { root: base.root, components: base.components }
       // 工具调用的 id → 在 job.tools 里的位置，结果回来时更新那一条
       const toolAt = new Map<string, number>()
       let text = ''
@@ -476,11 +483,18 @@ ${prompt}`,
           job.outChars = text.length
           // JSON 部分边写边给界面看；只留最后一段，免得每次推送都很大
           const fence = text.indexOf('```')
-          if (fence >= 0)
+          if (fence >= 0) {
             job.out = text
               .slice(fence)
               .replace(/^```\w*\n?/, '')
               .slice(-3000)
+            const ops = streamedOps(text.slice(fence))
+            if (ops.length > applied) {
+              preview = applyOps(preview, ops.slice(applied)).state
+              applied = ops.length
+              job.preview = { ...preview, applied }
+            }
+          }
         },
       })
       if (r.killed === 'stopped') throw new Error(t('已停止'))
@@ -539,6 +553,8 @@ ${prompt}`,
           run,
         })
         await save(cur)
+        // 存下来了，页面改用正式的设计
+        job.preview = undefined
         return ids
       }
       if (attempt === 2) throw new Error(t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error }))
@@ -621,6 +637,7 @@ ${prompt}`,
       })
       .catch(async (e) => {
         job.status = 'failed'
+        job.preview = undefined
         job.error = (e as Error).message
         log.warn('designs', '设计任务失败', { id: d.id, error: job.error })
         const cur = cache.get(d.id)

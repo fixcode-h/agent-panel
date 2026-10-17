@@ -15,6 +15,7 @@ import {
 } from './umg.ts'
 import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
 import { t } from './i18n.ts'
+import { applyOps } from './design-ops.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -319,6 +320,8 @@ export interface DesignJob {
   outChars: number
   /** 正在写的控件树和图片清单（JSON 的最后一段），边写边显示 */
   out?: string
+  /** AI 一步步改（ops）时，已经收到的操作应用后的样子；页面在 AI 改的过程中显示它，applied 是已经应用了几步 */
+  preview?: { root: Widget; components: Component[]; applied: number }
   attempt: number
   error?: string
   startedAt: number
@@ -372,6 +375,8 @@ export const AiDesignResult = z.object({
     .array(z.object({ Name: z.string().min(1), DesignSize: Vec2Schema.optional(), Root: z.any() }))
     .optional(),
   images: z.array(AiImage).default([]),
+  /** 在现有设计上一步步改（见 design-ops.ts），和 root 二选一 */
+  ops: z.array(z.any()).max(500).optional(),
 })
 
 const UMG_NOTES = `## 插槽（Slot）和常用属性（名字和取值都和 UE5 一致）
@@ -438,6 +443,7 @@ ${UMG_NOTES}
 - 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
+- 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
 - 图片的 prompt 用英文写清楚画什么、什么风格、什么颜色，不要包含文字；尺寸写在 width / height（像素，按界面上的显示尺寸）。
 - 已经生成好的图片不用再列出来，除非用户要求改它（列出来就会重新生成）。新图片的 id 用简短的英文（例如 btn_normal）。
 - 用户只是提问、不需要改设计时，只回答，JSON 里只写 reply。
@@ -461,10 +467,23 @@ ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
   "reply": "给用户看的说明（中文）",
   "style": "${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突；没有就不写）' : '整体美术风格（英文，生成每张图时都会带上；不改就不写）'}",
   "designSize": {"X":1920,"Y":1080}（不改就不写）,
-  "root": { 完整的控件树（改了结构就写完整的树；没改就不写） },
-  "components": [{"Name":"WBP_ItemSlot","DesignSize":{"X":96,"Y":96},"Root":{…}}]（写了就是完整的子控件列表）,
+  "ops": [ 在现有设计上一步步改的操作，见下面（改现有设计时用这个） ],
+  "root": { 完整的控件树（只有控件树还是空的、或要整个重做时才写；和 ops 二选一） },
+  "components": [{"Name":"WBP_ItemSlot","DesignSize":{"X":96,"Y":96},"Root":{…}}]（只在写 root 时用，写了就是完整的子控件列表；改现有设计时用 ops 里的 addComponent 等）,
   "images": [{"id":"btn_normal","name":"Button_Normal","prompt":"…","width":320,"height":96,"transparent":true,"nineSlice":{"Left":0.2,"Top":0.3,"Right":0.2,"Bottom":0.3}}]（这次要新建或重新生成的图片）
 }
+
+### ops：像在控件树和属性面板里操作一样改设计
+只写要改的地方，没提到的控件和属性保持不变。控件用 Name 指定；改子控件里的内容加 "in":"<子控件名>"，主界面不写 in。按顺序执行，后面的操作能用前面加的控件。
+- 改属性：{"op":"set","target":"Txt_Title","path":"Properties.Text","value":"背包"}；path 以 Properties. 或 Slot. 开头，值是对象时只写要改的字段，例如 {"op":"set","target":"Btn_Start","path":"Slot.Padding","value":{"Top":24}}
+- 加控件：{"op":"add","parent":"MenuBox","index":0,"widget":{"Type":"TextBlock","Name":"Txt_Hint","Properties":{"Text":"按任意键继续"}}}（index 不写就放最后；widget 可以带 Children）
+- 删控件：{"op":"remove","target":"Btn_Old"}
+- 移动：{"op":"move","target":"Btn_Quit","parent":"MenuBox","index":2}
+- 改名：{"op":"rename","target":"Image_1","name":"Img_Logo"}
+- 整个换掉一个控件（连同子控件）：{"op":"replace","target":"DetailBox","widget":{…}}（不写 Slot 就沿用原来的）
+- 子控件：{"op":"addComponent","component":{"Name":"WBP_Slot","DesignSize":{"X":96,"Y":96},"Root":{…}}}、{"op":"removeComponent","name":"WBP_Slot"}、{"op":"resizeComponent","name":"WBP_Slot","size":{"X":120,"Y":120}}
+- 换图：给控件的画刷设图片，例如 {"op":"set","target":"Img_Icon","path":"Properties.Brush","value":{"ResourceObject":"img:icon_gem"}}
+
 不要修改文件、不要运行命令，只输出说明和 JSON。`
 }
 
@@ -482,13 +501,23 @@ export function resolveDesignResult(
     DesignSize: c.DesignSize ?? { X: 128, Y: 128 },
     Root: normalizeTree(c.Root),
   }))
-  const compNames = (components ?? d.components).map((c) => c.Name)
-  const root = r.root ? normalizeTree(r.root) : undefined
-  const errors = [
+  let root = r.root ? normalizeTree(r.root) : undefined
+  const errors: string[] = []
+  // 一步步改：在现有设计（或这次写的完整树）上应用操作，结果再整体检查
+  let after = components
+  if (r.ops?.length) {
+    const applied = applyOps({ root: root ?? d.root, components: components ?? d.components }, r.ops)
+    errors.push(...applied.errors)
+    root = applied.state.root
+    after = applied.state.components
+  }
+  const compNames = (after ?? d.components).map((c) => c.Name)
+  errors.push(
     ...(root ? checkTree(root, compNames, imageIds) : []),
-    ...(components ?? []).flatMap((c) => checkTree(c.Root, compNames, imageIds).map((e) => `${c.Name}：${e}`)),
-  ]
-  if (root && !r.root?.Type) errors.push('root 必须是一个控件（有 Type）')
+    ...(after ?? []).flatMap((c) => checkTree(c.Root, compNames, imageIds).map((e) => `${c.Name}：${e}`)),
+  )
+  if (r.root && !r.root?.Type) errors.push('root 必须是一个控件（有 Type）')
+  if (r.root && r.ops?.length) errors.push('root 和 ops 只写一个：改现有设计用 ops，整个重做才写完整的 root')
   // normalizeTree 会把不认识的类型换成 Overlay，这里先查原始数据，让 AI 知道写错了
   const unknown = (w: any, out: string[]): string[] => {
     if (w && typeof w === 'object') {
@@ -502,16 +531,32 @@ export function resolveDesignResult(
     }
     return out
   }
-  errors.push(...unknown(r.root, []), ...(r.components ?? []).flatMap((c) => unknown(c.Root, [])))
+  errors.push(
+    ...unknown(r.root, []),
+    ...(r.components ?? []).flatMap((c) => unknown(c.Root, [])),
+    ...(r.ops ?? []).flatMap((o: any) => unknown(o?.widget ?? o?.component?.Root, [])),
+  )
+  // TextBlock 留着默认的 "Text Block"：要写成实际显示的文字或示例
+  const placeholder: string[] = []
+  for (const tr of [root, ...(after ?? []).map((c) => c.Root)])
+    if (tr)
+      walk(tr, (w) => {
+        if (w.Type === 'TextBlock' && (!String(w.Properties.Text ?? '').trim() || w.Properties.Text === 'Text Block'))
+          placeholder.push(w.Name)
+      })
+  if (placeholder.length)
+    errors.push(
+      `这些 TextBlock 还是默认文字：${placeholder.slice(0, 10).join('、')}。把 Text 写成要显示的内容，运行时才知道的值写成真实格式的示例（如 Lv.99、12,345、00:59）`,
+    )
   // 列出来的图都要用在控件上：只列图不引用，图生成完了效果图上也看不到
-  const used = usedImages([root ?? d.root, ...(components ?? d.components).map((c) => c.Root)])
+  const used = usedImages([root ?? d.root, ...(after ?? d.components).map((c) => c.Root)])
   const unused = r.images.filter((i) => !used.has(i.id)).map((i) => i.id)
   if (unused.length)
     errors.push(
-      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal 等），并写出完整的 root / components`,
+      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal 等），用 set 操作或在 root / components 里写上`,
     )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
-  return { result: r, root, components }
+  return { result: r, root, components: after }
 }
 
 export const ANNOTATION_LABEL: Record<AnnotationKind, string> = {
