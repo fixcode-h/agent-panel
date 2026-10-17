@@ -46,6 +46,7 @@ import {
   WIDGET_TYPES,
   canAddChild,
   canReplace,
+  entryCount,
   isPanel,
   pathTo,
   type Widget,
@@ -344,10 +345,13 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                     {WIDGETS[w.Type]?.entries && (
                       <span
                         className="ml-1.5 text-[11px] text-subtle"
-                        title={t('条目在游戏运行时按数据生成，设计器里只是预览')}
+                        title={
+                          w.Type === 'UniformGridPanel'
+                            ? t('格子在属性里设置，导出到 UE 时展开成子控件')
+                            : t('条目在游戏运行时按数据生成，设计器里只是预览')
+                        }
                       >
-                        {w.Properties?.EntryWidgetClass || t('未选条目')} ×
-                        {w.Properties?.NumDesignerPreviewEntries ?? 0}
+                        {w.Properties?.EntryWidgetClass || t('未选条目')} ×{entryCount(w)}
                       </span>
                     )}
                   </span>

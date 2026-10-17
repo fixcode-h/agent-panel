@@ -108,9 +108,14 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('StretchDirection', 'enum', { options: ['Both', 'DownOnly', 'UpOnly'] }),
   ],
   UniformGridPanel: [
+    F('EntryWidgetClass', 'component'),
+    F('NumEntries', 'num', { min: 0, max: 100 }),
+    F('NumColumns', 'num', { min: 1, max: 20 }),
     F('SlotPadding', 'margin'),
     F('MinDesiredSlotWidth', 'num', { min: 0 }),
     F('MinDesiredSlotHeight', 'num', { min: 0 }),
+    F('EntryHorizontalAlignment', 'enum', { options: ['HAlign_Fill', 'HAlign_Left', 'HAlign_Center', 'HAlign_Right'] }),
+    F('EntryVerticalAlignment', 'enum', { options: ['VAlign_Fill', 'VAlign_Top', 'VAlign_Center', 'VAlign_Bottom'] }),
   ],
   WrapBox: [F('InnerSlotPadding', 'vec2'), F('Orientation', 'enum', { options: ORIENT })],
   ScrollBox: [

@@ -2,7 +2,9 @@ import { useEffect, useState, type CSSProperties, type ReactNode } from 'react'
 import {
   WIDGETS,
   cssColor,
+  entryCount,
   fontPx,
+  gridCell,
   parseColor,
   type Brush,
   type Component,
@@ -280,6 +282,70 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
       return el({ display: 'flex', flexDirection: 'column' }, <Children w={w} ctx={ctx} />)
     case 'UniformGridPanel': {
       const kids = w.Children ?? []
+      // 格子在属性里设：同一个子控件按格子数、列数排开，每格四周留 SlotPadding，和 UE 的 UniformGridPanel 一样等大
+      const comp = ctx.components.get(String(p.EntryWidgetClass ?? ''))
+      if (!kids.length) {
+        const n = entryCount(w)
+        if (!comp || ctx.depth > 6 || !n)
+          return el(
+            {
+              width: fillX ? undefined : 200,
+              height: fillY ? undefined : 120,
+              outline: '1px dashed #60a5fa99',
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 11,
+              color: '#60a5fa',
+            },
+            `${w.Type}${p.EntryWidgetClass ? ` · ${p.EntryWidgetClass}` : ''}`,
+          )
+        const cols = Math.min(n, Math.max(1, Number(p.NumColumns) || 1))
+        const sp = p.SlotPadding ?? {}
+        const cellW = Math.max(Number(p.MinDesiredSlotWidth) || 0, comp.DesignSize.X + (sp.Left ?? 0) + (sp.Right ?? 0))
+        const cellH = Math.max(
+          Number(p.MinDesiredSlotHeight) || 0,
+          comp.DesignSize.Y + (sp.Top ?? 0) + (sp.Bottom ?? 0),
+        )
+        const fx = (p.EntryHorizontalAlignment ?? 'HAlign_Fill') === 'HAlign_Fill'
+        const fy = (p.EntryVerticalAlignment ?? 'VAlign_Fill') === 'VAlign_Fill'
+        const sub = { ...ctx, interactive: false, depth: ctx.depth + 1 }
+        return el(
+          {
+            display: 'grid',
+            gridTemplateColumns: `repeat(${cols}, minmax(${cellW}px, 1fr))`,
+            gridTemplateRows: `repeat(${Math.ceil(n / cols)}, minmax(${cellH}px, 1fr))`,
+          },
+          Array.from({ length: n }, (_, i) => {
+            const cell = gridCell(w, i)
+            return (
+              <div
+                key={i}
+                style={{
+                  gridRow: cell.Row + 1,
+                  gridColumn: cell.Column + 1,
+                  display: 'flex',
+                  minWidth: 0,
+                  minHeight: 0,
+                  padding: pad(sp),
+                  justifyContent: H_JUSTIFY[p.EntryHorizontalAlignment] ?? 'stretch',
+                  alignItems: V_ALIGN[p.EntryVerticalAlignment] ?? 'stretch',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    width: fx ? '100%' : comp.DesignSize.X,
+                    height: fy ? '100%' : comp.DesignSize.Y,
+                  }}
+                >
+                  <UmgNode w={comp.Root} ctx={sub} />
+                </div>
+              </div>
+            )
+          }),
+        )
+      }
+      // 以前存下的、格子各不相同的网格：照旧显示里面的子控件
       const cols = Math.max(1, ...kids.map((k) => (k.Slot?.Column ?? 0) + 1))
       const rows = Math.max(1, ...kids.map((k) => (k.Slot?.Row ?? 0) + 1))
       return el(

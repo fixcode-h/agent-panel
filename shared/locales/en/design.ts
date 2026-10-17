@@ -142,6 +142,8 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  '格子在属性里设置，导出到 UE 时展开成子控件':
+    'Cells are set in the properties and expand into child widgets when exported to UE',
   '打开 {name} 的扩展页面刷新': 'Reload from {name}’s extensions page',
   '已连上，找到 {n} 个可以用的标签页': 'Connected. Found {n} usable tabs',
   '扩展已连上，还没有打开 Gemini 或 ChatGPT': 'Extension connected, but no Gemini or ChatGPT tab is open',

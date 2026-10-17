@@ -30,7 +30,7 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, normalizeTree, uniqueName } from '../shared/umg.ts'
+import { exportDesign, migrateGrids, normalizeTree, uniqueName } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 import { READ_ONLY, safeArgs } from './assist.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -79,8 +79,14 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       if (!f.endsWith('.json') || f.startsWith('_')) continue
       const raw = await readJson(path.join(DIR, f))
       const p = Design.safeParse(raw)
-      if (p.success) cache.set(p.data.id, p.data as Design)
-      else log.warn('designs', `设计文件格式不对，跳过：${f}`)
+      if (p.success) {
+        const d = p.data as Design
+        cache.set(d.id, {
+          ...d,
+          root: migrateGrids(d.root),
+          components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
+        })
+      } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
     }
     loaded = true
   }

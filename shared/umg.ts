@@ -99,7 +99,8 @@ export interface WidgetDef {
   hint: string
   /**
    * 运行时才填内容的列表（ListView、TileView、DynamicEntryBox）：设计时不放子控件，
-   * 条目用 EntryWidgetClass 指定的子控件，设计器里按 NumDesignerPreviewEntries 预览几条
+   * 条目用 EntryWidgetClass 指定的子控件，设计器里按 NumDesignerPreviewEntries 预览几条。
+   * UniformGridPanel 也这样设：格子都是同一个子控件，在属性里设格子数和列数，导出时展开成 UE 里真正的子控件
    */
   entries?: boolean
 }
@@ -134,18 +135,26 @@ export const WIDGETS: Record<WidgetType, WidgetDef> = {
   Overlay: W('Overlay', 'panel', 'many', 'OverlaySlot', '叠放：子控件一层层叠在一起，按对齐方式摆放'),
   HorizontalBox: W('HorizontalBox', 'panel', 'many', 'HorizontalBoxSlot', '横向排列'),
   VerticalBox: W('VerticalBox', 'panel', 'many', 'VerticalBoxSlot', '纵向排列'),
-  UniformGridPanel: W(
-    'UniformGridPanel',
-    'panel',
-    'many',
-    'UniformGridSlot',
-    '等大网格，格子数量设计时就固定（技能栏）；运行时才知道数量的背包格子用 TileView',
-    () => ({
-      SlotPadding: margin(0),
-      MinDesiredSlotWidth: 0,
-      MinDesiredSlotHeight: 0,
-    }),
-  ),
+  UniformGridPanel: {
+    ...W(
+      'UniformGridPanel',
+      'panel',
+      'none',
+      'UniformGridSlot',
+      '等大网格，格子数量设计时就固定（技能栏、快捷栏）：不放子控件，EntryWidgetClass 指定每个格子用的子控件，NumEntries 是格子数、NumColumns 是每行几个，SlotPadding 是格子间距；运行时才知道数量的背包格子用 TileView',
+      () => ({
+        EntryWidgetClass: '',
+        NumEntries: 9,
+        NumColumns: 3,
+        SlotPadding: margin(0),
+        MinDesiredSlotWidth: 0,
+        MinDesiredSlotHeight: 0,
+        EntryHorizontalAlignment: 'HAlign_Fill',
+        EntryVerticalAlignment: 'VAlign_Fill',
+      }),
+    ),
+    entries: true,
+  },
   WrapBox: W('WrapBox', 'panel', 'many', 'WrapBoxSlot', '自动换行排列', () => ({
     InnerSlotPadding: { X: 0, Y: 0 },
     Orientation: 'Orient_Horizontal',
@@ -507,6 +516,34 @@ export function entryClassOf(w: Widget): string | undefined {
   return cls && kids.every((k) => k.Type === 'UserWidget' && k.Class === cls) ? cls : undefined
 }
 
+/**
+ * UniformGridPanel 只在设计器里用的属性：UE 的 UniformGridPanel 没有条目类，格子是真正的子控件，
+ * 导出时按这些属性展开成子控件（每个格子的 UniformGridSlot 填好 Row / Column 和对齐）
+ */
+export const GRID_DESIGN_PROPS = [
+  'EntryWidgetClass',
+  'NumEntries',
+  'NumColumns',
+  'EntryHorizontalAlignment',
+  'EntryVerticalAlignment',
+] as const
+
+/** 条目数：UniformGridPanel 是真正的格子数，运行时列表是设计器里预览几条 */
+export const entryCount = (w: Widget) =>
+  Math.max(
+    0,
+    Math.min(
+      w.Type === 'UniformGridPanel' ? 100 : 50,
+      Number(w.Type === 'UniformGridPanel' ? w.Properties?.NumEntries : w.Properties?.NumDesignerPreviewEntries) || 0,
+    ),
+  )
+
+/** UniformGridPanel 的第 i 个格子在第几行第几列 */
+export const gridCell = (w: Widget, i: number) => {
+  const cols = Math.max(1, Number(w.Properties?.NumColumns) || 1)
+  return { Row: Math.floor(i / cols), Column: i % cols }
+}
+
 /** 能不能把 w 替换成 type：子控件要放得下 */
 export function canReplace(w: Widget, type: WidgetType) {
   if (w.Type === type || type === 'UserWidget') return false
@@ -527,10 +564,7 @@ export function replaceWidget(root: Widget, id: string, type: WidgetType): Widge
         .map((k) => [k, w.Properties[k]]),
     )
     const def = WIDGETS[type]
-    const entry =
-      def.entries && w.Children?.length
-        ? { EntryWidgetClass: entryClassOf(w), NumDesignerPreviewEntries: w.Children.length }
-        : {}
+    const entry = def.entries && w.Children?.length ? entryProps(type, w.Children) : {}
     return {
       id: w.id,
       Type: type,
@@ -542,6 +576,35 @@ export function replaceWidget(root: Widget, id: string, type: WidgetType): Widge
         : {}),
     }
   })
+}
+
+/** 预先摆好的同一种格子换成条目属性：UniformGridPanel 记下格子数和列数，运行时列表记下预览几条 */
+function entryProps(type: WidgetType, kids: Widget[]) {
+  const cls = entryClassOf({ Children: kids } as Widget) ?? ''
+  if (type !== 'UniformGridPanel') return { EntryWidgetClass: cls, NumDesignerPreviewEntries: kids.length }
+  const cols = Math.max(...kids.map((k) => Number(k.Slot?.Column ?? 0) + 1), 1)
+  return {
+    EntryWidgetClass: cls,
+    NumEntries: kids.length,
+    // 原来只排了一行时按格子数算列数
+    NumColumns: kids.some((k) => k.Slot?.Column !== undefined) ? cols : kids.length,
+  }
+}
+
+/**
+ * 以前存下的设计里 UniformGridPanel 直接摆着格子：都是同一个子控件时换成条目属性（格子数、列数）。
+ * 格子各不相同的换不了，原样留着，画布照旧显示
+ */
+export function migrateGrids(w: Widget): Widget {
+  const kids = w.Children?.map(migrateGrids)
+  if (w.Type === 'UniformGridPanel' && kids?.length && !w.Properties?.EntryWidgetClass && entryClassOf(w)) {
+    const { Children: _, ...rest } = w
+    return {
+      ...rest,
+      Properties: { ...WIDGETS.UniformGridPanel.defaults(), ...w.Properties, ...entryProps(w.Type, kids) },
+    }
+  }
+  return kids ? { ...w, Children: kids } : w
 }
 
 export function allNames(root: Widget) {
@@ -630,11 +693,17 @@ export function normalizeTree(w: any, parentSlot?: SlotType, names = new Set<str
   const def = WIDGETS[type]
   const name = uniqueName(String(w?.Name || type), names)
   names.add(name)
+  // 以前的 UniformGridPanel 里直接摆着同一种格子：换成条目属性
+  const kids = Array.isArray(w?.Children) ? w.Children : []
+  const legacy =
+    type === 'UniformGridPanel' && kids.length && !w?.Properties?.EntryWidgetClass && entryClassOf(w)
+      ? entryProps(type, kids)
+      : {}
   const out: Widget = {
     id: typeof w?.id === 'string' && w.id ? w.id : newId(),
     Type: type,
     Name: name,
-    Properties: deepMerge({ ...COMMON_PROPS(), ...def.defaults() }, w?.Properties ?? {}),
+    Properties: deepMerge({ ...COMMON_PROPS(), ...def.defaults() }, { ...(w?.Properties ?? {}), ...legacy }),
   }
   if (parentSlot) out.Slot = deepMerge(defaultSlot(parentSlot) ?? {}, w?.Slot ?? {})
   if (type === 'UserWidget') out.Class = String(w?.Class ?? '')
@@ -704,8 +773,16 @@ export const textureName = (name: string) => {
   return /^T_/i.test(n) ? n : `T_${n}`
 }
 
-/** 导出一个控件：去掉 id，颜色换成 LinearColor，图片换成贴图名，SizeBox 补上 bOverride_ 开关 */
-export function exportWidget(w: Widget, tex: Map<string, string>, slotType?: SlotType): any {
+/**
+ * 导出一个控件：去掉 id，颜色换成 LinearColor，图片换成贴图名，SizeBox 补上 bOverride_ 开关，
+ * UniformGridPanel 的格子展开成 UE 里真正的子控件。names 是这棵树里已有的控件名，展开的格子不和它们重名
+ */
+export function exportWidget(
+  w: Widget,
+  tex: Map<string, string>,
+  slotType?: SlotType,
+  names: Set<string> = allNames(w),
+): any {
   const conv = (v: any): any => {
     if (typeof v === 'string' && /^#[0-9a-f]{6,8}$/i.test(v)) return linearColor(v)
     if (typeof v === 'string' && v.startsWith('img:')) return tex.get(v.slice(4)) ?? ''
@@ -724,6 +801,28 @@ export function exportWidget(w: Widget, tex: Map<string, string>, slotType?: Slo
       'MaxDesiredHeight',
     ])
       props[`bOverride_${k}`] = (w.Properties[k] ?? 0) > 0
+  let children = w.Children?.map((c) => exportWidget(c, tex, WIDGETS[w.Type].slot, names))
+  if (w.Type === 'UniformGridPanel') {
+    for (const k of GRID_DESIGN_PROPS) delete props[k]
+    const cls = String(w.Properties.EntryWidgetClass ?? '')
+    if (cls)
+      children = Array.from({ length: entryCount(w) }, (_, i) => {
+        const name = uniqueName(`${w.Name}_${i}`, names)
+        names.add(name)
+        return {
+          Type: 'UserWidget',
+          Name: name,
+          Class: cls,
+          Slot: {
+            Type: 'UniformGridSlot',
+            ...gridCell(w, i),
+            HorizontalAlignment: w.Properties.EntryHorizontalAlignment ?? 'HAlign_Fill',
+            VerticalAlignment: w.Properties.EntryVerticalAlignment ?? 'VAlign_Fill',
+          },
+          Properties: conv(COMMON_PROPS()),
+        }
+      })
+  }
   return {
     Type: w.Type,
     Name: w.Name,
@@ -731,7 +830,7 @@ export function exportWidget(w: Widget, tex: Map<string, string>, slotType?: Slo
     // 插槽类型写进导出数据，导入时不用再看父控件
     ...(w.Slot && slotType ? { Slot: { Type: slotType, ...conv(w.Slot) } } : {}),
     Properties: props,
-    ...(w.Children ? { Children: w.Children.map((c) => exportWidget(c, tex, WIDGETS[w.Type].slot)) } : {}),
+    ...(children ? { Children: children } : {}),
   }
 }
 
