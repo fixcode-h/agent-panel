@@ -2,7 +2,7 @@
  * 访问外网（GitHub）的请求：Node 自带的 fetch 不走代理，国内访问 GitHub 常常连不上。
  * 设置里填了代理就用它，没填时看环境变量 HTTPS_PROXY / HTTP_PROXY。
  */
-import { EnvHttpProxyAgent, ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
+import { ProxyAgent, fetch as proxyFetch, type Dispatcher } from 'undici'
 import { getSettings } from './settings.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -10,16 +10,33 @@ let agent: { key: string; dispatcher: Dispatcher } | undefined
 
 const ENV_PROXY = ['HTTPS_PROXY', 'https_proxy', 'HTTP_PROXY', 'http_proxy']
 
+/** 环境变量 NO_PROXY 里列出的主机（或它的子域名）不走代理；* 表示都不走 */
+function noProxy(url: string) {
+  const host = new URL(url).hostname.toLowerCase()
+  return (process.env.NO_PROXY ?? process.env.no_proxy ?? '')
+    .split(',')
+    .map((x) =>
+      x
+        .trim()
+        .toLowerCase()
+        .replace(/:\d+$/, '')
+        .replace(/^\*?\./, ''),
+    )
+    .filter(Boolean)
+    .some((x) => x === '*' || host === x || host.endsWith(`.${x}`))
+}
+
 /** 设置里的代理优先；没填时用环境变量（这时 NO_PROXY 也照常生效）。本机地址不走代理 */
 async function proxyFor(url: string) {
   if (/^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])[:/]/.test(url)) return undefined
   const set = (await getSettings()).proxy.trim()
   const env = ENV_PROXY.map((k) => process.env[k]).find(Boolean) ?? ''
-  const key = set || (env ? 'env' : '')
-  if (!key) return undefined
+  if (!set && (!env || noProxy(url))) return undefined
+  // 不用 undici 的 EnvHttpProxyAgent：它还是实验功能，每次启动都会打一条警告
+  const key = set || env
   if (agent?.key !== key) {
     void agent?.dispatcher.close()
-    agent = { key, dispatcher: set ? new ProxyAgent(set) : new EnvHttpProxyAgent() }
+    agent = { key, dispatcher: new ProxyAgent(key) }
   }
   // 报错里显示代理地址时去掉里面的账号密码
   return { shown: (set || env).replace(/\/\/[^/@]*@/, '//'), dispatcher: agent.dispatcher }

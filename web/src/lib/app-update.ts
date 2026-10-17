@@ -56,7 +56,11 @@ export async function installRelease(tag: string) {
   set({ job })
   while (job.status === 'running') {
     await sleep(600)
-    job = await api.appInstallJob(job.id)
+    const next = await api.appInstallJob(job.id).catch(() => null)
+    // 装好后服务马上重启：这时查不到进度（连不上，或者新服务里没有这条记录），
+    // 不当成失败，按「正在重启」等新版本起来
+    if (!next) break
+    job = next
     set({ job })
   }
   if (job.status === 'failed') throw new Error(job.error ?? t('更新失败'))
