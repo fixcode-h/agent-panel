@@ -5,12 +5,15 @@ import {
   entryCount,
   fontPx,
   gridCell,
+  isWebType,
   parseColor,
   type Brush,
   type Component,
   type SlotType,
   type Widget,
 } from '@shared/umg'
+import { WebNode } from './web-render'
+import type { Device } from '@shared/web'
 
 /**
  * 用 HTML 近似 UMG 的布局，在设计器里预览。视觉都来自图片（画刷），HTML 只负责摆位置：
@@ -33,6 +36,8 @@ export interface RenderCtx {
   depth: number
   /** 运行模式：像游戏里一样能点按钮、勾选、拖滑块、输入文字，只改预览不改设计 */
   play?: boolean
+  /** 网页 UI 按哪个宽度画（平板、手机用断点里的属性） */
+  device?: Device
 }
 
 const H_JUSTIFY: Record<string, string> = {
@@ -222,6 +227,8 @@ export function UmgNode({
   parent?: Widget
   ctx: RenderCtx
 }) {
+  // 网页 UI 的控件（以及放在 Frame 里的子控件引用）按网页的规则画
+  if (isWebType(w.Type) || slotType === 'FlexSlot') return <WebNode w={w} parent={parent} ctx={ctx} />
   if (w.Properties?.Visibility === 'Collapsed') return null
   const s = slotStyle(slotType, w.Slot, parent)
   return (

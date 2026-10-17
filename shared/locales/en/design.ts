@@ -14,7 +14,6 @@ export const EN_DESIGN: Record<string, string> = {
   '例如：主菜单、背包、战斗 HUD': 'e.g. main menu, inventory, combat HUD',
   类型: 'Type',
   '游戏 UI（UE5 UMG）': 'Game UI (UE5 UMG)',
-  '网页 UI（即将支持）': 'Web UI (coming soon)',
   设计尺寸: 'Design size',
   开始设计: 'Start designing',
 
@@ -142,6 +141,59 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  已存为一个版本: 'Saved as a version',
+  版本: 'Versions',
+  '版本名，例如：第一稿、给老板看的': 'Version name, e.g. First draft, For review',
+  存版本: 'Save version',
+  '还没有版本。AI 每次修改前会自动存一个，也可以在上面手动存。':
+    'No versions yet. One is saved automatically before every AI change, or save one above.',
+  '{n} 个控件': '{n} widgets',
+  和现在对比: 'Compare with now',
+  恢复到这个版本: 'Restore this version',
+  '已恢复到「{name}」，恢复前的样子也存成了一个版本':
+    'Restored “{name}”. The state before restoring was saved as a version too',
+  删除这个版本: 'Delete this version',
+  对比版本: 'Compare versions',
+  关闭对比: 'Close comparison',
+  现在: 'Now',
+  版本不存在: 'Version not found',
+  未命名版本: 'Untitled version',
+  '恢复「{name}」之前': 'Before restoring “{name}”',
+  'AI 修改前：{text}': 'Before AI change: {text}',
+  'absolute：不占位置，贴在父控件的某个角上（角标、浮层）':
+    'absolute: takes no space and sticks to a corner of the parent (badges, overlays)',
+  偏移: 'Offset',
+  '外观（{device}）': 'Appearance ({device})',
+  平板: 'Tablet',
+  手机: 'Phone',
+  '正在改{device}宽度下的样式，只影响这个宽度，桌面不变': 'Editing the {device} width only; desktop stays the same',
+  还原: 'Reset',
+  悬停: 'Hover',
+  'React + Tailwind 组件（ZIP）': 'React + Tailwind component (ZIP)',
+  预览宽度: 'Preview width',
+  '桌面（{w}）': 'Desktop ({w})',
+  '平板（{w}）': 'Tablet ({w})',
+  '手机（{w}）': 'Phone ({w})',
+  '做一个 SaaS 产品首页：顶部导航、左文右图的头图、三张功能卡片和页脚，暖色调':
+    'Make a SaaS product home page: top nav, hero with text on the left and an image on the right, three feature cards and a footer, warm colors',
+  '做一个登录页：左边品牌插图，右边邮箱、密码输入框和登录按钮':
+    'Make a sign-in page: brand illustration on the left; email, password fields and a sign-in button on the right',
+  '做一个电商商品详情页：大图、标题价格、规格选择、加入购物车按钮':
+    'Make a product details page: large image, title and price, option picker and an add-to-cart button',
+  '照着附上的截图做一个一样的页面（点左下角的 + 附上截图，或直接粘贴）':
+    'Recreate the page in the attached screenshot (attach it with + at the bottom left, or just paste it)',
+  选择图片: 'Choose an image',
+  还没有图片: 'No images yet',
+  无: 'None',
+  '在父控件的交叉轴上怎么对齐，auto 跟随父控件的 AlignItems':
+    'Alignment on the parent’s cross axis; auto follows the parent’s AlignItems',
+  网页控件: 'Web widgets',
+  '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。':
+    'Design web pages in chat: the AI builds the page with auto layout, generates illustrations and icons, and exports HTML / CSS with images you can open in a browser.',
+  '例如：首页、登录页、商品详情': 'e.g. Home, Sign in, Product details',
+  '网页 UI（HTML / CSS）': 'Web UI (HTML / CSS)',
+  'ZIP（HTML + 图片文件）': 'ZIP (HTML + image files)',
+  '单个 HTML（图片内嵌）': 'Single HTML (images embedded)',
   '照着附上的截图做一个一样的界面（点左下角的 + 附上截图，或直接粘贴）':
     'Recreate the screen in the attached screenshot (attach it with + at the bottom left, or just paste it)',
   对齐: 'Align',

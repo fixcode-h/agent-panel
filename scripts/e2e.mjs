@@ -2243,6 +2243,98 @@ try {
       }),
       /没有要生成的图片/,
     )
+    // 网页 UI：根控件是占满整页的 Frame，AI 用 Frame / Text / WebButton 搭，导出成 HTML
+    const webD = await call('POST', '/designs', {
+      projectId: uiProject.id,
+      kind: 'web',
+      title: 'Landing Page',
+      designSize: { X: 1440, Y: 900 },
+    })
+    assert.deepEqual([webD.kind, webD.root.Type, webD.root.Properties.Width], ['web', 'Frame', 'fill'])
+    const webTree = {
+      reply: '首页好了',
+      ops: [
+        {
+          op: 'add',
+          parent: 'Page',
+          widget: { Type: 'Text', Name: 'Title', Properties: { Text: '欢迎来到 Flowboard', Tag: 'h1' } },
+        },
+        {
+          op: 'add',
+          parent: 'Page',
+          widget: {
+            Type: 'Frame',
+            Name: 'Actions',
+            Properties: { Direction: 'row', Gap: 12, Mobile: { Direction: 'column' } },
+            Children: [
+              {
+                Type: 'WebButton',
+                Name: 'Btn_Go',
+                Properties: { Text: '开始使用', Href: '/start', Hover: { Background: '#1D4ED8FF' } },
+              },
+              {
+                Type: 'Text',
+                Name: 'Badge',
+                Slot: { Position: 'absolute', Pin: 'top-right', X: 4, Y: 4 },
+                Properties: { Text: 'NEW' },
+              },
+            ],
+          },
+        },
+      ],
+    }
+    await call('POST', `/designs/${webD.id}/chat`, {
+      text: `做首页 FAKE_DESIGN:${JSON.stringify(webTree)}`,
+      source: { kind: 'none' },
+    })
+    let wd = await waitJob(webD.id)
+    assert.equal(wd.job.status, 'done', JSON.stringify(wd.job.error))
+    assert.deepEqual(
+      wd.root.Children.map((w) => [w.Type, w.Name, w.Slot?.AlignSelf]),
+      [
+        ['Text', 'Title', 'auto'],
+        ['Frame', 'Actions', 'auto'],
+      ],
+    )
+    const webAsk = calls()
+      .filter((c) => c.kind === 'codex' && /你是网页 UI 设计助手/.test(c.input ?? ''))
+      .at(-1)
+    assert.ok(webAsk, '网页设计用网页的提示词')
+    assert.doesNotMatch(webAsk.input, /CanvasPanelSlot/, '网页的提示词里没有 UMG 的插槽')
+    const html = await (await fetch(`${base}/designs/${webD.id}/export?format=json`)).text()
+    assert.match(html, /<h1 class="Title">欢迎来到 Flowboard<\/h1>/)
+    assert.match(html, /\.Actions \{[^}]*flex-direction: row;[^}]*gap: 12px;/)
+    assert.match(html, /<a class="Btn_Go" href="\/start">开始使用<\/a>/, '写了 Href 就是链接')
+    assert.match(html, /\.Btn_Go:hover \{ background-color: rgba\(29,78,216,1\); \}/, '悬停样式')
+    assert.match(html, /@media \(max-width: 767px\) \{\n {2}\.Actions \{ flex-direction: column; \}/, '手机上改竖排')
+    assert.match(html, /\.Badge \{[^}]*position: absolute;[^}]*top: 4px;[^}]*right: 4px;/, '绝对定位贴在右上角')
+    const reactZip = Buffer.from(await (await fetch(`${base}/designs/${webD.id}/export?format=react`)).arrayBuffer())
+    assert.ok(reactZip.includes(Buffer.from('LandingPage.tsx')), JSON.stringify(reactZip.subarray(30, 80).toString()))
+    assert.ok(reactZip.includes(Buffer.from('max-md:flex-col')), 'React 组件里手机用 max-md:')
+    const webZip = Buffer.from(await (await fetch(`${base}/designs/${webD.id}/export?format=zip`)).arrayBuffer())
+    assert.ok(webZip.includes(Buffer.from('index.html')))
+    // 版本：AI 改之前自动存了一个；手动存一个；恢复到 AI 改之前，恢复前的样子也存下来
+    let vers = await call('GET', `/designs/${webD.id}/versions`)
+    assert.equal(vers.length, 1)
+    assert.ok(vers[0].auto && /AI 修改前/.test(vers[0].name))
+    const named = await call('POST', `/designs/${webD.id}/versions`, { name: '第一稿' })
+    assert.equal(named.auto, false)
+    const full = await call('GET', `/designs/${webD.id}/versions/${named.id}`)
+    assert.equal(full.snapshot.root.Children.length, 2, '版本里有完整的控件树')
+    const restored = await call('POST', `/designs/${webD.id}/versions/${vers[0].id}/restore`)
+    assert.equal(restored.root.Children.length, 0, '恢复到 AI 改之前（空页面）')
+    vers = await call('GET', `/designs/${webD.id}/versions`)
+    assert.deepEqual(
+      vers.map((v) => v.auto),
+      [true, false, true],
+    )
+    assert.match(vers[0].name, /^恢复「AI 修改前：做首页.*」之前$/)
+    assert.equal(vers[1].name, '第一稿')
+    await call('DELETE', `/designs/${webD.id}/versions/${named.id}`)
+    assert.equal((await call('GET', `/designs/${webD.id}/versions`)).length, 2)
+    await call('DELETE', `/designs/${webD.id}`)
+    step('UI 设计：网页 UI（自动布局的控件、网页的提示词、导出 HTML）')
+
     // 「控件」列表：项目里别的设计的子控件能连同图片加进来
     const other2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'Shop' })
     const pc = await call('GET', `/designs/projects/${uiProject.id}/components`)

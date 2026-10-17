@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { UmgNode, type RenderImage } from './umg-render'
 import type { Annotation, AnnotationKind } from '@shared/design'
+import type { Device } from '@shared/web'
 import { AnnotationLayer, AnnotationToolbar, TOOL_KEYS, isMarkTool, widgetsIn, type Tool } from './Annotations'
 
 /**
@@ -36,6 +37,9 @@ export function Viewport({
   onOpen,
   extra = [],
   onPick,
+  device,
+  onReorder,
+  onNudge,
 }: {
   root: Widget
   size: Vec2
@@ -56,6 +60,12 @@ export function Viewport({
   extra?: string[]
   /** additive：按住 Shift / Ctrl 点的，加进多选或从多选里去掉 */
   onPick?: (id: string, additive: boolean) => void
+  /** 网页 UI 按哪个宽度画 */
+  device?: Device
+  /** 网页 UI：把控件拖到某个 Frame 的第 index 个位置 */
+  onReorder?: (id: string, parentId: string, index: number) => void
+  /** 网页 UI：绝对定位的控件拖动时改偏移（dx、dy 是设计稿像素，往右、往下为正） */
+  onNudge?: (id: string, dx: number, dy: number, key: string) => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -239,6 +249,93 @@ export function Viewport({
     }
   }
 
+  // 网页 UI 拖动换位置时插入的位置（设计稿像素的一条线）
+  const [dropLine, setDropLine] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+
+  /**
+   * 网页 UI 里拖动选中的控件：跟着自动布局走的，松手时放到鼠标下面那个 Frame 里对应的位置；
+   * 绝对定位的，直接改偏移
+   */
+  const webDrag = (e: React.PointerEvent) => {
+    const st = stage.current
+    const me = st?.querySelector<HTMLElement>(`[data-wid="${CSS.escape(selected)}"]`)
+    const w = findWidget(root, selected)
+    if (!st || !me || !w || !parent || !onReorder) return
+    e.preventDefault()
+    e.stopPropagation()
+    const sx = e.clientX
+    const sy = e.clientY
+    const abs = w.Slot?.Position === 'absolute'
+    const key = `drag:${selected}:${Date.now()}`
+    let lx = 0
+    let ly = 0
+    let target: { parent: string; index: number } | null = null
+    let started = false
+    const toDesign = (r: DOMRect) => {
+      const a = st.getBoundingClientRect()
+      return { x: (r.left - a.left) / scale, y: (r.top - a.top) / scale, w: r.width / scale, h: r.height / scale }
+    }
+    const move = (ev: PointerEvent) => {
+      if (!started && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return
+      started = true
+      if (abs) {
+        const dx = Math.round((ev.clientX - sx) / scale)
+        const dy = Math.round((ev.clientY - sy) / scale)
+        if (dx !== lx || dy !== ly) onNudge?.(selected, dx - lx, dy - ly, key)
+        lx = dx
+        ly = dy
+        return
+      }
+      // 鼠标下面最近的、不是自己（也不在自己里面）的 Frame
+      const frame = document
+        .elementsFromPoint(ev.clientX, ev.clientY)
+        .find(
+          (el): el is HTMLElement =>
+            el instanceof HTMLElement && el.dataset.type === 'Frame' && !!el.dataset.wid && !me.contains(el),
+        )
+      if (!frame) {
+        target = null
+        setDropLine(null)
+        return
+      }
+      const row = getComputedStyle(frame).flexDirection.startsWith('row')
+      const kids = [...frame.children].filter(
+        (c): c is HTMLElement => c instanceof HTMLElement && !!c.dataset.wid && c !== me,
+      )
+      let index = kids.length
+      for (let i = 0; i < kids.length; i++) {
+        const r = kids[i].getBoundingClientRect()
+        if (row ? ev.clientX < r.left + r.width / 2 : ev.clientY < r.top + r.height / 2) {
+          index = i
+          break
+        }
+      }
+      // 插入线：在第 index 个控件前面，放到最后时在最后一个后面
+      const fr = toDesign(frame.getBoundingClientRect())
+      const ref = kids[index] ?? kids[index - 1]
+      const rr = ref ? toDesign(ref.getBoundingClientRect()) : undefined
+      const before = !!kids[index]
+      const line = rr
+        ? row
+          ? { x: before ? rr.x - 1 : rr.x + rr.w - 1, y: rr.y, w: 2, h: rr.h }
+          : { x: rr.x, y: before ? rr.y - 1 : rr.y + rr.h - 1, w: rr.w, h: 2 }
+        : { x: fr.x + 4, y: fr.y + 4, w: row ? 2 : fr.w - 8, h: row ? fr.h - 8 : 2 }
+      setDropLine(line)
+      // 控件树里的位置：自己原来在这个 Frame 里时，前面的位置要把自己算进去
+      const all = [...frame.children].filter((c): c is HTMLElement => c instanceof HTMLElement && !!c.dataset.wid)
+      const realIndex = kids[index] ? all.indexOf(kids[index]) : all.length
+      target = { parent: frame.dataset.wid!, index: realIndex }
+    }
+    const up = () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      setDropLine(null)
+      if (started && target) onReorder(selected, target.parent, target.index)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+  }
+
   const drag = (e: React.PointerEvent, mode: 'move' | 'resize') => {
     if (!movable) return
     e.preventDefault()
@@ -304,7 +401,14 @@ export function Viewport({
   }
 
   const play = tool === 'play'
-  const ctx = { images, components: new Map(components.map((c) => [c.Name, c])), interactive: true, depth: 0, play }
+  const ctx = {
+    images,
+    components: new Map(components.map((c) => [c.Name, c])),
+    interactive: true,
+    depth: 0,
+    play,
+    device,
+  }
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#18181a]">
@@ -344,7 +448,10 @@ export function Viewport({
                 }
                 onSelect(id)
                 // 点到的就是选中的、能拖动的控件时直接开始拖
-                if (id && id === selected) drag(e, 'move')
+                if (id && id === selected) {
+                  if (device && parent?.Type === 'Frame') webDrag(e)
+                  else drag(e, 'move')
+                }
               }}
               onDoubleClick={(e) => {
                 if (tool !== 'select') return
@@ -377,6 +484,17 @@ export function Viewport({
                   style={{ left: b.x * scale, top: b.y * scale, width: b.w * scale, height: b.h * scale }}
                 />
               ))}
+            {dropLine && (
+              <div
+                className="pointer-events-none absolute rounded-full bg-[#4c9bff]"
+                style={{
+                  left: dropLine.x * scale,
+                  top: dropLine.y * scale,
+                  width: Math.max(2, dropLine.w * scale),
+                  height: Math.max(2, dropLine.h * scale),
+                }}
+              />
+            )}
             {guides.x.map((x) => (
               <div
                 key={`gx${x}`}

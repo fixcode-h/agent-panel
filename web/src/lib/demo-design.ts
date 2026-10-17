@@ -10,9 +10,10 @@ import {
   type Design,
   type DesignMeta,
   type DesignProject,
+  type DesignVersion,
   type ImageSource,
 } from '@shared/design'
-import { normalizeTree, type Widget } from '@shared/umg'
+import { normalizeTree, walk, type Widget } from '@shared/umg'
 
 type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
@@ -216,6 +217,208 @@ const menuButton = (name: string, label: string) => ({
   },
   Children: [text(`Txt_${name}`, label, 26)],
 })
+
+/** 网页 UI 的演示：一个产品首页（导航栏、头图、三张功能卡片、页脚） */
+function webTemplate() {
+  const txt = (Name: string, Text: string, more: Record<string, unknown> = {}) => ({
+    Type: 'Text',
+    Name,
+    Properties: { Text, ...more },
+  })
+  const card = {
+    Type: 'Frame',
+    Name: 'Card',
+    Properties: {
+      Gap: 10,
+      Padding: { Left: 24, Top: 24, Right: 24, Bottom: 24 },
+      Background: '#FFFFFFFF',
+      Radius: 16,
+      BorderWidth: 1,
+      BorderColor: '#E7E5E4FF',
+      Shadow: 'sm',
+      Width: 'fill',
+      Hover: { Shadow: 'lg', BorderColor: '#FDBA74FF' },
+    },
+    Children: [
+      { Type: 'Picture', Name: 'Icon', Properties: { Src: 'img:feature_icon', Width: 48, Height: 48, Radius: 12 } },
+      txt('Title', '实时协作', { Tag: 'h3', FontSize: 20, FontWeight: 600 }),
+      txt('Desc', '多人同时编辑同一个看板，改动秒级同步，再也不用来回发文件。', {
+        FontSize: 15,
+        Color: '#57534EFF',
+      }),
+    ],
+  }
+  const feature = (name: string) => ({
+    Type: 'UserWidget',
+    Name: name,
+    Class: 'FeatureCard',
+    Properties: { Width: 'fill' },
+  })
+  const root = {
+    Type: 'Frame',
+    Name: 'Page',
+    Properties: { Width: 'fill', Height: 'fill', Background: '#FAFAF9FF', Overflow: 'auto' },
+    Children: [
+      {
+        Type: 'Frame',
+        Name: 'Nav',
+        Properties: {
+          Direction: 'row',
+          AlignItems: 'center',
+          JustifyContent: 'between',
+          Padding: { Left: 64, Top: 20, Right: 64, Bottom: 20 },
+          Width: 'fill',
+          Mobile: { Padding: { Left: 20, Top: 16, Right: 20, Bottom: 16 } },
+        },
+        Children: [
+          txt('Logo', 'Flowboard', { FontSize: 22, FontWeight: 700 }),
+          {
+            Type: 'Frame',
+            Name: 'Links',
+            Properties: { Direction: 'row', Gap: 28, AlignItems: 'center' },
+            Children: [
+              // 手机上只留按钮
+              txt('Link_Product', '产品', {
+                Color: '#44403CFF',
+                Href: '#product',
+                Mobile: { Visibility: 'Collapsed' },
+              }),
+              txt('Link_Pricing', '价格', {
+                Color: '#44403CFF',
+                Href: '#pricing',
+                Mobile: { Visibility: 'Collapsed' },
+              }),
+              txt('Link_Docs', '文档', { Color: '#44403CFF', Href: '#docs', Mobile: { Visibility: 'Collapsed' } }),
+              {
+                Type: 'WebButton',
+                Name: 'Btn_Signup',
+                Properties: { Text: '免费试用', Background: '#1C1917FF', Hover: { Background: '#44403CFF' } },
+              },
+            ],
+          },
+        ],
+      },
+      {
+        Type: 'Frame',
+        Name: 'Hero',
+        Properties: {
+          Direction: 'row',
+          Gap: 48,
+          AlignItems: 'center',
+          Padding: { Left: 64, Top: 56, Right: 64, Bottom: 56 },
+          Width: 'fill',
+          // 手机上左文右图改成上下排
+          Mobile: { Direction: 'column', Gap: 28, Padding: { Left: 20, Top: 24, Right: 20, Bottom: 32 } },
+        },
+        Children: [
+          {
+            Type: 'Frame',
+            Name: 'HeroText',
+            Properties: { Gap: 20, Width: 'fill' },
+            Children: [
+              txt('Headline', '让团队的每个项目都井井有条', {
+                Tag: 'h1',
+                FontSize: 52,
+                FontWeight: 700,
+                LineHeight: 1.15,
+                Mobile: { FontSize: 34 },
+              }),
+              txt('Subline', '看板、文档和讨论放在一起，任务进展一目了然。超过 12,000 个团队在用。', {
+                FontSize: 18,
+                Color: '#57534EFF',
+              }),
+              {
+                Type: 'Frame',
+                Name: 'Actions',
+                Properties: { Direction: 'row', Gap: 12 },
+                Children: [
+                  {
+                    Type: 'WebButton',
+                    Name: 'Btn_Start',
+                    Properties: {
+                      Text: '开始使用',
+                      FontSize: 16,
+                      Background: '#EA580CFF',
+                      Padding: { Left: 24, Top: 12, Right: 24, Bottom: 12 },
+                      Radius: 10,
+                    },
+                  },
+                  {
+                    Type: 'WebButton',
+                    Name: 'Btn_Demo',
+                    Properties: {
+                      Text: '观看演示',
+                      FontSize: 16,
+                      Color: '#1C1917FF',
+                      Background: '#FFFFFFFF',
+                      BorderWidth: 1,
+                      BorderColor: '#D6D3D1FF',
+                      Padding: { Left: 24, Top: 12, Right: 24, Bottom: 12 },
+                      Radius: 10,
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            Type: 'Picture',
+            Name: 'HeroArt',
+            Properties: {
+              Src: 'img:hero_art',
+              Width: 560,
+              Height: 400,
+              Radius: 20,
+              Mobile: { Width: 'fill', Height: 240 },
+            },
+          },
+        ],
+      },
+      {
+        Type: 'Frame',
+        Name: 'Features',
+        Properties: {
+          Direction: 'row',
+          Gap: 24,
+          Padding: { Left: 64, Top: 8, Right: 64, Bottom: 64 },
+          Width: 'fill',
+          Mobile: { Direction: 'column', Gap: 16, Padding: { Left: 20, Top: 0, Right: 20, Bottom: 32 } },
+        },
+        Children: [feature('Feature_1'), feature('Feature_2'), feature('Feature_3')],
+      },
+      { Type: 'Divider', Name: 'FooterLine' },
+      txt('Footer', '© 2026 Flowboard · 隐私政策 · 联系我们', {
+        FontSize: 13,
+        Color: '#A8A29EFF',
+        TextAlign: 'center',
+      }),
+    ],
+  }
+  return {
+    reply: '做好了产品首页：顶部导航、左文右图的头图区、三张功能卡片（做成了子控件 FeatureCard）和页脚。',
+    style: 'clean modern SaaS, warm neutral palette with orange accent, soft lighting',
+    root,
+    components: [{ Name: 'FeatureCard', DesignSize: { X: 400, Y: 220 }, Root: card }],
+    images: [
+      {
+        id: 'hero_art',
+        name: 'Hero_Art',
+        prompt: 'isometric illustration of a tidy project board with cards and avatars, warm orange accents',
+        width: 560,
+        height: 400,
+        transparent: false,
+      },
+      {
+        id: 'feature_icon',
+        name: 'Feature_Icon',
+        prompt: 'flat rounded app icon of two overlapping chat bubbles, orange gradient',
+        width: 96,
+        height: 96,
+        transparent: true,
+      },
+    ],
+  }
+}
 
 function menuTemplate() {
   const root = {
@@ -560,7 +763,9 @@ async function runChat(
     run,
   }
   d.job = job
-  const tpl = /背包|物品|inventory/i.test(text) ? inventoryTemplate() : menuTemplate()
+  addVersion(d, `AI 修改前：${text.slice(0, 24)}`, true)
+  const tpl =
+    d.kind === 'web' ? webTemplate() : /背包|物品|inventory/i.test(text) ? inventoryTemplate() : menuTemplate()
   // 演示流式输出：先思考，再说明
   for (const ch of '先看一下现在的控件树和图片，再按要求调整布局、列出需要的图片。'.match(/.{1,3}/g) ?? []) {
     await sleep(40)
@@ -721,7 +926,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       title: body.title,
       designSize: body.designSize ?? { X: 1920, Y: 1080 },
       style: '',
-      root: emptyRoot(),
+      root: emptyRoot(body.kind ?? 'game'),
       components: [],
       images: [],
       annotations: [],
@@ -865,4 +1070,66 @@ export function demoImportComponent(id: string, body: any) {
   d.images = r.images
   d.rev++
   return d
+}
+
+// ---- 版本（在线演示：放在内存里） ----
+const versions = new Map<string, DesignVersion[]>()
+function addVersion(d: Full, name: string, auto: boolean) {
+  const v: DesignVersion = {
+    id: randomId(),
+    name,
+    at: now(),
+    auto,
+    snapshot: structuredClone({
+      designSize: d.designSize,
+      style: d.style,
+      root: d.root,
+      components: d.components,
+      images: d.images,
+    }),
+  }
+  versions.set(d.id, [v, ...(versions.get(d.id) ?? [])].slice(0, 40))
+  return v
+}
+const meta = ({ snapshot, ...rest }: DesignVersion) => {
+  let widgets = 0
+  for (const r of [snapshot.root, ...snapshot.components.map((c) => c.Root)]) walk(r, () => widgets++)
+  return { ...rest, widgets }
+}
+
+/** /designs/:id/versions[/:vid[/restore]] */
+export function demoVersions(
+  method: string,
+  id: string,
+  vid: string | undefined,
+  action: string | undefined,
+  body: any,
+) {
+  seed()
+  const d = designs.get(id) ?? fail('设计不存在')
+  const list = versions.get(id) ?? []
+  if (!vid) return method === 'POST' ? meta(addVersion(d, String(body.name || '未命名版本'), false)) : list.map(meta)
+  const v = list.find((x) => x.id === vid) ?? fail('版本不存在')
+  if (method === 'DELETE') {
+    versions.set(
+      id,
+      list.filter((x) => x !== v),
+    )
+    return undefined
+  }
+  if (action === 'restore') {
+    addVersion(d, `恢复「${v.name}」之前`, true)
+    Object.assign(
+      d,
+      structuredClone({
+        root: v.snapshot.root,
+        components: v.snapshot.components,
+        designSize: v.snapshot.designSize,
+        style: v.snapshot.style,
+      }),
+    )
+    d.rev++
+    return d
+  }
+  return v
 }

@@ -5,19 +5,31 @@ import {
   Download,
   FileJson,
   FileArchive,
+  FileCode2,
   FolderDown,
   Gamepad2,
+  Globe,
   MessageSquare,
   Palette as PaletteIcon,
   Plus,
   Puzzle,
   Loader2,
+  Monitor,
   Redo2,
+  Smartphone,
+  Tablet,
   Trash2,
   Undo2,
 } from 'lucide-react'
 import type { Attachment } from '@shared/schema'
-import { imageRevisionText, type Annotation, type DesignDoc, type DesignImage, type ImageSource } from '@shared/design'
+import {
+  imageRevisionText,
+  type Annotation,
+  type DesignVersion,
+  type DesignDoc,
+  type DesignImage,
+  type ImageSource,
+} from '@shared/design'
 import {
   IMAGE_SLOT,
   WIDGETS,
@@ -66,6 +78,8 @@ import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierar
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
+import { VersionCompare, VersionsButton } from '@/components/design/Versions'
+import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
@@ -91,6 +105,14 @@ const SIZES = [
   { v: '1280x720', label: '1280 × 720（16:9）' },
   { v: '2340x1080', label: '2340 × 1080（手机横屏）' },
   { v: '1080x1920', label: '1080 × 1920（竖屏）' },
+]
+/** 网页的常用尺寸：桌面、笔记本、平板、手机 */
+const WEB_SIZES = [
+  { v: '1440x900', label: '1440 × 900（桌面）' },
+  { v: '1280x800', label: '1280 × 800（笔记本）' },
+  { v: '1920x1080', label: '1920 × 1080（大屏）' },
+  { v: '768x1024', label: '768 × 1024（平板）' },
+  { v: '390x844', label: '390 × 844（手机）' },
 ]
 
 function NewDesign({ projectId }: { projectId?: string }) {
@@ -146,9 +168,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
         </span>
         <h1 className="font-serif text-[26px] font-semibold tracking-tight">{t('UI 设计')}</h1>
         <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
-          {t(
-            '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
-          )}
+          {kind === 'web'
+            ? t(
+                '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
+              )
+            : t(
+                '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
+              )}
         </p>
         <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
@@ -168,7 +194,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !busy && pid && void create()}
-                placeholder={t('例如：主菜单、背包、战斗 HUD')}
+                placeholder={kind === 'web' ? t('例如：首页、登录页、商品详情') : t('例如：主菜单、背包、战斗 HUD')}
               />
             </label>
             <div className="flex flex-col gap-1.5">
@@ -176,10 +202,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
               <Segmented
                 label={t('类型')}
                 value={kind}
-                onChange={setKind}
+                onChange={(k) => {
+                  setKind(k)
+                  setSize(k === 'web' ? WEB_SIZES[0].v : SIZES[0].v)
+                }}
                 options={[
                   { id: 'game', label: t('游戏 UI（UE5 UMG）') },
-                  { id: 'web', label: t('网页 UI（即将支持）'), disabled: true },
+                  { id: 'web', label: t('网页 UI（HTML / CSS）') },
                 ]}
               />
             </div>
@@ -202,13 +231,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
                   aria-label={t('设计尺寸')}
                   value={size}
                   onChange={(e) => setSize(e.target.value)}
-                  options={SIZES.map((s) => ({ value: s.v, label: s.label }))}
+                  options={(kind === 'web' ? WEB_SIZES : SIZES).map((s) => ({ value: s.v, label: s.label }))}
                 />
               </div>
             </div>
             <div className="flex justify-end">
               <Button onClick={() => void create()} disabled={busy || !pid}>
-                <Gamepad2 className="h-4 w-4" />
+                {kind === 'web' ? <Globe className="h-4 w-4" /> : <Gamepad2 className="h-4 w-4" />}
                 {t('开始设计')}
               </Button>
             </div>
@@ -261,12 +290,16 @@ function Designer({ id }: { id: string }) {
   const [selected, setSelected] = useState('')
   /** 效果图上按住 Shift / Ctrl 多选的其他控件，用来对齐、等间距；换树或普通点选时清掉 */
   const [extra, setExtra] = useState<string[]>([])
+  /** 网页 UI 按哪个宽度预览；平板、手机时属性面板改的是这个宽度的断点 */
+  const [device, setDevice] = useState<Device>('desktop')
   useEffect(() => setExtra([]), [target])
   const [hasClip, setHasClip] = useState(!!clipboard)
   const [tab, setTab] = useState<'tree' | 'images' | 'widgets'>('tree')
   const [imageSel, setImageSel] = useState('')
   /** 双击图片后在画布区域放大预览的图片 */
   const [preview, setPreview] = useState('')
+  /** 正在和现在对比的版本 */
+  const [compare, setCompare] = useState<DesignVersion>()
   /** 图上的修改标记和效果图的标注放在一起（target 是 img:<图片 id>），在右边对话框上面列出来，发送时一起发 */
   const imgTarget = (imgId: string) => `img:${imgId}`
   const [chatOpen, setChatOpen] = useState(true)
@@ -361,8 +394,24 @@ function Designer({ id }: { id: string }) {
     setTab('tree')
   }
 
+  /** 按住 Shift / Ctrl 点（效果图或控件树）：加进多选；再点一次已选的就取消它 */
+  const pick = (wid: string) => {
+    if (wid === selected) {
+      setSelected(extra.at(-1) ?? '')
+      setExtra(extra.slice(0, -1))
+    } else if (extra.includes(wid)) setExtra(extra.filter((x) => x !== wid))
+    else {
+      if (selected) setExtra([...extra.filter((x) => x !== selected), selected])
+      setSelected(wid)
+    }
+    setTab('tree')
+  }
+
   const actions: TreeActions = {
-    select: (wid) => setSelected(wid),
+    select: (wid) => {
+      setSelected(wid)
+      setExtra([])
+    },
     rename: (wid, name) =>
       editTree((r) => {
         const names = allNames(r)
@@ -529,7 +578,13 @@ function Designer({ id }: { id: string }) {
         actions.paste(selected || tree.id)
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected && tree && selected !== tree.id) {
         e.preventDefault()
-        actions.remove(selected)
+        // 多选时一起删（一次撤销全部退回）
+        const ids = [selected, ...extra].filter((x) => x !== tree.id)
+        if (ids.length > 1) {
+          editTree((r) => ids.reduce((acc, x) => removeWidget(acc, x), r), `rm:${ids.join(',')}`)
+          setSelected('')
+          setExtra([])
+        } else actions.remove(selected)
       } else if (e.key.startsWith('Arrow') && selected && !mod) {
         const step = e.shiftKey ? 10 : 1
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0
@@ -576,6 +631,11 @@ function Designer({ id }: { id: string }) {
   const designSize = target
     ? (doc.components.find((c) => c.Name === target)?.DesignSize ?? doc.designSize)
     : doc.designSize
+  // 网页的主界面按选的宽度预览（高度用常见设备的高度）；子控件照旧按自己的尺寸
+  const viewSize =
+    server.kind === 'web' && !target && device !== 'desktop'
+      ? { X: DEVICE_WIDTH[device], Y: device === 'tablet' ? 1024 : 844 }
+      : designSize
 
   const setImage = (img: DesignImage, key: string) =>
     ed.change((d) => ({ ...d, images: d.images.map((i) => (i.id === img.id ? img : i)) }), key)
@@ -674,13 +734,14 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  const exportFile = async (format: 'zip' | 'json') => {
+  const exportFile = async (format: 'zip' | 'json' | 'react') => {
     try {
       ed.absorb(await api.saveDesign(id, doc))
     } catch (e) {
       return toast.error((e as Error).message)
     }
-    if (import.meta.env.VITE_DEMO) return demoExport(doc)
+    if (import.meta.env.VITE_DEMO)
+      return server.kind === 'web' ? demoWebExport(doc, format === 'react') : demoExport(doc)
     const a = document.createElement('a')
     a.href = designExportUrl(id, format)
     a.click()
@@ -721,6 +782,17 @@ function Designer({ id }: { id: string }) {
           <DesignProjectDialog open={promptsOpen} onOpenChange={setPromptsOpen} project={project} section="prompts" />
         )}
         <SizeButton doc={doc} onChange={(designSize) => ed.change((d) => ({ ...d, designSize }), 'size')} />
+        <VersionsButton
+          designId={id}
+          beforeSave={async () => {
+            ed.absorb(await api.saveDesign(id, doc))
+          }}
+          onRestored={(d) => {
+            ed.absorb(d)
+            setCompare(undefined)
+          }}
+          onCompare={setCompare}
+        />
         <div className="flex items-center">
           <Button
             size="icon-sm"
@@ -754,12 +826,18 @@ function Designer({ id }: { id: string }) {
           <MenuContent align="end">
             <MenuItem onSelect={() => void exportFile('zip')}>
               <FileArchive className="h-4 w-4" />
-              {t('ZIP（JSON + 贴图文件）')}
+              {server.kind === 'web' ? t('ZIP（HTML + 图片文件）') : t('ZIP（JSON + 贴图文件）')}
             </MenuItem>
             <MenuItem onSelect={() => void exportFile('json')}>
               <FileJson className="h-4 w-4" />
-              {t('单个 JSON（贴图内嵌）')}
+              {server.kind === 'web' ? t('单个 HTML（图片内嵌）') : t('单个 JSON（贴图内嵌）')}
             </MenuItem>
+            {server.kind === 'web' && (
+              <MenuItem onSelect={() => void exportFile('react')}>
+                <FileCode2 className="h-4 w-4" />
+                {t('React + Tailwind 组件（ZIP）')}
+              </MenuItem>
+            )}
             {!import.meta.env.VITE_DEMO && (
               <MenuItem
                 disabled={!project?.path}
@@ -800,7 +878,27 @@ function Designer({ id }: { id: string }) {
         <div className="relative flex min-w-0 flex-1">
           <Viewport
             root={shownTree ?? tree}
-            size={designSize}
+            size={viewSize}
+            device={server.kind === 'web' ? device : undefined}
+            onReorder={(wid, parentId, index) =>
+              editTree((r) => moveWidget(r, wid, parentId, index), `reorder:${wid}:${Date.now()}`)
+            }
+            onNudge={(wid, dx, dy, key) =>
+              editTree(
+                (r) =>
+                  mapWidget(r, wid, (w) => {
+                    // 贴在右边、下边时偏移是离右边、下边的距离：往右拖要变小
+                    const pin = String(w.Slot?.Pin ?? 'top-left')
+                    const sx = pin.endsWith('right') ? -1 : 1
+                    const sy = pin.startsWith('bottom') ? -1 : 1
+                    return {
+                      ...w,
+                      Slot: { ...w.Slot, X: (w.Slot?.X ?? 0) + sx * dx, Y: (w.Slot?.Y ?? 0) + sy * dy },
+                    }
+                  }),
+                key,
+              )
+            }
             images={renderImages}
             components={shownDoc?.components ?? doc.components}
             selected={selected}
@@ -810,18 +908,7 @@ function Designer({ id }: { id: string }) {
               if (wid) setTab('tree')
             }}
             extra={extra.filter((x) => x !== selected)}
-            onPick={(wid) => {
-              // 再点一次已选的就取消它
-              if (wid === selected) {
-                setSelected(extra.at(-1) ?? '')
-                setExtra(extra.slice(0, -1))
-              } else if (extra.includes(wid)) setExtra(extra.filter((x) => x !== wid))
-              else {
-                if (selected) setExtra([...extra.filter((x) => x !== selected), selected])
-                setSelected(wid)
-              }
-              setTab('tree')
-            }}
+            onPick={pick}
             onMove={onMove}
             annotations={doc.annotations}
             onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
@@ -842,6 +929,71 @@ function Designer({ id }: { id: string }) {
               }
             }}
           />
+          {compare && (
+            <VersionCompare
+              version={compare}
+              current={{ root: doc.root, components: doc.components, designSize: doc.designSize }}
+              images={
+                // 版本里用到、现在已经删掉的图片也要画出来
+                new Map([
+                  ...compare.snapshot.images.flatMap((i) => {
+                    const v = i.variants[i.selected] ?? i.variants.at(-1)
+                    return v
+                      ? [
+                          [
+                            i.id,
+                            { url: designFileUrl(id, v.file), width: v.width || i.width, height: v.height || i.height },
+                          ] as const,
+                        ]
+                      : []
+                  }),
+                  ...renderImages,
+                ])
+              }
+              device={server.kind === 'web' ? device : undefined}
+              onRestore={async () => {
+                try {
+                  ed.absorb(await api.saveDesign(id, doc))
+                  ed.absorb(await api.restoreDesignVersion(id, compare.id))
+                  toast.success(t('已恢复到「{name}」，恢复前的样子也存成了一个版本', { name: compare.name }))
+                  setCompare(undefined)
+                } catch (e) {
+                  toast.error((e as Error).message)
+                }
+              }}
+              onClose={() => setCompare(undefined)}
+            />
+          )}
+          {server.kind === 'web' && (
+            <div
+              role="radiogroup"
+              aria-label={t('预览宽度')}
+              className="absolute bottom-3 left-3 z-20 flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
+            >
+              {(
+                [
+                  ['desktop', Monitor, t('桌面（{w}）', { w: designSize.X })],
+                  ['tablet', Tablet, t('平板（{w}）', { w: DEVICE_WIDTH.tablet })],
+                  ['mobile', Smartphone, t('手机（{w}）', { w: DEVICE_WIDTH.mobile })],
+                ] as const
+              ).map(([k, Icon, label]) => (
+                <button
+                  key={k}
+                  role="radio"
+                  aria-checked={device === k}
+                  aria-label={label}
+                  title={label}
+                  onClick={() => setDevice(k)}
+                  className={cn(
+                    'grid h-7 w-7 cursor-pointer place-items-center rounded-lg hover:text-white',
+                    device === k && 'bg-white/10 text-white',
+                  )}
+                >
+                  <Icon className="h-4 w-4" strokeWidth={1.8} />
+                </button>
+              ))}
+            </div>
+          )}
           {(() => {
             const img = preview ? doc.images.find((i) => i.id === preview) : undefined
             const src = img && imageUrl(img)
@@ -887,7 +1039,9 @@ function Designer({ id }: { id: string }) {
               </button>
             ))}
             <span className="flex-1" />
-            {tab === 'tree' && <Palette components={doc.components.map((c) => c.Name)} onAdd={addWidget} />}
+            {tab === 'tree' && (
+              <Palette kind={server.kind} components={doc.components.map((c) => c.Name)} onAdd={addWidget} />
+            )}
           </div>
           {tab === 'tree' && (doc.components.length > 0 || target) && (
             <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
@@ -930,7 +1084,13 @@ function Designer({ id }: { id: string }) {
                     {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
                   </p>
                 )}
-                <Hierarchy root={shownTree ?? tree} selected={selected} actions={actions} />
+                <Hierarchy
+                  root={shownTree ?? tree}
+                  selected={selected}
+                  actions={actions}
+                  extra={extra.filter((x) => x !== selected)}
+                  onPick={pick}
+                />
               </>
             ) : tab === 'widgets' ? (
               <ComponentsPanel
@@ -978,6 +1138,7 @@ function Designer({ id }: { id: string }) {
             {tab === 'tree' && selWidget ? (
               <Details
                 key={selWidget.id}
+                device={server.kind === 'web' ? device : 'desktop'}
                 widget={selWidget}
                 slotType={selParent ? WIDGETS[selParent.Type].slot : undefined}
                 parentSize={() => {
@@ -1046,6 +1207,7 @@ function Designer({ id }: { id: string }) {
               onCount={setCount}
               onSend={send}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+              kind={server.kind}
               onRetry={async (imageId) => {
                 try {
                   ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))
@@ -1222,6 +1384,28 @@ function demoExport(doc: DesignDoc) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = `${json.Name}.umg.json`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+}
+
+/** 在线演示导出网页：单个 HTML，图片本来就是 data URL */
+function demoWebExport(doc: DesignDoc, react: boolean) {
+  const src = new Map(
+    doc.images.flatMap((i) => {
+      const v = i.variants[i.selected] ?? i.variants[0]
+      return v ? [[i.id, v.file] as const] : []
+    }),
+  )
+  // React 组件只出 .tsx（演示里的图片在浏览器内存里，按 images/<图片名>.png 引用）
+  const out = react
+    ? webReactExport({
+        ...doc,
+        file: (id) => (src.has(id) ? `${doc.images.find((i) => i.id === id)!.name}.png` : undefined),
+      })
+    : webExport({ ...doc, file: (id) => src.get(id) })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([out], { type: react ? 'text/plain' : 'text/html' }))
+  a.download = react ? 'Page.tsx' : 'index.html'
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 5000)
 }

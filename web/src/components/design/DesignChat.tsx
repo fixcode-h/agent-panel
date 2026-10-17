@@ -412,6 +412,7 @@ export function DesignChat({
   onSend,
   onStop,
   onRetry,
+  kind = 'game',
   annotations = [],
   onRemoveAnnotation,
 }: {
@@ -424,6 +425,8 @@ export function DesignChat({
   onCount: (n: number) => void
   onSend: (text: string, run: ChatRun, attachments: Attachment[]) => Promise<boolean>
   onStop: () => void
+  /** 游戏 UI 还是网页 UI：示例要求不一样 */
+  kind?: 'game' | 'web'
   /** 重新排队生成一张失败的图 */
   onRetry?: (imageId: string) => Promise<void>
   /** 效果图上还没发出去的标注，发送时一起带上 */
@@ -490,12 +493,20 @@ export function DesignChat({
               {t('描述想要的界面，AI 会搭好控件树并列出需要的图片，再按下面选的方式生成。')}
             </p>
             <div className="flex w-full flex-col gap-1.5">
-              {[
-                t('做一个暗黑奇幻风格的游戏主菜单：标题、开始游戏、设置、退出三个按钮，按钮要有高亮框'),
-                t('做一个背包界面：左边 5×4 的格子，右边是选中物品的详情，格子做成子控件'),
-                t('做一个战斗 HUD：左上角头像、血条和蓝条，右下角四个技能按钮带冷却'),
-                t('照着附上的截图做一个一样的界面（点左下角的 + 附上截图，或直接粘贴）'),
-              ].map((s) => (
+              {(kind === 'web'
+                ? [
+                    t('做一个 SaaS 产品首页：顶部导航、左文右图的头图、三张功能卡片和页脚，暖色调'),
+                    t('做一个登录页：左边品牌插图，右边邮箱、密码输入框和登录按钮'),
+                    t('做一个电商商品详情页：大图、标题价格、规格选择、加入购物车按钮'),
+                    t('照着附上的截图做一个一样的页面（点左下角的 + 附上截图，或直接粘贴）'),
+                  ]
+                : [
+                    t('做一个暗黑奇幻风格的游戏主菜单：标题、开始游戏、设置、退出三个按钮，按钮要有高亮框'),
+                    t('做一个背包界面：左边 5×4 的格子，右边是选中物品的详情，格子做成子控件'),
+                    t('做一个战斗 HUD：左上角头像、血条和蓝条，右下角四个技能按钮带冷却'),
+                    t('照着附上的截图做一个一样的界面（点左下角的 + 附上截图，或直接粘贴）'),
+                  ]
+              ).map((s) => (
                 <button
                   key={s}
                   onClick={() => {
