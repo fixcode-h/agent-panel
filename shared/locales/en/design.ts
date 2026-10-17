@@ -142,6 +142,14 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  '照着附上的截图做一个一样的界面（点左下角的 + 附上截图，或直接粘贴）':
+    'Recreate the screen in the attached screenshot (attach it with + at the bottom left, or just paste it)',
+  对齐: 'Align',
+  '已选 {n} 个': '{n} selected',
+  顶对齐: 'Align top',
+  底对齐: 'Align bottom',
+  水平等间距: 'Distribute horizontally',
+  垂直等间距: 'Distribute vertically',
   'AI 正在修改，已经改了 {n} 处': 'AI is editing: {n} changes so far',
   '写修改意见，发送后按图上的标记重新生成图片': 'Write your notes. Sending regenerates the images using your marks',
   '图上有 {n} 处标记，': '{n} marks on the image. ',

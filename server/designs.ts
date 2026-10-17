@@ -477,6 +477,10 @@ ${prompt}`,
             ) + extra,
           signal: job.abort.signal,
           timeoutMs: TIMEOUT,
+          // 附上的截图、参考图直接给模型看（路径也写在提示词里，需要时它还能自己读）
+          images: input.attachments
+            .filter((x) => /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name))
+            .map((x) => x.path),
           onEvent: (ev) => {
             if (ev.type === 'text_delta') text += ev.text
             else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text

@@ -259,6 +259,9 @@ function Designer({ id }: { id: string }) {
   const { doc, server } = ed
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
+  /** 效果图上按住 Shift / Ctrl 多选的其他控件，用来对齐、等间距；换树或普通点选时清掉 */
+  const [extra, setExtra] = useState<string[]>([])
+  useEffect(() => setExtra([]), [target])
   const [hasClip, setHasClip] = useState(!!clipboard)
   const [tab, setTab] = useState<'tree' | 'images' | 'widgets'>('tree')
   const [imageSel, setImageSel] = useState('')
@@ -803,7 +806,21 @@ function Designer({ id }: { id: string }) {
             selected={selected}
             onSelect={(wid) => {
               setSelected(wid)
+              setExtra([])
               if (wid) setTab('tree')
+            }}
+            extra={extra.filter((x) => x !== selected)}
+            onPick={(wid) => {
+              // 再点一次已选的就取消它
+              if (wid === selected) {
+                setSelected(extra.at(-1) ?? '')
+                setExtra(extra.slice(0, -1))
+              } else if (extra.includes(wid)) setExtra(extra.filter((x) => x !== wid))
+              else {
+                if (selected) setExtra([...extra.filter((x) => x !== selected), selected])
+                setSelected(wid)
+              }
+              setTab('tree')
             }}
             onMove={onMove}
             annotations={doc.annotations}

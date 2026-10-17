@@ -10,7 +10,9 @@ import { t } from '../../shared/i18n.ts'
  * 流程：initialize → thread/start（续接时 thread/resume，分叉时 thread/fork）→ turn/start（压缩时 thread/compact/start，
  * 审查时 review/start）→ 收通知直到 turn/completed，然后关掉 stdin 让它退出。执行中可以插话（turn/steer）和中断（turn/interrupt）。
  */
-export function codexAppSession(o: BuildOptions & { cwd: string; input: string; platform?: string }) {
+export function codexAppSession(
+  o: BuildOptions & { cwd: string; input: string; platform?: string; images?: string[] },
+) {
   let io: { write: (s: string) => void; end: () => void } | undefined
   let thread = ''
   let turnId = ''
@@ -132,7 +134,11 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
           method: 'turn/start',
           params: {
             threadId: thread,
-            input: [{ type: 'text', text: o.input, text_elements: [] }],
+            input: [
+              { type: 'text', text: o.input, text_elements: [] },
+              // 附上的图片（参考图、截图）直接给模型看
+              ...(o.images ?? []).map((p) => ({ type: 'localImage', path: p })),
+            ],
             effort: o.effort || undefined,
           },
         })

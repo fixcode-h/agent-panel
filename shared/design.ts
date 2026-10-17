@@ -443,6 +443,7 @@ ${UMG_NOTES}
 - 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
 - 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
 - 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
+- 用户附上了界面截图或参考图（附件里的图片）时，先打开看清楚再做：照着截图还原布局，控件的结构、位置和大小按截图和设计稿的比例换算；截图里的底框、按钮、图标、装饰都列成要生成的图片，prompt 照着截图里的样子描述；截图里的文字写进 TextBlock。
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。

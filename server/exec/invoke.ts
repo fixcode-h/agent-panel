@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
 import { codexAppSession } from './codex-app.ts'
@@ -33,6 +34,8 @@ export async function invokeCli(o: {
   canAsk?: boolean
   /** 拿到执行中控制 CLI 的方法 */
   onControl?: (c: CliControl) => void
+  /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
+  images?: string[]
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
@@ -76,7 +79,7 @@ async function invoke(
   const emit = (ev: CliEvent) => (ev.type === 'ask' && !o.canAsk ? ev.reply({ allow: false }) : o.onEvent(ev))
 
   if (o.cliId === 'codex') {
-    const session = codexAppSession({ ...o.build, cwd: o.cwd, input: o.input })
+    const session = codexAppSession({ ...o.build, cwd: o.cwd, input: o.input, images: o.images })
     setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
     const r = await runProcess({
       command: o.command,
@@ -133,7 +136,7 @@ async function invoke(
       env: o.env,
       onSpawn: (w) => {
         io = w
-        line({ type: 'user', message: { role: 'user', content: o.input } })
+        line({ type: 'user', message: { role: 'user', content: withImages(o.input, o.images) } })
       },
       signal,
       timeoutMs: o.timeoutMs,
@@ -229,4 +232,21 @@ function claudeAnswer(name: string, input: any, answer?: string) {
   if (name !== 'AskUserQuestion' || !answer) return input
   const q = input?.questions?.[0]?.question ?? ''
   return { ...input, answers: { ...(input.answers ?? {}), [q]: answer } }
+}
+
+/** Claude Code 的用户消息：有图片时把图片（base64）跟文字放在一起，模型直接看得到 */
+function withImages(text: string, images: string[] | undefined) {
+  const blocks = (images ?? []).flatMap((p) => {
+    const ext = p.split('.').pop()?.toLowerCase() ?? ''
+    const media = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext]
+    if (!media) return []
+    try {
+      return [
+        { type: 'image', source: { type: 'base64', media_type: media, data: readFileSync(p).toString('base64') } },
+      ]
+    } catch {
+      return []
+    }
+  })
+  return blocks.length ? [{ type: 'text', text }, ...blocks] : text
 }

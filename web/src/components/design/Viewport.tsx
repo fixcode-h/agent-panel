@@ -1,5 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { Maximize, Minus, Plus } from 'lucide-react'
+import {
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalSpaceAround,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalSpaceAround,
+  Maximize,
+  Minus,
+  Plus,
+} from 'lucide-react'
 import { findParent, findWidget, type Component, type Vec2, type Widget } from '@shared/umg'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
@@ -22,6 +34,8 @@ export function Viewport({
   onAnnotations,
   target,
   onOpen,
+  extra = [],
+  onPick,
 }: {
   root: Widget
   size: Vec2
@@ -38,6 +52,10 @@ export function Viewport({
   target: string
   /** 双击控件：用了图片的跳到图片，子控件进去编辑 */
   onOpen?: (id: string) => void
+  /** 按住 Shift / Ctrl 多选的其他控件（selected 是最后点的那个） */
+  extra?: string[]
+  /** additive：按住 Shift / Ctrl 点的，加进多选或从多选里去掉 */
+  onPick?: (id: string, additive: boolean) => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -87,6 +105,7 @@ export function Viewport({
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      setGuides({ x: [], y: [] })
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -138,6 +157,87 @@ export function Viewport({
 
   const parent = selected ? findParent(root, selected) : undefined
   const movable = parent?.Type === 'CanvasPanel' && !!findWidget(root, selected)?.Slot
+  // 拖动时的对齐参考线（设计稿像素）
+  const [guides, setGuides] = useState<{ x: number[]; y: number[] }>({ x: [], y: [] })
+
+  /** 控件在设计稿里的位置和大小（按页面上实际画出来的量） */
+  const measure = (id: string) => {
+    const st = stage.current
+    const el = st?.querySelector<HTMLElement>(`[data-wid="${CSS.escape(id)}"]`)
+    if (!st || !el) return undefined
+    const a = st.getBoundingClientRect()
+    const b = el.getBoundingClientRect()
+    return { x: (b.left - a.left) / scale, y: (b.top - a.top) / scale, w: b.width / scale, h: b.height / scale }
+  }
+  const multi = [selected, ...extra].filter(Boolean)
+  // 多选的控件都在同一个 CanvasPanel 里时才能对齐、等间距
+  const alignable =
+    multi.length > 1 &&
+    multi.every((id) => {
+      const p = findParent(root, id)
+      return p?.Type === 'CanvasPanel' && p.id === parent?.id
+    })
+  const [extraBoxes, setExtraBoxes] = useState<{ x: number; y: number; w: number; h: number }[]>([])
+  useEffect(() => {
+    if (!extra.length) return setExtraBoxes([])
+    let raf = 0
+    const tick = () => {
+      const next = extra.map(measure).filter(Boolean) as { x: number; y: number; w: number; h: number }[]
+      setExtraBoxes((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next))
+      raf = requestAnimationFrame(tick)
+    }
+    tick()
+    return () => cancelAnimationFrame(raf)
+    // measure 每次渲染都是新的函数，只在多选或缩放变化时重新开始
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [extra.join('|'), scale])
+
+  /** 对齐、等间距：按量到的位置算出每个控件要挪多少，一次挪完（撤销时一起退回） */
+  const align = (how: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' | 'hspace' | 'vspace') => {
+    const items = multi.map((id) => ({ id, b: measure(id)! })).filter((x) => x.b)
+    if (items.length < 2) return
+    const key = `align:${Date.now()}`
+    const minX = Math.min(...items.map((x) => x.b.x))
+    const maxX = Math.max(...items.map((x) => x.b.x + x.b.w))
+    const minY = Math.min(...items.map((x) => x.b.y))
+    const maxY = Math.max(...items.map((x) => x.b.y + x.b.h))
+    const moves = new Map<string, { dx: number; dy: number }>()
+    for (const { id, b } of items) {
+      const dx =
+        how === 'left'
+          ? minX - b.x
+          : how === 'right'
+            ? maxX - b.x - b.w
+            : how === 'hcenter'
+              ? (minX + maxX) / 2 - b.x - b.w / 2
+              : 0
+      const dy =
+        how === 'top'
+          ? minY - b.y
+          : how === 'bottom'
+            ? maxY - b.y - b.h
+            : how === 'vcenter'
+              ? (minY + maxY) / 2 - b.y - b.h / 2
+              : 0
+      moves.set(id, { dx, dy })
+    }
+    if (how === 'hspace' || how === 'vspace') {
+      const h = how === 'hspace'
+      const sorted = [...items].sort((a, b) => (h ? a.b.x - b.b.x : a.b.y - b.b.y))
+      const total = sorted.reduce((n, x) => n + (h ? x.b.w : x.b.h), 0)
+      const gap = ((h ? maxX - minX : maxY - minY) - total) / (sorted.length - 1)
+      let at = h ? minX : minY
+      for (const x of sorted) {
+        moves.set(x.id, h ? { dx: at - x.b.x, dy: 0 } : { dx: 0, dy: at - x.b.y })
+        at += (h ? x.b.w : x.b.h) + gap
+      }
+    }
+    for (const [id, m] of moves) {
+      const dx = Math.round(m.dx)
+      const dy = Math.round(m.dy)
+      if (dx || dy) onMove(id, { dx, dy, mode: 'move' }, key)
+    }
+  }
 
   const drag = (e: React.PointerEvent, mode: 'move' | 'resize') => {
     if (!movable) return
@@ -148,9 +248,48 @@ export function Viewport({
     let lx = 0
     let ly = 0
     const key = `${mode}:${selected}:${Date.now()}`
+    // 吸附：自己的左、中、右（上、中、下）边靠近父控件或同级控件的边和中线时贴上去，按住 Alt 不吸附
+    const me = measure(selected)
+    const refs = [parent!.id, ...(parent!.Children ?? []).map((c) => c.id).filter((id) => id !== selected)]
+      .map((id) => ({ b: measure(id) }))
+      .filter((x) => x.b) as { b: { x: number; y: number; w: number; h: number } }[]
+    const lines = (axis: 'x' | 'y') =>
+      refs.flatMap(({ b }) => {
+        const [p, l] = axis === 'x' ? [b.x, b.w] : [b.y, b.h]
+        return [p, p + l / 2, p + l]
+      })
+    const tx = lines('x')
+    const ty = lines('y')
+    const snap = (edges: number[], targets: number[]) => {
+      const th = 6 / scale
+      let best: { d: number; at: number } | undefined
+      for (const ed of edges)
+        for (const tg of targets) {
+          const d = tg - ed
+          if (Math.abs(d) <= th && (!best || Math.abs(d) < Math.abs(best.d))) best = { d, at: tg }
+        }
+      return best
+    }
     const move = (ev: PointerEvent) => {
-      const dx = Math.round((ev.clientX - sx) / scale)
-      const dy = Math.round((ev.clientY - sy) / scale)
+      let dx = Math.round((ev.clientX - sx) / scale)
+      let dy = Math.round((ev.clientY - sy) / scale)
+      const gx: number[] = []
+      const gy: number[] = []
+      if (me && !ev.altKey) {
+        const ex = mode === 'move' ? [me.x + dx, me.x + me.w / 2 + dx, me.x + me.w + dx] : [me.x + me.w + dx]
+        const ey = mode === 'move' ? [me.y + dy, me.y + me.h / 2 + dy, me.y + me.h + dy] : [me.y + me.h + dy]
+        const bx = snap(ex, tx)
+        const by = snap(ey, ty)
+        if (bx) {
+          dx = Math.round(dx + bx.d)
+          gx.push(bx.at)
+        }
+        if (by) {
+          dy = Math.round(dy + by.d)
+          gy.push(by.at)
+        }
+      }
+      setGuides({ x: gx, y: gy })
       if (dx === lx && dy === ly) return
       onMove(selected, { dx: dx - lx, dy: dy - ly, mode }, key)
       lx = dx
@@ -199,6 +338,10 @@ export function Viewport({
                 if (tool !== 'select') return
                 const el = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')
                 const id = el?.dataset.wid ?? ''
+                if (id && (e.shiftKey || e.ctrlKey || e.metaKey) && onPick) {
+                  onPick(id, true)
+                  return
+                }
                 onSelect(id)
                 // 点到的就是选中的、能拖动的控件时直接开始拖
                 if (id && id === selected) drag(e, 'move')
@@ -226,6 +369,28 @@ export function Viewport({
                 )}
               </div>
             )}
+            {!play &&
+              extraBoxes.map((b, i) => (
+                <div
+                  key={i}
+                  className="pointer-events-none absolute outline-[1.5px] outline-[#4c9bff]/70 outline-dashed"
+                  style={{ left: b.x * scale, top: b.y * scale, width: b.w * scale, height: b.h * scale }}
+                />
+              ))}
+            {guides.x.map((x) => (
+              <div
+                key={`gx${x}`}
+                className="pointer-events-none absolute top-0 bottom-0 w-px bg-[#ff4fd8]"
+                style={{ left: x * scale }}
+              />
+            ))}
+            {guides.y.map((y) => (
+              <div
+                key={`gy${y}`}
+                className="pointer-events-none absolute right-0 left-0 h-px bg-[#ff4fd8]"
+                style={{ top: y * scale }}
+              />
+            ))}
             {!root.Children?.length && (
               <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
                 <div className="max-w-[320px] text-[12.5px] leading-relaxed text-white/45">
@@ -285,6 +450,40 @@ export function Viewport({
           }}
         />
       </div>
+      {alignable && !play && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-14 flex justify-center">
+          <div
+            role="toolbar"
+            aria-label={t('对齐')}
+            className="pointer-events-auto flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
+          >
+            <span className="px-2 text-[11.5px] text-white/50">{t('已选 {n} 个', { n: multi.length })}</span>
+            {(
+              [
+                ['left', AlignStartVertical, t('左对齐')],
+                ['hcenter', AlignCenterVertical, t('水平居中')],
+                ['right', AlignEndVertical, t('右对齐')],
+                ['top', AlignStartHorizontal, t('顶对齐')],
+                ['vcenter', AlignCenterHorizontal, t('垂直居中')],
+                ['bottom', AlignEndHorizontal, t('底对齐')],
+                ['hspace', AlignHorizontalSpaceAround, t('水平等间距')],
+                ['vspace', AlignVerticalSpaceAround, t('垂直等间距')],
+              ] as const
+            ).map(([k, Icon, label]) => (
+              <button
+                key={k}
+                onClick={() => align(k)}
+                disabled={(k === 'hspace' || k === 'vspace') && multi.length < 3}
+                aria-label={label}
+                title={label}
+                className="grid h-7 w-7 cursor-pointer place-items-center rounded-lg hover:bg-white/10 hover:text-white disabled:cursor-default disabled:opacity-30"
+              >
+                <Icon className="h-4 w-4" strokeWidth={1.8} />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
       {play && (
         <div className="pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
           <span className="flex items-center gap-1.5 rounded-full border border-emerald-400/30 bg-emerald-500/15 px-3 py-1 text-[11.5px] text-emerald-200 shadow-pop">
