@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ArrowUp, Folder, FolderOpen, GitBranch, HardDrive, House, Loader2, X } from 'lucide-react'
+import { ArrowUp, Folder, FolderOpen, FolderPlus, GitBranch, HardDrive, House, Loader2, X } from 'lucide-react'
 import type { DirInfo, DirListing } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -37,9 +37,17 @@ function DirBrowser({
   const [jump, setJump] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  // 新建文件夹：null 表示没在新建，字符串是正在输入的名字
+  const [creating, setCreating] = useState<string | null>(null)
+  const [createError, setCreateError] = useState('')
+  const [busy, setBusy] = useState(false)
+  // 刚建好的文件夹：列表里高亮，方便直接选中
+  const [fresh, setFresh] = useState('')
 
   const go = async (p: string) => {
     setLoading(true)
+    setCreating(null)
+    setCreateError('')
     try {
       const l = await api.listDir(p)
       setListing(l)
@@ -54,6 +62,22 @@ function DirBrowser({
     }
   }
 
+  const create = async () => {
+    if (!listing || creating === null || busy) return
+    if (!creating.trim()) return setCreating(null)
+    setBusy(true)
+    try {
+      const { path } = await api.makeDir(listing.path, creating)
+      // 留在当前目录，新文件夹高亮出来：用户可以双击进入或直接选它
+      await go(listing.path)
+      setFresh(path)
+    } catch (e) {
+      setCreateError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   useEffect(() => {
     if (open) go(start)
     // 打开时跳到起始目录，之后由用户浏览
@@ -64,7 +88,16 @@ function DirBrowser({
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none">
+        <D.Content
+          // 正在输入新文件夹名时，Esc 只取消新建，不关掉整个弹窗
+          onEscapeKeyDown={(e) => {
+            if (creating === null) return
+            e.preventDefault()
+            setCreating(null)
+            setCreateError('')
+          }}
+          className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none"
+        >
           <div className="flex items-center gap-3 border-b px-5 py-4">
             <D.Title className="text-[15px] font-semibold">{t('选择项目目录')}</D.Title>
             <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
@@ -124,22 +157,71 @@ function DirBrowser({
           <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
             {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
             {error && <p className="px-3 py-2 text-[13px] text-danger">{error}</p>}
+            {creating !== null && (
+              <div className="mb-1">
+                <div className="flex items-center gap-2.5 rounded-lg bg-sel/60 px-3 py-1.5">
+                  {busy ? (
+                    <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
+                  ) : (
+                    <FolderPlus className="h-4 w-4 shrink-0 text-accent" />
+                  )}
+                  <input
+                    autoFocus
+                    value={creating}
+                    disabled={busy}
+                    onChange={(e) => {
+                      setCreating(e.target.value)
+                      setCreateError('')
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        void create()
+                      }
+                    }}
+                    onBlur={() => !creating.trim() && !busy && setCreating(null)}
+                    placeholder={t('新文件夹名，回车创建')}
+                    aria-label={t('新文件夹名')}
+                    className="h-7 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 text-[13px] outline-none"
+                  />
+                </div>
+                {createError && <p className="px-3 pt-1 text-[12px] text-danger">{createError}</p>}
+              </div>
+            )}
             {listing?.dirs.map((d) => (
               <button
                 key={d.path}
+                ref={(el) => {
+                  if (el && d.path === fresh) el.scrollIntoView({ block: 'nearest' })
+                }}
                 onClick={() => go(d.path)}
                 onDoubleClick={() => onPick(d.path)}
-                className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] hover:bg-sel"
+                className={cn(
+                  'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] hover:bg-sel',
+                  d.path === fresh && 'bg-accent/12 text-fg',
+                )}
               >
-                <Folder className="h-4 w-4 text-subtle" />
+                <Folder className={cn('h-4 w-4', d.path === fresh ? 'text-accent' : 'text-subtle')} />
                 {d.name}
               </button>
             ))}
-            {listing && listing.dirs.length === 0 && !error && (
+            {listing && listing.dirs.length === 0 && !error && creating === null && (
               <p className="px-3 py-8 text-center text-[13px] text-subtle">{t('这个目录下没有子目录')}</p>
             )}
           </div>
           <div className="flex items-center gap-2 border-t bg-panel px-5 py-3">
+            <Button
+              variant="ghost"
+              disabled={!listing || creating !== null}
+              onClick={() => {
+                setCreating('')
+                setCreateError('')
+              }}
+              title={t('在当前目录下新建文件夹')}
+            >
+              <FolderPlus className="h-4 w-4" />
+              {t('新建文件夹')}
+            </Button>
             <span className="min-w-0 flex-1 truncate font-mono text-xs text-muted" title={listing?.path}>
               {listing?.path}
             </span>

@@ -167,6 +167,7 @@ export const api = {
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
+  makeDir: (parent: string, name: string) => request<{ path: string }>('/fs/mkdir', json('POST', { parent, name })),
   dataUsage: () => request<DataUsage>('/data'),
   revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
   revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),

@@ -138,6 +138,11 @@ export const EN_SERVER: Record<string, string> = {
   '无法读取项目文件：{error}': 'Couldn’t read project files: {error}',
   '目录不存在：{dir}': 'Directory doesn’t exist: {dir}',
   '无法读取目录：{error}': 'Couldn’t read directory: {error}',
+  请输入文件夹名: 'Enter a folder name',
+  '文件夹名不能包含 \\ / : * ? " < > |，也不能以点或空格结尾':
+    'Folder names can’t contain \\ / : * ? " < > | or end with a dot or space',
+  '「{name}」已经存在': '“{name}” already exists',
+  '新建文件夹失败：{error}': 'Couldn’t create folder: {error}',
 
   // 安装 / 卸载 CLI
   '没有权限写入安装目录。请用管理员身份打开终端运行下面的命令。':

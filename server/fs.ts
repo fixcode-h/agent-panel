@@ -1,4 +1,4 @@
-import { access, readdir, readFile, stat } from 'node:fs/promises'
+import { access, mkdir, readdir, readFile, stat } from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import type { DirInfo, DirListing } from '../shared/schema.ts'
@@ -66,4 +66,23 @@ async function roots() {
     driveCache = { at: Date.now(), list: found.filter((x) => x !== null) }
   }
   return [home, ...driveCache.list]
+}
+
+/** 在 parent 下新建一个文件夹，返回它的完整路径；名字不能带路径分隔符和 Windows 不允许的字符 */
+export async function makeDir(parent: string, name: string) {
+  const n = name.trim()
+  if (!n) throw new Error(t('请输入文件夹名'))
+  if (n === '.' || n === '..' || /[<>:"/\\|?*\x00-\x1f]/.test(n) || /[. ]$/.test(n))
+    throw new Error(t('文件夹名不能包含 \\ / : * ? " < > |，也不能以点或空格结尾'))
+  const dir = resolvePath(parent)
+  const full = path.join(dir, n)
+  if (
+    await stat(full)
+      .then(() => true)
+      .catch(() => false)
+  )
+    throw new Error(t('「{name}」已经存在', { name: n }))
+  // 不递归：父目录必须已经存在，避免路径写错时悄悄建出一串目录
+  await mkdir(full)
+  return full
 }

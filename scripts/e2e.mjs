@@ -2121,7 +2121,13 @@ try {
   // 目录浏览带上快速入口（Windows 上是各个盘符）
   const listing = await call('GET', `/fs/list?path=${encodeURIComponent(tmp)}`)
   assert.ok(listing.roots.length >= 2 && listing.roots[0].name === '主目录')
-  step('目录浏览列出主目录和磁盘')
+  const made = await call('POST', '/fs/mkdir', { parent: tmp, name: 'new-folder' })
+  assert.equal(made.path, path.join(tmp, 'new-folder'))
+  assert.ok((await call('GET', `/fs/list?path=${encodeURIComponent(tmp)}`)).dirs.some((d) => d.name === 'new-folder'))
+  await assert.rejects(call('POST', '/fs/mkdir', { parent: tmp, name: 'new-folder' }), /已经存在/)
+  await assert.rejects(call('POST', '/fs/mkdir', { parent: tmp, name: '../escape' }), /不能包含/)
+  await assert.rejects(call('POST', '/fs/mkdir', { parent: path.join(tmp, 'nope'), name: 'x' }), /新建文件夹失败/)
+  step('目录浏览列出主目录和磁盘，可以新建文件夹（不重名、不能带路径、父目录要存在）')
 
   // ---- 正式版没有模拟执行：旧设置里的 execution 会被忽略，任务一律真实调用 CLI ----
   await call('PUT', '/settings', { ...settings, execution: 'simulate' })

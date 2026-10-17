@@ -102,6 +102,10 @@ export const EN_APP: Record<string, string> = {
   目录不存在: 'Folder doesn’t exist',
   '这是一个文件，不是目录': 'This is a file, not a folder',
   目录存在: 'Folder exists',
+  '新文件夹名，回车创建': 'New folder name, press Enter to create',
+  新文件夹名: 'New folder name',
+  在当前目录下新建文件夹: 'Create a folder in the current directory',
+  新建文件夹: 'New folder',
   'Agent 会在这个目录里执行任务。': 'Agents run tasks in this folder.',
 
   // 项目分类

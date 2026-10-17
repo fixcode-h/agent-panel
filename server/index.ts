@@ -37,7 +37,7 @@ import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
-import { inspectDir, listDir, resolvePath } from './fs.ts'
+import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
@@ -362,6 +362,16 @@ app.get('/fs/list', async (c) => {
     return c.json(await listDir(c.req.query('path') ?? ''))
   } catch (e) {
     return bad(c, t('无法读取目录：{error}', { error: (e as Error).message }))
+  }
+})
+
+// 选择项目目录时新建文件夹
+app.post('/fs/mkdir', async (c) => {
+  const { parent, name } = (await c.req.json().catch(() => ({}))) as { parent?: string; name?: string }
+  try {
+    return c.json({ path: await makeDir(String(parent ?? ''), String(name ?? '')) })
+  } catch (e) {
+    return bad(c, t('新建文件夹失败：{error}', { error: (e as Error).message }))
   }
 })
 
