@@ -95,9 +95,11 @@ export function Markdown({
           const why = String((e as Error)?.message ?? '').split('\n')[0]
           box.innerHTML = `<div class="md-code"><div class="md-code-bar"><span>mermaid · ${escape(t('图的语法有误，显示源码'))}</span><button type="button" class="md-copy" data-copy>${t('复制')}</button></div><pre><code title="${escape(why)}">${escape(src)}</code></pre></div>`
         } finally {
-          // 出错时 mermaid 会把临时节点留在 body 末尾，清掉
-          document.getElementById(id)?.remove()
-          document.getElementById(`d${id}`)?.remove()
+          // 出错时 mermaid 会把临时节点留在 body 末尾，清掉；画好的图也用这个 id，只清 body 下面的
+          for (const tmp of [`d${id}`, `i${id}`, id]) {
+            const el = document.getElementById(tmp)
+            if (el && !root.contains(el)) el.remove()
+          }
         }
       }
     })()

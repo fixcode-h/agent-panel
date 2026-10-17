@@ -17,6 +17,7 @@ import {
   X,
   Zap,
   ListPlus,
+  ArrowDown,
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId, taskWorkflows } from '@shared/flow'
@@ -110,6 +111,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const [renaming, setRenaming] = useState<string | null>(null)
   const [resuming, setResuming] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  // 往上翻得比较远时显示「回到底部」
+  const [away, setAway] = useState(false)
   useEscape(panel, () => setPanel(false))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
@@ -254,11 +257,26 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const openStep =
     task.mode === 'workflow'
       ? (id: string) => {
-          setView('flow')
-          setFocus({ id, at: Date.now() })
           setPanel(false)
+          // 流程视图里和点流程图的节点一样，选中它；对话视图里滚到这一步的输出，不切换视图
+          if (view === 'flow') return setFocus({ id, at: Date.now() })
+          const el = scroller.current
+          const sec = el?.querySelector<HTMLElement>(`[data-step="${CSS.escape(id)}"]`)
+          if (!el || !sec) return toast(t('这一步还没有输出'))
+          stick.current = false
+          el.scrollTo({
+            top: sec.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 8,
+            behavior: 'smooth',
+          })
         }
       : undefined
+  const toBottom = () => {
+    const el = scroller.current
+    if (!el) return
+    stick.current = true
+    setAway(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }
   // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏里就不再重复显示
   const progressCard =
     task.mode === 'workflow' && tops.length > 0 && gutter >= 200 ? (
@@ -393,6 +411,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 const el = e.currentTarget
                 stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
                 setScrolled(el.scrollTop > 4)
+                setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
               }}
               // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
               className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
@@ -420,7 +439,14 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                     ) : b.kind === 'steps' ? (
                       <div key={b.key} className="flex flex-col gap-7">
                         {b.roots.map((r) => (
-                          <StepSection key={r} task={task} rootId={r} msgs={b.byRoot.get(r)!} teamNames={teamNames} />
+                          <StepSection
+                            key={r}
+                            task={task}
+                            rootId={r}
+                            msgs={b.byRoot.get(r)!}
+                            teamNames={teamNames}
+                            sticky="chat"
+                          />
                         ))}
                       </div>
                     ) : b.m.role === 'user' ? (
@@ -458,6 +484,17 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 </div>
               )}
             </div>
+            {!isFlow && away && (
+              <button
+                type="button"
+                onClick={toBottom}
+                aria-label={t('回到底部')}
+                title={t('回到底部')}
+                className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
+              >
+                <ArrowDown className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
