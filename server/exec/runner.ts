@@ -50,16 +50,38 @@ export interface RealContext {
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
 const replies = new Map<string, (r: AskReply) => void>()
 
-/** 正在跑的对话（不属于节点的调用）：任务 id → 插话的方法 */
-const steers = new Map<string, (text: string, msg: TaskMessage) => Promise<boolean>>()
+/** 正在跑的一次 CLI 调用里能接收补充的那个：step 为空是对话，否则是工作流节点 */
+interface Steerer {
+  step: string
+  agentId: string
+  steer: (text: string) => Promise<boolean>
+  /** 补充交给了它：之后的输出另起一条，排在用户消息后面 */
+  accepted: () => void
+}
+/** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
+const steers = new Map<string, Set<Steerer>>()
+/** 工作流里正在跑的节点都收不了补充（Command Code）时，留给下一个开始的节点 */
+const notes = new Map<string, string[]>()
+
+/** 交给 CLI 的补充：说清楚是执行中补充的信息，结合它接着做，不要从头开始 */
+const noteText = (text: string) => `用户在执行中补充了信息，请结合它继续当前的任务：\n${text}`
 
 /**
- * 插话：把要求交给正在跑的这一轮，CLI 在这一轮里接着处理；成功时把用户消息加进对话。
- * 没在跑、CLI 不支持（Command Code）或 CLI 拒绝时返回 false，由调用方排队
+ * 补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理；成功时把用户消息加进对话。
+ * 工作流里交给所有正在跑的节点；它们都不支持（Command Code）时留给下一个开始的节点。
+ * 对话没在跑、CLI 不支持或拒绝时返回 false，由调用方排队
  */
-export async function steerTask(taskId: string, text: string, msg: TaskMessage) {
-  const fn = steers.get(taskId)
-  return fn ? fn(text, msg) : false
+export async function steerTask(task: Task, text: string, msg: TaskMessage) {
+  const took: Steerer[] = []
+  for (const s of steers.get(task.id) ?? []) if (await s.steer(noteText(text))) took.push(s)
+  const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
+  if (!took.length && !(task.mode === 'workflow' && running)) return false
+  if (!took.length) (notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
+  // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
+  const at = took[0] ?? { step: running?.id ?? '', agentId: '' }
+  task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
+  for (const s of took) s.accepted()
+  return true
 }
 
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
@@ -275,13 +297,19 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // 触发这一轮的用户消息：结束后在它上面记下这一轮在 CLI 会话里的位置
   const asker = chat && !op ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
-  if (rewind) {
-    const th = rewind.through
+  // 对话中途换了 CLI：原来的会话是另一个 CLI 的，接不上，开新会话把之前的对话带过去
+  const switched = chat && !!task.sessionCli && task.sessionCli !== cliId
+  if (switched) resume = undefined
+  if (rewind || switched) {
+    const th = rewind?.through ?? null
     resume = undefined
-    if (rewind.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
-    else if (th && cliId === 'codex' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
+    if (rewind?.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
+    else if (switched) {
+      const upto = asker ? task.messages.indexOf(asker) : task.messages.length
+      carry = `## 之前的对话\n${transcript(task, upto)}`
+    } else if (th && cliId === 'codex' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
     else if (th && cliId === 'claude' && th.end) [resume, fork] = [th.session, { end: th.end }]
-    else if (th && rewind.latest) [resume, fork] = [th.session, {}]
+    else if (th && rewind?.latest) [resume, fork] = [th.session, {}]
     else if (th) {
       // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上
       const upto = asker ? task.messages.indexOf(asker) : task.messages.length
@@ -298,6 +326,12 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     guessWindow(cli, m)
   const instructions = agent.instructions.trim()
   let input = op?.kind === 'review' && cliId !== 'codex' ? reviewPrompt(op.target) : prompt
+  // 之前的节点收不了的补充，交给这个节点
+  const pending = step ? notes.get(task.id) : undefined
+  if (pending?.length) {
+    notes.delete(task.id)
+    input = `${input}\n\n## 用户在执行中补充的信息\n${pending.join('\n\n')}`
+  }
   if (op?.kind === 'compact') input = cliId === 'claude' ? '/compact' : SUMMARY_PROMPT
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${input}`
@@ -345,7 +379,17 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const errors: string[] = []
   let result: { ok: boolean; error?: string } | undefined
   const newMsg = () => {
-    cur = { id: ctx.newId(), role: 'agent', agentId, step, text: '', tools: [], at: new Date().toISOString() }
+    cur = {
+      id: ctx.newId(),
+      role: 'agent',
+      agentId,
+      step,
+      text: '',
+      tools: [],
+      // 对话中途可以换 CLI 和模型，每条回复记下自己用的
+      ...(chat ? { run: { cli: cliId, model, effort: run.effort } } : {}),
+      at: new Date().toISOString(),
+    }
     task.messages.push(cur)
     mine.push(cur)
     return cur
@@ -406,6 +450,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
+        if (chat) task.sessionCli = cliId
         break
       case 'thinking': {
         // 思考属于接下来的那段回复：当前消息已经有文字或工具时另起一条
@@ -529,16 +574,20 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     ctx.changed()
   }
   const asked: string[] = []
-  /** 插话：成功交给 CLI 后把用户消息放进对话，之后的输出另起一条，排在这条消息后面 */
-  const register = (c: CliControl) =>
-    steers.set(task.id, async (text, msg) => {
-      if (!(await c.steer(text))) return false
-      task.messages.push(msg)
-      mine.push(msg)
-      cur = undefined
-      ctx.changed(true)
-      return true
-    })
+  /** 补充：交给 CLI 成功后，之后的输出另起一条，排在用户消息后面 */
+  let steerer: Steerer | undefined
+  const register = (c: CliControl) => {
+    steerer = {
+      step,
+      agentId,
+      steer: c.steer,
+      accepted: () => {
+        cur = undefined
+        ctx.changed(true)
+      },
+    }
+    ;(steers.get(task.id) ?? steers.set(task.id, new Set()).get(task.id)!).add(steerer)
+  }
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
@@ -577,11 +626,16 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       : undefined,
     onEvent: apply,
     canAsk: true,
-    onControl: chat ? (c) => register(c) : undefined,
+    // 对话和工作流节点都能接收补充；压缩、审查这类操作不接收
+    onControl: chat || (step && !op) ? (c) => register(c) : undefined,
   }).finally(() => {
     finished = true
     clearTimeout(gitTimer)
-    if (chat) steers.delete(task.id)
+    if (steerer) {
+      const set = steers.get(task.id)
+      set?.delete(steerer)
+      if (!set?.size) steers.delete(task.id)
+    }
     meter.stop()
     // 进程结束了（完成、停止、超时），还没回答的请求作废
     for (const id of asked) replies.delete(id)

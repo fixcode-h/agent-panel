@@ -18,15 +18,15 @@ import {
   Pause,
   Trash2,
   X,
-  Zap,
   ListPlus,
   ArrowDown,
 } from 'lucide-react'
-import type { Project, Task, TaskMessage } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage } from '@shared/schema'
+import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { rootStepId, taskWorkflows } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultSettings } from '@shared/settings'
-import { STEER_CLIS } from '@shared/clis'
+import { STEER_CLIS, getCli } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -194,19 +194,13 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       </main>
     )
 
-  // 执行中也能发：插话（交给正在跑的这一轮，CLI 支持时默认）、排队（这一轮完成后处理）、打断（先停下这一轮再发）
-  const send = async (how: 'steer' | 'queue' | 'interrupt' = canSteer ? 'steer' : 'queue') => {
+  // 执行中也能发：补充（交给正在做的 Agent，接着当前的任务做；能补充时默认）、排队（这一轮完成后处理）
+  const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
     if (!text.trim() || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
-      const r = await api.sendMessage(
-        task.id,
-        text,
-        files.attachments,
-        running && how === 'interrupt',
-        running && how === 'steer',
-      )
+      const r = await api.sendMessage(task.id, text, files.attachments, false, running && how === 'steer')
       if (running && how === 'steer' && r.queue.length > task.queue.length) toast(t('这一轮刚好结束，已改成排队'))
       apply(r)
       setText('')
@@ -282,7 +276,21 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const chatAgent = agents.find((a) => a.id === task.agentId)
   // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
-  const canSteer = running && task.mode === 'chat' && STEER_CLIS.includes(chatCli)
+  // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
+  const canSteer = running && (task.mode === 'workflow' || STEER_CLIS.includes(chatCli))
+  // 用默认 Agent 的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换，下一轮生效
+  const byCli = task.mode === 'chat' && task.agentId === DEFAULT_AGENT_ID
+  const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
+  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || 'Agent'
+  const changeRun = async (v: ChatRun) => {
+    setTask({ ...task, ...v })
+    try {
+      apply(await api.setChatRun(task.id, v))
+      if (running) toast(t('改好了，下一轮回复开始生效'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
@@ -483,10 +491,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   {blocks.slice(hidden).map((b, i) =>
                     b.kind === 'turn' ? (
                       <div key={b.key} className="flex flex-col gap-4">
-                        <FoldedRun
+                        <ChatTurn
                           msgs={b.msgs}
                           teamNames={teamNames}
                           live={running && i + hidden === blocks.length - 1}
+                          fallback={byCli ? chatRun : undefined}
                         />
                       </div>
                     ) : b.kind === 'steps' ? (
@@ -546,7 +555,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   {running && task.mode === 'chat' && (
                     <div className="flex items-center gap-2 text-[13px] text-muted">
                       <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                      {t('{name} 正在回复', { name: chatName(chatAgent, task) || 'Agent' })}
+                      {t('{name} 正在回复', { name: chatLabel })}
                       <LiveStats task={task} agentIds={[task.agentId]} />
                     </div>
                   )}
@@ -605,53 +614,45 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   if (mention.onKeyDown(e)) return
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
-                    // 执行中按 Ctrl/⌘ + Enter：打断当前这一轮，马上处理这条
-                    send(e.metaKey || e.ctrlKey ? 'interrupt' : undefined)
+                    send()
                   }
                 }}
                 placeholder={
                   !running
                     ? t('继续输入要求')
                     : canSteer
-                      ? t('执行中也可以输入，直接补充给正在做的这一轮')
+                      ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
                       : t('执行中也可以输入，这一轮完成后接着处理')
                 }
                 className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
                 <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
-                <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-                  {running
-                    ? tops.filter((s) => s.status === 'running').length > 1
-                      ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
-                      : t('执行中，可以随时暂停')
-                    : task.mode === 'workflow'
-                      ? tops.every((s) => s.status === 'done')
-                        ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
-                        : task.status === 'failed'
-                          ? t('会从失败的节点重新执行')
-                          : t('会从没完成的节点继续执行')
-                      : t('发给 {name}', { name: chatName(chatAgent, task) || 'Agent' })}
-                </span>
+                {byCli ? (
+                  <ChatModelPicker value={chatRun} onChange={changeRun} />
+                ) : (
+                  <span className="min-w-0 truncate pl-1 text-xs text-subtle">
+                    {running
+                      ? tops.filter((s) => s.status === 'running').length > 1
+                        ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
+                        : t('执行中，可以随时暂停')
+                      : task.mode === 'workflow'
+                        ? tops.every((s) => s.status === 'done')
+                          ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                          : task.status === 'failed'
+                            ? t('会从失败的节点重新执行')
+                            : t('会从没完成的节点继续执行')
+                        : t('发给 {name}', { name: chatLabel })}
+                  </span>
+                )}
                 {running ? (
                   <>
                     {text.trim() ? (
                       <>
                         <Button
                           size="sm"
-                          variant="ghost"
-                          className="ml-auto rounded-lg"
-                          disabled={sending}
-                          title={t('停下当前这一轮，马上处理这条（Ctrl/⌘ + Enter）')}
-                          onClick={() => send('interrupt')}
-                        >
-                          <Zap className="h-3.5 w-3.5" />
-                          {t('打断并发送')}
-                        </Button>
-                        <Button
-                          size="sm"
                           variant={canSteer ? 'ghost' : 'secondary'}
-                          className="rounded-lg"
+                          className="ml-auto rounded-lg"
                           disabled={sending}
                           title={canSteer ? t('这一轮完成后接着处理') : t('这一轮完成后接着处理（Enter）')}
                           onClick={() => send('queue')}
@@ -665,11 +666,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                             variant="secondary"
                             className="rounded-lg"
                             disabled={sending}
-                            title={t('不停下，直接补充给正在做的这一轮（Enter）')}
+                            title={t('不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）')}
                             onClick={() => send('steer')}
                           >
                             <MessageSquarePlus className="h-3.5 w-3.5" />
-                            {t('插话')}
+                            {t('补充')}
                           </Button>
                         )}
                       </>
@@ -897,4 +898,22 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
       />
     </div>
   )
+}
+
+/** 对话的一轮回复：署名用这条回复记下的 CLI 和模型；以前的回复没记，用对话现在的设置 */
+function ChatTurn({
+  msgs,
+  teamNames,
+  live,
+  fallback,
+}: {
+  msgs: TaskMessage[]
+  teamNames: Set<string>
+  live: boolean
+  fallback?: ChatRun
+}) {
+  const run = msgs.find((m) => m.run)?.run
+  const cur = useChatRun(fallback ?? { cli: '', model: '', effort: '' }).run
+  const author = useRunAuthor(fallback ? (run ?? cur) : undefined)
+  return <FoldedRun msgs={msgs} teamNames={teamNames} live={live} author={author} />
 }

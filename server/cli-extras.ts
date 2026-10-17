@@ -133,6 +133,19 @@ async function claudePluginSkills(): Promise<CliSkill[]> {
  * （用户目录下的、项目目录下的，Claude Code 另外读插件里的）。cwd 为空时只列用户级的。
  */
 export async function listSkills(cli: string, cwd: string): Promise<CliSkill[]> {
+  // 按 Skill 所在的目录分组：.agents 下共用的和 CLI 自己目录下的分开列
+  const home = homedir()
+  const source = (s: CliSkill): CliSkill => {
+    if (s.scope === 'plugin' || !s.path) return s
+    const dir = path.dirname(path.dirname(s.path))
+    const rel = (base: string, prefix: string) =>
+      dir === base || dir.startsWith(base + path.sep) ? prefix + dir.slice(base.length).replaceAll('\\', '/') : ''
+    return { ...s, source: (cwd && rel(cwd, '.')) || rel(home, '~') || dir }
+  }
+  return (await rawSkills(cli, cwd)).map(source)
+}
+
+async function rawSkills(cli: string, cwd: string): Promise<CliSkill[]> {
   const def = getCli(cli)
   if (!def) throw new Error(t('未知的 CLI：{cli}', { cli }))
   if (cli === 'codex') {
@@ -171,5 +184,7 @@ export async function listSkills(cli: string, cwd: string): Promise<CliSkill[]> 
         ]
   const found = (await Promise.all(dirs.map(([d, scope]) => scanDir(d, scope)))).flat()
   if (cli === 'claude') found.push(...(await claudePluginSkills()))
-  return found.sort((a, b) => a.scope.localeCompare(b.scope) || a.name.localeCompare(b.name))
+  return found.sort(
+    (a, b) => a.scope.localeCompare(b.scope) || a.path.localeCompare(b.path) || a.name.localeCompare(b.name),
+  )
 }

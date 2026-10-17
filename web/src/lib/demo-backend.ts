@@ -577,6 +577,7 @@ const DEMO_SKILLS: CliSkill[] = [
     scope: 'user',
     path: '~/.agents/skills/frontend-design/SKILL.md',
     enabled: true,
+    source: '~/.agents/skills',
   },
   {
     name: 'pdf',
@@ -584,13 +585,23 @@ const DEMO_SKILLS: CliSkill[] = [
     scope: 'user',
     path: '~/.agents/skills/pdf/SKILL.md',
     enabled: true,
+    source: '~/.agents/skills',
+  },
+  {
+    name: 'commit-message',
+    description: '按团队约定写提交说明',
+    scope: 'user',
+    path: '~/.claude/skills/commit-message/SKILL.md',
+    enabled: true,
+    source: '~/.claude/skills',
   },
   {
     name: 'release-notes',
     description: '按仓库的提交说明格式整理更新说明',
     scope: 'repo',
-    path: '.agents/skills/release-notes/SKILL.md',
+    path: './.agents/skills/release-notes/SKILL.md',
     enabled: true,
+    source: './.agents/skills',
   },
 ]
 
@@ -998,6 +1009,23 @@ function tasksRoute(
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
     const cur = live.get(task.id)
+    // 补充：演示的模拟执行不会真的读它，记进对话（工作流里记在正在跑的节点上）
+    if (cur && f.steer) {
+      const step =
+        task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : ''
+      task.messages.push({
+        id: `demo-${crypto.randomUUID()}`,
+        role: 'user',
+        agentId: '',
+        step,
+        text: f.text,
+        tools: [],
+        ...(f.attachments.length ? { attachments: f.attachments } : {}),
+        at: new Date().toISOString(),
+      })
+      persist()
+      return task
+    }
     if (cur && !f.interrupt) {
       ;(task.queue ??= []).push({
         id: `demo-${crypto.randomUUID()}`,

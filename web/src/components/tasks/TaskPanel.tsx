@@ -14,7 +14,16 @@ import { api } from '@/lib/api'
 import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
 import { LimitBars, LIMIT_CLIS, useCliLimits } from '@/components/settings/CliLimits'
-import type { FileChange, Project, StepUsage, Task, TaskStep, TaskTodo, Workflow } from '@shared/schema'
+import {
+  DEFAULT_AGENT_ID,
+  type FileChange,
+  type Project,
+  type StepUsage,
+  type Task,
+  type TaskStep,
+  type TaskTodo,
+  type Workflow,
+} from '@shared/schema'
 import { useData } from '@/lib/data'
 import { fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
@@ -25,7 +34,7 @@ import { StepIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
 import { Terminal } from '@/components/agents/CommandPreview'
 import { t } from '@shared/i18n'
-import { chatName, mergeChanges, taskSummary, withTaskModel } from '@shared/task'
+import { mergeChanges, taskSummary, withTaskModel } from '@shared/task'
 import { DiffDialog } from './DiffDialog'
 
 /** 右栏块里的小操作（压缩上下文、审查改动） */
@@ -152,7 +161,7 @@ export function TaskPanel({
   node?: TaskStep
 }) {
   const { modelOf } = useAgentView()
-  const { agents } = useData()
+  const { agents, settings } = useData()
   const dir = useDirInfo(project?.path ?? '')
   const [busy, setBusy] = useState<'' | 'compact' | 'review'>('')
   const act = async (what: 'compact' | 'review') => {
@@ -168,6 +177,12 @@ export function TaskPanel({
   }
   const idle = task.status !== 'running'
   const byId = new Map(agents.map((a) => [a.id, a]))
+  // 用默认 Agent 的对话按 CLI 显示：名字和颜色跟着对话现在用的 CLI
+  const rowAgent = (a?: { id: string; name: string; icon: string; cli: string; model: string; effort: string }) => {
+    if (!a || task.mode !== 'chat' || a.id !== task.agentId || a.id !== DEFAULT_AGENT_ID) return a
+    const cli = agentRun(withTaskModel(a, task), settings ?? defaultSettings()).cli
+    return { ...a, cli, name: getCli(cli)?.name ?? a.name }
+  }
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
   // 工作流任务：对话视图看整个任务的上下文和用量，不显示启动命令和更改（它们属于具体节点）；
@@ -346,7 +361,7 @@ export function TaskPanel({
             ) : (
               <ul className="flex flex-col gap-3">
                 {Object.entries(task.usage.agents).map(([id, u]) => (
-                  <ContextRow key={id} agent={byId.get(id)} u={u} live={u} />
+                  <ContextRow key={id} agent={rowAgent(byId.get(id))} u={u} live={u} />
                 ))}
               </ul>
             )}
@@ -467,7 +482,7 @@ export function TaskPanel({
                   <>
                     <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
                     <span className="truncate">
-                      {t('对话：{name}', { name: chatName(chatAgent, task) || t('已删除的 Agent') })}
+                      {t('对话：{name}', { name: rowAgent(found)?.name || t('已删除的 Agent') })}
                       {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
                     </span>
                   </>

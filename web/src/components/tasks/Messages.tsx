@@ -23,13 +23,18 @@ export function SystemNote({ text, error, className }: { text: string; error?: b
         role="alert"
         className="flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg"
       >
-        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
+        {/* 图标放在和第一行一样高的框里居中，单行、多行都和文字对齐 */}
+        <span className="flex h-[1.625em] shrink-0 items-center">
+          <CircleAlert className="h-4 w-4 text-danger" />
+        </span>
         <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
       </div>
     )
   return (
     <div className={cn('flex items-start gap-1.5 text-xs leading-relaxed whitespace-pre-wrap text-subtle', className)}>
-      <Info className="mt-px h-3.5 w-3.5 shrink-0" />
+      <span className="flex h-[1.625em] shrink-0 items-center">
+        <Info className="h-3.5 w-3.5" />
+      </span>
       <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
     </div>
   )

@@ -249,8 +249,6 @@ export const EN_TASKS: Record<string, string> = {
   '查看「{path}」的改动': 'View changes to "{path}"',
   // 执行中排队、打断
   '执行中也可以输入，这一轮完成后接着处理': 'You can type while it runs; it will be handled after this turn',
-  '停下当前这一轮，马上处理这条（Ctrl/⌘ + Enter）': 'Stop this turn and handle this now (Ctrl/⌘ + Enter)',
-  打断并发送: 'Interrupt & send',
   '这一轮完成后接着处理（Enter）': 'Handle after this turn (Enter)',
   排队: 'Queue',
   '排队中 · 任务没在执行，点「继续执行」后处理':
@@ -313,10 +311,13 @@ export const EN_TASKS: Record<string, string> = {
   '撤回到这里：去掉这条和之后的对话，改了再发':
     'Rewind to here: remove this message and everything after, then edit and resend',
   撤回到这里: 'Rewind to here',
-  '执行中也可以输入，直接补充给正在做的这一轮': 'You can type while it runs to add to the current turn',
+  '执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做':
+    'You can type while it runs; the agent takes it into account and keeps going',
   这一轮完成后接着处理: 'Handle after this turn finishes',
-  '不停下，直接补充给正在做的这一轮（Enter）': 'Add to the current turn without stopping (Enter)',
-  插话: 'Add now',
+  '不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）':
+    'Give this to the running agent without stopping; it keeps going with the current task (Enter)',
+  补充: 'Add info',
+  '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
   '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
     "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The CLI continues from before this message. File changes aren't undone; undo them under Changes if needed.",
