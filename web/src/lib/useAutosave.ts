@@ -5,7 +5,7 @@ import { t } from '@shared/i18n'
 export type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error'
 
 /**
- * 编辑后自动保存：停止输入 600ms 后保存；组件卸载（切换到别的条目）时立即保存未提交的改动。
+ * 编辑后自动保存：停止输入 400ms 后保存；组件卸载（切换到别的条目）时立即保存未提交的改动。
  * `valid` 为 false 时不保存（例如名称为空）。
  */
 export function useAutosave<T>(value: T, save: (v: T) => Promise<unknown>, valid: boolean) {
@@ -38,7 +38,7 @@ export function useAutosave<T>(value: T, save: (v: T) => Promise<unknown>, valid
     }
     if (!valid) return
     setStatus('pending')
-    const t = setTimeout(run, 600)
+    const t = setTimeout(run, 400)
     return () => clearTimeout(t)
   }, [serialized, valid])
 

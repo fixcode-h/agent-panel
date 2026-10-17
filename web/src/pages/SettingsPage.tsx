@@ -174,7 +174,8 @@ function SettingsBody({
     value,
     async (v) => {
       setSettings(await api.saveSettings(v))
-      await refreshClis()
+      // 不强制重新检测：每次自动保存都把 CLI 跑一遍会让保存变得很慢
+      await refreshClis(false)
     },
     // 超时填错时这一项沿用原值，其他设置照常保存
     true,

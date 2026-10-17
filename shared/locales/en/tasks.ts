@@ -135,6 +135,7 @@ export const EN_TASKS: Record<string, string> = {
   更改: 'Changes',
   '还没有改动文件。': 'No files changed yet.',
   回到底部: 'Back to bottom',
+  '显示更早的 {n} 段': 'Show {n} earlier sections',
   这一步还没有输出: 'This step has no output yet',
   '这个节点没有改动文件。': 'This node changed no files.',
   '这个节点还没有启动过 CLI。': 'This node has not started a CLI yet.',

@@ -73,6 +73,24 @@ writeFileSync(
     },
   ]),
 )
+// 上一版每个任务一个完整文件（tasks/items/），启动后按项目分目录、对话单独存
+mkdirSync(path.join(dataDir, 'tasks/items'), { recursive: true })
+writeFileSync(
+  path.join(dataDir, 'tasks/items/legacy-2.json'),
+  JSON.stringify({
+    id: 'legacy-2',
+    projectId: '',
+    title: '旧聊天',
+    mode: 'chat',
+    status: 'done',
+    messages: [
+      { id: 'm1', role: 'user', text: '旧的聊天', at: legacyAt },
+      { id: 'm2', role: 'agent', text: '旧的回答', at: legacyAt },
+    ],
+    createdAt: legacyAt,
+    updatedAt: legacyAt,
+  }),
+)
 const relServer = http.createServer((req, res) => {
   const host = `http://127.0.0.1:${relServer.address().port}`
   if (req.url.startsWith('/releases')) {
@@ -1298,9 +1316,27 @@ try {
   // 用户数据目录：旧的平铺文件搬进子目录，按类查看占用、清理缓存，导出再导入原样恢复
   assert.ok(existsSync(path.join(dataDir, 'config/project-categories.json')), '旧的平铺文件搬进 config/')
   assert.ok(!existsSync(path.join(dataDir, 'project-categories.json')))
-  assert.ok(existsSync(path.join(dataDir, 'tasks/items/legacy-1.json')), '旧的 tasks.json 拆成每个任务一个文件')
+  // 任务按项目分目录，任务文件里只有用户的消息，完整对话在 .messages.json 里，打开任务时才读
+  const legacyFile = path.join(dataDir, 'tasks/projects/legacy-project/legacy-1.json')
+  assert.ok(existsSync(legacyFile), '旧的 tasks.json 拆成按项目分目录的任务文件')
+  assert.ok(existsSync(path.join(dataDir, 'tasks/projects/legacy-project/legacy-1.messages.json')))
   assert.ok(!existsSync(path.join(dataDir, 'tasks/tasks.json')))
   assert.equal((await call('GET', '/tasks/legacy-1')).messages[0].text, '旧的要求')
+  assert.ok(!existsSync(path.join(dataDir, 'tasks/items')), '上一版的 items 目录转换后删掉')
+  const chatMeta = JSON.parse(readFileSync(path.join(dataDir, 'tasks/chats/legacy-2.json'), 'utf8'))
+  assert.deepEqual(
+    chatMeta.messages.map((m) => m.text),
+    ['旧的聊天'],
+    '任务文件里只放用户消息',
+  )
+  assert.deepEqual(
+    (await call('GET', '/tasks/legacy-2')).messages.map((m) => m.text),
+    ['旧的聊天', '旧的回答'],
+  )
+  assert.equal((await call('GET', '/tasks')).find((x) => x.id === 'legacy-2').messages[0].text, '旧的聊天')
+  // 刚跑完的任务：对话在 .messages.json 里
+  const wfFile = path.join(dataDir, `tasks/projects/${project.id}/${t.id}.messages.json`)
+  assert.ok(JSON.parse(readFileSync(wfFile, 'utf8')).some((m) => m.role === 'agent'))
   const usage = await call('GET', '/data')
   assert.equal(usage.dir, dataDir)
   const kindOf = (u, k) => u.kinds.find((x) => x.id === k)
@@ -1325,7 +1361,11 @@ try {
     '配置不能清理',
   )
   const backup = await call('GET', '/data/export?kinds=config,projects,tasks')
-  assert.ok(backup.files['config/agents.json'] && backup.files['tasks/items/legacy-1.json'] && !backup.files['uploads'])
+  assert.ok(
+    backup.files['config/agents.json'] &&
+      backup.files['tasks/projects/legacy-project/legacy-1.json'] &&
+      !backup.files['uploads'],
+  )
   const agentsBefore = await call('GET', '/agents')
   const tasksBefore = (await call('GET', '/tasks')).length
   await call('DELETE', `/agents/${agentsBefore.at(-1).id}`).catch(() => {})

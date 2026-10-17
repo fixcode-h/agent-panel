@@ -95,6 +95,9 @@ function toBlocks(task: Task): Block[] {
 
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
 /** project 为空时是 Chat 模式的聊天，不属于任何项目 */
+/** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
+const BLOCK_LIMIT = 30
+
 export function TaskView({ taskId, project }: { taskId: string; project?: Project }) {
   const { agents, workflows, upsertTask, removeTask } = useData()
   const { go } = useNav()
@@ -113,6 +116,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const [scrolled, setScrolled] = useState(false)
   // 往上翻得比较远时显示「回到底部」
   const [away, setAway] = useState(false)
+  const [limit, setLimit] = useState(BLOCK_LIMIT)
+  useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
@@ -252,6 +257,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const chatAgent = agents.find((a) => a.id === task.agentId)
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
+  // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
+  const hidden = Math.max(0, blocks.length - limit)
   const isFlow = task.mode === 'workflow' && view === 'flow'
   // 点了任务进度里的某一步：切到流程图并定位到那一步
   const openStep =
@@ -262,6 +269,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
           if (view === 'flow') return setFocus({ id, at: Date.now() })
           const el = scroller.current
           const sec = el?.querySelector<HTMLElement>(`[data-step="${CSS.escape(id)}"]`)
+          // 这一步在还没显示的较早内容里：先全部显示，画出来后再滚过去
+          if (!sec && hidden) {
+            setLimit(Infinity)
+            return requestAnimationFrame(() => requestAnimationFrame(() => openStep?.(id)))
+          }
           if (!el || !sec) return toast(t('这一步还没有输出'))
           stick.current = false
           el.scrollTo({
@@ -431,10 +443,23 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 </Suspense>
               ) : (
                 <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
-                  {blocks.map((b, bi) =>
+                  {hidden > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLimit(Infinity)}
+                      className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+                    >
+                      {t('显示更早的 {n} 段', { n: hidden })}
+                    </button>
+                  )}
+                  {blocks.slice(hidden).map((b, i) =>
                     b.kind === 'turn' ? (
                       <div key={b.key} className="flex flex-col gap-4">
-                        <FoldedRun msgs={b.msgs} teamNames={teamNames} live={running && bi === blocks.length - 1} />
+                        <FoldedRun
+                          msgs={b.msgs}
+                          teamNames={teamNames}
+                          live={running && i + hidden === blocks.length - 1}
+                        />
                       </div>
                     ) : b.kind === 'steps' ? (
                       <div key={b.key} className="flex flex-col gap-7">

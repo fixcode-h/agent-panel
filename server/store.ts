@@ -77,10 +77,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 /**
  * 原子写 JSON：先写唯一的临时文件再改名。Windows 上杀毒软件、索引服务短暂占用文件时改名会报 EPERM / EBUSY，重试几次。
  */
-export async function writeJsonAtomic(file: string, data: unknown) {
+export async function writeJsonAtomic(file: string, data: unknown, compact = false) {
   await mkdir(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
-  await writeFile(tmp, JSON.stringify(data, null, 2), 'utf8')
+  // compact：大文件（任务的对话）不缩进，写得快、占地方小
+  await writeFile(tmp, compact ? JSON.stringify(data) : JSON.stringify(data, null, 2), 'utf8')
   for (let i = 0; ; i++) {
     try {
       return await rename(tmp, file)

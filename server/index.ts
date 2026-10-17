@@ -27,7 +27,7 @@ import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { docsApi } from './docs.ts'
-import { detectClis, invalidateClis } from './detect.ts'
+import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
 import { openBrowser, revealDir } from './open.ts'
 import { modelsApi } from './models.ts'
@@ -127,7 +127,6 @@ app.put('/settings', async (c) => {
   const p = Settings.safeParse(await c.req.json())
   if (!p.success) return bad(c, z.prettifyError(p.error))
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
-  invalidateClis()
   // 打开访问令牌的是这个浏览器：先给它发 Cookie，免得刚打开就把自己关在外面
   if (p.data.requireToken) grantCookie(c)
   return c.json(await saveSettings(p.data))
@@ -342,6 +341,8 @@ app.route(
 )
 
 void tasks.cleanupUploads()
+// 启动时先在后台检测一遍 CLI，打开页面时直接用结果
+void detectClis().catch(() => {})
 
 const root = new Hono()
 // 接口里没接住的错误：写进日志（带请求路径和调用栈），页面上照常看到错误信息
