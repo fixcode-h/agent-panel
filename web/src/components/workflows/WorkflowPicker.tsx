@@ -35,6 +35,7 @@ export function WorkflowPicker({
           {workflows.map((w) => (
             <PopoverClose key={w.id} className={menuItem} onClick={() => onChange(w.id)}>
               <span
+                title={isReady(workflowChecks(w, agents, clis, workflows)) ? t('就绪') : t('未就绪')}
                 className={cn(
                   'h-2 w-2 shrink-0 rounded-full',
                   isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',

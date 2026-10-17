@@ -7,6 +7,7 @@ import { useData, useNav } from '@/lib/data'
 import { cliColor, shortVersion } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { StatusDot } from '@/components/ui/badge'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { ContextMenuItem, ContextMenuSeparator, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
@@ -189,9 +190,16 @@ export function AgentsPage() {
       .finally(() => setChecking(false))
   }
 
+  // 列表右边的状态带文字：只有一个点时看不出是什么意思
   const status = (a: Agent) => {
     const installed = clis.find((c) => c.id === cliOf(a))?.installed
-    return !a.enabled ? 'bg-line-strong' : installed ? 'bg-success' : 'bg-warning'
+    return !a.enabled ? (
+      <StatusDot tone="muted" label={t('已停用')} />
+    ) : installed ? (
+      <StatusDot tone="success" label={t('就绪')} />
+    ) : (
+      <StatusDot tone="warning" label={t('CLI 未安装')} />
+    )
   }
 
   return (
@@ -265,7 +273,7 @@ export function AgentsPage() {
                 leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
                 title={a.name}
                 subtitle={`${cliName(a)} · ${modelOf(a)}`}
-                trailing={<span className={cn('h-2 w-2 shrink-0 rounded-full', status(a))} />}
+                trailing={<span className="shrink-0">{status(a)}</span>}
                 menu={
                   <>
                     <ContextMenuItem onSelect={() => duplicate(a)}>

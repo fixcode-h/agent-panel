@@ -8,8 +8,8 @@ import { api } from '@/lib/api'
 import { exportWorkflow, importWorkflow } from '@/lib/transfer'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { StatusDot } from '@/components/ui/badge'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
 import { ListEmpty, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
@@ -132,13 +132,15 @@ export function WorkflowsPage() {
             title={w.name}
             monoSubtitle={false}
             subtitle={`${nameOf(w.mainAgentId) ?? t('未选主 Agent')} · ${t('{n} 个子 Agent', { n: w.members.length })}`}
+            // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
             trailing={
-              <span
-                className={cn(
-                  'h-2 w-2 shrink-0 rounded-full',
-                  isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',
+              <span className="shrink-0">
+                {isReady(workflowChecks(w, agents, clis, workflows)) ? (
+                  <StatusDot tone="success" label={t('就绪')} />
+                ) : (
+                  <StatusDot tone="warning" label={t('未就绪')} />
                 )}
-              />
+              </span>
             }
             menu={
               <>
