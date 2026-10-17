@@ -58,7 +58,8 @@ import { SaveIndicator } from '@/components/layout/Detail'
 import { Viewport } from '@/components/design/Viewport'
 import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
 import { Details } from '@/components/design/Details'
-import { ImageDetails, ImagesPanel, readFile } from '@/components/design/ImagesPanel'
+import { ImageDetails, ImagePreview, ImagesPanel, readFile } from '@/components/design/ImagesPanel'
+import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
@@ -253,8 +254,10 @@ function Designer({ id }: { id: string }) {
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
   const [hasClip, setHasClip] = useState(!!clipboard)
-  const [tab, setTab] = useState<'tree' | 'images'>('tree')
+  const [tab, setTab] = useState<'tree' | 'images' | 'widgets'>('tree')
   const [imageSel, setImageSel] = useState('')
+  /** 双击图片后在画布区域放大预览的图片 */
+  const [preview, setPreview] = useState('')
   const [chatOpen, setChatOpen] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [source, setSourceState] = useState<ImageSource>(() => {
@@ -725,26 +728,33 @@ function Designer({ id }: { id: string }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <Viewport
-          root={tree}
-          size={designSize}
-          images={renderImages}
-          components={doc.components}
-          selected={selected}
-          onSelect={(wid) => {
-            setSelected(wid)
-            if (wid) setTab('tree')
-          }}
-          onMove={onMove}
-          annotations={doc.annotations}
-          onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
-          target={target}
-        />
+        <div className="relative flex min-w-0 flex-1">
+          <Viewport
+            root={tree}
+            size={designSize}
+            images={renderImages}
+            components={doc.components}
+            selected={selected}
+            onSelect={(wid) => {
+              setSelected(wid)
+              if (wid) setTab('tree')
+            }}
+            onMove={onMove}
+            annotations={doc.annotations}
+            onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
+            target={target}
+          />
+          {(() => {
+            const img = preview ? doc.images.find((i) => i.id === preview) : undefined
+            const src = img && imageUrl(img)
+            return img && src ? <ImagePreview image={img} src={src} onClose={() => setPreview('')} /> : null
+          })()}
+        </div>
 
         <aside style={{ width: treePane.width }} className="relative flex shrink-0 flex-col border-l bg-card">
           <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
           <div role="tablist" className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
-            {(['tree', 'images'] as const).map((k) => (
+            {(['tree', 'images', 'widgets'] as const).map((k) => (
               <button
                 key={k}
                 role="tab"
@@ -755,7 +765,7 @@ function Designer({ id }: { id: string }) {
                   tab === k ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
                 )}
               >
-                {k === 'tree' ? t('控件树') : t('图片 {n}', { n: doc.images.length })}
+                {k === 'tree' ? t('控件树') : k === 'images' ? t('图片 {n}', { n: doc.images.length }) : t('控件')}
               </button>
             ))}
             <span className="flex-1" />
@@ -796,6 +806,27 @@ function Designer({ id }: { id: string }) {
           <div className="min-h-[120px] flex-1 overflow-y-auto">
             {tab === 'tree' ? (
               <Hierarchy root={tree} selected={selected} actions={actions} />
+            ) : tab === 'widgets' ? (
+              <ComponentsPanel
+                projectId={server.projectId}
+                designId={id}
+                own={doc.components.map((c) => c.Name)}
+                onOpen={(name) => {
+                  setTarget(name)
+                  setSelected('')
+                  setTab('tree')
+                }}
+                onImport={async (from, name) => {
+                  try {
+                    // 先保存本地的修改，服务端在保存的内容上加
+                    ed.absorb(await api.saveDesign(id, doc))
+                    ed.absorb(await api.importComponent(id, { from, name }))
+                    toast.success(t('已把 {name} 加进这个设计', { name }))
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                  }
+                }}
+              />
             ) : (
               <ImagesPanel
                 images={doc.images}
@@ -803,11 +834,12 @@ function Designer({ id }: { id: string }) {
                 selected={imageSel}
                 onSelect={setImageSel}
                 onUpload={(f) => void upload(f)}
+                onPreview={setPreview}
                 usedIds={used}
               />
             )}
           </div>
-          <div className="min-h-[160px] flex-[1.3] overflow-y-auto border-t">
+          <div className={cn('min-h-[160px] flex-[1.3] overflow-y-auto border-t', tab === 'widgets' && 'hidden')}>
             {tab === 'tree' && selWidget ? (
               <Details
                 key={selWidget.id}
@@ -835,7 +867,8 @@ function Designer({ id }: { id: string }) {
                   ed.change((d) => ({ ...d, images: d.images.filter((i) => i.id !== selImage.id) }))
                   setImageSel('')
                 }}
-                canGenerate={source.kind !== 'none' && !ed.running}
+                // 正在生成别的图时也能点：排进这一轮的队列；AI 还在改设计时不行
+                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
                 sourceLabel={sourceLabel}
               />
             ) : (

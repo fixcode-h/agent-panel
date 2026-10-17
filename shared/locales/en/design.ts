@@ -142,6 +142,20 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  控件: 'Widgets',
+  '这个项目里还没有子控件。让 AI 把重复的部分（列表项、格子、按钮）做成子控件，就会出现在这里。':
+    'No widgets in this project yet. Ask the AI to turn repeated parts (list items, slots, buttons) into widgets and they show up here.',
+  这个设计: 'This design',
+  点击编辑这个子控件: 'Click to edit this widget',
+  这个设计里已经有同名的子控件: 'This design already has a widget with this name',
+  连同它用到的图片一起加进这个设计: 'Add it to this design along with the images it uses',
+  已在这个设计里: 'Already in this design',
+  加入这个设计: 'Add to this design',
+  '已把 {name} 加进这个设计': 'Added {name} to this design',
+  '没有找到子控件 {name}': 'Widget {name} not found',
+  '这个设计里已经有叫 {name} 的子控件了': 'This design already has a widget named {name}',
+  双击放大预览: 'Double-click to preview large',
+  关闭预览: 'Close preview',
   '有 {n} 张图片没有生成出来': '{n} images failed to generate',
   '格子在属性里设置，导出到 UE 时展开成子控件':
     'Cells are set in the properties and expand into child widgets when exported to UE',

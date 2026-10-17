@@ -379,11 +379,15 @@ export function ImagePick({
   )
 }
 
+/** 图片缩略图：透明的地方用灰白方格表示，一眼能看出哪里是透明的 */
 export function Thumb({ src, className }: { src?: string; className?: string }) {
   return (
     <span
       className={cn(
-        'grid shrink-0 place-items-center overflow-hidden rounded border border-line bg-[length:8px_8px] [background-image:conic-gradient(#0000_25%,#8882_0_50%,#0000_0_75%,#8882_0)]',
+        'grid shrink-0 place-items-center overflow-hidden rounded border border-line',
+        src
+          ? 'bg-[#fff] bg-[length:12px_12px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]'
+          : 'bg-sel',
         className,
       )}
     >

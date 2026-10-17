@@ -1,5 +1,5 @@
-import { useRef } from 'react'
-import { AlertCircle, ImagePlus, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+import { AlertCircle, ImagePlus, Loader2, RefreshCw, Trash2, Upload, X } from 'lucide-react'
 import type { DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -22,6 +22,7 @@ export function ImagesPanel({
   selected,
   onSelect,
   onUpload,
+  onPreview,
   usedIds,
 }: {
   images: DesignImage[]
@@ -29,6 +30,8 @@ export function ImagesPanel({
   selected: string
   onSelect: (id: string) => void
   onUpload: (files: File[]) => void
+  /** 双击：在左边的画布区域放大看 */
+  onPreview: (id: string) => void
   usedIds: Set<string>
 }) {
   const input = useRef<HTMLInputElement>(null)
@@ -62,6 +65,8 @@ export function ImagesPanel({
           <button
             key={i.id}
             onClick={() => onSelect(i.id)}
+            onDoubleClick={() => url(i) && onPreview(i.id)}
+            title={url(i) ? t('双击放大预览') : undefined}
             className={cn(
               'group flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-field text-left transition-colors',
               selected === i.id ? 'border-accent ring-2 ring-accent-soft' : 'hover:border-line-strong',
@@ -224,6 +229,53 @@ export function ImageDetails({
           </Button>
         </div>
         {canGenerate && <p className="px-3 pb-3 text-[11px] text-subtle">{sourceLabel}</p>}
+      </div>
+    </div>
+  )
+}
+
+/** 透明的地方用灰白方格表示（和 Photoshop、UE 的贴图预览一样） */
+export const CHECKER =
+  'bg-[#fff] bg-[length:16px_16px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]'
+
+/** 盖在画布区域上的大图预览：点空白处、关闭按钮或按 Esc 关掉 */
+export function ImagePreview({ image, src, onClose }: { image: DesignImage; src: string; onClose: () => void }) {
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    window.addEventListener('keydown', on)
+    return () => window.removeEventListener('keydown', on)
+  }, [onClose])
+  const v = image.variants[image.selected] ?? image.variants.at(-1)
+  return (
+    <div
+      role="dialog"
+      aria-label={image.name}
+      onClick={onClose}
+      className="absolute inset-0 z-30 flex flex-col bg-[#18181a]/95 animate-[fade-in_120ms_ease-out]"
+    >
+      <div className="flex h-10 shrink-0 items-center gap-2 px-3 text-[12px] text-white/80">
+        <span className="font-mono font-medium text-white">{image.name}</span>
+        {v && (
+          <span className="font-mono text-white/50">
+            {v.width}×{v.height}
+            {image.variants.length > 1 && ` · ${image.selected + 1}/${image.variants.length}`}
+          </span>
+        )}
+        <button
+          onClick={onClose}
+          aria-label={t('关闭预览')}
+          className="ml-auto grid h-7 w-7 cursor-pointer place-items-center rounded-md text-white/70 hover:bg-white/10 hover:text-white"
+        >
+          <X className="h-4 w-4" />
+        </button>
+      </div>
+      <div className="grid min-h-0 flex-1 place-items-center p-6">
+        <img
+          src={src}
+          alt={image.name}
+          onClick={(e) => e.stopPropagation()}
+          className={cn('max-h-full max-w-full object-contain shadow-[0_12px_40px_-12px_rgba(0,0,0,0.8)]', CHECKER)}
+        />
       </div>
     </div>
   )
