@@ -813,7 +813,8 @@ function route(method: string, url: string, body: unknown): unknown {
   }
 
   if (res === 'designs')
-    return seg[2] === 'images' && seg[4] === 'generate'
+    // 演示里没有失败的图，重试和生成一样
+    return seg[2] === 'images' && (seg[4] === 'generate' || seg[4] === 'retry')
       ? demoGenerate(id, seg[3], body ?? {})
       : demoDesigns(method, id, sub, body ?? {})
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])

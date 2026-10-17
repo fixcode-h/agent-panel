@@ -108,9 +108,14 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('StretchDirection', 'enum', { options: ['Both', 'DownOnly', 'UpOnly'] }),
   ],
   UniformGridPanel: [
+    F('EntryWidgetClass', 'component'),
+    F('NumEntries', 'num', { min: 0, max: 100 }),
+    F('NumColumns', 'num', { min: 1, max: 20 }),
     F('SlotPadding', 'margin'),
     F('MinDesiredSlotWidth', 'num', { min: 0 }),
     F('MinDesiredSlotHeight', 'num', { min: 0 }),
+    F('EntryHorizontalAlignment', 'enum', { options: ['HAlign_Fill', 'HAlign_Left', 'HAlign_Center', 'HAlign_Right'] }),
+    F('EntryVerticalAlignment', 'enum', { options: ['VAlign_Fill', 'VAlign_Top', 'VAlign_Center', 'VAlign_Bottom'] }),
   ],
   WrapBox: [F('InnerSlotPadding', 'vec2'), F('Orientation', 'enum', { options: ORIENT })],
   ScrollBox: [
@@ -404,7 +409,8 @@ export function Details({
 
   return (
     <div className="text-[12px]">
-      <div className="flex items-center gap-2 border-b px-3 py-2">
+      {/* 名字和类型固定在属性面板顶上，往下翻属性时一直能看到选的是哪个控件 */}
+      <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-3 py-2">
         {Icon && <Icon className="h-4 w-4 shrink-0 text-accent" />}
         <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] font-medium">{widget.Name}</span>
         <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[10.5px] text-subtle">{widget.Type}</span>

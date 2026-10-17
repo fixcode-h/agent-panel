@@ -198,12 +198,16 @@ export const api = {
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),
   generateDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number; prompt?: string }) =>
     request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
+  retryDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number }) =>
+    request<DesignFull>(`/designs/${id}/images/${imageId}/retry`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
   browserStatus: () => request<BrowserStatus>('/designs/browser'),
   promptAi: (input: Partial<PromptAiInput>) =>
     request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
   installExtension: (browser: string) =>
     request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
+  reloadExtension: (browser: string) =>
+    request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }

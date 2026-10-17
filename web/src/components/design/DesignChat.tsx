@@ -9,11 +9,13 @@ import {
   FolderOpen,
   Globe,
   Loader2,
+  RefreshCw,
   Sparkles,
   Square,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { extensionSelfReload } from '@shared/design'
 import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
 import type { TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
@@ -156,6 +158,24 @@ function BrowserHelp({
       setInstalling('')
     }
   }
+  const [reloading, setReloading] = useState('')
+  const selfReload = extensionSelfReload(status.version)
+  // 1.3 起的扩展让它自己重新加载；更早的版本只能打开扩展页面，让用户点一下扩展上的刷新按钮
+  const reload = async (browser: string) => {
+    setReloading(browser || 'auto')
+    try {
+      const { auto } = await api.reloadExtension(browser)
+      toast.success(
+        auto
+          ? t('扩展正在刷新，几秒后会重新连上')
+          : t('已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新'),
+      )
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setReloading('')
+    }
+  }
   const state = !connected
     ? waiting
       ? { tone: 'wait', text: t('正在等待扩展连上…装好后这里会自动变成已连上') }
@@ -267,6 +287,26 @@ function BrowserHelp({
             )}
             <div className="min-w-0 flex-1">
               <p>{state.text}</p>
+              {outdated && !demo && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(selfReload ? [{ id: '', name: '' }] : status.browsers).map((b) => (
+                    <Button
+                      key={b.id}
+                      size="sm"
+                      variant="primary"
+                      disabled={!!reloading}
+                      onClick={() => void reload(b.id)}
+                    >
+                      {reloading === (b.id || 'auto') ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      {selfReload ? t('一键刷新扩展') : t('打开 {name} 的扩展页面刷新', { name: b.name })}
+                    </Button>
+                  ))}
+                </div>
+              )}
               {connected && tabs.length > 0 && (
                 <ul className="mt-1 flex flex-col gap-0.5 text-muted">
                   {tabs.map((tb) => (
@@ -364,6 +404,7 @@ export function DesignChat({
   onCount,
   onSend,
   onStop,
+  onRetry,
   annotations = [],
   onRemoveAnnotation,
 }: {
@@ -376,6 +417,8 @@ export function DesignChat({
   onCount: (n: number) => void
   onSend: (text: string, run: ChatRun) => Promise<boolean>
   onStop: () => void
+  /** 重新排队生成一张失败的图 */
+  onRetry?: (imageId: string) => Promise<void>
   /** 效果图上还没发出去的标注，发送时一起带上 */
   annotations?: Annotation[]
   onRemoveAnnotation?: (id: string) => void
@@ -461,7 +504,11 @@ export function DesignChat({
         </div>
       </div>
       <div className="relative shrink-0 px-3 pb-3">
-        {running && job && <JobProgress job={job} />}
+        {job && (running || job.images?.some((i) => i.status === 'failed')) && job.phase === 'images' ? (
+          <JobProgress job={job} onRetry={onRetry} />
+        ) : (
+          running && job && <JobProgress job={job} />
+        )}
         <div className="flex min-w-0 items-center pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
         </div>
@@ -659,9 +706,12 @@ function LiveOutput({ job }: { job: DesignJob }) {
 }
 
 /** 固定在输入框上方的进度：设计时是一行状态，生成图片时是每张图的进度 */
-function JobProgress({ job }: { job: DesignJob }) {
+function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: string) => Promise<void> }) {
   const [, tick] = useState(0)
   const [open, setOpen] = useState(true)
+  const [retrying, setRetrying] = useState('')
+  const running = job.status === 'running'
+  const failedN = (job.images ?? []).filter((i) => i.status === 'failed').length
   useEffect(() => {
     const timer = setInterval(() => tick((n) => n + 1), 1000)
     return () => clearInterval(timer)
@@ -680,15 +730,23 @@ function JobProgress({ job }: { job: DesignJob }) {
         aria-expanded={items.length ? open : undefined}
         className="flex cursor-pointer items-center gap-2 font-medium text-muted disabled:cursor-default"
       >
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        {running ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        ) : (
+          <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger" />
+        )}
         <span className="min-w-0 truncate">
-          {job.phase === 'images'
-            ? t('正在生成图片 {i}/{n}', { i: done, n: items.length })
-            : job.attempt > 1
-              ? t('格式不对，正在修正')
-              : t('正在设计')}
+          {!running
+            ? t('有 {n} 张图片没有生成出来', { n: failedN })
+            : job.phase === 'images'
+              ? t('正在生成图片 {i}/{n}', { i: done, n: items.length })
+              : job.attempt > 1
+                ? t('格式不对，正在修正')
+                : t('正在设计')}
         </span>
-        <span className="ml-auto shrink-0 font-mono text-[11px] font-normal text-subtle tabular-nums">{sec}s</span>
+        {running && (
+          <span className="ml-auto shrink-0 font-mono text-[11px] font-normal text-subtle tabular-nums">{sec}s</span>
+        )}
         {items.length > 0 && (
           <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', !open && '-rotate-90')} />
         )}
@@ -729,6 +787,19 @@ function JobProgress({ job }: { job: DesignJob }) {
                 <span className="shrink-0 font-mono text-[11px] text-subtle tabular-nums">
                   {i.got}/{i.want}
                 </span>
+              )}
+              {i.status === 'failed' && onRetry && (
+                <button
+                  disabled={!!retrying}
+                  onClick={() => {
+                    setRetrying(i.id)
+                    void onRetry(i.id).finally(() => setRetrying(''))
+                  }}
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-px text-[11.5px] text-accent hover:bg-sel disabled:cursor-default disabled:opacity-50"
+                >
+                  {retrying === i.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                  {t('重试')}
+                </button>
               )}
             </li>
           ))}

@@ -697,7 +697,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     }
   }
   if (id === 'browser') {
-    if (sub === 'reveal' || sub === 'install') fail('在线演示不能打开本机的浏览器和目录')
+    if (sub === 'reveal' || sub === 'install' || sub === 'reload') fail('在线演示不能打开本机的浏览器和目录')
     return {
       connected: true,
       version: '1.0.0',

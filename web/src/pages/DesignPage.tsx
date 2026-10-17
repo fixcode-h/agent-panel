@@ -861,6 +861,13 @@ function Designer({ id }: { id: string }) {
               onCount={setCount}
               onSend={send}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+              onRetry={async (imageId) => {
+                try {
+                  ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))
+                } catch (e) {
+                  toast.error((e as Error).message)
+                }
+              }}
               annotations={doc.annotations}
               onRemoveAnnotation={(aid) =>
                 ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)

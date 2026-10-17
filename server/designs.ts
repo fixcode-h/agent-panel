@@ -30,7 +30,7 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, normalizeTree, uniqueName } from '../shared/umg.ts'
+import { exportDesign, migrateGrids, normalizeTree, uniqueName } from '../shared/umg.ts'
 import { t } from '../shared/i18n.ts'
 import { READ_ONLY, safeArgs } from './assist.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -53,7 +53,11 @@ const PROJECTS_FILE = path.join(DIR, '_projects.json')
 const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
-type Job = DesignJob & { abort: AbortController }
+type Job = DesignJob & {
+  abort: AbortController
+  /** 生成图片时：把一张失败的图重新排进这一轮的队列（点了「重试」）；不在生成图片时没有 */
+  enqueue?: (img: DesignImage) => void
+}
 
 const now = () => new Date().toISOString()
 const meta = (d: Design): DesignMeta => ({
@@ -79,8 +83,14 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       if (!f.endsWith('.json') || f.startsWith('_')) continue
       const raw = await readJson(path.join(DIR, f))
       const p = Design.safeParse(raw)
-      if (p.success) cache.set(p.data.id, p.data as Design)
-      else log.warn('designs', `设计文件格式不对，跳过：${f}`)
+      if (p.success) {
+        const d = p.data as Design
+        cache.set(d.id, {
+          ...d,
+          root: migrateGrids(d.root),
+          components: d.components.map((c) => ({ ...c, Root: migrateGrids(c.Root) })),
+        })
+      } else log.warn('designs', `设计文件格式不对，跳过：${f}`)
     }
     loaded = true
   }
@@ -195,6 +205,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
                 prompt: imagePrompt(img, cache.get(d.id)!.style, img.transparent, style),
                 count,
                 chroma: img.transparent,
+                concurrency: (await getSettings()).imageGen.concurrency,
                 onProgress: (text) => (item.text = text),
                 onImage: add,
               },
@@ -305,25 +316,42 @@ ${prompt}`,
     // 每张图单独一个会话（CLI 进程或浏览器里的新对话），同时跑的个数在设置里调；旧版扩展只能一张张来
     const settings = await getSettings()
     const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
-    const failed: string[] = []
+    // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
+    const failed = new Map<string, string>()
+    const queue = list.map((img, k) => ({ img, item: items[k] }))
     let next = 0
     const worker = async () => {
-      while (next < list.length && !job.abort.signal.aborted) {
-        const k = next++
-        const img = list[k]
+      while (next < queue.length && !job.abort.signal.aborted) {
+        const { img, item } = queue[next++]
         try {
-          await generateOne(cache.get(d.id)!, img, source, count, style, job, items[k])
+          await generateOne(cache.get(d.id)!, img, source, count, style, job, item)
+          failed.delete(img.id)
         } catch (e) {
-          failed.push(`${img.name}：${(e as Error).message}`)
+          failed.set(img.id, `${img.name}：${(e as Error).message}`)
         }
       }
     }
-    await Promise.all(Array.from({ length: Math.min(width, list.length) }, worker))
+    const workers = new Set<Promise<void>>()
+    const spawn = () => {
+      const p: Promise<void> = worker().finally(() => workers.delete(p))
+      workers.add(p)
+    }
+    for (let i = 0; i < Math.min(width, queue.length); i++) spawn()
+    // 重试：排到队尾，有空着的位置就马上开始
+    job.enqueue = (img) => {
+      const item = items.find((x) => x.id === img.id)
+      if (!item || item.status !== 'failed') return
+      Object.assign(item, { status: 'waiting', got: 0, text: undefined })
+      queue.push({ img, item })
+      if (workers.size < width) spawn()
+    }
+    while (workers.size) await Promise.all([...workers])
+    job.enqueue = undefined
     // 没轮到的（停止了）恢复成未生成
     const dd = cache.get(d.id)!
     dd.images = dd.images.map((i) => (ids.includes(i.id) && i.status === 'pending' ? { ...i, status: 'idle' } : i))
     await save(dd)
-    return failed
+    return [...failed.values()]
   }
 
   // ---- AI 对话 ----
@@ -578,7 +606,7 @@ ${prompt}`,
 
   const view = (j?: Job): DesignJob | null => {
     if (!j) return null
-    const { abort, ...rest } = j
+    const { abort, enqueue, ...rest } = j
     return rest
   }
 
@@ -762,6 +790,33 @@ ${prompt}`,
       if (!p.success) return bad(c, z.prettifyError(p.error))
       if (p.data.source.kind === 'none') return bad(c, t('请选择生成图片的方式'))
       if (p.data.prompt !== undefined) img.prompt = p.data.prompt
+      if (!img.prompt.trim()) return bad(c, t('先写一下这张图要画什么'))
+      img.status = 'pending'
+      await save(d)
+      startJob(d, async (job) => {
+        const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job)
+        if (failed.length) throw new Error(failed.join('\n'))
+      })
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // 重试一张失败的图：正在生成这一轮时排回队列，否则单独生成这一张
+    .post('/:id/images/:imageId/retry', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const img = d.images.find((i) => i.id === c.req.param('imageId'))
+      if (!img) return bad(c, t('图片不存在'), 404)
+      const p = GenerateImageInput.safeParse(await c.req.json().catch(() => ({})))
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const running = jobs.get(d.id)
+      if (running?.status === 'running') {
+        if (!running.enqueue) return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+        img.status = 'pending'
+        img.error = undefined
+        await save(d)
+        running.enqueue(img)
+        return c.json({ ...d, job: view(running) })
+      }
+      if (p.data.source.kind === 'none') return bad(c, t('请选择生成图片的方式'))
       if (!img.prompt.trim()) return bad(c, t('先写一下这张图要画什么'))
       img.status = 'pending'
       await save(d)

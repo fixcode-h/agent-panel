@@ -11,6 +11,7 @@ let state = { connected: false, error: '', tabs: 0 }
 let polling = false
 // 正在处理的指令数：每张图在同一个标签页里各开一个对话，可以同时生成好几张
 let active = 0
+let reloadWanted = false
 
 async function base() {
   const { port } = await chrome.storage.local.get('port')
@@ -39,6 +40,9 @@ async function hello() {
     const r = await post('hello', { version: chrome.runtime.getManifest().version, tabs })
     state.connected = true
     state.error = ''
+    // 用户在面板里点了「刷新扩展」；正在生成时不打断，下次报到再说（面板那边的要求只带一次，所以记下来）
+    if (r?.reload) reloadWanted = true
+    if (reloadWanted && !active) chrome.runtime.reload()
     void selfUpdate(r?.latestVersion)
   } catch (e) {
     state.connected = false
@@ -164,7 +168,7 @@ async function handle(cmd) {
     await post('progress', { id: cmd.id, text: '已收到，排队发送描述' })
     const got = await new Promise((resolve, reject) => {
       const d = driver(Number(cmd.tabId))
-      d.queue.push({ cmd, resolve, reject, url: '', got: 0, start: 0, idle: 0 })
+      d.queue.push({ cmd, resolve, reject, conv: null, got: 0, base: 0, replyBase: 0, start: 0, idle: 0 })
       void runDriver(d)
     })
     await post('result', { id: cmd.id, ok: true, images: [], streamed: got })
@@ -176,16 +180,40 @@ async function handle(cmd) {
 }
 
 /**
- * 每个标签页一个调度。一个标签页同一时间只能显示一个对话，所以都在这里排队：
- * 先把描述逐个发到新对话里（网页左边的对话列表会多出这些对话，图在网页那边同时生成），
- * 再轮流打开这些对话取图。同时有几个对话由面板设置里的「同时生成几张」决定（最多 10 个）
+ * 每个标签页一个调度。一个标签页同一时间只能显示一个对话，所以都在这里排队。
+ * 每个标签页只开固定几个对话（面板设置里的「同时生成几张」，最多 10 个），之后的图排队，
+ * 哪个对话空下来就在哪个对话里接着生成，不会每张图都开一个新对话。描述发出去后轮流打开这些对话取图
  */
 const drivers = new Map()
+/** 每个标签页开过的对话：{ url, job }，job 为空表示这个对话空着；生成完也留着，下次接着用 */
+const pools = new Map()
+
+async function poolOf(tabId) {
+  if (!pools.has(tabId)) {
+    // 后台被浏览器休眠后内存清空了：从会话存储里恢复，接着用原来那几个对话
+    const key = `pool:${tabId}`
+    const saved = (await chrome.storage.session.get(key).catch(() => ({})))[key]
+    if (!pools.has(tabId))
+      pools.set(
+        tabId,
+        (saved ?? []).map((url) => ({ url, job: null })),
+      )
+  }
+  return pools.get(tabId)
+}
+function savePool(tabId) {
+  const urls = (pools.get(tabId) ?? []).map((c) => c.url).filter(Boolean)
+  void chrome.storage.session.set({ [`pool:${tabId}`]: urls }).catch(() => {})
+}
+chrome.tabs.onRemoved.addListener((tabId) => {
+  pools.delete(tabId)
+  void chrome.storage.session.remove(`pool:${tabId}`).catch(() => {})
+})
 
 function driver(tabId) {
   let d = drivers.get(tabId)
   if (!d) {
-    d = { tabId, queue: [], convs: [], next: 0, running: false }
+    d = { tabId, queue: [], next: 0, running: false }
     drivers.set(tabId, d)
   }
   return d
@@ -195,28 +223,42 @@ async function runDriver(d) {
   if (d.running) return
   d.running = true
   try {
-    while (d.queue.length || d.convs.length) {
+    const pool = await poolOf(d.tabId)
+    for (;;) {
+      const working = () => pool.filter((c) => c.job)
+      if (!d.queue.length && !working().length) break
       try {
         await chrome.tabs.get(d.tabId)
       } catch {
         const err = new Error('生成图片用的标签页被关掉了')
-        for (const job of [...d.queue, ...d.convs]) job.reject(err)
+        for (const job of [...d.queue, ...working().map((c) => c.job)]) job.reject(err)
         d.queue = []
-        d.convs = []
+        pool.length = 0
         break
       }
-      // 新的描述先发出去，让网页尽早开始生成
+      // 排队的图先找空着的对话，没有空的且还没开满就开一个新对话；描述先发出去，让网页尽早开始生成
       if (d.queue.length) {
-        const job = d.queue.shift()
-        try {
-          await startJob(d, job)
-          d.convs.push(job)
-        } catch (e) {
-          job.reject(e)
+        const limit = Math.max(1, d.queue[0].cmd.concurrency || 3)
+        let conv = pool.slice(0, limit).find((c) => !c.job && c.url)
+        if (!conv && pool.length < limit) pool.push((conv = { url: '', job: null }))
+        if (conv) {
+          const job = d.queue.shift()
+          conv.job = job
+          job.conv = conv
+          try {
+            await startJob(d, job)
+          } catch (e) {
+            conv.job = null
+            job.reject(e)
+          }
+          // 新开却没开成的对话不留
+          if (!conv.url) pool.splice(pool.indexOf(conv), 1)
+          savePool(d.tabId)
+          continue
         }
-        continue
       }
-      const job = d.convs[d.next++ % d.convs.length]
+      const list = working()
+      const job = list[d.next++ % list.length].job
       let done
       try {
         done = await checkJob(d, job)
@@ -224,9 +266,9 @@ async function runDriver(d) {
         job.reject(e)
         done = true
       }
-      if (done) d.convs.splice(d.convs.indexOf(job), 1)
+      if (done) job.conv.job = null
       // 只剩一个对话时它就停在页面上，隔一会儿再看；几个对话时切换本身就要几秒
-      if (d.convs.length === 1 && !d.queue.length) await sleep(3000)
+      if (working().length === 1 && !d.queue.length) await sleep(3000)
     }
   } finally {
     d.running = false
@@ -259,11 +301,29 @@ async function ask(tabId, msg) {
 
 async function startJob(d, job) {
   const { id, prompt } = job.cmd
+  const conv = job.conv
+  // 已经开过的对话：切过去接着发。对话被删了、切不过去时改开新对话
+  if (conv.url) {
+    try {
+      await post('progress', { id, text: '在已有的对话里发送描述' })
+      await openUrl(d.tabId, conv.url)
+      const res = await ask(d.tabId, { type: 'prompt', id, prompt })
+      job.base = res.images
+      job.replyBase = res.replies
+      job.start = Date.now()
+      await post('progress', { id, text: '描述已发出，网页正在生成' }).catch(() => {})
+      return
+    } catch {
+      conv.url = ''
+    }
+  }
   await post('progress', { id, text: '打开新对话' })
   const tab = await chrome.tabs.get(d.tabId)
   await openUrl(d.tabId, newChatUrl(tab.url), true)
   const res = await ask(d.tabId, { type: 'submit', id, prompt })
-  job.url = res.url
+  conv.url = res.url
+  job.base = 0
+  job.replyBase = 0
   job.start = Date.now()
   await post('progress', { id, text: '描述已发出，网页正在生成' }).catch(() => {})
 }
@@ -271,8 +331,9 @@ async function startJob(d, job) {
 /** 打开这个对话看一眼：新出现的图马上交给面板；够了几版就结束。返回 true 表示这张图处理完了 */
 async function checkJob(d, job) {
   const { id, count, chroma } = job.cmd
-  await openUrl(d.tabId, job.url)
-  const res = await ask(d.tabId, { type: 'check', id, skip: job.got })
+  await openUrl(d.tabId, job.conv.url)
+  // 对话是接着用的：前面几张图和回复不算这张的
+  const res = await ask(d.tabId, { type: 'check', id, skip: job.base + job.got, replyBase: job.replyBase })
   for (const img of res.images) {
     await sendImage(id, img, chroma)
     job.got++
@@ -284,7 +345,7 @@ async function checkJob(d, job) {
   const sec = Math.round((Date.now() - job.start) / 1000)
   if (!res.busy && res.images.length) {
     // 这一轮出图了但还不够几版：在同一个对话里再要一张
-    await ask(d.tabId, { type: 'more', id })
+    job.replyBase = (await ask(d.tabId, { type: 'more', id })).replies
     job.idle = 0
   } else if (!res.busy && res.replied && !res.images.length) {
     // 回复结束了却没有图：连着几次都这样才算失败（刚打开时回复可能还没渲染完）

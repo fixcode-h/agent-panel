@@ -2097,6 +2097,18 @@ try {
     })
     // 扩展靠这个版本号判断要不要自己重新加载
     assert.equal(typeof (await hello.json()).latestVersion, 'string')
+    // 一键刷新扩展：1.3 起的扩展在下次报到时收到一次重新加载的要求
+    assert.deepEqual(await call('POST', '/designs/browser/reload', {}), { auto: true })
+    const helloAgain = () =>
+      bridge('POST', '/hello', {
+        version: '1.3.0',
+        tabs: [
+          { id: 7, url: 'https://gemini.google.com/app/abc' },
+          { id: 8, url: 'https://chatgpt.com/c/1' },
+        ],
+      }).then((r) => r.json())
+    assert.equal((await helloAgain()).reload, true)
+    assert.equal((await helloAgain()).reload, false, '刷新要求只带一次')
     const status = await call('GET', '/designs/browser')
     assert.equal(status.connected, true)
     assert.equal(typeof status.latestVersion, 'string')
@@ -2149,7 +2161,22 @@ try {
     await bridge('POST', '/result', { id: cmd2.id, ok: false, error: '没有找到输入框' })
     d = await waitJob(design.id)
     assert.match(d.images.find((i) => i.id === 'frame').error, /没有找到输入框/)
-    step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上；网站不能调用')
+    // 失败的图点重试：没有在生成时单独生成这一张，成功后错误清掉
+    assert.equal(d.job.images[0].status, 'failed')
+    const retried = await call('POST', `/designs/${design.id}/images/frame/retry`, {
+      source: { kind: 'browser', tabId: '8' },
+      count: 1,
+    })
+    assert.equal(retried.job.status, 'running')
+    const cmd3 = (await (await bridge('GET', '/poll')).json()).cmd
+    assert.equal(cmd3.tabId, '8')
+    await bridge('POST', '/image', { id: cmd3.id, data: png })
+    await bridge('POST', '/result', { id: cmd3.id, ok: true, images: [], streamed: 1 })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done')
+    assert.equal(d.images.find((i) => i.id === 'frame').status, 'idle')
+    assert.equal(d.images.find((i) => i.id === 'frame').variants.length, 5)
+    step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上、能重试；网站不能调用')
 
     await call('DELETE', `/designs/${design.id}`)
     assert.ok(!(await call('GET', '/designs')).some((x) => x.id === design.id))
