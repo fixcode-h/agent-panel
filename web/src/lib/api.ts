@@ -23,7 +23,7 @@ import type {
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type {
-  BrowserTab,
+  BrowserStatus,
   Design,
   DesignChatInput,
   DesignDoc,
@@ -187,8 +187,9 @@ export const api = {
   generateDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number; prompt?: string }) =>
     request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
-  browserStatus: () =>
-    request<{ connected: boolean; version: string; tabs: BrowserTab[]; extensionDir: string }>('/designs/browser'),
+  browserStatus: () => request<BrowserStatus>('/designs/browser'),
+  installExtension: (browser: string) =>
+    request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }

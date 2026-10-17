@@ -158,6 +158,18 @@ export interface BrowserTab {
   title: string
   url: string
 }
+/** 浏览器扩展的连接状态 */
+export interface BrowserStatus {
+  connected: boolean
+  /** 浏览器里装的扩展版本 */
+  version: string
+  /** 面板自带的扩展版本 */
+  latestVersion: string
+  tabs: BrowserTab[]
+  extensionDir: string
+  /** 本机装了的浏览器，用来打开扩展页面 */
+  browsers: { id: string; name: string }[]
+}
 
 export const emptyRoot = (): Widget => newWidget('CanvasPanel', 'RootCanvas')
 

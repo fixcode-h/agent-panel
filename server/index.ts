@@ -27,7 +27,7 @@ import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
-import { bridgeApi, extensionDir } from './bridge.ts'
+import { bridgeApi, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
@@ -320,6 +320,19 @@ app.post('/designs/browser/reveal', (c) => {
   if (!dir) return bad(c, t('没有找到扩展目录'))
   revealDir(dir)
   return c.json({ ok: true })
+})
+// 安装扩展：打开浏览器的扩展页面和扩展所在的文件夹
+app.post('/designs/browser/install', async (c) => {
+  const { browser } = (await c.req.json().catch(() => ({}))) as { browser?: string }
+  const dir = extensionDir()
+  if (!dir) return bad(c, t('没有找到扩展目录'))
+  try {
+    openExtensionsPage(String(browser ?? ''))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  revealDir(dir)
+  return c.json({ dir })
 })
 app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())

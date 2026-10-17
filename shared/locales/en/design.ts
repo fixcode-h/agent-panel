@@ -119,14 +119,6 @@ export const EN_DESIGN: Record<string, string> = {
   '用浏览器里的 Gemini / ChatGPT 生成图片': 'Generate images with Gemini / ChatGPT in your browser',
   '不需要图片模型的 API：面板通过一个小扩展，用你在浏览器里已经登录的 Gemini 或 ChatGPT（会员版才能生成图片）。扩展只读取这两个网站的标签页。':
     'No image model API needed: a small extension lets the panel use the Gemini or ChatGPT you’re already signed in to (image generation needs a paid plan). The extension only reads tabs of these two sites.',
-  '在 Chrome 或 Edge 的地址栏打开 chrome://extensions（Edge 是 edge://extensions），打开右上角的「开发者模式」。':
-    'In Chrome or Edge, open chrome://extensions (edge://extensions in Edge) and turn on “Developer mode” at the top right.',
-  '点「加载已解压的扩展程序」，选择 Agent 面板程序目录里的 extension 文件夹。':
-    'Click “Load unpacked” and choose the extension folder in the Agent Panel program folder.',
-  打开这个文件夹: 'Open this folder',
-  '打开 gemini.google.com 或 chatgpt.com 并登录，停在聊天页面。之后就能在这里选那个标签页。':
-    'Open gemini.google.com or chatgpt.com, sign in and stay on the chat page. Then you can pick that tab here.',
-  扩展已连上: 'Extension connected',
   扩展还没连上: 'Extension not connected',
   '描述想要的界面，AI 会搭好控件树并列出需要的图片，再按下面选的方式生成。':
     'Describe the UI you want. The AI builds the widget tree, lists the images it needs, and generates them the way you choose below.',
@@ -147,6 +139,29 @@ export const EN_DESIGN: Record<string, string> = {
   '格式不对，正在修正': 'Bad format, fixing it',
   正在设计: 'Designing',
   '已输出 {n} 个字符': '{n} characters so far',
+
+  '浏览器扩展…': 'Browser extension…',
+  '已打开扩展页面和扩展文件夹，文件夹路径已复制':
+    'Opened the extensions page and the extension folder. The folder path is copied',
+  '正在等待扩展连上…装好后这里会自动变成已连上': 'Waiting for the extension… this turns to connected once it’s loaded',
+  '扩展已连上，但不是最新版（{v} → {latest}）：在扩展页面点一下扩展的刷新按钮':
+    'Extension connected but outdated ({v} → {latest}): click its reload button on the extensions page',
+  '已连上，找到 {n} 个可以用的标签页': 'Connected. Found {n} usable tabs',
+  '扩展已连上，还没有打开 Gemini 或 ChatGPT': 'Extension connected, but no Gemini or ChatGPT tab is open',
+  安装扩展: 'Install the extension',
+  '点下面的按钮，会打开浏览器的扩展页面和扩展所在的文件夹，并复制文件夹路径。':
+    'The button below opens the browser’s extensions page and the extension folder, and copies the folder path.',
+  '安装到 {name}': 'Install in {name}',
+  打开扩展文件夹: 'Open extension folder',
+  '没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。':
+    'Chrome or Edge not found: open chrome://extensions in your browser and install it manually.',
+  加载扩展: 'Load the extension',
+  '在扩展页面打开右上角的「开发者模式」，点「加载已解压的扩展程序」，在弹出的窗口里粘贴路径，选中 extension 文件夹。':
+    'On the extensions page, turn on “Developer mode” at the top right, click “Load unpacked”, paste the path in the dialog and select the extension folder.',
+  '打开 Gemini 或 ChatGPT': 'Open Gemini or ChatGPT',
+  '登录后停在聊天页面，之后就能在对话框下面选这个标签页。':
+    'Sign in and stay on the chat page. Then pick that tab below the chat box.',
+  没有找到这个浏览器: 'Browser not found',
 
   // 设置
   图片生成: 'Image generation',

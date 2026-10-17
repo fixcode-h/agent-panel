@@ -2017,6 +2017,10 @@ try {
     })
     const status = await call('GET', '/designs/browser')
     assert.equal(status.connected, true)
+    assert.equal(typeof status.latestVersion, 'string')
+    assert.ok(Array.isArray(status.browsers))
+    // 测试的程序目录里没有扩展（打包时才会把扩展写进 server.mjs）
+    await assert.rejects(call('POST', '/designs/browser/install', { browser: 'nope' }), /没有找到/)
     assert.deepEqual(
       status.tabs.map((x) => [x.id, x.site]),
       [

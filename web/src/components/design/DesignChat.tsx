@@ -1,7 +1,18 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { AlertCircle, ArrowUp, FolderOpen, Globe, Loader2, Sparkles, Square } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowUp,
+  Check,
+  Download,
+  ExternalLink,
+  FolderOpen,
+  Globe,
+  Loader2,
+  Sparkles,
+  Square,
+} from 'lucide-react'
 import { toast } from 'sonner'
-import type { BrowserTab, DesignJob, DesignMessage, ImageSource } from '@shared/design'
+import type { BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
 import { agentRun, defaultCli } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -17,11 +28,14 @@ import { t } from '@shared/i18n'
 const NO_NAMES = new Set<string>()
 
 /** 浏览器扩展报上来的 Gemini / ChatGPT 标签页；页面开着时每几秒问一次 */
-export function useBrowserTabs() {
-  const [st, setSt] = useState<{ connected: boolean; tabs: BrowserTab[]; extensionDir: string }>({
+export function useBrowserTabs(fast = false) {
+  const [st, setSt] = useState<BrowserStatus>({
     connected: false,
+    version: '',
+    latestVersion: '',
     tabs: [],
     extensionDir: '',
+    browsers: [],
   })
   useEffect(() => {
     let alive = true
@@ -31,12 +45,13 @@ export function useBrowserTabs() {
         .then((s) => alive && setSt(s))
         .catch(() => {})
     load()
-    const timer = setInterval(load, 4000)
+    // 安装说明打开着时问得勤一些，装好扩展后马上能看到连上
+    const timer = setInterval(load, fast ? 1500 : 4000)
     return () => {
       alive = false
       clearInterval(timer)
     }
-  }, [])
+  }, [fast])
   return st
 }
 
@@ -50,8 +65,8 @@ export function parseSource(v: string): ImageSource {
 /** 生成图片的方式：设置里的图片模型、浏览器里的 Gemini / ChatGPT 标签页，或者先不生成 */
 export function SourceSelect({ value, onChange }: { value: ImageSource; onChange: (s: ImageSource) => void }) {
   const { settings, clis } = useData()
-  const browser = useBrowserTabs()
   const [help, setHelp] = useState(false)
+  const browser = useBrowserTabs(help)
   const imgCli = settings?.imageGen.cli || 'codex'
   const def = useCliDef(imgCli)
   const st = clis.find((c) => c.id === imgCli)
@@ -68,15 +83,15 @@ export function SourceSelect({ value, onChange }: { value: ImageSource; onChange
         : `${SITE[tb.site]} · ${tb.title || tb.url}`,
       group: t('浏览器标签页'),
     })),
-    ...(!browser.tabs.length
-      ? [
-          {
-            value: 'help',
-            label: browser.connected ? t('打开 Gemini 或 ChatGPT…') : t('连接浏览器…'),
-            group: t('浏览器标签页'),
-          },
-        ]
-      : []),
+    {
+      value: 'help',
+      label: !browser.connected
+        ? t('连接浏览器…')
+        : browser.tabs.length
+          ? t('浏览器扩展…')
+          : t('打开 Gemini 或 ChatGPT…'),
+      group: t('浏览器标签页'),
+    },
     { value: 'none', label: t('先不生成图片'), group: ' ' },
   ]
   // 选的标签页关掉了：换成第一个能用的
@@ -95,28 +110,69 @@ export function SourceSelect({ value, onChange }: { value: ImageSource; onChange
         options={options}
         className="h-7 max-w-[200px] rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
       />
-      <BrowserHelp open={help} onOpenChange={setHelp} connected={browser.connected} dir={browser.extensionDir} />
+      <BrowserHelp
+        open={help}
+        onOpenChange={(o) => {
+          setHelp(o)
+          // 连好后关掉说明：还没选浏览器标签页的话直接选上第一个
+          if (!o && value.kind !== 'browser' && browser.tabs[0])
+            onChange({ kind: 'browser', tabId: browser.tabs[0].id })
+        }}
+        status={browser}
+      />
     </>
   )
 }
 
-/** 怎么连上浏览器：装一次扩展，打开并登录 Gemini 或 ChatGPT */
+/** 怎么连上浏览器：一键打开扩展页面装上扩展，弹窗开着时自动检测连接状态 */
 function BrowserHelp({
   open,
   onOpenChange,
-  connected,
-  dir,
+  status,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
-  connected: boolean
-  dir: string
+  status: BrowserStatus
 }) {
+  const [installing, setInstalling] = useState('')
+  const [waiting, setWaiting] = useState(false)
+  const demo = !!import.meta.env.VITE_DEMO
+  const { connected, tabs } = status
+  const outdated = connected && !!status.latestVersion && status.version !== status.latestVersion
+  const install = async (browser: string) => {
+    setInstalling(browser)
+    try {
+      const { dir } = await api.installExtension(browser)
+      // 「加载已解压的扩展程序」弹出的选择窗口里可以直接粘贴路径
+      await navigator.clipboard?.writeText(dir).catch(() => {})
+      setWaiting(true)
+      toast.success(t('已打开扩展页面和扩展文件夹，文件夹路径已复制'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setInstalling('')
+    }
+  }
+  const state = !connected
+    ? waiting
+      ? { tone: 'wait', text: t('正在等待扩展连上…装好后这里会自动变成已连上') }
+      : { tone: 'off', text: t('扩展还没连上') }
+    : outdated
+      ? {
+          tone: 'warn',
+          text: t('扩展已连上，但不是最新版（{v} → {latest}）：在扩展页面点一下扩展的刷新按钮', {
+            v: status.version || '?',
+            latest: status.latestVersion,
+          }),
+        }
+      : tabs.length
+        ? { tone: 'ok', text: t('已连上，找到 {n} 个可以用的标签页', { n: tabs.length }) }
+        : { tone: 'warn', text: t('扩展已连上，还没有打开 Gemini 或 ChatGPT') }
   return (
     <D.Root open={open} onOpenChange={onOpenChange}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 animate-[fade-in_120ms_ease-out]" />
-        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(520px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card p-6 shadow-pop">
+        <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card p-6 shadow-pop">
           <D.Title className="flex items-center gap-2 font-serif text-[18px] font-semibold">
             <Globe className="h-5 w-5 text-accent" />
             {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
@@ -126,38 +182,135 @@ function BrowserHelp({
               '不需要图片模型的 API：面板通过一个小扩展，用你在浏览器里已经登录的 Gemini 或 ChatGPT（会员版才能生成图片）。扩展只读取这两个网站的标签页。',
             )}
           </D.Description>
-          <ol className="mt-4 flex list-decimal flex-col gap-2.5 pl-5 text-[13px] leading-relaxed">
-            <li className={cn(connected && 'text-subtle line-through')}>
-              {t(
-                '在 Chrome 或 Edge 的地址栏打开 chrome://extensions（Edge 是 edge://extensions），打开右上角的「开发者模式」。',
+
+          <ol className="mt-5 flex flex-col gap-4 text-[13px] leading-relaxed">
+            <Step n={1} done={connected} title={t('安装扩展')}>
+              <p className="text-muted">
+                {t('点下面的按钮，会打开浏览器的扩展页面和扩展所在的文件夹，并复制文件夹路径。')}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {status.browsers.map((b) => (
+                  <Button
+                    key={b.id}
+                    size="sm"
+                    variant={connected ? 'secondary' : 'primary'}
+                    disabled={demo || !!installing}
+                    onClick={() => void install(b.id)}
+                  >
+                    {installing === b.id ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Download className="h-3.5 w-3.5" />
+                    )}
+                    {t('安装到 {name}', { name: b.name })}
+                  </Button>
+                ))}
+                {status.extensionDir && !demo && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => api.revealExtension().catch((e) => toast.error((e as Error).message))}
+                  >
+                    <FolderOpen className="h-3.5 w-3.5" />
+                    {t('打开扩展文件夹')}
+                  </Button>
+                )}
+              </div>
+              {!status.browsers.length && !demo && (
+                <p className="mt-1.5 text-[12px] text-subtle">
+                  {t('没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。')}
+                </p>
               )}
-            </li>
-            <li className={cn(connected && 'text-subtle line-through')}>
-              {t('点「加载已解压的扩展程序」，选择 Agent 面板程序目录里的 extension 文件夹。')}
-              {dir && !import.meta.env.VITE_DEMO && (
-                <button
-                  onClick={() => api.revealExtension().catch((e) => toast.error((e as Error).message))}
-                  className="mt-1 flex cursor-pointer items-center gap-1.5 text-accent hover:underline"
-                >
-                  <FolderOpen className="h-3.5 w-3.5" />
-                  {t('打开这个文件夹')}
-                </button>
-              )}
-            </li>
-            <li>{t('打开 gemini.google.com 或 chatgpt.com 并登录，停在聊天页面。之后就能在这里选那个标签页。')}</li>
+            </Step>
+            <Step n={2} done={connected} title={t('加载扩展')}>
+              <p className="text-muted">
+                {t(
+                  '在扩展页面打开右上角的「开发者模式」，点「加载已解压的扩展程序」，在弹出的窗口里粘贴路径，选中 extension 文件夹。',
+                )}
+              </p>
+            </Step>
+            <Step n={3} done={connected && tabs.length > 0} title={t('打开 Gemini 或 ChatGPT')}>
+              <p className="text-muted">{t('登录后停在聊天页面，之后就能在对话框下面选这个标签页。')}</p>
+              <div className="mt-2 flex gap-2">
+                <a href="https://gemini.google.com/app" target="_blank" rel="noreferrer" className={LINK}>
+                  Gemini
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+                <a href="https://chatgpt.com/" target="_blank" rel="noreferrer" className={LINK}>
+                  ChatGPT
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </Step>
           </ol>
-          <p className="mt-4 flex items-center gap-2 text-[12.5px]">
-            <span className={cn('h-2 w-2 rounded-full', connected ? 'bg-success' : 'bg-line-strong')} />
-            {connected ? t('扩展已连上') : t('扩展还没连上')}
-          </p>
+
+          <div
+            role="status"
+            className={cn(
+              'mt-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[12.5px] leading-relaxed',
+              state.tone === 'ok' && 'border-success/40 bg-success/8',
+              state.tone === 'warn' && 'border-warning/40 bg-warning/8',
+            )}
+          >
+            {state.tone === 'wait' ? (
+              <Loader2 className="mt-0.5 h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+            ) : (
+              <span
+                className={cn(
+                  'mt-1.5 h-2 w-2 shrink-0 rounded-full',
+                  state.tone === 'ok' ? 'bg-success' : state.tone === 'warn' ? 'bg-warning' : 'bg-line-strong',
+                )}
+              />
+            )}
+            <div className="min-w-0 flex-1">
+              <p>{state.text}</p>
+              {connected && tabs.length > 0 && (
+                <ul className="mt-1 flex flex-col gap-0.5 text-muted">
+                  {tabs.map((tb) => (
+                    <li key={tb.id} className="truncate">
+                      {SITE[tb.site]} · {tb.title || tb.url}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+            {connected && status.version && (
+              <span className="shrink-0 font-mono text-[11px] text-subtle">v{status.version}</span>
+            )}
+          </div>
+
           <div className="mt-5 flex justify-end">
             <D.Close asChild>
-              <Button variant="ghost">{t('知道了')}</Button>
+              <Button variant={connected && tabs.length ? 'primary' : 'ghost'}>
+                {connected && tabs.length ? t('完成') : t('知道了')}
+              </Button>
             </D.Close>
           </div>
         </D.Content>
       </D.Portal>
     </D.Root>
+  )
+}
+
+const LINK =
+  'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12.5px] text-muted hover:bg-sel hover:text-fg'
+
+function Step({ n, done, title, children }: { n: number; done: boolean; title: string; children: React.ReactNode }) {
+  return (
+    <li className="flex gap-3">
+      <span
+        className={cn(
+          'grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-medium',
+          done ? 'bg-success text-white' : 'bg-sel text-muted',
+        )}
+      >
+        {done ? <Check className="h-3 w-3" strokeWidth={3} /> : n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="font-medium">{title}</p>
+        {children}
+      </div>
+    </li>
   )
 }
 

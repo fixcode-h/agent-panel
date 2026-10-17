@@ -575,10 +575,12 @@ export function demoDesigns(
 ): unknown {
   seed(projects[0]?.id)
   if (id === 'browser') {
-    if (sub === 'reveal') fail('在线演示不能打开本机目录')
+    if (sub === 'reveal' || sub === 'install') fail('在线演示不能打开本机的浏览器和目录')
     return {
       connected: true,
       version: '1.0.0',
+      latestVersion: '1.0.0',
+      browsers: [{ id: 'chrome', name: 'Chrome' }],
       extensionDir: '',
       tabs: [
         { id: '101', site: 'gemini', title: 'Gemini', url: 'https://gemini.google.com/app' },
