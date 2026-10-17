@@ -1,5 +1,17 @@
 import { useState } from 'react'
-import { ChevronRight, Folder, FolderOpen, Gamepad2, Loader2, PencilLine, Plus, Settings2, Trash2 } from 'lucide-react'
+import {
+  ChevronRight,
+  CopyPlus,
+  Folder,
+  FolderInput,
+  FolderOpen,
+  Gamepad2,
+  Loader2,
+  PencilLine,
+  Plus,
+  Settings2,
+  Trash2,
+} from 'lucide-react'
 import { toast } from 'sonner'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
@@ -11,6 +23,9 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -66,6 +81,39 @@ export function DesignList() {
     }
   }
 
+  const copy = async (d: DesignMeta) => {
+    try {
+      const c = await api.copyDesign(d.id)
+      setDesigns((l) => [
+        ...l,
+        {
+          id: c.id,
+          projectId: c.projectId,
+          kind: c.kind,
+          title: c.title,
+          createdAt: c.createdAt,
+          updatedAt: c.updatedAt,
+        },
+      ])
+      go({ page: 'design', id: c.id })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const move = async (d: DesignMeta, projectId: string) => {
+    try {
+      await api.moveDesign(d.id, projectId)
+      setDesigns((l) => l.map((x) => (x.id === d.id ? { ...x, projectId } : x)))
+      // 目标项目如果折叠着就展开，能看到移过去的设计
+      setFolded((f) => {
+        const n = new Set(f)
+        n.delete(projectId)
+        return n
+      })
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
   const removeProject = async (p: DesignProject) => {
     try {
       await api.deleteDesignProject(p.id)
@@ -218,6 +266,28 @@ export function DesignList() {
                           <PencilLine className="h-4 w-4" />
                           {t('重命名')}
                         </ContextMenuItem>
+                        <ContextMenuItem onSelect={() => void copy(d)}>
+                          <CopyPlus className="h-4 w-4" />
+                          {t('创建副本')}
+                        </ContextMenuItem>
+                        {projects.length > 1 && (
+                          <ContextMenuSub>
+                            <ContextMenuSubTrigger>
+                              <FolderInput className="h-4 w-4" />
+                              {t('移到项目')}
+                            </ContextMenuSubTrigger>
+                            <ContextMenuSubContent>
+                              {projects
+                                .filter((x) => x.id !== d.projectId)
+                                .map((x) => (
+                                  <ContextMenuItem key={x.id} onSelect={() => void move(d, x.id)}>
+                                    <Folder className="h-4 w-4 text-subtle" />
+                                    {x.name}
+                                  </ContextMenuItem>
+                                ))}
+                            </ContextMenuSubContent>
+                          </ContextMenuSub>
+                        )}
                         <ContextMenuSeparator />
                         <ContextMenuItem danger onSelect={() => setDeleting(d)}>
                           <Trash2 className="h-4 w-4" />

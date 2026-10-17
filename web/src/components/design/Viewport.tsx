@@ -217,6 +217,14 @@ export function Viewport({
                 )}
               </div>
             )}
+            {!root.Children?.length && (
+              <div className="pointer-events-none absolute inset-0 grid place-items-center p-6 text-center">
+                <div className="max-w-[320px] text-[12.5px] leading-relaxed text-white/45">
+                  <p className="mb-1 text-[13.5px] font-medium text-white/70">{t('还是空白界面')}</p>
+                  {t('在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。')}
+                </div>
+              </div>
+            )}
             <AnnotationLayer
               size={size}
               scale={scale}

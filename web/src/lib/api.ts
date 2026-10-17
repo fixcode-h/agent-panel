@@ -186,6 +186,9 @@ export const api = {
   design: (id: string) => request<DesignFull>(`/designs/${id}`),
   createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
   saveDesign: (id: string, doc: DesignDoc) => request<DesignFull>(`/designs/${id}`, json('PUT', doc)),
+  copyDesign: (id: string, projectId?: string) => request<Design>(`/designs/${id}/copy`, json('POST', { projectId })),
+  moveDesign: (id: string, projectId: string) =>
+    request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),
   deleteDesign: (id: string) => request<void>(`/designs/${id}`, { method: 'DELETE' }),
   designChat: (id: string, input: DesignChatInput) => request<DesignFull>(`/designs/${id}/chat`, json('POST', input)),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),

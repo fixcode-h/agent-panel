@@ -688,6 +688,26 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     void runChat(d, body.text, body.source, body.count ?? 1)
     return d
   }
+  if (sub === 'copy') {
+    const at = now()
+    const c: Full = {
+      ...structuredClone({ ...d, job: null }),
+      id: randomId(),
+      projectId: body.projectId ?? d.projectId,
+      title: `${d.title} 副本`,
+      messages: [],
+      annotations: [],
+      rev: 0,
+      createdAt: at,
+      updatedAt: at,
+    }
+    designs.set(c.id, c)
+    return c
+  }
+  if (sub === 'move') {
+    d.projectId = body.projectId
+    return metaOf(d)
+  }
   if (sub === 'stop') {
     if (d.job) d.job.status = 'done'
     return d.job

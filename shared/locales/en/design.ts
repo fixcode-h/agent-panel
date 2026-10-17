@@ -248,4 +248,8 @@ export const EN_DESIGN: Record<string, string> = {
   '补充说明，或直接发送让 AI 按标注修改': 'Add details, or just send to let the AI follow the annotations',
   '描述界面，或者说要改哪里…（也可以在效果图上标注）': 'Describe the UI or what to change… (or annotate the preview)',
   按标注修改: 'Apply the annotations',
+  还是空白界面: 'Still a blank screen',
+  '在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。':
+    'Tell the AI on the right what screen you want, or add widgets with + in the widget tree.',
+  移到项目: 'Move to project',
 }

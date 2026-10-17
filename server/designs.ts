@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -611,6 +611,42 @@ ${prompt}`,
           throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // 创建副本：复制控件树、子控件和图片，对话不带；可以放到别的 UI 项目
+    .post('/:id/copy', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { projectId = d.projectId, title } = (await c.req.json().catch(() => ({}))) as {
+        projectId?: string
+        title?: string
+      }
+      if (!(await loadProjects()).some((x) => x.id === projectId)) return bad(c, t('项目不存在'), 404)
+      const at = now()
+      const copy: Design = {
+        ...structuredClone(d),
+        id: randomUUID(),
+        projectId,
+        title: String(title || t('{name} 副本', { name: d.title })).slice(0, 100),
+        images: d.images.map((i) => ({ ...i, status: 'idle' as const, error: undefined })),
+        messages: [],
+        annotations: [],
+        rev: 0,
+        createdAt: at,
+        updatedAt: at,
+      }
+      await cp(imagesDir(d.id), imagesDir(copy.id), { recursive: true }).catch(() => {})
+      await save(copy, false)
+      return c.json(copy, 201)
+    })
+    // 移到别的 UI 项目
+    .post('/:id/move', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { projectId } = (await c.req.json().catch(() => ({}))) as { projectId?: string }
+      if (!(await loadProjects()).some((x) => x.id === projectId)) return bad(c, t('项目不存在'), 404)
+      d.projectId = projectId!
+      await save(d)
+      return c.json(meta(d))
     })
     .get('/:id/job', async (c) => c.json(view(jobs.get(c.req.param('id')))))
     .post('/:id/stop', async (c) => {

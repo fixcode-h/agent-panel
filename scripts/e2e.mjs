@@ -2099,6 +2099,15 @@ try {
     assert.ok(!existsSync(path.join(dataDir, 'designs', design.id)))
     // 删除 UI 项目时连同里面的设计一起删
     const d2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'HUD' })
+    // 创建副本和移到别的项目
+    const copy = await call('POST', `/designs/${d2.id}/copy`, {})
+    assert.notEqual(copy.id, d2.id)
+    assert.match(copy.title, /HUD/)
+    const other = await call('POST', '/designs/projects', { name: 'Other', path: '' })
+    assert.equal((await call('POST', `/designs/${copy.id}/move`, { projectId: other.id })).projectId, other.id)
+    await assert.rejects(call('POST', `/designs/${copy.id}/move`, { projectId: 'nope' }), /项目不存在/)
+    await call('DELETE', `/designs/projects/${other.id}`)
+    assert.ok(!(await call('GET', '/designs')).some((x) => x.id === copy.id))
     await call('PUT', `/designs/projects/${uiProject.id}`, { name: 'Game 2', path: '' })
     assert.equal((await call('GET', '/designs/projects'))[0].name, 'Game 2')
     await call('DELETE', `/designs/projects/${uiProject.id}`)
