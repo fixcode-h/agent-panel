@@ -1,5 +1,5 @@
 // 运行在 Gemini / ChatGPT 页面里，听后台的指令：nav 在页面里切到新对话或某个对话（不刷新页面）；
-// submit 在当前的新对话里写描述并发送，返回对话地址；
+// submit 在当前的新对话里写描述并发送，返回对话地址；prompt 在已有的对话里接着要一张新图；
 // check 看当前对话里新出现的图片（能直接读的读成 data URL，否则给地址）；more 在这个对话里再要一版。
 // 网页改版后选择器可能失效：每个都准备了几种写法，最后退到通用的判断（可编辑的输入框、aria-label 含 Stop 的按钮）。
 
@@ -220,7 +220,25 @@ if (!window.__agentPanelContent) {
 
   /** 这个对话里的图还不够几版：在同一个对话里再要一张 */
   async function more() {
+    const n = replies().length
     await send('Generate one more variation of the same image with exactly the same requirements.')
+    return { replies: n }
+  }
+
+  /**
+   * 在已经开着的对话里接着要一张新图（每个标签页只开固定几个对话，图排队轮流用）。
+   * 返回发之前对话里已有几张图、几条回复，取图时跳过它们
+   */
+  async function prompt(msg) {
+    const start = Date.now()
+    while (Date.now() - start < 10_000 && !replies().length) await sleep(300)
+    wakeImages()
+    await sleep(300)
+    const base = { images: candidates().length, replies: replies().length }
+    await send(
+      `Now generate a new, separate image (use your image generation tool, output the image only). It is not a variation of the previous images:\n\n${msg.prompt}`,
+    )
+    return base
   }
 
   /** 对话自己的地址（左边对话列表里那一项）：Gemini 是 /app/<id>，ChatGPT 是 /c/<id> */
@@ -327,7 +345,9 @@ if (!window.__agentPanelContent) {
     for (const img of fresh) images.push(await grab(img))
     const r = replies()
     const text = (r[r.length - 1]?.innerText ?? '').trim()
-    return { busy: busy(), images, replied: !!text, text: text.slice(0, 200) }
+    // 接着用的对话里，发描述之前的回复不算
+    const replied = r.length > (msg.replyBase ?? 0) && !!text
+    return { busy: busy(), images, replied, text: replied ? text.slice(0, 200) : '' }
   }
 
   chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
@@ -335,7 +355,7 @@ if (!window.__agentPanelContent) {
       reply({ ok: true, site })
       return false
     }
-    const run = { nav, submit: startChat, check, more }[msg?.type]
+    const run = { nav, submit: startChat, prompt, check, more }[msg?.type]
     if (run) {
       run(msg)
         .then((r) => reply(r ?? {}))

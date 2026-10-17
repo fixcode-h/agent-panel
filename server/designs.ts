@@ -201,6 +201,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
                 prompt: imagePrompt(img, cache.get(d.id)!.style, img.transparent, style),
                 count,
                 chroma: img.transparent,
+                concurrency: (await getSettings()).imageGen.concurrency,
                 onProgress: (text) => (item.text = text),
                 onImage: add,
               },

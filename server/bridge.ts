@@ -35,6 +35,8 @@ interface Command {
   chroma: boolean
   /** 每张图开一个新对话。1.1 的扩展会为此新开标签页，所以只发给 1.2 起的扩展（在选中的标签页里开对话） */
   newChat: boolean
+  /** 一个标签页里最多开几个对话；之后的图排队，轮流用这几个对话生成（1.4 起的扩展） */
+  concurrency: number
 }
 interface Pending {
   cmd: Command
@@ -214,6 +216,7 @@ export function browserGenerate(
     prompt: string
     count: number
     chroma: boolean
+    concurrency?: number
     onProgress?: (text: string) => void
     onImage?: (img: Buffer) => void
   },
@@ -232,6 +235,7 @@ export function browserGenerate(
       count: o.count,
       chroma: o.chroma,
       newChat: browserParallel(),
+      concurrency: Math.max(1, Math.min(10, o.concurrency ?? 3)),
     }
     const p: Pending = { cmd, resolve, reject, onProgress: o.onProgress, onImage: o.onImage, streamed: 0 }
     const done = () => {

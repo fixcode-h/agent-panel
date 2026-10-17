@@ -313,6 +313,6 @@ export const EN_DESIGN: Record<string, string> = {
   写入: 'Writing',
   控件树和图片清单: 'widget tree and image list',
   '{n} 个字符': '{n} chars',
-  '每张图单独开一个会话生成：CLI 是各开一个进程，浏览器是在选中的 Gemini / ChatGPT 标签页里各开一个新对话（网页左边的对话列表里能看到），最多同时开这么多个。':
-    "Each image gets its own session: a separate CLI process, or a new conversation in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left). At most this many run at once.",
+  'CLI 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。':
+    "With a CLI, each image runs in its own process, at most this many at once. In the browser, only this many conversations are opened in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left); further images queue up and reuse whichever conversation is free.",
 }
