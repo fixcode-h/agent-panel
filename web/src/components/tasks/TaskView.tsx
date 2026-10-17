@@ -118,6 +118,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
   useEscape(task?.status === 'running' && !panel && !stopAsk, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
+  // 流程图里选中的节点，右栏只看它
+  const [flowSel, setFlowSel] = useState('')
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
@@ -401,6 +403,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                     task={task}
                     focus={focus}
                     gutter={progressCard}
+                    onSelect={setFlowSel}
                     onOpenChat={() => {
                       stick.current = true
                       setView('chat')
@@ -616,6 +619,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
             workflow={workflow}
             onStep={openStep}
             progressClass={progressCard ? 'hidden' : undefined}
+            node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
           />
         </aside>
         {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}

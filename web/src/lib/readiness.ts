@@ -25,11 +25,11 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
       label: t('CLI 已安装'),
       hint: !cli
         ? t('未知的 CLI：{cli}', { cli: a.cli })
-        : !cli.enabled
-          ? t('{cli} 已在设置中停用', { cli: cli.name })
-          : cli.installed
-            ? `${cli.name} ${shortVersion(cli.version)}`
-            : t('没有找到 {cmd}，安装后或在设置里填写路径', { cmd: cli.command }),
+        : !cli.installed
+          ? t('没有找到 {cmd}，安装后或在设置里填写路径', { cmd: cli.command })
+          : !cli.enabled
+            ? t('{cli} 已在设置中停用', { cli: cli.name })
+            : `${cli.name} ${shortVersion(cli.version)}`,
     },
     { ok: a.enabled, label: t('已启用'), hint: a.enabled ? t('可以被工作流调用') : t('停用后工作流不会调用它') },
     // 自带的默认 Agent 固定跟随默认 CLI 的默认模型，不能指定，这一项对它没有意义

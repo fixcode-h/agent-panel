@@ -301,6 +301,15 @@ try {
   assert.equal(t.usage.agents[B.id].window, 258400, 'Codex 报告的上下文窗口')
   assert.equal(t.usage.agents[A.id].window, 500000, 'Claude Code 在 result.modelUsage 里报告的上下文窗口')
   assert.equal(t.usage.agents[B.id].context, 24300)
+  // 每个节点自己的用量和改动：加起来等于任务的；Codex 节点只算它自己写的文件
+  assert.equal(
+    t.steps.reduce((n, s) => n + (s.usage?.inputTokens ?? 0), 0),
+    t.usage.inputTokens,
+  )
+  const codexStep = t.steps.find((s) => s.agentId === B.id)
+  assert.equal(codexStep.usage.context, 24300)
+  assert.equal(codexStep.usage.window, 258400)
+  assert.deepEqual(codexStep.changes, [{ path: 'codex-output.txt', add: 3, del: 0 }])
   assert.ok(
     Object.values(t.usage.agents).every((u) => u.tps === 0),
     '结束后速度归零',
@@ -814,7 +823,12 @@ try {
   net = await waitDone(net.id)
   assert.equal(net.status, 'done', '断开后自动续接完成')
   c = calls().at(-1)
-  assert.ok(c.args.includes('--resume') && /连接中断了/.test(c.input))
+  assert.ok(c.args.includes('--resume') && /连接中断了/.test(c.input) && /分几次写/.test(c.input))
+  // 续接前把这次的报错写进对话，不悄悄重试
+  const shown = net.messages.find(
+    (m) => m.role === 'system' && m.error && /正在自动续接会话重试（第 1\/2 次）/.test(m.text),
+  )
+  assert.ok(shown && /Unable to connect to the API/.test(shown.text), '断开的报错要显示出来再续接')
   net = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -825,9 +839,25 @@ try {
   assert.equal(net.status, 'failed')
   const netErr = net.messages.at(-1)
   assert.ok(netErr.error)
-  assert.match(netErr.text, /续接 2 次后仍然失败/)
+  assert.match(netErr.text, /已自动续接 2 次，仍然失败/)
+  assert.equal(
+    net.messages.filter((m) => m.error && /正在自动续接会话重试/.test(m.text)).length,
+    2,
+    '每次续接前的报错都显示',
+  )
   assert.match(netErr.text, /走的是 Command Code 官方服务[\s\S]*me\/fake\/flash/)
   assert.match(netErr.text, /连接中途断开/)
+  // 运行日志：数据目录的 logs/ 里，这次启动一个文件，记下了启动、CLI 的命令和断开重试
+  const logUsage = await call('GET', '/data')
+  assert.ok(
+    logUsage.logs?.current && logUsage.logs.current.startsWith(path.join(dataDir, 'logs')),
+    '日志在单独的文件夹里',
+  )
+  const logText = readFileSync(logUsage.logs.current, 'utf8')
+  assert.match(logText, /INFO  \[server\] 启动/)
+  assert.match(logText, /\[agent\] 启动 Command Code[\s\S]*command: /)
+  assert.match(logText, /WARN  \[agent\] Command Code 连接中断，自动续接第 1 次/)
+  assert.match(logText, /ERROR \[agent\] Command Code 执行失败/)
   step('失败：显示 CLI 报告的错误，工作流停在失败的节点')
   // 卡住的 CLI：没有输出先提醒一次，再过同样的时间自动停止；输出里看出是没登录，给出登录的方法
   await call('PUT', '/settings', { ...settings, idleTimeoutMinutes: 1 })
@@ -1669,6 +1699,37 @@ try {
   assert.ok(existsSync(path.join(appDir, 'dist/old.html')))
   assert.equal(readFileSync(path.join(dataDir, 'cache/updates/previous/server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
   step('版本更新：读取 GitHub 上的包、校验哈希，替换程序文件、保留数据；新版本加载不了自动退回，也能手动回到上一个版本')
+
+  // ---- 项目说明文件：读、写（只认白名单里的文件名）、AI 优化 ----
+  {
+    let docs = await call('GET', `/project-docs/${project.id}`)
+    assert.equal(docs.dir, projectDir)
+    assert.ok(docs.files.some((f) => f.path === 'AGENTS.md' && !f.exists))
+    const saved = await call('PUT', `/project-docs/${project.id}`, { path: '.claude/CLAUDE.md', content: '# 约定\n' })
+    assert.equal(saved.exists, true)
+    assert.equal(readFileSync(path.join(projectDir, '.claude/CLAUDE.md'), 'utf8'), '# 约定\n')
+    await assert.rejects(call('PUT', `/project-docs/${project.id}`, { path: '../x.md', content: 'x' }), /400/)
+    assert.ok(!existsSync(path.join(projectDir, '../x.md')), '不能写到白名单外')
+    let job = await call('POST', `/project-docs/${project.id}/optimize`, {
+      path: 'AGENTS.md',
+      content: '# 项目\n',
+      cli: 'commandcode',
+    })
+    for (let i = 0; job.status === 'running' && i < 100; i++) {
+      await sleep(100)
+      job = await call('GET', `/doc-jobs/${job.id}`)
+    }
+    assert.equal(job.status, 'done', job.error)
+    assert.equal(job.text, '补上了常用命令。')
+    assert.ok(
+      job.result.startsWith('# 项目\n') && job.result.includes('## 常用命令\n\n```bash\nnpm test\n```'),
+      job.result,
+    )
+    docs = await call('GET', `/project-docs/${project.id}`)
+    assert.ok(!docs.files.find((f) => f.path === 'AGENTS.md').exists, '优化不直接写文件')
+    rmSync(path.join(projectDir, '.claude'), { recursive: true })
+    step('项目说明文件：读写、拒绝白名单外的路径、AI 优化')
+  }
 
   // ---- 只接受本机页面的请求 ----
   const raw = (method, url, headers, body) =>

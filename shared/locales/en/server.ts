@@ -103,10 +103,7 @@ export const EN_SERVER: Record<string, string> = {
   '超过 {n} 分钟没有完成，已停止': 'Stopped after not finishing within {n} minutes',
   '{error}。请确认已安装 {cli}（{hint}），或在设置里填写可执行文件的完整路径。':
     '{error}. Make sure {cli} is installed ({hint}), or set the full path to its executable in Settings.',
-  '{cli} 执行失败（退出码 {code}），自动续接 {n} 次后仍然失败：':
-    '{cli} failed (exit code {code}), still failing after {n} automatic resumes:',
   '{cli} 执行失败（退出码 {code}）：': '{cli} failed (exit code {code}):',
-  '{cli} 执行失败，自动续接 {n} 次后仍然失败：': '{cli} failed, still failing after {n} automatic resumes:',
   '{cli} 执行失败：': '{cli} failed:',
   '原始输出：': 'Raw output:',
 
@@ -268,4 +265,20 @@ export const EN_SERVER: Record<string, string> = {
   需要访问令牌: 'Access token required',
   '这个面板打开了访问令牌。Windows 上右键托盘图标选「打开面板」；其他系统请打开终端里显示的带 token 的地址。':
     'This panel requires an access token. On Windows, right-click the tray icon and choose Open panel; elsewhere, open the address with the token shown in the terminal.',
+  '正在自动续接会话重试（第 {n}/{max} 次）…': 'Resuming the session automatically (attempt {n}/{max})…',
+  '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
+  服务出错: 'Server error',
+  连接超时: 'connection timed out',
+  域名解析失败: 'DNS lookup failed',
+  连接被拒绝: 'connection refused',
+  连接被重置: 'connection reset',
+  证书校验失败: 'certificate verification failed',
+  '{error}。当前使用代理 {proxy}，请确认代理能访问 GitHub。':
+    '{error}. Using proxy {proxy}; make sure it can reach GitHub.',
+  '{error}。访问不了 GitHub 时，可以在「设置 · 常规 · 网络代理」里填写本机代理。':
+    "{error}. If GitHub isn't reachable, set a local proxy in Settings · General · Network proxy.",
+  '{cli} 没有按格式给出新的文件内容，可以再试一次':
+    "{cli} didn't return the new file content in the expected format; try again",
+  '找不到这次优化，可能已过期': "Can't find this optimization; it may have expired",
+  找不到这次优化: "Can't find this optimization",
 }

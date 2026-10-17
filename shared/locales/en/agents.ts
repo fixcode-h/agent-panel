@@ -263,4 +263,8 @@ export const EN_AGENTS: Record<string, string> = {
   重新加载: 'Reload',
   已复制错误信息: 'Error details copied',
   复制错误信息: 'Copy error details',
+  '生成中…': 'Generating…',
+  已生成: 'Ready',
+  最小化: 'Minimize',
+  关闭并终止生成: 'Close and stop generating',
 }

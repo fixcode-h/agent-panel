@@ -40,6 +40,7 @@ import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
+import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 
 const KEY = 'agent-panel-demo-v3'
@@ -651,6 +652,13 @@ function route(method: string, url: string, body: unknown): unknown {
     return a
   }
   if (res === 'data') return demoData(d, id, method, body, query)
+  if (res === 'project-docs') {
+    const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
+    if (sub === 'optimize') return startDemoDocJob(body)
+    return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
+  }
+  if (res === 'doc-jobs')
+    return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
   if (res === 'projects' && id && sub === 'files') {
     const q = (query.get('q') ?? '').toLowerCase()
     return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)

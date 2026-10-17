@@ -145,6 +145,15 @@ if (slow && kind === 'claude')
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
 for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 150)
 
+// 「AI 优化说明文件」：回一句说明和完整的新文件（在原内容后面补一节），只用 Command Code 的格式
+if (input.startsWith('你在帮忙优化项目根目录下的说明文件') && kind === 'commandcode') {
+  const old = input.match(/<<<文件开始\n([\s\S]*)\n文件结束>>>/)?.[1] ?? ''
+  const text = `补上了常用命令。\n\n\`\`\`markdown\n${old}\n\n## 常用命令\n\n\`\`\`bash\nnpm test\n\`\`\`\n\`\`\``
+  out({ type: 'event', event: { type: 'run_start', sessionId: session } })
+  out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
+  out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
+  process.exit(0)
+}
 // 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
 // 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
 if (input.startsWith('你是「Agent 面板」里的配置助手')) {

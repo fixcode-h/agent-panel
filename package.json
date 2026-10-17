@@ -1,6 +1,6 @@
 {
   "name": "agent-panel",
-  "version": "0.17.0",
+  "version": "0.18.0",
   "private": true,
   "type": "module",
   "description": "本机 Agent 任务面板：按项目分类编排 Codex / Claude Code 等本地 Agent",
@@ -41,6 +41,7 @@
     "react-dom": "^19.3.1",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",
+    "undici": "^6.29.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {

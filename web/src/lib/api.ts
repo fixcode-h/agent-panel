@@ -20,6 +20,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage } from '@shared/data'
 import type { AppReleases, AppUpdateJob } from '@shared/version'
 import { t } from '@shared/i18n'
@@ -121,11 +122,19 @@ export const api = {
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),
   assistJob: (id: string) => request<AssistJob>(`/assist/${id}`),
   stopAssist: (id: string) => request<AssistJob>(`/assist/${id}/stop`, { method: 'POST' }),
+  projectDocs: (projectId: string) => request<ProjectDocs>(`/project-docs/${projectId}`),
+  saveProjectDoc: (projectId: string, path: DocFile, content: string) =>
+    request<ProjectDoc>(`/project-docs/${projectId}`, json('PUT', { path, content })),
+  optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
+    request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
+  docJob: (id: string) => request<DocJob>(`/doc-jobs/${id}`),
+  stopDocJob: (id: string) => request<DocJob>(`/doc-jobs/${id}/stop`, { method: 'POST' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
   dataUsage: () => request<DataUsage>('/data'),
   revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
+  revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>

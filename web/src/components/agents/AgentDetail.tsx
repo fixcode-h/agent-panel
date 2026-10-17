@@ -280,12 +280,15 @@ export function AgentDetail({
                         value={cliId}
                         disabled={follow}
                         onChange={(e) => pickCli(e.target.value)}
-                        options={clis.map((c) => ({
-                          value: c.id,
-                          label:
-                            (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
-                            (!c.enabled ? ` · ${t('已停用')}` : c.installed ? '' : ` · ${t('未安装')}`),
-                        }))}
+                        // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
+                        options={clis
+                          .filter((c) => (c.installed && c.enabled) || c.id === cliId)
+                          .map((c) => ({
+                            value: c.id,
+                            label:
+                              (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
+                              (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
+                          }))}
                       />
                     </Field>
                     <Field

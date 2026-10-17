@@ -171,4 +171,44 @@ export const EN_APP: Record<string, string> = {
   '{mod}K 命令面板': '{mod}K command palette',
   '{mod}Enter 打断并发送': '{mod}Enter interrupt and send',
   'Esc 停止正在执行的任务': 'Esc stops the running task',
+  未创建: 'not created',
+  有未保存的改动: 'Unsaved changes',
+  '文件太大（{size}），不在这里编辑': 'File too large ({size}) to edit here',
+  '已修改，确认后保存': 'Modified, saved when you confirm',
+  '还没有这个文件，写好后确认就会创建': "This file doesn't exist yet; it's created when you confirm",
+  '已替换为优化后的内容，确认后保存': "Replaced with the optimized content; it's saved when you confirm",
+  '# 项目约定\n\n写给编码助手看的项目说明：常用命令、目录结构、代码风格、注意事项…':
+    '# Project conventions\n\nNotes for coding assistants: common commands, layout, code style, gotchas…',
+  还没有内容: 'Nothing here yet',
+  '用 AI 优化 {file}': 'Optimize {file} with AI',
+  'CLI 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。':
+    "The CLI runs read-only in the project directory: it looks at the code, commands and layout, checks and fills in the notes, and doesn't change project files. You review the result first, then confirm to save.",
+  '想怎么改（可以不填），例如：补上测试命令，写得更简洁':
+    'What to change (optional), e.g. add the test commands, make it more concise',
+  '没有可用的 CLI，请先在设置里安装并启用': 'No CLI available; install and enable one in Settings',
+  开始优化: 'Optimize',
+  '正在查看：{files}': 'Looking at: {files}',
+  '正在看项目…': 'Reading the project…',
+  '已输出 {n} 字': '{n} chars written',
+  采用: 'Use this',
+  重新生成: 'Regenerate',
+  放弃: 'Discard',
+  项目设置分类: 'Project settings sections',
+  项目说明: 'Project notes',
+  '各个 CLI 读的说明': 'Notes each CLI reads',
+  '先创建项目，再编辑项目里的说明文件。': 'Create the project first, then edit its notes files.',
+  '本地目录改了，先点「确认」保存，再编辑新目录里的说明文件。':
+    'The local directory changed. Click Confirm to save first, then edit the notes in the new directory.',
+  'AGENTS.md 放在项目根目录，Codex 和 Command Code 每次启动都会读它，写这个项目的约定、常用命令和注意事项。Claude Code 读的是 CLAUDE.md，可以在左边的 Claude Code 里编辑，或在 CLAUDE.md 里写一行 @AGENTS.md 引用它。':
+    "AGENTS.md lives in the project root. Codex and Command Code read it on every start: put the project's conventions, common commands and gotchas here. Claude Code reads CLAUDE.md instead; edit it under Claude Code on the left, or add a line @AGENTS.md to CLAUDE.md to include this file.",
+  '检测到 AGENT.md，但各个 CLI 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。':
+    "Found AGENT.md, but the CLIs only read AGENTS.md (with an s), so this file isn't being read.",
+  '复制到 AGENTS.md': 'Copy to AGENTS.md',
+  'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。':
+    "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other CLIs, add a line @AGENTS.md to CLAUDE.md.",
+  'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。':
+    'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
+  'Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。':
+    'Command Code reads AGENTS.md on every start, or .commandcode/AGENTS.md when the root has none. AGENTS.md is the same file as Project notes.',
+  '{n} 个说明文件有改动': '{n} notes files changed',
 }

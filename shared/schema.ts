@@ -459,6 +459,22 @@ export type StepStatus = z.infer<typeof StepStatus>
  * 任务里执行过（或将要执行）的一个节点。主流程的节点在任务创建时就列出来；
  * 节点的开始 / 验收 / 结束流程、流程节点里的子节点在执行时才加进来，用 parentId 挂在发起它的节点下。
  */
+export const FileChange = z.object({ path: z.string(), add: z.number().int(), del: z.number().int() })
+export type FileChange = z.infer<typeof FileChange>
+
+/** 节点的用量：最近一次的上下文占用，以及累计的 token 和费用 */
+export const StepUsage = z.object({
+  context: z.number().default(0),
+  window: z.number().default(0),
+  model: z.string().default(''),
+  inputTokens: z.number().default(0),
+  outputTokens: z.number().default(0),
+  cacheReadTokens: z.number().default(0),
+  cacheWriteTokens: z.number().default(0),
+  costUsd: z.number().default(0),
+})
+export type StepUsage = z.infer<typeof StepUsage>
+
 export const TaskStep = z.object({
   /** 路径形式的唯一 id，也是 CLI 会话键：主流程节点就是节点 id，子节点形如 `n1/review.2/n5` */
   id: z.string(),
@@ -488,11 +504,12 @@ export const TaskStep = z.object({
   interrupted: z.boolean().default(false),
   /** 最近一次启动这个节点的 Agent 用的命令（可执行文件和参数），方便复制出来排查问题 */
   command: z.array(z.string()).default([]),
+  /** 这个节点自己的用量（不含子节点）：右栏点了节点时只看它的 */
+  usage: StepUsage.optional(),
+  /** 这个节点执行期间改动的文件 */
+  changes: z.array(FileChange).default([]),
 })
 export type TaskStep = z.infer<typeof TaskStep>
-
-export const FileChange = z.object({ path: z.string(), add: z.number().int(), del: z.number().int() })
-export type FileChange = z.infer<typeof FileChange>
 
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
@@ -655,6 +672,8 @@ export const Settings = z.object({
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
   openBrowser: z.boolean().default(true),
+  /** 网络代理：检查更新、下载新版本时用，例如 http://127.0.0.1:7890；为空时用环境变量 HTTPS_PROXY / HTTP_PROXY */
+  proxy: z.string().trim().default(''),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */

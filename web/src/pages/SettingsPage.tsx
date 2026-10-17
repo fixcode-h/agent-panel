@@ -78,6 +78,7 @@ function SettingsBody({
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
+  const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [language, setLanguage] = useState(initial.language)
   const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
@@ -145,6 +146,7 @@ function SettingsBody({
   const value: Settings = {
     openBrowser,
     requireToken,
+    proxy: proxy.trim(),
     contentWidth,
     language,
     cliOrder,
@@ -291,7 +293,7 @@ function SettingsBody({
                     <span
                       className={cn(
                         'hidden h-1.5 w-1.5 shrink-0 rounded-full md:block',
-                        !st.enabled ? 'bg-line-strong' : st.installed ? 'bg-success' : 'bg-warning',
+                        st.installed && st.enabled ? 'bg-success' : 'bg-line-strong',
                       )}
                     />
                   )}
@@ -428,6 +430,23 @@ function SettingsBody({
                   <Switch aria-label={t('访问令牌')} checked={requireToken} onCheckedChange={setRequireToken} />
                 </Row>
               )}
+              {!demo && (
+                <Row
+                  title={t('网络代理')}
+                  desc={t(
+                    '检查更新、下载新版本时使用。访问不了 GitHub 时填本机代理的地址；留空时用环境变量 HTTPS_PROXY。',
+                  )}
+                >
+                  <Input
+                    value={proxy}
+                    onChange={(e) => setProxy(e.target.value)}
+                    placeholder="http://127.0.0.1:7890"
+                    className="w-[240px] font-mono text-[13px]"
+                    spellCheck={false}
+                    aria-label={t('网络代理')}
+                  />
+                </Row>
+              )}
               <Row
                 title={t('任务完成时通知我')}
                 desc={t('页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。')}
@@ -460,17 +479,23 @@ function SettingsBody({
                     value={defCli}
                     onChange={(e) => setDefCli(e.target.value)}
                     className="w-[240px]"
-                    options={ordered.map((c) => {
-                      const st = statusOf(c.id)
-                      const note = !st
-                        ? ''
-                        : !st.enabled
-                          ? ` · ${t('已停用')}`
-                          : st.installed
-                            ? ''
-                            : ` · ${t('未安装')}`
-                      return { value: c.id, label: c.name + note }
-                    })}
+                    // 停用或没安装的 CLI 不给选；当前的默认照常显示，并标出原因
+                    options={ordered
+                      .filter((c) => {
+                        const st = statusOf(c.id)
+                        return !st || (st.installed && st.enabled) || c.id === defCli
+                      })
+                      .map((c) => {
+                        const st = statusOf(c.id)
+                        const note = !st
+                          ? ''
+                          : !st.installed
+                            ? ` · ${t('未安装')}`
+                            : !st.enabled
+                              ? ` · ${t('已停用')}`
+                              : ''
+                        return { value: c.id, label: c.name + note }
+                      })}
                   />
                 </Row>
               </Group>
@@ -550,10 +575,15 @@ function SettingsBody({
                     onChange={(e) =>
                       setAssist({ ...assist, cli: e.target.value === defCli ? '' : e.target.value, model: '' })
                     }
-                    options={ordered.map((c) => ({
-                      value: c.id,
-                      label: `${c.name}${c.id === defCli ? t('（默认）') : ''}`,
-                    }))}
+                    options={ordered
+                      .filter((c) => {
+                        const st = statusOf(c.id)
+                        return !st || (st.installed && st.enabled) || c.id === (assist.cli || defCli)
+                      })
+                      .map((c) => ({
+                        value: c.id,
+                        label: `${c.name}${c.id === defCli ? t('（默认）') : ''}`,
+                      }))}
                   />
                 </Row>
                 <Row title={t('模型')} desc={t('默认用这个 CLI 设置里的默认模型')}>

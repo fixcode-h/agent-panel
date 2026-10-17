@@ -14,7 +14,7 @@ import type {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
-import { withTaskModel } from '../../shared/task.ts'
+import { changesSince, mergeChanges, stepUsage, withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { cachedModels, knownWindows } from '../models.ts'
@@ -24,6 +24,7 @@ import { invokeCli } from './invoke.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
+import { log } from '../log.ts'
 
 export interface RealContext {
   task: Task
@@ -145,8 +146,10 @@ function speedMeter(onIdle: () => void) {
   }
 }
 
+/** 连接断开时自动续接的次数上限 */
+const MAX_NET_RETRIES = 2
 const NETWORK_ERROR =
-  /Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+  /Connection error|APIConnectionError|Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
 const NOT_LOGGED_IN =
   /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token/i
@@ -238,7 +241,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const owner = step ? task.steps.find((s) => s.id === step) : undefined
   if (owner) owner.command = argv
   else task.command = argv
+  log.info('agent', `启动 ${def.name}`, { task: task.id, step, agent: agent.name, cwd, command: argv.join(' ') })
 
+  // 节点开始前的改动统计，结束后相减得到这个节点改了什么
+  const before = task.changes.map((c) => ({ ...c }))
+  const touched = new Set<string>()
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
   const mine: TaskMessage[] = []
   let cur: TaskMessage | undefined
@@ -316,12 +323,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         m.text = ''
         m.tools.push(ev.tool)
         if (ev.id) toolsById.set(ev.id, ev.tool)
+        if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file && !ctx.isGit) {
-          const old = task.changes.find((c) => c.path === ev.file!.path)
-          if (old) {
-            old.add += ev.file.add
-            old.del += ev.file.del
-          } else task.changes.push({ ...ev.file })
+          mergeChanges(task.changes, [ev.file])
+          if (owner) mergeChanges((owner.changes ??= []), [ev.file])
         }
         break
       }
@@ -335,12 +340,15 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         } else if (!reported) u.window = windowFor(cliId, u.model || model)
         u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
-        const t = task.usage
-        t.inputTokens += ev.addInput ?? 0
-        t.outputTokens += ev.addOutput ?? 0
-        t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
-        t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
-        t.costUsd += ev.addCost ?? 0
+        // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
+        for (const t of owner ? [task.usage, stepUsage(owner)] : [task.usage]) {
+          t.inputTokens += ev.addInput ?? 0
+          t.outputTokens += ev.addOutput ?? 0
+          t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
+          t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
+          t.costUsd += ev.addCost ?? 0
+        }
+        if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })
         break
       }
       case 'tool_result': {
@@ -437,10 +445,27 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   for (const m of mine) if (m.text) texts.push(m.text)
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
-    if (changes) task.changes = changes
+    if (changes) {
+      // 同时在跑的节点的改动也会出现在差值里：CLI 报告了改哪些文件时只算这些，没报告（例如用命令写的）才全算
+      const mine = changesSince(before, changes).filter((c) => !touched.size || touched.has(c.path))
+      if (owner) mergeChanges((owner.changes ??= []), mine)
+      task.changes = changes
+    }
   }
   ctx.changed(true)
 
+  // 进程结束的情况都记一笔：退出码、为什么被停、最后的错误输出，排查问题时对得上页面上的报错
+  if (r.killed || r.spawnError || r.code !== 0 || result?.ok === false)
+    log.warn('agent', `${def.name} 进程结束`, {
+      task: task.id,
+      step,
+      code: r.code,
+      killed: r.killed,
+      spawnError: r.spawnError,
+      result: result?.error,
+      errors: errors.join('\n'),
+      stderr: r.stderr.trim().split('\n').slice(-20).join('\n'),
+    })
   if (r.killed === 'stopped') return { ok: false, stopped: true, error: t('已停止') }
   if (r.killed === 'timeout')
     return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
@@ -481,39 +506,52 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       // 新会话没有之前的上下文，要用完整提示
       return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
     }
-    // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次
+    const hints = failureHints(detail, def)
+    const head =
+      r.code !== null && r.code !== 0
+        ? t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
+        : t('{cli} 执行失败：', { cli: def.name })
+    const raw = clip(detail || t('没有更多信息'), 1500)
+    const message = [head, ...hints, hints.length ? `\n${t('原始输出：')}\n${raw}` : raw].join('\n')
+    // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次。
+    // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
     const session = task.sessions[sessionKey]
-    if (NETWORK_ERROR.test(detail) && session && netRetries < 2 && !ctx.signal.aborted) {
+    if (NETWORK_ERROR.test(detail) && session && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
+      task.messages.push({
+        id: ctx.newId(),
+        role: 'system',
+        agentId,
+        step,
+        text: [
+          message,
+          '',
+          t('正在自动续接会话重试（第 {n}/{max} 次）…', { n: netRetries + 1, max: MAX_NET_RETRIES }),
+        ].join('\n'),
+        tools: [],
+        error: true,
+        at: new Date().toISOString(),
+      })
+      log.warn('agent', `${def.name} 连接中断，自动续接第 ${netRetries + 1} 次`, { task: task.id, step, detail })
       ctx.changed(true)
       return runAgent(
         ctx,
-        { ...call, prompt: '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' },
+        {
+          ...call,
+          prompt:
+            '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' +
+            '如果是在一次写入很长的文件时断开的，请分几次写：先写前一部分，再分段追加，每次不要太长。',
+        },
         retried,
         netRetries + 1,
       )
     }
-    const hints = failureHints(detail, def)
+    log.error('agent', `${def.name} 执行失败`, { task: task.id, step, code: r.code, detail })
     return {
       ok: false,
-      error: [
-        r.code !== null && r.code !== 0
-          ? netRetries
-            ? t('{cli} 执行失败（退出码 {code}），自动续接 {n} 次后仍然失败：', {
-                cli: def.name,
-                code: r.code,
-                n: netRetries,
-              })
-            : t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
-          : netRetries
-            ? t('{cli} 执行失败，自动续接 {n} 次后仍然失败：', { cli: def.name, n: netRetries })
-            : t('{cli} 执行失败：', { cli: def.name }),
-        ...hints,
-        hints.length
-          ? `\n${t('原始输出：')}\n${clip(detail || t('没有更多信息'), 1500)}`
-          : clip(detail || t('没有更多信息'), 1500),
-      ].join('\n'),
+      error: netRetries ? [message, '', t('已自动续接 {n} 次，仍然失败。', { n: netRetries })].join('\n') : message,
     }
   }
+  log.info('agent', `${def.name} 完成`, { task: task.id, step })
   return { ok: true, text: texts.join('\n\n') }
 }
 

@@ -329,10 +329,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           onClick={toggleCollapsed}
           aria-label={narrow ? t('展开侧栏') : t('收起侧栏')}
           title={narrow ? t('展开侧栏') : t('收起侧栏')}
-          className={cn(
-            'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid',
-            narrow && 'ml-auto',
-          )}
+          // 收起时和下面的图标一样居中，不能靠右
+          className="hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid"
         >
           {narrow ? <PanelLeftOpen className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
         </button>

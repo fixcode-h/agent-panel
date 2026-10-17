@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 import { CACHE_DIR } from './store.ts'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type AppUpdateJob } from '../shared/version.ts'
 import { capture } from './exec/process.ts'
+import { netFetch } from './net.ts'
+import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
 // 出包时由 esbuild 写入版本号；从源码运行时没有
@@ -22,7 +24,7 @@ export const appDir = () =>
   process.env.AGENT_PANEL_APP_DIR ?? (BUILT ? path.dirname(fileURLToPath(import.meta.url)) : process.cwd())
 const packaged = () => !!BUILT || !!process.env.AGENT_PANEL_APP_DIR
 
-function currentVersion() {
+export function currentVersion() {
   if (process.env.AGENT_PANEL_VERSION) return process.env.AGENT_PANEL_VERSION
   if (BUILT) return BUILT
   try {
@@ -113,7 +115,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
   async function releases(refresh: boolean): Promise<AppRelease[]> {
     // GitHub 匿名访问每小时 60 次，缓存 10 分钟
     if (!refresh && cache && Date.now() - cache.at < 600_000) return cache.list
-    const res = await fetch(`${API()}?per_page=30`, {
+    const res = await netFetch(`${API()}?per_page=30`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' },
       signal: AbortSignal.timeout(15_000),
     })
@@ -155,7 +157,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     try {
       // 1. 下载
       job.phase = t('下载中')
-      const res = await fetch(rel.tarUrl, { headers: { 'User-Agent': 'agent-panel' } })
+      const res = await netFetch(rel.tarUrl, { headers: { 'User-Agent': 'agent-panel' } })
       if (!res.ok || !res.body) throw new Error(t('下载失败：{status}', { status: res.status }))
       job.total = Number(res.headers.get('content-length')) || rel.size
       const file = path.join(work, 'package.tar.gz')
@@ -169,7 +171,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
       // 校验：和 Release 里的 SHA256SUMS 对一下，下载不完整或被改过就不装。早期的包没有这个文件，跳过
       if (rel.sumsUrl) {
         job.phase = t('校验中')
-        const sums = await fetch(rel.sumsUrl, { headers: { 'User-Agent': 'agent-panel' } })
+        const sums = await netFetch(rel.sumsUrl, { headers: { 'User-Agent': 'agent-panel' } })
         if (!sums.ok) throw new Error(t('下载校验文件失败：{status}', { status: sums.status }))
         const name = decodeURIComponent(new URL(rel.tarUrl).pathname.split('/').pop() ?? '')
         const want = (await sums.text())
@@ -228,6 +230,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
             update: pickUpdate(current, list),
           } satisfies AppReleases)
         } catch (e) {
+          log.warn('update', '检查更新失败', e)
           return c.json({
             ...base,
             error: t('检查更新失败：{error}', { error: (e as Error).message }),
@@ -257,7 +260,9 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
         // 只有页面正在看的这一次有用，以前的记录丢掉
         for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
         jobs.set(job.id, job)
+        log.info('update', `开始更新到 ${rel.tag}`)
         install(job, rel).catch((e) => {
+          log.error('update', `更新到 ${rel.tag} 失败`, e)
           job.status = 'failed'
           job.error = (e as Error).message
         })

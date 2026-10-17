@@ -20,6 +20,8 @@ export interface DataUsage {
   /** 数据目录的绝对路径 */
   dir: string
   kinds: { id: DataKind; files: number; bytes: number }[]
+  /** 运行日志：每次启动一个文件，写满 5 MB 换下一个；在线演示没有 */
+  logs?: { dir: string; current: string; files: number; bytes: number }
   /** 面板服务进程的内存占用（字节） */
   memory: { rss: number; heapUsed: number }
 }
