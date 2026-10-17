@@ -14,7 +14,6 @@ export const EN_DESIGN: Record<string, string> = {
   '例如：主菜单、背包、战斗 HUD': 'e.g. main menu, inventory, combat HUD',
   类型: 'Type',
   '游戏 UI（UE5 UMG）': 'Game UI (UE5 UMG)',
-  '网页 UI（即将支持）': 'Web UI (coming soon)',
   设计尺寸: 'Design size',
   开始设计: 'Start designing',
 
@@ -142,6 +141,26 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  '做一个 SaaS 产品首页：顶部导航、左文右图的头图、三张功能卡片和页脚，暖色调':
+    'Make a SaaS product home page: top nav, hero with text on the left and an image on the right, three feature cards and a footer, warm colors',
+  '做一个登录页：左边品牌插图，右边邮箱、密码输入框和登录按钮':
+    'Make a sign-in page: brand illustration on the left; email, password fields and a sign-in button on the right',
+  '做一个电商商品详情页：大图、标题价格、规格选择、加入购物车按钮':
+    'Make a product details page: large image, title and price, option picker and an add-to-cart button',
+  '照着附上的截图做一个一样的页面（点左下角的 + 附上截图，或直接粘贴）':
+    'Recreate the page in the attached screenshot (attach it with + at the bottom left, or just paste it)',
+  选择图片: 'Choose an image',
+  还没有图片: 'No images yet',
+  无: 'None',
+  '在父控件的交叉轴上怎么对齐，auto 跟随父控件的 AlignItems':
+    'Alignment on the parent’s cross axis; auto follows the parent’s AlignItems',
+  网页控件: 'Web widgets',
+  '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。':
+    'Design web pages in chat: the AI builds the page with auto layout, generates illustrations and icons, and exports HTML / CSS with images you can open in a browser.',
+  '例如：首页、登录页、商品详情': 'e.g. Home, Sign in, Product details',
+  '网页 UI（HTML / CSS）': 'Web UI (HTML / CSS)',
+  'ZIP（HTML + 图片文件）': 'ZIP (HTML + image files)',
+  '单个 HTML（图片内嵌）': 'Single HTML (images embedded)',
   '照着附上的截图做一个一样的界面（点左下角的 + 附上截图，或直接粘贴）':
     'Recreate the screen in the attached screenshot (attach it with + at the bottom left, or just paste it)',
   对齐: 'Align',

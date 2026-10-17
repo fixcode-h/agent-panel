@@ -2243,6 +2243,61 @@ try {
       }),
       /没有要生成的图片/,
     )
+    // 网页 UI：根控件是占满整页的 Frame，AI 用 Frame / Text / WebButton 搭，导出成 HTML
+    const webD = await call('POST', '/designs', {
+      projectId: uiProject.id,
+      kind: 'web',
+      title: 'Landing Page',
+      designSize: { X: 1440, Y: 900 },
+    })
+    assert.deepEqual([webD.kind, webD.root.Type, webD.root.Properties.Width], ['web', 'Frame', 'fill'])
+    const webTree = {
+      reply: '首页好了',
+      ops: [
+        {
+          op: 'add',
+          parent: 'Page',
+          widget: { Type: 'Text', Name: 'Title', Properties: { Text: '欢迎来到 Flowboard', Tag: 'h1' } },
+        },
+        {
+          op: 'add',
+          parent: 'Page',
+          widget: {
+            Type: 'Frame',
+            Name: 'Actions',
+            Properties: { Direction: 'row', Gap: 12 },
+            Children: [{ Type: 'WebButton', Name: 'Btn_Go', Properties: { Text: '开始使用' } }],
+          },
+        },
+      ],
+    }
+    await call('POST', `/designs/${webD.id}/chat`, {
+      text: `做首页 FAKE_DESIGN:${JSON.stringify(webTree)}`,
+      source: { kind: 'none' },
+    })
+    let wd = await waitJob(webD.id)
+    assert.equal(wd.job.status, 'done', JSON.stringify(wd.job.error))
+    assert.deepEqual(
+      wd.root.Children.map((w) => [w.Type, w.Name, w.Slot?.AlignSelf]),
+      [
+        ['Text', 'Title', 'auto'],
+        ['Frame', 'Actions', 'auto'],
+      ],
+    )
+    const webAsk = calls()
+      .filter((c) => c.kind === 'codex' && /你是网页 UI 设计助手/.test(c.input ?? ''))
+      .at(-1)
+    assert.ok(webAsk, '网页设计用网页的提示词')
+    assert.doesNotMatch(webAsk.input, /CanvasPanelSlot/, '网页的提示词里没有 UMG 的插槽')
+    const html = await (await fetch(`${base}/designs/${webD.id}/export?format=json`)).text()
+    assert.match(html, /<h1 class="Title">欢迎来到 Flowboard<\/h1>/)
+    assert.match(html, /\.Actions \{[^}]*flex-direction: row;[^}]*gap: 12px;/)
+    assert.match(html, /<button class="Btn_Go" type="button">开始使用<\/button>/)
+    const webZip = Buffer.from(await (await fetch(`${base}/designs/${webD.id}/export?format=zip`)).arrayBuffer())
+    assert.ok(webZip.includes(Buffer.from('index.html')))
+    await call('DELETE', `/designs/${webD.id}`)
+    step('UI 设计：网页 UI（自动布局的控件、网页的提示词、导出 HTML）')
+
     // 「控件」列表：项目里别的设计的子控件能连同图片加进来
     const other2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'Shop' })
     const pc = await call('GET', `/designs/projects/${uiProject.id}/components`)

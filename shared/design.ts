@@ -6,6 +6,7 @@ import {
   normalizeTree,
   usedImages,
   walk,
+  webRoot,
   widgetCatalogText,
   WIDGETS,
   type WidgetType,
@@ -353,7 +354,9 @@ export const extensionSelfReload = (version: string) => {
   return major > 1 || (major === 1 && minor >= 3)
 }
 
-export const emptyRoot = (): Widget => newWidget('CanvasPanel', 'RootCanvas')
+/** 新设计的根控件：游戏 UI 是 CanvasPanel，网页是占满整页的 Frame */
+export const emptyRoot = (kind: DesignKind = 'game'): Widget =>
+  kind === 'web' ? webRoot() : newWidget('CanvasPanel', 'RootCanvas')
 
 // ---- AI 对话 ----
 
@@ -378,6 +381,41 @@ export const AiDesignResult = z.object({
   /** 在现有设计上一步步改（见 design-ops.ts），和 root 二选一 */
   ops: z.array(z.any()).max(500).optional(),
 })
+
+const gameRules = (
+  d: Design,
+) => `- 游戏 UI 的视觉全部用图片：面板底框、按钮底图、高亮框、选中框、进度条底和填充、图标、分隔线、装饰都是独立的图片，用 Image 或画刷引用（"img:<图片 id>"），不要指望用纯色块拼出效果。文字用 TextBlock。
+- 一张图只画一个元素（例如只画按钮底图，不带文字；高亮框单独一张），这样在 UE 里能分别替换和复用。按钮的 Normal / Hovered / Pressed 可以各一张图，也可以共用一张再用 TintColor 区分。
+- 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
+- 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
+- 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
+- 用户附上了界面截图或参考图（附件里的图片）时，先打开看清楚再做：照着截图还原布局，控件的结构、位置和大小按截图和设计稿的比例换算；截图里的底框、按钮、图标、装饰都列成要生成的图片，prompt 照着截图里的样子描述；截图里的文字写进 TextBlock。
+- 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
+- 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
+- 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
+`
+
+const webRules = (
+  d: Design,
+) => `- 网页的视觉以 Frame 的背景色、圆角、边框、阴影和文字排版为主，配色要协调、留白充足、层次清楚；只有插图、头图、商品图、头像、图标这类真正的图片才用 Picture 或 BackgroundImage 引用（"img:<图片 id>"）。
+- 用 Frame 一层层搭：页面（根控件 Page，竖排）→ 区块（导航栏、头图、内容区、页脚）→ 卡片、行、列。横排用 Direction "row"，间距用 Gap，内边距用 Padding，别用空的 Frame 占位。
+- 宽高：要占满父控件剩下的空间写 "fill"（例如横排里自适应的那一列、竖排里撑开的内容区），按内容写 "auto"，固定大小写像素数。根控件 Page 的宽高是 "fill"，设计稿宽 ${d.designSize.X}，高 ${d.designSize.Y}。
+- 重复出现的结构（卡片、列表项、导航项）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用，子控件的根控件也是 Frame。
+- 用户附上了网页截图或参考图时，照着截图还原布局、配色和文字，截图里的插图、头像、图标列成要生成的图片。
+- 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
+- 每个 Text 的 Text 都写成页面上要显示的真实内容（标题、按钮文案、说明文字），不要留默认的 "Text"；动态的数据写成真实格式的示例（「¥1,299」「2026-10-17」「128 条评论」）。颜色一律写 "#RRGGBBAA"。
+`
+
+const WEB_NOTES = `## 属性（Properties）
+- 所有控件：Width、Height（"auto" | "fill" | 像素数）、Visibility(Visible|Hidden|Collapsed)、RenderOpacity
+- Frame：Direction("row"|"column")、Gap、Padding{"Left","Top","Right","Bottom"}、AlignItems(stretch|start|center|end)、JustifyContent(start|center|end|between|around|evenly)、Wrap、Background、BackgroundImage("img:<id>")、Radius、BorderWidth、BorderColor、Shadow(none|sm|md|lg)、Overflow(visible|hidden|auto)
+- Text：Text、Tag(h1|h2|h3|h4|p|span|label)、FontSize、FontWeight(300~800)、Color、TextAlign(left|center|right)、LineHeight、LetterSpacing
+- Picture：Src("img:<id>")、Fit(cover|contain|fill|none)、Radius、Alt
+- WebButton：Text、FontSize、FontWeight、Color、Background、BackgroundImage、Padding、Radius、BorderWidth、BorderColor
+- Input：Placeholder、Value、InputType(text|password|email|number|search|tel)、Multiline、FontSize、Color、Background、BorderWidth、BorderColor、Radius、Padding
+- Divider：Color、Thickness、Vertical
+- 插槽（Slot，放在 Frame 里的控件都有）：{"AlignSelf":"auto|start|center|end|stretch"}，在父控件的交叉轴上单独对齐
+- 颜色一律写 sRGB 的 "#RRGGBBAA"。`
 
 const UMG_NOTES = `## 插槽（Slot）和常用属性（名字和取值都和 UE5 一致）
 - CanvasPanelSlot：{"LayoutData":{"Offsets":{"Left","Top","Right","Bottom"},"Anchors":{"Minimum":{"X","Y"},"Maximum":{"X","Y"}},"Alignment":{"X","Y"}},"bAutoSize":false,"ZOrder":0}
@@ -430,24 +468,20 @@ export function buildDesignPrompt(
     .slice(-12)
     .map((m) => `${m.role === 'user' ? '用户' : m.role === 'agent' ? '你' : '系统'}：${m.text}`)
     .join('\n\n')
-  return `你是游戏 UI 设计助手，在为虚幻引擎 5 的 UMG 设计界面。用户描述想要的界面，你给出 UMG 控件树和需要生成的图片，用户最后会把结果导入 UE 生成 Widget Blueprint。
+  const web = d.kind === 'web'
+  return `${
+    web
+      ? '你是网页 UI 设计助手。用户描述想要的网页界面，你给出控件树（布局和 Figma 的自动布局、CSS 的 flex 一样）和需要生成的图片，用户最后会导出成 HTML / CSS。'
+      : '你是游戏 UI 设计助手，在为虚幻引擎 5 的 UMG 设计界面。用户描述想要的界面，你给出 UMG 控件树和需要生成的图片，用户最后会把结果导入 UE 生成 Widget Blueprint。'
+  }
 
-## 可用控件（UE5 自带）
-${widgetCatalogText()}
+## 可用控件${web ? '' : '（UE5 自带）'}
+${widgetCatalogText(web ? 'web' : 'game')}
 
-${UMG_NOTES}
+${web ? WEB_NOTES : UMG_NOTES}
 
 ## 设计规则
-- 游戏 UI 的视觉全部用图片：面板底框、按钮底图、高亮框、选中框、进度条底和填充、图标、分隔线、装饰都是独立的图片，用 Image 或画刷引用（"img:<图片 id>"），不要指望用纯色块拼出效果。文字用 TextBlock。
-- 一张图只画一个元素（例如只画按钮底图，不带文字；高亮框单独一张），这样在 UE 里能分别替换和复用。按钮的 Normal / Hovered / Pressed 可以各一张图，也可以共用一张再用 TintColor 区分。
-- 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
-- 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
-- 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
-- 用户附上了界面截图或参考图（附件里的图片）时，先打开看清楚再做：照着截图还原布局，控件的结构、位置和大小按截图和设计稿的比例换算；截图里的底框、按钮、图标、装饰都列成要生成的图片，prompt 照着截图里的样子描述；截图里的文字写进 TextBlock。
-- 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
-- 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
-- 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
-- 图片的 prompt 用英文写清楚画什么、什么风格、什么颜色，不要包含文字；尺寸写在 width / height（像素，按界面上的显示尺寸）。
+${web ? webRules(d) : gameRules(d)}- 图片的 prompt 用英文写清楚画什么、什么风格、什么颜色，不要包含文字；尺寸写在 width / height（像素，按界面上的显示尺寸）。
 - 已经生成好的图片不用再列出来，除非用户要求改它（列出来就会重新生成）。新图片的 id 用简短的英文（例如 btn_normal）。
 - 用户只是提问、不需要改设计时，只回答，JSON 里只写 reply。
 
@@ -554,19 +588,19 @@ export function resolveDesignResult(
   for (const tr of [root, ...(after ?? []).map((c) => c.Root)])
     if (tr)
       walk(tr, (w) => {
-        if (w.Type === 'TextBlock' && (!String(w.Properties.Text ?? '').trim() || w.Properties.Text === 'Text Block'))
-          placeholder.push(w.Name)
+        const def = w.Type === 'TextBlock' ? 'Text Block' : w.Type === 'Text' ? 'Text' : ''
+        if (def && (!String(w.Properties.Text ?? '').trim() || w.Properties.Text === def)) placeholder.push(w.Name)
       })
   if (placeholder.length)
     errors.push(
-      `这些 TextBlock 还是默认文字：${placeholder.slice(0, 10).join('、')}。把 Text 写成要显示的内容，运行时才知道的值写成真实格式的示例（如 Lv.99、12,345、00:59）`,
+      `这些文字控件还是默认文字：${placeholder.slice(0, 10).join('、')}。把 Text 写成要显示的内容，运行时才知道的值写成真实格式的示例（如 Lv.99、12,345、00:59）`,
     )
   // 列出来的图都要用在控件上：只列图不引用，图生成完了效果图上也看不到
   const used = usedImages([root ?? d.root, ...(after ?? d.components).map((c) => c.Root)])
   const unused = r.images.filter((i) => !used.has(i.id)).map((i) => i.id)
   if (unused.length)
     errors.push(
-      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal 等），用 set 操作或在 root / components 里写上`,
+      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal；网页是 Picture 的 Src、Frame / WebButton 的 BackgroundImage），用 set 操作或在 root / components 里写上`,
     )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
   return { result: r, root, components: after }
@@ -622,13 +656,17 @@ export function imagePrompt(
   chroma: boolean,
   /** 项目提示词的英文（projectPromptText），整个项目统一 */
   projectStyle = '',
+  /** 网页 UI 的图（插图、头像、图标）和游戏 UI 的描述不一样 */
+  kind: DesignKind = 'game',
 ) {
   const ratio = aspect(img.width, img.height)
   const parts = [
-    `Game UI asset: ${img.prompt.trim()}`,
+    kind === 'web' ? `Image for a web page: ${img.prompt.trim()}` : `Game UI asset: ${img.prompt.trim()}`,
     projectStyle.trim(),
     style ? `${projectStyle.trim() ? 'Additional style for this screen' : 'Art style'}: ${style.trim()}` : '',
-    `Aspect ratio ${ratio} (about ${img.width}x${img.height} px). One single isolated UI element, centered, filling the canvas, no text, no watermark, no mockup or screen around it.`,
+    kind === 'web'
+      ? `Aspect ratio ${ratio} (about ${img.width}x${img.height} px). The image fills the whole canvas, no text, no watermark, no browser window or device mockup around it.`
+      : `Aspect ratio ${ratio} (about ${img.width}x${img.height} px). One single isolated UI element, centered, filling the canvas, no text, no watermark, no mockup or screen around it.`,
     img.nineSlice
       ? 'It will be stretched as a 9-slice: keep the corners decorated and the edges and center plain and uniform.'
       : '',

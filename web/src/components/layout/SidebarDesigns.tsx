@@ -6,6 +6,7 @@ import {
   FolderInput,
   FolderOpen,
   Gamepad2,
+  Globe,
   Loader2,
   PencilLine,
   Plus,
@@ -238,6 +239,8 @@ export function DesignList() {
                         >
                           {d.running ? (
                             <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+                          ) : d.kind === 'web' ? (
+                            <Globe className="h-3.5 w-3.5 shrink-0 text-subtle" />
                           ) : (
                             <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
                           )}

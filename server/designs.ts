@@ -48,7 +48,8 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, migrateGrids, normalizeTree, uniqueName } from '../shared/umg.ts'
+import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages } from '../shared/umg.ts'
+import { webExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { READ_ONLY, safeArgs } from './assist.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -227,7 +228,10 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           ? await browserGenerate(
               {
                 tabId: source.tabId,
-                prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style), revision),
+                prompt: withRevision(
+                  imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
+                  revision,
+                ),
                 count,
                 chroma: img.transparent,
                 concurrency: (await getSettings()).imageGen.concurrency,
@@ -237,7 +241,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               job.abort.signal,
             )
           : await cliGenerate(
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, false, style), revision),
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, false, style, d.kind), revision),
               count,
               job,
               add,
@@ -793,7 +797,7 @@ ${prompt}`,
         title: p.data.title,
         designSize: p.data.designSize,
         style: '',
-        root: emptyRoot(),
+        root: emptyRoot(p.data.kind),
         components: [],
         images: [],
         annotations: [],
@@ -1109,8 +1113,44 @@ ${prompt}`,
       return c.json({ dir })
     })
 
-  /** 导出的文件：<名字>.umg.json + Textures/T_xxx.png */
+  /**
+   * 网页 UI 导出：index.html + images/ 下的图片；inline 时只出一个 HTML，图片按 data URL 内嵌，
+   * 双击就能用浏览器打开
+   */
+  async function exportWebFiles(d: Design, inline: boolean) {
+    const used = usedImages([d.root, ...d.components.map((c) => c.Root)])
+    const names = new Set<string>()
+    const files: { name: string; data: Buffer }[] = []
+    const src = new Map<string, string>()
+    for (const i of d.images) {
+      const v = i.variants[i.selected] ?? i.variants.at(-1)
+      if (!v || !used.has(i.id)) continue
+      const buf = await readFile(path.join(imagesDir(d.id), v.file)).catch(() => null)
+      if (!buf) continue
+      const ext = v.file.split('.').pop()!
+      if (inline) {
+        src.set(i.id, `data:image/${ext === 'jpg' ? 'jpeg' : ext};base64,${buf.toString('base64')}`)
+        continue
+      }
+      const base = uniqueName(i.name.replace(/[^A-Za-z0-9_-]/g, '_') || i.id, names)
+      names.add(base)
+      src.set(i.id, `images/${base}.${ext}`)
+      files.push({ name: `images/${base}.${ext}`, data: buf })
+    }
+    const html = webExport({
+      title: d.title,
+      designSize: d.designSize,
+      root: d.root,
+      components: d.components,
+      file: (id) => src.get(id),
+    })
+    const ascii = (d.title.match(/[A-Za-z0-9]+/g) ?? []).join('-').toLowerCase()
+    return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files] }
+  }
+
+  /** 导出的文件：<名字>.umg.json + Textures/T_xxx.png（网页 UI 是 index.html + images/） */
   async function exportFiles(d: Design) {
+    if (d.kind === 'web') return { ...(await exportWebFiles(d, false)), json: undefined }
     const images = []
     const datas = new Map<string, Buffer>()
     for (const i of d.images) {
@@ -1143,12 +1183,17 @@ ${prompt}`,
   }
 
   async function buildExport(d: Design, single: boolean) {
+    if (d.kind === 'web') {
+      const f = await exportWebFiles(d, single)
+      if (single) return { name: `${f.name}.html`, type: 'text/html; charset=utf-8', data: f.files[0].data }
+      return { name: `${f.name}.zip`, type: 'application/zip', data: zip(f.files) }
+    }
     const f = await exportFiles(d)
-    if (single) {
+    if (single && f.json) {
       // 单个 JSON：图片按 base64 内嵌在 Textures[].Data 里
       const data = {
         ...f.json,
-        Textures: f.json.Textures.map((tx) => ({
+        Textures: f.json.Textures.map((tx: { File: string }) => ({
           ...tx,
           Data: f.files.find((x) => x.name === tx.File)?.data.toString('base64') ?? '',
         })),

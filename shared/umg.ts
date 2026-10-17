@@ -46,7 +46,7 @@ export interface Component {
 }
 
 export type ChildRule = 'many' | 'one' | 'none'
-export type WidgetGroup = 'panel' | 'list' | 'common' | 'input' | 'user'
+export type WidgetGroup = 'panel' | 'list' | 'common' | 'input' | 'user' | 'web'
 
 export const WIDGET_TYPES = [
   'CanvasPanel',
@@ -72,6 +72,13 @@ export const WIDGET_TYPES = [
   'Slider',
   'EditableTextBox',
   'UserWidget',
+  // 网页 UI 用的控件（WEB_TYPES），和 UMG 的分开列
+  'Frame',
+  'Text',
+  'Picture',
+  'WebButton',
+  'Input',
+  'Divider',
 ] as const
 export type WidgetType = (typeof WIDGET_TYPES)[number]
 
@@ -119,6 +126,7 @@ export type SlotType =
   | 'ButtonSlot'
   | 'CheckBoxSlot'
   | 'WidgetSwitcherSlot'
+  | 'FlexSlot'
 
 const W = (
   type: WidgetType,
@@ -305,7 +313,107 @@ export const WIDGETS: Record<WidgetType, WidgetDef> = {
     ForegroundColor: '#FFFFFFFF',
   })),
   UserWidget: W('UserWidget', 'user', 'none', undefined, '引用一个子控件（Components 里定义的）'),
+
+  // ---- 网页 UI ----
+  // 布局和 Figma 的自动布局、CSS 的 flex 一样：Frame 横排或竖排子控件；每个控件的宽高是
+  // "auto"（按内容）、"fill"（占满父控件剩下的空间）或像素数
+  Frame: W(
+    'Frame',
+    'web',
+    'many',
+    'FlexSlot',
+    '容器（div）：Direction 横排 row / 竖排 column 放子控件，Gap 间距、Padding 内边距、AlignItems 交叉轴对齐、JustifyContent 主轴分布；可设背景色、背景图、圆角、边框、阴影。页面、卡片、导航栏、列表都用它搭',
+    () => ({
+      Direction: 'column',
+      Gap: 0,
+      Padding: margin(0),
+      AlignItems: 'stretch',
+      JustifyContent: 'start',
+      Wrap: false,
+      Width: 'auto',
+      Height: 'auto',
+      Background: '#00000000',
+      BackgroundImage: '',
+      Radius: 0,
+      BorderWidth: 0,
+      BorderColor: '#E5E7EBFF',
+      Shadow: 'none',
+      Overflow: 'visible',
+    }),
+  ),
+  Text: W('Text', 'web', 'none', undefined, '文字（标题、段落、标签）：Tag 选 h1/h2/h3/p/span', () => ({
+    Text: 'Text',
+    Tag: 'p',
+    FontSize: 16,
+    FontWeight: 400,
+    Color: '#111827FF',
+    TextAlign: 'left',
+    LineHeight: 1.5,
+    LetterSpacing: 0,
+    Width: 'auto',
+    Height: 'auto',
+  })),
+  Picture: W('Picture', 'web', 'none', undefined, '图片（img）：Src 写 "img:<图片 id>"，Fit 是缩放方式', () => ({
+    Src: '',
+    Fit: 'cover',
+    Width: 160,
+    Height: 120,
+    Radius: 0,
+    Alt: '',
+  })),
+  WebButton: W('WebButton', 'web', 'none', undefined, '按钮（button）', () => ({
+    Text: 'Button',
+    FontSize: 14,
+    FontWeight: 500,
+    Color: '#FFFFFFFF',
+    Background: '#2563EBFF',
+    BackgroundImage: '',
+    Padding: { Left: 16, Top: 8, Right: 16, Bottom: 8 },
+    Radius: 8,
+    BorderWidth: 0,
+    BorderColor: '#00000000',
+    Width: 'auto',
+    Height: 'auto',
+  })),
+  Input: W('Input', 'web', 'none', undefined, '输入框（input / textarea）：Multiline 为 true 时多行', () => ({
+    Placeholder: '请输入',
+    Value: '',
+    InputType: 'text',
+    Multiline: false,
+    FontSize: 14,
+    Color: '#111827FF',
+    Background: '#FFFFFFFF',
+    BorderWidth: 1,
+    BorderColor: '#D1D5DBFF',
+    Radius: 8,
+    Padding: { Left: 12, Top: 8, Right: 12, Bottom: 8 },
+    Width: 'fill',
+    Height: 'auto',
+  })),
+  Divider: W('Divider', 'web', 'none', undefined, '分隔线：横向或竖向', () => ({
+    Color: '#E5E7EBFF',
+    Thickness: 1,
+    Vertical: false,
+  })),
 }
+
+/** 网页 UI 能用的控件（加上 UserWidget 引用子控件） */
+export const WEB_TYPES: WidgetType[] = ['Frame', 'Text', 'Picture', 'WebButton', 'Input', 'Divider']
+export const isWebType = (type: string) => (WEB_TYPES as string[]).includes(type)
+/** 某种设计能用的控件 */
+export const typesFor = (kind: 'game' | 'web'): WidgetType[] =>
+  kind === 'web' ? [...WEB_TYPES, 'UserWidget'] : WIDGET_TYPES.filter((t) => !isWebType(t))
+/** 网页的根控件：一个占满整页的竖排 Frame */
+export const webRoot = (): Widget => ({
+  ...newWidget('Frame', 'Page'),
+  Properties: {
+    ...COMMON_PROPS(),
+    ...WIDGETS.Frame.defaults(),
+    Width: 'fill',
+    Height: 'fill',
+    Background: '#FFFFFFFF',
+  },
+})
 
 export const isPanel = (type: WidgetType) => WIDGETS[type]?.children !== 'none'
 export const canAddChild = (w: Widget) =>
@@ -352,6 +460,9 @@ export function defaultSlot(
       return { Padding: margin(0), HorizontalAlignment: 'HAlign_Center', VerticalAlignment: 'VAlign_Center' }
     case 'BorderSlot':
       return { Padding: margin(4), HorizontalAlignment: 'HAlign_Fill', VerticalAlignment: 'VAlign_Fill' }
+    // 网页的 Frame：子控件自己的宽高写在属性里，插槽只管在交叉轴上怎么对齐
+    case 'FlexSlot':
+      return { AlignSelf: 'auto' }
     case undefined:
       return undefined
     default:
@@ -913,8 +1024,8 @@ export function exportDesign(d: {
 
 // ---- 给 AI 的控件说明 ----
 
-export function widgetCatalogText() {
-  const lines = WIDGET_TYPES.map((t) => {
+export function widgetCatalogText(kind: 'game' | 'web' = 'game') {
+  const lines = typesFor(kind).map((t) => {
     const d = WIDGETS[t]
     const kids = d.children === 'many' ? '多个子控件' : d.children === 'one' ? '一个子控件' : '不能有子控件'
     return `- ${t}（${kids}${d.slot ? `，子控件插槽 ${d.slot}` : ''}）：${d.hint}`

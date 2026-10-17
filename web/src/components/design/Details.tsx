@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
-import { WIDGETS, type SlotType, type Widget, type WidgetType } from '@shared/umg'
+import { WIDGETS, isWebType, type SlotType, type Widget, type WidgetType } from '@shared/umg'
 import type { DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
@@ -22,7 +22,21 @@ import {
 } from './fields'
 import { WIDGET_ICON } from './Hierarchy'
 
-type Kind = 'num' | 'text' | 'textarea' | 'color' | 'enum' | 'bool' | 'vec2' | 'margin' | 'brush' | 'component'
+type Kind =
+  | 'num'
+  | 'text'
+  | 'textarea'
+  | 'color'
+  | 'enum'
+  | 'bool'
+  | 'vec2'
+  | 'margin'
+  | 'brush'
+  | 'component'
+  /** 网页控件的宽高：auto（按内容）、fill（占满）或像素数 */
+  | 'size'
+  /** 网页控件的图片：选设计里的一张图 */
+  | 'image'
 interface Spec {
   path: string
   kind: Kind
@@ -148,6 +162,74 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('EntrySpacing', 'vec2'),
   ],
   Spacer: [F('Size', 'vec2')],
+  // ---- 网页 UI ----
+  Frame: [
+    F('Direction', 'enum', { options: ['column', 'row'] }),
+    F('Gap', 'num', { min: 0 }),
+    F('Padding', 'margin'),
+    F('AlignItems', 'enum', { options: ['stretch', 'start', 'center', 'end'] }),
+    F('JustifyContent', 'enum', { options: ['start', 'center', 'end', 'between', 'around', 'evenly'] }),
+    F('Wrap', 'bool'),
+    F('Width', 'size'),
+    F('Height', 'size'),
+    F('Background', 'color'),
+    F('BackgroundImage', 'image'),
+    F('Radius', 'num', { min: 0 }),
+    F('BorderWidth', 'num', { min: 0 }),
+    F('BorderColor', 'color'),
+    F('Shadow', 'enum', { options: ['none', 'sm', 'md', 'lg'] }),
+    F('Overflow', 'enum', { options: ['visible', 'hidden', 'auto'] }),
+  ],
+  Text: [
+    F('Text', 'textarea'),
+    F('Tag', 'enum', { options: ['p', 'h1', 'h2', 'h3', 'h4', 'span', 'label'] }),
+    F('FontSize', 'num', { min: 1 }),
+    F('FontWeight', 'enum', { options: ['300', '400', '500', '600', '700', '800'] }),
+    F('Color', 'color'),
+    F('TextAlign', 'enum', { options: ['left', 'center', 'right'] }),
+    F('LineHeight', 'num', { step: 0.1, min: 0.5 }),
+    F('LetterSpacing', 'num', { step: 0.5 }),
+    F('Width', 'size'),
+    F('Height', 'size'),
+  ],
+  Picture: [
+    F('Src', 'image'),
+    F('Fit', 'enum', { options: ['cover', 'contain', 'fill', 'none'] }),
+    F('Width', 'size'),
+    F('Height', 'size'),
+    F('Radius', 'num', { min: 0 }),
+    F('Alt', 'text'),
+  ],
+  WebButton: [
+    F('Text', 'text'),
+    F('FontSize', 'num', { min: 1 }),
+    F('FontWeight', 'enum', { options: ['400', '500', '600', '700'] }),
+    F('Color', 'color'),
+    F('Background', 'color'),
+    F('BackgroundImage', 'image'),
+    F('Padding', 'margin'),
+    F('Radius', 'num', { min: 0 }),
+    F('BorderWidth', 'num', { min: 0 }),
+    F('BorderColor', 'color'),
+    F('Width', 'size'),
+    F('Height', 'size'),
+  ],
+  Input: [
+    F('Placeholder', 'text'),
+    F('Value', 'text'),
+    F('InputType', 'enum', { options: ['text', 'password', 'email', 'number', 'search', 'tel'] }),
+    F('Multiline', 'bool'),
+    F('FontSize', 'num', { min: 1 }),
+    F('Color', 'color'),
+    F('Background', 'color'),
+    F('BorderWidth', 'num', { min: 0 }),
+    F('BorderColor', 'color'),
+    F('Radius', 'num', { min: 0 }),
+    F('Padding', 'margin'),
+    F('Width', 'size'),
+    F('Height', 'size'),
+  ],
+  Divider: [F('Color', 'color'), F('Thickness', 'num', { min: 1 }), F('Vertical', 'bool')],
 }
 
 const COMMON: Spec[] = [
@@ -374,6 +456,37 @@ export function Details({
       case 'margin':
         input = <MarginInput value={v} onChange={(x) => set(s.path, x)} />
         break
+      case 'size': {
+        const mode = typeof v === 'number' ? 'fixed' : v === 'fill' ? 'fill' : 'auto'
+        input = (
+          <>
+            <EnumInput
+              label={label}
+              value={mode}
+              options={['auto', 'fill', 'fixed']}
+              onChange={(x) => set(s.path, x === 'fixed' ? (typeof v === 'number' ? v : 100) : x)}
+            />
+            {mode === 'fixed' && (
+              <div className="w-16 shrink-0">
+                <NumInput label={label} min={0} value={v as number} onChange={(n) => set(s.path, n)} />
+              </div>
+            )}
+          </>
+        )
+        break
+      }
+      case 'image':
+        input = (
+          <Select
+            aria-label={label}
+            value={typeof v === 'string' ? v.replace(/^img:/, '') : ''}
+            placeholder={images.length ? t('选择图片') : t('还没有图片')}
+            onChange={(e) => set(s.path, e.target.value ? `img:${e.target.value}` : '')}
+            options={[{ value: '', label: t('无') }, ...images.map((i) => ({ value: i.id, label: i.name }))]}
+            className="h-7 rounded-md px-2 text-[12px]"
+          />
+        )
+        break
       case 'component':
         input = (
           <Select
@@ -429,7 +542,16 @@ export function Details({
       )}
       {slot && slotType && (
         <Section title={`${t('插槽')}（${slotType}）`}>
-          {canvas ? (
+          {slotType === 'FlexSlot' ? (
+            <FieldRow label="AlignSelf" title={t('在父控件的交叉轴上怎么对齐，auto 跟随父控件的 AlignItems')}>
+              <EnumInput
+                label="AlignSelf"
+                value={String(slot.AlignSelf ?? 'auto')}
+                options={['auto', 'start', 'center', 'end', 'stretch']}
+                onChange={(v) => setSlot('AlignSelf', v)}
+              />
+            </FieldRow>
+          ) : canvas ? (
             <>
               <FieldRow label="Anchors">
                 <AnchorPick
@@ -567,7 +689,12 @@ export function Details({
           {PROPS[widget.Type]!.map((s) => field(s, (p) => getPath(widget.Properties, p), setProp))}
         </Section>
       )}
-      <Section title={t('通用')}>{COMMON.map((s) => field(s, (p) => getPath(widget.Properties, p), setProp))}</Section>
+      <Section title={t('通用')}>
+        {/* 网页控件只有可见性和透明度；变换、提示文字这些是 UMG 的 */}
+        {(isWebType(widget.Type) ? COMMON.slice(0, 2) : COMMON).map((s) =>
+          field(s, (p) => getPath(widget.Properties, p), setProp),
+        )}
+      </Section>
       <p className="px-3 py-3 text-[11px] leading-relaxed text-subtle">{WIDGETS[widget.Type]?.hint}</p>
     </div>
   )

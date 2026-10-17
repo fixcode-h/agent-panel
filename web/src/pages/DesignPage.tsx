@@ -7,6 +7,7 @@ import {
   FileArchive,
   FolderDown,
   Gamepad2,
+  Globe,
   MessageSquare,
   Palette as PaletteIcon,
   Plus,
@@ -66,6 +67,7 @@ import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierar
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
 import { ComponentsPanel } from '@/components/design/ComponentsPanel'
+import { webExport } from '@shared/web'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
@@ -91,6 +93,14 @@ const SIZES = [
   { v: '1280x720', label: '1280 × 720（16:9）' },
   { v: '2340x1080', label: '2340 × 1080（手机横屏）' },
   { v: '1080x1920', label: '1080 × 1920（竖屏）' },
+]
+/** 网页的常用尺寸：桌面、笔记本、平板、手机 */
+const WEB_SIZES = [
+  { v: '1440x900', label: '1440 × 900（桌面）' },
+  { v: '1280x800', label: '1280 × 800（笔记本）' },
+  { v: '1920x1080', label: '1920 × 1080（大屏）' },
+  { v: '768x1024', label: '768 × 1024（平板）' },
+  { v: '390x844', label: '390 × 844（手机）' },
 ]
 
 function NewDesign({ projectId }: { projectId?: string }) {
@@ -146,9 +156,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
         </span>
         <h1 className="font-serif text-[26px] font-semibold tracking-tight">{t('UI 设计')}</h1>
         <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
-          {t(
-            '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
-          )}
+          {kind === 'web'
+            ? t(
+                '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
+              )
+            : t(
+                '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
+              )}
         </p>
         <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
@@ -168,7 +182,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && !busy && pid && void create()}
-                placeholder={t('例如：主菜单、背包、战斗 HUD')}
+                placeholder={kind === 'web' ? t('例如：首页、登录页、商品详情') : t('例如：主菜单、背包、战斗 HUD')}
               />
             </label>
             <div className="flex flex-col gap-1.5">
@@ -176,10 +190,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
               <Segmented
                 label={t('类型')}
                 value={kind}
-                onChange={setKind}
+                onChange={(k) => {
+                  setKind(k)
+                  setSize(k === 'web' ? WEB_SIZES[0].v : SIZES[0].v)
+                }}
                 options={[
                   { id: 'game', label: t('游戏 UI（UE5 UMG）') },
-                  { id: 'web', label: t('网页 UI（即将支持）'), disabled: true },
+                  { id: 'web', label: t('网页 UI（HTML / CSS）') },
                 ]}
               />
             </div>
@@ -202,13 +219,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
                   aria-label={t('设计尺寸')}
                   value={size}
                   onChange={(e) => setSize(e.target.value)}
-                  options={SIZES.map((s) => ({ value: s.v, label: s.label }))}
+                  options={(kind === 'web' ? WEB_SIZES : SIZES).map((s) => ({ value: s.v, label: s.label }))}
                 />
               </div>
             </div>
             <div className="flex justify-end">
               <Button onClick={() => void create()} disabled={busy || !pid}>
-                <Gamepad2 className="h-4 w-4" />
+                {kind === 'web' ? <Globe className="h-4 w-4" /> : <Gamepad2 className="h-4 w-4" />}
                 {t('开始设计')}
               </Button>
             </div>
@@ -680,7 +697,7 @@ function Designer({ id }: { id: string }) {
     } catch (e) {
       return toast.error((e as Error).message)
     }
-    if (import.meta.env.VITE_DEMO) return demoExport(doc)
+    if (import.meta.env.VITE_DEMO) return server.kind === 'web' ? demoWebExport(doc) : demoExport(doc)
     const a = document.createElement('a')
     a.href = designExportUrl(id, format)
     a.click()
@@ -754,11 +771,11 @@ function Designer({ id }: { id: string }) {
           <MenuContent align="end">
             <MenuItem onSelect={() => void exportFile('zip')}>
               <FileArchive className="h-4 w-4" />
-              {t('ZIP（JSON + 贴图文件）')}
+              {server.kind === 'web' ? t('ZIP（HTML + 图片文件）') : t('ZIP（JSON + 贴图文件）')}
             </MenuItem>
             <MenuItem onSelect={() => void exportFile('json')}>
               <FileJson className="h-4 w-4" />
-              {t('单个 JSON（贴图内嵌）')}
+              {server.kind === 'web' ? t('单个 HTML（图片内嵌）') : t('单个 JSON（贴图内嵌）')}
             </MenuItem>
             {!import.meta.env.VITE_DEMO && (
               <MenuItem
@@ -887,7 +904,9 @@ function Designer({ id }: { id: string }) {
               </button>
             ))}
             <span className="flex-1" />
-            {tab === 'tree' && <Palette components={doc.components.map((c) => c.Name)} onAdd={addWidget} />}
+            {tab === 'tree' && (
+              <Palette kind={server.kind} components={doc.components.map((c) => c.Name)} onAdd={addWidget} />
+            )}
           </div>
           {tab === 'tree' && (doc.components.length > 0 || target) && (
             <div className="flex shrink-0 items-center gap-1.5 border-b px-2 py-1.5">
@@ -1046,6 +1065,7 @@ function Designer({ id }: { id: string }) {
               onCount={setCount}
               onSend={send}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+              kind={server.kind}
               onRetry={async (imageId) => {
                 try {
                   ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))
@@ -1222,6 +1242,22 @@ function demoExport(doc: DesignDoc) {
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = `${json.Name}.umg.json`
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000)
+}
+
+/** 在线演示导出网页：单个 HTML，图片本来就是 data URL */
+function demoWebExport(doc: DesignDoc) {
+  const src = new Map(
+    doc.images.flatMap((i) => {
+      const v = i.variants[i.selected] ?? i.variants[0]
+      return v ? [[i.id, v.file] as const] : []
+    }),
+  )
+  const html = webExport({ ...doc, file: (id) => src.get(id) })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
+  a.download = 'index.html'
   a.click()
   setTimeout(() => URL.revokeObjectURL(a.href), 5000)
 }

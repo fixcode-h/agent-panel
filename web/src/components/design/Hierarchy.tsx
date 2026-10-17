@@ -39,11 +39,16 @@ import {
   Trash2,
   Type,
   WrapText,
+  SquareDashed,
+  CaseSensitive,
+  MousePointerClick,
+  SeparatorHorizontal,
   type LucideIcon,
 } from 'lucide-react'
 import {
   WIDGETS,
-  WIDGET_TYPES,
+  isWebType,
+  typesFor,
   canAddChild,
   canReplace,
   entryCount,
@@ -95,6 +100,12 @@ export const WIDGET_ICON: Record<WidgetType, LucideIcon> = {
   Slider: SlidersHorizontal,
   EditableTextBox: TextCursorInput,
   UserWidget: Puzzle,
+  Frame: SquareDashed,
+  Text: CaseSensitive,
+  Picture: ImageIcon,
+  WebButton: MousePointerClick,
+  Input: TextCursorInput,
+  Divider: SeparatorHorizontal,
 }
 
 const GROUPS: { id: WidgetGroup; label: string }[] = [
@@ -103,12 +114,18 @@ const GROUPS: { id: WidgetGroup; label: string }[] = [
   { id: 'common', label: t('常用') },
   { id: 'input', label: t('输入') },
 ]
+const WEB_GROUPS: { id: WidgetGroup; label: string }[] = [{ id: 'web', label: t('网页控件') }]
+/** 网页 UI 的设计根控件是 Frame：按根控件判断这棵树用哪套控件 */
+const kindOf = (root: Widget) => (isWebType(root.Type) ? 'web' : 'game')
+const groupsFor = (kind: 'game' | 'web') => (kind === 'web' ? WEB_GROUPS : GROUPS)
 
 /** 控件面板：点一个控件加到选中的容器里（选中的不是容器就加到它旁边） */
 export function Palette({
   components,
   onAdd,
+  kind = 'game',
 }: {
+  kind?: 'game' | 'web'
   components: string[]
   onAdd: (type: WidgetType, cls?: string) => void
 }) {
@@ -129,24 +146,26 @@ export function Palette({
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[260px] p-1.5">
-        {GROUPS.map((g) => (
+        {groupsFor(kind).map((g) => (
           <div key={g.id} className="mb-1">
             <p className="px-2 pt-1.5 pb-1 text-[11px] text-subtle">{g.label}</p>
             <div className="grid grid-cols-2 gap-px">
-              {WIDGET_TYPES.filter((x) => WIDGETS[x].group === g.id).map((x) => {
-                const Icon = WIDGET_ICON[x]
-                return (
-                  <button
-                    key={x}
-                    onClick={() => add(x)}
-                    title={WIDGETS[x].hint}
-                    className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[12.5px] text-muted hover:bg-sel hover:text-fg"
-                  >
-                    <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                    <span className="truncate">{x}</span>
-                  </button>
-                )
-              })}
+              {typesFor(kind)
+                .filter((x) => WIDGETS[x].group === g.id)
+                .map((x) => {
+                  const Icon = WIDGET_ICON[x]
+                  return (
+                    <button
+                      key={x}
+                      onClick={() => add(x)}
+                      title={WIDGETS[x].hint}
+                      className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-left text-[12.5px] text-muted hover:bg-sel hover:text-fg"
+                    >
+                      <Icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                      <span className="truncate">{x}</span>
+                    </button>
+                  )
+                })}
             </div>
           </div>
         ))}
@@ -193,7 +212,8 @@ export interface TreeActions {
 }
 
 const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+'
-const PANELS = WIDGET_TYPES.filter((x) => WIDGETS[x].group === 'panel' && isPanel(x))
+const panelsFor = (kind: 'game' | 'web') =>
+  typesFor(kind).filter((x) => (WIDGETS[x].group === 'panel' || WIDGETS[x].group === 'web') && isPanel(x))
 
 function TypeItem({ type, onSelect }: { type: WidgetType; onSelect: () => void }) {
   const Icon = WIDGET_ICON[type]
@@ -207,6 +227,7 @@ function TypeItem({ type, onSelect }: { type: WidgetType; onSelect: () => void }
 
 /** 控件树（Hierarchy）：缩进显示父子关系，拖动调整顺序或换父控件，右键复制、删除、提取成子控件 */
 export function Hierarchy({ root, selected, actions }: { root: Widget; selected: string; actions: TreeActions }) {
+  const kind = kindOf(root)
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const [renaming, setRenaming] = useState('')
   const [drag, setDrag] = useState('')
@@ -419,12 +440,14 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                     {t('添加子控件')}
                   </ContextMenuSubTrigger>
                   <ContextMenuSubContent>
-                    {GROUPS.map((g) => (
+                    {groupsFor(kind).map((g) => (
                       <div key={g.id}>
                         <ContextMenuLabel>{g.label}</ContextMenuLabel>
-                        {WIDGET_TYPES.filter((x) => WIDGETS[x].group === g.id).map((x) => (
-                          <TypeItem key={x} type={x} onSelect={() => actions.addChild(w.id, x)} />
-                        ))}
+                        {typesFor(kind)
+                          .filter((x) => WIDGETS[x].group === g.id)
+                          .map((x) => (
+                            <TypeItem key={x} type={x} onSelect={() => actions.addChild(w.id, x)} />
+                          ))}
                       </div>
                     ))}
                     {actions.components.length > 0 && (
@@ -447,7 +470,7 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                   {t('包裹为')}
                 </ContextMenuSubTrigger>
                 <ContextMenuSubContent>
-                  {PANELS.map((x) => (
+                  {panelsFor(kind).map((x) => (
                     <TypeItem key={x} type={x} onSelect={() => actions.wrap(w.id, x)} />
                   ))}
                 </ContextMenuSubContent>
@@ -459,11 +482,11 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                     {t('替换为')}
                   </ContextMenuSubTrigger>
                   <ContextMenuSubContent>
-                    {WIDGET_TYPES.filter(
-                      (x) => canReplace(w, x) && (isPanel(w.Type) === isPanel(x) || !w.Children?.length),
-                    ).map((x) => (
-                      <TypeItem key={x} type={x} onSelect={() => actions.replace(w.id, x)} />
-                    ))}
+                    {typesFor(kind)
+                      .filter((x) => canReplace(w, x) && (isPanel(w.Type) === isPanel(x) || !w.Children?.length))
+                      .map((x) => (
+                        <TypeItem key={x} type={x} onSelect={() => actions.replace(w.id, x)} />
+                      ))}
                   </ContextMenuSubContent>
                 </ContextMenuSub>
               )}

@@ -298,7 +298,7 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
 // UI 设计的对话用设计工具（MCP）改：要求里有 FAKE_MCP:<一组 ops> 时，按 -c mcp_servers.design.url 调工具，
 // 回复里只写说明。用来测试工具接口和「用工具改完再收尾」
 const mcpUrl = args.map((a) => a.match(/^mcp_servers\.design\.url="(.*)"$/)?.[1]).find(Boolean)
-if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex' && mcpUrl && /FAKE_MCP:/.test(input)) {
+if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && mcpUrl && /FAKE_MCP:/.test(input)) {
   const ops = JSON.parse([...input.matchAll(/FAKE_MCP:(.*)/g)].at(-1)[1])
   let id = 0
   const rpc = async (method, params) => {
@@ -319,7 +319,7 @@ if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex' && mcpU
 }
 // UI 设计的对话：回说明 + JSON。JSON 由用户要求里最后一个 FAKE_DESIGN: 指定（一行），
 // 收到「不符合要求」的重试提示后改用 FAKE_DESIGN2:，用来测试自动修正
-if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex') {
+if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex') {
   const pick = (tag) => [...input.matchAll(new RegExp(`${tag}:(.*)`, 'g'))].at(-1)?.[1]?.trim()
   const json = (input.includes('不符合要求') && pick('FAKE_DESIGN2')) || pick('FAKE_DESIGN') || '{}'
   const text = `按你的要求搭好了界面。\n\n\`\`\`json\n${json}\n\`\`\``
