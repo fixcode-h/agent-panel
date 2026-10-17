@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -106,9 +106,24 @@ export function TextInput({
 }) {
   const [text, setText] = useState(value ?? '')
   useEffect(() => setText(value ?? ''), [value])
+  const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null)
+  // 多行时高度跟着内容走（最高 320px，再多就滚动）：长的描述不用拖拽就能看全；面板拉宽拉窄也重新算
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!multiline || !el) return
+    const fit = () => {
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(320, el.scrollHeight + el.offsetHeight - el.clientHeight)}px`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [multiline, text])
   const Tag = multiline ? 'textarea' : 'input'
   return (
     <Tag
+      ref={ref}
       aria-label={label}
       value={text}
       rows={multiline ? 2 : undefined}
@@ -117,7 +132,7 @@ export function TextInput({
       onKeyDown={(e: any) => {
         if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) e.currentTarget.blur()
       }}
-      className={cn(box, multiline && 'h-auto resize-y py-1 leading-snug')}
+      className={cn(box, multiline && 'h-auto resize-none overflow-y-auto py-1 leading-snug')}
     />
   )
 }
