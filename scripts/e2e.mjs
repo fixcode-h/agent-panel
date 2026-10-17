@@ -2161,7 +2161,22 @@ try {
     await bridge('POST', '/result', { id: cmd2.id, ok: false, error: '没有找到输入框' })
     d = await waitJob(design.id)
     assert.match(d.images.find((i) => i.id === 'frame').error, /没有找到输入框/)
-    step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上；网站不能调用')
+    // 失败的图点重试：没有在生成时单独生成这一张，成功后错误清掉
+    assert.equal(d.job.images[0].status, 'failed')
+    const retried = await call('POST', `/designs/${design.id}/images/frame/retry`, {
+      source: { kind: 'browser', tabId: '8' },
+      count: 1,
+    })
+    assert.equal(retried.job.status, 'running')
+    const cmd3 = (await (await bridge('GET', '/poll')).json()).cmd
+    assert.equal(cmd3.tabId, '8')
+    await bridge('POST', '/image', { id: cmd3.id, data: png })
+    await bridge('POST', '/result', { id: cmd3.id, ok: true, images: [], streamed: 1 })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done')
+    assert.equal(d.images.find((i) => i.id === 'frame').status, 'idle')
+    assert.equal(d.images.find((i) => i.id === 'frame').variants.length, 5)
+    step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上、能重试；网站不能调用')
 
     await call('DELETE', `/designs/${design.id}`)
     assert.ok(!(await call('GET', '/designs')).some((x) => x.id === design.id))

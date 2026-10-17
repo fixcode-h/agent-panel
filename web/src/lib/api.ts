@@ -198,6 +198,8 @@ export const api = {
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),
   generateDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number; prompt?: string }) =>
     request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
+  retryDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number }) =>
+    request<DesignFull>(`/designs/${id}/images/${imageId}/retry`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
   browserStatus: () => request<BrowserStatus>('/designs/browser'),
   promptAi: (input: Partial<PromptAiInput>) =>

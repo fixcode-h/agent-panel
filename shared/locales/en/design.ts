@@ -142,6 +142,7 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  '有 {n} 张图片没有生成出来': '{n} images failed to generate',
   '格子在属性里设置，导出到 UE 时展开成子控件':
     'Cells are set in the properties and expand into child widgets when exported to UE',
   '打开 {name} 的扩展页面刷新': 'Reload from {name}’s extensions page',
