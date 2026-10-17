@@ -355,6 +355,12 @@ export function CliSection({
   const perm = def.permissions.find((p) => p.id === draft.permission) ?? def.permissions[0]
   const ok = status?.installed
   const installer = useCliInstaller(def)
+  // 在这里装好（或更新好）以后自动启用，不用再手动打开开关
+  const installed = installer.job?.action === 'install' && installer.job.status === 'done'
+  useEffect(() => {
+    if (installed && !draft.enabled) set('enabled', true)
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [installed])
   // 只有 npm 上有更新的版本时才显示「更新」
   const [update, setUpdate] = useState<CliUpdate | null>(null)
   const checkUpdate = (refresh = false) =>
@@ -456,8 +462,11 @@ export function CliSection({
         >
           <RefreshCw className={cn('h-3.5 w-3.5', detecting && 'animate-spin')} />
         </Button>
+        {/* 没安装的 CLI 用不了，开关显示为关；装好后自动打开 */}
         <Switch
-          checked={draft.enabled}
+          checked={!!ok && draft.enabled}
+          disabled={!ok}
+          title={ok ? undefined : t('安装后自动启用')}
           onCheckedChange={(v) => set('enabled', v)}
           aria-label={t('启用 {cli}', { cli: def.name })}
         />

@@ -24,6 +24,7 @@ import { invokeCli } from './invoke.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
+import { log } from '../log.ts'
 
 export interface RealContext {
   task: Task
@@ -145,8 +146,10 @@ function speedMeter(onIdle: () => void) {
   }
 }
 
+/** 连接断开时自动续接的次数上限 */
+const MAX_NET_RETRIES = 2
 const NETWORK_ERROR =
-  /Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+  /Connection error|APIConnectionError|Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
 const NOT_LOGGED_IN =
   /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token/i
@@ -238,6 +241,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const owner = step ? task.steps.find((s) => s.id === step) : undefined
   if (owner) owner.command = argv
   else task.command = argv
+  log.info('agent', `启动 ${def.name}`, { task: task.id, step, agent: agent.name, cwd, command: argv.join(' ') })
 
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
   const mine: TaskMessage[] = []
@@ -441,6 +445,18 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   }
   ctx.changed(true)
 
+  // 进程结束的情况都记一笔：退出码、为什么被停、最后的错误输出，排查问题时对得上页面上的报错
+  if (r.killed || r.spawnError || r.code !== 0 || result?.ok === false)
+    log.warn('agent', `${def.name} 进程结束`, {
+      task: task.id,
+      step,
+      code: r.code,
+      killed: r.killed,
+      spawnError: r.spawnError,
+      result: result?.error,
+      errors: errors.join('\n'),
+      stderr: r.stderr.trim().split('\n').slice(-20).join('\n'),
+    })
   if (r.killed === 'stopped') return { ok: false, stopped: true, error: t('已停止') }
   if (r.killed === 'timeout')
     return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
@@ -481,39 +497,52 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       // 新会话没有之前的上下文，要用完整提示
       return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
     }
-    // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次
+    const hints = failureHints(detail, def)
+    const head =
+      r.code !== null && r.code !== 0
+        ? t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
+        : t('{cli} 执行失败：', { cli: def.name })
+    const raw = clip(detail || t('没有更多信息'), 1500)
+    const message = [head, ...hints, hints.length ? `\n${t('原始输出：')}\n${raw}` : raw].join('\n')
+    // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次。
+    // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
     const session = task.sessions[sessionKey]
-    if (NETWORK_ERROR.test(detail) && session && netRetries < 2 && !ctx.signal.aborted) {
+    if (NETWORK_ERROR.test(detail) && session && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
+      task.messages.push({
+        id: ctx.newId(),
+        role: 'system',
+        agentId,
+        step,
+        text: [
+          message,
+          '',
+          t('正在自动续接会话重试（第 {n}/{max} 次）…', { n: netRetries + 1, max: MAX_NET_RETRIES }),
+        ].join('\n'),
+        tools: [],
+        error: true,
+        at: new Date().toISOString(),
+      })
+      log.warn('agent', `${def.name} 连接中断，自动续接第 ${netRetries + 1} 次`, { task: task.id, step, detail })
       ctx.changed(true)
       return runAgent(
         ctx,
-        { ...call, prompt: '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' },
+        {
+          ...call,
+          prompt:
+            '刚才和模型服务的连接中断了，请从中断的地方继续完成之前的任务，已经做完的不用重做。' +
+            '如果是在一次写入很长的文件时断开的，请分几次写：先写前一部分，再分段追加，每次不要太长。',
+        },
         retried,
         netRetries + 1,
       )
     }
-    const hints = failureHints(detail, def)
+    log.error('agent', `${def.name} 执行失败`, { task: task.id, step, code: r.code, detail })
     return {
       ok: false,
-      error: [
-        r.code !== null && r.code !== 0
-          ? netRetries
-            ? t('{cli} 执行失败（退出码 {code}），自动续接 {n} 次后仍然失败：', {
-                cli: def.name,
-                code: r.code,
-                n: netRetries,
-              })
-            : t('{cli} 执行失败（退出码 {code}）：', { cli: def.name, code: r.code })
-          : netRetries
-            ? t('{cli} 执行失败，自动续接 {n} 次后仍然失败：', { cli: def.name, n: netRetries })
-            : t('{cli} 执行失败：', { cli: def.name }),
-        ...hints,
-        hints.length
-          ? `\n${t('原始输出：')}\n${clip(detail || t('没有更多信息'), 1500)}`
-          : clip(detail || t('没有更多信息'), 1500),
-      ].join('\n'),
+      error: netRetries ? [message, '', t('已自动续接 {n} 次，仍然失败。', { n: netRetries })].join('\n') : message,
     }
   }
+  log.info('agent', `${def.name} 完成`, { task: task.id, step })
   return { ok: true, text: texts.join('\n\n') }
 }
 

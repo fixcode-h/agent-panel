@@ -231,8 +231,12 @@ export function AgentsPage() {
               <div key={c.id} className="flex items-center gap-2 text-[13px]" title={c.version}>
                 <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(c.id) }} />
                 {c.name}
-                <span className={cn('ml-auto text-xs', c.installed ? 'text-success' : 'text-warning')}>
-                  {c.installed ? t('可用 · {version}', { version: shortVersion(c.version) }) : t('未安装')}
+                <span className={cn('ml-auto text-xs', c.installed && c.enabled ? 'text-success' : 'text-subtle')}>
+                  {!c.installed
+                    ? t('未安装')
+                    : c.enabled
+                      ? t('可用 · {version}', { version: shortVersion(c.version) })
+                      : t('已停用')}
                 </span>
               </div>
             ))}

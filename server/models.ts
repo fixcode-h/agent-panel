@@ -9,6 +9,7 @@ import { cliSettings } from '../shared/settings.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 import { resolveCommand } from './cli-source.ts'
+import { detectClis } from './detect.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -322,6 +323,9 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
   const cs = cliSettings(await getSettings(), id)
   const env = childEnv(cs.env)
   let data: CliModels
+  // 没安装或停用的 CLI 不去启动它读模型，用内置列表
+  const st = (await detectClis()).find((c) => c.id === id)
+  if (!st?.installed || !cs.enabled) return { source: 'builtin', models: builtin(def), efforts: [] }
   try {
     if (id === 'codex' || id === 'commandcode') {
       const p = id === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)

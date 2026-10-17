@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { ArrowUp, Check, CircleAlert, Crown, Loader2, Sparkles, Square, Wand2, X } from 'lucide-react'
+import { ArrowUp, Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Square, Wand2, X } from 'lucide-react'
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
@@ -412,6 +412,34 @@ export function AssistDialog({
   const latest = useMemo(() => [...turns].reverse().find((t) => t.proposal)?.proposal, [turns])
   const running = !!job
 
+  // 最小化：窗口收成右下角的悬浮按钮，生成照常进行，点按钮再展开
+  const [minimized, setMinimized] = useState(false)
+  // 最小化期间生成完了：悬浮按钮上提示一下
+  const [unseen, setUnseen] = useState(false)
+  useEffect(() => {
+    if (!open) setMinimized(false)
+  }, [open])
+  useEffect(() => {
+    if (minimized && turns.length) setUnseen(true)
+    // 只在有新回复时提示
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [turns.length])
+  // 关闭就终止：生成中也能关，关掉时停掉还在跑的 CLI
+  const jobRef = useRef(job)
+  jobRef.current = job
+  const close = () => {
+    if (jobRef.current) void api.stopAssist(jobRef.current.id).catch(() => {})
+    setJob(null)
+    onOpenChange(false)
+  }
+  // 所在页面被关掉（例如换了一个 Agent）时，也不留下没人看的生成
+  useEffect(
+    () => () => {
+      if (jobRef.current) void api.stopAssist(jobRef.current.id).catch(() => {})
+    },
+    [],
+  )
+
   const send = async (msg = text) => {
     if (!msg.trim() || running) return
     const next: Turn[] = [...turns, { role: 'user', text: msg.trim() }]
@@ -471,198 +499,238 @@ export function AssistDialog({
   }
 
   return (
-    <D.Root open={open} onOpenChange={(o) => !running && onOpenChange(o)}>
-      <D.Portal>
-        <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
-        <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
-          <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
-            <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
-              {target ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
-            </span>
-            <div className="min-w-0 flex-1">
-              <D.Title className="truncate text-[15px] font-semibold">
-                {target ? t('用 AI 优化「{name}」', { name: target.name }) : L.create}
-              </D.Title>
-              <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
-            </div>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('关闭')}
-              disabled={running}
-              onClick={() => onOpenChange(false)}
-            >
-              <X className="h-4 w-4" />
-            </Button>
-          </header>
+    <>
+      {open && minimized && (
+        <button
+          onClick={() => {
+            setMinimized(false)
+            setUnseen(false)
+          }}
+          title={t('展开')}
+          className="fixed right-5 bottom-5 z-40 flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[13px] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
+        >
+          <span className="relative grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent">
+            {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {unseen && !running && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-accent" />}
+          </span>
+          <span className="max-w-[220px] truncate">
+            {target ? t('用 AI 优化「{name}」', { name: target.name }) : L.create}
+          </span>
+          <span className="text-xs text-subtle">{running ? t('生成中…') : unseen ? t('已生成') : ''}</span>
+        </button>
+      )}
+      <D.Root
+        open={open && !minimized}
+        // 按 Esc 或点窗口外面：生成中先收起来，免得误触终止；没在生成就直接关
+        onOpenChange={(o) => {
+          if (o) return
+          if (running) setMinimized(true)
+          else close()
+        }}
+      >
+        <D.Portal>
+          <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
+          <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
+            <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
+              <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
+                {target ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+              </span>
+              <div className="min-w-0 flex-1">
+                <D.Title className="truncate text-[15px] font-semibold">
+                  {target ? t('用 AI 优化「{name}」', { name: target.name }) : L.create}
+                </D.Title>
+                <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('最小化')}
+                title={t('最小化')}
+                onClick={() => setMinimized(true)}
+              >
+                <Minus className="h-4 w-4" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t('关闭')}
+                title={running ? t('关闭并终止生成') : t('关闭')}
+                onClick={close}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </header>
 
-          <div className="flex min-h-0 flex-1 flex-col md:flex-row">
-            {/* 对话 */}
-            <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
-              <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
-                <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
-                {orderClis(CLIS, settings?.cliOrder ?? []).map((c) => {
-                  const st = clis.find((x) => x.id === c.id)
-                  const ok = !!st?.installed && st.enabled
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => pickCli(c.id)}
-                      aria-pressed={cli === c.id}
-                      disabled={running}
-                      title={ok ? st?.version : t('未安装或已停用')}
-                      className={cn(
-                        'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs',
-                        cli === c.id ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:text-fg',
-                        !ok && 'opacity-50',
-                      )}
-                    >
-                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.id) }} />
-                      {c.name}
-                    </button>
-                  )
-                })}
-              </div>
-              <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
-                {turns.length === 0 && !running && (
-                  <div className="flex flex-col gap-2">
-                    <p className="text-[13px] text-muted">
-                      {target ? t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。') : L.intro}
-                    </p>
-                    {!target &&
-                      EXAMPLES[kind].map((e) => (
-                        <button
-                          key={e}
-                          onClick={() => send(e)}
-                          className="cursor-pointer rounded-lg border bg-card px-3 py-2 text-left text-[13px] text-muted hover:border-accent hover:text-fg"
-                        >
-                          {e}
-                        </button>
-                      ))}
-                  </div>
-                )}
-                {turns.map((turn, i) =>
-                  turn.role === 'user' ? (
-                    <div
-                      key={i}
-                      className="ml-auto max-w-[88%] rounded-2xl rounded-br-md border bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap"
-                    >
-                      {turn.text}
-                    </div>
-                  ) : (
-                    <div key={i} className="flex flex-col gap-2 text-[13px] leading-relaxed">
-                      {turn.msgs?.length ? (
-                        <FoldedRun msgs={turn.msgs} teamNames={teamNames} author={author} />
-                      ) : (
-                        turn.text && <p className="whitespace-pre-wrap">{turn.text.split('```')[0].trim()}</p>
-                      )}
-                      {turn.proposal && (
-                        <span className="flex items-center gap-1.5 text-xs text-success">
-                          <Check className="h-3.5 w-3.5" />
-                          {t('格式校验通过，右侧是预览')}
-                        </span>
-                      )}
-                      {turn.error && (
-                        <span className="flex items-start gap-1.5 text-xs text-danger whitespace-pre-wrap">
-                          <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
-                          {turn.error}
-                        </span>
-                      )}
-                    </div>
-                  ),
-                )}
-                {job && (
-                  <JobProgress
-                    job={job}
-                    cliName={CLIS.find((c) => c.id === cli)?.name ?? cli}
-                    author={author}
-                    teamNames={teamNames}
-                  />
-                )}
-              </div>
-              <div className="p-3">
-                <div className="rounded-xl border border-line-strong bg-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">
-                  <textarea
-                    rows={2}
-                    value={text}
-                    aria-label={t('描述')}
-                    onChange={(e) => setText(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                        e.preventDefault()
-                        send()
-                      }
-                    }}
-                    placeholder={latest ? t('继续说要改的地方') : L.placeholder}
-                    className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
-                  />
-                  <div className="flex items-center px-2.5 pb-2">
-                    {settings && cliDef && (
-                      <RunPicker
-                        def={cliDef}
-                        settings={settings}
-                        model={model}
-                        effort={effort}
-                        onModel={setModel}
-                        onEffort={setEffort}
+            <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+              {/* 对话 */}
+              <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
+                <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
+                  <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
+                  {orderClis(CLIS, settings?.cliOrder ?? []).map((c) => {
+                    const st = clis.find((x) => x.id === c.id)
+                    const ok = !!st?.installed && st.enabled
+                    // 停用或没安装的不显示；正选着的照常显示（变灰）
+                    if (st && !ok && cli !== c.id) return null
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => pickCli(c.id)}
+                        aria-pressed={cli === c.id}
                         disabled={running}
-                      />
-                    )}
-                    <span className="ml-2 hidden shrink-0 text-[11px] text-subtle sm:inline">{t('Enter 发送')}</span>
-                    {running ? (
-                      <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
-                        <Square className="h-3 w-3 fill-current" />
-                        {t('停止')}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="icon-sm"
-                        className="ml-auto"
-                        aria-label={t('发送')}
-                        disabled={!text.trim()}
-                        onClick={() => send()}
+                        title={ok ? st?.version : t('未安装或已停用')}
+                        className={cn(
+                          'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs',
+                          cli === c.id ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:text-fg',
+                          !ok && 'opacity-50',
+                        )}
                       >
-                        <ArrowUp className="h-4 w-4" />
-                      </Button>
-                    )}
+                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.id) }} />
+                        {c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+                <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
+                  {turns.length === 0 && !running && (
+                    <div className="flex flex-col gap-2">
+                      <p className="text-[13px] text-muted">
+                        {target ? t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。') : L.intro}
+                      </p>
+                      {!target &&
+                        EXAMPLES[kind].map((e) => (
+                          <button
+                            key={e}
+                            onClick={() => send(e)}
+                            className="cursor-pointer rounded-lg border bg-card px-3 py-2 text-left text-[13px] text-muted hover:border-accent hover:text-fg"
+                          >
+                            {e}
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                  {turns.map((turn, i) =>
+                    turn.role === 'user' ? (
+                      <div
+                        key={i}
+                        className="ml-auto max-w-[88%] rounded-2xl rounded-br-md border bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap"
+                      >
+                        {turn.text}
+                      </div>
+                    ) : (
+                      <div key={i} className="flex flex-col gap-2 text-[13px] leading-relaxed">
+                        {turn.msgs?.length ? (
+                          <FoldedRun msgs={turn.msgs} teamNames={teamNames} author={author} />
+                        ) : (
+                          turn.text && <p className="whitespace-pre-wrap">{turn.text.split('```')[0].trim()}</p>
+                        )}
+                        {turn.proposal && (
+                          <span className="flex items-center gap-1.5 text-xs text-success">
+                            <Check className="h-3.5 w-3.5" />
+                            {t('格式校验通过，右侧是预览')}
+                          </span>
+                        )}
+                        {turn.error && (
+                          <span className="flex items-start gap-1.5 text-xs text-danger whitespace-pre-wrap">
+                            <CircleAlert className="mt-px h-3.5 w-3.5 shrink-0" />
+                            {turn.error}
+                          </span>
+                        )}
+                      </div>
+                    ),
+                  )}
+                  {job && (
+                    <JobProgress
+                      job={job}
+                      cliName={CLIS.find((c) => c.id === cli)?.name ?? cli}
+                      author={author}
+                      teamNames={teamNames}
+                    />
+                  )}
+                </div>
+                <div className="p-3">
+                  <div className="rounded-xl border border-line-strong bg-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">
+                    <textarea
+                      rows={2}
+                      value={text}
+                      aria-label={t('描述')}
+                      onChange={(e) => setText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault()
+                          send()
+                        }
+                      }}
+                      placeholder={latest ? t('继续说要改的地方') : L.placeholder}
+                      className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
+                    />
+                    <div className="flex items-center px-2.5 pb-2">
+                      {settings && cliDef && (
+                        <RunPicker
+                          def={cliDef}
+                          settings={settings}
+                          model={model}
+                          effort={effort}
+                          onModel={setModel}
+                          onEffort={setEffort}
+                          disabled={running}
+                        />
+                      )}
+                      <span className="ml-2 hidden shrink-0 text-[11px] text-subtle sm:inline">{t('Enter 发送')}</span>
+                      {running ? (
+                        <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
+                          <Square className="h-3 w-3 fill-current" />
+                          {t('停止')}
+                        </Button>
+                      ) : (
+                        <Button
+                          size="icon-sm"
+                          className="ml-auto"
+                          aria-label={t('发送')}
+                          disabled={!text.trim()}
+                          onClick={() => send()}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </section>
+              </section>
 
-            {/* 预览 */}
-            <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-panel">
-              <div className="flex-1 overflow-y-auto p-5">
-                {latest ? (
-                  latest.kind === 'agent' ? (
-                    <AgentPreview
-                      agent={latest.agent}
-                      before={target as Agent | undefined}
-                      newCategory={latest.newCategory}
-                    />
+              {/* 预览 */}
+              <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-panel">
+                <div className="flex-1 overflow-y-auto p-5">
+                  {latest ? (
+                    latest.kind === 'agent' ? (
+                      <AgentPreview
+                        agent={latest.agent}
+                        before={target as Agent | undefined}
+                        newCategory={latest.newCategory}
+                      />
+                    ) : (
+                      <WorkflowPreview p={latest} />
+                    )
                   ) : (
-                    <WorkflowPreview p={latest} />
-                  )
-                ) : (
-                  <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
-                    <Sparkles className="h-6 w-6" />
-                    <p className="text-[13px]">{L.empty}</p>
-                  </div>
-                )}
-              </div>
-              <footer className="flex items-center gap-2 border-t px-5 py-3">
-                <span className="text-xs text-subtle">
-                  {latest ? (target ? t('应用后会覆盖当前内容') : t('可以继续对话修改，满意后再创建')) : ''}
-                </span>
-                <Button className="ml-auto" disabled={!latest || running || applying} onClick={apply}>
-                  {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                  {target ? t('应用修改') : L.button}
-                </Button>
-              </footer>
-            </section>
-          </div>
-        </D.Content>
-      </D.Portal>
-    </D.Root>
+                    <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
+                      <Sparkles className="h-6 w-6" />
+                      <p className="text-[13px]">{L.empty}</p>
+                    </div>
+                  )}
+                </div>
+                <footer className="flex items-center gap-2 border-t px-5 py-3">
+                  <span className="text-xs text-subtle">
+                    {latest ? (target ? t('应用后会覆盖当前内容') : t('可以继续对话修改，满意后再创建')) : ''}
+                  </span>
+                  <Button className="ml-auto" disabled={!latest || running || applying} onClick={apply}>
+                    {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                    {target ? t('应用修改') : L.button}
+                  </Button>
+                </footer>
+              </section>
+            </div>
+          </D.Content>
+        </D.Portal>
+      </D.Root>
+    </>
   )
 }

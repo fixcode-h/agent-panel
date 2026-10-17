@@ -25,6 +25,7 @@ import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.t
 import { mkdir, readFile, rm, stat } from 'node:fs/promises'
 import { cleanupUploads, removeUploads, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
+import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
@@ -141,6 +142,12 @@ export function tasksApi(deps: {
         void flush()
       }
     }
+    log.info('task', first ? '开始执行任务' : '继续执行任务', {
+      task: task.id,
+      title: task.title,
+      project: found?.name,
+      workflow: task.workflowId,
+    })
     const run = (async () => {
       // 项目被删掉后任务还在，这时没有目录可以执行
       if (!project) throw new Error(t('任务所属的项目已经不存在'))
@@ -164,6 +171,7 @@ export function tasksApi(deps: {
     })()
     entry.done = run
       .catch((e) => {
+        log.error('task', '任务执行出错', { task: task.id, error: e })
         entry.task.status = 'failed'
         entry.task.messages.push({
           id: randomUUID(),
@@ -172,10 +180,12 @@ export function tasksApi(deps: {
           step: '',
           text: t('执行出错：{error}', { error: (e as Error).message }),
           tools: [],
+          error: true,
           at: new Date().toISOString(),
         })
       })
       .finally(async () => {
+        log.info('task', `任务结束：${entry.task.status}`, { task: task.id })
         endRun(entry.task)
         await flush()
         live.delete(task.id)

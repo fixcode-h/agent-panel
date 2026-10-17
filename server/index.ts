@@ -22,7 +22,7 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
-import { createCollection, migrateDataDir } from './store.ts'
+import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
@@ -30,7 +30,7 @@ import { detectClis, invalidateClis } from './detect.ts'
 import { installApi } from './install.ts'
 import { openBrowser, revealDir } from './open.ts'
 import { modelsApi } from './models.ts'
-import { appDir, cleanupOldTray, restartProcess, updateApi } from './update.ts'
+import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, resolvePath } from './fs.ts'
@@ -38,9 +38,11 @@ import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
+import { installLogging, log, logFile } from './log.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
+installLogging()
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
@@ -338,6 +340,11 @@ app.route(
 void tasks.cleanupUploads()
 
 const root = new Hono()
+// 接口里没接住的错误：写进日志（带请求路径和调用栈），页面上照常看到错误信息
+root.onError((e, c) => {
+  log.error('http', `${c.req.method} ${c.req.path} 出错`, e)
+  return c.json({ error: e.message || t('服务出错') }, 500)
+})
 root.use('*', tokenGuard)
 root.route('/', app)
 // 生产模式下直接托管前端构建产物
@@ -360,6 +367,7 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问
   const url = withToken(`http://127.0.0.1:${port}`)
   console.log(`Agent 面板服务已启动: ${url}`)
+  log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
   if (tray) {
@@ -376,6 +384,7 @@ let exiting = false
 async function shutdown(code = 0) {
   if (exiting) return process.exit(1)
   exiting = true
+  log.info('server', '正在退出，停止正在执行的任务')
   server.close()
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
   process.exit(code)

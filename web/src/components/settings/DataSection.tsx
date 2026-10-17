@@ -121,6 +121,35 @@ export function DataSection() {
         </div>
       </section>
 
+      {usage?.logs && (
+        // 运行日志：出了问题把这个文件夹里最新的文件发出来
+        <section className="flex flex-col gap-2">
+          <div className="flex items-center">
+            <h3 className="text-[13px] font-semibold">{t('运行日志')}</h3>
+            <span className="ml-2 text-xs text-subtle">
+              {t('{n} 个文件 · {size}', { n: usage.logs.files, size: size(usage.logs.bytes) })}
+            </span>
+          </div>
+          <p className="text-[13px] leading-relaxed text-subtle">
+            {t(
+              '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。',
+            )}
+          </p>
+          <div className="flex items-center gap-2 rounded-xl border bg-field/50 px-3.5 py-2.5">
+            <span
+              className="min-w-0 flex-1 truncate font-mono text-[13px]"
+              title={usage.logs.current || usage.logs.dir}
+            >
+              {usage.logs.current || usage.logs.dir}
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => api.revealLogs().catch((e) => toast.error(e.message))}>
+              <FolderOpen className="h-3.5 w-3.5" />
+              {t('打开')}
+            </Button>
+          </div>
+        </section>
+      )}
+
       <section className="flex flex-col">
         <div className="flex items-center pb-2">
           <h3 className="text-[13px] font-semibold">{t('占用')}</h3>

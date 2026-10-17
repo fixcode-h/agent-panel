@@ -126,6 +126,7 @@ export const api = {
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
   dataUsage: () => request<DataUsage>('/data'),
   revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
+  revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),
   clearData: (kind: DataKind) => request<{ ok: boolean }>('/data/clear', json('POST', { kind })),
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
