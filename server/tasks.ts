@@ -41,20 +41,24 @@ export function tasksApi(deps: {
   projectCategories: Lister<ProjectCategory>
 }) {
   const store = createTaskStore()
-  type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void> }
+  /** rev：执行中每次有变化加一，实时推送靠它判断要不要比较内容 */
+  type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void>; rev: number }
   const live = new Map<string, Live>()
   /** 服务正在退出：不再接着处理排队的要求 */
   let shuttingDown = false
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
   const reserve = (task: Task): Live => {
-    const entry: Live = { task: structuredClone(task), stop: false, abort: new AbortController() }
+    const entry: Live = { task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0 }
     live.set(task.id, entry)
     return entry
   }
 
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   void store.list().then(async (all) => {
-    for (const task of all.filter((task) => task.status === 'running'))
+    for (const meta of all.filter((x) => x.status === 'running')) {
+      // 列表里只有用户消息，改之前取完整的
+      const task = await store.get(meta.id)
+      if (!task) continue
       await store.update(task.id, {
         ...task,
         status: 'stopped',
@@ -80,6 +84,7 @@ export function tasksApi(deps: {
           },
         ],
       })
+    }
   })
 
   /** Chat 模式的聊天在数据目录里各有一个空的工作目录，不碰任何项目 */
@@ -136,6 +141,7 @@ export function tasksApi(deps: {
       store.update(task.id, entry.task).catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
+      entry.rev++
       // 流式输出时最多每秒落盘一次，关键节点立即落盘
       if (f || Date.now() - last > 1000) {
         last = Date.now()
@@ -258,6 +264,7 @@ export function tasksApi(deps: {
       let stamps = new Map<string, string>()
       let meta = ''
       let beat = Date.now()
+      let seen = ''
       const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
       while (!closed) {
         const t = await current(id)
@@ -265,6 +272,18 @@ export function tasksApi(deps: {
           await send('gone', {})
           break
         }
+        // 没有变化时什么都不比较：长任务的消息很多，每次都逐条比较、序列化会拖慢整个服务
+        const e = live.get(id)
+        const key = e ? `${e.rev}|${t.updatedAt}` : `${t.updatedAt}|${t.messages.length}`
+        if (key === seen && meta) {
+          if (Date.now() - beat > 15_000) {
+            await stream.writeSSE({ event: 'ping', data: '' })
+            beat = Date.now()
+          }
+          await stream.sleep(e ? 200 : 1000)
+          continue
+        }
+        seen = key
         const { messages, ...rest } = t
         const m = JSON.stringify(rest)
         // 有消息被删掉（返工时重跑的节点）就整个重发，其余情况只发新增和变化的消息

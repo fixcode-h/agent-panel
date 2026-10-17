@@ -73,8 +73,11 @@ export function StepSection({
   teamNames: Set<string>
   /** 不显示节点标题（外面已经有了） */
   bare?: boolean
-  /** 标题固定在滚动区域顶部（流程视图里只看一个节点时） */
-  sticky?: boolean
+  /**
+   * 标题固定在滚动区域顶部：flow 是流程视图里只看一个节点时；
+   * chat 是对话里每个节点的标题，滚到下一个节点时被它顶替
+   */
+  sticky?: 'flow' | 'chat'
 }) {
   const { agents } = useData()
   const now = useNow(task.status === 'running')
@@ -85,12 +88,13 @@ export function StepSection({
   const vt = verdictText(root)
 
   return (
-    <section className="flex flex-col gap-3">
+    <section className="flex flex-col gap-3" data-step={rootId}>
       {!bare && (
         <header
           className={cn(
             'flex flex-wrap items-center gap-x-2.5 gap-y-1',
-            sticky && 'sticky top-0 z-10 -mx-1 border-b bg-bg px-1 pt-5 pb-3',
+            sticky === 'flow' && 'sticky top-0 z-10 -mx-1 border-b bg-bg px-1 pt-5 pb-3',
+            sticky === 'chat' && 'sticky top-0 z-10 -mx-2 -my-2 bg-bg px-2 py-2',
           )}
         >
           <StepIcon status={root.status} />

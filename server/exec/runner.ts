@@ -270,6 +270,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // CLI 报告过窗口后就以它为准，后面没带窗口的用量事件不要改回估计值
   let reported = false
 
+  // 中途换了模型（改了 Agent 或设置）：记录换成这次实际用的，CLI 报告了模型时再以报告的为准
+  const prevUsage = task.usage.agents[agentId]
+  if (prevUsage && prevUsage.model !== model) Object.assign(prevUsage, { model, window: windowFor(cliId, model) })
+  if (owner) Object.assign(stepUsage(owner), { model, window: windowFor(cliId, model) })
+
   /** 这个 Agent 的用量记录，没有就建一条 */
   const au = (): AgentUsage => {
     const prev = task.usage.agents[agentId]

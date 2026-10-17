@@ -17,6 +17,7 @@ import {
   X,
   Zap,
   ListPlus,
+  ArrowDown,
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId, taskWorkflows } from '@shared/flow'
@@ -94,6 +95,9 @@ function toBlocks(task: Task): Block[] {
 
 /** 一个任务的对话页：上方是执行输出，下方继续输入要求，右侧是进度、上下文和更改 */
 /** project 为空时是 Chat 模式的聊天，不属于任何项目 */
+/** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
+const BLOCK_LIMIT = 30
+
 export function TaskView({ taskId, project }: { taskId: string; project?: Project }) {
   const { agents, workflows, upsertTask, removeTask } = useData()
   const { go } = useNav()
@@ -110,6 +114,10 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const [renaming, setRenaming] = useState<string | null>(null)
   const [resuming, setResuming] = useState(false)
   const [scrolled, setScrolled] = useState(false)
+  // 往上翻得比较远时显示「回到底部」
+  const [away, setAway] = useState(false)
+  const [limit, setLimit] = useState(BLOCK_LIMIT)
+  useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
@@ -249,16 +257,38 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const chatAgent = agents.find((a) => a.id === task.agentId)
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
+  // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
+  const hidden = Math.max(0, blocks.length - limit)
   const isFlow = task.mode === 'workflow' && view === 'flow'
   // 点了任务进度里的某一步：切到流程图并定位到那一步
   const openStep =
     task.mode === 'workflow'
       ? (id: string) => {
-          setView('flow')
-          setFocus({ id, at: Date.now() })
           setPanel(false)
+          // 流程视图里和点流程图的节点一样，选中它；对话视图里滚到这一步的输出，不切换视图
+          if (view === 'flow') return setFocus({ id, at: Date.now() })
+          const el = scroller.current
+          const sec = el?.querySelector<HTMLElement>(`[data-step="${CSS.escape(id)}"]`)
+          // 这一步在还没显示的较早内容里：先全部显示，画出来后再滚过去
+          if (!sec && hidden) {
+            setLimit(Infinity)
+            return requestAnimationFrame(() => requestAnimationFrame(() => openStep?.(id)))
+          }
+          if (!el || !sec) return toast(t('这一步还没有输出'))
+          stick.current = false
+          el.scrollTo({
+            top: sec.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop - 8,
+            behavior: 'smooth',
+          })
         }
       : undefined
+  const toBottom = () => {
+    const el = scroller.current
+    if (!el) return
+    stick.current = true
+    setAway(false)
+    el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
+  }
   // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏里就不再重复显示
   const progressCard =
     task.mode === 'workflow' && tops.length > 0 && gutter >= 200 ? (
@@ -393,6 +423,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 const el = e.currentTarget
                 stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
                 setScrolled(el.scrollTop > 4)
+                setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
               }}
               // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
               className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
@@ -412,15 +443,35 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 </Suspense>
               ) : (
                 <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
-                  {blocks.map((b, bi) =>
+                  {hidden > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setLimit(Infinity)}
+                      className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+                    >
+                      {t('显示更早的 {n} 段', { n: hidden })}
+                    </button>
+                  )}
+                  {blocks.slice(hidden).map((b, i) =>
                     b.kind === 'turn' ? (
                       <div key={b.key} className="flex flex-col gap-4">
-                        <FoldedRun msgs={b.msgs} teamNames={teamNames} live={running && bi === blocks.length - 1} />
+                        <FoldedRun
+                          msgs={b.msgs}
+                          teamNames={teamNames}
+                          live={running && i + hidden === blocks.length - 1}
+                        />
                       </div>
                     ) : b.kind === 'steps' ? (
                       <div key={b.key} className="flex flex-col gap-7">
                         {b.roots.map((r) => (
-                          <StepSection key={r} task={task} rootId={r} msgs={b.byRoot.get(r)!} teamNames={teamNames} />
+                          <StepSection
+                            key={r}
+                            task={task}
+                            rootId={r}
+                            msgs={b.byRoot.get(r)!}
+                            teamNames={teamNames}
+                            sticky="chat"
+                          />
                         ))}
                       </div>
                     ) : b.m.role === 'user' ? (
@@ -458,6 +509,17 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 </div>
               )}
             </div>
+            {!isFlow && away && (
+              <button
+                type="button"
+                onClick={toBottom}
+                aria-label={t('回到底部')}
+                title={t('回到底部')}
+                className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
+              >
+                <ArrowDown className="h-4 w-4" />
+              </button>
+            )}
           </div>
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">

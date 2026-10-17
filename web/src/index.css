@@ -266,6 +266,13 @@ body,
   @apply my-3 overflow-hidden rounded-xl border;
   background: var(--code-bg);
 }
+/* 画不出来时里面就是一个普通代码块，外面这层不再加边框 */
+.chat-md .md-mermaid[data-done='error'] {
+  @apply overflow-visible rounded-none border-0 bg-transparent;
+}
+.chat-md .md-mermaid[data-done='error'] > .md-code {
+  @apply my-0;
+}
 .chat-md .md-mermaid-svg {
   @apply flex justify-center overflow-x-auto p-4;
 }

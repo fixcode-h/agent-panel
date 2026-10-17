@@ -41,7 +41,8 @@ interface Data {
   setAgents: React.Dispatch<React.SetStateAction<Agent[]>>
   setCategories: React.Dispatch<React.SetStateAction<Category[]>>
   setWorkflows: React.Dispatch<React.SetStateAction<Workflow[]>>
-  refreshClis: () => Promise<void>
+  /** force：重新跑一遍检测；不带时用服务端的缓存（改了命令、环境变量时服务端会自己重新检测） */
+  refreshClis: (force?: boolean) => Promise<void>
 }
 
 const Ctx = createContext<Data | null>(null)
@@ -97,30 +98,33 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const removeTask = useCallback((id: string) => setTasks((ts) => ts.filter((t) => t.id !== id)), [])
 
   useEffect(() => {
+    // CLI 检测可能要跑一遍各个 CLI，不挡住页面：其他数据到了就先显示
+    api
+      .clis()
+      .then(setClis)
+      .catch(() => {})
     Promise.all([
       api.agents(),
       api.categories(),
       api.workflows(),
-      api.clis(),
       api.projects(),
       api.projectCategories(),
       api.settings(),
     ])
-      .then(([a, c, w, l, p, pc, s]) => {
+      .then(([a, c, w, p, pc, s]) => {
         setSettings(s)
         setProjects(p)
         setProjectCategories(pc)
         setAgents(a)
         setCategories(c)
         setWorkflows(w)
-        setClis(l)
       })
       .catch((e) => toast.error(t('加载失败：{msg}', { msg: (e as Error).message })))
       .finally(() => setLoading(false))
   }, [])
 
-  const refreshClis = useCallback(async () => {
-    setClis(await api.clis(true))
+  const refreshClis = useCallback(async (force = true) => {
+    setClis(await api.clis(force))
   }, [])
 
   return (

@@ -105,6 +105,17 @@ export function TaskPanel({
   const changes = scope ? sumChanges(scope) : task.changes
   const add = changes.reduce((n, c) => n + c.add, 0)
   const del = changes.reduce((n, c) => n + c.del, 0)
+  // 对话视图里的上下文：每个流程节点一行，调用流程的节点看它里面最近跑的那个
+  const nodeRows = workflowMode
+    ? tops.flatMap((st) => {
+        const own = st.usage?.window ? st : undefined
+        const sub = task.steps
+          .filter((s) => s.id.startsWith(st.id + '/') && s.usage?.window)
+          .sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
+        const src = own ?? sub
+        return src ? [{ step: { ...st, agentId: src.agentId }, usage: src.usage! }] : []
+      })
+    : []
   const nodeTag = node && <span className="block max-w-[150px] truncate">{node.title}</span>
   const chatAgent = byId.get(task.agentId)
   const { upsertTask } = useData()
@@ -243,6 +254,19 @@ export function TaskPanel({
               ) : (
                 <p className="text-xs text-subtle">{t('这个节点的 CLI 运行后会显示上下文占用。')}</p>
               )
+            ) : nodeRows.length ? (
+              // 工作流按流程节点一行：同一个 Agent 跑了好几个节点也分开看
+              <ul className="flex flex-col gap-3">
+                {nodeRows.map(({ step: st, usage: u }) => (
+                  <ContextRow
+                    key={st.id}
+                    agent={byId.get(st.agentId)}
+                    label={st.title}
+                    u={u}
+                    live={st.status === 'running' ? task.usage.agents[st.agentId] : undefined}
+                  />
+                ))}
+              </ul>
             ) : Object.keys(task.usage.agents).length === 0 ? (
               <p className="text-xs text-subtle">{t('CLI 开始运行后会显示上下文占用。')}</p>
             ) : (
