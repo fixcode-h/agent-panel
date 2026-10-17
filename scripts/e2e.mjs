@@ -560,6 +560,21 @@ try {
   await waitDone(dc.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--model') + 1], 'claude-opus-5-5', '继续对话也用临时换的模型')
+  // 对话时选别的 CLI：默认 Agent 换成那个 CLI 执行，继续对话也用它
+  dc = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'codex',
+    prompt: '换 CLI',
+  })
+  assert.equal(dc.cli, 'codex')
+  dc = await waitDone(dc.id)
+  assert.equal(dc.status, 'done', dc.messages.at(-1)?.text)
+  assert.equal(calls().at(-1).kind, 'codex', '对话时选的 CLI')
+  await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
+  await waitDone(dc.id)
+  assert.equal(calls().at(-1).kind, 'codex', '继续对话也用选的 CLI')
   const other = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',

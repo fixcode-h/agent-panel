@@ -376,7 +376,8 @@ export const NewTaskInput = z.object({
   workflowId: z.string().default(''),
   /** chat 模式：对话的 Agent */
   agentId: z.string().default(''),
-  /** chat 模式用默认 Agent 时临时选的模型和思考强度；为空跟随默认 CLI 的设置 */
+  /** chat 模式用的 CLI、模型和思考强度（只对默认 Agent 有效）；为空跟随默认 CLI 的设置 */
+  cli: z.string().trim().max(40).default(''),
   model: z.string().trim().max(200).default(''),
   effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
@@ -554,7 +555,8 @@ export const TaskData = z.object({
   mode: TaskMode,
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
-  /** 对话时给默认 Agent 临时选的模型和思考强度，继续对话也用它 */
+  /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
+  cli: z.string().default(''),
   model: z.string().default(''),
   effort: z.string().default(''),
   status: TaskStatus,

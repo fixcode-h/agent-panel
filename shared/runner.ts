@@ -6,7 +6,7 @@ import type { Agent, FileChange, Task, TaskMessage, TaskStep, ToolUse, Workflow,
 import { getCli } from './clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultSettings } from './settings.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
-import { mergeChanges, stepUsage } from './task.ts'
+import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 
 export interface RunContext {
   task: Task
@@ -28,8 +28,9 @@ export interface RunContext {
 
 /** 和真实执行一样记下启动命令，演示里也能看到、复制 */
 function recordCommand(ctx: RunContext, call: AgentCall) {
-  const agent = ctx.agents.find((a) => a.id === call.agentId)
-  if (!agent) return
+  const found = ctx.agents.find((a) => a.id === call.agentId)
+  if (!found) return
+  const agent = withTaskModel(found, ctx.task)
   const s = ctx.settings ?? defaultSettings()
   const run = agentRun(agent, s)
   const def = getCli(run.cli)
@@ -214,7 +215,8 @@ function fakeUsage(ctx: RunContext, agentId: string, text: string, step?: TaskSt
 
 const agent = (ctx: RunContext, id: string) => {
   // 和真实执行一样记下实际用的模型，右栏「上下文」里显示
-  const a = ctx.agents.find((x) => x.id === id)
+  const found = ctx.agents.find((x) => x.id === id)
+  const a = found && withTaskModel(found, ctx.task)
   const model = a ? agentRun(a, ctx.settings ?? defaultSettings()).model : ''
   return (ctx.task.usage.agents[id] ??= { context: 0, window: 200_000, model, tps: 0, outputTokens: 0, genMs: 0 })
 }

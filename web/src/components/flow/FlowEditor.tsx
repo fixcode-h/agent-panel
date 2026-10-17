@@ -7,8 +7,6 @@ import {
   LayoutGrid,
   Maximize2,
   Minimize2,
-  PanelLeftClose,
-  PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
   Plus,
@@ -48,14 +46,12 @@ function Editor({
   main,
   team,
   checks,
-  list,
 }: {
   w: W
   onChange: (p: Partial<WorkflowInput>) => void
   main?: Agent
   team: Team
   checks: Check[]
-  list?: { open: boolean; toggle: () => void }
 }) {
   const { agents, workflows } = useData()
   const { modelOf } = useAgentView()
@@ -155,18 +151,6 @@ function Editor({
     <div className={cn('flex min-h-0 flex-1 flex-col lg:flex-row', full && 'fixed inset-0 z-30 bg-bg')}>
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex flex-wrap items-center gap-1.5 border-b bg-bg px-3 py-2 md:px-5">
-          {list && !full && (
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="hidden md:inline-flex"
-              onClick={list.toggle}
-              aria-label={list.open ? t('收起工作流列表') : t('显示工作流列表')}
-              title={list.open ? t('收起工作流列表') : t('显示工作流列表')}
-            >
-              {list.open ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
-            </Button>
-          )}
           <div role="tablist" aria-label={t('流程')} className="flex min-w-0 flex-wrap items-center gap-1">
             {w.flows.map((f) => {
               const on = f.id === flow.id
@@ -487,7 +471,6 @@ export function FlowEditor(props: {
   main?: Agent
   team: Team
   checks: Check[]
-  list?: { open: boolean; toggle: () => void }
 }) {
   return (
     <ReactFlowProvider>

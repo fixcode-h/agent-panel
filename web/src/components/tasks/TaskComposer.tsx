@@ -13,14 +13,11 @@ import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMode } from '@share
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { useAgentView } from '@/lib/agent-view'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { AgentPicker } from '@/components/agents/AgentPicker'
 import { useDirInfo } from '@/components/projects/DirPicker'
-import { ChatModelPicker } from './ChatModelPicker'
+import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMention } from './Attachments'
 import { t } from '@shared/i18n'
 
@@ -48,7 +45,6 @@ export function TaskComposer({
   standalone?: boolean
 }) {
   const { workflows, agents, clis, projects, projectCategories, tasks, loading } = useData()
-  const { modelOf } = useAgentView()
   const [projectId, setProjectId] = useState(() => {
     try {
       return fixed?.id ?? localStorage.getItem('last-project') ?? ''
@@ -60,21 +56,9 @@ export function TaskComposer({
   const defaultWf = projectWorkflowId(project, projectCategories)
   const [mode, setMode] = useState<TaskMode | ''>('')
   const [workflowId, setWorkflowId] = useState('')
-  // 对话默认用自带的默认 Agent；用户主动选过别的就记住
-  const [agentId, setAgentId] = useState(() => {
-    try {
-      return localStorage.getItem('last-chat-agent') || DEFAULT_AGENT_ID
-    } catch {
-      return DEFAULT_AGENT_ID
-    }
-  })
-  const pickAgent = (id: string) => {
-    setAgentId(id)
-    try {
-      localStorage.setItem('last-chat-agent', id)
-    } catch {}
-  }
-  const [chatModel, setChatModel] = useState({ model: '', effort: '' })
+  // 对话直接选 CLI（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
+  const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
+  const chatRun = useChatRun(chat).run
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
@@ -91,17 +75,12 @@ export function TaskComposer({
   const workflow = workflows.find((w) => w.id === (workflowId || defaultWf))
   // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
   const effMode: TaskMode = standalone ? 'chat' : mode || 'workflow'
-  const agent =
-    agents.find((a) => a.id === agentId && a.enabled) ??
-    agents.find((a) => a.id === DEFAULT_AGENT_ID) ??
-    agents.find((a) => a.enabled)
-  const isDefault = agent?.id === DEFAULT_AGENT_ID
   const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0
   const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
   const canStart =
     (standalone || !!project) &&
     !!prompt.trim() &&
-    (effMode === 'workflow' ? !!workflow : !!agent) &&
+    (effMode === 'workflow' ? !!workflow : !!chatRun.cli) &&
     !busy &&
     !files.uploading
 
@@ -117,9 +96,10 @@ export function TaskComposer({
           projectId: project?.id ?? '',
           mode: effMode,
           workflowId: effMode === 'workflow' ? workflow!.id : '',
-          agentId: effMode === 'chat' ? agent!.id : '',
-          model: effMode === 'chat' && isDefault ? chatModel.model : '',
-          effort: effMode === 'chat' && isDefault ? chatModel.effort : '',
+          agentId: effMode === 'chat' ? DEFAULT_AGENT_ID : '',
+          cli: effMode === 'chat' ? chatRun.cli : '',
+          model: effMode === 'chat' ? chatRun.model : '',
+          effort: effMode === 'chat' ? chatRun.effort : '',
           prompt,
           attachments: files.attachments,
           isolate: canIsolate && isolate,
@@ -186,37 +166,6 @@ export function TaskComposer({
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
             <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
-            {!fixed && !standalone && (
-              <Popover>
-                <PopoverTrigger className={chip} title={t('在哪个项目里执行')}>
-                  <FolderGit2 className="h-4 w-4 shrink-0" />
-                  <span className="truncate">{project?.name ?? t('选择项目')}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                </PopoverTrigger>
-                <PopoverContent className="w-[280px]">
-                  <div className="max-h-72 overflow-y-auto">
-                    {projects.map((p) => (
-                      <PopoverClose key={p.id} className={menuItem} onClick={() => setProjectId(p.id)}>
-                        <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate">{p.name}</span>
-                          <span className="truncate font-mono text-[11px] text-subtle">
-                            {p.path || t('未选择目录')}
-                          </span>
-                        </span>
-                        {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
-                      </PopoverClose>
-                    ))}
-                    {projects.length === 0 && (
-                      <p className="px-2.5 py-2 text-xs text-subtle">
-                        {t('还没有项目，先在「项目」里添加一个本机目录')}
-                      </p>
-                    )}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            )}
-
             {!standalone && (
               <div
                 role="radiogroup"
@@ -278,38 +227,7 @@ export function TaskComposer({
                 </PopoverContent>
               </Popover>
             ) : (
-              <div className="flex min-w-0 items-center gap-0.5">
-                <AgentPicker onPick={(a) => pickAgent(a.id)} align="start">
-                  <button
-                    className={chip}
-                    title={agent && !isDefault ? `${agent.name} · ${modelOf(agent)}` : t('对话的 Agent')}
-                  >
-                    {agent ? (
-                      <>
-                        <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" dim={!agent.enabled} />
-                        <span className="truncate">{agent.name}</span>
-                      </>
-                    ) : (
-                      <span>{t('选择 Agent')}</span>
-                    )}
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                  </button>
-                </AgentPicker>
-                {isDefault && <ChatModelPicker {...chatModel} onChange={setChatModel} />}
-              </div>
-            )}
-
-            {canIsolate && (
-              <button
-                role="switch"
-                aria-checked={isolate}
-                onClick={() => setIsolate((v) => !v)}
-                title={t('在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃')}
-                className={cn(chip, isolate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}
-              >
-                <GitBranch className="h-4 w-4 shrink-0" />
-                <span className="truncate">{t('独立分支')}</span>
-              </button>
+              <ChatModelPicker value={chat} onChange={setChat} />
             )}
 
             <button
@@ -324,6 +242,49 @@ export function TaskComposer({
           </div>
         )}
       </div>
+      {/* 在哪里执行（项目、独立分支）放在输入框外面左下角，和「怎么执行」分开 */}
+      {!loading && ((!fixed && !standalone) || canIsolate) && (
+        <div className="-mt-2 flex flex-wrap items-center gap-1 px-1">
+          {!fixed && !standalone && (
+            <Popover>
+              <PopoverTrigger className={chip} title={t('在哪个项目里执行')}>
+                <FolderGit2 className="h-4 w-4 shrink-0" />
+                <span className="truncate">{project?.name ?? t('选择项目')}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+              </PopoverTrigger>
+              <PopoverContent className="w-[280px]">
+                <div className="max-h-72 overflow-y-auto">
+                  {projects.map((p) => (
+                    <PopoverClose key={p.id} className={menuItem} onClick={() => setProjectId(p.id)}>
+                      <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate">{p.name}</span>
+                        <span className="truncate font-mono text-[11px] text-subtle">{p.path || t('未选择目录')}</span>
+                      </span>
+                      {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
+                    </PopoverClose>
+                  ))}
+                  {projects.length === 0 && (
+                    <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有项目，先在「项目」里添加一个本机目录')}</p>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          )}
+          {canIsolate && (
+            <button
+              role="switch"
+              aria-checked={isolate}
+              onClick={() => setIsolate((v) => !v)}
+              title={t('在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃')}
+              className={cn(chip, isolate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}
+            >
+              <GitBranch className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('独立分支')}</span>
+            </button>
+          )}
+        </div>
+      )}
       {busyProject && canIsolate && !isolate && (
         <p className="px-1 text-xs text-subtle">
           {t('这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。')}

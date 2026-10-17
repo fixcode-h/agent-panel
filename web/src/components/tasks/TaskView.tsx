@@ -21,7 +21,7 @@ import {
 } from 'lucide-react'
 import type { Project, Task, TaskMessage } from '@shared/schema'
 import { rootStepId, taskWorkflows } from '@shared/flow'
-import { taskSummary } from '@shared/task'
+import { chatName, taskSummary } from '@shared/task'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -495,7 +495,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   {running && task.mode === 'chat' && (
                     <div className="flex items-center gap-2 text-[13px] text-muted">
                       <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                      {t('{name} 正在回复', { name: chatAgent?.name ?? 'Agent' })}
+                      {t('{name} 正在回复', { name: chatName(chatAgent, task) || 'Agent' })}
                       <LiveStats task={task} agentIds={[task.agentId]} />
                     </div>
                   )}
@@ -574,7 +574,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                         : task.status === 'failed'
                           ? t('会从失败的节点重新执行')
                           : t('会从没完成的节点继续执行')
-                      : t('发给 {name}', { name: chatAgent?.name ?? 'Agent' })}
+                      : t('发给 {name}', { name: chatName(chatAgent, task) || 'Agent' })}
                 </span>
                 {running ? (
                   <>
