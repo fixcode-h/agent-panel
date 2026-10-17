@@ -20,7 +20,9 @@ import { HANDOFF_DIR } from '../store.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
-import { invokeCli } from './invoke.ts'
+import { invokeCli, type CliControl } from './invoke.ts'
+import { setLimits } from '../cli-extras.ts'
+import type { BuildOptions } from '../../shared/clis.ts'
 import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
@@ -41,10 +43,60 @@ export interface RealContext {
   newId: () => string
   /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
   isGit: boolean
+  /** 这一轮不是普通的对话：压缩上下文，或者审查代码 */
+  op?: AgentCall['op']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
 const replies = new Map<string, (r: AskReply) => void>()
+
+/** 正在跑的对话（不属于节点的调用）：任务 id → 插话的方法 */
+const steers = new Map<string, (text: string, msg: TaskMessage) => Promise<boolean>>()
+
+/**
+ * 插话：把要求交给正在跑的这一轮，CLI 在这一轮里接着处理；成功时把用户消息加进对话。
+ * 没在跑、CLI 不支持（Command Code）或 CLI 拒绝时返回 false，由调用方排队
+ */
+export async function steerTask(taskId: string, text: string, msg: TaskMessage) {
+  const fn = steers.get(taskId)
+  return fn ? fn(text, msg) : false
+}
+
+/** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
+const MAX_LIVE_OUTPUT = 8000
+const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
+
+/** 对话撤回、分叉后 CLI 不能截断会话时，把留下的对话整理成文字带给新会话 */
+function transcript(task: Task, upto: number) {
+  const lines: string[] = []
+  for (const m of task.messages.slice(0, upto)) {
+    if (m.step || m.role === 'system' || !m.text.trim()) continue
+    lines.push(`${m.role === 'user' ? '用户' : '你'}：${m.text.trim()}`)
+  }
+  return lines.join('\n\n')
+}
+
+/** 审查改动时给不支持审查模式的 CLI 的要求 */
+function reviewPrompt(target: Extract<NonNullable<BuildOptions['op']>, { kind: 'review' }>['target']) {
+  const what =
+    target.type === 'base'
+      ? `当前分支相对 ${target.branch} 的改动（git diff ${target.branch}...HEAD）`
+      : target.type === 'custom'
+        ? target.instructions
+        : '工作区里还没提交的改动（git diff HEAD，包括新建的文件）'
+  return [
+    `请审查${what}。`,
+    '只审查，不要修改任何文件。',
+    '按严重程度从高到低列出发现的问题：每条写明文件和行号、问题是什么、为什么是问题、建议怎么改。',
+    '重点看会导致错误行为的问题（逻辑错误、边界情况、并发、安全、资源泄漏），其次是可维护性；不要列纯粹的格式问题。',
+    '没有发现问题就直接说没有问题。',
+  ].join('\n')
+}
+
+/** Command Code 不能压缩会话：请它把对话整理成摘要，下一轮开新会话时带上 */
+const SUMMARY_PROMPT =
+  '请把我们到目前为止的对话整理成一份摘要，用于在新的会话里继续工作：包括要做的事、已经做了什么（改了哪些文件、关键的决定和原因）、' +
+  '还没做完的、需要注意的问题。只输出摘要本身，不要做别的事，也不要修改文件。'
 
 const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
 
@@ -214,16 +266,51 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
 
   const model = run.model
-  const resume = task.sessions[sessionKey]
+  const op = call.op
+  // 对话（不属于节点的调用）才能插话、分叉、撤回
+  const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
+  let resume: string | undefined = task.sessions[sessionKey]
+  let fork: BuildOptions['fork']
+  let carry = ''
+  // 触发这一轮的用户消息：结束后在它上面记下这一轮在 CLI 会话里的位置
+  const asker = chat && !op ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
+  const rewind = chat ? task.rewind : undefined
+  if (rewind) {
+    const th = rewind.through
+    resume = undefined
+    if (rewind.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
+    else if (th && cliId === 'codex' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
+    else if (th && cliId === 'claude' && th.end) [resume, fork] = [th.session, { end: th.end }]
+    else if (th && rewind.latest) [resume, fork] = [th.session, {}]
+    else if (th) {
+      // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上
+      const upto = asker ? task.messages.indexOf(asker) : task.messages.length
+      carry = `## 之前的对话\n${transcript(task, upto)}`
+    }
+  }
+  // 只用已经读过的模型列表（设置页、Agent 页打开时会读），不为了查窗口再跑一次 CLI
+  const catalog = cachedModels(cliId)?.models ?? []
+  const files = await knownWindows(cliId)
+  const windowFor = (cli: string, m: string) =>
+    catalog.find((x) => x.id === m || x.id.endsWith(`/${m}`))?.contextWindow ??
+    files.get(m) ??
+    files.get(m.slice(m.lastIndexOf('/') + 1)) ??
+    guessWindow(cli, m)
   const instructions = agent.instructions.trim()
-  let input = prompt
-  if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${prompt}`
-  const build = {
+  let input = op?.kind === 'review' && cliId !== 'codex' ? reviewPrompt(op.target) : prompt
+  if (op?.kind === 'compact') input = cliId === 'claude' ? '/compact' : SUMMARY_PROMPT
+  if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
+  if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${input}`
+  // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
+  const pct = cs.autoCompact
+  const build: BuildOptions = {
     model,
     effort: run.effort,
     permission: agentPermission(agent, settings),
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     resume,
+    fork,
+    op: op?.kind === 'compact' && cliId !== 'codex' ? undefined : op,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
     // 节点交接的完整结果也在数据目录里
@@ -231,7 +318,12 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
+    autoCompactTokens: pct && cliId === 'codex' ? Math.floor((windowFor(cliId, model) * pct) / 100) : undefined,
   }
+  const env = childEnv([
+    ...cs.env,
+    ...(pct && cliId === 'claude' ? [{ key: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', value: String(pct) }] : []),
+  ])
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
   const argv = [
@@ -259,14 +351,6 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     return cur
   }
 
-  // 只用已经读过的模型列表（设置页、Agent 页打开时会读），不为了查窗口再跑一次 CLI
-  const catalog = cachedModels(cliId)?.models ?? []
-  const files = await knownWindows(cliId)
-  const windowFor = (cli: string, m: string) =>
-    catalog.find((x) => x.id === m || x.id.endsWith(`/${m}`))?.contextWindow ??
-    files.get(m) ??
-    files.get(m.slice(m.lastIndexOf('/') + 1)) ??
-    guessWindow(cli, m)
   // CLI 报告过窗口后就以它为准，后面没带窗口的用量事件不要改回估计值
   let reported = false
 
@@ -289,6 +373,25 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  // 这一轮在 CLI 会话里的位置，结束后记在触发它的用户消息上（分叉、撤回用）
+  const turn: { id: string; end: string } = { id: '', end: '' }
+  // 改了文件就去 git 里重新读一次改动，更改面板边跑边更新；读得太勤会拖慢大仓库，最多一秒半一次
+  let gitTimer: ReturnType<typeof setTimeout> | undefined
+  let gitBusy = false
+  const refreshChanges = () => {
+    if (!ctx.isGit || gitTimer || gitBusy) return
+    gitTimer = setTimeout(async () => {
+      gitTimer = undefined
+      gitBusy = true
+      const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
+      gitBusy = false
+      if (changes && !finished) {
+        task.changes = changes
+        ctx.changed()
+      }
+    }, 1500)
+  }
+  let finished = false
   const meter = speedMeter(() => {
     au().tps = 0
     ctx.changed()
@@ -329,6 +432,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         m.tools.push(ev.tool)
         if (ev.id) toolsById.set(ev.id, ev.tool)
         if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
+        if (ev.file) refreshChanges()
         if (ev.file && !ctx.isGit) {
           mergeChanges(task.changes, [ev.file])
           if (owner) mergeChanges((owner.changes ??= []), [ev.file])
@@ -363,7 +467,31 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
           if (ev.output) t.output = ev.output
           if (ev.failed) t.failed = true
           if (ev.patch) t.input = ev.patch
+          if (ev.detail !== undefined) t.detail = ev.detail
+          delete t.running
         }
+        break
+      }
+      case 'tool_delta': {
+        const t = toolsById.get(ev.id)
+        if (t) t.output = tail((t.output ?? '') + ev.text)
+        break
+      }
+      case 'files_changed':
+        refreshChanges()
+        return
+      case 'turn':
+        if (ev.id) turn.id = ev.id
+        if (ev.end) turn.end = ev.end
+        return
+      case 'limits':
+        setLimits(cliId, ev.limits)
+        return
+      case 'compacted': {
+        if (ev.context !== undefined) au().context = ev.context
+        const m = newMsg()
+        Object.assign(m, { role: 'system', text: t('已压缩上下文') })
+        cur = undefined
         break
       }
       case 'todos':
@@ -401,6 +529,16 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     ctx.changed()
   }
   const asked: string[] = []
+  /** 插话：成功交给 CLI 后把用户消息放进对话，之后的输出另起一条，排在这条消息后面 */
+  const register = (c: CliControl) =>
+    steers.set(task.id, async (text, msg) => {
+      if (!(await c.steer(text))) return false
+      task.messages.push(msg)
+      mine.push(msg)
+      cur = undefined
+      ctx.changed(true)
+      return true
+    })
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
@@ -410,7 +548,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     command: cs.command,
     build,
     cwd,
-    env: childEnv(cs.env),
+    env,
     input,
     signal: ctx.signal,
     // 0 表示不限制
@@ -439,7 +577,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       : undefined,
     onEvent: apply,
     canAsk: true,
+    onControl: chat ? (c) => register(c) : undefined,
   }).finally(() => {
+    finished = true
+    clearTimeout(gitTimer)
+    if (chat) steers.delete(task.id)
     meter.stop()
     // 进程结束了（完成、停止、超时），还没回答的请求作废
     for (const id of asked) replies.delete(id)
@@ -447,7 +589,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     if (task.usage.agents[agentId]) task.usage.agents[agentId].tps = 0
   })
 
-  for (const m of mine) if (m.text) texts.push(m.text)
+  for (const m of mine) if (m.text && m.role === 'agent') texts.push(m.text)
+  // 记下这一轮在会话里的位置，分叉、撤回时让 CLI 从这里截断
+  if (asker && task.sessions[sessionKey])
+    asker.turn = { session: task.sessions[sessionKey], id: turn.id, end: turn.end }
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
     if (changes) {
@@ -471,7 +616,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       errors: errors.join('\n'),
       stderr: r.stderr.trim().split('\n').slice(-20).join('\n'),
     })
-  if (r.killed === 'stopped') return { ok: false, stopped: true, error: t('已停止') }
+  // 停止时 CLI 自己中断了这一轮（进程正常退出），也算停止
+  if (r.killed === 'stopped' || (ctx.signal.aborted && !r.killed))
+    return { ok: false, stopped: true, error: t('已停止') }
   if (r.killed === 'timeout')
     return { ok: false, error: t('超过 {n} 分钟没有完成，已停止', { n: settings.stepTimeoutMinutes }) }
   if (r.killed === 'idle') {
@@ -557,7 +704,37 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     }
   }
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
-  return { ok: true, text: texts.join('\n\n') }
+  const done: AgentResult = { ok: true, text: texts.join('\n\n') }
+  // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
+  if (rewind) task.rewind = undefined
+  const sysMsg = (text: string, error?: boolean) => {
+    task.messages.push({
+      id: ctx.newId(),
+      role: 'system',
+      agentId,
+      step,
+      text,
+      tools: [],
+      ...(error ? { error } : {}),
+      at: new Date().toISOString(),
+    })
+    ctx.changed(true)
+  }
+  // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
+  if (op?.kind === 'compact' && cliId !== 'codex' && cliId !== 'claude') {
+    task.rewind = { session: '', through: null, latest: false, summary: done.text }
+    delete task.sessions[sessionKey]
+    au().context = 0
+    sysMsg(t('已压缩上下文：下一轮会开新的会话，带上这份摘要'))
+  }
+  // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
+  const u = task.usage.agents[agentId]
+  if (chat && !op && pct && cliId === 'commandcode' && u?.window && (u.context / u.window) * 100 >= pct) {
+    sysMsg(t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }))
+    const c = await runAgent(ctx, { ...call, op: { kind: 'compact' } })
+    if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true)
+  }
+  return done
 }
 
 /** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
@@ -571,7 +748,7 @@ export async function runRealTurn(ctx: RealContext) {
     prompt: ctx.prompt,
     changed: ctx.changed,
     newId: ctx.newId,
-    runAgent: (call) => runAgent(ctx, call),
+    runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     confirm: (step, text) =>
       new Promise((resolve) => {
         const { task, signal } = ctx

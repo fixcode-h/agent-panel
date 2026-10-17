@@ -31,6 +31,7 @@ import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
 import { openBrowser, revealDir } from './open.ts'
 import { modelsApi } from './models.ts'
+import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
@@ -135,6 +136,23 @@ app.put('/settings', async (c) => {
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/clis', installApi())
 app.route('/clis', modelsApi())
+// 账号额度、加载的 Skill；查不到时给出原因，页面上显示
+app.get('/clis/:id/limits', async (c) => {
+  try {
+    return c.json(await getLimits(c.req.param('id')))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+})
+app.get('/clis/:id/skills', async (c) => {
+  const pid = c.req.query('projectId')
+  const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
+  try {
+    return c.json(await listSkills(c.req.param('id'), dir))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+})
 
 // ---- 分类 ----
 app.get('/categories', async (c) => c.json(await categories.list()))

@@ -36,6 +36,8 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { CopyText, Group, Row } from './parts'
+import { CliLimitsPanel, LIMIT_CLIS } from './CliLimits'
+import { CliSkills } from './CliSkills'
 
 export const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
 export const textToEnv = (text: string) =>
@@ -576,6 +578,24 @@ export function CliSection({
             spellCheck={false}
           />
         </Row>
+        <Row
+          title={t('自动压缩上下文')}
+          desc={
+            def.id === 'commandcode'
+              ? t('上下文占用达到这个比例时，对话结束一轮后自动压缩（写一份摘要，下一轮开新会话带上）')
+              : t('上下文占用达到这个比例时自动压缩')
+          }
+        >
+          <Select
+            aria-label={t('{cli} 自动压缩', { cli: def.name })}
+            value={String(draft.autoCompact)}
+            onChange={(e) => set('autoCompact', Number(e.target.value))}
+            options={[
+              { value: '0', label: t('{name}（默认）', { name: t('按 CLI 自己的规则') }) },
+              ...[50, 60, 70, 80, 90].map((n) => ({ value: String(n), label: `${n}%` })),
+            ]}
+          />
+        </Row>
         <div className="pt-4">
           <CommandPreview
             cli={def.id}
@@ -583,6 +603,8 @@ export function CliSection({
             extraArgs={[]}
             title={t('实际调用（任务描述从 stdin 传入）')}
             override={{
+              showLimits: draft.showLimits,
+              autoCompact: draft.autoCompact,
               enabled: draft.enabled,
               command: draft.command.trim(),
               defaultModel: draft.defaultModel.trim(),
@@ -595,6 +617,36 @@ export function CliSection({
           />
         </div>
       </Group>
+
+      {LIMIT_CLIS.includes(def.id) && (
+        <Group title={t('额度')}>
+          <Row title={t('显示额度')} desc={t('在这里和任务页右栏显示账号的 5 小时、每周额度用了多少')}>
+            <Switch
+              checked={draft.showLimits}
+              onCheckedChange={(v) => set('showLimits', v)}
+              aria-label={t('显示 {cli} 的额度', { cli: def.name })}
+            />
+          </Row>
+          {draft.showLimits && ok && (
+            <div className="pb-1">
+              <CliLimitsPanel cli={def.id} />
+            </div>
+          )}
+        </Group>
+      )}
+
+      {ok && (
+        <Group title="Skills">
+          <p className="pb-2 text-[12px] text-muted">
+            {def.id === 'codex'
+              ? t('Codex 加载的 Skill（用户目录、系统自带和插件里的）')
+              : def.id === 'claude'
+                ? t('~/.claude/skills 和已装插件里的 Skill；项目里的在项目设置里看')
+                : t('~/.commandcode/skills、~/.agents/skills 里的 Skill')}
+          </p>
+          <CliSkills cli={def.id} />
+        </Group>
+      )}
     </>
   )
 }
@@ -615,6 +667,8 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           permission: eff.permission,
           args: joinArgs(eff.extraArgs),
           envText: envToText(eff.env),
+          showLimits: eff.showLimits,
+          autoCompact: eff.autoCompact,
         },
       ]
     }),

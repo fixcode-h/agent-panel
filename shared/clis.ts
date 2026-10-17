@@ -27,7 +27,22 @@ export interface BuildOptions {
   maxTurns?: number
   /** 工作目录之外还允许读写的目录（例如附件所在的目录） */
   addDirs?: string[]
+  /**
+   * 从 resume 的会话分叉出一个新会话（原会话不动）；给了 turn 时只保留到那一轮（含）：
+   * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid
+   */
+  fork?: { turnId?: string; end?: string }
+  /** 不是普通的一轮对话：压缩上下文，或者审查代码 */
+  op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
+  /** 上下文达到这么多 token 时自动压缩（Codex 的 model_auto_compact_token_limit） */
+  autoCompactTokens?: number
 }
+
+/** 审查什么：未提交的改动、和某个分支的差异，或者按说明审查 */
+export type ReviewTarget =
+  | { type: 'uncommitted' }
+  | { type: 'base'; branch: string }
+  | { type: 'custom'; instructions: string }
 
 export type ModelTier = 'high' | 'medium' | 'low'
 
@@ -117,10 +132,10 @@ export const CLIS: CliDefinition[] = [
       'stream-json',
       '--verbose',
       '--include-partial-messages',
-      // 需要审批的操作通过 stdin / stdout 上的控制消息发给面板，在任务页上让用户确认；任务描述也改走 stdin 上的 JSON
-      ...(o.permission === 'bypassPermissions'
-        ? []
-        : ['--input-format', 'stream-json', '--permission-prompt-tool', 'stdio']),
+      // 任务描述走 stdin 上的 JSON，执行中还能插话、中断；需要审批的操作也通过 stdin / stdout 上的控制消息发给面板
+      '--input-format',
+      'stream-json',
+      ...(o.permission === 'bypassPermissions' ? [] : ['--permission-prompt-tool', 'stdio']),
       ...opt(o.model, '--model', o.model),
       ...opt(o.effort, '--effort', o.effort!),
       ...(o.permission === 'bypassPermissions'
@@ -128,6 +143,8 @@ export const CLIS: CliDefinition[] = [
         : // 「逐项确认」也要明确传 default，否则会沿用 ~/.claude/settings.json 里的 defaultMode
           opt(o.permission, '--permission-mode', o.permission)),
       ...opt(o.resume, '--resume', o.resume!),
+      ...opt(o.resume && o.fork, '--fork-session'),
+      ...opt(o.resume && o.fork?.end, '--resume-session-at', o.fork?.end ?? ''),
       ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
       ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
@@ -179,6 +196,7 @@ export const CLIS: CliDefinition[] = [
       'app-server',
       ...opt(o.model, '-c', `model="${o.model}"`),
       ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
+      ...opt(o.autoCompactTokens, '-c', `model_auto_compact_token_limit=${o.autoCompactTokens}`),
       '-c',
       `sandbox_mode="${o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'}"`,
       // 和 thread/start 里传的一致：完全访问不确认，其余越过沙箱时请用户确认
@@ -244,6 +262,8 @@ export const CLIS: CliDefinition[] = [
         ? ['--dangerously-skip-permissions']
         : opt(o.permission, '--permission-mode', o.permission)),
       ...opt(o.resume, '--resume', o.resume!),
+      // 只能从会话的最后分叉；要截在中间时由面板把对话整理成文字带给新会话
+      ...opt(o.resume && o.fork, '--fork-session'),
       '--max-turns',
       String(o.maxTurns ?? 200),
       ...o.extraArgs,
@@ -255,6 +275,9 @@ export const CLIS: CliDefinition[] = [
 ]
 
 export const getCli = (id: string) => CLIS.find((c) => c.id === id)
+
+/** 执行中能插话的 CLI（Codex 的 turn/steer、Claude Code 的 stdin 消息）；Command Code 只能排队 */
+export const STEER_CLIS = ['codex', 'claude']
 
 const quote = (a: string) => (/[\s"'<>|&]/.test(a) || a === '' ? JSON.stringify(a) : a)
 

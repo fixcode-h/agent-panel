@@ -298,4 +298,26 @@ export const EN_TASKS: Record<string, string> = {
   '这是二进制文件，不显示内容。': "This is a binary file, so its content isn't shown.",
   '文件太大，只显示了前面一部分。完整内容请在编辑器里查看。':
     'The file is too large, so only the beginning is shown. Open it in an editor to see all of it.',
+  执行后会显示: 'Shown after it runs',
+  '让 CLI 把之前的对话压缩成摘要，腾出上下文':
+    'Have the CLI compress the conversation so far into a summary to free up context',
+  压缩上下文: 'Compact context',
+  '让 CLI 审查还没提交的改动，只列问题，不改文件':
+    'Have the CLI review uncommitted changes. It only lists issues and changes no files',
+  审查改动: 'Review changes',
+  '这一轮刚好结束，已改成排队': 'This turn just finished, so it was queued instead',
+  已分叉成新的对话: 'Forked into a new chat',
+  '从这里分叉：新建一个对话，带着到这条为止的内容':
+    'Fork from here: start a new chat with everything up to this message',
+  从这里分叉: 'Fork from here',
+  '撤回到这里：去掉这条和之后的对话，改了再发':
+    'Rewind to here: remove this message and everything after, then edit and resend',
+  撤回到这里: 'Rewind to here',
+  '执行中也可以输入，直接补充给正在做的这一轮': 'You can type while it runs to add to the current turn',
+  这一轮完成后接着处理: 'Handle after this turn finishes',
+  '不停下，直接补充给正在做的这一轮（Enter）': 'Add to the current turn without stopping (Enter)',
+  插话: 'Add now',
+  '撤回到这条消息？': 'Rewind to this message?',
+  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
+    "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The CLI continues from before this message. File changes aren't undone; undo them under Changes if needed.",
 }

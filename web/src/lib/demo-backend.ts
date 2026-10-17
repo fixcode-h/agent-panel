@@ -27,6 +27,8 @@ import {
   type CliInstallJob,
   type CliModels,
   type CliUpdate,
+  type CliLimits,
+  type CliSkill,
   type CliStatus,
   type DirInfo,
   type DirListing,
@@ -567,6 +569,31 @@ const DEMO_FILES = [
   'tests/cart.test.ts',
 ]
 
+/** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
+const DEMO_SKILLS: CliSkill[] = [
+  {
+    name: 'frontend-design',
+    description: '做界面时按设计规范出稿，注意配色、间距和动效',
+    scope: 'user',
+    path: '~/.agents/skills/frontend-design/SKILL.md',
+    enabled: true,
+  },
+  {
+    name: 'pdf',
+    description: '读取、合并、拆分 PDF，填写表单',
+    scope: 'user',
+    path: '~/.agents/skills/pdf/SKILL.md',
+    enabled: true,
+  },
+  {
+    name: 'release-notes',
+    description: '按仓库的提交说明格式整理更新说明',
+    scope: 'repo',
+    path: '.agents/skills/release-notes/SKILL.md',
+    enabled: true,
+  },
+]
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -596,6 +623,30 @@ function route(method: string, url: string, body: unknown): unknown {
         available: !!cur?.installed && !!current && current !== LATEST[id],
       } satisfies CliUpdate
     }
+    // 额度和 Skill：演示没有本机 CLI，给一份看起来像真的数据
+    if (id && sub === 'limits') {
+      if (id !== 'codex' && id !== 'claude') return null
+      const h = 3_600_000
+      return {
+        windows: [
+          {
+            id: id === 'codex' ? 'primary' : 'five_hour',
+            usedPercent: 42,
+            resetsAt: Date.now() + 2.4 * h,
+            minutes: 300,
+          },
+          {
+            id: id === 'codex' ? 'secondary' : 'seven_day',
+            usedPercent: 18,
+            resetsAt: Date.now() + 96 * h,
+            minutes: 10080,
+          },
+        ],
+        plan: id === 'codex' ? 'plus' : 'max',
+        at: new Date().toISOString(),
+      } satisfies CliLimits
+    }
+    if (id && sub === 'skills') return DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo')
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
       const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
@@ -882,6 +933,66 @@ function tasksRoute(
   if (sub === 'queue' && method === 'DELETE') {
     task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
     persist()
+    return task
+  }
+  if (sub === 'rewind' || sub === 'fork') {
+    if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
+    if (task.mode !== 'chat') fail('只有对话任务可以这样做')
+    const { messageId } = (body ?? {}) as { messageId?: string }
+    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    if (i < 0) fail('找不到这条消息')
+    if (sub === 'rewind') {
+      if (!task.messages.slice(0, i).some((m) => m.role === 'user')) fail('第一条消息不能撤回，可以新建一个对话')
+      const removed = task.messages[i]
+      task.messages = task.messages.slice(0, i)
+      task.queue = []
+      task.status = 'done'
+      persist()
+      return { task, text: removed.text, attachments: removed.attachments ?? [] }
+    }
+    const next = task.messages.findIndex((m, k) => k > i && m.role === 'user' && !m.step)
+    const now = new Date().toISOString()
+    const forked: Task = {
+      ...JSON.parse(JSON.stringify(task)),
+      id: `demo-${crypto.randomUUID()}`,
+      title: `${task.title}（分叉）`.slice(0, 80),
+      messages: task.messages
+        .slice(0, next < 0 ? task.messages.length : next)
+        .map((m) => ({ ...m, id: `demo-${crypto.randomUUID()}` })),
+      status: 'done',
+      queue: [],
+      requests: [],
+      todos: [],
+      worktree: null,
+      createdAt: now,
+      updatedAt: now,
+    }
+    tasks.unshift(forked)
+    persist()
+    return forked
+  }
+  if (sub === 'compact' || sub === 'review') {
+    if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
+    if (sub === 'compact') {
+      if (task.mode !== 'chat') fail('只有对话任务可以这样做')
+      const at = new Date().toISOString()
+      task.messages.push(
+        { id: `demo-${crypto.randomUUID()}`, role: 'system', agentId: '', step: '', text: '压缩上下文', tools: [], at },
+        {
+          id: `demo-${crypto.randomUUID()}`,
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: '上下文已压缩：之前的对话换成了摘要，接着聊会从摘要继续',
+          tools: [],
+          at,
+        },
+      )
+      persist()
+      return task
+    }
+    const base = (body as { base?: string } | undefined)?.base
+    void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
   if (sub === 'messages') {

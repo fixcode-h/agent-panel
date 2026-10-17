@@ -18,7 +18,7 @@ import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments }
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
-import { answerRequest, runRealTurn } from './exec/runner.ts'
+import { answerRequest, runRealTurn, steerTask, type RealContext } from './exec/runner.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
@@ -122,7 +122,7 @@ export function tasksApi(deps: {
     return id ? ((await deps.workflows.get(id)) ?? undefined) : undefined
   }
 
-  async function start(entry: Live, prompt: string, first: boolean, agents: Agent[]) {
+  async function start(entry: Live, prompt: string, first: boolean, agents: Agent[], op?: RealContext['op']) {
     const task = entry.task
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
@@ -173,6 +173,7 @@ export function tasksApi(deps: {
         changed,
         newId: randomUUID,
         isGit: snapshot !== null,
+        op,
       })
     })()
     entry.done = run
@@ -353,6 +354,20 @@ export function tasksApi(deps: {
     const { text, attachments, interrupt } = p.data
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
+      // 插话：直接交给正在跑的 CLI；CLI 不支持或这一轮刚好结束时改成排队
+      if (p.data.steer && !interrupt) {
+        const msg = {
+          id: randomUUID(),
+          role: 'user' as const,
+          agentId: '',
+          step: '',
+          text,
+          tools: [],
+          ...(attachments.length ? { attachments } : {}),
+          at: new Date().toISOString(),
+        }
+        if (await steerTask(id, withAttachments(text, attachments), msg)) return c.json(prev.task)
+      }
       if (!interrupt) {
         // 执行中：先排队，这一轮完成后自动接着处理
         prev.task.queue.push({ id: randomUUID(), text, attachments, at: new Date().toISOString() })
@@ -542,6 +557,133 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
     return c.json(await store.update(id, { ...task, ...p.data }))
+  })
+
+  /** 停着的对话任务（没在执行）：分叉、撤回、压缩、审查都要先停下 */
+  async function idleTask(c: Context, chatOnly = true) {
+    const id = c.req.param('id')!
+    const prev = live.get(id)
+    if (prev && prev.task.status !== 'running') await prev.done
+    if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+    const task = await store.get(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
+    if (chatOnly && task.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
+    return task
+  }
+
+  /** 第 i 条用户消息之前（不含）最近一条用户消息的那一轮，没有时为 null；latest：那一轮是会话的最后一轮 */
+  function turnBefore(task: Task, i: number) {
+    const prev = [...task.messages.slice(0, i)].reverse().find((m) => m.role === 'user' && !m.step)
+    if (!prev?.turn) return { through: null, session: '', latest: false }
+    const th = prev.turn
+    const at = task.messages.indexOf(prev)
+    const latest = !task.messages.slice(at + 1).some((m) => m.turn?.session === th.session)
+    return { through: th, session: th.session, latest }
+  }
+
+  // 撤回到某条消息：这条和之后的对话都去掉，下一轮从它之前接着聊（文件改动不会撤销）；返回被撤回的那条，方便改了再发
+  routes.post('/:id/rewind', async (c) => {
+    const task = await idleTask(c)
+    if (task instanceof Response) return task
+    const { messageId } = (await c.req.json().catch(() => ({}))) as { messageId?: string }
+    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    if (i < 0) return bad(c, t('找不到这条消息'))
+    if (!task.messages.slice(0, i).some((m) => m.role === 'user'))
+      return bad(c, t('第一条消息不能撤回，可以新建一个对话'))
+    const removed = task.messages[i]
+    const updated = await store.update(task.id, {
+      ...task,
+      messages: task.messages.slice(0, i),
+      rewind: turnBefore(task, i),
+      status: 'done',
+      queue: [],
+      todos: [],
+    })
+    return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
+  })
+
+  // 从某条消息分叉：新建一个对话，带着到这条消息为止的对话（含它的回复），原对话不动
+  routes.post('/:id/fork', async (c) => {
+    const task = await idleTask(c)
+    if (task instanceof Response) return task
+    const { messageId } = (await c.req.json().catch(() => ({}))) as { messageId?: string }
+    const i = task.messages.findIndex((m) => m.id === messageId && m.role === 'user' && !m.step)
+    if (i < 0) return bad(c, t('找不到这条消息'))
+    // 留到下一条用户消息之前：这条消息和它的回复都带上
+    const next = task.messages.findIndex((m, k) => k > i && m.role === 'user' && !m.step)
+    const kept = task.messages.slice(0, next < 0 ? task.messages.length : next)
+    const { through, session, latest } = turnBefore(task, next < 0 ? task.messages.length : next)
+    const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = task
+    const agents = Object.fromEntries(
+      Object.entries(task.usage.agents).map(([k, v]) => [k, { ...v, tps: 0, outputTokens: 0, genMs: 0 }]),
+    )
+    const forked = await store.create({
+      ...rest,
+      title: t('{title}（分叉）', { title: task.title }).slice(0, 80),
+      // 消息 id 换新的，免得两个任务里的消息 id 相同
+      messages: kept.map((m) => ({ ...m, id: randomUUID() })),
+      rewind: { through, session, latest },
+      status: 'done',
+      runMs: 0,
+      runStartedAt: '',
+      queue: [],
+      requests: [],
+      todos: [],
+      worktree: null,
+      archived: undefined,
+      usage: { agents, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 },
+    })
+    return c.json(forked, 201)
+  })
+
+  // 压缩上下文：让 CLI 把这个对话的会话压缩（不能压缩的 CLI 写一份摘要，下一轮开新会话带上）
+  routes.post('/:id/compact', async (c) => {
+    const task = await idleTask(c)
+    if (task instanceof Response) return task
+    if (!task.sessions[task.agentId] && !task.rewind) return bad(c, t('还没有会话，不需要压缩'))
+    const entry = reserve(task)
+    entry.task.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t('压缩上下文'),
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    try {
+      return c.json(await start(entry, '', false, await deps.agents.list(), { kind: 'compact' }))
+    } catch (e) {
+      live.delete(task.id)
+      throw e
+    }
+  })
+
+  // 审查改动：Codex 用自己的审查模式，其他 CLI 按审查的要求跑一轮；只审查，不改文件
+  routes.post('/:id/review', async (c) => {
+    const task = await idleTask(c, false)
+    if (task instanceof Response) return task
+    const body = (await c.req.json().catch(() => ({}))) as { base?: string }
+    const target = body.base ? { type: 'base' as const, branch: body.base } : { type: 'uncommitted' as const }
+    if (!(await taskDir(task)) || (await gitNumstat(await taskDir(task), '').catch(() => null)) === null)
+      return bad(c, t('项目不是 git 仓库，没法审查改动'))
+    const entry = reserve(task)
+    const text = body.base ? t('审查相对 {branch} 的改动', { branch: body.base }) : t('审查还没提交的改动')
+    entry.task.messages.push({
+      id: randomUUID(),
+      role: 'user',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    try {
+      return c.json(await start(entry, text, false, await deps.agents.list(), { kind: 'review', target }))
+    } catch (e) {
+      live.delete(task.id)
+      throw e
+    }
   })
 
   routes.post('/:id/stop', async (c) => {

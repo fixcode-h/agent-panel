@@ -31,21 +31,74 @@ let appThread = ''
 let appResume = ''
 let developer = ''
 let policy = {}
+// 插话收到的内容；Codex 的 turn/steer、Claude Code 执行中写进来的 user 消息
+const steered = []
+let interrupted = false
+// 压缩、审查、分叉（Codex 的 thread/compact/start、review/start、thread/fork）
+let appOp = ''
+let appFork = null
+let reviewTarget = null
 if (args[0] === 'app-server') {
   const { createInterface } = await import('node:readline')
-  for await (const line of createInterface({ input: process.stdin })) {
+  const rl = createInterface({ input: process.stdin })
+  const reqs = rl[Symbol.asyncIterator]()
+  for (;;) {
+    const { value: line, done } = await reqs.next()
+    if (done) break
     const req = JSON.parse(line)
     if (req.method === 'initialize') console.log(JSON.stringify({ id: req.id, result: { userAgent: 'fake' } }))
-    if (req.method === 'thread/start' || req.method === 'thread/resume') {
+    if (req.method === 'thread/start' || req.method === 'thread/resume' || req.method === 'thread/fork') {
       appResume = req.params.threadId ?? ''
-      appThread = appResume || randomUUID()
+      appThread = req.method === 'thread/fork' ? `fork-${randomUUID()}` : appResume || randomUUID()
+      if (req.method === 'thread/fork') appFork = { from: appResume, lastTurnId: req.params.lastTurnId ?? null }
       developer = req.params.developerInstructions ?? ''
       policy = { approval: req.params.approvalPolicy, sandbox: req.params.sandbox }
       console.log(JSON.stringify({ id: req.id, result: { thread: { id: appThread } } }))
     }
+    if (req.method === 'account/rateLimits/read') {
+      const w = (usedPercent, windowDurationMins) => ({ usedPercent, windowDurationMins, resetsAt: 2000000000 })
+      console.log(
+        JSON.stringify({
+          id: req.id,
+          result: { rateLimits: { primary: w(42, 300), secondary: w(7, 10080), planType: 'plus' } },
+        }),
+      )
+    }
+    if (req.method === 'skills/list') {
+      const skill = {
+        name: 'fake-skill',
+        description: '测试用的技能',
+        path: '/skills/fake/SKILL.md',
+        scope: 'user',
+        enabled: true,
+      }
+      console.log(JSON.stringify({ id: req.id, result: { data: [{ cwd: '', skills: [skill], errors: [] }] } }))
+    }
+    if (req.method === 'thread/compact/start' || req.method === 'review/start') {
+      appOp = req.method === 'review/start' ? 'review' : 'compact'
+      reviewTarget = req.params.target ?? null
+      console.log(JSON.stringify({ id: req.id, result: { turn: { id: 't1', status: 'inProgress' } } }))
+      input = appOp
+      break
+    }
     if (req.method === 'turn/start') {
       console.log(JSON.stringify({ id: req.id, result: { turn: { id: 't1', status: 'inProgress' } } }))
       input = req.params.input.map((x) => x.text).join('')
+      // 执行中继续读：插话、中断
+      ;(async () => {
+        for (;;) {
+          const { value, done } = await reqs.next()
+          if (done) return
+          const m = JSON.parse(value)
+          if (m.method === 'turn/steer') {
+            steered.push(m.params.input.map((x) => x.text).join(''))
+            console.log(JSON.stringify({ id: m.id, result: { turnId: 't1' } }))
+          } else if (m.method === 'turn/interrupt') {
+            interrupted = true
+            console.log(JSON.stringify({ id: m.id, result: {} }))
+          }
+        }
+      })()
       break
     }
     if (req.method === 'model/list') {
@@ -89,8 +142,14 @@ const lines = []
 let wake
 if (streamIn) {
   const rl = (await import('node:readline')).createInterface({ input: process.stdin })
+  let started = false
   rl.on('line', (l) => {
-    lines.push(JSON.parse(l))
+    const m = JSON.parse(l)
+    // 第一条是任务描述；之后的 user 消息是插话，control_request 的 interrupt 是中断
+    if (started && m.type === 'user') return steered.push(String(m.message?.content ?? ''))
+    if (m.type === 'control_request' && m.request?.subtype === 'interrupt') return void (interrupted = true)
+    started = true
+    lines.push(m)
     wake?.()
   })
   const next = async () => {
@@ -103,7 +162,10 @@ if (streamIn) {
 } else if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
-  const extra = kind === 'codex' ? { resume: appResume, developer, ...policy } : {}
+  const extra =
+    kind === 'codex'
+      ? { resume: appResume, developer, ...policy, op: appOp, fork: appFork, reviewTarget }
+      : { compactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }
   appendFileSync(
     log,
     JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, pid: process.pid, start: Date.now() }) + '\n',
@@ -113,12 +175,18 @@ if (process.env.FAKE_CLI_LOG) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
+process.on('exit', () => {
+  if (process.env.FAKE_CLI_LOG && steered.length)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.steer', JSON.stringify({ kind, steered }) + '\n')
+})
 const out = (o) => process.stdout.write(JSON.stringify(o) + '\n')
 // 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
 const slow = input.includes('SLOW') && !input.includes('上游节点的结果')
 const fail = input.includes('FAIL')
 const resumeIdx = args.indexOf('--resume')
-const session = kind === 'codex' ? appThread : resumeIdx >= 0 ? args[resumeIdx + 1] : randomUUID()
+const session =
+  kind === 'codex' ? appThread : resumeIdx >= 0 && !args.includes('--fork-session') ? args[resumeIdx + 1] : randomUUID()
 // app-server 的通知
 const note = (method, params) => out({ method, params: { threadId: session, turnId: 't1', ...params } })
 const codexDone = (status, error) => {
@@ -143,7 +211,49 @@ const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
-for (let i = 0; i < (slow ? 40 : 1); i++) await sleep(slow ? 250 : 150)
+for (let i = 0; i < (slow ? 40 : 1) && !interrupted; i++) await sleep(slow ? 250 : 150)
+// 被中断：像真的 CLI 一样结束这一轮，进程自己退出
+if (interrupted) {
+  if (kind === 'codex') {
+    out({
+      method: 'turn/completed',
+      params: { threadId: session, turnId: 't1', turn: { id: 't1', status: 'interrupted', items: [] } },
+    })
+  } else if (kind === 'claude') {
+    out({
+      type: 'result',
+      subtype: 'error_during_execution',
+      is_error: true,
+      result: 'interrupted',
+      session_id: session,
+      usage: {},
+    })
+  }
+  process.exit(0)
+}
+// Codex 的压缩和审查
+if (kind === 'codex' && appOp === 'compact') {
+  note('item/completed', { item: { id: 'cc', type: 'contextCompaction' } })
+  codexDone('completed')
+}
+if (kind === 'codex' && appOp === 'review') {
+  note('item/started', { item: { id: 'a9', type: 'agentMessage', text: '' } })
+  note('item/agentMessage/delta', { itemId: 'a9', delta: '{"findings":[]}' })
+  note('item/completed', { item: { id: 'rv', type: 'exitedReviewMode', review: '审查结论：没有发现问题。' } })
+  codexDone('completed')
+}
+// Claude Code 的 /compact
+if (kind === 'claude' && input === '/compact') {
+  out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
+  out({
+    type: 'system',
+    subtype: 'compact_boundary',
+    session_id: session,
+    compact_metadata: { trigger: 'manual', pre_tokens: 9000 },
+  })
+  out({ type: 'result', subtype: 'success', is_error: false, result: '', session_id: session, usage: {} })
+  process.exit(0)
+}
 
 // 「AI 优化说明文件」：回一句说明和完整的新文件（在原内容后面补一节），只用 Command Code 的格式
 if (input.startsWith('你在帮忙优化项目根目录下的说明文件') && kind === 'commandcode') {
@@ -296,7 +406,21 @@ if (kind === 'claude') {
   out({ type: 'stream_event', event: { type: 'content_block_start', content_block: { type: 'text', text: '' } } })
   for (const part of reply.match(/.{1,6}/g))
     out({ type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: part } } })
-  out({ type: 'assistant', message: { id: 'm2', content: [{ type: 'text', text: reply }] } })
+  out({
+    type: 'assistant',
+    uuid: `u-${session}-${input.length}`,
+    message: { id: 'm2', content: [{ type: 'text', text: reply }] },
+  })
+  out({
+    type: 'rate_limit_event',
+    rate_limit_info: {
+      status: 'allowed',
+      unifiedWindows: {
+        five_hour: { utilization: 0.25, resetsAt: 2000000000 },
+        seven_day: { utilization: 0.5, resetsAt: 2000100000 },
+      },
+    },
+  })
   if (fail) {
     out({
       type: 'result',
@@ -328,8 +452,24 @@ if (kind === 'claude') {
       { step: '写文件', status: 'inProgress' },
     ],
   })
+  note('item/started', {
+    item: { id: 'c0', type: 'commandExecution', command: "bash -lc 'ls -la'", status: 'inProgress' },
+  })
+  note('item/commandExecution/outputDelta', { itemId: 'c0', delta: 'total 8\n' })
+  note('item/commandExecution/outputDelta', { itemId: 'c0', delta: 'README.md\n' })
   note('item/completed', {
-    item: { id: 'c0', type: 'commandExecution', command: "bash -lc 'ls -la'", exitCode: 0, status: 'completed' },
+    item: {
+      id: 'c0',
+      type: 'commandExecution',
+      command: "bash -lc 'ls -la'",
+      exitCode: 0,
+      status: 'completed',
+      aggregatedOutput: 'total 8\nREADME.md\n',
+    },
+  })
+  note('turn/diff/updated', { diff: '' })
+  note('account/rateLimits/updated', {
+    rateLimits: { primary: { usedPercent: 40, windowDurationMins: 300, resetsAt: 2000000000 }, secondary: null },
   })
   writeFileSync(file, 'a\nb\nc\n')
   note('item/completed', {

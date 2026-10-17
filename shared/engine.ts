@@ -9,6 +9,7 @@
  *
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
+import type { ReviewTarget } from './clis.ts'
 import {
   END,
   START,
@@ -56,6 +57,8 @@ export interface AgentCall {
   deciding?: boolean
   /** 会话续不上时（CLI 清理了历史）改用的完整提示；prompt 只是续接用的简短要求时才需要 */
   fresh?: string
+  /** 不是普通的一轮：压缩上下文，或者审查代码 */
+  op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
 }
 
 export interface EngineHost {
