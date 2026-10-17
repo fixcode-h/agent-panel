@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { WIDGETS, isWebType, type SlotType, type Widget, type WidgetType } from '@shared/umg'
+import { DEVICE_KEY, propsAt, type Device } from '@shared/web'
 import type { DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
@@ -178,7 +179,8 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('BorderWidth', 'num', { min: 0 }),
     F('BorderColor', 'color'),
     F('Shadow', 'enum', { options: ['none', 'sm', 'md', 'lg'] }),
-    F('Overflow', 'enum', { options: ['visible', 'hidden', 'auto'] }),
+    F('Overflow', 'enum', { options: ['visible', 'hidden', 'auto', 'scroll-x', 'scroll-y'] }),
+    F('Href', 'text'),
   ],
   Text: [
     F('Text', 'textarea'),
@@ -191,6 +193,8 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('LetterSpacing', 'num', { step: 0.5 }),
     F('Width', 'size'),
     F('Height', 'size'),
+    F('Href', 'text'),
+    F('Underline', 'bool'),
   ],
   Picture: [
     F('Src', 'image'),
@@ -199,6 +203,7 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('Height', 'size'),
     F('Radius', 'num', { min: 0 }),
     F('Alt', 'text'),
+    F('Href', 'text'),
   ],
   WebButton: [
     F('Text', 'text'),
@@ -211,8 +216,10 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('Radius', 'num', { min: 0 }),
     F('BorderWidth', 'num', { min: 0 }),
     F('BorderColor', 'color'),
+    F('Shadow', 'enum', { options: ['none', 'sm', 'md', 'lg'] }),
     F('Width', 'size'),
     F('Height', 'size'),
+    F('Href', 'text'),
   ],
   Input: [
     F('Placeholder', 'text'),
@@ -230,6 +237,24 @@ const PROPS: Partial<Record<WidgetType, Spec[]>> = {
     F('Height', 'size'),
   ],
   Divider: [F('Color', 'color'), F('Thickness', 'num', { min: 1 }), F('Vertical', 'bool')],
+}
+
+/** 网页控件鼠标移上去时的样式（写在 Properties.Hover 里） */
+const HOVER: Partial<Record<WidgetType, Spec[]>> = {
+  Frame: [
+    F('Hover.Background', 'color'),
+    F('Hover.BorderColor', 'color'),
+    F('Hover.Shadow', 'enum', { options: ['none', 'sm', 'md', 'lg'] }),
+  ],
+  Text: [F('Hover.Color', 'color'), F('Hover.Underline', 'bool')],
+  WebButton: [
+    F('Hover.Background', 'color'),
+    F('Hover.Color', 'color'),
+    F('Hover.BorderColor', 'color'),
+    F('Hover.Shadow', 'enum', { options: ['none', 'sm', 'md', 'lg'] }),
+  ],
+  Picture: [F('Hover.RenderOpacity', 'num', { step: 0.05, min: 0, max: 1 })],
+  Input: [F('Hover.BorderColor', 'color')],
 }
 
 const COMMON: Spec[] = [
@@ -391,7 +416,10 @@ export function Details({
   url,
   components,
   onChange,
+  device = 'desktop',
 }: {
+  /** 网页 UI 正在按哪个宽度预览：平板、手机时外观的改动只写进这个宽度的断点 */
+  device?: Device
   widget: Widget
   slotType?: SlotType
   parentSize: () => { w: number; h: number }
@@ -403,6 +431,11 @@ export function Details({
   const Icon = WIDGET_ICON[widget.Type]
   const setProp = (path: string, v: unknown) =>
     onChange({ ...widget, Properties: setPath(widget.Properties, path, v) }, `p:${widget.id}:${path}`)
+  const web = isWebType(widget.Type)
+  const bp = web && device !== 'desktop' ? DEVICE_KEY[device] : undefined
+  // 平板、手机上看到的是叠上断点改动后的值，改的也只是这个宽度
+  const getLook = (path: string) => getPath(bp ? propsAt(widget.Properties, device) : widget.Properties, path)
+  const setLook = (path: string, v: unknown) => setProp(bp ? `${bp}.${path}` : path, v)
   const setSlot = (path: string, v: unknown) =>
     onChange({ ...widget, Slot: setPath(widget.Slot, path, v) }, `s:${widget.id}:${path}`)
 
@@ -543,14 +576,44 @@ export function Details({
       {slot && slotType && (
         <Section title={`${t('插槽')}（${slotType}）`}>
           {slotType === 'FlexSlot' ? (
-            <FieldRow label="AlignSelf" title={t('在父控件的交叉轴上怎么对齐，auto 跟随父控件的 AlignItems')}>
-              <EnumInput
-                label="AlignSelf"
-                value={String(slot.AlignSelf ?? 'auto')}
-                options={['auto', 'start', 'center', 'end', 'stretch']}
-                onChange={(v) => setSlot('AlignSelf', v)}
-              />
-            </FieldRow>
+            <>
+              <FieldRow label="Position" title={t('absolute：不占位置，贴在父控件的某个角上（角标、浮层）')}>
+                <EnumInput
+                  label="Position"
+                  value={String(slot.Position ?? 'flow')}
+                  options={['flow', 'absolute']}
+                  onChange={(v) => setSlot('Position', v)}
+                />
+              </FieldRow>
+              {slot.Position === 'absolute' ? (
+                <>
+                  <FieldRow label="Pin">
+                    <EnumInput
+                      label="Pin"
+                      value={String(slot.Pin ?? 'top-left')}
+                      options={['top-left', 'top-right', 'bottom-left', 'bottom-right', 'center']}
+                      onChange={(v) => setSlot('Pin', v)}
+                    />
+                  </FieldRow>
+                  <FieldRow label={t('偏移')}>
+                    <NumInput prefix="X" value={slot.X ?? 0} onChange={(n) => setSlot('X', n)} />
+                    <NumInput prefix="Y" value={slot.Y ?? 0} onChange={(n) => setSlot('Y', n)} />
+                  </FieldRow>
+                  <FieldRow label="ZIndex">
+                    <NumInput label="ZIndex" value={slot.ZIndex ?? 0} onChange={(n) => setSlot('ZIndex', n)} />
+                  </FieldRow>
+                </>
+              ) : (
+                <FieldRow label="AlignSelf" title={t('在父控件的交叉轴上怎么对齐，auto 跟随父控件的 AlignItems')}>
+                  <EnumInput
+                    label="AlignSelf"
+                    value={String(slot.AlignSelf ?? 'auto')}
+                    options={['auto', 'start', 'center', 'end', 'stretch']}
+                    onChange={(v) => setSlot('AlignSelf', v)}
+                  />
+                </FieldRow>
+              )}
+            </>
           ) : canvas ? (
             <>
               <FieldRow label="Anchors">
@@ -685,15 +748,41 @@ export function Details({
         </Section>
       )}
       {PROPS[widget.Type] && (
-        <Section title={t('外观')}>
-          {PROPS[widget.Type]!.map((s) => field(s, (p) => getPath(widget.Properties, p), setProp))}
+        <Section
+          title={bp ? t('外观（{device}）', { device: device === 'tablet' ? t('平板') : t('手机') }) : t('外观')}
+        >
+          {bp && (
+            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-[11.5px] leading-relaxed text-accent">
+              <span className="flex-1">
+                {t('正在改{device}宽度下的样式，只影响这个宽度，桌面不变', {
+                  device: device === 'tablet' ? t('平板') : t('手机'),
+                })}
+              </span>
+              {widget.Properties?.[bp] && (
+                <button
+                  onClick={() => {
+                    const { [bp]: _, ...rest } = widget.Properties
+                    onChange({ ...widget, Properties: rest }, `bp:${widget.id}`)
+                  }}
+                  className="shrink-0 cursor-pointer underline"
+                >
+                  {t('还原')}
+                </button>
+              )}
+            </div>
+          )}
+          {PROPS[widget.Type]!.map((s) => field(s, getLook, setLook))}
+        </Section>
+      )}
+      {HOVER[widget.Type] && (
+        <Section title={t('悬停')}>
+          {HOVER[widget.Type]!.map((s) => field(s, (p) => getPath(widget.Properties, p), setProp))}
         </Section>
       )}
       <Section title={t('通用')}>
         {/* 网页控件只有可见性和透明度；变换、提示文字这些是 UMG 的 */}
-        {(isWebType(widget.Type) ? COMMON.slice(0, 2) : COMMON).map((s) =>
-          field(s, (p) => getPath(widget.Properties, p), setProp),
-        )}
+        {/* 平板、手机上也能单独隐藏（Visibility 选 Collapsed） */}
+        {(web ? COMMON.slice(0, 2) : COMMON).map((s) => field(s, getLook, setLook))}
       </Section>
       <p className="px-3 py-3 text-[11px] leading-relaxed text-subtle">{WIDGETS[widget.Type]?.hint}</p>
     </div>

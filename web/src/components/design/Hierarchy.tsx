@@ -226,7 +226,21 @@ function TypeItem({ type, onSelect }: { type: WidgetType; onSelect: () => void }
 }
 
 /** 控件树（Hierarchy）：缩进显示父子关系，拖动调整顺序或换父控件，右键复制、删除、提取成子控件 */
-export function Hierarchy({ root, selected, actions }: { root: Widget; selected: string; actions: TreeActions }) {
+export function Hierarchy({
+  root,
+  selected,
+  actions,
+  extra = [],
+  onPick,
+}: {
+  root: Widget
+  selected: string
+  actions: TreeActions
+  /** 按住 Shift / Ctrl 多选的其他控件 */
+  extra?: string[]
+  /** 按住 Shift / Ctrl 点：加进多选或去掉 */
+  onPick?: (id: string) => void
+}) {
   const kind = kindOf(root)
   const [folded, setFolded] = useState<Set<string>>(new Set())
   const [renaming, setRenaming] = useState('')
@@ -305,12 +319,18 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                   setDrag('')
                   setDrop(null)
                 }}
-                onClick={() => actions.select(w.id)}
+                onClick={(e) =>
+                  onPick && (e.shiftKey || e.ctrlKey || e.metaKey) ? onPick(w.id) : actions.select(w.id)
+                }
                 onDoubleClick={() => setRenaming(w.id)}
                 style={{ paddingLeft: 6 + depth * 14 }}
                 className={cn(
                   'group relative flex h-7 cursor-pointer items-center gap-1 pr-1.5 text-[12.5px] select-none',
-                  on ? 'bg-accent-soft text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
+                  on
+                    ? 'bg-accent-soft text-fg'
+                    : extra.includes(w.id)
+                      ? 'bg-accent-soft/50 text-fg'
+                      : 'text-muted hover:bg-sel/60 hover:text-fg',
                   d === 'into' && 'ring-1 ring-accent ring-inset',
                   drag === w.id && 'opacity-40',
                 )}

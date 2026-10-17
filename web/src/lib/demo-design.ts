@@ -10,9 +10,10 @@ import {
   type Design,
   type DesignMeta,
   type DesignProject,
+  type DesignVersion,
   type ImageSource,
 } from '@shared/design'
-import { normalizeTree, type Widget } from '@shared/umg'
+import { normalizeTree, walk, type Widget } from '@shared/umg'
 
 type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
@@ -236,6 +237,7 @@ function webTemplate() {
       BorderColor: '#E7E5E4FF',
       Shadow: 'sm',
       Width: 'fill',
+      Hover: { Shadow: 'lg', BorderColor: '#FDBA74FF' },
     },
     Children: [
       { Type: 'Picture', Name: 'Icon', Properties: { Src: 'img:feature_icon', Width: 48, Height: 48, Radius: 12 } },
@@ -266,6 +268,7 @@ function webTemplate() {
           JustifyContent: 'between',
           Padding: { Left: 64, Top: 20, Right: 64, Bottom: 20 },
           Width: 'fill',
+          Mobile: { Padding: { Left: 20, Top: 16, Right: 20, Bottom: 16 } },
         },
         Children: [
           txt('Logo', 'Flowboard', { FontSize: 22, FontWeight: 700 }),
@@ -274,10 +277,23 @@ function webTemplate() {
             Name: 'Links',
             Properties: { Direction: 'row', Gap: 28, AlignItems: 'center' },
             Children: [
-              txt('Link_Product', '产品', { Color: '#44403CFF' }),
-              txt('Link_Pricing', '价格', { Color: '#44403CFF' }),
-              txt('Link_Docs', '文档', { Color: '#44403CFF' }),
-              { Type: 'WebButton', Name: 'Btn_Signup', Properties: { Text: '免费试用', Background: '#1C1917FF' } },
+              // 手机上只留按钮
+              txt('Link_Product', '产品', {
+                Color: '#44403CFF',
+                Href: '#product',
+                Mobile: { Visibility: 'Collapsed' },
+              }),
+              txt('Link_Pricing', '价格', {
+                Color: '#44403CFF',
+                Href: '#pricing',
+                Mobile: { Visibility: 'Collapsed' },
+              }),
+              txt('Link_Docs', '文档', { Color: '#44403CFF', Href: '#docs', Mobile: { Visibility: 'Collapsed' } }),
+              {
+                Type: 'WebButton',
+                Name: 'Btn_Signup',
+                Properties: { Text: '免费试用', Background: '#1C1917FF', Hover: { Background: '#44403CFF' } },
+              },
             ],
           },
         ],
@@ -291,6 +307,8 @@ function webTemplate() {
           AlignItems: 'center',
           Padding: { Left: 64, Top: 56, Right: 64, Bottom: 56 },
           Width: 'fill',
+          // 手机上左文右图改成上下排
+          Mobile: { Direction: 'column', Gap: 28, Padding: { Left: 20, Top: 24, Right: 20, Bottom: 32 } },
         },
         Children: [
           {
@@ -303,6 +321,7 @@ function webTemplate() {
                 FontSize: 52,
                 FontWeight: 700,
                 LineHeight: 1.15,
+                Mobile: { FontSize: 34 },
               }),
               txt('Subline', '看板、文档和讨论放在一起，任务进展一目了然。超过 12,000 个团队在用。', {
                 FontSize: 18,
@@ -345,14 +364,26 @@ function webTemplate() {
           {
             Type: 'Picture',
             Name: 'HeroArt',
-            Properties: { Src: 'img:hero_art', Width: 560, Height: 400, Radius: 20 },
+            Properties: {
+              Src: 'img:hero_art',
+              Width: 560,
+              Height: 400,
+              Radius: 20,
+              Mobile: { Width: 'fill', Height: 240 },
+            },
           },
         ],
       },
       {
         Type: 'Frame',
         Name: 'Features',
-        Properties: { Direction: 'row', Gap: 24, Padding: { Left: 64, Top: 8, Right: 64, Bottom: 64 }, Width: 'fill' },
+        Properties: {
+          Direction: 'row',
+          Gap: 24,
+          Padding: { Left: 64, Top: 8, Right: 64, Bottom: 64 },
+          Width: 'fill',
+          Mobile: { Direction: 'column', Gap: 16, Padding: { Left: 20, Top: 0, Right: 20, Bottom: 32 } },
+        },
         Children: [feature('Feature_1'), feature('Feature_2'), feature('Feature_3')],
       },
       { Type: 'Divider', Name: 'FooterLine' },
@@ -732,6 +763,7 @@ async function runChat(
     run,
   }
   d.job = job
+  addVersion(d, `AI 修改前：${text.slice(0, 24)}`, true)
   const tpl =
     d.kind === 'web' ? webTemplate() : /背包|物品|inventory/i.test(text) ? inventoryTemplate() : menuTemplate()
   // 演示流式输出：先思考，再说明
@@ -1038,4 +1070,66 @@ export function demoImportComponent(id: string, body: any) {
   d.images = r.images
   d.rev++
   return d
+}
+
+// ---- 版本（在线演示：放在内存里） ----
+const versions = new Map<string, DesignVersion[]>()
+function addVersion(d: Full, name: string, auto: boolean) {
+  const v: DesignVersion = {
+    id: randomId(),
+    name,
+    at: now(),
+    auto,
+    snapshot: structuredClone({
+      designSize: d.designSize,
+      style: d.style,
+      root: d.root,
+      components: d.components,
+      images: d.images,
+    }),
+  }
+  versions.set(d.id, [v, ...(versions.get(d.id) ?? [])].slice(0, 40))
+  return v
+}
+const meta = ({ snapshot, ...rest }: DesignVersion) => {
+  let widgets = 0
+  for (const r of [snapshot.root, ...snapshot.components.map((c) => c.Root)]) walk(r, () => widgets++)
+  return { ...rest, widgets }
+}
+
+/** /designs/:id/versions[/:vid[/restore]] */
+export function demoVersions(
+  method: string,
+  id: string,
+  vid: string | undefined,
+  action: string | undefined,
+  body: any,
+) {
+  seed()
+  const d = designs.get(id) ?? fail('设计不存在')
+  const list = versions.get(id) ?? []
+  if (!vid) return method === 'POST' ? meta(addVersion(d, String(body.name || '未命名版本'), false)) : list.map(meta)
+  const v = list.find((x) => x.id === vid) ?? fail('版本不存在')
+  if (method === 'DELETE') {
+    versions.set(
+      id,
+      list.filter((x) => x !== v),
+    )
+    return undefined
+  }
+  if (action === 'restore') {
+    addVersion(d, `恢复「${v.name}」之前`, true)
+    Object.assign(
+      d,
+      structuredClone({
+        root: v.snapshot.root,
+        components: v.snapshot.components,
+        designSize: v.snapshot.designSize,
+        style: v.snapshot.style,
+      }),
+    )
+    d.rev++
+    return d
+  }
+  return v
 }

@@ -31,6 +31,8 @@ import type {
   DesignMeta,
   DesignProject,
   DesignProjectInput,
+  DesignVersion,
+  DesignVersionMeta,
   ImageSource,
   NewDesignInput,
   ProjectComponents,
@@ -49,7 +51,8 @@ export type DesignFull = Design & { job: DesignJob | null }
 export const designFileUrl = (id: string, file: string) =>
   file.startsWith('data:') ? file : `/api/designs/${id}/files/${file}`
 /** 导出下载的地址；在线演示没有后端，由页面自己打包 */
-export const designExportUrl = (id: string, format: 'zip' | 'json') => `/api/designs/${id}/export?format=${format}`
+export const designExportUrl = (id: string, format: 'zip' | 'json' | 'react') =>
+  `/api/designs/${id}/export?format=${format}`
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -207,6 +210,14 @@ export const api = {
     request<DesignFull>(`/designs/${id}/components/import`, json('POST', body)),
   generateDesignImages: (id: string, body: { ids: string[]; source: ImageSource; count: number }) =>
     request<DesignFull>(`/designs/${id}/images/generate`, json('POST', body)),
+  designVersions: (id: string) => request<DesignVersionMeta[]>(`/designs/${id}/versions`),
+  designVersion: (id: string, vid: string) => request<DesignVersion>(`/designs/${id}/versions/${vid}`),
+  saveDesignVersion: (id: string, name: string) =>
+    request<DesignVersionMeta>(`/designs/${id}/versions`, json('POST', { name })),
+  restoreDesignVersion: (id: string, vid: string) =>
+    request<DesignFull>(`/designs/${id}/versions/${vid}/restore`, json('POST', {})),
+  deleteDesignVersion: (id: string, vid: string) =>
+    request<void>(`/designs/${id}/versions/${vid}`, { method: 'DELETE' }),
   retryDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number }) =>
     request<DesignFull>(`/designs/${id}/images/${imageId}/retry`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),

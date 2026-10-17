@@ -38,6 +38,8 @@ import {
   emptyRoot,
   imagePrompt,
   importComponent,
+  type DesignVersion,
+  type DesignVersionMeta,
   type ProjectComponents,
   projectPromptText,
   resolveDesignResult,
@@ -48,8 +50,8 @@ import {
 } from '../shared/design.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
-import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages } from '../shared/umg.ts'
-import { webExport } from '../shared/web.ts'
+import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
+import { webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { READ_ONLY, safeArgs } from './assist.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -69,6 +71,11 @@ import { imageSize, zip } from './zip.ts'
 const DIR = path.join(DATA_DIR, 'designs')
 const fileOf = (id: string) => path.join(DIR, `${id}.json`)
 const imagesDir = (id: string) => path.join(DIR, id, 'images')
+/** 版本单独存一个文件：设计文件页面每秒都要取，不能带着所有历史版本 */
+const versionsFile = (id: string) => path.join(DIR, id, 'versions.json')
+/** 自动存的版本最多留这么多，手动存的最多 50 个 */
+const MAX_AUTO_VERSIONS = 20
+const MAX_VERSIONS = 50
 // 下划线开头，和设计文件（<id>.json）区分开
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
 const TIMEOUT = 10 * 60_000
@@ -628,6 +635,44 @@ ${prompt}`,
     return []
   }
 
+  async function readVersions(id: string): Promise<DesignVersion[]> {
+    const raw = await readJson(versionsFile(id))
+    return Array.isArray(raw) ? (raw as DesignVersion[]) : []
+  }
+  async function writeVersions(id: string, list: DesignVersion[]) {
+    await mkdir(path.dirname(versionsFile(id)), { recursive: true })
+    await writeJsonAtomic(versionsFile(id), list)
+  }
+  const versionMeta = ({ snapshot, ...rest }: DesignVersion): DesignVersionMeta => {
+    let widgets = 0
+    for (const r of [snapshot.root, ...snapshot.components.map((c) => c.Root)]) walk(r, () => widgets++)
+    return { ...rest, widgets }
+  }
+  /** 存一个版本（最新的在最前面）；自动存的超过上限时删掉最老的自动版本 */
+  async function addVersion(d: Design, name: string, auto: boolean) {
+    const v: DesignVersion = {
+      id: randomUUID(),
+      name,
+      at: now(),
+      auto,
+      snapshot: structuredClone({
+        designSize: d.designSize,
+        style: d.style,
+        root: d.root,
+        components: d.components,
+        images: d.images,
+      }),
+    }
+    let list = [v, ...(await readVersions(d.id))]
+    const autos = list.filter((x) => x.auto)
+    if (autos.length > MAX_AUTO_VERSIONS) {
+      const drop = new Set(autos.slice(MAX_AUTO_VERSIONS).map((x) => x.id))
+      list = list.filter((x) => !drop.has(x.id))
+    }
+    await writeVersions(d.id, list.slice(0, MAX_VERSIONS + MAX_AUTO_VERSIONS))
+    return v
+  }
+
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
   async function promptAi(input: PromptAiInput, signal: AbortSignal) {
     const settings = await getSettings()
@@ -1020,6 +1065,57 @@ ${prompt}`,
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
+    // ---- 版本 ----
+    .get('/:id/versions', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      return c.json((await readVersions(d.id)).map(versionMeta))
+    })
+    .get('/:id/versions/:vid', async (c) => {
+      const v = (await readVersions(c.req.param('id'))).find((x) => x.id === c.req.param('vid'))
+      return v ? c.json(v) : bad(c, t('版本不存在'), 404)
+    })
+    .post('/:id/versions', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { name } = (await c.req.json().catch(() => ({}))) as { name?: string }
+      const v = await addVersion(
+        d,
+        String(name ?? '')
+          .trim()
+          .slice(0, 80) || t('未命名版本'),
+        false,
+      )
+      return c.json(versionMeta(v))
+    })
+    // 恢复到某个版本：先把现在的样子自动存一个版本，免得恢复错了回不去
+    .post('/:id/versions/:vid/restore', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      const v = (await readVersions(d.id)).find((x) => x.id === c.req.param('vid'))
+      if (!v) return bad(c, t('版本不存在'), 404)
+      await addVersion(d, t('恢复「{name}」之前', { name: v.name }), true)
+      d.root = v.snapshot.root
+      d.components = v.snapshot.components
+      d.designSize = v.snapshot.designSize
+      d.style = v.snapshot.style
+      // 版本里有、现在已经删掉的图片加回来（文件还在时）
+      for (const img of v.snapshot.images)
+        if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
+      d.rev++
+      await save(d)
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    .delete('/:id/versions/:vid', async (c) => {
+      const id = c.req.param('id')
+      const list = await readVersions(id)
+      await writeVersions(
+        id,
+        list.filter((x) => x.id !== c.req.param('vid')),
+      )
+      return c.body(null, 204)
+    })
     .post('/:id/chat', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
@@ -1038,6 +1134,8 @@ ${prompt}`,
         ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
       })
       await save(d)
+      // AI 改之前自动存一个版本，改坏了可以回去
+      await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
       startJob(d, async (job) => {
         const ids = await chat(d, p.data, job)
         if (!ids.length || p.data.source.kind === 'none') return
@@ -1092,7 +1190,9 @@ ${prompt}`,
     .get('/:id/export', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      const pack = await buildExport(d, c.req.query('format') === 'json')
+      const format = c.req.query('format')
+      const pack =
+        format === 'react' && d.kind === 'web' ? await reactExport(d) : await buildExport(d, format === 'json')
       return c.body(new Uint8Array(pack.data), 200, {
         'Content-Type': pack.type,
         'Content-Disposition': `attachment; filename="${pack.name}"; filename*=UTF-8''${encodeURIComponent(pack.name)}`,
@@ -1145,12 +1245,15 @@ ${prompt}`,
       file: (id) => src.get(id),
     })
     const ascii = (d.title.match(/[A-Za-z0-9]+/g) ?? []).join('-').toLowerCase()
-    return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files] }
+    return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files], src }
   }
 
   /** 导出的文件：<名字>.umg.json + Textures/T_xxx.png（网页 UI 是 index.html + images/） */
   async function exportFiles(d: Design) {
-    if (d.kind === 'web') return { ...(await exportWebFiles(d, false)), json: undefined }
+    if (d.kind === 'web') {
+      const f = await exportWebFiles(d, false)
+      return { name: f.name, files: f.files, json: undefined }
+    }
     const images = []
     const datas = new Map<string, Buffer>()
     for (const i of d.images) {
@@ -1180,6 +1283,23 @@ ${prompt}`,
       ...tex.map((x) => ({ name: x.file, data: datas.get(x.id)! })),
     ]
     return { name: json.Name, json, files }
+  }
+
+  /** 网页 UI 导出成 React + Tailwind：<页面>.tsx + images/ */
+  async function reactExport(d: Design) {
+    const f = await exportWebFiles(d, false)
+    const tsx = webReactExport({
+      title: d.title,
+      root: d.root,
+      components: d.components,
+      file: (id) => f.src.get(id)?.replace(/^images\//, ''),
+    })
+    const name = f.name.replace(/(^|-)(\w)/g, (_, _a, c: string) => c.toUpperCase()) || 'Page'
+    return {
+      name: `${f.name}-react.zip`,
+      type: 'application/zip',
+      data: zip([{ name: `${name}.tsx`, data: Buffer.from(tsx) }, ...f.files.filter((x) => x.name !== 'index.html')]),
+    }
   }
 
   async function buildExport(d: Design, single: boolean) {

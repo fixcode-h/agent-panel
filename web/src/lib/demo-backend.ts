@@ -43,7 +43,7 @@ import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflow
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
-import { demoDesigns, demoGenerate, demoImportComponent, demoProjectComponents } from './demo-design'
+import { demoDesigns, demoGenerate, demoImportComponent, demoProjectComponents, demoVersions } from './demo-design'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 
 const KEY = 'agent-panel-demo-v3'
@@ -814,6 +814,7 @@ function route(method: string, url: string, body: unknown): unknown {
 
   if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
   if (res === 'designs' && sub === 'components') return demoImportComponent(id, body ?? {})
+  if (res === 'designs' && sub === 'versions') return demoVersions(method, id, seg[3], seg[4], body ?? {})
   if (res === 'designs')
     // 演示里没有失败的图，重试和生成一样
     return seg[2] === 'images' && (seg[4] === 'generate' || seg[4] === 'retry')

@@ -401,6 +401,8 @@ const webRules = (
 - 用 Frame 一层层搭：页面（根控件 Page，竖排）→ 区块（导航栏、头图、内容区、页脚）→ 卡片、行、列。横排用 Direction "row"，间距用 Gap，内边距用 Padding，别用空的 Frame 占位。
 - 宽高：要占满父控件剩下的空间写 "fill"（例如横排里自适应的那一列、竖排里撑开的内容区），按内容写 "auto"，固定大小写像素数。根控件 Page 的宽高是 "fill"，设计稿宽 ${d.designSize.X}，高 ${d.designSize.Y}。
 - 重复出现的结构（卡片、列表项、导航项）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用，子控件的根控件也是 Frame。
+- 页面要能适配手机：横排的大区块（头图左右分栏、多列卡片）给 Mobile 改成竖排，固定的大宽度在手机上改成 "fill"，大标题在手机上调小。
+- 按钮、链接、卡片这类能点的控件加上 Hover 样式。
 - 用户附上了网页截图或参考图时，照着截图还原布局、配色和文字，截图里的插图、头像、图标列成要生成的图片。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 Text 的 Text 都写成页面上要显示的真实内容（标题、按钮文案、说明文字），不要留默认的 "Text"；动态的数据写成真实格式的示例（「¥1,299」「2026-10-17」「128 条评论」）。颜色一律写 "#RRGGBBAA"。
@@ -414,7 +416,12 @@ const WEB_NOTES = `## 属性（Properties）
 - WebButton：Text、FontSize、FontWeight、Color、Background、BackgroundImage、Padding、Radius、BorderWidth、BorderColor
 - Input：Placeholder、Value、InputType(text|password|email|number|search|tel)、Multiline、FontSize、Color、Background、BorderWidth、BorderColor、Radius、Padding
 - Divider：Color、Thickness、Vertical
-- 插槽（Slot，放在 Frame 里的控件都有）：{"AlignSelf":"auto|start|center|end|stretch"}，在父控件的交叉轴上单独对齐
+- Frame、Text、Picture、WebButton 写了 Href 就是链接（导出成 <a>）
+- 插槽（Slot，放在 Frame 里的控件都有）：{"AlignSelf":"auto|start|center|end|stretch"}，在父控件的交叉轴上单独对齐；
+  角标、浮层、悬浮按钮用绝对定位：{"Position":"absolute","Pin":"top-left|top-right|bottom-left|bottom-right|center","X":8,"Y":8,"ZIndex":1}，不占位置，贴在父控件的 Pin 角上（X、Y 是离那个角的距离）
+- 悬停：Properties.Hover 里写鼠标移上去时要变的属性，例如按钮 {"Hover":{"Background":"#1D4ED8FF"}}、卡片 {"Hover":{"Shadow":"lg"}}
+- 响应式：Properties.Tablet（宽度 ≤ 1023）、Properties.Mobile（≤ 767）里写这个宽度下要改的属性，例如横排的区块在手机上改竖排 {"Mobile":{"Direction":"column","Gap":16}}、手机上隐藏 {"Mobile":{"Visibility":"Collapsed"}}、字号变小 {"Mobile":{"FontSize":32}}
+- 滚动区域：Frame 固定 Height（或 Width）再把 Overflow 设成 "scroll-y"（或 "scroll-x"）
 - 颜色一律写 sRGB 的 "#RRGGBBAA"。`
 
 const UMG_NOTES = `## 插槽（Slot）和常用属性（名字和取值都和 UE5 一致）
@@ -783,3 +790,15 @@ export function importComponent(
           : v
   return { components: [...target.components, ...add.map(fix)], images, copyFiles }
 }
+
+// ---- 设计版本 ----
+
+/** 一个版本：控件树、子控件、尺寸、风格和图片清单的快照；auto 是自动存的（AI 改之前、恢复之前） */
+export interface DesignVersion {
+  id: string
+  name: string
+  at: string
+  auto: boolean
+  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'>
+}
+export type DesignVersionMeta = Omit<DesignVersion, 'snapshot'> & { widgets: number }

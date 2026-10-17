@@ -1,6 +1,6 @@
 import { createElement, useState, type CSSProperties } from 'react'
 import type { Widget } from '@shared/umg'
-import { webCss } from '@shared/web'
+import { propsAt, webCss } from '@shared/web'
 import type { RenderCtx } from './umg-render'
 
 /**
@@ -10,8 +10,11 @@ import type { RenderCtx } from './umg-render'
 export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; ctx: RenderCtx; wid?: string }) {
   const [hover, setHover] = useState(false)
   const [text, setText] = useState<string>()
-  if (w.Properties?.Visibility === 'Collapsed') return null
-  const p = w.Properties ?? {}
+  const device = ctx.device ?? 'desktop'
+  const play = !!ctx.play
+  // 运行模式里鼠标移上去时用悬停样式
+  const over = play && hover && !!w.Properties?.Hover
+  const p = propsAt(w.Properties, device, over)
   const id = wid ?? (ctx.interactive ? w.id : undefined)
   if (w.Type === 'UserWidget') {
     const comp = ctx.components.get(w.Class ?? '')
@@ -29,24 +32,38 @@ export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; c
           {w.Class || 'UserWidget'}
         </div>
       )
-    return <WebNode w={comp.Root} parent={parent} ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1 }} wid={id} />
+    // 插槽（绝对定位、对齐）用引用它的 UserWidget 的
+    return (
+      <WebNode
+        w={{ ...comp.Root, Slot: w.Slot }}
+        parent={parent}
+        ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1 }}
+        wid={id}
+      />
+    )
   }
-  const style = webCss(w, parent, (img) => ctx.images.get(img)?.url) as CSSProperties
-  const play = !!ctx.play
-  const common = { 'data-wid': id, 'data-type': w.Type, style }
+  const style = webCss(w, parent, (img) => ctx.images.get(img)?.url, { device, hover: over }) as CSSProperties
+  const common = {
+    'data-wid': id,
+    'data-type': w.Type,
+    style,
+    ...(w.Properties?.Hover ? { onPointerEnter: () => setHover(true), onPointerLeave: () => setHover(false) } : {}),
+  }
+  // 链接画成 <a>，但在设计器里点了不跳转
+  const link = p.Href
+    ? { href: String(p.Href), onClick: (e: { preventDefault: () => void }) => e.preventDefault() }
+    : {}
   switch (w.Type) {
     case 'Frame':
-      return (
-        <div {...common}>
-          {(w.Children ?? []).map((c) => (
-            <WebNode key={c.id} w={c} parent={w} ctx={ctx} />
-          ))}
-        </div>
+      return createElement(
+        p.Href ? 'a' : 'div',
+        { ...common, ...link },
+        (w.Children ?? []).map((c) => <WebNode key={c.id} w={c} parent={w} ctx={ctx} />),
       )
     case 'Text':
       return createElement(
-        ['h1', 'h2', 'h3', 'h4', 'p', 'span', 'label'].includes(p.Tag) ? p.Tag : 'p',
-        common,
+        p.Href ? 'a' : ['h1', 'h2', 'h3', 'h4', 'p', 'span', 'label'].includes(p.Tag) ? p.Tag : 'p',
+        { ...common, ...link },
         String(p.Text ?? ''),
       )
     case 'Picture': {
@@ -70,10 +87,10 @@ export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; c
           {...common}
           type="button"
           tabIndex={play ? 0 : -1}
-          onPointerEnter={() => play && setHover(true)}
+          onPointerEnter={() => setHover(true)}
           onPointerLeave={() => setHover(false)}
-          // 运行模式里鼠标移上去稍微变亮，像真的按钮
-          style={{ ...style, filter: hover && play ? 'brightness(1.08)' : undefined }}
+          // 运行模式里鼠标移上去：有悬停样式用悬停样式，没有就稍微变亮，像真的按钮
+          style={{ ...style, filter: hover && play && !w.Properties?.Hover ? 'brightness(1.08)' : undefined }}
         >
           {String(p.Text ?? '')}
         </button>

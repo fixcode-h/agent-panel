@@ -2265,8 +2265,20 @@ try {
           widget: {
             Type: 'Frame',
             Name: 'Actions',
-            Properties: { Direction: 'row', Gap: 12 },
-            Children: [{ Type: 'WebButton', Name: 'Btn_Go', Properties: { Text: '开始使用' } }],
+            Properties: { Direction: 'row', Gap: 12, Mobile: { Direction: 'column' } },
+            Children: [
+              {
+                Type: 'WebButton',
+                Name: 'Btn_Go',
+                Properties: { Text: '开始使用', Href: '/start', Hover: { Background: '#1D4ED8FF' } },
+              },
+              {
+                Type: 'Text',
+                Name: 'Badge',
+                Slot: { Position: 'absolute', Pin: 'top-right', X: 4, Y: 4 },
+                Properties: { Text: 'NEW' },
+              },
+            ],
           },
         },
       ],
@@ -2292,9 +2304,34 @@ try {
     const html = await (await fetch(`${base}/designs/${webD.id}/export?format=json`)).text()
     assert.match(html, /<h1 class="Title">欢迎来到 Flowboard<\/h1>/)
     assert.match(html, /\.Actions \{[^}]*flex-direction: row;[^}]*gap: 12px;/)
-    assert.match(html, /<button class="Btn_Go" type="button">开始使用<\/button>/)
+    assert.match(html, /<a class="Btn_Go" href="\/start">开始使用<\/a>/, '写了 Href 就是链接')
+    assert.match(html, /\.Btn_Go:hover \{ background-color: rgba\(29,78,216,1\); \}/, '悬停样式')
+    assert.match(html, /@media \(max-width: 767px\) \{\n {2}\.Actions \{ flex-direction: column; \}/, '手机上改竖排')
+    assert.match(html, /\.Badge \{[^}]*position: absolute;[^}]*top: 4px;[^}]*right: 4px;/, '绝对定位贴在右上角')
+    const reactZip = Buffer.from(await (await fetch(`${base}/designs/${webD.id}/export?format=react`)).arrayBuffer())
+    assert.ok(reactZip.includes(Buffer.from('LandingPage.tsx')), JSON.stringify(reactZip.subarray(30, 80).toString()))
+    assert.ok(reactZip.includes(Buffer.from('max-md:flex-col')), 'React 组件里手机用 max-md:')
     const webZip = Buffer.from(await (await fetch(`${base}/designs/${webD.id}/export?format=zip`)).arrayBuffer())
     assert.ok(webZip.includes(Buffer.from('index.html')))
+    // 版本：AI 改之前自动存了一个；手动存一个；恢复到 AI 改之前，恢复前的样子也存下来
+    let vers = await call('GET', `/designs/${webD.id}/versions`)
+    assert.equal(vers.length, 1)
+    assert.ok(vers[0].auto && /AI 修改前/.test(vers[0].name))
+    const named = await call('POST', `/designs/${webD.id}/versions`, { name: '第一稿' })
+    assert.equal(named.auto, false)
+    const full = await call('GET', `/designs/${webD.id}/versions/${named.id}`)
+    assert.equal(full.snapshot.root.Children.length, 2, '版本里有完整的控件树')
+    const restored = await call('POST', `/designs/${webD.id}/versions/${vers[0].id}/restore`)
+    assert.equal(restored.root.Children.length, 0, '恢复到 AI 改之前（空页面）')
+    vers = await call('GET', `/designs/${webD.id}/versions`)
+    assert.deepEqual(
+      vers.map((v) => v.auto),
+      [true, false, true],
+    )
+    assert.match(vers[0].name, /^恢复「AI 修改前：做首页.*」之前$/)
+    assert.equal(vers[1].name, '第一稿')
+    await call('DELETE', `/designs/${webD.id}/versions/${named.id}`)
+    assert.equal((await call('GET', `/designs/${webD.id}/versions`)).length, 2)
     await call('DELETE', `/designs/${webD.id}`)
     step('UI 设计：网页 UI（自动布局的控件、网页的提示词、导出 HTML）')
 
