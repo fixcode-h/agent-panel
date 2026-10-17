@@ -142,6 +142,7 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  'AI 正在修改，已经改了 {n} 处': 'AI is editing: {n} changes so far',
   '写修改意见，发送后按图上的标记重新生成图片': 'Write your notes. Sending regenerates the images using your marks',
   '图上有 {n} 处标记，': '{n} marks on the image. ',
   在大图上标记要改的地方: 'Mark what to change on the large view',
@@ -157,10 +158,9 @@ export const EN_DESIGN: Record<string, string> = {
   '用到控件上…': 'Use on a widget…',
   没有要生成的图片: 'No images to generate',
   参考附件: 'See the attachments',
-  按图上的标记和修改意见重新生成: 'Regenerate using the marks on the image and the change notes',
   按标记重新生成: 'Regenerate with marks',
-  '选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再点「按标记重新生成」':
-    'Pick box, arrow, pen or pin above, mark what to change on the image, then click “Regenerate with marks”',
+  '选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再在右边的对话框里写修改意见发送':
+    'Pick box, arrow, pen or pin above, mark what to change on the image, then write your notes in the chat on the right and send',
   控件: 'Widgets',
   '这个项目里还没有子控件。让 AI 把重复的部分（列表项、格子、按钮）做成子控件，就会出现在这里。':
     'No widgets in this project yet. Ask the AI to turn repeated parts (list items, slots, buttons) into widgets and they show up here.',

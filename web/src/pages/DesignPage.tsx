@@ -11,6 +11,7 @@ import {
   Palette as PaletteIcon,
   Plus,
   Puzzle,
+  Loader2,
   Redo2,
   Trash2,
   Undo2,
@@ -286,7 +287,11 @@ function Designer({ id }: { id: string }) {
   const treePane = usePaneWidth('design-tree', 300, 220, 560)
   const chatPane = usePaneWidth('design-chat', 380, 300, 720)
 
+  // AI 一步步改的时候，效果图和控件树显示已经收到的改动（还没存下，改完整体检查通过才存）
+  const live = server?.job?.status === 'running' && server.job.phase === 'design' ? server.job.preview : undefined
+  const shownDoc = doc && live ? { ...doc, root: live.root, components: live.components } : doc
   const tree = doc ? treeOf(doc, target) : undefined
+  const shownTree = shownDoc ? (treeOf(shownDoc, target) ?? tree) : undefined
   // 子控件被删掉或改名了：回到主界面
   useEffect(() => {
     if (doc && target && !doc.components.some((c) => c.Name === target)) setTarget('')
@@ -791,10 +796,10 @@ function Designer({ id }: { id: string }) {
       <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1">
           <Viewport
-            root={tree}
+            root={shownTree ?? tree}
             size={designSize}
             images={renderImages}
-            components={doc.components}
+            components={shownDoc?.components ?? doc.components}
             selected={selected}
             onSelect={(wid) => {
               setSelected(wid)
@@ -841,8 +846,6 @@ function Designer({ id }: { id: string }) {
                     `ann:img:${img.id}`,
                   )
                 }
-                onRegenerate={() => void generate(img)}
-                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
                 onClose={() => setPreview('')}
               />
             ) : null
@@ -903,7 +906,15 @@ function Designer({ id }: { id: string }) {
           )}
           <div className="min-h-[120px] flex-1 overflow-y-auto">
             {tab === 'tree' ? (
-              <Hierarchy root={tree} selected={selected} actions={actions} />
+              <>
+                {live && (
+                  <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[11.5px] text-accent">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
+                  </p>
+                )}
+                <Hierarchy root={shownTree ?? tree} selected={selected} actions={actions} />
+              </>
             ) : tab === 'widgets' ? (
               <ComponentsPanel
                 projectId={server.projectId}

@@ -2058,7 +2058,46 @@ try {
     )
     assert.equal(d.messages.at(-2).annotations[0].note, '按钮换成金色')
     assert.equal(d.messages.at(-1).text, '改好了')
-    step('UI 设计：AI 搭控件树（自动修正一次）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开')
+    // AI 一步步改（ops）：改属性、加控件、改名、改子控件里的；写错的操作退回去让它改
+    const revBefore = d.rev
+    const badOps = { reply: 'x', ops: [{ op: 'set', target: 'Nope', path: 'Properties.Text', value: 'a' }] }
+    const goodOps = {
+      reply: '改了几处',
+      ops: [
+        { op: 'rename', target: 'Bg', name: 'Img_Bg' },
+        {
+          op: 'add',
+          parent: 'Buttons',
+          widget: { Type: 'TextBlock', Name: 'Txt_Ver', Properties: { Text: 'v1.0.3' } },
+        },
+        { op: 'set', in: 'WBP_MenuButton', target: 'Label', path: 'Properties.Text', value: '开始游戏' },
+        { op: 'set', target: 'Buttons', path: 'Slot.LayoutData.Offsets', value: { Top: 500 } },
+      ],
+    }
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `改一下 FAKE_DESIGN:${JSON.stringify(badOps)}\nFAKE_DESIGN2:${JSON.stringify(goodOps)}`,
+      source: { kind: 'none' },
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    assert.equal(d.job.attempt, 2, '写错的操作退回去重写')
+    assert.equal(d.rev, revBefore + 1)
+    assert.deepEqual(
+      d.root.Children.map((w) => w.Name),
+      ['Img_Bg', 'Buttons'],
+    )
+    const ver = d.root.Children[1].Children.at(-1)
+    assert.deepEqual([ver.Name, ver.Properties.Text, ver.Slot.Size.SizeRule], ['Txt_Ver', 'v1.0.3', 'Automatic'])
+    assert.equal(d.components[0].Root.Children[0].Properties.Text, '开始游戏')
+    assert.equal(d.root.Children[1].Slot.LayoutData.Offsets.Top, 500, '只改写到的字段')
+    assert.ok(d.root.Children[1].Slot.LayoutData.Offsets.Right > 0, '没写到的字段保留')
+    const retryAsk = calls()
+      .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
+      .at(-1).input
+    assert.match(retryAsk, /ops\[0\]：主界面里没有叫 Nope 的控件/)
+    step(
+      'UI 设计：AI 搭控件树（自动修正一次）、一步步改（ops）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开',
+    )
 
     // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge
     const ext = { 'content-type': 'application/json', origin: 'chrome-extension://abcdefghijklmnop' }

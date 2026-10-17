@@ -363,14 +363,12 @@ export function ImageDetails({
 export const CHECKER =
   'bg-[#fff] bg-[length:16px_16px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]'
 
-/** 盖在画布区域上的大图预览：可以在图上画修改标记，直接重新生成；点空白处、关闭按钮或按 Esc 关掉 */
+/** 盖在画布区域上的大图预览：可以在图上画修改标记（列在右边对话框上面，写好意见发送就按它重新生成）；点空白处、关闭按钮或按 Esc 关掉 */
 export function ImagePreview({
   image,
   src,
   marks,
   onMarks,
-  onRegenerate,
-  canGenerate,
   onClose,
 }: {
   image: DesignImage
@@ -378,8 +376,6 @@ export function ImagePreview({
   /** 图上的修改标记，坐标是这一版图片的像素 */
   marks: Annotation[]
   onMarks: (list: Annotation[]) => void
-  onRegenerate: () => void
-  canGenerate: boolean
   onClose: () => void
 }) {
   const [tool, setTool] = useState<Tool>('select')
@@ -390,7 +386,6 @@ export function ImagePreview({
   const [scale, setScale] = useState(0)
   const v = image.variants[image.selected] ?? image.variants.at(-1)
   const size = { X: v?.width || image.width, Y: v?.height || image.height }
-  const busy = image.status === 'generating' || image.status === 'pending'
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest('input, textarea')) return
@@ -426,15 +421,6 @@ export function ImagePreview({
           {image.variants.length > 1 && ` · ${image.selected + 1}/${image.variants.length}`}
         </span>
         <span className="flex-1" />
-        <Button
-          size="sm"
-          onClick={onRegenerate}
-          disabled={!canGenerate || busy}
-          title={marks.length ? t('按图上的标记和修改意见重新生成') : undefined}
-        >
-          {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-          {marks.length ? t('按标记重新生成') : t('重新生成')}
-        </Button>
         <button
           onClick={onClose}
           aria-label={t('关闭预览')}
@@ -507,7 +493,7 @@ export function ImagePreview({
       </div>
       {!marks.length && (
         <p className="pointer-events-none shrink-0 pb-3 text-center text-[11.5px] text-white/40">
-          {t('选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再点「按标记重新生成」')}
+          {t('选上面的框选、箭头、画笔或打点，在图上标出要改的地方，再在右边的对话框里写修改意见发送')}
         </p>
       )}
     </div>
