@@ -35,7 +35,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { AgentMessage, FoldedRun } from './Messages'
+import { AgentMessage, FoldedRun, PendingAuthor } from './Messages'
+import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskPanel } from './TaskPanel'
@@ -552,13 +553,24 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                       <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
                     ),
                   )}
-                  {running && task.mode === 'chat' && (
-                    <div className="flex items-center gap-2 text-[13px] text-muted">
-                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                      {t('{name} 正在回复', { name: chatLabel })}
-                      <LiveStats task={task} agentIds={[task.agentId]} />
-                    </div>
-                  )}
+                  {running &&
+                    task.mode === 'chat' &&
+                    (blocks.at(-1)?.kind === 'turn' ? (
+                      <div className="flex items-center gap-2 text-[13px] text-muted">
+                        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                        {t('{name} 正在回复', { name: chatLabel })}
+                        <LiveStats task={task} agentIds={[task.agentId]} />
+                      </div>
+                    ) : (
+                      // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
+                      <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
+                        <div className="flex items-center gap-2 text-[13px] text-muted">
+                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                          {t('思考中…')}
+                          <LiveStats task={task} agentIds={[task.agentId]} />
+                        </div>
+                      </PendingReply>
+                    ))}
                   {running && task.mode === 'workflow' && runningSteps.length === 0 && (
                     <div className="flex items-center gap-2 text-[13px] text-muted">
                       <Loader2 className="h-4 w-4 animate-spin text-accent" />
@@ -916,4 +928,24 @@ function ChatTurn({
   const cur = useChatRun(fallback ?? { cli: '', model: '', effort: '' }).run
   const author = useRunAuthor(fallback ? (run ?? cur) : undefined)
   return <FoldedRun msgs={msgs} teamNames={teamNames} live={live} author={author} />
+}
+
+/** 回复还没开始输出时的署名：按 CLI 显示的对话用现在选的 CLI 和模型，其他对话用 Agent */
+function PendingReply({
+  fallback,
+  agentId,
+  children,
+}: {
+  fallback?: ChatRun
+  agentId: string
+  children: React.ReactNode
+}) {
+  const { agents } = useData()
+  const { modelOf } = useAgentView()
+  const cur = useChatRun(fallback ?? { cli: '', model: '', effort: '' }).run
+  const byCli = useRunAuthor(fallback ? cur : undefined)
+  const a = agents.find((x) => x.id === agentId)
+  const author = byCli ?? (a ? { name: a.name, cli: a.cli, icon: a.icon, model: modelOf(a) } : undefined)
+  if (!author) return <>{children}</>
+  return <PendingAuthor author={author}>{children}</PendingAuthor>
 }

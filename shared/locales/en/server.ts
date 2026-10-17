@@ -257,6 +257,8 @@ export const EN_SERVER: Record<string, string> = {
   检查新版本: 'Checking the new version',
   '新版本没能装好，已经退回原来的版本：{error}':
     'The new version could not be installed, so the previous version was restored: {error}',
+  '新版本没能装好：{error}。退回原来的版本也失败了：{back}。请关掉 Agent 面板后重新解压原来的包':
+    'The new version failed to install: {error}. Rolling back also failed: {back}. Quit Agent Panel and extract the original package again',
   '从源码运行时请用 git 切换版本': 'When running from source, use git to switch versions',
   没有可以退回的版本: 'No previous version to go back to',
   '退回失败：{error}': 'Failed to go back: {error}',

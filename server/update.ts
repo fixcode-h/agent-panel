@@ -64,29 +64,71 @@ async function backup(dir: string, to: string) {
   await writeFile(path.join(to, VERSION_FILE), currentVersion())
 }
 
+/**
+ * Windows 上刚解压、刚复制的文件常被杀毒软件或索引服务短暂打开，这时改名、覆盖会报 EPERM / EBUSY；
+ * 等一会儿再试通常就好了（和 npm 的 graceful-fs 一样的做法）
+ */
+async function retry<T>(fn: () => Promise<T>, tries = 12): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn()
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code ?? ''
+      if (i >= tries || !['EPERM', 'EACCES', 'EBUSY', 'ENOTEMPTY'].includes(code)) throw e
+      await new Promise((r) => setTimeout(r, Math.min(200 * i, 1500)))
+    }
+  }
+}
+
+/** 目录改名；一直改不了时（目录里有文件被占用）改成复制过去再删掉原来的 */
+async function moveDir(from: string, to: string) {
+  try {
+    await retry(() => rename(from, to), 8)
+  } catch {
+    await retry(() => cp(from, to, { recursive: true }))
+    await rm(from, { recursive: true, force: true, maxRetries: 5 }).catch(() => {})
+  }
+}
+
+/** 两个文件内容一样（托盘程序大多数版本没有变化，不用换） */
+async function sameFile(a: string, b: string) {
+  if (!existsSync(a) || !existsSync(b)) return false
+  return (await sha256(a)) === (await sha256(b))
+}
+
+/**
+ * 换托盘程序：它正在运行，不能覆盖，但可以改名，所以先挪开再放新的。
+ * 托盘重启服务时自己不退出，上次挪开的 AgentPanel.exe.old 可能就是正在运行的那个，删不掉也不能被覆盖，
+ * 这时挪到一个新名字（AgentPanel.exe.old-时间），下次启动时再清理
+ */
+async function replaceTray(src: string, exe: string) {
+  if (await sameFile(src, exe)) return
+  if (existsSync(exe)) {
+    const old = `${exe}.old`
+    await rm(old, { force: true }).catch(() => {})
+    const moved = existsSync(old) ? `${old}-${Date.now()}` : old
+    await retry(() => rename(exe, moved))
+  }
+  await retry(() => cp(src, exe))
+}
+
 /** 用 src 里的程序文件替换 dir 里的：先放好新的 dist 再换名，data/ 不动 */
 async function apply(src: string, dir: string) {
   const dist = path.join(dir, 'dist')
   const next = path.join(dir, 'dist.next')
   const old = path.join(dir, 'dist.old')
-  await rm(next, { recursive: true, force: true })
-  await rm(old, { recursive: true, force: true })
-  await cp(path.join(src, 'dist'), next, { recursive: true })
-  if (existsSync(dist)) await rename(dist, old)
-  await rename(next, dist)
-  for (const f of FILES) if (existsSync(path.join(src, f))) await cp(path.join(src, f), path.join(dir, f))
-  if (existsSync(path.join(src, TRAY_EXE))) {
-    const exe = path.join(dir, TRAY_EXE)
-    const moved = `${exe}.old`
-    await rm(moved, { force: true }).catch(() => {})
-    if (existsSync(exe)) await rename(exe, moved)
-    await cp(path.join(src, TRAY_EXE), exe)
-  }
+  await rm(next, { recursive: true, force: true, maxRetries: 5 })
+  await rm(old, { recursive: true, force: true, maxRetries: 5 })
+  await retry(() => cp(path.join(src, 'dist'), next, { recursive: true }))
+  if (existsSync(dist)) await moveDir(dist, old)
+  await moveDir(next, dist)
+  for (const f of FILES) if (existsSync(path.join(src, f))) await retry(() => cp(path.join(src, f), path.join(dir, f)))
+  if (existsSync(path.join(src, TRAY_EXE))) await replaceTray(path.join(src, TRAY_EXE), path.join(dir, TRAY_EXE))
   // 换成托盘程序后不再需要命令行启动文件
   if (existsSync(path.join(dir, TRAY_EXE))) await rm(path.join(dir, 'start.cmd'), { force: true }).catch(() => {})
   for (const sh of ['start.sh', 'install-service.sh'])
     if (existsSync(path.join(dir, sh))) await chmod(path.join(dir, sh), 0o755).catch(() => {})
-  await rm(old, { recursive: true, force: true }).catch(() => {})
+  await rm(old, { recursive: true, force: true, maxRetries: 5 }).catch(() => {})
 }
 
 /** 新的 server.mjs 能不能在这台电脑的 Node 上加载：只加载模块就退出，不监听端口 */
@@ -203,7 +245,19 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
         job.phase = t('检查新版本')
         await selfCheck(dir)
       } catch (e) {
-        await apply(PREVIOUS(), dir).catch(() => {})
+        log.error('update', '新版本没能装好，退回原来的版本', e)
+        // 退回也失败时要说出来：程序文件可能是新旧混在一起的，不能当作已经退回
+        const back = await apply(PREVIOUS(), dir).then(
+          () => '',
+          (b: Error) => b.message,
+        )
+        if (back)
+          throw new Error(
+            t('新版本没能装好：{error}。退回原来的版本也失败了：{back}。请关掉 Agent 面板后重新解压原来的包', {
+              error: (e as Error).message,
+              back,
+            }),
+          )
         throw new Error(t('新版本没能装好，已经退回原来的版本：{error}', { error: (e as Error).message }))
       }
 
@@ -304,7 +358,17 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
  */
 /** 上次更新时挪开的旧托盘程序：托盘重新启动后就不再占用，可以删掉 */
 export function cleanupOldTray(dir = appDir()) {
-  void rm(path.join(dir, `${TRAY_EXE}.old`), { force: true }).catch(() => {})
+  // 包括换不了名时挪到的 AgentPanel.exe.old-时间；还在运行的那个删不掉，下次再试
+  void readdir(dir)
+    .then((names) =>
+      Promise.all(
+        names
+          .filter((n) => n.startsWith(`${TRAY_EXE}.old`))
+          .map((n) => rm(path.join(dir, n), { force: true }).catch(() => {})),
+      ),
+    )
+    .catch(() => {})
+  void rm(path.join(dir, 'dist.old'), { recursive: true, force: true }).catch(() => {})
 }
 
 export function restartProcess(close: () => void) {
