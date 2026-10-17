@@ -2097,6 +2097,18 @@ try {
     })
     // 扩展靠这个版本号判断要不要自己重新加载
     assert.equal(typeof (await hello.json()).latestVersion, 'string')
+    // 一键刷新扩展：1.3 起的扩展在下次报到时收到一次重新加载的要求
+    assert.deepEqual(await call('POST', '/designs/browser/reload', {}), { auto: true })
+    const helloAgain = () =>
+      bridge('POST', '/hello', {
+        version: '1.3.0',
+        tabs: [
+          { id: 7, url: 'https://gemini.google.com/app/abc' },
+          { id: 8, url: 'https://chatgpt.com/c/1' },
+        ],
+      }).then((r) => r.json())
+    assert.equal((await helloAgain()).reload, true)
+    assert.equal((await helloAgain()).reload, false, '刷新要求只带一次')
     const status = await call('GET', '/designs/browser')
     assert.equal(status.connected, true)
     assert.equal(typeof status.latestVersion, 'string')

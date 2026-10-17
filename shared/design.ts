@@ -335,6 +335,12 @@ export interface BrowserStatus {
   browsers: { id: string; name: string }[]
 }
 
+/** 1.3 起的扩展能按面板的要求自己重新加载（浏览器不会自己重新加载已解压的扩展），更早的只能去扩展页面点刷新 */
+export const extensionSelfReload = (version: string) => {
+  const [major, minor] = version.split('.').map(Number)
+  return major > 1 || (major === 1 && minor >= 3)
+}
+
 export const emptyRoot = (): Widget => newWidget('CanvasPanel', 'RootCanvas')
 
 // ---- AI 对话 ----

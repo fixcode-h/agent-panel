@@ -138,6 +138,11 @@ export const EN_DESIGN: Record<string, string> = {
   '正在等待扩展连上…装好后这里会自动变成已连上': 'Waiting for the extension… this turns to connected once it’s loaded',
   '扩展已连上，但不是最新版（{v} → {latest}）：在扩展页面点一下扩展的刷新按钮':
     'Extension connected but outdated ({v} → {latest}): click its reload button on the extensions page',
+  '扩展正在刷新，几秒后会重新连上': 'The extension is reloading and will reconnect in a few seconds',
+  '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
+    'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
+  一键刷新扩展: 'Reload extension',
+  '打开 {name} 的扩展页面刷新': 'Reload from {name}’s extensions page',
   '已连上，找到 {n} 个可以用的标签页': 'Connected. Found {n} usable tabs',
   '扩展已连上，还没有打开 Gemini 或 ChatGPT': 'Extension connected, but no Gemini or ChatGPT tab is open',
   安装扩展: 'Install the extension',

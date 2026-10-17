@@ -54,6 +54,8 @@ const ONLINE_MS = 45_000
 const tabs = new Map<string, BrowserTab>()
 let lastSeen = 0
 let extVersion = ''
+/** 用户在面板里点了「刷新扩展」：下次扩展报到时让它重新加载 */
+let reloadAsked = false
 const queue: Pending[] = []
 const pending = new Map<string, Pending>()
 const waiters = new Set<(p: Pending | null) => void>()
@@ -200,6 +202,11 @@ export function browserParallel() {
   return major > 1 || (major === 1 && minor >= 2)
 }
 
+/** 让扩展重新加载（1.3 起的扩展支持）。扩展每隔几秒报到一次，报到时带上这个要求 */
+export function askExtensionReload() {
+  reloadAsked = true
+}
+
 /** 在浏览器标签页里生成图片：每取到一张就交给 onImage，返回最后才交来的图片（旧版扩展一次全交） */
 export function browserGenerate(
   o: {
@@ -265,7 +272,9 @@ export function bridgeApi() {
         // 告诉扩展面板自带的版本：浏览器不会自己重新加载已解压的扩展，1.3 起的扩展看到更新的版本会自己重新加载。
         // 先调 extensionDir()，确保磁盘上的扩展文件已经是这个版本
         extensionDir()
-        return c.json({ ok: true, latestVersion: bundledExtensionVersion() })
+        const reload = reloadAsked
+        reloadAsked = false
+        return c.json({ ok: true, latestVersion: bundledExtensionVersion(), reload })
       })
       .get('/poll', async (c) => {
         lastSeen = Date.now()

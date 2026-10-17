@@ -11,6 +11,7 @@ let state = { connected: false, error: '', tabs: 0 }
 let polling = false
 // 正在处理的指令数：每张图在同一个标签页里各开一个对话，可以同时生成好几张
 let active = 0
+let reloadWanted = false
 
 async function base() {
   const { port } = await chrome.storage.local.get('port')
@@ -39,6 +40,9 @@ async function hello() {
     const r = await post('hello', { version: chrome.runtime.getManifest().version, tabs })
     state.connected = true
     state.error = ''
+    // 用户在面板里点了「刷新扩展」；正在生成时不打断，下次报到再说（面板那边的要求只带一次，所以记下来）
+    if (r?.reload) reloadWanted = true
+    if (reloadWanted && !active) chrome.runtime.reload()
     void selfUpdate(r?.latestVersion)
   } catch (e) {
     state.connected = false

@@ -22,12 +22,13 @@ import {
 } from '../shared/schema.ts'
 import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
+import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
-import { bridgeApi, extensionDir, openExtensionsPage } from './bridge.ts'
+import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
@@ -319,6 +320,20 @@ app.post('/designs/browser/reveal', (c) => {
   if (!dir) return bad(c, t('没有找到扩展目录'))
   revealDir(dir)
   return c.json({ ok: true })
+})
+// 刷新扩展：1.3 起的扩展自己重新加载；更早的版本做不到，只能打开扩展页面让用户点刷新
+app.post('/designs/browser/reload', async (c) => {
+  const { browser } = (await c.req.json().catch(() => ({}))) as { browser?: string }
+  if (extensionSelfReload(browserStatus().version)) {
+    askExtensionReload()
+    return c.json({ auto: true })
+  }
+  try {
+    openExtensionsPage(String(browser ?? ''))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  return c.json({ auto: false })
 })
 // 安装扩展：打开浏览器的扩展页面和扩展所在的文件夹
 app.post('/designs/browser/install', async (c) => {

@@ -204,6 +204,8 @@ export const api = {
     request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
   installExtension: (browser: string) =>
     request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
+  reloadExtension: (browser: string) =>
+    request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }

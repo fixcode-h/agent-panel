@@ -9,11 +9,13 @@ import {
   FolderOpen,
   Globe,
   Loader2,
+  RefreshCw,
   Sparkles,
   Square,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
+import { extensionSelfReload } from '@shared/design'
 import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
 import type { TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
@@ -156,6 +158,24 @@ function BrowserHelp({
       setInstalling('')
     }
   }
+  const [reloading, setReloading] = useState('')
+  const selfReload = extensionSelfReload(status.version)
+  // 1.3 起的扩展让它自己重新加载；更早的版本只能打开扩展页面，让用户点一下扩展上的刷新按钮
+  const reload = async (browser: string) => {
+    setReloading(browser || 'auto')
+    try {
+      const { auto } = await api.reloadExtension(browser)
+      toast.success(
+        auto
+          ? t('扩展正在刷新，几秒后会重新连上')
+          : t('已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新'),
+      )
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setReloading('')
+    }
+  }
   const state = !connected
     ? waiting
       ? { tone: 'wait', text: t('正在等待扩展连上…装好后这里会自动变成已连上') }
@@ -267,6 +287,26 @@ function BrowserHelp({
             )}
             <div className="min-w-0 flex-1">
               <p>{state.text}</p>
+              {outdated && !demo && (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {(selfReload ? [{ id: '', name: '' }] : status.browsers).map((b) => (
+                    <Button
+                      key={b.id}
+                      size="sm"
+                      variant="primary"
+                      disabled={!!reloading}
+                      onClick={() => void reload(b.id)}
+                    >
+                      {reloading === (b.id || 'auto') ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="h-3.5 w-3.5" />
+                      )}
+                      {selfReload ? t('一键刷新扩展') : t('打开 {name} 的扩展页面刷新', { name: b.name })}
+                    </Button>
+                  ))}
+                </div>
+              )}
               {connected && tabs.length > 0 && (
                 <ul className="mt-1 flex flex-col gap-0.5 text-muted">
                   {tabs.map((tb) => (
