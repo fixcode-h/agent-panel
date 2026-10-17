@@ -36,14 +36,34 @@ async function hello() {
   try {
     const tabs = await listTabs()
     state.tabs = tabs.length
-    await post('hello', { version: chrome.runtime.getManifest().version, tabs })
+    const r = await post('hello', { version: chrome.runtime.getManifest().version, tabs })
     state.connected = true
     state.error = ''
+    void selfUpdate(r?.latestVersion)
   } catch (e) {
     state.connected = false
     state.error = String(e?.message ?? e)
   }
   return state
+}
+
+const newer = (a, b) => {
+  const x = String(a).split('.').map(Number)
+  const y = String(b).split('.').map(Number)
+  for (let i = 0; i < 3; i++) if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0)
+  return false
+}
+
+/**
+ * 面板更新后扩展文件夹里已经是新版，但浏览器不会自己重新加载已解压的扩展，旧代码会一直跑下去：
+ * 看到面板自带的版本更新就重新加载一次。正在生成时不打断；每个版本只试一次，免得文件夹没更新时反复重载
+ */
+async function selfUpdate(latest) {
+  if (!latest || active || !newer(latest, chrome.runtime.getManifest().version)) return
+  const { reloadedFor } = await chrome.storage.local.get('reloadedFor')
+  if (reloadedFor === latest) return
+  await chrome.storage.local.set({ reloadedFor: latest })
+  chrome.runtime.reload()
 }
 
 // 长轮询取指令。浏览器会让空闲的后台休眠，这里每几秒调一次扩展接口（报标签页）让它保持运行；
@@ -83,7 +103,7 @@ chrome.tabs.onUpdated.addListener((_id, info) => {
 })
 chrome.tabs.onRemoved.addListener(() => void hello())
 
-chrome.runtime.onMessage.addListener((msg, sender, reply) => {
+chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
   // 弹出窗口要状态
   if (msg?.type === 'status') {
     void hello().then((s) => {
@@ -92,48 +112,12 @@ chrome.runtime.onMessage.addListener((msg, sender, reply) => {
     })
     return true
   }
-  // 标签页在后台发不出描述：切到前面发，发完切回原来的标签页。同时只切一个，免得几个对话抢着切
-  if (msg?.type === 'focus' && sender.tab?.id !== undefined) {
-    void focusTab(sender.tab).then(
-      () => reply(true),
-      () => reply(false),
-    )
-    return true
-  }
-  if (msg?.type === 'unfocus' && sender.tab?.id !== undefined) {
-    void unfocusTab(sender.tab.id)
-    return false
-  }
   // 标签页里的进度转给面板
   if (msg?.type === 'progress' && msg.id) {
     void post('progress', { id: msg.id, text: msg.text }).catch(() => {})
   }
   return false
 })
-
-let focusLock = Promise.resolve()
-const focusRelease = new Map()
-
-async function focusTab(tab) {
-  let release
-  const mine = new Promise((r) => (release = r))
-  const wait = focusLock
-  focusLock = focusLock.then(() => mine)
-  await wait
-  const [cur] = await chrome.tabs.query({ active: true, windowId: tab.windowId })
-  focusRelease.set(tab.id, { release, prev: cur?.id })
-  // 最多占 20 秒，标签页没发 unfocus 也会放开
-  setTimeout(() => void unfocusTab(tab.id), 20_000)
-  await chrome.tabs.update(tab.id, { active: true })
-}
-
-async function unfocusTab(tabId) {
-  const f = focusRelease.get(tabId)
-  if (!f) return
-  focusRelease.delete(tabId)
-  if (f.prev !== undefined && f.prev !== tabId) await chrome.tabs.update(f.prev, { active: true }).catch(() => {})
-  f.release()
-}
 
 /** 页面是在扩展装好之前打开的，里面没有 content.js：补注入一次 */
 async function ensureContent(tabId) {
