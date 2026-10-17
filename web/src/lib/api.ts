@@ -33,6 +33,7 @@ import type {
   DesignProjectInput,
   ImageSource,
   NewDesignInput,
+  ProjectComponents,
   ProjectPrompt,
   PromptAiInput,
 } from '@shared/design'
@@ -196,8 +197,16 @@ export const api = {
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
   uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),
-  generateDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number; prompt?: string }) =>
-    request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
+  generateDesignImage: (
+    id: string,
+    imageId: string,
+    body: { source: ImageSource; count: number; prompt?: string; revision?: string },
+  ) => request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
+  projectComponents: (projectId: string) => request<ProjectComponents[]>(`/designs/projects/${projectId}/components`),
+  importComponent: (id: string, body: { from: string; name: string }) =>
+    request<DesignFull>(`/designs/${id}/components/import`, json('POST', body)),
+  generateDesignImages: (id: string, body: { ids: string[]; source: ImageSource; count: number }) =>
+    request<DesignFull>(`/designs/${id}/images/generate`, json('POST', body)),
   retryDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number }) =>
     request<DesignFull>(`/designs/${id}/images/${imageId}/retry`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),

@@ -8,9 +8,30 @@ import { t } from '@shared/i18n'
 /** 能显示额度的 CLI：Codex 可以主动查，Claude Code 执行时会推送；Command Code 不提供 */
 export const LIMIT_CLIS = ['codex', 'claude']
 
-/** 额度：打开时查一次，之后每分钟刷新（执行中 CLI 推送的新数据也会在这时带上） */
+/**
+ * 上次读到的额度：先显示它，读到最新的再换掉，不用每次打开都等「读取中」。
+ * 存在浏览器里，刷新页面后也能马上显示；读不到存储时只在这次打开期间记着
+ */
+const KEY = 'agent-panel:cli-limits'
+const lastLimits = new Map<string, CliLimits>(
+  (() => {
+    try {
+      return Object.entries(JSON.parse(localStorage.getItem(KEY) ?? '{}') as Record<string, CliLimits>)
+    } catch {
+      return []
+    }
+  })(),
+)
+function remember(cli: string, d: CliLimits) {
+  lastLimits.set(cli, d)
+  try {
+    localStorage.setItem(KEY, JSON.stringify(Object.fromEntries(lastLimits)))
+  } catch {}
+}
+
+/** 额度：打开时查一次，之后每分钟刷新（执行中 CLI 推送的新数据也会在这时带上）；查到之前先显示上次的 */
 export function useCliLimits(cli: string, enabled: boolean) {
-  const [data, setData] = useState<CliLimits | null>(null)
+  const [data, setData] = useState<CliLimits | null>(() => lastLimits.get(cli) ?? null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const load = () => {
@@ -18,14 +39,16 @@ export function useCliLimits(cli: string, enabled: boolean) {
     api
       .cliLimits(cli)
       .then((d) => {
-        setData(d)
+        // 这次没读到（例如 Claude Code 还没执行过）就留着上次的
+        if (d?.windows.length || !lastLimits.has(cli)) setData(d)
+        if (d?.windows.length) remember(cli, d)
         setError('')
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false))
   }
   useEffect(() => {
-    setData(null)
+    setData(lastLimits.get(cli) ?? null)
     setError('')
     if (!enabled || !LIMIT_CLIS.includes(cli)) return
     load()

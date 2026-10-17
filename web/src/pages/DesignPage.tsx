@@ -15,16 +15,20 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react'
-import type { DesignDoc, DesignImage, ImageSource } from '@shared/design'
+import type { Attachment } from '@shared/schema'
+import { imageRevisionText, type Annotation, type DesignDoc, type DesignImage, type ImageSource } from '@shared/design'
 import {
+  IMAGE_SLOT,
   WIDGETS,
   allNames,
+  assignImage,
   canAddChild,
   cloneWidget,
   defaultSlot,
   exportDesign,
   findParent,
   findWidget,
+  imageUsers,
   insertWidget,
   mapWidget,
   moveWidget,
@@ -34,6 +38,7 @@ import {
   uniqueName,
   wrapWidget,
   usedImages,
+  walk,
   type Widget,
   type WidgetType,
 } from '@shared/umg'
@@ -58,7 +63,8 @@ import { SaveIndicator } from '@/components/layout/Detail'
 import { Viewport } from '@/components/design/Viewport'
 import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
 import { Details } from '@/components/design/Details'
-import { ImageDetails, ImagesPanel, readFile } from '@/components/design/ImagesPanel'
+import { ImageDetails, ImagePreview, ImagesPanel, readFile, type WidgetRef } from '@/components/design/ImagesPanel'
+import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
@@ -253,8 +259,12 @@ function Designer({ id }: { id: string }) {
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
   const [hasClip, setHasClip] = useState(!!clipboard)
-  const [tab, setTab] = useState<'tree' | 'images'>('tree')
+  const [tab, setTab] = useState<'tree' | 'images' | 'widgets'>('tree')
   const [imageSel, setImageSel] = useState('')
+  /** 双击图片后在画布区域放大预览的图片 */
+  const [preview, setPreview] = useState('')
+  /** 图上的修改标记和效果图的标注放在一起（target 是 img:<图片 id>），在右边对话框上面列出来，发送时一起发 */
+  const imgTarget = (imgId: string) => `img:${imgId}`
   const [chatOpen, setChatOpen] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [source, setSourceState] = useState<ImageSource>(() => {
@@ -542,6 +552,18 @@ function Designer({ id }: { id: string }) {
   const selWidget = selected ? findWidget(tree, selected) : undefined
   const selParent = selWidget ? findParent(tree, selWidget.id) : undefined
   const selImage = doc.images.find((i) => i.id === imageSel)
+  // 主界面和每个子控件各是一棵树：找图用在哪、能用到哪些控件上
+  const trees = [{ target: '', root: doc.root }, ...doc.components.map((c) => ({ target: c.Name, root: c.Root }))]
+  const imageSlots: WidgetRef[] = []
+  for (const tr of trees)
+    walk(tr.root, (w) => {
+      if (IMAGE_SLOT[w.Type]) imageSlots.push({ target: tr.target, id: w.id, name: w.Name, type: w.Type })
+    })
+  const jumpTo = (w: WidgetRef) => {
+    setTarget(w.target)
+    setSelected(w.id)
+    setTab('tree')
+  }
   const project = projects.find((p) => p.id === server.projectId)
   const designSize = target
     ? (doc.components.find((c) => c.Name === target)?.DesignSize ?? doc.designSize)
@@ -570,27 +592,69 @@ function Designer({ id }: { id: string }) {
 
   const generate = async (img: DesignImage) => {
     if (source.kind === 'none') return toast.error(t('先在对话框下面选生成图片的方式'))
+    const marks = doc.annotations.filter((a) => a.target === imgTarget(img.id))
+    const ok = await regenerate(img, '', marks, {
+      ...doc,
+      annotations: doc.annotations.filter((a) => !marks.includes(a)),
+    })
+    if (ok && marks.length)
+      ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !marks.includes(a)) }), 'ann:sent')
+  }
+
+  /** 按修改意见（对话框里写的）和图上的标记重新生成一张图；next 是先保存上去的设计 */
+  const regenerate = async (img: DesignImage, feedback: string, marks: Annotation[], next = doc) => {
+    const v = img.variants[img.selected] ?? img.variants.at(-1)
+    const revision = imageRevisionText(feedback, marks, { X: v?.width || img.width, Y: v?.height || img.height })
     try {
       // 先保存当前的描述和尺寸，服务端按保存的生成
-      ed.absorb(await api.saveDesign(id, doc))
-      ed.absorb(await api.generateDesignImage(id, img.id, { source, count }))
+      ed.absorb(await api.saveDesign(id, next))
+      ed.absorb(await api.generateDesignImage(id, img.id, { source, count, revision: revision || undefined }))
+      return true
     } catch (e) {
       toast.error((e as Error).message)
+      return false
     }
   }
 
-  const send = async (text: string, run: ChatRun) => {
+  const send = async (text: string, run: ChatRun, attachments: Attachment[]) => {
+    // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
+    const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
+    const annotations = doc.annotations.filter((a) => !a.target.startsWith('img:'))
+    if (imgMarks.length) {
+      if (source.kind === 'none') {
+        toast.error(t('先在对话框下面选生成图片的方式'))
+        return false
+      }
+      const next = { ...doc, annotations }
+      for (const imgId of new Set(imgMarks.map((a) => a.target.slice(4)))) {
+        const img = doc.images.find((i) => i.id === imgId)
+        if (!img) continue
+        if (
+          !(await regenerate(
+            img,
+            text,
+            imgMarks.filter((a) => a.target === imgTarget(imgId)),
+            next,
+          ))
+        )
+          return false
+      }
+      ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !a.target.startsWith('img:')) }), 'ann:sent')
+      toast.success(t('已按标记重新生成图片'))
+      // 没有效果图上的标注、也没有附件时，这条消息只是图片的修改意见
+      if (!annotations.length && !attachments.length) return true
+    }
     // 标注随这条消息一起发出，发出后从效果图上清掉
-    const annotations = doc.annotations
     const next = { ...doc, annotations: [] }
     try {
       ed.absorb(await api.saveDesign(id, next))
       ed.absorb(
         await api.designChat(id, {
-          text: text.trim() || t('按标注修改'),
+          text: text.trim() || (annotations.length ? t('按标注修改') : t('参考附件')),
           source,
           count,
           annotations,
+          attachments,
           run,
         }),
       )
@@ -725,26 +789,70 @@ function Designer({ id }: { id: string }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <Viewport
-          root={tree}
-          size={designSize}
-          images={renderImages}
-          components={doc.components}
-          selected={selected}
-          onSelect={(wid) => {
-            setSelected(wid)
-            if (wid) setTab('tree')
-          }}
-          onMove={onMove}
-          annotations={doc.annotations}
-          onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
-          target={target}
-        />
+        <div className="relative flex min-w-0 flex-1">
+          <Viewport
+            root={tree}
+            size={designSize}
+            images={renderImages}
+            components={doc.components}
+            selected={selected}
+            onSelect={(wid) => {
+              setSelected(wid)
+              if (wid) setTab('tree')
+            }}
+            onMove={onMove}
+            annotations={doc.annotations}
+            onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
+            target={target}
+            onOpen={(wid) => {
+              const w = findWidget(tree, wid)
+              if (!w) return
+              // 子控件：进去编辑它；用了图片的：打开那张图
+              if (w.Type === 'UserWidget' && w.Class && doc.components.some((c) => c.Name === w.Class)) {
+                setTarget(w.Class)
+                setSelected('')
+                return
+              }
+              const img = [...usedImages([{ ...w, Children: [] }])][0]
+              if (img && doc.images.some((i) => i.id === img)) {
+                setImageSel(img)
+                setTab('images')
+              }
+            }}
+          />
+          {(() => {
+            const img = preview ? doc.images.find((i) => i.id === preview) : undefined
+            const src = img && imageUrl(img)
+            return img && src ? (
+              <ImagePreview
+                image={img}
+                src={src}
+                marks={doc.annotations.filter((a) => a.target === imgTarget(img.id))}
+                onMarks={(marks) =>
+                  ed.change(
+                    (d) => ({
+                      ...d,
+                      annotations: [
+                        ...d.annotations.filter((a) => a.target !== imgTarget(img.id)),
+                        // 对话框上面的小标签里显示是哪张图
+                        ...marks.map((m) => ({ ...m, target: imgTarget(img.id), widgets: [img.name] })),
+                      ],
+                    }),
+                    `ann:img:${img.id}`,
+                  )
+                }
+                onRegenerate={() => void generate(img)}
+                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
+                onClose={() => setPreview('')}
+              />
+            ) : null
+          })()}
+        </div>
 
         <aside style={{ width: treePane.width }} className="relative flex shrink-0 flex-col border-l bg-card">
           <ResizeHandle pane={treePane} label={t('拖动调整控件树的宽度')} />
           <div role="tablist" className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
-            {(['tree', 'images'] as const).map((k) => (
+            {(['tree', 'images', 'widgets'] as const).map((k) => (
               <button
                 key={k}
                 role="tab"
@@ -755,7 +863,7 @@ function Designer({ id }: { id: string }) {
                   tab === k ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
                 )}
               >
-                {k === 'tree' ? t('控件树') : t('图片 {n}', { n: doc.images.length })}
+                {k === 'tree' ? t('控件树') : k === 'images' ? t('图片 {n}', { n: doc.images.length }) : t('控件')}
               </button>
             ))}
             <span className="flex-1" />
@@ -796,6 +904,27 @@ function Designer({ id }: { id: string }) {
           <div className="min-h-[120px] flex-1 overflow-y-auto">
             {tab === 'tree' ? (
               <Hierarchy root={tree} selected={selected} actions={actions} />
+            ) : tab === 'widgets' ? (
+              <ComponentsPanel
+                projectId={server.projectId}
+                designId={id}
+                own={doc.components.map((c) => c.Name)}
+                onOpen={(name) => {
+                  setTarget(name)
+                  setSelected('')
+                  setTab('tree')
+                }}
+                onImport={async (from, name) => {
+                  try {
+                    // 先保存本地的修改，服务端在保存的内容上加
+                    ed.absorb(await api.saveDesign(id, doc))
+                    ed.absorb(await api.importComponent(id, { from, name }))
+                    toast.success(t('已把 {name} 加进这个设计', { name }))
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                  }
+                }}
+              />
             ) : (
               <ImagesPanel
                 images={doc.images}
@@ -803,11 +932,21 @@ function Designer({ id }: { id: string }) {
                 selected={imageSel}
                 onSelect={setImageSel}
                 onUpload={(f) => void upload(f)}
+                onPreview={setPreview}
                 usedIds={used}
+                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
+                onGenerateAll={async (ids) => {
+                  try {
+                    ed.absorb(await api.saveDesign(id, doc))
+                    ed.absorb(await api.generateDesignImages(id, { ids, source, count }))
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                  }
+                }}
               />
             )}
           </div>
-          <div className="min-h-[160px] flex-[1.3] overflow-y-auto border-t">
+          <div className={cn('min-h-[160px] flex-[1.3] overflow-y-auto border-t', tab === 'widgets' && 'hidden')}>
             {tab === 'tree' && selWidget ? (
               <Details
                 key={selWidget.id}
@@ -835,8 +974,26 @@ function Designer({ id }: { id: string }) {
                   ed.change((d) => ({ ...d, images: d.images.filter((i) => i.id !== selImage.id) }))
                   setImageSel('')
                 }}
-                canGenerate={source.kind !== 'none' && !ed.running}
+                // 正在生成别的图时也能点：排进这一轮的队列；AI 还在改设计时不行
+                canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
                 sourceLabel={sourceLabel}
+                marks={doc.annotations.filter((a) => a.target === imgTarget(selImage.id))}
+                onPreview={() => setPreview(selImage.id)}
+                users={imageUsers(trees, selImage.id)}
+                candidates={imageSlots}
+                onJump={jumpTo}
+                onAssign={(w) => {
+                  ed.change(
+                    (d) =>
+                      setTree(
+                        d,
+                        w.target,
+                        mapWidget(treeOf(d, w.target)!, w.id, (x) => assignImage(x, selImage)),
+                      ),
+                    `assign:${selImage.id}`,
+                  )
+                  jumpTo(w)
+                }}
               />
             ) : (
               <p className="px-4 py-6 text-center text-[12px] leading-relaxed text-subtle">

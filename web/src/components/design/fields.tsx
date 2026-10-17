@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -98,18 +98,36 @@ export function TextInput({
   onChange,
   multiline,
   label,
+  placeholder,
 }: {
   value: string
   onChange: (v: string) => void
   multiline?: boolean
   label: string
+  placeholder?: string
 }) {
   const [text, setText] = useState(value ?? '')
   useEffect(() => setText(value ?? ''), [value])
+  const ref = useRef<HTMLTextAreaElement & HTMLInputElement>(null)
+  // 多行时高度跟着内容走（最高 320px，再多就滚动）：长的描述不用拖拽就能看全；面板拉宽拉窄也重新算
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!multiline || !el) return
+    const fit = () => {
+      el.style.height = 'auto'
+      el.style.height = `${Math.min(320, el.scrollHeight + el.offsetHeight - el.clientHeight)}px`
+    }
+    fit()
+    const ro = new ResizeObserver(fit)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [multiline, text])
   const Tag = multiline ? 'textarea' : 'input'
   return (
     <Tag
+      ref={ref}
       aria-label={label}
+      placeholder={placeholder}
       value={text}
       rows={multiline ? 2 : undefined}
       onChange={(e: any) => setText(e.target.value)}
@@ -117,7 +135,7 @@ export function TextInput({
       onKeyDown={(e: any) => {
         if (e.key === 'Enter' && (!multiline || e.ctrlKey || e.metaKey)) e.currentTarget.blur()
       }}
-      className={cn(box, multiline && 'h-auto resize-y py-1 leading-snug')}
+      className={cn(box, multiline && 'h-auto resize-none overflow-y-auto py-1 leading-snug')}
     />
   )
 }
@@ -364,11 +382,15 @@ export function ImagePick({
   )
 }
 
+/** 图片缩略图：透明的地方用灰白方格表示，一眼能看出哪里是透明的 */
 export function Thumb({ src, className }: { src?: string; className?: string }) {
   return (
     <span
       className={cn(
-        'grid shrink-0 place-items-center overflow-hidden rounded border border-line bg-[length:8px_8px] [background-image:conic-gradient(#0000_25%,#8882_0_50%,#0000_0_75%,#8882_0)]',
+        'grid shrink-0 place-items-center overflow-hidden rounded border border-line',
+        src
+          ? 'bg-[#fff] bg-[length:12px_12px] [background-image:conic-gradient(#ccc_25%,#fff_0_50%,#ccc_0_75%,#fff_0)]'
+          : 'bg-sel',
         className,
       )}
     >

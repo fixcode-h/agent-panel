@@ -21,6 +21,8 @@ import {
   buildDesignPrompt,
   emptyRoot,
   imagePrompt,
+  importComponent,
+  type ProjectComponents,
   projectPromptText,
   resolveDesignResult,
   type DesignJob,
@@ -39,6 +41,8 @@ import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
+import { UPLOADS_DIR } from './uploads.ts'
+import { withAttachments } from '../shared/task.ts'
 import { imageSize, zip } from './zip.ts'
 
 /**
@@ -55,8 +59,8 @@ const TIMEOUT = 10 * 60_000
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
 type Job = DesignJob & {
   abort: AbortController
-  /** 生成图片时：把一张失败的图重新排进这一轮的队列（点了「重试」）；不在生成图片时没有 */
-  enqueue?: (img: DesignImage) => void
+  /** 生成图片时：把一张图排进这一轮的队列（点了「重试」或「再生成」）；不在生成图片时没有 */
+  enqueue?: (img: DesignImage, revision?: string) => void
 }
 
 const now = () => new Date().toISOString()
@@ -155,6 +159,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
 
   // ---- 生成图片 ----
 
+  const withRevision = (prompt: string, revision: string) =>
+    revision.trim() ? `${prompt}\n\n${revision.trim()}` : prompt
+
   /** 项目提示词的英文：这个项目里每张图都带上 */
   async function projectStyle(d: Design) {
     const p = (await loadProjects()).find((x) => x.id === d.projectId)
@@ -173,6 +180,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     style: string,
     job: Job,
     item: ImageJobItem,
+    /** 这一次的修改意见，加在描述后面 */
+    revision = '',
   ) {
     const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
     const set = (patch: Partial<DesignImage>) => {
@@ -202,7 +211,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
           ? await browserGenerate(
               {
                 tabId: source.tabId,
-                prompt: imagePrompt(img, cache.get(d.id)!.style, img.transparent, style),
+                prompt: withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style), revision),
                 count,
                 chroma: img.transparent,
                 concurrency: (await getSettings()).imageGen.concurrency,
@@ -211,7 +220,12 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               },
               job.abort.signal,
             )
-          : await cliGenerate(imagePrompt(img, cache.get(d.id)!.style, false, style), count, job, add)
+          : await cliGenerate(
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, false, style), revision),
+              count,
+              job,
+              add,
+            )
       for (const b of rest) add(b)
       await chain
       if (!item.got) throw new Error(t('没有取到图片'))
@@ -302,7 +316,15 @@ ${prompt}`,
       )
     return []
   }
-  async function generateImages(d: Design, ids: string[], source: ImageSource, count: number, job: Job) {
+  async function generateImages(
+    d: Design,
+    ids: string[],
+    source: ImageSource,
+    count: number,
+    job: Job,
+    /** 图片 id → 这一次的修改意见 */
+    revisions: Record<string, string> = {},
+  ) {
     job.phase = 'images'
     // 进入生成图片阶段：对话的说明已经成了一条消息，不再显示
     job.text = ''
@@ -318,13 +340,13 @@ ${prompt}`,
     const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
-    const queue = list.map((img, k) => ({ img, item: items[k] }))
+    const queue = list.map((img, k) => ({ img, item: items[k], revision: revisions[img.id] ?? '' }))
     let next = 0
     const worker = async () => {
       while (next < queue.length && !job.abort.signal.aborted) {
-        const { img, item } = queue[next++]
+        const { img, item, revision } = queue[next++]
         try {
-          await generateOne(cache.get(d.id)!, img, source, count, style, job, item)
+          await generateOne(cache.get(d.id)!, img, source, count, style, job, item, revision)
           failed.delete(img.id)
         } catch (e) {
           failed.set(img.id, `${img.name}：${(e as Error).message}`)
@@ -337,12 +359,13 @@ ${prompt}`,
       workers.add(p)
     }
     for (let i = 0; i < Math.min(width, queue.length); i++) spawn()
-    // 重试：排到队尾，有空着的位置就马上开始
-    job.enqueue = (img) => {
-      const item = items.find((x) => x.id === img.id)
-      if (!item || item.status !== 'failed') return
-      Object.assign(item, { status: 'waiting', got: 0, text: undefined })
-      queue.push({ img, item })
+    // 重试、再生成：排到队尾，有空着的位置就马上开始。已经在排队或正在生成的不重复排
+    job.enqueue = (img, revision = '') => {
+      let item = items.find((x) => x.id === img.id)
+      if (item?.status === 'waiting' || item?.status === 'generating') return
+      if (item) Object.assign(item, { status: 'waiting', got: 0, text: undefined })
+      else items.push((item = { id: img.id, name: img.name, status: 'waiting', got: 0, want: count }))
+      queue.push({ img, item, revision })
       if (workers.size < width) spawn()
     }
     while (workers.size) await Promise.all([...workers])
@@ -411,10 +434,19 @@ ${prompt}`,
           effort: run.effort,
           permission: READ_ONLY[cliId] ?? cs.permission,
           extraArgs: safeArgs(cs.extraArgs),
+          // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
+          addDirs: input.attachments.length ? [UPLOADS_DIR] : undefined,
         },
         cwd,
         env: childEnv(cs.env),
-        input: buildDesignPrompt(cache.get(d.id)!, history, input.text, input.annotations, project) + extra,
+        input:
+          buildDesignPrompt(
+            cache.get(d.id)!,
+            history,
+            withAttachments(input.text, input.attachments),
+            input.annotations,
+            project,
+          ) + extra,
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
         onEvent: (ev) => {
@@ -623,6 +655,23 @@ ${prompt}`,
       return c.json(item, 201)
     })
     // 只改传了的字段：改名时不会把提示词清掉
+    // 项目里所有设计已经做好的子控件（「控件」列表），带上它们用到的图片
+    .get('/projects/:pid/components', async (c) => {
+      await loadAll()
+      const pid = c.req.param('pid')
+      const out: ProjectComponents[] = [...cache.values()]
+        .filter((d) => d.projectId === pid && d.components.length)
+        .map((d) => ({
+          designId: d.id,
+          title: d.title,
+          components: d.components,
+          images: d.images.flatMap((i) => {
+            const v = i.variants[i.selected] ?? i.variants.at(-1)
+            return v ? [{ id: i.id, file: v.file, width: v.width, height: v.height }] : []
+          }),
+        }))
+      return c.json(out)
+    })
     .put('/projects/:pid', async (c) => {
       const body = await c.req.json().catch(() => ({}))
       const p = DesignProjectInput.partial().safeParse(body)
@@ -780,10 +829,45 @@ ${prompt}`,
         return bad(c, (e as Error).message)
       }
     })
+    // 一次生成好几张（「生成全部未生成的」）：正在生成别的图时排进这一轮的队列
+    .post('/:id/images/generate', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const running = jobs.get(d.id)?.status === 'running' ? jobs.get(d.id) : undefined
+      if (running && !running.enqueue) return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
+      const p = GenerateImageInput.safeParse(body)
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      if (p.data.source.kind === 'none') return bad(c, t('请选择生成图片的方式'))
+      const want = new Set(Array.isArray(body.ids) ? body.ids.map(String) : [])
+      const list = d.images.filter((i) => want.has(i.id) && i.prompt.trim() && i.status !== 'generating')
+      if (!list.length) return bad(c, t('没有要生成的图片'))
+      for (const i of list) {
+        i.status = 'pending'
+        i.error = undefined
+      }
+      await save(d)
+      if (running?.enqueue) for (const i of list) running.enqueue(i)
+      else
+        startJob(d, async (job) => {
+          const failed = await generateImages(
+            d,
+            list.map((i) => i.id),
+            p.data.source,
+            p.data.count,
+            job,
+          )
+          if (failed.length)
+            throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
+        })
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
     .post('/:id/images/:imageId/generate', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      if (jobs.get(d.id)?.status === 'running') return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      const running = jobs.get(d.id)?.status === 'running' ? jobs.get(d.id) : undefined
+      // 正在生成别的图时排进这一轮的队列；AI 还在改设计时不行
+      if (running && !running.enqueue) return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
       const img = d.images.find((i) => i.id === c.req.param('imageId'))
       if (!img) return bad(c, t('图片不存在'), 404)
       const p = GenerateImageInput.safeParse(await c.req.json())
@@ -791,12 +875,40 @@ ${prompt}`,
       if (p.data.source.kind === 'none') return bad(c, t('请选择生成图片的方式'))
       if (p.data.prompt !== undefined) img.prompt = p.data.prompt
       if (!img.prompt.trim()) return bad(c, t('先写一下这张图要画什么'))
+      if (running?.enqueue) {
+        img.status = 'pending'
+        img.error = undefined
+        await save(d)
+        running.enqueue(img, p.data.revision)
+        return c.json({ ...d, job: view(running) })
+      }
       img.status = 'pending'
       await save(d)
       startJob(d, async (job) => {
-        const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job)
+        const failed = await generateImages(d, [img.id], p.data.source, p.data.count, job, {
+          [img.id]: p.data.revision ?? '',
+        })
         if (failed.length) throw new Error(failed.join('\n'))
       })
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // 把项目里别的设计的子控件（连同它引用的子控件和图片）加进这个设计
+    .post('/:id/components/import', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { from, name } = (await c.req.json().catch(() => ({}))) as { from?: string; name?: string }
+      const src = from ? cache.get(from) : undefined
+      if (!src || src.projectId !== d.projectId) return bad(c, t('设计不存在'), 404)
+      const r = importComponent(d, src, String(name ?? ''))
+      if ('error' in r) return bad(c, r.error, 409)
+      await mkdir(imagesDir(d.id), { recursive: true })
+      for (const f of r.copyFiles)
+        await cp(path.join(imagesDir(src.id), f), path.join(imagesDir(d.id), f)).catch(() => {})
+      d.components = r.components
+      d.images = r.images
+      // 结构变了：页面用服务端的子控件替换本地的
+      d.rev++
+      await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
     })
     // 重试一张失败的图：正在生成这一轮时排回队列，否则单独生成这一张
@@ -841,6 +953,7 @@ ${prompt}`,
         text: p.data.text,
         at: now(),
         ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
+        ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
       })
       await save(d)
       startJob(d, async (job) => {

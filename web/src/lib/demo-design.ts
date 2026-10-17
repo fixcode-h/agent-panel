@@ -6,6 +6,7 @@ const randomId = () => crypto.randomUUID()
 import {
   DesignImage,
   emptyRoot,
+  importComponent,
   type Design,
   type DesignMeta,
   type DesignProject,
@@ -835,5 +836,33 @@ export function demoGenerate(id: string, imageId: string, body: any) {
   const im = d.images.find((i) => i.id === imageId) ?? fail('图片不存在')
   im.status = 'pending'
   void genImages(d, [imageId], body.count ?? 1, job).then(() => (job.status = 'done'))
+  return d
+}
+
+/** 「控件」列表：/designs/projects/:pid/components */
+export function demoProjectComponents(pid: string) {
+  seed()
+  return [...designs.values()]
+    .filter((d) => d.projectId === pid && d.components.length)
+    .map((d) => ({
+      designId: d.id,
+      title: d.title,
+      components: d.components,
+      images: d.images.flatMap((i) => {
+        const v = i.variants[i.selected] ?? i.variants.at(-1)
+        return v ? [{ id: i.id, file: v.file, width: v.width, height: v.height }] : []
+      }),
+    }))
+}
+
+/** 把别的设计的子控件加进来：/designs/:id/components/import（演示里的图片是 data URL，不用复制文件） */
+export function demoImportComponent(id: string, body: any) {
+  const d = designs.get(id) ?? fail('设计不存在')
+  const src = designs.get(body.from) ?? fail('设计不存在')
+  const r = importComponent(d, src, String(body.name ?? ''))
+  if ('error' in r) return fail(r.error)
+  d.components = r.components
+  d.images = r.images
+  d.rev++
   return d
 }

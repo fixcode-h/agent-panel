@@ -2178,6 +2178,42 @@ try {
     assert.equal(d.images.find((i) => i.id === 'frame').variants.length, 5)
     step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上、能重试；网站不能调用')
 
+    await assert.rejects(
+      call('POST', `/designs/${design.id}/images/generate`, {
+        ids: ['nope'],
+        source: { kind: 'browser', tabId: '8' },
+        count: 1,
+      }),
+      /没有要生成的图片/,
+    )
+    // 「控件」列表：项目里别的设计的子控件能连同图片加进来
+    const other2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'Shop' })
+    const pc = await call('GET', `/designs/projects/${uiProject.id}/components`)
+    const fromMenu = pc.find((x) => x.designId === design.id)
+    assert.deepEqual(
+      fromMenu.components.map((c) => c.Name),
+      ['WBP_MenuButton'],
+    )
+    assert.ok(fromMenu.images.some((i) => i.id === 'frame'))
+    const imported = await call('POST', `/designs/${other2.id}/components/import`, {
+      from: design.id,
+      name: 'WBP_MenuButton',
+    })
+    assert.deepEqual(
+      imported.components.map((c) => c.Name),
+      ['WBP_MenuButton'],
+    )
+    const copiedFrame = imported.images.find((i) => i.id === 'frame')
+    assert.ok(copiedFrame?.variants.length, '用到的图片一起带过来')
+    const fileRes = await fetch(`${base}/designs/${other2.id}/files/${copiedFrame.variants[0].file}`)
+    assert.equal(fileRes.status, 200, '图片文件也复制过来了')
+    await assert.rejects(
+      call('POST', `/designs/${other2.id}/components/import`, { from: design.id, name: 'WBP_MenuButton' }),
+      /已经有/,
+    )
+    await call('DELETE', `/designs/${other2.id}`)
+    step('UI 设计：「控件」列表列出项目里的子控件，能连同图片加进别的设计')
+
     await call('DELETE', `/designs/${design.id}`)
     assert.ok(!(await call('GET', '/designs')).some((x) => x.id === design.id))
     assert.ok(!existsSync(path.join(dataDir, 'designs', design.id)))

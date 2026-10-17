@@ -18,7 +18,14 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
-import { AttachMenu, AttachmentChips, useAttachments, useDropPaste, useFileMention } from './Attachments'
+import {
+  AttachMenu,
+  AttachmentChips,
+  DropHint,
+  useAttachments,
+  useDropPaste,
+  useFileMention,
+} from '@/components/chat/Attachments'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -296,15 +303,6 @@ export function TaskComposer({
           {t('工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。')}
         </p>
       )}
-    </div>
-  )
-}
-
-/** 拖文件进来时盖在输入框上的提示 */
-export function DropHint() {
-  return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[13px] text-accent">
-      {t('松开鼠标，把文件附到要求里')}
     </div>
   )
 }

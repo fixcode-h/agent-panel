@@ -46,12 +46,12 @@ import { TaskStatusIcon } from './TaskStatusIcon'
 import {
   AttachMenu,
   AttachmentChips,
+  DropHint,
   MessageAttachments,
   useAttachments,
   useDropPaste,
   useFileMention,
-} from './Attachments'
-import { DropHint } from './TaskComposer'
+} from '@/components/chat/Attachments'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))

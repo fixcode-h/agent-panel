@@ -4,6 +4,8 @@ import {
   compactTree,
   newWidget,
   normalizeTree,
+  usedImages,
+  walk,
   widgetCatalogText,
   WIDGETS,
   type WidgetType,
@@ -11,7 +13,8 @@ import {
   type Margin,
   type Widget,
 } from './umg.ts'
-import type { ToolUse } from './schema.ts'
+import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
+import { t } from './i18n.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -83,6 +86,8 @@ export const DesignMessage = z.object({
   error: z.boolean().optional(),
   /** 用户这条消息带的标注 */
   annotations: z.array(Annotation).optional(),
+  /** 用户这条消息带的附件（参考图、文档） */
+  attachments: z.array(Attachment).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -268,6 +273,8 @@ export const DesignChatInput = z.object({
   count: z.number().int().min(1).max(4).default(1),
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
+  /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */
   run: z
     .object({ cli: z.string().max(40), model: z.string().max(200).default(''), effort: z.string().max(40).default('') })
@@ -280,6 +287,8 @@ export const GenerateImageInput = z.object({
   count: z.number().int().min(1).max(4).default(1),
   /** 换一个描述再生成 */
   prompt: z.string().max(4000).optional(),
+  /** 这一次的修改意见（用户写的和在图上标的，见 imageRevisionText），只用在这一次生成 */
+  revision: z.string().max(8000).optional(),
 })
 
 /** 生成图片时每张图的进度 */
@@ -494,6 +503,13 @@ export function resolveDesignResult(
     return out
   }
   errors.push(...unknown(r.root, []), ...(r.components ?? []).flatMap((c) => unknown(c.Root, [])))
+  // 列出来的图都要用在控件上：只列图不引用，图生成完了效果图上也看不到
+  const used = usedImages([root ?? d.root, ...(components ?? d.components).map((c) => c.Root)])
+  const unused = r.images.filter((i) => !used.has(i.id)).map((i) => i.id)
+  if (unused.length)
+    errors.push(
+      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal 等），并写出完整的 root / components`,
+    )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
   return { result: r, root, components }
 }
@@ -567,6 +583,31 @@ export function imagePrompt(
   return parts.filter(Boolean).join('\n')
 }
 
+/**
+ * 图片的修改意见：用户写的意见和在大图上画的标记，拼成英文加在生成描述后面。
+ * 位置用图片宽高的百分比，生成模型不管出图多大都能对上
+ */
+export function imageRevisionText(feedback: string, marks: Annotation[], size: { X: number; Y: number }) {
+  const verb = { change: 'Change', add: 'Add something', remove: 'Remove', keep: 'Keep unchanged' }
+  const pct = (v: number, max: number) => `${Math.round((v / Math.max(1, max)) * 100)}%`
+  const lines = marks.map((a, i) => {
+    const b = annotationBox(a)
+    const where =
+      b.w || b.h
+        ? `the area x ${pct(b.x, size.X)}–${pct(b.x + b.w, size.X)}, y ${pct(b.y, size.Y)}–${pct(b.y + b.h, size.Y)}`
+        : `around x ${pct(b.x, size.X)}, y ${pct(b.y, size.Y)}`
+    return `${i + 1}. ${verb[a.kind]} at ${where} (from the top-left corner)${a.note.trim() ? `: ${a.note.trim()}` : ''}`
+  })
+  if (!feedback.trim() && !lines.length) return ''
+  return [
+    'Requested changes compared with the previous version (keep everything else as described):',
+    feedback.trim(),
+    ...lines,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
 function aspect(w: number, h: number) {
   const g = (a: number, b: number): number => (b ? g(b, a % b) : a)
   const d = g(w, h) || 1
@@ -576,3 +617,73 @@ function aspect(w: number, h: number) {
 }
 
 export type { Margin }
+
+// ---- 项目里已有的子控件 ----
+
+/** 项目里一个设计的子控件，给「控件」列表用：带上它们用到的图片（选中的那一版），页面能直接画出来 */
+export interface ProjectComponents {
+  designId: string
+  title: string
+  components: Component[]
+  images: { id: string; file: string; width: number; height: number }[]
+}
+
+/** 子控件引用的其他子控件（UserWidget 的 Class、列表和网格的 EntryWidgetClass），连同间接引用的 */
+export function componentDeps(name: string, all: Component[]): string[] {
+  const out: string[] = []
+  const visit = (n: string) => {
+    if (out.includes(n)) return
+    const c = all.find((x) => x.Name === n)
+    if (!c) return
+    out.push(n)
+    walk(c.Root, (w) => {
+      if (w.Type === 'UserWidget' && w.Class) visit(w.Class)
+      const entry = w.Properties?.EntryWidgetClass
+      if (typeof entry === 'string' && entry) visit(entry)
+    })
+  }
+  visit(name)
+  return out
+}
+
+/**
+ * 把别的设计里的子控件（连同它引用的子控件和图片）加进这个设计。
+ * 同名的子控件已经有了就不重复加（引用的子控件按名字共用）；图片 id 冲突时换个 id，引用跟着改。
+ * 返回新的子控件和图片列表，copyFiles 是要从来源设计复制过来的图片文件
+ */
+export function importComponent(
+  target: { components: Component[]; images: DesignImage[] },
+  source: { components: Component[]; images: DesignImage[] },
+  name: string,
+): { error: string } | { components: Component[]; images: DesignImage[]; copyFiles: string[] } {
+  if (!source.components.some((c) => c.Name === name)) return { error: t('没有找到子控件 {name}', { name }) }
+  if (target.components.some((c) => c.Name === name))
+    return { error: t('这个设计里已经有叫 {name} 的子控件了', { name }) }
+  const add = componentDeps(name, source.components)
+    .filter((n) => !target.components.some((c) => c.Name === n))
+    .map((n) => structuredClone(source.components.find((c) => c.Name === n)!))
+  const used = usedImages(add.map((c) => c.Root))
+  const ids = new Set(target.images.map((i) => i.id))
+  const rename = new Map<string, string>()
+  const images = [...target.images]
+  const copyFiles: string[] = []
+  for (const img of source.images) {
+    if (!used.has(img.id)) continue
+    let id = img.id
+    for (let k = 2; ids.has(id); k++) id = `${img.id}_${k}`
+    ids.add(id)
+    if (id !== img.id) rename.set(img.id, id)
+    images.push({ ...structuredClone(img), id, status: 'idle', error: undefined })
+    copyFiles.push(...img.variants.map((v) => v.file))
+  }
+  // 图片换了 id 的，子控件里的 "img:<id>" 引用跟着换
+  const fix = (v: any): any =>
+    typeof v === 'string' && v.startsWith('img:') && rename.has(v.slice(4))
+      ? `img:${rename.get(v.slice(4))}`
+      : Array.isArray(v)
+        ? v.map(fix)
+        : v && typeof v === 'object'
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]))
+          : v
+  return { components: [...target.components, ...add.map(fix)], images, copyFiles }
+}
