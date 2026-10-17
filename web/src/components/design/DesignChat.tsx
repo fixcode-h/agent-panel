@@ -111,7 +111,7 @@ export function SourceSelect({ value, onChange }: { value: ImageSource; onChange
         value={key}
         onChange={(e) => (e.target.value === 'help' ? setHelp(true) : onChange(parseSource(e.target.value)))}
         options={options}
-        className="h-7 max-w-[200px] rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+        className="h-7 w-auto max-w-[200px] min-w-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
       />
       <BrowserHelp
         open={help}
@@ -520,7 +520,6 @@ export function DesignChat({
             className="block max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13.5px] leading-relaxed outline-none placeholder:text-subtle"
           />
           <div className="flex items-center gap-1 px-2 pb-2">
-            <span className="flex-1" />
             <SourceSelect value={source} onChange={onSource} />
             {source.kind !== 'none' && (
               <Select
@@ -528,9 +527,10 @@ export function DesignChat({
                 value={String(count)}
                 onChange={(e) => onCount(Number(e.target.value))}
                 options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t('每张 {n} 版', { n }) }))}
-                className="h-7 w-auto shrink-0 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+                className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
               />
             )}
+            <span className="flex-1" />
             {running ? (
               <button
                 onClick={onStop}
