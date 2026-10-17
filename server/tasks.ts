@@ -354,7 +354,7 @@ export function tasksApi(deps: {
     const { text, attachments, interrupt } = p.data
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
-      // 插话：直接交给正在跑的 CLI；CLI 不支持或这一轮刚好结束时改成排队
+      // 补充：直接交给正在跑的 CLI，接着当前的任务做；对话的 CLI 不支持或这一轮刚好结束时改成排队
       if (p.data.steer && !interrupt) {
         const msg = {
           id: randomUUID(),
@@ -366,7 +366,11 @@ export function tasksApi(deps: {
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        if (await steerTask(id, withAttachments(text, attachments), msg)) return c.json(prev.task)
+        if (await steerTask(prev.task, withAttachments(text, attachments), msg)) {
+          prev.task.updatedAt = new Date().toISOString()
+          await store.update(id, prev.task)
+          return c.json(prev.task)
+        }
       }
       if (!interrupt) {
         // 执行中：先排队，这一轮完成后自动接着处理

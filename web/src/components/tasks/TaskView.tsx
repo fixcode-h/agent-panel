@@ -18,7 +18,6 @@ import {
   Pause,
   Trash2,
   X,
-  Zap,
   ListPlus,
   ArrowDown,
 } from 'lucide-react'
@@ -194,19 +193,13 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
       </main>
     )
 
-  // 执行中也能发：插话（交给正在跑的这一轮，CLI 支持时默认）、排队（这一轮完成后处理）、打断（先停下这一轮再发）
-  const send = async (how: 'steer' | 'queue' | 'interrupt' = canSteer ? 'steer' : 'queue') => {
+  // 执行中也能发：补充（交给正在做的 Agent，接着当前的任务做；能补充时默认）、排队（这一轮完成后处理）
+  const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
     if (!text.trim() || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
-      const r = await api.sendMessage(
-        task.id,
-        text,
-        files.attachments,
-        running && how === 'interrupt',
-        running && how === 'steer',
-      )
+      const r = await api.sendMessage(task.id, text, files.attachments, false, running && how === 'steer')
       if (running && how === 'steer' && r.queue.length > task.queue.length) toast(t('这一轮刚好结束，已改成排队'))
       apply(r)
       setText('')
@@ -282,7 +275,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const chatAgent = agents.find((a) => a.id === task.agentId)
   // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
-  const canSteer = running && task.mode === 'chat' && STEER_CLIS.includes(chatCli)
+  // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
+  const canSteer = running && (task.mode === 'workflow' || STEER_CLIS.includes(chatCli))
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
@@ -605,15 +599,14 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                   if (mention.onKeyDown(e)) return
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
-                    // 执行中按 Ctrl/⌘ + Enter：打断当前这一轮，马上处理这条
-                    send(e.metaKey || e.ctrlKey ? 'interrupt' : undefined)
+                    send()
                   }
                 }}
                 placeholder={
                   !running
                     ? t('继续输入要求')
                     : canSteer
-                      ? t('执行中也可以输入，直接补充给正在做的这一轮')
+                      ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
                       : t('执行中也可以输入，这一轮完成后接着处理')
                 }
                 className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
@@ -639,19 +632,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                       <>
                         <Button
                           size="sm"
-                          variant="ghost"
-                          className="ml-auto rounded-lg"
-                          disabled={sending}
-                          title={t('停下当前这一轮，马上处理这条（Ctrl/⌘ + Enter）')}
-                          onClick={() => send('interrupt')}
-                        >
-                          <Zap className="h-3.5 w-3.5" />
-                          {t('打断并发送')}
-                        </Button>
-                        <Button
-                          size="sm"
                           variant={canSteer ? 'ghost' : 'secondary'}
-                          className="rounded-lg"
+                          className="ml-auto rounded-lg"
                           disabled={sending}
                           title={canSteer ? t('这一轮完成后接着处理') : t('这一轮完成后接着处理（Enter）')}
                           onClick={() => send('queue')}
@@ -665,11 +647,11 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                             variant="secondary"
                             className="rounded-lg"
                             disabled={sending}
-                            title={t('不停下，直接补充给正在做的这一轮（Enter）')}
+                            title={t('不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）')}
                             onClick={() => send('steer')}
                           >
                             <MessageSquarePlus className="h-3.5 w-3.5" />
-                            {t('插话')}
+                            {t('补充')}
                           </Button>
                         )}
                       </>

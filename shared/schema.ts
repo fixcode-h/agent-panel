@@ -236,6 +236,8 @@ export interface CliSkill {
   scope: string
   path: string
   enabled: boolean
+  /** 来自哪个目录（~/.agents/skills、./.claude/skills），列表按它分组；插件里的是空 */
+  source?: string
 }
 
 export interface CliStatus {

@@ -651,11 +651,11 @@ try {
     assert.equal(b.status, 'done')
     const sl = steerLog()
     assert.ok(
-      sl.some((x) => x.kind === 'codex' && x.steered.includes('顺便看看测试')),
+      sl.some((x) => x.kind === 'codex' && x.steered.some((s) => s.includes('顺便看看测试'))),
       'Codex 收到了插话',
     )
     assert.ok(
-      sl.some((x) => x.kind === 'claude' && x.steered.includes('也看看文档')),
+      sl.some((x) => x.kind === 'claude' && x.steered.some((s) => s.includes('也看看文档'))),
       'Claude Code 收到了插话',
     )
     const at = a.messages.findIndex((m) => m.text === '顺便看看测试')
@@ -882,6 +882,26 @@ try {
   assert.match(cont.input, /从中断的地方接着完成本节点/)
   assert.ok(!half.steps.some((s) => s.interrupted))
   step('中断恢复：停止后继续执行，被打断的节点续接会话接着做')
+
+  // ---- 工作流执行中补充信息：交给正在跑的节点（收不了时留给下一个节点），不排队、不算新要求 ----
+  {
+    let w = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'SLOW 工作流补充' })
+    await sleep(1000)
+    const before = calls().length
+    w = await call('POST', `/tasks/${w.id}/messages`, { text: '接口要兼容旧版', steer: true })
+    assert.equal(w.queue.length, 0, '工作流的补充不排队')
+    const note = w.messages.find((m) => m.text === '接口要兼容旧版')
+    assert.ok(note?.step, '补充记在正在跑的节点上')
+    w = await waitDone(w.id, 20000)
+    assert.equal(w.status, 'done')
+    const got =
+      readLog(`${log}.steer`).some((x) => x.steered.some((s) => s.includes('接口要兼容旧版'))) ||
+      calls()
+        .slice(before)
+        .some((c) => c.input.includes('用户在执行中补充的信息') && c.input.includes('接口要兼容旧版'))
+    assert.ok(got, 'Agent 收到了补充的信息')
+  }
+  step('工作流执行中补充信息：交给正在跑的节点，接着当前的任务做')
 
   // ---- 权限请求：Claude Code 要确认的命令和问题显示在任务上，用户回答后交回 CLI ----
   let ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 需要确认' })

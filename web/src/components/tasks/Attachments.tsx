@@ -208,6 +208,8 @@ export function AttachMenu({
   className?: string
 }) {
   const input = useRef<HTMLInputElement>(null)
+  // 选了「引用项目文件」：焦点要留在输入框里弹出文件列表，不能被还给「+」按钮
+  const mentioning = useRef(false)
   return (
     <>
       <input
@@ -231,13 +233,28 @@ export function AttachMenu({
         >
           <Plus className="h-4 w-4" />
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-[260px]">
+        <PopoverContent
+          align="start"
+          className="w-[260px]"
+          onCloseAutoFocus={(e) => {
+            if (!mentioning.current) return
+            mentioning.current = false
+            e.preventDefault()
+          }}
+        >
           <PopoverClose className={menuItem} onClick={() => input.current?.click()}>
             <Paperclip className="h-4 w-4 shrink-0 text-subtle" />
             <span className="flex-1">{t('上传文件或图片')}</span>
             <span className="text-[11px] text-subtle">{t('可粘贴 / 拖入')}</span>
           </PopoverClose>
-          <PopoverClose className={menuItem} disabled={!canMention} onClick={onMention}>
+          <PopoverClose
+            className={menuItem}
+            disabled={!canMention}
+            onClick={() => {
+              mentioning.current = true
+              onMention()
+            }}
+          >
             <AtSign className="h-4 w-4 shrink-0 text-subtle" />
             <span className="flex-1">{t('引用项目文件')}</span>
             <span className="font-mono text-[11px] text-subtle">@</span>

@@ -58,15 +58,19 @@ export function PopoverContent({
   children,
   className,
   align = 'start',
+  onCloseAutoFocus,
 }: {
   children: React.ReactNode
   className?: string
   align?: 'start' | 'end'
+  /** 关闭后默认把焦点还给触发按钮；菜单项要把焦点放到别处（输入框）时在这里拦下 */
+  onCloseAutoFocus?: (e: Event) => void
 }) {
   return (
     <P.Portal>
       <P.Content
         align={align}
+        onCloseAutoFocus={onCloseAutoFocus}
         sideOffset={6}
         className={cn(popoverPanel, 'w-[var(--radix-popover-trigger-width)]', className)}
       >
