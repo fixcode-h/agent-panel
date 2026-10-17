@@ -45,7 +45,12 @@ let n = 0
 async function page(viewport) {
   const p = await browser.newPage({ viewport, locale: 'zh-CN' })
   p.on('pageerror', (e) => errors.push(`页面出错：${e.message}`))
-  p.on('console', (m) => m.type() === 'error' && errors.push(`控制台错误：${m.text()}`))
+  p.on('console', (m) => {
+    if (m.type() !== 'error') return
+    // 外部资源（GitHub 的版本列表、字体）加载失败和页面本身无关：CI 的机器共用 IP，GitHub 接口常被限流返回 403
+    if (/^Failed to load resource/.test(m.text()) && !m.location().url.startsWith(base)) return
+    errors.push(`控制台错误：${m.text()}`)
+  })
   return p
 }
 
