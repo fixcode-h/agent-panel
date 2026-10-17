@@ -297,6 +297,7 @@ ${prompt}`,
     job.text = ''
     job.thinking = undefined
     job.tools = undefined
+    job.out = undefined
     const list = ids.map((id) => d.images.find((i) => i.id === id)).filter(Boolean) as DesignImage[]
     const items: ImageJobItem[] = list.map((i) => ({ id: i.id, name: i.name, status: 'waiting', got: 0, want: count }))
     job.images = items
@@ -368,6 +369,7 @@ ${prompt}`,
       job.thinking = undefined
       job.tools = undefined
       job.outChars = 0
+      job.out = undefined
       // 工具调用的 id → 在 job.tools 里的位置，结果回来时更新那一条
       const toolAt = new Map<string, number>()
       let text = ''
@@ -412,6 +414,13 @@ ${prompt}`,
           else if (ev.type === 'result') result = ev
           job.text = text.split('```')[0].trim()
           job.outChars = text.length
+          // JSON 部分边写边给界面看；只留最后一段，免得每次推送都很大
+          const fence = text.indexOf('```')
+          if (fence >= 0)
+            job.out = text
+              .slice(fence)
+              .replace(/^```\w*\n?/, '')
+              .slice(-3000)
         },
       })
       if (r.killed === 'stopped') throw new Error(t('已停止'))

@@ -100,6 +100,10 @@ try {
   // 发给 AI：流式输出，生成图片时进度固定在输入框上方
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('按钮再大一点')
   await p.keyboard.press('Enter')
+  // 控件树 JSON 边写边显示
+  await p.getByText('控件树和图片清单').waitFor({ timeout: 15000 })
+  await p.waitForTimeout(600)
+  await check(p, 'UI设计-写入', ['控件树和图片清单'])
   await p.getByText(/正在生成图片 \d+\/\d+/).waitFor({ timeout: 15000 })
   await check(p, 'UI设计-生成中', ['正在生成图片'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })

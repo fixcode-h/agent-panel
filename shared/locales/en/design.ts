@@ -245,8 +245,6 @@ export const EN_DESIGN: Record<string, string> = {
     'Tell the AI on the right what screen you want, or add widgets with + in the widget tree.',
   移到项目: 'Move to project',
   AI: 'AI',
-  '格式不对，正在修正（已输出 {n} 个字符）': 'Fixing the format ({n} characters so far)',
-  '正在写控件树和图片清单（已输出 {n} 个字符）': 'Writing the widget tree and image list ({n} characters so far)',
   '正在生成图片 {i}/{n}': 'Generating images {i}/{n}',
   '翻译提示词失败：{error}': "Couldn't translate the prompt: {error}",
   美术提示词: 'Art prompts',
@@ -300,10 +298,14 @@ export const EN_DESIGN: Record<string, string> = {
   构图: 'Composition',
   避免: 'Avoid',
   同时生成几张: 'Images at once',
-  '每张图单独开一个会话生成（CLI 进程，或浏览器里新开的 Gemini / ChatGPT 对话），最多同时开这么多个。':
-    'Each image is generated in its own session (a CLI process, or a new Gemini / ChatGPT chat in the browser). This is how many can run at the same time.',
   '{n} 个（默认）': '{n} (default)',
   '{n} 个': '{n}',
   '运行模式：像游戏里一样点按钮看效果': 'Play mode: click buttons like in the game',
   '运行模式 · 按 Esc 退出': 'Play mode · press Esc to exit',
+  修正格式: 'Fixing format',
+  写入: 'Writing',
+  控件树和图片清单: 'widget tree and image list',
+  '{n} 个字符': '{n} chars',
+  '每张图单独开一个会话生成：CLI 是各开一个进程，浏览器是在选中的 Gemini / ChatGPT 标签页里各开一个新对话（网页左边的对话列表里能看到），最多同时开这么多个。':
+    "Each image gets its own session: a separate CLI process, or a new conversation in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left). At most this many run at once.",
 }
