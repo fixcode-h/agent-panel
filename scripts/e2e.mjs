@@ -2178,6 +2178,14 @@ try {
     assert.equal(d.images.find((i) => i.id === 'frame').variants.length, 5)
     step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上、能重试；网站不能调用')
 
+    await assert.rejects(
+      call('POST', `/designs/${design.id}/images/generate`, {
+        ids: ['nope'],
+        source: { kind: 'browser', tabId: '8' },
+        count: 1,
+      }),
+      /没有要生成的图片/,
+    )
     // 「控件」列表：项目里别的设计的子控件能连同图片加进来
     const other2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'Shop' })
     const pc = await call('GET', `/designs/projects/${uiProject.id}/components`)

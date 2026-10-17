@@ -21,6 +21,7 @@ export function Viewport({
   annotations,
   onAnnotations,
   target,
+  onOpen,
 }: {
   root: Widget
   size: Vec2
@@ -35,6 +36,8 @@ export function Viewport({
   onAnnotations: (list: Annotation[], key: string) => void
   /** 正在编辑的树：空是主界面，否则是子控件名 */
   target: string
+  /** 双击控件：用了图片的跳到图片，子控件进去编辑 */
+  onOpen?: (id: string) => void
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -199,6 +202,11 @@ export function Viewport({
                 onSelect(id)
                 // 点到的就是选中的、能拖动的控件时直接开始拖
                 if (id && id === selected) drag(e, 'move')
+              }}
+              onDoubleClick={(e) => {
+                if (tool !== 'select') return
+                const id = (e.target as HTMLElement).closest<HTMLElement>('[data-wid]')?.dataset.wid
+                if (id) onOpen?.(id)
               }}
             >
               <UmgNode w={root} ctx={ctx} />

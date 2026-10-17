@@ -829,6 +829,39 @@ ${prompt}`,
         return bad(c, (e as Error).message)
       }
     })
+    // 一次生成好几张（「生成全部未生成的」）：正在生成别的图时排进这一轮的队列
+    .post('/:id/images/generate', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const running = jobs.get(d.id)?.status === 'running' ? jobs.get(d.id) : undefined
+      if (running && !running.enqueue) return bad(c, t('正在处理上一个请求，等它完成或先停止'), 409)
+      const body = (await c.req.json().catch(() => ({}))) as { ids?: unknown }
+      const p = GenerateImageInput.safeParse(body)
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      if (p.data.source.kind === 'none') return bad(c, t('请选择生成图片的方式'))
+      const want = new Set(Array.isArray(body.ids) ? body.ids.map(String) : [])
+      const list = d.images.filter((i) => want.has(i.id) && i.prompt.trim() && i.status !== 'generating')
+      if (!list.length) return bad(c, t('没有要生成的图片'))
+      for (const i of list) {
+        i.status = 'pending'
+        i.error = undefined
+      }
+      await save(d)
+      if (running?.enqueue) for (const i of list) running.enqueue(i)
+      else
+        startJob(d, async (job) => {
+          const failed = await generateImages(
+            d,
+            list.map((i) => i.id),
+            p.data.source,
+            p.data.count,
+            job,
+          )
+          if (failed.length)
+            throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
+        })
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
     .post('/:id/images/:imageId/generate', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)

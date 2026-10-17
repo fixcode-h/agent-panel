@@ -555,9 +555,11 @@ export function DesignChat({
             placeholder={
               running
                 ? t('AI 正在处理，完成后可以继续说')
-                : annotations.length
-                  ? t('补充说明，或直接发送让 AI 按标注修改')
-                  : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
+                : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
+                  ? t('写修改意见，发送后按图上的标记重新生成图片')
+                  : annotations.length
+                    ? t('补充说明，或直接发送让 AI 按标注修改')
+                    : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
             }
             aria-label={t('告诉 AI 要做什么')}
             className="block max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13.5px] leading-relaxed outline-none placeholder:text-subtle"

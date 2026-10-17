@@ -4,9 +4,18 @@ import type { Annotation, AnnotationKind, DesignImage } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import { Select } from '@/components/ui/input'
 import { t } from '@shared/i18n'
 import { FieldRow, MarginInput, NumInput, TextInput, Thumb } from './fields'
-import { AnnotationChips, AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
+import { AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
+
+/** 设计里的一个控件：在哪棵树（空是主界面，否则是子控件名）、id、名字、类型 */
+export interface WidgetRef {
+  target: string
+  id: string
+  name: string
+  type?: string
+}
 
 export const readFile = (f: File) =>
   new Promise<string>((res, rej) => {
@@ -25,7 +34,12 @@ export function ImagesPanel({
   onUpload,
   onPreview,
   usedIds,
+  onGenerateAll,
+  canGenerate,
 }: {
+  /** 生成这些还没生成或失败的图 */
+  onGenerateAll: (ids: string[]) => void
+  canGenerate: boolean
   images: DesignImage[]
   url: (img: DesignImage) => string | undefined
   selected: string
@@ -36,6 +50,19 @@ export function ImagesPanel({
   usedIds: Set<string>
 }) {
   const input = useRef<HTMLInputElement>(null)
+  const [filter, setFilter] = useState<'all' | 'unused' | 'missing' | 'failed'>('all')
+  const busy = (i: DesignImage) => i.status === 'generating' || i.status === 'pending'
+  const missing = images.filter((i) => !i.variants.length && !busy(i) && i.prompt.trim())
+  const failed = images.filter((i) => i.status === 'failed')
+  const unused = images.filter((i) => !usedIds.has(i.id))
+  const todo = [...new Set([...missing, ...failed])].filter((i) => !busy(i))
+  const filters = [
+    { id: 'all' as const, label: t('全部'), n: images.length },
+    { id: 'unused' as const, label: t('未用'), n: unused.length },
+    { id: 'missing' as const, label: t('未生成'), n: missing.length },
+    { id: 'failed' as const, label: t('失败'), n: failed.length },
+  ]
+  const shown = { all: images, unused, missing, failed }[filter]
   return (
     <div className="flex flex-col gap-2 p-2">
       <input
@@ -56,13 +83,44 @@ export function ImagesPanel({
         <Upload className="h-3.5 w-3.5" />
         {t('上传图片')}
       </button>
+      {images.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1">
+          {filters
+            .filter((f) => f.id === 'all' || f.n > 0 || filter === f.id)
+            .map((f) => (
+              <button
+                key={f.id}
+                onClick={() => setFilter(f.id)}
+                aria-pressed={filter === f.id}
+                className={cn(
+                  'h-6 cursor-pointer rounded-md px-2 text-[11.5px]',
+                  filter === f.id ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
+                  f.id === 'failed' && f.n > 0 && filter !== f.id && 'text-danger',
+                )}
+              >
+                {f.label} {f.n}
+              </button>
+            ))}
+          {todo.length > 0 && (
+            <button
+              onClick={() => onGenerateAll(todo.map((i) => i.id))}
+              disabled={!canGenerate}
+              title={t('生成还没生成和失败的图片')}
+              className="ml-auto inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-[11.5px] text-accent hover:bg-sel disabled:cursor-default disabled:opacity-50"
+            >
+              <RefreshCw className="h-3 w-3" />
+              {t('生成 {n} 张', { n: todo.length })}
+            </button>
+          )}
+        </div>
+      )}
       {!images.length && (
         <p className="px-1 py-4 text-center text-[12px] leading-relaxed text-subtle">
           {t('还没有图片。在右边告诉 AI 想要什么界面，它会列出需要的图片并生成。')}
         </p>
       )}
       <div className="grid grid-cols-2 gap-2">
-        {images.map((i) => (
+        {shown.map((i) => (
           <button
             key={i.id}
             onClick={() => onSelect(i.id)}
@@ -116,18 +174,21 @@ export function ImageDetails({
   onDelete,
   canGenerate,
   sourceLabel,
-  feedback,
-  onFeedback,
   marks,
-  onMarks,
   onPreview,
+  users,
+  candidates,
+  onJump,
+  onAssign,
 }: {
-  /** 这次生成的修改意见（不改描述，只用在下一次生成） */
-  feedback: string
-  onFeedback: (v: string) => void
-  /** 在大图上画的修改标记 */
+  /** 用到这张图的控件，点一下跳过去 */
+  users: WidgetRef[]
+  /** 能放这张图的控件（Image、Border、Button），没用到时可以直接用上 */
+  candidates: WidgetRef[]
+  onJump: (w: WidgetRef) => void
+  onAssign: (w: WidgetRef) => void
+  /** 在大图上画的修改标记（列在右边对话框上面，发送时按它重新生成） */
   marks: Annotation[]
-  onMarks: (list: Annotation[]) => void
   /** 打开大图预览（在图上画标记） */
   onPreview: () => void
   image: DesignImage
@@ -173,6 +234,47 @@ export function ImageDetails({
           ))}
         </div>
       )}
+      <div className="flex flex-wrap items-center gap-1 border-b px-3 py-2">
+        {users.length ? (
+          <>
+            <span className="mr-1 text-[11.5px] text-subtle">{t('用在')}</span>
+            {users.map((u) => (
+              <button
+                key={u.id}
+                onClick={() => onJump(u)}
+                title={u.target ? t('在子控件 {name} 里', { name: u.target }) : undefined}
+                className="cursor-pointer rounded border bg-field px-1.5 py-px font-mono text-[11px] text-muted hover:border-line-strong hover:text-fg"
+              >
+                {u.target ? `${u.target} › ` : ''}
+                {u.name}
+              </button>
+            ))}
+          </>
+        ) : (
+          <>
+            <span className="flex-1 text-[11.5px] text-warning">{t('设计里还没用到这张图')}</span>
+            {candidates.length > 0 && (
+              <Select
+                aria-label={t('用到控件上')}
+                value=""
+                onChange={(e) => {
+                  const c = candidates.find((x) => x.id === e.target.value)
+                  if (c) onAssign(c)
+                }}
+                options={[
+                  { value: '', label: t('用到控件上…') },
+                  ...candidates.map((c) => ({
+                    value: c.id,
+                    label: `${c.name} · ${c.type}`,
+                    group: c.target || t('主界面'),
+                  })),
+                ]}
+                className="h-6 w-auto max-w-[180px] rounded-md px-2 text-[11.5px]"
+              />
+            )}
+          </>
+        )}
+      </div>
       {image.status === 'failed' && image.error && (
         <p className="mx-3 mt-2 rounded-md bg-danger/10 px-2 py-1.5 text-[11.5px] leading-relaxed whitespace-pre-wrap text-danger">
           {image.error}
@@ -216,28 +318,15 @@ export function ImageDetails({
             onChange={(prompt) => set({ prompt }, 'prompt')}
           />
         </div>
-        <div className="px-3 pt-2.5">
-          <div className="mb-1 flex items-center gap-2">
-            <p className="text-[12px] text-subtle">{t('修改意见（这次生成用）')}</p>
-            {image.variants.length > 0 && (
-              <button onClick={onPreview} className="ml-auto cursor-pointer text-[11.5px] text-accent hover:underline">
-                {t('在大图上标记')}
-              </button>
-            )}
-          </div>
-          {marks.length > 0 && (
-            <div className="mb-1.5">
-              <AnnotationChips list={marks} onRemove={(id) => onMarks(marks.filter((m) => m.id !== id))} />
-            </div>
-          )}
-          <TextInput
-            label={t('修改意见')}
-            multiline
-            placeholder={t('哪里不满意、要怎么改，不用改上面的描述')}
-            value={feedback}
-            onChange={onFeedback}
-          />
-        </div>
+        {image.variants.length > 0 && (
+          <p className="px-3 pt-2 text-[11.5px] leading-relaxed text-subtle">
+            {marks.length ? t('图上有 {n} 处标记，', { n: marks.length }) : ''}
+            <button onClick={onPreview} className="cursor-pointer text-accent hover:underline">
+              {t('在大图上标记要改的地方')}
+            </button>
+            {t('，修改意见写在右边的对话框里发送')}
+          </p>
+        )}
         <div className="flex flex-wrap gap-1.5 px-3 pt-2 pb-3">
           <Button
             size="sm"
@@ -246,7 +335,7 @@ export function ImageDetails({
             title={sourceLabel}
           >
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-            {feedback.trim() || marks.length ? t('按意见重新生成') : image.variants.length ? t('再生成') : t('生成')}
+            {marks.length ? t('按标记重新生成') : image.variants.length ? t('再生成') : t('生成')}
           </Button>
           <input
             ref={input}

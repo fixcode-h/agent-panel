@@ -658,6 +658,43 @@ export function usedImages(roots: Widget[]) {
   return ids
 }
 
+/** 用到某张图的控件：target 是所在的树（空是主界面，否则是子控件名） */
+export function imageUsers(trees: { target: string; root: Widget }[], imageId: string) {
+  const ref = `img:${imageId}`
+  const has = (v: unknown): boolean =>
+    v === ref || (!!v && typeof v === 'object' && Object.values(v as object).some(has))
+  const out: { target: string; id: string; name: string }[] = []
+  for (const tr of trees)
+    walk(tr.root, (w) => has(w.Properties) && out.push({ target: tr.target, id: w.id, name: w.Name }))
+  return out
+}
+
+/** 能直接放图的控件和放在哪个画刷上：Image 的 Brush、Border 的 Background、Button 的普通状态 */
+export const IMAGE_SLOT: Partial<Record<WidgetType, string>> = {
+  Image: 'Brush',
+  Border: 'Background',
+  Button: 'WidgetStyle.Normal',
+}
+
+/** 把图用到控件上：设好画刷的图片；九宫格的图按 Box 拉伸，Image 顺便把尺寸设成图片尺寸 */
+export function assignImage(w: Widget, img: { id: string; width: number; height: number; nineSlice?: Margin }): Widget {
+  const path = IMAGE_SLOT[w.Type]
+  if (!path) return w
+  const keys = path.split('.')
+  const props = structuredClone(w.Properties)
+  let cur: any = props
+  for (const k of keys.slice(0, -1)) cur = cur[k] ??= {}
+  const last = keys[keys.length - 1]
+  cur[last] = {
+    ...brush(),
+    ...(cur[last] ?? {}),
+    ResourceObject: `img:${img.id}`,
+    ImageSize: { X: img.width, Y: img.height },
+    ...(img.nineSlice ? { DrawAs: 'Box', Margin: img.nineSlice } : {}),
+  }
+  return { ...w, Properties: props }
+}
+
 /** 控件在树里能不能有这些子控件：给 AI 的结果做检查，也给拖放做判断 */
 export function checkTree(root: Widget, components: string[], images: Set<string>): string[] {
   const errors: string[] = []
