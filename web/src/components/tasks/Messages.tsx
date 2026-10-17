@@ -136,6 +136,22 @@ type BodyProps = {
 const sig = (m: TaskMessage) =>
   `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.tools.map((x) => `${x.output?.length ?? 0}${x.failed ? '!' : ''}`).join(',')}`
 
+/** 回复还没开始输出时的占位：发出消息马上显示是谁在回复、用的模型，下面放进度 */
+export function PendingAuthor({ author, children }: { author: Author; children: React.ReactNode }) {
+  return (
+    <div className="flex gap-3">
+      <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
+      <div className="flex min-w-0 flex-1 flex-col gap-2">
+        <div className="flex items-center gap-2 pt-0.5 text-[13px]">
+          <span className="font-medium">{author.name}</span>
+          {author.model && <span className="font-mono text-xs text-subtle">{author.model}</span>}
+        </div>
+        {children}
+      </div>
+    </div>
+  )
+}
+
 /**
  * 每次轮询拿到的都是新的任务对象，长任务有上千条消息时全部重新渲染（Markdown、代码高亮）会很卡。
  * 只在这条消息的内容或显示方式变了时才重新渲染

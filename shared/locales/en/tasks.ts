@@ -317,6 +317,7 @@ export const EN_TASKS: Record<string, string> = {
   '不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）':
     'Give this to the running agent without stopping; it keeps going with the current task (Enter)',
   补充: 'Add info',
+  '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
   '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
