@@ -41,6 +41,8 @@ import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
+import { UPLOADS_DIR } from './uploads.ts'
+import { withAttachments } from '../shared/task.ts'
 import { imageSize, zip } from './zip.ts'
 
 /**
@@ -432,10 +434,19 @@ ${prompt}`,
           effort: run.effort,
           permission: READ_ONLY[cliId] ?? cs.permission,
           extraArgs: safeArgs(cs.extraArgs),
+          // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
+          addDirs: input.attachments.length ? [UPLOADS_DIR] : undefined,
         },
         cwd,
         env: childEnv(cs.env),
-        input: buildDesignPrompt(cache.get(d.id)!, history, input.text, input.annotations, project) + extra,
+        input:
+          buildDesignPrompt(
+            cache.get(d.id)!,
+            history,
+            withAttachments(input.text, input.attachments),
+            input.annotations,
+            project,
+          ) + extra,
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
         onEvent: (ev) => {
@@ -909,6 +920,7 @@ ${prompt}`,
         text: p.data.text,
         at: now(),
         ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
+        ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
       })
       await save(d)
       startJob(d, async (job) => {

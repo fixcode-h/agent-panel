@@ -16,7 +16,7 @@ import {
 import { toast } from 'sonner'
 import { extensionSelfReload } from '@shared/design'
 import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
-import type { TaskMessage, ToolUse } from '@shared/schema'
+import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
@@ -27,6 +27,14 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/compo
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
+import {
+  AttachMenu,
+  AttachmentChips,
+  DropHint,
+  MessageAttachments,
+  useAttachments,
+  useDropPaste,
+} from '@/components/chat/Attachments'
 import { t } from '@shared/i18n'
 
 const NO_NAMES = new Set<string>()
@@ -414,7 +422,7 @@ export function DesignChat({
   onSource: (s: ImageSource) => void
   count: number
   onCount: (n: number) => void
-  onSend: (text: string, run: ChatRun) => Promise<boolean>
+  onSend: (text: string, run: ChatRun, attachments: Attachment[]) => Promise<boolean>
   onStop: () => void
   /** 重新排队生成一张失败的图 */
   onRetry?: (imageId: string) => Promise<void>
@@ -428,6 +436,9 @@ export function DesignChat({
   const { run } = useChatRun(pick)
   const list = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
+  // 参考图、需求文档：选文件、粘贴截图、拖进来都行
+  const files = useAttachments()
+  const drop = useDropPaste(files.add)
   const running = job?.status === 'running'
   const designing = running && job?.phase === 'design'
 
@@ -447,11 +458,14 @@ export function DesignChat({
   const send = async () => {
     const v = text.trim()
     // 只有标注、没写文字也能发：按标注改
-    if ((!v && !annotations.length) || running || sending) return
+    if ((!v && !annotations.length && !files.attachments.length) || running || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
-      if (await onSend(v, run)) setText('')
+      if (await onSend(v, run, files.attachments)) {
+        setText('')
+        files.clear()
+      }
     } finally {
       setSending(false)
     }
@@ -511,7 +525,15 @@ export function DesignChat({
         <div className="flex min-w-0 items-center pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
         </div>
-        <div className="rounded-2xl border border-line-strong bg-field shadow-card focus-within:border-accent/60">
+        <div
+          {...drop.container}
+          className={cn(
+            'relative rounded-2xl border border-line-strong bg-field shadow-card focus-within:border-accent/60',
+            drop.over && 'border-accent ring-2 ring-accent/25',
+          )}
+        >
+          {drop.over && <DropHint />}
+          <AttachmentChips items={files.items} onRemove={files.remove} />
           {annotations.length > 0 && (
             <div className="border-b px-2.5 pt-2.5 pb-2">
               <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
@@ -521,6 +543,7 @@ export function DesignChat({
             ref={box}
             value={text}
             onChange={(e) => setText(e.target.value)}
+            onPaste={drop.onPaste}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
@@ -540,6 +563,7 @@ export function DesignChat({
             className="block max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13.5px] leading-relaxed outline-none placeholder:text-subtle"
           />
           <div className="flex items-center gap-1 px-2 pb-2">
+            <AttachMenu onFiles={files.add} canMention={false} className="h-7 w-7" />
             <SourceSelect value={source} onChange={onSource} />
             {source.kind !== 'none' && (
               <Select
@@ -563,7 +587,12 @@ export function DesignChat({
             ) : (
               <button
                 onClick={() => void send()}
-                disabled={(!text.trim() && !annotations.length) || sending || disabled}
+                disabled={
+                  (!text.trim() && !annotations.length && !files.attachments.length) ||
+                  sending ||
+                  files.uploading ||
+                  disabled
+                }
                 aria-label={t('发送')}
                 title={t('发送（Enter）')}
                 className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
@@ -582,27 +611,30 @@ function ChatMessage({ msg }: { msg: DesignMessage }) {
   const author = useRunAuthor(msg.run as ChatRun | undefined)
   if (msg.role === 'user')
     return (
-      <div className="ml-8 self-end rounded-2xl rounded-br-md bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
-        {msg.text}
-        {!!msg.annotations?.length && (
-          <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
-            {msg.annotations.map((a, i) => (
-              <span key={a.id} className="flex items-center gap-1.5">
-                <span
-                  className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
-                  style={{ background: KIND_COLOR[a.kind] }}
-                >
-                  {i + 1}
+      <div className="ml-8 flex flex-col items-end gap-1.5 self-end">
+        {!!msg.attachments?.length && <MessageAttachments items={msg.attachments} />}
+        <div className="rounded-2xl rounded-br-md bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
+          {msg.text}
+          {!!msg.annotations?.length && (
+            <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
+              {msg.annotations.map((a, i) => (
+                <span key={a.id} className="flex items-center gap-1.5">
+                  <span
+                    className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+                    style={{ background: KIND_COLOR[a.kind] }}
+                  >
+                    {i + 1}
+                  </span>
+                  <span className="truncate">
+                    {kindLabel(a.kind)}
+                    {a.widgets.length ? ` · ${a.widgets.slice(0, 3).join('、')}` : ''}
+                    {a.note ? ` · ${a.note}` : ''}
+                  </span>
                 </span>
-                <span className="truncate">
-                  {kindLabel(a.kind)}
-                  {a.widgets.length ? ` · ${a.widgets.slice(0, 3).join('、')}` : ''}
-                  {a.note ? ` · ${a.note}` : ''}
-                </span>
-              </span>
-            ))}
-          </span>
-        )}
+              ))}
+            </span>
+          )}
+        </div>
       </div>
     )
   if (msg.role === 'system') return <SystemNote text={msg.text} error={msg.error} />

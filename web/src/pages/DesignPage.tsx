@@ -15,6 +15,7 @@ import {
   Trash2,
   Undo2,
 } from 'lucide-react'
+import type { Attachment } from '@shared/schema'
 import { imageRevisionText, type Annotation, type DesignDoc, type DesignImage, type ImageSource } from '@shared/design'
 import {
   WIDGETS,
@@ -600,7 +601,7 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  const send = async (text: string, run: ChatRun) => {
+  const send = async (text: string, run: ChatRun, attachments: Attachment[]) => {
     // 标注随这条消息一起发出，发出后从效果图上清掉
     const annotations = doc.annotations
     const next = { ...doc, annotations: [] }
@@ -608,10 +609,11 @@ function Designer({ id }: { id: string }) {
       ed.absorb(await api.saveDesign(id, next))
       ed.absorb(
         await api.designChat(id, {
-          text: text.trim() || t('按标注修改'),
+          text: text.trim() || (annotations.length ? t('按标注修改') : t('参考附件')),
           source,
           count,
           annotations,
+          attachments,
           run,
         }),
       )

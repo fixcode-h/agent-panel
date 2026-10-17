@@ -13,7 +13,7 @@ import {
   type Margin,
   type Widget,
 } from './umg.ts'
-import type { ToolUse } from './schema.ts'
+import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
 import { t } from './i18n.ts'
 
 /**
@@ -86,6 +86,8 @@ export const DesignMessage = z.object({
   error: z.boolean().optional(),
   /** 用户这条消息带的标注 */
   annotations: z.array(Annotation).optional(),
+  /** 用户这条消息带的附件（参考图、文档） */
+  attachments: z.array(Attachment).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -271,6 +273,8 @@ export const DesignChatInput = z.object({
   count: z.number().int().min(1).max(4).default(1),
   /** 这次一起发的标注 */
   annotations: z.array(Annotation).max(200).default([]),
+  /** 这次一起发的附件：参考图、需求文档等，AI 按路径读取 */
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 对话用的 CLI、模型和思考强度；不给时用默认 CLI */
   run: z
     .object({ cli: z.string().max(40), model: z.string().max(200).default(''), effort: z.string().max(40).default('') })

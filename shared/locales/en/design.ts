@@ -142,6 +142,7 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  参考附件: 'See the attachments',
   '修改意见（这次生成用）': 'Change notes (for this generation)',
   在大图上标记: 'Mark up on the large view',
   修改意见: 'Change notes',

@@ -1,3 +1,5 @@
+// 对话输入框通用的附件：选文件、粘贴截图、拖进来，图片显示缩略图。任务对话和 UI 设计的 AI 对话都用这一套，
+// 以后新的对话输入框直接拿来用
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { AtSign, File as FileIcon, FileCode2, Loader2, Paperclip, Plus, X } from 'lucide-react'
@@ -203,7 +205,8 @@ export function AttachMenu({
   className,
 }: {
   onFiles: (f: File[]) => void
-  onMention: () => void
+  /** 没有「引用项目文件」时不传（例如 UI 设计的对话） */
+  onMention?: () => void
   canMention: boolean
   className?: string
 }) {
@@ -247,18 +250,20 @@ export function AttachMenu({
             <span className="flex-1">{t('上传文件或图片')}</span>
             <span className="text-[11px] text-subtle">{t('可粘贴 / 拖入')}</span>
           </PopoverClose>
-          <PopoverClose
-            className={menuItem}
-            disabled={!canMention}
-            onClick={() => {
-              mentioning.current = true
-              onMention()
-            }}
-          >
-            <AtSign className="h-4 w-4 shrink-0 text-subtle" />
-            <span className="flex-1">{t('引用项目文件')}</span>
-            <span className="font-mono text-[11px] text-subtle">@</span>
-          </PopoverClose>
+          {onMention && (
+            <PopoverClose
+              className={menuItem}
+              disabled={!canMention}
+              onClick={() => {
+                mentioning.current = true
+                onMention()
+              }}
+            >
+              <AtSign className="h-4 w-4 shrink-0 text-subtle" />
+              <span className="flex-1">{t('引用项目文件')}</span>
+              <span className="font-mono text-[11px] text-subtle">@</span>
+            </PopoverClose>
+          )}
         </PopoverContent>
       </Popover>
     </>
@@ -398,4 +403,13 @@ export function useFileMention(
   ) : null
 
   return { sync, onKeyDown, start, menu }
+}
+
+/** 拖文件进来时盖在输入框上的提示 */
+export function DropHint() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[13px] text-accent">
+      {t('松开鼠标，把文件附到要求里')}
+    </div>
+  )
 }
