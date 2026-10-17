@@ -123,6 +123,9 @@ async function apply(src: string, dir: string) {
   if (existsSync(dist)) await moveDir(dist, old)
   await moveDir(next, dist)
   for (const f of FILES) if (existsSync(path.join(src, f))) await retry(() => cp(path.join(src, f), path.join(dir, f)))
+  // 浏览器扩展（UI 设计用网页生图）：浏览器是从这个目录加载的，原地覆盖文件，目录不换
+  if (existsSync(path.join(src, 'extension')))
+    await retry(() => cp(path.join(src, 'extension'), path.join(dir, 'extension'), { recursive: true, force: true }))
   if (existsSync(path.join(src, TRAY_EXE))) await replaceTray(path.join(src, TRAY_EXE), path.join(dir, TRAY_EXE))
   // 换成托盘程序后不再需要命令行启动文件
   if (existsSync(path.join(dir, TRAY_EXE))) await rm(path.join(dir, 'start.cmd'), { force: true }).catch(() => {})

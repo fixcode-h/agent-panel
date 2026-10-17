@@ -75,6 +75,8 @@ export interface CliDefinition {
   /** 用 npm 全局安装的包名；设置里的「安装 / 卸载」按钮用它 */
   npmPackage: string
   docsUrl: string
+  /** 内置了生成图片的工具（UI 设计里用） */
+  images?: boolean
 }
 
 const opt = (cond: unknown, ...args: string[]) => (cond ? args : [])
@@ -157,6 +159,7 @@ export const CLIS: CliDefinition[] = [
   {
     id: 'codex',
     name: 'Codex',
+    images: true,
     command: 'codex',
     versionArgs: ['--version'],
     // 读不到本机 Codex 时的建议；能读到时以 `codex app-server` 返回的为准

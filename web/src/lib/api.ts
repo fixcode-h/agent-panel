@@ -22,10 +22,29 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type {
+  BrowserTab,
+  Design,
+  DesignChatInput,
+  DesignDoc,
+  DesignJob,
+  DesignMeta,
+  ImageSource,
+  NewDesignInput,
+} from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage } from '@shared/data'
 import type { AppReleases, AppUpdateJob } from '@shared/version'
 import { t } from '@shared/i18n'
+
+/** 设计连同正在进行的 AI 对话 / 生成图片 */
+export type DesignFull = Design & { job: DesignJob | null }
+
+/** 设计里图片文件的地址（在线演示里是内存里的 data URL） */
+export const designFileUrl = (id: string, file: string) =>
+  file.startsWith('data:') ? file : `/api/designs/${id}/files/${file}`
+/** 导出下载的地址；在线演示没有后端，由页面自己打包 */
+export const designExportUrl = (id: string, format: 'zip' | 'json') => `/api/designs/${id}/export?format=${format}`
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   // 在线演示版没有后端，请求交给浏览器里的模拟实现
@@ -155,5 +174,20 @@ export const api = {
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
+  designs: () => request<DesignMeta[]>('/designs'),
+  design: (id: string) => request<DesignFull>(`/designs/${id}`),
+  createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
+  saveDesign: (id: string, doc: DesignDoc) => request<DesignFull>(`/designs/${id}`, json('PUT', doc)),
+  deleteDesign: (id: string) => request<void>(`/designs/${id}`, { method: 'DELETE' }),
+  designChat: (id: string, input: DesignChatInput) => request<DesignFull>(`/designs/${id}/chat`, json('POST', input)),
+  stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
+  uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
+    request<DesignFull>(`/designs/${id}/images`, json('POST', body)),
+  generateDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number; prompt?: string }) =>
+    request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
+  exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
+  browserStatus: () =>
+    request<{ connected: boolean; version: string; tabs: BrowserTab[]; extensionDir: string }>('/designs/browser'),
+  revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }

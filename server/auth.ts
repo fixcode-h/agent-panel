@@ -52,6 +52,9 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
     return c.redirect(url.pathname + url.search, 302)
   }
   if (!(await getSettings()).requireToken || getCookie(c, COOKIE) === accessToken()) return next()
+  // 浏览器扩展拿不到面板的 Cookie；它能调的只有 /bridge 下面的几个接口（index.ts 里按来源限制了）
+  if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
+    return next()
   if (c.req.path.startsWith('/api/')) return c.json({ error: t('需要访问令牌：请用启动时显示的地址打开面板') }, 401)
   return c.html(
     `<!doctype html><meta charset="utf-8"><title>Agent</title><body style="font:15px system-ui;padding:48px;max-width:560px;margin:auto;line-height:1.7"><h3>${t('需要访问令牌')}</h3><p>${t('这个面板打开了访问令牌。Windows 上右键托盘图标选「打开面板」；其他系统请打开终端里显示的带 token 的地址。')}</p></body>`,

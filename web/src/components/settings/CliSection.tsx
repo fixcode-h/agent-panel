@@ -229,11 +229,16 @@ export function AssistModel({
   draft,
   value,
   onChange,
+  label,
+  fallback,
 }: {
   cli: string
   draft?: CliDraft
   value: string
   onChange: (v: string) => void
+  label?: string
+  /** 留空时实际用的值；不给时是这个 CLI 的默认模型 */
+  fallback?: string
 }) {
   const def = useCliDef(cli) ?? CLIS.find((c) => c.id === cli)
   if (!def || !draft) return null
@@ -244,12 +249,12 @@ export function AssistModel({
   }
   return (
     <ModelSelect
-      aria-label={t('AI 创建使用的模型')}
+      aria-label={label ?? t('AI 创建使用的模型')}
       def={def}
       value={value}
       onChange={onChange}
       tiers={tiers}
-      defaultValue={draft.defaultModel || cliDefaultModel(def)?.id || ''}
+      defaultValue={fallback ?? (draft.defaultModel || cliDefaultModel(def)?.id || '')}
     />
   )
 }

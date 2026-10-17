@@ -750,6 +750,10 @@ export const Settings = z.object({
     .default(CONTENT_WIDTH),
   /** 界面语言：auto 跟随浏览器 */
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
+  /** UI 设计里生成图片用的 CLI 和模型（目前只有 Codex 内置了生图工具）；模型为空用这个 CLI 的高档 */
+  imageGen: z
+    .object({ cli: z.string().default('codex'), model: z.string().trim().default(''), effort: z.string().default('') })
+    .default({ cli: 'codex', model: '', effort: '' }),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

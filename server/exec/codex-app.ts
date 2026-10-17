@@ -301,6 +301,28 @@ export function codexAppSession(o: BuildOptions & { cwd: string; input: string; 
         return [
           { type: 'tool', tool: { kind: 'web', name: t('网页搜索'), label: String(item.query ?? ''), detail: '' } },
         ]
+      case 'imageGeneration': {
+        const failed =
+          item.status === 'failed' || item.failure
+            ? String(item.failure?.message ?? item.failure?.reason ?? item.failure ?? t('生成失败'))
+            : undefined
+        return [
+          {
+            type: 'tool',
+            tool: {
+              kind: 'other',
+              name: t('生成图片'),
+              label: oneLine(String(item.revisedPrompt ?? '')),
+              detail: failed ? t('失败') : '',
+              output: failed,
+              failed: !!failed || undefined,
+            },
+          },
+          failed
+            ? { type: 'image', failed }
+            : { type: 'image', path: item.savedPath || undefined, data: item.result || undefined },
+        ]
+      }
       case 'imageView':
         return [{ type: 'tool', tool: { kind: 'read', name: t('查看图片'), label: rel(o.cwd, item.path), detail: '' } }]
       default:

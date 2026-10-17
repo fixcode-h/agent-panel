@@ -23,6 +23,7 @@ import {
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
+  Palette,
   Plus,
   Settings,
   Sun,
@@ -51,6 +52,7 @@ import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
+import { DesignList } from './SidebarDesigns'
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -181,44 +183,72 @@ function Row({
   )
 }
 
-/** 切到 Agent 模式时回到上次在 Agent 模式里看的页面 */
+/** 切到 Agent 模式、UI 设计模式时回到上次在那个模式里看的页面 */
 let lastAgentRoute: Route = { page: 'home' }
+let lastDesignRoute: Route = { page: 'design' }
 
 /**
- * 顶部的模式切换，参考 Claude 应用：Chat 是不属于项目的聊天，Agent 是按项目执行任务。
- * 收起侧栏时只显示一个按钮，点了切到另一个模式。
+ * 顶部的模式切换，参考 Claude 应用：Chat 是不属于项目的聊天，Agent 是按项目执行任务，UI 设计是按项目做界面。
+ * 收起侧栏时竖着排成三个按钮。
  */
 function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
   const chat = route.page === 'chat'
+  const design = route.page === 'design'
   const modes = [
     {
       id: 'chat',
       label: t('Chat 模式：直接聊天，不用选项目'),
+      short: 'Chat',
       icon: MessagesSquare,
       on: chat,
       to: { page: 'chat' } as Route,
     },
-    { id: 'agent', label: t('Agent 模式：在项目里执行任务和工作流'), icon: Code2, on: !chat, to: lastAgentRoute },
+    {
+      id: 'agent',
+      label: t('Agent 模式：在项目里执行任务和工作流'),
+      short: 'Agent',
+      icon: Code2,
+      on: !chat && !design,
+      to: lastAgentRoute,
+    },
+    {
+      id: 'design',
+      label: t('UI 设计：用对话设计游戏界面，导出给 UE'),
+      short: t('UI 设计'),
+      icon: Palette,
+      on: design,
+      to: lastDesignRoute,
+    },
   ]
   if (narrow) {
-    const other = modes.find((m) => !m.on)!
     return (
-      <button
-        onClick={() => go(other.to)}
-        aria-label={t('切换到{mode}', { mode: other.label })}
-        title={t('切换到{mode}', { mode: other.label })}
-        className="grid h-8 w-8 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg"
-      >
-        <other.icon className="h-[17px] w-[17px]" strokeWidth={1.8} />
-      </button>
+      <div role="radiogroup" aria-label={t('模式')} className="mb-1 flex flex-col items-center gap-0.5">
+        {modes.map((m) => (
+          <button
+            key={m.id}
+            role="radio"
+            aria-checked={m.on}
+            onClick={() => !m.on && go(m.to)}
+            aria-label={m.label}
+            title={m.label}
+            className={cn(
+              'grid h-8 w-8 cursor-pointer place-items-center rounded-lg hover:bg-sel hover:text-fg',
+              m.on ? 'bg-sel text-fg' : 'text-subtle',
+            )}
+          >
+            <m.icon className="h-[17px] w-[17px]" strokeWidth={1.8} />
+          </button>
+        ))}
+      </div>
     )
   }
   return (
     <div
       role="radiogroup"
       aria-label={t('模式')}
-      className="flex shrink-0 items-center gap-0.5 rounded-lg border p-0.5"
+      // 三个模式放不进标题那一行（会把名字挤成省略号），单独一行，带上文字
+      className="mx-3 mb-2 grid shrink-0 grid-cols-3 gap-0.5 rounded-lg border bg-field/60 p-0.5"
     >
       {modes.map((m) => (
         <button
@@ -229,11 +259,12 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
           title={m.label}
           onClick={() => !m.on && go(m.to)}
           className={cn(
-            'grid h-6.5 w-7 cursor-pointer place-items-center rounded-md transition-colors',
-            m.on ? 'bg-sel text-fg shadow-card' : 'text-subtle hover:text-fg',
+            'flex h-7 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[12.5px] transition-colors',
+            m.on ? 'bg-card font-medium text-fg shadow-card' : 'text-subtle hover:text-fg',
           )}
         >
-          <m.icon className="h-[15px] w-[15px]" strokeWidth={1.8} />
+          <m.icon className="h-[14px] w-[14px] shrink-0" strokeWidth={1.8} />
+          <span className="truncate">{m.short}</span>
         </button>
       ))}
     </div>
@@ -254,7 +285,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
-  if (!chatMode) lastAgentRoute = route
+  const designMode = route.page === 'design'
+  if (designMode) lastDesignRoute = route
+  else if (!chatMode) lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 
   // 按项目分组，最近有动静的项目排在前面；组内按更新时间
@@ -320,25 +353,33 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             <span className="truncate font-serif text-[16px] font-semibold tracking-tight">{t('Agent 面板')}</span>
           </button>
         )}
-        {!narrow && (
-          <span className="ml-auto">
-            <ModeSwitch narrow={false} />
-          </span>
-        )}
         <button
           onClick={toggleCollapsed}
           aria-label={narrow ? t('展开侧栏') : t('收起侧栏')}
           title={narrow ? t('展开侧栏') : t('收起侧栏')}
           // 收起时和下面的图标一样居中，不能靠右
-          className="hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid"
+          className={cn(
+            'hidden h-8 w-8 shrink-0 cursor-pointer place-items-center rounded-lg text-subtle hover:bg-sel hover:text-fg md:grid',
+            !narrow && 'ml-auto',
+          )}
         >
           {narrow ? <PanelLeftOpen className="h-[18px] w-[18px]" /> : <PanelLeftClose className="h-[18px] w-[18px]" />}
         </button>
       </div>
+      {!narrow && <ModeSwitch narrow={false} />}
 
       <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2', narrow && 'items-center')}>
         {narrow && <ModeSwitch narrow />}
-        {chatMode ? (
+        {designMode ? (
+          <Row
+            icon={Plus}
+            label={t('新建设计')}
+            collapsed={narrow}
+            on={!route.id || route.id === 'new'}
+            onClick={() => go({ page: 'design' })}
+            className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
+          />
+        ) : chatMode ? (
           <Row
             icon={Plus}
             label={t('新建聊天')}
@@ -371,7 +412,13 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         )}
       </nav>
 
-      {chatMode ? (
+      {designMode ? (
+        narrow ? (
+          <div className="flex-1" />
+        ) : (
+          <DesignList />
+        )
+      ) : chatMode ? (
         narrow ? (
           <div className="flex-1" />
         ) : (

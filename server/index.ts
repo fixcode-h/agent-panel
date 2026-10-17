@@ -26,6 +26,8 @@ import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
+import { designsApi } from './designs.ts'
+import { bridgeApi, extensionDir } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
@@ -87,6 +89,11 @@ app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
   if (!LOCAL_HOSTS.has(hostOf(host))) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
+  // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
+  if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
+    if (!c.req.path.startsWith('/api/bridge/')) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
+    return next()
+  }
   if (origin !== undefined) {
     let ok = false
     try {
@@ -298,6 +305,7 @@ app.delete('/projects/:id', async (c) => {
   const repo = (await projects.get(id))?.path
   if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
   await tasks.removeByProject(id, repo)
+  await designs.removeByProject(id)
   return c.body(null, 204)
 })
 
@@ -305,6 +313,16 @@ app.delete('/projects/:id', async (c) => {
 const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
 app.route('/assist', assistApi({ agents, categories, workflows }))
+// ---- UI 设计和连接浏览器的扩展 ----
+const designs = designsApi({ projects })
+app.post('/designs/browser/reveal', (c) => {
+  const dir = extensionDir()
+  if (!dir) return bad(c, t('没有找到扩展目录'))
+  revealDir(dir)
+  return c.json({ ok: true })
+})
+app.route('/designs', designs.routes)
+app.route('/bridge', bridgeApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
@@ -347,12 +365,12 @@ app.get('/fs/list', async (c) => {
   }
 })
 
-app.route('/data', dataApi({ running: () => tasks.running() }))
+app.route('/data', dataApi({ running: () => tasks.running() + designs.running() }))
 
 app.route(
   '/app',
   updateApi({
-    running: () => tasks.running(),
+    running: () => tasks.running() + designs.running(),
     // server 在下面才创建，重启时一定已经有了
     restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
   }),

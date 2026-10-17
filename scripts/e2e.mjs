@@ -1130,10 +1130,10 @@ try {
   )
   assert.match(netErr.text, /走的是 Command Code 官方服务[\s\S]*me\/fake\/flash/)
   assert.match(netErr.text, /连接中途断开/)
-  // 运行日志：数据目录的 logs/ 里，这次启动一个文件，记下了启动、CLI 的命令和断开重试
+  // 运行日志：程序目录的 logs/ 里，这次启动一个文件，记下了启动、CLI 的命令和断开重试
   const logUsage = await call('GET', '/data')
   assert.ok(
-    logUsage.logs?.current && logUsage.logs.current.startsWith(path.join(dataDir, 'logs')),
+    logUsage.logs?.current && logUsage.logs.current.startsWith(path.join(appDir, 'logs')),
     '日志在单独的文件夹里',
   )
   const logText = readFileSync(logUsage.logs.current, 'utf8')
@@ -1815,6 +1815,249 @@ try {
   assert.equal(job.status, 'failed')
   assert.match(job.error, /形成了环[\s\S]*没有从 start 连过来|没有从 start 连过来[\s\S]*形成了环|形成了环/)
   step('AI 创建：按格式生成、校验、自动修正一次，优化时带上当前配置，工作流解析 Agent 引用')
+
+  // ---- UI 设计 ----
+  {
+    await call('PUT', '/settings', {
+      ...settings,
+      defaultCli: 'codex',
+      imageGen: { cli: 'codex', model: '', effort: '' },
+    })
+    const design = await call('POST', '/designs', {
+      projectId: project.id,
+      kind: 'game',
+      title: 'Main Menu',
+      designSize: { X: 1920, Y: 1080 },
+    })
+    assert.equal(design.root.Type, 'CanvasPanel')
+    assert.ok((await call('GET', '/designs')).some((d) => d.id === design.id))
+    const tasksBefore = (await call('GET', '/tasks')).length
+    const waitJob = async (id) => {
+      for (let i = 0; ; i++) {
+        const d = await call('GET', `/designs/${id}`)
+        if (d.job?.status !== 'running') return d
+        if (i > 200) throw new Error('设计任务超时')
+        await sleep(100)
+      }
+    }
+    const tree = {
+      reply: '主菜单搭好了',
+      style: 'dark fantasy',
+      root: {
+        Type: 'CanvasPanel',
+        Name: 'Root',
+        Children: [
+          {
+            Type: 'Image',
+            Name: 'Bg',
+            Slot: { LayoutData: { Anchors: { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } } } },
+            Properties: { Brush: { ResourceObject: 'img:bg', DrawAs: 'Image' } },
+          },
+          {
+            Type: 'VerticalBox',
+            Name: 'Buttons',
+            Children: [
+              { Type: 'UserWidget', Name: 'StartBtn', Class: 'WBP_MenuButton' },
+              { Type: 'UserWidget', Name: 'QuitBtn', Class: 'WBP_MenuButton' },
+            ],
+          },
+        ],
+      },
+      components: [
+        {
+          Name: 'WBP_MenuButton',
+          DesignSize: { X: 320, Y: 72 },
+          Root: {
+            Type: 'Button',
+            Name: 'Btn',
+            Properties: { WidgetStyle: { Normal: { ResourceObject: 'img:frame', DrawAs: 'Box' } } },
+            Children: [
+              { Type: 'TextBlock', Name: 'Label', Properties: { Text: 'Start', ColorAndOpacity: '#FFD080FF' } },
+            ],
+          },
+        },
+      ],
+      images: [
+        { id: 'bg', name: 'MenuBg', prompt: 'castle at night', width: 1920, height: 1080, transparent: false },
+        {
+          id: 'frame',
+          name: 'BtnFrame',
+          prompt: 'golden frame',
+          width: 320,
+          height: 72,
+          nineSlice: { Left: 0.2, Top: 0.3, Right: 0.2, Bottom: 0.3 },
+        },
+      ],
+    }
+    // 第一次输出写错了控件类型，自动修正一次
+    const wrong = { ...tree, root: { ...tree.root, Children: [{ Type: 'Fancy', Name: 'X' }] } }
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `做主菜单 FAKE_DESIGN:${JSON.stringify(wrong)}\nFAKE_DESIGN2:${JSON.stringify(tree)}`,
+      source: { kind: 'cli' },
+      count: 2,
+    })
+    let d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job))
+    assert.equal(d.rev, 1)
+    assert.equal(d.style, 'dark fantasy')
+    assert.deepEqual(
+      d.root.Children.map((w) => [w.Type, w.Name, !!w.Slot?.LayoutData]),
+      [
+        ['Image', 'Bg', true],
+        ['VerticalBox', 'Buttons', true],
+      ],
+      '按父控件补上插槽',
+    )
+    assert.deepEqual(d.root.Children[0].Slot.LayoutData.Anchors.Maximum, { X: 1, Y: 1 }, 'AI 写的值盖过默认值')
+    assert.equal(d.root.Children[1].Children[0].Slot.Size.SizeRule, 'Automatic')
+    assert.equal(d.components[0].Root.Children[0].Slot.HorizontalAlignment, 'HAlign_Center')
+    assert.deepEqual(
+      d.images.map((i) => [i.id, i.status, i.variants.length, i.variants[0]?.source, i.variants[0]?.width]),
+      [
+        ['bg', 'idle', 2, 'cli', 1],
+        ['frame', 'idle', 2, 'cli', 1],
+      ],
+      '每张图生成两版：一版从 savedPath 读，一版从 base64 读',
+    )
+    const agentMsg = d.messages.at(-1)
+    assert.equal(agentMsg.role, 'agent')
+    assert.equal(agentMsg.text, '主菜单搭好了')
+    assert.deepEqual(agentMsg.images, ['bg', 'frame'])
+    assert.equal(agentMsg.run.cli, 'codex')
+    const prompts = calls().filter((c) => c.kind === 'codex' && /image_gen/.test(c.stdin ?? c.input ?? ''))
+    assert.ok(prompts.length >= 2, '生图交给 Codex 的 image_gen')
+    assert.equal((await call('GET', '/tasks')).length, tasksBefore, '设计不出现在任务列表里')
+
+    // 图片文件能取到；生成失败把错误显示在图片上
+    const file = await fetch(`${base}/designs/${design.id}/files/${d.images[0].variants[0].file}`)
+    assert.equal(file.headers.get('content-type'), 'image/png')
+    await call('POST', `/designs/${design.id}/images/bg/generate`, {
+      source: { kind: 'cli' },
+      count: 1,
+      prompt: 'IMGFAIL castle',
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'failed')
+    assert.equal(d.images[0].status, 'failed')
+    assert.match(d.images[0].error, /内容不符合政策/)
+    assert.equal(d.images[0].variants.length, 2, '失败不影响已有的版本')
+
+    // 页面保存：改选中的版本和名字，生成结果以服务端为准
+    const doc = { title: d.title, designSize: d.designSize, style: d.style, root: d.root, components: d.components }
+    d = await call('PUT', `/designs/${design.id}`, {
+      ...doc,
+      images: d.images.map((i) => (i.id === 'frame' ? { ...i, selected: 1, name: 'ButtonFrame', variants: [] } : i)),
+    })
+    const frame = d.images.find((i) => i.id === 'frame')
+    assert.deepEqual([frame.name, frame.selected, frame.variants.length], ['ButtonFrame', 1, 2])
+
+    // 导出：单个 JSON 内嵌贴图；ZIP 带 JSON 和贴图文件；导出到项目目录
+    const json = await (await fetch(`${base}/designs/${design.id}/export?format=json`)).json()
+    assert.equal(json.Format, 'AgentPanel.UMG')
+    assert.equal(json.Name, 'WBP_MainMenu')
+    assert.deepEqual(
+      json.Textures.map((x) => [x.Name, x.File, !!x.Data]),
+      [
+        ['T_MenuBg', 'Textures/T_MenuBg.png', true],
+        ['T_ButtonFrame', 'Textures/T_ButtonFrame.png', true],
+      ],
+    )
+    assert.deepEqual(json.Textures[1].NineSlice, { Left: 0.2, Top: 0.3, Right: 0.2, Bottom: 0.3 })
+    assert.equal(json.Root.Children[0].Properties.Brush.ResourceObject, 'T_MenuBg')
+    assert.equal(json.UserWidgets[0].Name, 'WBP_MenuButton')
+    const label = json.UserWidgets[0].Root.Children[0]
+    assert.equal(label.Slot.Type, 'ButtonSlot')
+    assert.equal(label.Properties.ColorAndOpacity.Hex, '#FFD080FF')
+    const zipRes = await fetch(`${base}/designs/${design.id}/export`)
+    assert.equal(zipRes.headers.get('content-type'), 'application/zip')
+    const zip = Buffer.from(await zipRes.arrayBuffer())
+    assert.equal(zip.readUInt32LE(0), 0x04034b50)
+    for (const n of ['WBP_MainMenu.umg.json', 'Textures/T_MenuBg.png', 'Textures/T_ButtonFrame.png'])
+      assert.ok(zip.includes(Buffer.from(n)), `ZIP 里有 ${n}`)
+    const { dir } = await call('POST', `/designs/${design.id}/export-to-project`)
+    assert.ok(existsSync(path.join(dir, 'WBP_MainMenu.umg.json')))
+    assert.ok(existsSync(path.join(dir, 'Textures/T_ButtonFrame.png')))
+    rmSync(path.join(projectDir, 'UI'), { recursive: true, force: true })
+    step('UI 设计：AI 搭控件树（自动修正一次）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开')
+
+    // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge
+    const ext = { 'content-type': 'application/json', origin: 'chrome-extension://abcdefghijklmnop' }
+    const bridge = (method, url, body, headers = ext) =>
+      fetch(`${base}/bridge${url}`, { method, headers, body: body && JSON.stringify(body) })
+    assert.equal(
+      (
+        await bridge(
+          'POST',
+          '/hello',
+          { tabs: [] },
+          { 'content-type': 'application/json', origin: 'https://evil.example' },
+        )
+      ).status,
+      403,
+      '网站不能冒充扩展',
+    )
+    assert.equal(
+      (
+        await call('POST', `/designs/${design.id}/images/bg/generate`, {
+          source: { kind: 'browser', tabId: '7' },
+          count: 1,
+        })
+      ).job.status,
+      'running',
+    )
+    d = await waitJob(design.id)
+    assert.match(d.images[0].error, /扩展没有连上/)
+    await bridge('POST', '/hello', {
+      version: '1.0.0',
+      tabs: [
+        { id: 7, url: 'https://gemini.google.com/app/abc', title: 'Gemini' },
+        { id: 8, url: 'https://chatgpt.com/c/1', title: 'ChatGPT' },
+        { id: 9, url: 'https://www.google.com/', title: 'Google' },
+      ],
+    })
+    const status = await call('GET', '/designs/browser')
+    assert.equal(status.connected, true)
+    assert.deepEqual(
+      status.tabs.map((x) => [x.id, x.site]),
+      [
+        ['7', 'gemini'],
+        ['8', 'chatgpt'],
+      ],
+    )
+    await call('POST', `/designs/${design.id}/images/frame/generate`, {
+      source: { kind: 'browser', tabId: '7' },
+      count: 2,
+    })
+    const cmd = (await (await bridge('GET', '/poll')).json()).cmd
+    assert.deepEqual([cmd.type, cmd.tabId, cmd.count, cmd.chroma], ['generate', '7', 2, true])
+    assert.match(cmd.prompt, /#00FF00/, '透明图让网页画纯绿底，扩展再抠掉')
+    await bridge('POST', '/progress', { id: cmd.id, text: '等待生成' })
+    const png =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+    await bridge('POST', '/result', { id: cmd.id, ok: true, images: [{ data: png }, { data: png }] })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done')
+    const f2 = d.images.find((i) => i.id === 'frame')
+    assert.deepEqual(
+      f2.variants.map((v) => v.source),
+      ['cli', 'cli', 'browser', 'browser'],
+    )
+    assert.equal(f2.selected, 2, '新生成的一版自动选中')
+    await call('POST', `/designs/${design.id}/images/frame/generate`, {
+      source: { kind: 'browser', tabId: '8' },
+      count: 1,
+    })
+    const cmd2 = (await (await bridge('GET', '/poll')).json()).cmd
+    await bridge('POST', '/result', { id: cmd2.id, ok: false, error: '没有找到输入框' })
+    d = await waitJob(design.id)
+    assert.match(d.images.find((i) => i.id === 'frame').error, /没有找到输入框/)
+    step('浏览器扩展：只列出 Gemini、ChatGPT 标签页，取指令、交回图片，错误显示在图片上；网站不能调用')
+
+    await call('DELETE', `/designs/${design.id}`)
+    assert.ok(!(await call('GET', '/designs')).some((x) => x.id === design.id))
+    assert.ok(!existsSync(path.join(dataDir, 'designs', design.id)))
+    await call('PUT', '/settings', settings)
+  }
 
   // ---- 找不到命令 / 停用 ----
   await call('PUT', '/settings', {

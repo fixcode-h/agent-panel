@@ -14,6 +14,7 @@ import { ErrorBoundary } from '@/components/ui/error-boundary'
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
 const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })))
+const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
@@ -23,6 +24,7 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   agents: () => <AgentsPage />,
   workflows: () => <WorkflowsPage />,
   chat: () => <ChatPage />,
+  design: () => <DesignPage />,
 }
 
 function useTheme() {

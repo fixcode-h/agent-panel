@@ -41,6 +41,8 @@ export type CliEvent =
   /** CLI 的待办清单 / 计划，每次给出完整列表 */
   | { type: 'todos'; todos: { text: string; status: 'pending' | 'running' | 'done' }[] }
   | { type: 'error'; message: string }
+  /** 生成了一张图片（Codex 的 image_gen）：path 是 CLI 存下的文件，data 是 base64；失败时 failed 是原因 */
+  | { type: 'image'; path?: string; data?: string; failed?: string }
   | { type: 'result'; ok: boolean; error?: string }
   /** CLI 要用户确认（权限不够的命令、改文件）或回答问题；reply 把用户的选择交回给 CLI */
   | {

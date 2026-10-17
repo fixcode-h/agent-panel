@@ -34,7 +34,6 @@ export const EN_APP: Record<string, string> = {
   '{n} 天前': '{n}d ago',
   'Chat 模式：直接聊天，不用选项目': 'Chat mode: chat directly, no project needed',
   'Agent 模式：在项目里执行任务和工作流': 'Agent mode: run tasks and workflows in a project',
-  '切换到{mode}': 'Switch to {mode}',
   模式: 'Mode',
   聊天标题: 'Chat title',
   任务标题: 'Task title',
