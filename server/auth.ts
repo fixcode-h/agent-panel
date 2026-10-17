@@ -52,6 +52,8 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
     return c.redirect(url.pathname + url.search, 302)
   }
   if (!(await getSettings()).requireToken || getCookie(c, COOKIE) === accessToken()) return next()
+  // AI 改设计用的工具由 CLI 调，没有 Cookie；地址里的随机令牌只在那一轮设计里有效，由接口自己核对
+  if (c.req.path.startsWith('/api/mcp/design/')) return next()
   // 浏览器扩展拿不到面板的 Cookie；它能调的只有 /bridge 下面的几个接口（index.ts 里按来源限制了）
   if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
     return next()

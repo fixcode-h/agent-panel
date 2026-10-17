@@ -295,6 +295,28 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
   process.exit(0)
 }
 
+// UI 设计的对话用设计工具（MCP）改：要求里有 FAKE_MCP:<一组 ops> 时，按 -c mcp_servers.design.url 调工具，
+// 回复里只写说明。用来测试工具接口和「用工具改完再收尾」
+const mcpUrl = args.map((a) => a.match(/^mcp_servers\.design\.url="(.*)"$/)?.[1]).find(Boolean)
+if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex' && mcpUrl && /FAKE_MCP:/.test(input)) {
+  const ops = JSON.parse([...input.matchAll(/FAKE_MCP:(.*)/g)].at(-1)[1])
+  let id = 0
+  const rpc = async (method, params) => {
+    const r = await fetch(mcpUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: ++id, method, params }),
+    })
+    return (await r.json()).result
+  }
+  await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'fake' } })
+  const tools = (await rpc('tools/list', {})).tools.map((t) => t.name)
+  const edit = await rpc('tools/call', { name: 'edit', arguments: { ops } })
+  const check = await rpc('tools/call', { name: 'check', arguments: {} })
+  const text = `用工具改好了（${tools.join(',')}）：${edit.content[0].text.split('\n')[0]}；检查：${check.content[0].text}\n\n\`\`\`json\n{"reply":"工具改好了"}\n\`\`\``
+  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
+  codexDone('completed')
+}
 // UI 设计的对话：回说明 + JSON。JSON 由用户要求里最后一个 FAKE_DESIGN: 指定（一行），
 // 收到「不符合要求」的重试提示后改用 FAKE_DESIGN2:，用来测试自动修正
 if (input.startsWith('你是游戏 UI 设计助手') && kind === 'codex') {

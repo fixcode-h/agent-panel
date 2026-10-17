@@ -357,7 +357,7 @@ export const emptyRoot = (): Widget => newWidget('CanvasPanel', 'RootCanvas')
 
 // ---- AI 对话 ----
 
-const AiImage = z.object({
+export const AiImage = z.object({
   id: z.string().regex(/^[A-Za-z0-9_-]+$/, 'id 只能用字母、数字、下划线和连字符'),
   name: z.string().min(1),
   prompt: z.string().min(1),
@@ -408,6 +408,8 @@ export function buildDesignPrompt(
   request: string,
   annotations?: Annotation[],
   project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
+  /** 这一轮给了 design 工具（MCP）：优先用工具改，JSON 里只写说明 */
+  tools = false,
 ) {
   const brief = project ? projectPromptBrief(project.prompts) : ''
   const imgs = d.images.map((i) => ({
@@ -441,6 +443,7 @@ ${UMG_NOTES}
 - 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
 - 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）提取成子控件放进 components，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
 - 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
+- 用户附上了界面截图或参考图（附件里的图片）时，先打开看清楚再做：照着截图还原布局，控件的结构、位置和大小按截图和设计稿的比例换算；截图里的底框、按钮、图标、装饰都列成要生成的图片，prompt 照着截图里的样子描述；截图里的文字写进 TextBlock。
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 TextBlock 的 Text 都写成它在游戏里要显示的内容，不要留默认的 "Text Block"：固定文字直接写（「开始游戏」「背包」）；运行时才知道的数值和名字写成真实格式的示例（等级「Lv.99」、金币「12,345」、倒计时「00:59」、数量「x99」、物品名「星辉宝石」），方便看出最终效果和排版。
@@ -461,7 +464,16 @@ ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
 ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
-## 输出格式
+${
+  tools
+    ? `## 用 design 工具改设计（优先）
+这一轮你有 design 工具（MCP）：get_tree 看当前的控件树，edit 提交修改操作（格式见下面的 ops），add_images 列出要生成的图片，check 检查。
+像在控件树和属性面板里操作一样一步步改：先 get_tree 看清楚，再用 edit 改，改动会马上显示给用户；改完调一次 check，有问题接着改。
+用工具改过的内容不用再写进最后的 JSON，JSON 里只写 reply（以及 style、designSize 有变化时）。调用不了这些工具时，就按下面的格式把 ops 和 images 写进 JSON。
+
+`
+    : ''
+}## 输出格式
 先用一两句中文说明你做了什么，然后输出一个 \`\`\`json 代码块：
 {
   "reply": "给用户看的说明（中文）",
@@ -505,7 +517,8 @@ export function resolveDesignResult(
   const errors: string[] = []
   // 一步步改：在现有设计（或这次写的完整树）上应用操作，结果再整体检查
   let after = components
-  if (r.ops?.length) {
+  // ops 给了空数组也要走这里：MCP 的「检查」用它检查当前的设计
+  if (r.ops) {
     const applied = applyOps({ root: root ?? d.root, components: components ?? d.components }, r.ops)
     errors.push(...applied.errors)
     root = applied.state.root
