@@ -1,5 +1,5 @@
 import { Hono, type Context } from 'hono'
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { cp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -9,6 +9,8 @@ import { getCli } from '../shared/clis.ts'
 import {
   Design,
   DesignChatInput,
+  DesignProject,
+  DesignProjectInput,
   DesignDoc,
   DesignImage,
   GenerateImageInput,
@@ -41,6 +43,8 @@ import { imageSize, zip } from './zip.ts'
 const DIR = path.join(DATA_DIR, 'designs')
 const fileOf = (id: string) => path.join(DIR, `${id}.json`)
 const imagesDir = (id: string) => path.join(DIR, id, 'images')
+// 下划线开头，和设计文件（<id>.json）区分开
+const PROJECTS_FILE = path.join(DIR, '_projects.json')
 const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
@@ -67,7 +71,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     if (loaded) return
     await mkdir(DIR, { recursive: true })
     for (const f of await readdir(DIR)) {
-      if (!f.endsWith('.json')) continue
+      if (!f.endsWith('.json') || f.startsWith('_')) continue
       const raw = await readJson(path.join(DIR, f))
       const p = Design.safeParse(raw)
       if (p.success) cache.set(p.data.id, p.data as Design)
@@ -75,6 +79,35 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     }
     loaded = true
   }
+  // ---- UI 设计的项目 ----
+  let projects: DesignProject[] | null = null
+  async function loadProjects() {
+    if (projects) return projects
+    await loadAll()
+    const raw = await readJson(PROJECTS_FILE)
+    if (Array.isArray(raw)) projects = raw.flatMap((x) => DesignProject.safeParse(x).data ?? [])
+    else {
+      // 第一版的设计挂在 Agent 的项目下：按原来的项目建同名的设计项目，id 不变，设计不用改
+      projects = []
+      for (const pid of new Set([...cache.values()].map((d) => d.projectId))) {
+        const old = await deps.projects.get(pid)
+        const at = now()
+        projects.push({ id: pid, name: old?.name ?? t('未分类'), path: old?.path ?? '', createdAt: at, updatedAt: at })
+      }
+      await saveProjects()
+    }
+    return projects
+  }
+  const saveProjects = () => writeJsonAtomic(PROJECTS_FILE, projects ?? [], true)
+  async function removeDesign(d: Design) {
+    jobs.get(d.id)?.abort.abort()
+    jobs.delete(d.id)
+    cache.delete(d.id)
+    await writing.get(d.id)?.catch(() => {})
+    await rm(fileOf(d.id), { force: true })
+    await rm(path.join(DIR, d.id), { recursive: true, force: true })
+  }
+
   async function get(id: string) {
     await loadAll()
     return cache.get(id)
@@ -262,7 +295,7 @@ ${prompt}`,
         },
         cwd,
         env: childEnv(cs.env),
-        input: buildDesignPrompt(cache.get(d.id)!, history, input.text) + extra,
+        input: buildDesignPrompt(cache.get(d.id)!, history, input.text, input.annotations) + extra,
         signal: job.abort.signal,
         timeoutMs: TIMEOUT,
         onEvent: (ev) => {
@@ -380,6 +413,36 @@ ${prompt}`,
   }
 
   const routes = new Hono()
+    .get('/projects', async (c) => c.json(await loadProjects()))
+    .post('/projects', async (c) => {
+      const p = DesignProjectInput.safeParse(await c.req.json().catch(() => ({})))
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const list = await loadProjects()
+      const at = now()
+      const item: DesignProject = { id: randomUUID(), ...p.data, createdAt: at, updatedAt: at }
+      list.push(item)
+      await saveProjects()
+      return c.json(item, 201)
+    })
+    .put('/projects/:pid', async (c) => {
+      const p = DesignProjectInput.safeParse(await c.req.json().catch(() => ({})))
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const item = (await loadProjects()).find((x) => x.id === c.req.param('pid'))
+      if (!item) return bad(c, t('项目不存在'), 404)
+      Object.assign(item, p.data, { updatedAt: now() })
+      await saveProjects()
+      return c.json(item)
+    })
+    // 删除项目时连同它的设计一起删
+    .delete('/projects/:pid', async (c) => {
+      const list = await loadProjects()
+      const pid = c.req.param('pid')
+      if (!list.some((x) => x.id === pid)) return bad(c, t('项目不存在'), 404)
+      for (const d of [...cache.values()]) if (d.projectId === pid) await removeDesign(d)
+      projects = list.filter((x) => x.id !== pid)
+      await saveProjects()
+      return c.body(null, 204)
+    })
     .get('/', async (c) => {
       await loadAll()
       const pid = c.req.query('projectId')
@@ -391,7 +454,7 @@ ${prompt}`,
     .post('/', async (c) => {
       const p = NewDesignInput.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
-      if (!(await deps.projects.get(p.data.projectId))) return bad(c, t('项目不存在'), 404)
+      if (!(await loadProjects()).some((x) => x.id === p.data.projectId)) return bad(c, t('项目不存在'), 404)
       await loadAll()
       const at = now()
       const d: Design = {
@@ -404,6 +467,7 @@ ${prompt}`,
         root: emptyRoot(),
         components: [],
         images: [],
+        annotations: [],
         messages: [],
         rev: 0,
         createdAt: at,
@@ -448,6 +512,7 @@ ${prompt}`,
         root: normalizeTree(doc.root),
         components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,
+        annotations: doc.annotations,
       })
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
@@ -455,12 +520,7 @@ ${prompt}`,
     .delete('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      jobs.get(d.id)?.abort.abort()
-      jobs.delete(d.id)
-      cache.delete(d.id)
-      await writing.get(d.id)?.catch(() => {})
-      await rm(fileOf(d.id), { force: true })
-      await rm(path.join(DIR, d.id), { recursive: true, force: true })
+      await removeDesign(d)
       return c.body(null, 204)
     })
     .get('/:id/files/:file', async (c) => {
@@ -535,7 +595,13 @@ ${prompt}`,
       const settings = await getSettings()
       if (!cliSettings(settings, defaultCli(settings)).enabled)
         return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(defaultCli(settings))!.name }))
-      d.messages.push({ id: randomUUID(), role: 'user', text: p.data.text, at: now() })
+      d.messages.push({
+        id: randomUUID(),
+        role: 'user',
+        text: p.data.text,
+        at: now(),
+        ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
+      })
       await save(d)
       startJob(d, async (job) => {
         const ids = await chat(d, p.data, job)
@@ -545,6 +611,42 @@ ${prompt}`,
           throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // 创建副本：复制控件树、子控件和图片，对话不带；可以放到别的 UI 项目
+    .post('/:id/copy', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { projectId = d.projectId, title } = (await c.req.json().catch(() => ({}))) as {
+        projectId?: string
+        title?: string
+      }
+      if (!(await loadProjects()).some((x) => x.id === projectId)) return bad(c, t('项目不存在'), 404)
+      const at = now()
+      const copy: Design = {
+        ...structuredClone(d),
+        id: randomUUID(),
+        projectId,
+        title: String(title || t('{name} 副本', { name: d.title })).slice(0, 100),
+        images: d.images.map((i) => ({ ...i, status: 'idle' as const, error: undefined })),
+        messages: [],
+        annotations: [],
+        rev: 0,
+        createdAt: at,
+        updatedAt: at,
+      }
+      await cp(imagesDir(d.id), imagesDir(copy.id), { recursive: true }).catch(() => {})
+      await save(copy, false)
+      return c.json(copy, 201)
+    })
+    // 移到别的 UI 项目
+    .post('/:id/move', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { projectId } = (await c.req.json().catch(() => ({}))) as { projectId?: string }
+      if (!(await loadProjects()).some((x) => x.id === projectId)) return bad(c, t('项目不存在'), 404)
+      d.projectId = projectId!
+      await save(d)
+      return c.json(meta(d))
     })
     .get('/:id/job', async (c) => c.json(view(jobs.get(c.req.param('id')))))
     .post('/:id/stop', async (c) => {
@@ -565,7 +667,7 @@ ${prompt}`,
     .post('/:id/export-to-project', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
-      const p = await deps.projects.get(d.projectId)
+      const p = (await loadProjects()).find((x) => x.id === d.projectId)
       if (!p?.path) return bad(c, t('这个项目还没有选择目录'))
       const files = await exportFiles(d)
       const dir = path.join(p.path, 'UI', files.name)
@@ -628,15 +730,5 @@ ${prompt}`,
   return {
     routes,
     running: () => [...jobs.values()].filter((j) => j.status === 'running').length,
-    removeByProject: async (projectId: string) => {
-      await loadAll()
-      for (const d of [...cache.values()])
-        if (d.projectId === projectId) {
-          jobs.get(d.id)?.abort.abort()
-          cache.delete(d.id)
-          await rm(fileOf(d.id), { force: true })
-          await rm(path.join(DIR, d.id), { recursive: true, force: true })
-        }
-    },
   }
 }

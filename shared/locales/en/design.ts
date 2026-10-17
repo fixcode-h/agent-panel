@@ -4,7 +4,6 @@ export const EN_DESIGN: Record<string, string> = {
   'UI 设计': 'UI Design',
   'UI 设计：用对话设计游戏界面，导出给 UE': 'UI Design: design game UI by chat and export it to UE',
   新建设计: 'New design',
-  '还没有项目。设计放在项目里，先添加一个项目。': 'No projects yet. Designs live in projects, so add a project first.',
   '在「{name}」新建设计': 'New design in “{name}”',
   设计名称: 'Design name',
   '会删除这个设计的控件树、对话和生成的图片。':
@@ -12,7 +11,6 @@ export const EN_DESIGN: Record<string, string> = {
   未命名界面: 'Untitled UI',
   '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。':
     'Design game UI by chat: AI builds the UMG widget tree and generates every image, then you export the WidgetTree JSON and textures and import them into UE as a Widget Blueprint.',
-  '设计放在项目里。先添加一个项目吧。': 'Designs live in projects. Add a project first.',
   '例如：主菜单、背包、战斗 HUD': 'e.g. main menu, inventory, combat HUD',
   类型: 'Type',
   '游戏 UI（UE5 UMG）': 'Game UI (UE5 UMG)',
@@ -119,14 +117,6 @@ export const EN_DESIGN: Record<string, string> = {
   '用浏览器里的 Gemini / ChatGPT 生成图片': 'Generate images with Gemini / ChatGPT in your browser',
   '不需要图片模型的 API：面板通过一个小扩展，用你在浏览器里已经登录的 Gemini 或 ChatGPT（会员版才能生成图片）。扩展只读取这两个网站的标签页。':
     'No image model API needed: a small extension lets the panel use the Gemini or ChatGPT you’re already signed in to (image generation needs a paid plan). The extension only reads tabs of these two sites.',
-  '在 Chrome 或 Edge 的地址栏打开 chrome://extensions（Edge 是 edge://extensions），打开右上角的「开发者模式」。':
-    'In Chrome or Edge, open chrome://extensions (edge://extensions in Edge) and turn on “Developer mode” at the top right.',
-  '点「加载已解压的扩展程序」，选择 Agent 面板程序目录里的 extension 文件夹。':
-    'Click “Load unpacked” and choose the extension folder in the Agent Panel program folder.',
-  打开这个文件夹: 'Open this folder',
-  '打开 gemini.google.com 或 chatgpt.com 并登录，停在聊天页面。之后就能在这里选那个标签页。':
-    'Open gemini.google.com or chatgpt.com, sign in and stay on the chat page. Then you can pick that tab here.',
-  扩展已连上: 'Extension connected',
   扩展还没连上: 'Extension not connected',
   '描述想要的界面，AI 会搭好控件树并列出需要的图片，再按下面选的方式生成。':
     'Describe the UI you want. The AI builds the widget tree, lists the images it needs, and generates them the way you choose below.',
@@ -137,7 +127,6 @@ export const EN_DESIGN: Record<string, string> = {
   '做一个战斗 HUD：左上角头像、血条和蓝条，右下角四个技能按钮带冷却':
     'A combat HUD: portrait with health and mana bars at the top left, four skill buttons with cooldowns at the bottom right',
   'AI 正在处理，完成后可以继续说': 'The AI is working. You can continue once it’s done',
-  '描述界面，或者说要改哪里…': 'Describe the UI, or what to change…',
   '告诉 AI 要做什么': 'Tell the AI what to do',
   '对话用默认 CLI 的高档模型，在设置里修改': 'Chat uses the default CLI’s high-tier model. Change it in settings',
   每张图生成几版: 'Versions per image',
@@ -147,6 +136,29 @@ export const EN_DESIGN: Record<string, string> = {
   '格式不对，正在修正': 'Bad format, fixing it',
   正在设计: 'Designing',
   '已输出 {n} 个字符': '{n} characters so far',
+
+  '浏览器扩展…': 'Browser extension…',
+  '已打开扩展页面和扩展文件夹，文件夹路径已复制':
+    'Opened the extensions page and the extension folder. The folder path is copied',
+  '正在等待扩展连上…装好后这里会自动变成已连上': 'Waiting for the extension… this turns to connected once it’s loaded',
+  '扩展已连上，但不是最新版（{v} → {latest}）：在扩展页面点一下扩展的刷新按钮':
+    'Extension connected but outdated ({v} → {latest}): click its reload button on the extensions page',
+  '已连上，找到 {n} 个可以用的标签页': 'Connected. Found {n} usable tabs',
+  '扩展已连上，还没有打开 Gemini 或 ChatGPT': 'Extension connected, but no Gemini or ChatGPT tab is open',
+  安装扩展: 'Install the extension',
+  '点下面的按钮，会打开浏览器的扩展页面和扩展所在的文件夹，并复制文件夹路径。':
+    'The button below opens the browser’s extensions page and the extension folder, and copies the folder path.',
+  '安装到 {name}': 'Install in {name}',
+  打开扩展文件夹: 'Open extension folder',
+  '没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。':
+    'Chrome or Edge not found: open chrome://extensions in your browser and install it manually.',
+  加载扩展: 'Load the extension',
+  '在扩展页面打开右上角的「开发者模式」，点「加载已解压的扩展程序」，在弹出的窗口里粘贴路径，选中 extension 文件夹。':
+    'On the extensions page, turn on “Developer mode” at the top right, click “Load unpacked”, paste the path in the dialog and select the extension folder.',
+  '打开 Gemini 或 ChatGPT': 'Open Gemini or ChatGPT',
+  '登录后停在聊天页面，之后就能在对话框下面选这个标签页。':
+    'Sign in and stay on the chat page. Then pick that tab below the chat box.',
+  没有找到这个浏览器: 'Browser not found',
 
   // 设置
   图片生成: 'Image generation',
@@ -185,4 +197,59 @@ export const EN_DESIGN: Record<string, string> = {
   生成失败: 'Generation failed',
   生成图片: 'Generate image',
   没有找到扩展目录: 'Extension folder not found',
+  编辑项目: 'Edit project',
+  '新建 UI 项目': 'New UI project',
+  'UI 设计的项目和 Agent 的项目分开管理。一个项目对应一个游戏，里面放它的各个界面。':
+    'UI design projects are managed separately from Agent projects. One project per game, holding all its screens.',
+  '例如：暗夜远征': 'e.g. Night Expedition',
+  '可以不填。「导出到项目目录」会写到这个目录下的 UI 文件夹，一般选 UE 工程的目录。':
+    'Optional. “Export to project folder” writes into a UI folder here; usually pick your UE project folder.',
+  保存: 'Save',
+  'UI 项目': 'UI projects',
+  '还没有 UI 项目。UI 设计的项目和 Agent 的项目是分开的。':
+    'No UI projects yet. UI design projects are separate from Agent projects.',
+  '删除项目「{name}」？': 'Delete project “{name}”?',
+  '会一起删除这个项目里的 {n} 个设计和它们的图片，本机目录里导出的文件不受影响。':
+    'This also deletes its {n} designs and their images. Files already exported to disk are kept.',
+  '设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。':
+    'Designs live in UI projects (separate from Agent projects). Create one first, usually one per game.',
+  '新建 UI 项目…': 'New UI project…',
+  剪切: 'Cut',
+  粘贴到里面: 'Paste inside',
+  粘贴到后面: 'Paste after',
+  创建副本: 'Duplicate',
+  添加子控件: 'Add child',
+  包裹为: 'Wrap with',
+  替换为: 'Replace with',
+  选中父控件: 'Select parent',
+  新增: 'Add',
+  保持不变: 'Keep',
+  这里要改: 'Change this',
+  在这里加东西: 'Add something here',
+  把这里去掉: 'Remove this',
+  '这部分别动，可以当参考': 'Leave this as is; use it as a reference',
+  选择: 'Select',
+  拖动画布: 'Pan',
+  框选标注: 'Box annotation',
+  箭头标注: 'Arrow annotation',
+  画笔标注: 'Pen annotation',
+  打点标注: 'Pin annotation',
+  标注工具: 'Annotation tools',
+  标注的意思: 'Annotation meaning',
+  隐藏标注: 'Hide annotations',
+  显示标注: 'Show annotations',
+  清除所有标注: 'Clear all annotations',
+  '标注 {n}': 'Annotation {n}',
+  没有对上具体的控件: 'No specific widget matched',
+  '说明要怎么改，例如：按钮换成金色描边': 'Say what to change, e.g. give the button a gold outline',
+  标注说明: 'Annotation note',
+  删除标注: 'Delete annotation',
+  回车保存: 'Enter to save',
+  '补充说明，或直接发送让 AI 按标注修改': 'Add details, or just send to let the AI follow the annotations',
+  '描述界面，或者说要改哪里…（也可以在效果图上标注）': 'Describe the UI or what to change… (or annotate the preview)',
+  按标注修改: 'Apply the annotations',
+  还是空白界面: 'Still a blank screen',
+  '在右边告诉 AI 想要什么界面，或者用控件树上的 + 添加控件。':
+    'Tell the AI on the right what screen you want, or add widgets with + in the widget tree.',
+  移到项目: 'Move to project',
 }

@@ -1,11 +1,18 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import type { BrowserTab } from '../shared/design.ts'
 import { t } from '../shared/i18n.ts'
 import { appDir } from './update.ts'
 import { log } from './log.ts'
+import { DATA_DIR } from './store.ts'
+
+// 出包时由 esbuild 把 extension/ 里的文件（base64）写进来：从旧版本「版本更新」过来时，
+// 旧的更新程序不知道要复制 extension 目录，包里的扩展会缺失，这时从这里写出来
+declare const __EXTENSION_FILES__: Record<string, string> | undefined
+const EMBEDDED = typeof __EXTENSION_FILES__ === 'object' ? __EXTENSION_FILES__ : undefined
 
 /**
  * 浏览器扩展（extension/ 目录）和面板之间的桥：用户在自己日常用的浏览器里登录好 Gemini 或 ChatGPT，
@@ -63,12 +70,97 @@ export function browserStatus() {
     tabs: online ? [...tabs.values()] : [],
     /** 扩展所在的目录，在浏览器的扩展页面「加载已解压的扩展程序」选它 */
     extensionDir: extensionDir(),
+    /** 面板自带的扩展版本，和 version 不一样时提示在扩展页面刷新 */
+    latestVersion: bundledExtensionVersion(),
+    browsers: installedBrowsers(),
   }
 }
 
+const manifestVersion = (json: string) => {
+  try {
+    return String(JSON.parse(json).version ?? '')
+  } catch {
+    return ''
+  }
+}
+/** 面板自带的扩展版本；浏览器里装的版本比它旧时提示刷新扩展 */
+export function bundledExtensionVersion() {
+  if (EMBEDDED?.['manifest.json']) return manifestVersion(Buffer.from(EMBEDDED['manifest.json'], 'base64').toString())
+  const f = path.join(appDir(), 'extension', 'manifest.json')
+  return existsSync(f) ? manifestVersion(readFileSync(f, 'utf8')) : ''
+}
+
+/**
+ * 扩展所在的目录。包里带的文件缺失或版本不对时，用打进 server.mjs 的文件重新写出来：
+ * 优先写到程序目录，写不进去（装在只读位置）就写到数据目录
+ */
 export function extensionDir() {
   const dir = path.join(appDir(), 'extension')
-  return existsSync(dir) ? dir : ''
+  if (!EMBEDDED) return existsSync(dir) ? dir : ''
+  const want = bundledExtensionVersion()
+  for (const d of [dir, path.join(DATA_DIR, 'extension')]) {
+    const f = path.join(d, 'manifest.json')
+    if (existsSync(f) && manifestVersion(readFileSync(f, 'utf8')) === want) return d
+    try {
+      mkdirSync(d, { recursive: true })
+      for (const [name, b64] of Object.entries(EMBEDDED)) writeFileSync(path.join(d, name), Buffer.from(b64, 'base64'))
+      return d
+    } catch (e) {
+      log.warn('bridge', '写出浏览器扩展失败', { dir: d, error: (e as Error).message })
+    }
+  }
+  return ''
+}
+
+type BrowserId = 'chrome' | 'edge'
+const BROWSERS: { id: BrowserId; name: string; page: string; win: string[]; mac: string; linux: string[] }[] = [
+  {
+    id: 'chrome',
+    name: 'Chrome',
+    page: 'chrome://extensions/',
+    win: ['Google\\Chrome\\Application\\chrome.exe'],
+    mac: '/Applications/Google Chrome.app',
+    linux: ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'],
+  },
+  {
+    id: 'edge',
+    name: 'Edge',
+    page: 'edge://extensions/',
+    win: ['Microsoft\\Edge\\Application\\msedge.exe'],
+    mac: '/Applications/Microsoft Edge.app',
+    linux: ['microsoft-edge', 'microsoft-edge-stable'],
+  },
+]
+
+/** 找浏览器的可执行文件；找不到返回空 */
+function browserExe(b: (typeof BROWSERS)[number]) {
+  if (process.platform === 'win32') {
+    const bases = [process.env.ProgramFiles, process.env['ProgramFiles(x86)'], process.env.LOCALAPPDATA].filter(Boolean)
+    for (const base of bases)
+      for (const rel of b.win) if (existsSync(path.join(base!, rel))) return path.join(base!, rel)
+    return ''
+  }
+  if (process.platform === 'darwin') return existsSync(b.mac) ? b.mac : ''
+  for (const dir of (process.env.PATH ?? '').split(':'))
+    for (const name of b.linux) if (dir && existsSync(path.join(dir, name))) return path.join(dir, name)
+  return ''
+}
+
+/** 本机装了的 Chrome / Edge */
+export const installedBrowsers = () => BROWSERS.filter((b) => browserExe(b)).map((b) => ({ id: b.id, name: b.name }))
+
+/**
+ * 安装扩展：网页打不开 chrome://extensions，也不能替用户装未上架的扩展，
+ * 所以由服务端用浏览器打开扩展页面（已经开着的浏览器会新开一个标签页），用户再点「加载已解压的扩展程序」
+ */
+export function openExtensionsPage(id: string) {
+  const b = BROWSERS.find((x) => x.id === id)
+  const exe = b && browserExe(b)
+  if (!b || !exe) throw new Error(t('没有找到这个浏览器'))
+  const [cmd, args] = process.platform === 'darwin' ? ['open', ['-a', exe, b.page]] : [exe, [b.page]]
+  const child = spawn(cmd, args, { stdio: 'ignore', detached: true, windowsHide: true })
+  child.on('error', (e) => log.warn('bridge', '打开扩展页面失败', { error: e.message }))
+  child.unref()
 }
 
 function dispatch() {

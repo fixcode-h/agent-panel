@@ -1823,8 +1823,19 @@ try {
       defaultCli: 'codex',
       imageGen: { cli: 'codex', model: '', effort: '' },
     })
+    // UI 设计用自己的项目，和 Agent 的项目分开
+    await assert.rejects(
+      call('POST', '/designs', { projectId: project.id, kind: 'game', title: 'X' }),
+      /项目不存在/,
+      'Agent 的项目不能放设计',
+    )
+    const uiProject = await call('POST', '/designs/projects', { name: 'Game', path: projectDir })
+    assert.deepEqual(
+      (await call('GET', '/designs/projects')).map((p) => p.name),
+      ['Game'],
+    )
     const design = await call('POST', '/designs', {
-      projectId: project.id,
+      projectId: uiProject.id,
       kind: 'game',
       title: 'Main Menu',
       designSize: { X: 1920, Y: 1080 },
@@ -1978,6 +1989,32 @@ try {
     assert.ok(existsSync(path.join(dir, 'WBP_MainMenu.umg.json')))
     assert.ok(existsSync(path.join(dir, 'Textures/T_ButtonFrame.png')))
     rmSync(path.join(projectDir, 'UI'), { recursive: true, force: true })
+    // 标注随消息发给 AI：编号、意思、范围、涉及的控件和说明
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: '按标注改 FAKE_DESIGN:{"reply":"改好了"}',
+      source: { kind: 'none' },
+      annotations: [
+        {
+          id: 'a1',
+          kind: 'change',
+          shape: 'rect',
+          points: [10, 20, 300, 100],
+          note: '按钮换成金色',
+          target: '',
+          widgets: ['Buttons'],
+        },
+      ],
+    })
+    d = await waitJob(design.id)
+    const asked = calls()
+      .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
+      .at(-1).input
+    assert.match(
+      asked,
+      /用户在效果图上的标注[\s\S]*1\.【修改】框选，范围 x=10 y=20 宽=300 高=100\n {3}涉及的控件：Buttons\n {3}说明：按钮换成金色/,
+    )
+    assert.equal(d.messages.at(-2).annotations[0].note, '按钮换成金色')
+    assert.equal(d.messages.at(-1).text, '改好了')
     step('UI 设计：AI 搭控件树（自动修正一次）、Codex 生图、保存、导出成 UMG 的 JSON 和贴图，和任务分开')
 
     // 浏览器扩展：只认 Gemini 和 ChatGPT 的标签页，只有扩展能调 /bridge
@@ -2017,6 +2054,10 @@ try {
     })
     const status = await call('GET', '/designs/browser')
     assert.equal(status.connected, true)
+    assert.equal(typeof status.latestVersion, 'string')
+    assert.ok(Array.isArray(status.browsers))
+    // 测试的程序目录里没有扩展（打包时才会把扩展写进 server.mjs）
+    await assert.rejects(call('POST', '/designs/browser/install', { browser: 'nope' }), /没有找到/)
     assert.deepEqual(
       status.tabs.map((x) => [x.id, x.site]),
       [
@@ -2056,6 +2097,22 @@ try {
     await call('DELETE', `/designs/${design.id}`)
     assert.ok(!(await call('GET', '/designs')).some((x) => x.id === design.id))
     assert.ok(!existsSync(path.join(dataDir, 'designs', design.id)))
+    // 删除 UI 项目时连同里面的设计一起删
+    const d2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'HUD' })
+    // 创建副本和移到别的项目
+    const copy = await call('POST', `/designs/${d2.id}/copy`, {})
+    assert.notEqual(copy.id, d2.id)
+    assert.match(copy.title, /HUD/)
+    const other = await call('POST', '/designs/projects', { name: 'Other', path: '' })
+    assert.equal((await call('POST', `/designs/${copy.id}/move`, { projectId: other.id })).projectId, other.id)
+    await assert.rejects(call('POST', `/designs/${copy.id}/move`, { projectId: 'nope' }), /项目不存在/)
+    await call('DELETE', `/designs/projects/${other.id}`)
+    assert.ok(!(await call('GET', '/designs')).some((x) => x.id === copy.id))
+    await call('PUT', `/designs/projects/${uiProject.id}`, { name: 'Game 2', path: '' })
+    assert.equal((await call('GET', '/designs/projects'))[0].name, 'Game 2')
+    await call('DELETE', `/designs/projects/${uiProject.id}`)
+    assert.deepEqual(await call('GET', '/designs/projects'), [])
+    assert.ok(!(await call('GET', '/designs')).some((x) => x.id === d2.id))
     await call('PUT', '/settings', settings)
   }
 
@@ -2121,7 +2178,13 @@ try {
   // 目录浏览带上快速入口（Windows 上是各个盘符）
   const listing = await call('GET', `/fs/list?path=${encodeURIComponent(tmp)}`)
   assert.ok(listing.roots.length >= 2 && listing.roots[0].name === '主目录')
-  step('目录浏览列出主目录和磁盘')
+  const made = await call('POST', '/fs/mkdir', { parent: tmp, name: 'new-folder' })
+  assert.equal(made.path, path.join(tmp, 'new-folder'))
+  assert.ok((await call('GET', `/fs/list?path=${encodeURIComponent(tmp)}`)).dirs.some((d) => d.name === 'new-folder'))
+  await assert.rejects(call('POST', '/fs/mkdir', { parent: tmp, name: 'new-folder' }), /已经存在/)
+  await assert.rejects(call('POST', '/fs/mkdir', { parent: tmp, name: '../escape' }), /不能包含/)
+  await assert.rejects(call('POST', '/fs/mkdir', { parent: path.join(tmp, 'nope'), name: 'x' }), /新建文件夹失败/)
+  step('目录浏览列出主目录和磁盘，可以新建文件夹（不重名、不能带路径、父目录要存在）')
 
   // ---- 正式版没有模拟执行：旧设置里的 execution 会被忽略，任务一律真实调用 CLI ----
   await call('PUT', '/settings', { ...settings, execution: 'simulate' })

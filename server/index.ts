@@ -27,7 +27,7 @@ import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
-import { bridgeApi, extensionDir } from './bridge.ts'
+import { bridgeApi, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
@@ -37,7 +37,7 @@ import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
-import { inspectDir, listDir, resolvePath } from './fs.ts'
+import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
@@ -305,7 +305,6 @@ app.delete('/projects/:id', async (c) => {
   const repo = (await projects.get(id))?.path
   if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
   await tasks.removeByProject(id, repo)
-  await designs.removeByProject(id)
   return c.body(null, 204)
 })
 
@@ -320,6 +319,19 @@ app.post('/designs/browser/reveal', (c) => {
   if (!dir) return bad(c, t('没有找到扩展目录'))
   revealDir(dir)
   return c.json({ ok: true })
+})
+// 安装扩展：打开浏览器的扩展页面和扩展所在的文件夹
+app.post('/designs/browser/install', async (c) => {
+  const { browser } = (await c.req.json().catch(() => ({}))) as { browser?: string }
+  const dir = extensionDir()
+  if (!dir) return bad(c, t('没有找到扩展目录'))
+  try {
+    openExtensionsPage(String(browser ?? ''))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+  revealDir(dir)
+  return c.json({ dir })
 })
 app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())
@@ -362,6 +374,16 @@ app.get('/fs/list', async (c) => {
     return c.json(await listDir(c.req.query('path') ?? ''))
   } catch (e) {
     return bad(c, t('无法读取目录：{error}', { error: (e as Error).message }))
+  }
+})
+
+// 选择项目目录时新建文件夹
+app.post('/fs/mkdir', async (c) => {
+  const { parent, name } = (await c.req.json().catch(() => ({}))) as { parent?: string; name?: string }
+  try {
+    return c.json({ path: await makeDir(String(parent ?? ''), String(name ?? '')) })
+  } catch (e) {
+    return bad(c, t('新建文件夹失败：{error}', { error: (e as Error).message }))
   }
 })
 

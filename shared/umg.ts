@@ -396,6 +396,68 @@ export function cloneWidget(w: Widget, names: Set<string>): Widget {
   return c
 }
 
+/**
+ * 包裹为：在 id 的位置放一个新的面板，原来的控件成为它唯一的子控件。
+ * 新面板接过原来的插槽（位置、大小不变）；子控件在 CanvasPanel 里铺满，其他面板用默认插槽
+ */
+export function wrapWidget(
+  root: Widget,
+  id: string,
+  type: WidgetType,
+  names: Set<string>,
+): { root: Widget; id: string } {
+  const w = findWidget(root, id)
+  if (!w || !isPanel(type)) return { root, id }
+  const wrapper = newWidget(type, uniqueName(type, names), w.Slot)
+  const slotType = WIDGETS[type].slot
+  let childSlot = defaultSlot(slotType)
+  if (slotType === 'CanvasPanelSlot')
+    childSlot = {
+      ...childSlot,
+      LayoutData: {
+        Offsets: { Left: 0, Top: 0, Right: 0, Bottom: 0 },
+        Anchors: { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } },
+        Alignment: { X: 0, Y: 0 },
+      },
+    }
+  if (slotType && slotType !== 'CanvasPanelSlot' && childSlot && 'HorizontalAlignment' in childSlot)
+    childSlot = { ...childSlot, HorizontalAlignment: 'HAlign_Fill', VerticalAlignment: 'VAlign_Fill' }
+  wrapper.Children = [{ ...w, Slot: childSlot }]
+  if (w.Slot === undefined) delete wrapper.Slot
+  return { root: id === root.id ? wrapper : mapWidget(root, id, () => wrapper), id: wrapper.id }
+}
+
+/** 能不能把 w 替换成 type：子控件要放得下 */
+export function canReplace(w: Widget, type: WidgetType) {
+  if (w.Type === type || type === 'UserWidget') return false
+  const n = w.Children?.length ?? 0
+  const rule = WIDGETS[type].children
+  return rule === 'many' || (rule === 'one' ? n <= 1 : n === 0)
+}
+
+/** 替换为：换成另一种控件，名字、插槽和通用属性（可见性、透明度等）保留，子控件换成新面板的插槽 */
+export function replaceWidget(root: Widget, id: string, type: WidgetType): Widget {
+  return mapWidget(root, id, (w) => {
+    if (!canReplace(w, type)) return w
+    const common = Object.fromEntries(
+      Object.keys(COMMON_PROPS())
+        .filter((k) => w.Properties[k] !== undefined)
+        .map((k) => [k, w.Properties[k]]),
+    )
+    const def = WIDGETS[type]
+    return {
+      id: w.id,
+      Type: type,
+      Name: w.Name,
+      ...(w.Slot ? { Slot: w.Slot } : {}),
+      Properties: { ...COMMON_PROPS(), ...def.defaults(), ...common },
+      ...(def.children !== 'none'
+        ? { Children: (w.Children ?? []).map((c) => ({ ...c, Slot: adaptSlot(c.Slot, def.slot) })) }
+        : {}),
+    }
+  })
+}
+
 export function allNames(root: Widget) {
   const s = new Set<string>()
   walk(root, (w) => s.add(w.Name))

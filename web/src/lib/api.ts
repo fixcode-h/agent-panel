@@ -23,12 +23,13 @@ import type {
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type {
-  BrowserTab,
+  BrowserStatus,
   Design,
   DesignChatInput,
   DesignDoc,
   DesignJob,
   DesignMeta,
+  DesignProject,
   ImageSource,
   NewDesignInput,
 } from '@shared/design'
@@ -167,6 +168,7 @@ export const api = {
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
+  makeDir: (parent: string, name: string) => request<{ path: string }>('/fs/mkdir', json('POST', { parent, name })),
   dataUsage: () => request<DataUsage>('/data'),
   revealData: () => request<{ ok: boolean }>('/data/reveal', json('POST', {})),
   revealLogs: () => request<{ ok: boolean }>('/data/reveal-logs', json('POST', {})),
@@ -175,9 +177,18 @@ export const api = {
   importData: (backup: unknown) =>
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
   designs: () => request<DesignMeta[]>('/designs'),
+  designProjects: () => request<DesignProject[]>('/designs/projects'),
+  createDesignProject: (input: { name: string; path: string }) =>
+    request<DesignProject>('/designs/projects', json('POST', input)),
+  updateDesignProject: (id: string, input: { name: string; path: string }) =>
+    request<DesignProject>(`/designs/projects/${id}`, json('PUT', input)),
+  deleteDesignProject: (id: string) => request<void>(`/designs/projects/${id}`, { method: 'DELETE' }),
   design: (id: string) => request<DesignFull>(`/designs/${id}`),
   createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
   saveDesign: (id: string, doc: DesignDoc) => request<DesignFull>(`/designs/${id}`, json('PUT', doc)),
+  copyDesign: (id: string, projectId?: string) => request<Design>(`/designs/${id}/copy`, json('POST', { projectId })),
+  moveDesign: (id: string, projectId: string) =>
+    request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),
   deleteDesign: (id: string) => request<void>(`/designs/${id}`, { method: 'DELETE' }),
   designChat: (id: string, input: DesignChatInput) => request<DesignFull>(`/designs/${id}/chat`, json('POST', input)),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
@@ -186,8 +197,9 @@ export const api = {
   generateDesignImage: (id: string, imageId: string, body: { source: ImageSource; count: number; prompt?: string }) =>
     request<DesignFull>(`/designs/${id}/images/${imageId}/generate`, json('POST', body)),
   exportDesignToProject: (id: string) => request<{ dir: string }>(`/designs/${id}/export-to-project`, json('POST', {})),
-  browserStatus: () =>
-    request<{ connected: boolean; version: string; tabs: BrowserTab[]; extensionDir: string }>('/designs/browser'),
+  browserStatus: () => request<BrowserStatus>('/designs/browser'),
+  installExtension: (browser: string) =>
+    request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
 }

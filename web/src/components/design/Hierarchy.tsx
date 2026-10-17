@@ -1,5 +1,14 @@
 import { useState } from 'react'
 import {
+  ArrowDown,
+  ArrowUp,
+  BoxSelect,
+  ClipboardPaste,
+  CopyPlus,
+  CornerLeftUp,
+  PencilLine,
+  Replace,
+  Scissors,
   BatteryMedium,
   ChevronRight,
   Columns3,
@@ -33,6 +42,7 @@ import {
   WIDGETS,
   WIDGET_TYPES,
   canAddChild,
+  canReplace,
   isPanel,
   pathTo,
   type Widget,
@@ -44,8 +54,13 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuLabel,
   ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
   ContextMenuTrigger,
+  MenuShortcut,
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -155,6 +170,31 @@ export interface TreeActions {
   duplicate: (id: string) => void
   toggleVisible: (id: string) => void
   extract: (id: string) => void
+  copy: (id: string) => void
+  cut: (id: string) => void
+  /** 粘贴到 id 里面（它放得下时），否则粘到它后面 */
+  paste: (id: string) => void
+  canPaste: boolean
+  addChild: (parentId: string, type: WidgetType, cls?: string) => void
+  wrap: (id: string, type: WidgetType) => void
+  replace: (id: string, type: WidgetType) => void
+  /** 在父控件里上移（-1）或下移（1） */
+  shift: (id: string, delta: number) => void
+  /** 可以引用的子控件（UserWidget） */
+  components: string[]
+}
+
+const MOD = typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) ? '⌘' : 'Ctrl+'
+const PANELS = WIDGET_TYPES.filter((x) => WIDGETS[x].group === 'panel' && isPanel(x))
+
+function TypeItem({ type, onSelect }: { type: WidgetType; onSelect: () => void }) {
+  const Icon = WIDGET_ICON[type]
+  return (
+    <ContextMenuItem onSelect={onSelect} title={WIDGETS[type].hint}>
+      <Icon className="h-4 w-4 text-subtle" />
+      {type}
+    </ContextMenuItem>
+  )
 }
 
 /** 控件树（Hierarchy）：缩进显示父子关系，拖动调整顺序或换父控件，右键复制、删除、提取成子控件 */
@@ -189,7 +229,7 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
       className="flex flex-col py-1"
       onDragEnd={() => (setDrag(''), setDrop(null))}
     >
-      {rows.map(({ w, depth, parent }) => {
+      {rows.map(({ w, depth, parent, index }) => {
         const Icon = WIDGET_ICON[w.Type] ?? Square
         const hasKids = !!w.Children?.length
         const isOpen = !folded.has(w.id) || open.has(w.id)
@@ -316,12 +356,120 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent>
-              <ContextMenuItem onSelect={() => setRenaming(w.id)}>{t('重命名')}</ContextMenuItem>
+              <ContextMenuItem onSelect={() => setRenaming(w.id)}>
+                <PencilLine className="h-4 w-4" />
+                {t('重命名')}
+              </ContextMenuItem>
+              <ContextMenuSeparator />
               {parent && (
-                <ContextMenuItem onSelect={() => actions.duplicate(w.id)}>
-                  <Copy className="h-4 w-4" />
-                  {t('复制一份')}
+                <ContextMenuItem onSelect={() => actions.cut(w.id)}>
+                  <Scissors className="h-4 w-4" />
+                  {t('剪切')}
+                  <MenuShortcut>{MOD}X</MenuShortcut>
                 </ContextMenuItem>
+              )}
+              <ContextMenuItem onSelect={() => actions.copy(w.id)}>
+                <Copy className="h-4 w-4" />
+                {t('复制')}
+                <MenuShortcut>{MOD}C</MenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem
+                disabled={!actions.canPaste || (!parent && !canAddChild(w))}
+                onSelect={() => actions.paste(w.id)}
+              >
+                <ClipboardPaste className="h-4 w-4" />
+                {canAddChild(w) ? t('粘贴到里面') : t('粘贴到后面')}
+                <MenuShortcut>{MOD}V</MenuShortcut>
+              </ContextMenuItem>
+              {parent && (
+                <ContextMenuItem
+                  disabled={WIDGETS[parent.Type].children !== 'many'}
+                  onSelect={() => actions.duplicate(w.id)}
+                >
+                  <CopyPlus className="h-4 w-4" />
+                  {t('创建副本')}
+                  <MenuShortcut>{MOD}D</MenuShortcut>
+                </ContextMenuItem>
+              )}
+              <ContextMenuSeparator />
+              {canAddChild(w) && (
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <Plus className="h-4 w-4" />
+                    {t('添加子控件')}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {GROUPS.map((g) => (
+                      <div key={g.id}>
+                        <ContextMenuLabel>{g.label}</ContextMenuLabel>
+                        {WIDGET_TYPES.filter((x) => WIDGETS[x].group === g.id).map((x) => (
+                          <TypeItem key={x} type={x} onSelect={() => actions.addChild(w.id, x)} />
+                        ))}
+                      </div>
+                    ))}
+                    {actions.components.length > 0 && (
+                      <>
+                        <ContextMenuLabel>{t('子控件')}</ContextMenuLabel>
+                        {actions.components.map((c) => (
+                          <ContextMenuItem key={c} onSelect={() => actions.addChild(w.id, 'UserWidget', c)}>
+                            <Puzzle className="h-4 w-4 text-subtle" />
+                            {c}
+                          </ContextMenuItem>
+                        ))}
+                      </>
+                    )}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              )}
+              <ContextMenuSub>
+                <ContextMenuSubTrigger>
+                  <BoxSelect className="h-4 w-4" />
+                  {t('包裹为')}
+                </ContextMenuSubTrigger>
+                <ContextMenuSubContent>
+                  {PANELS.map((x) => (
+                    <TypeItem key={x} type={x} onSelect={() => actions.wrap(w.id, x)} />
+                  ))}
+                </ContextMenuSubContent>
+              </ContextMenuSub>
+              {w.Type !== 'UserWidget' && (
+                <ContextMenuSub>
+                  <ContextMenuSubTrigger>
+                    <Replace className="h-4 w-4" />
+                    {t('替换为')}
+                  </ContextMenuSubTrigger>
+                  <ContextMenuSubContent>
+                    {WIDGET_TYPES.filter(
+                      (x) => canReplace(w, x) && (isPanel(w.Type) === isPanel(x) || !w.Children?.length),
+                    ).map((x) => (
+                      <TypeItem key={x} type={x} onSelect={() => actions.replace(w.id, x)} />
+                    ))}
+                  </ContextMenuSubContent>
+                </ContextMenuSub>
+              )}
+              {parent && (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem disabled={index === 0} onSelect={() => actions.shift(w.id, -1)}>
+                    <ArrowUp className="h-4 w-4" />
+                    {t('上移')}
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    disabled={index === (parent.Children?.length ?? 1) - 1}
+                    onSelect={() => actions.shift(w.id, 1)}
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                    {t('下移')}
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => actions.select(parent.id)}>
+                    <CornerLeftUp className="h-4 w-4" />
+                    {t('选中父控件')}
+                  </ContextMenuItem>
+                  <ContextMenuItem onSelect={() => actions.toggleVisible(w.id)}>
+                    {hidden ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                    {hidden ? t('显示') : t('隐藏')}
+                  </ContextMenuItem>
+                </>
               )}
               {parent && w.Type !== 'UserWidget' && (
                 <ContextMenuItem onSelect={() => actions.extract(w.id)}>
@@ -335,6 +483,7 @@ export function Hierarchy({ root, selected, actions }: { root: Widget; selected:
                   <ContextMenuItem danger onSelect={() => actions.remove(w.id)}>
                     <Trash2 className="h-4 w-4" />
                     {t('删除')}
+                    <MenuShortcut>Del</MenuShortcut>
                   </ContextMenuItem>
                 </>
               )}

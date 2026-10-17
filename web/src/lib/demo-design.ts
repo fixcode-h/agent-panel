@@ -3,7 +3,14 @@
  * AI 对话按关键词套用示例界面（主菜单 / 背包），图片用 canvas 画出示意图，模拟「生成」的过程。
  */
 const randomId = () => crypto.randomUUID()
-import { DesignImage, emptyRoot, type Design, type DesignMeta, type ImageSource } from '@shared/design'
+import {
+  DesignImage,
+  emptyRoot,
+  type Design,
+  type DesignMeta,
+  type DesignProject,
+  type ImageSource,
+} from '@shared/design'
 import { normalizeTree, type Widget } from '@shared/umg'
 import { t } from '@shared/i18n'
 
@@ -462,9 +469,21 @@ const metaOf = (d: Full): DesignMeta => ({
 
 let seeded = false
 /** 演示一开始就有一个做好的主菜单，打开就能看到效果 */
-function seed(projectId: string | undefined) {
-  if (seeded || !projectId) return
+// UI 设计自己的项目，和 Agent 的项目分开
+const DEMO_PROJECT = 'demo-ui-project'
+const projectList: DesignProject[] = []
+
+function seed() {
+  if (seeded) return
   seeded = true
+  const projectId = DEMO_PROJECT
+  projectList.push({
+    id: DEMO_PROJECT,
+    name: '暗夜远征',
+    path: '/home/demo/code/game-client',
+    createdAt: now(),
+    updatedAt: now(),
+  })
   const tpl = menuTemplate()
   const at = now()
   const d: Full = {
@@ -476,6 +495,7 @@ function seed(projectId: string | undefined) {
     style: tpl.style,
     root: normalizeTree(tpl.root),
     components: [],
+    annotations: [],
     images: tpl.images.map((i) =>
       DesignImage.parse({
         ...i,
@@ -566,19 +586,31 @@ async function genImages(d: Full, ids: string[], count: number, job: Job) {
   }
 }
 
-export function demoDesigns(
-  method: string,
-  id: string | undefined,
-  sub: string | undefined,
-  body: any,
-  projects: { id: string }[],
-): unknown {
-  seed(projects[0]?.id)
+export function demoDesigns(method: string, id: string | undefined, sub: string | undefined, body: any): unknown {
+  seed()
+  if (id === 'projects') {
+    if (!sub) {
+      if (method === 'GET') return projectList
+      const at = now()
+      const p: DesignProject = { id: randomId(), name: body.name, path: body.path ?? '', createdAt: at, updatedAt: at }
+      projectList.push(p)
+      return p
+    }
+    const p = projectList.find((x) => x.id === sub) ?? fail('项目不存在')
+    if (method === 'DELETE') {
+      projectList.splice(projectList.indexOf(p), 1)
+      for (const d of [...designs.values()]) if (d.projectId === sub) designs.delete(d.id)
+      return undefined
+    }
+    return Object.assign(p, { name: body.name, path: body.path ?? '', updatedAt: now() })
+  }
   if (id === 'browser') {
-    if (sub === 'reveal') fail('在线演示不能打开本机目录')
+    if (sub === 'reveal' || sub === 'install') fail('在线演示不能打开本机的浏览器和目录')
     return {
       connected: true,
       version: '1.0.0',
+      latestVersion: '1.0.0',
+      browsers: [{ id: 'chrome', name: 'Chrome' }],
       extensionDir: '',
       tabs: [
         { id: '101', site: 'gemini', title: 'Gemini', url: 'https://gemini.google.com/app' },
@@ -599,6 +631,7 @@ export function demoDesigns(
       root: emptyRoot(),
       components: [],
       images: [],
+      annotations: [],
       messages: [],
       rev: 0,
       createdAt: at,
@@ -633,6 +666,7 @@ export function demoDesigns(
         : i
     })
     Object.assign(d, {
+      annotations: body.annotations ?? [],
       title: body.title,
       designSize: body.designSize,
       style: body.style,
@@ -644,9 +678,35 @@ export function demoDesigns(
   }
   if (sub === 'chat') {
     if (d.job?.status === 'running') fail('正在处理上一个请求，等它完成或先停止')
-    d.messages.push({ id: randomId(), role: 'user', text: body.text, at: now() })
+    d.messages.push({
+      id: randomId(),
+      role: 'user',
+      text: body.text,
+      at: now(),
+      ...(body.annotations?.length ? { annotations: body.annotations } : {}),
+    })
     void runChat(d, body.text, body.source, body.count ?? 1)
     return d
+  }
+  if (sub === 'copy') {
+    const at = now()
+    const c: Full = {
+      ...structuredClone({ ...d, job: null }),
+      id: randomId(),
+      projectId: body.projectId ?? d.projectId,
+      title: `${d.title} 副本`,
+      messages: [],
+      annotations: [],
+      rev: 0,
+      createdAt: at,
+      updatedAt: at,
+    }
+    designs.set(c.id, c)
+    return c
+  }
+  if (sub === 'move') {
+    d.projectId = body.projectId
+    return metaOf(d)
   }
   if (sub === 'stop') {
     if (d.job) d.job.status = 'done'

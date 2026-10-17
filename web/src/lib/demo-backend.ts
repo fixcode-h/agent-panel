@@ -728,6 +728,16 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
+  if (res === 'fs' && id === 'mkdir') {
+    const b = body as { parent: string; name: string }
+    const name = b.name.trim()
+    if (!name || /[<>:"/\\|?*]/.test(name)) fail('新建文件夹失败：文件夹名不对')
+    const parent = normalize(b.parent)
+    const full = (parent === '/' ? '' : parent) + '/' + name
+    if (TREE[full]) fail(`新建文件夹失败：「${name}」已经存在`)
+    TREE[full] = {}
+    return { path: full }
+  }
   if (res === 'fs' && id === 'reveal') throw new Error('在线演示不能打开本机目录')
 
   if (res === 'categories') {
@@ -805,7 +815,7 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'designs')
     return seg[2] === 'images' && seg[4] === 'generate'
       ? demoGenerate(id, seg[3], body ?? {})
-      : demoDesigns(method, id, sub, body ?? {}, d.projects)
+      : demoDesigns(method, id, sub, body ?? {})
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)

@@ -9,6 +9,7 @@ import {
   Gamepad2,
   MessageSquare,
   Palette as PaletteIcon,
+  Plus,
   Puzzle,
   Redo2,
   Trash2,
@@ -18,6 +19,7 @@ import type { DesignDoc, DesignImage, ImageSource } from '@shared/design'
 import {
   WIDGETS,
   allNames,
+  canAddChild,
   cloneWidget,
   defaultSlot,
   exportDesign,
@@ -28,7 +30,9 @@ import {
   moveWidget,
   newWidget,
   removeWidget,
+  replaceWidget,
   uniqueName,
+  wrapWidget,
   usedImages,
   type Widget,
   type WidgetType,
@@ -56,6 +60,7 @@ import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierar
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagesPanel, readFile } from '@/components/design/ImagesPanel'
 import { ChatModelLabel, DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
+import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
 import { t } from '@shared/i18n'
@@ -80,8 +85,9 @@ const SIZES = [
 ]
 
 function NewDesign({ projectId }: { projectId?: string }) {
-  const { projects, setDesigns } = useData()
-  const { go, openProject } = useNav()
+  const { designProjects: projects, setDesigns } = useData()
+  const { go } = useNav()
+  const [creatingProject, setCreatingProject] = useState(false)
   const [pid, setPid] = useState(projectId || projects[0]?.id || '')
   const [title, setTitle] = useState('')
   const [kind, setKind] = useState<'game' | 'web'>('game')
@@ -135,11 +141,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
             '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
           )}
         </p>
+        <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
           <div className="mt-8 rounded-xl border p-5 text-[13px] text-muted">
-            {t('设计放在项目里。先添加一个项目吧。')}
-            <Button className="mt-3" onClick={() => openProject()}>
-              {t('新建项目')}
+            {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
+            <Button className="mt-3" onClick={() => setCreatingProject(true)}>
+              <Plus className="h-4 w-4" />
+              {t('新建 UI 项目')}
             </Button>
           </div>
         ) : (
@@ -172,8 +180,11 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 <Select
                   aria-label={t('项目')}
                   value={pid}
-                  onChange={(e) => setPid(e.target.value)}
-                  options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                  onChange={(e) => (e.target.value === '+new' ? setCreatingProject(true) : setPid(e.target.value))}
+                  options={[
+                    ...projects.map((p) => ({ value: p.id, label: p.name })),
+                    { value: '+new', label: t('新建 UI 项目…') },
+                  ]}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -226,13 +237,17 @@ const NEW_SIZE: Partial<Record<WidgetType, [number, number]>> = {
 
 const SOURCE_KEY = 'design-image-source'
 
+// 复制的控件：放在模块里，切换到别的设计也能粘贴
+let clipboard: Widget | null = null
+
 function Designer({ id }: { id: string }) {
   const ed = useDesignEditor(id)
-  const { projects, setDesigns } = useData()
+  const { designProjects: projects, setDesigns } = useData()
   const { go } = useNav()
   const { doc, server } = ed
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
+  const [hasClip, setHasClip] = useState(!!clipboard)
   const [tab, setTab] = useState<'tree' | 'images'>('tree')
   const [imageSel, setImageSel] = useState('')
   const [chatOpen, setChatOpen] = useState(true)
@@ -284,9 +299,9 @@ function Designer({ id }: { id: string }) {
       return n === r ? d : setTree(d, target, n)
     }, key)
 
-  const addWidget = (type: WidgetType, cls?: string) => {
+  const addWidget = (type: WidgetType, cls?: string, into?: string) => {
     if (!tree || !doc) return
-    const sel = selected ? findWidget(tree, selected) : undefined
+    const sel = (into ?? selected) ? findWidget(tree, into ?? selected) : undefined
     let parent =
       sel && WIDGETS[sel.Type].children !== 'none' && (WIDGETS[sel.Type].children === 'many' || !sel.Children?.length)
         ? sel
@@ -365,6 +380,48 @@ function Designer({ id }: { id: string }) {
           },
         })),
       ),
+    copy: (wid) => {
+      const w = tree && findWidget(tree, wid)
+      if (!w) return
+      clipboard = structuredClone(w)
+      setHasClip(true)
+    },
+    cut: (wid) => {
+      actions.copy(wid)
+      actions.remove(wid)
+    },
+    canPaste: hasClip,
+    paste: (wid) => {
+      if (!tree || !clipboard) return
+      const target = findWidget(tree, wid)
+      if (!target) return
+      const into = canAddChild(target)
+      const parent = into ? target : findParent(tree, wid)
+      if (!parent || !canAddChild(parent))
+        return toast.error(t('{name} 里不能再放控件了', { name: (parent ?? target).Name }))
+      const c = cloneWidget(clipboard, allNames(tree))
+      const index = into ? undefined : parent.Children!.findIndex((x) => x.id === wid) + 1
+      editTree((r) => insertWidget(r, parent.id, c, index))
+      setSelected(c.id)
+    },
+    addChild: (pid, type, cls) => addWidget(type, cls, pid),
+    wrap: (wid, type) => {
+      if (!tree) return
+      const res = wrapWidget(tree, wid, type, allNames(tree))
+      // 新面板的 id 是随机的，树没变时直接用算好的结果，才能选中它
+      editTree((r) => (r === tree ? res.root : wrapWidget(r, wid, type, allNames(r)).root))
+      setSelected(res.id)
+    },
+    replace: (wid, type) => editTree((r) => replaceWidget(r, wid, type)),
+    shift: (wid, delta) => {
+      if (!tree) return
+      const p = findParent(tree, wid)
+      if (!p) return
+      const from = p.Children!.findIndex((c) => c.id === wid)
+      // moveWidget 往后挪时会先减一，所以下移要给 from + 2
+      editTree((r) => moveWidget(r, wid, p.id, delta > 0 ? from + 2 : Math.max(0, from - 1)))
+    },
+    components: doc?.components.filter((c) => c.Name !== target).map((c) => c.Name) ?? [],
     extract: (wid) => {
       if (!tree || !doc) return
       const w = findWidget(tree, wid)
@@ -434,6 +491,15 @@ function Designer({ id }: { id: string }) {
       } else if (mod && e.key.toLowerCase() === 'd' && selected) {
         e.preventDefault()
         actions.duplicate(selected)
+      } else if (mod && e.key.toLowerCase() === 'c' && selected && !window.getSelection()?.toString()) {
+        e.preventDefault()
+        actions.copy(selected)
+      } else if (mod && e.key.toLowerCase() === 'x' && selected && tree && selected !== tree.id) {
+        e.preventDefault()
+        actions.cut(selected)
+      } else if (mod && e.key.toLowerCase() === 'v' && clipboard && tree) {
+        e.preventDefault()
+        actions.paste(selected || tree.id)
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && selected && tree && selected !== tree.id) {
         e.preventDefault()
         actions.remove(selected)
@@ -505,9 +571,20 @@ function Designer({ id }: { id: string }) {
   }
 
   const send = async (text: string) => {
+    // 标注随这条消息一起发出，发出后从效果图上清掉
+    const annotations = doc.annotations
+    const next = { ...doc, annotations: [] }
     try {
-      ed.absorb(await api.saveDesign(id, doc))
-      ed.absorb(await api.designChat(id, { text, source, count }))
+      ed.absorb(await api.saveDesign(id, next))
+      ed.absorb(
+        await api.designChat(id, {
+          text: text.trim() || t('按标注修改'),
+          source,
+          count,
+          annotations,
+        }),
+      )
+      if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
       return true
     } catch (e) {
       toast.error((e as Error).message)
@@ -641,6 +718,9 @@ function Designer({ id }: { id: string }) {
             if (wid) setTab('tree')
           }}
           onMove={onMove}
+          annotations={doc.annotations}
+          onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
+          target={target}
         />
 
         <aside className="flex w-[300px] shrink-0 flex-col border-l bg-card">
@@ -764,6 +844,10 @@ function Designer({ id }: { id: string }) {
               onCount={setCount}
               onSend={send}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
+              annotations={doc.annotations}
+              onRemoveAnnotation={(aid) =>
+                ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)
+              }
             />
           </aside>
         )}

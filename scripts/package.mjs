@@ -47,7 +47,19 @@ await build({
   minify: false,
   legalComments: 'none',
   // 版本号写进服务端，设置里的「版本更新」靠它判断有没有新包
-  define: { 'process.env.NODE_ENV': '"production"', __APP_VERSION__: JSON.stringify(version) },
+  define: {
+    'process.env.NODE_ENV': '"production"',
+    __APP_VERSION__: JSON.stringify(version),
+    // 浏览器扩展的文件打进 server.mjs：从旧版本在线更新过来时包里的 extension 目录可能没被复制
+    __EXTENSION_FILES__: JSON.stringify(
+      Object.fromEntries(
+        readdirSync(path.join(root, 'extension')).map((f) => [
+          f,
+          readFileSync(path.join(root, 'extension', f)).toString('base64'),
+        ]),
+      ),
+    ),
+  },
   // 依赖里有 CommonJS 模块（cross-spawn），给它一个 require
   banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
 })
