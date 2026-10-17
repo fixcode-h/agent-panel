@@ -33,7 +33,7 @@ interface Command {
   count: number
   /** 抠掉纯绿底（网页版做不出透明背景时） */
   chroma: boolean
-  /** 在选中的标签页旁边新开一个对话生成（1.1 起的扩展支持，可以同时生成好几张） */
+  /** 每张图开一个新对话。1.1 的扩展会为此新开标签页，所以只发给 1.2 起的扩展（在选中的标签页里开对话） */
   newChat: boolean
 }
 interface Pending {
@@ -191,10 +191,13 @@ setInterval(() => {
   dispatch()
 }, 5000).unref()
 
-/** 扩展能不能每张图新开对话、同时生成好几张：1.1 之前的版本只会在选中的标签页里一张张来 */
+/**
+ * 扩展能不能每张图开一个新对话、同时生成好几张。1.1 的扩展是每张图新开一个标签页，
+ * 用户没刷新扩展时会弹出一排标签页，所以 1.2 之前的都只在选中的标签页里一张张来
+ */
 export function browserParallel() {
   const [major, minor] = extVersion.split('.').map(Number)
-  return major > 1 || (major === 1 && minor >= 1)
+  return major > 1 || (major === 1 && minor >= 2)
 }
 
 /** 在浏览器标签页里生成图片：每取到一张就交给 onImage，返回最后才交来的图片（旧版扩展一次全交） */
@@ -221,7 +224,7 @@ export function browserGenerate(
       prompt: o.prompt,
       count: o.count,
       chroma: o.chroma,
-      newChat: true,
+      newChat: browserParallel(),
     }
     const p: Pending = { cmd, resolve, reject, onProgress: o.onProgress, onImage: o.onImage, streamed: 0 }
     const done = () => {
@@ -259,7 +262,10 @@ export function bridgeApi() {
           const id = String(x.id)
           tabs.set(id, { id, site, title: String(x.title ?? '').slice(0, 200), url: String(x.url) })
         }
-        return c.json({ ok: true })
+        // 告诉扩展面板自带的版本：浏览器不会自己重新加载已解压的扩展，1.3 起的扩展看到更新的版本会自己重新加载。
+        // 先调 extensionDir()，确保磁盘上的扩展文件已经是这个版本
+        extensionDir()
+        return c.json({ ok: true, latestVersion: bundledExtensionVersion() })
       })
       .get('/poll', async (c) => {
         lastSeen = Date.now()

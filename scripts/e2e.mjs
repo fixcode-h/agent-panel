@@ -2087,14 +2087,16 @@ try {
     )
     d = await waitJob(design.id)
     assert.match(d.images[0].error, /扩展没有连上/)
-    await bridge('POST', '/hello', {
-      version: '1.0.0',
+    const hello = await bridge('POST', '/hello', {
+      version: '1.3.0',
       tabs: [
         { id: 7, url: 'https://gemini.google.com/app/abc', title: 'Gemini' },
         { id: 8, url: 'https://chatgpt.com/c/1', title: 'ChatGPT' },
         { id: 9, url: 'https://www.google.com/', title: 'Google' },
       ],
     })
+    // 扩展靠这个版本号判断要不要自己重新加载
+    assert.equal(typeof (await hello.json()).latestVersion, 'string')
     const status = await call('GET', '/designs/browser')
     assert.equal(status.connected, true)
     assert.equal(typeof status.latestVersion, 'string')

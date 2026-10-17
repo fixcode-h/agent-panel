@@ -597,7 +597,7 @@ function SettingsBody({
                     className="w-[240px]"
                     options={Array.from({ length: 10 }, (_, i) => ({
                       value: String(i + 1),
-                      label: i + 1 === 4 ? t('{n} 个（默认）', { n: i + 1 }) : t('{n} 个', { n: i + 1 }),
+                      label: i + 1 === 3 ? t('{n} 个（默认）', { n: i + 1 }) : t('{n} 个', { n: i + 1 }),
                     }))}
                   />
                 </Row>

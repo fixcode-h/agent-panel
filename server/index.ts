@@ -31,7 +31,7 @@ import { bridgeApi, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { installApi } from './install.ts'
-import { openBrowser, revealDir } from './open.ts'
+import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
 import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
@@ -330,7 +330,7 @@ app.post('/designs/browser/install', async (c) => {
   } catch (e) {
     return bad(c, (e as Error).message)
   }
-  revealDir(dir)
+  revealItem(dir)
   return c.json({ dir })
 })
 app.route('/designs', designs.routes)

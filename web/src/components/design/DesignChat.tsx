@@ -146,10 +146,10 @@ function BrowserHelp({
     setInstalling(browser)
     try {
       const { dir } = await api.installExtension(browser)
-      // 「加载已解压的扩展程序」弹出的选择窗口里可以直接粘贴路径
+      // 不想拖文件夹时，「加载已解压的扩展程序」弹出的选择窗口里可以直接粘贴路径
       await navigator.clipboard?.writeText(dir).catch(() => {})
       setWaiting(true)
-      toast.success(t('已打开扩展页面和扩展文件夹，文件夹路径已复制'))
+      toast.success(t('已打开扩展页面，extension 文件夹已选中，把它拖到扩展页面上'))
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -189,7 +189,7 @@ function BrowserHelp({
           <ol className="mt-5 flex flex-col gap-4 text-[13px] leading-relaxed">
             <Step n={1} done={connected} title={t('安装扩展')}>
               <p className="text-muted">
-                {t('点下面的按钮，会打开浏览器的扩展页面和扩展所在的文件夹，并复制文件夹路径。')}
+                {t('点下面的按钮，会打开浏览器的扩展页面，并打开文件夹选中 extension 文件夹。')}
               </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 {status.browsers.map((b) => (
@@ -228,7 +228,7 @@ function BrowserHelp({
             <Step n={2} done={connected} title={t('加载扩展')}>
               <p className="text-muted">
                 {t(
-                  '在扩展页面打开右上角的「开发者模式」，点「加载已解压的扩展程序」，在弹出的窗口里粘贴路径，选中 extension 文件夹。',
+                  '在扩展页面打开右上角的「开发者模式」，把选中的 extension 文件夹拖到扩展页面上松手就装好了（也可以点「加载已解压的扩展程序」，粘贴已复制的路径）。只要装这一次，以后面板更新时扩展会自动刷新。',
                 )}
               </p>
             </Step>

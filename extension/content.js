@@ -1,4 +1,5 @@
-// 运行在 Gemini / ChatGPT 页面里，听后台的三种指令：submit 在新对话里写描述并发送，返回对话地址；
+// 运行在 Gemini / ChatGPT 页面里，听后台的指令：nav 在页面里切到新对话或某个对话（不刷新页面）；
+// submit 在当前的新对话里写描述并发送，返回对话地址；
 // check 看当前对话里新出现的图片（能直接读的读成 data URL，否则给地址）；more 在这个对话里再要一版。
 // 网页改版后选择器可能失效：每个都准备了几种写法，最后退到通用的判断（可编辑的输入框、aria-label 含 Stop 的按钮）。
 
@@ -54,46 +55,91 @@ if (!window.__agentPanelContent) {
     )
   }
 
-  /** 页面上「像生成结果」的图片：够大、不是头像和图标 */
-  const candidates = () =>
-    [...document.querySelectorAll('img')].filter((img) => {
-      const r = img.getBoundingClientRect()
-      if (r.width < 120 || r.height < 120) return false
-      if (!img.complete || img.naturalWidth < 200) return false
+  // 生成的图放在这些域名上（Gemini 是 googleusercontent，ChatGPT 是 oaiusercontent）
+  const IMAGE_HOST = /(googleusercontent\.com|oaiusercontent\.com)$/
+
+  /**
+   * 页面上「像生成结果」的图片：够大、不是头像和图标。
+   * 标签页在后台时网页不渲染动画、懒加载也不触发，图片可能已经在回复里了，但显示尺寸是 0 或还没开始加载，
+   * 所以回复里的图按原图尺寸判断，没加载的按地址判断（交给后台下载）
+   */
+  const candidates = () => {
+    const inReply = new Set(replies().flatMap((r) => [...r.querySelectorAll('img')]))
+    return [...document.querySelectorAll('img')].filter((img) => {
       const src = img.currentSrc || img.src
       if (!src || src.startsWith('data:image/svg')) return false
       // 用户自己上传的图（在用户消息里）不算
       if (img.closest('[data-message-author-role="user"], user-query')) return false
-      return true
+      if (inReply.has(img)) {
+        if (img.complete && img.naturalWidth) return img.naturalWidth >= 200 && img.naturalHeight >= 200
+        try {
+          return IMAGE_HOST.test(new URL(src).hostname)
+        } catch {
+          return false
+        }
+      }
+      const r = img.getBoundingClientRect()
+      if (r.width < 120 || r.height < 120) return false
+      return img.complete && img.naturalWidth >= 200
     })
+  }
 
-  async function typeInto(el, text) {
-    el.focus()
-    if (el.tagName === 'TEXTAREA') {
-      const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
-      set.call(el, text)
-      el.dispatchEvent(new Event('input', { bubbles: true }))
-      return
-    }
-    // 富文本输入框（Quill、ProseMirror）：先选中原有内容再插入，插不进去时模拟粘贴
+  /** 后台标签页里懒加载不会触发：把回复里的图改成立即加载 */
+  const wakeImages = () => {
+    for (const r of replies()) for (const img of r.querySelectorAll('img[loading="lazy"]')) img.loading = 'eager'
+  }
+
+  const selectAll = (el) => {
+    el.focus({ preventScroll: true })
     const sel = window.getSelection()
     const range = document.createRange()
     range.selectNodeContents(el)
     sel.removeAllRanges()
     sel.addRange(range)
-    document.execCommand('insertText', false, text)
-    await sleep(100)
-    if (!el.innerText.trim()) {
+  }
+  const fireInput = (el, text) => {
+    el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
+    el.dispatchEvent(new Event('change', { bubbles: true }))
+  }
+
+  /** 几种写入输入框的方式，send 里依次试 */
+  const WRITE = [
+    // 普通输入框直接设值；富文本（Quill、ProseMirror）用编辑命令插入，和打字一样会触发网页的输入处理
+    async (el, text) => {
+      if (el.tagName === 'TEXTAREA') {
+        const set = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set
+        set.call(el, text)
+        fireInput(el, text)
+        return
+      }
+      selectAll(el)
+      document.execCommand('insertText', false, text)
+      await sleep(100)
+    },
+    // 模拟粘贴：ProseMirror 和 Quill 都处理粘贴事件
+    async (el, text) => {
+      if (el.tagName === 'TEXTAREA') return
+      selectAll(el)
       const dt = new DataTransfer()
       dt.setData('text/plain', text)
       el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }))
-      await sleep(100)
-    }
-    if (!el.innerText.trim()) {
-      el.textContent = text
-      el.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: text }))
-    }
-  }
+      await sleep(200)
+    },
+    // 直接改内容：两种编辑器都会监听内容变化，同步进自己的状态
+    async (el, text) => {
+      if (el.tagName === 'TEXTAREA') return
+      el.replaceChildren(
+        ...text.split('\n').map((line) => {
+          const p = document.createElement('p')
+          if (line) p.textContent = line
+          else p.append(document.createElement('br'))
+          return p
+        }),
+      )
+      fireInput(el, text)
+      await sleep(200)
+    },
+  ]
 
   const inputText = (el) => (el.tagName === 'TEXTAREA' ? el.value : el.innerText).trim()
 
@@ -107,10 +153,10 @@ if (!window.__agentPanelContent) {
   }
 
   /**
-   * 写描述并发送。标签页在后台时，有的输入框不接受程序写入，发送按钮一直是灰的（以前报「网页没有开始回复」
-   * 多半就是这样）：发不出去时让后台把这个标签页切到前面，再发一次，发完切回去
+   * 写描述并发送。不切换标签页：用户在面板里发消息时，不该被拉到 Gemini / ChatGPT 那边。
+   * 后台标签页里写入的方式不一定都管用，一种不行换下一种，直到发送按钮能点
    */
-  async function send(text, progress) {
+  async function send(text) {
     // 新开的对话页面要等输入框渲染出来
     let input = $(INPUT[site])
     for (let i = 0; !input && i < 60; i++) {
@@ -119,27 +165,21 @@ if (!window.__agentPanelContent) {
     }
     if (!input) throw new Error('找不到输入框：请确认这个标签页已经登录，并停在聊天页面')
     const before = userMsgs()
-    await submit(input, text)
-    if (await sent(before, input)) return
-    progress('切到这个标签页发送描述')
-    await chrome.runtime.sendMessage({ type: 'focus' }).catch(() => {})
-    try {
-      await sleep(400)
-      input = $(INPUT[site]) ?? input
-      await submit(input, text)
+    for (const way of WRITE) {
+      await way(input, text)
+      if (!inputText(input)) continue
+      await submit(input)
       if (await sent(before, input)) return
-    } finally {
-      chrome.runtime.sendMessage({ type: 'unfocus' }).catch(() => {})
     }
     throw new Error(
       '描述没能发出去：输入框或发送按钮没有反应，可能网页改版了。请看一下那个标签页的输入框里有没有这段描述',
     )
   }
 
-  async function submit(input, text) {
-    await typeInto(input, text)
-    // 发送按钮要等输入框有内容后才可用
-    for (let i = 0; i < 30; i++) {
+  /** 点发送按钮；按钮一直不可用就按回车 */
+  async function submit(input) {
+    // 发送按钮要等输入框有内容、网页处理完输入事件后才可用
+    for (let i = 0; i < 15; i++) {
       const btn = $(SEND[site])
       if (btn && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
         btn.click()
@@ -147,7 +187,17 @@ if (!window.__agentPanelContent) {
       }
       await sleep(200)
     }
-    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', keyCode: 13, bubbles: true }))
+    for (const type of ['keydown', 'keypress', 'keyup'])
+      input.dispatchEvent(
+        new KeyboardEvent(type, {
+          key: 'Enter',
+          code: 'Enter',
+          keyCode: 13,
+          which: 13,
+          bubbles: true,
+          cancelable: true,
+        }),
+      )
   }
 
   /** 能在页面里直接读的图片读成 data URL（blob:、同源），其余把地址交给后台下载 */
@@ -169,9 +219,8 @@ if (!window.__agentPanelContent) {
   }
 
   /** 这个对话里的图还不够几版：在同一个对话里再要一张 */
-  async function more(msg) {
-    const progress = (text) => chrome.runtime.sendMessage({ type: 'progress', id: msg.id, text }).catch(() => {})
-    await send('Generate one more variation of the same image with exactly the same requirements.', progress)
+  async function more() {
+    await send('Generate one more variation of the same image with exactly the same requirements.')
   }
 
   /** 对话自己的地址（左边对话列表里那一项）：Gemini 是 /app/<id>，ChatGPT 是 /c/<id> */
@@ -190,14 +239,61 @@ if (!window.__agentPanelContent) {
     return []
   }
 
+  const NEW_CHAT = {
+    gemini: [
+      '[data-test-id="new-chat-button"] a',
+      '[data-test-id="new-chat-button"] button',
+      'button[aria-label*="New chat" i]',
+      'a[aria-label*="New chat" i]',
+      'button[aria-label*="新对话"]',
+      'a[aria-label*="新对话"]',
+    ],
+    chatgpt: ['a[data-testid="create-new-chat-button"]', 'button[data-testid="create-new-chat-button"]'],
+  }
+
+  const pathOf = (url) => {
+    try {
+      return new URL(url, location.href).pathname.replace(/\/+$/, '') || '/'
+    } catch {
+      return ''
+    }
+  }
+
+  /**
+   * 在页面里切换对话，不刷新标签页：点网页自己的「新对话」按钮或左边对话列表里的那一项，
+   * 都找不到（侧栏收起了）时改地址再通知网页的路由。等旧对话的内容从页面上消失才返回，免得把上一个对话的图算进来
+   */
+  async function nav(msg) {
+    const want = pathOf(msg.url)
+    if (pathOf(location.href) === want) return { ok: true }
+    const fresh = !!msg.fresh
+    const stale = replies()
+    let el = fresh ? visibleOf(NEW_CHAT[site]) : null
+    if (!el) el = [...document.querySelectorAll('a[href]')].find((a) => pathOf(a.href) === want && visible(a))
+    if (el) el.click()
+    else {
+      history.pushState(history.state, '', msg.url)
+      window.dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+    }
+    const start = Date.now()
+    while (Date.now() - start < 10_000) {
+      await sleep(300)
+      const here = fresh ? !convUrl() : pathOf(location.href) === want
+      if (here && stale.every((r) => !r.isConnected) && (!fresh || $(INPUT[site]))) return { ok: true }
+    }
+    return { ok: false }
+  }
+
+  const visibleOf = (sels) => {
+    for (const s of sels) for (const el of document.querySelectorAll(s)) if (visible(el)) return el
+    return null
+  }
+
   /** 在新对话里发描述，等对话有了自己的地址就返回；图在网页那边接着生成，后台切去开下一个对话 */
   async function startChat(msg) {
     const progress = (text) => chrome.runtime.sendMessage({ type: 'progress', id: msg.id, text }).catch(() => {})
     progress('在新对话里发送描述')
-    await send(
-      `Please generate an image (use your image generation tool, output the image only):\n\n${msg.prompt}`,
-      progress,
-    )
+    await send(`Please generate an image (use your image generation tool, output the image only):\n\n${msg.prompt}`)
     for (let i = 0; i < 60; i++) {
       const url = convUrl()
       if (url) return { url }
@@ -216,6 +312,7 @@ if (!window.__agentPanelContent) {
     let last = -1
     let quiet = Date.now()
     while (Date.now() - start < 30_000) {
+      wakeImages()
       const n = candidates().length
       if (n !== last) {
         last = n
@@ -238,7 +335,7 @@ if (!window.__agentPanelContent) {
       reply({ ok: true, site })
       return false
     }
-    const run = { submit: startChat, check, more }[msg?.type]
+    const run = { nav, submit: startChat, check, more }[msg?.type]
     if (run) {
       run(msg)
         .then((r) => reply(r ?? {}))

@@ -757,9 +757,9 @@ export const Settings = z.object({
       model: z.string().trim().default(''),
       effort: z.string().default(''),
       /** 同时生成几张图：每张图单独开一个会话（CLI 进程或浏览器里的新对话），最多 10 个 */
-      concurrency: z.number().int().min(1).max(10).catch(4).default(4),
+      concurrency: z.number().int().min(1).max(10).catch(3).default(3),
     })
-    .default({ cli: 'codex', model: '', effort: '', concurrency: 4 }),
+    .default({ cli: 'codex', model: '', effort: '', concurrency: 3 }),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({
