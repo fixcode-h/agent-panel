@@ -280,10 +280,13 @@ export function DirPicker({
   value,
   onChange,
   info,
+  hint,
 }: {
   value: string
   onChange: (p: string) => void
   info: DirInfo | null | undefined
+  /** 没填路径时的说明 */
+  hint?: string
 }) {
   const [browsing, setBrowsing] = useState(false)
   return (
@@ -325,7 +328,7 @@ export function DirPicker({
           {info.exists && info.path !== value.trim() && <span className="truncate text-subtle">· {info.path}</span>}
         </span>
       )}
-      {!value.trim() && <span className="text-xs text-subtle">{t('Agent 会在这个目录里执行任务。')}</span>}
+      {!value.trim() && <span className="text-xs text-subtle">{hint ?? t('Agent 会在这个目录里执行任务。')}</span>}
       <DirBrowser
         open={browsing}
         start={info?.exists && info.isDir ? info.path : ''}

@@ -107,6 +107,22 @@ export type DesignMeta = Pick<Design, 'id' | 'projectId' | 'kind' | 'title' | 'c
   running?: boolean
 }
 
+/**
+ * UI 设计自己的项目：和 Agent 的项目分开，互不影响。path 是可选的本机目录，「导出到项目目录」写到这里
+ */
+export const DesignProject = z.object({
+  id: z.string(),
+  name: z.string(),
+  path: z.string().default(''),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
+export type DesignProject = z.infer<typeof DesignProject>
+export const DesignProjectInput = z.object({
+  name: z.string().trim().min(1).max(100),
+  path: z.string().trim().max(1000).default(''),
+})
+
 export const NewDesignInput = z.object({
   projectId: z.string().min(1),
   kind: z.enum(DESIGN_KINDS).default('game'),

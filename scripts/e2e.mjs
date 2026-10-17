@@ -1823,8 +1823,19 @@ try {
       defaultCli: 'codex',
       imageGen: { cli: 'codex', model: '', effort: '' },
     })
+    // UI 设计用自己的项目，和 Agent 的项目分开
+    await assert.rejects(
+      call('POST', '/designs', { projectId: project.id, kind: 'game', title: 'X' }),
+      /项目不存在/,
+      'Agent 的项目不能放设计',
+    )
+    const uiProject = await call('POST', '/designs/projects', { name: 'Game', path: projectDir })
+    assert.deepEqual(
+      (await call('GET', '/designs/projects')).map((p) => p.name),
+      ['Game'],
+    )
     const design = await call('POST', '/designs', {
-      projectId: project.id,
+      projectId: uiProject.id,
       kind: 'game',
       title: 'Main Menu',
       designSize: { X: 1920, Y: 1080 },
@@ -2060,6 +2071,13 @@ try {
     await call('DELETE', `/designs/${design.id}`)
     assert.ok(!(await call('GET', '/designs')).some((x) => x.id === design.id))
     assert.ok(!existsSync(path.join(dataDir, 'designs', design.id)))
+    // 删除 UI 项目时连同里面的设计一起删
+    const d2 = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'HUD' })
+    await call('PUT', `/designs/projects/${uiProject.id}`, { name: 'Game 2', path: '' })
+    assert.equal((await call('GET', '/designs/projects'))[0].name, 'Game 2')
+    await call('DELETE', `/designs/projects/${uiProject.id}`)
+    assert.deepEqual(await call('GET', '/designs/projects'), [])
+    assert.ok(!(await call('GET', '/designs')).some((x) => x.id === d2.id))
     await call('PUT', '/settings', settings)
   }
 

@@ -815,7 +815,7 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'designs')
     return seg[2] === 'images' && seg[4] === 'generate'
       ? demoGenerate(id, seg[3], body ?? {})
-      : demoDesigns(method, id, sub, body ?? {}, d.projects)
+      : demoDesigns(method, id, sub, body ?? {})
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)

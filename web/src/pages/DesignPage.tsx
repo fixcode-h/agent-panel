@@ -9,6 +9,7 @@ import {
   Gamepad2,
   MessageSquare,
   Palette as PaletteIcon,
+  Plus,
   Puzzle,
   Redo2,
   Trash2,
@@ -56,6 +57,7 @@ import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierar
 import { Details } from '@/components/design/Details'
 import { ImageDetails, ImagesPanel, readFile } from '@/components/design/ImagesPanel'
 import { ChatModelLabel, DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
+import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
 import { t } from '@shared/i18n'
@@ -80,8 +82,9 @@ const SIZES = [
 ]
 
 function NewDesign({ projectId }: { projectId?: string }) {
-  const { projects, setDesigns } = useData()
-  const { go, openProject } = useNav()
+  const { designProjects: projects, setDesigns } = useData()
+  const { go } = useNav()
+  const [creatingProject, setCreatingProject] = useState(false)
   const [pid, setPid] = useState(projectId || projects[0]?.id || '')
   const [title, setTitle] = useState('')
   const [kind, setKind] = useState<'game' | 'web'>('game')
@@ -135,11 +138,13 @@ function NewDesign({ projectId }: { projectId?: string }) {
             '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。',
           )}
         </p>
+        <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
           <div className="mt-8 rounded-xl border p-5 text-[13px] text-muted">
-            {t('设计放在项目里。先添加一个项目吧。')}
-            <Button className="mt-3" onClick={() => openProject()}>
-              {t('新建项目')}
+            {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
+            <Button className="mt-3" onClick={() => setCreatingProject(true)}>
+              <Plus className="h-4 w-4" />
+              {t('新建 UI 项目')}
             </Button>
           </div>
         ) : (
@@ -172,8 +177,11 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 <Select
                   aria-label={t('项目')}
                   value={pid}
-                  onChange={(e) => setPid(e.target.value)}
-                  options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                  onChange={(e) => (e.target.value === '+new' ? setCreatingProject(true) : setPid(e.target.value))}
+                  options={[
+                    ...projects.map((p) => ({ value: p.id, label: p.name })),
+                    { value: '+new', label: t('新建 UI 项目…') },
+                  ]}
                 />
               </div>
               <div className="flex flex-col gap-1.5">
@@ -228,7 +236,7 @@ const SOURCE_KEY = 'design-image-source'
 
 function Designer({ id }: { id: string }) {
   const ed = useDesignEditor(id)
-  const { projects, setDesigns } = useData()
+  const { designProjects: projects, setDesigns } = useData()
   const { go } = useNav()
   const { doc, server } = ed
   const [target, setTarget] = useState('')

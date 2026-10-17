@@ -4,7 +4,6 @@ export const EN_DESIGN: Record<string, string> = {
   'UI 设计': 'UI Design',
   'UI 设计：用对话设计游戏界面，导出给 UE': 'UI Design: design game UI by chat and export it to UE',
   新建设计: 'New design',
-  '还没有项目。设计放在项目里，先添加一个项目。': 'No projects yet. Designs live in projects, so add a project first.',
   '在「{name}」新建设计': 'New design in “{name}”',
   设计名称: 'Design name',
   '会删除这个设计的控件树、对话和生成的图片。':
@@ -12,7 +11,6 @@ export const EN_DESIGN: Record<string, string> = {
   未命名界面: 'Untitled UI',
   '用对话设计游戏界面：AI 搭好 UMG 控件树、生成每一张图片，最后导出成 WidgetTree 的 JSON 和贴图，导入 UE 生成 Widget Blueprint。':
     'Design game UI by chat: AI builds the UMG widget tree and generates every image, then you export the WidgetTree JSON and textures and import them into UE as a Widget Blueprint.',
-  '设计放在项目里。先添加一个项目吧。': 'Designs live in projects. Add a project first.',
   '例如：主菜单、背包、战斗 HUD': 'e.g. main menu, inventory, combat HUD',
   类型: 'Type',
   '游戏 UI（UE5 UMG）': 'Game UI (UE5 UMG)',
@@ -200,4 +198,21 @@ export const EN_DESIGN: Record<string, string> = {
   生成失败: 'Generation failed',
   生成图片: 'Generate image',
   没有找到扩展目录: 'Extension folder not found',
+  编辑项目: 'Edit project',
+  '新建 UI 项目': 'New UI project',
+  'UI 设计的项目和 Agent 的项目分开管理。一个项目对应一个游戏，里面放它的各个界面。':
+    'UI design projects are managed separately from Agent projects. One project per game, holding all its screens.',
+  '例如：暗夜远征': 'e.g. Night Expedition',
+  '可以不填。「导出到项目目录」会写到这个目录下的 UI 文件夹，一般选 UE 工程的目录。':
+    'Optional. “Export to project folder” writes into a UI folder here; usually pick your UE project folder.',
+  保存: 'Save',
+  'UI 项目': 'UI projects',
+  '还没有 UI 项目。UI 设计的项目和 Agent 的项目是分开的。':
+    'No UI projects yet. UI design projects are separate from Agent projects.',
+  '删除项目「{name}」？': 'Delete project “{name}”?',
+  '会一起删除这个项目里的 {n} 个设计和它们的图片，本机目录里导出的文件不受影响。':
+    'This also deletes its {n} designs and their images. Files already exported to disk are kept.',
+  '设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。':
+    'Designs live in UI projects (separate from Agent projects). Create one first, usually one per game.',
+  '新建 UI 项目…': 'New UI project…',
 }

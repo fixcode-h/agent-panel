@@ -3,7 +3,7 @@
  * AI 对话按关键词套用示例界面（主菜单 / 背包），图片用 canvas 画出示意图，模拟「生成」的过程。
  */
 const randomId = () => crypto.randomUUID()
-import { DesignImage, emptyRoot, type Design, type DesignMeta, type ImageSource } from '@shared/design'
+import { DesignImage, emptyRoot, type Design, type DesignMeta, type DesignProject, type ImageSource } from '@shared/design'
 import { normalizeTree, type Widget } from '@shared/umg'
 import { t } from '@shared/i18n'
 
@@ -462,9 +462,21 @@ const metaOf = (d: Full): DesignMeta => ({
 
 let seeded = false
 /** 演示一开始就有一个做好的主菜单，打开就能看到效果 */
-function seed(projectId: string | undefined) {
-  if (seeded || !projectId) return
+// UI 设计自己的项目，和 Agent 的项目分开
+const DEMO_PROJECT = 'demo-ui-project'
+const projectList: DesignProject[] = []
+
+function seed() {
+  if (seeded) return
   seeded = true
+  const projectId = DEMO_PROJECT
+  projectList.push({
+    id: DEMO_PROJECT,
+    name: '暗夜远征',
+    path: '/home/demo/code/game-client',
+    createdAt: now(),
+    updatedAt: now(),
+  })
   const tpl = menuTemplate()
   const at = now()
   const d: Full = {
@@ -571,9 +583,24 @@ export function demoDesigns(
   id: string | undefined,
   sub: string | undefined,
   body: any,
-  projects: { id: string }[],
 ): unknown {
-  seed(projects[0]?.id)
+  seed()
+  if (id === 'projects') {
+    if (!sub) {
+      if (method === 'GET') return projectList
+      const at = now()
+      const p: DesignProject = { id: randomId(), name: body.name, path: body.path ?? '', createdAt: at, updatedAt: at }
+      projectList.push(p)
+      return p
+    }
+    const p = projectList.find((x) => x.id === sub) ?? fail('项目不存在')
+    if (method === 'DELETE') {
+      projectList.splice(projectList.indexOf(p), 1)
+      for (const d of [...designs.values()]) if (d.projectId === sub) designs.delete(d.id)
+      return undefined
+    }
+    return Object.assign(p, { name: body.name, path: body.path ?? '', updatedAt: now() })
+  }
   if (id === 'browser') {
     if (sub === 'reveal' || sub === 'install') fail('在线演示不能打开本机的浏览器和目录')
     return {

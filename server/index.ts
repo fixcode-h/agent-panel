@@ -305,7 +305,6 @@ app.delete('/projects/:id', async (c) => {
   const repo = (await projects.get(id))?.path
   if (!(await projects.remove(id))) return bad(c, t('项目不存在'), 404)
   await tasks.removeByProject(id, repo)
-  await designs.removeByProject(id)
   return c.body(null, 204)
 })
 

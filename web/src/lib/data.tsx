@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
-import type { DesignMeta } from '@shared/design'
+import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
 import { t } from '@shared/i18n'
 
@@ -36,6 +36,9 @@ interface Data {
   /** UI 设计（和任务分开） */
   designs: DesignMeta[]
   setDesigns: React.Dispatch<React.SetStateAction<DesignMeta[]>>
+  /** UI 设计自己的项目，和 Agent 的项目分开 */
+  designProjects: DesignProject[]
+  setDesignProjects: React.Dispatch<React.SetStateAction<DesignProject[]>>
   reloadDesigns: () => Promise<void>
   upsertTask: (t: Task) => void
   removeTask: (id: string) => void
@@ -72,9 +75,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([])
   const [tasksLoaded, setTasksLoaded] = useState(false)
   const [designs, setDesigns] = useState<DesignMeta[]>([])
+  const [designProjects, setDesignProjects] = useState<DesignProject[]>([])
   const reloadDesigns = useCallback(async () => {
     try {
-      setDesigns(await api.designs())
+      const [ps, ds] = await Promise.all([api.designProjects(), api.designs()])
+      setDesignProjects(ps)
+      setDesigns(ds)
     } catch {
       // 连不上时保留现有列表
     }
@@ -158,6 +164,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         tasksLoaded,
         designs,
         setDesigns,
+        designProjects,
+        setDesignProjects,
         reloadDesigns,
         upsertTask,
         removeTask,

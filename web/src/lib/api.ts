@@ -29,6 +29,7 @@ import type {
   DesignDoc,
   DesignJob,
   DesignMeta,
+  DesignProject,
   ImageSource,
   NewDesignInput,
 } from '@shared/design'
@@ -176,6 +177,12 @@ export const api = {
   importData: (backup: unknown) =>
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
   designs: () => request<DesignMeta[]>('/designs'),
+  designProjects: () => request<DesignProject[]>('/designs/projects'),
+  createDesignProject: (input: { name: string; path: string }) =>
+    request<DesignProject>('/designs/projects', json('POST', input)),
+  updateDesignProject: (id: string, input: { name: string; path: string }) =>
+    request<DesignProject>(`/designs/projects/${id}`, json('PUT', input)),
+  deleteDesignProject: (id: string) => request<void>(`/designs/projects/${id}`, { method: 'DELETE' }),
   design: (id: string) => request<DesignFull>(`/designs/${id}`),
   createDesign: (input: NewDesignInput) => request<Design>('/designs', json('POST', input)),
   saveDesign: (id: string, doc: DesignDoc) => request<DesignFull>(`/designs/${id}`, json('PUT', doc)),
