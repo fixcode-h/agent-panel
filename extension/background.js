@@ -234,10 +234,16 @@ async function runDriver(d) {
   }
 }
 
-/** 让标签页打开某个地址，等加载完、content.js 就绪；已经在这个地址上就不重新加载 */
-async function openUrl(tabId, url) {
+/**
+ * 让标签页切到某个对话：先让网页自己在页面里切换（不刷新，用户正在看的内容不会被打断），
+ * 网页那边切不过去时才改地址重新加载。fresh 表示要开一个新对话
+ */
+async function openUrl(tabId, url, fresh = false) {
+  await ensureContent(tabId)
+  const r = await chrome.tabs.sendMessage(tabId, { type: 'nav', url, fresh }).catch(() => null)
+  if (r?.ok) return
   const tab = await chrome.tabs.get(tabId)
-  if (tab.url !== url) {
+  if (fresh || tab.url !== url) {
     await chrome.tabs.update(tabId, { url })
     await sleep(500)
     await waitLoaded(tabId)
@@ -255,7 +261,7 @@ async function startJob(d, job) {
   const { id, prompt } = job.cmd
   await post('progress', { id, text: '打开新对话' })
   const tab = await chrome.tabs.get(d.tabId)
-  await openUrl(d.tabId, newChatUrl(tab.url))
+  await openUrl(d.tabId, newChatUrl(tab.url), true)
   const res = await ask(d.tabId, { type: 'submit', id, prompt })
   job.url = res.url
   job.start = Date.now()
