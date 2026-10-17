@@ -2,7 +2,9 @@
 import {
   DEFAULT_AGENT_ID,
   type Attachment,
+  type FileChange,
   type NewTaskInput,
+  type StepUsage,
   type Task,
   type TaskData,
   type TaskMessage,
@@ -114,7 +116,7 @@ export function taskSummary(t: Task): Task {
   return {
     ...t,
     messages: first ? [{ ...first, text: first.text.slice(0, 500), tools: [] }] : [],
-    steps: t.steps.map((s) => ({ ...s, output: '', command: [] })),
+    steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], changes: [] })),
     todos: [],
     baseline: {},
     sessions: {},
@@ -129,4 +131,44 @@ export function messageStamp(m: TaskMessage) {
   return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${m.tools
     .map((t) => `${t.output?.length ?? 0}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`)
     .join(',')}`
+}
+
+/** 把一次调用的改动累加到列表里（同一个文件合并行数） */
+export function mergeChanges(into: FileChange[], add: FileChange[]) {
+  for (const c of add) {
+    const old = into.find((x) => x.path === c.path)
+    if (old) {
+      old.add += c.add
+      old.del += c.del
+    } else into.push({ ...c })
+  }
+}
+
+/**
+ * 节点执行期间新增的改动：节点结束后和开始前的统计（都相对任务开始时）相减。
+ * 同时在跑的节点改了同一个文件时分不清是谁改的，算在先结束的节点上
+ */
+export function changesSince(before: FileChange[], after: FileChange[]): FileChange[] {
+  const out: FileChange[] = []
+  for (const c of after) {
+    const b = before.find((x) => x.path === c.path)
+    const add = c.add - (b?.add ?? 0)
+    const del = c.del - (b?.del ?? 0)
+    if (add > 0 || del > 0) out.push({ path: c.path, add: Math.max(0, add), del: Math.max(0, del) })
+  }
+  return out
+}
+
+/** 节点的用量记录，没有就建一条 */
+export function stepUsage(step: { usage?: StepUsage }, model = ''): StepUsage {
+  return (step.usage ??= {
+    context: 0,
+    window: 0,
+    model,
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    cacheWriteTokens: 0,
+    costUsd: 0,
+  })
 }

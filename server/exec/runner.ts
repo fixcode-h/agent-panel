@@ -14,7 +14,7 @@ import type {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
-import { withTaskModel } from '../../shared/task.ts'
+import { changesSince, mergeChanges, stepUsage, withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { cachedModels, knownWindows } from '../models.ts'
@@ -243,6 +243,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   else task.command = argv
   log.info('agent', `启动 ${def.name}`, { task: task.id, step, agent: agent.name, cwd, command: argv.join(' ') })
 
+  // 节点开始前的改动统计，结束后相减得到这个节点改了什么
+  const before = task.changes.map((c) => ({ ...c }))
+  const touched = new Set<string>()
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
   const mine: TaskMessage[] = []
   let cur: TaskMessage | undefined
@@ -320,12 +323,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         m.text = ''
         m.tools.push(ev.tool)
         if (ev.id) toolsById.set(ev.id, ev.tool)
+        if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file && !ctx.isGit) {
-          const old = task.changes.find((c) => c.path === ev.file!.path)
-          if (old) {
-            old.add += ev.file.add
-            old.del += ev.file.del
-          } else task.changes.push({ ...ev.file })
+          mergeChanges(task.changes, [ev.file])
+          if (owner) mergeChanges((owner.changes ??= []), [ev.file])
         }
         break
       }
@@ -339,12 +340,15 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         } else if (!reported) u.window = windowFor(cliId, u.model || model)
         u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
-        const t = task.usage
-        t.inputTokens += ev.addInput ?? 0
-        t.outputTokens += ev.addOutput ?? 0
-        t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
-        t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
-        t.costUsd += ev.addCost ?? 0
+        // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
+        for (const t of owner ? [task.usage, stepUsage(owner)] : [task.usage]) {
+          t.inputTokens += ev.addInput ?? 0
+          t.outputTokens += ev.addOutput ?? 0
+          t.cacheReadTokens = (t.cacheReadTokens ?? 0) + (ev.addCacheRead ?? 0)
+          t.cacheWriteTokens = (t.cacheWriteTokens ?? 0) + (ev.addCacheWrite ?? 0)
+          t.costUsd += ev.addCost ?? 0
+        }
+        if (owner?.usage) Object.assign(owner.usage, { context: u.context, window: u.window, model: u.model })
         break
       }
       case 'tool_result': {
@@ -441,7 +445,12 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   for (const m of mine) if (m.text) texts.push(m.text)
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
-    if (changes) task.changes = changes
+    if (changes) {
+      // 同时在跑的节点的改动也会出现在差值里：CLI 报告了改哪些文件时只算这些，没报告（例如用命令写的）才全算
+      const mine = changesSince(before, changes).filter((c) => !touched.size || touched.has(c.path))
+      if (owner) mergeChanges((owner.changes ??= []), mine)
+      task.changes = changes
+    }
   }
   ctx.changed(true)
 

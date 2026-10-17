@@ -24,6 +24,7 @@ export function TaskFlow({
   focus,
   onOpenChat,
   gutter,
+  onSelect,
 }: {
   task: Task
   /** 放在节点输出左边空白处的内容（任务进度），宽度够时才有 */
@@ -31,6 +32,8 @@ export function TaskFlow({
   /** 外面（右栏的任务进度）要求选中的节点；at 变了就重新选中 */
   focus?: { id: string; at: number }
   onOpenChat: () => void
+  /** 选中的节点变了：右栏跟着只看这个节点 */
+  onSelect?: (id: string) => void
 }) {
   const data = useData()
   const { agents } = data
@@ -46,6 +49,11 @@ export function TaskFlow({
   useEffect(() => {
     if (follow && runningId) setSel(runningId)
   }, [follow, runningId])
+  useEffect(() => {
+    onSelect?.(sel)
+    // 只在选中的节点变化时通知；onSelect 每次渲染都是新函数
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [sel])
   useEffect(() => {
     if (!focus) return
     setSel(focus.id)

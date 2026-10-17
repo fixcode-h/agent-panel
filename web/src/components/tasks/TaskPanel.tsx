@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { ChevronDown, FolderOpen, GitBranch, MessageSquare, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Project, Task, TaskTodo, Workflow } from '@shared/schema'
+import type { FileChange, Project, StepUsage, Task, TaskStep, TaskTodo, Workflow } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { cacheRate, fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
+import { fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
@@ -11,23 +11,31 @@ import { StepIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
 import { Terminal } from '@/components/agents/CommandPreview'
 import { t } from '@shared/i18n'
-import { taskSummary } from '@shared/task'
+import { mergeChanges, taskSummary } from '@shared/task'
 import { DiffDialog } from './DiffDialog'
 
 /**
- * 启动命令：正在执行的节点用的命令；没有在执行的节点时是最近启动的那次。
- * 对话和追加要求不属于节点，用任务上记的那条。复制出来可以自己在终端里跑一遍排查问题。
+ * 启动命令：点了流程节点时是这个节点最近一次启动的命令（调用流程的节点看它里面最近启动的）；
+ * 对话任务用任务上记的那条。复制出来可以自己在终端里跑一遍排查问题。
  */
-function CommandSection({ task }: { task: Task }) {
-  const live = task.steps.find((s) => s.status === 'running' && s.command.length)
-  const last = [...task.steps].filter((s) => s.command.length).sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0]
-  const step = live ?? last
-  const chatNewer = task.command.length && (!step || task.mode === 'chat')
-  const argv = chatNewer ? task.command : step?.command
-  if (!argv?.length) return null
+function CommandSection({ task, scope }: { task: Task; scope?: TaskStep[] }) {
+  // 节点自己的命令优先；调用流程的节点自己不启动 CLI，看它里面最近启动的
+  const last = scope?.[0].command.length
+    ? scope[0]
+    : scope
+        ?.filter((s) => s.command.length)
+        .sort((a, b) =>
+          a.status === 'running' ? -1 : b.status === 'running' ? 1 : b.startedAt.localeCompare(a.startedAt),
+        )[0]
+  const argv = scope ? last?.command : task.command
+  if (!scope && !argv?.length) return null
   return (
-    <Section title={t('启动命令')} extra={chatNewer ? undefined : step && stepLabel(step)}>
-      <Terminal argv={argv} title={argv[0].split(/[\\/]/).pop()} className="rounded-lg" />
+    <Section title={t('启动命令')} extra={scope && last && last.id !== scope[0].id ? stepLabel(last) : undefined}>
+      {argv?.length ? (
+        <Terminal argv={argv} title={argv[0].split(/[\\/]/).pop()} className="rounded-lg" />
+      ) : (
+        <p className="text-xs text-subtle">{t('这个节点还没有启动过 CLI。')}</p>
+      )}
     </Section>
   )
 }
@@ -69,6 +77,7 @@ export function TaskPanel({
   onStep,
   only,
   progressClass,
+  node,
 }: {
   task: Task
   /** 只显示任务进度（宽屏时任务进度单独放在左边） */
@@ -80,6 +89,8 @@ export function TaskPanel({
   workflow?: Workflow
   /** 点了任务进度里的某一步 */
   onStep?: (id: string) => void
+  /** 流程图里选中的节点：启动命令、上下文、Token、更改只看这个节点（含它的子节点）；没有时看整个任务 */
+  node?: TaskStep
 }) {
   const { modelOf } = useAgentView()
   const { agents } = useData()
@@ -87,8 +98,14 @@ export function TaskPanel({
   const byId = new Map(agents.map((a) => [a.id, a]))
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
-  const add = task.changes.reduce((n, c) => n + c.add, 0)
-  const del = task.changes.reduce((n, c) => n + c.del, 0)
+  // 工作流任务：对话视图看整个任务的上下文和用量，不显示启动命令和更改（它们属于具体节点）；
+  // 流程图里点了节点才看这个节点的。对话任务只有一个 Agent，一直显示
+  const workflowMode = task.mode === 'workflow'
+  const scope = node ? [node, ...task.steps.filter((s) => s.id.startsWith(node.id + '/'))] : undefined
+  const changes = scope ? sumChanges(scope) : task.changes
+  const add = changes.reduce((n, c) => n + c.add, 0)
+  const del = changes.reduce((n, c) => n + c.del, 0)
+  const nodeTag = node && <span className="block max-w-[150px] truncate">{node.title}</span>
   const chatAgent = byId.get(task.agentId)
   const { upsertTask } = useData()
   const [diffPath, setDiffPath] = useState<string | null>(null)
@@ -205,87 +222,89 @@ export function TaskPanel({
 
       {only !== 'progress' && (
         <>
-          <CommandSection task={task} />
+          {(!workflowMode || scope) && <CommandSection task={task} scope={scope} />}
           {/* 演示里的模拟执行也写每个 Agent 的用量，和真实执行用同一个视图 */}
-          <Section title={t('上下文')} extra={task.simulated ? t('模拟') : t('CLI 报告')}>
-            {Object.keys(task.usage.agents).length === 0 ? (
+          <Section title={t('上下文')} extra={nodeTag ?? (task.simulated ? t('模拟') : t('CLI 报告'))}>
+            {scope ? (
+              scope.some((s) => s.usage?.window) ? (
+                <ul className="flex flex-col gap-3">
+                  {scope
+                    .filter((s) => s.usage?.window)
+                    .map((s) => (
+                      <ContextRow
+                        key={s.id}
+                        agent={byId.get(s.agentId)}
+                        label={s === node ? undefined : stepLabel(s)}
+                        u={s.usage!}
+                        live={s.status === 'running' ? task.usage.agents[s.agentId] : undefined}
+                      />
+                    ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-subtle">{t('这个节点的 CLI 运行后会显示上下文占用。')}</p>
+              )
+            ) : Object.keys(task.usage.agents).length === 0 ? (
               <p className="text-xs text-subtle">{t('CLI 开始运行后会显示上下文占用。')}</p>
             ) : (
               <ul className="flex flex-col gap-3">
-                {Object.entries(task.usage.agents).map(([id, u]) => {
-                  const a = byId.get(id)
-                  const p = Math.min(100, (u.context / u.window) * 100)
-                  return (
-                    <li key={id} className="flex flex-col gap-1.5">
-                      <div className="flex items-center gap-2 text-xs">
-                        {a && <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />}
-                        <span className="min-w-0 flex-1 truncate text-fg">{a?.name ?? t('已删除的 Agent')}</span>
-                        <span className="font-mono text-subtle">
-                          {fmtTokens(u.context)} / {fmtTokens(u.window)}
-                        </span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-field">
-                        <span
-                          className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
-                          style={{ width: `${Math.max(p, 1)}%` }}
-                        />
-                      </div>
-                      <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
-                        <span>
-                          {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
-                        </span>
-                        {u.tps > 0 ? (
-                          <span className="text-accent">· {u.tps.toFixed(1)} token/s</span>
-                        ) : (
-                          u.genMs > 3000 &&
-                          u.outputTokens > 0 && (
-                            <span title={t('输出 token ÷ 生成用时')}>
-                              · {t('平均 {n} token/s', { n: ((u.outputTokens / u.genMs) * 1000).toFixed(1) })}
-                            </span>
-                          )
-                        )}
-                      </span>
-                    </li>
-                  )
-                })}
-              </ul>
-            )}
-          </Section>
-
-          {!task.simulated || task.usage.inputTokens > 0 ? <TokenUsage task={task} /> : null}
-
-          <Section
-            title={t('更改')}
-            extra={
-              task.changes.length ? (
-                <span className="font-mono">
-                  <span className="text-success">+{add}</span>
-                  {del > 0 && <span className="text-danger"> -{del}</span>}
-                </span>
-              ) : undefined
-            }
-          >
-            {task.changes.length ? (
-              <ul className="flex flex-col gap-1">
-                {task.changes.map((c) => (
-                  <li key={c.path}>
-                    <button
-                      type="button"
-                      onClick={() => setDiffPath(c.path)}
-                      title={t('查看「{path}」的改动', { path: c.path })}
-                      className="-mx-1.5 flex w-[calc(100%+0.75rem)] cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left font-mono text-xs transition-colors hover:bg-sel"
-                    >
-                      <span className="min-w-0 flex-1 truncate text-muted">{c.path}</span>
-                      <span className="shrink-0 text-success">+{c.add}</span>
-                      <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
-                    </button>
-                  </li>
+                {Object.entries(task.usage.agents).map(([id, u]) => (
+                  <ContextRow key={id} agent={byId.get(id)} u={u} live={u} />
                 ))}
               </ul>
-            ) : (
-              <p className="text-xs text-subtle">{t('还没有改动文件。')}</p>
             )}
           </Section>
+
+          {scope ? (
+            <TokenUsage
+              usage={sumUsage(scope)}
+              tps={scope
+                .filter((s) => s.status === 'running')
+                .reduce((n, s) => n + (task.usage.agents[s.agentId]?.tps ?? 0), 0)}
+              extra={nodeTag}
+            />
+          ) : !task.simulated || task.usage.inputTokens > 0 ? (
+            <TokenUsage
+              usage={task.usage}
+              tps={Object.values(task.usage.agents).reduce((n, a) => n + (a.tps ?? 0), 0)}
+            />
+          ) : null}
+
+          {(!workflowMode || scope) && (
+            <Section
+              title={t('更改')}
+              extra={
+                changes.length ? (
+                  <span className="font-mono">
+                    <span className="text-success">+{add}</span>
+                    {del > 0 && <span className="text-danger"> -{del}</span>}
+                  </span>
+                ) : (
+                  nodeTag
+                )
+              }
+            >
+              {changes.length ? (
+                <ul className="flex flex-col gap-1">
+                  {changes.map((c) => (
+                    <li key={c.path}>
+                      <button
+                        type="button"
+                        onClick={() => setDiffPath(c.path)}
+                        title={t('查看「{path}」的改动', { path: c.path })}
+                        className="-mx-1.5 flex w-[calc(100%+0.75rem)] cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left font-mono text-xs transition-colors hover:bg-sel"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-muted">{c.path}</span>
+                        <span className="shrink-0 text-success">+{c.add}</span>
+                        <span className="w-8 shrink-0 text-right text-danger">{c.del ? `-${c.del}` : ''}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-xs text-subtle">{scope ? t('这个节点没有改动文件。') : t('还没有改动文件。')}</p>
+              )}
+            </Section>
+          )}
 
           <Section title={t('环境')}>
             <ul className="flex flex-col gap-2 text-xs text-muted">
@@ -331,12 +350,75 @@ export function TaskPanel({
   )
 }
 
+type Usage = Pick<StepUsage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens' | 'cacheWriteTokens' | 'costUsd'>
+
+/** 几个节点的用量加起来 */
+function sumUsage(steps: TaskStep[]): Usage {
+  const u: Usage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }
+  for (const s of steps) if (s.usage) for (const k of Object.keys(u) as (keyof Usage)[]) u[k] += s.usage[k] ?? 0
+  return u
+}
+
+function sumChanges(steps: TaskStep[]) {
+  const out: FileChange[] = []
+  for (const s of steps) mergeChanges(out, s.changes ?? [])
+  return out
+}
+
+/** 一个 Agent（或节点）的上下文占用；live 是正在输出时的速度 */
+function ContextRow({
+  agent,
+  label,
+  u,
+  live,
+}: {
+  agent?: { name: string; icon: string; cli: string }
+  label?: string
+  u: { context: number; window: number; model: string }
+  live?: { tps: number; outputTokens: number; genMs: number }
+}) {
+  const p = Math.min(100, (u.context / u.window) * 100)
+  return (
+    <li className="flex flex-col gap-1.5">
+      <div className="flex items-center gap-2 text-xs">
+        {agent && <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />}
+        <span className="min-w-0 flex-1 truncate text-fg" title={label}>
+          {label ?? agent?.name ?? t('已删除的 Agent')}
+        </span>
+        <span className="font-mono text-subtle">
+          {fmtTokens(u.context)} / {fmtTokens(u.window)}
+        </span>
+      </div>
+      <div className="h-1.5 overflow-hidden rounded-full bg-field">
+        <span
+          className={cn('block h-full rounded-full', p > 80 ? 'bg-warning' : 'bg-accent')}
+          style={{ width: `${Math.max(p, 1)}%` }}
+        />
+      </div>
+      <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
+        <span>
+          {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
+        </span>
+        {live && live.tps > 0 ? (
+          <span className="text-accent">· {live.tps.toFixed(1)} token/s</span>
+        ) : (
+          live &&
+          live.genMs > 3000 &&
+          live.outputTokens > 0 && (
+            <span title={t('输出 token ÷ 生成用时')}>
+              · {t('平均 {n} token/s', { n: ((live.outputTokens / live.genMs) * 1000).toFixed(1) })}
+            </span>
+          )
+        )}
+      </span>
+    </li>
+  )
+}
+
 /** Token 用量：总数、输入 / 输出、缓存命中和命中率、费用 */
-function TokenUsage({ task }: { task: Task }) {
-  const u = task.usage
+function TokenUsage({ usage: u, tps, extra }: { usage: Usage; tps: number; extra?: React.ReactNode }) {
   const total = u.inputTokens + u.outputTokens
-  const rate = cacheRate(task)
-  const tps = Object.values(u.agents).reduce((n, a) => n + (a.tps ?? 0), 0)
+  const rate = u.inputTokens > 0 ? (u.cacheReadTokens ?? 0) / u.inputTokens : 0
   const rows: [string, string, string?][] = [
     [t('输入'), fmtTokens(u.inputTokens)],
     [t('输出'), fmtTokens(u.outputTokens)],
@@ -347,7 +429,7 @@ function TokenUsage({ task }: { task: Task }) {
   return (
     <Section
       title={t('Token 用量')}
-      extra={tps > 0 ? <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span> : undefined}
+      extra={tps > 0 ? <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span> : extra}
     >
       {total === 0 ? (
         <p className="text-xs text-subtle">{t('CLI 报告用量后会显示在这里。')}</p>
@@ -359,13 +441,13 @@ function TokenUsage({ task }: { task: Task }) {
           </div>
           <div className="flex flex-col gap-1">
             <div className="flex items-baseline justify-between text-xs">
-              {/* 整个任务所有调用累加：读缓存的输入 ÷ 全部输入，不是最后一次请求的 */}
+              {/* 所有调用累加：读缓存的输入 ÷ 全部输入，不是最后一次请求的 */}
               <span className="text-muted">{t('缓存命中率 · 累计')}</span>
               <span
                 className="font-mono font-medium tabular-nums"
                 title={t('读缓存 {hit} / 输入 {input}', {
-                  hit: fmtTokens(task.usage.cacheReadTokens ?? 0),
-                  input: fmtTokens(task.usage.inputTokens),
+                  hit: fmtTokens(u.cacheReadTokens ?? 0),
+                  input: fmtTokens(u.inputTokens),
                 })}
               >
                 {(rate * 100).toFixed(1)}%

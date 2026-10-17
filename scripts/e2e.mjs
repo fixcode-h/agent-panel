@@ -301,6 +301,15 @@ try {
   assert.equal(t.usage.agents[B.id].window, 258400, 'Codex 报告的上下文窗口')
   assert.equal(t.usage.agents[A.id].window, 500000, 'Claude Code 在 result.modelUsage 里报告的上下文窗口')
   assert.equal(t.usage.agents[B.id].context, 24300)
+  // 每个节点自己的用量和改动：加起来等于任务的；Codex 节点只算它自己写的文件
+  assert.equal(
+    t.steps.reduce((n, s) => n + (s.usage?.inputTokens ?? 0), 0),
+    t.usage.inputTokens,
+  )
+  const codexStep = t.steps.find((s) => s.agentId === B.id)
+  assert.equal(codexStep.usage.context, 24300)
+  assert.equal(codexStep.usage.window, 258400)
+  assert.deepEqual(codexStep.changes, [{ path: 'codex-output.txt', add: 3, del: 0 }])
   assert.ok(
     Object.values(t.usage.agents).every((u) => u.tps === 0),
     '结束后速度归零',

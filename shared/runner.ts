@@ -6,6 +6,7 @@ import type { Agent, FileChange, Task, TaskMessage, TaskStep, ToolUse, Workflow,
 import { getCli } from './clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultSettings } from './settings.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
+import { mergeChanges, stepUsage } from './task.ts'
 
 export interface RunContext {
   task: Task
@@ -185,16 +186,6 @@ function reviewOutput(step: TaskStep): Output {
   }
 }
 
-function mergeChanges(into: FileChange[], add: FileChange[]) {
-  for (const c of add) {
-    const old = into.find((x) => x.path === c.path)
-    if (old) {
-      old.add += c.add
-      old.del += c.del
-    } else into.push({ ...c })
-  }
-}
-
 /** 模拟的思考过程，按输出内容挑一句 */
 function thoughtFor(out: Output) {
   if (out.tools.some((t) => t.kind === 'edit'))
@@ -204,18 +195,21 @@ function thoughtFor(out: Output) {
 }
 
 /** 模拟用量：每次调用读一遍上下文（大部分命中缓存），输出按字数估算 */
-function fakeUsage(ctx: RunContext, agentId: string, text: string) {
-  const u = ctx.task.usage
+function fakeUsage(ctx: RunContext, agentId: string, text: string, step?: TaskStep) {
   const input = 14000 + Math.round(Math.random() * 6000) + ctx.task.messages.length * 400
   const read = Math.round(input * (0.72 + Math.random() * 0.18))
   const out = Math.round(text.length * 0.9) + 120
-  u.inputTokens += input
-  u.cacheReadTokens = (u.cacheReadTokens ?? 0) + read
-  u.cacheWriteTokens = (u.cacheWriteTokens ?? 0) + Math.round((input - read) * 0.6)
-  u.outputTokens += out
   const a = agent(ctx, agentId)
+  // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
+  for (const u of step ? [ctx.task.usage, stepUsage(step, a.model)] : [ctx.task.usage]) {
+    u.inputTokens += input
+    u.cacheReadTokens = (u.cacheReadTokens ?? 0) + read
+    u.cacheWriteTokens = (u.cacheWriteTokens ?? 0) + Math.round((input - read) * 0.6)
+    u.outputTokens += out
+  }
   a.context = input + out
   a.outputTokens += out
+  if (step?.usage) Object.assign(step.usage, { context: a.context, window: a.window, model: a.model })
 }
 
 const agent = (ctx: RunContext, id: string) => {
@@ -259,9 +253,11 @@ async function speak(ctx: RunContext, agentId: string, step: string, out: Output
     msg.tools.push(t)
     ctx.changed()
   }
+  const owner = step ? ctx.task.steps.find((x) => x.id === step) : undefined
   mergeChanges(ctx.task.changes, out.changes)
+  if (owner) mergeChanges((owner.changes ??= []), out.changes)
   if (!(await stream(out.text, (s) => (msg.text = s)))) return false
-  fakeUsage(ctx, agentId, out.text)
+  fakeUsage(ctx, agentId, out.text, owner)
   ctx.changed(true)
   return true
 }
