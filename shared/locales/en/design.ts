@@ -133,23 +133,23 @@ export const EN_DESIGN: Record<string, string> = {
   正在设计: 'Designing',
 
   '浏览器扩展…': 'Browser extension…',
-  '已打开扩展页面和扩展文件夹，文件夹路径已复制':
-    'Opened the extensions page and the extension folder. The folder path is copied',
+  '已打开扩展页面，extension 文件夹已选中，把它拖到扩展页面上':
+    'Opened the extensions page with the extension folder selected. Drag it onto the extensions page',
   '正在等待扩展连上…装好后这里会自动变成已连上': 'Waiting for the extension… this turns to connected once it’s loaded',
   '扩展已连上，但不是最新版（{v} → {latest}）：在扩展页面点一下扩展的刷新按钮':
     'Extension connected but outdated ({v} → {latest}): click its reload button on the extensions page',
   '已连上，找到 {n} 个可以用的标签页': 'Connected. Found {n} usable tabs',
   '扩展已连上，还没有打开 Gemini 或 ChatGPT': 'Extension connected, but no Gemini or ChatGPT tab is open',
   安装扩展: 'Install the extension',
-  '点下面的按钮，会打开浏览器的扩展页面和扩展所在的文件夹，并复制文件夹路径。':
-    'The button below opens the browser’s extensions page and the extension folder, and copies the folder path.',
+  '点下面的按钮，会打开浏览器的扩展页面，并打开文件夹选中 extension 文件夹。':
+    'The button below opens the browser’s extensions page and a folder window with the extension folder selected.',
   '安装到 {name}': 'Install in {name}',
   打开扩展文件夹: 'Open extension folder',
   '没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。':
     'Chrome or Edge not found: open chrome://extensions in your browser and install it manually.',
   加载扩展: 'Load the extension',
-  '在扩展页面打开右上角的「开发者模式」，点「加载已解压的扩展程序」，在弹出的窗口里粘贴路径，选中 extension 文件夹。':
-    'On the extensions page, turn on “Developer mode” at the top right, click “Load unpacked”, paste the path in the dialog and select the extension folder.',
+  '在扩展页面打开右上角的「开发者模式」，把选中的 extension 文件夹拖到扩展页面上松手就装好了（也可以点「加载已解压的扩展程序」，粘贴已复制的路径）。只要装这一次，以后面板更新时扩展会自动刷新。':
+    'On the extensions page, turn on “Developer mode” at the top right, then drag the selected extension folder onto the page and drop it (or click “Load unpacked” and paste the copied path). You only do this once; the extension reloads itself when the panel updates.',
   '打开 Gemini 或 ChatGPT': 'Open Gemini or ChatGPT',
   '登录后停在聊天页面，之后就能在对话框下面选这个标签页。':
     'Sign in and stay on the chat page. Then pick that tab below the chat box.',
