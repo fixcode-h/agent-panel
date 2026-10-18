@@ -134,6 +134,13 @@ try {
   await check(p, 'UI设计-右键菜单', ['创建副本', 'SizeBox'])
   await p.keyboard.press('Escape')
   await p.keyboard.press('Escape')
+  // 动画：选中控件，用预设加一个弹出动画，拖播放头预览
+  await p.getByRole('treeitem', { name: /StartGroup/ }).click()
+  await p.getByRole('button', { name: /^动画/ }).click()
+  await p.getByRole('button', { name: '预设' }).click()
+  await p.getByRole('menuitem', { name: '弹出（弹窗）' }).click()
+  await check(p, 'UI设计-动画', ['Anim_PopIn', 'StartGroup · 缩放'])
+  await p.getByRole('button', { name: '关闭动画面板' }).click()
   // 标注：框选一块，写说明，出现在 AI 输入框上方
   await p.keyboard.press('r')
   const vp = await p.locator('[data-wid]').first().boundingBox()
