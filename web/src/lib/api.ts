@@ -12,6 +12,9 @@ import type {
   Agent,
   AgentInput,
   Category,
+  ParamValues,
+  Tag,
+  TagInput,
   CliStatus,
   DirInfo,
   DirListing,
@@ -151,9 +154,15 @@ export const api = {
   appRollback: () => request<{ version: string }>('/app/rollback', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),
-  createCategory: (name: string) => request<Category>('/categories', json('POST', { name })),
+  createCategory: (name: string, scope: Category['scope'] = 'agent') =>
+    request<Category>('/categories', json('POST', { name, scope })),
   renameCategory: (id: string, name: string) => request<Category>(`/categories/${id}`, json('PUT', { name })),
   deleteCategory: (id: string) => request<void>(`/categories/${id}`, { method: 'DELETE' }),
+
+  tags: () => request<Tag[]>('/tags'),
+  createTag: (input: TagInput) => request<Tag>('/tags', json('POST', input)),
+  updateTag: (id: string, input: TagInput) => request<Tag>(`/tags/${id}`, json('PUT', input)),
+  deleteTag: (id: string) => request<void>(`/tags/${id}`, { method: 'DELETE' }),
 
   agents: () => request<Agent[]>('/agents'),
   createAgent: (input: AgentInput) => request<Agent>('/agents', json('POST', input)),
@@ -216,6 +225,7 @@ export const api = {
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
+  setTaskParams: (id: string, params: ParamValues) => request<Task>(`/tasks/${id}`, json('PATCH', { params })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>

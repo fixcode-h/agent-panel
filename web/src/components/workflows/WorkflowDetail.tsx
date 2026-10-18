@@ -18,6 +18,8 @@ import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { TeamEditor } from './TeamEditor'
+import { CategoryPicker } from '@/components/agents/CategoryPicker'
+import { TagPicker } from '@/components/tags/Tags'
 import { DocEditor } from './DocEditor'
 import { FlowEditor } from '@/components/flow/FlowEditor'
 
@@ -181,13 +183,21 @@ export function WorkflowDetail({
                     placeholder={t('例如：Web 功能开发')}
                   />
                 </Field>
-                <Field label={t('简介')} className="flex-[2_1_280px]">
-                  <Input
-                    value={draft.description}
-                    onChange={(e) => set('description', e.target.value)}
-                    placeholder={t('适合什么样的任务')}
-                  />
-                </Field>
+                <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('分类')}</span>
+                  <CategoryPicker scope="workflow" value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
+                </div>
+              </div>
+              <Field label={t('简介')}>
+                <Input
+                  value={draft.description}
+                  onChange={(e) => set('description', e.target.value)}
+                  placeholder={t('适合什么样的任务')}
+                />
+              </Field>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-xs text-muted">{t('标签')}</span>
+                <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
               </div>
             </FormSection>
 

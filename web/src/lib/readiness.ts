@@ -2,6 +2,7 @@ import { shortVersion } from './cli-style'
 import { DEFAULT_AGENT_ID, type Agent, type CliStatus, type DirInfo, type Workflow } from '@shared/schema'
 import { entryFlow, findRefCycle, flowLabel, getFlow, reachable, refsOf, topoOrder } from '@shared/flow'
 import { t } from '@shared/i18n'
+import { nodeMissingParams, paramLabel } from '@shared/agent-role'
 
 export interface Check {
   ok: boolean
@@ -63,9 +64,15 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
   ]
   const used = new Set(nodes.map((n) => n.agentId))
   const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !used.has(a.id)) as Agent[]
-  const notRunnable = team.filter((a) => {
-    const c = cliFor(a, clis)
-    return !a.enabled || !c?.installed || !c.enabled
+  // 工作流里的节点都用默认 CLI 执行，看默认 CLI 能不能用
+  const defCli = clis.find((c) => c.isDefault) ?? clis[0]
+  const cliOk = !clis.length || (!!defCli?.installed && defCli.enabled)
+  const notRunnable = team.filter((a) => !a.enabled)
+  // 节点上必填（没有默认值）的参数还没填
+  const lacking = nodes.flatMap((n) => {
+    if (n.kind !== 'agent') return []
+    const miss = nodeMissingParams(byId.get(n.agentId || w.mainAgentId), n.params)
+    return miss.length ? [`${n.title || t('未命名节点')}（${miss.map(paramLabel).join(t('、'))}）`] : []
   })
   const entry = entryFlow(w)
   const live = topoOrder(entry)
@@ -93,11 +100,20 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
       hint: main ? main.name : t('主 Agent 执行没指定 Agent 的节点，并处理追加要求'),
     },
     {
-      ok: notRunnable.length === 0,
+      ok: notRunnable.length === 0 && cliOk,
       label: t('团队成员都可运行'),
-      hint: notRunnable.length
-        ? t('{names} 已停用或 CLI 未安装', { names: notRunnable.map((a) => a.name).join(t('、')) })
-        : t('共 {n} 个 Agent', { n: team.length }),
+      hint: !cliOk
+        ? t('节点都用默认 CLI 执行，{cli} 未安装或已停用', { cli: defCli?.name ?? '' })
+        : notRunnable.length
+          ? t('{names} 已停用', { names: notRunnable.map((a) => a.name).join(t('、')) })
+          : t('共 {n} 个 Agent', { n: team.length }),
+    },
+    {
+      ok: lacking.length === 0,
+      label: t('节点参数已填写'),
+      hint: lacking.length
+        ? t('这些节点还有必填参数没填：{names}', { names: lacking.slice(0, 3).join(t('、')) })
+        : t('没有缺少的参数'),
     },
     {
       ok: live.length > 0 && emptyFlowNode.length === 0,

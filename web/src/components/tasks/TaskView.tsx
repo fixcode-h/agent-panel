@@ -41,6 +41,7 @@ import { FileDialog, FileOpenCtx } from './FileDialog'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
+import { ParamsChip } from '@/components/agents/ParamFields'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
@@ -641,6 +642,16 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                         api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
                       }}
                     />
+                    {task.mode === 'chat' && !byCli && chatAgent && chatAgent.params.length > 0 && (
+                      <ParamsChip
+                        params={chatAgent.params}
+                        values={task.params}
+                        onChange={(v) => {
+                          setTask({ ...task, params: v })
+                          api.setTaskParams(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+                        }}
+                      />
+                    )}
                     {byCli ? (
                       <ChatModelPicker value={chatRun} onChange={changeRun} />
                     ) : (

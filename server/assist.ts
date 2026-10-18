@@ -228,7 +228,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       const settings = await getSettings()
       const ctx: AssistContext = {
         agents: await deps.agents.list(),
-        categories: await deps.categories.list(),
+        categories: (await deps.categories.list()).filter((c) => c.scope !== 'workflow'),
         workflows: await deps.workflows.list(),
         rules:
           input.kind === 'agent'

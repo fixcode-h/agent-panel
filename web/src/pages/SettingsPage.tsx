@@ -14,6 +14,7 @@ import {
   HardDrive,
   GripVertical,
   KeyRound,
+  Tag as TagIcon,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -36,6 +37,7 @@ import { UpdateSection } from '@/components/settings/UpdateSection'
 import { StylesSettings } from '@/components/settings/StylesSettings'
 import { ApiSection } from '@/components/settings/ApiSection'
 import { DataSection } from '@/components/settings/DataSection'
+import { TagsSection } from '@/components/settings/TagsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
@@ -61,6 +63,7 @@ interface Section {
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2 },
   { id: 'categories', label: t('项目分类'), icon: Layers },
+  { id: 'tags', label: t('标签'), icon: TagIcon },
   { id: 'models', label: t('默认 CLI'), icon: Cpu },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
@@ -660,6 +663,7 @@ function SettingsBody({
           )}
 
           {cur.id === 'data' && <DataSection />}
+          {cur.id === 'tags' && <TagsSection />}
           {cur.id === 'update' && <UpdateSection />}
 
           {cur.id === 'categories' && <ProjectCategoryList />}

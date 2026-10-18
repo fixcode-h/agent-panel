@@ -452,6 +452,14 @@ export function extractJson(text: string): { json?: unknown; rest: string; error
 
 const issues = (e: z.ZodError) => e.issues.map((i) => `${i.path.join('.') || '(根)'}：${i.message}`).join('；')
 
+const agentExtras = (a?: Agent) => ({
+  includes: a?.includes ?? [],
+  params: a?.params ?? [],
+  skills: a?.skills ?? [],
+  starters: a?.starters ?? [],
+  tags: a?.tags ?? [],
+})
+
 function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; newCategory: string; error?: string } {
   const sys = !d.cli || /^(default|系统默认|默认)$/i.test(d.cli)
   const cli = sys ? { id: '' } : (getCli(d.cli) ?? CLIS.find((c) => c.name.toLowerCase() === d.cli.toLowerCase()))
@@ -474,6 +482,8 @@ function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; 
       permission: '',
       extraArgs: [],
       enabled: true,
+      // AI 只改名称、简介、角色设定这些；优化时引入、参数、Skill、标签沿用原来的
+      ...agentExtras(ctx.target && 'instructions' in ctx.target ? ctx.target : undefined),
     },
     newCategory: d.category && !cat ? d.category.slice(0, 20) : '',
   }
@@ -643,6 +653,8 @@ export function resolveProposal(
         flows,
         entryFlowId,
         document: d.document,
+        categoryId: target?.categoryId ?? '',
+        tags: target?.tags ?? [],
       },
       newAgents: newAgents.filter((a) => used.has(a.ref)),
     },

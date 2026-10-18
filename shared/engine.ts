@@ -18,6 +18,8 @@ import {
   type FlowNode,
   type FlowEdge,
   type FlowRef,
+  type NodeTier,
+  type ParamValues,
   type Task,
   type TaskStep,
   type Workflow,
@@ -59,6 +61,10 @@ export interface AgentCall {
   fresh?: string
   /** 不是普通的一轮：压缩上下文，或者审查代码 */
   op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
+  /** 工作流里的调用：用默认 CLI 的这一档（空表示按 Agent 设的档位）；对话不传，用 Agent 自己的设置 */
+  tier?: NodeTier
+  /** Agent 参数的值（节点上填的）；不传时对话用任务里选的 */
+  params?: ParamValues
 }
 
 export interface EngineHost {
@@ -338,15 +344,36 @@ async function runNode(
         ? `上次执行到一半被中断了（停止或面板重启）。请检查已经做了哪些，从中断的地方接着完成本节点「${step.title}」的工作，完成后同样简要总结。`
         : ''
     const tail = deciding && (extra || cont) ? '\n\n最后同样单独一行写「结论：通过」或「结论：不通过」。' : ''
-    return host.runAgent({
-      step,
-      agentId: step.agentId,
-      prompt: (extra || cont || full) + tail,
-      fresh: extra || cont ? `${full}\n\n${extra}` : undefined,
-      sessionKey: step.id,
-      reviewing: inv.slot === 'review',
-      deciding,
-    })
+    const call = (prompt: string) =>
+      host.runAgent({
+        step,
+        agentId: step.agentId,
+        prompt,
+        fresh: extra || cont ? `${full}\n\n${extra}` : undefined,
+        sessionKey: step.id,
+        reviewing: inv.slot === 'review',
+        deciding,
+        tier: node.tier,
+        params: node.params,
+      })
+    let r = await call((extra || cont || full) + tail)
+    // 失败自动重试（CLI 断线、偶发错误）：续接同一个会话，让它检查做到哪了接着做
+    for (let i = 0; i < node.retries && !r.ok && !r.stopped && !r.halted && !r.budget && !host.halted; i++) {
+      system(
+        host,
+        t('「{title}」执行失败，自动重试（第 {n} 次）：{error}', {
+          title: step.title,
+          n: i + 1,
+          error: clip(r.error, 300),
+        }),
+        step.id,
+      )
+      host.changed(true)
+      r = await call(
+        `上一次执行失败了：${clip(r.error, 1000)}\n\n请检查已经做了哪些，接着完成本节点「${step.title}」的工作，完成后同样简要总结。${tail}`,
+      )
+    }
+    return r
   }
   const rework = (agentText: string, flowText: string) => body(++bodyRound, node.kind === 'flow' ? flowText : agentText)
   let r = await body(0, '')
@@ -635,7 +662,13 @@ export async function runEngineTurn(host: EngineHost) {
       if (last) task.sessions[who] = task.sessions[last.id]
     }
     if (!who) return finish(host, { ok: false, error: t('没有可以回答的 Agent，请先给工作流选择主 Agent') })
-    const r = await host.runAgent({ agentId: who, prompt: followUpPrompt(host), sessionKey: who })
+    const r = await host.runAgent({
+      agentId: who,
+      prompt: followUpPrompt(host),
+      sessionKey: who,
+      // 工作流任务的追加要求也走默认 CLI 的档位，和节点一致
+      ...(task.mode === 'workflow' ? { tier: '' as NodeTier } : {}),
+    })
     if (!r.ok) return finish(host, r)
   }
   task.status = 'done'

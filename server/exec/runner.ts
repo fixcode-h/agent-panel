@@ -13,13 +13,14 @@ import type {
   Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
-import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
+import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import { changesSince, mergeChanges, questionAnswers, stepUsage, withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
+import { composeRole, nodeAgentRun } from '../../shared/agent-role.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
@@ -304,7 +305,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const { task, settings, project } = ctx
   const found = ctx.agents.find((a) => a.id === agentId)
   if (!found) return { ok: false, error: t('找不到执行这一步的 Agent，可能已被删除') }
-  const agent = withTaskModel(found, task)
+  // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
+  const agent =
+    call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
   const run = agentRun(agent, settings)
   const cliId = run.cli
   const def = getCli(cliId)
@@ -353,7 +356,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     files.get(m) ??
     files.get(m.slice(m.lastIndexOf('/') + 1)) ??
     guessWindow(cli, m)
-  const instructions = agent.instructions.trim()
+  const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params)).trim()
   let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined

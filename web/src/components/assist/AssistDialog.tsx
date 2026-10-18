@@ -622,7 +622,7 @@ export function AssistDialog({
         return
       }
       const r = await applyProposal(latest, {
-        categories,
+        categories: categories.filter((c) => c.scope !== 'workflow'),
         createCategory: (name) => api.createCategory(name),
         createAgent: (a) => api.createAgent(a),
       })
