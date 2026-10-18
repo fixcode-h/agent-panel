@@ -2232,16 +2232,32 @@ try {
       .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
       .at(-1).input
     assert.match(retryAsk, /ops\[0\]：主界面里没有叫 Nope 的控件/)
-    // 用设计工具（MCP）改：CLI 调 edit / check，回复里只写说明
-    const mcpOps = [{ op: 'rename', target: 'Txt_Ver', name: 'Txt_Version' }]
+    // 用设计工具（MCP）改：CLI 调加控件、改属性、改名、建子控件等工具，回复只写普通文字
+    const mcpCalls = [
+      ['rename_widget', { name: 'Txt_Ver', to: 'Txt_Version' }],
+      ['update_widget', { name: 'Txt_Version', properties: { Text: 'v2.0.0' } }],
+      [
+        'add_widget',
+        { parent: 'Buttons', widget: { Type: 'TextBlock', Name: 'Txt_Tip', Properties: { Text: '提示' } } },
+      ],
+      ['create_component', { name: 'WBP_Tag', size: { X: 64, Y: 32 }, root: { Type: 'Overlay', Name: 'Root' } }],
+      ['set_style', { style: 'clean' }],
+    ]
     await call('POST', `/designs/${design.id}/chat`, {
-      text: `用工具改 FAKE_MCP:${JSON.stringify(mcpOps)}`,
+      text: `用工具改 FAKE_MCP:${JSON.stringify(mcpCalls)}`,
       source: { kind: 'none' },
     })
     d = await waitJob(design.id)
     assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
-    assert.equal(d.root.Children[1].Children.at(-1).Name, 'Txt_Version', '工具里的改动存下来了')
-    assert.equal(d.messages.at(-1).text, '工具改好了')
+    assert.match(d.messages.at(-1).text, /^工具改好了/, '回复是普通文字，不要求 JSON')
+    const box = d.root.Children[1].Children
+    assert.deepEqual(
+      [box.at(-2).Name, box.at(-2).Properties.Text, box.at(-1).Name],
+      ['Txt_Version', 'v2.0.0', 'Txt_Tip'],
+      '工具里的改动存下来了',
+    )
+    assert.ok(d.components.some((c) => c.Name === 'WBP_Tag' && c.DesignSize.X === 64))
+    assert.equal(d.style, 'clean')
     const mcpAsk = calls()
       .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
       .at(-1)
@@ -2478,7 +2494,7 @@ try {
     const fromMenu = pc.find((x) => x.designId === design.id)
     assert.deepEqual(
       fromMenu.components.map((c) => c.Name),
-      ['WBP_MenuButton'],
+      ['WBP_MenuButton', 'WBP_Tag'],
     )
     assert.ok(fromMenu.images.some((i) => i.id === 'frame'))
     const imported = await call('POST', `/designs/${other2.id}/components/import`, {

@@ -8,16 +8,29 @@ import { extractJson } from '../shared/assist.ts'
 import { applyOps, streamedOps, type OpsState } from '../shared/design-ops.ts'
 import { openDesignSession } from './design-mcp.ts'
 
-/** 把设计工具（MCP）接给 CLI 的参数；不在这里的 CLI 只用 JSON 里的操作 */
-const MCP_ARGS: Record<string, (url: string) => string[]> = {
+/**
+ * 把设计工具（MCP）接给 CLI：返回要加的命令行参数，需要配置文件的写进这一轮的工作目录。
+ * 不在这里的 CLI 只能把操作写在回复的 JSON 里
+ */
+const MCP_ARGS: Record<string, (url: string, cwd: string) => Promise<string[]>> = {
   // 只放行这个工具服务，不用逐个确认
-  claude: (url) => [
+  claude: async (url) => [
     '--mcp-config',
     JSON.stringify({ mcpServers: { design: { type: 'http', url } } }),
     '--allowedTools',
     'mcp__design',
   ],
-  codex: (url) => ['-c', `mcp_servers.design.url=${JSON.stringify(url)}`],
+  codex: async (url) => ['-c', `mcp_servers.design.url=${JSON.stringify(url)}`],
+  // Command Code 没有命令行参数：读工作目录里的 .mcp.json，权限写在 .commandcode/settings.json 里放行
+  commandcode: async (url, cwd) => {
+    await writeFile(path.join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { design: { transport: 'http', url } } }))
+    await mkdir(path.join(cwd, '.commandcode'), { recursive: true })
+    await writeFile(
+      path.join(cwd, '.commandcode', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['mcp__design__*'] } }),
+    )
+    return []
+  },
 }
 /** 试过不支持设计工具的 CLI（版本太旧），之后只用 JSON 里的操作 */
 const NO_MCP = new Set<string>()
@@ -46,6 +59,7 @@ import {
   type DesignVersionMeta,
   type ProjectComponents,
   projectPromptText,
+  AiDesignResult,
   resolveDesignResult,
   type DesignJob,
   type DesignMeta,
@@ -460,8 +474,22 @@ ${prompt}`,
     const cs = cliSettings(settings, cliId)
     job.run = run
     setAskUser(job.scope, input.askUser)
-    const cwd = path.join(tmpdir(), 'agent-panel-design')
+    // 每一轮一个单独的工作目录：放设计工具的配置和附件，结束后删掉
+    const cwd = path.join(tmpdir(), 'agent-panel-design', randomUUID())
     await mkdir(cwd, { recursive: true })
+    // 附件复制进工作目录：有的 CLI 读不了工作目录以外的文件（以前 Command Code 说找不到参考图就是这样）
+    const attachments = await Promise.all(
+      input.attachments.map(async (a, i) => {
+        const to = path.join(cwd, 'attachments', `${i + 1}-${path.basename(a.path)}`)
+        await mkdir(path.dirname(to), { recursive: true })
+        return (await cp(a.path, to).then(
+          () => true,
+          () => false,
+        ))
+          ? { ...a, path: to }
+          : a
+      }),
+    )
     const history = d.messages.slice(0, -1)
     const project = await projectContext(d)
     let extra = ''
@@ -497,9 +525,9 @@ ${prompt}`,
             model: run.model,
             effort: run.effort,
             permission: cs.permission,
-            extraArgs: [...cs.extraArgs, ...(mcp && !NO_MCP.has(cliId) ? MCP_ARGS[cliId]!(mcp.url) : [])],
+            extraArgs: [...cs.extraArgs, ...(mcp && !NO_MCP.has(cliId) ? await MCP_ARGS[cliId]!(mcp.url, cwd) : [])],
             // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
-            addDirs: input.attachments.length ? [UPLOADS_DIR] : undefined,
+            addDirs: attachments.some((a) => !a.path.startsWith(cwd)) ? [UPLOADS_DIR] : undefined,
           },
           cwd,
           env: childEnv(cs.env),
@@ -507,16 +535,17 @@ ${prompt}`,
             buildDesignPrompt(
               cache.get(d.id)!,
               history,
-              withAttachments(await expandSlash(input.text, cliId, '', false), input.attachments),
+              withAttachments(await expandSlash(input.text, cliId, '', false), attachments),
               input.annotations,
               project,
               !!mcp && !NO_MCP.has(cliId),
               (await loadStyles()).filter((x) => x.kind === d.kind),
             ) + extra,
           signal: job.abort.signal,
-          timeoutMs: TIMEOUT,
+          // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
+          timeoutMs: 0,
           // 附上的截图、参考图直接给模型看（路径也写在提示词里，需要时它还能自己读）
-          images: input.attachments
+          images: attachments
             .filter((x) => /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name))
             .map((x) => x.path),
           onEvent: (ev) => {
@@ -561,7 +590,6 @@ ${prompt}`,
           },
         }).finally(asks.done)
         if (r.killed === 'stopped') throw new Error(t('已停止'))
-        if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有完成，已停止'))
         if (r.spawnError)
           throw new Error(
             t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
@@ -594,23 +622,39 @@ ${prompt}`,
             }),
           )
         const ex = extractJson(text)
-        // 用工具改过：在工具改好的样子上收尾（JSON 里只有说明，也可能没有 JSON）
-        const viaTools = !!mcp && !NO_MCP.has(cliId) && (mcp.session.applied > 0 || mcp.session.images.length > 0)
-        const json = !ex.error && ex.json && typeof ex.json === 'object' ? (ex.json as Record<string, any>) : {}
-        const res = viaTools
-          ? resolveDesignResult(
-              {
-                ...json,
-                root: undefined,
-                reply: json.reply || (ex.error ? text.trim() : ''),
-                ops: Array.isArray(json.ops) ? json.ops : [],
-                images: [...mcp.session.images, ...(Array.isArray(json.images) ? json.images : [])],
-              },
-              { ...cache.get(d.id)!, root: mcp.session.state.root, components: mcp.session.state.components },
-            )
-          : ex.error
-            ? { error: ex.error }
-            : resolveDesignResult(ex.json, cache.get(d.id)!)
+        const toolsMode = !!mcp && !NO_MCP.has(cliId)
+        const json = !ex.error && ex.json && typeof ex.json === 'object' ? (ex.json as Record<string, any>) : undefined
+        // 用工具改：在工具改好的样子上收尾，回复就是普通的文字（万一还写了 JSON，里面的操作也照样用上）
+        const sess = mcp?.session
+        const touched = !!sess && (sess.applied > 0 || sess.images.length > 0)
+        const reply = (json?.reply as string) || (json ? ex.rest : text).trim()
+        let res: ReturnType<typeof resolveDesignResult> = { error: '' }
+        // 没用工具、照旧写了 JSON（工具没连上，或者模型习惯这样）：按 JSON 的老办法处理
+        if (toolsMode && sess && !(json && !touched)) {
+          const raw = {
+            ...json,
+            root: undefined,
+            reply,
+            style: json?.style ?? sess.style,
+            designSize: json?.designSize ?? sess.designSize,
+            question: json?.question ?? sess.question,
+            images: [...sess.images, ...(Array.isArray(json?.images) ? json.images : [])],
+            // 什么都没改（只是回答问题）时不带 ops：设计原样不动，也不算一次修改
+            ops: touched || Array.isArray(json?.ops) ? (Array.isArray(json?.ops) ? json.ops : []) : undefined,
+          }
+          const state = { ...cache.get(d.id)!, root: sess.state.root, components: sess.state.components }
+          res = resolveDesignResult(raw, state)
+          // 改了两轮检查还有问题：改好的部分不丢，照样存下，把问题告诉用户
+          if ('error' in res && attempt === 2 && touched) {
+            const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
+            if (ok.success)
+              res = {
+                result: { ...ok.data, reply: `${reply || t('改好了。')}\n\n${t('检查还有这些问题：')}\n${res.error}` },
+                root: sess.state.root,
+                components: sess.state.components,
+              }
+          }
+        } else res = ex.error ? { error: ex.error } : resolveDesignResult(ex.json, cache.get(d.id)!)
         if ('result' in res) {
           const cur = cache.get(d.id)!
           const r2 = res.result
@@ -640,7 +684,7 @@ ${prompt}`,
           cur.messages.push({
             id: randomUUID(),
             role: 'agent',
-            text: r2.reply || ex.rest || t('改好了。'),
+            text: r2.reply || t('改好了。'),
             at: now(),
             images: ids.length ? ids : undefined,
             run,
@@ -654,13 +698,20 @@ ${prompt}`,
           return ids
         }
         if (attempt === 2)
-          throw new Error(t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error }))
-        extra = viaTools
-          ? `\n\n## 你上一次的输出\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
-          : `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${res.error}\n请修正后重新输出完整的说明和 JSON。`
+          throw new Error(
+            toolsMode
+              ? t('{cli} 改完的设计两次检查都没通过：{error}', { cli: def.name, error: res.error })
+              : t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error }),
+          )
+        extra =
+          toolsMode && !(json && !touched)
+            ? `\n\n## 你上一次的输出\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
+            : `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${res.error}\n请修正后重新输出完整的说明和 JSON。`
       }
     } finally {
       mcp?.close()
+      // 这一轮的工作目录（附件副本、Command Code 的 MCP 配置）用完就删
+      await rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
     return []
   }

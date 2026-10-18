@@ -545,7 +545,7 @@ export function buildDesignPrompt(
   request: string,
   annotations?: Annotation[],
   project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
-  /** 这一轮给了 design 工具（MCP）：优先用工具改，JSON 里只写说明 */
+  /** 这一轮给了 design 工具（MCP）：全部用工具改，回复普通文字，不写 JSON */
   tools = false,
   /** 风格库里同类（游戏 / 网页）的风格：风格还没定时可以作为选项 */
   styles: SavedStyle[] = [],
@@ -586,15 +586,15 @@ ${web ? WEB_NOTES : UMG_NOTES}
 ## 设计规则
 ${web ? webRules(d) : gameRules(d)}- 图片的 prompt 用英文写清楚画什么、什么风格、什么颜色，不要包含文字；尺寸写在 width / height（像素，按界面上的显示尺寸）。
 - 已经生成好的图片不用再列出来，除非用户要求改它（列出来就会重新生成）。新图片的 id 用简短的英文（例如 btn_normal）。
-- 用户只是提问、不需要改设计时，只回答，JSON 里只写 reply。
+- 用户只是提问、不需要改设计时，只回答，${tools ? '不用调用修改的工具' : 'JSON 里只写 reply'}。
 
 ${
   styled
     ? ''
     : `## 整体风格还没定
-这个设计还没有确定整体美术风格。如果用户这次的要求和之前的对话里都没有说清楚整体风格（例如「暗黑奇幻」「像素风」「扁平简约」这样的描述，或者附上了参考图），先不要搭界面、不要列图片、不要调用 design 工具：
-JSON 里只写 reply（一句话说明为什么先问）和 question，问用户想要什么整体风格，给 3~4 个适合这个界面和题材的选项，每个选项写 label（中文，10 个字以内）、desc（一句中文说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
-${styles.length ? `风格库里有这些用户存过的风格，合适的直接作为选项（style 照抄它的英文）：\n${styles.map((x) => `- ${x.name}：${x.summary}\n  英文：${x.en}`).join('\n')}\n` : ''}用户已经说清楚风格时不要问，直接做，并在 JSON 的 style 里写下整体风格。用户回答了风格问题后，按之前的要求接着做。
+这个设计还没有确定整体美术风格。如果用户这次的要求和之前的对话里都没有说清楚整体风格（例如「暗黑奇幻」「像素风」「扁平简约」这样的描述，或者附上了参考图），先不要搭界面、不要列图片：
+${tools ? '调用 ask_style 问用户想要什么整体风格，然后回复一句为什么先问' : 'JSON 里只写 reply（一句话说明为什么先问）和 question，问用户想要什么整体风格'}，给 3~4 个适合这个界面和题材的选项，每个选项写 label（中文，10 个字以内）、desc（一句中文说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
+${styles.length ? `风格库里有这些用户存过的风格，合适的直接作为选项（style 照抄它的英文）：\n${styles.map((x) => `- ${x.name}：${x.summary}\n  英文：${x.en}`).join('\n')}\n` : ''}用户已经说清楚风格时不要问，直接做，并${tools ? '用 set_style' : '在 JSON 的 style 里'}写下整体风格。用户回答了风格问题后，按之前的要求接着做。
 
 `
 }## 当前设计
@@ -612,14 +612,19 @@ ${request}
 ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 ${
   tools
-    ? `## 用 design 工具改设计（优先）
-这一轮你有 design 工具（MCP）：get_tree 看当前的控件树，edit 提交修改操作（格式见下面的 ops），add_images 列出要生成的图片，check 检查。
-像在控件树和属性面板里操作一样一步步改：先 get_tree 看清楚，再用 edit 改，改动会马上显示给用户；改完调一次 check，有问题接着改。
-用工具改过的内容不用再写进最后的 JSON，JSON 里只写 reply（以及 style、designSize 有变化时）。调用不了这些工具时，就按下面的格式把 ops 和 images 写进 JSON。
+    ? `## 用 design 工具改设计
+这一轮你有 design 工具（MCP），像在控件树和属性面板里操作一样改设计，每一步都会马上显示给用户：
+- 看：get_tree 看控件树（in 写子控件名看子控件），get_design 看尺寸、风格、子控件和图片
+- 控件：add_widget 加控件（可以带子控件）、update_widget 改属性和插槽、remove_widget 删、move_widget 移动或调整顺序、rename_widget 改名、replace_widget 整个换掉
+- 子控件（Widget Blueprint）：create_component 新建、resize_component 改尺寸、delete_component 删；往子控件里加控件时 in 写子控件名
+- 图片：add_images 列出要生成的图片，再用 update_widget 设到控件的画刷上（"img:<图片 id>"）
+- 其他：set_style 写整体风格、set_design_size 改设计稿尺寸、ask_style 先问用户风格
+- 改很多地方时可以用 edit 一次提交多步（格式见下面的 ops）
+先看清楚现在的设计，再一步步改；改完调一次 check，有问题接着改，没问题了再用几句中文回复用户你做了什么。
+不要输出 JSON，不要写文件，不要运行命令，所有修改都通过 design 工具完成。
 
 `
-    : ''
-}## 输出格式
+    : `## 输出格式
 先用一两句中文说明你做了什么，然后输出一个 \`\`\`json 代码块：
 {
   "reply": "给用户看的说明（中文）",
@@ -636,7 +641,8 @@ ${
   }
 }
 
-### ops：像在控件树和属性面板里操作一样改设计
+`
+}### ops：像在控件树和属性面板里操作一样改设计
 只写要改的地方，没提到的控件和属性保持不变。控件用 Name 指定；改子控件里的内容加 "in":"<子控件名>"，主界面不写 in。按顺序执行，后面的操作能用前面加的控件。
 - 改属性：{"op":"set","target":"Txt_Title","path":"Properties.Text","value":"背包"}；path 以 Properties. 或 Slot. 开头，值是对象时只写要改的字段，例如 {"op":"set","target":"Btn_Start","path":"Slot.Padding","value":{"Top":24}}
 - 加控件：{"op":"add","parent":"MenuBox","index":0,"widget":{"Type":"TextBlock","Name":"Txt_Hint","Properties":{"Text":"按任意键继续"}}}（index 不写就放最后；widget 可以带 Children）
@@ -647,7 +653,7 @@ ${
 - 子控件：{"op":"addComponent","component":{"Name":"WBP_Slot","DesignSize":{"X":96,"Y":96},"Root":{…}}}、{"op":"removeComponent","name":"WBP_Slot"}、{"op":"resizeComponent","name":"WBP_Slot","size":{"X":120,"Y":120}}
 - 换图：给控件的画刷设图片，例如 {"op":"set","target":"Img_Icon","path":"Properties.Brush","value":{"ResourceObject":"img:icon_gem"}}
 
-不要修改文件、不要运行命令，只输出说明和 JSON。`
+${tools ? '' : '不要修改文件、不要运行命令，只输出说明和 JSON。'}`
 }
 
 /** 检查 AI 的结果，补齐默认值；不合格时返回给 CLI 修正的错误 */
