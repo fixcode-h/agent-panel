@@ -141,6 +141,8 @@ export const EN_DESIGN: Record<string, string> = {
   '已打开扩展页面：点一下「Agent 面板 · 网页生图」上的刷新按钮。只需要这一次，以后会自动刷新':
     'Opened the extensions page: click the reload button on “Agent 面板 · 网页生图”. You only need to do this once; it reloads itself from then on',
   一键刷新扩展: 'Reload extension',
+  '游戏 UI': 'Game UI',
+  '网页 UI': 'Web UI',
   '游戏 UI 和网页 UI 的控件不能混用': 'Game UI and web UI widgets can’t be mixed',
   '同时移到锚点（Ctrl）': 'Also move to the anchor (Ctrl)',
   '同时设对齐点（Shift）': 'Also set the pivot (Shift)',
