@@ -48,6 +48,26 @@ export const McpSpec = z.object({
 })
 export type McpSpec = z.infer<typeof McpSpec>
 
+/**
+ * 用户自己装的 MCP 工具存在 CLI 的哪个配置文件里、怎么写：面板的「MCP 工具」页按这个读写。
+ * 不写表示这个 CLI 的 MCP 配置不归面板管
+ */
+export const McpStore = z.object({
+  /** 配置文件，~ 开头，可以用 ${ENV:-默认值} */
+  file: z.string(),
+  format: z.enum(['json', 'toml']),
+  /** json 里放工具表的键（toml 固定是 mcp_servers） */
+  key: z.string().default('mcpServers'),
+  /** 远程（HTTP）工具的地址写在哪个字段 */
+  urlKey: z.string().default('url'),
+  /** 远程工具要不要写 type；stdio 的要不要写 type: "stdio" */
+  remoteType: z.string().default(''),
+  stdioType: z.boolean().default(false),
+  /** 请求头写在哪个字段 */
+  headersKey: z.string().default('headers'),
+})
+export type McpStore = z.infer<typeof McpStore>
+
 /** 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件 */
 export function mcpConfig(spec: McpSpec, name: string, url: string) {
   const fillStr = (s: string) => s.replaceAll('{name}', name).replaceAll('{url}', url)
@@ -142,6 +162,8 @@ export const CliSpec = z.object({
    * （路径 → JSON 内容）。里面的 {url} 换成工具地址，{name} 换成工具名。不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
+  mcpStore: McpStore.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
   auth: CliAuth.optional(),
   /** 界面文案的翻译：{ "en": { "中文": "English" } } */
@@ -259,6 +281,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     envExample: spec.envExample,
     env: spec.env,
     mcp: spec.mcp,
+    mcpStore: spec.mcpStore,
     auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,
   }

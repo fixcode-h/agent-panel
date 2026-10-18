@@ -3291,6 +3291,125 @@ try {
   }
   step('访问令牌：打开后没带令牌的请求被拒绝，用带令牌的地址打开的浏览器拿到 Cookie')
 
+  // Skills / 命令库：读写各 CLI 用户目录下的 Skill 和命令，复制给别的 CLI 时命令自动换格式
+  {
+    const lib = (kind) => call('GET', `/library?kind=${kind}`)
+    const put = (b) => call('PUT', '/library/file', b)
+    await put({
+      cli: 'claude',
+      kind: 'skill',
+      name: 'lib-demo',
+      create: true,
+      content: '---\nname: lib-demo\ndescription: 库里的测试 Skill\n---\n\n步骤\n',
+    })
+    const skillDir = path.join(homeDir, '.claude', 'skills', 'lib-demo')
+    writeFileSync(path.join(skillDir, 'notes.md'), '附带文件')
+    const listed = (await lib('skill')).items.find((i) => i.cli === 'claude' && i.name === 'lib-demo')
+    assert.equal(listed.description, '库里的测试 Skill')
+    assert.deepEqual((await call('GET', '/library/file?cli=claude&kind=skill&name=lib-demo')).files, ['notes.md'])
+    await assert.rejects(
+      put({ cli: 'claude', kind: 'skill', name: 'lib-demo', create: true, content: 'x' }),
+      /已经有了/,
+    )
+    await assert.rejects(put({ cli: 'claude', kind: 'skill', name: '../evil', content: 'x' }), /名字/)
+    // 复制给 Codex：整个文件夹带过去；已有同名的不覆盖
+    let cp = await call('POST', '/library/copy', { cli: 'claude', kind: 'skill', name: 'lib-demo', to: ['codex'] })
+    assert.deepEqual(cp.done, ['codex'])
+    assert.ok(existsSync(path.join(homeDir, '.codex', 'skills', 'lib-demo', 'notes.md')))
+    cp = await call('POST', '/library/copy', { cli: 'claude', kind: 'skill', name: 'lib-demo', to: ['codex'] })
+    assert.deepEqual(cp.skipped, ['codex'])
+    // 命令：Claude Code 是 md，Gemini CLI 是 toml
+    await put({
+      cli: 'claude',
+      kind: 'command',
+      name: 'lib-cmd',
+      create: true,
+      content: '---\ndescription: 测试命令\n---\n做点事 $ARGUMENTS\n',
+    })
+    await call('POST', '/library/copy', { cli: 'claude', kind: 'command', name: 'lib-cmd', to: ['gemini'] })
+    const toml = readFileSync(path.join(homeDir, '.gemini', 'commands', 'lib-cmd.toml'), 'utf8')
+    assert.match(toml, /description = "测试命令"/)
+    assert.ok(toml.includes('{{args}}'))
+    assert.ok((await lib('command')).items.some((i) => i.cli === 'gemini' && i.name === 'lib-cmd'))
+    await call('DELETE', '/library/file?cli=gemini&kind=command&name=lib-cmd')
+    await call('DELETE', '/library/file?cli=claude&kind=skill&name=lib-demo')
+    assert.ok(!existsSync(skillDir), '删除 Skill 连文件夹一起删')
+    assert.ok(existsSync(path.join(homeDir, '.codex', 'skills', 'lib-demo')), '只删选中的 CLI 里的那一份')
+  }
+  step('Skills / 命令库：新建、列出、复制给别的 CLI（命令换格式）、删除，名字不能越出目录')
+
+  // MCP 工具：直接读写各 CLI 自己的配置文件，其他配置原样保留
+  {
+    const codexToml = path.join(homeDir, '.codex', 'config.toml')
+    mkdirSync(path.dirname(codexToml), { recursive: true })
+    writeFileSync(codexToml, 'model = "gpt-5"\n\n[mcp_servers.old]\ncommand = "old-cmd"\n')
+    writeFileSync(path.join(homeDir, '.claude.json'), JSON.stringify({ theme: 'dark', mcpServers: {} }))
+    // 一个最小的 stdio MCP 服务，用来测试「测试连接」
+    const mcpJs = path.join(tmp, 'mini-mcp.mjs')
+    writeFileSync(
+      mcpJs,
+      `import readline from 'node:readline'
+readline.createInterface({ input: process.stdin }).on('line', (l) => {
+  const m = JSON.parse(l)
+  if (m.method === 'initialize') console.log(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { serverInfo: { name: 'mini' }, capabilities: {} } }))
+  if (m.method === 'tools/list') console.log(JSON.stringify({ jsonrpc: '2.0', id: m.id, result: { tools: [{ name: 'hello', description: '打招呼' }] } }))
+})`,
+    )
+    const server = {
+      name: 'mini',
+      transport: 'stdio',
+      command: process.execPath,
+      args: [mcpJs],
+      env: { A: '1' },
+      url: '',
+      headers: {},
+    }
+    const t0 = await call('POST', '/mcp-tools/test', server)
+    assert.equal(t0.ok, true, JSON.stringify(t0))
+    assert.deepEqual(t0.tools, [{ name: 'hello', description: '打招呼' }])
+    assert.equal((await call('POST', '/mcp-tools/test', { ...server, command: 'no-such-cmd-xyz' })).ok, false)
+    let ov = await call('GET', '/mcp-tools')
+    assert.deepEqual(
+      ov.servers.map((x) => [x.name, x.clis]),
+      [['old', ['codex']]],
+    )
+    ov = await call('PUT', '/mcp-tools/mini', { server, clis: ['claude', 'codex', 'gemini'] })
+    assert.deepEqual(ov.servers.find((x) => x.name === 'mini').clis, ['claude', 'codex', 'gemini'])
+    const cj = JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8'))
+    assert.equal(cj.theme, 'dark', 'Claude Code 配置里别的内容保留')
+    assert.deepEqual(cj.mcpServers.mini, { type: 'stdio', command: process.execPath, args: [mcpJs], env: { A: '1' } })
+    const tomlText = readFileSync(codexToml, 'utf8')
+    assert.ok(tomlText.includes('model = "gpt-5"') && tomlText.includes('[mcp_servers.old]'))
+    assert.ok(tomlText.includes('[mcp_servers.mini.env]'))
+    // 远程地址：Gemini CLI 写 httpUrl，Claude Code 写 type: http
+    const remote = {
+      name: 'web',
+      transport: 'http',
+      command: '',
+      args: [],
+      env: {},
+      url: 'https://x.example/mcp',
+      headers: { A: 'b' },
+    }
+    await call('PUT', '/mcp-tools/web', { server: remote, clis: ['claude', 'gemini'] })
+    const gs = JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
+    assert.equal(gs.mcpServers.web.httpUrl, 'https://x.example/mcp')
+    assert.equal(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.web.type, 'http')
+    // 只留 Codex：别的 CLI 里的同名工具被移除
+    await call('PUT', '/mcp-tools/mini', { server, clis: ['codex'] })
+    assert.equal(JSON.parse(readFileSync(path.join(homeDir, '.claude.json'), 'utf8')).mcpServers.mini, undefined)
+    await call('DELETE', '/mcp-tools/mini')
+    await call('DELETE', '/mcp-tools/web')
+    ov = await call('GET', '/mcp-tools')
+    assert.deepEqual(
+      ov.servers.map((x) => x.name),
+      ['old'],
+    )
+    assert.ok(readFileSync(codexToml, 'utf8').includes('[mcp_servers.old]'))
+    await assert.rejects(call('PUT', '/mcp-tools/bad name', { server: { ...server, name: 'bad name' }, clis: [] }))
+  }
+  step('MCP 工具：读写 Claude Code / Codex / Gemini CLI 的配置文件，保留其他内容，测试连接能列出工具')
+
   // Windows 托盘程序（AgentPanel.exe）和服务的约定：启动完成输出地址，托盘关掉输入时服务退出
   {
     const trayPort = port + 1

@@ -3,6 +3,7 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { demoAccounts } from './demo-accounts'
+import { demoLibrary } from './demo-library'
 import { z } from 'zod'
 import {
   Agent,
@@ -649,6 +650,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return Settings.parse((d.settings ??= Settings.parse({})))
   }
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
+  if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {})
   if (res === 'clis') {
     if (id === 'jobs' && !sub) {
       const latest = new Map<string, CliInstallJob>()

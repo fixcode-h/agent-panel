@@ -301,4 +301,13 @@ export const EN_SERVER: Record<string, string> = {
   '项目不是 git 仓库，没法审查改动': "The project isn't a git repository, so changes can't be reviewed",
   '审查相对 {branch} 的改动': 'Review changes against {branch}',
   审查还没提交的改动: 'Review uncommitted changes',
+  '这个 CLI 没有用户级的{kind}目录': 'This CLI has no user-level {kind} directory',
+  '名字只能用字母、数字、. _ -': 'Names may only use letters, digits, . _ -',
+  名字不对: 'Invalid name',
+  没有这一项: 'No such item',
+  '「{name}」已经有了': '“{name}” already exists',
+  '{file} 不是有效的 JSON，没有改动': '{file} is not valid JSON; nothing was changed',
+  没有回应: 'No response',
+  要填启动命令: 'A start command is required',
+  '地址要以 http:// 或 https:// 开头': 'The URL must start with http:// or https://',
 }

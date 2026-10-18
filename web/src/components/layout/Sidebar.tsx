@@ -24,8 +24,10 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Palette,
+  Plug,
   Plus,
   Settings,
+  Sparkles,
   Sun,
   Workflow,
   X,
@@ -79,6 +81,8 @@ export function Logo({ className }: { className?: string }) {
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
   { id: 'agents', label: 'Agent', icon: Bot },
   { id: 'workflows', label: t('工作流'), icon: Workflow },
+  { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
+  { id: 'mcp', label: t('MCP 工具'), icon: Plug },
 ]
 
 /** 侧栏任务的更新时间：今天显示时刻，其余显示几天前或日期 */
