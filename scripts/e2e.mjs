@@ -2296,6 +2296,8 @@ try {
     )
     assert.ok(d.components.some((c) => c.Name === 'WBP_Tag' && c.DesignSize.X === 64))
     assert.equal(d.style, 'clean')
+    // 没在改设计时补充不了：告诉页面改成排队
+    assert.deepEqual(await call('POST', `/designs/${design.id}/steer`, { text: '再大一点' }), { steered: false })
     const mcpAsk = calls()
       .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
       .at(-1)

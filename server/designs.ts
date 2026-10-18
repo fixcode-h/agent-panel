@@ -49,7 +49,7 @@ import { webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
-import { invokeCli } from './exec/invoke.ts'
+import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
@@ -92,6 +92,8 @@ type Job = DesignJob & {
   enqueue?: (img: DesignImage, revision?: string) => void
   /** 审批和提问放在哪个会话下（design:<设计 id>），页面按它取回来显示 */
   scope: string
+  /** AI 正在改设计时控制 CLI：把用户新说的话补充给这一轮 */
+  control?: CliControl
 }
 
 const now = () => new Date().toISOString()
@@ -503,6 +505,7 @@ ${prompt}`,
         const r = await invokeCli({
           askUser: asks.askUser,
           onAsk: asks.onAsk,
+          onControl: (c) => (job.control = c),
           cliId,
           command: cs.command,
           build: {
@@ -561,7 +564,10 @@ ${prompt}`,
             job.parts = parts
             job.outChars = text.length
           },
-        }).finally(asks.done)
+        }).finally(() => {
+          asks.done()
+          job.control = undefined
+        })
         if (r.killed === 'stopped') throw new Error(t('已停止'))
         if (r.spawnError)
           throw new Error(
@@ -811,7 +817,7 @@ ${prompt}`,
 
   const view = (j?: Job): DesignJob | null => {
     if (!j) return null
-    const { abort, enqueue, scope, ...rest } = j
+    const { abort, enqueue, scope, control, ...rest } = j
     return rest
   }
 
@@ -1246,6 +1252,20 @@ ${prompt}`,
           throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // AI 正在改设计时用户又说了话：补充给正在进行的这一轮；CLI 不支持插话或这一轮已经结束时告诉页面改成排队
+    .post('/:id/steer', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { text = '' } = (await c.req.json().catch(() => ({}))) as { text?: string }
+      const v = String(text).trim().slice(0, 20000)
+      if (!v) return bad(c, t('内容不能为空'))
+      const job = jobs.get(d.id)
+      const ok = job?.status === 'running' && job.phase === 'design' && !!job.control && (await job.control.steer(v))
+      if (!ok) return c.json({ steered: false })
+      d.messages.push({ id: randomUUID(), role: 'user', text: v, at: now() })
+      await save(d)
+      return c.json({ steered: true })
     })
     // 让 CLI 总结这个设计的整体风格；页面上确认、改名后再存进风格库
     .post('/:id/extract-style', async (c) => {

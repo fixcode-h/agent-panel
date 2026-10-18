@@ -161,7 +161,6 @@ export const EN_AGENTS: Record<string, string> = {
   '格式校验通过，右侧是预览': 'Format validated, preview on the right',
   描述: 'Description',
   继续说要改的地方: 'Describe further changes',
-  'Enter 发送': 'Enter to send',
   停止: 'Stop',
   发送: 'Send',
   应用后会覆盖当前内容: 'Applying will overwrite the current content',

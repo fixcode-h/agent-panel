@@ -7,14 +7,12 @@ import {
   GitBranch,
   GitFork,
   Loader2,
-  MessageSquarePlus,
   MessageSquareText,
   MoreHorizontal,
   PanelRight,
   Undo2,
   Pencil,
   RotateCw,
-  Pause,
   Trash2,
   X,
   ListPlus,
@@ -45,7 +43,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { useAttachments, useFileMention } from '@/components/chat/Attachments'
-import { ChatComposer, SendButton, useDraft } from '@/components/chat/ChatComposer'
+import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
@@ -667,71 +665,32 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                     )}
                   </>
                 }
-                actions={
-                  <>
-                    {running ? (
-                      <>
-                        {text.trim() ? (
-                          <>
-                            <Button
-                              size="sm"
-                              variant={canSteer ? 'ghost' : 'secondary'}
-                              className="rounded-lg"
-                              disabled={sending}
-                              title={canSteer ? t('这一轮完成后接着处理') : t('这一轮完成后接着处理（Enter）')}
-                              onClick={() => send('queue')}
-                            >
-                              <ListPlus className="h-3.5 w-3.5" />
-                              {t('排队')}
-                            </Button>
-                            {canSteer && (
-                              <Button
-                                size="sm"
-                                variant="secondary"
-                                className="rounded-lg"
-                                disabled={sending}
-                                title={t('不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）')}
-                                onClick={() => send('steer')}
-                              >
-                                <MessageSquarePlus className="h-3.5 w-3.5" />
-                                {t('补充')}
-                              </Button>
-                            )}
-                          </>
-                        ) : (
-                          <Button size="sm" variant="secondary" className="rounded-lg" onClick={stop}>
-                            <Pause className="h-3.5 w-3.5" />
-                            {t('暂停')}
-                          </Button>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {canResume && (
-                          <Button
-                            size="sm"
-                            variant="secondary"
-                            className="rounded-lg"
-                            disabled={resuming}
-                            onClick={() => resume()}
-                            title={
-                              task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
-                                ? t('从没完成的节点继续执行')
-                                : t('重新执行最后一条要求')
-                            }
-                          >
-                            {resuming ? (
-                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            ) : (
-                              <RotateCw className="h-3.5 w-3.5" />
-                            )}
-                            {task.status === 'failed' ? t('重试') : t('继续执行')}
-                          </Button>
-                        )}
-                        <SendButton onClick={() => void send()} disabled={!text.trim() || sending} sending={sending} />
-                      </>
-                    )}
-                  </>
+                running={running}
+                onStop={stop}
+                onQueue={() => void send('queue')}
+                leading={
+                  !running &&
+                  canResume && (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      className="rounded-lg"
+                      disabled={resuming}
+                      onClick={() => resume()}
+                      title={
+                        task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
+                          ? t('从没完成的节点继续执行')
+                          : t('重新执行最后一条要求')
+                      }
+                    >
+                      {resuming ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <RotateCw className="h-3.5 w-3.5" />
+                      )}
+                      {task.status === 'failed' ? t('重试') : t('继续执行')}
+                    </Button>
+                  )
                 }
                 label={t('继续输入要求')}
                 placeholder={

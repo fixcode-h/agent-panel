@@ -8,7 +8,9 @@ import {
   FolderOpen,
   Globe,
   Loader2,
+  ListPlus,
   Pencil,
+  X,
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
@@ -468,10 +470,49 @@ export function DesignChat({
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [messages.length, job?.text, job?.parts, job?.phase, running])
 
+  // 排队的要求：这一轮结束后按顺序发出去
+  const [queue, setQueue] = useState<{ id: string; text: string; attachments: Attachment[] }[]>([])
+  const enqueue = () => {
+    const v = text.trim()
+    if ((!v && !files.attachments.length) || files.uploading) return
+    setQueue((q) => [...q, { id: crypto.randomUUID(), text: v, attachments: files.attachments }])
+    setText('')
+    files.clear()
+  }
+  useEffect(() => {
+    const next = queue[0]
+    if (running || sending || !next || askDesign) return
+    setQueue((q) => q.slice(1))
+    setSending(true)
+    stick.current = true
+    void onSend(next.text, run, next.attachments, { askUser }).finally(() => setSending(false))
+    // 只在这一轮结束、队列变化时看要不要发下一条
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, sending, queue, askDesign])
+
   const send = async () => {
     const v = text.trim()
+    // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队
+    if (running) {
+      if (!v || sending) return
+      if (files.attachments.length || job?.phase !== 'design') return enqueue()
+      setSending(true)
+      try {
+        const r = await api.steerDesign(designId, v)
+        if (r.steered) setText('')
+        else {
+          enqueue()
+          toast(t('这一轮不能补充，已改成排队'))
+        }
+      } catch (e) {
+        toast.error((e as Error).message)
+      } finally {
+        setSending(false)
+      }
+      return
+    }
     // 只有标注、没写文字也能发：按标注改
-    if ((!v && !annotations.length && !files.attachments.length) || running || sending || files.uploading) return
+    if ((!v && !annotations.length && !files.attachments.length) || sending || files.uploading) return
     setSending(true)
     stick.current = true
     try {
@@ -584,6 +625,28 @@ export function DesignChat({
         ) : (
           running && job && <JobProgress job={job} />
         )}
+        {queue.length > 0 && (
+          <div className="mb-2 flex flex-col gap-1 rounded-xl border bg-card px-3 py-2 text-[12.5px] shadow-card">
+            <span className="text-[11.5px] text-subtle">{t('排队中，这一轮结束后发送')}</span>
+            {queue.map((q) => (
+              <div key={q.id} className="group flex min-w-0 items-center gap-2">
+                <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                <span className="min-w-0 flex-1 truncate">
+                  {q.text || t('{n} 个附件', { n: q.attachments.length })}
+                </span>
+                <button
+                  type="button"
+                  aria-label={t('撤回')}
+                  title={t('撤回')}
+                  onClick={() => setQueue((l) => l.filter((x) => x.id !== q.id))}
+                  className="grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-fg"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         <div className="flex min-w-0 items-center pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
         </div>
@@ -631,12 +694,13 @@ export function DesignChat({
             }
             running={running}
             onStop={onStop}
+            onQueue={enqueue}
             sending={sending}
-            canSend={!!text.trim() || annotations.length > 0 || files.attachments.length > 0}
+            canSend={running ? !!text.trim() : !!text.trim() || annotations.length > 0 || files.attachments.length > 0}
             label={t('告诉 AI 要做什么')}
             placeholder={
               running
-                ? t('AI 正在处理，完成后可以继续说')
+                ? t('AI 正在处理：发送会补充给这一轮，也可以排队')
                 : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
                   ? t('写修改意见，发送后按图上的标记重新生成图片')
                   : annotations.length

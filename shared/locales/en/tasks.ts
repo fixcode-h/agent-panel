@@ -245,7 +245,6 @@ export const EN_TASKS: Record<string, string> = {
   '查看「{path}」的改动': 'View changes to "{path}"',
   // 执行中排队、打断
   '执行中也可以输入，这一轮完成后接着处理': 'You can type while it runs; it will be handled after this turn',
-  '这一轮完成后接着处理（Enter）': 'Handle after this turn (Enter)',
   排队: 'Queue',
   '排队中 · 任务没在执行，点「继续执行」后处理':
     'Queued · the task is not running; it will be handled after you resume',
@@ -309,10 +308,6 @@ export const EN_TASKS: Record<string, string> = {
   撤回到这里: 'Rewind to here',
   '执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做':
     'You can type while it runs; the agent takes it into account and keeps going',
-  这一轮完成后接着处理: 'Handle after this turn finishes',
-  '不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）':
-    'Give this to the running agent without stopping; it keeps going with the current task (Enter)',
-  补充: 'Add info',
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
@@ -337,4 +332,11 @@ export const EN_TASKS: Record<string, string> = {
   '不回答，让 AI 自己决定': 'Skip and let the AI decide',
   '你回答了：{answers}': 'You answered: {answers}',
   '你没有回答「{title}」': 'You skipped "{title}"',
+  '排队中，这一轮结束后发送：{text}': 'Queued, sends after this turn: {text}',
+  等这一轮结束再发: 'Send after this turn finishes',
+  '补充给正在进行的这一轮（Enter）': 'Add to the current turn (Enter)',
+  '这一轮不能补充，已改成排队': "Can't add to this turn, queued instead",
+  '排队中，这一轮结束后发送': 'Queued, sends after this turn',
+  '{n} 个附件': '{n} attachments',
+  'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
 }

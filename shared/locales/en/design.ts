@@ -123,7 +123,6 @@ export const EN_DESIGN: Record<string, string> = {
     'An inventory: a 5×4 grid on the left, details of the selected item on the right, with the slot as a user widget',
   '做一个战斗 HUD：左上角头像、血条和蓝条，右下角四个技能按钮带冷却':
     'A combat HUD: portrait with health and mana bars at the top left, four skill buttons with cooldowns at the bottom right',
-  'AI 正在处理，完成后可以继续说': 'The AI is working. You can continue once it’s done',
   '告诉 AI 要做什么': 'Tell the AI what to do',
   每张图生成几版: 'Versions per image',
   '每张 {n} 版': '{n} per image',

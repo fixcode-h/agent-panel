@@ -1090,6 +1090,12 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
     if (d.job) d.job.status = 'done'
     return d.job
   }
+  // 和真的一样：正在改设计时把话补充给这一轮
+  if (sub === 'steer') {
+    if (d.job?.status !== 'running' || d.job.phase !== 'design') return { steered: false }
+    d.messages.push({ id: randomId(), role: 'user', text: String(body.text ?? ''), at: now() })
+    return { steered: true }
+  }
   if (sub === 'images') {
     const data = String(body.data)
     const old = body.imageId ? d.images.find((i) => i.id === body.imageId) : undefined

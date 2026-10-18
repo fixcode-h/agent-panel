@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { ArrowUp, Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Square, Wand2, X } from 'lucide-react'
+import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Wand2, X } from 'lucide-react'
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
@@ -19,6 +19,8 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
 import { ChatReply, FoldedRun, type Author } from '@/components/tasks/Messages'
 import { UserMessage } from '@/components/chat/ChatMessage'
+import { ChatComposer } from '@/components/chat/ChatComposer'
+import { useAttachments } from '@/components/chat/Attachments'
 import { modelOptions } from '@/components/agents/ModelSelect'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
@@ -468,6 +470,25 @@ export function AssistDialog({
   const stop = async () => {
     if (job) await api.stopAssist(job.id).catch(() => {})
   }
+  // 生成中说的话：AI 创建一次生成完一份配置，不能中途补充，排队等这一轮结束再发
+  const [queue, setQueue] = useState<string[]>([])
+  const files = useAttachments()
+  const enqueue = () => {
+    if (!text.trim()) return
+    setQueue((q) => [...q, text.trim()])
+    setText('')
+  }
+  // 正在发出一条（还没拿到生成任务）：别接着发下一条
+  const [starting, setStarting] = useState(false)
+  useEffect(() => {
+    if (running || starting || !queue.length) return
+    const [next, ...rest] = queue
+    setQueue(rest)
+    setStarting(true)
+    void send(next).finally(() => setStarting(false))
+    // 只在这一轮结束、队列变化时发下一条
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, starting, queue])
 
   const apply = async () => {
     if (!latest) return
@@ -648,59 +669,47 @@ export function AssistDialog({
                 </div>
                 <div className="p-3">
                   {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
-                  <div className="rounded-xl border border-line-strong bg-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">
-                    <textarea
-                      rows={2}
-                      value={text}
-                      aria-label={t('描述')}
-                      onChange={(e) => setText(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                          e.preventDefault()
-                          send()
-                        }
-                      }}
-                      placeholder={latest ? t('继续说要改的地方') : L.placeholder}
-                      className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
-                    />
-                    <div className="flex items-center gap-1 px-2.5 pb-2">
-                      <AskToggle
-                        value={askUser}
-                        onChange={(v) => {
-                          setAskUser(v)
-                          if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
-                        }}
-                      />
-                      {settings && cliDef && (
-                        <RunPicker
-                          def={cliDef}
-                          settings={settings}
-                          model={model}
-                          effort={effort}
-                          onModel={setModel}
-                          onEffort={setEffort}
-                          disabled={running}
+                  {queue.length > 0 && (
+                    <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-[12px] text-muted">
+                      {t('排队中，这一轮结束后发送：{text}', { text: queue.join(' / ') })}
+                    </p>
+                  )}
+                  <ChatComposer
+                    size="sm"
+                    value={text}
+                    onChange={setText}
+                    onSubmit={() => (running ? enqueue() : void send())}
+                    files={files}
+                    attach={false}
+                    running={running}
+                    onStop={() => void stop()}
+                    onQueue={enqueue}
+                    canSend={!!text.trim()}
+                    label={t('描述')}
+                    placeholder={latest ? t('继续说要改的地方') : L.placeholder}
+                    tools={
+                      <>
+                        <AskToggle
+                          value={askUser}
+                          onChange={(v) => {
+                            setAskUser(v)
+                            if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
+                          }}
                         />
-                      )}
-                      <span className="ml-2 hidden shrink-0 text-[11px] text-subtle sm:inline">{t('Enter 发送')}</span>
-                      {running ? (
-                        <Button size="sm" variant="secondary" className="ml-auto" onClick={stop}>
-                          <Square className="h-3 w-3 fill-current" />
-                          {t('停止')}
-                        </Button>
-                      ) : (
-                        <Button
-                          size="icon-sm"
-                          className="ml-auto"
-                          aria-label={t('发送')}
-                          disabled={!text.trim()}
-                          onClick={() => send()}
-                        >
-                          <ArrowUp className="h-4 w-4" />
-                        </Button>
-                      )}
-                    </div>
-                  </div>
+                        {settings && cliDef && (
+                          <RunPicker
+                            def={cliDef}
+                            settings={settings}
+                            model={model}
+                            effort={effort}
+                            onModel={setModel}
+                            onEffort={setEffort}
+                            disabled={running}
+                          />
+                        )}
+                      </>
+                    }
+                  />
                 </div>
               </section>
 

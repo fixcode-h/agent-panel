@@ -2,7 +2,7 @@
 // 任务对话和 UI 设计的对话共用这一个，不同的地方通过插槽扩展：
 // menus（「/」「@」弹出的列表）、above（输入框上面的标注等）、tools（左下角的开关和选项）、actions（换掉右下角的按钮）
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { ArrowUp, Loader2, Square } from 'lucide-react'
+import { ArrowUp, ListPlus, Loader2, Square } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { AttachMenu, AttachmentChips, DropHint, useDropPaste, type useAttachments } from './Attachments'
@@ -54,8 +54,10 @@ export function ChatComposer({
   attach,
   tools,
   actions,
+  leading,
   running,
   onStop,
+  onQueue,
   sending,
   canSend,
   size = 'md',
@@ -82,10 +84,17 @@ export function ChatComposer({
   attach?: { onMention?: () => void; canMention?: boolean; self?: string } | false
   /** 「+」后面的开关和选项 */
   tools?: React.ReactNode
-  /** 换掉右下角默认的发送 / 停止按钮 */
+  /** 换掉右下角默认的按钮 */
   actions?: React.ReactNode
+  /** 右下角默认按钮前面再加的按钮（例如「重试」） */
+  leading?: React.ReactNode
+  /**
+   * 正在回复时：没写东西只显示停止；写了东西显示「排队」「发送」「停止」——
+   * 发送（Enter）是补充给正在进行的这一轮，排队是等这一轮结束再发
+   */
   running?: boolean
   onStop?: () => void
+  onQueue?: () => void
   sending?: boolean
   /** 能不能发：默认是有文字或附件 */
   canSend?: boolean
@@ -96,7 +105,8 @@ export function ChatComposer({
   const ta = taRef ?? own
   const drop = useDropPaste(files.add)
   const sm = size === 'sm'
-  const ready = (canSend ?? (!!value.trim() || files.attachments.length > 0)) && !sending && !files.uploading
+  const typed = canSend ?? (!!value.trim() || files.attachments.length > 0)
+  const ready = typed && !sending && !files.uploading
   // 跟着内容长高，到上限后出滚动条
   useLayoutEffect(() => {
     const el = ta.current
@@ -170,25 +180,59 @@ export function ChatComposer({
         )}
         {tools}
         <span className="flex-1" />
+        {leading}
         {actions ??
-          (running && onStop ? (
-            <button
-              type="button"
-              onClick={onStop}
-              aria-label={t('停止')}
-              title={t('停止')}
-              className={cn(
-                'grid shrink-0 cursor-pointer place-items-center rounded-full bg-fg text-bg hover:opacity-85',
-                sm ? 'h-7 w-7' : 'h-8 w-8',
+          (running ? (
+            <>
+              {typed && onQueue && (
+                <button
+                  type="button"
+                  onClick={onQueue}
+                  disabled={sending}
+                  title={t('等这一轮结束再发')}
+                  className={cn(
+                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-[12.5px] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
+                    sm ? 'h-7' : 'h-8',
+                  )}
+                >
+                  <ListPlus className="h-3.5 w-3.5" />
+                  {t('排队')}
+                </button>
               )}
-            >
-              <Square className="h-3 w-3 fill-current" />
-            </button>
+              {typed && (
+                <SendButton
+                  onClick={onSubmit}
+                  disabled={!ready || !!disabled}
+                  sending={sending}
+                  size={size}
+                  title={t('补充给正在进行的这一轮（Enter）')}
+                />
+              )}
+              {onStop && <StopButton onClick={onStop} size={size} />}
+            </>
           ) : (
             <SendButton onClick={onSubmit} disabled={!ready || !!disabled} sending={sending} size={size} />
           ))}
       </div>
     </div>
+  )
+}
+
+/** 停止正在进行的回复 */
+export function StopButton({ onClick, size = 'md' }: { onClick: () => void; size?: 'sm' | 'md' }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={t('停止')}
+      title={t('停止')}
+      className={cn(
+        'grid shrink-0 cursor-pointer place-items-center rounded-full bg-fg text-bg hover:opacity-85',
+        size === 'sm' ? 'h-7 w-7' : 'h-8 w-8',
+      )}
+    >
+      <Square className="h-3 w-3 fill-current" />
+    </button>
   )
 }
 
@@ -198,17 +242,19 @@ export function SendButton({
   disabled,
   sending,
   size = 'md',
+  title,
 }: {
   onClick: () => void
   disabled?: boolean
   sending?: boolean
   size?: 'sm' | 'md'
+  title?: string
 }) {
   return (
     <button
       type="button"
       aria-label={t('发送')}
-      title={t('发送（Enter）')}
+      title={title ?? t('发送（Enter）')}
       disabled={disabled}
       onClick={onClick}
       className={cn(

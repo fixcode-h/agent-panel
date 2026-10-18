@@ -223,6 +223,8 @@ export const api = {
     request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),
   deleteDesign: (id: string) => request<void>(`/designs/${id}`, { method: 'DELETE' }),
   designChat: (id: string, input: DesignChatInput) => request<DesignFull>(`/designs/${id}/chat`, json('POST', input)),
+  steerDesign: (id: string, text: string) =>
+    request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
   uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),
