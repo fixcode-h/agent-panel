@@ -335,21 +335,42 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
           </p>
         ) : (
           <div className="max-h-72 overflow-y-auto">
-            {list.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => {
-                  setOpen(false)
-                  onImport(s)
-                }}
-                className="flex w-full cursor-pointer flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
-              >
-                <span className="text-[12.5px]">{s.name}</span>
-                <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">
-                  {s.summary || t('{n} 条提示词', { n: s.prompts.length })}
-                </span>
-              </button>
-            ))}
+            {/* 游戏和网页的风格分开显示 */}
+            {(['game', 'web'] as const).map((k) => {
+              const items = [
+                ...list.filter((s) => s.kind === k && !s.builtin),
+                ...list.filter((s) => s.kind === k && s.builtin),
+              ]
+              return (
+                items.length > 0 && (
+                  <div key={k} role="group" aria-label={k === 'game' ? t('游戏 UI') : t('网页 UI')}>
+                    <p className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-subtle">
+                      {k === 'game' ? t('游戏 UI') : t('网页 UI')}
+                    </p>
+                    {items.map((s) => (
+                      <button
+                        key={s.id}
+                        onClick={() => {
+                          setOpen(false)
+                          onImport(s)
+                        }}
+                        className="flex w-full cursor-pointer flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
+                      >
+                        <span className="flex items-center gap-1.5 text-[12.5px]">
+                          {s.name}
+                          {s.builtin && (
+                            <span className="rounded bg-field px-1 text-[10px] text-subtle">{t('内置')}</span>
+                          )}
+                        </span>
+                        <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">
+                          {s.summary || t('{n} 条提示词', { n: s.prompts.length })}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )
+              )
+            })}
           </div>
         )}
       </PopoverContent>

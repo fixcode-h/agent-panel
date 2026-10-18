@@ -14,11 +14,13 @@ import {
   Loader2,
   MessageSquare,
   MessagesSquare,
+  Palette,
   Paperclip,
   Plus,
   X,
 } from 'lucide-react'
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
+import type { DesignKind, SavedStyle } from '@shared/design'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
@@ -247,6 +249,8 @@ export function AttachMenu({
   onMention,
   canMention,
   onSession,
+  onStyle,
+  styleKind,
   self,
   className,
 }: {
@@ -256,6 +260,10 @@ export function AttachMenu({
   canMention: boolean
   /** 引入会话：选好的会话整理成附件交回来；不传就没有这一项 */
   onSession?: (a: Attachment) => void
+  /** 引入风格：选好的风格交回来（UI 设计的对话用）；不传就没有这一项 */
+  onStyle?: (s: SavedStyle) => void
+  /** 引入风格时只列这一类（游戏 / 网页）的风格；不写列两类，分开显示 */
+  styleKind?: DesignKind
   /** 当前会话的 id：引入列表里不列自己 */
   self?: string
   className?: string
@@ -264,7 +272,7 @@ export function AttachMenu({
   // 选了「引用项目文件」：焦点要留在输入框里弹出文件列表，不能被还给「+」按钮
   const mentioning = useRef(false)
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<'menu' | 'sessions'>('menu')
+  const [view, setView] = useState<'menu' | 'sessions' | 'styles'>('menu')
   return (
     <>
       <input
@@ -296,14 +304,24 @@ export function AttachMenu({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className={view === 'sessions' ? 'w-[340px] p-0' : 'w-[260px]'}
+          className={view === 'menu' ? 'w-[260px]' : 'w-[340px] p-0'}
           onCloseAutoFocus={(e) => {
             if (!mentioning.current) return
             mentioning.current = false
             e.preventDefault()
           }}
         >
-          {view === 'sessions' && onSession ? (
+          {view === 'styles' && onStyle ? (
+            <StylePicker
+              kind={styleKind}
+              onBack={() => setView('menu')}
+              onPick={(st) => {
+                onStyle(st)
+                setOpen(false)
+                setView('menu')
+              }}
+            />
+          ) : view === 'sessions' && onSession ? (
             <SessionPicker
               self={self}
               onBack={() => setView('menu')}
@@ -334,6 +352,13 @@ export function AttachMenu({
                   <span className="font-mono text-[11px] text-subtle">@</span>
                 </PopoverClose>
               )}
+              {onStyle && (
+                <button type="button" className={menuItem} onClick={() => setView('styles')}>
+                  <Palette className="h-4 w-4 shrink-0 text-subtle" />
+                  <span className="flex-1">{t('引入风格')}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-subtle" />
+                </button>
+              )}
               {onSession && (
                 <button type="button" className={menuItem} onClick={() => setView('sessions')}>
                   <MessagesSquare className="h-4 w-4 shrink-0 text-subtle" />
@@ -346,6 +371,104 @@ export function AttachMenu({
         </PopoverContent>
       </Popover>
     </>
+  )
+}
+
+/**
+ * 引入风格的列表：风格库里的风格（自己存的 + 内置的），游戏和网页分开显示；
+ * 选中的风格定为这个设计的整体风格，AI 按它做
+ */
+function StylePicker({
+  kind,
+  onBack,
+  onPick,
+}: {
+  kind?: DesignKind
+  onBack: () => void
+  onPick: (s: SavedStyle) => void
+}) {
+  const [list, setList] = useState<SavedStyle[] | null>(null)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    api
+      .styles()
+      .then(setList)
+      .catch(() => setList([]))
+  }, [])
+  const kw = q.trim().toLowerCase()
+  const match = (s: SavedStyle) => !kw || `${s.name} ${s.summary}`.toLowerCase().includes(kw)
+  const groups = (['game', 'web'] as const)
+    .filter((k) => !kind || k === kind)
+    .map((k) => ({
+      kind: k,
+      title: k === 'game' ? t('游戏 UI') : t('网页 UI'),
+      icon: k === 'game' ? Gamepad2 : Globe,
+      items: [
+        ...(list ?? []).filter((s) => s.kind === k && !s.builtin),
+        ...(list ?? []).filter((s) => s.kind === k && s.builtin),
+      ].filter(match),
+    }))
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={t('返回')}
+          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t('搜索风格')}
+          aria-label={t('搜索风格')}
+          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[13px] outline-none placeholder:text-subtle"
+        />
+      </div>
+      <div className="max-h-80 overflow-y-auto p-1">
+        {!list ? (
+          <Loader2 className="mx-auto my-4 h-4 w-4 animate-spin text-subtle" />
+        ) : (
+          groups.map((g) => (
+            <div key={g.kind} className="flex flex-col" role="group" aria-label={g.title}>
+              <p className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 text-[11px] font-medium text-subtle">
+                <g.icon className="h-3 w-3" />
+                {g.title}
+              </p>
+              {g.items.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  title={s.en}
+                  onClick={() => onPick(s)}
+                  className="flex w-full cursor-pointer items-start gap-2 rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
+                >
+                  <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
+                  <span className="min-w-0 flex-1">
+                    <span className="flex items-center gap-1.5 text-[13px]">
+                      <span className="truncate">{s.name}</span>
+                      {s.builtin && (
+                        <span className="shrink-0 rounded bg-field px-1 text-[10px] text-subtle">{t('内置')}</span>
+                      )}
+                    </span>
+                    {s.summary && (
+                      <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">{s.summary}</span>
+                    )}
+                  </span>
+                </button>
+              ))}
+              {!g.items.length && <p className="px-2.5 py-2 text-xs text-subtle">{t('没有匹配的风格')}</p>}
+            </div>
+          ))
+        )}
+      </div>
+      <p className="border-t px-3 py-2 text-[11px] leading-relaxed text-subtle">
+        {t('选中后这个设计按这个风格来，发送时一起交给 AI。')}
+      </p>
+    </div>
   )
 }
 

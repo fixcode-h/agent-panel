@@ -9,6 +9,7 @@ import {
   Globe,
   Loader2,
   ListPlus,
+  Palette,
   Pencil,
   X,
   RefreshCw,
@@ -16,7 +17,15 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { extensionSelfReload } from '@shared/design'
-import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource, ReplyPart } from '@shared/design'
+import type {
+  Annotation,
+  BrowserStatus,
+  DesignJob,
+  DesignMessage,
+  ImageSource,
+  ReplyPart,
+  SavedStyle,
+} from '@shared/design'
 import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useScopedSetting } from '@/lib/useScopedSetting'
@@ -490,8 +499,11 @@ export function DesignChat({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [running, sending, queue, askDesign])
 
+  // 从「+」里引入的风格：随下一条消息一起发出，设计就按它的整体风格做
+  const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
+  const styleText = styleRef ? t('使用「{name}」风格', { name: styleRef.name }) : ''
   const send = async () => {
-    const v = text.trim()
+    const v = text.trim() || (!running ? styleText : '')
     // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队
     if (running) {
       if (!v || sending) return
@@ -516,9 +528,10 @@ export function DesignChat({
     setSending(true)
     stick.current = true
     try {
-      if (await onSend(v, run, files.attachments, { askUser })) {
+      if (await onSend(v, run, files.attachments, { askUser, ...(styleRef ? { style: styleRef.en } : {}) })) {
         setText('')
         files.clear()
+        setStyleRef(null)
       }
     } finally {
       setSending(false)
@@ -663,13 +676,29 @@ export function DesignChat({
             onSync={slash.sync}
             onKeyDown={slash.onKeyDown}
             above={
-              annotations.length > 0 && (
-                <div className="border-b px-2.5 pt-2.5 pb-2">
-                  <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
+              (annotations.length > 0 || styleRef) && (
+                <div className="flex flex-col gap-1.5 border-b px-2.5 pt-2.5 pb-2">
+                  {styleRef && (
+                    <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[12px] text-accent">
+                      <Palette className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate" title={styleRef.en}>
+                        {t('风格：{name}', { name: styleRef.name })}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label={t('不用这个风格')}
+                        onClick={() => setStyleRef(null)}
+                        className="grid h-4 w-4 shrink-0 cursor-pointer place-items-center rounded hover:bg-accent/15"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+                  {annotations.length > 0 && <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />}
                 </div>
               )
             }
-            attach={{ self: designId }}
+            attach={{ self: designId, onStyle: setStyleRef, styleKind: kind }}
             tools={
               <>
                 <AskToggle
@@ -696,7 +725,11 @@ export function DesignChat({
             onStop={onStop}
             onQueue={enqueue}
             sending={sending}
-            canSend={running ? !!text.trim() : !!text.trim() || annotations.length > 0 || files.attachments.length > 0}
+            canSend={
+              running
+                ? !!text.trim()
+                : !!text.trim() || !!styleRef || annotations.length > 0 || files.attachments.length > 0
+            }
             label={t('告诉 AI 要做什么')}
             placeholder={
               running

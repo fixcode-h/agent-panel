@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ChevronRight, Gamepad2, Globe, Loader2, Palette, Trash2 } from 'lucide-react'
+import { ChevronRight, Copy, Gamepad2, Globe, Loader2, Palette, Trash2 } from 'lucide-react'
 import { PROMPT_CATEGORY_LABEL, type SavedStyle, type SavedStyleInput } from '@shared/design'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -53,26 +53,63 @@ export function StylesSettings() {
       </div>
     )
 
+  const copy = async (s: SavedStyle) => {
+    try {
+      const c = await api.createStyle({
+        name: `${s.name} ${t('（副本）')}`.slice(0, 40),
+        kind: s.kind,
+        summary: s.summary,
+        en: s.en,
+        prompts: s.prompts,
+      })
+      setList((l) => (l ? [c, ...l] : l))
+      toast.success(t('已复制到「我的风格」，可以改了'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const kinds = [
+    { kind: 'game' as const, title: t('游戏 UI'), icon: Gamepad2 },
+    { kind: 'web' as const, title: t('网页 UI'), icon: Globe },
+  ]
+
   return (
-    <div className="flex flex-col gap-4 pt-2">
+    <div className="flex flex-col gap-6 pt-2">
       <p className="text-[13px] leading-relaxed text-muted">
         {t(
-          '从 UI 设计里存下来的整体风格。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里也能直接套用，项目的美术提示词也能从这里导入。',
+          '整体美术风格库。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里能直接套用，AI 输入框的「+」里能引入，项目的美术提示词也能从这里导入。程序内置了一批常用风格（只读，可以复制成自己的再改），也能把自己设计里的风格存进来。',
         )}
       </p>
-      {!list.length ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed px-6 py-10 text-center">
-          <Palette className="h-6 w-6 text-subtle" />
-          <p className="text-[13px] font-medium">{t('还没有保存的风格')}</p>
-          <p className="max-w-[360px] text-[12.5px] leading-relaxed text-subtle">
-            {t('在 UI 设计里打开风格设置，点「存到风格库」，AI 会总结这个设计的风格存进来。')}
-          </p>
-        </div>
-      ) : (
-        list.map((s) => (
-          <StyleCard key={s.id} s={s} onPatch={(p) => void patch(s, p)} onRemove={() => setRemoving(s)} />
-        ))
-      )}
+      {/* 游戏和网页的风格分开：每类里自己存的在前，内置的在后 */}
+      {kinds.map(({ kind, title, icon: Icon }) => {
+        const mine = list.filter((x) => x.kind === kind && !x.builtin)
+        const builtin = list.filter((x) => x.kind === kind && x.builtin)
+        return (
+          <section key={kind} className="flex flex-col gap-3" aria-label={title}>
+            <h3 className="flex items-center gap-2 border-b pb-2 text-[14px] font-medium">
+              <Icon className="h-4 w-4 text-accent" />
+              {title}
+              <span className="text-[12px] font-normal text-subtle">
+                {t('{n} 个', { n: mine.length + builtin.length })}
+              </span>
+            </h3>
+            <h4 className="text-[12px] font-medium text-subtle">{t('我的风格')}</h4>
+            {mine.length ? (
+              mine.map((s) => (
+                <StyleCard key={s.id} s={s} onPatch={(p) => void patch(s, p)} onRemove={() => setRemoving(s)} />
+              ))
+            ) : (
+              <p className="rounded-xl border border-dashed px-4 py-4 text-[12.5px] leading-relaxed text-subtle">
+                {t('还没有自己的风格：在 UI 设计的风格设置里点「存到风格库」，或复制一个内置的来改。')}
+              </p>
+            )}
+            <h4 className="pt-2 text-[12px] font-medium text-subtle">{t('内置风格')}</h4>
+            {builtin.map((s) => (
+              <StyleCard key={s.id} s={s} readOnly onCopy={() => void copy(s)} />
+            ))}
+          </section>
+        )
+      })}
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
@@ -97,10 +134,15 @@ function StyleCard({
   s,
   onPatch,
   onRemove,
+  onCopy,
+  readOnly,
 }: {
   s: SavedStyle
-  onPatch: (p: Partial<SavedStyleInput>) => void
-  onRemove: () => void
+  onPatch?: (p: Partial<SavedStyleInput>) => void
+  onRemove?: () => void
+  /** 内置风格：复制成自己的 */
+  onCopy?: () => void
+  readOnly?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const Icon = s.kind === 'web' ? Globe : Gamepad2
@@ -114,33 +156,50 @@ function StyleCard({
           <div className="flex items-center gap-2">
             <input
               defaultValue={s.name}
+              readOnly={readOnly}
               aria-label={t('风格名称')}
               onBlur={(e) => {
                 const v = e.target.value.trim()
-                if (v && v !== s.name) onPatch({ name: v })
+                if (v && v !== s.name) onPatch?.({ name: v })
                 else e.target.value = s.name
               }}
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
-              className="h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-[14px] font-medium outline-none hover:border-line focus:border-accent focus:bg-field"
+              className={cn(
+                'h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-[14px] font-medium outline-none',
+                !readOnly && 'hover:border-line focus:border-accent focus:bg-field',
+              )}
             />
             <span className="flex shrink-0 items-center gap-1 rounded-full bg-field px-2 py-0.5 text-[11px] text-muted">
               <Icon className="h-3 w-3" />
               {s.kind === 'web' ? t('网页 UI') : t('游戏 UI')}
             </span>
-            <button
-              onClick={onRemove}
-              aria-label={t('删除')}
-              title={t('删除')}
-              className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-danger/10 hover:text-danger"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </button>
+            {readOnly ? (
+              <button
+                onClick={onCopy}
+                aria-label={t('复制到我的风格')}
+                title={t('复制到我的风格，再自己改')}
+                className="inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[12px] text-muted hover:bg-sel hover:text-fg"
+              >
+                <Copy className="h-3.5 w-3.5" />
+                {t('复制')}
+              </button>
+            ) : (
+              <button
+                onClick={onRemove}
+                aria-label={t('删除')}
+                title={t('删除')}
+                className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-danger/10 hover:text-danger"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <Textarea
             defaultValue={s.summary}
+            readOnly={readOnly}
             aria-label={t('风格说明')}
             rows={2}
-            onBlur={(e) => e.target.value.trim() !== s.summary && onPatch({ summary: e.target.value.trim() })}
+            onBlur={(e) => e.target.value.trim() !== s.summary && onPatch?.({ summary: e.target.value.trim() })}
             placeholder={t('一两句话说明这个风格')}
             className="min-h-0 resize-none border-transparent bg-transparent px-1.5 py-1 text-[12.5px] leading-relaxed text-muted hover:border-line focus:bg-field"
           />
@@ -168,9 +227,10 @@ function StyleCard({
         <div className="px-4 pb-4 pl-[58px]">
           <Textarea
             defaultValue={s.en}
+            readOnly={readOnly}
             aria-label={t('英文风格描述')}
             rows={4}
-            onBlur={(e) => e.target.value.trim() !== s.en && onPatch({ en: e.target.value.trim() })}
+            onBlur={(e) => e.target.value.trim() !== s.en && onPatch?.({ en: e.target.value.trim() })}
             className="font-mono text-[12px] leading-relaxed"
           />
         </div>

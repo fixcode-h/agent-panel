@@ -53,6 +53,7 @@ import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { normalizeGenerated, sliceSheet } from './image.ts'
+import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
@@ -665,7 +666,8 @@ ${prompt}`,
                 (facts.length ? `\n\n${facts.join('\n')}` : ''),
               input.annotations,
               project,
-              (await loadStyles()).filter((x) => x.kind === d.kind),
+              // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
+              [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
             ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
@@ -1053,7 +1055,8 @@ ${prompt}`,
     })
     .get('/browser', (c) => c.json(browserStatus()))
     // 风格库：设置里增删改，设计里存进来、套用
-    .get('/styles', async (c) => c.json(await loadStyles()))
+    // 自己存的在前，内置的（程序自带、只读）在后
+    .get('/styles', async (c) => c.json([...(await loadStyles()), ...BUILTIN_STYLES]))
     .post('/styles', async (c) => {
       const p = SavedStyleInput.safeParse(await c.req.json().catch(() => ({})))
       if (!p.success) return bad(c, z.prettifyError(p.error))
@@ -1066,6 +1069,7 @@ ${prompt}`,
     // 只改传了的字段
     .put('/styles/:sid', async (c) => {
       const body = await c.req.json().catch(() => ({}))
+      if (isBuiltinStyle(c.req.param('sid'))) return bad(c, t('内置风格不能修改，复制成自己的再改'))
       const p = SavedStyleInput.partial().safeParse(body)
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const list = await loadStyles()
@@ -1077,6 +1081,7 @@ ${prompt}`,
       return c.json(list[i])
     })
     .delete('/styles/:sid', async (c) => {
+      if (isBuiltinStyle(c.req.param('sid'))) return bad(c, t('内置风格不能删除'))
       styles = (await loadStyles()).filter((x) => x.id !== c.req.param('sid'))
       await saveStyles()
       return c.body(null, 204)

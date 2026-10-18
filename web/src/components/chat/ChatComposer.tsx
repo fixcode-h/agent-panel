@@ -3,6 +3,7 @@
 // menus（「/」「@」弹出的列表）、above（输入框上面的标注等）、tools（左下角的开关和选项）、actions（换掉右下角的按钮）
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { ArrowUp, ListPlus, Loader2, Square } from 'lucide-react'
+import type { DesignKind, SavedStyle } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { AttachMenu, AttachmentChips, DropHint, useDropPaste, type useAttachments } from './Attachments'
@@ -81,7 +82,16 @@ export function ChatComposer({
   /** 先交给「/」「@」列表处理按键；返回 true 表示处理掉了 */
   onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean
   /** 左下角「+」菜单的选项；false 不显示 */
-  attach?: { onMention?: () => void; canMention?: boolean; self?: string } | false
+  attach?:
+    | {
+        onMention?: () => void
+        canMention?: boolean
+        self?: string
+        /** 引入风格（UI 设计用）：选好的风格交回来；styleKind 限定只列哪一类 */
+        onStyle?: (s: SavedStyle) => void
+        styleKind?: DesignKind
+      }
+    | false
   /** 「+」后面的开关和选项 */
   tools?: React.ReactNode
   /** 换掉右下角默认的按钮 */
@@ -175,6 +185,8 @@ export function ChatComposer({
             canMention={!!attach?.canMention}
             onSession={files.addReady}
             self={attach?.self}
+            onStyle={attach?.onStyle}
+            styleKind={attach?.styleKind}
             className={sm ? 'h-7 w-7' : undefined}
           />
         )}

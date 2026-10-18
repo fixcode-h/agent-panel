@@ -18,6 +18,7 @@ import {
   type ImageSource,
 } from '@shared/design'
 import { normalizeTree, walk, type Widget } from '@shared/umg'
+import { BUILTIN_STYLES, isBuiltinStyle } from '@shared/styles'
 import type { ToolUse } from '@shared/schema'
 
 type Job = NonNullable<Full['job']>
@@ -1240,7 +1241,8 @@ const demoStyleList: SavedStyle[] = [
 ]
 
 export function demoStyles(method: string, sid: string | undefined, body: any): unknown {
-  if (method === 'GET') return demoStyleList
+  if (method === 'GET') return [...demoStyleList, ...BUILTIN_STYLES]
+  if (isBuiltinStyle(sid ?? '')) fail('内置风格不能修改，复制成自己的再改')
   if (method === 'POST') {
     const at = now()
     const item: SavedStyle = { ...SavedStyleInput.parse(body), id: randomId(), createdAt: at, updatedAt: at }

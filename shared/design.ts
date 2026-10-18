@@ -261,7 +261,13 @@ export const SavedStyleInput = z.object({
   prompts: z.array(StylePrompt).max(30).default([]),
 })
 export type SavedStyleInput = z.input<typeof SavedStyleInput>
-export const SavedStyle = SavedStyleInput.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string() })
+export const SavedStyle = SavedStyleInput.extend({
+  id: z.string(),
+  /** 程序内置的风格（shared/styles.ts）：只读，可以复制成自己的再改 */
+  builtin: z.boolean().optional(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+})
 export type SavedStyle = z.infer<typeof SavedStyle>
 
 /** 让 CLI 从一个设计里总结整体风格：看风格说明、项目提示词、图片描述和对话 */
