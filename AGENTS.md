@@ -12,6 +12,8 @@
 - CLI 的差异都写在定义里（`shared/clis.ts`，Command Code、Gemini CLI、Pi 是 `shared/clis/*.json` 配置）：参数规则、输出解析、能力、Skill 和说明文件的位置。
   其他代码按定义里的能力走，不要按 CLI 的名字写分支。接入新 CLI 写一份配置，格式见 `docs/cli-config.md`；用户也能把配置放进数据目录的 `config/clis/`。
 - 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现 `web/src/lib/demo-backend.ts`、`demo-assist.ts`。
+- 自带 Skill 在 `skills/<分类>/<名字>/`（说明见 `skills/README.md`），出包时写进 `server.mjs`，装到各 CLI 由 `server/bundled-skills.ts` 负责；
+  内置 Agent 和工作流模板在 `shared/builtin/`，引用的 Skill 名必须在 `skills/` 里（`server/builtin.test.ts` 会检查）。
 - 界面参考 Claude Code 的风格，视觉质量很重要。
 - 界面支持中文和英文：文案用 `t('中文原文')`（`shared/i18n.ts`，中文原文就是键，插值写 `t('共 {n} 个', { n })`），
   英文写在 `shared/locales/en/` 下对应的文件里。`npm run typecheck` 会跑 `scripts/i18n-check.mjs`，有漏翻的就失败。

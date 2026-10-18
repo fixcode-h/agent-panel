@@ -1,0 +1,92 @@
+---
+name: p4-workflow
+description: 处理 Perforce 项目的 client/stream 识别、default changelist 预处理、任务收尾分桶、文件级 p4 edit/add、一次编译验收和 P4 安全边界；仅在 project-workflow 确认项目由 P4 管理时使用。
+user-invocable: true
+---
+
+# Perforce 项目工作流
+
+## 适用范围
+
+先用只读命令确认 `p4 info`、`p4 set`、`p4 client -o <client>` 和限定范围的 `p4 opened`。确认 server、client、workspace root、depot/stream、项目目录和外部文档根后，本技能约束任务直到验收结束；无法确认身份时停止。
+
+## 禁止操作
+
+不得执行或变相执行：`p4 sync`、`p4 update`、`p4 submit`、`p4 populate`、`p4 integrate`、`p4 switch`、切换 client/stream、`p4 revert`、`p4 clean`、全项目 checkout，以及不带任务路径的 `p4 diff`、`p4 status`、`p4 reconcile`、`p4 files //...`、`p4 fstat //...`。远端 submit 由用户单独执行；但本地任务不得以未核对的 default/final pending 状态结束。
+
+允许对明确文件执行 `p4 edit`、`p4 add`、`p4 reopen`、构建和测试；所有命令限定到任务文件或明确路径。常规任务不执行 `p4 shelve` 或 `p4 unshelve`，只有用户明确要求时才操作。
+
+## ProjectDoc 与简化台账
+
+P4 项目的设计、任务和验收文档放在共同外层的：
+
+```text
+<共同外层目录>/ProjectDoc/doc/<实际项目文件夹名>/
+```
+
+默认不创建 `p4change` 台账。只有跨会话、跨多个独立验收边界、需要恢复上下文或用户明确要求时，才创建简化台账，记录任务、PROJECT_ROOT/DOC_ROOT、Server/Client/Stream、起始 opened 基线、任务文件清单、default changelist、最终分桶和验证结论。普通任务直接以 `p4 opened -c default`、限定范围 diff 和最终 pending 分桶作为事实来源。
+
+## Pending 分桶
+
+最多四个 pending，changelist 的 `Description`（提交说明）使用 `[类型]` + 中文任务短句，例如 `[Lua] 家园装饰软状态操作通知`。新建或更新本任务 changelist 描述时，必须用中文说明修改目的与内容，不使用整句英文；`[C++]`、`[XLSX]`、`[Lua]`、`[Other]` 标签、代码标识符和路径保持原样。不得仅为翻译而改写用户已有或其他任务的 changelist 描述。
+
+| 分桶 | 文件类型 |
+| --- | --- |
+| C++ | `.c/.cc/.cpp/.cxx/.h/.hh/.hpp/.inl/.ixx/.mm` |
+| XLSX | `.xlsx/.xlsm/.xlsb/.xls` |
+| Lua | `.lua` 及其对应生成的 `.luac` |
+| Other | 其他需要提交的代码、资源和配置 |
+
+修改前以当前用户和当前 client 的本地 opened 状态判断明确任务文件是否已纳入自己的 changelist，不以其他用户或其他 client 的 changelist 归属替代本地状态。
+
+1. 使用限定路径 `p4 opened <任务文件>` 核对当前 client 的状态；`p4 opened -a <任务文件>` 或 `otherOpen` 中的其他用户/其他 client 记录只作并行编辑或锁定提示，不构成本地已纳入的证据。
+2. 本地尚未纳入自己的 changelist 时，必须对已纳管文件执行限定路径 `p4 edit <任务文件>`，新文件执行 `p4 add <任务文件>`，默认进入 default changelist；已明确指定本任务 pending 时使用 `-c <pending>`。即使其他用户或其他 client 已在 changelist（例如 1122299）打开同一文件，也不能跳过本地纳入，更不能把本地打开误判为抢占或移动他人的 changelist。
+3. 当前用户和当前 client 已有 changelist 中的文件，当前任务修改继续归入其原 changelist，并记录 changelist 编号；其他 client 即使使用同一用户，也不属于当前工作区的既有归属。
+4. 执行后再次用限定路径 `p4 opened` 核对文件已进入当前用户和当前 client 的实际 changelist；不能只凭 `p4 edit/add` 的提示文本判定成功。只有 Perforce 实际拒绝本地打开（如 exclusive open 或权限限制）时，才将该文件记录为单文件阻塞并继续其他任务文件；不抢占、不强制移动、不绕过锁。
+
+任务全部完成并通过验证后，必须按文件类型完成最终分桶：本次纳入 default changelist 的文件分配到对应的 `[C++]`、`[XLSX]`、`[Lua]` 或 `[Other]` changelist；已经属于当前用户和当前 client 既有 changelist 的文件，将其原 changelist 作为最终分桶，不强制移动。不得擅自合并、拆分或移动已有 changelist；只有用户明确要求时才可调整既有 changelist。**凡本轮修改了 P4 文件，必须在结束前核对每个任务文件的实际 changelist、限定范围 diff、各 pending 文件清单和验证结果；未完成该收尾不得宣布任务完成。**
+
+### 描述写入方式
+
+changelist 描述含中文，写入时必须避免终端管道编码损坏：
+
+- 不得用 shell 管道把描述直接送进 `p4 change -i` 等命令。Windows PowerShell 5.1 的 `$OutputEncoding` 默认是 `us-ascii`，会把非 ASCII 字符替换为 `?` 且不可逆——服务端存下的就是字面 `?`，与文件编码和 BOM 政策无关。
+- 安全方式二选一：提前执行 `$OutputEncoding = New-Object System.Text.UTF8Encoding($false)`；或把完整 change spec 写成 UTF-8 无 BOM 临时文件，再用输入重定向提交，例如 `p4 change -i < spec.txt`。
+- 写入后必须回读核对：用 `p4 describe -s <changelist>` 确认中文完整、没有连续 `?`，才算写入成功。
+- 发现描述已是连续 `?` 时，判定为写入期编码损坏而非显示问题；原文字已丢失时先向用户确认目标描述，再按上述安全方式重写。
+
+## 工具导出文件
+
+工具导出或自动生成的文件不得手动修改后作为正式变更提交。先确认文件的源数据、配置或生成命令，优先修改源头，再由工具重新导出并验证结果；生成文件只作为结果纳入对应 pending。
+
+测试、故障复现或验证流程允许临时修改导出文件，但必须在修改前记录基线、文件清单和原因，明确标记为临时改动；测试结束后必须恢复原文件，或使用工具从源头重新生成等价结果。恢复后用限定范围的 `p4 opened`、diff 或文件校验确认没有残留临时修改；未恢复时不得结束任务、shelve 或提交。
+
+## C++ 验收
+
+C++ 改动完成后，在当前工作区对受影响目标编译一次，记录命令、目标、退出码和结果，并执行任务需要的测试。编译通过且代码未再变化时，复用本次结果，不因 pending 分桶或任务收尾重复编译；编译失败或之后修改了影响编译的代码/配置时，修复后重新编译。
+
+验收以本次编译结果、限定范围 diff 和最终 pending 文件清单为依据，不要求 shelf、unshelve 或额外验证 pending。编译未执行或失败时，明确记录验收未完成。
+
+## 其他资源验收
+
+XLSX 检查工作簿、公式和链接；Lua 源码执行项目规定的语法、单元或最小加载测试。当本次修改包含 `.lua` 时，必须先检查 `lua-luac-compiler` 的前置条件：只有 VS Code `LuacPacker` 插件可用、实际编译入口已确认、编译器与目标 Lua 运行时版本匹配时，才编译对应 `.luac`。输出目录必须位于当前 P4 workspace 内；每个生成 `.luac` 必须与一个源 `.lua` 一一对应，并纳入与源 `.lua` 相同的 Lua pending；孤儿 `.luac`、工作区外生成物或未纳入 pending 的生成物都属于验收失败。前置条件不满足时不得编译、不得生成或纳入 `.luac`，但必须记录未执行原因。Other 按资源类型执行格式、导入、构建或运行检查。所有类型用限定范围的 `p4 opened -c` 对照实际修改清单。
+
+## 性能与范围
+
+`p4 opened -c <pending>` 是首选状态检查；`p4 diff/reconcile/status` 会扫描本地工作区，必须给出任务路径。不要用 `p4 diff -se` 冒充窄范围检查。
+
+## 完成前检查
+
+- [ ] 未执行 sync/update/submit/checkout/switch/revert/clean；
+- [ ] 未执行无路径全库扫描；
+- [ ] 新建或更新的本任务 changelist 描述为 `[类型]` + 中文任务短句，未擅自改写其他任务的描述；
+- [ ] changelist 描述以安全编码方式写入，并已用 `p4 describe -s` 回读核对无连续 `?`；
+- [ ] 若创建 p4change 台账，只记录关键事实且与文件实际状态一致；
+- [ ] 修改期间已按当前用户和当前 client 回读任务文件的实际 changelist；本地未纳入的文件已执行限定路径 `p4 edit/add`，未因他人/其他 client 已打开而跳过；实际拒绝已记录，同一用户和同一 client 的既有 changelist 未被擅自移动；
+- [ ] 常规任务未执行 shelve/unshelve；用户明确要求的操作已限定范围并回读核对；
+- [ ] C++ 在当前工作区完成一次编译并记录结果；重复编译仅因失败修复或影响编译的代码/配置再次变化；
+- [ ] Lua 源码完成语法/单元/最小加载验证；
+- [ ] 若 LuacPacker 前置条件满足，所有对应 `.luac` 已编译、验证并纳入同一个 Lua pending；若不满足，已记录未编译原因；
+- [ ] 其他资源完成对应验证；
+- [ ] 普通验收和 P4 专项验收均有证据；
+- [ ] 本轮修改的 P4 文件已完成 default/final pending 核对，未以未收尾状态宣布完成。

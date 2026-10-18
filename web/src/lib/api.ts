@@ -31,7 +31,15 @@ import type {
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ApiConfig } from '@shared/accounts'
-import type { LibraryCli, LibraryFile, LibraryItem, McpOverview, McpServer, McpTestResult } from '@shared/library'
+import type {
+  BundledSkill,
+  LibraryCli,
+  LibraryFile,
+  LibraryItem,
+  McpOverview,
+  McpServer,
+  McpTestResult,
+} from '@shared/library'
 import type {
   BrowserStatus,
   Design,
@@ -147,6 +155,9 @@ export const api = {
   /** Skills / 命令库 */
   library: (kind: 'skill' | 'command') =>
     request<{ clis: LibraryCli[]; items: LibraryItem[] }>(`/library?kind=${kind}`),
+  bundledSkills: () => request<{ items: BundledSkill[] }>('/library/bundled'),
+  installBundled: (b: { names: string[]; clis: string[]; overwrite: boolean }) =>
+    request<{ done: string[]; skipped: string[] }>('/library/bundled/install', json('POST', b)),
   libraryFile: (cli: string, kind: 'skill' | 'command', name: string) =>
     request<LibraryFile>(`/library/file?cli=${cli}&kind=${kind}&name=${encodeURIComponent(name)}`),
   saveLibraryFile: (b: { cli: string; kind: 'skill' | 'command'; name: string; content: string; create?: boolean }) =>

@@ -81,6 +81,8 @@ export function AgentsPage() {
         starters: [],
         tags: [],
         ...input,
+        // 副本不再算内置的，免得添加内置工作流时被当成那个内置 Agent
+        origin: '',
       })
       setAgents((as) => [...as, a])
       setQuery('')

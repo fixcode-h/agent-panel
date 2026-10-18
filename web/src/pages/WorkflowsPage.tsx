@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Download, Plus, Sparkles, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react'
+import { Copy, Download, LayoutTemplate, Plus, Sparkles, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Category, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { newFlow } from '@shared/flow'
@@ -10,13 +10,14 @@ import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { StatusDot } from '@/components/ui/badge'
-import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
+import { ContextMenuItem, ContextMenuSeparator, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
 import { CategoryHeader } from '@/components/agents/CategoryHeader'
 import { TagFilter, TagList } from '@/components/tags/Tags'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { BuiltinDialog } from '@/components/workflows/BuiltinDialog'
 
 export function WorkflowsPage() {
   const { loading, workflows, agents, clis, categories: allCategories, tags, setWorkflows, setAgents } = useData()
@@ -25,6 +26,7 @@ export function WorkflowsPage() {
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
   const [assist, setAssist] = useState(false)
+  const [builtin, setBuiltin] = useState(false)
   const [rev, setRev] = useState(0)
 
   const selected = workflows.find((w) => w.id === route.id) ?? workflows[0]
@@ -113,15 +115,23 @@ export function WorkflowsPage() {
         onNew={() => create()}
         extra={
           <>
-            <Button
-              size="icon-sm"
-              variant="secondary"
-              aria-label={t('导入工作流')}
-              title={t('导入工作流文件')}
-              onClick={() => file.current?.click()}
-            >
-              <Upload className="h-4 w-4" />
-            </Button>
+            <Menu>
+              <MenuTrigger asChild>
+                <Button size="icon-sm" variant="secondary" aria-label={t('添加内置或导入的工作流')}>
+                  <LayoutTemplate className="h-4 w-4" />
+                </Button>
+              </MenuTrigger>
+              <MenuContent>
+                <MenuItem onSelect={() => setBuiltin(true)}>
+                  <LayoutTemplate className="h-4 w-4" />
+                  {t('从内置工作流添加')}
+                </MenuItem>
+                <MenuItem onSelect={() => file.current?.click()}>
+                  <Upload className="h-4 w-4" />
+                  {t('导入工作流文件')}
+                </MenuItem>
+              </MenuContent>
+            </Menu>
             <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
             <Button
               size="sm"
@@ -225,13 +235,29 @@ export function WorkflowsPage() {
             <p>
               {t('工作流把 Agent 组成团队：选一个主 Agent 负责推进，再加几个子 Agent，然后在流程图里编排执行顺序。')}
             </p>
-            <Button className="mt-5" onClick={() => create()}>
-              <Plus className="h-4 w-4" />
-              {t('新建工作流')}
-            </Button>
+            <div className="mt-5 flex flex-wrap justify-center gap-2">
+              <Button onClick={() => create()}>
+                <Plus className="h-4 w-4" />
+                {t('新建工作流')}
+              </Button>
+              <Button variant="secondary" onClick={() => setBuiltin(true)}>
+                <LayoutTemplate className="h-4 w-4" />
+                {t('从内置工作流添加')}
+              </Button>
+            </div>
           </DetailEmpty>
         )
       )}
+      <BuiltinDialog
+        open={builtin}
+        onOpenChange={setBuiltin}
+        onAdded={(w) => {
+          setBuiltin(false)
+          setQuery('')
+          setTag('')
+          go({ page: 'workflows', id: w.id })
+        }}
+      />
       <AssistDialog
         open={assist}
         onOpenChange={setAssist}

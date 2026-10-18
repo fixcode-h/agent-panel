@@ -66,6 +66,8 @@ export const AgentInput = z.object({
   /** 追加给 CLI 的参数，例如 --add-dir ../shared */
   extraArgs: z.array(z.string()).default([]),
   enabled: z.boolean().default(true),
+  /** 从内置模板建出来的 Agent 记下来源（builtin:<key>），再次添加内置工作流时复用，不重复建 */
+  origin: z.string().max(80).default(''),
 })
 export type AgentInput = z.infer<typeof AgentInput>
 

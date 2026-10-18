@@ -13,8 +13,11 @@ import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { CliTag, PageFrame } from '@/components/library/parts'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { BundledSkills } from '@/components/library/BundledSkills'
 
 type Kind = 'skill' | 'command'
+/** 页面上的分页：多一个「自带 Skill」 */
+type Tab = Kind | 'bundled'
 
 /** 新建时的模板：命令按 CLI 的格式（md / toml）写 */
 function template(kind: Kind, name: string, format: 'md' | 'toml') {
@@ -26,7 +29,8 @@ function template(kind: Kind, name: string, format: 'md' | 'toml') {
 }
 
 export function LibraryPage() {
-  const [kind, setKind] = useState<Kind>('skill')
+  const [tab, setTab] = useState<Tab>('skill')
+  const kind: Kind = tab === 'command' ? 'command' : 'skill'
   const [data, setData] = useState<{ clis: LibraryCli[]; items: LibraryItem[] } | null>(null)
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -45,9 +49,9 @@ export function LibraryPage() {
   useEffect(() => {
     setData(null)
     void load()
-    // load 每次渲染都是新的函数，只在种类变化时重新读
+    // load 每次渲染都是新的函数，只在切换分页时重新读（自带 Skill 装完后回到 Skill 页要看到新装的）
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [kind])
+  }, [tab])
 
   // 同名的并成一行，右边列出装在哪些 CLI 里
   const rows = useMemo(() => {
@@ -67,7 +71,7 @@ export function LibraryPage() {
       )}
       actions={
         <>
-          {kind === 'skill' && (
+          {tab === 'skill' && (
             <Button
               variant="secondary"
               onClick={() => setAi(true)}
@@ -78,7 +82,7 @@ export function LibraryPage() {
               {t('AI 创建')}
             </Button>
           )}
-          <Button onClick={() => setCreating(true)} disabled={!data}>
+          <Button onClick={() => setCreating(true)} disabled={!data || tab === 'bundled'}>
             <Plus className="h-4 w-4" />
             {t('新建')}
           </Button>
@@ -88,11 +92,12 @@ export function LibraryPage() {
       <div className="flex flex-wrap items-center gap-3">
         <Segmented
           label={t('种类')}
-          value={kind}
-          onChange={setKind}
+          value={tab}
+          onChange={setTab}
           options={[
             { id: 'skill', label: 'Skill' },
             { id: 'command', label: t('命令') },
+            { id: 'bundled', label: t('自带 Skill') },
           ]}
         />
         <label className="relative block min-w-[200px] flex-1">
@@ -107,7 +112,13 @@ export function LibraryPage() {
         </label>
       </div>
 
-      {error ? (
+      {tab === 'bundled' ? (
+        data ? (
+          <BundledSkills clis={data.clis} query={query} />
+        ) : (
+          <p className="text-[13px] text-subtle">{t('读取中…')}</p>
+        )
+      ) : error ? (
         <p className="text-[13px] text-warning">{t('读取失败：{error}', { error })}</p>
       ) : !data ? (
         <p className="text-[13px] text-subtle">{t('读取中…')}</p>

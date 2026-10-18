@@ -458,6 +458,7 @@ const agentExtras = (a?: Agent) => ({
   skills: a?.skills ?? [],
   starters: a?.starters ?? [],
   tags: a?.tags ?? [],
+  origin: a?.origin ?? '',
 })
 
 function resolveAgent(d: AgentDraft, ctx: AssistContext): { agent?: AgentInput; newCategory: string; error?: string } {

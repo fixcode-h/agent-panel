@@ -36,6 +36,7 @@ mkdirSync(out, { recursive: true })
 // 直接用 node 跑 vite：Windows 上 npx 是 .cmd，execFileSync 启动不了
 run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'])
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
+const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
 // 2. 服务端打成一个文件，依赖全部内联
 await build({
   entryPoints: [path.join(root, 'server/index.ts')],
@@ -51,6 +52,17 @@ await build({
     'process.env.NODE_ENV': '"production"',
     __APP_VERSION__: JSON.stringify(version),
     // 浏览器扩展的文件打进 server.mjs：从旧版本在线更新过来时包里的 extension 目录可能没被复制
+    // 自带的 Skill（skills/<分类>/<名字>/…）也写进来，装到各 CLI 时从这里取
+    __BUNDLED_SKILLS__: JSON.stringify(
+      Object.fromEntries(
+        files(path.join(root, 'skills'))
+          .filter((f) => path.relative(path.join(root, 'skills'), f).split(path.sep).length > 2)
+          .map((f) => [
+            path.relative(path.join(root, 'skills'), f).split(path.sep).join('/'),
+            readFileSync(f).toString('base64'),
+          ]),
+      ),
+    ),
     __EXTENSION_FILES__: JSON.stringify(
       Object.fromEntries(
         readdirSync(path.join(root, 'extension')).map((f) => [
@@ -66,7 +78,6 @@ await build({
 
 // 演示用的模拟后端和模拟执行（示例输出）都不能出现在包里
 // 不用系统的 grep：Windows 上没有，而且找不到命令时会被当成「没找到」
-const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
 const shipped = [...files(path.join(out, 'dist')), path.join(out, 'server.mjs')]
 const grep = (word) =>
   shipped

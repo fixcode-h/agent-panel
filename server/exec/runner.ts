@@ -20,7 +20,8 @@ import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
-import { composeRole, nodeAgentRun } from '../../shared/agent-role.ts'
+import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
+import { ensureBundled } from '../bundled-skills.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli, type CliControl } from './invoke.ts'
 import { setLimits } from '../cli-extras.ts'
@@ -357,6 +358,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     files.get(m.slice(m.lastIndexOf('/') + 1)) ??
     guessWindow(cli, m)
   const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params)).trim()
+  // Agent 要用的自带 Skill，这个 CLI 里没有的先装上，提示里点名的 Skill 才找得到
+  await ensureBundled(cliId, [
+    ...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)]),
+  ])
   let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Check, Plus, Sparkles, X } from 'lucide-react'
-import type { LibraryItem } from '@shared/library'
+import type { BundledSkill, LibraryItem } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -8,15 +8,14 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 
-/** 本机各 CLI 用户目录下的 Skill，打开 Agent 页时读一次 */
-let skillCache: Promise<LibraryItem[]> | null = null
+/** 本机各 CLI 用户目录下的 Skill 和面板自带的 Skill，打开 Agent 页时读一次 */
+let skillCache: Promise<{ items: LibraryItem[]; bundled: BundledSkill[] }> | null = null
 const loadSkills = () =>
-  (skillCache ??= api
-    .library('skill')
-    .then((r) => r.items)
+  (skillCache ??= Promise.all([api.library('skill').then((r) => r.items), api.bundledSkills().then((r) => r.items)])
+    .then(([items, bundled]) => ({ items, bundled }))
     .catch(() => {
       skillCache = null
-      return []
+      return { items: [], bundled: [] }
     }))
 
 /**
@@ -34,15 +33,21 @@ export function SkillsPicker({
   cli: string
 }) {
   const [items, setItems] = useState<LibraryItem[]>([])
+  const [bundled, setBundled] = useState<BundledSkill[]>([])
   const [q, setQ] = useState('')
   useEffect(() => {
-    void loadSkills().then(setItems)
+    void loadSkills().then((r) => {
+      setItems(r.items)
+      setBundled(r.bundled)
+    })
   }, [])
-  const names = [...new Set(items.map((x) => x.name))]
+  // 自带的排在前面：执行时会自动装进 CLI
+  const names = [...new Set([...bundled.map((x) => x.name), ...items.map((x) => x.name)])]
+  const isBundled = (n: string) => bundled.some((x) => x.name === n)
   const name = q.trim()
   const list = names.filter((n) => n.toLowerCase().includes(name.toLowerCase()))
   const toggle = (n: string) => onChange(value.includes(n) ? value.filter((x) => x !== n) : [...value, n])
-  const has = (n: string) => items.some((x) => x.name === n && x.cli === cli)
+  const has = (n: string) => isBundled(n) || items.some((x) => x.name === n && x.cli === cli)
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {value.map((n) => (
@@ -90,11 +95,19 @@ export function SkillsPicker({
           />
           <div className="max-h-72 overflow-y-auto">
             {list.map((n) => {
-              const it = items.find((x) => x.name === n && x.cli === cli) ?? items.find((x) => x.name === n)
+              const it =
+                bundled.find((x) => x.name === n) ??
+                items.find((x) => x.name === n && x.cli === cli) ??
+                items.find((x) => x.name === n)
               return (
                 <button key={n} type="button" className={menuItem} onClick={() => toggle(n)}>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate font-mono text-[12.5px]">{n}</span>
+                    <span className="flex items-center gap-1.5 truncate font-mono text-[12.5px]">
+                      {n}
+                      {isBundled(n) && (
+                        <span className="rounded bg-sel px-1 font-sans text-[10.5px] text-subtle">{t('自带')}</span>
+                      )}
+                    </span>
                     {it?.description && <span className="truncate text-[11px] text-subtle">{it.description}</span>}
                   </span>
                   {value.includes(n) && <Check className="h-4 w-4 shrink-0 text-accent" />}

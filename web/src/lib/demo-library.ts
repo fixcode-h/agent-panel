@@ -1,5 +1,14 @@
 import { CLIS } from '@shared/clis'
-import type { LibraryCli, LibraryFile, LibraryItem, McpEntry, McpOverview, McpServer } from '@shared/library'
+import type {
+  BundledSkill,
+  LibraryCli,
+  LibraryFile,
+  LibraryItem,
+  McpEntry,
+  McpOverview,
+  McpServer,
+} from '@shared/library'
+import { frontField } from '@shared/library'
 
 /**
  * 在线演示里的 Skills / 命令库和 MCP 工具：没有本机的 CLI 和配置文件，数据放在内存里
@@ -83,6 +92,24 @@ const overview = (): McpOverview => ({
   servers: [...servers].sort((a, b) => a.name.localeCompare(b.name)),
 })
 
+const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
+  query: '?raw',
+  import: 'default',
+  eager: true,
+}) as Record<string, string>
+const installedBundled = new Set<string>()
+function bundledList(): BundledSkill[] {
+  return Object.entries(BUNDLED)
+    .map(([file, text]) => {
+      const [category, name] = file.split('/skills/')[1].split('/')
+      const status: BundledSkill['status'] = {}
+      for (const c of libClis())
+        if (c.skillDir) status[c.id] = installedBundled.has(`${c.id}/${name}`) ? 'same' : 'missing'
+      return { name, category, description: frontField(text, 'description'), files: 0, status }
+    })
+    .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
+}
+
 export function demoLibrary(method: string, seg: string[], query: URLSearchParams, body: any): unknown {
   const [res, id] = seg
   if (res === 'mcp-tools') {
@@ -104,6 +131,24 @@ export function demoLibrary(method: string, seg: string[], query: URLSearchParam
     if (at >= 0) servers.splice(at, 1)
     if (method === 'PUT') servers.push({ ...(body.server as McpServer), name, clis: body.clis ?? [] })
     return overview()
+  }
+  // 自带 Skill：内容取仓库 skills/ 下的 SKILL.md，装没装记在内存里
+  if (id === 'bundled') {
+    if (seg[2] === 'install') {
+      const done: string[] = []
+      const skipped: string[] = []
+      for (const c of body.clis as string[])
+        for (const n of body.names as string[]) {
+          const k = `${c}/${n}`
+          if (installedBundled.has(k)) skipped.push(k)
+          else {
+            installedBundled.add(k)
+            done.push(k)
+          }
+        }
+      return { done, skipped }
+    }
+    return { items: bundledList() }
   }
   // library
   const kind = (query.get('kind') ?? body.kind) as Kind
