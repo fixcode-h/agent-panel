@@ -7,6 +7,7 @@ import { libraryName, type LibraryCli, type LibraryFile, type LibraryItem } from
 import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
 import { readCommand, scanCommands } from './slash.ts'
+import { installBundled, listBundled } from './bundled-skills.ts'
 
 /**
  * Skills / 命令库：管各 CLI 用户目录下的 Skill 和自定义命令（项目里的归项目管）。
@@ -174,6 +175,19 @@ export function libraryApi() {
       guard(async (c) => {
         await deleteLibrary(c.req.query('cli') ?? '', kindOf(c.req.query('kind')), c.req.query('name') ?? '')
         return c.json({ ok: true })
+      }),
+    )
+    .get(
+      '/bundled',
+      guard(async (c) => c.json({ items: await listBundled() })),
+    )
+    .post(
+      '/bundled/install',
+      guard(async (c) => {
+        const b = await c.req.json()
+        const names = Array.isArray(b.names) ? b.names.map(String) : []
+        const clis = Array.isArray(b.clis) ? b.clis.map(String) : []
+        return c.json(await installBundled(names, clis, !!b.overwrite))
       }),
     )
     .post(

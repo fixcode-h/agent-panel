@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { t } from './i18n.ts'
 
 /** 库里的一项：某个 CLI 用户目录下的一个 Skill 或自定义命令 */
 export interface LibraryItem {
@@ -59,4 +60,43 @@ export interface McpTestResult {
   error?: string
   server?: string
   tools: { name: string; description: string }[]
+}
+
+/** 面板自带的 Skill（仓库的 skills/<分类>/<名字>/），可以装进各 CLI 的用户 Skill 目录 */
+export interface BundledSkill {
+  name: string
+  /** 分类文件夹名，显示名见 BUNDLED_CATEGORIES */
+  category: string
+  description: string
+  /** SKILL.md 以外的文件数 */
+  files: number
+  /** 在各 CLI 里的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
+  status: Record<string, 'missing' | 'same' | 'changed'>
+}
+
+export const BUNDLED_CATEGORIES: { id: string; label: string }[] = [
+  { id: 'workflow', label: t('流程') },
+  { id: 'coding', label: t('编码') },
+  { id: 'docs', label: t('文档') },
+  { id: 'vcs', label: t('版本控制') },
+  { id: 'ue', label: 'UE' },
+  { id: 'art', label: t('美术') },
+]
+
+/** SKILL.md 开头 front matter 里的一个字段，支持引号和 | > 多行写法 */
+export function frontField(text: string, key: string) {
+  const fm = text.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] ?? ''
+  const lines = fm.split(/\r?\n/)
+  const i = lines.findIndex((l) => l.startsWith(`${key}:`))
+  if (i < 0) return ''
+  const v = lines[i].slice(key.length + 1).trim()
+  if (/^[|>][-+]?$/.test(v)) {
+    const body: string[] = []
+    for (const l of lines.slice(i + 1)) {
+      if (l && !/^\s/.test(l)) break
+      body.push(l.trim())
+    }
+    return body.join(v.startsWith('|') ? '\n' : ' ').trim()
+  }
+  return v.replace(/^(["'])([\s\S]*)\1$/, '$2')
 }

@@ -1,0 +1,57 @@
+# 精细度指标与阈值
+
+> 来源：`inspect_scene.py` 的检查项（字段名与 JSON 中的 `id` 一一对应）。判定等级：FAIL（必须修）、WARN（记录并判断）、PASS。
+> 体检失败时不得进入导出（唯一例外：显式 `--exempt` 并在评估记录说明理由）。
+
+## 网格（group: `mesh`）
+
+| 字段 | 判定 | 等级 | 修复建议 |
+|---|---|---|---|
+| `tri_budget` | 全场景三角面 ≤ `--max-tris`（工具默认 50000） | FAIL | 按下方「预算设置依据」显式传参并记录原因；参考复刻不得为满足工具默认值删减可见细节 |
+| `ngons` | 面顶点数 >4 的 n-gon = 0 | FAIL | 圆柱/圆锥端盖用 `end_fill_type='TRIFAN'`；倒角用单段；必要时切分/三角化局部 |
+| `non_manifold` | 非流形边 = 0 | FAIL | 检查重复面、孤边；布尔后清理 |
+| `loose_verts` | 松散顶点 = 0 | WARN | `mesh.delete_loose()` 或手动清理 |
+| `transform_applied` | 所有物体 scale = 1（±1e-4） | FAIL | `transform_apply(scale=True)`；尺寸用编辑模式改 mesh，不用物体 scale |
+| `negative_scale` | 无负缩放/镜像翻面（行列式 > 0） | FAIL | 应用缩放后检查法线方向，必要时 `flip_normals` |
+| `naming_default` | 无默认名（Cube/Sphere/N.001 等） | WARN | 按前缀命名：`SM_`（静态网格）/`SK_`（骨骼网格）/`M_`（材质）/`T_`（贴图）/`A_`（动作）/`CAM_`/`LGT_` |
+| `naming_pattern` | 名称形如 `角色_部件[序号]`（字母数字下划线） | WARN | 统一 `Pascal_Snake` 风格，编号用 `_01` 而非 Blender 的 `.001` |
+
+## UV 与材质（group: `uv_material`）
+
+| 字段 | 判定 | 等级 | 修复建议 |
+|---|---|---|---|
+| `uv_present` | 每个网格都有 UV 层 | FAIL | `smart_project` 或按面手工展开；导出后无 UV 会导致材质/贴图异常 |
+| `uv_bounds` | UV 在 [0,1] 范围（±0.001） | WARN | `pack_islands`/缩放 UV；越界会与平铺设置冲突 |
+| `material_nodes` | 每个在用材质含 Principled BSDF | FAIL | 5.x 默认即节点材质；被清空的节点树需重建 Principled |
+| `texture_files`（导出处） | 引用的贴图文件存在 | WARN | 统一相对路径并随任务目录交付 |
+
+## 动画（group: `animation`）
+
+| 字段 | 判定 | 等级 | 修复建议 |
+|---|---|---|---|
+| `fps` | 帧率 ∈ {24,25,30} | WARN | UE 交付建议 30fps；改帧率后重做关键帧 |
+| `actions` | 报告动作清单（数量/帧范围/插值/首尾一致性） | WARN（无动作时） | 每个动画组织为独立 action；循环动画首尾帧一致（`first_last_equal`；旋转通道按 2π 取模，整圈旋转视为连续） |
+| `zero_length_bones` | 零长度骨骼 = 0 | FAIL | 删除或修正零长骨骼；导出会放大问题 |
+| `bone_naming` | 骨骼名非默认（Bone/Bone.001） | WARN | 按部位命名（Hips/Spine/…），便于 UE 重定向 |
+
+## 场景（group: `scene`）
+
+| 字段 | 判定 | 等级 | 修复建议 |
+|---|---|---|---|
+| `units` | 公制 + 缩放 1.0 | FAIL | 场景属性 → 单位；不要用场景缩放补偿建模尺寸 |
+| `hidden_objects` | 无渲染隐藏对象 | WARN | 确认隐藏对象不需要交付；导出会包含或排除它们 |
+| `frame_range` | 帧范围有效（end > start） | WARN | 动画交付前设置好起止帧 |
+
+## 导出前（group: `export_pre`）
+
+| 字段 | 判定 | 等级 | 修复建议 |
+|---|---|---|---|
+| `pending_modifiers` | 无未应用修改器 | WARN | 导出会按 `use_mesh_modifiers` 处理；非导出场合建议先应用并复查 |
+| `texture_files` | 贴图文件可用 | WARN | FBX 默认不内嵌贴图，UE 侧需要贴图文件对照交付 |
+
+## 预算设置依据
+
+- 不按高模/低模、主体/环境划分制作档位或套统一面数/材质数上限；几何、纹理、材质与颜色以参考图片实际内容为依据。
+- 项目或用户明确给出性能/导出上限时，记录数值、来源和统计范围，体检显式传入 `--max-tris`。若满足上限需要损失参考特征，先列出影响并确认取舍。
+- 未给出面数限制时，根据完成参考还原所需的几何规模设置检查上限，记录实际三角数和选择依据；工具默认 50000 是检查参数，不是建模要求或视觉质量标准。明确区分“检查上限”与“交付硬限制”。
+- 同时记录单件、实例和场景的实际统计，使用共享网格等方式减少重复数据；不能以统计优化代替参考外观验收。

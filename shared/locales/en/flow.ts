@@ -180,7 +180,6 @@ export const EN_FLOW: Record<string, string> = {
   '已导入「{name}」，新建了 {n} 个 Agent：{list}': 'Imported “{name}” and created {n} Agents: {list}',
   '已导入「{name}」': 'Imported “{name}”',
   '{name} 副本': '{name} copy',
-  导入工作流: 'Import workflow',
   导入工作流文件: 'Import a workflow file',
   '描述需求，让本机 CLI 生成工作流': 'Describe what you need and let a local CLI generate the workflow',
   'AI 创建': 'Create with AI',
