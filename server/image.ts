@@ -393,6 +393,24 @@ export function normalizeGenerated(
   return encodePng(fitExact(cur, want.width, want.height, { stretch: !!want.nineSlice, trim: want.transparent }))
 }
 
+/** 锐化（反锐化掩模，3×3）：只动颜色不动透明度，amount 0~1 */
+export function sharpen(img: Img, amount = 0.35): Img {
+  const { width: w, height: h, data } = img
+  const out = new Uint8Array(data)
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const o = (y * w + x) * 4
+      if (data[o + 3] === 0) continue
+      for (let c = 0; c < 3; c++) {
+        let blur = 0
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blur += data[((y + dy) * w + x + dx) * 4 + c]
+        const v = data[o + c] + amount * (data[o + c] - blur / 9) * 2
+        out[o + c] = Math.max(0, Math.min(255, Math.round(v)))
+      }
+    }
+  return { width: w, height: h, data: out }
+}
+
 /** 把一张图标表按 cols×rows 平均切开，每格再裁掉空白、精确放进各自的尺寸 */
 export function sliceSheet(
   buf: Buffer,
@@ -413,7 +431,9 @@ export function sliceSheet(
     const cell = crop(sheet, c * cw, r * ch, cw, ch)
     // 整格都是空的：这个图标没画出来
     if (w.transparent && !contentBox(cell)) return null
-    return encodePng(fitExact(cell, w.width, w.height, { trim: w.transparent }))
+    const out = fitExact(cell, w.width, w.height, { trim: w.transparent })
+    // 从大格子缩成小图标会变软：缩得多时轻微锐化，小尺寸下边缘清楚
+    return encodePng(cw / w.width > 1.5 ? sharpen(out, 0.35) : out)
   })
 }
 

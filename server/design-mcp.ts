@@ -8,6 +8,8 @@ import {
   MAX_TOOL_IMAGES,
   MAX_TOOL_ITEMS,
   MAX_TOOL_KEYS,
+  SHEET_MAX_SIDE,
+  sheetProblems,
   MAX_TOOL_WIDGETS,
   resolveDesignResult,
   type Design,
@@ -264,7 +266,7 @@ const TOOLS = [
     description:
       '列出这次要新建或重新生成的图片（id、name、prompt、negative、width、height、transparent、nineSlice、sheet）；同一个 id 再提交会覆盖。图片要设到控件上（"img:<id>"）才会显示。' +
       'prompt 是英文的正向描述（画什么、形状、材质、颜色、细节），negative 是反向提示词（不能出现的东西）。' +
-      `很多同类的小图标（背包物品、技能、货币）写成一组：同一个 sheet（例如 "items"），面板会把它们画在一张图上再自动切开，快很多。一次最多 ${MAX_TOOL_IMAGES} 张。`,
+      `尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，例如 96×96 的背包物品、技能、货币图标）写成一组：同一个 sheet（例如 "items"），面板让图片模型在一张干净的底色上把它们等间距排成格子，再自动切开，快很多；大图（底框、按钮、面板、插图）和尺寸不一样的不要写 sheet，一张张生成。一次最多 ${MAX_TOOL_IMAGES} 张。`,
     inputSchema: obj({ images: { type: 'array', items: { type: 'object' } } }, ['images']),
   },
   {
@@ -860,6 +862,10 @@ async function callTool(s: Session, raw: string, args: any) {
         return text(`一次最多 ${MAX_TOOL_IMAGES} 张，这次有 ${list.length} 张，没有记下。分几次提交。`, true)
       const p = z.array(AiImage).safeParse(list)
       if (!p.success) return text(z.prettifyError(p.error), true)
+      // 图集只放尺寸统一的小图标：和这一轮已经列出的同一个 sheet 的一起看
+      const merged = [...s.images.filter((x) => !p.data.some((y) => y.id === x.id)), ...p.data]
+      const bad = sheetProblems(merged)
+      if (bad.length) return text(`没有记下：\n${bad.join('\n')}`, true)
       s.history.push({ state: s.state, images: s.images })
       for (const img of p.data) s.images = [...s.images.filter((x) => x.id !== img.id), img]
       return text(`已记下 ${p.data.length} 张图片：${p.data.map((i) => i.id).join('、')}`)

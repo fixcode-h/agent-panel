@@ -594,7 +594,11 @@ export const AiImage = z.object({
   nineSlice: MarginSchema.optional(),
   /** 反向提示词：这张图里不能出现的东西（英文） */
   negative: z.string().max(2000).optional(),
-  /** 同类的小图标（背包物品、技能、货币…）写成同一个 sheet：面板让图片模型把它们画在一张图上再切开，比一张张生成快很多 */
+  /**
+   * 尺寸统一的小图标（背包物品、技能、货币…，边长不超过 SHEET_MAX_SIDE）写成同一个 sheet：
+   * 面板让图片模型在一张干净的底色上把它们等间距排成整齐的格子，再按格子切开，比一张张生成快很多。
+   * 底框、按钮、面板这类大图不能用，要一张张生成
+   */
   sheet: z
     .string()
     .regex(/^[A-Za-z0-9_-]{1,40}$/, 'sheet 只能用字母、数字、下划线和连字符')
@@ -773,7 +777,8 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 找控件：find_widgets 按名字、类型、文字找；get_tree 看某个子控件的树（in 写子控件名）
 - 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
-- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。同类的小图标（背包物品、技能、货币、状态图标，3 个以上）给它们写同一个 sheet（例如 "items"）：面板让图片模型把它们画在一张图上再自动切开，比一张张生成快得多，每个图标仍然按各自的 width、height 精确输出
+- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。
+- 图集（sheet）只用于尺寸统一的小图标：同一类、同样大小（边长 ${SHEET_MIN_SIDE}~${SHEET_MAX_SIDE} 像素，例如 96×96 的背包物品、技能、货币、状态图标）、3 个以上，只是画的内容不同时，给它们写同一个 sheet（例如 "items"）。面板让图片模型在一张干净的底色上把它们按相同间距排成整齐的格子（不重叠、不拼成一幅画），再按格子切开，每个图标按各自的 width、height 精确输出，比一张张生成快得多。底框、按钮、面板、进度条、头图、插图这些大图和尺寸各不相同的图不要写 sheet，一张张生成。小图标的 width、height 按在界面上的显示尺寸写准，prompt 写清楚轮廓简洁、主体占满画面、小尺寸下也清晰可辨
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
@@ -827,7 +832,7 @@ function conceptSection(c: ConceptContext, d: Design) {
 照着它搭界面、出切图，界面要和模板一致：
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
-3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。同类的小图标（3 个以上）放进同一个 sheet 合成一张图出，面板会自动切开，不用一张张出，也不用问用户；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
+3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
 4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；最后调 check。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 
@@ -1084,6 +1089,31 @@ export function conceptPrompt(
   return parts.filter(Boolean).join('\n')
 }
 
+/** 图集只用于小图标：边长范围，一张图集最多几个（格子太多每个图标分到的像素少，会糊） */
+export const SHEET_MIN_SIDE = 24
+export const SHEET_MAX_SIDE = 160
+export const SHEET_MAX_ICONS = 16
+
+/** 图集的写法对不对：大图、同一个图集里尺寸不一样的，返回给 AI 改 */
+export function sheetProblems(imgs: { id: string; width: number; height: number; sheet?: string }[]) {
+  const out: string[] = []
+  const groups = new Map<string, typeof imgs>()
+  for (const i of imgs) if (i.sheet) groups.set(i.sheet, [...(groups.get(i.sheet) ?? []), i])
+  for (const [name, list] of groups) {
+    const big = list.filter((i) => Math.max(i.width, i.height) > SHEET_MAX_SIDE)
+    if (big.length)
+      out.push(
+        `sheet "${name}" 里的 ${big.map((i) => `${i.id}（${i.width}×${i.height}）`).join('、')} 太大：图集只用于边长不超过 ${SHEET_MAX_SIDE} 的小图标，大图去掉 sheet 一张张生成`,
+      )
+    const sizes = [...new Set(list.map((i) => `${i.width}×${i.height}`))]
+    if (sizes.length > 1)
+      out.push(
+        `sheet "${name}" 里的图标尺寸不统一（${sizes.join('、')}）：同一个图集的图标要一样大，按尺寸分成不同的 sheet 或去掉 sheet`,
+      )
+  }
+  return out
+}
+
 /** 图标表的格数：尽量接近正方形（按图标的宽高比算），最后一行可以不满 */
 export function sheetGrid(n: number, cell: { width: number; height: number }) {
   const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * cell.height) / cell.width))))
@@ -1110,8 +1140,9 @@ export function sheetPrompt(
   const { cols, rows } = sheetGrid(imgs.length, cell)
   const transparent = imgs.some((i) => i.transparent)
   const parts = [
-    `Icon sprite sheet for ${kind === 'web' ? 'a web page' : 'a game UI'}: ${imgs.length} separate icons laid out in a strict grid of ${cols} columns × ${rows} rows, aspect ratio ${aspect(cols * cell.width, rows * cell.height)}, the grid fills the whole canvas.`,
-    'Every cell is the same size. Each icon is centered in its own cell, fully inside it with about 12% empty margin on every side; nothing touches or crosses a cell border. No grid lines, frames around cells, numbers, labels or text anywhere.',
+    `Icon sprite sheet for ${kind === 'web' ? 'a web page' : 'a game UI'}: ${imgs.length} separate, individual icons of the same size, laid out one after another in a strict, evenly spaced grid of ${cols} columns × ${rows} rows on one clean plain background, aspect ratio ${aspect(cols * cell.width, rows * cell.height)}, the grid fills the whole canvas.`,
+    'This is a sheet of separate items to be cut apart, NOT a scene or a composition: icons never overlap, never touch, and nothing connects them. Every cell is exactly the same size and the gaps between icons are identical. Each icon is centered in its own cell, fully inside it with about 12% empty margin on every side; nothing touches or crosses a cell border. No grid lines, frames around cells, numbers, labels or text anywhere.',
+    `Each icon must stay crisp and readable when shown at only ${cell.width}x${cell.height} px: bold clear silhouette, strong contrast, simple readable shapes, the subject fills about three quarters of its cell, sharp clean edges, no tiny noisy details, no blur, high resolution.`,
     'All icons look like one matching set: identical art style, outline weight, lighting direction, color treatment and level of detail.',
     kind === 'web' ? WEB_QUALITY : GAME_QUALITY,
     projectStyle.trim(),

@@ -34,6 +34,8 @@ import {
   imagePrompt,
   type ConceptImage,
   type ConceptState,
+  SHEET_MAX_ICONS,
+  SHEET_MAX_SIDE,
   sheetGrid,
   sheetPrompt,
   importComponent,
@@ -530,11 +532,17 @@ ${prompt}`,
     const groups = new Map<string, number[]>()
     list.forEach((img, k) => {
       const sheet = job.sheets?.get(img.id)
-      if (sheet) groups.set(`${sheet}:${img.transparent}`, [...(groups.get(`${sheet}:${img.transparent}`) ?? []), k])
+      // 图集只放尺寸统一的小图标：大图、尺寸不同的分开（大图一张张生成）
+      if (!sheet || Math.max(img.width, img.height) > SHEET_MAX_SIDE) return
+      const key = `${sheet}:${img.transparent}:${img.width}x${img.height}`
+      groups.set(key, [...(groups.get(key) ?? []), k])
     })
     const grouped = new Set<number>()
-    for (const ks of groups.values())
-      if (ks.length >= 2) {
+    for (const all of groups.values())
+      // 一张图集最多 SHEET_MAX_ICONS 个：格子太多，每个图标分到的像素少，切出来会糊
+      for (let i = 0; i < all.length; i += SHEET_MAX_ICONS) {
+        const ks = all.slice(i, i + SHEET_MAX_ICONS)
+        if (ks.length < 2) continue
         ks.forEach((k) => grouped.add(k))
         queue.push({
           imgs: ks.map((k) => list[k]),
