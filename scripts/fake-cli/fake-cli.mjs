@@ -444,7 +444,9 @@ if (input.startsWith('你在帮用户整理游戏 UI 生图用的提示词') && 
 if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
   let png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
   // 图标表：纯绿底，每个图标一个 20×20 的色块放在各自的格子正中；描述里有 MISS3 时第 3 个图标「漏画」
-  const grid = input.match(/(\d+) separate icons laid out in a strict grid of (\d+) columns × (\d+) rows/)
+  const grid = input.match(
+    /(\d+) separate, individual icons of the same size, laid out one after another in a strict, evenly spaced grid of (\d+) columns × (\d+) rows/,
+  )
   if (grid) {
     const [n, cols, rows] = grid.slice(1).map(Number)
     const W = cols * 40

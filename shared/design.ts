@@ -30,7 +30,7 @@ const MarginSchema = z.object({ Left: z.number(), Top: z.number(), Right: z.numb
 export const ImageVariant = z.object({
   /** 设计目录 images/ 下的文件名 */
   file: z.string(),
-  source: z.enum(['cli', 'browser', 'upload']),
+  source: z.enum(['cli', 'browser', 'local', 'upload']),
   /** 实际尺寸（像素） */
   width: z.number().default(0),
   height: z.number().default(0),
@@ -115,7 +115,7 @@ export const ConceptImage = z.object({
   round: z.number().int().default(1),
   /** 在哪张的基础上改的 */
   base: z.string().optional(),
-  source: z.enum(['cli', 'browser', 'upload']),
+  source: z.enum(['cli', 'browser', 'local', 'upload']),
   at: z.string(),
 })
 export type ConceptImage = z.infer<typeof ConceptImage>
@@ -411,6 +411,8 @@ export type NewDesignInput = z.infer<typeof NewDesignInput>
 export const ImageSource = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cli') }),
   z.object({ kind: z.literal('browser'), tabId: z.string().min(1) }),
+  /** 本机的 ComfyUI：workflow 是工作流 id，auto 按图片用途自动选 */
+  z.object({ kind: z.literal('local'), workflow: z.string().min(1).default('auto') }),
   z.object({ kind: z.literal('none') }),
 ])
 export type ImageSource = z.infer<typeof ImageSource>
@@ -1054,6 +1056,34 @@ const negativeLine = (...lists: (string | undefined)[]) => {
   const all = lists.flatMap((l) => (l ?? '').split(',')).map((x) => x.trim())
   const uniq = [...new Set(all.filter(Boolean).map((x) => x.toLowerCase()))]
   return uniq.length ? `Negative prompt (none of these may appear): ${uniq.join(', ')}.` : ''
+}
+
+/**
+ * 本机模型（ComfyUI）的正反提示词：新一代模型（Z-Image、FLUX、Qwen-Image）读得懂完整的描述，
+ * 只是把写在正文里的「不能出现」拿出来单独传；SDXL 的文本编码器只看前 77 个词，压成关键词短句
+ */
+export function localPrompts(
+  full: string,
+  natural: boolean,
+  o: { subject: string; style: string; projectStyle?: string; kind?: DesignKind; chroma?: boolean; negative?: string },
+) {
+  const lines = full.split('\n')
+  const neg = lines.find((l) => l.startsWith('Negative prompt'))
+  const negative = neg
+    ? neg.replace(/^Negative prompt[^:]*:\s*/, '').replace(/\.$/, '')
+    : negativeLine(o.kind === 'web' ? WEB_NEGATIVE : GAME_NEGATIVE, o.negative).replace(/^[^:]*:\s*/, '')
+  if (natural) return { prompt: lines.filter((l) => l !== neg).join('\n'), negative }
+  const prompt = [
+    o.subject.trim(),
+    o.kind === 'web' ? 'web illustration' : 'game ui asset',
+    o.style.trim(),
+    (o.projectStyle ?? '').trim().split(/[.\n]/)[0],
+    'isolated, centered, clean sharp edges, high detail, masterpiece',
+    o.chroma ? 'on a flat pure green background' : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+  return { prompt, negative }
 }
 
 /**

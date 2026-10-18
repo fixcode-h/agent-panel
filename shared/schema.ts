@@ -875,8 +875,24 @@ export const Settings = z.object({
       effort: z.string().default(''),
       /** 同时生成几张图：每张图单独开一个会话（CLI 进程或浏览器里的新对话），最多 10 个 */
       concurrency: z.number().int().min(1).max(10).catch(3).default(3),
+      /** 本机生图（ComfyUI）：装在软件目录的 comfyui/ 下 */
+      local: z
+        .object({
+          /** 下载模型用 hf-mirror.com、装依赖用清华 PyPI 镜像 */
+          mirror: z.boolean().default(false),
+          port: z.number().int().min(1024).max(65535).catch(8188).default(8188),
+          /** 已经有 ComfyUI 时填它的地址（例如 http://127.0.0.1:8188），不用再装 */
+          url: z.string().trim().default(''),
+        })
+        .default({ mirror: false, port: 8188, url: '' }),
     })
-    .default({ cli: 'codex', model: '', effort: '', concurrency: 3 }),
+    .default({
+      cli: 'codex',
+      model: '',
+      effort: '',
+      concurrency: 3,
+      local: { mirror: false, port: 8188, url: '' },
+    }),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

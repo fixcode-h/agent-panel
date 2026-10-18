@@ -2611,7 +2611,7 @@ try {
     assert.equal(sheetGen.length, 2, '三个图标一次出图，漏画的第三个单独补一张')
     assert.match(
       sheetGen[0].stdin ?? sheetGen[0].input,
-      /3 separate icons laid out in a strict grid of 2 columns × 2 rows/,
+      /3 separate, individual icons of the same size, laid out one after another in a strict, evenly spaced grid of 2 columns × 2 rows/,
     )
     assert.match(sheetGen[0].stdin ?? sheetGen[0].input, /1\. item A\n2\. item B\n3\. MISS3 item C/)
     assert.doesNotMatch(sheetGen[1].stdin ?? sheetGen[1].input, /sprite sheet/)

@@ -3,6 +3,8 @@ import { toast } from 'sonner'
 import {
   ChevronDown,
   Clapperboard,
+  Settings2,
+  Workflow,
   Download,
   Layers,
   FileJson,
@@ -91,6 +93,7 @@ import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/we
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ConceptBoard } from '@/components/design/ConceptBoard'
 import { CanvasCapture } from '@/components/design/CanvasCapture'
+import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
@@ -296,7 +299,7 @@ let clipboard: Widget | null = null
 function Designer({ id }: { id: string }) {
   const ed = useDesignEditor(id)
   const { designProjects: projects, setDesigns } = useData()
-  const { go } = useNav()
+  const { go, openSettings } = useNav()
   const { doc, server } = ed
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
@@ -329,6 +332,7 @@ function Designer({ id }: { id: string }) {
   const [animOpen, setAnimOpen] = useState(false)
   // 正在从图片列表往画布上拖的图：画布高亮能放这张图的控件
   const [dragImage, setDragImage] = useState<DesignImage | null>(null)
+  const [comfyWeb, setComfyWeb] = useState(false)
   const [animCommand, setAnimCommand] = useState<AnimCommand | null>(null)
   /** 已经交回的截图请求，不重复画 */
   const captured = useRef(new Set<string>())
@@ -901,6 +905,31 @@ function Designer({ id }: { id: string }) {
             <Redo2 className="h-4 w-4" />
           </Button>
         </div>
+        <Menu>
+          <MenuTrigger asChild>
+            <Button size="sm" variant="ghost" title={t('本机 ComfyUI：工作流和网页')}>
+              <Workflow className="h-3.5 w-3.5" />
+              ComfyUI
+              <ChevronDown className="h-3 w-3 text-subtle" />
+            </Button>
+          </MenuTrigger>
+          <MenuContent align="end">
+            <MenuItem onSelect={() => go({ page: 'comfy', id: server.kind === 'web' ? 'web' : 'game' })}>
+              <Workflow className="h-4 w-4" />
+              {server.kind === 'web' ? t('网页工作流管理') : t('游戏工作流管理')}
+            </MenuItem>
+            <MenuItem onSelect={() => setComfyWeb(true)}>
+              <Globe className="h-4 w-4" />
+              {t('打开 ComfyUI 网页')}
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem onSelect={() => openSettings('local-image')}>
+              <Settings2 className="h-4 w-4" />
+              {t('本机生图设置')}
+            </MenuItem>
+          </MenuContent>
+        </Menu>
+        <ComfyWebDialog open={comfyWeb} onOpenChange={setComfyWeb} />
         <Button
           size="sm"
           variant={animOpen ? 'secondary' : 'ghost'}

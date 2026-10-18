@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import {
   ArrowUpCircle,
   Cpu,
+  ImageIcon,
   FlaskConical,
   Settings2,
   Palette,
@@ -37,6 +38,7 @@ import { UpdateSection } from '@/components/settings/UpdateSection'
 import { StylesSettings } from '@/components/settings/StylesSettings'
 import { ApiSection } from '@/components/settings/ApiSection'
 import { DataSection } from '@/components/settings/DataSection'
+import { LocalImageSection } from '@/components/settings/LocalImageSection'
 import { TagsSection } from '@/components/settings/TagsSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
@@ -68,6 +70,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
   { id: 'assist', label: t('AI 创建'), icon: Sparkles },
+  { id: 'local-image', label: t('本机生图'), icon: ImageIcon },
   { id: 'styles', label: t('风格库'), icon: Palette },
   { id: 'data', label: t('数据'), icon: HardDrive },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle },
@@ -662,6 +665,9 @@ function SettingsBody({
             />
           )}
 
+          {cur.id === 'local-image' && (
+            <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
+          )}
           {cur.id === 'data' && <DataSection />}
           {cur.id === 'tags' && <TagsSection />}
           {cur.id === 'update' && <UpdateSection />}

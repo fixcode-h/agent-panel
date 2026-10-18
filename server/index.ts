@@ -40,6 +40,7 @@ import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi } from './accounts.ts'
 import { installApi } from './install.ts'
+import { comfyApi } from './comfy.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { openBrowser, revealDir, revealItem } from './open.ts'
@@ -178,6 +179,7 @@ app.route('/accounts', accountsApi())
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 app.route('/clis', installApi())
+app.route('/local-image', comfyApi())
 app.route('/clis', modelsApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
 app.get('/clis/:id/limits', async (c) => {

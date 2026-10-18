@@ -41,6 +41,15 @@ import {
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
+import {
+  BUILTIN_WORKFLOWS,
+  ComfyWorkflow,
+  localModel,
+  localFile,
+  modelReady,
+  type LocalJob,
+  type LocalStatus,
+} from '@shared/local-image'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams } from '@shared/agent-role'
@@ -712,6 +721,98 @@ const DEMO_COMMANDS: Record<string, SlashCommand[]> = {
   codex: [{ name: 'prompts:explain', description: '解释一段代码的作用', kind: 'command', source: '~/.codex/prompts' }],
 }
 
+/** 本机生图的演示：模拟安装、下载的进度，演示里没有真的 ComfyUI */
+const local: LocalStatus = {
+  dir: '~/agent-panel/comfyui',
+  installed: false,
+  running: false,
+  external: false,
+  url: 'http://127.0.0.1:8188',
+  python: '3.12',
+  gpu: 'cuda',
+  gpuName: 'NVIDIA GeForce RTX 4090',
+  vram: 24,
+  files: [],
+}
+let demoWorkflows: ComfyWorkflow[] = []
+function demoLocal(method: string, seg: string[], body: unknown): unknown {
+  const [, action, id, sub] = seg
+  if (action === 'workflows') {
+    if (id === 'assist') {
+      // 演示没有 AI：在参考的工作流上做一点改动，说明一下
+      const b = body as { kind: 'game' | 'web'; instruction: string; base?: ComfyWorkflow }
+      const base = b.base ?? BUILTIN_WORKFLOWS.find((w) => w.kind === b.kind)!
+      return {
+        workflow: {
+          ...base,
+          id: b.base && !b.base.builtin ? b.base.id : `wf_${Date.now().toString(36)}`,
+          name: b.base ? `${base.name}（优化）` : b.instruction.slice(0, 20),
+          builtin: undefined,
+          extra: [base.extra, 'high detail, crisp clean edges'].filter(Boolean).join(' '),
+        },
+        note: '演示：在参考工作流的基础上加强了清晰度要求（真实环境里由 AI 按你的要求改写节点和参数）。',
+      }
+    }
+    if (method === 'PUT' && id) {
+      const wf = { ...parse(ComfyWorkflow, { ...(body as object), id }), builtin: undefined }
+      demoWorkflows = demoWorkflows.some((w) => w.id === id)
+        ? demoWorkflows.map((w) => (w.id === id ? wf : w))
+        : [...demoWorkflows, wf]
+      return wf
+    }
+    if (method === 'DELETE' && id) {
+      demoWorkflows = demoWorkflows.filter((w) => w.id !== id)
+      return { ok: true }
+    }
+    const list = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
+    const ready = list.filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
+    return { list, ready: ready.map((w) => w.id) }
+  }
+  const tick = (steps: string[], done: () => void, total = 0) => {
+    const j: LocalJob = (local.job = {
+      id: String(Date.now()),
+      kind: total ? 'download' : 'install',
+      status: 'running',
+      step: steps[0],
+      log: '',
+      progress: total ? { done: 0, total } : undefined,
+    })
+    let i = 0
+    const timer = setInterval(() => {
+      i++
+      if (j.progress) j.progress.done = Math.min(total, (total * i) / 8)
+      const step = steps[Math.min(steps.length - 1, Math.floor((i * steps.length) / 8))]
+      if (step !== j.step) j.log += `${j.step}\n`
+      j.step = step
+      if (i < 8) return
+      clearInterval(timer)
+      j.status = 'done'
+      done()
+    }, 400)
+  }
+  if (action === 'install' && method === 'POST')
+    tick(
+      ['检查 Python', '下载 ComfyUI', '创建 Python 虚拟环境', '安装 PyTorch', '安装 ComfyUI 的依赖', '安装完成'],
+      () => {
+        local.installed = true
+      },
+    )
+  if (action === 'start') local.running = local.installed
+  if (action === 'stop') local.running = false
+  if (action === 'cancel' && local.job) local.job.status = 'failed'
+  if (action === 'models' && id) {
+    const m = localModel(id)
+    if (m && sub === 'download')
+      tick(
+        m.files.map((f) => `下载 ${localFile(f)!.file}`),
+        () => (local.files = [...new Set([...local.files, ...m.files])]),
+        m.files.reduce((n, f) => n + localFile(f)!.gb * 1024 ** 3, 0),
+      )
+    if (m && method === 'DELETE') local.files = local.files.filter((f) => !m.files.includes(f))
+  }
+  return structuredClone(local)
+}
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -724,6 +825,7 @@ function route(method: string, url: string, body: unknown): unknown {
     persist()
     return Settings.parse((d.settings ??= Settings.parse({})))
   }
+  if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {})
   if (res === 'clis') {

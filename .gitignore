@@ -8,3 +8,4 @@ release
 build/
 ui-shots
 logs/
+/comfyui/

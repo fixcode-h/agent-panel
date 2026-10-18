@@ -32,6 +32,8 @@ import {
   emptyConcept,
   emptyRoot,
   imagePrompt,
+  type DesignKind,
+  localPrompts,
   type ConceptImage,
   type ConceptState,
   SHEET_MAX_ICONS,
@@ -57,6 +59,8 @@ import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
+import { localGenerate } from './comfy.ts'
+import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/runner.ts'
 import { normalizeGenerated, sliceSheet } from './image.ts'
@@ -262,7 +266,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     }
     let first = -1
     let chain = Promise.resolve()
-    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
+    const kind = source.kind === 'browser' || source.kind === 'local' ? source.kind : ('cli' as const)
     const add = (buf: Buffer, exact = false) => {
       chain = chain
         .then(async () => {
@@ -296,30 +300,50 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const ref = templateRef(d, source)
     try {
       const rest =
-        source.kind === 'browser'
-          ? await browserGenerate(
+        source.kind === 'local'
+          ? await localRun(
+              source,
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
               {
-                tabId: source.tabId,
-                prompt: withRevision(
-                  imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
-                  revision,
-                ),
-                count,
+                subject: withRevision(img.prompt, revision),
+                style: cache.get(d.id)!.style,
+                projectStyle: style,
+                kind: d.kind,
                 chroma: img.transparent,
-                concurrency: (await getSettings()).imageGen.concurrency,
-                onProgress: (text) => (item.text = text),
-                onImage: (b) => sink.add(b),
+                negative: img.negative,
               },
-              job.abort.signal,
-            )
-          : await cliGenerate(
-              // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
+              img,
               count,
               job,
               (b) => sink.add(b),
-              ref ? [ref] : [],
+              (text) => (item.text = text),
+              imageUse(img, d.kind === 'web' ? 'web' : 'game'),
+              d.kind,
             )
+          : source.kind === 'browser'
+            ? await browserGenerate(
+                {
+                  tabId: source.tabId,
+                  prompt: withRevision(
+                    imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
+                    revision,
+                  ),
+                  count,
+                  chroma: img.transparent,
+                  concurrency: (await getSettings()).imageGen.concurrency,
+                  onProgress: (text) => (item.text = text),
+                  onImage: (b) => sink.add(b),
+                },
+                job.abort.signal,
+              )
+            : await cliGenerate(
+                // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
+                withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
+                count,
+                job,
+                (b) => sink.add(b),
+                ref ? [ref] : [],
+              )
       for (const b of rest) sink.add(b)
       await sink.done()
       if (!item.got) throw new Error(t('没有取到图片'))
@@ -415,6 +439,37 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       items[i].text = undefined
     }
     if (failed.length) throw new Error(failed.join('\n'))
+  }
+
+  /** 用本机的 ComfyUI 生成：按图片用途选工作流；新模型用完整描述，SDXL 用压缩过的关键词 */
+  async function localRun(
+    source: Extract<ImageSource, { kind: 'local' }>,
+    full: string,
+    short: Parameters<typeof localPrompts>[2],
+    size: { width: number; height: number },
+    count: number,
+    job: Job,
+    onImage: (b: Buffer) => void,
+    onProgress: (text: string) => void,
+    use: WorkflowUse,
+    kind: DesignKind,
+  ): Promise<Buffer[]> {
+    await localGenerate(
+      {
+        workflow: source.workflow,
+        kind: kind === 'web' ? 'web' : 'game',
+        use,
+        full,
+        short,
+        width: size.width,
+        height: size.height,
+        count,
+        onImage,
+        onProgress,
+      },
+      job.abort.signal,
+    )
+    return []
   }
 
   /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
@@ -523,7 +578,9 @@ ${prompt}`,
     const style = await projectStyle(d)
     // 每张图单独一个会话（CLI 进程或浏览器里的新对话），同时跑的个数在设置里调；旧版扩展只能一张张来
     const settings = await getSettings()
-    const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
+    // 本机只有一块显卡，ComfyUI 也是排队一张张画：一次交一张，进度看得清楚
+    const width =
+      (source.kind === 'browser' && !browserParallel()) || source.kind === 'local' ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
     // 同一个 sheet（至少 2 个、透明度一样）的图标一起生成，其余一张张来
@@ -533,7 +590,8 @@ ${prompt}`,
     list.forEach((img, k) => {
       const sheet = job.sheets?.get(img.id)
       // 图集只放尺寸统一的小图标：大图、尺寸不同的分开（大图一张张生成）
-      if (!sheet || Math.max(img.width, img.height) > SHEET_MAX_SIDE) return
+      // 本机的扩散模型画不准等间距的格子：图标一张张生成
+      if (!sheet || source.kind === 'local' || Math.max(img.width, img.height) > SHEET_MAX_SIDE) return
       const key = `${sheet}:${img.transparent}:${img.width}x${img.height}`
       groups.set(key, [...(groups.get(key) ?? []), k])
     })
@@ -1004,7 +1062,7 @@ ${prompt}`,
               negative: req.negative,
               round,
               base: req.base,
-              source: source.kind === 'browser' ? 'browser' : 'cli',
+              source: source.kind === 'browser' || source.kind === 'local' ? source.kind : 'cli',
               at: now(),
             }
             // 出了新的候选就回到挑图：之前确认的模板作废
@@ -1021,20 +1079,33 @@ ${prompt}`,
       }
       try {
         const rest =
-          source.kind === 'browser'
-            ? await browserGenerate(
-                {
-                  tabId: source.tabId,
-                  prompt,
-                  count: req.count,
-                  chroma: false,
-                  concurrency: (await getSettings()).imageGen.concurrency,
-                  onProgress: (text) => (progress.text = text),
-                  onImage: add,
-                },
-                job.abort.signal,
+          source.kind === 'local'
+            ? await localRun(
+                source,
+                prompt,
+                { subject: req.prompt, style: cur.style, projectStyle: style, kind: cur.kind, negative: req.negative },
+                { width: cur.designSize.X, height: cur.designSize.Y },
+                req.count,
+                job,
+                add,
+                (text) => (progress.text = text),
+                'concept',
+                cur.kind,
               )
-            : await cliGenerate(prompt, req.count, job, add, ref ? [ref] : [])
+            : source.kind === 'browser'
+              ? await browserGenerate(
+                  {
+                    tabId: source.tabId,
+                    prompt,
+                    count: req.count,
+                    chroma: false,
+                    concurrency: (await getSettings()).imageGen.concurrency,
+                    onProgress: (text) => (progress.text = text),
+                    onImage: add,
+                  },
+                  job.abort.signal,
+                )
+              : await cliGenerate(prompt, req.count, job, add, ref ? [ref] : [])
         for (const b of rest) add(b)
       } catch (e) {
         if (job.abort.signal.aborted) throw e

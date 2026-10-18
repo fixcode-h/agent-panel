@@ -198,7 +198,8 @@ let lastDesignRoute: Route = { page: 'design' }
 function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
   const chat = route.page === 'chat'
-  const design = route.page === 'design'
+  // ComfyUI 工作流管理属于 UI 设计
+  const design = route.page === 'design' || route.page === 'comfy'
   const modes = [
     {
       id: 'chat',
@@ -285,8 +286,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
-  const designMode = route.page === 'design'
-  if (designMode) lastDesignRoute = route
+  const designMode = route.page === 'design' || route.page === 'comfy'
+  if (route.page === 'design') lastDesignRoute = route
   else if (!chatMode) lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 
@@ -371,14 +372,23 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       <nav aria-label={t('主导航')} className={cn('flex flex-col gap-0.5 px-2', narrow && 'items-center')}>
         {narrow && <ModeSwitch narrow />}
         {designMode ? (
-          <Row
-            icon={Plus}
-            label={t('新建设计')}
-            collapsed={narrow}
-            on={!route.id || route.id === 'new'}
-            onClick={() => go({ page: 'design' })}
-            className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
-          />
+          <>
+            <Row
+              icon={Plus}
+              label={t('新建设计')}
+              collapsed={narrow}
+              on={route.page === 'design' && (!route.id || route.id === 'new')}
+              onClick={() => go({ page: 'design' })}
+              className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
+            />
+            <Row
+              icon={Workflow}
+              label={t('ComfyUI 工作流')}
+              collapsed={narrow}
+              on={route.page === 'comfy'}
+              onClick={() => go({ page: 'comfy' })}
+            />
+          </>
         ) : chatMode ? (
           <Row
             icon={Plus}

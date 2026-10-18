@@ -15,7 +15,7 @@ export interface ProcessResult {
 }
 
 /** 结束整个进程树：CLI 往往会再起子进程（shell、MCP 服务等） */
-function killTree(pid: number) {
+export function killTree(pid: number) {
   if (isWin) {
     nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }).on('error', () => {})
     return

@@ -233,7 +233,7 @@ export function ImageDetails({
             <button
               key={v.file}
               onClick={() => set({ selected: i }, 'sel')}
-              title={`${v.width}×${v.height} · ${{ cli: t('图片模型'), browser: t('浏览器'), upload: t('上传') }[v.source]}`}
+              title={`${v.width}×${v.height} · ${{ cli: t('图片模型'), browser: t('浏览器'), local: t('本机模型'), upload: t('上传') }[v.source]}`}
               className={cn(
                 'shrink-0 cursor-pointer rounded-md border-2 p-px',
                 i === image.selected ? 'border-accent' : 'border-transparent hover:border-line-strong',
