@@ -347,16 +347,16 @@ if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && 
       let failed = false
       const call = async (name, a) => (failed = (await tool(name, a)).isError || failed)
       for (const c of j.components ?? [])
-        await call('create_component', { name: c.Name, size: c.DesignSize, root: c.Root })
+        await call('create_components', { items: [{ name: c.Name, size: c.DesignSize, root: c.Root }] })
       if (j.images?.length) await call('add_images', { images: j.images })
       if (j.root) {
         const cur = JSON.parse((await tool('get_tree', {})).content[0].text)
         await call('replace_widget', { name: cur.Name, widget: j.root })
       }
       if (j.ops?.length) await call('edit', { ops: j.ops })
-      if (j.style) await call('set_style', { style: j.style })
+      if (j.style) await call('set_design', { style: j.style })
       if (j.designSize) await call('set_design_size', j.designSize)
-      if (j.question) await call('ask_style', j.question)
+      if (j.question) await call('ask_user', { questions: [j.question] })
       return failed
     }
     const second = pick('FAKE_DESIGN2')
@@ -537,7 +537,10 @@ if (kind === 'claude') {
     }
     const a1 = await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
     const a2 = await ask('AskUserQuestion', {
-      questions: [{ question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] }],
+      questions: [
+        { question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] },
+        { question: '要不要加缓存？', header: '缓存', options: [{ label: '加' }, { label: '不加' }] },
+      ],
     })
     if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2]) + '\n')
   }

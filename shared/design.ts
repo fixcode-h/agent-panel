@@ -79,7 +79,10 @@ export type Annotation = z.infer<typeof Annotation>
 
 /** AI 在动手之前问用户的问题：每个选项有一句说明，style 是选了以后定下来的整体风格（英文） */
 export const DesignQuestion = z.object({
-  text: z.string().max(500),
+  text: z.string().min(1).max(500),
+  /** 很短的标签，多个问题时显示在页签上 */
+  header: z.string().max(20).default(''),
+  multiSelect: z.boolean().default(false),
   options: z
     .array(
       z.object({
@@ -111,8 +114,10 @@ export const DesignMessage = z.object({
   tools: z.array(z.any()).optional(),
   /** AI 回复按发生的顺序分段：每段是思考、工具调用、说明，和 Agent 的输出一样依次显示 */
   parts: z.array(z.object({ text: z.string(), thinking: z.string().optional(), tools: z.array(z.any()) })).optional(),
-  /** AI 先问用户的问题（例如整体风格还没定），选项点一下就作为回答发出去 */
+  /** AI 先问用户的问题（旧数据，只有一个） */
   question: DesignQuestion.optional(),
+  /** AI 先问用户的问题（例如整体风格还没定），一次可以问几个；问题面板换掉输入框，全部回答后一起发出去 */
+  questions: z.array(DesignQuestion).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -513,7 +518,7 @@ export const AiDesignResult = z.object({
   /** 在现有设计上一步步改（见 design-ops.ts），和 root 二选一 */
   ops: z.array(z.any()).max(500).optional(),
   /** 先问用户（整体风格还没定时）；有它时这一轮不改设计 */
-  question: DesignQuestion.optional(),
+  questions: z.array(DesignQuestion).optional(),
 })
 
 const gameRules = (
@@ -521,7 +526,7 @@ const gameRules = (
 ) => `- 游戏 UI 的视觉全部用图片：面板底框、按钮底图、高亮框、选中框、进度条底和填充、图标、分隔线、装饰都是独立的图片，用 Image 或画刷引用（"img:<图片 id>"），不要指望用纯色块拼出效果。文字用 TextBlock。
 - 一张图只画一个元素（例如只画按钮底图，不带文字；高亮框单独一张），这样在 UE 里能分别替换和复用。按钮的 Normal / Hovered / Pressed 可以各一张图，也可以共用一张再用 TintColor 区分。
 - 需要拉伸的框和底图（面板、按钮、进度条）给图片设 nineSlice，画刷用 DrawAs: "Box" 并把 Margin 设成同样的比例。
-- 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）用 create_component 提取成子控件，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
+- 重复出现、结构复杂的部分（列表项、背包格子、技能按钮）用 create_components 提取成子控件，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用。
 - 数量要等游戏运行时才知道的内容（背包和商店的格子、任务 / 邮件 / 好友列表、排行榜、Buff 图标）用 TileView、ListView 或 DynamicEntryBox，不要在里面预先摆子控件：条目做成子控件，写在 Properties.EntryWidgetClass，NumDesignerPreviewEntries 是设计器里预览几条。数量固定的等大格子（技能栏、快捷栏）用 UniformGridPanel，同样不放子控件，在属性里写 EntryWidgetClass、NumEntries、NumColumns。数量固定、各不相同的排列（主菜单的几个按钮、属性栏）才用 VerticalBox / HorizontalBox 直接放子控件。
 - 用户附上了界面截图或参考图（附件里的图片）时，先打开看清楚再做：照着截图还原布局，控件的结构、位置和大小按截图和设计稿的比例换算；截图里的底框、按钮、图标、装饰都列成要生成的图片，prompt 照着截图里的样子描述；截图里的文字写进 TextBlock。
 - 根控件一般是 CanvasPanel，尺寸就是设计稿尺寸 ${d.designSize.X}×${d.designSize.Y}；靠边的元素用对应的锚点，方便适配不同分辨率。
@@ -534,7 +539,7 @@ const webRules = (
 ) => `- 网页的视觉以 Frame 的背景色、圆角、边框、阴影和文字排版为主，配色要协调、留白充足、层次清楚；只有插图、头图、商品图、头像、图标这类真正的图片才用 Picture 或 BackgroundImage 引用（"img:<图片 id>"）。
 - 用 Frame 一层层搭：页面（根控件 Page，竖排）→ 区块（导航栏、头图、内容区、页脚）→ 卡片、行、列。横排用 Direction "row"，间距用 Gap，内边距用 Padding，别用空的 Frame 占位。
 - 宽高：要占满父控件剩下的空间写 "fill"（例如横排里自适应的那一列、竖排里撑开的内容区），按内容写 "auto"，固定大小写像素数。根控件 Page 的宽高是 "fill"，设计稿宽 ${d.designSize.X}，高 ${d.designSize.Y}。
-- 重复出现的结构（卡片、列表项、导航项）用 create_component 提取成子控件，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用，子控件的根控件也是 Frame。
+- 重复出现的结构（卡片、列表项、导航项）用 create_components 提取成子控件，在树里用 {"Type":"UserWidget","Class":"<子控件名>"} 引用，子控件的根控件也是 Frame。
 - 页面要能适配手机：横排的大区块（头图左右分栏、多列卡片）给 Mobile 改成竖排，固定的大宽度在手机上改成 "fill"，大标题在手机上调小。
 - 按钮、链接、卡片这类能点的控件加上 Hover 样式。
 - 用户附上了网页截图或参考图时，照着截图还原布局、配色和文字，截图里的插图、头像、图标列成要生成的图片。
@@ -633,8 +638,8 @@ ${
     ? ''
     : `## 整体风格还没定
 这个设计还没有确定整体美术风格。如果用户这次的要求和之前的对话里都没有说清楚整体风格（例如「暗黑奇幻」「像素风」「扁平简约」这样的描述，或者附上了参考图），先不要搭界面、不要列图片：
-调用 ask_style 问用户想要什么整体风格，然后回复一句为什么先问，给 3~4 个适合这个界面和题材的选项，每个选项写 label（中文，10 个字以内）、desc（一句中文说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
-${styles.length ? `风格库里有这些用户存过的风格，合适的直接作为选项（style 照抄它的英文）：\n${styles.map((x) => `- ${x.name}：${x.summary}\n  英文：${x.en}`).join('\n')}\n` : ''}用户已经说清楚风格时不要问，直接做，并用 set_style 写下整体风格。用户回答了风格问题后，按之前的要求接着做。
+调用 ask_user 问用户想要什么整体风格（需要的话同时问配色、气质等其他问题），然后回复一句为什么先问，给 3~4 个适合这个界面和题材的选项，每个选项写 label（中文，10 个字以内）、desc（一句中文说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
+${styles.length ? `风格库里有这些用户存过的风格，合适的直接作为选项（style 照抄它的英文）：\n${styles.map((x) => `- ${x.name}：${x.summary}\n  英文：${x.en}`).join('\n')}\n` : ''}用户已经说清楚风格时不要问，直接做，并用 set_design 的 style 写下整体风格。用户回答了风格问题后，按之前的要求接着做。
 
 `
 }## 当前设计
@@ -651,14 +656,20 @@ ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ${request}
 ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 ## 用 design 工具改设计
-你有 design 工具（MCP），像在控件树和属性面板里操作一样改设计，每一步都会马上显示给用户：
-- 看：get_tree 看控件树（in 写子控件名看子控件），get_design 看尺寸、风格、子控件和图片
-- 控件：add_widget 加控件（可以带子控件）、update_widget 改属性和插槽、remove_widget 删、move_widget 移动或调整顺序、rename_widget 改名、replace_widget 整个换掉（换根控件就是整个重做）
-- 子控件（Widget Blueprint）：create_component 新建、resize_component 改尺寸、delete_component 删；往子控件里加控件时 in 写子控件名
-- 图片：add_images 列出要新建或重新生成的图片（id、name、prompt、width、height、transparent、nineSlice），再用 update_widget 设到控件的画刷上（"img:<图片 id>"）
-- 风格和尺寸：set_style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，set_design_size 改设计稿尺寸${styled ? '' : '，ask_style 先问用户想要什么风格'}
-- 改很多地方时可以用 edit 一次提交多步（ops 的格式见下面）
-先看清楚现在的设计，再一步步改；改完调一次 check，有问题接着改，没问题了再用几句中文回复用户你做了什么。
+你有 design 工具（MCP），每一步都会马上显示给用户。改动类的工具都能一次提交很多条（items 数组），**尽量少调用、每次多做**：
+- 从零搭界面：先 create_components 一次建好所有子控件，再 replace_widget 把根控件换成写好的整棵树（带全部子控件），一次调用搭完
+- 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets，把要改的全部放进同一次调用的 items
+- 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
+- 图片：add_images 一次列出所有图片，再用 update_widgets 设到控件上（"img:<图片 id>"）
+- set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
+- 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句中文回复你做了什么
+
+### 控件的写法（宽松，少写错）
+- {"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…}}：Type、Name、Slot、Children、Class 以外的键都是属性，也可以写在 Properties 里
+- 画布（CanvasPanel）里的位置用简写：{"anchor":"top-left","x":40,"y":32,"w":320,"h":72}，anchor 取 top-left / top / top-right / left / center / right / bottom-left / bottom / bottom-right，
+  锚点和控件自身的对齐点是同一个角，x、y 是离那个点的距离（例如 bottom-right 写 x:-24,y:-24 就是离右下角各 24 像素），w、h 是宽高；铺满写 {"anchor":"stretch","margin":[左,上,右,下]}
+- 横排、竖排等的插槽：{"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
+- 尺寸按设计稿 ${d.designSize.X}×${d.designSize.Y} 的像素写准；照着参考图做时按参考图和设计稿的比例换算（参考图的尺寸见附件说明）
 
 ## 回复
 所有修改都通过 design 工具完成。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块，不要写文件，不要运行命令。
@@ -742,7 +753,7 @@ export function resolveDesignResult(
   const unused = r.images.filter((i) => !used.has(i.id)).map((i) => i.id)
   if (unused.length)
     errors.push(
-      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal；网页是 Picture 的 Src、Frame / WebButton 的 BackgroundImage），用 update_widget 设上`,
+      `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal；网页是 Picture 的 Src、Frame / WebButton 的 BackgroundImage），用 update_widgets 设上`,
     )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
   return { result: r, root, components: after }

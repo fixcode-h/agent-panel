@@ -7,7 +7,7 @@
 import { randomUUID } from 'node:crypto'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import type { TaskRequest } from '../shared/schema.ts'
+import { RequestAnswer, type TaskRequest } from '../shared/schema.ts'
 import type { AskReply, CliEvent } from './exec/parsers.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -71,6 +71,7 @@ export function askSession(scope: string) {
           title: ev.title,
           detail: ev.detail,
           options: ev.options ?? [],
+          ...(ev.questions ? { questions: ev.questions } : {}),
           at: new Date().toISOString(),
         },
       })
@@ -82,7 +83,6 @@ export function askSession(scope: string) {
 }
 
 export function asksApi() {
-  const Answer = z.object({ allow: z.boolean(), answer: z.string().max(20000).optional() })
   const Flag = z.object({ scope: z.string().min(1).max(200), askUser: z.boolean() })
   return (
     new Hono()
@@ -95,7 +95,7 @@ export function asksApi() {
         return c.json({ ok: true })
       })
       .post('/:id', async (c) => {
-        const p = Answer.safeParse(await c.req.json().catch(() => ({})))
+        const p = RequestAnswer.safeParse(await c.req.json().catch(() => ({})))
         if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
         if (!answerAsk(c.req.param('id'), p.data)) return c.json({ error: t('这个请求已经结束了') }, 404)
         return c.json({ ok: true })

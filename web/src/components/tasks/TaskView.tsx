@@ -40,7 +40,7 @@ import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
-import { TaskRequestCard } from './RequestCard'
+import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
@@ -618,128 +618,131 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
             <TaskRequestCard task={task} onAnswered={apply} />
             <WorktreeBar task={task} onChange={apply} />
             <QueuedList task={task} onChange={apply} />
-            <ChatComposer
-              id="follow-up"
-              value={text}
-              onChange={setText}
-              onSubmit={() => void send()}
-              files={files}
-              taRef={followTa}
-              menus={
-                <>
-                  {mention.menu}
-                  {slash.menu}
-                </>
-              }
-              onSync={() => {
-                mention.sync()
-                slash.sync()
-              }}
-              onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
-              attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
-              tools={
-                <>
-                  <AskToggle
-                    value={task.askUser}
-                    onChange={(v) => {
-                      setTask({ ...task, askUser: v })
-                      api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
-                    }}
-                  />
-                  {byCli ? (
-                    <ChatModelPicker value={chatRun} onChange={changeRun} />
-                  ) : (
-                    <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-                      {running
-                        ? tops.filter((s) => s.status === 'running').length > 1
-                          ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
-                          : t('执行中，可以随时暂停')
-                        : task.mode === 'workflow'
-                          ? tops.every((s) => s.status === 'done')
-                            ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
-                            : task.status === 'failed'
-                              ? t('会从失败的节点重新执行')
-                              : t('会从没完成的节点继续执行')
-                          : t('发给 {name}', { name: chatLabel })}
-                    </span>
-                  )}
-                </>
-              }
-              actions={
-                <>
-                  {running ? (
-                    <>
-                      {text.trim() ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant={canSteer ? 'ghost' : 'secondary'}
-                            className="rounded-lg"
-                            disabled={sending}
-                            title={canSteer ? t('这一轮完成后接着处理') : t('这一轮完成后接着处理（Enter）')}
-                            onClick={() => send('queue')}
-                          >
-                            <ListPlus className="h-3.5 w-3.5" />
-                            {t('排队')}
-                          </Button>
-                          {canSteer && (
+            {/* AI 在问问题时，问题面板换掉输入框 */}
+            {!asksQuestion(task.requests) && (
+              <ChatComposer
+                id="follow-up"
+                value={text}
+                onChange={setText}
+                onSubmit={() => void send()}
+                files={files}
+                taRef={followTa}
+                menus={
+                  <>
+                    {mention.menu}
+                    {slash.menu}
+                  </>
+                }
+                onSync={() => {
+                  mention.sync()
+                  slash.sync()
+                }}
+                onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
+                attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
+                tools={
+                  <>
+                    <AskToggle
+                      value={task.askUser}
+                      onChange={(v) => {
+                        setTask({ ...task, askUser: v })
+                        api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+                      }}
+                    />
+                    {byCli ? (
+                      <ChatModelPicker value={chatRun} onChange={changeRun} />
+                    ) : (
+                      <span className="min-w-0 truncate pl-1 text-xs text-subtle">
+                        {running
+                          ? tops.filter((s) => s.status === 'running').length > 1
+                            ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
+                            : t('执行中，可以随时暂停')
+                          : task.mode === 'workflow'
+                            ? tops.every((s) => s.status === 'done')
+                              ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                              : task.status === 'failed'
+                                ? t('会从失败的节点重新执行')
+                                : t('会从没完成的节点继续执行')
+                            : t('发给 {name}', { name: chatLabel })}
+                      </span>
+                    )}
+                  </>
+                }
+                actions={
+                  <>
+                    {running ? (
+                      <>
+                        {text.trim() ? (
+                          <>
                             <Button
                               size="sm"
-                              variant="secondary"
+                              variant={canSteer ? 'ghost' : 'secondary'}
                               className="rounded-lg"
                               disabled={sending}
-                              title={t('不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）')}
-                              onClick={() => send('steer')}
+                              title={canSteer ? t('这一轮完成后接着处理') : t('这一轮完成后接着处理（Enter）')}
+                              onClick={() => send('queue')}
                             >
-                              <MessageSquarePlus className="h-3.5 w-3.5" />
-                              {t('补充')}
+                              <ListPlus className="h-3.5 w-3.5" />
+                              {t('排队')}
                             </Button>
-                          )}
-                        </>
-                      ) : (
-                        <Button size="sm" variant="secondary" className="rounded-lg" onClick={stop}>
-                          <Pause className="h-3.5 w-3.5" />
-                          {t('暂停')}
-                        </Button>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {canResume && (
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          className="rounded-lg"
-                          disabled={resuming}
-                          onClick={() => resume()}
-                          title={
-                            task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
-                              ? t('从没完成的节点继续执行')
-                              : t('重新执行最后一条要求')
-                          }
-                        >
-                          {resuming ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <RotateCw className="h-3.5 w-3.5" />
-                          )}
-                          {task.status === 'failed' ? t('重试') : t('继续执行')}
-                        </Button>
-                      )}
-                      <SendButton onClick={() => void send()} disabled={!text.trim() || sending} sending={sending} />
-                    </>
-                  )}
-                </>
-              }
-              label={t('继续输入要求')}
-              placeholder={
-                !running
-                  ? t('继续输入要求')
-                  : canSteer
-                    ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
-                    : t('执行中也可以输入，这一轮完成后接着处理')
-              }
-            />
+                            {canSteer && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="rounded-lg"
+                                disabled={sending}
+                                title={t('不停下，把这些信息补充给正在做的 Agent，它会接着当前的任务做（Enter）')}
+                                onClick={() => send('steer')}
+                              >
+                                <MessageSquarePlus className="h-3.5 w-3.5" />
+                                {t('补充')}
+                              </Button>
+                            )}
+                          </>
+                        ) : (
+                          <Button size="sm" variant="secondary" className="rounded-lg" onClick={stop}>
+                            <Pause className="h-3.5 w-3.5" />
+                            {t('暂停')}
+                          </Button>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        {canResume && (
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="rounded-lg"
+                            disabled={resuming}
+                            onClick={() => resume()}
+                            title={
+                              task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
+                                ? t('从没完成的节点继续执行')
+                                : t('重新执行最后一条要求')
+                            }
+                          >
+                            {resuming ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : (
+                              <RotateCw className="h-3.5 w-3.5" />
+                            )}
+                            {task.status === 'failed' ? t('重试') : t('继续执行')}
+                          </Button>
+                        )}
+                        <SendButton onClick={() => void send()} disabled={!text.trim() || sending} sending={sending} />
+                      </>
+                    )}
+                  </>
+                }
+                label={t('继续输入要求')}
+                placeholder={
+                  !running
+                    ? t('继续输入要求')
+                    : canSteer
+                      ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
+                      : t('执行中也可以输入，这一轮完成后接着处理')
+                }
+              />
+            )}
           </div>
         </main>
 

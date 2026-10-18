@@ -1119,7 +1119,7 @@ function tasksRoute(
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
-    const a = body as { allow: boolean; answer?: string }
+    const a = body as { allow: boolean; answer?: string; answers?: string[] }
     simAnswers.set(rid, a)
     task.requests = task.requests.filter((r) => r.id !== rid)
     task.messages.push({
@@ -1133,7 +1133,7 @@ function tasksRoute(
             ? `你确认了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」的结果，接着往下执行`
             : `你退回了「${task.steps.find((s) => s.id === req.step)?.title ?? ''}」：${a.answer ?? ''}`
           : req.kind === 'question'
-            ? `你回答了「${req.title}」：${a.answer ?? ''}`
+            ? `你回答了「${req.title}」：${(a.answers ?? [a.answer ?? '']).join('；')}`
             : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
       tools: [],
       at: new Date().toISOString(),

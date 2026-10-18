@@ -148,7 +148,13 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
         ? t('你确认了「{title}」的结果，接着往下执行', { title: stepTitle(task, req.step) })
         : t('你退回了「{title}」：{answer}', { title: stepTitle(task, req.step), answer: r.answer ?? '' })
       : req.kind === 'question'
-        ? t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answer ?? '' })
+        ? req.questions && req.questions.length > 1 && r.answers?.length
+          ? t('你回答了：{answers}', {
+              answers: req.questions.map((q, i) => `${q.question} → ${r.answers?.[i] ?? ''}`).join('；'),
+            })
+          : !r.allow
+            ? t('你没有回答「{title}」', { title: req.title })
+            : t('你回答了「{title}」：{answer}', { title: req.title, answer: r.answers?.[0] ?? r.answer ?? '' })
         : r.allow
           ? t('你允许了：{title}', { title: req.title })
           : t('你拒绝了：{title}', { title: req.title })
@@ -582,6 +588,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
           title: ev.title,
           detail: ev.detail,
           options: ev.options ?? [],
+          ...(ev.questions ? { questions: ev.questions } : {}),
           at: new Date().toISOString(),
         })
         // 新的请求马上落盘，侧栏的铃铛和任务页立刻能看到

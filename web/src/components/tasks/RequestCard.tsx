@@ -15,7 +15,17 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { QuestionPanel, type PanelQuestion } from '@/components/chat/QuestionPanel'
 import { t } from '@shared/i18n'
+
+/** 请求里的问题：一次问了几个时每个一条，旧的请求只有标题和选项 */
+export const requestQuestions = (req: TaskRequest): PanelQuestion[] =>
+  req.questions?.length
+    ? req.questions
+    : [{ question: req.title, header: req.detail, options: req.options.map((label) => ({ label })) }]
+
+/** 第一个等你处理的是问题：问题面板换掉输入框 */
+export const asksQuestion = (requests: TaskRequest[] | undefined) => requests?.[0]?.kind === 'question'
 
 const ICONS = {
   command: SquareTerminal,
@@ -50,7 +60,7 @@ export function RequestCard({
   className,
 }: {
   requests: TaskRequest[]
-  onAnswer: (id: string, r: { allow: boolean; answer?: string }) => Promise<void>
+  onAnswer: (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => Promise<void>
   agent?: { name: string; icon: string; cli: string }
   className?: string
 }) {
@@ -74,10 +84,42 @@ export function RequestCard({
   }
   const spin = (key: string) => busy === key && <Loader2 className="h-3.5 w-3.5 animate-spin" />
 
+  // 问题：换掉输入框显示，一次问了几个时全部回答完一起交回去
+  if (req.kind === 'question')
+    return (
+      <QuestionPanel
+        className={className}
+        questions={requestQuestions(req)}
+        who={
+          a && (
+            <>
+              <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
+              <span className="truncate">{a.name}</span>
+            </>
+          )
+        }
+        onSubmit={async (answers) => {
+          try {
+            await onAnswer(req.id, { allow: true, answer: answers.join('\n'), answers })
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+        onSkip={async () => {
+          try {
+            await onAnswer(req.id, { allow: false })
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+        skipLabel={t('不回答，让 AI 自己决定')}
+      />
+    )
+
   return (
     <div
       role="alertdialog"
-      aria-label={req.kind === 'question' ? t('Agent 的问题') : t('Agent 请求确认')}
+      aria-label={t('Agent 请求确认')}
       className={cn(
         'mx-auto mb-2 max-w-(--content-w) overflow-hidden rounded-2xl border border-warning/50 bg-card shadow-card animate-[pop-in_160ms_ease-out]',
         className,
@@ -85,7 +127,7 @@ export function RequestCard({
     >
       <div className="flex items-center gap-2 border-b border-warning/25 bg-warning/8 px-4 py-2 text-xs">
         <CircleAlert className="h-3.5 w-3.5 text-warning" />
-        <span className="font-medium text-warning">{req.kind === 'question' ? t('需要你回答') : t('需要你确认')}</span>
+        <span className="font-medium text-warning">{t('需要你确认')}</span>
         {a && (
           <span className="flex min-w-0 items-center gap-1.5 text-muted">
             <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
@@ -152,42 +194,6 @@ export function RequestCard({
               </Button>
             </div>
           </form>
-        ) : req.kind === 'question' ? (
-          <div className="flex flex-col gap-2">
-            {req.options.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {req.options.map((o) => (
-                  <Button key={o} size="sm" variant="secondary" disabled={!!busy} onClick={() => send(o, true, o)}>
-                    {spin(o)}
-                    {o}
-                  </Button>
-                ))}
-              </div>
-            )}
-            <form
-              className="flex gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                if (answer.trim()) void send('text', true, answer.trim())
-              }}
-            >
-              <input
-                value={answer}
-                onChange={(e) => setAnswer(e.target.value)}
-                placeholder={req.options.length ? t('或者自己填写回答') : t('填写回答')}
-                aria-label={t('回答')}
-                className="h-8 min-w-0 flex-1 rounded-lg border border-line-strong bg-field px-3 text-[13px] outline-none focus:border-accent"
-              />
-              <Button size="sm" type="submit" disabled={!answer.trim() || !!busy}>
-                {spin('text')}
-                {t('回答')}
-              </Button>
-              <Button size="sm" variant="ghost" disabled={!!busy} onClick={() => send('skip', false)}>
-                {spin('skip')}
-                {t('不回答')}
-              </Button>
-            </form>
-          </div>
         ) : (
           <div className="flex justify-end gap-2">
             <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => send('deny', false)}>

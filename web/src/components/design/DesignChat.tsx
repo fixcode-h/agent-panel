@@ -8,22 +8,13 @@ import {
   FolderOpen,
   Globe,
   Loader2,
-  Palette as PaletteIcon,
   Pencil,
   RefreshCw,
   Sparkles,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { extensionSelfReload } from '@shared/design'
-import type {
-  Annotation,
-  BrowserStatus,
-  DesignJob,
-  DesignMessage,
-  DesignQuestion,
-  ImageSource,
-  ReplyPart,
-} from '@shared/design'
+import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource, ReplyPart } from '@shared/design'
 import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useScopedSetting } from '@/lib/useScopedSetting'
@@ -39,8 +30,10 @@ import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
 import { useAttachments } from '@/components/chat/Attachments'
+import { QuestionPanel } from '@/components/chat/QuestionPanel'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
-import { AskToggle, ScopeRequests, useAskUser } from '@/components/chat/AskToggle'
+import { AskToggle, useAskUser, useScopeRequests } from '@/components/chat/AskToggle'
+import { RequestCard, asksQuestion } from '@/components/tasks/RequestCard'
 import { t } from '@shared/i18n'
 
 const NO_NAMES = new Set<string>()
@@ -458,6 +451,13 @@ export function DesignChat({
   const files = useAttachments()
   const running = job?.status === 'running'
   const designing = running && job?.phase === 'design'
+  // CLI 执行中的审批和提问
+  const asks = useScopeRequests(`design:${designId}`, running)
+  // AI 回复里先问用户的问题（例如整体风格）：最后一条回复带问题、还没回答时，问题面板换掉输入框
+  const lastMsg = messages.at(-1)
+  const designQs = lastMsg?.role === 'agent' ? (lastMsg.questions ?? (lastMsg.question ? [lastMsg.question] : [])) : []
+  const [dismissed, setDismissed] = useState('')
+  const askDesign = !running && designQs.length > 0 && dismissed !== lastMsg?.id
   // 「/」：用选的 CLI 自己带的命令和 Skill，展开后放进设计要求里
   const slash = useSlashMenu({ cli: run.cli, scope: 'skills', text, setText, ta: box })
 
@@ -484,16 +484,15 @@ export function DesignChat({
     }
   }
 
-  // 选了 AI 问的选项：作为回答发出去；带 style 的（整体风格）先定到设计里
-  const pickOption = async (o: DesignQuestion['options'][number]) => {
+  // 回答了 AI 问的问题：全部答案一起作为一条消息发出去；选了带 style 的选项（整体风格）先定到设计里
+  const answerDesign = async (answers: string[], picked: number[][]) => {
     if (running || sending) return
     setSending(true)
     stick.current = true
+    const style = designQs.flatMap((q, i) => picked[i].map((k) => q.options[k]?.style ?? '')).find(Boolean)
+    const text = designQs.length === 1 ? answers[0] : designQs.map((q, i) => `${q.text}：${answers[i]}`).join('\n')
     try {
-      await onSend(o.desc ? `${o.label}：${o.desc}` : o.label, run, [], {
-        askUser,
-        ...(o.style ? { style: o.style } : {}),
-      })
+      await onSend(text, run, [], { askUser, ...(style ? { style } : {}) })
     } finally {
       setSending(false)
     }
@@ -560,18 +559,26 @@ export function DesignChat({
                       box.current?.focus()
                     }
               }
-              onPick={
-                msg.question && i === messages.length - 1 && !running && !sending
-                  ? (o) => void pickOption(o)
-                  : undefined
-              }
             />
           ))}
           {designing && job && <LiveReply job={job} />}
         </div>
       </div>
       <div className="relative shrink-0 px-3 pb-3">
-        <ScopeRequests scope={`design:${designId}`} active={running} />
+        <RequestCard requests={asks.list} onAnswer={asks.answer} className="mb-2" />
+        {askDesign && (
+          <QuestionPanel
+            questions={designQs.map((q) => ({
+              header: q.header,
+              question: q.text,
+              multiSelect: q.multiSelect,
+              options: q.options.map((o) => ({ label: o.label, description: o.desc })),
+            }))}
+            onSubmit={answerDesign}
+            onSkip={() => setDismissed(lastMsg?.id ?? '')}
+            skipLabel={t('自己说')}
+          />
+        )}
         {job && (running || job.images?.some((i) => i.status === 'failed')) && job.phase === 'images' ? (
           <JobProgress job={job} onRetry={onRetry} />
         ) : (
@@ -580,62 +587,64 @@ export function DesignChat({
         <div className="flex min-w-0 items-center pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
         </div>
-        <ChatComposer
-          size="sm"
-          value={text}
-          onChange={setText}
-          onSubmit={() => void send()}
-          files={files}
-          taRef={box}
-          disabled={disabled}
-          menus={slash.menu}
-          onSync={slash.sync}
-          onKeyDown={slash.onKeyDown}
-          above={
-            annotations.length > 0 && (
-              <div className="border-b px-2.5 pt-2.5 pb-2">
-                <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
-              </div>
-            )
-          }
-          attach={{ self: designId }}
-          tools={
-            <>
-              <AskToggle
-                value={askUser}
-                onChange={(v) => {
-                  setAskUserState(v)
-                  // 执行中改也马上生效：等着的问题会按新的设置处理
-                  if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
-                }}
-              />
-              <SourceSelect value={source} onChange={onSource} />
-              {source.kind !== 'none' && (
-                <Select
-                  aria-label={t('每张图生成几版')}
-                  value={String(count)}
-                  onChange={(e) => onCount(Number(e.target.value))}
-                  options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t('每张 {n} 版', { n }) }))}
-                  className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+        {!askDesign && !asksQuestion(asks.list) && (
+          <ChatComposer
+            size="sm"
+            value={text}
+            onChange={setText}
+            onSubmit={() => void send()}
+            files={files}
+            taRef={box}
+            disabled={disabled}
+            menus={slash.menu}
+            onSync={slash.sync}
+            onKeyDown={slash.onKeyDown}
+            above={
+              annotations.length > 0 && (
+                <div className="border-b px-2.5 pt-2.5 pb-2">
+                  <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
+                </div>
+              )
+            }
+            attach={{ self: designId }}
+            tools={
+              <>
+                <AskToggle
+                  value={askUser}
+                  onChange={(v) => {
+                    setAskUserState(v)
+                    // 执行中改也马上生效：等着的问题会按新的设置处理
+                    if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
+                  }}
                 />
-              )}
-            </>
-          }
-          running={running}
-          onStop={onStop}
-          sending={sending}
-          canSend={!!text.trim() || annotations.length > 0 || files.attachments.length > 0}
-          label={t('告诉 AI 要做什么')}
-          placeholder={
-            running
-              ? t('AI 正在处理，完成后可以继续说')
-              : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
-                ? t('写修改意见，发送后按图上的标记重新生成图片')
-                : annotations.length
-                  ? t('补充说明，或直接发送让 AI 按标注修改')
-                  : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
-          }
-        />
+                <SourceSelect value={source} onChange={onSource} />
+                {source.kind !== 'none' && (
+                  <Select
+                    aria-label={t('每张图生成几版')}
+                    value={String(count)}
+                    onChange={(e) => onCount(Number(e.target.value))}
+                    options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t('每张 {n} 版', { n }) }))}
+                    className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+                  />
+                )}
+              </>
+            }
+            running={running}
+            onStop={onStop}
+            sending={sending}
+            canSend={!!text.trim() || annotations.length > 0 || files.attachments.length > 0}
+            label={t('告诉 AI 要做什么')}
+            placeholder={
+              running
+                ? t('AI 正在处理，完成后可以继续说')
+                : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
+                  ? t('写修改意见，发送后按图上的标记重新生成图片')
+                  : annotations.length
+                    ? t('补充说明，或直接发送让 AI 按标注修改')
+                    : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
+            }
+          />
+        )}
       </div>
     </div>
   )
@@ -644,14 +653,11 @@ export function DesignChat({
 function ChatMessage({
   msg,
   last,
-  onPick,
   onResend,
 }: {
   msg: DesignMessage
   /** 最后一条回复：时间和操作一直显示 */
   last?: boolean
-  /** 这条是最后一条、在等用户选的问题时才有：点了选项就作为回答发出去 */
-  onPick?: (o: DesignQuestion['options'][number]) => void
   /** 把这条要求放回输入框重新编辑 */
   onResend?: (text: string) => void
 }) {
@@ -714,7 +720,6 @@ function ChatMessage({
       {!!msg.images?.length && (
         <span className="pl-[38px] text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>
       )}
-      {msg.question && <QuestionOptions q={msg.question} onPick={onPick} />}
     </ChatReply>
   )
 }
@@ -722,39 +727,6 @@ function ChatMessage({
 /** 回复的各段换成 Agent 输出的消息格式：和任务对话一样按顺序显示，只有第一段带头像和名字 */
 const partsToMessages = (id: string, parts: ReplyPart[], at: string) =>
   parts.map((p, i) => asTaskMessage(`${id}:${i}`, p.text, at, p))
-
-/** AI 先问的问题（例如整体风格）：每个选项一张卡片，点一下就作为回答发出去；也可以在输入框里自己说 */
-function QuestionOptions({
-  q,
-  onPick,
-}: {
-  q: DesignQuestion
-  onPick?: (o: DesignQuestion['options'][number]) => void
-}) {
-  return (
-    <div className="flex flex-col gap-1.5 pl-[38px]">
-      {q.text && <p className="text-[12.5px] font-medium">{q.text}</p>}
-      <div className="grid gap-1.5">
-        {q.options.map((o) => (
-          <button
-            key={o.label}
-            disabled={!onPick}
-            onClick={() => onPick?.(o)}
-            title={o.style}
-            className="group flex cursor-pointer items-start gap-2.5 rounded-xl border bg-card px-3 py-2 text-left transition-colors enabled:hover:border-accent/60 enabled:hover:bg-accent-soft/40 disabled:cursor-default disabled:opacity-60"
-          >
-            <PaletteIcon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
-            <span className="min-w-0 flex-1">
-              <span className="block text-[12.5px] font-medium">{o.label}</span>
-              {o.desc && <span className="block text-[11.5px] leading-snug text-muted">{o.desc}</span>}
-            </span>
-          </button>
-        ))}
-      </div>
-      {onPick && <p className="text-[11.5px] text-subtle">{t('都不合适的话，直接在下面说想要的风格')}</p>}
-    </div>
-  )
-}
 
 /** 正在输出的回复：思考、工具调用和说明按顺序边出边显示，和 Agent 的输出一样 */
 function LiveReply({ job }: { job: DesignJob }) {

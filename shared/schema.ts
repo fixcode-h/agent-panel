@@ -598,7 +598,17 @@ export const TaskTodo = z.object({
 })
 export type TaskTodo = z.infer<typeof TaskTodo>
 
-/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；在任务页输入框上方显示 */
+/** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
+export const AskQuestion = z.object({
+  /** 很短的标签，多个问题时显示在页签上 */
+  header: z.string().default(''),
+  question: z.string(),
+  options: z.array(z.object({ label: z.string(), description: z.string().default('') })).default([]),
+  multiSelect: z.boolean().default(false),
+})
+export type AskQuestion = z.infer<typeof AskQuestion>
+
+/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；确认在输入框上方显示，问题换掉输入框 */
 export const TaskRequest = z.object({
   id: z.string(),
   step: z.string().default(''),
@@ -609,6 +619,8 @@ export const TaskRequest = z.object({
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */
   options: z.array(z.string()).default([]),
+  /** 一次问了几个问题时的每一个（有它时 title、options 是第一个问题的） */
+  questions: z.array(AskQuestion).optional(),
   at: z.string(),
 })
 export type TaskRequest = z.infer<typeof TaskRequest>
@@ -794,3 +806,10 @@ export const Settings = z.object({
     .default({ cli: '', model: '', agentRules: '', workflowRules: '' }),
 })
 export type Settings = z.infer<typeof Settings>
+
+/** 回答 Agent 的请求：允许 / 拒绝，问题的回答（一次问了几个时每个一条） */
+export const RequestAnswer = z.object({
+  allow: z.boolean(),
+  answer: z.string().max(20000).optional(),
+  answers: z.array(z.string().max(20000)).max(20).optional(),
+})

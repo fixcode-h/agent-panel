@@ -135,7 +135,7 @@ try {
   // 思考、调设计工具、说明按顺序边出边显示
   await p.getByText(/design · check/).waitFor({ timeout: 15000 })
   await p.waitForTimeout(600)
-  await check(p, 'UI设计-写入', ['design · get_tree'])
+  await check(p, 'UI设计-写入', ['design · replace_widget'])
   await p.getByText(/正在生成图片 \d+\/\d+/).waitFor({ timeout: 15000 })
   await check(p, 'UI设计-生成中', ['正在生成图片'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
@@ -156,8 +156,13 @@ try {
   await p.keyboard.press('Enter')
   // 还没定整体风格：AI 先给几个风格选项，点一个接着做
   await p.getByText('想要什么整体风格？').waitFor({ timeout: 15000 })
-  await check(p, 'UI设计-问风格', ['想要什么整体风格？', '简约科技'])
+  // 问题面板换掉输入框：一次问两个问题，最后一项可以自己输入，全部回答后一起发出去
+  await check(p, 'UI设计-问风格', ['想要什么整体风格？', '简约科技', '配色'])
   await p.getByRole('button', { name: /简约科技/ }).click()
+  await p.getByText('主色调偏向哪种？').waitFor()
+  await p.getByRole('textbox', { name: '自己输入回答' }).fill('蓝紫渐变')
+  await check(p, 'UI设计-问配色', ['提交 2 个回答'])
+  await p.getByRole('button', { name: '提交 2 个回答' }).click()
   await p.getByText('做好了产品首页').first().waitFor({ timeout: 20000 })
   await p.getByText(/正在生成图片/).waitFor({ timeout: 20000 })
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 30000 })

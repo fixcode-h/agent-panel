@@ -1060,7 +1060,15 @@ try {
   const r2 = await waitReq()
   assert.equal(r2.kind, 'question')
   assert.deepEqual(r2.options, ['SQLite', 'MySQL'])
-  await call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true, answer: 'SQLite' })
+  assert.deepEqual(
+    r2.questions.map((q) => [q.header, q.options.length]),
+    [
+      ['数据库', 2],
+      ['缓存', 2],
+    ],
+    '一次问的几个问题都带上',
+  )
+  await call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true, answers: ['SQLite', '用 Redis'] })
   await assert.rejects(call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true }), /已经结束/)
   ask = await waitDone(ask.id)
   assert.equal(ask.status, 'done')
@@ -1069,6 +1077,7 @@ try {
   assert.equal(a1.behavior, 'allow')
   assert.equal(a1.updatedInput.command, 'rm -rf build')
   assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
+  assert.equal(a2.updatedInput.answers['要不要加缓存？'], '用 Redis', '几个问题的回答一起交回去')
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
 
@@ -2234,15 +2243,32 @@ try {
       .find((x) => x.failed)
     assert.match(failedTool.output, /主界面里没有叫 Nope 的控件/)
     // 用设计工具（MCP）改：CLI 调加控件、改属性、改名、建子控件等工具，回复只写普通文字
+    // 每个工具一次提交多条；控件写法宽松（属性直接写在控件上、插槽用简写），旧的单数工具名也认
     const mcpCalls = [
       ['rename_widget', { name: 'Txt_Ver', to: 'Txt_Version' }],
-      ['update_widget', { name: 'Txt_Version', properties: { Text: 'v2.0.0' } }],
+      ['update_widgets', { items: [{ name: 'Txt_Version', properties: { Text: 'v2.0.0' } }] }],
       [
-        'add_widget',
-        { parent: 'Buttons', widget: { Type: 'TextBlock', Name: 'Txt_Tip', Properties: { Text: '提示' } } },
+        'add_widgets',
+        {
+          items: [
+            { parent: 'Buttons', widget: { type: 'TextBlock', name: 'Txt_Tip', Text: '提示', slot: { padding: 8 } } },
+            {
+              parent: 'Root',
+              widget: {
+                Type: 'TextBlock',
+                Name: 'Txt_Corner',
+                Text: 'v',
+                Slot: { anchor: 'bottom-right', x: -24, y: -16, w: 120, h: 30 },
+              },
+            },
+          ],
+        },
       ],
-      ['create_component', { name: 'WBP_Tag', size: { X: 64, Y: 32 }, root: { Type: 'Overlay', Name: 'Root' } }],
-      ['set_style', { style: 'clean' }],
+      [
+        'create_components',
+        { items: [{ name: 'WBP_Tag', size: { X: 64, Y: 32 }, root: { Type: 'Overlay', Name: 'Root' } }] },
+      ],
+      ['set_design', { style: 'clean' }],
     ]
     await call('POST', `/designs/${design.id}/chat`, {
       text: `用工具改 FAKE_MCP:${JSON.stringify(mcpCalls)}`,
@@ -2256,6 +2282,17 @@ try {
       [box.at(-2).Name, box.at(-2).Properties.Text, box.at(-1).Name],
       ['Txt_Version', 'v2.0.0', 'Txt_Tip'],
       '工具里的改动存下来了',
+    )
+    assert.deepEqual(box.at(-1).Slot.Padding, { Left: 8, Top: 8, Right: 8, Bottom: 8 }, '插槽的简写')
+    const corner = d.root.Children.find((w) => w.Name === 'Txt_Corner').Slot.LayoutData
+    assert.deepEqual(
+      [corner.Anchors.Minimum, corner.Alignment, corner.Offsets],
+      [
+        { X: 1, Y: 1 },
+        { X: 1, Y: 1 },
+        { Left: -24, Top: -16, Right: 120, Bottom: 30 },
+      ],
+      '画布位置的简写换成锚点和偏移',
     )
     assert.ok(d.components.some((c) => c.Name === 'WBP_Tag' && c.DesignSize.X === 64))
     assert.equal(d.style, 'clean')

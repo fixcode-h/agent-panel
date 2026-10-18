@@ -415,7 +415,6 @@ export const EN_DESIGN: Record<string, string> = {
     'The AI asks you and waits for your answer (click to let the AI decide on its own)',
   'AI 有问题时自己选最合适的做法（点一下改成问你）':
     'The AI picks the best option on its own (click to have it ask you)',
-  '都不合适的话，直接在下面说想要的风格': 'If none fits, describe the style you want below',
   从风格库导入: 'Import from style library',
   '风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。':
     'The style library is empty. Click "Save to style library" in a UI design\'s style settings to add one.',

@@ -12,6 +12,7 @@ import {
   type Project,
   type ProjectCategory,
   type Workflow,
+  RequestAnswer,
 } from '../shared/schema.ts'
 import { taskWorkflows, workflowClosure } from '../shared/flow.ts'
 import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments, withTaskModel } from '../shared/task.ts'
@@ -578,7 +579,7 @@ export function tasksApi(deps: {
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
   routes.post('/:id/requests/:rid', async (c) => {
     const e = live.get(c.req.param('id'))
-    const body = z.object({ allow: z.boolean(), answer: z.string().optional() }).safeParse(await c.req.json())
+    const body = RequestAnswer.safeParse(await c.req.json())
     if (!body.success) return bad(c, z.prettifyError(body.error))
     if (!e || !answerRequest(e.task, c.req.param('rid'), body.data, randomUUID))
       return bad(c, t('这个请求已经结束了'), 404)

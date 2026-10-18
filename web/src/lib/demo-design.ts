@@ -777,39 +777,53 @@ async function runChat(
       text: '动手之前先定一下整体风格，后面所有图片都按它来。',
       at: now(),
       run,
-      question: {
-        text: '想要什么整体风格？',
-        options: [
-          ...demoStyleList
-            .filter((x) => x.kind === d.kind)
-            .map((x) => ({ label: x.name, desc: x.summary, style: x.en })),
-          ...(d.kind === 'web'
-            ? [
-                {
-                  label: '简约科技',
-                  desc: '大量留白、细线条、蓝紫渐变点缀',
-                  style: 'minimal tech, generous whitespace, thin lines, blue-violet gradient accents',
-                },
-                {
-                  label: '温暖手作',
-                  desc: '米色纸张质感、手绘插画、圆润字体',
-                  style: 'warm handmade, beige paper texture, hand-drawn illustrations, rounded type',
-                },
-              ]
-            : [
-                {
-                  label: '日系卡通',
-                  desc: '明亮配色、圆润描边、Q 版可爱',
-                  style: 'bright japanese cartoon, rounded thick outlines, cute chibi, saturated pastel palette',
-                },
-                {
-                  label: '科幻全息',
-                  desc: '深蓝底、青色发光线框、半透明面板',
-                  style: 'sci-fi hologram, deep navy background, cyan glowing wireframes, translucent glass panels',
-                },
-              ]),
-        ].slice(0, 4),
-      },
+      questions: [
+        {
+          text: '想要什么整体风格？',
+          header: '风格',
+          multiSelect: false,
+          options: [
+            ...demoStyleList
+              .filter((x) => x.kind === d.kind)
+              .map((x) => ({ label: x.name, desc: x.summary, style: x.en })),
+            ...(d.kind === 'web'
+              ? [
+                  {
+                    label: '简约科技',
+                    desc: '大量留白、细线条、蓝紫渐变点缀',
+                    style: 'minimal tech, generous whitespace, thin lines, blue-violet gradient accents',
+                  },
+                  {
+                    label: '温暖手作',
+                    desc: '米色纸张质感、手绘插画、圆润字体',
+                    style: 'warm handmade, beige paper texture, hand-drawn illustrations, rounded type',
+                  },
+                ]
+              : [
+                  {
+                    label: '日系卡通',
+                    desc: '明亮配色、圆润描边、Q 版可爱',
+                    style: 'bright japanese cartoon, rounded thick outlines, cute chibi, saturated pastel palette',
+                  },
+                  {
+                    label: '科幻全息',
+                    desc: '深蓝底、青色发光线框、半透明面板',
+                    style: 'sci-fi hologram, deep navy background, cyan glowing wireframes, translucent glass panels',
+                  },
+                ]),
+          ].slice(0, 4),
+        },
+        {
+          text: '主色调偏向哪种？',
+          header: '配色',
+          multiSelect: false,
+          options: [
+            { label: '冷色', desc: '蓝、青、紫为主，沉静克制', style: '' },
+            { label: '暖色', desc: '金、橙、红为主，热烈醒目', style: '' },
+            { label: '中性', desc: '黑白灰为主，点缀一种强调色', style: '' },
+          ],
+        },
+      ],
     })
     d.updatedAt = now()
     job.status = 'done'
@@ -825,9 +839,8 @@ async function runChat(
     job.parts = parts = addToParts(parts, { type: 'thinking', text: ch, delta: true })
   }
   const calls = [
-    ['get_tree', ''],
+    ['create_components', tpl.components.map((c) => c.Name).join(', ')],
     ['replace_widget', tpl.root.Name ?? 'Root'],
-    ...tpl.components.map((c) => ['create_component', c.Name]),
     ['add_images', tpl.images.map((i) => i.id).join(', ')],
     ['check', ''],
   ]

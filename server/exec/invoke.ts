@@ -175,7 +175,7 @@ async function invoke(
             reply: (r) =>
               respond(
                 r.allow
-                  ? { behavior: 'allow', updatedInput: claudeAnswer(name, input, r.answer) }
+                  ? { behavior: 'allow', updatedInput: claudeAnswer(name, input, r.answer, r.answers) }
                   : {
                       behavior: 'deny',
                       message: r.message ?? (r.answer ? `用户拒绝了：${r.answer}` : '用户拒绝了这个操作'),
@@ -211,12 +211,21 @@ async function invoke(
 export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { type: 'ask' }>, 'reply' | 'type'> {
   const str = (v: unknown) => (typeof v === 'string' ? v : '')
   if (name === 'AskUserQuestion') {
-    const q = input?.questions?.[0] ?? {}
+    const qs = (Array.isArray(input?.questions) ? input.questions : []).map((q: any) => ({
+      header: str(q?.header),
+      question: str(q?.question),
+      options: (Array.isArray(q?.options) ? q.options : [])
+        .map((x: any) => ({ label: str(x?.label), description: str(x?.description) }))
+        .filter((x: { label: string }) => x.label),
+      multiSelect: !!q?.multiSelect,
+    }))
+    const q = qs[0] ?? { header: '', question: '', options: [] }
     return {
       kind: 'question',
-      title: str(q.question) || t('有一个问题需要你回答'),
-      detail: str(q.header),
-      options: (q.options ?? []).map((x: any) => str(x?.label)).filter(Boolean),
+      title: q.question || t('有一个问题需要你回答'),
+      detail: q.header,
+      options: q.options.map((x: { label: string }) => x.label),
+      questions: qs.length ? qs : undefined,
     }
   }
   if (name === 'Bash')
@@ -239,11 +248,13 @@ export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { ty
   return { kind: 'tool', title: t('使用工具：{name}', { name }), detail: clipDetail(JSON.stringify(input, null, 2)) }
 }
 
-/** 允许时交回给 CLI 的参数：问题要带上用户选的答案 */
-function claudeAnswer(name: string, input: any, answer?: string) {
-  if (name !== 'AskUserQuestion' || !answer) return input
-  const q = input?.questions?.[0]?.question ?? ''
-  return { ...input, answers: { ...(input.answers ?? {}), [q]: answer } }
+/** 允许时交回给 CLI 的参数：问题要带上用户的回答（一次问了几个时每个问题一条） */
+function claudeAnswer(name: string, input: any, answer?: string, answers?: string[]) {
+  if (name !== 'AskUserQuestion' || (!answer && !answers?.length)) return input
+  const qs: any[] = Array.isArray(input?.questions) ? input.questions : []
+  const got = answers?.length ? answers : [answer ?? '']
+  const map = Object.fromEntries(qs.map((q, i) => [String(q?.question ?? ''), got[i] ?? '']).filter(([, v]) => v))
+  return { ...input, answers: { ...(input.answers ?? {}), ...map } }
 }
 
 /** Claude Code 的用户消息：有图片时把图片（base64）跟文字放在一起，模型直接看得到 */

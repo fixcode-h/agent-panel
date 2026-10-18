@@ -586,7 +586,7 @@ ${prompt}`,
           reply: text.trim(),
           style: sess.style,
           designSize: sess.designSize,
-          question: sess.question,
+          questions: sess.questions,
           images: sess.images,
           // 什么都没改（只是回答问题）时不带 ops：设计原样不动，也不算一次修改
           ops: touched ? [] : undefined,
@@ -643,7 +643,7 @@ ${prompt}`,
           run,
           // 过程按顺序存下：思考、工具调用和说明，和 Agent 的对话一样显示
           parts: finalParts(parts),
-          ...(r2.question?.options.length ? { question: r2.question } : {}),
+          ...(r2.questions?.length ? { questions: r2.questions } : {}),
         })
         if (problems)
           cur.messages.push({

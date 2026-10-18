@@ -174,12 +174,12 @@ export const api = {
   /** 独立分支：合并进项目当前的分支，或丢弃 */
   finishWorktree: (id: string, merge: boolean) =>
     request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
-  answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
+  answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
-  answerAsk: (id: string, body: { allow: boolean; answer?: string }) =>
+  answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),

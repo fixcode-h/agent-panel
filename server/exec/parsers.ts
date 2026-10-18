@@ -53,12 +53,16 @@ export type CliEvent =
       title: string
       detail: string
       options?: string[]
+      /** 一次问了几个问题（Claude Code 的 AskUserQuestion） */
+      questions?: import('../../shared/schema.ts').AskQuestion[]
       reply: (r: AskReply) => void
     }
 
 export type AskReply = {
   allow: boolean
   answer?: string
+  /** 一次问了几个问题时，每个问题的回答 */
+  answers?: string[]
   /** 拒绝时交给 CLI 的原话；不给时按 answer 拼一句「用户拒绝了」 */
   message?: string
 }
