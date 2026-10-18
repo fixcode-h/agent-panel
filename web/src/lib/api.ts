@@ -5,6 +5,8 @@ import type {
   CliLimits,
   CliSkill,
   SlashCommand,
+  CliAccounts,
+  LoginJob,
   CliModels,
   CliUpdate,
   Agent,
@@ -24,6 +26,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { ApiConfig } from '@shared/accounts'
 import type {
   BrowserStatus,
   Design,
@@ -94,6 +97,21 @@ export const api = {
   cliJob: (jobId: string) => request<CliInstallJob>(`/clis/jobs/${jobId}`),
   cliUpdate: (id: string, refresh = false) => request<CliUpdate>(`/clis/${id}/update${refresh ? '?refresh=1' : ''}`),
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
+  accounts: () => request<CliAccounts[]>('/accounts'),
+  loginStart: (cli: string) => request<LoginJob>(`/accounts/${cli}/login`, json('POST', {})),
+  loginStatus: (cli: string) => request<LoginJob | null>(`/accounts/${cli}/login`),
+  loginInput: (cli: string, text: string) =>
+    request<{ ok: true }>(`/accounts/${cli}/login/input`, json('POST', { text })),
+  loginCancel: (cli: string) => request<{ ok: true }>(`/accounts/${cli}/login`, { method: 'DELETE' }),
+  saveAccount: (cli: string, name = '') => request<CliAccounts>(`/accounts/${cli}/save`, json('POST', { name })),
+  switchAccount: (cli: string, id: string) => request<CliAccounts>(`/accounts/${cli}/switch`, json('POST', { id })),
+  logoutAccount: (cli: string) => request<CliAccounts>(`/accounts/${cli}/logout`, json('POST', {})),
+  renameAccount: (cli: string, id: string, name: string) =>
+    request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, json('PATCH', { name })),
+  deleteAccount: (cli: string, id: string) =>
+    request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
+  apiModels: (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
+    request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
   cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
   /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */
@@ -174,12 +192,12 @@ export const api = {
   /** 独立分支：合并进项目当前的分支，或丢弃 */
   finishWorktree: (id: string, merge: boolean) =>
     request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
-  answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
+  answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
-  answerAsk: (id: string, body: { allow: boolean; answer?: string }) =>
+  answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
@@ -223,6 +241,8 @@ export const api = {
     request<DesignMeta>(`/designs/${id}/move`, json('POST', { projectId })),
   deleteDesign: (id: string) => request<void>(`/designs/${id}`, { method: 'DELETE' }),
   designChat: (id: string, input: DesignChatInput) => request<DesignFull>(`/designs/${id}/chat`, json('POST', input)),
+  steerDesign: (id: string, text: string) =>
+    request<{ steered: boolean }>(`/designs/${id}/steer`, json('POST', { text })),
   stopDesign: (id: string) => request<DesignJob | null>(`/designs/${id}/stop`, json('POST', {})),
   uploadDesignImage: (id: string, body: { data: string; name?: string; imageId?: string }) =>
     request<DesignFull>(`/designs/${id}/images`, json('POST', body)),

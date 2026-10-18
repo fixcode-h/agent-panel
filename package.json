@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit && node scripts/i18n-check.mjs",
     "lint": "oxlint --deny-warnings && prettier --check web/src server shared scripts vite.config.ts",
     "test:e2e": "node scripts/e2e.mjs",
-    "test:unit": "tsx --test server/exec/*.test.ts",
+    "test:unit": "tsx --test server/exec/*.test.ts server/*.test.ts",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {

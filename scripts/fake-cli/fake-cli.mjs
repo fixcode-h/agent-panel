@@ -6,10 +6,11 @@
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
  * 设置环境变量 FAKE_CLI_LOG 后，每次调用的参数、目录和 stdin 会追加写进这个文件。
  */
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { crc32, deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
@@ -22,6 +23,41 @@ const kind =
         ? 'claude'
         : 'gemini'
       : 'commandcode'
+// 登录：按 FAKE_AUTH 把凭据文件写到各个 CLI 放凭据的地方（每次登录换一个邮箱），打印一个登录网址
+const isLogin =
+  (args[0] === 'auth' && args[1] === 'login') || args[0] === 'login' || (args[0] === '-p' && args[1] === 'hello')
+if (isLogin && process.env.FAKE_AUTH) {
+  const home = process.env.HOME
+  const counter = `${process.env.FAKE_CLI_LOG}.login`
+  const n = (existsSync(counter) ? Number(readFileSync(counter, 'utf8')) : 0) + 1
+  writeFileSync(counter, String(n))
+  const email = `fake${n}@example.com`
+  const put = (file, content) => {
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content))
+  }
+  process.stderr.write('Starting local login server on http://localhost:1455\n')
+  process.stderr.write(`Open this URL in your browser: https://example.com/oauth/authorize?n=${n}\n`)
+  await new Promise((r) => setTimeout(r, 300))
+  const kind = process.env.FAKE_AUTH
+  if (kind === 'codex') {
+    const jwt = `x.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.y`
+    put(path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'auth.json'), { tokens: { id_token: jwt, n } })
+  } else if (kind === 'claude') {
+    const dir = process.env.CLAUDE_CONFIG_DIR || path.join(home, '.claude')
+    put(path.join(dir, '.credentials.json'), { claudeAiOauth: { accessToken: `tok-${n}` } })
+    const file = path.join(process.env.CLAUDE_CONFIG_DIR || home, '.claude.json')
+    const cur = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
+    put(file, { ...cur, oauthAccount: { emailAddress: email, organizationName: 'Org' } })
+  } else if (kind === 'gemini') {
+    const dir = path.join(process.env.GEMINI_CLI_HOME || home, '.gemini')
+    put(path.join(dir, 'oauth_creds.json'), { access_token: `tok-${n}` })
+    put(path.join(dir, 'google_accounts.json'), { active: email, old: [] })
+  } else put(path.join(home, '.commandcode', 'auth.json'), { apiKey: `key-${n}` })
+  // Gemini CLI 这样登录后会接着跑那条提示，不自己退出：让面板看到凭据变了就停掉它
+  if (kind === 'gemini') await new Promise((r) => setTimeout(r, 20_000))
+  process.exit(0)
+}
 if (args.includes('--version')) {
   // 假 npm 「更新」过以后报告新版本
   let ver = '0.0.1'
@@ -174,9 +210,16 @@ if (process.env.FAKE_CLI_LOG) {
     kind === 'codex'
       ? { resume: appResume, developer, ...policy, op: appOp, fork: appFork, reviewTarget }
       : { compactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }
+  // 用 API 时交给 CLI 的环境变量：测试检查接口地址和密钥传进来了
+  const apiEnv = {
+    anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
+    agentpanel: process.env.AGENT_PANEL_API_KEY,
+    gemini: [process.env.GEMINI_API_KEY, process.env.GOOGLE_GEMINI_BASE_URL],
+  }
   appendFileSync(
     log,
-    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, pid: process.pid, start: Date.now() }) + '\n',
+    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, apiEnv, pid: process.pid, start: Date.now() }) +
+      '\n',
   )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))
@@ -303,11 +346,12 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
   process.exit(0)
 }
 
-// UI 设计的对话用设计工具（MCP）改：要求里有 FAKE_MCP:<一组 [工具名, 参数]> 时，按 -c mcp_servers.design.url
-// 依次调工具，回复只写普通文字（不写 JSON）。用来测试工具接口和「用工具改完再收尾」
+// UI 设计的对话：按 -c mcp_servers.design.url 调设计工具（MCP）改，回复只写普通文字。
+// 要求里 FAKE_MCP:<一组 [工具名, 参数]> 时依次调这些工具；FAKE_DESIGN:<一行 JSON> 时把 root、components、ops、images、
+// style、question 换成对应的工具调用，reply 作为回复。工具报错后有 FAKE_DESIGN2: 时接着按它改（像 AI 看到错误后修正），
+// 收到「还有问题」的重试提示时直接用 FAKE_DESIGN2:
 const mcpUrl = args.map((a) => a.match(/^mcp_servers\.design\.url="(.*)"$/)?.[1]).find(Boolean)
-if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && mcpUrl && /FAKE_MCP:/.test(input)) {
-  const calls = JSON.parse([...input.matchAll(/FAKE_MCP:(.*)/g)].at(-1)[1])
+if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && mcpUrl) {
   let id = 0
   const rpc = async (method, params) => {
     const r = await fetch(mcpUrl, {
@@ -317,21 +361,53 @@ if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && 
     })
     return (await r.json()).result
   }
+  const tool = async (name, args) => {
+    const r = await rpc('tools/call', { name, arguments: args })
+    note('item/completed', {
+      item: {
+        id: `t${id}`,
+        type: 'mcpToolCall',
+        server: 'design',
+        tool: name,
+        arguments: args,
+        status: r.isError ? 'failed' : 'completed',
+        ...(r.isError ? { error: { message: r.content[0].text } } : { result: { content: r.content } }),
+      },
+    })
+    return r
+  }
   await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'fake' } })
   const tools = (await rpc('tools/list', {})).tools.map((t) => t.name)
-  const results = []
-  for (const [name, args] of calls) results.push((await rpc('tools/call', { name, arguments: args })).content[0].text)
-  const check = await rpc('tools/call', { name: 'check', arguments: {} })
-  const text = `工具改好了（${tools.length} 个工具）：${results.join('；')}；检查：${check.content[0].text}`
-  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
-  codexDone('completed')
-}
-// UI 设计的对话：回说明 + JSON。JSON 由用户要求里最后一个 FAKE_DESIGN: 指定（一行），
-// 收到「不符合要求」的重试提示后改用 FAKE_DESIGN2:，用来测试自动修正
-if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex') {
   const pick = (tag) => [...input.matchAll(new RegExp(`${tag}:(.*)`, 'g'))].at(-1)?.[1]?.trim()
-  const json = (input.includes('不符合要求') && pick('FAKE_DESIGN2')) || pick('FAKE_DESIGN') || '{}'
-  const text = `按你的要求搭好了界面。\n\n\`\`\`json\n${json}\n\`\`\``
+  let text
+  if (/FAKE_MCP:/.test(input)) {
+    const results = []
+    for (const [name, a] of JSON.parse(pick('FAKE_MCP'))) results.push((await tool(name, a)).content[0].text)
+    const check = await tool('check', {})
+    text = `工具改好了（${tools.length} 个工具）：${results.join('；')}；检查：${check.content[0].text}`
+  } else {
+    const apply = async (j) => {
+      let failed = false
+      const call = async (name, a) => (failed = (await tool(name, a)).isError || failed)
+      for (const c of j.components ?? [])
+        await call('create_components', { items: [{ name: c.Name, size: c.DesignSize, root: c.Root }] })
+      if (j.images?.length) await call('add_images', { images: j.images })
+      if (j.root) {
+        const cur = JSON.parse((await tool('get_tree', {})).content[0].text)
+        await call('replace_widget', { name: cur.Name, widget: j.root })
+      }
+      if (j.ops?.length) await call('edit', { ops: j.ops })
+      if (j.style) await call('set_design', { style: j.style })
+      if (j.designSize) await call('set_design_size', j.designSize)
+      if (j.question) await call('ask_user', { questions: [j.question] })
+      return failed
+    }
+    const second = pick('FAKE_DESIGN2')
+    let j = JSON.parse((input.includes('还有问题') && second) || pick('FAKE_DESIGN') || '{}')
+    if ((await apply(j)) && second && !input.includes('还有问题')) await apply((j = JSON.parse(second)))
+    await tool('check', {})
+    text = j.reply ?? '好了'
+  }
   for (const part of text.match(/[\s\S]{1,40}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
   note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
   codexDone('completed')
@@ -351,7 +427,41 @@ if (input.startsWith('你在帮用户整理游戏 UI 生图用的提示词') && 
 // Codex 的 image_gen：每张图一个 imageGeneration 条目，第一张写到 savedPath，其余只给 base64；
 // 描述里有 IMGFAIL 时报生成失败
 if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
-  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+  let png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+  // 图标表：纯绿底，每个图标一个 20×20 的色块放在各自的格子正中；描述里有 MISS3 时第 3 个图标「漏画」
+  const grid = input.match(/(\d+) separate icons laid out in a strict grid of (\d+) columns × (\d+) rows/)
+  if (grid) {
+    const [n, cols, rows] = grid.slice(1).map(Number)
+    const W = cols * 40
+    const H = rows * 40
+    const raw = Buffer.alloc((W * 3 + 1) * H)
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = Math.floor(y / 40) * cols + Math.floor(x / 40)
+        const inside = x % 40 >= 10 && x % 40 < 30 && y % 40 >= 10 && y % 40 < 30
+        const on = inside && i < n && !(input.includes('MISS3') && i === 2)
+        raw.set(on ? [200, 40 + i * 30, 40] : [0, 255, 0], y * (W * 3 + 1) + 1 + x * 3)
+      }
+    const chunk = (type, body) => {
+      const head = Buffer.alloc(8)
+      head.writeUInt32BE(body.length, 0)
+      head.write(type, 4, 'ascii')
+      const crc = Buffer.alloc(4)
+      crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0)
+      return Buffer.concat([head, body, crc])
+    }
+    const ihdr = Buffer.alloc(13)
+    ihdr.writeUInt32BE(W, 0)
+    ihdr.writeUInt32BE(H, 4)
+    ihdr[8] = 8
+    ihdr[9] = 2
+    png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', deflateSync(raw)),
+      chunk('IEND', Buffer.alloc(0)),
+    ]).toString('base64')
+  }
   const n = Number(input.match(/生成 (\d+) 张图片/)?.[1] ?? 1)
   for (let i = 0; i < n; i++) {
     const id = `ig${i}`
@@ -504,7 +614,10 @@ if (kind === 'claude') {
     }
     const a1 = await ask('Bash', { command: 'rm -rf build', description: '清理构建目录' })
     const a2 = await ask('AskUserQuestion', {
-      questions: [{ question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] }],
+      questions: [
+        { question: '用哪个数据库？', header: '数据库', options: [{ label: 'SQLite' }, { label: 'MySQL' }] },
+        { question: '要不要加缓存？', header: '缓存', options: [{ label: '加' }, { label: '不加' }] },
+      ],
     })
     if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.ask', JSON.stringify([a1, a2]) + '\n')
   }

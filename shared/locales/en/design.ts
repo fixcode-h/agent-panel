@@ -123,12 +123,10 @@ export const EN_DESIGN: Record<string, string> = {
     'An inventory: a 5×4 grid on the left, details of the selected item on the right, with the slot as a user widget',
   '做一个战斗 HUD：左上角头像、血条和蓝条，右下角四个技能按钮带冷却':
     'A combat HUD: portrait with health and mana bars at the top left, four skill buttons with cooldowns at the bottom right',
-  'AI 正在处理，完成后可以继续说': 'The AI is working. You can continue once it’s done',
   '告诉 AI 要做什么': 'Tell the AI what to do',
   每张图生成几版: 'Versions per image',
   '每张 {n} 版': '{n} per image',
   '需要的图片：{n} 张': 'Images needed: {n}',
-  '格式不对，正在修正': 'Bad format, fixing it',
   正在设计: 'Designing',
 
   '浏览器扩展…': 'Browser extension…',
@@ -281,11 +279,9 @@ export const EN_DESIGN: Record<string, string> = {
   '不是能识别的图片（支持 PNG、JPEG、WebP、GIF）': 'Unrecognized image (PNG, JPEG, WebP and GIF are supported)',
   '{cli} 不能生成图片，请在设置的「默认 CLI」里换成 Codex':
     '{cli} can’t generate images. Switch to Codex under “Default CLI” in settings',
-  '超过 10 分钟没有生成完，已停止': 'Stopped: not finished after 10 minutes',
   '{error}。请确认已安装 {cli}': '{error}. Make sure {cli} is installed',
   '{cli} 没有生成图片': '{cli} didn’t generate any image',
   '检查还有这些问题：': 'The check still found these issues:',
-  '{cli} 改完的设计两次检查都没通过：{error}': '{cli} finished, but the design failed the check twice: {error}',
   '改好了。': 'Done.',
   设计不存在: 'Design not found',
   文件名不对: 'Invalid file name',
@@ -409,10 +405,7 @@ export const EN_DESIGN: Record<string, string> = {
   '{n} 个': '{n}',
   '运行模式：像游戏里一样点按钮看效果': 'Play mode: click buttons like in the game',
   '运行模式 · 按 Esc 退出': 'Play mode · press Esc to exit',
-  修正格式: 'Fixing format',
   写入: 'Writing',
-  控件树和图片清单: 'widget tree and image list',
-  '{n} 个字符': '{n} chars',
   'CLI 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。':
     "With a CLI, each image runs in its own process, at most this many at once. In the browser, only this many conversations are opened in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left); further images queue up and reuse whichever conversation is free.",
   'AI 有问题时问我': 'Ask me when the AI has a question',
@@ -420,7 +413,6 @@ export const EN_DESIGN: Record<string, string> = {
     'The AI asks you and waits for your answer (click to let the AI decide on its own)',
   'AI 有问题时自己选最合适的做法（点一下改成问你）':
     'The AI picks the best option on its own (click to have it ask you)',
-  '都不合适的话，直接在下面说想要的风格': 'If none fits, describe the style you want below',
   从风格库导入: 'Import from style library',
   '风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。':
     'The style library is empty. Click "Save to style library" in a UI design\'s style settings to add one.',
@@ -484,4 +476,9 @@ export const EN_DESIGN: Record<string, string> = {
   重新读取: 'Reload',
   '和已有的 CLI 重名': 'has the same id as an existing CLI',
   '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
+  '检查还有问题，正在接着改': 'The check found issues, still fixing',
+  '{cli} 用不了设计工具，请换一个 CLI': '{cli} cannot use the design tools. Please switch to another CLI',
+  '{cli} 连不上设计工具，请升级到最新版：{detail}':
+    '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
+  '和另外 {n} 个图标一起生成': 'Generating together with {n} other icons',
 }

@@ -53,10 +53,10 @@ export function useAskUser(scope: string) {
 }
 
 /**
- * 任务页以外的会话在等你处理的审批和提问：执行中定时取回来，贴在输入框上方。
- * active 为 false（没在执行）时不取，也不显示
+ * 任务页以外的会话在等你处理的审批和提问：执行中定时取回来。
+ * active 为 false（没在执行）时不取
  */
-export function ScopeRequests({ scope, active, className }: { scope: string; active: boolean; className?: string }) {
+export function useScopeRequests(scope: string, active: boolean) {
   const [list, setList] = useState<TaskRequest[]>([])
   useEffect(() => {
     if (!active) {
@@ -76,14 +76,15 @@ export function ScopeRequests({ scope, active, className }: { scope: string; act
       clearInterval(timer)
     }
   }, [scope, active])
-  return (
-    <RequestCard
-      requests={list}
-      className={className}
-      onAnswer={async (id, r) => {
-        await api.answerAsk(id, r)
-        setList((l) => l.filter((x) => x.id !== id))
-      }}
-    />
-  )
+  const answer = async (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => {
+    await api.answerAsk(id, r)
+    setList((l) => l.filter((x) => x.id !== id))
+  }
+  return { list, answer }
+}
+
+/** 等你处理的审批和提问，贴在输入框上方 */
+export function ScopeRequests({ scope, active, className }: { scope: string; active: boolean; className?: string }) {
+  const { list, answer } = useScopeRequests(scope, active)
+  return <RequestCard requests={list} className={className} onAnswer={answer} />
 }

@@ -35,6 +35,7 @@ import { designMcpApi } from './design-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
+import { accountsApi } from './accounts.ts'
 import { installApi } from './install.ts'
 import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
@@ -159,6 +160,7 @@ app.post('/clis/specs/reload', async (c) => {
   return c.json(userClis())
 })
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
+app.route('/accounts', accountsApi())
 app.route('/clis', installApi())
 app.route('/clis', modelsApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示

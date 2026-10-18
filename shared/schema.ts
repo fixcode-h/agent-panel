@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 
 /**
@@ -598,7 +599,17 @@ export const TaskTodo = z.object({
 })
 export type TaskTodo = z.infer<typeof TaskTodo>
 
-/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；在任务页输入框上方显示 */
+/** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
+export const AskQuestion = z.object({
+  /** 很短的标签，多个问题时显示在页签上 */
+  header: z.string().default(''),
+  question: z.string(),
+  options: z.array(z.object({ label: z.string(), description: z.string().default('') })).default([]),
+  multiSelect: z.boolean().default(false),
+})
+export type AskQuestion = z.infer<typeof AskQuestion>
+
+/** Agent 等用户确认的操作（权限不够的命令、改文件）或问题；确认在输入框上方显示，问题换掉输入框 */
 export const TaskRequest = z.object({
   id: z.string(),
   step: z.string().default(''),
@@ -609,6 +620,8 @@ export const TaskRequest = z.object({
   detail: z.string().default(''),
   /** 问题的选项；也可以自己填 */
   options: z.array(z.string()).default([]),
+  /** 一次问了几个问题时的每一个（有它时 title、options 是第一个问题的） */
+  questions: z.array(AskQuestion).optional(),
   at: z.string(),
 })
 export type TaskRequest = z.infer<typeof TaskRequest>
@@ -737,6 +750,10 @@ export const CliSettings = z.object({
   extraArgs: z.array(z.string()).default([]),
   /** 追加的环境变量，例如 API Key、代理 */
   env: z.array(z.object({ key: z.string().trim(), value: z.string() })).default([]),
+  /** 用账号（浏览器登录）还是 API（全局设置里配的接口 + 密钥）；两种方式的模型下拉各列各的 */
+  authMode: z.enum(['account', 'api']).default('account'),
+  /** API 模式用哪个 API（全局设置里 apis 的 id） */
+  apiId: z.string().default(''),
   /** 在任务页和设置里显示账号额度（5 小时、每周用了多少） */
   showLimits: z.boolean().default(false),
   /** 上下文占用达到这个百分比时自动压缩；0 表示用 CLI 自己的规则 */
@@ -756,6 +773,8 @@ export const Settings = z.object({
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
+  /** 全局的 API：配一次，每个 CLI 都能选用（协议对得上的） */
+  apis: z.array(ApiConfig).default([]),
   /** CLI 的显示顺序（设置侧栏、默认 CLI、Agent 的 CLI 选项）；没列出的排在后面 */
   cliOrder: z.array(z.string()).default([]),
   /** 服务启动后用默认浏览器打开面板（只在托管了前端页面时生效，开发模式下页面在 Vite 那边） */
@@ -794,3 +813,47 @@ export const Settings = z.object({
     .default({ cli: '', model: '', agentRules: '', workflowRules: '' }),
 })
 export type Settings = z.infer<typeof Settings>
+
+/** 回答 Agent 的请求：允许 / 拒绝，问题的回答（一次问了几个时每个一条） */
+export const RequestAnswer = z.object({
+  allow: z.boolean(),
+  answer: z.string().max(20000).optional(),
+  answers: z.array(z.string().max(20000)).max(20).optional(),
+})
+
+/** 一个保存下来的账号 */
+export const SavedAccount = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string().default(''),
+  savedAt: z.string(),
+})
+export type SavedAccount = z.infer<typeof SavedAccount>
+
+/** 设置里「账号」页看到的一个 CLI 的登录状态 */
+export interface CliAccounts {
+  cli: string
+  /** 这个 CLI 能不能在面板里登录（有登录命令） */
+  canLogin: boolean
+  /** 能不能用 API（定义里写了怎么交给它） */
+  canApi: boolean
+  /** 现在登录着的：没登录时 loggedIn 为 false */
+  live: { loggedIn: boolean; email: string; label: string }
+  /** 现在登录的账号还没保存下来（用「保存」存成一个账号后才能切回来） */
+  unsaved: boolean
+  /** 保存下来的账号；active 是现在用的那个 */
+  accounts: (SavedAccount & { active: boolean })[]
+}
+
+/** 正在进行的登录 */
+export interface LoginJob {
+  id: string
+  cli: string
+  status: 'running' | 'done' | 'failed'
+  /** CLI 打印的登录网址（浏览器没自动打开时点这里） */
+  url: string
+  /** CLI 的输出（最后一部分）；要粘贴授权码时用来提示 */
+  output: string
+  error?: string
+  startedAt: number
+}

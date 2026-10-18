@@ -5,35 +5,9 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
-import { applyOps, streamedOps, type OpsState } from '../shared/design-ops.ts'
 import { openDesignSession } from './design-mcp.ts'
+import { mcpConfig } from '../shared/cli-spec.ts'
 
-/**
- * 把设计工具（MCP）接给 CLI：返回要加的命令行参数，需要配置文件的写进这一轮的工作目录。
- * 不在这里的 CLI 只能把操作写在回复的 JSON 里
- */
-const MCP_ARGS: Record<string, (url: string, cwd: string) => Promise<string[]>> = {
-  // 只放行这个工具服务，不用逐个确认
-  claude: async (url) => [
-    '--mcp-config',
-    JSON.stringify({ mcpServers: { design: { type: 'http', url } } }),
-    '--allowedTools',
-    'mcp__design',
-  ],
-  codex: async (url) => ['-c', `mcp_servers.design.url=${JSON.stringify(url)}`],
-  // Command Code 没有命令行参数：读工作目录里的 .mcp.json，权限写在 .commandcode/settings.json 里放行
-  commandcode: async (url, cwd) => {
-    await writeFile(path.join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { design: { transport: 'http', url } } }))
-    await mkdir(path.join(cwd, '.commandcode'), { recursive: true })
-    await writeFile(
-      path.join(cwd, '.commandcode', 'settings.json'),
-      JSON.stringify({ permissions: { allow: ['mcp__design__*'] } }),
-    )
-    return []
-  },
-}
-/** 试过不支持设计工具的 CLI（版本太旧），之后只用 JSON 里的操作 */
-const NO_MCP = new Set<string>()
 import { getCli } from '../shared/clis.ts'
 import {
   Design,
@@ -56,6 +30,8 @@ import {
   buildDesignPrompt,
   emptyRoot,
   imagePrompt,
+  sheetGrid,
+  sheetPrompt,
   importComponent,
   type DesignVersion,
   type DesignVersionMeta,
@@ -75,7 +51,8 @@ import { webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
-import { invokeCli } from './exec/invoke.ts'
+import { invokeCli, type CliControl } from './exec/invoke.ts'
+import { normalizeGenerated, sliceSheet } from './image.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
@@ -101,22 +78,16 @@ const MAX_VERSIONS = 50
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
 /** 风格库：设置里管理，所有 UI 项目共用 */
 const STYLES_FILE = path.join(DIR, '_styles.json')
-const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
-/** 回复里的 JSON 不给用户看：每段只留 ``` 前面的说明 */
-const cleanParts = (parts: ReplyPart[]) => parts.map((p) => ({ ...p, text: p.text.split('```')[0].trim() }))
+const isImageFile = (x: { mime: string; name: string }) =>
+  /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name)
 
-/** 存进消息的分段：工具都已结束；按 JSON 回复时最后一段的说明换成 JSON 里的 reply */
-function finalParts(parts: ReplyPart[], reply: string): ReplyPart[] | undefined {
+/** 存进消息的分段：工具都已结束，去掉空的段 */
+function finalParts(parts: ReplyPart[]): ReplyPart[] | undefined {
   const list = parts
     .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
     .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
-  if (reply) {
-    const last = list.at(-1)
-    if (last) last.text = reply
-    else list.push({ text: reply, tools: [] })
-  }
   return list.length ? list : undefined
 }
 
@@ -126,6 +97,10 @@ type Job = DesignJob & {
   enqueue?: (img: DesignImage, revision?: string) => void
   /** 审批和提问放在哪个会话下（design:<设计 id>），页面按它取回来显示 */
   scope: string
+  /** AI 正在改设计时控制 CLI：把用户新说的话补充给这一轮 */
+  control?: CliControl
+  /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
+  sheets?: Map<string, string>
 }
 
 const now = () => new Date().toISOString()
@@ -243,9 +218,35 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   }
 
   /**
-   * 生成一张图：每取回一版就存下来、马上换到设计里（页面轮询时就能看到），不等这张图的几版全部生成完。
-   * 第一版到了就选中它，之后的几版作为备选
+   * 收图：每取回一版就存下来、马上换到设计里（页面轮询时就能看到）。第一版到了就选中它，之后的几版作为备选。
+   * 存之前精确变成设计里要的宽高（模型出图的尺寸和比例不由我们定），透明的图抠掉绿底、裁掉空白
    */
+  function variantSink(d: Design, img: DesignImage, source: ImageSource, item: ImageJobItem) {
+    const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
+    const set = (patch: Partial<DesignImage>) => {
+      const dd = cache.get(d.id)!
+      dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, ...patch } : i))
+      void save(dd)
+    }
+    let first = -1
+    let chain = Promise.resolve()
+    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
+    const add = (buf: Buffer, exact = false) => {
+      chain = chain
+        .then(async () => {
+          const want = cur() ?? img
+          const s = await storeImage(cache.get(d.id)!, exact ? buf : normalizeGenerated(buf, want))
+          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
+          if (first < 0) first = variants.length - 1
+          set({ variants, selected: first })
+          item.got++
+        })
+        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
+    }
+    return { set, add, done: () => chain }
+  }
+
+  /** 生成一张图 */
   async function generateOne(
     d: Design,
     img: DesignImage,
@@ -257,28 +258,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     /** 这一次的修改意见，加在描述后面 */
     revision = '',
   ) {
-    const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
-    const set = (patch: Partial<DesignImage>) => {
-      const dd = cache.get(d.id)!
-      dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, ...patch } : i))
-      void save(dd)
-    }
-    set({ status: 'generating', error: undefined })
+    const sink = variantSink(d, img, source, item)
+    sink.set({ status: 'generating', error: undefined })
     item.status = 'generating'
-    let first = -1
-    let chain = Promise.resolve()
-    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
-    const add = (buf: Buffer) => {
-      chain = chain
-        .then(async () => {
-          const s = await storeImage(cache.get(d.id)!, buf)
-          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
-          if (first < 0) first = variants.length - 1
-          set({ variants, selected: first })
-          item.got++
-        })
-        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
-    }
     try {
       const rest =
         source.kind === 'browser'
@@ -293,31 +275,111 @@ export function designsApi(deps: { projects: Lister<Project> }) {
                 chroma: img.transparent,
                 concurrency: (await getSettings()).imageGen.concurrency,
                 onProgress: (text) => (item.text = text),
-                onImage: add,
+                onImage: (b) => sink.add(b),
               },
               job.abort.signal,
             )
           : await cliGenerate(
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, false, style, d.kind), revision),
+              // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
               count,
               job,
-              add,
+              (b) => sink.add(b),
             )
-      for (const b of rest) add(b)
-      await chain
+      for (const b of rest) sink.add(b)
+      await sink.done()
       if (!item.got) throw new Error(t('没有取到图片'))
-      set({ status: 'idle' })
+      sink.set({ status: 'idle' })
       item.status = 'done'
       item.text = undefined
     } catch (e) {
-      await chain
+      await sink.done()
       const msg = (e as Error).message
       // 已经取回的几版留着能用，只是没生成全
-      set(item.got ? { status: 'idle' } : { status: 'failed', error: msg })
+      sink.set(item.got ? { status: 'idle' } : { status: 'failed', error: msg })
       item.status = 'failed'
       item.text = msg
       throw e
     }
+  }
+
+  /**
+   * 同类的小图标一次生成：让模型把它们画在一张图上（排成格子），面板按格切开、各自精确裁成要的尺寸。
+   * 一次出图就是十几个图标，比一个个生成快得多；没切出来的图标（模型漏画了）单独再生成
+   */
+  async function generateSheet(
+    d: Design,
+    imgs: DesignImage[],
+    items: ImageJobItem[],
+    source: ImageSource,
+    count: number,
+    style: string,
+    job: Job,
+    revision: string,
+  ) {
+    const sinks = imgs.map((img, i) => variantSink(d, img, source, items[i]))
+    const { cols, rows } = sheetGrid(imgs.length, {
+      width: Math.max(...imgs.map((i) => i.width)),
+      height: Math.max(...imgs.map((i) => i.height)),
+    })
+    const chroma = imgs.some((i) => i.transparent)
+    const prompt = withRevision(sheetPrompt(imgs, cache.get(d.id)!.style, chroma, style, d.kind), revision)
+    imgs.forEach((img, i) => {
+      sinks[i].set({ status: 'generating', error: undefined })
+      items[i].status = 'generating'
+      items[i].text = t('和另外 {n} 个图标一起生成', { n: imgs.length - 1 })
+    })
+    const missed = new Set(imgs.map((_, i) => i))
+    const onSheet = (buf: Buffer) => {
+      const parts = sliceSheet(buf, cols, rows, imgs)
+      parts.forEach((part, i) => {
+        if (!part) return
+        missed.delete(i)
+        sinks[i].add(part, true)
+      })
+    }
+    try {
+      const rest =
+        source.kind === 'browser'
+          ? await browserGenerate(
+              {
+                tabId: source.tabId,
+                prompt,
+                count,
+                chroma,
+                concurrency: (await getSettings()).imageGen.concurrency,
+                onProgress: (text) => items.forEach((it) => (it.text = text)),
+                onImage: onSheet,
+              },
+              job.abort.signal,
+            )
+          : await cliGenerate(prompt, count, job, onSheet)
+      for (const b of rest) onSheet(b)
+    } catch (e) {
+      // 整张图都没出来：全部改成一张张生成，下面统一处理
+      if (job.abort.signal.aborted) throw e
+      log.warn('designs', '图标表生成失败，改成一张张生成', { error: (e as Error).message })
+    }
+    await Promise.all(sinks.map((x) => x.done()))
+    const failed: string[] = []
+    // 没切出来的单独生成（整张图失败时就是全部）
+    for (const i of missed) {
+      if (job.abort.signal.aborted) break
+      items[i].text = undefined
+      items[i].got = 0
+      try {
+        await generateOne(cache.get(d.id)!, imgs[i], source, count, style, job, items[i], revision)
+      } catch (e) {
+        failed.push(`${imgs[i].name}：${(e as Error).message}`)
+      }
+    }
+    for (let i = 0; i < imgs.length; i++) {
+      if (missed.has(i)) continue
+      sinks[i].set({ status: 'idle' })
+      items[i].status = 'done'
+      items[i].text = undefined
+    }
+    if (failed.length) throw new Error(failed.join('\n'))
   }
 
   /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
@@ -360,7 +422,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
 图片要求：
 ${prompt}`,
       signal: job.abort.signal,
-      timeoutMs: TIMEOUT,
+      // 不限时长，用户随时可以停止
+      timeoutMs: 0,
       onEvent: (ev) => {
         if (ev.type === 'image') {
           if (ev.failed) errors.push(ev.failed)
@@ -382,7 +445,6 @@ ${prompt}`,
     }).finally(asks.done)
     await Promise.all(reads)
     if (r.killed === 'stopped') throw new Error(t('已停止'))
-    if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有生成完，已停止'))
     if (r.spawnError) throw new Error(t('{error}。请确认已安装 {cli}', { error: r.spawnError, cli: def.name }))
     if (!got)
       throw new Error(
@@ -411,7 +473,6 @@ ${prompt}`,
     job.preview = undefined
     job.text = ''
     job.parts = undefined
-    job.out = undefined
     const list = ids.map((id) => d.images.find((i) => i.id === id)).filter(Boolean) as DesignImage[]
     const items: ImageJobItem[] = list.map((i) => ({ id: i.id, name: i.name, status: 'waiting', got: 0, want: count }))
     job.images = items
@@ -421,16 +482,42 @@ ${prompt}`,
     const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
-    const queue = list.map((img, k) => ({ img, item: items[k], revision: revisions[img.id] ?? '' }))
+    // 同一个 sheet（至少 2 个、透明度一样）的图标一起生成，其余一张张来
+    type Task = { imgs: DesignImage[]; items: ImageJobItem[]; revision: string }
+    const queue: Task[] = []
+    const groups = new Map<string, number[]>()
+    list.forEach((img, k) => {
+      const sheet = job.sheets?.get(img.id)
+      if (sheet) groups.set(`${sheet}:${img.transparent}`, [...(groups.get(`${sheet}:${img.transparent}`) ?? []), k])
+    })
+    const grouped = new Set<number>()
+    for (const ks of groups.values())
+      if (ks.length >= 2) {
+        ks.forEach((k) => grouped.add(k))
+        queue.push({
+          imgs: ks.map((k) => list[k]),
+          items: ks.map((k) => items[k]),
+          revision: revisions[list[ks[0]].id] ?? '',
+        })
+      }
+    list.forEach((img, k) => {
+      if (!grouped.has(k)) queue.push({ imgs: [img], items: [items[k]], revision: revisions[img.id] ?? '' })
+    })
     let next = 0
     const worker = async () => {
       while (next < queue.length && !job.abort.signal.aborted) {
-        const { img, item, revision } = queue[next++]
+        const task = queue[next++]
         try {
-          await generateOne(cache.get(d.id)!, img, source, count, style, job, item, revision)
-          failed.delete(img.id)
+          if (task.imgs.length > 1)
+            await generateSheet(cache.get(d.id)!, task.imgs, task.items, source, count, style, job, task.revision)
+          else
+            await generateOne(cache.get(d.id)!, task.imgs[0], source, count, style, job, task.items[0], task.revision)
+          for (const img of task.imgs) failed.delete(img.id)
         } catch (e) {
-          failed.set(img.id, `${img.name}：${(e as Error).message}`)
+          // 图标表里失败的图标各自带着原因（一行一个）
+          const msg = (e as Error).message
+          if (task.imgs.length > 1) for (const line of msg.split('\n')) failed.set(line, line)
+          else failed.set(task.imgs[0].id, `${task.imgs[0].name}：${msg}`)
         }
       }
     }
@@ -446,7 +533,7 @@ ${prompt}`,
       if (item?.status === 'waiting' || item?.status === 'generating') return
       if (item) Object.assign(item, { status: 'waiting', got: 0, text: undefined })
       else items.push((item = { id: img.id, name: img.name, status: 'waiting', got: 0, want: count }))
-      queue.push({ img, item, revision })
+      queue.push({ imgs: [img], items: [item], revision })
       if (workers.size < width) spawn()
     }
     while (workers.size) await Promise.all([...workers])
@@ -507,25 +594,46 @@ ${prompt}`,
           : a
       }),
     )
+    // 附件图片的精确尺寸写进要求里：AI 按它量、换算，不用目测
+    const facts = (
+      await Promise.all(
+        attachments.map(async (a, i) => {
+          const info = isImageFile(a) ? imageSize(await readFile(a.path).catch(() => Buffer.alloc(0))) : null
+          return info
+            ? `附件 ${i + 1}「${a.name}」：${info.width}×${info.height} 像素（inspect_image、view_image 里写 attachment:${i + 1}）`
+            : ''
+        }),
+      )
+    ).filter(Boolean)
     const history = d.messages.slice(0, -1)
     const project = await projectContext(d)
     let extra = ''
-    // 支持 MCP 的 CLI 这一轮可以直接调设计工具改；连不上时 AI 照旧把操作写在 JSON 里
-    const mcp = MCP_ARGS[cliId]
-      ? openDesignSession(cache.get(d.id)!, (s) => (job.preview = { ...s.state, applied: s.applied }))
-      : undefined
+    // AI 只通过设计工具（MCP）改设计，回复就是普通文字；CLI 的定义里写了怎么把工具交给它
+    if (!def.mcp) throw new Error(t('{cli} 用不了设计工具，请换一个 CLI', { cli: def.name }))
+    const mcp = openDesignSession(cache.get(d.id)!, (s) => (job.preview = { ...s.state, applied: s.applied }), {
+      dir: cwd,
+      attachments: attachments.map((a) => ({ name: a.name, path: a.path })),
+      imagePath: (id) => {
+        const im = cache.get(d.id)?.images.find((i) => i.id === id)
+        const v = im?.variants[im.selected] ?? im?.variants.at(-1)
+        return v ? path.join(imagesDir(d.id), v.file) : undefined
+      },
+    })
+    const tools = mcpConfig(def.mcp, 'design', mcp.url)
+    // 要配置文件的 CLI（Command Code、Gemini CLI）读工作目录里的配置
+    for (const f of tools.files) {
+      const to = path.join(cwd, f.path)
+      await mkdir(path.dirname(to), { recursive: true })
+      await writeFile(to, JSON.stringify(f.content, null, 2))
+    }
+    const sess = mcp.session
     try {
       for (let attempt = 1; attempt <= 2; attempt++) {
         job.attempt = attempt
         job.text = ''
         job.parts = undefined
         job.outChars = 0
-        job.out = undefined
-        job.preview = mcp?.session.applied ? { ...mcp.session.state, applied: mcp.session.applied } : undefined
-        // AI 一步步改（ops）时边收边应用到一份副本上，页面上实时看到改动；最后整体检查通过才真正存下
-        const base = cache.get(d.id)!
-        let applied = 0
-        let preview: OpsState = { root: base.root, components: base.components }
+        job.preview = sess.applied ? { ...sess.state, applied: sess.applied } : undefined
         // 工具调用的 id → 在分段里的位置（第几段、第几个），结果回来时更新那一条
         const toolAt = new Map<string, [number, number]>()
         let parts: ReplyPart[] = []
@@ -533,17 +641,17 @@ ${prompt}`,
         const errors: string[] = []
         let result: { ok: boolean; error?: string } | undefined
         const asks = askSession(job.scope)
-        const toolsModeNow = !!mcp && !NO_MCP.has(cliId)
         const r = await invokeCli({
           askUser: asks.askUser,
           onAsk: asks.onAsk,
+          onControl: (c) => (job.control = c),
           cliId,
           command: cs.command,
           build: {
             model: run.model,
             effort: run.effort,
             permission: cs.permission,
-            extraArgs: [...cs.extraArgs, ...(mcp && !NO_MCP.has(cliId) ? await MCP_ARGS[cliId]!(mcp.url, cwd) : [])],
+            extraArgs: [...cs.extraArgs, ...tools.args],
             // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
             addDirs: attachments.some((a) => !a.path.startsWith(cwd)) ? [UPLOADS_DIR] : undefined,
           },
@@ -553,19 +661,17 @@ ${prompt}`,
             buildDesignPrompt(
               cache.get(d.id)!,
               history,
-              withAttachments(await expandSlash(input.text, cliId, '', false), attachments),
+              withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
+                (facts.length ? `\n\n${facts.join('\n')}` : ''),
               input.annotations,
               project,
-              !!mcp && !NO_MCP.has(cliId),
               (await loadStyles()).filter((x) => x.kind === d.kind),
             ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
           // 附上的截图、参考图直接给模型看（路径也写在提示词里，需要时它还能自己读）
-          images: attachments
-            .filter((x) => /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name))
-            .map((x) => x.path),
+          images: attachments.filter(isImageFile).map((x) => x.path),
           onEvent: (ev) => {
             if (ev.type === 'text_delta') {
               text += ev.text
@@ -592,26 +698,14 @@ ${prompt}`,
                 })
             } else if (ev.type === 'error') errors.push(ev.message)
             else if (ev.type === 'result') result = ev
-            job.text = text.split('```')[0].trim()
-            // 写 JSON 的那一段只显示 JSON 前面的说明，JSON 在下面单独边写边显示
-            job.parts = toolsModeNow ? parts : cleanParts(parts)
+            job.text = text.trim()
+            job.parts = parts
             job.outChars = text.length
-            // JSON 部分边写边给界面看；只留最后一段，免得每次推送都很大
-            const fence = text.indexOf('```')
-            if (fence >= 0) {
-              job.out = text
-                .slice(fence)
-                .replace(/^```\w*\n?/, '')
-                .slice(-3000)
-              const ops = streamedOps(text.slice(fence))
-              if (ops.length > applied) {
-                preview = applyOps(preview, ops.slice(applied)).state
-                applied = ops.length
-                job.preview = { ...preview, applied }
-              }
-            }
           },
-        }).finally(asks.done)
+        }).finally(() => {
+          asks.done()
+          job.control = undefined
+        })
         if (r.killed === 'stopped') throw new Error(t('已停止'))
         if (r.spawnError)
           throw new Error(
@@ -621,129 +715,97 @@ ${prompt}`,
               hint: def.installHint,
             }),
           )
-        // 这个版本的 CLI 不认设计工具的参数（启动就报错）：记下来，这一轮不用工具重来，以后也不再给它
-        if (
-          (result ? !result.ok : r.code !== 0) &&
-          mcp &&
-          !NO_MCP.has(cliId) &&
-          !mcp.session.applied &&
-          /mcp|mcp_servers|mcp-config|allowedTools/i.test([result?.error, ...errors, r.stderr].join('\n'))
-        ) {
-          NO_MCP.add(cliId)
-          log.warn('designs', 'CLI 不支持设计工具，改用 JSON 里的操作', { cli: cliId })
-          attempt--
-          continue
+        if (result ? !result.ok : r.code !== 0) {
+          const detail =
+            [result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')].filter(Boolean).join('\n') ||
+            t('没有更多信息')
+          // 启动就因为工具的参数报错：多半是 CLI 版本太旧
+          if (!sess.applied && /mcp|mcp_servers|mcp-config|allowedTools/i.test(detail))
+            throw new Error(t('{cli} 连不上设计工具，请升级到最新版：{detail}', { cli: def.name, detail }))
+          throw new Error(t('{cli} 执行失败：{detail}', { cli: def.name, detail }))
         }
-        if (result ? !result.ok : r.code !== 0)
-          throw new Error(
-            t('{cli} 执行失败：{detail}', {
-              cli: def.name,
-              detail:
-                [result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')]
-                  .filter(Boolean)
-                  .join('\n') || t('没有更多信息'),
-            }),
-          )
-        const ex = extractJson(text)
-        const toolsMode = !!mcp && !NO_MCP.has(cliId)
-        const json = !ex.error && ex.json && typeof ex.json === 'object' ? (ex.json as Record<string, any>) : undefined
-        // 用工具改：在工具改好的样子上收尾，回复就是普通的文字（万一还写了 JSON，里面的操作也照样用上）
-        const sess = mcp?.session
-        const touched = !!sess && (sess.applied > 0 || sess.images.length > 0)
-        const reply = (json?.reply as string) || (json ? ex.rest : text).trim()
-        let res: ReturnType<typeof resolveDesignResult> = { error: '' }
+        // 回复就是普通文字；改动都在工具里做好了
+        const touched = sess.applied > 0 || sess.images.length > 0
+        const raw = {
+          reply: text.trim(),
+          style: sess.style,
+          designSize: sess.designSize,
+          questions: sess.questions,
+          images: sess.images,
+          // 什么都没改（只是回答问题）时不带 ops：设计原样不动，也不算一次修改
+          ops: touched ? [] : undefined,
+        }
+        let res = resolveDesignResult(raw, {
+          ...cache.get(d.id)!,
+          root: sess.state.root,
+          components: sess.state.components,
+        })
         let problems = ''
-        // 没用工具、照旧写了 JSON（工具没连上，或者模型习惯这样）：按 JSON 的老办法处理
-        if (toolsMode && sess && !(json && !touched)) {
-          const raw = {
-            ...json,
-            root: undefined,
-            reply,
-            style: json?.style ?? sess.style,
-            designSize: json?.designSize ?? sess.designSize,
-            question: json?.question ?? sess.question,
-            images: [...sess.images, ...(Array.isArray(json?.images) ? json.images : [])],
-            // 什么都没改（只是回答问题）时不带 ops：设计原样不动，也不算一次修改
-            ops: touched || Array.isArray(json?.ops) ? (Array.isArray(json?.ops) ? json.ops : []) : undefined,
+        if ('error' in res) {
+          // 检查没通过：让它接着用工具改一次（改过的都保留）
+          if (attempt === 1) {
+            extra = `\n\n## 你上一次的回复\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
+            continue
           }
-          const state = { ...cache.get(d.id)!, root: sess.state.root, components: sess.state.components }
-          res = resolveDesignResult(raw, state)
-          // 改了两轮检查还有问题：改好的部分不丢，照样存下，把问题告诉用户
-          if ('error' in res && attempt === 2 && touched) {
-            problems = res.error
-            const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
-            if (ok.success)
-              res = {
-                result: ok.data,
-                root: sess.state.root,
-                components: sess.state.components,
-              }
+          // 两次都没通过：改好的部分不丢，照样存下，把问题告诉用户
+          problems = res.error
+          const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
+          if (!ok.success) throw new Error(z.prettifyError(ok.error))
+          res = { result: ok.data, root: sess.state.root, components: sess.state.components }
+        }
+        const cur = cache.get(d.id)!
+        const r2 = res.result
+        const changed = !!(res.root || res.components || r2.designSize || r2.style !== undefined || r2.images.length)
+        if (res.root) cur.root = res.root
+        if (res.components) cur.components = res.components
+        if (r2.designSize) cur.designSize = r2.designSize
+        if (r2.style !== undefined) cur.style = r2.style
+        const ids: string[] = []
+        job.sheets = new Map(r2.images.flatMap((im) => (im.sheet ? [[im.id, im.sheet] as [string, string]] : [])))
+        for (const im of r2.images) {
+          ids.push(im.id)
+          const old = cur.images.find((i) => i.id === im.id)
+          const fields = {
+            name: im.name,
+            prompt: im.prompt,
+            width: im.width,
+            height: im.height,
+            transparent: im.transparent,
+            nineSlice: im.nineSlice,
+            status: input.source.kind === 'none' ? ('idle' as const) : ('pending' as const),
+            error: undefined,
           }
-        } else res = ex.error ? { error: ex.error } : resolveDesignResult(ex.json, cache.get(d.id)!)
-        if ('result' in res) {
-          const cur = cache.get(d.id)!
-          const r2 = res.result
-          const changed = !!(res.root || res.components || r2.designSize || r2.style !== undefined || r2.images.length)
-          if (res.root) cur.root = res.root
-          if (res.components) cur.components = res.components
-          if (r2.designSize) cur.designSize = r2.designSize
-          if (r2.style !== undefined) cur.style = r2.style
-          const ids: string[] = []
-          for (const im of r2.images) {
-            ids.push(im.id)
-            const old = cur.images.find((i) => i.id === im.id)
-            const fields = {
-              name: im.name,
-              prompt: im.prompt,
-              width: im.width,
-              height: im.height,
-              transparent: im.transparent,
-              nineSlice: im.nineSlice,
-              status: input.source.kind === 'none' ? ('idle' as const) : ('pending' as const),
-              error: undefined,
-            }
-            if (old) cur.images = cur.images.map((i) => (i.id === im.id ? { ...i, ...fields } : i))
-            else cur.images.push(DesignImage.parse({ id: im.id, ...fields }))
-          }
-          if (changed) cur.rev++
+          if (old) cur.images = cur.images.map((i) => (i.id === im.id ? { ...i, ...fields } : i))
+          else cur.images.push(DesignImage.parse({ id: im.id, ...fields }))
+        }
+        if (changed) cur.rev++
+        cur.messages.push({
+          id: randomUUID(),
+          role: 'agent',
+          text: r2.reply || t('改好了。'),
+          at: now(),
+          images: ids.length ? ids : undefined,
+          run,
+          // 过程按顺序存下：思考、工具调用和说明，和 Agent 的对话一样显示
+          parts: finalParts(parts),
+          ...(r2.questions?.length ? { questions: r2.questions } : {}),
+        })
+        if (problems)
           cur.messages.push({
             id: randomUUID(),
-            role: 'agent',
-            text: r2.reply || t('改好了。'),
+            role: 'system',
+            text: `${t('检查还有这些问题：')}\n${problems}`,
             at: now(),
-            images: ids.length ? ids : undefined,
-            run,
-            // 过程留着：完成后在对话里收成一行，点开能看 AI 想了什么、做了哪些操作
-            parts: finalParts(toolsMode && !json ? parts : cleanParts(parts), json ? r2.reply : ''),
-            ...(r2.question?.options.length ? { question: r2.question } : {}),
+            error: true,
           })
-          if (problems)
-            cur.messages.push({
-              id: randomUUID(),
-              role: 'system',
-              text: `${t('检查还有这些问题：')}\n${problems}`,
-              at: now(),
-              error: true,
-            })
-          await save(cur)
-          // 存下来了，页面改用正式的设计
-          job.preview = undefined
-          return ids
-        }
-        if (attempt === 2)
-          throw new Error(
-            toolsMode
-              ? t('{cli} 改完的设计两次检查都没通过：{error}', { cli: def.name, error: res.error })
-              : t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error }),
-          )
-        extra =
-          toolsMode && !(json && !touched)
-            ? `\n\n## 你上一次的输出\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
-            : `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${res.error}\n请修正后重新输出完整的说明和 JSON。`
+        await save(cur)
+        // 存下来了，页面改用正式的设计
+        job.preview = undefined
+        return ids
       }
     } finally {
-      mcp?.close()
-      // 这一轮的工作目录（附件副本、Command Code 的 MCP 配置）用完就删
+      mcp.close()
+      // 这一轮的工作目录（附件副本、工具的配置）用完就删
       await rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
     return []
@@ -894,7 +956,7 @@ ${prompt}`,
 
   const view = (j?: Job): DesignJob | null => {
     if (!j) return null
-    const { abort, enqueue, scope, ...rest } = j
+    const { abort, enqueue, scope, control, sheets, ...rest } = j
     return rest
   }
 
@@ -1329,6 +1391,20 @@ ${prompt}`,
           throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // AI 正在改设计时用户又说了话：补充给正在进行的这一轮；CLI 不支持插话或这一轮已经结束时告诉页面改成排队
+    .post('/:id/steer', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { text = '' } = (await c.req.json().catch(() => ({}))) as { text?: string }
+      const v = String(text).trim().slice(0, 20000)
+      if (!v) return bad(c, t('内容不能为空'))
+      const job = jobs.get(d.id)
+      const ok = job?.status === 'running' && job.phase === 'design' && !!job.control && (await job.control.steer(v))
+      if (!ok) return c.json({ steered: false })
+      d.messages.push({ id: randomUUID(), role: 'user', text: v, at: now() })
+      await save(d)
+      return c.json({ steered: true })
     })
     // 让 CLI 总结这个设计的整体风格；页面上确认、改名后再存进风格库
     .post('/:id/extract-style', async (c) => {

@@ -1,5 +1,6 @@
 import {
   WIDGETS,
+  type SlotType,
   allNames,
   deepMerge,
   findParent,
@@ -57,6 +58,112 @@ function setPath(obj: any, path: string[], value: unknown): any {
   return { ...base, [k]: setPath(base[k], rest, value) }
 }
 
+const ANCHORS: Record<string, [number, number]> = {
+  'top-left': [0, 0],
+  top: [0.5, 0],
+  'top-right': [1, 0],
+  left: [0, 0.5],
+  center: [0.5, 0.5],
+  right: [1, 0.5],
+  'bottom-left': [0, 1],
+  bottom: [0.5, 1],
+  'bottom-right': [1, 1],
+}
+const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
+const box = (v: unknown) =>
+  typeof v === 'number'
+    ? { Left: v, Top: v, Right: v, Bottom: v }
+    : Array.isArray(v)
+      ? v.length === 2
+        ? { Left: num(v[0]), Top: num(v[1]), Right: num(v[0]), Bottom: num(v[1]) }
+        : { Left: num(v[0]), Top: num(v[1]), Right: num(v[2]), Bottom: num(v[3]) }
+      : v
+const ALIGN = (prefix: 'HAlign' | 'VAlign', v: unknown) =>
+  typeof v === 'string' && !v.includes('_') ? `${prefix}_${v[0].toUpperCase()}${v.slice(1).toLowerCase()}` : v
+
+/**
+ * 插槽的简写，写起来短、不容易错：
+ * 画布里 {"anchor":"top-right","x":-24,"y":24,"w":200,"h":60}——锚点和自身对齐点都是右上角，x、y 是离那个角的距离；
+ * {"anchor":"stretch","margin":[左,上,右,下]} 铺满父控件留边距。
+ * 横排、竖排等 {"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
+ */
+function looseSlot(slot: any, parentSlot: SlotType | undefined): any {
+  if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return slot
+  const out: any = { ...slot }
+  if (parentSlot === 'CanvasPanelSlot' && ('anchor' in out || 'x' in out || 'w' in out || 'margin' in out)) {
+    const a = String(out.anchor ?? 'top-left').toLowerCase()
+    if (a === 'stretch' || a === 'fill') {
+      const m = box(out.margin ?? 0) as any
+      out.LayoutData = {
+        Anchors: { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } },
+        Alignment: { X: 0, Y: 0 },
+        Offsets: { Left: num(m?.Left), Top: num(m?.Top), Right: num(m?.Right), Bottom: num(m?.Bottom) },
+      }
+    } else {
+      const [ax, ay] = ANCHORS[a] ?? [0, 0]
+      out.LayoutData = {
+        Anchors: { Minimum: { X: ax, Y: ay }, Maximum: { X: ax, Y: ay } },
+        Alignment: { X: ax, Y: ay },
+        Offsets: { Left: num(out.x), Top: num(out.y), Right: num(out.w, 100), Bottom: num(out.h, 40) },
+      }
+    }
+    if ('z' in out) out.ZOrder = num(out.z)
+    for (const k of ['anchor', 'x', 'y', 'w', 'h', 'z', 'margin']) delete out[k]
+    return out
+  }
+  if ('padding' in out) out.Padding = box(out.padding)
+  if ('Padding' in out) out.Padding = box(out.Padding)
+  if ('fill' in out) out.Size = { SizeRule: out.fill === false ? 'Automatic' : 'Fill', Value: num(out.fill, 1) }
+  if ('h' in out) out.HorizontalAlignment = out.h
+  if ('v' in out) out.VerticalAlignment = out.v
+  if (out.HorizontalAlignment) out.HorizontalAlignment = ALIGN('HAlign', out.HorizontalAlignment)
+  if (out.VerticalAlignment) out.VerticalAlignment = ALIGN('VAlign', out.VerticalAlignment)
+  for (const k of ['padding', 'fill', 'h', 'v']) delete out[k]
+  return out
+}
+
+const KEYS: Record<string, string> = {
+  type: 'Type',
+  name: 'Name',
+  slot: 'Slot',
+  children: 'Children',
+  properties: 'Properties',
+  props: 'Properties',
+  class: 'Class',
+}
+
+/**
+ * AI 写的控件宽松一点也认：键名大小写随意（type、children…），Type、Name、Slot、Children、Class 以外的键都当作属性
+ * （{"Type":"TextBlock","Name":"Txt_Title","Text":"背包"}），插槽可以用简写（见 looseSlot）。少写错、少返工
+ */
+export function looseWidget(w: any, parentSlot?: SlotType): any {
+  if (!w || typeof w !== 'object' || Array.isArray(w)) return w
+  const out: any = { Properties: {} }
+  for (const [k, v] of Object.entries(w)) {
+    const key = KEYS[k.toLowerCase()] ?? k
+    if (key === 'Properties' && v && typeof v === 'object') Object.assign(out.Properties, v)
+    else if (['Type', 'Name', 'Slot', 'Children', 'Class', 'id'].includes(key)) out[key] = v
+    else out.Properties[key] = v
+  }
+  const def = WIDGETS[out.Type as keyof typeof WIDGETS]
+  out.Slot = looseSlot(out.Slot, parentSlot)
+  if (Array.isArray(out.Children)) out.Children = out.Children.map((c: any) => looseWidget(c, def?.slot))
+  return out
+}
+
+/** 新加的控件里写错的地方：不认识的类型、列表控件下预先放的子控件（normalizeTree 会悄悄换掉或丢掉，先告诉 AI） */
+function badWidgets(w: any, out: string[] = []): string[] {
+  if (w && typeof w === 'object') {
+    if (w.Type && !WIDGETS[w.Type as keyof typeof WIDGETS]) out.push(`未知的控件类型 ${w.Type}（${w.Name ?? ''}）`)
+    else if (WIDGETS[w.Type as keyof typeof WIDGETS]?.entries && Array.isArray(w.Children) && w.Children.length)
+      out.push(
+        `${w.Type} 的条目是运行时生成的，不能预先放子控件（${w.Name ?? ''}）：把条目做成子控件，写在 Properties.EntryWidgetClass 里`,
+      )
+    for (const c of Array.isArray(w.Children) ? w.Children : []) badWidgets(c, out)
+  }
+  return out
+}
+
 const subtreeNames = (w: any, out: string[] = []) => {
   if (w && typeof w === 'object') {
     if (w.Name) out.push(String(w.Name))
@@ -70,9 +177,12 @@ const subtreeNames = (w: any, out: string[] = []) => {
  * 加进来的控件用 normalizeTree 补齐默认属性和插槽，名字不能和树里已有的重复
  */
 export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { error: string } {
-  const op = raw as DesignOp
+  const op = { ...(raw as any) } as DesignOp
   if (!op || typeof op !== 'object' || typeof (op as any).op !== 'string') return { error: '操作要写成 {"op": …}' }
   const comps = s.components
+  if (op.op === 'addComponent' && op.component) op.component = { ...op.component, Root: looseWidget(op.component.Root) }
+  const bad = badWidgets(op.op === 'addComponent' ? op.component?.Root : undefined)
+  if (bad.length) return { error: bad.join('；') }
   if (op.op === 'addComponent') {
     const c = op.component
     if (!c?.Name) return { error: 'addComponent 要写 component.Name' }
@@ -130,7 +240,9 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
         return done(mapWidget(root, w.id, (x) => setPath(x, parts, op.value)))
       if (head === 'Slot' && (rest.length || whole)) {
         if (!w.Slot) return { error: `${w.Name} 是根控件，没有插槽` }
-        return done(mapWidget(root, w.id, (x) => setPath(x, parts, op.value)))
+        const parent = findParent(root, w.id)
+        const value = whole ? looseSlot(op.value, parent ? WIDGETS[parent.Type].slot : undefined) : op.value
+        return done(mapWidget(root, w.id, (x) => setPath(x, parts, value)))
       }
       if (head === 'Class' && w.Type === 'UserWidget')
         return done(mapWidget(root, w.id, (x) => ({ ...x, Class: String(op.value ?? '') })))
@@ -141,10 +253,13 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       if (typeof p === 'string') return { error: p }
       const def = WIDGETS[p.Type]
       if (!def?.slot) return { error: `${p.Type} 不能放子控件（${p.Name}）` }
+      const widget = looseWidget(op.widget, def.slot)
+      const wrong = badWidgets(widget)
+      if (wrong.length) return { error: wrong.join('；') }
       const names = allNames(root)
-      const dup = subtreeNames(op.widget).find((n) => names.has(n))
+      const dup = subtreeNames(widget).find((n) => names.has(n))
       if (dup) return { error: `${inTree}已经有叫 ${dup} 的控件，换个名字` }
-      const w = normalizeTree(op.widget, def.slot, new Set(names))
+      const w = normalizeTree(widget, def.slot, new Set(names))
       return done(insertWidget(root, p.id, w, typeof op.index === 'number' ? op.index : undefined))
     }
     case 'remove': {
@@ -175,12 +290,14 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       const w = need(op.target)
       if (typeof w === 'string') return { error: w }
       const parent = findParent(root, w.id)
+      const raw = looseWidget(op.widget, parent ? WIDGETS[parent.Type].slot : undefined)
+      const wrong = badWidgets(raw)
+      if (wrong.length) return { error: wrong.join('；') }
       const names = allNames(root)
       // 被替换的这棵子树的名字可以重新用
       walk(w, (x) => names.delete(x.Name))
-      const dup = subtreeNames(op.widget).find((n) => names.has(n))
+      const dup = subtreeNames(raw).find((n) => names.has(n))
       if (dup) return { error: `${inTree}已经有叫 ${dup} 的控件，换个名字` }
-      const raw = op.widget as any
       const next = normalizeTree(
         { ...raw, Slot: raw?.Slot ?? w.Slot },
         parent ? WIDGETS[parent.Type].slot : undefined,
@@ -203,42 +320,4 @@ export function applyOps(s: OpsState, ops: unknown[]): { state: OpsState; errors
     else cur = r.state
   })
   return { state: cur, errors }
-}
-
-/**
- * 还在输出中的回复里已经写完的操作：找到 "ops": [ 后面一个个完整的 {…}。
- * 用来边收边应用，页面上实时看到 AI 在改哪里
- */
-export function streamedOps(text: string): unknown[] {
-  const at = text.search(/"ops"\s*:\s*\[/)
-  if (at < 0) return []
-  let i = text.indexOf('[', at) + 1
-  const out: unknown[] = []
-  let depth = 0
-  let start = -1
-  let str = false
-  let esc = false
-  for (; i < text.length; i++) {
-    const ch = text[i]
-    if (str) {
-      if (esc) esc = false
-      else if (ch === '\\') esc = true
-      else if (ch === '"') str = false
-      continue
-    }
-    if (ch === '"') str = true
-    else if (ch === '{') {
-      if (depth++ === 0) start = i
-    } else if (ch === '}') {
-      if (--depth === 0 && start >= 0) {
-        try {
-          out.push(JSON.parse(text.slice(start, i + 1)))
-        } catch {
-          // 写坏的一条跳过，最后整体检查时会报给 AI
-        }
-        start = -1
-      }
-    } else if (ch === ']' && depth === 0) break
-  }
-  return out
 }

@@ -1,6 +1,7 @@
 import { t } from './i18n.ts'
 import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
 import { CliSettings, Settings } from './schema.ts'
+import { apiFits, apiInjection, type ApiConfig } from './accounts.ts'
 
 export const defaultSettings = (): Settings => Settings.parse({})
 
@@ -13,15 +14,24 @@ export function tierFallback(def: CliDefinition | undefined, defaultModel: strin
 }
 
 /** 某个 CLI 的有效设置：没配置过的项用默认值补齐 */
-export function cliSettings(settings: Settings, cliId: string): CliSettings & { command: string; permission: string } {
+export function cliSettings(
+  settings: Settings,
+  cliId: string,
+): CliSettings & { command: string; permission: string; api?: ApiConfig } {
   const def = getCli(cliId)
   const s = CliSettings.parse(settings.clis[cliId] ?? {})
+  // API 模式：选的 API 协议对得上时，把接口地址、密钥按 CLI 定义里的规则加进环境变量和参数（所有调用 CLI 的地方都经过这里）
+  const api = s.authMode === 'api' ? settings.apis.find((a) => a.id === s.apiId) : undefined
+  const inject = def?.auth && api && apiFits(def.auth, api) ? apiInjection(def.auth, api) : undefined
   const tier = (t: ModelTier) => ({
     model: s.tiers[t].model || tierFallback(def, s.defaultModel, t),
     effort: s.tiers[t].effort || def?.tiers[t].effort || '',
   })
   return {
     ...s,
+    api: inject ? api : undefined,
+    env: inject ? [...s.env, ...inject.env] : s.env,
+    extraArgs: inject ? [...s.extraArgs, ...inject.args] : s.extraArgs,
     command: s.command || def?.command || cliId,
     permission: s.permission || def?.defaultPermission || '',
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },

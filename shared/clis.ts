@@ -128,6 +128,10 @@ export interface CliDefinition {
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */
   readOnly: string
+  /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API（见 shared/accounts.ts） */
+  auth?: import('./accounts.ts').CliAuth
+  /** 怎么把面板的工具（MCP）交给它，见 cli-spec.ts 的 mcp；没有时用不了 UI 设计的 AI */
+  mcp?: import('./cli-spec.ts').McpSpec
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean
   /** 用户放在数据目录里的配置（不是面板内置的） */
@@ -230,6 +234,35 @@ export const CLIS: CliDefinition[] = [
     commands: { user: ['~/.claude/commands'], repo: ['.claude/commands'], format: 'md', prefix: '' },
     modelsFrom: 'claude',
     readOnly: 'default',
+    auth: {
+      login: ['auth', 'login'],
+      home: '${CLAUDE_CONFIG_DIR:-~/.claude}',
+      files: ['.credentials.json'],
+      // 账号信息（邮箱）记在 .claude.json 里
+      fields: [{ file: '${CLAUDE_CONFIG_DIR:-~}/.claude.json', keys: ['oauthAccount'] }],
+      keychain: 'Claude Code-credentials',
+      identity: 'claude',
+      loginEdits: [],
+      loginStdin: '',
+      api: {
+        protocols: ['anthropic'],
+        env: { ANTHROPIC_BASE_URL: '{baseUrl}', '{keyEnv}': '{apiKey}' },
+        args: [],
+        edits: [],
+        accountEdits: [],
+        wire: {},
+      },
+    },
+    // 只放行这个工具服务，不用逐个确认
+    mcp: {
+      args: [
+        '--mcp-config',
+        '{"mcpServers":{"{name}":{"type":"http","url":"{url}"}}}',
+        '--allowedTools',
+        'mcp__{name}',
+      ],
+      files: {},
+    },
     color: '#c96442',
     envExample: 'ANTHROPIC_API_KEY=sk-ant-...',
   },
@@ -308,6 +341,36 @@ export const CLIS: CliDefinition[] = [
     commands: { user: ['${CODEX_HOME:-~/.codex}/prompts'], repo: [], format: 'md', prefix: 'prompts:' },
     modelsFrom: 'codex',
     readOnly: 'read-only',
+    auth: {
+      login: ['login'],
+      home: '${CODEX_HOME:-~/.codex}',
+      files: ['auth.json'],
+      fields: [],
+      keychain: '',
+      identity: 'codex',
+      loginEdits: [],
+      loginStdin: '',
+      api: {
+        protocols: ['openai-responses'],
+        env: { AGENT_PANEL_API_KEY: '{apiKey}' },
+        args: [
+          '-c',
+          'model_providers.agentpanel.name={name|json}',
+          '-c',
+          'model_providers.agentpanel.base_url={baseUrl|json}',
+          '-c',
+          'model_providers.agentpanel.env_key="AGENT_PANEL_API_KEY"',
+          '-c',
+          'model_providers.agentpanel.wire_api="responses"',
+          '-c',
+          'model_provider="agentpanel"',
+        ],
+        edits: [],
+        accountEdits: [],
+        wire: {},
+      },
+    },
+    mcp: { args: ['-c', 'mcp_servers.{name}.url="{url}"'], files: {} },
     color: '#0e8a6b',
     envExample: 'OPENAI_API_KEY=sk-...',
   },

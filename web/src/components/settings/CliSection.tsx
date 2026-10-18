@@ -36,6 +36,8 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { CopyText, Group, Row } from './parts'
+import { CliAuthPanel } from './CliAuthPanel'
+import type { ApiConfig } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
 
@@ -346,6 +348,8 @@ export function CliSection({
   onChange,
   onDetect,
   detecting,
+  apis,
+  onGoApis,
 }: {
   def: CliDefinition
   draft: CliDraft
@@ -354,6 +358,8 @@ export function CliSection({
   onChange: (d: CliDraft) => void
   onDetect: () => void
   detecting: boolean
+  apis: ApiConfig[]
+  onGoApis: () => void
 }) {
   const set = <K extends keyof CliDraft>(k: K, v: CliDraft[K]) => onChange({ ...draft, [k]: v })
   // 模型和思考强度用本机 CLI 实际支持的
@@ -507,6 +513,18 @@ export function CliSection({
         }}
       />
 
+      {def.auth && (
+        <CliAuthPanel
+          def={def}
+          mode={draft.authMode}
+          apiId={draft.apiId}
+          apis={apis}
+          onMode={(m) => set('authMode', m)}
+          onApi={(id) => set('apiId', id)}
+          onGoApis={onGoApis}
+        />
+      )}
+
       <Group title={t('模型')}>
         <ModelSource cli={def} data={models} />
         <Row
@@ -604,6 +622,8 @@ export function CliSection({
             override={{
               showLimits: draft.showLimits,
               autoCompact: draft.autoCompact,
+              authMode: draft.authMode,
+              apiId: draft.apiId,
               enabled: draft.enabled,
               command: draft.command.trim(),
               defaultModel: draft.defaultModel.trim(),
@@ -668,6 +688,8 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           envText: envToText(eff.env),
           showLimits: eff.showLimits,
           autoCompact: eff.autoCompact,
+          authMode: eff.authMode,
+          apiId: eff.apiId,
         },
       ]
     }),

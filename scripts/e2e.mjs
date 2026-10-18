@@ -9,6 +9,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
+import { crc32, deflateSync } from 'node:zlib'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -17,6 +18,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fake = path.join(root, 'scripts/fake-cli/fake-cli.mjs')
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-'))
 const dataDir = path.join(tmp, 'data')
+const homeDir = path.join(tmp, 'home')
+mkdirSync(homeDir, { recursive: true })
 const projectDir = path.join(tmp, 'project')
 const log = path.join(tmp, 'calls.jsonl')
 const port = 8900 + Math.floor(Math.random() * 90)
@@ -128,6 +131,12 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
   env: {
     ...process.env,
     AGENT_PANEL_DATA: dataDir,
+    // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    CLAUDE_CONFIG_DIR: '',
+    CODEX_HOME: '',
+    GEMINI_CLI_HOME: '',
     // 断言里用的是中文提示，固定用中文界面跑
     LANG: 'zh_CN.UTF-8',
     PORT: String(port),
@@ -1060,7 +1069,15 @@ try {
   const r2 = await waitReq()
   assert.equal(r2.kind, 'question')
   assert.deepEqual(r2.options, ['SQLite', 'MySQL'])
-  await call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true, answer: 'SQLite' })
+  assert.deepEqual(
+    r2.questions.map((q) => [q.header, q.options.length]),
+    [
+      ['数据库', 2],
+      ['缓存', 2],
+    ],
+    '一次问的几个问题都带上',
+  )
+  await call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true, answers: ['SQLite', '用 Redis'] })
   await assert.rejects(call('POST', `/tasks/${ask.id}/requests/${r2.id}`, { allow: true }), /已经结束/)
   ask = await waitDone(ask.id)
   assert.equal(ask.status, 'done')
@@ -1069,6 +1086,7 @@ try {
   assert.equal(a1.behavior, 'allow')
   assert.equal(a1.updatedInput.command, 'rm -rf build')
   assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
+  assert.equal(a2.updatedInput.answers['要不要加缓存？'], '用 Redis', '几个问题的回答一起交回去')
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
 
@@ -2087,10 +2105,10 @@ try {
     assert.deepEqual(
       d.images.map((i) => [i.id, i.status, i.variants.length, i.variants[0]?.source, i.variants[0]?.width]),
       [
-        ['bg', 'idle', 2, 'cli', 1],
-        ['frame', 'idle', 2, 'cli', 1],
+        ['bg', 'idle', 2, 'cli', 1920],
+        ['frame', 'idle', 2, 'cli', 320],
       ],
-      '每张图生成两版：一版从 savedPath 读，一版从 base64 读',
+      '每张图生成两版：一版从 savedPath 读，一版从 base64 读；存下来的都是设计里要的精确宽度',
     )
     const agentMsg = d.messages.at(-1)
     assert.equal(agentMsg.role, 'agent')
@@ -2217,7 +2235,6 @@ try {
     })
     d = await waitJob(design.id)
     assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
-    assert.equal(d.job.attempt, 2, '写错的操作退回去重写')
     assert.equal(d.rev, revBefore + 1)
     assert.deepEqual(
       d.root.Children.map((w) => w.Name),
@@ -2228,20 +2245,39 @@ try {
     assert.equal(d.components[0].Root.Children[0].Properties.Text, '开始游戏')
     assert.equal(d.root.Children[1].Slot.LayoutData.Offsets.Top, 500, '只改写到的字段')
     assert.ok(d.root.Children[1].Slot.LayoutData.Offsets.Right > 0, '没写到的字段保留')
-    const retryAsk = calls()
-      .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
-      .at(-1).input
-    assert.match(retryAsk, /ops\[0\]：主界面里没有叫 Nope 的控件/)
+    // 写错的操作当场把错误交还给 AI，它接着改；过程按顺序存在回复里
+    const failedTool = d.messages
+      .at(-1)
+      .parts.flatMap((p) => p.tools)
+      .find((x) => x.failed)
+    assert.match(failedTool.output, /主界面里没有叫 Nope 的控件/)
     // 用设计工具（MCP）改：CLI 调加控件、改属性、改名、建子控件等工具，回复只写普通文字
+    // 每个工具一次提交多条；控件写法宽松（属性直接写在控件上、插槽用简写），旧的单数工具名也认
     const mcpCalls = [
       ['rename_widget', { name: 'Txt_Ver', to: 'Txt_Version' }],
-      ['update_widget', { name: 'Txt_Version', properties: { Text: 'v2.0.0' } }],
+      ['update_widgets', { items: [{ name: 'Txt_Version', properties: { Text: 'v2.0.0' } }] }],
       [
-        'add_widget',
-        { parent: 'Buttons', widget: { Type: 'TextBlock', Name: 'Txt_Tip', Properties: { Text: '提示' } } },
+        'add_widgets',
+        {
+          items: [
+            { parent: 'Buttons', widget: { type: 'TextBlock', name: 'Txt_Tip', Text: '提示', slot: { padding: 8 } } },
+            {
+              parent: 'Root',
+              widget: {
+                Type: 'TextBlock',
+                Name: 'Txt_Corner',
+                Text: 'v',
+                Slot: { anchor: 'bottom-right', x: -24, y: -16, w: 120, h: 30 },
+              },
+            },
+          ],
+        },
       ],
-      ['create_component', { name: 'WBP_Tag', size: { X: 64, Y: 32 }, root: { Type: 'Overlay', Name: 'Root' } }],
-      ['set_style', { style: 'clean' }],
+      [
+        'create_components',
+        { items: [{ name: 'WBP_Tag', size: { X: 64, Y: 32 }, root: { Type: 'Overlay', Name: 'Root' } }] },
+      ],
+      ['set_design', { style: 'clean' }],
     ]
     await call('POST', `/designs/${design.id}/chat`, {
       text: `用工具改 FAKE_MCP:${JSON.stringify(mcpCalls)}`,
@@ -2256,8 +2292,137 @@ try {
       ['Txt_Version', 'v2.0.0', 'Txt_Tip'],
       '工具里的改动存下来了',
     )
+    assert.deepEqual(box.at(-1).Slot.Padding, { Left: 8, Top: 8, Right: 8, Bottom: 8 }, '插槽的简写')
+    const corner = d.root.Children.find((w) => w.Name === 'Txt_Corner').Slot.LayoutData
+    assert.deepEqual(
+      [corner.Anchors.Minimum, corner.Alignment, corner.Offsets],
+      [
+        { X: 1, Y: 1 },
+        { X: 1, Y: 1 },
+        { Left: -24, Top: -16, Right: 120, Bottom: 30 },
+      ],
+      '画布位置的简写换成锚点和偏移',
+    )
     assert.ok(d.components.some((c) => c.Name === 'WBP_Tag' && c.DesignSize.X === 64))
     assert.equal(d.style, 'clean')
+    // 没在改设计时补充不了：告诉页面改成排队
+    assert.deepEqual(await call('POST', `/designs/${design.id}/steer`, { text: '再大一点' }), { steered: false })
+    // 看图量尺寸：inspect_image 量尺寸和颜色，view_image 画坐标格、放大一块，存成文件给 AI 读图
+    const pngOf = (w, h, pix) => {
+      const raw = Buffer.alloc((w * 3 + 1) * h)
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(pix(x, y), y * (w * 3 + 1) + 1 + x * 3)
+      const chunk = (type, body) => {
+        const head = Buffer.alloc(8)
+        head.writeUInt32BE(body.length, 0)
+        head.write(type, 4, 'ascii')
+        const crc = Buffer.alloc(4)
+        crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0)
+        return Buffer.concat([head, body, crc])
+      }
+      const ihdr = Buffer.alloc(13)
+      ihdr.writeUInt32BE(w, 0)
+      ihdr.writeUInt32BE(h, 4)
+      ihdr[8] = 8
+      ihdr[9] = 2
+      return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk('IHDR', ihdr),
+        chunk('IDAT', deflateSync(raw)),
+        chunk('IEND', Buffer.alloc(0)),
+      ])
+    }
+    const ref = await call('POST', '/uploads', {
+      name: '参考图.png',
+      mime: 'image/png',
+      data: pngOf(100, 60, (x) => (x < 50 ? [255, 0, 0] : [0, 0, 255])).toString('base64'),
+    })
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `量一下参考图 FAKE_MCP:${JSON.stringify([
+        [
+          'inspect_image',
+          {
+            source: 'attachment:1',
+            points: [
+              { x: 10, y: 10 },
+              { x: 90, y: 10 },
+            ],
+          },
+        ],
+        ['view_image', { source: 'attachment:1', region: { x: 0, y: 0, w: 50, h: 30 } }],
+        ['inspect_image', { source: 'attachment:9' }],
+      ])}`,
+      source: { kind: 'none' },
+      attachments: [ref],
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const looked = d.messages.at(-1).text
+    assert.match(looked, /"size":"100×60"/, '量出精确尺寸')
+    assert.match(looked, /"color":"#FF0000"[\s\S]*"color":"#0000FF"/, '取到指定位置的颜色')
+    assert.match(looked, /views[\\/]view-1\.png/, '放大的图存成文件交给 AI 读')
+    assert.match(looked, /没有这个附件/, '附件序号不对时说明原因')
+    assert.match(
+      calls()
+        .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
+        .at(-1).input,
+      /附件 1「参考图\.png」：100×60 像素/,
+      '附件的精确尺寸写进了要求',
+    )
+
+    // 图标表：同一个 sheet 的图标一次生成再切开，每个都是各自精确的尺寸；漏画的单独补
+    const callsBefore = calls().length
+    const icon = (id, n, extra = '') => ({
+      id,
+      name: `Ico_${n}`,
+      prompt: `${extra}item ${n}`,
+      width: 48,
+      height: 48,
+      sheet: 'items',
+    })
+    const icons = [icon('ico_a', 'A'), icon('ico_b', 'B'), icon('ico_c', 'C', 'MISS3 ')]
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `做三个物品图标 FAKE_MCP:${JSON.stringify([
+        ['add_images', { images: icons }],
+        [
+          'add_widgets',
+          {
+            items: icons.map((x, i) => ({
+              parent: 'Root',
+              widget: {
+                Type: 'Image',
+                Name: x.name,
+                Brush: { ResourceObject: `img:${x.id}` },
+                Slot: { anchor: 'top-left', x: 10 + i * 60, y: 10, w: 48, h: 48 },
+              },
+            })),
+          },
+        ],
+      ])}`,
+      source: { kind: 'cli' },
+      count: 1,
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const pngSize = async (file) => {
+      const b = Buffer.from(await (await fetch(`${base}/designs/${design.id}/files/${file}`)).arrayBuffer())
+      return [b.readUInt32BE(16), b.readUInt32BE(20)]
+    }
+    for (const id of ['ico_a', 'ico_b', 'ico_c']) {
+      const im = d.images.find((x) => x.id === id)
+      assert.equal(im.variants.length, 1, `${id} 有图`)
+      assert.deepEqual(await pngSize(im.variants[0].file), [48, 48], `${id} 是要求的精确尺寸`)
+    }
+    const sheetGen = calls()
+      .slice(callsBefore)
+      .filter((c) => c.kind === 'codex' && (c.stdin ?? c.input ?? '').startsWith('请用内置的 image_gen'))
+    assert.equal(sheetGen.length, 2, '三个图标一次出图，漏画的第三个单独补一张')
+    assert.match(
+      sheetGen[0].stdin ?? sheetGen[0].input,
+      /3 separate icons laid out in a strict grid of 2 columns × 2 rows/,
+    )
+    assert.match(sheetGen[0].stdin ?? sheetGen[0].input, /1\. item A\n2\. item B\n3\. MISS3 item C/)
+    assert.doesNotMatch(sheetGen[1].stdin ?? sheetGen[1].input, /sprite sheet/)
+
     const mcpAsk = calls()
       .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
       .at(-1)
@@ -2767,6 +2932,293 @@ try {
     assert.ok(!docs.files.find((f) => f.path === 'AGENTS.md').exists, '优化不直接写文件')
     rmSync(path.join(projectDir, '.claude'), { recursive: true })
     step('项目说明文件：读写、拒绝白名单外的路径、AI 优化')
+  }
+
+  // ---- 账号和 API：登录、保存、切换、登出；用 API 时把地址和密钥交给 CLI，模型只列这个 API 的 ----
+  {
+    const base0 = await call('GET', '/settings')
+    const withAuth = (extra = {}) => ({
+      ...base0,
+      ...extra,
+      clis: Object.fromEntries(
+        ['claude', 'codex', 'commandcode', 'gemini'].map((id) => [
+          id,
+          { ...base0.clis[id], env: [{ key: 'FAKE_AUTH', value: id }], ...(extra.clis?.[id] ?? {}) },
+        ]),
+      ),
+    })
+    await call('PUT', '/settings', withAuth())
+    const list = async (cli) => (await call('GET', '/accounts')).find((x) => x.cli === cli)
+    const waitLogin = async (cli) => {
+      for (let i = 0; i < 100; i++) {
+        const j = await call('GET', `/accounts/${cli}/login`)
+        if (j && j.status !== 'running') return j
+        await sleep(150)
+      }
+      throw new Error('登录没有结束')
+    }
+    assert.deepEqual(
+      (await call('GET', '/accounts')).map((x) => [x.cli, x.live.loggedIn, x.accounts.length]),
+      [
+        ['claude', false, 0],
+        ['codex', false, 0],
+        ['commandcode', false, 0],
+        ['gemini', false, 0],
+      ],
+      '一开始都没登录',
+    )
+    // Codex：登录两个账号，凭据文件换成新的，之前的自动存下来
+    const authFile = path.join(homeDir, '.codex', 'auth.json')
+    const emailOf = () =>
+      JSON.parse(Buffer.from(JSON.parse(readFileSync(authFile, 'utf8')).tokens.id_token.split('.')[1], 'base64url'))
+        .email
+    let j = await call('POST', '/accounts/codex/login')
+    assert.equal(j.status, 'running')
+    j = await waitLogin('codex')
+    assert.equal(j.status, 'done', JSON.stringify(j))
+    assert.match(j.url, /^https:\/\/example\.com\/oauth\/authorize/, '登录网址（localhost 的回调地址不算）')
+    let c = await list('codex')
+    assert.deepEqual(
+      [c.live.loggedIn, c.live.email, c.unsaved, c.accounts.map((a) => [a.email, a.active])],
+      [true, 'fake1@example.com', false, [['fake1@example.com', true]]],
+    )
+    await call('POST', '/accounts/codex/login')
+    assert.equal((await waitLogin('codex')).status, 'done')
+    c = await list('codex')
+    assert.deepEqual(
+      c.accounts.map((a) => [a.email, a.active]),
+      [
+        ['fake1@example.com', false],
+        ['fake2@example.com', true],
+      ],
+      '登录第二个账号：第一个还在，第二个是现在用的',
+    )
+    assert.equal(emailOf(), 'fake2@example.com')
+    // 切换回第一个：凭据文件换回去
+    const first = c.accounts[0]
+    c = await call('POST', '/accounts/codex/switch', { id: first.id })
+    assert.equal(emailOf(), 'fake1@example.com')
+    assert.deepEqual(
+      c.accounts.map((a) => a.active),
+      [true, false],
+    )
+    // 改名、登出（凭据文件没了，账号还在）、再切回来
+    c = await call('PATCH', `/accounts/codex/accounts/${first.id}`, { name: '工作号' })
+    assert.equal(c.accounts[0].name, '工作号')
+    c = await call('POST', '/accounts/codex/logout')
+    assert.deepEqual([c.live.loggedIn, c.accounts.length, existsSync(authFile)], [false, 2, false])
+    c = await call('POST', '/accounts/codex/switch', { id: first.id })
+    assert.deepEqual([c.live.loggedIn, c.live.email, emailOf()], [true, 'fake1@example.com', 'fake1@example.com'])
+    c = await call('DELETE', `/accounts/codex/accounts/${c.accounts[1].id}`)
+    assert.equal(c.accounts.length, 1)
+    // Claude Code：除了凭据文件，账号信息在 .claude.json 的 oauthAccount 里，别的内容不动；登出后只去掉它
+    const claudeJson = path.join(homeDir, '.claude.json')
+    writeFileSync(claudeJson, JSON.stringify({ userID: 'u-1', theme: 'dark' }))
+    await call('POST', '/accounts/claude/login')
+    assert.equal((await waitLogin('claude')).status, 'done')
+    c = await list('claude')
+    assert.deepEqual([c.live.email, c.accounts.length], ['fake3@example.com', 1])
+    assert.equal(JSON.parse(readFileSync(claudeJson, 'utf8')).userID, 'u-1', '.claude.json 里别的内容原样保留')
+    await call('POST', '/accounts/claude/logout')
+    const left = JSON.parse(readFileSync(claudeJson, 'utf8'))
+    assert.deepEqual(
+      [left.oauthAccount, left.theme, existsSync(path.join(homeDir, '.claude', '.credentials.json'))],
+      [undefined, 'dark', false],
+    )
+    // Gemini CLI：登录后 CLI 不退出，凭据一变面板就算登录成功并停掉它；登录前先写好登录方式
+    await call('POST', '/accounts/gemini/login')
+    assert.equal((await waitLogin('gemini')).status, 'done')
+    assert.equal((await list('gemini')).live.email, 'fake4@example.com')
+    assert.equal(
+      JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8')).security.auth.selectedType,
+      'oauth-personal',
+    )
+    // Command Code：凭据里认不出邮箱，用起的名字；同一份凭据不重复保存
+    await call('POST', '/accounts/commandcode/login')
+    assert.equal((await waitLogin('commandcode')).status, 'done')
+    c = await call('POST', '/accounts/commandcode/save', { name: '备用' })
+    assert.deepEqual(
+      c.accounts.map((a) => a.name),
+      ['Command Code 账号 1'],
+      '已经保存过的凭据不重复保存',
+    )
+
+    // API：读模型列表（在服务端请求），选用后模型下拉只列这个 API 的模型，地址和密钥按 CLI 的规则传进去
+    const apiSrv = http.createServer((req, res) => {
+      res.setHeader('content-type', 'application/json')
+      if (req.headers.authorization !== 'Bearer sk-test')
+        return void res.writeHead(401).end(JSON.stringify({ error: { message: 'bad key' } }))
+      res.end(JSON.stringify({ data: [{ id: 'm-b' }, { id: 'm-a' }] }))
+    })
+    await new Promise((r) => apiSrv.listen(0, '127.0.0.1', r))
+    const apiBase = `http://127.0.0.1:${apiSrv.address().port}/v1`
+    const got = await call('POST', '/accounts/api-models', {
+      protocol: 'openai-chat',
+      baseUrl: apiBase,
+      apiKey: 'sk-test',
+    })
+    assert.deepEqual(got.models, ['m-a', 'm-b'])
+    await assert.rejects(
+      call('POST', '/accounts/api-models', { protocol: 'openai-chat', baseUrl: apiBase, apiKey: 'wrong' }),
+      /401/,
+    )
+    apiSrv.close()
+    const apis = [
+      {
+        id: 'ap1',
+        name: '中转 A',
+        protocol: 'openai-responses',
+        baseUrl: 'https://relay.example/v1',
+        apiKey: 'sk-relay',
+        authHeader: 'x-api-key',
+        models: ['relay-1', 'relay-2'],
+      },
+      {
+        id: 'ap2',
+        name: 'Claude 中转',
+        protocol: 'anthropic',
+        baseUrl: 'https://claude.example',
+        apiKey: 'sk-ant',
+        authHeader: 'bearer',
+        models: ['claude-x'],
+      },
+    ]
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap1' }, claude: { authMode: 'api', apiId: 'ap2' } } }),
+    )
+    const cm = await call('GET', '/clis/codex/models?refresh=1')
+    assert.deepEqual(
+      [cm.auth, cm.from, cm.models.map((m) => m.id), cm.models[0].isDefault],
+      ['api', '中转 A', ['relay-1', 'relay-2'], true],
+      'API 模式只列这个 API 的模型',
+    )
+    const accountModels = await call('GET', '/clis/gemini/models?refresh=1')
+    assert.notEqual(accountModels.auth, 'api', '账号模式不受影响')
+    const before = calls().length
+    const t1 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'codex',
+      model: 'relay-1',
+      prompt: '用 API 跑',
+    })
+    await waitDone(t1.id)
+    const t2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'claude',
+      model: 'claude-x',
+      prompt: '用 API 跑 claude',
+    })
+    await waitDone(t2.id)
+    const used = calls().slice(before)
+    const codexCall = used.find((x) => x.kind === 'codex')
+    assert.ok(
+      codexCall.args.includes('model_providers.agentpanel.base_url="https://relay.example/v1"'),
+      'Codex 的接口地址写进了 -c 参数',
+    )
+    assert.ok(codexCall.args.includes('model_provider="agentpanel"'))
+    assert.equal(codexCall.apiEnv.agentpanel, 'sk-relay', '密钥走环境变量，不出现在参数里')
+    assert.ok(!codexCall.args.join(' ').includes('sk-relay'))
+    const claudeCall = used.find((x) => x.kind === 'claude')
+    assert.deepEqual(
+      claudeCall.apiEnv.anthropic,
+      ['https://claude.example', null, 'sk-ant'],
+      'Bearer 方式用 ANTHROPIC_AUTH_TOKEN',
+    )
+    // 协议对不上的 API 不会交给 CLI（Codex 选了 Anthropic 的 API）
+    await call('PUT', '/settings', withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap2' } } }))
+    assert.notEqual((await call('GET', '/clis/codex/models?refresh=1')).auth, 'api')
+    // 改用 API 需要改配置文件的 CLI：Gemini CLI 选了 gemini-api-key，改回账号时还原；Command Code 写进自定义接口
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        apis: [
+          {
+            id: 'g1',
+            name: 'Gemini Key',
+            protocol: 'gemini',
+            baseUrl: '',
+            apiKey: 'gk',
+            authHeader: 'x-api-key',
+            models: ['gem-1'],
+          },
+          {
+            id: 'c1',
+            name: 'CC 接口',
+            protocol: 'openai-chat',
+            baseUrl: 'https://cc.example/v1',
+            apiKey: 'ck',
+            authHeader: 'x-api-key',
+            models: ['cc-1'],
+          },
+        ],
+        clis: { gemini: { authMode: 'api', apiId: 'g1' }, commandcode: { authMode: 'api', apiId: 'c1' } },
+      }),
+    )
+    const g = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'gemini',
+      model: 'gem-1',
+      prompt: '用 gemini API',
+    })
+    await waitDone(g.id)
+    const geminiSettings = () => JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
+    assert.equal(geminiSettings().security.auth.selectedType, 'gemini-api-key')
+    assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], 'gk')
+    const cc = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      model: 'cc-1',
+      prompt: '用 cc API',
+    })
+    await waitDone(cc.id)
+    const ccFile = path.join(homeDir, '.commandcode', 'settings.json')
+    assert.deepEqual(JSON.parse(readFileSync(ccFile, 'utf8')).provider.agentpanel, {
+      baseURL: 'https://cc.example/v1',
+      apiKey: '$AGENT_PANEL_API_KEY',
+      api: 'openai-completions',
+      models: { 'cc-1': {} },
+    })
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({ apis: [], clis: { gemini: { authMode: 'account' }, commandcode: { authMode: 'account' } } }),
+    )
+    const g2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'gemini',
+      prompt: '改回账号',
+    })
+    await waitDone(g2.id)
+    assert.equal(geminiSettings().security.auth.selectedType, 'oauth-personal', '改回账号还原登录方式')
+    const cc2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      prompt: '改回账号 cc',
+    })
+    await waitDone(cc2.id)
+    assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined)
+    // 凭据不进数据导出
+    const backup = await call('GET', '/data/export?kinds=config,projects,tasks,uploads')
+    assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')
+    await call('PUT', '/settings', base0)
+    step(
+      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息）；API 模式传地址和密钥、模型只列这个 API 的、协议对不上不用、按 CLI 改配置文件',
+    )
   }
 
   // ---- 只接受本机页面的请求 ----

@@ -139,5 +139,58 @@
       "标准": "Standard",
       "非交互执行时改文件和跑命令都会被拦下": "File edits and commands are blocked in non-interactive mode"
     }
+  },
+  "mcp": {
+    "files": {
+      ".mcp.json": {
+        "mcpServers": {
+          "{name}": {
+            "transport": "http",
+            "url": "{url}"
+          }
+        }
+      },
+      ".commandcode/settings.json": {
+        "permissions": {
+          "allow": ["mcp__{name}__*"]
+        }
+      }
+    }
+  },
+  "auth": {
+    "login": ["login"],
+    "home": "~/.commandcode",
+    "files": ["auth.json"],
+    "identity": "none",
+    "api": {
+      "protocols": ["anthropic", "openai-responses", "openai-chat"],
+      "env": {
+        "AGENT_PANEL_API_KEY": "{apiKey}"
+      },
+      "wire": {
+        "anthropic": "anthropic-messages",
+        "openai-responses": "openai-responses",
+        "openai-chat": "openai-completions"
+      },
+      "edits": [
+        {
+          "file": "~/.commandcode/settings.json",
+          "set": {
+            "provider.agentpanel": {
+              "baseURL": "{baseUrl}",
+              "apiKey": "$AGENT_PANEL_API_KEY",
+              "api": "{wire}",
+              "models": "{models}"
+            }
+          }
+        }
+      ],
+      "accountEdits": [
+        {
+          "file": "~/.commandcode/settings.json",
+          "unset": ["provider.agentpanel"]
+        }
+      ]
+    }
   }
 }
