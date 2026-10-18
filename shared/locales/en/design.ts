@@ -429,11 +429,6 @@ export const EN_DESIGN: Record<string, string> = {
   '发给 AI 的英文描述': 'English description sent to the AI',
   保存: 'Save',
   '加载中…': 'Loading…',
-  '从 UI 设计里存下来的整体风格。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里也能直接套用，项目的美术提示词也能从这里导入。':
-    "Overall styles saved from UI designs. When a new design has no style yet, the AI offers matching styles as options; you can also apply them in a design's style settings or import them into a project's art prompts.",
-  还没有保存的风格: 'No saved styles yet',
-  '在 UI 设计里打开风格设置，点「存到风格库」，AI 会总结这个设计的风格存进来。':
-    'Open the style settings in a UI design and click "Save to style library"; the AI will summarize the design\'s style and save it here.',
   '删除风格「{name}」？': 'Delete style "{name}"?',
   '已经用了这个风格的设计不受影响。': 'Designs already using this style are not affected.',
   风格名称: 'Style name',
@@ -481,4 +476,25 @@ export const EN_DESIGN: Record<string, string> = {
   '{cli} 连不上设计工具，请升级到最新版：{detail}':
     '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
   '和另外 {n} 个图标一起生成': 'Generating together with {n} other icons',
+  引入风格: 'Add a style',
+  搜索风格: 'Search styles',
+  内置: 'Built-in',
+  没有匹配的风格: 'No matching styles',
+  '选中后这个设计按这个风格来，发送时一起交给 AI。':
+    'The design follows this style once chosen; it is sent to the AI with your message.',
+  '使用「{name}」风格': 'Use the "{name}" style',
+  '风格：{name}': 'Style: {name}',
+  不用这个风格: "Don't use this style",
+  '（副本）': '(copy)',
+  '已复制到「我的风格」，可以改了': 'Copied to "My styles"; you can edit it now',
+  '整体美术风格库。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里能直接套用，AI 输入框的「+」里能引入，项目的美术提示词也能从这里导入。程序内置了一批常用风格（只读，可以复制成自己的再改），也能把自己设计里的风格存进来。':
+    'The overall art style library. When a new design has no style yet, the AI offers styles of the same kind as options; you can apply one in a design\'s style settings, add one from the "+" in the AI input, or import one into a project\'s art prompts. Common styles are built in (read-only; copy one to edit it), and you can also save the style of your own designs.',
+  我的风格: 'My styles',
+  '还没有自己的风格：在 UI 设计的风格设置里点「存到风格库」，或复制一个内置的来改。':
+    'No styles of your own yet: click "Save to style library" in a design\'s style settings, or copy a built-in one to edit.',
+  内置风格: 'Built-in styles',
+  复制到我的风格: 'Copy to my styles',
+  '复制到我的风格，再自己改': 'Copy to my styles, then edit it',
+  '内置风格不能修改，复制成自己的再改': "Built-in styles can't be edited; copy one to your own styles first",
+  内置风格不能删除: "Built-in styles can't be deleted",
 }

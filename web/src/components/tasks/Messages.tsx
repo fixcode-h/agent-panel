@@ -4,7 +4,7 @@ import type { TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { ToolRow } from './ToolRow'
-import { ReplyFrame } from '@/components/chat/ChatMessage'
+import { CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
@@ -22,13 +22,15 @@ export function SystemNote({ text, error, className }: { text: string; error?: b
     return (
       <div
         role="alert"
-        className="flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg"
+        className="relative flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg"
       >
         {/* 图标放在和第一行一样高的框里居中，单行、多行都和文字对齐 */}
         <span className="flex h-[1.625em] shrink-0 items-center">
           <CircleAlert className="h-4 w-4 text-danger" />
         </span>
-        <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
+        {/* 右边留出复制按钮的位置，长报错不会压在它下面 */}
+        <span className="min-w-0 pr-7 [overflow-wrap:anywhere]">{text}</span>
+        <CopyButton text={text} label={t('复制报错')} className="absolute top-1.5 right-1.5 h-6 w-6 bg-card/60" />
       </div>
     )
   return (

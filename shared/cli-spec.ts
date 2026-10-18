@@ -135,6 +135,8 @@ export const CliSpec = z.object({
   }),
   /** 设置里环境变量的示例 */
   envExample: z.string().default(''),
+  /** 每次运行都加的环境变量（用户在设置里写的同名变量优先）：例如让无界面运行信任工作目录 */
+  env: z.record(z.string(), z.string()).default({}),
   /**
    * 怎么把面板提供的工具（MCP，例如 UI 设计的设计工具）交给 CLI：args 是加的参数，files 是写进工作目录的配置文件
    * （路径 → JSON 内容）。里面的 {url} 换成工具地址，{name} 换成工具名。不写表示这个 CLI 用不了面板的工具
@@ -255,6 +257,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     readOnly: spec.readOnlyPermission,
     color: spec.color,
     envExample: spec.envExample,
+    env: spec.env,
     mcp: spec.mcp,
     auth: spec.auth,
     spec: true,

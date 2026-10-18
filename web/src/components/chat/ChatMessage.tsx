@@ -27,14 +27,14 @@ export const msgAction =
   'grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-40'
 
 /** 复制按钮：点了显示一下「已复制」 */
-export function CopyButton({ text, className }: { text: string; className?: string }) {
+export function CopyButton({ text, className, label }: { text: string; className?: string; label?: string }) {
   const [done, setDone] = useState(false)
   return (
     <button
       type="button"
       className={cn(msgAction, className)}
-      title={done ? t('已复制') : t('复制')}
-      aria-label={t('复制')}
+      title={done ? t('已复制') : (label ?? t('复制'))}
+      aria-label={label ?? t('复制')}
       onClick={() => {
         void navigator.clipboard?.writeText(text).then(() => {
           setDone(true)

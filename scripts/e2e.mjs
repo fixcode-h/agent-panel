@@ -2013,7 +2013,16 @@ try {
     assert.equal((await call('GET', '/designs/styles')).find((x) => x.id === st.id).name, '暗黑奇幻·改')
     await call('DELETE', `/designs/styles/${st.id}`)
     assert.ok(!(await call('GET', '/designs/styles')).some((x) => x.id === st.id))
-    step('风格库：存、改、删')
+    // 内置风格：游戏和网页各一批，排在自己存的后面；只读，不能改也不能删
+    const all = await call('GET', '/designs/styles')
+    const builtin = all.filter((x) => x.builtin)
+    assert.ok(
+      builtin.filter((x) => x.kind === 'game').length >= 10 && builtin.filter((x) => x.kind === 'web').length >= 10,
+    )
+    assert.ok(all.findIndex((x) => x.builtin) > all.findLastIndex((x) => !x.builtin), '自己存的在前，内置的在后')
+    await assert.rejects(call('PUT', `/designs/styles/${builtin[0].id}`, { name: '改' }), /内置风格不能修改/)
+    await assert.rejects(call('DELETE', `/designs/styles/${builtin[0].id}`), /内置风格不能删除/)
+    step('风格库：存、改、删；内置风格只读')
     const design = await call('POST', '/designs', {
       projectId: uiProject.id,
       kind: 'game',
@@ -3173,6 +3182,11 @@ try {
     const geminiSettings = () => JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
     assert.equal(geminiSettings().security.auth.selectedType, 'gemini-api-key')
     assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], 'gk')
+    assert.equal(
+      calls().findLast((x) => x.kind === 'gemini').apiEnv.trust,
+      'true',
+      'Gemini CLI 无界面运行要信任工作目录，否则报「not running in a trusted directory」',
+    )
     const cc = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',

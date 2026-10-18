@@ -14,31 +14,32 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 
 ## 字段
 
-| 字段                              | 说明                                                                                           |
-| --------------------------------- | ---------------------------------------------------------------------------------------------- |
-| `id`                              | 唯一标识，小写字母、数字和 `-`，写进设置和 Agent 配置里，定了就别改                            |
-| `name`                            | 界面上显示的名字                                                                               |
-| `command`                         | 可执行文件名（设置里可以改成完整路径）                                                         |
-| `versionArgs`                     | 检测是否安装、显示版本用的参数，默认 `["--version"]`                                           |
-| `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                             |
-| `color`                           | 界面上的标识色                                                                                 |
-| `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填                                    |
-| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                   |
-| `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                   |
-| `permissions`                     | 权限选项 `[{ "id", "label", "hint" }]`，`id` 会作为 `{permission}` 填进参数                    |
-| `defaultPermission`               | 默认权限，不写时用第一个                                                                       |
-| `readOnlyPermission`              | 只分析、不改文件时用的权限（例如优化项目说明）                                                 |
-| `args`                            | 参数规则，见下面                                                                               |
-| `output`                          | 输出解析，见下面                                                                               |
-| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                |
-| `features`                        | 能力，见下面                                                                                   |
-| `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                       |
-| `docsNote`                        | 项目设置里说明文件那一页的说明                                                                 |
-| `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`     |
-| `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来 |
-| `envExample`                      | 设置里环境变量的示例                                                                           |
-| `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                             |
-| `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                               |
+| 字段                              | 说明                                                                                                      |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `id`                              | 唯一标识，小写字母、数字和 `-`，写进设置和 Agent 配置里，定了就别改                                       |
+| `name`                            | 界面上显示的名字                                                                                          |
+| `command`                         | 可执行文件名（设置里可以改成完整路径）                                                                    |
+| `versionArgs`                     | 检测是否安装、显示版本用的参数，默认 `["--version"]`                                                      |
+| `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                        |
+| `color`                           | 界面上的标识色                                                                                            |
+| `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填                                               |
+| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                              |
+| `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                              |
+| `permissions`                     | 权限选项 `[{ "id", "label", "hint" }]`，`id` 会作为 `{permission}` 填进参数                               |
+| `defaultPermission`               | 默认权限，不写时用第一个                                                                                  |
+| `readOnlyPermission`              | 只分析、不改文件时用的权限（例如优化项目说明）                                                            |
+| `args`                            | 参数规则，见下面                                                                                          |
+| `output`                          | 输出解析，见下面                                                                                          |
+| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                           |
+| `features`                        | 能力，见下面                                                                                              |
+| `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                  |
+| `docsNote`                        | 项目设置里说明文件那一页的说明                                                                            |
+| `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`                |
+| `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来            |
+| `envExample`                      | 设置里环境变量的示例                                                                                      |
+| `env`                             | 每次运行都加的环境变量 `{ "KEY": "VALUE" }`，用户在设置里写的同名变量优先（例如让无界面运行信任工作目录） |
+| `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                                        |
+| `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                          |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
 

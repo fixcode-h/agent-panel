@@ -16,7 +16,10 @@ export function useStyles(kind: DesignKind, active: boolean) {
     if (!active) return
     api
       .styles()
-      .then((l) => setList(l.filter((x) => x.kind === kind)))
+      .then((l) => {
+        const same = l.filter((x) => x.kind === kind)
+        setList([...same.filter((x) => !x.builtin), ...same.filter((x) => x.builtin)])
+      })
       .catch(() => setList([]))
   }, [kind, active])
   return list
@@ -52,7 +55,10 @@ export function StyleLibraryList({
         >
           <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
           <span className="min-w-0 flex-1">
-            <span className="block truncate text-[12.5px]">{s.name}</span>
+            <span className="flex items-center gap-1.5 text-[12.5px]">
+              <span className="truncate">{s.name}</span>
+              {s.builtin && <span className="shrink-0 rounded bg-field px-1 text-[10px] text-subtle">{t('内置')}</span>}
+            </span>
             {s.summary && <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">{s.summary}</span>}
           </span>
           {current.trim() === s.en.trim() && <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />}
