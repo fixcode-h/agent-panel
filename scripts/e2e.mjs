@@ -1088,6 +1088,11 @@ try {
   assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
   assert.equal(a2.updatedInput.answers['要不要加缓存？'], '用 Redis', '几个问题的回答一起交回去')
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
+  // 回答带上每个问题和答案，页面在对话正文里显示
+  assert.deepEqual(ask.messages.find((m) => m.answers)?.answers, [
+    { question: '用哪个数据库？', answer: 'SQLite' },
+    { question: '要不要加缓存？', answer: '用 Redis' },
+  ])
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
 
   // 「提问」开关关着：审批照样等用户，问题不交给用户，让 CLI 自己选

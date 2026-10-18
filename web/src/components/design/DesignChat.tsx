@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
 import { ChatReply, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
-import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
+import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
@@ -437,7 +437,7 @@ export function DesignChat({
     text: string,
     run: ChatRun,
     attachments: Attachment[],
-    extra: { askUser: boolean; style?: string },
+    extra: { askUser: boolean; style?: string; answers?: { question: string; answer: string }[] },
   ) => Promise<boolean>
   onStop: () => void
   /** 哪个设计：对话的 CLI、模型各个设计分开记 */
@@ -546,7 +546,11 @@ export function DesignChat({
     const style = designQs.flatMap((q, i) => picked[i].map((k) => q.options[k]?.style ?? '')).find(Boolean)
     const text = designQs.length === 1 ? answers[0] : designQs.map((q, i) => `${q.text}：${answers[i]}`).join('\n')
     try {
-      await onSend(text, run, [], { askUser, ...(style ? { style } : {}) })
+      await onSend(text, run, [], {
+        askUser,
+        ...(style ? { style } : {}),
+        answers: designQs.map((q, i) => ({ question: q.text, answer: answers[i] ?? '' })),
+      })
     } finally {
       setSending(false)
     }
@@ -759,6 +763,8 @@ function ChatMessage({
   onResend?: (text: string) => void
 }) {
   const author = useRunAuthor(msg.run as ChatRun | undefined)
+  // 回答 AI 提问的消息：每个问题和答案分开显示
+  if (msg.role === 'user' && msg.answers?.length) return <AnswerMessage size="sm" answers={msg.answers} at={msg.at} />
   if (msg.role === 'user')
     return (
       <UserMessage

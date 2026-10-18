@@ -180,6 +180,8 @@ try {
   await check(p, 'UI设计-问配色', ['提交 2 个回答'])
   await p.getByRole('button', { name: '提交 2 个回答' }).click()
   await p.getByText('做好了产品首页').first().waitFor({ timeout: 20000 })
+  // 回答显示在对话里：问题一行小字，下面是答案
+  await check(p, 'UI设计-回答', ['主色调偏向哪种？', '蓝紫渐变'])
   await p.getByText(/正在生成图片/).waitFor({ timeout: 20000 })
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 30000 })
   await check(p, 'UI设计-网页', ['Hero', 'FeatureCard'])

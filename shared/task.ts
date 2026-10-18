@@ -8,6 +8,7 @@ import {
   type Task,
   type TaskData,
   type TaskMessage,
+  type TaskRequest,
   type Workflow,
 } from './schema.ts'
 import { getCli } from './clis.ts'
@@ -188,4 +189,39 @@ export function stepUsage(step: { usage?: StepUsage }, model = ''): StepUsage {
     cacheWriteTokens: 0,
     costUsd: 0,
   })
+}
+
+/** 用户回答了 Agent 的提问：每个问题和答案，在对话正文里显示；没回答（交给 AI 自己决定）时为空 */
+export function questionAnswers(
+  req: Pick<TaskRequest, 'title' | 'questions'>,
+  r: { allow: boolean; answer?: string; answers?: string[] },
+): { question: string; answer: string }[] | undefined {
+  if (!r.allow) return undefined
+  const qs = req.questions?.length ? req.questions.map((q) => q.question) : [req.title]
+  const got = r.answers?.length ? r.answers : [r.answer ?? '']
+  return qs.map((question, i) => ({ question, answer: got[i] ?? '' }))
+}
+
+/**
+ * 模型偶尔把工具调用的原始写法（<invoke name=…>、<parameter name=…>）当成文字说出来，
+ * 内容和工具调用的折叠块重复，一大段参数堆在正文里很难看：显示时去掉。
+ * 从第一个这样的标记去掉到最后一个结束标记；没有结束标记（流式输出到一半、或者只写了半截）时去掉到结尾。
+ * 代码块和行内代码里的不算：那是在正经讲 XML
+ */
+const TOOL_OPEN =
+  /<\/?(?:[\w-]+:)?(?:function_calls|invoke|parameter)\b[^>\n]*>|(?:^|(?<=\s))(?:invoke|parameter) name="[^"\n]*"[^>\n]*>/m
+const TOOL_CLOSE = /<\/(?:[\w-]+:)?(?:function_calls|invoke|parameter)>/g
+
+export function stripToolMarkup(text: string) {
+  if (!/invoke|parameter|function_calls/.test(text)) return text
+  // 代码换成等长的空白再找，下标和原文对得上
+  const plain = text.replace(/```[\s\S]*?(?:```|$)|`[^`\n]*`/g, (m) => ' '.repeat(m.length))
+  const open = TOOL_OPEN.exec(plain)
+  if (!open) return text
+  let end = text.length
+  let last: RegExpExecArray | null = null
+  TOOL_CLOSE.lastIndex = open.index
+  for (let m = TOOL_CLOSE.exec(plain); m; m = TOOL_CLOSE.exec(plain)) last = m
+  if (last) end = last.index + last[0].length
+  return (text.slice(0, open.index).trimEnd() + '\n\n' + text.slice(end).trimStart()).trim()
 }

@@ -4,11 +4,15 @@ import type { TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { ToolRow } from './ToolRow'
-import { CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
+import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
+import { stripToolMarkup } from '@shared/task'
+
+/** 正文里显示的文字：模型当成文字说出来的工具调用写法去掉，那些在工具的折叠块里已经有了 */
+const replyText = (m: TaskMessage) => (m.role === 'agent' ? stripToolMarkup(m.text) : m.text)
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
 function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
@@ -41,6 +45,12 @@ export function SystemNote({ text, error, className }: { text: string; error?: b
       <span className="min-w-0 [overflow-wrap:anywhere]">{text}</span>
     </div>
   )
+}
+
+/** 对话里的系统消息：用户对提问的回答像用户消息一样显示在正文里，其他的是一行说明 */
+export function NoteMessage({ m, className }: { m: TaskMessage; className?: string }) {
+  if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
+  return <SystemNote text={m.text} error={m.error} className={className} />
 }
 
 /**
@@ -105,9 +115,10 @@ export function AgentMessage({
   const { modelOf } = useAgentView()
   const { agents } = useData()
   const a = author ? undefined : agents.find((x) => x.id === m.agentId)
+  const text = replyText(m)
   return (
     <MessageBody
-      m={m}
+      m={text === m.text ? m : { ...m, text }}
       teamNames={teamNames}
       compact={compact}
       live={live}
@@ -228,7 +239,7 @@ export function Msgs({
     <>
       {msgs.map((m, k) =>
         m.role === 'system' ? (
-          <SystemNote key={m.id} text={m.text} error={m.error} />
+          <NoteMessage key={m.id} m={m} />
         ) : (
           <AgentMessage
             key={m.id}
@@ -261,11 +272,11 @@ export function FoldedRun({
   author?: Author
 }) {
   const [open, setOpen] = useState(false)
-  const last = lastIndex(msgs, (m) => m.role === 'agent' && !!m.text.trim())
+  const last = lastIndex(msgs, (m) => m.role === 'agent' && !!replyText(m).trim())
   const process = last < 0 ? [] : msgs.slice(0, last + 1).filter((m) => m.role === 'agent')
   const tools = process.reduce((n, m) => n + m.tools.length, 0)
   const thoughts = process.filter((m) => m.thinking?.trim()).length
-  const notes = process.slice(0, -1).filter((m) => m.text.trim()).length
+  const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
   if (live || last < 0 || (!tools && !thoughts && !notes))
     return <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} />
 
@@ -292,7 +303,7 @@ export function FoldedRun({
   // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
   return (
     <>
-      {msgs.slice(0, last).map((m) => m.role === 'system' && <SystemNote key={m.id} text={m.text} error={m.error} />)}
+      {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} />)}
       <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} />
       <Msgs msgs={msgs.slice(last + 1)} teamNames={teamNames} author={author} />
     </>
@@ -329,14 +340,9 @@ export function ChatReply({
     </>
   )
   if (live) return <div className="flex flex-col gap-2">{body}</div>
-  const replies = msgs.filter((m) => m.role === 'agent' && m.text.trim())
+  const replies = msgs.map(replyText).filter((x, i) => msgs[i].role === 'agent' && x.trim())
   return (
-    <ReplyFrame
-      text={replies.map((m) => m.text.trim()).join('\n\n')}
-      at={msgs.at(-1)?.at}
-      actions={actions}
-      always={last}
-    >
+    <ReplyFrame text={replies.map((x) => x.trim()).join('\n\n')} at={msgs.at(-1)?.at} actions={actions} always={last}>
       <div className="flex flex-col gap-2">{body}</div>
     </ReplyFrame>
   )

@@ -32,10 +32,10 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { AgentMessage, ChatReply, PendingAuthor } from './Messages'
+import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
-import { StepSection, SystemNote } from './StepSection'
+import { StepSection } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
@@ -561,12 +561,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                         }
                       />
                     ) : b.m.role === 'system' ? (
-                      <SystemNote
-                        key={b.m.id}
-                        text={b.m.text}
-                        error={b.m.error}
-                        className="justify-center text-center"
-                      />
+                      <NoteMessage key={b.m.id} m={b.m} className="justify-center text-center" />
                     ) : (
                       <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
                     ),
