@@ -498,6 +498,45 @@ if (input.includes('HANG')) {
   await new Promise(() => setInterval(() => {}, 60_000))
 }
 
+// 没有提问通道的 CLI（Command Code、Gemini CLI）：面板在工作目录里写了 MCP 配置，按 FAKE_ASK:<参数 JSON> 调 ask_user，
+// 等用户回答后把工具返回的话当作回复
+const askArgs = input.match(/FAKE_ASK:(.*)/)?.[1]
+if (askArgs && (kind === 'gemini' || kind === 'commandcode')) {
+  const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
+  const url = cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
+  const rpc = (id, method, params) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    }).then((r) => r.json())
+  await rpc(1, 'initialize', {})
+  const tools = (await rpc(2, 'tools/list', {})).result.tools.map((x) => x.name)
+  const got = (await rpc(3, 'tools/call', { name: 'ask_user', arguments: JSON.parse(askArgs) })).result.content[0].text
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.askbridge',
+      JSON.stringify({ kind, tools, got, hint: input.includes('ask_user') }) + '\n',
+    )
+  const text = `收到：${got}`
+  if (kind === 'gemini') {
+    const at = new Date().toISOString()
+    out({ type: 'init', timestamp: at, session_id: session, model: 'gemini-fake' })
+    out({ type: 'message', timestamp: at, role: 'assistant', content: text, delta: true })
+    out({
+      type: 'result',
+      timestamp: at,
+      status: 'success',
+      stats: { total_tokens: 1, input_tokens: 1, output_tokens: 1, duration_ms: 1, tool_calls: 1 },
+    })
+  } else {
+    out({ type: 'event', event: { type: 'run_start', sessionId: session } })
+    out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
+    out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
+  }
+  process.exit(0)
+}
+
 // Gemini CLI 的 --output-format stream-json
 if (kind === 'gemini') {
   const at = new Date().toISOString()

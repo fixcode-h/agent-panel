@@ -644,6 +644,7 @@ ${prompt}`,
         let result: { ok: boolean; error?: string } | undefined
         const asks = askSession(job.scope)
         const r = await invokeCli({
+          noAskTool: true,
           askUser: asks.askUser,
           onAsk: asks.onAsk,
           onControl: (c) => (job.control = c),

@@ -7,6 +7,8 @@ import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
+import { mcpConfig } from '../../shared/cli-spec.ts'
+import { applyConfigFiles, openAskBridge } from '../ask-mcp.ts'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -37,6 +39,8 @@ export async function invokeCli(o: {
    * 不交时让 CLI 自己选最合适的做法。审批（命令、改文件）按设置里的权限，CLI 要确认时总是交给用户
    */
   askUser?: () => boolean
+  /** 不给没有提问通道的 CLI 加提问工具（调用方自己带了提问的办法，例如 UI 设计的 ask_user） */
+  noAskTool?: boolean
   /** 审批和要交给用户的提问；不给时作为 ask 事件交给 onEvent（任务页自己存在任务里） */
   onAsk?: (ev: Extract<CliEvent, { type: 'ask' }>) => void
   /** 拿到执行中控制 CLI 的方法 */
@@ -58,10 +62,31 @@ export async function invokeCli(o: {
   }
   if (o.signal?.aborted) hard.abort()
   else o.signal?.addEventListener('abort', onStop, { once: true })
+  // 没有提问通道的 CLI（无界面运行的 Command Code、Gemini CLI）：这一轮临时接一个提问工具，
+  // 模型调用时一直等到用户回答。Claude Code、Codex 走自己的协议，不需要
+  let restore: (() => Promise<void>) | undefined
+  let bridge: ReturnType<typeof openAskBridge> | undefined
+  let run = o
+  if (def.mcp && o.askUser && !o.noAskTool && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
+    bridge = openAskBridge((ev) => {
+      if (!o.askUser?.()) return ev.reply(AUTO_ANSWER)
+      return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
+    })
+    const tools = mcpConfig(def.mcp, 'panel', bridge.url)
+    restore = await applyConfigFiles(o.cwd, tools.files).catch(() => undefined)
+    run = {
+      ...o,
+      build: { ...o.build, extraArgs: [...(o.build.extraArgs ?? []), ...tools.args] },
+      // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
+      input: o.askUser() ? `${o.input}\n\n（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）` : o.input,
+    }
+  }
   try {
-    return await invoke(o, def, setControl, hard.signal)
+    return await invoke(run, def, setControl, hard.signal)
   } finally {
     o.signal?.removeEventListener('abort', onStop)
+    bridge?.close()
+    await restore?.().catch(() => {})
   }
 }
 
