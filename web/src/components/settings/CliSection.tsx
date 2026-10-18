@@ -11,7 +11,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
+import { CLIS, MODEL_TIERS, getCli, type CliDefinition, type ModelTier } from '@shared/clis'
 import {
   CliSettings,
   type CliInstallJob,
@@ -36,7 +36,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { CommandPreview } from '@/components/agents/CommandPreview'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { CopyText, Group, Row } from './parts'
-import { CliLimitsPanel, LIMIT_CLIS } from './CliLimits'
+import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
 
 export const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
@@ -332,7 +332,7 @@ function ModelSource({ cli, data }: { cli: CliDefinition; data?: CliModels }) {
               cli: cli.name,
               error: data.error,
             })
-          : cli.id === 'claude'
+          : !['codex', 'commandcode'].includes(getCli(cli.id)?.modelsFrom ?? '')
             ? t('{cli} 没有列出模型的命令，下面是常用的型号，也可以直接填写完整的模型名。', { cli: cli.name })
             : t('下面是内置的建议，也可以直接填写模型名。')
   return <p className={cn('pt-1 text-xs leading-relaxed', data.error ? 'text-warning' : 'text-subtle')}>{text}</p>
@@ -572,13 +572,7 @@ export function CliSection({
             rows={2}
             value={draft.envText}
             onChange={(e) => set('envText', e.target.value)}
-            placeholder={
-              def.id === 'codex'
-                ? 'OPENAI_API_KEY=sk-...'
-                : def.id === 'claude'
-                  ? 'ANTHROPIC_API_KEY=sk-ant-...'
-                  : 'HTTPS_PROXY=http://127.0.0.1:7890'
-            }
+            placeholder={def.envExample || 'HTTPS_PROXY=http://127.0.0.1:7890'}
             className="font-mono text-[13px]"
             spellCheck={false}
           />
@@ -586,7 +580,7 @@ export function CliSection({
         <Row
           title={t('自动压缩上下文')}
           desc={
-            def.id === 'commandcode'
+            def.autoCompact === 'panel'
               ? t('上下文占用达到这个比例时，对话结束一轮后自动压缩（写一份摘要，下一轮开新会话带上）')
               : t('上下文占用达到这个比例时自动压缩')
           }
@@ -623,7 +617,7 @@ export function CliSection({
         </div>
       </Group>
 
-      {LIMIT_CLIS.includes(def.id) && (
+      {hasLimits(def.id) && (
         <Group title={t('额度')}>
           <Row title={t('显示额度')} desc={t('在这里和任务页右栏显示账号的 5 小时、每周额度用了多少')}>
             <Switch
@@ -643,11 +637,11 @@ export function CliSection({
       {ok && (
         <Group title="Skills">
           <p className="pb-2 text-[12px] text-muted">
-            {def.id === 'codex'
-              ? t('Codex 加载的 Skill（用户目录、系统自带和插件里的）')
-              : def.id === 'claude'
-                ? t('~/.claude/skills 和已装插件里的 Skill；项目里的在项目设置里看')
-                : t('~/.commandcode/skills、~/.agents/skills 里的 Skill')}
+            {def.protocol === 'codex-app'
+              ? t('{cli} 加载的 Skill（用户目录、系统自带和插件里的）', { cli: def.name })
+              : t('{dirs} 里的 Skill；项目里的在项目设置里看', {
+                  dirs: [...def.skills.user, ...(def.protocol === 'claude-stream' ? [t('已装插件')] : [])].join('、'),
+                })}
           </p>
           <CliSkills cli={def.id} />
         </Group>

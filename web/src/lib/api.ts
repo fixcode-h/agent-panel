@@ -77,6 +77,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
+/** 用户加的 CLI 配置：原文（页面拿去注册）、读不进来的原因、所在目录 */
+export interface UserClis {
+  specs: unknown[]
+  errors: string[]
+  dir: string
+}
+
 export const api = {
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
@@ -89,6 +96,10 @@ export const api = {
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
   cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
+  /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */
+  cliSpecs: () => request<UserClis>('/clis/specs'),
+  reloadCliSpecs: () => request<UserClis>('/clis/specs/reload', json('POST', {})),
+  revealCliSpecs: () => request<{ ok: boolean }>('/clis/specs/reveal', json('POST', {})),
   cliCommands: (id: string, projectId = '') =>
     request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   cliSkills: (id: string, projectId = '') =>

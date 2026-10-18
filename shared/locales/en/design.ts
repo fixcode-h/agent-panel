@@ -471,4 +471,16 @@ export const EN_DESIGN: Record<string, string> = {
   '↑↓ 选择，回车确认': '↑↓ to select, Enter to confirm',
   '正在读取 CLI 的命令和 Skill…': "Loading the CLI's commands and skills…",
   会话: 'Conversation',
+  '{cli} 加载的 Skill（用户目录、系统自带和插件里的）': 'Skills loaded by {cli} (user folder, built-in and plugins)',
+  '{dirs} 里的 Skill；项目里的在项目设置里看': 'Skills in {dirs}; project skills are in project settings',
+  已装插件: 'installed plugins',
+  '有 {n} 份配置读不进来': "{n} config file(s) couldn't be loaded",
+  '添加其他 CLI': 'Add another CLI',
+  '面板按配置文件调用 CLI：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。':
+    'The panel runs CLIs from config files: how to build the command, how to parse its output, and where skills and instruction files live. Put a JSON config in the folder below and click Reload. No code changes needed.',
+  配置格式: 'Config format',
+  打开目录: 'Open folder',
+  重新读取: 'Reload',
+  '和已有的 CLI 重名': 'has the same id as an existing CLI',
+  '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
 }

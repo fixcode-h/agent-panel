@@ -1,6 +1,8 @@
 import path from 'node:path'
 import type { CliLimits, ToolUse } from '../../shared/schema.ts'
 import { t } from '../../shared/i18n.ts'
+import { getCli } from '../../shared/clis.ts'
+import type { OutputSpec } from '../../shared/cli-spec.ts'
 
 /** 各 CLI 的输出统一成这几种事件 */
 export type CliEvent =
@@ -395,7 +397,7 @@ export function codexUsage(delta: Record<string, number>, last: Record<string, n
 // ---- Command Code：cmdc -p --output-format json（NDJSON 事件流 + 最后一行结果） ----
 function genericTool(name: string, input: any, cwd: string): CliEvent {
   const n = name.toLowerCase()
-  const file = rel(cwd, input?.path ?? input?.file_path ?? input?.filePath ?? input?.file)
+  const file = rel(cwd, input?.path ?? input?.file_path ?? input?.filePath ?? input?.absolute_path ?? input?.file)
   if (/skill/.test(n))
     return {
       type: 'tool',
@@ -526,8 +528,91 @@ export function commandCodeParser(cwd: string): Parser {
   }
 }
 
-/** 一行一个 JSON 事件的 CLI（Claude Code、Command Code）；Codex 走 codex-app.ts 的 app-server 协议 */
+// ---- 配置文件描述的输出：按事件映射转成面板的事件 ----
+/** 取事件里的字段（$.a.b）、比较（$.a == x、$.a != x），其余是字面值 */
+function evalExpr(o: any, v: unknown): unknown {
+  if (typeof v !== 'string' || !v.startsWith('$.')) return v
+  const m = /^\$\.([\w.]+)\s*(==|!=)\s*(.*)$/.exec(v)
+  const get = (p: string) => p.split('.').reduce((x, k) => (x == null ? undefined : x[k]), o)
+  if (!m) return get(v.slice(2))
+  const got = String(get(m[1]) ?? '')
+  return m[2] === '==' ? got === m[3].trim() : got !== m[3].trim()
+}
+
+const str = (v: unknown) => (v === undefined || v === null ? '' : typeof v === 'string' ? v : toolText(v))
+const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
+
+export function specParser(spec: OutputSpec, cwd: string): Parser {
+  return (o) => {
+    const rule = spec.events.find((r) => Object.entries(r.when).every(([k, want]) => evalExpr(o, `$.${k}`) === want))
+    if (!rule) return []
+    const out: CliEvent[] = []
+    for (const e of rule.emit) {
+      const g = (k: string) => evalExpr(o, e[k])
+      switch (e.type) {
+        case 'session':
+          if (str(g('id'))) out.push({ type: 'session', id: str(g('id')) })
+          break
+        case 'text_delta':
+        case 'text':
+        case 'error':
+          if (str(g(e.type === 'error' ? 'message' : 'text')))
+            out.push(
+              e.type === 'error'
+                ? { type: 'error', message: str(g('message')) }
+                : { type: e.type, text: str(g('text')) },
+            )
+          break
+        case 'thinking':
+          if (str(g('text'))) out.push({ type: 'thinking', text: str(g('text')), delta: !!g('delta') })
+          break
+        case 'tool': {
+          const name = str(g('name')) || 'tool'
+          const input = g('input') ?? {}
+          out.push(detailed(genericTool(name, input, cwd), g('id'), name, input))
+          break
+        }
+        case 'tool_result':
+          if (str(g('id')))
+            out.push({
+              type: 'tool_result',
+              id: str(g('id')),
+              output: clipDetail(str(g('output')) || str(g('error'))),
+              failed: !!g('failed'),
+            })
+          break
+        case 'usage': {
+          const u = {
+            context: num(g('context')),
+            window: num(g('window')),
+            model: str(g('model')) || undefined,
+            addInput: num(g('addInput')),
+            addOutput: num(g('addOutput')),
+            addCacheRead: num(g('addCacheRead')),
+            addCacheWrite: num(g('addCacheWrite')),
+            addCost: num(g('addCost')),
+          }
+          if (Object.values(u).some((x) => x !== undefined)) out.push({ type: 'usage', ...u })
+          break
+        }
+        case 'files_changed':
+          out.push({ type: 'files_changed' })
+          break
+        case 'result': {
+          const ok = g('ok') !== false && g('ok') !== undefined
+          out.push({ type: 'result', ok, error: ok ? undefined : str(g('error')) || t('执行失败') })
+          break
+        }
+      }
+    }
+    return out
+  }
+}
+
+/** 一行一个 JSON 事件的 CLI：内置解析器按名字找，配置文件写的事件映射用 specParser；Codex 走 codex-app.ts 的 app-server 协议 */
 export function parserFor(cliId: string, cwd: string): Parser {
-  if (cliId === 'claude') return claudeParser(cwd)
+  const p = getCli(cliId)?.parser
+  if (p && typeof p === 'object') return specParser(p, cwd)
+  if (p === 'claude') return claudeParser(cwd)
   return commandCodeParser(cwd)
 }

@@ -26,7 +26,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { rootStepId, taskWorkflows } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultSettings } from '@shared/settings'
-import { STEER_CLIS, getCli } from '@shared/clis'
+import { getCli } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -301,7 +301,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
-  const canSteer = running && (task.mode === 'workflow' || STEER_CLIS.includes(chatCli))
+  const canSteer = running && (task.mode === 'workflow' || !!getCli(chatCli)?.steer)
   // 用默认 Agent 的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换，下一轮生效
   const byCli = task.mode === 'chat' && task.agentId === DEFAULT_AGENT_ID
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }

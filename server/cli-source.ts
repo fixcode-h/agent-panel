@@ -2,6 +2,7 @@ import { existsSync, realpathSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { capture, childEnv } from './exec/process.ts'
+import { getCli } from '../shared/clis.ts'
 
 const isWin = process.platform === 'win32'
 // 测试时换成假的 npm
@@ -67,7 +68,8 @@ export async function cliSource(cliId: string, file: string | undefined): Promis
   if (npmBin && same(path.dirname(file), npmBin)) return 'npm'
   const target = real(file)
   // 没装在 npm 的全局目录，但最后指向某个 node_modules 里的包（例如 nvm、自定义 prefix）
-  if (/[\\/]node_modules[\\/]@?(anthropic-ai|openai|command-code)/i.test(target)) return 'npm'
+  const pkg = getCli(cliId)?.npmPackage
+  if (pkg && target.replaceAll('\\', '/').includes(`/node_modules/${pkg}/`)) return 'npm'
   if (/[\\/](homebrew|Cellar|Caskroom|linuxbrew)[\\/]/i.test(target) || /[\\/](homebrew|linuxbrew)[\\/]/i.test(file))
     return 'brew'
   if (cliId === 'claude') {
@@ -86,5 +88,4 @@ export async function npmCommandPath(command: string) {
 }
 
 /** Homebrew 里对应的包 */
-export const brewName = (cliId: string) =>
-  ({ claude: ['--cask', 'claude-code'], codex: ['codex'], commandcode: ['command-code'] })[cliId] ?? []
+export const brewName = (cliId: string) => getCli(cliId)?.brew ?? []

@@ -203,7 +203,7 @@ try {
   })
   const settings = {
     stepTimeoutMinutes: 5,
-    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli() },
+    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), gemini: cli() },
   }
   await call('PUT', '/settings', settings)
   const clis = await call('GET', '/clis?refresh=1')
@@ -213,10 +213,11 @@ try {
       ['claude', true],
       ['codex', true],
       ['commandcode', true],
+      ['gemini', true],
     ],
   )
   assert.match(clis[1].version, /fake 0.0.1/)
-  step('设置保存，三个 CLI 都能检测到')
+  step('设置保存，四个 CLI 都能检测到')
 
   const agent = (o) =>
     call('POST', '/agents', {
@@ -580,6 +581,64 @@ try {
   await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
   await waitDone(dc.id)
   assert.equal(calls().at(-1).kind, 'codex', '继续对话也用选的 CLI')
+  // Gemini CLI：按配置文件（shared/clis/gemini.json）拼参数、解析 stream-json
+  let gm = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'gemini',
+    prompt: '用 Gemini',
+  })
+  gm = await waitDone(gm.id)
+  assert.equal(gm.status, 'done', gm.messages.at(-1)?.text)
+  c = calls().at(-1)
+  assert.equal(c.kind, 'gemini')
+  assert.ok(c.args.includes('--approval-mode') && c.args.includes('auto_edit'), c.args.join(' '))
+  assert.equal(c.input, '用 Gemini', '任务描述从 stdin 传入')
+  const gReply = gm.messages.filter((m) => m.role === 'agent').at(-1)
+  assert.match(gReply.text, /这是 gemini 的回复/)
+  assert.deepEqual(
+    gReply.tools.map((x) => x.kind),
+    ['read', 'edit'],
+    '工具调用按名字认出读文件、改文件',
+  )
+  assert.equal(gm.usage.inputTokens, 5000, JSON.stringify(gm.usage))
+  await call('POST', `/tasks/${gm.id}/messages`, { text: '继续' })
+  await waitDone(gm.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
+  // 用户自己加的 CLI：数据目录 config/clis/ 下放一份配置，重新读取后就能用，不用改代码
+  const gemSpec = JSON.parse(readFileSync(path.join(root, 'shared/clis/gemini.json'), 'utf8'))
+  mkdirSync(path.join(dataDir, 'config/clis'), { recursive: true })
+  writeFileSync(
+    path.join(dataDir, 'config/clis/my-cli.json'),
+    JSON.stringify({ ...gemSpec, id: 'my-cli', name: 'My CLI', command: fake, color: '#123456' }),
+  )
+  writeFileSync(path.join(dataDir, 'config/clis/broken.json'), JSON.stringify({ id: 'broken', name: 'x' }))
+  const us = await call('POST', '/clis/specs/reload', {})
+  assert.deepEqual(
+    us.specs.map((x) => x.id),
+    ['my-cli'],
+  )
+  assert.ok(
+    us.errors.some((e) => e.startsWith('broken')),
+    '写错的配置报出原因',
+  )
+  assert.ok((await call('GET', '/clis')).some((x) => x.id === 'my-cli' && x.installed))
+  let mine = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'my-cli',
+    prompt: '自己加的',
+  })
+  mine = await waitDone(mine.id)
+  assert.equal(mine.status, 'done', mine.messages.at(-1)?.text)
+  assert.equal(calls().at(-1).input, '自己加的')
+  rmSync(path.join(dataDir, 'config/clis'), { recursive: true })
+  assert.ok(!(await call('POST', '/clis/specs/reload', {})).specs.length, '删掉配置后不再有')
+  step('Gemini CLI 按配置执行；数据目录里加一份配置就能接入新的 CLI')
+
   // 「/」命令：列出 CLI 自己的命令和 Skill；Claude Code 原样发，其他 CLI 展开成普通要求
   mkdirSync(path.join(project.path, '.claude/commands'), { recursive: true })
   writeFileSync(
@@ -2606,7 +2665,7 @@ try {
   await call('PUT', '/settings', { ...settings, cliOrder: ['commandcode', 'claude'] })
   assert.deepEqual(
     (await call('GET', '/clis')).map((c) => c.id),
-    ['commandcode', 'claude', 'codex'],
+    ['commandcode', 'claude', 'codex', 'gemini'],
   )
   await call('PUT', '/settings', settings)
   step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')

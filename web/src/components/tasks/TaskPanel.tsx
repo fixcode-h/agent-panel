@@ -13,7 +13,7 @@ import { toast } from 'sonner'
 import { api } from '@/lib/api'
 import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
-import { LimitBars, LIMIT_CLIS, useCliLimits } from '@/components/settings/CliLimits'
+import { LimitBars, hasLimits, useCliLimits } from '@/components/settings/CliLimits'
 import {
   DEFAULT_AGENT_ID,
   type FileChange,
@@ -50,7 +50,7 @@ function LimitsSection({ task }: { task: Task }) {
     const a = agents.find((x) => x.id === id)
     if (a) ids.add(agentRun(withTaskModel(a, task), s).cli)
   }
-  const shown = [...ids].filter((c) => LIMIT_CLIS.includes(c) && cliSettings(s, c).showLimits)
+  const shown = [...ids].filter((c) => hasLimits(c) && cliSettings(s, c).showLimits)
   if (!shown.length) return null
   return (
     <Section title={t('额度')}>
@@ -72,7 +72,11 @@ function CliLimitRows({ cli, named }: { cli: string; named: boolean }) {
         <LimitBars data={data} compact />
       ) : (
         <p className="text-xs text-subtle">
-          {error ? t('读取失败：{error}', { error }) : cli === 'claude' ? t('执行后会显示') : t('读取中…')}
+          {error
+            ? t('读取失败：{error}', { error })
+            : getCli(cli)?.limits === 'push'
+              ? t('执行后会显示')
+              : t('读取中…')}
         </p>
       )}
     </div>

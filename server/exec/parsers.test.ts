@@ -6,7 +6,8 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
-import { claudeParser, commandCodeParser, type CliEvent } from './parsers.ts'
+import { claudeParser, commandCodeParser, parserFor, type CliEvent } from './parsers.ts'
+import { getCli } from '../../shared/clis.ts'
 import { codexAppSession, unwrapShell } from './codex-app.ts'
 
 const CWD = '/work/shop'
@@ -178,4 +179,73 @@ test('Command Code：事件流的文字、思考、工具结果和用量', () =>
     { input: 12000 + 12200, output: 350, read: 21000, write: 1000 },
   )
   assert.deepEqual(s.results, [{ ok: true, error: undefined }])
+})
+
+test('Gemini CLI：按配置文件里的事件映射解析 stream-json', () => {
+  const parse = parserFor('gemini', CWD)
+  const s = summarize(fixture('gemini-stream.jsonl').flatMap((o) => parse(o)))
+  assert.equal(s.session, 'c25acda3-b4f1-4a8e-9f2d-1d7f4e7a9c01')
+  // 用户消息不算回复
+  assert.equal(s.text, '改好了：角标现在订阅购物车数量。')
+  assert.deepEqual(
+    s.tools.map((x) => [x.kind, x.label, x.detail]),
+    [
+      ['read', 'src/CartBadge.tsx', ''],
+      ['edit', 'src/CartBadge.tsx', '+2 -1'],
+      ['run', 'npm test', ''],
+    ],
+  )
+  assert.equal(s.tools[2].failed, true)
+  assert.match(s.tools[2].output ?? '', /denied by policy/, '失败时显示错误原因')
+  assert.deepEqual(
+    { input: s.usage.input, output: s.usage.output, read: s.usage.read, model: s.usage.model },
+    { input: 12400, output: 450, read: 8000, model: 'gemini-2.5-pro' },
+  )
+  assert.deepEqual(s.results, [{ ok: true, error: undefined }])
+  const failed = summarize(
+    parse({ type: 'result', status: 'error', error: { type: 'FatalError', message: '配额用完了' }, stats: {} }),
+  )
+  assert.deepEqual(failed.results, [{ ok: false, error: '配额用完了' }])
+})
+
+test('Gemini CLI：按配置文件拼参数', () => {
+  const def = getCli('gemini')!
+  const args = def.buildArgs({
+    model: 'gemini-2.5-pro',
+    permission: 'yolo',
+    extraArgs: ['--debug'],
+    resume: 'sess-1',
+    addDirs: ['/a', '/b'],
+  })
+  assert.deepEqual(args, [
+    '--output-format',
+    'stream-json',
+    '-m',
+    'gemini-2.5-pro',
+    '--approval-mode',
+    'yolo',
+    '--resume',
+    'sess-1',
+    '--include-directories',
+    '/a,/b',
+    '--debug',
+  ])
+  // Command Code 也是配置文件写的：跳过确认换成专门的参数，没写 maxTurns 时用默认值
+  assert.deepEqual(
+    getCli('commandcode')!.buildArgs({ model: '', permission: 'yolo', extraArgs: [], resume: 's', fork: {} }),
+    [
+      '-p',
+      '--output-format',
+      'json',
+      '--skip-onboarding',
+      '--trust',
+      '--no-auto-update',
+      '--dangerously-skip-permissions',
+      '--resume',
+      's',
+      '--fork-session',
+      '--max-turns',
+      '200',
+    ],
+  )
 })

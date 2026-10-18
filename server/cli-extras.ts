@@ -27,7 +27,7 @@ export function setLimits(cli: string, l: CliLimits) {
 
 /** 额度：Codex 每次都去查一遍最新的；其他 CLI 给最近一次执行时收到的 */
 export async function getLimits(cli: string): Promise<CliLimits | null> {
-  if (cli === 'codex') {
+  if (getCli(cli)?.limits === 'query' && getCli(cli)?.protocol === 'codex-app') {
     const s = cliSettings(await getSettings(), cli)
     const r = await codexRpc(s.command, childEnv(s.env), homedir(), [{ method: 'account/rateLimits/read', params: {} }])
     const l = codexLimits(r[0]?.rateLimits)
@@ -78,6 +78,12 @@ async function codexRpc(
     throw new Error(error || r.stderr.trim().split('\n').at(-1) || t('Codex 没有返回'))
   }
   return out
+}
+
+/** 配置里的目录：~ 是用户目录，${ENV:-默认值} 先取环境变量 */
+export function expandHome(dir: string) {
+  const d = dir.replace(/\$\{(\w+)(?::-([^}]*))?\}/g, (_, k: string, def = '') => process.env[k] || def)
+  return d === '~' || d.startsWith('~/') ? path.join(homedir(), d.slice(1)) : path.resolve(d)
 }
 
 /** Skill 的元数据在 SKILL.md 开头的 front matter 里（name、description） */
@@ -148,7 +154,7 @@ export async function listSkills(cli: string, cwd: string): Promise<CliSkill[]> 
 async function rawSkills(cli: string, cwd: string): Promise<CliSkill[]> {
   const def = getCli(cli)
   if (!def) throw new Error(t('未知的 CLI：{cli}', { cli }))
-  if (cli === 'codex') {
+  if (def.protocol === 'codex-app') {
     const s = cliSettings(await getSettings(), cli)
     const r = await codexRpc(s.command, childEnv(s.env), cwd || homedir(), [
       { method: 'skills/list', params: cwd ? { cwds: [cwd] } : {} },
@@ -165,25 +171,14 @@ async function rawSkills(cli: string, cwd: string): Promise<CliSkill[]> {
         enabled: x.enabled !== false,
       }))
   }
-  const home = homedir()
-  const dirs: [string, string][] =
-    cli === 'claude'
-      ? [
-          [path.join(home, '.claude', 'skills'), 'user'],
-          ...(cwd ? [[path.join(cwd, '.claude', 'skills'), 'repo'] as [string, string]] : []),
-        ]
-      : [
-          [path.join(home, '.commandcode', 'skills'), 'user'],
-          [path.join(home, '.agents', 'skills'), 'user'],
-          ...(cwd
-            ? ([
-                [path.join(cwd, '.commandcode', 'skills'), 'repo'],
-                [path.join(cwd, '.agents', 'skills'), 'repo'],
-              ] as [string, string][])
-            : []),
-        ]
+  // 定义里写的 Skill 目录：用户级的（~ 开头）和项目里的
+  const dirs: [string, string][] = [
+    ...def.skills.user.map((d): [string, string] => [expandHome(d), 'user']),
+    ...(cwd ? def.skills.repo.map((d): [string, string] => [path.join(cwd, d), 'repo']) : []),
+  ]
   const found = (await Promise.all(dirs.map(([d, scope]) => scanDir(d, scope)))).flat()
-  if (cli === 'claude') found.push(...(await claudePluginSkills()))
+  // Claude Code 装的插件里也带 Skill
+  if (def.protocol === 'claude-stream') found.push(...(await claudePluginSkills()))
   return found.sort(
     (a, b) => a.scope.localeCompare(b.scope) || a.path.localeCompare(b.path) || a.name.localeCompare(b.name),
   )

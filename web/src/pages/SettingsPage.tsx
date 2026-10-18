@@ -38,6 +38,7 @@ import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
+import { CustomClis } from '@/components/settings/CustomClis'
 import {
   AssistModel,
   CliSection,
@@ -606,6 +607,7 @@ function SettingsBody({
                   />
                 </Row>
               </Group>
+              <CustomClis demo={demo} />
             </>
           )}
 

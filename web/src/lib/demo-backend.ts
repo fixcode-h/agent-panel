@@ -687,6 +687,7 @@ function route(method: string, url: string, body: unknown): unknown {
         at: new Date().toISOString(),
       } satisfies CliLimits
     }
+    if (id === 'specs') return { specs: [], errors: [], dir: '~/.agent-panel/config/clis' }
     if (id && sub === 'commands')
       return [
         ...(DEMO_COMMANDS[id] ?? []),

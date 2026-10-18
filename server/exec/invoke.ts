@@ -87,7 +87,7 @@ async function invoke(
     return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
   }
 
-  if (o.cliId === 'codex') {
+  if (def.protocol === 'codex-app') {
     const session = codexAppSession({ ...o.build, cwd: o.cwd, input: o.input, images: o.images })
     setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
     const r = await runProcess({
@@ -106,7 +106,7 @@ async function invoke(
     })
     // 没等到 turn/completed 就退出了（崩溃、配置错误），算失败
     if (!session.finished && !r.killed && !r.spawnError)
-      o.onEvent({ type: 'result', ok: false, error: t('Codex 没有完成这一轮就退出了') })
+      o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
     return r
   }
 
@@ -115,7 +115,7 @@ async function invoke(
   // Claude Code 的控制协议：任务描述是 stdin 上的一条 user 消息，审批请求是 control_request（can_use_tool），
   // 回 control_response；stdin 要一直开着，收到 result 再关掉，CLI 读到 EOF 退出。
   // 执行中插话是再写一条 user 消息（priority next：在这一轮里接着处理），中断是 control_request（interrupt）
-  if (args.includes('--input-format')) {
+  if (def.protocol === 'claude-stream') {
     let io: { write: (s: string) => void; end: () => void } | undefined
     const line = (m: object) => io?.write(JSON.stringify(m) + '\n')
     let ended = false

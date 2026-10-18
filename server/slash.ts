@@ -1,14 +1,14 @@
 import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import path from 'node:path'
 import type { CliSkill, SlashCommand } from '../shared/schema.ts'
-import { listSkills } from './cli-extras.ts'
+import { expandHome, listSkills } from './cli-extras.ts'
+import { getCli } from '../shared/clis.ts'
 
 /**
  * 输入框里的「/」命令：列出 CLI 自己带的命令和 Skill，发出去之前按 CLI 展开。
- * Claude Code 在会话里认识「/命令」和「/Skill」，原样发过去；Codex（app-server）和 Command Code 不认，
- * 面板把命令文件的内容、Skill 的路径展开成普通的要求再发。
+ * 会话里认识「/命令」的 CLI（定义里 slash 为 true，例如 Claude Code）原样发过去；其他的由面板
+ * 把命令文件的内容、Skill 的说明展开成普通的要求再发。命令和 Skill 的目录写在 CLI 的定义里。
  */
 
 interface Found extends SlashCommand {
@@ -27,20 +27,48 @@ const splitFrontMatter = (text: string) => {
   return { fm: m?.[1] ?? '', body: m ? text.slice(m[0].length) : text }
 }
 
-/** 一个目录下的 .md 命令文件；子目录里的叫「子目录:名字」（和 Claude Code 一样） */
-async function scanCommands(dir: string, source: string, prefix = '', depth = 0): Promise<Found[]> {
+/** TOML 里的一个字符串字段（Gemini CLI 的命令文件只用到 description、prompt 两个） */
+function tomlString(text: string, key: string) {
+  const unescape = (v: string) => v.replace(/\\(["\\nt])/g, (_, c: string) => ({ n: '\n', t: '\t' })[c] ?? c)
+  const multi = new RegExp(`^${key}\\s*=\\s*("""|''')\\r?\\n?([\\s\\S]*?)\\1`, 'm').exec(text)
+  if (multi) return multi[1] === '"""' ? unescape(multi[2]) : multi[2]
+  const basic = new RegExp(`^${key}\\s*=\\s*"((?:[^"\\\\]|\\\\.)*)"`, 'm').exec(text)
+  if (basic) return unescape(basic[1])
+  return new RegExp(`^${key}\\s*=\\s*'([^']*)'`, 'm').exec(text)?.[1] ?? ''
+}
+
+/** 命令文件的说明、参数提示和正文 */
+async function readCommand(file: string, format: 'md' | 'toml') {
+  const text = await readFile(file, 'utf8').catch(() => '')
+  if (format === 'toml') {
+    const body = tomlString(text, 'prompt')
+    return { description: tomlString(text, 'description'), hint: '', body }
+  }
+  const { fm, body } = splitFrontMatter(text)
+  return { description: field(fm, 'description'), hint: field(fm, 'argument-hint'), body }
+}
+
+/** 一个目录下的命令文件；子目录里的叫「子目录:名字」（和 Claude Code、Gemini CLI 一样） */
+async function scanCommands(
+  dir: string,
+  source: string,
+  format: 'md' | 'toml',
+  prefix = '',
+  depth = 0,
+): Promise<Found[]> {
   if (!existsSync(dir) || depth > 3) return []
+  const ext = `.${format}`
   const out: Found[] = []
   for (const d of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
     const p = path.join(dir, d.name)
-    if (d.isDirectory()) out.push(...(await scanCommands(p, source, `${prefix}${d.name}:`, depth + 1)))
-    else if (d.name.endsWith('.md')) {
-      const { fm, body } = splitFrontMatter(await readFile(p, 'utf8').catch(() => ''))
+    if (d.isDirectory()) out.push(...(await scanCommands(p, source, format, `${prefix}${d.name}:`, depth + 1)))
+    else if (d.name.endsWith(ext)) {
+      const c = await readCommand(p, format)
       out.push({
-        name: prefix + d.name.slice(0, -3),
+        name: prefix + d.name.slice(0, -ext.length),
         description:
-          field(fm, 'description') ||
-          body
+          c.description ||
+          c.body
             .trim()
             .split('\n')[0]
             ?.replace(/^#+\s*/, '')
@@ -48,7 +76,7 @@ async function scanCommands(dir: string, source: string, prefix = '', depth = 0)
           '',
         kind: 'command',
         source,
-        hint: field(fm, 'argument-hint') || undefined,
+        hint: c.hint || undefined,
         path: p,
       })
     }
@@ -56,19 +84,16 @@ async function scanCommands(dir: string, source: string, prefix = '', depth = 0)
   return out
 }
 
+/** 定义里写的命令目录：用户级的和项目里的 */
 async function rawCommands(cli: string, cwd: string): Promise<Found[]> {
-  const home = homedir()
-  if (cli === 'claude')
-    return [
-      ...(await scanCommands(path.join(home, '.claude', 'commands'), '~/.claude/commands')),
-      ...(cwd ? await scanCommands(path.join(cwd, '.claude', 'commands'), './.claude/commands') : []),
-    ]
-  if (cli === 'codex') {
-    // Codex 的自定义提示在 $CODEX_HOME/prompts，界面里用「/prompts:名字」调用
-    const dir = path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'prompts')
-    return (await scanCommands(dir, '~/.codex/prompts')).map((c) => ({ ...c, name: `prompts:${c.name}` }))
-  }
-  return []
+  const def = getCli(cli)
+  if (!def) return []
+  const { user, repo, format, prefix } = def.commands
+  const lists = await Promise.all([
+    ...user.map((d) => scanCommands(expandHome(d), d, format)),
+    ...(cwd ? repo.map((d) => scanCommands(path.join(cwd, d), `./${d}`, format)) : []),
+  ])
+  return lists.flat().map((c) => ({ ...c, name: prefix + c.name }))
 }
 
 // Codex 列 Skill 要起一次 app-server：短时间内的重复查询用缓存
@@ -134,11 +159,15 @@ export async function expandSlash(text: string, cli: string, cwd: string, native
       ...(args ? [`## 要求\n${args}`] : []),
     ].join('\n\n')
   }
-  const { body } = splitFrontMatter(await readFile(c.path, 'utf8').catch(() => ''))
+  const format = getCli(cli)?.commands.format ?? 'md'
+  const { body } = await readCommand(c.path, format)
   if (!body.trim()) return text
-  // 和 Claude Code 的命令文件一样：$ARGUMENTS 换成全部参数，$1、$2… 换成按空格分开的参数
+  // Gemini CLI 的命令用 {{args}}；Claude Code 的用 $ARGUMENTS 和 $1、$2…（按空格分开的参数）
   const parts = args.split(/\s+/).filter(Boolean)
-  const used = /\$ARGUMENTS|\$\d/.test(body)
-  const out = body.replaceAll('$ARGUMENTS', args).replace(/\$(\d)/g, (_, i: string) => parts[Number(i) - 1] ?? '')
+  const used = /\$ARGUMENTS|\$\d|\{\{args\}\}/.test(body)
+  const out = body
+    .replaceAll('{{args}}', args)
+    .replaceAll('$ARGUMENTS', args)
+    .replace(/\$(\d)/g, (_, i: string) => parts[Number(i) - 1] ?? '')
   return used || !args ? out.trim() : `${out.trim()}\n\n${args}`
 }

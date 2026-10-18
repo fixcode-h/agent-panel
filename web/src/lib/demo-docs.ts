@@ -3,7 +3,7 @@
  * 「AI 优化」不跑 CLI，过两秒给出一份补全过的示例。
  */
 import {
-  DOC_FILES,
+  docFiles,
   DocOptimizeInput,
   DocWrite,
   type DocFile,
@@ -37,7 +37,7 @@ const doc = (m: Map<DocFile, string>, path: DocFile): ProjectDoc => {
 
 export function demoDocs(projectId: string, dir: string): ProjectDocs {
   const m = of(projectId)
-  return { dir, files: DOC_FILES.map((f) => doc(m, f)) }
+  return { dir, files: docFiles().map((f) => doc(m, f)) }
 }
 
 export function saveDemoDoc(projectId: string, body: unknown): ProjectDoc {

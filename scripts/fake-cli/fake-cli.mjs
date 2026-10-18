@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 测试用的假 CLI：按 Claude Code / Codex / Command Code 的非交互输出格式吐事件，
+ * 测试用的假 CLI：按 Claude Code / Codex / Command Code / Gemini CLI 的非交互输出格式吐事件，
  * 并在当前目录写一个文件，用来在没有安装或登录真实 CLI 的环境里测通执行流程。
  *
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
@@ -13,7 +13,15 @@ import { randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
-const kind = args[0] === 'app-server' ? 'codex' : args.includes('stream-json') ? 'claude' : 'commandcode'
+// Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p
+const kind =
+  args[0] === 'app-server'
+    ? 'codex'
+    : args.includes('stream-json')
+      ? args.includes('-p')
+        ? 'claude'
+        : 'gemini'
+      : 'commandcode'
 if (args.includes('--version')) {
   // 假 npm 「更新」过以后报告新版本
   let ver = '0.0.1'
@@ -376,6 +384,40 @@ if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
 if (input.includes('HANG')) {
   process.stderr.write('Invalid API key · Please run /login\n')
   await new Promise(() => setInterval(() => {}, 60_000))
+}
+
+// Gemini CLI 的 --output-format stream-json
+if (kind === 'gemini') {
+  const at = new Date().toISOString()
+  out({ type: 'init', timestamp: at, session_id: session, model: 'gemini-fake' })
+  out({ type: 'message', timestamp: at, role: 'user', content: input })
+  out({
+    type: 'tool_use',
+    timestamp: at,
+    tool_name: 'read_file',
+    tool_id: 'g1',
+    parameters: { absolute_path: `${process.cwd()}/README.md` },
+  })
+  out({ type: 'tool_result', timestamp: at, tool_id: 'g1', status: 'success', output: '# README' })
+  writeFileSync(file, 'g\n')
+  out({
+    type: 'tool_use',
+    timestamp: at,
+    tool_name: 'write_file',
+    tool_id: 'g2',
+    parameters: { file_path: file, content: 'g\n' },
+  })
+  out({ type: 'tool_result', timestamp: at, tool_id: 'g2', status: 'success', output: '' })
+  for (const part of reply.match(/.{1,6}/g))
+    out({ type: 'message', timestamp: at, role: 'assistant', content: part, delta: true })
+  out({
+    type: 'result',
+    timestamp: at,
+    status: fail ? 'error' : 'success',
+    ...(fail ? { error: { type: 'FatalError', message: '模拟的失败' } } : {}),
+    stats: { total_tokens: 5200, input_tokens: 5000, output_tokens: 200, duration_ms: 10, tool_calls: 2 },
+  })
+  process.exit(fail ? 1 : 0)
 }
 
 if (kind === 'claude') {
