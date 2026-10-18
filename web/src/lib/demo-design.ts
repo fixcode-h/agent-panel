@@ -5,6 +5,8 @@
 const randomId = () => crypto.randomUUID()
 import {
   DesignImage,
+  addToParts,
+  type ReplyPart,
   emptyRoot,
   importComponent,
   SavedStyleInput,
@@ -16,6 +18,7 @@ import {
   type ImageSource,
 } from '@shared/design'
 import { normalizeTree, walk, type Widget } from '@shared/umg'
+import type { ToolUse } from '@shared/schema'
 
 type Job = NonNullable<Full['job']>
 type Full = Design & { job: import('@shared/design').DesignJob | null }
@@ -815,22 +818,36 @@ async function runChat(
   addVersion(d, `AI 修改前：${text.slice(0, 24)}`, true)
   const tpl =
     d.kind === 'web' ? webTemplate() : /背包|物品|inventory/i.test(text) ? inventoryTemplate() : menuTemplate()
-  // 演示流式输出：先思考，再说明
+  // 演示流式输出：和真的一样按顺序来——思考、调设计工具、再说明
+  let parts: ReplyPart[] = []
   for (const ch of '先看一下现在的控件树和图片，再按要求调整布局、列出需要的图片。'.match(/.{1,3}/g) ?? []) {
     await sleep(40)
-    job.thinking = (job.thinking ?? '') + ch
+    job.parts = parts = addToParts(parts, { type: 'thinking', text: ch, delta: true })
+  }
+  const calls = [
+    ['get_tree', ''],
+    ['replace_widget', tpl.root.Name ?? 'Root'],
+    ...tpl.components.map((c) => ['create_component', c.Name]),
+    ['add_images', tpl.images.map((i) => i.id).join(', ')],
+    ['check', ''],
+  ]
+  for (const [name, arg] of calls) {
+    await sleep(260)
+    const tool: ToolUse = {
+      kind: 'other',
+      name: 'MCP',
+      label: `design · ${name}`,
+      detail: '',
+      input: arg,
+      output: '好了',
+    }
+    job.parts = parts = addToParts(parts, { type: 'tool', tool })
   }
   for (const ch of tpl.reply.match(/.{1,4}/g) ?? []) {
     await sleep(60)
+    job.parts = parts = addToParts(parts, { type: 'text', text: ch, delta: true })
     job.text += ch
     job.outChars += 4
-  }
-  // 演示边写边显示 JSON
-  const json = JSON.stringify({ root: tpl.root, images: tpl.images }, null, 2)
-  for (let i = 0; i < json.length; i += 160) {
-    await sleep(30)
-    job.out = json.slice(Math.max(0, i + 160 - 3000), i + 160)
-    job.outChars = job.text.length + i + 160
   }
   d.root = normalizeTree(tpl.root)
   d.components = tpl.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) }))
@@ -849,7 +866,7 @@ async function runChat(
     at: now(),
     images: tpl.images.map((i) => i.id),
     run,
-    thinking: job.thinking,
+    parts,
   })
   d.updatedAt = now()
   if (source.kind !== 'none')
@@ -866,7 +883,7 @@ async function genImages(d: Full, ids: string[], count: number, job: Job) {
   job.phase = 'images'
   job.text = ''
   job.out = undefined
-  job.thinking = undefined
+  job.parts = undefined
   const items = ids.map((id) => {
     const im = d.images.find((i) => i.id === id)
     return { id, name: im?.name ?? id, status: 'waiting' as const, got: 0, want: count }
@@ -886,7 +903,7 @@ async function genImages(d: Full, ids: string[], count: number, job: Job) {
       const before = im.variants.length
       // 每生成一版就放进设计里
       for (let k = 0; k < count; k++) {
-        await sleep(700 + Math.random() * 600)
+        await sleep(1200 + Math.random() * 800)
         im.variants.push({
           file: draw(id, im.width, im.height),
           source: 'cli',

@@ -106,9 +106,11 @@ export const DesignMessage = z.object({
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */
   attachments: z.array(Attachment).optional(),
-  /** AI 回复的过程：思考和工具调用，完成后收起来，点开能看 */
+  /** AI 回复的过程：思考和工具调用，完成后收起来，点开能看（旧数据） */
   thinking: z.string().optional(),
   tools: z.array(z.any()).optional(),
+  /** AI 回复按发生的顺序分段：每段是思考、工具调用、说明，和 Agent 的输出一样依次显示 */
+  parts: z.array(z.object({ text: z.string(), thinking: z.string().optional(), tools: z.array(z.any()) })).optional(),
   /** AI 先问用户的问题（例如整体风格还没定），选项点一下就作为回答发出去 */
   question: DesignQuestion.optional(),
 })
@@ -383,6 +385,49 @@ export const GenerateImageInput = z.object({
   revision: z.string().max(8000).optional(),
 })
 
+/** AI 回复里的一段：先思考，再调工具，再说明；后面又有思考或工具调用时开始新的一段 */
+export interface ReplyPart {
+  text: string
+  thinking?: string
+  tools: ToolUse[]
+}
+
+/** 收到一条输出事件，按顺序记进分段里（返回新的数组，页面轮询时能看出变化） */
+export function addToParts(
+  parts: ReplyPart[],
+  ev:
+    | { type: 'text'; text: string; delta?: boolean }
+    | { type: 'thinking'; text: string; delta?: boolean }
+    | { type: 'tool'; tool: ToolUse }
+    | { type: 'tool_update'; at: [number, number]; patch: Partial<ToolUse> },
+): ReplyPart[] {
+  const list = [...parts]
+  let cur = list.at(-1)
+  const fresh = () => {
+    cur = { text: '', tools: [] }
+    list.push(cur)
+    return cur
+  }
+  if (ev.type === 'thinking') {
+    const p = !cur || cur.text || cur.tools.length ? fresh() : { ...cur }
+    p.thinking = (ev.delta ? (p.thinking ?? '') + ev.text : ev.text).slice(-4000)
+    list[list.length - 1] = p
+  } else if (ev.type === 'tool') {
+    const p = !cur || cur.text ? fresh() : { ...cur }
+    p.tools = [...p.tools, ev.tool]
+    list[list.length - 1] = p
+  } else if (ev.type === 'text') {
+    const p = cur ? { ...cur } : fresh()
+    p.text = ev.delta ? p.text + ev.text : p.text ? `${p.text.trimEnd()}\n\n${ev.text}` : ev.text
+    list[list.length - 1] = p
+  } else {
+    const [pi, ti] = ev.at
+    const p = list[pi]
+    if (p?.tools[ti]) list[pi] = { ...p, tools: p.tools.map((x, k) => (k === ti ? { ...x, ...ev.patch } : x)) }
+  }
+  return list
+}
+
 /** 生成图片时每张图的进度 */
 export interface ImageJobItem {
   id: string
@@ -401,9 +446,8 @@ export interface DesignJob {
   phase: 'design' | 'images'
   /** 正在说的话（JSON 之前的说明） */
   text: string
-  thinking?: string
-  /** 这一轮的工具调用，和 Agent 的输出一样显示 */
-  tools?: ToolUse[]
+  /** 这一轮的输出按顺序分段（思考、工具调用、说明），和 Agent 的输出一样依次显示 */
+  parts?: ReplyPart[]
   /** 这次对话用的 CLI、模型和思考强度 */
   run?: { cli: string; model: string; effort: string }
   /** 生成图片的进度 */

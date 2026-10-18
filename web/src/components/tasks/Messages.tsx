@@ -1,9 +1,10 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
-import type { TaskMessage, ToolUse } from '@shared/schema'
+import type { TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { ToolRow } from './ToolRow'
+import { ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useAgentView } from '@/lib/agent-view'
@@ -297,36 +298,44 @@ export function FoldedRun({
 }
 
 /**
- * 已经完成的回复的过程（思考和工具调用）：收成一行，点开再看，和工作流执行完的节点一样。
- * 回复文字照常显示在下面
+ * 通用对话里的一轮回复（工作流以外的 AI 对话都用它）：思考、工具调用和说明按发生的顺序流式显示，
+ * 不折叠；完成后下面是时间、复制和各个对话自己的操作
  */
-export function ProcessFold({ thinking, tools }: { thinking?: string; tools: ToolUse[] }) {
-  const [open, setOpen] = useState(false)
-  if (!thinking?.trim() && !tools.length) return null
-  const failed = tools.filter((x) => x.failed).length
+export function ChatReply({
+  msgs,
+  teamNames,
+  live,
+  author,
+  actions,
+  last,
+  children,
+}: {
+  msgs: TaskMessage[]
+  teamNames: Set<string>
+  live?: boolean
+  author?: Author
+  actions?: React.ReactNode
+  /** 最后一轮：操作一直显示 */
+  last?: boolean
+  /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
+  children?: React.ReactNode
+}) {
+  const body = (
+    <>
+      <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} />
+      {children}
+    </>
+  )
+  if (live) return <div className="flex flex-col gap-2">{body}</div>
+  const replies = msgs.filter((m) => m.role === 'agent' && m.text.trim())
   return (
-    <div className="flex flex-col gap-1.5">
-      <button
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-[12px] text-subtle hover:text-fg"
-      >
-        <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
-        {thinking?.trim() && !tools.length
-          ? t('思考过程')
-          : thinking?.trim()
-            ? t('思考和 {n} 个操作', { n: tools.length })
-            : t('{n} 个操作', { n: tools.length })}
-        {failed > 0 && <span className="text-danger">{t('{n} 个失败', { n: failed })}</span>}
-      </button>
-      {open && (
-        <div className="flex flex-col gap-1 border-l pl-3">
-          {thinking?.trim() && <Thinking text={thinking} live={false} />}
-          {tools.map((x, i) => (
-            <ToolRow key={i} tool={x} />
-          ))}
-        </div>
-      )}
-    </div>
+    <ReplyFrame
+      text={replies.map((m) => m.text.trim()).join('\n\n')}
+      at={msgs.at(-1)?.at}
+      actions={actions}
+      always={last}
+    >
+      <div className="flex flex-col gap-2">{body}</div>
+    </ReplyFrame>
   )
 }

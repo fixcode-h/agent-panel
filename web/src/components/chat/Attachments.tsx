@@ -23,6 +23,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+import { Lightbox } from '@/components/ui/lightbox'
 import { t } from '@shared/i18n'
 
 /** 输入框里正在上传或已经上传好的一个附件 */
@@ -147,9 +148,12 @@ export function useDropPaste(add: (f: File[]) => void) {
 
 /** 输入框上方的附件条：图片显示缩略图，其他文件显示名字和大小 */
 export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: (key: string) => void }) {
+  const [open, setOpen] = useState<number>()
   if (!items.length) return null
+  const images = items.flatMap((x) => (x.preview ? [{ src: x.preview, name: x.name }] : []))
   return (
     <div className="flex flex-wrap gap-2 px-3 pt-3">
+      <Lightbox images={images} index={open} onClose={() => setOpen(undefined)} />
       {items.map((x) => (
         <div
           key={x.key}
@@ -157,7 +161,14 @@ export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: 
           title={x.name}
         >
           {x.preview ? (
-            <img src={x.preview} alt="" className="h-11 w-11 shrink-0 rounded-lg object-cover" />
+            <button
+              type="button"
+              aria-label={t('查看 {name}', { name: x.name })}
+              onClick={() => setOpen(images.findIndex((i) => i.src === x.preview))}
+              className="shrink-0 cursor-zoom-in"
+            >
+              <img src={x.preview} alt="" className="h-11 w-11 rounded-lg object-cover" />
+            </button>
           ) : (
             <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-card text-subtle">
               <FileIcon className="h-5 w-5" strokeWidth={1.6} />
@@ -186,36 +197,47 @@ export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: 
 
 /** 用户消息里的附件：图片缩略图，点开看原图；其他文件显示名字 */
 export function MessageAttachments({ items, className }: { items: Attachment[]; className?: string }) {
+  const [urls, setUrls] = useState<Record<string, string>>({})
+  const [open, setOpen] = useState<number>()
+  useEffect(() => {
+    let alive = true
+    void Promise.all(
+      items.filter((a) => isImage(a.mime, a.name)).map(async (a) => [a.path, (await attachmentUrl(a)) ?? ''] as const),
+    ).then((list) => alive && setUrls(Object.fromEntries(list.filter(([, u]) => u))))
+    return () => {
+      alive = false
+    }
+  }, [items])
+  // 点开图片在页面上看大图，多张图可以左右切换
+  const images = items.filter((a) => urls[a.path]).map((a) => ({ src: urls[a.path], name: a.name }))
   return (
     <div className={cn('flex flex-wrap justify-end gap-2', className)}>
-      {items.map((a) => (
-        <MessageAttachment key={a.path} a={a} />
-      ))}
+      {items.map((a) =>
+        urls[a.path] ? (
+          <button
+            key={a.path}
+            type="button"
+            title={a.name}
+            aria-label={t('查看 {name}', { name: a.name })}
+            onClick={() => setOpen(images.findIndex((x) => x.src === urls[a.path]))}
+            className="block cursor-zoom-in overflow-hidden rounded-xl border transition hover:brightness-95"
+          >
+            <img src={urls[a.path]} alt={a.name} className="h-24 max-w-[200px] object-cover" />
+          </button>
+        ) : (
+          <span
+            key={a.path}
+            title={a.path}
+            className="inline-flex h-9 max-w-[260px] items-center gap-2 rounded-xl border bg-field/60 px-3 text-[12.5px]"
+          >
+            <FileIcon className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.7} />
+            <span className="truncate">{a.name}</span>
+            <span className="shrink-0 text-[11px] text-subtle">{formatSize(a.size)}</span>
+          </span>
+        ),
+      )}
+      <Lightbox images={images} index={open} onClose={() => setOpen(undefined)} />
     </div>
-  )
-}
-
-function MessageAttachment({ a }: { a: Attachment }) {
-  const [url, setUrl] = useState<string>()
-  const img = isImage(a.mime, a.name)
-  useEffect(() => {
-    if (img) void attachmentUrl(a).then(setUrl)
-  }, [a, img])
-  if (img && url)
-    return (
-      <a href={url} target="_blank" rel="noreferrer" title={a.name} className="block overflow-hidden rounded-xl border">
-        <img src={url} alt={a.name} className="h-24 max-w-[200px] object-cover" />
-      </a>
-    )
-  return (
-    <span
-      title={a.path}
-      className="inline-flex h-9 max-w-[260px] items-center gap-2 rounded-xl border bg-field/60 px-3 text-[12.5px]"
-    >
-      <FileIcon className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.7} />
-      <span className="truncate">{a.name}</span>
-      <span className="shrink-0 text-[11px] text-subtle">{formatSize(a.size)}</span>
-    </span>
   )
 }
 

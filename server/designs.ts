@@ -37,6 +37,8 @@ const NO_MCP = new Set<string>()
 import { getCli } from '../shared/clis.ts'
 import {
   Design,
+  addToParts,
+  type ReplyPart,
   DesignChatInput,
   DesignProject,
   DesignProjectInput,
@@ -102,6 +104,22 @@ const STYLES_FILE = path.join(DIR, '_styles.json')
 const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
+/** 回复里的 JSON 不给用户看：每段只留 ``` 前面的说明 */
+const cleanParts = (parts: ReplyPart[]) => parts.map((p) => ({ ...p, text: p.text.split('```')[0].trim() }))
+
+/** 存进消息的分段：工具都已结束；按 JSON 回复时最后一段的说明换成 JSON 里的 reply */
+function finalParts(parts: ReplyPart[], reply: string): ReplyPart[] | undefined {
+  const list = parts
+    .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
+    .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
+  if (reply) {
+    const last = list.at(-1)
+    if (last) last.text = reply
+    else list.push({ text: reply, tools: [] })
+  }
+  return list.length ? list : undefined
+}
+
 type Job = DesignJob & {
   abort: AbortController
   /** 生成图片时：把一张图排进这一轮的队列（点了「重试」或「再生成」）；不在生成图片时没有 */
@@ -392,8 +410,7 @@ ${prompt}`,
     // 进入生成图片阶段：对话的说明已经成了一条消息，不再显示
     job.preview = undefined
     job.text = ''
-    job.thinking = undefined
-    job.tools = undefined
+    job.parts = undefined
     job.out = undefined
     const list = ids.map((id) => d.images.find((i) => i.id === id)).filter(Boolean) as DesignImage[]
     const items: ImageJobItem[] = list.map((i) => ({ id: i.id, name: i.name, status: 'waiting', got: 0, want: count }))
@@ -501,8 +518,7 @@ ${prompt}`,
       for (let attempt = 1; attempt <= 2; attempt++) {
         job.attempt = attempt
         job.text = ''
-        job.thinking = undefined
-        job.tools = undefined
+        job.parts = undefined
         job.outChars = 0
         job.out = undefined
         job.preview = mcp?.session.applied ? { ...mcp.session.state, applied: mcp.session.applied } : undefined
@@ -510,12 +526,14 @@ ${prompt}`,
         const base = cache.get(d.id)!
         let applied = 0
         let preview: OpsState = { root: base.root, components: base.components }
-        // 工具调用的 id → 在 job.tools 里的位置，结果回来时更新那一条
-        const toolAt = new Map<string, number>()
+        // 工具调用的 id → 在分段里的位置（第几段、第几个），结果回来时更新那一条
+        const toolAt = new Map<string, [number, number]>()
+        let parts: ReplyPart[] = []
         let text = ''
         const errors: string[] = []
         let result: { ok: boolean; error?: string } | undefined
         const asks = askSession(job.scope)
+        const toolsModeNow = !!mcp && !NO_MCP.has(cliId)
         const r = await invokeCli({
           askUser: asks.askUser,
           onAsk: asks.onAsk,
@@ -549,29 +567,34 @@ ${prompt}`,
             .filter((x) => /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name))
             .map((x) => x.path),
           onEvent: (ev) => {
-            if (ev.type === 'text_delta') text += ev.text
-            else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
-            else if (ev.type === 'thinking')
-              job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
+            if (ev.type === 'text_delta') {
+              text += ev.text
+              parts = addToParts(parts, { type: 'text', text: ev.text, delta: true })
+            } else if (ev.type === 'text') {
+              text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
+              parts = addToParts(parts, { type: 'text', text: ev.text })
+            } else if (ev.type === 'thinking')
+              parts = addToParts(parts, { type: 'thinking', text: ev.text, delta: ev.delta })
             else if (ev.type === 'tool') {
-              const tools = [...(job.tools ?? []), { ...ev.tool, running: !!ev.id }]
-              if (ev.id) toolAt.set(ev.id, tools.length - 1)
-              job.tools = tools
+              parts = addToParts(parts, { type: 'tool', tool: { ...ev.tool, running: !!ev.id } })
+              if (ev.id) toolAt.set(ev.id, [parts.length - 1, parts.at(-1)!.tools.length - 1])
             } else if (ev.type === 'tool_delta' || ev.type === 'tool_result') {
-              const i = toolAt.get(ev.id)
-              if (i !== undefined && job.tools?.[i]) {
-                const cur = job.tools[i]
-                job.tools = job.tools.map((x, k) =>
-                  k !== i
-                    ? x
-                    : ev.type === 'tool_delta'
-                      ? { ...x, output: ((cur.output ?? '') + ev.text).slice(-4000) }
-                      : { ...x, output: ev.output.slice(-4000), failed: ev.failed, running: false },
-                )
-              }
+              const at = toolAt.get(ev.id)
+              const cur = at && parts[at[0]]?.tools[at[1]]
+              if (at && cur)
+                parts = addToParts(parts, {
+                  type: 'tool_update',
+                  at,
+                  patch:
+                    ev.type === 'tool_delta'
+                      ? { output: ((cur.output ?? '') + ev.text).slice(-4000) }
+                      : { output: ev.output.slice(-4000), failed: ev.failed, running: false },
+                })
             } else if (ev.type === 'error') errors.push(ev.message)
             else if (ev.type === 'result') result = ev
             job.text = text.split('```')[0].trim()
+            // 写 JSON 的那一段只显示 JSON 前面的说明，JSON 在下面单独边写边显示
+            job.parts = toolsModeNow ? parts : cleanParts(parts)
             job.outChars = text.length
             // JSON 部分边写边给界面看；只留最后一段，免得每次推送都很大
             const fence = text.indexOf('```')
@@ -629,6 +652,7 @@ ${prompt}`,
         const touched = !!sess && (sess.applied > 0 || sess.images.length > 0)
         const reply = (json?.reply as string) || (json ? ex.rest : text).trim()
         let res: ReturnType<typeof resolveDesignResult> = { error: '' }
+        let problems = ''
         // 没用工具、照旧写了 JSON（工具没连上，或者模型习惯这样）：按 JSON 的老办法处理
         if (toolsMode && sess && !(json && !touched)) {
           const raw = {
@@ -646,10 +670,11 @@ ${prompt}`,
           res = resolveDesignResult(raw, state)
           // 改了两轮检查还有问题：改好的部分不丢，照样存下，把问题告诉用户
           if ('error' in res && attempt === 2 && touched) {
+            problems = res.error
             const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
             if (ok.success)
               res = {
-                result: { ...ok.data, reply: `${reply || t('改好了。')}\n\n${t('检查还有这些问题：')}\n${res.error}` },
+                result: ok.data,
                 root: sess.state.root,
                 components: sess.state.components,
               }
@@ -689,9 +714,17 @@ ${prompt}`,
             images: ids.length ? ids : undefined,
             run,
             // 过程留着：完成后在对话里收成一行，点开能看 AI 想了什么、做了哪些操作
-            ...processOf(job),
+            parts: finalParts(toolsMode && !json ? parts : cleanParts(parts), json ? r2.reply : ''),
             ...(r2.question?.options.length ? { question: r2.question } : {}),
           })
+          if (problems)
+            cur.messages.push({
+              id: randomUUID(),
+              role: 'system',
+              text: `${t('检查还有这些问题：')}\n${problems}`,
+              at: now(),
+              error: true,
+            })
           await save(cur)
           // 存下来了，页面改用正式的设计
           job.preview = undefined
@@ -753,12 +786,6 @@ ${prompt}`,
     await writeVersions(d.id, list.slice(0, MAX_VERSIONS + MAX_AUTO_VERSIONS))
     return v
   }
-
-  /** 这一轮回复的过程（思考和工具调用），存进消息里 */
-  const processOf = (j: Job) => ({
-    ...(j.thinking?.trim() ? { thinking: j.thinking } : {}),
-    ...(j.tools?.length ? { tools: j.tools.map((x) => ({ ...x, running: false })) } : {}),
-  })
 
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
   /** 用默认 CLI 跑一次、要一个 JSON 回来（项目提示词、风格提取）；格式不对时让它改一次 */
