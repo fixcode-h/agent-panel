@@ -81,7 +81,7 @@ export type CliAuth = z.infer<typeof CliAuth>
 /**
  * 填占位：{baseUrl}、{apiKey}、{name}、{id}、{protocol}、{wire}、{keyEnv}（Anthropic 协议按 authHeader 选 ANTHROPIC_API_KEY 或
  * ANTHROPIC_AUTH_TOKEN）；{x|json} 填成 JSON 字符串（带引号，写进 TOML 参数时用）。
- * 整个值正好是 {models} 时换成 { 模型: {} } 的对象
+ * 整个值正好是 {models} 时换成 { 模型: {} } 的对象，正好是 {modelList} 时换成 [{ id: 模型 }] 的数组（Pi 的 models.json）
  */
 export function apiVars(api: ApiConfig, wire: Record<string, string> = {}) {
   return {
@@ -103,7 +103,11 @@ export function fillTemplate(s: string, vars: Record<string, string>) {
 
 function fillValue(v: unknown, vars: Record<string, string>, api: ApiConfig): unknown {
   if (typeof v === 'string')
-    return v === '{models}' ? Object.fromEntries(api.models.map((m) => [m, {}])) : fillTemplate(v, vars)
+    return v === '{models}'
+      ? Object.fromEntries(api.models.map((m) => [m, {}]))
+      : v === '{modelList}'
+        ? api.models.map((id) => ({ id }))
+        : fillTemplate(v, vars)
   if (Array.isArray(v)) return v.map((x) => fillValue(x, vars, api))
   if (v && typeof v === 'object')
     return Object.fromEntries(Object.entries(v).map(([k, x]) => [fillTemplate(k, vars), fillValue(x, vars, api)]))

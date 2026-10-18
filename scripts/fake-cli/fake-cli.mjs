@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 测试用的假 CLI：按 Claude Code / Codex / Command Code / Gemini CLI 的非交互输出格式吐事件，
+ * 测试用的假 CLI：按 Claude Code / Codex / Command Code / Gemini CLI / Pi 的非交互输出格式吐事件，
  * 并在当前目录写一个文件，用来在没有安装或登录真实 CLI 的环境里测通执行流程。
  *
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
@@ -14,15 +14,17 @@ import { crc32, deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
-// Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p
+// Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p；Pi 是 --mode json
 const kind =
   args[0] === 'app-server'
     ? 'codex'
-    : args.includes('stream-json')
-      ? args.includes('-p')
-        ? 'claude'
-        : 'gemini'
-      : 'commandcode'
+    : args.includes('--mode')
+      ? 'pi'
+      : args.includes('stream-json')
+        ? args.includes('-p')
+          ? 'claude'
+          : 'gemini'
+        : 'commandcode'
 // 登录：按 FAKE_AUTH 把凭据文件写到各个 CLI 放凭据的地方（每次登录换一个邮箱），打印一个登录网址
 const isLogin =
   (args[0] === 'auth' && args[1] === 'login') || args[0] === 'login' || (args[0] === '-p' && args[1] === 'hello')
@@ -172,6 +174,17 @@ if (args[0] === 'app-server') {
   }
   if (!input) process.exit(0)
 }
+// Pi 的 --list-models（面板带着 --offline 调）：一个提供方一行
+if (args.includes('--list-models') && args.includes('--offline')) {
+  console.log(
+    [
+      'provider   model           context  max-out  thinking  images',
+      'anthropic  claude-fake     200K     64K      yes       yes',
+      'ollama     qwen-fake:7b    128K     16.4K    no        no',
+    ].join('\n'),
+  )
+  process.exit(0)
+}
 // Command Code 的 --list-models
 if (args.includes('--list-models')) {
   console.log(
@@ -236,7 +249,8 @@ const out = (o) => process.stdout.write(JSON.stringify(o) + '\n')
 // 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
 const slow = input.includes('SLOW') && !input.includes('上游节点的结果')
 const fail = input.includes('FAIL')
-const resumeIdx = args.indexOf('--resume')
+// Pi 续接用 --session，分叉用 --fork（开新会话）
+const resumeIdx = args.indexOf(kind === 'pi' ? '--session' : '--resume')
 const session =
   kind === 'codex' ? appThread : resumeIdx >= 0 && !args.includes('--fork-session') ? args[resumeIdx + 1] : randomUUID()
 // app-server 的通知
@@ -501,9 +515,15 @@ if (input.includes('HANG')) {
 // 没有提问通道的 CLI（Command Code、Gemini CLI）：面板在工作目录里写了 MCP 配置，按 FAKE_ASK:<参数 JSON> 调 ask_user，
 // 等用户回答后把工具返回的话当作回复
 const askArgs = input.match(/FAKE_ASK:(.*)/)?.[1]
-if (askArgs && (kind === 'gemini' || kind === 'commandcode')) {
-  const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-  const url = cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
+if (askArgs && (kind === 'gemini' || kind === 'commandcode' || kind === 'pi')) {
+  // Pi 没有 MCP：面板写的是一个扩展脚本，地址在脚本里
+  const url =
+    kind === 'pi'
+      ? /new URL\('([^']+)'\)/.exec(readFileSync('.pi/extensions/agent-panel-panel.ts', 'utf8'))[1]
+      : (() => {
+          const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
+          return cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
+        })()
   const rpc = (id, method, params) =>
     fetch(url, {
       method: 'POST',
@@ -519,7 +539,12 @@ if (askArgs && (kind === 'gemini' || kind === 'commandcode')) {
       JSON.stringify({ kind, tools, got, hint: input.includes('ask_user') }) + '\n',
     )
   const text = `收到：${got}`
-  if (kind === 'gemini') {
+  if (kind === 'pi') {
+    const msg = { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop', usage: {} }
+    out({ type: 'session', version: 3, id: session, cwd: process.cwd() })
+    out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: text } })
+    out({ type: 'agent_end', messages: [msg] })
+  } else if (kind === 'gemini') {
     const at = new Date().toISOString()
     out({ type: 'init', timestamp: at, session_id: session, model: 'gemini-fake' })
     out({ type: 'message', timestamp: at, role: 'assistant', content: text, delta: true })
@@ -569,6 +594,58 @@ if (kind === 'gemini') {
     stats: { total_tokens: 5200, input_tokens: 5000, output_tokens: 200, duration_ms: 10, tool_calls: 2 },
   })
   process.exit(fail ? 1 : 0)
+}
+
+// Pi 的 --mode json：第一行是会话头，之后是 agent 的事件；每次（含自动重试）以 agent_end 结束
+if (kind === 'pi') {
+  const usage = (input, output) => ({
+    input,
+    output,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: input + output,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+  })
+  const assistant = (content, extra = {}) => ({
+    role: 'assistant',
+    content,
+    api: 'anthropic-messages',
+    provider: 'anthropic',
+    model: 'pi-fake',
+    usage: usage(4000, 100),
+    stopReason: 'stop',
+    ...extra,
+  })
+  out({ type: 'session', version: 3, id: session, timestamp: new Date().toISOString(), cwd: process.cwd() })
+  out({ type: 'agent_start' })
+  out({ type: 'message_end', message: { role: 'user', content: [{ type: 'text', text: input }] } })
+  out({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: '先看看' } })
+  out({ type: 'tool_execution_start', toolCallId: 'p1', toolName: 'read', args: { path: 'README.md' } })
+  out({
+    type: 'tool_execution_end',
+    toolCallId: 'p1',
+    toolName: 'read',
+    result: { content: [{ type: 'text', text: '# README' }] },
+    isError: false,
+  })
+  writeFileSync(file, 'p\n')
+  out({ type: 'tool_execution_start', toolCallId: 'p2', toolName: 'write', args: { path: file, content: 'p\n' } })
+  out({
+    type: 'tool_execution_end',
+    toolCallId: 'p2',
+    toolName: 'write',
+    result: { content: [{ type: 'text', text: `Successfully wrote 2 bytes to ${file}` }] },
+    isError: false,
+  })
+  for (const part of reply.match(/.{1,6}/gs))
+    out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 1, delta: part } })
+  const last = fail
+    ? assistant([], { stopReason: 'error', errorMessage: '模拟的失败' })
+    : assistant([{ type: 'text', text: reply }])
+  out({ type: 'message_end', message: last })
+  out({ type: 'agent_end', messages: [last] })
+  // Pi 出错时退出码也是 0
+  process.exit(0)
 }
 
 if (kind === 'claude') {

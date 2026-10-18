@@ -334,7 +334,7 @@ function ModelSource({ cli, data }: { cli: CliDefinition; data?: CliModels }) {
               cli: cli.name,
               error: data.error,
             })
-          : !['codex', 'commandcode'].includes(getCli(cli.id)?.modelsFrom ?? '')
+          : !['codex', 'commandcode', 'pi'].includes(getCli(cli.id)?.modelsFrom ?? '')
             ? t('{cli} 没有列出模型的命令，下面是常用的型号，也可以直接填写完整的模型名。', { cli: cli.name })
             : t('下面是内置的建议，也可以直接填写模型名。')
   return <p className={cn('pt-1 text-xs leading-relaxed', data.error ? 'text-warning' : 'text-subtle')}>{text}</p>

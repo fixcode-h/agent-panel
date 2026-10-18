@@ -249,3 +249,87 @@ test('Gemini CLI：按配置文件拼参数', () => {
     ],
   )
 })
+
+test('Pi：按配置文件里的事件映射解析 --mode json', () => {
+  const parse = parserFor('pi', CWD)
+  const s = summarize(fixture('pi-json.jsonl').flatMap((o) => parse(o)))
+  assert.equal(s.session, '01a14e97-a046-7582-8d1a-98d858e416c5')
+  // 用户消息、流式之外的整段消息都不重复算进回复
+  assert.equal(s.text, 'Updating the note.Done: added a second line.')
+  assert.equal(s.thinking, 'Need to read the file first.')
+  assert.deepEqual(
+    s.tools.map((x) => [x.kind, x.label, x.detail]),
+    [
+      ['read', 'notes.txt', ''],
+      // Pi 的 edit 是 edits 数组，每处是 oldText / newText
+      ['edit', 'notes.txt', '+2 -1'],
+      ['run', 'cat missing.txt', ''],
+    ],
+  )
+  assert.equal(s.tools[0].output, 'hello\n')
+  assert.deepEqual(s.files, [{ path: 'notes.txt', add: 2, del: 1 }])
+  assert.equal(s.tools[2].failed, true)
+  assert.match(s.tools[2].output ?? '', /Command exited with code 1/)
+  assert.deepEqual(
+    {
+      input: s.usage.input,
+      output: s.usage.output,
+      read: s.usage.read,
+      context: s.usage.context,
+      model: s.usage.model,
+    },
+    { input: 2300, output: 120, read: 6300, context: 2310, model: 'claude-sonnet-4-6' },
+  )
+  assert.ok(s.usage.cost > 0, '费用按每条回复加起来')
+  assert.deepEqual(s.results, [{ ok: true, error: undefined }])
+})
+
+test('Pi：接口出错时自动重试，最后一次的结果算数', () => {
+  const parse = parserFor('pi', CWD)
+  const s = summarize(fixture('pi-error.jsonl').flatMap((o) => parse(o)))
+  // 每次重试都有一个 agent_end，面板以最后一个为准
+  assert.ok(s.results.length > 1)
+  assert.deepEqual(s.results.at(-1), { ok: false, error: 'Connection error.' })
+})
+
+test('Pi：按配置文件拼参数', () => {
+  const def = getCli('pi')!
+  assert.deepEqual(
+    def.buildArgs({
+      model: 'anthropic/claude-sonnet-4-6',
+      effort: 'high',
+      permission: 'readonly',
+      extraArgs: ['--verbose'],
+      resume: 'sess-1',
+      systemPrompt: '你是审查员',
+    }),
+    [
+      '-p',
+      '--mode',
+      'json',
+      '--model',
+      'anthropic/claude-sonnet-4-6',
+      '--thinking',
+      'high',
+      '--tools',
+      'read,grep,find,ls,ask_user',
+      '--session',
+      'sess-1',
+      '--append-system-prompt',
+      '你是审查员',
+      '--verbose',
+    ],
+  )
+  // 全部工具时不限制工具（--tools 会连扩展的工具一起限制）；分叉用 --fork
+  assert.deepEqual(def.buildArgs({ model: '', permission: 'full', extraArgs: [], resume: 's', fork: {} }), [
+    '-p',
+    '--mode',
+    'json',
+    '--fork',
+    's',
+  ])
+  assert.deepEqual(def.buildArgs({ model: '', permission: 'edit', extraArgs: [] }).slice(3), [
+    '--tools',
+    'read,edit,write,grep,find,ls,ask_user',
+  ])
+})

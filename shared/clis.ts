@@ -14,9 +14,10 @@ import { t } from './i18n.ts'
 import { CliSpec, specToDefinition, type CliSpecInput } from './cli-spec.ts'
 import commandcode from './clis/commandcode.json'
 import gemini from './clis/gemini.json'
+import pi from './clis/pi.json'
 
 /** 写成配置文件的内置 CLI，按这个顺序排在 Claude Code、Codex 后面 */
-const BUILTIN_SPECS = [commandcode, gemini]
+const BUILTIN_SPECS = [commandcode, gemini, pi]
 export interface PermissionOption {
   id: string
   label: string
@@ -126,7 +127,7 @@ export interface CliDefinition {
   envExample: string
   /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
   env?: Record<string, string>
-  /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、claude（配置和环境变量）；为空时只用 models 里写的 */
+  /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */
   readOnly: string

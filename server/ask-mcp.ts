@@ -178,6 +178,12 @@ export async function applyConfigFiles(cwd: string, files: { path: string; conte
       held.set(to, { count: 1, original: existsSync(to) ? await readFile(to, 'utf8') : null })
     }
     done.push(to)
+    // 字符串是整个文件的内容（例如 Pi 的扩展脚本），直接写，不合并
+    if (typeof f.content === 'string') {
+      await mkdir(path.dirname(to), { recursive: true })
+      await writeFile(to, f.content)
+      continue
+    }
     let base: unknown = {}
     const original = held.get(to)!.original
     if (original) {
