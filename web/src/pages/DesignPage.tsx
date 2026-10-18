@@ -327,6 +327,8 @@ function Designer({ id }: { id: string }) {
   const [request, setRequest] = useState<{ id: string; text: string }>()
   /** 动画面板（时间轴）开着没有，以及它让画布停在哪一刻 */
   const [animOpen, setAnimOpen] = useState(false)
+  // 正在从图片列表往画布上拖的图：画布高亮能放这张图的控件
+  const [dragImage, setDragImage] = useState<DesignImage | null>(null)
   const [animCommand, setAnimCommand] = useState<AnimCommand | null>(null)
   /** 已经交回的截图请求，不重复画 */
   const captured = useRef(new Set<string>())
@@ -977,6 +979,15 @@ function Designer({ id }: { id: string }) {
             <Viewport
               animations={shownDoc?.animations ?? doc.animations}
               animCommand={animOpen ? animCommand : null}
+              dragImage={live ? null : dragImage}
+              onDropImage={(wid, imgId) => {
+                const img = doc.images.find((i) => i.id === imgId)
+                if (!img) return
+                editTree((r) => mapWidget(r, wid, (x) => assignImage(x, img)), `assign:${imgId}:${wid}`)
+                setDragImage(null)
+                setSelected(wid)
+                setExtra([])
+              }}
               root={shownTree ?? tree}
               size={viewSize}
               device={server.kind === 'web' ? device : undefined}
@@ -1310,6 +1321,7 @@ function Designer({ id }: { id: string }) {
                 onSelect={setImageSel}
                 onUpload={(f) => void upload(f)}
                 onPreview={setPreview}
+                onDragImage={setDragImage}
                 usedIds={used}
                 canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
                 onGenerateAll={async (ids) => {

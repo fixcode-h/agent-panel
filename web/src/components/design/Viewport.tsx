@@ -12,7 +12,16 @@ import {
   Minus,
   Plus,
 } from 'lucide-react'
-import { findParent, findWidget, type Component, type Vec2, type Widget } from '@shared/umg'
+import {
+  IMAGE_SLOT,
+  findParent,
+  findWidget,
+  walk,
+  type Component,
+  type Margin,
+  type Vec2,
+  type Widget,
+} from '@shared/umg'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { UmgNode, type RenderImage } from './umg-render'
@@ -21,6 +30,20 @@ import type { Device } from '@shared/web'
 import { animRuntime, compileAnimations, type UiAnimation } from '@shared/anim'
 import type { AnimCommand } from './AnimationPanel'
 import { AnnotationLayer, AnnotationToolbar, TOOL_KEYS, isMarkTool, widgetsIn, type Tool } from './Annotations'
+
+type Rect = { x: number; y: number; w: number; h: number }
+type DragImage = { id: string; width: number; height: number; nineSlice?: Margin }
+
+/**
+ * 图片和控件大小合不合适：九宫格的图能任意拉伸；其他的宽高比差不多（30% 以内），
+ * 大小在图片的 0.35 ~ 3 倍之间（再大就糊、再小就浪费）
+ */
+const imageFits = (img: DragImage, r: Rect) => {
+  if (img.nineSlice) return true
+  const aspect = Math.abs(Math.log(r.w / r.h / (img.width / img.height)))
+  const k = Math.max(r.w / img.width, r.h / img.height)
+  return aspect <= Math.log(1.3) && k >= 0.35 && k <= 3
+}
 
 /**
  * 效果展示区：按设计稿尺寸画出界面，可以缩放；点选控件，CanvasPanel 里的控件可以拖动位置、拖右下角改大小。
@@ -45,7 +68,13 @@ export function Viewport({
   overlay,
   animations,
   animCommand,
+  dragImage,
+  onDropImage,
 }: {
+  /** 正在从图片列表拖过来的图：高亮能放它、大小合适的控件 */
+  dragImage?: DragImage | null
+  /** 在控件上松手：把图用到这个控件上 */
+  onDropImage?: (id: string, imageId: string) => void
   root: Widget
   size: Vec2
   images: Map<string, RenderImage>
@@ -257,6 +286,36 @@ export function Viewport({
     // measure 每次渲染都是新的函数，只在多选或缩放变化时重新开始
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [extra.join('|'), scale])
+
+  // 拖图片时能放的控件：能放图（Image、Border、Button、Picture、Frame…）且大小合适；按住 Alt 不看大小
+  const [slots, setSlots] = useState<(Rect & { id: string; name: string; fits: boolean })[]>([])
+  const [hot, setHot] = useState('')
+  const [anySize, setAnySize] = useState(false)
+  useEffect(() => {
+    setHot('')
+    setAnySize(false)
+    if (!dragImage) return setSlots([])
+    const out: typeof slots = []
+    walk(root, (w) => {
+      const r = IMAGE_SLOT[w.Type] && measure(w.id)
+      if (r && r.w >= 4 && r.h >= 4) out.push({ ...r, id: w.id, name: w.Name, fits: imageFits(dragImage, r) })
+    })
+    setSlots(out)
+    // measure 每次渲染都是新的函数，只在开始拖、树或缩放变化时重新量
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [dragImage, root, scale])
+  const shownSlots = slots.filter((r) => r.fits || anySize)
+  /** 指针下最小的那个能放的控件（嵌套时取最里面的） */
+  const slotAt = (e: React.DragEvent, any: boolean) => {
+    const st = stage.current
+    if (!st) return undefined
+    const a = st.getBoundingClientRect()
+    const x = (e.clientX - a.left) / scale
+    const y = (e.clientY - a.top) / scale
+    return slots
+      .filter((r) => (r.fits || any) && x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h)
+      .sort((p, q) => p.w * p.h - q.w * q.h)[0]
+  }
 
   /** 对齐、等间距：按量到的位置算出每个控件要挪多少，一次挪完（撤销时一起退回） */
   const align = (how: 'left' | 'hcenter' | 'right' | 'top' | 'vcenter' | 'bottom' | 'hspace' | 'vspace') => {
@@ -487,6 +546,15 @@ export function Viewport({
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#18181a]">
+      {dragImage && !play && onDropImage && (
+        <div className="pointer-events-none absolute top-14 left-1/2 z-20 -translate-x-1/2 rounded-full bg-black/75 px-3 py-1 text-[12px] whitespace-nowrap text-white/85">
+          {slots.some((r) => r.fits)
+            ? t('拖到绿框的控件上松手即可用上；按住 Alt 显示所有能放图的控件')
+            : slots.length
+              ? t('没有大小合适的控件；按住 Alt 可以放到任意能放图的控件上')
+              : t('当前界面里没有能放图片的控件')}
+        </div>
+      )}
       <div
         ref={wrap}
         className={cn(
@@ -512,7 +580,29 @@ export function Viewport({
             if (e.target === e.currentTarget) onSelect('')
           }}
         >
-          <div style={{ width: size.X * scale, height: size.Y * scale }} className="relative shrink-0">
+          <div
+            style={{ width: size.X * scale, height: size.Y * scale }}
+            className="relative shrink-0"
+            onDragOver={(e) => {
+              if (!dragImage || play || !onDropImage) return
+              setAnySize(e.altKey)
+              const r = slotAt(e, e.altKey)
+              setHot(r?.id ?? '')
+              if (!r) return
+              e.preventDefault()
+              e.dataTransfer.dropEffect = 'copy'
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node)) setHot('')
+            }}
+            onDrop={(e) => {
+              if (!dragImage || !onDropImage) return
+              const r = slotAt(e, e.altKey)
+              if (!r) return
+              e.preventDefault()
+              onDropImage(r.id, dragImage.id)
+            }}
+          >
             <div
               ref={stage}
               style={{ width: size.X, height: size.Y, transform: `scale(${scale})`, transformOrigin: '0 0' }}
@@ -570,6 +660,27 @@ export function Viewport({
                   className="pointer-events-none absolute outline-[1.5px] outline-[#4c9bff]/70 outline-dashed"
                   style={{ left: b.x * scale, top: b.y * scale, width: b.w * scale, height: b.h * scale }}
                 />
+              ))}
+            {dragImage &&
+              !play &&
+              shownSlots.map((r) => (
+                <div
+                  key={r.id}
+                  data-drop-slot={r.name}
+                  className={cn(
+                    'pointer-events-none absolute rounded-[2px] outline-solid',
+                    r.id === hot
+                      ? 'bg-[#35c46a]/25 outline-2 outline-[#35c46a]'
+                      : 'bg-[#35c46a]/8 outline-[1.5px] outline-[#35c46a]/70',
+                  )}
+                  style={{ left: r.x * scale, top: r.y * scale, width: r.w * scale, height: r.h * scale }}
+                >
+                  {r.id === hot && (
+                    <span className="absolute -top-5 left-0 rounded bg-[#35c46a] px-1.5 py-px text-[11px] whitespace-nowrap text-black">
+                      {t('放到 {name}', { name: r.name })}
+                    </span>
+                  )}
+                </div>
               ))}
             {dropLine && (
               <div

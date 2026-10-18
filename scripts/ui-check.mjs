@@ -164,6 +164,33 @@ try {
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
   await p.getByRole('tab', { name: /图片/ }).click()
   await check(p, 'UI设计-图片')
+  // 把图片拖到画布上：能放、大小合适的控件高亮，松手就用上（用脚本发拖放事件，无头浏览器的鼠标拖不出 HTML5 拖放）
+  await p.evaluate(() => {
+    window.__dt = new DataTransfer()
+    const thumb = document.querySelector('button[draggable="true"]')
+    thumb.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__dt }))
+  })
+  await p.waitForTimeout(200)
+  const dragAt = (type) =>
+    p.evaluate((type) => {
+      const slot = document.querySelector('[data-drop-slot]')
+      if (!slot) return ''
+      const r = slot.getBoundingClientRect()
+      const at = { bubbles: true, cancelable: true, dataTransfer: window.__dt }
+      const x = r.left + r.width / 2
+      const y = r.top + r.height / 2
+      document.elementFromPoint(x, y).dispatchEvent(new DragEvent(type, { ...at, clientX: x, clientY: y }))
+      return slot.dataset.dropSlot
+    }, type)
+  const dropName = await dragAt('dragover')
+  assert.ok(dropName, '拖图片时有大小合适的控件高亮')
+  await check(p, 'UI设计-拖图片', ['放到 ' + dropName])
+  await dragAt('drop')
+  await p.evaluate(() =>
+    document
+      .querySelector('button[draggable="true"]')
+      .dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt })),
+  )
   // UI 项目设置：美术提示词
   await p.getByText('暗夜远征').first().click({ button: 'right' })
   await p.getByRole('menuitem', { name: '美术提示词' }).click()

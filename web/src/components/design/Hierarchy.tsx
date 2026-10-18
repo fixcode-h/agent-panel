@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowUp,
@@ -248,6 +248,22 @@ export function Hierarchy({
   const [drop, setDrop] = useState<{ id: string; where: 'before' | 'after' | 'into' } | null>(null)
   // 选中的控件的上级都要展开
   const open = new Set(pathTo(root, selected).map((w) => w.id))
+  const box = useRef<HTMLDivElement>(null)
+  // 在树里点的不用滚；在画布上点的，把那一行滚到可见区域中间
+  const fromTree = useRef('')
+  useEffect(() => {
+    const hit = fromTree.current === selected
+    fromTree.current = ''
+    if (hit) return
+    const row = box.current?.querySelector<HTMLElement>(`[data-tid="${CSS.escape(selected)}"]`)
+    let sc = row?.parentElement
+    while (sc && !/(auto|scroll)/.test(getComputedStyle(sc).overflowY)) sc = sc.parentElement
+    if (!row || !sc) return
+    const r = row.getBoundingClientRect()
+    const b = sc.getBoundingClientRect()
+    if (r.top >= b.top + 24 && r.bottom <= b.bottom - 24) return
+    sc.scrollTo({ top: sc.scrollTop + r.top - b.top - (b.height - r.height) / 2, behavior: 'smooth' })
+  }, [selected])
 
   const rows: { w: Widget; depth: number; parent?: Widget; index: number }[] = []
   const walk = (w: Widget, depth: number, parent?: Widget, index = 0) => {
@@ -267,9 +283,13 @@ export function Hierarchy({
 
   return (
     <div
+      ref={box}
       role="tree"
       aria-label={t('控件树')}
       className="flex flex-col py-1"
+      onPointerDownCapture={(e) =>
+        (fromTree.current = (e.target as HTMLElement).closest<HTMLElement>('[data-tid]')?.dataset.tid ?? '')
+      }
       onDragEnd={() => (setDrag(''), setDrop(null))}
     >
       {rows.map(({ w, depth, parent, index }) => {
@@ -284,6 +304,7 @@ export function Hierarchy({
             <ContextMenuTrigger asChild>
               <div
                 role="treeitem"
+                data-tid={w.id}
                 aria-selected={on}
                 aria-expanded={hasKids ? isOpen : undefined}
                 draggable={!!parent && renaming !== w.id}

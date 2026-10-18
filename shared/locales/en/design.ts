@@ -236,7 +236,7 @@ export const EN_DESIGN: Record<string, string> = {
   '已把 {name} 加进这个设计': 'Added {name} to this design',
   '没有找到子控件 {name}': 'Widget {name} not found',
   '这个设计里已经有叫 {name} 的子控件了': 'This design already has a widget named {name}',
-  双击放大预览: 'Double-click to preview large',
+  '双击放大预览，拖到画布的控件上直接用上': 'Double-click to preview large; drag onto a widget on the canvas to use it',
   关闭预览: 'Close preview',
   '有 {n} 张图片没有生成出来': '{n} images failed to generate',
   '格子在属性里设置，导出到 UE 时展开成子控件':
@@ -625,4 +625,11 @@ export const EN_DESIGN: Record<string, string> = {
   '点关键帧修改；拖动关键帧改时间（按住 Shift 对齐到 0.1 秒）；双击轨道空白处加关键帧':
     'Click a key to edit it; drag keys to retime (hold Shift to snap to 0.1s); double-click an empty spot on a track to add a key',
   '动画：打开时间轴，给控件加动画和动效': 'Animation: open the timeline to animate widgets',
+  // 拖图片到控件
+  '拖到绿框的控件上松手即可用上；按住 Alt 显示所有能放图的控件':
+    'Drop on a green-outlined widget to use it; hold Alt to show every widget that takes an image',
+  '没有大小合适的控件；按住 Alt 可以放到任意能放图的控件上':
+    'No widget has a matching size; hold Alt to drop on any widget that takes an image',
+  当前界面里没有能放图片的控件: 'No widget on this screen takes an image',
+  '放到 {name}': 'Drop on {name}',
 }

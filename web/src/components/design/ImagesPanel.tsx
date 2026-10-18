@@ -36,7 +36,10 @@ export function ImagesPanel({
   usedIds,
   onGenerateAll,
   canGenerate,
+  onDragImage,
 }: {
+  /** 开始 / 结束把图片拖到画布的控件上：画布据此高亮能放的控件 */
+  onDragImage?: (img: DesignImage | null) => void
   /** 生成这些还没生成或失败的图 */
   onGenerateAll: (ids: string[]) => void
   canGenerate: boolean
@@ -125,7 +128,14 @@ export function ImagesPanel({
             key={i.id}
             onClick={() => onSelect(i.id)}
             onDoubleClick={() => url(i) && onPreview(i.id)}
-            title={url(i) ? t('双击放大预览') : undefined}
+            title={url(i) ? t('双击放大预览，拖到画布的控件上直接用上') : undefined}
+            draggable={!!url(i) && !!onDragImage}
+            onDragStart={(e) => {
+              e.dataTransfer.effectAllowed = 'copy'
+              e.dataTransfer.setData('application/x-design-image', i.id)
+              onDragImage?.(i)
+            }}
+            onDragEnd={() => onDragImage?.(null)}
             className={cn(
               'group flex cursor-pointer flex-col overflow-hidden rounded-lg border bg-field text-left transition-colors',
               selected === i.id ? 'border-accent ring-2 ring-accent-soft' : 'hover:border-line-strong',

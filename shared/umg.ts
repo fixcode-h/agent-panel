@@ -781,11 +781,14 @@ export function imageUsers(trees: { target: string; root: Widget }[], imageId: s
   return out
 }
 
-/** 能直接放图的控件和放在哪个画刷上：Image 的 Brush、Border 的 Background、Button 的普通状态 */
+/** 能直接放图的控件和放在哪个属性上：Image 的 Brush、Border 的 Background、Button 的普通状态；网页是 Picture 的 Src、Frame / WebButton 的背景图 */
 export const IMAGE_SLOT: Partial<Record<WidgetType, string>> = {
   Image: 'Brush',
   Border: 'Background',
   Button: 'WidgetStyle.Normal',
+  Picture: 'Src',
+  Frame: 'BackgroundImage',
+  WebButton: 'BackgroundImage',
 }
 
 /** 把图用到控件上：设好画刷的图片；九宫格的图按 Box 拉伸，Image 顺便把尺寸设成图片尺寸 */
@@ -797,6 +800,8 @@ export function assignImage(w: Widget, img: { id: string; width: number; height:
   let cur: any = props
   for (const k of keys.slice(0, -1)) cur = cur[k] ??= {}
   const last = keys[keys.length - 1]
+  // 网页控件的图片属性就是一个 "img:<id>" 字符串
+  if (WIDGETS[w.Type]?.group === 'web') return { ...w, Properties: { ...props, [last]: `img:${img.id}` } }
   cur[last] = {
     ...brush(),
     ...(cur[last] ?? {}),
