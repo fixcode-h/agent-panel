@@ -3337,6 +3337,58 @@ try {
   }
   step('访问令牌：打开后没带令牌的请求被拒绝，用带令牌的地址打开的浏览器拿到 Cookie')
 
+  // 没有提问通道的 CLI（Command Code、Gemini CLI）：面板临时接一个 ask_user 工具，等用户回答后交回，项目里原有的 MCP 配置用完还原
+  {
+    const mcpFile = path.join(project.path, '.mcp.json')
+    const original = JSON.stringify({ mcpServers: { mine: { command: 'x' } } })
+    writeFileSync(mcpFile, original)
+    for (const cli of ['commandcode', 'gemini']) {
+      const before = readLog(log + '.askbridge').length
+      const t = await call('POST', '/tasks', {
+        projectId: project.id,
+        mode: 'chat',
+        agentId: 'default-agent',
+        cli,
+        askUser: true,
+        prompt: `想做什么 FAKE_ASK:${JSON.stringify({ questions: [{ header: '方向', question: '想做什么？', options: [{ label: '修 bug（推荐）' }, { label: '写文档' }] }] })}`,
+      })
+      let req
+      for (let i = 0; i < 100 && !req; i++) {
+        req = (await call('GET', `/tasks/${t.id}`)).requests[0]
+        if (!req) await sleep(100)
+      }
+      assert.ok(req, `${cli}：弹出了提问`)
+      assert.equal(req.kind, 'question')
+      assert.deepEqual(req.options, ['修 bug（推荐）', '写文档'])
+      await call('POST', `/tasks/${t.id}/requests/${req.id}`, { allow: true, answers: ['写文档'] })
+      const done = await waitDone(t.id)
+      assert.equal(done.status, 'done')
+      const rec = readLog(log + '.askbridge')
+        .slice(before)
+        .at(-1)
+      assert.deepEqual(rec.tools, ['ask_user'])
+      assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
+      assert.ok(rec.hint, '提示里告诉模型有 ask_user')
+      assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
+    }
+    assert.equal(readFileSync(mcpFile, 'utf8'), original, '项目里原有的 MCP 配置还原')
+    assert.ok(!existsSync(path.join(project.path, '.gemini', 'settings.json')), '临时写的配置删掉了')
+    // 提问开关关着：不弹出，工具让模型自己选
+    const off = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: `FAKE_ASK:${JSON.stringify({ questions: [{ question: '选哪个？', options: [{ label: 'a' }] }] })}`,
+    })
+    const offDone = await waitDone(off.id)
+    assert.equal(offDone.requests.length, 0)
+    assert.match(readLog(log + '.askbridge').at(-1).got, /不回答问题/)
+    rmSync(mcpFile, { force: true })
+  }
+  step('没有提问通道的 CLI：临时接 ask_user 工具，回答后交回模型，开关关着时让模型自己选，项目里原有的配置还原')
+
   // Skills / 命令库：读写各 CLI 用户目录下的 Skill 和命令，复制给别的 CLI 时命令自动换格式
   {
     const lib = (kind) => call('GET', `/library?kind=${kind}`)
