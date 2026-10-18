@@ -41,7 +41,7 @@ import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/ver
 import { CLIS, getCli } from '@shared/clis'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
-import { beginRun, endRun, newTask, taskSummary, withAttachments } from '@shared/task'
+import { beginRun, endRun, newTask, questionAnswers, taskSummary, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -1132,6 +1132,7 @@ function tasksRoute(
     const a = body as { allow: boolean; answer?: string; answers?: string[] }
     simAnswers.set(rid, a)
     task.requests = task.requests.filter((r) => r.id !== rid)
+    const answers = req.kind === 'question' ? questionAnswers(req, a) : undefined
     task.messages.push({
       id: `demo-${crypto.randomUUID()}`,
       role: 'system',
@@ -1147,6 +1148,7 @@ function tasksRoute(
             : `你${a.allow ? '允许' : '拒绝'}了：${req.title}`,
       tools: [],
       at: new Date().toISOString(),
+      ...(answers ? { answers } : {}),
     })
     persist()
     return task

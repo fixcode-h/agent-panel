@@ -144,3 +144,38 @@ export function ReplyFrame({
     </div>
   )
 }
+
+/**
+ * 用户对 AI 提问的回答：和用户消息一样的气泡放在对话正文里，每个问题一行小字、下面是答案。
+ * 提问面板答完就收起了，这里留下问了什么、选了什么
+ */
+export function AnswerMessage({
+  answers,
+  at,
+  size = 'md',
+}: {
+  answers: { question: string; answer: string }[]
+  at?: string
+  size?: 'sm' | 'md'
+}) {
+  return (
+    <div className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
+      <div
+        className={cn(
+          'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
+          size === 'sm'
+            ? 'rounded-br-md px-3.5 py-2 text-[13px] leading-relaxed'
+            : 'px-4 py-2.5 text-[14.5px] leading-relaxed',
+        )}
+      >
+        {answers.map((a, i) => (
+          <div key={i} className="flex min-w-0 flex-col">
+            <span className={cn('text-muted', size === 'sm' ? 'text-[11.5px]' : 'text-[12.5px]')}>{a.question}</span>
+            <span className="whitespace-pre-wrap">{a.answer}</span>
+          </div>
+        ))}
+      </div>
+      <MessageMeta text={answers.map((a) => `${a.question}\n${a.answer}`).join('\n\n')} at={at} align="end" />
+    </div>
+  )
+}

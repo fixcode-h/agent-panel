@@ -1063,6 +1063,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       text: body.text,
       at: now(),
       ...(body.annotations?.length ? { annotations: body.annotations } : {}),
+      ...(body.answers?.length ? { answers: body.answers } : {}),
     })
     void runChat(d, body.text, body.source, body.count ?? 1, body.run)
     return d

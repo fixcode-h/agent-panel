@@ -118,6 +118,8 @@ export const DesignMessage = z.object({
   question: DesignQuestion.optional(),
   /** AI 先问用户的问题（例如整体风格还没定），一次可以问几个；问题面板换掉输入框，全部回答后一起发出去 */
   questions: z.array(DesignQuestion).optional(),
+  /** 用户这条消息是在回答 AI 的提问：每个问题和答案，像回答一样显示 */
+  answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -384,6 +386,11 @@ export const DesignChatInput = z.object({
   askUser: z.boolean().default(false),
   /** 用户在风格提问里选的整体风格（英文），发送前先存进设计 */
   style: z.string().max(4000).optional(),
+  /** 这条消息是在回答 AI 的提问：每个问题和答案 */
+  answers: z
+    .array(z.object({ question: z.string().max(2000), answer: z.string().max(20000) }))
+    .max(20)
+    .optional(),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
 

@@ -61,7 +61,7 @@ import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
 import { expandSlash } from './slash.ts'
-import { withAttachments } from '../shared/task.ts'
+import { stripToolMarkup, withAttachments } from '../shared/task.ts'
 import { imageSize, zip } from './zip.ts'
 
 /**
@@ -733,7 +733,7 @@ ${prompt}`,
         // 回复就是普通文字；改动都在工具里做好了
         const touched = sess.applied > 0 || sess.images.length > 0
         const raw = {
-          reply: text.trim(),
+          reply: stripToolMarkup(text.trim()),
           style: sess.style,
           designSize: sess.designSize,
           questions: sess.questions,
@@ -1388,6 +1388,7 @@ ${prompt}`,
         at: now(),
         ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
         ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
+        ...(p.data.answers?.length ? { answers: p.data.answers } : {}),
       })
       await save(d)
       // AI 改之前自动存一个版本，改坏了可以回去

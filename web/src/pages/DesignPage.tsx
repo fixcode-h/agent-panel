@@ -681,7 +681,7 @@ function Designer({ id }: { id: string }) {
     text: string,
     run: ChatRun,
     attachments: Attachment[],
-    extra: { askUser: boolean; style?: string },
+    extra: { askUser: boolean; style?: string; answers?: { question: string; answer: string }[] },
   ) => {
     // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))

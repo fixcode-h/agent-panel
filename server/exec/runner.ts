@@ -14,7 +14,7 @@ import type {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts'
-import { changesSince, mergeChanges, stepUsage, withTaskModel } from '../../shared/task.ts'
+import { changesSince, mergeChanges, questionAnswers, stepUsage, withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
@@ -158,6 +158,8 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
         : r.allow
           ? t('你允许了：{title}', { title: req.title })
           : t('你拒绝了：{title}', { title: req.title })
+  // 回答了问题：问题和答案在对话正文里显示，不再是一行灰色的说明
+  const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
   task.messages.push({
     id: newId(),
     role: 'system',
@@ -166,6 +168,7 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
     text: what,
     tools: [],
     at: new Date().toISOString(),
+    ...(answers ? { answers } : {}),
   })
   fn(r)
   return true
