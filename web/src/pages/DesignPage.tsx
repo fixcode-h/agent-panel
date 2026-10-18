@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ChevronDown,
   Download,
+  Layers,
   FileJson,
   FileArchive,
   FileCode2,
@@ -23,8 +24,10 @@ import {
 } from 'lucide-react'
 import type { Attachment } from '@shared/schema'
 import {
+  emptyConcept,
   imageRevisionText,
   type Annotation,
+  type ConceptImage,
   type DesignVersion,
   type DesignDoc,
   type DesignImage,
@@ -83,6 +86,8 @@ import { ComponentsPanel } from '@/components/design/ComponentsPanel'
 import { VersionCompare, VersionsButton } from '@/components/design/Versions'
 import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/web'
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
+import { ConceptBoard } from '@/components/design/ConceptBoard'
+import { CanvasCapture } from '@/components/design/CanvasCapture'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
@@ -312,6 +317,14 @@ function Designer({ id }: { id: string }) {
   const [source, setSource] = useScopedSetting<ImageSource>(SOURCE_KEY, id, (v) => parseSource(v ?? 'cli'), sourceKey)
   const [count, setCount] = useScopedSetting(COUNT_KEY, id, (v) => Math.max(1, Math.min(4, Number(v) || 1)), String)
   const [promptsOpen, setPromptsOpen] = useState(false)
+  /** 左边显示原画还是界面；对照模板：把确认的原画半透明盖在界面上 */
+  const [view, setView] = useState<'ui' | 'concept'>('ui')
+  const [overlay, setOverlay] = useState(false)
+  /** 替用户发给 AI 的话（确认模板后开始搭界面） */
+  const [request, setRequest] = useState<{ id: string; text: string }>()
+  /** 已经交回的截图请求，不重复画 */
+  const captured = useRef(new Set<string>())
+  const [, setCaptureTick] = useState(0)
   // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
   const treePane = usePaneWidth('design-tree', 300, 220, 560)
   const chatPane = usePaneWidth('design-chat', 380, 300, 720)
@@ -343,6 +356,19 @@ function Designer({ id }: { id: string }) {
     () => (doc ? usedImages([doc.root, ...doc.components.map((c) => c.Root)]) : new Set<string>()),
     [doc],
   )
+
+  // 出了新的原画、正在出原画时切到原画；确认了模板切回界面
+  const concept = server?.concept ?? emptyConcept()
+  const conceptCount = concept.images.length
+  const conceptsRunning = server?.job?.status === 'running' && server.job.phase === 'concepts'
+  useEffect(() => {
+    if (conceptsRunning || (conceptCount && !concept.approved)) setView('concept')
+    // 只在数量、阶段变化时自动切换，用户自己切了不打扰
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [conceptCount, conceptsRunning])
+  useEffect(() => {
+    if (concept.approved) setView('ui')
+  }, [concept.approved])
 
   const editTree = (fn: (root: Widget) => Widget, key = '') =>
     ed.change((d) => {
@@ -681,7 +707,12 @@ function Designer({ id }: { id: string }) {
     text: string,
     run: ChatRun,
     attachments: Attachment[],
-    extra: { askUser: boolean; style?: string; answers?: { question: string; answer: string }[] },
+    extra: {
+      askUser: boolean
+      style?: string
+      answers?: { question: string; answer: string }[]
+      concept: boolean
+    },
   ) => {
     // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
@@ -733,6 +764,27 @@ function Designer({ id }: { id: string }) {
     }
   }
 
+  // ---- 原画 ----
+  const conceptUrl = (c: ConceptImage) => designFileUrl(id, c.file)
+  const approvedConcept = concept.images.find((i) => i.id === concept.approved)
+  const conceptAction = async (action: 'select' | 'approve' | 'remove', cid: string) => {
+    try {
+      ed.absorb(await api.designConcept(id, action, cid))
+      return true
+    } catch (e) {
+      toast.error((e as Error).message)
+      return false
+    }
+  }
+  const approve = async (cid: string) => {
+    if (!(await conceptAction('approve', cid)) || !cid) return
+    // 原画上的标注用不上了；确认后马上让 AI 照着模板搭界面
+    ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => !a.target.startsWith('concept:')) }), 'ann:sent')
+    setView('ui')
+    setOverlay(false)
+    setRequest({ id: crypto.randomUUID(), text: t('按确认的原画模板搭界面，并生成切图') })
+  }
+
   const exportFile = async (format: 'zip' | 'json' | 'react') => {
     try {
       ed.absorb(await api.saveDesign(id, doc))
@@ -771,6 +823,17 @@ function Designer({ id }: { id: string }) {
         />
         <SaveIndicator status={ed.save.status} error={ed.save.error} />
         <span className="flex-1" />
+        {(conceptCount > 0 || conceptsRunning) && (
+          <Segmented
+            label={t('显示')}
+            value={view}
+            onChange={setView}
+            options={[
+              { id: 'concept', label: t('原画') },
+              { id: 'ui', label: t('界面') },
+            ]}
+          />
+        )}
         <StyleButton
           value={doc.style}
           onChange={(style) => ed.change((d) => ({ ...d, style }), 'style')}
@@ -902,6 +965,7 @@ function Designer({ id }: { id: string }) {
               )
             }
             images={renderImages}
+            overlay={overlay && approvedConcept && !target ? conceptUrl(approvedConcept) : undefined}
             components={shownDoc?.components ?? doc.components}
             selected={selected}
             onSelect={(wid) => {
@@ -931,6 +995,61 @@ function Designer({ id }: { id: string }) {
               }
             }}
           />
+          {view === 'concept' && (conceptCount > 0 || conceptsRunning) && (
+            <ConceptBoard
+              concept={concept}
+              url={conceptUrl}
+              marks={doc.annotations.filter((a) => a.target.startsWith('concept:'))}
+              onMarks={(cid, list) =>
+                ed.change(
+                  (d) => ({
+                    ...d,
+                    annotations: [...d.annotations.filter((a) => a.target !== `concept:${cid}`), ...list],
+                  }),
+                  `ann:concept:${cid}`,
+                )
+              }
+              onSelect={(cid) => void conceptAction('select', cid)}
+              onApprove={(cid) => void approve(cid)}
+              onRemove={(cid) => void conceptAction('remove', cid)}
+              onUpload={async (data) => {
+                try {
+                  ed.absorb(await api.uploadConcept(id, data))
+                } catch (e) {
+                  toast.error((e as Error).message)
+                }
+              }}
+              progress={conceptsRunning ? server.job?.concepts : undefined}
+              busy={ed.running}
+            />
+          )}
+          {view === 'ui' && approvedConcept && !target && (
+            <button
+              onClick={() => setOverlay(!overlay)}
+              aria-pressed={overlay}
+              title={t('把确认的原画模板半透明盖在界面上，对照着调')}
+              className={cn(
+                'absolute top-3 left-3 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[12px] text-white/70 shadow-pop hover:text-white',
+                overlay && 'text-accent hover:text-accent',
+              )}
+            >
+              <Layers className="h-3.5 w-3.5" />
+              {t('对照模板')}
+            </button>
+          )}
+          {server.job?.status === 'running' && server.job.capture && !captured.current.has(server.job.capture.id) && (
+            <CanvasCapture
+              key={server.job.capture.id}
+              designId={id}
+              req={server.job.capture}
+              images={renderImages}
+              web={server.kind === 'web'}
+              onDone={(cid) => {
+                captured.current.add(cid)
+                setCaptureTick((n) => n + 1)
+              }}
+            />
+          )}
           {compare && (
             <VersionCompare
               version={compare}
@@ -1223,6 +1342,9 @@ function Designer({ id }: { id: string }) {
               onRemoveAnnotation={(aid) =>
                 ed.change((d) => ({ ...d, annotations: d.annotations.filter((a) => a.id !== aid) }), `ann:rm:${aid}`)
               }
+              hasTemplate={!!concept.approved}
+              request={request}
+              conceptDefault={server.kind === 'game' && !doc.root.Children?.length && !server.messages.length}
             />
           </aside>
         )}

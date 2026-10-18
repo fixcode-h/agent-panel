@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { z } from 'zod'
 import { extractJson } from '../shared/assist.ts'
-import { openDesignSession } from './design-mcp.ts'
+import { openDesignSession, type ConceptRequest, type WidgetRect } from './design-mcp.ts'
 import { mcpConfig } from '../shared/cli-spec.ts'
 
 import { getCli } from '../shared/clis.ts'
@@ -28,8 +28,12 @@ import {
   PromptAiInput,
   buildPromptAiPrompt,
   buildDesignPrompt,
+  conceptPrompt,
+  emptyConcept,
   emptyRoot,
   imagePrompt,
+  type ConceptImage,
+  type ConceptState,
   sheetGrid,
   sheetPrompt,
   importComponent,
@@ -105,6 +109,15 @@ type Job = DesignJob & {
   sheets?: Map<string, string>
 }
 
+/** 等页面交回的截图：截图 id → 收到后怎么办 */
+type CaptureWait = {
+  designId: string
+  resolve: (v: { png: Buffer; rects: WidgetRect[] }) => void
+  reject: (e: Error) => void
+}
+/** 页面多久没交回截图就算没打开 */
+const CAPTURE_TIMEOUT = 20_000
+
 const now = () => new Date().toISOString()
 const meta = (d: Design): DesignMeta => ({
   id: d.id,
@@ -120,6 +133,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   let loaded = false
   const writing = new Map<string, Promise<void>>()
   const jobs = new Map<string, Job>()
+  const captures = new Map<string, CaptureWait>()
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
   async function loadAll() {
@@ -213,6 +227,20 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   const withRevision = (prompt: string, revision: string) =>
     revision.trim() ? `${prompt}\n\n${revision.trim()}` : prompt
 
+  const conceptOf = (d: Design): ConceptState => d.concept ?? emptyConcept()
+  const conceptFile = (d: Design, id: string) => {
+    const c = conceptOf(d).images.find((i) => i.id === id)
+    return c ? path.join(imagesDir(d.id), c.file) : undefined
+  }
+  /**
+   * 确认的原画模板：生成切图时作为参考图交给图片模型，切图的画风、材质、配色和模板一致。
+   * 只有图片 CLI 能带参考图，浏览器标签页只能靠文字描述
+   */
+  const templateRef = (d: Design, source: ImageSource) => {
+    const c = conceptOf(cache.get(d.id) ?? d)
+    return source.kind === 'cli' && c.approved ? conceptFile(cache.get(d.id) ?? d, c.approved) : undefined
+  }
+
   /** 项目提示词的英文：这个项目里每张图都带上 */
   async function projectStyle(d: Design) {
     const p = (await loadProjects()).find((x) => x.id === d.projectId)
@@ -263,6 +291,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const sink = variantSink(d, img, source, item)
     sink.set({ status: 'generating', error: undefined })
     item.status = 'generating'
+    const ref = templateRef(d, source)
     try {
       const rest =
         source.kind === 'browser'
@@ -283,10 +312,11 @@ export function designsApi(deps: { projects: Lister<Project> }) {
             )
           : await cliGenerate(
               // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
               count,
               job,
               (b) => sink.add(b),
+              ref ? [ref] : [],
             )
       for (const b of rest) sink.add(b)
       await sink.done()
@@ -325,7 +355,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       height: Math.max(...imgs.map((i) => i.height)),
     })
     const chroma = imgs.some((i) => i.transparent)
-    const prompt = withRevision(sheetPrompt(imgs, cache.get(d.id)!.style, chroma, style, d.kind), revision)
+    const ref = templateRef(d, source)
+    const prompt = withRevision(sheetPrompt(imgs, cache.get(d.id)!.style, chroma, style, d.kind, !!ref), revision)
     imgs.forEach((img, i) => {
       sinks[i].set({ status: 'generating', error: undefined })
       items[i].status = 'generating'
@@ -355,7 +386,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
               },
               job.abort.signal,
             )
-          : await cliGenerate(prompt, count, job, onSheet)
+          : await cliGenerate(prompt, count, job, onSheet, ref ? [ref] : [])
       for (const b of rest) onSheet(b)
     } catch (e) {
       // 整张图都没出来：全部改成一张张生成，下面统一处理
@@ -385,7 +416,14 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   }
 
   /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
-  async function cliGenerate(prompt: string, count: number, job: Job, onImage: (b: Buffer) => void): Promise<Buffer[]> {
+  async function cliGenerate(
+    prompt: string,
+    count: number,
+    job: Job,
+    onImage: (b: Buffer) => void,
+    /** 一起交给模型的参考图（原画模板、要在它基础上改的原画） */
+    refs: string[] = [],
+  ): Promise<Buffer[]> {
     const settings = await getSettings()
     const cliId = settings.imageGen.cli || 'codex'
     const def = getCli(cliId)
@@ -419,10 +457,11 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       },
       cwd,
       env: childEnv(cs.env),
-      input: `请用内置的 image_gen 工具生成 ${count} 张图片（每张单独调用一次 image_gen，内容一样、细节可以不同）。不要写代码、不要运行命令、不要另存文件，生成完直接结束，不用解释。
+      input: `请用内置的 image_gen 工具生成 ${count} 张图片（每张单独调用一次 image_gen，内容一样、细节可以不同）。不要写代码、不要运行命令、不要另存文件，生成完直接结束，不用解释。${refs.length ? '\n附上的图片是参考图，按下面的要求参考它。' : ''}
 
 图片要求：
 ${prompt}`,
+      images: refs.length ? refs : undefined,
       signal: job.abort.signal,
       // 不限时长，用户随时可以停止
       timeoutMs: 0,
@@ -610,17 +649,92 @@ ${prompt}`,
     const history = d.messages.slice(0, -1)
     const project = await projectContext(d)
     let extra = ''
+    // 原画：有确认的模板就照着它做；没有模板、打开了「先出原画」时这一轮只出原画
+    const concept = conceptOf(cache.get(d.id)!)
+    const approved = concept.images.find((i) => i.id === concept.approved)
+    const conceptMarks = input.annotations.filter((a) => a.target.startsWith('concept:'))
+    // 在原画上标注了也是在改原画，不管开关
+    const mode = approved
+      ? ('template' as const)
+      : input.concept || conceptMarks.length
+        ? ('concept' as const)
+        : undefined
+    // 模板、正在看的原画直接给模型看：复制进工作目录，所有 CLI 都读得到
+    const shown = [
+      ...new Set(
+        [
+          approved?.id,
+          mode === 'concept' ? concept.selected : undefined,
+          ...conceptMarks.map((a) => a.target.slice('concept:'.length)),
+        ].filter(Boolean) as string[],
+      ),
+    ]
+    const conceptImages = (
+      await Promise.all(
+        shown.map(async (cid) => {
+          const from = conceptFile(cache.get(d.id)!, cid)
+          if (!from) return ''
+          const to = path.join(cwd, 'concepts', `${cid}${path.extname(from)}`)
+          await mkdir(path.dirname(to), { recursive: true })
+          return (await cp(from, to).then(
+            () => true,
+            () => false,
+          ))
+            ? to
+            : ''
+        }),
+      )
+    ).filter(Boolean)
     // AI 只通过设计工具（MCP）改设计，回复就是普通文字；CLI 的定义里写了怎么把工具交给它
     if (!def.mcp) throw new Error(t('{cli} 用不了设计工具，请换一个 CLI', { cli: def.name }))
-    const mcp = openDesignSession(cache.get(d.id)!, (s) => (job.preview = { ...s.state, applied: s.applied }), {
-      dir: cwd,
-      attachments: attachments.map((a) => ({ name: a.name, path: a.path })),
-      imagePath: (id) => {
-        const im = cache.get(d.id)?.images.find((i) => i.id === id)
-        const v = im?.variants[im.selected] ?? im?.variants.at(-1)
-        return v ? path.join(imagesDir(d.id), v.file) : undefined
+    const mcp = openDesignSession(
+      cache.get(d.id)!,
+      (s) => (job.preview = { ...s.state, applied: s.applied }),
+      {
+        dir: cwd,
+        attachments: attachments.map((a) => ({ name: a.name, path: a.path })),
+        imagePath: (id) => {
+          const im = cache.get(d.id)?.images.find((i) => i.id === id)
+          const v = im?.variants[im.selected] ?? im?.variants.at(-1)
+          return v ? path.join(imagesDir(d.id), v.file) : undefined
+        },
+        conceptPath: (id) => conceptFile(cache.get(d.id)!, id),
+        // 截图：把这一轮改到现在的树交给页面画出来，页面截好图交回（/capture/:cid）
+        capture: (s, target) =>
+          new Promise((resolve, reject) => {
+            const comp = target ? s.state.components.find((c) => c.Name === target) : undefined
+            const cid = randomUUID()
+            const finish = () => {
+              clearTimeout(timer)
+              captures.delete(cid)
+              if (job.capture?.id === cid) job.capture = undefined
+            }
+            const timer = setTimeout(() => {
+              finish()
+              reject(new Error('页面没有交回截图（设计页面可能没有打开）'))
+            }, CAPTURE_TIMEOUT)
+            captures.set(cid, {
+              designId: d.id,
+              resolve: (v) => {
+                finish()
+                resolve(v)
+              },
+              reject: (e) => {
+                finish()
+                reject(e)
+              },
+            })
+            job.capture = {
+              id: cid,
+              target,
+              root: comp ? comp.Root : s.state.root,
+              components: s.state.components,
+              size: comp ? comp.DesignSize : (s.designSize ?? s.design.designSize),
+            }
+          }),
       },
-    })
+      { conceptOnly: mode === 'concept' },
+    )
     const tools = mcpConfig(def.mcp, 'design', mcp.url)
     // 要配置文件的 CLI（Command Code、Gemini CLI）读工作目录里的配置
     for (const f of tools.files) {
@@ -667,16 +781,17 @@ ${prompt}`,
               history,
               withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
                 (facts.length ? `\n\n${facts.join('\n')}` : ''),
-              input.annotations,
+              input.annotations.filter((a) => !a.target.startsWith('concept:')),
               project,
               // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
               [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
+              mode ? { mode, state: concept, marks: conceptMarks } : undefined,
             ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
           // 附上的截图、参考图直接给模型看（路径也写在提示词里，需要时它还能自己读）
-          images: attachments.filter(isImageFile).map((x) => x.path),
+          images: [...attachments.filter(isImageFile).map((x) => x.path), ...conceptImages],
           onEvent: (ev) => {
             if (ev.type === 'text_delta') {
               text += ev.text
@@ -775,6 +890,7 @@ ${prompt}`,
           const fields = {
             name: im.name,
             prompt: im.prompt,
+            negative: im.negative ?? '',
             width: im.width,
             height: im.height,
             transparent: im.transparent,
@@ -808,14 +924,96 @@ ${prompt}`,
         await save(cur)
         // 存下来了，页面改用正式的设计
         job.preview = undefined
-        return ids
+        return { ids, concepts: sess.concepts }
       }
     } finally {
       mcp.close()
+      // 这一轮结束了：还在等的截图不用等了
+      for (const w of captures.values()) if (w.designId === d.id) w.reject(new Error(t('已停止')))
       // 这一轮的工作目录（附件副本、工具的配置）用完就删
       await rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
-    return []
+    return { ids: [] as string[], concepts: [] as ConceptRequest[] }
+  }
+
+  /**
+   * 出原画：每个请求出 count 张整屏效果图，存进设计的候选里；第一张到了就选中它。
+   * 在某张的基础上改（base）时，用图片 CLI 把那张一起交给模型参考
+   */
+  async function generateConcepts(d: Design, reqs: ConceptRequest[], source: ImageSource, job: Job) {
+    job.phase = 'concepts'
+    job.preview = undefined
+    job.text = ''
+    job.parts = undefined
+    const want = reqs.reduce((n, r) => n + r.count, 0)
+    const progress = { want, got: 0, text: undefined as string | undefined }
+    job.concepts = progress
+    const style = await projectStyle(d)
+    const errors: string[] = []
+    let first = true
+    for (const req of reqs) {
+      if (job.abort.signal.aborted) break
+      const cur = cache.get(d.id)!
+      const round = Math.max(0, ...conceptOf(cur).images.map((i) => i.round)) + 1
+      const ref = req.base && source.kind === 'cli' ? conceptFile(cur, req.base) : undefined
+      const prompt = conceptPrompt(req, cur.designSize, cur.style, style, cur.kind, !!ref)
+      // 存图串行：同一轮的几张按到达的顺序编号
+      let chain = Promise.resolve()
+      const add = (buf: Buffer) => {
+        chain = chain
+          .then(async () => {
+            const dd = cache.get(d.id)!
+            const want = { width: dd.designSize.X, height: dd.designSize.Y, transparent: false }
+            const stored = await storeImage(dd, normalizeGenerated(buf, want))
+            const c = conceptOf(dd)
+            const img: ConceptImage = {
+              id: `c${round}_${c.images.filter((i) => i.round === round).length + 1}`,
+              ...stored,
+              prompt: req.prompt,
+              negative: req.negative,
+              round,
+              base: req.base,
+              source: source.kind === 'browser' ? 'browser' : 'cli',
+              at: now(),
+            }
+            // 出了新的候选就回到挑图：之前确认的模板作废
+            dd.concept = {
+              images: [...c.images, img],
+              selected: first ? img.id : c.selected,
+              approved: '',
+            }
+            first = false
+            progress.got++
+            await save(dd)
+          })
+          .catch((e) => log.warn('designs', '保存原画失败', { error: (e as Error).message }))
+      }
+      try {
+        const rest =
+          source.kind === 'browser'
+            ? await browserGenerate(
+                {
+                  tabId: source.tabId,
+                  prompt,
+                  count: req.count,
+                  chroma: false,
+                  concurrency: (await getSettings()).imageGen.concurrency,
+                  onProgress: (text) => (progress.text = text),
+                  onImage: add,
+                },
+                job.abort.signal,
+              )
+            : await cliGenerate(prompt, req.count, job, add, ref ? [ref] : [])
+        for (const b of rest) add(b)
+      } catch (e) {
+        if (job.abort.signal.aborted) throw e
+        errors.push((e as Error).message)
+      }
+      await chain
+    }
+    progress.text = undefined
+    if (!progress.got)
+      throw new Error(t('原画没有生成出来：{error}', { error: errors.join('\n') || t('没有取到图片') }))
   }
 
   async function readVersions(id: string): Promise<DesignVersion[]> {
@@ -1139,6 +1337,7 @@ ${prompt}`,
           ...old,
           name: i.name,
           prompt: i.prompt,
+          negative: i.negative,
           width: i.width,
           height: i.height,
           transparent: i.transparent,
@@ -1371,6 +1570,81 @@ ${prompt}`,
       )
       return c.body(null, 204)
     })
+    // 原画：选中一张看、确认作为模板（approve，空字符串是取消确认）、删掉一张
+    .post('/:id/concept', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const body = (await c.req.json().catch(() => ({}))) as { action?: string; id?: string }
+      const cur = conceptOf(d)
+      const id = String(body.id ?? '')
+      const has = cur.images.some((i) => i.id === id)
+      if (body.action === 'select' && has) d.concept = { ...cur, selected: id }
+      else if (body.action === 'approve' && (has || !id))
+        d.concept = { ...cur, approved: id, selected: id || cur.selected }
+      else if (body.action === 'remove' && has) {
+        const img = cur.images.find((i) => i.id === id)!
+        const images = cur.images.filter((i) => i.id !== id)
+        d.concept = {
+          images,
+          selected: cur.selected === id ? (images.at(-1)?.id ?? '') : cur.selected,
+          approved: cur.approved === id ? '' : cur.approved,
+        }
+        await rm(path.join(imagesDir(d.id), img.file), { force: true }).catch(() => {})
+        // 这张图上的标注也没用了
+        d.annotations = d.annotations.filter((a) => a.target !== `concept:${id}`)
+      } else return bad(c, t('没有这张原画'), 404)
+      await save(d)
+      return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // 上传自己的原画（例如美术画好的效果图），和 AI 出的一样可以挑、标注、确认作为模板
+    .post('/:id/concept/upload', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const body = (await c.req.json().catch(() => ({}))) as { data?: string }
+      const buf = Buffer.from(String(body.data ?? '').replace(/^data:[^,]*,/, ''), 'base64')
+      if (!buf.length) return bad(c, t('没有图片数据'))
+      if (buf.length > 20 * 1024 * 1024) return bad(c, t('图片太大（最多 20 MB）'))
+      try {
+        const stored = await storeImage(d, buf)
+        const cur = conceptOf(d)
+        const round = Math.max(0, ...cur.images.map((i) => i.round)) + 1
+        const img: ConceptImage = {
+          id: `c${round}_1`,
+          ...stored,
+          prompt: '',
+          negative: '',
+          round,
+          source: 'upload',
+          at: now(),
+        }
+        d.concept = { images: [...cur.images, img], selected: img.id, approved: cur.approved }
+        await save(d)
+        return c.json({ ...d, job: view(jobs.get(d.id)) })
+      } catch (e) {
+        return bad(c, (e as Error).message)
+      }
+    })
+    // 页面交回 AI 要的画布截图（screenshot 工具）；画不出来时交回原因
+    .post('/:id/capture/:cid', async (c) => {
+      const w = captures.get(c.req.param('cid'))
+      if (!w || w.designId !== c.req.param('id')) return bad(c, t('这张截图已经不需要了'), 404)
+      const body = (await c.req.json().catch(() => ({}))) as { data?: string; rects?: unknown; error?: string }
+      if (body.error) {
+        w.reject(new Error(String(body.error).slice(0, 300)))
+        return c.json({ ok: true })
+      }
+      const png = Buffer.from(String(body.data ?? '').replace(/^data:[^,]*,/, ''), 'base64')
+      if (!png.length) return bad(c, t('没有图片数据'))
+      const rects = (Array.isArray(body.rects) ? body.rects : [])
+        .slice(0, 2000)
+        .flatMap((r: any) =>
+          r && typeof r.name === 'string'
+            ? [{ name: r.name, type: String(r.type ?? ''), x: +r.x || 0, y: +r.y || 0, w: +r.w || 0, h: +r.h || 0 }]
+            : [],
+        )
+      w.resolve({ png, rects })
+      return c.json({ ok: true })
+    })
     .post('/:id/chat', async (c) => {
       const d = await get(c.req.param('id'))
       if (!d) return bad(c, t('设计不存在'), 404)
@@ -1395,7 +1669,11 @@ ${prompt}`,
       // AI 改之前自动存一个版本，改坏了可以回去
       await addVersion(d, t('AI 修改前：{text}', { text: p.data.text.slice(0, 24) }), true)
       startJob(d, async (job) => {
-        const ids = await chat(d, p.data, job)
+        const { ids, concepts } = await chat(d, p.data, job)
+        if (concepts.length) {
+          if (p.data.source.kind === 'none') throw new Error(t('出原画要先在对话框下面选生成图片的方式'))
+          await generateConcepts(d, concepts, p.data.source, job)
+        }
         if (!ids.length || p.data.source.kind === 'none') return
         const failed = await generateImages(d, ids, p.data.source, p.data.count, job)
         if (failed.length)

@@ -43,6 +43,8 @@ export const DesignImage = z.object({
   name: z.string(),
   /** 生成用的描述 */
   prompt: z.string().default(''),
+  /** 反向提示词：图里不能出现的东西（英文，逗号分隔） */
+  negative: z.string().default(''),
   /** 在界面上的尺寸（像素），也是生成时的比例 */
   width: z.number().int().min(1).max(4096).default(256),
   height: z.number().int().min(1).max(4096).default(256),
@@ -95,6 +97,40 @@ export const DesignQuestion = z.object({
     .default([]),
 })
 export type DesignQuestion = z.infer<typeof DesignQuestion>
+
+/**
+ * 原画（效果图）：「先出原画」时先画整屏的效果图给用户挑，一轮可以出几张候选；
+ * 用户在图上标注、提意见再出下一轮，直到确认一张作为模板（approved），AI 再照着模板搭界面、出切图
+ */
+export const ConceptImage = z.object({
+  id: z.string(),
+  /** 设计目录 images/ 下的文件名 */
+  file: z.string(),
+  width: z.number().default(0),
+  height: z.number().default(0),
+  prompt: z.string().default(''),
+  negative: z.string().default(''),
+  /** 第几轮出的：同一轮的几张是一组候选 */
+  round: z.number().int().default(1),
+  /** 在哪张的基础上改的 */
+  base: z.string().optional(),
+  source: z.enum(['cli', 'browser', 'upload']),
+  at: z.string(),
+})
+export type ConceptImage = z.infer<typeof ConceptImage>
+export const ConceptState = z.object({
+  images: z.array(ConceptImage).default([]),
+  /** 正在看的那张 */
+  selected: z.string().default(''),
+  /** 确认作为模板的那张；空表示还在挑 */
+  approved: z.string().default(''),
+})
+export type ConceptState = z.infer<typeof ConceptState>
+export const emptyConcept = (): ConceptState => ({ images: [], selected: '', approved: '' })
+/** 一次最多出几张候选 */
+export const MAX_CONCEPTS = 4
+/** 图上的标注（target）指的是哪张原画 */
+export const conceptTarget = (id: string) => `concept:${id}`
 
 export const DesignMessage = z.object({
   id: z.string(),
@@ -152,6 +188,8 @@ export const Design = DesignDoc.extend({
   messages: z.array(DesignMessage).default([]),
   /** AI 改过结构就加一，页面据此换掉本地的树 */
   rev: z.number().int().default(0),
+  /** 原画：候选图和确认的模板 */
+  concept: ConceptState.default(emptyConcept),
   createdAt: z.string(),
   updatedAt: z.string(),
 })
@@ -161,6 +199,7 @@ export type Design = DesignDoc & {
   kind: DesignKind
   messages: DesignMessage[]
   rev: number
+  concept?: ConceptState
   createdAt: string
   updatedAt: string
 }
@@ -391,6 +430,8 @@ export const DesignChatInput = z.object({
     .array(z.object({ question: z.string().max(2000), answer: z.string().max(20000) }))
     .max(20)
     .optional(),
+  /** 「先出原画」开关：没有确认的模板时，这一轮只出整屏的效果图给用户挑，不搭界面 */
+  concept: z.boolean().default(false),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
 
@@ -458,10 +499,34 @@ export interface ImageJobItem {
   want: number
 }
 
+/** 生成原画的进度 */
+export interface ConceptJob {
+  want: number
+  got: number
+  /** 浏览器里的进度说明，或失败原因 */
+  text?: string
+}
+
+/**
+ * AI 要看当前画布的截图（screenshot 工具）：页面画出这棵树、截图后交回来。
+ * 带着这一轮改到现在的树，页面不用等存下来
+ */
+export interface CaptureRequest {
+  id: string
+  /** 空是主界面，否则是子控件名 */
+  target: string
+  root: Widget
+  components: Component[]
+  size: { X: number; Y: number }
+}
+
 export interface DesignJob {
   status: 'running' | 'done' | 'failed'
-  /** design：AI 在改结构；images：在生成图片 */
-  phase: 'design' | 'images'
+  /** design：AI 在改结构；concepts：在出原画；images：在生成图片 */
+  phase: 'design' | 'concepts' | 'images'
+  concepts?: ConceptJob
+  /** 等页面交回的画布截图 */
+  capture?: CaptureRequest
   /** 正在说的话 */
   text: string
   /** 这一轮的输出按顺序分段（思考、工具调用、说明），和 Agent 的输出一样依次显示 */
@@ -518,6 +583,8 @@ export const AiImage = z.object({
   height: z.number().int().min(4).max(2048),
   transparent: z.boolean().default(true),
   nineSlice: MarginSchema.optional(),
+  /** 反向提示词：这张图里不能出现的东西（英文） */
+  negative: z.string().max(2000).optional(),
   /** 同类的小图标（背包物品、技能、货币…）写成同一个 sheet：面板让图片模型把它们画在一张图上再切开，比一张张生成快很多 */
   sheet: z
     .string()
@@ -612,6 +679,8 @@ export function buildDesignPrompt(
   project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
   /** 风格库里同类（游戏 / 网页）的风格：风格还没定时可以作为选项 */
   styles: SavedStyle[] = [],
+  /** 原画：先出原画阶段（concept）还是照着确认的模板做（template） */
+  concept?: ConceptContext,
 ) {
   const brief = project ? projectPromptBrief(project.prompts) : ''
   // 整体风格定了没有：设计有风格说明，或者项目里打开了画风类的提示词
@@ -673,13 +742,17 @@ ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
 ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
-## 用 design 工具改设计
-你有 design 工具（MCP），每一步都会马上显示给用户。改动类的工具都能一次提交很多条（items 数组），**尽量少调用、每次多做**：
-- 从零搭界面：先 create_components 一次建好所有子控件，再 replace_widget 把根控件换成写好的整棵树（带全部子控件），一次调用搭完
-- 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets，把要改的全部放进同一次调用的 items
+${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
+你有 design 工具（MCP），每一次调用都会马上显示给用户。**一次输出太长会让连接中途断开、这一轮整个失败**，所以按区域分多次小步提交：
+- 每次调用最多 ${MAX_TOOL_ITEMS} 条 items、合计最多 ${MAX_TOOL_WIDGETS} 个控件（带的子控件也算）、add_images 最多 ${MAX_TOOL_IMAGES} 张，超过会被退回
+- 从零搭界面：先 create_components 建好子控件（每个子控件一次），再 replace_widget 把根控件换成只有几个大区块的骨架，然后用 add_widgets 一块一块往各区块里填，每块一次调用
+- 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets；duplicate_widgets 复制控件（重复的卡片、按钮）；wrap_widget 给控件外面套一层面板
+- 找控件：find_widgets 按名字、类型、文字找；get_tree 看某个子控件的树（in 写子控件名）
+- 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
-- 图片：add_images 一次列出所有图片，再用 update_widgets 设到控件上（"img:<图片 id>"）。同类的小图标（背包物品、技能、货币、状态图标，3 个以上）给它们写同一个 sheet（例如 "items"）：面板会让图片模型把它们画在一张图上再切开，比一张张生成快得多，每个图标仍然按各自的 width、height 精确输出
+- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。同类的小图标（背包物品、技能、货币、状态图标，3 个以上）给它们写同一个 sheet（例如 "items"）：面板让图片模型把它们画在一张图上再自动切开，比一张张生成快得多，每个图标仍然按各自的 width、height 精确输出
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
+- 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
 - 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句中文回复你做了什么
 
@@ -690,20 +763,66 @@ ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 - 横排、竖排等的插槽：{"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
 - 尺寸按设计稿 ${d.designSize.X}×${d.designSize.Y} 的像素写准；照着参考图做时先量准再换算：参考图的宽高比和设计稿一致时，参考图像素坐标 × (${d.designSize.X} ÷ 参考图宽) 就是设计稿坐标
 - 图片控件的显示尺寸和图片自己的宽高比要一致（add_images 的 width、height 就按它在界面上的显示尺寸写），否则会被拉伸变形；check 会提醒
+- 改属性：update_widgets 的 properties / slot 只写要改的字段，和原来的合并；换图就是给画刷设 {"Brush":{"ResourceObject":"img:icon_gem"}}
 
 ## 回复
-所有修改都通过 design 工具完成。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块，不要写文件，不要运行命令。
+所有修改都通过 design 工具完成，不要把整棵树写成 JSON 输出、不要写文件、不要运行命令。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块。`
+}
 
-### edit 工具的 ops
-只写要改的地方，没提到的控件和属性保持不变。控件用 Name 指定；改子控件里的内容加 "in":"<子控件名>"，主界面不写 in。按顺序执行，后面的操作能用前面加的控件。
-- 改属性：{"op":"set","target":"Txt_Title","path":"Properties.Text","value":"背包"}；path 以 Properties. 或 Slot. 开头，值是对象时只写要改的字段，例如 {"op":"set","target":"Btn_Start","path":"Slot.Padding","value":{"Top":24}}
-- 加控件：{"op":"add","parent":"MenuBox","index":0,"widget":{"Type":"TextBlock","Name":"Txt_Hint","Properties":{"Text":"按任意键继续"}}}（index 不写就放最后；widget 可以带 Children）
-- 删控件：{"op":"remove","target":"Btn_Old"}
-- 移动：{"op":"move","target":"Btn_Quit","parent":"MenuBox","index":2}
-- 改名：{"op":"rename","target":"Image_1","name":"Img_Logo"}
-- 整个换掉一个控件（连同子控件）：{"op":"replace","target":"DetailBox","widget":{…}}（不写 Slot 就沿用原来的）
-- 子控件：{"op":"addComponent","component":{"Name":"WBP_Slot","DesignSize":{"X":96,"Y":96},"Root":{…}}}、{"op":"removeComponent","name":"WBP_Slot"}、{"op":"resizeComponent","name":"WBP_Slot","size":{"X":120,"Y":120}}
-- 换图：给控件的画刷设图片，例如 {"op":"set","target":"Img_Icon","path":"Properties.Brush","value":{"ResourceObject":"img:icon_gem"}}`
+/** 每次调用设计工具最多提交的条数、控件数和图片数：一次输出太长，模型服务的连接容易中途断开 */
+export const MAX_TOOL_ITEMS = 20
+export const MAX_TOOL_WIDGETS = 30
+export const MAX_TOOL_IMAGES = 16
+
+/** 给设计 AI 的原画信息：先出原画（concept）还是照着确认的模板做（template） */
+export interface ConceptContext {
+  mode: 'concept' | 'template'
+  state: ConceptState
+  /** 用户这次在原画上的标注 */
+  marks: Annotation[]
+}
+
+function conceptSection(c: ConceptContext, d: Design) {
+  const size = `${d.designSize.X}×${d.designSize.Y}`
+  const fmt = (i: ConceptImage) =>
+    `- ${i.id}（第 ${i.round} 轮，${i.width}×${i.height}${i.base ? `，在 ${i.base} 上改的` : ''}）：${i.prompt.slice(0, 400)}${i.negative ? `\n  negative：${i.negative.slice(0, 200)}` : ''}`
+  if (c.mode === 'template') {
+    const tpl = c.state.images.find((i) => i.id === c.state.approved)!
+    return `## 已确认的效果图模板
+用户已经确认这张效果图作为最终模板：${tpl.id}（${tpl.width}×${tpl.height}，看图时 source 写 "concept:${tpl.id}"）。它的描述：${tpl.prompt.slice(0, 600)}
+照着它搭界面、出切图，界面要和模板一致：
+1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
+2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
+3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。同类的小图标（3 个以上）放进同一个 sheet 合成一张图出，面板会自动切开，不用一张张出，也不用问用户；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
+4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；最后调 check。
+- 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
+
+`
+  }
+  const sel = c.state.images.find((i) => i.id === c.state.selected)
+  return `## 现在是「先出原画」阶段
+用户打开了「先出原画」：这一轮**不要搭控件树、不要列切图**，先画整屏的效果图（原画）给用户挑，用户确认一张作为模板以后才开始搭界面和切图。
+- 调用 generate_concepts：prompt 用英文完整描述整个界面的画面（题材、整体风格、布局分区和每块放什么、主色调、材质和光影、氛围），negative 写反向提示词（不想出现的东西），count 是同时出几张候选（用户没说就出 3 张，最多 ${MAX_CONCEPTS} 张；几张之间在布局或配色上要有明显区别，方便挑）。效果图按设计稿 ${size} 的比例出。
+- 用户要在某张的基础上改（标注、提意见）时：base 写那张的 id，prompt 写改好以后的完整描述（不是只写改动），面板会把那张图作为参考一起交给图片模型；用户想要几张不同的改法时 count 写几张。
+- 想先确认题材或风格可以用 ask_user；要求已经清楚时直接出图。
+- 调用后回复一两句：这几张的思路有什么不同；用户可以在左边挑一张、在图上标注再让你改，满意了点「用这张做模板」。
+${c.state.images.length ? `\n已经出过的原画：\n${c.state.images.slice(-12).map(fmt).join('\n')}\n用户现在选中的是：${sel ? sel.id : '（没有）'}\n` : ''}${
+    c.marks.length
+      ? `\n${c.marks
+          .map((m) => m.target.slice('concept:'.length))
+          .filter((id, i, a) => a.indexOf(id) === i)
+          .map((id) => {
+            const img = c.state.images.find((i) => i.id === id)
+            const marks = c.marks.filter((m) => m.target === conceptTarget(id))
+            return img
+              ? `用户在原画 ${id} 上标出的修改（位置是图片宽高的百分比，可以直接写进 prompt）：\n${imageRevisionText('', marks, { X: img.width || d.designSize.X, Y: img.height || d.designSize.Y })}`
+              : ''
+          })
+          .filter(Boolean)
+          .join('\n\n')}\n`
+      : ''
+  }
+`
 }
 
 /** 检查 AI 的结果，补齐默认值；不合格时返回给 CLI 修正的错误 */
@@ -824,19 +943,23 @@ ${lines.join('\n')}`
  * 让它画纯绿底，扩展再抠掉（chroma 为 true 时）。
  */
 export function imagePrompt(
-  img: Pick<DesignImage, 'prompt' | 'width' | 'height' | 'transparent' | 'nineSlice'>,
+  img: Pick<DesignImage, 'prompt' | 'width' | 'height' | 'transparent' | 'nineSlice'> & { negative?: string },
   style: string,
   chroma: boolean,
   /** 项目提示词的英文（projectPromptText），整个项目统一 */
   projectStyle = '',
   /** 网页 UI 的图（插图、头像、图标）和游戏 UI 的描述不一样 */
   kind: DesignKind = 'game',
+  /** 生成时一起交给图片模型的参考图（确认的原画模板） */
+  reference = false,
 ) {
   const ratio = aspect(img.width, img.height)
   const parts = [
     kind === 'web' ? `Image for a web page: ${img.prompt.trim()}` : `Game UI asset: ${img.prompt.trim()}`,
+    kind === 'web' ? WEB_QUALITY : GAME_QUALITY,
     projectStyle.trim(),
     style ? `${projectStyle.trim() ? 'Additional style for this screen' : 'Art style'}: ${style.trim()}` : '',
+    reference ? REFERENCE_NOTE : '',
     kind === 'web'
       ? `Aspect ratio ${ratio} (about ${img.width}x${img.height} px). The image fills the whole canvas, no text, no watermark, no browser window or device mockup around it.`
       : `Aspect ratio ${ratio} (about ${img.width}x${img.height} px). One single isolated UI element, centered, filling the canvas, no text, no watermark, no mockup or screen around it.`,
@@ -848,6 +971,60 @@ export function imagePrompt(
         ? 'Background: perfectly flat pure green #00FF00 everywhere outside the element (chroma key), no shadows or gradients on the background, do not use green inside the element.'
         : 'Transparent background (alpha), nothing outside the element.'
       : '',
+    negativeLine(kind === 'web' ? WEB_NEGATIVE : GAME_NEGATIVE, img.negative),
+  ]
+  return parts.filter(Boolean).join('\n')
+}
+
+/**
+ * 生产级出图的正向要求：图片模型默认出的东西偏「插画、海报」，要明确说这是交给引擎用的资源。
+ * 反向提示词：网页版的图片模型没有单独的反向参数，写成「不能出现」的一行，效果最稳
+ */
+const GAME_QUALITY =
+  'Production-ready game UI asset, as delivered by a senior game UI artist for direct use in the engine: crisp clean edges, precise readable silhouette, consistent soft top-left lighting, rich but controlled detail that stays readable at the target size, high resolution, sharp focus, clean flat-on front view.'
+const WEB_QUALITY =
+  'Production-ready image for a shipped website: professional, polished, high resolution, sharp focus, clean composition with breathing room, consistent lighting and color grading.'
+const GAME_NEGATIVE =
+  'text, letters, numbers, words, watermark, signature, logo, UI mockup, screenshot, full screen layout, extra unrelated elements, cropped, cut off, out of frame, blurry, low resolution, pixelated, jpeg artifacts, noise, grain, chromatic aberration, depth of field, perspective tilt, photo background, messy sketch lines, unfinished, inconsistent lighting, deformed or warped shapes'
+const WEB_NEGATIVE =
+  'text, letters, watermark, signature, logo, browser window, device frame, screenshot, cropped, blurry, low resolution, pixelated, jpeg artifacts, noise, oversaturated, distorted, deformed, cluttered composition'
+const REFERENCE_NOTE =
+  'The attached image is the approved concept art of the whole screen: match its art style, materials, colors, lighting and level of detail exactly, but draw only the single element described here, cleanly isolated (not cropped from the screenshot).'
+const negativeLine = (...lists: (string | undefined)[]) => {
+  const all = lists.flatMap((l) => (l ?? '').split(',')).map((x) => x.trim())
+  const uniq = [...new Set(all.filter(Boolean).map((x) => x.toLowerCase()))]
+  return uniq.length ? `Negative prompt (none of these may appear): ${uniq.join(', ')}.` : ''
+}
+
+/**
+ * 原画（整屏效果图）的生成描述：按设计稿的比例画出完整的界面，正面平视、没有设备边框；
+ * reference 表示带着上一张图一起交给图片模型，在它的基础上改
+ */
+export function conceptPrompt(
+  c: { prompt: string; negative?: string },
+  size: { X: number; Y: number },
+  style: string,
+  projectStyle = '',
+  kind: DesignKind = 'game',
+  reference = false,
+) {
+  const parts = [
+    kind === 'web'
+      ? `Website UI design concept: a complete, polished page design shown at ${size.X}x${size.Y} (aspect ratio ${aspect(size.X, size.Y)}). ${c.prompt.trim()}`
+      : `Game UI concept art: a complete, polished in-game screen mockup at ${size.X}x${size.Y} (aspect ratio ${aspect(size.X, size.Y)}). ${c.prompt.trim()}`,
+    'Shown exactly as the final screen looks on the display: flat front-on view filling the whole canvas, no device frame, no monitor, no perspective angle, no hands or people.',
+    kind === 'web'
+      ? 'Production quality UI design: clear visual hierarchy, consistent component styling, aligned grid, generous whitespace, legible typography hierarchy shown with short placeholder text.'
+      : 'Production quality game UI art direction: clear visual hierarchy, every panel, frame, button, icon and decoration in one consistent art style, clean alignment and spacing, readable at a glance, layered depth with subtle shadows and highlights. Labels are short and legible or suggested with simple lines.',
+    projectStyle.trim(),
+    style ? `${projectStyle.trim() ? 'Additional style for this screen' : 'Art style'}: ${style.trim()}` : '',
+    reference
+      ? 'The attached image is the previous version of this screen: keep its layout, composition and everything not mentioned, and apply only the described changes.'
+      : '',
+    negativeLine(
+      'watermark, signature, device frame, monitor bezel, photo of a screen, perspective angle, blurry, low resolution, jpeg artifacts, cluttered overlapping elements, misaligned layout, inconsistent styles, distorted icons, gibberish text, long paragraphs of text',
+      c.negative,
+    ),
   ]
   return parts.filter(Boolean).join('\n')
 }
@@ -863,11 +1040,13 @@ export function sheetGrid(n: number, cell: { width: number; height: number }) {
  * chroma 时用纯绿底（面板再抠成透明）
  */
 export function sheetPrompt(
-  imgs: Pick<DesignImage, 'prompt' | 'width' | 'height' | 'transparent'>[],
+  imgs: (Pick<DesignImage, 'prompt' | 'width' | 'height' | 'transparent'> & { negative?: string })[],
   style: string,
   chroma: boolean,
   projectStyle = '',
   kind: DesignKind = 'game',
+  /** 带着确认的原画模板一起交给图片模型 */
+  reference = false,
 ) {
   const cell = {
     width: Math.max(...imgs.map((i) => i.width)),
@@ -879,8 +1058,12 @@ export function sheetPrompt(
     `Icon sprite sheet for ${kind === 'web' ? 'a web page' : 'a game UI'}: ${imgs.length} separate icons laid out in a strict grid of ${cols} columns × ${rows} rows, aspect ratio ${aspect(cols * cell.width, rows * cell.height)}, the grid fills the whole canvas.`,
     'Every cell is the same size. Each icon is centered in its own cell, fully inside it with about 12% empty margin on every side; nothing touches or crosses a cell border. No grid lines, frames around cells, numbers, labels or text anywhere.',
     'All icons look like one matching set: identical art style, outline weight, lighting direction, color treatment and level of detail.',
+    kind === 'web' ? WEB_QUALITY : GAME_QUALITY,
     projectStyle.trim(),
     style ? `${projectStyle.trim() ? 'Additional style for this screen' : 'Art style'}: ${style.trim()}` : '',
+    reference
+      ? 'The attached image is the approved concept art of the whole screen: match its art style, materials, colors and lighting exactly, but draw each icon cleanly isolated in its own cell.'
+      : '',
     transparent
       ? chroma
         ? 'Background: perfectly flat pure green #00FF00 everywhere outside the icons (chroma key), no shadows, gradients or texture on the background, do not use green inside any icon.'
@@ -888,6 +1071,11 @@ export function sheetPrompt(
       : 'Background: plain flat neutral color, identical in every cell.',
     `Icons in order, row by row starting at the top-left, left to right:\n${imgs.map((i, k) => `${k + 1}. ${i.prompt.trim()}`).join('\n')}`,
     imgs.length < cols * rows ? 'Leave the unused cells at the end empty (background only).' : '',
+    negativeLine(
+      kind === 'web' ? WEB_NEGATIVE : GAME_NEGATIVE,
+      'grid lines, cell borders, icons touching each other, icons crossing cell borders',
+      ...imgs.map((i) => i.negative),
+    ),
   ]
   return parts.filter(Boolean).join('\n')
 }

@@ -2,6 +2,7 @@ import {
   WIDGETS,
   type SlotType,
   allNames,
+  cloneWidget,
   deepMerge,
   findParent,
   insertWidget,
@@ -11,8 +12,10 @@ import {
   pathTo,
   removeWidget,
   walk,
+  wrapWidget,
   type Component,
   type Widget,
+  type WidgetType,
 } from './umg.ts'
 
 /**
@@ -29,6 +32,8 @@ export type DesignOp =
   | { op: 'move'; in?: string; target: string; parent: string; index?: number }
   | { op: 'rename'; in?: string; target: string; name: string }
   | { op: 'replace'; in?: string; target: string; widget: unknown }
+  | { op: 'duplicate'; in?: string; target: string; name?: string; parent?: string; index?: number }
+  | { op: 'wrap'; in?: string; target: string; type: string; name?: string }
   | { op: 'addComponent'; component: { Name: string; DesignSize?: { X: number; Y: number }; Root: unknown } }
   | { op: 'removeComponent'; name: string }
   | { op: 'resizeComponent'; name: string; size: { X: number; Y: number } }
@@ -304,6 +309,42 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
         new Set(names),
       )
       return done(w.id === root.id ? next : mapWidget(root, w.id, () => next))
+    }
+    case 'duplicate': {
+      // 复制一份（连同子控件）：默认放在原来的后面，名字自动加序号；name 给新的根改名
+      const w = need(op.target)
+      if (typeof w === 'string') return { error: w }
+      if (w.id === root.id) return { error: '不能复制根控件' }
+      const p = op.parent ? need(op.parent) : findParent(root, w.id)
+      if (typeof p === 'string') return { error: p }
+      if (!p || !WIDGETS[p.Type]?.slot) return { error: `${p?.Name ?? ''} 不能放子控件` }
+      if (WIDGETS[p.Type].children === 'one' && p.Children?.length) return { error: `${p.Name} 只能放一个子控件` }
+      const names = allNames(root)
+      if (op.name && !/^[A-Za-z_][A-Za-z0-9_]*$/.test(op.name))
+        return { error: `控件名要用英文、数字和下划线：${op.name}` }
+      if (op.name && names.has(op.name)) return { error: `${inTree}已经有叫 ${op.name} 的控件` }
+      const c = cloneWidget(w, names)
+      if (op.name) c.Name = op.name
+      const at =
+        typeof op.index === 'number'
+          ? op.index
+          : p.id === findParent(root, w.id)?.id
+            ? p.Children!.findIndex((x) => x.id === w.id) + 1
+            : undefined
+      return done(insertWidget(root, p.id, c, at))
+    }
+    case 'wrap': {
+      // 外面套一层面板：新面板接过原来的位置和大小
+      const w = need(op.target)
+      if (typeof w === 'string') return { error: w }
+      const type = String(op.type ?? '') as WidgetType
+      if (!WIDGETS[type]?.slot)
+        return { error: `wrap 的 type 要是能放子控件的面板（例如 Overlay、SizeBox、Border），不能是 ${type}` }
+      const names = allNames(root)
+      if (op.name && names.has(op.name)) return { error: `${inTree}已经有叫 ${op.name} 的控件` }
+      const r = wrapWidget(root, w.id, type, names)
+      if (r.root === root) return { error: `${type} 不能用来包裹控件` }
+      return done(op.name ? mapWidget(r.root, r.id, (x) => ({ ...x, Name: op.name! })) : r.root)
     }
     default:
       return { error: `不认识的操作 ${(op as any).op}` }
