@@ -5,6 +5,8 @@ import type {
   CliLimits,
   CliSkill,
   SlashCommand,
+  CliAccounts,
+  LoginJob,
   CliModels,
   CliUpdate,
   Agent,
@@ -24,6 +26,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { ApiConfig } from '@shared/accounts'
 import type {
   BrowserStatus,
   Design,
@@ -94,6 +97,21 @@ export const api = {
   cliJob: (jobId: string) => request<CliInstallJob>(`/clis/jobs/${jobId}`),
   cliUpdate: (id: string, refresh = false) => request<CliUpdate>(`/clis/${id}/update${refresh ? '?refresh=1' : ''}`),
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
+  accounts: () => request<CliAccounts[]>('/accounts'),
+  loginStart: (cli: string) => request<LoginJob>(`/accounts/${cli}/login`, json('POST', {})),
+  loginStatus: (cli: string) => request<LoginJob | null>(`/accounts/${cli}/login`),
+  loginInput: (cli: string, text: string) =>
+    request<{ ok: true }>(`/accounts/${cli}/login/input`, json('POST', { text })),
+  loginCancel: (cli: string) => request<{ ok: true }>(`/accounts/${cli}/login`, { method: 'DELETE' }),
+  saveAccount: (cli: string, name = '') => request<CliAccounts>(`/accounts/${cli}/save`, json('POST', { name })),
+  switchAccount: (cli: string, id: string) => request<CliAccounts>(`/accounts/${cli}/switch`, json('POST', { id })),
+  logoutAccount: (cli: string) => request<CliAccounts>(`/accounts/${cli}/logout`, json('POST', {})),
+  renameAccount: (cli: string, id: string, name: string) =>
+    request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, json('PATCH', { name })),
+  deleteAccount: (cli: string, id: string) =>
+    request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
+  apiModels: (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
+    request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
   cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
   /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */

@@ -156,5 +156,41 @@
         }
       }
     }
+  },
+  "auth": {
+    "login": ["login"],
+    "home": "~/.commandcode",
+    "files": ["auth.json"],
+    "identity": "none",
+    "api": {
+      "protocols": ["anthropic", "openai-responses", "openai-chat"],
+      "env": {
+        "AGENT_PANEL_API_KEY": "{apiKey}"
+      },
+      "wire": {
+        "anthropic": "anthropic-messages",
+        "openai-responses": "openai-responses",
+        "openai-chat": "openai-completions"
+      },
+      "edits": [
+        {
+          "file": "~/.commandcode/settings.json",
+          "set": {
+            "provider.agentpanel": {
+              "baseURL": "{baseUrl}",
+              "apiKey": "$AGENT_PANEL_API_KEY",
+              "api": "{wire}",
+              "models": "{models}"
+            }
+          }
+        }
+      ],
+      "accountEdits": [
+        {
+          "file": "~/.commandcode/settings.json",
+          "unset": ["provider.agentpanel"]
+        }
+      ]
+    }
   }
 }

@@ -8,6 +8,7 @@
 import { z } from 'zod'
 import type { BuildOptions, CliDefinition, ModelTier } from './clis.ts'
 import { getLang, t } from './i18n.ts'
+import { CliAuth } from './accounts.ts'
 
 const Tier = z.object({ model: z.string().default(''), effort: z.string().default('') })
 
@@ -139,6 +140,8 @@ export const CliSpec = z.object({
    * （路径 → JSON 内容）。里面的 {url} 换成工具地址，{name} 换成工具名。不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
+  /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
+  auth: CliAuth.optional(),
   /** 界面文案的翻译：{ "en": { "中文": "English" } } */
   i18n: z.record(z.string(), z.record(z.string(), z.string())).default({}),
 })
@@ -253,6 +256,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     color: spec.color,
     envExample: spec.envExample,
     mcp: spec.mcp,
+    auth: spec.auth,
     spec: true,
   }
 }

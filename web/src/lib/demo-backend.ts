@@ -2,6 +2,7 @@
  * 在线演示版的「后端」：在浏览器里实现和 server/index.ts 相同的接口，数据存在 localStorage。
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
+import { demoAccounts } from './demo-accounts'
 import { z } from 'zod'
 import {
   Agent,
@@ -647,6 +648,7 @@ function route(method: string, url: string, body: unknown): unknown {
     persist()
     return Settings.parse((d.settings ??= Settings.parse({})))
   }
+  if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'clis') {
     if (id === 'jobs' && !sub) {
       const latest = new Map<string, CliInstallJob>()

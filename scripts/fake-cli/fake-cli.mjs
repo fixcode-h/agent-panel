@@ -6,7 +6,7 @@
  * 任务描述里包含 FAIL 会以退出码 1 结束；包含 SLOW 会慢慢输出，方便测试「停止」。
  * 设置环境变量 FAKE_CLI_LOG 后，每次调用的参数、目录和 stdin 会追加写进这个文件。
  */
-import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -23,6 +23,41 @@ const kind =
         ? 'claude'
         : 'gemini'
       : 'commandcode'
+// 登录：按 FAKE_AUTH 把凭据文件写到各个 CLI 放凭据的地方（每次登录换一个邮箱），打印一个登录网址
+const isLogin =
+  (args[0] === 'auth' && args[1] === 'login') || args[0] === 'login' || (args[0] === '-p' && args[1] === 'hello')
+if (isLogin && process.env.FAKE_AUTH) {
+  const home = process.env.HOME
+  const counter = `${process.env.FAKE_CLI_LOG}.login`
+  const n = (existsSync(counter) ? Number(readFileSync(counter, 'utf8')) : 0) + 1
+  writeFileSync(counter, String(n))
+  const email = `fake${n}@example.com`
+  const put = (file, content) => {
+    mkdirSync(path.dirname(file), { recursive: true })
+    writeFileSync(file, typeof content === 'string' ? content : JSON.stringify(content))
+  }
+  process.stderr.write('Starting local login server on http://localhost:1455\n')
+  process.stderr.write(`Open this URL in your browser: https://example.com/oauth/authorize?n=${n}\n`)
+  await new Promise((r) => setTimeout(r, 300))
+  const kind = process.env.FAKE_AUTH
+  if (kind === 'codex') {
+    const jwt = `x.${Buffer.from(JSON.stringify({ email })).toString('base64url')}.y`
+    put(path.join(process.env.CODEX_HOME || path.join(home, '.codex'), 'auth.json'), { tokens: { id_token: jwt, n } })
+  } else if (kind === 'claude') {
+    const dir = process.env.CLAUDE_CONFIG_DIR || path.join(home, '.claude')
+    put(path.join(dir, '.credentials.json'), { claudeAiOauth: { accessToken: `tok-${n}` } })
+    const file = path.join(process.env.CLAUDE_CONFIG_DIR || home, '.claude.json')
+    const cur = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : {}
+    put(file, { ...cur, oauthAccount: { emailAddress: email, organizationName: 'Org' } })
+  } else if (kind === 'gemini') {
+    const dir = path.join(process.env.GEMINI_CLI_HOME || home, '.gemini')
+    put(path.join(dir, 'oauth_creds.json'), { access_token: `tok-${n}` })
+    put(path.join(dir, 'google_accounts.json'), { active: email, old: [] })
+  } else put(path.join(home, '.commandcode', 'auth.json'), { apiKey: `key-${n}` })
+  // Gemini CLI 这样登录后会接着跑那条提示，不自己退出：让面板看到凭据变了就停掉它
+  if (kind === 'gemini') await new Promise((r) => setTimeout(r, 20_000))
+  process.exit(0)
+}
 if (args.includes('--version')) {
   // 假 npm 「更新」过以后报告新版本
   let ver = '0.0.1'
@@ -175,9 +210,16 @@ if (process.env.FAKE_CLI_LOG) {
     kind === 'codex'
       ? { resume: appResume, developer, ...policy, op: appOp, fork: appFork, reviewTarget }
       : { compactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }
+  // 用 API 时交给 CLI 的环境变量：测试检查接口地址和密钥传进来了
+  const apiEnv = {
+    anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
+    agentpanel: process.env.AGENT_PANEL_API_KEY,
+    gemini: [process.env.GEMINI_API_KEY, process.env.GOOGLE_GEMINI_BASE_URL],
+  }
   appendFileSync(
     log,
-    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, pid: process.pid, start: Date.now() }) + '\n',
+    JSON.stringify({ kind, args, cwd: process.cwd(), input, ...extra, apiEnv, pid: process.pid, start: Date.now() }) +
+      '\n',
   )
   // 结束时间单独记一个文件，用来检查并行节点是否真的同时运行
   process.on('exit', () => appendFileSync(`${log}.end`, JSON.stringify({ pid: process.pid, end: Date.now() }) + '\n'))

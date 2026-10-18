@@ -6,6 +6,7 @@ import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
+import { prepareAuth } from '../accounts.ts'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -70,6 +71,8 @@ async function invoke(
   setControl: (c: CliControl) => void,
   signal: AbortSignal,
 ): Promise<ProcessResult> {
+  // 按这个 CLI 现在用账号还是 API，先把它的配置文件改成对应的样子
+  await prepareAuth(o.cliId)
   const args = def.buildArgs(o.build)
   const toJson = (line: string) => {
     const t = line.trim()

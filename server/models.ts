@@ -318,9 +318,23 @@ async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'acc
 export async function cliModels(id: string, refresh = false): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
   if (!def) throw new Error(t('未知的 CLI：{cli}', { cli: id }))
+  const cs = cliSettings(await getSettings(), id)
+  // API 模式：只列这个 API 里配的模型（用账号时才列 CLI 自己读到的）
+  if (cs.api)
+    return {
+      source: 'builtin',
+      models: cs.api.models.map((m, i) => ({
+        id: m,
+        label: m,
+        isDefault: i === 0 || undefined,
+        origin: 'config' as const,
+      })),
+      efforts: [],
+      auth: 'api',
+      from: cs.api.name,
+    }
   const hit = cache.get(id)
   if (!refresh && hit && Date.now() - hit.at < TTL) return hit.data
-  const cs = cliSettings(await getSettings(), id)
   const env = childEnv(cs.env)
   let data: CliModels
   // 没安装或停用的 CLI 不去启动它读模型，用内置列表

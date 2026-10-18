@@ -1,0 +1,130 @@
+import { z } from 'zod'
+
+/**
+ * 账号和 API：每个 CLI 可以用「账号」（浏览器登录的订阅账号）或「API」（全局设置里配的接口 + 密钥）。
+ * 这里是前后端共用的结构，和怎么把 API 交给各个 CLI 的规则（写在 CLI 的定义里，见 shared/clis.ts）。
+ */
+
+/** API 的协议：决定哪些 CLI 能用它 */
+export const API_PROTOCOLS = ['anthropic', 'openai-responses', 'openai-chat', 'gemini'] as const
+export type ApiProtocol = (typeof API_PROTOCOLS)[number]
+
+export const API_PROTOCOL_LABEL: Record<ApiProtocol, string> = {
+  anthropic: 'Anthropic Messages',
+  'openai-responses': 'OpenAI Responses',
+  'openai-chat': 'OpenAI Chat Completions',
+  gemini: 'Gemini',
+}
+
+/** 全局设置里的一个 API：接口地址、密钥和可用的模型 */
+export const ApiConfig = z.object({
+  id: z.string().min(1),
+  name: z.string().trim().min(1).max(60),
+  protocol: z.enum(API_PROTOCOLS).default('openai-chat'),
+  baseUrl: z.string().trim().default(''),
+  apiKey: z.string().default(''),
+  /** Anthropic 协议：密钥用哪种方式带（x-api-key，或 Authorization: Bearer） */
+  authHeader: z.enum(['x-api-key', 'bearer']).default('x-api-key'),
+  /** 这个 API 可用的模型（可以从接口读取，也可以自己填）；第一个是默认 */
+  models: z.array(z.string().trim().min(1)).default([]),
+})
+export type ApiConfig = z.infer<typeof ApiConfig>
+
+/** 改 JSON 配置文件里的一些键：set 的键可以写成 a.b.c；值里的 {baseUrl} 等占位见 fillTemplate */
+export const JsonEdit = z.object({
+  file: z.string().min(1),
+  set: z.record(z.string(), z.unknown()).default({}),
+  unset: z.array(z.string()).default([]),
+})
+export type JsonEdit = z.infer<typeof JsonEdit>
+
+/** CLI 怎么用账号登录、凭据存在哪、怎么改用 API */
+export const CliAuth = z.object({
+  /** 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录 */
+  login: z.array(z.string()).default([]),
+  /** 登录时从 stdin 写进去的内容（例如要确认的 y） */
+  loginStdin: z.string().default(''),
+  /** 登录前先改的配置（例如 Gemini CLI 要先选登录方式） */
+  loginEdits: z.array(JsonEdit).default([]),
+  /** 凭据所在的目录：~ 是用户目录，${ENV:-默认值} 先取环境变量 */
+  home: z.string().min(1),
+  /** 凭据文件（相对 home）：保存账号就是把它们存起来，切换账号就是写回去 */
+  files: z.array(z.string()).default([]),
+  /** 其他 JSON 文件里属于账号的键（例如 Claude Code 在 .claude.json 里记着账号信息） */
+  fields: z.array(z.object({ file: z.string(), keys: z.array(z.string()) })).default([]),
+  /** macOS 钥匙串里的条目名（Claude Code 在 macOS 上把凭据放在钥匙串） */
+  keychain: z.string().default(''),
+  /** 从凭据里认出是哪个账号（邮箱）的方式；none 表示认不出，用保存时起的名字 */
+  identity: z.enum(['claude', 'codex', 'gemini', 'none']).default('none'),
+  /** 改用 API 时怎么交给 CLI */
+  api: z
+    .object({
+      /** 能用哪些协议的 API */
+      protocols: z.array(z.enum(API_PROTOCOLS)).min(1),
+      /** 加的环境变量；值为空的不加 */
+      env: z.record(z.string(), z.string()).default({}),
+      /** 加的命令行参数 */
+      args: z.array(z.string()).default([]),
+      /** 改用 API 时要改的配置文件 */
+      edits: z.array(JsonEdit).default([]),
+      /** 改回账号时要还原的配置文件 */
+      accountEdits: z.array(JsonEdit).default([]),
+      /** 协议在这个 CLI 配置里的写法，用 {wire} 引用 */
+      wire: z.record(z.string(), z.string()).default({}),
+    })
+    .optional(),
+})
+export type CliAuth = z.infer<typeof CliAuth>
+
+/**
+ * 填占位：{baseUrl}、{apiKey}、{name}、{id}、{protocol}、{wire}、{keyEnv}（Anthropic 协议按 authHeader 选 ANTHROPIC_API_KEY 或
+ * ANTHROPIC_AUTH_TOKEN）；{x|json} 填成 JSON 字符串（带引号，写进 TOML 参数时用）。
+ * 整个值正好是 {models} 时换成 { 模型: {} } 的对象
+ */
+export function apiVars(api: ApiConfig, wire: Record<string, string> = {}) {
+  return {
+    baseUrl: api.baseUrl,
+    apiKey: api.apiKey,
+    name: api.name,
+    id: api.id,
+    protocol: api.protocol,
+    wire: wire[api.protocol] ?? api.protocol,
+    keyEnv: api.authHeader === 'bearer' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY',
+  } as Record<string, string>
+}
+
+export function fillTemplate(s: string, vars: Record<string, string>) {
+  return s.replace(/\{(\w+)(\|json)?\}/g, (m, k: string, json?: string) =>
+    k in vars ? (json ? JSON.stringify(vars[k]) : vars[k]) : m,
+  )
+}
+
+function fillValue(v: unknown, vars: Record<string, string>, api: ApiConfig): unknown {
+  if (typeof v === 'string')
+    return v === '{models}' ? Object.fromEntries(api.models.map((m) => [m, {}])) : fillTemplate(v, vars)
+  if (Array.isArray(v)) return v.map((x) => fillValue(x, vars, api))
+  if (v && typeof v === 'object')
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [fillTemplate(k, vars), fillValue(x, vars, api)]))
+  return v
+}
+
+/** 这个 CLI 能不能用这个 API（协议对得上） */
+export const apiFits = (auth: CliAuth | undefined, api: ApiConfig | undefined) =>
+  !!auth?.api && !!api && auth.api.protocols.includes(api.protocol)
+
+/** 用 API 时要加给 CLI 的环境变量、参数和要改的配置文件 */
+export function apiInjection(auth: CliAuth, api: ApiConfig) {
+  const spec = auth.api!
+  const vars = apiVars(api, spec.wire)
+  return {
+    env: Object.entries(spec.env)
+      .map(([k, v]) => ({ key: fillTemplate(k, vars), value: fillTemplate(v, vars) }))
+      .filter((e) => e.key && e.value),
+    args: spec.args.map((a) => fillTemplate(a, vars)),
+    edits: spec.edits.map((e) => ({
+      file: e.file,
+      set: fillValue(e.set, vars, api) as Record<string, unknown>,
+      unset: e.unset,
+    })),
+  }
+}

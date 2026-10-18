@@ -228,5 +228,43 @@
         }
       }
     }
+  },
+  "auth": {
+    "login": ["-p", "hello"],
+    "loginStdin": "y\n",
+    "loginEdits": [
+      {
+        "file": "${GEMINI_CLI_HOME:-~}/.gemini/settings.json",
+        "set": {
+          "security.auth.selectedType": "oauth-personal"
+        }
+      }
+    ],
+    "home": "${GEMINI_CLI_HOME:-~}/.gemini",
+    "files": ["oauth_creds.json", "google_accounts.json"],
+    "identity": "gemini",
+    "api": {
+      "protocols": ["gemini"],
+      "env": {
+        "GEMINI_API_KEY": "{apiKey}",
+        "GOOGLE_GEMINI_BASE_URL": "{baseUrl}"
+      },
+      "edits": [
+        {
+          "file": "${GEMINI_CLI_HOME:-~}/.gemini/settings.json",
+          "set": {
+            "security.auth.selectedType": "gemini-api-key"
+          }
+        }
+      ],
+      "accountEdits": [
+        {
+          "file": "${GEMINI_CLI_HOME:-~}/.gemini/settings.json",
+          "set": {
+            "security.auth.selectedType": "oauth-personal"
+          }
+        }
+      ]
+    }
   }
 }

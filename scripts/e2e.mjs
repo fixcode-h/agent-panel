@@ -18,6 +18,8 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fake = path.join(root, 'scripts/fake-cli/fake-cli.mjs')
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-e2e-'))
 const dataDir = path.join(tmp, 'data')
+const homeDir = path.join(tmp, 'home')
+mkdirSync(homeDir, { recursive: true })
 const projectDir = path.join(tmp, 'project')
 const log = path.join(tmp, 'calls.jsonl')
 const port = 8900 + Math.floor(Math.random() * 90)
@@ -129,6 +131,12 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
   env: {
     ...process.env,
     AGENT_PANEL_DATA: dataDir,
+    // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex
+    HOME: homeDir,
+    USERPROFILE: homeDir,
+    CLAUDE_CONFIG_DIR: '',
+    CODEX_HOME: '',
+    GEMINI_CLI_HOME: '',
     // 断言里用的是中文提示，固定用中文界面跑
     LANG: 'zh_CN.UTF-8',
     PORT: String(port),
@@ -2924,6 +2932,293 @@ try {
     assert.ok(!docs.files.find((f) => f.path === 'AGENTS.md').exists, '优化不直接写文件')
     rmSync(path.join(projectDir, '.claude'), { recursive: true })
     step('项目说明文件：读写、拒绝白名单外的路径、AI 优化')
+  }
+
+  // ---- 账号和 API：登录、保存、切换、登出；用 API 时把地址和密钥交给 CLI，模型只列这个 API 的 ----
+  {
+    const base0 = await call('GET', '/settings')
+    const withAuth = (extra = {}) => ({
+      ...base0,
+      ...extra,
+      clis: Object.fromEntries(
+        ['claude', 'codex', 'commandcode', 'gemini'].map((id) => [
+          id,
+          { ...base0.clis[id], env: [{ key: 'FAKE_AUTH', value: id }], ...(extra.clis?.[id] ?? {}) },
+        ]),
+      ),
+    })
+    await call('PUT', '/settings', withAuth())
+    const list = async (cli) => (await call('GET', '/accounts')).find((x) => x.cli === cli)
+    const waitLogin = async (cli) => {
+      for (let i = 0; i < 100; i++) {
+        const j = await call('GET', `/accounts/${cli}/login`)
+        if (j && j.status !== 'running') return j
+        await sleep(150)
+      }
+      throw new Error('登录没有结束')
+    }
+    assert.deepEqual(
+      (await call('GET', '/accounts')).map((x) => [x.cli, x.live.loggedIn, x.accounts.length]),
+      [
+        ['claude', false, 0],
+        ['codex', false, 0],
+        ['commandcode', false, 0],
+        ['gemini', false, 0],
+      ],
+      '一开始都没登录',
+    )
+    // Codex：登录两个账号，凭据文件换成新的，之前的自动存下来
+    const authFile = path.join(homeDir, '.codex', 'auth.json')
+    const emailOf = () =>
+      JSON.parse(Buffer.from(JSON.parse(readFileSync(authFile, 'utf8')).tokens.id_token.split('.')[1], 'base64url'))
+        .email
+    let j = await call('POST', '/accounts/codex/login')
+    assert.equal(j.status, 'running')
+    j = await waitLogin('codex')
+    assert.equal(j.status, 'done', JSON.stringify(j))
+    assert.match(j.url, /^https:\/\/example\.com\/oauth\/authorize/, '登录网址（localhost 的回调地址不算）')
+    let c = await list('codex')
+    assert.deepEqual(
+      [c.live.loggedIn, c.live.email, c.unsaved, c.accounts.map((a) => [a.email, a.active])],
+      [true, 'fake1@example.com', false, [['fake1@example.com', true]]],
+    )
+    await call('POST', '/accounts/codex/login')
+    assert.equal((await waitLogin('codex')).status, 'done')
+    c = await list('codex')
+    assert.deepEqual(
+      c.accounts.map((a) => [a.email, a.active]),
+      [
+        ['fake1@example.com', false],
+        ['fake2@example.com', true],
+      ],
+      '登录第二个账号：第一个还在，第二个是现在用的',
+    )
+    assert.equal(emailOf(), 'fake2@example.com')
+    // 切换回第一个：凭据文件换回去
+    const first = c.accounts[0]
+    c = await call('POST', '/accounts/codex/switch', { id: first.id })
+    assert.equal(emailOf(), 'fake1@example.com')
+    assert.deepEqual(
+      c.accounts.map((a) => a.active),
+      [true, false],
+    )
+    // 改名、登出（凭据文件没了，账号还在）、再切回来
+    c = await call('PATCH', `/accounts/codex/accounts/${first.id}`, { name: '工作号' })
+    assert.equal(c.accounts[0].name, '工作号')
+    c = await call('POST', '/accounts/codex/logout')
+    assert.deepEqual([c.live.loggedIn, c.accounts.length, existsSync(authFile)], [false, 2, false])
+    c = await call('POST', '/accounts/codex/switch', { id: first.id })
+    assert.deepEqual([c.live.loggedIn, c.live.email, emailOf()], [true, 'fake1@example.com', 'fake1@example.com'])
+    c = await call('DELETE', `/accounts/codex/accounts/${c.accounts[1].id}`)
+    assert.equal(c.accounts.length, 1)
+    // Claude Code：除了凭据文件，账号信息在 .claude.json 的 oauthAccount 里，别的内容不动；登出后只去掉它
+    const claudeJson = path.join(homeDir, '.claude.json')
+    writeFileSync(claudeJson, JSON.stringify({ userID: 'u-1', theme: 'dark' }))
+    await call('POST', '/accounts/claude/login')
+    assert.equal((await waitLogin('claude')).status, 'done')
+    c = await list('claude')
+    assert.deepEqual([c.live.email, c.accounts.length], ['fake3@example.com', 1])
+    assert.equal(JSON.parse(readFileSync(claudeJson, 'utf8')).userID, 'u-1', '.claude.json 里别的内容原样保留')
+    await call('POST', '/accounts/claude/logout')
+    const left = JSON.parse(readFileSync(claudeJson, 'utf8'))
+    assert.deepEqual(
+      [left.oauthAccount, left.theme, existsSync(path.join(homeDir, '.claude', '.credentials.json'))],
+      [undefined, 'dark', false],
+    )
+    // Gemini CLI：登录后 CLI 不退出，凭据一变面板就算登录成功并停掉它；登录前先写好登录方式
+    await call('POST', '/accounts/gemini/login')
+    assert.equal((await waitLogin('gemini')).status, 'done')
+    assert.equal((await list('gemini')).live.email, 'fake4@example.com')
+    assert.equal(
+      JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8')).security.auth.selectedType,
+      'oauth-personal',
+    )
+    // Command Code：凭据里认不出邮箱，用起的名字；同一份凭据不重复保存
+    await call('POST', '/accounts/commandcode/login')
+    assert.equal((await waitLogin('commandcode')).status, 'done')
+    c = await call('POST', '/accounts/commandcode/save', { name: '备用' })
+    assert.deepEqual(
+      c.accounts.map((a) => a.name),
+      ['Command Code 账号 1'],
+      '已经保存过的凭据不重复保存',
+    )
+
+    // API：读模型列表（在服务端请求），选用后模型下拉只列这个 API 的模型，地址和密钥按 CLI 的规则传进去
+    const apiSrv = http.createServer((req, res) => {
+      res.setHeader('content-type', 'application/json')
+      if (req.headers.authorization !== 'Bearer sk-test')
+        return void res.writeHead(401).end(JSON.stringify({ error: { message: 'bad key' } }))
+      res.end(JSON.stringify({ data: [{ id: 'm-b' }, { id: 'm-a' }] }))
+    })
+    await new Promise((r) => apiSrv.listen(0, '127.0.0.1', r))
+    const apiBase = `http://127.0.0.1:${apiSrv.address().port}/v1`
+    const got = await call('POST', '/accounts/api-models', {
+      protocol: 'openai-chat',
+      baseUrl: apiBase,
+      apiKey: 'sk-test',
+    })
+    assert.deepEqual(got.models, ['m-a', 'm-b'])
+    await assert.rejects(
+      call('POST', '/accounts/api-models', { protocol: 'openai-chat', baseUrl: apiBase, apiKey: 'wrong' }),
+      /401/,
+    )
+    apiSrv.close()
+    const apis = [
+      {
+        id: 'ap1',
+        name: '中转 A',
+        protocol: 'openai-responses',
+        baseUrl: 'https://relay.example/v1',
+        apiKey: 'sk-relay',
+        authHeader: 'x-api-key',
+        models: ['relay-1', 'relay-2'],
+      },
+      {
+        id: 'ap2',
+        name: 'Claude 中转',
+        protocol: 'anthropic',
+        baseUrl: 'https://claude.example',
+        apiKey: 'sk-ant',
+        authHeader: 'bearer',
+        models: ['claude-x'],
+      },
+    ]
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap1' }, claude: { authMode: 'api', apiId: 'ap2' } } }),
+    )
+    const cm = await call('GET', '/clis/codex/models?refresh=1')
+    assert.deepEqual(
+      [cm.auth, cm.from, cm.models.map((m) => m.id), cm.models[0].isDefault],
+      ['api', '中转 A', ['relay-1', 'relay-2'], true],
+      'API 模式只列这个 API 的模型',
+    )
+    const accountModels = await call('GET', '/clis/gemini/models?refresh=1')
+    assert.notEqual(accountModels.auth, 'api', '账号模式不受影响')
+    const before = calls().length
+    const t1 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'codex',
+      model: 'relay-1',
+      prompt: '用 API 跑',
+    })
+    await waitDone(t1.id)
+    const t2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'claude',
+      model: 'claude-x',
+      prompt: '用 API 跑 claude',
+    })
+    await waitDone(t2.id)
+    const used = calls().slice(before)
+    const codexCall = used.find((x) => x.kind === 'codex')
+    assert.ok(
+      codexCall.args.includes('model_providers.agentpanel.base_url="https://relay.example/v1"'),
+      'Codex 的接口地址写进了 -c 参数',
+    )
+    assert.ok(codexCall.args.includes('model_provider="agentpanel"'))
+    assert.equal(codexCall.apiEnv.agentpanel, 'sk-relay', '密钥走环境变量，不出现在参数里')
+    assert.ok(!codexCall.args.join(' ').includes('sk-relay'))
+    const claudeCall = used.find((x) => x.kind === 'claude')
+    assert.deepEqual(
+      claudeCall.apiEnv.anthropic,
+      ['https://claude.example', null, 'sk-ant'],
+      'Bearer 方式用 ANTHROPIC_AUTH_TOKEN',
+    )
+    // 协议对不上的 API 不会交给 CLI（Codex 选了 Anthropic 的 API）
+    await call('PUT', '/settings', withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap2' } } }))
+    assert.notEqual((await call('GET', '/clis/codex/models?refresh=1')).auth, 'api')
+    // 改用 API 需要改配置文件的 CLI：Gemini CLI 选了 gemini-api-key，改回账号时还原；Command Code 写进自定义接口
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({
+        apis: [
+          {
+            id: 'g1',
+            name: 'Gemini Key',
+            protocol: 'gemini',
+            baseUrl: '',
+            apiKey: 'gk',
+            authHeader: 'x-api-key',
+            models: ['gem-1'],
+          },
+          {
+            id: 'c1',
+            name: 'CC 接口',
+            protocol: 'openai-chat',
+            baseUrl: 'https://cc.example/v1',
+            apiKey: 'ck',
+            authHeader: 'x-api-key',
+            models: ['cc-1'],
+          },
+        ],
+        clis: { gemini: { authMode: 'api', apiId: 'g1' }, commandcode: { authMode: 'api', apiId: 'c1' } },
+      }),
+    )
+    const g = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'gemini',
+      model: 'gem-1',
+      prompt: '用 gemini API',
+    })
+    await waitDone(g.id)
+    const geminiSettings = () => JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
+    assert.equal(geminiSettings().security.auth.selectedType, 'gemini-api-key')
+    assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], 'gk')
+    const cc = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      model: 'cc-1',
+      prompt: '用 cc API',
+    })
+    await waitDone(cc.id)
+    const ccFile = path.join(homeDir, '.commandcode', 'settings.json')
+    assert.deepEqual(JSON.parse(readFileSync(ccFile, 'utf8')).provider.agentpanel, {
+      baseURL: 'https://cc.example/v1',
+      apiKey: '$AGENT_PANEL_API_KEY',
+      api: 'openai-completions',
+      models: { 'cc-1': {} },
+    })
+    await call(
+      'PUT',
+      '/settings',
+      withAuth({ apis: [], clis: { gemini: { authMode: 'account' }, commandcode: { authMode: 'account' } } }),
+    )
+    const g2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'gemini',
+      prompt: '改回账号',
+    })
+    await waitDone(g2.id)
+    assert.equal(geminiSettings().security.auth.selectedType, 'oauth-personal', '改回账号还原登录方式')
+    const cc2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      prompt: '改回账号 cc',
+    })
+    await waitDone(cc2.id)
+    assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined)
+    // 凭据不进数据导出
+    const backup = await call('GET', '/data/export?kinds=config,projects,tasks,uploads')
+    assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')
+    await call('PUT', '/settings', base0)
+    step(
+      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息）；API 模式传地址和密钥、模型只列这个 API 的、协议对不上不用、按 CLI 改配置文件',
+    )
   }
 
   // ---- 只接受本机页面的请求 ----
