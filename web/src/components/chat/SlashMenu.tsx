@@ -210,9 +210,7 @@ export function useSlashMenu({
         if (!list.length) return null
         return (
           <div key={g.id}>
-            <div className="px-2.5 pt-2 pb-0.5 text-[10.5px] font-medium text-subtle">
-              {g.label}
-            </div>
+            <div className="px-2.5 pt-2 pb-0.5 text-[10.5px] font-medium text-subtle">{g.label}</div>
             {list.map((x) => {
               const i = items.indexOf(x)
               return (
