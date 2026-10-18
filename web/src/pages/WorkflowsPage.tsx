@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Copy, Download, Plus, Sparkles, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Workflow, WorkflowInput } from '@shared/schema'
+import type { Category, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { newFlow } from '@shared/flow'
 import { api } from '@/lib/api'
@@ -11,13 +11,17 @@ import { isReady, workflowChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { StatusDot } from '@/components/ui/badge'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
-import { ListEmpty, ListItem, ListPane } from '@/components/layout/ListPane'
+import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
+import { CategoryHeader } from '@/components/agents/CategoryHeader'
+import { TagFilter, TagList } from '@/components/tags/Tags'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 
 export function WorkflowsPage() {
-  const { loading, workflows, agents, clis, setWorkflows, setAgents } = useData()
+  const { loading, workflows, agents, clis, categories: allCategories, tags, setWorkflows, setAgents } = useData()
+  const categories = allCategories.filter((c) => c.scope === 'workflow')
+  const [tag, setTag] = useState('')
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
   const [assist, setAssist] = useState(false)
@@ -31,7 +35,20 @@ export function WorkflowsPage() {
   }, [loading, selected?.id, route.id])
 
   const q = query.trim().toLowerCase()
-  const list = workflows.filter((w) => !q || `${w.name}${w.description}`.toLowerCase().includes(q))
+  const tagNames = (ids: string[]) => ids.map((id) => tags.find((x) => x.id === id)?.name ?? '').join(' ')
+  const list = workflows.filter(
+    (w) =>
+      (!tag || w.tags.includes(tag)) &&
+      (!q || `${w.name}${w.description}${tagNames(w.tags)}`.toLowerCase().includes(q)),
+  )
+  // 按分类分组；分类删掉后残留的 id 归到「未分类」
+  const known = new Set(categories.map((c) => c.id))
+  const groups = [...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }]
+    .map((g) => ({
+      ...g,
+      items: list.filter((w) => (known.has(w.categoryId) ? w.categoryId : '') === g.id),
+    }))
+    .filter((g) => g.items.length || (!q && !tag && g.category))
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name
 
   const create = async (input: Partial<WorkflowInput> = {}) => {
@@ -44,6 +61,8 @@ export function WorkflowsPage() {
         flows: [newFlow(t('主流程'), 'main')],
         entryFlowId: 'main',
         document: '',
+        categoryId: selected?.categoryId ?? '',
+        tags: [],
         ...input,
       })
       setWorkflows((ws) => [...ws, w])
@@ -117,55 +136,75 @@ export function WorkflowsPage() {
         }
         query={query}
         onQuery={setQuery}
-        placeholder={t('搜索工作流')}
+        placeholder={t('搜索名称、简介或标签')}
       >
-        {list.map((w) => (
-          <ListItem
-            key={w.id}
-            selected={w.id === selected?.id}
-            onClick={() => go({ page: 'workflows', id: w.id })}
-            leading={
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent">
-                <WorkflowIcon className="h-[18px] w-[18px]" strokeWidth={1.8} />
-              </span>
+        <TagFilter value={tag} onChange={setTag} used={[...new Set(workflows.flatMap((w) => w.tags))]} />
+        {groups.map((g) => (
+          <ListGroup
+            key={g.id || 'none'}
+            header={
+              g.category ? (
+                <CategoryHeader
+                  category={g.category}
+                  count={g.items.length}
+                  onAdd={() => create({ categoryId: g.id })}
+                />
+              ) : (
+                <GroupHeader label={t('未分类')} count={g.items.length} />
+              )
             }
-            title={w.name}
-            monoSubtitle={false}
-            subtitle={`${nameOf(w.mainAgentId) ?? t('未选主 Agent')} · ${t('{n} 个子 Agent', { n: w.members.length })}`}
-            // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
-            trailing={
-              <span className="shrink-0">
-                {isReady(workflowChecks(w, agents, clis, workflows)) ? (
-                  <StatusDot tone="success" label={t('就绪')} />
-                ) : (
-                  <StatusDot tone="warning" label={t('未就绪')} />
-                )}
-              </span>
-            }
-            menu={
-              <>
-                <ContextMenuItem onSelect={() => duplicate(w)}>
-                  <Copy className="h-4 w-4" />
-                  {t('复制一份')}
-                </ContextMenuItem>
-                <ContextMenuItem onSelect={() => exportWorkflow(w, agents)}>
-                  <Download className="h-4 w-4" />
-                  {t('导出')}
-                </ContextMenuItem>
-                <ContextMenuSeparator />
-                <ContextMenuItem
-                  danger
-                  onSelect={() => {
-                    go({ page: 'workflows', id: w.id })
-                    setDelReq({ id: w.id, at: Date.now() })
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  {t('删除')}
-                </ContextMenuItem>
-              </>
-            }
-          />
+          >
+            {g.items.map((w) => (
+              <ListItem
+                key={w.id}
+                selected={w.id === selected?.id}
+                onClick={() => go({ page: 'workflows', id: w.id })}
+                leading={
+                  <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-accent-soft text-accent">
+                    <WorkflowIcon className="h-[18px] w-[18px]" strokeWidth={1.8} />
+                  </span>
+                }
+                title={w.name}
+                monoSubtitle={false}
+                subtitle={`${nameOf(w.mainAgentId) ?? t('未选主 Agent')} · ${t('{n} 个子 Agent', { n: w.members.length })}`}
+                tags={w.tags.length ? <TagList ids={w.tags} /> : undefined}
+                // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
+                trailing={
+                  <span className="shrink-0">
+                    {isReady(workflowChecks(w, agents, clis, workflows)) ? (
+                      <StatusDot tone="success" label={t('就绪')} />
+                    ) : (
+                      <StatusDot tone="warning" label={t('未就绪')} />
+                    )}
+                  </span>
+                }
+                menu={
+                  <>
+                    <ContextMenuItem onSelect={() => duplicate(w)}>
+                      <Copy className="h-4 w-4" />
+                      {t('复制一份')}
+                    </ContextMenuItem>
+                    <ContextMenuItem onSelect={() => exportWorkflow(w, agents)}>
+                      <Download className="h-4 w-4" />
+                      {t('导出')}
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      danger
+                      onSelect={() => {
+                        go({ page: 'workflows', id: w.id })
+                        setDelReq({ id: w.id, at: Date.now() })
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      {t('删除')}
+                    </ContextMenuItem>
+                  </>
+                }
+              />
+            ))}
+            {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">{t('这个分类还没有工作流')}</p>}
+          </ListGroup>
         ))}
         {!loading && workflows.length > 0 && list.length === 0 && <ListEmpty>{t('没有匹配的工作流')}</ListEmpty>}
         {!loading && workflows.length === 0 && <ListEmpty>{t('还没有工作流')}</ListEmpty>}

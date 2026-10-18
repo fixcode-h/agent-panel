@@ -17,6 +17,7 @@ import {
 import { taskWorkflows, workflowClosure } from '../shared/flow.ts'
 import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments, withTaskModel } from '../shared/task.ts'
 import { agentRun } from '../shared/settings.ts'
+import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
@@ -375,6 +376,8 @@ export function tasksApi(deps: {
         : await projectWorkflow(project)
       if (!workflow) return bad(c, t('项目还没有指定工作流，请选择一个工作流或改用直接对话'))
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
+    const lack = chatMissingParams(input, agents)
+    if (lack) return bad(c, lack)
     const snapshot = workflow ? workflowClosure(workflow, await deps.workflows.list()) : []
     const draft = { ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot), id: randomUUID() }
     if (input.isolate && input.projectId) {

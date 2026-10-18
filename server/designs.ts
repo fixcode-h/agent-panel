@@ -32,8 +32,12 @@ import {
   emptyConcept,
   emptyRoot,
   imagePrompt,
+  type DesignKind,
+  localPrompts,
   type ConceptImage,
   type ConceptState,
+  SHEET_MAX_ICONS,
+  SHEET_MAX_SIDE,
   sheetGrid,
   sheetPrompt,
   importComponent,
@@ -51,10 +55,12 @@ import {
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
-import { webExport, webReactExport } from '../shared/web.ts'
+import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
+import { localGenerate } from './comfy.ts'
+import { imageUse, type WorkflowUse } from '../shared/local-image.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
 import { failureHints } from './exec/runner.ts'
 import { normalizeGenerated, sliceSheet } from './image.ts'
@@ -260,7 +266,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     }
     let first = -1
     let chain = Promise.resolve()
-    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
+    const kind = source.kind === 'browser' || source.kind === 'local' ? source.kind : ('cli' as const)
     const add = (buf: Buffer, exact = false) => {
       chain = chain
         .then(async () => {
@@ -294,30 +300,50 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const ref = templateRef(d, source)
     try {
       const rest =
-        source.kind === 'browser'
-          ? await browserGenerate(
+        source.kind === 'local'
+          ? await localRun(
+              source,
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
               {
-                tabId: source.tabId,
-                prompt: withRevision(
-                  imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
-                  revision,
-                ),
-                count,
+                subject: withRevision(img.prompt, revision),
+                style: cache.get(d.id)!.style,
+                projectStyle: style,
+                kind: d.kind,
                 chroma: img.transparent,
-                concurrency: (await getSettings()).imageGen.concurrency,
-                onProgress: (text) => (item.text = text),
-                onImage: (b) => sink.add(b),
+                negative: img.negative,
               },
-              job.abort.signal,
-            )
-          : await cliGenerate(
-              // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
+              img,
               count,
               job,
               (b) => sink.add(b),
-              ref ? [ref] : [],
+              (text) => (item.text = text),
+              imageUse(img, d.kind === 'web' ? 'web' : 'game'),
+              d.kind,
             )
+          : source.kind === 'browser'
+            ? await browserGenerate(
+                {
+                  tabId: source.tabId,
+                  prompt: withRevision(
+                    imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind),
+                    revision,
+                  ),
+                  count,
+                  chroma: img.transparent,
+                  concurrency: (await getSettings()).imageGen.concurrency,
+                  onProgress: (text) => (item.text = text),
+                  onImage: (b) => sink.add(b),
+                },
+                job.abort.signal,
+              )
+            : await cliGenerate(
+                // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
+                withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind, !!ref), revision),
+                count,
+                job,
+                (b) => sink.add(b),
+                ref ? [ref] : [],
+              )
       for (const b of rest) sink.add(b)
       await sink.done()
       if (!item.got) throw new Error(t('没有取到图片'))
@@ -413,6 +439,37 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       items[i].text = undefined
     }
     if (failed.length) throw new Error(failed.join('\n'))
+  }
+
+  /** 用本机的 ComfyUI 生成：按图片用途选工作流；新模型用完整描述，SDXL 用压缩过的关键词 */
+  async function localRun(
+    source: Extract<ImageSource, { kind: 'local' }>,
+    full: string,
+    short: Parameters<typeof localPrompts>[2],
+    size: { width: number; height: number },
+    count: number,
+    job: Job,
+    onImage: (b: Buffer) => void,
+    onProgress: (text: string) => void,
+    use: WorkflowUse,
+    kind: DesignKind,
+  ): Promise<Buffer[]> {
+    await localGenerate(
+      {
+        workflow: source.workflow,
+        kind: kind === 'web' ? 'web' : 'game',
+        use,
+        full,
+        short,
+        width: size.width,
+        height: size.height,
+        count,
+        onImage,
+        onProgress,
+      },
+      job.abort.signal,
+    )
+    return []
   }
 
   /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
@@ -521,7 +578,9 @@ ${prompt}`,
     const style = await projectStyle(d)
     // 每张图单独一个会话（CLI 进程或浏览器里的新对话），同时跑的个数在设置里调；旧版扩展只能一张张来
     const settings = await getSettings()
-    const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
+    // 本机只有一块显卡，ComfyUI 也是排队一张张画：一次交一张，进度看得清楚
+    const width =
+      (source.kind === 'browser' && !browserParallel()) || source.kind === 'local' ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
     // 同一个 sheet（至少 2 个、透明度一样）的图标一起生成，其余一张张来
@@ -530,11 +589,18 @@ ${prompt}`,
     const groups = new Map<string, number[]>()
     list.forEach((img, k) => {
       const sheet = job.sheets?.get(img.id)
-      if (sheet) groups.set(`${sheet}:${img.transparent}`, [...(groups.get(`${sheet}:${img.transparent}`) ?? []), k])
+      // 图集只放尺寸统一的小图标：大图、尺寸不同的分开（大图一张张生成）
+      // 本机的扩散模型画不准等间距的格子：图标一张张生成
+      if (!sheet || source.kind === 'local' || Math.max(img.width, img.height) > SHEET_MAX_SIDE) return
+      const key = `${sheet}:${img.transparent}:${img.width}x${img.height}`
+      groups.set(key, [...(groups.get(key) ?? []), k])
     })
     const grouped = new Set<number>()
-    for (const ks of groups.values())
-      if (ks.length >= 2) {
+    for (const all of groups.values())
+      // 一张图集最多 SHEET_MAX_ICONS 个：格子太多，每个图标分到的像素少，切出来会糊
+      for (let i = 0; i < all.length; i += SHEET_MAX_ICONS) {
+        const ks = all.slice(i, i + SHEET_MAX_ICONS)
+        if (ks.length < 2) continue
         ks.forEach((k) => grouped.add(k))
         queue.push({
           imgs: ks.map((k) => list[k]),
@@ -866,6 +932,7 @@ ${prompt}`,
           ...cache.get(d.id)!,
           root: sess.state.root,
           components: sess.state.components,
+          animations: sess.state.animations ?? [],
         })
         let problems = ''
         if ('error' in res) {
@@ -878,13 +945,26 @@ ${prompt}`,
           problems = res.error
           const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
           if (!ok.success) throw new Error(z.prettifyError(ok.error))
-          res = { result: ok.data, root: sess.state.root, components: sess.state.components }
+          res = {
+            result: ok.data,
+            root: sess.state.root,
+            components: sess.state.components,
+            animations: sess.state.animations,
+          }
         }
         const cur = cache.get(d.id)!
         const r2 = res.result
-        const changed = !!(res.root || res.components || r2.designSize || r2.style !== undefined || r2.images.length)
+        const changed = !!(
+          res.root ||
+          res.components ||
+          res.animations ||
+          r2.designSize ||
+          r2.style !== undefined ||
+          r2.images.length
+        )
         if (res.root) cur.root = res.root
         if (res.components) cur.components = res.components
+        if (res.animations) cur.animations = res.animations
         if (r2.designSize) cur.designSize = r2.designSize
         if (r2.style !== undefined) cur.style = r2.style
         const ids: string[] = []
@@ -982,7 +1062,7 @@ ${prompt}`,
               negative: req.negative,
               round,
               base: req.base,
-              source: source.kind === 'browser' ? 'browser' : 'cli',
+              source: source.kind === 'browser' || source.kind === 'local' ? source.kind : 'cli',
               at: now(),
             }
             // 出了新的候选就回到挑图：之前确认的模板作废
@@ -999,20 +1079,33 @@ ${prompt}`,
       }
       try {
         const rest =
-          source.kind === 'browser'
-            ? await browserGenerate(
-                {
-                  tabId: source.tabId,
-                  prompt,
-                  count: req.count,
-                  chroma: false,
-                  concurrency: (await getSettings()).imageGen.concurrency,
-                  onProgress: (text) => (progress.text = text),
-                  onImage: add,
-                },
-                job.abort.signal,
+          source.kind === 'local'
+            ? await localRun(
+                source,
+                prompt,
+                { subject: req.prompt, style: cur.style, projectStyle: style, kind: cur.kind, negative: req.negative },
+                { width: cur.designSize.X, height: cur.designSize.Y },
+                req.count,
+                job,
+                add,
+                (text) => (progress.text = text),
+                'concept',
+                cur.kind,
               )
-            : await cliGenerate(prompt, req.count, job, add, ref ? [ref] : [])
+            : source.kind === 'browser'
+              ? await browserGenerate(
+                  {
+                    tabId: source.tabId,
+                    prompt,
+                    count: req.count,
+                    chroma: false,
+                    concurrency: (await getSettings()).imageGen.concurrency,
+                    onProgress: (text) => (progress.text = text),
+                    onImage: add,
+                  },
+                  job.abort.signal,
+                )
+              : await cliGenerate(prompt, req.count, job, add, ref ? [ref] : [])
         for (const b of rest) add(b)
       } catch (e) {
         if (job.abort.signal.aborted) throw e
@@ -1051,6 +1144,7 @@ ${prompt}`,
         root: d.root,
         components: d.components,
         images: d.images,
+        animations: d.animations ?? [],
       }),
     }
     let list = [v, ...(await readVersions(d.id))]
@@ -1364,6 +1458,7 @@ ${prompt}`,
         components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,
         annotations: doc.annotations,
+        animations: doc.animations,
       })
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
@@ -1496,6 +1591,7 @@ ${prompt}`,
         await cp(path.join(imagesDir(src.id), f), path.join(imagesDir(d.id), f)).catch(() => {})
       d.components = r.components
       d.images = r.images
+      d.animations = r.animations
       // 结构变了：页面用服务端的子控件替换本地的
       d.rev++
       await save(d)
@@ -1563,6 +1659,8 @@ ${prompt}`,
       d.components = v.snapshot.components
       d.designSize = v.snapshot.designSize
       d.style = v.snapshot.style
+      // 旧版本没有动画：恢复后就没有动画
+      d.animations = v.snapshot.animations ?? []
       // 版本里有、现在已经删掉的图片加回来（文件还在时）
       for (const img of v.snapshot.images)
         if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
@@ -1814,6 +1912,7 @@ ${prompt}`,
       root: d.root,
       components: d.components,
       file: (id) => src.get(id),
+      animations: d.animations,
     })
     const ascii = (d.title.match(/[A-Za-z0-9]+/g) ?? []).join('-').toLowerCase()
     return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files], src }
@@ -1848,6 +1947,7 @@ ${prompt}`,
       root: d.root,
       components: d.components,
       images,
+      animations: d.animations,
     })
     const files = [
       { name: `${json.Name}.umg.json`, data: Buffer.from(JSON.stringify(json, null, 2)) },
@@ -1864,12 +1964,18 @@ ${prompt}`,
       root: d.root,
       components: d.components,
       file: (id) => f.src.get(id)?.replace(/^images\//, ''),
+      animations: d.animations,
     })
     const name = f.name.replace(/(^|-)(\w)/g, (_, _a, c: string) => c.toUpperCase()) || 'Page'
     return {
       name: `${f.name}-react.zip`,
       type: 'application/zip',
-      data: zip([{ name: `${name}.tsx`, data: Buffer.from(tsx) }, ...f.files.filter((x) => x.name !== 'index.html')]),
+      data: zip([
+        { name: `${name}.tsx`, data: Buffer.from(tsx) },
+        // 有动画时一起带上播放代码
+        ...(d.animations?.length ? [{ name: 'ui-anim.ts', data: Buffer.from(reactAnimFile()) }] : []),
+        ...f.files.filter((x) => x.name !== 'index.html'),
+      ]),
     }
   }
 

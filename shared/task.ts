@@ -50,6 +50,7 @@ export function newTask(
     model: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.model ?? '') : '',
     effort: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
+    params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
     runMs: 0,
     runStartedAt: now,

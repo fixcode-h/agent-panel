@@ -347,6 +347,45 @@ export function chromaKey(img: Img): Img {
 }
 
 /**
+ * 色键没抠掉时的补救：模型没画纯绿底、而是画了别的纯色底（白、灰、黑、浅色）时，
+ * 从四条边开始，把和边上颜色接近、连成一片的像素变透明，边缘按颜色差做半透明过渡。
+ * 边上的颜色不统一（是场景、不是纯色底）时原样返回，不误伤
+ */
+export function removeFlatBackground(img: Img, tolerance = 28): Img {
+  const { width: w, height: h, data } = img
+  const edge: number[] = []
+  for (let x = 0; x < w; x += Math.max(1, Math.floor(w / 64))) edge.push(x, (h - 1) * w + x)
+  for (let y = 0; y < h; y += Math.max(1, Math.floor(h / 64))) edge.push(y * w, y * w + w - 1)
+  const avg = [0, 0, 0]
+  for (const p of edge) for (let c = 0; c < 3; c++) avg[c] += data[p * 4 + c] / edge.length
+  const dist = (p: number) =>
+    Math.max(Math.abs(data[p * 4] - avg[0]), Math.abs(data[p * 4 + 1] - avg[1]), Math.abs(data[p * 4 + 2] - avg[2]))
+  // 边上九成以上的点都接近平均色才算纯色底
+  if (edge.filter((p) => dist(p) <= tolerance).length < edge.length * 0.9) return img
+  const out = new Uint8Array(data)
+  const seen = new Uint8Array(w * h)
+  const stack: number[] = []
+  for (let x = 0; x < w; x++) stack.push(x, (h - 1) * w + x)
+  for (let y = 0; y < h; y++) stack.push(y * w, y * w + w - 1)
+  while (stack.length) {
+    const p = stack.pop()!
+    if (seen[p]) continue
+    seen[p] = 1
+    const d = dist(p)
+    if (d > tolerance * 1.6) continue
+    // 很接近底色的全透明；稍远的（抗锯齿的边）半透明，不再往里扩
+    out[p * 4 + 3] = d <= tolerance ? 0 : Math.round(out[p * 4 + 3] * ((d - tolerance) / (tolerance * 0.6)))
+    if (d > tolerance) continue
+    const x = p % w
+    if (x > 0) stack.push(p - 1)
+    if (x < w - 1) stack.push(p + 1)
+    if (p >= w) stack.push(p - w)
+    if (p < w * (h - 1)) stack.push(p + w)
+  }
+  return { width: w, height: h, data: out }
+}
+
+/**
  * 把图精确变成 width×height：
  * - 透明的元素先裁掉四周的空白，再放进去：比例接近（相差 15% 以内）直接拉伸铺满，差得多就保持比例居中，其余透明
  * - 不透明的图：比例接近直接缩放，差得多就按比例铺满后裁掉多出的部分（居中）
@@ -386,11 +425,36 @@ export function normalizeGenerated(
   const img = decodePng(buf)
   if (!img) return buf
   let cur = img
-  // 要透明的图：画的是纯绿底就抠掉
-  if (want.transparent && o.key !== false) cur = chromaKey(cur)
+  // 要透明的图：画的是纯绿底就抠掉；没按要求画绿底、但底是纯色的，按边上的颜色抠
+  if (want.transparent && o.key !== false) {
+    cur = chromaKey(cur)
+    if (!hasAlpha(cur)) cur = removeFlatBackground(cur)
+  }
   const exact = cur.width === want.width && cur.height === want.height && cur === img
   if (exact) return buf
-  return encodePng(fitExact(cur, want.width, want.height, { stretch: !!want.nineSlice, trim: want.transparent }))
+  let fitted = fitExact(cur, want.width, want.height, { stretch: !!want.nineSlice, trim: want.transparent })
+  // 缩得很小（例如 1024 的图缩成 96 的图标）时细节会发虚：按缩小的倍数补一点锐化
+  const k = Math.min(cur.width / want.width, cur.height / want.height)
+  if (k > 2) fitted = sharpen(fitted, Math.min(0.5, 0.15 * Math.log2(k)))
+  return encodePng(fitted)
+}
+
+/** 锐化（反锐化掩模，3×3）：只动颜色不动透明度，amount 0~1 */
+export function sharpen(img: Img, amount = 0.35): Img {
+  const { width: w, height: h, data } = img
+  const out = new Uint8Array(data)
+  for (let y = 1; y < h - 1; y++)
+    for (let x = 1; x < w - 1; x++) {
+      const o = (y * w + x) * 4
+      if (data[o + 3] === 0) continue
+      for (let c = 0; c < 3; c++) {
+        let blur = 0
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) blur += data[((y + dy) * w + x + dx) * 4 + c]
+        const v = data[o + c] + amount * (data[o + c] - blur / 9) * 2
+        out[o + c] = Math.max(0, Math.min(255, Math.round(v)))
+      }
+    }
+  return { width: w, height: h, data: out }
 }
 
 /** 把一张图标表按 cols×rows 平均切开，每格再裁掉空白、精确放进各自的尺寸 */
@@ -413,7 +477,9 @@ export function sliceSheet(
     const cell = crop(sheet, c * cw, r * ch, cw, ch)
     // 整格都是空的：这个图标没画出来
     if (w.transparent && !contentBox(cell)) return null
-    return encodePng(fitExact(cell, w.width, w.height, { trim: w.transparent }))
+    const out = fitExact(cell, w.width, w.height, { trim: w.transparent })
+    // 从大格子缩成小图标会变软：缩得多时轻微锐化，小尺寸下边缘清楚
+    return encodePng(cw / w.width > 1.5 ? sharpen(out, 0.35) : out)
   })
 }
 

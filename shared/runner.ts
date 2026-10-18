@@ -4,9 +4,10 @@
  */
 import type { Agent, FileChange, Task, TaskMessage, TaskStep, ToolUse, Workflow, Settings } from './schema.ts'
 import { getCli } from './clis.ts'
-import { agentPermission, agentRun, cliSettings, defaultSettings } from './settings.ts'
+import { agentPermission, agentRun, cliSettings, defaultCli, defaultSettings } from './settings.ts'
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
 import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
+import { composeRole, nodeAgentRun } from './agent-role.ts'
 
 export interface RunContext {
   task: Task
@@ -30,7 +31,11 @@ export interface RunContext {
 function recordCommand(ctx: RunContext, call: AgentCall) {
   const found = ctx.agents.find((a) => a.id === call.agentId)
   if (!found) return
-  const agent = withTaskModel(found, ctx.task)
+  const agent =
+    call.tier !== undefined
+      ? nodeAgentRun(found, call.tier, defaultCli(ctx.settings ?? defaultSettings()))
+      : withTaskModel(found, ctx.task)
+  const role = composeRole(agent, ctx.agents, call.params ?? (call.step ? {} : ctx.task.params))
   const s = ctx.settings ?? defaultSettings()
   const run = agentRun(agent, s)
   const def = getCli(run.cli)
@@ -44,7 +49,7 @@ function recordCommand(ctx: RunContext, call: AgentCall) {
       permission: agentPermission(agent, s),
       extraArgs: [...cs.extraArgs, ...agent.extraArgs],
       resume: ctx.task.sessions[call.sessionKey],
-      systemPrompt: def.systemPromptFlag && agent.instructions.trim() ? '<角色设定>' : undefined,
+      systemPrompt: def.systemPromptFlag && role.trim() ? '<角色设定>' : undefined,
     }),
   ]
   const owner = call.step && ctx.task.steps.find((x) => x.id === call.step!.id)

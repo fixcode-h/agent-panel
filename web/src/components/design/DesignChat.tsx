@@ -30,7 +30,8 @@ import type {
 import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useScopedSetting } from '@/lib/useScopedSetting'
-import { useData } from '@/lib/data'
+import { useData, useNav } from '@/lib/data'
+import type { ComfyWorkflow } from '@shared/local-image'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
@@ -78,16 +79,49 @@ export function useBrowserTabs(fast = false) {
   return st
 }
 
+/** 本机 ComfyUI 的工作流和哪些能用（模型下载好了）；不常变，进来时读一次、之后慢慢刷新 */
+export function useLocalWorkflows() {
+  const [st, setSt] = useState<{ list: ComfyWorkflow[]; ready: string[]; loaded?: boolean }>({ list: [], ready: [] })
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      api
+        .comfyWorkflows()
+        .then((s) => alive && setSt({ ...s, loaded: true }))
+        .catch(() => {})
+    void load()
+    const timer = setInterval(load, 20000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [])
+  return st
+}
+
 const SITE = { gemini: 'Gemini', chatgpt: 'ChatGPT' }
-export const sourceKey = (s: ImageSource) => (s.kind === 'browser' ? `browser:${s.tabId}` : s.kind)
+export const sourceKey = (s: ImageSource) =>
+  s.kind === 'browser' ? `browser:${s.tabId}` : s.kind === 'local' ? `local:${s.workflow}` : s.kind
 export function parseSource(v: string): ImageSource {
   if (v.startsWith('browser:')) return { kind: 'browser', tabId: v.slice(8) }
+  if (v.startsWith('local:')) return { kind: 'local', workflow: v.slice(6) || 'auto' }
   return v === 'none' ? { kind: 'none' } : { kind: 'cli' }
 }
 
 /** 生成图片的方式：设置里的图片模型、浏览器里的 Gemini / ChatGPT 标签页，或者先不生成 */
-export function SourceSelect({ value, onChange }: { value: ImageSource; onChange: (s: ImageSource) => void }) {
+export function SourceSelect({
+  value,
+  onChange,
+  kind = 'game',
+}: {
+  value: ImageSource
+  onChange: (s: ImageSource) => void
+  kind?: 'game' | 'web'
+}) {
   const { settings, clis } = useData()
+  const { openSettings } = useNav()
+  const local = useLocalWorkflows()
+  const localReady = local.list.filter((w) => w.kind === kind && local.ready.includes(w.id))
   const [help, setHelp] = useState(false)
   const browser = useBrowserTabs(help)
   const imgCli = settings?.imageGen.cli || 'codex'
@@ -115,6 +149,25 @@ export function SourceSelect({ value, onChange }: { value: ImageSource; onChange
           : t('打开 Gemini 或 ChatGPT…'),
       group: t('浏览器标签页'),
     },
+    // 还没读到工作流时保留已选的本机方式，免得被换成别的
+    ...(!local.loaded && value.kind === 'local'
+      ? [{ value: sourceKey(value), label: t('本机 ComfyUI'), group: t('本机 ComfyUI') }]
+      : []),
+    ...(localReady.length
+      ? [
+          { value: 'local:auto', label: t('本机 · 按图片用途自动选工作流'), group: t('本机 ComfyUI') },
+          ...localReady.map((w) => ({
+            value: `local:${w.id}`,
+            label: t('本机 · {name}', { name: w.name }),
+            group: t('本机 ComfyUI'),
+          })),
+        ]
+      : []),
+    {
+      value: 'local-setup',
+      label: localReady.length ? t('管理本机模型…') : t('配置本机生图（ComfyUI）…'),
+      group: t('本机 ComfyUI'),
+    },
     { value: 'none', label: t('先不生成图片'), group: ' ' },
   ]
   // 选的标签页关掉了：换成第一个能用的
@@ -129,7 +182,13 @@ export function SourceSelect({ value, onChange }: { value: ImageSource; onChange
       <Select
         aria-label={t('生成图片的方式')}
         value={key}
-        onChange={(e) => (e.target.value === 'help' ? setHelp(true) : onChange(parseSource(e.target.value)))}
+        onChange={(e) =>
+          e.target.value === 'help'
+            ? setHelp(true)
+            : e.target.value === 'local-setup'
+              ? openSettings('local-image')
+              : onChange(parseSource(e.target.value))
+        }
         options={options}
         className="h-7 w-auto max-w-[200px] min-w-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
       />
@@ -815,7 +874,7 @@ export function DesignChat({
                   }}
                 />
                 <ConceptToggle value={concept} onChange={setConcept} template={!!hasTemplate} />
-                <SourceSelect value={source} onChange={onSource} />
+                <SourceSelect value={source} onChange={onSource} kind={kind === 'web' ? 'web' : 'game'} />
                 {source.kind !== 'none' && (
                   <Select
                     // 先出原画时这个数就是一轮出几张原画

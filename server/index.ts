@@ -16,6 +16,8 @@ import {
   AgentInput,
   Category,
   CategoryInput,
+  Tag,
+  TagInput,
   Project,
   ProjectCategory,
   ProjectCategoryInput,
@@ -38,6 +40,7 @@ import { docsApi } from './docs.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi } from './accounts.ts'
 import { installApi } from './install.ts'
+import { comfyApi } from './comfy.ts'
 import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { openBrowser, revealDir, revealItem } from './open.ts'
@@ -63,6 +66,12 @@ migrateDataDir()
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent, () => [defaultAgent()])
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
+const tags = createCollection<TagInput, Tag>('tags.json', Tag)
+/** 只留存在的标签（标签删掉后，前端还没刷新时可能带着旧 id） */
+const knownTags = async (ids: string[]) => {
+  const all = new Set((await tags.list()).map((x) => x.id))
+  return ids.filter((id) => all.has(id))
+}
 const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
   'project-categories.json',
@@ -127,6 +136,7 @@ async function parseAgent(body: unknown) {
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 CLI：{cli}', { cli: p.data.cli }) }
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
+  p.data.tags = await knownTags(p.data.tags)
   return { data: p.data }
 }
 
@@ -135,6 +145,8 @@ async function parseWorkflow(body: unknown, selfId = '') {
   if (!p.success) return { error: z.prettifyError(p.error) }
   const ids = new Set((await agents.list()).map((a) => a.id))
   const error = checkWorkflow(p.data, ids, await workflows.list(), selfId)
+  if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
+  p.data.tags = await knownTags(p.data.tags)
   return error ? { error } : { data: p.data }
 }
 
@@ -167,6 +179,7 @@ app.route('/accounts', accountsApi())
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 app.route('/clis', installApi())
+app.route('/local-image', comfyApi())
 app.route('/clis', modelsApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
 app.get('/clis/:id/limits', async (c) => {
@@ -203,8 +216,11 @@ app.get('/categories', async (c) => c.json(await categories.list()))
 async function parseCategory(body: unknown, selfId?: string) {
   const p = CategoryInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
-  const dup = (await categories.list()).some((x) => x.name === p.data.name && x.id !== selfId)
-  return dup ? { error: t('分类「{name}」已存在', { name: p.data.name }) } : { data: p.data }
+  // 改名时不带 scope：沿用原来的；Agent 和工作流的分类各自不能重名
+  const all = await categories.list()
+  const scope = all.find((x) => x.id === selfId)?.scope ?? p.data.scope
+  const dup = all.some((x) => x.name === p.data.name && x.scope === scope && x.id !== selfId)
+  return dup ? { error: t('分类「{name}」已存在', { name: p.data.name }) } : { data: { ...p.data, scope } }
 }
 
 app.post('/categories', async (c) => {
@@ -227,6 +243,43 @@ app.delete('/categories/:id', async (c) => {
   for (const a of await agents.list()) {
     if (a.categoryId === id) await agents.update(a.id, { ...a, categoryId: '' })
   }
+  for (const w of await workflows.list()) {
+    if (w.categoryId === id) await workflows.update(w.id, { ...w, categoryId: '' })
+  }
+  return c.body(null, 204)
+})
+
+// ---- 标签：Agent 和工作流共用 ----
+app.get('/tags', async (c) => c.json(await tags.list()))
+
+async function parseTag(body: unknown, selfId?: string) {
+  const p = TagInput.safeParse(body)
+  if (!p.success) return { error: z.prettifyError(p.error) }
+  const dup = (await tags.list()).some((x) => x.name === p.data.name && x.id !== selfId)
+  return dup ? { error: t('标签「{name}」已存在', { name: p.data.name }) } : { data: p.data }
+}
+
+app.post('/tags', async (c) => {
+  const r = await parseTag(await c.req.json())
+  return r.error ? bad(c, r.error) : c.json(await tags.create(r.data!), 201)
+})
+
+app.put('/tags/:id', async (c) => {
+  const id = c.req.param('id')
+  const r = await parseTag(await c.req.json(), id)
+  if (r.error) return bad(c, r.error)
+  const x = await tags.update(id, r.data!)
+  return x ? c.json(x) : bad(c, t('标签不存在'), 404)
+})
+
+// 删除标签时从所有 Agent 和工作流上去掉
+app.delete('/tags/:id', async (c) => {
+  const id = c.req.param('id')
+  if (!(await tags.remove(id))) return bad(c, t('标签不存在'), 404)
+  for (const a of await agents.list())
+    if (a.tags.includes(id)) await agents.update(a.id, { ...a, tags: a.tags.filter((x) => x !== id) })
+  for (const w of await workflows.list())
+    if (w.tags.includes(id)) await workflows.update(w.id, { ...w, tags: w.tags.filter((x) => x !== id) })
   return c.body(null, 204)
 })
 
@@ -252,7 +305,11 @@ app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
   const err = agentDeleteError(id, await workflows.list())
   if (err) return bad(c, err, 409)
-  return (await agents.remove(id)) ? c.body(null, 204) : bad(c, t('Agent 不存在'), 404)
+  if (!(await agents.remove(id))) return bad(c, t('Agent 不存在'), 404)
+  // 引入了它的 Agent 去掉这条引入
+  for (const a of await agents.list())
+    if (a.includes.includes(id)) await agents.update(a.id, { ...a, includes: a.includes.filter((x) => x !== id) })
+  return c.body(null, 204)
 })
 
 // ---- 工作流 ----

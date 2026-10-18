@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Bot, Copy, MoreHorizontal, Pencil, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Bot, Copy, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -8,12 +8,13 @@ import { cliColor, shortVersion } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { StatusDot } from '@/components/ui/badge'
-import { ConfirmDialog } from '@/components/ui/dialog'
-import { ContextMenuItem, ContextMenuSeparator, Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
 import { GroupHeader, ListEmpty, ListGroup, ListItem, ListPane } from '@/components/layout/ListPane'
 import { DetailEmpty } from '@/components/layout/Detail'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentDetail } from '@/components/agents/AgentDetail'
+import { CategoryHeader } from '@/components/agents/CategoryHeader'
+import { TagFilter, TagList } from '@/components/tags/Tags'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
@@ -21,108 +22,11 @@ import { t } from '@shared/i18n'
 /** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
 const DEFAULT_GROUP = '#default'
 
-function CategoryHeader({ category, count, onAdd }: { category: Category; count: number; onAdd: () => void }) {
-  const { setCategories, setAgents } = useData()
-  const [editing, setEditing] = useState(false)
-  const [name, setName] = useState(category.name)
-  const [deleting, setDeleting] = useState(false)
-
-  const rename = async () => {
-    setEditing(false)
-    const n = name.trim()
-    if (!n || n === category.name) return setName(category.name)
-    try {
-      const c = await api.renameCategory(category.id, n)
-      setCategories((cs) => cs.map((x) => (x.id === c.id ? c : x)))
-    } catch (e) {
-      toast.error((e as Error).message)
-      setName(category.name)
-    }
-  }
-
-  const remove = async () => {
-    try {
-      await api.deleteCategory(category.id)
-      setCategories((cs) => cs.filter((x) => x.id !== category.id))
-      setAgents((as) => as.map((a) => (a.categoryId === category.id ? { ...a, categoryId: '' } : a)))
-      toast.success(t('已删除分类「{name}」', { name: category.name }))
-    } catch (e) {
-      toast.error((e as Error).message)
-    }
-    setDeleting(false)
-  }
-
-  if (editing)
-    return (
-      <div className="flex h-9 items-center px-2 pt-2">
-        <input
-          autoFocus
-          aria-label={t('分类名称')}
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onBlur={rename}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') rename()
-            if (e.key === 'Escape') {
-              setName(category.name)
-              setEditing(false)
-            }
-          }}
-          className="h-7 w-full rounded-md border border-accent bg-field px-2 text-xs text-fg outline-none"
-        />
-      </div>
-    )
-
-  return (
-    <>
-      <GroupHeader
-        label={category.name}
-        count={count}
-        actions={
-          <>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={t('在此分类新建 Agent')}
-              title={t('在此分类新建 Agent')}
-              onClick={onAdd}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </Button>
-            <Menu>
-              <MenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={t('分类操作')} title={t('分类操作')}>
-                  <MoreHorizontal className="h-3.5 w-3.5" />
-                </Button>
-              </MenuTrigger>
-              <MenuContent>
-                <MenuItem onSelect={() => setEditing(true)}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  {t('重命名')}
-                </MenuItem>
-                <MenuItem danger onSelect={() => setDeleting(true)}>
-                  <Trash2 className="h-3.5 w-3.5" />
-                  {t('删除分类')}
-                </MenuItem>
-              </MenuContent>
-            </Menu>
-          </>
-        }
-      />
-      <ConfirmDialog
-        open={deleting}
-        onOpenChange={setDeleting}
-        title={t('删除分类「{name}」？', { name: category.name })}
-        description={t('分类里的 Agent 不会被删除，会移到「未分类」。')}
-        onConfirm={remove}
-      />
-    </>
-  )
-}
-
 export function AgentsPage() {
   const { cliName, cliOf, modelOf } = useAgentView()
-  const { loading, agents, categories, clis, setAgents, refreshClis } = useData()
+  const { loading, agents, categories: allCategories, tags, clis, setAgents, refreshClis } = useData()
+  const categories = allCategories.filter((c) => c.scope !== 'workflow')
+  const [tag, setTag] = useState('')
   const { route, go } = useNav()
   const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
@@ -139,7 +43,10 @@ export function AgentsPage() {
   }, [loading, selected?.id, route.id])
 
   const q = query.trim().toLowerCase()
-  const match = (a: Agent) => !q || `${a.name}${a.description}${modelOf(a)}`.toLowerCase().includes(q)
+  const tagNames = (ids: string[]) => ids.map((id) => tags.find((x) => x.id === id)?.name ?? '').join(' ')
+  const match = (a: Agent) =>
+    (!tag || a.tags.includes(tag)) &&
+    (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
   // 自带的默认 Agent 单独放在最上面的「默认」分类，不跟着用户的分类走
   const groups = [
     {
@@ -151,8 +58,8 @@ export function AgentsPage() {
       (g) => ({ ...g, items: agents.filter((a) => a.id !== DEFAULT_AGENT_ID && a.categoryId === g.id && match(a)) }),
     ),
   ]
-    // 搜索时隐藏空分类；「默认」「未分类」为空时也不显示
-    .filter((g) => g.items.length || (!q && g.category))
+    // 搜索、筛选时隐藏空分类；「默认」「未分类」为空时也不显示
+    .filter((g) => g.items.length || (!q && !tag && g.category))
 
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
@@ -168,6 +75,11 @@ export function AgentsPage() {
         permission: '',
         extraArgs: [],
         enabled: true,
+        includes: [],
+        params: [],
+        skills: [],
+        starters: [],
+        tags: [],
         ...input,
       })
       setAgents((as) => [...as, a])
@@ -221,7 +133,7 @@ export function AgentsPage() {
         }
         query={query}
         onQuery={setQuery}
-        placeholder={t('搜索名称、简介或模型')}
+        placeholder={t('搜索名称、简介、模型或标签')}
         footer={
           <div className="flex flex-col gap-2">
             <div className="flex items-center text-xs text-subtle">
@@ -250,6 +162,7 @@ export function AgentsPage() {
           </div>
         }
       >
+        <TagFilter value={tag} onChange={setTag} used={[...new Set(agents.flatMap((a) => a.tags))]} />
         {groups.map((g) => (
           <ListGroup
             key={g.id || 'none'}
@@ -273,6 +186,7 @@ export function AgentsPage() {
                 leading={<AgentAvatar icon={a.icon} cli={a.cli} dim={!a.enabled} />}
                 title={a.name}
                 subtitle={`${cliName(a)} · ${modelOf(a)}`}
+                tags={a.tags.length ? <TagList ids={a.tags} /> : undefined}
                 trailing={<span className="shrink-0">{status(a)}</span>}
                 menu={
                   <>

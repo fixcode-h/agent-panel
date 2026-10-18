@@ -36,6 +36,9 @@ export function newNode(o: Partial<FlowNode> & { x: number; y: number }): FlowNo
     agentId: '',
     flow: null,
     instructions: '',
+    tier: '',
+    params: {},
+    retries: 0,
     hooks: { start: null, review: null, end: null, maxRounds: 3 },
     ...o,
   }

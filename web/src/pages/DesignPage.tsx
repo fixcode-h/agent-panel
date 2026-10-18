@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ChevronDown,
+  Clapperboard,
+  Settings2,
+  Workflow,
   Download,
   Layers,
   FileJson,
@@ -78,6 +81,8 @@ import {
   PopoverTrigger,
 } from '@/components/ui/menu'
 import { SaveIndicator } from '@/components/layout/Detail'
+import { AnimationPanel, type AnimCommand } from '@/components/design/AnimationPanel'
+import { renameInAnimations } from '@shared/anim'
 import { Viewport } from '@/components/design/Viewport'
 import { Hierarchy, Palette, type TreeActions } from '@/components/design/Hierarchy'
 import { Details } from '@/components/design/Details'
@@ -88,6 +93,7 @@ import { DEVICE_WIDTH, webExport, webReactExport, type Device } from '@shared/we
 import { DesignChat, parseSource, sourceKey } from '@/components/design/DesignChat'
 import { ConceptBoard } from '@/components/design/ConceptBoard'
 import { CanvasCapture } from '@/components/design/CanvasCapture'
+import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
@@ -293,7 +299,7 @@ let clipboard: Widget | null = null
 function Designer({ id }: { id: string }) {
   const ed = useDesignEditor(id)
   const { designProjects: projects, setDesigns } = useData()
-  const { go } = useNav()
+  const { go, openSettings } = useNav()
   const { doc, server } = ed
   const [target, setTarget] = useState('')
   const [selected, setSelected] = useState('')
@@ -322,6 +328,12 @@ function Designer({ id }: { id: string }) {
   const [overlay, setOverlay] = useState(false)
   /** 替用户发给 AI 的话（确认模板后开始搭界面） */
   const [request, setRequest] = useState<{ id: string; text: string }>()
+  /** 动画面板（时间轴）开着没有，以及它让画布停在哪一刻 */
+  const [animOpen, setAnimOpen] = useState(false)
+  // 正在从图片列表往画布上拖的图：画布高亮能放这张图的控件
+  const [dragImage, setDragImage] = useState<DesignImage | null>(null)
+  const [comfyWeb, setComfyWeb] = useState(false)
+  const [animCommand, setAnimCommand] = useState<AnimCommand | null>(null)
   /** 已经交回的截图请求，不重复画 */
   const captured = useRef(new Set<string>())
   const [, setCaptureTick] = useState(0)
@@ -432,10 +444,22 @@ function Designer({ id }: { id: string }) {
       setExtra([])
     },
     rename: (wid, name) =>
-      editTree((r) => {
+      ed.change((d) => {
+        const r = treeOf(d, target)
+        const old = r && findWidget(r, wid)?.Name
+        if (!r || !old) return d
         const names = allNames(r)
-        names.delete(findWidget(r, wid)?.Name ?? '')
-        return mapWidget(r, wid, (w) => ({ ...w, Name: uniqueName(name, names) }))
+        names.delete(old)
+        const next = uniqueName(name, names)
+        // 动画里引用这个控件的轨道跟着改名
+        return {
+          ...setTree(
+            d,
+            target,
+            mapWidget(r, wid, (w) => ({ ...w, Name: next })),
+          ),
+          animations: renameInAnimations(d.animations ?? [], target, old, next),
+        }
       }),
     move: (wid, pid, index) => editTree((r) => moveWidget(r, wid, pid, index)),
     remove: (wid) => {
@@ -883,6 +907,44 @@ function Designer({ id }: { id: string }) {
         </div>
         <Menu>
           <MenuTrigger asChild>
+            <Button size="sm" variant="ghost" title={t('本机 ComfyUI：工作流和网页')}>
+              <Workflow className="h-3.5 w-3.5" />
+              ComfyUI
+              <ChevronDown className="h-3 w-3 text-subtle" />
+            </Button>
+          </MenuTrigger>
+          <MenuContent align="end">
+            <MenuItem onSelect={() => go({ page: 'comfy', id: server.kind === 'web' ? 'web' : 'game' })}>
+              <Workflow className="h-4 w-4" />
+              {server.kind === 'web' ? t('网页工作流管理') : t('游戏工作流管理')}
+            </MenuItem>
+            <MenuItem onSelect={() => setComfyWeb(true)}>
+              <Globe className="h-4 w-4" />
+              {t('打开 ComfyUI 网页')}
+            </MenuItem>
+            <MenuSeparator />
+            <MenuItem onSelect={() => openSettings('local-image')}>
+              <Settings2 className="h-4 w-4" />
+              {t('本机生图设置')}
+            </MenuItem>
+          </MenuContent>
+        </Menu>
+        <ComfyWebDialog open={comfyWeb} onOpenChange={setComfyWeb} />
+        <Button
+          size="sm"
+          variant={animOpen ? 'secondary' : 'ghost'}
+          aria-pressed={animOpen}
+          title={t('动画：打开时间轴，给控件加动画和动效')}
+          onClick={() => setAnimOpen(!animOpen)}
+        >
+          <Clapperboard className="h-3.5 w-3.5" />
+          {t('动画')}
+          {(doc.animations?.length ?? 0) > 0 && (
+            <span className="text-[11px] text-subtle tabular-nums">{doc.animations!.length}</span>
+          )}
+        </Button>
+        <Menu>
+          <MenuTrigger asChild>
             <Button size="sm" variant="secondary">
               <Download className="h-3.5 w-3.5" />
               {t('导出')}
@@ -941,206 +1003,250 @@ function Designer({ id }: { id: string }) {
       </header>
 
       <div className="flex min-h-0 flex-1">
-        <div className="relative flex min-w-0 flex-1">
-          <Viewport
-            root={shownTree ?? tree}
-            size={viewSize}
-            device={server.kind === 'web' ? device : undefined}
-            onReorder={(wid, parentId, index) =>
-              editTree((r) => moveWidget(r, wid, parentId, index), `reorder:${wid}:${Date.now()}`)
-            }
-            onNudge={(wid, dx, dy, key) =>
-              editTree(
-                (r) =>
-                  mapWidget(r, wid, (w) => {
-                    // 贴在右边、下边时偏移是离右边、下边的距离：往右拖要变小
-                    const pin = String(w.Slot?.Pin ?? 'top-left')
-                    const sx = pin.endsWith('right') ? -1 : 1
-                    const sy = pin.startsWith('bottom') ? -1 : 1
-                    return {
-                      ...w,
-                      Slot: { ...w.Slot, X: (w.Slot?.X ?? 0) + sx * dx, Y: (w.Slot?.Y ?? 0) + sy * dy },
-                    }
-                  }),
-                key,
-              )
-            }
-            images={renderImages}
-            overlay={overlay && approvedConcept && !target ? conceptUrl(approvedConcept) : undefined}
-            components={shownDoc?.components ?? doc.components}
-            selected={selected}
-            onSelect={(wid) => {
-              setSelected(wid)
-              setExtra([])
-              if (wid) setTab('tree')
-            }}
-            extra={extra.filter((x) => x !== selected)}
-            onPick={pick}
-            onMove={onMove}
-            annotations={doc.annotations}
-            onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
-            target={target}
-            onOpen={(wid) => {
-              const w = findWidget(tree, wid)
-              if (!w) return
-              // 子控件：进去编辑它；用了图片的：打开那张图
-              if (w.Type === 'UserWidget' && w.Class && doc.components.some((c) => c.Name === w.Class)) {
-                setTarget(w.Class)
-                setSelected('')
-                return
+        <div className="flex min-w-0 flex-1 flex-col">
+          <div className="relative flex min-h-0 min-w-0 flex-1">
+            <Viewport
+              animations={shownDoc?.animations ?? doc.animations}
+              animCommand={animOpen ? animCommand : null}
+              dragImage={live ? null : dragImage}
+              onDropImage={(wid, imgId) => {
+                const img = doc.images.find((i) => i.id === imgId)
+                if (!img) return
+                editTree((r) => mapWidget(r, wid, (x) => assignImage(x, img)), `assign:${imgId}:${wid}`)
+                setDragImage(null)
+                setSelected(wid)
+                setExtra([])
+              }}
+              root={shownTree ?? tree}
+              size={viewSize}
+              device={server.kind === 'web' ? device : undefined}
+              onReorder={(wid, parentId, index) =>
+                editTree((r) => moveWidget(r, wid, parentId, index), `reorder:${wid}:${Date.now()}`)
               }
-              const img = [...usedImages([{ ...w, Children: [] }])][0]
-              if (img && doc.images.some((i) => i.id === img)) {
-                setImageSel(img)
-                setTab('images')
-              }
-            }}
-          />
-          {view === 'concept' && (conceptCount > 0 || conceptsRunning) && (
-            <ConceptBoard
-              concept={concept}
-              url={conceptUrl}
-              marks={doc.annotations.filter((a) => a.target.startsWith('concept:'))}
-              onMarks={(cid, list) =>
-                ed.change(
-                  (d) => ({
-                    ...d,
-                    annotations: [...d.annotations.filter((a) => a.target !== `concept:${cid}`), ...list],
-                  }),
-                  `ann:concept:${cid}`,
+              onNudge={(wid, dx, dy, key) =>
+                editTree(
+                  (r) =>
+                    mapWidget(r, wid, (w) => {
+                      // 贴在右边、下边时偏移是离右边、下边的距离：往右拖要变小
+                      const pin = String(w.Slot?.Pin ?? 'top-left')
+                      const sx = pin.endsWith('right') ? -1 : 1
+                      const sy = pin.startsWith('bottom') ? -1 : 1
+                      return {
+                        ...w,
+                        Slot: { ...w.Slot, X: (w.Slot?.X ?? 0) + sx * dx, Y: (w.Slot?.Y ?? 0) + sy * dy },
+                      }
+                    }),
+                  key,
                 )
               }
-              onSelect={(cid) => void conceptAction('select', cid)}
-              onApprove={(cid) => void approve(cid)}
-              onRemove={(cid) => void conceptAction('remove', cid)}
-              onUpload={async (data) => {
-                try {
-                  ed.absorb(await api.uploadConcept(id, data))
-                } catch (e) {
-                  toast.error((e as Error).message)
-                }
-              }}
-              progress={conceptsRunning ? server.job?.concepts : undefined}
-              busy={ed.running}
-            />
-          )}
-          {view === 'ui' && approvedConcept && !target && (
-            <button
-              onClick={() => setOverlay(!overlay)}
-              aria-pressed={overlay}
-              title={t('把确认的原画模板半透明盖在界面上，对照着调')}
-              className={cn(
-                'absolute top-3 left-3 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[12px] text-white/70 shadow-pop hover:text-white',
-                overlay && 'text-accent hover:text-accent',
-              )}
-            >
-              <Layers className="h-3.5 w-3.5" />
-              {t('对照模板')}
-            </button>
-          )}
-          {server.job?.status === 'running' && server.job.capture && !captured.current.has(server.job.capture.id) && (
-            <CanvasCapture
-              key={server.job.capture.id}
-              designId={id}
-              req={server.job.capture}
               images={renderImages}
-              web={server.kind === 'web'}
-              onDone={(cid) => {
-                captured.current.add(cid)
-                setCaptureTick((n) => n + 1)
+              overlay={overlay && approvedConcept && !target ? conceptUrl(approvedConcept) : undefined}
+              components={shownDoc?.components ?? doc.components}
+              selected={selected}
+              onSelect={(wid) => {
+                setSelected(wid)
+                setExtra([])
+                if (wid) setTab('tree')
               }}
-            />
-          )}
-          {compare && (
-            <VersionCompare
-              version={compare}
-              current={{ root: doc.root, components: doc.components, designSize: doc.designSize }}
-              images={
-                // 版本里用到、现在已经删掉的图片也要画出来
-                new Map([
-                  ...compare.snapshot.images.flatMap((i) => {
-                    const v = i.variants[i.selected] ?? i.variants.at(-1)
-                    return v
-                      ? [
-                          [
-                            i.id,
-                            { url: designFileUrl(id, v.file), width: v.width || i.width, height: v.height || i.height },
-                          ] as const,
-                        ]
-                      : []
-                  }),
-                  ...renderImages,
-                ])
-              }
-              device={server.kind === 'web' ? device : undefined}
-              onRestore={async () => {
-                try {
-                  ed.absorb(await api.saveDesign(id, doc))
-                  ed.absorb(await api.restoreDesignVersion(id, compare.id))
-                  toast.success(t('已恢复到「{name}」，恢复前的样子也存成了一个版本', { name: compare.name }))
-                  setCompare(undefined)
-                } catch (e) {
-                  toast.error((e as Error).message)
+              extra={extra.filter((x) => x !== selected)}
+              onPick={pick}
+              onMove={onMove}
+              annotations={doc.annotations}
+              onAnnotations={(annotations, key) => ed.change((d) => ({ ...d, annotations }), key)}
+              target={target}
+              onOpen={(wid) => {
+                const w = findWidget(tree, wid)
+                if (!w) return
+                // 子控件：进去编辑它；用了图片的：打开那张图
+                if (w.Type === 'UserWidget' && w.Class && doc.components.some((c) => c.Name === w.Class)) {
+                  setTarget(w.Class)
+                  setSelected('')
+                  return
+                }
+                const img = [...usedImages([{ ...w, Children: [] }])][0]
+                if (img && doc.images.some((i) => i.id === img)) {
+                  setImageSel(img)
+                  setTab('images')
                 }
               }}
-              onClose={() => setCompare(undefined)}
             />
-          )}
-          {server.kind === 'web' && (
-            <div
-              role="radiogroup"
-              aria-label={t('预览宽度')}
-              className="absolute bottom-3 left-3 z-20 flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
-            >
-              {(
-                [
-                  ['desktop', Monitor, t('桌面（{w}）', { w: designSize.X })],
-                  ['tablet', Tablet, t('平板（{w}）', { w: DEVICE_WIDTH.tablet })],
-                  ['mobile', Smartphone, t('手机（{w}）', { w: DEVICE_WIDTH.mobile })],
-                ] as const
-              ).map(([k, Icon, label]) => (
-                <button
-                  key={k}
-                  role="radio"
-                  aria-checked={device === k}
-                  aria-label={label}
-                  title={label}
-                  onClick={() => setDevice(k)}
-                  className={cn(
-                    'grid h-7 w-7 cursor-pointer place-items-center rounded-lg hover:text-white',
-                    device === k && 'bg-white/10 text-white',
-                  )}
-                >
-                  <Icon className="h-4 w-4" strokeWidth={1.8} />
-                </button>
-              ))}
-            </div>
-          )}
-          {(() => {
-            const img = preview ? doc.images.find((i) => i.id === preview) : undefined
-            const src = img && imageUrl(img)
-            return img && src ? (
-              <ImagePreview
-                image={img}
-                src={src}
-                marks={doc.annotations.filter((a) => a.target === imgTarget(img.id))}
-                onMarks={(marks) =>
+            {view === 'concept' && (conceptCount > 0 || conceptsRunning) && (
+              <ConceptBoard
+                concept={concept}
+                url={conceptUrl}
+                marks={doc.annotations.filter((a) => a.target.startsWith('concept:'))}
+                onMarks={(cid, list) =>
                   ed.change(
                     (d) => ({
                       ...d,
-                      annotations: [
-                        ...d.annotations.filter((a) => a.target !== imgTarget(img.id)),
-                        // 对话框上面的小标签里显示是哪张图
-                        ...marks.map((m) => ({ ...m, target: imgTarget(img.id), widgets: [img.name] })),
-                      ],
+                      annotations: [...d.annotations.filter((a) => a.target !== `concept:${cid}`), ...list],
                     }),
-                    `ann:img:${img.id}`,
+                    `ann:concept:${cid}`,
                   )
                 }
-                onClose={() => setPreview('')}
+                onSelect={(cid) => void conceptAction('select', cid)}
+                onApprove={(cid) => void approve(cid)}
+                onRemove={(cid) => void conceptAction('remove', cid)}
+                onUpload={async (data) => {
+                  try {
+                    ed.absorb(await api.uploadConcept(id, data))
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                  }
+                }}
+                progress={conceptsRunning ? server.job?.concepts : undefined}
+                busy={ed.running}
               />
-            ) : null
-          })()}
+            )}
+            {view === 'ui' && approvedConcept && !target && (
+              <button
+                onClick={() => setOverlay(!overlay)}
+                aria-pressed={overlay}
+                title={t('把确认的原画模板半透明盖在界面上，对照着调')}
+                className={cn(
+                  'absolute top-3 left-3 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[12px] text-white/70 shadow-pop hover:text-white',
+                  overlay && 'text-accent hover:text-accent',
+                )}
+              >
+                <Layers className="h-3.5 w-3.5" />
+                {t('对照模板')}
+              </button>
+            )}
+            {server.job?.status === 'running' && server.job.capture && !captured.current.has(server.job.capture.id) && (
+              <CanvasCapture
+                key={server.job.capture.id}
+                designId={id}
+                req={server.job.capture}
+                images={renderImages}
+                web={server.kind === 'web'}
+                onDone={(cid) => {
+                  captured.current.add(cid)
+                  setCaptureTick((n) => n + 1)
+                }}
+              />
+            )}
+            {compare && (
+              <VersionCompare
+                version={compare}
+                current={{ root: doc.root, components: doc.components, designSize: doc.designSize }}
+                images={
+                  // 版本里用到、现在已经删掉的图片也要画出来
+                  new Map([
+                    ...compare.snapshot.images.flatMap((i) => {
+                      const v = i.variants[i.selected] ?? i.variants.at(-1)
+                      return v
+                        ? [
+                            [
+                              i.id,
+                              {
+                                url: designFileUrl(id, v.file),
+                                width: v.width || i.width,
+                                height: v.height || i.height,
+                              },
+                            ] as const,
+                          ]
+                        : []
+                    }),
+                    ...renderImages,
+                  ])
+                }
+                device={server.kind === 'web' ? device : undefined}
+                onRestore={async () => {
+                  try {
+                    ed.absorb(await api.saveDesign(id, doc))
+                    ed.absorb(await api.restoreDesignVersion(id, compare.id))
+                    toast.success(t('已恢复到「{name}」，恢复前的样子也存成了一个版本', { name: compare.name }))
+                    setCompare(undefined)
+                  } catch (e) {
+                    toast.error((e as Error).message)
+                  }
+                }}
+                onClose={() => setCompare(undefined)}
+              />
+            )}
+            {server.kind === 'web' && (
+              <div
+                role="radiogroup"
+                aria-label={t('预览宽度')}
+                className="absolute bottom-3 left-3 z-20 flex items-center gap-0.5 rounded-xl border border-white/10 bg-[#232326]/95 p-1 text-white/70 shadow-pop"
+              >
+                {(
+                  [
+                    ['desktop', Monitor, t('桌面（{w}）', { w: designSize.X })],
+                    ['tablet', Tablet, t('平板（{w}）', { w: DEVICE_WIDTH.tablet })],
+                    ['mobile', Smartphone, t('手机（{w}）', { w: DEVICE_WIDTH.mobile })],
+                  ] as const
+                ).map(([k, Icon, label]) => (
+                  <button
+                    key={k}
+                    role="radio"
+                    aria-checked={device === k}
+                    aria-label={label}
+                    title={label}
+                    onClick={() => setDevice(k)}
+                    className={cn(
+                      'grid h-7 w-7 cursor-pointer place-items-center rounded-lg hover:text-white',
+                      device === k && 'bg-white/10 text-white',
+                    )}
+                  >
+                    <Icon className="h-4 w-4" strokeWidth={1.8} />
+                  </button>
+                ))}
+              </div>
+            )}
+            {(() => {
+              const img = preview ? doc.images.find((i) => i.id === preview) : undefined
+              const src = img && imageUrl(img)
+              return img && src ? (
+                <ImagePreview
+                  image={img}
+                  src={src}
+                  marks={doc.annotations.filter((a) => a.target === imgTarget(img.id))}
+                  onMarks={(marks) =>
+                    ed.change(
+                      (d) => ({
+                        ...d,
+                        annotations: [
+                          ...d.annotations.filter((a) => a.target !== imgTarget(img.id)),
+                          // 对话框上面的小标签里显示是哪张图
+                          ...marks.map((m) => ({ ...m, target: imgTarget(img.id), widgets: [img.name] })),
+                        ],
+                      }),
+                      `ann:img:${img.id}`,
+                    )
+                  }
+                  onClose={() => setPreview('')}
+                />
+              ) : null
+            })()}
+          </div>
+          {animOpen && (
+            <AnimationPanel
+              key={`${id}:${target}`}
+              animations={doc.animations ?? []}
+              tree={target}
+              root={tree}
+              web={server.kind === 'web'}
+              selectedNames={[...extra, selected]
+                .filter((x, i, a) => x && a.indexOf(x) === i)
+                .map((x) => findWidget(tree, x)?.Name ?? '')
+                .filter(Boolean)}
+              onChange={(animations, key) => ed.change((d) => ({ ...d, animations }), key)}
+              onCommand={setAnimCommand}
+              onSelectWidget={(name) => {
+                let hit = ''
+                walk(tree, (w) => {
+                  if (w.Name === name) hit = w.id
+                })
+                if (hit) {
+                  setSelected(hit)
+                  setExtra([])
+                  setTab('tree')
+                }
+              }}
+              onClose={() => setAnimOpen(false)}
+            />
+          )}
         </div>
 
         <aside style={{ width: treePane.width }} className="relative flex shrink-0 flex-col border-l bg-card">
@@ -1244,6 +1350,7 @@ function Designer({ id }: { id: string }) {
                 onSelect={setImageSel}
                 onUpload={(f) => void upload(f)}
                 onPreview={setPreview}
+                onDragImage={setDragImage}
                 usedIds={used}
                 canGenerate={source.kind !== 'none' && (!ed.running || server.job?.phase === 'images')}
                 onGenerateAll={async (ids) => {
@@ -1527,6 +1634,7 @@ function demoExport(doc: DesignDoc) {
     root: doc.root,
     components: doc.components,
     images,
+    animations: doc.animations,
   })
   const data = {
     ...json,

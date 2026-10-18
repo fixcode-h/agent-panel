@@ -30,6 +30,7 @@ export const DATA_FILES: Record<string, string> = {
   'settings.json': 'settings.json',
   'agents.json': 'config/agents.json',
   'categories.json': 'config/categories.json',
+  'tags.json': 'config/tags.json',
   'workflows.json': 'config/workflows.json',
   'project-categories.json': 'config/project-categories.json',
   'projects.json': 'projects/projects.json',

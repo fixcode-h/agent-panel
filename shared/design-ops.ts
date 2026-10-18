@@ -17,6 +17,7 @@ import {
   type Widget,
   type WidgetType,
 } from './umg.ts'
+import { looseAnimation, renameInAnimations, type UiAnimation } from './anim.ts'
 
 /**
  * AI 改设计用的操作：不用每次重写整棵控件树，像在控件树和属性面板里点一样，一步步改：
@@ -37,10 +38,14 @@ export type DesignOp =
   | { op: 'addComponent'; component: { Name: string; DesignSize?: { X: number; Y: number }; Root: unknown } }
   | { op: 'removeComponent'; name: string }
   | { op: 'resizeComponent'; name: string; size: { X: number; Y: number } }
+  | { op: 'setAnimation'; animation: unknown }
+  | { op: 'removeAnimation'; in?: string; name: string }
 
 export interface OpsState {
   root: Widget
   components: Component[]
+  /** 动画（见 anim.ts）：in 是属于哪棵树 */
+  animations?: UiAnimation[]
 }
 
 const byName = (root: Widget, name: string) => {
@@ -275,7 +280,37 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
   }
   if (op.op === 'removeComponent') {
     if (!comps.some((x) => x.Name === op.name)) return { error: `没有子控件 ${op.name}` }
-    return { state: { ...s, components: comps.filter((x) => x.Name !== op.name) } }
+    // 子控件的动画跟着删
+    return {
+      state: {
+        ...s,
+        components: comps.filter((x) => x.Name !== op.name),
+        ...(s.animations ? { animations: s.animations.filter((a) => a.in !== op.name) } : {}),
+      },
+    }
+  }
+  if (op.op === 'setAnimation') {
+    // 同一棵树里同名的动画整个换掉
+    const r = looseAnimation(op.animation)
+    if ('error' in r) return r
+    const a = r.animation
+    if (a.in && !comps.some((x) => x.Name === a.in)) return { error: `没有子控件 ${a.in}（in 写子控件名，主界面不写）` }
+    const tree = a.in ? comps.find((x) => x.Name === a.in)!.Root : s.root
+    const names = allNames(tree)
+    const missing = [...new Set(a.tracks.map((t) => t.widget).filter((w) => !names.has(w)))]
+    if (missing.length)
+      return { error: `${a.in ? `子控件 ${a.in} 里` : '主界面里'}没有这些控件：${missing.join('、')}` }
+    if (a.source && !names.has(a.source)) return { error: `触发控件 ${a.source} 不存在` }
+    const list = s.animations ?? []
+    const i = list.findIndex((x) => x.in === a.in && x.name === a.name)
+    return { state: { ...s, animations: i >= 0 ? list.map((x, k) => (k === i ? a : x)) : [...list, a] } }
+  }
+  if (op.op === 'removeAnimation') {
+    const list = s.animations ?? []
+    const where = op.in ?? ''
+    if (!list.some((x) => x.in === where && x.name === op.name))
+      return { error: `${where ? `子控件 ${where} 里` : ''}没有动画 ${op.name}` }
+    return { state: { ...s, animations: list.filter((x) => !(x.in === where && x.name === op.name)) } }
   }
   if (op.op === 'resizeComponent') {
     if (!comps.some((x) => x.Name === op.name)) return { error: `没有子控件 ${op.name}` }
@@ -359,7 +394,10 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       const name = String(op.name ?? '')
       if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return { error: `控件名要用英文、数字和下划线：${name}` }
       if (name !== w.Name && allNames(root).has(name)) return { error: `${inTree}已经有叫 ${name} 的控件` }
-      return done(mapWidget(root, w.id, (x) => ({ ...x, Name: name })))
+      const r = done(mapWidget(root, w.id, (x) => ({ ...x, Name: name })))
+      // 动画里引用这个控件的轨道跟着改名
+      if (s.animations) r.state.animations = renameInAnimations(s.animations, where, w.Name, name)
+      return r
     }
     case 'replace': {
       const w = need(op.target)

@@ -1,6 +1,16 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
+import type {
+  Agent,
+  Category,
+  CliStatus,
+  Tag,
+  Project,
+  ProjectCategory,
+  Settings,
+  Task,
+  Workflow,
+} from '@shared/schema'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
 import { rememberAskUserDefault } from './askUserDefault'
@@ -27,6 +37,8 @@ interface Data {
   loading: boolean
   agents: Agent[]
   categories: Category[]
+  /** 全局标签：Agent 和工作流共用 */
+  tags: Tag[]
   workflows: Workflow[]
   clis: CliStatus[]
   projects: Project[]
@@ -50,6 +62,7 @@ interface Data {
   setProjectCategories: React.Dispatch<React.SetStateAction<ProjectCategory[]>>
   setAgents: React.Dispatch<React.SetStateAction<Agent[]>>
   setCategories: React.Dispatch<React.SetStateAction<Category[]>>
+  setTags: React.Dispatch<React.SetStateAction<Tag[]>>
   setWorkflows: React.Dispatch<React.SetStateAction<Workflow[]>>
   /** force：重新跑一遍检测；不带时用服务端的缓存（改了命令、环境变量时服务端会自己重新检测） */
   refreshClis: (force?: boolean) => Promise<void>
@@ -62,6 +75,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [agents, setAgents] = useState<Agent[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [tags, setTags] = useState<Tag[]>([])
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [clis, setClis] = useState<CliStatus[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -165,8 +179,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       api.projects(),
       api.projectCategories(),
       api.settings(),
+      // 旧版本的服务没有标签接口：取不到当作没有标签
+      api.tags().catch(() => [] as Tag[]),
     ])
-      .then(([a, c, w, p, pc, s]) => {
+      .then(([a, c, w, p, pc, s, tg]) => {
+        setTags(tg)
         setSettings(s)
         setProjects(p)
         setProjectCategories(pc)
@@ -188,6 +205,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         loading,
         agents,
         categories,
+        tags,
         workflows,
         clis,
         projects,
@@ -206,6 +224,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         setSettings,
         setAgents,
         setCategories,
+        setTags,
         setWorkflows,
         setProjects,
         setProjectCategories,
@@ -224,7 +243,7 @@ export function useData() {
 }
 
 /** 当前页面和选中项；用于跨页面跳转，例如从 Agent 跳到使用它的工作流 */
-export type PageId = 'home' | 'agents' | 'workflows' | 'projects' | 'chat' | 'design' | 'library' | 'mcp'
+export type PageId = 'home' | 'agents' | 'workflows' | 'projects' | 'chat' | 'design' | 'comfy' | 'library' | 'mcp'
 export interface Route {
   page: PageId
   id?: string

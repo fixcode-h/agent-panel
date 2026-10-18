@@ -9,7 +9,8 @@ import {
   MessageSquare,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMode } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type ParamValues, type Project, type Task, type TaskMode } from '@shared/schema'
+import { paramLabel, resolveParams } from '@shared/agent-role'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -28,6 +29,12 @@ import {
 } from '@/components/chat/Attachments'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
+import { AgentPicker } from '@/components/agents/AgentPicker'
+import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { ParamsChip } from '@/components/agents/ParamFields'
+
+/** 对话上次选的 Agent；Agent 页的「开始对话」也写这里 */
+export const CHAT_AGENT_KEY = 'last-chat-agent'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -68,6 +75,25 @@ export function TaskComposer({
   // 对话直接选 CLI（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
+  // 对话的 Agent：默认 Agent 可以临时换 CLI 和模型，其他 Agent 用自己配置的
+  const [agentId, setAgentId] = useState(() => {
+    try {
+      return localStorage.getItem(CHAT_AGENT_KEY) || DEFAULT_AGENT_ID
+    } catch {
+      return DEFAULT_AGENT_ID
+    }
+  })
+  const chatAgent = agents.find((a) => a.id === agentId && a.enabled) ?? agents.find((a) => a.id === DEFAULT_AGENT_ID)
+  const isDefaultAgent = !chatAgent || chatAgent.id === DEFAULT_AGENT_ID
+  const pickAgent = (id: string) => {
+    setAgentId(id)
+    setParams({})
+    try {
+      localStorage.setItem(CHAT_AGENT_KEY, id)
+    } catch {}
+  }
+  const [params, setParams] = useState<ParamValues>({})
+  const [paramsOpen, setParamsOpen] = useState(false)
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
@@ -99,12 +125,19 @@ export function TaskComposer({
   const canStart =
     (standalone || !!project) &&
     !!prompt.trim() &&
-    (effMode === 'workflow' ? !!workflow : !!chatRun.cli) &&
+    (effMode === 'workflow' ? !!workflow : isDefaultAgent ? !!chatRun.cli : !!chatAgent) &&
     !busy &&
     !files.uploading
 
   const start = async () => {
     if (!canStart) return
+    // 有没默认值的参数还没选：先打开参数面板让用户选
+    const missing = effMode === 'chat' && chatAgent ? resolveParams(chatAgent.params, params).missing : []
+    if (missing.length) {
+      setParamsOpen(true)
+      toast.warning(t('请先选择参数：{list}', { list: missing.map(paramLabel).join(t('、')) }))
+      return
+    }
     setBusy(true)
     try {
       try {
@@ -115,10 +148,11 @@ export function TaskComposer({
           projectId: project?.id ?? '',
           mode: effMode,
           workflowId: effMode === 'workflow' ? workflow!.id : '',
-          agentId: effMode === 'chat' ? DEFAULT_AGENT_ID : '',
-          cli: effMode === 'chat' ? chatRun.cli : '',
-          model: effMode === 'chat' ? chatRun.model : '',
-          effort: effMode === 'chat' ? chatRun.effort : '',
+          agentId: effMode === 'chat' ? (chatAgent?.id ?? DEFAULT_AGENT_ID) : '',
+          cli: effMode === 'chat' && isDefaultAgent ? chatRun.cli : '',
+          model: effMode === 'chat' && isDefaultAgent ? chatRun.model : '',
+          effort: effMode === 'chat' && isDefaultAgent ? chatRun.effort : '',
+          params: effMode === 'chat' ? params : {},
           prompt,
           attachments: files.attachments,
           isolate: canIsolate && isolate,
@@ -134,8 +168,26 @@ export function TaskComposer({
     }
   }
 
+  const starters = effMode === 'chat' && !prompt.trim() ? (chatAgent?.starters ?? []) : []
   return (
     <div className="flex flex-col gap-3">
+      {starters.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 px-1">
+          {starters.map((x) => (
+            <button
+              key={x}
+              type="button"
+              onClick={() => {
+                setPrompt(x)
+                ta.current?.focus()
+              }}
+              className="max-w-full cursor-pointer truncate rounded-full border border-line-strong bg-card px-3 py-1 text-[12.5px] text-muted transition-colors hover:border-accent hover:text-fg"
+            >
+              {x}
+            </button>
+          ))}
+        </div>
+      )}
       <div
         {...drop.container}
         className={cn(
@@ -259,7 +311,31 @@ export function TaskComposer({
                 </PopoverContent>
               </Popover>
             ) : (
-              <ChatModelPicker value={chat} onChange={setChat} />
+              <>
+                <AgentPicker
+                  onPick={(a) => pickAgent(a.id)}
+                  exclude={agents.filter((a) => !a.enabled).map((a) => a.id)}
+                >
+                  <button type="button" className={chip} title={t('和哪个 Agent 对话')}>
+                    {chatAgent && <AgentAvatar icon={chatAgent.icon} cli={chatAgent.cli} size="xs" />}
+                    <span className="truncate">{chatAgent?.name ?? t('选择 Agent')}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </button>
+                </AgentPicker>
+                {isDefaultAgent ? (
+                  <ChatModelPicker value={chat} onChange={setChat} />
+                ) : (
+                  chatAgent && (
+                    <ParamsChip
+                      params={chatAgent.params}
+                      values={params}
+                      onChange={setParams}
+                      open={paramsOpen}
+                      onOpenChange={setParamsOpen}
+                    />
+                  )
+                )}
+              </>
             )}
 
             <button

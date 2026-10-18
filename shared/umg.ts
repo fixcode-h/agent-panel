@@ -1,3 +1,4 @@
+import { exportAnimations, type UiAnimation } from './anim.ts'
 /**
  * 游戏 UI 设计用的 UMG 控件模型。面板里保存的结构和导出的结构是同一套：
  * 控件类型、插槽、属性名都按 UE5 的 UMG 来写（CanvasPanelSlot.LayoutData.Offsets、Brush.DrawAs、Font.Size……），
@@ -780,11 +781,14 @@ export function imageUsers(trees: { target: string; root: Widget }[], imageId: s
   return out
 }
 
-/** 能直接放图的控件和放在哪个画刷上：Image 的 Brush、Border 的 Background、Button 的普通状态 */
+/** 能直接放图的控件和放在哪个属性上：Image 的 Brush、Border 的 Background、Button 的普通状态；网页是 Picture 的 Src、Frame / WebButton 的背景图 */
 export const IMAGE_SLOT: Partial<Record<WidgetType, string>> = {
   Image: 'Brush',
   Border: 'Background',
   Button: 'WidgetStyle.Normal',
+  Picture: 'Src',
+  Frame: 'BackgroundImage',
+  WebButton: 'BackgroundImage',
 }
 
 /** 把图用到控件上：设好画刷的图片；九宫格的图按 Box 拉伸，Image 顺便把尺寸设成图片尺寸 */
@@ -796,6 +800,8 @@ export function assignImage(w: Widget, img: { id: string; width: number; height:
   let cur: any = props
   for (const k of keys.slice(0, -1)) cur = cur[k] ??= {}
   const last = keys[keys.length - 1]
+  // 网页控件的图片属性就是一个 "img:<id>" 字符串
+  if (WIDGETS[w.Type]?.group === 'web') return { ...w, Properties: { ...props, [last]: `img:${img.id}` } }
   cur[last] = {
     ...brush(),
     ...(cur[last] ?? {}),
@@ -988,8 +994,10 @@ export function exportDesign(d: {
   root: Widget
   components: Component[]
   images: ExportImage[]
+  animations?: UiAnimation[]
 }) {
   const tex = new Map<string, string>()
+  const anims = (tree: string) => exportAnimations((d.animations ?? []).filter((a) => a.in === tree && a.tracks.length))
   const used = new Set<string>()
   for (const img of d.images) {
     const n = uniqueName(textureName(img.name), used)
@@ -1014,8 +1022,14 @@ export function exportDesign(d: {
       Size: { X: i.width, Y: i.height },
       ...(i.nineSlice ? { NineSlice: i.nineSlice } : {}),
     })),
-    UserWidgets: comps.map((c) => ({ Name: c.Name, DesignSize: c.DesignSize, Root: exportWidget(c.Root, tex) })),
+    UserWidgets: comps.map((c) => ({
+      Name: c.Name,
+      DesignSize: c.DesignSize,
+      Root: exportWidget(c.Root, tex),
+      Animations: anims(c.Name),
+    })),
     Root: exportWidget(root, tex),
+    Animations: anims(''),
   }
   /** 每张用到的图片对应导出的哪个文件 */
   const files = used2.map((i) => ({ id: i.id, file: `Textures/${tex.get(i.id)}.${i.ext}` }))

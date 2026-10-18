@@ -1,4 +1,5 @@
 import { cssColor, deepMerge, type Component, type Widget } from './umg.ts'
+import { animKey, animRuntime, animRuntimeSource, compileAnimations, type UiAnimation } from './anim.ts'
 
 /**
  * 网页 UI：控件 → CSS。效果图（web-render.tsx）和导出的 HTML、React 组件用同一套规则，看到的就是导出的样子。
@@ -237,6 +238,8 @@ interface Node {
   kids: Node[]
   /** 子控件（UserWidget）展开出来的，记下子控件名 */
   component?: string
+  /** 动画用的标记（data-an）：主界面的控件名，子控件里的是「子控件名/控件名」；子控件的根还带引用它的控件名 */
+  an: string
 }
 
 function buildNodes(d: { root: Widget; components: Component[]; file: (id: string) => string | undefined }) {
@@ -248,7 +251,7 @@ function buildNodes(d: { root: Widget; components: Component[]; file: (id: strin
       if (!c || depth >= 8) return undefined
       // 子控件的根控件在这里的样子：插槽和可见性用引用它的 UserWidget 的
       const n = walk({ ...c.Root, Slot: w.Slot ?? c.Root.Slot }, parent, c.Name, depth + 1)
-      return n && { ...n, component: c.Name }
+      return n && { ...n, component: c.Name, an: `${animKey(prefix, w.Name)} ${n.an}` }
     }
     const style = (o: { device?: Device; hover?: boolean }) => webCss(w, parent, d.file, o)
     const base = style({})
@@ -265,6 +268,7 @@ function buildNodes(d: { root: Widget; components: Component[]; file: (id: strin
         hover: w.Properties?.Hover ? cssDiff(base, style({ hover: true })) : undefined,
       },
       kids: (w.Children ?? []).map((c) => walk(c, w, prefix, depth)).filter(Boolean) as Node[],
+      an: animKey(prefix, w.Name),
     }
   }
   return walk(d.root, undefined, '', 0)
@@ -281,7 +285,12 @@ export function webExport(d: {
   components: Component[]
   /** 图片 id → 导出的文件路径 */
   file: (id: string) => string | undefined
+  animations?: UiAnimation[]
 }) {
+  const runs = compileAnimations(d.animations ?? [])
+  // 有动画时给控件打上标记，播放代码按标记找控件
+  const mark = (n: Node) =>
+    runs.length ? ` data-an="${esc(n.an)}"${n.component ? ` data-ac="${esc(n.component)}"` : ''}` : ''
   const base = new Map<string, Css>()
   const hover = new Map<string, Css>()
   const tablet = new Map<string, Css>()
@@ -299,26 +308,26 @@ export function webExport(d: {
     switch (w.Type) {
       case 'Frame': {
         const tag = p.Href ? 'a' : 'div'
-        return `${indent}<${tag} class="${n.cls}"${href}>${kids ? `\n${kids}\n${indent}` : ''}</${tag}>`
+        return `${indent}<${tag} class="${n.cls}"${mark(n)}${href}>${kids ? `\n${kids}\n${indent}` : ''}</${tag}>`
       }
       case 'Text': {
         const tag = p.Href ? 'a' : textTag(p)
-        return `${indent}<${tag} class="${n.cls}"${href}>${esc(p.Text)}</${tag}>`
+        return `${indent}<${tag} class="${n.cls}"${mark(n)}${href}>${esc(p.Text)}</${tag}>`
       }
       case 'Picture': {
-        const img = `<img class="${n.cls}" src="${esc((imgId(p.Src) && d.file(imgId(p.Src))) || '')}" alt="${esc(p.Alt || w.Name)}">`
+        const img = `<img class="${n.cls}"${mark(n)} src="${esc((imgId(p.Src) && d.file(imgId(p.Src))) || '')}" alt="${esc(p.Alt || w.Name)}">`
         return p.Href ? `${indent}<a${href}>${img}</a>` : `${indent}${img}`
       }
       case 'WebButton':
         return p.Href
-          ? `${indent}<a class="${n.cls}"${href}>${esc(p.Text)}</a>`
-          : `${indent}<button class="${n.cls}" type="button">${esc(p.Text)}</button>`
+          ? `${indent}<a class="${n.cls}"${mark(n)}${href}>${esc(p.Text)}</a>`
+          : `${indent}<button class="${n.cls}"${mark(n)} type="button">${esc(p.Text)}</button>`
       case 'Input':
         return p.Multiline
-          ? `${indent}<textarea class="${n.cls}" placeholder="${esc(p.Placeholder)}">${esc(p.Value)}</textarea>`
-          : `${indent}<input class="${n.cls}" type="${esc(p.InputType || 'text')}" placeholder="${esc(p.Placeholder)}" value="${esc(p.Value)}">`
+          ? `${indent}<textarea class="${n.cls}"${mark(n)} placeholder="${esc(p.Placeholder)}">${esc(p.Value)}</textarea>`
+          : `${indent}<input class="${n.cls}"${mark(n)} type="${esc(p.InputType || 'text')}" placeholder="${esc(p.Placeholder)}" value="${esc(p.Value)}">`
       case 'Divider':
-        return `${indent}<div class="${n.cls}" role="separator"></div>`
+        return `${indent}<div class="${n.cls}"${mark(n)} role="separator"></div>`
       default:
         return ''
     }
@@ -343,7 +352,7 @@ ${[rules(base), rules(hover, ':hover'), media(tablet, DEVICE_MAX.tablet), media(
 </head>
 <body>
 ${body}
-</body>
+${runs.length ? `<script>\n${animRuntimeSource(runs)}\n</script>\n` : ''}</body>
 </html>
 `
 }
@@ -411,7 +420,9 @@ export function webReactExport(d: {
   components: Component[]
   /** 图片 id → images/ 下的文件名（不含目录） */
   file: (id: string) => string | undefined
+  animations?: UiAnimation[]
 }) {
+  const runs = compileAnimations(d.animations ?? [])
   const imports = new Map<string, string>()
   const imgVar = (id: string) => {
     const f = d.file(id)
@@ -439,7 +450,8 @@ export function webReactExport(d: {
       .filter(Boolean)
       .join(' ')
     const bg = imgId(p.BackgroundImage) && imgVar(imgId(p.BackgroundImage))
-    const attrs = `className=${str(className)}${bg ? ` style={{ backgroundImage: \`url(\${${bg}})\` }}` : ''}${p.Href ? ` href=${str(p.Href)}` : ''}`
+    const marks = runs.length ? ` data-an=${str(n.an)}${n.component ? ` data-ac=${str(n.component)}` : ''}` : ''
+    const attrs = `className=${str(className)}${marks}${bg ? ` style={{ backgroundImage: \`url(\${${bg}})\` }}` : ''}${p.Href ? ` href=${str(p.Href)}` : ''}`
     const kids = n.kids.map((c) => jsx(c, indent + '  ', inComponent)).join('\n')
     switch (w.Type) {
       case 'Frame': {
@@ -476,13 +488,32 @@ export function webReactExport(d: {
     const [name, n] = [...used][i]
     parts.push(`export function ${pascal(name)}() {\n  return (\n${jsx(n, '    ', name)}\n  )\n}`)
   }
-  const head = [...imports].map(([f, v]) => `import ${v} from './images/${f}'`).join('\n')
+  const head = [
+    ...(runs.length ? ["import { useEffect } from 'react'", "import { animRuntime } from './ui-anim'"] : []),
+    ...[...imports].map(([f, v]) => `import ${v} from './images/${f}'`),
+  ].join('\n')
+  // 动画：页面挂上以后按触发方式播放（打开时、滚动到可见、悬停、点击）
+  const effect = runs.length
+    ? `  useEffect(() => {
+    const ctl = animRuntime(document.body, ANIMATIONS, { triggers: true })
+    return () => ctl.dispose()
+  }, [])
+`
+    : ''
   return `// ${d.title}：由 Agent 面板的 UI 设计导出（React + Tailwind CSS）
-${head}${head ? '\n' : ''}
+${head}${head ? '\n' : ''}${runs.length ? `\nconst ANIMATIONS = ${JSON.stringify(runs)}\n` : ''}
 ${parts.join('\n\n')}${parts.length ? '\n\n' : ''}export default function ${pascal(d.title)}() {
-  return (
+${effect}  return (
 ${page}
   )
 }
+`
+}
+
+/** React 导出里的动画播放代码（ui-anim.ts）：和导出的 HTML 用的是同一个函数，只用浏览器自带的 Web Animations */
+export function reactAnimFile() {
+  return `// @ts-nocheck
+// 由 Agent 面板导出：播放 UI 设计里的动画（浏览器自带的 Web Animations，不依赖动画库）
+export const animRuntime = ${animRuntime.toString()}
 `
 }

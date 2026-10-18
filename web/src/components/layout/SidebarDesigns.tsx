@@ -72,6 +72,7 @@ export function DesignList() {
         components: f.components,
         annotations: f.annotations,
         images: f.images,
+        animations: f.animations,
       })
       setDesigns((l) => l.map((x) => (x.id === d.id ? { ...x, title } : x)))
     } catch (e) {

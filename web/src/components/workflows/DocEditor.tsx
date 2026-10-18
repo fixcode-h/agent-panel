@@ -9,17 +9,31 @@ import { fieldClass } from '@/components/ui/input'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 
-/** 工作流文档：Markdown 编辑 / 预览，可以插入模板和 @Agent */
+/** 工作流说明、Agent 角色设定：Markdown 编辑 / 预览，可以插入模板和 @Agent */
 export function DocEditor({
   value,
   onChange,
   team,
   onTemplate,
+  label = t('工作流说明'),
+  placeholder = t('用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。'),
+  mentionHint = t('在光标处插入 Agent 名称'),
+  onMention,
+  tools,
+  minHeight = 420,
 }: {
   value: string
   onChange: (v: string) => void
   team: Agent[]
   onTemplate: () => string
+  label?: string
+  placeholder?: string
+  mentionHint?: string
+  /** 插入 @Agent 之后（Agent 角色设定里用来顺便引入它） */
+  onMention?: (a: Agent) => void
+  /** 工具栏上额外的按钮；insert 在光标处插入文字 */
+  tools?: (insert: (text: string) => void) => React.ReactNode
+  minHeight?: number
 }) {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
   const ref = useRef<HTMLTextAreaElement>(null)
@@ -57,7 +71,8 @@ export function DocEditor({
           {tab('edit', t('编辑'), PencilLine)}
           {tab('preview', t('预览'), Eye)}
         </div>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center gap-1">
+          {mode === 'edit' && tools?.(insert)}
           <Popover>
             <PopoverTrigger asChild>
               <Button variant="ghost" size="sm" disabled={mode !== 'edit' || team.length === 0}>
@@ -65,10 +80,17 @@ export function DocEditor({
                 {t('引用 Agent')}
               </Button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-[240px]">
-              <div className="px-2.5 pt-1 pb-1.5 text-xs text-subtle">{t('在光标处插入 Agent 名称')}</div>
+            <PopoverContent align="end" className="max-h-80 w-[240px] overflow-y-auto">
+              <div className="px-2.5 pt-1 pb-1.5 text-xs text-subtle">{mentionHint}</div>
               {team.map((a) => (
-                <PopoverClose key={a.id} className={menuItem} onClick={() => insert(`@${a.name} `)}>
+                <PopoverClose
+                  key={a.id}
+                  className={menuItem}
+                  onClick={() => {
+                    insert(`@${a.name} `)
+                    onMention?.(a)
+                  }}
+                >
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" />
                   {a.name}
                 </PopoverClose>
@@ -89,17 +111,18 @@ export function DocEditor({
       {mode === 'edit' ? (
         <textarea
           ref={ref}
-          aria-label={t('工作流说明')}
+          aria-label={label}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={t('用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。')}
+          placeholder={placeholder}
+          style={{ minHeight }}
           className={cn(
             fieldClass,
-            'block min-h-[420px] resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0',
+            'block resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0',
           )}
         />
       ) : (
-        <div className="doc-preview min-h-[420px] px-5 py-4">
+        <div className="doc-preview px-5 py-4" style={{ minHeight }}>
           {value.trim() ? (
             <div dangerouslySetInnerHTML={{ __html: renderDoc(value, new Set(team.map((a) => a.name))) }} />
           ) : (

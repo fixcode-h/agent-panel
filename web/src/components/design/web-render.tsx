@@ -2,12 +2,26 @@ import { createElement, useState, type CSSProperties } from 'react'
 import type { Widget } from '@shared/umg'
 import { propsAt, webCss } from '@shared/web'
 import type { RenderCtx } from './umg-render'
+import { animKey } from '@shared/anim'
 
 /**
  * 网页 UI 的效果图：按 shared/web.ts 的规则画出来，和导出的 HTML 一致。
  * 子控件（UserWidget）画成它的根控件，选中时选的是引用它的那个 UserWidget
  */
-export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; ctx: RenderCtx; wid?: string }) {
+export function WebNode({
+  w,
+  parent,
+  ctx,
+  wid,
+  instance,
+}: {
+  w: Widget
+  parent?: Widget
+  ctx: RenderCtx
+  wid?: string
+  /** 子控件的根控件画在引用它的地方：引用它的 UserWidget 的动画标记和子控件名 */
+  instance?: { an: string; ac: string }
+}) {
   const [hover, setHover] = useState(false)
   const [text, setText] = useState<string>()
   const device = ctx.device ?? 'desktop'
@@ -37,8 +51,9 @@ export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; c
       <WebNode
         w={{ ...comp.Root, Slot: w.Slot }}
         parent={parent}
-        ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1 }}
+        ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1, tree: comp.Name }}
         wid={id}
+        instance={{ an: animKey(ctx.tree ?? '', w.Name), ac: comp.Name }}
       />
     )
   }
@@ -46,6 +61,8 @@ export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; c
   const common = {
     'data-wid': id,
     'data-type': w.Type,
+    'data-an': [instance?.an, animKey(ctx.tree ?? '', w.Name)].filter(Boolean).join(' '),
+    'data-ac': instance?.ac,
     style,
     ...(w.Properties?.Hover ? { onPointerEnter: () => setHover(true), onPointerLeave: () => setHover(false) } : {}),
   }

@@ -13,6 +13,8 @@ import {
   AgentInput,
   Category,
   CategoryInput,
+  Tag,
+  TagInput,
   Project,
   ProjectCategory,
   ProjectCategoryInput,
@@ -39,8 +41,18 @@ import {
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
+import {
+  BUILTIN_WORKFLOWS,
+  ComfyWorkflow,
+  localModel,
+  localFile,
+  modelReady,
+  type LocalJob,
+  type LocalStatus,
+} from '@shared/local-image'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
+import { chatMissingParams } from '@shared/agent-role'
 import { beginRun, endRun, newTask, questionAnswers, taskSummary, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
@@ -62,6 +74,8 @@ const KEY = 'agent-panel-demo-v3'
 interface Db {
   agents: Agent[]
   categories: Category[]
+  /** 旧版本的演示数据没有标签 */
+  tags?: Tag[]
   workflows: Workflow[]
   projectCategories: ProjectCategory[]
   projects: Project[]
@@ -141,10 +155,16 @@ function seed(): Db {
   const now = new Date().toISOString()
   let n = 0
   const meta = () => ({ id: `demo-${++n}`, createdAt: now, updatedAt: now })
-  const cat = (name: string): Category => ({ ...meta(), name })
+  const cat = (name: string, scope: Category['scope'] = 'agent'): Category => ({ ...meta(), name, scope })
   const plan = cat('规划')
   const dev = cat('开发')
   const qa = cat('质量')
+  const wfDev = cat('功能开发', 'workflow')
+  const wfFix = cat('问题处理', 'workflow')
+  const tag = (name: string, color: Tag['color'], description = ''): Tag => ({ ...meta(), name, color, description })
+  const tWeb = tag('Web', 'blue', '网站和后台相关')
+  const tQuality = tag('质量', 'green', '测试、审查、验收')
+  const tCommon = tag('常用', 'amber')
   const agent = (o: Partial<AgentInput> & Pick<AgentInput, 'name' | 'cli'>): Agent => ({
     ...meta(),
     ...AgentInput.parse(o),
@@ -183,6 +203,7 @@ function seed(): Db {
     cli: '',
     model: '@medium',
     description: '编写并运行单元测试与端到端测试',
+    tags: [tQuality.id, tWeb.id],
   })
   const review = agent({
     name: '代码审查',
@@ -192,6 +213,44 @@ function seed(): Db {
     model: 'claude-haiku-5-5',
     description: '检查改动的正确性与风格，给出修改建议',
     enabled: false,
+    tags: [tQuality.id],
+    instructions: `# 角色
+你负责审查代码改动，只提意见，不直接改代码。
+
+# 重点
+重点检查：{{focus}}
+
+{{#if level=严格}}
+逐行检查改动，包括命名、注释和边界情况；有任何疑问都列出来。
+{{else}}{{#if level=快速}}
+只看会导致错误行为的问题，风格问题一概不提。
+{{else}}
+先看正确性，其次是可读性；纯格式问题不提。
+{{/if}}{{/if}}
+
+# 输出
+按严重程度从高到低列出问题，每条写明文件和行号。`,
+    params: [
+      {
+        key: 'level',
+        label: '审查力度',
+        type: 'select',
+        options: ['快速', '标准', '严格'],
+        default: '标准',
+        ask: false,
+        description: '严格会逐行检查，快速只看会出错的地方',
+      },
+      {
+        key: 'focus',
+        label: '关注点',
+        type: 'multi',
+        options: ['正确性', '安全', '性能', '可读性'],
+        default: ['正确性', '安全'],
+        ask: false,
+        description: '',
+      },
+    ],
+    starters: ['审查工作区里还没提交的改动', '审查当前分支相对 main 的改动'],
   })
   const docs = agent({
     name: '文档助手',
@@ -199,6 +258,19 @@ function seed(): Db {
     cli: '',
     model: '@low',
     description: '整理 README 和变更说明',
+    tags: [tCommon.id],
+    params: [
+      {
+        key: 'audience',
+        label: '读者',
+        type: 'select',
+        options: ['用户', '开发者'],
+        ask: true,
+        description: '写给谁看：用户看功能和用法，开发者看结构和接口',
+      },
+    ],
+    instructions: '你负责整理文档。这次的读者是{{audience}}，按读者关心的内容组织，不要堆砌实现细节。',
+    starters: ['根据最近的提交整理一份更新说明', '检查 README 里过时的内容'],
   })
 
   const node = (title: string, agentId: string, instructions: string, hooks: Partial<FlowNode['hooks']> = {}) =>
@@ -272,6 +344,8 @@ function seed(): Db {
     ...meta(),
     name: 'Web 功能开发',
     description: '前后端一起改的常规功能需求',
+    categoryId: wfDev.id,
+    tags: [tWeb.id, tCommon.id],
     mainAgentId: arch.id,
     members: [
       { agentId: be.id, responsibility: '实现 API 与数据校验' },
@@ -296,6 +370,8 @@ function seed(): Db {
     ...meta(),
     name: 'Bug 修复',
     description: '复现、定位并修复缺陷',
+    categoryId: wfFix.id,
+    tags: [tQuality.id],
     mainAgentId: arch.id,
     members: [{ agentId: qaAgent.id, responsibility: '复现问题' }],
     flows: [
@@ -326,7 +402,8 @@ function seed(): Db {
   const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
   const project = (o: ProjectInput): Project => ({ ...meta(), ...o })
   return {
-    categories: [plan, dev, qa],
+    categories: [plan, dev, qa, wfDev, wfFix],
+    tags: [tWeb, tQuality, tCommon],
     agents: [arch, fe, be, qaAgent, review, docs],
     workflows: [webFlow, bugFlow],
     projectCategories: [web, game],
@@ -371,6 +448,11 @@ function load(): Db {
     if (raw) db = JSON.parse(raw) as Db
   } catch {}
   db ??= seed()
+  // 旧的演示数据、导入的数据缺新加的字段（标签、参数……）：按现在的结构补齐默认值
+  db.agents = db.agents.map((a) => Agent.parse(a))
+  db.workflows = db.workflows.map((w) => Workflow.parse(w))
+  db.categories = db.categories.map((c) => Category.parse(c))
+  db.tags ??= []
   // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
   if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
   return db
@@ -387,6 +469,7 @@ const DEMO_DATA_FILES: Record<Exclude<DataKind, 'uploads' | 'cache'>, (d: Db) =>
     'settings.json': d.settings ?? Settings.parse({}),
     'config/agents.json': d.agents,
     'config/categories.json': d.categories,
+    'config/tags.json': d.tags ?? [],
     'config/workflows.json': d.workflows,
     'config/project-categories.json': d.projectCategories,
   }),
@@ -439,6 +522,7 @@ function demoData(d: Db, action: string | undefined, method: string, body: unkno
       d.settings = Settings.parse(get('settings.json') ?? {})
       d.agents = get('config/agents.json') ?? []
       d.categories = get('config/categories.json') ?? []
+      d.tags = get('config/tags.json') ?? []
       d.workflows = get('config/workflows.json') ?? []
       d.projectCategories = get('config/project-categories.json') ?? []
     }
@@ -637,6 +721,98 @@ const DEMO_COMMANDS: Record<string, SlashCommand[]> = {
   codex: [{ name: 'prompts:explain', description: '解释一段代码的作用', kind: 'command', source: '~/.codex/prompts' }],
 }
 
+/** 本机生图的演示：模拟安装、下载的进度，演示里没有真的 ComfyUI */
+const local: LocalStatus = {
+  dir: '~/agent-panel/comfyui',
+  installed: false,
+  running: false,
+  external: false,
+  url: 'http://127.0.0.1:8188',
+  python: '3.12',
+  gpu: 'cuda',
+  gpuName: 'NVIDIA GeForce RTX 4090',
+  vram: 24,
+  files: [],
+}
+let demoWorkflows: ComfyWorkflow[] = []
+function demoLocal(method: string, seg: string[], body: unknown): unknown {
+  const [, action, id, sub] = seg
+  if (action === 'workflows') {
+    if (id === 'assist') {
+      // 演示没有 AI：在参考的工作流上做一点改动，说明一下
+      const b = body as { kind: 'game' | 'web'; instruction: string; base?: ComfyWorkflow }
+      const base = b.base ?? BUILTIN_WORKFLOWS.find((w) => w.kind === b.kind)!
+      return {
+        workflow: {
+          ...base,
+          id: b.base && !b.base.builtin ? b.base.id : `wf_${Date.now().toString(36)}`,
+          name: b.base ? `${base.name}（优化）` : b.instruction.slice(0, 20),
+          builtin: undefined,
+          extra: [base.extra, 'high detail, crisp clean edges'].filter(Boolean).join(' '),
+        },
+        note: '演示：在参考工作流的基础上加强了清晰度要求（真实环境里由 AI 按你的要求改写节点和参数）。',
+      }
+    }
+    if (method === 'PUT' && id) {
+      const wf = { ...parse(ComfyWorkflow, { ...(body as object), id }), builtin: undefined }
+      demoWorkflows = demoWorkflows.some((w) => w.id === id)
+        ? demoWorkflows.map((w) => (w.id === id ? wf : w))
+        : [...demoWorkflows, wf]
+      return wf
+    }
+    if (method === 'DELETE' && id) {
+      demoWorkflows = demoWorkflows.filter((w) => w.id !== id)
+      return { ok: true }
+    }
+    const list = [...BUILTIN_WORKFLOWS, ...demoWorkflows]
+    const ready = list.filter((w) => !w.model || (localModel(w.model) && modelReady(localModel(w.model)!, local)))
+    return { list, ready: ready.map((w) => w.id) }
+  }
+  const tick = (steps: string[], done: () => void, total = 0) => {
+    const j: LocalJob = (local.job = {
+      id: String(Date.now()),
+      kind: total ? 'download' : 'install',
+      status: 'running',
+      step: steps[0],
+      log: '',
+      progress: total ? { done: 0, total } : undefined,
+    })
+    let i = 0
+    const timer = setInterval(() => {
+      i++
+      if (j.progress) j.progress.done = Math.min(total, (total * i) / 8)
+      const step = steps[Math.min(steps.length - 1, Math.floor((i * steps.length) / 8))]
+      if (step !== j.step) j.log += `${j.step}\n`
+      j.step = step
+      if (i < 8) return
+      clearInterval(timer)
+      j.status = 'done'
+      done()
+    }, 400)
+  }
+  if (action === 'install' && method === 'POST')
+    tick(
+      ['检查 Python', '下载 ComfyUI', '创建 Python 虚拟环境', '安装 PyTorch', '安装 ComfyUI 的依赖', '安装完成'],
+      () => {
+        local.installed = true
+      },
+    )
+  if (action === 'start') local.running = local.installed
+  if (action === 'stop') local.running = false
+  if (action === 'cancel' && local.job) local.job.status = 'failed'
+  if (action === 'models' && id) {
+    const m = localModel(id)
+    if (m && sub === 'download')
+      tick(
+        m.files.map((f) => `下载 ${localFile(f)!.file}`),
+        () => (local.files = [...new Set([...local.files, ...m.files])]),
+        m.files.reduce((n, f) => n + localFile(f)!.gb * 1024 ** 3, 0),
+      )
+    if (m && method === 'DELETE') local.files = local.files.filter((f) => !m.files.includes(f))
+  }
+  return structuredClone(local)
+}
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -649,6 +825,7 @@ function route(method: string, url: string, body: unknown): unknown {
     persist()
     return Settings.parse((d.settings ??= Settings.parse({})))
   }
+  if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {})
   if (res === 'clis') {
@@ -795,12 +972,32 @@ function route(method: string, url: string, body: unknown): unknown {
     if (method === 'DELETE') {
       remove('categories', id, '分类不存在')
       d.agents = d.agents.map((a) => (a.categoryId === id ? { ...a, categoryId: '' } : a))
+      d.workflows = d.workflows.map((w) => (w.categoryId === id ? { ...w, categoryId: '' } : w))
       persist()
       return undefined
     }
     const input = parse(CategoryInput, body)
-    if (d.categories.some((c) => c.name === input.name && c.id !== id)) fail(`分类「${input.name}」已存在`)
-    return method === 'POST' ? create('categories', input) : update('categories', id, input, '分类不存在')
+    // 改名时不带 scope：沿用原来的
+    const scope = d.categories.find((c) => c.id === id)?.scope ?? input.scope
+    if (d.categories.some((c) => c.name === input.name && c.scope === scope && c.id !== id))
+      fail(`分类「${input.name}」已存在`)
+    return method === 'POST' ? create('categories', input) : update('categories', id, { ...input, scope }, '分类不存在')
+  }
+
+  if (res === 'tags') {
+    if (method === 'GET') return (d.tags ??= [])
+    if (method === 'DELETE') {
+      remove('tags', id, '标签不存在')
+      const drop = <T extends { tags: string[] }>(x: T) => ({ ...x, tags: x.tags.filter((t) => t !== id) })
+      d.agents = d.agents.map(drop)
+      d.workflows = d.workflows.map(drop)
+      persist()
+      return undefined
+    }
+    const input = parse(TagInput, body)
+    d.tags ??= []
+    if (d.tags.some((x) => x.name === input.name && x.id !== id)) fail(`标签「${input.name}」已存在`)
+    return method === 'POST' ? create('tags', input) : update('tags', id, input, '标签不存在')
   }
 
   if (res === 'agents') {
@@ -809,11 +1006,14 @@ function route(method: string, url: string, body: unknown): unknown {
       const err = agentDeleteError(id, d.workflows)
       if (err) fail(err)
       remove('agents', id, 'Agent 不存在')
+      d.agents = d.agents.map((a) => ({ ...a, includes: a.includes.filter((x) => x !== id) }))
+      persist()
       return undefined
     }
     const input = parse(AgentInput, body)
     if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
+    input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
     if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
     return method === 'POST' ? create('agents', input) : update('agents', id, input, 'Agent 不存在')
   }
@@ -827,6 +1027,7 @@ function route(method: string, url: string, body: unknown): unknown {
       return undefined
     }
     const wf = parse(WorkflowInput, body)
+    wf.tags = wf.tags.filter((t) => d.tags?.some((x) => x.id === t))
     // 和服务端同一套检查：成员、连线、环、流程之间的循环调用
     const err = checkWorkflow(wf, new Set(d.agents.map((a) => a.id)), d.workflows, method === 'POST' ? '' : id)
     if (err) fail(err)
@@ -959,6 +1160,8 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
   } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
+  const lack = chatMissingParams(input, d.agents)
+  if (lack) fail(lack)
   const task = create<Task>('tasks', {
     ...newTask(
       input,
@@ -1221,6 +1424,7 @@ async function seedTasks(d: Db) {
         effort: '',
         isolate: false,
         askUser: false,
+        params: {},
       },
       true,
     )
@@ -1242,6 +1446,7 @@ async function seedTasks(d: Db) {
         effort: '',
         isolate: false,
         askUser: false,
+        params: {},
       },
       true,
     )
@@ -1263,6 +1468,7 @@ async function seedTasks(d: Db) {
         effort: '',
         isolate: false,
         askUser: false,
+        params: {},
       },
       true,
     )

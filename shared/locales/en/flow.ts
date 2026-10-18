@@ -184,7 +184,6 @@ export const EN_FLOW: Record<string, string> = {
   导入工作流文件: 'Import a workflow file',
   '描述需求，让本机 CLI 生成工作流': 'Describe what you need and let a local CLI generate the workflow',
   'AI 创建': 'Create with AI',
-  搜索工作流: 'Search workflows',
   没有匹配的工作流: 'No matching workflows',
   还没有工作流: 'No workflows yet',
   创建第一个工作流: 'Create your first workflow',

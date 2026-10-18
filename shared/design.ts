@@ -17,6 +17,7 @@ import {
 import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
 import { t } from './i18n.ts'
 import { applyOps } from './design-ops.ts'
+import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -29,7 +30,7 @@ const MarginSchema = z.object({ Left: z.number(), Top: z.number(), Right: z.numb
 export const ImageVariant = z.object({
   /** 设计目录 images/ 下的文件名 */
   file: z.string(),
-  source: z.enum(['cli', 'browser', 'upload']),
+  source: z.enum(['cli', 'browser', 'local', 'upload']),
   /** 实际尺寸（像素） */
   width: z.number().default(0),
   height: z.number().default(0),
@@ -114,7 +115,7 @@ export const ConceptImage = z.object({
   round: z.number().int().default(1),
   /** 在哪张的基础上改的 */
   base: z.string().optional(),
-  source: z.enum(['cli', 'browser', 'upload']),
+  source: z.enum(['cli', 'browser', 'local', 'upload']),
   at: z.string(),
 })
 export type ConceptImage = z.infer<typeof ConceptImage>
@@ -177,10 +178,14 @@ export const DesignDoc = z.object({
   images: z.array(DesignImage).default([]),
   /** 还没发给 AI 的标注 */
   annotations: z.array(Annotation).max(200).default([]),
+  /** 动画（UE 的 Widget Animation；网页是动效），见 anim.ts */
+  animations: z.array(UiAnimation).max(300).default([]),
 })
-export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components'> & {
+export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components' | 'animations'> & {
   root: Widget
   components: Component[]
+  /** 旧数据没有 */
+  animations?: UiAnimation[]
 }
 
 export const Design = DesignDoc.extend({
@@ -406,6 +411,8 @@ export type NewDesignInput = z.infer<typeof NewDesignInput>
 export const ImageSource = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('cli') }),
   z.object({ kind: z.literal('browser'), tabId: z.string().min(1) }),
+  /** 本机的 ComfyUI：workflow 是工作流 id，auto 按图片用途自动选 */
+  z.object({ kind: z.literal('local'), workflow: z.string().min(1).default('auto') }),
   z.object({ kind: z.literal('none') }),
 ])
 export type ImageSource = z.infer<typeof ImageSource>
@@ -541,7 +548,7 @@ export interface DesignJob {
   images?: ImageJobItem[]
   outChars: number
   /** AI 用工具改的过程中，改到现在的样子；页面在 AI 改的过程中显示它，applied 是已经应用了几步 */
-  preview?: { root: Widget; components: Component[]; applied: number }
+  preview?: { root: Widget; components: Component[]; animations?: UiAnimation[]; applied: number }
   attempt: number
   error?: string
   startedAt: number
@@ -589,7 +596,11 @@ export const AiImage = z.object({
   nineSlice: MarginSchema.optional(),
   /** 反向提示词：这张图里不能出现的东西（英文） */
   negative: z.string().max(2000).optional(),
-  /** 同类的小图标（背包物品、技能、货币…）写成同一个 sheet：面板让图片模型把它们画在一张图上再切开，比一张张生成快很多 */
+  /**
+   * 尺寸统一的小图标（背包物品、技能、货币…，边长不超过 SHEET_MAX_SIDE）写成同一个 sheet：
+   * 面板让图片模型在一张干净的底色上把它们等间距排成整齐的格子，再按格子切开，比一张张生成快很多。
+   * 底框、按钮、面板这类大图不能用，要一张张生成
+   */
   sheet: z
     .string()
     .regex(/^[A-Za-z0-9_-]{1,40}$/, 'sheet 只能用字母、数字、下划线和连字符')
@@ -606,6 +617,8 @@ export const AiDesignResult = z.object({
   images: z.array(AiImage).default([]),
   /** 在现有设计上一步步改（见 design-ops.ts），和 root 二选一 */
   ops: z.array(z.any()).max(500).optional(),
+  /** 这一轮改完的动画（MCP 会话里的），给了就整个换掉 */
+  animations: z.array(UiAnimation).optional(),
   /** 先问用户（整体风格还没定时）；有它时这一轮不改设计 */
   questions: z.array(DesignQuestion).optional(),
 })
@@ -635,6 +648,16 @@ const webRules = (
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 Text 的 Text 都写成页面上要显示的真实内容（标题、按钮文案、说明文字），不要留默认的 "Text"；动态的数据写成真实格式的示例（「¥1,299」「2026-10-17」「128 条评论」）。颜色一律写 "#RRGGBBAA"。
 `
+
+const GAME_MOTION = `- 参照 UE 的 UMG 动画：每个动画导出成 Widget Blueprint 里的一个 WidgetAnimation（轨道是控件的 RenderOpacity、RenderTransform），trigger 决定什么时候播（show 是 Construct 时、hover / click 绑到 source 控件上、manual 由蓝图调用）。
+- 用户要动画、动效、过场，或者在做弹窗、奖励结算、提示条这类本来就该有动画的界面时加：弹窗 / 面板打开用 pop-in 或 zoom-in（主面板，trigger show），里面的列表项、奖励物品用 fade-in-up 加 stagger；关闭用 zoom-out / fade-out（trigger manual，名字写 Anim_Close）；
+  重要按钮加 hover-grow（hover）和 press（click）；可领取、红点、新物品用 pulse-loop / breathe（loop 0）；加载转圈用 spin。用户没要求时不要给普通的静态界面硬加动画。
+- 子控件（例如按钮、格子）自己的动画写 in（子控件名），轨道里写子控件里的控件名，每个用到它的地方都有。`
+
+const WEB_MOTION = `- 网页导出时用浏览器自带的 Web Animations 播放（不依赖任何库），trigger：show 是页面打开时、scroll 是滚动到能看见时、hover 移上去播放移开倒放、click 点击时。
+- 网页不要是完全静态的：搭页面时顺手加上合适的动效——首屏的标题、副标题、按钮用 fade-in-up 依次出现（trigger show，stagger 0.08）；下面的每个区块、卡片列表用 fade-in-up 或 zoom-in，trigger scroll（卡片 stagger 0.08）；
+  卡片、主按钮加 hover-lift 或 hover-grow（trigger hover）。用户说不要动画时不加。
+- 子控件（例如卡片）的悬停动画写在子控件里（in 写子控件名），每张卡片各自响应。`
 
 const WEB_NOTES = `## 属性（Properties）
 - 所有控件：Width、Height（"auto" | "fill" | 像素数）、Visibility(Visible|Hidden|Collapsed)、RenderOpacity
@@ -742,6 +765,8 @@ ${JSON.stringify(compactTree(d.root))}
 ${comps.length ? JSON.stringify(comps) : '（没有）'}
 图片：
 ${imgs.length ? JSON.stringify(imgs) : '（没有）'}
+动画：
+${d.animations?.length ? JSON.stringify(animationsBrief(d.animations)) : '（没有）'}
 ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
@@ -754,7 +779,8 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 找控件：find_widgets 按名字、类型、文字找；get_tree 看某个子控件的树（in 写子控件名）
 - 改错了：undo 撤回这一轮最近几次调用
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
-- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。同类的小图标（背包物品、技能、货币、状态图标，3 个以上）给它们写同一个 sheet（例如 "items"）：面板让图片模型把它们画在一张图上再自动切开，比一张张生成快得多，每个图标仍然按各自的 width、height 精确输出
+- 图片：add_images 列出要生成的图片（prompt 写正向描述，negative 写反向提示词），再用 update_widgets 设到控件上（"img:<图片 id>"）。
+- 图集（sheet）只用于尺寸统一的小图标：同一类、同样大小（边长 ${SHEET_MIN_SIDE}~${SHEET_MAX_SIDE} 像素，例如 96×96 的背包物品、技能、货币、状态图标）、3 个以上，只是画的内容不同时，给它们写同一个 sheet（例如 "items"）。面板让图片模型在一张干净的底色上把它们按相同间距排成整齐的格子（不重叠、不拼成一幅画），再按格子切开，每个图标按各自的 width、height 精确输出，比一张张生成快得多。底框、按钮、面板、进度条、头图、插图这些大图和尺寸各不相同的图不要写 sheet，一张张生成。小图标的 width、height 按在界面上的显示尺寸写准，prompt 写清楚轮廓简洁、主体占满画面、小尺寸下也清晰可辨
 - 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - 看效果：screenshot 截一张当前画布（就是用户左边看到的样子），返回图片文件和每个控件在画布上的位置；搭完一块或改完后截图看一眼，有重叠、跑出画面、比例不对的地方接着改
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
@@ -769,6 +795,14 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 图片控件的显示尺寸和图片自己的宽高比要一致（add_images 的 width、height 就按它在界面上的显示尺寸写），否则会被拉伸变形；check 会提醒
 - 改属性：update_widgets 的 properties / slot 只写要改的字段，和原来的合并；换图就是给画刷设 {"Brush":{"ResourceObject":"img:icon_gem"}}
 
+### 动画（add_animations / remove_animations）
+${web ? WEB_MOTION : GAME_MOTION}
+- 一般用 presets，一句话就能加上；预设满足不了时再写 tracks 关键帧。动画只改不透明度、位移、缩放、旋转，不影响布局。
+- 列表、卡片、按钮组一个接一个出现：同一个预设写多个 widgets，stagger 0.05~0.12 秒。
+- 动画要克制：入场 0.3~0.6 秒，悬停反馈 0.15~0.2 秒，循环动画只用在真正需要吸引注意的地方（可领取的奖励、加载中、新消息）。
+- 可用的预设：
+${presetCatalogText()}
+
 ## 回复
 所有修改都通过 design 工具完成，不要把整棵树写成 JSON 输出、不要写文件、不要运行命令。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块。`
 }
@@ -777,6 +811,7 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 export const MAX_TOOL_ITEMS = 20
 export const MAX_TOOL_WIDGETS = 30
 export const MAX_TOOL_IMAGES = 16
+export const MAX_TOOL_KEYS = 240
 
 /** 给设计 AI 的原画信息：先出原画（concept）还是照着确认的模板做（template） */
 export interface ConceptContext {
@@ -799,7 +834,7 @@ function conceptSection(c: ConceptContext, d: Design) {
 照着它搭界面、出切图，界面要和模板一致：
 1. 先用 view_image 整体看一遍模板，再用 region 放大各个区域，用 inspect_image 量准位置、尺寸和颜色，换算到设计稿 ${size}。
 2. 分区域搭控件树：先搭骨架，再一块一块往里加控件（见下面的数量限制）。模板里的文字写进 TextBlock。
-3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。同类的小图标（3 个以上）放进同一个 sheet 合成一张图出，面板会自动切开，不用一张张出，也不用问用户；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
+3. 切图资源不是从效果图上截，而是照着模板里的样子重新生成生产级的独立图片：每个底框、按钮、高亮框、图标、装饰单独一张，prompt 用英文写清楚形状、材质、颜色、细节，negative 写反向提示词（例如 text, watermark, background scenery, cropped）。尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，3 个以上，例如背包物品）放进同一个 sheet，按格子等间距排在一张图上出，面板会自动切开，不用一张张出，也不用问用户；其他大图一张张出；需要拉伸的框给 nineSlice。生成时面板会把模板图一起交给图片模型参考，风格会和模板一致。
 4. 搭完调 screenshot 截一张当前画布，和模板对比（用 view_image 看截图文件和模板的同一块），位置、比例、层次不对的接着改，直到和模板一致；最后调 check。
 - 之后用户只要求改某个已有的小图标时，只重新出那一张（add_images 写同一个 id，不写 sheet），不要重出整张图集。
 
@@ -835,7 +870,9 @@ ${c.state.images.length ? `\n已经出过的原画：\n${c.state.images.slice(-1
 export function resolveDesignResult(
   raw: unknown,
   d: Design,
-): { error: string } | { result: z.infer<typeof AiDesignResult>; root?: Widget; components?: Component[] } {
+):
+  | { error: string }
+  | { result: z.infer<typeof AiDesignResult>; root?: Widget; components?: Component[]; animations?: UiAnimation[] } {
   const p = AiDesignResult.safeParse(raw)
   if (!p.success) return { error: z.prettifyError(p.error) }
   const r = p.data
@@ -849,12 +886,17 @@ export function resolveDesignResult(
   const errors: string[] = []
   // 一步步改：在现有设计（或这次写的完整树）上应用操作，结果再整体检查
   let after = components
+  let animations = r.animations
   // ops 给了空数组也要走这里：MCP 的「检查」用它检查当前的设计
   if (r.ops) {
-    const applied = applyOps({ root: root ?? d.root, components: components ?? d.components }, r.ops)
+    const applied = applyOps(
+      { root: root ?? d.root, components: components ?? d.components, animations: animations ?? d.animations ?? [] },
+      r.ops,
+    )
     errors.push(...applied.errors)
     root = applied.state.root
     after = applied.state.components
+    animations = applied.state.animations
   }
   const compNames = (after ?? d.components).map((c) => c.Name)
   errors.push(
@@ -900,8 +942,22 @@ export function resolveDesignResult(
     errors.push(
       `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal；网页是 Picture 的 Src、Frame / WebButton 的 BackgroundImage），用 update_widgets 设上`,
     )
+  // 动画引用的控件要在：控件删了、改名了，动画里的轨道要跟着改
+  const finalRoot = root ?? d.root
+  const finalComps = after ?? d.components
+  const names = (w: Widget) => {
+    const set = new Set<string>()
+    walk(w, (x) => set.add(x.Name))
+    return set
+  }
+  errors.push(
+    ...checkAnimations(
+      animations ?? d.animations ?? [],
+      new Map([['', names(finalRoot)], ...finalComps.map((c) => [c.Name, names(c.Root)] as [string, Set<string>])]),
+    ).map((e) => `${e}：用 add_animations 改好或 remove_animations 删掉`),
+  )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
-  return { result: r, root, components: after }
+  return { result: r, root, components: after, animations }
 }
 
 export const ANNOTATION_LABEL: Record<AnnotationKind, string> = {
@@ -1003,6 +1059,34 @@ const negativeLine = (...lists: (string | undefined)[]) => {
 }
 
 /**
+ * 本机模型（ComfyUI）的正反提示词：新一代模型（Z-Image、FLUX、Qwen-Image）读得懂完整的描述，
+ * 只是把写在正文里的「不能出现」拿出来单独传；SDXL 的文本编码器只看前 77 个词，压成关键词短句
+ */
+export function localPrompts(
+  full: string,
+  natural: boolean,
+  o: { subject: string; style: string; projectStyle?: string; kind?: DesignKind; chroma?: boolean; negative?: string },
+) {
+  const lines = full.split('\n')
+  const neg = lines.find((l) => l.startsWith('Negative prompt'))
+  const negative = neg
+    ? neg.replace(/^Negative prompt[^:]*:\s*/, '').replace(/\.$/, '')
+    : negativeLine(o.kind === 'web' ? WEB_NEGATIVE : GAME_NEGATIVE, o.negative).replace(/^[^:]*:\s*/, '')
+  if (natural) return { prompt: lines.filter((l) => l !== neg).join('\n'), negative }
+  const prompt = [
+    o.subject.trim(),
+    o.kind === 'web' ? 'web illustration' : 'game ui asset',
+    o.style.trim(),
+    (o.projectStyle ?? '').trim().split(/[.\n]/)[0],
+    'isolated, centered, clean sharp edges, high detail, masterpiece',
+    o.chroma ? 'on a flat pure green background' : '',
+  ]
+    .filter(Boolean)
+    .join(', ')
+  return { prompt, negative }
+}
+
+/**
  * 原画（整屏效果图）的生成描述：按设计稿的比例画出完整的界面，正面平视、没有设备边框；
  * reference 表示带着上一张图一起交给图片模型，在它的基础上改
  */
@@ -1035,6 +1119,31 @@ export function conceptPrompt(
   return parts.filter(Boolean).join('\n')
 }
 
+/** 图集只用于小图标：边长范围，一张图集最多几个（格子太多每个图标分到的像素少，会糊） */
+export const SHEET_MIN_SIDE = 24
+export const SHEET_MAX_SIDE = 160
+export const SHEET_MAX_ICONS = 16
+
+/** 图集的写法对不对：大图、同一个图集里尺寸不一样的，返回给 AI 改 */
+export function sheetProblems(imgs: { id: string; width: number; height: number; sheet?: string }[]) {
+  const out: string[] = []
+  const groups = new Map<string, typeof imgs>()
+  for (const i of imgs) if (i.sheet) groups.set(i.sheet, [...(groups.get(i.sheet) ?? []), i])
+  for (const [name, list] of groups) {
+    const big = list.filter((i) => Math.max(i.width, i.height) > SHEET_MAX_SIDE)
+    if (big.length)
+      out.push(
+        `sheet "${name}" 里的 ${big.map((i) => `${i.id}（${i.width}×${i.height}）`).join('、')} 太大：图集只用于边长不超过 ${SHEET_MAX_SIDE} 的小图标，大图去掉 sheet 一张张生成`,
+      )
+    const sizes = [...new Set(list.map((i) => `${i.width}×${i.height}`))]
+    if (sizes.length > 1)
+      out.push(
+        `sheet "${name}" 里的图标尺寸不统一（${sizes.join('、')}）：同一个图集的图标要一样大，按尺寸分成不同的 sheet 或去掉 sheet`,
+      )
+  }
+  return out
+}
+
 /** 图标表的格数：尽量接近正方形（按图标的宽高比算），最后一行可以不满 */
 export function sheetGrid(n: number, cell: { width: number; height: number }) {
   const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * cell.height) / cell.width))))
@@ -1061,8 +1170,9 @@ export function sheetPrompt(
   const { cols, rows } = sheetGrid(imgs.length, cell)
   const transparent = imgs.some((i) => i.transparent)
   const parts = [
-    `Icon sprite sheet for ${kind === 'web' ? 'a web page' : 'a game UI'}: ${imgs.length} separate icons laid out in a strict grid of ${cols} columns × ${rows} rows, aspect ratio ${aspect(cols * cell.width, rows * cell.height)}, the grid fills the whole canvas.`,
-    'Every cell is the same size. Each icon is centered in its own cell, fully inside it with about 12% empty margin on every side; nothing touches or crosses a cell border. No grid lines, frames around cells, numbers, labels or text anywhere.',
+    `Icon sprite sheet for ${kind === 'web' ? 'a web page' : 'a game UI'}: ${imgs.length} separate, individual icons of the same size, laid out one after another in a strict, evenly spaced grid of ${cols} columns × ${rows} rows on one clean plain background, aspect ratio ${aspect(cols * cell.width, rows * cell.height)}, the grid fills the whole canvas.`,
+    'This is a sheet of separate items to be cut apart, NOT a scene or a composition: icons never overlap, never touch, and nothing connects them. Every cell is exactly the same size and the gaps between icons are identical. Each icon is centered in its own cell, fully inside it with about 12% empty margin on every side; nothing touches or crosses a cell border. No grid lines, frames around cells, numbers, labels or text anywhere.',
+    `Each icon must stay crisp and readable when shown at only ${cell.width}x${cell.height} px: bold clear silhouette, strong contrast, simple readable shapes, the subject fills about three quarters of its cell, sharp clean edges, no tiny noisy details, no blur, high resolution.`,
     'All icons look like one matching set: identical art style, outline weight, lighting direction, color treatment and level of detail.',
     kind === 'web' ? WEB_QUALITY : GAME_QUALITY,
     projectStyle.trim(),
@@ -1157,10 +1267,12 @@ export function componentDeps(name: string, all: Component[]): string[] {
  * 返回新的子控件和图片列表，copyFiles 是要从来源设计复制过来的图片文件
  */
 export function importComponent(
-  target: { components: Component[]; images: DesignImage[] },
-  source: { components: Component[]; images: DesignImage[] },
+  target: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
+  source: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
   name: string,
-): { error: string } | { components: Component[]; images: DesignImage[]; copyFiles: string[] } {
+):
+  | { error: string }
+  | { components: Component[]; images: DesignImage[]; animations: UiAnimation[]; copyFiles: string[] } {
   if (!source.components.some((c) => c.Name === name)) return { error: t('没有找到子控件 {name}', { name }) }
   if (target.components.some((c) => c.Name === name))
     return { error: t('这个设计里已经有叫 {name} 的子控件了', { name }) }
@@ -1190,7 +1302,13 @@ export function importComponent(
         : v && typeof v === 'object'
           ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]))
           : v
-  return { components: [...target.components, ...add.map(fix)], images, copyFiles }
+  // 子控件自己的动画一起带过来
+  const added = new Set(add.map((c) => c.Name))
+  const animations = [
+    ...(target.animations ?? []),
+    ...structuredClone((source.animations ?? []).filter((a) => added.has(a.in))),
+  ]
+  return { components: [...target.components, ...add.map(fix)], images, animations, copyFiles }
 }
 
 // ---- 设计版本 ----
@@ -1201,6 +1319,6 @@ export interface DesignVersion {
   name: string
   at: string
   auto: boolean
-  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'>
+  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'> & { animations?: UiAnimation[] }
 }
 export type DesignVersionMeta = Omit<DesignVersion, 'snapshot'> & { widgets: number }

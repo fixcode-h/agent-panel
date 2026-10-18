@@ -1,5 +1,17 @@
 import { Bot, Crown, MousePointerClick, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
-import type { Agent, Flow, FlowNode, FlowRef, WorkflowInput } from '@shared/schema'
+import {
+  DEFAULT_AGENT_ID,
+  type Agent,
+  type Flow,
+  type FlowNode,
+  type FlowRef,
+  type WorkflowInput,
+} from '@shared/schema'
+import { MODEL_TIERS } from '@shared/clis'
+import { agentTier } from '@shared/agent-role'
+import { cliSettings, defaultCli, defaultSettings } from '@shared/settings'
+import { Segmented } from '@/components/ui/segmented'
+import { ParamsForm } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
 import { END, START, entryFlow, flowLabel, preds, succs } from '@shared/flow'
 import { useData } from '@/lib/data'
@@ -54,7 +66,7 @@ export function NodeInspector({
   setFlow: (f: Flow) => void
   onSelect: (id: string) => void
 }) {
-  const { workflows } = useData()
+  const { workflows, agents, settings, clis } = useData()
   const name = (id: string) =>
     id === START ? t('开始') : id === END ? t('结束') : flow.nodes.find((n) => n.id === id)?.title || t('未命名节点')
   const setNode = (p: Partial<FlowNode>) =>
@@ -63,6 +75,13 @@ export function NodeInspector({
   const down = succs(flow, node.id).map(name)
   const opts = refOptions(w, workflows, flow.id)
   const outside = node.agentId && node.agentId !== main?.id && !team.some((m) => m.agent.id === node.agentId)
+  // 节点只能用默认 CLI 的三档模型，思考强度跟着档位
+  const runner = node.agentId ? agents.find((a) => a.id === node.agentId) : main
+  const s = settings ?? defaultSettings()
+  const defCliId = defaultCli(s)
+  const cs = cliSettings(s, defCliId)
+  const tier = node.tier || (runner ? agentTier(runner) : 'medium')
+  const params = runner && runner.id !== DEFAULT_AGENT_ID ? runner.params : []
 
   return (
     <div className="flex flex-col gap-5 p-5">
@@ -139,6 +158,35 @@ export function NodeInspector({
           />
         )}
       </div>
+      {node.kind === 'agent' && (
+        <div className="flex flex-col gap-1.5">
+          <Label
+            hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。', {
+              cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
+            })}
+          >
+            {t('模型档位')}
+          </Label>
+          <Segmented
+            label={t('模型档位')}
+            value={tier}
+            onChange={(v) => setNode({ tier: v })}
+            options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
+          />
+          <span className="font-mono text-[11.5px] text-subtle">
+            {cs.tiers[tier].model || t('自动')}
+            {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
+          </span>
+        </div>
+      )}
+      {node.kind === 'agent' && params.length > 0 && (
+        <section className="flex flex-col gap-3 rounded-xl border p-3.5">
+          <Label hint={t('{name} 暴露的参数，在这个节点上的取值；没改的用 Agent 的默认值。', { name: runner!.name })}>
+            {t('参数')}
+          </Label>
+          <ParamsForm params={params} values={node.params} onChange={(v) => setNode({ params: v })} compact />
+        </section>
+      )}
       <label className="flex flex-col gap-1.5">
         <Label hint={t('会和工作流说明、上游节点的结果一起发给执行者')}>{t('要做的事')}</Label>
         <Textarea
@@ -206,6 +254,27 @@ export function NodeInspector({
           aria-label={t('完成后等我确认')}
         />
       </label>
+
+      {node.kind === 'agent' && (
+        <label className="flex flex-wrap items-center gap-2 rounded-xl border p-3.5 text-xs text-muted">
+          <span className="flex flex-1 flex-col gap-0.5">
+            <span className="text-[13px] font-semibold text-fg">{t('失败自动重试')}</span>
+            <span className="text-[11.5px] leading-relaxed text-subtle">
+              {t('连接断开、偶发报错时接着上次的会话再试，不用等你点「继续执行」。')}
+            </span>
+          </span>
+          <Input
+            type="number"
+            min={0}
+            max={5}
+            value={node.retries}
+            aria-label={t('失败自动重试')}
+            onChange={(e) => setNode({ retries: Math.min(5, Math.max(0, Math.round(Number(e.target.value) || 0))) })}
+            className="h-8 w-16 text-center"
+          />
+          {t('次')}
+        </label>
+      )}
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-subtle">{t('上游')}</dt>

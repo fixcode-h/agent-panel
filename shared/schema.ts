@@ -2,6 +2,36 @@ import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
 
+/** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
+export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
+export type ParamValue = z.infer<typeof ParamValue>
+export type ParamValues = Record<string, ParamValue>
+
+/**
+ * Agent 向外暴露的参数：角色设定里用 {{key}} 引用、用 {{#if key=值}}…{{/if}} 分支，
+ * 同一个 Agent 换个参数就能走不同的做法。对话时用默认值，没有默认值（ask）的先问用户；
+ * 工作流节点上可以直接改。
+ */
+export const AgentParam = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1, t('参数名不能为空'))
+    .max(40)
+    .regex(/^[A-Za-z_\u4e00-\u9fa5][\w\u4e00-\u9fa5-]*$/, t('参数名只能用字母、数字、下划线、横线和中文')),
+  /** 显示的名字；为空显示 key */
+  label: z.string().trim().max(40).default(''),
+  /** select 单选下拉；multi 多选；bool 开关；text 文本；number 数字 */
+  type: z.enum(['select', 'multi', 'bool', 'text', 'number']).default('select'),
+  /** 单选、多选的选项 */
+  options: z.array(z.string().trim().min(1).max(60)).max(30).default([]),
+  default: ParamValue.optional(),
+  /** 没有默认值：对话开始前问用户选，工作流节点上必须填 */
+  ask: z.boolean().default(false),
+  description: z.string().trim().max(200).default(''),
+})
+export type AgentParam = z.infer<typeof AgentParam>
+
 /**
  * Agent：一个可复用的「CLI + 模型 + 角色设定」组合。
  * 主 / 子 Agent 不在这里区分，而是在工作流里指定。
@@ -19,8 +49,18 @@ export const AgentInput = z.object({
   categoryId: z.string().default(''),
   /** 卡片上显示的图标，可选值见 web/src/lib/agent-icons.ts */
   icon: z.string().default('bot'),
-  /** 角色设定 / 系统提示词，执行时会拼在任务前面 */
-  instructions: z.string().max(8000).default(''),
+  /** 角色设定 / 系统提示词（Markdown），执行时会拼在任务前面；可以用 {{参数}} 和条件分支 */
+  instructions: z.string().max(50000).default(''),
+  /** 引入的其他 Agent：它们的角色设定一起交给这个 Agent（按引入顺序，循环引用会跳过） */
+  includes: z.array(z.string()).max(20).default([]),
+  /** 向外暴露的参数 */
+  params: z.array(AgentParam).max(30).default([]),
+  /** 要用的 Skill（名字）：执行时提示 Agent 优先用这些 Skill */
+  skills: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
+  /** 常用的开场要求：对话输入框上方显示成快捷按钮 */
+  starters: z.array(z.string().trim().min(1).max(500)).max(8).default([]),
+  /** 全局标签的 id */
+  tags: z.array(z.string()).max(20).default([]),
   /** 权限模式，取值见 shared/clis.ts 里各 CLI 的 permissions；为空跟随 CLI 设置 */
   permission: z.string().default(''),
   /** 追加给 CLI 的参数，例如 --add-dir ../shared */
@@ -53,14 +93,31 @@ export const defaultAgent = (): Agent => {
   }
 }
 
-/** Agent 分类，例如「开发」「测试」「文档」，只用于组织列表 */
+/** Agent 和工作流的分类，例如「开发」「测试」「文档」，只用于组织列表；两边的分类各管各的 */
 export const CategoryInput = z.object({
   name: z.string().trim().min(1, t('分类名不能为空')).max(20),
+  scope: z.enum(['agent', 'workflow']).default('agent'),
 })
 export type CategoryInput = z.infer<typeof CategoryInput>
 
 export const Category = CategoryInput.extend(Meta.shape)
 export type Category = z.infer<typeof Category>
+
+/** 全局标签：Agent 和工作流共用，在设置里管理 */
+export const TAG_COLORS = ['gray', 'red', 'orange', 'amber', 'green', 'teal', 'blue', 'violet', 'pink'] as const
+export const TagInput = z.object({
+  name: z.string().trim().min(1, t('标签名不能为空')).max(20),
+  color: z.enum(TAG_COLORS).default('gray'),
+  description: z.string().trim().max(200).default(''),
+})
+export type TagInput = z.infer<typeof TagInput>
+
+export const Tag = TagInput.extend(Meta.shape)
+export type Tag = z.infer<typeof Tag>
+
+/** 工作流节点用的模型档位：只能是默认 CLI 的高 / 中 / 低三档，思考强度也用档位的 */
+export const NodeTier = z.enum(['', 'high', 'medium', 'low'])
+export type NodeTier = z.infer<typeof NodeTier>
 
 /** 工作流里的一个子 Agent，以及它在这个工作流中负责的内容 */
 export const WorkflowMember = z.object({
@@ -104,6 +161,12 @@ export const FlowNode = z.object({
   agentId: z.string().default(''),
   /** kind 为 flow 时执行的流程 */
   flow: FlowRef.nullable().default(null),
+  /** 用默认 CLI 的哪一档模型；为空时按 Agent 设的档位（Agent 不是档位时用中档） */
+  tier: NodeTier.default(''),
+  /** Agent 参数在这个节点上的值；没写的用 Agent 的默认值 */
+  params: z.record(z.string(), ParamValue).default({}),
+  /** 失败后自动重试几次（CLI 断线、偶发错误）；0 不重试 */
+  retries: z.number().int().min(0).max(5).default(0),
   /** 这个节点要做什么、产出什么（Markdown） */
   instructions: z.string().max(20000).default(''),
   x: z.number().default(0),
@@ -207,6 +270,10 @@ const WorkflowFields = z.object({
   /** 流程：第一个默认是主流程；entryFlowId 指定任务从哪个流程开始 */
   flows: z.array(Flow).min(1).max(20),
   entryFlowId: z.string().default('main'),
+  /** 所属分类；为空表示未分类 */
+  categoryId: z.string().default(''),
+  /** 全局标签的 id */
+  tags: z.array(z.string()).max(20).default([]),
   /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
@@ -420,6 +487,8 @@ export const NewTaskInput = z.object({
   effort: z.string().trim().max(40).default(''),
   prompt: z.string().trim().min(1, t('请描述任务')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
+  /** chat 模式：Agent 参数的值（没给的用默认值） */
+  params: z.record(z.string(), ParamValue).default({}),
   /** 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以 */
   isolate: z.boolean().default(false),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
@@ -466,6 +535,8 @@ export const TaskPatch = z
     effort: z.string().trim().max(40),
     // 「提问」开关：Agent 有问题时交给你回答，还是让它自己选
     askUser: z.boolean(),
+    // 对话的 Agent 参数，下一轮生效
+    params: z.record(z.string(), ParamValue),
   })
   .partial()
 
@@ -640,6 +711,8 @@ export const TaskData = z.object({
   effort: z.string().default(''),
   /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
   askUser: z.boolean().default(false),
+  /** 对话时 Agent 参数的值 */
+  params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
@@ -802,8 +875,24 @@ export const Settings = z.object({
       effort: z.string().default(''),
       /** 同时生成几张图：每张图单独开一个会话（CLI 进程或浏览器里的新对话），最多 10 个 */
       concurrency: z.number().int().min(1).max(10).catch(3).default(3),
+      /** 本机生图（ComfyUI）：装在软件目录的 comfyui/ 下 */
+      local: z
+        .object({
+          /** 下载模型用 hf-mirror.com、装依赖用清华 PyPI 镜像 */
+          mirror: z.boolean().default(false),
+          port: z.number().int().min(1024).max(65535).catch(8188).default(8188),
+          /** 已经有 ComfyUI 时填它的地址（例如 http://127.0.0.1:8188），不用再装 */
+          url: z.string().trim().default(''),
+        })
+        .default({ mirror: false, port: 8188, url: '' }),
     })
-    .default({ cli: 'codex', model: '', effort: '', concurrency: 3 }),
+    .default({
+      cli: 'codex',
+      model: '',
+      effort: '',
+      concurrency: 3,
+      local: { mirror: false, port: 8188, url: '' },
+    }),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

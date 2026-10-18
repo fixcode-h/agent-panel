@@ -134,6 +134,13 @@ try {
   await check(p, 'UI设计-右键菜单', ['创建副本', 'SizeBox'])
   await p.keyboard.press('Escape')
   await p.keyboard.press('Escape')
+  // 动画：选中控件，用预设加一个弹出动画，拖播放头预览
+  await p.getByRole('treeitem', { name: /StartGroup/ }).click()
+  await p.getByRole('button', { name: /^动画/ }).click()
+  await p.getByRole('button', { name: '预设' }).click()
+  await p.getByRole('menuitem', { name: '弹出（弹窗）' }).click()
+  await check(p, 'UI设计-动画', ['Anim_PopIn', 'StartGroup · 缩放'])
+  await p.getByRole('button', { name: '关闭动画面板' }).click()
   // 标注：框选一块，写说明，出现在 AI 输入框上方
   await p.keyboard.press('r')
   const vp = await p.locator('[data-wid]').first().boundingBox()
@@ -157,6 +164,33 @@ try {
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
   await p.getByRole('tab', { name: /图片/ }).click()
   await check(p, 'UI设计-图片')
+  // 把图片拖到画布上：能放、大小合适的控件高亮，松手就用上（用脚本发拖放事件，无头浏览器的鼠标拖不出 HTML5 拖放）
+  await p.evaluate(() => {
+    window.__dt = new DataTransfer()
+    const thumb = document.querySelector('button[draggable="true"]')
+    thumb.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__dt }))
+  })
+  await p.waitForTimeout(200)
+  const dragAt = (type) =>
+    p.evaluate((type) => {
+      const slot = document.querySelector('[data-drop-slot]')
+      if (!slot) return ''
+      const r = slot.getBoundingClientRect()
+      const at = { bubbles: true, cancelable: true, dataTransfer: window.__dt }
+      const x = r.left + r.width / 2
+      const y = r.top + r.height / 2
+      document.elementFromPoint(x, y).dispatchEvent(new DragEvent(type, { ...at, clientX: x, clientY: y }))
+      return slot.dataset.dropSlot
+    }, type)
+  const dropName = await dragAt('dragover')
+  assert.ok(dropName, '拖图片时有大小合适的控件高亮')
+  await check(p, 'UI设计-拖图片', ['放到 ' + dropName])
+  await dragAt('drop')
+  await p.evaluate(() =>
+    document
+      .querySelector('button[draggable="true"]')
+      .dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt })),
+  )
   // UI 项目设置：美术提示词
   await p.getByText('暗夜远征').first().click({ button: 'right' })
   await p.getByRole('menuitem', { name: '美术提示词' }).click()
@@ -218,7 +252,24 @@ try {
   await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
   await p.getByText('添加其他 CLI').scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 CLI', 'Gemini CLI'])
+  // 本机生图：一键安装 ComfyUI、下载推荐的模型（演示里是模拟的进度）
+  await p.getByRole('button', { name: '本机生图' }).click()
+  await check(p, '设置-本机生图', ['一键安装', 'Z-Image Turbo', '建议显存'])
+  await p.getByRole('button', { name: '一键安装' }).click()
+  await p.getByText('已安装，未启动').waitFor({ timeout: 10000 })
+  await p.getByRole('button', { name: '下载' }).first().click()
+  await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
+  await check(p, '设置-本机生图-已下载', ['已下载'])
   await p.keyboard.press('Escape')
+  // ComfyUI 工作流：游戏和网页分开，内置的只读
+  await p.goto(base + '#/comfy/game')
+  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}'])
+  await p.getByRole('radio', { name: '网页 UI' }).click()
+  await check(p, 'ComfyUI-网页工作流', ['网页插画'])
+  await p.getByRole('button', { name: 'AI 优化' }).click()
+  await p.getByRole('button', { name: '出图更清晰、边缘更干净' }).click()
+  await p.getByRole('button', { name: '优化', exact: true }).click()
+  await check(p, 'ComfyUI-AI优化', ['网页插画（优化）', '保存'])
   await p.keyboard.press('Control+k')
   await check(p, '命令面板', ['新建聊天'])
   await p.keyboard.press('Escape')

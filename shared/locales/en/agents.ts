@@ -58,10 +58,6 @@ export const EN_AGENTS: Record<string, string> = {
   '越高想得越久、越慢。选档位时默认用档位的思考强度。':
     'Higher means more thinking and slower responses. With a tier, the tier’s effort is used by default.',
   权限: 'Permissions',
-  行为: 'Behavior',
-  '执行任务时会作为前置说明交给这个 Agent。': 'Given to this Agent as a preamble when it runs a task.',
-  '例如：你是资深前端工程师，负责按照设计稿实现页面，完成后运行测试并汇报结果。':
-    'e.g. You are a senior frontend engineer. Implement pages from the designs, then run the tests and report the results.',
   额外参数: 'Extra arguments',
   '追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。':
     'Arguments appended to the CLI, separated by spaces. Quote values that contain spaces.',
@@ -182,7 +178,6 @@ export const EN_AGENTS: Record<string, string> = {
   '检测失败：{error}': 'Detection failed: {error}',
   '描述需求，让本机 CLI 生成 Agent': 'Describe what you need and let a local CLI generate the Agent',
   'AI 创建': 'Create with AI',
-  '搜索名称、简介或模型': 'Search name, description or model',
   '本机 CLI': 'Local CLIs',
   重新检测: 'Detect again',
   '可用 · {version}': 'Available · {version}',
@@ -212,7 +207,6 @@ export const EN_AGENTS: Record<string, string> = {
   '主 Agent 执行没指定 Agent 的节点，并处理追加要求':
     'The main Agent runs nodes without an assigned Agent and handles follow-up requests',
   团队成员都可运行: 'All team members can run',
-  '{names} 已停用或 CLI 未安装': '{names}: disabled or CLI not installed',
   '共 {n} 个 Agent': '{n} Agents',
   已设计流程: 'Flow designed',
   '从「开始」连一条线到{flow}的第一个节点': 'Connect “Start” to the first node of {flow}',

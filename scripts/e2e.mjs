@@ -319,31 +319,34 @@ try {
     )
   const kinds = new Set(t.messages.flatMap((m) => m.tools.map((x) => x.kind)))
   for (const k of ['read', 'edit', 'run']) assert.ok(kinds.has(k), `缺少工具类型 ${k}`)
+  // 工作流的节点都用默认 CLI（Claude Code）的档位执行，不看 Agent 自己选的 CLI
   const changed = t.changes.map((c) => c.path).sort()
-  assert.deepEqual(changed, ['claude-output.txt', 'codex-output.txt', 'commandcode-output.txt'])
-  assert.equal(t.changes.find((c) => c.path === 'codex-output.txt').add, 3)
+  assert.deepEqual(changed, ['claude-output.txt'])
   assert.deepEqual(Object.keys(t.sessions).sort(), ['n1', 'n2', 'n3', 'n4'], '每个节点各有自己的会话')
   assert.equal(Object.keys(t.usage.agents).length, 3)
   assert.equal(t.usage.agents[A.id].context, 13020)
-  assert.ok(Math.abs(t.usage.costUsd - 0.0246) < 1e-9)
-  // 用量：输入含缓存，缓存命中单独记；流式过程中计入的和最后的总数不重复
-  // Claude 两个节点各 25530 输入（25000 命中、500 写入），Codex 24000（20000 命中），Command Code 9000（1000 命中）
-  assert.equal(t.usage.inputTokens, 25530 * 2 + 24000 + 9000)
-  assert.equal(t.usage.cacheReadTokens, 25000 * 2 + 20000 + 1000)
-  assert.equal(t.usage.cacheWriteTokens, 500 * 2)
-  assert.equal(t.usage.outputTokens, 120 * 2 + 300 + 80)
-  assert.equal(t.usage.agents[B.id].window, 258400, 'Codex 报告的上下文窗口')
-  assert.equal(t.usage.agents[A.id].window, 500000, 'Claude Code 在 result.modelUsage 里报告的上下文窗口')
-  assert.equal(t.usage.agents[B.id].context, 24300)
-  // 每个节点自己的用量和改动：加起来等于任务的；Codex 节点只算它自己写的文件
+  assert.ok(Math.abs(t.usage.costUsd - 0.0123 * 4) < 1e-9)
+  // 用量：输入含缓存，缓存命中单独记；流式过程中计入的和最后的总数不重复。四个节点各 25530 输入（25000 命中、500 写入）
+  assert.equal(t.usage.inputTokens, 25530 * 4)
+  assert.equal(t.usage.cacheReadTokens, 25000 * 4)
+  assert.equal(t.usage.cacheWriteTokens, 500 * 4)
+  assert.equal(t.usage.outputTokens, 120 * 4)
+  assert.equal(t.usage.agents[B.id].window, 500000, 'Claude Code 在 result.modelUsage 里报告的上下文窗口')
+  // 每个节点自己的用量和改动：加起来等于任务的
   assert.equal(
     t.steps.reduce((n, s) => n + (s.usage?.inputTokens ?? 0), 0),
     t.usage.inputTokens,
   )
   const codexStep = t.steps.find((s) => s.agentId === B.id)
-  assert.equal(codexStep.usage.context, 24300)
-  assert.equal(codexStep.usage.window, 258400)
-  assert.deepEqual(codexStep.changes, [{ path: 'codex-output.txt', add: 3, del: 0 }])
+  assert.equal(codexStep.usage.context, 13020)
+  // 节点的命令：默认 CLI、Agent 档位对应的模型；固定了别的 CLI 的 Agent，它的额外参数不带过去
+  assert.ok(
+    t.steps.every((s) => s.command.includes('--model') && s.command[s.command.indexOf('--model') + 1] === 'sonnet'),
+  )
+  assert.ok(
+    !t.steps.find((s) => s.agentId === C.id).command.includes('low'),
+    '丙的 Command Code 参数不带给 Claude Code',
+  )
   assert.ok(
     Object.values(t.usage.agents).every((u) => u.tps === 0),
     '结束后速度归零',
@@ -354,15 +357,7 @@ try {
       t.messages.some((m) => m.agentId === who.id && m.thinking),
       `${who.name} 的思考没有记录`,
     )
-  assert.ok(t.messages.some((m) => m.agentId === B.id && m.thinking?.includes('先看目录')))
-  // 待办：Claude 的 TodoWrite 和 Codex 的计划
-  assert.deepEqual(
-    t.todos.filter((x) => x.agentId === B.id).map((x) => [x.text, x.status]),
-    [
-      ['看目录', 'done'],
-      ['写文件', 'running'],
-    ],
-  )
+  // 待办：Claude 的 TodoWrite
   assert.deepEqual(
     t.todos.filter((x) => x.agentId === A.id).map((x) => [x.text, x.status]),
     [
@@ -462,29 +457,51 @@ try {
   assert.match(c1.input, /流程「主流程」的节点：分析/)
   assert.match(c1.input, /## 本节点要做的事\n先分析。/)
   assert.doesNotMatch(c1.input, /同时进行的节点/)
-  const c2 = [cp1, cp2].find((x) => x.kind === 'codex')
-  const c3 = [cp1, cp2].find((x) => x.kind === 'commandcode')
-  assert.ok(c2 && c3, '开发阶段应该调用 Codex 和 Command Code')
+  // 节点都用默认 CLI：乙（固定 Codex）、丙（固定 Command Code）的节点也交给 Claude Code
+  const c2 = [cp1, cp2].find((x) => x.input.includes('节点：实现'))
+  const c3 = [cp1, cp2].find((x) => x.input.includes('节点：文档'))
+  assert.ok(c2 && c3 && c2.kind === 'claude' && c3.kind === 'claude', '节点固定用默认 CLI')
   assert.ok(c2.start < c3.end && c3.start < c2.end, '同一阶段的两个节点应该同时运行')
   assert.ok(Math.min(c2.start, c3.start) >= c1.end, '下游节点要等上游结束')
   assert.ok(c4.start >= Math.max(c2.end, c3.end), '有两个上游的节点要等两个都结束')
-  assert.equal(c2.developer, '你是乙，负责实现。', 'Codex 的角色说明通过 developerInstructions 传入')
-  assert.ok(!c2.input.includes('## 你的角色'))
+  assert.ok(c2.args.includes('你是乙，负责实现。'), '角色设定照样交给默认 CLI')
   assert.match(c2.input, /上游节点的结果[\s\S]*### 分析/)
   assert.match(c2.input, /同时进行的节点[\s\S]*文档（丙）/)
   assert.match(c3.input, /同时进行的节点[\s\S]*实现（乙）/)
-  assert.equal(c2.args[0], 'app-server', 'Codex 用 app-server 执行才有流式输出')
-  assert.ok(c2.args.includes('model="gpt-5.6"'))
-  assert.ok(c2.args.includes('approval_policy="on-request"'), '参数里的确认方式和 thread/start 一致')
-  assert.deepEqual(
-    [c2.approval, c2.sandbox],
-    ['on-request', 'workspace-write'],
-    '可写项目目录：沙箱内运行，越过沙箱时确认',
-  )
-  assert.ok(c3.args.includes('--effort') && c3.args.includes('low'))
+  assert.ok(!c3.args.includes('low'), '丙写给 Command Code 的额外参数不带给 Claude Code')
   assert.equal(c4.kind, 'claude')
   assert.match(c4.input, /上游节点的结果[\s\S]*### 实现[\s\S]*### 文档/)
   assert.ok(!c4.args.includes('--resume'), '不同节点用各自的新会话')
+  // 对话还是用 Agent 自己的 CLI：乙用 Codex，丙用 Command Code
+  {
+    const n0 = calls().length
+    let ct = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '看看代码' })
+    ct = await waitDone(ct.id)
+    assert.equal(ct.status, 'done')
+    const cx = calls()
+      .slice(n0)
+      .find((x) => x.kind === 'codex')
+    assert.ok(cx, '对话用 Agent 自己的 CLI')
+    assert.equal(cx.developer, '你是乙，负责实现。', 'Codex 的角色说明通过 developerInstructions 传入')
+    assert.ok(!cx.input.includes('## 你的角色'))
+    assert.equal(cx.args[0], 'app-server', 'Codex 用 app-server 执行才有流式输出')
+    assert.ok(cx.args.includes('model="gpt-5.6"'))
+    assert.ok(cx.args.includes('approval_policy="on-request"'), '参数里的确认方式和 thread/start 一致')
+    assert.deepEqual(
+      [cx.approval, cx.sandbox],
+      ['on-request', 'workspace-write'],
+      '可写项目目录：沙箱内运行，越过沙箱时确认',
+    )
+    await call('DELETE', `/tasks/${ct.id}`)
+    const n1 = calls().length
+    let cc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: C.id, prompt: '写文档' })
+    cc = await waitDone(cc.id)
+    const cm = calls()
+      .slice(n1)
+      .find((x) => x.kind === 'commandcode')
+    assert.ok(cm && cm.args.includes('--effort') && cm.args.includes('low'))
+    await call('DELETE', `/tasks/${cc.id}`)
+  }
   step('调用参数：模型、权限、角色设定、上游结果、同时进行的节点、工作目录都对；没有依赖的节点同时运行')
 
   // 上游的结果太长：交给下游的只放开头，完整内容存成文件，下游的 CLI 能读到那个目录
@@ -494,7 +511,7 @@ try {
   assert.equal(tLong.status, 'done')
   const down = calls()
     .slice(nLong)
-    .find((x) => x.kind === 'codex')
+    .find((x) => x.input.includes('节点：实现'))
   const handoff = /完整内容在文件 (\S+?\.md)/.exec(down.input)?.[1]
   assert.ok(handoff && existsSync(handoff), '下游拿到完整结果的文件路径 ' + down.input.slice(-300))
   assert.ok(readFileSync(handoff, 'utf8').includes('很长的方案。'.repeat(1000) + '结尾'), '文件里是完整结果')
@@ -1437,11 +1454,12 @@ try {
   const hc = calls().slice(before2)
   assert.deepEqual(
     hc.map((k) => k.kind),
-    ['commandcode', 'codex', 'claude', 'codex', 'claude', 'commandcode', 'claude'],
+    // 节点都用默认 CLI（claude）执行
+    Array(7).fill('claude'),
   )
   assert.match(hc[1].input, /开始流程的结果[\s\S]*的回复/)
   assert.match(hc[2].input, /实现功能」的验收流程（第 1 轮验收）[\s\S]*验收结论/)
-  assert.ok(hc[3].resume, '验收不通过后续接节点的会话继续完善')
+  assert.ok(hc[3].args.includes('--resume'), '验收不通过后续接节点的会话继续完善')
   assert.match(hc[3].input, /验收没有通过（第 1 轮）[\s\S]*验收结论：不通过/)
   assert.match(hc[4].input, /第 2 轮验收/)
   assert.match(hc[6].input, /工作流「小流程」[\s\S]*上游节点的结果|工作流「小流程」[\s\S]*## 输入/)
@@ -2593,7 +2611,7 @@ try {
     assert.equal(sheetGen.length, 2, '三个图标一次出图，漏画的第三个单独补一张')
     assert.match(
       sheetGen[0].stdin ?? sheetGen[0].input,
-      /3 separate icons laid out in a strict grid of 2 columns × 2 rows/,
+      /3 separate, individual icons of the same size, laid out one after another in a strict, evenly spaced grid of 2 columns × 2 rows/,
     )
     assert.match(sheetGen[0].stdin ?? sheetGen[0].input, /1\. item A\n2\. item B\n3\. MISS3 item C/)
     assert.doesNotMatch(sheetGen[1].stdin ?? sheetGen[1].input, /sprite sheet/)

@@ -1,7 +1,9 @@
 import { EN_AGENTS } from './en/agents.ts'
 import { EN_APP } from './en/app.ts'
 import { EN_DESIGN } from './en/design.ts'
+import { EN_EXTEND } from './en/extend.ts'
 import { EN_FLOW } from './en/flow.ts'
+import { EN_LOCAL_IMAGE } from './en/local-image.ts'
 import { EN_SERVER } from './en/server.ts'
 import { EN_SETTINGS } from './en/settings.ts'
 import { EN_SHARED } from './en/shared.ts'
@@ -17,4 +19,6 @@ export const EN: Record<string, string> = {
   ...EN_SETTINGS,
   ...EN_TASKS,
   ...EN_DESIGN,
+  ...EN_EXTEND,
+  ...EN_LOCAL_IMAGE,
 }

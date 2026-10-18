@@ -2,6 +2,7 @@ import type { Agent, Flow, FlowRef, Workflow, WorkflowInput } from '@shared/sche
 import { t } from '@shared/i18n'
 import { flowLabel, nodeAgent, reachable, refLabel } from '@shared/flow'
 import { plainLine } from '@/lib/tasks'
+import { nodeAgentRun } from '@shared/agent-role'
 import type { HookSlot, NodeView } from './FlowCanvas'
 
 type W = Pick<WorkflowInput, 'flows' | 'entryFlowId' | 'mainAgentId'>
@@ -18,7 +19,9 @@ export function nodeViews(
   const byId = new Map(agents.map((a) => [a.id, a]))
   return Object.fromEntries(
     flow.nodes.map((n) => {
-      const agent = byId.get(nodeAgent(w, n.agentId))
+      // 节点固定用默认 CLI 的档位：画布上显示的模型、颜色按节点实际用的
+      const found = byId.get(nodeAgent(w, n.agentId))
+      const agent = found && n.kind === 'agent' ? nodeAgentRun(found, n.tier) : found
       const hooks = (['start', 'review', 'end'] as HookSlot[])
         .filter((s) => n.hooks[s])
         .map((s) => ({

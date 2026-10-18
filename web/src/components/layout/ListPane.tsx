@@ -103,7 +103,10 @@ export function ListItem({
   trailing,
   monoSubtitle = true,
   menu,
+  tags,
 }: {
+  /** 副标题下面的一行标签 */
+  tags?: React.ReactNode
   monoSubtitle?: boolean
   /** 右键菜单的菜单项 */
   menu?: React.ReactNode
@@ -127,6 +130,7 @@ export function ListItem({
       <span className="flex min-w-0 flex-1 flex-col">
         <span className="truncate font-medium">{title}</span>
         <span className={cn('truncate text-xs text-muted', monoSubtitle && 'font-mono')}>{subtitle}</span>
+        {tags && <span className="mt-1 flex min-w-0">{tags}</span>}
       </span>
       {trailing}
     </button>

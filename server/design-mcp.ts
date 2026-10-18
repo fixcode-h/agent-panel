@@ -7,11 +7,15 @@ import {
   MAX_CONCEPTS,
   MAX_TOOL_IMAGES,
   MAX_TOOL_ITEMS,
+  MAX_TOOL_KEYS,
+  SHEET_MAX_SIDE,
+  sheetProblems,
   MAX_TOOL_WIDGETS,
   resolveDesignResult,
   type Design,
 } from '../shared/design.ts'
 import { applyOp, type OpsState } from '../shared/design-ops.ts'
+import { ANIM_PROPS, ANIM_TRIGGERS, EASES, animationsBrief, presetCatalogText } from '../shared/anim.ts'
 import { compactTree, walk, type Widget } from '../shared/umg.ts'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
@@ -111,7 +115,7 @@ export function openDesignSession(
   const token = randomUUID()
   const s: Session = {
     design,
-    state: { root: design.root, components: design.components },
+    state: { root: design.root, components: design.components, animations: design.animations ?? [] },
     images: [],
     applied: 0,
     onChange,
@@ -262,8 +266,36 @@ const TOOLS = [
     description:
       '列出这次要新建或重新生成的图片（id、name、prompt、negative、width、height、transparent、nineSlice、sheet）；同一个 id 再提交会覆盖。图片要设到控件上（"img:<id>"）才会显示。' +
       'prompt 是英文的正向描述（画什么、形状、材质、颜色、细节），negative 是反向提示词（不能出现的东西）。' +
-      `很多同类的小图标（背包物品、技能、货币）写成一组：同一个 sheet（例如 "items"），面板会把它们画在一张图上再自动切开，快很多。一次最多 ${MAX_TOOL_IMAGES} 张。`,
+      `尺寸统一的同类小图标（边长不超过 ${SHEET_MAX_SIDE}，例如 96×96 的背包物品、技能、货币图标）写成一组：同一个 sheet（例如 "items"），面板让图片模型在一张干净的底色上把它们等间距排成格子，再自动切开，快很多；大图（底框、按钮、面板、插图）和尺寸不一样的不要写 sheet，一张张生成。一次最多 ${MAX_TOOL_IMAGES} 张。`,
     inputSchema: obj({ images: { type: 'array', items: { type: 'object' } } }, ['images']),
+  },
+  {
+    name: 'add_animations',
+    description:
+      '加动画或整个改掉同名的动画（UE 的 Widget Animation；网页是动效），一次可以写几个。每项：name（英文，例如 Anim_Open）、in（子控件名，主界面不写）、' +
+      `trigger（${ANIM_TRIGGERS.join(' / ')}：打开时、鼠标悬停（移开时倒放回去）、点击、滚动到可见（网页）、程序调用）、source（hover / click 由哪个控件触发，不写是第一条轨道的控件）、` +
+      'loop（播几遍，0 一直循环）、pingPong、delay（秒）。' +
+      '内容二选一或一起用：presets 用预设（推荐，[{"preset":"fade-in-up","widgets":["Card1","Card2"],"stagger":0.08}]，可选 at 开始时间、duration、distance 位移像素、strength 幅度倍数）；' +
+      `tracks 自己写关键帧：[{"widget":"Panel","prop":"Scale","keys":[{"t":0,"v":[0.8,0.8],"ease":"back-out"},{"t":0.3,"v":[1,1]}]}]，prop 是 ${ANIM_PROPS.join(' / ')}（位移、缩放写 [x,y]），t 是秒，ease 是这一帧到下一帧的缓动：${EASES.join(' / ')}。\n预设：\n${presetCatalogText()}`,
+    inputSchema: batch(
+      {
+        name: { type: 'string' },
+        in: IN,
+        trigger: { type: 'string', enum: [...ANIM_TRIGGERS] },
+        source: { type: 'string' },
+        loop: { type: 'integer' },
+        pingPong: { type: 'boolean' },
+        delay: { type: 'number' },
+        presets: { type: 'array', items: { type: 'object' } },
+        tracks: { type: 'array', items: { type: 'object' } },
+      },
+      ['name'],
+    ),
+  },
+  {
+    name: 'remove_animations',
+    description: '删掉动画，names 一次写多个；in 写子控件名（主界面不写）。',
+    inputSchema: NAMES,
   },
   {
     name: 'set_design',
@@ -405,6 +437,8 @@ const MUTATING = new Set([
   'resize_components',
   'delete_components',
   'add_images',
+  'add_animations',
+  'remove_animations',
   'edit',
 ])
 
@@ -488,7 +522,7 @@ function warnings(s: Session) {
 export function checkSession(s: Session) {
   return resolveDesignResult(
     { reply: '', images: s.images, ops: [] },
-    { ...s.design, root: s.state.root, components: s.state.components },
+    { ...s.design, root: s.state.root, components: s.state.components, animations: s.state.animations ?? [] },
   )
 }
 
@@ -655,6 +689,10 @@ const NESTED = new Set([
   'padding',
   'pos',
   'position',
+  'tracks',
+  'presets',
+  'keys',
+  'widgets',
 ])
 function unstring(v: any, key = ''): any {
   if (typeof v === 'string' && NESTED.has(key)) {
@@ -698,6 +736,18 @@ async function callTool(s: Session, raw: string, args: any) {
       (n: number, x: any) => n + countWidgets(x?.widget) + countWidgets(x?.root) + countWidgets(x?.component?.Root),
       0,
     )
+    // 动画按关键帧算：一次写太多帧同样会让输出过长
+    const keys = list.reduce(
+      (n: number, x: any) =>
+        n +
+        (Array.isArray(x?.tracks) ? x.tracks : []).reduce(
+          (m: number, t: any) => m + (Array.isArray(t?.keys) ? t.keys.length : 0),
+          0,
+        ),
+      0,
+    )
+    if (keys > MAX_TOOL_KEYS)
+      return text(`一次最多 ${MAX_TOOL_KEYS} 个关键帧，这次有 ${keys} 个，没有应用。分几次写，或者改用 presets。`, true)
     const big = tooBig(list.length, widgets)
     if (big) return big
   }
@@ -731,6 +781,7 @@ async function callTool(s: Session, raw: string, args: any) {
             generated: i.variants.length > 0,
           })),
           newImages: s.images.map((i) => i.id),
+          animations: animationsBrief(s.state.animations ?? []),
         }),
       )
     case 'add_widgets':
@@ -795,12 +846,26 @@ async function callTool(s: Session, raw: string, args: any) {
       if (!ops.length) return text('ops 是空的', true)
       return apply(s, ops)
     }
+    case 'add_animations':
+      return apply(
+        s,
+        itemsOf(a).map((x) => ({ op: 'setAnimation', animation: x })),
+      )
+    case 'remove_animations':
+      return apply(
+        s,
+        namesOf(a).map((n) => ({ op: 'removeAnimation', in: str(a.in), name: n })),
+      )
     case 'add_images': {
       const list = Array.isArray(a.images) ? a.images : a.id ? [a] : []
       if (list.length > MAX_TOOL_IMAGES)
         return text(`一次最多 ${MAX_TOOL_IMAGES} 张，这次有 ${list.length} 张，没有记下。分几次提交。`, true)
       const p = z.array(AiImage).safeParse(list)
       if (!p.success) return text(z.prettifyError(p.error), true)
+      // 图集只放尺寸统一的小图标：和这一轮已经列出的同一个 sheet 的一起看
+      const merged = [...s.images.filter((x) => !p.data.some((y) => y.id === x.id)), ...p.data]
+      const bad = sheetProblems(merged)
+      if (bad.length) return text(`没有记下：\n${bad.join('\n')}`, true)
       s.history.push({ state: s.state, images: s.images })
       for (const img of p.data) s.images = [...s.images.filter((x) => x.id !== img.id), img]
       return text(`已记下 ${p.data.length} 张图片：${p.data.map((i) => i.id).join('、')}`)
