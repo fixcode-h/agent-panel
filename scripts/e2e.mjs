@@ -2418,9 +2418,10 @@ try {
     await call('POST', `/designs/${sketch.id}/chat`, {
       text: `做背包 FAKE_MCP:${JSON.stringify([
         ['add_widgets', { items: [{ parent: 'RootCanvas', widget: { Type: 'TextBlock', Name: 'T', Text: 'x' } }] }],
-        ['generate_concepts', { prompt: 'dark fantasy inventory screen', negative: 'cartoon', count: 2 }],
+        ['generate_concepts', { prompt: 'dark fantasy inventory screen', negative: 'cartoon', count: 4 }],
       ])}`,
       source: { kind: 'cli' },
+      count: 2,
       concept: true,
     })
     d = await waitJob(sketch.id)
@@ -2433,7 +2434,7 @@ try {
         [1, 1920, 1080, 'dark fantasy inventory screen', 'cartoon'],
         [1, 1920, 1080, 'dark fantasy inventory screen', 'cartoon'],
       ],
-      '一轮出两张候选，按设计稿尺寸存下',
+      '按输入框选的张数出两张候选（AI 写的 count 不算），按设计稿尺寸存下',
     )
     assert.equal(d.concept.selected, d.concept.images[0].id)
     const conceptGen = calls()

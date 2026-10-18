@@ -156,6 +156,8 @@ export const DesignMessage = z.object({
   questions: z.array(DesignQuestion).optional(),
   /** 用户这条消息是在回答 AI 的提问：每个问题和答案，像回答一样显示 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
+  /** 用户这条消息选的整体风格（风格库里的名字），显示在消息上 */
+  style: z.string().optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -425,6 +427,8 @@ export const DesignChatInput = z.object({
   askUser: z.boolean().default(false),
   /** 用户在风格提问里选的整体风格（英文），发送前先存进设计 */
   style: z.string().max(4000).optional(),
+  /** 选的风格的名字：显示在用户的消息上 */
+  styleName: z.string().max(200).optional(),
   /** 这条消息是在回答 AI 的提问：每个问题和答案 */
   answers: z
     .array(z.object({ question: z.string().max(2000), answer: z.string().max(20000) }))
@@ -780,6 +784,8 @@ export interface ConceptContext {
   state: ConceptState
   /** 用户这次在原画上的标注 */
   marks: Annotation[]
+  /** 用户在输入框选的这一轮出几张 */
+  count?: number
 }
 
 function conceptSection(c: ConceptContext, d: Design) {
@@ -802,8 +808,8 @@ function conceptSection(c: ConceptContext, d: Design) {
   const sel = c.state.images.find((i) => i.id === c.state.selected)
   return `## 现在是「先出原画」阶段
 用户打开了「先出原画」：这一轮**不要搭控件树、不要列切图**，先画整屏的效果图（原画）给用户挑，用户确认一张作为模板以后才开始搭界面和切图。
-- 调用 generate_concepts：prompt 用英文完整描述整个界面的画面（题材、整体风格、布局分区和每块放什么、主色调、材质和光影、氛围），negative 写反向提示词（不想出现的东西），count 是同时出几张候选（用户没说就出 3 张，最多 ${MAX_CONCEPTS} 张；几张之间在布局或配色上要有明显区别，方便挑）。效果图按设计稿 ${size} 的比例出。
-- 用户要在某张的基础上改（标注、提意见）时：base 写那张的 id，prompt 写改好以后的完整描述（不是只写改动），面板会把那张图作为参考一起交给图片模型；用户想要几张不同的改法时 count 写几张。
+- 调用 generate_concepts：prompt 用英文完整描述整个界面的画面（题材、整体风格（定了美术风格时照它写，不要换成别的风格）、布局分区和每块放什么、主色调、材质和光影、氛围），negative 写反向提示词（不想出现的东西），${c.count ? `这一轮出 ${c.count} 张，是用户在输入框里选的，count 不用写，generate_concepts 只调一次` : `count 是同时出几张候选（用户没说就出 3 张，最多 ${MAX_CONCEPTS} 张）`}${(c.count ?? 3) > 1 ? '；几张之间在布局或配色上要有明显区别，方便挑' : ''}。效果图按设计稿 ${size} 的比例出。
+- 用户要在某张的基础上改（标注、提意见）时：base 写那张的 id，prompt 写改好以后的完整描述（不是只写改动），面板会把那张图作为参考一起交给图片模型。
 - 想先确认题材或风格可以用 ask_user；要求已经清楚时直接出图。
 - 调用后回复一两句：这几张的思路有什么不同；用户可以在左边挑一张、在图上标注再让你改，满意了点「用这张做模板」。
 ${c.state.images.length ? `\n已经出过的原画：\n${c.state.images.slice(-12).map(fmt).join('\n')}\n用户现在选中的是：${sel ? sel.id : '（没有）'}\n` : ''}${

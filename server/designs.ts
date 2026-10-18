@@ -438,6 +438,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const cwd = path.join(tmpdir(), 'agent-panel-images')
     await mkdir(cwd, { recursive: true })
     let got = 0
+    // 模型有时会多画几张：最多收 count 张，多的不要，不然进度会出现「4/3」
     // 图片文件可能还没写完，读到了再交出去；最后等所有读取结束
     const reads: Promise<void>[] = []
     const errors: string[] = []
@@ -457,7 +458,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
       },
       cwd,
       env: childEnv(cs.env),
-      input: `请用内置的 image_gen 工具生成 ${count} 张图片（每张单独调用一次 image_gen，内容一样、细节可以不同）。不要写代码、不要运行命令、不要另存文件，生成完直接结束，不用解释。${refs.length ? '\n附上的图片是参考图，按下面的要求参考它。' : ''}
+      input: `请用内置的 image_gen 工具生成 ${count} 张图片（每张单独调用一次 image_gen，内容一样、细节可以不同；正好 ${count} 张，不要多画）。不要写代码、不要运行命令、不要另存文件，生成完直接结束，不用解释。${refs.length ? '\n附上的图片是参考图，按下面的要求参考它。' : ''}
 
 图片要求：
 ${prompt}`,
@@ -473,7 +474,7 @@ ${prompt}`,
             const read = ev.path ? readFile(ev.path).catch(() => b64) : Promise.resolve(b64)
             reads.push(
               read.then((b) => {
-                if (!b?.length) return
+                if (!b?.length || got >= count) return
                 got++
                 onImage(b)
               }),
@@ -733,7 +734,7 @@ ${prompt}`,
             }
           }),
       },
-      { conceptOnly: mode === 'concept' },
+      { conceptOnly: mode === 'concept', conceptCount: mode === 'concept' ? input.count : undefined },
     )
     const tools = mcpConfig(def.mcp, 'design', mcp.url)
     // 要配置文件的 CLI（Command Code、Gemini CLI）读工作目录里的配置
@@ -780,12 +781,16 @@ ${prompt}`,
               cache.get(d.id)!,
               history,
               withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
-                (facts.length ? `\n\n${facts.join('\n')}` : ''),
+                (facts.length ? `\n\n${facts.join('\n')}` : '') +
+                // 用户这次选了整体风格：明说一句，不然 AI 只在风格说明里看到它，容易沿用之前对话里的风格
+                (input.style
+                  ? `\n\n用户这次选定了整体美术风格${input.styleName ? `「${input.styleName}」` : ''}，已经写进设计的风格说明，这一轮的画面、原画和图片都按它来：${input.style}`
+                  : ''),
               input.annotations.filter((a) => !a.target.startsWith('concept:')),
               project,
               // 风格还没定时 AI 把同类的风格作为选项：自己存的在前，再加内置的
               [...(await loadStyles()), ...BUILTIN_STYLES].filter((x) => x.kind === d.kind),
-              mode ? { mode, state: concept, marks: conceptMarks } : undefined,
+              mode ? { mode, state: concept, marks: conceptMarks, count: input.count } : undefined,
             ) + extra,
           signal: job.abort.signal,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
@@ -959,7 +964,11 @@ ${prompt}`,
       const prompt = conceptPrompt(req, cur.designSize, cur.style, style, cur.kind, !!ref)
       // 存图串行：同一轮的几张按到达的顺序编号
       let chain = Promise.resolve()
+      // 每个请求最多收它要的张数：多出来的不存，进度也不会超过总数
+      let taken = 0
       const add = (buf: Buffer) => {
+        if (taken >= req.count) return
+        taken++
         chain = chain
           .then(async () => {
             const dd = cache.get(d.id)!
@@ -1664,6 +1673,7 @@ ${prompt}`,
         ...(p.data.annotations.length ? { annotations: p.data.annotations } : {}),
         ...(p.data.attachments.length ? { attachments: p.data.attachments } : {}),
         ...(p.data.answers?.length ? { answers: p.data.answers } : {}),
+        ...(p.data.style && p.data.styleName ? { style: p.data.styleName } : {}),
       })
       await save(d)
       // AI 改之前自动存一个版本，改坏了可以回去

@@ -61,6 +61,8 @@ interface Session {
   conceptOnly: boolean
   /** 这一轮要出的原画（generate_concepts），这一轮结束后生成 */
   concepts: ConceptRequest[]
+  /** 用户在输入框选的原画张数：给了就按它出，AI 写的 count 不算 */
+  conceptCount?: number
   /** 每次改动前的样子，undo 用 */
   history: { state: OpsState; images: Session['images'] }[]
   /** 截过的画布截图，view_image 里写 screenshot:<第几张> */
@@ -104,7 +106,7 @@ export function openDesignSession(
   design: Design,
   onChange: (s: Session) => void,
   files: DesignFiles,
-  opts: { conceptOnly?: boolean } = {},
+  opts: { conceptOnly?: boolean; conceptCount?: number } = {},
 ) {
   const token = randomUUID()
   const s: Session = {
@@ -117,6 +119,7 @@ export function openDesignSession(
     views: 0,
     conceptOnly: !!opts.conceptOnly,
     concepts: [],
+    conceptCount: opts.conceptCount,
     history: [],
     shots: [],
   }
@@ -295,7 +298,7 @@ const TOOLS = [
   {
     name: 'generate_concepts',
     description:
-      `出整屏的效果图（原画）给用户挑：prompt 用英文完整描述整个界面的画面，negative 写反向提示词，count 同时出几张候选（默认 3，最多 ${MAX_CONCEPTS}）；` +
+      `出整屏的效果图（原画）给用户挑：prompt 用英文完整描述整个界面的画面，negative 写反向提示词，count 同时出几张候选（用户在输入框选了张数时按用户的，不用写；没选时默认 3，最多 ${MAX_CONCEPTS}）；每一轮只调一次；` +
       'base 写某张原画的 id 时，在那张的基础上改（面板会把那张图作为参考交给图片模型）。这一轮结束后开始生成，用户挑好、确认模板后才搭界面。',
     inputSchema: obj(
       {
@@ -830,7 +833,9 @@ async function callTool(s: Session, raw: string, args: any) {
       if (!prompt) return text('prompt 要写整个界面的英文描述', true)
       const base = str(a.base).trim()
       if (base && !(s.design.concept?.images ?? []).some((i) => i.id === base)) return text(`没有原画 ${base}`, true)
-      const count = Math.max(1, Math.min(MAX_CONCEPTS, Math.round(Number(a.count) || 3)))
+      const count = Math.max(1, Math.min(MAX_CONCEPTS, Math.round(s.conceptCount ?? (Number(a.count) || 3))))
+      // 张数是用户定的：一轮只出一组，再调一次就换掉上一次的描述，不会多出图
+      if (s.conceptCount) s.concepts = []
       const total = s.concepts.reduce((n, c) => n + c.count, 0)
       if (total + count > MAX_CONCEPTS * 2)
         return text(`这一轮已经要出 ${total} 张了，最多 ${MAX_CONCEPTS * 2} 张；让用户先挑一挑`, true)
