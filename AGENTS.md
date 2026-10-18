@@ -4,12 +4,12 @@
 
 ## 项目
 
-本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex、Command Code、Gemini CLI），按工作流的流程图执行。
+本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi），按工作流的流程图执行。
 
 - 全部 TypeScript：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），服务端 `server/`（Hono，只监听 127.0.0.1），
   前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。不用 Python。
 - 数据是 `data/` 下的 JSON 文件。
-- CLI 的差异都写在定义里（`shared/clis.ts`，Command Code、Gemini CLI 是 `shared/clis/*.json` 配置）：参数规则、输出解析、能力、Skill 和说明文件的位置。
+- CLI 的差异都写在定义里（`shared/clis.ts`，Command Code、Gemini CLI、Pi 是 `shared/clis/*.json` 配置）：参数规则、输出解析、能力、Skill 和说明文件的位置。
   其他代码按定义里的能力走，不要按 CLI 的名字写分支。接入新 CLI 写一份配置，格式见 `docs/cli-config.md`；用户也能把配置放进数据目录的 `config/clis/`。
 - 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现 `web/src/lib/demo-backend.ts`、`demo-assist.ts`。
 - 界面参考 Claude Code 的风格，视觉质量很重要。
@@ -24,7 +24,7 @@ npm run dev          # 前端 :5173 + 后端 :8787
 npm run typecheck    # 类型检查
 npm run lint         # 代码检查（oxlint：Hook 依赖、没用到的变量）和格式检查
 npm run test:unit    # CLI 输出解析测试（样本在 server/exec/fixtures/，CLI 升级后重新录）
-npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟三个 CLI）
+npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo，截图在 ui-shots/
 npm run build        # 正式版前端
 npx vite build --mode demo   # 在线演示版

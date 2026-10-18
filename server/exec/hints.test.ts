@@ -23,3 +23,12 @@ test('Google 不再支持个人账号用 Gemini CLI：说明是服务端限制�
 test('普通的报错不加说明', () => {
   assert.deepEqual(failureHints('something else went wrong', gemini), [])
 })
+
+test('Pi 没配 API Key：提示在终端里登录', () => {
+  const hints = failureHints('No API key found for anthropic.\n\nUse /login to log into a provider', {
+    id: 'pi',
+    name: 'Pi',
+  })
+  assert.equal(hints.length, 1)
+  assert.match(hints[0], /运行 pi，在里面输入 \/login/)
+})

@@ -9,8 +9,8 @@
   界面文案的英文写进配置的 `i18n.en`（或 `shared/locales/en/`），再给 `scripts/fake-cli` 和 `server/exec/fixtures/` 补上样本和测试。
 
 前提：CLI 要有**非交互模式**（任务描述从 stdin 读，跑完就退出）和**结构化输出**（stdout 一行一个 JSON 事件）。
-Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Command Code、Gemini CLI 是用这个格式写的，
-可以直接参考 [`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)。
+Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Command Code、Gemini CLI、Pi 是用这个格式写的，
+可以直接参考 [`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
 
 ## 字段
 
@@ -83,7 +83,9 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 }
 ```
 
-`emit` 里的值：`$.a.b` 取事件里的字段，`$.a == x`、`$.a != x` 比较，其余是字面值。面板认识的事件：
+`when` 的键也可以是 `a.b` 这样的路径（例如 Pi 的 `"assistantMessageEvent.type": "text_delta"`）。
+`emit` 里的值：`$.a.b` 取事件里的字段（数组用 `-1` 取最后一项，如 `$.messages.-1.stopReason`），`$.a == x`、`$.a != x` 比较，其余是字面值。
+同一轮里出现多个 `result` 时以最后一个为准（例如 Pi 自动重试时每次都有 `agent_end`）。面板认识的事件：
 
 | 事件                  | 字段                                                                                                                                                          |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -99,8 +101,12 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 
 ## 面板的工具 `mcp`
 
-UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计。`args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容）；
+UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计，没有提问通道的 CLI 也通过它向用户提问（`ask_user`）。
+`args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容，用完还原）；内容是字符串时原样写成文本文件。
 里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址。
+
+CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.json` 写了一个项目扩展 `.pi/extensions/agent-panel-{name}.ts`，
+启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具，调用时转发过去。
 
 ```json
 "mcp": {
@@ -121,4 +127,4 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 | `steer`         | 执行中能插话（需要协议支持，配置文件写的 CLI 目前都是排队）                                           |
 | `contextWindow` | 上下文窗口的默认估计                                                                                  |
 
-审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`）。
+审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`；Pi 没有审批，用 `--tools` 限制能用的工具）。

@@ -212,7 +212,7 @@ try {
   })
   const settings = {
     stepTimeoutMinutes: 5,
-    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), gemini: cli() },
+    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), gemini: cli(), pi: cli() },
   }
   await call('PUT', '/settings', settings)
   const clis = await call('GET', '/clis?refresh=1')
@@ -223,10 +223,11 @@ try {
       ['codex', true],
       ['commandcode', true],
       ['gemini', true],
+      ['pi', true],
     ],
   )
   assert.match(clis[1].version, /fake 0.0.1/)
-  step('设置保存，四个 CLI 都能检测到')
+  step('设置保存，各个 CLI 都能检测到')
 
   const agent = (o) =>
     call('POST', '/agents', {
@@ -616,6 +617,43 @@ try {
   await waitDone(gm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
+  // Pi：按配置文件（shared/clis/pi.json）拼参数、解析 --mode json
+  let pm = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'pi',
+    prompt: '用 Pi',
+  })
+  pm = await waitDone(pm.id)
+  assert.equal(pm.status, 'done', pm.messages.at(-1)?.text)
+  c = calls().at(-1)
+  assert.equal(c.kind, 'pi')
+  assert.deepEqual(c.args.slice(0, 3), ['-p', '--mode', 'json'])
+  assert.ok(!c.args.includes('--tools'), '默认全部工具，不限制')
+  assert.equal(c.input, '用 Pi', '任务描述从 stdin 传入')
+  const pReply = pm.messages.filter((m) => m.role === 'agent').at(-1)
+  assert.match(pReply.text, /这是 pi 的回复/)
+  assert.deepEqual(
+    pReply.tools.map((x) => x.kind),
+    ['read', 'edit'],
+  )
+  assert.equal(pm.usage.inputTokens, 4000, JSON.stringify(pm.usage))
+  await call('POST', `/tasks/${pm.id}/messages`, { text: '继续' })
+  await waitDone(pm.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--session') + 1], pm.sessions[pm.agentId], '继续时用 --session 续接会话')
+  // Pi 出错时退出码也是 0，按最后的 agent_end 判断失败
+  let pf = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'pi',
+    prompt: 'FAIL',
+  })
+  pf = await waitDone(pf.id)
+  assert.equal(pf.status, 'failed')
+  assert.match(JSON.stringify(pf.messages), /模拟的失败/)
   // 用户自己加的 CLI：数据目录 config/clis/ 下放一份配置，重新读取后就能用，不用改代码
   const gemSpec = JSON.parse(readFileSync(path.join(root, 'shared/clis/gemini.json'), 'utf8'))
   mkdirSync(path.join(dataDir, 'config/clis'), { recursive: true })
@@ -2826,11 +2864,20 @@ try {
     ],
   )
   assert.equal(mm.models[0].isDefault, true)
+  const pim = await call('GET', '/clis/pi/models?refresh=1')
+  assert.equal(pim.source, 'cli')
+  assert.deepEqual(
+    pim.models.map((m) => [m.id, m.contextWindow, m.efforts.length > 0]),
+    [
+      ['anthropic/claude-fake', 200000, true],
+      ['ollama/qwen-fake:7b', 128000, false],
+    ],
+  )
   const cl = await call('GET', '/clis/claude/models')
   assert.equal(cl.source, 'builtin')
   assert.ok(cl.models.some((m) => m.id === 'claude-opus-5-5'))
   assert.ok(!cl.models.some((m) => m.id === 'opus'), '不列别名')
-  step('从本机 CLI 读取模型列表：Codex 走 app-server，Command Code 走 --list-models')
+  step('从本机 CLI 读取模型列表：Codex 走 app-server，Command Code、Pi 走 --list-models')
 
   // 目录浏览带上快速入口（Windows 上是各个盘符）
   const listing = await call('GET', `/fs/list?path=${encodeURIComponent(tmp)}`)
@@ -2916,7 +2963,7 @@ try {
   await call('PUT', '/settings', { ...settings, cliOrder: ['commandcode', 'claude'] })
   assert.deepEqual(
     (await call('GET', '/clis')).map((c) => c.id),
-    ['commandcode', 'claude', 'codex', 'gemini'],
+    ['commandcode', 'claude', 'codex', 'gemini', 'pi'],
   )
   await call('PUT', '/settings', settings)
   step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')
@@ -3011,7 +3058,7 @@ try {
       ...base0,
       ...extra,
       clis: Object.fromEntries(
-        ['claude', 'codex', 'commandcode', 'gemini'].map((id) => [
+        ['claude', 'codex', 'commandcode', 'gemini', 'pi'].map((id) => [
           id,
           { ...base0.clis[id], env: [{ key: 'FAKE_AUTH', value: id }], ...(extra.clis?.[id] ?? {}) },
         ]),
@@ -3034,6 +3081,7 @@ try {
         ['codex', false, 0],
         ['commandcode', false, 0],
         ['gemini', false, 0],
+        ['pi', false, 0],
       ],
       '一开始都没登录',
     )
@@ -3228,7 +3276,11 @@ try {
             models: ['cc-1'],
           },
         ],
-        clis: { gemini: { authMode: 'api', apiId: 'g1' }, commandcode: { authMode: 'api', apiId: 'c1' } },
+        clis: {
+          gemini: { authMode: 'api', apiId: 'g1' },
+          commandcode: { authMode: 'api', apiId: 'c1' },
+          pi: { authMode: 'api', apiId: 'c1' },
+        },
       }),
     )
     const g = await call('POST', '/tasks', {
@@ -3264,10 +3316,36 @@ try {
       api: 'openai-completions',
       models: { 'cc-1': {} },
     })
+    // Pi：自己接的接口写进 models.json 的 providers，用 --provider 指定
+    const pa = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'pi',
+      model: 'cc-1',
+      prompt: '用 pi API',
+    })
+    await waitDone(pa.id)
+    const piModels = path.join(homeDir, '.pi', 'agent', 'models.json')
+    assert.deepEqual(JSON.parse(readFileSync(piModels, 'utf8')).providers.agentpanel, {
+      baseUrl: 'https://cc.example/v1',
+      api: 'openai-completions',
+      apiKey: 'AGENT_PANEL_API_KEY',
+      models: [{ id: 'cc-1' }],
+    })
+    const piCall = calls().findLast((x) => x.kind === 'pi')
+    assert.equal(piCall.apiEnv.agentpanel, 'ck')
+    assert.deepEqual(piCall.args.slice(piCall.args.indexOf('--provider'), piCall.args.indexOf('--provider') + 2), [
+      '--provider',
+      'agentpanel',
+    ])
     await call(
       'PUT',
       '/settings',
-      withAuth({ apis: [], clis: { gemini: { authMode: 'account' }, commandcode: { authMode: 'account' } } }),
+      withAuth({
+        apis: [],
+        clis: { gemini: { authMode: 'account' }, commandcode: { authMode: 'account' }, pi: { authMode: 'account' } },
+      }),
     )
     const g2 = await call('POST', '/tasks', {
       projectId: project.id,
@@ -3287,6 +3365,15 @@ try {
     })
     await waitDone(cc2.id)
     assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined)
+    const pa2 = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'pi',
+      prompt: '改回账号 pi',
+    })
+    await waitDone(pa2.id)
+    assert.equal(JSON.parse(readFileSync(piModels, 'utf8')).providers?.agentpanel, undefined, '改回账号删掉接口')
     // 凭据不进数据导出
     const backup = await call('GET', '/data/export?kinds=config,projects,tasks,uploads')
     assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')
@@ -3347,7 +3434,7 @@ try {
     const mcpFile = path.join(project.path, '.mcp.json')
     const original = JSON.stringify({ mcpServers: { mine: { command: 'x' } } })
     writeFileSync(mcpFile, original)
-    for (const cli of ['commandcode', 'gemini']) {
+    for (const cli of ['commandcode', 'gemini', 'pi']) {
       const before = readLog(log + '.askbridge').length
       const t = await call('POST', '/tasks', {
         projectId: project.id,
@@ -3378,6 +3465,7 @@ try {
     }
     assert.equal(readFileSync(mcpFile, 'utf8'), original, '项目里原有的 MCP 配置还原')
     assert.ok(!existsSync(path.join(project.path, '.gemini', 'settings.json')), '临时写的配置删掉了')
+    assert.ok(!existsSync(path.join(project.path, '.pi', 'extensions', 'agent-panel-panel.ts')), 'Pi 的桥接扩展删掉了')
     // 提问开关关着：不弹出，工具让模型自己选
     const off = await call('POST', '/tasks', {
       projectId: project.id,

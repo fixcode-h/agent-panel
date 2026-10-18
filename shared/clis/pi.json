@@ -1,0 +1,343 @@
+{
+  "id": "pi",
+  "name": "Pi",
+  "command": "pi",
+  "npmPackage": "@mariozechner/pi-coding-agent",
+  "docsUrl": "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent",
+  "color": "#7c3aed",
+  "modelsFrom": "pi",
+  "models": [
+    {
+      "id": "anthropic/claude-sonnet-4-6",
+      "label": "Claude Sonnet 4.6",
+      "isDefault": true
+    },
+    {
+      "id": "anthropic/claude-opus-4-7",
+      "label": "Claude Opus 4.7"
+    },
+    {
+      "id": "anthropic/claude-haiku-4-5",
+      "label": "Claude Haiku 4.5"
+    },
+    {
+      "id": "openai/gpt-5.5",
+      "label": "GPT-5.5"
+    },
+    {
+      "id": "openai/gpt-5.4-mini",
+      "label": "GPT-5.4 mini"
+    },
+    {
+      "id": "google/gemini-3.1-pro-preview",
+      "label": "Gemini 3.1 Pro"
+    },
+    {
+      "id": "google/gemini-2.5-flash",
+      "label": "Gemini 2.5 Flash"
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "label": "DeepSeek V4 Pro"
+    }
+  ],
+  "efforts": [
+    {
+      "id": "off",
+      "label": "关闭"
+    },
+    {
+      "id": "minimal",
+      "label": "最低"
+    },
+    {
+      "id": "low",
+      "label": "低"
+    },
+    {
+      "id": "medium",
+      "label": "中"
+    },
+    {
+      "id": "high",
+      "label": "高"
+    },
+    {
+      "id": "xhigh",
+      "label": "超高"
+    }
+  ],
+  "tiers": {
+    "high": {
+      "model": "anthropic/claude-opus-4-7",
+      "effort": "high"
+    },
+    "medium": {
+      "model": "anthropic/claude-sonnet-4-6",
+      "effort": "medium"
+    },
+    "low": {
+      "model": "anthropic/claude-haiku-4-5",
+      "effort": "low"
+    }
+  },
+  "permissions": [
+    {
+      "id": "full",
+      "label": "全部工具",
+      "hint": "可以改文件、执行任意命令；Pi 没有确认环节，只在信任的项目里用"
+    },
+    {
+      "id": "edit",
+      "label": "只改文件",
+      "hint": "可以读写文件，不能执行命令"
+    },
+    {
+      "id": "readonly",
+      "label": "只读",
+      "hint": "只能读代码和搜索，不能改文件、不能执行命令"
+    }
+  ],
+  "defaultPermission": "full",
+  "readOnlyPermission": "readonly",
+  "args": [
+    {
+      "args": ["-p", "--mode", "json"]
+    },
+    {
+      "if": "model",
+      "args": ["--model", "{model}"]
+    },
+    {
+      "if": "effort",
+      "args": ["--thinking", "{effort}"]
+    },
+    {
+      "if": "permission=edit",
+      "args": ["--tools", "read,edit,write,grep,find,ls,ask_user"]
+    },
+    {
+      "if": "permission=readonly",
+      "args": ["--tools", "read,grep,find,ls,ask_user"]
+    },
+    {
+      "if": ["resume", "!fork"],
+      "args": ["--session", "{resume}"]
+    },
+    {
+      "if": ["resume", "fork"],
+      "args": ["--fork", "{resume}"]
+    }
+  ],
+  "systemPromptFlag": "--append-system-prompt",
+  "output": {
+    "format": "ndjson",
+    "events": [
+      {
+        "when": {
+          "type": "session"
+        },
+        "emit": [
+          {
+            "type": "session",
+            "id": "$.id"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "message_update",
+          "assistantMessageEvent.type": "text_delta"
+        },
+        "emit": [
+          {
+            "type": "text_delta",
+            "text": "$.assistantMessageEvent.delta"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "message_update",
+          "assistantMessageEvent.type": "thinking_delta"
+        },
+        "emit": [
+          {
+            "type": "thinking",
+            "text": "$.assistantMessageEvent.delta",
+            "delta": true
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "message_end",
+          "message.role": "assistant"
+        },
+        "emit": [
+          {
+            "type": "usage",
+            "model": "$.message.model",
+            "context": "$.message.usage.totalTokens",
+            "addInput": "$.message.usage.input",
+            "addOutput": "$.message.usage.output",
+            "addCacheRead": "$.message.usage.cacheRead",
+            "addCacheWrite": "$.message.usage.cacheWrite",
+            "addCost": "$.message.usage.cost.total"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "tool_execution_start"
+        },
+        "emit": [
+          {
+            "type": "tool",
+            "name": "$.toolName",
+            "id": "$.toolCallId",
+            "input": "$.args"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "tool_execution_end",
+          "toolName": "edit"
+        },
+        "emit": [
+          {
+            "type": "tool_result",
+            "id": "$.toolCallId",
+            "output": "$.result",
+            "failed": "$.isError == true"
+          },
+          {
+            "type": "files_changed"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "tool_execution_end",
+          "toolName": "write"
+        },
+        "emit": [
+          {
+            "type": "tool_result",
+            "id": "$.toolCallId",
+            "output": "$.result",
+            "failed": "$.isError == true"
+          },
+          {
+            "type": "files_changed"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "tool_execution_end"
+        },
+        "emit": [
+          {
+            "type": "tool_result",
+            "id": "$.toolCallId",
+            "output": "$.result",
+            "failed": "$.isError == true"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "agent_end"
+        },
+        "emit": [
+          {
+            "type": "result",
+            "ok": "$.messages.-1.stopReason != error",
+            "error": "$.messages.-1.errorMessage"
+          }
+        ]
+      }
+    ]
+  },
+  "features": {
+    "fork": "latest",
+    "compact": "summary",
+    "autoCompact": "panel",
+    "contextWindow": 200000
+  },
+  "docs": ["AGENTS.md", "CLAUDE.md"],
+  "docsNote": "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。",
+  "skills": {
+    "user": ["${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills", "~/.agents/skills"],
+    "repo": [".pi/skills", ".agents/skills"]
+  },
+  "commands": {
+    "user": ["${PI_CODING_AGENT_DIR:-~/.pi/agent}/prompts"],
+    "repo": [".pi/prompts"],
+    "format": "md"
+  },
+  "envExample": "ANTHROPIC_API_KEY=...",
+  "env": {
+    "PI_OFFLINE": "1"
+  },
+  "auth": {
+    "home": "${PI_CODING_AGENT_DIR:-~/.pi/agent}",
+    "files": ["auth.json"],
+    "identity": "none",
+    "accountNote": "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。",
+    "api": {
+      "protocols": ["anthropic", "openai-responses", "openai-chat", "gemini"],
+      "env": {
+        "AGENT_PANEL_API_KEY": "{apiKey}"
+      },
+      "args": ["--provider", "agentpanel"],
+      "wire": {
+        "anthropic": "anthropic-messages",
+        "openai-responses": "openai-responses",
+        "openai-chat": "openai-completions",
+        "gemini": "google-generative-ai"
+      },
+      "edits": [
+        {
+          "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+          "set": {
+            "providers.agentpanel": {
+              "baseUrl": "{baseUrl}",
+              "api": "{wire}",
+              "apiKey": "AGENT_PANEL_API_KEY",
+              "models": "{modelList}"
+            }
+          }
+        }
+      ],
+      "accountEdits": [
+        {
+          "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+          "unset": ["providers.agentpanel"]
+        }
+      ]
+    }
+  },
+  "mcp": {
+    "files": {
+      ".pi/extensions/agent-panel-{name}.ts": "// Agent 面板这一轮临时写进来的：把面板的工具（MCP）交给 Pi，跑完就删掉\nimport { request } from 'node:http'\n\nconst url = new URL('{url}')\nlet seq = 0\n\n// 用 node:http 而不是 fetch：等用户回答提问可能很久，fetch 默认 5 分钟就超时\nfunction rpc(method: string, params: unknown): Promise<any> {\n  const body = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params })\n  return new Promise((resolve, reject) => {\n    const req = request(\n      url,\n      { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } },\n      (res) => {\n        let text = ''\n        res.setEncoding('utf8')\n        res.on('data', (c) => (text += c))\n        res.on('end', () => {\n          try {\n            const raw = text.trim().startsWith('{')\n              ? text\n              : (text.split('\\n').filter((l) => l.startsWith('data:')).pop() ?? '').slice(5)\n            const msg = JSON.parse(raw)\n            if (msg.error) reject(new Error(msg.error.message))\n            else resolve(msg.result)\n          } catch {\n            reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`))\n          }\n        })\n      },\n    )\n    req.on('error', reject)\n    req.end(body)\n  })\n}\n\nexport default async function (pi: any) {\n  let tools: any[] = []\n  try {\n    await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pi', version: '1' } })\n    tools = (await rpc('tools/list', {}))?.tools ?? []\n  } catch (e) {\n    // 连不上面板时不拦着 Pi 启动，只是这一轮没有面板的工具\n    console.error(`agent-panel: ${(e as Error).message}`)\n  }\n  for (const tool of tools)\n    pi.registerTool({\n      name: tool.name,\n      label: tool.title ?? tool.name,\n      description: tool.description ?? '',\n      parameters: tool.inputSchema ?? { type: 'object', properties: {} },\n      async execute(_id: string, args: unknown) {\n        const r = await rpc('tools/call', { name: tool.name, arguments: args ?? {} })\n        const content = (r?.content ?? []).map((c: any) =>\n          c.type === 'image'\n            ? { type: 'image', data: c.data, mimeType: c.mimeType }\n            : { type: 'text', text: c.type === 'text' ? c.text : JSON.stringify(c) },\n        )\n        if (r?.isError) throw new Error(content.map((c: any) => c.text ?? '').join('\\n'))\n        return { content, details: {} }\n      },\n    })\n}\n"
+    }
+  },
+  "i18n": {
+    "en": {
+      "关闭": "Off",
+      "最低": "Minimal",
+      "超高": "Extra high",
+      "全部工具": "All tools",
+      "可以改文件、执行任意命令；Pi 没有确认环节，只在信任的项目里用": "Can edit files and run any command. Pi never asks for confirmation, so use it only in trusted projects",
+      "只改文件": "Files only",
+      "可以读写文件，不能执行命令": "Can read and write files, but can't run commands",
+      "只读": "Read-only",
+      "只能读代码和搜索，不能改文件、不能执行命令": "Can only read and search code; no edits and no commands",
+      "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。": "Pi reads AGENTS.md (or CLAUDE.md when there is none) in the project and its parent directories, plus ~/.pi/agent/AGENTS.md, on every start.",
+      "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。": "Pi accounts can only be signed in from a terminal: run pi and type /login to sign in with a Claude Pro/Max, ChatGPT, GitHub Copilot or similar subscription. Then come back here and save it to switch between accounts. You can also set ANTHROPIC_API_KEY, OPENAI_API_KEY and so on under Environment variables above."
+    }
+  }
+}

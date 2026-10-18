@@ -87,20 +87,24 @@ export function toolText(c: unknown): string {
   return c === undefined || c === null ? '' : String(c)
 }
 
+// 各家 CLI 改文件工具的字段名不同（old_string、oldString、old_str，Pi 是 oldText）
+const oldText = (e: any): unknown => e?.old_string ?? e?.oldString ?? e?.old_str ?? e?.oldText
+const newText = (e: any): unknown => e?.new_string ?? e?.newString ?? e?.new_str ?? e?.newText
+
 /** 工具的输入整理成便于阅读的文字：命令直接显示，改文件显示改前改后，其余显示 JSON */
 function inputText(name: string, input: any): string {
   if (!input || typeof input !== 'object') return toolText(input)
   const cmd = input.command ?? input.cmd
   if (typeof cmd === 'string') return cmd
   const edits: any[] = Array.isArray(input.edits) ? input.edits : [input]
-  const pairs = edits.filter((e) => typeof (e?.old_string ?? e?.oldString ?? e?.old_str) === 'string')
+  const pairs = edits.filter((e) => typeof oldText(e) === 'string')
   if (pairs.length)
     return pairs
       .map((e) => {
-        const minus = String(e.old_string ?? e.oldString ?? e.old_str)
+        const minus = String(oldText(e))
           .split('\n')
           .map((l) => `-${l}`)
-        const plus = String(e.new_string ?? e.newString ?? e.new_str ?? '')
+        const plus = String(newText(e) ?? '')
           .split('\n')
           .map((l) => `+${l}`)
         // 每处改动一段，段头不带行号（调用时还不知道在第几行，CLI 给出结果后会换成带行号的 diff）
@@ -416,8 +420,10 @@ function genericTool(name: string, input: any, cwd: string): CliEvent {
   if (/fetch|url|browse/.test(n))
     return { type: 'tool', tool: { kind: 'web', name: t('打开网页'), label: String(input?.url ?? ''), detail: '' } }
   if (/write|edit|patch|replace|create_file/.test(n)) {
-    const add = lines(input?.content ?? input?.new_string ?? input?.newString ?? input?.new_str)
-    const del = lines(input?.old_string ?? input?.oldString ?? input?.old_str)
+    // 一次改多处（edits 数组）时把每处的行数加起来
+    const edits: any[] = Array.isArray(input?.edits) ? input.edits : [input]
+    const add = edits.reduce((n, e) => n + lines(e?.content ?? newText(e)), 0)
+    const del = edits.reduce((n, e) => n + lines(oldText(e)), 0)
     return {
       type: 'tool',
       tool: {
@@ -533,11 +539,14 @@ export function commandCodeParser(cwd: string): Parser {
 }
 
 // ---- 配置文件描述的输出：按事件映射转成面板的事件 ----
-/** 取事件里的字段（$.a.b）、比较（$.a == x、$.a != x），其余是字面值 */
+/** 取事件里的字段（$.a.b，数组可以用 -1 取最后一项）、比较（$.a == x、$.a != x），其余是字面值 */
 function evalExpr(o: any, v: unknown): unknown {
   if (typeof v !== 'string' || !v.startsWith('$.')) return v
-  const m = /^\$\.([\w.]+)\s*(==|!=)\s*(.*)$/.exec(v)
-  const get = (p: string) => p.split('.').reduce((x, k) => (x == null ? undefined : x[k]), o)
+  const m = /^\$\.([\w.-]+)\s*(==|!=)\s*(.*)$/.exec(v)
+  const get = (p: string) =>
+    p
+      .split('.')
+      .reduce((x, k) => (x == null ? undefined : Array.isArray(x) && /^-\d+$/.test(k) ? x.at(Number(k)) : x[k]), o)
   if (!m) return get(v.slice(2))
   const got = String(get(m[1]) ?? '')
   return m[2] === '==' ? got === m[3].trim() : got !== m[3].trim()

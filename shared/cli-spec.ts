@@ -106,7 +106,7 @@ export const CliSpec = z.object({
   tiers: z.object({ high: Tier, medium: Tier, low: Tier }).optional(),
   permissions: z.array(z.object({ id: z.string(), label: z.string(), hint: z.string().default('') })).min(1),
   defaultPermission: z.string().optional(),
-  /** 从哪里读可用模型：内置读取方式的名字（commandcode）；不写时只用 models 里列的 */
+  /** 从哪里读可用模型：内置读取方式的名字（commandcode、pi）；不写时只用 models 里列的 */
   modelsFrom: z.string().default(''),
   /** 只读的权限（只分析不改文件时用，例如优化项目说明）；非交互时会拦下改动的权限也算 */
   readOnlyPermission: z.string().default(''),
@@ -159,7 +159,8 @@ export const CliSpec = z.object({
   env: z.record(z.string(), z.string()).default({}),
   /**
    * 怎么把面板提供的工具（MCP，例如 UI 设计的设计工具）交给 CLI：args 是加的参数，files 是写进工作目录的配置文件
-   * （路径 → JSON 内容）。里面的 {url} 换成工具地址，{name} 换成工具名。不写表示这个 CLI 用不了面板的工具
+   * （路径 → JSON 内容；内容是字符串时原样写成文本文件，例如 Pi 的扩展脚本）。里面的 {url} 换成工具地址，{name} 换成工具名。
+   * 不写表示这个 CLI 用不了面板的工具
    */
   mcp: McpSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */

@@ -16,6 +16,7 @@ import { t } from '../shared/i18n.ts'
  * 从本机 CLI 读取可用的模型：内置列表跟不上 CLI 的更新，也不知道用户账号能用哪些模型。
  * - Codex：通过 `codex app-server` 的 model/list 请求（和 Codex 自己的 /model 菜单同一个来源）
  * - Command Code：`cmdc --list-models`
+ * - Pi：`pi --list-models`
  * - Claude Code：没有列出模型的命令，用内置的型号（opus / sonnet 这类别名不列，和具体型号重复），再加上用户在环境变量、settings.json 里配置的模型
  */
 
@@ -197,6 +198,51 @@ async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promi
   return byok.length ? { models: byok, auth: 'api', from: 'providers.json' } : { models: tagged, auth: 'api' }
 }
 
+/**
+ * Pi：`pi --list-models` 列出配好了凭据的提供方的模型（环境变量、auth.json、models.json 里自己接的都算），
+ * 一行一个：provider、model、context、max-out、thinking、images。模型写成 provider/model，Pi 的 --model 认这种写法
+ */
+export function parsePiModels(out: string, efforts: string[]): CliModel[] {
+  const models: CliModel[] = []
+  for (const raw of out.split('\n')) {
+    const cells = raw
+      .replace(/\x1b\[[0-9;]*m/g, '')
+      .trim()
+      .split(/\s+/)
+    if (cells.length < 5 || cells[0] === 'provider') continue
+    const [provider, model, context, , thinking] = cells
+    const w = parseContextSize(context)
+    // 只认表格里的行：上下文是「200K」这样的大小，thinking 列是 yes / no（提示文字不是模型）
+    if (!w || !/^(yes|no)$/.test(thinking)) continue
+    models.push({
+      id: `${provider}/${model}`,
+      label: model,
+      group: provider,
+      contextWindow: w,
+      // 不支持思考的模型不给思考强度，选了 Pi 也会忽略
+      efforts: thinking === 'yes' ? efforts : [],
+    })
+  }
+  return models
+}
+
+async function piModels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
+  // --offline：只读本机的模型表，不去联网检查更新
+  const r = await capture(command, ['--list-models', '--offline'], homedir(), env, 30_000)
+  const models = parsePiModels(
+    r.stdout,
+    def.efforts.map((e) => e.id),
+  )
+  if (!models.length) {
+    if (r.spawnError) throw new Error(r.spawnError)
+    const msg = (r.stderr || r.stdout).trim().split('\n').at(-1)
+    // 一个提供方都没配时 Pi 只说没有模型，这时用内置的建议
+    if (r.code === 0) return { models: [] }
+    throw new Error(msg || t('退出码 {code}', { code: String(r.code) }))
+  }
+  return { models, from: t('Pi 已配置的提供方') }
+}
+
 /** 「1M」「256K」「1.05M」换成 token 数 */
 export function parseContextSize(s: string) {
   const m = /^([\d.]+)\s*([KM])$/i.exec(s.trim())
@@ -345,6 +391,9 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
       const p =
         def.modelsFrom === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)
       data = { source: 'cli', models: p.models, efforts: [], auth: p.auth, from: p.from }
+    } else if (def.modelsFrom === 'pi') {
+      const p = await piModels(def, cs.command, env)
+      data = { source: 'cli', models: p.models, efforts: [], from: p.from }
     } else if (def.modelsFrom === 'claude') {
       const [auth, found] = await Promise.all([claudeAuth(cs.command, env), claudeConfigured(env)])
       const configured = found.map((m) => ({ ...m, origin: 'config' as const }))

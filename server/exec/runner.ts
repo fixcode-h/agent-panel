@@ -247,7 +247,7 @@ const NETWORK_ERROR =
   /Connection error|APIConnectionError|Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
 const NOT_LOGGED_IN =
-  /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token/i
+  /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token|No API key found/i
 
 /** 各个 CLI 登录的方法：在终端里照着做 */
 const loginHow = (cli: string) =>
@@ -255,6 +255,7 @@ const loginHow = (cli: string) =>
     claude: t('运行 claude，在里面输入 /login'),
     codex: t('运行 codex login'),
     commandcode: t('运行 cmdc，按提示登录'),
+    pi: t('运行 pi，在里面输入 /login'),
   })[cli] ?? t('运行它并按提示登录')
 
 /** 把常见的 CLI 报错翻译成能照着做的说明，原始输出另外附在后面 */

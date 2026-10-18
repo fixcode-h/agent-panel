@@ -626,7 +626,8 @@ ${prompt}`,
     for (const f of tools.files) {
       const to = path.join(cwd, f.path)
       await mkdir(path.dirname(to), { recursive: true })
-      await writeFile(to, JSON.stringify(f.content, null, 2))
+      // 字符串是整个文件的内容（例如 Pi 的扩展脚本），其余写成 JSON
+      await writeFile(to, typeof f.content === 'string' ? f.content : JSON.stringify(f.content, null, 2))
     }
     const sess = mcp.session
     try {
