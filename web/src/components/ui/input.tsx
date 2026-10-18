@@ -29,7 +29,7 @@ const listPanel =
   'z-50 max-h-[min(360px,var(--radix-select-content-available-height))] min-w-[var(--radix-select-trigger-width)] ' +
   'overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop animate-[fade-in_120ms_ease-out]'
 export const listItem =
-  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-1.5 pr-8 pl-2.5 text-left text-[13px] ' +
+  'relative flex w-full cursor-pointer select-none items-center gap-2 rounded-lg py-1 pr-8 pl-2.5 text-left text-[13px] leading-5 ' +
   'outline-none data-[highlighted]:bg-sel data-[state=checked]:text-fg data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
 
 /** 下拉框：样式和输入框一致，弹出的列表也跟随主题（不用系统原生列表） */
@@ -79,7 +79,7 @@ export function Select({
           <S.ScrollUpButton className="grid h-5 place-items-center text-subtle">
             <ChevronUp className="h-3.5 w-3.5" />
           </S.ScrollUpButton>
-          <S.Viewport className="p-1">
+          <S.Viewport className="p-0.5">
             {groups.map((g, i) => (
               <S.Group key={g || '_'}>
                 {g && (
