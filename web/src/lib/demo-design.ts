@@ -800,6 +800,7 @@ async function runChat(
     at: now(),
     images: tpl.images.map((i) => i.id),
     run,
+    thinking: job.thinking,
   })
   d.updatedAt = now()
   if (source.kind !== 'none')
@@ -1051,6 +1052,7 @@ export function demoProjectComponents(pid: string) {
     .filter((d) => d.projectId === pid && d.components.length)
     .map((d) => ({
       designId: d.id,
+      kind: d.kind,
       title: d.title,
       components: d.components,
       images: d.images.flatMap((i) => {

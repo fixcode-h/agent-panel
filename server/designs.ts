@@ -617,6 +617,8 @@ ${prompt}`,
             at: now(),
             images: ids.length ? ids : undefined,
             run,
+            // 过程留着：完成后在对话里收成一行，点开能看 AI 想了什么、做了哪些操作
+            ...processOf(job),
           })
           await save(cur)
           // 存下来了，页面改用正式的设计
@@ -672,6 +674,12 @@ ${prompt}`,
     await writeVersions(d.id, list.slice(0, MAX_VERSIONS + MAX_AUTO_VERSIONS))
     return v
   }
+
+  /** 这一轮回复的过程（思考和工具调用），存进消息里 */
+  const processOf = (j: Job) => ({
+    ...(j.thinking?.trim() ? { thinking: j.thinking } : {}),
+    ...(j.tools?.length ? { tools: j.tools.map((x) => ({ ...x, running: false })) } : {}),
+  })
 
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
   async function promptAi(input: PromptAiInput, signal: AbortSignal) {
@@ -790,6 +798,7 @@ ${prompt}`,
         .filter((d) => d.projectId === pid && d.components.length)
         .map((d) => ({
           designId: d.id,
+          kind: d.kind,
           title: d.title,
           components: d.components,
           images: d.images.flatMap((i) => {
@@ -1026,6 +1035,7 @@ ${prompt}`,
       const { from, name } = (await c.req.json().catch(() => ({}))) as { from?: string; name?: string }
       const src = from ? cache.get(from) : undefined
       if (!src || src.projectId !== d.projectId) return bad(c, t('设计不存在'), 404)
+      if (src.kind !== d.kind) return bad(c, t('游戏 UI 和网页 UI 的控件不能混用'))
       const r = importComponent(d, src, String(name ?? ''))
       if ('error' in r) return bad(c, r.error, 409)
       await mkdir(imagesDir(d.id), { recursive: true })

@@ -23,7 +23,7 @@ import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
-import { AgentMessage, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import { AgentMessage, PendingAuthor, ProcessFold, SystemNote } from '@/components/tasks/Messages'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
@@ -661,6 +661,7 @@ function ChatMessage({ msg }: { msg: DesignMessage }) {
         m={asTaskMessage(msg.id, msg.text, msg.at)}
         teamNames={NO_NAMES}
         author={author ?? { name: t('AI'), cli: '', icon: 'sparkles' }}
+        slot={<ProcessFold thinking={msg.thinking} tools={(msg.tools ?? []) as ToolUse[]} />}
       />
       {!!msg.images?.length && (
         <span className="pl-[38px] text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>

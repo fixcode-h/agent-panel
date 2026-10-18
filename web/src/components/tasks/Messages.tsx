@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
-import type { TaskMessage } from '@shared/schema'
+import type { TaskMessage, ToolUse } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { ToolRow } from './ToolRow'
@@ -293,5 +293,40 @@ export function FoldedRun({
       <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} />
       <Msgs msgs={msgs.slice(last + 1)} teamNames={teamNames} author={author} />
     </>
+  )
+}
+
+/**
+ * 已经完成的回复的过程（思考和工具调用）：收成一行，点开再看，和工作流执行完的节点一样。
+ * 回复文字照常显示在下面
+ */
+export function ProcessFold({ thinking, tools }: { thinking?: string; tools: ToolUse[] }) {
+  const [open, setOpen] = useState(false)
+  if (!thinking?.trim() && !tools.length) return null
+  const failed = tools.filter((x) => x.failed).length
+  return (
+    <div className="flex flex-col gap-1.5">
+      <button
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 pr-1.5 text-[12px] text-subtle hover:text-fg"
+      >
+        <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
+        {thinking?.trim() && !tools.length
+          ? t('思考过程')
+          : thinking?.trim()
+            ? t('思考和 {n} 个操作', { n: tools.length })
+            : t('{n} 个操作', { n: tools.length })}
+        {failed > 0 && <span className="text-danger">{t('{n} 个失败', { n: failed })}</span>}
+      </button>
+      {open && (
+        <div className="flex flex-col gap-1 border-l pl-3">
+          {thinking?.trim() && <Thinking text={thinking} live={false} />}
+          {tools.map((x, i) => (
+            <ToolRow key={i} tool={x} />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }

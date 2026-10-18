@@ -90,6 +90,9 @@ export const DesignMessage = z.object({
   annotations: z.array(Annotation).optional(),
   /** 用户这条消息带的附件（参考图、文档） */
   attachments: z.array(Attachment).optional(),
+  /** AI 回复的过程：思考和工具调用，完成后收起来，点开能看 */
+  thinking: z.string().optional(),
+  tools: z.array(z.any()).optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -726,6 +729,8 @@ export type { Margin }
 /** 项目里一个设计的子控件，给「控件」列表用：带上它们用到的图片（选中的那一版），页面能直接画出来 */
 export interface ProjectComponents {
   designId: string
+  /** 游戏 UI 和网页 UI 的控件不能混用，列表只列同一种的 */
+  kind: DesignKind
   title: string
   components: Component[]
   images: { id: string; file: string; width: number; height: number }[]

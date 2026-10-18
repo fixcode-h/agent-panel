@@ -1087,6 +1087,7 @@ function Designer({ id }: { id: string }) {
               <ComponentsPanel
                 projectId={server.projectId}
                 designId={id}
+                kind={server.kind}
                 own={doc.components.map((c) => c.Name)}
                 onOpen={(name) => {
                   setTarget(name)
