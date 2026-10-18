@@ -24,8 +24,8 @@ export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; c
           data-wid={id}
           style={{
             padding: '12px 16px',
-            outline: '1px dashed #ff00ff88',
-            color: '#ff66ff',
+            outline: '1px dashed #94a3b866',
+            color: '#94a3b8',
             fontSize: 11,
           }}
         >
@@ -74,7 +74,7 @@ export function WebNode({ w, parent, ctx, wid }: { w: Widget; parent?: Widget; c
             {...common}
             style={{
               ...style,
-              background: 'repeating-linear-gradient(45deg,#9ca3af22 0 6px,#0000 6px 12px)',
+              background: 'repeating-linear-gradient(45deg,#94a3b81f 0 8px,#0000 8px 16px)',
               outline: '1px dashed #9ca3af88',
             }}
           />

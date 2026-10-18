@@ -40,6 +40,8 @@ export type JsonEdit = z.infer<typeof JsonEdit>
 
 /** CLI 怎么用账号登录、凭据存在哪、怎么改用 API */
 export const CliAuth = z.object({
+  /** 账号登录页上的提醒（例如这个 CLI 对账号类型有限制） */
+  accountNote: z.string().default(''),
   /** 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录 */
   login: z.array(z.string()).default([]),
   /** 登录时从 stdin 写进去的内容（例如要确认的 y） */

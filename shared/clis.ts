@@ -246,6 +246,7 @@ export const CLIS: CliDefinition[] = [
       identity: 'claude',
       loginEdits: [],
       loginStdin: '',
+      accountNote: '',
       api: {
         protocols: ['anthropic'],
         env: { ANTHROPIC_BASE_URL: '{baseUrl}', '{keyEnv}': '{apiKey}' },
@@ -352,6 +353,7 @@ export const CLIS: CliDefinition[] = [
       identity: 'codex',
       loginEdits: [],
       loginStdin: '',
+      accountNote: '',
       api: {
         protocols: ['openai-responses'],
         env: { AGENT_PANEL_API_KEY: '{apiKey}' },

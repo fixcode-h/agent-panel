@@ -18,6 +18,7 @@ import { getCli } from '../shared/clis.ts'
 import type { Agent, Category, TaskMessage, ToolUse, Workflow } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { detectClis } from './detect.ts'
+import { failureHints } from './exec/runner.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
@@ -174,16 +175,15 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
             hint: def.installHint,
           }),
         )
-      if (result ? !result.ok : r.code !== 0)
+      if (result ? !result.ok : r.code !== 0) {
+        const detail =
+          [result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')].filter(Boolean).join('\n') ||
+          t('没有更多信息')
         return fail(
           job,
-          t('{cli} 执行失败：{detail}', {
-            cli: def.name,
-            detail:
-              [result?.error, ...errors, r.stderr.trim().split('\n').slice(-4).join('\n')].filter(Boolean).join('\n') ||
-              t('没有更多信息'),
-          }),
+          [t('{cli} 执行失败：{detail}', { cli: def.name, detail }), ...failureHints(detail, def)].join('\n\n'),
         )
+      }
 
       const ex = extractJson(text)
       job.text = ex.rest

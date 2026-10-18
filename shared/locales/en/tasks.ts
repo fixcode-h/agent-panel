@@ -340,4 +340,6 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个附件': '{n} attachments',
   'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
   复制报错: 'Copy error',
+  '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。':
+    '· Google no longer supports signing in to Gemini CLI with a personal account (Gemini Code Assist for individuals). This is a Google server-side restriction, not a panel problem. Use an API instead: add a Gemini API key under "API settings" (get one at aistudio.google.com), then switch the sign-in method to API on the Gemini CLI page. Google Workspace or paid Code Assist accounts can still sign in with an account.',
 }
