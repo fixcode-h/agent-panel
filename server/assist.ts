@@ -230,7 +230,13 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         agents: await deps.agents.list(),
         categories: await deps.categories.list(),
         workflows: await deps.workflows.list(),
-        rules: input.kind === 'agent' ? settings.assist.agentRules : settings.assist.workflowRules,
+        rules:
+          input.kind === 'agent'
+            ? settings.assist.agentRules
+            : input.kind === 'workflow'
+              ? settings.assist.workflowRules
+              : '',
+        subject: input.subject,
         target: target ?? undefined,
         defaultCli: defaultCli(settings),
       }

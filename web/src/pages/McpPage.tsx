@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { CircleAlert, CircleCheck, Globe, Loader2, Pencil, Plus, Terminal, Trash2, Zap } from 'lucide-react'
+import { CircleAlert, CircleCheck, Globe, Loader2, Pencil, Plus, Terminal, Trash2, Wand2, Zap } from 'lucide-react'
 import { McpServer, type McpEntry, type McpOverview, type McpTestResult } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -13,6 +13,7 @@ import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { Switch } from '@/components/ui/switch'
 import { CliTag, PageFrame } from '@/components/library/parts'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 
 /** 「键=值」一行一个 */
 const toLines = (r: Record<string, string>, sep: string) =>
@@ -184,6 +185,8 @@ function EditDialog({
   const [clis, setClis] = useState<string[]>(entry?.clis ?? data.clis.map((c) => c.id))
   const [busy, setBusy] = useState(false)
   const [test, setTest] = useState<McpTestResult | 'running' | null>(null)
+  // 让 AI 排查时带去的当前配置和报错（打开那一刻的快照）
+  const [ai, setAi] = useState<Record<string, string> | null>(null)
 
   const server = (): McpServer => ({
     name,
@@ -336,6 +339,28 @@ function EditDialog({
           ))}
         </div>
       </div>
+      {ai && (
+        <AssistDialog
+          open
+          onOpenChange={(o) => !o && setAi(null)}
+          kind="mcp"
+          title={name}
+          subject={ai}
+          autoStart={t('帮我排查这个工具为什么连不上，找到原因并修复配置。')}
+          onApply={(p) => {
+            if (p.kind !== 'mcp') return
+            const v = p.server
+            setTransport(v.transport)
+            setCommand(v.command)
+            setArgs(joinArgs(v.args))
+            setEnv(toLines(v.env, '='))
+            setUrl(v.url)
+            setHeaders(toLines(v.headers, ': '))
+            setTest(null)
+            toast.success(t('已填入修复后的配置，可以再点「测试连接」确认'))
+          }}
+        />
+      )}
       {test && test !== 'running' && (
         <div
           className={`rounded-lg border px-3 py-2.5 text-[12.5px] ${test.ok ? 'border-success/40 bg-success/8' : 'border-warning/40 bg-warning/8'}`}
@@ -350,6 +375,24 @@ function EditDialog({
               ? t('连接成功，{n} 个工具', { n: test.tools.length })
               : t('连接失败：{error}', { error: test.error ?? '' })}
           </p>
+          {!test.ok && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="mt-2"
+              onClick={() =>
+                setAi({
+                  name,
+                  server: JSON.stringify(server(), null, 2),
+                  error: test.error ?? '',
+                  clis: clis.map((id) => data.clis.find((c) => c.id === id)?.name ?? id).join('、'),
+                })
+              }
+            >
+              <Wand2 className="h-3.5 w-3.5 text-accent" />
+              {t('用 AI 排查修复')}
+            </Button>
+          )}
           {!!test.tools.length && (
             <ul className="mt-2 flex max-h-40 flex-col gap-1 overflow-y-auto">
               {test.tools.map((x) => (

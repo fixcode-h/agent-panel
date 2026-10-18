@@ -18,6 +18,7 @@ import {
   wouldCycle,
 } from './flow.ts'
 import { AGENT_ICON_IDS } from './icons.ts'
+import { McpServer } from './library.ts'
 import {
   END,
   START,
@@ -31,7 +32,7 @@ import {
   type WorkflowInput,
 } from './schema.ts'
 
-export const AssistKind = z.enum(['agent', 'workflow'])
+export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp'])
 export type AssistKind = z.infer<typeof AssistKind>
 
 export const AssistMessage = z.object({
@@ -53,6 +54,11 @@ export const AssistInput = z.object({
   messages: z.array(AssistMessage).min(1).max(40),
   /** 「提问」开关：CLI 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
+  /**
+   * Skill 和 MCP 工具的当前内容（它们不在面板的数据里，由页面带来）：
+   * skill 是 cli、name、content；mcp 是 name、server（JSON）、error（测试连接的报错）、clis（装在哪些 CLI 里）
+   */
+  subject: z.record(z.string(), z.string().max(60000)).default({}),
 })
 export type AssistInput = z.infer<typeof AssistInput>
 
@@ -128,7 +134,17 @@ export type WorkflowProposal = {
   /** 需要先创建的 Agent；workflow 里用 `new:<名称>` 引用它们 */
   newAgents: (AgentInput & { ref: string; newCategory: string })[]
 }
-export type Proposal = AgentProposal | WorkflowProposal
+export type SkillProposal = {
+  kind: 'skill'
+  name: string
+  /** 完整的 SKILL.md */
+  content: string
+}
+export type McpProposal = {
+  kind: 'mcp'
+  server: McpServer
+}
+export type Proposal = AgentProposal | WorkflowProposal | SkillProposal | McpProposal
 
 export interface AssistJob {
   id: string
@@ -162,9 +178,11 @@ export interface AssistContext {
   target?: Agent | Workflow
   /** 设置里的系统默认 CLI */
   defaultCli?: string
+  /** Skill、MCP 工具的当前内容，见 AssistInput.subject */
+  subject?: Record<string, string>
 }
 
-const KIND_NAME = { agent: 'Agent', workflow: '工作流' }
+const KIND_NAME = { agent: 'Agent', workflow: '工作流', skill: 'Skill', mcp: 'MCP 工具' }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
 - description 一句话说明它擅长什么，不超过 60 字
@@ -285,6 +303,7 @@ export function buildAssistPrompt(
   messages: AssistMessage[],
   installed: string[],
 ) {
+  if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -328,6 +347,88 @@ ${kind === 'agent' ? AGENT_SHAPE : WORKFLOW_SHAPE}
     .filter(Boolean)
     .join('\n\n')
 }
+
+const SKILL_RULES = `- SKILL.md 开头是 front matter：name 和 description 两个字段，后面是正文
+- name 和文件夹名一致：小写字母、数字和连字符，简短，例如 commit-message（优化时保持原名）
+- description 一到两句：写清它做什么、什么时候该用它——CLI 靠这句话决定要不要自动启用，别写成笼统的口号
+- 正文用祈使句分步骤写：先做什么、再做什么、什么情况下停下来问用户；有固定格式的产出给一个简短的例子
+- 只写这个 Skill 自己的流程，不要重复通用常识；篇幅精炼（一般不超过 150 行）
+- 不要引用不存在的脚本和文件；需要时说明让 CLI 现场创建`
+
+const SKILL_SHAPE = `{
+  "name": "commit-message",
+  "content": "---\\nname: commit-message\\ndescription: 按团队约定写提交说明。在用户要求提交代码或写 commit message 时使用。\\n---\\n\\n# 写提交说明\\n\\n1. 先看 git diff…\\n2. …\\n"
+}`
+
+const MCP_RULES = `- 你要排查的是一个 MCP 工具的配置：本地命令（transport 为 stdio，面板按 command 加 args 启动它，通过标准输入输出对话）或远程地址（transport 为 http，面板向 url 发 MCP 请求）
+- 可以只读地排查：检查命令是否存在（which / where、--version）、Node 或 Python 的版本、自己运行一下启动命令看输出、读相关配置文件。不要修改任何文件，不要安装软件，不要执行有副作用的命令；运行命令需要用户确认时会弹出确认卡片
+- 常见原因：命令不在 PATH 里或没装；npx 少了 -y 导致卡在确认安装；包名或参数拼错；需要的环境变量（API Key 等）没填；Node 版本太低；远程地址缺了路径（如 /mcp）、需要 Authorization 请求头、或者服务实际是 SSE 而不是 HTTP；工具启动时往标准输出打印了非 MCP 的内容
+- 找到原因后改配置：只改能确定要改的字段；不知道的值（密钥等）保留原样并在说明里请用户自己填写
+- 工具名 name 必须保持不变`
+
+const MCP_SHAPE = `{
+  "name": "docs",
+  "transport": "stdio",
+  "command": "npx",
+  "args": ["-y", "docs-mcp"],
+  "env": { "API_KEY": "…" },
+  "url": "",
+  "headers": {}
+}`
+
+/** Skill 的创建 / 优化、MCP 工具的报错排查：和 Agent、工作流用同一套对话，提示词和输出格式不同 */
+function buildLibraryPrompt(kind: 'skill' | 'mcp', ctx: AssistContext, messages: AssistMessage[]) {
+  const sub = ctx.subject ?? {}
+  const convo = messages
+    .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
+    .join('\n\n')
+  const fence = (lang: string, body: string) => `\`\`\`${lang}\n${body}\n\`\`\``
+  if (kind === 'skill') {
+    const improving = !!sub.content
+    const cli = CLIS.find((c) => c.id === sub.cli)?.name
+    return [
+      `你是「Agent 面板」里的配置助手，正在和用户对话，帮他${improving ? '优化一个已有的' : '设计一个新的'} Skill。`,
+      '只根据下面的信息回答。不要读写任何文件，也不要运行命令。',
+      `## 背景\nSkill 是一个文件夹，核心是里面的 SKILL.md：教编码 CLI${cli ? `（这份是给 ${cli} 用的）` : ''}怎样完成某一类事情的说明，CLI 会按 description 判断什么时候用它。`,
+      improving
+        ? `## 当前的 SKILL.md（文件夹名 ${sub.name}，在它的基础上按用户要求修改）\n${fence('markdown', sub.content)}`
+        : '',
+      `## 创建规则\n${SKILL_RULES}`,
+      ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
+      `## 输出格式
+先用两三句中文说明你的设计${improving ? '和改了哪些地方' : ''}；信息不够时可以说明你做的假设，但仍然要给出完整结果。
+然后输出且只输出一个 \`\`\`json 代码块，content 是完整的 SKILL.md 文本（含 front matter），严格符合下面的结构（字段名不能改，不要加注释）：
+${fence('json', SKILL_SHAPE)}`,
+      `## 对话\n${convo}`,
+      '请回复用户最后一条消息。',
+    ]
+      .filter(Boolean)
+      .join('\n\n')
+  }
+  return [
+    '你是「Agent 面板」里的配置助手，正在和用户对话，帮他排查并修复一个 MCP 工具的配置。',
+    `## 当前配置\n${fence('json', sub.server ?? '{}')}`,
+    sub.error ? `## 测试连接的报错\n${fence('', sub.error)}` : '',
+    sub.clis ? `## 已装在这些 CLI 里\n${sub.clis}` : '',
+    `## 排查规则\n${MCP_RULES}`,
+    `## 输出格式
+先用几句中文说明你查到的原因、做了哪些检查、改了哪里；没能确定原因时说清楚还缺什么信息，但仍然给出你认为最可能可用的配置。
+然后输出且只输出一个 \`\`\`json 代码块，内容是修复后的完整配置，严格符合下面的结构（字段名不能改，不要加注释；stdio 的只填 command、args、env，http 的只填 url、headers）：
+${fence('json', MCP_SHAPE)}`,
+    `## 对话\n${convo}`,
+    '请回复用户最后一条消息。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+const SkillDraft = z.object({
+  name: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9][\w.-]*$/, 'name 只能用字母、数字、. _ -'),
+  content: z.string().min(1, 'content 不能为空').max(60000),
+})
 
 /** 取出回复里最后一个 JSON 代码块；没有代码块时取最外层的大括号 */
 export function extractJson(text: string): { json?: unknown; rest: string; error?: string } {
@@ -384,6 +485,27 @@ export function resolveProposal(
   json: unknown,
   ctx: AssistContext,
 ): { proposal?: Proposal; error?: string } {
+  if (kind === 'skill') {
+    const p = SkillDraft.safeParse(json)
+    if (!p.success) return { error: issues(p.error) }
+    // 优化时文件夹名不变
+    const name = ctx.subject?.name || p.data.name
+    const fm = p.data.content.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1]
+    if (!fm) return { error: 'content 要以 --- 包起来的 front matter 开头，里面写 name 和 description' }
+    if (!/^description:\s*\S/m.test(fm)) return { error: 'front matter 里缺少 description' }
+    const fmName = /^name:\s*["']?([^"'\n]+?)["']?\s*$/m.exec(fm)?.[1]
+    if (fmName !== name) return { error: `front matter 里的 name 要写成 ${name}（和文件夹名一致）` }
+    return { proposal: { kind: 'skill', name, content: p.data.content } }
+  }
+  if (kind === 'mcp') {
+    const p = McpServer.safeParse({ ...(json as object), name: ctx.subject?.name || (json as any)?.name })
+    if (!p.success) return { error: issues(p.error) }
+    const sv = p.data
+    if (sv.transport === 'stdio' && !sv.command.trim()) return { error: 'stdio 的工具要填 command' }
+    if (sv.transport === 'http' && !/^https?:\/\//.test(sv.url))
+      return { error: 'http 的工具要填以 http:// 或 https:// 开头的 url' }
+    return { proposal: { kind: 'mcp', server: sv } }
+  }
   if (kind === 'agent') {
     const p = AgentDraft.safeParse(json)
     if (!p.success) return { error: issues(p.error) }
@@ -545,6 +667,8 @@ export async function applyProposal(
     cats.push(c)
     return c.id
   }
+  // Skill 和 MCP 工具由各自的页面应用
+  if (p.kind === 'skill' || p.kind === 'mcp') return { created: [], categories: [] }
   if (p.kind === 'agent')
     return {
       agent: { ...p.agent, categoryId: await categoryId(p.newCategory, p.agent.categoryId) },

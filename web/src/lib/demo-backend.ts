@@ -738,7 +738,13 @@ function route(method: string, url: string, body: unknown): unknown {
         agents: d.agents,
         categories: d.categories,
         workflows: d.workflows,
-        rules: input.kind === 'agent' ? settings.assist.agentRules : settings.assist.workflowRules,
+        rules:
+          input.kind === 'agent'
+            ? settings.assist.agentRules
+            : input.kind === 'workflow'
+              ? settings.assist.workflowRules
+              : '',
+        subject: input.subject,
         defaultCli: defaultCli(settings),
         target,
       })
