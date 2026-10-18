@@ -157,6 +157,10 @@ try {
     .waitFor()
   await check(p, 'UI设计-版本', ['存版本', 'AI 修改前'])
   await p.keyboard.press('Escape')
+  // 侧栏里点设计那一行的图标（不是文字）也能切过去
+  const row = await p.getByRole('button', { name: '主菜单', exact: true }).boundingBox()
+  await p.mouse.click(row.x - 14, row.y + row.height / 2)
+  await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   await p.getByRole('button', { name: '设置' }).first().click()
   await check(p, '设置', ['常规', '内容宽度'])
   await p.keyboard.press('Escape')

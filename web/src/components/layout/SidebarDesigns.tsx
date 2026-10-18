@@ -232,8 +232,10 @@ export function DesignList() {
                     <ContextMenu key={d.id}>
                       <ContextMenuTrigger asChild>
                         <div
+                          // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
+                          onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
                           className={cn(
-                            'flex h-8 items-center gap-2 rounded-lg px-2 text-[13px]',
+                            'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[13px]',
                             on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
                           )}
                         >
@@ -261,12 +263,8 @@ export function DesignList() {
                               className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[12.5px] text-fg outline-none"
                             />
                           ) : (
-                            <button
-                              onClick={() => go({ page: 'design', id: d.id })}
-                              className="min-w-0 flex-1 cursor-pointer truncate text-left"
-                            >
-                              {d.title}
-                            </button>
+                            // 点击冒泡到整行去跳转；保留按钮是为了能用键盘选中
+                            <button className="min-w-0 flex-1 cursor-pointer truncate text-left">{d.title}</button>
                           )}
                         </div>
                       </ContextMenuTrigger>

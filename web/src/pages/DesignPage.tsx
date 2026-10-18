@@ -56,6 +56,7 @@ import {
   type WidgetType,
 } from '@shared/umg'
 import { api, designExportUrl, designFileUrl } from '@/lib/api'
+import { useScopedSetting } from '@/lib/useScopedSetting'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -277,6 +278,7 @@ const NEW_SIZE: Partial<Record<WidgetType, [number, number]>> = {
 }
 
 const SOURCE_KEY = 'design-image-source'
+const COUNT_KEY = 'design-image-count'
 
 // 复制的控件：放在模块里，切换到别的设计也能粘贴
 let clipboard: Widget | null = null
@@ -304,20 +306,9 @@ function Designer({ id }: { id: string }) {
   const imgTarget = (imgId: string) => `img:${imgId}`
   const [chatOpen, setChatOpen] = useState(true)
   const [deleting, setDeleting] = useState(false)
-  const [source, setSourceState] = useState<ImageSource>(() => {
-    try {
-      return parseSource(localStorage.getItem(SOURCE_KEY) ?? 'cli')
-    } catch {
-      return { kind: 'cli' }
-    }
-  })
-  const setSource = (s: ImageSource) => {
-    setSourceState(s)
-    try {
-      localStorage.setItem(SOURCE_KEY, sourceKey(s))
-    } catch {}
-  }
-  const [count, setCount] = useState(1)
+  // 生成图片的方式和每张几版：每个设计各自记住，在这个设计里改不影响别的设计
+  const [source, setSource] = useScopedSetting<ImageSource>(SOURCE_KEY, id, (v) => parseSource(v ?? 'cli'), sourceKey)
+  const [count, setCount] = useScopedSetting(COUNT_KEY, id, (v) => Math.max(1, Math.min(4, Number(v) || 1)), String)
   const [promptsOpen, setPromptsOpen] = useState(false)
   // 控件树和对话栏可以拖动调整宽度，效果区占剩下的
   const treePane = usePaneWidth('design-tree', 300, 220, 560)
@@ -1208,6 +1199,7 @@ function Designer({ id }: { id: string }) {
               onSend={send}
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
               kind={server.kind}
+              designId={id}
               onRetry={async (imageId) => {
                 try {
                   ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))
