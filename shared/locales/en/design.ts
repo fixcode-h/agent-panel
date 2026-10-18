@@ -497,4 +497,34 @@ export const EN_DESIGN: Record<string, string> = {
   '复制到我的风格，再自己改': 'Copy to my styles, then edit it',
   '内置风格不能修改，复制成自己的再改': "Built-in styles can't be edited; copy one to your own styles first",
   内置风格不能删除: "Built-in styles can't be deleted",
+  原画: 'Concept',
+  '已确认模板：{id}': 'Template approved: {id}',
+  上传自己画的效果图: 'Upload your own concept art',
+  删除这张原画: 'Delete this concept',
+  取消模板: 'Unset template',
+  '这张图上还有没发出去的标注，确认模板后标注会被清掉':
+    "This image still has unsent marks; they'll be cleared once it becomes the template",
+  '确认用这张作为最终效果，AI 会照着它搭界面、出切图':
+    'Use this as the final look; the AI will build the UI and generate the assets from it',
+  用这张做模板: 'Use as template',
+  '正在出原画…': 'Drawing concepts…',
+  '在右边的对话框里补充修改意见后发送，AI 会在这张的基础上改':
+    'Add your feedback in the chat on the right and send; the AI will revise this one',
+  '挑一张，用上面的工具在图上标出要改的地方再发送；满意了点「用这张做模板」':
+    "Pick one, mark what to change with the tools above and send; when you're happy, click “Use as template”",
+  正在出: 'Drawing',
+  先出原画: 'Concept first',
+  '已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）':
+    'A concept template is approved, so the AI builds the UI from it (unset it in Concept to pick again)',
+  '先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面）':
+    'Draws a few full-screen concepts for you to pick from and builds the UI after you approve one (click to build directly)',
+  '直接搭界面（点一下改成先出原画）': 'Builds the UI directly (click to draw concepts first)',
+  '描述想要的界面，AI 先画几张整屏的原画给你挑，可以在图上标注修改；确认一张作为模板后再搭界面、出切图。':
+    'Describe the screen you want. The AI first draws a few full-screen concepts for you to pick from and mark up; once you approve one as the template, it builds the UI and generates the assets.',
+  '描述界面，AI 先出几张原画给你挑…': 'Describe the screen; the AI will draw a few concepts first…',
+  '正在出原画 {i}/{n}': 'Drawing concepts {i}/{n}',
+  '按确认的原画模板搭界面，并生成切图': 'Build the UI from the approved concept template and generate the assets',
+  界面: 'UI',
+  '把确认的原画模板半透明盖在界面上，对照着调': 'Overlay the approved concept template on the UI to line things up',
+  对照模板: 'Compare with template',
 }

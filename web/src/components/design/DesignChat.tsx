@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
+  Brush,
   Check,
   ChevronDown,
   Download,
@@ -374,6 +375,54 @@ function Step({ n, done, title, children }: { n: number; done: boolean; title: s
   )
 }
 
+/**
+ * 「先出原画」开关，和「提问」开关放在一起：打开时 AI 先画整屏的效果图给你挑，
+ * 确认一张作为模板后才搭界面、出切图；关着时直接搭界面
+ */
+function ConceptToggle({
+  value,
+  onChange,
+  template,
+}: {
+  value: boolean
+  onChange: (v: boolean) => void
+  /** 已经确认了模板：AI 照着模板做，开关不起作用 */
+  template: boolean
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!value)}
+      aria-pressed={value}
+      aria-label={t('先出原画')}
+      title={
+        template
+          ? t('已经确认了原画模板，AI 照着模板搭界面（在原画里取消模板可以重新挑）')
+          : value
+            ? t('先画几张整屏原画给你挑，确认模板后再搭界面（点一下改成直接搭界面）')
+            : t('直接搭界面（点一下改成先出原画）')
+      }
+      className={cn(
+        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] transition-colors',
+        value && !template ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
+      )}
+    >
+      <Brush className="h-4 w-4" />
+      {t('原画')}
+    </button>
+  )
+}
+
+/** 每个设计各自记住「先出原画」；没选过时新的空白游戏界面默认打开，已经搭好的界面默认关着 */
+function useConceptFirst(designId: string, fallback: boolean) {
+  return useScopedSetting<boolean>(
+    'design-concept',
+    designId,
+    (raw) => (raw === null ? fallback : raw === '1'),
+    (v) => (v ? '1' : '0'),
+  )
+}
+
 const RUN_KEY = 'design-chat-run'
 
 /** 对话用的 CLI、模型和思考强度：记在本机，下次打开还是这个 */
@@ -425,6 +474,9 @@ export function DesignChat({
   designId,
   annotations = [],
   onRemoveAnnotation,
+  hasTemplate,
+  request,
+  conceptDefault = false,
 }: {
   messages: DesignMessage[]
   job: DesignJob | null | undefined
@@ -437,9 +489,20 @@ export function DesignChat({
     text: string,
     run: ChatRun,
     attachments: Attachment[],
-    extra: { askUser: boolean; style?: string; answers?: { question: string; answer: string }[] },
+    extra: {
+      askUser: boolean
+      style?: string
+      answers?: { question: string; answer: string }[]
+      concept: boolean
+    },
   ) => Promise<boolean>
   onStop: () => void
+  /** 已经确认了原画模板：「先出原画」开关不再起作用，AI 照着模板做 */
+  hasTemplate?: boolean
+  /** 页面要替用户发的一句话（例如确认模板后让 AI 开始搭界面）：id 变了就发一次 */
+  request?: { id: string; text: string }
+  /** 「先出原画」第一次打开时默认开着（新的、空白的游戏界面） */
+  conceptDefault?: boolean
   /** 哪个设计：对话的 CLI、模型各个设计分开记 */
   designId: string
   /** 游戏 UI 还是网页 UI：示例要求不一样 */
@@ -455,6 +518,7 @@ export function DesignChat({
   const [sending, setSending] = useState(false)
   const [pick, setPick] = useStoredRun(designId)
   const [askUser, setAskUserState] = useAskUser(designId)
+  const [concept, setConcept] = useConceptFirst(designId, conceptDefault)
   const { run } = useChatRun(pick)
   const list = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
@@ -494,7 +558,7 @@ export function DesignChat({
     setQueue((q) => q.slice(1))
     setSending(true)
     stick.current = true
-    void onSend(next.text, run, next.attachments, { askUser }).finally(() => setSending(false))
+    void onSend(next.text, run, next.attachments, { askUser, concept }).finally(() => setSending(false))
     // 只在这一轮结束、队列变化时看要不要发下一条
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [running, sending, queue, askDesign])
@@ -528,7 +592,7 @@ export function DesignChat({
     setSending(true)
     stick.current = true
     try {
-      if (await onSend(v, run, files.attachments, { askUser, ...(styleRef ? { style: styleRef.en } : {}) })) {
+      if (await onSend(v, run, files.attachments, { askUser, concept, ...(styleRef ? { style: styleRef.en } : {}) })) {
         setText('')
         files.clear()
         setStyleRef(null)
@@ -548,6 +612,7 @@ export function DesignChat({
     try {
       await onSend(text, run, [], {
         askUser,
+        concept,
         ...(style ? { style } : {}),
         answers: designQs.map((q, i) => ({ question: q.text, answer: answers[i] ?? '' })),
       })
@@ -555,6 +620,15 @@ export function DesignChat({
       setSending(false)
     }
   }
+
+  // 页面替用户发的话（确认模板后开始搭界面）：正在处理时排队
+  useEffect(() => {
+    if (!request) return
+    setQueue((q) => [...q, { id: request.id, text: request.text, attachments: [] }])
+    stick.current = true
+    // 每个请求只发一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [request?.id])
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -572,7 +646,11 @@ export function DesignChat({
               <Sparkles className="h-5 w-5" />
             </span>
             <p className="text-[13px] leading-relaxed text-muted">
-              {t('描述想要的界面，AI 会搭好控件树并列出需要的图片，再按下面选的方式生成。')}
+              {concept && !hasTemplate
+                ? t(
+                    '描述想要的界面，AI 先画几张整屏的原画给你挑，可以在图上标注修改；确认一张作为模板后再搭界面、出切图。',
+                  )
+                : t('描述想要的界面，AI 会搭好控件树并列出需要的图片，再按下面选的方式生成。')}
             </p>
             <div className="flex w-full flex-col gap-1.5">
               {(kind === 'web'
@@ -713,6 +791,7 @@ export function DesignChat({
                     if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
                   }}
                 />
+                <ConceptToggle value={concept} onChange={setConcept} template={!!hasTemplate} />
                 <SourceSelect value={source} onChange={onSource} />
                 {source.kind !== 'none' && (
                   <Select
@@ -742,7 +821,9 @@ export function DesignChat({
                   ? t('写修改意见，发送后按图上的标记重新生成图片')
                   : annotations.length
                     ? t('补充说明，或直接发送让 AI 按标注修改')
-                    : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
+                    : concept && !hasTemplate
+                      ? t('描述界面，AI 先出几张原画给你挑…')
+                      : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
             }
           />
         )}
@@ -883,9 +964,11 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
             ? t('有 {n} 张图片没有生成出来', { n: failedN })
             : job.phase === 'images'
               ? t('正在生成图片 {i}/{n}', { i: done, n: items.length })
-              : job.attempt > 1
-                ? t('检查还有问题，正在接着改')
-                : t('正在设计')}
+              : job.phase === 'concepts'
+                ? t('正在出原画 {i}/{n}', { i: job.concepts?.got ?? 0, n: job.concepts?.want ?? 0 })
+                : job.attempt > 1
+                  ? t('检查还有问题，正在接着改')
+                  : t('正在设计')}
         </span>
         {running && (
           <span className="ml-auto shrink-0 font-mono text-[11px] font-normal text-subtle tabular-nums">{sec}s</span>

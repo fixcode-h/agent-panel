@@ -2413,6 +2413,72 @@ try {
     )
     assert.ok(d.components.some((c) => c.Name === 'WBP_Tag' && c.DesignSize.X === 64))
     assert.equal(d.style, 'clean')
+    // 先出原画：开关打开时 AI 不能搭界面，只出整屏原画；原画按设计稿尺寸存成候选，确认模板后照着模板做、出切图
+    const sketch = await call('POST', '/designs', { projectId: uiProject.id, kind: 'game', title: 'Bag' })
+    await call('POST', `/designs/${sketch.id}/chat`, {
+      text: `做背包 FAKE_MCP:${JSON.stringify([
+        ['add_widgets', { items: [{ parent: 'RootCanvas', widget: { Type: 'TextBlock', Name: 'T', Text: 'x' } }] }],
+        ['generate_concepts', { prompt: 'dark fantasy inventory screen', negative: 'cartoon', count: 2 }],
+      ])}`,
+      source: { kind: 'cli' },
+      concept: true,
+    })
+    d = await waitJob(sketch.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    assert.match(d.messages.at(-1).text, /先出原画/, '先出原画阶段搭界面的工具被退回')
+    assert.equal(d.root.Children?.length ?? 0, 0, '没有搭界面')
+    assert.deepEqual(
+      d.concept.images.map((i) => [i.round, i.width, i.height, i.prompt, i.negative]),
+      [
+        [1, 1920, 1080, 'dark fantasy inventory screen', 'cartoon'],
+        [1, 1920, 1080, 'dark fantasy inventory screen', 'cartoon'],
+      ],
+      '一轮出两张候选，按设计稿尺寸存下',
+    )
+    assert.equal(d.concept.selected, d.concept.images[0].id)
+    const conceptGen = calls()
+      .filter((c) => /Game UI concept art/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.match(conceptGen.stdin ?? conceptGen.input, /Negative prompt \(none of these may appear\):.*cartoon/)
+    const tpl = d.concept.images[1].id
+    d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'approve', id: tpl })
+    assert.equal(d.concept.approved, tpl)
+    await call('POST', `/designs/${sketch.id}/chat`, {
+      text: `照着模板做 FAKE_MCP:${JSON.stringify([
+        [
+          'add_images',
+          { images: [{ id: 'gem', name: 'Gem', prompt: 'a red gem', negative: 'frame', width: 64, height: 64 }] },
+        ],
+        [
+          'add_widgets',
+          {
+            items: [
+              {
+                parent: 'RootCanvas',
+                widget: { Type: 'Image', Name: 'Img_Gem', Brush: { ResourceObject: 'img:gem' } },
+              },
+            ],
+          },
+        ],
+      ])}`,
+      source: { kind: 'cli' },
+      concept: true,
+    })
+    d = await waitJob(sketch.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const tplInput = calls()
+      .filter((c) => /你是游戏 UI 设计助手/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.match(tplInput.stdin ?? tplInput.input, new RegExp(`已确认的效果图模板[\\s\\S]*concept:${tpl}`))
+    assert.equal(d.images.find((i) => i.id === 'gem').negative, 'frame')
+    const gemGen = calls()
+      .filter((c) => /a red gem/.test(c.stdin ?? c.input ?? ''))
+      .at(-1)
+    assert.match(gemGen.stdin ?? gemGen.input, /approved concept art/, '切图带着模板作为参考')
+    assert.match(gemGen.stdin ?? gemGen.input, /Negative prompt.*frame/)
+    d = await call('POST', `/designs/${sketch.id}/concept`, { action: 'remove', id: tpl })
+    assert.deepEqual([d.concept.images.length, d.concept.approved], [1, ''], '删掉模板就回到挑图')
+    step('先出原画：不能先搭界面，出候选、确认模板后照着模板出切图')
     // 没在改设计时补充不了：告诉页面改成排队
     assert.deepEqual(await call('POST', `/designs/${design.id}/steer`, { text: '再大一点' }), { steered: false })
     // 看图量尺寸：inspect_image 量尺寸和颜色，view_image 画坐标格、放大一块，存成文件给 AI 读图

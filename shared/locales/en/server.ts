@@ -312,4 +312,8 @@ export const EN_SERVER: Record<string, string> = {
   没有回应: 'No response',
   要填启动命令: 'A start command is required',
   '地址要以 http:// 或 https:// 开头': 'The URL must start with http:// or https://',
+  '原画没有生成出来：{error}': "The concepts weren't generated: {error}",
+  没有这张原画: 'Concept not found',
+  这张截图已经不需要了: 'This screenshot is no longer needed',
+  出原画要先在对话框下面选生成图片的方式: 'To draw concepts, first pick an image source below the chat box',
 }

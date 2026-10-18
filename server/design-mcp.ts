@@ -1,9 +1,18 @@
 import { Hono } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
-import { AiImage, DesignQuestion, resolveDesignResult, type Design } from '../shared/design.ts'
+import {
+  AiImage,
+  DesignQuestion,
+  MAX_CONCEPTS,
+  MAX_TOOL_IMAGES,
+  MAX_TOOL_ITEMS,
+  MAX_TOOL_WIDGETS,
+  resolveDesignResult,
+  type Design,
+} from '../shared/design.ts'
 import { applyOp, type OpsState } from '../shared/design-ops.ts'
-import { compactTree } from '../shared/umg.ts'
+import { compactTree, walk, type Widget } from '../shared/umg.ts'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
@@ -22,9 +31,13 @@ import { imageSize } from './zip.ts'
 
 /**
  * 给 CLI 用的设计工具（MCP，Streamable HTTP）：AI 像在控件树和属性面板里操作一样调用工具改设计。
- * 每个改动类的工具都能一次提交多条（items），一次调用就能搭好一整块界面，少来回、快很多；
+ * 改动类的工具能一次提交多条（items），但每次的条数和控件数有上限：一次输出太长，模型服务的连接容易中途断开，
+ * 整轮白做；分区域小步提交，页面上也能一块块看到界面长出来。
  * 控件和插槽的写法宽松（见 design-ops.ts 的 looseWidget），少写错、少返工。
  * 每次改动马上应用到这一轮的副本上，页面实时显示；这一轮结束、整体检查通过后才真正存下。
+ *
+ * 为什么用 MCP 而不是让 AI 在终端里跑命令行工具：Codex 的沙箱默认不能联网（连不上本机的面板），
+ * Windows 的命令行里写 JSON 引号很容易出错，而且每条命令都可能要用户审批；MCP 的工具四个 CLI 都能直接放行。
  *
  * 每轮 AI 对话开一个会话，地址里带随机令牌，只在这一轮有效；面板只监听本机。
  */
@@ -44,6 +57,32 @@ interface Session {
   /** 给 AI 看图用：附件、设计里已有的图，和放生成的预览图的目录 */
   files: DesignFiles
   views: number
+  /** 「先出原画」阶段：只能出原画、提问、看图，不能改控件树和列切图 */
+  conceptOnly: boolean
+  /** 这一轮要出的原画（generate_concepts），这一轮结束后生成 */
+  concepts: ConceptRequest[]
+  /** 每次改动前的样子，undo 用 */
+  history: { state: OpsState; images: Session['images'] }[]
+  /** 截过的画布截图，view_image 里写 screenshot:<第几张> */
+  shots: string[]
+}
+
+export interface ConceptRequest {
+  prompt: string
+  negative: string
+  count: number
+  /** 在哪张原画的基础上改 */
+  base?: string
+}
+
+/** 截图里每个控件的位置（设计稿像素） */
+export interface WidgetRect {
+  name: string
+  type: string
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 export interface DesignFiles {
@@ -53,11 +92,20 @@ export interface DesignFiles {
   attachments: { name: string; path: string }[]
   /** 设计里已有的图（选中的那一版）的文件路径 */
   imagePath: (id: string) => string | undefined
+  /** 原画的文件路径 */
+  conceptPath: (id: string) => string | undefined
+  /** 让页面画出当前的画布并截图；页面没开着时报错 */
+  capture?: (s: Session, target: string) => Promise<{ png: Buffer; rects: WidgetRect[] }>
 }
 
 const sessions = new Map<string, Session>()
 
-export function openDesignSession(design: Design, onChange: (s: Session) => void, files: DesignFiles) {
+export function openDesignSession(
+  design: Design,
+  onChange: (s: Session) => void,
+  files: DesignFiles,
+  opts: { conceptOnly?: boolean } = {},
+) {
   const token = randomUUID()
   const s: Session = {
     design,
@@ -67,6 +115,10 @@ export function openDesignSession(design: Design, onChange: (s: Session) => void
     onChange,
     files,
     views: 0,
+    conceptOnly: !!opts.conceptOnly,
+    concepts: [],
+    history: [],
+    shots: [],
   }
   sessions.set(token, s)
   const port = Number(process.env.PORT ?? 8787)
@@ -152,9 +204,43 @@ const TOOLS = [
   },
   {
     name: 'replace_widget',
-    description:
-      '把一个控件（连同子控件）整个换成新的；不写 Slot 就沿用原来的。换根控件就是整个重做这棵树——从零搭一个界面时用它一次写完整棵树最快。',
+    description: `把一个控件（连同子控件）整个换成新的；不写 Slot 就沿用原来的。从零搭界面时先用它把根控件换成几个大区块的骨架，再用 add_widgets 分块往里填（一次最多 ${MAX_TOOL_WIDGETS} 个控件）。`,
     inputSchema: obj({ name: { type: 'string' }, widget: WIDGET, in: IN }, ['name', 'widget']),
+  },
+  {
+    name: 'duplicate_widgets',
+    description:
+      '复制控件（连同子控件），名字自动加序号，默认放在原来的后面；to 给复制出来的控件起名，parent、index 放到别处。重复的卡片、按钮、行用它，不用重写一遍。',
+    inputSchema: batch(
+      {
+        name: { type: 'string' },
+        to: { type: 'string' },
+        parent: { type: 'string' },
+        index: { type: 'integer' },
+        in: IN,
+      },
+      ['name'],
+    ),
+  },
+  {
+    name: 'wrap_widget',
+    description:
+      '给控件外面套一层面板（type 写 Overlay、SizeBox、Border、ScaleBox、HorizontalBox 等），新面板接过原来的位置和大小；as 给新面板起名。',
+    inputSchema: obj({ name: { type: 'string' }, type: { type: 'string' }, as: { type: 'string' }, in: IN }, [
+      'name',
+      'type',
+    ]),
+  },
+  {
+    name: 'find_widgets',
+    description:
+      '找控件：query 匹配名字或文字（不分大小写），type 按控件类型；不写 in 时主界面和所有子控件一起找。树很大时用它定位，不用整棵 get_tree。',
+    inputSchema: obj({ query: { type: 'string' }, type: { type: 'string' }, in: IN }),
+  },
+  {
+    name: 'undo',
+    description: '撤回这一轮最近的几次修改（steps 默认 1）：改坏了退回去重来。',
+    inputSchema: obj({ steps: { type: 'integer' } }),
   },
   {
     name: 'create_components',
@@ -171,8 +257,9 @@ const TOOLS = [
   {
     name: 'add_images',
     description:
-      '列出这次要新建或重新生成的图片（id、name、prompt、width、height、transparent、nineSlice）；同一个 id 再提交会覆盖。图片要设到控件上（"img:<id>"）才会显示。' +
-      '很多同类的小图标（背包物品、技能、货币）写成一组：同一个 sheet（例如 "items"），面板会把它们画在一张图上再切开，快很多。',
+      '列出这次要新建或重新生成的图片（id、name、prompt、negative、width、height、transparent、nineSlice、sheet）；同一个 id 再提交会覆盖。图片要设到控件上（"img:<id>"）才会显示。' +
+      'prompt 是英文的正向描述（画什么、形状、材质、颜色、细节），negative 是反向提示词（不能出现的东西）。' +
+      `很多同类的小图标（背包物品、技能、货币）写成一组：同一个 sheet（例如 "items"），面板会把它们画在一张图上再自动切开，快很多。一次最多 ${MAX_TOOL_IMAGES} 张。`,
     inputSchema: obj({ images: { type: 'array', items: { type: 'object' } } }, ['images']),
   },
   {
@@ -206,16 +293,32 @@ const TOOLS = [
     ),
   },
   {
-    name: 'edit',
+    name: 'generate_concepts',
     description:
-      '一次提交多步不同种类的修改（op 为 set / add / remove / move / rename / replace / addComponent / removeComponent / resizeComponent，格式见提示词）。',
-    inputSchema: obj({ ops: { type: 'array', items: { type: 'object' } } }, ['ops']),
+      `出整屏的效果图（原画）给用户挑：prompt 用英文完整描述整个界面的画面，negative 写反向提示词，count 同时出几张候选（默认 3，最多 ${MAX_CONCEPTS}）；` +
+      'base 写某张原画的 id 时，在那张的基础上改（面板会把那张图作为参考交给图片模型）。这一轮结束后开始生成，用户挑好、确认模板后才搭界面。',
+    inputSchema: obj(
+      {
+        prompt: { type: 'string' },
+        negative: { type: 'string' },
+        count: { type: 'integer' },
+        base: { type: 'string' },
+      },
+      ['prompt'],
+    ),
+  },
+  {
+    name: 'screenshot',
+    description:
+      '截一张当前画布（用户在左边看到的样子，包括这一轮还没存下的改动），存成图片文件，再用读图的能力看它；同时返回每个控件在画布上的位置和大小，以及跑出画面、大小为 0 的控件。' +
+      'in 写子控件名截子控件。搭完一块或改完以后用它检查效果，和参考图、模板对比。截过的图在 view_image 里写 "screenshot:<第几张>" 可以放大看。',
+    inputSchema: obj({ in: IN }),
   },
   {
     name: 'inspect_image',
     description:
       '量一张图：精确的像素尺寸、宽高比、是否透明、内容范围、主要颜色（十六进制）。region 只量图里的一块，points 取指定位置的颜色。照着参考图做界面时用它取准确的尺寸和颜色，不要目测。' +
-      'source 写 "attachment:1"（第几个附件）或 "image:<图片 id>"（设计里已有的图）。',
+      'source 写 "attachment:1"（第几个附件）、"image:<图片 id>"（设计里已有的图）、"concept:<原画 id>"（原画、模板）或 "screenshot:1"（第几张截图）。',
     inputSchema: obj(
       {
         source: { type: 'string' },
@@ -244,6 +347,11 @@ const TOOLS = [
 
 /** 以前的工具名（单个的）也认，免得 AI 照着旧习惯调用时报错 */
 const ALIASES: Record<string, string> = {
+  duplicate_widget: 'duplicate_widgets',
+  find_widget: 'find_widgets',
+  wrap_widgets: 'wrap_widget',
+  generate_concept: 'generate_concepts',
+  view_canvas: 'screenshot',
   add_widget: 'add_widgets',
   update_widget: 'update_widgets',
   remove_widget: 'remove_widgets',
@@ -259,10 +367,49 @@ const ALIASES: Record<string, string> = {
 
 const text = (t: string, isError = false) => ({ content: [{ type: 'text', text: t }], ...(isError ? { isError } : {}) })
 
+/** 一个控件（连同子控件）有几个 */
+const countWidgets = (w: any): number =>
+  w && typeof w === 'object'
+    ? 1 +
+      (Array.isArray(w.Children ?? w.children) ? (w.Children ?? w.children) : []).reduce(
+        (n: number, c: unknown) => n + countWidgets(c),
+        0,
+      )
+    : 0
+
+/** 一次提交太多：退回去让 AI 拆成几次（一次输出太长，模型服务的连接容易中途断开） */
+function tooBig(items: number, widgets: number) {
+  if (items > MAX_TOOL_ITEMS)
+    return text(`一次最多 ${MAX_TOOL_ITEMS} 条，这次有 ${items} 条，没有应用。拆成几次调用，每次一块区域。`, true)
+  if (widgets > MAX_TOOL_WIDGETS)
+    return text(
+      `一次最多 ${MAX_TOOL_WIDGETS} 个控件（子控件也算），这次有 ${widgets} 个，没有应用。先搭外层的骨架，再分几次往里面加。`,
+      true,
+    )
+  return undefined
+}
+
+const MUTATING = new Set([
+  'add_widgets',
+  'update_widgets',
+  'remove_widgets',
+  'move_widgets',
+  'rename_widgets',
+  'replace_widget',
+  'duplicate_widgets',
+  'wrap_widget',
+  'create_components',
+  'resize_components',
+  'delete_components',
+  'add_images',
+  'edit',
+])
+
 /** 应用几步操作，返回给 AI 看的结果；失败的不影响其他的 */
 function apply(s: Session, ops: unknown[]) {
   const lines: string[] = []
   let ok = 0
+  const before = { state: s.state, images: s.images }
   ops.forEach((op, i) => {
     const r = applyOp(s.state, op)
     if ('error' in r) lines.push(ops.length > 1 ? `第 ${i + 1} 条失败：${r.error}` : r.error)
@@ -272,7 +419,11 @@ function apply(s: Session, ops: unknown[]) {
     }
   })
   s.applied += ok
-  if (ok) s.onChange(s)
+  if (ok) {
+    s.history.push(before)
+    if (s.history.length > 50) s.history.shift()
+    s.onChange(s)
+  }
   if (ops.length === 1) return ok ? text('好了') : text(lines[0], true)
   return text(
     [
@@ -352,11 +503,20 @@ const toQuestion = (q: any): unknown => ({
 
 /** 找 source 指的图：附件（从 1 数起，或写文件名）或设计里已有的图 */
 function sourceFile(s: Session, source: string): { file: string; name: string; error?: undefined } | { error: string } {
-  const m = /^(attachment|image):(.+)$/.exec(source.trim())
-  if (!m) return { error: 'source 要写 "attachment:1" 或 "image:<图片 id>"' }
+  const m = /^(attachment|image|concept|screenshot):(.+)$/.exec(source.trim())
+  if (!m) return { error: 'source 要写 "attachment:1"、"image:<图片 id>"、"concept:<原画 id>" 或 "screenshot:1"' }
   if (m[1] === 'image') {
     const file = s.files.imagePath(m[2])
     return file ? { file, name: m[2] } : { error: `设计里没有已经生成的图片 ${m[2]}` }
+  }
+  if (m[1] === 'concept') {
+    const file = s.files.conceptPath(m[2])
+    return file ? { file, name: m[2] } : { error: `没有原画 ${m[2]}` }
+  }
+  if (m[1] === 'screenshot') {
+    const n = m[2] === 'latest' ? s.shots.length : Number(m[2])
+    const file = s.shots[n - 1]
+    return file ? { file, name: `screenshot-${n}` } : { error: `没有第 ${m[2]} 张截图（截过 ${s.shots.length} 张）` }
   }
   const list = s.files.attachments
   const at = /^\d+$/.test(m[2]) ? list[Number(m[2]) - 1] : list.find((x) => x.name === m[2])
@@ -438,10 +598,69 @@ async function inspect(s: Session, view: boolean, a: any) {
   )
 }
 
+/** 截一张当前画布：页面画出来交回；列出每个控件的位置和明显的问题 */
+async function screenshot(s: Session, target: string) {
+  if (target && !s.state.components.some((c) => c.Name === target)) return text(`没有子控件 ${target}`, true)
+  if (!s.files.capture) return text('这里截不了图，用 get_tree 和 check 检查', true)
+  let shot: { png: Buffer; rects: WidgetRect[] }
+  try {
+    shot = await s.files.capture(s, target)
+  } catch (e) {
+    return text(`${(e as Error).message}。先用 get_tree 和 check 检查`, true)
+  }
+  await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
+  const file = path.join(s.files.dir, 'views', `screenshot-${s.shots.length + 1}.png`)
+  await writeFile(file, shot.png)
+  s.shots.push(file)
+  const size = target
+    ? (s.state.components.find((c) => c.Name === target)?.DesignSize ?? s.design.designSize)
+    : (s.designSize ?? s.design.designSize)
+  const r = (n: number) => Math.round(n)
+  const outside = shot.rects.filter(
+    (w) => w.w > 0 && w.h > 0 && (w.x < -2 || w.y < -2 || w.x + w.w > size.X + 2 || w.y + w.h > size.Y + 2),
+  )
+  const empty = shot.rects.filter((w) => w.w < 1 || w.h < 1)
+  const list = shot.rects.slice(0, 80).map((w) => `${w.name}（${w.type}）${r(w.x)},${r(w.y)} ${r(w.w)}×${r(w.h)}`)
+  return text(
+    [
+      `已截图 ${file}（第 ${s.shots.length} 张，${size.X}×${size.Y}），用读图的能力看这个文件；要看细节用 view_image 写 source "screenshot:${s.shots.length}" 加 region 放大。`,
+      outside.length ? `跑出画面的控件：${outside.map((w) => w.name).join('、')}` : '',
+      empty.length ? `大小为 0、看不见的控件：${empty.map((w) => w.name).join('、')}` : '',
+      `控件位置（x,y 宽×高，设计稿像素${shot.rects.length > 80 ? '，只列前 80 个' : ''}）：`,
+      ...list,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  )
+}
+
 async function callTool(s: Session, raw: string, args: any) {
   const name = ALIASES[raw] ?? raw
   const a = args && typeof args === 'object' ? args : {}
   const at = (x: any) => (str(x?.in) ? { in: str(x.in) } : {})
+  // 「先出原画」：用户确认模板之前不搭界面、不列切图
+  if (s.conceptOnly && MUTATING.has(name))
+    return text(
+      '现在是「先出原画」阶段：用户确认效果图模板之前不能搭界面、不能列切图。用 generate_concepts 出原画，回复一两句后结束这一轮。',
+      true,
+    )
+  // 条数、控件数的上限（add_images 单独算张数）
+  if (MUTATING.has(name) && name !== 'add_images') {
+    const list =
+      name === 'edit'
+        ? Array.isArray(a.ops)
+          ? a.ops
+          : []
+        : name === 'remove_widgets' || name === 'delete_components'
+          ? namesOf(a)
+          : itemsOf(a)
+    const widgets = list.reduce(
+      (n: number, x: any) => n + countWidgets(x?.widget) + countWidgets(x?.root) + countWidgets(x?.component?.Root),
+      0,
+    )
+    const big = tooBig(list.length, widgets)
+    if (big) return big
+  }
   switch (name) {
     case 'get_tree': {
       if (a.all)
@@ -530,6 +749,7 @@ async function callTool(s: Session, raw: string, args: any) {
         s,
         namesOf(a).map((n) => ({ op: 'removeComponent', name: n })),
       )
+    // 不在工具列表里了（一次写一大串操作容易太长），只给照旧习惯调用的留着
     case 'edit': {
       const ops = Array.isArray(a.ops) ? a.ops : []
       if (!ops.length) return text('ops 是空的', true)
@@ -537,8 +757,11 @@ async function callTool(s: Session, raw: string, args: any) {
     }
     case 'add_images': {
       const list = Array.isArray(a.images) ? a.images : a.id ? [a] : []
+      if (list.length > MAX_TOOL_IMAGES)
+        return text(`一次最多 ${MAX_TOOL_IMAGES} 张，这次有 ${list.length} 张，没有记下。分几次提交。`, true)
       const p = z.array(AiImage).safeParse(list)
       if (!p.success) return text(z.prettifyError(p.error), true)
+      s.history.push({ state: s.state, images: s.images })
       for (const img of p.data) s.images = [...s.images.filter((x) => x.id !== img.id), img]
       return text(`已记下 ${p.data.length} 张图片：${p.data.map((i) => i.id).join('、')}`)
     }
@@ -557,6 +780,72 @@ async function callTool(s: Session, raw: string, args: any) {
       s.questions = p.data
       return text('已记下，用户回答后会一起交回来。回复一句为什么先问，就结束这一轮。')
     }
+    case 'duplicate_widgets':
+      return apply(
+        s,
+        itemsOf(a).map((x) => ({
+          op: 'duplicate',
+          ...at(x),
+          target: x?.name,
+          name: str(x?.to) || undefined,
+          parent: str(x?.parent) || undefined,
+          index: x?.index,
+        })),
+      )
+    case 'wrap_widget':
+      return apply(s, [{ op: 'wrap', ...at(a), target: a.name, type: a.type, name: str(a.as) || undefined }])
+    case 'find_widgets': {
+      const q = str(a.query).toLowerCase()
+      const type = str(a.type)
+      const trees: { in: string; root: Widget }[] = a.in
+        ? s.state.components.filter((c) => c.Name === a.in).map((c) => ({ in: c.Name, root: c.Root }))
+        : [{ in: '', root: s.state.root }, ...s.state.components.map((c) => ({ in: c.Name, root: c.Root }))]
+      if (a.in && !trees.length) return text(`没有子控件 ${a.in}`, true)
+      const hits: string[] = []
+      for (const tr of trees)
+        walk(tr.root, (w, parent) => {
+          const label = String(w.Properties?.Text ?? '')
+          if (type && w.Type !== type) return
+          if (q && !w.Name.toLowerCase().includes(q) && !label.toLowerCase().includes(q)) return
+          hits.push(
+            `${tr.in ? `${tr.in} / ` : ''}${w.Name}（${w.Type}${label ? `，「${label.slice(0, 30)}」` : ''}${parent ? `，在 ${parent.Name} 里` : '，根控件'}）`,
+          )
+        })
+      if (!hits.length) return text('没有找到')
+      return text(
+        `找到 ${hits.length} 个${hits.length > 60 ? '（只列前 60 个）' : ''}：\n${hits.slice(0, 60).join('\n')}`,
+      )
+    }
+    case 'undo': {
+      const steps = Math.max(1, Math.min(Number(a.steps) || 1, s.history.length))
+      if (!s.history.length) return text('这一轮还没有改过，没有可以撤回的', true)
+      const back = s.history.splice(s.history.length - steps, steps)[0]
+      s.state = back.state
+      s.images = back.images
+      s.onChange(s)
+      return text(`撤回了 ${steps} 次修改`)
+    }
+    case 'generate_concepts': {
+      const prompt = str(a.prompt).trim()
+      if (!prompt) return text('prompt 要写整个界面的英文描述', true)
+      const base = str(a.base).trim()
+      if (base && !(s.design.concept?.images ?? []).some((i) => i.id === base)) return text(`没有原画 ${base}`, true)
+      const count = Math.max(1, Math.min(MAX_CONCEPTS, Math.round(Number(a.count) || 3)))
+      const total = s.concepts.reduce((n, c) => n + c.count, 0)
+      if (total + count > MAX_CONCEPTS * 2)
+        return text(`这一轮已经要出 ${total} 张了，最多 ${MAX_CONCEPTS * 2} 张；让用户先挑一挑`, true)
+      s.concepts.push({
+        prompt: prompt.slice(0, 4000),
+        negative: str(a.negative).trim().slice(0, 2000),
+        count,
+        base: base || undefined,
+      })
+      return text(
+        `已记下，这一轮结束后出 ${count} 张原画（显示在用户左边的画布区域）。回复一两句说明这几张的思路，就结束这一轮。`,
+      )
+    }
+    case 'screenshot':
+      return screenshot(s, str(a.in))
     case 'inspect_image':
     case 'view_image':
       return inspect(s, name === 'view_image', a)

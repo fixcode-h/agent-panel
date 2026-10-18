@@ -6,6 +6,7 @@ const randomId = () => crypto.randomUUID()
 import {
   DesignImage,
   addToParts,
+  emptyConcept,
   type ReplyPart,
   emptyRoot,
   importComponent,
@@ -32,6 +33,86 @@ const fail = (msg: string): never => {
 }
 
 // ---- 示意图：按图片 id 里的关键词画 ----
+
+/** 演示用的原画：按设计稿比例画一张整屏的示意图，几张之间换配色和布局 */
+function drawConcept(k: number, w: number, h: number): string {
+  const c = document.createElement('canvas')
+  // 画小一点就够看，data URL 也小
+  const s = Math.min(1, 960 / w)
+  c.width = Math.round(w * s)
+  c.height = Math.round(h * s)
+  const W = c.width
+  const H = c.height
+  const g = c.getContext('2d')!
+  const hues = [265, 20, 190, 140]
+  const hue = hues[k % hues.length]
+  const grd = g.createLinearGradient(0, 0, W, H)
+  grd.addColorStop(0, `hsl(${hue} 45% 22%)`)
+  grd.addColorStop(1, `hsl(${hue + 30} 50% 8%)`)
+  g.fillStyle = grd
+  g.fillRect(0, 0, W, H)
+  const panel = (x: number, y: number, ww: number, hh: number) => {
+    g.fillStyle = `hsla(${hue} 30% 12% / 0.85)`
+    g.strokeStyle = `hsl(${hue + 40} 70% 65%)`
+    g.lineWidth = 2
+    g.beginPath()
+    g.roundRect(x, y, ww, hh, 10)
+    g.fill()
+    g.stroke()
+  }
+  // 顶栏
+  panel(W * 0.02, H * 0.03, W * 0.96, H * 0.09)
+  // 左右两种布局交替：左边列表右边详情，或者中间一排按钮
+  if (k % 2 === 0) {
+    panel(W * 0.03, H * 0.16, W * 0.55, H * 0.78)
+    for (let r = 0; r < 4; r++)
+      for (let col = 0; col < 5; col++) panel(W * (0.05 + col * 0.105), H * (0.2 + r * 0.18), W * 0.09, H * 0.15)
+    panel(W * 0.61, H * 0.16, W * 0.36, H * 0.78)
+  } else {
+    for (let i = 0; i < 3; i++) panel(W * 0.35, H * (0.32 + i * 0.17), W * 0.3, H * 0.12)
+  }
+  g.fillStyle = `hsl(${hue + 40} 80% 75%)`
+  g.font = `600 ${Math.round(H * 0.045)}px sans-serif`
+  g.fillText(`Concept ${k + 1}`, W * 0.04, H * 0.09)
+  return c.toDataURL('image/png')
+}
+
+/** 演示里的「先出原画」：回复一句，再一张张「画」出三张候选 */
+async function runConcepts(d: Full, text: string, run = { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' }) {
+  const job: Job = { status: 'running', phase: 'design', text: '', outChars: 0, attempt: 1, startedAt: Date.now(), run }
+  d.job = job
+  await sleep(700)
+  d.messages.push({
+    id: randomId(),
+    role: 'agent',
+    text: '先出三张整屏原画给你挑：第一、三张是左边格子右边详情的布局，第二张是居中的按钮布局，配色各不相同。挑一张，可以在图上标注再让我改，满意了点「用这张做模板」。',
+    at: now(),
+    run,
+  })
+  job.phase = 'concepts'
+  const cur = d.concept ?? emptyConcept()
+  const round = Math.max(0, ...cur.images.map((i) => i.round)) + 1
+  const progress = { want: 3, got: 0 }
+  job.concepts = progress
+  for (let k = 0; k < 3; k++) {
+    await sleep(900 + Math.random() * 600)
+    const c = d.concept ?? emptyConcept()
+    const img = {
+      id: `c${round}_${k + 1}`,
+      file: drawConcept(k + round - 1, d.designSize.X, d.designSize.Y),
+      width: d.designSize.X,
+      height: d.designSize.Y,
+      prompt: text,
+      negative: '',
+      round,
+      source: 'cli' as const,
+      at: now(),
+    }
+    d.concept = { images: [...c.images, img], selected: k === 0 ? img.id : c.selected, approved: '' }
+    progress.got++
+  }
+  job.status = 'done'
+}
 
 function draw(id: string, w: number, h: number): string {
   const c = document.createElement('canvas')
@@ -1065,9 +1146,48 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       ...(body.annotations?.length ? { annotations: body.annotations } : {}),
       ...(body.answers?.length ? { answers: body.answers } : {}),
     })
-    void runChat(d, body.text, body.source, body.count ?? 1, body.run)
+    const concept = d.concept ?? emptyConcept()
+    if (
+      !concept.approved &&
+      (body.concept || (body.annotations ?? []).some((a: { target: string }) => a.target.startsWith('concept:')))
+    )
+      void runConcepts(d, body.text, body.run)
+    else void runChat(d, body.text, body.source, body.count ?? 1, body.run)
     return d
   }
+  // 原画：选中、确认模板、删掉；带图片数据的是上传
+  if (sub === 'concept') {
+    const c = d.concept ?? emptyConcept()
+    if (body.data) {
+      const round = Math.max(0, ...c.images.map((i) => i.round)) + 1
+      const img = {
+        id: `c${round}_1`,
+        file: String(body.data),
+        width: d.designSize.X,
+        height: d.designSize.Y,
+        prompt: '',
+        negative: '',
+        round,
+        source: 'upload' as const,
+        at: now(),
+      }
+      d.concept = { ...c, images: [...c.images, img], selected: img.id }
+      return d
+    }
+    const cid = String(body.id ?? '')
+    if (body.action === 'select') d.concept = { ...c, selected: cid }
+    else if (body.action === 'approve') d.concept = { ...c, approved: cid, selected: cid || c.selected }
+    else if (body.action === 'remove') {
+      const images = c.images.filter((i) => i.id !== cid)
+      d.concept = {
+        images,
+        selected: c.selected === cid ? (images.at(-1)?.id ?? '') : c.selected,
+        approved: c.approved === cid ? '' : c.approved,
+      }
+    }
+    return d
+  }
+  if (sub === 'capture') return { ok: true }
   if (sub === 'copy') {
     const at = now()
     const c: Full = {

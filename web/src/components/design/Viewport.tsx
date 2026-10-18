@@ -40,6 +40,7 @@ export function Viewport({
   device,
   onReorder,
   onNudge,
+  overlay,
 }: {
   root: Widget
   size: Vec2
@@ -66,6 +67,8 @@ export function Viewport({
   onReorder?: (id: string, parentId: string, index: number) => void
   /** 网页 UI：绝对定位的控件拖动时改偏移（dx、dy 是设计稿像素，往右、往下为正） */
   onNudge?: (id: string, dx: number, dy: number, key: string) => void
+  /** 半透明盖在画布上的图（确认的原画模板），对照着调位置 */
+  overlay?: string
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -511,6 +514,14 @@ export function Viewport({
             >
               <UmgNode w={root} ctx={ctx} />
             </div>
+            {overlay && (
+              <img
+                src={overlay}
+                alt=""
+                draggable={false}
+                className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-40"
+              />
+            )}
             {box && !play && (
               <div
                 className="pointer-events-none absolute"

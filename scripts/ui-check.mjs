@@ -164,6 +164,17 @@ try {
   await p.keyboard.press('Escape')
   await p.goto(base + '#/design/new')
   await check(p, 'UI设计-新建', ['开始设计'])
+  // 先出原画：新的游戏界面默认打开「原画」，AI 先出几张整屏原画，显示在左边挑
+  await p.getByRole('textbox').first().fill('背包')
+  await p.getByRole('button', { name: '开始设计' }).click()
+  await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('暗黑奇幻风格的背包界面')
+  await p.keyboard.press('Enter')
+  await p.getByRole('button', { name: '用这张做模板' }).waitFor({ timeout: 15000 })
+  await p.getByText(/正在出原画/).waitFor({ state: 'detached', timeout: 20000 })
+  await check(p, 'UI设计-原画', ['第 1 轮', '用这张做模板'])
+  await p.getByRole('button', { name: '用这张做模板' }).click()
+  await p.getByRole('button', { name: '对照模板' }).waitFor({ timeout: 15000 })
+  await p.goto(base + '#/design/new')
   // 网页 UI：新建一个网页设计，让 AI 搭首页，看自动布局画出来的样子
   await p.getByRole('radio', { name: /网页 UI/ }).click()
   await p.getByRole('textbox').first().fill('首页')
