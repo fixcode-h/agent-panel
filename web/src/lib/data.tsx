@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
+import { rememberAskUserDefault } from './askUserDefault'
 import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
 
@@ -67,6 +68,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   useEffect(() => applyContentWidth(settings?.contentWidth), [settings?.contentWidth])
+  // 新会话的「提问」开关要同步读默认值，设置还没取回来时也能用上次存的
+  const askDefault = settings?.askUserDefault
+  useEffect(() => {
+    if (askDefault !== undefined) rememberAskUserDefault(askDefault)
+  }, [askDefault])
   // 设置里的语言和浏览器记的不一样（例如在别的浏览器里改过）：以设置为准
   useEffect(() => {
     if (settings) switchLang(settings.language)

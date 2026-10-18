@@ -27,7 +27,7 @@ import {
   useFileMention,
 } from '@/components/chat/Attachments'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
-import { AskToggle, useAskUser } from '@/components/chat/AskToggle'
+import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -71,7 +71,7 @@ export function TaskComposer({
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
-  const [askUser, setAskUser] = useAskUser('new-task')
+  const [askUser, setAskUser] = useNewAskUser()
   const ta = useRef<HTMLTextAreaElement>(null)
   const files = useAttachments()
   const drop = useDropPaste(files.add)

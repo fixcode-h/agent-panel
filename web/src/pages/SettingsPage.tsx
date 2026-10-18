@@ -85,6 +85,7 @@ function SettingsBody({
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
+  const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [language, setLanguage] = useState(initial.language)
@@ -157,6 +158,7 @@ function SettingsBody({
   const value: Settings = {
     openBrowser,
     requireToken,
+    askUserDefault,
     proxy: proxy.trim(),
     contentWidth,
     language,
@@ -476,6 +478,18 @@ function SettingsBody({
                   />
                 </Row>
               )}
+              <Row
+                title={t('新会话默认开启提问')}
+                desc={t(
+                  '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。',
+                )}
+              >
+                <Switch
+                  aria-label={t('新会话默认开启提问')}
+                  checked={askUserDefault}
+                  onCheckedChange={setAskUserDefault}
+                />
+              </Row>
               <Row
                 title={t('任务完成时通知我')}
                 desc={t('页面不在前台时，任务完成或失败会弹出系统通知。需要浏览器允许通知。')}
