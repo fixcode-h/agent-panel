@@ -675,6 +675,7 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
     CLIS.map((c) => {
       const raw = s.clis[c.id]
       const eff = cliSettings(s, c.id)
+      const own = CliSettings.parse(raw ?? {})
       return [
         c.id,
         {
@@ -684,8 +685,9 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           defaultEffort: eff.defaultEffort,
           tiers: CliSettings.shape.tiers.parse(raw?.tiers),
           permission: eff.permission,
-          args: joinArgs(eff.extraArgs),
-          envText: envToText(eff.env),
+          // 用户自己写的：API 模式和 CLI 定义自带的环境变量、参数不算（保存时会写回设置里）
+          args: joinArgs(own.extraArgs),
+          envText: envToText(own.env),
           showLimits: eff.showLimits,
           autoCompact: eff.autoCompact,
           authMode: eff.authMode,

@@ -3182,6 +3182,11 @@ try {
     const geminiSettings = () => JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
     assert.equal(geminiSettings().security.auth.selectedType, 'gemini-api-key')
     assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], 'gk')
+    assert.equal(
+      calls().findLast((x) => x.kind === 'gemini').apiEnv.trust,
+      'true',
+      'Gemini CLI 无界面运行要信任工作目录，否则报「not running in a trusted directory」',
+    )
     const cc = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',

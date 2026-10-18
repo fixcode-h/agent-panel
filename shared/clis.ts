@@ -124,6 +124,8 @@ export interface CliDefinition {
   color: string
   /** 设置里环境变量的示例 */
   envExample: string
+  /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
+  env?: Record<string, string>
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、claude（配置和环境变量）；为空时只用 models 里写的 */
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */

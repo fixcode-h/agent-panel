@@ -339,4 +339,5 @@ export const EN_TASKS: Record<string, string> = {
   '排队中，这一轮结束后发送': 'Queued, sends after this turn',
   '{n} 个附件': '{n} attachments',
   'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
+  复制报错: 'Copy error',
 }

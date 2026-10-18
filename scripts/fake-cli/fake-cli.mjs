@@ -215,6 +215,7 @@ if (process.env.FAKE_CLI_LOG) {
     anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
     agentpanel: process.env.AGENT_PANEL_API_KEY,
     gemini: [process.env.GEMINI_API_KEY, process.env.GOOGLE_GEMINI_BASE_URL],
+    trust: process.env.GEMINI_CLI_TRUST_WORKSPACE,
   }
   appendFileSync(
     log,
