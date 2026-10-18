@@ -78,23 +78,28 @@ function drawConcept(k: number, w: number, h: number): string {
 }
 
 /** 演示里的「先出原画」：回复一句，再一张张「画」出三张候选 */
-async function runConcepts(d: Full, text: string, run = { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' }) {
+async function runConcepts(
+  d: Full,
+  text: string,
+  run = { cli: 'claude', model: 'claude-opus-4-1', effort: 'high' },
+  count = 3,
+) {
   const job: Job = { status: 'running', phase: 'design', text: '', outChars: 0, attempt: 1, startedAt: Date.now(), run }
   d.job = job
   await sleep(700)
   d.messages.push({
     id: randomId(),
     role: 'agent',
-    text: '先出三张整屏原画给你挑：第一、三张是左边格子右边详情的布局，第二张是居中的按钮布局，配色各不相同。挑一张，可以在图上标注再让我改，满意了点「用这张做模板」。',
+    text: `先出 ${count} 张整屏原画给你挑${count > 1 ? '，布局和配色各不相同' : ''}。可以在图上标注再让我改，满意了点「用这张做模板」。`,
     at: now(),
     run,
   })
   job.phase = 'concepts'
   const cur = d.concept ?? emptyConcept()
   const round = Math.max(0, ...cur.images.map((i) => i.round)) + 1
-  const progress = { want: 3, got: 0 }
+  const progress = { want: count, got: 0 }
   job.concepts = progress
-  for (let k = 0; k < 3; k++) {
+  for (let k = 0; k < count; k++) {
     await sleep(900 + Math.random() * 600)
     const c = d.concept ?? emptyConcept()
     const img = {
@@ -1145,13 +1150,14 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       at: now(),
       ...(body.annotations?.length ? { annotations: body.annotations } : {}),
       ...(body.answers?.length ? { answers: body.answers } : {}),
+      ...(body.style && body.styleName ? { style: body.styleName } : {}),
     })
     const concept = d.concept ?? emptyConcept()
     if (
       !concept.approved &&
       (body.concept || (body.annotations ?? []).some((a: { target: string }) => a.target.startsWith('concept:')))
     )
-      void runConcepts(d, body.text, body.run)
+      void runConcepts(d, body.text, body.run, body.count ?? 3)
     else void runChat(d, body.text, body.source, body.count ?? 1, body.run)
     return d
   }

@@ -710,6 +710,7 @@ function Designer({ id }: { id: string }) {
     extra: {
       askUser: boolean
       style?: string
+      styleName?: string
       answers?: { question: string; answer: string }[]
       concept: boolean
     },

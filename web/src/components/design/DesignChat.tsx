@@ -492,6 +492,7 @@ export function DesignChat({
     extra: {
       askUser: boolean
       style?: string
+      styleName?: string
       answers?: { question: string; answer: string }[]
       concept: boolean
     },
@@ -525,6 +526,7 @@ export function DesignChat({
   // 参考图、需求文档：选文件、粘贴截图、拖进来都行
   const files = useAttachments()
   const running = job?.status === 'running'
+  const conceptRound = concept && !hasTemplate
   const designing = running && job?.phase === 'design'
   // CLI 执行中的审批和提问
   const asks = useScopeRequests(`design:${designId}`, running)
@@ -543,14 +545,22 @@ export function DesignChat({
     if (el && stick.current) el.scrollTop = el.scrollHeight
   }, [messages.length, job?.text, job?.parts, job?.phase, running])
 
+  // 从「+」里引入的风格：随下一条消息一起发出，设计就按它的整体风格做
+  const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
+  const styleText = styleRef ? t('使用「{name}」风格', { name: styleRef.name }) : ''
   // 排队的要求：这一轮结束后按顺序发出去
-  const [queue, setQueue] = useState<{ id: string; text: string; attachments: Attachment[] }[]>([])
+  const [queue, setQueue] = useState<{ id: string; text: string; attachments: Attachment[]; style?: SavedStyle }[]>([])
   const enqueue = () => {
-    const v = text.trim()
+    // 只选了风格、没写字也能排队：风格要跟着这条一起发，不然这一轮结束后就丢了
+    const v = text.trim() || styleText
     if ((!v && !files.attachments.length) || files.uploading) return
-    setQueue((q) => [...q, { id: crypto.randomUUID(), text: v, attachments: files.attachments }])
+    setQueue((q) => [
+      ...q,
+      { id: crypto.randomUUID(), text: v, attachments: files.attachments, ...(styleRef ? { style: styleRef } : {}) },
+    ])
     setText('')
     files.clear()
+    setStyleRef(null)
   }
   useEffect(() => {
     const next = queue[0]
@@ -558,20 +568,26 @@ export function DesignChat({
     setQueue((q) => q.slice(1))
     setSending(true)
     stick.current = true
-    void onSend(next.text, run, next.attachments, { askUser, concept }).finally(() => setSending(false))
+    void onSend(next.text, run, next.attachments, {
+      askUser,
+      concept,
+      ...(next.style ? { style: next.style.en, styleName: next.style.name } : {}),
+    }).finally(() => setSending(false))
     // 只在这一轮结束、队列变化时看要不要发下一条
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [running, sending, queue, askDesign])
 
-  // 从「+」里引入的风格：随下一条消息一起发出，设计就按它的整体风格做
-  const [styleRef, setStyleRef] = useState<SavedStyle | null>(null)
-  const styleText = styleRef ? t('使用「{name}」风格', { name: styleRef.name }) : ''
   const send = async () => {
-    const v = text.trim() || (!running ? styleText : '')
-    // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队
+    const v = text.trim() || styleText
+    // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队。
+    // 选了风格时也排队：插话只能带文字，风格要等这一轮结束、随下一轮一起定到设计里
     if (running) {
       if (!v || sending) return
-      if (files.attachments.length || job?.phase !== 'design') return enqueue()
+      if (files.attachments.length || styleRef || job?.phase !== 'design') {
+        enqueue()
+        if (styleRef) toast(t('选的风格会在这一轮结束后随这条一起发出'))
+        return
+      }
       setSending(true)
       try {
         const r = await api.steerDesign(designId, v)
@@ -592,7 +608,13 @@ export function DesignChat({
     setSending(true)
     stick.current = true
     try {
-      if (await onSend(v, run, files.attachments, { askUser, concept, ...(styleRef ? { style: styleRef.en } : {}) })) {
+      if (
+        await onSend(v, run, files.attachments, {
+          askUser,
+          concept,
+          ...(styleRef ? { style: styleRef.en, styleName: styleRef.name } : {}),
+        })
+      ) {
         setText('')
         files.clear()
         setStyleRef(null)
@@ -729,6 +751,7 @@ export function DesignChat({
                 <span className="min-w-0 flex-1 truncate">
                   {q.text || t('{n} 个附件', { n: q.attachments.length })}
                 </span>
+                {q.style && <StyleTag name={q.style.name} title={q.style.en} />}
                 <button
                   type="button"
                   aria-label={t('撤回')}
@@ -795,10 +818,14 @@ export function DesignChat({
                 <SourceSelect value={source} onChange={onSource} />
                 {source.kind !== 'none' && (
                   <Select
-                    aria-label={t('每张图生成几版')}
+                    // 先出原画时这个数就是一轮出几张原画
+                    aria-label={conceptRound ? t('一轮出几张原画') : t('每张图生成几版')}
                     value={String(count)}
                     onChange={(e) => onCount(Number(e.target.value))}
-                    options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t('每张 {n} 版', { n }) }))}
+                    options={[1, 2, 3, 4].map((n) => ({
+                      value: String(n),
+                      label: conceptRound ? t('原画 {n} 张', { n }) : t('每张 {n} 版', { n }),
+                    }))}
                     className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
                   />
                 )}
@@ -867,25 +894,28 @@ function ChatMessage({
           )
         }
         extra={
-          !!msg.annotations?.length && (
-            <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
-              {msg.annotations.map((a, i) => (
-                <span key={a.id} className="flex items-center gap-1.5">
-                  <span
-                    className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
-                    style={{ background: KIND_COLOR[a.kind] }}
-                  >
-                    {i + 1}
+          <>
+            {msg.style && <StyleTag name={msg.style} className="mt-1.5 flex" />}
+            {!!msg.annotations?.length && (
+              <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
+                {msg.annotations.map((a, i) => (
+                  <span key={a.id} className="flex items-center gap-1.5">
+                    <span
+                      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+                      style={{ background: KIND_COLOR[a.kind] }}
+                    >
+                      {i + 1}
+                    </span>
+                    <span className="truncate">
+                      {kindLabel(a.kind)}
+                      {a.widgets.length ? ` · ${a.widgets.slice(0, 3).join('、')}` : ''}
+                      {a.note ? ` · ${a.note}` : ''}
+                    </span>
                   </span>
-                  <span className="truncate">
-                    {kindLabel(a.kind)}
-                    {a.widgets.length ? ` · ${a.widgets.slice(0, 3).join('、')}` : ''}
-                    {a.note ? ` · ${a.note}` : ''}
-                  </span>
-                </span>
-              ))}
-            </span>
-          )
+                ))}
+              </span>
+            )}
+          </>
         }
       />
     )
@@ -1033,5 +1063,21 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
       )}
       {!open && active[0]?.text && <p className="truncate text-[11.5px] text-subtle">{active[0].text}</p>}
     </div>
+  )
+}
+
+/** 选的整体风格：排队的消息和发出去的消息上都显示，看得出风格跟着这条发了 */
+function StyleTag({ name, title, className }: { name: string; title?: string; className?: string }) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        'inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[11.5px] text-accent',
+        className,
+      )}
+    >
+      <Palette className="h-3 w-3 shrink-0" />
+      <span className="truncate">{t('风格：{name}', { name })}</span>
+    </span>
   )
 }
