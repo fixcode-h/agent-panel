@@ -1963,6 +1963,52 @@ try {
   assert.match(job.error, /形成了环[\s\S]*没有从 start 连过来|没有从 start 连过来[\s\S]*形成了环|形成了环/)
   step('AI 创建：按格式生成、校验、自动修正一次，优化时带上当前配置，工作流解析 Agent 引用')
 
+  // Skill 的 AI 创建 / 优化、MCP 工具的 AI 排查：同一套对话，当前内容由页面带来
+  {
+    const skillMd = '---\nname: demo-skill\ndescription: 做示例。在用户要示例时使用。\n---\n\n步骤\n'
+    job = await assist('skill', `FAKE_JSON:${JSON.stringify({ name: 'demo-skill', content: skillMd })}`)
+    assert.equal(job.status, 'done', job.error)
+    assert.deepEqual(job.proposal, { kind: 'skill', name: 'demo-skill', content: skillMd })
+    // front matter 里的 name 和文件夹名对不上：自动让 CLI 修正一次
+    job = await assist(
+      'skill',
+      `FAKE_JSON:${JSON.stringify({ name: 'demo-skill', content: skillMd.replace('name: demo-skill', 'name: other') })} FAKE_JSON2:${JSON.stringify({ name: 'demo-skill', content: skillMd })}`,
+    )
+    assert.equal(job.status, 'done', job.error)
+    assert.equal(job.attempt, 2)
+    // 优化：提示词带上当前的 SKILL.md，文件夹名不能被改
+    const before = calls().length
+    job = await assist('skill', `FAKE_JSON:${JSON.stringify({ name: 'renamed', content: skillMd })}`, {
+      subject: { cli: 'claude', name: 'demo-skill', content: skillMd },
+    })
+    assert.equal(job.status, 'done', job.error)
+    assert.equal(job.proposal.name, 'demo-skill')
+    assert.ok(calls().slice(before).at(-1).input.includes('文件夹名 demo-skill'))
+    // MCP：提示词带上配置和测试连接的报错，名字不变
+    const server = {
+      name: 'mini',
+      transport: 'stdio',
+      command: 'npx',
+      args: ['docs-mcp'],
+      env: {},
+      url: '',
+      headers: {},
+    }
+    const fixed = { ...server, args: ['-y', 'docs-mcp'] }
+    job = await assist('mcp', `FAKE_JSON:${JSON.stringify({ ...fixed, name: 'x' })}`, {
+      subject: { name: 'mini', server: JSON.stringify(server), error: 'spawn npx ENOENT', clis: 'Claude Code' },
+    })
+    assert.equal(job.status, 'done', job.error)
+    assert.deepEqual(job.proposal, { kind: 'mcp', server: fixed })
+    const prompt = calls().at(-1).input
+    assert.ok(prompt.includes('spawn npx ENOENT') && prompt.includes('docs-mcp'))
+    job = await assist('mcp', `FAKE_JSON:${JSON.stringify({ transport: 'http', url: 'ftp://x' })}`, {
+      subject: { name: 'mini', server: '{}' },
+    })
+    assert.equal(job.status, 'failed')
+  }
+  step('Skill 的 AI 创建 / 优化、MCP 工具的 AI 排查：校验格式、自动修正、文件夹名和工具名不被改')
+
   // ---- UI 设计 ----
   {
     await call('PUT', '/settings', {

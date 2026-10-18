@@ -12,6 +12,7 @@ import { Input, Textarea } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { Segmented } from '@/components/ui/segmented'
 import { CliTag, PageFrame } from '@/components/library/parts'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 
 type Kind = 'skill' | 'command'
 
@@ -31,6 +32,7 @@ export function LibraryPage() {
   const [query, setQuery] = useState('')
   const [edit, setEdit] = useState<LibraryItem | null>(null)
   const [creating, setCreating] = useState(false)
+  const [ai, setAi] = useState(false)
 
   const load = () =>
     api
@@ -64,10 +66,23 @@ export function LibraryPage() {
         '各个 CLI 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 CLI（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。',
       )}
       actions={
-        <Button onClick={() => setCreating(true)} disabled={!data}>
-          <Plus className="h-4 w-4" />
-          {t('新建')}
-        </Button>
+        <>
+          {kind === 'skill' && (
+            <Button
+              variant="secondary"
+              onClick={() => setAi(true)}
+              disabled={!data}
+              title={t('描述需求，让本机 CLI 写 Skill')}
+            >
+              <Sparkles className="h-4 w-4 text-accent" />
+              {t('AI 创建')}
+            </Button>
+          )}
+          <Button onClick={() => setCreating(true)} disabled={!data}>
+            <Plus className="h-4 w-4" />
+            {t('新建')}
+          </Button>
+        </>
       }
     >
       <div className="flex flex-wrap items-center gap-3">
@@ -141,6 +156,24 @@ export function LibraryPage() {
           onClose={() => setCreating(false)}
           onDone={() => {
             setCreating(false)
+            void load()
+          }}
+        />
+      )}
+      {data && (
+        <AssistDialog
+          open={ai}
+          onOpenChange={setAi}
+          kind="skill"
+          onApply={async (p) => {
+            if (p.kind !== 'skill') return
+            // 先放进第一个有 Skill 目录的 CLI，要给别的 CLI 用，打开它再复制
+            const cli = data.clis.find((c) => c.skillDir)
+            if (!cli) throw new Error(t('没有可以放 Skill 的 CLI'))
+            await api.saveLibraryFile({ cli: cli.id, kind: 'skill', name: p.name, content: p.content, create: true })
+            toast.success(
+              t('已创建「{name}」，放在 {cli}；要给别的 CLI 用，打开它再复制', { name: p.name, cli: cli.name }),
+            )
             void load()
           }}
         />
@@ -265,6 +298,8 @@ function EditDialog({
   const [busy, setBusy] = useState(false)
   const [del, setDel] = useState(false)
   const [to, setTo] = useState<string[]>([])
+  const [ai, setAi] = useState(false)
+  const [rev, setRev] = useState(0)
   const { kind, name } = item
   const here = same.filter((i) => i.name === name)
 
@@ -280,7 +315,7 @@ function EditDialog({
         setError('')
       })
       .catch((e) => setError((e as Error).message))
-  }, [cli, kind, name])
+  }, [cli, kind, name, rev])
 
   const save = async () => {
     setBusy(true)
@@ -335,6 +370,12 @@ function EditDialog({
               {t('删除')}
             </Button>
             <span className="flex-1" />
+            {kind === 'skill' && (
+              <Button variant="secondary" onClick={() => setAi(true)} disabled={busy || text === null}>
+                <Sparkles className="h-4 w-4 text-accent" />
+                {t('AI 优化')}
+              </Button>
+            )}
             <Button variant="secondary" onClick={onClose}>
               {t('关闭')}
             </Button>
@@ -404,6 +445,22 @@ function EditDialog({
           </div>
         )}
       </Modal>
+      {kind === 'skill' && (
+        <AssistDialog
+          open={ai}
+          onOpenChange={setAi}
+          kind="skill"
+          title={name}
+          subject={{ cli, name, content: text ?? '' }}
+          onApply={async (p) => {
+            if (p.kind !== 'skill') return
+            await api.saveLibraryFile({ cli, kind, name, content: p.content })
+            toast.success(t('已更新「{name}」', { name }))
+            setRev((n) => n + 1)
+            onChanged()
+          }}
+        />
+      )}
       <ConfirmDialog
         open={del}
         onOpenChange={setDel}

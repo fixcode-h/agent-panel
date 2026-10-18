@@ -13,6 +13,7 @@ import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
+import type { McpServer } from '@shared/library'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -40,6 +41,81 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('Bug 修复：复现问题、定位修复、回归测试'),
     t('文档更新：并行整理 README 和接口文档，再统一校对'),
   ],
+  skill: [
+    t('一个按团队约定写提交说明的 Skill：先看改动，再按「类型：标题」的格式写'),
+    t('代码审查 Skill：逐个文件看改动，先给结论，再列问题和缺失的测试'),
+    t('帮我写技术方案文档的 Skill，包含背景、方案对比、风险和排期'),
+  ],
+  mcp: [],
+}
+
+/** Skill 的预览：优化时和当前内容对比，标出改没改 */
+function SkillPreview({ name, content, before }: { name: string; content: string; before?: string }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center gap-2">
+        <Sparkles className="h-4 w-4 text-accent" />
+        <span className="font-mono text-[15px] font-semibold">{name}</span>
+        {before !== undefined && (
+          <Badge tone={before === content ? 'neutral' : 'accent'}>
+            {before === content ? t('没有变化') : t('已修改')}
+          </Badge>
+        )}
+      </div>
+      <span className="text-xs text-muted">SKILL.md</span>
+      <pre className="max-h-[560px] overflow-auto rounded-lg border bg-field p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-fg">
+        {content}
+      </pre>
+    </div>
+  )
+}
+
+/** MCP 工具的预览：修复后的配置，和修改前不同的字段标出来 */
+function McpPreview({ server, before }: { server: McpServer; before?: McpServer }) {
+  const rows: [string, keyof McpServer, string][] =
+    server.transport === 'stdio'
+      ? [
+          [t('启动命令'), 'command', server.command],
+          [t('参数'), 'args', server.args.join(' ')],
+          [
+            t('环境变量'),
+            'env',
+            Object.entries(server.env)
+              .map(([k, v]) => `${k}=${v}`)
+              .join('\n'),
+          ],
+        ]
+      : [
+          [t('地址'), 'url', server.url],
+          [
+            t('请求头'),
+            'headers',
+            Object.entries(server.headers)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join('\n'),
+          ],
+        ]
+  const changed = (k: keyof McpServer) => before && JSON.stringify(before[k]) !== JSON.stringify(server[k])
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex items-center gap-2">
+        <span className="font-mono text-[15px] font-semibold">{server.name}</span>
+        <Badge>{server.transport === 'stdio' ? t('本地命令') : t('远程地址')}</Badge>
+        {before && before.transport !== server.transport && <Badge tone="accent">{t('已修改')}</Badge>}
+      </div>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-[13px]">
+        {rows.map(([label, key, value]) => (
+          <div key={key} className="contents">
+            <dt className="text-subtle">{label}</dt>
+            <dd className="flex flex-wrap items-start gap-2">
+              <span className="font-mono text-xs break-all whitespace-pre-wrap">{value || t('（空）')}</span>
+              {changed(key) && <Badge tone="accent">{t('已修改')}</Badge>}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
 }
 
 function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; before?: Agent; newCategory: string }) {
@@ -303,14 +379,27 @@ export function AssistDialog({
   kind,
   target,
   onApplied,
+  subject,
+  title,
+  autoStart,
+  onApply,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   kind: AssistKind
   /** 有值表示优化它，没有表示新建 */
   target?: Agent | Workflow
-  onApplied: (r: { agent?: Agent; workflow?: Workflow }) => void
+  onApplied?: (r: { agent?: Agent; workflow?: Workflow }) => void
+  /** Skill、MCP 工具的当前内容（见 AssistInput.subject） */
+  subject?: Record<string, string>
+  /** Skill、MCP 工具优化 / 修复时显示的名字 */
+  title?: string
+  /** 打开后自动发出的第一句话（例如让 AI 排查测试连接的报错） */
+  autoStart?: string
+  /** Skill、MCP 工具的结果交给页面去应用 */
+  onApply?: (p: Proposal) => Promise<void> | void
 }) {
+  const shown = target?.name ?? title
   const { clis, settings, categories, agents, setAgents, setCategories, setWorkflows } = useData()
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
   const usable = clis.filter((c) => c.installed && c.enabled)
@@ -333,23 +422,41 @@ export function AssistDialog({
   const scroller = useRef<HTMLDivElement>(null)
   // Agent 和工作流各用整句文案，英文语序和中文不同，不拼接
   const L =
-    kind === 'agent'
+    kind === 'skill'
       ? {
-          create: t('用 AI 创建 Agent'),
-          desc: t('本机 CLI 按固定格式生成 Agent，校验通过后在右侧预览，确认再应用'),
-          intro: t('描述你想要的 Agent，越具体越好。可以从下面的例子开始：'),
-          placeholder: t('描述你想要的 Agent'),
-          empty: t('生成的 Agent 会显示在这里'),
-          button: t('创建 Agent'),
+          create: t('用 AI 创建 Skill'),
+          desc: t('本机 CLI 写出 SKILL.md，在右侧预览，确认再应用'),
+          intro: t('描述你想要的 Skill，越具体越好。可以从下面的例子开始：'),
+          placeholder: t('描述你想要的 Skill'),
+          empty: t('生成的 Skill 会显示在这里'),
+          button: t('创建 Skill'),
         }
-      : {
-          create: t('用 AI 创建工作流'),
-          desc: t('本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
-          intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
-          placeholder: t('描述你想要的工作流'),
-          empty: t('生成的工作流会显示在这里'),
-          button: t('创建工作流'),
-        }
+      : kind === 'mcp'
+        ? {
+            create: t('用 AI 排查 MCP 工具'),
+            desc: t('本机 CLI 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
+            intro: t('说说遇到的问题，或者直接让它排查。'),
+            placeholder: t('补充你知道的情况'),
+            empty: t('修复后的配置会显示在这里'),
+            button: t('应用修复'),
+          }
+        : kind === 'agent'
+          ? {
+              create: t('用 AI 创建 Agent'),
+              desc: t('本机 CLI 按固定格式生成 Agent，校验通过后在右侧预览，确认再应用'),
+              intro: t('描述你想要的 Agent，越具体越好。可以从下面的例子开始：'),
+              placeholder: t('描述你想要的 Agent'),
+              empty: t('生成的 Agent 会显示在这里'),
+              button: t('创建 Agent'),
+            }
+          : {
+              create: t('用 AI 创建工作流'),
+              desc: t('本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+              intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+              placeholder: t('描述你想要的工作流'),
+              empty: t('生成的工作流会显示在这里'),
+              button: t('创建工作流'),
+            }
 
   useEffect(() => {
     if (!open) return
@@ -362,6 +469,18 @@ export function AssistDialog({
     // 打开时按当时的设置选一次 CLI，之后用户自己选的不被覆盖
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
+
+  // 打开后自动发第一句；等选好 CLI 再发
+  const started = useRef(false)
+  useEffect(() => {
+    if (!open) started.current = false
+    else if (autoStart && cli && !started.current) {
+      started.current = true
+      void send(autoStart)
+    }
+    // 只在打开、选好 CLI 时发一次，send 每次渲染都是新的函数
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, cli])
 
   // 生成中轮询
   useEffect(() => {
@@ -455,6 +574,7 @@ export function AssistDialog({
         await api.assist({
           kind,
           targetId: target?.id ?? '',
+          subject: subject ?? {},
           cli,
           model,
           effort,
@@ -494,6 +614,11 @@ export function AssistDialog({
     if (!latest) return
     setApplying(true)
     try {
+      if (latest.kind === 'skill' || latest.kind === 'mcp') {
+        await onApply?.(latest)
+        onOpenChange(false)
+        return
+      }
       const r = await applyProposal(latest, {
         categories,
         createCategory: (name) => api.createCategory(name),
@@ -505,7 +630,7 @@ export function AssistDialog({
         const a = target ? await api.updateAgent(target.id, r.agent) : await api.createAgent(r.agent)
         setAgents((as) => (target ? as.map((x) => (x.id === a.id ? a : x)) : [...as, a]))
         toast.success(target ? t('已更新「{name}」', { name: a.name }) : t('已创建「{name}」', { name: a.name }))
-        onApplied({ agent: a })
+        onApplied?.({ agent: a })
       } else if (r.workflow) {
         const w = target ? await api.updateWorkflow(target.id, r.workflow) : await api.createWorkflow(r.workflow)
         setWorkflows((ws) => (target ? ws.map((x) => (x.id === w.id ? w : x)) : [...ws, w]))
@@ -513,7 +638,7 @@ export function AssistDialog({
           (target ? t('已更新「{name}」', { name: w.name }) : t('已创建「{name}」', { name: w.name })) +
             (r.created.length ? t('，并新建了 {n} 个 Agent', { n: r.created.length }) : ''),
         )
-        onApplied({ workflow: w })
+        onApplied?.({ workflow: w })
       }
       onOpenChange(false)
     } catch (e) {
@@ -539,7 +664,7 @@ export function AssistDialog({
             {unseen && !running && <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-accent" />}
           </span>
           <span className="max-w-[220px] truncate">
-            {target ? t('用 AI 优化「{name}」', { name: target.name }) : L.create}
+            {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
           </span>
           <span className="text-xs text-subtle">{running ? t('生成中…') : unseen ? t('已生成') : ''}</span>
         </button>
@@ -558,11 +683,11 @@ export function AssistDialog({
           <D.Content className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1400px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6">
             <header className="flex items-center gap-3 border-b bg-panel px-5 py-3.5">
               <span className="grid h-8 w-8 place-items-center rounded-lg bg-accent-soft text-accent">
-                {target ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
+                {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
                 <D.Title className="truncate text-[15px] font-semibold">
-                  {target ? t('用 AI 优化「{name}」', { name: target.name }) : L.create}
+                  {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
                 </D.Title>
                 <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
               </div>
@@ -619,9 +744,15 @@ export function AssistDialog({
                   {turns.length === 0 && !running && (
                     <div className="flex flex-col gap-2">
                       <p className="text-[13px] text-muted">
-                        {target ? t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。') : L.intro}
+                        {shown
+                          ? kind === 'skill'
+                            ? t('说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。')
+                            : kind === 'mcp'
+                              ? L.intro
+                              : t('说说想怎么改，例如「角色设定再具体一些」「加一个代码审查阶段」。')
+                          : L.intro}
                       </p>
-                      {!target &&
+                      {!shown &&
                         EXAMPLES[kind].map((e) => (
                           <button
                             key={e}
@@ -717,7 +848,14 @@ export function AssistDialog({
               <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-panel">
                 <div className="flex-1 overflow-y-auto p-5">
                   {latest ? (
-                    latest.kind === 'agent' ? (
+                    latest.kind === 'skill' ? (
+                      <SkillPreview name={latest.name} content={latest.content} before={subject?.content} />
+                    ) : latest.kind === 'mcp' ? (
+                      <McpPreview
+                        server={latest.server}
+                        before={subject?.server ? (JSON.parse(subject.server) as McpServer) : undefined}
+                      />
+                    ) : latest.kind === 'agent' ? (
                       <AgentPreview
                         agent={latest.agent}
                         before={target as Agent | undefined}
@@ -735,11 +873,11 @@ export function AssistDialog({
                 </div>
                 <footer className="flex items-center gap-2 border-t px-5 py-3">
                   <span className="text-xs text-subtle">
-                    {latest ? (target ? t('应用后会覆盖当前内容') : t('可以继续对话修改，满意后再创建')) : ''}
+                    {latest ? (shown ? t('应用后会覆盖当前内容') : t('可以继续对话修改，满意后再创建')) : ''}
                   </span>
                   <Button className="ml-auto" disabled={!latest || running || applying} onClick={apply}>
                     {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    {target ? t('应用修改') : L.button}
+                    {shown ? (kind === 'mcp' ? L.button : t('应用修改')) : L.button}
                   </Button>
                 </footer>
               </section>

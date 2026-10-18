@@ -260,6 +260,41 @@ function workflowDraft(text: string, ctx: AssistContext): { draft: WorkflowDraft
 
 const jobs = new Map<string, AssistJob>()
 
+/** Skill：按描述写一份示例；优化时在原文后面补一段 */
+function skillDraft(text: string, ctx: AssistContext) {
+  const sub = ctx.subject ?? {}
+  if (sub.content)
+    return {
+      draft: { name: sub.name, content: `${sub.content.trimEnd()}\n\n## 补充\n- ${text.trim()}\n` },
+      note: '把你的要求补进了 Skill 的末尾。',
+    }
+  const name = /提交|commit/i.test(text)
+    ? 'commit-message'
+    : /审查|review/i.test(text)
+      ? 'code-review'
+      : /文档|方案/.test(text)
+        ? 'design-doc'
+        : 'my-skill'
+  return {
+    draft: {
+      name,
+      content: `---\nname: ${name}\ndescription: ${text.trim().slice(0, 60)}。在用户提出相关要求时使用。\n---\n\n# ${name}\n\n1. 先了解相关的代码和背景。\n2. 按要求完成，并说明做了什么。\n3. 拿不准的地方先问用户。\n`,
+    },
+    note: `按你的描述写了 Skill「${name}」。`,
+  }
+}
+
+/** MCP 工具排查：npx 缺 -y 的补上；其余不改，只说明要自己检查什么 */
+function mcpDraft(_text: string, ctx: AssistContext) {
+  const sv = JSON.parse(ctx.subject?.server ?? '{}')
+  if (sv.command === 'npx' && !(sv.args ?? []).includes('-y'))
+    return {
+      draft: { ...sv, args: ['-y', ...(sv.args ?? [])] },
+      note: 'npx 第一次运行要确认安装，没有 -y 会一直等待。给参数加上了 -y。',
+    }
+  return { draft: sv, note: '检查了命令和地址的格式，没有发现能确定的问题；请确认命令在 PATH 里、需要的密钥已经填写。' }
+}
+
 export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJob {
   const text = [...input.messages].reverse().find((m) => m.role === 'user')?.text ?? ''
   const job: AssistJob = {
@@ -272,7 +307,14 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
     startedAt: Date.now(),
   }
   jobs.set(job.id, job)
-  const gen = input.kind === 'agent' ? agentDraft(text, ctx) : workflowDraft(text, ctx)
+  const gen =
+    input.kind === 'agent'
+      ? agentDraft(text, ctx)
+      : input.kind === 'skill'
+        ? skillDraft(text, ctx)
+        : input.kind === 'mcp'
+          ? mcpDraft(text, ctx)
+          : workflowDraft(text, ctx)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`

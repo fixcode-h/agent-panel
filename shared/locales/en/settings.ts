@@ -440,4 +440,36 @@ export const EN_SETTINGS: Record<string, string> = {
   '装进哪些 CLI': 'Install in these CLIs',
   '连接成功，{n} 个工具': 'Connected — {n} tools',
   '连接失败：{error}': 'Connection failed: {error}',
+  '一个按团队约定写提交说明的 Skill：先看改动，再按「类型：标题」的格式写':
+    'A Skill that writes commit messages by team convention: look at the changes, then use the “type: title” format',
+  '代码审查 Skill：逐个文件看改动，先给结论，再列问题和缺失的测试':
+    'A code review Skill: go through the changes file by file, give a verdict first, then list problems and missing tests',
+  '帮我写技术方案文档的 Skill，包含背景、方案对比、风险和排期':
+    'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
+  没有变化: 'No change',
+  '用 AI 创建 Skill': 'Create Skill with AI',
+  '本机 CLI 写出 SKILL.md，在右侧预览，确认再应用':
+    'The local CLI writes SKILL.md; preview it on the right and apply when happy',
+  '描述你想要的 Skill，越具体越好。可以从下面的例子开始：':
+    'Describe the Skill you want, as specifically as you can. You can start from an example:',
+  '描述你想要的 Skill': 'Describe the Skill you want',
+  '生成的 Skill 会显示在这里': 'The generated Skill will appear here',
+  '创建 Skill': 'Create Skill',
+  '用 AI 排查 MCP 工具': 'Troubleshoot MCP tool with AI',
+  '本机 CLI 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用':
+    "The local CLI checks the environment and finds why it can't connect; preview the fixed config on the right and apply when happy",
+  '说说遇到的问题，或者直接让它排查。': 'Describe the problem, or just ask it to investigate.',
+  补充你知道的情况: 'Add anything you know',
+  修复后的配置会显示在这里: 'The fixed config will appear here',
+  应用修复: 'Apply fix',
+  '说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。':
+    'Say what to change, e.g. “make the steps more specific” or “say clearly in the description when to use it”.',
+  '描述需求，让本机 CLI 写 Skill': 'Describe what you need and let the local CLI write the Skill',
+  '没有可以放 Skill 的 CLI': 'No CLI can hold Skills',
+  '已创建「{name}」，放在 {cli}；要给别的 CLI 用，打开它再复制':
+    'Created “{name}” in {cli}; to use it in other CLIs, open it and copy',
+  '帮我排查这个工具为什么连不上，找到原因并修复配置。':
+    "Please find out why this tool can't connect, and fix the config.",
+  '已填入修复后的配置，可以再点「测试连接」确认': 'Fixed config filled in; click “Test connection” to confirm',
+  '用 AI 排查修复': 'Fix with AI',
 }
