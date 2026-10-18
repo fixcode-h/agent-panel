@@ -17,7 +17,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas } from '@/components/flow/FlowCanvas'
-import { FoldedRun, type Author } from '@/components/tasks/Messages'
+import { ChatReply, FoldedRun, type Author } from '@/components/tasks/Messages'
+import { UserMessage } from '@/components/chat/ChatMessage'
 import { modelOptions } from '@/components/agents/ModelSelect'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
@@ -613,16 +614,11 @@ export function AssistDialog({
                   )}
                   {turns.map((turn, i) =>
                     turn.role === 'user' ? (
-                      <div
-                        key={i}
-                        className="ml-auto max-w-[88%] rounded-2xl rounded-br-md border bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap"
-                      >
-                        {turn.text}
-                      </div>
+                      <UserMessage key={i} size="sm" text={turn.text} />
                     ) : (
                       <div key={i} className="flex flex-col gap-2 text-[13px] leading-relaxed">
                         {turn.msgs?.length ? (
-                          <FoldedRun msgs={turn.msgs} teamNames={teamNames} author={author} />
+                          <ChatReply msgs={turn.msgs} teamNames={teamNames} author={author} />
                         ) : (
                           turn.text && <p className="whitespace-pre-wrap">{turn.text.split('```')[0].trim()}</p>
                         )}

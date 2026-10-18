@@ -322,7 +322,8 @@ export const EN_TASKS: Record<string, string> = {
   '撤回到这条消息？': 'Rewind to this message?',
   '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
     "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The CLI continues from before this message. File changes aren't undone; undo them under Changes if needed.",
-  '思考和 {n} 个操作': 'Thinking and {n} actions',
-  '{n} 个操作': '{n} actions',
-  '{n} 个失败': '{n} failed',
+  '查看 {name}': 'View {name}',
+  '放回输入框，改了再发': 'Put back in the input box to edit and resend',
+  上一张: 'Previous',
+  下一张: 'Next',
 }

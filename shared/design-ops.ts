@@ -124,8 +124,11 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
         .split('.')
         .filter(Boolean)
       const [head, ...rest] = parts
-      if (head === 'Properties' && rest.length) return done(mapWidget(root, w.id, (x) => setPath(x, parts, op.value)))
-      if (head === 'Slot' && rest.length) {
+      // 只写 Properties / Slot 时值是对象，和原来的深合并（工具 update_widget 用）
+      const whole = !rest.length && !!op.value && typeof op.value === 'object' && !Array.isArray(op.value)
+      if (head === 'Properties' && (rest.length || whole))
+        return done(mapWidget(root, w.id, (x) => setPath(x, parts, op.value)))
+      if (head === 'Slot' && (rest.length || whole)) {
         if (!w.Slot) return { error: `${w.Name} 是根控件，没有插槽` }
         return done(mapWidget(root, w.id, (x) => setPath(x, parts, op.value)))
       }

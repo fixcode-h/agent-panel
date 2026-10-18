@@ -46,14 +46,16 @@ function ChipSelect({
         <span className="truncate">{text}</span>
         <ChevronDown className="h-3 w-3 shrink-0 opacity-60" />
       </PopoverTrigger>
-      <PopoverContent className="w-[300px]" align="start">
+      {/* 列表按最长的选项自适应宽度，太长时才截断 */}
+      <PopoverContent className="w-max max-w-[min(560px,calc(100vw-24px))] min-w-[220px]" align="start">
         <div className="max-h-80 overflow-y-auto">
           {options.map((o, i) => (
             <div key={o.value + i}>
               {o.group && o.group !== options[i - 1]?.group && (
                 <p className="px-2.5 pt-2 pb-1 text-[11px] text-subtle">{o.group}</p>
               )}
-              <PopoverClose className={menuItem} onClick={() => onChange(o.value)}>
+              {/* 行距和设置里的下拉框一样 */}
+              <PopoverClose className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => onChange(o.value)}>
                 {dot && <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: dot(o.value) }} />}
                 <span className={cn('min-w-0 flex-1 truncate text-[12.5px]', !dot && 'font-mono')}>{o.label}</span>
                 {o.value === value && <Check className="h-4 w-4 shrink-0 text-accent" />}

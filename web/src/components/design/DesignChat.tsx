@@ -1,7 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import {
   AlertCircle,
-  ArrowUp,
   Check,
   ChevronDown,
   Download,
@@ -10,13 +9,21 @@ import {
   Globe,
   Loader2,
   Palette as PaletteIcon,
+  Pencil,
   RefreshCw,
   Sparkles,
-  Square,
 } from 'lucide-react'
 import { toast } from 'sonner'
 import { extensionSelfReload } from '@shared/design'
-import type { Annotation, BrowserStatus, DesignJob, DesignMessage, DesignQuestion, ImageSource } from '@shared/design'
+import type {
+  Annotation,
+  BrowserStatus,
+  DesignJob,
+  DesignMessage,
+  DesignQuestion,
+  ImageSource,
+  ReplyPart,
+} from '@shared/design'
 import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useScopedSetting } from '@/lib/useScopedSetting'
@@ -24,19 +31,14 @@ import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
-import { AgentMessage, PendingAuthor, ProcessFold, SystemNote } from '@/components/tasks/Messages'
+import { ChatReply, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
+import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
-import {
-  AttachMenu,
-  AttachmentChips,
-  DropHint,
-  MessageAttachments,
-  useAttachments,
-  useDropPaste,
-} from '@/components/chat/Attachments'
+import { useAttachments } from '@/components/chat/Attachments'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle, ScopeRequests, useAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
@@ -444,7 +446,8 @@ export function DesignChat({
   annotations?: Annotation[]
   onRemoveAnnotation?: (id: string) => void
 }) {
-  const [text, setText] = useState('')
+  // 没发出去的内容按设计分开记，切到别的设计再回来还在
+  const [text, setText] = useDraft(`design:${designId}`)
   const [sending, setSending] = useState(false)
   const [pick, setPick] = useStoredRun(designId)
   const [askUser, setAskUserState] = useAskUser(designId)
@@ -453,7 +456,6 @@ export function DesignChat({
   const box = useRef<HTMLTextAreaElement>(null)
   // 参考图、需求文档：选文件、粘贴截图、拖进来都行
   const files = useAttachments()
-  const drop = useDropPaste(files.add)
   const running = job?.status === 'running'
   const designing = running && job?.phase === 'design'
   // 「/」：用选的 CLI 自己带的命令和 Skill，展开后放进设计要求里
@@ -464,13 +466,7 @@ export function DesignChat({
   useLayoutEffect(() => {
     const el = list.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [messages.length, job?.text, job?.thinking, job?.tools?.length, job?.phase, running])
-  useLayoutEffect(() => {
-    const el = box.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(200, el.scrollHeight)}px`
-  }, [text])
+  }, [messages.length, job?.text, job?.parts, job?.phase, running])
 
   const send = async () => {
     const v = text.trim()
@@ -511,7 +507,7 @@ export function DesignChat({
           const el = e.currentTarget
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40
         }}
-        className="min-h-0 flex-1 overflow-y-auto px-4 py-4"
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4"
       >
         {!messages.length && !running && (
           <div className="mt-6 flex flex-col items-center gap-3 px-2 text-center">
@@ -555,6 +551,15 @@ export function DesignChat({
             <ChatMessage
               key={msg.id}
               msg={msg}
+              last={i === messages.length - 1 && !running}
+              onResend={
+                running
+                  ? undefined
+                  : (v) => {
+                      setText(v)
+                      box.current?.focus()
+                    }
+              }
               onPick={
                 msg.question && i === messages.length - 1 && !running && !sending
                   ? (o) => void pickOption(o)
@@ -575,105 +580,62 @@ export function DesignChat({
         <div className="flex min-w-0 items-center pb-1">
           <ChatModelPicker value={pick} onChange={setPick} />
         </div>
-        <div
-          {...drop.container}
-          className={cn(
-            'relative rounded-2xl border border-line-strong bg-field shadow-card focus-within:border-accent/60',
-            drop.over && 'border-accent ring-2 ring-accent/25',
-          )}
-        >
-          {slash.menu}
-          {drop.over && <DropHint />}
-          <AttachmentChips items={files.items} onRemove={files.remove} />
-          {annotations.length > 0 && (
-            <div className="border-b px-2.5 pt-2.5 pb-2">
-              <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
-            </div>
-          )}
-          <textarea
-            ref={box}
-            value={text}
-            onChange={(e) => {
-              setText(e.target.value)
-              slash.sync()
-            }}
-            onSelect={slash.sync}
-            onPaste={drop.onPaste}
-            onKeyDown={(e) => {
-              if (slash.onKeyDown(e)) return
-              if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault()
-                void send()
-              }
-            }}
-            disabled={disabled}
-            rows={2}
-            placeholder={
-              running
-                ? t('AI 正在处理，完成后可以继续说')
-                : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
-                  ? t('写修改意见，发送后按图上的标记重新生成图片')
-                  : annotations.length
-                    ? t('补充说明，或直接发送让 AI 按标注修改')
-                    : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
-            }
-            aria-label={t('告诉 AI 要做什么')}
-            className="block max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13.5px] leading-relaxed outline-none placeholder:text-subtle"
-          />
-          <div className="flex items-center gap-1 px-2 pb-2">
-            <AttachMenu
-              onFiles={files.add}
-              canMention={false}
-              onSession={files.addReady}
-              self={designId}
-              className="h-7 w-7"
-            />
-            <AskToggle
-              value={askUser}
-              onChange={(v) => {
-                setAskUserState(v)
-                // 执行中改也马上生效：等着的问题会按新的设置处理
-                if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
-              }}
-            />
-            <SourceSelect value={source} onChange={onSource} />
-            {source.kind !== 'none' && (
-              <Select
-                aria-label={t('每张图生成几版')}
-                value={String(count)}
-                onChange={(e) => onCount(Number(e.target.value))}
-                options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t('每张 {n} 版', { n }) }))}
-                className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+        <ChatComposer
+          size="sm"
+          value={text}
+          onChange={setText}
+          onSubmit={() => void send()}
+          files={files}
+          taRef={box}
+          disabled={disabled}
+          menus={slash.menu}
+          onSync={slash.sync}
+          onKeyDown={slash.onKeyDown}
+          above={
+            annotations.length > 0 && (
+              <div className="border-b px-2.5 pt-2.5 pb-2">
+                <AnnotationChips list={annotations} onRemove={onRemoveAnnotation} />
+              </div>
+            )
+          }
+          attach={{ self: designId }}
+          tools={
+            <>
+              <AskToggle
+                value={askUser}
+                onChange={(v) => {
+                  setAskUserState(v)
+                  // 执行中改也马上生效：等着的问题会按新的设置处理
+                  if (running) void api.setAskUser(`design:${designId}`, v).catch(() => {})
+                }}
               />
-            )}
-            <span className="flex-1" />
-            {running ? (
-              <button
-                onClick={onStop}
-                aria-label={t('停止')}
-                title={t('停止')}
-                className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-full bg-fg text-bg hover:opacity-85"
-              >
-                <Square className="h-3 w-3 fill-current" />
-              </button>
-            ) : (
-              <button
-                onClick={() => void send()}
-                disabled={
-                  (!text.trim() && !annotations.length && !files.attachments.length) ||
-                  sending ||
-                  files.uploading ||
-                  disabled
-                }
-                aria-label={t('发送')}
-                title={t('发送（Enter）')}
-                className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-full bg-accent text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                {sending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
-              </button>
-            )}
-          </div>
-        </div>
+              <SourceSelect value={source} onChange={onSource} />
+              {source.kind !== 'none' && (
+                <Select
+                  aria-label={t('每张图生成几版')}
+                  value={String(count)}
+                  onChange={(e) => onCount(Number(e.target.value))}
+                  options={[1, 2, 3, 4].map((n) => ({ value: String(n), label: t('每张 {n} 版', { n }) }))}
+                  className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+                />
+              )}
+            </>
+          }
+          running={running}
+          onStop={onStop}
+          sending={sending}
+          canSend={!!text.trim() || annotations.length > 0 || files.attachments.length > 0}
+          label={t('告诉 AI 要做什么')}
+          placeholder={
+            running
+              ? t('AI 正在处理，完成后可以继续说')
+              : annotations.length && annotations.every((a) => a.target.startsWith('img:'))
+                ? t('写修改意见，发送后按图上的标记重新生成图片')
+                : annotations.length
+                  ? t('补充说明，或直接发送让 AI 按标注修改')
+                  : t('描述界面，或者说要改哪里…（也可以在效果图上标注）')
+          }
+        />
       </div>
     </div>
   )
@@ -681,20 +643,41 @@ export function DesignChat({
 
 function ChatMessage({
   msg,
+  last,
   onPick,
+  onResend,
 }: {
   msg: DesignMessage
+  /** 最后一条回复：时间和操作一直显示 */
+  last?: boolean
   /** 这条是最后一条、在等用户选的问题时才有：点了选项就作为回答发出去 */
   onPick?: (o: DesignQuestion['options'][number]) => void
+  /** 把这条要求放回输入框重新编辑 */
+  onResend?: (text: string) => void
 }) {
   const author = useRunAuthor(msg.run as ChatRun | undefined)
   if (msg.role === 'user')
     return (
-      <div className="ml-8 flex flex-col items-end gap-1.5 self-end">
-        {!!msg.attachments?.length && <MessageAttachments items={msg.attachments} />}
-        <div className="rounded-2xl rounded-br-md bg-sel px-3.5 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
-          {msg.text}
-          {!!msg.annotations?.length && (
+      <UserMessage
+        size="sm"
+        text={msg.text}
+        at={msg.at}
+        attachments={msg.attachments}
+        actions={
+          onResend && (
+            <button
+              type="button"
+              className={msgAction}
+              title={t('放回输入框，改了再发')}
+              aria-label={t('放回输入框，改了再发')}
+              onClick={() => onResend(msg.text)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+          )
+        }
+        extra={
+          !!msg.annotations?.length && (
             <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
               {msg.annotations.map((a, i) => (
                 <span key={a.id} className="flex items-center gap-1.5">
@@ -712,26 +695,33 @@ function ChatMessage({
                 </span>
               ))}
             </span>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
     )
   if (msg.role === 'system') return <SystemNote text={msg.text} error={msg.error} />
+  // 旧的消息没有分段：思考和工具调用放在回复前面
+  const parts: ReplyPart[] = msg.parts ?? [
+    { text: msg.text, thinking: msg.thinking, tools: (msg.tools ?? []) as ToolUse[] },
+  ]
   return (
-    <div className="flex flex-col gap-1.5">
-      <AgentMessage
-        m={asTaskMessage(msg.id, msg.text, msg.at)}
-        teamNames={NO_NAMES}
-        author={author ?? { name: t('AI'), cli: '', icon: 'sparkles' }}
-        slot={<ProcessFold thinking={msg.thinking} tools={(msg.tools ?? []) as ToolUse[]} />}
-      />
+    <ChatReply
+      msgs={partsToMessages(msg.id, parts, msg.at)}
+      teamNames={NO_NAMES}
+      author={author ?? { name: t('AI'), cli: '', icon: 'sparkles' }}
+      last={last}
+    >
       {!!msg.images?.length && (
         <span className="pl-[38px] text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>
       )}
       {msg.question && <QuestionOptions q={msg.question} onPick={onPick} />}
-    </div>
+    </ChatReply>
   )
 }
+
+/** 回复的各段换成 Agent 输出的消息格式：和任务对话一样按顺序显示，只有第一段带头像和名字 */
+const partsToMessages = (id: string, parts: ReplyPart[], at: string) =>
+  parts.map((p, i) => asTaskMessage(`${id}:${i}`, p.text, at, p))
 
 /** AI 先问的问题（例如整体风格）：每个选项一张卡片，点一下就作为回答发出去；也可以在输入框里自己说 */
 function QuestionOptions({
@@ -766,24 +756,19 @@ function QuestionOptions({
   )
 }
 
-/** 正在输出的回复：思考、工具调用和说明边出边显示，和 Agent 的输出一样 */
+/** 正在输出的回复：思考、工具调用和说明按顺序边出边显示，和 Agent 的输出一样 */
 function LiveReply({ job }: { job: DesignJob }) {
   const author = useRunAuthor(job.run as ChatRun | undefined) ?? { name: t('AI'), cli: '', icon: 'sparkles' }
   const writingJson = job.outChars > job.text.length + 20
-  const empty = !job.text && !job.thinking?.trim() && !job.tools?.length
+  const parts = (job.parts ?? []).filter((p) => p.text || p.thinking?.trim() || p.tools.length)
   return (
     <div className="flex flex-col gap-1.5">
-      {empty ? (
+      {!parts.length ? (
         <PendingAuthor author={author}>
           <span className="thinking-shimmer text-[12.5px] text-subtle">{t('正在思考…')}</span>
         </PendingAuthor>
       ) : (
-        <AgentMessage
-          m={asTaskMessage('live', job.text, '', { thinking: job.thinking, tools: job.tools })}
-          teamNames={NO_NAMES}
-          author={author}
-          live
-        />
+        <ChatReply msgs={partsToMessages('live', parts, '')} teamNames={NO_NAMES} author={author} live />
       )}
       {writingJson && <LiveOutput job={job} />}
     </div>

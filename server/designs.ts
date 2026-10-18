@@ -8,22 +8,37 @@ import { extractJson } from '../shared/assist.ts'
 import { applyOps, streamedOps, type OpsState } from '../shared/design-ops.ts'
 import { openDesignSession } from './design-mcp.ts'
 
-/** 把设计工具（MCP）接给 CLI 的参数；不在这里的 CLI 只用 JSON 里的操作 */
-const MCP_ARGS: Record<string, (url: string) => string[]> = {
+/**
+ * 把设计工具（MCP）接给 CLI：返回要加的命令行参数，需要配置文件的写进这一轮的工作目录。
+ * 不在这里的 CLI 只能把操作写在回复的 JSON 里
+ */
+const MCP_ARGS: Record<string, (url: string, cwd: string) => Promise<string[]>> = {
   // 只放行这个工具服务，不用逐个确认
-  claude: (url) => [
+  claude: async (url) => [
     '--mcp-config',
     JSON.stringify({ mcpServers: { design: { type: 'http', url } } }),
     '--allowedTools',
     'mcp__design',
   ],
-  codex: (url) => ['-c', `mcp_servers.design.url=${JSON.stringify(url)}`],
+  codex: async (url) => ['-c', `mcp_servers.design.url=${JSON.stringify(url)}`],
+  // Command Code 没有命令行参数：读工作目录里的 .mcp.json，权限写在 .commandcode/settings.json 里放行
+  commandcode: async (url, cwd) => {
+    await writeFile(path.join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { design: { transport: 'http', url } } }))
+    await mkdir(path.join(cwd, '.commandcode'), { recursive: true })
+    await writeFile(
+      path.join(cwd, '.commandcode', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['mcp__design__*'] } }),
+    )
+    return []
+  },
 }
 /** 试过不支持设计工具的 CLI（版本太旧），之后只用 JSON 里的操作 */
 const NO_MCP = new Set<string>()
 import { getCli } from '../shared/clis.ts'
 import {
   Design,
+  addToParts,
+  type ReplyPart,
   DesignChatInput,
   DesignProject,
   DesignProjectInput,
@@ -46,6 +61,7 @@ import {
   type DesignVersionMeta,
   type ProjectComponents,
   projectPromptText,
+  AiDesignResult,
   resolveDesignResult,
   type DesignJob,
   type DesignMeta,
@@ -88,6 +104,22 @@ const STYLES_FILE = path.join(DIR, '_styles.json')
 const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
+/** 回复里的 JSON 不给用户看：每段只留 ``` 前面的说明 */
+const cleanParts = (parts: ReplyPart[]) => parts.map((p) => ({ ...p, text: p.text.split('```')[0].trim() }))
+
+/** 存进消息的分段：工具都已结束；按 JSON 回复时最后一段的说明换成 JSON 里的 reply */
+function finalParts(parts: ReplyPart[], reply: string): ReplyPart[] | undefined {
+  const list = parts
+    .map((p) => ({ ...p, tools: p.tools.map((x) => ({ ...x, running: false })) }))
+    .filter((p) => p.text || p.thinking?.trim() || p.tools.length)
+  if (reply) {
+    const last = list.at(-1)
+    if (last) last.text = reply
+    else list.push({ text: reply, tools: [] })
+  }
+  return list.length ? list : undefined
+}
+
 type Job = DesignJob & {
   abort: AbortController
   /** 生成图片时：把一张图排进这一轮的队列（点了「重试」或「再生成」）；不在生成图片时没有 */
@@ -378,8 +410,7 @@ ${prompt}`,
     // 进入生成图片阶段：对话的说明已经成了一条消息，不再显示
     job.preview = undefined
     job.text = ''
-    job.thinking = undefined
-    job.tools = undefined
+    job.parts = undefined
     job.out = undefined
     const list = ids.map((id) => d.images.find((i) => i.id === id)).filter(Boolean) as DesignImage[]
     const items: ImageJobItem[] = list.map((i) => ({ id: i.id, name: i.name, status: 'waiting', got: 0, want: count }))
@@ -460,8 +491,22 @@ ${prompt}`,
     const cs = cliSettings(settings, cliId)
     job.run = run
     setAskUser(job.scope, input.askUser)
-    const cwd = path.join(tmpdir(), 'agent-panel-design')
+    // 每一轮一个单独的工作目录：放设计工具的配置和附件，结束后删掉
+    const cwd = path.join(tmpdir(), 'agent-panel-design', randomUUID())
     await mkdir(cwd, { recursive: true })
+    // 附件复制进工作目录：有的 CLI 读不了工作目录以外的文件（以前 Command Code 说找不到参考图就是这样）
+    const attachments = await Promise.all(
+      input.attachments.map(async (a, i) => {
+        const to = path.join(cwd, 'attachments', `${i + 1}-${path.basename(a.path)}`)
+        await mkdir(path.dirname(to), { recursive: true })
+        return (await cp(a.path, to).then(
+          () => true,
+          () => false,
+        ))
+          ? { ...a, path: to }
+          : a
+      }),
+    )
     const history = d.messages.slice(0, -1)
     const project = await projectContext(d)
     let extra = ''
@@ -473,8 +518,7 @@ ${prompt}`,
       for (let attempt = 1; attempt <= 2; attempt++) {
         job.attempt = attempt
         job.text = ''
-        job.thinking = undefined
-        job.tools = undefined
+        job.parts = undefined
         job.outChars = 0
         job.out = undefined
         job.preview = mcp?.session.applied ? { ...mcp.session.state, applied: mcp.session.applied } : undefined
@@ -482,12 +526,14 @@ ${prompt}`,
         const base = cache.get(d.id)!
         let applied = 0
         let preview: OpsState = { root: base.root, components: base.components }
-        // 工具调用的 id → 在 job.tools 里的位置，结果回来时更新那一条
-        const toolAt = new Map<string, number>()
+        // 工具调用的 id → 在分段里的位置（第几段、第几个），结果回来时更新那一条
+        const toolAt = new Map<string, [number, number]>()
+        let parts: ReplyPart[] = []
         let text = ''
         const errors: string[] = []
         let result: { ok: boolean; error?: string } | undefined
         const asks = askSession(job.scope)
+        const toolsModeNow = !!mcp && !NO_MCP.has(cliId)
         const r = await invokeCli({
           askUser: asks.askUser,
           onAsk: asks.onAsk,
@@ -497,9 +543,9 @@ ${prompt}`,
             model: run.model,
             effort: run.effort,
             permission: cs.permission,
-            extraArgs: [...cs.extraArgs, ...(mcp && !NO_MCP.has(cliId) ? MCP_ARGS[cliId]!(mcp.url) : [])],
+            extraArgs: [...cs.extraArgs, ...(mcp && !NO_MCP.has(cliId) ? await MCP_ARGS[cliId]!(mcp.url, cwd) : [])],
             // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
-            addDirs: input.attachments.length ? [UPLOADS_DIR] : undefined,
+            addDirs: attachments.some((a) => !a.path.startsWith(cwd)) ? [UPLOADS_DIR] : undefined,
           },
           cwd,
           env: childEnv(cs.env),
@@ -507,42 +553,48 @@ ${prompt}`,
             buildDesignPrompt(
               cache.get(d.id)!,
               history,
-              withAttachments(await expandSlash(input.text, cliId, '', false), input.attachments),
+              withAttachments(await expandSlash(input.text, cliId, '', false), attachments),
               input.annotations,
               project,
               !!mcp && !NO_MCP.has(cliId),
               (await loadStyles()).filter((x) => x.kind === d.kind),
             ) + extra,
           signal: job.abort.signal,
-          timeoutMs: TIMEOUT,
+          // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
+          timeoutMs: 0,
           // 附上的截图、参考图直接给模型看（路径也写在提示词里，需要时它还能自己读）
-          images: input.attachments
+          images: attachments
             .filter((x) => /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name))
             .map((x) => x.path),
           onEvent: (ev) => {
-            if (ev.type === 'text_delta') text += ev.text
-            else if (ev.type === 'text') text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
-            else if (ev.type === 'thinking')
-              job.thinking = (ev.delta ? (job.thinking ?? '') + ev.text : ev.text).slice(-1500)
+            if (ev.type === 'text_delta') {
+              text += ev.text
+              parts = addToParts(parts, { type: 'text', text: ev.text, delta: true })
+            } else if (ev.type === 'text') {
+              text = text ? `${text.trimEnd()}\n\n${ev.text}` : ev.text
+              parts = addToParts(parts, { type: 'text', text: ev.text })
+            } else if (ev.type === 'thinking')
+              parts = addToParts(parts, { type: 'thinking', text: ev.text, delta: ev.delta })
             else if (ev.type === 'tool') {
-              const tools = [...(job.tools ?? []), { ...ev.tool, running: !!ev.id }]
-              if (ev.id) toolAt.set(ev.id, tools.length - 1)
-              job.tools = tools
+              parts = addToParts(parts, { type: 'tool', tool: { ...ev.tool, running: !!ev.id } })
+              if (ev.id) toolAt.set(ev.id, [parts.length - 1, parts.at(-1)!.tools.length - 1])
             } else if (ev.type === 'tool_delta' || ev.type === 'tool_result') {
-              const i = toolAt.get(ev.id)
-              if (i !== undefined && job.tools?.[i]) {
-                const cur = job.tools[i]
-                job.tools = job.tools.map((x, k) =>
-                  k !== i
-                    ? x
-                    : ev.type === 'tool_delta'
-                      ? { ...x, output: ((cur.output ?? '') + ev.text).slice(-4000) }
-                      : { ...x, output: ev.output.slice(-4000), failed: ev.failed, running: false },
-                )
-              }
+              const at = toolAt.get(ev.id)
+              const cur = at && parts[at[0]]?.tools[at[1]]
+              if (at && cur)
+                parts = addToParts(parts, {
+                  type: 'tool_update',
+                  at,
+                  patch:
+                    ev.type === 'tool_delta'
+                      ? { output: ((cur.output ?? '') + ev.text).slice(-4000) }
+                      : { output: ev.output.slice(-4000), failed: ev.failed, running: false },
+                })
             } else if (ev.type === 'error') errors.push(ev.message)
             else if (ev.type === 'result') result = ev
             job.text = text.split('```')[0].trim()
+            // 写 JSON 的那一段只显示 JSON 前面的说明，JSON 在下面单独边写边显示
+            job.parts = toolsModeNow ? parts : cleanParts(parts)
             job.outChars = text.length
             // JSON 部分边写边给界面看；只留最后一段，免得每次推送都很大
             const fence = text.indexOf('```')
@@ -561,7 +613,6 @@ ${prompt}`,
           },
         }).finally(asks.done)
         if (r.killed === 'stopped') throw new Error(t('已停止'))
-        if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有完成，已停止'))
         if (r.spawnError)
           throw new Error(
             t('{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。', {
@@ -594,23 +645,41 @@ ${prompt}`,
             }),
           )
         const ex = extractJson(text)
-        // 用工具改过：在工具改好的样子上收尾（JSON 里只有说明，也可能没有 JSON）
-        const viaTools = !!mcp && !NO_MCP.has(cliId) && (mcp.session.applied > 0 || mcp.session.images.length > 0)
-        const json = !ex.error && ex.json && typeof ex.json === 'object' ? (ex.json as Record<string, any>) : {}
-        const res = viaTools
-          ? resolveDesignResult(
-              {
-                ...json,
-                root: undefined,
-                reply: json.reply || (ex.error ? text.trim() : ''),
-                ops: Array.isArray(json.ops) ? json.ops : [],
-                images: [...mcp.session.images, ...(Array.isArray(json.images) ? json.images : [])],
-              },
-              { ...cache.get(d.id)!, root: mcp.session.state.root, components: mcp.session.state.components },
-            )
-          : ex.error
-            ? { error: ex.error }
-            : resolveDesignResult(ex.json, cache.get(d.id)!)
+        const toolsMode = !!mcp && !NO_MCP.has(cliId)
+        const json = !ex.error && ex.json && typeof ex.json === 'object' ? (ex.json as Record<string, any>) : undefined
+        // 用工具改：在工具改好的样子上收尾，回复就是普通的文字（万一还写了 JSON，里面的操作也照样用上）
+        const sess = mcp?.session
+        const touched = !!sess && (sess.applied > 0 || sess.images.length > 0)
+        const reply = (json?.reply as string) || (json ? ex.rest : text).trim()
+        let res: ReturnType<typeof resolveDesignResult> = { error: '' }
+        let problems = ''
+        // 没用工具、照旧写了 JSON（工具没连上，或者模型习惯这样）：按 JSON 的老办法处理
+        if (toolsMode && sess && !(json && !touched)) {
+          const raw = {
+            ...json,
+            root: undefined,
+            reply,
+            style: json?.style ?? sess.style,
+            designSize: json?.designSize ?? sess.designSize,
+            question: json?.question ?? sess.question,
+            images: [...sess.images, ...(Array.isArray(json?.images) ? json.images : [])],
+            // 什么都没改（只是回答问题）时不带 ops：设计原样不动，也不算一次修改
+            ops: touched || Array.isArray(json?.ops) ? (Array.isArray(json?.ops) ? json.ops : []) : undefined,
+          }
+          const state = { ...cache.get(d.id)!, root: sess.state.root, components: sess.state.components }
+          res = resolveDesignResult(raw, state)
+          // 改了两轮检查还有问题：改好的部分不丢，照样存下，把问题告诉用户
+          if ('error' in res && attempt === 2 && touched) {
+            problems = res.error
+            const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
+            if (ok.success)
+              res = {
+                result: ok.data,
+                root: sess.state.root,
+                components: sess.state.components,
+              }
+          }
+        } else res = ex.error ? { error: ex.error } : resolveDesignResult(ex.json, cache.get(d.id)!)
         if ('result' in res) {
           const cur = cache.get(d.id)!
           const r2 = res.result
@@ -640,27 +709,42 @@ ${prompt}`,
           cur.messages.push({
             id: randomUUID(),
             role: 'agent',
-            text: r2.reply || ex.rest || t('改好了。'),
+            text: r2.reply || t('改好了。'),
             at: now(),
             images: ids.length ? ids : undefined,
             run,
             // 过程留着：完成后在对话里收成一行，点开能看 AI 想了什么、做了哪些操作
-            ...processOf(job),
+            parts: finalParts(toolsMode && !json ? parts : cleanParts(parts), json ? r2.reply : ''),
             ...(r2.question?.options.length ? { question: r2.question } : {}),
           })
+          if (problems)
+            cur.messages.push({
+              id: randomUUID(),
+              role: 'system',
+              text: `${t('检查还有这些问题：')}\n${problems}`,
+              at: now(),
+              error: true,
+            })
           await save(cur)
           // 存下来了，页面改用正式的设计
           job.preview = undefined
           return ids
         }
         if (attempt === 2)
-          throw new Error(t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error }))
-        extra = viaTools
-          ? `\n\n## 你上一次的输出\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
-          : `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${res.error}\n请修正后重新输出完整的说明和 JSON。`
+          throw new Error(
+            toolsMode
+              ? t('{cli} 改完的设计两次检查都没通过：{error}', { cli: def.name, error: res.error })
+              : t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: res.error }),
+          )
+        extra =
+          toolsMode && !(json && !touched)
+            ? `\n\n## 你上一次的输出\n${text}\n\n用工具改完的设计还有问题：${res.error}\n请用 design 工具接着改（改过的已经保留），改好后再回复说明。`
+            : `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${res.error}\n请修正后重新输出完整的说明和 JSON。`
       }
     } finally {
       mcp?.close()
+      // 这一轮的工作目录（附件副本、Command Code 的 MCP 配置）用完就删
+      await rm(cwd, { recursive: true, force: true }).catch(() => {})
     }
     return []
   }
@@ -702,12 +786,6 @@ ${prompt}`,
     await writeVersions(d.id, list.slice(0, MAX_VERSIONS + MAX_AUTO_VERSIONS))
     return v
   }
-
-  /** 这一轮回复的过程（思考和工具调用），存进消息里 */
-  const processOf = (j: Job) => ({
-    ...(j.thinking?.trim() ? { thinking: j.thinking } : {}),
-    ...(j.tools?.length ? { tools: j.tools.map((x) => ({ ...x, running: false })) } : {}),
-  })
 
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
   /** 用默认 CLI 跑一次、要一个 JSON 回来（项目提示词、风格提取）；格式不对时让它改一次 */
