@@ -36,6 +36,11 @@ import { t } from '@shared/i18n'
 /**
  * UI 设计模式的侧栏：UI 设计自己的项目（和 Agent 的项目分开），展开后是这个项目的各个界面。
  */
+const KINDS = [
+  { id: 'game', icon: Gamepad2 },
+  { id: 'web', icon: Globe },
+] as const
+
 export function DesignList() {
   const { designProjects: projects, setDesignProjects, designs, setDesigns } = useData()
   const { route, go } = useNav()
@@ -129,6 +134,86 @@ export function DesignList() {
     } finally {
       setRemovingProject(undefined)
     }
+  }
+
+  /** 侧栏里的一个设计 */
+  const designRow = (d: DesignMeta) => {
+    const on = route.page === 'design' && route.id === d.id
+    return (
+      <ContextMenu key={d.id}>
+        <ContextMenuTrigger asChild>
+          <div
+            // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
+            onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
+            className={cn(
+              'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[13px]',
+              on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
+            )}
+          >
+            {d.running ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+            ) : d.kind === 'web' ? (
+              <Globe className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            ) : (
+              <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            )}
+            {renaming === d.id ? (
+              <input
+                autoFocus
+                defaultValue={d.title}
+                aria-label={t('设计名称')}
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => void rename(d, e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') e.currentTarget.blur()
+                  if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    setRenaming('')
+                  }
+                }}
+                className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[12.5px] text-fg outline-none"
+              />
+            ) : (
+              // 点击冒泡到整行去跳转；保留按钮是为了能用键盘选中
+              <button className="min-w-0 flex-1 cursor-pointer truncate text-left">{d.title}</button>
+            )}
+          </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem onSelect={() => setRenaming(d.id)}>
+            <PencilLine className="h-4 w-4" />
+            {t('重命名')}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => void copy(d)}>
+            <CopyPlus className="h-4 w-4" />
+            {t('创建副本')}
+          </ContextMenuItem>
+          {projects.length > 1 && (
+            <ContextMenuSub>
+              <ContextMenuSubTrigger>
+                <FolderInput className="h-4 w-4" />
+                {t('移到项目')}
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                {projects
+                  .filter((x) => x.id !== d.projectId)
+                  .map((x) => (
+                    <ContextMenuItem key={x.id} onSelect={() => void move(d, x.id)}>
+                      <Folder className="h-4 w-4 text-subtle" />
+                      {x.name}
+                    </ContextMenuItem>
+                  ))}
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+          )}
+          <ContextMenuSeparator />
+          <ContextMenuItem danger onSelect={() => setDeleting(d)}>
+            <Trash2 className="h-4 w-4" />
+            {t('删除')}
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    )
   }
 
   return (
@@ -226,84 +311,33 @@ export function DesignList() {
             </ContextMenu>
             {open && ds.length > 0 && (
               <div className="mt-0.5 ml-[18px] flex flex-col gap-px border-l pl-1.5">
-                {ds.map((d) => {
-                  const on = route.page === 'design' && route.id === d.id
+                {/* 同一个项目里游戏 UI 和网页 UI 分开列，各自可以收起 */}
+                {KINDS.filter((k) => ds.some((d) => (d.kind ?? 'game') === k.id)).map((k) => {
+                  const list = ds.filter((d) => (d.kind ?? 'game') === k.id)
+                  const key = `${p.id}:${k.id}`
+                  const kOpen = !folded.has(key)
                   return (
-                    <ContextMenu key={d.id}>
-                      <ContextMenuTrigger asChild>
-                        <div
-                          className={cn(
-                            'flex h-8 items-center gap-2 rounded-lg px-2 text-[13px]',
-                            on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
-                          )}
-                        >
-                          {d.running ? (
-                            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-                          ) : d.kind === 'web' ? (
-                            <Globe className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                          ) : (
-                            <Gamepad2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                          )}
-                          {renaming === d.id ? (
-                            <input
-                              autoFocus
-                              defaultValue={d.title}
-                              aria-label={t('设计名称')}
-                              onFocus={(e) => e.target.select()}
-                              onBlur={(e) => void rename(d, e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') e.currentTarget.blur()
-                                if (e.key === 'Escape') {
-                                  e.stopPropagation()
-                                  setRenaming('')
-                                }
-                              }}
-                              className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[12.5px] text-fg outline-none"
-                            />
-                          ) : (
-                            <button
-                              onClick={() => go({ page: 'design', id: d.id })}
-                              className="min-w-0 flex-1 cursor-pointer truncate text-left"
-                            >
-                              {d.title}
-                            </button>
-                          )}
-                        </div>
-                      </ContextMenuTrigger>
-                      <ContextMenuContent>
-                        <ContextMenuItem onSelect={() => setRenaming(d.id)}>
-                          <PencilLine className="h-4 w-4" />
-                          {t('重命名')}
-                        </ContextMenuItem>
-                        <ContextMenuItem onSelect={() => void copy(d)}>
-                          <CopyPlus className="h-4 w-4" />
-                          {t('创建副本')}
-                        </ContextMenuItem>
-                        {projects.length > 1 && (
-                          <ContextMenuSub>
-                            <ContextMenuSubTrigger>
-                              <FolderInput className="h-4 w-4" />
-                              {t('移到项目')}
-                            </ContextMenuSubTrigger>
-                            <ContextMenuSubContent>
-                              {projects
-                                .filter((x) => x.id !== d.projectId)
-                                .map((x) => (
-                                  <ContextMenuItem key={x.id} onSelect={() => void move(d, x.id)}>
-                                    <Folder className="h-4 w-4 text-subtle" />
-                                    {x.name}
-                                  </ContextMenuItem>
-                                ))}
-                            </ContextMenuSubContent>
-                          </ContextMenuSub>
-                        )}
-                        <ContextMenuSeparator />
-                        <ContextMenuItem danger onSelect={() => setDeleting(d)}>
-                          <Trash2 className="h-4 w-4" />
-                          {t('删除')}
-                        </ContextMenuItem>
-                      </ContextMenuContent>
-                    </ContextMenu>
+                    <div key={k.id} className="flex flex-col gap-px">
+                      <button
+                        onClick={() =>
+                          setFolded((f) => {
+                            const n = new Set(f)
+                            if (!n.delete(key)) n.add(key)
+                            return n
+                          })
+                        }
+                        aria-expanded={kOpen}
+                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[12px] text-subtle hover:bg-sel/60 hover:text-fg"
+                      >
+                        <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
+                        <k.icon className="h-3.5 w-3.5 shrink-0" />
+                        <span className="min-w-0 flex-1 truncate text-left">
+                          {k.id === 'web' ? t('网页 UI') : t('游戏 UI')}
+                        </span>
+                        <span className="shrink-0 pr-1 text-[11px] tabular-nums">{list.length}</span>
+                      </button>
+                      {kOpen && <div className="ml-3 flex flex-col gap-px">{list.map(designRow)}</div>}
+                    </div>
                   )
                 })}
               </div>

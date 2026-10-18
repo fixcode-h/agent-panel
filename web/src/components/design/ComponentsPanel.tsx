@@ -14,12 +14,15 @@ import { UmgNode, type RenderImage } from './umg-render'
 export function ComponentsPanel({
   projectId,
   designId,
+  kind,
   own,
   onOpen,
   onImport,
 }: {
   projectId: string
   designId: string
+  /** 只列同一种设计（游戏 UI / 网页 UI）的子控件 */
+  kind: 'game' | 'web'
   /** 这个设计现在的子控件名（变了就重新取列表） */
   own: string[]
   onOpen: (name: string) => void
@@ -41,8 +44,12 @@ export function ComponentsPanel({
 
   // 这个设计排在最前面
   const groups = useMemo(
-    () => [...(list ?? [])].sort((a, b) => Number(b.designId === designId) - Number(a.designId === designId)),
-    [list, designId],
+    () =>
+      (list ?? [])
+        // 游戏 UI 和网页 UI 的控件不能混用
+        .filter((g) => (g.kind ?? 'game') === kind)
+        .sort((a, b) => Number(b.designId === designId) - Number(a.designId === designId)),
+    [list, designId, kind],
   )
   if (!list) return <Loader2 className="mx-auto mt-6 h-4 w-4 animate-spin text-subtle" />
   if (!groups.length)

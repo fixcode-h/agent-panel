@@ -88,6 +88,23 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void reloadDesigns()
   }, [reloadDesigns])
+  // 有设计在跑 AI 对话或生成图片时定期刷新列表：切到别的设计后，侧栏里那个的转圈也能在完成时停下
+  const designRunning = designs.some((d) => d.running)
+  useEffect(() => {
+    if (!designRunning) return
+    const t = setInterval(
+      () =>
+        void api
+          .designs()
+          .then((ds) =>
+            // 只更新状态，名字等以页面上的为准（正在改名时不被盖掉）
+            setDesigns((cur) => cur.map((x) => ({ ...x, running: !!ds.find((d) => d.id === x.id)?.running }))),
+          )
+          .catch(() => {}),
+      2500,
+    )
+    return () => clearInterval(t)
+  }, [designRunning])
 
   const reloadTasks = useCallback(async () => {
     try {

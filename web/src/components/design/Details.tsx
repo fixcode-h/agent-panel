@@ -292,7 +292,14 @@ const ANCHORS: { min: [number, number]; max: [number, number] }[] = [
  * 换锚点时保持控件在画面上的位置和大小不变（换算偏移），和 UE 里拖锚点的效果一样。
  * parent 是父控件的像素尺寸。
  */
-export function reanchor(slot: any, min: [number, number], max: [number, number], parent: { w: number; h: number }) {
+export function reanchor(
+  slot: any,
+  min: [number, number],
+  max: [number, number],
+  parent: { w: number; h: number },
+  /** move：同时移到锚点上（UE 里按住 Ctrl）；pivot：对齐点也设成锚点（UE 里按住 Shift） */
+  o: { move?: boolean; pivot?: boolean } = {},
+) {
   const L = slot.LayoutData
   const axis = (i: 0 | 1) => {
     const P = i ? parent.h : parent.w
@@ -312,21 +319,36 @@ export function reanchor(slot: any, min: [number, number], max: [number, number]
     }
     const nMin = min[i]
     const nMax = max[i]
+    // 拉伸：贴满锚点范围；不拉伸：对齐点放在锚点上
+    if (o.move) return nMin !== nMax ? { [lo]: 0, [hi]: 0 } : { [lo]: 0, [hi]: Math.round(w) }
     if (nMin !== nMax) return { [lo]: Math.round(x - nMin * P), [hi]: Math.round(nMax * P - (x + w)) }
-    return { [lo]: Math.round(x - nMin * P + al * w), [hi]: Math.round(w) }
+    const nal = o.pivot ? nMin : al
+    return { [lo]: Math.round(x - nMin * P + nal * w), [hi]: Math.round(w) }
   }
+  const pivot = (i: 0 | 1) => (min[i] === max[i] ? min[i] : (min[i] + max[i]) / 2)
   return {
     ...slot,
     LayoutData: {
       ...L,
       Anchors: { Minimum: { X: min[0], Y: min[1] }, Maximum: { X: max[0], Y: max[1] } },
       Offsets: { ...axis(0), ...axis(1) },
+      ...(o.pivot ? { Alignment: { X: pivot(0), Y: pivot(1) } } : {}),
     },
   }
 }
 
-function AnchorPick({ slot, onPick }: { slot: any; onPick: (min: [number, number], max: [number, number]) => void }) {
+function AnchorPick({
+  slot,
+  onPick,
+}: {
+  slot: any
+  onPick: (min: [number, number], max: [number, number], o: { move: boolean; pivot: boolean }) => void
+}) {
   const [open, setOpen] = useState(false)
+  // 默认换锚点时一起移过去、对齐点也跟着换（选右下角就贴到右下角）；取消勾选就和 UE 默认一样只换锚点、位置不动，
+  // 按住 Ctrl / Shift 点也能临时打开
+  const [move, setMove] = useState(true)
+  const [pivot, setPivot] = useState(true)
   const a = slot.LayoutData.Anchors
   const same = (x: (typeof ANCHORS)[number]) =>
     x.min[0] === a.Minimum.X && x.min[1] === a.Minimum.Y && x.max[0] === a.Maximum.X && x.max[1] === a.Maximum.Y
@@ -346,8 +368,11 @@ function AnchorPick({ slot, onPick }: { slot: any; onPick: (min: [number, number
           {ANCHORS.map((x, i) => (
             <button
               key={i}
-              onClick={() => {
-                onPick(x.min as [number, number], x.max as [number, number])
+              onClick={(e) => {
+                onPick(x.min as [number, number], x.max as [number, number], {
+                  move: move || e.ctrlKey || e.metaKey,
+                  pivot: pivot || e.shiftKey,
+                })
                 setOpen(false)
               }}
               className={cn('cursor-pointer rounded-md p-1 hover:bg-sel', same(x) && 'bg-accent-soft')}
@@ -355,6 +380,16 @@ function AnchorPick({ slot, onPick }: { slot: any; onPick: (min: [number, number
               <AnchorIcon min={x.min as [number, number]} max={x.max as [number, number]} big />
             </button>
           ))}
+        </div>
+        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[11.5px] text-muted">
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
+            {t('同时移到锚点（Ctrl）')}
+          </label>
+          <label className="flex cursor-pointer items-center gap-1.5">
+            <input type="checkbox" checked={pivot} onChange={(e) => setPivot(e.target.checked)} />
+            {t('同时设对齐点（Shift）')}
+          </label>
         </div>
       </PopoverContent>
     </Popover>
@@ -619,7 +654,9 @@ export function Details({
               <FieldRow label="Anchors">
                 <AnchorPick
                   slot={slot}
-                  onPick={(min, max) => onChange({ ...widget, Slot: reanchor(slot, min, max, parentSize()) }, '')}
+                  onPick={(min, max, o) =>
+                    onChange({ ...widget, Slot: reanchor(slot, min, max, parentSize(), o) }, `anchor:${widget.id}`)
+                  }
                 />
               </FieldRow>
               {stretchX ? (

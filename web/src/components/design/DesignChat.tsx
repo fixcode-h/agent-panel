@@ -18,11 +18,12 @@ import { extensionSelfReload } from '@shared/design'
 import type { Annotation, BrowserStatus, DesignJob, DesignMessage, ImageSource } from '@shared/design'
 import type { Attachment, TaskMessage, ToolUse } from '@shared/schema'
 import { api } from '@/lib/api'
+import { useScopedSetting } from '@/lib/useScopedSetting'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
-import { AgentMessage, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import { AgentMessage, PendingAuthor, ProcessFold, SystemNote } from '@/components/tasks/Messages'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
@@ -367,21 +368,20 @@ function Step({ n, done, title, children }: { n: number; done: boolean; title: s
 const RUN_KEY = 'design-chat-run'
 
 /** 对话用的 CLI、模型和思考强度：记在本机，下次打开还是这个 */
-function useStoredRun() {
-  const [run, setRun] = useState<ChatRun>(() => {
-    try {
-      const v = JSON.parse(localStorage.getItem(RUN_KEY) ?? 'null')
-      if (v && typeof v.cli === 'string') return { cli: v.cli, model: v.model ?? '', effort: v.effort ?? '' }
-    } catch {}
-    return { cli: '', model: '', effort: '' }
-  })
-  const set = (v: ChatRun) => {
-    setRun(v)
-    try {
-      localStorage.setItem(RUN_KEY, JSON.stringify(v))
-    } catch {}
-  }
-  return [run, set] as const
+/** 对话用的 CLI、模型和思考强度：每个设计各自记住 */
+function useStoredRun(designId: string) {
+  return useScopedSetting<ChatRun>(
+    RUN_KEY,
+    designId,
+    (raw) => {
+      try {
+        const v = JSON.parse(raw ?? 'null')
+        if (v && typeof v.cli === 'string') return { cli: v.cli, model: v.model ?? '', effort: v.effort ?? '' }
+      } catch {}
+      return { cli: '', model: '', effort: '' }
+    },
+    (v) => JSON.stringify(v),
+  )
 }
 
 /** 设计消息换成 Agent 输出用的消息格式，和 Agent 对话显示得一样 */
@@ -413,6 +413,7 @@ export function DesignChat({
   onStop,
   onRetry,
   kind = 'game',
+  designId,
   annotations = [],
   onRemoveAnnotation,
 }: {
@@ -425,6 +426,8 @@ export function DesignChat({
   onCount: (n: number) => void
   onSend: (text: string, run: ChatRun, attachments: Attachment[]) => Promise<boolean>
   onStop: () => void
+  /** 哪个设计：对话的 CLI、模型各个设计分开记 */
+  designId: string
   /** 游戏 UI 还是网页 UI：示例要求不一样 */
   kind?: 'game' | 'web'
   /** 重新排队生成一张失败的图 */
@@ -435,7 +438,7 @@ export function DesignChat({
 }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [pick, setPick] = useStoredRun()
+  const [pick, setPick] = useStoredRun(designId)
   const { run } = useChatRun(pick)
   const list = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
@@ -658,6 +661,7 @@ function ChatMessage({ msg }: { msg: DesignMessage }) {
         m={asTaskMessage(msg.id, msg.text, msg.at)}
         teamNames={NO_NAMES}
         author={author ?? { name: t('AI'), cli: '', icon: 'sparkles' }}
+        slot={<ProcessFold thinking={msg.thinking} tools={(msg.tools ?? []) as ToolUse[]} />}
       />
       {!!msg.images?.length && (
         <span className="pl-[38px] text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>

@@ -80,6 +80,26 @@ try {
   await check(p, 'Agent', ['命令预览'])
   await p.goto(base + '#/design/demo-design-menu')
   await check(p, 'UI设计', ['控件树', 'AI 对话', 'StartGroup'])
+  // 滚轮在画布上缩放（以鼠标为中心），不滚动整个页面
+  const zoomText = async () =>
+    Number(
+      (
+        await p
+          .getByText(/^\d+%$/)
+          .first()
+          .textContent()
+      ).replace('%', ''),
+    )
+  const z0 = await zoomText()
+  const cv = await p.locator('[data-wid]').first().boundingBox()
+  await p.mouse.move(cv.x + cv.width / 2, cv.y + cv.height / 2)
+  for (let i = 0; i < 3; i++) await p.mouse.wheel(0, -100)
+  await p.waitForTimeout(200)
+  assert.ok((await zoomText()) > z0, '滚轮往上放大')
+  for (let i = 0; i < 3; i++) await p.mouse.wheel(0, 100)
+  await p.waitForTimeout(200)
+  assert.ok(Math.abs((await zoomText()) - z0) <= 2, '滚轮往下缩回去')
+  await p.getByRole('button', { name: '适应窗口' }).click()
   // 控件树右键菜单和二级菜单
   await p.getByRole('treeitem', { name: /StartGroup/ }).click({ button: 'right' })
   await p.getByRole('menuitem', { name: '包裹为' }).hover()
@@ -137,6 +157,10 @@ try {
     .waitFor()
   await check(p, 'UI设计-版本', ['存版本', 'AI 修改前'])
   await p.keyboard.press('Escape')
+  // 侧栏里点设计那一行的图标（不是文字）也能切过去
+  const row = await p.getByRole('button', { name: '主菜单', exact: true }).boundingBox()
+  await p.mouse.click(row.x - 14, row.y + row.height / 2)
+  await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   await p.getByRole('button', { name: '设置' }).first().click()
   await check(p, '设置', ['常规', '内容宽度'])
   await p.keyboard.press('Escape')

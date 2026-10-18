@@ -122,6 +122,43 @@ export function Viewport({
     return true
   }
 
+  // 滚轮缩放：以鼠标所在的点为中心（缩放后这一点还在鼠标下面）；按住 Shift 照常滚动画布，运行模式里滚动页面内容。
+  // React 的 onWheel 是被动监听，拦不住浏览器自己的缩放和滚动，所以直接挂原生事件
+  const anchor = useRef<{ x: number; y: number; cx: number; cy: number } | null>(null)
+  const scaleRef = useRef(scale)
+  scaleRef.current = scale
+  const playRef = useRef(false)
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const on = (e: WheelEvent) => {
+      if (e.shiftKey || (playRef.current && !e.ctrlKey && !e.metaKey)) return
+      e.preventDefault()
+      const st = stage.current
+      if (st) {
+        const r = st.getBoundingClientRect()
+        const s0 = scaleRef.current
+        anchor.current = { x: (e.clientX - r.left) / s0, y: (e.clientY - r.top) / s0, cx: e.clientX, cy: e.clientY }
+      }
+      // 触控板的捏合缩放 deltaY 很小，按幅度缩放；鼠标滚轮一格约 10%
+      const k = Math.exp(-Math.max(-60, Math.min(60, e.deltaY)) / 600)
+      setZoom(Math.max(0.05, Math.min(4, scaleRef.current * k)))
+    }
+    el.addEventListener('wheel', on, { passive: false })
+    return () => el.removeEventListener('wheel', on)
+  }, [])
+  // 缩放之后把记下的那一点挪回鼠标下面
+  useLayoutEffect(() => {
+    const a = anchor.current
+    const el = wrap.current
+    const st = stage.current
+    if (!a || !el || !st) return
+    anchor.current = null
+    const r = st.getBoundingClientRect()
+    el.scrollLeft += r.left + a.x * scale - a.cx
+    el.scrollTop += r.top + a.y * scale - a.cy
+  }, [scale])
+
   // 适应窗口的缩放比例
   useLayoutEffect(() => {
     const el = wrap.current
@@ -401,6 +438,7 @@ export function Viewport({
   }
 
   const play = tool === 'play'
+  playRef.current = play
   const ctx = {
     images,
     components: new Map(components.map((c) => [c.Name, c])),
@@ -420,11 +458,6 @@ export function Viewport({
         }}
         onPointerDown={(e) => {
           if (e.target === e.currentTarget) onSelect('')
-        }}
-        onWheel={(e) => {
-          if (!e.ctrlKey && !e.metaKey) return
-          e.preventDefault()
-          setZoom((z) => Math.max(0.05, Math.min(4, (z || fit) * (e.deltaY < 0 ? 1.1 : 1 / 1.1))))
         }}
       >
         <div
