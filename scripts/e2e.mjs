@@ -9,6 +9,7 @@ import { spawn, execFileSync } from 'node:child_process'
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { createHash } from 'node:crypto'
+import { crc32, deflateSync } from 'node:zlib'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
@@ -2096,10 +2097,10 @@ try {
     assert.deepEqual(
       d.images.map((i) => [i.id, i.status, i.variants.length, i.variants[0]?.source, i.variants[0]?.width]),
       [
-        ['bg', 'idle', 2, 'cli', 1],
-        ['frame', 'idle', 2, 'cli', 1],
+        ['bg', 'idle', 2, 'cli', 1920],
+        ['frame', 'idle', 2, 'cli', 320],
       ],
-      '每张图生成两版：一版从 savedPath 读，一版从 base64 读',
+      '每张图生成两版：一版从 savedPath 读，一版从 base64 读；存下来的都是设计里要的精确宽度',
     )
     const agentMsg = d.messages.at(-1)
     assert.equal(agentMsg.role, 'agent')
@@ -2298,6 +2299,122 @@ try {
     assert.equal(d.style, 'clean')
     // 没在改设计时补充不了：告诉页面改成排队
     assert.deepEqual(await call('POST', `/designs/${design.id}/steer`, { text: '再大一点' }), { steered: false })
+    // 看图量尺寸：inspect_image 量尺寸和颜色，view_image 画坐标格、放大一块，存成文件给 AI 读图
+    const pngOf = (w, h, pix) => {
+      const raw = Buffer.alloc((w * 3 + 1) * h)
+      for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) raw.set(pix(x, y), y * (w * 3 + 1) + 1 + x * 3)
+      const chunk = (type, body) => {
+        const head = Buffer.alloc(8)
+        head.writeUInt32BE(body.length, 0)
+        head.write(type, 4, 'ascii')
+        const crc = Buffer.alloc(4)
+        crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0)
+        return Buffer.concat([head, body, crc])
+      }
+      const ihdr = Buffer.alloc(13)
+      ihdr.writeUInt32BE(w, 0)
+      ihdr.writeUInt32BE(h, 4)
+      ihdr[8] = 8
+      ihdr[9] = 2
+      return Buffer.concat([
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+        chunk('IHDR', ihdr),
+        chunk('IDAT', deflateSync(raw)),
+        chunk('IEND', Buffer.alloc(0)),
+      ])
+    }
+    const ref = await call('POST', '/uploads', {
+      name: '参考图.png',
+      mime: 'image/png',
+      data: pngOf(100, 60, (x) => (x < 50 ? [255, 0, 0] : [0, 0, 255])).toString('base64'),
+    })
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `量一下参考图 FAKE_MCP:${JSON.stringify([
+        [
+          'inspect_image',
+          {
+            source: 'attachment:1',
+            points: [
+              { x: 10, y: 10 },
+              { x: 90, y: 10 },
+            ],
+          },
+        ],
+        ['view_image', { source: 'attachment:1', region: { x: 0, y: 0, w: 50, h: 30 } }],
+        ['inspect_image', { source: 'attachment:9' }],
+      ])}`,
+      source: { kind: 'none' },
+      attachments: [ref],
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const looked = d.messages.at(-1).text
+    assert.match(looked, /"size":"100×60"/, '量出精确尺寸')
+    assert.match(looked, /"color":"#FF0000"[\s\S]*"color":"#0000FF"/, '取到指定位置的颜色')
+    assert.match(looked, /views[\\/]view-1\.png/, '放大的图存成文件交给 AI 读')
+    assert.match(looked, /没有这个附件/, '附件序号不对时说明原因')
+    assert.match(
+      calls()
+        .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
+        .at(-1).input,
+      /附件 1「参考图\.png」：100×60 像素/,
+      '附件的精确尺寸写进了要求',
+    )
+
+    // 图标表：同一个 sheet 的图标一次生成再切开，每个都是各自精确的尺寸；漏画的单独补
+    const callsBefore = calls().length
+    const icon = (id, n, extra = '') => ({
+      id,
+      name: `Ico_${n}`,
+      prompt: `${extra}item ${n}`,
+      width: 48,
+      height: 48,
+      sheet: 'items',
+    })
+    const icons = [icon('ico_a', 'A'), icon('ico_b', 'B'), icon('ico_c', 'C', 'MISS3 ')]
+    await call('POST', `/designs/${design.id}/chat`, {
+      text: `做三个物品图标 FAKE_MCP:${JSON.stringify([
+        ['add_images', { images: icons }],
+        [
+          'add_widgets',
+          {
+            items: icons.map((x, i) => ({
+              parent: 'Root',
+              widget: {
+                Type: 'Image',
+                Name: x.name,
+                Brush: { ResourceObject: `img:${x.id}` },
+                Slot: { anchor: 'top-left', x: 10 + i * 60, y: 10, w: 48, h: 48 },
+              },
+            })),
+          },
+        ],
+      ])}`,
+      source: { kind: 'cli' },
+      count: 1,
+    })
+    d = await waitJob(design.id)
+    assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
+    const pngSize = async (file) => {
+      const b = Buffer.from(await (await fetch(`${base}/designs/${design.id}/files/${file}`)).arrayBuffer())
+      return [b.readUInt32BE(16), b.readUInt32BE(20)]
+    }
+    for (const id of ['ico_a', 'ico_b', 'ico_c']) {
+      const im = d.images.find((x) => x.id === id)
+      assert.equal(im.variants.length, 1, `${id} 有图`)
+      assert.deepEqual(await pngSize(im.variants[0].file), [48, 48], `${id} 是要求的精确尺寸`)
+    }
+    const sheetGen = calls()
+      .slice(callsBefore)
+      .filter((c) => c.kind === 'codex' && (c.stdin ?? c.input ?? '').startsWith('请用内置的 image_gen'))
+    assert.equal(sheetGen.length, 2, '三个图标一次出图，漏画的第三个单独补一张')
+    assert.match(
+      sheetGen[0].stdin ?? sheetGen[0].input,
+      /3 separate icons laid out in a strict grid of 2 columns × 2 rows/,
+    )
+    assert.match(sheetGen[0].stdin ?? sheetGen[0].input, /1\. item A\n2\. item B\n3\. MISS3 item C/)
+    assert.doesNotMatch(sheetGen[1].stdin ?? sheetGen[1].input, /sprite sheet/)
+
     const mcpAsk = calls()
       .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
       .at(-1)

@@ -30,6 +30,8 @@ import {
   buildDesignPrompt,
   emptyRoot,
   imagePrompt,
+  sheetGrid,
+  sheetPrompt,
   importComponent,
   type DesignVersion,
   type DesignVersionMeta,
@@ -50,6 +52,7 @@ import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
+import { normalizeGenerated, sliceSheet } from './image.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
@@ -75,9 +78,11 @@ const MAX_VERSIONS = 50
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
 /** 风格库：设置里管理，所有 UI 项目共用 */
 const STYLES_FILE = path.join(DIR, '_styles.json')
-const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
+const isImageFile = (x: { mime: string; name: string }) =>
+  /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name)
+
 /** 存进消息的分段：工具都已结束，去掉空的段 */
 function finalParts(parts: ReplyPart[]): ReplyPart[] | undefined {
   const list = parts
@@ -94,6 +99,8 @@ type Job = DesignJob & {
   scope: string
   /** AI 正在改设计时控制 CLI：把用户新说的话补充给这一轮 */
   control?: CliControl
+  /** 这一轮列出的图标表：图片 id → sheet，生成图片时同一个 sheet 的图标一起生成 */
+  sheets?: Map<string, string>
 }
 
 const now = () => new Date().toISOString()
@@ -211,9 +218,35 @@ export function designsApi(deps: { projects: Lister<Project> }) {
   }
 
   /**
-   * 生成一张图：每取回一版就存下来、马上换到设计里（页面轮询时就能看到），不等这张图的几版全部生成完。
-   * 第一版到了就选中它，之后的几版作为备选
+   * 收图：每取回一版就存下来、马上换到设计里（页面轮询时就能看到）。第一版到了就选中它，之后的几版作为备选。
+   * 存之前精确变成设计里要的宽高（模型出图的尺寸和比例不由我们定），透明的图抠掉绿底、裁掉空白
    */
+  function variantSink(d: Design, img: DesignImage, source: ImageSource, item: ImageJobItem) {
+    const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
+    const set = (patch: Partial<DesignImage>) => {
+      const dd = cache.get(d.id)!
+      dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, ...patch } : i))
+      void save(dd)
+    }
+    let first = -1
+    let chain = Promise.resolve()
+    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
+    const add = (buf: Buffer, exact = false) => {
+      chain = chain
+        .then(async () => {
+          const want = cur() ?? img
+          const s = await storeImage(cache.get(d.id)!, exact ? buf : normalizeGenerated(buf, want))
+          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
+          if (first < 0) first = variants.length - 1
+          set({ variants, selected: first })
+          item.got++
+        })
+        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
+    }
+    return { set, add, done: () => chain }
+  }
+
+  /** 生成一张图 */
   async function generateOne(
     d: Design,
     img: DesignImage,
@@ -225,28 +258,9 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     /** 这一次的修改意见，加在描述后面 */
     revision = '',
   ) {
-    const cur = () => cache.get(d.id)!.images.find((i) => i.id === img.id)
-    const set = (patch: Partial<DesignImage>) => {
-      const dd = cache.get(d.id)!
-      dd.images = dd.images.map((i) => (i.id === img.id ? { ...i, ...patch } : i))
-      void save(dd)
-    }
-    set({ status: 'generating', error: undefined })
+    const sink = variantSink(d, img, source, item)
+    sink.set({ status: 'generating', error: undefined })
     item.status = 'generating'
-    let first = -1
-    let chain = Promise.resolve()
-    const kind = source.kind === 'browser' ? ('browser' as const) : ('cli' as const)
-    const add = (buf: Buffer) => {
-      chain = chain
-        .then(async () => {
-          const s = await storeImage(cache.get(d.id)!, buf)
-          const variants = [...(cur()?.variants ?? []), { ...s, source: kind, at: now() }]
-          if (first < 0) first = variants.length - 1
-          set({ variants, selected: first })
-          item.got++
-        })
-        .catch((e) => log.warn('designs', '保存生成的图片失败', { error: (e as Error).message }))
-    }
     try {
       const rest =
         source.kind === 'browser'
@@ -261,31 +275,111 @@ export function designsApi(deps: { projects: Lister<Project> }) {
                 chroma: img.transparent,
                 concurrency: (await getSettings()).imageGen.concurrency,
                 onProgress: (text) => (item.text = text),
-                onImage: add,
+                onImage: (b) => sink.add(b),
               },
               job.abort.signal,
             )
           : await cliGenerate(
-              withRevision(imagePrompt(img, cache.get(d.id)!.style, false, style, d.kind), revision),
+              // 透明的图让模型画纯绿底，面板自己抠：比模型自己出透明图可靠
+              withRevision(imagePrompt(img, cache.get(d.id)!.style, img.transparent, style, d.kind), revision),
               count,
               job,
-              add,
+              (b) => sink.add(b),
             )
-      for (const b of rest) add(b)
-      await chain
+      for (const b of rest) sink.add(b)
+      await sink.done()
       if (!item.got) throw new Error(t('没有取到图片'))
-      set({ status: 'idle' })
+      sink.set({ status: 'idle' })
       item.status = 'done'
       item.text = undefined
     } catch (e) {
-      await chain
+      await sink.done()
       const msg = (e as Error).message
       // 已经取回的几版留着能用，只是没生成全
-      set(item.got ? { status: 'idle' } : { status: 'failed', error: msg })
+      sink.set(item.got ? { status: 'idle' } : { status: 'failed', error: msg })
       item.status = 'failed'
       item.text = msg
       throw e
     }
+  }
+
+  /**
+   * 同类的小图标一次生成：让模型把它们画在一张图上（排成格子），面板按格切开、各自精确裁成要的尺寸。
+   * 一次出图就是十几个图标，比一个个生成快得多；没切出来的图标（模型漏画了）单独再生成
+   */
+  async function generateSheet(
+    d: Design,
+    imgs: DesignImage[],
+    items: ImageJobItem[],
+    source: ImageSource,
+    count: number,
+    style: string,
+    job: Job,
+    revision: string,
+  ) {
+    const sinks = imgs.map((img, i) => variantSink(d, img, source, items[i]))
+    const { cols, rows } = sheetGrid(imgs.length, {
+      width: Math.max(...imgs.map((i) => i.width)),
+      height: Math.max(...imgs.map((i) => i.height)),
+    })
+    const chroma = imgs.some((i) => i.transparent)
+    const prompt = withRevision(sheetPrompt(imgs, cache.get(d.id)!.style, chroma, style, d.kind), revision)
+    imgs.forEach((img, i) => {
+      sinks[i].set({ status: 'generating', error: undefined })
+      items[i].status = 'generating'
+      items[i].text = t('和另外 {n} 个图标一起生成', { n: imgs.length - 1 })
+    })
+    const missed = new Set(imgs.map((_, i) => i))
+    const onSheet = (buf: Buffer) => {
+      const parts = sliceSheet(buf, cols, rows, imgs)
+      parts.forEach((part, i) => {
+        if (!part) return
+        missed.delete(i)
+        sinks[i].add(part, true)
+      })
+    }
+    try {
+      const rest =
+        source.kind === 'browser'
+          ? await browserGenerate(
+              {
+                tabId: source.tabId,
+                prompt,
+                count,
+                chroma,
+                concurrency: (await getSettings()).imageGen.concurrency,
+                onProgress: (text) => items.forEach((it) => (it.text = text)),
+                onImage: onSheet,
+              },
+              job.abort.signal,
+            )
+          : await cliGenerate(prompt, count, job, onSheet)
+      for (const b of rest) onSheet(b)
+    } catch (e) {
+      // 整张图都没出来：全部改成一张张生成，下面统一处理
+      if (job.abort.signal.aborted) throw e
+      log.warn('designs', '图标表生成失败，改成一张张生成', { error: (e as Error).message })
+    }
+    await Promise.all(sinks.map((x) => x.done()))
+    const failed: string[] = []
+    // 没切出来的单独生成（整张图失败时就是全部）
+    for (const i of missed) {
+      if (job.abort.signal.aborted) break
+      items[i].text = undefined
+      items[i].got = 0
+      try {
+        await generateOne(cache.get(d.id)!, imgs[i], source, count, style, job, items[i], revision)
+      } catch (e) {
+        failed.push(`${imgs[i].name}：${(e as Error).message}`)
+      }
+    }
+    for (let i = 0; i < imgs.length; i++) {
+      if (missed.has(i)) continue
+      sinks[i].set({ status: 'idle' })
+      items[i].status = 'done'
+      items[i].text = undefined
+    }
+    if (failed.length) throw new Error(failed.join('\n'))
   }
 
   /** 用设置里的图片 CLI（Codex 的 image_gen）生成：每生成一张就交给 onImage */
@@ -328,7 +422,8 @@ export function designsApi(deps: { projects: Lister<Project> }) {
 图片要求：
 ${prompt}`,
       signal: job.abort.signal,
-      timeoutMs: TIMEOUT,
+      // 不限时长，用户随时可以停止
+      timeoutMs: 0,
       onEvent: (ev) => {
         if (ev.type === 'image') {
           if (ev.failed) errors.push(ev.failed)
@@ -350,7 +445,6 @@ ${prompt}`,
     }).finally(asks.done)
     await Promise.all(reads)
     if (r.killed === 'stopped') throw new Error(t('已停止'))
-    if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有生成完，已停止'))
     if (r.spawnError) throw new Error(t('{error}。请确认已安装 {cli}', { error: r.spawnError, cli: def.name }))
     if (!got)
       throw new Error(
@@ -388,16 +482,42 @@ ${prompt}`,
     const width = source.kind === 'browser' && !browserParallel() ? 1 : settings.imageGen.concurrency
     // 失败的图：图片 id → 原因；点了重试、重新生成成功的从这里去掉
     const failed = new Map<string, string>()
-    const queue = list.map((img, k) => ({ img, item: items[k], revision: revisions[img.id] ?? '' }))
+    // 同一个 sheet（至少 2 个、透明度一样）的图标一起生成，其余一张张来
+    type Task = { imgs: DesignImage[]; items: ImageJobItem[]; revision: string }
+    const queue: Task[] = []
+    const groups = new Map<string, number[]>()
+    list.forEach((img, k) => {
+      const sheet = job.sheets?.get(img.id)
+      if (sheet) groups.set(`${sheet}:${img.transparent}`, [...(groups.get(`${sheet}:${img.transparent}`) ?? []), k])
+    })
+    const grouped = new Set<number>()
+    for (const ks of groups.values())
+      if (ks.length >= 2) {
+        ks.forEach((k) => grouped.add(k))
+        queue.push({
+          imgs: ks.map((k) => list[k]),
+          items: ks.map((k) => items[k]),
+          revision: revisions[list[ks[0]].id] ?? '',
+        })
+      }
+    list.forEach((img, k) => {
+      if (!grouped.has(k)) queue.push({ imgs: [img], items: [items[k]], revision: revisions[img.id] ?? '' })
+    })
     let next = 0
     const worker = async () => {
       while (next < queue.length && !job.abort.signal.aborted) {
-        const { img, item, revision } = queue[next++]
+        const task = queue[next++]
         try {
-          await generateOne(cache.get(d.id)!, img, source, count, style, job, item, revision)
-          failed.delete(img.id)
+          if (task.imgs.length > 1)
+            await generateSheet(cache.get(d.id)!, task.imgs, task.items, source, count, style, job, task.revision)
+          else
+            await generateOne(cache.get(d.id)!, task.imgs[0], source, count, style, job, task.items[0], task.revision)
+          for (const img of task.imgs) failed.delete(img.id)
         } catch (e) {
-          failed.set(img.id, `${img.name}：${(e as Error).message}`)
+          // 图标表里失败的图标各自带着原因（一行一个）
+          const msg = (e as Error).message
+          if (task.imgs.length > 1) for (const line of msg.split('\n')) failed.set(line, line)
+          else failed.set(task.imgs[0].id, `${task.imgs[0].name}：${msg}`)
         }
       }
     }
@@ -413,7 +533,7 @@ ${prompt}`,
       if (item?.status === 'waiting' || item?.status === 'generating') return
       if (item) Object.assign(item, { status: 'waiting', got: 0, text: undefined })
       else items.push((item = { id: img.id, name: img.name, status: 'waiting', got: 0, want: count }))
-      queue.push({ img, item, revision })
+      queue.push({ imgs: [img], items: [item], revision })
       if (workers.size < width) spawn()
     }
     while (workers.size) await Promise.all([...workers])
@@ -474,12 +594,31 @@ ${prompt}`,
           : a
       }),
     )
+    // 附件图片的精确尺寸写进要求里：AI 按它量、换算，不用目测
+    const facts = (
+      await Promise.all(
+        attachments.map(async (a, i) => {
+          const info = isImageFile(a) ? imageSize(await readFile(a.path).catch(() => Buffer.alloc(0))) : null
+          return info
+            ? `附件 ${i + 1}「${a.name}」：${info.width}×${info.height} 像素（inspect_image、view_image 里写 attachment:${i + 1}）`
+            : ''
+        }),
+      )
+    ).filter(Boolean)
     const history = d.messages.slice(0, -1)
     const project = await projectContext(d)
     let extra = ''
     // AI 只通过设计工具（MCP）改设计，回复就是普通文字；CLI 的定义里写了怎么把工具交给它
     if (!def.mcp) throw new Error(t('{cli} 用不了设计工具，请换一个 CLI', { cli: def.name }))
-    const mcp = openDesignSession(cache.get(d.id)!, (s) => (job.preview = { ...s.state, applied: s.applied }))
+    const mcp = openDesignSession(cache.get(d.id)!, (s) => (job.preview = { ...s.state, applied: s.applied }), {
+      dir: cwd,
+      attachments: attachments.map((a) => ({ name: a.name, path: a.path })),
+      imagePath: (id) => {
+        const im = cache.get(d.id)?.images.find((i) => i.id === id)
+        const v = im?.variants[im.selected] ?? im?.variants.at(-1)
+        return v ? path.join(imagesDir(d.id), v.file) : undefined
+      },
+    })
     const tools = mcpConfig(def.mcp, 'design', mcp.url)
     // 要配置文件的 CLI（Command Code、Gemini CLI）读工作目录里的配置
     for (const f of tools.files) {
@@ -522,7 +661,8 @@ ${prompt}`,
             buildDesignPrompt(
               cache.get(d.id)!,
               history,
-              withAttachments(await expandSlash(input.text, cliId, '', false), attachments),
+              withAttachments(await expandSlash(input.text, cliId, '', false), attachments) +
+                (facts.length ? `\n\n${facts.join('\n')}` : ''),
               input.annotations,
               project,
               (await loadStyles()).filter((x) => x.kind === d.kind),
@@ -531,9 +671,7 @@ ${prompt}`,
           // 不限时长：复杂的界面让 Agent 慢慢做完，用户随时可以停止
           timeoutMs: 0,
           // 附上的截图、参考图直接给模型看（路径也写在提示词里，需要时它还能自己读）
-          images: attachments
-            .filter((x) => /^image\//.test(x.mime) || /\.(png|jpe?g|gif|webp)$/i.test(x.name))
-            .map((x) => x.path),
+          images: attachments.filter(isImageFile).map((x) => x.path),
           onEvent: (ev) => {
             if (ev.type === 'text_delta') {
               text += ev.text
@@ -623,6 +761,7 @@ ${prompt}`,
         if (r2.designSize) cur.designSize = r2.designSize
         if (r2.style !== undefined) cur.style = r2.style
         const ids: string[] = []
+        job.sheets = new Map(r2.images.flatMap((im) => (im.sheet ? [[im.id, im.sheet] as [string, string]] : [])))
         for (const im of r2.images) {
           ids.push(im.id)
           const old = cur.images.find((i) => i.id === im.id)
@@ -817,7 +956,7 @@ ${prompt}`,
 
   const view = (j?: Job): DesignJob | null => {
     if (!j) return null
-    const { abort, enqueue, scope, control, ...rest } = j
+    const { abort, enqueue, scope, control, sheets, ...rest } = j
     return rest
   }
 

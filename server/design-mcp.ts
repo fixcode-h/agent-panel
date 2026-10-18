@@ -4,6 +4,21 @@ import { z } from 'zod'
 import { AiImage, DesignQuestion, resolveDesignResult, type Design } from '../shared/design.ts'
 import { applyOp, type OpsState } from '../shared/design-ops.ts'
 import { compactTree } from '../shared/umg.ts'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import path from 'node:path'
+import {
+  contentBox,
+  crop,
+  decodePng,
+  drawGrid,
+  encodePng,
+  gridStep,
+  hasAlpha,
+  palette,
+  pixelAt,
+  resize,
+} from './image.ts'
+import { imageSize } from './zip.ts'
 
 /**
  * 给 CLI 用的设计工具（MCP，Streamable HTTP）：AI 像在控件树和属性面板里操作一样调用工具改设计。
@@ -26,11 +41,23 @@ interface Session {
   /** 成功应用了几步 */
   applied: number
   onChange: (s: Session) => void
+  /** 给 AI 看图用：附件、设计里已有的图，和放生成的预览图的目录 */
+  files: DesignFiles
+  views: number
+}
+
+export interface DesignFiles {
+  /** 放预览图的目录（这一轮的工作目录） */
+  dir: string
+  /** 用户附上的图片 */
+  attachments: { name: string; path: string }[]
+  /** 设计里已有的图（选中的那一版）的文件路径 */
+  imagePath: (id: string) => string | undefined
 }
 
 const sessions = new Map<string, Session>()
 
-export function openDesignSession(design: Design, onChange: (s: Session) => void) {
+export function openDesignSession(design: Design, onChange: (s: Session) => void, files: DesignFiles) {
   const token = randomUUID()
   const s: Session = {
     design,
@@ -38,6 +65,8 @@ export function openDesignSession(design: Design, onChange: (s: Session) => void
     images: [],
     applied: 0,
     onChange,
+    files,
+    views: 0,
   }
   sessions.set(token, s)
   const port = Number(process.env.PORT ?? 8787)
@@ -56,6 +85,11 @@ const WIDGET = {
     '控件：{"Type":"TextBlock","Name":"Txt_Title","Text":"背包","Slot":{…},"Children":[…]}。Type、Name、Slot、Children、Class 以外的键都是属性（也可以写在 Properties 里），只写和默认值不一样的；可以带子控件，一次搭好一整块',
 }
 const SIZE = { type: 'object', properties: { X: { type: 'number' }, Y: { type: 'number' } } }
+const REGION = {
+  type: 'object',
+  description: '图里的一块，单位是原图像素：左上角 x、y，宽 w、高 h',
+  properties: { x: { type: 'number' }, y: { type: 'number' }, w: { type: 'number' }, h: { type: 'number' } },
+}
 const obj = (properties: Record<string, unknown>, required: string[] = []) => ({
   type: 'object',
   properties,
@@ -178,6 +212,30 @@ const TOOLS = [
     inputSchema: obj({ ops: { type: 'array', items: { type: 'object' } } }, ['ops']),
   },
   {
+    name: 'inspect_image',
+    description:
+      '量一张图：精确的像素尺寸、宽高比、是否透明、内容范围、主要颜色（十六进制）。region 只量图里的一块，points 取指定位置的颜色。照着参考图做界面时用它取准确的尺寸和颜色，不要目测。' +
+      'source 写 "attachment:1"（第几个附件）或 "image:<图片 id>"（设计里已有的图）。',
+    inputSchema: obj(
+      {
+        source: { type: 'string' },
+        region: REGION,
+        points: { type: 'array', items: obj({ x: { type: 'number' }, y: { type: 'number' } }) },
+      },
+      ['source'],
+    ),
+  },
+  {
+    name: 'view_image',
+    description:
+      '生成一张方便读数的图：画上坐标格（线上标的是原图像素坐标）、可以放大其中一块，保存成文件，再用你读图的能力看这个文件，按格子读元素的位置和大小，比直接看原图准得多。' +
+      '大图先整张看一遍，再用 region 放大细节处（按钮边缘、图标、文字）。source 同 inspect_image；grid 默认画格子；zoom 不写自动放大到合适。',
+    inputSchema: obj(
+      { source: { type: 'string' }, region: REGION, grid: { type: 'boolean' }, zoom: { type: 'number' } },
+      ['source'],
+    ),
+  },
+  {
     name: 'check',
     description: '检查当前设计有没有问题（控件放法、引用的子控件和图片、没用上的图、默认文字）。改完后调一次。',
     inputSchema: obj({}),
@@ -237,6 +295,41 @@ const itemsOf = (a: any): any[] =>
 const namesOf = (a: any): string[] =>
   Array.isArray(a.names) ? a.names.map(String) : a.name ? [String(a.name)] : itemsOf(a).map((x) => str(x?.name))
 
+/**
+ * 提醒（不算错误，AI 自己判断要不要改）：主界面画布里不拉伸的控件超出了设计稿，
+ * 或者图片的显示比例和图片本身差得多（会被拉伸变形）
+ */
+function warnings(s: Session) {
+  const d = s.designSize ?? s.design.designSize
+  const root = s.state.root
+  if (root.Type !== 'CanvasPanel') return []
+  const out: string[] = []
+  for (const w of root.Children ?? []) {
+    const lay = w.Slot?.LayoutData
+    if (!lay || w.Slot?.bAutoSize) continue
+    const { Minimum: lo, Maximum: hi } = lay.Anchors ?? {}
+    if (!lo || !hi || lo.X !== hi.X || lo.Y !== hi.Y) continue
+    const o = lay.Offsets ?? {}
+    const width = Number(o.Right)
+    const height = Number(o.Bottom)
+    if (!(width > 0 && height > 0)) continue
+    const x = lo.X * d.X + Number(o.Left) - (lay.Alignment?.X ?? 0) * width
+    const y = lo.Y * d.Y + Number(o.Top) - (lay.Alignment?.Y ?? 0) * height
+    if (x < -2 || y < -2 || x + width > d.X + 2 || y + height > d.Y + 2)
+      out.push(
+        `${w.Name} 超出了设计稿 ${d.X}×${d.Y}（位置 ${Math.round(x)},${Math.round(y)}，大小 ${width}×${height}）`,
+      )
+    const ref = typeof w.Properties?.Brush?.ResourceObject === 'string' ? w.Properties.Brush.ResourceObject : ''
+    const im = ref.startsWith('img:') ? [...s.design.images, ...s.images].find((i) => i.id === ref.slice(4)) : undefined
+    const nine = w.Properties?.Brush?.DrawAs === 'Box' || w.Properties?.Brush?.DrawAs === 'Border'
+    if (im && !nine && Math.abs(width / height / (im.width / im.height) - 1) > 0.15)
+      out.push(
+        `${w.Name} 显示 ${width}×${height}（比例 ${(width / height).toFixed(2)}），图片 ${im.id} 是 ${im.width}×${im.height}（比例 ${(im.width / im.height).toFixed(2)}），会被拉伸变形：改控件尺寸或图片尺寸让比例一致`,
+      )
+  }
+  return out
+}
+
 /** 当前设计（加上这一轮的改动）的检查 */
 export function checkSession(s: Session) {
   return resolveDesignResult(
@@ -257,7 +350,95 @@ const toQuestion = (q: any): unknown => ({
   ),
 })
 
-function callTool(s: Session, raw: string, args: any) {
+/** 找 source 指的图：附件（从 1 数起，或写文件名）或设计里已有的图 */
+function sourceFile(s: Session, source: string): { file: string; name: string; error?: undefined } | { error: string } {
+  const m = /^(attachment|image):(.+)$/.exec(source.trim())
+  if (!m) return { error: 'source 要写 "attachment:1" 或 "image:<图片 id>"' }
+  if (m[1] === 'image') {
+    const file = s.files.imagePath(m[2])
+    return file ? { file, name: m[2] } : { error: `设计里没有已经生成的图片 ${m[2]}` }
+  }
+  const list = s.files.attachments
+  const at = /^\d+$/.test(m[2]) ? list[Number(m[2]) - 1] : list.find((x) => x.name === m[2])
+  return at ? { file: at.path, name: at.name } : { error: `没有这个附件（共 ${list.length} 个）` }
+}
+
+/** inspect_image：量；view_image：画格子、放大，存成文件 */
+async function inspect(s: Session, view: boolean, a: any) {
+  const src = sourceFile(s, str(a.source))
+  if (src.error !== undefined) return text(src.error, true)
+  const buf = await readFile(src.file).catch(() => undefined)
+  if (!buf) return text('读不到这张图', true)
+  const info = imageSize(buf)
+  const img = decodePng(buf)
+  if (!info) return text('不是能识别的图片', true)
+  // 不是 PNG：只能告诉尺寸，放大、画格子要自己用读图能力看原文件
+  if (!img)
+    return text(
+      `${src.name}：${info.width}×${info.height} 像素（${info.ext}，这个格式不能放大或取色，请直接读原文件 ${src.file}）`,
+    )
+  const r = a.region && a.region.w > 0 && a.region.h > 0 ? a.region : undefined
+  const rx = Math.max(0, Math.round(r?.x ?? 0))
+  const ry = Math.max(0, Math.round(r?.y ?? 0))
+  const part = r ? crop(img, rx, ry, r.w, r.h) : img
+  const d = s.design.designSize
+  // 参考图和设计稿的换算：宽高比不一致时提醒，免得按错的比例算
+  const fit =
+    Math.abs(info.width / info.height / (d.X / d.Y) - 1) < 0.02
+      ? `和设计稿 ${d.X}×${d.Y} 比例一致，原图坐标 × ${(d.X / info.width).toFixed(4)} 就是设计稿坐标`
+      : `和设计稿 ${d.X}×${d.Y} 的宽高比不同（${(info.width / info.height).toFixed(3)} 对 ${(d.X / d.Y).toFixed(3)}），换算时按内容要铺满的方式想清楚`
+  if (!view) {
+    const box = hasAlpha(part) ? contentBox(part) : null
+    const pts = (Array.isArray(a.points) ? a.points : []).slice(0, 40).map((p: any) => ({
+      x: Math.round(Number(p?.x)),
+      y: Math.round(Number(p?.y)),
+      color: pixelAt(img, Number(p?.x), Number(p?.y)),
+    }))
+    return text(
+      JSON.stringify({
+        name: src.name,
+        size: `${info.width}×${info.height}`,
+        ...(r ? { region: { x: rx, y: ry, w: part.width, h: part.height } } : {}),
+        aspect: Math.round((part.width / part.height) * 1000) / 1000,
+        transparent: hasAlpha(part),
+        ...(box ? { contentBox: { x: rx + box.x, y: ry + box.y, w: box.w, h: box.h } } : {}),
+        palette: palette(part, 8),
+        ...(pts.length ? { points: pts } : {}),
+        designSizeNote: fit,
+      }),
+    )
+  }
+  const long = Math.max(part.width, part.height)
+  // 放大到长边约 900 像素（小的块放大看细节，最多 6 倍），整张大图缩到 1600 以内
+  const zoom =
+    Number(a.zoom) > 0
+      ? Math.min(8, Number(a.zoom))
+      : r || long < 600
+        ? Math.min(6, 900 / long)
+        : long > 1800
+          ? 1600 / long
+          : 1
+  let out = zoom === 1 ? part : resize(part, part.width * zoom, part.height * zoom)
+  const step = gridStep(long)
+  if (a.grid !== false) out = drawGrid(out, { origin: { x: rx, y: ry }, zoom, step })
+  await mkdir(path.join(s.files.dir, 'views'), { recursive: true })
+  const file = path.join(s.files.dir, 'views', `view-${++s.views}.png`)
+  await writeFile(file, encodePng(out))
+  return text(
+    [
+      `已生成 ${file}，用读图的能力看这个文件。`,
+      `原图 ${info.width}×${info.height} 像素${r ? `，这张是其中 x ${rx}–${rx + part.width}、y ${ry}–${ry + part.height} 的一块` : ''}，放大 ${Math.round(zoom * 100) / 100} 倍。`,
+      a.grid !== false
+        ? `品红色格线每格 ${step} 像素，线边的黄色数字是原图像素坐标（横轴数字在上沿，纵轴数字在左沿）。`
+        : '',
+      fit,
+    ]
+      .filter(Boolean)
+      .join('\n'),
+  )
+}
+
+async function callTool(s: Session, raw: string, args: any) {
   const name = ALIASES[raw] ?? raw
   const a = args && typeof args === 'object' ? args : {}
   const at = (x: any) => (str(x?.in) ? { in: str(x.in) } : {})
@@ -376,9 +557,14 @@ function callTool(s: Session, raw: string, args: any) {
       s.questions = p.data
       return text('已记下，用户回答后会一起交回来。回复一句为什么先问，就结束这一轮。')
     }
+    case 'inspect_image':
+    case 'view_image':
+      return inspect(s, name === 'view_image', a)
     case 'check': {
       const r = checkSession(s)
-      return text('error' in r ? r.error : '没有发现问题')
+      const warn = warnings(s)
+      const tail = warn.length ? `\n提醒（不一定要改，看是不是故意的）：\n${warn.join('\n')}` : ''
+      return text('error' in r ? r.error + tail : `没有发现问题${tail}`)
     }
     default:
       return text(`没有这个工具：${raw}`, true)
@@ -386,7 +572,7 @@ function callTool(s: Session, raw: string, args: any) {
 }
 
 /** 一条 JSON-RPC 请求；通知（没有 id）返回 undefined */
-function handle(s: Session, msg: any) {
+async function handle(s: Session, msg: any) {
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
   if (msg?.id === undefined || msg?.id === null) return undefined
   switch (msg.method) {
@@ -401,7 +587,7 @@ function handle(s: Session, msg: any) {
     case 'tools/list':
       return reply({ tools: TOOLS })
     case 'tools/call':
-      return reply(callTool(s, String(msg.params?.name ?? ''), msg.params?.arguments ?? {}))
+      return reply(await callTool(s, String(msg.params?.name ?? ''), msg.params?.arguments ?? {}))
     default:
       return { jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: `不支持 ${msg.method}` } }
   }
@@ -415,7 +601,9 @@ export function designMcpApi() {
         if (!s)
           return c.json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: '这一轮设计已经结束了' } }, 404)
         const body = await c.req.json().catch(() => null)
-        const out = Array.isArray(body) ? body.map((m) => handle(s, m)).filter(Boolean) : handle(s, body)
+        const out = Array.isArray(body)
+          ? (await Promise.all(body.map((m) => handle(s, m)))).filter(Boolean)
+          : await handle(s, body)
         // 只有通知时按协议回 202
         if (!out || (Array.isArray(out) && !out.length)) return c.body(null, 202)
         return c.json(out)

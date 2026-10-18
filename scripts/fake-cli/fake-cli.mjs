@@ -10,6 +10,7 @@ import { appendFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { crc32, deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
@@ -384,7 +385,41 @@ if (input.startsWith('你在帮用户整理游戏 UI 生图用的提示词') && 
 // Codex 的 image_gen：每张图一个 imageGeneration 条目，第一张写到 savedPath，其余只给 base64；
 // 描述里有 IMGFAIL 时报生成失败
 if (input.startsWith('请用内置的 image_gen') && kind === 'codex') {
-  const png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+  let png = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg=='
+  // 图标表：纯绿底，每个图标一个 20×20 的色块放在各自的格子正中；描述里有 MISS3 时第 3 个图标「漏画」
+  const grid = input.match(/(\d+) separate icons laid out in a strict grid of (\d+) columns × (\d+) rows/)
+  if (grid) {
+    const [n, cols, rows] = grid.slice(1).map(Number)
+    const W = cols * 40
+    const H = rows * 40
+    const raw = Buffer.alloc((W * 3 + 1) * H)
+    for (let y = 0; y < H; y++)
+      for (let x = 0; x < W; x++) {
+        const i = Math.floor(y / 40) * cols + Math.floor(x / 40)
+        const inside = x % 40 >= 10 && x % 40 < 30 && y % 40 >= 10 && y % 40 < 30
+        const on = inside && i < n && !(input.includes('MISS3') && i === 2)
+        raw.set(on ? [200, 40 + i * 30, 40] : [0, 255, 0], y * (W * 3 + 1) + 1 + x * 3)
+      }
+    const chunk = (type, body) => {
+      const head = Buffer.alloc(8)
+      head.writeUInt32BE(body.length, 0)
+      head.write(type, 4, 'ascii')
+      const crc = Buffer.alloc(4)
+      crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0)
+      return Buffer.concat([head, body, crc])
+    }
+    const ihdr = Buffer.alloc(13)
+    ihdr.writeUInt32BE(W, 0)
+    ihdr.writeUInt32BE(H, 4)
+    ihdr[8] = 8
+    ihdr[9] = 2
+    png = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', ihdr),
+      chunk('IDAT', deflateSync(raw)),
+      chunk('IEND', Buffer.alloc(0)),
+    ]).toString('base64')
+  }
   const n = Number(input.match(/生成 (\d+) 张图片/)?.[1] ?? 1)
   for (let i = 0; i < n; i++) {
     const id = `ig${i}`

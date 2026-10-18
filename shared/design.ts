@@ -505,6 +505,11 @@ export const AiImage = z.object({
   height: z.number().int().min(4).max(2048),
   transparent: z.boolean().default(true),
   nineSlice: MarginSchema.optional(),
+  /** 同类的小图标（背包物品、技能、货币…）写成同一个 sheet：面板让图片模型把它们画在一张图上再切开，比一张张生成快很多 */
+  sheet: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,40}$/, 'sheet 只能用字母、数字、下划线和连字符')
+    .optional(),
 })
 export const AiDesignResult = z.object({
   reply: z.string().default(''),
@@ -660,7 +665,8 @@ ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 - 从零搭界面：先 create_components 一次建好所有子控件，再 replace_widget 把根控件换成写好的整棵树（带全部子控件），一次调用搭完
 - 改现有界面：add_widgets / update_widgets / remove_widgets / move_widgets / rename_widgets，把要改的全部放进同一次调用的 items
 - 子控件：create_components、resize_components、delete_components；往子控件里加控件时 in 写子控件名
-- 图片：add_images 一次列出所有图片，再用 update_widgets 设到控件上（"img:<图片 id>"）
+- 图片：add_images 一次列出所有图片，再用 update_widgets 设到控件上（"img:<图片 id>"）。同类的小图标（背包物品、技能、货币、状态图标，3 个以上）给它们写同一个 sheet（例如 "items"）：面板会让图片模型把它们画在一张图上再切开，比一张张生成快得多，每个图标仍然按各自的 width、height 精确输出
+- 看图量尺寸：inspect_image 量图的精确像素尺寸、主要颜色和任意位置的颜色；view_image 生成带坐标格的图或放大一块区域，再用读图的能力看这个文件。照着参考图做界面、或要看设计里已有的图时先用它们量准位置、大小和颜色，不要目测
 - set_design：style 写${brief ? '这个界面在项目提示词之外的风格补充（英文，不能和项目提示词冲突）' : '整体美术风格（英文，生成每张图时都会带上）'}，designSize 改设计稿尺寸${styled ? '' : '；ask_user 先问用户（可以一次问几个问题）'}
 - 当前的控件树已经在上面，不用先 get_tree；最后调一次 check，有问题接着改，没问题就用几句中文回复你做了什么
 
@@ -669,7 +675,8 @@ ${annotations?.length ? `\n${annotationText(annotations, d.designSize)}\n` : ''}
 - 画布（CanvasPanel）里的位置用简写：{"anchor":"top-left","x":40,"y":32,"w":320,"h":72}，anchor 取 top-left / top / top-right / left / center / right / bottom-left / bottom / bottom-right，
   锚点和控件自身的对齐点是同一个角，x、y 是离那个点的距离（例如 bottom-right 写 x:-24,y:-24 就是离右下角各 24 像素），w、h 是宽高；铺满写 {"anchor":"stretch","margin":[左,上,右,下]}
 - 横排、竖排等的插槽：{"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
-- 尺寸按设计稿 ${d.designSize.X}×${d.designSize.Y} 的像素写准；照着参考图做时按参考图和设计稿的比例换算（参考图的尺寸见附件说明）
+- 尺寸按设计稿 ${d.designSize.X}×${d.designSize.Y} 的像素写准；照着参考图做时先量准再换算：参考图的宽高比和设计稿一致时，参考图像素坐标 × (${d.designSize.X} ÷ 参考图宽) 就是设计稿坐标
+- 图片控件的显示尺寸和图片自己的宽高比要一致（add_images 的 width、height 就按它在界面上的显示尺寸写），否则会被拉伸变形；check 会提醒
 
 ## 回复
 所有修改都通过 design 工具完成。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块，不要写文件，不要运行命令。
@@ -828,6 +835,46 @@ export function imagePrompt(
         ? 'Background: perfectly flat pure green #00FF00 everywhere outside the element (chroma key), no shadows or gradients on the background, do not use green inside the element.'
         : 'Transparent background (alpha), nothing outside the element.'
       : '',
+  ]
+  return parts.filter(Boolean).join('\n')
+}
+
+/** 图标表的格数：尽量接近正方形（按图标的宽高比算），最后一行可以不满 */
+export function sheetGrid(n: number, cell: { width: number; height: number }) {
+  const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt((n * cell.height) / cell.width))))
+  return { cols, rows: Math.ceil(n / cols) }
+}
+
+/**
+ * 图标表的生成描述：一张图里画 n 个图标，排成整齐的格子，每个图标单独占一格，之后面板按格切开。
+ * chroma 时用纯绿底（面板再抠成透明）
+ */
+export function sheetPrompt(
+  imgs: Pick<DesignImage, 'prompt' | 'width' | 'height' | 'transparent'>[],
+  style: string,
+  chroma: boolean,
+  projectStyle = '',
+  kind: DesignKind = 'game',
+) {
+  const cell = {
+    width: Math.max(...imgs.map((i) => i.width)),
+    height: Math.max(...imgs.map((i) => i.height)),
+  }
+  const { cols, rows } = sheetGrid(imgs.length, cell)
+  const transparent = imgs.some((i) => i.transparent)
+  const parts = [
+    `Icon sprite sheet for ${kind === 'web' ? 'a web page' : 'a game UI'}: ${imgs.length} separate icons laid out in a strict grid of ${cols} columns × ${rows} rows, aspect ratio ${aspect(cols * cell.width, rows * cell.height)}, the grid fills the whole canvas.`,
+    'Every cell is the same size. Each icon is centered in its own cell, fully inside it with about 12% empty margin on every side; nothing touches or crosses a cell border. No grid lines, frames around cells, numbers, labels or text anywhere.',
+    'All icons look like one matching set: identical art style, outline weight, lighting direction, color treatment and level of detail.',
+    projectStyle.trim(),
+    style ? `${projectStyle.trim() ? 'Additional style for this screen' : 'Art style'}: ${style.trim()}` : '',
+    transparent
+      ? chroma
+        ? 'Background: perfectly flat pure green #00FF00 everywhere outside the icons (chroma key), no shadows, gradients or texture on the background, do not use green inside any icon.'
+        : 'Transparent background (alpha), nothing outside the icons.'
+      : 'Background: plain flat neutral color, identical in every cell.',
+    `Icons in order, row by row starting at the top-left, left to right:\n${imgs.map((i, k) => `${k + 1}. ${i.prompt.trim()}`).join('\n')}`,
+    imgs.length < cols * rows ? 'Leave the unused cells at the end empty (background only).' : '',
   ]
   return parts.filter(Boolean).join('\n')
 }

@@ -279,7 +279,6 @@ export const EN_DESIGN: Record<string, string> = {
   '不是能识别的图片（支持 PNG、JPEG、WebP、GIF）': 'Unrecognized image (PNG, JPEG, WebP and GIF are supported)',
   '{cli} 不能生成图片，请在设置的「默认 CLI」里换成 Codex':
     '{cli} can’t generate images. Switch to Codex under “Default CLI” in settings',
-  '超过 10 分钟没有生成完，已停止': 'Stopped: not finished after 10 minutes',
   '{error}。请确认已安装 {cli}': '{error}. Make sure {cli} is installed',
   '{cli} 没有生成图片': '{cli} didn’t generate any image',
   '检查还有这些问题：': 'The check still found these issues:',
@@ -481,4 +480,5 @@ export const EN_DESIGN: Record<string, string> = {
   '{cli} 用不了设计工具，请换一个 CLI': '{cli} cannot use the design tools. Please switch to another CLI',
   '{cli} 连不上设计工具，请升级到最新版：{detail}':
     '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
+  '和另外 {n} 个图标一起生成': 'Generating together with {n} other icons',
 }
