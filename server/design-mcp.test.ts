@@ -153,3 +153,53 @@ test('截图交给页面画，返回文件和控件位置，提醒跑出画面�
   off.close()
   close()
 })
+
+test('画布位置的简写：大小写、别名、写在控件上都认，只改一部分时其他的保留', async () => {
+  const { call, session, close } = open()
+  const slot = (name: string) => {
+    let hit: any
+    const find = (w: any) => (w.Name === name ? (hit = w) : (w.Children ?? []).forEach(find))
+    find(session.state.root)
+    return hit.Slot.LayoutData
+  }
+  const r = await call('add_widgets', {
+    items: [
+      {
+        parent: 'RootCanvas',
+        widget: { Type: 'Image', Name: 'A', Slot: { anchor: 'top-left', x: 40, y: 32, w: 320, h: 72 } },
+      },
+      {
+        parent: 'RootCanvas',
+        widget: {
+          Type: 'Image',
+          Name: 'B',
+          Slot: { Anchor: 'bottom-right', X: -24, Y: '-24', Width: 200, Height: '60px' },
+        },
+      },
+      { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'C', x: 10, y: 20, w: 30, h: 40 } },
+      { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'D', Slot: { pos: [5, 6], size: [70, 80] } } },
+    ],
+  })
+  assert.ok(!r.error, r.text)
+  assert.deepEqual(slot('A').Offsets, { Left: 40, Top: 32, Right: 320, Bottom: 72 })
+  assert.deepEqual(slot('B').Offsets, { Left: -24, Top: -24, Right: 200, Bottom: 60 })
+  assert.deepEqual(slot('B').Anchors.Minimum, { X: 1, Y: 1 })
+  assert.deepEqual(slot('C').Offsets, { Left: 10, Top: 20, Right: 30, Bottom: 40 })
+  assert.deepEqual(slot('D').Offsets, { Left: 5, Top: 6, Right: 70, Bottom: 80 })
+  // 有的模型把对象参数写成 JSON 字符串
+  const r2 = await call('add_widgets', {
+    items: JSON.stringify([
+      { parent: 'RootCanvas', widget: { Type: 'Image', Name: 'E', Slot: JSON.stringify({ x: 1, y: 2, w: 3, h: 4 }) } },
+    ]),
+  })
+  assert.ok(!r2.error, r2.text)
+  assert.deepEqual(slot('E').Offsets, { Left: 1, Top: 2, Right: 3, Bottom: 4 })
+  // 只挪位置：锚点和大小不变，不会变回 100×40
+  assert.ok(!(await call('update_widgets', { items: [{ name: 'B', slot: { x: -50, y: -60 } }] })).error)
+  assert.deepEqual(slot('B').Offsets, { Left: -50, Top: -60, Right: 200, Bottom: 60 })
+  assert.deepEqual(slot('B').Anchors.Minimum, { X: 1, Y: 1 })
+  // 只改大小：位置不变
+  assert.ok(!(await call('update_widgets', { items: [{ name: 'A', slot: { w: 500 } }] })).error)
+  assert.deepEqual(slot('A').Offsets, { Left: 40, Top: 32, Right: 500, Bottom: 72 })
+  close()
+})

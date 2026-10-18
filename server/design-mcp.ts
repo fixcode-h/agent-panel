@@ -637,9 +637,46 @@ async function screenshot(s: Session, target: string) {
   )
 }
 
+/** 会是对象或数组的参数：有的 CLI（模型）把它们写成 JSON 字符串传进来，原样用就会被当成没写，位置变成默认的 100×40 */
+const NESTED = new Set([
+  'items',
+  'widget',
+  'slot',
+  'properties',
+  'props',
+  'root',
+  'Slot',
+  'Properties',
+  'Children',
+  'children',
+  'size',
+  'names',
+  'margin',
+  'padding',
+  'pos',
+  'position',
+])
+function unstring(v: any, key = ''): any {
+  if (typeof v === 'string' && NESTED.has(key)) {
+    const t = v.trim()
+    if (/^[[{]/.test(t)) {
+      try {
+        return unstring(JSON.parse(t), key)
+      } catch {
+        return v
+      }
+    }
+    return v
+  }
+  if (Array.isArray(v))
+    return v.map((x) => unstring(x, key === 'items' || key === 'Children' || key === 'children' ? '' : key))
+  if (v && typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, unstring(x, k)]))
+  return v
+}
+
 async function callTool(s: Session, raw: string, args: any) {
   const name = ALIASES[raw] ?? raw
-  const a = args && typeof args === 'object' ? args : {}
+  const a = unstring(args && typeof args === 'object' ? args : {})
   const at = (x: any) => (str(x?.in) ? { in: str(x.in) } : {})
   // 「先出原画」：用户确认模板之前不搭界面、不列切图
   if (s.conceptOnly && MUTATING.has(name))
