@@ -240,6 +240,21 @@ export interface CliSkill {
   source?: string
 }
 
+/**
+ * 输入框里「/」能用的、CLI 自己带的命令：Claude Code 的 .claude/commands、Codex 的 ~/.codex/prompts，
+ * 以及 Skill。面板自己做的命令（压缩、审查……）不在这里，页面按 CLI 补上
+ */
+export interface SlashCommand {
+  /** 输入时打的名字，不含「/」 */
+  name: string
+  description: string
+  kind: 'command' | 'skill'
+  /** 来自哪里：~/.claude/commands、./.agents/skills、插件…… */
+  source: string
+  /** 命令接受的参数提示（front matter 里的 argument-hint） */
+  hint?: string
+}
+
 export interface CliStatus {
   id: string
   name: string

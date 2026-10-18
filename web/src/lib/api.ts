@@ -4,6 +4,7 @@ import type {
   CliInstallJob,
   CliLimits,
   CliSkill,
+  SlashCommand,
   CliModels,
   CliUpdate,
   Agent,
@@ -88,6 +89,8 @@ export const api = {
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
   cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
+  cliCommands: (id: string, projectId = '') =>
+    request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   cliSkills: (id: string, projectId = '') =>
     request<CliSkill[]>(`/clis/${id}/skills${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
 
@@ -141,6 +144,9 @@ export const api = {
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
   unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
+  /** 引入会话：把任务或设计的对话整理成一份附件 */
+  taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
+  designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),

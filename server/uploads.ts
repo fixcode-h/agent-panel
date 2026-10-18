@@ -43,6 +43,23 @@ export function uploadsApi() {
   return routes
 }
 
+/** 面板自己生成的附件（例如引入的会话记录）：和上传的一样存进附件目录 */
+export async function saveTextUpload(name: string, text: string): Promise<Attachment> {
+  const dir = path.join(UPLOADS_DIR, randomUUID())
+  await mkdir(dir, { recursive: true })
+  const file = path.join(dir, safeName(name))
+  const buf = Buffer.from(text, 'utf8')
+  await writeFile(file, buf)
+  return { name, path: file, size: buf.length, mime: 'text/markdown' }
+}
+
+/** 引入的会话记录最多这么多字：太长的只留开头和最近的部分 */
+const MAX_TRANSCRIPT = 120_000
+export const clipTranscript = (s: string) =>
+  s.length > MAX_TRANSCRIPT
+    ? `${s.slice(0, MAX_TRANSCRIPT * 0.3)}\n\n…（中间省略 ${s.length - MAX_TRANSCRIPT} 字）…\n\n${s.slice(-MAX_TRANSCRIPT * 0.7)}`
+    : s
+
 /** 只读出附件目录里的文件，给页面显示缩略图；不能用来读任意路径 */
 export function uploadsRawApi() {
   const routes = new Hono()

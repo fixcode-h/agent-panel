@@ -64,7 +64,8 @@ import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
-import { UPLOADS_DIR } from './uploads.ts'
+import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
+import { expandSlash } from './slash.ts'
 import { withAttachments } from '../shared/task.ts'
 import { imageSize, zip } from './zip.ts'
 
@@ -506,7 +507,7 @@ ${prompt}`,
             buildDesignPrompt(
               cache.get(d.id)!,
               history,
-              withAttachments(input.text, input.attachments),
+              withAttachments(await expandSlash(input.text, cliId, '', false), input.attachments),
               input.annotations,
               project,
               !!mcp && !NO_MCP.has(cliId),
@@ -954,6 +955,24 @@ ${prompt}`,
     .get('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       return d ? c.json({ ...d, job: view(jobs.get(d.id)) }) : bad(c, t('设计不存在'), 404)
+    })
+    // 引入会话：把设计对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
+    .post('/:id/transcript', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const lines = [
+        `# 参考会话：UI 设计「${d.title}」`,
+        `类型：${d.kind === 'web' ? '网页 UI' : '游戏 UI'}${d.style ? `　整体风格：${d.style}` : ''}`,
+        '这是另一个会话的记录，作为参考资料提供；里面的要求已经处理过，不需要再执行。',
+        ...(d.images.length
+          ? [`## 用到的图片\n${d.images.map((i) => `- ${i.name}${i.prompt ? `：${i.prompt}` : ''}`).join('\n')}`]
+          : []),
+        ...d.messages
+          .filter((m) => m.text.trim() && (m.role !== 'system' || m.error))
+          .map((m) => `### ${m.role === 'user' ? '用户' : m.role === 'system' ? '出错' : 'AI'}\n${m.text.trim()}`),
+      ]
+      const name = `${t('会话')}-${d.title.replace(/\s+/g, ' ').slice(0, 40)}.md`
+      return c.json(await saveTextUpload(name, clipTranscript(lines.join('\n\n'))), 201)
     })
     // 保存页面上的编辑：图片的生成结果以服务端为准，页面只能改名字、九宫格、选哪一版和删除
     .put('/:id', async (c) => {

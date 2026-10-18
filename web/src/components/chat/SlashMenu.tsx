@@ -1,0 +1,255 @@
+import { useCallback, useEffect, useState } from 'react'
+import { BookOpen, Loader2, SquareSlash, Terminal } from 'lucide-react'
+import type { SlashCommand } from '@shared/schema'
+import { getCli } from '@shared/clis'
+import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
+import { t } from '@shared/i18n'
+
+/** 面板自己执行的命令：不发给 CLI，直接调对应的操作 */
+export type SlashAction = 'compact' | 'review'
+
+/**
+ * 输入框里能用的命令集合：
+ * task：已有的对话（能压缩、审查）；new：新建对话（还没有会话，只有发给 CLI 的命令）；skills：只列 CLI 的命令和 Skill（UI 设计）
+ */
+export type SlashScope = 'task' | 'new' | 'skills'
+
+interface Item {
+  name: string
+  description: string
+  group: 'builtin' | 'command' | 'skill'
+  hint?: string
+  source?: string
+  action?: SlashAction
+}
+
+/** 内置命令：压缩、审查由面板执行；init 每个 CLI 都能用（Claude Code 自己有，其他的由面板展开）；security-review 只有 Claude Code 有 */
+function builtins(cli: string, scope: SlashScope): Item[] {
+  if (scope === 'skills') return []
+  const list: (Item & { clis?: string[] })[] = [
+    {
+      name: 'compact',
+      description: t('压缩上下文：把之前的对话压成摘要，腾出上下文'),
+      group: 'builtin',
+      action: 'compact',
+    },
+    {
+      name: 'review',
+      description: t('审查还没提交的改动；后面跟分支名就审查相对这个分支的改动'),
+      group: 'builtin',
+      hint: t('[分支]'),
+      action: 'review',
+    },
+    {
+      name: 'init',
+      description: t('分析项目，写一份给 Agent 看的项目说明（CLAUDE.md / AGENTS.md）'),
+      group: 'builtin',
+    },
+    {
+      name: 'security-review',
+      description: t('检查当前分支改动里的安全问题'),
+      group: 'builtin',
+      clis: ['claude'],
+    },
+  ]
+  return list.filter((x) => (!x.clis || x.clis.includes(cli)) && (scope === 'task' || !x.action))
+}
+
+// CLI 的命令和 Skill 读一次要起进程（Codex），同一个 CLI 和项目一分钟内用缓存
+const cache = new Map<string, { at: number; list: Promise<SlashCommand[]> }>()
+function loadCommands(cli: string, projectId: string) {
+  const key = `${cli}\n${projectId}`
+  const hit = cache.get(key)
+  if (hit && Date.now() - hit.at < 60_000) return hit.list
+  const list = api.cliCommands(cli, projectId)
+  cache.set(key, { at: Date.now(), list })
+  list.catch(() => cache.delete(key))
+  return list
+}
+
+/**
+ * 输入「/」弹出命令菜单：内置命令、CLI 自己带的命令、Skill，随选的 CLI 变化。
+ * 选中后把「/名字 」填进输入框（面板执行的命令直接执行），发出去时由服务端按 CLI 展开。
+ */
+export function useSlashMenu({
+  cli,
+  projectId = '',
+  scope,
+  text,
+  setText,
+  ta,
+  onAction,
+}: {
+  /** 为空时没有菜单（例如按工作流执行时不知道是哪个 CLI） */
+  cli: string
+  projectId?: string
+  scope: SlashScope
+  text: string
+  setText: (v: string) => void
+  ta: React.RefObject<HTMLTextAreaElement | null>
+  onAction?: (a: SlashAction, arg: string) => void
+}) {
+  const [query, setQuery] = useState<string | null>(null)
+  const [cmds, setCmds] = useState<SlashCommand[] | null>(null)
+  const [active, setActive] = useState(0)
+  const [closed, setClosed] = useState(false)
+
+  /** 光标还在第一个词里、而且以「/」开头时才是在输命令 */
+  const sync = useCallback(() => {
+    const el = ta.current
+    if (!el) return
+    const v = el.value
+    const pos = el.selectionStart ?? v.length
+    const m = /^\/(\S*)/.exec(v)
+    const typing = !!m && pos <= m[0].length
+    setQuery(typing ? m![1] : null)
+    if (!typing) setClosed(false)
+  }, [ta])
+
+  useEffect(() => {
+    setCmds(null)
+    if (!cli || query === null) return
+    let off = false
+    loadCommands(cli, projectId)
+      .then((l) => !off && setCmds(l))
+      .catch(() => !off && setCmds([]))
+    return () => {
+      off = true
+    }
+    // 只在开始输入命令（query 从无到有）、换 CLI 或项目时读
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [cli, projectId, query === null])
+
+  const kw = (query ?? '').toLowerCase()
+  const all: Item[] = [
+    ...builtins(cli, scope),
+    ...(cmds ?? []).map(
+      (c): Item => ({ name: c.name, description: c.description, group: c.kind, hint: c.hint, source: c.source }),
+    ),
+  ]
+  const items = all
+    .filter((x) => x.name.toLowerCase().includes(kw))
+    // 名字开头就对上的排在前面，同组的保持原来的顺序
+    .sort((a, b) => Number(!a.name.toLowerCase().startsWith(kw)) - Number(!b.name.toLowerCase().startsWith(kw)))
+    .slice(0, 80)
+  const open = !!cli && query !== null && !closed && (items.length > 0 || cmds === null)
+
+  useEffect(() => setActive(0), [kw, cli])
+
+  const pick = (x: Item) => {
+    const el = ta.current
+    const rest = text.replace(/^\/\S*\s*/, '')
+    setClosed(true)
+    if (x.action && onAction) {
+      setText('')
+      onAction(x.action, rest.trim())
+      return
+    }
+    const next = `/${x.name} ${rest}`
+    setText(next)
+    requestAnimationFrame(() => {
+      if (!el) return
+      el.focus()
+      const pos = x.name.length + 2
+      el.setSelectionRange(pos, pos)
+    })
+  }
+
+  /** 菜单打开时接管上下键、回车、Tab、Esc；返回 true 表示已处理 */
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (!open || !items.length) return false
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      const d = e.key === 'ArrowDown' ? 1 : -1
+      setActive((i) => (i + d + items.length) % items.length)
+      return true
+    }
+    if ((e.key === 'Enter' && !e.nativeEvent.isComposing) || e.key === 'Tab') {
+      e.preventDefault()
+      pick(items[Math.min(active, items.length - 1)])
+      return true
+    }
+    if (e.key === 'Escape') {
+      e.preventDefault()
+      setClosed(true)
+      return true
+    }
+    return false
+  }
+
+  /** 发送前：是面板执行的命令（/compact、/review 分支）就直接执行，返回 true 表示不用再发 */
+  const intercept = (v: string) => {
+    if (scope !== 'task' || !onAction) return false
+    const m = /^\/(compact|review)(?:\s+(\S+))?\s*$/.exec(v.trim())
+    if (!m) return false
+    if (m[1] === 'compact' && m[2]) return false
+    onAction(m[1] as SlashAction, m[2] ?? '')
+    setText('')
+    return true
+  }
+
+  const groups: { id: Item['group']; label: string; icon: typeof Terminal }[] = [
+    { id: 'builtin', label: t('内置命令'), icon: SquareSlash },
+    { id: 'command', label: t('自定义命令'), icon: Terminal },
+    { id: 'skill', label: t('Skill'), icon: BookOpen },
+  ]
+  const menu = open ? (
+    <div
+      role="listbox"
+      aria-label={t('命令')}
+      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop"
+    >
+      <div className="flex items-center gap-2 px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">
+        <span className="font-medium text-muted">{getCli(cli)?.name ?? cli}</span>
+        <span>{t('↑↓ 选择，回车确认')}</span>
+        {cmds === null && <Loader2 className="ml-auto h-3 w-3 animate-spin" />}
+      </div>
+      {groups.map((g) => {
+        const list = items.filter((x) => x.group === g.id)
+        if (!list.length) return null
+        return (
+          <div key={g.id}>
+            <div className="px-2.5 pt-2 pb-0.5 text-[10.5px] font-medium text-subtle">
+              {g.label}
+            </div>
+            {list.map((x) => {
+              const i = items.indexOf(x)
+              return (
+                <button
+                  key={`${x.group}:${x.name}`}
+                  type="button"
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onMouseEnter={() => setActive(i)}
+                  onClick={() => pick(x)}
+                  title={x.description}
+                  className={cn(
+                    'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px]',
+                    i === active ? 'bg-sel text-fg' : 'text-muted',
+                  )}
+                >
+                  <g.icon className="h-3.5 w-3.5 shrink-0 text-subtle" />
+                  <span className="shrink-0 font-mono text-fg">/{x.name}</span>
+                  {x.hint && <span className="shrink-0 font-mono text-[11.5px] text-subtle">{x.hint}</span>}
+                  <span className="min-w-0 flex-1 truncate text-[12px] text-subtle">{x.description}</span>
+                  {x.source && (
+                    <span className="max-w-[120px] shrink-0 truncate font-mono text-[10.5px] text-subtle/80">
+                      {x.source}
+                    </span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )
+      })}
+      {cmds === null && !items.length && (
+        <div className="px-2.5 py-2 text-[12px] text-subtle">{t('正在读取 CLI 的命令和 Skill…')}</div>
+      )}
+    </div>
+  ) : null
+
+  return { sync, onKeyDown, menu, intercept }
+}

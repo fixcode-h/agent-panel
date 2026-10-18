@@ -451,4 +451,24 @@ export const EN_DESIGN: Record<string, string> = {
   风格库: 'Style library',
   没有拿到结果: 'No result was returned',
   风格不存在: 'Style not found',
+  引入会话: 'Import a conversation',
+  Chat: 'Chat',
+  搜索会话: 'Search conversations',
+  没有可以引入的会话: 'No conversations to import',
+  '选中的会话会整理成一份记录附上，AI 拿它当参考，不会重新执行里面的要求。':
+    "The selected conversation is attached as a transcript. The AI uses it as reference and won't redo the requests in it.",
+  '压缩上下文：把之前的对话压成摘要，腾出上下文':
+    'Compact context: summarize the conversation so far to free up context',
+  '审查还没提交的改动；后面跟分支名就审查相对这个分支的改动':
+    'Review uncommitted changes; add a branch name to review changes against that branch',
+  '[分支]': '[branch]',
+  '分析项目，写一份给 Agent 看的项目说明（CLAUDE.md / AGENTS.md）':
+    'Analyze the project and write a guide for agents (CLAUDE.md / AGENTS.md)',
+  检查当前分支改动里的安全问题: "Check the current branch's changes for security issues",
+  内置命令: 'Built-in',
+  自定义命令: 'Custom commands',
+  Skill: 'Skills',
+  '↑↓ 选择，回车确认': '↑↓ to select, Enter to confirm',
+  '正在读取 CLI 的命令和 Skill…': "Loading the CLI's commands and skills…",
+  会话: 'Conversation',
 }

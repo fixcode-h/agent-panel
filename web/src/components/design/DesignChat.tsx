@@ -37,6 +37,7 @@ import {
   useAttachments,
   useDropPaste,
 } from '@/components/chat/Attachments'
+import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle, ScopeRequests, useAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
@@ -455,6 +456,8 @@ export function DesignChat({
   const drop = useDropPaste(files.add)
   const running = job?.status === 'running'
   const designing = running && job?.phase === 'design'
+  // 「/」：用选的 CLI 自己带的命令和 Skill，展开后放进设计要求里
+  const slash = useSlashMenu({ cli: run.cli, scope: 'skills', text, setText, ta: box })
 
   // 新消息、输出变化时滚到底（用户往上翻看时不打扰）
   const stick = useRef(true)
@@ -579,6 +582,7 @@ export function DesignChat({
             drop.over && 'border-accent ring-2 ring-accent/25',
           )}
         >
+          {slash.menu}
           {drop.over && <DropHint />}
           <AttachmentChips items={files.items} onRemove={files.remove} />
           {annotations.length > 0 && (
@@ -589,9 +593,14 @@ export function DesignChat({
           <textarea
             ref={box}
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={(e) => {
+              setText(e.target.value)
+              slash.sync()
+            }}
+            onSelect={slash.sync}
             onPaste={drop.onPaste}
             onKeyDown={(e) => {
+              if (slash.onKeyDown(e)) return
               if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                 e.preventDefault()
                 void send()
@@ -612,7 +621,13 @@ export function DesignChat({
             className="block max-h-[200px] w-full resize-none bg-transparent px-3.5 pt-3 pb-1 text-[13.5px] leading-relaxed outline-none placeholder:text-subtle"
           />
           <div className="flex items-center gap-1 px-2 pb-2">
-            <AttachMenu onFiles={files.add} canMention={false} className="h-7 w-7" />
+            <AttachMenu
+              onFiles={files.add}
+              canMention={false}
+              onSession={files.addReady}
+              self={designId}
+              className="h-7 w-7"
+            />
             <AskToggle
               value={askUser}
               onChange={(v) => {

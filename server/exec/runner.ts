@@ -17,6 +17,7 @@ import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts
 import { changesSince, mergeChanges, stepUsage, withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
+import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
@@ -345,6 +346,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     input = `${input}\n\n## 用户在执行中补充的信息\n${pending.join('\n\n')}`
   }
   if (op?.kind === 'compact') input = cliId === 'claude' ? '/compact' : SUMMARY_PROMPT
+  // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求
+  if (chat && !op && input.startsWith('/')) input = await expandSlash(input, cliId, cwd, cliId === 'claude' && !carry)
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${input}`
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩

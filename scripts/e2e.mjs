@@ -580,6 +580,45 @@ try {
   await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
   await waitDone(dc.id)
   assert.equal(calls().at(-1).kind, 'codex', '继续对话也用选的 CLI')
+  // 「/」命令：列出 CLI 自己的命令和 Skill；Claude Code 原样发，其他 CLI 展开成普通要求
+  mkdirSync(path.join(project.path, '.claude/commands'), { recursive: true })
+  writeFileSync(
+    path.join(project.path, '.claude/commands/hello.md'),
+    '---\ndescription: 打个招呼\nargument-hint: <名字>\n---\n跟 $ARGUMENTS 打个招呼',
+  )
+  mkdirSync(path.join(project.path, '.agents/skills/demo-skill'), { recursive: true })
+  writeFileSync(
+    path.join(project.path, '.agents/skills/demo-skill/SKILL.md'),
+    '---\nname: demo-skill\ndescription: 演示用的 Skill\n---\n按演示的步骤做事',
+  )
+  const cmds = await call('GET', `/clis/claude/commands?projectId=${project.id}`)
+  const hello = cmds.find((x) => x.name === 'hello')
+  assert.equal(hello?.kind, 'command')
+  assert.equal(hello?.hint, '<名字>')
+  assert.equal(hello?.description, '打个招呼')
+  assert.ok(
+    (await call('GET', `/clis/commandcode/commands?projectId=${project.id}`)).some((x) => x.name === 'demo-skill'),
+  )
+  let sc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '/hello 小明' })
+  await waitDone(sc.id)
+  assert.match(calls().at(-1).input, /^\/hello 小明/, 'Claude Code 自己认得命令，原样发')
+  sc = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'commandcode',
+    prompt: '/demo-skill 做点事',
+  })
+  await waitDone(sc.id)
+  c = calls().at(-1)
+  assert.ok(c.input.includes('Skill「demo-skill」') && c.input.includes('按演示的步骤做事'), 'Skill 展开成要求')
+  assert.ok(c.input.includes('做点事'))
+  // 引入会话：整理成一份 Markdown 附件
+  const ref = await call('POST', `/tasks/${sc.id}/transcript`, {})
+  assert.ok(ref.name.endsWith('.md'))
+  const refText = readFileSync(ref.path, 'utf8')
+  assert.ok(refText.includes('# 参考会话') && refText.includes('/demo-skill 做点事'), refText)
+  step('「/」命令和 Skill 按 CLI 列出、展开，会话能整理成附件引入')
   const other = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',

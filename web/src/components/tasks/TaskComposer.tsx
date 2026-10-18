@@ -26,6 +26,7 @@ import {
   useDropPaste,
   useFileMention,
 } from '@/components/chat/Attachments'
+import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle, useAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
@@ -75,6 +76,15 @@ export function TaskComposer({
   const files = useAttachments()
   const drop = useDropPaste(files.add)
   const mention = useFileMention(project?.id, prompt, setPrompt, ta)
+  // 「/」菜单只在对话方式下有：工作流各节点用的 CLI 不同
+  const slash = useSlashMenu({
+    cli: (standalone || mode === 'chat') && chatRun.cli ? chatRun.cli : '',
+    projectId: project?.id,
+    scope: 'new',
+    text: prompt,
+    setText: setPrompt,
+    ta,
+  })
 
   // 独立分支要靠 git worktree，只有 git 仓库能用
   const dir = useDirInfo(project?.path ?? '')
@@ -134,6 +144,7 @@ export function TaskComposer({
         )}
       >
         {mention.menu}
+        {slash.menu}
         {drop.over && <DropHint />}
         <AttachmentChips items={files.items} onRemove={files.remove} />
         <label htmlFor="task-prompt" className="sr-only">
@@ -150,11 +161,15 @@ export function TaskComposer({
             e.target.style.height = 'auto'
             e.target.style.height = `${Math.min(e.target.scrollHeight, 320)}px`
             mention.sync()
+            slash.sync()
           }}
-          onSelect={mention.sync}
+          onSelect={() => {
+            mention.sync()
+            slash.sync()
+          }}
           onPaste={drop.onPaste}
           onKeyDown={(e) => {
-            if (mention.onKeyDown(e)) return
+            if (slash.onKeyDown(e) || mention.onKeyDown(e)) return
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               start()
@@ -175,7 +190,12 @@ export function TaskComposer({
           </div>
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
-            <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
+            <AttachMenu
+              onFiles={files.add}
+              onMention={mention.start}
+              canMention={!!project?.path}
+              onSession={files.addReady}
+            />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             {!standalone && (
               <div

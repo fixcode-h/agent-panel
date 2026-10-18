@@ -41,6 +41,7 @@ import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } fro
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
+import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
@@ -159,6 +160,17 @@ app.get('/clis/:id/skills', async (c) => {
   const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
   try {
     return c.json(await listSkills(c.req.param('id'), dir))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+})
+
+// 输入框「/」菜单：CLI 自己带的命令和 Skill
+app.get('/clis/:id/commands', async (c) => {
+  const pid = c.req.query('projectId')
+  const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
+  try {
+    return c.json(await listCommands(c.req.param('id'), dir))
   } catch (e) {
     return bad(c, (e as Error).message)
   }

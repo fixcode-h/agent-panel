@@ -72,6 +72,18 @@ try {
   const p = await page({ width: 1440, height: 900 })
   await p.goto(base)
   await check(p, '首页', ['新建任务', '工作流'])
+  // 对话方式下输入「/」：内置命令、CLI 自己的命令和 Skill
+  await p.goto(base + '#/chat')
+  await p.locator('#task-prompt').fill('/')
+  await p.locator('#task-prompt').press('End')
+  await check(p, '斜杠命令', ['/init', '/commit', 'frontend-design'])
+  await p.locator('#task-prompt').fill('')
+  // 「+」里引入会话
+  await p.getByRole('button', { name: '添加文件、图片或引用' }).click()
+  await p.getByRole('button', { name: '引入会话' }).click()
+  await check(p, '引入会话', ['主菜单', '购物车右上角'])
+  await p.keyboard.press('Escape')
+  await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
   await check(p, '任务', ['上下文', '启动命令'])
   await p.goto(base + '#/workflows')

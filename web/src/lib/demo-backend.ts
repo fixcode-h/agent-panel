@@ -29,6 +29,7 @@ import {
   type CliUpdate,
   type CliLimits,
   type CliSkill,
+  type SlashCommand,
   type CliStatus,
   type DirInfo,
   type DirListing,
@@ -614,6 +615,26 @@ const DEMO_SKILLS: CliSkill[] = [
   },
 ]
 
+/** 演示的自定义命令：每个 CLI 不一样 */
+const DEMO_COMMANDS: Record<string, SlashCommand[]> = {
+  claude: [
+    {
+      name: 'commit',
+      description: '看一下改动，按约定写提交说明并提交',
+      kind: 'command',
+      source: '~/.claude/commands',
+    },
+    {
+      name: 'fix-issue',
+      description: '按 issue 编号修复问题',
+      kind: 'command',
+      source: './.claude/commands',
+      hint: '<编号>',
+    },
+  ],
+  codex: [{ name: 'prompts:explain', description: '解释一段代码的作用', kind: 'command', source: '~/.codex/prompts' }],
+}
+
 function route(method: string, url: string, body: unknown): unknown {
   const d = load()
   const [path, qs] = url.split('?')
@@ -666,6 +687,16 @@ function route(method: string, url: string, body: unknown): unknown {
         at: new Date().toISOString(),
       } satisfies CliLimits
     }
+    if (id && sub === 'commands')
+      return [
+        ...(DEMO_COMMANDS[id] ?? []),
+        ...DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo').map((x) => ({
+          name: x.name,
+          description: x.description,
+          kind: 'skill' as const,
+          source: x.source ?? '',
+        })),
+      ] satisfies SlashCommand[]
     if (id && sub === 'skills') return DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo')
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
@@ -820,6 +851,15 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }
 
+  // 引入会话：演示里只给一份假的附件（没有本机磁盘）
+  if ((res === 'tasks' || res === 'designs') && sub === 'transcript' && method === 'POST') {
+    const title =
+      res === 'tasks'
+        ? ((d.tasks ?? []).find((x) => x.id === id)?.title ?? fail('任务不存在'))
+        : ((demoDesigns('GET', id, undefined, null) as { title: string }).title ?? fail('设计不存在'))
+    const name = `会话-${title.slice(0, 40)}.md`
+    return { name, path: `/demo/uploads/${crypto.randomUUID()}/${name}`, size: 4096, mime: 'text/markdown' }
+  }
   if (res === 'designs' && id === 'styles') return demoStyles(method, sub, body ?? {})
   if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
   if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
