@@ -2,6 +2,7 @@
  * 项目说明文件（AGENTS.md、CLAUDE.md…）：读、写，以及用本机 CLI 优化。
  * 只认 shared/docs.ts 里列出的文件名，不能借这个接口读写项目里的其他文件。
  */
+import { askSession } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
@@ -68,7 +69,10 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
     log.info('docs', `用 ${def.name} 优化 ${input.path}`, { dir })
+    const asks = askSession(`doc:${job.id}`)
     const r = await invokeCli({
+      askUser: asks.askUser,
+      onAsk: asks.onAsk,
       cliId: input.cli,
       command: cs.command,
       // 在项目目录里运行，能看代码核对；权限用只读，不会改文件
@@ -94,7 +98,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
         job.text = text.split('```')[0].trim()
         job.outChars = text.length
       },
-    })
+    }).finally(asks.done)
     const fail = (error: string) => {
       job.status = 'failed'
       job.error = error

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
-  BellRing,
+  CircleAlert,
   Bot,
   Code2,
   MessagesSquare,
@@ -577,7 +577,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           </button>
                         )}
                         {!open && ts.some((t) => t.requests?.length) && (
-                          <BellRing aria-label={t('有对话需要你处理')} className="h-3.5 w-3.5 shrink-0 text-warning" />
+                          <CircleAlert
+                            aria-label={t('有对话需要你处理')}
+                            className="h-3.5 w-3.5 shrink-0 text-warning"
+                            strokeWidth={2.4}
+                          />
                         )}
                         {running > 0 ? (
                           <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10.5px] leading-[18px] font-medium text-accent group-hover/proj:hidden">

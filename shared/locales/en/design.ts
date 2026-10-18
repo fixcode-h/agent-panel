@@ -414,4 +414,41 @@ export const EN_DESIGN: Record<string, string> = {
   '{n} 个字符': '{n} chars',
   'CLI 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。':
     "With a CLI, each image runs in its own process, at most this many at once. In the browser, only this many conversations are opened in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left); further images queue up and reuse whichever conversation is free.",
+  'AI 有问题时问我': 'Ask me when the AI has a question',
+  'AI 有问题时会问你，等你回答再继续（点一下改成让 AI 自己选）':
+    'The AI asks you and waits for your answer (click to let the AI decide on its own)',
+  'AI 有问题时自己选最合适的做法（点一下改成问你）':
+    'The AI picks the best option on its own (click to have it ask you)',
+  '都不合适的话，直接在下面说想要的风格': 'If none fits, describe the style you want below',
+  从风格库导入: 'Import from style library',
+  '风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。':
+    'The style library is empty. Click "Save to style library" in a UI design\'s style settings to add one.',
+  '{n} 条提示词': '{n} prompts',
+  这个风格的提示词都已经有了: 'All prompts of this style are already here',
+  '已导入 {n} 条提示词': 'Imported {n} prompts',
+  '风格库还是空的，可以把这个设计的风格存进去。': "The style library is empty. You can save this design's style to it.",
+  已存到风格库: 'Saved to style library',
+  'AI 正在总结风格…': 'AI is summarizing the style…',
+  存到风格库: 'Save to style library',
+  'AI 从这个设计里总结出了下面的风格，可以改一改再存。':
+    "The AI summarized this design's style. Edit it if you like, then save.",
+  名字: 'Name',
+  '发给 AI 的英文描述': 'English description sent to the AI',
+  保存: 'Save',
+  '加载中…': 'Loading…',
+  '从 UI 设计里存下来的整体风格。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里也能直接套用，项目的美术提示词也能从这里导入。':
+    "Overall styles saved from UI designs. When a new design has no style yet, the AI offers matching styles as options; you can also apply them in a design's style settings or import them into a project's art prompts.",
+  还没有保存的风格: 'No saved styles yet',
+  '在 UI 设计里打开风格设置，点「存到风格库」，AI 会总结这个设计的风格存进来。':
+    'Open the style settings in a UI design and click "Save to style library"; the AI will summarize the design\'s style and save it here.',
+  '删除风格「{name}」？': 'Delete style "{name}"?',
+  '已经用了这个风格的设计不受影响。': 'Designs already using this style are not affected.',
+  风格名称: 'Style name',
+  风格说明: 'Style description',
+  一两句话说明这个风格: 'Describe this style in a sentence or two',
+  英文风格描述: 'English style description',
+  从风格库套用: 'Apply from style library',
+  风格库: 'Style library',
+  没有拿到结果: 'No result was returned',
+  风格不存在: 'Style not found',
 }

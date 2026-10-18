@@ -1,4 +1,5 @@
 // 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
+import { asksApi } from './asks.ts'
 import './lang.ts'
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
@@ -351,6 +352,7 @@ app.post('/designs/browser/install', async (c) => {
 })
 app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())
+app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
 const docs = docsApi({ projects })

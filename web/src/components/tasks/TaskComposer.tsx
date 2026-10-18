@@ -26,6 +26,7 @@ import {
   useDropPaste,
   useFileMention,
 } from '@/components/chat/Attachments'
+import { AskToggle, useAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -69,6 +70,7 @@ export function TaskComposer({
   const [prompt, setPrompt] = useState('')
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
+  const [askUser, setAskUser] = useAskUser('new-task')
   const ta = useRef<HTMLTextAreaElement>(null)
   const files = useAttachments()
   const drop = useDropPaste(files.add)
@@ -110,6 +112,7 @@ export function TaskComposer({
           prompt,
           attachments: files.attachments,
           isolate: canIsolate && isolate,
+          askUser,
         }),
       )
       setPrompt('')
@@ -173,6 +176,7 @@ export function TaskComposer({
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
             <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
+            <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             {!standalone && (
               <div
                 role="radiogroup"

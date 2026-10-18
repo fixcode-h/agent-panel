@@ -406,6 +406,8 @@ export const NewTaskInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以 */
   isolate: z.boolean().default(false),
+  /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
+  askUser: z.boolean().default(false),
 })
 export type NewTaskInput = z.infer<typeof NewTaskInput>
 
@@ -446,6 +448,8 @@ export const TaskPatch = z
     cli: z.string().trim().max(40),
     model: z.string().trim().max(200),
     effort: z.string().trim().max(40),
+    // 「提问」开关：Agent 有问题时交给你回答，还是让它自己选
+    askUser: z.boolean(),
   })
   .partial()
 
@@ -604,6 +608,8 @@ export const TaskData = z.object({
   cli: z.string().default(''),
   model: z.string().default(''),
   effort: z.string().default(''),
+  /** 「提问」开关：打开时 Agent 的提问交给用户回答，关着时让它自己选最合适的做法 */
+  askUser: z.boolean().default(false),
   status: TaskStatus,
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),

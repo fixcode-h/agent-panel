@@ -1,7 +1,15 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { BellRing, ClipboardCheck, FilePen, Loader2, MessageCircleQuestion, SquareTerminal, Wrench } from 'lucide-react'
-import type { Task } from '@shared/schema'
+import {
+  CircleAlert,
+  ClipboardCheck,
+  FilePen,
+  Loader2,
+  MessageCircleQuestion,
+  SquareTerminal,
+  Wrench,
+} from 'lucide-react'
+import type { Task, TaskRequest } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -17,23 +25,46 @@ const ICONS = {
   confirm: ClipboardCheck,
 }
 
-/**
- * Agent 等你确认的操作或问题，贴在输入框上方。一次处理一个，回答后 CLI 接着执行；
- * 后面还有几个排队的在右上角标出来。
- */
-export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: Task) => void }) {
+/** 任务页：请求存在任务里，回答后换成新的任务 */
+export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: Task) => void }) {
   const { agents } = useData()
   const req = task.requests?.[0]
+  const a = req && agents.find((x) => x.id === req.agentId)
+  return (
+    <RequestCard
+      requests={task.requests ?? []}
+      agent={a ? { name: a.name, icon: a.icon, cli: a.cli } : undefined}
+      onAnswer={async (id, r) => onAnswered(await api.answerRequest(task.id, id, r))}
+    />
+  )
+}
+
+/**
+ * AI 等你确认的操作或问题，贴在输入框上方。一次处理一个，回答后 CLI 接着执行；
+ * 后面还有几个排队的在右上角标出来。任务页和其他 AI 会话（UI 设计、AI 创建…）共用
+ */
+export function RequestCard({
+  requests,
+  onAnswer,
+  agent,
+  className,
+}: {
+  requests: TaskRequest[]
+  onAnswer: (id: string, r: { allow: boolean; answer?: string }) => Promise<void>
+  agent?: { name: string; icon: string; cli: string }
+  className?: string
+}) {
+  const req = requests[0]
   const [busy, setBusy] = useState('')
   const [answer, setAnswer] = useState('')
   if (!req) return null
-  const a = agents.find((x) => x.id === req.agentId)
+  const a = agent
   const Icon = ICONS[req.kind]
   const send = async (key: string, allow: boolean, text?: string) => {
     if (busy) return
     setBusy(key)
     try {
-      onAnswered(await api.answerRequest(task.id, req.id, { allow, answer: text }))
+      await onAnswer(req.id, { allow, answer: text })
       setAnswer('')
     } catch (e) {
       toast.error((e as Error).message)
@@ -47,10 +78,13 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
     <div
       role="alertdialog"
       aria-label={req.kind === 'question' ? t('Agent 的问题') : t('Agent 请求确认')}
-      className="mx-auto mb-2 max-w-(--content-w) overflow-hidden rounded-2xl border border-warning/50 bg-card shadow-card animate-[pop-in_160ms_ease-out]"
+      className={cn(
+        'mx-auto mb-2 max-w-(--content-w) overflow-hidden rounded-2xl border border-warning/50 bg-card shadow-card animate-[pop-in_160ms_ease-out]',
+        className,
+      )}
     >
       <div className="flex items-center gap-2 border-b border-warning/25 bg-warning/8 px-4 py-2 text-xs">
-        <BellRing className="h-3.5 w-3.5 text-warning" />
+        <CircleAlert className="h-3.5 w-3.5 text-warning" />
         <span className="font-medium text-warning">{req.kind === 'question' ? t('需要你回答') : t('需要你确认')}</span>
         {a && (
           <span className="flex min-w-0 items-center gap-1.5 text-muted">
@@ -58,8 +92,8 @@ export function RequestCard({ task, onAnswered }: { task: Task; onAnswered: (t: 
             <span className="truncate">{a.name}</span>
           </span>
         )}
-        {task.requests.length > 1 && (
-          <span className="ml-auto shrink-0 text-subtle">{t('还有 {n} 个', { n: task.requests.length - 1 })}</span>
+        {requests.length > 1 && (
+          <span className="ml-auto shrink-0 text-subtle">{t('还有 {n} 个', { n: requests.length - 1 })}</span>
         )}
       </div>
       <div className="flex flex-col gap-3 px-4 py-3">

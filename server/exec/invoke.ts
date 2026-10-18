@@ -5,6 +5,7 @@ import { codexAppSession } from './codex-app.ts'
 import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
+import { AUTO_ANSWER } from '../asks.ts'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -30,8 +31,13 @@ export async function invokeCli(o: {
   timeoutMs: number
   idle?: Parameters<typeof runProcess>[0]['idle']
   onEvent: (ev: CliEvent) => void
-  /** 能把审批请求交给用户（任务页）；不能时（AI 创建）一律拒绝，免得 CLI 一直等 */
-  canAsk?: boolean
+  /**
+   * CLI 的提问要不要交给用户（会话上的「提问」开关，执行中也能改，所以每次问的时候再看）；
+   * 不交时让 CLI 自己选最合适的做法。审批（命令、改文件）按设置里的权限，CLI 要确认时总是交给用户
+   */
+  askUser?: () => boolean
+  /** 审批和要交给用户的提问；不给时作为 ask 事件交给 onEvent（任务页自己存在任务里） */
+  onAsk?: (ev: Extract<CliEvent, { type: 'ask' }>) => void
   /** 拿到执行中控制 CLI 的方法 */
   onControl?: (c: CliControl) => void
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
@@ -75,8 +81,11 @@ async function invoke(
     }
   }
 
-  // 没人能确认时直接拒绝
-  const emit = (ev: CliEvent) => (ev.type === 'ask' && !o.canAsk ? ev.reply({ allow: false }) : o.onEvent(ev))
+  const emit = (ev: CliEvent) => {
+    if (ev.type !== 'ask') return o.onEvent(ev)
+    if (ev.kind === 'question' && !o.askUser?.()) return ev.reply(AUTO_ANSWER)
+    return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
+  }
 
   if (o.cliId === 'codex') {
     const session = codexAppSession({ ...o.build, cwd: o.cwd, input: o.input, images: o.images })
@@ -167,7 +176,10 @@ async function invoke(
               respond(
                 r.allow
                   ? { behavior: 'allow', updatedInput: claudeAnswer(name, input, r.answer) }
-                  : { behavior: 'deny', message: r.answer ? `用户拒绝了：${r.answer}` : '用户拒绝了这个操作' },
+                  : {
+                      behavior: 'deny',
+                      message: r.message ?? (r.answer ? `用户拒绝了：${r.answer}` : '用户拒绝了这个操作'),
+                    },
               ),
           })
         }

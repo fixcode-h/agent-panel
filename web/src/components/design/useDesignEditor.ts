@@ -178,6 +178,8 @@ export function useDesignEditor(id: string) {
     doc,
     error,
     save,
+    /** 马上存下还没存的改动（让 CLI 读设计前用） */
+    flush,
     change,
     absorb,
     undo,

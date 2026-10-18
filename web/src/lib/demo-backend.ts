@@ -43,7 +43,15 @@ import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflow
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
-import { demoDesigns, demoGenerate, demoImportComponent, demoProjectComponents, demoVersions } from './demo-design'
+import {
+  demoDesigns,
+  demoGenerate,
+  demoImportComponent,
+  demoProjectComponents,
+  demoStyles,
+  demoExtractStyle,
+  demoVersions,
+} from './demo-design'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '@shared/validate'
 
 const KEY = 'agent-panel-demo-v3'
@@ -812,6 +820,8 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projects', input) : update('projects', id, input, '项目不存在')
   }
 
+  if (res === 'designs' && id === 'styles') return demoStyles(method, sub, body ?? {})
+  if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
   if (res === 'designs' && id === 'projects' && seg[3] === 'components') return demoProjectComponents(sub)
   if (res === 'designs' && sub === 'components') return demoImportComponent(id, body ?? {})
   if (res === 'designs' && sub === 'versions') return demoVersions(method, id, seg[3], seg[4], body ?? {})
@@ -821,6 +831,8 @@ function route(method: string, url: string, body: unknown): unknown {
       ? demoGenerate(id, seg[3], body ?? {})
       : demoDesigns(method, id, sub, body ?? {})
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
+  // 演示里的 AI 不会请求确认，也不会提问
+  if (res === 'asks') return method === 'GET' ? [] : { ok: true }
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)
 }
@@ -835,7 +847,7 @@ export async function handle(method: string, url: string, body: unknown) {
     persist()
   }
   if (url.startsWith('/app/')) return demoApp(url)
-  const result = route(method, url, body)
+  const result = await route(method, url, body)
   // 返回副本：执行中的任务会被原地修改，页面需要拿到新对象才会刷新
   return result === undefined ? undefined : JSON.parse(JSON.stringify(result))
 }
@@ -1155,6 +1167,7 @@ async function seedTasks(d: Db) {
         model: '',
         effort: '',
         isolate: false,
+        askUser: false,
       },
       true,
     )
@@ -1175,6 +1188,7 @@ async function seedTasks(d: Db) {
         model: '',
         effort: '',
         isolate: false,
+        askUser: false,
       },
       true,
     )
@@ -1195,6 +1209,7 @@ async function seedTasks(d: Db) {
         model: '',
         effort: '',
         isolate: false,
+        askUser: false,
       },
       true,
     )

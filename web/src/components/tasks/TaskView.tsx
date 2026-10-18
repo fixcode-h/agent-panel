@@ -41,7 +41,8 @@ import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
-import { RequestCard } from './RequestCard'
+import { TaskRequestCard } from './RequestCard'
+import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import {
   AttachMenu,
@@ -595,7 +596,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
           </div>
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
-            <RequestCard task={task} onAnswered={apply} />
+            <TaskRequestCard task={task} onAnswered={apply} />
             <WorktreeBar task={task} onChange={apply} />
             <QueuedList task={task} onChange={apply} />
             <div
@@ -640,6 +641,13 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
                 <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
+                <AskToggle
+                  value={task.askUser}
+                  onChange={(v) => {
+                    setTask({ ...task, askUser: v })
+                    api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+                  }}
+                />
                 {byCli ? (
                   <ChatModelPicker value={chatRun} onChange={changeRun} />
                 ) : (

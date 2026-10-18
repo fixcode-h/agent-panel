@@ -27,6 +27,7 @@ import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
+import { AUTO_ANSWER } from '../asks.ts'
 
 export interface RealContext {
   task: Task
@@ -121,6 +122,17 @@ const SUMMARY_PROMPT =
   '还没做完的、需要注意的问题。只输出摘要本身，不要做别的事，也不要修改文件。'
 
 const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
+
+/** 「提问」开关关掉了：还在等回答的问题让 CLI 自己选 */
+export function autoAnswerQuestions(task: Task) {
+  for (const req of task.requests.filter((x) => x.kind === 'question')) {
+    const fn = replies.get(req.id)
+    if (!fn) continue
+    replies.delete(req.id)
+    task.requests = task.requests.filter((x) => x.id !== req.id)
+    fn(AUTO_ANSWER)
+  }
+}
 
 /** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
 export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
@@ -625,7 +637,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         }
       : undefined,
     onEvent: apply,
-    canAsk: true,
+    // 任务上的「提问」开关：执行中也能改，CLI 问的时候再看
+    askUser: () => task.askUser,
     // 对话和工作流节点都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (step && !op) ? (c) => register(c) : undefined,
   }).finally(() => {

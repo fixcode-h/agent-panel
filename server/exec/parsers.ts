@@ -54,7 +54,12 @@ export type CliEvent =
       reply: (r: AskReply) => void
     }
 
-export type AskReply = { allow: boolean; answer?: string }
+export type AskReply = {
+  allow: boolean
+  answer?: string
+  /** 拒绝时交给 CLI 的原话；不给时按 answer 拼一句「用户拒绝了」 */
+  message?: string
+}
 
 export type Parser = (obj: any) => CliEvent[]
 

@@ -29,6 +29,7 @@ import {
   type DesignDoc,
   type DesignImage,
   type ImageSource,
+  type DesignKind,
 } from '@shared/design'
 import {
   IMAGE_SLOT,
@@ -87,6 +88,7 @@ import type { ChatRun } from '@/components/tasks/ChatModelPicker'
 import { DesignProjectDialog } from '@/components/design/DesignProjectDialog'
 import { setTree, treeOf, useDesignEditor } from '@/components/design/useDesignEditor'
 import type { RenderImage } from '@/components/design/umg-render'
+import { SaveStyleButton, StyleLibraryList } from '@/components/design/StyleLibrary'
 import { t } from '@shared/i18n'
 
 export function DesignPage() {
@@ -675,7 +677,12 @@ function Designer({ id }: { id: string }) {
     }
   }
 
-  const send = async (text: string, run: ChatRun, attachments: Attachment[]) => {
+  const send = async (
+    text: string,
+    run: ChatRun,
+    attachments: Attachment[],
+    extra: { askUser: boolean; style?: string },
+  ) => {
     // 图上的标记：这条消息就是这些图的修改意见，按它重新生成，不用让 AI 改设计
     const imgMarks = doc.annotations.filter((a) => a.target.startsWith('img:'))
     const annotations = doc.annotations.filter((a) => !a.target.startsWith('img:'))
@@ -715,6 +722,7 @@ function Designer({ id }: { id: string }) {
           annotations,
           attachments,
           run,
+          ...extra,
         }),
       )
       if (annotations.length) ed.change((d) => ({ ...d, annotations: [] }), 'ann:sent')
@@ -768,6 +776,9 @@ function Designer({ id }: { id: string }) {
           onChange={(style) => ed.change((d) => ({ ...d, style }), 'style')}
           prompts={project?.prompts.filter((p) => p.enabled).length ?? 0}
           onPrompts={() => setPromptsOpen(true)}
+          designId={id}
+          kind={server.kind}
+          beforeExtract={ed.flush}
         />
         {project && (
           <DesignProjectDialog open={promptsOpen} onOpenChange={setPromptsOpen} project={project} section="prompts" />
@@ -1292,16 +1303,30 @@ function StyleButton({
   onChange,
   prompts,
   onPrompts,
+  designId,
+  kind,
+  beforeExtract,
 }: {
   value: string
   onChange: (s: string) => void
   /** 项目里启用的提示词条数 */
   prompts: number
   onPrompts: () => void
+  designId: string
+  kind: DesignKind
+  /** 存到风格库前先把没存的改动存下 */
+  beforeExtract: () => Promise<void>
 }) {
   const [text, setText] = useState(value)
+  const [open, setOpen] = useState(false)
   return (
-    <Popover onOpenChange={(o) => (o ? setText(value) : text !== value && onChange(text))}>
+    <Popover
+      onOpenChange={(o) => {
+        setOpen(o)
+        if (o) setText(value)
+        else if (text !== value) onChange(text)
+      }}
+    >
       <PopoverTrigger asChild>
         <button
           className="flex h-7 max-w-[220px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[12px] text-muted hover:bg-sel hover:text-fg"
@@ -1338,6 +1363,21 @@ function StyleButton({
           placeholder="dark fantasy, carved stone with gold trim, glowing runes"
           className="text-[12.5px]"
         />
+        <div className="mt-3 border-t pt-3">
+          <p className="mb-1.5 text-[12px] font-medium">{t('从风格库套用')}</p>
+          <StyleLibraryList
+            kind={kind}
+            active={open}
+            current={text}
+            onPick={(s) => {
+              setText(s.en)
+              onChange(s.en)
+            }}
+          />
+          <div className="mt-2">
+            <SaveStyleButton designId={designId} kind={kind} beforeExtract={beforeExtract} />
+          </div>
+        </div>
       </PopoverContent>
     </Popover>
   )

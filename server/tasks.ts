@@ -19,7 +19,7 @@ import { agentRun } from '../shared/settings.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
-import { answerRequest, runRealTurn, steerTask, type RealContext } from './exec/runner.ts'
+import { answerRequest, autoAnswerQuestions, runRealTurn, steerTask, type RealContext } from './exec/runner.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
@@ -564,6 +564,7 @@ export function tasksApi(deps: {
     }
     if (e) {
       Object.assign(e.task, p.data)
+      if (p.data.askUser === false) autoAnswerQuestions(e.task)
       // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
       await store.update(id, e.task)
       return c.json(e.task)

@@ -1,5 +1,6 @@
 import type {
   Attachment,
+  TaskRequest,
   CliInstallJob,
   CliLimits,
   CliSkill,
@@ -35,6 +36,8 @@ import type {
   DesignVersionMeta,
   ImageSource,
   NewDesignInput,
+  SavedStyle,
+  SavedStyleInput,
   ProjectComponents,
   ProjectPrompt,
   PromptAiInput,
@@ -156,6 +159,12 @@ export const api = {
     request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
+  /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
+  asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
+  answerAsk: (id: string, body: { allow: boolean; answer?: string }) =>
+    request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
+  setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
@@ -224,6 +233,14 @@ export const api = {
   browserStatus: () => request<BrowserStatus>('/designs/browser'),
   promptAi: (input: Partial<PromptAiInput>) =>
     request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
+  styles: () => request<SavedStyle[]>('/designs/styles'),
+  createStyle: (input: SavedStyleInput) => request<SavedStyle>('/designs/styles', json('POST', input)),
+  updateStyle: (id: string, patch: Partial<SavedStyleInput>) =>
+    request<SavedStyle>(`/designs/styles/${id}`, json('PUT', patch)),
+  deleteStyle: (id: string) => request<void>(`/designs/styles/${id}`, { method: 'DELETE' }),
+  /** 让 CLI 总结设计的整体风格（还没存） */
+  extractStyle: (designId: string, scope: string) =>
+    request<Omit<SavedStyleInput, 'kind'>>(`/designs/${designId}/extract-style`, json('POST', { scope })),
   installExtension: (browser: string) =>
     request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
   reloadExtension: (browser: string) =>

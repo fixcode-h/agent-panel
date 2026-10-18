@@ -101,14 +101,21 @@ export function Viewport({
     return () => window.removeEventListener('keydown', on)
   }, [])
 
-  // 拖动画布：抓手工具下左键拖，任何时候中键拖
+  // 拖动画布：抓手工具下左键拖，任何时候中键或右键按住拖（放大后看细节时最顺手）
+  const [panning, setPanning] = useState(false)
+  // 右键拖过就不弹浏览器的右键菜单；只是点一下右键时照常
+  const dragged = useRef(false)
   const pan = (e: React.PointerEvent) => {
     const el = wrap.current
-    if (!el || !(e.button === 1 || (tool === 'hand' && e.button === 0))) return false
+    if (!el || !(e.button === 1 || e.button === 2 || (tool === 'hand' && e.button === 0))) return false
     e.preventDefault()
     const sx = e.clientX + el.scrollLeft
     const sy = e.clientY + el.scrollTop
+    dragged.current = false
     const move = (ev: PointerEvent) => {
+      if (!dragged.current && Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) < 4) return
+      if (!dragged.current) setPanning(true)
+      dragged.current = true
       el.scrollLeft = sx - ev.clientX
       el.scrollTop = sy - ev.clientY
     }
@@ -116,6 +123,7 @@ export function Viewport({
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
       setGuides({ x: [], y: [] })
+      setPanning(false)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
@@ -452,9 +460,18 @@ export function Viewport({
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#18181a]">
       <div
         ref={wrap}
-        className={cn('relative min-h-0 flex-1 overflow-auto', tool === 'hand' && 'cursor-grab active:cursor-grabbing')}
+        className={cn(
+          'relative min-h-0 flex-1 overflow-auto',
+          tool === 'hand' && 'cursor-grab active:cursor-grabbing',
+          panning && 'cursor-grabbing [&_*]:cursor-grabbing!',
+        )}
         onPointerDownCapture={(e) => {
           if (pan(e)) e.stopPropagation()
+        }}
+        onContextMenu={(e) => {
+          if (!dragged.current) return
+          e.preventDefault()
+          dragged.current = false
         }}
         onPointerDown={(e) => {
           if (e.target === e.currentTarget) onSelect('')

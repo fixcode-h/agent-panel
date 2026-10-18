@@ -98,7 +98,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           .designs()
           .then((ds) =>
             // 只更新状态，名字等以页面上的为准（正在改名时不被盖掉）
-            setDesigns((cur) => cur.map((x) => ({ ...x, running: !!ds.find((d) => d.id === x.id)?.running }))),
+            setDesigns((cur) =>
+              cur.map((x) => {
+                const d = ds.find((d) => d.id === x.id)
+                return { ...x, running: !!d?.running, asking: !!d?.asking }
+              }),
+            ),
           )
           .catch(() => {}),
       2500,

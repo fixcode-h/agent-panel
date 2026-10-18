@@ -77,6 +77,22 @@ export const Annotation = z.object({
 })
 export type Annotation = z.infer<typeof Annotation>
 
+/** AI 在动手之前问用户的问题：每个选项有一句说明，style 是选了以后定下来的整体风格（英文） */
+export const DesignQuestion = z.object({
+  text: z.string().max(500),
+  options: z
+    .array(
+      z.object({
+        label: z.string().max(40),
+        desc: z.string().max(300).default(''),
+        style: z.string().max(2000).default(''),
+      }),
+    )
+    .max(6)
+    .default([]),
+})
+export type DesignQuestion = z.infer<typeof DesignQuestion>
+
 export const DesignMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -93,6 +109,8 @@ export const DesignMessage = z.object({
   /** AI 回复的过程：思考和工具调用，完成后收起来，点开能看 */
   thinking: z.string().optional(),
   tools: z.array(z.any()).optional(),
+  /** AI 先问用户的问题（例如整体风格还没定），选项点一下就作为回答发出去 */
+  question: DesignQuestion.optional(),
 })
 export type DesignMessage = z.infer<typeof DesignMessage>
 
@@ -140,6 +158,8 @@ export type Design = DesignDoc & {
 /** 侧栏列表用：不带树和对话 */
 export type DesignMeta = Pick<Design, 'id' | 'projectId' | 'kind' | 'title' | 'createdAt' | 'updatedAt'> & {
   running?: boolean
+  /** AI 在等用户确认或回答 */
+  asking?: boolean
 }
 
 /**
@@ -212,8 +232,71 @@ export const PromptAiInput = z.object({
     .default([]),
   /** 已经有的提示词，生成时避开重复 */
   existing: z.array(z.string().max(500)).max(300).default([]),
+  /** 页面生成的会话 id：CLI 要确认时，页面按它取回请求显示 */
+  scope: z.string().max(80).default(''),
 })
 export type PromptAiInput = z.infer<typeof PromptAiInput>
+
+/**
+ * 风格库：从做好的设计里让 CLI 总结出来的整体风格，存在设置里，别的项目、别的设计可以直接套用。
+ * summary 是给人看的中文说明，en 是发给设计 AI 和生图 AI 的英文；prompts 套用到 UI 项目的美术提示词
+ */
+export const StylePrompt = z.object({
+  category: z.enum(PROMPT_CATEGORIES).catch('style'),
+  zh: z.string().trim().max(200),
+  en: z.string().trim().max(300),
+})
+export const SavedStyleInput = z.object({
+  name: z.string().trim().min(1).max(40),
+  kind: z.enum(DESIGN_KINDS).default('game'),
+  summary: z.string().trim().max(500).default(''),
+  en: z.string().trim().max(4000).default(''),
+  prompts: z.array(StylePrompt).max(30).default([]),
+})
+export type SavedStyleInput = z.input<typeof SavedStyleInput>
+export const SavedStyle = SavedStyleInput.extend({ id: z.string(), createdAt: z.string(), updatedAt: z.string() })
+export type SavedStyle = z.infer<typeof SavedStyle>
+
+/** 让 CLI 从一个设计里总结整体风格：看风格说明、项目提示词、图片描述和对话 */
+export function buildStyleExtractPrompt(d: Design, history: DesignMessage[], project: { prompts: ProjectPrompt[] }) {
+  const imgs = d.images
+    .filter((i) => i.prompt)
+    .slice(0, 40)
+    .map((i) => `- ${i.name}：${i.prompt}`)
+    .join('\n')
+  const chat = history
+    .filter((m) => m.role !== 'system')
+    .slice(-16)
+    .map((m) => `${m.role === 'user' ? '用户' : 'AI'}：${m.text.slice(0, 600)}`)
+    .join('\n\n')
+  return `你在帮用户整理一个${d.kind === 'web' ? '网页' : '游戏'} UI 设计的整体美术风格，存进风格库，以后别的项目可以直接套用。
+只总结风格（画风、配色、材质、光影、形状和装饰、字体气质、构图习惯），不要写这个界面具体有哪些内容（例如「背包」「开始按钮」）。
+
+## 这个设计
+名称：${d.title}
+风格说明：${d.style || '（没有）'}
+项目提示词：
+${projectPromptBrief(project.prompts) || '（没有）'}
+图片描述：
+${imgs || '（没有）'}
+${chat ? `\n## 对话\n${chat}\n` : ''}
+## 输出格式
+先用一句中文说明，然后输出一个 \`\`\`json 代码块：
+{
+  "name": "风格的名字（中文，12 个字以内，例如「暗黑奇幻·石刻金边」）",
+  "summary": "一两句中文说明这个风格的特点",
+  "en": "完整的英文风格描述，给设计 AI 和生图 AI 用（一段话，60~120 个词）",
+  "prompts": [{"category":"style","zh":"中文要点","en":"English keywords"}]（6~12 条，category 是 ${PROMPT_CATEGORIES.join(' / ')} 之一）
+}
+不要修改文件、不要运行命令，只输出说明和 JSON。`
+}
+
+export const AiStyle = z.object({
+  name: z.string().trim().min(1).max(40),
+  summary: z.string().trim().max(500).default(''),
+  en: z.string().trim().min(1).max(4000),
+  prompts: z.array(StylePrompt).max(30).default([]),
+})
 
 export function buildPromptAiPrompt(input: PromptAiInput) {
   const cats = PROMPT_CATEGORIES.map((c) => `${c}（${PROMPT_CATEGORY_LABEL[c]}）`).join('、')
@@ -284,6 +367,10 @@ export const DesignChatInput = z.object({
   run: z
     .object({ cli: z.string().max(40), model: z.string().max(200).default(''), effort: z.string().max(40).default('') })
     .optional(),
+  /** 「提问」开关：AI 的提问交给用户回答；关着时让它自己选 */
+  askUser: z.boolean().default(false),
+  /** 用户在风格提问里选的整体风格（英文），发送前先存进设计 */
+  style: z.string().max(4000).optional(),
 })
 export type DesignChatInput = z.infer<typeof DesignChatInput>
 
@@ -383,6 +470,8 @@ export const AiDesignResult = z.object({
   images: z.array(AiImage).default([]),
   /** 在现有设计上一步步改（见 design-ops.ts），和 root 二选一 */
   ops: z.array(z.any()).max(500).optional(),
+  /** 先问用户（整体风格还没定时）；有它时这一轮不改设计 */
+  question: DesignQuestion.optional(),
 })
 
 const gameRules = (
@@ -458,8 +547,12 @@ export function buildDesignPrompt(
   project?: { prompts: ProjectPrompt[]; images: { name: string; prompt: string }[] },
   /** 这一轮给了 design 工具（MCP）：优先用工具改，JSON 里只写说明 */
   tools = false,
+  /** 风格库里同类（游戏 / 网页）的风格：风格还没定时可以作为选项 */
+  styles: SavedStyle[] = [],
 ) {
   const brief = project ? projectPromptBrief(project.prompts) : ''
+  // 整体风格定了没有：设计有风格说明，或者项目里打开了画风类的提示词
+  const styled = !!d.style.trim() || !!project?.prompts.some((p) => p.enabled && p.category === 'style')
   const imgs = d.images.map((i) => ({
     id: i.id,
     name: i.name,
@@ -495,7 +588,16 @@ ${web ? webRules(d) : gameRules(d)}- 图片的 prompt 用英文写清楚画什�
 - 已经生成好的图片不用再列出来，除非用户要求改它（列出来就会重新生成）。新图片的 id 用简短的英文（例如 btn_normal）。
 - 用户只是提问、不需要改设计时，只回答，JSON 里只写 reply。
 
-## 当前设计
+${
+  styled
+    ? ''
+    : `## 整体风格还没定
+这个设计还没有确定整体美术风格。如果用户这次的要求和之前的对话里都没有说清楚整体风格（例如「暗黑奇幻」「像素风」「扁平简约」这样的描述，或者附上了参考图），先不要搭界面、不要列图片、不要调用 design 工具：
+JSON 里只写 reply（一句话说明为什么先问）和 question，问用户想要什么整体风格，给 3~4 个适合这个界面和题材的选项，每个选项写 label（中文，10 个字以内）、desc（一句中文说明画面感觉）、style（选了以后用的英文风格描述，40~80 个词）。
+${styles.length ? `风格库里有这些用户存过的风格，合适的直接作为选项（style 照抄它的英文）：\n${styles.map((x) => `- ${x.name}：${x.summary}\n  英文：${x.en}`).join('\n')}\n` : ''}用户已经说清楚风格时不要问，直接做，并在 JSON 的 style 里写下整体风格。用户回答了风格问题后，按之前的要求接着做。
+
+`
+}## 当前设计
 ${brief ? `项目提示词（整个项目统一的美术要求，生成每张图时会自动带上英文版，图片的 prompt 里不用重复，但设计要符合）：\n${brief}\n这个界面额外的风格补充：${d.style || '（没有）'}` : `美术风格：${d.style || '（还没定）'}`}${project?.images.length ? `\n项目里其他界面已有的图片（新图片要和它们风格一致，可以复用相同的描述方式）：\n${project.images.map((i) => `- ${i.name}：${i.prompt}`).join('\n')}` : ''}
 设计稿尺寸：${d.designSize.X}×${d.designSize.Y}
 控件树：
@@ -526,7 +628,12 @@ ${
   "ops": [ 在现有设计上一步步改的操作，见下面（改现有设计时用这个） ],
   "root": { 完整的控件树（只有控件树还是空的、或要整个重做时才写；和 ops 二选一） },
   "components": [{"Name":"WBP_ItemSlot","DesignSize":{"X":96,"Y":96},"Root":{…}}]（只在写 root 时用，写了就是完整的子控件列表；改现有设计时用 ops 里的 addComponent 等）,
-  "images": [{"id":"btn_normal","name":"Button_Normal","prompt":"…","width":320,"height":96,"transparent":true,"nineSlice":{"Left":0.2,"Top":0.3,"Right":0.2,"Bottom":0.3}}]（这次要新建或重新生成的图片）
+  "images": [{"id":"btn_normal","name":"Button_Normal","prompt":"…","width":320,"height":96,"transparent":true,"nineSlice":{"Left":0.2,"Top":0.3,"Right":0.2,"Bottom":0.3}}]（这次要新建或重新生成的图片）${
+    styled
+      ? ''
+      : `,
+  "question": {"text":"想要什么整体风格？","options":[{"label":"暗黑奇幻","desc":"石刻边框、暗金描边、幽蓝光效","style":"dark fantasy …"}]}（只在要先问整体风格时写，写了就不要写 ops、root、images）`
+  }
 }
 
 ### ops：像在控件树和属性面板里操作一样改设计

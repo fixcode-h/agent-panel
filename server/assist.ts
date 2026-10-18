@@ -1,3 +1,4 @@
+import { askSession, setAskUser } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -116,15 +117,19 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
+      const asks = askSession(`assist:${job.id}`)
       const r = await invokeCli({
+        askUser: asks.askUser,
+        onAsk: asks.onAsk,
         cliId: input.cli,
         command: cs.command,
         build: {
           // 默认模型可能是「@high」这样的档位，要换成具体模型和思考强度
           model: run.model,
           effort: run.effort,
-          permission: READ_ONLY[input.cli] ?? cs.permission,
-          extraArgs: safeArgs(cs.extraArgs),
+          // 审批按设置里的权限：CLI 要确认时弹出卡片等用户
+          permission: cs.permission,
+          extraArgs: cs.extraArgs,
         },
         cwd,
         env: childEnv(cs.env),
@@ -163,7 +168,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
           job.text = text.split('```')[0].trim()
           job.outChars = text.length
         },
-      })
+      }).finally(asks.done)
       if (r.killed === 'stopped') return fail(job, t('已停止'))
       if (r.killed === 'timeout') return fail(job, t('超过 5 分钟没有完成，已停止'))
       if (r.spawnError)
@@ -247,6 +252,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         at: Date.now(),
       }
       jobs.set(job.id, job)
+      setAskUser(`assist:${job.id}`, input.askUser)
       run(job, input, ctx)
         .catch((e) => fail(job, (e as Error).message))
         .finally(() => (job.at = Date.now()))

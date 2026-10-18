@@ -940,7 +940,13 @@ try {
   step('对话中途换 CLI：下一轮生效，开新会话并带上之前的对话')
 
   // ---- 权限请求：Claude Code 要确认的命令和问题显示在任务上，用户回答后交回 CLI ----
-  let ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 需要确认' })
+  let ask = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'ASK 需要确认',
+    askUser: true,
+  })
   const waitReq = async () => {
     for (let i = 0; i < 100; i++) {
       const t = await call('GET', `/tasks/${ask.id}`)
@@ -967,6 +973,20 @@ try {
   assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
+
+  // 「提问」开关关着：审批照样等用户，问题不交给用户，让 CLI 自己选
+  ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 自己选' })
+  assert.equal(ask.askUser, false)
+  const r3 = await waitReq()
+  assert.equal(r3.kind, 'command')
+  await call('POST', `/tasks/${ask.id}/requests/${r3.id}`, { allow: false })
+  ask = await waitDone(ask.id)
+  assert.equal(ask.status, 'done')
+  const [d1, d2] = readLog(log + '.ask').at(-1)
+  assert.equal(d1.behavior, 'deny')
+  assert.equal(d2.behavior, 'deny')
+  assert.match(d2.message, /自己的判断|不要再提问/, '问题让 CLI 自己选')
+  step('提问开关关着：审批照样等用户，问题让 CLI 自己选最合适的做法')
 
   // ---- 工作流的条件连线、完成后等我确认、预算上限 ----
   const wfBranch = await call('POST', '/workflows', {
@@ -1720,7 +1740,8 @@ try {
   assert.equal(job.proposal.newCategory, '质量', '不存在的分类标记为新建')
   c = calls().at(-1)
   assert.match(c.input, /配置助手[\s\S]*## 已有的 Agent[\s\S]*甲（claude[\s\S]*## 创建规则[\s\S]*## 输出格式/)
-  assert.ok(c.args.includes('--permission-mode') ? c.args.includes('default') : true, '只读权限')
+  // 权限按设置里的；Claude Code 的审批交给面板（弹出卡片），不再一律拒绝
+  if (c.kind === 'claude') assert.ok(c.args.includes('--permission-prompt-tool'), '审批交给面板')
   assert.notEqual(c.cwd, projectDir, '不在项目目录里运行')
   // 第一次格式不对，自动让 CLI 修正
   job = await assist(
@@ -1859,6 +1880,24 @@ try {
     assert.deepEqual(tr.prompts[0], { category: 'light', zh: '柔和顶光', en: 'EN:柔和顶光' })
     await assert.rejects(call('POST', '/designs/prompts/ai', { mode: 'generate', text: '' }), /没有要处理的内容/)
     step('UI 项目提示词：按分类保存，AI 生成和翻译')
+
+    // 风格库：增删改；没定风格的设计，AI 的提示词里带上同类风格作为选项
+    const st = await call('POST', '/designs/styles', {
+      name: '暗黑奇幻',
+      kind: 'game',
+      summary: '石刻金边',
+      en: 'dark fantasy STYLELIB',
+      prompts: [{ category: 'style', zh: '暗黑奇幻', en: 'dark fantasy' }],
+    })
+    assert.equal(
+      (await call('PUT', `/designs/styles/${st.id}`, { name: '暗黑奇幻·改' })).summary,
+      '石刻金边',
+      '只改传了的',
+    )
+    assert.equal((await call('GET', '/designs/styles')).find((x) => x.id === st.id).name, '暗黑奇幻·改')
+    await call('DELETE', `/designs/styles/${st.id}`)
+    assert.ok(!(await call('GET', '/designs/styles')).some((x) => x.id === st.id))
+    step('风格库：存、改、删')
     const design = await call('POST', '/designs', {
       projectId: uiProject.id,
       kind: 'game',
