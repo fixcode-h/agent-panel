@@ -211,7 +211,5 @@ export const EN_APP: Record<string, string> = {
     "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other CLIs, add a line @AGENTS.md to CLAUDE.md.",
   'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。':
     'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
-  'Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。':
-    'Command Code reads AGENTS.md on every start, or .commandcode/AGENTS.md when the root has none. AGENTS.md is the same file as Project notes.',
   '{n} 个说明文件有改动': '{n} notes files changed',
 }

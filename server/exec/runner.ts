@@ -17,6 +17,7 @@ import { agentPermission, agentRun, cliSettings } from '../../shared/settings.ts
 import { changesSince, mergeChanges, stepUsage, withTaskModel } from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
+import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows } from '../models.ts'
 import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { gitChanges } from './git.ts'
@@ -27,6 +28,7 @@ import type { AskReply, CliEvent } from './parsers.ts'
 import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
+import { AUTO_ANSWER } from '../asks.ts'
 
 export interface RealContext {
   task: Task
@@ -122,6 +124,17 @@ const SUMMARY_PROMPT =
 
 const stepTitle = (task: Task, id: string) => task.steps.find((s) => s.id === id)?.title ?? ''
 
+/** 「提问」开关关掉了：还在等回答的问题让 CLI 自己选 */
+export function autoAnswerQuestions(task: Task) {
+  for (const req of task.requests.filter((x) => x.kind === 'question')) {
+    const fn = replies.get(req.id)
+    if (!fn) continue
+    replies.delete(req.id)
+    task.requests = task.requests.filter((x) => x.id !== req.id)
+    fn(AUTO_ANSWER)
+  }
+}
+
 /** 用户在任务页上回答了请求；找不到（已经结束、已回答过）时返回 false */
 export function answerRequest(task: Task, id: string, r: AskReply, newId: () => string) {
   const fn = replies.get(id)
@@ -160,8 +173,7 @@ const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s
  */
 function guessWindow(cli: string, model: string) {
   if (/1m/i.test(model)) return 1_000_000
-  if (cli === 'codex') return 272_000
-  return 200_000
+  return getCli(cli)?.contextWindow ?? 200_000
 }
 
 /** 估算一段文字的 token 数：中日韩字符约一个字一个 token，其余约四个字符一个 token。只用于显示实时速度 */
@@ -307,9 +319,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     else if (switched) {
       const upto = asker ? task.messages.indexOf(asker) : task.messages.length
       carry = `## 之前的对话\n${transcript(task, upto)}`
-    } else if (th && cliId === 'codex' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
-    else if (th && cliId === 'claude' && th.end) [resume, fork] = [th.session, { end: th.end }]
-    else if (th && rewind?.latest) [resume, fork] = [th.session, {}]
+    } else if (th && def.fork === 'turn' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
+    else if (th && def.fork === 'end' && th.end) [resume, fork] = [th.session, { end: th.end }]
+    else if (th && rewind?.latest && def.fork !== 'none') [resume, fork] = [th.session, {}]
     else if (th) {
       // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上
       const upto = asker ? task.messages.indexOf(asker) : task.messages.length
@@ -325,14 +337,16 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     files.get(m.slice(m.lastIndexOf('/') + 1)) ??
     guessWindow(cli, m)
   const instructions = agent.instructions.trim()
-  let input = op?.kind === 'review' && cliId !== 'codex' ? reviewPrompt(op.target) : prompt
+  let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined
   if (pending?.length) {
     notes.delete(task.id)
     input = `${input}\n\n## 用户在执行中补充的信息\n${pending.join('\n\n')}`
   }
-  if (op?.kind === 'compact') input = cliId === 'claude' ? '/compact' : SUMMARY_PROMPT
+  if (op?.kind === 'compact') input = def.compact === 'slash' ? '/compact' : SUMMARY_PROMPT
+  // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求
+  if (chat && !op && input.startsWith('/')) input = await expandSlash(input, cliId, cwd, def.slash && !carry)
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${input}`
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
@@ -344,7 +358,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     resume,
     fork,
-    op: op?.kind === 'compact' && cliId !== 'codex' ? undefined : op,
+    // 审查走 CLI 自己的审查模式，压缩走协议；其余的已经换成普通的一轮
+    op: (op?.kind === 'compact' ? def.compact : def.review) === 'native' ? op : undefined,
     systemPrompt: def.systemPromptFlag && instructions ? instructions : undefined,
     // 附件在面板的数据目录里，不在项目目录下；Claude Code 读工作目录外的文件要先放行
     // 节点交接的完整结果也在数据目录里
@@ -352,11 +367,14 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
-    autoCompactTokens: pct && cliId === 'codex' ? Math.floor((windowFor(cliId, model) * pct) / 100) : undefined,
+    autoCompactTokens:
+      pct && def.autoCompact === 'config' ? Math.floor((windowFor(cliId, model) * pct) / 100) : undefined,
   }
   const env = childEnv([
     ...cs.env,
-    ...(pct && cliId === 'claude' ? [{ key: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', value: String(pct) }] : []),
+    ...(pct && def.autoCompact === 'env' && def.autoCompactEnv
+      ? [{ key: def.autoCompactEnv, value: String(pct) }]
+      : []),
   ])
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
@@ -625,7 +643,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         }
       : undefined,
     onEvent: apply,
-    canAsk: true,
+    // 任务上的「提问」开关：执行中也能改，CLI 问的时候再看
+    askUser: () => task.askUser,
     // 对话和工作流节点都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (step && !op) ? (c) => register(c) : undefined,
   }).finally(() => {
@@ -775,7 +794,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     ctx.changed(true)
   }
   // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
-  if (op?.kind === 'compact' && cliId !== 'codex' && cliId !== 'claude') {
+  if (op?.kind === 'compact' && def.compact === 'summary') {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
     delete task.sessions[sessionKey]
     au().context = 0
@@ -783,7 +802,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   }
   // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
   const u = task.usage.agents[agentId]
-  if (chat && !op && pct && cliId === 'commandcode' && u?.window && (u.context / u.window) * 100 >= pct) {
+  if (chat && !op && pct && def.autoCompact === 'panel' && u?.window && (u.context / u.window) * 100 >= pct) {
     sysMsg(t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }))
     const c = await runAgent(ctx, { ...call, op: { kind: 'compact' } })
     if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true)

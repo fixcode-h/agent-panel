@@ -1,13 +1,7 @@
-import type { CliDefinition } from '@shared/clis'
+import { getCli, type CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
-/** 每种 CLI 的标识色；新增 CLI 时补一项即可，缺省走 fallback */
-const colors: Record<string, string> = {
-  claude: '#c96442',
-  codex: '#0e8a6b',
-  commandcode: '#b4307a',
-}
-
-export const cliColor = (id: string) => colors[id] ?? '#64748b'
+/** 每种 CLI 的标识色：写在 CLI 的定义里（配置文件的 color） */
+export const cliColor = (id: string) => getCli(id)?.color ?? '#64748b'
 
 /** 思考强度下拉框的选项；empty 是不指定时的说明 */
 export const effortOptions = (def: CliDefinition, empty: string) => [
@@ -20,7 +14,7 @@ export const effortLabel = (def: CliDefinition | undefined, id: string) =>
 export const modelGroup = (def: CliDefinition, m: { origin?: 'cli' | 'config' }) =>
   m.origin === 'config'
     ? CONFIG_GROUP()
-    : def.id === 'claude'
+    : def.id === 'claude' || def.spec
       ? t('{cli} 内置', { cli: def.name })
       : t('{cli} 读取', { cli: def.name })
 /** 配置文件里第三方 API 模型的组名；排序时按它认组，不按中文前缀 */

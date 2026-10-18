@@ -1,8 +1,10 @@
 import type {
   Attachment,
+  TaskRequest,
   CliInstallJob,
   CliLimits,
   CliSkill,
+  SlashCommand,
   CliModels,
   CliUpdate,
   Agent,
@@ -35,6 +37,8 @@ import type {
   DesignVersionMeta,
   ImageSource,
   NewDesignInput,
+  SavedStyle,
+  SavedStyleInput,
   ProjectComponents,
   ProjectPrompt,
   PromptAiInput,
@@ -73,6 +77,13 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
+/** 用户加的 CLI 配置：原文（页面拿去注册）、读不进来的原因、所在目录 */
+export interface UserClis {
+  specs: unknown[]
+  errors: string[]
+  dir: string
+}
+
 export const api = {
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
@@ -85,6 +96,12 @@ export const api = {
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
   cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
+  /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */
+  cliSpecs: () => request<UserClis>('/clis/specs'),
+  reloadCliSpecs: () => request<UserClis>('/clis/specs/reload', json('POST', {})),
+  revealCliSpecs: () => request<{ ok: boolean }>('/clis/specs/reveal', json('POST', {})),
+  cliCommands: (id: string, projectId = '') =>
+    request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   cliSkills: (id: string, projectId = '') =>
     request<CliSkill[]>(`/clis/${id}/skills${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
 
@@ -138,6 +155,9 @@ export const api = {
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
   unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
+  /** 引入会话：把任务或设计的对话整理成一份附件 */
+  taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
+  designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
@@ -156,6 +176,12 @@ export const api = {
     request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
+  /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
+  asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
+  answerAsk: (id: string, body: { allow: boolean; answer?: string }) =>
+    request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
+  setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
@@ -224,6 +250,14 @@ export const api = {
   browserStatus: () => request<BrowserStatus>('/designs/browser'),
   promptAi: (input: Partial<PromptAiInput>) =>
     request<{ prompts: Omit<ProjectPrompt, 'id' | 'enabled'>[] }>('/designs/prompts/ai', json('POST', input)),
+  styles: () => request<SavedStyle[]>('/designs/styles'),
+  createStyle: (input: SavedStyleInput) => request<SavedStyle>('/designs/styles', json('POST', input)),
+  updateStyle: (id: string, patch: Partial<SavedStyleInput>) =>
+    request<SavedStyle>(`/designs/styles/${id}`, json('PUT', patch)),
+  deleteStyle: (id: string) => request<void>(`/designs/styles/${id}`, { method: 'DELETE' }),
+  /** 让 CLI 总结设计的整体风格（还没存） */
+  extractStyle: (designId: string, scope: string) =>
+    request<Omit<SavedStyleInput, 'kind'>>(`/designs/${designId}/extract-style`, json('POST', { scope })),
   installExtension: (browser: string) =>
     request<{ dir: string }>('/designs/browser/install', json('POST', { browser })),
   reloadExtension: (browser: string) =>

@@ -7,6 +7,8 @@ import {
   DesignImage,
   emptyRoot,
   importComponent,
+  SavedStyleInput,
+  type SavedStyle,
   type Design,
   type DesignMeta,
   type DesignProject,
@@ -763,6 +765,53 @@ async function runChat(
     run,
   }
   d.job = job
+  // 整体风格还没定、这次也没说：和真实的一样先问风格
+  if (!d.style.trim() && !/风格|style|参考|截图/i.test(text)) {
+    await sleep(600)
+    d.messages.push({
+      id: randomId(),
+      role: 'agent',
+      text: '动手之前先定一下整体风格，后面所有图片都按它来。',
+      at: now(),
+      run,
+      question: {
+        text: '想要什么整体风格？',
+        options: [
+          ...demoStyleList
+            .filter((x) => x.kind === d.kind)
+            .map((x) => ({ label: x.name, desc: x.summary, style: x.en })),
+          ...(d.kind === 'web'
+            ? [
+                {
+                  label: '简约科技',
+                  desc: '大量留白、细线条、蓝紫渐变点缀',
+                  style: 'minimal tech, generous whitespace, thin lines, blue-violet gradient accents',
+                },
+                {
+                  label: '温暖手作',
+                  desc: '米色纸张质感、手绘插画、圆润字体',
+                  style: 'warm handmade, beige paper texture, hand-drawn illustrations, rounded type',
+                },
+              ]
+            : [
+                {
+                  label: '日系卡通',
+                  desc: '明亮配色、圆润描边、Q 版可爱',
+                  style: 'bright japanese cartoon, rounded thick outlines, cute chibi, saturated pastel palette',
+                },
+                {
+                  label: '科幻全息',
+                  desc: '深蓝底、青色发光线框、半透明面板',
+                  style: 'sci-fi hologram, deep navy background, cyan glowing wireframes, translucent glass panels',
+                },
+              ]),
+        ].slice(0, 4),
+      },
+    })
+    d.updatedAt = now()
+    job.status = 'done'
+    return
+  }
   addVersion(d, `AI 修改前：${text.slice(0, 24)}`, true)
   const tpl =
     d.kind === 'web' ? webTemplate() : /背包|物品|inventory/i.test(text) ? inventoryTemplate() : menuTemplate()
@@ -785,7 +834,7 @@ async function runChat(
   }
   d.root = normalizeTree(tpl.root)
   d.components = tpl.components.map((c) => ({ ...c, Root: normalizeTree(c.Root) }))
-  d.style = tpl.style
+  d.style = d.style || tpl.style
   for (const im of tpl.images) {
     const old = d.images.find((i) => i.id === im.id)
     const fields = { ...im, status: source.kind === 'none' ? 'idle' : 'pending', error: undefined }
@@ -977,6 +1026,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
   }
   if (sub === 'chat') {
     if (d.job?.status === 'running') fail('正在处理上一个请求，等它完成或先停止')
+    if (body.style) d.style = body.style
     d.messages.push({
       id: randomId(),
       role: 'user',
@@ -1134,4 +1184,64 @@ export function demoVersions(
     return d
   }
   return v
+}
+
+/** 演示的风格库：存在内存里，刷新后回到示例 */
+const demoStyleList: SavedStyle[] = [
+  {
+    id: 'style-dark-fantasy',
+    name: '暗黑奇幻·石刻金边',
+    kind: 'game',
+    summary: '深色石刻底框配暗金描边，幽蓝符文微光，整体厚重神秘。',
+    en: 'dark fantasy, carved dark stone frames with aged gold trim, faint glowing blue runes, heavy and mysterious mood, soft rim light',
+    prompts: [
+      { category: 'style', zh: '暗黑奇幻', en: 'dark fantasy' },
+      { category: 'material', zh: '石刻底框、暗金描边', en: 'carved stone frames, aged gold trim' },
+      { category: 'light', zh: '幽蓝符文微光', en: 'faint glowing blue runes' },
+    ],
+    createdAt: '2026-10-17T08:00:00.000Z',
+    updatedAt: '2026-10-17T08:00:00.000Z',
+  },
+]
+
+export function demoStyles(method: string, sid: string | undefined, body: any): unknown {
+  if (method === 'GET') return demoStyleList
+  if (method === 'POST') {
+    const at = now()
+    const item: SavedStyle = { ...SavedStyleInput.parse(body), id: randomId(), createdAt: at, updatedAt: at }
+    demoStyleList.unshift(item)
+    return item
+  }
+  const i = demoStyleList.findIndex((x) => x.id === sid)
+  if (i < 0) fail('风格不存在')
+  if (method === 'DELETE') {
+    demoStyleList.splice(i, 1)
+    return undefined
+  }
+  demoStyleList[i] = { ...demoStyleList[i], ...body, updatedAt: now() }
+  return demoStyleList[i]
+}
+
+/** 演示里「AI 总结风格」：按设计现有的风格说明拼一个 */
+export async function demoExtractStyle(id: string) {
+  await sleep(900)
+  const d = designs.get(id)
+  return {
+    name: d?.kind === 'web' ? '温暖简约·橙色点缀' : '暗黑奇幻·铜金符文',
+    summary:
+      d?.kind === 'web' ? '暖灰底色配橙色强调，圆角卡片，柔和阴影。' : '青铜和石材质感，金色描边，柔和的魔法光晕。',
+    en: d?.style || 'dark fantasy, carved bronze and stone with gold trim, soft magical glow',
+    prompts: [
+      {
+        category: 'style',
+        zh: d?.kind === 'web' ? '简约现代' : '暗黑奇幻',
+        en: d?.kind === 'web' ? 'clean modern' : 'dark fantasy',
+      },
+      {
+        category: 'color',
+        zh: d?.kind === 'web' ? '暖灰 + 橙色' : '青铜 + 金色',
+        en: d?.kind === 'web' ? 'warm grey with orange accent' : 'bronze and gold',
+      },
+    ],
+  }
 }

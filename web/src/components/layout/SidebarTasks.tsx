@@ -2,7 +2,7 @@ import { useState } from 'react'
 import {
   Archive,
   ArchiveRestore,
-  BellRing,
+  CircleAlert,
   Check,
   ListFilter,
   Search,
@@ -131,9 +131,10 @@ export function TaskRow({
           >
             {task.requests?.length ? (
               // Agent 在等你确认操作或回答问题
-              <BellRing
+              <CircleAlert
                 aria-label={t('需要你处理')}
-                className="h-3.5 w-3.5 shrink-0 animate-[bell_1.6s_ease-in-out_infinite] text-warning"
+                className="h-3.5 w-3.5 shrink-0 text-warning"
+                strokeWidth={2.4}
               />
             ) : task.status === 'running' || task.status === 'failed' ? (
               <TaskStatusIcon status={task.status} className="h-3.5 w-3.5" />

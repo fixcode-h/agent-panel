@@ -327,10 +327,11 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
   const st = (await detectClis()).find((c) => c.id === id)
   if (!st?.installed || !cs.enabled) return { source: 'builtin', models: builtin(def), efforts: [] }
   try {
-    if (id === 'codex' || id === 'commandcode') {
-      const p = id === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)
+    if (def.modelsFrom === 'codex' || def.modelsFrom === 'commandcode') {
+      const p =
+        def.modelsFrom === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)
       data = { source: 'cli', models: p.models, efforts: [], auth: p.auth, from: p.from }
-    } else {
+    } else if (def.modelsFrom === 'claude') {
       const [auth, found] = await Promise.all([claudeAuth(cs.command, env), claudeConfigured(env)])
       const configured = found.map((m) => ({ ...m, origin: 'config' as const }))
       const base = builtin(def).map((m) => ({ ...m, origin: 'cli' as const }))
@@ -340,6 +341,9 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
         auth === 'api' && configured.length
           ? { source: 'cli', models: [...configured, ...base], efforts: [], auth, from: t('settings.json / 环境变量') }
           : { source: 'builtin', models: [...base, ...configured], efforts: [], auth }
+    } else {
+      // 配置文件加的 CLI 没有列模型的命令，用配置里写的
+      data = { source: 'builtin', models: builtin(def), efforts: [] }
     }
   } catch (e) {
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }
@@ -353,7 +357,7 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
 
 /** Command Code 的上下文窗口只要读文件，不用跑 CLI，执行任务时模型列表还没读过也能查到 */
 export async function knownWindows(id: string): Promise<Map<string, number>> {
-  if (id !== 'commandcode') return new Map()
+  if (CLIS.find((c) => c.id === id)?.modelsFrom !== 'commandcode') return new Map()
   const cs = cliSettings(await getSettings(), id)
   return commandCodeWindows(cs.command, childEnv(cs.env)).catch(() => new Map())
 }

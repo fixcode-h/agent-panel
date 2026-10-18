@@ -1,13 +1,22 @@
 /**
- * 本机 CLI 注册表。新增一种 Agent CLI 需要：
- * 1. 在这里加一项（命令、模型建议、权限选项、参数拼装）
- * 2. 在 server/exec/parsers.ts 里加它的输出解析
- * 3. 在 web/src/lib/cli-style.ts 里加一个标识色
+ * 本机 CLI 注册表。CLI 的一切差异都写在定义里（怎么拼参数、怎么解析输出、支持哪些能力、Skill 和说明文件在哪），
+ * 面板其他地方按定义里的能力走，不按 CLI 的名字分支。
  *
- * 所有 CLI 都用「非交互 + 结构化输出」模式运行，任务描述通过 stdin 传入，
+ * 新增一种 CLI：写一份 JSON 配置（格式见 shared/cli-spec.ts 和 docs/cli-config.md）。
+ * - 内置：放在 shared/clis/ 下，在下面的 BUILTIN_SPECS 里引入，再在 shared/locales/en/ 里补上文案的英文（也可以写在配置的 i18n 里）
+ * - 用户自己加：放在数据目录的 config/clis/ 下，面板启动时读取，不用改代码
+ * Claude Code 和 Codex 有自己的通信协议（stdin 控制消息、app-server），直接写在这个文件里。
+ *
+ * CLI 都用「非交互 + 结构化输出」模式运行，任务描述通过 stdin 传入，
  * 避免长文本、换行和引号在不同系统的命令行里转义出错。
  */
 import { t } from './i18n.ts'
+import { CliSpec, specToDefinition, type CliSpecInput } from './cli-spec.ts'
+import commandcode from './clis/commandcode.json'
+import gemini from './clis/gemini.json'
+
+/** 写成配置文件的内置 CLI，按这个顺序排在 Claude Code、Codex 后面 */
+const BUILTIN_SPECS = [commandcode, gemini]
 export interface PermissionOption {
   id: string
   label: string
@@ -77,6 +86,52 @@ export interface CliDefinition {
   docsUrl: string
   /** 内置了生成图片的工具（UI 设计里用） */
   images?: boolean
+  /** Homebrew 的包（brew install 的参数） */
+  brew?: string[]
+  /**
+   * 怎么调用：claude-stream 是 Claude Code 的 stdin / stdout 控制协议（插话、审批、中断），
+   * codex-app 是 codex app-server 的 JSON-RPC，stdin 是任务描述从 stdin 传入、stdout 一行一个 JSON 事件
+   */
+  protocol: 'claude-stream' | 'codex-app' | 'stdin'
+  /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、claude-stream 时用） */
+  parser: string | import('./cli-spec.ts').OutputSpec
+  /** 执行中能插话 */
+  steer: boolean
+  /** 压缩上下文：native 走协议，slash 发「/compact」，summary 让它写摘要、下一轮开新会话 */
+  compact: 'native' | 'slash' | 'summary'
+  /** 审查改动：native 走 CLI 的审查模式，prompt 按审查要求跑一轮 */
+  review: 'native' | 'prompt'
+  /** 会话分叉：turn 能截到某一轮（Codex），end 能截到某条回复（Claude Code），latest 只能从最后分叉，none 不能 */
+  fork: 'turn' | 'end' | 'latest' | 'none'
+  /** 自动压缩：config 是告诉 CLI token 数（Codex），env 是用环境变量告诉百分比，panel 是面板在一轮结束后压缩 */
+  autoCompact: 'config' | 'env' | 'panel'
+  autoCompactEnv?: string
+  /** 会话里认识「/命令」「/Skill」，原样发过去；否则面板展开成普通要求 */
+  slash: boolean
+  /** 上下文窗口的默认估计 */
+  contextWindow: number
+  /** 账号额度：query 能主动查，push 执行时才报告，none 没有 */
+  limits: 'query' | 'push' | 'none'
+  /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
+  docs: string[]
+  /** 项目设置里说明文件那一页的说明 */
+  docsNote: string
+  /** Skill 目录：user 相对用户目录（~ 开头，可以用 ${ENV:-默认值}），repo 相对项目目录 */
+  skills: { user: string[]; repo: string[] }
+  /** 自定义命令的目录和格式 */
+  commands: { user: string[]; repo: string[]; format: 'md' | 'toml'; prefix: string }
+  /** 界面上的标识色 */
+  color: string
+  /** 设置里环境变量的示例 */
+  envExample: string
+  /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、claude（配置和环境变量）；为空时只用 models 里写的 */
+  modelsFrom: string
+  /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */
+  readOnly: string
+  /** 来自配置文件（不是写在代码里的） */
+  spec?: boolean
+  /** 用户放在数据目录里的配置（不是面板内置的） */
+  user?: boolean
 }
 
 const opt = (cond: unknown, ...args: string[]) => (cond ? args : [])
@@ -154,7 +209,29 @@ export const CLIS: CliDefinition[] = [
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',
     npmPackage: '@anthropic-ai/claude-code',
+    brew: ['--cask', 'claude-code'],
     docsUrl: 'https://code.claude.com/docs',
+    protocol: 'claude-stream',
+    parser: 'claude',
+    steer: true,
+    compact: 'slash',
+    review: 'prompt',
+    fork: 'end',
+    autoCompact: 'env',
+    autoCompactEnv: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
+    slash: true,
+    contextWindow: 200_000,
+    limits: 'push',
+    docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
+    docsNote: t(
+      'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
+    ),
+    skills: { user: ['~/.claude/skills'], repo: ['.claude/skills'] },
+    commands: { user: ['~/.claude/commands'], repo: ['.claude/commands'], format: 'md', prefix: '' },
+    modelsFrom: 'claude',
+    readOnly: 'default',
+    color: '#c96442',
+    envExample: 'ANTHROPIC_API_KEY=sk-ant-...',
   },
   {
     id: 'codex',
@@ -209,78 +286,60 @@ export const CLIS: CliDefinition[] = [
     ],
     installHint: 'npm install -g @openai/codex',
     npmPackage: '@openai/codex',
+    brew: ['codex'],
     docsUrl: 'https://github.com/openai/codex',
-  },
-  {
-    id: 'commandcode',
-    name: 'Command Code',
-    // npm 包同时提供 cmd / cmdc / commandcode；Windows 上 cmd 会和系统命令冲突，所以默认用 cmdc
-    command: 'cmdc',
-    versionArgs: ['--version'],
-    // 完整列表见 cmdc --list-models
-    models: [
-      { id: 'deepseek/deepseek-v4-flash', label: 'DeepSeek V4 Flash', isDefault: true },
-      { id: 'deepseek/deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
-      { id: 'moonshotai/kimi-k3', label: 'Kimi K3' },
-      { id: 'zai-org/glm-5.3', label: 'GLM-5.3' },
-      { id: 'qwen/qwen3.8-max', label: 'Qwen 3.8 Max' },
-      { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5' },
-    ],
-    permissions: [
-      {
-        id: 'accept-edits',
-        label: t('自动接受改文件'),
-        hint: t(
-          'Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」',
-        ),
-      },
-      { id: 'yolo', label: t('跳过所有确认'), hint: t('可以改文件、执行任意命令，只在信任的项目里用') },
-      { id: 'plan', label: t('只读规划'), hint: t('只分析和出方案，不改文件') },
-      { id: 'standard', label: t('标准'), hint: t('非交互执行时改文件和跑命令都会被拦下') },
-    ],
-    // 思考强度是否生效取决于模型
-    efforts: [
-      { id: 'low', label: t('低') },
-      { id: 'medium', label: t('中') },
-      { id: 'high', label: t('高') },
-    ],
-    tiers: {
-      high: { model: 'claude-sonnet-5-5', effort: 'high' },
-      medium: { model: 'deepseek/deepseek-v4-pro', effort: '' },
-      low: { model: 'deepseek/deepseek-v4-flash', effort: '' },
-    },
-    defaultPermission: 'accept-edits',
-    systemPromptFlag: false,
-    buildArgs: (o) => [
-      '-p',
-      '--output-format',
-      'json',
-      '--skip-onboarding',
-      '--trust',
-      '--no-auto-update',
-      ...opt(o.model, '-m', o.model),
-      ...opt(o.effort, '--effort', o.effort!),
-      // -p 模式下 Command Code 只认 --dangerously-skip-permissions，--permission-mode yolo 仍会拦下改文件和命令
-      ...(o.permission === 'yolo'
-        ? ['--dangerously-skip-permissions']
-        : opt(o.permission, '--permission-mode', o.permission)),
-      ...opt(o.resume, '--resume', o.resume!),
-      // 只能从会话的最后分叉；要截在中间时由面板把对话整理成文字带给新会话
-      ...opt(o.resume && o.fork, '--fork-session'),
-      '--max-turns',
-      String(o.maxTurns ?? 200),
-      ...o.extraArgs,
-    ],
-    installHint: 'npm install -g command-code',
-    npmPackage: 'command-code',
-    docsUrl: 'https://www.npmjs.com/package/command-code',
+    protocol: 'codex-app',
+    parser: '',
+    steer: true,
+    compact: 'native',
+    review: 'native',
+    fork: 'turn',
+    autoCompact: 'config',
+    slash: false,
+    contextWindow: 272_000,
+    limits: 'query',
+    docs: ['AGENTS.md', 'AGENTS.override.md'],
+    docsNote: t(
+      'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。',
+    ),
+    // Skill 由 app-server 的 skills/list 给出（含系统自带和插件的），这里不用列目录
+    skills: { user: [], repo: [] },
+    // 自定义提示在 $CODEX_HOME/prompts，界面里用「/prompts:名字」调用
+    commands: { user: ['${CODEX_HOME:-~/.codex}/prompts'], repo: [], format: 'md', prefix: 'prompts:' },
+    modelsFrom: 'codex',
+    readOnly: 'read-only',
+    color: '#0e8a6b',
+    envExample: 'OPENAI_API_KEY=sk-...',
   },
 ]
 
+// 写成配置文件的内置 CLI
+CLIS.push(...BUILTIN_SPECS.map((s) => specToDefinition(s as CliSpecInput)))
+
 export const getCli = (id: string) => CLIS.find((c) => c.id === id)
 
-/** 执行中能插话的 CLI（Codex 的 turn/steer、Claude Code 的 stdin 消息）；Command Code 只能排队 */
-export const STEER_CLIS = ['codex', 'claude']
+/**
+ * 换上用户自己加的 CLI（数据目录 config/clis/ 下的配置）：服务端启动和重新读取时调用，页面从接口拿到后也调一遍。
+ * 之前加的先去掉（配置文件可能删了）；和内置的 id 相同的不加。返回加不进来的原因
+ */
+export function registerCliSpecs(specs: unknown[]): string[] {
+  for (let i = CLIS.length - 1; i >= 0; i--) if (CLIS[i].user) CLIS.splice(i, 1)
+  const errors: string[] = []
+  for (const raw of specs) {
+    const id = (raw as { id?: string })?.id ?? '?'
+    const p = CliSpec.safeParse(raw)
+    if (!p.success) {
+      errors.push(`${id}：${p.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('；')}`)
+      continue
+    }
+    if (getCli(p.data.id)) {
+      errors.push(`${id}：${t('和已有的 CLI 重名')}`)
+      continue
+    }
+    CLIS.push({ ...specToDefinition(p.data), user: true })
+  }
+  return errors
+}
 
 const quote = (a: string) => (/[\s"'<>|&]/.test(a) || a === '' ? JSON.stringify(a) : a)
 

@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select, Textarea } from '@/components/ui/input'
 import { Markdown } from '@/components/tasks/Markdown'
+import { ScopeRequests } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
 const size = (n: number) => (n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`)
@@ -280,23 +281,26 @@ function Optimizer({
           )}
         </>
       ) : running ? (
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
-          <span className="min-w-0 flex-1 truncate">
-            {lastThought
-              ? t('正在思考：{text}', { text: lastThought })
-              : job.tools?.length
-                ? t('正在查看：{files}', { files: job.tools.join('、') })
-                : t('正在看项目…')}
-          </span>
-          <span className="tabular-nums text-subtle">
-            {secs}s{job.outChars ? ` · ${t('已输出 {n} 字', { n: job.outChars })}` : ''}
-          </span>
-          <Button size="sm" variant="secondary" onClick={() => void api.stopDocJob(job.id).catch(() => {})}>
-            <Square className="h-3 w-3" />
-            {t('停止')}
-          </Button>
-        </div>
+        <>
+          <ScopeRequests scope={`doc:${job.id}`} active className="mb-0 max-w-none" />
+          <div className="flex items-center gap-2 text-xs text-muted">
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
+            <span className="min-w-0 flex-1 truncate">
+              {lastThought
+                ? t('正在思考：{text}', { text: lastThought })
+                : job.tools?.length
+                  ? t('正在查看：{files}', { files: job.tools.join('、') })
+                  : t('正在看项目…')}
+            </span>
+            <span className="tabular-nums text-subtle">
+              {secs}s{job.outChars ? ` · ${t('已输出 {n} 字', { n: job.outChars })}` : ''}
+            </span>
+            <Button size="sm" variant="secondary" onClick={() => void api.stopDocJob(job.id).catch(() => {})}>
+              <Square className="h-3 w-3" />
+              {t('停止')}
+            </Button>
+          </div>
+        </>
       ) : (
         <>
           {job.text && <p className="text-[13px] leading-relaxed">{job.text}</p>}

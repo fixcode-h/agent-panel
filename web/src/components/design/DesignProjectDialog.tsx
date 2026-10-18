@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Check, Loader2, Palette, Pencil, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import { BookMarked, Check, Loader2, Palette, Pencil, Plus, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { PROMPT_CATEGORIES, type DesignProject, type ProjectPrompt, type PromptCategory } from '@shared/design'
+import {
+  PROMPT_CATEGORIES,
+  type DesignProject,
+  type ProjectPrompt,
+  type PromptCategory,
+  type SavedStyle,
+} from '@shared/design'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -11,6 +17,8 @@ import { Field, FormSection, Input, Textarea } from '@/components/ui/input'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { DirPicker, useDirInfo } from '@/components/projects/DirPicker'
 import { DialogCloseButton, NavItem } from '@/components/projects/ProjectSettingsDialog'
+import { ScopeRequests } from '@/components/chat/AskToggle'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 
 export type DesignProjectSection = 'general' | 'prompts'
@@ -299,6 +307,56 @@ function Body({
   )
 }
 
+/** 从风格库导入：把存过的风格的提示词加进这个项目 */
+function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
+  const [open, setOpen] = useState(false)
+  const [list, setList] = useState<SavedStyle[] | null>(null)
+  useEffect(() => {
+    if (open && !list)
+      api
+        .styles()
+        .then(setList)
+        .catch(() => setList([]))
+  }, [open, list])
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button size="sm" variant="secondary" className="self-start">
+          <BookMarked className="h-3.5 w-3.5" />
+          {t('从风格库导入')}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[320px] p-1.5">
+        {!list ? (
+          <Loader2 className="mx-auto my-3 h-4 w-4 animate-spin text-subtle" />
+        ) : !list.length ? (
+          <p className="px-2 py-2 text-[12px] leading-relaxed text-subtle">
+            {t('风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。')}
+          </p>
+        ) : (
+          <div className="max-h-72 overflow-y-auto">
+            {list.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => {
+                  setOpen(false)
+                  onImport(s)
+                }}
+                className="flex w-full cursor-pointer flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
+              >
+                <span className="text-[12.5px]">{s.name}</span>
+                <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">
+                  {s.summary || t('{n} 条提示词', { n: s.prompts.length })}
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 /** 美术提示词：AI 按描述生成、常用的一键加入、按分类显示和编辑 */
 function PromptsPage({
   prompts,
@@ -313,6 +371,8 @@ function PromptsPage({
 }) {
   const [desc, setDesc] = useState('')
   const [busy, setBusy] = useState(false)
+  // 这次生成的会话：CLI 要确认时按它取回请求显示
+  const [aiScope] = useState(() => crypto.randomUUID())
   const [found, setFound] = useState<(Omit<ProjectPrompt, 'id' | 'enabled'> & { pick: boolean })[]>([])
   const [adding, setAdding] = useState<PromptCategory | ''>('')
   const has = (zh: string) => prompts.some((p) => p.zh === zh)
@@ -321,7 +381,12 @@ function PromptsPage({
     if (!desc.trim() || busy) return
     setBusy(true)
     try {
-      const r = await api.promptAi({ mode: 'generate', text: desc.trim(), existing: prompts.map((p) => p.zh) })
+      const r = await api.promptAi({
+        mode: 'generate',
+        text: desc.trim(),
+        existing: prompts.map((p) => p.zh),
+        scope: aiScope,
+      })
       setFound(r.prompts.filter((p) => !has(p.zh)).map((p) => ({ ...p, pick: true })))
       if (!r.prompts.length) toast(t('AI 没有给出新的提示词'))
     } catch (e) {
@@ -348,6 +413,14 @@ function PromptsPage({
             )}
           </p>
         </div>
+        <ImportStyle
+          onImport={(st) => {
+            const fresh = st.prompts.filter((p) => !has(p.zh))
+            if (!fresh.length) return toast(t('这个风格的提示词都已经有了'))
+            onChange((l) => [...l, ...fresh.map((p) => ({ ...p, id: newId(), enabled: true }))])
+            toast.success(t('已导入 {n} 条提示词', { n: fresh.length }))
+          }}
+        />
         <div className="rounded-xl border bg-panel/50 p-3">
           <p className="mb-2 flex items-center gap-1.5 text-[12.5px] font-medium">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
@@ -370,6 +443,7 @@ function PromptsPage({
               {t('生成提示词')}
             </Button>
           </div>
+          <ScopeRequests scope={`prompts:${aiScope}`} active={busy} className="mt-2 mb-0 max-w-none" />
           {found.length > 0 && (
             <div className="mt-3 border-t pt-3">
               <p className="mb-2 text-[12px] text-muted">{t('选择要加入的提示词：')}</p>

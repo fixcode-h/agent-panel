@@ -2,15 +2,16 @@
  * 项目说明文件（AGENTS.md、CLAUDE.md…）：读、写，以及用本机 CLI 优化。
  * 只认 shared/docs.ts 里列出的文件名，不能借这个接口读写项目里的其他文件。
  */
+import { askSession } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
-import { getCli } from '../shared/clis.ts'
+import { CLIS, getCli } from '../shared/clis.ts'
 import {
-  CLI_DOCS,
-  DOC_FILES,
+  docFiles,
+  type DocFile,
   DOC_MAX,
   DocOptimizeInput,
   DocWrite,
@@ -22,7 +23,7 @@ import {
 } from '../shared/docs.ts'
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings } from '../shared/settings.ts'
-import { READ_ONLY, safeArgs } from './assist.ts'
+import { safeArgs } from './assist.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
@@ -48,7 +49,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     return p.path
   }
 
-  async function read(dir: string, file: (typeof DOC_FILES)[number]): Promise<ProjectDoc> {
+  async function read(dir: string, file: DocFile): Promise<ProjectDoc> {
     const full = path.join(dir, file)
     const s = await stat(full).catch(() => null)
     if (!s?.isFile()) return { path: file, exists: false, content: '', bytes: 0 }
@@ -61,21 +62,22 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     const def = getCli(input.cli)!
     const cs = cliSettings(settings, input.cli)
     const r0 = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
-    const readers = Object.entries(CLI_DOCS)
-      .filter(([, files]) => files.includes(input.path))
-      .map(([id]) => getCli(id)?.name ?? id)
+    const readers = CLIS.filter((c) => c.docs.includes(input.path)).map((c) => c.name)
     let text = ''
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
     log.info('docs', `用 ${def.name} 优化 ${input.path}`, { dir })
+    const asks = askSession(`doc:${job.id}`)
     const r = await invokeCli({
+      askUser: asks.askUser,
+      onAsk: asks.onAsk,
       cliId: input.cli,
       command: cs.command,
       // 在项目目录里运行，能看代码核对；权限用只读，不会改文件
       build: {
         model: r0.model,
         effort: r0.effort,
-        permission: READ_ONLY[input.cli] ?? cs.permission,
+        permission: def.readOnly || cs.permission,
         extraArgs: safeArgs(cs.extraArgs),
       },
       cwd: dir,
@@ -94,7 +96,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
         job.text = text.split('```')[0].trim()
         job.outChars = text.length
       },
-    })
+    }).finally(asks.done)
     const fail = (error: string) => {
       job.status = 'failed'
       job.error = error
@@ -130,7 +132,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     .get('/:id', async (c) => {
       try {
         const dir = await dirOf(c.req.param('id'))
-        const files = await Promise.all(DOC_FILES.map((f) => read(dir, f)))
+        const files = await Promise.all(docFiles().map((f) => read(dir, f)))
         return c.json({ dir, files } satisfies ProjectDocs)
       } catch (e) {
         return bad(c, (e as Error).message)

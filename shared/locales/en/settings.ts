@@ -292,11 +292,6 @@ export const EN_SETTINGS: Record<string, string> = {
   '在这里和任务页右栏显示账号的 5 小时、每周额度用了多少':
     'Show how much of the 5-hour and weekly limits is used, here and in the task side panel',
   '显示 {cli} 的额度': 'Show {cli} usage limits',
-  'Codex 加载的 Skill（用户目录、系统自带和插件里的）':
-    'Skills Codex loads (from your user folder, built-in and plugins)',
-  '~/.claude/skills 和已装插件里的 Skill；项目里的在项目设置里看':
-    'Skills in ~/.claude/skills and installed plugins. Project skills are in project settings',
-  '~/.commandcode/skills、~/.agents/skills 里的 Skill': 'Skills in ~/.commandcode/skills and ~/.agents/skills',
   用户: 'User',
   插件: 'Plugin',
   自带: 'Built-in',

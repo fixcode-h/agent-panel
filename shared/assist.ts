@@ -51,6 +51,8 @@ export const AssistInput = z.object({
   /** 为空时跟着模型档位或这个 CLI 的默认思考强度 */
   effort: z.string().trim().default(''),
   messages: z.array(AssistMessage).min(1).max(40),
+  /** 「提问」开关：CLI 的提问交给用户回答；关着时让它自己选 */
+  askUser: z.boolean().default(false),
 })
 export type AssistInput = z.infer<typeof AssistInput>
 

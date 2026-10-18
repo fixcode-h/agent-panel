@@ -26,7 +26,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { rootStepId, taskWorkflows } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultSettings } from '@shared/settings'
-import { STEER_CLIS, getCli } from '@shared/clis'
+import { getCli } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -41,7 +41,9 @@ import { LiveStats } from './LiveStats'
 import { StepSection, SystemNote } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
-import { RequestCard } from './RequestCard'
+import { TaskRequestCard } from './RequestCard'
+import { useSlashMenu } from '@/components/chat/SlashMenu'
+import { AskToggle } from '@/components/chat/AskToggle'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import {
   AttachMenu,
@@ -187,6 +189,26 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   const latestWf = workflows.find((w) => w.id === task?.workflowId)
   const wfChanged = !!task?.workflows.length && !!latestWf && latestWf.updatedAt !== workflow?.updatedAt
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
+  // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流各节点的 CLI 不同，不提供
+  const slashAgent = task?.mode === 'chat' ? agents.find((a) => a.id === task.agentId) : undefined
+  const slashCli =
+    task && slashAgent ? agentRun(withTaskModel(slashAgent, task), settings ?? defaultSettings()).cli : ''
+  const slash = useSlashMenu({
+    cli: slashCli,
+    projectId: project?.id,
+    scope: 'task',
+    text,
+    setText,
+    ta: followTa,
+    onAction: (a, arg) => {
+      if (!task) return
+      if (running) return void toast.error(t('任务正在执行，请等它完成或先停止'))
+      stick.current = true
+      ;(a === 'compact' ? api.compactTask(task.id) : api.reviewTask(task.id, arg))
+        .then(apply)
+        .catch((e) => toast.error((e as Error).message))
+    },
+  })
 
   if (!task)
     return (
@@ -198,6 +220,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   // 执行中也能发：补充（交给正在做的 Agent，接着当前的任务做；能补充时默认）、排队（这一轮完成后处理）
   const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
     if (!text.trim() || sending || files.uploading) return
+    if (!files.items.length && slash.intercept(text)) return
     setSending(true)
     stick.current = true
     try {
@@ -278,7 +301,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
-  const canSteer = running && (task.mode === 'workflow' || STEER_CLIS.includes(chatCli))
+  const canSteer = running && (task.mode === 'workflow' || !!getCli(chatCli)?.steer)
   // 用默认 Agent 的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换，下一轮生效
   const byCli = task.mode === 'chat' && task.agentId === DEFAULT_AGENT_ID
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
@@ -595,7 +618,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
           </div>
 
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
-            <RequestCard task={task} onAnswered={apply} />
+            <TaskRequestCard task={task} onAnswered={apply} />
             <WorktreeBar task={task} onChange={apply} />
             <QueuedList task={task} onChange={apply} />
             <div
@@ -606,6 +629,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
               )}
             >
               {mention.menu}
+              {slash.menu}
               {drop.over && <DropHint />}
               <AttachmentChips items={files.items} onRemove={files.remove} />
               <label htmlFor="follow-up" className="sr-only">
@@ -619,11 +643,15 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 onChange={(e) => {
                   setText(e.target.value)
                   mention.sync()
+                  slash.sync()
                 }}
-                onSelect={mention.sync}
+                onSelect={() => {
+                  mention.sync()
+                  slash.sync()
+                }}
                 onPaste={drop.onPaste}
                 onKeyDown={(e) => {
-                  if (mention.onKeyDown(e)) return
+                  if (slash.onKeyDown(e) || mention.onKeyDown(e)) return
                   if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault()
                     send()
@@ -639,7 +667,20 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 className="block max-h-48 w-full resize-none bg-transparent px-4 pt-3.5 text-[14.5px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
               />
               <div className="flex items-center gap-1 px-2.5 pb-2.5">
-                <AttachMenu onFiles={files.add} onMention={mention.start} canMention={!!project?.path} />
+                <AttachMenu
+                  onFiles={files.add}
+                  onMention={mention.start}
+                  canMention={!!project?.path}
+                  onSession={files.addReady}
+                  self={task.id}
+                />
+                <AskToggle
+                  value={task.askUser}
+                  onChange={(v) => {
+                    setTask({ ...task, askUser: v })
+                    api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+                  }}
+                />
                 {byCli ? (
                   <ChatModelPicker value={chatRun} onChange={changeRun} />
                 ) : (

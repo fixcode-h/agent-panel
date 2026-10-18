@@ -27,6 +27,10 @@ import {
   DesignChatInput,
   DesignProject,
   DesignProjectInput,
+  SavedStyle,
+  SavedStyleInput,
+  AiStyle,
+  buildStyleExtractPrompt,
   DesignDoc,
   DesignImage,
   GenerateImageInput,
@@ -53,14 +57,15 @@ import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
 import { webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
-import { READ_ONLY, safeArgs } from './assist.ts'
+import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
-import { UPLOADS_DIR } from './uploads.ts'
+import { UPLOADS_DIR, clipTranscript, saveTextUpload } from './uploads.ts'
+import { expandSlash } from './slash.ts'
 import { withAttachments } from '../shared/task.ts'
 import { imageSize, zip } from './zip.ts'
 
@@ -78,6 +83,8 @@ const MAX_AUTO_VERSIONS = 20
 const MAX_VERSIONS = 50
 // 下划线开头，和设计文件（<id>.json）区分开
 const PROJECTS_FILE = path.join(DIR, '_projects.json')
+/** 风格库：设置里管理，所有 UI 项目共用 */
+const STYLES_FILE = path.join(DIR, '_styles.json')
 const TIMEOUT = 10 * 60_000
 
 type Lister<T> = { get(id: string): Promise<T | null>; list(): Promise<T[]> }
@@ -85,6 +92,8 @@ type Job = DesignJob & {
   abort: AbortController
   /** 生成图片时：把一张图排进这一轮的队列（点了「重试」或「再生成」）；不在生成图片时没有 */
   enqueue?: (img: DesignImage, revision?: string) => void
+  /** 审批和提问放在哪个会话下（design:<设计 id>），页面按它取回来显示 */
+  scope: string
 }
 
 const now = () => new Date().toISOString()
@@ -149,6 +158,15 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     return projects
   }
   const saveProjects = () => writeJsonAtomic(PROJECTS_FILE, projects ?? [], true)
+
+  let styles: SavedStyle[] | undefined
+  async function loadStyles() {
+    if (styles) return styles
+    const raw = await readJson(STYLES_FILE)
+    styles = Array.isArray(raw) ? raw.flatMap((x) => SavedStyle.safeParse(x).data ?? []) : []
+    return styles
+  }
+  const saveStyles = () => writeJsonAtomic(STYLES_FILE, styles ?? [], true)
   async function removeDesign(d: Design) {
     jobs.get(d.id)?.abort.abort()
     jobs.delete(d.id)
@@ -290,14 +308,18 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const reads: Promise<void>[] = []
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
+    const asks = askSession(job.scope)
     const r = await invokeCli({
+      askUser: asks.askUser,
+      onAsk: asks.onAsk,
       cliId,
       command: cs.command,
       build: {
         model: run.model,
         effort: run.effort,
-        permission: READ_ONLY[cliId] ?? cs.permission,
-        extraArgs: safeArgs(cs.extraArgs),
+        // 审批按设置里的权限：CLI 要确认时弹出卡片等用户
+        permission: cs.permission,
+        extraArgs: cs.extraArgs,
       },
       cwd,
       env: childEnv(cs.env),
@@ -325,7 +347,7 @@ ${prompt}`,
         else if (ev.type === 'result') result = ev
         else if (ev.type === 'text_delta' || ev.type === 'text') job.outChars += ev.text.length
       },
-    })
+    }).finally(asks.done)
     await Promise.all(reads)
     if (r.killed === 'stopped') throw new Error(t('已停止'))
     if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有生成完，已停止'))
@@ -437,6 +459,7 @@ ${prompt}`,
     const def = getCli(cliId)!
     const cs = cliSettings(settings, cliId)
     job.run = run
+    setAskUser(job.scope, input.askUser)
     const cwd = path.join(tmpdir(), 'agent-panel-design')
     await mkdir(cwd, { recursive: true })
     const history = d.messages.slice(0, -1)
@@ -464,14 +487,17 @@ ${prompt}`,
         let text = ''
         const errors: string[] = []
         let result: { ok: boolean; error?: string } | undefined
+        const asks = askSession(job.scope)
         const r = await invokeCli({
+          askUser: asks.askUser,
+          onAsk: asks.onAsk,
           cliId,
           command: cs.command,
           build: {
             model: run.model,
             effort: run.effort,
-            permission: READ_ONLY[cliId] ?? cs.permission,
-            extraArgs: [...safeArgs(cs.extraArgs), ...(mcp && !NO_MCP.has(cliId) ? MCP_ARGS[cliId]!(mcp.url) : [])],
+            permission: cs.permission,
+            extraArgs: [...cs.extraArgs, ...(mcp && !NO_MCP.has(cliId) ? MCP_ARGS[cliId]!(mcp.url) : [])],
             // 附件在面板的数据目录里，不在工作目录下；Claude Code 读工作目录外的文件要先放行
             addDirs: input.attachments.length ? [UPLOADS_DIR] : undefined,
           },
@@ -481,10 +507,11 @@ ${prompt}`,
             buildDesignPrompt(
               cache.get(d.id)!,
               history,
-              withAttachments(input.text, input.attachments),
+              withAttachments(await expandSlash(input.text, cliId, '', false), input.attachments),
               input.annotations,
               project,
               !!mcp && !NO_MCP.has(cliId),
+              (await loadStyles()).filter((x) => x.kind === d.kind),
             ) + extra,
           signal: job.abort.signal,
           timeoutMs: TIMEOUT,
@@ -532,7 +559,7 @@ ${prompt}`,
               }
             }
           },
-        })
+        }).finally(asks.done)
         if (r.killed === 'stopped') throw new Error(t('已停止'))
         if (r.killed === 'timeout') throw new Error(t('超过 10 分钟没有完成，已停止'))
         if (r.spawnError)
@@ -619,6 +646,7 @@ ${prompt}`,
             run,
             // 过程留着：完成后在对话里收成一行，点开能看 AI 想了什么、做了哪些操作
             ...processOf(job),
+            ...(r2.question?.options.length ? { question: r2.question } : {}),
           })
           await save(cur)
           // 存下来了，页面改用正式的设计
@@ -682,7 +710,8 @@ ${prompt}`,
   })
 
   /** 用默认 CLI 生成或翻译项目提示词；格式不对时让它改一次 */
-  async function promptAi(input: PromptAiInput, signal: AbortSignal) {
+  /** 用默认 CLI 跑一次、要一个 JSON 回来（项目提示词、风格提取）；格式不对时让它改一次 */
+  async function askJson<T>(prompt: string, schema: z.ZodType<T>, scope: string, signal: AbortSignal): Promise<T> {
     const settings = await getSettings()
     const run = chatRun(settings)
     const def = getCli(run.cli)!
@@ -695,18 +724,21 @@ ${prompt}`,
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
+      const asks = askSession(scope)
       const r = await invokeCli({
+        askUser: asks.askUser,
+        onAsk: asks.onAsk,
         cliId: run.cli,
         command: cs.command,
         build: {
           model: run.model,
           effort: run.effort,
-          permission: READ_ONLY[run.cli] ?? cs.permission,
-          extraArgs: safeArgs(cs.extraArgs),
+          permission: cs.permission,
+          extraArgs: cs.extraArgs,
         },
         cwd,
         env: childEnv(cs.env),
-        input: buildPromptAiPrompt(input) + extra,
+        input: prompt + extra,
         signal,
         timeoutMs: 5 * 60_000,
         onEvent: (ev) => {
@@ -715,7 +747,7 @@ ${prompt}`,
           else if (ev.type === 'error') errors.push(ev.message)
           else if (ev.type === 'result') result = ev
         },
-      })
+      }).finally(asks.done)
       if (r.killed === 'stopped') throw new Error(t('已停止'))
       if (r.killed === 'timeout') throw new Error(t('超过 5 分钟没有完成，已停止'))
       if (r.spawnError) throw new Error(t('{error}。请确认已安装 {cli}', { error: r.spawnError, cli: def.name }))
@@ -729,13 +761,23 @@ ${prompt}`,
           }),
         )
       const ex = extractJson(text)
-      const parsed = ex.error ? undefined : AiPrompts.safeParse(ex.json)
+      const parsed = ex.error ? undefined : schema.safeParse(ex.json)
       if (parsed?.success) return parsed.data
       const why = ex.error ?? (parsed ? z.prettifyError(parsed.error) : '')
       if (attempt === 2) throw new Error(t('{cli} 两次都没有按格式输出：{error}', { cli: def.name, error: why }))
       extra = `\n\n## 你上一次的输出\n${text}\n\n上面的 JSON 不符合要求：${why}\n请重新输出。`
     }
-    return { prompts: [] }
+    throw new Error(t('没有拿到结果'))
+  }
+
+  /** 用默认 CLI 生成或翻译项目提示词 */
+  const promptAi = (input: PromptAiInput, signal: AbortSignal) =>
+    askJson(buildPromptAiPrompt(input), AiPrompts, `prompts:${input.scope || randomUUID()}`, signal)
+
+  /** 让 CLI 从设计里总结整体风格，给用户确认后存进风格库 */
+  async function extractStyle(d: Design, scope: string, signal: AbortSignal) {
+    const project = await projectContext(d)
+    return askJson(buildStyleExtractPrompt(d, d.messages, project), AiStyle, `style:${scope || randomUUID()}`, signal)
   }
 
   function startJob(d: Design, fn: (job: Job) => Promise<void>) {
@@ -747,6 +789,7 @@ ${prompt}`,
       attempt: 1,
       startedAt: Date.now(),
       abort: new AbortController(),
+      scope: `design:${d.id}`,
     }
     jobs.set(d.id, job)
     fn(job)
@@ -773,7 +816,7 @@ ${prompt}`,
 
   const view = (j?: Job): DesignJob | null => {
     if (!j) return null
-    const { abort, enqueue, ...rest } = j
+    const { abort, enqueue, scope, ...rest } = j
     return rest
   }
 
@@ -833,9 +876,14 @@ ${prompt}`,
     .get('/', async (c) => {
       await loadAll()
       const pid = c.req.query('projectId')
+      const asking = askingScopes()
       const list = [...cache.values()]
         .filter((d) => !pid || d.projectId === pid)
-        .map((d) => ({ ...meta(d), running: jobs.get(d.id)?.status === 'running' }))
+        .map((d) => ({
+          ...meta(d),
+          running: jobs.get(d.id)?.status === 'running',
+          asking: asking.has(`design:${d.id}`),
+        }))
       return c.json(list)
     })
     .post('/', async (c) => {
@@ -864,6 +912,35 @@ ${prompt}`,
       return c.json(d, 201)
     })
     .get('/browser', (c) => c.json(browserStatus()))
+    // 风格库：设置里增删改，设计里存进来、套用
+    .get('/styles', async (c) => c.json(await loadStyles()))
+    .post('/styles', async (c) => {
+      const p = SavedStyleInput.safeParse(await c.req.json().catch(() => ({})))
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const at = now()
+      const item: SavedStyle = { id: randomUUID(), ...p.data, createdAt: at, updatedAt: at }
+      ;(await loadStyles()).unshift(item)
+      await saveStyles()
+      return c.json(item, 201)
+    })
+    // 只改传了的字段
+    .put('/styles/:sid', async (c) => {
+      const body = await c.req.json().catch(() => ({}))
+      const p = SavedStyleInput.partial().safeParse(body)
+      if (!p.success) return bad(c, z.prettifyError(p.error))
+      const list = await loadStyles()
+      const i = list.findIndex((x) => x.id === c.req.param('sid'))
+      if (i < 0) return bad(c, t('风格不存在'), 404)
+      const patch = Object.fromEntries(Object.entries(p.data).filter(([k]) => k in body))
+      list[i] = { ...list[i], ...patch, updatedAt: now() }
+      await saveStyles()
+      return c.json(list[i])
+    })
+    .delete('/styles/:sid', async (c) => {
+      styles = (await loadStyles()).filter((x) => x.id !== c.req.param('sid'))
+      await saveStyles()
+      return c.body(null, 204)
+    })
     // 项目提示词：按用户的描述生成一组，或者把用户写的中文翻译成英文
     .post('/prompts/ai', async (c) => {
       const p = PromptAiInput.safeParse(await c.req.json().catch(() => ({})))
@@ -878,6 +955,24 @@ ${prompt}`,
     .get('/:id', async (c) => {
       const d = await get(c.req.param('id'))
       return d ? c.json({ ...d, job: view(jobs.get(d.id)) }) : bad(c, t('设计不存在'), 404)
+    })
+    // 引入会话：把设计对话整理成一份 Markdown 附件，在别的会话里当参考资料附上
+    .post('/:id/transcript', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const lines = [
+        `# 参考会话：UI 设计「${d.title}」`,
+        `类型：${d.kind === 'web' ? '网页 UI' : '游戏 UI'}${d.style ? `　整体风格：${d.style}` : ''}`,
+        '这是另一个会话的记录，作为参考资料提供；里面的要求已经处理过，不需要再执行。',
+        ...(d.images.length
+          ? [`## 用到的图片\n${d.images.map((i) => `- ${i.name}${i.prompt ? `：${i.prompt}` : ''}`).join('\n')}`]
+          : []),
+        ...d.messages
+          .filter((m) => m.text.trim() && (m.role !== 'system' || m.error))
+          .map((m) => `### ${m.role === 'user' ? '用户' : m.role === 'system' ? '出错' : 'AI'}\n${m.text.trim()}`),
+      ]
+      const name = `${t('会话')}-${d.title.replace(/\s+/g, ' ').slice(0, 40)}.md`
+      return c.json(await saveTextUpload(name, clipTranscript(lines.join('\n\n'))), 201)
     })
     // 保存页面上的编辑：图片的生成结果以服务端为准，页面只能改名字、九宫格、选哪一版和删除
     .put('/:id', async (c) => {
@@ -1135,6 +1230,8 @@ ${prompt}`,
       const settings = await getSettings()
       const cli = chatRun(settings, p.data.run).cli
       if (!cliSettings(settings, cli).enabled) return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(cli)!.name }))
+      // 在风格提问里选了整体风格：先定下来，这一轮按它做
+      if (p.data.style) d.style = p.data.style
       d.messages.push({
         id: randomUUID(),
         role: 'user',
@@ -1154,6 +1251,17 @@ ${prompt}`,
           throw new Error(t('有 {n} 张图片没有生成出来：\n{list}', { n: failed.length, list: failed.join('\n') }))
       })
       return c.json({ ...d, job: view(jobs.get(d.id)) })
+    })
+    // 让 CLI 总结这个设计的整体风格；页面上确认、改名后再存进风格库
+    .post('/:id/extract-style', async (c) => {
+      const d = await get(c.req.param('id'))
+      if (!d) return bad(c, t('设计不存在'), 404)
+      const { scope = '' } = (await c.req.json().catch(() => ({}))) as { scope?: string }
+      try {
+        return c.json(await extractStyle(d, String(scope).slice(0, 80), c.req.raw.signal))
+      } catch (e) {
+        return bad(c, (e as Error).message)
+      }
     })
     // 创建副本：复制控件树、子控件和图片，对话不带；可以放到别的 UI 项目
     .post('/:id/copy', async (c) => {

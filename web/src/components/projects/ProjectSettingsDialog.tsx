@@ -16,7 +16,7 @@ import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
 import { CLIS } from '@shared/clis'
-import { CLI_DOCS, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
+import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
 import { orderClis } from '@shared/settings'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
@@ -115,7 +115,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   )
   const isChanged = (files: DocFile[]) => changedDocs.some(([f]) => files.includes(f))
   const hasDoc = (files: DocFile[]) => files.some((f) => docOf(f)?.exists)
-  const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter((c) => CLI_DOCS[c.id])
+  const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter((c) => c.docs.length)
 
   const confirm = async () => {
     if (!valid || saving) return
@@ -191,8 +191,8 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
               key={c.id}
               on={section === `cli:${c.id}`}
               onClick={() => setSection(`cli:${c.id}`)}
-              dot={isChanged(CLI_DOCS[c.id])}
-              hint={CLI_DOCS[c.id].find((f) => docOf(f)?.exists)}
+              dot={isChanged(cliDocs(c.id))}
+              hint={cliDocs(c.id).find((f) => docOf(f)?.exists)}
             >
               <span className="h-4 w-4 shrink-0 rounded-[4px]" style={{ background: cliColor(c.id) }} />
               {c.name}
@@ -243,25 +243,13 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
               (() => {
                 const id = section.slice(4)
                 const name = CLIS.find((c) => c.id === id)?.name ?? id
-                const files = CLI_DOCS[id] ?? []
+                const files = cliDocs(id)
                 return (
                   <DocPage
                     key={section}
                     projectId={project!.id}
                     title={name}
-                    desc={
-                      id === 'claude'
-                        ? t(
-                            'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
-                          )
-                        : id === 'codex'
-                          ? t(
-                              'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。',
-                            )
-                          : t(
-                              'Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。',
-                            )
-                    }
+                    desc={CLIS.find((c) => c.id === id)?.docsNote ?? ''}
                     files={files}
                     docs={docs.files}
                     drafts={docDrafts}

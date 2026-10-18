@@ -3,6 +3,7 @@ import { toast } from 'sonner'
 import type { Agent, Category, CliStatus, Project, ProjectCategory, Settings, Task, Workflow } from '@shared/schema'
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
+import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
 
 /** 换语言：记在浏览器里（页面加载时就要用），重新加载让所有文案换掉 */
@@ -98,7 +99,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           .designs()
           .then((ds) =>
             // 只更新状态，名字等以页面上的为准（正在改名时不被盖掉）
-            setDesigns((cur) => cur.map((x) => ({ ...x, running: !!ds.find((d) => d.id === x.id)?.running }))),
+            setDesigns((cur) =>
+              cur.map((x) => {
+                const d = ds.find((d) => d.id === x.id)
+                return { ...x, running: !!d?.running, asking: !!d?.asking }
+              }),
+            ),
           )
           .catch(() => {}),
       2500,
@@ -138,8 +144,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // CLI 检测可能要跑一遍各个 CLI，不挡住页面：其他数据到了就先显示
+    // 先注册用户自己加的 CLI 配置，CLI 列表、设置页才认得它们
     api
-      .clis()
+      .cliSpecs()
+      .then((r) => registerCliSpecs(r.specs))
+      .catch(() => {})
+      .then(() => api.clis())
       .then(setClis)
       .catch(() => {})
     Promise.all([

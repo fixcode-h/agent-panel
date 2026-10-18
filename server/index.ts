@@ -1,9 +1,12 @@
 // 必须第一个引入：先定下界面语言，其他模块顶层的文案才会用对语言
 import './lang.ts'
+// 用户自己加的 CLI 配置要在用到 CLI 列表的模块之前读进来
+import { CLI_CONFIG_DIR, loadUserClis, userClis } from './cli-config.ts'
+import { asksApi } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import {
@@ -40,6 +43,7 @@ import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } fro
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
+import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
@@ -142,6 +146,18 @@ app.put('/settings', async (c) => {
   return c.json(await saveSettings(p.data))
 })
 
+// 用户在数据目录里加的 CLI 配置：页面拿去注册；改了配置文件后可以重新读
+app.get('/clis/specs', (c) => c.json(userClis()))
+app.post('/clis/specs/reveal', async (c) => {
+  await mkdir(CLI_CONFIG_DIR, { recursive: true })
+  revealDir(CLI_CONFIG_DIR)
+  return c.json({ ok: true })
+})
+app.post('/clis/specs/reload', async (c) => {
+  loadUserClis()
+  await detectClis(true)
+  return c.json(userClis())
+})
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/clis', installApi())
 app.route('/clis', modelsApi())
@@ -158,6 +174,17 @@ app.get('/clis/:id/skills', async (c) => {
   const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
   try {
     return c.json(await listSkills(c.req.param('id'), dir))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+})
+
+// 输入框「/」菜单：CLI 自己带的命令和 Skill
+app.get('/clis/:id/commands', async (c) => {
+  const pid = c.req.query('projectId')
+  const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
+  try {
+    return c.json(await listCommands(c.req.param('id'), dir))
   } catch (e) {
     return bad(c, (e as Error).message)
   }
@@ -351,6 +378,7 @@ app.post('/designs/browser/install', async (c) => {
 })
 app.route('/designs', designs.routes)
 app.route('/bridge', bridgeApi())
+app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
 const docs = docsApi({ projects })

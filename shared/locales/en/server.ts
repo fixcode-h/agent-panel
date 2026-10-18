@@ -84,7 +84,6 @@ export const EN_SERVER: Record<string, string> = {
   // 执行
   执行出错: 'Execution error',
   已中断: 'Interrupted',
-  'Codex 没有完成这一轮就退出了': 'Codex exited before finishing the turn',
   '找不到命令「{cmd}」': 'Command not found: “{cmd}”',
   解析输出出错: 'Output parse error',
   '你回答了「{title}」：{answer}': 'You answered “{title}”: {answer}',

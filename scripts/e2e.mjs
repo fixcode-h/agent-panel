@@ -203,7 +203,7 @@ try {
   })
   const settings = {
     stepTimeoutMinutes: 5,
-    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli() },
+    clis: { claude: cli({ defaultModel: 'sonnet' }), codex: cli(), commandcode: cli(), gemini: cli() },
   }
   await call('PUT', '/settings', settings)
   const clis = await call('GET', '/clis?refresh=1')
@@ -213,10 +213,11 @@ try {
       ['claude', true],
       ['codex', true],
       ['commandcode', true],
+      ['gemini', true],
     ],
   )
   assert.match(clis[1].version, /fake 0.0.1/)
-  step('设置保存，三个 CLI 都能检测到')
+  step('设置保存，四个 CLI 都能检测到')
 
   const agent = (o) =>
     call('POST', '/agents', {
@@ -580,6 +581,103 @@ try {
   await call('POST', `/tasks/${dc.id}/messages`, { text: '继续' })
   await waitDone(dc.id)
   assert.equal(calls().at(-1).kind, 'codex', '继续对话也用选的 CLI')
+  // Gemini CLI：按配置文件（shared/clis/gemini.json）拼参数、解析 stream-json
+  let gm = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'gemini',
+    prompt: '用 Gemini',
+  })
+  gm = await waitDone(gm.id)
+  assert.equal(gm.status, 'done', gm.messages.at(-1)?.text)
+  c = calls().at(-1)
+  assert.equal(c.kind, 'gemini')
+  assert.ok(c.args.includes('--approval-mode') && c.args.includes('auto_edit'), c.args.join(' '))
+  assert.equal(c.input, '用 Gemini', '任务描述从 stdin 传入')
+  const gReply = gm.messages.filter((m) => m.role === 'agent').at(-1)
+  assert.match(gReply.text, /这是 gemini 的回复/)
+  assert.deepEqual(
+    gReply.tools.map((x) => x.kind),
+    ['read', 'edit'],
+    '工具调用按名字认出读文件、改文件',
+  )
+  assert.equal(gm.usage.inputTokens, 5000, JSON.stringify(gm.usage))
+  await call('POST', `/tasks/${gm.id}/messages`, { text: '继续' })
+  await waitDone(gm.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
+  // 用户自己加的 CLI：数据目录 config/clis/ 下放一份配置，重新读取后就能用，不用改代码
+  const gemSpec = JSON.parse(readFileSync(path.join(root, 'shared/clis/gemini.json'), 'utf8'))
+  mkdirSync(path.join(dataDir, 'config/clis'), { recursive: true })
+  writeFileSync(
+    path.join(dataDir, 'config/clis/my-cli.json'),
+    JSON.stringify({ ...gemSpec, id: 'my-cli', name: 'My CLI', command: fake, color: '#123456' }),
+  )
+  writeFileSync(path.join(dataDir, 'config/clis/broken.json'), JSON.stringify({ id: 'broken', name: 'x' }))
+  const us = await call('POST', '/clis/specs/reload', {})
+  assert.deepEqual(
+    us.specs.map((x) => x.id),
+    ['my-cli'],
+  )
+  assert.ok(
+    us.errors.some((e) => e.startsWith('broken')),
+    '写错的配置报出原因',
+  )
+  assert.ok((await call('GET', '/clis')).some((x) => x.id === 'my-cli' && x.installed))
+  let mine = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'my-cli',
+    prompt: '自己加的',
+  })
+  mine = await waitDone(mine.id)
+  assert.equal(mine.status, 'done', mine.messages.at(-1)?.text)
+  assert.equal(calls().at(-1).input, '自己加的')
+  rmSync(path.join(dataDir, 'config/clis'), { recursive: true })
+  assert.ok(!(await call('POST', '/clis/specs/reload', {})).specs.length, '删掉配置后不再有')
+  step('Gemini CLI 按配置执行；数据目录里加一份配置就能接入新的 CLI')
+
+  // 「/」命令：列出 CLI 自己的命令和 Skill；Claude Code 原样发，其他 CLI 展开成普通要求
+  mkdirSync(path.join(project.path, '.claude/commands'), { recursive: true })
+  writeFileSync(
+    path.join(project.path, '.claude/commands/hello.md'),
+    '---\ndescription: 打个招呼\nargument-hint: <名字>\n---\n跟 $ARGUMENTS 打个招呼',
+  )
+  mkdirSync(path.join(project.path, '.agents/skills/demo-skill'), { recursive: true })
+  writeFileSync(
+    path.join(project.path, '.agents/skills/demo-skill/SKILL.md'),
+    '---\nname: demo-skill\ndescription: 演示用的 Skill\n---\n按演示的步骤做事',
+  )
+  const cmds = await call('GET', `/clis/claude/commands?projectId=${project.id}`)
+  const hello = cmds.find((x) => x.name === 'hello')
+  assert.equal(hello?.kind, 'command')
+  assert.equal(hello?.hint, '<名字>')
+  assert.equal(hello?.description, '打个招呼')
+  assert.ok(
+    (await call('GET', `/clis/commandcode/commands?projectId=${project.id}`)).some((x) => x.name === 'demo-skill'),
+  )
+  let sc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '/hello 小明' })
+  await waitDone(sc.id)
+  assert.match(calls().at(-1).input, /^\/hello 小明/, 'Claude Code 自己认得命令，原样发')
+  sc = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'commandcode',
+    prompt: '/demo-skill 做点事',
+  })
+  await waitDone(sc.id)
+  c = calls().at(-1)
+  assert.ok(c.input.includes('Skill「demo-skill」') && c.input.includes('按演示的步骤做事'), 'Skill 展开成要求')
+  assert.ok(c.input.includes('做点事'))
+  // 引入会话：整理成一份 Markdown 附件
+  const ref = await call('POST', `/tasks/${sc.id}/transcript`, {})
+  assert.ok(ref.name.endsWith('.md'))
+  const refText = readFileSync(ref.path, 'utf8')
+  assert.ok(refText.includes('# 参考会话') && refText.includes('/demo-skill 做点事'), refText)
+  step('「/」命令和 Skill 按 CLI 列出、展开，会话能整理成附件引入')
   const other = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -940,7 +1038,13 @@ try {
   step('对话中途换 CLI：下一轮生效，开新会话并带上之前的对话')
 
   // ---- 权限请求：Claude Code 要确认的命令和问题显示在任务上，用户回答后交回 CLI ----
-  let ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 需要确认' })
+  let ask = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: A.id,
+    prompt: 'ASK 需要确认',
+    askUser: true,
+  })
   const waitReq = async () => {
     for (let i = 0; i < 100; i++) {
       const t = await call('GET', `/tasks/${ask.id}`)
@@ -967,6 +1071,20 @@ try {
   assert.equal(a2.updatedInput.answers['用哪个数据库？'], 'SQLite')
   assert.ok(ask.messages.some((m) => m.role === 'system' && /你允许了：运行命令：rm -rf build/.test(m.text)))
   step('权限请求：命令和问题在任务上等用户确认，回答后交回 CLI')
+
+  // 「提问」开关关着：审批照样等用户，问题不交给用户，让 CLI 自己选
+  ask = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'ASK 自己选' })
+  assert.equal(ask.askUser, false)
+  const r3 = await waitReq()
+  assert.equal(r3.kind, 'command')
+  await call('POST', `/tasks/${ask.id}/requests/${r3.id}`, { allow: false })
+  ask = await waitDone(ask.id)
+  assert.equal(ask.status, 'done')
+  const [d1, d2] = readLog(log + '.ask').at(-1)
+  assert.equal(d1.behavior, 'deny')
+  assert.equal(d2.behavior, 'deny')
+  assert.match(d2.message, /自己的判断|不要再提问/, '问题让 CLI 自己选')
+  step('提问开关关着：审批照样等用户，问题让 CLI 自己选最合适的做法')
 
   // ---- 工作流的条件连线、完成后等我确认、预算上限 ----
   const wfBranch = await call('POST', '/workflows', {
@@ -1720,7 +1838,8 @@ try {
   assert.equal(job.proposal.newCategory, '质量', '不存在的分类标记为新建')
   c = calls().at(-1)
   assert.match(c.input, /配置助手[\s\S]*## 已有的 Agent[\s\S]*甲（claude[\s\S]*## 创建规则[\s\S]*## 输出格式/)
-  assert.ok(c.args.includes('--permission-mode') ? c.args.includes('default') : true, '只读权限')
+  // 权限按设置里的；Claude Code 的审批交给面板（弹出卡片），不再一律拒绝
+  if (c.kind === 'claude') assert.ok(c.args.includes('--permission-prompt-tool'), '审批交给面板')
   assert.notEqual(c.cwd, projectDir, '不在项目目录里运行')
   // 第一次格式不对，自动让 CLI 修正
   job = await assist(
@@ -1859,6 +1978,24 @@ try {
     assert.deepEqual(tr.prompts[0], { category: 'light', zh: '柔和顶光', en: 'EN:柔和顶光' })
     await assert.rejects(call('POST', '/designs/prompts/ai', { mode: 'generate', text: '' }), /没有要处理的内容/)
     step('UI 项目提示词：按分类保存，AI 生成和翻译')
+
+    // 风格库：增删改；没定风格的设计，AI 的提示词里带上同类风格作为选项
+    const st = await call('POST', '/designs/styles', {
+      name: '暗黑奇幻',
+      kind: 'game',
+      summary: '石刻金边',
+      en: 'dark fantasy STYLELIB',
+      prompts: [{ category: 'style', zh: '暗黑奇幻', en: 'dark fantasy' }],
+    })
+    assert.equal(
+      (await call('PUT', `/designs/styles/${st.id}`, { name: '暗黑奇幻·改' })).summary,
+      '石刻金边',
+      '只改传了的',
+    )
+    assert.equal((await call('GET', '/designs/styles')).find((x) => x.id === st.id).name, '暗黑奇幻·改')
+    await call('DELETE', `/designs/styles/${st.id}`)
+    assert.ok(!(await call('GET', '/designs/styles')).some((x) => x.id === st.id))
+    step('风格库：存、改、删')
     const design = await call('POST', '/designs', {
       projectId: uiProject.id,
       kind: 'game',
@@ -2528,7 +2665,7 @@ try {
   await call('PUT', '/settings', { ...settings, cliOrder: ['commandcode', 'claude'] })
   assert.deepEqual(
     (await call('GET', '/clis')).map((c) => c.id),
-    ['commandcode', 'claude', 'codex'],
+    ['commandcode', 'claude', 'codex', 'gemini'],
   )
   await call('PUT', '/settings', settings)
   step('设置里安装 / 卸载 CLI：调用 npm、记录输出、完成后重新检测')

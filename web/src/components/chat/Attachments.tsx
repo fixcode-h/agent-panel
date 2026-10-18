@@ -2,10 +2,26 @@
 // 以后新的对话输入框直接拿来用
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { AtSign, File as FileIcon, FileCode2, Loader2, Paperclip, Plus, X } from 'lucide-react'
+import {
+  AtSign,
+  ChevronLeft,
+  ChevronRight,
+  File as FileIcon,
+  FileCode2,
+  FolderGit2,
+  Gamepad2,
+  Globe,
+  Loader2,
+  MessageSquare,
+  MessagesSquare,
+  Paperclip,
+  Plus,
+  X,
+} from 'lucide-react'
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
 
@@ -74,11 +90,17 @@ export function useAttachments() {
       }
     }
   }, [])
+  /** 已经在服务端生成好的附件（引入的会话记录） */
+  const addReady = useCallback((a: Attachment) => {
+    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+    setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
+  }, [])
   const remove = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key))
   const clear = () => setItems([])
   return {
     items,
     add,
+    addReady,
     remove,
     clear,
     uploading: items.some((x) => !x.done),
@@ -197,22 +219,30 @@ function MessageAttachment({ a }: { a: Attachment }) {
   )
 }
 
-/** 输入框左下角的「+」：上传文件或图片、引用项目文件，和 Claude Code 一样也可以直接粘贴、拖进来、输入 @ */
+/** 输入框左下角的「+」：上传文件或图片、引用项目文件、引入别的会话，和 Claude Code 一样也可以直接粘贴、拖进来、输入 @ */
 export function AttachMenu({
   onFiles,
   onMention,
   canMention,
+  onSession,
+  self,
   className,
 }: {
   onFiles: (f: File[]) => void
   /** 没有「引用项目文件」时不传（例如 UI 设计的对话） */
   onMention?: () => void
   canMention: boolean
+  /** 引入会话：选好的会话整理成附件交回来；不传就没有这一项 */
+  onSession?: (a: Attachment) => void
+  /** 当前会话的 id：引入列表里不列自己 */
+  self?: string
   className?: string
 }) {
   const input = useRef<HTMLInputElement>(null)
   // 选了「引用项目文件」：焦点要留在输入框里弹出文件列表，不能被还给「+」按钮
   const mentioning = useRef(false)
+  const [open, setOpen] = useState(false)
+  const [view, setView] = useState<'menu' | 'sessions'>('menu')
   return (
     <>
       <input
@@ -225,7 +255,13 @@ export function AttachMenu({
           e.target.value = ''
         }}
       />
-      <Popover>
+      <Popover
+        open={open}
+        onOpenChange={(o) => {
+          setOpen(o)
+          if (!o) setView('menu')
+        }}
+      >
         <PopoverTrigger
           aria-label={t('添加文件、图片或引用')}
           title={t('添加文件、图片或引用')}
@@ -238,35 +274,152 @@ export function AttachMenu({
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="w-[260px]"
+          className={view === 'sessions' ? 'w-[340px] p-0' : 'w-[260px]'}
           onCloseAutoFocus={(e) => {
             if (!mentioning.current) return
             mentioning.current = false
             e.preventDefault()
           }}
         >
-          <PopoverClose className={menuItem} onClick={() => input.current?.click()}>
-            <Paperclip className="h-4 w-4 shrink-0 text-subtle" />
-            <span className="flex-1">{t('上传文件或图片')}</span>
-            <span className="text-[11px] text-subtle">{t('可粘贴 / 拖入')}</span>
-          </PopoverClose>
-          {onMention && (
-            <PopoverClose
-              className={menuItem}
-              disabled={!canMention}
-              onClick={() => {
-                mentioning.current = true
-                onMention()
+          {view === 'sessions' && onSession ? (
+            <SessionPicker
+              self={self}
+              onBack={() => setView('menu')}
+              onPick={(a) => {
+                onSession(a)
+                setOpen(false)
+                setView('menu')
               }}
-            >
-              <AtSign className="h-4 w-4 shrink-0 text-subtle" />
-              <span className="flex-1">{t('引用项目文件')}</span>
-              <span className="font-mono text-[11px] text-subtle">@</span>
-            </PopoverClose>
+            />
+          ) : (
+            <>
+              <PopoverClose className={menuItem} onClick={() => input.current?.click()}>
+                <Paperclip className="h-4 w-4 shrink-0 text-subtle" />
+                <span className="flex-1">{t('上传文件或图片')}</span>
+                <span className="text-[11px] text-subtle">{t('可粘贴 / 拖入')}</span>
+              </PopoverClose>
+              {onMention && (
+                <PopoverClose
+                  className={menuItem}
+                  disabled={!canMention}
+                  onClick={() => {
+                    mentioning.current = true
+                    onMention()
+                  }}
+                >
+                  <AtSign className="h-4 w-4 shrink-0 text-subtle" />
+                  <span className="flex-1">{t('引用项目文件')}</span>
+                  <span className="font-mono text-[11px] text-subtle">@</span>
+                </PopoverClose>
+              )}
+              {onSession && (
+                <button type="button" className={menuItem} onClick={() => setView('sessions')}>
+                  <MessagesSquare className="h-4 w-4 shrink-0 text-subtle" />
+                  <span className="flex-1">{t('引入会话')}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-subtle" />
+                </button>
+              )}
+            </>
           )}
         </PopoverContent>
       </Popover>
     </>
+  )
+}
+
+/**
+ * 引入会话的列表：Agent 任务、Chat、UI 设计都能选，选中的会话整理成一份 Markdown 附件，
+ * AI 把它当参考资料读（不会重新执行里面的要求）
+ */
+function SessionPicker({
+  self,
+  onBack,
+  onPick,
+}: {
+  self?: string
+  onBack: () => void
+  onPick: (a: Attachment) => void
+}) {
+  const { tasks, designs, projects } = useData()
+  const [q, setQ] = useState('')
+  const [busy, setBusy] = useState('')
+  const kw = q.trim().toLowerCase()
+  const items = [
+    ...tasks.map((x) => ({
+      id: x.id,
+      kind: 'task' as const,
+      title: x.title,
+      at: x.updatedAt,
+      icon: x.projectId ? FolderGit2 : MessageSquare,
+      where: x.projectId ? (projects.find((p) => p.id === x.projectId)?.name ?? '') : t('Chat'),
+    })),
+    ...designs.map((x) => ({
+      id: x.id,
+      kind: 'design' as const,
+      title: x.title,
+      at: x.updatedAt,
+      icon: x.kind === 'web' ? Globe : Gamepad2,
+      where: t('UI 设计'),
+    })),
+  ]
+    .filter((x) => x.id !== self && (!kw || `${x.title} ${x.where}`.toLowerCase().includes(kw)))
+    .sort((a, b) => b.at.localeCompare(a.at))
+    .slice(0, 60)
+  const pick = async (x: (typeof items)[number]) => {
+    if (busy) return
+    setBusy(x.id)
+    try {
+      onPick(await (x.kind === 'task' ? api.taskTranscript(x.id) : api.designTranscript(x.id)))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={t('返回')}
+          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <input
+          autoFocus
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={t('搜索会话')}
+          aria-label={t('搜索会话')}
+          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[13px] outline-none placeholder:text-subtle"
+        />
+      </div>
+      <div className="max-h-80 overflow-y-auto p-1">
+        {items.map((x) => (
+          <button
+            key={x.id}
+            type="button"
+            disabled={!!busy}
+            onClick={() => void pick(x)}
+            className={cn(menuItem, 'disabled:cursor-wait')}
+          >
+            {busy === x.id ? (
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-subtle" />
+            ) : (
+              <x.icon className="h-4 w-4 shrink-0 text-subtle" />
+            )}
+            <span className="min-w-0 flex-1 truncate">{x.title}</span>
+            <span className="max-w-[96px] shrink-0 truncate text-[11px] text-subtle">{x.where}</span>
+          </button>
+        ))}
+        {!items.length && <p className="px-2.5 py-3 text-center text-xs text-subtle">{t('没有可以引入的会话')}</p>}
+      </div>
+      <p className="border-t px-3 py-2 text-[11px] leading-relaxed text-subtle">
+        {t('选中的会话会整理成一份记录附上，AI 拿它当参考，不会重新执行里面的要求。')}
+      </p>
+    </div>
   )
 }
 

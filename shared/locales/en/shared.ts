@@ -26,11 +26,6 @@ export const EN_SHARED: Record<string, string> = {
   只能读文件和跑只读命令: 'Can only read files and run read-only commands',
   完全访问: 'Full access',
   '不使用沙箱、不确认，只在信任的项目里用': 'No sandbox, no confirmations. Use only in trusted projects',
-  'Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」':
-    'In non-interactive mode, Command Code still blocks file edits and commands, so it can only read and analyze code. To let it make changes, choose "Skip all confirmations"',
-  '可以改文件、执行任意命令，只在信任的项目里用': 'Can edit files and run any command. Use only in trusted projects',
-  标准: 'Standard',
-  非交互执行时改文件和跑命令都会被拦下: 'File edits and commands are blocked in non-interactive mode',
   '<任务描述>': '<task>',
 
   // data.ts：数据分类

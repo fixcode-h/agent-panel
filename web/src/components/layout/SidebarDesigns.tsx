@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   ChevronRight,
+  CircleAlert,
   CopyPlus,
   Folder,
   FolderInput,
@@ -150,7 +151,14 @@ export function DesignList() {
               on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
             )}
           >
-            {d.running ? (
+            {d.asking ? (
+              // AI 在等你确认或回答
+              <CircleAlert
+                aria-label={t('需要你处理')}
+                className="h-3.5 w-3.5 shrink-0 text-warning"
+                strokeWidth={2.4}
+              />
+            ) : d.running ? (
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
             ) : d.kind === 'web' ? (
               <Globe className="h-3.5 w-3.5 shrink-0 text-subtle" />

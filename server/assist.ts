@@ -1,3 +1,4 @@
+import { askSession, setAskUser } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { mkdir } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
@@ -24,23 +25,17 @@ import { t } from '../shared/i18n.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
-/**
- * 生成配置时只需要回答，不需要改文件。Claude Code 和 Command Code 的默认 / 标准模式在非交互运行时会拒绝所有需要审批的操作
- * （改文件、执行命令），等于只读；不用 plan 模式，因为它可能把回答放进「退出规划」的工具调用里，读不到文字。
- */
-export const READ_ONLY: Record<string, string> = { claude: 'default', codex: 'read-only', commandcode: 'standard' }
-
 /** 设置里的额外参数可能放宽权限（跳过确认、换沙箱），生成配置时去掉，保证只读 */
 export function safeArgs(args: string[]) {
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
     const a = args[i]
-    if (/^--(dangerously-|yolo|full-auto|bypass)/.test(a)) continue
-    if (/^(--permission-mode|--sandbox|-s)$/.test(a)) {
+    if (/^--(dangerously-|yolo|full-auto|bypass)/.test(a) || a === '-y') continue
+    if (/^(--permission-mode|--approval-mode|--sandbox|-s)$/.test(a)) {
       i++
       continue
     }
-    if (/^--(permission-mode|sandbox)=/.test(a)) continue
+    if (/^--(permission-mode|approval-mode|sandbox)=/.test(a)) continue
     if (a === '-c' && /^sandbox_mode|^approval_policy/.test(args[i + 1] ?? '')) {
       i++
       continue
@@ -116,15 +111,19 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       let text = ''
       const errors: string[] = []
       let result: { ok: boolean; error?: string } | undefined
+      const asks = askSession(`assist:${job.id}`)
       const r = await invokeCli({
+        askUser: asks.askUser,
+        onAsk: asks.onAsk,
         cliId: input.cli,
         command: cs.command,
         build: {
           // 默认模型可能是「@high」这样的档位，要换成具体模型和思考强度
           model: run.model,
           effort: run.effort,
-          permission: READ_ONLY[input.cli] ?? cs.permission,
-          extraArgs: safeArgs(cs.extraArgs),
+          // 审批按设置里的权限：CLI 要确认时弹出卡片等用户
+          permission: cs.permission,
+          extraArgs: cs.extraArgs,
         },
         cwd,
         env: childEnv(cs.env),
@@ -163,7 +162,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
           job.text = text.split('```')[0].trim()
           job.outChars = text.length
         },
-      })
+      }).finally(asks.done)
       if (r.killed === 'stopped') return fail(job, t('已停止'))
       if (r.killed === 'timeout') return fail(job, t('超过 5 分钟没有完成，已停止'))
       if (r.spawnError)
@@ -247,6 +246,7 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         at: Date.now(),
       }
       jobs.set(job.id, job)
+      setAskUser(`assist:${job.id}`, input.askUser)
       run(job, input, ctx)
         .catch((e) => fail(job, (e as Error).message))
         .finally(() => (job.at = Date.now()))

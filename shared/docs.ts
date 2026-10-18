@@ -2,30 +2,22 @@
  * 项目说明文件：各个 CLI 每次启动时自动读的 Markdown（项目约定、常用命令、架构说明）。
  * 项目设置里能看、能改、能让 AI 优化。
  *
- * - Codex 读 AGENTS.md（同目录有 AGENTS.override.md 时用它代替）
- * - Command Code 读 AGENTS.md，没有时读 .commandcode/AGENTS.md
- * - Claude Code 读 CLAUDE.md 和 .claude/CLAUDE.md，CLAUDE.local.md 是个人的、不提交
- * - AGENT.md（少了 s）哪个 CLI 都不读，检测到时提醒改名
+ * 每个 CLI 读哪些文件写在它的定义里（docs），例如 Claude Code 读 CLAUDE.md，Codex 读 AGENTS.md。
+ * AGENT.md（少了 s）哪个 CLI 都不读，检测到时提醒改名
  */
 import { z } from 'zod'
+import { CLIS, getCli } from './clis.ts'
 
-export const DOC_FILES = [
-  'AGENTS.md',
-  'AGENTS.override.md',
-  '.commandcode/AGENTS.md',
-  'CLAUDE.md',
-  '.claude/CLAUDE.md',
-  'CLAUDE.local.md',
-  'AGENT.md',
-] as const
-export type DocFile = (typeof DOC_FILES)[number]
+/** 项目说明文件相对项目目录的路径 */
+export type DocFile = string
+
+/** 能看、能改的说明文件：各个 CLI 定义里写的（docs），加上通用的 AGENTS.md 和写错名字的 AGENT.md */
+export const docFiles = (): DocFile[] => [...new Set(['AGENTS.md', ...CLIS.flatMap((c) => c.docs), 'AGENT.md'])]
 
 /** 每个 CLI 读哪些说明文件；第一个是还没有文件时新建的那个 */
-export const CLI_DOCS: Record<string, DocFile[]> = {
-  claude: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
-  codex: ['AGENTS.md', 'AGENTS.override.md'],
-  commandcode: ['AGENTS.md', '.commandcode/AGENTS.md'],
-}
+export const cliDocs = (id: string): DocFile[] => getCli(id)?.docs ?? []
+
+const DocPath = z.string().refine((p) => docFiles().includes(p), '不是项目说明文件')
 
 /** 通用的项目说明：多个 CLI 共用 */
 export const SHARED_DOC: DocFile = 'AGENTS.md'
@@ -49,12 +41,12 @@ export interface ProjectDocs {
 }
 
 export const DocWrite = z.object({
-  path: z.enum(DOC_FILES),
+  path: DocPath,
   content: z.string().max(DOC_MAX),
 })
 
 export const DocOptimizeInput = z.object({
-  path: z.enum(DOC_FILES),
+  path: DocPath,
   /** 编辑器里当前的内容（可能还没保存） */
   content: z.string().max(DOC_MAX),
   /** 想怎么改；为空时按通用的标准优化 */

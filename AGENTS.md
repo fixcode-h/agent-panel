@@ -4,11 +4,13 @@
 
 ## 项目
 
-本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex、Command Code），按工作流的流程图执行。
+本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex、Command Code、Gemini CLI），按工作流的流程图执行。
 
 - 全部 TypeScript：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），服务端 `server/`（Hono，只监听 127.0.0.1），
   前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。不用 Python。
 - 数据是 `data/` 下的 JSON 文件。
+- CLI 的差异都写在定义里（`shared/clis.ts`，Command Code、Gemini CLI 是 `shared/clis/*.json` 配置）：参数规则、输出解析、能力、Skill 和说明文件的位置。
+  其他代码按定义里的能力走，不要按 CLI 的名字写分支。接入新 CLI 写一份配置，格式见 `docs/cli-config.md`；用户也能把配置放进数据目录的 `config/clis/`。
 - 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现 `web/src/lib/demo-backend.ts`、`demo-assist.ts`。
 - 界面参考 Claude Code 的风格，视觉质量很重要。
 - 界面支持中文和英文：文案用 `t('中文原文')`（`shared/i18n.ts`，中文原文就是键，插值写 `t('共 {n} 个', { n })`），

@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
+import { getCli } from '@shared/clis'
 import type { CliLimits } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
 /** 能显示额度的 CLI：Codex 可以主动查，Claude Code 执行时会推送；Command Code 不提供 */
-export const LIMIT_CLIS = ['codex', 'claude']
+/** 有账号额度可看的 CLI（定义里 limits 不是 none） */
+export const hasLimits = (cli: string) => (getCli(cli)?.limits ?? 'none') !== 'none'
 
 /**
  * 上次读到的额度：先显示它，读到最新的再换掉，不用每次打开都等「读取中」。
@@ -50,7 +52,7 @@ export function useCliLimits(cli: string, enabled: boolean) {
   useEffect(() => {
     setData(lastLimits.get(cli) ?? null)
     setError('')
-    if (!enabled || !LIMIT_CLIS.includes(cli)) return
+    if (!enabled || !hasLimits(cli)) return
     load()
     const timer = setInterval(load, 60_000)
     return () => clearInterval(timer)
@@ -121,7 +123,7 @@ export function CliLimitsPanel({ cli }: { cli: string }) {
             ? t('读取失败：{error}', { error })
             : loading
               ? t('读取中…')
-              : cli === 'claude'
+              : getCli(cli)?.limits === 'push'
                 ? t('Claude Code 在执行时才报告额度，跑过一次任务后这里会显示')
                 : t('没有读到额度（用 API Key 登录时没有额度限制）')}
         </p>

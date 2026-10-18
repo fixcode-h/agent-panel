@@ -1,0 +1,143 @@
+{
+  "id": "commandcode",
+  "name": "Command Code",
+  "command": "cmdc",
+  "npmPackage": "command-code",
+  "brew": ["command-code"],
+  "docsUrl": "https://www.npmjs.com/package/command-code",
+  "color": "#b4307a",
+  "models": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "label": "DeepSeek V4 Flash",
+      "isDefault": true
+    },
+    {
+      "id": "deepseek/deepseek-v4-pro",
+      "label": "DeepSeek V4 Pro"
+    },
+    {
+      "id": "moonshotai/kimi-k3",
+      "label": "Kimi K3"
+    },
+    {
+      "id": "zai-org/glm-5.3",
+      "label": "GLM-5.3"
+    },
+    {
+      "id": "qwen/qwen3.8-max",
+      "label": "Qwen 3.8 Max"
+    },
+    {
+      "id": "claude-sonnet-5-5",
+      "label": "Claude Sonnet 5.5"
+    }
+  ],
+  "efforts": [
+    {
+      "id": "low",
+      "label": "低"
+    },
+    {
+      "id": "medium",
+      "label": "中"
+    },
+    {
+      "id": "high",
+      "label": "高"
+    }
+  ],
+  "tiers": {
+    "high": {
+      "model": "claude-sonnet-5-5",
+      "effort": "high"
+    },
+    "medium": {
+      "model": "deepseek/deepseek-v4-pro",
+      "effort": ""
+    },
+    "low": {
+      "model": "deepseek/deepseek-v4-flash",
+      "effort": ""
+    }
+  },
+  "permissions": [
+    {
+      "id": "accept-edits",
+      "label": "自动接受改文件",
+      "hint": "Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」"
+    },
+    {
+      "id": "yolo",
+      "label": "跳过所有确认",
+      "hint": "可以改文件、执行任意命令，只在信任的项目里用"
+    },
+    {
+      "id": "plan",
+      "label": "只读规划",
+      "hint": "只分析和出方案，不改文件"
+    },
+    {
+      "id": "standard",
+      "label": "标准",
+      "hint": "非交互执行时改文件和跑命令都会被拦下"
+    }
+  ],
+  "defaultPermission": "accept-edits",
+  "modelsFrom": "commandcode",
+  "readOnlyPermission": "standard",
+  "args": [
+    {
+      "args": ["-p", "--output-format", "json", "--skip-onboarding", "--trust", "--no-auto-update"]
+    },
+    {
+      "if": "model",
+      "args": ["-m", "{model}"]
+    },
+    {
+      "if": "effort",
+      "args": ["--effort", "{effort}"]
+    },
+    {
+      "if": "permission=yolo",
+      "args": ["--dangerously-skip-permissions"]
+    },
+    {
+      "if": ["permission", "permission!=yolo"],
+      "args": ["--permission-mode", "{permission}"]
+    },
+    {
+      "if": "resume",
+      "args": ["--resume", "{resume}"]
+    },
+    {
+      "if": ["resume", "fork"],
+      "args": ["--fork-session"]
+    },
+    {
+      "args": ["--max-turns", "{maxTurns:200}"]
+    }
+  ],
+  "output": "commandcode",
+  "features": {
+    "fork": "latest",
+    "compact": "summary",
+    "autoCompact": "panel"
+  },
+  "docs": ["AGENTS.md", ".commandcode/AGENTS.md"],
+  "docsNote": "Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。",
+  "skills": {
+    "user": ["~/.commandcode/skills", "~/.agents/skills"],
+    "repo": [".commandcode/skills", ".agents/skills"]
+  },
+  "envExample": "HTTPS_PROXY=http://127.0.0.1:7890",
+  "i18n": {
+    "en": {
+      "Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。": "Command Code reads AGENTS.md on every start, or .commandcode/AGENTS.md when the root has none. AGENTS.md is the same file as Project notes.",
+      "Command Code 非交互执行时，改文件和跑命令仍会被拦下，只能读代码和分析；要让它动手请选「跳过所有确认」": "In non-interactive mode, Command Code still blocks file edits and commands, so it can only read and analyze code. To let it make changes, choose \"Skip all confirmations\"",
+      "可以改文件、执行任意命令，只在信任的项目里用": "Can edit files and run any command. Use only in trusted projects",
+      "标准": "Standard",
+      "非交互执行时改文件和跑命令都会被拦下": "File edits and commands are blocked in non-interactive mode"
+    }
+  }
+}

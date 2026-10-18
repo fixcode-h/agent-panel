@@ -21,6 +21,7 @@ import { FoldedRun, type Author } from '@/components/tasks/Messages'
 import { modelOptions } from '@/components/agents/ModelSelect'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
+import { AskToggle, ScopeRequests, useAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
@@ -411,6 +412,7 @@ export function AssistDialog({
 
   const latest = useMemo(() => [...turns].reverse().find((t) => t.proposal)?.proposal, [turns])
   const running = !!job
+  const [askUser, setAskUser] = useAskUser(`assist-${kind}`)
 
   // 最小化：窗口收成右下角的悬浮按钮，生成照常进行，点按钮再展开
   const [minimized, setMinimized] = useState(false)
@@ -454,6 +456,7 @@ export function AssistDialog({
           model,
           effort,
           messages: next.map(({ role, text }) => ({ role, text })),
+          askUser,
         }),
       )
     } catch (e) {
@@ -648,6 +651,7 @@ export function AssistDialog({
                   )}
                 </div>
                 <div className="p-3">
+                  {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
                   <div className="rounded-xl border border-line-strong bg-card focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft">
                     <textarea
                       rows={2}
@@ -663,7 +667,14 @@ export function AssistDialog({
                       placeholder={latest ? t('继续说要改的地方') : L.placeholder}
                       className="block max-h-40 w-full resize-none bg-transparent px-3.5 pt-2.5 text-[13px] leading-relaxed outline-none placeholder:text-subtle"
                     />
-                    <div className="flex items-center px-2.5 pb-2">
+                    <div className="flex items-center gap-1 px-2.5 pb-2">
+                      <AskToggle
+                        value={askUser}
+                        onChange={(v) => {
+                          setAskUser(v)
+                          if (job) void api.setAskUser(`assist:${job.id}`, v).catch(() => {})
+                        }}
+                      />
                       {settings && cliDef && (
                         <RunPicker
                           def={cliDef}

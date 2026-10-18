@@ -6,6 +6,7 @@ import {
   Cpu,
   FlaskConical,
   Settings2,
+  Palette,
   Sparkles,
   SquareTerminal,
   type LucideIcon,
@@ -31,11 +32,13 @@ import { Input, Select, Textarea } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { SaveIndicator } from '@/components/layout/Detail'
 import { UpdateSection } from '@/components/settings/UpdateSection'
+import { StylesSettings } from '@/components/settings/StylesSettings'
 import { DataSection } from '@/components/settings/DataSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
+import { CustomClis } from '@/components/settings/CustomClis'
 import {
   AssistModel,
   CliSection,
@@ -59,6 +62,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'models', label: t('默认 CLI'), icon: Cpu },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: t('AI 创建'), icon: Sparkles },
+  { id: 'styles', label: t('风格库'), icon: Palette },
   { id: 'data', label: t('数据'), icon: HardDrive },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle },
 ]
@@ -316,6 +320,7 @@ function SettingsBody({
           <DialogCloseButton label={t('关闭设置')} />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
+          {cur.id === 'styles' && <StylesSettings />}
           {cur.id === 'general' && (
             <Group>
               {demo && (
@@ -602,6 +607,7 @@ function SettingsBody({
                   />
                 </Row>
               </Group>
+              <CustomClis demo={demo} />
             </>
           )}
 

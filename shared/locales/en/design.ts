@@ -414,4 +414,73 @@ export const EN_DESIGN: Record<string, string> = {
   '{n} 个字符': '{n} chars',
   'CLI 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。':
     "With a CLI, each image runs in its own process, at most this many at once. In the browser, only this many conversations are opened in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left); further images queue up and reuse whichever conversation is free.",
+  'AI 有问题时问我': 'Ask me when the AI has a question',
+  'AI 有问题时会问你，等你回答再继续（点一下改成让 AI 自己选）':
+    'The AI asks you and waits for your answer (click to let the AI decide on its own)',
+  'AI 有问题时自己选最合适的做法（点一下改成问你）':
+    'The AI picks the best option on its own (click to have it ask you)',
+  '都不合适的话，直接在下面说想要的风格': 'If none fits, describe the style you want below',
+  从风格库导入: 'Import from style library',
+  '风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。':
+    'The style library is empty. Click "Save to style library" in a UI design\'s style settings to add one.',
+  '{n} 条提示词': '{n} prompts',
+  这个风格的提示词都已经有了: 'All prompts of this style are already here',
+  '已导入 {n} 条提示词': 'Imported {n} prompts',
+  '风格库还是空的，可以把这个设计的风格存进去。': "The style library is empty. You can save this design's style to it.",
+  已存到风格库: 'Saved to style library',
+  'AI 正在总结风格…': 'AI is summarizing the style…',
+  存到风格库: 'Save to style library',
+  'AI 从这个设计里总结出了下面的风格，可以改一改再存。':
+    "The AI summarized this design's style. Edit it if you like, then save.",
+  名字: 'Name',
+  '发给 AI 的英文描述': 'English description sent to the AI',
+  保存: 'Save',
+  '加载中…': 'Loading…',
+  '从 UI 设计里存下来的整体风格。新的设计还没定风格时，AI 会把同类的风格作为选项问你；在设计的风格设置里也能直接套用，项目的美术提示词也能从这里导入。':
+    "Overall styles saved from UI designs. When a new design has no style yet, the AI offers matching styles as options; you can also apply them in a design's style settings or import them into a project's art prompts.",
+  还没有保存的风格: 'No saved styles yet',
+  '在 UI 设计里打开风格设置，点「存到风格库」，AI 会总结这个设计的风格存进来。':
+    'Open the style settings in a UI design and click "Save to style library"; the AI will summarize the design\'s style and save it here.',
+  '删除风格「{name}」？': 'Delete style "{name}"?',
+  '已经用了这个风格的设计不受影响。': 'Designs already using this style are not affected.',
+  风格名称: 'Style name',
+  风格说明: 'Style description',
+  一两句话说明这个风格: 'Describe this style in a sentence or two',
+  英文风格描述: 'English style description',
+  从风格库套用: 'Apply from style library',
+  风格库: 'Style library',
+  没有拿到结果: 'No result was returned',
+  风格不存在: 'Style not found',
+  引入会话: 'Import a conversation',
+  Chat: 'Chat',
+  搜索会话: 'Search conversations',
+  没有可以引入的会话: 'No conversations to import',
+  '选中的会话会整理成一份记录附上，AI 拿它当参考，不会重新执行里面的要求。':
+    "The selected conversation is attached as a transcript. The AI uses it as reference and won't redo the requests in it.",
+  '压缩上下文：把之前的对话压成摘要，腾出上下文':
+    'Compact context: summarize the conversation so far to free up context',
+  '审查还没提交的改动；后面跟分支名就审查相对这个分支的改动':
+    'Review uncommitted changes; add a branch name to review changes against that branch',
+  '[分支]': '[branch]',
+  '分析项目，写一份给 Agent 看的项目说明（CLAUDE.md / AGENTS.md）':
+    'Analyze the project and write a guide for agents (CLAUDE.md / AGENTS.md)',
+  检查当前分支改动里的安全问题: "Check the current branch's changes for security issues",
+  内置命令: 'Built-in',
+  自定义命令: 'Custom commands',
+  Skill: 'Skills',
+  '↑↓ 选择，回车确认': '↑↓ to select, Enter to confirm',
+  '正在读取 CLI 的命令和 Skill…': "Loading the CLI's commands and skills…",
+  会话: 'Conversation',
+  '{cli} 加载的 Skill（用户目录、系统自带和插件里的）': 'Skills loaded by {cli} (user folder, built-in and plugins)',
+  '{dirs} 里的 Skill；项目里的在项目设置里看': 'Skills in {dirs}; project skills are in project settings',
+  已装插件: 'installed plugins',
+  '有 {n} 份配置读不进来': "{n} config file(s) couldn't be loaded",
+  '添加其他 CLI': 'Add another CLI',
+  '面板按配置文件调用 CLI：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。':
+    'The panel runs CLIs from config files: how to build the command, how to parse its output, and where skills and instruction files live. Put a JSON config in the folder below and click Reload. No code changes needed.',
+  配置格式: 'Config format',
+  打开目录: 'Open folder',
+  重新读取: 'Reload',
+  '和已有的 CLI 重名': 'has the same id as an existing CLI',
+  '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
 }
