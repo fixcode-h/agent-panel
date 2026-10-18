@@ -4,6 +4,8 @@ import type { TaskRequest } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useScopedSetting } from '@/lib/useScopedSetting'
+import { askUserDefault } from '@/lib/askUserDefault'
+import { useData } from '@/lib/data'
 import { RequestCard } from '@/components/tasks/RequestCard'
 import { t } from '@shared/i18n'
 
@@ -42,14 +44,28 @@ export function AskToggle({
   )
 }
 
-/** 每个会话各自记住「提问」开关；新会话沿用上次的选择 */
+/** 每个会话各自记住「提问」开关；新会话按设置里的默认值 */
 export function useAskUser(scope: string) {
   return useScopedSetting<boolean>(
     'ask-user',
     scope,
     (raw) => raw === '1',
     (v) => (v ? '1' : '0'),
+    askUserDefault,
   )
+}
+
+/** 新建任务的输入框这类每次都开新会话的：不记上次的选择，每次打开都按设置里的默认值 */
+export function useNewAskUser() {
+  const [value, setValue] = useState(askUserDefault)
+  // 设置取回来或在设置里改了默认值：还没发出去的新会话跟着变
+  const def = useData().settings?.askUserDefault
+  const [seen, setSeen] = useState(def)
+  if (seen !== def) {
+    setSeen(def)
+    if (def !== undefined) setValue(def)
+  }
+  return [value, setValue] as const
 }
 
 /**

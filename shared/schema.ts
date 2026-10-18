@@ -788,6 +788,8 @@ export const Settings = z.object({
   contentWidth: z
     .preprocess((v) => (typeof v === 'number' ? Math.min(CONTENT_MAX, Math.max(640, v)) : v), z.number().int())
     .default(CONTENT_WIDTH),
+  /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
+  askUserDefault: z.boolean().default(false),
   /** 界面语言：auto 跟随浏览器 */
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /** UI 设计里生成图片用的 CLI 和模型（目前只有 Codex 内置了生图工具）；模型为空用这个 CLI 的高档 */

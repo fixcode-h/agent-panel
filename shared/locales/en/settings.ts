@@ -32,6 +32,9 @@ export const EN_SETTINGS: Record<string, string> = {
     'Used by the input box and task list on the project home, and by the conversation and workflow nodes on the task page. Shrinks automatically in narrow windows.',
   恢复默认: 'Reset to default',
   启动后打开浏览器: 'Open browser on startup',
+  新会话默认开启提问: 'Ask me by default in new chats',
+  '输入框上的「提问」按钮在新会话里默认打开：AI 有问题时弹出卡片问你，等你回答再继续。关着时 AI 自己选最合适的做法。已有的会话保持各自的选择。':
+    'Turns on the Ask button above the input in new chats: when the AI has a question it shows a card and waits for your answer. When off, the AI picks the best option itself. Existing chats keep their own choice.',
   '启动面板服务后，自动用默认浏览器打开 http://127.0.0.1:8787。':
     'Open http://127.0.0.1:8787 in your default browser when the panel server starts.',
   任务完成时通知我: 'Notify me when tasks finish',

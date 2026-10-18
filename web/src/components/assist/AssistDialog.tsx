@@ -25,7 +25,8 @@ import { useAttachments } from '@/components/chat/Attachments'
 import { modelOptions } from '@/components/agents/ModelSelect'
 import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
-import { AskToggle, ScopeRequests, useAskUser } from '@/components/chat/AskToggle'
+import { AskToggle, ScopeRequests, useNewAskUser } from '@/components/chat/AskToggle'
+import { askUserDefault } from '@/lib/askUserDefault'
 import { t } from '@shared/i18n'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
@@ -416,6 +417,7 @@ export function AssistDialog({
     setEffort('')
   }
   const [turns, setTurns] = useState<Turn[]>([])
+  const [askUser, setAskUser] = useNewAskUser()
   const [text, setText] = useState('')
   const [job, setJob] = useState<AssistJob | null>(null)
   const [applying, setApplying] = useState(false)
@@ -463,6 +465,8 @@ export function AssistDialog({
     setTurns([])
     setText('')
     setJob(null)
+    // 每次打开都是新对话：「提问」开关回到设置里的默认值
+    setAskUser(askUserDefault())
     // 没单独指定时用设置里的默认 CLI
     const pref = settings?.assist.cli || (settings ? defaultCli(settings) : '')
     pickCli(usable.find((c) => c.id === pref)?.id ?? usable[0]?.id ?? pref ?? CLIS[0].id)
@@ -534,8 +538,6 @@ export function AssistDialog({
 
   const latest = useMemo(() => [...turns].reverse().find((t) => t.proposal)?.proposal, [turns])
   const running = !!job
-  const [askUser, setAskUser] = useAskUser(`assist-${kind}`)
-
   // 最小化：窗口收成右下角的悬浮按钮，生成照常进行，点按钮再展开
   const [minimized, setMinimized] = useState(false)
   // 最小化期间生成完了：悬浮按钮上提示一下
