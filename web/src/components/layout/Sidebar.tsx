@@ -189,7 +189,7 @@ let lastDesignRoute: Route = { page: 'design' }
 
 /**
  * 顶部的模式切换，参考 Claude 应用：Chat 是不属于项目的聊天，Agent 是按项目执行任务，UI 设计是按项目做界面。
- * 收起侧栏时竖着排成三个按钮。
+ * 只显示图标，名字在悬停提示里；收起侧栏时竖着排。
  */
 function ModeSwitch({ narrow }: { narrow: boolean }) {
   const { route, go } = useNav()
@@ -199,7 +199,6 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'chat',
       label: t('Chat 模式：直接聊天，不用选项目'),
-      short: 'Chat',
       icon: MessagesSquare,
       on: chat,
       to: { page: 'chat' } as Route,
@@ -207,7 +206,6 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'agent',
       label: t('Agent 模式：在项目里执行任务和工作流'),
-      short: 'Agent',
       icon: Code2,
       on: !chat && !design,
       to: lastAgentRoute,
@@ -215,7 +213,6 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     {
       id: 'design',
       label: t('UI 设计：用对话设计游戏界面，导出给 UE'),
-      short: t('UI 设计'),
       icon: Palette,
       on: design,
       to: lastDesignRoute,
@@ -247,8 +244,8 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
     <div
       role="radiogroup"
       aria-label={t('模式')}
-      // 三个模式放不进标题那一行（会把名字挤成省略号），单独一行，带上文字
-      className="mx-3 mb-2 grid shrink-0 grid-cols-3 gap-0.5 rounded-lg border bg-field/60 p-0.5"
+      // 只显示图标（名字在悬停提示里），以后模式再多也排得下：按数量平分宽度
+      className="mx-3 mb-2 flex shrink-0 gap-0.5 rounded-lg border bg-field/60 p-0.5"
     >
       {modes.map((m) => (
         <button
@@ -259,12 +256,11 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
           title={m.label}
           onClick={() => !m.on && go(m.to)}
           className={cn(
-            'flex h-7 min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[12.5px] transition-colors',
-            m.on ? 'bg-card font-medium text-fg shadow-card' : 'text-subtle hover:text-fg',
+            'grid h-8 min-w-0 flex-1 cursor-pointer place-items-center rounded-md transition-colors',
+            m.on ? 'bg-card text-fg shadow-card' : 'text-subtle hover:bg-sel/60 hover:text-fg',
           )}
         >
-          <m.icon className="h-[14px] w-[14px] shrink-0" strokeWidth={1.8} />
-          <span className="truncate">{m.short}</span>
+          <m.icon className="h-[17px] w-[17px] shrink-0" strokeWidth={1.8} />
         </button>
       ))}
     </div>
