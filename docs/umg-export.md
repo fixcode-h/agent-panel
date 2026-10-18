@@ -61,3 +61,39 @@ ListView、TileView、DynamicEntryBox 的条目是游戏运行时按数据生成
 - **SizeBox**：除了 `WidthOverride` 等数值，还带 `bOverride_WidthOverride` 等开关（数值大于 0 时为 true）。
 - **字体**：`Font.Size` 是 UE 的字号，`TypefaceFontName` 是 Regular / Bold / Italic，字体资源由导入工具指定。
 - 枚举写 UE 的枚举名，比如 `HAlign_Center`、`VAlign_Fill`、`Visible`、`ScaleToFit`。
+
+## 动画（Animations）
+
+主界面和每个 `UserWidgets[]` 各自带 `Animations`，对应 Widget Blueprint 里的 WidgetAnimation（没有动画时是空数组）：
+
+```jsonc
+{
+  "Name": "Anim_Open",                 // WidgetAnimation 名
+  "Length": 0.45,                      // 秒，最后一个关键帧的时间
+  "Trigger": "Construct",              // Construct（打开时播放）| Hover（Source 悬停时正放、移开倒放）| Click（Source 点击时）| Manual（蓝图里自己 PlayAnimation）
+  "Source": "Btn_Start",               // 只有 Hover / Click 有：绑定事件的控件
+  "NumLoops": 1,                       // 0 表示一直循环（PlayAnimation 的 NumLoopsToPlay）
+  "PlayMode": "Forward",               // Forward | PingPong
+  "Delay": 0,                          // 开始前等多久（秒）
+  "Tracks": [
+    {
+      "Widget": "Panel",                       // 控件名（同一个 Widget Blueprint 里）
+      "Property": "RenderTransform.Scale",     // RenderOpacity | RenderTransform.Translation | RenderTransform.Scale | RenderTransform.Angle
+      "Keys": [                                // 直接用的关键帧：Linear / Constant 插值
+        { "Time": 0, "Value": { "X": 0.6, "Y": 0.6 }, "Interp": "Linear" },
+        { "Time": 0.0333, "Value": { "X": 0.71, "Y": 0.71 }, "Interp": "Linear" }
+      ],
+      "Source": [                              // 设计里的原始关键帧和缓动，想自己设切线时用
+        { "Time": 0, "Value": { "X": 0.6, "Y": 0.6 }, "Ease": "back-out" },
+        { "Time": 0.45, "Value": { "X": 1, "Y": 1 }, "Ease": "ease-out" }
+      ]
+    }
+  ]
+}
+```
+
+- `Value` 对 RenderOpacity、Angle 是数字，对 Translation、Scale 是 `{ X, Y }`；Translation 单位是 Slate 像素，Angle 是度。
+- 缓动（ease-out、back-out、弹簧、弹跳等）在 `Keys` 里已经按 30 帧取点成线性关键帧，导入时照着加关键帧就和设计里的预览一致；线性和跳变（constant）不取点。
+- 导入时：为每个动画新建 WidgetAnimation，给 `Widget` 绑定 Possessable，按 `Property` 建 Float 轨道（RenderOpacity）或 2D Transform 轨道（RenderTransform 的各通道），把 `Keys` 写进去；`Trigger` 为 Construct 的在 Event Construct 里 PlayAnimation，Hover / Click 绑到 `Source` 控件的 OnHovered / OnUnhovered / OnClicked。
+
+网页 UI 的导出（HTML、React）里，动画由页面里的一小段播放代码（浏览器自带的 Web Animations，不依赖动画库）按触发方式播放：打开时、滚动到可见时、悬停（移开倒放）、点击；`window.uiAnim.play('动画名')` 可以手动播放。

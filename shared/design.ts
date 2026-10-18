@@ -17,6 +17,7 @@ import {
 import { Attachment, MAX_ATTACHMENTS, type ToolUse } from './schema.ts'
 import { t } from './i18n.ts'
 import { applyOps } from './design-ops.ts'
+import { UiAnimation, animationsBrief, checkAnimations, presetCatalogText } from './anim.ts'
 
 /**
  * UI 设计：一个设计属于一个项目，和任务分开存放、分开列出。
@@ -177,10 +178,14 @@ export const DesignDoc = z.object({
   images: z.array(DesignImage).default([]),
   /** 还没发给 AI 的标注 */
   annotations: z.array(Annotation).max(200).default([]),
+  /** 动画（UE 的 Widget Animation；网页是动效），见 anim.ts */
+  animations: z.array(UiAnimation).max(300).default([]),
 })
-export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components'> & {
+export type DesignDoc = Omit<z.infer<typeof DesignDoc>, 'root' | 'components' | 'animations'> & {
   root: Widget
   components: Component[]
+  /** 旧数据没有 */
+  animations?: UiAnimation[]
 }
 
 export const Design = DesignDoc.extend({
@@ -541,7 +546,7 @@ export interface DesignJob {
   images?: ImageJobItem[]
   outChars: number
   /** AI 用工具改的过程中，改到现在的样子；页面在 AI 改的过程中显示它，applied 是已经应用了几步 */
-  preview?: { root: Widget; components: Component[]; applied: number }
+  preview?: { root: Widget; components: Component[]; animations?: UiAnimation[]; applied: number }
   attempt: number
   error?: string
   startedAt: number
@@ -606,6 +611,8 @@ export const AiDesignResult = z.object({
   images: z.array(AiImage).default([]),
   /** 在现有设计上一步步改（见 design-ops.ts），和 root 二选一 */
   ops: z.array(z.any()).max(500).optional(),
+  /** 这一轮改完的动画（MCP 会话里的），给了就整个换掉 */
+  animations: z.array(UiAnimation).optional(),
   /** 先问用户（整体风格还没定时）；有它时这一轮不改设计 */
   questions: z.array(DesignQuestion).optional(),
 })
@@ -635,6 +642,16 @@ const webRules = (
 - 控件名用英文 PascalCase，同一棵树里不能重复；只写和默认值不一样的属性。
 - 每个 Text 的 Text 都写成页面上要显示的真实内容（标题、按钮文案、说明文字），不要留默认的 "Text"；动态的数据写成真实格式的示例（「¥1,299」「2026-10-17」「128 条评论」）。颜色一律写 "#RRGGBBAA"。
 `
+
+const GAME_MOTION = `- 参照 UE 的 UMG 动画：每个动画导出成 Widget Blueprint 里的一个 WidgetAnimation（轨道是控件的 RenderOpacity、RenderTransform），trigger 决定什么时候播（show 是 Construct 时、hover / click 绑到 source 控件上、manual 由蓝图调用）。
+- 用户要动画、动效、过场，或者在做弹窗、奖励结算、提示条这类本来就该有动画的界面时加：弹窗 / 面板打开用 pop-in 或 zoom-in（主面板，trigger show），里面的列表项、奖励物品用 fade-in-up 加 stagger；关闭用 zoom-out / fade-out（trigger manual，名字写 Anim_Close）；
+  重要按钮加 hover-grow（hover）和 press（click）；可领取、红点、新物品用 pulse-loop / breathe（loop 0）；加载转圈用 spin。用户没要求时不要给普通的静态界面硬加动画。
+- 子控件（例如按钮、格子）自己的动画写 in（子控件名），轨道里写子控件里的控件名，每个用到它的地方都有。`
+
+const WEB_MOTION = `- 网页导出时用浏览器自带的 Web Animations 播放（不依赖任何库），trigger：show 是页面打开时、scroll 是滚动到能看见时、hover 移上去播放移开倒放、click 点击时。
+- 网页不要是完全静态的：搭页面时顺手加上合适的动效——首屏的标题、副标题、按钮用 fade-in-up 依次出现（trigger show，stagger 0.08）；下面的每个区块、卡片列表用 fade-in-up 或 zoom-in，trigger scroll（卡片 stagger 0.08）；
+  卡片、主按钮加 hover-lift 或 hover-grow（trigger hover）。用户说不要动画时不加。
+- 子控件（例如卡片）的悬停动画写在子控件里（in 写子控件名），每张卡片各自响应。`
 
 const WEB_NOTES = `## 属性（Properties）
 - 所有控件：Width、Height（"auto" | "fill" | 像素数）、Visibility(Visible|Hidden|Collapsed)、RenderOpacity
@@ -742,6 +759,8 @@ ${JSON.stringify(compactTree(d.root))}
 ${comps.length ? JSON.stringify(comps) : '（没有）'}
 图片：
 ${imgs.length ? JSON.stringify(imgs) : '（没有）'}
+动画：
+${d.animations?.length ? JSON.stringify(animationsBrief(d.animations)) : '（没有）'}
 ${chat ? `\n## 之前的对话\n${chat}\n` : ''}
 ## 用户这次的要求
 ${request}
@@ -769,6 +788,14 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 - 图片控件的显示尺寸和图片自己的宽高比要一致（add_images 的 width、height 就按它在界面上的显示尺寸写），否则会被拉伸变形；check 会提醒
 - 改属性：update_widgets 的 properties / slot 只写要改的字段，和原来的合并；换图就是给画刷设 {"Brush":{"ResourceObject":"img:icon_gem"}}
 
+### 动画（add_animations / remove_animations）
+${web ? WEB_MOTION : GAME_MOTION}
+- 一般用 presets，一句话就能加上；预设满足不了时再写 tracks 关键帧。动画只改不透明度、位移、缩放、旋转，不影响布局。
+- 列表、卡片、按钮组一个接一个出现：同一个预设写多个 widgets，stagger 0.05~0.12 秒。
+- 动画要克制：入场 0.3~0.6 秒，悬停反馈 0.15~0.2 秒，循环动画只用在真正需要吸引注意的地方（可领取的奖励、加载中、新消息）。
+- 可用的预设：
+${presetCatalogText()}
+
 ## 回复
 所有修改都通过 design 工具完成，不要把整棵树写成 JSON 输出、不要写文件、不要运行命令。回复就是给用户看的几句中文说明，不要输出 JSON 或代码块。`
 }
@@ -777,6 +804,7 @@ ${concept ? conceptSection(concept, d) : ''}## 用 design 工具改设计
 export const MAX_TOOL_ITEMS = 20
 export const MAX_TOOL_WIDGETS = 30
 export const MAX_TOOL_IMAGES = 16
+export const MAX_TOOL_KEYS = 240
 
 /** 给设计 AI 的原画信息：先出原画（concept）还是照着确认的模板做（template） */
 export interface ConceptContext {
@@ -835,7 +863,9 @@ ${c.state.images.length ? `\n已经出过的原画：\n${c.state.images.slice(-1
 export function resolveDesignResult(
   raw: unknown,
   d: Design,
-): { error: string } | { result: z.infer<typeof AiDesignResult>; root?: Widget; components?: Component[] } {
+):
+  | { error: string }
+  | { result: z.infer<typeof AiDesignResult>; root?: Widget; components?: Component[]; animations?: UiAnimation[] } {
   const p = AiDesignResult.safeParse(raw)
   if (!p.success) return { error: z.prettifyError(p.error) }
   const r = p.data
@@ -849,12 +879,17 @@ export function resolveDesignResult(
   const errors: string[] = []
   // 一步步改：在现有设计（或这次写的完整树）上应用操作，结果再整体检查
   let after = components
+  let animations = r.animations
   // ops 给了空数组也要走这里：MCP 的「检查」用它检查当前的设计
   if (r.ops) {
-    const applied = applyOps({ root: root ?? d.root, components: components ?? d.components }, r.ops)
+    const applied = applyOps(
+      { root: root ?? d.root, components: components ?? d.components, animations: animations ?? d.animations ?? [] },
+      r.ops,
+    )
     errors.push(...applied.errors)
     root = applied.state.root
     after = applied.state.components
+    animations = applied.state.animations
   }
   const compNames = (after ?? d.components).map((c) => c.Name)
   errors.push(
@@ -900,8 +935,22 @@ export function resolveDesignResult(
     errors.push(
       `这些图片没有被任何控件用到：${unused.join('、')}。在对应控件的画刷里写 "ResourceObject":"img:<图片 id>"（Image 的 Brush、Border 的 Background、Button 的 WidgetStyle.Normal；网页是 Picture 的 Src、Frame / WebButton 的 BackgroundImage），用 update_widgets 设上`,
     )
+  // 动画引用的控件要在：控件删了、改名了，动画里的轨道要跟着改
+  const finalRoot = root ?? d.root
+  const finalComps = after ?? d.components
+  const names = (w: Widget) => {
+    const set = new Set<string>()
+    walk(w, (x) => set.add(x.Name))
+    return set
+  }
+  errors.push(
+    ...checkAnimations(
+      animations ?? d.animations ?? [],
+      new Map([['', names(finalRoot)], ...finalComps.map((c) => [c.Name, names(c.Root)] as [string, Set<string>])]),
+    ).map((e) => `${e}：用 add_animations 改好或 remove_animations 删掉`),
+  )
   if (errors.length) return { error: errors.slice(0, 12).join('\n') }
-  return { result: r, root, components: after }
+  return { result: r, root, components: after, animations }
 }
 
 export const ANNOTATION_LABEL: Record<AnnotationKind, string> = {
@@ -1157,10 +1206,12 @@ export function componentDeps(name: string, all: Component[]): string[] {
  * 返回新的子控件和图片列表，copyFiles 是要从来源设计复制过来的图片文件
  */
 export function importComponent(
-  target: { components: Component[]; images: DesignImage[] },
-  source: { components: Component[]; images: DesignImage[] },
+  target: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
+  source: { components: Component[]; images: DesignImage[]; animations?: UiAnimation[] },
   name: string,
-): { error: string } | { components: Component[]; images: DesignImage[]; copyFiles: string[] } {
+):
+  | { error: string }
+  | { components: Component[]; images: DesignImage[]; animations: UiAnimation[]; copyFiles: string[] } {
   if (!source.components.some((c) => c.Name === name)) return { error: t('没有找到子控件 {name}', { name }) }
   if (target.components.some((c) => c.Name === name))
     return { error: t('这个设计里已经有叫 {name} 的子控件了', { name }) }
@@ -1190,7 +1241,13 @@ export function importComponent(
         : v && typeof v === 'object'
           ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)]))
           : v
-  return { components: [...target.components, ...add.map(fix)], images, copyFiles }
+  // 子控件自己的动画一起带过来
+  const added = new Set(add.map((c) => c.Name))
+  const animations = [
+    ...(target.animations ?? []),
+    ...structuredClone((source.animations ?? []).filter((a) => added.has(a.in))),
+  ]
+  return { components: [...target.components, ...add.map(fix)], images, animations, copyFiles }
 }
 
 // ---- 设计版本 ----
@@ -1201,6 +1258,6 @@ export interface DesignVersion {
   name: string
   at: string
   auto: boolean
-  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'>
+  snapshot: Pick<Design, 'designSize' | 'style' | 'root' | 'components' | 'images'> & { animations?: UiAnimation[] }
 }
 export type DesignVersionMeta = Omit<DesignVersion, 'snapshot'> & { widgets: number }

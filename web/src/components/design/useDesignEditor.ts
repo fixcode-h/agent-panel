@@ -15,6 +15,7 @@ const docOf = (d: DesignFull): DesignDoc => ({
   components: d.components,
   images: d.images,
   annotations: d.annotations ?? [],
+  animations: d.animations ?? [],
 })
 
 /**

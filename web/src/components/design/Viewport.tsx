@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -18,6 +18,8 @@ import { t } from '@shared/i18n'
 import { UmgNode, type RenderImage } from './umg-render'
 import type { Annotation, AnnotationKind } from '@shared/design'
 import type { Device } from '@shared/web'
+import { animRuntime, compileAnimations, type UiAnimation } from '@shared/anim'
+import type { AnimCommand } from './AnimationPanel'
 import { AnnotationLayer, AnnotationToolbar, TOOL_KEYS, isMarkTool, widgetsIn, type Tool } from './Annotations'
 
 /**
@@ -41,6 +43,8 @@ export function Viewport({
   onReorder,
   onNudge,
   overlay,
+  animations,
+  animCommand,
 }: {
   root: Widget
   size: Vec2
@@ -69,6 +73,10 @@ export function Viewport({
   onNudge?: (id: string, dx: number, dy: number, key: string) => void
   /** 半透明盖在画布上的图（确认的原画模板），对照着调位置 */
   overlay?: string
+  /** 设计里的全部动画：运行模式里按触发方式播放 */
+  animations?: UiAnimation[]
+  /** 动画面板的指令：停在某个时间或播放一次 */
+  animCommand?: AnimCommand | null
 }) {
   const wrap = useRef<HTMLDivElement>(null)
   const stage = useRef<HTMLDivElement>(null)
@@ -457,7 +465,25 @@ export function Viewport({
     depth: 0,
     play,
     device,
+    tree: target,
   }
+
+  // 动画：运行模式里按触发方式自动播放（打开时、悬停、点击、滚动到可见）；平时只在动画面板拖播放头、点播放时动
+  const runs = useMemo(() => compileAnimations(animations ?? []), [animations])
+  useEffect(() => {
+    const el = stage.current
+    if (!play || !el || !runs.length) return
+    const ctl = animRuntime(el, runs, { rootTree: target, triggers: true })
+    return () => ctl.dispose()
+  }, [play, runs, target, root, components, device])
+  useEffect(() => {
+    const el = stage.current
+    if (play || !el || !animCommand) return
+    const ctl = animRuntime(el, runs, { rootTree: target })
+    if (animCommand.play) ctl.play(animCommand.name, { tree: animCommand.tree })
+    else ctl.seek(animCommand.name, animCommand.ms, animCommand.tree)
+    return () => ctl.dispose()
+  }, [play, runs, target, root, components, device, animCommand])
 
   return (
     <div className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-[#18181a]">

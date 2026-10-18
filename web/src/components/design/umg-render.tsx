@@ -14,6 +14,7 @@ import {
 } from '@shared/umg'
 import { WebNode } from './web-render'
 import type { Device } from '@shared/web'
+import { animKey } from '@shared/anim'
 
 /**
  * 用 HTML 近似 UMG 的布局，在设计器里预览。视觉都来自图片（画刷），HTML 只负责摆位置：
@@ -38,6 +39,8 @@ export interface RenderCtx {
   play?: boolean
   /** 网页 UI 按哪个宽度画（平板、手机用断点里的属性） */
   device?: Device
+  /** 正在画的是哪棵树（主界面是空，子控件里是子控件名）：给控件打上动画用的标记 data-an */
+  tree?: string
 }
 
 const H_JUSTIFY: Record<string, string> = {
@@ -275,7 +278,13 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
   }
   const id = ctx.interactive ? w.id : undefined
   const el = (style: CSSProperties, children?: ReactNode, extra?: Record<string, unknown>) => (
-    <div data-wid={id} data-type={w.Type} style={{ ...base, ...style }} {...extra}>
+    <div
+      data-wid={id}
+      data-type={w.Type}
+      data-an={animKey(ctx.tree ?? '', w.Name)}
+      style={{ ...base, ...style }}
+      {...extra}
+    >
       {children}
     </div>
   )
@@ -316,7 +325,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
         )
         const fx = (p.EntryHorizontalAlignment ?? 'HAlign_Fill') === 'HAlign_Fill'
         const fy = (p.EntryVerticalAlignment ?? 'VAlign_Fill') === 'VAlign_Fill'
-        const sub = { ...ctx, interactive: false, depth: ctx.depth + 1 }
+        const sub = { ...ctx, interactive: false, depth: ctx.depth + 1, tree: comp.Name }
         return el(
           {
             display: 'grid',
@@ -340,6 +349,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
                 }}
               >
                 <div
+                  data-ac={comp.Name}
                   style={{
                     display: 'flex',
                     width: fx ? '100%' : comp.DesignSize.X,
@@ -639,7 +649,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
           : w.Type === 'DynamicEntryBox'
             ? `${p.EntrySpacing?.Y ?? 0}px ${p.EntrySpacing?.X ?? 0}px`
             : '0'
-      const sub = { ...ctx, interactive: false, depth: ctx.depth + 1 }
+      const sub = { ...ctx, interactive: false, depth: ctx.depth + 1, tree: comp.Name }
       return el(
         {
           display: p.EntryBoxType === 'Overlay' ? 'grid' : 'flex',
@@ -656,6 +666,7 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
         Array.from({ length: n }, (_, i) => (
           <div
             key={i}
+            data-ac={comp.Name}
             style={{
               display: 'flex',
               flex: '0 0 auto',
@@ -691,7 +702,8 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
           width: fillX ? undefined : comp.DesignSize.X,
           height: fillY ? undefined : comp.DesignSize.Y,
         },
-        <UmgNode w={comp.Root} ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1 }} />,
+        <UmgNode w={comp.Root} ctx={{ ...ctx, interactive: false, depth: ctx.depth + 1, tree: comp.Name }} />,
+        { 'data-ac': comp.Name },
       )
     }
     default:

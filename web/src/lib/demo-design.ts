@@ -1136,6 +1136,7 @@ export function demoDesigns(method: string, id: string | undefined, sub: string 
       style: body.style,
       root: body.root as Widget,
       components: body.components,
+      animations: body.animations ?? d.animations ?? [],
     })
     d.updatedAt = now()
     return d
@@ -1283,6 +1284,7 @@ export function demoImportComponent(id: string, body: any) {
   if ('error' in r) return fail(r.error)
   d.components = r.components
   d.images = r.images
+  d.animations = r.animations
   d.rev++
   return d
 }
@@ -1301,6 +1303,7 @@ function addVersion(d: Full, name: string, auto: boolean) {
       root: d.root,
       components: d.components,
       images: d.images,
+      animations: d.animations ?? [],
     }),
   }
   versions.set(d.id, [v, ...(versions.get(d.id) ?? [])].slice(0, 40))
@@ -1341,6 +1344,7 @@ export function demoVersions(
         components: v.snapshot.components,
         designSize: v.snapshot.designSize,
         style: v.snapshot.style,
+        animations: v.snapshot.animations ?? [],
       }),
     )
     d.rev++

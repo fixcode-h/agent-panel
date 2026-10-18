@@ -51,7 +51,7 @@ import {
 import type { Project } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { exportDesign, migrateGrids, normalizeTree, uniqueName, usedImages, walk } from '../shared/umg.ts'
-import { webExport, webReactExport } from '../shared/web.ts'
+import { reactAnimFile, webExport, webReactExport } from '../shared/web.ts'
 import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
@@ -866,6 +866,7 @@ ${prompt}`,
           ...cache.get(d.id)!,
           root: sess.state.root,
           components: sess.state.components,
+          animations: sess.state.animations ?? [],
         })
         let problems = ''
         if ('error' in res) {
@@ -878,13 +879,26 @@ ${prompt}`,
           problems = res.error
           const ok = AiDesignResult.safeParse({ ...raw, ops: undefined })
           if (!ok.success) throw new Error(z.prettifyError(ok.error))
-          res = { result: ok.data, root: sess.state.root, components: sess.state.components }
+          res = {
+            result: ok.data,
+            root: sess.state.root,
+            components: sess.state.components,
+            animations: sess.state.animations,
+          }
         }
         const cur = cache.get(d.id)!
         const r2 = res.result
-        const changed = !!(res.root || res.components || r2.designSize || r2.style !== undefined || r2.images.length)
+        const changed = !!(
+          res.root ||
+          res.components ||
+          res.animations ||
+          r2.designSize ||
+          r2.style !== undefined ||
+          r2.images.length
+        )
         if (res.root) cur.root = res.root
         if (res.components) cur.components = res.components
+        if (res.animations) cur.animations = res.animations
         if (r2.designSize) cur.designSize = r2.designSize
         if (r2.style !== undefined) cur.style = r2.style
         const ids: string[] = []
@@ -1051,6 +1065,7 @@ ${prompt}`,
         root: d.root,
         components: d.components,
         images: d.images,
+        animations: d.animations ?? [],
       }),
     }
     let list = [v, ...(await readVersions(d.id))]
@@ -1364,6 +1379,7 @@ ${prompt}`,
         components: doc.components.map((x) => ({ ...x, Root: normalizeTree(x.Root) })),
         images,
         annotations: doc.annotations,
+        animations: doc.animations,
       })
       await save(d)
       return c.json({ ...d, job: view(jobs.get(d.id)) })
@@ -1496,6 +1512,7 @@ ${prompt}`,
         await cp(path.join(imagesDir(src.id), f), path.join(imagesDir(d.id), f)).catch(() => {})
       d.components = r.components
       d.images = r.images
+      d.animations = r.animations
       // 结构变了：页面用服务端的子控件替换本地的
       d.rev++
       await save(d)
@@ -1563,6 +1580,8 @@ ${prompt}`,
       d.components = v.snapshot.components
       d.designSize = v.snapshot.designSize
       d.style = v.snapshot.style
+      // 旧版本没有动画：恢复后就没有动画
+      d.animations = v.snapshot.animations ?? []
       // 版本里有、现在已经删掉的图片加回来（文件还在时）
       for (const img of v.snapshot.images)
         if (!d.images.some((i) => i.id === img.id)) d.images.push({ ...img, status: 'idle', error: undefined })
@@ -1814,6 +1833,7 @@ ${prompt}`,
       root: d.root,
       components: d.components,
       file: (id) => src.get(id),
+      animations: d.animations,
     })
     const ascii = (d.title.match(/[A-Za-z0-9]+/g) ?? []).join('-').toLowerCase()
     return { name: ascii || 'page', files: [{ name: 'index.html', data: Buffer.from(html) }, ...files], src }
@@ -1848,6 +1868,7 @@ ${prompt}`,
       root: d.root,
       components: d.components,
       images,
+      animations: d.animations,
     })
     const files = [
       { name: `${json.Name}.umg.json`, data: Buffer.from(JSON.stringify(json, null, 2)) },
@@ -1864,12 +1885,18 @@ ${prompt}`,
       root: d.root,
       components: d.components,
       file: (id) => f.src.get(id)?.replace(/^images\//, ''),
+      animations: d.animations,
     })
     const name = f.name.replace(/(^|-)(\w)/g, (_, _a, c: string) => c.toUpperCase()) || 'Page'
     return {
       name: `${f.name}-react.zip`,
       type: 'application/zip',
-      data: zip([{ name: `${name}.tsx`, data: Buffer.from(tsx) }, ...f.files.filter((x) => x.name !== 'index.html')]),
+      data: zip([
+        { name: `${name}.tsx`, data: Buffer.from(tsx) },
+        // 有动画时一起带上播放代码
+        ...(d.animations?.length ? [{ name: 'ui-anim.ts', data: Buffer.from(reactAnimFile()) }] : []),
+        ...f.files.filter((x) => x.name !== 'index.html'),
+      ]),
     }
   }
 

@@ -1,3 +1,4 @@
+import { exportAnimations, type UiAnimation } from './anim.ts'
 /**
  * 游戏 UI 设计用的 UMG 控件模型。面板里保存的结构和导出的结构是同一套：
  * 控件类型、插槽、属性名都按 UE5 的 UMG 来写（CanvasPanelSlot.LayoutData.Offsets、Brush.DrawAs、Font.Size……），
@@ -988,8 +989,10 @@ export function exportDesign(d: {
   root: Widget
   components: Component[]
   images: ExportImage[]
+  animations?: UiAnimation[]
 }) {
   const tex = new Map<string, string>()
+  const anims = (tree: string) => exportAnimations((d.animations ?? []).filter((a) => a.in === tree && a.tracks.length))
   const used = new Set<string>()
   for (const img of d.images) {
     const n = uniqueName(textureName(img.name), used)
@@ -1014,8 +1017,14 @@ export function exportDesign(d: {
       Size: { X: i.width, Y: i.height },
       ...(i.nineSlice ? { NineSlice: i.nineSlice } : {}),
     })),
-    UserWidgets: comps.map((c) => ({ Name: c.Name, DesignSize: c.DesignSize, Root: exportWidget(c.Root, tex) })),
+    UserWidgets: comps.map((c) => ({
+      Name: c.Name,
+      DesignSize: c.DesignSize,
+      Root: exportWidget(c.Root, tex),
+      Animations: anims(c.Name),
+    })),
     Root: exportWidget(root, tex),
+    Animations: anims(''),
   }
   /** 每张用到的图片对应导出的哪个文件 */
   const files = used2.map((i) => ({ id: i.id, file: `Textures/${tex.get(i.id)}.${i.ext}` }))
