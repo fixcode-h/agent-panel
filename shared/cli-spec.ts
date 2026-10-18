@@ -259,7 +259,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     envExample: spec.envExample,
     env: spec.env,
     mcp: spec.mcp,
-    auth: spec.auth,
+    auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,
   }
 }

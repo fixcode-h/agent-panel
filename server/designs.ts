@@ -52,6 +52,7 @@ import { t } from '../shared/i18n.ts'
 import { askSession, askingScopes, setAskUser } from './asks.ts'
 import { browserGenerate, browserParallel, browserStatus } from './bridge.ts'
 import { invokeCli, type CliControl } from './exec/invoke.ts'
+import { failureHints } from './exec/runner.ts'
 import { normalizeGenerated, sliceSheet } from './image.ts'
 import { BUILTIN_STYLES, isBuiltinStyle } from '../shared/styles.ts'
 import { childEnv } from './exec/process.ts'
@@ -724,7 +725,9 @@ ${prompt}`,
           // 启动就因为工具的参数报错：多半是 CLI 版本太旧
           if (!sess.applied && /mcp|mcp_servers|mcp-config|allowedTools/i.test(detail))
             throw new Error(t('{cli} 连不上设计工具，请升级到最新版：{detail}', { cli: def.name, detail }))
-          throw new Error(t('{cli} 执行失败：{detail}', { cli: def.name, detail }))
+          throw new Error(
+            [t('{cli} 执行失败：{detail}', { cli: def.name, detail }), ...failureHints(detail, def)].join('\n\n'),
+          )
         }
         // 回复就是普通文字；改动都在工具里做好了
         const touched = sess.applied > 0 || sess.images.length > 0

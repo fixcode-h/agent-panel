@@ -79,8 +79,9 @@ export function brushStyle(b: Brush | undefined, ctx: RenderCtx, tint?: string):
   if (!img) {
     if (id)
       return {
-        background: 'repeating-linear-gradient(45deg,#ff00ff33 0 6px,#0000 6px 12px)',
-        outline: '1px dashed #ff00ff88',
+        // 图片还没生成：柔和的灰蓝斜纹，不抢眼（以前是品红色，一整片很晃眼）
+        background: 'repeating-linear-gradient(45deg,#94a3b81f 0 8px,#0000 8px 16px)',
+        outline: '1px dashed #94a3b855',
       }
     if (b.DrawAs === 'Border') return { boxShadow: `inset 0 0 0 1px ${color}` }
     const r = b.OutlineSettings?.CornerRadii
@@ -675,11 +676,11 @@ function UmgBody({ w, ctx, fillX, fillY }: { w: Widget; ctx: RenderCtx; fillX: b
           {
             width: fillX ? undefined : 96,
             height: fillY ? undefined : 48,
-            outline: '1px dashed #ff00ff88',
+            outline: '1px dashed #94a3b866',
             display: 'grid',
             placeItems: 'center',
             fontSize: 11,
-            color: '#ff66ff',
+            color: '#94a3b8',
           },
           w.Class || 'UserWidget',
         )

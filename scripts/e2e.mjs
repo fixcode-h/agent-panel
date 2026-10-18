@@ -1691,7 +1691,17 @@ try {
     isolate: true,
   })
   tDrop = await waitDone(tDrop.id)
-  const dropped = await call('POST', `/tasks/${tDrop.id}/worktree/discard`)
+  // 状态变成完成的一瞬间，服务端还没把任务从执行中的列表里放掉：等一下再丢弃
+  let dropped
+  for (let i = 0; ; i++) {
+    try {
+      dropped = await call('POST', `/tasks/${tDrop.id}/worktree/discard`)
+      break
+    } catch (e) {
+      if (i >= 30 || !/正在执行/.test(e.message)) throw e
+      await sleep(100)
+    }
+  }
   assert.equal(dropped.worktree.state, 'discarded')
   assert.ok(!existsSync(tDrop.worktree.path) && !existsSync(path.join(projectDir, 'committed.txt')), '丢弃后什么都不留')
   assert.equal(git('branch', '--list', tDrop.worktree.branch).toString().trim(), '', '丢弃时删掉任务分支')
