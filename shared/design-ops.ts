@@ -74,7 +74,11 @@ const ANCHORS: Record<string, [number, number]> = {
   bottom: [0.5, 1],
   'bottom-right': [1, 1],
 }
-const num = (v: unknown, d = 0) => (typeof v === 'number' && Number.isFinite(v) ? v : d)
+// AI 有时把数字写成字符串（"40"、"40px"），也认
+const num = (v: unknown, d = 0) => {
+  const n = typeof v === 'string' ? parseFloat(v) : v
+  return typeof n === 'number' && Number.isFinite(n) ? n : d
+}
 const box = (v: unknown) =>
   typeof v === 'number'
     ? { Left: v, Top: v, Right: v, Bottom: v }
@@ -86,19 +90,71 @@ const box = (v: unknown) =>
 const ALIGN = (prefix: 'HAlign' | 'VAlign', v: unknown) =>
   typeof v === 'string' && !v.includes('_') ? `${prefix}_${v[0].toUpperCase()}${v.slice(1).toLowerCase()}` : v
 
+/** 画布插槽简写的键：大小写和常见别名都认 */
+const CANVAS_KEYS: Record<string, string> = {
+  anchor: 'anchor',
+  x: 'x',
+  y: 'y',
+  w: 'w',
+  h: 'h',
+  z: 'z',
+  margin: 'margin',
+  width: 'w',
+  height: 'h',
+  left: 'x',
+  top: 'y',
+  zorder: 'z',
+  margins: 'margin',
+  pos: 'pos',
+  position: 'pos',
+  size: 'size',
+}
+const SHORT = ['anchor', 'x', 'y', 'w', 'h', 'z', 'margin']
+
 /**
  * 插槽的简写，写起来短、不容易错：
  * 画布里 {"anchor":"top-right","x":-24,"y":24,"w":200,"h":60}——锚点和自身对齐点都是右上角，x、y 是离那个角的距离；
  * {"anchor":"stretch","margin":[左,上,右,下]} 铺满父控件留边距。
  * 横排、竖排等 {"padding":8 或 [左,上,右,下],"fill":1,"h":"center","v":"center"}
  */
-function looseSlot(slot: any, parentSlot: SlotType | undefined): any {
+function looseSlot(slot: any, parentSlot: SlotType | undefined, prev?: any): any {
   if (!slot || typeof slot !== 'object' || Array.isArray(slot)) return slot
   const out: any = { ...slot }
-  if (parentSlot === 'CanvasPanelSlot' && ('anchor' in out || 'x' in out || 'w' in out || 'margin' in out)) {
-    const a = String(out.anchor ?? 'top-left').toLowerCase()
+  if (parentSlot === 'CanvasPanelSlot') {
+    // 键名大小写、别名都认（X、Width、left、size:[w,h]…）：认不出来就会悄悄变成默认的 100×40
+    for (const [k, v] of Object.entries(slot)) {
+      const key = CANVAS_KEYS[k.toLowerCase()]
+      if (!key || k === key) continue
+      delete out[k]
+      if (out[key] === undefined) out[key] = v
+    }
+    // pos:[x,y]、size:[w,h]（也可以是 {x,y}）
+    for (const key of ['pos', 'size'] as const) {
+      if (out[key] === undefined) continue
+      const v = out[key]
+      delete out[key]
+      const [a, b] = Array.isArray(v) ? v : [v?.x ?? v?.X, v?.y ?? v?.Y]
+      const [ka, kb] = key === 'pos' ? ['x', 'y'] : ['w', 'h']
+      if (a !== undefined && out[ka] === undefined) out[ka] = a
+      if (b !== undefined && out[kb] === undefined) out[kb] = b
+    }
+  }
+  if (parentSlot === 'CanvasPanelSlot' && SHORT.some((k) => k in out)) {
+    // 只改了一部分（例如只写 x、y 挪位置）：没写的沿用原来的锚点、位置和大小，不要重置成默认值
+    const was = prev?.LayoutData
+    const wasMin = was?.Anchors?.Minimum
+    const wasMax = was?.Anchors?.Maximum
+    const wasStretch = !!wasMin && !!wasMax && (wasMin.X !== wasMax.X || wasMin.Y !== wasMax.Y)
+    const wasAnchor =
+      wasMin && !wasStretch
+        ? Object.keys(ANCHORS).find((k) => ANCHORS[k][0] === wasMin.X && ANCHORS[k][1] === wasMin.Y)
+        : undefined
+    const o = was?.Offsets ?? {}
+    const a = String(
+      out.anchor ?? (wasStretch && !('x' in out || 'w' in out) ? 'stretch' : wasAnchor) ?? 'top-left',
+    ).toLowerCase()
     if (a === 'stretch' || a === 'fill') {
-      const m = box(out.margin ?? 0) as any
+      const m = box(out.margin ?? (wasStretch ? [o.Left, o.Top, o.Right, o.Bottom] : 0)) as any
       out.LayoutData = {
         Anchors: { Minimum: { X: 0, Y: 0 }, Maximum: { X: 1, Y: 1 } },
         Alignment: { X: 0, Y: 0 },
@@ -106,14 +162,20 @@ function looseSlot(slot: any, parentSlot: SlotType | undefined): any {
       }
     } else {
       const [ax, ay] = ANCHORS[a] ?? [0, 0]
+      const keep = !wasStretch && !!was
       out.LayoutData = {
         Anchors: { Minimum: { X: ax, Y: ay }, Maximum: { X: ax, Y: ay } },
         Alignment: { X: ax, Y: ay },
-        Offsets: { Left: num(out.x), Top: num(out.y), Right: num(out.w, 100), Bottom: num(out.h, 40) },
+        Offsets: {
+          Left: num(out.x, keep ? num(o.Left) : 0),
+          Top: num(out.y, keep ? num(o.Top) : 0),
+          Right: num(out.w, keep ? num(o.Right, 100) : 100),
+          Bottom: num(out.h, keep ? num(o.Bottom, 40) : 40),
+        },
       }
     }
     if ('z' in out) out.ZOrder = num(out.z)
-    for (const k of ['anchor', 'x', 'y', 'w', 'h', 'z', 'margin']) delete out[k]
+    for (const k of SHORT) delete out[k]
     return out
   }
   if ('padding' in out) out.Padding = box(out.padding)
@@ -151,6 +213,14 @@ export function looseWidget(w: any, parentSlot?: SlotType): any {
     else out.Properties[key] = v
   }
   const def = WIDGETS[out.Type as keyof typeof WIDGETS]
+  // 画布里的位置写在了控件上而不是 Slot 里（{"Type":"Image","x":40,"y":32,"w":320,"h":72}）：挪进 Slot
+  if (parentSlot === 'CanvasPanelSlot') {
+    for (const k of ['anchor', 'x', 'y', 'w', 'h', 'margin']) {
+      if (!(k in out.Properties)) continue
+      out.Slot = { ...(out.Slot && typeof out.Slot === 'object' ? out.Slot : {}), [k]: out.Properties[k] }
+      delete out.Properties[k]
+    }
+  }
   out.Slot = looseSlot(out.Slot, parentSlot)
   if (Array.isArray(out.Children)) out.Children = out.Children.map((c: any) => looseWidget(c, def?.slot))
   return out
@@ -246,7 +316,7 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
       if (head === 'Slot' && (rest.length || whole)) {
         if (!w.Slot) return { error: `${w.Name} 是根控件，没有插槽` }
         const parent = findParent(root, w.id)
-        const value = whole ? looseSlot(op.value, parent ? WIDGETS[parent.Type].slot : undefined) : op.value
+        const value = whole ? looseSlot(op.value, parent ? WIDGETS[parent.Type].slot : undefined, w.Slot) : op.value
         return done(mapWidget(root, w.id, (x) => setPath(x, parts, value)))
       }
       if (head === 'Class' && w.Type === 'UserWidget')
