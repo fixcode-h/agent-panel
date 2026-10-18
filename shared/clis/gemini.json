@@ -218,6 +218,12 @@
       "Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，个人账号登录后运行会报「no longer supported」。Google Workspace 或付费的 Code Assist 账号仍可以用账号登录；个人用户请把上面的「登录方式」切到 API，用 Gemini API Key。": "Google no longer supports signing in to Gemini CLI with a personal account (Gemini Code Assist for individuals); runs after a personal sign-in fail with \"no longer supported\". Google Workspace or paid Code Assist accounts can still sign in with an account; personal users should switch the sign-in method above to API and use a Gemini API key."
     }
   },
+  "mcpStore": {
+    "file": "${GEMINI_CLI_HOME:-~}/.gemini/settings.json",
+    "format": "json",
+    "key": "mcpServers",
+    "urlKey": "httpUrl"
+  },
   "mcp": {
     "files": {
       ".gemini/settings.json": {

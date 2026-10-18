@@ -27,6 +27,7 @@ import type {
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ApiConfig } from '@shared/accounts'
+import type { LibraryCli, LibraryFile, LibraryItem, McpOverview, McpServer, McpTestResult } from '@shared/library'
 import type {
   BrowserStatus,
   Design,
@@ -122,6 +123,26 @@ export const api = {
     request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
   cliSkills: (id: string, projectId = '') =>
     request<CliSkill[]>(`/clis/${id}/skills${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
+
+  /** Skills / 命令库 */
+  library: (kind: 'skill' | 'command') =>
+    request<{ clis: LibraryCli[]; items: LibraryItem[] }>(`/library?kind=${kind}`),
+  libraryFile: (cli: string, kind: 'skill' | 'command', name: string) =>
+    request<LibraryFile>(`/library/file?cli=${cli}&kind=${kind}&name=${encodeURIComponent(name)}`),
+  saveLibraryFile: (b: { cli: string; kind: 'skill' | 'command'; name: string; content: string; create?: boolean }) =>
+    request<{ ok: boolean }>('/library/file', json('PUT', b)),
+  deleteLibraryFile: (cli: string, kind: 'skill' | 'command', name: string) =>
+    request<{ ok: boolean }>(`/library/file?cli=${cli}&kind=${kind}&name=${encodeURIComponent(name)}`, {
+      method: 'DELETE',
+    }),
+  copyLibraryItem: (b: { cli: string; kind: 'skill' | 'command'; name: string; to: string[]; overwrite?: boolean }) =>
+    request<{ done: string[]; skipped: string[] }>('/library/copy', json('POST', b)),
+  /** MCP 工具 */
+  mcpTools: () => request<McpOverview>('/mcp-tools'),
+  saveMcpTool: (server: McpServer, clis: string[]) =>
+    request<McpOverview>(`/mcp-tools/${encodeURIComponent(server.name)}`, json('PUT', { server, clis })),
+  deleteMcpTool: (name: string) => request<McpOverview>(`/mcp-tools/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  testMcpTool: (server: McpServer) => request<McpTestResult>('/mcp-tools/test', json('POST', server)),
 
   appVersion: () => request<{ current: string; packaged: boolean; previous?: string }>('/app/version'),
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),

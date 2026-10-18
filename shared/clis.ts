@@ -134,6 +134,8 @@ export interface CliDefinition {
   auth?: import('./accounts.ts').CliAuth
   /** 怎么把面板的工具（MCP）交给它，见 cli-spec.ts 的 mcp；没有时用不了 UI 设计的 AI */
   mcp?: import('./cli-spec.ts').McpSpec
+  /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */
+  mcpStore?: import('./cli-spec.ts').McpStore
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean
   /** 用户放在数据目录里的配置（不是面板内置的） */
@@ -266,6 +268,15 @@ export const CLIS: CliDefinition[] = [
       ],
       files: {},
     },
+    mcpStore: {
+      file: '${CLAUDE_CONFIG_DIR:-~}/.claude.json',
+      format: 'json',
+      key: 'mcpServers',
+      urlKey: 'url',
+      remoteType: 'http',
+      stdioType: true,
+      headersKey: 'headers',
+    },
     color: '#c96442',
     envExample: 'ANTHROPIC_API_KEY=sk-ant-...',
   },
@@ -375,6 +386,15 @@ export const CLIS: CliDefinition[] = [
       },
     },
     mcp: { args: ['-c', 'mcp_servers.{name}.url="{url}"'], files: {} },
+    mcpStore: {
+      file: '${CODEX_HOME:-~/.codex}/config.toml',
+      format: 'toml',
+      key: 'mcp_servers',
+      urlKey: 'url',
+      remoteType: '',
+      stdioType: false,
+      headersKey: 'http_headers',
+    },
     color: '#0e8a6b',
     envExample: 'OPENAI_API_KEY=sk-...',
   },

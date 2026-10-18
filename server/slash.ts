@@ -38,7 +38,7 @@ function tomlString(text: string, key: string) {
 }
 
 /** 命令文件的说明、参数提示和正文 */
-async function readCommand(file: string, format: 'md' | 'toml') {
+export async function readCommand(file: string, format: 'md' | 'toml') {
   const text = await readFile(file, 'utf8').catch(() => '')
   if (format === 'toml') {
     const body = tomlString(text, 'prompt')
@@ -49,7 +49,7 @@ async function readCommand(file: string, format: 'md' | 'toml') {
 }
 
 /** 一个目录下的命令文件；子目录里的叫「子目录:名字」（和 Claude Code、Gemini CLI 一样） */
-async function scanCommands(
+export async function scanCommands(
   dir: string,
   source: string,
   format: 'md' | 'toml',

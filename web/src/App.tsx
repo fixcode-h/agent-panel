@@ -14,6 +14,8 @@ import { ErrorBoundary } from '@/components/ui/error-boundary'
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
 const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })))
+const LibraryPage = lazy(() => import('@/pages/LibraryPage').then((m) => ({ default: m.LibraryPage })))
+const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 
@@ -25,6 +27,8 @@ const PAGES: Record<Route['page'], () => React.ReactNode> = {
   workflows: () => <WorkflowsPage />,
   chat: () => <ChatPage />,
   design: () => <DesignPage />,
+  library: () => <LibraryPage />,
+  mcp: () => <McpPage />,
 }
 
 function useTheme() {
