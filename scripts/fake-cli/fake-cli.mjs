@@ -303,11 +303,12 @@ if (input.startsWith('你是「Agent 面板」里的配置助手')) {
   process.exit(0)
 }
 
-// UI 设计的对话用设计工具（MCP）改：要求里有 FAKE_MCP:<一组 [工具名, 参数]> 时，按 -c mcp_servers.design.url
-// 依次调工具，回复只写普通文字（不写 JSON）。用来测试工具接口和「用工具改完再收尾」
+// UI 设计的对话：按 -c mcp_servers.design.url 调设计工具（MCP）改，回复只写普通文字。
+// 要求里 FAKE_MCP:<一组 [工具名, 参数]> 时依次调这些工具；FAKE_DESIGN:<一行 JSON> 时把 root、components、ops、images、
+// style、question 换成对应的工具调用，reply 作为回复。工具报错后有 FAKE_DESIGN2: 时接着按它改（像 AI 看到错误后修正），
+// 收到「还有问题」的重试提示时直接用 FAKE_DESIGN2:
 const mcpUrl = args.map((a) => a.match(/^mcp_servers\.design\.url="(.*)"$/)?.[1]).find(Boolean)
-if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && mcpUrl && /FAKE_MCP:/.test(input)) {
-  const calls = JSON.parse([...input.matchAll(/FAKE_MCP:(.*)/g)].at(-1)[1])
+if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && mcpUrl) {
   let id = 0
   const rpc = async (method, params) => {
     const r = await fetch(mcpUrl, {
@@ -317,21 +318,53 @@ if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex' && 
     })
     return (await r.json()).result
   }
+  const tool = async (name, args) => {
+    const r = await rpc('tools/call', { name, arguments: args })
+    note('item/completed', {
+      item: {
+        id: `t${id}`,
+        type: 'mcpToolCall',
+        server: 'design',
+        tool: name,
+        arguments: args,
+        status: r.isError ? 'failed' : 'completed',
+        ...(r.isError ? { error: { message: r.content[0].text } } : { result: { content: r.content } }),
+      },
+    })
+    return r
+  }
   await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'fake' } })
   const tools = (await rpc('tools/list', {})).tools.map((t) => t.name)
-  const results = []
-  for (const [name, args] of calls) results.push((await rpc('tools/call', { name, arguments: args })).content[0].text)
-  const check = await rpc('tools/call', { name: 'check', arguments: {} })
-  const text = `工具改好了（${tools.length} 个工具）：${results.join('；')}；检查：${check.content[0].text}`
-  note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
-  codexDone('completed')
-}
-// UI 设计的对话：回说明 + JSON。JSON 由用户要求里最后一个 FAKE_DESIGN: 指定（一行），
-// 收到「不符合要求」的重试提示后改用 FAKE_DESIGN2:，用来测试自动修正
-if (/^你是(游戏|网页) UI 设计助手/.test(input) && kind === 'codex') {
   const pick = (tag) => [...input.matchAll(new RegExp(`${tag}:(.*)`, 'g'))].at(-1)?.[1]?.trim()
-  const json = (input.includes('不符合要求') && pick('FAKE_DESIGN2')) || pick('FAKE_DESIGN') || '{}'
-  const text = `按你的要求搭好了界面。\n\n\`\`\`json\n${json}\n\`\`\``
+  let text
+  if (/FAKE_MCP:/.test(input)) {
+    const results = []
+    for (const [name, a] of JSON.parse(pick('FAKE_MCP'))) results.push((await tool(name, a)).content[0].text)
+    const check = await tool('check', {})
+    text = `工具改好了（${tools.length} 个工具）：${results.join('；')}；检查：${check.content[0].text}`
+  } else {
+    const apply = async (j) => {
+      let failed = false
+      const call = async (name, a) => (failed = (await tool(name, a)).isError || failed)
+      for (const c of j.components ?? [])
+        await call('create_component', { name: c.Name, size: c.DesignSize, root: c.Root })
+      if (j.images?.length) await call('add_images', { images: j.images })
+      if (j.root) {
+        const cur = JSON.parse((await tool('get_tree', {})).content[0].text)
+        await call('replace_widget', { name: cur.Name, widget: j.root })
+      }
+      if (j.ops?.length) await call('edit', { ops: j.ops })
+      if (j.style) await call('set_style', { style: j.style })
+      if (j.designSize) await call('set_design_size', j.designSize)
+      if (j.question) await call('ask_style', j.question)
+      return failed
+    }
+    const second = pick('FAKE_DESIGN2')
+    let j = JSON.parse((input.includes('还有问题') && second) || pick('FAKE_DESIGN') || '{}')
+    if ((await apply(j)) && second && !input.includes('还有问题')) await apply((j = JSON.parse(second)))
+    await tool('check', {})
+    text = j.reply ?? '好了'
+  }
   for (const part of text.match(/[\s\S]{1,40}/g)) note('item/agentMessage/delta', { itemId: 'a0', delta: part })
   note('item/completed', { item: { id: 'a0', type: 'agentMessage', text } })
   codexDone('completed')

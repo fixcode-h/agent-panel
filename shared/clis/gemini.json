@@ -216,5 +216,17 @@
       "Gemini CLI 每次启动读项目里的 GEMINI.md（可以在 settings.json 的 context.fileName 里改成也读 AGENTS.md）。": "Gemini CLI reads GEMINI.md in the project on every start (set context.fileName in settings.json to also read AGENTS.md).",
       "可以改文件、执行任意命令，只在信任的项目里用": "Can edit files and run any command. Use only in trusted projects"
     }
+  },
+  "mcp": {
+    "files": {
+      ".gemini/settings.json": {
+        "mcpServers": {
+          "{name}": {
+            "httpUrl": "{url}",
+            "trust": true
+          }
+        }
+      }
+    }
   }
 }

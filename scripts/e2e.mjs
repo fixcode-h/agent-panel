@@ -2217,7 +2217,6 @@ try {
     })
     d = await waitJob(design.id)
     assert.equal(d.job.status, 'done', JSON.stringify(d.job.error))
-    assert.equal(d.job.attempt, 2, '写错的操作退回去重写')
     assert.equal(d.rev, revBefore + 1)
     assert.deepEqual(
       d.root.Children.map((w) => w.Name),
@@ -2228,10 +2227,12 @@ try {
     assert.equal(d.components[0].Root.Children[0].Properties.Text, '开始游戏')
     assert.equal(d.root.Children[1].Slot.LayoutData.Offsets.Top, 500, '只改写到的字段')
     assert.ok(d.root.Children[1].Slot.LayoutData.Offsets.Right > 0, '没写到的字段保留')
-    const retryAsk = calls()
-      .filter((c) => c.kind === 'codex' && c.input?.startsWith('你是游戏 UI 设计助手'))
-      .at(-1).input
-    assert.match(retryAsk, /ops\[0\]：主界面里没有叫 Nope 的控件/)
+    // 写错的操作当场把错误交还给 AI，它接着改；过程按顺序存在回复里
+    const failedTool = d.messages
+      .at(-1)
+      .parts.flatMap((p) => p.tools)
+      .find((x) => x.failed)
+    assert.match(failedTool.output, /主界面里没有叫 Nope 的控件/)
     // 用设计工具（MCP）改：CLI 调加控件、改属性、改名、建子控件等工具，回复只写普通文字
     const mcpCalls = [
       ['rename_widget', { name: 'Txt_Ver', to: 'Txt_Version' }],

@@ -139,5 +139,22 @@
       "标准": "Standard",
       "非交互执行时改文件和跑命令都会被拦下": "File edits and commands are blocked in non-interactive mode"
     }
+  },
+  "mcp": {
+    "files": {
+      ".mcp.json": {
+        "mcpServers": {
+          "{name}": {
+            "transport": "http",
+            "url": "{url}"
+          }
+        }
+      },
+      ".commandcode/settings.json": {
+        "permissions": {
+          "allow": ["mcp__{name}__*"]
+        }
+      }
+    }
   }
 }

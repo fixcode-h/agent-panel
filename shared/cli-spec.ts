@@ -41,6 +41,29 @@ export const OutputSpec = z.object({
 })
 export type OutputSpec = z.infer<typeof OutputSpec>
 
+export const McpSpec = z.object({
+  args: z.array(z.string()).default([]),
+  files: z.record(z.string(), z.unknown()).default({}),
+})
+export type McpSpec = z.infer<typeof McpSpec>
+
+/** 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件 */
+export function mcpConfig(spec: McpSpec, name: string, url: string) {
+  const fillStr = (s: string) => s.replaceAll('{name}', name).replaceAll('{url}', url)
+  const fillAny = (v: unknown): unknown =>
+    typeof v === 'string'
+      ? fillStr(v)
+      : Array.isArray(v)
+        ? v.map(fillAny)
+        : v && typeof v === 'object'
+          ? Object.fromEntries(Object.entries(v).map(([k, x]) => [fillStr(k), fillAny(x)]))
+          : v
+  return {
+    args: spec.args.map(fillStr),
+    files: Object.entries(spec.files).map(([p, content]) => ({ path: fillStr(p), content: fillAny(content) })),
+  }
+}
+
 const Dirs = z.object({ user: z.array(z.string()).default([]), repo: z.array(z.string()).default([]) })
 
 export const CliSpec = z.object({
@@ -111,6 +134,11 @@ export const CliSpec = z.object({
   }),
   /** 设置里环境变量的示例 */
   envExample: z.string().default(''),
+  /**
+   * 怎么把面板提供的工具（MCP，例如 UI 设计的设计工具）交给 CLI：args 是加的参数，files 是写进工作目录的配置文件
+   * （路径 → JSON 内容）。里面的 {url} 换成工具地址，{name} 换成工具名。不写表示这个 CLI 用不了面板的工具
+   */
+  mcp: McpSpec.optional(),
   /** 界面文案的翻译：{ "en": { "中文": "English" } } */
   i18n: z.record(z.string(), z.record(z.string(), z.string())).default({}),
 })
@@ -224,6 +252,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     readOnly: spec.readOnlyPermission,
     color: spec.color,
     envExample: spec.envExample,
+    mcp: spec.mcp,
     spec: true,
   }
 }

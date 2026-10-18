@@ -57,6 +57,19 @@ function setPath(obj: any, path: string[], value: unknown): any {
   return { ...base, [k]: setPath(base[k], rest, value) }
 }
 
+/** 新加的控件里写错的地方：不认识的类型、列表控件下预先放的子控件（normalizeTree 会悄悄换掉或丢掉，先告诉 AI） */
+function badWidgets(w: any, out: string[] = []): string[] {
+  if (w && typeof w === 'object') {
+    if (w.Type && !WIDGETS[w.Type as keyof typeof WIDGETS]) out.push(`未知的控件类型 ${w.Type}（${w.Name ?? ''}）`)
+    else if (WIDGETS[w.Type as keyof typeof WIDGETS]?.entries && Array.isArray(w.Children) && w.Children.length)
+      out.push(
+        `${w.Type} 的条目是运行时生成的，不能预先放子控件（${w.Name ?? ''}）：把条目做成子控件，写在 Properties.EntryWidgetClass 里`,
+      )
+    for (const c of Array.isArray(w.Children) ? w.Children : []) badWidgets(c, out)
+  }
+  return out
+}
+
 const subtreeNames = (w: any, out: string[] = []) => {
   if (w && typeof w === 'object') {
     if (w.Name) out.push(String(w.Name))
@@ -73,6 +86,10 @@ export function applyOp(s: OpsState, raw: unknown): { state: OpsState } | { erro
   const op = raw as DesignOp
   if (!op || typeof op !== 'object' || typeof (op as any).op !== 'string') return { error: '操作要写成 {"op": …}' }
   const comps = s.components
+  const bad = badWidgets(
+    op.op === 'add' || op.op === 'replace' ? op.widget : op.op === 'addComponent' ? op.component?.Root : undefined,
+  )
+  if (bad.length) return { error: bad.join('；') }
   if (op.op === 'addComponent') {
     const c = op.component
     if (!c?.Name) return { error: 'addComponent 要写 component.Name' }
@@ -203,42 +220,4 @@ export function applyOps(s: OpsState, ops: unknown[]): { state: OpsState; errors
     else cur = r.state
   })
   return { state: cur, errors }
-}
-
-/**
- * 还在输出中的回复里已经写完的操作：找到 "ops": [ 后面一个个完整的 {…}。
- * 用来边收边应用，页面上实时看到 AI 在改哪里
- */
-export function streamedOps(text: string): unknown[] {
-  const at = text.search(/"ops"\s*:\s*\[/)
-  if (at < 0) return []
-  let i = text.indexOf('[', at) + 1
-  const out: unknown[] = []
-  let depth = 0
-  let start = -1
-  let str = false
-  let esc = false
-  for (; i < text.length; i++) {
-    const ch = text[i]
-    if (str) {
-      if (esc) esc = false
-      else if (ch === '\\') esc = true
-      else if (ch === '"') str = false
-      continue
-    }
-    if (ch === '"') str = true
-    else if (ch === '{') {
-      if (depth++ === 0) start = i
-    } else if (ch === '}') {
-      if (--depth === 0 && start >= 0) {
-        try {
-          out.push(JSON.parse(text.slice(start, i + 1)))
-        } catch {
-          // 写坏的一条跳过，最后整体检查时会报给 AI
-        }
-        start = -1
-      }
-    } else if (ch === ']' && depth === 0) break
-  }
-  return out
 }

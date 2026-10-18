@@ -882,7 +882,6 @@ async function runChat(
 async function genImages(d: Full, ids: string[], count: number, job: Job) {
   job.phase = 'images'
   job.text = ''
-  job.out = undefined
   job.parts = undefined
   const items = ids.map((id) => {
     const im = d.images.find((i) => i.id === id)

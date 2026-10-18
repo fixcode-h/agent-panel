@@ -37,6 +37,7 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 | `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`     |
 | `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来 |
 | `envExample`                      | 设置里环境变量的示例                                                                           |
+| `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                             |
 | `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                               |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
@@ -94,6 +95,19 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 | `error`               | `message`                                                                                                                                                     |
 | `files_changed`       | 改了文件，面板去 git 里重新读改动                                                                                                                             |
 | `result`              | `ok`、`error`：这一轮结束                                                                                                                                     |
+
+## 面板的工具 `mcp`
+
+UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计。`args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容）；
+里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址。
+
+```json
+"mcp": {
+  "files": {
+    ".gemini/settings.json": { "mcpServers": { "{name}": { "httpUrl": "{url}", "trust": true } } }
+  }
+}
+```
 
 ## 能力 `features`
 
