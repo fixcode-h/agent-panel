@@ -342,4 +342,21 @@ export const EN_TASKS: Record<string, string> = {
   复制报错: 'Copy error',
   '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。':
     '· Google no longer supports signing in to Gemini CLI with a personal account (Gemini Code Assist for individuals). This is a Google server-side restriction, not a panel problem. Use an API instead: add a Gemini API key under "API settings" (get one at aistudio.google.com), then switch the sign-in method to API on the Gemini CLI page. Google Workspace or paid Code Assist accounts can still sign in with an account.',
+  '开始 {time}': 'Started {time}',
+  '结束 {time}': 'Ended {time}',
+  总耗时: 'Total time',
+  '累计执行时间，不含两轮之间的空闲': 'Total run time, excluding idle time between turns',
+  等你处理: 'Waiting on you',
+  '等你确认操作、回答问题、查看节点结果的时间':
+    'Time spent waiting for you to confirm actions, answer questions or review node results',
+  开始于: 'Started',
+  结束于: 'Ended',
+  其中等你处理的时间: 'Of which waiting on you',
+  '输入 {input} · 输出 {output} · 缓存命中 {hit}': 'Input {input} · Output {output} · Cache hits {hit}',
+  '· 命中 {n}%': '· {n}% cached',
+  '其中等你确认、回答问题的时间': 'Of which waiting for you to confirm or answer',
+  '等你 {d}': 'Waiting {d}',
+  追加要求: 'Follow-ups',
+  对话轮次: 'Turns',
+  '（最近 {n} 轮，共 {total} 轮）': ' (last {n} of {total})',
 }

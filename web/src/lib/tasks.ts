@@ -1,6 +1,7 @@
 import type { Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
+import { stepMs } from '@shared/task'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -111,11 +112,23 @@ export function fmtDuration(ms: number) {
   return t('{h} 小时 {m} 分', { h: Math.floor(s / 3600), m: Math.floor((s % 3600) / 60) })
 }
 
-export function stepDuration(step: { startedAt: string; endedAt: string; status: string }, now: number) {
-  if (!step.startedAt) return ''
-  const end = step.endedAt ? new Date(step.endedAt).getTime() : step.status === 'running' ? now : 0
-  const ms = end - new Date(step.startedAt).getTime()
-  return end && ms >= 1000 ? fmtDuration(ms) : ''
+export function stepDuration(
+  step: { startedAt: string; endedAt: string; status: string; spentMs?: number },
+  now: number,
+) {
+  const ms = stepMs(step, now)
+  return ms >= 1000 ? fmtDuration(ms) : ''
+}
+
+/** 时刻：今天的只写时分秒，其他日子带上日期 */
+export function fmtClock(iso: string) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const locale = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const time = d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
+  return d.toDateString() === new Date().toDateString()
+    ? time
+    : `${d.toLocaleDateString(locale, { month: 'numeric', day: 'numeric' })} ${time}`
 }
 
 /** 子节点的说明：「验收 第 2 轮 · 审查改动」 */

@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import {
   ChevronDown,
+  Clock,
+  Coins,
   FolderOpen,
+  Hourglass,
   GitBranch,
   Loader2,
   MessageSquare,
@@ -25,16 +28,17 @@ import {
   type Workflow,
 } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { fmtTokens, stepDepth, stepLabel, verdictText } from '@/lib/tasks'
+import { fmtClock, fmtDuration, fmtTokens, stepDepth, stepDuration, stepLabel, verdictText } from '@/lib/tasks'
+import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { stepTree, topSteps } from '@shared/flow'
-import { StepIcon } from './TaskStatusIcon'
+import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
 import { Terminal } from '@/components/agents/CommandPreview'
 import { t } from '@shared/i18n'
-import { mergeChanges, taskSummary, withTaskModel } from '@shared/task'
+import { mergeChanges, stepMs, taskDuration, taskSummary, turnStats, waitDuration, withTaskModel } from '@shared/task'
 import { DiffDialog } from './DiffDialog'
 
 /** 右栏块里的小操作（压缩上下文、审查改动） */
@@ -189,6 +193,8 @@ export function TaskPanel({
   }
   const tops = topSteps(task)
   const done = tops.filter((s) => s.status === 'done').length
+  // 执行中每秒刷新，节点耗时和总耗时实时走
+  const now = useNow(task.status === 'running')
   // 工作流任务：对话视图看整个任务的上下文和用量，不显示启动命令和更改（它们属于具体节点）；
   // 流程图里点了节点才看这个节点的。对话任务只有一个 Agent，一直显示
   const workflowMode = task.mode === 'workflow'
@@ -235,6 +241,7 @@ export function TaskPanel({
               : undefined
         }
       >
+        <TimeSummary task={task} now={now} />
         {task.mode === 'workflow' ? (
           <ol className="flex flex-col">
             {tops.map((st, si) => {
@@ -277,6 +284,7 @@ export function TaskPanel({
                           </span>
                         )}
                       </span>
+                      <StepStats step={st} kids={kids} now={now} />
                     </button>
                     {kids.length > 0 && (
                       <ul className="mt-0.5 flex flex-col gap-1 border-l border-line-strong pl-2.5">
@@ -301,6 +309,14 @@ export function TaskPanel({
                                 {k.verdict === 'fail' ? t('不通过') : t('通过')}
                               </span>
                             )}
+                            {stepDuration(k, now) && (
+                              <span
+                                className="shrink-0 font-mono text-[11px] text-subtle tabular-nums"
+                                title={spanTitle(k)}
+                              >
+                                {stepDuration(k, now)}
+                              </span>
+                            )}
                           </li>
                         ))}
                       </ul>
@@ -312,10 +328,18 @@ export function TaskPanel({
           </ol>
         ) : (task.todos ?? []).length ? (
           <Todos todos={task.todos} />
-        ) : (
+        ) : (task.turns ?? []).length ? null : (
           <p className="text-xs leading-relaxed text-subtle">
             {t('直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。')}
           </p>
+        )}
+        {(task.turns ?? []).length > 0 && (
+          <TurnRows
+            task={task}
+            now={now}
+            byAgent={byId}
+            label={task.mode === 'workflow' ? t('追加要求') : t('对话轮次')}
+          />
         )}
         {task.mode === 'workflow' && (task.todos ?? []).length > 0 && (
           <div className="mt-3 border-t pt-2.5">
@@ -497,6 +521,176 @@ export function TaskPanel({
         </>
       )}
     </div>
+  )
+}
+
+/** 「开始 10:32:01 · 结束 10:35:12」 */
+function spanTitle(s: { startedAt: string; endedAt: string; status: string }) {
+  return [
+    s.startedAt && t('开始 {time}', { time: fmtClock(s.startedAt) }),
+    s.endedAt && s.status !== 'running' && t('结束 {time}', { time: fmtClock(s.endedAt) }),
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+/** 任务进度顶上的时间：总耗时（含等用户的时间）、其中等你确认 / 回答的时间、开始和结束的时刻 */
+function TimeSummary({ task, now }: { task: Task; now: number }) {
+  const total = taskDuration(task, now)
+  const wait = waitDuration(task, now)
+  if (total < 1000) return null
+  const running = task.status === 'running'
+  const cells: [string, string, string?, string?][] = [
+    [t('总耗时'), fmtDuration(total), running ? 'text-accent' : '', t('累计执行时间，不含两轮之间的空闲')],
+    [t('等你处理'), wait >= 1000 ? fmtDuration(wait) : '—', '', t('等你确认操作、回答问题、查看节点结果的时间')],
+    running
+      ? [t('开始于'), fmtClock(task.createdAt)]
+      : [t('结束于'), fmtClock(task.updatedAt), '', t('开始 {time}', { time: fmtClock(task.createdAt) })],
+  ]
+  return (
+    <dl className="mb-3 grid grid-cols-3 gap-2 rounded-lg bg-field/60 px-2.5 py-2">
+      {cells.map(([k, v, cls, tip]) => (
+        <div key={k} className="flex min-w-0 flex-col gap-0.5" title={tip}>
+          <dt className="text-[11px] text-subtle">{k}</dt>
+          <dd className={cn('truncate font-mono text-xs font-medium tabular-nums', cls)}>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
+/** 工作流跑完后的追加要求 / 对话的每一轮：一轮一行，带耗时、等待和 token */
+function TurnRows({
+  task,
+  now,
+  byAgent,
+  label,
+}: {
+  task: Task
+  now: number
+  byAgent: Map<string, { name: string; icon: string; cli: string }>
+  label: string
+}) {
+  // 对话很长时只看最近的，免得这一块太长
+  const turns = task.turns.slice(-20)
+  return (
+    <div
+      className={cn(
+        'flex flex-col gap-2',
+        (task.mode === 'workflow' || task.todos.length > 0) && 'mt-3 border-t pt-2.5',
+      )}
+    >
+      <span className="text-[11px] text-subtle">
+        {label}
+        {task.turns.length > turns.length &&
+          t('（最近 {n} 轮，共 {total} 轮）', { n: turns.length, total: task.turns.length })}
+      </span>
+      <ol className="flex flex-col gap-2">
+        {turns.map((x, i) => {
+          const a = byAgent.get(x.agentId)
+          const st = turnStats(task, x, now)
+          const step = { startedAt: x.startedAt, endedAt: x.endedAt, status: x.status, spentMs: 0 }
+          return (
+            <li key={x.id} className="flex gap-2">
+              <TaskStatusIcon status={x.status} className="mt-px h-3.5 w-3.5" />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span
+                  className={cn('truncate text-xs', x.status === 'running' ? 'font-medium text-fg' : 'text-muted')}
+                  title={x.title}
+                >
+                  {x.title || t('第 {n} 轮', { n: task.turns.length - turns.length + i + 1 })}
+                </span>
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle">
+                  {a && task.mode === 'workflow' && (
+                    <span className="flex items-center gap-1">
+                      <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
+                      {a.name}
+                    </span>
+                  )}
+                  <Stats
+                    ms={stepMs(step, now)}
+                    wait={st.waitMs}
+                    u={st}
+                    running={x.status === 'running'}
+                    span={spanTitle(step)}
+                  />
+                </span>
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+/** 节点的耗时、等你处理的时间和 token（含开始、验收、结束等子节点） */
+function StepStats({ step, kids, now }: { step: TaskStep; kids: TaskStep[]; now: number }) {
+  const all = [step, ...kids]
+  return (
+    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+      <Stats
+        ms={stepMs(step, now)}
+        wait={all.reduce((n, s) => n + waitDuration(s, now), 0)}
+        u={sumUsage(all)}
+        running={step.status === 'running'}
+        span={spanTitle(step)}
+      />
+    </span>
+  )
+}
+
+/** 耗时（悬停看开始、结束时刻）、其中等你处理的时间、token 和缓存命中率 */
+function Stats({
+  ms,
+  wait,
+  u,
+  running,
+  span,
+}: {
+  ms: number
+  wait: number
+  u: Pick<Usage, 'inputTokens' | 'outputTokens' | 'cacheReadTokens'>
+  running: boolean
+  span: string
+}) {
+  const tokens = u.inputTokens + u.outputTokens
+  if (ms < 1000 && !tokens) return null
+  const rate = u.inputTokens > 0 ? (u.cacheReadTokens ?? 0) / u.inputTokens : 0
+  const item = 'flex items-center gap-1 whitespace-nowrap font-mono text-[11px] text-subtle tabular-nums'
+  return (
+    <>
+      {ms >= 1000 && (
+        <span className={cn(item, running && 'text-accent')} title={span}>
+          <Clock className="h-3 w-3" />
+          {fmtDuration(ms)}
+        </span>
+      )}
+      {wait >= 1000 && (
+        <span className={item} title={t('其中等你处理的时间')}>
+          <Hourglass className="h-3 w-3" />
+          {fmtDuration(wait)}
+        </span>
+      )}
+      {tokens > 0 && (
+        <span
+          className={item}
+          title={t('输入 {input} · 输出 {output} · 缓存命中 {hit}', {
+            input: fmtTokens(u.inputTokens),
+            output: fmtTokens(u.outputTokens),
+            hit: fmtTokens(u.cacheReadTokens ?? 0),
+          })}
+        >
+          <Coins className="h-3 w-3" />
+          {fmtTokens(tokens)}
+          {u.inputTokens > 0 && (
+            <span className={cn(rate >= 0.5 && 'text-success')}>
+              {t('· 命中 {n}%', { n: (rate * 100).toFixed(0) })}
+            </span>
+          )}
+        </span>
+      )}
+    </>
   )
 }
 

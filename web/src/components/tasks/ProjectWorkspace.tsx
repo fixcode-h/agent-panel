@@ -6,11 +6,12 @@ import {
   DatabaseZap,
   FolderGit2,
   GitBranch,
+  Hourglass,
   Settings2,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
-import { taskDuration } from '@shared/task'
+import { taskDuration, waitDuration } from '@shared/task'
 import { useData, useNav } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
@@ -147,6 +148,12 @@ function TaskStats({ task, now }: { task: Task; now: number }) {
         <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
           <Clock className="h-3 w-3" />
           {fmtDuration(ms)}
+        </span>
+      )}
+      {waitDuration(task, now) >= 1000 && (
+        <span className={item} title={t('其中等你确认、回答问题的时间')}>
+          <Hourglass className="h-3 w-3" />
+          {t('等你 {d}', { d: fmtDuration(waitDuration(task, now)) })}
         </span>
       )}
       {total > 0 && (
