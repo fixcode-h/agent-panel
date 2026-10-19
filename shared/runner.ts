@@ -8,6 +8,7 @@ import { agentPermission, agentRun, cliSettings, defaultCli, defaultSettings } f
 import { runEngineTurn, system, type AgentCall, type AgentResult } from './engine.ts'
 import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
+import { isDefaultWorkflow } from './builtin/default.ts'
 
 export interface RunContext {
   task: Task
@@ -338,11 +339,25 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       { text: '阅读实现', status: 'done', agentId: call.agentId },
       { text: '整理回答', status: 'running', agentId: call.agentId },
     ]
+  // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
+  if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
+    out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }
   // 后面有条件连线的节点要给出结论；演示里一律通过
   if (call.deciding && !/结论[:：]/.test(out.text)) out = { ...out, text: `${out.text}\n\n结论：通过` }
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
+}
+
+function demoNext(document: string, task: Task) {
+  const origin = task.messages.find((m) => m.role === 'user')?.text ?? ''
+  const picks = [...document.matchAll(/^- id: (\S+?)｜([^：（\n]+)/gm)].slice(0, 2)
+  const recs = picks.map(([, id, name]) => ({
+    id,
+    reason: `「${name}」适合接着把这件事做完`,
+    prompt: `按上面的分析结果继续处理：${origin.slice(0, 200)}`,
+  }))
+  return '```next-workflows\n' + JSON.stringify(recs, null, 2) + '\n```'
 }
 
 /** 在线演示里用户对「完成后等我确认」的回答：请求 id → 决定（演示后端回答请求时写进来） */

@@ -4,6 +4,7 @@ import { Copy, Crown, Download, GitBranch, Settings2, Sparkles, Trash2, Workflow
 import { exportWorkflow } from '@/lib/transfer'
 import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
+import { isDefaultWorkflow } from '@shared/builtin/default'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
@@ -131,15 +132,17 @@ export function WorkflowDetail({
                 >
                   <Download className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="danger-outline"
-                  size="icon"
-                  aria-label={t('删除')}
-                  title={t('删除')}
-                  onClick={() => setDeleting(true)}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                {!isDefaultWorkflow(workflow.id) && (
+                  <Button
+                    variant="danger-outline"
+                    size="icon"
+                    aria-label={t('删除')}
+                    title={t('删除')}
+                    onClick={() => setDeleting(true)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </>
             }
           />

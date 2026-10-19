@@ -55,6 +55,7 @@ import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
+import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { installLogging, log, logFile } from './log.ts'
@@ -74,7 +75,7 @@ const knownTags = async (ids: string[]) => {
   const all = new Set((await tags.list()).map((x) => x.id))
   return ids.filter((id) => all.has(id))
 }
-const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow)
+const workflows = createCollection<WorkflowInput, Workflow>('workflows.json', Workflow, () => [defaultWorkflow()])
 const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory>(
   'project-categories.json',
   ProjectCategory,

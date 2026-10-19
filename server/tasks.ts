@@ -14,7 +14,8 @@ import {
   type Workflow,
   RequestAnswer,
 } from '../shared/schema.ts'
-import { taskWorkflows, workflowClosure } from '../shared/flow.ts'
+import { taskWorkflows } from '../shared/flow.ts'
+import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
 import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments, withTaskModel } from '../shared/task.ts'
 import { agentRun } from '../shared/settings.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
@@ -122,7 +123,8 @@ export function tasksApi(deps: {
   async function projectWorkflow(p: Project) {
     const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
     const id = p.workflowId || cat?.workflowId
-    return id ? ((await deps.workflows.get(id)) ?? undefined) : undefined
+    // 项目没指定工作流时用自带的「默认」工作流
+    return (await deps.workflows.get(id || DEFAULT_WORKFLOW_ID)) ?? undefined
   }
 
   async function start(entry: Live, prompt: string, first: boolean, agents: Agent[], op?: RealContext['op']) {
@@ -378,7 +380,7 @@ export function tasksApi(deps: {
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
-    const snapshot = workflow ? workflowClosure(workflow, await deps.workflows.list()) : []
+    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list()) : []
     const draft = { ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot), id: randomUUID() }
     if (input.isolate && input.projectId) {
       try {
@@ -465,7 +467,7 @@ export function tasksApi(deps: {
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
       if (fresh) {
-        entry.task.workflows = workflowClosure(fresh, await deps.workflows.list())
+        entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list())
         entry.task.workflowName = fresh.name
       }
       const last = users.at(-1)

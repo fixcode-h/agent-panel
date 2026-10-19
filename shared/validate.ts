@@ -4,6 +4,7 @@
 import { END, START, findRefCycle } from './flow.ts'
 import { DEFAULT_AGENT_ID, type Project, type ProjectCategory, type Workflow, type WorkflowInput } from './schema.ts'
 import { t } from './i18n.ts'
+import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 
 /** 流程图里有没有环；有就返回环上的节点名 */
 export function cycleIn(f: { nodes: { id: string; title: string }[]; edges: { from: string; to: string }[] }) {
@@ -91,6 +92,7 @@ export function agentDeleteError(id: string, workflows: Workflow[]): string | nu
 
 /** 能不能删这个工作流：项目分类或项目还在用它时不能删 */
 export function workflowDeleteError(id: string, categories: ProjectCategory[], projects: Project[]): string | null {
+  if (id === DEFAULT_WORKFLOW_ID) return t('默认工作流是自带的，不能删除')
   const users = [
     ...categories.filter((x) => x.workflowId === id).map((x) => t('项目分类「{name}」', { name: x.name })),
     ...projects.filter((x) => x.workflowId === id).map((x) => t('项目「{name}」', { name: x.name })),
