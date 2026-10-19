@@ -407,7 +407,7 @@ export function AnimationPanel({
                 setCur(v)
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[11.5px] outline-none focus:border-accent"
+              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[11.5px] outline-none focus:border-focus"
             />
             <Select
               aria-label={t('触发方式')}

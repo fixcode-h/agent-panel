@@ -193,7 +193,7 @@ export function TaskComposer({
       <div
         {...drop.container}
         className={cn(
-          'relative rounded-[20px] border border-line-strong bg-card shadow-card transition-shadow focus-within:shadow-pop',
+          'relative rounded-[20px] border border-line-strong bg-card shadow-card transition-[border-color,box-shadow] focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
           drop.over && 'border-accent ring-2 ring-accent/25',
         )}
       >

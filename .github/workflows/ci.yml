@@ -83,10 +83,13 @@ jobs:
         shell: pwsh
         run: |
           $csc = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
+          # UI 自动化（在浏览器标签栏里找面板）的程序集在 WPF 子目录里
+          $wpf = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\WPF'
           New-Item -ItemType Directory -Force build/tray | Out-Null
           $out = & $csc /nologo /target:winexe /platform:anycpu /optimize+ /codepage:65001 `
             /win32icon:scripts\tray\app.ico /out:build\tray\AgentPanel.exe `
-            /r:System.Windows.Forms.dll /r:System.Drawing.dll scripts\tray\AgentPanel.cs 2>&1
+            /lib:"$wpf" /r:System.Windows.Forms.dll /r:System.Drawing.dll `
+            /r:UIAutomationClient.dll /r:UIAutomationTypes.dll /r:WindowsBase.dll scripts\tray\AgentPanel.cs 2>&1
           $code = $LASTEXITCODE
           # 编译信息写成注解，在检查结果页面直接能看到
           foreach ($l in $out) { if ("$l" -match 'error') { Write-Output "::error::$l" } else { Write-Output "$l" } }

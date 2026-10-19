@@ -861,7 +861,7 @@ function Designer({ id }: { id: string }) {
           aria-label={t('设计名称')}
           value={doc.title}
           onChange={(e) => ed.change((d) => ({ ...d, title: e.target.value }), 'title')}
-          className="h-8 w-[min(240px,30vw)] min-w-0 rounded-md bg-transparent px-1.5 text-[14px] font-medium outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-accent"
+          className="h-8 w-[min(240px,30vw)] min-w-0 rounded-md bg-transparent px-1.5 text-[14px] font-medium outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
         />
         <SaveIndicator status={ed.save.status} error={ed.save.error} />
         <span className="flex-1" />

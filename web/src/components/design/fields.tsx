@@ -28,7 +28,7 @@ export function setPath<T>(o: T, path: string, v: unknown): T {
 }
 
 const box =
-  'h-7 w-full min-w-0 rounded-md border border-line bg-field px-1.5 text-[12px] text-fg outline-none focus:border-accent'
+  'h-7 w-full min-w-0 rounded-md border border-line bg-field px-1.5 text-[12px] text-fg outline-none focus:border-focus'
 
 export function FieldRow({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) {
   return (

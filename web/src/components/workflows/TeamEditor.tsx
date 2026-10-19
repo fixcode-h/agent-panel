@@ -99,7 +99,7 @@ export function TeamEditor({
                   value={m.responsibility}
                   onChange={(e) => update(i, e.target.value)}
                   placeholder={t('在这个工作流中负责…')}
-                  className="order-last col-span-2 col-start-2 h-9 min-w-0 rounded-lg lg:order-none lg:col-span-1 lg:col-start-auto border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+                  className="order-last col-span-2 col-start-2 h-9 min-w-0 rounded-lg lg:order-none lg:col-span-1 lg:col-start-auto border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
                 />
                 <span className="flex items-center">
                   <Button

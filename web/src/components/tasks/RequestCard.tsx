@@ -175,7 +175,7 @@ export function RequestCard({
               rows={2}
               placeholder={t('要退回修改时，写上要改的地方')}
               aria-label={t('退回意见')}
-              className="min-w-0 resize-none rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] outline-none focus:border-accent"
+              className="min-w-0 resize-none rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] outline-none focus:border-focus"
             />
             <div className="flex justify-end gap-2">
               <Button

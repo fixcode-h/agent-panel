@@ -134,10 +134,10 @@ export function ChatComposer({
     <div
       {...drop.container}
       className={cn(
-        'relative border border-line-strong shadow-card transition-shadow',
+        'relative border border-line-strong shadow-card transition-[border-color,box-shadow]',
         sm
-          ? 'rounded-2xl bg-field focus-within:border-accent/60'
-          : 'mx-auto max-w-(--content-w) rounded-[20px] bg-card focus-within:shadow-pop',
+          ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
+          : 'mx-auto max-w-(--content-w) rounded-[20px] bg-card focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
         drop.over && 'border-accent ring-2 ring-accent/25',
         className,
       )}

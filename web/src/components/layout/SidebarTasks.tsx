@@ -225,7 +225,7 @@ export function TaskSearch({
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 px-0.5 pb-1">
-      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent bg-field/70 px-2 text-[13px] focus-within:border-accent/60 focus-within:bg-field">
+      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent bg-field/70 px-2 text-[13px] focus-within:border-focus/60 focus-within:bg-field">
         <Search className="h-3.5 w-3.5 shrink-0 text-subtle" />
         <input
           id="sidebar-search"

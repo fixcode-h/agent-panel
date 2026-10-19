@@ -202,6 +202,12 @@ export const EN_SERVER: Record<string, string> = {
   替换文件: 'Replacing files',
   正在重启: 'Restarting',
   '检查更新失败：{error}': 'Failed to check for updates: {error}',
+  '正在检查更新…': 'Checking for updates…',
+  '已经是最新版本（{version}）': "You're on the latest version ({version})",
+  '发现新版本 {version}，但现在不能更新：{error}':
+    'Version {version} is available but cannot be installed now: {error}',
+  '发现新版本 {version}，正在下载…': 'Version {version} is available, downloading…',
+  '已更新到 {version}，正在重启': 'Updated to {version}, restarting',
   '从源码运行时请用 git 更新，只有发布的包能在这里更新':
     'Running from source: update with git. Only released packages can update here.',
   '正在更新，请稍等': 'Update in progress, please wait',
@@ -291,6 +297,13 @@ export const EN_SERVER: Record<string, string> = {
   找不到这次优化: "Can't find this optimization",
   'Codex 没有返回': "Codex didn't respond",
   已压缩上下文: 'Context compacted',
+  '压缩了 {freed} token（{before} → {after}）': 'Compacted {freed} tokens ({before} → {after})',
+  '压缩前 {before} token': '{before} tokens before compaction',
+  '当前占用 {pct}%': '{pct}% of context used',
+  '压缩前：{n} token': 'Before: {n} tokens',
+  '压缩后：{n} token': 'After: {n} tokens',
+  '上下文窗口：{n} token': 'Context window: {n} tokens',
+  '当前占用：{pct}%': 'Context used: {pct}%',
   '已压缩上下文：下一轮会开新的会话，带上这份摘要':
     'Context compacted: the next turn starts a new session with this summary',
   '上下文占用达到 {n}%，自动压缩': 'Context usage reached {n}%, compacting automatically',

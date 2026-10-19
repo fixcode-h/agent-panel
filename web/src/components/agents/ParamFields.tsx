@@ -356,7 +356,7 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
       }}
       onBlur={() => setText(tidy(text).join('\n'))}
       placeholder={t('例如：\n快速\n标准\n严格')}
-      className="w-full resize-y rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-accent"
+      className="w-full resize-y rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-focus"
     />
   )
 }

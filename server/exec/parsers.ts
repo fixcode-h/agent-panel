@@ -23,7 +23,8 @@ export type CliEvent =
   /** 账号额度有了新数据 */
   | { type: 'limits'; limits: CliLimits }
   /** 上下文压缩完了；context 是压缩后的占用（知道时） */
-  | { type: 'compacted'; context?: number }
+  /** 压缩了上下文：before 是压缩前的 token 数，context 是压缩后的（CLI 给了才有） */
+  | { type: 'compacted'; context?: number; before?: number }
   /** patch：改文件的工具给出的 unified diff，用来替换调用时记下的改前改后 */
   | { type: 'tool_result'; id: string; output: string; failed?: boolean; patch?: string; detail?: string }
   /**
@@ -281,7 +282,12 @@ export function claudeParser(cwd: string): Parser {
         out.push({ type: 'text_delta', text: e.delta.text ?? '' })
       }
     } else if (o.type === 'system' && o.subtype === 'compact_boundary') {
-      out.push({ type: 'compacted' })
+      const meta = o.compact_metadata ?? {}
+      out.push({
+        type: 'compacted',
+        ...(typeof meta.pre_tokens === 'number' ? { before: meta.pre_tokens } : {}),
+        ...(typeof meta.post_tokens === 'number' ? { context: meta.post_tokens } : {}),
+      })
     } else if (o.type === 'rate_limit_event' && o.rate_limit_info) {
       const l = claudeLimits(o.rate_limit_info)
       if (l) out.push({ type: 'limits', limits: l })

@@ -884,11 +884,14 @@ try {
     await call('POST', `/tasks/${a.id}/compact`)
     a = await waitDone(a.id)
     assert.equal(calls().at(-1).op, 'compact', 'Codex 用 thread/compact/start')
-    assert.ok(a.messages.some((m) => m.role === 'system' && m.text === '已压缩上下文'))
+    const compactTool = (x) =>
+      x.messages.flatMap((m) => (m.role === 'agent' ? m.tools : [])).find((t) => t.kind === 'compact')
+    assert.ok(compactTool(a), '压缩显示成回复里的一次工具调用')
+    assert.ok(!a.messages.some((m) => m.role === 'system' && m.text === '已压缩上下文'), '不插系统消息把回复切开')
     await call('POST', `/tasks/${b.id}/compact`)
     b = await waitDone(b.id)
     assert.equal(calls().at(-1).input, '/compact', 'Claude Code 用 /compact')
-    assert.ok(b.messages.some((m) => m.role === 'system' && m.text === '已压缩上下文'))
+    assert.match(compactTool(b).label, /9\.0k/, '写明压缩前的大小（compact_boundary 的 pre_tokens）')
     let cc = await chatWith({ cli: 'commandcode' }, '第一件事')
     cc = await waitDone(cc.id)
     await call('POST', `/tasks/${cc.id}/compact`)
@@ -3857,6 +3860,10 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
         PORT: String(trayPort),
         AGENT_PANEL_TRAY: '1',
         FAKE_CLI_LOG: log,
+        // 托盘的「检查更新」：当成发布的包，版本已经是最新的
+        AGENT_PANEL_RELEASES_URL: `http://127.0.0.1:${relServer.address().port}/releases`,
+        AGENT_PANEL_APP_DIR: path.join(tmp, 'tray-app'),
+        AGENT_PANEL_VERSION: '0.11.9-dev',
       },
       stdio: ['pipe', 'pipe', 'inherit'],
     })
@@ -3865,6 +3872,38 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     const exited = new Promise((r) => child.on('exit', (code) => r(code)))
     for (let i = 0; i < 100 && !out.includes('AGENT_PANEL_READY'); i++) await sleep(100)
     assert.ok(out.includes(`AGENT_PANEL_READY http://127.0.0.1:${trayPort}/?token=`), '托盘模式输出带令牌的地址')
+    const waitOut = async (text) => {
+      for (let i = 0; i < 100 && !out.includes(text); i++) await sleep(100)
+      assert.ok(out.includes(text), `托盘收到 ${text}`)
+    }
+    // 点图标：没有打开着的页面时回答 0，托盘去打开新的
+    child.stdin.write('focus m1\n')
+    await waitOut('AGENT_PANEL_FOCUS m1 0')
+    // 有页面开着：页面收到要加到标题上的标记，以及切过来后要打开设置
+    const ac = new AbortController()
+    const es = await fetch(`http://127.0.0.1:${trayPort}/api/app/events`, { signal: ac.signal })
+    const reader = es.body.getReader()
+    let sse = ''
+    const readSse = (async () => {
+      try {
+        for (;;) {
+          const { value, done } = await reader.read()
+          if (done) break
+          sse += new TextDecoder().decode(value)
+        }
+      } catch {}
+    })()
+    for (let i = 0; i < 50 && !sse.includes('hello'); i++) await sleep(100)
+    child.stdin.write('focus m2 settings\n')
+    await waitOut('AGENT_PANEL_FOCUS m2 1')
+    for (let i = 0; i < 50 && !sse.includes('m2'); i++) await sleep(100)
+    assert.match(sse, /event: focus\ndata: \{"type":"focus","mark":"m2","view":"settings"\}/)
+    ac.abort()
+    await readSse
+    // 右键「检查更新」：马上问 GitHub，已经是最新的就告诉托盘
+    child.stdin.write('update\n')
+    await waitOut('AGENT_PANEL_UPDATE checking')
+    await waitOut('AGENT_PANEL_UPDATE latest 已经是最新版本（0.11.9-dev）')
     // 退出时还有 CLI 在跑：要一起停掉，不能留在后台继续改项目
     const n = calls().length
     await fetch(`http://127.0.0.1:${trayPort}/api/tasks`, {
@@ -3889,7 +3928,9 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     })()
     assert.ok(!alive, '服务退出时正在执行的 CLI 也被结束')
   }
-  step('Windows 托盘程序：服务启动完成后告诉托盘地址，托盘退出时服务和正在执行的 CLI 一起退出')
+  step(
+    'Windows 托盘程序：服务启动完成后告诉托盘地址，点图标切到打开着的页面，右键检查更新，托盘退出时服务和正在执行的 CLI 一起退出',
+  )
 
   console.log('\n全部通过')
 } catch (e) {

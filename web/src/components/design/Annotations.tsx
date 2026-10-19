@@ -482,7 +482,7 @@ function AnnotationEditor({
         rows={3}
         placeholder={t('说明要怎么改，例如：按钮换成金色描边')}
         aria-label={t('标注说明')}
-        className="block w-full resize-none rounded-lg border bg-field px-2.5 py-2 text-[12.5px] leading-relaxed outline-none placeholder:text-subtle focus:border-accent"
+        className="block w-full resize-none rounded-lg border bg-field px-2.5 py-2 text-[12.5px] leading-relaxed outline-none placeholder:text-subtle focus:border-focus"
       />
       <div className="mt-2 flex items-center">
         <button

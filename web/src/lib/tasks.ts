@@ -58,6 +58,7 @@ const VERB: Record<ToolUse['kind'], string> = {
   web: '网页',
   skill: '技能',
   agent: '子任务',
+  compact: '压缩上下文',
   other: '',
 }
 
@@ -70,6 +71,7 @@ const VERB_TEXT: Record<ToolUse['kind'], string> = {
   web: t('网页'),
   skill: t('技能'),
   agent: t('子任务'),
+  compact: t('压缩上下文'),
   other: '',
 }
 

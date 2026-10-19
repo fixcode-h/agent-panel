@@ -3,6 +3,7 @@ import {
   Bot,
   ChevronRight,
   FileText,
+  FoldVertical,
   Globe,
   Loader2,
   PencilLine,
@@ -24,6 +25,7 @@ export const toolIcon = {
   web: Globe,
   skill: Sparkles,
   agent: Bot,
+  compact: FoldVertical,
   other: Wrench,
 }
 
