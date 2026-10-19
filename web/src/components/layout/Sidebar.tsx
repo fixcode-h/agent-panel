@@ -189,7 +189,8 @@ function Row({
   )
 }
 
-/** 切到 Agent 模式、UI 设计模式时回到上次在那个模式里看的页面 */
+/** 切到各模式时回到上次在那个模式里看的页面 */
+let lastChatRoute: Route = { page: 'chat' }
 let lastAgentRoute: Route = { page: 'home' }
 let lastDesignRoute: Route = { page: 'design' }
 
@@ -208,7 +209,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
       label: t('Chat 模式：直接聊天，不用选项目'),
       icon: MessagesSquare,
       on: chat,
-      to: { page: 'chat' } as Route,
+      to: lastChatRoute,
     },
     {
       id: 'agent',
@@ -292,7 +293,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const designMode = route.page === 'design' || route.page === 'comfy'
   // ComfyUI 工作流管理也算 UI 设计：不能记成 Agent 模式的页面，否则点 Agent 又回到 ComfyUI，切不过去
   if (designMode) lastDesignRoute = route
-  else if (!chatMode) lastAgentRoute = route
+  else if (chatMode) lastChatRoute = route
+  else lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 
   // 按项目分组，用户最近发过消息的项目排在前面；组内按用户最近发消息的时间
