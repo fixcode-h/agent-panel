@@ -42,7 +42,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/compo
 import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
-import { useAttachments } from '@/components/chat/Attachments'
+import { insertRefs, removeRef, useAttachments } from '@/components/chat/Attachments'
 import { QuestionPanel } from '@/components/chat/QuestionPanel'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle, useAskUser, useScopeRequests } from '@/components/chat/AskToggle'
@@ -582,8 +582,11 @@ export function DesignChat({
   const { run } = useChatRun(pick)
   const list = useRef<HTMLDivElement>(null)
   const box = useRef<HTMLTextAreaElement>(null)
-  // 参考图、需求文档：选文件、粘贴截图、拖进来都行
-  const files = useAttachments()
+  // 参考图、需求文档：选文件、粘贴截图、拖进来都行，引用插到文字的光标处
+  const files = useAttachments(undefined, {
+    insert: (refs) => insertRefs(box, text, setText, refs),
+    remove: (ref) => setText(removeRef(text, ref)),
+  })
   const running = job?.status === 'running'
   const conceptRound = concept && !hasTemplate
   const designing = running && job?.phase === 'design'

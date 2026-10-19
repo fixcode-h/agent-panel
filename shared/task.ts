@@ -17,18 +17,44 @@ import { planTask } from './flow.ts'
 import { t } from './i18n.ts'
 
 export function taskTitle(prompt: string) {
-  const line = prompt.trim().split('\n')[0]
+  // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
+  const raw = prompt.trim().split('\n')[0]
+  const line =
+    raw
+      .replace(/\[(?:图片|文件):[^\]]+\]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim() || raw
   return line.length > 32 ? line.slice(0, 32) + '…' : line
 }
 
 /**
- * 交给 Agent 的要求：附件不塞进消息正文（页面上单独显示），执行时在要求后面列出路径，
+ * 输入框里引用附件用的标记：粘贴、拖入、选择文件时插到光标处，发送给 CLI 前换成附件的实际路径。
+ * 页面上存的是这个标记，用户回头看消息时能看出引用的是哪张图。
+ */
+export function attachmentRef(a: Pick<Attachment, 'name' | 'mime'>) {
+  const image = a.mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name)
+  return `[${image ? '图片' : '文件'}:${a.name}]`
+}
+
+/**
+ * 交给 Agent 的要求：文字里引用到的附件在原来的位置换成路径；没引用到的仍然列在后面。
  * CLI 用自己的读文件工具去读（Claude Code、Codex 都能直接看图片）
  */
 export function withAttachments(prompt: string, attachments: Attachment[] | undefined) {
   if (!attachments?.length) return prompt
-  const list = attachments.map((a) => `- ${a.name}：${a.path}`).join('\n')
-  return `${prompt}\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n${list}`
+  let text = prompt
+  const used = new Set<Attachment>()
+  // 名字长的先换：一个名字是另一个的前缀时不会换错
+  for (const a of [...attachments].sort((x, y) => y.name.length - x.name.length)) {
+    const ref = attachmentRef(a)
+    if (!text.includes(ref)) continue
+    text = text.split(ref).join(a.path)
+    used.add(a)
+  }
+  const rest = attachments.filter((a) => !used.has(a))
+  if (!rest.length) return text
+  const list = rest.map((a) => `- ${a.name}：${a.path}`).join('\n')
+  return `${text}\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n${list}`
 }
 
 /** 新建任务的初始数据 */

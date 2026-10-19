@@ -60,7 +60,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
-import { beginTurn, endTurn, pauseStep } from './task.ts'
+import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 
 /** 提示词里的流程入口名，固定用中文（提示词不跟随界面语言） */
@@ -254,7 +254,10 @@ function overBudget(host: EngineHost): string {
 }
 
 function userRequests(task: Task) {
-  const users = task.messages.filter((m) => m.role === 'user' && !m.step).map((m) => m.prompt || m.text)
+  // 和实际交给 CLI 的一样：文字里的附件引用换成路径，没引用的列在后面
+  const users = task.messages
+    .filter((m) => m.role === 'user' && !m.step)
+    .map((m) => withAttachments(m.prompt || m.text, m.attachments))
   return { original: users[0] ?? '', extra: users.slice(1) }
 }
 

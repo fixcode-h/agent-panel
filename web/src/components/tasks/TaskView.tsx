@@ -52,7 +52,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { TaskStatusIcon } from './TaskStatusIcon'
-import { useAttachments, useFileMention } from '@/components/chat/Attachments'
+import { insertRefs, removeRef, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 
@@ -150,7 +150,10 @@ export function TaskView({
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<HTMLTextAreaElement>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
-  const files = useAttachments(`task:${taskId}`)
+  const files = useAttachments(`task:${taskId}`, {
+    insert: (refs) => insertRefs(followTa, text, setText, refs),
+    remove: (ref) => setText(removeRef(text, ref)),
+  })
   const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
