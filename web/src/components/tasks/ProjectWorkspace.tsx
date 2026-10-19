@@ -11,7 +11,7 @@ import {
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
-import { taskDuration, waitDuration } from '@shared/task'
+import { byAskedAt, taskDuration, waitDuration } from '@shared/task'
 import { useData, useNav } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
@@ -32,7 +32,7 @@ function ProjectHome({ project }: { project: Project }) {
   // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）
   const all = tasks.filter((t) => t.projectId === project.id)
   const archived = all.filter((t) => t.archived).length
-  const list = all.filter((t) => !t.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务在执行时每秒刷新，耗时跟着走
   const now = useNow(list.some((t) => t.status === 'running'))
   const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))

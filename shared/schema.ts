@@ -830,6 +830,8 @@ export const TaskData = z.object({
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
+  /** 用户最近一次发消息的时间：只在列表摘要里带（摘要去掉了消息），排序和显示用 askedAt() 取 */
+  askedAt: z.string().optional(),
 })
 export type TaskData = z.infer<typeof TaskData>
 

@@ -32,6 +32,7 @@ import { ConfirmDialog } from '@/components/ui/dialog'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
+import { askedAt, byAskedAt } from '@shared/task'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -141,7 +142,7 @@ export function TaskRow({
             ) : null}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
             {hint && <span className="max-w-[40%] shrink truncate text-[11px] text-subtle">{hint}</span>}
-            <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(task.updatedAt)}</span>
+            <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(askedAt(task))}</span>
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -284,9 +285,7 @@ export function ChatList() {
   const { tasks } = useData()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
-  const chats = tasks
-    .filter((t) => !t.projectId && matchTask(t, query, filter))
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const chats = tasks.filter((t) => !t.projectId && matchTask(t, query, filter)).sort(byAskedAt)
   const filtering = !!query.trim() || filter !== 'all'
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">

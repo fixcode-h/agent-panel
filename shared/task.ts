@@ -231,6 +231,20 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
 }
 
 /**
+ * 用户最近一次发消息的时间（含排队还没处理的），没有就用创建时间。
+ * 列表按它排序、显示它：Agent 回复、执行状态变化不改变顺序，只有用户发了新消息才排到前面
+ */
+export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'> & { queue?: { at: string }[] }) {
+  let at = t.askedAt ?? ''
+  for (const m of t.messages) if (m.role === 'user' && m.at > at) at = m.at
+  for (const q of t.queue ?? []) if (q.at > at) at = q.at
+  return at || t.createdAt
+}
+
+/** 按用户最近发消息的时间排，新的在前 */
+export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(a))
+
+/**
  * 列表用的任务摘要：侧栏、项目首页只要标题、状态、进度和用量。去掉消息内容、节点输出这些大块数据，
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
@@ -238,6 +252,7 @@ export function taskSummary(t: Task): Task {
   const first = t.messages.find((m) => m.role === 'user')
   return {
     ...t,
+    askedAt: askedAt(t),
     messages: first ? [{ ...first, text: first.text.slice(0, 500), tools: [] }] : [],
     steps: t.steps.map(({ usage, ...s }) => ({ ...s, output: '', command: [], changes: [] })),
     todos: [],
