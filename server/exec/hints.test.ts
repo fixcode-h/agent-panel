@@ -4,7 +4,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
-import { failureHints } from './runner.ts'
+import { describeCompaction, failureHints } from './runner.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -31,4 +31,14 @@ test('Pi 没配 API Key：提示在终端里登录', () => {
   })
   assert.equal(hints.length, 1)
   assert.match(hints[0], /运行 pi，在里面输入 \/login/)
+})
+
+test('压缩上下文：写明压缩了多少、现在占上下文窗口多少', () => {
+  const tool = { kind: 'compact' as const, label: '', detail: '' }
+  describeCompaction(tool, 96_000, 14_000, 200_000)
+  assert.equal(tool.label, '压缩了 82.0k token（96.0k → 14.0k）')
+  assert.equal(tool.detail, '当前占用 7%')
+  describeCompaction(tool, 9000)
+  assert.equal(tool.label, '压缩前 9.0k token')
+  assert.equal(tool.detail, '')
 })

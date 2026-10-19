@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { Task } from '@shared/schema'
 import { t } from '@shared/i18n'
+import { setBaseTitle } from './page-signal'
 
 const KEY = 'notify-task-done'
 
@@ -38,7 +39,7 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
     const next = new Map(tasks.map((task) => [task.id, task.status]))
     prev.current = next
     const running = tasks.filter((task) => task.status === 'running').length
-    document.title = running ? `(${running}) ${t('Agent 面板')}` : t('Agent 面板')
+    setBaseTitle(running ? `(${running}) ${t('Agent 面板')}` : t('Agent 面板'))
     // 新出现的确认请求：页面不在前台时也通知
     const reqs = new Set(tasks.flatMap((task) => (task.requests ?? []).map((r) => r.id)))
     const fresh = tasks.filter((task) => (task.requests ?? []).some((r) => !asked.current.has(r.id)))

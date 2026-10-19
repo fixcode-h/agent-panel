@@ -99,9 +99,22 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
-export function TaskView({ taskId, project }: { taskId: string; project?: Project }) {
+export function TaskView({
+  taskId,
+  project,
+  embed,
+}: {
+  taskId: string
+  project?: Project
+  /** 放在弹窗里（例如「AI 处理」）：标题栏右边加上弹窗自己的按钮；要跳到别的页面时先收起弹窗 */
+  embed?: { actions: React.ReactNode; onLeave: () => void }
+}) {
   const { agents, workflows, settings, upsertTask, removeTask } = useData()
-  const { go } = useNav()
+  const nav = useNav()
+  const go: typeof nav.go = (r) => {
+    embed?.onLeave()
+    nav.go(r)
+  }
   const [task, setTask] = useState<Task | null>(null)
   // 没发出去的内容按对话分开记，切到别的对话再回来还在
   const [text, setText] = useDraft(`task:${taskId}`)
@@ -469,6 +482,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                 </MenuItem>
               </MenuContent>
             </Menu>
+            {embed?.actions}
           </header>
 
           <div className="relative flex min-h-0 flex-1 flex-col">

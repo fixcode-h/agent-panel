@@ -166,7 +166,7 @@ function StyleCard({
               onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
               className={cn(
                 'h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-[14px] font-medium outline-none',
-                !readOnly && 'hover:border-line focus:border-accent focus:bg-field',
+                !readOnly && 'hover:border-line focus:border-focus focus:bg-field',
               )}
             />
             <span className="flex shrink-0 items-center gap-1 rounded-full bg-field px-2 py-0.5 text-[11px] text-muted">

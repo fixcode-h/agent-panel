@@ -59,7 +59,7 @@ import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows } from '@
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
-import { demoFixJob, startDemoFix, stopDemoFix } from './demo-fix'
+import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoDeploy } from './demo-deploy'
 import {
@@ -970,10 +970,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body)
-  if (res === 'fix-jobs') {
-    if (!id) return startDemoFix(body)
-    return (sub === 'stop' ? stopDemoFix(id) : demoFixJob(id)) ?? fail('找不到这次处理，可能已过期')
-  }
+  if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
   if (res === 'projects' && id && sub === 'files') {
@@ -1301,18 +1298,31 @@ function tasksRoute(
     if (sub === 'compact') {
       if (task.mode !== 'chat') fail('只有对话任务可以这样做')
       const at = new Date().toISOString()
-      task.messages.push(
-        { id: `demo-${crypto.randomUUID()}`, role: 'system', agentId: '', step: '', text: '压缩上下文', tools: [], at },
-        {
-          id: `demo-${crypto.randomUUID()}`,
-          role: 'system',
-          agentId: '',
-          step: '',
-          text: '上下文已压缩：之前的对话换成了摘要，接着聊会从摘要继续',
-          tools: [],
-          at,
-        },
-      )
+      // 和真实执行一样：压缩是回复里的一次工具调用，写明压缩了多少、现在占多少
+      const last = [...task.messages].reverse().find((m) => m.role === 'agent')
+      const usage = last ? task.usage.agents[last.agentId] : undefined
+      const window = usage?.window || 200_000
+      const before = usage?.context || 86_400
+      const after = Math.round(before * 0.18)
+      if (usage) usage.context = after
+      const k = (n: number) => `${(n / 1000).toFixed(1)}k`
+      task.messages.push({
+        id: `demo-${crypto.randomUUID()}`,
+        role: 'agent',
+        agentId: last?.agentId ?? '',
+        step: '',
+        text: '',
+        tools: [
+          {
+            kind: 'compact',
+            name: '压缩上下文',
+            label: `压缩了 ${k(before - after)} token（${k(before)} → ${k(after)}）`,
+            detail: `当前占用 ${Math.round((after / window) * 100)}%`,
+            output: `压缩前：${k(before)} token\n压缩后：${k(after)} token\n上下文窗口：${k(window)} token\n当前占用：${Math.round((after / window) * 100)}%`,
+          },
+        ],
+        at,
+      })
       persist()
       return task
     }

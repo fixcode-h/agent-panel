@@ -289,88 +289,130 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     }
   }
 
-  return (
-    new Hono()
-      .get('/version', (c) => c.json({ current: currentVersion(), packaged: packaged(), previous: previousVersion() }))
-      .get('/releases', async (c) => {
-        const current = currentVersion()
-        const base: AppReleases = { current, packaged: packaged(), previous: previousVersion(), releases: [] }
-        try {
-          const list = await releases(c.req.query('refresh') === '1')
-          return c.json({
-            ...base,
-            checkedAt: cache ? new Date(cache.at).toISOString() : undefined,
-            releases: list.slice(0, 5),
-            update: pickUpdate(current, list),
-          } satisfies AppReleases)
-        } catch (e) {
-          log.warn('update', '检查更新失败', e)
-          return c.json({
-            ...base,
-            error: t('检查更新失败：{error}', { error: (e as Error).message }),
-          } satisfies AppReleases)
-        }
-      })
-      .post('/install', async (c) => {
-        const { tag } = (await c.req.json().catch(() => ({}))) as { tag?: string }
-        if (!packaged()) return c.json({ error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新') }, 400)
-        if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
-        if (deps.running() > 0) return c.json({ error: t('有任务正在执行，请等它完成或先停止再更新') }, 409)
-        let rel: AppRelease | undefined
-        try {
-          rel = (await releases(false)).find((r) => r.tag === tag) ?? (await releases(true)).find((r) => r.tag === tag)
-        } catch (e) {
-          return c.json({ error: t('读取版本列表失败：{error}', { error: (e as Error).message }) }, 502)
-        }
-        if (!rel) return c.json({ error: t('找不到版本 {tag}', { tag: tag ?? '' }) }, 404)
-        const job: AppUpdateJob = {
-          id: randomUUID(),
-          tag: rel.tag,
-          status: 'running',
-          phase: t('准备中'),
-          received: 0,
-          total: 0,
-        }
-        // 只有页面正在看的这一次有用，以前的记录丢掉
-        for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
-        jobs.set(job.id, job)
-        log.info('update', `开始更新到 ${rel.tag}`)
-        install(job, rel).catch((e) => {
-          log.error('update', `更新到 ${rel.tag} 失败`, e)
-          job.status = 'failed'
-          job.error = (e as Error).message
-        })
-        return c.json(job, 201)
-      })
-      // 回到上一个版本：和当前版本互换，换完还可以再换回来
-      .post('/rollback', async (c) => {
-        if (!packaged()) return c.json({ error: t('从源码运行时请用 git 切换版本') }, 400)
-        if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
-        if (deps.running() > 0) return c.json({ error: t('有任务正在执行，请等它完成或先停止再更新') }, 409)
-        const version = previousVersion()
-        if (!version || !existsSync(path.join(PREVIOUS(), 'dist')))
-          return c.json({ error: t('没有可以退回的版本') }, 404)
-        const dir = appDir()
-        const swap = path.join(CACHE_DIR, 'updates', 'rollback')
-        try {
-          await backup(dir, swap)
-          await apply(PREVIOUS(), dir)
-          await rm(PREVIOUS(), { recursive: true, force: true })
-          await rename(swap, PREVIOUS())
-        } catch (e) {
-          await apply(swap, dir).catch(() => {})
-          await rm(swap, { recursive: true, force: true }).catch(() => {})
-          return c.json({ error: t('退回失败：{error}', { error: (e as Error).message }) }, 500)
-        }
-        setTimeout(() => deps.restart(), 800)
-        return c.json({ version })
-      })
-      .get('/install/:id', (c) => {
-        const j = jobs.get(c.req.param('id'))
-        return j ? c.json(j) : c.json({ error: t('找不到这次更新') }, 404)
-      })
-  )
+  /** 开始装某个版本；不能装时返回原因和状态码 */
+  function startInstall(
+    rel: AppRelease,
+  ): { job: AppUpdateJob; done: Promise<void> } | { error: string; status: 400 | 409 } {
+    if (!packaged()) return { error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新'), status: 400 }
+    if ([...jobs.values()].some((j) => j.status === 'running')) return { error: t('正在更新，请稍等'), status: 409 }
+    if (deps.running() > 0) return { error: t('有任务正在执行，请等它完成或先停止再更新'), status: 409 }
+    const job: AppUpdateJob = {
+      id: randomUUID(),
+      tag: rel.tag,
+      status: 'running',
+      phase: t('准备中'),
+      received: 0,
+      total: 0,
+    }
+    // 只有页面正在看的这一次有用，以前的记录丢掉
+    for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
+    jobs.set(job.id, job)
+    log.info('update', `开始更新到 ${rel.tag}`)
+    const done = install(job, rel).catch((e) => {
+      log.error('update', `更新到 ${rel.tag} 失败`, e)
+      job.status = 'failed'
+      job.error = (e as Error).message
+    })
+    return { job, done }
+  }
+
+  /**
+   * 托盘菜单的「检查更新」：马上问一次 GitHub，有新版本就直接下载安装（装好后重启），
+   * 每一步用 report 告诉托盘，由它弹出通知。和设置页里的检查更新各走各的，不用打开页面
+   */
+  async function checkAndInstall(report: (state: TrayUpdateState, text: string) => void) {
+    if (!packaged()) return report('failed', t('从源码运行时请用 git 更新，只有发布的包能在这里更新'))
+    report('checking', t('正在检查更新…'))
+    let list: AppRelease[]
+    try {
+      list = await releases(true)
+    } catch (e) {
+      log.warn('update', '检查更新失败', e)
+      return report('failed', t('检查更新失败：{error}', { error: (e as Error).message }))
+    }
+    const current = currentVersion()
+    const rel = pickUpdate(current, list)
+    if (!rel) return report('latest', t('已经是最新版本（{version}）', { version: current }))
+    const started = startInstall(rel)
+    if ('error' in started)
+      return report(
+        'busy',
+        t('发现新版本 {version}，但现在不能更新：{error}', { version: rel.version, error: started.error }),
+      )
+    report('downloading', t('发现新版本 {version}，正在下载…', { version: rel.version }))
+    await started.done
+    if (started.job.status === 'done') report('done', t('已更新到 {version}，正在重启', { version: rel.version }))
+    else report('failed', started.job.error ?? t('更新失败'))
+  }
+
+  const api = new Hono()
+    .get('/version', (c) => c.json({ current: currentVersion(), packaged: packaged(), previous: previousVersion() }))
+    .get('/releases', async (c) => {
+      const current = currentVersion()
+      const base: AppReleases = { current, packaged: packaged(), previous: previousVersion(), releases: [] }
+      try {
+        const list = await releases(c.req.query('refresh') === '1')
+        return c.json({
+          ...base,
+          checkedAt: cache ? new Date(cache.at).toISOString() : undefined,
+          releases: list.slice(0, 5),
+          update: pickUpdate(current, list),
+        } satisfies AppReleases)
+      } catch (e) {
+        log.warn('update', '检查更新失败', e)
+        return c.json({
+          ...base,
+          error: t('检查更新失败：{error}', { error: (e as Error).message }),
+        } satisfies AppReleases)
+      }
+    })
+    .post('/install', async (c) => {
+      const { tag } = (await c.req.json().catch(() => ({}))) as { tag?: string }
+      if (!packaged()) return c.json({ error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新') }, 400)
+      if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
+      if (deps.running() > 0) return c.json({ error: t('有任务正在执行，请等它完成或先停止再更新') }, 409)
+      let rel: AppRelease | undefined
+      try {
+        rel = (await releases(false)).find((r) => r.tag === tag) ?? (await releases(true)).find((r) => r.tag === tag)
+      } catch (e) {
+        return c.json({ error: t('读取版本列表失败：{error}', { error: (e as Error).message }) }, 502)
+      }
+      if (!rel) return c.json({ error: t('找不到版本 {tag}', { tag: tag ?? '' }) }, 404)
+      const started = startInstall(rel)
+      if ('error' in started) return c.json({ error: started.error }, started.status)
+      return c.json(started.job, 201)
+    })
+    // 回到上一个版本：和当前版本互换，换完还可以再换回来
+    .post('/rollback', async (c) => {
+      if (!packaged()) return c.json({ error: t('从源码运行时请用 git 切换版本') }, 400)
+      if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
+      if (deps.running() > 0) return c.json({ error: t('有任务正在执行，请等它完成或先停止再更新') }, 409)
+      const version = previousVersion()
+      if (!version || !existsSync(path.join(PREVIOUS(), 'dist'))) return c.json({ error: t('没有可以退回的版本') }, 404)
+      const dir = appDir()
+      const swap = path.join(CACHE_DIR, 'updates', 'rollback')
+      try {
+        await backup(dir, swap)
+        await apply(PREVIOUS(), dir)
+        await rm(PREVIOUS(), { recursive: true, force: true })
+        await rename(swap, PREVIOUS())
+      } catch (e) {
+        await apply(swap, dir).catch(() => {})
+        await rm(swap, { recursive: true, force: true }).catch(() => {})
+        return c.json({ error: t('退回失败：{error}', { error: (e as Error).message }) }, 500)
+      }
+      setTimeout(() => deps.restart(), 800)
+      return c.json({ version })
+    })
+    .get('/install/:id', (c) => {
+      const j = jobs.get(c.req.param('id'))
+      return j ? c.json(j) : c.json({ error: t('找不到这次更新') }, 404)
+    })
+  return { api, checkAndInstall }
 }
+
+/** 托盘「检查更新」每一步的状态：checking、downloading 之后还会有下文，其余是最终结果 */
+export type TrayUpdateState = 'checking' | 'downloading' | 'latest' | 'done' | 'busy' | 'failed'
 
 /**
  * 重启：关掉监听，用同样的参数启动新的服务进程（共用当前的终端窗口），然后退出。

@@ -8,6 +8,7 @@ import { serve } from '@hono/node-server'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
+import { createInterface } from 'node:readline'
 import { z } from 'zod'
 import {
   Agent,
@@ -50,6 +51,7 @@ import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
 import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
+import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
@@ -454,7 +456,7 @@ app.route('/mcp', orchMcpApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
-app.route('/fix-jobs', fixApi())
+app.route('/ai-fix', fixApi())
 app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----
@@ -507,14 +509,13 @@ app.post('/fs/mkdir', async (c) => {
 
 app.route('/data', dataApi({ running: () => tasks.running() + designs.running() }))
 
-app.route(
-  '/app',
-  updateApi({
-    running: () => tasks.running() + designs.running(),
-    // server 在下面才创建，重启时一定已经有了
-    restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
-  }),
-)
+const updater = updateApi({
+  running: () => tasks.running() + designs.running(),
+  // server 在下面才创建，重启时一定已经有了
+  restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
+})
+app.route('/app', updater.api)
+app.route('/app', pageEventsApi())
 
 void tasks.cleanupUploads()
 // 启动时先在后台检测一遍 CLI，打开页面时直接用结果
@@ -575,7 +576,16 @@ if (tray) {
   cleanupOldTray()
   // 托盘程序退出时会关掉服务的输入：停掉 CLI、收尾后退出
   process.stdin.on('end', () => void shutdown())
-  process.stdin.resume()
+  // 托盘菜单的操作按行写进来，结果按约定的行输出给托盘（见 scripts/tray/AgentPanel.cs）
+  createInterface({ input: process.stdin, crlfDelay: Infinity }).on('line', (line) => {
+    const c = parseTrayCommand(line)
+    if (c?.cmd === 'focus')
+      console.log(`AGENT_PANEL_FOCUS ${c.mark} ${signalPages({ type: 'focus', mark: c.mark, view: c.view })}`)
+    else if (c?.cmd === 'update')
+      void updater.checkAndInstall((state, text) =>
+        console.log(`AGENT_PANEL_UPDATE ${state} ${text.replace(/\s*\n\s*/g, ' ')}`),
+      )
+  })
 }
 let retries = 0
 server.on('error', (e: NodeJS.ErrnoException) => {

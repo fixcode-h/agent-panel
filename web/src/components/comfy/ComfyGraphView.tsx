@@ -102,7 +102,7 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
         if (s.trim() !== '' && Number.isFinite(n)) onChange(n)
       }}
       className={cn(
-        'nodrag h-[22px] min-w-0 flex-1 rounded border-0 bg-field px-1.5 font-mono text-[11px] outline-none focus:ring-1 focus:ring-accent',
+        'nodrag h-[22px] min-w-0 flex-1 rounded border-0 bg-field px-1.5 font-mono text-[11px] outline-none focus:ring-1 focus:ring-focus',
         slot && 'text-accent',
       )}
     />

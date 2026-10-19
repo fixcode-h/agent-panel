@@ -365,13 +365,10 @@ export const comfyLog = () => server?.log ?? ''
 
 /**
  * 「AI 处理」本机生图的报错：页面把失败的步骤和输出交过来（见 server/fix.ts），这里补上环境、目录和修好后要满足的条件。
- * 在 comfyui 目录里处理；处理完重新找 Python
+ * 页面在处理完后点「重新检测」，会重新找 Python
  */
 registerFixTopic('local-image', {
   cwd: () => comfyDir(),
-  after: () => {
-    python = undefined
-  },
   context: async () => {
     const g = await detectGpu()
     const py = await findPython()

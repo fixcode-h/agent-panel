@@ -51,7 +51,7 @@ export function ListPane({
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             placeholder={placeholder}
-            className="h-[38px] w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[13px] outline-none placeholder:text-subtle focus:border-accent focus:ring-[3px] focus:ring-accent-soft"
+            className="h-[38px] w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[13px] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
           />
         </label>
       </div>

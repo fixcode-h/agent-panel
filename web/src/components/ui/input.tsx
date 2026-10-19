@@ -7,7 +7,7 @@ import { t } from '@shared/i18n'
 
 export const fieldClass =
   'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
-  'outline-none transition-[border-color,box-shadow] focus:border-accent focus:ring-[3px] focus:ring-accent-soft'
+  'outline-none transition-[border-color,box-shadow] focus:border-focus focus:ring-[3px] focus:ring-focus-soft'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
   ({ className, ...props }, ref) => <input ref={ref} className={cn(fieldClass, 'h-10', className)} {...props} />,

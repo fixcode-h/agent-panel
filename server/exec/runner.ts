@@ -479,6 +479,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  // 刚压缩完、还不知道压缩后多大：下一次报告上下文用量时补到这次压缩的工具调用上
+  let compaction: { tool: ToolUse; before?: number } | undefined
   // 这一轮在 CLI 会话里的位置，结束后记在触发它的用户消息上（分叉、撤回用）
   const turn: { id: string; end: string } = { id: '', end: '' }
   // 改了文件就去 git 里重新读一次改动，更改面板边跑边更新；读得太勤会拖慢大仓库，最多一秒半一次
@@ -554,6 +556,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
           u.window = ev.window
           reported = true
         } else if (!reported) u.window = windowFor(cliId, u.model || model)
+        if (compaction && ev.context !== undefined) {
+          describeCompaction(compaction.tool, compaction.before, ev.context, u.window)
+          compaction = undefined
+        }
         u.outputTokens = (u.outputTokens ?? 0) + (ev.addOutput ?? 0)
         meter.real(ev.addOutput ?? 0)
         // 任务的累计和节点自己的都记一份，右栏点了节点时只看节点的
@@ -595,10 +601,16 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         setLimits(cliId, ev.limits)
         return
       case 'compacted': {
-        if (ev.context !== undefined) au().context = ev.context
-        const m = newMsg()
-        Object.assign(m, { role: 'system', text: t('已压缩上下文') })
-        cur = undefined
+        // 当作一次工具调用放进回复里，不插一条系统消息把回复切成两段；压缩后的大小晚一点从 usage 补上
+        const u = au()
+        const before = ev.before ?? (u.context || undefined)
+        if (ev.context !== undefined) u.context = ev.context
+        const tool: ToolUse = { kind: 'compact', name: t('压缩上下文'), label: '', detail: '' }
+        compaction = { tool, before }
+        describeCompaction(tool, before, ev.context, u.window)
+        if (ev.context !== undefined) compaction = undefined
+        const m = !cur || cur.text.trim() ? newMsg() : cur
+        m.tools.push(tool)
         break
       }
       case 'todos':
@@ -916,4 +928,31 @@ export async function runRealTurn(ctx: RealContext) {
       return file
     },
   })
+}
+
+const fmtTok = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
+
+/** 压缩上下文的工具调用：一行写压缩了多少，右边写现在占上下文窗口多少，点开看明细 */
+export function describeCompaction(tool: ToolUse, before?: number, after?: number, window?: number) {
+  const pct = after !== undefined && window ? Math.round((after / window) * 100) : undefined
+  tool.label =
+    before !== undefined && after !== undefined
+      ? t('压缩了 {freed} token（{before} → {after}）', {
+          freed: fmtTok(Math.max(0, before - after)),
+          before: fmtTok(before),
+          after: fmtTok(after),
+        })
+      : before !== undefined
+        ? t('压缩前 {before} token', { before: fmtTok(before) })
+        : t('已压缩上下文')
+  tool.detail = pct !== undefined ? t('当前占用 {pct}%', { pct }) : ''
+  tool.output = [
+    before !== undefined && t('压缩前：{n} token', { n: fmtTok(before) }),
+    after !== undefined && t('压缩后：{n} token', { n: fmtTok(after) }),
+    window && t('上下文窗口：{n} token', { n: fmtTok(window) }),
+    pct !== undefined && t('当前占用：{pct}%', { pct }),
+  ]
+    .filter(Boolean)
+    .join('\n')
 }

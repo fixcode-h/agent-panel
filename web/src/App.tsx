@@ -1,4 +1,5 @@
 import { Suspense, lazy, useEffect, useState } from 'react'
+import { usePageSignals } from '@/lib/page-signal'
 import { Toaster } from 'sonner'
 import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
@@ -111,6 +112,8 @@ export function App() {
   const fix = useAiFix()
   const [project, setProject] = useState<{ open: boolean; id?: string }>({ open: false })
   const [dark, toggleTheme] = useTheme()
+  // 托盘右键「设置」：切到这个页面后打开设置
+  usePageSignals((view) => view === 'settings' && setSettings({ open: true, loaded: true }))
 
   return (
     <DataProvider>

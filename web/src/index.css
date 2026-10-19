@@ -20,6 +20,9 @@
   --content-w: 1000px;
   --accent: #c6613f;
   --accent-soft: rgb(198 97 63 / 0.11);
+  /* 输入框、按钮获得焦点时的颜色 */
+  --focus: var(--accent);
+  --focus-soft: var(--accent-soft);
   --success: #3d8a5a;
   --warning: #a4660f;
   --danger: #bf3b2c;
@@ -53,6 +56,9 @@
   --sel-line: #4a4945;
   --accent: #d97757;
   --accent-soft: rgb(217 119 87 / 0.15);
+  /* 深色背景上橙色的焦点框不显眼，和 Claude Code 一样用蓝色 */
+  --focus: #4a9df0;
+  --focus-soft: rgb(74 157 240 / 0.28);
   --success: #6fbf8b;
   --warning: #e3a752;
   --danger: #ec7a64;
@@ -86,6 +92,8 @@
   --color-sel-line: var(--sel-line);
   --color-accent: var(--accent);
   --color-accent-soft: var(--accent-soft);
+  --color-focus: var(--focus);
+  --color-focus-soft: var(--focus-soft);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -116,7 +124,7 @@ body,
     color: var(--fg);
   }
   :focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
 }
