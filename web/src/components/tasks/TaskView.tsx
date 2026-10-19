@@ -132,7 +132,7 @@ export function TaskView({
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<HTMLTextAreaElement>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
-  const files = useAttachments()
+  const files = useAttachments(`task:${taskId}`)
   const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)

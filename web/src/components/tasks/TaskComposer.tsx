@@ -78,7 +78,7 @@ export function TaskComposer({
   const [isolate, setIsolate] = useState(false)
   const [askUser, setAskUser] = useNewAskUser()
   const ta = useRef<HTMLTextAreaElement>(null)
-  const files = useAttachments()
+  const files = useAttachments(draftKey)
   const drop = useDropPaste(files.add)
   const mention = useFileMention(project?.id, prompt, setPrompt, ta)
   // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
