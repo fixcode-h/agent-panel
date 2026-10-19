@@ -1472,6 +1472,9 @@ try {
   assert.ok(hc[3].args.includes('--resume'), '验收不通过后续接节点的会话继续完善')
   assert.match(hc[3].input, /验收没有通过（第 1 轮）[\s\S]*验收结论：不通过/)
   assert.match(hc[4].input, /第 2 轮验收/)
+  // 第 2 轮验收续接第 1 轮验收的会话，只交修改后的结果，不再重复整段需求
+  assert.equal(hc[4].args[hc[4].args.indexOf('--resume') + 1], h.sessions['x/review.1/r'], '验收续接上一轮的会话')
+  assert.ok(!/## 用户需求/.test(hc[4].input) && /修改后的结果/.test(hc[4].input))
   assert.match(hc[6].input, /工作流「小流程」[\s\S]*上游节点的结果|工作流「小流程」[\s\S]*## 输入/)
   assert.ok(h.messages.some((m) => m.role === 'system' && /第 1 轮验收未通过/.test(m.text)))
   assert.ok(

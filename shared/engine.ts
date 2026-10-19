@@ -40,6 +40,9 @@ import { t } from './i18n.ts'
 /** 提示词里的流程入口名，固定用中文（提示词不跟随界面语言） */
 const SLOT_PROMPT: Record<string, string> = { start: '开始', review: '验收', end: '结束', body: '执行' }
 
+/** 节点提示词里节点自己的部分从这里开始，前面是同一个任务里各节点共用的部分 */
+export const NODE_PART = '## 当前节点'
+
 export type AgentResult =
   | { ok: true; text: string }
   /** stopped：用户停止；halted：别的节点失败了，这里没再继续（节点保持待执行，续跑时重来） */
@@ -218,14 +221,19 @@ function nodePrompt(host: EngineHost, inv: Invocation, node: FlowNode, step: Tas
       .filter((e) => e.when === w)
       .map((e) => target(e.to))
       .join('、')
+  // 顺序按「越稳定越靠前」排：同一个任务里各个节点都一样的（需求、工作流说明、通用要求）放在最前面，
+  // 节点自己的（标题、要做的事、上游结果）放在后面。按前缀匹配缓存的模型服务（Codex 等）这样能多命中一段
   return [
-    `你正在执行工作流「${inv.workflow.name}」里流程「${flowLabel(inv.flow, inv.workflow)}」的节点：${step.title}`,
-    inv.owner
-      ? `这个流程是节点「${inv.owner}」的${SLOT_PROMPT[inv.slot]}流程${reviewing ? `（第 ${inv.round} 轮验收）` : ''}。`
-      : '',
     `## 用户需求\n${original}`,
     extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
     inv.workflow.document.trim() ? `## 工作流说明\n${inv.workflow.document.trim()}` : '',
+    '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
+      // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
+      '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。',
+    `${NODE_PART}\n你正在执行工作流「${inv.workflow.name}」里流程「${flowLabel(inv.flow, inv.workflow)}」的节点：${step.title}` +
+      (inv.owner
+        ? `\n这个流程是节点「${inv.owner}」的${SLOT_PROMPT[inv.slot]}流程${reviewing ? `（第 ${inv.round} 轮验收）` : ''}。`
+        : ''),
     node.instructions.trim() ? `## 本节点要做的事\n${node.instructions.trim()}` : '',
     start ? `## 开始流程的结果（作为本节点的初始资料）\n${start}` : '',
     input ? `## 输入\n${input}` : '',
@@ -234,9 +242,7 @@ function nodePrompt(host: EngineHost, inv: Invocation, node: FlowNode, step: Tas
           .map((s) => `- ${s.title || '未命名节点'}（${name(nodeAgent(inv.workflow, s.agentId))}）`)
           .join('\n')}`
       : '',
-    `## 要求\n只完成本节点「${step.title}」，不要做其他节点的工作。完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n` +
-      // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
-      '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。',
+    `## 要求\n只完成本节点「${step.title}」，不要做其他节点的工作。`,
     reviewing
       ? '你在验收上面「输入」里的结果。逐条检查，不通过时列出必须修改的地方。最后单独一行写「验收结论：通过」或「验收结论：不通过」。'
       : '',
@@ -246,6 +252,34 @@ function nodePrompt(host: EngineHost, inv: Invocation, node: FlowNode, step: Tas
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/**
+ * 上一轮同一个节点的 CLI 会话：验收流程第 N 轮接第 N-1 轮，流程节点返工（body.2、body.3…）接上一轮（第一轮是 body）。
+ * 其他情况（第一轮、开始和结束流程）返回空
+ */
+function prevRoundSession(host: EngineHost, inv: Invocation, node: FlowNode) {
+  if (!inv.parentId || node.kind !== 'agent') return ''
+  // 返工轮次从 2 开始编号，第一轮是 0（路径里不带轮次）
+  const prev =
+    inv.slot === 'review' && inv.round > 1
+      ? inv.round - 1
+      : inv.slot === 'body' && inv.round >= 2
+        ? inv.round === 2
+          ? 0
+          : inv.round - 1
+        : -1
+  if (prev < 0) return ''
+  return host.task.sessions[stepPath({ ...inv, round: prev }, node.id)] ?? ''
+}
+
+/** 续接上一轮会话时的提示：只交这一轮的输入，其余要求上一轮已经给过 */
+function nextRoundPrompt(inv: Invocation, step: TaskStep, input: string) {
+  const what =
+    inv.slot === 'review'
+      ? `这是第 ${inv.round} 轮验收：被验收的节点按上一轮的意见修改过了，下面是修改后的结果。请在上一轮检查的基础上重新逐条验收，确认上一轮提出的问题都已解决、没有引入新的问题。最后单独一行写「验收结论：通过」或「验收结论：不通过」。`
+      : `上一轮的结果需要修改，下面是这一轮的输入。请在你上一轮工作的基础上继续完善本节点「${step.title}」，完成后同样简要总结。`
+  return [what, input ? `## 输入\n${input}` : ''].filter(Boolean).join('\n\n')
 }
 
 /** 执行一个节点（含开始、验收、结束入口） */
@@ -339,17 +373,23 @@ async function runNode(
     if (!step.agentId)
       return { ok: false, error: t('「{title}」没有可执行的 Agent，请先给工作流选择主 Agent', { title: step.title }) }
     const full = nodePrompt(host, inv, node, step, input, start)
+    // 验收的第 2 轮起、流程节点返工的子节点：续接上一轮同一个节点的会话，只交这一轮的新输入。
+    // 上一轮读过的代码、给过的意见都在会话里，整段历史能命中缓存；不续接的话每轮都从头读一遍
+    const prev = round === 0 && !resumeHalf && !host.task.sessions[step.id] ? prevRoundSession(host, inv, node) : ''
+    if (prev) host.task.sessions[step.id] = prev
     const cont =
       round === 0 && resumeHalf
         ? `上次执行到一半被中断了（停止或面板重启）。请检查已经做了哪些，从中断的地方接着完成本节点「${step.title}」的工作，完成后同样简要总结。`
-        : ''
+        : prev
+          ? nextRoundPrompt(inv, step, input)
+          : ''
     const tail = deciding && (extra || cont) ? '\n\n最后同样单独一行写「结论：通过」或「结论：不通过」。' : ''
     const call = (prompt: string) =>
       host.runAgent({
         step,
         agentId: step.agentId,
         prompt,
-        fresh: extra || cont ? `${full}\n\n${extra}` : undefined,
+        fresh: extra || cont ? [full, extra].filter(Boolean).join('\n\n') : undefined,
         sessionKey: step.id,
         reviewing: inv.slot === 'review',
         deciding,
