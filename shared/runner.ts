@@ -277,7 +277,8 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
   await ctx.sleep(300 + Math.random() * 500)
   if (ctx.stopped()) return { ok: false, stopped: true, error: '已停止' }
   let out: Output
-  if (call.step) {
+  if (call.dispatching) out = dispatchOutput(call)
+  else if (call.step) {
     const fixing = call.prompt.startsWith('验收没有通过')
     out = fixing
       ? {
@@ -339,6 +340,21 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       { text: '阅读实现', status: 'done', agentId: call.agentId },
       { text: '整理回答', status: 'running', agentId: call.agentId },
     ]
+  // 演示派子 Agent：测试类的节点把单元测试和接口回归分给两个子 Agent 同时跑，等它们回来再总结
+  if (call.step && call.orch && !call.dispatching && call.step.slot !== 'sub' && kindOf(call.step.title) === 'test') {
+    const { ids } = call.orch.spawn([
+      { title: '单元测试', instructions: '补齐新增逻辑的单元测试并运行。' },
+      { title: '接口回归', instructions: '跑一遍接口的回归测试，记录失败的用例。' },
+    ])
+    if (ids.length) {
+      const got = await call.orch.wait(ids, 120_000)
+      if (ctx.stopped()) return { ok: false, stopped: true, error: '已停止' }
+      out = {
+        ...out,
+        text: `${out.text}\n\n两个子 Agent 的结果：${got.done.map((d) => `「${d.title}」${d.status === 'done' ? '通过' : '未完成'}`).join('，')}。`,
+      }
+    }
+  }
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
     out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }
@@ -347,6 +363,25 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
   const ok = await speak(ctx, call.agentId, call.step?.id ?? '', out)
   if (ok && !call.step) task.todos = (task.todos ?? []).map((t) => ({ ...t, status: 'done' as const }))
   return ok ? { ok: true, text: out.text } : { ok: false, stopped: true, error: '已停止' }
+}
+
+/** 演示里主 Agent 的调度轮：评估一律通过（有分支走「通过」），汇总列出各节点，回答提问 */
+function dispatchOutput(call: AgentCall): Output {
+  const tools: ToolUse[] = [{ kind: 'run', label: 'git diff --stat', detail: '查看改动' }]
+  if (call.dispatching === 'summary')
+    return {
+      tools,
+      changes: [],
+      text: '流程已经全部完成。\n\n- 需求已拆分并实现，接口和页面都已对接\n- 测试全部通过，验收标准逐条满足\n- 遗留：上线前请确认一下文案\n\n可以交付。',
+    }
+  if (call.dispatching === 'answer') return { tools: [], changes: [], text: '按方案一做，保持和现有接口一致。' }
+  const node = /节点「([^」]+)」/.exec(call.prompt)?.[1] ?? '这个节点'
+  const branch = call.prompt.includes('dispatch 里必须写 branch') ? ', "branch": "pass"' : ''
+  return {
+    tools,
+    changes: [],
+    text: `看了「${node}」的结果和改动，符合这个节点的要求，可以往下走。\n\n\`\`\`dispatch\n{"action": "continue"${branch}}\n\`\`\``,
+  }
 }
 
 function demoNext(document: string, task: Task) {

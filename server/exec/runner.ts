@@ -79,7 +79,7 @@ const noteText = (text: string) => `用户在执行中补充了信息，请结�
 export async function steerTask(task: Task, text: string, msg: TaskMessage) {
   const took: Steerer[] = []
   for (const s of steers.get(task.id) ?? []) if (await s.steer(noteText(text))) took.push(s)
-  const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
+  const running = task.steps.find((x) => x.status === 'running' && !x.parentId && x.kind !== 'main')
   if (!took.length && !(task.mode === 'workflow' && running)) return false
   if (!took.length) (notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
   // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
@@ -863,6 +863,15 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
+    // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
+    steer: async (stepId, text) => {
+      for (const s of steers.get(ctx.task.id) ?? [])
+        if (s.step === stepId && (await s.steer(text))) {
+          s.accepted()
+          return true
+        }
+      return false
+    },
     confirm: (step, text) =>
       new Promise((resolve) => {
         const { task, signal } = ctx

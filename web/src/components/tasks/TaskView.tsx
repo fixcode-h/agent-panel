@@ -20,7 +20,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
-import { rootStepId, taskWorkflows } from '@shared/flow'
+import { rootStepId, taskWorkflows, topSteps } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultSettings } from '@shared/settings'
 import { getCli } from '@shared/clis'
@@ -82,7 +82,7 @@ function toBlocks(task: Task): Block[] {
   }
   // 正在执行但还没有输出的节点也显示出来
   if (task.status === 'running') {
-    const running = task.steps.filter((s) => !s.parentId && s.status === 'running')
+    const running = task.steps.filter((s) => !s.parentId && s.status === 'running' && s.kind !== 'main')
     let b = blocks.at(-1)
     if (running.length && b?.kind !== 'steps') {
       b = { kind: 'steps', key: 'live', roots: [], byRoot: new Map() }
@@ -288,7 +288,9 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
     }
   }
 
-  const tops = task.steps.filter((s) => !s.parentId)
+  // 主流程的节点（不含主 Agent）；「都做完了」要连主 Agent 的整理一起算
+  const tops = topSteps(task)
+  const roots = task.steps.filter((s) => !s.parentId)
   const runningSteps = task.steps.filter((s) => s.status === 'running')
   const chatAgent = agents.find((a) => a.id === task.agentId)
   // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
@@ -663,7 +665,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                             ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
                             : t('执行中，可以随时暂停')
                           : task.mode === 'workflow'
-                            ? tops.every((s) => s.status === 'done')
+                            ? roots.every((s) => s.status === 'done')
                               ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
                               : task.status === 'failed'
                                 ? t('会从失败的节点重新执行')
@@ -686,7 +688,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                       disabled={resuming}
                       onClick={() => resume()}
                       title={
-                        task.mode === 'workflow' && !tops.every((s) => s.status === 'done')
+                        task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
                           ? t('从没完成的节点继续执行')
                           : t('重新执行最后一条要求')
                       }

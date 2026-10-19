@@ -268,6 +268,14 @@ const WorkflowFields = z.object({
   description: z.string().trim().max(200).default(''),
   /** 主 Agent；为空表示还没选 */
   mainAgentId: z.string().default(''),
+  /**
+   * 主 Agent 调度：子 Agent 的节点完成后交给主 Agent 评估（通过、退回、委派其他工作流、停下），
+   * 条件连线由主 Agent 选路，流程结束时主 Agent 整理最终结果。关掉（false）时按连线自动往下走；没写等于打开
+   */
+  dispatch: z.boolean().optional(),
+  /** 主 Agent 调度时用默认 CLI 的哪一档；为空按 Agent 设的档位 */
+  mainTier: NodeTier.optional(),
+  /** 旧版的「团队」：子 Agent 现在直接在节点上选，这里只为读旧数据保留 */
   members: z.array(WorkflowMember).default([]),
   /** 流程：第一个默认是主流程；entryFlowId 指定任务从哪个流程开始 */
   flows: z.array(Flow).min(1).max(20),
@@ -624,14 +632,18 @@ export const TaskStep = z.object({
   /** 路径形式的唯一 id，也是 CLI 会话键：主流程节点就是节点 id，子节点形如 `n1/review.2/n5` */
   id: z.string(),
   parentId: z.string().default(''),
-  /** 在父节点里的位置：start / review / end 是三个入口，body 是流程节点执行的流程 */
-  slot: z.enum(['', 'start', 'review', 'end', 'body']).default(''),
+  /**
+   * 在父节点里的位置：start / review / end 是三个入口，body 是流程节点执行的流程，
+   * sub 是节点执行中自己派出的子 Agent，call 是主 Agent 评估时委派的另一个工作流
+   */
+  slot: z.enum(['', 'start', 'review', 'end', 'body', 'sub', 'call']).default(''),
   /** 验收的第几轮（从 1 开始）；不是验收流程里的节点为 0 */
   round: z.number().int().default(0),
   workflowId: z.string().default(''),
   flowId: z.string().default(''),
   nodeId: z.string().default(''),
-  kind: z.enum(['agent', 'flow']).default('agent'),
+  /** main：一个工作流这次执行的主 Agent（调度、评估子 Agent 的结果、整理最终结果），id 以 @main 结尾 */
+  kind: z.enum(['agent', 'flow', 'main']).default('agent'),
   title: z.string(),
   agentId: z.string().default(''),
   status: StepStatus.default('pending'),

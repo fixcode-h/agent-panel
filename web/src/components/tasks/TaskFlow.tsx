@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { MessageSquareText } from 'lucide-react'
 import type { StepStatus, Task } from '@shared/schema'
-import { END, START, childSteps, entryFlow, getFlow, taskWorkflows } from '@shared/flow'
+import { END, START, childSteps, entryFlow, getFlow, taskWorkflows, topSteps } from '@shared/flow'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
 import { FlowCanvas, type EdgeTone, type NodeView } from '@/components/flow/FlowCanvas'
@@ -41,7 +41,7 @@ export function TaskFlow({
   // 用任务创建时存下的工作流画图，之后改了工作流也和执行记录对得上
   const { workflow, workflows } = taskWorkflows(task, data.workflows)
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
-  const tops = task.steps.filter((s) => !s.parentId)
+  const tops = topSteps(task)
   const flow = workflow ? (getFlow(workflow, tops[0]?.flowId ?? '') ?? entryFlow(workflow)) : undefined
   const runningId = tops.find((s) => s.status === 'running')?.id
   const [sel, setSel] = useState(() => runningId ?? tops.find((s) => s.status === 'failed')?.id ?? tops[0]?.id ?? '')
