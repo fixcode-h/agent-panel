@@ -838,6 +838,15 @@ export const TaskData = z.object({
   askedAt: z.string().optional(),
   /** 用户结束了工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理 */
   flowClosed: z.boolean().optional(),
+  /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
+  imported: z
+    .object({
+      at: z.string(),
+      exportedAt: z.string().default(''),
+      app: z.string().default(''),
+      agents: z.array(Agent).default([]),
+    })
+    .optional(),
 })
 export type TaskData = z.infer<typeof TaskData>
 

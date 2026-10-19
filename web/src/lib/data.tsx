@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import type {
   Agent,
@@ -234,6 +234,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       {children}
     </Ctx.Provider>
   )
+}
+
+/** 导入的任务里用到了本机没有的 Agent：任务页里换成带上它们的列表，名字、图标照常显示 */
+export function WithAgents({ agents, children }: { agents: Agent[]; children: React.ReactNode }) {
+  const d = useContext(Ctx)
+  const value = useMemo(() => (d && d.agents !== agents ? { ...d, agents } : d), [d, agents])
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
 export function useData() {

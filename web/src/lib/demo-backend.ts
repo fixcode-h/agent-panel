@@ -66,6 +66,7 @@ import {
 } from '@shared/task'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
+import { importTask, parseTaskExport } from '@shared/task-export'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixStart } from './demo-fix'
@@ -1261,7 +1262,24 @@ function tasksRoute(
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
+  // 导入别人导出的任务：和正式版一样建成只读的
+  if (id === 'import' && method === 'POST') {
+    const b = (body ?? {}) as { projectId?: string; bundle?: unknown }
+    if (b.projectId && !d.projects.some((p) => p.id === b.projectId)) fail('项目不存在')
+    const task = importTask(parseTaskExport(b.bundle), b.projectId ?? '', `demo-${crypto.randomUUID()}`)
+    tasks.unshift(task)
+    persist()
+    return task
+  }
   const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
+  if (
+    task.imported &&
+    (['messages', 'resume', 'compact', 'review', 'rewind', 'fork', 'requests', 'revert', 'end-flow', 'queue'].includes(
+      sub ?? '',
+    ) ||
+      (method === 'PATCH' && Object.keys((body ?? {}) as object).some((k) => k !== 'title' && k !== 'archived')))
+  )
+    fail('这是导入的任务，只能查看，不能继续执行')
   if (method === 'DELETE') {
     if (live.has(id)) live.get(id)!.stop = true
     remove('tasks', id, '任务不存在')

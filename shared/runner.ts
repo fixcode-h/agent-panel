@@ -9,6 +9,7 @@ import { runEngineTurn, system, type AgentCall, type AgentResult } from './engin
 import { mergeChanges, stepUsage, withTaskModel } from './task.ts'
 import { composeRole, nodeAgentRun } from './agent-role.ts'
 import { isDefaultWorkflow } from './builtin/default.ts'
+import { EVOLUTION_LANG, demoEvolution } from './task-export.ts'
 
 export interface RunContext {
   task: Task
@@ -357,6 +358,13 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       }
     }
   }
+  // AI 分析执行记录：回复后面带上修改建议，演示里也能看到差异和应用
+  if (!call.step && ctx.first && ctx.prompt.includes('```' + EVOLUTION_LANG))
+    out = {
+      tools: [{ kind: 'read', label: '执行记录.md', detail: '' }],
+      changes: [],
+      text: `结论：这次执行整体完成了需求，但前两个节点的要求比较笼统，Agent 花了不少时间确认范围；验收一次通过，缓存命中率偏低。\n\n1. 结果质量：交付内容覆盖了需求的主要点，遗留的文案问题在总结里提到了。\n2. 工作流：建议把节点要求写得更具体，并把不需要深度推理的节点降到中档。\n3. Agent：角色设定和节点要求有部分重复，可以精简。\n4. 面板框架：见下面的发现。\n\n${demoEvolution(ctx.prompt)}`,
+    }
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))
     out = { ...out, text: `${out.text}\n\n${demoNext(ctx.workflow.document, task)}` }

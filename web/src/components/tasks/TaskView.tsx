@@ -19,6 +19,9 @@ import {
   ArrowDown,
   Check,
   Workflow as WorkflowIcon,
+  Download,
+  FileInput,
+  Sparkles,
 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
@@ -29,7 +32,9 @@ import { getCli } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
-import { useData, useNav } from '@/lib/data'
+import { WithAgents, useData, useNav } from '@/lib/data'
+import { downloadTask } from '@/lib/task-transfer'
+import { withImportedAgents } from '@shared/task-export'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -38,6 +43,7 @@ import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
+import { AnalyzeDialog, EvolutionCard } from './Evolution'
 import { StepSection } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
@@ -111,13 +117,17 @@ export function TaskView({
   /** 放在弹窗里（例如「AI 处理」）：标题栏右边加上弹窗自己的按钮；要跳到别的页面时先收起弹窗 */
   embed?: { actions: React.ReactNode; onLeave: () => void }
 }) {
-  const { agents, workflows, settings, upsertTask, removeTask } = useData()
+  const { agents: localAgents, workflows, settings, upsertTask, removeTask } = useData()
   const nav = useNav()
   const go: typeof nav.go = (r) => {
     embed?.onLeave()
     nav.go(r)
   }
   const [task, setTask] = useState<Task | null>(null)
+  // 导入的任务：本机没有的 Agent 用导入时带来的，名字照常显示
+  const imported = task?.imported
+  const agents = useMemo(() => withImportedAgents(localAgents, { imported }), [localAgents, imported])
+  const [analyzing, setAnalyzing] = useState(false)
   // 没发出去的内容按对话分开记，切到别的对话再回来还在
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<HTMLTextAreaElement>(null)
@@ -377,448 +387,498 @@ export function TaskView({
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
   const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim() && !flowLeft
 
-  return (
-    <FileOpenCtx.Provider value={openFile}>
-      <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
-        <main ref={mainRef} className="flex min-w-0 flex-1 flex-col md:h-full">
-          <header
-            className={cn(
-              'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
-              scrolled ? 'border-line' : 'border-transparent',
-            )}
-          >
-            <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
-              <button
-                onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
-                className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
-              >
-                {project?.name ?? t('聊天')}
-              </button>
-              <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
-              <TaskStatusIcon status={task.status} className="ml-1" />
-              {renaming !== null ? (
-                <input
-                  autoFocus
-                  aria-label={t('任务标题')}
-                  value={renaming}
-                  maxLength={80}
-                  onChange={(e) => setRenaming(e.target.value)}
-                  onFocus={(e) => e.currentTarget.select()}
-                  onBlur={rename}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
-                    if (e.key === 'Escape') setRenaming(null)
-                  }}
-                  className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
-                />
-              ) : (
-                <h2
-                  title={t('双击重命名')}
-                  onDoubleClick={() => setRenaming(task.title)}
-                  className="min-w-0 truncate px-1 font-medium"
-                >
-                  {task.title}
-                </h2>
-              )}
-              {task.simulated && (
-                <span
-                  title={t('没有真正调用 CLI，输出是示例')}
-                  className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[11px] text-warning md:inline-flex"
-                >
-                  <FlaskConical className="h-3 w-3" />
-                  {t('模拟')}
-                </span>
-              )}
-            </nav>
-            {task.mode === 'workflow' && (
-              <div className="flex shrink-0 rounded-lg bg-field p-0.5" role="tablist" aria-label={t('视图')}>
-                {(
-                  [
-                    ['chat', t('对话'), MessageSquareText],
-                    ['flow', t('流程图'), GitBranch],
-                  ] as const
-                ).map(([v, label, Icon]) => (
-                  <button
-                    key={v}
-                    role="tab"
-                    aria-label={label}
-                    aria-selected={view === v}
-                    onClick={() => {
-                      setView(v)
-                      stick.current = v === 'chat'
-                      if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
-                    }}
-                    className={cn(
-                      'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
-                      view === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
-                    )}
-                  >
-                    <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
-                    <span className="hidden sm:inline">{label}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="xl:hidden"
-              aria-label={t('显示任务面板')}
-              title={t('任务进度、上下文和更改')}
-              onClick={() => setPanel(true)}
-            >
-              <PanelRight className="h-4 w-4" />
-            </Button>
-            <Menu>
-              <MenuTrigger asChild>
-                <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
-                  <MoreHorizontal className="h-4 w-4" />
-                </Button>
-              </MenuTrigger>
-              <MenuContent>
-                <MenuItem onSelect={() => setRenaming(task.title)}>
-                  <Pencil className="h-4 w-4" />
-                  {t('重命名')}
-                </MenuItem>
-                {wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
-                  <MenuItem onSelect={() => resume(true)}>
-                    <RotateCw className="h-4 w-4" />
-                    {t('按最新的工作流继续')}
-                  </MenuItem>
-                )}
-                <MenuItem danger onSelect={() => setDeleting(true)}>
-                  <Trash2 className="h-4 w-4" />
-                  {t('删除任务')}
-                </MenuItem>
-              </MenuContent>
-            </Menu>
-            {embed?.actions}
-          </header>
+  const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
 
-          <div className="relative flex min-h-0 flex-1 flex-col">
-            {!isFlow && progressCard}
-            <div
-              ref={scroller}
-              onScroll={(e) => {
-                const el = e.currentTarget
-                stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-                setScrolled(el.scrollTop > 4)
-                setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
-              }}
-              // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
-              className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
+  return (
+    <WithAgents agents={agents}>
+      <FileOpenCtx.Provider value={openFile}>
+        <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
+          <main ref={mainRef} className="flex min-w-0 flex-1 flex-col md:h-full">
+            <header
+              className={cn(
+                'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
+                scrolled ? 'border-line' : 'border-transparent',
+              )}
             >
-              {isFlow ? (
-                <Suspense fallback={null}>
-                  <TaskFlow
-                    task={task}
-                    focus={focus}
-                    gutter={progressCard}
-                    onSelect={setFlowSel}
-                    onOpenChat={() => {
-                      stick.current = true
-                      setView('chat')
+              <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
+                <button
+                  onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
+                  className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
+                >
+                  {project?.name ?? t('聊天')}
+                </button>
+                <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
+                <TaskStatusIcon status={task.status} className="ml-1" />
+                {renaming !== null ? (
+                  <input
+                    autoFocus
+                    aria-label={t('任务标题')}
+                    value={renaming}
+                    maxLength={80}
+                    onChange={(e) => setRenaming(e.target.value)}
+                    onFocus={(e) => e.currentTarget.select()}
+                    onBlur={rename}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
+                      if (e.key === 'Escape') setRenaming(null)
                     }}
+                    className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
                   />
-                </Suspense>
-              ) : (
-                <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
-                  {hidden > 0 && (
+                ) : (
+                  <h2
+                    title={t('双击重命名')}
+                    onDoubleClick={() => setRenaming(task.title)}
+                    className="min-w-0 truncate px-1 font-medium"
+                  >
+                    {task.title}
+                  </h2>
+                )}
+                {task.simulated && (
+                  <span
+                    title={t('没有真正调用 CLI，输出是示例')}
+                    className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[11px] text-warning md:inline-flex"
+                  >
+                    <FlaskConical className="h-3 w-3" />
+                    {t('模拟')}
+                  </span>
+                )}
+                {task.imported && (
+                  <span
+                    title={t('从导出的文件导入，只能查看')}
+                    className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent md:inline-flex"
+                  >
+                    <FileInput className="h-3 w-3" />
+                    {t('导入')}
+                  </span>
+                )}
+              </nav>
+              {task.mode === 'workflow' && (
+                <div className="flex shrink-0 rounded-lg bg-field p-0.5" role="tablist" aria-label={t('视图')}>
+                  {(
+                    [
+                      ['chat', t('对话'), MessageSquareText],
+                      ['flow', t('流程图'), GitBranch],
+                    ] as const
+                  ).map(([v, label, Icon]) => (
                     <button
-                      type="button"
-                      onClick={() => setLimit(Infinity)}
-                      className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+                      key={v}
+                      role="tab"
+                      aria-label={label}
+                      aria-selected={view === v}
+                      onClick={() => {
+                        setView(v)
+                        stick.current = v === 'chat'
+                        if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
+                      }}
+                      className={cn(
+                        'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
+                        view === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                      )}
                     >
-                      {t('显示更早的 {n} 段', { n: hidden })}
+                      <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
+                      <span className="hidden sm:inline">{label}</span>
                     </button>
-                  )}
-                  {blocks.slice(hidden).map((b, i) =>
-                    b.kind === 'turn' ? (
-                      <div key={b.key} className="flex flex-col gap-4">
-                        <ChatTurn
-                          msgs={b.msgs}
-                          teamNames={teamNames}
-                          live={running && i + hidden === blocks.length - 1}
-                          last={!running && i + hidden === blocks.length - 1}
-                          fallback={byCli ? chatRun : undefined}
-                        />
-                      </div>
-                    ) : b.kind === 'steps' ? (
-                      <div key={b.key} className="flex flex-col gap-7">
-                        {b.roots.map((r) => (
-                          <StepSection
-                            key={r}
-                            task={task}
-                            rootId={r}
-                            msgs={b.byRoot.get(r)!}
-                            teamNames={teamNames}
-                            sticky="chat"
-                          />
-                        ))}
-                      </div>
-                    ) : b.m.role === 'user' ? (
-                      <UserMessage
-                        key={b.m.id}
-                        text={b.m.text}
-                        at={b.m.at}
-                        attachments={b.m.attachments}
-                        actions={
-                          // 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回）
-                          task.mode === 'chat' &&
-                          !running && (
-                            <>
-                              <button
-                                className={msgAction}
-                                title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                aria-label={t('从这里分叉')}
-                                onClick={() => fork(b.m.id)}
-                              >
-                                <GitFork className="h-3.5 w-3.5" />
-                              </button>
-                              {b.m.id !== firstUser && (
-                                <button
-                                  className={msgAction}
-                                  title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                  aria-label={t('撤回到这里')}
-                                  onClick={() => setRewindAsk(b.m.id)}
-                                >
-                                  <Undo2 className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                            </>
-                          )
-                        }
-                      />
-                    ) : b.m.role === 'system' ? (
-                      <NoteMessage key={b.m.id} m={b.m} className="justify-center text-center" />
-                    ) : (
-                      <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
-                    ),
-                  )}
-                  <NextWorkflows task={task} />
-                  {running &&
-                    task.mode === 'chat' &&
-                    (blocks.at(-1)?.kind === 'turn' ? (
-                      <div className="flex items-center gap-2 text-[13px] text-muted">
-                        <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        {t('{name} 正在回复', { name: chatLabel })}
-                        <LiveStats task={task} agentIds={[task.agentId]} />
-                      </div>
-                    ) : (
-                      // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
-                      <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
-                        <div className="flex items-center gap-2 text-[13px] text-muted">
-                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          {t('思考中…')}
-                          <LiveStats task={task} agentIds={[task.agentId]} />
-                        </div>
-                      </PendingReply>
-                    ))}
-                  {running && task.mode === 'workflow' && runningSteps.length === 0 && (
-                    <div className="flex items-center gap-2 text-[13px] text-muted">
-                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                      {t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
-                      <LiveStats task={task} />
-                    </div>
-                  )}
+                  ))}
                 </div>
               )}
-            </div>
-            {!isFlow && away && (
-              <button
-                type="button"
-                onClick={toBottom}
-                aria-label={t('回到底部')}
-                title={t('回到底部')}
-                className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
-              >
-                <ArrowDown className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-
-          <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
-            <TaskRequestCard task={task} onAnswered={apply} />
-            <WorktreeBar task={task} onChange={apply} />
-            {flowLeft && (
-              <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
-            )}
-            <QueuedList task={task} onChange={apply} />
-            {/* AI 在问问题时，问题面板换掉输入框 */}
-            {!asksQuestion(task.requests) && (
-              <ChatComposer
-                id="follow-up"
-                value={text}
-                onChange={setText}
-                onSubmit={() => void send()}
-                files={files}
-                taRef={followTa}
-                menus={
-                  <>
-                    {mention.menu}
-                    {slash.menu}
-                  </>
-                }
-                onSync={() => {
-                  mention.sync()
-                  slash.sync()
-                }}
-                onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
-                attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
-                tools={
-                  <>
-                    <AskToggle
-                      value={task.askUser}
-                      onChange={(v) => {
-                        setTask({ ...task, askUser: v })
-                        api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
-                      }}
-                    />
-                    {task.mode === 'chat' && !byCli && chatAgent && chatAgent.params.length > 0 && (
-                      <ParamsChip
-                        params={chatAgent.params}
-                        values={task.params}
-                        onChange={(v) => {
-                          setTask({ ...task, params: v })
-                          api.setTaskParams(task.id, v).then(apply, (e) => toast.error((e as Error).message))
-                        }}
-                      />
-                    )}
-                    {byCli ? (
-                      <ChatModelPicker value={chatRun} onChange={changeRun} />
-                    ) : (
-                      <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-                        {running
-                          ? tops.filter((s) => s.status === 'running').length > 1
-                            ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
-                            : t('执行中，可以随时暂停')
-                          : task.mode === 'workflow'
-                            ? blocked
-                              ? t('主 Agent 处理后会接着走流程')
-                              : roots.every((s) => s.status === 'done')
-                                ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
-                                : task.status === 'failed'
-                                  ? t('会从失败的节点重新执行')
-                                  : t('会从没完成的节点继续执行')
-                            : t('发给 {name}', { name: chatLabel })}
-                      </span>
-                    )}
-                  </>
-                }
-                running={running}
-                onStop={stop}
-                onQueue={() => void send('queue')}
-                leading={
-                  !running &&
-                  canResume && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      className="rounded-lg"
-                      disabled={resuming}
-                      onClick={() => resume()}
-                      title={
-                        task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
-                          ? t('从没完成的节点继续执行')
-                          : t('重新执行最后一条要求')
-                      }
-                    >
-                      {resuming ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <RotateCw className="h-3.5 w-3.5" />
-                      )}
-                      {task.status === 'failed' ? t('重试') : t('继续执行')}
-                    </Button>
-                  )
-                }
-                label={t('继续输入要求')}
-                placeholder={
-                  !running
-                    ? t('继续输入要求')
-                    : canSteer
-                      ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
-                      : t('执行中也可以输入，这一轮完成后接着处理')
-                }
-              />
-            )}
-          </div>
-        </main>
-
-        <aside
-          aria-label={t('任务面板')}
-          className={cn(
-            'w-[340px] shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
-            panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
-            'xl:static xl:z-auto xl:flex xl:h-full xl:shadow-none',
-          )}
-        >
-          {panel && (
-            <div className="mb-2 flex items-center justify-between xl:hidden">
-              <span className="px-1 text-[13px] font-semibold">{t('任务面板')}</span>
               <Button
-                autoFocus
                 variant="ghost"
                 size="icon-sm"
-                aria-label={t('关闭面板')}
-                onClick={() => setPanel(false)}
+                className="xl:hidden"
+                aria-label={t('显示任务面板')}
+                title={t('任务进度、上下文和更改')}
+                onClick={() => setPanel(true)}
               >
-                <X className="h-4 w-4" />
+                <PanelRight className="h-4 w-4" />
               </Button>
+              <Menu>
+                <MenuTrigger asChild>
+                  <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </MenuTrigger>
+                <MenuContent>
+                  <MenuItem onSelect={() => setRenaming(task.title)}>
+                    <Pencil className="h-4 w-4" />
+                    {t('重命名')}
+                  </MenuItem>
+                  <MenuItem onSelect={exportIt}>
+                    <Download className="h-4 w-4" />
+                    {t('导出任务')}
+                  </MenuItem>
+                  <MenuItem disabled={running} onSelect={() => setAnalyzing(true)}>
+                    <Sparkles className="h-4 w-4" />
+                    {t('AI 分析执行结果')}
+                  </MenuItem>
+                  {!task.imported && wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
+                    <MenuItem onSelect={() => resume(true)}>
+                      <RotateCw className="h-4 w-4" />
+                      {t('按最新的工作流继续')}
+                    </MenuItem>
+                  )}
+                  <MenuItem danger onSelect={() => setDeleting(true)}>
+                    <Trash2 className="h-4 w-4" />
+                    {t('删除任务')}
+                  </MenuItem>
+                </MenuContent>
+              </Menu>
+              {embed?.actions}
+            </header>
+
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              {!isFlow && progressCard}
+              <div
+                ref={scroller}
+                onScroll={(e) => {
+                  const el = e.currentTarget
+                  stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+                  setScrolled(el.scrollTop > 4)
+                  setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
+                }}
+                // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
+                className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
+              >
+                {isFlow ? (
+                  <Suspense fallback={null}>
+                    <TaskFlow
+                      task={task}
+                      focus={focus}
+                      gutter={progressCard}
+                      onSelect={setFlowSel}
+                      onOpenChat={() => {
+                        stick.current = true
+                        setView('chat')
+                      }}
+                    />
+                  </Suspense>
+                ) : (
+                  <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
+                    {hidden > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setLimit(Infinity)}
+                        className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+                      >
+                        {t('显示更早的 {n} 段', { n: hidden })}
+                      </button>
+                    )}
+                    {blocks.slice(hidden).map((b, i) =>
+                      b.kind === 'turn' ? (
+                        <div key={b.key} className="flex flex-col gap-4">
+                          <ChatTurn
+                            msgs={b.msgs}
+                            teamNames={teamNames}
+                            live={running && i + hidden === blocks.length - 1}
+                            last={!running && i + hidden === blocks.length - 1}
+                            fallback={byCli ? chatRun : undefined}
+                          />
+                        </div>
+                      ) : b.kind === 'steps' ? (
+                        <div key={b.key} className="flex flex-col gap-7">
+                          {b.roots.map((r) => (
+                            <StepSection
+                              key={r}
+                              task={task}
+                              rootId={r}
+                              msgs={b.byRoot.get(r)!}
+                              teamNames={teamNames}
+                              sticky="chat"
+                            />
+                          ))}
+                        </div>
+                      ) : b.m.role === 'user' ? (
+                        <UserMessage
+                          key={b.m.id}
+                          text={b.m.text}
+                          at={b.m.at}
+                          attachments={b.m.attachments}
+                          actions={
+                            // 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回）
+                            task.mode === 'chat' &&
+                            !running &&
+                            !task.imported && (
+                              <>
+                                <button
+                                  className={msgAction}
+                                  title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
+                                  aria-label={t('从这里分叉')}
+                                  onClick={() => fork(b.m.id)}
+                                >
+                                  <GitFork className="h-3.5 w-3.5" />
+                                </button>
+                                {b.m.id !== firstUser && (
+                                  <button
+                                    className={msgAction}
+                                    title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
+                                    aria-label={t('撤回到这里')}
+                                    onClick={() => setRewindAsk(b.m.id)}
+                                  >
+                                    <Undo2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </>
+                            )
+                          }
+                        />
+                      ) : b.m.role === 'system' ? (
+                        <NoteMessage key={b.m.id} m={b.m} className="justify-center text-center" />
+                      ) : (
+                        <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
+                      ),
+                    )}
+                    <NextWorkflows task={task} />
+                    <EvolutionCard task={task} />
+                    {running &&
+                      task.mode === 'chat' &&
+                      (blocks.at(-1)?.kind === 'turn' ? (
+                        <div className="flex items-center gap-2 text-[13px] text-muted">
+                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                          {t('{name} 正在回复', { name: chatLabel })}
+                          <LiveStats task={task} agentIds={[task.agentId]} />
+                        </div>
+                      ) : (
+                        // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
+                        <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
+                          <div className="flex items-center gap-2 text-[13px] text-muted">
+                            <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                            {t('思考中…')}
+                            <LiveStats task={task} agentIds={[task.agentId]} />
+                          </div>
+                        </PendingReply>
+                      ))}
+                    {running && task.mode === 'workflow' && runningSteps.length === 0 && (
+                      <div className="flex items-center gap-2 text-[13px] text-muted">
+                        <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                        {t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
+                        <LiveStats task={task} />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              {!isFlow && away && (
+                <button
+                  type="button"
+                  onClick={toBottom}
+                  aria-label={t('回到底部')}
+                  title={t('回到底部')}
+                  className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
+                >
+                  <ArrowDown className="h-4 w-4" />
+                </button>
+              )}
             </div>
+
+            <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
+              <TaskRequestCard task={task} onAnswered={apply} />
+              <WorktreeBar task={task} onChange={apply} />
+              {flowLeft && !task.imported && (
+                <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
+              )}
+              <QueuedList task={task} onChange={apply} />
+              {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
+              {/* AI 在问问题时，问题面板换掉输入框；导入的任务只读，没有输入框 */}
+              {!task.imported && !asksQuestion(task.requests) && (
+                <ChatComposer
+                  id="follow-up"
+                  value={text}
+                  onChange={setText}
+                  onSubmit={() => void send()}
+                  files={files}
+                  taRef={followTa}
+                  menus={
+                    <>
+                      {mention.menu}
+                      {slash.menu}
+                    </>
+                  }
+                  onSync={() => {
+                    mention.sync()
+                    slash.sync()
+                  }}
+                  onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
+                  attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
+                  tools={
+                    <>
+                      <AskToggle
+                        value={task.askUser}
+                        onChange={(v) => {
+                          setTask({ ...task, askUser: v })
+                          api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+                        }}
+                      />
+                      {task.mode === 'chat' && !byCli && chatAgent && chatAgent.params.length > 0 && (
+                        <ParamsChip
+                          params={chatAgent.params}
+                          values={task.params}
+                          onChange={(v) => {
+                            setTask({ ...task, params: v })
+                            api.setTaskParams(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+                          }}
+                        />
+                      )}
+                      {byCli ? (
+                        <ChatModelPicker value={chatRun} onChange={changeRun} />
+                      ) : (
+                        <span className="min-w-0 truncate pl-1 text-xs text-subtle">
+                          {running
+                            ? tops.filter((s) => s.status === 'running').length > 1
+                              ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
+                              : t('执行中，可以随时暂停')
+                            : task.mode === 'workflow'
+                              ? blocked
+                                ? t('主 Agent 处理后会接着走流程')
+                                : roots.every((s) => s.status === 'done')
+                                  ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                                  : task.status === 'failed'
+                                    ? t('会从失败的节点重新执行')
+                                    : t('会从没完成的节点继续执行')
+                              : t('发给 {name}', { name: chatLabel })}
+                        </span>
+                      )}
+                    </>
+                  }
+                  running={running}
+                  onStop={stop}
+                  onQueue={() => void send('queue')}
+                  leading={
+                    !running &&
+                    canResume && (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        className="rounded-lg"
+                        disabled={resuming}
+                        onClick={() => resume()}
+                        title={
+                          task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
+                            ? t('从没完成的节点继续执行')
+                            : t('重新执行最后一条要求')
+                        }
+                      >
+                        {resuming ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <RotateCw className="h-3.5 w-3.5" />
+                        )}
+                        {task.status === 'failed' ? t('重试') : t('继续执行')}
+                      </Button>
+                    )
+                  }
+                  label={t('继续输入要求')}
+                  placeholder={
+                    !running
+                      ? t('继续输入要求')
+                      : canSteer
+                        ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
+                        : t('执行中也可以输入，这一轮完成后接着处理')
+                  }
+                />
+              )}
+            </div>
+          </main>
+
+          <aside
+            aria-label={t('任务面板')}
+            className={cn(
+              'w-[340px] shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
+              panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
+              'xl:static xl:z-auto xl:flex xl:h-full xl:shadow-none',
+            )}
+          >
+            {panel && (
+              <div className="mb-2 flex items-center justify-between xl:hidden">
+                <span className="px-1 text-[13px] font-semibold">{t('任务面板')}</span>
+                <Button
+                  autoFocus
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('关闭面板')}
+                  onClick={() => setPanel(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+            <TaskPanel
+              task={task}
+              project={project}
+              workflow={workflow}
+              onStep={openStep}
+              progressClass={progressCard ? 'hidden' : undefined}
+              node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+              onTask={apply}
+            />
+          </aside>
+          {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
+        </div>
+        <ConfirmDialog
+          open={stopAsk && task.status === 'running'}
+          onOpenChange={setStopAsk}
+          title={t('停止这个任务？')}
+          description={t('正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
+          confirmText={t('停止')}
+          onConfirm={async () => {
+            await stop()
+            setStopAsk(false)
+          }}
+        />
+        <ConfirmDialog
+          open={!!rewindAsk}
+          onOpenChange={(o) => !o && setRewindAsk('')}
+          title={t('撤回到这条消息？')}
+          description={t(
+            '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
           )}
-          <TaskPanel
-            task={task}
-            project={project}
-            workflow={workflow}
-            onStep={openStep}
-            progressClass={progressCard ? 'hidden' : undefined}
-            node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
-            onTask={apply}
-          />
-        </aside>
-        {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
-      </div>
-      <ConfirmDialog
-        open={stopAsk && task.status === 'running'}
-        onOpenChange={setStopAsk}
-        title={t('停止这个任务？')}
-        description={t('正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
-        confirmText={t('停止')}
-        onConfirm={async () => {
-          await stop()
-          setStopAsk(false)
-        }}
-      />
-      <ConfirmDialog
-        open={!!rewindAsk}
-        onOpenChange={(o) => !o && setRewindAsk('')}
-        title={t('撤回到这条消息？')}
-        description={t(
-          '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
-        )}
-        confirmText={t('撤回')}
-        onConfirm={async () => {
-          try {
-            const r = await api.rewindTask(task.id, rewindAsk)
-            apply(r.task)
-            setText(r.text)
-            setRewindAsk('')
-            followTa.current?.focus()
-          } catch (e) {
-            toast.error((e as Error).message)
-          }
-        }}
-      />
-      <ConfirmDialog
-        open={deleting}
-        onOpenChange={setDeleting}
-        title={t('删除任务「{title}」？', { title: task.title })}
-        description={t('会删除这个任务的对话记录，不会撤销已经改动的文件。')}
-        onConfirm={remove}
-      />
-      <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
-    </FileOpenCtx.Provider>
+          confirmText={t('撤回')}
+          onConfirm={async () => {
+            try {
+              const r = await api.rewindTask(task.id, rewindAsk)
+              apply(r.task)
+              setText(r.text)
+              setRewindAsk('')
+              followTa.current?.focus()
+            } catch (e) {
+              toast.error((e as Error).message)
+            }
+          }}
+        />
+        <ConfirmDialog
+          open={deleting}
+          onOpenChange={setDeleting}
+          title={t('删除任务「{title}」？', { title: task.title })}
+          description={t('会删除这个任务的对话记录，不会撤销已经改动的文件。')}
+          onConfirm={remove}
+        />
+        <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+        <AnalyzeDialog
+          open={analyzing}
+          onOpenChange={setAnalyzing}
+          tasks={async () => [await api.task(task.id)]}
+          projectId={task.projectId}
+        />
+      </FileOpenCtx.Provider>
+    </WithAgents>
+  )
+}
+
+/** 导入的任务在输入框的位置显示来源，只能查看；可以交给 AI 分析 */
+function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void }) {
+  const info = task.imported!
+  return (
+    <div className="mx-auto flex max-w-(--content-w) items-center gap-3 rounded-2xl border border-line-strong bg-card px-4 py-3 shadow-card">
+      <FileInput className="h-4 w-4 shrink-0 text-accent" />
+      <span className="min-w-0 flex-1 text-[13px] text-muted">
+        {t('这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。', {
+          at: (info.exportedAt || info.at).slice(0, 16).replace('T', ' '),
+          app: info.app ? t('，面板 {v}', { v: info.app }) : '',
+        })}
+      </span>
+      <Button size="sm" variant="secondary" className="shrink-0 rounded-lg" onClick={onAnalyze}>
+        <Sparkles className="h-3.5 w-3.5 text-accent" />
+        {t('AI 分析')}
+      </Button>
+    </div>
   )
 }
 

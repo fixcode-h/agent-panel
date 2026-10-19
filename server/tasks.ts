@@ -44,6 +44,7 @@ import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDi
 import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
+import { importTask, parseTaskExport } from '../shared/task-export.ts'
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
@@ -143,6 +144,8 @@ export function tasksApi(deps: {
 
   const current = async (id: string) => live.get(id)?.task ?? (await store.get(id))
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
+  /** 导入的任务只读：只能看、改名、归档、删除 */
+  const READONLY = t('这是导入的任务，只能查看，不能继续执行')
 
   async function projectWorkflow(p: Project) {
     const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
@@ -407,6 +410,22 @@ export function tasksApi(deps: {
     return c.json(await saveTextUpload(name, clipTranscript(lines.join('\n\n'))), 201)
   })
 
+  // 导入别人导出的任务：建一个只读的任务，放进指定的项目（为空放进聊天）
+  routes.post('/import', async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { projectId?: string; bundle?: unknown } | null
+    if (!body) return bad(c, t('不是有效的 JSON 文件'))
+    const projectId = body.projectId ?? ''
+    if (projectId && !(await deps.projects.get(projectId))) return bad(c, t('项目不存在'), 404)
+    let task: Task
+    try {
+      task = importTask(parseTaskExport(body.bundle), projectId, randomUUID())
+    } catch (e) {
+      return bad(c, (e as Error).message)
+    }
+    log.info('task', '导入任务', { task: task.id, title: task.title })
+    return c.json(await store.create(task), 201)
+  })
+
   routes.post('/', async (c) => {
     const p = NewTaskInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
@@ -449,6 +468,7 @@ export function tasksApi(deps: {
     const p = FollowUpInput.safeParse(await c.req.json())
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const { text, attachments, interrupt } = p.data
+    if ((await current(id))?.imported) return bad(c, READONLY, 409)
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
       // 补充：直接交给正在跑的 CLI，接着当前的任务做；对话的 CLI 不支持或这一轮刚好结束时改成排队
@@ -522,6 +542,7 @@ export function tasksApi(deps: {
     if (live.has(id)) return bad(c, t('任务正在执行，请先停止'), 409)
     const tk = await store.get(id)
     if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.imported) return bad(c, READONLY, 409)
     if (tk.mode !== 'workflow') return bad(c, t('只有工作流任务可以结束流程'))
     closeFlow(tk, randomUUID())
     return c.json(await store.update(id, tk))
@@ -535,6 +556,7 @@ export function tasksApi(deps: {
     if (live.has(id)) return bad(c, t('任务正在执行'), 409)
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
+    if (task.imported) return bad(c, READONLY, 409)
     // 停在某个节点结论上的工作流（例如前置检查不通过）也能继续：从那个节点重新检查
     const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, await deps.workflows.list()).workflow))
     if (task.status !== 'failed' && task.status !== 'stopped' && !blocked)
@@ -617,7 +639,8 @@ export function tasksApi(deps: {
     const file = c.req.query('path') ?? ''
     if (!tk.changes.some((x) => x.path === file)) return bad(c, t('这个文件不在任务的改动里'))
     const dir = await taskDir(tk)
-    const isGit = !!dir && (await gitNumstat(dir, tk.baseRef).catch(() => null)) !== null
+    // 导入的任务改的是别人电脑上的文件，只能拼出 Agent 当时给出的改动
+    const isGit = !tk.imported && !!dir && (await gitNumstat(dir, tk.baseRef).catch(() => null)) !== null
     if (isGit) {
       const diff = await gitFileDiff(dir, tk.baseRef, file)
       return c.json({ path: file, dir, diff, git: true, before: file in tk.baseline })
@@ -633,6 +656,7 @@ export function tasksApi(deps: {
   routes.get('/:id/file', async (c) => {
     const tk = await current(c.req.param('id'))
     if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
     const dir = await taskDir(tk)
     const want = (c.req.query('path') ?? '').trim()
     if (!dir || !want) return bad(c, t('缺少文件路径'))
@@ -655,6 +679,7 @@ export function tasksApi(deps: {
     if (live.has(id)) return bad(c, t('任务正在执行，等它停下后再撤销'), 409)
     const tk = await store.get(id)
     if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.imported) return bad(c, READONLY, 409)
     const { path: file } = (await c.req.json().catch(() => ({}))) as { path?: string }
     if (!file || !tk.changes.some((x) => x.path === file)) return bad(c, t('这个文件不在任务的改动里'))
     const dir = await taskDir(tk)
@@ -691,6 +716,7 @@ export function tasksApi(deps: {
     const e = live.get(id)
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
+    if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
     if ((p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined) && cur.mode !== 'chat')
       return bad(c, t('只有对话任务可以这样做'))
     // 换 CLI 前记下会话是哪个 CLI 的（以前的任务没记），下一轮才知道要开新会话
@@ -716,6 +742,7 @@ export function tasksApi(deps: {
     if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
+    if (task.imported) return bad(c, READONLY, 409)
     if (chatOnly && task.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
     return task
   }

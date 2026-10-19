@@ -776,6 +776,38 @@ try {
   const refText = readFileSync(ref.path, 'utf8')
   assert.ok(refText.includes('# 参考会话') && refText.includes('/demo-skill 做点事'), refText)
   step('「/」命令和 Skill 按 CLI 列出、展开，会话能整理成附件引入')
+  // 导入别人导出的任务：只读，密钥再去一遍，不能继续执行
+  const at = new Date().toISOString()
+  const bundle = {
+    format: 'agent-panel/task',
+    version: 1,
+    exportedAt: at,
+    app: '0.0.0',
+    task: {
+      title: '别人的任务',
+      mode: 'chat',
+      agentId: 'their-agent',
+      status: 'done',
+      messages: [
+        { id: 'm1', role: 'user', text: '帮我看看', at },
+        { id: 'm2', role: 'agent', agentId: 'their-agent', text: '用 sk-abcdefghijklmnopqrstuvwx 调接口', at },
+      ],
+      createdAt: at,
+      updatedAt: at,
+    },
+    agents: [{ id: 'their-agent', name: '他们的 Agent', createdAt: at, updatedAt: at }],
+  }
+  const imp = await call('POST', '/tasks/import', { projectId: project.id, bundle })
+  assert.equal(imp.projectId, project.id)
+  assert.equal(imp.imported.agents[0].name, '他们的 Agent')
+  assert.ok(!JSON.stringify(imp).includes('sk-abcdef'), '导入时去掉密钥')
+  await assert.rejects(call('POST', `/tasks/${imp.id}/messages`, { text: '继续' }), /导入的任务/)
+  await assert.rejects(call('POST', `/tasks/${imp.id}/fork`, { messageId: 'm1' }), /导入的任务/)
+  await assert.rejects(call('PATCH', `/tasks/${imp.id}`, { askUser: true }), /导入的任务/)
+  assert.equal((await call('PATCH', `/tasks/${imp.id}`, { title: '改个名' })).title, '改个名', '能改名')
+  await assert.rejects(call('POST', '/tasks/import', { bundle: { format: 'x' } }), /不是 Agent 面板导出的任务/)
+  await call('DELETE', `/tasks/${imp.id}`)
+  step('导入别人导出的任务：只读，去掉密钥，不能继续执行')
   const other = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',

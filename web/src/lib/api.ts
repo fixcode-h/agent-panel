@@ -221,6 +221,9 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
+  /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
+  importTask: (projectId: string, bundle: unknown) =>
+    request<Task>('/tasks/import', json('POST', { projectId, bundle })),
   sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, steer = false) =>
     request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt, steer })),
   /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
