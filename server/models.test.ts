@@ -18,6 +18,7 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
       label: 'claude-sonnet-4-6',
       group: 'anthropic',
       contextWindow: 1_000_000,
+      maxOutput: 64_000,
       efforts: ['low', 'high'],
     },
     {
@@ -25,9 +26,17 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
       label: 'gemini-2.5-flash',
       group: 'google',
       contextWindow: 1_000_000,
+      maxOutput: 65_500,
       efforts: ['low', 'high'],
     },
-    { id: 'ollama/qwen2.5-coder:7b', label: 'qwen2.5-coder:7b', group: 'ollama', contextWindow: 128_000, efforts: [] },
+    {
+      id: 'ollama/qwen2.5-coder:7b',
+      label: 'qwen2.5-coder:7b',
+      group: 'ollama',
+      contextWindow: 128_000,
+      maxOutput: 16_400,
+      efforts: [],
+    },
   ])
   // 一个提供方都没配时只有一句提示，没有模型
   assert.deepEqual(parsePiModels('No models available. Use /login to log into a provider', []), [])

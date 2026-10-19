@@ -46,6 +46,9 @@ export interface BuildOptions {
   op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
   /** 上下文达到这么多 token 时自动压缩（Codex 的 model_auto_compact_token_limit） */
   autoCompactTokens?: number
+  /** 设置里手动改过的上下文窗口和最大输出（token）；自动时为空，不传，让 CLI 用模型自己的 */
+  contextWindow?: number
+  maxOutput?: number
 }
 
 /** 审查什么：未提交的改动、和某个分支的差异，或者按说明审查 */
@@ -111,6 +114,10 @@ export interface CliDefinition {
   slash: boolean
   /** 上下文窗口的默认估计 */
   contextWindow: number
+  /** 手动设的上下文窗口、最大输出用哪个环境变量告诉 CLI；没有的项 CLI 不接受，只用于面板估算 */
+  limitEnv?: { context?: string; maxOutput?: string }
+  /** buildArgs 里会把这几项写成参数（BuildOptions 的 contextWindow、maxOutput） */
+  limitArgs?: ('context' | 'maxOutput')[]
   /** 账号额度：query 能主动查，push 执行时才报告，none 没有 */
   limits: 'query' | 'push' | 'none'
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
@@ -230,6 +237,7 @@ export const CLIS: CliDefinition[] = [
     fork: 'end',
     autoCompact: 'env',
     autoCompactEnv: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
+    limitEnv: { context: 'CLAUDE_CODE_MAX_CONTEXT_TOKENS', maxOutput: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS' },
     slash: true,
     contextWindow: 200_000,
     limits: 'push',
@@ -373,6 +381,8 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.model, '-c', `model="${o.model}"`),
       ...opt(o.effort, '-c', `model_reasoning_effort="${o.effort}"`),
       ...opt(o.autoCompactTokens, '-c', `model_auto_compact_token_limit=${o.autoCompactTokens}`),
+      // Codex 只有上下文窗口的配置（model_context_window），没有最大输出的
+      ...opt(o.contextWindow, '-c', `model_context_window=${o.contextWindow}`),
       '-c',
       `sandbox_mode="${o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'}"`,
       // 和 thread/start 里传的一致：完全访问不确认，其余越过沙箱时请用户确认
@@ -391,6 +401,7 @@ export const CLIS: CliDefinition[] = [
     review: 'native',
     fork: 'turn',
     autoCompact: 'config',
+    limitArgs: ['context'],
     slash: false,
     contextWindow: 272_000,
     limits: 'query',

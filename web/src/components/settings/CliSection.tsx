@@ -7,6 +7,7 @@ import {
   Download,
   Loader2,
   RefreshCw,
+  RotateCcw,
   SquareTerminal,
   Trash2,
   X,
@@ -22,6 +23,7 @@ import {
 } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
+import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, effortLabel } from '@/lib/cli-style'
@@ -176,6 +178,70 @@ function InstallLog({
   )
 }
 
+/**
+ * 上下文窗口 / 最大输出的输入框：0 是自动，显示成灰色的「自动 · 1M」；手填「1M」「200K」「128000」都认，
+ * 改过的旁边有恢复自动的按钮。CLI 不接受的项只读（disabled 时只显示自动值）
+ */
+function TokenField({
+  label,
+  value,
+  auto,
+  onChange,
+  disabled,
+  readOnly,
+  title,
+}: {
+  label: string
+  value: number
+  auto?: number
+  onChange: (v: number) => void
+  disabled?: boolean
+  readOnly?: boolean
+  title?: string
+}) {
+  const [text, setText] = useState(value ? fmtTokens(value) : '')
+  useEffect(() => setText(value ? fmtTokens(value) : ''), [value])
+  const autoText = auto ? t('自动 · {n}', { n: fmtTokens(auto) }) : t('自动')
+  const commit = () => {
+    if (!text.trim()) return onChange(0)
+    const n = parseTokens(text)
+    if (n) onChange(n)
+    else setText(value ? fmtTokens(value) : '')
+  }
+  return (
+    <label className="flex min-w-0 items-center gap-2 text-xs text-subtle" title={title}>
+      <span className="shrink-0">{label}</span>
+      {readOnly ? (
+        <span className="truncate font-mono text-[13px] text-fg">{value ? fmtTokens(value) : autoText}</span>
+      ) : (
+        <span className="relative min-w-0 flex-1">
+          <Input
+            aria-label={label}
+            className="h-8 pr-8 font-mono text-[13px]"
+            value={disabled ? '' : text}
+            placeholder={autoText}
+            disabled={disabled}
+            onChange={(e) => setText(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+          />
+          {!!value && !disabled && (
+            <button
+              type="button"
+              onClick={() => onChange(0)}
+              aria-label={t('恢复自动')}
+              title={t('恢复自动')}
+              className="absolute top-1/2 right-1.5 grid h-6 w-6 -translate-y-1/2 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </span>
+      )}
+    </label>
+  )
+}
+
 /** 高 / 中 / 低三档：每档一个模型和思考强度，模型留空跟随默认模型（没设默认模型时用建议值） */
 export function TierTable({
   def,
@@ -192,7 +258,9 @@ export function TierTable({
   /** 只展示：「默认 CLI」里跟随那个 CLI 自己的档位设置 */
   readOnly?: boolean
 }) {
-  const set = (tier: ModelTier, k: 'model' | 'effort', v: string) =>
+  const catalog = useCliModels(def.id)?.models
+  const can = limitSupport(def)
+  const set = <K extends keyof CliDraft['tiers']['high']>(tier: ModelTier, k: K, v: CliDraft['tiers']['high'][K]) =>
     onChange?.({ ...value, [tier]: { ...value[tier], [k]: v } })
   return (
     <div className="overflow-hidden rounded-xl border">
@@ -203,10 +271,12 @@ export function TierTable({
       </div>
       {MODEL_TIERS.map((tr) => {
         const sug = { ...def.tiers[tr.id], model: tierFallback(def, defaultModel, tr.id) }
+        // 自动值按这一档实际用的模型识别：换了模型，空着的上下文和最大输出跟着变
+        const auto = autoLimits(value[tr.id].model || sug.model, catalog)
         return (
           <div
             key={tr.id}
-            className="grid grid-cols-1 gap-2 border-b px-3.5 py-3 last:border-b-0 sm:grid-cols-[120px_1fr_170px] sm:items-center sm:gap-3"
+            className="grid grid-cols-1 gap-2 border-b px-3.5 py-3 last:border-b-0 sm:grid-cols-[120px_1fr_170px] sm:items-center sm:gap-x-3"
           >
             <span className="flex items-center gap-2">
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-accent-soft text-xs font-semibold text-accent">
@@ -243,9 +313,37 @@ export function TierTable({
                 />
               </>
             )}
+            <div className="grid grid-cols-1 gap-2 sm:col-span-2 sm:col-start-2 sm:grid-cols-2 sm:gap-3">
+              <TokenField
+                label={t('上下文')}
+                value={value[tr.id].context}
+                auto={auto.context}
+                readOnly={readOnly}
+                onChange={(v) => set(tr.id, 'context', v)}
+                title={can.context ? undefined : t('{cli} 不接受这项设置，只用于面板估算上下文占用', { cli: def.name })}
+              />
+              <TokenField
+                label={t('最大输出')}
+                value={value[tr.id].maxOutput}
+                auto={auto.maxOutput}
+                readOnly={readOnly}
+                disabled={!can.maxOutput}
+                onChange={(v) => set(tr.id, 'maxOutput', v)}
+                title={can.maxOutput ? undefined : t('{cli} 不接受最大输出的设置', { cli: def.name })}
+              />
+            </div>
           </div>
         )
       })}
+      {(!can.context || !can.maxOutput) && (
+        <p className="border-t bg-field/40 px-3.5 py-2 text-[11.5px] leading-relaxed text-subtle">
+          {!can.context && !can.maxOutput
+            ? t('{cli} 没有设置上下文窗口和最大输出的参数，上下文只用于面板估算占用和压缩时机。', { cli: def.name })
+            : !can.maxOutput
+              ? t('{cli} 没有设置最大输出的参数，只能改上下文窗口。', { cli: def.name })
+              : t('{cli} 没有设置上下文窗口的参数，上下文只用于面板估算占用。', { cli: def.name })}
+        </p>
+      )}
     </div>
   )
 }
@@ -565,7 +663,7 @@ export function CliSection({
         <Row
           title={t('三档模型')}
           desc={t(
-            'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。',
+            'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文和最大输出按模型自动填，也可以手动改。',
           )}
           stack
         >

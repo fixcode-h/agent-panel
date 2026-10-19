@@ -394,6 +394,8 @@ export interface CliModel {
   origin?: 'cli' | 'config'
   /** 上下文窗口（token）；CLI 没给出时省略 */
   contextWindow?: number
+  /** 最大输出（token）；CLI 没给出时省略 */
+  maxOutput?: number
 }
 
 export interface CliModels {
@@ -840,7 +842,13 @@ export type Task = z.infer<typeof TaskData> & z.infer<typeof Meta>
 /** 一个档位：模型和思考强度；旧数据只有模型名 */
 export const TierSetting = z.preprocess(
   (v) => (typeof v === 'string' ? { model: v } : (v ?? {})),
-  z.object({ model: z.string().trim().default(''), effort: z.string().trim().default('') }),
+  z.object({
+    model: z.string().trim().default(''),
+    effort: z.string().trim().default(''),
+    /** 上下文窗口和最大输出（token）；0 表示自动（按模型的默认值，不传给 CLI） */
+    context: z.number().int().min(0).default(0),
+    maxOutput: z.number().int().min(0).default(0),
+  }),
 )
 export type TierSetting = z.infer<typeof TierSetting>
 
@@ -854,9 +862,11 @@ export const CliSettings = z.object({
   /** Agent 和档位都没指定思考强度时使用；为空不传 */
   defaultEffort: z.string().trim().default(''),
   /** 高 / 中 / 低三档对应的模型和思考强度；为空用内置的建议值 */
-  tiers: z
-    .object({ high: TierSetting, medium: TierSetting, low: TierSetting })
-    .default({ high: { model: '', effort: '' }, medium: { model: '', effort: '' }, low: { model: '', effort: '' } }),
+  tiers: z.object({ high: TierSetting, medium: TierSetting, low: TierSetting }).default(() => ({
+    high: TierSetting.parse({}),
+    medium: TierSetting.parse({}),
+    low: TierSetting.parse({}),
+  })),
   /** 权限模式，取值见 shared/clis.ts 里各 CLI 的 permissions */
   permission: z.string().default(''),
   /** 每次调用都追加的参数 */

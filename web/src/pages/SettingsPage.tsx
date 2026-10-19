@@ -19,7 +19,7 @@ import {
   Rocket,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
-import { type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
+import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
 import { applyContentWidth, switchLang } from '@/lib/data'
 import { LANGS, t } from '@shared/i18n'
 import { defaultCli, orderClis } from '@shared/settings'
@@ -172,7 +172,7 @@ function SettingsBody({
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
   const idleMin = Number(idle)
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
-  const tier = (x: { model: string; effort: string }) => ({ model: x.model.trim(), effort: x.effort })
+  const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     openBrowser,
     requireToken,

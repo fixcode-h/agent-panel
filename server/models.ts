@@ -210,8 +210,9 @@ export function parsePiModels(out: string, efforts: string[]): CliModel[] {
       .trim()
       .split(/\s+/)
     if (cells.length < 5 || cells[0] === 'provider') continue
-    const [provider, model, context, , thinking] = cells
+    const [provider, model, context, maxOut, thinking] = cells
     const w = parseContextSize(context)
+    const out = parseContextSize(maxOut)
     // 只认表格里的行：上下文是「200K」这样的大小，thinking 列是 yes / no（提示文字不是模型）
     if (!w || !/^(yes|no)$/.test(thinking)) continue
     models.push({
@@ -219,6 +220,7 @@ export function parsePiModels(out: string, efforts: string[]): CliModel[] {
       label: model,
       group: provider,
       contextWindow: w,
+      ...(out ? { maxOutput: out } : {}),
       // 不支持思考的模型不给思考强度，选了 Pi 也会忽略
       efforts: thinking === 'yes' ? efforts : [],
     })
