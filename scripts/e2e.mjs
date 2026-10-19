@@ -202,6 +202,15 @@ for (let i = 0; ; i++) {
 }
 
 try {
+  // 新装：所有 CLI 都先不启用，等用户自己去设置里打开
+  const fresh = await call('GET', '/settings')
+  assert.ok(
+    Object.values(fresh.clis).length && Object.values(fresh.clis).every((c) => !c.enabled),
+    '新装时 CLI 默认不启用',
+  )
+  assert.ok((await call('GET', '/clis')).every((c) => !c.enabled))
+  step('新装时 CLI 默认都不启用')
+
   const cli = (extra = {}) => ({
     enabled: true,
     command: fake,

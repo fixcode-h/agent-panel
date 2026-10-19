@@ -119,6 +119,14 @@ function SettingsBody({
   const [imageGen, setImageGen] = useState(initial.imageGen)
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const [apis, setApis] = useState(initial.apis)
+  // 默认 CLI 被停用、又有别的启用了（例如新装后第一次打开一个）：默认换成按顺序第一个启用的
+  useEffect(() => {
+    if (drafts[defCli]?.enabled) return
+    const first = ordered.find((c) => drafts[c.id]?.enabled)
+    if (first) setDefCli(first.id)
+    // 只跟着开关变化；ordered、defCli 变了不需要重新判断
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [drafts])
   const demo = !!import.meta.env.VITE_DEMO
   const update = useAppUpdate().data?.update
   // 安装 / 卸载结束后重新检测，并提示结果；进度在 cli-install 里，切换页面不会丢

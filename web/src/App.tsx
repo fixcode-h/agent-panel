@@ -7,6 +7,7 @@ import { HomePage } from '@/pages/HomePage'
 import { ChatPage } from '@/pages/ChatPage'
 import { ProjectSettingsDialog } from '@/components/projects/ProjectSettingsDialog'
 import { DemoBanner } from '@/components/layout/DemoBanner'
+import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
@@ -122,6 +123,7 @@ export function App() {
           <TaskWatcher />
           <Shortcuts />
           {import.meta.env.VITE_DEMO && <DemoBanner />}
+          <NoCliBanner />
           <div className="flex min-h-0 flex-1 flex-col md:flex-row">
             <Sidebar dark={dark} onToggleTheme={toggleTheme} />
             <div className="flex min-w-0 flex-1 flex-col md:flex-row md:overflow-hidden">

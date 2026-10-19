@@ -18,6 +18,8 @@ import { TagFilter, TagList } from '@/components/tags/Tags'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
+import { defaultCli } from '@shared/settings'
+import { cliToEnable } from '@/components/layout/NoCliBanner'
 import { t } from '@shared/i18n'
 
 /** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
@@ -25,10 +27,10 @@ const DEFAULT_GROUP = '#default'
 
 export function AgentsPage() {
   const { cliName, cliOf, modelOf } = useAgentView()
-  const { loading, agents, categories: allCategories, tags, clis, setAgents, refreshClis } = useData()
+  const { loading, agents, categories: allCategories, tags, clis, settings, setAgents, refreshClis } = useData()
   const categories = allCategories.filter((c) => c.scope !== 'workflow')
   const [tag, setTag] = useState('')
-  const { route, go } = useNav()
+  const { route, go, openSettings } = useNav()
   const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
   const [assist, setAssist] = useState(false)
@@ -36,6 +38,9 @@ export function AgentsPage() {
   const [rev, setRev] = useState(0)
   // 列表右键「删除」：先选中那个 Agent，再让详情页弹出删除确认（确认框和被引用的检查都在详情页里）
   const [delReq, setDelReq] = useState<{ id: string; at: number }>()
+
+  const defId = settings ? defaultCli(settings) : clis.find((c) => c.isDefault)?.id
+  const defStatus = clis.find((c) => c.id === defId && c.enabled)
 
   const selected = agents.find((a) => a.id === route.id) ?? agents[0]
   useEffect(() => {
@@ -152,7 +157,7 @@ export function AgentsPage() {
         footer={
           <div className="flex flex-col gap-2">
             <div className="flex items-center text-xs text-subtle">
-              {t('本机 CLI')}
+              {t('默认 CLI')}
               <button
                 onClick={recheck}
                 disabled={checking}
@@ -162,18 +167,27 @@ export function AgentsPage() {
                 {t('重新检测')}
               </button>
             </div>
-            {/* 停用的 CLI 不列出来：用不上，去设置里重新启用 */}
-            {clis
-              .filter((c) => c.enabled)
-              .map((c) => (
-                <div key={c.id} className="flex items-center gap-2 text-[13px]" title={c.version}>
-                  <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(c.id) }} />
-                  {c.name}
-                  <span className={cn('ml-auto text-xs', c.installed ? 'text-success' : 'text-subtle')}>
-                    {c.installed ? t('可用 · {version}', { version: shortVersion(c.version) }) : t('未安装')}
-                  </span>
-                </div>
-              ))}
+            {/* 只列默认 CLI：Agent 不指定 CLI 时用它，工作流节点也固定用它；完整列表和切换默认在设置里 */}
+            {defStatus ? (
+              <div className="flex items-center gap-2 text-[13px]" title={defStatus.version}>
+                <span className="h-2 w-2 rounded-[2px]" style={{ background: cliColor(defStatus.id) }} />
+                {defStatus.name}
+                <span className={cn('ml-auto text-xs', defStatus.installed ? 'text-success' : 'text-subtle')}>
+                  {defStatus.installed
+                    ? t('可用 · {version}', { version: shortVersion(defStatus.version) })
+                    : t('未安装')}
+                </span>
+              </div>
+            ) : (
+              clis.length > 0 && (
+                <button
+                  onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
+                  className="cursor-pointer text-left text-[13px] text-accent hover:underline"
+                >
+                  {t('还没有启用 CLI，去设置里启用')}
+                </button>
+              )
+            )}
           </div>
         }
       >

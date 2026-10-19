@@ -212,4 +212,9 @@ export const EN_APP: Record<string, string> = {
   'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。':
     'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
   '{n} 个说明文件有改动': '{n} notes files changed',
+  '还没有启用 CLI': 'No CLI enabled yet',
+  '：检测到本机已安装 {name}，启用后就能运行 Agent 和工作流。':
+    ': {name} is installed on this machine. Enable it to run Agents and workflows.',
+  '：先安装并启用一个 CLI，才能运行 Agent 和工作流。': ': Install and enable a CLI to run Agents and workflows.',
+  '去启用 {name}': 'Enable {name}',
 }
