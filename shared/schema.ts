@@ -589,10 +589,14 @@ export const TaskMessage = z.object({
   tools: z.array(ToolUse).default([]),
   /** 生成这段回复前的思考过程（CLI 给出的思考或推理摘要） */
   thinking: z.string().optional(),
+  /** 这一轮模型请求用了多久（毫秒）：CLI 报得出起止时才有，用来说明两步之间等的是模型 */
+  modelMs: z.number().optional(),
   /** 用户消息附上的文件和图片 */
   attachments: z.array(Attachment).optional(),
   /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
   error: z.boolean().optional(),
+  /** 这次执行结束时写的状态说明（已暂停、失败后可以重试）：继续执行时它已经不成立，会被去掉 */
+  transient: z.boolean().optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */

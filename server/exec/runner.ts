@@ -658,6 +658,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
           ...ev.todos.map((x) => ({ ...x, agentId })),
         ]
         break
+      case 'model':
+        // 模型请求的耗时记在这段回复上：两步之间看起来「卡住」的时间大多在这里
+        if (cur) cur.modelMs = (cur.modelMs ?? 0) + ev.ms
+        break
       case 'error':
         errors.push(ev.message)
         break

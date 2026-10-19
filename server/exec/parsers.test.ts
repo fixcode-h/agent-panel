@@ -181,6 +181,16 @@ test('Command Code：事件流的文字、思考、工具结果和用量', () =>
   assert.deepEqual(s.results, [{ ok: true, error: undefined }])
 })
 
+test('Command Code：模型请求的耗时（有开始和结束才报，用来显示「等待模型」）', () => {
+  const parse = commandCodeParser(CWD)
+  const ms = fixture('commandcode.jsonl')
+    .flatMap((o) => parse(o))
+    .flatMap((e) => (e.type === 'model' ? [e.ms] : []))
+  // 样本里第一次请求有开始和结束；第二次只有结束（没开始），不报耗时
+  assert.equal(ms.length, 1)
+  assert.ok(ms[0] >= 0)
+})
+
 test('Gemini CLI：按配置文件里的事件映射解析 stream-json', () => {
   const parse = parserFor('gemini', CWD)
   const s = summarize(fixture('gemini-stream.jsonl').flatMap((o) => parse(o)))

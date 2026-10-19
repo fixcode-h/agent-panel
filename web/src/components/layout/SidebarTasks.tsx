@@ -39,6 +39,7 @@ export function TaskRow({
   onOpen,
   onDeleted,
   hint,
+  unread,
   className,
 }: {
   task: Task
@@ -47,6 +48,8 @@ export function TaskRow({
   onDeleted: () => void
   /** 时间前面的小字，搜索结果里显示所属项目 */
   hint?: string
+  /** 项目里的对话完成了、用户还没打开看过 */
+  unread?: boolean
   className?: string
 }) {
   const menu = useTaskRowMenu(task, onDeleted)
@@ -66,6 +69,14 @@ export function TaskRow({
               className,
             )}
           >
+            {unread && (
+              <span
+                role="img"
+                aria-label={t('对话已完成，还没查看')}
+                title={t('对话已完成，还没查看')}
+                className="h-2 w-2 shrink-0 rounded-full bg-accent"
+              />
+            )}
             {task.requests?.length ? (
               // Agent 在等你确认操作或回答问题
               <CircleAlert

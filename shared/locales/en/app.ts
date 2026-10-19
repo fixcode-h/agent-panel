@@ -68,6 +68,7 @@ export const EN_APP: Record<string, string> = {
   项目名称: 'Project name',
   '打开项目「{name}」，右键查看更多操作': 'Open project “{name}” (right-click for more actions)',
   有对话需要你处理: 'A conversation needs your attention',
+  '对话已完成，还没查看': 'Conversation finished — not viewed yet',
   '{n} 个执行中': '{n} running',
   '在「{name}」新建对话': 'New conversation in “{name}”',
   新建对话: 'New conversation',

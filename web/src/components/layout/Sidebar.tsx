@@ -55,6 +55,7 @@ import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
+import { useUnreadTasks } from '@/lib/task-unread'
 import { askedAt, byAskedAt } from '@shared/task'
 
 export function Logo({ className }: { className?: string }) {
@@ -280,6 +281,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings, openProject } = useNav()
   const { tasks, projects, setProjects, reloadTasks } = useData()
+  const unread = useUnreadTasks()
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
@@ -457,6 +459,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                 task={tk}
                 hint={projectName(tk.projectId)}
                 active={route.page === 'projects' && route.sub === tk.id}
+                unread={unread.includes(tk.id)}
                 onOpen={() => go({ page: 'projects', id: tk.projectId, sub: tk.id })}
                 onDeleted={() =>
                   route.page === 'projects' && route.sub === tk.id && go({ page: 'projects', id: tk.projectId })
@@ -654,6 +657,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           key={t.id}
                           task={t}
                           active={route.page === 'projects' && route.sub === t.id}
+                          unread={unread.includes(t.id)}
                           onOpen={() => go({ page: 'projects', id: t.projectId, sub: t.id })}
                           onDeleted={() =>
                             route.page === 'projects' && route.sub === t.id && go({ page: 'projects', id: pid })

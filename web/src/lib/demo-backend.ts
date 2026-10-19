@@ -57,6 +57,7 @@ import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
   closeFlow,
+  dropEndNotes,
   endRun,
   newTask,
   questionAnswers,
@@ -1239,6 +1240,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
 
 function followUp(d: Db, task: Task, text: string, fast = false, attachments: Attachment[] = []) {
   if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
+  dropEndNotes(task)
   task.messages.push({
     id: `demo-${crypto.randomUUID()}`,
     role: 'user',
@@ -1499,6 +1501,7 @@ function tasksRoute(
       task.workflows = taskSnapshot(fresh, d.workflows)
       task.workflowName = fresh.name
     }
+    dropEndNotes(task)
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     void startTurn(d, task, users.at(-1)?.text ?? '', false, false, true)
     return task

@@ -41,6 +41,8 @@ export type CliEvent =
       addCacheWrite?: number
       addCost?: number
     }
+  /** 一次模型请求结束：ms 是这次请求从开始到结束的耗时（CLI 报得出起止时才有） */
+  | { type: 'model'; ms: number }
   /** CLI 的待办清单 / 计划，每次给出完整列表 */
   | { type: 'todos'; todos: { text: string; status: 'pending' | 'running' | 'done' }[] }
   | { type: 'error'; message: string }
@@ -472,6 +474,8 @@ export function commandCodeParser(cwd: string): Parser {
   // 正在流式输出思考；多段思考之间空一行
   let thinking = false
   let thought = false
+  // 这次模型请求开始的时间：结束时报给面板，用来说明两步之间等的是模型
+  let reqStart = 0
   const sep = () => {
     const s = thought ? '\n\n' : ''
     thought = true
@@ -516,22 +520,28 @@ export function commandCodeParser(cwd: string): Parser {
           output: clipDetail(toolText(e.type === 'tool_errored' ? e.error : e.result)),
           failed: e.type === 'tool_errored',
         })
-      else if (e.type === 'model_request_end' && e.usage) {
+      else if (e.type === 'model_request_start') reqStart = Date.now()
+      else if (e.type === 'model_request_end') {
         const u = e.usage
-        const read = u.cacheReadTokens ?? 0
-        const write = u.cacheWriteTokens ?? 0
-        // Command Code 的 inputTokens 一般已含缓存（AI SDK 的口径）；比缓存还小说明是不含缓存的口径，要加上
-        const raw = u.inputTokens ?? 0
-        const input = raw >= read + write ? raw : raw + read + write
-        out.push({
-          type: 'usage',
-          context: input + (u.outputTokens ?? 0),
-          model: e.model,
-          addInput: input,
-          addCacheRead: read,
-          addCacheWrite: write,
-          addOutput: u.outputTokens ?? 0,
-        })
+        if (u) {
+          const read = u.cacheReadTokens ?? 0
+          const write = u.cacheWriteTokens ?? 0
+          // Command Code 的 inputTokens 一般已含缓存（AI SDK 的口径）；比缓存还小说明是不含缓存的口径，要加上
+          const raw = u.inputTokens ?? 0
+          const input = raw >= read + write ? raw : raw + read + write
+          out.push({
+            type: 'usage',
+            context: input + (u.outputTokens ?? 0),
+            model: e.model,
+            addInput: input,
+            addCacheRead: read,
+            addCacheWrite: write,
+            addOutput: u.outputTokens ?? 0,
+          })
+        }
+        // 模型请求本身要几秒到几十秒，记下来：界面上才能说是「在等模型」而不是卡住了
+        if (reqStart) out.push({ type: 'model', ms: Date.now() - reqStart })
+        reqStart = 0
       } else if (e.type === 'notice' && e.level === 'warning') out.push({ type: 'error', message: e.message })
       else if (e.type === 'run_error')
         out.push({ type: 'error', message: e.error?.message ?? String(e.error ?? t('执行失败')) })

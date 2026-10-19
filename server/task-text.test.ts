@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { questionAnswers, stripToolMarkup } from '../shared/task.ts'
+import { dropEndNotes, questionAnswers, stripToolMarkup, withAttachments } from '../shared/task.ts'
+import type { TaskMessage } from '../shared/schema.ts'
 
 test('模型当成文字说出来的工具调用写法不进正文', () => {
   // 半截的参数（截图里的样子）：去掉到结尾
@@ -19,6 +20,49 @@ test('模型当成文字说出来的工具调用写法不进正文', () => {
   assert.equal(stripToolMarkup(plain), plain)
   const code = '配置写成 `<parameter name="a">` 就行\n```xml\n<parameter name="b">1</parameter>\n```'
   assert.equal(stripToolMarkup(code), code)
+})
+
+test('继续执行前去掉结束时写的临时说明，已经接上正常消息的不动', () => {
+  const note = (id: string, extra: Partial<TaskMessage> = {}): TaskMessage => ({
+    id,
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: id,
+    tools: [],
+    at: '',
+    ...extra,
+  })
+  const task = {
+    messages: [note('a'), note('pause', { transient: true }), note('error', { transient: true, error: true })],
+  }
+  dropEndNotes(task)
+  assert.deepEqual(
+    task.messages.map((m) => m.id),
+    ['a'],
+    '结尾的暂停 / 失败说明都去掉',
+  )
+  const after = { messages: [note('pause', { transient: true }), { ...note('u'), role: 'user' as const }] }
+  dropEndNotes(after)
+  assert.equal(after.messages.length, 2, '后面已经有新要求时不动')
+})
+
+test('文字里引用了附件：路径换到原来的位置，没引用的才列在后面', () => {
+  const a = { name: '设计稿.png', path: '/uploads/1/设计稿.png', size: 1, mime: 'image/png' }
+  const b = { name: '需求.pdf', path: '/uploads/2/需求.pdf', size: 1, mime: 'application/pdf' }
+  const c = { name: '渲染.png', path: '/uploads/3/渲染.png', size: 1, mime: 'image/png' }
+  assert.equal(
+    withAttachments('按 [图片:设计稿.png] 改，参考 [文件:需求.pdf]', [a, b]),
+    '按 /uploads/1/设计稿.png 改，参考 /uploads/2/需求.pdf',
+  )
+  assert.equal(
+    withAttachments('只改 [图片:设计稿.png]', [a, c]),
+    '只改 /uploads/1/设计稿.png\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n- 渲染.png：/uploads/3/渲染.png',
+  )
+  assert.equal(
+    withAttachments('看看这张图', [c]),
+    '看看这张图\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n- 渲染.png：/uploads/3/渲染.png',
+  )
 })
 
 test('回答的问题和答案一一对应，没回答时没有', () => {

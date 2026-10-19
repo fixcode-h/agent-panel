@@ -32,6 +32,7 @@ import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
+import { useNow } from '@/lib/useNow'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -52,7 +53,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { TaskStatusIcon } from './TaskStatusIcon'
-import { useAttachments, useFileMention } from '@/components/chat/Attachments'
+import { insertRefs, removeRef, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 
@@ -150,7 +151,10 @@ export function TaskView({
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<HTMLTextAreaElement>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
-  const files = useAttachments(`task:${taskId}`)
+  const files = useAttachments(`task:${taskId}`, {
+    insert: (refs) => insertRefs(followTa, text, setText, refs),
+    remove: (ref) => setText(removeRef(text, ref)),
+  })
   const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
@@ -656,7 +660,7 @@ export function TaskView({
                       (blocks.at(-1)?.kind === 'turn' ? (
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          {t('{name} 正在回复', { name: chatLabel })}
+                          <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
                           <LiveStats task={task} agentIds={[task.agentId]} />
                         </div>
                       ) : (
@@ -664,7 +668,7 @@ export function TaskView({
                         <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
                           <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                             <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                            {t('思考中…')}
+                            <RunPhase task={task} label={t('思考中…')} />
                             <LiveStats task={task} agentIds={[task.agentId]} />
                           </div>
                         </PendingReply>
@@ -672,7 +676,10 @@ export function TaskView({
                     {running && task.mode === 'workflow' && runningSteps.length === 0 && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        {t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
+                        <RunPhase
+                          task={task}
+                          label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
+                        />
                         <LiveStats task={task} />
                       </div>
                     )}
@@ -1187,4 +1194,15 @@ function PendingReply({
   const author = byCli ?? (a ? { name: a.name, cli: a.cli, icon: a.icon, model: modelOf(a) } : undefined)
   if (!author) return <>{children}</>
   return <PendingAuthor author={author}>{children}</PendingAuthor>
+}
+
+/**
+ * 执行中的状态文字：最近一段时间没有任何输出、也没有工具在跑，说明在等模型的下一段。
+ * 模型请求本身要几秒到几十秒（上下文越大越久），标出来，免得看起来像卡在工具上
+ */
+function RunPhase({ task, label }: { task: Task; label: string }) {
+  const now = useNow(true)
+  const idle = now - Date.parse(task.updatedAt)
+  const busy = !!task.requests.length || (task.messages.at(-1)?.tools ?? []).some((x) => x.running)
+  return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {n} 秒', { n: Math.floor(idle / 1000) })}</>
 }
