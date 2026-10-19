@@ -26,7 +26,7 @@ import { cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
 import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { cliColor, cliDefaultModel, defaultEffortOptions, effortLabel, modelEfforts } from '@/lib/cli-style'
+import { cliColor, cliDefaultModel, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
 import { useCliDef, useCliModels } from '@/lib/cli-models'
 import { clearInstallJob, startInstall, useInstallJob } from '@/lib/cli-install'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
@@ -290,10 +290,7 @@ export function TierTable({
             {readOnly ? (
               <>
                 <span className="truncate font-mono text-[0.8125rem]">{value[tr.id].model || sug.model}</span>
-                <span className="truncate text-[0.8125rem] text-muted">
-                  {(value[tr.id].effort || sug.effort) &&
-                    `${value[tr.id].effort || sug.effort} · ${effortLabel(def, value[tr.id].effort || sug.effort)}`}
-                </span>
+                <span className="truncate text-[0.8125rem] text-muted">{value[tr.id].effort || sug.effort}</span>
               </>
             ) : (
               <>
@@ -401,9 +398,8 @@ export function defaultModelText(def: CliDefinition, d: CliDraft) {
 }
 
 export function defaultEffortText(def: CliDefinition, d: CliDraft) {
-  const e = d.defaultEffort || cliDefaultModel(def)?.defaultEffort
-  if (!e) return `auto · ${t('自动（默认）')}`
-  return `${e} · ${effortLabel(def, e)}${d.defaultEffort ? '' : t('（默认）')}`
+  // 只显示 CLI 的英文取值，和下拉里一致
+  return d.defaultEffort || cliDefaultModel(def)?.defaultEffort || 'auto'
 }
 
 /** 默认模型：可以是档位或具体模型；不指定时就是 CLI 自己的默认模型，直接标（默认） */

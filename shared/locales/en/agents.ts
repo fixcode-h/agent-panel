@@ -24,9 +24,7 @@ export const EN_AGENTS: Record<string, string> = {
   '「{name}」': '“{name}”',
   '、': ', ',
   '{name}（默认）': '{name} (default)',
-  '{name} · {label}（这个模型不支持）': '{name} · {label} (not supported by this model)',
   '自动（默认）': 'Auto (default)',
-  'auto · 自动（默认）': 'auto · Auto (default)',
   '{tier}档 · {model}': '{tier} tier · {model}',
   档位: 'Tier',
   其他: 'Other',
@@ -94,15 +92,13 @@ export const EN_AGENTS: Record<string, string> = {
   '{cli} 读取': 'From {cli}',
   '配置文件 · 第三方 API': 'Config file · Third-party API',
 
-  // 思考强度
-  不思考: 'None',
+  // 思考强度（Pi 等配置文件里的强度名会用到；界面上的强度只显示英文 id）
   最低: 'Minimal',
   低: 'Low',
   中: 'Medium',
   高: 'High',
   很高: 'Extra high',
   最高: 'Max',
-  极限: 'Ultra',
 
   // AI 创建 / 优化
   '一个专门写 Playwright 端到端测试的 Agent，用 Claude Code':

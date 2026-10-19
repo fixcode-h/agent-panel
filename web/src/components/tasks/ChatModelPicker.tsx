@@ -107,16 +107,16 @@ export function useRunAuthor(run: ChatRun | undefined) {
   const def = useCliDef(run?.cli || undefined)
   if (!run || !def) return undefined
   const model = run.model || def.models.find((m) => m.isDefault)?.id || ''
-  const effort = def.efforts.find((e) => e.id === run.effort)
   return {
     name: def.name,
     cli: def.id,
     icon: 'sparkles',
-    model: [model, effort && (effort.label ? `${effort.id} · ${effort.label}` : effort.id)].filter(Boolean).join(' · '),
+    // 强度只显示 CLI 的英文取值
+    model: [model, run.effort].filter(Boolean).join(' · '),
   }
 }
 
-/** 对话时选 CLI、模型和思考强度；都是实际的值，默认的标「（默认）」 */
+/** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
 export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
   if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 CLI')}</span>

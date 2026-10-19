@@ -7,7 +7,7 @@ import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/c
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type { Agent, AgentInput, Settings, TaskMessage, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
-import { cliColor, defaultEffortOptions, effortLabel, modelEfforts } from '@/lib/cli-style'
+import { cliColor, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
 import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
@@ -345,7 +345,7 @@ function RunPicker({
       className="flex min-w-0 items-center gap-0.5"
       title={
         t('这次用 {model}', { model: run.model || defaultModel || t('CLI 自动选择的模型') }) +
-        (run.effort ? ` · ${effortLabel(def, run.effort)}` : '')
+        (run.effort ? ` · ${run.effort}` : '')
       }
     >
       <Select
