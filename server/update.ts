@@ -210,7 +210,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     return list
   }
 
-  async function install(job: AppUpdateJob, rel: AppRelease) {
+  async function install(job: AppUpdateJob, rel: AppRelease, onWait?: () => void) {
     const dir = appDir()
     // 下载的包放在数据目录的缓存里，设置的「数据」里能看到占用、可以清理
     await mkdir(path.join(CACHE_DIR, 'updates'), { recursive: true })
@@ -242,6 +242,18 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
         if (!want) throw new Error(t('校验文件里没有 {name}', { name }))
         if ((await sha256(file)).toLowerCase() !== want.toLowerCase())
           throw new Error(t('下载的包校验不通过，可能下载不完整，请重试'))
+      }
+
+      // 下载和校验都不动程序文件，任务执行中也可以继续；
+      // 解压和替换会换掉正在运行的程序，等所有任务结束再做
+      let running = deps.running()
+      if (running > 0) {
+        onWait?.()
+        while (running > 0) {
+          job.phase = t('等待任务结束（还有 {n} 个）', { n: running })
+          await new Promise((r) => setTimeout(r, 1000))
+          running = deps.running()
+        }
       }
 
       // 2. 解压：Windows 10 起自带 tar，macOS / Linux 都有
@@ -292,10 +304,10 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
   /** 开始装某个版本；不能装时返回原因和状态码 */
   function startInstall(
     rel: AppRelease,
+    onWait?: () => void,
   ): { job: AppUpdateJob; done: Promise<void> } | { error: string; status: 400 | 409 } {
     if (!packaged()) return { error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新'), status: 400 }
     if ([...jobs.values()].some((j) => j.status === 'running')) return { error: t('正在更新，请稍等'), status: 409 }
-    if (deps.running() > 0) return { error: t('有任务正在执行，请等它完成或先停止再更新'), status: 409 }
     const job: AppUpdateJob = {
       id: randomUUID(),
       tag: rel.tag,
@@ -308,7 +320,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
     jobs.set(job.id, job)
     log.info('update', `开始更新到 ${rel.tag}`)
-    const done = install(job, rel).catch((e) => {
+    const done = install(job, rel, onWait).catch((e) => {
       log.error('update', `更新到 ${rel.tag} 失败`, e)
       job.status = 'failed'
       job.error = (e as Error).message
@@ -333,7 +345,9 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     const current = currentVersion()
     const rel = pickUpdate(current, list)
     if (!rel) return report('latest', t('已经是最新版本（{version}）', { version: current }))
-    const started = startInstall(rel)
+    const started = startInstall(rel, () =>
+      report('waiting', t('新版本 {version} 已下载，等所有任务结束后再替换并重启', { version: rel.version })),
+    )
     if ('error' in started)
       return report(
         'busy',
@@ -370,7 +384,6 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
       const { tag } = (await c.req.json().catch(() => ({}))) as { tag?: string }
       if (!packaged()) return c.json({ error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新') }, 400)
       if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
-      if (deps.running() > 0) return c.json({ error: t('有任务正在执行，请等它完成或先停止再更新') }, 409)
       let rel: AppRelease | undefined
       try {
         rel = (await releases(false)).find((r) => r.tag === tag) ?? (await releases(true)).find((r) => r.tag === tag)
@@ -412,7 +425,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
 }
 
 /** 托盘「检查更新」每一步的状态：checking、downloading 之后还会有下文，其余是最终结果 */
-export type TrayUpdateState = 'checking' | 'downloading' | 'latest' | 'done' | 'busy' | 'failed'
+export type TrayUpdateState = 'checking' | 'downloading' | 'waiting' | 'latest' | 'done' | 'busy' | 'failed'
 
 /**
  * 重启：关掉监听，用同样的参数启动新的服务进程（共用当前的终端窗口），然后退出。

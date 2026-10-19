@@ -218,8 +218,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '上次检查 {time}': 'Last checked {time}',
   '在线演示不能安装，可以下载包到本机运行。':
     "The online demo can't install updates. Download a package to run locally.",
-  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时不能更新。':
-    "Updating downloads the package from GitHub, replaces the app files and restarts automatically. Data in the data folder is kept. You can't update while tasks are running.",
+  '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时会先下载，等所有任务结束后再替换。':
+    'Updating downloads the package from GitHub, replaces the app files and restarts automatically. Data in the data folder is kept. If tasks are running, the download starts right away and the files are replaced after all tasks finish.',
   '从源码运行时请用 git 拉取更新；这里可以查看和下载发布的包。':
     'When running from source, pull updates with git. You can still view and download released packages here.',
   '当前是预览版，会提示所有更新的包；正式版只提示正式版。':

@@ -429,6 +429,13 @@ class Tray : ApplicationContext
             icon.ShowBalloonTip(5000, "Agent 面板", text, ToolTipIcon.Info);
             return;
         }
+        // 已经下载好，等正在跑的任务结束再替换程序
+        if (state == "waiting")
+        {
+            updateItem.Text = "等待任务结束后更新…";
+            icon.ShowBalloonTip(8000, "Agent 面板", text, ToolTipIcon.Info);
+            return;
+        }
         // 装好后服务会重启，重新就绪时菜单再恢复
         if (state != "done")
         {
