@@ -2,7 +2,7 @@ import type { FlowEdge, FlowNode, NodeHooks, ParamValues, WorkflowInput } from '
 import { autoLayout, END, START } from '../flow.ts'
 
 /**
- * 内置工作流：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」整理的日常开发流程，加上 UE / P4 和美术资产链。
+ * 内置工作流：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」整理的日常开发流程，加上 UE 和美术资产链。
  * 节点里的 agent 写内置 Agent 的 key（./agents.ts），添加时换成本机的 Agent id。
  * 节点说明是交给 CLI 的提示词，不翻译。
  */
@@ -366,30 +366,33 @@ Bug、测试失败、线上问题。
     ],
   },
   {
-    key: 'ue-p4',
-    name: 'UE 功能开发（P4）',
-    description: 'UE C++ / Lua 改动：只读侦察 → 确认设计 → 实现 → 单独编译验收 → 文档 → P4 分桶',
+    key: 'ue-dev',
+    name: 'UE 功能开发',
+    description:
+      'UE C++ / Lua 改动：只读侦察 → 确认设计 → 实现 → 单独编译验收 → 文档 → 版本控制收尾（Git / P4 自动识别）',
     category: 'UE',
     main: 'developer',
     members: [
-      ['guide', '识别 P4 工作区和 ProjectDoc 文档根'],
+      ['guide', '识别版本控制（Git / P4 等）和文档根'],
       ['uescout', '架构、构建方向的只读侦察'],
       ['impact', '分析影响面'],
       ['analyst', '出设计摘要等你确认'],
       ['developer', 'C++ / Lua 实现'],
       ['ueintegrator', '唯一负责编译和 Lua 检查'],
       ['verifier', '验收，登记需要 Editor 的延期验证'],
-      ['docs', '同步 ProjectDoc 里的模块文档'],
-      ['vcs', '核对 default，按类型分 pending'],
+      ['docs', '同步文档根里的模块文档'],
+      ['vcs', 'Git 本地提交 / P4 按类型分 pending'],
     ],
     document: `## 适用
-P4 管理的 UE 项目里的 C++ / Lua 改动。
+UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能用。
 
 ## 约定
-- P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert。
-- 文档根是共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
+- 版本控制在「识别现场」自动识别，后面的节点按识别结果操作；想固定成某一种，把节点参数里的「工作区」改成 git 或 p4。
+- Git：只提交本次任务的文件，按功能拆本地提交，不 push。
+- P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert；最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
+- 文档根：Git 项目用项目下的 docs；P4 项目用共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
 - 编译只由「UE 集成员」做，同一时间只编译一次（-WaitMutex）。
-- 最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending，submit 由你自己做。`,
+- push、submit 由你自己做。`,
     flows: [
       {
         id: 'main',
@@ -400,8 +403,8 @@ P4 管理的 UE 项目里的 C++ / Lua 改动。
             title: '识别现场',
             agent: 'guide',
             tier: 'low',
-            params: { vcs: 'p4' },
-            instructions: '识别 P4 工作区（client、stream、限定路径的 opened）和 ProjectDoc 文档根，定位相关模块。',
+            instructions:
+              '识别版本控制（Git 的分支和未提交改动，P4 的 client、stream 和限定路径的 opened，或者没有版本控制）和文档根，定位相关模块。结果里写明是哪种版本控制，后面的节点按它操作。',
           },
           {
             id: 'arch',
@@ -441,27 +444,27 @@ P4 管理的 UE 项目里的 C++ / Lua 改动。
             title: '实现',
             agent: 'developer',
             tier: 'high',
-            params: { lang: '多种', vcs: 'p4', tdd: false },
+            params: { lang: '多种', tdd: false },
             review: 'compile',
             maxRounds: 3,
             retries: 1,
             instructions:
-              '按已确认的设计实现。修改前先 p4 edit / add。不要自己编译，编译由验收流程里的 UE 集成员统一做。',
+              '按已确认的设计实现。P4 项目修改前先 p4 edit / add。不要自己编译，编译由验收流程里的 UE 集成员统一做。',
           },
           {
             id: 'docs',
             title: '同步文档',
             agent: 'docs',
             tier: 'low',
-            instructions: '把这次改动同步到 ProjectDoc 里的模块文档。',
+            instructions: '把这次改动同步到识别出的文档根里的模块文档。',
           },
           {
             id: 'commit',
-            title: 'P4 分桶',
+            title: '版本控制收尾',
             agent: 'vcs',
             tier: 'low',
-            params: { vcs: 'p4' },
-            instructions: '核对 default changelist，按类型分 pending。',
+            instructions:
+              '按识别出的版本控制收尾：Git 只提交本次任务的文件、按功能拆本地提交；P4 核对 default changelist，按类型分 pending。',
           },
         ],
         edges: [

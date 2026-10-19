@@ -79,6 +79,9 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '自己的模型（不检查下载）': 'My own model (not checked)',
   '附加要求（英文，加在每张图的描述后面）': 'Extra requirements (English, appended to every image prompt)',
   '节点图（ComfyUI 接口格式）': 'Node graph (ComfyUI API format)',
+  节点图的显示方式: 'Node graph view',
+  图形: 'Graph',
+  节点图: 'Node graph',
   '占位符：{{prompt}} 描述、{{negative}} 反向描述、{{width}} {{height}} 尺寸、{{count}} 张数、{{seed}} 随机种子':
     'Placeholders: {{prompt}} prompt, {{negative}} negative prompt, {{width}} {{height}} size, {{count}} image count, {{seed}} random seed',
   '已自动换上占位符，检查无误后保存。': 'Placeholders were filled in automatically. Check and save.',

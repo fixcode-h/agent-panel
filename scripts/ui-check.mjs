@@ -274,7 +274,17 @@ try {
   await p.keyboard.press('Escape')
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
-  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}'])
+  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  // 节点图可以在图形和配置（JSON）之间切换
+  await p.getByRole('radio', { name: '配置', exact: true }).click()
+  await check(p, 'ComfyUI-节点图配置', ['"class_type"'])
+  await p.getByRole('radio', { name: '图形', exact: true }).click()
+  // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
+  await p.getByRole('radio', { name: /^Agent 模式/ }).click()
+  await p
+    .waitForURL((u) => !u.hash.startsWith('#/comfy'), { timeout: 5000 })
+    .catch(() => errors.push('在 ComfyUI 页点 Agent 模式没有切过去'))
+  await p.goto(base + '#/comfy/game')
   await p.getByRole('radio', { name: '网页 UI' }).click()
   await check(p, 'ComfyUI-网页工作流', ['网页插画'])
   await p.getByRole('button', { name: 'AI 优化' }).click()

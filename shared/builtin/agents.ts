@@ -386,7 +386,7 @@ ${VCS_TEXT}
 
 1. 找到项目实际使用的引擎和 Build.bat，用 \`Build.bat <EditorTarget> Win64 {{config}} -Project=<.uproject> -NoUBTMakefiles -WaitMutex\` 编译一次，记录命令和结果。
 2. 有 Lua 改动时做语法检查（lua-luac-compiler 技能目录下的脚本）。
-{{#if luac}}3. LuacPacker 的前置条件满足时编译 .luac，产物放进和 Lua 相同的 pending。{{/if}}
+{{#if luac}}3. LuacPacker 的前置条件满足时编译 .luac，产物和 Lua 一起交给版本控制（P4 放进和 Lua 相同的 pending）。{{/if}}
 
 编译或检查失败时，把错误原文和对应的文件、行列出来交回实现节点。最后一行写「验收结论：通过」或「验收结论：不通过」。`,
   }),
