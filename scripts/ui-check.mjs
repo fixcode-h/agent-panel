@@ -321,6 +321,8 @@ try {
   if ((await ctx.inputValue()) !== '500K')
     errors.push(`设置-CLI-三档上下文：手填的值显示成了「${await ctx.inputValue()}」`)
   await p.getByRole('dialog').getByRole('button', { name: '恢复自动' }).first().click()
+  // 清空要等设置保存、重新渲染；CI 的机器慢，立刻读会读到旧值
+  for (let i = 0; i < 30 && (await ctx.inputValue()) !== ''; i++) await p.waitForTimeout(100)
   if ((await ctx.inputValue()) !== '') errors.push('设置-CLI-三档上下文：恢复自动后没有清空')
   await p.getByRole('dialog').getByText('Codex', { exact: true }).first().click()
   await p.getByText('没有设置最大输出的参数').first().scrollIntoViewIfNeeded()
@@ -410,12 +412,18 @@ try {
   await check(m, '手机-首页', ['今天要做什么'])
   await m.goto(base + '#/workflows')
   await check(m, '手机-工作流')
+} catch (e) {
+  // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
+  if (process.env.GITHUB_ACTIONS)
+    console.log(`::error title=界面检查::第 ${n} 步之后出错：${String(e?.message ?? e).split('\n')[0]}`)
+  throw e
 } finally {
   await browser.close()
   server.close()
 }
 
 if (errors.length) {
+  if (process.env.GITHUB_ACTIONS) for (const e of errors) console.log(`::error title=界面检查::${e.split('\n')[0]}`)
   console.error('\n' + errors.join('\n'))
   process.exit(1)
 }
