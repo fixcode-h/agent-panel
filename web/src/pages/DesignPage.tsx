@@ -182,8 +182,8 @@ function NewDesign({ projectId }: { projectId?: string }) {
         <span className="mb-4 grid h-11 w-11 place-items-center rounded-xl bg-accent-soft text-accent">
           <PaletteIcon className="h-5 w-5" />
         </span>
-        <h1 className="font-serif text-[26px] font-semibold tracking-tight">{t('UI 设计')}</h1>
-        <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
+        <h1 className="font-serif text-[1.625rem] font-semibold tracking-tight">{t('UI 设计')}</h1>
+        <p className="mt-2 text-[0.84375rem] leading-relaxed text-muted">
           {kind === 'web'
             ? t(
                 '用对话设计网页界面：AI 用自动布局搭好页面、生成插图和图标，最后导出成 HTML / CSS 和图片，直接用浏览器打开。',
@@ -194,7 +194,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         </p>
         <DesignProjectDialog open={creatingProject} onOpenChange={setCreatingProject} onSaved={(p) => setPid(p.id)} />
         {!projects.length ? (
-          <div className="mt-8 rounded-xl border p-5 text-[13px] text-muted">
+          <div className="mt-8 rounded-xl border p-5 text-[0.8125rem] text-muted">
             {t('设计放在 UI 项目里（和 Agent 的项目分开）。先建一个项目吧，一般一个游戏一个项目。')}
             <Button className="mt-3" onClick={() => setCreatingProject(true)}>
               <Plus className="h-4 w-4" />
@@ -204,7 +204,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
         ) : (
           <div className="mt-8 flex flex-col gap-5 rounded-2xl border bg-card p-6 shadow-card">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-medium">{t('名称')}</span>
+              <span className="text-[0.8125rem] font-medium">{t('名称')}</span>
               <Input
                 autoFocus
                 value={title}
@@ -214,7 +214,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
               />
             </label>
             <div className="flex flex-col gap-1.5">
-              <span className="text-[13px] font-medium">{t('类型')}</span>
+              <span className="text-[0.8125rem] font-medium">{t('类型')}</span>
               <Segmented
                 label={t('类型')}
                 value={kind}
@@ -230,7 +230,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-medium">{t('项目')}</span>
+                <span className="text-[0.8125rem] font-medium">{t('项目')}</span>
                 <Select
                   aria-label={t('项目')}
                   value={pid}
@@ -242,7 +242,7 @@ function NewDesign({ projectId }: { projectId?: string }) {
                 />
               </div>
               <div className="flex flex-col gap-1.5">
-                <span className="text-[13px] font-medium">{t('设计尺寸')}</span>
+                <span className="text-[0.8125rem] font-medium">{t('设计尺寸')}</span>
                 <Select
                   aria-label={t('设计尺寸')}
                   value={size}
@@ -661,7 +661,7 @@ function Designer({ id }: { id: string }) {
 
   if (ed.error)
     return (
-      <div className="grid flex-1 place-items-center p-8 text-center text-[13px] text-muted">
+      <div className="grid flex-1 place-items-center p-8 text-center text-[0.8125rem] text-muted">
         <div>
           <p>{ed.error}</p>
           <Button variant="ghost" className="mt-3" onClick={() => go({ page: 'design' })}>
@@ -856,12 +856,12 @@ function Designer({ id }: { id: string }) {
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3">
-        {project && <span className="hidden truncate text-[12.5px] text-subtle sm:block">{project.name} /</span>}
+        {project && <span className="hidden truncate text-[0.78125rem] text-subtle sm:block">{project.name} /</span>}
         <input
           aria-label={t('设计名称')}
           value={doc.title}
           onChange={(e) => ed.change((d) => ({ ...d, title: e.target.value }), 'title')}
-          className="h-8 w-[min(240px,30vw)] min-w-0 rounded-md bg-transparent px-1.5 text-[14px] font-medium outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
+          className="h-8 w-[min(240px,30vw)] min-w-0 rounded-md bg-transparent px-1.5 text-[0.875rem] font-medium outline-none hover:bg-sel/60 focus:bg-field focus:ring-1 focus:ring-focus"
         />
         <SaveIndicator status={ed.save.status} error={ed.save.error} />
         <span className="flex-1" />
@@ -957,7 +957,7 @@ function Designer({ id }: { id: string }) {
           <Clapperboard className="h-3.5 w-3.5" />
           {t('动画')}
           {(doc.animations?.length ?? 0) > 0 && (
-            <span className="text-[11px] text-subtle tabular-nums">{doc.animations!.length}</span>
+            <span className="text-[0.6875rem] text-subtle tabular-nums">{doc.animations!.length}</span>
           )}
         </Button>
         <Menu>
@@ -1121,7 +1121,7 @@ function Designer({ id }: { id: string }) {
                 aria-pressed={overlay}
                 title={t('把确认的原画模板半透明盖在界面上，对照着调')}
                 className={cn(
-                  'absolute top-3 left-3 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[12px] text-white/70 shadow-pop hover:text-white',
+                  'absolute top-3 left-3 z-20 inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-xl border border-white/10 bg-[#232326]/95 px-2.5 text-[0.75rem] text-white/70 shadow-pop hover:text-white',
                   overlay && 'text-accent hover:text-accent',
                 )}
               >
@@ -1276,7 +1276,7 @@ function Designer({ id }: { id: string }) {
                 aria-selected={tab === k}
                 onClick={() => setTab(k)}
                 className={cn(
-                  'h-7 cursor-pointer rounded-md px-2.5 text-[12.5px]',
+                  'h-7 cursor-pointer rounded-md px-2.5 text-[0.78125rem]',
                   tab === k ? 'bg-sel font-medium text-fg' : 'text-subtle hover:text-fg',
                 )}
               >
@@ -1302,7 +1302,7 @@ function Designer({ id }: { id: string }) {
                   { value: '', label: t('主界面') },
                   ...doc.components.map((c) => ({ value: c.Name, label: c.Name, group: t('子控件') })),
                 ]}
-                className="h-7 rounded-md px-2 text-[12px]"
+                className="h-7 rounded-md px-2 text-[0.75rem]"
               />
               {target && (
                 <Button
@@ -1324,7 +1324,7 @@ function Designer({ id }: { id: string }) {
             {tab === 'tree' ? (
               <>
                 {live && (
-                  <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[11.5px] text-accent">
+                  <p className="flex items-center gap-1.5 border-b bg-accent-soft/40 px-3 py-1.5 text-[0.71875rem] text-accent">
                     <Loader2 className="h-3 w-3 animate-spin" />
                     {t('AI 正在修改，已经改了 {n} 处', { n: live.applied })}
                   </p>
@@ -1432,7 +1432,7 @@ function Designer({ id }: { id: string }) {
                 }}
               />
             ) : (
-              <p className="px-4 py-6 text-center text-[12px] leading-relaxed text-subtle">
+              <p className="px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
                 {tab === 'tree' ? t('选中一个控件查看和修改它的属性') : t('选中一张图片查看它的每一版和生成设置')}
               </p>
             )}
@@ -1442,7 +1442,7 @@ function Designer({ id }: { id: string }) {
         {chatOpen && (
           <aside style={{ width: chatPane.width }} className="relative flex shrink-0 flex-col border-l bg-bg">
             <ResizeHandle pane={chatPane} label={t('拖动调整 AI 对话的宽度')} />
-            <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-[12.5px] font-medium text-muted">
+            <div className="flex h-10 shrink-0 items-center gap-2 border-b px-4 text-[0.78125rem] font-medium text-muted">
               <span className="shrink-0">{t('AI 对话')}</span>
             </div>
             <DesignChat
@@ -1493,14 +1493,14 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
     <Popover onOpenChange={(o) => o && (setW(String(doc.designSize.X)), setH(String(doc.designSize.Y)))}>
       <PopoverTrigger asChild>
         <button
-          className="h-7 cursor-pointer rounded-md px-2 font-mono text-[12px] text-muted hover:bg-sel hover:text-fg"
+          className="h-7 cursor-pointer rounded-md px-2 font-mono text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
           title={t('设计尺寸')}
         >
           {doc.designSize.X}×{doc.designSize.Y}
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[240px] p-3">
-        <p className="mb-2 text-[12px] font-medium">{t('设计尺寸')}</p>
+        <p className="mb-2 text-[0.75rem] font-medium">{t('设计尺寸')}</p>
         <div className="flex items-center gap-2">
           <Input
             value={w}
@@ -1525,7 +1525,7 @@ function SizeButton({ doc, onChange }: { doc: DesignDoc; onChange: (s: { X: numb
                 setW(x)
                 setH(y)
               }}
-              className="cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[11px] text-subtle hover:text-fg"
+              className="cursor-pointer rounded border px-1.5 py-0.5 font-mono text-[0.6875rem] text-subtle hover:text-fg"
             >
               {s.v.replace('x', '×')}
             </button>
@@ -1576,7 +1576,7 @@ function StyleButton({
     >
       <PopoverTrigger asChild>
         <button
-          className="flex h-7 max-w-[220px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[12px] text-muted hover:bg-sel hover:text-fg"
+          className="flex h-7 max-w-[220px] cursor-pointer items-center gap-1.5 rounded-md px-2 text-[0.75rem] text-muted hover:bg-sel hover:text-fg"
           title={value || t('美术风格')}
         >
           <PaletteIcon className="h-3.5 w-3.5 shrink-0" />
@@ -1588,8 +1588,8 @@ function StyleButton({
       <PopoverContent align="end" className="w-[340px] p-3">
         <div className="mb-3 flex items-start gap-2 rounded-lg border bg-panel/60 px-2.5 py-2">
           <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-medium">{t('项目美术提示词')}</p>
-            <p className="mt-0.5 text-[11.5px] leading-relaxed text-subtle">
+            <p className="text-[0.75rem] font-medium">{t('项目美术提示词')}</p>
+            <p className="mt-0.5 text-[0.71875rem] leading-relaxed text-subtle">
               {prompts
                 ? t('{n} 条启用中，项目里所有界面共用', { n: prompts })
                 : t('还没有设置。设置后项目里所有界面风格统一')}
@@ -1599,8 +1599,8 @@ function StyleButton({
             {prompts ? t('管理') : t('设置')}
           </Button>
         </div>
-        <p className="mb-1 text-[12px] font-medium">{t('这个界面的补充风格')}</p>
-        <p className="mb-2 text-[11.5px] leading-relaxed text-subtle">
+        <p className="mb-1 text-[0.75rem] font-medium">{t('这个界面的补充风格')}</p>
+        <p className="mb-2 text-[0.71875rem] leading-relaxed text-subtle">
           {t('只对这个界面生效，加在项目提示词后面。AI 对话时也会帮你定。')}
         </p>
         <Textarea
@@ -1608,10 +1608,10 @@ function StyleButton({
           onChange={(e) => setText(e.target.value)}
           rows={4}
           placeholder="dark fantasy, carved stone with gold trim, glowing runes"
-          className="text-[12.5px]"
+          className="text-[0.78125rem]"
         />
         <div className="mt-3 border-t pt-3">
-          <p className="mb-1.5 text-[12px] font-medium">{t('从风格库套用')}</p>
+          <p className="mb-1.5 text-[0.75rem] font-medium">{t('从风格库套用')}</p>
           <StyleLibraryList
             kind={kind}
             active={open}

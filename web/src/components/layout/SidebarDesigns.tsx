@@ -148,7 +148,7 @@ export function DesignList() {
             // 整行都能点：以前只有文字能点，点到图标或空白处没反应，像是要点两次
             onClick={() => renaming !== d.id && go({ page: 'design', id: d.id })}
             className={cn(
-              'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[13px]',
+              'flex h-8 cursor-pointer items-center gap-2 rounded-lg px-2 text-[0.8125rem]',
               on ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60 hover:text-fg',
             )}
           >
@@ -180,7 +180,7 @@ export function DesignList() {
                     setRenaming('')
                   }
                 }}
-                className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[12.5px] text-fg outline-none"
+                className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[0.78125rem] text-fg outline-none"
               />
             ) : (
               // 点击冒泡到整行去跳转；保留按钮是为了能用键盘选中
@@ -253,7 +253,7 @@ export function DesignList() {
           <section key={p.id} className="mb-2">
             <ContextMenu>
               <ContextMenuTrigger asChild>
-                <div className="group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[12.5px] text-muted hover:bg-sel/60">
+                <div className="group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] text-muted hover:bg-sel/60">
                   <button
                     onClick={() =>
                       setFolded((f) => {
@@ -281,7 +281,7 @@ export function DesignList() {
                     <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
                   </span>
                   {ds.length > 0 && (
-                    <span className="shrink-0 pr-1 text-[11px] text-subtle tabular-nums group-hover/proj:hidden">
+                    <span className="shrink-0 pr-1 text-[0.6875rem] text-subtle tabular-nums group-hover/proj:hidden">
                       {ds.length}
                     </span>
                   )}
@@ -336,14 +336,14 @@ export function DesignList() {
                           })
                         }
                         aria-expanded={kOpen}
-                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[12px] text-subtle hover:bg-sel/60 hover:text-fg"
+                        className="flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[0.75rem] text-subtle hover:bg-sel/60 hover:text-fg"
                       >
                         <ChevronRight className={cn('h-3 w-3 shrink-0 transition-transform', kOpen && 'rotate-90')} />
                         <k.icon className="h-3.5 w-3.5 shrink-0" />
                         <span className="min-w-0 flex-1 truncate text-left">
                           {k.id === 'web' ? t('网页 UI') : t('游戏 UI')}
                         </span>
-                        <span className="shrink-0 pr-1 text-[11px] tabular-nums">{list.length}</span>
+                        <span className="shrink-0 pr-1 text-[0.6875rem] tabular-nums">{list.length}</span>
                       </button>
                       {kOpen && <div className="ml-3 flex flex-col gap-px">{list.map(designRow)}</div>}
                     </div>

@@ -42,7 +42,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
     ])
   return (
     <Group>
-      <p className="pb-3 text-[13px] leading-relaxed text-subtle">
+      <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
         {t(
           '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
         )}
@@ -63,7 +63,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
           <Plus className="h-3.5 w-3.5" />
           {t('添加 API')}
         </Button>
-        <span className="text-[12px] text-subtle">{t('从常用的开始：')}</span>
+        <span className="text-[0.75rem] text-subtle">{t('从常用的开始：')}</span>
         {PRESETS.map((p) => (
           <Button key={p.label} variant="ghost" size="sm" onClick={() => add(p)}>
             {p.label}
@@ -127,7 +127,7 @@ function ApiCard({
         </Button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-[12px] text-subtle">
+        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
           {t('协议')}
           <Select
             aria-label={t('协议')}
@@ -136,7 +136,7 @@ function ApiCard({
             options={API_PROTOCOLS.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
           />
         </label>
-        <label className="flex flex-col gap-1 text-[12px] text-subtle">
+        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
           {t('接口地址')}
           <Input
             value={a.baseUrl}
@@ -144,10 +144,10 @@ function ApiCard({
             placeholder="https://api.example.com/v1"
             spellCheck={false}
             aria-label={t('接口地址')}
-            className="h-9 font-mono text-[13px]"
+            className="h-9 font-mono text-[0.8125rem]"
           />
         </label>
-        <label className="flex flex-col gap-1 text-[12px] text-subtle sm:col-span-2">
+        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
           {t('密钥')}
           <span className="flex gap-1.5">
             <Input
@@ -158,7 +158,7 @@ function ApiCard({
               spellCheck={false}
               autoComplete="off"
               aria-label={t('密钥')}
-              className="h-9 min-w-0 flex-1 font-mono text-[13px]"
+              className="h-9 min-w-0 flex-1 font-mono text-[0.8125rem]"
             />
             <Button
               type="button"
@@ -173,7 +173,7 @@ function ApiCard({
           </span>
         </label>
         {a.protocol === 'anthropic' && (
-          <label className="flex flex-col gap-1 text-[12px] text-subtle">
+          <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
             {t('密钥的发送方式')}
             <Select
               aria-label={t('密钥的发送方式')}
@@ -189,7 +189,7 @@ function ApiCard({
       </div>
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <span className="text-[12px] text-subtle">{t('可用的模型')}</span>
+          <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
           <span className="flex-1" />
           <Button
             size="sm"
@@ -205,11 +205,11 @@ function ApiCard({
           {a.models.map((m, i) => (
             <span
               key={m}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-sel pr-1 pl-2 font-mono text-[12px]"
+              className="inline-flex h-7 items-center gap-1 rounded-md bg-sel pr-1 pl-2 font-mono text-[0.75rem]"
               title={i === 0 ? t('第一个是默认模型') : undefined}
             >
               {m}
-              {i === 0 && <span className="rounded bg-accent-soft px-1 text-[10px] text-accent">{t('默认')}</span>}
+              {i === 0 && <span className="rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>}
               <button
                 type="button"
                 aria-label={t('移除 {name}', { name: m })}
@@ -234,7 +234,7 @@ function ApiCard({
               placeholder={t('自己输入模型名，回车添加')}
               aria-label={t('添加模型')}
               spellCheck={false}
-              className="h-7 w-52 font-mono text-[12px]"
+              className="h-7 w-52 font-mono text-[0.75rem]"
             />
           </form>
         </div>
@@ -246,7 +246,7 @@ function ApiCard({
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder={t('在 {n} 个模型里搜索', { n: found.length })}
                 aria-label={t('搜索模型')}
-                className="h-8 min-w-0 flex-1 text-[12.5px]"
+                className="h-8 min-w-0 flex-1 text-[0.78125rem]"
               />
               <Button
                 size="sm"
@@ -269,7 +269,7 @@ function ApiCard({
                     aria-pressed={on}
                     onClick={() => toggle(m)}
                     className={cn(
-                      'inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 font-mono text-[12px] transition-colors',
+                      'inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 font-mono text-[0.75rem] transition-colors',
                       on ? 'border-accent/50 bg-accent-soft text-accent' : 'hover:bg-sel',
                     )}
                   >
@@ -278,12 +278,14 @@ function ApiCard({
                   </button>
                 )
               })}
-              {!shown.length && <span className="text-[12px] text-subtle">{t('没有匹配的模型')}</span>}
+              {!shown.length && <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>}
             </div>
           </div>
         )}
       </div>
-      <p className="text-[12px] text-subtle">{t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}</p>
+      <p className="text-[0.75rem] text-subtle">
+        {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
+      </p>
     </div>
   )
 }

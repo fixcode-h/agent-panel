@@ -102,7 +102,7 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
         if (s.trim() !== '' && Number.isFinite(n)) onChange(n)
       }}
       className={cn(
-        'nodrag h-[22px] min-w-0 flex-1 rounded border-0 bg-field px-1.5 font-mono text-[11px] outline-none focus:ring-1 focus:ring-focus',
+        'nodrag h-[22px] min-w-0 flex-1 rounded border-0 bg-field px-1.5 font-mono text-[0.6875rem] outline-none focus:ring-1 focus:ring-focus',
         slot && 'text-accent',
       )}
     />
@@ -111,12 +111,12 @@ function Field({ value, readOnly, onChange }: { value: unknown; readOnly: boolea
 
 const ComfyNode = memo(function ComfyNode({ data }: NodeProps<Node<NodeData>>) {
   return (
-    <div className="w-[260px] rounded-xl border bg-card text-[12px] shadow-card">
+    <div className="w-[260px] rounded-xl border bg-card text-[0.75rem] shadow-card">
       <div className="flex items-baseline gap-2 border-b px-3 py-2">
         <span className="min-w-0 flex-1 truncate font-medium" title={data.type}>
           {data.title || data.type}
         </span>
-        <span className="shrink-0 font-mono text-[10.5px] text-subtle">#{data.id}</span>
+        <span className="shrink-0 font-mono text-[0.65625rem] text-subtle">#{data.id}</span>
       </div>
       <div className="relative flex flex-col py-1.5">
         {data.inputs.map(([key, v]) => {
@@ -136,7 +136,7 @@ const ComfyNode = memo(function ComfyNode({ data }: NodeProps<Node<NodeData>>) {
                 {key}
               </span>
               {link ? (
-                <span className="truncate font-mono text-[11px] text-subtle">
+                <span className="truncate font-mono text-[0.6875rem] text-subtle">
                   ← #{link[0]}
                   {link[1] ? ` · ${link[1]}` : ''}
                 </span>

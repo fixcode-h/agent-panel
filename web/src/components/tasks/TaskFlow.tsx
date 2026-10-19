@@ -109,7 +109,7 @@ export function TaskFlow({
 
   if (!flow || !workflow)
     return (
-      <p className="px-6 py-10 text-center text-[13px] text-subtle">
+      <p className="px-6 py-10 text-center text-[0.8125rem] text-subtle">
         {t('这个任务的工作流已经删除，无法显示流程图。')}
       </p>
     )
@@ -160,7 +160,7 @@ export function TaskFlow({
             <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-4 px-4 pb-6 md:px-6">
               <StepSection task={task} rootId={step.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
               {!msgs.length && step.status !== 'running' && (
-                <p className="text-[13px] text-subtle">
+                <p className="text-[0.8125rem] text-subtle">
                   {step.status === 'pending'
                     ? t('这个节点还没开始执行。')
                     : step.status === 'skipped'

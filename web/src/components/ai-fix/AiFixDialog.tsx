@@ -71,7 +71,7 @@ export function AiFixDialog() {
               onPointerDown={(e) => e.stopPropagation()}
               onClick={() => minimizeAiFix(false)}
               title={t('展开')}
-              className="flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[13px] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
+              className="flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[0.8125rem] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
             >
               <span className="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent">
                 {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -106,20 +106,20 @@ export function AiFixDialog() {
               <div className="flex min-h-0 flex-1 flex-col">
                 <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-5">
                   <Sparkles className="h-4 w-4 text-accent" />
-                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">
+                  <span className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium">
                     {t('AI 排查：{title}', { title: issue.title })}
                   </span>
                   {actions}
                 </header>
                 <div className="grid flex-1 place-items-center p-6">
                   {starting ? (
-                    <p className="flex items-center gap-2 text-[13px] text-muted">
+                    <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
                       <Loader2 className="h-4 w-4 animate-spin text-accent" />
                       {t('正在新建排查对话…')}
                     </p>
                   ) : (
                     error && (
-                      <p className="flex max-w-lg items-start gap-2 text-[13px] leading-relaxed whitespace-pre-wrap text-danger">
+                      <p className="flex max-w-lg items-start gap-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-danger">
                         <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
                         {error}
                       </p>

@@ -60,8 +60,8 @@ export function DeploySection() {
       .filter((g) => g.items.length)
   }, [st])
 
-  if (error) return <p className="text-[13px] text-warning">{t('读取失败：{error}', { error })}</p>
-  if (!st || !draft) return <p className="text-[13px] text-subtle">{t('读取中…')}</p>
+  if (error) return <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
+  if (!st || !draft) return <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(st.config)
   const set = (patch: Partial<DeployConfig>) => setDraft({ ...draft, ...patch })
@@ -110,7 +110,7 @@ export function DeploySection() {
 
   return (
     <div className="flex flex-col">
-      <p className="text-[13px] leading-relaxed text-subtle">
+      <p className="text-[0.8125rem] leading-relaxed text-subtle">
         {t(
           '全局说明会写进下面选中的 CLI 的用户目录，在所有项目里每次启动时读入。选中的技能放到 {dir}/<分类>/<名字>/，默认不加载：全局说明末尾会附上技能清单，任务用得上时再去读。',
           { dir: SKILL_TARGET },
@@ -120,7 +120,7 @@ export function DeploySection() {
       <Group title={t('全局说明（AGENTS.md）')}>
         <div className="flex min-h-[380px] flex-col overflow-hidden rounded-xl border bg-field/40">
           <div className="flex flex-wrap items-center gap-2 border-b bg-panel/60 px-3 py-2">
-            <span className="font-mono text-[12.5px]">AGENTS.md</span>
+            <span className="font-mono text-[0.78125rem]">AGENTS.md</span>
             {draft.agentsMd !== st.config.agentsMd && (
               <span className="text-xs text-subtle">{t('已修改，保存或部署时写入')}</span>
             )}
@@ -186,14 +186,14 @@ export function DeploySection() {
               spellCheck={false}
               aria-label={t('全局说明')}
               placeholder={t('# 全局约束\n\n写给编码助手看、所有项目都适用的约定：语言、编码、提问方式、安全边界…')}
-              className="min-h-[320px] flex-1 resize-y rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[13px] leading-[1.65] focus:ring-0"
+              className="min-h-[320px] flex-1 resize-y rounded-none border-0 bg-transparent px-4 py-3 font-mono text-[0.8125rem] leading-[1.65] focus:ring-0"
             />
           ) : (
             <div className="max-h-[520px] min-h-[320px] overflow-y-auto px-5 py-4">
               {draft.agentsMd.trim() ? (
                 <Markdown text={draft.agentsMd} teamNames={NO_TEAM} />
               ) : (
-                <p className="text-[13px] text-subtle">{t('还没有内容')}</p>
+                <p className="text-[0.8125rem] text-subtle">{t('还没有内容')}</p>
               )}
             </div>
           )}
@@ -219,12 +219,12 @@ export function DeploySection() {
                   </span>
                 }
               />
-              <span className="min-w-0 flex-1 truncate font-mono text-[12px] text-subtle" title={d.path}>
+              <span className="min-w-0 flex-1 truncate font-mono text-[0.75rem] text-subtle" title={d.path}>
                 {d.path}
               </span>
               <span
                 className={cn(
-                  'text-[12px]',
+                  'text-[0.75rem]',
                   d.status === 'same' ? 'text-success' : d.status === 'changed' ? 'text-warning' : 'text-subtle',
                 )}
               >
@@ -236,7 +236,7 @@ export function DeploySection() {
       </Group>
 
       <Group title={t('要部署的技能（已选 {n} 个）', { n: draft.skills.length })}>
-        <div className="mb-2 flex flex-wrap items-center gap-3 text-[12.5px] text-subtle">
+        <div className="mb-2 flex flex-wrap items-center gap-3 text-[0.78125rem] text-subtle">
           <span className="min-w-0 flex-1 truncate font-mono" title={st.skillRoot}>
             {st.skillRoot}
           </span>
@@ -253,7 +253,7 @@ export function DeploySection() {
         <div className="flex flex-col gap-3">
           {groups.map((g) => (
             <section key={g.id} className="flex flex-col gap-1.5">
-              <h4 className="px-1 text-[12px] text-subtle">
+              <h4 className="px-1 text-[0.75rem] text-subtle">
                 {g.label} · {g.items.length}
               </h4>
               <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
@@ -263,12 +263,12 @@ export function DeploySection() {
                     <li key={s.name}>
                       <label className="flex cursor-pointer items-center gap-3 px-4 py-2.5 hover:bg-sel/40">
                         <div className="min-w-0 flex-1">
-                          <p className="flex items-center gap-2 font-mono text-[13px]">
+                          <p className="flex items-center gap-2 font-mono text-[0.8125rem]">
                             {s.name}
                             {s.status !== 'missing' && (
                               <span
                                 className={cn(
-                                  'font-sans text-[11.5px]',
+                                  'font-sans text-[0.71875rem]',
                                   s.status === 'same' ? 'text-success' : 'text-warning',
                                 )}
                               >
@@ -277,7 +277,7 @@ export function DeploySection() {
                             )}
                           </p>
                           {s.description && (
-                            <p className="line-clamp-1 text-[12px] text-muted" title={s.description}>
+                            <p className="line-clamp-1 text-[0.75rem] text-muted" title={s.description}>
                               {s.description}
                             </p>
                           )}

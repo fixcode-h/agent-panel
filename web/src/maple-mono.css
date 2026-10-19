@@ -1,0 +1,16 @@
+/* Maple Mono NL：Maple Mono 不带符号连字的版本（=> 、!= 不会合成一个符号），可变字重，SIL OFL 1.1（同目录 OFL.txt）
+ * 来自 https://github.com/subframe7536/maple-font 的 MapleMonoNL-Variable，转成了 woff2。在线演示也用这份 */
+@font-face {
+  font-family: 'Maple Mono NL';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('./assets/fonts/maple-mono-nl/MapleMonoNL-wght.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Maple Mono NL';
+  font-style: italic;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('./assets/fonts/maple-mono-nl/MapleMonoNL-Italic-wght.woff2') format('woff2');
+}

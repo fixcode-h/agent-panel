@@ -46,7 +46,7 @@ export function CliSkills({ cli, projectId = '' }: { cli: string; projectId?: st
   }, [cli, projectId])
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center text-[12px] text-subtle">
+      <div className="flex items-center text-[0.75rem] text-subtle">
         {list && t('共 {n} 个', { n: list.length })}
         <button
           onClick={load}
@@ -58,17 +58,17 @@ export function CliSkills({ cli, projectId = '' }: { cli: string; projectId?: st
         </button>
       </div>
       {error ? (
-        <p className="text-[12px] text-warning">{t('读取失败：{error}', { error })}</p>
+        <p className="text-[0.75rem] text-warning">{t('读取失败：{error}', { error })}</p>
       ) : !list ? (
-        <p className="text-[12px] text-subtle">{t('读取中…')}</p>
+        <p className="text-[0.75rem] text-subtle">{t('读取中…')}</p>
       ) : !list.length ? (
-        <p className="text-[12px] text-subtle">{t('还没有装 Skill')}</p>
+        <p className="text-[0.75rem] text-subtle">{t('还没有装 Skill')}</p>
       ) : (
         // 按目录分组：.agents 下共用的和 CLI 自己目录下的分开列
         <div className="flex flex-col gap-3">
           {groups(list).map(([source, items]) => (
             <div key={source} className="flex flex-col gap-1.5">
-              <p className="flex items-center gap-2 text-[11.5px] text-subtle">
+              <p className="flex items-center gap-2 text-[0.71875rem] text-subtle">
                 <span className="truncate font-mono">{source || t('插件')}</span>
                 <span className="shrink-0">{items.length}</span>
               </p>
@@ -79,17 +79,17 @@ export function CliSkills({ cli, projectId = '' }: { cli: string; projectId?: st
                       className={cn('mt-0.5 h-3.5 w-3.5 shrink-0', s.enabled ? 'text-accent' : 'text-subtle')}
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="flex items-center gap-2 text-[13px]">
+                      <p className="flex items-center gap-2 text-[0.8125rem]">
                         <span className={cn('truncate font-mono', !s.enabled && 'text-subtle line-through')}>
                           {s.name}
                         </span>
                         {s.scope && (
-                          <span className="shrink-0 rounded-full bg-sel px-1.5 py-px text-[10.5px] text-muted">
+                          <span className="shrink-0 rounded-full bg-sel px-1.5 py-px text-[0.65625rem] text-muted">
                             {scopeName(s.scope)}
                           </span>
                         )}
                       </p>
-                      {s.description && <p className="line-clamp-2 text-[12px] text-muted">{s.description}</p>}
+                      {s.description && <p className="line-clamp-2 text-[0.75rem] text-muted">{s.description}</p>}
                     </div>
                   </li>
                 ))}

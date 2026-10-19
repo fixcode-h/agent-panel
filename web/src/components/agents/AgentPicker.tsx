@@ -42,7 +42,7 @@ export function AgentPicker({
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('搜索 Agent')}
-          className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[13px] outline-none placeholder:text-subtle"
+          className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
         />
         <div className="max-h-72 overflow-y-auto">
           {groups.map((g) => (
@@ -53,7 +53,7 @@ export function AgentPicker({
                   <AgentAvatar icon={a.icon} cli={a.cli} size="sm" dim={!a.enabled} />
                   <span className="flex min-w-0 flex-col">
                     <span className="truncate">{a.name}</span>
-                    <span className="truncate font-mono text-[11px] text-subtle">{modelOf(a)}</span>
+                    <span className="truncate font-mono text-[0.6875rem] text-subtle">{modelOf(a)}</span>
                   </span>
                 </PopoverClose>
               ))}

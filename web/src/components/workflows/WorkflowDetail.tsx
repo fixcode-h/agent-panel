@@ -297,14 +297,14 @@ export function WorkflowDetail({
         aside={
           <>
             <section className="rounded-xl border bg-card p-4">
-              <h3 className="mb-3 text-[13px] font-semibold">{t('团队结构')}</h3>
+              <h3 className="mb-3 text-[0.8125rem] font-semibold">{t('团队结构')}</h3>
               {main ? (
                 <button
                   onClick={() => go({ page: 'agents', id: main.id })}
                   className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg bg-accent-soft p-2 text-left"
                 >
                   <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
-                  <span className="flex-1 truncate text-[13px] font-medium">{main.name}</span>
+                  <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
                   <Crown className="h-3.5 w-3.5 text-accent" />
                 </button>
               ) : (
@@ -316,7 +316,7 @@ export function WorkflowDetail({
                     key={a.id}
                     title={responsibility || undefined}
                     onClick={() => go({ page: 'agents', id: a.id })}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] text-muted hover:bg-sel hover:text-fg"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] text-muted hover:bg-sel hover:text-fg"
                   >
                     <AgentAvatar icon={a.icon} cli={a.cli} size="xs" dim={!a.enabled} />
                     <span className="truncate">{a.name}</span>

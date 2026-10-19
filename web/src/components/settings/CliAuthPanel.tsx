@@ -84,13 +84,13 @@ export function CliAuthPanel({
               </Button>
             </div>
             {cur ? (
-              <p className="text-[12.5px] leading-relaxed text-subtle">
+              <p className="text-[0.78125rem] leading-relaxed text-subtle">
                 <span className="font-mono">{cur.baseUrl || t('默认地址')}</span>
                 {' · '}
                 {cur.models.length ? t('{n} 个模型', { n: cur.models.length }) : t('还没有填模型，去 API 配置里添加')}
               </p>
             ) : (
-              <p className="text-[12.5px] leading-relaxed text-warning">
+              <p className="text-[0.78125rem] leading-relaxed text-warning">
                 {fitting.length
                   ? t('还没选 API，现在会按 CLI 自己的登录运行')
                   : t('还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的', {
@@ -189,8 +189,8 @@ function AccountList({ def }: { def: CliDefinition }) {
       <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-field/40 p-3">
         <User className="h-4 w-4 shrink-0 text-subtle" />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-[13.5px] font-medium">{label}</p>
-          <p className="text-[12px] text-subtle">
+          <p className="truncate text-[0.84375rem] font-medium">{label}</p>
+          <p className="text-[0.75rem] text-subtle">
             {data.live.loggedIn
               ? data.unsaved
                 ? t('这个账号还没保存，保存后才能切换回来')
@@ -233,7 +233,7 @@ function AccountList({ def }: { def: CliDefinition }) {
         )}
       </div>
       {def.auth?.accountNote && (
-        <p className="rounded-xl border border-warning/40 bg-warning/8 px-3 py-2.5 text-[12.5px] leading-relaxed">
+        <p className="rounded-xl border border-warning/40 bg-warning/8 px-3 py-2.5 text-[0.78125rem] leading-relaxed">
           {def.auth.accountNote}
         </p>
       )}
@@ -272,7 +272,7 @@ function AccountList({ def }: { def: CliDefinition }) {
                     maxLength={60}
                     onChange={(e) => setRenaming({ id: a.id, name: e.target.value })}
                     aria-label={t('账号名称')}
-                    className="h-8 min-w-0 flex-1 text-[13px]"
+                    className="h-8 min-w-0 flex-1 text-[0.8125rem]"
                   />
                   <Button size="icon-sm" type="submit" aria-label={t('保存名称')}>
                     <Check className="h-3.5 w-3.5" />
@@ -290,9 +290,9 @@ function AccountList({ def }: { def: CliDefinition }) {
               ) : (
                 <>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] font-medium">{a.name}</span>
+                    <span className="block truncate text-[0.84375rem] font-medium">{a.name}</span>
                     {a.email && a.email !== a.name && (
-                      <span className="block truncate text-[12px] text-subtle">{a.email}</span>
+                      <span className="block truncate text-[0.75rem] text-subtle">{a.email}</span>
                     )}
                   </span>
                   {!a.active && (
@@ -336,7 +336,7 @@ function AccountList({ def }: { def: CliDefinition }) {
           ))}
         </ul>
       )}
-      <p className="text-[12px] leading-relaxed text-subtle">
+      <p className="text-[0.75rem] leading-relaxed text-subtle">
         {t('账号的登录凭据只保存在本机的数据目录里。切换账号只替换凭据，{cli} 的其他配置、Skill 和会话都不变。', {
           cli: def.name,
         })}
@@ -357,7 +357,7 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
   return (
     <div
       className={cn(
-        'flex flex-col gap-2 rounded-xl border p-3 text-[13px]',
+        'flex flex-col gap-2 rounded-xl border p-3 text-[0.8125rem]',
         job.status === 'failed' && 'border-danger/40 bg-danger/5',
         job.status === 'done' && 'border-success/40 bg-success/5',
       )}
@@ -425,18 +425,18 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
             onChange={(e) => setCode(e.target.value)}
             placeholder={t('粘贴浏览器里显示的授权码')}
             aria-label={t('授权码')}
-            className="h-8 min-w-0 flex-1 font-mono text-[12.5px]"
+            className="h-8 min-w-0 flex-1 font-mono text-[0.78125rem]"
           />
           <Button size="sm" type="submit" disabled={!code.trim()}>
             {t('提交')}
           </Button>
         </form>
       )}
-      {job.error && <p className="text-[12.5px] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>}
+      {job.error && <p className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>}
       {job.output.trim() && (
         <pre
           ref={box}
-          className="max-h-28 overflow-auto rounded-lg bg-field px-2.5 py-2 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]"
+          className="max-h-28 overflow-auto rounded-lg bg-field px-2.5 py-2 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]"
         >
           {job.output.trim()}
         </pre>

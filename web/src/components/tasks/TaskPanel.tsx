@@ -44,7 +44,7 @@ import { DiffDialog } from './DiffDialog'
 
 /** 右栏块里的小操作（压缩上下文、审查改动） */
 const panelAction =
-  'mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[12px] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60'
+  'mt-3 inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-2.5 py-1 text-[0.75rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-60'
 
 /** 任务用到的 CLI 里打开了「显示额度」的，每个显示一组额度 */
 function LimitsSection({ task }: { task: Task }) {
@@ -72,7 +72,7 @@ function CliLimitRows({ cli, named }: { cli: string; named: boolean }) {
   const { data, error } = useCliLimits(cli, true)
   return (
     <div className="flex flex-col gap-2">
-      {named && <p className="text-[12px] font-medium">{getCli(cli)?.name}</p>}
+      {named && <p className="text-[0.75rem] font-medium">{getCli(cli)?.name}</p>}
       {data?.windows.length ? (
         <LimitBars data={data} compact />
       ) : (
@@ -131,7 +131,7 @@ function Section({
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex w-full cursor-pointer items-center gap-1.5 px-3.5 py-2.5 text-left text-[13px] font-semibold"
+        className="flex w-full cursor-pointer items-center gap-1.5 px-3.5 py-2.5 text-left text-[0.8125rem] font-semibold"
       >
         {title}
         <ChevronDown className={cn('h-3.5 w-3.5 text-subtle transition-transform', !open && '-rotate-90')} />
@@ -269,7 +269,7 @@ export function TaskPanel({
                     >
                       <span
                         className={cn(
-                          'text-[13px]',
+                          'text-[0.8125rem]',
                           st.status === 'pending' ? 'text-muted' : 'text-fg',
                           st.status === 'running' && 'font-medium',
                         )}
@@ -331,7 +331,7 @@ export function TaskPanel({
                             )}
                             {stepDuration(k, now) && (
                               <span
-                                className="shrink-0 font-mono text-[11px] text-subtle tabular-nums"
+                                className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
                                 title={spanTitle(k)}
                               >
                                 {stepDuration(k, now)}
@@ -568,7 +568,7 @@ function MainRow({
         title={t('主 Agent 评估子 Agent 的结果、决定流程怎么走，最后整理结果')}
         className="-mx-1.5 -my-0.5 flex min-w-0 flex-1 flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
       >
-        <span className={cn('flex items-center gap-1.5 text-[13px]', step.status === 'running' && 'font-medium')}>
+        <span className={cn('flex items-center gap-1.5 text-[0.8125rem]', step.status === 'running' && 'font-medium')}>
           <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />
           {t('主 Agent')}
         </span>
@@ -614,7 +614,7 @@ function TimeSummary({ task, now }: { task: Task; now: number }) {
     <dl className="mb-3 grid grid-cols-3 gap-2 rounded-lg bg-field/60 px-2.5 py-2">
       {cells.map(([k, v, cls, tip]) => (
         <div key={k} className="flex min-w-0 flex-col gap-0.5" title={tip}>
-          <dt className="text-[11px] text-subtle">{k}</dt>
+          <dt className="text-[0.6875rem] text-subtle">{k}</dt>
           <dd className={cn('truncate font-mono text-xs font-medium tabular-nums', cls)}>{v}</dd>
         </div>
       ))}
@@ -643,7 +643,7 @@ function TurnRows({
         (task.mode === 'workflow' || task.todos.length > 0) && 'mt-3 border-t pt-2.5',
       )}
     >
-      <span className="text-[11px] text-subtle">
+      <span className="text-[0.6875rem] text-subtle">
         {label}
         {task.turns.length > turns.length &&
           t('（最近 {n} 轮，共 {total} 轮）', { n: turns.length, total: task.turns.length })}
@@ -663,7 +663,7 @@ function TurnRows({
                 >
                   {x.title || t('第 {n} 轮', { n: task.turns.length - turns.length + i + 1 })}
                 </span>
-                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-subtle">
+                <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.6875rem] text-subtle">
                   {a && task.mode === 'workflow' && (
                     <span className="flex items-center gap-1">
                       <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
@@ -718,7 +718,7 @@ function Stats({
   const tokens = u.inputTokens + u.outputTokens
   if (ms < 1000 && !tokens) return null
   const rate = u.inputTokens > 0 ? (u.cacheReadTokens ?? 0) / u.inputTokens : 0
-  const item = 'flex items-center gap-1 whitespace-nowrap font-mono text-[11px] text-subtle tabular-nums'
+  const item = 'flex items-center gap-1 whitespace-nowrap font-mono text-[0.6875rem] text-subtle tabular-nums'
   return (
     <>
       {ms >= 1000 && (
@@ -800,7 +800,7 @@ function ContextRow({
           style={{ width: `${Math.max(p, 1)}%` }}
         />
       </div>
-      <span className="flex flex-wrap gap-x-1.5 font-mono text-[11px] text-subtle">
+      <span className="flex flex-wrap gap-x-1.5 font-mono text-[0.6875rem] text-subtle">
         <span>
           {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
         </span>
@@ -875,7 +875,7 @@ function TokenUsage({ usage: u, tps, extra }: { usage: Usage; tps: number; extra
                 <dt className="text-subtle">{k}</dt>
                 <dd className="font-mono text-muted tabular-nums">
                   {v}
-                  {p && <span className="ml-1 text-[11px] text-subtle">{p}</span>}
+                  {p && <span className="ml-1 text-[0.6875rem] text-subtle">{p}</span>}
                 </dd>
               </div>
             ))}
@@ -901,7 +901,7 @@ function Todos({ todos, byAgent }: { todos: TaskTodo[]; byAgent?: Map<string, { 
       {[...groups].map(([id, list]) => (
         <div key={id} className="flex flex-col gap-1">
           {byAgent && (
-            <span className="text-[11px] text-subtle">
+            <span className="text-[0.6875rem] text-subtle">
               {t('{name} 的待办', { name: byAgent.get(id)?.name ?? 'Agent' })}
             </span>
           )}

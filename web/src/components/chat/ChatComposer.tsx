@@ -174,7 +174,7 @@ export function ChatComposer({
         aria-label={id ? undefined : label}
         className={cn(
           'block w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none',
-          sm ? 'max-h-[200px] px-3.5 pt-3 pb-1 text-[13.5px]' : 'max-h-48 px-4 pt-3.5 text-[14.5px]',
+          sm ? 'max-h-[200px] px-3.5 pt-3 pb-1 text-[0.84375rem]' : 'max-h-48 px-4 pt-3.5 text-[0.90625rem]',
         )}
       />
       <div className={cn('flex min-w-0 items-center gap-1', sm ? 'px-2 pb-2' : 'px-2.5 pb-2.5')}>
@@ -203,7 +203,7 @@ export function ChatComposer({
                   disabled={sending}
                   title={t('等这一轮结束再发')}
                   className={cn(
-                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-[12.5px] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
+                    'inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-[0.78125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:opacity-40',
                     sm ? 'h-7' : 'h-8',
                   )}
                 >

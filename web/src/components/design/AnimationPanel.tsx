@@ -343,7 +343,7 @@ export function AnimationPanel({
     'grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg'
 
   return (
-    <section aria-label={t('动画')} className="flex h-[260px] shrink-0 flex-col border-t bg-card text-[12px]">
+    <section aria-label={t('动画')} className="flex h-[260px] shrink-0 flex-col border-t bg-card text-[0.75rem]">
       <div className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b px-2">
         <Clapperboard className="ml-1 h-4 w-4 shrink-0 text-subtle" />
         {mine.length > 0 && anim ? (
@@ -356,7 +356,7 @@ export function AnimationPanel({
               seek(0)
             }}
             options={mine.map((a) => ({ value: a.name, label: a.name }))}
-            className="h-7 w-[150px] shrink-0 rounded-md px-2 text-[12px]"
+            className="h-7 w-[150px] shrink-0 rounded-md px-2 text-[0.75rem]"
           />
         ) : (
           <span className="shrink-0 text-subtle">{t('还没有动画')}</span>
@@ -376,7 +376,7 @@ export function AnimationPanel({
               {presetGroups.map((g, gi) => (
                 <div key={g}>
                   {gi > 0 && <MenuSeparator />}
-                  <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">{groupLabel(g)}</div>
+                  <div className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{groupLabel(g)}</div>
                   {Object.entries(ANIM_PRESETS)
                     .filter(([, p]) => p.group === g)
                     .map(([k]) => (
@@ -407,14 +407,14 @@ export function AnimationPanel({
                 setCur(v)
               }}
               onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[11.5px] outline-none focus:border-focus"
+              className="h-7 w-[120px] shrink-0 rounded-md border border-line bg-field px-1.5 font-mono text-[0.71875rem] outline-none focus:border-focus"
             />
             <Select
               aria-label={t('触发方式')}
               value={anim.trigger}
               onChange={(e) => update((a) => ({ ...a, trigger: e.target.value as AnimTrigger }))}
               options={triggers.map((x) => ({ value: x, label: triggerLabel(x) }))}
-              className="h-7 w-[118px] shrink-0 rounded-md px-2 text-[12px]"
+              className="h-7 w-[118px] shrink-0 rounded-md px-2 text-[0.75rem]"
             />
             {(anim.trigger === 'hover' || anim.trigger === 'click') && (
               <Select
@@ -426,7 +426,7 @@ export function AnimationPanel({
                   { value: '', label: t('第一条轨道的控件') },
                   ...[...names].map((n) => ({ value: n, label: n })),
                 ]}
-                className="h-7 w-[130px] shrink-0 rounded-md px-2 text-[12px]"
+                className="h-7 w-[130px] shrink-0 rounded-md px-2 text-[0.75rem]"
               />
             )}
             <span className="shrink-0 text-subtle" title={t('播放几遍，0 是一直循环')}>
@@ -489,7 +489,7 @@ export function AnimationPanel({
             >
               {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
-            <span className="w-14 shrink-0 text-right font-mono text-[11.5px] text-subtle tabular-nums">
+            <span className="w-14 shrink-0 text-right font-mono text-[0.71875rem] text-subtle tabular-nums">
               {time.toFixed(2)}s
             </span>
           </>
@@ -500,9 +500,9 @@ export function AnimationPanel({
       </div>
 
       {!anim ? (
-        <div className="grid flex-1 place-items-center px-6 text-center text-[12.5px] leading-relaxed text-subtle">
+        <div className="grid flex-1 place-items-center px-6 text-center text-[0.78125rem] leading-relaxed text-subtle">
           <div className="max-w-[460px]">
-            <p className="mb-1 text-[13px] font-medium text-fg">
+            <p className="mb-1 text-[0.8125rem] font-medium text-fg">
               {web ? t('给网页加上动效') : t('给界面加动画（UE 的 Widget Animation）')}
             </p>
             {t(
@@ -514,7 +514,7 @@ export function AnimationPanel({
         <div className="flex min-h-0 flex-1">
           {/* 轨道列表 */}
           <div className="flex w-[200px] shrink-0 flex-col border-r">
-            <div className="flex h-7 shrink-0 items-center border-b px-2 text-[11px] text-subtle">{t('轨道')}</div>
+            <div className="flex h-7 shrink-0 items-center border-b px-2 text-[0.6875rem] text-subtle">{t('轨道')}</div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               {anim.tracks.map((tr, i) => (
                 <div
@@ -590,7 +590,7 @@ export function AnimationPanel({
                         style={{ left: `${(x / span) * 100}%` }}
                       >
                         {major && (
-                          <span className="absolute -top-3.5 left-1 font-mono text-[10px] text-subtle tabular-nums">
+                          <span className="absolute -top-3.5 left-1 font-mono text-[0.625rem] text-subtle tabular-nums">
                             {x.toFixed(1)}
                           </span>
                         )}
@@ -647,7 +647,7 @@ export function AnimationPanel({
                 </div>
               </div>
               {!anim.tracks.length && (
-                <p className="py-4 text-center text-[12px] text-subtle">
+                <p className="py-4 text-center text-[0.75rem] text-subtle">
                   {t('选中控件，用左边的「加轨道」或上面的「预设」开始')}
                 </p>
               )}
@@ -706,7 +706,7 @@ export function AnimationPanel({
                     value={selKey.ease}
                     onChange={(e) => setKey(sel!.track, sel!.key, { ease: e.target.value as Ease })}
                     options={EASES.map((x) => ({ value: x, label: easeLabel(x) }))}
-                    className="h-7 w-[140px] shrink-0 rounded-md px-2 text-[12px]"
+                    className="h-7 w-[140px] shrink-0 rounded-md px-2 text-[0.75rem]"
                   />
                   <button
                     aria-label={t('删除关键帧')}

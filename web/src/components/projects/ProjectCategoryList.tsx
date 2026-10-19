@@ -29,11 +29,11 @@ export function ProjectCategoryList() {
   }
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[13px] leading-relaxed text-subtle">
+      <p className="text-[0.8125rem] leading-relaxed text-subtle">
         {t('项目选了分类后默认使用分类的工作流；项目也可以在项目设置里单独指定。')}
       </p>
       {projectCategories.length === 0 && (
-        <p className="rounded-xl border border-dashed p-6 text-center text-[13px] text-subtle">
+        <p className="rounded-xl border border-dashed p-6 text-center text-[0.8125rem] text-subtle">
           {t('还没有项目分类。')}
         </p>
       )}
@@ -84,7 +84,7 @@ function CategoryRow({ category }: { category: ProjectCategory }) {
     <section className="flex flex-col gap-3 rounded-xl border bg-card p-4">
       <div className="flex items-center gap-2">
         <Layers className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.8} />
-        <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">{draft.name || t('未命名分类')}</span>
+        <span className="min-w-0 flex-1 truncate text-[0.84375rem] font-medium">{draft.name || t('未命名分类')}</span>
         <span className="shrink-0 text-xs text-subtle">{t('{n} 个项目', { n: members })}</span>
         <Button
           variant="ghost"

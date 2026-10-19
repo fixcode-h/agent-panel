@@ -99,7 +99,7 @@ function DirBrowser({
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[80vh] w-[calc(100%-2rem)] max-w-[560px] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <div className="flex items-center gap-3 border-b px-5 py-4">
-            <D.Title className="text-[15px] font-semibold">{t('选择项目目录')}</D.Title>
+            <D.Title className="text-[0.9375rem] font-semibold">{t('选择项目目录')}</D.Title>
             <D.Description className="sr-only">{t('浏览本机目录，选中项目所在的文件夹')}</D.Description>
             <D.Close className="ml-auto rounded-md p-1 text-muted hover:bg-sel hover:text-fg" aria-label={t('关闭')}>
               <X className="h-4 w-4" />
@@ -125,7 +125,7 @@ function DirBrowser({
             <Input
               value={jump}
               onChange={(e) => setJump(e.target.value)}
-              className="h-9 font-mono text-[12.5px]"
+              className="h-9 font-mono text-[0.78125rem]"
               aria-label={t('路径')}
             />
           </form>
@@ -143,7 +143,7 @@ function DirBrowser({
                     aria-current={cur ? 'location' : undefined}
                     title={r.path}
                     className={cn(
-                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[12.5px] transition-colors',
+                      'inline-flex cursor-pointer items-center gap-1.5 rounded-md border px-2.5 py-1 text-[0.78125rem] transition-colors',
                       cur ? 'border-accent/50 bg-accent/12 text-fg' : 'text-muted hover:bg-sel hover:text-fg',
                     )}
                   >
@@ -156,7 +156,7 @@ function DirBrowser({
           )}
           <div className="min-h-[280px] flex-1 overflow-y-auto p-2">
             {loading && !listing && <Loader2 className="mx-auto mt-10 h-5 w-5 animate-spin text-subtle" />}
-            {error && <p className="px-3 py-2 text-[13px] text-danger">{error}</p>}
+            {error && <p className="px-3 py-2 text-[0.8125rem] text-danger">{error}</p>}
             {creating !== null && (
               <div className="mb-1">
                 <div className="flex items-center gap-2.5 rounded-lg bg-sel/60 px-3 py-1.5">
@@ -182,10 +182,10 @@ function DirBrowser({
                     onBlur={() => !creating.trim() && !busy && setCreating(null)}
                     placeholder={t('新文件夹名，回车创建')}
                     aria-label={t('新文件夹名')}
-                    className="h-7 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 text-[13px] outline-none"
+                    className="h-7 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 text-[0.8125rem] outline-none"
                   />
                 </div>
-                {createError && <p className="px-3 pt-1 text-[12px] text-danger">{createError}</p>}
+                {createError && <p className="px-3 pt-1 text-[0.75rem] text-danger">{createError}</p>}
               </div>
             )}
             {listing?.dirs.map((d) => (
@@ -197,7 +197,7 @@ function DirBrowser({
                 onClick={() => go(d.path)}
                 onDoubleClick={() => onPick(d.path)}
                 className={cn(
-                  'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] hover:bg-sel',
+                  'flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[0.8125rem] hover:bg-sel',
                   d.path === fresh && 'bg-accent/12 text-fg',
                 )}
               >
@@ -206,7 +206,7 @@ function DirBrowser({
               </button>
             ))}
             {listing && listing.dirs.length === 0 && !error && creating === null && (
-              <p className="px-3 py-8 text-center text-[13px] text-subtle">{t('这个目录下没有子目录')}</p>
+              <p className="px-3 py-8 text-center text-[0.8125rem] text-subtle">{t('这个目录下没有子目录')}</p>
             )}
           </div>
           <div className="flex items-center gap-2 border-t bg-panel px-5 py-3">
@@ -297,7 +297,7 @@ export function DirPicker({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={t('例如 ~/code/my-app')}
-          className="font-mono text-[13px]"
+          className="font-mono text-[0.8125rem]"
           aria-label={t('本地目录')}
         />
         <Button variant="secondary" className="h-10" onClick={() => setBrowsing(true)}>

@@ -355,9 +355,9 @@ function AnchorPick({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-field px-1.5 text-[12px] hover:border-line-strong">
+        <button className="flex h-7 cursor-pointer items-center gap-1.5 rounded-md border border-line bg-field px-1.5 text-[0.75rem] hover:border-line-strong">
           <AnchorIcon min={[a.Minimum.X, a.Minimum.Y]} max={[a.Maximum.X, a.Maximum.Y]} />
-          <span className="font-mono text-[11px] text-muted">
+          <span className="font-mono text-[0.6875rem] text-muted">
             ({a.Minimum.X},{a.Minimum.Y}) ({a.Maximum.X},{a.Maximum.Y})
           </span>
           <ChevronDown className="h-3 w-3 text-subtle" />
@@ -381,7 +381,7 @@ function AnchorPick({
             </button>
           ))}
         </div>
-        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[11.5px] text-muted">
+        <div className="mt-2 flex flex-col gap-1 border-t pt-2 text-[0.71875rem] text-muted">
           <label className="flex cursor-pointer items-center gap-1.5">
             <input type="checkbox" checked={move} onChange={(e) => setMove(e.target.checked)} />
             {t('同时移到锚点（Ctrl）')}
@@ -430,7 +430,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
       <button
         onClick={() => setOpen(!open)}
         aria-expanded={open}
-        className="flex h-8 w-full cursor-pointer items-center gap-1 bg-panel px-2 text-[11.5px] font-medium tracking-wide text-muted hover:text-fg"
+        className="flex h-8 w-full cursor-pointer items-center gap-1 bg-panel px-2 text-[0.71875rem] font-medium tracking-wide text-muted hover:text-fg"
       >
         <ChevronDown className={cn('h-3 w-3 transition-transform', !open && '-rotate-90')} />
         {title}
@@ -551,7 +551,7 @@ export function Details({
             placeholder={images.length ? t('选择图片') : t('还没有图片')}
             onChange={(e) => set(s.path, e.target.value ? `img:${e.target.value}` : '')}
             options={[{ value: '', label: t('无') }, ...images.map((i) => ({ value: i.id, label: i.name }))]}
-            className="h-7 rounded-md px-2 text-[12px]"
+            className="h-7 rounded-md px-2 text-[0.75rem]"
           />
         )
         break
@@ -563,14 +563,14 @@ export function Details({
             placeholder={components.length ? t('选择子控件') : t('先提取一个子控件')}
             onChange={(e) => set(s.path, e.target.value)}
             options={components.map((c) => ({ value: c, label: c }))}
-            className="h-7 rounded-md px-2 text-[12px]"
+            className="h-7 rounded-md px-2 text-[0.75rem]"
           />
         )
         break
       case 'brush':
         return (
           <div key={s.path} className="border-t border-line/60 px-3 py-1.5 first:border-t-0">
-            <p className="mb-1 text-[12px] text-subtle">{s.path.replace(/^WidgetStyle\./, '')}</p>
+            <p className="mb-1 text-[0.75rem] text-subtle">{s.path.replace(/^WidgetStyle\./, '')}</p>
             <BrushInput value={v} images={images} url={url} onChange={(x) => set(s.path, x)} />
           </div>
         )
@@ -589,12 +589,12 @@ export function Details({
   const gs = (p: string) => getPath(slot, p)
 
   return (
-    <div className="text-[12px]">
+    <div className="text-[0.75rem]">
       {/* 名字和类型固定在属性面板顶上，往下翻属性时一直能看到选的是哪个控件 */}
       <div className="sticky top-0 z-10 flex items-center gap-2 border-b bg-card px-3 py-2">
         {Icon && <Icon className="h-4 w-4 shrink-0 text-accent" />}
-        <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] font-medium">{widget.Name}</span>
-        <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[10.5px] text-subtle">{widget.Type}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[0.78125rem] font-medium">{widget.Name}</span>
+        <span className="shrink-0 rounded bg-sel px-1.5 py-px text-[0.65625rem] text-subtle">{widget.Type}</span>
       </div>
       {widget.Type === 'UserWidget' && (
         <Section title={t('子控件')}>
@@ -789,7 +789,7 @@ export function Details({
           title={bp ? t('外观（{device}）', { device: device === 'tablet' ? t('平板') : t('手机') }) : t('外观')}
         >
           {bp && (
-            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-[11.5px] leading-relaxed text-accent">
+            <div className="mx-3 my-1.5 flex items-center gap-2 rounded-md bg-accent-soft/50 px-2 py-1.5 text-[0.71875rem] leading-relaxed text-accent">
               <span className="flex-1">
                 {t('正在改{device}宽度下的样式，只影响这个宽度，桌面不变', {
                   device: device === 'tablet' ? t('平板') : t('手机'),
@@ -821,7 +821,7 @@ export function Details({
         {/* 平板、手机上也能单独隐藏（Visibility 选 Collapsed） */}
         {(web ? COMMON.slice(0, 2) : COMMON).map((s) => field(s, getLook, setLook))}
       </Section>
-      <p className="px-3 py-3 text-[11px] leading-relaxed text-subtle">{WIDGETS[widget.Type]?.hint}</p>
+      <p className="px-3 py-3 text-[0.6875rem] leading-relaxed text-subtle">{WIDGETS[widget.Type]?.hint}</p>
     </div>
   )
 }

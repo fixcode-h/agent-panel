@@ -36,6 +36,8 @@ mkdirSync(out, { recursive: true })
 // 直接用 node 跑 vite：Windows 上 npx 是 .cmd，execFileSync 启动不了
 run(process.execPath, [path.join(root, 'node_modules/vite/bin/vite.js'), 'build'])
 cpSync(path.join(root, 'dist'), path.join(out, 'dist'), { recursive: true })
+// 内置的 Maple Mono 是 SIL OFL 字体，许可证要跟着字体一起发
+cpSync(path.join(root, 'web/src/assets/fonts/maple-mono-nl/OFL.txt'), path.join(out, 'dist/assets/MapleMono-OFL.txt'))
 const files = (p) => (statSync(p).isDirectory() ? readdirSync(p).flatMap((f) => files(path.join(p, f))) : [p])
 // 2. 服务端打成一个文件，依赖全部内联
 await build({

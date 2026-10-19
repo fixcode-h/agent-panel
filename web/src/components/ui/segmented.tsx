@@ -22,7 +22,7 @@ export function Segmented<T extends string>({
           disabled={o.disabled}
           onClick={() => onChange(o.id)}
           className={cn(
-            'h-8 cursor-pointer rounded-md px-3 text-[13px] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
+            'h-8 cursor-pointer rounded-md px-3 text-[0.8125rem] transition-colors disabled:cursor-not-allowed disabled:opacity-40',
             value === o.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
           )}
         >

@@ -65,7 +65,7 @@ export function MessageMeta({
   return (
     <div
       className={cn(
-        'flex items-center gap-0.5 text-[11.5px] text-subtle transition-opacity',
+        'flex items-center gap-0.5 text-[0.71875rem] text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
         !always && 'opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100',
       )}
@@ -106,8 +106,8 @@ export function UserMessage({
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
-              ? 'rounded-br-md px-3.5 py-2 text-[13px] leading-relaxed'
-              : 'px-4 py-2.5 text-[14.5px] leading-relaxed',
+              ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
+              : 'px-4 py-2.5 text-[0.90625rem] leading-relaxed',
           )}
         >
           {text}
@@ -164,13 +164,15 @@ export function AnswerMessage({
         className={cn(
           'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
           size === 'sm'
-            ? 'rounded-br-md px-3.5 py-2 text-[13px] leading-relaxed'
-            : 'px-4 py-2.5 text-[14.5px] leading-relaxed',
+            ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
+            : 'px-4 py-2.5 text-[0.90625rem] leading-relaxed',
         )}
       >
         {answers.map((a, i) => (
           <div key={i} className="flex min-w-0 flex-col">
-            <span className={cn('text-muted', size === 'sm' ? 'text-[11.5px]' : 'text-[12.5px]')}>{a.question}</span>
+            <span className={cn('text-muted', size === 'sm' ? 'text-[0.71875rem]' : 'text-[0.78125rem]')}>
+              {a.question}
+            </span>
             <span className="whitespace-pre-wrap">{a.answer}</span>
           </div>
         ))}

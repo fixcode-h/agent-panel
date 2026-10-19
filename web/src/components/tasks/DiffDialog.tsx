@@ -104,7 +104,7 @@ export function DiffDialog({
           className="fixed top-1/2 left-1/2 z-50 flex h-[min(760px,calc(100dvh-2rem))] w-[min(1000px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <D.Title className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium" title={path ?? ''}>
+            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={path ?? ''}>
               {path}
             </D.Title>
             {stamp && (
@@ -153,19 +153,19 @@ export function DiffDialog({
           </header>
           <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
             {error ? (
-              <p className="p-6 text-[13px] text-danger">{error}</p>
+              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
             ) : !diff || diff.path !== path ? (
               <div className="flex h-full items-center justify-center text-subtle">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
             ) : !diff.diff.trim() ? (
-              <p className="p-6 text-[13px] text-subtle">
+              <p className="p-6 text-[0.8125rem] text-subtle">
                 {diff.git
                   ? t('和任务开始时相比没有差异。')
                   : t('项目不是 git 仓库，Agent 也没有给出这个文件的改动内容。')}
               </p>
             ) : (
-              <pre className="min-w-max py-2 font-mono text-[12.5px] leading-[1.6]">
+              <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
                 {numbered(lines).map(({ l, cls, a, b }, i) => (
                   <div key={i} className={cn('flex whitespace-pre', cls)}>
                     {/* 改前、改后的行号，参照 Claude Code 的差异显示 */}

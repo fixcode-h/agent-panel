@@ -11,7 +11,7 @@ export function LiveStats({ task, agentIds, className }: { task: Task; agentIds?
   const total = task.usage.inputTokens + task.usage.outputTokens
   if (!tps && !total) return null
   return (
-    <span className={cn('flex items-center gap-2 font-mono text-[11px] text-subtle tabular-nums', className)}>
+    <span className={cn('flex items-center gap-2 font-mono text-[0.6875rem] text-subtle tabular-nums', className)}>
       {tps > 0 && (
         <span className="flex items-center gap-1 text-accent" title={t('实时输出速度')}>
           <Zap className="h-3 w-3" />

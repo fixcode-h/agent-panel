@@ -400,7 +400,7 @@ export function TaskView({
                 scrolled ? 'border-line' : 'border-transparent',
               )}
             >
-              <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[13.5px]">
+              <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
                 <button
                   onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
                   className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
@@ -436,7 +436,7 @@ export function TaskView({
                 {task.simulated && (
                   <span
                     title={t('没有真正调用 CLI，输出是示例')}
-                    className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[11px] text-warning md:inline-flex"
+                    className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[0.6875rem] text-warning md:inline-flex"
                   >
                     <FlaskConical className="h-3 w-3" />
                     {t('模拟')}
@@ -445,7 +445,7 @@ export function TaskView({
                 {task.imported && (
                   <span
                     title={t('从导出的文件导入，只能查看')}
-                    className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[11px] text-accent md:inline-flex"
+                    className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent md:inline-flex"
                   >
                     <FileInput className="h-3 w-3" />
                     {t('导入')}
@@ -631,7 +631,7 @@ export function TaskView({
                     {running &&
                       task.mode === 'chat' &&
                       (blocks.at(-1)?.kind === 'turn' ? (
-                        <div className="flex items-center gap-2 text-[13px] text-muted">
+                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
                           {t('{name} 正在回复', { name: chatLabel })}
                           <LiveStats task={task} agentIds={[task.agentId]} />
@@ -639,7 +639,7 @@ export function TaskView({
                       ) : (
                         // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
                         <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
-                          <div className="flex items-center gap-2 text-[13px] text-muted">
+                          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                             <Loader2 className="h-4 w-4 animate-spin text-accent" />
                             {t('思考中…')}
                             <LiveStats task={task} agentIds={[task.agentId]} />
@@ -647,7 +647,7 @@ export function TaskView({
                         </PendingReply>
                       ))}
                     {running && task.mode === 'workflow' && runningSteps.length === 0 && (
-                      <div className="flex items-center gap-2 text-[13px] text-muted">
+                      <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
                         {t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
                         <LiveStats task={task} />
@@ -788,7 +788,7 @@ export function TaskView({
           >
             {panel && (
               <div className="mb-2 flex items-center justify-between xl:hidden">
-                <span className="px-1 text-[13px] font-semibold">{t('任务面板')}</span>
+                <span className="px-1 text-[0.8125rem] font-semibold">{t('任务面板')}</span>
                 <Button
                   autoFocus
                   variant="ghost"
@@ -868,7 +868,7 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
   return (
     <div className="mx-auto flex max-w-(--content-w) items-center gap-3 rounded-2xl border border-line-strong bg-card px-4 py-3 shadow-card">
       <FileInput className="h-4 w-4 shrink-0 text-accent" />
-      <span className="min-w-0 flex-1 text-[13px] text-muted">
+      <span className="min-w-0 flex-1 text-[0.8125rem] text-muted">
         {t('这是从文件导入的任务（{at} 导出{app}），只能查看，不能继续执行。', {
           at: (info.exportedAt || info.at).slice(0, 16).replace('T', ' '),
           app: info.app ? t('，面板 {v}', { v: info.app }) : '',
@@ -886,7 +886,7 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
 
 /** 输入框上面一行的提示条（排队的要求、没走完的流程）共用的样式 */
 const barRow =
-  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[13px]'
+  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
 const barIcon =
   'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg disabled:opacity-40'
 
@@ -1081,7 +1081,7 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
         toast.error((e as Error).message)
       })
   return (
-    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[13px]">
+    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[0.8125rem]">
       <GitBranch className={cn('h-3.5 w-3.5 shrink-0', wt.state === 'active' ? 'text-accent' : 'text-subtle')} />
       <span className="min-w-0 flex-1 text-muted">
         {wt.state === 'merged'

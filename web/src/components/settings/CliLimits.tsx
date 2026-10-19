@@ -94,7 +94,7 @@ export function LimitBars({ data, compact }: { data: CliLimits; compact?: boolea
         const tone = pct >= 90 ? 'bg-danger' : pct >= 70 ? 'bg-warning' : 'bg-accent'
         return (
           <div key={w.id} className="flex flex-col gap-1">
-            <div className="flex items-baseline gap-2 text-[12px]">
+            <div className="flex items-baseline gap-2 text-[0.75rem]">
               <span className="text-fg">{windowName(w.id, w.minutes)}</span>
               <span className="font-mono text-muted">{t('已用 {n}%', { n: Math.round(pct) })}</span>
               <span className="ml-auto text-subtle">{resetText(w.resetsAt)}</span>
@@ -105,7 +105,7 @@ export function LimitBars({ data, compact }: { data: CliLimits; compact?: boolea
           </div>
         )
       })}
-      {data.limited && <p className="text-[12px] text-danger">{t('额度已经用完，等重置后才能继续用')}</p>}
+      {data.limited && <p className="text-[0.75rem] text-danger">{t('额度已经用完，等重置后才能继续用')}</p>}
     </div>
   )
 }
@@ -118,7 +118,7 @@ export function CliLimitsPanel({ cli }: { cli: string }) {
       {data?.windows.length ? (
         <LimitBars data={data} />
       ) : (
-        <p className="text-[12px] text-subtle">
+        <p className="text-[0.75rem] text-subtle">
           {error
             ? t('读取失败：{error}', { error })
             : loading
@@ -128,7 +128,7 @@ export function CliLimitsPanel({ cli }: { cli: string }) {
                 : t('没有读到额度（用 API Key 登录时没有额度限制）')}
         </p>
       )}
-      <div className="flex items-center gap-2 text-[11px] text-subtle">
+      <div className="flex items-center gap-2 text-[0.6875rem] text-subtle">
         {data?.plan && <span>{t('套餐：{plan}', { plan: data.plan })}</span>}
         <button
           onClick={reload}

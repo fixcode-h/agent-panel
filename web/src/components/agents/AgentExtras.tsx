@@ -55,7 +55,7 @@ export function SkillsPicker({
           key={n}
           title={has(n) ? undefined : t('当前 CLI 的用户目录里没有这个 Skill（可能在项目里或插件里）')}
           className={cn(
-            'inline-flex h-7 items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 font-mono text-[12px]',
+            'inline-flex h-7 items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 font-mono text-[0.75rem]',
             !has(n) && items.length > 0 && 'border-dashed text-muted',
           )}
         >
@@ -91,7 +91,7 @@ export function SkillsPicker({
               }
             }}
             placeholder={t('搜索，或输入 Skill 名后回车')}
-            className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[13px] outline-none placeholder:text-subtle"
+            className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
           />
           <div className="max-h-72 overflow-y-auto">
             {list.map((n) => {
@@ -102,13 +102,13 @@ export function SkillsPicker({
               return (
                 <button key={n} type="button" className={menuItem} onClick={() => toggle(n)}>
                   <span className="flex min-w-0 flex-1 flex-col">
-                    <span className="flex items-center gap-1.5 truncate font-mono text-[12.5px]">
+                    <span className="flex items-center gap-1.5 truncate font-mono text-[0.78125rem]">
                       {n}
                       {isBundled(n) && (
-                        <span className="rounded bg-sel px-1 font-sans text-[10.5px] text-subtle">{t('自带')}</span>
+                        <span className="rounded bg-sel px-1 font-sans text-[0.65625rem] text-subtle">{t('自带')}</span>
                       )}
                     </span>
-                    {it?.description && <span className="truncate text-[11px] text-subtle">{it.description}</span>}
+                    {it?.description && <span className="truncate text-[0.6875rem] text-subtle">{it.description}</span>}
                   </span>
                   {value.includes(n) && <Check className="h-4 w-4 shrink-0 text-accent" />}
                 </button>
@@ -142,7 +142,7 @@ export function StartersEditor({ value, onChange }: { value: string[]; onChange:
             maxLength={500}
             onChange={(e) => onChange(value.map((x, j) => (j === i ? e.target.value : x)))}
             onBlur={() => !value[i].trim() && onChange(value.filter((_, j) => j !== i))}
-            className="h-9 text-[13px]"
+            className="h-9 text-[0.8125rem]"
           />
           <Button
             variant="ghost"
@@ -167,7 +167,7 @@ export function StartersEditor({ value, onChange }: { value: string[]; onChange:
               }
             }}
             placeholder={t('例如：审查当前分支相对 main 的改动')}
-            className="h-9 text-[13px]"
+            className="h-9 text-[0.8125rem]"
           />
           <Button variant="secondary" size="sm" onClick={add} disabled={!text.trim()}>
             <Plus className="h-3.5 w-3.5" />

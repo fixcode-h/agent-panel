@@ -24,7 +24,7 @@ import { Modal } from '@/components/ui/modal'
 function DiffView({ before, after }: { before: string; after: string }) {
   const rows = useMemo(() => lineDiff(before, after), [before, after])
   return (
-    <pre className="max-h-80 overflow-auto rounded-lg border bg-field py-1.5 font-mono text-[12px] leading-[1.6]">
+    <pre className="max-h-80 overflow-auto rounded-lg border bg-field py-1.5 font-mono text-[0.75rem] leading-[1.6]">
       {rows.map((r, i) => (
         <div
           key={i}
@@ -148,12 +148,12 @@ export function EvolutionCard({ task }: { task: Task }) {
     <section aria-label={t('工作流优化建议')} className="flex flex-col gap-3">
       {evo.changes.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="flex items-center gap-1.5 px-1 text-[12.5px] font-medium text-muted">
+          <h3 className="flex items-center gap-1.5 px-1 text-[0.78125rem] font-medium text-muted">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
             {t('工作流优化建议')}
           </h3>
           <div className="overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
-            {evo.summary && <p className="border-b px-3.5 py-2.5 text-[13px]">{evo.summary}</p>}
+            {evo.summary && <p className="border-b px-3.5 py-2.5 text-[0.8125rem]">{evo.summary}</p>}
             <ul className="flex flex-col divide-y">
               {rows.map((r, i) => (
                 <ChangeRow
@@ -185,7 +185,7 @@ export function EvolutionCard({ task }: { task: Task }) {
       )}
       {evo.framework.length > 0 && (
         <div className="flex flex-col gap-2">
-          <h3 className="flex items-center gap-1.5 px-1 text-[12.5px] font-medium text-muted">
+          <h3 className="flex items-center gap-1.5 px-1 text-[0.78125rem] font-medium text-muted">
             <FileCode2 className="h-3.5 w-3.5" />
             <span className="flex-1">{t('面板框架的问题')}</span>
             <button
@@ -200,12 +200,12 @@ export function EvolutionCard({ task }: { task: Task }) {
           <ul className="flex flex-col divide-y overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
             {evo.framework.map((f, i) => (
               <li key={i} className="flex flex-col gap-1 px-3.5 py-3">
-                <span className="text-[13.5px] font-medium">{f.title}</span>
-                {f.detail && <span className="text-[12.5px] whitespace-pre-wrap text-muted">{f.detail}</span>}
+                <span className="text-[0.84375rem] font-medium">{f.title}</span>
+                {f.detail && <span className="text-[0.78125rem] whitespace-pre-wrap text-muted">{f.detail}</span>}
                 {f.files.length > 0 && (
                   <span className="mt-0.5 flex flex-wrap gap-1.5">
                     {f.files.map((x) => (
-                      <code key={x} className="rounded bg-field px-1.5 py-0.5 font-mono text-[11.5px] text-subtle">
+                      <code key={x} className="rounded bg-field px-1.5 py-0.5 font-mono text-[0.71875rem] text-subtle">
                         {x}
                       </code>
                     ))}
@@ -277,12 +277,12 @@ export function AnalyzeDialog({
         </>
       }
     >
-      <p className="text-[13px] leading-relaxed text-muted">
+      <p className="text-[0.8125rem] leading-relaxed text-muted">
         {t(
           'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。',
         )}
       </p>
-      <label className="flex flex-col gap-1.5 text-[13px]">
+      <label className="flex flex-col gap-1.5 text-[0.8125rem]">
         <span className="font-medium">{t('想重点看什么（可选）')}</span>
         <textarea
           value={focus}

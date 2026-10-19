@@ -190,7 +190,7 @@ export function SourceSelect({
               : onChange(parseSource(e.target.value))
         }
         options={options}
-        className="h-7 w-auto max-w-[200px] min-w-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+        className="h-7 w-auto max-w-[200px] min-w-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted hover:bg-sel"
       />
       <BrowserHelp
         open={help}
@@ -273,17 +273,17 @@ function BrowserHelp({
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/40 animate-[fade-in_120ms_ease-out]" />
         <D.Content className="fixed top-1/2 left-1/2 z-50 w-[min(540px,calc(100vw-32px))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card p-6 shadow-pop">
-          <D.Title className="flex items-center gap-2 font-serif text-[18px] font-semibold">
+          <D.Title className="flex items-center gap-2 font-serif text-[1.125rem] font-semibold">
             <Globe className="h-5 w-5 text-accent" />
             {t('用浏览器里的 Gemini / ChatGPT 生成图片')}
           </D.Title>
-          <D.Description className="mt-2 text-[13px] leading-relaxed text-muted">
+          <D.Description className="mt-2 text-[0.8125rem] leading-relaxed text-muted">
             {t(
               '不需要图片模型的 API：面板通过一个小扩展，用你在浏览器里已经登录的 Gemini 或 ChatGPT（会员版才能生成图片）。扩展只读取这两个网站的标签页。',
             )}
           </D.Description>
 
-          <ol className="mt-5 flex flex-col gap-4 text-[13px] leading-relaxed">
+          <ol className="mt-5 flex flex-col gap-4 text-[0.8125rem] leading-relaxed">
             <Step n={1} done={connected} title={t('安装扩展')}>
               <p className="text-muted">
                 {t('点下面的按钮，会打开浏览器的扩展页面，并打开文件夹选中 extension 文件夹。')}
@@ -317,7 +317,7 @@ function BrowserHelp({
                 )}
               </div>
               {!status.browsers.length && !demo && (
-                <p className="mt-1.5 text-[12px] text-subtle">
+                <p className="mt-1.5 text-[0.75rem] text-subtle">
                   {t('没有找到 Chrome 或 Edge：在浏览器地址栏打开 chrome://extensions 手动安装。')}
                 </p>
               )}
@@ -347,7 +347,7 @@ function BrowserHelp({
           <div
             role="status"
             className={cn(
-              'mt-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[12.5px] leading-relaxed',
+              'mt-5 flex items-start gap-2 rounded-lg border px-3 py-2.5 text-[0.78125rem] leading-relaxed',
               state.tone === 'ok' && 'border-success/40 bg-success/8',
               state.tone === 'warn' && 'border-warning/40 bg-warning/8',
             )}
@@ -395,7 +395,7 @@ function BrowserHelp({
               )}
             </div>
             {connected && status.version && (
-              <span className="shrink-0 font-mono text-[11px] text-subtle">v{status.version}</span>
+              <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">v{status.version}</span>
             )}
           </div>
 
@@ -413,14 +413,14 @@ function BrowserHelp({
 }
 
 const LINK =
-  'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[12.5px] text-muted hover:bg-sel hover:text-fg'
+  'inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg'
 
 function Step({ n, done, title, children }: { n: number; done: boolean; title: string; children: React.ReactNode }) {
   return (
     <li className="flex gap-3">
       <span
         className={cn(
-          'grid h-5 w-5 shrink-0 place-items-center rounded-full text-[11px] font-medium',
+          'grid h-5 w-5 shrink-0 place-items-center rounded-full text-[0.6875rem] font-medium',
           done ? 'bg-success text-white' : 'bg-sel text-muted',
         )}
       >
@@ -462,7 +462,7 @@ function ConceptToggle({
             : t('直接搭界面（点一下改成先出原画）')
       }
       className={cn(
-        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[12px] transition-colors',
+        'inline-flex h-7 shrink-0 cursor-pointer items-center gap-1 rounded-md px-1.5 text-[0.75rem] transition-colors',
         value && !template ? 'bg-accent-soft text-accent' : 'text-subtle hover:bg-sel hover:text-fg',
       )}
     >
@@ -726,7 +726,7 @@ export function DesignChat({
             <span className="grid h-10 w-10 place-items-center rounded-xl bg-accent-soft text-accent">
               <Sparkles className="h-5 w-5" />
             </span>
-            <p className="text-[13px] leading-relaxed text-muted">
+            <p className="text-[0.8125rem] leading-relaxed text-muted">
               {concept && !hasTemplate
                 ? t(
                     '描述想要的界面，AI 先画几张整屏的原画给你挑，可以在图上标注修改；确认一张作为模板后再搭界面、出切图。',
@@ -754,7 +754,7 @@ export function DesignChat({
                     setText(s)
                     box.current?.focus()
                   }}
-                  className="cursor-pointer rounded-lg border px-3 py-2 text-left text-[12px] leading-relaxed text-muted hover:border-line-strong hover:bg-sel/50 hover:text-fg"
+                  className="cursor-pointer rounded-lg border px-3 py-2 text-left text-[0.75rem] leading-relaxed text-muted hover:border-line-strong hover:bg-sel/50 hover:text-fg"
                 >
                   {s}
                 </button>
@@ -802,8 +802,8 @@ export function DesignChat({
           running && job && <JobProgress job={job} />
         )}
         {queue.length > 0 && (
-          <div className="mb-2 flex flex-col gap-1 rounded-xl border bg-card px-3 py-2 text-[12.5px] shadow-card">
-            <span className="text-[11.5px] text-subtle">{t('排队中，这一轮结束后发送')}</span>
+          <div className="mb-2 flex flex-col gap-1 rounded-xl border bg-card px-3 py-2 text-[0.78125rem] shadow-card">
+            <span className="text-[0.71875rem] text-subtle">{t('排队中，这一轮结束后发送')}</span>
             {queue.map((q) => (
               <div key={q.id} className="group flex min-w-0 items-center gap-2">
                 <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -843,7 +843,7 @@ export function DesignChat({
               (annotations.length > 0 || styleRef) && (
                 <div className="flex flex-col gap-1.5 border-b px-2.5 pt-2.5 pb-2">
                   {styleRef && (
-                    <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[12px] text-accent">
+                    <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[0.75rem] text-accent">
                       <Palette className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate" title={styleRef.en}>
                         {t('风格：{name}', { name: styleRef.name })}
@@ -885,7 +885,7 @@ export function DesignChat({
                       value: String(n),
                       label: conceptRound ? t('原画 {n} 张', { n }) : t('每张 {n} 版', { n }),
                     }))}
-                    className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted hover:bg-sel"
+                    className="h-7 w-auto shrink-0 justify-start rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted hover:bg-sel"
                   />
                 )}
               </>
@@ -956,11 +956,11 @@ function ChatMessage({
           <>
             {msg.style && <StyleTag name={msg.style} className="mt-1.5 flex" />}
             {!!msg.annotations?.length && (
-              <span className="mt-1.5 flex flex-col gap-0.5 text-[11.5px] whitespace-normal text-muted">
+              <span className="mt-1.5 flex flex-col gap-0.5 text-[0.71875rem] whitespace-normal text-muted">
                 {msg.annotations.map((a, i) => (
                   <span key={a.id} className="flex items-center gap-1.5">
                     <span
-                      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+                      className="grid h-4 min-w-4 shrink-0 place-items-center rounded-full px-0.5 font-mono text-[0.625rem] font-semibold text-white"
                       style={{ background: KIND_COLOR[a.kind] }}
                     >
                       {i + 1}
@@ -991,7 +991,9 @@ function ChatMessage({
       last={last}
     >
       {!!msg.images?.length && (
-        <span className="pl-[38px] text-[11.5px] text-subtle">{t('需要的图片：{n} 张', { n: msg.images.length })}</span>
+        <span className="pl-[38px] text-[0.71875rem] text-subtle">
+          {t('需要的图片：{n} 张', { n: msg.images.length })}
+        </span>
       )}
     </ChatReply>
   )
@@ -1009,7 +1011,7 @@ function LiveReply({ job }: { job: DesignJob }) {
     <div className="flex flex-col gap-1.5">
       {!parts.length ? (
         <PendingAuthor author={author}>
-          <span className="thinking-shimmer text-[12.5px] text-subtle">{t('正在思考…')}</span>
+          <span className="thinking-shimmer text-[0.78125rem] text-subtle">{t('正在思考…')}</span>
         </PendingAuthor>
       ) : (
         <ChatReply msgs={partsToMessages('live', parts, '')} teamNames={NO_NAMES} author={author} live />
@@ -1036,7 +1038,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
   const got = items.reduce((n, i) => n + Math.min(i.got, i.want), 0)
   const active = items.filter((i) => i.status === 'generating')
   return (
-    <div className="mb-2 flex flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-[12.5px] shadow-card">
+    <div className="mb-2 flex flex-col gap-2 rounded-xl border bg-card px-3 py-2.5 text-[0.78125rem] shadow-card">
       <button
         onClick={() => setOpen(!open)}
         disabled={!items.length}
@@ -1060,7 +1062,9 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                   : t('正在设计')}
         </span>
         {running && (
-          <span className="ml-auto shrink-0 font-mono text-[11px] font-normal text-subtle tabular-nums">{sec}s</span>
+          <span className="ml-auto shrink-0 font-mono text-[0.6875rem] font-normal text-subtle tabular-nums">
+            {sec}s
+          </span>
         )}
         {items.length > 0 && (
           <ChevronDown className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', !open && '-rotate-90')} />
@@ -1077,7 +1081,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
       {open && items.length > 0 && (
         <ul className="flex max-h-36 flex-col gap-1 overflow-y-auto">
           {items.map((i) => (
-            <li key={i.id} className="flex min-w-0 items-center gap-2 text-[12px]">
+            <li key={i.id} className="flex min-w-0 items-center gap-2 text-[0.75rem]">
               {i.status === 'done' ? (
                 <Check className="h-3.5 w-3.5 shrink-0 text-success" />
               ) : i.status === 'failed' ? (
@@ -1099,7 +1103,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                 {i.text ?? ''}
               </span>
               {i.want > 1 && (
-                <span className="shrink-0 font-mono text-[11px] text-subtle tabular-nums">
+                <span className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums">
                   {i.got}/{i.want}
                 </span>
               )}
@@ -1110,7 +1114,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
                     setRetrying(i.id)
                     void onRetry(i.id).finally(() => setRetrying(''))
                   }}
-                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-px text-[11.5px] text-accent hover:bg-sel disabled:cursor-default disabled:opacity-50"
+                  className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded px-1.5 py-px text-[0.71875rem] text-accent hover:bg-sel disabled:cursor-default disabled:opacity-50"
                 >
                   {retrying === i.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
                   {t('重试')}
@@ -1120,7 +1124,7 @@ function JobProgress({ job, onRetry }: { job: DesignJob; onRetry?: (imageId: str
           ))}
         </ul>
       )}
-      {!open && active[0]?.text && <p className="truncate text-[11.5px] text-subtle">{active[0].text}</p>}
+      {!open && active[0]?.text && <p className="truncate text-[0.71875rem] text-subtle">{active[0].text}</p>}
     </div>
   )
 }
@@ -1131,7 +1135,7 @@ function StyleTag({ name, title, className }: { name: string; title?: string; cl
     <span
       title={title}
       className={cn(
-        'inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[11.5px] text-accent',
+        'inline-flex w-fit max-w-full shrink-0 items-center gap-1 rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.71875rem] text-accent',
         className,
       )}
     >

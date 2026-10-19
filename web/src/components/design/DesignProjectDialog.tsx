@@ -214,7 +214,7 @@ function Body({
   return (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-        <D.Title className="min-w-0 flex-1 truncate font-serif text-[18px] font-semibold">
+        <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
           {project ? t('项目设置 · {name}', { name: project.name }) : t('新建 UI 项目')}
         </D.Title>
         <DialogCloseButton />
@@ -247,7 +247,7 @@ function Body({
               }}
             >
               <FormSection title={t('基本信息')}>
-                <p className="-mt-2 text-[12.5px] leading-relaxed text-muted">
+                <p className="-mt-2 text-[0.78125rem] leading-relaxed text-muted">
                   {t('UI 设计的项目和 Agent 的项目分开管理。一个项目对应一个游戏，里面放它的各个界面。')}
                 </p>
                 <Field label={t('项目名称')} error={name.trim() ? undefined : t('名称不能为空')}>
@@ -330,7 +330,7 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
         {!list ? (
           <Loader2 className="mx-auto my-3 h-4 w-4 animate-spin text-subtle" />
         ) : !list.length ? (
-          <p className="px-2 py-2 text-[12px] leading-relaxed text-subtle">
+          <p className="px-2 py-2 text-[0.75rem] leading-relaxed text-subtle">
             {t('风格库还是空的。在 UI 设计的风格设置里点「存到风格库」就能存进来。')}
           </p>
         ) : (
@@ -344,7 +344,7 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
               return (
                 items.length > 0 && (
                   <div key={k} role="group" aria-label={k === 'game' ? t('游戏 UI') : t('网页 UI')}>
-                    <p className="px-2.5 pt-2 pb-1 text-[11px] font-medium text-subtle">
+                    <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
                       {k === 'game' ? t('游戏 UI') : t('网页 UI')}
                     </p>
                     {items.map((s) => (
@@ -356,13 +356,13 @@ function ImportStyle({ onImport }: { onImport: (s: SavedStyle) => void }) {
                         }}
                         className="flex w-full cursor-pointer flex-col items-start rounded-lg px-2.5 py-1.5 text-left hover:bg-sel"
                       >
-                        <span className="flex items-center gap-1.5 text-[12.5px]">
+                        <span className="flex items-center gap-1.5 text-[0.78125rem]">
                           {s.name}
                           {s.builtin && (
-                            <span className="rounded bg-field px-1 text-[10px] text-subtle">{t('内置')}</span>
+                            <span className="rounded bg-field px-1 text-[0.625rem] text-subtle">{t('内置')}</span>
                           )}
                         </span>
-                        <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">
+                        <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">
                           {s.summary || t('{n} 条提示词', { n: s.prompts.length })}
                         </span>
                       </button>
@@ -427,8 +427,8 @@ function PromptsPage({
     <div className="flex flex-col gap-7">
       <section className="flex flex-col gap-3">
         <div>
-          <h3 className="text-[13px] font-semibold">{t('美术提示词')}</h3>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">
+          <h3 className="text-[0.8125rem] font-semibold">{t('美术提示词')}</h3>
+          <p className="mt-1 text-[0.78125rem] leading-relaxed text-muted">
             {t(
               '这个项目里每一张图生成时都会自动带上打开的提示词，设计界面的 AI 也会照着它来，让整个游戏的界面风格统一。这里显示中文，发给生图 AI 的是对应的英文。',
             )}
@@ -443,7 +443,7 @@ function PromptsPage({
           }}
         />
         <div className="rounded-xl border bg-panel/50 p-3">
-          <p className="mb-2 flex items-center gap-1.5 text-[12.5px] font-medium">
+          <p className="mb-2 flex items-center gap-1.5 text-[0.78125rem] font-medium">
             <Sparkles className="h-3.5 w-3.5 text-accent" />
             {t('让 AI 生成')}
           </p>
@@ -455,7 +455,7 @@ function PromptsPage({
             }}
             rows={2}
             placeholder={t('描述想要的美术风格，例如：西方魔幻、石头和暗金色的边框、按钮有微微发光的符文')}
-            className="text-[13px]"
+            className="text-[0.8125rem]"
           />
           <div className="mt-2 flex items-center justify-end gap-2">
             {busy && <span className="text-xs text-subtle">{t('AI 正在整理提示词…')}</span>}
@@ -467,7 +467,7 @@ function PromptsPage({
           <ScopeRequests scope={`prompts:${aiScope}`} active={busy} className="mt-2 mb-0 max-w-none" />
           {found.length > 0 && (
             <div className="mt-3 border-t pt-3">
-              <p className="mb-2 text-[12px] text-muted">{t('选择要加入的提示词：')}</p>
+              <p className="mb-2 text-[0.75rem] text-muted">{t('选择要加入的提示词：')}</p>
               <div className="flex flex-wrap gap-1.5">
                 {found.map((f, i) => (
                   <button
@@ -476,12 +476,12 @@ function PromptsPage({
                     aria-pressed={f.pick}
                     onClick={() => setFound((l) => l.map((x, k) => (k === i ? { ...x, pick: !x.pick } : x)))}
                     className={cn(
-                      'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[12.5px]',
+                      'flex cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 text-[0.78125rem]',
                       f.pick ? 'border-accent/60 bg-accent-soft text-fg' : 'text-subtle hover:text-fg',
                     )}
                   >
                     {f.pick ? <Check className="h-3 w-3 text-accent" /> : <Plus className="h-3 w-3" />}
-                    <span className="text-[11px] text-subtle">{catLabel(f.category)}</span>
+                    <span className="text-[0.6875rem] text-subtle">{catLabel(f.category)}</span>
                     {f.zh}
                   </button>
                 ))}
@@ -505,11 +505,11 @@ function PromptsPage({
         return (
           <section key={c} className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
-              <h4 className="text-[13px] font-medium">{catLabel(c)}</h4>
-              <span className="text-[11.5px] text-subtle">{list.length || ''}</span>
+              <h4 className="text-[0.8125rem] font-medium">{catLabel(c)}</h4>
+              <span className="text-[0.71875rem] text-subtle">{list.length || ''}</span>
               <button
                 onClick={() => setAdding(c)}
-                className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-subtle hover:bg-sel hover:text-fg"
+                className="ml-auto flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.75rem] text-subtle hover:bg-sel hover:text-fg"
               >
                 <Plus className="h-3.5 w-3.5" />
                 {t('添加')}
@@ -535,7 +535,7 @@ function PromptsPage({
                     <Input
                       autoFocus
                       placeholder={t('写中文就行，会自动翻译成英文')}
-                      className="h-8 text-[13px]"
+                      className="h-8 text-[0.8125rem]"
                       onKeyDown={(e) => {
                         if (e.key === 'Escape') {
                           e.stopPropagation()
@@ -557,13 +557,13 @@ function PromptsPage({
             )}
             {presets.length > 0 && (
               <div className="flex flex-wrap items-center gap-1">
-                <span className="mr-1 text-[11.5px] text-subtle">{t('常用：')}</span>
+                <span className="mr-1 text-[0.71875rem] text-subtle">{t('常用：')}</span>
                 {presets.map((p) => (
                   <button
                     key={p.zh}
                     title={p.en}
                     onClick={() => onChange((l) => [...l, { id: newId(), category: c, ...p, enabled: true }])}
-                    className="flex cursor-pointer items-center gap-0.5 rounded-md border border-dashed px-1.5 py-0.5 text-[12px] text-subtle hover:border-solid hover:text-fg"
+                    className="flex cursor-pointer items-center gap-0.5 rounded-md border border-dashed px-1.5 py-0.5 text-[0.75rem] text-subtle hover:border-solid hover:text-fg"
                   >
                     <Plus className="h-3 w-3" />
                     {p.zh}
@@ -605,11 +605,16 @@ function PromptRow({
   if (editing)
     return (
       <li className="flex flex-col gap-1.5 px-3 py-2">
-        <Input value={zh} onChange={(e) => setZh(e.target.value)} className="h-8 text-[13px]" aria-label={t('中文')} />
+        <Input
+          value={zh}
+          onChange={(e) => setZh(e.target.value)}
+          className="h-8 text-[0.8125rem]"
+          aria-label={t('中文')}
+        />
         <Input
           value={en}
           onChange={(e) => setEn(e.target.value)}
-          className="h-8 font-mono text-[12px]"
+          className="h-8 font-mono text-[0.75rem]"
           aria-label={t('发给生图 AI 的英文')}
           placeholder={t('发给生图 AI 的英文')}
         />
@@ -639,17 +644,17 @@ function PromptRow({
       </button>
       <span
         title={p.en || t('还没有英文，会直接用中文')}
-        className={cn('min-w-0 flex-1 truncate text-[13px]', !p.enabled && 'text-subtle line-through')}
+        className={cn('min-w-0 flex-1 truncate text-[0.8125rem]', !p.enabled && 'text-subtle line-through')}
       >
         {p.zh}
       </span>
       {translating ? (
-        <span className="flex shrink-0 items-center gap-1 text-[11.5px] text-subtle">
+        <span className="flex shrink-0 items-center gap-1 text-[0.71875rem] text-subtle">
           <Loader2 className="h-3 w-3 animate-spin" />
           {t('翻译中')}
         </span>
       ) : (
-        !p.en && <span className="shrink-0 text-[11.5px] text-warning">{t('没有英文')}</span>
+        !p.en && <span className="shrink-0 text-[0.71875rem] text-warning">{t('没有英文')}</span>
       )}
       <button
         onClick={() => setEditing(true)}

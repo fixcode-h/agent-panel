@@ -85,7 +85,7 @@ export function FileDialog({
           )}
         >
           <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-            <D.Title className="min-w-0 flex-1 truncate font-mono text-[13px] font-medium" title={target?.path}>
+            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={target?.path}>
               {file?.path || target?.path}
               {target?.line ? <span className="text-subtle">:{target.line}</span> : null}
             </D.Title>
@@ -121,21 +121,21 @@ export function FileDialog({
           </header>
           <div ref={box} className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
             {error ? (
-              <p className="p-6 text-[13px] text-danger">{error}</p>
+              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
             ) : !file ? (
               <div className="flex h-full items-center justify-center text-subtle">
                 <Loader2 className="h-5 w-5 animate-spin" />
               </div>
             ) : !file.exists ? (
-              <p className="p-6 text-[13px] text-subtle">
+              <p className="p-6 text-[0.8125rem] text-subtle">
                 {import.meta.env.VITE_DEMO
                   ? t('在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。')
                   : t('项目目录里找不到这个文件，可能已经被移动或删除。')}
               </p>
             ) : file.binary ? (
-              <p className="p-6 text-[13px] text-subtle">{t('这是二进制文件，不显示内容。')}</p>
+              <p className="p-6 text-[0.8125rem] text-subtle">{t('这是二进制文件，不显示内容。')}</p>
             ) : (
-              <pre className="min-w-max py-2 font-mono text-[12.5px] leading-[1.6]">
+              <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
                 {lines.map((l, i) => (
                   <div
                     key={i}

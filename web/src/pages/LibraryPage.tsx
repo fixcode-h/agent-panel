@@ -116,14 +116,14 @@ export function LibraryPage() {
         data ? (
           <BundledSkills clis={data.clis} query={query} />
         ) : (
-          <p className="text-[13px] text-subtle">{t('读取中…')}</p>
+          <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
         )
       ) : error ? (
-        <p className="text-[13px] text-warning">{t('读取失败：{error}', { error })}</p>
+        <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
       ) : !data ? (
-        <p className="text-[13px] text-subtle">{t('读取中…')}</p>
+        <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
       ) : !rows.length ? (
-        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[13px] text-subtle">
+        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
           {query
             ? t('没有符合的{kind}。', { kind: kind === 'skill' ? 'Skill' : t('命令') })
             : t('还没有，点右上角「新建」。')}
@@ -143,9 +143,9 @@ export function LibraryPage() {
                   onClick={() => setEdit(list[0])}
                   className="min-w-0 flex-[1_1_260px] cursor-pointer text-left"
                 >
-                  <p className="truncate font-mono text-[13.5px]">{kind === 'command' ? `/${name}` : name}</p>
+                  <p className="truncate font-mono text-[0.84375rem]">{kind === 'command' ? `/${name}` : name}</p>
                   {list[0].description && (
-                    <p className="line-clamp-2 text-[12.5px] text-muted">{list[0].description}</p>
+                    <p className="line-clamp-2 text-[0.78125rem] text-muted">{list[0].description}</p>
                   )}
                 </button>
                 <span className="flex flex-wrap gap-1.5">
@@ -245,7 +245,7 @@ function CreateDialog({
       title={kind === 'skill' ? t('新建 Skill') : t('新建命令')}
       footer={
         <>
-          <span className="flex-1 text-[12px] text-warning">
+          <span className="flex-1 text-[0.75rem] text-warning">
             {dup.length ? t('{cli} 里已经有同名的了', { cli: dup.map((i) => i.cli).join('、') }) : ''}
           </span>
           <Button variant="secondary" onClick={onClose}>
@@ -259,7 +259,7 @@ function CreateDialog({
       }
     >
       <label className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-medium">{t('名字')}</span>
+        <span className="text-[0.8125rem] font-medium">{t('名字')}</span>
         <Input
           autoFocus
           value={name}
@@ -267,12 +267,12 @@ function CreateDialog({
           placeholder={kind === 'skill' ? 'commit-message' : 'review'}
           className="font-mono"
         />
-        <span className="text-[12px] text-subtle">
+        <span className="text-[0.75rem] text-subtle">
           {name && !valid ? t('只能用字母、数字、. _ -，以字母或数字开头') : t('用来调用它的名字，创建后不能改')}
         </span>
       </label>
       <div className="flex flex-col gap-2">
-        <span className="text-[13px] font-medium">{t('放进哪些 CLI')}</span>
+        <span className="text-[0.8125rem] font-medium">{t('放进哪些 CLI')}</span>
         {ok.map((c) => (
           <Checkbox
             key={c.id}
@@ -399,37 +399,37 @@ function EditDialog({
       >
         {here.length > 1 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[12px] text-subtle">{t('装在')}</span>
+            <span className="text-[0.75rem] text-subtle">{t('装在')}</span>
             {here.map((i) => (
               <button
                 key={i.cli}
                 type="button"
                 onClick={() => setCli(i.cli)}
-                className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[12px] ${i.cli === cli ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel'}`}
+                className={`cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.75rem] ${i.cli === cli ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel'}`}
               >
                 {label(i.cli)}
               </button>
             ))}
           </div>
         )}
-        <p className="-mt-2 truncate font-mono text-[11.5px] text-subtle">
+        <p className="-mt-2 truncate font-mono text-[0.71875rem] text-subtle">
           {same.find((i) => i.cli === cli)?.path ?? item.path}
         </p>
         {error ? (
-          <p className="text-[13px] text-warning">{error}</p>
+          <p className="text-[0.8125rem] text-warning">{error}</p>
         ) : text === null ? (
-          <p className="text-[13px] text-subtle">{t('读取中…')}</p>
+          <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
         ) : (
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             spellCheck={false}
-            className="h-[min(46vh,420px)] resize-none font-mono text-[12.5px] leading-relaxed"
+            className="h-[min(46vh,420px)] resize-none font-mono text-[0.78125rem] leading-relaxed"
             aria-label={t('内容')}
           />
         )}
         {!!files.length && (
-          <p className="text-[12px] leading-relaxed text-muted">
+          <p className="text-[0.75rem] leading-relaxed text-muted">
             {t('文件夹里还有：')}
             <span className="font-mono">{files.join('  ')}</span>
             {t('（复制时一起带走，这里不能编辑）')}
@@ -437,7 +437,7 @@ function EditDialog({
         )}
         {!!targets.length && (
           <div className="flex flex-col gap-2 border-t pt-4">
-            <span className="text-[13px] font-medium">{t('复制给别的 CLI')}</span>
+            <span className="text-[0.8125rem] font-medium">{t('复制给别的 CLI')}</span>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {targets.map((c) => (
                 <Checkbox
@@ -452,7 +452,7 @@ function EditDialog({
                 {t('复制')}
               </Button>
             </div>
-            {dirty && <p className="text-[12px] text-subtle">{t('先保存修改再复制')}</p>}
+            {dirty && <p className="text-[0.75rem] text-subtle">{t('先保存修改再复制')}</p>}
           </div>
         )}
       </Modal>

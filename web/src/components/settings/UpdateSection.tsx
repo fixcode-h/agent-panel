@@ -38,7 +38,7 @@ function Channel({ pre }: { pre: boolean }) {
   return (
     <span
       className={cn(
-        'shrink-0 rounded-full px-1.5 py-px text-[11px]',
+        'shrink-0 rounded-full px-1.5 py-px text-[0.6875rem]',
         pre ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
       )}
     >
@@ -75,10 +75,12 @@ function ReleaseRow({
           title={t('查看更新说明')}
         >
           <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 text-subtle transition-transform', open && 'rotate-90')} />
-          <span className="truncate font-mono text-[13.5px] font-medium">{r.tag}</span>
+          <span className="truncate font-mono text-[0.84375rem] font-medium">{r.tag}</span>
         </button>
         <Channel pre={r.prerelease} />
-        {isCur && <span className="rounded-full bg-accent-soft px-1.5 py-px text-[11px] text-accent">{t('当前')}</span>}
+        {isCur && (
+          <span className="rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">{t('当前')}</span>
+        )}
         <span className="text-xs text-subtle">{day(r.publishedAt)}</span>
         <span className="ml-auto flex items-center gap-1.5">
           <a
@@ -86,7 +88,7 @@ function ReleaseRow({
             target="_blank"
             rel="noreferrer"
             title={r.size ? t('下载 zip 包（约 {size}）', { size: mb(r.size) }) : t('下载 zip 包')}
-            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted hover:bg-sel hover:text-fg"
+            className="flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted hover:bg-sel hover:text-fg"
           >
             <Download className="h-3.5 w-3.5" />
             {t('下载')}
@@ -107,7 +109,7 @@ function ReleaseRow({
       {open && (
         <div className="mt-2 ml-5 flex flex-col gap-2 rounded-lg border bg-rail px-4 py-3">
           <div
-            className="chat-md release-notes text-[13px] [overflow-wrap:anywhere]"
+            className="chat-md release-notes text-[0.8125rem] [overflow-wrap:anywhere]"
             dangerouslySetInnerHTML={{ __html: html }}
           />
           {r.url && (
@@ -154,11 +156,13 @@ export function UpdateSection() {
     <div className="flex flex-col gap-5">
       <section className="flex flex-col gap-3 rounded-xl border p-4">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <span className="text-[13px] text-subtle">{t('当前版本')}</span>
-          <span className="font-mono text-[15px] font-semibold">{current ? `v${current.replace(/^v/, '')}` : '—'}</span>
+          <span className="text-[0.8125rem] text-subtle">{t('当前版本')}</span>
+          <span className="font-mono text-[0.9375rem] font-semibold">
+            {current ? `v${current.replace(/^v/, '')}` : '—'}
+          </span>
           {cur ? <Channel pre={cur.prerelease} /> : current.includes('-dev') && <Channel pre />}
           {data && !data.packaged && !demo && (
-            <span className="rounded-full bg-field px-1.5 py-px text-[11px] text-subtle">{t('从源码运行')}</span>
+            <span className="rounded-full bg-field px-1.5 py-px text-[0.6875rem] text-subtle">{t('从源码运行')}</span>
           )}
           {data?.checkedAt && (
             <span className="ml-auto text-xs text-subtle">
@@ -202,7 +206,7 @@ export function UpdateSection() {
             </div>
           </div>
         ) : data?.error ? (
-          <p className="text-[13px] leading-relaxed text-warning">
+          <p className="text-[0.8125rem] leading-relaxed text-warning">
             {data.error}
             {t('。可以稍后再试，或到')}{' '}
             <a
@@ -225,14 +229,14 @@ export function UpdateSection() {
             />
           </p>
         ) : !data ? (
-          <p className="flex items-center gap-1.5 text-[13px] text-subtle">
+          <p className="flex items-center gap-1.5 text-[0.8125rem] text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
             {t('正在检查…')}
           </p>
         ) : data.update ? (
           <div className="flex flex-wrap items-center gap-3 rounded-lg bg-accent-soft px-3.5 py-2.5">
             <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent" />
-            <span className="min-w-0 flex-1 text-[13px]">
+            <span className="min-w-0 flex-1 text-[0.8125rem]">
               {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
               <span className="text-subtle"> · {day(data.update.publishedAt)}</span>
             </span>
@@ -243,7 +247,7 @@ export function UpdateSection() {
             )}
           </div>
         ) : (
-          <p className="flex items-center gap-1.5 text-[13px] text-success">
+          <p className="flex items-center gap-1.5 text-[0.8125rem] text-success">
             <CircleCheck className="h-4 w-4" />
             {t('已是最新版本')}
           </p>
@@ -282,7 +286,7 @@ export function UpdateSection() {
             ))}
           </ul>
         ) : (
-          <p className="py-3 text-[13px] text-subtle">{loading ? t('正在读取…') : t('暂时没有读到发布的包。')}</p>
+          <p className="py-3 text-[0.8125rem] text-subtle">{loading ? t('正在读取…') : t('暂时没有读到发布的包。')}</p>
         )}
       </section>
 

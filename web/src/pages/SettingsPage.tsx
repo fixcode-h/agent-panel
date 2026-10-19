@@ -17,6 +17,7 @@ import {
   KeyRound,
   Tag as TagIcon,
   Rocket,
+  Type,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -42,6 +43,7 @@ import { DataSection } from '@/components/settings/DataSection'
 import { LocalImageSection } from '@/components/settings/LocalImageSection'
 import { TagsSection } from '@/components/settings/TagsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
+import { FontSection } from '@/components/settings/FontSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
@@ -66,6 +68,7 @@ interface Section {
 
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2 },
+  { id: 'fonts', label: t('字体'), icon: Type },
   { id: 'categories', label: t('项目分类'), icon: Layers },
   { id: 'tags', label: t('标签'), icon: TagIcon },
   { id: 'models', label: t('默认 CLI'), icon: Cpu },
@@ -99,6 +102,7 @@ function SettingsBody({
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [language, setLanguage] = useState(initial.language)
+  const [appearance, setAppearance] = useState(initial.appearance)
   const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
   const ordered = orderClis(CLIS, cliOrder)
   const SECTIONS = sectionsFor(ordered)
@@ -179,6 +183,7 @@ function SettingsBody({
     askUserDefault,
     proxy: proxy.trim(),
     contentWidth,
+    appearance,
     language,
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
@@ -251,7 +256,7 @@ function SettingsBody({
         aria-label={t('设置分类')}
         className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
       >
-        <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[20px] font-semibold md:block">{t('设置')}</span>
+        <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[1.25rem] font-semibold md:block">{t('设置')}</span>
         {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s) => {
           // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
           const on = s.id === 'models' ? inCli : s.id === cur.id
@@ -261,7 +266,7 @@ function SettingsBody({
               onClick={() => onSection(s.id)}
               aria-current={on ? 'page' : undefined}
               className={cn(
-                'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
+                'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
                 on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
               )}
             >
@@ -291,9 +296,9 @@ function SettingsBody({
             return (
               <div key={s.id} className="contents">
                 {s.cli && !list[i - 1]?.cli && (
-                  <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[11px] text-subtle md:flex">
+                  <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[0.6875rem] text-subtle md:flex">
                     {t('已接入')}
-                    <span className="text-[10.5px] text-subtle/80">{t('拖动调整顺序')}</span>
+                    <span className="text-[0.65625rem] text-subtle/80">{t('拖动调整顺序')}</span>
                   </span>
                 )}
                 <button
@@ -320,7 +325,7 @@ function SettingsBody({
                     moveCli(s.cli.id, cliOrder.indexOf(s.cli.id) + (e.key === 'ArrowUp' ? -1 : 1))
                   }}
                   className={cn(
-                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
+                    'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
                     on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
                     s.cli && dragging === s.cli.id && 'opacity-50',
                   )}
@@ -332,7 +337,7 @@ function SettingsBody({
                   )}
                   <span className="truncate">{s.label}</span>
                   {s.cli && defCli === s.cli.id && (
-                    <span className="text-[11px] font-normal text-subtle">{t('默认')}</span>
+                    <span className="text-[0.6875rem] font-normal text-subtle">{t('默认')}</span>
                   )}
                   {s.cli && (
                     <GripVertical className="ml-auto hidden h-3.5 w-3.5 shrink-0 text-subtle opacity-0 group-hover:opacity-100 md:block" />
@@ -354,17 +359,18 @@ function SettingsBody({
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <header className="flex shrink-0 items-center gap-3 px-5 pt-5 pb-3 md:px-8 md:pt-7">
-          <h2 className="min-w-0 flex-1 truncate font-serif text-[20px] font-semibold">{cur.label}</h2>
+          <h2 className="min-w-0 flex-1 truncate font-serif text-[1.25rem] font-semibold">{cur.label}</h2>
           <SaveIndicator {...save} invalid={valid ? undefined : t('超时时间需要是 0 到 1440 的整数')} />
           <DialogCloseButton label={t('关闭设置')} />
         </header>
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
           {cur.id === 'styles' && <StylesSettings />}
+          {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
           {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
           {cur.id === 'general' && (
             <Group>
               {demo && (
-                <p className="mb-2 flex gap-2.5 rounded-xl border p-3.5 text-[13px] leading-relaxed text-subtle">
+                <p className="mb-2 flex gap-2.5 rounded-xl border p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
                   <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
                   {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 CLI。')}
                 </p>
@@ -447,7 +453,7 @@ function SettingsBody({
                     }}
                     className="w-40 cursor-pointer accent-[var(--color-accent)]"
                   />
-                  <span className="w-14 font-mono text-[13px] text-muted tabular-nums">{contentWidth}px</span>
+                  <span className="w-14 font-mono text-[0.8125rem] text-muted tabular-nums">{contentWidth}px</span>
                   {contentWidth !== CONTENT_WIDTH && (
                     <Button
                       variant="ghost"
@@ -491,7 +497,7 @@ function SettingsBody({
                     value={proxy}
                     onChange={(e) => setProxy(e.target.value)}
                     placeholder="http://127.0.0.1:7890"
-                    className="w-[240px] font-mono text-[13px]"
+                    className="w-[240px] font-mono text-[0.8125rem]"
                     spellCheck={false}
                     aria-label={t('网络代理')}
                   />
@@ -529,7 +535,7 @@ function SettingsBody({
 
           {cur.id === 'models' && (
             <>
-              <p className="text-[13px] leading-relaxed text-subtle">
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {t(
                   'Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。',
                 )}
@@ -691,7 +697,7 @@ function SettingsBody({
 
           {cur.id === 'assist' && (
             <>
-              <p className="text-[13px] leading-relaxed text-subtle">
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {t(
                   '在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。',
                 )}
@@ -734,7 +740,7 @@ function SettingsBody({
                     placeholder={t(
                       '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的 Agent 默认用 Claude Code',
                     )}
-                    className="font-mono text-[13px]"
+                    className="font-mono text-[0.8125rem]"
                   />
                 </Row>
                 <Row title={t('创建工作流的补充规则')} stack>
@@ -743,7 +749,7 @@ function SettingsBody({
                     value={assist.workflowRules}
                     onChange={(e) => setAssist({ ...assist, workflowRules: e.target.value })}
                     placeholder={t('例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮')}
-                    className="font-mono text-[13px]"
+                    className="font-mono text-[0.8125rem]"
                   />
                 </Row>
               </Group>

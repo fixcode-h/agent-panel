@@ -33,6 +33,9 @@ npx vite build --mode demo   # 在线演示版
 npm run package      # 出包到 release/（正式版，不含演示内容）
 ```
 
+- 界面字号用 rem（`text-[0.8125rem]` 即 13px，不要写 `text-[13px]`）：设置里的「字号」改的是根字号，间距 `--spacing` 固定用像素，字号写死像素就不会跟着变。
+  字体走 `--app-sans` / `--app-mono`（`web/src/lib/appearance.ts`），默认是内置的 Maple Mono NL（无连字版，`web/src/assets/fonts/maple-mono-nl/`）配思源黑体。
+
 代码格式：`npx prettier --write <文件>`（配置在 `.prettierrc.json`）。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。注释用中文，写「为什么」。
 
 ## 分支与发布

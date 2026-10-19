@@ -96,7 +96,7 @@ export function Terminal({
       </div>
       {/* 只在参数之间换行：参数里的「-」也是浏览器默认的断行点，不禁掉的话「--verbose」会被拆成两行；
           特别长的单个参数（路径、JSON）才在中间断开 */}
-      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[12.5px] leading-[1.7] select-text">
+      <p className="px-3.5 pt-3 pb-3.5 font-mono text-[0.78125rem] leading-[1.7] select-text">
         <span className="text-[#5fd39a]">$ </span>
         <span className="whitespace-nowrap text-[#f2c46d]">echo "{t('<任务描述>')}"</span>{' '}
         <span className="text-[#8c909a]">| </span>

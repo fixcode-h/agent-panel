@@ -54,7 +54,7 @@ export function BuiltinAgentsDialog({
     <Modal open={open} onOpenChange={onOpenChange} title={t('内置 Agent')} wide>
       <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
         <div className="flex flex-wrap items-start gap-3">
-          <p className="min-w-0 flex-[1_1_320px] text-[13px] leading-relaxed text-muted">
+          <p className="min-w-0 flex-[1_1_320px] text-[0.8125rem] leading-relaxed text-muted">
             {t(
               '按规划、开发、质量、文档与交付、UE 和美术整理好的 Agent，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 CLI。',
             )}
@@ -76,25 +76,25 @@ export function BuiltinAgentsDialog({
         </div>
         {groups.map((g) => (
           <section key={g.name} className="flex flex-col gap-2">
-            <h3 className="text-[12px] font-medium text-subtle">{g.name}</h3>
+            <h3 className="text-[0.75rem] font-medium text-subtle">{g.name}</h3>
             <ul className="flex flex-col divide-y overflow-hidden rounded-xl border">
               {g.items.map((b) => {
                 const added = !!addedBuiltin(agents, b.key)
                 return (
                   <li key={b.key} className="flex flex-wrap items-start gap-x-3 gap-y-2 px-4 py-3">
                     <div className="min-w-0 flex-[1_1_320px]">
-                      <p className="flex items-center gap-2 text-[13.5px] font-medium">
+                      <p className="flex items-center gap-2 text-[0.84375rem] font-medium">
                         {b.agent.name}
                         {added && (
-                          <span className="inline-flex items-center gap-0.5 text-[11.5px] font-normal text-success">
+                          <span className="inline-flex items-center gap-0.5 text-[0.71875rem] font-normal text-success">
                             <Check className="h-3 w-3" />
                             {t('已添加')}
                           </span>
                         )}
                       </p>
-                      <p className="mt-0.5 text-[12.5px] leading-relaxed text-muted">{b.agent.description}</p>
+                      <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{b.agent.description}</p>
                       {b.agent.skills.length > 0 && (
-                        <p className="mt-1 font-mono text-[11.5px] text-subtle">{b.agent.skills.join(' · ')}</p>
+                        <p className="mt-1 font-mono text-[0.71875rem] text-subtle">{b.agent.skills.join(' · ')}</p>
                       )}
                     </div>
                     {added ? (
