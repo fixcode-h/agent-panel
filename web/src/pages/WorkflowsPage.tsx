@@ -103,7 +103,8 @@ export function WorkflowsPage() {
   const [delReq, setDelReq] = useState<{ id: string; at: number }>()
 
   const duplicate = (w: Workflow) => {
-    const { id, createdAt, updatedAt, ...rest } = w
+    // 复制出来的是自己的，不再算内置的
+    const { id, createdAt, updatedAt, origin, ...rest } = w
     create({ ...rest, name: t('{name} 副本', { name: w.name }) })
   }
 

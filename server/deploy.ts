@@ -26,6 +26,8 @@ import { entries, statusIn, writeSkill, type Entry } from './bundled-skills.ts'
 import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
+import { getSettings } from './settings.ts'
+import { cliSettings } from '../shared/settings.ts'
 
 const FILE = dataPath('config/deploy.json')
 const docClis = () => CLIS.filter((d) => d.globalDoc)
@@ -38,10 +40,12 @@ async function loadConfig(): Promise<DeployConfig> {
   const c = DeployConfig.safeParse(raw ?? {})
   const cfg = c.success ? c.data : DeployConfig.parse({})
   if (raw === undefined) cfg.agentsMd = deployTemplate()
-  if (!cfg.clis.length)
+  if (!cfg.clis.length) {
+    const settings = await getSettings()
     cfg.clis = docClis()
-      .filter((d) => existsSync(path.dirname(docPath(d))))
+      .filter((d) => cliSettings(settings, d.id).enabled && existsSync(path.dirname(docPath(d))))
       .map((d) => d.id)
+  }
   return cfg
 }
 
@@ -151,7 +155,9 @@ export function deployApi(deps: {
       if (!p.success) return bad(c, z.prettifyError(p.error))
       try {
         await save(p.data)
-        const result = await deploy(p.data)
+        // 没启用的 CLI 不写（页面上也不能选）
+        const settings = await getSettings()
+        const result = await deploy({ ...p.data, clis: p.data.clis.filter((id) => cliSettings(settings, id).enabled) })
         return c.json({ result, state: await state() })
       } catch (e) {
         return bad(c, (e as Error).message)
