@@ -712,6 +712,21 @@ export function CliSection({
             options={def.permissions.map((p) => ({ id: p.id, label: p.label }))}
           />
         </Row>
+        <Row
+          title={t('最大回合')}
+          desc={t('一轮任务最多执行多少回合（模型请求次数）。留空用 CLI 自己的默认值，Command Code 是 1000')}
+        >
+          <Input
+            type="number"
+            min={0}
+            max={1000}
+            aria-label={t('{cli} 最大回合', { cli: def.name })}
+            value={draft.maxTurns || ''}
+            onChange={(e) => set('maxTurns', Math.min(1000, Math.max(0, Math.trunc(Number(e.target.value) || 0))))}
+            placeholder="1000"
+            className="h-9 w-28 font-mono text-[0.8125rem]"
+          />
+        </Row>
         <Row title={t('可执行文件')} desc={t('留空时从 PATH 查找 {command}', { command: def.command })}>
           <Input
             value={draft.command}
@@ -777,6 +792,7 @@ export function CliSection({
               permission: draft.permission,
               extraArgs: splitArgs(draft.args),
               env: textToEnv(draft.envText),
+              maxTurns: draft.maxTurns,
             }}
           />
         </div>
@@ -835,6 +851,7 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           envText: envToText(own.env),
           showLimits: eff.showLimits,
           autoCompact: eff.autoCompact,
+          maxTurns: own.maxTurns,
           authMode: eff.authMode,
           apiId: eff.apiId,
         },

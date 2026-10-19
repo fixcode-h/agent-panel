@@ -198,7 +198,13 @@ async function invoke(
   }
 
   if (def.protocol === 'commandcode-rpc') {
-    const session = commandCodeRpcSession({ cwd: o.cwd, input: o.input, onEvent: emit })
+    const session = commandCodeRpcSession({
+      cwd: o.cwd,
+      input: o.input,
+      // -p 的 --max-turns 在 RPC 模式不生效，改由 turn/start 的参数限制；没设置时用 CLI 的默认上限
+      maxTurns: o.build.maxTurns ?? 1000,
+      onEvent: emit,
+    })
     setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
     try {
       const r = await runProcess({

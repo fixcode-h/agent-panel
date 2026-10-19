@@ -146,9 +146,6 @@
     {
       "if": ["resume", "fork"],
       "args": ["--fork-session"]
-    },
-    {
-      "args": ["--max-turns", "{maxTurns:200}"]
     }
   ],
   "output": "commandcode",
