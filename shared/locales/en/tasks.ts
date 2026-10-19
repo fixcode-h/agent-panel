@@ -17,6 +17,8 @@ export const EN_TASKS: Record<string, string> = {
   // 模型选择、实时数据
   模型: 'Model',
   思考强度: 'Effort',
+  '等待模型 · 已 {n} 秒': 'Waiting for model · {n}s',
+  '模型 {s}s': 'Model {s}s',
   实时输出速度: 'Live output speed',
   '输入 {input} · 输出 {output}': 'Input {input} · Output {output}',
 

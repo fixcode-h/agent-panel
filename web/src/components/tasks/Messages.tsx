@@ -69,10 +69,15 @@ export function NoteMessage({ m, className }: { m: TaskMessage; className?: stri
   return <SystemNote text={m.text} error={m.error} className={className} />
 }
 
+/** 这一轮模型请求用了多久：两步之间看起来在等的时间基本都在这里 */
+function ModelTime({ ms }: { ms: number }) {
+  return <span className="text-xs text-subtle">{t('模型 {s}s', { s: (ms / 1000).toFixed(1) })}</span>
+}
+
 /**
  * 思考过程：正在思考时展开并跟随最新内容，思考结束（开始输出回复）后自动收起成一行，可以点开看完整内容
  */
-function Thinking({ text, live }: { text: string; live: boolean }) {
+function Thinking({ text, live, ms }: { text: string; live: boolean; ms?: number }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const box = useRef<HTMLDivElement>(null)
   const shown = open ?? live
@@ -88,6 +93,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
       >
         <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
         <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
+        {!live && !!ms && <ModelTime ms={ms} />}
         <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
       </button>
       {shown && (
@@ -162,9 +168,9 @@ type BodyProps = {
   cli: string
 }
 
-/** 消息内容会变的部分：文字、思考长度和每个工具调用的结果 */
+/** 消息内容会变的部分：文字、思考长度、模型耗时和每个工具调用的结果 */
 const sig = (m: TaskMessage) =>
-  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.tools.map((x) => `${x.output?.length ?? 0}${x.failed ? '!' : ''}`).join(',')}`
+  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.tools.map((x) => `${x.output?.length ?? 0}${x.failed ? '!' : ''}`).join(',')}`
 
 /** 回复还没开始输出时的占位：发出消息马上显示是谁在回复、用的模型，下面放进度 */
 export function PendingAuthor({ author, children }: { author: Author; children: React.ReactNode }) {
@@ -206,8 +212,9 @@ const MessageBody = memo(
           )}
           {slot}
           {!hideProcess && m.thinking?.trim() && (
-            <Thinking text={m.thinking} live={!!live && !m.text.trim() && !m.tools.length} />
+            <Thinking text={m.thinking} live={!!live && !m.text.trim() && !m.tools.length} ms={m.modelMs} />
           )}
+          {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
           {!hideProcess && m.tools.length > 0 && (
             <div className="flex flex-col gap-1">
               {m.tools.map((t, i) => (
@@ -243,6 +250,7 @@ export function Msgs({
   live,
   slot,
   author,
+  compactFirst,
 }: {
   msgs: TaskMessage[]
   teamNames: Set<string>
@@ -250,6 +258,8 @@ export function Msgs({
   /** 放在第一条 Agent 消息名字下面的内容（展开后的折叠开关） */
   slot?: React.ReactNode
   author?: Author
+  /** 这段前面已经显示了同一个 Agent 的名字：第一条不再重复 */
+  compactFirst?: boolean
 }) {
   const lastAgent = lastIndex(msgs, (m) => m.role === 'agent')
   const firstAgent = msgs.findIndex((m) => m.role === 'agent')
@@ -266,7 +276,7 @@ export function Msgs({
             live={live && k === lastAgent}
             slot={k === firstAgent ? slot : undefined}
             author={author}
-            compact={k > 0 && msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
+            compact={k === 0 ? !!compactFirst : msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
           />
         ),
       )}
@@ -319,11 +329,17 @@ export function FoldedRun({
       <Msgs msgs={msgs} teamNames={teamNames} slot={toggle} author={author} />
     )
   // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
+  const tail = msgs.slice(last + 1)
   return (
     <>
       {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} />)}
       <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} />
-      <Msgs msgs={msgs.slice(last + 1)} teamNames={teamNames} author={author} />
+      <Msgs
+        msgs={tail}
+        teamNames={teamNames}
+        author={author}
+        compactFirst={tail[0]?.role === 'agent' && tail[0].agentId === msgs[last].agentId}
+      />
     </>
   )
 }

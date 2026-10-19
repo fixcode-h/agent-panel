@@ -589,6 +589,8 @@ export const TaskMessage = z.object({
   tools: z.array(ToolUse).default([]),
   /** 生成这段回复前的思考过程（CLI 给出的思考或推理摘要） */
   thinking: z.string().optional(),
+  /** 这一轮模型请求用了多久（毫秒）：CLI 报得出起止时才有，用来说明两步之间等的是模型 */
+  modelMs: z.number().optional(),
   /** 用户消息附上的文件和图片 */
   attachments: z.array(Attachment).optional(),
   /** 系统消息是不是错误：错误在节点里和对话里都用醒目的样式显示 */
