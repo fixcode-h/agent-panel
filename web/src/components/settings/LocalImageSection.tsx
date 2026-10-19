@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Download, Loader2, Play, RefreshCw, Square, Trash2, Wrench, X } from 'lucide-react'
+import { Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
 import { LOCAL_MODELS, modelGb, modelReady, type LocalModel, type LocalStatus } from '@shared/local-image'
 import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { ScopeRequests } from '@/components/chat/AskToggle'
+import { AiFixButton } from '@/components/ui/ai-fix'
 import { Group, ReadValue, Row } from './parts'
 
 type LocalSettings = Settings['imageGen']['local']
@@ -161,12 +161,18 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                 </Button>
               )}
               {job.status === 'failed' && (
-                <Button size="sm" onClick={() => void act(() => api.localImageAction('repair'))}>
-                  <Wrench className="h-3.5 w-3.5" />
-                  {t('AI 修复')}
-                </Button>
+                <AiFixButton
+                  variant="primary"
+                  issue={{
+                    title: t('本机生图：{step}', { step: job.step }),
+                    error: job.error ?? '',
+                    output: job.log.slice(-12_000),
+                    topic: 'local-image',
+                    onDone: () => void act(() => api.localImageAction('detect')),
+                  }}
+                />
               )}
-              {job.status === 'failed' && job.kind !== 'repair' && (
+              {job.status === 'failed' && (
                 <Button
                   size="sm"
                   variant="ghost"
@@ -195,10 +201,9 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
                 {job.log.slice(-6000)}
               </pre>
             )}
-            <ScopeRequests scope="local-image" active={job.kind === 'repair' && busy} className="mt-2" />
             {job.status === 'failed' && (
               <p className="mt-2 text-[12px] text-subtle">
-                {t('「AI 修复」会把出错的步骤和输出交给「AI 创建」里设置的 CLI，让它在安装目录里排查并修好环境。')}
+                {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 CLI，让它在安装目录里排查并修好环境。')}
               </p>
             )}
           </div>

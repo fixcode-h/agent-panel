@@ -15,6 +15,7 @@ import { invalidateClis } from './detect.ts'
 import { invalidateModels } from './models.ts'
 import { log } from './log.ts'
 import { getSettings, saveSettings } from './settings.ts'
+import { detectApis } from './api-detect.ts'
 import { dataPath, writeJsonAtomic, readJson } from './store.ts'
 
 /**
@@ -508,6 +509,11 @@ export function accountsApi() {
       .get(
         '/',
         guard(async (c) => c.json(await Promise.all(CLIS.filter((d) => d.auth).map((d) => listAccounts(d))))),
+      )
+      // 各个 CLI 自己配置里识别到的 API，页面确认后存进全局 API 列表
+      .get(
+        '/detected-apis',
+        guard(async (c) => c.json(await detectApis())),
       )
       // 读 API 的模型列表（在服务端请求，页面直接请求会被跨域挡住）
       .post(

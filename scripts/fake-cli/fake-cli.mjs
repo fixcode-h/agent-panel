@@ -330,6 +330,14 @@ if (input.startsWith('你在帮忙优化项目根目录下的说明文件') && k
   out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
   process.exit(0)
 }
+// 「AI 处理」报错：回一句结论；提示里带上了 CLI 的安装情况时说出来，测试按 topic 补充情况
+if (input.startsWith('本机的 Agent 面板') && kind === 'commandcode') {
+  const text = `原因：卸载后还留着启动脚本，已经删掉了。${input.includes('相关的 CLI：Pi') ? '（看过 Pi 的安装情况）' : ''}`
+  out({ type: 'event', event: { type: 'run_start', sessionId: session } })
+  out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
+  out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
+  process.exit(0)
+}
 // 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
 // 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
 if (input.startsWith('你是「Agent 面板」里的配置助手')) {

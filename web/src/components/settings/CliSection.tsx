@@ -34,6 +34,7 @@ import { Switch } from '@/components/ui/switch'
 import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { CommandPreview } from '@/components/agents/CommandPreview'
+import { AiFixButton } from '@/components/ui/ai-fix'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { CopyText, Group, Row } from './parts'
 import { CliAuthPanel } from './CliAuthPanel'
@@ -83,7 +84,17 @@ function useCliInstaller(def: CliDefinition) {
   return { job, running, start, clear: () => clearInstallJob(def.id), busy }
 }
 
-function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void }) {
+function InstallLog({
+  job,
+  name,
+  onClose,
+  onDetect,
+}: {
+  job: CliInstallJob
+  name: string
+  onClose: () => void
+  onDetect: () => void
+}) {
   const [open, setOpen] = useState(job.status === 'failed')
   const pre = useRef<HTMLPreElement>(null)
   useEffect(() => {
@@ -114,6 +125,20 @@ function InstallLog({ job, onClose }: { job: CliInstallJob; onClose: () => void 
           <CircleAlert className="h-4 w-4 shrink-0 text-danger" />
         )}
         <span className="min-w-0 flex-1">{statusText}</span>
+        {job.status === 'failed' && (
+          <AiFixButton
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            issue={() => ({
+              title: `${name}：${statusText}`,
+              error: [job.error, job.note].filter(Boolean).join('\n'),
+              command: job.command,
+              output: job.log.slice(-12_000),
+              topic: `cli:${job.cli}`,
+              onDone: onDetect,
+            })}
+          />
+        )}
         <button
           onClick={() => setOpen((o) => !o)}
           className="cursor-pointer rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-sel hover:text-fg"
@@ -350,6 +375,7 @@ export function CliSection({
   detecting,
   apis,
   onGoApis,
+  onAddApi,
 }: {
   def: CliDefinition
   draft: CliDraft
@@ -360,6 +386,8 @@ export function CliSection({
   detecting: boolean
   apis: ApiConfig[]
   onGoApis: () => void
+  /** 把识别到的 API 存进全局列表 */
+  onAddApi: (a: ApiConfig) => void
 }) {
   const set = <K extends keyof CliDraft>(k: K, v: CliDraft[K]) => onChange({ ...draft, [k]: v })
   // 模型和思考强度用本机 CLI 实际支持的
@@ -485,7 +513,13 @@ export function CliSection({
         />
       </div>
       {installer.job ? (
-        <InstallLog key={installer.job.id} job={installer.job} onClose={installer.clear} />
+        <InstallLog
+          key={installer.job.id}
+          job={installer.job}
+          name={def.name}
+          onClose={installer.clear}
+          onDetect={onDetect}
+        />
       ) : (
         status &&
         !ok && (
@@ -522,6 +556,7 @@ export function CliSection({
           onMode={(m) => set('authMode', m)}
           onApi={(id) => set('apiId', id)}
           onGoApis={onGoApis}
+          onAddApi={onAddApi}
         />
       )}
 

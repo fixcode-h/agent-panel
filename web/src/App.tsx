@@ -11,6 +11,7 @@ import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
 import { Sidebar } from '@/components/layout/Sidebar'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import { useAiFix } from '@/lib/ai-fix'
 
 // 不常用、又带着大依赖（流程图画布、设置里的各种表单）的页面按需加载，首次打开更快
 const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ default: m.AgentsPage })))
@@ -19,6 +20,7 @@ const LibraryPage = lazy(() => import('@/pages/LibraryPage').then((m) => ({ defa
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
+const AiFixDialog = lazy(() => import('@/components/ai-fix/AiFixDialog').then((m) => ({ default: m.AiFixDialog })))
 const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ default: m.SettingsDialog })))
 
 /** 页面登记；新增页面在这里加一项，并在 Sidebar 的 NAV 里加入口 */
@@ -106,6 +108,7 @@ function ProjectDialog({ open, id, onOpenChange }: { open: boolean; id?: string;
 export function App() {
   const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
+  const fix = useAiFix()
   const [project, setProject] = useState<{ open: boolean; id?: string }>({ open: false })
   const [dark, toggleTheme] = useTheme()
 
@@ -142,6 +145,12 @@ export function App() {
               section={settings.section}
               onOpenChange={(open) => setSettings((s) => ({ ...s, open }))}
             />
+          </Suspense>
+        )}
+        {/* 「AI 处理」的弹窗：第一次点报错旁的按钮时才加载 */}
+        {fix.issue && (
+          <Suspense fallback={null}>
+            <AiFixDialog />
           </Suspense>
         )}
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />

@@ -29,9 +29,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
     'The GPU decides which PyTorch build is installed; without a GPU it uses the CPU, which works but is very slow',
   '{n}GB 显存': '{n} GB VRAM',
   '没有找到 Python': 'Python not found',
-  'AI 修复': 'Fix with AI',
-  '「AI 修复」会把出错的步骤和输出交给「AI 创建」里设置的 CLI，让它在安装目录里排查并修好环境。':
-    '"Fix with AI" hands the failed step and its output to the CLI set under "AI Create", which diagnoses and repairs the environment in the install folder.',
+  '「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 CLI，让它在安装目录里排查并修好环境。':
+    '"Handle with AI" hands the failed step and its output to the CLI set under "AI Create", which diagnoses and repairs the environment in the install folder.',
   '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。':
     'Download one to get started; recommended models come first. Downloaded models show up under "Image source" in UI design. Less VRAM than suggested still works, just slower.',
   推荐: 'Recommended',
@@ -167,7 +166,7 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '下载失败（{status}）：{url}': 'Download failed ({status}): {url}',
   准备安装: 'Preparing install',
   '检查 Python': 'Checking Python',
-  '没有找到 Python 3.10 ~ 3.13。请先安装 Python 3.12（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 修复」让 AI 帮你装。':
+  '没有找到 Python 3.10 ~ 3.13。请先安装 Python 3.12（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 处理」让 AI 帮你装。':
     'Python 3.10–3.13 not found. Install Python 3.12 (https://www.python.org/downloads/ ; on Windows tick Add to PATH) and retry, or click "Fix with AI" to have AI install it.',
   '使用 Python {v}（{cmd}）': 'Using Python {v} ({cmd})',
   '显卡：{gpu}': 'GPU: {gpu}',
@@ -185,10 +184,6 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '还没有安装本机生图（ComfyUI），请到设置 → 本机生图里一键安装':
     "Local images (ComfyUI) aren't installed yet. Install them in Settings → Local images",
   'ComfyUI 没有启动起来：{log}': "ComfyUI didn't start: {log}",
-  'AI 正在排查': 'AI is diagnosing',
-  '用 {cli} 排查和修复…': 'Diagnosing and fixing with {cli}…',
-  'AI 修复完成': 'AI fix complete',
-  'AI 已处理完，请看上面的说明': 'AI finished; see its notes above',
   '还没有能用的本机模型，请到设置 → 本机生图里下载一个':
     'No local model is ready yet. Download one in Settings → Local images',
   '找不到工作流 {id}': 'Workflow {id} not found',

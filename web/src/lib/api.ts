@@ -31,7 +31,8 @@ import type {
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
-import type { ApiConfig } from '@shared/accounts'
+import type { ApiConfig, DetectedApi } from '@shared/accounts'
+import type { FixInput, FixJob } from '@shared/fix'
 import type {
   BundledSkill,
   LibraryCli,
@@ -106,7 +107,7 @@ export const api = {
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
-  localImageAction: (action: 'install' | 'repair' | 'cancel' | 'start' | 'stop' | 'detect') =>
+  localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
     request<LocalStatus>(`/local-image/${action}`, { method: 'POST' }),
   localModel: (id: string, action: 'download' | 'remove') =>
     request<LocalStatus>(`/local-image/models/${id}${action === 'download' ? '/download' : ''}`, {
@@ -128,6 +129,7 @@ export const api = {
   cliUpdate: (id: string, refresh = false) => request<CliUpdate>(`/clis/${id}/update${refresh ? '?refresh=1' : ''}`),
   cliJobs: () => request<CliInstallJob[]>('/clis/jobs'),
   accounts: () => request<CliAccounts[]>('/accounts'),
+  detectedApis: () => request<DetectedApi[]>('/accounts/detected-apis'),
   loginStart: (cli: string) => request<LoginJob>(`/accounts/${cli}/login`, json('POST', {})),
   loginStatus: (cli: string) => request<LoginJob | null>(`/accounts/${cli}/login`),
   loginInput: (cli: string, text: string) =>
@@ -279,6 +281,9 @@ export const api = {
   runDeploy: (r: DeployRun) => request<{ result: DeployResult; state: DeployState }>('/deploy/run', json('POST', r)),
   optimizeGlobalDoc: (input: GlobalDocOptimize) => request<DocJob>('/deploy/optimize', json('POST', input)),
   docJob: (id: string) => request<DocJob>(`/doc-jobs/${id}`),
+  startFix: (input: Partial<FixInput> & { title: string }) => request<FixJob>('/fix-jobs', json('POST', input)),
+  fixJob: (id: string) => request<FixJob>(`/fix-jobs/${id}`),
+  stopFix: (id: string) => request<FixJob>(`/fix-jobs/${id}/stop`, { method: 'POST' }),
   stopDocJob: (id: string) => request<DocJob>(`/doc-jobs/${id}/stop`, { method: 'POST' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),

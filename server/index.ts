@@ -37,6 +37,7 @@ import { designMcpApi } from './design-mcp.ts'
 import { askMcpApi } from './ask-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
+import { fixApi } from './fix.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi } from './accounts.ts'
@@ -450,6 +451,7 @@ app.route('/mcp', askMcpApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
+app.route('/fix-jobs', fixApi())
 app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----

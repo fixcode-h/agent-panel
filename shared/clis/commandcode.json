@@ -192,6 +192,19 @@
           "unset": ["provider.agentpanel"]
         }
       ]
-    }
+    },
+    "apiSources": [
+      {
+        "file": "~/.commandcode/settings.json",
+        "at": "provider",
+        "each": true,
+        "protocol": "openai-chat",
+        "baseUrl": ["baseURL", "baseUrl"],
+        "apiKey": ["apiKey"],
+        "models": ["models"],
+        "wireKey": ["api"],
+        "name": ["name"]
+      }
+    ]
   }
 }

@@ -1,5 +1,6 @@
 import { CLIS } from '@shared/clis'
 import type { CliAccounts, LoginJob, SavedAccount } from '@shared/schema'
+import type { DetectedApi } from '@shared/accounts'
 
 /**
  * 在线演示里的账号：没有本机的 CLI 和凭据，数据放在内存里，登录用一段假的过程演示
@@ -43,6 +44,36 @@ const list = (cli: string): CliAccounts => {
 export function demoAccounts(method: string, seg: string[], body: Record<string, any>): unknown {
   const [, cli, sub, id] = seg
   if (!cli) return CLIS.filter((c) => c.auth).map((c) => list(c.id))
+  // 演示：像是在本机 Claude Code 和 Codex 的配置里识别到的两个网关
+  if (cli === 'detected-apis')
+    return [
+      {
+        cli: 'claude',
+        source: '~/.claude/settings.json',
+        api: {
+          id: 'det-claude',
+          name: 'Claude Code · settings.json',
+          protocol: 'anthropic',
+          baseUrl: 'https://gateway.example.com/anthropic',
+          apiKey: 'sk-demo-claude-gateway-0000',
+          authHeader: 'bearer',
+          models: ['claude-sonnet-5-5'],
+        },
+      },
+      {
+        cli: 'codex',
+        source: '~/.codex/config.toml',
+        api: {
+          id: 'det-codex',
+          name: 'Codex · openrouter',
+          protocol: 'openai-responses',
+          baseUrl: 'https://openrouter.ai/api/v1',
+          apiKey: 'sk-or-demo-0000',
+          authHeader: 'x-api-key',
+          models: [],
+        },
+      },
+    ] satisfies DetectedApi[]
   if (cli === 'api-models') {
     const base = String(body.baseUrl ?? '')
     return {

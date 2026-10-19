@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Group } from './parts'
+import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
 
 /** 新建时可以从常用的开始 */
@@ -47,6 +48,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
         )}
       </p>
       <div className="flex flex-col gap-4">
+        <DetectedApis apis={apis} onAdd={(a) => onChange([...apis, a])} />
         {apis.map((a) => (
           <ApiCard
             key={a.id}
