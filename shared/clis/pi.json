@@ -319,7 +319,19 @@
           "unset": ["providers.agentpanel"]
         }
       ]
-    }
+    },
+    "apiSources": [
+      {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers",
+        "each": true,
+        "protocol": "openai-chat",
+        "baseUrl": ["baseUrl"],
+        "apiKey": ["apiKey"],
+        "models": ["models"],
+        "wireKey": ["api"]
+      }
+    ]
   },
   "mcp": {
     "files": {

@@ -57,6 +57,7 @@ import { beginRun, endRun, newTask, questionAnswers, taskSummary, withAttachment
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
+import { demoFixJob, startDemoFix, stopDemoFix } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoDeploy } from './demo-deploy'
 import {
@@ -575,9 +576,17 @@ const VERSIONS: Record<string, string> = {
   claude: '2.1.300 (Claude Code)',
   codex: 'codex-cli 0.150.0',
   commandcode: 'command-code 1.8.2',
+  gemini: '0.40.0',
+  pi: '0.85.1',
 }
 // npm 上的「最新版本」：Claude Code 演示有更新可装
-const LATEST: Record<string, string> = { claude: '2.1.301', codex: '0.150.0', commandcode: '1.8.2' }
+const LATEST: Record<string, string> = {
+  claude: '2.1.301',
+  codex: '0.150.0',
+  commandcode: '1.8.2',
+  gemini: '0.40.0',
+  pi: '0.85.1',
+}
 
 function clis(): CliStatus[] {
   const d = load()
@@ -622,12 +631,21 @@ function cliAction(id: string, action: CliInstallJob['action']) {
           '',
           `added 3 packages in 2s`,
         ]
-      : ['（在线演示：模拟卸载，不会真的执行 npm）', '', 'removed 3 packages in 1s']
+      : id === 'pi'
+        ? // Pi 演示卸载没成功的样子（npm 删掉了包，启动脚本还在），可以试「AI 处理」
+          ['（在线演示：模拟卸载，不会真的执行 npm）', '', 'up to date in 364ms']
+        : ['（在线演示：模拟卸载，不会真的执行 npm）', '', 'removed 3 packages in 1s']
   lines.forEach((l, i) =>
     setTimeout(
       () => {
         job.log += l + '\n'
         if (i < lines.length - 1) return
+        if (id === 'pi' && action === 'uninstall') {
+          job.status = 'failed'
+          job.error =
+            '已经执行了卸载，但还能找到 C:\\Users\\demo\\AppData\\Roaming\\npm\\pi.cmd。它不是 npm 、Homebrew 或官方安装脚本装的，请手动删除这个文件，或用安装它的方式卸载。'
+          return
+        }
         const d = load()
         d.installed = { ...d.installed, [id]: action === 'install' }
         if (action === 'install') VERSIONS[id] = VERSIONS[id].replace(/\d+\.\d+\.\d+/, LATEST[id])
@@ -949,6 +967,10 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body)
+  if (res === 'fix-jobs') {
+    if (!id) return startDemoFix(body)
+    return (sub === 'stop' ? stopDemoFix(id) : demoFixJob(id)) ?? fail('找不到这次处理，可能已过期')
+  }
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
   if (res === 'projects' && id && sub === 'files') {

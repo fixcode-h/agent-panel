@@ -29,17 +29,17 @@ import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
 import { localPrompts } from '../shared/design.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
-import { askSession } from './asks.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { capture, childEnv, killTree, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { netFetch } from './net.ts'
 import { getSettings } from './settings.ts'
+import { registerFixTopic } from './fix.ts'
 import { appDir } from './update.ts'
 
 /**
  * 本机生图：在软件目录的 comfyui/ 下装 ComfyUI（源码 + 独立的 Python 虚拟环境），按需启动，
- * 用它的 HTTP 接口提交工作流、取回图片。安装、下载模型、AI 修复同一时间只跑一个，进度给设置页轮询。
+ * 用它的 HTTP 接口提交工作流、取回图片。安装、下载模型同一时间只跑一个，进度给设置页轮询。
  */
 
 const isWin = platform() === 'win32'
@@ -219,7 +219,7 @@ export function installComfy() {
     if (!py)
       throw new Error(
         t(
-          '没有找到 Python 3.10 ~ 3.13。请先安装 Python 3.12（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 修复」让 AI 帮你装。',
+          '没有找到 Python 3.10 ~ 3.13。请先安装 Python 3.12（https://www.python.org/downloads/ ，Windows 安装时勾选 Add to PATH），装好后重试；也可以点「AI 处理」让 AI 帮你装。',
         ),
       )
     say(t('使用 Python {v}（{cmd}）', { v: py.version, cmd: [py.cmd, ...py.args].join(' ') }))
@@ -364,71 +364,31 @@ process.on('exit', stopComfy)
 export const comfyLog = () => server?.log ?? ''
 
 /**
- * AI 修复：把失败的步骤和输出交给设置里「AI 创建」用的 CLI，让它在 comfyui 目录里排查、修好环境。
- * 审批按这个 CLI 的权限设置，要确认的命令会在设置页上弹卡片
+ * 「AI 处理」本机生图的报错：页面把失败的步骤和输出交过来（见 server/fix.ts），这里补上环境、目录和修好后要满足的条件。
+ * 在 comfyui 目录里处理；处理完重新找 Python
  */
-export function repairComfy() {
-  const failed = job?.status === 'failed' ? job : undefined
-  const context = failed
-    ? `失败的操作：${failed.step}\n错误：${failed.error}\n\n最后的输出：\n${failed.log.slice(-6000)}`
-    : ''
-  const serverLog = comfyLog()
-  return begin('repair', t('AI 正在排查'), async (j) => {
-    const settings = await getSettings()
-    const cli = settings.assist.cli && getCli(settings.assist.cli) ? settings.assist.cli : defaultCli(settings)
-    const def = getCli(cli)!
-    const cs = cliSettings(settings, cli)
-    const run = agentRun({ cli, model: settings.assist.model || '@high' }, settings)
+registerFixTopic('local-image', {
+  cwd: () => comfyDir(),
+  after: () => {
+    python = undefined
+  },
+  context: async () => {
     const g = await detectGpu()
     const py = await findPython()
     await mkdir(comfyDir(), { recursive: true })
-    say(t('用 {cli} 排查和修复…', { cli: def.name }))
-    const input = `本机图片生成工具 ComfyUI 的安装或启动出了问题，请帮忙排查并修好。
-
-环境：
-- 系统：${platform()} ${arch()}
+    const serverLog = comfyLog()
+    return `这是本机图片生成工具 ComfyUI 的安装或启动问题。
 - 显卡：${g.name ?? g.gpu}${g.vram ? `（${g.vram}GB 显存）` : ''}，PyTorch 应该用 ${g.gpu.toUpperCase()} 版本${TORCH_INDEX[g.gpu] ? `（${TORCH_INDEX[g.gpu]}）` : ''}
 - 找到的 Python：${py ? `${[py.cmd, ...py.args].join(' ')}（${py.version}）` : '没有找到 3.10~3.13 的版本'}
 - 安装目录：${comfyDir()}（ComfyUI 源码在 ${codeDir()}，Python 虚拟环境在 ${path.join(comfyDir(), 'venv')}）
 - 虚拟环境的 Python：${venvPython()}
-
-${context}
-${serverLog ? `\nComfyUI 启动时的输出：\n${serverLog.slice(-4000)}` : ''}
-
-要求：
-1. 先找出原因，再动手修。只在安装目录里改动；可以用虚拟环境的 pip 装或重装依赖，缺 Python 时可以用系统的包管理器装 Python 3.12。
-2. 不要删除 ${path.join(codeDir(), 'models')} 里的模型文件。
-3. 修好后运行 ${venvPython()} -c "import torch, safetensors, aiohttp, yaml" 确认能导入；全部正常时在 ${marker()} 写入当前时间（这个文件表示安装完成）。
-4. 最后用一两句话说明原因和你做了什么；修不好的话说明还需要用户做什么。`
-    const asks = askSession('local-image')
-    const errors: string[] = []
-    const r = await invokeCli({
-      askUser: asks.askUser,
-      onAsk: asks.onAsk,
-      cliId: cli,
-      command: cs.command,
-      build: { model: run.model, effort: run.effort, permission: cs.permission, extraArgs: cs.extraArgs },
-      cwd: comfyDir(),
-      env: childEnv(cs.env),
-      input,
-      signal: j.abort.signal,
-      timeoutMs: 0,
-      onEvent: (ev) => {
-        if (ev.type === 'text_delta') j.log = tail(j.log + ev.text)
-        else if (ev.type === 'text') say(ev.text)
-        else if (ev.type === 'tool') {
-          say(`\n▸ ${ev.tool.name ?? ev.tool.kind} ${ev.tool.label}`)
-          j.step = `${ev.tool.name ?? ev.tool.kind} ${ev.tool.label}`.slice(0, 120)
-        } else if (ev.type === 'error') errors.push(ev.message)
-      },
-    }).finally(asks.done)
-    if (r.killed === 'stopped') throw new Error(t('已取消'))
-    if (r.spawnError) throw new Error(r.spawnError)
-    if (r.code !== 0) throw new Error(errors.join('\n') || r.stderr.trim().split('\n').slice(-3).join('\n'))
-    python = undefined
-    j.step = existsSync(marker()) ? t('AI 修复完成') : t('AI 已处理完，请看上面的说明')
-  })
-}
+${serverLog ? `\nComfyUI 启动时的输出：\n${serverLog.slice(-4000)}\n` : ''}
+处理这类问题的约定：
+- 只在安装目录里改动；可以用虚拟环境的 pip 装或重装依赖，缺 Python 时可以用系统的包管理器装 Python 3.12。
+- 不要删除 ${path.join(codeDir(), 'models')} 里的模型文件。
+- 修好后运行 ${venvPython()} -c "import torch, safetensors, aiohttp, yaml" 确认能导入；全部正常时在 ${marker()} 写入当前时间（这个文件表示安装完成）。`
+  },
+})
 
 export function cancelJob() {
   job?.abort.abort()
@@ -710,10 +670,6 @@ export function comfyApi() {
   routes.post(
     '/install',
     wrap(() => void installComfy()),
-  )
-  routes.post(
-    '/repair',
-    wrap(() => void repairComfy()),
   )
   routes.post(
     '/cancel',

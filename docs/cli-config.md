@@ -34,7 +34,7 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 | `features`                        | 能力，见下面                                                                                              |
 | `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                  |
 | `docsNote`                        | 项目设置里说明文件那一页的说明                                                                            |
-| `globalDoc`                       | 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持 |
+| `globalDoc`                       | 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持                        |
 | `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`                |
 | `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来            |
 | `envExample`                      | 设置里环境变量的示例                                                                                      |
@@ -129,3 +129,22 @@ CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.jso
 | `contextWindow` | 上下文窗口的默认估计                                                                                  |
 
 审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`；Pi 没有审批，用 `--tools` 限制能用的工具）。
+
+## 识别 CLI 自己配的 API `auth.apiSources`
+
+设置的「API 配置」页和 CLI 页会读各个 CLI 自己的环境变量和配置文件，把里面配好的接口地址、密钥和模型列出来，用户确认后存进全局的 API 列表，
+别的 CLI 也能选用。读哪里写在 `auth.apiSources` 里，每一项是一个来源：
+
+| 字段                   | 说明                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------- |
+| `file`                 | 配置文件；不写表示看环境变量（系统的加上设置里这个 CLI 的）                                   |
+| `format`               | `json`（默认）、`toml` 或 `env`（`.env` 文件）                                                |
+| `at` / `each`          | 配置所在的键（`a.b`）；`each` 为 `true` 时下面每个子键各是一个 API（例如 `providers.<名字>`） |
+| `protocol` / `wire`    | 默认的协议，和「协议写法 → 协议」的对照；不写 `wire` 时用 `auth.api.wire` 反查                |
+| `wireKey`              | 协议写法的键                                                                                  |
+| `baseUrl`              | 接口地址的键，都没值时用 `defaultBaseUrl`                                                     |
+| `apiKey` / `bearerKey` | 密钥的键；`bearerKey` 的用 `Authorization: Bearer` 发                                         |
+| `keyEnv`               | 值是环境变量名的键（例如 Codex 的 `env_key`）                                                 |
+| `models` / `name`      | 模型（字符串、数组、`[{ "id" }]` 或以模型名为键的对象都认）和名字的键                         |
+
+键都按顺序取第一个有值的；值写成 `$NAME`、`${NAME}`，或正好是一个设置了的环境变量名时取那个环境变量。面板自己写进去的 `agentpanel` 不算。

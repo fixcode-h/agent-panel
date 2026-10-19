@@ -38,6 +38,53 @@ export const JsonEdit = z.object({
 })
 export type JsonEdit = z.infer<typeof JsonEdit>
 
+/**
+ * CLI 自己的配置里 API 写在哪：识别出来后可以存进全局的 API 列表给别的 CLI 用。
+ * 每一项的键名按顺序取第一个有值的；值写成 $NAME / ${NAME}，或者正好是一个存在的环境变量名时，取那个环境变量
+ */
+export const ApiSource = z.object({
+  /** 配置文件（~ 是用户目录，${ENV:-默认值} 先取环境变量）；不写表示看环境变量（系统的加上这个 CLI 设置里的） */
+  file: z.string().default(''),
+  format: z.enum(['json', 'toml', 'env']).default('json'),
+  /** 配置所在的键（a.b）；不写是整个文件 */
+  at: z.string().default(''),
+  /** at 下面每个子键各是一个 API（例如 Codex 的 model_providers.<名字>） */
+  each: z.boolean().default(false),
+  /** 读不到协议写法时用的协议 */
+  protocol: z.enum(API_PROTOCOLS),
+  /** 协议写法 → 协议；不写时用 api.wire 反查 */
+  wire: z.record(z.string(), z.enum(API_PROTOCOLS)).default({}),
+  /** 接口地址的键；都没有值时用 defaultBaseUrl */
+  baseUrl: z.array(z.string()).default([]),
+  defaultBaseUrl: z.string().default(''),
+  /** 密钥的键；bearerKey 里的是用 Authorization: Bearer 发的（Anthropic 的 ANTHROPIC_AUTH_TOKEN） */
+  apiKey: z.array(z.string()).default([]),
+  bearerKey: z.array(z.string()).default([]),
+  /** 值是环境变量名的键（例如 Codex 的 env_key） */
+  keyEnv: z.array(z.string()).default([]),
+  /** 模型的键：字符串、字符串数组、[{ id }] 或以模型名为键的对象都认 */
+  models: z.array(z.string()).default([]),
+  /** 协议写法的键 */
+  wireKey: z.array(z.string()).default([]),
+  /** 名字的键；不写时用子键名 */
+  name: z.array(z.string()).default([]),
+})
+export type ApiSource = z.infer<typeof ApiSource>
+
+/** 识别到的一个 API：来自哪个 CLI 的哪个配置 */
+export interface DetectedApi {
+  cli: string
+  /** 配置文件路径，或「环境变量」 */
+  source: string
+  api: ApiConfig
+}
+
+/** 两个 API 是不是同一个：协议、地址（忽略末尾的 /）和密钥都一样 */
+export const sameApi = (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey'>, b: typeof a) =>
+  a.protocol === b.protocol &&
+  a.baseUrl.trim().replace(/\/+$/, '') === b.baseUrl.trim().replace(/\/+$/, '') &&
+  a.apiKey === b.apiKey
+
 /** CLI 怎么用账号登录、凭据存在哪、怎么改用 API */
 export const CliAuth = z.object({
   /** 账号登录页上的提醒（例如这个 CLI 对账号类型有限制） */
@@ -75,6 +122,8 @@ export const CliAuth = z.object({
       wire: z.record(z.string(), z.string()).default({}),
     })
     .optional(),
+  /** CLI 自己配置的 API 写在哪，用来识别 */
+  apiSources: z.array(ApiSource).default([]),
 })
 export type CliAuth = z.infer<typeof CliAuth>
 

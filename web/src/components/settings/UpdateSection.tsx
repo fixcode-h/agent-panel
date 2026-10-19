@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { t } from '@shared/i18n'
+import { AiFixButton } from '@/components/ui/ai-fix'
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
 const day = (iso: string) => {
@@ -194,6 +195,15 @@ export function UpdateSection() {
               GitHub Releases
             </a>{' '}
             {t('手动下载。')}
+            <AiFixButton
+              variant="ghost"
+              className="ml-1 h-6 px-1.5 align-middle text-xs"
+              issue={{
+                title: t('检查面板更新失败'),
+                error: data.error,
+                context: '面板从 GitHub Releases（fixcode-h/agent-panel）检查新版本时出错，常见原因是网络或代理。',
+              }}
+            />
           </p>
         ) : !data ? (
           <p className="flex items-center gap-1.5 text-[13px] text-subtle">

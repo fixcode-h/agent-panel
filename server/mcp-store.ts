@@ -137,6 +137,22 @@ function tomlBody(lines: string[]): Record<string, Val> {
   return out
 }
 
+/** 整个 TOML 文件读成对象：[a.b] 表头按段嵌套（[[数组表]] 不处理），给识别 CLI 配置用 */
+export function parseToml(text: string): Record<string, Val> {
+  const lines = text.split(/\r?\n/)
+  const secs = tomlSections(lines)
+  const root = tomlBody(lines.slice(0, secs[0]?.from ?? lines.length))
+  for (const sec of secs) {
+    let cur: Record<string, Val> = root
+    for (const k of sec.parts) {
+      const next = cur[k]
+      cur = (next && typeof next === 'object' && !Array.isArray(next) ? next : (cur[k] = {})) as Record<string, Val>
+    }
+    Object.assign(cur, tomlBody(lines.slice(sec.from + 1, sec.to)))
+  }
+  return root
+}
+
 const asStrings = (v: Val | undefined) => (Array.isArray(v) ? v.map(String) : [])
 const asRecord = (v: Val | undefined): Record<string, string> =>
   v && typeof v === 'object' && !Array.isArray(v)

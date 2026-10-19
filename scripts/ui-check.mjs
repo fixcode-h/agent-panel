@@ -267,6 +267,29 @@ try {
   await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
   await p.getByText('添加其他 CLI').scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 CLI', 'Gemini CLI'])
+  // 报错的地方都有「AI 处理」：演示里 Pi 卸载会失败（留着启动脚本），点了在统一的弹窗里看 AI 的处理
+  await p.getByRole('dialog').getByText('Pi', { exact: true }).first().click()
+  await p.getByRole('button', { name: '安装', exact: true }).first().click()
+  await p.getByText('安装完成').first().waitFor({ timeout: 8000 })
+  await p.getByRole('button', { name: '卸载', exact: true }).first().click()
+  await p.getByRole('dialog').last().getByRole('button', { name: '卸载', exact: true }).click()
+  await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })
+  await check(p, '设置-CLI-卸载失败', ['卸载没有成功', 'AI 处理'])
+  await p.getByRole('button', { name: 'AI 处理', exact: true }).first().click()
+  await p
+    .getByText('AI 处理完了，按上面的说明确认一下结果')
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('AI 处理：弹窗里没有出结果'))
+  await check(p, 'AI处理-弹窗', ['Pi：卸载没有成功', '原因'])
+  await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).last().click()
+  // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
+  await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
+  await check(p, '设置-API-识别', ['在本机 CLI 的配置里识别到 2 个 API', 'Codex · openrouter'])
+  await p.getByRole('button', { name: '存到 API 配置' }).first().click()
+  await check(p, '设置-API-已存', ['已在列表中'])
+  // 回到 CLI 的默认 CLI 页（部署在它下面）
+  await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
+  await p.getByRole('dialog').getByText('默认 CLI', { exact: true }).first().click()
   // 部署：全局说明写进各 CLI，技能默认不选，选了再部署
   await p.getByRole('button', { name: '部署', exact: true }).first().click()
   await check(p, '设置-部署', ['全局说明（AGENTS.md）', '写到哪些 CLI', '要部署的技能', 'grilling'])

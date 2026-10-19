@@ -8,6 +8,7 @@ import { Select } from '@/components/ui/input'
 import { t } from '@shared/i18n'
 import { FieldRow, MarginInput, NumInput, TextInput, Thumb } from './fields'
 import { AnnotationLayer, AnnotationToolbar, isMarkTool, type Tool } from './Annotations'
+import { AiFixButton } from '@/components/ui/ai-fix'
 
 /** 设计里的一个控件：在哪棵树（空是主界面，否则是子控件名）、id、名字、类型 */
 export interface WidgetRef {
@@ -286,9 +287,19 @@ export function ImageDetails({
         )}
       </div>
       {image.status === 'failed' && image.error && (
-        <p className="mx-3 mt-2 rounded-md bg-danger/10 px-2 py-1.5 text-[11.5px] leading-relaxed whitespace-pre-wrap text-danger">
-          {image.error}
-        </p>
+        <div className="mx-3 mt-2 flex flex-col items-start gap-1.5 rounded-md bg-danger/10 px-2 py-1.5">
+          <p className="text-[11.5px] leading-relaxed whitespace-pre-wrap text-danger">{image.error}</p>
+          <AiFixButton
+            variant="ghost"
+            className="h-6 px-1.5 text-[11.5px]"
+            issue={{
+              title: t('生成图片失败：{name}', { name: image.name }),
+              error: image.error,
+              context:
+                '这是 Agent 面板 UI 设计里的生成图片（按设置里「生成图片的方式」调用 CLI、API 或本机 ComfyUI）。',
+            }}
+          />
+        </div>
       )}
       <div className="py-1">
         <FieldRow label={t('名称')}>

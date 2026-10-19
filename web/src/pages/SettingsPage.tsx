@@ -675,6 +675,7 @@ function SettingsBody({
               detecting={detecting}
               apis={apis}
               onGoApis={() => onSection('apis')}
+              onAddApi={(a) => setApis((l) => [...l, a])}
             />
           )}
 

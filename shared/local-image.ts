@@ -197,7 +197,7 @@ export type LocalGpu = 'cuda' | 'rocm' | 'mps' | 'cpu'
 /** 安装、下载、修复的进度（同一时间只有一个） */
 export interface LocalJob {
   id: string
-  kind: 'install' | 'download' | 'repair' | 'start'
+  kind: 'install' | 'download' | 'start'
   status: 'running' | 'done' | 'failed'
   /** 当前在做什么 */
   step: string

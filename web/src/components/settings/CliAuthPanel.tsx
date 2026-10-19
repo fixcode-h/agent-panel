@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, ExternalLink, Loader2, LogIn, LogOut, Pencil, Save, Trash2, User, X } from 'lucide-react'
-import type { CliDefinition } from '@shared/clis'
+import { getCli, type CliDefinition } from '@shared/clis'
 import { API_PROTOCOL_LABEL, apiFits, type ApiConfig } from '@shared/accounts'
 import type { CliAccounts, LoginJob } from '@shared/schema'
 import { api } from '@/lib/api'
+import { DetectedApis } from './DetectedApis'
+import { AiFixButton } from '@/components/ui/ai-fix'
 import { loadCliModels } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -25,6 +27,7 @@ export function CliAuthPanel({
   onMode,
   onApi,
   onGoApis,
+  onAddApi,
 }: {
   def: CliDefinition
   mode: 'account' | 'api'
@@ -33,6 +36,7 @@ export function CliAuthPanel({
   onMode: (m: 'account' | 'api') => void
   onApi: (id: string) => void
   onGoApis: () => void
+  onAddApi: (a: ApiConfig) => void
 }) {
   const fitting = apis.filter((a) => apiFits(def.auth, a))
   const cur = fitting.find((a) => a.id === apiId)
@@ -94,6 +98,15 @@ export function CliAuthPanel({
                     })}
               </p>
             )}
+            {/* 这个 CLI 自己配置里的 API：存进全局列表后直接选用 */}
+            <DetectedApis
+              apis={apis}
+              cli={def.id}
+              filter={(d) => apiFits(def.auth, d.api)}
+              onAdd={onAddApi}
+              onSaved={(a) => onApi(a.id)}
+              selected={cur?.id}
+            />
           </div>
         </Row>
       ) : (
@@ -364,6 +377,18 @@ function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onCl
               ? t('登录成功')
               : t('登录没有完成')}
         </span>
+        {job.status === 'failed' && (
+          <AiFixButton
+            variant="ghost"
+            className="h-7 px-2 text-xs"
+            issue={() => ({
+              title: t('{cli} 登录没有完成', { cli: getCli(cli)?.name ?? cli }),
+              error: job.error ?? '',
+              output: job.output.slice(-12_000),
+              topic: `cli:${cli}`,
+            })}
+          />
+        )}
         {running ? (
           <Button size="sm" variant="ghost" onClick={() => void api.loginCancel(cli)}>
             {t('取消')}
