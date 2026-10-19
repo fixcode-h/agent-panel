@@ -62,7 +62,8 @@ const str = (v: unknown) => (typeof v === 'string' ? v : '')
 const NOTES_TOOL = {
   name: 'read_user_notes',
   description:
-    '取用户在你这轮执行中补充的信息。做比较久的事（跑命令、改多处文件、等测试）中间看一眼，取到就结合它继续当前的任务，不要从头重做。取过一次的这些就不会再给；没有时说「没有新的补充」，不要反复调用。',
+    '取用户在你这轮执行中补充的信息。开始动手前先调用一次；做比较久的事（跑命令、改多处文件、等测试）中间也每隔一会儿调用一次，取到就结合它继续当前的任务，不要从头重做。' +
+    '取过的不会再给；暂时没有时会等几秒再回答「没有新的补充」，这时继续做手上的事，过一会儿可以再调用。',
   inputSchema: { type: 'object', properties: {} },
 }
 
@@ -117,9 +118,17 @@ async function callAsk(s: NonNullable<ReturnType<typeof sessions.get>>, args: un
   }
 }
 
+/** 没有补充时等一会儿再回答：用户可能在模型检查之后的几秒里发来补充 */
+const NOTES_WAIT_MS = 5000
+
 /** 取执行中的补充：拿到的同时从排队里去掉（队列里已经没有了就不算数，例如用户刚撤回了） */
-function callNotes(s: NonNullable<ReturnType<typeof sessions.get>>) {
-  const list = s.notes?.() ?? []
+async function callNotes(s: NonNullable<ReturnType<typeof sessions.get>>) {
+  let list = s.notes?.() ?? []
+  const until = Date.now() + NOTES_WAIT_MS
+  while (!list.length && Date.now() < until) {
+    await new Promise((r) => setTimeout(r, 250))
+    list = s.notes?.() ?? []
+  }
   return { content: [{ type: 'text', text: list.length ? list.join('\n\n') : '没有新的补充' }] }
 }
 
@@ -141,7 +150,7 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
     case 'tools/call': {
       const name = msg.params?.name
       if (name === TOOL.name && s.ask) return reply(await callAsk(s, msg.params?.arguments ?? {}))
-      if (name === NOTES_TOOL.name && s.notes) return reply(callNotes(s))
+      if (name === NOTES_TOOL.name && s.notes) return reply(await callNotes(s))
       return reply({ content: [{ type: 'text', text: `没有这个工具：${name}` }], isError: true })
     }
     default:
