@@ -95,7 +95,7 @@ try {
   await p.getByRole('button', { name: '添加', exact: true }).first().click()
   // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
-  await check(p, '内置工作流-添加后', ['识别现场', '确认设计'])
+  await check(p, '内置工作流-添加后', ['识别现场与设计', '文档与提交'])
   // 「默认」工作流：什么都能交给它，做完推荐已有的工作流，点一下就带着上下文执行
   await p.goto(base)
   await p.getByTitle('执行的工作流').click()

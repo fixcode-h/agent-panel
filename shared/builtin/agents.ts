@@ -32,6 +32,23 @@ const VCS = p({
   default: '自动',
   description: '自动：按项目目录识别 Git / P4',
 })
+/**
+ * 识别现场：原来是单独的「项目向导」节点，现在由每个工作流的第一个节点顺带做（勾上这个参数），少一轮交接。
+ */
+const SCENE = p({
+  key: 'scene',
+  label: '先识别现场',
+  type: 'bool',
+  default: false,
+  description: '工作流的第一个节点勾上：先识别工作区、文档根和已有改动',
+})
+const SCENE_TEXT = `{{#if scene}}
+先只读识别现场（不改文件）：
+1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/doc/<项目文件夹名>。
+2. 记录版本控制基线：Git 的分支、HEAD、未提交改动；P4 的 client、stream 和限定路径下的 opened 文件。这些是用户已有的改动，后面的步骤不能认领或覆盖。
+3. 读 DOC_ROOT 下的 README、MODULE-MAP 和相关模块的 README、bugs.md，按文档定位代码；文档定位不到时再限定范围搜索。
+结果开头先写：工作区类型、PROJECT_ROOT、DOC_ROOT、基线和已有改动，以及相关模块、关键文件、已知的历史 Bug（后面的节点会直接用）。
+{{/if}}`
 const LANG = p({
   key: 'lang',
   label: '语言',
@@ -104,34 +121,14 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
   ),
 
   // ── 规划 ──
-  base('guide', '规划', {
-    name: '项目向导',
-    description: '只读识别工作区、文档根和已有改动，读文档地图定位相关代码',
-    icon: 'search',
-    model: '@low',
-    skills: ['project-workflow', 'project-documentation'],
-    params: [VCS],
-    instructions: `你负责进入项目时的现场识别，不修改任何文件。
-
-${VCS_TEXT}
-
-按顺序做：
-1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/doc/<项目文件夹名>。
-2. 记录版本控制基线：Git 的分支、HEAD、未提交改动；P4 的 client、stream 和限定路径下的 opened 文件。这些是用户已有的改动，后面的步骤不能认领或覆盖。
-3. 读 DOC_ROOT 下的 README、MODULE-MAP 和相关模块的 README、bugs.md，按文档定位代码；文档定位不到时再限定范围搜索。
-
-输出（后面的节点会直接用）：
-- 工作区类型、PROJECT_ROOT、DOC_ROOT、基线和已有改动
-- 和本次任务相关的模块、关键文件路径、已知的历史 Bug
-- 文档缺失或过期的地方`,
-  }),
   base('analyst', '规划', {
     name: '需求分析师',
     description: '收敛需求、压测方案，出可以确认的设计摘要',
     icon: 'brain',
     model: '@high',
-    skills: ['brainstorming', 'grilling'],
+    skills: ['brainstorming', 'grilling', 'project-workflow', 'project-documentation'],
     params: [
+      SCENE,
       p({
         key: 'scale',
         label: '规模',
@@ -142,6 +139,7 @@ ${VCS_TEXT}
       p({ key: 'grill', label: '压测方案', type: 'bool', default: false, description: '用 grilling 分轮压测设计树' }),
     ],
     instructions: `你负责把需求收敛成可以确认的设计，不写实现代码。
+${SCENE_TEXT}
 
 本次规模：{{scale}}。
 {{#if scale=spike}}这是探索验证：先明确要验证的问题和判定标准，给出最小的验证方案。{{/if}}
@@ -160,9 +158,13 @@ ${VCS_TEXT}
     description: '基于事实给出 2–4 个架构方案和带验证方式的架构契约',
     icon: 'layout',
     model: '@high',
-    skills: ['software-architecture-design'],
-    params: [p({ key: 'stack', label: '技术栈', options: ['通用', 'ue', 'lua', 'ts', 'csharp'], default: '通用' })],
+    skills: ['software-architecture-design', 'project-workflow', 'project-documentation'],
+    params: [
+      SCENE,
+      p({ key: 'stack', label: '技术栈', options: ['通用', 'ue', 'lua', 'ts', 'csharp'], default: '通用' }),
+    ],
     instructions: `你负责架构设计和评审。
+${SCENE_TEXT}
 
 1. 先读事实基线：现有模块、依赖方向、运行时数据流、已有的架构文档和 ADR。
 2. 按复杂度选最小够用的结构，不为假想的需求加层。
@@ -180,11 +182,13 @@ ${VCS_TEXT}
     description: '按 OpenSpec 写 proposal、specs、design、tasks，守住各阶段门禁并归档',
     icon: 'doc',
     model: '@high',
-    skills: ['openspec', 'project-documentation', 'task-records'],
+    skills: ['openspec', 'project-documentation', 'task-records', 'project-workflow'],
     params: [
+      SCENE,
       p({ key: 'stage', label: '阶段', options: ['前置检查', '落规范', '规范门禁', '归档'], default: '落规范' }),
     ],
     instructions: `你负责 OpenSpec 产物和门禁，按 openspec 技能的规则做。所有 openspec 命令都在 DOC_ROOT 下运行。
+${SCENE_TEXT}
 
 当前阶段：{{stage}}。
 {{#if stage=前置检查}}只读检查：确定 DOC_ROOT，在 DOC_ROOT 下运行 openspec --version，确认可用的 /opsx 指令，扫描 openspec/changes/ 下缺 .openspec.yaml 的目录。任何一项不满足就写明原因，最后一行写「验收结论：不通过」；都满足写「验收结论：通过」。{{/if}}
@@ -242,11 +246,13 @@ ${VCS_TEXT}
       'verification-before-completion',
       'cpp-code-style',
       'lua-code-style',
+      'project-documentation',
     ],
-    params: [LANG, VCS],
+    params: [SCENE, LANG, VCS],
     instructions: `你负责定位并修复 Bug。没找到根因不修。
 
 ${VCS_TEXT}
+${SCENE_TEXT}
 
 1. 先查相关模块的 bugs.md 和历史 Bug 记录，看是不是复发。
 2. 按 systematic-debugging 四个阶段：根因调查 → 模式分析 → 假设验证 → 实现修复。
@@ -260,15 +266,25 @@ ${VCS_TEXT}
   // ── 质量 ──
   base('verifier', '质量', {
     name: '验收员',
-    description: '跑构建、测试和检查拿新鲜证据，逐条对照验收标准给出结论',
+    description: '查回归，跑构建、测试和检查拿新鲜证据，逐条对照验收标准给出结论',
     icon: 'test',
     model: '@medium',
-    skills: ['verification-before-completion'],
-    params: [p({ key: 'scope', label: '验收范围', options: ['本次改动', '整体'], default: '本次改动' })],
+    skills: ['verification-before-completion', 'systematic-debugging'],
+    params: [
+      p({ key: 'scope', label: '验收范围', options: ['本次改动', '整体'], default: '本次改动' }),
+      p({
+        key: 'regress',
+        label: '查回归',
+        type: 'bool',
+        default: true,
+        description: '先读历史 Bug 和变更代码，找有证据的回归',
+      }),
+    ],
     instructions: `你负责验收，不修改代码。
 
 范围：{{scope}}。
-1. 找到验收标准（设计摘要、proposal、tasks 或节点说明里的要求）。
+1. 找到验收标准（设计摘要、proposal、tasks 或节点说明里的要求）。{{#if regress}}
+   同时查回归：读相关模块的 README、bugs.md、命中的历史 Bug 记录和变更代码，核对既有行为有没有被破坏；每条发现写文件和位置、触发条件、影响和证据，没有证据的不报。{{/if}}
 2. 运行能证明结果的命令：构建、测试、lint、类型检查，记录命令和关键输出。没有本轮的新鲜证据不算通过。
 3. 逐条对照验收标准，写「✓ / ✗ + 证据」。需要 Editor、设备或用户操作才能验证的，登记为「延期验证」，写明怎么验证。
 4. 不通过时列出必须修改的地方，具体到文件和现象。
@@ -295,31 +311,24 @@ ${VCS_TEXT}
   }),
   base('impact', '质量', {
     name: '影响面分析',
-    description: '只读分析改动波及的模块、入口、依赖和契约',
+    description: '只读分析改动波及的模块、入口、依赖和契约，以及测试缺口',
     icon: 'search',
     model: '@low',
-    skills: ['project-documentation'],
-    instructions:
-      '你负责变更影响面分析，不修改文件。先读取项目约束与模块索引，再围绕给定任务限定范围查找代码、入口、依赖和调用链；只有索引无法定位时才扩大搜索。区分已验证事实和推测，列出受影响模块、具体文件路径、依赖/契约风险和仍需确认的范围。不要提交或推送。返回简洁的证据路径和建议核对的点。',
-  }),
-  base('regression', '质量', {
-    name: '回归审查',
-    description: '读历史 Bug 和变更代码，找出有证据的回归和安全风险',
-    icon: 'shield',
-    model: '@medium',
-    skills: ['systematic-debugging'],
-    instructions: `你负责独立回归风险审查，不修改文件。根据明确的任务范围读取模块 README、bugs.md、命中的历史 Bug 记录、相关规范和变更代码，核对既有行为是否被破坏。每条发现必须给出具体文件和位置、触发条件、影响与可复核证据；没有证据不要报猜测。不要运行会改动工作区的命令，不要提交或推送。
-
-有必须修复的回归时最后一行写「验收结论：不通过」，否则写「验收结论：通过」。`,
-  }),
-  base('testscout', '质量', {
-    name: '测试侦察',
-    description: '找出已有测试和缺失的边界、回归用例，给出可执行的验证命令',
-    icon: 'test',
-    model: '@low',
-    skills: ['test-driven-development', 'verification-before-completion'],
-    instructions:
-      '你负责测试与验收侦察，不修改文件、不运行会写入工作区的测试。阅读给定模块的既有测试、模块 Bug 记录和变更验收条件，指出缺少的边界、回归用例及可执行验证命令；引用现有测试文件路径，区分已存在与建议新增的测试。不要提交或推送。实际编写、运行测试由开发和验收节点负责。',
+    skills: ['project-documentation', 'test-driven-development'],
+    params: [
+      p({
+        key: 'tests',
+        label: '查测试缺口',
+        type: 'bool',
+        default: true,
+        description: '同时列出已有测试、缺的边界和回归用例',
+      }),
+    ],
+    instructions: `你负责变更影响面分析，不修改文件。先读取项目约束与模块索引，再围绕给定任务限定范围查找代码、入口、依赖和调用链；只有索引无法定位时才扩大搜索。区分已验证事实和推测，列出受影响模块、具体文件路径、依赖/契约风险和仍需确认的范围。
+{{#if tests}}
+再做测试侦察：读相关模块的既有测试、Bug 记录和验收条件，指出缺少的边界、回归用例和可执行的验证命令；引用现有测试文件路径，区分已有的和建议新增的。不运行会写入工作区的测试。
+{{/if}}
+不要提交或推送。返回简洁的证据路径和建议核对的点。`,
   }),
 
   // ── 文档与版本控制 ──
@@ -339,21 +348,32 @@ ${VCS_TEXT}
 输出：改了哪些文档、各改了什么。`,
   }),
   base('vcs', '文档与交付', {
-    name: '版本控制员',
-    description: 'Git 按功能拆本地提交；P4 核对 default 并按类型分 pending',
+    name: '交付员',
+    description: '同步文档后做版本控制收尾：Git 按功能拆本地提交，P4 核对 default 并按类型分 pending',
     icon: 'workflow',
     model: '@low',
-    skills: ['project-workflow', 'git-workflow', 'p4-workflow'],
-    params: [VCS, p({ key: 'commit', label: '提交方式', options: ['本地提交', '只检查'], default: '本地提交' })],
-    instructions: `你负责版本控制收尾。
+    skills: ['project-workflow', 'project-documentation', 'git-workflow', 'p4-workflow'],
+    params: [
+      VCS,
+      p({ key: 'docs', label: '同步文档', type: 'bool', default: true, description: '提交前先把改动同步进项目文档' }),
+      p({ key: 'bug', label: '写 Bug 记录', type: 'bool', default: false }),
+      p({ key: 'commit', label: '提交方式', options: ['本地提交', '只检查'], default: '本地提交' }),
+    ],
+    instructions: `你负责任务的收尾：{{#if docs}}先同步文档，再{{/if}}做版本控制收尾。
 
 ${VCS_TEXT}
+{{#if docs}}
+同步文档（只写有证据的事实）：按 project-documentation 的「按变化选择文档」决定要更新哪些：模块 README（同步状态）、MODULE-MAP、架构文档、ADR、CONTEXT.md；只改和这次改动相关的段落，不重写整篇。没有要更新的就写明原因。
+{{/if}}{{#if bug}}
+写 Bug 记录：在模块 bugs.md 加一条索引，并写 bugs/<id>.md：症状、复现、根因、修复、回归测试、防复发措施。
+{{/if}}
+版本控制收尾（文档改动和代码一起）：
 
 {{#if commit=只检查}}只检查不提交：列出本次任务的改动（限定范围的 diff / opened），指出范围外的改动、临时文件、遗漏的文件。{{else}}
 - Git：只提交本次任务的文件，按功能拆成本地提交，提交前跑一遍验证；提交说明写清改了什么。不 push。
 - P4：核对 default changelist 里只有本次任务的文件，按 [C++]、[XLSX]、[Lua]、[Other] 分到各自的 pending，描述写「[类型] 中文短句」，用 UTF-8 临时文件写入后 p4 describe 回读确认没有乱码。不 submit。
 {{/if}}
-不认领、不提交用户原有的改动。输出：提交 / pending 清单和验证结果。`,
+不认领、不提交用户原有的改动。输出：{{#if docs}}改了哪些文档，{{/if}}提交 / pending 清单和验证结果。`,
   }),
 
   // ── UE ──
@@ -362,14 +382,30 @@ ${VCS_TEXT}
     description: '只读分析 UE 项目的架构、资产、构建或测试影响',
     icon: 'search',
     model: '@medium',
-    skills: ['software-architecture-design', 'ue-multi-agent-coordination', 'cpp-code-style'],
-    params: [p({ key: 'focus', label: '方向', options: ['架构', '资产', '构建', '测试'], default: '架构' })],
+    skills: [
+      'software-architecture-design',
+      'ue-multi-agent-coordination',
+      'cpp-code-style',
+      'project-workflow',
+      'project-documentation',
+    ],
+    params: [
+      SCENE,
+      p({
+        key: 'focus',
+        label: '方向',
+        options: ['综合', '架构', '资产', '构建', '测试'],
+        default: '综合',
+        description: '综合：架构、构建和影响面一次看完',
+      }),
+    ],
     instructions: `你负责 Unreal Engine 项目的只读侦察，不修改文件，不启动 Editor，不编译、Cook 或运行测试，不提交。必须引用具体文件路径，区分事实、推断和待确认项。
+${SCENE_TEXT}
 
 方向：{{focus}}。
-{{#if focus=架构}}确认 .uproject、.uplugin、模块入口、Build.cs、Target.cs 和项目文档，分析模块边界、插件依赖、Subsystem 生命周期、C++ / Blueprint / Lua 数据流和受影响的入口。返回模块影响范围、依赖风险、生命周期风险和应验证的事项。{{/if}}
+{{#if focus=架构|综合}}确认 .uproject、.uplugin、模块入口、Build.cs、Target.cs 和项目文档，分析模块边界、插件依赖、Subsystem 生命周期、C++ / Blueprint / Lua 数据流和受影响的入口。返回模块影响范围、依赖风险、生命周期风险和应验证的事项。{{/if}}
 {{#if focus=资产}}检查资产路径、Blueprint / C++ 引用、DataAsset、配置、软硬引用、插件内容、Cook 白名单和打包入口；无法解析二进制资产时明确标记限制，不猜测资产内容。返回潜在丢失引用、Cook、加载顺序和兼容性风险。{{/if}}
-{{#if focus=构建}}检查 .uproject、.uplugin、Build.cs、Target.cs、模块依赖、Public / Private include 边界、UHT 反射宏相关配置和导出宏（规则见 cpp-code-style）。指出可能的编译、链接、UHT、打包或模块加载风险，给出应执行的验证命令。{{/if}}
+{{#if focus=构建|综合}}检查 .uproject、.uplugin、Build.cs、Target.cs、模块依赖、Public / Private include 边界、UHT 反射宏相关配置和导出宏（规则见 cpp-code-style）。指出可能的编译、链接、UHT、打包或模块加载风险，给出应执行的验证命令。{{/if}}
 {{#if focus=测试}}读取现有 AutomationTest、FunctionalTest、PIE 配置和测试命令，设计最小回归矩阵；区分可直接执行的命令和需要 Editor / 设备的延期验证。{{/if}}`,
   }),
   base('ueintegrator', 'UE', {
@@ -402,7 +438,7 @@ ${VCS_TEXT}
       p({
         key: 'stage',
         label: '阶段',
-        options: ['解析与规格', '分件建模', '装配与材质', '动画', '减面', '导出 UE'],
+        options: ['解析与规格', '分件建模', '装配到减面', '装配与材质', '动画', '减面', '导出 UE'],
         default: '分件建模',
       }),
     ],
@@ -411,9 +447,9 @@ ${VCS_TEXT}
 当前阶段：{{stage}}。
 {{#if stage=解析与规格}}用 reference_frames.py 解析参考，确定交付用途、尺寸锚点（米）、可见和需要补全的部分，写出部件清单、GRP_* 根 Empty、局部原点和轴、命名规则。{{/if}}
 {{#if stage=分件建模}}每个部件走「单件脚本 → 单件预览 / 体检 → 精修」，和参考裁切并排对照。{{/if}}
-{{#if stage=装配与材质}}按模块契约装配，处理材质和 UV，确认每个 GRP_* 能整体平移和恢复。{{/if}}
-{{#if stage=动画}}用控制器驱动动画，Action 命名 A_*，30fps。{{/if}}
-{{#if stage=减面}}保留基线，在相同条件下对照，质量退化就恢复。{{/if}}
+{{#if stage=装配与材质|装配到减面}}按模块契约装配，处理材质和 UV，确认每个 GRP_* 能整体平移和恢复。{{/if}}
+{{#if stage=动画|装配到减面}}用控制器驱动动画，Action 命名 A_*，30fps。{{/if}}
+{{#if stage=减面|装配到减面}}保留基线，在相同条件下对照，质量退化就恢复。{{/if}}
 {{#if stage=导出 UE}}用 export_ue.py 导出 FBX：模型到 Asset/Mesh/，动画到 Asset/Anim/，并更新 <型号>/制作进度.md。{{/if}}
 
 每步都要有截图或体检结果作为证据，不能只凭单个视角下结论。`,
