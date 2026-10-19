@@ -16,7 +16,18 @@ import {
 } from '../shared/schema.ts'
 import { taskWorkflows } from '../shared/flow.ts'
 import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
-import { beginRun, endRun, messageStamp, newTask, taskSummary, withAttachments, withTaskModel } from '../shared/task.ts'
+import {
+  beginRun,
+  endRun,
+  messageStamp,
+  pauseStep,
+  trackWait,
+  waitDuration,
+  newTask,
+  taskSummary,
+  withAttachments,
+  withTaskModel,
+} from '../shared/task.ts'
 import { agentRun } from '../shared/settings.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
@@ -72,7 +83,18 @@ export function tasksApi(deps: {
           (task.runMs ?? 0) +
           (task.runStartedAt ? Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.runStartedAt)) : 0),
         runStartedAt: '',
-        steps: task.steps.map((s) => (s.status === 'running' ? { ...s, status: 'pending', interrupted: true } : s)),
+        // 等待和节点耗时也算到最后一次落盘为止
+        waitMs: waitDuration(task, Date.parse(task.updatedAt)),
+        waitStartedAt: '',
+        turns: (task.turns ?? []).map((x) =>
+          x.status === 'running' ? { ...x, status: 'stopped' as const, endedAt: task.updatedAt } : x,
+        ),
+        steps: task.steps.map((s) => {
+          const w = { ...s, waitMs: waitDuration(s, Date.parse(task.updatedAt)), waitStartedAt: '' }
+          if (s.status !== 'running') return w
+          pauseStep(w, Date.parse(task.updatedAt))
+          return { ...w, status: 'pending' as const, interrupted: true }
+        }),
         messages: [
           ...task.messages,
           {
@@ -146,6 +168,7 @@ export function tasksApi(deps: {
       store.update(task.id, entry.task).catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
+      trackWait(entry.task)
       entry.rev++
       // 流式输出时最多每秒落盘一次，关键节点立即落盘
       if (f || Date.now() - last > 1000) {
@@ -589,6 +612,7 @@ export function tasksApi(deps: {
     if (!e || !answerRequest(e.task, c.req.param('rid'), body.data, randomUUID))
       return bad(c, t('这个请求已经结束了'), 404)
     e.task.updatedAt = new Date().toISOString()
+    trackWait(e.task)
     await store.update(e.task.id, e.task)
     return c.json(e.task)
   })

@@ -635,6 +635,11 @@ export const TaskStep = z.object({
   status: StepStatus.default('pending'),
   startedAt: z.string().default(''),
   endedAt: z.string().default(''),
+  /** 之前几次被停止、打断时已经执行的时间（毫秒）；续接时接着累加，重新执行时清零 */
+  spentMs: z.number().default(0),
+  /** 等用户确认、回答问题的时间（毫秒），含在执行时间里；waitStartedAt 是正在等的开始时间 */
+  waitMs: z.number().default(0),
+  waitStartedAt: z.string().default(''),
   /** 节点的最终输出（交给下游节点），续跑时直接复用 */
   output: z.string().default(''),
   /** 验收结果；节点上记录最后一轮的结论 */
@@ -656,6 +661,30 @@ export type TaskStep = z.infer<typeof TaskStep>
 
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
+
+/** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
+export const TaskTurn = z.object({
+  id: z.string(),
+  /** 这一轮要求的第一行（截短） */
+  title: z.string(),
+  agentId: z.string().default(''),
+  status: TaskStatus,
+  startedAt: z.string(),
+  endedAt: z.string().default(''),
+  /** 开始时任务的累计用量和等待时间：这一轮的用量 = 结束时（执行中是现在）减去它 */
+  from: z.object({
+    inputTokens: z.number(),
+    outputTokens: z.number(),
+    cacheReadTokens: z.number(),
+    waitMs: z.number(),
+  }),
+  /** 结束时算好的这一轮用量和等待时间 */
+  inputTokens: z.number().default(0),
+  outputTokens: z.number().default(0),
+  cacheReadTokens: z.number().default(0),
+  waitMs: z.number().default(0),
+})
+export type TaskTurn = z.infer<typeof TaskTurn>
 
 export const AgentUsage = z.object({
   context: z.number(),
@@ -722,6 +751,11 @@ export const TaskData = z.object({
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */
   runStartedAt: z.string().default(''),
+  /** 等用户确认、回答问题的累计时间（毫秒），含在 runMs 里；waitStartedAt 是正在等的开始时间 */
+  waitMs: z.number().default(0),
+  waitStartedAt: z.string().default(''),
+  /** 追加要求、对话的每一轮，按时间顺序 */
+  turns: z.array(TaskTurn).default([]),
   /** 所有节点：主流程的节点按执行顺序排在前面，执行中产生的子节点追加在后面 */
   steps: z.array(TaskStep).default([]),
   messages: z.array(TaskMessage).default([]),

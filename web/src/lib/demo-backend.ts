@@ -28,6 +28,7 @@ import {
   NewTaskInput,
   Settings,
   type Task,
+  type TaskStep,
   type CliInstallJob,
   type CliModels,
   type CliUpdate,
@@ -53,7 +54,7 @@ import {
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams } from '@shared/agent-role'
-import { beginRun, endRun, newTask, questionAnswers, taskSummary, withAttachments } from '@shared/task'
+import { beginRun, endRun, newTask, questionAnswers, taskSummary, trackWait, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { AssistInput } from '@shared/assist'
@@ -1159,6 +1160,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     stopped: () => entry.stop,
     changed: (flush) => {
       task.updatedAt = new Date().toISOString()
+      trackWait(task)
       // 流式输出时不必每个字都写 localStorage
       if (flush || Date.now() - last > 800) {
         last = Date.now()
@@ -1362,6 +1364,7 @@ function tasksRoute(
     const a = body as { allow: boolean; answer?: string; answers?: string[] }
     simAnswers.set(rid, a)
     task.requests = task.requests.filter((r) => r.id !== rid)
+    trackWait(task)
     const answers = req.kind === 'question' ? questionAnswers(req, a) : undefined
     task.messages.push({
       id: `demo-${crypto.randomUUID()}`,
@@ -1424,6 +1427,32 @@ function tasksRoute(
   return task
 }
 
+/** 示例任务的节点也是瞬间跑完的：把执行时长按顺序分给主流程节点，子节点在父节点的时间里依次排开 */
+function spreadSteps(t: Task) {
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const place = (list: TaskStep[], from: number, to: number) => {
+    // 长短错开一点，看起来像真实执行
+    const w = list.map((_, i) => 3 + ((i * 7) % 5))
+    const sum = w.reduce((a, b) => a + b, 0)
+    let at = from
+    list.forEach((s, i) => {
+      const end = at + ((to - from) * w[i]) / sum
+      s.startedAt = iso(at)
+      s.endedAt = iso(end)
+      const kids = t.steps.filter((k) => k.parentId === s.id && k.startedAt)
+      // 子节点留出头尾一点时间给节点自己
+      if (kids.length) place(kids, at + (end - at) * 0.1, end - (end - at) * 0.05)
+      at = end
+    })
+  }
+  const end = Date.parse(t.updatedAt)
+  place(
+    t.steps.filter((s) => !s.parentId && s.startedAt),
+    end - t.runMs,
+    end,
+  )
+}
+
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
 async function seedTasks(d: Db) {
   const [shop, admin] = d.projects
@@ -1434,7 +1463,10 @@ async function seedTasks(d: Db) {
     t.updatedAt = shift(t.updatedAt)
     t.messages.forEach((m) => (m.at = shift(m.at)))
     // 示例任务是瞬间跑完的，给一个像样的执行时长
-    if (t.status !== 'running') t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
+    if (t.status !== 'running') {
+      t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000
+      spreadSteps(t)
+    }
   }
   if (admin) {
     const { task, done } = createTask(

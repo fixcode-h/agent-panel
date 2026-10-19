@@ -36,6 +36,7 @@ import {
   topSteps,
 } from './flow.ts'
 import { t } from './i18n.ts'
+import { beginTurn, endTurn, pauseStep } from './task.ts'
 
 /** 提示词里的流程入口名，固定用中文（提示词不跟随界面语言） */
 const SLOT_PROMPT: Record<string, string> = { start: '开始', review: '验收', end: '结束', body: '执行' }
@@ -296,7 +297,12 @@ async function runNode(
   // 上次执行到一半被打断、CLI 会话还在：续接会话接着做，不从头再来
   const resumeHalf = step.interrupted && !!host.task.sessions[step.id] && node.kind === 'agent'
   step.interrupted = false
-  if (!resumeHalf) dropRerun(host, step)
+  if (!resumeHalf) {
+    dropRerun(host, step)
+    // 重新执行：耗时和等待从头算；续接时接着之前做的时间累加
+    step.spentMs = 0
+    step.waitMs = 0
+  }
   step.status = 'running'
   step.startedAt = now()
   step.endedAt = ''
@@ -323,7 +329,7 @@ async function runNode(
     step.status = r.stopped || r.halted ? 'pending' : 'failed'
     // 被停止时已经做了一部分，记下来，继续执行时续接会话
     step.interrupted = !!r.stopped && !!host.task.sessions[step.id]
-    if (r.stopped || r.halted) step.startedAt = ''
+    if (r.stopped || r.halted) pauseStep(step)
     step.endedAt = now()
     // 错误写进出错的节点里，打开节点就能看到；外层节点和整个任务的结尾只提一句，不重复整段
     if (!r.stopped && !r.halted && !r.reported) {
@@ -644,6 +650,7 @@ function finish(host: EngineHost, r: Fail) {
     if (s.status === 'running') {
       s.status = r.stopped ? 'pending' : 'failed'
       s.interrupted = !!r.stopped
+      if (r.stopped) pauseStep(s)
       s.endedAt = now()
     }
   if (r.budget) system(host, r.error)
@@ -702,6 +709,9 @@ export async function runEngineTurn(host: EngineHost) {
       if (last) task.sessions[who] = task.sessions[last.id]
     }
     if (!who) return finish(host, { ok: false, error: t('没有可以回答的 Agent，请先给工作流选择主 Agent') })
+    // 每一轮单独记耗时和用量，任务进度里能看到工作流跑完后的追加要求
+    const turn = beginTurn(task, host.newId(), host.prompt, who)
+    host.changed(true)
     const r = await host.runAgent({
       agentId: who,
       prompt: followUpPrompt(host),
@@ -709,6 +719,7 @@ export async function runEngineTurn(host: EngineHost) {
       // 工作流任务的追加要求也走默认 CLI 的档位，和节点一致
       ...(task.mode === 'workflow' ? { tier: '' as NodeTier } : {}),
     })
+    endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
     if (!r.ok) return finish(host, r)
   }
   task.status = 'done'

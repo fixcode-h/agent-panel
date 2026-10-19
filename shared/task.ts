@@ -9,6 +9,7 @@ import {
   type TaskData,
   type TaskMessage,
   type TaskRequest,
+  type TaskTurn,
   type Workflow,
 } from './schema.ts'
 import { getCli } from './clis.ts'
@@ -54,6 +55,9 @@ export function newTask(
     status: 'running',
     runMs: 0,
     runStartedAt: now,
+    waitMs: 0,
+    waitStartedAt: '',
+    turns: [],
     ...(input.mode === 'workflow' ? planTask(workflow) : { steps: [] }),
     messages: [
       {
@@ -87,9 +91,109 @@ export function newTask(
 export function beginRun(task: { runStartedAt: string }, now = new Date()) {
   task.runStartedAt = now.toISOString()
 }
-export function endRun(task: { runMs: number; runStartedAt: string }, now = new Date()) {
+export function endRun(task: TurnHost & { runMs: number; runStartedAt: string; steps: Timed[] }, now = new Date()) {
   if (task.runStartedAt) task.runMs += Math.max(0, now.getTime() - Date.parse(task.runStartedAt))
   task.runStartedAt = ''
+  // 停下时还挂着的请求随这一轮结束，等待也到此为止
+  for (const o of [task, ...task.steps]) closeWait(o, now.getTime())
+  for (const turn of task.turns ?? []) if (turn.status === 'running') endTurn(task, turn, 'stopped', now.getTime())
+}
+
+type TurnHost = Timed & {
+  usage: { inputTokens: number; outputTokens: number; cacheReadTokens: number }
+  turns: TaskTurn[]
+}
+
+/** 开始一轮追加要求 / 对话：记下开始时间和这时的累计用量 */
+export function beginTurn(task: TurnHost, id: string, prompt: string, agentId: string, now = Date.now()) {
+  const line = prompt.trim().split('\n')[0] ?? ''
+  const turn: TaskTurn = {
+    id,
+    title: line.length > 60 ? line.slice(0, 60) + '…' : line,
+    agentId,
+    status: 'running',
+    startedAt: new Date(now).toISOString(),
+    endedAt: '',
+    from: {
+      inputTokens: task.usage.inputTokens,
+      outputTokens: task.usage.outputTokens,
+      cacheReadTokens: task.usage.cacheReadTokens ?? 0,
+      waitMs: waitDuration(task, now),
+    },
+    inputTokens: 0,
+    outputTokens: 0,
+    cacheReadTokens: 0,
+    waitMs: 0,
+  }
+  ;(task.turns ??= []).push(turn)
+  return turn
+}
+
+/** 一轮的用量和等待：结束了用记下的，执行中按现在的累计减去开始时的 */
+export function turnStats(task: TurnHost, turn: TaskTurn, now = Date.now()) {
+  if (turn.status !== 'running') return turn
+  return {
+    inputTokens: Math.max(0, task.usage.inputTokens - turn.from.inputTokens),
+    outputTokens: Math.max(0, task.usage.outputTokens - turn.from.outputTokens),
+    cacheReadTokens: Math.max(0, (task.usage.cacheReadTokens ?? 0) - turn.from.cacheReadTokens),
+    waitMs: Math.max(0, waitDuration(task, now) - turn.from.waitMs),
+  }
+}
+
+export function endTurn(task: TurnHost, turn: TaskTurn, status: TaskTurn['status'], now = Date.now()) {
+  if (turn.status !== 'running') return
+  Object.assign(turn, turnStats(task, turn, now), { status, endedAt: new Date(now).toISOString() })
+}
+
+type Timed = { waitMs: number; waitStartedAt: string }
+type Waiting = Timed & { requests: { step: string; at: string }[]; steps: (Timed & { id: string })[] }
+
+function closeWait(o: Timed, now: number) {
+  if (!o.waitStartedAt) return
+  o.waitMs = (o.waitMs ?? 0) + Math.max(0, now - Date.parse(o.waitStartedAt))
+  o.waitStartedAt = ''
+}
+
+/**
+ * 记等用户的时间：有请求挂着（权限确认、提问、节点完成后的确认）就开始计，全部处理完时累加。
+ * 任务和请求所在的节点各记一份。每次任务有变化时调用，开始时间取请求发出的时间，不受调用时机影响
+ */
+export function trackWait(task: Waiting, now = Date.now()) {
+  const tick = (o: Timed, reqs: { at: string }[]) => {
+    if (!reqs.length) return closeWait(o, now)
+    if (o.waitStartedAt) return
+    const at = Math.min(now, ...reqs.map((r) => Date.parse(r.at)).filter(Number.isFinite))
+    o.waitStartedAt = new Date(at).toISOString()
+  }
+  const reqs = task.requests ?? []
+  tick(task, reqs)
+  for (const s of task.steps)
+    if (s.waitStartedAt || reqs.some((r) => r.step === s.id))
+      tick(
+        s,
+        reqs.filter((r) => r.step === s.id),
+      )
+}
+
+/** 等用户的总时间（毫秒），含正在等的这一段 */
+export function waitDuration(o: Partial<Timed>, now = Date.now()) {
+  return (o.waitMs ?? 0) + (o.waitStartedAt ? Math.max(0, now - Date.parse(o.waitStartedAt)) : 0)
+}
+
+/** 节点执行了多久（毫秒）：之前被打断时做的部分加上这一次的；没开始过为 0 */
+export function stepMs(
+  step: { startedAt: string; endedAt: string; status: string; spentMs?: number },
+  now = Date.now(),
+) {
+  const end = step.endedAt ? Date.parse(step.endedAt) : step.status === 'running' ? now : 0
+  const cur = step.startedAt && end ? Math.max(0, end - Date.parse(step.startedAt)) : 0
+  return (step.spentMs ?? 0) + cur
+}
+
+/** 节点被停止或打断：已经做的时间记进 spentMs，续接时接着算 */
+export function pauseStep(step: { startedAt: string; spentMs: number }, now = Date.now()) {
+  if (step.startedAt) step.spentMs = (step.spentMs ?? 0) + Math.max(0, now - Date.parse(step.startedAt))
+  step.startedAt = ''
 }
 
 /** 任务执行了多久（毫秒）：已完成的几轮加上正在执行的这一轮；旧任务没有记录时按创建到最后更新估算 */
