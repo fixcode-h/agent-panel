@@ -203,6 +203,7 @@ function SettingsBody({
           env: textToEnv(d.envText),
           showLimits: d.showLimits,
           autoCompact: d.autoCompact,
+          maxTurns: d.maxTurns,
           authMode: d.authMode,
           apiId: d.apiId,
         },

@@ -470,6 +470,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     effort,
     permission: agentPermission(agent, settings),
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
+    maxTurns: cs.maxTurns || undefined,
     resume,
     fork,
     // 审查走 CLI 自己的审查模式，压缩走协议；其余的已经换成普通的一轮

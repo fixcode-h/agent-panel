@@ -290,6 +290,10 @@ export const EN_SETTINGS: Record<string, string> = {
     'When context usage reaches this level, compact after the turn ends (write a summary and start a new session with it next turn)',
   上下文占用达到这个比例时自动压缩: 'Compact automatically when context usage reaches this level',
   '{cli} 自动压缩': '{cli} auto-compact',
+  最大回合: 'Max turns',
+  '一轮任务最多执行多少回合（模型请求次数）。留空用 CLI 自己的默认值，Command Code 是 1000':
+    'Maximum number of turns (model requests) per run. Leave empty to use the CLI default; 1000 for Command Code',
+  '{cli} 最大回合': '{cli} max turns',
   '按 CLI 自己的规则': "CLI's own rule",
   额度: 'Usage limits',
   显示额度: 'Show usage limits',

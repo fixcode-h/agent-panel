@@ -928,6 +928,8 @@ export const CliSettings = z.object({
   showLimits: z.boolean().default(false),
   /** 上下文占用达到这个百分比时自动压缩；0 表示用 CLI 自己的规则 */
   autoCompact: z.number().int().min(0).max(100).default(0),
+  /** 一轮任务最多执行多少回合（模型请求次数）；0 表示用 CLI 自己的默认值（Command Code 是 1000） */
+  maxTurns: z.number().int().min(0).max(1000).default(0),
 })
 export type CliSettings = z.infer<typeof CliSettings>
 

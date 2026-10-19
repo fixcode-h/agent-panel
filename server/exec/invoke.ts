@@ -201,8 +201,8 @@ async function invoke(
     const session = commandCodeRpcSession({
       cwd: o.cwd,
       input: o.input,
-      // -p 的 --max-turns 在 RPC 模式不生效，改由 turn/start 的参数限制；和原来的默认值一致
-      maxTurns: o.build.maxTurns ?? 200,
+      // -p 的 --max-turns 在 RPC 模式不生效，改由 turn/start 的参数限制；没设置时用 CLI 的默认上限
+      maxTurns: o.build.maxTurns ?? 1000,
       onEvent: emit,
     })
     setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
