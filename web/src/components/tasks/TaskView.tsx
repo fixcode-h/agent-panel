@@ -49,11 +49,11 @@ import { StepSection } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
-import { useSlashMenu } from '@/components/chat/SlashMenu'
+import { SlashChip, useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { TaskStatusIcon } from './TaskStatusIcon'
-import { insertRefs, removeRef, useAttachments, useFileMention } from '@/components/chat/Attachments'
+import { ATTACHMENT_PROMPT, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 
@@ -151,10 +151,7 @@ export function TaskView({
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<HTMLTextAreaElement>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
-  const files = useAttachments(`task:${taskId}`, {
-    insert: (refs) => insertRefs(followTa, text, setText, refs),
-    remove: (ref) => setText(removeRef(text, ref)),
-  })
+  const files = useAttachments(`task:${taskId}`)
   const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
@@ -307,18 +304,20 @@ export function TaskView({
 
   // 执行中也能发：补充（交给正在做的 Agent，接着当前的任务做；能补充时默认）、排队（这一轮完成后处理）
   const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
-    if (!text.trim() || sending || files.uploading) return
-    if (!files.items.length && slash.intercept(text)) return
+    if ((!text.trim() && !files.attachments.length && !slash.picked) || sending || files.uploading) return
+    const content = slash.build(text.trim() || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
+    if (!files.items.length && slash.intercept(content)) return
     setSending(true)
     stick.current = true
     try {
-      const r = await api.sendMessage(task.id, text, files.attachments, false, running && how === 'steer')
+      const r = await api.sendMessage(task.id, content, files.attachments, false, running && how === 'steer')
       // 有插话协议的 CLI 刚结束这一轮时收不下，改成了排队；靠面板工具取的本来就会排队，不用提醒
       if (running && how === 'steer' && chatDef?.steer && r.queue.length > task.queue.length)
         toast(t('这一轮刚好结束，已改成排队'))
       apply(r)
       setText('')
       files.clear()
+      slash.clear()
       setTimeout(
         () =>
           api
@@ -808,6 +807,14 @@ export function TaskView({
                     slash.sync()
                   }}
                   onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
+                  above={
+                    slash.picked && (
+                      <div className="px-3 pt-3">
+                        <SlashChip item={slash.picked} onRemove={slash.clear} />
+                      </div>
+                    )
+                  }
+                  canSend={!!text.trim() || files.attachments.length > 0 || !!slash.picked}
                   attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
                   tools={
                     <>

@@ -16,7 +16,8 @@ const DRAFT = 'chat-draft:'
 export function useDraft(key: string) {
   const read = (k: string) => {
     try {
-      return localStorage.getItem(DRAFT + k) ?? ''
+      // 旧版附件会把「[图片:文件名]」插进文字，现在附件只显示成卡片：读到旧草稿时去掉这些标记
+      return (localStorage.getItem(DRAFT + k) ?? '').replace(/\[(?:图片|文件):[^\]]+\]\s?/g, '')
     } catch {
       return ''
     }

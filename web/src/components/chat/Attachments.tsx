@@ -20,7 +20,6 @@ import {
   X,
 } from 'lucide-react'
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
-import { attachmentRef } from '@shared/task'
 import type { DesignKind, SavedStyle } from '@shared/design'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -49,40 +48,10 @@ export function formatSize(n: number) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** 输入框里插入、删除附件引用的方法；没有输入框的场合不用传 */
-export interface AttachmentText {
-  insert: (refs: string[]) => void
-  remove: (ref: string) => void
-}
+/** 只发了附件、没写要求时交给 Agent 的一句话：输入框里不留附件文字，发送时补上 */
+export const ATTACHMENT_PROMPT = t('请查看附件')
 
-/** 把附件引用插到光标处（有选中内容时替换掉），插完把光标放到后面接着写 */
-export function insertRefs(
-  ta: React.RefObject<HTMLTextAreaElement | null>,
-  value: string,
-  setValue: (v: string) => void,
-  refs: string[],
-) {
-  if (!refs.length) return
-  const el = ta.current
-  const start = el?.selectionStart ?? value.length
-  const end = el?.selectionEnd ?? start
-  const pre = value.slice(0, start)
-  const ins = `${pre && !/\s$/.test(pre) ? ' ' : ''}${refs.join(' ')} `
-  setValue(pre + ins + value.slice(end))
-  requestAnimationFrame(() => {
-    if (!el) return
-    el.focus()
-    const at = start + ins.length
-    el.setSelectionRange(at, at)
-  })
-}
-
-/** 去掉附件时把文字里的引用一起删掉，连同插入时带的空格 */
-export function removeRef(value: string, ref: string) {
-  return value.split(`${ref} `).join('').split(ref).join('')
-}
-
-/** 同名附件加序号，引用标记才分得清 */
+/** 同名附件加序号，文件名才分得清 */
 function uniqueName(name: string, taken: Set<string>) {
   if (!taken.has(name)) return name
   const dot = name.lastIndexOf('.')
@@ -128,17 +97,12 @@ function readAttachments(key: string): Item[] {
 /**
  * 附件列表：选文件、粘贴、拖进来都走 add，选完马上上传。
  * 传了 draftKey（和文字草稿用同一个）就按对话记住，切到别的对话再回来还在。
- * 传了 text 时，附件会以引用标记插到输入框的光标处（发出去时换成路径，见 withAttachments）。
+ * 附件只在输入框上方以缩略图显示，不往文字里插引用。
  */
-export function useAttachments(draftKey?: string, text?: AttachmentText) {
+export function useAttachments(draftKey?: string) {
   const [items, setItems] = useState<Item[]>(() => (draftKey ? readAttachments(draftKey) : []))
   const count = useRef(0)
   count.current = items.length
-  // 事件回调里拿最新的输入框和附件，不用每次重新绑 add / remove
-  const textRef = useRef(text)
-  textRef.current = text
-  const itemsRef = useRef(items)
-  itemsRef.current = items
   const names = useRef(new Set<string>())
   names.current = new Set(items.map((x) => x.name))
   // 同一个输入框换了对话：换成那个对话的附件
@@ -202,8 +166,6 @@ export function useAttachments(draftKey?: string, text?: AttachmentText) {
       })
     }
     if (!accepted.length) return
-    // 先插引用：上传要等，用户接着写的时候标记已经在输入框里了
-    textRef.current?.insert(accepted.map((x) => attachmentRef(x)))
     setItems((xs) => [
       ...xs,
       ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
@@ -213,7 +175,6 @@ export function useAttachments(draftKey?: string, text?: AttachmentText) {
         const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
         setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, done } : i)))
       } catch (e) {
-        textRef.current?.remove(attachmentRef(x))
         toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
         setItems((xs) => xs.filter((i) => i.key !== x.key))
       }
@@ -224,11 +185,7 @@ export function useAttachments(draftKey?: string, text?: AttachmentText) {
     if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
   }, [])
-  const remove = (key: string) => {
-    const it = itemsRef.current.find((x) => x.key === key)
-    if (it) textRef.current?.remove(attachmentRef(it))
-    setItems((xs) => xs.filter((x) => x.key !== key))
-  }
+  const remove = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key))
   // 发送成功后页面可能马上切走，等不到 effect 删草稿；这里直接删，免得下次新建时附件又冒出来
   const clear = useCallback(() => {
     setItems([])
@@ -296,7 +253,7 @@ export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: 
       {items.map((x) => (
         <div
           key={x.key}
-          className="group relative flex h-14 max-w-[240px] items-center gap-2.5 rounded-xl border bg-field/60 pr-3 pl-1.5"
+          className="relative flex h-14 max-w-[240px] items-center gap-2.5 rounded-xl border bg-field/60 pr-3 pl-1.5"
           title={x.name}
         >
           {x.preview ? (
@@ -324,7 +281,8 @@ export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: 
             type="button"
             aria-label={t('移除 {name}', { name: x.name })}
             onClick={() => onRemove(x.key)}
-            className="absolute -top-1.5 -right-1.5 grid h-5 w-5 cursor-pointer place-items-center rounded-full border bg-card text-muted opacity-0 shadow-card transition group-hover:opacity-100 hover:text-fg focus-visible:opacity-100"
+            title={t('移除 {name}', { name: x.name })}
+            className="absolute -top-1.5 -right-1.5 z-10 grid h-5 w-5 cursor-pointer place-items-center rounded-full border bg-card text-muted shadow-card transition-colors hover:border-line-strong hover:bg-sel hover:text-fg"
           >
             <X className="h-3 w-3" />
           </button>
