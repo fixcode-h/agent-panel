@@ -2,7 +2,7 @@ import type { FlowEdge, FlowNode, NodeHooks, ParamValues, WorkflowInput } from '
 import { autoLayout, END, START } from '../flow.ts'
 
 /**
- * 内置工作流：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」整理的日常开发流程，加上 UE / P4 和美术资产链。
+ * 内置工作流：按「需求 → 设计 → 实现 → 验收 → 文档 → 版本控制」整理的日常开发流程，加上 UE 和美术资产链。
  * 节点里的 agent 写内置 Agent 的 key（./agents.ts），添加时换成本机的 Agent id。
  * 节点说明是交给 CLI 的提示词，不翻译。
  */
@@ -366,30 +366,33 @@ Bug、测试失败、线上问题。
     ],
   },
   {
-    key: 'ue-p4',
-    name: 'UE 功能开发（P4）',
-    description: 'UE C++ / Lua 改动：只读侦察 → 确认设计 → 实现 → 单独编译验收 → 文档 → P4 分桶',
+    key: 'ue-dev',
+    name: 'UE 功能开发',
+    description:
+      'UE C++ / Lua 改动：只读侦察 → 确认设计 → 实现 → 单独编译验收 → 文档 → 版本控制收尾（Git / P4 自动识别）',
     category: 'UE',
     main: 'developer',
     members: [
-      ['guide', '识别 P4 工作区和 ProjectDoc 文档根'],
+      ['guide', '识别版本控制（Git / P4 等）和文档根'],
       ['uescout', '架构、构建方向的只读侦察'],
       ['impact', '分析影响面'],
       ['analyst', '出设计摘要等你确认'],
       ['developer', 'C++ / Lua 实现'],
       ['ueintegrator', '唯一负责编译和 Lua 检查'],
       ['verifier', '验收，登记需要 Editor 的延期验证'],
-      ['docs', '同步 ProjectDoc 里的模块文档'],
-      ['vcs', '核对 default，按类型分 pending'],
+      ['docs', '同步文档根里的模块文档'],
+      ['vcs', 'Git 本地提交 / P4 按类型分 pending'],
     ],
     document: `## 适用
-P4 管理的 UE 项目里的 C++ / Lua 改动。
+UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能用。
 
 ## 约定
-- P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert。
-- 文档根是共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
+- 版本控制在「识别现场」自动识别，后面的节点按识别结果操作；想固定成某一种，把节点参数里的「工作区」改成 git 或 p4。
+- Git：只提交本次任务的文件，按功能拆本地提交，不 push。
+- P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert；最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
+- 文档根：Git 项目用项目下的 docs；P4 项目用共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
 - 编译只由「UE 集成员」做，同一时间只编译一次（-WaitMutex）。
-- 最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending，submit 由你自己做。`,
+- push、submit 由你自己做。`,
     flows: [
       {
         id: 'main',
@@ -400,8 +403,8 @@ P4 管理的 UE 项目里的 C++ / Lua 改动。
             title: '识别现场',
             agent: 'guide',
             tier: 'low',
-            params: { vcs: 'p4' },
-            instructions: '识别 P4 工作区（client、stream、限定路径的 opened）和 ProjectDoc 文档根，定位相关模块。',
+            instructions:
+              '识别版本控制（Git 的分支和未提交改动，P4 的 client、stream 和限定路径的 opened，或者没有版本控制）和文档根，定位相关模块。结果里写明是哪种版本控制，后面的节点按它操作。',
           },
           {
             id: 'arch',
@@ -441,27 +444,27 @@ P4 管理的 UE 项目里的 C++ / Lua 改动。
             title: '实现',
             agent: 'developer',
             tier: 'high',
-            params: { lang: '多种', vcs: 'p4', tdd: false },
+            params: { lang: '多种', tdd: false },
             review: 'compile',
             maxRounds: 3,
             retries: 1,
             instructions:
-              '按已确认的设计实现。修改前先 p4 edit / add。不要自己编译，编译由验收流程里的 UE 集成员统一做。',
+              '按已确认的设计实现。P4 项目修改前先 p4 edit / add。不要自己编译，编译由验收流程里的 UE 集成员统一做。',
           },
           {
             id: 'docs',
             title: '同步文档',
             agent: 'docs',
             tier: 'low',
-            instructions: '把这次改动同步到 ProjectDoc 里的模块文档。',
+            instructions: '把这次改动同步到识别出的文档根里的模块文档。',
           },
           {
             id: 'commit',
-            title: 'P4 分桶',
+            title: '版本控制收尾',
             agent: 'vcs',
             tier: 'low',
-            params: { vcs: 'p4' },
-            instructions: '核对 default changelist，按类型分 pending。',
+            instructions:
+              '按识别出的版本控制收尾：Git 只提交本次任务的文件、按功能拆本地提交；P4 核对 default changelist，按类型分 pending。',
           },
         ],
         edges: [
@@ -616,42 +619,6 @@ P4 管理的 UE 项目里的 C++ / Lua 改动。
     ],
   },
   {
-    key: 'model-ref',
-    name: '建模参考图提示词',
-    description: '参考图解析 → 确认部件拆分和视图 → 输出建模参考图的提示词文档',
-    category: '美术',
-    main: 'modelprompt',
-    members: [['modelprompt', '解析参考、推荐拆分、写提示词文档']],
-    document: `## 适用
-根据参考图和建模要求，产出建模用参考图（正交视图板、部件图、3/4 彩图、局部特写、材质板）的文生图提示词文档。
-部件拆分方案确认之前不写提示词。`,
-    flows: [
-      {
-        id: 'main',
-        name: '主流程',
-        nodes: [
-          {
-            id: 'parse',
-            title: '解析与拆分',
-            agent: 'modelprompt',
-            tier: 'high',
-            confirm: true,
-            instructions: '解析参考图，整理 brief 和尺寸表；推荐 2–4 个部件拆分粒度和视图组合，请用户选定。',
-          },
-          {
-            id: 'write',
-            title: '写提示词文档',
-            agent: 'modelprompt',
-            tier: 'high',
-            confirm: true,
-            instructions: '按确认的拆分和视图，压测后输出提示词文档并保存。',
-          },
-        ],
-        edges: chain(START, 'parse', 'write', END),
-      },
-    ],
-  },
-  {
     key: 'blender',
     name: 'Blender 建模与动画',
     description: '规格确认 → 分件建模 → 装配 → 动画 → 减面 → 质检确认 → 导出 UE',
@@ -749,40 +716,6 @@ P4 管理的 UE 项目里的 C++ / Lua 改动。
           },
         ],
         edges: chain(START, 'qa', END),
-      },
-    ],
-  },
-  {
-    key: 'game-ui',
-    name: '游戏 UI 提示词',
-    description: 'UI brief 和方向确认 → 输出效果图 / UMG 资源的文生图提示词规格',
-    category: '美术',
-    main: 'uiprompt',
-    members: [['uiprompt', '写 brief、给方向、输出提示词规格']],
-    document: `## 适用
-把游戏 UI 需求整理成文生图提示词，效果图和 UMG 资源分开交付。成图后可以继续对话复盘：保留、硬失败、软问题和修复。`,
-    flows: [
-      {
-        id: 'main',
-        name: '主流程',
-        nodes: [
-          {
-            id: 'brief',
-            title: 'Brief 与方向',
-            agent: 'uiprompt',
-            tier: 'high',
-            confirm: true,
-            instructions: '确定边界、画布和工具，写 UI brief 和中文文案表；风格有分歧时给 2–3 个方向请用户选。',
-          },
-          {
-            id: 'write',
-            title: '输出提示词',
-            agent: 'uiprompt',
-            tier: 'high',
-            instructions: '按确认的方向压测后输出提示词规格。',
-          },
-        ],
-        edges: chain(START, 'brief', 'write', END),
       },
     ],
   },

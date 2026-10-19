@@ -58,6 +58,7 @@ import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflow
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
+import { demoDeploy } from './demo-deploy'
 import {
   demoDesigns,
   demoGenerate,
@@ -947,6 +948,7 @@ function route(method: string, url: string, body: unknown): unknown {
     if (sub === 'optimize') return startDemoDocJob(body)
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
+  if (res === 'deploy') return demoDeploy(method, id, body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
   if (res === 'projects' && id && sub === 'files') {

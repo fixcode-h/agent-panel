@@ -15,12 +15,8 @@
 | 编码 `coding/` | `test-driven-development` | 红-绿-重构，先写失败的测试 |
 | | `systematic-debugging` | 先查历史 Bug，再四阶段找根因后修复 |
 | | `verification-before-completion` | 没有新鲜验证证据不声称完成 |
-| | `code-review` | 限定 diff 评审，按必须改 / 建议 / 细节分级并给证据 |
 | | `software-architecture-design` | 项目、子系统架构的设计与评审（含 UE、Lua、C# 参考） |
-| | `codebase-architecture` | TypeScript 代码库的模块契约、边界加深和仓库护栏 |
-| | `project-scaffolding` | 把已批准的架构落成最小可构建骨架 |
 | 文档 `docs/` | `project-documentation` | PROJECT_ROOT / DOC_ROOT、模块文档、bugs.md 与文档更新规则 |
-| | `domain-modeling` | 维护 CONTEXT.md 术语表和 ADR |
 | 版本控制 `vcs/` | `project-workflow` | 识别 Git / P4 / 无版本控制，保护既有改动，收尾核对 |
 | | `git-workflow` | Git 基线、限定 diff、按需本地提交，不推送 |
 | | `p4-workflow` | P4 default changelist、pending 分桶、中文描述编码安全 |
@@ -28,9 +24,7 @@
 | | `lua-code-style` | Lua 日志格式与排版 |
 | | `lua-luac-compiler` | LuacPacker 编译 .luac 与 Lua 语法检查 |
 | | `ue-multi-agent-coordination` | UE 项目多 Agent 并行时的资源锁与编译排队 |
-| 美术 `art/` | `game-ui-image-prompt-workflow` | 游戏 UI 需求整理成文生图提示词 |
-| | `model-reference-image-prompt-workflow` | 参考图整理成建模参考图提示词文档 |
-| | `blender-model-animation-workflow` | Blender 建模与动画的阶段和交付约定 |
+| 美术 `art/` | `blender-model-animation-workflow` | Blender 建模与动画的阶段和交付约定 |
 | | `blender` | 无头 Blender 建模、体检、多视角截图与 UE FBX 导出 |
 
 ## 新增技能

@@ -102,6 +102,8 @@ import type { RenderImage } from '@/components/design/umg-render'
 import { SaveStyleButton, StyleLibraryList } from '@/components/design/StyleLibrary'
 import { t } from '@shared/i18n'
 
+const ANIM_KEY = 'agent-panel:design-anim'
+
 export function DesignPage() {
   const { route } = useNav()
   return route.id && route.id !== 'new' ? (
@@ -329,7 +331,22 @@ function Designer({ id }: { id: string }) {
   /** 替用户发给 AI 的话（确认模板后开始搭界面） */
   const [request, setRequest] = useState<{ id: string; text: string }>()
   /** 动画面板（时间轴）开着没有，以及它让画布停在哪一刻 */
-  const [animOpen, setAnimOpen] = useState(false)
+  const [animOpen, setAnimOpenState] = useState(() => {
+    try {
+      return localStorage.getItem(ANIM_KEY) !== '0'
+    } catch {
+      return true
+    }
+  })
+  // 默认打开；关掉后记住，下次也不打开
+  const setAnimOpen = (v: boolean) => {
+    setAnimOpenState(v)
+    try {
+      localStorage.setItem(ANIM_KEY, v ? '1' : '0')
+    } catch {
+      // 存不了就只在这次有效
+    }
+  }
   // 正在从图片列表往画布上拖的图：画布高亮能放这张图的控件
   const [dragImage, setDragImage] = useState<DesignImage | null>(null)
   const [comfyWeb, setComfyWeb] = useState(false)

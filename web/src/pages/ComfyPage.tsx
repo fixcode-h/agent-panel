@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Copy,
@@ -34,8 +34,18 @@ import { Segmented } from '@/components/ui/segmented'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { ComfyWebDialog } from '@/components/design/ComfyWeb'
 import { useLocalImage } from '@/components/settings/LocalImageSection'
+import { ComfyGraphView } from '@/components/comfy/ComfyGraphView'
 
 type Kind = 'game' | 'web'
+type View = 'graph' | 'json'
+const VIEW_KEY = 'agent-panel:comfy-view'
+const loadView = (): View => {
+  try {
+    return localStorage.getItem(VIEW_KEY) === 'json' ? 'json' : 'graph'
+  } catch {
+    return 'graph'
+  }
+}
 const newId = () => `wf_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
 
 /**
@@ -57,6 +67,15 @@ export function ComfyPage() {
   const [deleting, setDeleting] = useState(false)
   const [web, setWeb] = useState(false)
   const [st] = useLocalImage()
+  const [view, setViewState] = useState<View>(loadView)
+  const setView = (v: View) => {
+    setViewState(v)
+    try {
+      localStorage.setItem(VIEW_KEY, v)
+    } catch {
+      // 存不了就只在这次有效
+    }
+  }
 
   const load = () =>
     api
@@ -109,6 +128,11 @@ export function ComfyPage() {
     }
   }, [graphText])
   const problems = graph ? checkWorkflow(graph) : [t('节点图不是合法的 JSON')]
+  // 图上改了值，写回 JSON；保持引用不变，免得节点图每次渲染都重建
+  const onGraph = useCallback((g: ComfyWorkflow['graph']) => {
+    setGraphText(JSON.stringify(g, null, 2))
+    setDirty(true)
+  }, [])
   const readOnly = !!draft?.builtin
   const ready = (w: ComfyWorkflow) => data?.ready.includes(w.id)
 
@@ -354,24 +378,42 @@ export function ComfyPage() {
                   onChange={(e) => edit({ extra: e.target.value })}
                 />
               </Field>
-              <Field
-                label={t('节点图（ComfyUI 接口格式）')}
-                hint={t(
-                  '占位符：{{prompt}} 描述、{{negative}} 反向描述、{{width}} {{height}} 尺寸、{{count}} 张数、{{seed}} 随机种子',
+              <div className="flex min-w-0 flex-col gap-1.5">
+                <div className="flex items-center gap-3">
+                  <span className="flex-1 text-[12.5px] font-medium text-muted">{t('节点图（ComfyUI 接口格式）')}</span>
+                  <Segmented
+                    label={t('节点图的显示方式')}
+                    value={graph ? view : 'json'}
+                    onChange={setView}
+                    options={[
+                      // JSON 改坏了画不出图，只能先在配置里改好
+                      { id: 'graph', label: t('图形'), disabled: !graph },
+                      { id: 'json', label: t('配置') },
+                    ]}
+                  />
+                </div>
+                {graph && view === 'graph' ? (
+                  <ComfyGraphView graph={graph} readOnly={readOnly} onChange={onGraph} />
+                ) : (
+                  <Textarea
+                    rows={18}
+                    spellCheck={false}
+                    aria-label={t('节点图（ComfyUI 接口格式）')}
+                    value={graphText}
+                    readOnly={readOnly}
+                    onChange={(e) => {
+                      setGraphText(e.target.value)
+                      setDirty(true)
+                    }}
+                    className="font-mono text-[12px] leading-[1.5]"
+                  />
                 )}
-              >
-                <Textarea
-                  rows={18}
-                  spellCheck={false}
-                  value={graphText}
-                  readOnly={readOnly}
-                  onChange={(e) => {
-                    setGraphText(e.target.value)
-                    setDirty(true)
-                  }}
-                  className="font-mono text-[12px] leading-[1.5]"
-                />
-              </Field>
+                <span className="text-[12px] leading-relaxed text-subtle">
+                  {t(
+                    '占位符：{{prompt}} 描述、{{negative}} 反向描述、{{width}} {{height}} 尺寸、{{count}} 张数、{{seed}} 随机种子',
+                  )}
+                </span>
+              </div>
               {problems.length > 0 && (
                 <ul className="flex flex-col gap-1 text-[12.5px] text-danger">
                   {problems.map((p) => (

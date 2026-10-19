@@ -98,6 +98,10 @@ try {
   await check(p, '内置工作流-添加后', ['识别现场', '确认设计'])
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])
+  // 内置 Agent：手动添加，已经随工作流建好的标成已添加
+  await p.getByRole('button', { name: '添加内置 Agent' }).first().click()
+  await check(p, '内置Agent', ['通用约束', 'UE 侦察', '已添加'])
+  await p.keyboard.press('Escape')
   await p.goto(base + '#/library')
   await check(p, 'Skills与命令', ['commit-message', 'code-review'])
   await p.getByRole('radio', { name: '自带 Skill' }).click()
@@ -147,7 +151,7 @@ try {
   await p.keyboard.press('Escape')
   // 动画：选中控件，用预设加一个弹出动画，拖播放头预览
   await p.getByRole('treeitem', { name: /StartGroup/ }).click()
-  await p.getByRole('button', { name: /^动画/ }).click()
+  // 动画面板默认打开
   await p.getByRole('button', { name: '预设' }).click()
   await p.getByRole('menuitem', { name: '弹出（弹窗）' }).click()
   await check(p, 'UI设计-动画', ['Anim_PopIn', 'StartGroup · 缩放'])
@@ -263,6 +267,17 @@ try {
   await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
   await p.getByText('添加其他 CLI').scrollIntoViewIfNeeded()
   await check(p, '设置-CLI', ['添加其他 CLI', 'Gemini CLI'])
+  // 部署：全局说明写进各 CLI，技能默认不选，选了再部署
+  await p.getByRole('button', { name: '部署', exact: true }).first().click()
+  await check(p, '设置-部署', ['全局说明（AGENTS.md）', '写到哪些 CLI', '要部署的技能', 'grilling'])
+  await p.getByRole('switch', { name: 'grilling' }).click()
+  await p.getByRole('button', { name: '部署', exact: true }).last().click()
+  await p
+    .getByText('部署好了')
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('部署：没有提示部署结果'))
+  await check(p, '设置-部署-完成', ['已部署', '已是最新'])
   // 本机生图：一键安装 ComfyUI、下载推荐的模型（演示里是模拟的进度）
   await p.getByRole('button', { name: '本机生图' }).click()
   await check(p, '设置-本机生图', ['一键安装', 'Z-Image Turbo', '建议显存'])
@@ -274,7 +289,17 @@ try {
   await p.keyboard.press('Escape')
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
-  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}'])
+  await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  // 节点图可以在图形和配置（JSON）之间切换
+  await p.getByRole('radio', { name: '配置', exact: true }).click()
+  await check(p, 'ComfyUI-节点图配置', ['"class_type"'])
+  await p.getByRole('radio', { name: '图形', exact: true }).click()
+  // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
+  await p.getByRole('radio', { name: /^Agent 模式/ }).click()
+  await p
+    .waitForURL((u) => !u.hash.startsWith('#/comfy'), { timeout: 5000 })
+    .catch(() => errors.push('在 ComfyUI 页点 Agent 模式没有切过去'))
+  await p.goto(base + '#/comfy/game')
   await p.getByRole('radio', { name: '网页 UI' }).click()
   await check(p, 'ComfyUI-网页工作流', ['网页插画'])
   await p.getByRole('button', { name: 'AI 优化' }).click()

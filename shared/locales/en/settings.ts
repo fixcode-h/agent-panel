@@ -475,4 +475,36 @@ export const EN_SETTINGS: Record<string, string> = {
     "Please find out why this tool can't connect, and fix the config.",
   '已填入修复后的配置，可以再点「测试连接」确认': 'Fixed config filled in; click “Test connection” to confirm',
   '用 AI 排查修复': 'Fix with AI',
+  // 部署
+  未部署: 'Not deployed',
+  已是最新: 'Up to date',
+  '内容不同，部署时旧文件备份为 .bak': 'Differs; the old file is backed up as .bak on deploy',
+  '部署好了：技能新装 {a} 个、移除 {b} 个，全局说明写入 {c} 个 CLI':
+    'Deployed: {a} skills added, {b} removed, global instructions written to {c} CLIs',
+  '{names} 在本机改过，没有覆盖': '{names} were changed locally and were not overwritten',
+  '全局说明会写进下面选中的 CLI 的用户目录，在所有项目里每次启动时读入。选中的技能放到 {dir}/<分类>/<名字>/，默认不加载：全局说明末尾会附上技能清单，任务用得上时再去读。':
+    "The global instructions are written to the user folder of the CLIs selected below and read at every start in every project. Selected skills go to {dir}/<category>/<name>/ and aren't loaded by default: a skill list is appended to the global instructions, and the CLI reads a skill when a task needs it.",
+  '全局说明（AGENTS.md）': 'Global instructions (AGENTS.md)',
+  '已修改，保存或部署时写入': 'Changed; written on save or deploy',
+  换回内置的通用约束: 'Restore the built-in common rules',
+  '用 AI 优化全局说明': 'Optimize global instructions with AI',
+  '用 AI 生成全局说明': 'Generate global instructions with AI',
+  'CLI 在用户目录里只读运行，只写跨项目都成立的约束，不会改任何文件。结果先给你看，采用后再保存。':
+    'The CLI runs read-only in your home folder and writes only rules that hold across projects. It changes no files. Review the result, then save it if you use it.',
+  '想怎么写（可以不填），例如：加上 Windows 下的编码注意事项':
+    'What you want (optional), e.g. add encoding notes for Windows',
+  '正在整理…': 'Working…',
+  '已替换为 AI 给出的内容，保存或部署后生效': 'Replaced with the AI result; takes effect after you save or deploy',
+  全局说明: 'Global instructions',
+  '# 全局约束\n\n写给编码助手看、所有项目都适用的约定：语言、编码、提问方式、安全边界…':
+    '# Global rules\n\nRules for coding assistants that apply to every project: language, encoding, how to ask, safety limits…',
+  '写到哪些 CLI': 'Write to these CLIs',
+  '要部署的技能（已选 {n} 个）': 'Skills to deploy ({n} selected)',
+  全选: 'Select all',
+  全不选: 'Select none',
+  已部署: 'Deployed',
+  本机改过: 'Changed locally',
+  覆盖本机改过的技能: 'Overwrite locally changed skills',
+  不勾时保留你改过的版本: 'When unchecked, your changed versions are kept',
+  部署: 'Deploy',
 }

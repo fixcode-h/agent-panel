@@ -16,7 +16,7 @@ python <本技能目录>/scripts/check_lua_syntax.py path\to\file.lua another\fi
 
 `lupa` 未安装或目标 Lua 版本与项目运行时不一致时，不得将该检查结果当作目标运行时兼容性证明；应记录工具链差异并使用项目目标运行时复核。
 
-本技能的目标是使用项目选定的 VS Code `LuacPacker` 扩展完成可重复、可验证的 Lua 字节码构建；不替代项目的 Lua/宿主架构设计。P4 任务中，只有本技能前置条件全部满足时才允许编译 `.luac`；生成的 `.luac` 必须由 `p4-workflow` 纳入与源 `.lua` 相同的 Lua pending。
+本技能的目标是使用项目选定的 VS Code `LuacPacker` 扩展完成可重复、可验证的 Lua 字节码构建；不替代项目的 Lua/宿主架构设计。P4 任务中，只有本技能前置条件全部满足时才允许编译 `.luac`；生成的 `.luac` 必须由 `p4-workflow` 纳入与源 `.lua` 相同的 Lua pending。Git 等其他版本控制下，`.luac` 是否入库按项目的忽略规则（如 `.gitignore`）和既有约定处理，不擅自改忽略规则。
 
 ## 前置检查
 

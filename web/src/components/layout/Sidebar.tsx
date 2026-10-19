@@ -287,7 +287,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
   const designMode = route.page === 'design' || route.page === 'comfy'
-  if (route.page === 'design') lastDesignRoute = route
+  // ComfyUI 工作流管理也算 UI 设计：不能记成 Agent 模式的页面，否则点 Agent 又回到 ComfyUI，切不过去
+  if (designMode) lastDesignRoute = route
   else if (!chatMode) lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 

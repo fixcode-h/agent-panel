@@ -30,6 +30,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig } from '@shared/accounts'
 import type {
   BundledSkill,
@@ -273,6 +274,10 @@ export const api = {
     request<ProjectDoc>(`/project-docs/${projectId}`, json('PUT', { path, content })),
   optimizeDoc: (projectId: string, input: DocOptimizeInput) =>
     request<DocJob>(`/project-docs/${projectId}/optimize`, json('POST', input)),
+  deployState: () => request<DeployState>('/deploy'),
+  saveDeploy: (c: DeployConfig) => request<DeployState>('/deploy', json('PUT', c)),
+  runDeploy: (r: DeployRun) => request<{ result: DeployResult; state: DeployState }>('/deploy/run', json('POST', r)),
+  optimizeGlobalDoc: (input: GlobalDocOptimize) => request<DocJob>('/deploy/optimize', json('POST', input)),
   docJob: (id: string) => request<DocJob>(`/doc-jobs/${id}`),
   stopDocJob: (id: string) => request<DocJob>(`/doc-jobs/${id}/stop`, { method: 'POST' }),
 

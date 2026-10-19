@@ -144,6 +144,8 @@ export const CliSpec = z.object({
   docs: z.array(z.string().regex(/^(?!\/)(?!.*\.\.)[\w.\-/]+$/, '只能是项目目录里的相对路径')).default(['AGENTS.md']),
   /** 项目设置里说明文件那一页的说明 */
   docsNote: z.string().default(''),
+  /** 用户目录里的全局说明文件（~ 开头，可以用 ${ENV:-默认值}），设置的「部署」页往这里写 */
+  globalDoc: z.string().default(''),
   /** Skill 目录（每个子目录一个 SKILL.md）：user 是相对用户目录（~ 开头），repo 是相对项目目录 */
   skills: Dirs.default({ user: [], repo: [] }),
   /** 自定义命令：目录下每个文件一个命令；md 是 Markdown（$ARGUMENTS 换成参数），toml 是 prompt 字段（{{args}} 换成参数） */
@@ -274,6 +276,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     limits: 'none',
     docs: spec.docs,
     docsNote: tr(spec.docsNote),
+    globalDoc: spec.globalDoc || undefined,
     skills: spec.skills,
     commands: spec.commands,
     modelsFrom: spec.modelsFrom,

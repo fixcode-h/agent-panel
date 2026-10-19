@@ -133,4 +133,12 @@ export const EN_EXTEND: Record<string, string> = {
   美术: 'Art',
   '没有自带的 Skill「{name}」': 'No bundled skill named “{name}”',
   添加内置或导入的工作流: 'Add a built-in or imported workflow',
+  添加内置工作流: 'Add built-in workflows',
+  '已添加 {n} 个 Agent': 'Added {n} agents',
+  '内置 Agent': 'Built-in agents',
+  '按规划、开发、质量、文档与交付、UE 和美术整理好的 Agent，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 CLI。':
+    'Agents organized for planning, development, quality, docs and delivery, UE, and art. They all include “Common rules”. They are created only when you click Add, and the bundled skills they use are installed into the CLI when they run.',
+  全部添加: 'Add all',
+  '添加内置 Agent': 'Add built-in agents',
+  '还可以添加整理好的内置 Agent': 'You can also add ready-made built-in agents',
 }
