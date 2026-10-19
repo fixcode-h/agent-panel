@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUpCircle,
@@ -20,6 +20,13 @@ import { t } from '@shared/i18n'
 import { AiFixButton } from '@/components/ui/ai-fix'
 
 const mb = (n: number) => `${(n / 1024 / 1024).toFixed(1)} MB`
+/** 上次检查的时间：今天只写时分，别的日子带上日期 */
+const checkedTime = (iso: string) => {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+  return d.toDateString() === new Date().toDateString() ? hm : `${day(iso)} ${hm}`
+}
 const day = (iso: string) => {
   const d = new Date(iso)
   return Number.isNaN(d.getTime())
@@ -130,6 +137,13 @@ export function UpdateSection() {
   const canInstall = !!data?.packaged && !demo
   const running = job?.status === 'running' || !!restarting
 
+  // 打开「版本更新」就马上检查一次，不等自动检查的间隔
+  useEffect(() => {
+    if (!running) void loadReleases(true)
+    // 只在打开时检查；安装中途不重新检查
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const install = (r: AppRelease) => {
     setConfirm(null)
     installRelease(r.tag).catch((e) => toast.error((e as Error).message))
@@ -146,10 +160,15 @@ export function UpdateSection() {
           {data && !data.packaged && !demo && (
             <span className="rounded-full bg-field px-1.5 py-px text-[11px] text-subtle">{t('从源码运行')}</span>
           )}
+          {data?.checkedAt && (
+            <span className="ml-auto text-xs text-subtle">
+              {t('上次检查 {time}', { time: checkedTime(data.checkedAt) })}
+            </span>
+          )}
           <Button
             size="sm"
             variant="ghost"
-            className="ml-auto"
+            className={cn(!data?.checkedAt && 'ml-auto')}
             disabled={loading || running}
             onClick={() => loadReleases(true)}
           >

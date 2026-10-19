@@ -215,6 +215,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '手动下载。': 'to download manually.',
   '正在检查…': 'Checking…',
   已是最新版本: "You're up to date",
+  '上次检查 {time}': 'Last checked {time}',
   '在线演示不能安装，可以下载包到本机运行。':
     "The online demo can't install updates. Download a package to run locally.",
   '更新会下载 GitHub 上的包，替换程序文件后自动重启；data 目录里的数据会保留。有任务在执行时不能更新。':

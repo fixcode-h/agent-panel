@@ -3076,6 +3076,10 @@ try {
     ],
   )
   assert.equal(rels.update.tag, 'v0.11.8', '正式版只提示更新的正式版')
+  // 检查的时间和结果记在缓存目录里；不带 refresh 的自动检查 6 小时内直接用上次的结果
+  assert.ok(rels.checkedAt, '返回上次检查的时间')
+  assert.ok(existsSync(path.join(dataDir, 'cache/updates/releases.json')), '检查结果存到缓存目录')
+  assert.equal((await call('GET', '/app/releases')).checkedAt, rels.checkedAt, '6 小时内不重新检查')
   await assert.rejects(call('POST', '/app/install', { tag: 'v9.9.9' }), /找不到版本/)
   const installJob = async (tag) => {
     let j = await call('POST', '/app/install', { tag })

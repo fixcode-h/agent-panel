@@ -45,6 +45,19 @@ const TRAY_EXE = 'AgentPanel.exe'
 /** 更新前把当前版本整个留在这里：新版本起不来时自动退回，设置里也可以手动回到上一个版本 */
 const PREVIOUS = () => path.join(CACHE_DIR, 'updates', 'previous')
 const VERSION_FILE = 'version.txt'
+/** 上次检查更新的时间和结果 */
+const CACHE_FILE = () => path.join(CACHE_DIR, 'updates', 'releases.json')
+/** 自动检查更新的间隔 */
+const CHECK_EVERY = 6 * 3600_000
+
+function readCache(): { at: number; list: AppRelease[] } | undefined {
+  try {
+    const c = JSON.parse(readFileSync(CACHE_FILE(), 'utf8'))
+    return typeof c?.at === 'number' && Array.isArray(c.list) ? c : undefined
+  } catch {
+    return undefined
+  }
+}
 
 /** 上一个版本的版本号；没有留下时为空 */
 function previousVersion() {
@@ -154,12 +167,13 @@ const sha256 = (file: string) =>
 
 /** 版本更新：对比 GitHub Releases 上的包，下载后替换当前目录里的程序文件并重启 */
 export function updateApi(deps: { running: () => number; restart: () => void }) {
-  let cache: { at: number; list: AppRelease[] } | undefined
+  // 上次检查的结果存在缓存目录里，重启面板也记得，不会每次打开都去问 GitHub
+  let cache: { at: number; list: AppRelease[] } | undefined = readCache()
   const jobs = new Map<string, AppUpdateJob>()
 
   async function releases(refresh: boolean): Promise<AppRelease[]> {
-    // GitHub 匿名访问每小时 60 次，缓存 10 分钟
-    if (!refresh && cache && Date.now() - cache.at < 600_000) return cache.list
+    // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
+    if (!refresh && cache && Date.now() - cache.at < CHECK_EVERY) return cache.list
     const res = await netFetch(`${API()}?per_page=30`, {
       headers: { Accept: 'application/vnd.github+json', 'User-Agent': 'agent-panel' },
       signal: AbortSignal.timeout(15_000),
@@ -191,6 +205,8 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
       .filter((r) => r.tarUrl)
       .sort((a, b) => b.publishedAt.localeCompare(a.publishedAt))
     cache = { at: Date.now(), list }
+    await mkdir(path.dirname(CACHE_FILE()), { recursive: true })
+    await writeFile(CACHE_FILE(), JSON.stringify(cache)).catch((e) => log.warn('update', '记录检查结果失败', e))
     return list
   }
 
@@ -283,6 +299,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
           const list = await releases(c.req.query('refresh') === '1')
           return c.json({
             ...base,
+            checkedAt: cache ? new Date(cache.at).toISOString() : undefined,
             releases: list.slice(0, 5),
             update: pickUpdate(current, list),
           } satisfies AppReleases)

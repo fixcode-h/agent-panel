@@ -1545,6 +1545,7 @@ async function demoApp(url: string): Promise<unknown> {
   return {
     current,
     packaged: false,
+    checkedAt: new Date().toISOString(),
     releases: list.slice(0, 5),
     update: pickUpdate(current, list),
   } satisfies AppReleases

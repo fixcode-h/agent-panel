@@ -132,7 +132,7 @@ CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.jso
 
 ## 识别 CLI 自己配的 API `auth.apiSources`
 
-设置的「API 配置」页和 CLI 页会读各个 CLI 自己的环境变量和配置文件，把里面配好的接口地址、密钥和模型列出来，用户确认后存进全局的 API 列表，
+设置 → CLI 里的「API 配置」页和各个 CLI 页会读各个 CLI 自己的环境变量和配置文件，把里面配好的接口地址、密钥和模型列出来，用户确认后存进全局的 API 列表，
 别的 CLI 也能选用。读哪里写在 `auth.apiSources` 里，每一项是一个来源：
 
 | 字段                   | 说明                                                                                          |
