@@ -60,7 +60,6 @@ import {
 import { DocEditor } from '@/components/workflows/DocEditor'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { TagPicker } from '@/components/tags/Tags'
-import { CHAT_AGENT_KEY } from '@/components/tasks/TaskComposer'
 import { AgentPicker } from './AgentPicker'
 import { ParamsEditor } from './ParamFields'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
@@ -176,12 +175,7 @@ export function AgentDetail({
     .filter((x) => x.depth > MAX_INCLUDE_DEPTH)
   const sortIncludes = useDragSort((from, to) => set('includes', moveItem(draft.includes, from, to)))
   const preview = composeRole(live, agents)
-  const startChat = () => {
-    try {
-      localStorage.setItem(CHAT_AGENT_KEY, agent.id)
-    } catch {}
-    go({ page: 'chat' })
-  }
+  const startChat = () => go({ page: 'chat' })
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
   const usedIn = workflows
