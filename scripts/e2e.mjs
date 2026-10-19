@@ -3358,7 +3358,23 @@ try {
   assert.match(aj.error, /退回原来的版本/)
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n')
   assert.ok(existsSync(path.join(appDir, 'dist/old.html')), '前端也换回来')
-  aj = await installJob('v0.11.9-dev')
+  // 有任务在执行：先下载，任务结束前不替换程序
+  const busyTask = await call('POST', '/tasks', { mode: 'chat', agentId: B.id, prompt: 'SLOW 更新等待' })
+  let wj = await call('POST', '/app/install', { tag: 'v0.11.9-dev' })
+  assert.equal(wj.status, 'running', '任务执行中也能开始下载')
+  for (let i = 0; i < 100 && !/等待任务结束/.test(wj.phase); i++) {
+    await sleep(100)
+    wj = await call('GET', `/app/install/${wj.id}`)
+  }
+  assert.match(wj.phase, /等待任务结束/, '下载完等任务结束')
+  assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// old\n', '任务结束前不替换程序')
+  await call('POST', `/tasks/${busyTask.id}/stop`)
+  await waitDone(busyTask.id)
+  for (let i = 0; i < 150 && wj.status === 'running'; i++) {
+    await sleep(100)
+    wj = await call('GET', `/app/install/${wj.id}`)
+  }
+  aj = wj
   assert.equal(aj.status, 'done', aj.error)
   assert.equal(readFileSync(path.join(appDir, 'server.mjs'), 'utf8'), '// new 0.11.9-dev\n')
   assert.ok(existsSync(path.join(appDir, 'dist/index.html')) && !existsSync(path.join(appDir, 'dist/old.html')))

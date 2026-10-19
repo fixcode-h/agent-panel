@@ -194,6 +194,9 @@ export const EN_SERVER: Record<string, string> = {
   'GitHub 返回 {status}（访问太频繁，稍后再试）': 'GitHub returned {status} (rate limited, try again later)',
   'GitHub 返回 {status}': 'GitHub returned {status}',
   下载中: 'Downloading',
+  '等待任务结束（还有 {n} 个）': 'Waiting for tasks to finish ({n} still running)',
+  '新版本 {version} 已下载，等所有任务结束后再替换并重启':
+    'Version {version} downloaded; files will be replaced after all tasks finish',
   '下载失败：{status}': 'Download failed: {status}',
   解压中: 'Extracting',
   '解压失败：{error}': 'Extraction failed: {error}',
