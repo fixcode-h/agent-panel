@@ -4,6 +4,7 @@ import { Copy, Download, LayoutTemplate, Plus, Sparkles, Trash2, Upload, Workflo
 import type { Category, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { newFlow } from '@shared/flow'
+import { isDefaultWorkflow } from '@shared/builtin/default'
 import { api } from '@/lib/api'
 import { exportWorkflow, importWorkflow } from '@/lib/transfer'
 import { useData, useNav } from '@/lib/data'
@@ -18,6 +19,9 @@ import { DetailEmpty } from '@/components/layout/Detail'
 import { WorkflowDetail } from '@/components/workflows/WorkflowDetail'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { BuiltinDialog } from '@/components/workflows/BuiltinDialog'
+
+/** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
+const DEFAULT_GROUP = '#default'
 
 export function WorkflowsPage() {
   const { loading, workflows, agents, clis, categories: allCategories, tags, setWorkflows, setAgents } = useData()
@@ -45,12 +49,16 @@ export function WorkflowsPage() {
   )
   // 按分类分组；分类删掉后残留的 id 归到「未分类」
   const known = new Set(categories.map((c) => c.id))
-  const groups = [...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }]
-    .map((g) => ({
-      ...g,
-      items: list.filter((w) => (known.has(w.categoryId) ? w.categoryId : '') === g.id),
-    }))
-    .filter((g) => g.items.length || (!q && !tag && g.category))
+  // 自带的「默认」工作流单独放在最上面的「默认」分类，不跟着用户的分类走
+  const groups = [
+    { category: null as Category | null, id: DEFAULT_GROUP, items: list.filter((w) => isDefaultWorkflow(w.id)) },
+    ...[...categories.map((c) => ({ category: c as Category | null, id: c.id })), { category: null, id: '' }].map(
+      (g) => ({
+        ...g,
+        items: list.filter((w) => !isDefaultWorkflow(w.id) && (known.has(w.categoryId) ? w.categoryId : '') === g.id),
+      }),
+    ),
+  ].filter((g) => g.items.length || (!q && !tag && g.category))
   const nameOf = (id: string) => agents.find((a) => a.id === id)?.name
 
   const create = async (input: Partial<WorkflowInput> = {}) => {
@@ -166,7 +174,7 @@ export function WorkflowsPage() {
                   onAdd={() => create({ categoryId: g.id })}
                 />
               ) : (
-                <GroupHeader label={t('未分类')} count={g.items.length} />
+                <GroupHeader label={g.id === DEFAULT_GROUP ? t('默认') : t('未分类')} count={g.items.length} />
               )
             }
           >
@@ -204,17 +212,21 @@ export function WorkflowsPage() {
                       <Download className="h-4 w-4" />
                       {t('导出')}
                     </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem
-                      danger
-                      onSelect={() => {
-                        go({ page: 'workflows', id: w.id })
-                        setDelReq({ id: w.id, at: Date.now() })
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                      {t('删除')}
-                    </ContextMenuItem>
+                    {!isDefaultWorkflow(w.id) && (
+                      <>
+                        <ContextMenuSeparator />
+                        <ContextMenuItem
+                          danger
+                          onSelect={() => {
+                            go({ page: 'workflows', id: w.id })
+                            setDelReq({ id: w.id, at: Date.now() })
+                          }}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          {t('删除')}
+                        </ContextMenuItem>
+                      </>
+                    )}
                   </>
                 }
               />
@@ -223,9 +235,10 @@ export function WorkflowsPage() {
           </ListGroup>
         ))}
         {!loading && workflows.length > 0 && list.length === 0 && <ListEmpty>{t('没有匹配的工作流')}</ListEmpty>}
-        {!loading && workflows.length === 0 && (
+        {/* 只有自带的「默认」工作流时提示可以添加内置的：内置的不会自动装，推荐下一步时也只会推荐已有的 */}
+        {!loading && !query && !tag && workflows.every((w) => isDefaultWorkflow(w.id)) && (
           <ListEmpty>
-            <p>{t('还没有工作流')}</p>
+            <p>{t('还可以添加整理好的内置工作流，「默认」工作流做完后会推荐用它们接着做')}</p>
             <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>
               <LayoutTemplate className="h-4 w-4" />
               {t('添加内置工作流')}

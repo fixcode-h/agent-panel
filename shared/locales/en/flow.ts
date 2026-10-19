@@ -217,4 +217,10 @@ export const EN_FLOW: Record<string, string> = {
   不限: 'No limit',
   收起属性栏: 'Hide properties panel',
   显示属性栏: 'Show properties panel',
+  推荐的下一步: 'Suggested next steps',
+  '还可以添加整理好的内置工作流，「默认」工作流做完后会推荐用它们接着做':
+    'You can also add the curated built-in workflows. The Default workflow recommends them as next steps when it finishes',
+  '什么都可以交给它：分析、排查、找资料、小改动，给出结果并推荐下一步用哪个工作流':
+    'Hand it anything: analysis, debugging, research, small changes. It returns the result and suggests which workflow to run next',
+  '默认工作流是自带的，不能删除': 'The Default workflow is built in and cannot be deleted',
 }

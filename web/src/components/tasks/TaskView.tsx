@@ -35,6 +35,7 @@ import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
+import { NextWorkflows } from './NextWorkflows'
 import { StepSection } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
@@ -567,6 +568,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
                       <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
                     ),
                   )}
+                  <NextWorkflows task={task} />
                   {running &&
                     task.mode === 'chat' &&
                     (blocks.at(-1)?.kind === 'turn' ? (

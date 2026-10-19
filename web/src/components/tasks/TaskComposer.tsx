@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type ParamValues, type Project, type Task, type TaskMode } from '@shared/schema'
 import { paramLabel, resolveParams } from '@shared/agent-role'
+import { DEFAULT_WORKFLOW_ID } from '@shared/builtin/default'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -117,7 +118,8 @@ export function TaskComposer({
   const canIsolate = !!project && !!dir?.gitBranch
   const busyProject = !!project && tasks.some((x) => x.projectId === project.id && x.status === 'running')
 
-  const workflow = workflows.find((w) => w.id === (workflowId || defaultWf))
+  // 项目没指定工作流时用自带的「默认」工作流：什么都能交给它，做完推荐下一步用哪个工作流
+  const workflow = workflows.find((w) => w.id === (workflowId || defaultWf || DEFAULT_WORKFLOW_ID))
   // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
   const effMode: TaskMode = standalone ? 'chat' : mode || 'workflow'
   const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0

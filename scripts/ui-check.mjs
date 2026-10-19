@@ -96,6 +96,16 @@ try {
   // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
   await check(p, '内置工作流-添加后', ['识别现场', '确认设计'])
+  // 「默认」工作流：什么都能交给它，做完推荐已有的工作流，点一下就带着上下文执行
+  await p.goto(base)
+  await p.getByTitle('执行的工作流').click()
+  await p.getByRole('dialog').getByText('默认', { exact: true }).click()
+  await p.locator('#task-prompt').fill('分析一下这个项目的结构')
+  await p.locator('#task-prompt').press('Enter')
+  await p.getByText('推荐的下一步').waitFor({ timeout: 20000 })
+  await check(p, '默认工作流-推荐', ['推荐的下一步', '执行'])
+  await p.getByRole('region', { name: '推荐的下一步' }).getByRole('button').first().click()
+  await check(p, '默认工作流-执行推荐', ['之前的上下文'])
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加

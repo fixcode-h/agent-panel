@@ -54,7 +54,8 @@ import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams } from '@shared/agent-role'
 import { beginRun, endRun, newTask, questionAnswers, taskSummary, withAttachments } from '@shared/task'
-import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows, workflowClosure } from '@shared/flow'
+import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows } from '@shared/flow'
+import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
 import { demoFixJob, startDemoFix, stopDemoFix } from './demo-fix'
@@ -457,6 +458,7 @@ function load(): Db {
   db.tags ??= []
   // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
   if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
+  if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
   return db
 }
 function persist() {
@@ -1137,7 +1139,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function projectWorkflow(d: Db, p: Project) {
   const id = p.workflowId || d.projectCategories.find((c) => c.id === p.categoryId)?.workflowId
-  return d.workflows.find((w) => w.id === id)
+  // 项目没指定工作流时用自带的「默认」工作流
+  return d.workflows.find((w) => w.id === (id || DEFAULT_WORKFLOW_ID))
 }
 
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
@@ -1192,7 +1195,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
       workflow,
       new Date().toISOString(),
       `demo-${crypto.randomUUID()}`,
-      workflow ? workflowClosure(workflow, d.workflows) : [],
+      workflow ? taskSnapshot(workflow, d.workflows) : [],
     ),
     simulated: true,
   })
@@ -1406,7 +1409,7 @@ function tasksRoute(
     if ((body as { latest?: boolean } | undefined)?.latest && task.workflowId) {
       const fresh =
         d.workflows.find((w) => w.id === task.workflowId) ?? fail('工作流已经被删除，只能按任务创建时的工作流继续')
-      task.workflows = workflowClosure(fresh, d.workflows)
+      task.workflows = taskSnapshot(fresh, d.workflows)
       task.workflowName = fresh.name
     }
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
