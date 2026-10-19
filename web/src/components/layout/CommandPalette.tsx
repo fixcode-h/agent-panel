@@ -16,6 +16,7 @@ import { t } from '@shared/i18n'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { TaskStatusIcon } from '@/components/tasks/TaskStatusIcon'
+import { byAskedAt } from '@shared/task'
 
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 /** 快捷键的显示：Mac 上是 ⌘，其他系统是 Ctrl */
@@ -55,7 +56,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
 
   const items = useMemo<Item[]>(() => {
     const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? ''
-    const recent = [...tasks].filter((x) => !x.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    const recent = [...tasks].filter((x) => !x.archived).sort(byAskedAt)
     return [
       {
         id: 'new-task',

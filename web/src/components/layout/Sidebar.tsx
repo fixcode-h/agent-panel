@@ -55,6 +55,7 @@ import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
+import { askedAt, byAskedAt } from '@shared/task'
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -292,22 +293,23 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   else if (!chatMode) lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 
-  // 按项目分组，最近有动静的项目排在前面；组内按更新时间
+  // 按项目分组，用户最近发过消息的项目排在前面；组内按用户最近发消息的时间
   const [folded, toggleFolded, setFolded] = useFolded()
   const [more, setMore] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
   const filtering = !!query.trim() || filter !== 'all'
   const projectTasks = tasks.filter((t) => t.projectId)
-  const found = filtering
-    ? projectTasks.filter((t) => matchTask(t, query, filter)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
-    : []
+  const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 归档的不在项目分组里显示
-  const recent = projectTasks.filter((t) => !t.archived).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+  const recent = projectTasks.filter((t) => !t.archived).sort(byAskedAt)
   const byProject = new Map<string, Task[]>()
   for (const t of recent) byProject.set(t.projectId, [...(byProject.get(t.projectId) ?? []), t])
   // 所有项目都列出来（还没有对话的也在），最近有动静的排前面
-  const last = (p: { id: string; updatedAt: string }) => byProject.get(p.id)?.[0]?.updatedAt ?? p.updatedAt
+  const last = (p: { id: string; updatedAt: string }) => {
+    const first = byProject.get(p.id)?.[0]
+    return first ? askedAt(first) : p.updatedAt
+  }
   const groups: [string, Task[]][] = [...projects]
     .sort((a, b) => last(b).localeCompare(last(a)))
     .map((p) => [p.id, byProject.get(p.id) ?? []])
