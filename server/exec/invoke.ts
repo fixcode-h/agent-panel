@@ -27,6 +27,8 @@ const WAIT_HINT =
 export interface CliControl {
   steer: (text: string) => Promise<boolean>
   interrupt: () => boolean
+  /** 插话要等 CLI 的下一个模型请求才取走（Command Code）：确认接受不等于已经读到 */
+  deferSteer?: boolean
 }
 
 /** 中断后等 CLI 自己收尾的时间，超过就直接结束进程 */
@@ -205,7 +207,7 @@ async function invoke(
       maxTurns: o.build.maxTurns ?? 1000,
       onEvent: emit,
     })
-    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
+    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt(), deferSteer: true })
     try {
       const r = await runProcess({
         command: o.command,

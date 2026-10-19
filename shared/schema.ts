@@ -846,6 +846,10 @@ export const TaskData = z.object({
   queue: z.array(QueuedMessage).default([]),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
+  /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
+  working: z.boolean().default(false),
+  /** CLI 最近一次完成一轮回复的时间：判断「完成但没看」用，和进程是否结束无关 */
+  turnDoneAt: z.string().default(''),
   /** CLI 回复完停在面板的 MCP 工具上，等用户在这个对话里的下一句 */
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */

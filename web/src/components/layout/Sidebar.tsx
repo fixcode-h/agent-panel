@@ -535,7 +535,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           {allOpen &&
             groups.map(([pid, ts]) => {
               const open = !folded.has(pid)
-              const running = ts.filter((t) => t.status === 'running').length
+              const running = ts.filter((t) => t.working).length
               // 收起「更多」时也要露出正在看的那个任务
               const shown = more.has(pid)
                 ? ts

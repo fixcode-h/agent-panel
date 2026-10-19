@@ -74,8 +74,10 @@ interface Steerer {
   step: string
   agentId: string
   steer: (text: string) => Promise<boolean>
-  /** 补充交给了它：之后的输出另起一条，排在用户消息后面 */
-  accepted: () => void
+  /** CLI 在下一个模型请求前才取走补充：先显示成待取走，等真正取走再插进正文 */
+  deferred?: boolean
+  /** 补充交给了它：立即生效的另起一条；延迟取走的记下消息，等取走时再插 */
+  accepted: (msg?: TaskMessage) => void
 }
 /** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
 const steers = new Map<string, Set<Steerer>>()
@@ -139,8 +141,14 @@ export async function steerTask(task: Task, text: string, msg: TaskMessage) {
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]
-    task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
-    for (const s of took) s.accepted()
+    const saved = { ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId }
+    // Command Code 这类要等下一次模型请求才取走的：先留在队列里显示成「待取走」，
+    // 等它真正开始下一次生成时再插进正文，免得旧回合迟到的工具调用跑到用户消息后面
+    const delayed = took.every((s) => s.deferred)
+    if (delayed)
+      task.queue.push({ id: msg.id, text: msg.text, attachments: msg.attachments ?? [], at: msg.at, note: true })
+    else task.messages.push(saved)
+    for (const s of took) s.accepted(delayed ? saved : undefined)
     return true
   }
   const takers = noteTakers.get(task.id)
@@ -594,6 +602,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const apply = (ev: CliEvent) => {
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
+    // 延迟取走的补充：CLI 开始下一次模型请求时，才说明它真的读到了补充；
+    // 这时把用户消息从「待取走」移到正文，之后的输出另起一条
+    if (steerNotes.length && ev.type === 'request_start') consumeSteer()
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
@@ -714,6 +725,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         break
       case 'result':
         result = ev
+        // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
+        if (chat && !op) {
+          task.working = false
+          if (ev.ok && !prewarmMode) task.turnDoneAt = new Date().toISOString()
+        }
         break
       case 'ask': {
         // 预热时用户还没发消息：不要让页面弹出确认/提问，直接拒绝并让它去等下一句
@@ -745,13 +761,36 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const asked: string[] = []
   /** 补充：交给 CLI 成功后，之后的输出另起一条，排在用户消息后面 */
   let steerer: Steerer | undefined
+  /** 延迟取走的补充：CLI 真正开始下一次生成时才从「待取走」移到正文 */
+  let steerNotes: TaskMessage[] = []
+  const consumeSteer = () => {
+    if (!steerNotes.length) return
+    for (const m of steerNotes) {
+      const i = task.queue.findIndex((q) => q.id === m.id && q.note)
+      // 已经撤回了：不再插进正文
+      if (i < 0) continue
+      task.queue.splice(i, 1)
+      task.messages.push(m)
+    }
+    steerNotes = []
+    cur = undefined
+    // CLI 真的开始处理用户消息了：预热结束，页面进入执行中
+    prewarmMode = false
+    task.prewarming = false
+    task.working = true
+    ctx.changed(true)
+  }
   const register = (c: CliControl) => {
     steerer = {
       step,
       agentId,
       steer: c.steer,
-      accepted: () => {
-        cur = undefined
+      deferred: c.deferSteer,
+      accepted: (m) => {
+        // CLI 收下了补充：这一轮又在处理了（延迟取走的也算，消息先显示成待取走）
+        task.working = true
+        if (m) steerNotes.push(m)
+        else cur = undefined
         ctx.changed(true)
       },
     }
@@ -819,13 +858,20 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         // 回复期间还在排队的要求：一起交回去，不用等进程结束
         const queued = drainQueue()
         if (queued) {
+          // 上一轮已经回复完，只是还有排队的消息没处理
+          if (!prewarmMode && chat && !op) task.turnDoneAt = new Date().toISOString()
           prewarmMode = false
           task.prewarming = false
+          task.working = true
           ctx.changed(true)
           return queued
         }
         task.prewarming = false
         task.awaitingUser = true
+        // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
+        task.working = false
+        // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
+        if (!prewarmMode && chat && !op) task.turnDoneAt = new Date().toISOString()
         ctx.changed(true)
         try {
           return await new Promise<string | null>((resolve) => {
@@ -840,6 +886,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
               waiter = undefined
               task.awaitingUser = false
               task.prewarming = false
+              if (value === null && chat) task.working = false
               if (!finished) ctx.changed(true)
               resolve(value)
             }
@@ -849,6 +896,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
                 // 用户发来第一句：预热结束，之后模型的输出正常记进对话
                 prewarmMode = false
                 task.messages.push(msg)
+                // 收到用户消息，CLI 开始处理这一轮
+                task.working = true
                 // 之后的输出另起一条，排在用户消息后面
                 cur = undefined
                 done(withAttachments(msg.text, msg.attachments ?? []))

@@ -132,7 +132,7 @@ export function Markdown({
       onKeyDown={(e) => {
         if (e.key === 'Enter' && (e.target as HTMLElement).dataset.path) onClick(e as unknown as React.MouseEvent)
       }}
-      className={cn('chat-md [overflow-wrap:anywhere]', live && 'streaming-caret', className)}
+      className={cn('chat-md [overflow-wrap:anywhere]', className)}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )

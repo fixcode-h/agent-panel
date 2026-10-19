@@ -99,6 +99,7 @@ export function tasksApi(deps: {
         ...task,
         status: 'stopped',
         requests: [],
+        working: false,
         awaitingUser: false,
         prewarming: false,
         // 中断前最后一次落盘的时间当作这一轮的结束
@@ -186,8 +187,12 @@ export function tasksApi(deps: {
   ) {
     const task = entry.task
     const before = task.status
+    const beforeUpdatedAt = task.updatedAt
+    const beforeTurnDoneAt = task.turnDoneAt ?? ''
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
+    // working 只表示 CLI 真的在处理这一轮；预热和等下一句时页面按空闲显示
+    entry.task.working = !prewarm
     entry.task.awaitingUser = false
     entry.task.prewarming = prewarm
     // 对话新的一轮从 0 开始显示速度，接口返回时页面不会还停在上一轮的数字上
@@ -253,6 +258,11 @@ export function tasksApi(deps: {
     entry.done = run
       .catch((e) => {
         log.error('task', '任务执行出错', { task: task.id, error: e })
+        // 预热失败不打扰对话：恢复原来的状态，等用户发消息时再按正常流程报错
+        if (prewarm) {
+          entry.task.status = before
+          return
+        }
         entry.task.status = 'failed'
         entry.task.messages.push({
           id: randomUUID(),
@@ -267,8 +277,17 @@ export function tasksApi(deps: {
       })
       .finally(async () => {
         log.info('task', `任务结束：${entry.task.status}`, { task: task.id })
+        entry.task.working = false
         entry.task.awaitingUser = false
         entry.task.prewarming = false
+        // 预热只是把 CLI 启动好，没有处理新消息就退出时不要算完成，也不要把列表时间改成现在
+        if (prewarm && entry.task.status === 'done' && (entry.task.turnDoneAt ?? '') === beforeTurnDoneAt) {
+          entry.task.status = before
+          entry.task.updatedAt = beforeUpdatedAt
+        }
+        // 工作流跑完一整轮才算完成；对话在 CLI 回复完时已经记了 turnDoneAt
+        if (!prewarm && entry.task.mode !== 'chat' && entry.task.status === 'done')
+          entry.task.turnDoneAt = new Date().toISOString()
         endRun(entry.task)
         await flush()
         live.delete(task.id)

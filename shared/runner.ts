@@ -455,5 +455,12 @@ export async function runTurn(ctx: RunContext) {
     },
   }
   if (ctx.first) system(host, '模拟执行：还没有真正调用 CLI，下面是示例输出，用来预览任务的执行过程。')
-  await runEngineTurn(host)
+  ctx.task.working = true
+  try {
+    await runEngineTurn(host)
+  } finally {
+    ctx.task.working = false
+    // 和真实 CLI 一样，完成一轮才记完成时间
+    if (ctx.task.status === 'done' && !ctx.stopped()) ctx.task.turnDoneAt = new Date().toISOString()
+  }
 }

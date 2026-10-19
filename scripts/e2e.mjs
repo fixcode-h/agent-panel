@@ -3923,6 +3923,8 @@ try {
       await sleep(100)
     }
     assert.ok(w.awaitingUser, '回复完停在等下一句上')
+    assert.equal(w.working, false, '等下一句不算执行中')
+    assert.ok(w.turnDoneAt, 'CLI 完成一轮时记了时间')
     await call('POST', `/tasks/${w.id}/messages`, { text: '接着看看测试', steer: true })
     w = await waitDone(w.id, 30000)
     assert.equal(w.status, 'done')
@@ -3956,10 +3958,13 @@ try {
       await sleep(100)
     }
     assert.ok(left.awaitingUser, '第二个对话也停在等下一句上')
+    assert.equal(left.working, false, '等下一句不算执行中')
+    assert.ok(left.turnDoneAt, '完成一轮时记了时间')
     await call('POST', `/tasks/${left.id}/presence`, { viewerId: 'e2e', active: false })
     left = await waitDone(left.id, 15000)
     assert.equal(left.status, 'done', '切走宽限到了，CLI 自己结束')
     assert.equal(left.awaitingUser, false)
+    assert.equal(left.working, false)
   }
   step('对话页开着时 CLI 停在等下一句上：下一句直接交给同一个进程，切走后结束')
 
@@ -3976,10 +3981,13 @@ try {
     w = await waitDone(w.id, 30000)
     assert.equal(w.status, 'done')
     assert.ok(w.sessions['default-agent'], '第一轮留下了会话')
+    assert.ok(w.turnDoneAt, '第一轮完成时记了时间')
+    const doneAt = w.turnDoneAt
     const beforeMsgs = w.messages.length
 
     w = await call('POST', `/tasks/${w.id}/prewarm`, {})
     assert.ok(w.status === 'running' || w.awaitingUser, '打开对话就开始启动')
+    assert.equal(w.working, false, '预热不算执行中')
     for (let i = 0; i < 100; i++) {
       w = await call('GET', `/tasks/${w.id}`)
       if (w.awaitingUser) break
@@ -3987,7 +3995,9 @@ try {
     }
     assert.ok(w.awaitingUser, '预热完停在等下一句上')
     assert.equal(w.prewarming, false)
+    assert.equal(w.working, false, '预热/等下一句不算执行中')
     assert.equal(w.messages.length, beforeMsgs, '预热不往对话里加消息')
+    assert.equal(w.turnDoneAt, doneAt, '预热本身不算完成一轮')
 
     // 预热好了再发消息：直接交给同一个进程，不用重新启动
     await call('POST', `/tasks/${w.id}/messages`, { text: '预热后直接问', steer: true })
@@ -3998,6 +4008,9 @@ try {
       w.messages.slice(at + 1).some((m) => m.role === 'agent' && /等到的下一句/.test(m.text)),
       '模型在用户消息下面继续输出',
     )
+    assert.notEqual(w.turnDoneAt, doneAt, '真正处理了用户消息才算完成一轮')
+    const askedDoneAt = w.turnDoneAt
+    const askedUpdatedAt = w.updatedAt
 
     // 再预热一次，然后切走：宽限到了结束，不在后台一直占着
     w = await call('POST', `/tasks/${w.id}/prewarm`, {})
@@ -4011,6 +4024,9 @@ try {
     w = await waitDone(w.id, 15000)
     assert.equal(w.status, 'done')
     assert.equal(w.prewarming, false)
+    assert.equal(w.working, false)
+    assert.equal(w.turnDoneAt, askedDoneAt, '切走让预热退出不算完成一轮')
+    assert.equal(w.updatedAt, askedUpdatedAt, '预热退出不改列表时间')
   }
   step('打开旧对话时后台预热 resume：不用等发消息才启动，切走后结束')
 

@@ -39,8 +39,8 @@ function ProjectHome({ project }: { project: Project }) {
   const all = tasks.filter((t) => t.projectId === project.id)
   const archived = all.filter((t) => t.archived).length
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
-  // 有任务在执行时每秒刷新，耗时跟着走
-  const now = useNow(list.some((t) => t.status === 'running'))
+  // 有任务真的在跑时每秒刷新，耗时跟着走
+  const now = useNow(list.some((t) => t.working))
   const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
   // 导入别人导出的任务：放进这个项目，只能查看
@@ -159,7 +159,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               onClick={onOpen}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
             >
-              <TaskStatusIcon status={task.status} />
+              <TaskStatusIcon status={task.status} working={task.working} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-[0.875rem]">{task.title}</span>
                 <span className="truncate text-xs text-subtle">
@@ -172,10 +172,14 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               <span
                 className={cn(
                   'hidden shrink-0 text-xs sm:block',
-                  task.status === 'failed' ? 'text-danger' : task.status === 'running' ? 'text-accent' : 'text-subtle',
+                  task.status === 'failed' ? 'text-danger' : task.working ? 'text-accent' : 'text-subtle',
                 )}
               >
-                {task.status === 'done' ? timeAgo(task.updatedAt, now) : statusLabel[task.status]}
+                {task.status === 'done'
+                  ? timeAgo(task.updatedAt, now)
+                  : task.status === 'running' && !task.working
+                    ? t('等待你的下一条消息')
+                    : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />
