@@ -128,8 +128,6 @@ export const EN_TASKS: Record<string, string> = {
   'CLI 报告': 'Reported by CLI',
   'CLI 开始运行后会显示上下文占用。': 'Context usage appears once the CLI starts running.',
   默认模型: 'Default model',
-  '输出 token ÷ 生成用时': 'Output tokens ÷ generation time',
-  '平均 {n} token/s': 'avg {n} token/s',
   更改: 'Changes',
   '还没有改动文件。': 'No files changed yet.',
   回到底部: 'Back to bottom',
@@ -250,6 +248,9 @@ export const EN_TASKS: Record<string, string> = {
   '执行中也可以输入，Agent 执行时会取走；没取到的等这一轮结束后接着处理':
     'You can type while it runs; the agent picks it up during the turn, or it is handled after this turn',
   'Agent 执行中会取走': 'The agent picks this up while running',
+  等待读取: 'Waiting to be read',
+  等待你的下一条消息: 'Waiting for your next message',
+  '正在准备对话…': 'Preparing the conversation…',
   排队: 'Queue',
   '排队中 · 任务没在执行，点「继续执行」后处理':
     'Queued · the task is not running; it will be handled after you resume',

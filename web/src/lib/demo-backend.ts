@@ -1298,6 +1298,8 @@ function tasksRoute(
     if (live.has(id)) live.get(id)!.stop = true
     return task
   }
+  // 演示里没有常驻 CLI，页面在场状态和预热都不用处理
+  if (sub === 'presence' || sub === 'prewarm') return task
   if (sub === 'queue' && method === 'DELETE') {
     task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
     persist()

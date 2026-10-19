@@ -105,6 +105,8 @@ export interface AgentCall {
   dispatching?: 'evaluate' | 'summary' | 'answer'
   /** 工作流里的调用都带编排工具：派子 Agent、查状态、提问、传话（真实执行交给 CLI 的 MCP） */
   orch?: Orchestra
+  /** 预热：打开对话页时先用 --resume 启动，只等下一句，不算一轮、不记输出 */
+  prewarm?: boolean
 }
 
 /** 派一个子 Agent 的要求 */
@@ -155,6 +157,9 @@ export interface EngineHost {
   prompt: string
   /** 这一轮是「继续流程」，不是新的要求：停在某个节点结论上的流程从那个节点重新检查后接着走 */
   resume?: boolean
+  /** 预热：打开对话页时后台启动 CLI，不算一轮；失败时回到 prewarmFrom */
+  prewarm?: boolean
+  prewarmFrom?: Task['status']
   changed: (flush?: boolean) => void
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
@@ -1431,18 +1436,27 @@ export async function runEngineTurn(host: EngineHost) {
       if (last) task.sessions[who] = task.sessions[last.id]
     }
     if (!who) return finish(host, { ok: false, error: t('没有可以回答的 Agent，请先给工作流选择主 Agent') })
-    // 每一轮单独记耗时和用量，任务进度里能看到工作流跑完后的追加要求
-    const turn = beginTurn(task, host.newId(), host.prompt, who)
-    host.changed(true)
+    // 每一轮单独记耗时和用量，任务进度里能看到工作流跑完后的追加要求；预热不算一轮
+    const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
+    if (turn) host.changed(true)
     const r = await host.runAgent({
       agentId: who,
       prompt: followUpPrompt(host, blocked),
       sessionKey: who,
       // 工作流任务的追加要求也走默认 CLI 的档位，和节点一致
       ...(task.mode === 'workflow' ? { tier: '' as NodeTier } : {}),
+      ...(host.prewarm ? { prewarm: true } : {}),
     })
-    endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
-    if (!r.ok) return finish(host, r)
+    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
+    // 预热失败（CLI 没装好、会话续不上等）不算这一轮：回到原来的状态，等用户发消息时再按正常流程报错
+    if (!r.ok) {
+      if (host.prewarm) {
+        task.status = host.prewarmFrom ?? 'done'
+        host.changed(true)
+        return
+      }
+      return finish(host, r)
+    }
     // 处理完停住流程的问题：从停住的节点重新检查，接着走后面的流程
     if (blocked && wf && flow && blockedStep(task, flow) === blocked) {
       reopenFlow(task, blocked)

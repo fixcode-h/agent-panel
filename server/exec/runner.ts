@@ -40,6 +40,7 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { openOrchSession, orchHint } from '../orch-mcp.ts'
+import { isWatched } from '../presence.ts'
 
 export interface RealContext {
   task: Task
@@ -60,6 +61,9 @@ export interface RealContext {
   op?: AgentCall['op']
   /** 「继续流程」：见 EngineHost.resume */
   resume?: boolean
+  /** 打开对话页时后台用 --resume 启动，只等下一句 */
+  prewarm?: boolean
+  prewarmFrom?: Task['status']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -90,6 +94,34 @@ interface NoteTaker {
   read: () => string[]
 }
 const noteTakers = new Map<string, Set<NoteTaker>>()
+
+/**
+ * 回复完停在 wait_user_message 上等下一句的调用（任务 id → 它）。
+ * 用户发消息时直接作为工具结果交回去，进程不用结束再 --resume；页面切走宽限到了就让它结束这一轮
+ */
+interface Waiter {
+  /** 用户发来下一句：记进对话再交给正在等的 CLI */
+  deliver: (msg: TaskMessage) => void
+  /** 用户离开了：结束等待 */
+  cancel: () => void
+}
+const waiters = new Map<string, Set<Waiter>>()
+
+/** 预热时不记进对话的事件：正文、思考、工具和待办 */
+const PREWARM_QUIET = new Set(['thinking', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
+
+/** 把用户消息交给正在等下一句的 CLI；没有在等时返回 false，由调用方按原来的方式处理 */
+export function deliverWait(task: Task, msg: TaskMessage) {
+  const w = waiters.get(task.id)?.values().next().value
+  if (!w) return false
+  w.deliver(msg)
+  return true
+}
+
+/** 用户离开了这个对话：让还在等下一句的 CLI 结束这一轮 */
+export function cancelWait(taskId: string) {
+  for (const w of waiters.get(taskId) ?? []) w.cancel()
+}
 
 /** 交给 CLI 的补充：说清楚是执行中补充的信息，结合它接着做，不要从头开始 */
 const noteText = (text: string) => `用户在执行中补充了信息，请结合它继续当前的任务：\n${text}`
@@ -368,11 +400,15 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const op = call.op
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
+  const prewarm = chat && !!call.prewarm
+  // 预热期间的输出不记进对话；用户发来第一句后开始正常记
+  let prewarmMode = prewarm
   let resume: string | undefined = task.sessions[sessionKey]
   let fork: BuildOptions['fork']
   let carry = ''
-  // 触发这一轮的用户消息：结束后在它上面记下这一轮在 CLI 会话里的位置
-  const asker = chat && !op ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
+  // 触发这一轮的用户消息：结束后在它上面记下这一轮在 CLI 会话里的位置（预热没有触发消息）
+  const asker =
+    chat && !op && !prewarm ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
   // 对话中途换了 CLI：原来的会话是另一个 CLI 的，接不上，开新会话把之前的对话带过去
   const switched = chat && !!task.sessionCli && task.sessionCli !== cliId
@@ -512,6 +548,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       window: windowFor(cliId, model),
       model,
       tps: 0,
+      lastTps: 0,
       outputTokens: 0,
       genMs: 0,
     })
@@ -542,13 +579,20 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     au().tps = 0
     ctx.changed()
   })
+  // 新的一轮从 0 开始显示；这一轮有输出后，没输出时接着显示最后一次的速度
+  const u0 = au()
+  u0.tps = 0
+  u0.lastTps = 0
   const streamed = (text: string) => {
     const u = au()
     u.genMs = (u.genMs ?? 0) + meter.add(text)
     u.tps = meter.tps
+    if (u.tps > 0) u.lastTps = u.tps
   }
 
   const apply = (ev: CliEvent) => {
+    // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
+    if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
@@ -574,6 +618,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         break
       }
       case 'tool': {
+        // 等下一句是面板内部的保活机制，不占一行工具调用
+        if (ev.tool.label.includes('wait_user_message')) break
         const m = !cur || cur.text.trim() ? newMsg() : cur
         m.text = ''
         m.tools.push(ev.tool)
@@ -669,6 +715,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
         result = ev
         break
       case 'ask': {
+        // 预热时用户还没发消息：不要让页面弹出确认/提问，直接拒绝并让它去等下一句
+        if (prewarmMode) {
+          ev.reply({ allow: false, message: '预热中，用户还没有发新消息；不要做别的，直接调用 wait_user_message。' })
+          return
+        }
         const id = ctx.newId()
         asked.push(id)
         replies.set(id, ev.reply)
@@ -708,9 +759,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
-  // 对话的 CLI 没有插话协议、但能用面板的工具取补充（见 CLI 配置的 notes）：登记自己，等它调 read_user_notes
+  // 对话的 CLI 能用面板的工具：没有插话协议时取补充（read_user_notes），回复完等下一句（wait_user_message）
   let taker: NoteTaker | undefined
-  if (chat && !op && def.notes && def.mcp && def.protocol === 'stdin') {
+  if (chat && !op && def.notes && def.mcp && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
     const pending = new Set<string>()
     taker = {
       add: (id) => pending.add(id),
@@ -739,6 +790,84 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     }
     ;(noteTakers.get(task.id) ?? noteTakers.set(task.id, new Set()).get(task.id)!).add(taker)
   }
+  // 回复完要停下来了：把这一轮里排队的要求取出来，和用户刚发的消息一样处理
+  const drainQueue = () => {
+    if (!task.queue.length) return ''
+    const all = task.queue
+    task.queue = []
+    for (const q of all)
+      task.messages.push({
+        id: ctx.newId(),
+        role: 'user',
+        agentId: '',
+        step: '',
+        text: q.text,
+        tools: [],
+        ...(q.attachments.length ? { attachments: q.attachments } : {}),
+        at: q.at,
+      })
+    cur = undefined
+    ctx.changed(true)
+    return all.map((q) => withAttachments(q.text, q.attachments)).join('\n\n')
+  }
+  // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume
+  let waiter: Waiter | undefined
+  const waitUser = taker
+    ? async (): Promise<string | null> => {
+        if (finished) return null
+        // 回复期间还在排队的要求：一起交回去，不用等进程结束
+        const queued = drainQueue()
+        if (queued) {
+          prewarmMode = false
+          task.prewarming = false
+          ctx.changed(true)
+          return queued
+        }
+        task.prewarming = false
+        task.awaitingUser = true
+        ctx.changed(true)
+        try {
+          return await new Promise<string | null>((resolve) => {
+            let settled = false
+            const done = (value: string | null) => {
+              if (settled) return
+              settled = true
+              ctx.signal.removeEventListener('abort', onAbort)
+              const set = waiters.get(task.id)
+              if (waiter) set?.delete(waiter)
+              if (!set?.size) waiters.delete(task.id)
+              waiter = undefined
+              task.awaitingUser = false
+              task.prewarming = false
+              if (!finished) ctx.changed(true)
+              resolve(value)
+            }
+            const onAbort = () => done(null)
+            waiter = {
+              deliver: (msg) => {
+                // 用户发来第一句：预热结束，之后模型的输出正常记进对话
+                prewarmMode = false
+                task.messages.push(msg)
+                // 之后的输出另起一条，排在用户消息后面
+                cur = undefined
+                done(withAttachments(msg.text, msg.attachments ?? []))
+              },
+              cancel: () => done(null),
+            }
+            ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
+            ctx.signal.addEventListener('abort', onAbort, { once: true })
+            // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮
+            if (!isWatched(task.id)) done(null)
+          })
+        } finally {
+          if (task.awaitingUser || task.prewarming) {
+            task.awaitingUser = false
+            task.prewarming = false
+            if (!finished) ctx.changed(true)
+          }
+        }
+      }
+    : undefined
 
   const r = await invokeCli({
     cliId,
@@ -753,8 +882,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     idle: idleMs
       ? {
           ms: idleMs,
-          // 在等用户确认或回答时 CLI 本来就没有输出，不算卡住
-          busy: () => task.requests.some((x) => asked.includes(x.id)),
+          // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住
+          busy: () => task.awaitingUser || task.requests.some((x) => asked.includes(x.id)),
           onWarn: () => {
             task.messages.push({
               id: ctx.newId(),
@@ -778,9 +907,12 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     // 对话、工作流节点和工作流跑完后的追加要求都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (!op && (step || task.mode === 'workflow')) ? (c) => register(c) : undefined,
     readNotes: taker ? () => taker.read() : undefined,
+    waitUser,
     mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true
+    // 进程先结束了（崩溃、被停掉）：还在等下一句的那次请求也结束，别一直挂着
+    cancelWait(task.id)
     orch?.close()
     clearTimeout(gitTimer)
     if (steerer) {
@@ -862,6 +994,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
     if (
       resume &&
+      !prewarm &&
       !retried &&
       /(no|not).{0,40}(session|conversation|thread)|(session|conversation|thread).{0,40}not found/i.test(detail)
     ) {
@@ -879,7 +1012,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     // 连接中途断开（多半是输出很长时被服务端或代理断开）：有会话就续接让它接着做，最多两次。
     // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
     const session = task.sessions[sessionKey]
-    if (NETWORK_ERROR.test(detail) && session && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
+    if (NETWORK_ERROR.test(detail) && session && !prewarm && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
       task.messages.push({
         id: ctx.newId(),
         role: 'system',
@@ -940,7 +1073,15 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   }
   // 达到设置的上下文占用时自动压缩（Claude Code 和 Codex 由 CLI 自己按设置压缩）
   const u = task.usage.agents[agentId]
-  if (chat && !op && pct && def.autoCompact === 'panel' && u?.window && (u.context / u.window) * 100 >= pct) {
+  if (
+    chat &&
+    !op &&
+    !prewarm &&
+    pct &&
+    def.autoCompact === 'panel' &&
+    u?.window &&
+    (u.context / u.window) * 100 >= pct
+  ) {
     sysMsg(t('上下文占用达到 {n}%，自动压缩', { n: Math.round((u.context / u.window) * 100) }))
     const c = await runAgent(ctx, { ...call, op: { kind: 'compact' } })
     if (!c.ok && !c.stopped) sysMsg(t('自动压缩失败：{error}', { error: c.error }), true)
@@ -958,6 +1099,8 @@ export async function runRealTurn(ctx: RealContext) {
     workflow: ctx.workflow,
     prompt: ctx.prompt,
     resume: ctx.resume,
+    prewarm: ctx.prewarm,
+    prewarmFrom: ctx.prewarmFrom,
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),

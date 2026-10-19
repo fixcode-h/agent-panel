@@ -1,0 +1,58 @@
+/**
+ * 对话页面是否还开着：CLI 在 MCP 工具上等用户下一句时，只有页面还开着才继续等。
+ * 切走（页面卸载或隐藏）后给一分钟宽限，期间切回来还能直接接着说；过了宽限让 CLI 结束这一轮。
+ */
+const GRACE_MS = Number(process.env.AGENT_PANEL_PRESENCE_GRACE_MS) || 60_000
+
+/** 任务 id → 正在看这个任务的页面 */
+const viewers = new Map<string, Set<string>>()
+/** 过了宽限、确认没人在看的任务 */
+const left = new Set<string>()
+const timers = new Map<string, ReturnType<typeof setTimeout>>()
+let onIdle: ((taskId: string) => void) | undefined
+
+/** 宽限期到了：让还在等用户的任务结束这一轮 */
+export function setPresenceIdleHandler(fn: (taskId: string) => void) {
+  onIdle = fn
+}
+
+/** 页面打开、切到前台时 active；卸载、切到后台时 false */
+export function setViewer(taskId: string, viewerId: string, active: boolean) {
+  if (active) {
+    const set = viewers.get(taskId) ?? new Set()
+    set.add(viewerId)
+    viewers.set(taskId, set)
+    left.delete(taskId)
+    const timer = timers.get(taskId)
+    if (timer) {
+      clearTimeout(timer)
+      timers.delete(taskId)
+    }
+    return
+  }
+  const set = viewers.get(taskId)
+  set?.delete(viewerId)
+  if (set?.size || timers.has(taskId)) return
+  timers.set(
+    taskId,
+    setTimeout(() => {
+      timers.delete(taskId)
+      left.add(taskId)
+      onIdle?.(taskId)
+    }, GRACE_MS),
+  )
+}
+
+/** 还有人在看吗：页面还没上报过时当作在看，避免刚开始执行就结束 */
+export function isWatched(taskId: string) {
+  return !left.has(taskId)
+}
+
+/** 任务删除、结束后清掉记录 */
+export function forgetPresence(taskId: string) {
+  const timer = timers.get(taskId)
+  if (timer) clearTimeout(timer)
+  timers.delete(taskId)
+  viewers.delete(taskId)
+  left.delete(taskId)
+}

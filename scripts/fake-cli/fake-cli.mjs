@@ -303,11 +303,8 @@ const out = (o) => {
   const stopReason = ok ? 'end_turn' : 'run_error'
   const usage = o.usage ?? {}
   process.stdout.write(
-    JSON.stringify({
-      type: 'event',
-      seq: ++rpcSeq,
-      event: { type: 'run_end', result: { finalText: o.finalText, stopReason, usage } },
-    }) + '\n',
+    JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_end', result: { finalText: o.finalText, stopReason, usage } } }) +
+      '\n',
   )
   process.stdout.write(
     JSON.stringify({
@@ -439,11 +436,8 @@ if (interrupted) {
   } else if (rpcMode) {
     // 告诉面板这一轮被中断了，然后等 session/exit
     process.stdout.write(
-      JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'turn/completed',
-        params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'interrupted' },
-      }) + '\n',
+      JSON.stringify({ jsonrpc: '2.0', method: 'turn/completed', params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'interrupted' } }) +
+        '\n',
     )
     await rpcExit
   }
@@ -1008,7 +1002,9 @@ if (kind === 'claude') {
     )
     if (rpcMode) {
       const error = { message: 'Stream connection failed mid-response: terminated' }
-      process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n')
+      process.stdout.write(
+        JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n',
+      )
       process.stdout.write(
         JSON.stringify({
           jsonrpc: '2.0',
@@ -1034,6 +1030,35 @@ if (kind === 'claude') {
   ev({ type: 'message_start' })
   for (const part of reply.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
   ev({ type: 'message_end', content: [{ type: 'text', text: reply }] })
+  // FAKE_WAIT / 打开对话页的预热：像按提示停在 wait_user_message 上一样，等用户下一句再接着输出
+  let finalReply = reply
+  if ((input.includes('FAKE_WAIT') || input.includes('面板预热')) && !fail) {
+    const url = panelMcpUrl()
+    const rpc = (id, method, params) =>
+      fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+        body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+      }).then(async (r) => {
+        const text = await r.text()
+        const data = text.split('\n').filter((l) => l.startsWith('data:'))
+        return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+      })
+    await rpc(1, 'initialize', {})
+    const got = (await rpc(3, 'tools/call', { name: 'wait_user_message' })).result.content[0].text
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(
+        process.env.FAKE_CLI_LOG + '.wait',
+        JSON.stringify({ kind, got, hint: input.includes('wait_user_message') }) + '\n',
+      )
+    if (!got.includes('用户已经离开了这个对话')) {
+      const text = `\n等到的下一句：${got}`
+      ev({ type: 'message_start' })
+      for (const part of text.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
+      ev({ type: 'message_end', content: [{ type: 'text', text }] })
+      finalReply += text
+    }
+  }
   if (fail) {
     out({
       type: 'result',
@@ -1052,7 +1077,7 @@ if (kind === 'claude') {
     sessionId: session,
     usage: { inputTokens: 10000, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
     durationMs: 10,
-    finalText: reply,
+    finalText: finalReply,
   })
   await exitTurn(0)
 }

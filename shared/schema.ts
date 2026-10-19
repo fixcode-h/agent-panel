@@ -524,6 +524,12 @@ export const TaskWorktree = z.object({
 })
 export type TaskWorktree = z.infer<typeof TaskWorktree>
 
+/** 对话页面还开着：CLI 才能停在 MCP 工具上等下一句（见 server/presence.ts） */
+export const PresenceInput = z.object({
+  viewerId: z.string().min(1),
+  active: z.boolean(),
+})
+
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
@@ -716,6 +722,8 @@ export const AgentUsage = z.object({
   model: z.string().default(''),
   /** 正在输出时的速度（token/秒），没在输出时为 0 */
   tps: z.number().default(0),
+  /** 这一轮最后一次的输出速度：没有输出时接着显示它，刚开始是 0 */
+  lastTps: z.number().default(0),
   /** 这个 Agent 累计输出的 token 和花在生成上的时间，用来算平均速度 */
   outputTokens: z.number().default(0),
   genMs: z.number().default(0),
@@ -838,6 +846,10 @@ export const TaskData = z.object({
   queue: z.array(QueuedMessage).default([]),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
+  /** CLI 回复完停在面板的 MCP 工具上，等用户在这个对话里的下一句 */
+  awaitingUser: z.boolean().default(false),
+  /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
+  prewarming: z.boolean().default(false),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /** 用户最近一次发消息的时间：只在列表摘要里带（摘要去掉了消息），排序和显示用 askedAt() 取 */

@@ -1,7 +1,7 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Loader2 } from 'lucide-react'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
@@ -47,13 +47,12 @@ export function CopyButton({ text, className, label }: { text: string; className
   )
 }
 
-/** 消息下面的一行：时间和操作按钮，鼠标移到消息上才显示（always 时一直显示，例如最后一条回复） */
+/** 消息下面的一行：时间和操作按钮，一直显示（always 保留给调用方，不再控制显隐） */
 export function MessageMeta({
   text,
   at,
   actions,
   align = 'start',
-  always,
 }: {
   text: string
   at?: string
@@ -67,7 +66,6 @@ export function MessageMeta({
       className={cn(
         'flex items-center gap-0.5 text-[0.71875rem] text-subtle transition-opacity',
         align === 'end' && 'flex-row-reverse',
-        !always && 'opacity-0 group-hover/msg:opacity-100 focus-within:opacity-100',
       )}
     >
       {text && <CopyButton text={text} />}
@@ -81,7 +79,7 @@ export function MessageMeta({
   )
 }
 
-/** 用户发的消息：附件、气泡，下面悬停显示时间、复制和各个对话自己的操作（分叉、撤回…） */
+/** 用户发的消息：附件、气泡，下面是等待状态、时间和各个对话自己的操作（分叉、撤回…） */
 export function UserMessage({
   text,
   at,
@@ -89,6 +87,7 @@ export function UserMessage({
   extra,
   actions,
   size = 'md',
+  pending,
 }: {
   text: string
   at?: string
@@ -97,6 +96,8 @@ export function UserMessage({
   extra?: React.ReactNode
   actions?: React.ReactNode
   size?: 'sm' | 'md'
+  /** CLI 还没取走：显示「等待读取」，取走后这条变成正常消息 */
+  pending?: boolean
 }) {
   return (
     <div className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
@@ -114,6 +115,12 @@ export function UserMessage({
           {extra}
         </div>
       )}
+      {pending && (
+        <span className="flex items-center gap-1 text-[0.71875rem] text-subtle">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          {t('等待读取')}
+        </span>
+      )}
       <MessageMeta text={text} at={at} actions={actions} align="end" />
     </div>
   )
@@ -124,13 +131,12 @@ export function ReplyFrame({
   text,
   at,
   actions,
-  always,
   children,
 }: {
   text: string
   at?: string
   actions?: React.ReactNode
-  /** 最后一条回复的操作一直显示 */
+  /** 兼容调用方：操作一直显示，不再需要这个开关 */
   always?: boolean
   children: React.ReactNode
 }) {
@@ -139,7 +145,7 @@ export function ReplyFrame({
       {children}
       {/* 图标和回复文字对齐：头像 26px 加间距 12px，减去按钮自己的内边距 */}
       <div className="pl-8">
-        <MessageMeta text={text} at={at} actions={actions} always={always} />
+        <MessageMeta text={text} at={at} actions={actions} />
       </div>
     </div>
   )

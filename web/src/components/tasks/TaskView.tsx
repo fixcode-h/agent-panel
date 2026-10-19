@@ -198,6 +198,8 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [!task])
   const stick = useRef(true)
+  // 这次打开对话有没有试过后台预热：每个任务只试一次，任务后续变化不用再发
+  const prewarmed = useRef('')
   const [rewindAsk, setRewindAsk] = useState('')
 
   const apply = (next: Task) => {
@@ -215,8 +217,49 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
+  // 告诉服务端这个对话页还开着：CLI 回复完会停在等下一句的工具上；切走一分钟内切回来还能接着说
+  useEffect(() => {
+    const viewer = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
+    const send = (active: boolean) => {
+      void api.setPresence(taskId, viewer, active).catch(() => {})
+    }
+    send(true)
+    const visibility = () => send(!document.hidden)
+    const hide = () => {
+      // 在线演示没有后端，不用发
+      if (import.meta.env.VITE_DEMO) return
+      const body = JSON.stringify({ viewerId: viewer, active: false })
+      navigator.sendBeacon?.(
+        `/api/tasks/${encodeURIComponent(taskId)}/presence`,
+        new Blob([body], { type: 'application/json' }),
+      )
+    }
+    document.addEventListener('visibilitychange', visibility)
+    window.addEventListener('pagehide', hide)
+    return () => {
+      document.removeEventListener('visibilitychange', visibility)
+      window.removeEventListener('pagehide', hide)
+      send(false)
+    }
+  }, [taskId])
+
+  // 打开旧对话时在后台用 --resume 启动，第一次发消息不用再等 CLI 启动和会话加载
+  useEffect(() => {
+    if (!task || task.id !== taskId || prewarmed.current === taskId) return
+    prewarmed.current = taskId
+    if (task.mode !== 'chat' || task.status === 'running' || task.imported || !task.sessions[task.agentId]) return
+    api
+      .prewarmTask(taskId)
+      .then(apply)
+      .catch(() => {})
+    // 只在这次打开、任务加载出来时试一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task, taskId])
+
   const running = task?.status === 'running'
   useTaskStream(taskId, running, apply)
+  // 还在排队、CLI 没取走的补充：放在对话最下面，取走后才成为正常消息
+  const pending = running && task ? task.queue.filter((q) => q.note) : []
 
   // 停留在底部时自动跟随新输出
   useLayoutEffect(() => {
@@ -657,7 +700,19 @@ export function TaskView({
                     <EvolutionCard task={task} />
                     {running &&
                       task.mode === 'chat' &&
-                      (blocks.at(-1)?.kind === 'turn' ? (
+                      (task.prewarming ? (
+                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                          <span>{t('正在准备对话…')}</span>
+                          <LiveStats task={task} agentIds={[task.agentId]} />
+                        </div>
+                      ) : task.awaitingUser ? (
+                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                          <MessageSquareText className="h-4 w-4 text-subtle" />
+                          <span>{t('等待你的下一条消息')}</span>
+                          <LiveStats task={task} agentIds={[task.agentId]} />
+                        </div>
+                      ) : blocks.at(-1)?.kind === 'turn' ? (
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
                           <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
@@ -683,6 +738,32 @@ export function TaskView({
                         <LiveStats task={task} />
                       </div>
                     )}
+                    {/* CLI 还没取走的消息先放在最下面，取走后才插到回复里 */}
+                    {pending.map((q) => (
+                      <UserMessage
+                        key={q.id}
+                        text={q.text}
+                        at={q.at}
+                        attachments={q.attachments}
+                        pending
+                        actions={
+                          <button
+                            type="button"
+                            className={msgAction}
+                            title={t('撤回这条要求')}
+                            aria-label={t('撤回')}
+                            onClick={() =>
+                              api
+                                .unqueue(task.id, q.id)
+                                .then(apply)
+                                .catch((e) => toast.error((e as Error).message))
+                            }
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        }
+                      />
+                    ))}
                   </div>
                 )}
               </div>
@@ -1003,7 +1084,9 @@ function FlowBar({
 function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
   const [editing, setEditing] = useState('')
   const [draft, setDraft] = useState('')
-  if (!task.queue.length) return null
+  // 执行中、CLI 还没取走的补充已经作为气泡放在对话最下面了，这里只列真正排队等下一轮的
+  const items = task.status === 'running' ? task.queue.filter((q) => !q.note) : task.queue
+  if (!items.length) return null
   const paused = task.status !== 'running'
   const save = (qid: string) => {
     const text = draft.trim()
@@ -1017,7 +1100,7 @@ function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => voi
   }
   return (
     <ul className="mx-auto mb-2 flex max-w-(--content-w) flex-col gap-1.5">
-      {task.queue.map((q, i) => (
+      {items.map((q, i) => (
         <li key={q.id} className={barRow}>
           <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
           {editing === q.id ? (

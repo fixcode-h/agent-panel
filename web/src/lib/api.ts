@@ -226,6 +226,11 @@ export const api = {
     request<Task>('/tasks/import', json('POST', { projectId, bundle })),
   sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, steer = false) =>
     request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt, steer })),
+  /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
+  setPresence: (id: string, viewerId: string, active: boolean) =>
+    request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
+  /** 打开旧对话时在后台用 --resume 启动，先停在等下一句上 */
+  prewarmTask: (id: string) => request<Task>(`/tasks/${id}/prewarm`, { method: 'POST' }),
   /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
   rewindTask: (id: string, messageId: string) =>
     request<{ task: Task; text: string; attachments: Attachment[] }>(

@@ -110,6 +110,8 @@ export function newTask(
     workflowName: wf?.name ?? '',
     requests: [],
     queue: [],
+    awaitingUser: false,
+    prewarming: false,
     worktree: null,
   }
 }

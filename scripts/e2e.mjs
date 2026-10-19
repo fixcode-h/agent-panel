@@ -149,6 +149,8 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
     AGENT_PANEL_NO_RESTART: '1',
     // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
     AGENT_PANEL_MINUTE_MS: '1500',
+    // 对话页切走后的宽限也缩短，测试不用等一分钟
+    AGENT_PANEL_PRESENCE_GRACE_MS: '1200',
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
@@ -3875,8 +3877,11 @@ try {
       const rec = readLog(log + '.askbridge')
         .slice(before)
         .at(-1)
-      // Command Code 现在用 RPC 的 turn/steer 插话，不再挂取补充的 MCP 工具
-      assert.deepEqual(rec.tools, ['ask_user'])
+      // Command Code 现在用 RPC 的 turn/steer 插话，只剩「等下一句」的 MCP 工具
+      assert.deepEqual(
+        rec.tools,
+        cli === 'commandcode' ? ['ask_user', 'wait_user_message'] : ['ask_user'],
+      )
       assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
       assert.ok(rec.hint, '提示里告诉模型有 ask_user')
       assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
@@ -3902,6 +3907,115 @@ try {
 
   // 执行中补充：Command Code 走常驻 RPC 的 turn/steer，已经在「插话」那一节覆盖；
   // MCP 的 read_user_notes 拉取通道由 server/ask-mcp.test.ts 单独测试
+
+  // 对话页开着时：CLI 回复完停在 wait_user_message 上，下一句直接交给同一个进程；切走宽限到了就结束
+  {
+    const before = readLog(log + '.wait').length
+    let w = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: 'FAKE_WAIT 先看代码',
+    })
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: true })
+    for (let i = 0; i < 100; i++) {
+      w = await call('GET', `/tasks/${w.id}`)
+      if (w.awaitingUser) break
+      await sleep(100)
+    }
+    assert.ok(w.awaitingUser, '回复完停在等下一句上')
+    await call('POST', `/tasks/${w.id}/messages`, { text: '接着看看测试', steer: true })
+    w = await waitDone(w.id, 30000)
+    assert.equal(w.status, 'done')
+    assert.equal(w.awaitingUser, false)
+    assert.deepEqual(w.queue, [], '直接交给 CLI，不排队')
+    const rec = readLog(log + '.wait')
+      .slice(before)
+      .at(-1)
+    assert.match(rec.got, /接着看看测试/)
+    assert.ok(rec.hint, '提示里告诉模型可以等下一句')
+    const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着看看测试')
+    assert.ok(at > 0, '用户消息记进对话')
+    assert.ok(
+      w.messages.slice(at + 1).some((m) => m.role === 'agent' && /等到的下一句/.test(m.text)),
+      'AI 在用户消息下面继续输出',
+    )
+
+    // 页面切走：宽限到了让还在等的 CLI 结束这一轮
+    let left = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: 'FAKE_WAIT 等一会儿',
+    })
+    await call('POST', `/tasks/${left.id}/presence`, { viewerId: 'e2e', active: true })
+    for (let i = 0; i < 100; i++) {
+      left = await call('GET', `/tasks/${left.id}`)
+      if (left.awaitingUser) break
+      await sleep(100)
+    }
+    assert.ok(left.awaitingUser, '第二个对话也停在等下一句上')
+    await call('POST', `/tasks/${left.id}/presence`, { viewerId: 'e2e', active: false })
+    left = await waitDone(left.id, 15000)
+    assert.equal(left.status, 'done', '切走宽限到了，CLI 自己结束')
+    assert.equal(left.awaitingUser, false)
+  }
+  step('对话页开着时 CLI 停在等下一句上：下一句直接交给同一个进程，切走后结束')
+
+  // 打开旧对话时后台预热：不用先发消息，--resume 已经启动好停在等下一句上
+  {
+    let w = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: '普通对话',
+    })
+    w = await waitDone(w.id, 30000)
+    assert.equal(w.status, 'done')
+    assert.ok(w.sessions['default-agent'], '第一轮留下了会话')
+    const beforeMsgs = w.messages.length
+
+    w = await call('POST', `/tasks/${w.id}/prewarm`, {})
+    assert.ok(w.status === 'running' || w.awaitingUser, '打开对话就开始启动')
+    for (let i = 0; i < 100; i++) {
+      w = await call('GET', `/tasks/${w.id}`)
+      if (w.awaitingUser) break
+      await sleep(50)
+    }
+    assert.ok(w.awaitingUser, '预热完停在等下一句上')
+    assert.equal(w.prewarming, false)
+    assert.equal(w.messages.length, beforeMsgs, '预热不往对话里加消息')
+
+    // 预热好了再发消息：直接交给同一个进程，不用重新启动
+    await call('POST', `/tasks/${w.id}/messages`, { text: '预热后直接问', steer: true })
+    w = await waitDone(w.id, 30000)
+    const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '预热后直接问')
+    assert.ok(at > 0, '用户消息记进对话')
+    assert.ok(
+      w.messages.slice(at + 1).some((m) => m.role === 'agent' && /等到的下一句/.test(m.text)),
+      '模型在用户消息下面继续输出',
+    )
+
+    // 再预热一次，然后切走：宽限到了结束，不在后台一直占着
+    w = await call('POST', `/tasks/${w.id}/prewarm`, {})
+    for (let i = 0; i < 100; i++) {
+      w = await call('GET', `/tasks/${w.id}`)
+      if (w.awaitingUser) break
+      await sleep(50)
+    }
+    assert.ok(w.awaitingUser, '再次打开也预热好了')
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
+    w = await waitDone(w.id, 15000)
+    assert.equal(w.status, 'done')
+    assert.equal(w.prewarming, false)
+  }
+  step('打开旧对话时后台预热 resume：不用等发消息才启动，切走后结束')
 
   // Skills / 命令库：读写各 CLI 用户目录下的 Skill 和命令，复制给别的 CLI 时命令自动换格式
   {

@@ -227,7 +227,15 @@ const agent = (ctx: RunContext, id: string) => {
   const found = ctx.agents.find((x) => x.id === id)
   const a = found && withTaskModel(found, ctx.task)
   const model = a ? agentRun(a, ctx.settings ?? defaultSettings()).model : ''
-  return (ctx.task.usage.agents[id] ??= { context: 0, window: 200_000, model, tps: 0, outputTokens: 0, genMs: 0 })
+  return (ctx.task.usage.agents[id] ??= {
+    context: 0,
+    window: 200_000,
+    model,
+    tps: 0,
+    lastTps: 0,
+    outputTokens: 0,
+    genMs: 0,
+  })
 }
 
 /** 一条 Agent 消息：先思考，再逐个出现工具调用，最后逐段输出文字；输出时显示模拟的速度 */
@@ -251,6 +259,7 @@ async function speak(ctx: RunContext, agentId: string, step: string, out: Output
       if (ctx.stopped()) return false
       put(text.slice(0, i + 4))
       a.tps = Math.round((38 + Math.random() * 30) * 10) / 10
+      a.lastTps = a.tps
       a.genMs += 40
       ctx.changed()
     }

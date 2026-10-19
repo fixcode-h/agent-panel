@@ -14,15 +14,27 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
  *
  * 同一轮里还能挂上 read_user_notes：CLI 没有插话协议时（见 CLI 配置的 notes），
  * 用户在它执行中发的要求先排进队列，模型用这个工具取走——取走的那些从队列里去掉，没取的等这一轮结束后照常处理。
+ *
+ * 对话页开着时再挂上 wait_user_message：模型回复完调用它停在进程里等用户下一句，
+ * 面板把新消息直接作为工具结果交回去，不用结束进程再 --resume。
  */
 
 type AskEvent = Extract<CliEvent, { type: 'ask' }>
 export type Ask = (ev: AskEvent) => void
 
-/** 提问的等待可能很久（用户不在电脑前），期间定期往流里写一行注释当心跳，免得 HTTP 客户端判定连接空闲 */
+/** 长等待（提问、等下一句）期间定期往流里写一行注释当心跳，免得 HTTP 客户端判定连接空闲 */
 const HEARTBEAT_MS = 20_000
 
-const sessions = new Map<string, { ask?: Ask; notes?: () => string[]; pending: Set<(r: AskReply) => void> }>()
+const sessions = new Map<
+  string,
+  {
+    ask?: Ask
+    notes?: () => string[]
+    /** 等用户在这个对话里的下一句；用户离开时返回空 */
+    wait?: () => Promise<string | null>
+    pending: Set<(r: AskReply) => void>
+  }
+>()
 
 const TOOL = {
   name: 'ask_user',
@@ -64,6 +76,14 @@ const NOTES_TOOL = {
   description:
     '取用户在你这轮执行中补充的信息。开始动手前先调用一次；做比较久的事（跑命令、改多处文件、等测试）中间也每隔一会儿调用一次，取到就结合它继续当前的任务，不要从头重做。' +
     '取过的不会再给；暂时没有时会等几秒再回答「没有新的补充」，这时继续做手上的事，过一会儿可以再调用。',
+  inputSchema: { type: 'object', properties: {} },
+}
+
+/** 回复完停在进程里等用户下一句的工具：对话页开着时才有，避免每句话都重新 --resume */
+const WAIT_TOOL = {
+  name: 'wait_user_message',
+  description:
+    '等用户在这个对话里的下一条消息。每次回复结束后调用一次：用户发来消息时返回消息内容，接着处理；返回「用户已经离开了这个对话」时结束本轮，不要继续做别的事。',
   inputSchema: { type: 'object', properties: {} },
 }
 
@@ -135,7 +155,7 @@ async function callNotes(s: NonNullable<ReturnType<typeof sessions.get>>) {
 async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any) {
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
-  const tools = [...(s.ask ? [TOOL] : []), ...(s.notes ? [NOTES_TOOL] : [])]
+  const tools = [...(s.ask ? [TOOL] : []), ...(s.notes ? [NOTES_TOOL] : []), ...(s.wait ? [WAIT_TOOL] : [])]
   switch (msg.method) {
     case 'initialize':
       return reply({
@@ -151,6 +171,12 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
       const name = msg.params?.name
       if (name === TOOL.name && s.ask) return reply(await callAsk(s, msg.params?.arguments ?? {}))
       if (name === NOTES_TOOL.name && s.notes) return reply(await callNotes(s))
+      if (name === WAIT_TOOL.name && s.wait) {
+        const text = await s.wait()
+        return reply({
+          content: [{ type: 'text', text: text ?? '用户已经离开了这个对话，本轮到此结束。' }],
+        })
+      }
       return reply({ content: [{ type: 'text', text: `没有这个工具：${name}` }], isError: true })
     }
     default:
@@ -160,9 +186,10 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
 
 /**
  * 开一个面板工具通道：url 交给 CLI，close 在这一轮结束时调用（还没回答的问题作废）。
- * ask 是向用户提问；notes 取用户在这轮执行中补充的信息（CLI 没有插话协议时用）。两个都不给就别开
+ * ask 是向用户提问；notes 取用户在这轮执行中补充的信息（CLI 没有插话协议时用）；
+ * wait 等用户在这个对话里的下一句。都不给就别开
  */
-export function openAskBridge(o: { ask?: Ask; notes?: () => string[] }) {
+export function openAskBridge(o: { ask?: Ask; notes?: () => string[]; wait?: () => Promise<string | null> }) {
   const token = randomUUID()
   const s = { ...o, pending: new Set<(r: AskReply) => void>() }
   sessions.set(token, s)
@@ -183,9 +210,9 @@ export function askMcpApi() {
       if (!s) return c.json({ jsonrpc: '2.0', id: null, error: { code: -32001, message: '这一轮已经结束了' } }, 404)
       const body = await c.req.json().catch(() => null)
       const msgs = Array.isArray(body) ? body : [body]
-      // 提问一直挂到用户回答，可能很久：HTTP 客户端（undici 的 bodyTimeout、Node 的 http 客户端）会因为长时间没有数据
-      // 断开请求，所以这条用流式响应，等待期间定期写心跳，回答后再把结果写回去
-      if (msgs.some((m) => m?.method === 'tools/call' && m?.params?.name === TOOL.name))
+      // 提问、等下一句都可能很久：HTTP 客户端（undici 的 bodyTimeout、Node 的 http 客户端）会因为长时间没有数据
+      // 断开请求，所以这些用流式响应，等待期间定期写心跳，有结果后再写回去
+      if (msgs.some((m) => m?.method === 'tools/call' && [TOOL.name, WAIT_TOOL.name].includes(m?.params?.name)))
         return streamSSE(c, async (stream) => {
           const beat = setInterval(() => {
             try {
