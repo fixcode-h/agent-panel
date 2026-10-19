@@ -30,6 +30,7 @@ import {
   useFileMention,
 } from '@/components/chat/Attachments'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
+import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { AgentPicker } from '@/components/agents/AgentPicker'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -96,7 +97,9 @@ export function TaskComposer({
   }
   const [params, setParams] = useState<ParamValues>({})
   const [paramsOpen, setParamsOpen] = useState(false)
-  const [prompt, setPrompt] = useState('')
+  // 没发出去的内容按模式各自记住：切到别的模式再回来还在
+  const draftKey = standalone ? 'new:chat' : fixed ? `new:project:${fixed.id}` : 'new:agent'
+  const [prompt, setPrompt] = useDraft(draftKey)
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
   const [askUser, setAskUser] = useNewAskUser()
