@@ -619,42 +619,6 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
     ],
   },
   {
-    key: 'model-ref',
-    name: '建模参考图提示词',
-    description: '参考图解析 → 确认部件拆分和视图 → 输出建模参考图的提示词文档',
-    category: '美术',
-    main: 'modelprompt',
-    members: [['modelprompt', '解析参考、推荐拆分、写提示词文档']],
-    document: `## 适用
-根据参考图和建模要求，产出建模用参考图（正交视图板、部件图、3/4 彩图、局部特写、材质板）的文生图提示词文档。
-部件拆分方案确认之前不写提示词。`,
-    flows: [
-      {
-        id: 'main',
-        name: '主流程',
-        nodes: [
-          {
-            id: 'parse',
-            title: '解析与拆分',
-            agent: 'modelprompt',
-            tier: 'high',
-            confirm: true,
-            instructions: '解析参考图，整理 brief 和尺寸表；推荐 2–4 个部件拆分粒度和视图组合，请用户选定。',
-          },
-          {
-            id: 'write',
-            title: '写提示词文档',
-            agent: 'modelprompt',
-            tier: 'high',
-            confirm: true,
-            instructions: '按确认的拆分和视图，压测后输出提示词文档并保存。',
-          },
-        ],
-        edges: chain(START, 'parse', 'write', END),
-      },
-    ],
-  },
-  {
     key: 'blender',
     name: 'Blender 建模与动画',
     description: '规格确认 → 分件建模 → 装配 → 动画 → 减面 → 质检确认 → 导出 UE',
@@ -752,40 +716,6 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           },
         ],
         edges: chain(START, 'qa', END),
-      },
-    ],
-  },
-  {
-    key: 'game-ui',
-    name: '游戏 UI 提示词',
-    description: 'UI brief 和方向确认 → 输出效果图 / UMG 资源的文生图提示词规格',
-    category: '美术',
-    main: 'uiprompt',
-    members: [['uiprompt', '写 brief、给方向、输出提示词规格']],
-    document: `## 适用
-把游戏 UI 需求整理成文生图提示词，效果图和 UMG 资源分开交付。成图后可以继续对话复盘：保留、硬失败、软问题和修复。`,
-    flows: [
-      {
-        id: 'main',
-        name: '主流程',
-        nodes: [
-          {
-            id: 'brief',
-            title: 'Brief 与方向',
-            agent: 'uiprompt',
-            tier: 'high',
-            confirm: true,
-            instructions: '确定边界、画布和工具，写 UI brief 和中文文案表；风格有分歧时给 2–3 个方向请用户选。',
-          },
-          {
-            id: 'write',
-            title: '输出提示词',
-            agent: 'uiprompt',
-            tier: 'high',
-            instructions: '按确认的方向压测后输出提示词规格。',
-          },
-        ],
-        edges: chain(START, 'brief', 'write', END),
       },
     ],
   },

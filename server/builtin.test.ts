@@ -31,7 +31,7 @@ const agents: Agent[] = BUILTIN_AGENTS.map((b) => ({
 }))
 
 test('自带 Skill：名字和文件夹一致、不重名、写了说明', () => {
-  assert.ok(skillDirs.length >= 20)
+  assert.ok(skillDirs.length >= 15)
   const names = skillDirs.map((s) => s.name)
   assert.equal(new Set(names).size, names.length, '不同分类里有同名的 Skill')
   for (const s of skillDirs) {

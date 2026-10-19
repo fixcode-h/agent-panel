@@ -198,6 +198,7 @@
   },
   "docs": ["GEMINI.md", "AGENTS.md"],
   "docsNote": "Gemini CLI 每次启动读项目里的 GEMINI.md（可以在 settings.json 的 context.fileName 里改成也读 AGENTS.md）。",
+  "globalDoc": "${GEMINI_CLI_HOME:-~}/.gemini/GEMINI.md",
   "skills": {
     "user": ["~/.gemini/skills", "~/.agents/skills"],
     "repo": [".gemini/skills", ".agents/skills"]

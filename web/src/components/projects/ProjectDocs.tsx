@@ -129,9 +129,10 @@ export function DocPage({
         {optimizing && (
           <Optimizer
             key={active}
-            projectId={projectId}
-            path={active}
-            content={value}
+            title={t('用 AI 优化 {file}', { file: active })}
+            start={(request, cli) =>
+              api.optimizeDoc(projectId, { path: active, content: value, request, cli, model: '', effort: '' })
+            }
             onClose={() => setOptimizing(false)}
             onApply={(c) => {
               onDraft(active, c)
@@ -166,17 +167,26 @@ export function DocPage({
   )
 }
 
-/** AI 优化：用本机 CLI 在项目目录里只读运行，核对代码后给出完整的新内容，看过再决定用不用 */
-function Optimizer({
-  projectId,
-  path,
-  content,
+/**
+ * AI 优化：用本机 CLI 只读运行，给出完整的新内容，看过再决定用不用。
+ * 项目说明在项目目录里跑（核对代码），设置「部署」里的全局说明在用户目录里跑
+ */
+export function Optimizer({
+  title,
+  hint = t(
+    'CLI 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。',
+  ),
+  placeholder = t('想怎么改（可以不填），例如：补上测试命令，写得更简洁'),
+  busyText = t('正在看项目…'),
+  start: begin,
   onClose,
   onApply,
 }: {
-  projectId: string
-  path: DocFile
-  content: string
+  title: string
+  hint?: string
+  placeholder?: string
+  busyText?: string
+  start: (request: string, cli: string) => Promise<DocJob>
   onClose: () => void
   onApply: (content: string) => void
 }) {
@@ -219,7 +229,7 @@ function Optimizer({
 
   const start = async () => {
     try {
-      setJob(await api.optimizeDoc(projectId, { path, content, request, cli, model: '', effort: '' }))
+      setJob(await begin(request, cli))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -232,7 +242,7 @@ function Optimizer({
     <div className="flex flex-col gap-3 border-b bg-accent-soft/40 px-4 py-3">
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent" />
-        <span className="text-[13px] font-medium">{t('用 AI 优化 {file}', { file: path })}</span>
+        <span className="text-[13px] font-medium">{title}</span>
         <button
           onClick={onClose}
           aria-label={t('关闭')}
@@ -245,17 +255,13 @@ function Optimizer({
 
       {!job || job.status === 'failed' ? (
         <>
-          <p className="text-xs leading-relaxed text-subtle">
-            {t(
-              'CLI 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。',
-            )}
-          </p>
+          <p className="text-xs leading-relaxed text-subtle">{hint}</p>
           <div className="flex flex-wrap items-center gap-2">
             <Input
               value={request}
               onChange={(e) => setRequest(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && cli && void start()}
-              placeholder={t('想怎么改（可以不填），例如：补上测试命令，写得更简洁')}
+              placeholder={placeholder}
               className="h-9 min-w-[240px] flex-1"
             />
             {usable.length ? (
@@ -290,7 +296,7 @@ function Optimizer({
                 ? t('正在思考：{text}', { text: lastThought })
                 : job.tools?.length
                   ? t('正在查看：{files}', { files: job.tools.join('、') })
-                  : t('正在看项目…')}
+                  : busyText}
             </span>
             <span className="tabular-nums text-subtle">
               {secs}s{job.outChars ? ` · ${t('已输出 {n} 字', { n: job.outChars })}` : ''}

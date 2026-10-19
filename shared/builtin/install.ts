@@ -3,8 +3,8 @@ import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
 import { BUILTIN_WORKFLOWS, buildWorkflow, builtinAgentKeys, type BuiltinWorkflow } from './workflows.ts'
 
 /**
- * 把内置工作流和它用到的 Agent 建进数据：服务端首次启动时自动装（seedBuiltins），
- * 工作流页的「内置工作流」里也能再加一份（addBuiltinWorkflow）。两边只是「怎么新建」不同，传进 ops。
+ * 把内置工作流、内置 Agent 建进数据：不自动装，由用户在工作流页、Agent 页的「内置」里明确添加。
+ * 怎么新建（接口还是测试里的内存）由调用方传进 ops。
  */
 export interface BuiltinOps {
   createAgent: (input: AgentInput) => Promise<Agent>
@@ -26,9 +26,9 @@ export interface BuiltinState {
 const originOf = (key: string) => `builtin:${key}`
 const findBuiltin = (agents: Agent[], key: string) => agents.find((a) => a.origin === originOf(key))
 
-/** 工作流用到的内置 Agent，加上它们引入的（例如「通用约束」） */
-function neededAgents(w: BuiltinWorkflow): BuiltinAgent[] {
-  const keys = new Set(builtinAgentKeys(w))
+/** 这些内置 Agent，加上它们引入的（例如「通用约束」） */
+function withIncludes(start: string[]): BuiltinAgent[] {
+  const keys = new Set(start)
   for (let changed = true; changed; ) {
     changed = false
     for (const k of [...keys])
@@ -43,13 +43,12 @@ function neededAgents(w: BuiltinWorkflow): BuiltinAgent[] {
 
 /** 这个内置工作流要新建哪些 Agent（本机已经有的会复用） */
 export const missingAgents = (w: BuiltinWorkflow, agents: Agent[]) =>
-  neededAgents(w).filter((b) => !findBuiltin(agents, b.key))
+  withIncludes(builtinAgentKeys(w)).filter((b) => !findBuiltin(agents, b.key))
 
-/**
- * 添加一个内置工作流：缺的内置 Agent 先建出来（按分类放好、引用好 Skill），已有的直接复用（你改过的设定不会被覆盖），
- * 再按模板建工作流。返回新建的东西，调用方据此更新页面上的数据。
- */
-export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState, api: BuiltinOps) {
+/** 本机已经添加过的内置 Agent（按 key） */
+export const addedBuiltin = (agents: Agent[], key: string) => findBuiltin(agents, key)
+
+function context(state: BuiltinState, api: BuiltinOps) {
   const agents = [...state.agents]
   const categories = [...state.categories]
   const tags = [...state.tags]
@@ -73,36 +72,55 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
     newTags.push(x)
     return x.id
   }
-  const tagId = await tag(BUILTIN_TAG)
 
-  // 先把要用的分类建好
-  let todo = missingAgents(w, agents)
-  const catIds = new Map<string, string>()
-  for (const c of new Set(todo.map((b) => b.category))) catIds.set(c, await category(c, 'agent'))
-  // 按引入关系一层层建：被引入的先建，建的时候就带上引入关系。
-  // 一个个建，不并行：服务端的集合是「读出来、加一项、整个写回」，并行新建会互相覆盖
-  const taken = new Set(agents.map((a) => a.name))
-  while (todo.length) {
-    const ready = todo.filter((b) => b.includes.every((k) => !todo.some((x) => x.key === k)))
-    if (!ready.length) throw new Error(`内置 Agent 的引入关系有循环：${todo.map((b) => b.key).join(', ')}`)
-    for (const b of ready) {
-      // 和你自己的 Agent 重名时加个后缀，两个都留着
-      let name = b.agent.name
-      for (let i = 1; taken.has(name); i++) name = i > 1 ? `${b.agent.name}（内置 ${i}）` : `${b.agent.name}（内置）`
-      taken.add(name)
-      const a = await api.createAgent({
-        ...b.agent,
-        name,
-        categoryId: catIds.get(b.category) ?? '',
-        tags: [tagId],
-        includes: b.includes.map((k) => findBuiltin(agents, k)?.id ?? '').filter(Boolean),
-        origin: originOf(b.key),
-      })
-      agents.push(a)
-      created.push(a)
+  /** 建出还没有的内置 Agent（按分类放好、带上引入关系）；已有的直接复用，你改过的设定不会被覆盖 */
+  const createAgents = async (keys: string[]) => {
+    const tagId = await tag(BUILTIN_TAG)
+    let todo = withIncludes(keys).filter((b) => !findBuiltin(agents, b.key))
+    const catIds = new Map<string, string>()
+    for (const c of new Set(todo.map((b) => b.category))) catIds.set(c, await category(c, 'agent'))
+    // 按引入关系一层层建：被引入的先建，建的时候就带上引入关系。
+    // 一个个建，不并行：服务端的集合是「读出来、加一项、整个写回」，并行新建会互相覆盖
+    const taken = new Set(agents.map((a) => a.name))
+    while (todo.length) {
+      const ready = todo.filter((b) => b.includes.every((k) => !todo.some((x) => x.key === k)))
+      if (!ready.length) throw new Error(`内置 Agent 的引入关系有循环：${todo.map((b) => b.key).join(', ')}`)
+      for (const b of ready) {
+        // 和你自己的 Agent 重名时加个后缀，两个都留着
+        let name = b.agent.name
+        for (let i = 1; taken.has(name); i++) name = i > 1 ? `${b.agent.name}（内置 ${i}）` : `${b.agent.name}（内置）`
+        taken.add(name)
+        const a = await api.createAgent({
+          ...b.agent,
+          name,
+          categoryId: catIds.get(b.category) ?? '',
+          tags: [tagId],
+          includes: b.includes.map((k) => findBuiltin(agents, k)?.id ?? '').filter(Boolean),
+          origin: originOf(b.key),
+        })
+        agents.push(a)
+        created.push(a)
+      }
+      todo = todo.filter((b) => !ready.includes(b))
     }
-    todo = todo.filter((b) => !ready.includes(b))
+    return tagId
   }
+  return { agents, created, newCategories, newTags, category, createAgents }
+}
+
+/** Agent 页「内置 Agent」里点添加：建出这些 Agent 和它们引入的 */
+export async function addBuiltinAgents(keys: string[], state: BuiltinState, api: BuiltinOps) {
+  const ctx = context(state, api)
+  await ctx.createAgents(keys)
+  return { created: ctx.created, newCategories: ctx.newCategories, newTags: ctx.newTags }
+}
+
+/**
+ * 添加一个内置工作流：缺的内置 Agent 先建出来，再按模板建工作流。返回新建的东西，调用方据此更新页面上的数据。
+ */
+export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState, api: BuiltinOps) {
+  const { agents, created, newCategories, newTags, category, createAgents } = context(state, api)
+  const tagId = await createAgents(builtinAgentKeys(w))
 
   const names = new Set(state.workflows.map((x) => x.name))
   let name = w.name
@@ -116,7 +134,7 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
   return { workflow, created, newCategories, newTags }
 }
 
-/** 装上内置工作流（默认全部；已有同名工作流的跳过），返回装完后的数据 */
+/** 一次装上多个内置工作流（默认全部；已有同名工作流的跳过），返回装完后的数据 */
 export async function seedBuiltins(state: BuiltinState, api: BuiltinOps, list = BUILTIN_WORKFLOWS) {
   const cur = {
     agents: [...state.agents],

@@ -117,6 +117,8 @@ export interface CliDefinition {
   docs: string[]
   /** 项目设置里说明文件那一页的说明 */
   docsNote: string
+  /** 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持 */
+  globalDoc?: string
   /** Skill 目录：user 相对用户目录（~ 开头，可以用 ${ENV:-默认值}），repo 相对项目目录 */
   skills: { user: string[]; repo: string[] }
   /** 自定义命令的目录和格式 */
@@ -232,6 +234,7 @@ export const CLIS: CliDefinition[] = [
     contextWindow: 200_000,
     limits: 'push',
     docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
+    globalDoc: '${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md',
     docsNote: t(
       'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
     ),
@@ -347,6 +350,7 @@ export const CLIS: CliDefinition[] = [
     contextWindow: 272_000,
     limits: 'query',
     docs: ['AGENTS.md', 'AGENTS.override.md'],
+    globalDoc: '${CODEX_HOME:-~/.codex}/AGENTS.md',
     docsNote: t(
       'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。',
     ),

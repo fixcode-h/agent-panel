@@ -21,7 +21,7 @@ user-invocable: true
 本技能不负责：
 
 - 替代 `brainstorming` 收敛需求或批准方案；
-- 替代 `domain-modeling` 定义领域词汇；
+- 替代领域建模去定义领域词汇（术语写进项目文档的 CONTEXT.md）；
 - 替代 `project-documentation` 决定文档路径；
 - 建立与 `openspec` 平行的任务或验收流程；
 - 在架构尚未确认时创建代码骨架；
@@ -135,4 +135,4 @@ user-invocable: true
 - 已落地的模块、依赖与数据流更新 `architecture.md`；
 - 难逆转、有惊讶性且存在真实权衡的决策才写 ADR；
 - API、持久化、资源格式等稳定跨模块约束写入 `tech/`；
-- 架构确认后，需要创建项目或模块骨架时，交给 `project-scaffolding` 技能。
+- 架构确认后需要创建项目或模块骨架时，只搭最小可构建、可测试的骨架，跑通构建再交付。

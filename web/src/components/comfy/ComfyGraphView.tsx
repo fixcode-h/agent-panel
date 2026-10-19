@@ -230,7 +230,7 @@ export function ComfyGraphView({
     [graph],
   )
   return (
-    <div className="h-[520px] overflow-hidden rounded-xl border bg-field/40">
+    <div className="h-[600px] overflow-hidden rounded-xl border bg-field/40">
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -238,7 +238,7 @@ export function ComfyGraphView({
         onNodesChange={(c: NodeChange<Node<NodeData>>[]) => setNodes((ns) => applyNodeChanges(c, ns))}
         nodesConnectable={false}
         fitView
-        fitViewOptions={{ padding: 0.15 }}
+        fitViewOptions={{ padding: 0.06 }}
         minZoom={0.2}
         proOptions={{ hideAttribution: true }}
         aria-label={t('节点图')}

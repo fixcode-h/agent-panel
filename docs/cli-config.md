@@ -34,6 +34,7 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 | `features`                        | 能力，见下面                                                                                              |
 | `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                  |
 | `docsNote`                        | 项目设置里说明文件那一页的说明                                                                            |
+| `globalDoc`                       | 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持 |
 | `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`                |
 | `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来            |
 | `envExample`                      | 设置里环境变量的示例                                                                                      |

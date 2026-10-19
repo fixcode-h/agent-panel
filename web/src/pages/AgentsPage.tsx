@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Bot, Copy, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { Bot, Copy, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -16,6 +16,7 @@ import { AgentDetail } from '@/components/agents/AgentDetail'
 import { CategoryHeader } from '@/components/agents/CategoryHeader'
 import { TagFilter, TagList } from '@/components/tags/Tags'
 import { AssistDialog } from '@/components/assist/AssistDialog'
+import { BuiltinAgentsDialog } from '@/components/agents/BuiltinAgentsDialog'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
 
@@ -31,6 +32,7 @@ export function AgentsPage() {
   const [query, setQuery] = useState('')
   const [checking, setChecking] = useState(false)
   const [assist, setAssist] = useState(false)
+  const [builtin, setBuiltin] = useState(false)
   const [rev, setRev] = useState(0)
   // 列表右键「删除」：先选中那个 Agent，再让详情页弹出删除确认（确认框和被引用的检查都在详情页里）
   const [delReq, setDelReq] = useState<{ id: string; at: number }>()
@@ -123,15 +125,26 @@ export function AgentsPage() {
         count={agents.length}
         onNew={() => create()}
         extra={
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setAssist(true)}
-            title={t('描述需求，让本机 CLI 生成 Agent')}
-          >
-            <Sparkles className="h-4 w-4 text-accent" />
-            {t('AI 创建')}
-          </Button>
+          <>
+            <Button
+              size="icon-sm"
+              variant="secondary"
+              aria-label={t('添加内置 Agent')}
+              title={t('添加内置 Agent')}
+              onClick={() => setBuiltin(true)}
+            >
+              <LayoutTemplate className="h-4 w-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setAssist(true)}
+              title={t('描述需求，让本机 CLI 生成 Agent')}
+            >
+              <Sparkles className="h-4 w-4 text-accent" />
+              {t('AI 创建')}
+            </Button>
+          </>
         }
         query={query}
         onQuery={setQuery}
@@ -216,6 +229,16 @@ export function AgentsPage() {
           </ListGroup>
         ))}
         {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的 Agent')}</ListEmpty>}
+        {/* 只有默认 Agent 时提示可以添加内置的：内置的不会自动装 */}
+        {!loading && !query && !tag && agents.every((a) => a.id === DEFAULT_AGENT_ID) && (
+          <ListEmpty>
+            <p>{t('还可以添加整理好的内置 Agent')}</p>
+            <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>
+              <LayoutTemplate className="h-4 w-4" />
+              {t('添加内置 Agent')}
+            </Button>
+          </ListEmpty>
+        )}
       </ListPane>
 
       {selected ? (
@@ -238,6 +261,7 @@ export function AgentsPage() {
           </DetailEmpty>
         )
       )}
+      <BuiltinAgentsDialog open={builtin} onOpenChange={setBuiltin} onAdded={(a) => go({ page: 'agents', id: a.id })} />
       <AssistDialog
         open={assist}
         onOpenChange={setAssist}

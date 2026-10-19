@@ -83,3 +83,23 @@ export function stopDemoDocJob(id: string) {
   if (j && j.status === 'running') Object.assign(j, { status: 'failed', error: '已停止' })
   return j
 }
+
+/** 设置「部署」里的全局说明：AI 生成 / 优化，过两秒给一份示例 */
+export function startDemoGlobalDocJob(body: { content?: string; request?: string }): DocJob {
+  const job: DocJob = { id: crypto.randomUUID(), path: 'AGENTS.md', status: 'running', text: '', startedAt: Date.now() }
+  jobs.set(job.id, job)
+  const base = body.content?.trim() || '# 全局约束\n\n## 语言\n始终用中文回答；代码、命令和报错原文保持原样。'
+  setTimeout(() => (job.thinking = '只保留跨项目都成立的约束，去掉具体项目的命令。'), 600)
+  setTimeout(() => {
+    if (job.status !== 'running') return
+    job.status = 'done'
+    job.text = '整理了分节，补上了命令执行和安全边界（这是在线演示，内容是示例）。'
+    job.result = `${base.trimEnd()}
+
+## 安全边界
+
+push、发布、破坏性清理都要用户明确授权；不覆盖用户已有的改动。
+${body.request ? `\n## 补充\n\n- ${body.request}\n` : ''}`
+  }, 2000)
+  return job
+}

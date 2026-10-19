@@ -16,7 +16,7 @@ declare const __BUNDLED_SKILLS__: Record<string, string> | undefined
 const EMBEDDED = typeof __BUNDLED_SKILLS__ === 'object' ? __BUNDLED_SKILLS__ : undefined
 const SOURCE = path.resolve(import.meta.dirname, '..', 'skills')
 
-interface Entry {
+export interface Entry {
   name: string
   category: string
   /** 相对技能目录的路径 → 内容 */
@@ -36,7 +36,7 @@ async function readTree(dir: string, rel = ''): Promise<[string, Buffer][]> {
 }
 
 /** 所有自带 Skill 的文件：出包后用写进来的，开发时直接读仓库目录（改了马上生效，所以不缓存） */
-async function entries(): Promise<Entry[]> {
+export async function entries(): Promise<Entry[]> {
   const load = async () => {
     const all: [string, Buffer][] = EMBEDDED
       ? Object.entries(EMBEDDED).map(([k, v]) => [k, Buffer.from(v, 'base64')])
@@ -66,7 +66,7 @@ function skillRoot(d: CliDefinition) {
 
 const bundledClis = () => CLIS.filter((d) => skillRoot(d))
 
-async function statusIn(e: Entry, root: string): Promise<BundledSkill['status'][string]> {
+export async function statusIn(e: Entry, root: string): Promise<BundledSkill['status'][string]> {
   const dir = path.join(root, e.name)
   if (!existsSync(path.join(dir, 'SKILL.md'))) return 'missing'
   for (const [rel, buf] of e.files) {
@@ -94,7 +94,7 @@ export async function listBundled(): Promise<BundledSkill[]> {
   return out.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
 }
 
-async function writeSkill(e: Entry, root: string) {
+export async function writeSkill(e: Entry, root: string) {
   const dir = path.join(root, e.name)
   for (const [rel, buf] of e.files) {
     const file = path.join(dir, rel)

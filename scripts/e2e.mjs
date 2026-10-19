@@ -132,7 +132,6 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
     ...process.env,
     AGENT_PANEL_DATA: dataDir,
     // 断言按空数据写的，不装内置工作流和 Agent（单元测试里单独测）
-    AGENT_PANEL_NO_BUILTIN: '1',
     // 账号测试会读写 CLI 的凭据文件：用临时的用户目录，不碰真正的 ~/.claude、~/.codex
     HOME: homeDir,
     USERPROFILE: homeDir,

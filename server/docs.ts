@@ -57,12 +57,12 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     return { path: file, exists: true, content: await readFile(full, 'utf8'), bytes: s.size }
   }
 
-  async function run(job: DocJob & { abort: AbortController }, input: DocOptimizeInput, dir: string) {
+  type RunInput = { cli: string; model: string; effort: string; path: string; prompt: string }
+  async function run(job: DocJob & { abort: AbortController }, input: RunInput, dir: string) {
     const settings = await getSettings()
     const def = getCli(input.cli)!
     const cs = cliSettings(settings, input.cli)
     const r0 = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
-    const readers = CLIS.filter((c) => c.docs.includes(input.path)).map((c) => c.name)
     let text = ''
     const errors: string[] = []
     let result: { ok: boolean; error?: string } | undefined
@@ -82,7 +82,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
       },
       cwd: dir,
       env: childEnv(cs.env),
-      input: docOptimizePrompt(input, readers),
+      input: input.prompt,
       signal: job.abort.signal,
       timeoutMs: TIMEOUT,
       onEvent: (ev) => {
@@ -156,33 +156,39 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
       const p = DocOptimizeInput.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const input = p.data
-      if (!getCli(input.cli)) return bad(c, t('未知的 CLI：{cli}', { cli: input.cli }))
-      if (!cliSettings(await getSettings(), input.cli).enabled)
-        return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
       let dir: string
       try {
         dir = await dirOf(c.req.param('id'))
       } catch (e) {
         return bad(c, (e as Error).message)
       }
-      const job = {
-        id: randomUUID(),
-        path: input.path,
-        status: 'running' as const,
-        text: '',
-        startedAt: Date.now(),
-        abort: new AbortController(),
-        at: Date.now(),
-      }
-      jobs.set(job.id, job)
-      run(job, input, dir)
-        .catch((e) => {
-          ;(job as DocJob).status = 'failed'
-          ;(job as DocJob).error = (e as Error).message
-        })
-        .finally(() => (job.at = Date.now()))
-      return c.json(view(job), 201)
+      const readers = CLIS.filter((d) => d.docs.includes(input.path)).map((d) => d.name)
+      return start(c, { ...input, prompt: docOptimizePrompt(input, readers) }, dir)
     })
+
+  /** 开始一次优化：检查 CLI 能用，在 dir 里只读运行，结果用 /doc-jobs 查 */
+  async function start(c: Context, input: RunInput, dir: string) {
+    if (!getCli(input.cli)) return bad(c, t('未知的 CLI：{cli}', { cli: input.cli }))
+    if (!cliSettings(await getSettings(), input.cli).enabled)
+      return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
+    const job = {
+      id: randomUUID(),
+      path: input.path,
+      status: 'running' as const,
+      text: '',
+      startedAt: Date.now(),
+      abort: new AbortController(),
+      at: Date.now(),
+    }
+    jobs.set(job.id, job)
+    run(job, input, dir)
+      .catch((e) => {
+        ;(job as DocJob).status = 'failed'
+        ;(job as DocJob).error = (e as Error).message
+      })
+      .finally(() => (job.at = Date.now()))
+    return c.json(view(job), 201)
+  }
 
   const jobRoutes = new Hono()
     .get('/:id', (c) => {
@@ -195,5 +201,5 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
       j.abort.abort()
       return c.json(view(j))
     })
-  return { routes, jobRoutes }
+  return { routes, jobRoutes, start }
 }

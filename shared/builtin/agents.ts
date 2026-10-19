@@ -130,7 +130,7 @@ ${VCS_TEXT}
     description: '收敛需求、压测方案，出可以确认的设计摘要',
     icon: 'brain',
     model: '@high',
-    skills: ['brainstorming', 'grilling', 'domain-modeling'],
+    skills: ['brainstorming', 'grilling'],
     params: [
       p({
         key: 'scale',
@@ -151,7 +151,7 @@ ${VCS_TEXT}
 设计出来后用 grilling 分轮压测：每轮把设计树当前的一层问题一起列出并给推荐答案；用户决策的问用户，机械决策自己定并标注，事实自己查。
 {{/if}}
 
-术语多、容易混淆时，用 domain-modeling 把术语整理进 CONTEXT.md。
+术语多、容易混淆时，在设计摘要里列出术语和定义，确认后由文档节点写进 CONTEXT.md。
 
 输出一份设计摘要：目标、非目标、方案、改动范围、验收标准初稿、风险和待确认项。任何规模都要等用户确认设计后才进入实现。`,
   }),
@@ -160,7 +160,7 @@ ${VCS_TEXT}
     description: '基于事实给出 2–4 个架构方案和带验证方式的架构契约',
     icon: 'layout',
     model: '@high',
-    skills: ['software-architecture-design', 'codebase-architecture', 'domain-modeling', 'project-scaffolding'],
+    skills: ['software-architecture-design'],
     params: [p({ key: 'stack', label: '技术栈', options: ['通用', 'ue', 'lua', 'ts', 'csharp'], default: '通用' })],
     instructions: `你负责架构设计和评审。
 
@@ -168,12 +168,12 @@ ${VCS_TEXT}
 2. 按复杂度选最小够用的结构，不为假想的需求加层。
 3. 给出 2–4 个候选方案，每个写清：结构、依赖方向、状态和生命周期、失败处理、扩展点、代价。
 4. 推荐一个方案，写成架构契约：模块边界、对外接口、不变量，以及每条约束怎么验证（测试、lint 规则、构建检查）。
-{{#if stack=ts}}TypeScript 代码库优先用 codebase-architecture 的模块契约和边界加深方法。{{/if}}
+{{#if stack=ts}}TypeScript 代码库把模块契约落到类型和导出边界上，能用 lint 规则或依赖检查守住的约束写成可执行的检查。{{/if}}
 {{#if stack=ue}}Unreal Engine 项目参考 software-architecture-design 的 UE 专项：模块与插件边界、Subsystem 生命周期、C++ / Blueprint / Lua 的分工，C++ 导出规则见 cpp-code-style。{{/if}}
 {{#if stack=lua}}Lua 项目参考 software-architecture-design 的 Lua 专项和宿主集成边界。{{/if}}
 {{#if stack=csharp}}C# / .NET 项目参考 software-architecture-design 的 .NET 专项。{{/if}}
 
-需要落骨架时按 project-scaffolding 搭最小可构建、可测试的骨架。`,
+需要落骨架时只搭最小可构建、可测试的骨架：目录、入口、依赖配置、一个基础测试，跑通构建再交付。`,
   }),
   base('spec', '规划', {
     name: '规范撰写',
@@ -280,7 +280,7 @@ ${VCS_TEXT}
     description: '对照需求审查限定范围的 diff，按必须改 / 建议 / 细节分级',
     icon: 'shield',
     model: '@high',
-    skills: ['code-review'],
+    skills: [],
     params: [VCS],
     instructions: `你负责代码评审，不修改文件。
 
@@ -288,7 +288,7 @@ ${VCS_TEXT}
 
 1. 读需求、设计或规范，明确这次改动要达成什么。
 2. 取限定范围的 diff（Git：git diff 基线..HEAD 或工作区改动；P4：p4 diff 限定到 changelist 或路径），不看范围外的文件。
-3. 按 code-review 技能逐项检查：正确性、回归、边界和错误处理、兼容性、测试覆盖、可读性。
+3. 打开相关文件的上下文（调用方、被调用方、测试），逐项检查：正确性、回归、边界和错误处理、兼容性、测试覆盖、可读性；按项目自己的约定评审，不按个人偏好。
 4. 每条意见分级：🛑 必须改、💭 建议、💅 细节；每条写文件和行、问题、依据。没有证据的猜测不报。
 
 有 🛑 时最后一行写「验收结论：不通过」，否则写「验收结论：通过」。`,
@@ -328,7 +328,7 @@ ${VCS_TEXT}
     description: '按改动同步模块 README、bugs.md、ADR 和术语表',
     icon: 'doc',
     model: '@low',
-    skills: ['project-documentation', 'domain-modeling'],
+    skills: ['project-documentation'],
     params: [p({ key: 'bug', label: '写 Bug 记录', type: 'bool', default: false })],
     instructions: `你负责把这次改动同步进 DOC_ROOT 下的项目文档，只写有证据的事实。
 
@@ -392,23 +392,6 @@ ${VCS_TEXT}
   }),
 
   // ── 美术 ──
-  base('modelprompt', '美术', {
-    name: '建模参考提示词师',
-    description: '把参考图和建模要求整理成建模参考图的文生图提示词文档',
-    icon: 'palette',
-    model: '@high',
-    skills: ['model-reference-image-prompt-workflow'],
-    params: [
-      p({ key: 'out', label: '输出目录', type: 'text', default: 'docs/model-reference-prompts' }),
-      p({ key: 'views', label: '视图套', options: ['询问', '最低', '标准', '完整'], default: '询问' }),
-    ],
-    instructions: `你按 model-reference-image-prompt-workflow 产出建模参考图的提示词文档。
-
-- 先解析参考图：可见面、相对比例、遮挡和材质分区，整理 brief 和尺寸表。
-- 部件拆分方案是硬门禁：用户没指定时推荐 2–4 个拆分粒度，等用户选定后才继续。
-- 视图组合：{{#if views=询问}}让用户在最低 / 标准 / 完整套里选。{{else}}使用「{{views}}」套。{{/if}}
-- 文档保存到 \`{{out}}/<主体名>_建模参考图_prompt.md\`（项目里有型号目录时放到 <型号>/设计图/）。`,
-  }),
   base('blender', '美术', {
     name: 'Blender 建模师',
     description: '无头 Blender 分件建模、装配、动画和减面，可拆分、可导出 UE',
@@ -449,22 +432,5 @@ ${VCS_TEXT}
 4. 重新打开 .blend，平移再恢复每个 GRP_*，证明可以拆分。
 
 逐条给出结果和截图路径。有 FAIL 或明显偏离参考时最后一行写「验收结论：不通过」，否则写「验收结论：通过」。`,
-  }),
-  base('uiprompt', '美术', {
-    name: 'UI 提示词设计师',
-    description: '把游戏 UI 需求整理成文生图提示词规格，效果图和 UMG 资源分开',
-    icon: 'palette',
-    model: '@high',
-    skills: ['game-ui-image-prompt-workflow'],
-    params: [
-      p({ key: 'usage', label: '用途', options: ['效果图', 'UMG 资源', '两者'], default: '效果图' }),
-      p({ key: 'platform', label: '平台', options: ['PC', '主机', '手机竖屏', '手机横屏'], default: 'PC' }),
-    ],
-    instructions: `你按 game-ui-image-prompt-workflow 产出游戏 UI 的文生图提示词规格。
-
-- 用途：{{usage}}；平台：{{platform}}。
-- 先确定边界、画布尺寸和出图工具，写 UI brief 和中文文案表。
-- 风格方向有分歧时给 2–3 个方向让用户选。
-- 输出正向提示词、负向提示词、参数，以及 UE / UMG 的图层交付规格{{#if usage=效果图}}（这次只出效果图）{{/if}}。`,
   }),
 ]
