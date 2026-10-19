@@ -19,7 +19,7 @@ import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows } from '../models.ts'
-import { runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
+import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { ensureBundled } from '../bundled-skills.ts'
 import { gitChanges } from './git.ts'
@@ -373,7 +373,12 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求
   if (chat && !op && input.startsWith('/')) input = await expandSlash(input, cliId, cwd, def.slash && !carry)
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
-  if (instructions && !def.systemPromptFlag && !resume) input = `## 你的角色\n${instructions}\n\n${input}`
+  if (instructions && !def.systemPromptFlag && !resume) {
+    // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
+    const role = `## 你的角色\n${instructions}\n\n`
+    const at = step ? input.indexOf(`\n\n${NODE_PART}\n`) : -1
+    input = at < 0 ? role + input : `${input.slice(0, at + 2)}${role}${input.slice(at + 2)}`
+  }
   // 自动压缩：Claude Code 用环境变量，Codex 用配置（按上下文窗口换算成 token 数）；Command Code 由面板在一轮结束后压缩
   const pct = cs.autoCompact
   const build: BuildOptions = {
