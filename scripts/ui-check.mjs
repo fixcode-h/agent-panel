@@ -107,8 +107,28 @@ try {
   await p.locator('#task-prompt').press('Enter')
   await p.getByText('推荐的下一步').waitFor({ timeout: 20000 })
   await check(p, '默认工作流-推荐', ['推荐的下一步', '执行'])
+  const doneTask = p.url()
   await p.getByRole('region', { name: '推荐的下一步' }).getByRole('button').first().click()
   await check(p, '默认工作流-执行推荐', ['之前的上下文'])
+  // AI 分析执行结果：新建分析对话，给出修改建议的差异和框架问题，勾选后应用到工作流
+  await p.goto(doneTask)
+  await p.getByRole('button', { name: '更多操作' }).click()
+  await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
+  await p.getByText('工作流优化建议').waitFor({ timeout: 20000 })
+  await p.getByRole('button', { name: '看差异' }).first().click()
+  await check(p, 'AI分析-建议', ['工作流优化建议', '面板框架的问题', '先确认范围'])
+  await p.getByRole('button', { name: /应用选中的 2 项/ }).click()
+  await check(p, 'AI分析-已应用', ['已应用'])
+  // 工作流停下后没走完：输入框上面一行「继续流程」，旁边的关闭是结束流程
+  await p.goto(base)
+  await p.locator('#task-prompt').fill('给登录页加一个记住我')
+  // 刚打开时数据还在加载，等输入框下面的选项出来再发
+  await p.waitForTimeout(300)
+  await p.locator('#task-prompt').press('Enter')
+  await p.getByRole('button', { name: '停止', exact: true }).first().click({ timeout: 20000 })
+  await p.getByRole('button', { name: '继续流程' }).waitFor({ timeout: 20000 })
+  await check(p, '流程没走完', ['继续流程', '流程没有完成'])
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加

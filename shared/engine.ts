@@ -45,6 +45,9 @@ import {
   dispatches,
   isMainStep,
   mainStep,
+  blockedStep,
+  reopenFlow,
+  taskFlow,
 } from './flow.ts'
 import {
   dispatchText,
@@ -150,6 +153,8 @@ export interface EngineHost {
   workflow?: Workflow
   /** 本轮的用户输入 */
   prompt: string
+  /** 这一轮是「继续流程」，不是新的要求：停在某个节点结论上的流程从那个节点重新检查后接着走 */
+  resume?: boolean
   changed: (flush?: boolean) => void
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
@@ -248,7 +253,7 @@ function overBudget(host: EngineHost): string {
 }
 
 function userRequests(task: Task) {
-  const users = task.messages.filter((m) => m.role === 'user' && !m.step).map((m) => m.text)
+  const users = task.messages.filter((m) => m.role === 'user' && !m.step).map((m) => m.prompt || m.text)
   return { original: users[0] ?? '', extra: users.slice(1) }
 }
 
@@ -1294,14 +1299,19 @@ async function runFlow(host: EngineHost, inv: Invocation): Promise<FlowResult> {
   }
 }
 
-function followUpPrompt(host: EngineHost) {
+function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
   const { original } = userRequests(host.task)
   if (host.task.mode === 'chat') return host.prompt
   return [
     `用户对任务「${host.task.title}」提出了追加要求：\n${host.prompt}`,
     `## 任务的原始需求\n${original}`,
     host.workflow?.document.trim() ? `## 工作流说明\n${host.workflow.document.trim()}` : '',
-    '工作流的各个节点已经完成。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。',
+    blocked
+      ? `工作流停在了节点「${blocked.title}」：它的结论是不通过，后面的节点还没有执行。它的结果：\n${clip(blocked.output, 3000)}\n\n` +
+        `请按追加要求处理（例如修好不通过的地方），必要时自己验证；完成后用中文简要说明改了什么。之后会重新执行「${blocked.title}」，通过后接着走后面的流程，后面节点的工作不用你做。`
+      : host.task.flowClosed
+        ? '用户已经结束了工作流，没完成的节点不再执行。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。'
+        : '工作流的各个节点已经完成。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -1316,7 +1326,13 @@ function finish(host: EngineHost, r: Fail) {
       s.endedAt = now()
     }
   if (r.budget) system(host, r.error)
-  else if (r.stopped) system(host, t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。'))
+  else if (r.stopped)
+    system(
+      host,
+      host.task.mode === 'workflow'
+        ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
+        : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。'),
+    )
   else {
     const failed = host.task.steps
       .filter((s) => s.status === 'failed' && !s.parentId)
@@ -1324,7 +1340,7 @@ function finish(host: EngineHost, r: Fail) {
     system(
       host,
       r.reported
-        ? t('{nodes}执行失败，原因见节点里的错误。可以点「继续执行」重试，或者在下面输入新的要求。', {
+        ? t('{nodes}执行失败，原因见节点里的错误。可以点「继续流程」重试，或者在下面输入新的要求。', {
             nodes: failed.join(t('、')) || t('有节点'),
           })
         : r.error || t('执行失败'),
@@ -1345,9 +1361,9 @@ export async function runEngineTurn(host: EngineHost) {
   host.changed(true)
 
   const wf = host.workflow
-  const flow = wf && (wf.flows.find((f) => f.id === (task.steps[0]?.flowId || wf.entryFlowId)) ?? wf.flows[0])
+  const flow = taskFlow(task, wf)
   const tops = topSteps(task)
-  if (task.mode === 'workflow' && flow) {
+  if (task.mode === 'workflow' && flow && !task.flowClosed) {
     // 任务开始后工作流改过：已经不在流程图里的节点不会再执行，标成跳过，免得任务永远「没跑完」
     const live = reachable(flow)
     for (const s of tops) if (s.status !== 'done' && !live.has(s.nodeId)) s.status = 'skipped'
@@ -1362,15 +1378,36 @@ export async function runEngineTurn(host: EngineHost) {
   const dispatching = !!wf && !!flow && dispatches(wf, flow)
   // 任务开始后关掉了调度：主 Agent 不再参与
   if (top && !dispatching && top.status !== 'done') top.status = 'skipped'
+  // 流程停在某个节点的结论上（例如前置检查不通过）：继续流程时从它重新检查；追加要求先交给主 Agent 处理，再接着走
+  const blocked = task.mode === 'workflow' ? blockedStep(task, flow) : undefined
+  if (blocked && host.resume) reopenFlow(task, blocked)
   const unfinished =
-    !tops.length ||
-    tops.some((s) => s.status !== 'done' && s.status !== 'skipped') ||
-    (dispatching && !!top && top.status !== 'done')
-  if (task.mode === 'workflow' && wf && flow && unfinished) {
-    const inv: Invocation = { workflow: wf, flow, parentId: '', slot: '', round: 0, input: '', depth: 0 }
+    !task.flowClosed &&
+    (!tops.length ||
+      tops.some((s) => s.status !== 'done' && s.status !== 'skipped') ||
+      (dispatching && !!top && top.status !== 'done' && top.status !== 'skipped'))
+  /** 按流程图执行（没完成的节点接着做） */
+  const runWorkflow = async (): Promise<boolean> => {
+    const inv: Invocation = { workflow: wf!, flow: flow!, parentId: '', slot: '', round: 0, input: '', depth: 0 }
     if (dispatching) inv.main = openMain(host, inv)
     const r = await runInvocation(host, inv)
-    if (!r.ok) return finish(host, r)
+    if (!r.ok) {
+      finish(host, r)
+      return false
+    }
+    const stuck = blockedStep(task, flow)
+    if (stuck)
+      system(
+        host,
+        t(
+          '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。',
+          { title: stuck.title },
+        ),
+      )
+    return true
+  }
+  if (task.mode === 'workflow' && wf && flow && unfinished) {
+    if (!(await runWorkflow())) return
   } else if (task.mode === 'workflow' && unfinished) {
     return finish(host, { ok: false, error: t('工作流不存在，可能已被删除') })
   } else {
@@ -1388,13 +1425,20 @@ export async function runEngineTurn(host: EngineHost) {
     host.changed(true)
     const r = await host.runAgent({
       agentId: who,
-      prompt: followUpPrompt(host),
+      prompt: followUpPrompt(host, blocked),
       sessionKey: who,
       // 工作流任务的追加要求也走默认 CLI 的档位，和节点一致
       ...(task.mode === 'workflow' ? { tier: '' as NodeTier } : {}),
     })
     endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
     if (!r.ok) return finish(host, r)
+    // 处理完停住流程的问题：从停住的节点重新检查，接着走后面的流程
+    if (blocked && wf && flow && blockedStep(task, flow) === blocked) {
+      reopenFlow(task, blocked)
+      system(host, t('处理完了，从「{title}」重新检查，接着走流程', { title: blocked.title }))
+      host.changed(true)
+      if (!(await runWorkflow())) return
+    }
   }
   task.status = 'done'
   host.changed(true)

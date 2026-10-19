@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Copy, Crown, Download, GitBranch, Settings2, Sparkles, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import {
+  Activity,
+  Copy,
+  Crown,
+  Download,
+  GitBranch,
+  Settings2,
+  Sparkles,
+  Trash2,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 import { exportWorkflow } from '@/lib/transfer'
 import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -23,6 +33,7 @@ import { CategoryPicker } from '@/components/agents/CategoryPicker'
 import { TagPicker } from '@/components/tags/Tags'
 import { DocEditor } from './DocEditor'
 import { FlowEditor } from '@/components/flow/FlowEditor'
+import { AnalyzeDialog } from '@/components/tasks/Evolution'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Workflow): WorkflowInput => rest
 
@@ -41,7 +52,13 @@ export function WorkflowDetail({
   /** AI 优化写回后让页面重新加载草稿 */
   onOptimized: () => void
 }) {
-  const { agents, clis, workflows, setWorkflows, projects, projectCategories } = useData()
+  const { agents, clis, workflows, setWorkflows, projects, projectCategories, tasks } = useData()
+  // 这个工作流最近几次跑完（含失败、停止）的执行，「分析执行」交给 AI 看
+  const runs = tasks
+    .filter((tk) => tk.mode === 'workflow' && tk.workflowId === workflow.id && tk.status !== 'running')
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
+    .slice(0, 5)
+  const [analyzing, setAnalyzing] = useState(false)
   const usedBy = [
     ...projectCategories
       .filter((c) => c.workflowId === workflow.id)
@@ -120,6 +137,19 @@ export function WorkflowDetail({
             save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
             actions={
               <>
+                <Button
+                  variant="secondary"
+                  disabled={!runs.length}
+                  onClick={() => setAnalyzing(true)}
+                  title={
+                    runs.length
+                      ? t('让 AI 分析最近 {n} 次执行的结果，给出优化建议，看过差异再应用', { n: runs.length })
+                      : t('还没有执行记录')
+                  }
+                >
+                  <Activity className="h-4 w-4" />
+                  {t('分析执行')}
+                </Button>
                 <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
                   <Sparkles className="h-4 w-4 text-accent" />
                   {t('AI 优化')}
@@ -311,6 +341,12 @@ export function WorkflowDetail({
         onConfirm={remove}
       />
       <AssistDialog open={assist} onOpenChange={setAssist} kind="workflow" target={workflow} onApplied={onOptimized} />
+      <AnalyzeDialog
+        open={analyzing}
+        onOpenChange={setAnalyzing}
+        tasks={() => Promise.all(runs.map((r) => api.task(r.id)))}
+        projectId={runs[0]?.projectId ?? ''}
+      />
     </>
   )
 }

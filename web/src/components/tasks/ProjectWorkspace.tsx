@@ -4,14 +4,18 @@ import {
   Clock,
   Coins,
   DatabaseZap,
+  FileInput,
   FolderGit2,
   GitBranch,
   Hourglass,
   Settings2,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
+import { useRef } from 'react'
+import { toast } from 'sonner'
 import type { Project, Task } from '@shared/schema'
-import { byAskedAt, taskDuration, waitDuration } from '@shared/task'
+import { byAskedAt, taskDuration, taskSummary, waitDuration } from '@shared/task'
+import { importTaskFile } from '@/lib/task-transfer'
 import { useData, useNav } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
@@ -37,11 +41,37 @@ function ProjectHome({ project }: { project: Project }) {
   const now = useNow(list.some((t) => t.status === 'running'))
   const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
+  // 导入别人导出的任务：放进这个项目，只能查看
+  const file = useRef<HTMLInputElement>(null)
+  const onImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0]
+    e.target.value = ''
+    if (!f) return
+    try {
+      const tk = await importTaskFile(f, project.id)
+      upsertTask(taskSummary(tk))
+      toast.success(t('已导入「{title}」', { title: tk.title }))
+      open(tk.id)
+    } catch (err) {
+      toast.error((err as Error).message)
+    }
+  }
 
   return (
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
       <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => openProject(project.id)}>
+        <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          title={t('导入别人导出的任务（对话或工作流执行），只能查看，也可以交给 AI 分析')}
+          onClick={() => file.current?.click()}
+        >
+          <FileInput className="h-4 w-4" />
+          {t('导入任务')}
+        </Button>
+        <Button variant="ghost" size="sm" onClick={() => openProject(project.id)}>
           <Settings2 className="h-4 w-4" />
           {t('项目设置')}
         </Button>

@@ -14,6 +14,7 @@ import {
 } from './schema.ts'
 import { getCli } from './clis.ts'
 import { planTask } from './flow.ts'
+import { t } from './i18n.ts'
 
 export function taskTitle(prompt: string) {
   const line = prompt.trim().split('\n')[0]
@@ -344,4 +345,26 @@ export function stripToolMarkup(text: string) {
   for (let m = TOOL_CLOSE.exec(plain); m; m = TOOL_CLOSE.exec(plain)) last = m
   if (last) end = last.index + last[0].length
   return (text.slice(0, open.index).trimEnd() + '\n\n' + text.slice(end).trimStart()).trim()
+}
+
+/** 结束工作流：没完成的节点标成跳过，不再执行；之后的要求由主 Agent 直接处理。真实执行和在线演示共用 */
+export function closeFlow(task: Task, id: string, now = new Date().toISOString()) {
+  for (const s of task.steps)
+    if (s.status !== 'done' && s.status !== 'skipped') {
+      s.status = 'skipped'
+      s.interrupted = false
+    }
+  task.flowClosed = true
+  // 用户主动结束的：不再显示成失败、暂停
+  if (task.status === 'failed' || task.status === 'stopped') task.status = 'done'
+  task.messages.push({
+    id,
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: t('已结束流程，没完成的节点不再执行。之后输入的要求由主 Agent 直接处理。'),
+    tools: [],
+    at: now,
+  })
+  task.updatedAt = now
 }

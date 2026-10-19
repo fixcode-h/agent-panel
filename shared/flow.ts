@@ -322,6 +322,56 @@ export function planTask(workflow: Workflow | undefined): { steps: TaskStep[] } 
 export const topSteps = (task: { steps: TaskStep[] }) => task.steps.filter((s) => !s.parentId && !isMainStep(s))
 /** 任务最外层的主 Agent；工作流没有调度时没有 */
 export const mainStep = (task: { steps: TaskStep[] }) => task.steps.find((s) => s.id === MAIN_STEP)
+
+type FlowTask = { mode: string; steps: TaskStep[]; flowClosed?: boolean }
+
+/** 任务走的主流程：第一个节点记下的流程，还没有节点时是入口流程 */
+export function taskFlow(task: { steps: TaskStep[] }, w: Workflow | undefined): Flow | undefined {
+  return w && (w.flows.find((f) => f.id === (task.steps[0]?.flowId || w.entryFlowId)) ?? w.flows[0])
+}
+
+/**
+ * 流程停在了哪个节点：它的结论（例如前置检查「不通过」）没有能走的连线，后面的节点都被跳过，流程没走到结束。
+ * 用户结束了流程时不算
+ */
+export function blockedStep(task: FlowTask, flow: Flow | undefined): TaskStep | undefined {
+  if (task.mode !== 'workflow' || task.flowClosed || !flow) return undefined
+  return topSteps(task).find((s) => {
+    if (s.status !== 'done' || !s.branch || s.flowId !== flow.id) return false
+    const out = flow.edges.filter((e) => e.from === s.nodeId)
+    return out.length > 0 && !out.some((e) => !e.when || e.when === s.branch)
+  })
+}
+
+/**
+ * 工作流还没走完：有节点没完成（失败、暂停、还没开始）、停在了某个节点的结论上，或者主 Agent 的整理还没做完。
+ * 用户结束了流程后不算
+ */
+export function flowUnfinished(task: FlowTask, w: Workflow | undefined): boolean {
+  if (task.mode !== 'workflow' || task.flowClosed) return false
+  const flow = taskFlow(task, w)
+  const tops = topSteps(task)
+  const top = mainStep(task)
+  return (
+    !tops.length ||
+    tops.some((s) => s.status !== 'done' && s.status !== 'skipped') ||
+    (!!w && !!flow && dispatches(w, flow) && !!top && top.status !== 'done' && top.status !== 'skipped') ||
+    !!blockedStep(task, flow)
+  )
+}
+
+/** 让停住的流程接着走：停住的节点重新执行（重新检查），主 Agent 最后重新整理；被跳过的节点由流程重新判断 */
+export function reopenFlow(task: { steps: TaskStep[] }, step: TaskStep) {
+  step.status = 'pending'
+  step.branch = ''
+  step.verdict = ''
+  step.endedAt = ''
+  const top = mainStep(task)
+  if (top?.status === 'done') {
+    top.status = 'pending'
+    top.endedAt = ''
+  }
+}
 /** 某个节点下面的直接子节点 */
 export const childSteps = (task: { steps: TaskStep[] }, id: string) => task.steps.filter((s) => s.parentId === id)
 /** 某个节点的所有后代 */
