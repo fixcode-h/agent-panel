@@ -7,7 +7,7 @@ import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/c
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type { Agent, AgentInput, Settings, TaskMessage, Workflow } from '@shared/schema'
 import { api } from '@/lib/api'
-import { cliColor, defaultEffortOptions, effortLabel } from '@/lib/cli-style'
+import { cliColor, defaultEffortOptions, effortLabel, modelEfforts } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
 import { Select } from '@/components/ui/input'
 import { useAgentView } from '@/lib/agent-view'
@@ -336,7 +336,8 @@ function RunPicker({
   const usedModel = run.model || defaultModel
   const defaultEffort =
     agentRun({ cli: def.id, model }, settings).effort || def.models.find((m) => m.id === usedModel)?.defaultEffort || ''
-  const effortOpts = defaultEffortOptions(def, defaultEffort)
+  // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
+  const effortOpts = defaultEffortOptions(def, defaultEffort, modelEfforts(def, usedModel))
   const compact =
     'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted shadow-none hover:bg-sel hover:text-fg'
   return (
@@ -357,7 +358,7 @@ function RunPicker({
         // 限制宽度：模型名很长时截断，不要把右边的发送按钮挤出去
         className={cn(compact, 'max-w-[170px] font-mono')}
       />
-      {def.efforts.length > 0 && (
+      {effortOpts.length > 1 && (
         <Select
           aria-label={t('思考强度')}
           value={effort === defaultEffort ? '' : effort}

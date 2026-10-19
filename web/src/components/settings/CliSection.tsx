@@ -26,7 +26,7 @@ import { cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
 import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { cliColor, cliDefaultModel, defaultEffortOptions, effortLabel } from '@/lib/cli-style'
+import { cliColor, cliDefaultModel, defaultEffortOptions, effortLabel, modelEfforts } from '@/lib/cli-style'
 import { useCliDef, useCliModels } from '@/lib/cli-models'
 import { clearInstallJob, startInstall, useInstallJob } from '@/lib/cli-install'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
@@ -309,7 +309,8 @@ export function TierTable({
                   aria-label={t('{cli} {tier}档思考强度', { cli: def.name, tier: tr.label })}
                   value={value[tr.id].effort === sug.effort ? '' : value[tr.id].effort}
                   onChange={(e) => set(tr.id, 'effort', e.target.value)}
-                  options={defaultEffortOptions(def, sug.effort)}
+                  // 只列这一档实际用的模型支持的强度：模型不认的强度 CLI 会启动即报错退出
+                  options={defaultEffortOptions(def, sug.effort, modelEfforts(def, value[tr.id].model || sug.model))}
                 />
               </>
             )}
@@ -492,6 +493,11 @@ export function CliSection({
   const full = useCliDef(def.id) ?? def
   const models = useCliModels(def.id)
   const perm = def.permissions.find((p) => p.id === draft.permission) ?? def.permissions[0]
+  // 默认思考强度用在实际的默认模型上：默认模型是档位时是那一档的模型
+  const defTier = tierOf(draft.defaultModel)
+  const defEffortModel = defTier
+    ? draft.tiers[defTier.id].model || tierFallback(full, '', defTier.id)
+    : draft.defaultModel || cliDefaultModel(full)?.id || ''
   const ok = status?.installed
   const installer = useCliInstaller(def)
   // 在这里装好（或更新好）以后自动启用，不用再手动打开开关
@@ -682,7 +688,11 @@ export function CliSection({
             aria-label={t('{cli} 默认思考强度', { cli: def.name })}
             value={draft.defaultEffort === cliDefaultModel(full)?.defaultEffort ? '' : draft.defaultEffort}
             onChange={(e) => set('defaultEffort', e.target.value)}
-            options={defaultEffortOptions(full, cliDefaultModel(full)?.defaultEffort)}
+            options={defaultEffortOptions(
+              full,
+              cliDefaultModel(full)?.defaultEffort,
+              modelEfforts(full, defEffortModel),
+            )}
           />
         </Row>
       </Group>

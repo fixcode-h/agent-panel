@@ -119,6 +119,8 @@ export const CliSpec = z.object({
     .object({
       /** 执行中能插话 */
       steer: z.boolean().default(false),
+      /** 没有插话协议，但能用面板的 MCP 工具（read_user_notes）取执行中的补充 */
+      notes: z.boolean().default(false),
       /** 压缩上下文：slash 是发「/compact」，summary 是让它写摘要、下一轮开新会话 */
       compact: z.enum(['slash', 'summary']).default('summary'),
       /** 会话能分叉到哪：latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话） */
@@ -135,6 +137,7 @@ export const CliSpec = z.object({
     })
     .default({
       steer: false,
+      notes: false,
       compact: 'summary',
       fork: 'none',
       autoCompact: 'panel',
@@ -269,6 +272,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     protocol: 'stdin',
     parser: spec.output,
     steer: f.steer,
+    notes: f.notes,
     compact: f.compact,
     review: 'prompt',
     fork: f.fork,

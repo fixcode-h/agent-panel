@@ -493,7 +493,7 @@ export function tasksApi(deps: {
       }
       if (!interrupt) {
         // 执行中：先排队，这一轮完成后自动接着处理
-        prev.task.queue.push({ id: randomUUID(), text, attachments, at: new Date().toISOString() })
+        prev.task.queue.push({ id: randomUUID(), text, attachments, at: new Date().toISOString(), note: false })
         prev.task.updatedAt = new Date().toISOString()
         await store.update(id, prev.task)
         return c.json(prev.task)

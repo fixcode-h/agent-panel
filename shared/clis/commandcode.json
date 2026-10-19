@@ -122,7 +122,8 @@
   "features": {
     "fork": "latest",
     "compact": "summary",
-    "autoCompact": "panel"
+    "autoCompact": "panel",
+    "notes": true
   },
   "docs": ["AGENTS.md", ".commandcode/AGENTS.md"],
   "docsNote": "Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。",
@@ -140,6 +141,9 @@
       "标准": "Standard",
       "非交互执行时改文件和跑命令都会被拦下": "File edits and commands are blocked in non-interactive mode"
     }
+  },
+  "env": {
+    "MCP_TOOL_TIMEOUT": "86400000"
   },
   "mcp": {
     "files": {

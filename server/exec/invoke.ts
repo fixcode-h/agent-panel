@@ -8,7 +8,15 @@ import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
-import { applyConfigFiles, merge, openAskBridge } from '../ask-mcp.ts'
+import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
+import { supportedEffort } from '../models.ts'
+import { log } from '../log.ts'
+
+/** 交给没有提问通道的 CLI 的一句用法说明 */
+const ASK_HINT = '（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）'
+/** 没有插话协议的 CLI：用户可能中途补充要求，让它自己取 */
+const NOTES_HINT =
+  '（用户可能在你执行中补充要求；做比较久的事中间用工具 read_user_notes 看一眼，取到就结合它继续当前的任务。）'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -45,12 +53,22 @@ export async function invokeCli(o: {
   onAsk?: (ev: Extract<CliEvent, { type: 'ask' }>) => void
   /** 拿到执行中控制 CLI 的方法 */
   onControl?: (c: CliControl) => void
+  /**
+   * 用户在执行中补充的信息（CLI 配置里 notes 为真时由调用方挂上）：
+   * 这一轮里模型可以用面板的工具 read_user_notes 取走，取走的那些不再排队
+   */
+  readNotes?: () => string[]
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
   images?: string[]
   /** 这一轮额外交给 CLI 的面板工具（例如工作流的编排工具）；CLI 定义里没写怎么接 MCP 时忽略 */
   mcp?: { name: string; url: string }[]
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
+  // 模型不认的思考强度会让 CLI 启动即报错退出（退出码 1），整个任务白跑：按读到的模型能力挡一下，这一轮不传
+  const effort = await supportedEffort(o.cliId, o.build.model ?? '', o.build.effort)
+  if (effort !== (o.build.effort ?? ''))
+    log.info('agent', `模型 ${o.build.model} 不支持 ${o.build.effort}，这次不带思考强度`, { cli: o.cliId })
+  const build = effort === o.build.effort ? o.build : { ...o.build, effort }
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
   let control: CliControl = { steer: async () => false, interrupt: () => false }
   const setControl = (c: CliControl) => {
@@ -68,17 +86,20 @@ export async function invokeCli(o: {
   // 模型调用时一直等到用户回答。Claude Code、Codex 走自己的协议，不需要
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
-  let run = o
+  let run = { ...o, build }
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
-  if (def.mcp && o.askUser && !o.noAskTool && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
-    bridge = openAskBridge((ev) => {
-      if (!o.askUser?.()) return ev.reply(AUTO_ANSWER)
-      return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
-    })
+  const askable = !!o.askUser && !o.noAskTool
+  const notes = def.notes ? o.readNotes : undefined
+  if (def.mcp && (askable || notes) && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
+    // 用户开着「提问」时把问题交给页面；关着时让模型自己选最合适的做法
+    const ask: Ask = (ev) => (o.askUser?.() ? (o.onAsk ? o.onAsk(ev) : o.onEvent(ev)) : ev.reply(AUTO_ANSWER))
+    bridge = openAskBridge({ ...(askable ? { ask } : {}), ...(notes ? { notes } : {}) })
     servers.unshift({ name: 'panel', url: bridge.url })
     // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
-    if (o.askUser()) input = `${input}\n\n（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）`
+    if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
+    // 没有插话协议的 CLI：补充排在队列里，让模型中途自己取
+    if (notes) input = `${input}\n\n${NOTES_HINT}`
   }
   if (def.mcp && servers.length) {
     const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url))
@@ -95,7 +116,7 @@ export async function invokeCli(o: {
     ).catch(() => undefined)
     run = {
       ...o,
-      build: { ...o.build, extraArgs: [...(o.build.extraArgs ?? []), ...tools.flatMap((x) => x.args)] },
+      build: { ...build, extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args)] },
       input,
     }
   }

@@ -245,6 +245,9 @@ export const EN_TASKS: Record<string, string> = {
   '查看「{path}」的改动': 'View changes to "{path}"',
   // 执行中排队、打断
   '执行中也可以输入，这一轮完成后接着处理': 'You can type while it runs; it will be handled after this turn',
+  '执行中也可以输入，Agent 执行时会取走；没取到的等这一轮结束后接着处理':
+    'You can type while it runs; the agent picks it up during the turn, or it is handled after this turn',
+  'Agent 执行中会取走': 'The agent picks this up while running',
   排队: 'Queue',
   '排队中 · 任务没在执行，点「继续执行」后处理':
     'Queued · the task is not running; it will be handled after you resume',
