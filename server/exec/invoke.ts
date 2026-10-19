@@ -8,7 +8,7 @@ import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
-import { applyConfigFiles, openAskBridge } from '../ask-mcp.ts'
+import { applyConfigFiles, merge, openAskBridge } from '../ask-mcp.ts'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -47,6 +47,8 @@ export async function invokeCli(o: {
   onControl?: (c: CliControl) => void
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
   images?: string[]
+  /** 这一轮额外交给 CLI 的面板工具（例如工作流的编排工具）；CLI 定义里没写怎么接 MCP 时忽略 */
+  mcp?: { name: string; url: string }[]
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
@@ -67,18 +69,34 @@ export async function invokeCli(o: {
   let restore: (() => Promise<void>) | undefined
   let bridge: ReturnType<typeof openAskBridge> | undefined
   let run = o
+  const servers = def.mcp ? [...(o.mcp ?? [])] : []
+  let input = o.input
   if (def.mcp && o.askUser && !o.noAskTool && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
     bridge = openAskBridge((ev) => {
       if (!o.askUser?.()) return ev.reply(AUTO_ANSWER)
       return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
     })
-    const tools = mcpConfig(def.mcp, 'panel', bridge.url)
-    restore = await applyConfigFiles(o.cwd, tools.files).catch(() => undefined)
+    servers.unshift({ name: 'panel', url: bridge.url })
+    // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
+    if (o.askUser()) input = `${input}\n\n（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）`
+  }
+  if (def.mcp && servers.length) {
+    const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url))
+    // 几个工具写进同一个配置文件（Gemini CLI 的 settings.json）时先合在一起，一次写进去
+    const files = new Map<string, unknown>()
+    for (const f of tools.flatMap((x) => x.files))
+      files.set(
+        f.path,
+        files.has(f.path) && typeof f.content !== 'string' ? merge(files.get(f.path), f.content) : f.content,
+      )
+    restore = await applyConfigFiles(
+      o.cwd,
+      [...files].map(([p, content]) => ({ path: p, content })),
+    ).catch(() => undefined)
     run = {
       ...o,
-      build: { ...o.build, extraArgs: [...(o.build.extraArgs ?? []), ...tools.args] },
-      // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
-      input: o.askUser() ? `${o.input}\n\n（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）` : o.input,
+      build: { ...o.build, extraArgs: [...(o.build.extraArgs ?? []), ...tools.flatMap((x) => x.args)] },
+      input,
     }
   }
   try {

@@ -32,6 +32,7 @@ import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
+import { openOrchSession, orchHint } from '../orch-mcp.ts'
 
 export interface RealContext {
   task: Task
@@ -379,6 +380,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求
   if (chat && !op && input.startsWith('/')) input = await expandSlash(input, cliId, cwd, def.slash && !carry)
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
+  // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
+  const orch = call.orch && def.mcp && !op ? openOrchSession(call.orch) : undefined
+  if (orch && !resume) input = `${input}\n\n${orchHint(call.orch!)}`
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
@@ -688,8 +692,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     askUser: () => task.askUser,
     // 对话和工作流节点都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (step && !op) ? (c) => register(c) : undefined,
+    mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true
+    orch?.close()
     clearTimeout(gitTimer)
     if (steerer) {
       const set = steers.get(task.id)

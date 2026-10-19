@@ -158,7 +158,7 @@ export function askMcpApi() {
 
 // ---- 配置文件：在用户的项目目录里写 MCP 配置，要合并进已有的内容，用完还原 ----
 
-const merge = (a: any, b: any): any =>
+export const merge = (a: any, b: any): any =>
   Array.isArray(a) && Array.isArray(b)
     ? [...new Set([...a, ...b])]
     : a && b && typeof a === 'object' && typeof b === 'object' && !Array.isArray(a)
