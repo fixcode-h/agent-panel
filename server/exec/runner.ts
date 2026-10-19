@@ -51,6 +51,8 @@ export interface RealContext {
   isGit: boolean
   /** 这一轮不是普通的对话：压缩上下文，或者审查代码 */
   op?: AgentCall['op']
+  /** 「继续流程」：见 EngineHost.resume */
+  resume?: boolean
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -80,7 +82,8 @@ const noteText = (text: string) => `用户在执行中补充了信息，请结�
 export async function steerTask(task: Task, text: string, msg: TaskMessage) {
   const took: Steerer[] = []
   for (const s of steers.get(task.id) ?? []) if (await s.steer(noteText(text))) took.push(s)
-  const running = task.steps.find((x) => x.status === 'running' && !x.parentId && x.kind !== 'main')
+  // 主 Agent 在调度（评估、整理结果）时也算工作流在跑：补充留给下一个开始的调用，不用排队
+  const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
   if (!took.length && !(task.mode === 'workflow' && running)) return false
   if (!took.length) (notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
   // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
@@ -702,8 +705,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     onEvent: apply,
     // 任务上的「提问」开关：执行中也能改，CLI 问的时候再看
     askUser: () => task.askUser,
-    // 对话和工作流节点都能接收补充；压缩、审查这类操作不接收
-    onControl: chat || (step && !op) ? (c) => register(c) : undefined,
+    // 对话、工作流节点和工作流跑完后的追加要求都能接收补充；压缩、审查这类操作不接收
+    onControl: chat || (!op && (step || task.mode === 'workflow')) ? (c) => register(c) : undefined,
     mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true
@@ -878,6 +881,7 @@ export async function runRealTurn(ctx: RealContext) {
     workflows: ctx.workflows,
     workflow: ctx.workflow,
     prompt: ctx.prompt,
+    resume: ctx.resume,
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),

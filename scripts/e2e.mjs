@@ -1028,15 +1028,17 @@ try {
       prompt: 'SLOW 排队测试',
     })
     await sleep(300)
-    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第一条' })
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第一条（草稿）' })
     q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第二条' })
     assert.deepEqual(
       q.queue.map((x) => x.text),
-      ['排队的第一条', '排队的第二条'],
+      ['排队的第一条（草稿）', '排队的第二条'],
     )
     assert.equal(q.status, 'running')
     q = await call('DELETE', `/tasks/${q.id}/queue/${q.queue[1].id}`)
     assert.equal(q.queue.length, 1, '撤回一条')
+    q = await call('PATCH', `/tasks/${q.id}/queue/${q.queue[0].id}`, { text: '排队的第一条' })
+    assert.equal(q.queue[0].text, '排队的第一条', '排队的要求可以修改')
     // 等两轮都跑完（第一轮慢，第二轮是排队的那条）
     for (let i = 0; i < 100; i++) {
       q = await call('GET', `/tasks/${q.id}`)
@@ -1266,6 +1268,85 @@ try {
   assert.match(first.input, /通过时接着做「发布」；不通过时接着做「修复」/)
   assert.ok(br.messages.some((m) => /你退回了「测试」：多跑一遍集成测试 BRANCHNO/.test(m.text)))
   assert.ok(br.messages.some((m) => /你确认了「测试」的结果/.test(m.text)))
+
+  // 流程停在门禁上（结论不通过、只有「通过」的线）：追加要求交给主 Agent 处理，处理完从门禁重新检查、接着走流程
+  {
+    const wfGate = await call('POST', '/workflows', {
+      name: '门禁',
+      description: '',
+      mainAgentId: A.id,
+      members: [],
+      flows: [
+        {
+          id: 'main',
+          name: '主流程',
+          nodes: [node('g', '前置检查', '', '检查环境。'), node('go', '设计', '', '出设计。')],
+          edges: [
+            { id: 'e1', from: 'start', to: 'g' },
+            { id: 'e2', from: 'g', to: 'go', when: 'pass' },
+            { id: 'e3', from: 'go', to: 'end' },
+          ],
+        },
+      ],
+      entryFlowId: 'main',
+      document: '',
+    })
+    const gateOf = (tk, id) => tk.steps.find((s) => s.nodeId === id)
+    let gt = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'workflow',
+          workflowId: wfGate.id,
+          prompt: 'BRANCHNO 门禁',
+        })
+      ).id,
+    )
+    assert.equal(gateOf(gt, 'g').branch, 'fail')
+    assert.equal(gateOf(gt, 'go').status, 'skipped')
+    assert.ok(
+      gt.messages.some((m) => /流程停在「前置检查」/.test(m.text)),
+      '停在门禁时说明怎么继续',
+    )
+    const nGate = calls().length
+    gt = await call('POST', `/tasks/${gt.id}/messages`, { text: 'GATEFIXED 帮我修好门禁' })
+    gt = await waitDone(gt.id)
+    const fixCall = calls()[nGate]
+    assert.match(fixCall.input, /工作流停在了节点「前置检查」/, '追加要求先交给主 Agent 处理停住的问题')
+    assert.equal(gateOf(gt, 'g').branch, 'pass', '处理完从门禁重新检查')
+    assert.equal(gateOf(gt, 'go').status, 'done', '门禁通过后接着走后面的流程')
+    assert.equal(gt.status, 'done')
+
+    // 「继续流程」：不加新要求，从门禁重新检查；「结束流程」：没完成的节点不再执行
+    let g2 = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'workflow',
+          workflowId: wfGate.id,
+          prompt: 'BRANCHNO 再来',
+        })
+      ).id,
+    )
+    const nResume = calls().length
+    g2 = await waitDone((await call('POST', `/tasks/${g2.id}/resume`)).id)
+    assert.ok(calls().length > nResume, '继续流程时重新执行门禁')
+    assert.equal(gateOf(g2, 'g').branch, 'fail')
+    g2 = await call('POST', `/tasks/${g2.id}/end-flow`)
+    assert.equal(g2.flowClosed, true)
+    assert.equal(gateOf(g2, 'go').status, 'skipped')
+    await assert.rejects(call('POST', `/tasks/${g2.id}/resume`), /400/, '结束的流程不能再继续')
+    // 工作流的输入框也能用「/命令」：按默认 CLI 展开成普通的要求，对话里显示原文
+    const nInit = calls().length
+    g2 = await waitDone((await call('POST', `/tasks/${g2.id}/messages`, { text: '/init' })).id)
+    const um = g2.messages.filter((m) => m.role === 'user').at(-1)
+    assert.equal(um.text, '/init')
+    assert.match(um.prompt, /AGENTS\.md/)
+    assert.match(calls()[nInit].input, /用户已经结束了工作流/)
+    assert.match(calls()[nInit].input, /请分析这个项目/)
+    assert.equal(gateOf(g2, 'g').branch, 'fail', '结束流程后追加要求不再重跑门禁')
+    step('流程停在门禁：追加要求处理完自动接着走；可以继续流程、结束流程；工作流支持「/命令」')
+  }
 
   // 预算：第一个节点用掉的 token 超过上限，第二个节点开始前暂停；继续执行再给一份额度
   const wfBudget = await call('POST', '/workflows', {

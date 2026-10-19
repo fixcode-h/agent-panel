@@ -17,12 +17,14 @@ import {
   X,
   ListPlus,
   ArrowDown,
+  Check,
+  Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
-import { rootStepId, taskWorkflows, topSteps } from '@shared/flow'
+import { blockedStep, flowUnfinished, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
-import { agentRun, defaultSettings } from '@shared/settings'
+import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
@@ -195,14 +197,19 @@ export function TaskView({
   const latestWf = workflows.find((w) => w.id === task?.workflowId)
   const wfChanged = !!task?.workflows.length && !!latestWf && latestWf.updatedAt !== workflow?.updatedAt
   const teamNames = useMemo(() => new Set(agents.map((a) => a.name)), [agents])
-  // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流各节点的 CLI 不同，不提供
+  // 「/」菜单：对话任务按现在用的 CLI 列命令和 Skill；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slashAgent = task?.mode === 'chat' ? agents.find((a) => a.id === task.agentId) : undefined
   const slashCli =
-    task && slashAgent ? agentRun(withTaskModel(slashAgent, task), settings ?? defaultSettings()).cli : ''
+    task?.mode === 'workflow'
+      ? defaultCli(settings ?? defaultSettings())
+      : task && slashAgent
+        ? agentRun(withTaskModel(slashAgent, task), settings ?? defaultSettings()).cli
+        : ''
   const slash = useSlashMenu({
     cli: slashCli,
     projectId: project?.id,
-    scope: 'task',
+    // 压缩、审查是对话的操作，工作流里不提供
+    scope: task?.mode === 'workflow' ? 'new' : 'task',
     text,
     setText,
     ta: followTa,
@@ -365,7 +372,10 @@ export function TaskView({
         <TaskPanel task={task} project={project} workflow={workflow} only="progress" onStep={openStep} />
       </div>
     ) : null
-  const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim()
+  // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
+  const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
+  const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
+  const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim() && !flowLeft
 
   return (
     <FileOpenCtx.Provider value={openFile}>
@@ -630,6 +640,9 @@ export function TaskView({
           <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
             <TaskRequestCard task={task} onAnswered={apply} />
             <WorktreeBar task={task} onChange={apply} />
+            {flowLeft && (
+              <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
+            )}
             <QueuedList task={task} onChange={apply} />
             {/* AI 在问问题时，问题面板换掉输入框 */}
             {!asksQuestion(task.requests) && (
@@ -680,11 +693,13 @@ export function TaskView({
                             ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
                             : t('执行中，可以随时暂停')
                           : task.mode === 'workflow'
-                            ? roots.every((s) => s.status === 'done')
-                              ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
-                              : task.status === 'failed'
-                                ? t('会从失败的节点重新执行')
-                                : t('会从没完成的节点继续执行')
+                            ? blocked
+                              ? t('主 Agent 处理后会接着走流程')
+                              : roots.every((s) => s.status === 'done')
+                                ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                                : task.status === 'failed'
+                                  ? t('会从失败的节点重新执行')
+                                  : t('会从没完成的节点继续执行')
                             : t('发给 {name}', { name: chatLabel })}
                       </span>
                     )}
@@ -809,24 +824,163 @@ export function TaskView({
 
 /** 用户消息下面的小按钮（分叉、撤回） */
 
-/** 执行中排队的要求：这一轮完成后按顺序处理，处理前可以撤回 */
+/** 输入框上面一行的提示条（排队的要求、没走完的流程）共用的样式 */
+const barRow =
+  'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[13px]'
+const barIcon =
+  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg disabled:opacity-40'
+
+/** 工作流没走完（失败、暂停、停在某个节点的结论上）：可以继续流程，或者结束它不再继续 */
+function FlowBar({
+  task,
+  blocked,
+  resuming,
+  onResume,
+  onChange,
+}: {
+  task: Task
+  blocked?: TaskStep
+  resuming: boolean
+  onResume: () => void
+  onChange: (t: Task) => void
+}) {
+  const [asking, setAsking] = useState(false)
+  const tops = topSteps(task)
+  const failed = tops.find((s) => s.status === 'failed')
+  const left = tops.filter((s) => s.status !== 'done' && s.status !== 'skipped').length
+  const what = blocked
+    ? t('流程停在「{title}」：结论不通过，后面的节点还没执行', { title: blocked.title })
+    : failed
+      ? t('流程没有完成：「{title}」执行失败', { title: failed.title })
+      : left
+        ? t('流程没有完成，还有 {n} 个节点没执行', { n: left })
+        : t('流程没有完成，主 Agent 还没整理结果')
+  return (
+    <div className="mx-auto mb-2 max-w-(--content-w)">
+      <div className={barRow}>
+        <WorkflowIcon className="h-3.5 w-3.5 shrink-0 text-warning" />
+        <span className="min-w-0 flex-1 truncate" title={what}>
+          {what}
+        </span>
+        <button
+          type="button"
+          disabled={resuming}
+          onClick={onResume}
+          title={
+            blocked ? t('从「{title}」重新检查，接着走流程', { title: blocked.title }) : t('从没完成的节点继续执行')
+          }
+          className="inline-flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+        >
+          {resuming ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCw className="h-3 w-3" />}
+          {t('继续流程')}
+        </button>
+        <button
+          type="button"
+          aria-label={t('结束流程')}
+          title={t('结束流程，不再继续')}
+          onClick={() => setAsking(true)}
+          className={barIcon}
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      <ConfirmDialog
+        open={asking}
+        onOpenChange={setAsking}
+        title={t('结束这个流程？')}
+        description={t('没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。')}
+        confirmText={t('结束流程')}
+        onConfirm={() =>
+          api
+            .endFlow(task.id)
+            .then((x) => {
+              onChange(x)
+              setAsking(false)
+            })
+            .catch((e) => {
+              setAsking(false)
+              toast.error((e as Error).message)
+            })
+        }
+      />
+    </div>
+  )
+}
+
+/** 执行中排队的要求：这一轮完成后按顺序处理，处理前可以修改、撤回 */
 function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
+  const [editing, setEditing] = useState('')
+  const [draft, setDraft] = useState('')
   if (!task.queue.length) return null
   const paused = task.status !== 'running'
+  const save = (qid: string) => {
+    const text = draft.trim()
+    const q = task.queue.find((x) => x.id === qid)
+    setEditing('')
+    if (!text || text === q?.text) return
+    api
+      .editQueued(task.id, qid, text)
+      .then(onChange)
+      .catch((e) => toast.error((e as Error).message))
+  }
   return (
     <ul className="mx-auto mb-2 flex max-w-(--content-w) flex-col gap-1.5">
       {task.queue.map((q, i) => (
-        <li
-          key={q.id}
-          className="flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[13px]"
-        >
+        <li key={q.id} className={barRow}>
           <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
-          <span className="min-w-0 flex-1 truncate" title={q.text}>
-            {q.text}
-          </span>
-          <span className="shrink-0 text-xs text-subtle">
-            {paused ? t('排队中 · 任务没在执行，点「继续执行」后处理') : i === 0 ? t('下一条') : t('排队中')}
-          </span>
+          {editing === q.id ? (
+            <>
+              <input
+                autoFocus
+                aria-label={t('修改排队的要求')}
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onFocus={(e) => e.currentTarget.select()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
+                    e.preventDefault()
+                    save(q.id)
+                  }
+                  if (e.key === 'Escape') {
+                    e.stopPropagation()
+                    setEditing('')
+                  }
+                }}
+                className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 outline-none"
+              />
+              <button
+                type="button"
+                aria-label={t('保存')}
+                title={t('保存（Enter）')}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => save(q.id)}
+                className={barIcon}
+              >
+                <Check className="h-3.5 w-3.5" />
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1 truncate" title={q.text}>
+                {q.text}
+              </span>
+              <span className="shrink-0 text-xs text-subtle">
+                {paused ? t('排队中 · 任务没在执行，点「继续执行」后处理') : i === 0 ? t('下一条') : t('排队中')}
+              </span>
+              <button
+                type="button"
+                aria-label={t('修改')}
+                title={t('修改这条要求')}
+                onClick={() => {
+                  setDraft(q.text)
+                  setEditing(q.id)
+                }}
+                className={barIcon}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
           <button
             type="button"
             aria-label={t('撤回')}
@@ -837,7 +991,7 @@ function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => voi
                 .then(onChange)
                 .catch((e) => toast.error((e as Error).message))
             }
-            className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+            className={barIcon}
           >
             <X className="h-3.5 w-3.5" />
           </button>

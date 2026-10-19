@@ -17,6 +17,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
+import { defaultCli, defaultSettings } from '@shared/settings'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
@@ -61,7 +62,7 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { workflows, agents, clis, projects, projectCategories, tasks, loading } = useData()
+  const { workflows, agents, clis, projects, projectCategories, tasks, loading, settings } = useData()
   const [projectId, setProjectId] = useState(() => {
     try {
       return fixed?.id ?? localStorage.getItem('last-project') ?? ''
@@ -103,9 +104,10 @@ export function TaskComposer({
   const files = useAttachments()
   const drop = useDropPaste(files.add)
   const mention = useFileMention(project?.id, prompt, setPrompt, ta)
-  // 「/」菜单只在对话方式下有：工作流各节点用的 CLI 不同
+  // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
+  const isChat = standalone || mode === 'chat'
   const slash = useSlashMenu({
-    cli: (standalone || mode === 'chat') && chatRun.cli ? chatRun.cli : '',
+    cli: isChat ? chatRun.cli : defaultCli(settings ?? defaultSettings()),
     projectId: project?.id,
     scope: 'new',
     text: prompt,

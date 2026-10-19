@@ -363,4 +363,28 @@ export const EN_TASKS: Record<string, string> = {
     'The main Agent reviews sub-agent results, decides where the flow goes, and writes the final result',
   '调度 {n} 轮': '{n} dispatch rounds',
   等节点交回结果: 'Waiting for nodes to report back',
+  '主 Agent 处理后会接着走流程': 'The main Agent handles it, then the flow continues',
+  '流程停在「{title}」：结论不通过，后面的节点还没执行':
+    'Flow stopped at "{title}": it did not pass, later nodes haven\'t run',
+  '流程没有完成：「{title}」执行失败': 'Flow not finished: "{title}" failed',
+  '流程没有完成，还有 {n} 个节点没执行': "Flow not finished: {n} nodes haven't run",
+  '流程没有完成，主 Agent 还没整理结果': "Flow not finished: the main Agent hasn't summarized the results",
+  '从「{title}」重新检查，接着走流程': 'Re-check "{title}" and continue the flow',
+  继续流程: 'Continue flow',
+  结束流程: 'End flow',
+  '结束流程，不再继续': 'End the flow without continuing',
+  '结束这个流程？': 'End this flow?',
+  '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。':
+    "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main Agent.",
+  修改排队的要求: 'Edit queued request',
+  '保存（Enter）': 'Save (Enter)',
+  修改这条要求: 'Edit this request',
+  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
+    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main Agent to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
+  '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
+  '已结束流程，没完成的节点不再执行。之后输入的要求由主 Agent 直接处理。':
+    "Flow ended. Unfinished nodes won't run; later requests go straight to the main Agent.",
+  要求不能为空: "The request can't be empty",
+  '任务正在执行，请先停止': 'The task is running; stop it first',
+  只有工作流任务可以结束流程: 'Only workflow tasks can end a flow',
 }

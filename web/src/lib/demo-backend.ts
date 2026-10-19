@@ -54,8 +54,17 @@ import {
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
-import { beginRun, endRun, newTask, questionAnswers, taskSummary, trackWait, withAttachments } from '@shared/task'
-import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows } from '@shared/flow'
+import {
+  beginRun,
+  closeFlow,
+  endRun,
+  newTask,
+  questionAnswers,
+  taskSummary,
+  trackWait,
+  withAttachments,
+} from '@shared/task'
+import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -1150,7 +1159,7 @@ function projectWorkflow(d: Db, p: Project) {
   return d.workflows.find((w) => w.id === (id || DEFAULT_WORKFLOW_ID))
 }
 
-function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false) {
+function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false, resume = false) {
   const entry: { stop: boolean; done?: Promise<unknown> } = { stop: false }
   live.set(task.id, entry)
   beginRun(task)
@@ -1162,6 +1171,7 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     ...taskWorkflows(task, d.workflows),
     prompt,
     first,
+    resume,
     sleep: fast ? async () => {} : sleep,
     stopped: () => entry.stop,
     changed: (flush) => {
@@ -1266,6 +1276,21 @@ function tasksRoute(
     persist()
     return task
   }
+  if (sub === 'queue' && method === 'PATCH') {
+    const q = (task.queue ?? []).find((x) => x.id === rid) ?? fail('这条要求已经开始处理了')
+    const text = String((body as { text?: string } | undefined)?.text ?? '').trim()
+    if (!text) fail('要求不能为空')
+    q.text = text
+    persist()
+    return task
+  }
+  if (sub === 'end-flow') {
+    if (live.has(task.id)) fail('任务正在执行，请先停止')
+    if (task.mode !== 'workflow') fail('只有工作流任务可以结束流程')
+    closeFlow(task, `demo-${crypto.randomUUID()}`)
+    persist()
+    return task
+  }
   if (sub === 'rewind' || sub === 'fork') {
     if (live.has(id)) fail('任务正在执行，请等它完成或先停止')
     if (task.mode !== 'chat') fail('只有对话任务可以这样做')
@@ -1345,9 +1370,7 @@ function tasksRoute(
     // 补充：演示的模拟执行不会真的读它，记进对话（工作流里记在正在跑的节点上）
     if (cur && f.steer) {
       const step =
-        task.mode === 'workflow'
-          ? (task.steps.find((s) => s.status === 'running' && !s.parentId && s.kind !== 'main')?.id ?? '')
-          : ''
+        task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : ''
       task.messages.push({
         id: `demo-${crypto.randomUUID()}`,
         role: 'user',
@@ -1429,7 +1452,8 @@ function tasksRoute(
   }
   if (sub === 'resume') {
     if (live.has(task.id)) fail('任务正在执行')
-    if (task.status !== 'failed' && task.status !== 'stopped') fail('只有失败或停止的任务可以继续')
+    const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, d.workflows).workflow))
+    if (task.status !== 'failed' && task.status !== 'stopped' && !blocked) fail('只有失败或停止的任务可以继续')
     if ((body as { latest?: boolean } | undefined)?.latest && task.workflowId) {
       const fresh =
         d.workflows.find((w) => w.id === task.workflowId) ?? fail('工作流已经被删除，只能按任务创建时的工作流继续')
@@ -1437,7 +1461,7 @@ function tasksRoute(
       task.workflowName = fresh.name
     }
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
-    void startTurn(d, task, users.at(-1)?.text ?? '', false)
+    void startTurn(d, task, users.at(-1)?.text ?? '', false, false, true)
     return task
   }
   if (method === 'PATCH') {

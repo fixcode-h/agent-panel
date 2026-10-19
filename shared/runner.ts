@@ -19,6 +19,8 @@ export interface RunContext {
   prompt: string
   /** 是否是任务的第一轮 */
   first: boolean
+  /** 「继续流程」：见 EngineHost.resume */
+  resume?: boolean
   sleep: (ms: number) => Promise<void>
   stopped: () => boolean
   /** task 被原地修改后调用；flush 表示到了值得落盘的节点 */
@@ -406,6 +408,7 @@ export async function runTurn(ctx: RunContext) {
     workflows: ctx.workflows,
     workflow: ctx.workflow,
     prompt: ctx.prompt,
+    resume: ctx.resume,
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call: AgentCall) => fakeAgent(ctx, call),

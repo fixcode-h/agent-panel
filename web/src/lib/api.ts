@@ -233,6 +233,10 @@ export const api = {
   compactTask: (id: string) => request<Task>(`/tasks/${id}/compact`, json('POST', {})),
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
   unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
+  editQueued: (id: string, qid: string, text: string) =>
+    request<Task>(`/tasks/${id}/queue/${qid}`, json('PATCH', { text })),
+  /** 结束工作流：没完成的节点不再执行 */
+  endFlow: (id: string) => request<Task>(`/tasks/${id}/end-flow`, json('POST', {})),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
   /** 引入会话：把任务或设计的对话整理成一份附件 */
   taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),

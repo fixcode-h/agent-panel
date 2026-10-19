@@ -582,6 +582,8 @@ export const TaskMessage = z.object({
   /** 属于哪个任务节点（task.steps 的 id）；为空表示不属于任何节点（追问、对话） */
   step: z.string().default(''),
   text: z.string().default(''),
+  /** 交给 Agent 的内容：工作流里输入的「/命令」展开成的要求；为空时用 text */
+  prompt: z.string().optional(),
   tools: z.array(ToolUse).default([]),
   /** 生成这段回复前的思考过程（CLI 给出的思考或推理摘要） */
   thinking: z.string().optional(),
@@ -834,6 +836,8 @@ export const TaskData = z.object({
   archived: z.boolean().optional(),
   /** 用户最近一次发消息的时间：只在列表摘要里带（摘要去掉了消息），排序和显示用 askedAt() 取 */
   askedAt: z.string().optional(),
+  /** 用户结束了工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理 */
+  flowClosed: z.boolean().optional(),
 })
 export type TaskData = z.infer<typeof TaskData>
 

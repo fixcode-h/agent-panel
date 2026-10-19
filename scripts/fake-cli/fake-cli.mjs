@@ -268,9 +268,9 @@ const verdict = input.includes('最后单独一行写「验收结论')
 // LONGOUT：第一个节点输出一份很长的结果（测试交接内容超过上限时存成文件）
 const long =
   input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
-// 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」
+// 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」，用户补充了 GATEFIXED（修好了）后给「通过」
 const branch = input.includes('「结论：通过」或「结论：不通过」')
-  ? `\n结论：${input.includes('BRANCHNO') ? '不通过' : '通过'}`
+  ? `\n结论：${input.includes('BRANCHNO') && !input.includes('GATEFIXED') ? '不通过' : '通过'}`
   : ''
 // 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，
 // 有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选；流程完成时给一段最终结果

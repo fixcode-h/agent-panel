@@ -14,10 +14,11 @@ import {
   type Workflow,
   RequestAnswer,
 } from '../shared/schema.ts'
-import { taskWorkflows } from '../shared/flow.ts'
+import { blockedStep, taskFlow, taskWorkflows } from '../shared/flow.ts'
 import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
 import {
   beginRun,
+  closeFlow,
   endRun,
   messageStamp,
   pauseStep,
@@ -28,7 +29,8 @@ import {
   withAttachments,
   withTaskModel,
 } from '../shared/task.ts'
-import { agentRun } from '../shared/settings.ts'
+import { agentRun, defaultCli } from '../shared/settings.ts'
+import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
@@ -44,7 +46,7 @@ import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
-const isolated = (tk: Task) => tk.worktree?.state === 'active'
+const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -149,7 +151,14 @@ export function tasksApi(deps: {
     return (await deps.workflows.get(id || DEFAULT_WORKFLOW_ID)) ?? undefined
   }
 
-  async function start(entry: Live, prompt: string, first: boolean, agents: Agent[], op?: RealContext['op']) {
+  async function start(
+    entry: Live,
+    prompt: string,
+    first: boolean,
+    agents: Agent[],
+    op?: RealContext['op'],
+    resume = false,
+  ) {
     const task = entry.task
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
@@ -202,6 +211,7 @@ export function tasksApi(deps: {
         newId: randomUUID,
         isGit: snapshot !== null,
         op,
+        resume,
       })
     })()
     entry.done = run
@@ -231,6 +241,16 @@ export function tasksApi(deps: {
     return entry.task
   }
 
+  /**
+   * 工作流里输入的「/命令」：节点和追加要求都用默认 CLI，按它把命令、Skill 展开成普通的要求。
+   * 没有展开（不是命令、找不到）时返回空
+   */
+  async function expandForWorkflow(tk: Pick<Task, 'mode' | 'worktree' | 'projectId' | 'id'>, text: string) {
+    if (tk.mode !== 'workflow' || !text.trim().startsWith('/')) return ''
+    const out = await expandSlash(text, defaultCli(await getSettings()), await taskDir(tk), false).catch(() => text)
+    return out === text ? '' : out
+  }
+
   /** 发一条追加要求：没给内容时取排队的第一条 */
   async function followUp(id: string, msg?: { text: string; attachments: Attachment[] }) {
     const task = await store.get(id)
@@ -246,18 +266,20 @@ export function tasksApi(deps: {
       }
       m = q
     }
+    const expanded = await expandForWorkflow(next, m.text)
     next.messages.push({
       id: randomUUID(),
       role: 'user',
       agentId: '',
       step: '',
       text: m.text,
+      ...(expanded ? { prompt: expanded } : {}),
       tools: [],
       ...(m.attachments.length ? { attachments: m.attachments } : {}),
       at: new Date().toISOString(),
     })
     try {
-      return await start(entry, withAttachments(m.text, m.attachments), false, await deps.agents.list())
+      return await start(entry, withAttachments(expanded || m.text, m.attachments), false, await deps.agents.list())
     } catch (e) {
       live.delete(id)
       throw e
@@ -412,8 +434,14 @@ export function tasksApi(deps: {
         return bad(c, (e as Error).message)
       }
     }
+    // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
+    const expanded = await expandForWorkflow(draft, input.prompt)
+    if (expanded && draft.messages[0]) draft.messages[0].prompt = expanded
     const task = await store.create(draft)
-    return c.json(await start(reserve(task), withAttachments(input.prompt, input.attachments), true, agents), 201)
+    return c.json(
+      await start(reserve(task), withAttachments(expanded || input.prompt, input.attachments), true, agents),
+      201,
+    )
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -425,17 +453,19 @@ export function tasksApi(deps: {
     if (prev?.task.status === 'running') {
       // 补充：直接交给正在跑的 CLI，接着当前的任务做；对话的 CLI 不支持或这一轮刚好结束时改成排队
       if (p.data.steer && !interrupt) {
+        const expanded = await expandForWorkflow(prev.task, text)
         const msg = {
           id: randomUUID(),
           role: 'user' as const,
           agentId: '',
           step: '',
           text,
+          ...(expanded ? { prompt: expanded } : {}),
           tools: [],
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        if (await steerTask(prev.task, withAttachments(text, attachments), msg)) {
+        if (await steerTask(prev.task, withAttachments(expanded || text, attachments), msg)) {
           prev.task.updatedAt = new Date().toISOString()
           await store.update(id, prev.task)
           return c.json(prev.task)
@@ -470,6 +500,33 @@ export function tasksApi(deps: {
     return c.json(await store.update(id, tk))
   })
 
+  // 改一条排队的要求（还没开始处理的才能改）
+  routes.patch('/:id/queue/:qid', async (c) => {
+    const id = c.req.param('id')
+    const p = z.object({ text: z.string().trim().min(1) }).safeParse(await c.req.json().catch(() => ({})))
+    if (!p.success) return bad(c, t('要求不能为空'))
+    const tk = live.get(id)?.task ?? (await store.get(id))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const q = tk.queue.find((x) => x.id === c.req.param('qid'))
+    if (!q) return bad(c, t('这条要求已经开始处理了'), 404)
+    q.text = p.data.text
+    tk.updatedAt = new Date().toISOString()
+    return c.json(await store.update(id, tk))
+  })
+
+  // 结束工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理
+  routes.post('/:id/end-flow', async (c) => {
+    const id = c.req.param('id')
+    const prev = live.get(id)
+    if (prev && prev.task.status !== 'running') await prev.done
+    if (live.has(id)) return bad(c, t('任务正在执行，请先停止'), 409)
+    const tk = await store.get(id)
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.mode !== 'workflow') return bad(c, t('只有工作流任务可以结束流程'))
+    closeFlow(tk, randomUUID())
+    return c.json(await store.update(id, tk))
+  })
+
   // 失败或停止后继续：不加新消息，从没完成的节点接着跑；工作流已完成时重做最后一条要求
   routes.post('/:id/resume', async (c) => {
     const id = c.req.param('id')
@@ -478,7 +535,10 @@ export function tasksApi(deps: {
     if (live.has(id)) return bad(c, t('任务正在执行'), 409)
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
-    if (task.status !== 'failed' && task.status !== 'stopped') return bad(c, t('只有失败或停止的任务可以继续'))
+    // 停在某个节点结论上的工作流（例如前置检查不通过）也能继续：从那个节点重新检查
+    const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, await deps.workflows.list()).workflow))
+    if (task.status !== 'failed' && task.status !== 'stopped' && !blocked)
+      return bad(c, t('只有失败或停止的任务可以继续'))
     // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
     const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
     let fresh: Workflow | undefined
@@ -495,7 +555,14 @@ export function tasksApi(deps: {
       }
       const last = users.at(-1)
       return c.json(
-        await start(entry, withAttachments(last?.text ?? '', last?.attachments), false, await deps.agents.list()),
+        await start(
+          entry,
+          withAttachments(last?.prompt || last?.text || '', last?.attachments),
+          false,
+          await deps.agents.list(),
+          undefined,
+          true,
+        ),
       )
     } catch (e) {
       live.delete(id)
@@ -504,7 +571,7 @@ export function tasksApi(deps: {
   })
 
   /** 任务的工作目录：项目目录，聊天是它自己的目录 */
-  const taskDir = async (tk: Task) =>
+  const taskDir = async (tk: Pick<Task, 'worktree' | 'projectId' | 'id'>) =>
     isolated(tk)
       ? tk.worktree!.path
       : tk.projectId
