@@ -168,6 +168,11 @@ const ExportedTask = TaskData.omit({
   budgetFrom: true,
   archived: true,
   imported: true,
+  // 这些是运行中的临时状态，导入后都按空闲算
+  working: true,
+  turnDoneAt: true,
+  awaitingUser: true,
+  prewarming: true,
 }).extend({ createdAt: z.string(), updatedAt: z.string() })
 export type ExportedTask = z.infer<typeof ExportedTask>
 
@@ -262,6 +267,10 @@ export function importTask(bundle: TaskExport, projectId: string, id: string, no
     requests: [],
     worktree: null,
     queue: [],
+    working: false,
+    turnDoneAt: '',
+    awaitingUser: false,
+    prewarming: false,
     simulated: b.task.simulated,
     imported: { at: now, exportedAt: b.exportedAt, app: b.app, agents: b.agents },
     createdAt: b.task.createdAt,

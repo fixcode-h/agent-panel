@@ -774,6 +774,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     }
     steerNotes = []
     cur = undefined
+    // CLI 真的开始处理用户消息了：预热结束，页面进入执行中
+    prewarmMode = false
+    task.prewarming = false
+    task.working = true
     ctx.changed(true)
   }
   const register = (c: CliControl) => {
