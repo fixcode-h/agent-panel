@@ -19,6 +19,7 @@ import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows } from '../models.ts'
+import { limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { ensureBundled } from '../bundled-skills.ts'
@@ -321,6 +322,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
 
   const model = run.model
+  // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，不传
+  const limits: ModelLimits = run.tier
+    ? { context: cs.tiers[run.tier.id].context, maxOutput: cs.tiers[run.tier.id].maxOutput }
+    : {}
   const op = call.op
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
@@ -353,6 +358,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const catalog = cachedModels(cliId)?.models ?? []
   const files = await knownWindows(cliId)
   const windowFor = (cli: string, m: string) =>
+    (m === model && limits.context ? limits.context : undefined) ??
     catalog.find((x) => x.id === m || x.id.endsWith(`/${m}`))?.contextWindow ??
     files.get(m) ??
     files.get(m.slice(m.lastIndexOf('/') + 1)) ??
@@ -399,12 +405,16 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     ],
     autoCompactTokens:
       pct && def.autoCompact === 'config' ? Math.floor((windowFor(cliId, model) * pct) / 100) : undefined,
+    contextWindow: limits.context || undefined,
+    maxOutput: limits.maxOutput || undefined,
   }
   const env = childEnv([
     ...cs.env,
     ...(pct && def.autoCompact === 'env' && def.autoCompactEnv
       ? [{ key: def.autoCompactEnv, value: String(pct) }]
       : []),
+    // 用户在环境变量里自己写了同名的，以设置里这一档的值为准（写在后面）
+    ...limitEnvVars(def, limits),
   ])
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替

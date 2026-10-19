@@ -130,6 +130,8 @@ export const CliSpec = z.object({
       slash: z.boolean().default(false),
       /** 上下文窗口的默认估计 */
       contextWindow: z.number().int().positive().default(200_000),
+      /** 设置里手动改的上下文窗口、最大输出用哪个环境变量传给 CLI；不写表示 CLI 不接受 */
+      limitEnv: z.object({ context: z.string().optional(), maxOutput: z.string().optional() }).default({}),
     })
     .default({
       steer: false,
@@ -139,6 +141,7 @@ export const CliSpec = z.object({
       autoCompactEnv: '',
       slash: false,
       contextWindow: 200_000,
+      limitEnv: {},
     }),
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
   docs: z.array(z.string().regex(/^(?!\/)(?!.*\.\.)[\w.\-/]+$/, '只能是项目目录里的相对路径')).default(['AGENTS.md']),
@@ -273,6 +276,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     autoCompactEnv: f.autoCompactEnv,
     slash: f.slash,
     contextWindow: f.contextWindow,
+    limitEnv: f.limitEnv,
     limits: 'none',
     docs: spec.docs,
     docsNote: tr(spec.docsNote),

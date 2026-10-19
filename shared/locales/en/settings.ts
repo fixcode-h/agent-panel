@@ -78,8 +78,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'A task is running with it. Wait for the task to finish or stop it first.',
   模型: 'Model',
   三档模型: 'Model tiers',
-  'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。':
-    'The model and effort used when an Agent picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set.',
+  'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文和最大输出按模型自动填，也可以手动改。':
+    'The model and effort used when an Agent picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set. Context and max output are filled in from the model automatically, and you can change them.',
   默认模型: 'Default model',
   'Agent 没有指定模型时使用，可以选一个档位': 'Used when an Agent has no model set. Can be a tier',
   默认思考强度: 'Default effort',
@@ -544,4 +544,17 @@ export const EN_SETTINGS: Record<string, string> = {
   选用: 'Use',
   已在列表中: 'Already saved',
   '存到 API 配置': 'Save to API settings',
+  // 三档模型的上下文和最大输出
+  '自动 · {n}': 'Auto · {n}',
+  恢复自动: 'Reset to auto',
+  最大输出: 'Max output',
+  '{cli} 不接受这项设置，只用于面板估算上下文占用':
+    "{cli} doesn't accept this setting; it's only used to estimate context usage in the panel",
+  '{cli} 不接受最大输出的设置': "{cli} doesn't accept a max output setting",
+  '{cli} 没有设置上下文窗口和最大输出的参数，上下文只用于面板估算占用和压缩时机。':
+    '{cli} has no setting for context window or max output. Context is only used by the panel to estimate usage and when to compact.',
+  '{cli} 没有设置最大输出的参数，只能改上下文窗口。':
+    '{cli} has no max output setting; only the context window can be changed.',
+  '{cli} 没有设置上下文窗口的参数，上下文只用于面板估算占用。':
+    '{cli} has no context window setting; context is only used by the panel to estimate usage.',
 }

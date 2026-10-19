@@ -26,6 +26,9 @@ export function cliSettings(
   const tier = (t: ModelTier) => ({
     model: s.tiers[t].model || tierFallback(def, s.defaultModel, t),
     effort: s.tiers[t].effort || def?.tiers[t].effort || '',
+    // 0 是自动：不传给 CLI，面板估算时按模型的默认值
+    context: s.tiers[t].context,
+    maxOutput: s.tiers[t].maxOutput,
   })
   return {
     ...s,
