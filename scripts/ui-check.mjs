@@ -321,6 +321,8 @@ try {
   if ((await ctx.inputValue()) !== '500K')
     errors.push(`设置-CLI-三档上下文：手填的值显示成了「${await ctx.inputValue()}」`)
   await p.getByRole('dialog').getByRole('button', { name: '恢复自动' }).first().click()
+  // 清空要等设置保存、重新渲染；CI 的机器慢，立刻读会读到旧值
+  for (let i = 0; i < 30 && (await ctx.inputValue()) !== ''; i++) await p.waitForTimeout(100)
   if ((await ctx.inputValue()) !== '') errors.push('设置-CLI-三档上下文：恢复自动后没有清空')
   await p.getByRole('dialog').getByText('Codex', { exact: true }).first().click()
   await p.getByText('没有设置最大输出的参数').first().scrollIntoViewIfNeeded()
