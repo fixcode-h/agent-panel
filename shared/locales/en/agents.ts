@@ -93,7 +93,6 @@ export const EN_AGENTS: Record<string, string> = {
   '配置文件 · 第三方 API': 'Config file · Third-party API',
 
   // 思考强度（Pi 等配置文件里的强度名会用到；界面上的强度只显示英文 id）
-  最低: 'Minimal',
   低: 'Low',
   中: 'Medium',
   高: 'High',

@@ -46,23 +46,25 @@ export function useUnreadTasks() {
 }
 
 /**
- * 项目里的对话执行完时，用户正开着它就不提示，开着别的页面就在侧栏标一个点。
+ * 项目里的对话完成一轮时，用户正开着它就不提示，开着别的页面就在侧栏标一个点。
+ * 以 CLI 完成一轮的时间为准，不看进程是否结束：预热、等下一句、离开后 CLI 退出都不算完成。
  * 第一次拿到的列表只记现状：页面打开时已经完成的任务不补标。
  */
 export function useTaskDoneUnread(tasks: Task[], viewingId: string) {
-  const prev = useRef<Map<string, Task['status']> | null>(null)
+  const prev = useRef<Map<string, string> | null>(null)
   useEffect(() => {
     if (viewingId) markTaskRead(viewingId)
-    const next = new Map(tasks.filter((t) => t.projectId).map((t) => [t.id, t.status]))
+    const next = new Map(tasks.filter((t) => t.projectId).map((t) => [t.id, t.turnDoneAt ?? '']))
     const before = prev.current
     prev.current = next
     if (!before) return
     for (const task of tasks) {
-      // 项目外的聊天不看，失败和暂停有各自的图标，只标完成
-      if (!task.projectId || task.status !== 'done' || task.id === viewingId) continue
-      // 新导入 / 新建的任务没有上一轮状态；已经完成过的也不再提示
+      if (!task.projectId || task.id === viewingId) continue
+      const done = task.turnDoneAt ?? ''
+      if (!done) continue
+      // 新导入 / 新建的任务没有上一轮状态；这一轮已经看过的也不再提示
       const was = before.get(task.id)
-      if (was === undefined || was === 'done') continue
+      if (was === undefined || was === done) continue
       markDone(task.id)
     }
   }, [tasks, viewingId])

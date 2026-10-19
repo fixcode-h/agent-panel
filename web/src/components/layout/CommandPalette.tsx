@@ -96,7 +96,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
         label: x.title,
         sub: x.projectId ? projectName(x.projectId) : undefined,
         icon: x.projectId ? undefined : MessageSquare,
-        status: <TaskStatusIcon status={x.status} className="h-3.5 w-3.5" />,
+        status: <TaskStatusIcon status={x.status} working={x.working} className="h-3.5 w-3.5" />,
         run: () => go(x.projectId ? { page: 'projects', id: x.projectId, sub: x.id } : { page: 'chat', id: x.id }),
       })),
       ...agents.map((a) => ({

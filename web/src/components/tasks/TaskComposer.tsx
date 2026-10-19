@@ -96,7 +96,7 @@ export function TaskComposer({
   // 独立分支要靠 git worktree，只有 git 仓库能用
   const dir = useDirInfo(project?.path ?? '')
   const canIsolate = !!project && !!dir?.gitBranch
-  const busyProject = !!project && tasks.some((x) => x.projectId === project.id && x.status === 'running')
+  const busyProject = !!project && tasks.some((x) => x.projectId === project.id && x.working)
 
   // 项目没指定工作流时用自带的「默认」工作流：什么都能交给它，做完推荐下一步用哪个工作流
   const workflow = workflows.find((w) => w.id === (workflowId || defaultWf || DEFAULT_WORKFLOW_ID))

@@ -30,15 +30,16 @@ const TEXT: Record<string, string> = { done: t('任务已完成'), failed: t('�
  * 跑很久的工作流不用一直盯着页面。
  */
 export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) {
-  const prev = useRef(new Map<string, string>())
+  const prev = useRef(new Map<string, { status: Task['status']; done: string }>())
   const asked = useRef(new Set<string>())
   const openRef = useRef(open)
   openRef.current = open
   useEffect(() => {
     const before = prev.current
-    const next = new Map(tasks.map((task) => [task.id, task.status]))
+    const next = new Map(tasks.map((task) => [task.id, { status: task.status, done: task.turnDoneAt ?? '' }]))
     prev.current = next
-    const running = tasks.filter((task) => task.status === 'running').length
+    // 标题里的数量只在 CLI 真的处理时算，预热/等下一句不算
+    const running = tasks.filter((task) => task.working).length
     setBaseTitle(running ? `(${running}) ${t('Agent 面板')}` : t('Agent 面板'))
     // 新出现的确认请求：页面不在前台时也通知
     const reqs = new Set(tasks.flatMap((task) => (task.requests ?? []).map((r) => r.id)))
@@ -60,9 +61,15 @@ export function useTaskNotifications(tasks: Task[], open: (task: Task) => void) 
           }
         } catch {}
     for (const task of tasks) {
-      if (before.get(task.id) !== 'running' || task.status === 'running' || !TEXT[task.status]) continue
+      const was = before.get(task.id)
+      if (!was) continue
+      // 完成以 CLI 完成一轮为准：预热、等下一句、切走后进程退出都不算
+      const doneTurn = !!task.turnDoneAt && task.turnDoneAt !== was.done
+      const ended = was.status === 'running' && (task.status === 'failed' || task.status === 'stopped')
+      if (!ended && !doneTurn) continue
+      const text = ended ? TEXT[task.status] : TEXT.done
       try {
-        const n = new Notification(TEXT[task.status], { body: task.title, tag: task.id })
+        const n = new Notification(text, { body: task.title, tag: task.id })
         n.onclick = () => {
           window.focus()
           openRef.current(task)

@@ -85,7 +85,7 @@ export function TaskRow({
                 strokeWidth={2.4}
               />
             ) : task.status === 'running' || task.status === 'failed' ? (
-              <TaskStatusIcon status={task.status} className="h-3.5 w-3.5" />
+              <TaskStatusIcon status={task.status} working={task.working} className="h-3.5 w-3.5" />
             ) : null}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
             {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
@@ -111,9 +111,9 @@ export const FILTERS: { id: TaskFilter; label: string }[] = [
 /** 按标题和第一条要求搜索，按状态筛选；归档的只在「已归档」里出现 */
 export function matchTask(tk: Task, query: string, filter: TaskFilter) {
   if (filter === 'archived' ? !tk.archived : tk.archived) return false
-  if (filter === 'running' && tk.status !== 'running') return false
+  if (filter === 'running' && !tk.working) return false
   if (filter === 'failed' && tk.status !== 'failed') return false
-  if (filter === 'waiting' && !tk.requests?.length) return false
+  if (filter === 'waiting' && !tk.requests?.length && !tk.awaitingUser) return false
   const q = query.trim().toLowerCase()
   if (!q) return true
   const first = tk.messages.find((m) => m.role === 'user')?.text ?? ''

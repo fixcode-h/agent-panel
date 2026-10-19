@@ -169,7 +169,7 @@ export function TaskView({
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
-  useEscape(task?.status === 'running' && !panel && !stopAsk, () => setStopAsk(true))
+  useEscape(!!task?.working && !panel && !stopAsk, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 流程图里选中的节点，右栏只看它
   const [flowSel, setFlowSel] = useState('')
@@ -254,6 +254,8 @@ export function TaskView({
   }, [task, taskId])
 
   const running = task?.status === 'running'
+  // CLI 真的在处理这一轮才算执行中；预热、等下一句时页面按空闲显示
+  const working = task?.working ?? false
   useTaskStream(taskId, running, apply)
   // 还在排队、CLI 没取走的补充：放在对话最下面，取走后才成为正常消息
   const pending = running && task ? task.queue.filter((q) => q.note) : []
@@ -310,9 +312,9 @@ export function TaskView({
     setSending(true)
     stick.current = true
     try {
-      const r = await api.sendMessage(task.id, content, files.attachments, false, running && how === 'steer')
+      const r = await api.sendMessage(task.id, content, files.attachments, false, working && how === 'steer')
       // 有插话协议的 CLI 刚结束这一轮时收不下，改成了排队；靠面板工具取的本来就会排队，不用提醒
-      if (running && how === 'steer' && chatDef?.steer && r.queue.length > task.queue.length)
+      if (working && how === 'steer' && chatDef?.steer && r.queue.length > task.queue.length)
         toast(t('这一轮刚好结束，已改成排队'))
       apply(r)
       setText('')
@@ -393,7 +395,7 @@ export function TaskView({
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
   const chatDef = getCli(chatCli)
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
-  const canSteer = running && (task.mode === 'workflow' || steerable(chatCli))
+  const canSteer = working && (task.mode === 'workflow' || steerable(chatCli))
   // 没有插话协议、靠面板的工具取补充的 CLI：发出去先排进队列，它执行中会自己取走
   const byNotes = task.mode === 'chat' && !!chatDef?.notes && !chatDef.steer
   // 用默认 Agent 的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换，下一轮生效
@@ -477,7 +479,7 @@ export function TaskView({
                   {project?.name ?? t('聊天')}
                 </button>
                 <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
-                <TaskStatusIcon status={task.status} className="ml-1" />
+                <TaskStatusIcon status={task.status} working={task.working} className="ml-1" />
                 {renaming !== null ? (
                   <input
                     autoFocus
@@ -637,8 +639,8 @@ export function TaskView({
                           <ChatTurn
                             msgs={b.msgs}
                             teamNames={teamNames}
-                            live={running && i + hidden === blocks.length - 1}
-                            last={!running && i + hidden === blocks.length - 1}
+                            live={working && i + hidden === blocks.length - 1}
+                            last={!working && i + hidden === blocks.length - 1}
                             fallback={byCli ? chatRun : undefined}
                           />
                         </div>
@@ -699,19 +701,8 @@ export function TaskView({
                     <EvolutionCard task={task} />
                     {running &&
                       task.mode === 'chat' &&
-                      (task.prewarming ? (
-                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          <span>{t('正在准备对话…')}</span>
-                          <LiveStats task={task} agentIds={[task.agentId]} />
-                        </div>
-                      ) : task.awaitingUser ? (
-                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                          <MessageSquareText className="h-4 w-4 text-subtle" />
-                          <span>{t('等待你的下一条消息')}</span>
-                          <LiveStats task={task} agentIds={[task.agentId]} />
-                        </div>
-                      ) : blocks.at(-1)?.kind === 'turn' ? (
+                      working &&
+                      (blocks.at(-1)?.kind === 'turn' ? (
                         <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                           <Loader2 className="h-4 w-4 animate-spin text-accent" />
                           <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
@@ -727,7 +718,14 @@ export function TaskView({
                           </div>
                         </PendingReply>
                       ))}
-                    {running && task.mode === 'workflow' && runningSteps.length === 0 && (
+                    {running && task.mode === 'chat' && !working && task.awaitingUser && (
+                      <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                        <MessageSquareText className="h-4 w-4 text-subtle" />
+                        <span>{t('等待你的下一条消息')}</span>
+                        <LiveStats task={task} agentIds={[task.agentId]} />
+                      </div>
+                    )}
+                    {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
                         <RunPhase
@@ -839,7 +837,7 @@ export function TaskView({
                         <ChatModelPicker value={chatRun} onChange={changeRun} />
                       ) : (
                         <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-                          {running
+                          {working
                             ? tops.filter((s) => s.status === 'running').length > 1
                               ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
                               : t('执行中，可以随时暂停')
@@ -856,11 +854,11 @@ export function TaskView({
                       )}
                     </>
                   }
-                  running={running}
+                  running={working}
                   onStop={stop}
                   onQueue={() => void send('queue')}
                   leading={
-                    !running &&
+                    !working &&
                     canResume && (
                       <Button
                         size="sm"
@@ -885,7 +883,7 @@ export function TaskView({
                   }
                   label={t('继续输入要求')}
                   placeholder={
-                    !running
+                    !working
                       ? t('继续输入要求')
                       : canSteer
                         ? byNotes
@@ -933,7 +931,7 @@ export function TaskView({
           {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
         </div>
         <ConfirmDialog
-          open={stopAsk && task.status === 'running'}
+          open={stopAsk && working}
           onOpenChange={setStopAsk}
           title={t('停止这个任务？')}
           description={t('正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。')}

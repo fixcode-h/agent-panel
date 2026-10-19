@@ -7,6 +7,8 @@ import type { OutputSpec } from '../../shared/cli-spec.ts'
 /** 各 CLI 的输出统一成这几种事件 */
 export type CliEvent =
   | { type: 'session'; id: string }
+  /** 开始一次模型请求：执行中补充的消息会在这次请求前被 CLI 取走 */
+  | { type: 'request_start' }
   | { type: 'text_delta'; text: string }
   /** 一整段文字（没有流式增量时使用） */
   | { type: 'text'; text: string }
@@ -520,8 +522,10 @@ export function commandCodeParser(cwd: string): Parser {
           output: clipDetail(toolText(e.type === 'tool_errored' ? e.error : e.result)),
           failed: e.type === 'tool_errored',
         })
-      else if (e.type === 'model_request_start') reqStart = Date.now()
-      else if (e.type === 'model_request_end') {
+      else if (e.type === 'model_request_start') {
+        reqStart = Date.now()
+        out.push({ type: 'request_start' })
+      } else if (e.type === 'model_request_end') {
         const u = e.usage
         if (u) {
           const read = u.cacheReadTokens ?? 0

@@ -14,8 +14,12 @@ import { t } from '@shared/i18n'
 export function useTaskControl(task: Task) {
   const { upsertTask } = useData()
   const [busy, setBusy] = useState(false)
-  const action: 'pause' | 'resume' | null =
-    task.status === 'running' ? 'pause' : task.status === 'stopped' || task.status === 'failed' ? 'resume' : null
+  // 暂停只在 CLI 真的处理这一轮时给；只是停在等下一句/预热时按空闲算
+  const action: 'pause' | 'resume' | null = task.working
+    ? 'pause'
+    : task.status === 'stopped' || task.status === 'failed'
+      ? 'resume'
+      : null
   const run = async () => {
     if (!action || busy) return
     setBusy(true)
