@@ -13,6 +13,7 @@ export function ConfirmDialog({
   onConfirm,
   onOpenChange,
   blocked,
+  extra,
 }: {
   open: boolean
   title: string
@@ -23,6 +24,8 @@ export function ConfirmDialog({
   onOpenChange: (open: boolean) => void
   /** 现在不能执行的原因（例如还在被使用）；有值时只显示原因，不提供确认按钮 */
   blocked?: string
+  /** 说明下面的额外内容，例如「以后不再提醒」 */
+  extra?: React.ReactNode
 }) {
   const [pending, setPending] = useState(false)
   const confirm = async () => {
@@ -43,6 +46,7 @@ export function ConfirmDialog({
           {description && (
             <D.Description className="mt-1.5 text-[13px] leading-relaxed text-muted">{description}</D.Description>
           )}
+          {extra && <div className="mt-3">{extra}</div>}
           {blocked && (
             <p className="mt-3 rounded-lg bg-warning/10 px-3 py-2 text-[13px] leading-relaxed text-warning">
               {blocked}

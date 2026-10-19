@@ -1,148 +1,137 @@
-import { useState } from 'react'
-import { ChevronRight, CircleAlert, CircleCheck, Loader2, RotateCw, Sparkles, Square } from 'lucide-react'
-import { getCli } from '@shared/clis'
+import { createPortal } from 'react-dom'
+import * as D from '@radix-ui/react-dialog'
+import { CircleAlert, ExternalLink, Loader2, Minus, Sparkles, X } from 'lucide-react'
 import { t } from '@shared/i18n'
-import { retryAiFix, setAiFixOpen, stopAiFix, useAiFix } from '@/lib/ai-fix'
-import { useNow } from '@/lib/useNow'
-import { cn } from '@/lib/utils'
+import { aiFixRunning, closeAiFix, hideAiFix, minimizeAiFix, useAiFix } from '@/lib/ai-fix'
+import { useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
-import { Modal } from '@/components/ui/modal'
-import { Markdown } from '@/components/tasks/Markdown'
-import { ScopeRequests } from '@/components/chat/AskToggle'
-
-const NO_TEAM = new Set<string>()
+import { useStopConfirm } from '@/components/ui/stop-confirm'
+import { TaskView } from '@/components/tasks/TaskView'
 
 /**
- * 「AI 处理」的弹窗：上面是交给 AI 的报错（可以展开看命令和输出），下面是 AI 的进展和结论，
- * 要确认的命令、要回答的问题在中间显示成卡片。挂在最外层，所有报错的地方共用
+ * 「AI 处理」的对话弹窗：和 MCP 工具的 AI 排查一样是一个大窗口，里面就是聊天里的那个对话（可以接着问）。
+ * 最小化成右下角的按钮，排查照常进行；关闭会停止排查，先提醒一下（可以勾选以后不再提醒）
  */
 export function AiFixDialog() {
-  const { open, issue, job, error } = useAiFix()
-  const [details, setDetails] = useState(false)
-  const running = job?.status === 'running' || (!job && !error)
-  const now = useNow(running)
+  const { open, minimized, issue, taskId, status, starting, error } = useAiFix()
+  const { go } = useNav()
+  const stop = useStopConfirm(closeAiFix)
   if (!issue) return null
-  const cli = job ? (getCli(job.cli)?.name ?? job.cli) : ''
-  const secs = job ? Math.max(0, Math.round((now - job.startedAt) / 1000)) : 0
-  const last = job?.thinking?.trim().split('\n').filter(Boolean).at(-1)
-  const failed = error || (job?.status === 'failed' ? job.error || t('没有更多信息') : '')
-  const more = !!(issue.command || issue.output || issue.context)
+  const running = aiFixRunning()
+  const close = () => stop.ask(running) && closeAiFix()
+  // 到聊天里看：弹窗收起，排查照常进行，结束时会提醒
+  const openInChat = () => {
+    if (!taskId) return
+    hideAiFix()
+    go({ page: 'chat', id: taskId })
+  }
+  const actions = (
+    <>
+      {taskId && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t('在聊天里打开')}
+          title={t('在聊天里打开（排查照常进行）')}
+          onClick={openInChat}
+        >
+          <ExternalLink className="h-4 w-4" />
+        </Button>
+      )}
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('最小化')}
+        title={t('最小化（排查照常进行）')}
+        onClick={() => minimizeAiFix(true)}
+      >
+        <Minus className="h-4 w-4" />
+      </Button>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label={t('关闭')}
+        title={running ? t('关闭并停止排查') : t('关闭')}
+        onClick={close}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+    </>
+  )
   return (
-    <Modal
-      open={open}
-      onOpenChange={setAiFixOpen}
-      wide
-      title={
-        <span className="flex items-center gap-2">
-          <Sparkles className="h-4 w-4 text-accent" />
-          {t('AI 处理')}
-        </span>
-      }
-      footer={
-        <>
-          <span className="min-w-0 flex-1 truncate text-[12px] text-subtle">
-            {running
-              ? t('关掉这个窗口也会接着处理，处理完会提醒你')
-              : cli && t('由 {cli} 处理（设置里「AI 创建」用的 CLI）', { cli })}
-          </span>
-          {running && job ? (
-            <Button variant="secondary" size="sm" onClick={stopAiFix}>
-              <Square className="h-3 w-3" />
-              {t('停止')}
-            </Button>
-          ) : (
-            failed && (
-              <Button variant="secondary" size="sm" onClick={retryAiFix}>
-                <RotateCw className="h-3.5 w-3.5" />
-                {t('重试')}
-              </Button>
-            )
-          )}
-          <Button size="sm" onClick={() => setAiFixOpen(false)}>
-            {running ? t('后台处理') : t('关闭')}
-          </Button>
-        </>
-      }
-    >
-      <div className="flex flex-col gap-2 rounded-xl border border-danger/35 bg-danger/5 px-3.5 py-3">
-        <div className="flex items-start gap-2 text-[13px]">
-          <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-danger" />
-          <span className="min-w-0 flex-1 font-medium">{issue.title}</span>
-          {more && (
+    <>
+      {open &&
+        minimized &&
+        // 放到 body 上、层级比设置弹窗高：在设置里最小化时也能看到、点到
+        createPortal(
+          // 放在底部中间：右下角是提示消息的位置，会被盖住
+          <div className="pointer-events-none fixed inset-x-0 bottom-5 z-[60] flex justify-center">
             <button
-              onClick={() => setDetails(!details)}
-              aria-expanded={details}
-              className="flex shrink-0 cursor-pointer items-center gap-0.5 rounded-md px-1.5 py-0.5 text-xs text-muted hover:bg-sel hover:text-fg"
+              style={{ pointerEvents: 'auto' }}
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => minimizeAiFix(false)}
+              title={t('展开')}
+              className="flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[13px] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
             >
-              <ChevronRight className={cn('h-3 w-3 transition-transform', details && 'rotate-90')} />
-              {t('交给 AI 的内容')}
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent">
+                {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              </span>
+              <span className="max-w-[260px] truncate">{t('AI 排查：{title}', { title: issue.title })}</span>
+              <span className="text-xs text-subtle">
+                {running ? t('排查中…') : status === 'done' ? t('已完成') : status ? t('已结束') : ''}
+              </span>
             </button>
-          )}
-        </div>
-        {issue.error && (
-          <p className="line-clamp-4 pl-6 text-[12.5px] leading-relaxed whitespace-pre-wrap text-danger [overflow-wrap:anywhere]">
-            {issue.error}
-          </p>
+          </div>,
+          document.body,
         )}
-        {details && (
-          <pre className="max-h-56 overflow-auto rounded-lg bg-field/70 px-3 py-2 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-muted">
-            {[
-              issue.command && `$ ${issue.command}`,
-              issue.output?.trim().slice(-6000),
-              issue.context && `\n${issue.context}`,
-            ]
-              .filter(Boolean)
-              .join('\n')}
-          </pre>
-        )}
-      </div>
-
-      {job && <ScopeRequests scope={`fix:${job.id}`} active={running} className="mb-0 max-w-none" />}
-
-      {running && (
-        <div className="flex items-center gap-2 text-[12.5px] text-muted">
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-          <span className="min-w-0 flex-1 truncate">
-            {!job
-              ? t('正在交给 AI…')
-              : last
-                ? t('正在思考：{text}', { text: last })
-                : job.tools?.length
-                  ? t('正在执行：{tool}', { tool: job.tools.at(-1)! })
-                  : t('{cli} 正在分析…', { cli })}
-          </span>
-          {job && <span className="shrink-0 font-mono text-[11.5px] text-subtle">{secs}s</span>}
-        </div>
-      )}
-
-      {!!job?.tools?.length && (
-        <ul className="flex flex-col gap-0.5 font-mono text-[11.5px] text-subtle">
-          {job.tools.map((x, i) => (
-            <li key={i} className="truncate">
-              ▸ {x}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {job?.text && (
-        <div className="text-[13.5px]">
-          <Markdown text={job.text} teamNames={NO_TEAM} live={running} />
-        </div>
-      )}
-
-      {job?.status === 'done' && (
-        <p className="flex items-center gap-1.5 text-[12.5px] text-success">
-          <CircleCheck className="h-4 w-4" />
-          {t('AI 处理完了，按上面的说明确认一下结果')}
-        </p>
-      )}
-      {failed && (
-        <p className="flex items-start gap-1.5 text-[12.5px] leading-relaxed whitespace-pre-wrap text-danger">
-          <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {failed}
-        </p>
-      )}
-    </Modal>
+      <D.Root
+        open={open && !minimized}
+        // 按 Esc 或点窗口外面：排查中先收起来，免得误触停止；没在排查就直接关
+        onOpenChange={(o) => {
+          if (o) return
+          if (running) minimizeAiFix(true)
+          else closeAiFix()
+        }}
+      >
+        <D.Portal>
+          <D.Overlay className="fixed inset-0 z-40 bg-black/50 animate-[fade-in_150ms_ease-out]" />
+          <D.Content
+            aria-describedby={undefined}
+            className="fixed inset-2 z-50 m-auto flex max-h-[960px] max-w-[1100px] flex-col overflow-hidden rounded-2xl border border-line-strong bg-bg shadow-2xl animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6"
+          >
+            <D.Title className="sr-only">{t('AI 排查：{title}', { title: issue.title })}</D.Title>
+            {taskId ? (
+              <TaskView key={taskId} taskId={taskId} embed={{ actions, onLeave: hideAiFix }} />
+            ) : (
+              <div className="flex min-h-0 flex-1 flex-col">
+                <header className="flex h-14 shrink-0 items-center gap-2 border-b px-3 md:px-5">
+                  <Sparkles className="h-4 w-4 text-accent" />
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-medium">
+                    {t('AI 排查：{title}', { title: issue.title })}
+                  </span>
+                  {actions}
+                </header>
+                <div className="grid flex-1 place-items-center p-6">
+                  {starting ? (
+                    <p className="flex items-center gap-2 text-[13px] text-muted">
+                      <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                      {t('正在新建排查对话…')}
+                    </p>
+                  ) : (
+                    error && (
+                      <p className="flex max-w-lg items-start gap-2 text-[13px] leading-relaxed whitespace-pre-wrap text-danger">
+                        <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                        {error}
+                      </p>
+                    )
+                  )}
+                </div>
+              </div>
+            )}
+          </D.Content>
+        </D.Portal>
+      </D.Root>
+      {stop.dialog}
+    </>
   )
 }

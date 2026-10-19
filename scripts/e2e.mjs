@@ -3275,27 +3275,45 @@ try {
     step('项目说明文件：读写、拒绝白名单外的路径、AI 优化')
   }
 
-  // ---- AI 处理报错：交给「AI 创建」的 CLI，按 topic 补上相关情况 ----
+  // ---- AI 处理报错：整理成第一句话（带上相关的安装情况），在聊天里新建一个对话去排查 ----
   {
     const base = await call('GET', '/settings')
     await call('PUT', '/settings', { ...base, assist: { ...base.assist, cli: 'commandcode' } })
-    await assert.rejects(call('POST', '/fix-jobs', { title: '' }), /400/)
-    let job = await call('POST', '/fix-jobs', {
+    await assert.rejects(call('POST', '/ai-fix', { title: '' }), /400/)
+    const s = await call('POST', '/ai-fix', {
       title: 'Pi：卸载没有成功',
       error: '还能找到 pi.cmd',
       command: 'npm uninstall -g @mariozechner/pi-coding-agent',
       output: 'up to date in 364ms',
       topic: 'cli:pi',
     })
-    assert.equal(job.cli, 'commandcode')
-    for (let i = 0; job.status === 'running' && i < 100; i++) {
-      await sleep(100)
-      job = await call('GET', `/fix-jobs/${job.id}`)
-    }
-    assert.equal(job.status, 'done', job.error)
-    assert.equal(job.text, '原因：卸载后还留着启动脚本，已经删掉了。（看过 Pi 的安装情况）')
+    assert.equal(s.cli, 'commandcode')
+    for (const part of [
+      '出了什么问题：Pi：卸载没有成功',
+      '还能找到 pi.cmd',
+      'npm uninstall -g',
+      'up to date in 364ms',
+      '相关的 CLI：Pi',
+    ])
+      assert.ok(s.prompt.includes(part), part)
+    let task = await call('POST', '/tasks', {
+      projectId: '',
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: s.cli,
+      model: s.model,
+      prompt: s.prompt,
+      askUser: true,
+    })
+    task = await waitDone(task.id)
+    assert.equal(task.status, 'done')
+    assert.ok(
+      (await call('GET', '/tasks')).some((x) => x.id === task.id),
+      '排查的对话留在聊天列表里',
+    )
+    await call('DELETE', `/tasks/${task.id}`)
     await call('PUT', '/settings', base)
-    step('AI 处理报错：交给「AI 创建」的 CLI，带上报错、命令、输出和相关的安装情况')
+    step('AI 处理报错：整理报错、命令、输出和相关的安装情况，在聊天里新建对话排查')
   }
 
   // ---- 账号和 API：登录、保存、切换、登出；用 API 时把地址和密钥交给 CLI，模型只列这个 API 的 ----

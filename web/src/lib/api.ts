@@ -32,7 +32,7 @@ import type {
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, DetectedApi } from '@shared/accounts'
-import type { FixInput, FixJob } from '@shared/fix'
+import type { FixInput, FixStart } from '@shared/fix'
 import type {
   BundledSkill,
   LibraryCli,
@@ -281,9 +281,7 @@ export const api = {
   runDeploy: (r: DeployRun) => request<{ result: DeployResult; state: DeployState }>('/deploy/run', json('POST', r)),
   optimizeGlobalDoc: (input: GlobalDocOptimize) => request<DocJob>('/deploy/optimize', json('POST', input)),
   docJob: (id: string) => request<DocJob>(`/doc-jobs/${id}`),
-  startFix: (input: Partial<FixInput> & { title: string }) => request<FixJob>('/fix-jobs', json('POST', input)),
-  fixJob: (id: string) => request<FixJob>(`/fix-jobs/${id}`),
-  stopFix: (id: string) => request<FixJob>(`/fix-jobs/${id}/stop`, { method: 'POST' }),
+  aiFix: (input: Partial<FixInput> & { title: string }) => request<FixStart>('/ai-fix', json('POST', input)),
   stopDocJob: (id: string) => request<DocJob>(`/doc-jobs/${id}/stop`, { method: 'POST' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),

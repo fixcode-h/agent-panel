@@ -302,12 +302,22 @@ try {
   await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })
   await check(p, '设置-CLI-卸载失败', ['卸载没有成功', 'AI 处理'])
   await p.getByRole('button', { name: 'AI 处理', exact: true }).first().click()
+  // 在聊天里新建一个排查对话，显示在大窗口里；最小化成右下角的按钮，排查照常进行
   await p
-    .getByText('AI 处理完了，按上面的说明确认一下结果')
+    .getByRole('heading', { name: 'AI 排查：Pi：卸载没有成功' })
+    .last()
     .waitFor({ timeout: 8000 })
-    .catch(() => errors.push('AI 处理：弹窗里没有出结果'))
-  await check(p, 'AI处理-弹窗', ['Pi：卸载没有成功', '原因'])
-  await p.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).last().click()
+    .catch(() => errors.push('AI 处理：没有新建排查对话'))
+  await check(p, 'AI处理-对话', ['出了什么问题：Pi：卸载没有成功'])
+  await p.getByRole('button', { name: '最小化', exact: true }).last().click()
+  await check(p, 'AI处理-最小化', ['AI 排查：Pi：卸载没有成功'])
+  await p.getByRole('button', { name: /^AI 排查：Pi/ }).click()
+  // 关闭：还在排查时先提醒会停止
+  await p.getByRole('button', { name: '关闭', exact: true }).last().click()
+  if (await p.getByText('停止 AI 排查？').isVisible()) {
+    await check(p, 'AI处理-关闭提醒', ['以后不再提醒，关闭时直接停止'])
+    await p.getByRole('button', { name: '停止并关闭' }).click()
+  }
   // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 CLI 的配置里识别到 2 个 API', 'Codex · openrouter'])

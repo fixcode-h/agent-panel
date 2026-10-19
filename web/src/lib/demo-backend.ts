@@ -59,7 +59,7 @@ import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows } from '@
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
-import { demoFixJob, startDemoFix, stopDemoFix } from './demo-fix'
+import { demoFixStart } from './demo-fix'
 import { demoDocJob, demoDocs, saveDemoDoc, startDemoDocJob, stopDemoDocJob } from './demo-docs'
 import { demoDeploy } from './demo-deploy'
 import {
@@ -970,10 +970,7 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
   if (res === 'deploy') return demoDeploy(method, id, body)
-  if (res === 'fix-jobs') {
-    if (!id) return startDemoFix(body)
-    return (sub === 'stop' ? stopDemoFix(id) : demoFixJob(id)) ?? fail('找不到这次处理，可能已过期')
-  }
+  if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
   if (res === 'projects' && id && sub === 'files') {

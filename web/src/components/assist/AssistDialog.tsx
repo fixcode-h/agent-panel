@@ -27,6 +27,7 @@ import { nodeViews } from '@/components/flow/views'
 import { entryFlow, flowLabel, getFlow } from '@shared/flow'
 import { AskToggle, ScopeRequests, useNewAskUser } from '@/components/chat/AskToggle'
 import { askUserDefault } from '@/lib/askUserDefault'
+import { useStopConfirm } from '@/components/ui/stop-confirm'
 import { t } from '@shared/i18n'
 
 type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMessage[] }
@@ -553,11 +554,14 @@ export function AssistDialog({
   // 关闭就终止：生成中也能关，关掉时停掉还在跑的 CLI
   const jobRef = useRef(job)
   jobRef.current = job
-  const close = () => {
+  const doClose = () => {
     if (jobRef.current) void api.stopAssist(jobRef.current.id).catch(() => {})
     setJob(null)
     onOpenChange(false)
   }
+  // MCP 工具的 AI 排查：排查中关窗口先提醒会停止（和「AI 处理」同一个提醒、同一个「以后不再提醒」）
+  const stopConfirm = useStopConfirm(doClose)
+  const close = () => (kind !== 'mcp' || stopConfirm.ask(!!jobRef.current)) && doClose()
   // 所在页面被关掉（例如换了一个 Agent）时，也不留下没人看的生成
   useEffect(
     () => () => {
@@ -887,6 +891,7 @@ export function AssistDialog({
           </D.Content>
         </D.Portal>
       </D.Root>
+      {stopConfirm.dialog}
     </>
   )
 }

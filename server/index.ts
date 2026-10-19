@@ -456,7 +456,7 @@ app.route('/mcp', orchMcpApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)
-app.route('/fix-jobs', fixApi())
+app.route('/ai-fix', fixApi())
 app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----
