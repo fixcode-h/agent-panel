@@ -39,8 +39,15 @@ export function cliSettings(
   }
 }
 
-/** 系统默认 CLI；设置里的值无效时用第一个 */
-export const defaultCli = (settings: Settings) => (getCli(settings.defaultCli) ? settings.defaultCli : CLIS[0].id)
+/**
+ * 系统默认 CLI；设置里的值无效时用第一个。
+ * 选的那个被停用了就换成按顺序第一个启用的，免得 Agent 一直落到停用的 CLI 上；一个都没启用时照旧返回设置里的值
+ */
+export function defaultCli(settings: Settings) {
+  const set = getCli(settings.defaultCli) ? settings.defaultCli : CLIS[0].id
+  if (cliSettings(settings, set).enabled) return set
+  return orderClis(CLIS, settings.cliOrder).find((c) => cliSettings(settings, c.id).enabled)?.id ?? set
+}
 
 /** 按设置里的顺序排列 CLI；新加的、没排过的 CLI 按内置顺序跟在后面 */
 export function orderClis<T extends { id: string }>(list: T[], order: string[]): T[] {
