@@ -29,6 +29,7 @@ import { getCli } from '../shared/clis.ts'
 import { migrateDocSteps } from '../shared/flow.ts'
 import { extensionSelfReload } from '../shared/design.ts'
 import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
+import { seedBuiltinsOnce } from './seed.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { assistApi } from './assist.ts'
@@ -78,6 +79,21 @@ const projectCategories = createCollection<ProjectCategoryInput, ProjectCategory
   ProjectCategory,
 )
 const projects = createCollection<ProjectInput, Project>('projects.json', Project)
+// 首次启动装上内置工作流和 Agent（之后新增的内置工作流也会补上），在开始接请求之前做完
+await seedBuiltinsOnce(
+  async () => ({
+    agents: await agents.list(),
+    categories: await categories.list(),
+    tags: await tags.list(),
+    workflows: await workflows.list(),
+  }),
+  {
+    createAgent: (a) => agents.create(AgentInput.parse(a)),
+    createCategory: (name, scope) => categories.create(CategoryInput.parse({ name, scope })),
+    createTag: (x) => tags.create(TagInput.parse(x)),
+    createWorkflow: (w) => workflows.create(WorkflowInput.parse(w)),
+  },
+)
 
 // 旧版工作流把步骤写在文档的二级标题里，启动时迁移成流程图
 for (const w of await workflows.list()) {

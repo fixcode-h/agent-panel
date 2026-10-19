@@ -117,7 +117,12 @@ export function WorkflowsPage() {
           <>
             <Menu>
               <MenuTrigger asChild>
-                <Button size="icon-sm" variant="secondary" aria-label={t('添加内置或导入的工作流')}>
+                <Button
+                  size="icon-sm"
+                  variant="secondary"
+                  aria-label={t('添加内置或导入的工作流')}
+                  title={t('添加内置或导入的工作流')}
+                >
                   <LayoutTemplate className="h-4 w-4" />
                 </Button>
               </MenuTrigger>
@@ -217,7 +222,15 @@ export function WorkflowsPage() {
           </ListGroup>
         ))}
         {!loading && workflows.length > 0 && list.length === 0 && <ListEmpty>{t('没有匹配的工作流')}</ListEmpty>}
-        {!loading && workflows.length === 0 && <ListEmpty>{t('还没有工作流')}</ListEmpty>}
+        {!loading && workflows.length === 0 && (
+          <ListEmpty>
+            <p>{t('还没有工作流')}</p>
+            <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>
+              <LayoutTemplate className="h-4 w-4" />
+              {t('添加内置工作流')}
+            </Button>
+          </ListEmpty>
+        )}
       </ListPane>
 
       {selected ? (

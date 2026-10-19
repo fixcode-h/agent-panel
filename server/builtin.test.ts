@@ -9,6 +9,8 @@ import { findRefCycle, topoOrder } from '../shared/flow.ts'
 import { frontField } from '../shared/library.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { BUILTIN_WORKFLOWS, buildWorkflow, builtinAgentKeys } from '../shared/builtin/workflows.ts'
+import { seedBuiltins, type BuiltinOps } from '../shared/builtin/install.ts'
+import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
 const root = path.resolve(import.meta.dirname, '..', 'skills')
@@ -132,4 +134,34 @@ test('自带 Skill：装进 CLI 的用户目录，已有的不覆盖，执行前
     process.env.HOME = old
     rmSync(home, { recursive: true, force: true })
   }
+})
+
+test('首次启动装上全部内置工作流：Agent 只建一份并互相引用好，分类、标签按名字复用', async () => {
+  let n = 0
+  const meta = () => ({ id: `id${++n}`, createdAt: '', updatedAt: '' })
+  const ops: BuiltinOps = {
+    createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
+    createCategory: async (name, scope) => ({ ...CategoryInput.parse({ name, scope }), ...meta() }),
+    createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
+    createWorkflow: async (w) => ({ ...WorkflowInput.parse(w), ...meta() }),
+  }
+  const mine = { ...AgentInput.parse({ name: '开发者' }), ...meta() }
+  const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
+  assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
+  const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
+  assert.equal(built.length, BUILTIN_AGENTS.length, '每个内置 Agent 只建一份')
+  // 和用户自己的 Agent 重名时加后缀，两个都在
+  assert.ok(r.agents.some((a) => a.name === '开发者（内置）' && a.origin === 'builtin:developer'))
+  const rules = built.find((a) => a.origin === 'builtin:rules')!
+  for (const a of built.filter((x) => x !== rules)) assert.deepEqual(a.includes, [rules.id], a.name)
+  // 工作流节点都指向建好的 Agent
+  const ids = new Set(r.agents.map((a) => a.id))
+  for (const w of r.workflows)
+    for (const f of w.flows) for (const nd of f.nodes) assert.ok(ids.has(nd.agentId), nd.title)
+  assert.equal(r.tags.filter((x) => x.name === '内置').length, 1)
+  assert.equal(new Set(r.categories.map((c) => `${c.scope}/${c.name}`)).size, r.categories.length, '分类没有重复')
+  // 再跑一遍：已有的跳过，不重复建
+  const again = await seedBuiltins(r, ops)
+  assert.equal(again.workflows.length, r.workflows.length)
+  assert.equal(again.agents.length, r.agents.length)
 })

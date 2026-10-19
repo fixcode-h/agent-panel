@@ -133,4 +133,5 @@ export const EN_EXTEND: Record<string, string> = {
   美术: 'Art',
   '没有自带的 Skill「{name}」': 'No bundled skill named “{name}”',
   添加内置或导入的工作流: 'Add a built-in or imported workflow',
+  添加内置工作流: 'Add built-in workflows',
 }
