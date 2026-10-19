@@ -14,8 +14,8 @@ import { tierOf } from './settings.ts'
  * 真实执行（server/exec/runner.ts）和在线演示都用这里，界面上的预览也用它，三边看到的一样。
  */
 
-/** 引入最多几层：A 引入 B、B 再引入 C……再深就不展开了，免得提示词无限长 */
-const MAX_INCLUDE_DEPTH = 3
+/** 引入最多几层：A 引入 B、B 再引入 C……再深就不展开了，免得提示词无限长；配置页超过这个深度时提醒 */
+export const MAX_INCLUDE_DEPTH = 3
 
 /** 参数显示的名字 */
 export const paramLabel = (p: AgentParam) => p.label || p.key
@@ -156,6 +156,88 @@ export function wouldCycle(agentId: string, target: string, agents: Agent[]) {
   }
   return false
 }
+
+/** 引入树的一行：depth 从 1 开始；cycle 表示这里绕回了上面的某一层，不再往下展开 */
+export interface IncludeRow {
+  id: string
+  agent?: Agent
+  depth: number
+  cycle?: boolean
+}
+
+/** 引入树最多列多少行：互相引入很多时也不至于卡住页面 */
+const MAX_TREE_ROWS = 200
+
+/**
+ * 完整的引入树（不受 MAX_INCLUDE_DEPTH 限制），按深度优先排成一行一行，配置页用来显示层级、提醒太深和循环。
+ * 同一个 Agent 从不同路径被引入会出现多次；绕回祖先的地方标 cycle 并停下。
+ */
+export function includeTree(agent: Pick<Agent, 'id' | 'includes'>, agents: Agent[]): IncludeRow[] {
+  const rows: IncludeRow[] = []
+  const walk = (a: Pick<Agent, 'id' | 'includes'>, depth: number, path: string[]) => {
+    for (const id of a.includes) {
+      if (rows.length >= MAX_TREE_ROWS) return
+      const sub = agents.find((x) => x.id === id)
+      const cycle = path.includes(id)
+      rows.push({ id, agent: sub, depth, ...(cycle && { cycle }) })
+      if (sub && !cycle) walk(sub, depth + 1, [...path, id])
+    }
+  }
+  walk(agent, 1, [agent.id])
+  return rows
+}
+
+/** 引入链有几层（没有引入是 0） */
+export const includeDepth = (agent: Pick<Agent, 'id' | 'includes'>, agents: Agent[]) =>
+  includeTree(agent, agents).reduce((m, r) => Math.max(m, r.depth), 0)
+
+/**
+ * 经过这个 Agent 的引入循环：返回 [自己, …, 自己] 的 id 链，没有循环返回空。
+ * 执行时循环会被跳过，但说明它的设定写错了，配置页要提出来。
+ */
+export function includeCycle(agent: Pick<Agent, 'id' | 'includes'>, agents: Agent[]): string[] {
+  const prev = new Map<string, string>()
+  const queue = agent.includes.filter((id) => {
+    if (prev.has(id)) return false
+    prev.set(id, agent.id)
+    return true
+  })
+  while (queue.length) {
+    const id = queue.shift()!
+    if (id === agent.id) {
+      const chain = [id]
+      for (let cur = prev.get(id)!; cur !== agent.id; cur = prev.get(cur)!) chain.unshift(cur)
+      return [agent.id, ...chain]
+    }
+    for (const next of agents.find((a) => a.id === id)?.includes ?? [])
+      if (!prev.has(next)) {
+        prev.set(next, id)
+        queue.push(next)
+      }
+  }
+  return []
+}
+
+/** 所有 Agent 里的引入循环（每个循环只列一次） */
+export function includeCycles(agents: Agent[]): string[][] {
+  const out: string[][] = []
+  const seen = new Set<string>()
+  for (const a of agents) {
+    if (seen.has(a.id)) continue
+    const c = includeCycle(a, agents)
+    if (!c.length) continue
+    c.forEach((id) => seen.add(id))
+    out.push(c)
+  }
+  return out
+}
+
+/** 循环链写成「A → B → A」 */
+export const cycleText = (chain: string[], agents: Agent[]) =>
+  chain.map((id) => agents.find((a) => a.id === id)?.name ?? id).join(' → ')
+
+/** 通用 Agent：工作流里任何 Agent 都可以把子任务派给它们（停用的不算） */
+export const commonAgents = (agents: Agent[]) => agents.filter((a) => a.common && a.enabled)
 
 /**
  * 交给 CLI 的完整角色设定：自己的设定（套上参数）、引入的 Agent 的设定、参数的取值、要用的 Skill。

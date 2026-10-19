@@ -54,6 +54,7 @@ import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } fro
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
+import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
@@ -137,9 +138,20 @@ app.use('*', async (c, next) => {
 
 const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
 
-async function parseAgent(body: unknown) {
+async function parseAgent(body: unknown, selfId = '') {
   const p = AgentInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
+  // 引入：去掉自己和重复的；改了之后会绕回自己就拒绝，免得配置里留下死循环
+  p.data.includes = [...new Set(p.data.includes)].filter((id) => id !== selfId)
+  // 以前就有的循环（旧数据、导入的）不拦，不然连改个名字都存不了；配置页会把它提出来
+  if (selfId && p.data.includes.length) {
+    const list = await agents.list()
+    const all = list.map((a) => (a.id === selfId ? { ...a, ...p.data } : a))
+    const cycle = includeCycle({ id: selfId, includes: p.data.includes }, all)
+    const before = list.find((a) => a.id === selfId)
+    if (cycle.length && !(before && includeCycle(before, list).length))
+      return { error: t('引入关系会形成循环：{chain}', { chain: cycleText(cycle, all) }) }
+  }
   if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 CLI：{cli}', { cli: p.data.cli }) }
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   p.data.tags = await knownTags(p.data.tags)
@@ -298,9 +310,9 @@ app.post('/agents', async (c) => {
 })
 
 app.put('/agents/:id', async (c) => {
-  const r = await parseAgent(await c.req.json())
-  if (r.error) return bad(c, r.error)
   const id = c.req.param('id')
+  const r = await parseAgent(await c.req.json(), id)
+  if (r.error) return bad(c, r.error)
   // 默认 Agent 的 CLI、模型、思考强度固定跟随默认 CLI，只能改名称、角色设定这些
   if (id === DEFAULT_AGENT_ID) Object.assign(r.data!, { cli: '', model: '', effort: '', enabled: true })
   const a = await agents.update(id, r.data!)

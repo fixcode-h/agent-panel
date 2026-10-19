@@ -14,7 +14,16 @@ const DEFAULT_WAIT_S = 40
 
 const sessions = new Map<string, Orchestra>()
 
-const TASKS = {
+/** 交给哪个 Agent：列出通用 Agent，模型不用猜名字 */
+function agentField(o: Orchestra) {
+  const list = o.common.map((a) => `「${a.name}」${a.description ? `（${a.description}）` : ''}`).join('、')
+  return {
+    type: 'string',
+    description: `交给哪个 Agent（名字）；不写用你自己的 Agent${list ? `。可以直接派的通用 Agent：${list}` : ''}`,
+  }
+}
+
+const tasksField = (o: Orchestra) => ({
   type: 'array',
   description: '每个子任务交给一个子 Agent，互相之间不能有依赖',
   items: {
@@ -22,12 +31,12 @@ const TASKS = {
     properties: {
       title: { type: 'string', description: '子任务的短标题（显示在任务进度里）' },
       instructions: { type: 'string', description: '要做什么、范围、产出；子 Agent 只看得到这些和用户需求' },
-      agent: { type: 'string', description: '交给哪个 Agent（名字）；不写用你自己的 Agent' },
+      agent: agentField(o),
       tier: { type: 'string', enum: ['high', 'medium', 'low'], description: '模型档位；不写跟你一样' },
     },
     required: ['title', 'instructions'],
   },
-}
+})
 
 function tools(o: Orchestra) {
   const main = o.self.endsWith('@main')
@@ -42,7 +51,7 @@ function tools(o: Orchestra) {
       name: 'spawn_agents',
       description:
         '派子 Agent 并行处理互不相关的几块工作（例如几个模块分别改、几类测试分别跑），马上返回它们的 id，不等它们做完；之后用 wait_agents 取结果。子 Agent 也能再派一层。只拆真正能同时做、不会改同一个文件的事，小事自己做更快。',
-      inputSchema: { type: 'object', properties: { tasks: TASKS }, required: ['tasks'] },
+      inputSchema: { type: 'object', properties: { tasks: tasksField(o) }, required: ['tasks'] },
     },
     {
       name: 'wait_agents',
@@ -191,9 +200,13 @@ export function openOrchSession(o: Orchestra) {
 
 /** 交给 CLI 的一句用法说明：工具列表模型自己看得到，这里说什么时候用 */
 export function orchHint(o: Orchestra) {
+  // 通用 Agent 写进说明里：不写的话模型很少想到去派别的 Agent
+  const common = o.common.length
+    ? `；可以派的通用 Agent：${o.common.map((a) => `「${a.name}」`).join('、')}（spawn_agents 的 agent 写名字）`
+    : ''
   return o.self.endsWith('@main')
-    ? '（你有编排工具 orch：get_status 查看各 Agent 的状态和结果；send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果。）'
-    : `（你有编排工具 orch：能拆成互不相关的几块时用 spawn_agents 派子 Agent 同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态${o.hasMain ? '；拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜' : ''}；send_message 传话，read_messages 看别人发给你的。）`
+    ? `（你有编排工具 orch：get_status 查看各 Agent 的状态和结果；send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
+    : `（你有编排工具 orch：能拆成互不相关的几块时用 spawn_agents 派子 Agent 同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态${o.hasMain ? '；拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜' : ''}；send_message 传话，read_messages 看别人发给你的${common}。）`
 }
 
 export function orchMcpApi() {

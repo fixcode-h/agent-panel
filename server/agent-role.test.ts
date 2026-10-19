@@ -2,7 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent } from '../shared/schema.ts'
 import {
+  commonAgents,
   composeRole,
+  cycleText,
+  includeCycle,
+  includeCycles,
+  includeDepth,
+  includeTree,
   includedAgents,
   nodeAgentRun,
   renderTemplate,
@@ -74,4 +80,47 @@ test('节点：固定用默认 CLI 的档位', () => {
   )
   assert.equal(nodeAgentRun(a, 'low').model, '@low')
   assert.equal(nodeAgentRun(agent('b', { model: 'gpt-5' }), '').model, '@medium')
+})
+
+test('引入：层级、太深和循环', () => {
+  const chain = ['a', 'b', 'c', 'd', 'e'].map((id, i, all) => agent(id, { includes: all[i + 1] ? [all[i + 1]] : [] }))
+  assert.equal(includeDepth(chain[0], chain), 4)
+  assert.deepEqual(
+    includeTree(chain[0], chain).map((r) => `${r.id}${r.depth}`),
+    ['b1', 'c2', 'd3', 'e4'],
+  )
+  // 执行时只展开 3 层
+  assert.deepEqual(
+    includedAgents(chain[0], chain).map((x) => x.agent.id),
+    ['b', 'c', 'd'],
+  )
+  assert.deepEqual(includeCycle(chain[0], chain), [])
+
+  const a = agent('a', { name: 'A', includes: ['b'] })
+  const b = agent('b', { name: 'B', includes: ['c'] })
+  const c = agent('c', { name: 'C', includes: ['a'] })
+  const loop = [a, b, c, agent('x', { includes: ['a'] })]
+  assert.deepEqual(includeCycle(a, loop), ['a', 'b', 'c', 'a'])
+  assert.equal(cycleText(includeCycle(b, loop), loop), 'B → C → A → B')
+  // x 引入了循环里的 a，但自己不在循环里
+  assert.deepEqual(includeCycle(loop[3], loop), [])
+  assert.equal(includeCycles(loop).length, 1)
+  const tree = includeTree(a, loop)
+  assert.deepEqual(
+    tree.map((r) => [r.id, r.depth, !!r.cycle]),
+    [
+      ['b', 1, false],
+      ['c', 2, false],
+      ['a', 3, true],
+    ],
+  )
+  assert.deepEqual(includeCycle(agent('s', { includes: ['s'] }), []), ['s', 's'])
+})
+
+test('通用 Agent：停用的不算', () => {
+  const list = [agent('a', { common: true }), agent('b', { common: true, enabled: false }), agent('c')]
+  assert.deepEqual(
+    commonAgents(list).map((a) => a.id),
+    ['a'],
+  )
 })

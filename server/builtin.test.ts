@@ -7,7 +7,7 @@ import { AgentInput, WorkflowInput, type Agent } from '../shared/schema.ts'
 import { composeRole, nodeMissingParams, resolveParams } from '../shared/agent-role.ts'
 import { findRefCycle, topoOrder } from '../shared/flow.ts'
 import { frontField } from '../shared/library.ts'
-import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import { BUILTIN_AGENTS, COMMON_AGENT_KEYS } from '../shared/builtin/agents.ts'
 import { BUILTIN_WORKFLOWS, buildWorkflow, builtinAgentKeys } from '../shared/builtin/workflows.ts'
 import { seedBuiltins, type BuiltinOps } from '../shared/builtin/install.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
@@ -160,6 +160,10 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
     for (const f of w.flows) for (const nd of f.nodes) assert.ok(ids.has(nd.agentId), nd.title)
   assert.equal(r.tags.filter((x) => x.name === '内置').length, 1)
   assert.equal(new Set(r.categories.map((c) => `${c.scope}/${c.name}`)).size, r.categories.length, '分类没有重复')
+  // 通用 Agent 跟着工作流一起建，标成通用
+  assert.ok(COMMON_AGENT_KEYS.length >= 3)
+  for (const k of COMMON_AGENT_KEYS) assert.ok(built.find((a) => a.origin === `builtin:${k}`)?.common, k)
+  assert.equal(built.filter((a) => a.common).length, COMMON_AGENT_KEYS.length)
   // 再跑一遍：已有的跳过，不重复建
   const again = await seedBuiltins(r, ops)
   assert.equal(again.workflows.length, r.workflows.length)

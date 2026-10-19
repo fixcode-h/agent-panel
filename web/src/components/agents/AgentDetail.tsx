@@ -2,9 +2,11 @@ import { subAgentIds } from '@shared/flow'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
+  AlertTriangle,
   Braces,
   Copy,
   GitBranch,
+  GripVertical,
   MessageSquare,
   Plus,
   Sparkles,
@@ -31,6 +33,7 @@ import { useCliDef } from '@/lib/cli-models'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
+import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { Badge, StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
@@ -45,7 +48,15 @@ import { AgentAvatar } from './AgentAvatar'
 import { CategoryPicker } from './CategoryPicker'
 import { CommandPreview } from './CommandPreview'
 import { t } from '@shared/i18n'
-import { composeRole, includedAgents, wouldCycle } from '@shared/agent-role'
+import {
+  MAX_INCLUDE_DEPTH,
+  composeRole,
+  cycleText,
+  includeCycle,
+  includeDepth,
+  includeTree,
+  wouldCycle,
+} from '@shared/agent-role'
 import { DocEditor } from '@/components/workflows/DocEditor'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { TagPicker } from '@/components/tags/Tags'
@@ -154,7 +165,16 @@ export function AgentDetail({
   const include = (id: string) =>
     !draft.includes.includes(id) && !wouldCycle(agent.id, id, agents) && set('includes', [...draft.includes, id])
   const includedBy = agents.filter((a) => a.includes.includes(agent.id))
-  const nested = includedAgents(live, agents).filter((x) => x.depth > 1)
+  // 按草稿算：改了引入马上看到层级、循环和对引入它的 Agent 的影响
+  const withLive = agents.map((a) => (a.id === agent.id ? live : a))
+  const tree = includeTree(live, withLive)
+  const depth = tree.reduce((m, r) => Math.max(m, r.depth), 0)
+  const tooDeep = tree.filter((r) => r.depth > MAX_INCLUDE_DEPTH && !r.cycle)
+  const cycle = includeCycle(live, withLive)
+  const deepParents = includedBy
+    .map((a) => ({ a, depth: includeDepth(a, withLive) }))
+    .filter((x) => x.depth > MAX_INCLUDE_DEPTH)
+  const sortIncludes = useDragSort((from, to) => set('includes', moveItem(draft.includes, from, to)))
   const preview = composeRole(live, agents)
   const startChat = () => {
     try {
@@ -200,6 +220,7 @@ export function AgentDetail({
             meta={
               <>
                 <Badge>{builtin ? t('默认') : (category?.name ?? t('未分类'))}</Badge>
+                {draft.common && <Badge tone="accent">{t('通用')}</Badge>}
                 {!draft.enabled ? (
                   <StatusDot tone="muted" label={t('已停用')} />
                 ) : isReady(checks) ? (
@@ -281,6 +302,14 @@ export function AgentDetail({
                   placeholder={t('一句话说明它擅长什么')}
                 />
               </Field>
+              {!builtin && (
+                <Checkbox
+                  checked={draft.common}
+                  onChange={(v) => set('common', v)}
+                  label={t('通用 Agent')}
+                  hint={t('工作流里任何 Agent 执行时都可以把子任务派给它，不用写进工作流。')}
+                />
+              )}
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{t('标签')}</span>
                 <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />
@@ -468,16 +497,29 @@ export function AgentDetail({
                   {t('引入的 Agent 的角色设定会一起交给这个 Agent，可以把通用的规范、领域知识做成单独的 Agent 复用。')}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
-                  {draft.includes.map((id) => {
+                  {draft.includes.map((id, i) => {
                     const a = agents.find((x) => x.id === id)
                     return (
                       <span
                         key={id}
-                        className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-card pr-1 pl-1.5 text-[13px]"
+                        {...sortIncludes.itemProps(i, draft.includes.length)}
+                        tabIndex={0}
+                        title={t('拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它')}
+                        className={cn(
+                          'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[13px] outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                          sortIncludes.drag === i && 'opacity-40',
+                          sortIncludes.over === i &&
+                            sortIncludes.drag !== null &&
+                            sortIncludes.drag !== i &&
+                            'border-accent bg-accent/10',
+                          cycle[1] === id && 'border-danger/60',
+                        )}
                       >
+                        <GripVertical className="h-3.5 w-3.5 shrink-0 text-subtle opacity-60 group-hover:opacity-100" />
                         {a ? (
                           <button
                             type="button"
+                            draggable={false}
                             className="flex cursor-pointer items-center gap-1.5 hover:text-accent"
                             onClick={() => go({ page: 'agents', id: a.id })}
                           >
@@ -489,6 +531,7 @@ export function AgentDetail({
                         )}
                         <button
                           type="button"
+                          draggable={false}
                           aria-label={t('不再引入')}
                           title={t('不再引入')}
                           onClick={() =>
@@ -514,10 +557,113 @@ export function AgentDetail({
                     </Button>
                   </AgentPicker>
                 </div>
-                {nested.length > 0 && (
-                  <p className="text-[11.5px] text-subtle">
-                    {t('间接引入：{list}', { list: nested.map((x) => x.agent.name).join(t('、')) })}
-                  </p>
+                {cycle.length > 0 && (
+                  <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] leading-relaxed text-danger">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <span className="min-w-0 flex-1">
+                      {t(
+                        '引入关系有循环：{chain}。执行时绕回的那一环会被跳过，设定很可能不完整，请去掉其中一个引入。',
+                        {
+                          chain: cycleText(cycle, withLive),
+                        },
+                      )}
+                    </span>
+                    <Button
+                      size="sm"
+                      variant="danger-outline"
+                      onClick={() =>
+                        set(
+                          'includes',
+                          draft.includes.filter((x) => x !== cycle[1]),
+                        )
+                      }
+                    >
+                      {t('不再引入「{name}」', { name: withLive.find((a) => a.id === cycle[1])?.name ?? '' })}
+                    </Button>
+                  </div>
+                )}
+                {(tooDeep.length > 0 || deepParents.length > 0) && (
+                  <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] leading-relaxed text-warning">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      {tooDeep.length > 0 && (
+                        <span>
+                          {t(
+                            '引入了 {depth} 层，超过 {max} 层的不会交给它：{list}。把深层的 Agent 直接引入到上面几层，或者精简引入链。',
+                            {
+                              depth,
+                              max: MAX_INCLUDE_DEPTH,
+                              list: [...new Set(tooDeep.map((r) => r.agent?.name ?? t('（已删除）')))].join(t('、')),
+                            },
+                          )}
+                        </span>
+                      )}
+                      {deepParents.map(({ a, depth: d }) => (
+                        <span key={a.id}>
+                          {t('「{name}」引入了它，「{name}」的引入链有 {depth} 层，超过 {max} 层的部分不会生效。', {
+                            name: a.name,
+                            depth: d,
+                            max: MAX_INCLUDE_DEPTH,
+                          })}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {depth > 1 && (
+                  <div className="flex flex-col gap-1 rounded-lg border bg-field px-3 py-2">
+                    <span className="text-[11.5px] text-subtle">
+                      {t('引入层级 · 共 {n} 层（最多展开 {max} 层）', { n: depth, max: MAX_INCLUDE_DEPTH })}
+                    </span>
+                    <ul className="flex flex-col">
+                      {tree.map((r, i) => {
+                        const over = r.depth > MAX_INCLUDE_DEPTH
+                        return (
+                          <li
+                            key={i}
+                            className="flex h-7 items-center gap-2 text-[12.5px]"
+                            style={{ paddingLeft: (r.depth - 1) * 18 }}
+                          >
+                            <span
+                              className={cn(
+                                'grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 font-mono text-[11px] tabular-nums',
+                                r.cycle
+                                  ? 'bg-danger/12 text-danger'
+                                  : over
+                                    ? 'bg-warning/12 text-warning'
+                                    : 'bg-sel text-muted',
+                              )}
+                              title={t('第 {n} 层', { n: r.depth })}
+                            >
+                              {r.depth}
+                            </span>
+                            {r.agent ? (
+                              <button
+                                type="button"
+                                className={cn(
+                                  'flex min-w-0 cursor-pointer items-center gap-1.5 hover:text-accent',
+                                  (over || r.cycle) && 'text-subtle line-through',
+                                )}
+                                onClick={() => go({ page: 'agents', id: r.agent!.id })}
+                              >
+                                <AgentAvatar icon={r.agent.icon} cli={r.agent.cli} size="xs" />
+                                <span className="truncate">{r.agent.name}</span>
+                              </button>
+                            ) : (
+                              <span className="text-subtle">{t('（已删除）')}</span>
+                            )}
+                            {r.cycle ? (
+                              <span className="shrink-0 text-[11.5px] text-danger">{t('绕回上层，形成循环')}</span>
+                            ) : over ? (
+                              <span className="shrink-0 text-[11.5px] text-warning">{t('太深，不会展开')}</span>
+                            ) : r.agent && !r.agent.enabled ? (
+                              <span className="shrink-0 text-[11.5px] text-subtle">{t('已停用')}</span>
+                            ) : null}
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  </div>
                 )}
               </div>
             </FormSection>

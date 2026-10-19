@@ -2,8 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
-import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
-import { callOrchTool, openOrchSession, orchMcpApi } from './orch-mcp.ts'
+import { runEngineTurn, type AgentCall, type EngineHost, type Orchestra } from '../shared/engine.ts'
+import { callOrchTool, openOrchSession, orchHint, orchMcpApi } from './orch-mcp.ts'
 
 const agent = (id: string, name: string): Agent => ({
   ...AgentInput.parse({ name }),
@@ -146,4 +146,25 @@ test('编排工具的 MCP：列出工具、调用、结束后失效', async () =
   assert.match(st.result.content[0].text, /- a｜实现（开发）【你】：完成/)
   s.close()
   assert.equal((await post({ jsonrpc: '2.0', id: 3, method: 'tools/list' })).status, 404)
+})
+
+test('编排工具：通用 Agent 列在 spawn_agents 和用法说明里', async () => {
+  const o = {
+    self: 'a',
+    hasMain: false,
+    common: [{ name: '代码侦察', description: '只读定位代码' }],
+  } as unknown as Orchestra
+  const s = openOrchSession(o)
+  const path = new URL(s.url).pathname.replace('/api/mcp', '')
+  const res = await orchMcpApi().request(path, {
+    method: 'POST',
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
+    headers: { 'content-type': 'application/json' },
+  })
+  const tools = (await res.json()).result.tools
+  const spawn = tools.find((x: { name: string }) => x.name === 'spawn_agents')
+  assert.match(spawn.inputSchema.properties.tasks.items.properties.agent.description, /「代码侦察」（只读定位代码）/)
+  assert.match(orchHint(o), /可以派的通用 Agent：「代码侦察」/)
+  assert.doesNotMatch(orchHint({ ...o, common: [] }), /通用 Agent/)
+  s.close()
 })

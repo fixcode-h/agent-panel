@@ -261,6 +261,22 @@ try {
   const A = await agent({ name: '甲', cli: 'claude', instructions: '你是甲，负责规划。' })
   const B = await agent({ name: '乙', cli: 'codex', model: 'gpt-5.6', instructions: '你是乙，负责实现。' })
   const C = await agent({ name: '丙', cli: 'commandcode', extraArgs: ['--effort', 'low'] })
+  {
+    // 引入会绕回自己时拒绝保存；引入自己的直接去掉
+    const put = (a, o) =>
+      fetch(`${base}/agents/${a.id}`, {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...a, ...o }),
+      })
+    assert.equal((await put(A, { includes: [B.id, A.id] })).status, 200)
+    assert.deepEqual((await call('GET', '/agents')).find((a) => a.id === A.id).includes, [B.id])
+    const r = await put(B, { includes: [A.id] })
+    assert.equal(r.status, 400)
+    assert.match((await r.json()).error, /循环：乙 → 甲 → 乙/)
+    assert.equal((await put(A, { includes: [] })).status, 200)
+    step('Agent 引入：会形成循环的拒绝保存')
+  }
   const node = (id, title, agentId, instructions, more = {}) => ({
     id,
     title,

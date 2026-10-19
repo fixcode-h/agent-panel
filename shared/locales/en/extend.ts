@@ -16,7 +16,6 @@ export const EN_EXTEND: Record<string, string> = {
   '（已删除）': '(deleted)',
   不再引入: 'Remove',
   '引入 Agent': 'Include agent',
-  '间接引入：{list}': 'Indirectly included: {list}',
   '把可变的部分做成参数暴露出去：对话时用默认值（没有默认值的先问你），工作流节点上可以直接改。同一个 Agent 换个参数就能走不同的做法。':
     'Expose the parts that vary as parameters: chats use the defaults (and ask you for ones without a default), and workflow nodes can change them. The same agent can then work differently depending on the parameters.',
   'Skill 与开场白': 'Skills and starters',
@@ -53,13 +52,11 @@ export const EN_EXTEND: Record<string, string> = {
   参数名重复: 'Duplicate name',
   '参数名只能用字母、数字、下划线、横线和中文': 'Names can only contain letters, digits, _, - and Chinese characters',
   显示名: 'Label',
-  '选项（每行一个）': 'Options (one per line)',
   '没有默认值，每次都要选': 'No default, choose every time',
   '对话开始前先问你选；工作流里必须在节点上填好。': 'Chats ask you before starting; workflow nodes must set it.',
   默认值: 'Default',
   '选的时候看的提示，例如：严格模式会逐行检查': 'Hint shown when choosing, e.g. Strict checks every line',
   添加参数: 'Add parameter',
-  '例如：\n快速\n标准\n严格': 'e.g.\nQuick\nStandard\nStrict',
   '用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。':
     "Uses this tier's model and effort on the default CLI ({cli}). Follows the agent's tier until changed.",
   模型档位: 'Model tier',
@@ -146,4 +143,29 @@ export const EN_EXTEND: Record<string, string> = {
     "It can't be deleted while a workflow uses it. Change or delete those workflows first.",
   '没有启用，先在这个 CLI 的设置里启用': 'Not enabled. Enable it in this CLI’s settings first',
   未启用: 'Not enabled',
+  '通用 Agent': 'Shared Agent',
+  '工作流里任何 Agent 执行时都可以把子任务派给它，不用写进工作流。':
+    'Any Agent running in a workflow can hand subtasks to it, without adding it to the workflow.',
+  '拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它':
+    'Drag to reorder (or press Alt + arrow keys). Earlier roles are given to it first',
+  '引入关系有循环：{chain}。执行时绕回的那一环会被跳过，设定很可能不完整，请去掉其中一个引入。':
+    'Includes form a loop: {chain}. The step that loops back is skipped at run time, so the role is probably incomplete. Remove one of the includes.',
+  '不再引入「{name}」': 'Stop including "{name}"',
+  '引入了 {depth} 层，超过 {max} 层的不会交给它：{list}。把深层的 Agent 直接引入到上面几层，或者精简引入链。':
+    'Includes go {depth} levels deep, and anything past level {max} is not given to it: {list}. Include the deep Agents in a higher level directly, or shorten the chain.',
+  '「{name}」引入了它，「{name}」的引入链有 {depth} 层，超过 {max} 层的部分不会生效。':
+    '"{name}" includes this Agent, and its include chain is {depth} levels deep. Anything past level {max} has no effect.',
+  '引入层级 · 共 {n} 层（最多展开 {max} 层）': 'Include levels · {n} deep (up to {max} are expanded)',
+  '第 {n} 层': 'Level {n}',
+  '绕回上层，形成循环': 'Loops back to a higher level',
+  '太深，不会展开': 'Too deep, not expanded',
+  选项: 'Options',
+  '已经有「{name}」了': '"{name}" already exists',
+  '最多 {n} 个选项': 'Up to {n} options',
+  '拖动调整顺序（也可以按 Alt + 方向键）': 'Drag to reorder (or press Alt + arrow keys)',
+  '删除选项「{name}」': 'Delete option "{name}"',
+  '输入新选项，回车添加': 'Type a new option and press Enter',
+  '输入选项，回车添加，例如：快速': 'Type an option and press Enter, e.g. Quick',
+  新选项: 'New option',
+  '引入关系会形成循环：{chain}': 'These includes would form a loop: {chain}',
 }
