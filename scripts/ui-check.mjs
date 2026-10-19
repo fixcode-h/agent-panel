@@ -410,12 +410,18 @@ try {
   await check(m, '手机-首页', ['今天要做什么'])
   await m.goto(base + '#/workflows')
   await check(m, '手机-工作流')
+} catch (e) {
+  // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
+  if (process.env.GITHUB_ACTIONS)
+    console.log(`::error title=界面检查::第 ${n} 步之后出错：${String(e?.message ?? e).split('\n')[0]}`)
+  throw e
 } finally {
   await browser.close()
   server.close()
 }
 
 if (errors.length) {
+  if (process.env.GITHUB_ACTIONS) for (const e of errors) console.log(`::error title=界面检查::${e.split('\n')[0]}`)
   console.error('\n' + errors.join('\n'))
   process.exit(1)
 }
