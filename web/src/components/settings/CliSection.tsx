@@ -310,7 +310,12 @@ export function TierTable({
                   value={value[tr.id].effort === sug.effort ? '' : value[tr.id].effort}
                   onChange={(e) => set(tr.id, 'effort', e.target.value)}
                   // 只列这一档实际用的模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                  options={defaultEffortOptions(def, sug.effort, modelEfforts(def, value[tr.id].model || sug.model))}
+                  options={defaultEffortOptions(
+                    def,
+                    sug.effort,
+                    modelEfforts(def, value[tr.id].model || sug.model),
+                    value[tr.id].effort,
+                  )}
                 />
               </>
             )}
@@ -692,6 +697,7 @@ export function CliSection({
               full,
               cliDefaultModel(full)?.defaultEffort,
               modelEfforts(full, defEffortModel),
+              draft.defaultEffort,
             )}
           />
         </Row>

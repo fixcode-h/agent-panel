@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { getCli, type CliDefinition } from '@shared/clis'
 import type { CliModels } from '@shared/schema'
 import { api } from './api'
-import { t } from '@shared/i18n'
+import { effortName } from './cli-style'
 
 /**
  * 本机 CLI 实际支持的模型：从服务端读一次，所有页面共用。
@@ -20,19 +20,6 @@ export const sortEfforts = <T>(list: T[], id: (x: T) => string) =>
     const j = EFFORT_ORDER.indexOf(id(b))
     return (i < 0 ? 99 : i) - (j < 0 ? 99 : j)
   })
-
-/** CLI 新出的思考强度没有中文名时，直接显示原值 */
-const EFFORT_LABELS: Record<string, string> = {
-  off: t('不思考'),
-  none: t('不思考'),
-  minimal: t('最低'),
-  low: t('低'),
-  medium: t('中'),
-  high: t('高'),
-  xhigh: t('很高'),
-  max: t('最高'),
-  ultra: t('极限'),
-}
 
 export function loadCliModels(id: string, refresh = false) {
   if (!refresh && pending.has(id)) return pending.get(id)!
@@ -82,7 +69,7 @@ export function useCliDef(id: string | undefined): CliDefinition | undefined {
       data.efforts.length
         ? data.efforts.map((e) => ({
             id: e,
-            label: EFFORT_LABELS[e] ?? base.efforts.find((x) => x.id === e)?.label ?? e,
+            label: base.efforts.find((x) => x.id === e)?.label ?? effortName(e),
           }))
         : base.efforts,
       (e) => e.id,

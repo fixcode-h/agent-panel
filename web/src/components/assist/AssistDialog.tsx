@@ -337,7 +337,7 @@ function RunPicker({
   const defaultEffort =
     agentRun({ cli: def.id, model }, settings).effort || def.models.find((m) => m.id === usedModel)?.defaultEffort || ''
   // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-  const effortOpts = defaultEffortOptions(def, defaultEffort, modelEfforts(def, usedModel))
+  const effortOpts = defaultEffortOptions(def, defaultEffort, modelEfforts(def, usedModel), effort)
   const compact =
     'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted shadow-none hover:bg-sel hover:text-fg'
   return (

@@ -397,7 +397,12 @@ export function AgentDetail({
                         value={draft.effort === defEffort ? '' : draft.effort}
                         onChange={(e) => set('effort', e.target.value)}
                         // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                        options={defaultEffortOptions(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''))}
+                        options={defaultEffortOptions(
+                          cliDef,
+                          defEffort,
+                          modelEfforts(cliDef, usedModel ?? ''),
+                          draft.effort,
+                        )}
                       />
                     </Field>
                   )}

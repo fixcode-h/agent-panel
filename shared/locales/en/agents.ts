@@ -24,6 +24,7 @@ export const EN_AGENTS: Record<string, string> = {
   '「{name}」': '“{name}”',
   '、': ', ',
   '{name}（默认）': '{name} (default)',
+  '{name} · {label}（这个模型不支持）': '{name} · {label} (not supported by this model)',
   '自动（默认）': 'Auto (default)',
   'auto · 自动（默认）': 'auto · Auto (default)',
   '{tier}档 · {model}': '{tier} tier · {model}',
