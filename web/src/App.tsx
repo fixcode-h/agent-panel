@@ -3,6 +3,7 @@ import { usePageSignals } from '@/lib/page-signal'
 import { Toaster } from 'sonner'
 import { DataProvider, NavCtx, useData, useNav, type Route } from '@/lib/data'
 import { useTaskNotifications } from '@/lib/notify'
+import { useTaskDoneUnread } from '@/lib/task-unread'
 import { ProjectsPage } from '@/pages/ProjectsPage'
 import { HomePage } from '@/pages/HomePage'
 import { ChatPage } from '@/pages/ChatPage'
@@ -85,7 +86,10 @@ function useHashRoute() {
 /** 任务完成通知和标签页标题 */
 function TaskWatcher() {
   const { tasks } = useData()
-  const { go } = useNav()
+  const { route, go } = useNav()
+  // 正在看的对话：项目里的任务或 Chat 里的聊天
+  const viewing = route.page === 'projects' && route.sub ? route.sub : route.page === 'chat' ? (route.id ?? '') : ''
+  useTaskDoneUnread(tasks, viewing)
   useTaskNotifications(tasks, (t) =>
     go(t.projectId ? { page: 'projects', id: t.projectId, sub: t.id } : { page: 'chat', id: t.id }),
   )
