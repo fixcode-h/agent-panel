@@ -4,6 +4,7 @@ export const EN_TASKS: Record<string, string> = {
   '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
   '「{name}」超过 {n} MB': '"{name}" is larger than {n} MB',
   截图: 'Screenshot',
+  请查看附件: 'Please see the attachment',
   '「{name}」上传失败：{error}': 'Failed to upload "{name}": {error}',
   上传中: 'Uploading',
   '移除 {name}': 'Remove {name}',

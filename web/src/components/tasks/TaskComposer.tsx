@@ -21,16 +21,15 @@ import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from 
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import {
+  ATTACHMENT_PROMPT,
   AttachMenu,
   AttachmentChips,
   DropHint,
-  insertRefs,
-  removeRef,
   useAttachments,
   useDropPaste,
   useFileMention,
 } from '@/components/chat/Attachments'
-import { useSlashMenu } from '@/components/chat/SlashMenu'
+import { SlashChip, useSlashMenu } from '@/components/chat/SlashMenu'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
@@ -80,10 +79,7 @@ export function TaskComposer({
   const [isolate, setIsolate] = useState(false)
   const [askUser, setAskUser] = useNewAskUser()
   const ta = useRef<HTMLTextAreaElement>(null)
-  const files = useAttachments(draftKey, {
-    insert: (refs) => insertRefs(ta, prompt, setPrompt, refs),
-    remove: (ref) => setPrompt(removeRef(prompt, ref)),
-  })
+  const files = useAttachments(draftKey)
   const drop = useDropPaste(files.add)
   const mention = useFileMention(project?.id, prompt, setPrompt, ta)
   // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
@@ -110,7 +106,7 @@ export function TaskComposer({
   const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
   const canStart =
     (standalone || !!project) &&
-    !!prompt.trim() &&
+    (!!prompt.trim() || files.attachments.length > 0 || !!slash.picked) &&
     (effMode === 'workflow' ? !!workflow : !!chatRun.cli) &&
     !busy &&
     !files.uploading
@@ -132,7 +128,7 @@ export function TaskComposer({
           model: effMode === 'chat' ? chatRun.model : '',
           effort: effMode === 'chat' ? chatRun.effort : '',
           params: {},
-          prompt,
+          prompt: slash.build(prompt.trim() || (files.attachments.length ? ATTACHMENT_PROMPT : '')),
           attachments: files.attachments,
           isolate: canIsolate && isolate,
           askUser,
@@ -140,6 +136,7 @@ export function TaskComposer({
       )
       setPrompt('')
       files.clear()
+      slash.clear()
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -160,6 +157,11 @@ export function TaskComposer({
         {slash.menu}
         {drop.over && <DropHint />}
         <AttachmentChips items={files.items} onRemove={files.remove} />
+        {slash.picked && (
+          <div className="flex flex-wrap gap-2 px-3 pt-3">
+            <SlashChip item={slash.picked} onRemove={slash.clear} />
+          </div>
+        )}
         <label htmlFor="task-prompt" className="sr-only">
           {t('任务描述')}
         </label>

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { BookOpen, Loader2, SquareSlash, Terminal } from 'lucide-react'
+import { BookOpen, Loader2, SquareSlash, Terminal, X } from 'lucide-react'
 import type { SlashCommand } from '@shared/schema'
 import { getCli } from '@shared/clis'
 import { api } from '@/lib/api'
@@ -23,6 +23,9 @@ interface Item {
   source?: string
   action?: SlashAction
 }
+
+/** 选中的命令或 Skill：输入框里显示成卡片，发送时再拼回「/名字」交给服务端展开 */
+export type PickedSlash = Pick<Item, 'name' | 'group' | 'description' | 'source'>
 
 /** 内置命令：压缩、审查由面板执行；init 每个 CLI 都能用（Claude Code 自己有，其他的由面板展开）；security-review 只有 Claude Code 有 */
 function builtins(cli: string, scope: SlashScope): Item[] {
@@ -70,7 +73,8 @@ function loadCommands(cli: string, projectId: string) {
 
 /**
  * 输入「/」弹出命令菜单：内置命令、CLI 自己带的命令、Skill，随选的 CLI 变化。
- * 选中后把「/名字 」填进输入框（面板执行的命令直接执行），发出去时由服务端按 CLI 展开。
+ * 选中后显示成输入框上方的卡片（面板执行的命令直接执行），发送时把「/名字」拼回要求前面，
+ * 再由服务端按 CLI 展开。
  */
 export function useSlashMenu({
   cli,
@@ -94,6 +98,9 @@ export function useSlashMenu({
   const [cmds, setCmds] = useState<SlashCommand[] | null>(null)
   const [active, setActive] = useState(0)
   const [closed, setClosed] = useState(false)
+  const [picked, setPicked] = useState<PickedSlash | null>(null)
+  // 换 CLI 后原来选的命令不一定还存在，清掉
+  useEffect(() => setPicked(null), [cli])
 
   /** 光标还在第一个词里、而且以「/」开头时才是在输命令 */
   const sync = useCallback(() => {
@@ -146,13 +153,13 @@ export function useSlashMenu({
       onAction(x.action, rest.trim())
       return
     }
-    const next = `/${x.name} ${rest}`
-    setText(next)
+    // 命令不再写进文字：显示成卡片，文字只留后面写的要求
+    setPicked({ name: x.name, group: x.group, description: x.description, source: x.source })
+    setText(rest)
     requestAnimationFrame(() => {
       if (!el) return
       el.focus()
-      const pos = x.name.length + 2
-      el.setSelectionRange(pos, pos)
+      el.setSelectionRange(0, 0)
     })
   }
 
@@ -180,14 +187,24 @@ export function useSlashMenu({
 
   /** 发送前：是面板执行的命令（/compact、/review 分支）就直接执行，返回 true 表示不用再发 */
   const intercept = (v: string) => {
-    if (scope !== 'task' || !onAction) return false
+    // 选的是 CLI 自己的同名命令时按命令发，不要当成面板的压缩 / 审查
+    if (picked || scope !== 'task' || !onAction) return false
     const m = /^\/(compact|review)(?:\s+(\S+))?\s*$/.exec(v.trim())
     if (!m) return false
     if (m[1] === 'compact' && m[2]) return false
     onAction(m[1] as SlashAction, m[2] ?? '')
     setText('')
+    setPicked(null)
     return true
   }
+
+  /** 交给服务端的文字：选中的命令拼回最前面，服务端按 CLI 展开 */
+  const build = (v: string) => {
+    if (!picked) return v
+    const rest = v.trim()
+    return `/${picked.name}${rest ? ` ${rest}` : ''}`
+  }
+  const clear = () => setPicked(null)
 
   const groups: { id: Item['group']; label: string; icon: typeof Terminal }[] = [
     { id: 'builtin', label: t('内置命令'), icon: SquareSlash },
@@ -249,5 +266,30 @@ export function useSlashMenu({
     </div>
   ) : null
 
-  return { sync, onKeyDown, menu, intercept }
+  return { sync, onKeyDown, menu, intercept, build, picked, clear }
+}
+
+/** 输入框上方的命令卡片：图标、/名字、类型，点叉去掉 */
+export function SlashChip({ item, onRemove }: { item: PickedSlash; onRemove: () => void }) {
+  const Icon = item.group === 'skill' ? BookOpen : item.group === 'command' ? Terminal : SquareSlash
+  const label = item.group === 'skill' ? t('Skill') : item.group === 'command' ? t('自定义命令') : t('内置命令')
+  return (
+    <div
+      title={item.description}
+      className="relative flex h-9 max-w-[300px] items-center gap-2 rounded-lg border border-accent/35 bg-accent-soft pr-8 pl-2.5 text-accent"
+    >
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      <span className="truncate font-mono text-[0.78125rem]">/{item.name}</span>
+      <span className="shrink-0 text-[0.6875rem] text-accent/70">{label}</span>
+      <button
+        type="button"
+        aria-label={t('移除 {name}', { name: `/${item.name}` })}
+        title={t('移除 {name}', { name: `/${item.name}` })}
+        onClick={onRemove}
+        className="absolute top-1/2 right-1.5 grid h-5 w-5 -translate-y-1/2 cursor-pointer place-items-center rounded text-accent/70 transition-colors hover:bg-accent/15 hover:text-accent"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </div>
+  )
 }

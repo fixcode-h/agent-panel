@@ -28,8 +28,8 @@ export function taskTitle(prompt: string) {
 }
 
 /**
- * 输入框里引用附件用的标记：粘贴、拖入、选择文件时插到光标处，发送给 CLI 前换成附件的实际路径。
- * 页面上存的是这个标记，用户回头看消息时能看出引用的是哪张图。
+ * 附件引用标记：旧版输入框会把标记插进文字，发送给 CLI 前换成附件的实际路径。
+ * 现在附件只显示成输入框上方的卡片，这里保留是为了继续支持已经存下的带标记的消息。
  */
 export function attachmentRef(a: Pick<Attachment, 'name' | 'mime'>) {
   const image = a.mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name)
