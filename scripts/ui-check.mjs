@@ -113,8 +113,15 @@ try {
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置 Agent' }).first().click()
-  await check(p, '内置Agent', ['通用约束', 'UE 侦察', '已添加'])
+  await check(p, '内置Agent', ['通用约束', 'UE 侦察', '代码侦察', '已添加'])
   await p.keyboard.press('Escape')
+  // Agent 的引入层级和参数的选项编辑（带序号的卡片、回车添加）
+  await p.getByText('开发者', { exact: true }).first().click()
+  await p.getByRole('button', { name: /\{\{vcs\}\}/ }).click()
+  await p.getByRole('textbox', { name: '新选项' }).fill('svn')
+  await p.getByRole('textbox', { name: '新选项' }).press('Enter')
+  await p.getByRole('button', { name: '删除选项「svn」' }).scrollIntoViewIfNeeded()
+  await check(p, 'Agent-参数选项', ['通用约束', 'svn'])
   await p.goto(base + '#/library')
   await check(p, 'Skills与命令', ['commit-message', 'code-review'])
   await p.getByRole('radio', { name: '自带 Skill' }).click()

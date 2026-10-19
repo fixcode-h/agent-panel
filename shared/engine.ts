@@ -15,6 +15,7 @@
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 import type { ReviewTarget } from './clis.ts'
+import { commonAgents } from './agent-role.ts'
 import {
   END,
   START,
@@ -131,6 +132,8 @@ export interface Orchestra {
   self: string
   /** 这个工作流有没有主 Agent 调度（没有时不能提问） */
   hasMain: boolean
+  /** 可以直接派的通用 Agent（名字和简介），spawn_agents 里列出来 */
+  common: { name: string; description: string }[]
   status(): string
   spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -1023,6 +1026,9 @@ function makeOrchestra(
   return {
     self: self.id,
     hasMain: !!ctx.main,
+    common: commonAgents(host.agents)
+      .filter((a) => a.id !== self.agentId)
+      .map((a) => ({ name: a.name, description: a.description })),
     status: () => statusTree(host, self.id),
     spawn(tasks) {
       const depth = (self.id.match(/\/sub\//g) ?? []).length

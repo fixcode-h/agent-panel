@@ -1,5 +1,5 @@
 import type { Agent, AgentInput, Category, Tag, TagInput, Workflow, WorkflowInput } from '../schema.ts'
-import { BUILTIN_AGENTS, type BuiltinAgent } from './agents.ts'
+import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, type BuiltinAgent } from './agents.ts'
 import { BUILTIN_WORKFLOWS, buildWorkflow, builtinAgentKeys, type BuiltinWorkflow } from './workflows.ts'
 
 /**
@@ -43,7 +43,10 @@ function withIncludes(start: string[]): BuiltinAgent[] {
 
 /** 这个内置工作流要新建哪些 Agent（本机已经有的会复用） */
 export const missingAgents = (w: BuiltinWorkflow, agents: Agent[]) =>
-  withIncludes(builtinAgentKeys(w)).filter((b) => !findBuiltin(agents, b.key))
+  withIncludes(workflowAgentKeys(w)).filter((b) => !findBuiltin(agents, b.key))
+
+/** 工作流要的内置 Agent，加上通用 Agent：节点执行时会派它们做子任务 */
+const workflowAgentKeys = (w: BuiltinWorkflow) => [...new Set([...builtinAgentKeys(w), ...COMMON_AGENT_KEYS])]
 
 /** 本机已经添加过的内置 Agent（按 key） */
 export const addedBuiltin = (agents: Agent[], key: string) => findBuiltin(agents, key)
@@ -124,7 +127,7 @@ export async function addBuiltinAgents(keys: string[], state: BuiltinState, api:
  */
 export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState, api: BuiltinOps) {
   const { agents, created, newCategories, newTags, category, createAgents } = context(state, api)
-  const tagId = await createAgents(builtinAgentKeys(w))
+  const tagId = await createAgents(workflowAgentKeys(w))
 
   const names = new Set(state.workflows.map((x) => x.name))
   let name = w.name

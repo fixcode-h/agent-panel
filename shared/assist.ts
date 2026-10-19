@@ -458,6 +458,7 @@ const agentExtras = (a?: Agent) => ({
   skills: a?.skills ?? [],
   starters: a?.starters ?? [],
   tags: a?.tags ?? [],
+  common: a?.common ?? false,
   origin: a?.origin ?? '',
 })
 

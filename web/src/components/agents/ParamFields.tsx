@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, Plus, SlidersHorizontal, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, GripVertical, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import type { AgentParam, ParamValue, ParamValues } from '@shared/schema'
 import { PARAM_TYPES, coerceValue, paramLabel, resolveParams, valueText } from '@shared/agent-role'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -295,10 +296,10 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                   </label>
                 </div>
                 {(p.type === 'select' || p.type === 'multi') && (
-                  <label className="flex flex-col gap-1">
-                    <span className="text-xs text-muted">{t('选项（每行一个）')}</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">{t('选项')}</span>
                     <OptionsInput value={p.options} onChange={(options) => set(i, { options })} />
-                  </label>
+                  </div>
                 )}
                 <Checkbox
                   checked={p.ask}
@@ -335,28 +336,105 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
   )
 }
 
-/** 选项的多行输入：边打边存会把正在输入的空行吃掉，所以本地留一份文字，失焦时再整理 */
+/** 选项最多几个、每个多长（和 schema 一致） */
+const MAX_OPTIONS = 30
+const MAX_OPTION_LEN = 60
+
+/**
+ * 选项编辑：上面是带序号的选项卡片，可以拖拽排序、点 × 删除；下面的输入框回车添加一个。
+ * 粘贴多行文字时每行加一个，方便从别处整段搬过来。
+ */
 function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }) {
-  const [text, setText] = useState(value.join('\n'))
-  const tidy = (s: string) => [
-    ...new Set(
-      s
-        .split('\n')
-        .map((x) => x.trim())
-        .filter(Boolean),
-    ),
-  ]
+  const [text, setText] = useState('')
+  const [error, setError] = useState('')
+  const { itemProps, drag, over } = useDragSort((from, to) => onChange(moveItem(value, from, to)))
+  const add = (items: string[]) => {
+    const next = [...value]
+    const dup: string[] = []
+    let full = false
+    for (const raw of items) {
+      const x = raw.trim().slice(0, MAX_OPTION_LEN)
+      if (!x) continue
+      if (next.includes(x)) dup.push(x)
+      else if (next.length < MAX_OPTIONS) next.push(x)
+      else full = true
+    }
+    if (next.length !== value.length) onChange(next)
+    setError(
+      dup.length
+        ? t('已经有「{name}」了', { name: dup.join(t('、')) })
+        : full
+          ? t('最多 {n} 个选项', { n: MAX_OPTIONS })
+          : '',
+    )
+    return !dup.length
+  }
   return (
-    <textarea
-      rows={Math.min(8, Math.max(3, value.length + 1))}
-      value={text}
-      onChange={(e) => {
-        setText(e.target.value)
-        onChange(tidy(e.target.value).slice(0, 30))
-      }}
-      onBlur={() => setText(tidy(text).join('\n'))}
-      placeholder={t('例如：\n快速\n标准\n严格')}
-      className="w-full resize-y rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] leading-relaxed outline-none focus:border-focus"
-    />
+    <div className="flex flex-col gap-2">
+      {value.length > 0 && (
+        <ul className="flex flex-wrap gap-1.5" aria-label={t('选项')}>
+          {value.map((o, i) => (
+            <li
+              key={o}
+              {...itemProps(i, value.length)}
+              tabIndex={0}
+              title={t('拖动调整顺序（也可以按 Alt + 方向键）')}
+              className={cn(
+                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[13px] transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                drag === i && 'opacity-40',
+                over === i && drag !== null && drag !== i && 'border-accent bg-accent/10',
+              )}
+            >
+              <GripVertical className="h-3.5 w-3.5 shrink-0 text-subtle opacity-60 group-hover:opacity-100" />
+              <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-md bg-sel px-1 font-mono text-[11px] text-muted tabular-nums">
+                {i + 1}
+              </span>
+              <span className="truncate px-0.5">{o}</span>
+              <button
+                type="button"
+                draggable={false}
+                aria-label={t('删除选项「{name}」', { name: o })}
+                title={t('删除')}
+                onClick={() => onChange(value.filter((_, j) => j !== i))}
+                className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <Input
+        value={text}
+        maxLength={MAX_OPTION_LEN}
+        disabled={value.length >= MAX_OPTIONS}
+        placeholder={
+          value.length >= MAX_OPTIONS
+            ? t('最多 {n} 个选项', { n: MAX_OPTIONS })
+            : value.length
+              ? t('输入新选项，回车添加')
+              : t('输入选项，回车添加，例如：快速')
+        }
+        onChange={(e) => {
+          setText(e.target.value)
+          if (error) setError('')
+        }}
+        onKeyDown={(e) => {
+          // 输入法选字时的回车不算
+          if (e.key !== 'Enter' || e.nativeEvent.isComposing) return
+          e.preventDefault()
+          if (text.trim() && add([text])) setText('')
+        }}
+        onPaste={(e) => {
+          const s = e.clipboardData.getData('text')
+          if (!s.includes('\n')) return
+          e.preventDefault()
+          add(s.split(/\r?\n/))
+        }}
+        className={cn('h-9 text-[13px]', error && 'border-danger')}
+        aria-label={t('新选项')}
+      />
+      {error && <span className="text-[11.5px] text-danger">{error}</span>}
+    </div>
   )
 }

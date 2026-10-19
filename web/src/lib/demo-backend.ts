@@ -53,7 +53,7 @@ import {
 } from '@shared/local-image'
 import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
-import { chatMissingParams } from '@shared/agent-role'
+import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import { beginRun, endRun, newTask, questionAnswers, taskSummary, trackWait, withAttachments } from '@shared/task'
 import { END, START, autoLayout, edge, newFlow, newNode, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
@@ -1039,6 +1039,15 @@ function route(method: string, url: string, body: unknown): unknown {
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
     if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
+    // 和服务端一样：去掉引入自己的，会形成循环就拒绝
+    const self = method === 'POST' ? '' : id
+    input.includes = [...new Set(input.includes)].filter((x) => x !== self)
+    const before = d.agents.find((a) => a.id === self)
+    if (self && !(before && includeCycle(before, d.agents).length)) {
+      const all = d.agents.map((a) => (a.id === self ? { ...a, ...input } : a))
+      const cycle = includeCycle({ id: self, includes: input.includes }, all)
+      if (cycle.length) fail(`引入关系会形成循环：${cycleText(cycle, all)}`)
+    }
     return method === 'POST' ? create('agents', input) : update('agents', id, input, 'Agent 不存在')
   }
 
