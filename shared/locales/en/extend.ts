@@ -126,7 +126,6 @@ export const EN_EXTEND: Record<string, string> = {
   已添加: 'Added',
   '{n} 步': '{n} steps',
   '将新建 {n} 个 Agent': 'will create {n} agent(s)',
-  再加一份: 'Add another',
   '自带 Skill': 'Bundled skills',
   从内置工作流添加: 'Add from built-in workflows',
   版本控制: 'Version control',
@@ -141,4 +140,10 @@ export const EN_EXTEND: Record<string, string> = {
   全部添加: 'Add all',
   '添加内置 Agent': 'Add built-in agents',
   '还可以添加整理好的内置 Agent': 'You can also add ready-made built-in agents',
+  '只删除工作流，用到的 Agent 会留着。': 'Only the workflow is deleted; the agents it uses are kept.',
+  '删除 Agent「{name}」？': 'Delete agent "{name}"?',
+  '工作流还在用它时不能删，先改掉或删除那些工作流。':
+    "It can't be deleted while a workflow uses it. Change or delete those workflows first.",
+  '没有启用，先在这个 CLI 的设置里启用': 'Not enabled. Enable it in this CLI’s settings first',
+  未启用: 'Not enabled',
 }

@@ -5,6 +5,7 @@ import { BUNDLED_CATEGORIES } from '@shared/library'
 import { SKILL_TARGET, type DeployConfig, type DeployState, type DeployStatus } from '@shared/deploy'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { useData } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -28,6 +29,9 @@ const DOC_STATUS: Record<DeployStatus, string> = {
  * 默认不加载，全局说明末尾附上技能清单，任务需要时再读。和 fixcode-h/Agent 原来的部署脚本做的事一样。
  */
 export function DeploySection() {
+  const { clis } = useData()
+  // 只有已安装、已启用的 CLI 能部署；没启用的列出来但不能选
+  const active = (id: string) => clis.some((c) => c.id === id && c.installed && c.enabled)
   const [st, setSt] = useState<DeployState | null>(null)
   const [draft, setDraft] = useState<DeployConfig | null>(null)
   const [error, setError] = useState('')
@@ -79,7 +83,11 @@ export function DeploySection() {
   const run = async () => {
     setBusy('run')
     try {
-      const { result: r, state } = await api.runDeploy({ ...draft, overwrite })
+      const { result: r, state } = await api.runDeploy({
+        ...draft,
+        clis: draft.clis.filter(active),
+        overwrite,
+      })
       apply(state)
       const docs = r.docs.filter((d) => d.result !== 'same').length
       toast.success(
@@ -195,9 +203,14 @@ export function DeploySection() {
       <Group title={t('写到哪些 CLI')}>
         <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
           {st.targets.map((d) => (
-            <li key={d.cli} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5">
+            <li
+              key={d.cli}
+              title={active(d.cli) ? undefined : t('没有启用，先在这个 CLI 的设置里启用')}
+              className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5"
+            >
               <Checkbox
-                checked={draft.clis.includes(d.cli)}
+                checked={active(d.cli) && draft.clis.includes(d.cli)}
+                disabled={!active(d.cli)}
                 onChange={(v) => toggle('clis', d.cli, v)}
                 label={
                   <span className="flex items-center gap-1.5">
@@ -215,7 +228,7 @@ export function DeploySection() {
                   d.status === 'same' ? 'text-success' : d.status === 'changed' ? 'text-warning' : 'text-subtle',
                 )}
               >
-                {DOC_STATUS[d.status]}
+                {active(d.cli) ? DOC_STATUS[d.status] : t('未启用')}
               </span>
             </li>
           ))}

@@ -100,7 +100,8 @@ export function AgentsPage() {
   }
 
   const duplicate = (a: Agent) => {
-    const { id, createdAt, updatedAt, ...rest } = a
+    // 复制出来的是自己的，不再算内置的（不然再加内置工作流时会被当成已有的复用）
+    const { id, createdAt, updatedAt, origin, ...rest } = a
     create({ ...rest, name: t('{name} 副本', { name: a.name }) })
   }
 

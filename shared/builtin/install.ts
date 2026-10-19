@@ -48,6 +48,10 @@ export const missingAgents = (w: BuiltinWorkflow, agents: Agent[]) =>
 /** 本机已经添加过的内置 Agent（按 key） */
 export const addedBuiltin = (agents: Agent[], key: string) => findBuiltin(agents, key)
 
+/** 本机已经添加过的这个内置工作流；以前添加的没有记来源，按名字认 */
+export const addedBuiltinWorkflow = (workflows: Workflow[], w: BuiltinWorkflow) =>
+  workflows.find((x) => x.origin === originOf(w.key)) ?? workflows.find((x) => !x.origin && x.name === w.name)
+
 function context(state: BuiltinState, api: BuiltinOps) {
   const agents = [...state.agents]
   const categories = [...state.categories]
@@ -130,6 +134,7 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
     name,
     categoryId: await category(w.category, 'workflow'),
     tags: [tagId],
+    origin: originOf(w.key),
   })
   return { workflow, created, newCategories, newTags }
 }

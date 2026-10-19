@@ -1,18 +1,20 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Loader2, Plus } from 'lucide-react'
+import { Check, Loader2, Plus, Trash2 } from 'lucide-react'
 import type { Workflow } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { BUILTIN_AGENTS } from '@shared/builtin/agents'
 import { BUILTIN_WORKFLOWS, builtinAgentKeys, type BuiltinWorkflow } from '@shared/builtin/workflows'
-import { addBuiltinWorkflow, missingAgents } from '@/lib/builtin'
+import { api } from '@/lib/api'
+import { addBuiltinWorkflow, addedBuiltinWorkflow, missingAgents } from '@/lib/builtin'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/dialog'
 
 /**
- * 内置工作流：按分类列出，点「添加」连同缺的 Agent 一起建出来。
- * 同一个模板可以加多次（例如改成不同的版本），已经加过的标出来。
+ * 内置工作流：按分类列出，点「添加」连同缺的 Agent 一起建出来；已经添加的显示「删除」。
+ * 删除只删工作流，用到的 Agent 留着（可能被别的工作流用，或者你改过），要删去 Agent 页的「内置 Agent」。
  */
 export function BuiltinDialog({
   open,
@@ -25,6 +27,7 @@ export function BuiltinDialog({
 }) {
   const { agents, categories, tags, workflows, setAgents, setCategories, setTags, setWorkflows } = useData()
   const [busy, setBusy] = useState('')
+  const [removing, setRemoving] = useState<Workflow | null>(null)
   const groups = [...new Set(BUILTIN_WORKFLOWS.map((w) => w.category))].map((c) => ({
     name: c,
     items: BUILTIN_WORKFLOWS.filter((w) => w.category === c),
@@ -65,7 +68,7 @@ export function BuiltinDialog({
             <h3 className="text-[12px] font-medium text-subtle">{g.name}</h3>
             <ul className="flex flex-col divide-y overflow-hidden rounded-xl border">
               {g.items.map((w) => {
-                const added = workflows.some((x) => x.name === w.name)
+                const added = addedBuiltinWorkflow(workflows, w)
                 const lack = missingAgents(w, agents).length
                 const steps = w.flows[0].nodes.length
                 return (
@@ -86,19 +89,21 @@ export function BuiltinDialog({
                         {lack > 0 && ` · ${t('将新建 {n} 个 Agent', { n: lack })}`}
                       </p>
                     </div>
-                    <Button
-                      size="sm"
-                      variant={added ? 'secondary' : 'primary'}
-                      disabled={!!busy}
-                      onClick={() => void add(w)}
-                    >
-                      {busy === w.key ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="h-3.5 w-3.5" />
-                      )}
-                      {added ? t('再加一份') : t('添加')}
-                    </Button>
+                    {added ? (
+                      <Button size="sm" variant="secondary" disabled={!!busy} onClick={() => setRemoving(added)}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {t('删除')}
+                      </Button>
+                    ) : (
+                      <Button size="sm" disabled={!!busy} onClick={() => void add(w)}>
+                        {busy === w.key ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                        {t('添加')}
+                      </Button>
+                    )}
                   </li>
                 )
               })}
@@ -106,6 +111,22 @@ export function BuiltinDialog({
           </section>
         ))}
       </div>
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={t('删除工作流「{name}」？', { name: removing?.name ?? '' })}
+        description={t('只删除工作流，用到的 Agent 会留着。')}
+        onConfirm={async () => {
+          if (!removing) return
+          try {
+            await api.deleteWorkflow(removing.id)
+            setWorkflows((ws) => ws.filter((x) => x.id !== removing.id))
+            setRemoving(null)
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+      />
     </Modal>
   )
 }

@@ -1,17 +1,19 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Loader2, Plus } from 'lucide-react'
+import { Check, Loader2, Plus, Trash2 } from 'lucide-react'
 import type { Agent } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { BUILTIN_AGENTS } from '@shared/builtin/agents'
+import { api } from '@/lib/api'
 import { addBuiltinAgents, addedBuiltin } from '@/lib/builtin'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
+import { ConfirmDialog } from '@/components/ui/dialog'
 
 /**
  * 内置 Agent：按分类列出，点「添加」才建出来（连同它引入的「通用约束」），不会自动装。
- * 已经添加过的标出来；添加内置工作流时用到的 Agent 也会自动建，这里能看到。
+ * 已经添加的显示「删除」；添加内置工作流时用到的 Agent 也会自动建，这里能看到。
  */
 export function BuiltinAgentsDialog({
   open,
@@ -24,6 +26,7 @@ export function BuiltinAgentsDialog({
 }) {
   const { agents, categories, tags, workflows, setAgents, setCategories, setTags } = useData()
   const [busy, setBusy] = useState('')
+  const [removing, setRemoving] = useState<Agent | null>(null)
   const groups = [...new Set(BUILTIN_AGENTS.map((b) => b.category))].map((c) => ({
     name: c,
     items: BUILTIN_AGENTS.filter((b) => b.category === c),
@@ -94,19 +97,26 @@ export function BuiltinAgentsDialog({
                         <p className="mt-1 font-mono text-[11.5px] text-subtle">{b.agent.skills.join(' · ')}</p>
                       )}
                     </div>
-                    <Button
-                      size="sm"
-                      variant={added ? 'secondary' : 'primary'}
-                      disabled={!!busy || added}
-                      onClick={() => void add([b.key], b.key)}
-                    >
-                      {busy === b.key ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="h-3.5 w-3.5" />
-                      )}
-                      {added ? t('已添加') : t('添加')}
-                    </Button>
+                    {added ? (
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={!!busy}
+                        onClick={() => setRemoving(addedBuiltin(agents, b.key) ?? null)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                        {t('删除')}
+                      </Button>
+                    ) : (
+                      <Button size="sm" disabled={!!busy} onClick={() => void add([b.key], b.key)}>
+                        {busy === b.key ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Plus className="h-3.5 w-3.5" />
+                        )}
+                        {t('添加')}
+                      </Button>
+                    )}
                   </li>
                 )
               })}
@@ -114,6 +124,31 @@ export function BuiltinAgentsDialog({
           </section>
         ))}
       </div>
+      <ConfirmDialog
+        open={!!removing}
+        onOpenChange={(o) => !o && setRemoving(null)}
+        title={t('删除 Agent「{name}」？', { name: removing?.name ?? '' })}
+        description={t('工作流还在用它时不能删，先改掉或删除那些工作流。')}
+        onConfirm={async () => {
+          if (!removing) return
+          try {
+            await api.deleteAgent(removing.id)
+            // 和服务端一样：引入了它的 Agent 去掉这条引入
+            setAgents((as) =>
+              as
+                .filter((a) => a.id !== removing.id)
+                .map((a) =>
+                  a.includes.includes(removing.id)
+                    ? { ...a, includes: a.includes.filter((x) => x !== removing.id) }
+                    : a,
+                ),
+            )
+            setRemoving(null)
+          } catch (e) {
+            toast.error((e as Error).message)
+          }
+        }}
+      />
     </Modal>
   )
 }

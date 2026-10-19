@@ -281,6 +281,8 @@ const WorkflowFields = z.object({
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
   budgetUsd: z.number().min(0).max(100000).optional(),
   budgetTokens: z.number().int().min(0).optional(),
+  /** 从内置模板建出来的工作流记下来源（builtin:<key>），内置工作流列表里据此显示「删除」 */
+  origin: z.string().max(80).optional(),
 })
 export const WorkflowInput = z.preprocess(migrateWorkflow, WorkflowFields)
 export type WorkflowInput = z.infer<typeof WorkflowFields>

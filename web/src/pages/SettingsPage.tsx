@@ -69,10 +69,11 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'categories', label: t('项目分类'), icon: Layers },
   { id: 'tags', label: t('标签'), icon: TagIcon },
   { id: 'models', label: t('默认 CLI'), icon: Cpu },
+  // 部署也是 CLI 的事（写全局说明、放技能），放在 CLI 二级列表里默认 CLI 下面
+  { id: 'deploy', label: t('部署'), icon: Rocket },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
   { id: 'assist', label: t('AI 创建'), icon: Sparkles },
-  { id: 'deploy', label: t('部署'), icon: Rocket },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon },
   { id: 'styles', label: t('风格库'), icon: Palette },
   { id: 'data', label: t('数据'), icon: HardDrive },
@@ -240,7 +241,8 @@ function SettingsBody({
 
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const statusOf = (id: string) => clis.find((c) => c.id === id)
-  const inCli = cur.id === 'models' || !!cur.cli
+  const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || !!s.cli
+  const inCli = cliPage(cur)
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
 
   return (
@@ -250,7 +252,7 @@ function SettingsBody({
         className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
       >
         <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[20px] font-semibold md:block">{t('设置')}</span>
-        {SECTIONS.filter((s) => !s.cli).map((s) => {
+        {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s) => {
           // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
           const on = s.id === 'models' ? inCli : s.id === cur.id
           return (
@@ -283,7 +285,7 @@ function SettingsBody({
           aria-label="CLI"
           className="flex shrink-0 gap-0.5 overflow-x-auto border-b p-2 md:w-[232px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3 md:pt-6"
         >
-          {SECTIONS.filter((s) => s.id === 'models' || s.cli).map((s, i, list) => {
+          {SECTIONS.filter(cliPage).map((s, i, list) => {
             const on = s.id === cur.id
             const st = s.cli && statusOf(s.cli.id)
             return (
