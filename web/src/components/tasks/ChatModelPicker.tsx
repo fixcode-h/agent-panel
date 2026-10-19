@@ -37,7 +37,7 @@ function ChipSelect({
         title={title}
         aria-label={title}
         className={cn(
-          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel',
+          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel',
           !dot && 'font-mono',
           className,
         )}
@@ -52,12 +52,12 @@ function ChipSelect({
           {options.map((o, i) => (
             <div key={o.value + i}>
               {o.group && o.group !== options[i - 1]?.group && (
-                <p className="px-2.5 pt-2 pb-1 text-[11px] text-subtle">{o.group}</p>
+                <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] text-subtle">{o.group}</p>
               )}
               {/* 行距和设置里的下拉框一样 */}
               <PopoverClose className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => onChange(o.value)}>
                 {dot && <span className="h-2 w-2 shrink-0 rounded-[2px]" style={{ background: dot(o.value) }} />}
-                <span className={cn('min-w-0 flex-1 truncate text-[12.5px]', !dot && 'font-mono')}>{o.label}</span>
+                <span className={cn('min-w-0 flex-1 truncate text-[0.78125rem]', !dot && 'font-mono')}>{o.label}</span>
                 {o.value === value && <Check className="h-4 w-4 shrink-0 text-accent" />}
               </PopoverClose>
             </div>
@@ -117,7 +117,7 @@ export function useRunAuthor(run: ChatRun | undefined) {
 /** 对话时选 CLI、模型和思考强度；都是实际的值，默认的标「（默认）」 */
 export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
-  if (!usable.length) return <span className="px-2 text-[12px] text-subtle">{t('没有可用的 CLI')}</span>
+  if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 CLI')}</span>
   const clisOpts = usable.map((c) => ({
     value: c.id,
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,

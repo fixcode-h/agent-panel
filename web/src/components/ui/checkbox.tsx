@@ -38,7 +38,7 @@ export function Checkbox({
         {checked && <Check className="h-3 w-3" strokeWidth={3} />}
       </span>
       <span className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[13.5px] text-fg">{label}</span>
+        <span className="text-[0.84375rem] text-fg">{label}</span>
         {hint && <span className="text-xs leading-relaxed text-subtle">{hint}</span>}
       </span>
     </button>

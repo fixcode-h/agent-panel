@@ -60,7 +60,7 @@ export function NextWorkflows({ task }: { task: Task }) {
 
   return (
     <section aria-label={t('推荐的下一步')} className="flex flex-col gap-2">
-      <h3 className="px-1 text-[12.5px] font-medium text-muted">{t('推荐的下一步')}</h3>
+      <h3 className="px-1 text-[0.78125rem] font-medium text-muted">{t('推荐的下一步')}</h3>
       <div className="flex flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
         {recs.map((r, i) => {
           const w = workflows.find((x) => x.id === r.id)!
@@ -80,12 +80,12 @@ export function NextWorkflows({ task }: { task: Task }) {
                 <WorkflowIcon className="h-4 w-4" strokeWidth={1.8} />
               </span>
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                <span className="truncate text-[13.5px] font-medium">{w.name}</span>
+                <span className="truncate text-[0.84375rem] font-medium">{w.name}</span>
                 {(r.reason || w.description) && (
-                  <span className="line-clamp-2 text-[12.5px] text-muted">{r.reason || w.description}</span>
+                  <span className="line-clamp-2 text-[0.78125rem] text-muted">{r.reason || w.description}</span>
                 )}
               </span>
-              <span className="mt-1 flex shrink-0 items-center gap-1 text-[12.5px] text-subtle transition-colors group-hover:text-accent">
+              <span className="mt-1 flex shrink-0 items-center gap-1 text-[0.78125rem] text-subtle transition-colors group-hover:text-accent">
                 {busy === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : t('执行')}
                 {busy !== r.id && <ArrowRight className="h-3.5 w-3.5" />}
               </span>

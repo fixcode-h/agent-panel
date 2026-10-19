@@ -67,7 +67,7 @@ export function ConceptBoard({
 
   return (
     <div className="absolute inset-0 z-20 flex flex-col bg-[#18181a] text-white/80">
-      <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-[12px]">
+      <div className="flex h-11 shrink-0 items-center gap-2 px-3 text-[0.75rem]">
         <span className="font-medium text-white">{t('原画')}</span>
         {cur && (
           <span className="font-mono text-white/50">
@@ -75,7 +75,7 @@ export function ConceptBoard({
           </span>
         )}
         {concept.approved && (
-          <span className="inline-flex items-center gap-1 rounded-md bg-success/20 px-1.5 py-0.5 text-[11px] text-success">
+          <span className="inline-flex items-center gap-1 rounded-md bg-success/20 px-1.5 py-0.5 text-[0.6875rem] text-success">
             <BadgeCheck className="h-3.5 w-3.5" />
             {t('已确认模板：{id}', { id: concept.approved })}
           </span>
@@ -201,13 +201,13 @@ export function ConceptBoard({
             )}
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-2 text-[12.5px] text-white/50">
+          <div className="flex flex-col items-center gap-2 text-[0.78125rem] text-white/50">
             <Loader2 className="h-5 w-5 animate-spin" />
             {progress?.text ?? t('正在出原画…')}
           </div>
         )}
       </div>
-      <p className="pointer-events-none shrink-0 px-3 pb-1 text-center text-[11.5px] text-white/40">
+      <p className="pointer-events-none shrink-0 px-3 pb-1 text-center text-[0.71875rem] text-white/40">
         {mine.length
           ? t('在右边的对话框里补充修改意见后发送，AI 会在这张的基础上改')
           : t('挑一张，用上面的工具在图上标出要改的地方再发送；满意了点「用这张做模板」')}
@@ -215,7 +215,7 @@ export function ConceptBoard({
       <div className="flex shrink-0 gap-3 overflow-x-auto border-t border-white/10 px-3 py-2.5">
         {rounds.map((r) => (
           <div key={r} className="flex shrink-0 flex-col gap-1">
-            <span className="text-[10.5px] text-white/40">{t('第 {n} 轮', { n: r })}</span>
+            <span className="text-[0.65625rem] text-white/40">{t('第 {n} 轮', { n: r })}</span>
             <div className="flex gap-1.5">
               {concept.images
                 .filter((i) => i.round === r)
@@ -246,7 +246,7 @@ export function ConceptBoard({
         ))}
         {pending > 0 && (
           <div className="flex shrink-0 flex-col gap-1">
-            <span className="text-[10.5px] text-white/40">{t('正在出')}</span>
+            <span className="text-[0.65625rem] text-white/40">{t('正在出')}</span>
             <div className="flex gap-1.5">
               {Array.from({ length: pending }, (_, k) => (
                 <span

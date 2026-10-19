@@ -35,15 +35,15 @@ export function ComfyWebDialog({ open, onOpenChange }: { open: boolean; onOpenCh
           className="fixed inset-3 z-50 flex flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none md:inset-6"
         >
           <div className="flex h-11 shrink-0 items-center gap-2 border-b px-4">
-            <D.Title className="text-[14px] font-semibold">{t('ComfyUI 网页')}</D.Title>
-            {url && <span className="font-mono text-[12px] text-subtle">{url}</span>}
+            <D.Title className="text-[0.875rem] font-semibold">{t('ComfyUI 网页')}</D.Title>
+            {url && <span className="font-mono text-[0.75rem] text-subtle">{url}</span>}
             <span className="flex-1" />
             {url && (
               <a
                 href={url}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[12.5px] text-muted hover:bg-sel hover:text-fg"
+                className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
               >
                 <ExternalLink className="h-3.5 w-3.5" />
                 {t('在浏览器中打开')}
@@ -60,7 +60,7 @@ export function ComfyWebDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <iframe title="ComfyUI" src={url} className="min-h-0 flex-1 border-0 bg-[#202020]" />
           ) : (
             <div className="grid flex-1 place-items-center p-6 text-center">
-              <div className="flex max-w-[360px] flex-col items-center gap-3 text-[13px] text-muted">
+              <div className="flex max-w-[360px] flex-col items-center gap-3 text-[0.8125rem] text-muted">
                 <p>{t('ComfyUI 还没有启动。启动后可以在这里直接看节点图、调参数和手动出图。')}</p>
                 <Button onClick={() => void start()} disabled={starting}>
                   {starting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}

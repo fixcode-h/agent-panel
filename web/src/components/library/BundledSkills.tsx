@@ -70,12 +70,12 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
   const need = (i: BundledSkill) => targets.some((id) => i.status[id] !== 'same')
   const cliName = (id: string) => clis.find((c) => c.id === id)?.name ?? id
 
-  if (error) return <p className="text-[13px] text-warning">{t('读取失败：{error}', { error })}</p>
-  if (!items) return <p className="text-[13px] text-subtle">{t('读取中…')}</p>
+  if (error) return <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
+  if (!items) return <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card px-4 py-3">
-        <span className="text-[13px] text-muted">{t('装到')}</span>
+        <span className="text-[0.8125rem] text-muted">{t('装到')}</span>
         {targetsAll.map((c) => (
           <Checkbox
             key={c.id}
@@ -107,13 +107,13 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
         </Button>
       </div>
       {!groups.length && (
-        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[13px] text-subtle">
+        <p className="rounded-xl border border-dashed px-4 py-10 text-center text-[0.8125rem] text-subtle">
           {t('没有符合的{kind}。', { kind: 'Skill' })}
         </p>
       )}
       {groups.map((g) => (
         <section key={g.id} className="flex flex-col gap-2">
-          <h2 className="px-1 text-[12px] font-medium text-subtle">
+          <h2 className="px-1 text-[0.75rem] font-medium text-subtle">
             {g.label} · {g.items.length}
           </h2>
           <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
@@ -123,15 +123,15 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
                 <li key={i.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
                   <Package className="h-4 w-4 shrink-0 text-accent" />
                   <div className="min-w-0 flex-[1_1_260px]">
-                    <p className="truncate font-mono text-[13.5px]">
+                    <p className="truncate font-mono text-[0.84375rem]">
                       {i.name}
                       {i.files > 0 && (
-                        <span className="ml-2 font-sans text-[11.5px] text-subtle">
+                        <span className="ml-2 font-sans text-[0.71875rem] text-subtle">
                           {t('另有 {n} 个文件', { n: i.files })}
                         </span>
                       )}
                     </p>
-                    {i.description && <p className="line-clamp-2 text-[12.5px] text-muted">{i.description}</p>}
+                    {i.description && <p className="line-clamp-2 text-[0.78125rem] text-muted">{i.description}</p>}
                   </div>
                   <span className="flex flex-wrap gap-1.5">
                     {targetsAll
@@ -141,7 +141,7 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
                           key={c.id}
                           title={STATUS_LABEL[i.status[c.id]]}
                           className={cn(
-                            'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[11.5px] text-muted',
+                            'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted',
                             i.status[c.id] === 'changed' && 'border-dashed',
                           )}
                         >

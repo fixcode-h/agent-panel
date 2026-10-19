@@ -77,13 +77,13 @@ export function DiffView({ diff }: { diff: string }) {
   const rows = useMemo(() => parseDiff(diff), [diff])
   const numbered = rows.some((r) => r.old !== undefined || r.new !== undefined)
   return (
-    <div className="max-h-[420px] overflow-auto font-mono text-[12px] leading-[1.6]">
+    <div className="max-h-[420px] overflow-auto font-mono text-[0.75rem] leading-[1.6]">
       <table className="w-full border-collapse">
         <tbody>
           {rows.map((r, i) =>
             r.kind === 'hunk' ? (
               <tr key={i} className="bg-field/60 text-subtle">
-                <td colSpan={numbered ? 4 : 2} className="px-3 py-0.5 text-[11px]">
+                <td colSpan={numbered ? 4 : 2} className="px-3 py-0.5 text-[0.6875rem]">
                   {r.text || '⋯'}
                 </td>
               </tr>
@@ -116,10 +116,12 @@ export function DiffView({ diff }: { diff: string }) {
 function Block({ label, text, tone }: { label: string; text: string; tone?: 'danger' }) {
   return (
     <div className="flex gap-3 px-3 py-2">
-      <span className="w-8 shrink-0 pt-px font-sans text-[10.5px] font-medium tracking-wider text-subtle">{label}</span>
+      <span className="w-8 shrink-0 pt-px font-sans text-[0.65625rem] font-medium tracking-wider text-subtle">
+        {label}
+      </span>
       <pre
         className={cn(
-          'max-h-[320px] min-w-0 flex-1 overflow-auto font-mono text-[12px] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
+          'max-h-[320px] min-w-0 flex-1 overflow-auto font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
           tone === 'danger' ? 'text-danger' : 'text-fg/90',
         )}
       >

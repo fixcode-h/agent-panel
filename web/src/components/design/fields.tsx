@@ -28,12 +28,12 @@ export function setPath<T>(o: T, path: string, v: unknown): T {
 }
 
 const box =
-  'h-7 w-full min-w-0 rounded-md border border-line bg-field px-1.5 text-[12px] text-fg outline-none focus:border-focus'
+  'h-7 w-full min-w-0 rounded-md border border-line bg-field px-1.5 text-[0.75rem] text-fg outline-none focus:border-focus'
 
 export function FieldRow({ label, children, title }: { label: string; children: React.ReactNode; title?: string }) {
   return (
     <div className="flex min-h-8 items-center gap-2 px-3 py-0.5">
-      <span title={title ?? label} className="w-[92px] shrink-0 truncate text-[12px] text-subtle">
+      <span title={title ?? label} className="w-[92px] shrink-0 truncate text-[0.75rem] text-subtle">
         {label}
       </span>
       <div className="flex min-w-0 flex-1 items-center gap-1">{children}</div>
@@ -71,7 +71,7 @@ export function NumInput({
   return (
     <label className="relative flex min-w-0 flex-1 items-center">
       {prefix && (
-        <span className="pointer-events-none absolute left-1.5 font-mono text-[10px] text-subtle/80">{prefix}</span>
+        <span className="pointer-events-none absolute left-1.5 font-mono text-[0.625rem] text-subtle/80">{prefix}</span>
       )}
       <input
         aria-label={label ?? prefix}
@@ -259,7 +259,7 @@ export function EnumInput({
       value={value}
       onChange={(e) => onChange(e.target.value)}
       options={options.map((o) => ({ value: o, label: o }))}
-      className="h-7 rounded-md px-2 text-[12px]"
+      className="h-7 rounded-md px-2 text-[0.75rem]"
     />
   )
 }
@@ -341,7 +341,7 @@ export function ImagePick({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border border-line bg-field px-1 text-left text-[12px] hover:border-line-strong">
+        <button className="flex h-8 min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md border border-line bg-field px-1 text-left text-[0.75rem] hover:border-line-strong">
           <Thumb src={src} className="h-6 w-6" />
           <span className={cn('min-w-0 flex-1 truncate', !cur && 'text-subtle')}>
             {cur ? cur.name : id ? t('图片不存在') : t('无图片（纯色）')}
@@ -351,7 +351,7 @@ export function ImagePick({
       <PopoverContent align="end" className="max-h-[320px] w-[240px] overflow-y-auto p-1">
         <button
           onClick={() => (onChange(''), setOpen(false))}
-          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[12.5px] hover:bg-sel"
+          className="flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.78125rem] hover:bg-sel"
         >
           <span className="grid h-7 w-7 place-items-center rounded border border-dashed border-line-strong">
             <ImageOff className="h-3.5 w-3.5 text-subtle" />
@@ -363,13 +363,13 @@ export function ImagePick({
             key={i.id}
             onClick={() => (onChange(`img:${i.id}`), setOpen(false))}
             className={cn(
-              'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[12.5px] hover:bg-sel',
+              'flex h-9 w-full cursor-pointer items-center gap-2 rounded-md px-1.5 text-left text-[0.78125rem] hover:bg-sel',
               i.id === id && 'bg-accent-soft',
             )}
           >
             <Thumb src={url(i)} className="h-7 w-7" />
             <span className="min-w-0 flex-1 truncate">{i.name}</span>
-            <span className="font-mono text-[10.5px] text-subtle">
+            <span className="font-mono text-[0.65625rem] text-subtle">
               {i.width}×{i.height}
             </span>
           </button>
@@ -435,7 +435,7 @@ export function BrushInput({
         />
       </div>
       <div className="flex items-center gap-1">
-        <span className="w-12 shrink-0 text-[11px] text-subtle">DrawAs</span>
+        <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">DrawAs</span>
         <EnumInput
           label="DrawAs"
           value={b.DrawAs ?? 'Image'}
@@ -444,17 +444,17 @@ export function BrushInput({
         />
       </div>
       <div className="flex items-center gap-1">
-        <span className="w-12 shrink-0 text-[11px] text-subtle">Size</span>
+        <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Size</span>
         <Vec2Input value={b.ImageSize} onChange={(ImageSize) => set({ ImageSize })} />
       </div>
       {showMargin && (
         <div className="flex items-center gap-1">
-          <span className="w-12 shrink-0 text-[11px] text-subtle">Margin</span>
+          <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Margin</span>
           <MarginInput step={0.05} value={b.Margin} onChange={(Margin) => set({ Margin })} />
         </div>
       )}
       <div className="flex items-center gap-1">
-        <span className="w-12 shrink-0 text-[11px] text-subtle">Tint</span>
+        <span className="w-12 shrink-0 text-[0.6875rem] text-subtle">Tint</span>
         <ColorInput value={b.TintColor} onChange={(TintColor) => set({ TintColor })} />
       </div>
     </div>

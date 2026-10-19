@@ -113,7 +113,7 @@ export function TaskRow({
           if (e.key === 'Enter') e.currentTarget.blur()
           if (e.key === 'Escape') setRenaming(false)
         }}
-        className="h-8 rounded-lg border border-accent bg-field px-2 text-[13px] text-fg outline-none"
+        className="h-8 rounded-lg border border-accent bg-field px-2 text-[0.8125rem] text-fg outline-none"
       />
     )
   return (
@@ -125,7 +125,7 @@ export function TaskRow({
             aria-current={active || undefined}
             title={task.title}
             className={cn(
-              'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg text-left text-[13px] transition-colors',
+              'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg text-left text-[0.8125rem] transition-colors',
               active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
               className,
             )}
@@ -141,8 +141,8 @@ export function TaskRow({
               <TaskStatusIcon status={task.status} className="h-3.5 w-3.5" />
             ) : null}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
-            {hint && <span className="max-w-[40%] shrink truncate text-[11px] text-subtle">{hint}</span>}
-            <span className="shrink-0 text-[11px] text-subtle tabular-nums">{shortTime(askedAt(task))}</span>
+            {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
+            <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">{shortTime(askedAt(task))}</span>
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>
@@ -225,7 +225,7 @@ export function TaskSearch({
 }) {
   return (
     <div className="flex shrink-0 items-center gap-1 px-0.5 pb-1">
-      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent bg-field/70 px-2 text-[13px] focus-within:border-focus/60 focus-within:bg-field">
+      <label className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-transparent bg-field/70 px-2 text-[0.8125rem] focus-within:border-focus/60 focus-within:bg-field">
         <Search className="h-3.5 w-3.5 shrink-0 text-subtle" />
         <input
           id="sidebar-search"

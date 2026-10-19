@@ -90,7 +90,7 @@ export function DetectedApis({
     <div className="flex flex-col gap-2 rounded-xl border border-dashed p-3.5">
       <div className="flex items-center gap-2">
         <ScanSearch className="h-4 w-4 shrink-0 text-accent" />
-        <span className="min-w-0 flex-1 text-[13px] font-medium">
+        <span className="min-w-0 flex-1 text-[0.8125rem] font-medium">
           {!list
             ? t('正在识别本机 CLI 配置的 API…')
             : shown.length
@@ -109,7 +109,7 @@ export function DetectedApis({
         </Button>
       </div>
       {!!shown.length && (
-        <p className="text-[12px] leading-relaxed text-subtle">
+        <p className="text-[0.75rem] leading-relaxed text-subtle">
           {t('读的是各个 CLI 自己的环境变量和配置文件。确认是你要用的再存进来，存好后其他 CLI 也能选用。')}
         </p>
       )}
@@ -119,17 +119,17 @@ export function DetectedApis({
           <div key={`${d.cli}:${d.api.id}`} className="flex items-center gap-3 rounded-lg bg-field/40 px-3 py-2.5">
             <span className="h-2 w-2 shrink-0 rounded-full" style={{ background: cliColor(d.cli) }} />
             <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-              <span className="flex min-w-0 items-center gap-2 text-[13px]">
+              <span className="flex min-w-0 items-center gap-2 text-[0.8125rem]">
                 <span className="truncate font-medium">{d.api.name}</span>
-                <span className="shrink-0 rounded bg-sel px-1.5 text-[11px] text-muted">
+                <span className="shrink-0 rounded bg-sel px-1.5 text-[0.6875rem] text-muted">
                   {API_PROTOCOL_LABEL[d.api.protocol]}
                 </span>
               </span>
-              <span className="truncate font-mono text-[11.5px] text-muted" title={d.api.baseUrl}>
+              <span className="truncate font-mono text-[0.71875rem] text-muted" title={d.api.baseUrl}>
                 {[d.api.baseUrl || t('默认地址'), mask(d.api.apiKey) || t('没有密钥')].join(' · ')}
                 {d.api.models.length ? ` · ${t('{n} 个模型', { n: d.api.models.length })}` : ''}
               </span>
-              <span className="truncate text-[11px] text-subtle" title={d.source}>
+              <span className="truncate text-[0.6875rem] text-subtle" title={d.source}>
                 {t('来自 {cli}：{source}', { cli: getCli(d.cli)?.name ?? d.cli, source: d.source })}
               </span>
             </div>
@@ -138,7 +138,7 @@ export function DetectedApis({
                 {t('选用')}
               </Button>
             ) : have ? (
-              <span className="flex shrink-0 items-center gap-1 text-[12px] text-subtle" title={have.name}>
+              <span className="flex shrink-0 items-center gap-1 text-[0.75rem] text-subtle" title={have.name}>
                 <Check className="h-3.5 w-3.5 text-success" />
                 {t('已在列表中')}
               </span>

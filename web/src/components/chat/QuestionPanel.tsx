@@ -136,7 +136,7 @@ export function QuestionPanel({
                 aria-selected={i === at}
                 onClick={() => setAt(i)}
                 className={cn(
-                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[11.5px] transition-colors',
+                  'flex h-6 shrink-0 cursor-pointer items-center gap-1 rounded-md px-2 text-[0.71875rem] transition-colors',
                   i === at ? 'bg-sel text-fg' : 'text-subtle hover:bg-sel/60 hover:text-fg',
                 )}
               >
@@ -151,7 +151,7 @@ export function QuestionPanel({
           </div>
         )}
       </div>
-      <p className="px-4 pt-2 pb-2.5 text-[14px] leading-relaxed font-medium [overflow-wrap:anywhere]">
+      <p className="px-4 pt-2 pb-2.5 text-[0.875rem] leading-relaxed font-medium [overflow-wrap:anywhere]">
         {q.question}
         {q.multiSelect && <span className="ml-2 text-xs font-normal text-subtle">{t('可以选多个')}</span>}
       </p>
@@ -171,8 +171,10 @@ export function QuestionPanel({
             >
               <Mark n={i + 1} on={on} multi={q.multiSelect} />
               <span className="min-w-0 flex-1">
-                <span className="block text-[13.5px] font-medium">{o.label}</span>
-                {o.description && <span className="block text-[12.5px] leading-snug text-muted">{o.description}</span>}
+                <span className="block text-[0.84375rem] font-medium">{o.label}</span>
+                {o.description && (
+                  <span className="block text-[0.78125rem] leading-snug text-muted">{o.description}</span>
+                )}
               </span>
             </button>
           )
@@ -204,7 +206,7 @@ export function QuestionPanel({
             }}
             placeholder={q.options.length ? t('都不合适？自己输入…') : t('输入你的回答…')}
             aria-label={t('自己输入回答')}
-            className="h-7 min-w-0 flex-1 bg-transparent text-[13.5px] outline-none placeholder:text-subtle"
+            className="h-7 min-w-0 flex-1 bg-transparent text-[0.84375rem] outline-none placeholder:text-subtle"
           />
         </label>
       </div>
@@ -214,7 +216,7 @@ export function QuestionPanel({
             type="button"
             onClick={() => void onSkip()}
             disabled={busy}
-            className="cursor-pointer rounded-md px-2 py-1 text-[12.5px] text-subtle hover:bg-sel hover:text-fg"
+            className="cursor-pointer rounded-md px-2 py-1 text-[0.78125rem] text-subtle hover:bg-sel hover:text-fg"
           >
             {skipLabel ?? t('不回答')}
           </button>
@@ -224,7 +226,7 @@ export function QuestionPanel({
           <button
             type="button"
             onClick={() => setAt(at - 1)}
-            className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-[12.5px] text-muted hover:bg-sel hover:text-fg"
+            className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2.5 text-[0.78125rem] text-muted hover:bg-sel hover:text-fg"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
             {t('上一题')}
@@ -235,7 +237,7 @@ export function QuestionPanel({
           onClick={next}
           disabled={!done(a) || (last && !all) || busy}
           title={last && !all ? t('还有问题没回答') : undefined}
-          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3.5 text-[12.5px] font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg bg-accent px-3.5 text-[0.78125rem] font-medium text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {last ? (n > 1 ? t('提交 {n} 个回答', { n }) : t('提交回答')) : t('下一题')}
@@ -250,7 +252,7 @@ function Mark({ n, on, multi, icon }: { n: number; on: boolean; multi?: boolean;
   return (
     <span
       className={cn(
-        'mt-px grid h-5 w-5 shrink-0 place-items-center border font-mono text-[11px] tabular-nums transition-colors',
+        'mt-px grid h-5 w-5 shrink-0 place-items-center border font-mono text-[0.6875rem] tabular-nums transition-colors',
         multi ? 'rounded-[5px]' : 'rounded-full',
         on ? 'border-accent bg-accent text-white' : 'border-line-strong text-subtle',
       )}

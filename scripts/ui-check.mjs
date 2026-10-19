@@ -302,6 +302,8 @@ try {
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   await p.getByRole('button', { name: '设置' }).first().click()
   await check(p, '设置', ['常规', '内容宽度'])
+  await p.getByRole('button', { name: '字体', exact: true }).click()
+  await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
   await p.getByRole('button', { name: 'CLI', exact: true }).first().click()

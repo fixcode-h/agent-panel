@@ -558,4 +558,35 @@ export const EN_SETTINGS: Record<string, string> = {
   '以后不再提醒，关闭时直接停止': "Don't ask again; stop right away when closing",
   'AI 排查结束：{title}': 'AI troubleshooting finished: {title}',
   '上一个报错还在排查，排查完再试': 'The previous error is still being troubleshot; try again when it finishes',
+  // 字体
+  字体: 'Fonts',
+  英文字体: 'Latin font',
+  '默认是内置的 Maple Mono NL：不带符号连字，=> 、!= 这些不会合成一个符号。':
+    'Defaults to the bundled Maple Mono NL, the no-ligature build: => and != stay as separate characters.',
+  'Maple Mono NL（内置）': 'Maple Mono NL (bundled)',
+  'IBM Plex Sans（内置）': 'IBM Plex Sans (bundled)',
+  'JetBrains Mono（内置）': 'JetBrains Mono (bundled)',
+  系统字体: 'System font',
+  中文字体: 'Chinese font',
+  '英文字体里没有汉字，汉字用这里选的字体。思源黑体和 Maple Mono 中文版是同一套字形。':
+    'The Latin font has no Chinese characters, so they use this font. Noto Sans SC shares its glyphs with the Chinese build of Maple Mono.',
+  '思源黑体 Noto Sans SC（内置）': 'Noto Sans SC (bundled)',
+  '系统字体（苹方 / 微软雅黑）': 'System font (PingFang / Microsoft YaHei)',
+  代码字体: 'Code font',
+  '代码块、命令、路径用的等宽字体。': 'Monospace font for code blocks, commands and paths.',
+  自定义字体: 'Custom font',
+  '填本机装了的字体名，多个用逗号隔开，会排在上面选的字体前面；没有的字还用上面的。留空不用。':
+    'Names of fonts installed on this computer, separated by commas. They go before the fonts above, which still cover missing characters. Leave empty to skip.',
+  '例如 Sarasa Gothic SC': 'e.g. Sarasa Gothic SC',
+  字号: 'Font size',
+  '界面正文的字号，其他文字按比例跟着变。': 'Size of body text; other text scales with it.',
+  字间距: 'Letter spacing',
+  '字和字之间的距离，负数更紧凑。Maple Mono 是等宽字体，默认稍微收紧一点。':
+    'Space between characters; negative is tighter. Maple Mono is monospaced, so it is slightly tightened by default.',
+  行高: 'Line height',
+  '对话回复和文档正文的行距。': 'Line spacing of chat replies and documents.',
+  'Agent 面板按工作流调度本机的编码 CLI。': 'Agent Panel runs local coding CLIs by workflow.',
+  空格宽度: 'Space width',
+  '调整空格的宽度，中英文之间的空隙主要来自它。等宽字体的空格比较宽，默认收窄；代码里的空格不调。':
+    'Adjusts the width of spaces, which make most of the gap between Chinese and Latin text. Monospaced fonts have wide spaces, so they are narrowed by default; spaces in code are left alone.',
 }

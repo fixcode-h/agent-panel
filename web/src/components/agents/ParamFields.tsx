@@ -50,7 +50,7 @@ export function ParamControl({
                   onChange(on ? cur.filter((x) => x !== o) : [...cur, o])
                 }}
                 className={cn(
-                  'h-7 cursor-pointer rounded-md border px-2 text-[12.5px] transition-colors',
+                  'h-7 cursor-pointer rounded-md border px-2 text-[0.78125rem] transition-colors',
                   on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:text-fg',
                 )}
               >
@@ -126,12 +126,12 @@ export function ParamsForm({
           <div key={p.key} className="flex flex-col gap-1.5">
             <span className="flex items-center gap-2 text-xs">
               <span className={cn('font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
-              {p.ask && <span className="text-[11px] text-subtle">{t('必填')}</span>}
+              {p.ask && <span className="text-[0.6875rem] text-subtle">{t('必填')}</span>}
               {changed && !p.ask && (
                 <button
                   type="button"
                   onClick={() => set(p.key, undefined)}
-                  className="ml-auto cursor-pointer text-[11px] text-accent"
+                  className="ml-auto cursor-pointer text-[0.6875rem] text-accent"
                 >
                   {t('恢复默认')}
                 </button>
@@ -143,7 +143,7 @@ export function ParamsForm({
               onChange={(v) => set(p.key, v)}
               placeholder={!p.ask && p.default !== undefined ? t('默认：{v}', { v: valueText(p.default) }) : undefined}
             />
-            {p.description && <span className="text-[11.5px] leading-relaxed text-subtle">{p.description}</span>}
+            {p.description && <span className="text-[0.71875rem] leading-relaxed text-subtle">{p.description}</span>}
           </div>
         )
       })}
@@ -176,7 +176,7 @@ export function ParamsChip({
       <PopoverTrigger
         title={missing.length ? t('还有参数没选：{list}', { list: missing.map(paramLabel).join(t('、')) }) : summary}
         className={cn(
-          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors hover:bg-sel data-[state=open]:bg-sel',
+          'inline-flex h-8 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:bg-sel data-[state=open]:bg-sel',
           missing.length ? 'text-warning' : 'text-subtle hover:text-fg',
         )}
       >
@@ -230,10 +230,10 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                 className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
                 aria-expanded={open}
               >
-                <code className={cn('shrink-0 font-mono text-[12.5px]', badKey ? 'text-danger' : 'text-accent')}>
+                <code className={cn('shrink-0 font-mono text-[0.78125rem]', badKey ? 'text-danger' : 'text-accent')}>
                   {`{{${p.key}}}`}
                 </code>
-                <span className="truncate text-[13px]">{p.label}</span>
+                <span className="truncate text-[0.8125rem]">{p.label}</span>
                 <span className="ml-auto shrink-0 text-xs text-subtle">
                   {PARAM_TYPES.find((x) => x.id === p.type)?.label}
                   {' · '}
@@ -267,10 +267,10 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                       value={p.key}
                       maxLength={40}
                       onChange={(e) => set(i, { key: e.target.value.trim() })}
-                      className={cn('h-9 font-mono text-[13px]', badKey && 'border-danger')}
+                      className={cn('h-9 font-mono text-[0.8125rem]', badKey && 'border-danger')}
                     />
                     {badKey && (
-                      <span className="text-[11.5px] text-danger">
+                      <span className="text-[0.71875rem] text-danger">
                         {dupKeys.has(p.key) ? t('参数名重复') : t('参数名只能用字母、数字、下划线、横线和中文')}
                       </span>
                     )}
@@ -380,13 +380,13 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
               tabIndex={0}
               title={t('拖动调整顺序（也可以按 Alt + 方向键）')}
               className={cn(
-                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[13px] transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                'group inline-flex h-8 max-w-full cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[0.8125rem] transition-colors outline-none select-none focus-visible:border-focus active:cursor-grabbing',
                 drag === i && 'opacity-40',
                 over === i && drag !== null && drag !== i && 'border-accent bg-accent/10',
               )}
             >
               <GripVertical className="h-3.5 w-3.5 shrink-0 text-subtle opacity-60 group-hover:opacity-100" />
-              <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-md bg-sel px-1 font-mono text-[11px] text-muted tabular-nums">
+              <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-md bg-sel px-1 font-mono text-[0.6875rem] text-muted tabular-nums">
                 {i + 1}
               </span>
               <span className="truncate px-0.5">{o}</span>
@@ -431,10 +431,10 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
           e.preventDefault()
           add(s.split(/\r?\n/))
         }}
-        className={cn('h-9 text-[13px]', error && 'border-danger')}
+        className={cn('h-9 text-[0.8125rem]', error && 'border-danger')}
         aria-label={t('新选项')}
       />
-      {error && <span className="text-[11.5px] text-danger">{error}</span>}
+      {error && <span className="text-[0.71875rem] text-danger">{error}</span>}
     </div>
   )
 }

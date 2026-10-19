@@ -51,7 +51,7 @@ export function ListPane({
             value={query}
             onChange={(e) => onQuery(e.target.value)}
             placeholder={placeholder}
-            className="h-[38px] w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[13px] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
+            className="h-[38px] w-full rounded-lg border border-line-strong bg-field pr-3 pl-9 text-[0.8125rem] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
           />
         </label>
       </div>
@@ -145,5 +145,5 @@ export function ListItem({
 }
 
 export function ListEmpty({ children }: { children: React.ReactNode }) {
-  return <div className="px-2 py-8 text-center text-[13px] text-subtle">{children}</div>
+  return <div className="px-2 py-8 text-center text-[0.8125rem] text-subtle">{children}</div>
 }

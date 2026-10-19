@@ -30,7 +30,7 @@ export function SystemNote({ text, error, className }: { text: string; error?: b
     return (
       <div
         role="alert"
-        className="relative flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[13px] leading-relaxed whitespace-pre-wrap text-fg"
+        className="relative flex items-start gap-2 rounded-xl border border-danger/35 bg-danger/8 px-3.5 py-2.5 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-fg"
       >
         {/* 图标放在和第一行一样高的框里居中，单行、多行都和文字对齐 */}
         <span className="flex h-[1.625em] shrink-0 items-center">
@@ -94,7 +94,7 @@ function Thinking({ text, live }: { text: string; live: boolean }) {
         <div
           ref={box}
           className={cn(
-            'border-l-2 border-line-strong pl-3 text-[13px] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
+            'border-l-2 border-line-strong pl-3 text-[0.8125rem] leading-relaxed whitespace-pre-wrap text-muted [overflow-wrap:anywhere]',
             live && 'max-h-40 overflow-y-auto',
           )}
         >
@@ -172,7 +172,7 @@ export function PendingAuthor({ author, children }: { author: Author; children: 
     <div className="flex gap-3">
       <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
       <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex items-center gap-2 pt-0.5 text-[13px]">
+        <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
           <span className="font-medium">{author.name}</span>
           {author.model && <span className="font-mono text-xs text-subtle">{author.model}</span>}
         </div>
@@ -199,7 +199,7 @@ const MessageBody = memo(
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {!compact && (
-            <div className="flex items-center gap-2 pt-0.5 text-[13px]">
+            <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
               <span className="font-medium">{name}</span>
               {model && <span className="font-mono text-xs text-subtle">{model}</span>}
             </div>

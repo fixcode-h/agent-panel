@@ -182,8 +182,8 @@ export function ComfyPage() {
     <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-hidden">
       <header className="flex flex-wrap items-center gap-3 border-b px-4 py-3 md:px-6">
         <div className="min-w-0 flex-1">
-          <h1 className="text-[15px] font-semibold">{t('ComfyUI 工作流')}</h1>
-          <p className="mt-0.5 text-[12.5px] text-subtle">
+          <h1 className="text-[0.9375rem] font-semibold">{t('ComfyUI 工作流')}</h1>
+          <p className="mt-0.5 text-[0.78125rem] text-subtle">
             {t('UI 设计里选「本机」生成图片时用这里的工作流；自动模式按图片用途（图标、按钮、面板、背景…）挑选。')}
           </p>
         </div>
@@ -230,7 +230,7 @@ export function ComfyPage() {
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">
         <aside className="flex shrink-0 flex-col gap-3 overflow-y-auto border-b p-3 md:w-[300px] md:border-r md:border-b-0">
           {!data ? (
-            <p className="p-3 text-[13px] text-subtle">{t('读取中…')}</p>
+            <p className="p-3 text-[0.8125rem] text-subtle">{t('读取中…')}</p>
           ) : (
             <>
               {[
@@ -238,9 +238,9 @@ export function ComfyPage() {
                 { title: t('我的'), items: own },
               ].map((g) => (
                 <section key={g.title} className="flex flex-col gap-0.5">
-                  <h2 className="px-2 pb-1 text-[11.5px] font-medium text-subtle">{g.title}</h2>
+                  <h2 className="px-2 pb-1 text-[0.71875rem] font-medium text-subtle">{g.title}</h2>
                   {!g.items.length && (
-                    <p className="px-2 py-1 text-[12px] text-subtle">
+                    <p className="px-2 py-1 text-[0.75rem] text-subtle">
                       {t('还没有。可以复制内置的来改，或者用 AI 生成、从 ComfyUI 导入。')}
                     </p>
                   )}
@@ -254,7 +254,7 @@ export function ComfyPage() {
                         draft?.id === w.id ? 'bg-sel' : 'hover:bg-sel/60',
                       )}
                     >
-                      <span className="flex w-full items-center gap-1.5 text-[13px] font-medium">
+                      <span className="flex w-full items-center gap-1.5 text-[0.8125rem] font-medium">
                         <span className="min-w-0 flex-1 truncate">{w.name}</span>
                         <span
                           title={ready(w) ? t('模型已下载，可以用') : t('模型还没下载')}
@@ -264,7 +264,7 @@ export function ComfyPage() {
                           )}
                         />
                       </span>
-                      <span className="text-[11.5px] text-subtle">
+                      <span className="text-[0.71875rem] text-subtle">
                         {WORKFLOW_USE_LABEL[w.use]}
                         {w.model ? ` · ${localModel(w.model)?.name ?? w.model}` : ''}
                       </span>
@@ -274,8 +274,8 @@ export function ComfyPage() {
               ))}
               {draftIsNew && (
                 <section className="flex flex-col gap-0.5">
-                  <h2 className="px-2 pb-1 text-[11.5px] font-medium text-subtle">{t('未保存')}</h2>
-                  <div className="rounded-lg bg-sel px-2.5 py-2 text-[13px] font-medium">{draft.name}</div>
+                  <h2 className="px-2 pb-1 text-[0.71875rem] font-medium text-subtle">{t('未保存')}</h2>
+                  <div className="rounded-lg bg-sel px-2.5 py-2 text-[0.8125rem] font-medium">{draft.name}</div>
                 </section>
               )}
             </>
@@ -284,12 +284,12 @@ export function ComfyPage() {
 
         <section className="min-h-0 flex-1 overflow-y-auto">
           {!draft ? (
-            <p className="p-8 text-center text-[13px] text-subtle">{t('选一个工作流查看和修改')}</p>
+            <p className="p-8 text-center text-[0.8125rem] text-subtle">{t('选一个工作流查看和修改')}</p>
           ) : (
             <div className="mx-auto flex max-w-[860px] flex-col gap-4 p-4 md:p-6">
               <div className="flex flex-wrap items-center gap-2">
                 {readOnly && (
-                  <span className="inline-flex items-center gap-1 rounded-md bg-sel px-2 py-0.5 text-[12px] text-muted">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-sel px-2 py-0.5 text-[0.75rem] text-muted">
                     <Lock className="h-3 w-3" />
                     {t('内置，只读')}
                   </span>
@@ -297,7 +297,7 @@ export function ComfyPage() {
                 {model && (
                   <span
                     className={cn(
-                      'rounded-md px-2 py-0.5 text-[12px]',
+                      'rounded-md px-2 py-0.5 text-[0.75rem]',
                       ready(draft) ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning',
                     )}
                   >
@@ -333,7 +333,7 @@ export function ComfyPage() {
                 )}
               </div>
               {note && (
-                <p className="rounded-xl border border-accent/40 bg-accent-soft/40 px-3 py-2 text-[13px] leading-relaxed whitespace-pre-wrap">
+                <p className="rounded-xl border border-accent/40 bg-accent-soft/40 px-3 py-2 text-[0.8125rem] leading-relaxed whitespace-pre-wrap">
                   {note}
                 </p>
               )}
@@ -380,7 +380,9 @@ export function ComfyPage() {
               </Field>
               <div className="flex min-w-0 flex-col gap-1.5">
                 <div className="flex items-center gap-3">
-                  <span className="flex-1 text-[12.5px] font-medium text-muted">{t('节点图（ComfyUI 接口格式）')}</span>
+                  <span className="flex-1 text-[0.78125rem] font-medium text-muted">
+                    {t('节点图（ComfyUI 接口格式）')}
+                  </span>
                   <Segmented
                     label={t('节点图的显示方式')}
                     value={graph ? view : 'json'}
@@ -405,17 +407,17 @@ export function ComfyPage() {
                       setGraphText(e.target.value)
                       setDirty(true)
                     }}
-                    className="font-mono text-[12px] leading-[1.5]"
+                    className="font-mono text-[0.75rem] leading-[1.5]"
                   />
                 )}
-                <span className="text-[12px] leading-relaxed text-subtle">
+                <span className="text-[0.75rem] leading-relaxed text-subtle">
                   {t(
                     '占位符：{{prompt}} 描述、{{negative}} 反向描述、{{width}} {{height}} 尺寸、{{count}} 张数、{{seed}} 随机种子',
                   )}
                 </span>
               </div>
               {problems.length > 0 && (
-                <ul className="flex flex-col gap-1 text-[12.5px] text-danger">
+                <ul className="flex flex-col gap-1 text-[0.78125rem] text-danger">
                   {problems.map((p) => (
                     <li key={p}>{p}</li>
                   ))}
@@ -471,9 +473,9 @@ export function ComfyPage() {
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex min-w-0 flex-col gap-1.5">
-      <span className="text-[12.5px] font-medium text-muted">{label}</span>
+      <span className="text-[0.78125rem] font-medium text-muted">{label}</span>
       {children}
-      {hint && <span className="text-[12px] leading-relaxed text-subtle">{hint}</span>}
+      {hint && <span className="text-[0.75rem] leading-relaxed text-subtle">{hint}</span>}
     </label>
   )
 }
@@ -522,7 +524,7 @@ function AssistModal({
       title={mode === 'create' ? t('AI 生成工作流') : t('AI 优化「{name}」', { name: base?.name ?? '' })}
       footer={
         <>
-          <span className="flex-1 text-[12px] text-subtle">
+          <span className="flex-1 text-[0.75rem] text-subtle">
             {t('用「AI 创建」里设置的 CLI；ComfyUI 在运行时会按它装的节点来写')}
           </span>
           <Button onClick={() => void run()} disabled={busy || !text.trim()}>
@@ -544,7 +546,7 @@ function AssistModal({
           <button
             key={x}
             onClick={() => setText(x)}
-            className="cursor-pointer rounded-full border px-2.5 py-1 text-[12px] text-muted hover:border-accent hover:text-accent"
+            className="cursor-pointer rounded-full border px-2.5 py-1 text-[0.75rem] text-muted hover:border-accent hover:text-accent"
           >
             {x}
           </button>
@@ -596,7 +598,7 @@ function ImportModal({
       title={t('从 ComfyUI 导入工作流')}
       footer={
         <>
-          <span className="flex-1 text-[12px] text-danger">{error}</span>
+          <span className="flex-1 text-[0.75rem] text-danger">{error}</span>
           <Button onClick={go} disabled={!text.trim()}>
             <Plus className="h-3.5 w-3.5" />
             {t('导入')}
@@ -604,7 +606,7 @@ function ImportModal({
         </>
       }
     >
-      <p className="text-[12.5px] leading-relaxed text-subtle">
+      <p className="text-[0.78125rem] leading-relaxed text-subtle">
         {t(
           '在 ComfyUI 里打开工作流，菜单「工作流 → 导出（API）」，把得到的 JSON 贴在下面。描述、尺寸、种子会自动换成占位符。',
         )}
@@ -618,7 +620,7 @@ function ImportModal({
           setText(e.target.value)
           setError('')
         }}
-        className="font-mono text-[12px]"
+        className="font-mono text-[0.75rem]"
         placeholder='{ "3": { "class_type": "KSampler", "inputs": { ... } } }'
       />
     </Modal>

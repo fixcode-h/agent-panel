@@ -917,6 +917,29 @@ export type CliSettings = z.infer<typeof CliSettings>
 export const CONTENT_WIDTH = 1000
 export const CONTENT_MAX = 1280
 
+/** 各英文字体默认的空格调整：只有等宽的 Maple Mono 需要收窄 */
+export const WORD_SPACING: Record<'maple' | 'plex' | 'system', number> = { maple: -0.2, plex: 0, system: 0 }
+/** 字体：界面（英文）、中文、代码各选一种，字号、字间距、空格宽度、行高可调 */
+export const Appearance = z.object({
+  /** 界面的英文字体：默认内置的 Maple Mono NL（不带符号连字的版本） */
+  uiFont: z.enum(['maple', 'plex', 'system']).catch('maple').default('maple'),
+  /** 中文字体：默认内置的思源黑体（Noto Sans SC），和 Maple Mono 中文版用的是同一套字形 */
+  cjkFont: z.enum(['noto', 'system']).catch('noto').default('noto'),
+  /** 代码、命令、路径用的等宽字体 */
+  monoFont: z.enum(['maple', 'jetbrains']).catch('maple').default('maple'),
+  /** 本机装了的字体名，填了就排在最前面，缺的字再用上面选的 */
+  customFont: z.string().trim().max(200).default(''),
+  /** 界面正文字号（像素），其他文字按比例跟着缩放 */
+  fontSize: z.number().min(12).max(18).catch(14).default(14),
+  /** 字间距（em）：Maple Mono 是等宽字体，英文字母本来就疏，默认收紧一点 */
+  letterSpacing: z.number().min(-0.08).max(0.15).catch(-0.02).default(-0.02),
+  /** 空格的宽度调整（em，CSS word-spacing）：等宽字体的空格有半个汉字宽，中英文混排时显得空，默认收窄。代码里不调 */
+  wordSpacing: z.number().min(-0.4).max(0.3).catch(-0.2).default(-0.2),
+  /** 对话和文档正文的行高 */
+  lineHeight: z.number().min(1.3).max(2.2).catch(1.75).default(1.75),
+})
+export type Appearance = z.infer<typeof Appearance>
+
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
   stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
@@ -940,6 +963,7 @@ export const Settings = z.object({
   contentWidth: z
     .preprocess((v) => (typeof v === 'number' ? Math.min(CONTENT_MAX, Math.max(640, v)) : v), z.number().int())
     .default(CONTENT_WIDTH),
+  appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
   /** 界面语言：auto 跟随浏览器 */

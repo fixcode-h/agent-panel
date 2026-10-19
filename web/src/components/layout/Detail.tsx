@@ -54,7 +54,7 @@ export function DetailTabs<T extends string>({
           aria-selected={value === id}
           onClick={() => onChange(id)}
           className={
-            'relative flex h-10 cursor-pointer items-center gap-1.5 px-2.5 text-[13px] font-medium ' +
+            'relative flex h-10 cursor-pointer items-center gap-1.5 px-2.5 text-[0.8125rem] font-medium ' +
             (value === id
               ? 'text-fg after:absolute after:inset-x-1 after:-bottom-px after:h-0.5 after:rounded-full after:bg-accent'
               : 'text-muted hover:text-fg')
@@ -92,7 +92,7 @@ export function DetailHeader({
           <h2 className="truncate text-xl font-semibold">{title}</h2>
           {meta}
         </div>
-        <p className="truncate text-[13px] text-muted">{subtitle}</p>
+        <p className="truncate text-[0.8125rem] text-muted">{subtitle}</p>
       </div>
       <div className="flex flex-wrap items-center gap-2">
         <SaveIndicator {...save} />
@@ -149,7 +149,7 @@ export function DetailEmpty({
       <div className="flex max-w-sm flex-col items-center text-center">
         <div className="grid h-12 w-12 place-items-center rounded-xl bg-accent-soft text-accent">{icon}</div>
         <h2 className="mt-4 text-base font-semibold">{title}</h2>
-        <div className="mt-2 text-[13px] leading-relaxed text-muted">{children}</div>
+        <div className="mt-2 text-[0.8125rem] leading-relaxed text-muted">{children}</div>
       </div>
     </main>
   )

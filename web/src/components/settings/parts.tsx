@@ -25,8 +25,8 @@ export function Row({
       )}
     >
       <div className="flex min-w-0 flex-col gap-0.5">
-        <span className="text-[14px] font-medium">{title}</span>
-        {desc && <span className="text-[13px] leading-relaxed text-subtle">{desc}</span>}
+        <span className="text-[0.875rem] font-medium">{title}</span>
+        {desc && <span className="text-[0.8125rem] leading-relaxed text-subtle">{desc}</span>}
       </div>
       <div className={cn('min-w-0', !stack && 'sm:w-[280px] sm:shrink-0')}>{children}</div>
     </div>
@@ -70,7 +70,7 @@ export function ReadValue({ children, mono }: { children: React.ReactNode; mono?
   return (
     <span
       className={cn(
-        'flex h-9 items-center truncate rounded-lg border border-line bg-field/50 px-3 text-[13px] text-muted',
+        'flex h-9 items-center truncate rounded-lg border border-line bg-field/50 px-3 text-[0.8125rem] text-muted',
         mono && 'font-mono',
       )}
     >

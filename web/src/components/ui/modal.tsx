@@ -32,7 +32,7 @@ export function Modal({
           )}
         >
           <div className="flex items-center gap-2 border-b px-5 py-3.5">
-            <D.Title className="min-w-0 flex-1 truncate text-[15px] font-semibold">{title}</D.Title>
+            <D.Title className="min-w-0 flex-1 truncate text-[0.9375rem] font-semibold">{title}</D.Title>
             <D.Close
               aria-label={t('关闭')}
               className="grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"

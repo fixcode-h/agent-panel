@@ -40,7 +40,7 @@ export const CHAT_AGENT_KEY = 'last-chat-agent'
 import { t } from '@shared/i18n'
 
 export const chip =
-  'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
+  'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
 export function projectWorkflowId(p: Project | undefined, cats: { id: string; workflowId: string }[]) {
   return p ? p.workflowId || cats.find((c) => c.id === p.categoryId)?.workflowId || '' : ''
@@ -185,7 +185,7 @@ export function TaskComposer({
                 setPrompt(x)
                 ta.current?.focus()
               }}
-              className="max-w-full cursor-pointer truncate rounded-full border border-line-strong bg-card px-3 py-1 text-[12.5px] text-muted transition-colors hover:border-accent hover:text-fg"
+              className="max-w-full cursor-pointer truncate rounded-full border border-line-strong bg-card px-3 py-1 text-[0.78125rem] text-muted transition-colors hover:border-accent hover:text-fg"
             >
               {x}
             </button>
@@ -234,7 +234,7 @@ export function TaskComposer({
           placeholder={
             effMode === 'workflow' ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')
           }
-          className="block max-h-80 min-h-[84px] w-full resize-none bg-transparent px-4 pt-4 text-[15px] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
+          className="block max-h-80 min-h-[84px] w-full resize-none bg-transparent px-4 pt-4 text-[0.9375rem] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
         />
         {loading ? (
           // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成工作流
@@ -271,7 +271,7 @@ export function TaskComposer({
                     aria-checked={effMode === m.id}
                     onClick={() => setMode(m.id)}
                     className={cn(
-                      'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[13px] transition-colors',
+                      'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[0.8125rem] transition-colors',
                       effMode === m.id ? 'bg-card text-fg shadow-card' : 'text-subtle hover:text-fg',
                     )}
                   >
@@ -371,7 +371,9 @@ export function TaskComposer({
                       <FolderGit2 className="h-4 w-4 shrink-0 text-subtle" />
                       <span className="flex min-w-0 flex-1 flex-col">
                         <span className="truncate">{p.name}</span>
-                        <span className="truncate font-mono text-[11px] text-subtle">{p.path || t('未选择目录')}</span>
+                        <span className="truncate font-mono text-[0.6875rem] text-subtle">
+                          {p.path || t('未选择目录')}
+                        </span>
                       </span>
                       {p.id === project?.id && <Check className="h-4 w-4 text-accent" />}
                     </PopoverClose>

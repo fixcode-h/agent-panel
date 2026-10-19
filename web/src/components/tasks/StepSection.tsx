@@ -98,7 +98,7 @@ export function StepSection({
           )}
         >
           <StepIcon status={root.status} />
-          <span className="min-w-0 truncate text-[14px] font-semibold">{root.title}</span>
+          <span className="min-w-0 truncate text-[0.875rem] font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
             {root.kind === 'main' && <Crown className="h-3.5 w-3.5 text-accent" />}
             {root.kind === 'flow' ? (
@@ -118,7 +118,7 @@ export function StepSection({
           {vt && (
             <span
               className={cn(
-                'rounded-full px-2 py-px text-[11px]',
+                'rounded-full px-2 py-px text-[0.6875rem]',
                 root.verdict === 'fail' ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
               )}
             >
@@ -126,7 +126,7 @@ export function StepSection({
             </span>
           )}
           <span className="ml-auto flex items-center gap-1.5">
-            {time && <span className="font-mono text-[11px] text-subtle">{time}</span>}
+            {time && <span className="font-mono text-[0.6875rem] text-subtle">{time}</span>}
             <StepCommand argv={root.command} />
           </span>
         </header>
@@ -154,7 +154,7 @@ export function StepSection({
                 {v && (
                   <span
                     className={cn(
-                      'rounded-full px-2 py-px text-[11px]',
+                      'rounded-full px-2 py-px text-[0.6875rem]',
                       !s?.command.length && 'ml-auto',
                       v === 'fail' ? 'bg-warning/12 text-warning' : 'bg-success/12 text-success',
                     )}

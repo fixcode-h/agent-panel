@@ -99,7 +99,7 @@ export function AnnotationToolbar({
             onClick={() => onKind(k)}
             title={`${kindLabel(k)}：${KIND_HINT[k]}`}
             className={cn(
-              'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[12px] transition-colors hover:text-white',
+              'flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2 text-[0.75rem] transition-colors hover:text-white',
               kind === k && 'bg-white/10 text-white',
             )}
           >
@@ -325,7 +325,7 @@ export function AnnotationLayer({
             aria-label={t('标注 {n}', { n: i + 1 })}
             style={{ left: x * scale, top: y * scale, background: KIND_COLOR[a.kind] }}
             className={cn(
-              'pointer-events-auto absolute z-10 grid h-5 min-w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full px-1 font-mono text-[11px] font-semibold text-white shadow-[0_1px_4px_rgba(0,0,0,0.5)] ring-2 ring-white/90',
+              'pointer-events-auto absolute z-10 grid h-5 min-w-5 -translate-x-1/2 -translate-y-1/2 cursor-pointer place-items-center rounded-full px-1 font-mono text-[0.6875rem] font-semibold text-white shadow-[0_1px_4px_rgba(0,0,0,0.5)] ring-2 ring-white/90',
               a.id === active && 'ring-[3px]',
             )}
           >
@@ -430,12 +430,12 @@ function AnnotationEditor({
     >
       <div className="mb-2 flex items-center gap-2">
         <span
-          className="grid h-5 min-w-5 place-items-center rounded-full px-1 font-mono text-[11px] font-semibold text-white"
+          className="grid h-5 min-w-5 place-items-center rounded-full px-1 font-mono text-[0.6875rem] font-semibold text-white"
           style={{ background: KIND_COLOR[a.kind] }}
         >
           {index}
         </span>
-        <span className="flex-1 truncate text-[12px] text-muted">
+        <span className="flex-1 truncate text-[0.75rem] text-muted">
           {a.widgets.length ? a.widgets.join('、') : t('没有对上具体的控件')}
         </span>
         <button
@@ -453,7 +453,7 @@ function AnnotationEditor({
             onClick={() => onChange({ ...a, note, kind: k })}
             title={KIND_HINT[k]}
             className={cn(
-              'flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md border text-[11.5px]',
+              'flex h-7 cursor-pointer items-center justify-center gap-1 rounded-md border text-[0.71875rem]',
               a.kind === k ? 'border-transparent text-white' : 'text-muted hover:bg-sel',
             )}
             style={a.kind === k ? { background: KIND_COLOR[k] } : undefined}
@@ -482,17 +482,17 @@ function AnnotationEditor({
         rows={3}
         placeholder={t('说明要怎么改，例如：按钮换成金色描边')}
         aria-label={t('标注说明')}
-        className="block w-full resize-none rounded-lg border bg-field px-2.5 py-2 text-[12.5px] leading-relaxed outline-none placeholder:text-subtle focus:border-focus"
+        className="block w-full resize-none rounded-lg border bg-field px-2.5 py-2 text-[0.78125rem] leading-relaxed outline-none placeholder:text-subtle focus:border-focus"
       />
       <div className="mt-2 flex items-center">
         <button
           onClick={onRemove}
-          className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[12px] text-subtle hover:bg-sel hover:text-danger"
+          className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-1 text-[0.75rem] text-subtle hover:bg-sel hover:text-danger"
         >
           <Trash2 className="h-3.5 w-3.5" />
           {t('删除标注')}
         </button>
-        <span className="ml-auto text-[11px] text-subtle">{t('回车保存')}</span>
+        <span className="ml-auto text-[0.6875rem] text-subtle">{t('回车保存')}</span>
       </div>
     </div>
   )
@@ -506,10 +506,10 @@ export function AnnotationChips({ list, onRemove }: { list: Annotation[]; onRemo
         <span
           key={a.id}
           title={[a.widgets.join('、'), a.note].filter(Boolean).join('\n')}
-          className="group flex max-w-full items-center gap-1.5 rounded-md border bg-card py-0.5 pr-1 pl-1 text-[11.5px] text-muted"
+          className="group flex max-w-full items-center gap-1.5 rounded-md border bg-card py-0.5 pr-1 pl-1 text-[0.71875rem] text-muted"
         >
           <span
-            className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[10px] font-semibold text-white"
+            className="grid h-4 min-w-4 place-items-center rounded-full px-0.5 font-mono text-[0.625rem] font-semibold text-white"
             style={{ background: KIND_COLOR[a.kind] }}
           >
             {i + 1}

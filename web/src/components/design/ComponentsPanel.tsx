@@ -54,7 +54,7 @@ export function ComponentsPanel({
   if (!list) return <Loader2 className="mx-auto mt-6 h-4 w-4 animate-spin text-subtle" />
   if (!groups.length)
     return (
-      <p className="px-4 py-6 text-center text-[12px] leading-relaxed text-subtle">
+      <p className="px-4 py-6 text-center text-[0.75rem] leading-relaxed text-subtle">
         {t('这个项目里还没有子控件。让 AI 把重复的部分（列表项、格子、按钮）做成子控件，就会出现在这里。')}
       </p>
     )
@@ -68,7 +68,7 @@ export function ComponentsPanel({
         const comps = new Map(g.components.map((c) => [c.Name, c]))
         return (
           <section key={g.designId}>
-            <h3 className="mb-1.5 truncate px-1 text-[11.5px] font-medium text-subtle">
+            <h3 className="mb-1.5 truncate px-1 text-[0.71875rem] font-medium text-subtle">
               {mine ? t('这个设计') : g.title}
             </h3>
             <div className="grid grid-cols-2 gap-2">
@@ -90,8 +90,8 @@ export function ComponentsPanel({
                   >
                     <Preview comp={c} images={images} components={comps} />
                     <span className="flex items-center gap-1 px-1.5 py-1">
-                      <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{c.Name}</span>
-                      <span className="shrink-0 font-mono text-[10px] text-subtle">
+                      <span className="min-w-0 flex-1 truncate font-mono text-[0.6875rem]">{c.Name}</span>
+                      <span className="shrink-0 font-mono text-[0.625rem] text-subtle">
                         {c.DesignSize.X}×{c.DesignSize.Y}
                       </span>
                     </span>
@@ -103,7 +103,7 @@ export function ComponentsPanel({
                           void onImport(g.designId, c.Name).finally(() => setImporting(''))
                         }}
                         title={has ? t('这个设计里已经有同名的子控件') : t('连同它用到的图片一起加进这个设计')}
-                        className="mx-1.5 mb-1.5 inline-flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md border text-[11.5px] text-muted hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
+                        className="mx-1.5 mb-1.5 inline-flex h-6 cursor-pointer items-center justify-center gap-1 rounded-md border text-[0.71875rem] text-muted hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50 disabled:hover:bg-transparent"
                       >
                         {importing === id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
                         {has ? t('已在这个设计里') : t('加入这个设计')}

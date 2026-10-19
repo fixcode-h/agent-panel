@@ -143,8 +143,8 @@ export function RequestCard({
           <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted" />
           <span
             className={cn(
-              'min-w-0 text-[13.5px] leading-relaxed [overflow-wrap:anywhere]',
-              req.kind === 'command' && 'font-mono text-[13px]',
+              'min-w-0 text-[0.84375rem] leading-relaxed [overflow-wrap:anywhere]',
+              req.kind === 'command' && 'font-mono text-[0.8125rem]',
             )}
           >
             {req.title}
@@ -153,7 +153,7 @@ export function RequestCard({
         {req.detail && (
           <pre
             className={cn(
-              'overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[12px] leading-relaxed whitespace-pre-wrap text-muted',
+              'overflow-auto rounded-lg bg-field px-3 py-2 font-mono text-[0.75rem] leading-relaxed whitespace-pre-wrap text-muted',
               req.kind === 'confirm' ? 'max-h-72' : 'max-h-40',
             )}
           >
@@ -175,7 +175,7 @@ export function RequestCard({
               rows={2}
               placeholder={t('要退回修改时，写上要改的地方')}
               aria-label={t('退回意见')}
-              className="min-w-0 resize-none rounded-lg border border-line-strong bg-field px-3 py-2 text-[13px] outline-none focus:border-focus"
+              className="min-w-0 resize-none rounded-lg border border-line-strong bg-field px-3 py-2 text-[0.8125rem] outline-none focus:border-focus"
             />
             <div className="flex justify-end gap-2">
               <Button

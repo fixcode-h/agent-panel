@@ -102,8 +102,8 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
           </span>
         )}
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="truncate text-[13.5px] leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
-          <span className="flex min-w-0 items-center gap-1.5 text-[11.5px] leading-4 text-subtle">
+          <span className="truncate text-[0.84375rem] leading-5 font-semibold tracking-[-0.005em]">{v.title}</span>
+          <span className="flex min-w-0 items-center gap-1.5 text-[0.71875rem] leading-4 text-subtle">
             {v.kind === 'flow' ? (
               <span className="truncate">
                 {t('调用流程')} · {v.flowText || t('未选择')}
@@ -112,13 +112,13 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               <>
                 <span className="truncate">{agent.name}</span>
                 {v.main && (
-                  <span className="shrink-0 rounded px-1 text-[10.5px] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
+                  <span className="shrink-0 rounded px-1 text-[0.65625rem] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
                     {t('主')}
                   </span>
                 )}
                 {/* 模型放在同一行，节点高度不变，已经排好的流程图不会重叠 */}
                 {v.model && (
-                  <span className="ml-auto flex min-w-0 shrink items-center gap-1 rounded bg-field px-1 font-mono text-[10.5px] leading-4 text-muted ring-1 ring-line ring-inset">
+                  <span className="ml-auto flex min-w-0 shrink items-center gap-1 rounded bg-field px-1 font-mono text-[0.65625rem] leading-4 text-muted ring-1 ring-line ring-inset">
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: cliColor(agent.cli) }} />
                     <span className="truncate">{v.model}</span>
                   </span>
@@ -134,20 +134,20 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
       {/* 行数截断放在没有内边距的元素上，否则第三行会从内边距里露出半截 */}
       {v.note && (
         <div className="px-3.5 pb-3">
-          <p className="line-clamp-2 text-[11.5px] leading-[1.6] text-subtle">{v.note}</p>
+          <p className="line-clamp-2 text-[0.71875rem] leading-[1.6] text-subtle">{v.note}</p>
         </div>
       )}
       {(v.hooks.length > 0 || v.loose || v.confirm) && (
         <div className="flex flex-wrap gap-1 border-t bg-panel/60 px-3 py-2">
           {v.loose && (
-            <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">{t('未连接')}</span>
+            <span className="rounded-md bg-warning/12 px-1.5 py-0.5 text-[0.6875rem] text-warning">{t('未连接')}</span>
           )}
           {v.hooks.map((h) => (
             <span
               key={h.slot}
               title={t('{slot}：{label}', { slot: HOOK_LABEL[h.slot], label: h.label })}
               className={cn(
-                'inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px]',
+                'inline-flex max-w-full items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem]',
                 h.slot === 'review' ? 'bg-accent-soft text-accent' : 'bg-field text-muted ring-1 ring-line ring-inset',
               )}
             >
@@ -158,7 +158,7 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
             </span>
           ))}
           {v.confirm && (
-            <span className="inline-flex items-center gap-1 rounded-md bg-warning/12 px-1.5 py-0.5 text-[11px] text-warning">
+            <span className="inline-flex items-center gap-1 rounded-md bg-warning/12 px-1.5 py-0.5 text-[0.6875rem] text-warning">
               <UserCheck className="h-3 w-3" />
               {t('等我确认')}
             </span>
@@ -191,8 +191,8 @@ const TermNode = memo(function TermNode({ data, selected }: NodeProps<Node<TermD
         )}
       </span>
       <span className="flex flex-col">
-        <span className="text-[13px] leading-4 font-medium">{data.label}</span>
-        {data.sub && <span className="max-w-[140px] truncate text-[11px] leading-4 text-subtle">{data.sub}</span>}
+        <span className="text-[0.8125rem] leading-4 font-medium">{data.label}</span>
+        {data.sub && <span className="max-w-[140px] truncate text-[0.6875rem] leading-4 text-subtle">{data.sub}</span>}
       </span>
       {start && <Handle type="source" position={Position.Right} />}
     </div>
@@ -259,7 +259,7 @@ const FlowEdge = memo(function FlowEdge({
         <EdgeLabelRenderer>
           <span
             className={cn(
-              'nodrag nopan pointer-events-none absolute rounded-full border bg-card px-1.5 py-px text-[11px] leading-4 shadow-card',
+              'nodrag nopan pointer-events-none absolute rounded-full border bg-card px-1.5 py-px text-[0.6875rem] leading-4 shadow-card',
               when === 'pass' ? 'border-success/40 text-success' : 'border-danger/40 text-danger',
             )}
             style={{

@@ -14,6 +14,7 @@ import type {
 import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
 import { rememberAskUserDefault } from './askUserDefault'
+import { applyAppearance } from './appearance'
 import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
 
@@ -82,6 +83,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   useEffect(() => applyContentWidth(settings?.contentWidth), [settings?.contentWidth])
+  const appearance = settings?.appearance
+  useEffect(() => {
+    if (appearance) applyAppearance(appearance)
+  }, [appearance])
   // 新会话的「提问」开关要同步读默认值，设置还没取回来时也能用上次存的
   const askDefault = settings?.askUserDefault
   useEffect(() => {

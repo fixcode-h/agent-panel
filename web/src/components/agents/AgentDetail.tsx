@@ -235,7 +235,7 @@ export function AgentDetail({
             actions={
               <>
                 {!builtin && (
-                  <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[13px] text-muted">
+                  <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[0.8125rem] text-muted">
                     <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
                     {t('启用')}
                   </label>
@@ -338,7 +338,7 @@ export function AgentDetail({
 
             <FormSection title={t('运行环境')}>
               {builtin ? (
-                <p className="rounded-lg border bg-field px-3 py-2.5 text-[13px] leading-relaxed text-muted">
+                <p className="rounded-lg border bg-field px-3 py-2.5 text-[0.8125rem] leading-relaxed text-muted">
                   {t(
                     '自带的默认 Agent 固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
                     {
@@ -388,7 +388,7 @@ export function AgentDetail({
                         value={draft.model}
                         onChange={(e) => set('model', e.target.value)}
                         options={tierOptions}
-                        className="font-mono text-[13px]"
+                        className="font-mono text-[0.8125rem]"
                       />
                     </Field>
                   </div>
@@ -467,7 +467,7 @@ export function AgentDetail({
                     <PopoverContent align="end" className="w-[260px]">
                       {draft.params.map((p) => (
                         <PopoverClose key={p.key} className={menuItem} onClick={() => insert(`{{${p.key}}}`)}>
-                          <code className="font-mono text-[12px] text-accent">{`{{${p.key}}}`}</code>
+                          <code className="font-mono text-[0.75rem] text-accent">{`{{${p.key}}}`}</code>
                           <span className="truncate text-subtle">{p.label}</span>
                         </PopoverClose>
                       ))}
@@ -493,7 +493,7 @@ export function AgentDetail({
               />
               <div className="flex flex-col gap-2">
                 <span className="text-xs text-muted">{t('引入的 Agent')}</span>
-                <p className="-mt-1 text-[11.5px] leading-relaxed text-subtle">
+                <p className="-mt-1 text-[0.71875rem] leading-relaxed text-subtle">
                   {t('引入的 Agent 的角色设定会一起交给这个 Agent，可以把通用的规范、领域知识做成单独的 Agent 复用。')}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -506,7 +506,7 @@ export function AgentDetail({
                         tabIndex={0}
                         title={t('拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它')}
                         className={cn(
-                          'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[13px] outline-none select-none focus-visible:border-focus active:cursor-grabbing',
+                          'group inline-flex h-8 cursor-grab items-center gap-1 rounded-lg border bg-card pr-1 pl-1 text-[0.8125rem] outline-none select-none focus-visible:border-focus active:cursor-grabbing',
                           sortIncludes.drag === i && 'opacity-40',
                           sortIncludes.over === i &&
                             sortIncludes.drag !== null &&
@@ -558,7 +558,7 @@ export function AgentDetail({
                   </AgentPicker>
                 </div>
                 {cycle.length > 0 && (
-                  <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[12.5px] leading-relaxed text-danger">
+                  <div className="flex items-start gap-2 rounded-lg bg-danger/10 px-3 py-2 text-[0.78125rem] leading-relaxed text-danger">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span className="min-w-0 flex-1">
                       {t(
@@ -583,7 +583,7 @@ export function AgentDetail({
                   </div>
                 )}
                 {(tooDeep.length > 0 || deepParents.length > 0) && (
-                  <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[12.5px] leading-relaxed text-warning">
+                  <div className="flex items-start gap-2 rounded-lg bg-warning/10 px-3 py-2 text-[0.78125rem] leading-relaxed text-warning">
                     <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <div className="flex min-w-0 flex-col gap-0.5">
                       {tooDeep.length > 0 && (
@@ -612,7 +612,7 @@ export function AgentDetail({
                 )}
                 {depth > 1 && (
                   <div className="flex flex-col gap-1 rounded-lg border bg-field px-3 py-2">
-                    <span className="text-[11.5px] text-subtle">
+                    <span className="text-[0.71875rem] text-subtle">
                       {t('引入层级 · 共 {n} 层（最多展开 {max} 层）', { n: depth, max: MAX_INCLUDE_DEPTH })}
                     </span>
                     <ul className="flex flex-col">
@@ -621,12 +621,12 @@ export function AgentDetail({
                         return (
                           <li
                             key={i}
-                            className="flex h-7 items-center gap-2 text-[12.5px]"
+                            className="flex h-7 items-center gap-2 text-[0.78125rem]"
                             style={{ paddingLeft: (r.depth - 1) * 18 }}
                           >
                             <span
                               className={cn(
-                                'grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 font-mono text-[11px] tabular-nums',
+                                'grid h-5 min-w-5 shrink-0 place-items-center rounded-md px-1 font-mono text-[0.6875rem] tabular-nums',
                                 r.cycle
                                   ? 'bg-danger/12 text-danger'
                                   : over
@@ -653,11 +653,11 @@ export function AgentDetail({
                               <span className="text-subtle">{t('（已删除）')}</span>
                             )}
                             {r.cycle ? (
-                              <span className="shrink-0 text-[11.5px] text-danger">{t('绕回上层，形成循环')}</span>
+                              <span className="shrink-0 text-[0.71875rem] text-danger">{t('绕回上层，形成循环')}</span>
                             ) : over ? (
-                              <span className="shrink-0 text-[11.5px] text-warning">{t('太深，不会展开')}</span>
+                              <span className="shrink-0 text-[0.71875rem] text-warning">{t('太深，不会展开')}</span>
                             ) : r.agent && !r.agent.enabled ? (
-                              <span className="shrink-0 text-[11.5px] text-subtle">{t('已停用')}</span>
+                              <span className="shrink-0 text-[0.71875rem] text-subtle">{t('已停用')}</span>
                             ) : null}
                           </li>
                         )
@@ -692,7 +692,7 @@ export function AgentDetail({
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
                   placeholder={t('例如：--add-dir ../shared')}
-                  className="font-mono text-[13px]"
+                  className="font-mono text-[0.8125rem]"
                 />
               </Field>
             </FormSection>
@@ -710,23 +710,23 @@ export function AgentDetail({
             <ReadinessCard checks={checks} />
             {preview && (
               <details className="group rounded-xl border bg-card p-4">
-                <summary className="cursor-pointer text-[13px] font-semibold">{t('实际交给它的设定')}</summary>
-                <p className="mt-2 text-[11.5px] text-subtle">
+                <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
+                <p className="mt-2 text-[0.71875rem] text-subtle">
                   {t('按参数默认值展开，包含引入的 Agent 和 Skill 提示。')}
                 </p>
-                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap">
+                <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap">
                   {preview}
                 </pre>
               </details>
             )}
             {includedBy.length > 0 && (
               <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
-                <h3 className="text-[13px] font-semibold">{t('被这些 Agent 引入')}</h3>
+                <h3 className="text-[0.8125rem] font-semibold">{t('被这些 Agent 引入')}</h3>
                 {includedBy.map((a) => (
                   <button
                     key={a.id}
                     onClick={() => go({ page: 'agents', id: a.id })}
-                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-sel"
+                    className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] hover:bg-sel"
                   >
                     <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
                     <span className="flex-1 truncate">{a.name}</span>
@@ -735,13 +735,13 @@ export function AgentDetail({
               </section>
             )}
             <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
-              <h3 className="text-[13px] font-semibold">{t('所在工作流')}</h3>
+              <h3 className="text-[0.8125rem] font-semibold">{t('所在工作流')}</h3>
               {usedIn.length === 0 && <p className="text-xs text-subtle">{t('还没有工作流使用它。')}</p>}
               {usedIn.map(({ w, role }) => (
                 <button
                   key={w.id}
                   onClick={() => go({ page: 'workflows', id: w.id })}
-                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[13px] hover:bg-sel"
+                  className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-[0.8125rem] hover:bg-sel"
                 >
                   <WorkflowIcon className="h-4 w-4 text-subtle" />
                   <span className="flex-1 truncate">{w.name}</span>

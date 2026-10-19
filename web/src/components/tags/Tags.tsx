@@ -31,7 +31,10 @@ export function TagChip({ tag, onRemove, className }: { tag: Tag; onRemove?: () 
     <span
       title={tag.description || undefined}
       style={tagStyle(tag.color)}
-      className={cn('inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[11.5px]', className)}
+      className={cn(
+        'inline-flex h-[22px] max-w-full items-center gap-1 rounded-md px-1.5 text-[0.71875rem]',
+        className,
+      )}
     >
       <span className="truncate">{tag.name}</span>
       {onRemove && (
@@ -56,9 +59,9 @@ export function TagList({ ids, max = 3 }: { ids: string[]; max?: number }) {
   return (
     <span className="flex min-w-0 flex-wrap items-center gap-1">
       {list.slice(0, max).map((x) => (
-        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[10.5px]" />
+        <TagChip key={x.id} tag={x} className="h-[18px] px-1 text-[0.65625rem]" />
       ))}
-      {list.length > max && <span className="text-[10.5px] text-subtle">+{list.length - max}</span>}
+      {list.length > max && <span className="text-[0.65625rem] text-subtle">+{list.length - max}</span>}
     </span>
   )
 }
@@ -106,7 +109,7 @@ export function TagPicker({ value, onChange }: { value: string[]; onChange: (ids
               }
             }}
             placeholder={t('搜索或输入新标签名')}
-            className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[13px] outline-none placeholder:text-subtle"
+            className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
           />
           <div className="max-h-64 overflow-y-auto">
             {list.map((x) => (
@@ -158,7 +161,7 @@ export function TagFilter({
           onClick={() => onChange(value === x.id ? '' : x.id)}
           style={value === x.id ? tagStyle(x.color) : undefined}
           className={cn(
-            'h-[22px] cursor-pointer rounded-md px-1.5 text-[11.5px] transition-colors',
+            'h-[22px] cursor-pointer rounded-md px-1.5 text-[0.71875rem] transition-colors',
             value === x.id ? 'font-medium ring-1 ring-current' : 'text-muted hover:bg-sel hover:text-fg',
           )}
         >

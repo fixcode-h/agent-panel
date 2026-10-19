@@ -14,7 +14,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
   if (!workflow)
     return (
       <section className="rounded-xl border bg-card p-4">
-        <h3 className="mb-1 text-[13px] font-semibold">{t('工作流')}</h3>
+        <h3 className="mb-1 text-[0.8125rem] font-semibold">{t('工作流')}</h3>
         <p className="text-xs text-subtle">{t('还没有指定工作流。')}</p>
       </section>
     )
@@ -26,7 +26,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-3 flex items-center gap-2">
-        <h3 className="text-[13px] font-semibold">{t('工作流')}</h3>
+        <h3 className="text-[0.8125rem] font-semibold">{t('工作流')}</h3>
         {source && <span className="text-xs text-subtle">{source}</span>}
       </div>
       <button
@@ -34,7 +34,7 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
         className="mb-3 flex w-full cursor-pointer items-center gap-2 rounded-lg border bg-field px-3 py-2 text-left hover:border-line-strong"
       >
         <span className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-[13px] font-medium">{workflow.name}</span>
+          <span className="truncate text-[0.8125rem] font-medium">{workflow.name}</span>
           {isReady(workflowChecks(workflow, agents, clis, workflows)) ? (
             <StatusDot tone="success" label={t('就绪')} />
           ) : (
@@ -46,14 +46,14 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
       {main && (
         <div className="flex items-center gap-2.5 rounded-lg bg-accent-soft p-2">
           <AgentAvatar icon={main.icon} cli={main.cli} size="sm" dim={!main.enabled} />
-          <span className="flex-1 truncate text-[13px] font-medium">{main.name}</span>
+          <span className="flex-1 truncate text-[0.8125rem] font-medium">{main.name}</span>
           <Crown className="h-3.5 w-3.5 text-accent" />
         </div>
       )}
       {subs.length > 0 && (
         <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-line-strong pt-1 pl-3">
           {subs.map((a) => (
-            <div key={a!.id} className="flex items-center gap-2.5 px-2 py-1.5 text-[13px] text-muted">
+            <div key={a!.id} className="flex items-center gap-2.5 px-2 py-1.5 text-[0.8125rem] text-muted">
               <AgentAvatar icon={a!.icon} cli={a!.cli} size="xs" dim={!a!.enabled} />
               <span className="truncate">{a!.name}</span>
             </div>

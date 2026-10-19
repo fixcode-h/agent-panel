@@ -57,7 +57,7 @@ function SkillPreview({ name, content, before }: { name: string; content: string
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <Sparkles className="h-4 w-4 text-accent" />
-        <span className="font-mono text-[15px] font-semibold">{name}</span>
+        <span className="font-mono text-[0.9375rem] font-semibold">{name}</span>
         {before !== undefined && (
           <Badge tone={before === content ? 'neutral' : 'accent'}>
             {before === content ? t('没有变化') : t('已修改')}
@@ -101,11 +101,11 @@ function McpPreview({ server, before }: { server: McpServer; before?: McpServer 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[15px] font-semibold">{server.name}</span>
+        <span className="font-mono text-[0.9375rem] font-semibold">{server.name}</span>
         <Badge>{server.transport === 'stdio' ? t('本地命令') : t('远程地址')}</Badge>
         {before && before.transport !== server.transport && <Badge tone="accent">{t('已修改')}</Badge>}
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-[13px]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 text-[0.8125rem]">
         {rows.map(([label, key, value]) => (
           <div key={key} className="contents">
             <dt className="text-subtle">{label}</dt>
@@ -132,15 +132,15 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
         <AgentAvatar icon={agent.icon} cli={agent.cli} size="lg" />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-[16px] font-semibold">{agent.name}</span>
+            <span className="truncate text-[1rem] font-semibold">{agent.name}</span>
             {tag('name')}
           </div>
-          <p className="text-[13px] text-muted">
+          <p className="text-[0.8125rem] text-muted">
             {agent.description || t('没有简介')} {tag('description')}
           </p>
         </div>
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[13px]">
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
         <dt className="text-subtle">CLI</dt>
         <dd className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: cliColor(cliOf(agent)) }} />
@@ -186,8 +186,8 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <div className="text-[16px] font-semibold">{w.name}</div>
-        <p className="text-[13px] text-muted">{w.description || t('没有简介')}</p>
+        <div className="text-[1rem] font-semibold">{w.name}</div>
+        <p className="text-[0.8125rem] text-muted">{w.description || t('没有简介')}</p>
       </div>
       <div className="flex flex-wrap gap-1.5">
         {[
@@ -207,7 +207,7 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
               <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
               {a.name}
               {i === 0 && <Crown className="h-3 w-3 text-accent" />}
-              {a.isNew && <span className="text-[11px] text-accent">{t('新建')}</span>}
+              {a.isNew && <span className="text-[0.6875rem] text-accent">{t('新建')}</span>}
             </span>
           ))}
       </div>
@@ -290,7 +290,7 @@ function JobProgress({
             ? t('正在思考')
             : t('{cli} 正在生成', { cli: cliName })
   return (
-    <div className="flex flex-col gap-2 text-[13px] leading-relaxed">
+    <div className="flex flex-col gap-2 text-[0.8125rem] leading-relaxed">
       {/* 和任务页同一套消息流：思考可以折叠，工具调用点开看详情 */}
       {!!job.messages?.length && <FoldedRun msgs={job.messages} teamNames={teamNames} live author={author} />}
       <span className="flex items-center gap-2 text-xs text-subtle">
@@ -338,7 +338,7 @@ function RunPicker({
     agentRun({ cli: def.id, model }, settings).effort || def.models.find((m) => m.id === usedModel)?.defaultEffort || ''
   const effortOpts = defaultEffortOptions(def, defaultEffort)
   const compact =
-    'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-[12px] text-muted shadow-none hover:bg-sel hover:text-fg'
+    'h-7 w-auto min-w-0 gap-1 rounded-md border-transparent bg-transparent px-2 text-[0.75rem] text-muted shadow-none hover:bg-sel hover:text-fg'
   return (
     <div
       className="flex min-w-0 items-center gap-0.5"
@@ -367,7 +367,7 @@ function RunPicker({
           options={effortOpts}
         />
       )}
-      {!cs.enabled && <span className="text-[11px] text-warning">{t('已停用')}</span>}
+      {!cs.enabled && <span className="text-[0.6875rem] text-warning">{t('已停用')}</span>}
     </div>
   )
 }
@@ -663,7 +663,7 @@ export function AssistDialog({
             setUnseen(false)
           }}
           title={t('展开')}
-          className="fixed right-5 bottom-5 z-40 flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[13px] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
+          className="fixed right-5 bottom-5 z-40 flex h-11 cursor-pointer items-center gap-2 rounded-full border border-line-strong bg-panel pr-4 pl-3 text-[0.8125rem] shadow-xl transition-colors hover:bg-sel animate-[pop-in_160ms_ease-out]"
         >
           <span className="relative grid h-7 w-7 place-items-center rounded-full bg-accent-soft text-accent">
             {running ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
@@ -692,7 +692,7 @@ export function AssistDialog({
                 {shown ? <Wand2 className="h-4 w-4" /> : <Sparkles className="h-4 w-4" />}
               </span>
               <div className="min-w-0 flex-1">
-                <D.Title className="truncate text-[15px] font-semibold">
+                <D.Title className="truncate text-[0.9375rem] font-semibold">
                   {shown ? (kind === 'mcp' ? L.create : t('用 AI 优化「{name}」', { name: shown })) : L.create}
                 </D.Title>
                 <D.Description className="truncate text-xs text-subtle">{L.desc}</D.Description>
@@ -749,7 +749,7 @@ export function AssistDialog({
                 <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
                   {turns.length === 0 && !running && (
                     <div className="flex flex-col gap-2">
-                      <p className="text-[13px] text-muted">
+                      <p className="text-[0.8125rem] text-muted">
                         {shown
                           ? kind === 'skill'
                             ? t('说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。')
@@ -763,7 +763,7 @@ export function AssistDialog({
                           <button
                             key={e}
                             onClick={() => send(e)}
-                            className="cursor-pointer rounded-lg border bg-card px-3 py-2 text-left text-[13px] text-muted hover:border-accent hover:text-fg"
+                            className="cursor-pointer rounded-lg border bg-card px-3 py-2 text-left text-[0.8125rem] text-muted hover:border-accent hover:text-fg"
                           >
                             {e}
                           </button>
@@ -774,7 +774,7 @@ export function AssistDialog({
                     turn.role === 'user' ? (
                       <UserMessage key={i} size="sm" text={turn.text} />
                     ) : (
-                      <div key={i} className="flex flex-col gap-2 text-[13px] leading-relaxed">
+                      <div key={i} className="flex flex-col gap-2 text-[0.8125rem] leading-relaxed">
                         {turn.msgs?.length ? (
                           <ChatReply msgs={turn.msgs} teamNames={teamNames} author={author} />
                         ) : (
@@ -807,7 +807,7 @@ export function AssistDialog({
                 <div className="p-3">
                   {job && <ScopeRequests scope={`assist:${job.id}`} active={running} />}
                   {queue.length > 0 && (
-                    <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-[12px] text-muted">
+                    <p className="mb-2 truncate rounded-lg bg-field px-3 py-1.5 text-[0.75rem] text-muted">
                       {t('排队中，这一轮结束后发送：{text}', { text: queue.join(' / ') })}
                     </p>
                   )}
@@ -873,7 +873,7 @@ export function AssistDialog({
                   ) : (
                     <div className="flex h-full min-h-[200px] flex-col items-center justify-center gap-2 text-center text-subtle">
                       <Sparkles className="h-6 w-6" />
-                      <p className="text-[13px]">{L.empty}</p>
+                      <p className="text-[0.8125rem]">{L.empty}</p>
                     </div>
                   )}
                 </div>

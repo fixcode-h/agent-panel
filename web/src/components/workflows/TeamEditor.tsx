@@ -71,7 +71,7 @@ export function TeamEditor({
           </div>
         ) : (
           <AgentPicker exclude={[]} onPick={(a) => onMainChange(a.id)}>
-            <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[13px] text-accent hover:bg-accent-soft">
+            <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[0.8125rem] text-accent hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
               {t('选择主 Agent')}
             </button>
@@ -82,7 +82,7 @@ export function TeamEditor({
       <div className="flex flex-col gap-2.5 rounded-[10px] border bg-card p-3">
         <label className="flex cursor-pointer items-start gap-3">
           <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[13px] font-medium">{t('主 Agent 调度')}</span>
+            <span className="text-[0.8125rem] font-medium">{t('主 Agent 调度')}</span>
             <span className="text-xs leading-relaxed text-subtle">
               {t(
                 '子 Agent 做完的节点交给主 Agent 评估：通过、退回修改、委派给别的工作流或停下，条件分支也由它选，流程结束后它整理最终结果。关掉时按连线自动往下走，少花几轮。',
@@ -117,7 +117,7 @@ export function TeamEditor({
             {subs.map((m) => (
               <li key={m.agent.id} className="flex items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5">
                 <AgentAvatar icon={m.agent.icon} cli={m.agent.cli} size="xs" dim={!m.agent.enabled} />
-                <span className="text-[13px]">{m.agent.name}</span>
+                <span className="text-[0.8125rem]">{m.agent.name}</span>
               </li>
             ))}
           </ul>

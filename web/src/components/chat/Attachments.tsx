@@ -177,8 +177,8 @@ export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: 
             </span>
           )}
           <span className="flex min-w-0 flex-col">
-            <span className="truncate text-[12.5px]">{x.name}</span>
-            <span className="flex items-center gap-1 text-[11px] text-subtle">
+            <span className="truncate text-[0.78125rem]">{x.name}</span>
+            <span className="flex items-center gap-1 text-[0.6875rem] text-subtle">
               {!x.done && <Loader2 className="h-3 w-3 animate-spin" />}
               {x.done ? formatSize(x.size) : t('上传中')}
             </span>
@@ -230,11 +230,11 @@ export function MessageAttachments({ items, className }: { items: Attachment[]; 
           <span
             key={a.path}
             title={a.path}
-            className="inline-flex h-9 max-w-[260px] items-center gap-2 rounded-xl border bg-field/60 px-3 text-[12.5px]"
+            className="inline-flex h-9 max-w-[260px] items-center gap-2 rounded-xl border bg-field/60 px-3 text-[0.78125rem]"
           >
             <FileIcon className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.7} />
             <span className="truncate">{a.name}</span>
-            <span className="shrink-0 text-[11px] text-subtle">{formatSize(a.size)}</span>
+            <span className="shrink-0 text-[0.6875rem] text-subtle">{formatSize(a.size)}</span>
           </span>
         ),
       )}
@@ -336,7 +336,7 @@ export function AttachMenu({
               <PopoverClose className={menuItem} onClick={() => input.current?.click()}>
                 <Paperclip className="h-4 w-4 shrink-0 text-subtle" />
                 <span className="flex-1">{t('上传文件或图片')}</span>
-                <span className="text-[11px] text-subtle">{t('可粘贴 / 拖入')}</span>
+                <span className="text-[0.6875rem] text-subtle">{t('可粘贴 / 拖入')}</span>
               </PopoverClose>
               {onMention && (
                 <PopoverClose
@@ -349,7 +349,7 @@ export function AttachMenu({
                 >
                   <AtSign className="h-4 w-4 shrink-0 text-subtle" />
                   <span className="flex-1">{t('引用项目文件')}</span>
-                  <span className="font-mono text-[11px] text-subtle">@</span>
+                  <span className="font-mono text-[0.6875rem] text-subtle">@</span>
                 </PopoverClose>
               )}
               {onStyle && (
@@ -425,7 +425,7 @@ function StylePicker({
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('搜索风格')}
           aria-label={t('搜索风格')}
-          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[13px] outline-none placeholder:text-subtle"
+          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[0.8125rem] outline-none placeholder:text-subtle"
         />
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
@@ -434,7 +434,7 @@ function StylePicker({
         ) : (
           groups.map((g) => (
             <div key={g.kind} className="flex flex-col" role="group" aria-label={g.title}>
-              <p className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 text-[11px] font-medium text-subtle">
+              <p className="flex items-center gap-1.5 px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
                 <g.icon className="h-3 w-3" />
                 {g.title}
               </p>
@@ -448,14 +448,14 @@ function StylePicker({
                 >
                   <Palette className="mt-0.5 h-3.5 w-3.5 shrink-0 text-accent" />
                   <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5 text-[13px]">
+                    <span className="flex items-center gap-1.5 text-[0.8125rem]">
                       <span className="truncate">{s.name}</span>
                       {s.builtin && (
-                        <span className="shrink-0 rounded bg-field px-1 text-[10px] text-subtle">{t('内置')}</span>
+                        <span className="shrink-0 rounded bg-field px-1 text-[0.625rem] text-subtle">{t('内置')}</span>
                       )}
                     </span>
                     {s.summary && (
-                      <span className="line-clamp-2 text-[11.5px] leading-snug text-subtle">{s.summary}</span>
+                      <span className="line-clamp-2 text-[0.71875rem] leading-snug text-subtle">{s.summary}</span>
                     )}
                   </span>
                 </button>
@@ -465,7 +465,7 @@ function StylePicker({
           ))
         )}
       </div>
-      <p className="border-t px-3 py-2 text-[11px] leading-relaxed text-subtle">
+      <p className="border-t px-3 py-2 text-[0.6875rem] leading-relaxed text-subtle">
         {t('选中后这个设计按这个风格来，发送时一起交给 AI。')}
       </p>
     </div>
@@ -538,7 +538,7 @@ function SessionPicker({
           onChange={(e) => setQ(e.target.value)}
           placeholder={t('搜索会话')}
           aria-label={t('搜索会话')}
-          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[13px] outline-none placeholder:text-subtle"
+          className="h-7 min-w-0 flex-1 bg-transparent px-1 text-[0.8125rem] outline-none placeholder:text-subtle"
         />
       </div>
       <div className="max-h-80 overflow-y-auto p-1">
@@ -556,12 +556,12 @@ function SessionPicker({
               <x.icon className="h-4 w-4 shrink-0 text-subtle" />
             )}
             <span className="min-w-0 flex-1 truncate">{x.title}</span>
-            <span className="max-w-[96px] shrink-0 truncate text-[11px] text-subtle">{x.where}</span>
+            <span className="max-w-[96px] shrink-0 truncate text-[0.6875rem] text-subtle">{x.where}</span>
           </button>
         ))}
         {!items.length && <p className="px-2.5 py-3 text-center text-xs text-subtle">{t('没有可以引入的会话')}</p>}
       </div>
-      <p className="border-t px-3 py-2 text-[11px] leading-relaxed text-subtle">
+      <p className="border-t px-3 py-2 text-[0.6875rem] leading-relaxed text-subtle">
         {t('选中的会话会整理成一份记录附上，AI 拿它当参考，不会重新执行里面的要求。')}
       </p>
     </div>
@@ -674,7 +674,7 @@ export function useFileMention(
       aria-label={t('项目文件')}
       className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-72 overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop"
     >
-      <div className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
+      <div className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">{t('项目文件 · ↑↓ 选择，回车确认')}</div>
       {files.map((f, i) => {
         const cut = f.lastIndexOf('/')
         return (
@@ -687,13 +687,13 @@ export function useFileMention(
             onMouseEnter={() => setActive(i)}
             onClick={() => pick(f)}
             className={cn(
-              'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[13px]',
+              'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[0.8125rem]',
               i === active ? 'bg-sel text-fg' : 'text-muted',
             )}
           >
             <FileCode2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
             <span className="shrink-0 font-mono">{f.slice(cut + 1)}</span>
-            {cut > 0 && <span className="truncate font-mono text-[11.5px] text-subtle">{f.slice(0, cut)}</span>}
+            {cut > 0 && <span className="truncate font-mono text-[0.71875rem] text-subtle">{f.slice(0, cut)}</span>}
           </button>
         )
       })}
@@ -706,7 +706,7 @@ export function useFileMention(
 /** 拖文件进来时盖在输入框上的提示 */
 export function DropHint() {
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[13px] text-accent">
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent">
       {t('松开鼠标，把文件附到要求里')}
     </div>
   )

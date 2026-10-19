@@ -78,11 +78,11 @@ function ProjectHome({ project }: { project: Project }) {
       </header>
       <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-16 md:px-6 md:pt-12">
         <div className="flex flex-col gap-2">
-          <h1 className="flex items-center gap-3 font-serif text-[28px] leading-tight font-semibold tracking-tight">
+          <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
             <FolderGit2 className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
             <span className="min-w-0 truncate">{project.name}</span>
           </h1>
-          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[13px] text-subtle">
+          <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
             <span className="max-w-full truncate font-mono">{project.path || t('还没有选择目录')}</span>
             {dir?.gitBranch && (
               <span className="flex items-center gap-1">
@@ -112,7 +112,7 @@ function ProjectHome({ project }: { project: Project }) {
             {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
           </h2>
           {list.length === 0 && tasksLoaded ? (
-            <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[13px] text-subtle">
+            <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.8125rem] text-subtle">
               {t('还没有任务。在上面描述要做的事，Agent 会按工作流完成。')}
             </p>
           ) : (
@@ -131,7 +131,7 @@ function ProjectHome({ project }: { project: Project }) {
                     >
                       <TaskStatusIcon status={tk.status} />
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-[14px]">{tk.title}</span>
+                        <span className="truncate text-[0.875rem]">{tk.title}</span>
                         <span className="truncate text-xs text-subtle">
                           {tk.mode === 'workflow'
                             ? `${tk.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
@@ -173,7 +173,7 @@ function TaskStats({ task, now }: { task: Task; now: number }) {
   const rate = cacheRate(task)
   const item = 'flex items-center gap-1 whitespace-nowrap'
   return (
-    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[11.5px] text-subtle tabular-nums">
+    <span className="mt-1 flex flex-wrap items-center gap-x-3.5 gap-y-0.5 text-[0.71875rem] text-subtle tabular-nums">
       {ms > 0 && (
         <span className={item} title={t('执行时间（不含等待继续对话的时间）')}>
           <Clock className="h-3 w-3" />

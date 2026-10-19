@@ -162,7 +162,7 @@ function Editor({
                   aria-selected={on}
                   onClick={() => switchFlow(f.id)}
                   className={cn(
-                    'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[13px] transition-colors',
+                    'inline-flex h-8 max-w-[200px] cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] transition-colors',
                     on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
                   )}
                 >
@@ -172,14 +172,14 @@ function Editor({
                     <WorkflowIcon className="h-3.5 w-3.5 shrink-0" />
                   )}
                   <span className="truncate">{flowLabel(f, w)}</span>
-                  <span className="text-[11px] text-subtle">{f.nodes.length}</span>
+                  <span className="text-[0.6875rem] text-subtle">{f.nodes.length}</span>
                 </button>
               )
             })}
             <button
               onClick={addFlow}
               disabled={w.flows.length >= 20}
-              className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 text-[13px] text-subtle hover:bg-sel/70 hover:text-fg disabled:opacity-40"
+              className="inline-flex h-8 cursor-pointer items-center gap-1 rounded-lg px-2 text-[0.8125rem] text-subtle hover:bg-sel/70 hover:text-fg disabled:opacity-40"
               title={t('新建子流程，可以挂到节点的开始、验收、结束上')}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -268,7 +268,7 @@ function Editor({
                 className="absolute flex max-h-[320px] w-[240px] flex-col overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop animate-[fade-in_120ms_ease-out]"
                 style={{ left: Math.max(8, drop.x), top: Math.max(8, drop.y) }}
               >
-                <span className="px-2.5 pt-1.5 pb-1 text-[11px] text-subtle">
+                <span className="px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">
                   {drop.reverse
                     ? t('新建节点，连到「{name}」前面', { name: name(drop.from) })
                     : t('新建节点，接在「{name}」后面', { name: name(drop.from) })}
@@ -295,7 +295,7 @@ function Editor({
                 ))}
                 {refOptions(w, workflows, flow.id).filter((o) => o.value).length > 0 && (
                   <>
-                    <span className="mt-1 border-t px-2.5 pt-2 pb-1 text-[11px] text-subtle">{t('调用流程')}</span>
+                    <span className="mt-1 border-t px-2.5 pt-2 pb-1 text-[0.6875rem] text-subtle">{t('调用流程')}</span>
                     {refOptions(w, workflows, flow.id)
                       .filter((o) => o.value)
                       .map((o) => (
@@ -327,10 +327,10 @@ function Editor({
           {flow.nodes.length === 0 && (
             <div className="pointer-events-none absolute inset-0 grid place-items-center p-6">
               <div className="pointer-events-auto flex max-w-[360px] flex-col items-center gap-3 rounded-2xl border bg-card p-5 text-center shadow-pop">
-                <p className="font-serif text-[16px] font-semibold">
+                <p className="font-serif text-[1rem] font-semibold">
                   {isEntry ? t('从这里设计工作流') : t('这个子流程还是空的')}
                 </p>
-                <p className="text-[13px] leading-relaxed text-subtle">
+                <p className="text-[0.8125rem] leading-relaxed text-subtle">
                   {t(
                     '添加节点后，从「开始」拖一条线到第一个节点。节点可以随意摆放，连线决定先后，没有先后关系的节点会同时执行。',
                   )}
@@ -379,8 +379,8 @@ function Editor({
           />
         ) : selEdge ? (
           <div className="flex flex-col gap-4 p-5">
-            <h3 className="font-serif text-[17px] font-semibold">{t('连线')}</h3>
-            <p className="text-[13px] leading-relaxed text-muted">
+            <h3 className="font-serif text-[1.0625rem] font-semibold">{t('连线')}</h3>
+            <p className="text-[0.8125rem] leading-relaxed text-muted">
               {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
             </p>
             {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (

@@ -75,7 +75,7 @@ export function ModelSelect({
           if (v !== CUSTOM) onChange(v)
         }}
         options={[...options, { value: CUSTOM, label: t('其他模型…'), group: t('其他') }]}
-        className="font-mono text-[13px]"
+        className="font-mono text-[0.8125rem]"
       />
       {custom && (
         <Input
@@ -84,7 +84,7 @@ export function ModelSelect({
           value={value}
           onChange={(e) => onChange(e.target.value.trim())}
           placeholder={t('填写完整的模型名')}
-          className="h-9 font-mono text-[13px]"
+          className="h-9 font-mono text-[0.8125rem]"
           spellCheck={false}
         />
       )}

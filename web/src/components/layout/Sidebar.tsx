@@ -166,7 +166,7 @@ function Row({
       aria-current={on ? 'page' : undefined}
       title={collapsed ? label : undefined}
       className={cn(
-        'flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] transition-colors',
+        'flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] transition-colors',
         on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
         collapsed && 'justify-center px-0',
         className,
@@ -180,7 +180,7 @@ function Row({
       </span>
       {!collapsed && <span className="truncate">{label}</span>}
       {badge && !collapsed && (
-        <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[11px] text-accent">
+        <span className="ml-auto shrink-0 rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">
           {badge}
         </span>
       )}
@@ -354,7 +354,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         {!narrow && (
           <button onClick={() => go({ page: 'home' })} className="flex min-w-0 cursor-pointer items-center gap-2.5">
             <Logo />
-            <span className="truncate font-serif text-[16px] font-semibold tracking-tight">{t('Agent 面板')}</span>
+            <span className="truncate font-serif text-[1rem] font-semibold tracking-tight">{t('Agent 面板')}</span>
           </button>
         )}
         <button
@@ -543,7 +543,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                     <ContextMenuTrigger asChild>
                       <div
                         className={cn(
-                          'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[12.5px] transition-colors',
+                          'group/proj flex h-8 items-center gap-1 rounded-lg pr-1 pl-1 text-[0.78125rem] transition-colors',
                           onProject ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/60',
                         )}
                       >
@@ -573,7 +573,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                                 setRenaming('')
                               }
                             }}
-                            className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[12.5px] font-medium text-fg outline-none"
+                            className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-1.5 text-[0.78125rem] font-medium text-fg outline-none"
                           />
                         ) : (
                           <button
@@ -597,12 +597,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           />
                         )}
                         {running > 0 ? (
-                          <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[10.5px] leading-[18px] font-medium text-accent group-hover/proj:hidden">
+                          <span className="shrink-0 rounded-full bg-accent-soft px-1.5 text-[0.65625rem] leading-[18px] font-medium text-accent group-hover/proj:hidden">
                             {t('{n} 个执行中', { n: running })}
                           </span>
                         ) : (
                           ts.length > 0 && (
-                            <span className="shrink-0 pr-1 text-[11px] text-subtle tabular-nums group-hover/proj:hidden">
+                            <span className="shrink-0 pr-1 text-[0.6875rem] text-subtle tabular-nums group-hover/proj:hidden">
                               {ts.length}
                             </span>
                           )
@@ -725,7 +725,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           <MenuIcon className="h-5 w-5" />
         </button>
         <Logo />
-        <span className="font-serif text-[15px] font-semibold">{t('Agent 面板')}</span>
+        <span className="font-serif text-[0.9375rem] font-semibold">{t('Agent 面板')}</span>
       </div>
       {mobileOpen && (
         <div className="fixed inset-0 z-40 md:hidden">

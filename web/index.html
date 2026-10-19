@@ -11,6 +11,9 @@
         var t = localStorage.getItem('theme')
         var light = t ? t === 'light' : window.matchMedia('(prefers-color-scheme: light)').matches
         if (light) document.documentElement.classList.remove('dark')
+        // 字体设置：先用上次记下的，设置取回来后再按设置更新
+        var a = JSON.parse(localStorage.getItem('appearance') || '{}')
+        for (var k in a) document.documentElement.style.setProperty(k, a[k])
       } catch {}
     </script>
   </head>

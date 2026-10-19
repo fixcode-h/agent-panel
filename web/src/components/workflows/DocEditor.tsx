@@ -55,7 +55,7 @@ export function DocEditor({
       onClick={() => setMode(m)}
       aria-pressed={mode === m}
       className={cn(
-        'flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[13px] font-medium',
+        'flex h-8 cursor-pointer items-center gap-1.5 rounded-md px-3 text-[0.8125rem] font-medium',
         mode === m ? 'bg-card text-fg shadow-card ring-1 ring-line-strong' : 'text-muted hover:text-fg',
       )}
     >
@@ -118,7 +118,7 @@ export function DocEditor({
           style={{ minHeight }}
           className={cn(
             fieldClass,
-            'block resize-y rounded-none border-0 py-3 font-mono text-[13px] leading-[1.75] focus:ring-0',
+            'block resize-y rounded-none border-0 py-3 font-mono text-[0.8125rem] leading-[1.75] focus:ring-0',
           )}
         />
       ) : (

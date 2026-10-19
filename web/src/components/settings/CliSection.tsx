@@ -118,7 +118,7 @@ function InstallLog({
         job.status === 'failed' ? 'border-danger/40 bg-danger/5' : job.status === 'done' ? 'border-success/30' : '',
       )}
     >
-      <div className="flex items-center gap-2 px-3.5 py-2.5 text-[13px]">
+      <div className="flex items-center gap-2 px-3.5 py-2.5 text-[0.8125rem]">
         {job.status === 'running' ? (
           <Loader2 className="h-4 w-4 shrink-0 animate-spin text-accent" />
         ) : job.status === 'done' ? (
@@ -157,8 +157,8 @@ function InstallLog({
           </button>
         )}
       </div>
-      {job.error && <p className="px-3.5 pb-2 text-[13px] leading-relaxed text-danger">{job.error}</p>}
-      {job.note && <p className="px-3.5 pb-2 text-[13px] leading-relaxed text-muted">{job.note}</p>}
+      {job.error && <p className="px-3.5 pb-2 text-[0.8125rem] leading-relaxed text-danger">{job.error}</p>}
+      {job.note && <p className="px-3.5 pb-2 text-[0.8125rem] leading-relaxed text-muted">{job.note}</p>}
       {job.status === 'failed' && (
         <p className="flex flex-wrap items-center gap-2 px-3.5 pb-2.5 text-xs text-muted">
           {t('在终端里运行')} <CopyText text={job.command} />
@@ -167,7 +167,7 @@ function InstallLog({
       {open && (
         <pre
           ref={pre}
-          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed whitespace-pre-wrap text-muted"
+          className="max-h-56 overflow-auto border-t bg-field/60 px-3.5 py-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted"
         >
           <span className="text-subtle">$ {job.command}</span>
           {'\n'}
@@ -212,12 +212,12 @@ function TokenField({
     <label className="flex min-w-0 items-center gap-2 text-xs text-subtle" title={title}>
       <span className="shrink-0">{label}</span>
       {readOnly ? (
-        <span className="truncate font-mono text-[13px] text-fg">{value ? fmtTokens(value) : autoText}</span>
+        <span className="truncate font-mono text-[0.8125rem] text-fg">{value ? fmtTokens(value) : autoText}</span>
       ) : (
         <span className="relative min-w-0 flex-1">
           <Input
             aria-label={label}
-            className="h-8 pr-8 font-mono text-[13px]"
+            className="h-8 pr-8 font-mono text-[0.8125rem]"
             value={disabled ? '' : text}
             placeholder={autoText}
             disabled={disabled}
@@ -283,14 +283,14 @@ export function TierTable({
                 {tr.label}
               </span>
               <span className="flex min-w-0 flex-col">
-                <span className="text-[13px]">{t('{tier}档', { tier: tr.label })}</span>
-                <span className="truncate text-[11px] text-subtle">{tr.hint}</span>
+                <span className="text-[0.8125rem]">{t('{tier}档', { tier: tr.label })}</span>
+                <span className="truncate text-[0.6875rem] text-subtle">{tr.hint}</span>
               </span>
             </span>
             {readOnly ? (
               <>
-                <span className="truncate font-mono text-[13px]">{value[tr.id].model || sug.model}</span>
-                <span className="truncate text-[13px] text-muted">
+                <span className="truncate font-mono text-[0.8125rem]">{value[tr.id].model || sug.model}</span>
+                <span className="truncate text-[0.8125rem] text-muted">
                   {(value[tr.id].effort || sug.effort) &&
                     `${value[tr.id].effort || sug.effort} · ${effortLabel(def, value[tr.id].effort || sug.effort)}`}
                 </span>
@@ -336,7 +336,7 @@ export function TierTable({
         )
       })}
       {(!can.context || !can.maxOutput) && (
-        <p className="border-t bg-field/40 px-3.5 py-2 text-[11.5px] leading-relaxed text-subtle">
+        <p className="border-t bg-field/40 px-3.5 py-2 text-[0.71875rem] leading-relaxed text-subtle">
           {!can.context && !can.maxOutput
             ? t('{cli} 没有设置上下文窗口和最大输出的参数，上下文只用于面板估算占用和压缩时机。', { cli: def.name })
             : !can.maxOutput
@@ -527,7 +527,7 @@ export function CliSection({
           <p className="flex items-center gap-2 font-medium">
             {def.name}
             {isDefault && (
-              <span className="rounded-full bg-accent-soft px-2 py-px text-[11px] font-normal text-accent">
+              <span className="rounded-full bg-accent-soft px-2 py-px text-[0.6875rem] font-normal text-accent">
                 {t('系统默认')}
               </span>
             )}
@@ -633,7 +633,7 @@ export function CliSection({
         title={t('卸载 {cli}？', { cli: def.name })}
         description={
           <>
-            {t('会运行')} <code className="font-mono text-[12px]">npm uninstall -g {def.npmPackage}</code>
+            {t('会运行')} <code className="font-mono text-[0.75rem]">npm uninstall -g {def.npmPackage}</code>
             {t('。用这个 CLI 的 Agent 之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
           </>
         }
@@ -705,7 +705,7 @@ export function CliSection({
             value={draft.command}
             onChange={(e) => set('command', e.target.value)}
             placeholder={def.command}
-            className="h-9 font-mono text-[13px]"
+            className="h-9 font-mono text-[0.8125rem]"
             spellCheck={false}
           />
         </Row>
@@ -714,7 +714,7 @@ export function CliSection({
             value={draft.args}
             onChange={(e) => set('args', e.target.value)}
             placeholder={t('例如 --add-dir ../shared')}
-            className="h-9 font-mono text-[13px]"
+            className="h-9 font-mono text-[0.8125rem]"
             spellCheck={false}
           />
         </Row>
@@ -724,7 +724,7 @@ export function CliSection({
             value={draft.envText}
             onChange={(e) => set('envText', e.target.value)}
             placeholder={def.envExample || 'HTTPS_PROXY=http://127.0.0.1:7890'}
-            className="font-mono text-[13px]"
+            className="font-mono text-[0.8125rem]"
             spellCheck={false}
           />
         </Row>
@@ -789,7 +789,7 @@ export function CliSection({
 
       {ok && (
         <Group title="Skills">
-          <p className="pb-2 text-[12px] text-muted">
+          <p className="pb-2 text-[0.75rem] text-muted">
             {def.protocol === 'codex-app'
               ? t('{cli} 加载的 Skill（用户目录、系统自带和插件里的）', { cli: def.name })
               : t('{dirs} 里的 Skill；项目里的在项目设置里看', {

@@ -161,7 +161,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   return (
     <>
       <header className="flex shrink-0 items-center gap-3 border-b px-6 py-4">
-        <D.Title className="min-w-0 flex-1 truncate font-serif text-[18px] font-semibold">
+        <D.Title className="min-w-0 flex-1 truncate font-serif text-[1.125rem] font-semibold">
           {project ? t('项目设置 · {name}', { name: project.name }) : t('新建项目')}
         </D.Title>
         <DialogCloseButton />
@@ -185,7 +185,9 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             <FileText className="h-4 w-4 shrink-0" strokeWidth={1.8} />
             {t('项目说明')}
           </NavItem>
-          <span className="hidden px-2.5 pt-4 pb-1 text-[11px] text-subtle md:block">{t('各个 CLI 读的说明')}</span>
+          <span className="hidden px-2.5 pt-4 pb-1 text-[0.6875rem] text-subtle md:block">
+            {t('各个 CLI 读的说明')}
+          </span>
           {cliPages.map((c) => (
             <NavItem
               key={c.id}
@@ -202,7 +204,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         {section !== 'general' ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
             {!docsReady || !docs ? (
-              <p className="text-[13px] leading-relaxed text-subtle">
+              <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {!project
                   ? t('先创建项目，再编辑项目里的说明文件。')
                   : !project.path || draft.path.trim() !== project.path
@@ -224,7 +226,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                 note={
                   docOf('AGENT.md')?.exists &&
                   !docOf(SHARED_DOC)?.exists && (
-                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-[13px]">
+                    <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-[0.8125rem]">
                       <span className="min-w-0 flex-1">
                         {t('检测到 AGENT.md，但各个 CLI 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
                       </span>
@@ -256,8 +258,8 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                     onDraft={(f, c) => setDocDrafts((d) => ({ ...d, [f]: c }))}
                     extra={
                       <section className="flex flex-col gap-2 pt-6">
-                        <h3 className="text-[13px] font-medium">Skills</h3>
-                        <p className="text-[12px] text-muted">
+                        <h3 className="text-[0.8125rem] font-medium">Skills</h3>
+                        <p className="text-[0.75rem] text-muted">
                           {t('{cli} 在这个项目里能用的 Skill，包括用户目录下的和项目里的', { cli: name })}
                         </p>
                         <CliSkills key={id} cli={id} projectId={project!.id} />
@@ -417,13 +419,13 @@ export function NavItem({
       onClick={onClick}
       aria-current={on ? 'page' : undefined}
       className={cn(
-        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[13.5px] whitespace-nowrap transition-colors',
+        'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
         on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
       )}
     >
       {children}
       {hint && (
-        <span className="ml-auto hidden truncate font-mono text-[10.5px] font-normal text-subtle md:inline">
+        <span className="ml-auto hidden truncate font-mono text-[0.65625rem] font-normal text-subtle md:inline">
           {hint}
         </span>
       )}

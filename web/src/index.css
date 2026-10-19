@@ -18,6 +18,11 @@
   --sel: #ebe8df;
   --sel-line: #d5d1c4;
   --content-w: 1000px;
+  /* 默认字体：内置的 Maple Mono NL（无连字）配思源黑体 */
+  --app-sans: 'Maple Mono NL', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  --app-mono:
+    'Maple Mono NL', 'JetBrains Mono Variable', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', ui-monospace,
+    Consolas, monospace;
   --accent: #c6613f;
   --accent-soft: rgb(198 97 63 / 0.11);
   /* 输入框、按钮获得焦点时的颜色 */
@@ -99,9 +104,12 @@
   --color-danger: var(--danger);
   --shadow-card: var(--shadow);
   --shadow-pop: var(--shadow-pop);
-  --font-sans: 'IBM Plex Sans', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif;
+  /* 字体跟着设置走（web/src/lib/appearance.ts 在 html 上改 --app-sans / --app-mono），默认值在 :root */
+  --font-sans: var(--app-sans);
   --font-serif: 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
-  --font-mono: 'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Consolas, monospace;
+  --font-mono: var(--app-mono);
+  /* 间距固定用像素：设置里调字号改的是根字号，界面字号都写 rem，这样只有字变大、布局不跟着撑开 */
+  --spacing: 4px;
 }
 
 html,
@@ -113,6 +121,16 @@ body,
 @layer base {
   body {
     @apply bg-bg text-fg font-sans text-sm antialiased;
+    letter-spacing: var(--app-tracking, -0.02em);
+    word-spacing: var(--app-word-spacing, -0.2em);
+  }
+  /* 代码要按空格对齐，不跟着收窄空格 */
+  pre,
+  code,
+  kbd,
+  textarea,
+  .font-mono {
+    word-spacing: normal;
   }
   * {
     @apply border-line;
@@ -144,16 +162,17 @@ body,
 
 /* 预览工作流文档 */
 .doc-preview {
-  @apply text-[14px] leading-7 text-fg;
+  @apply text-[0.875rem] text-fg;
+  line-height: calc(var(--app-leading, 1.75) * 1.143);
 }
 .doc-preview h1 {
-  @apply mt-6 mb-2 text-[18px] font-semibold first:mt-0;
+  @apply mt-6 mb-2 text-[1.125rem] font-semibold first:mt-0;
 }
 .doc-preview h2 {
-  @apply mt-5 mb-2 text-[15px] font-semibold first:mt-0;
+  @apply mt-5 mb-2 text-[0.9375rem] font-semibold first:mt-0;
 }
 .doc-preview h3 {
-  @apply mt-4 mb-1 text-[14px] font-semibold;
+  @apply mt-4 mb-1 text-[0.875rem] font-semibold;
 }
 .doc-preview p {
   @apply my-2 text-muted;
@@ -165,7 +184,7 @@ body,
   @apply my-2 list-decimal pl-5 text-muted;
 }
 .doc-preview code {
-  @apply rounded bg-field px-1 py-0.5 font-mono text-[12.5px];
+  @apply rounded bg-field px-1 py-0.5 font-mono text-[0.78125rem];
 }
 .doc-preview pre {
   @apply my-3 overflow-x-auto rounded-lg border bg-field p-3;
@@ -177,7 +196,7 @@ body,
   @apply my-3 border-l-2 border-line-strong pl-3 text-subtle;
 }
 .doc-preview .mention {
-  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[13px] font-medium text-accent;
+  @apply rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.8125rem] font-medium text-accent;
 }
 .doc-preview .mention.unknown {
   @apply bg-warning/15 text-warning;
@@ -185,7 +204,8 @@ body,
 
 /* 任务对话里 Agent 的回复：正文用主文字色，段距更紧 */
 .chat-md {
-  @apply text-[14px] leading-[1.75] text-fg;
+  @apply text-[0.875rem] text-fg;
+  line-height: var(--app-leading, 1.75);
 }
 .chat-md > * {
   @apply my-2.5 first:mt-0 last:mb-0;
@@ -194,18 +214,18 @@ body,
   @apply my-2 first:mt-0 last:mb-0;
 }
 .chat-md h1 {
-  @apply mt-5 mb-2 text-[18px] leading-snug font-semibold;
+  @apply mt-5 mb-2 text-[1.125rem] leading-snug font-semibold;
 }
 .chat-md h2 {
-  @apply mt-5 mb-2 text-[16px] leading-snug font-semibold;
+  @apply mt-5 mb-2 text-[1rem] leading-snug font-semibold;
 }
 .chat-md h3 {
-  @apply mt-4 mb-1.5 text-[14.5px] font-semibold;
+  @apply mt-4 mb-1.5 text-[0.90625rem] font-semibold;
 }
 .chat-md h4,
 .chat-md h5,
 .chat-md h6 {
-  @apply mt-3 mb-1 text-[14px] font-semibold text-muted;
+  @apply mt-3 mb-1 text-[0.875rem] font-semibold text-muted;
 }
 .chat-md ul {
   @apply my-2 list-disc pl-5;
@@ -237,7 +257,7 @@ body,
 }
 /* 行内代码：和 Claude Code 一样是带细边框的小标签 */
 .chat-md :not(pre) > code {
-  @apply rounded-[5px] border px-[5px] py-px font-mono text-[12.5px];
+  @apply rounded-[5px] border px-[5px] py-px font-mono text-[0.78125rem];
   background: var(--code-chip);
   color: var(--code-chip-fg);
 }
@@ -254,13 +274,13 @@ body,
   background: var(--code-bg);
 }
 .chat-md .md-code-bar {
-  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[11.5px] text-subtle;
+  @apply flex items-center justify-between border-b px-3.5 py-1.5 font-sans text-[0.71875rem] text-subtle;
 }
 .chat-md .md-copy {
-  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[11.5px] text-subtle hover:bg-sel hover:text-fg;
+  @apply cursor-pointer rounded-md px-1.5 py-0.5 text-[0.71875rem] text-subtle hover:bg-sel hover:text-fg;
 }
 .chat-md pre {
-  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[12.5px] leading-[1.65];
+  @apply m-0 overflow-x-auto px-3.5 py-3 font-mono text-[0.78125rem] leading-[1.65];
 }
 .chat-md pre code {
   @apply whitespace-pre [overflow-wrap:normal];
@@ -291,14 +311,14 @@ body,
   @apply border-t;
 }
 .chat-md .md-mermaid summary {
-  @apply cursor-pointer px-3.5 py-1.5 text-[12px] text-subtle select-none hover:text-fg;
+  @apply cursor-pointer px-3.5 py-1.5 text-[0.75rem] text-subtle select-none hover:text-fg;
 }
 .chat-md .md-mermaid details pre {
   @apply border-t;
 }
 /* 表格：细线、表头加粗，太宽时横向滚动 */
 .chat-md table {
-  @apply my-3 block w-max max-w-full overflow-x-auto border-collapse text-[13px];
+  @apply my-3 block w-max max-w-full overflow-x-auto border-collapse text-[0.8125rem];
 }
 .chat-md th {
   @apply border-b border-line-strong px-3 py-1.5 text-left font-semibold;
@@ -313,7 +333,7 @@ body,
   @apply mr-1.5 align-[-2px] accent-accent;
 }
 .chat-md .mention {
-  @apply rounded-md bg-accent-soft px-1 py-px text-[13px] font-medium text-accent;
+  @apply rounded-md bg-accent-soft px-1 py-px text-[0.8125rem] font-medium text-accent;
 }
 .chat-md .mention.unknown {
   @apply bg-warning/15 text-warning;
@@ -565,11 +585,11 @@ body,
 
 /* 设置里的版本更新说明：标题小一号，和正文拉开 */
 .release-notes h1 {
-  @apply mb-1 text-[14px] font-semibold;
+  @apply mb-1 text-[0.875rem] font-semibold;
 }
 .release-notes h2,
 .release-notes h3 {
-  @apply mt-3 mb-1 text-[13px] font-semibold text-fg first:mt-0;
+  @apply mt-3 mb-1 text-[0.8125rem] font-semibold text-fg first:mt-0;
 }
 .release-notes ul {
   @apply my-1;
