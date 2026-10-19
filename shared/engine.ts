@@ -772,12 +772,15 @@ const MAX_DELEGATIONS = 2
 
 /**
  * 这个节点完成后要不要交给主 Agent 评估：子 Agent 做的节点、调用另一个工作流的节点、后面有条件连线的节点。
- * 主 Agent 自己做的节点不再评估自己；验收、开始、结束入口里的节点属于发起节点的验证，也不评估
+ * 主 Agent 自己做的节点不再评估自己；验收、开始、结束入口里的节点属于发起节点的验证，也不评估；
+ * 带验收流程、完成后等用户确认的节点已经有人把关，也不评估（有条件连线时仍由主 Agent 选路）
  */
 function mainEvaluates(inv: Invocation, node: FlowNode, branchy: boolean) {
   if (!inv.main || inv.main.workflow.id !== inv.workflow.id) return false
   if (inv.slot !== '' && inv.slot !== 'body' && inv.slot !== 'call') return false
   if (branchy) return true
+  // 已经有验收流程把过关、或者你亲自确认过的节点，主 Agent 不再评估一遍：省一轮，也不和验收意见打架
+  if (node.hooks.review || node.hooks.confirm) return false
   if (node.kind === 'flow') return node.flow?.kind === 'workflow'
   return nodeAgent(inv.workflow, node.agentId) !== inv.workflow.mainAgentId
 }

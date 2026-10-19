@@ -74,7 +74,9 @@ export function NodeInspector({
   const up = preds(flow, node.id).map(name)
   const down = succs(flow, node.id).map(name)
   const opts = refOptions(w, workflows, flow.id)
-  const outside = node.agentId && node.agentId !== main?.id && !team.some((m) => m.agent.id === node.agentId)
+  // 子 Agent 直接在节点上选：这个工作流已经用到的排在前面，其余的 Agent 都能选
+  const used = new Set(team.map((m) => m.agent.id))
+  const rest = agents.filter((a) => a.id !== main?.id && !used.has(a.id) && (a.enabled || a.id === node.agentId))
   // 节点只能用默认 CLI 的三档模型，思考强度跟着档位
   const runner = node.agentId ? agents.find((a) => a.id === node.agentId) : main
   const s = settings ?? defaultSettings()
@@ -145,8 +147,10 @@ export function NodeInspector({
             onChange={(e) => setNode({ agentId: e.target.value })}
             options={[
               { value: '', label: main ? t('主 Agent · {name}', { name: main.name }) : t('主 Agent（还没有选择）') },
-              ...team.map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('子 Agent') })),
-              ...(outside ? [{ value: node.agentId, label: t('（不在团队里）') }] : []),
+              ...team
+                .filter((m) => m.agent.id !== main?.id)
+                .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
+              ...rest.map((a) => ({ value: a.id, label: a.name, group: t('其他 Agent') })),
             ]}
           />
         ) : (

@@ -39,7 +39,6 @@ export const EN_FLOW: Record<string, string> = {
   '主 Agent · {name}': 'Main Agent · {name}',
   '主 Agent（还没有选择）': 'Main Agent (not selected yet)',
   '子 Agent': 'Sub-agents',
-  '（不在团队里）': '(not on the team)',
   调用的流程: 'Flow to call',
   选择流程: 'Select a flow',
   '会和工作流说明、上游节点的结果一起发给执行者':
@@ -121,18 +120,10 @@ export const EN_FLOW: Record<string, string> = {
   复制: 'Copy',
 
   // 团队
-  '按文档推进，把步骤分派给子 Agent，并验收结果':
-    'Drives the work from the doc, assigns steps to sub-agents and reviews results',
   更换: 'Change',
   '选择主 Agent': 'Select main Agent',
-  '按执行顺序排列，可以写清楚它在这个工作流里负责什么':
-    'In execution order; describe what each one handles in this workflow',
-  '{name} 的职责': 'Responsibility of {name}',
-  '在这个工作流中负责…': 'Responsible for…',
   上移: 'Move up',
   下移: 'Move down',
-  移出团队: 'Remove from team',
-  '添加子 Agent': 'Add sub-agent',
 
   // 工作流详情
   '项目分类「{name}」': 'project category “{name}”',
@@ -157,7 +148,6 @@ export const EN_FLOW: Record<string, string> = {
   '例如：Web 功能开发': 'e.g. Web feature development',
   简介: 'Description',
   适合什么样的任务: 'What kinds of tasks it suits',
-  团队: 'Team',
   '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给 Agent；具体每一步做什么在「流程图」里编辑。':
     'Describe the goals, guidelines and definition of done. This doc is sent to the Agent for every node; edit what each step does in the Flowchart tab.',
   团队结构: 'Team structure',
@@ -223,4 +213,19 @@ export const EN_FLOW: Record<string, string> = {
   '什么都可以交给它：分析、排查、找资料、小改动，给出结果并推荐下一步用哪个工作流':
     'Hand it anything: analysis, debugging, research, small changes. It returns the result and suggests which workflow to run next',
   '默认工作流是自带的，不能删除': 'The Default workflow is built in and cannot be deleted',
+  这个工作流用到的: 'Used in this workflow',
+  '其他 Agent': 'Other Agents',
+  '调度流程：评估子 Agent 的结果、决定往哪走、最后整理结果':
+    'Runs the flow: reviews sub-agent results, decides where to go next, and writes the final result',
+  '主 Agent 调度': 'Main Agent dispatch',
+  '子 Agent 做完的节点交给主 Agent 评估：通过、退回修改、委派给别的工作流或停下，条件分支也由它选，流程结束后它整理最终结果。关掉时按连线自动往下走，少花几轮。':
+    'Nodes finished by sub-agents go to the main Agent for review: pass, send back for changes, delegate to another workflow, or stop. It also picks conditional branches and writes the final result when the flow ends. Turn it off to follow the connections automatically and save a few rounds.',
+  调度用的模型档位: 'Model tier for dispatch',
+  '跟随 Agent': 'Same as Agent',
+  '在流程图的节点上选；节点执行中还可以自己再派子 Agent 并发处理':
+    'Chosen on the nodes in the flow chart; a running node can also start more sub-agents to work in parallel',
+  '节点还都由主 Agent 自己做。': 'All nodes are still done by the main Agent.',
+  '节点的 Agent 都还在': 'Node Agents all exist',
+  '这些节点的 Agent 已经删除：{names}': 'The Agents of these nodes were deleted: {names}',
+  '主 Agent 与子 Agent': 'Main Agent and sub-agents',
 }

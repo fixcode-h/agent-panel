@@ -109,7 +109,8 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
             review: 'check',
             maxRounds: 3,
             retries: 1,
-            instructions: '按已确认的设计实现并验证。',
+            instructions:
+              '按已确认的设计实现并验证。改动分成几块互不依赖、不改同一个文件的部分时（例如后端接口和前端页面），用 spawn_agents 派子 Agent 并行实现，自己负责拆分、取回结果后统一检查和联调。',
           },
           {
             id: 'commit',
@@ -202,7 +203,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
             maxRounds: 3,
             retries: 1,
             instructions:
-              '按 tasks.md 依次实现：每条先查相关历史 Bug，改完跑这条的验证，通过才勾选并把证据写进 acceptance。做不了的验证登记为延期验证。发现设计假设不成立时停下，写明哪条假设、证据和受影响的 tasks。',
+              '按 tasks.md 依次实现：每条先查相关历史 Bug，改完跑这条的验证，通过才勾选并把证据写进 acceptance。互不依赖、不改同一批文件的 tasks 可以用 spawn_agents 派子 Agent 并行做，勾选和证据由你统一核对后再写。做不了的验证登记为延期验证。发现设计假设不成立时停下，写明哪条假设、证据和受影响的 tasks。',
           },
           {
             id: 'deferred',
@@ -363,7 +364,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
             maxRounds: 3,
             retries: 1,
             instructions:
-              '按已确认的设计实现。P4 项目修改前先 p4 edit / add。不要自己编译，编译由验收流程里的 UE 集成员统一做。',
+              '按已确认的设计实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子 Agent 并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要自己编译（子 Agent 也不要），编译由验收流程里的 UE 集成员统一做。',
           },
           {
             id: 'commit',
@@ -482,7 +483,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
             agent: 'reviewer',
             tier: 'high',
             instructions:
-              '结合上面的结果，对评审范围内的 diff 给出分级的评审意见；对照相关模块的 bugs.md 看有没有回归和安全风险。',
+              '结合上面的结果，对评审范围内的 diff 给出分级的评审意见；对照相关模块的 bugs.md 看有没有回归和安全风险。改动涉及的模块很多时，可以用 spawn_agents 按模块派子 Agent 并行看，最后由你去重、定级、汇总。',
           },
         ],
         edges: chain(START, 'impact', 'review', END),
@@ -593,7 +594,8 @@ export function buildWorkflow(
     name: w.name,
     description: w.description,
     mainAgentId: agentId(w.main),
-    members: w.members.map(([key, responsibility]) => ({ agentId: agentId(key), responsibility })),
+    // 子 Agent 在节点上选，不再单独列团队；members 只用来决定要建哪些 Agent
+    members: [],
     entryFlowId: 'main',
     document: w.document,
     flows: w.flows.map((f) =>

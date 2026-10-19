@@ -1,3 +1,4 @@
+import { subAgentIds } from '@shared/flow'
 import { ArrowUpRight, Crown } from 'lucide-react'
 import type { Workflow } from '@shared/schema'
 import { t } from '@shared/i18n'
@@ -19,7 +20,9 @@ export function WorkflowSummary({ workflow, source }: { workflow?: Workflow; sou
     )
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(workflow.mainAgentId)
-  const subs = workflow.members.map((m) => byId.get(m.agentId)).filter(Boolean)
+  const subs = subAgentIds(workflow)
+    .map((id) => byId.get(id))
+    .filter(Boolean)
   return (
     <section className="rounded-xl border bg-card p-4">
       <div className="mb-3 flex items-center gap-2">

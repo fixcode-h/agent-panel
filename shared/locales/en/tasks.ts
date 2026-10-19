@@ -359,4 +359,8 @@ export const EN_TASKS: Record<string, string> = {
   追加要求: 'Follow-ups',
   对话轮次: 'Turns',
   '（最近 {n} 轮，共 {total} 轮）': ' (last {n} of {total})',
+  '主 Agent 评估子 Agent 的结果、决定流程怎么走，最后整理结果':
+    'The main Agent reviews sub-agent results, decides where the flow goes, and writes the final result',
+  '调度 {n} 轮': '{n} dispatch rounds',
+  等节点交回结果: 'Waiting for nodes to report back',
 }

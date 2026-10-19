@@ -1,3 +1,4 @@
+import { subAgentIds } from '@shared/flow'
 import { Check, ChevronDown, Workflow as WorkflowIcon } from 'lucide-react'
 import { useData } from '@/lib/data'
 import { t } from '@shared/i18n'
@@ -44,7 +45,7 @@ export function WorkflowPicker({
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate">{w.name}</span>
                 <span className="truncate text-xs text-subtle">
-                  {mainName(w.mainAgentId)} · {t('{n} 个子 Agent', { n: w.members.length })}
+                  {mainName(w.mainAgentId)} · {t('{n} 个子 Agent', { n: subAgentIds(w).length })}
                 </span>
               </span>
               {w.id === value && <Check className="h-4 w-4 text-accent" />}

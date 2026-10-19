@@ -1,11 +1,13 @@
-import { ArrowDown, ArrowUp, Crown, Plus, ArrowLeftRight, X } from 'lucide-react'
-import type { Agent, WorkflowMember } from '@shared/schema'
+import { Crown, Plus, ArrowLeftRight } from 'lucide-react'
+import type { Agent, NodeTier } from '@shared/schema'
+import { MODEL_TIERS } from '@shared/clis'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
-import { cn } from '@/lib/utils'
+import { Switch } from '@/components/ui/switch'
+import { Segmented } from '@/components/ui/segmented'
 import { useAgentView } from '@/lib/agent-view'
 
 function AgentLine({ agent }: { agent: Agent }) {
@@ -23,30 +25,31 @@ function AgentLine({ agent }: { agent: Agent }) {
   )
 }
 
-/** 工作流团队：一个主 Agent + 有序的子 Agent 列表，每个子 Agent 可写在本工作流中的职责 */
+/**
+ * 工作流的 Agent：只配主 Agent（调度整个流程、评估子 Agent 的结果、整理最终结果）；
+ * 子 Agent 在流程节点上选，这里列出节点上用到了哪些
+ */
 export function TeamEditor({
   mainAgentId,
-  members,
   onMainChange,
-  onMembersChange,
+  team,
+  dispatch,
+  onDispatchChange,
+  mainTier,
+  onMainTierChange,
 }: {
   mainAgentId: string
-  members: WorkflowMember[]
   onMainChange: (id: string) => void
-  onMembersChange: (m: WorkflowMember[]) => void
+  /** 节点上用到的子 Agent（只读） */
+  team: { agent: Agent; responsibility: string }[]
+  dispatch: boolean
+  onDispatchChange: (v: boolean) => void
+  mainTier: NodeTier
+  onMainTierChange: (v: NodeTier) => void
 }) {
   const { agents } = useData()
-  const byId = new Map(agents.map((a) => [a.id, a]))
-  const main = byId.get(mainAgentId)
-  const used = [mainAgentId, ...members.map((m) => m.agentId)]
-
-  const move = (i: number, d: -1 | 1) => {
-    const next = [...members]
-    ;[next[i], next[i + d]] = [next[i + d], next[i]]
-    onMembersChange(next)
-  }
-  const update = (i: number, responsibility: string) =>
-    onMembersChange(members.map((m, j) => (j === i ? { ...m, responsibility } : m)))
+  const main = agents.find((a) => a.id === mainAgentId)
+  const subs = team.filter((m) => m.agent.id !== mainAgentId)
 
   return (
     <>
@@ -54,12 +57,12 @@ export function TeamEditor({
         <span className="flex items-center gap-1.5 text-xs text-muted">
           <Crown className="h-3.5 w-3.5 text-accent" />
           {t('主 Agent')}
-          <span className="text-subtle">· {t('按文档推进，把步骤分派给子 Agent，并验收结果')}</span>
+          <span className="text-subtle">· {t('调度流程：评估子 Agent 的结果、决定往哪走、最后整理结果')}</span>
         </span>
         {main ? (
           <div className="flex items-center gap-3 rounded-[10px] border border-accent/50 bg-accent-soft p-3">
             <AgentLine agent={main} />
-            <AgentPicker exclude={used} onPick={(a) => onMainChange(a.id)} align="end">
+            <AgentPicker exclude={[mainAgentId]} onPick={(a) => onMainChange(a.id)} align="end">
               <Button variant="secondary" size="sm" className="ml-auto">
                 <ArrowLeftRight className="h-3.5 w-3.5" />
                 {t('更换')}
@@ -67,7 +70,7 @@ export function TeamEditor({
             </AgentPicker>
           </div>
         ) : (
-          <AgentPicker exclude={used} onPick={(a) => onMainChange(a.id)}>
+          <AgentPicker exclude={[]} onPick={(a) => onMainChange(a.id)}>
             <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[13px] text-accent hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
               {t('选择主 Agent')}
@@ -76,77 +79,51 @@ export function TeamEditor({
         )}
       </div>
 
+      <div className="flex flex-col gap-2.5 rounded-[10px] border bg-card p-3">
+        <label className="flex cursor-pointer items-start gap-3">
+          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+            <span className="text-[13px] font-medium">{t('主 Agent 调度')}</span>
+            <span className="text-xs leading-relaxed text-subtle">
+              {t(
+                '子 Agent 做完的节点交给主 Agent 评估：通过、退回修改、委派给别的工作流或停下，条件分支也由它选，流程结束后它整理最终结果。关掉时按连线自动往下走，少花几轮。',
+              )}
+            </span>
+          </span>
+          <Switch checked={dispatch} onCheckedChange={onDispatchChange} aria-label={t('主 Agent 调度')} />
+        </label>
+        {dispatch && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted">{t('调度用的模型档位')}</span>
+            <Segmented
+              label={t('调度用的模型档位')}
+              value={mainTier}
+              onChange={(v) => onMainTierChange(v)}
+              options={[
+                { id: '' as NodeTier, label: t('跟随 Agent') },
+                ...MODEL_TIERS.map((m) => ({ id: m.id as NodeTier, label: t('{tier}档', { tier: m.label }) })),
+              ]}
+            />
+          </div>
+        )}
+      </div>
+
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted">
           {t('子 Agent')}{' '}
-          <span className="text-subtle">· {t('按执行顺序排列，可以写清楚它在这个工作流里负责什么')}</span>
+          <span className="text-subtle">· {t('在流程图的节点上选；节点执行中还可以自己再派子 Agent 并发处理')}</span>
         </span>
-        <ol className="flex flex-col gap-2">
-          {members.map((m, i) => {
-            const a = byId.get(m.agentId)
-            if (!a) return null
-            return (
-              <li
-                key={m.agentId}
-                className="grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-x-3 gap-y-2 rounded-[10px] border bg-card p-3 lg:grid-cols-[16px_minmax(150px,1fr)_minmax(0,1.3fr)_auto]"
-              >
-                <span className="w-4 text-center font-mono text-xs text-subtle">{i + 1}</span>
-                <span className="flex min-w-0 items-center gap-3">
-                  <AgentLine agent={a} />
-                </span>
-                <input
-                  aria-label={t('{name} 的职责', { name: a.name })}
-                  value={m.responsibility}
-                  onChange={(e) => update(i, e.target.value)}
-                  placeholder={t('在这个工作流中负责…')}
-                  className="order-last col-span-2 col-start-2 h-9 min-w-0 rounded-lg lg:order-none lg:col-span-1 lg:col-start-auto border border-line-strong bg-field px-3 text-[13px] outline-none placeholder:text-subtle focus:border-focus focus:ring-[3px] focus:ring-focus-soft"
-                />
-                <span className="flex items-center">
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t('上移')}
-                    disabled={i === 0}
-                    onClick={() => move(i, -1)}
-                  >
-                    <ArrowUp className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t('下移')}
-                    disabled={i === members.length - 1}
-                    onClick={() => move(i, 1)}
-                  >
-                    <ArrowDown className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={t('移出团队')}
-                    className="hover:text-danger"
-                    onClick={() => onMembersChange(members.filter((_, j) => j !== i))}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </Button>
-                </span>
+        {subs.length ? (
+          <ul className="flex flex-wrap gap-2">
+            {subs.map((m) => (
+              <li key={m.agent.id} className="flex items-center gap-2 rounded-lg border bg-card px-2.5 py-1.5">
+                <AgentAvatar icon={m.agent.icon} cli={m.agent.cli} size="xs" dim={!m.agent.enabled} />
+                <span className="text-[13px]">{m.agent.name}</span>
               </li>
-            )
-          })}
-        </ol>
-        <AgentPicker
-          exclude={used}
-          onPick={(a) => onMembersChange([...members, { agentId: a.id, responsibility: '' }])}
-        >
-          <button
-            className={cn(
-              'flex h-11 w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-line-strong text-[13px] text-muted hover:border-accent/60 hover:text-accent',
-            )}
-          >
-            <Plus className="h-4 w-4" />
-            {t('添加子 Agent')}
-          </button>
-        </AgentPicker>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-subtle">{t('节点还都由主 Agent 自己做。')}</p>
+        )}
       </div>
     </>
   )

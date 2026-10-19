@@ -1,4 +1,4 @@
-import { Loader2, SquareTerminal, Workflow as WorkflowIcon } from 'lucide-react'
+import { Crown, Loader2, SquareTerminal, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { parseVerdict } from '@shared/engine'
 import { useData } from '@/lib/data'
@@ -100,6 +100,7 @@ export function StepSection({
           <StepIcon status={root.status} />
           <span className="min-w-0 truncate text-[14px] font-semibold">{root.title}</span>
           <span className="flex items-center gap-1.5 text-xs text-subtle">
+            {root.kind === 'main' && <Crown className="h-3.5 w-3.5 text-accent" />}
             {root.kind === 'flow' ? (
               <>
                 <WorkflowIcon className="h-3.5 w-3.5" />

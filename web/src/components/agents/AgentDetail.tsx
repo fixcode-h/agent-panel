@@ -1,3 +1,4 @@
+import { subAgentIds } from '@shared/flow'
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -166,14 +167,7 @@ export function AgentDetail({
   const usedIn = workflows
     .map((w) => ({
       w,
-      role:
-        w.mainAgentId === agent.id
-          ? t('主 Agent')
-          : w.members.some((m) => m.agentId === agent.id)
-            ? t('子 Agent')
-            : w.flows.some((f) => f.nodes.some((n) => n.agentId === agent.id))
-              ? t('节点执行者')
-              : '',
+      role: w.mainAgentId === agent.id ? t('主 Agent') : subAgentIds(w).includes(agent.id) ? t('子 Agent') : '',
     }))
     .filter((x) => x.role)
 
