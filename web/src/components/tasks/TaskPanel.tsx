@@ -283,8 +283,9 @@ export function TaskPanel({
                             {verdictText(st)}
                           </span>
                         )}
+                        {/* 耗时、token、命中率接在 Agent 后面，放不下再换行 */}
+                        <StepStats step={st} kids={kids} now={now} />
                       </span>
-                      <StepStats step={st} kids={kids} now={now} />
                     </button>
                     {kids.length > 0 && (
                       <ul className="mt-0.5 flex flex-col gap-1 border-l border-line-strong pl-2.5">
@@ -628,15 +629,13 @@ function TurnRows({
 function StepStats({ step, kids, now }: { step: TaskStep; kids: TaskStep[]; now: number }) {
   const all = [step, ...kids]
   return (
-    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-      <Stats
-        ms={stepMs(step, now)}
-        wait={all.reduce((n, s) => n + waitDuration(s, now), 0)}
-        u={sumUsage(all)}
-        running={step.status === 'running'}
-        span={spanTitle(step)}
-      />
-    </span>
+    <Stats
+      ms={stepMs(step, now)}
+      wait={all.reduce((n, s) => n + waitDuration(s, now), 0)}
+      u={sumUsage(all)}
+      running={step.status === 'running'}
+      span={spanTitle(step)}
+    />
   )
 }
 
@@ -763,12 +762,15 @@ function ContextRow({
 function TokenUsage({ usage: u, tps, extra }: { usage: Usage; tps: number; extra?: React.ReactNode }) {
   const total = u.inputTokens + u.outputTokens
   const rate = u.inputTokens > 0 ? (u.cacheReadTokens ?? 0) / u.inputTokens : 0
+  // 占输入的百分比：缓存命中、写入、未命中各占多少
+  const pct = (n: number) => (u.inputTokens > 0 ? ((n / u.inputTokens) * 100).toFixed(1) + '%' : undefined)
+  const miss = Math.max(0, u.inputTokens - (u.cacheReadTokens ?? 0))
   const rows: [string, string, string?][] = [
     [t('输入'), fmtTokens(u.inputTokens)],
     [t('输出'), fmtTokens(u.outputTokens)],
-    [t('缓存命中'), fmtTokens(u.cacheReadTokens ?? 0)],
-    [t('缓存写入'), fmtTokens(u.cacheWriteTokens ?? 0)],
-    [t('未命中缓存'), fmtTokens(Math.max(0, u.inputTokens - (u.cacheReadTokens ?? 0)))],
+    [t('缓存命中'), fmtTokens(u.cacheReadTokens ?? 0), pct(u.cacheReadTokens ?? 0)],
+    [t('缓存写入'), fmtTokens(u.cacheWriteTokens ?? 0), pct(u.cacheWriteTokens ?? 0)],
+    [t('未命中缓存'), fmtTokens(miss), pct(miss)],
   ]
   return (
     <Section
@@ -806,10 +808,13 @@ function TokenUsage({ usage: u, tps, extra }: { usage: Usage; tps: number; extra
             </div>
           </div>
           <dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-xs">
-            {rows.map(([k, v]) => (
+            {rows.map(([k, v, p]) => (
               <div key={k} className="flex items-baseline justify-between gap-2">
                 <dt className="text-subtle">{k}</dt>
-                <dd className="font-mono text-muted tabular-nums">{v}</dd>
+                <dd className="font-mono text-muted tabular-nums">
+                  {v}
+                  {p && <span className="ml-1 text-[11px] text-subtle">{p}</span>}
+                </dd>
               </div>
             ))}
             {u.costUsd > 0 && (

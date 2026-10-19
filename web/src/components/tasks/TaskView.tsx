@@ -347,7 +347,8 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
   // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏里就不再重复显示
   const progressCard =
     task.mode === 'workflow' && tops.length > 0 && gutter >= 200 ? (
-      <div className="absolute top-4 left-4 z-10" style={{ width: Math.min(272, gutter - 24) }}>
+      // 节点行里要放耗时、等待、token 和命中率，宽一点才能排在一行
+      <div className="absolute top-4 left-4 z-10" style={{ width: Math.min(320, gutter - 24) }}>
         <TaskPanel task={task} project={project} workflow={workflow} only="progress" onStep={openStep} />
       </div>
     ) : null
@@ -718,7 +719,7 @@ export function TaskView({ taskId, project }: { taskId: string; project?: Projec
         <aside
           aria-label={t('任务面板')}
           className={cn(
-            'w-[320px] shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
+            'w-[340px] shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
             panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
             'xl:static xl:z-auto xl:flex xl:h-full xl:shadow-none',
           )}
