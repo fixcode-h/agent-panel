@@ -272,7 +272,27 @@ const long =
 const branch = input.includes('「结论：通过」或「结论：不通过」')
   ? `\n结论：${input.includes('BRANCHNO') ? '不通过' : '通过'}`
   : ''
-const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${long}`
+// 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，
+// 有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选；流程完成时给一段最终结果
+const firstEval = input.includes('这是对它的第 1 次评估')
+const dispatch = input.includes('## 事件：节点完成')
+  ? '\n```dispatch\n' +
+    JSON.stringify(
+      input.includes('MAINREWORK') && firstEval
+        ? { action: 'rework', feedback: '补上错误处理' }
+        : /MAINDELEGATE:(\S+)/.test(input) && firstEval
+          ? { action: 'delegate', workflow: /MAINDELEGATE:(\S+)/.exec(input)[1], input: '帮忙检查一遍' }
+          : input.includes('dispatch 里必须写 branch')
+            ? { action: 'continue', branch: input.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
+            : { action: 'continue' },
+    ) +
+    '\n```'
+  : input.includes('## 事件：流程完成')
+    ? '\n最终结果：主 Agent 整理好了'
+    : input.includes('## 事件：子 Agent 提问')
+      ? '\n主 Agent 的回答：用方案一'
+      : ''
+const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}`
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')

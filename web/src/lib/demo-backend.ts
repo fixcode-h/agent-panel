@@ -1326,7 +1326,9 @@ function tasksRoute(
     // 补充：演示的模拟执行不会真的读它，记进对话（工作流里记在正在跑的节点上）
     if (cur && f.steer) {
       const step =
-        task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : ''
+        task.mode === 'workflow'
+          ? (task.steps.find((s) => s.status === 'running' && !s.parentId && s.kind !== 'main')?.id ?? '')
+          : ''
       task.messages.push({
         id: `demo-${crypto.randomUUID()}`,
         role: 'user',

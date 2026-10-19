@@ -90,7 +90,7 @@ function ProjectHome({ project }: { project: Project }) {
               {list.map((tk) => {
                 const a = agents.find((x) => x.id === tk.agentId)
                 const w = workflows.find((x) => x.id === tk.workflowId)
-                const tops = tk.steps.filter((s) => !s.parentId)
+                const tops = tk.steps.filter((s) => !s.parentId && s.kind !== 'main')
                 const done = tops.filter((s) => s.status === 'done').length
                 return (
                   // 暂停 / 继续按钮不能套在整行的按钮里，放在行的右边

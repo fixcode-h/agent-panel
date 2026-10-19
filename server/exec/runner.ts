@@ -32,6 +32,7 @@ import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
+import { openOrchSession, orchHint } from '../orch-mcp.ts'
 
 export interface RealContext {
   task: Task
@@ -79,7 +80,7 @@ const noteText = (text: string) => `用户在执行中补充了信息，请结�
 export async function steerTask(task: Task, text: string, msg: TaskMessage) {
   const took: Steerer[] = []
   for (const s of steers.get(task.id) ?? []) if (await s.steer(noteText(text))) took.push(s)
-  const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
+  const running = task.steps.find((x) => x.status === 'running' && !x.parentId && x.kind !== 'main')
   if (!took.length && !(task.mode === 'workflow' && running)) return false
   if (!took.length) (notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
   // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
@@ -379,6 +380,9 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求
   if (chat && !op && input.startsWith('/')) input = await expandSlash(input, cliId, cwd, def.slash && !carry)
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
+  // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
+  const orch = call.orch && def.mcp && !op ? openOrchSession(call.orch) : undefined
+  if (orch && !resume) input = `${input}\n\n${orchHint(call.orch!)}`
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
@@ -688,8 +692,10 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     askUser: () => task.askUser,
     // 对话和工作流节点都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (step && !op) ? (c) => register(c) : undefined,
+    mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true
+    orch?.close()
     clearTimeout(gitTimer)
     if (steerer) {
       const set = steers.get(task.id)
@@ -863,6 +869,15 @@ export async function runRealTurn(ctx: RealContext) {
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
+    // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
+    steer: async (stepId, text) => {
+      for (const s of steers.get(ctx.task.id) ?? [])
+        if (s.step === stepId && (await s.steer(text))) {
+          s.accepted()
+          return true
+        }
+      return false
+    },
     confirm: (step, text) =>
       new Promise((resolve) => {
         const { task, signal } = ctx

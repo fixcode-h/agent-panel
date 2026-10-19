@@ -121,4 +121,25 @@ export const EN_SHARED: Record<string, string> = {
   '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '「{title}」没有写「结论」，按通过处理。': '"{title}" did not state a verdict; treating it as a pass.',
+  '主 Agent 评估「{title}」：通过，走「{branch}」分支':
+    'Main Agent reviewed "{title}": pass, taking the "{branch}" branch',
+  '主 Agent 评估「{title}」：通过': 'Main Agent reviewed "{title}": pass',
+  '。交代后续：{note}': '. Note for the next nodes: {note}',
+  '主 Agent 把「{title}」退回修改：{feedback}': 'Main Agent sent "{title}" back for changes: {feedback}',
+  '（没有写具体意见）': '(no specific feedback)',
+  '主 Agent 把「{title}」相关的事委派给工作流「{workflow}」':
+    'Main Agent delegated work on "{title}" to the workflow "{workflow}"',
+  '主 Agent 停下了流程：{reason}': 'Main Agent stopped the flow: {reason}',
+  '（没有写原因）': '(no reason given)',
+  '主 Agent 评估「{title}」失败：{error}': 'Main Agent failed to review "{title}": {error}',
+  '主 Agent 没有写调度决定，「{title}」按通过处理。':
+    'Main Agent did not write a decision; treating "{title}" as a pass.',
+  '主 Agent 退回「{title}」{n} 次后仍不满意：{feedback}':
+    'Main Agent is still not satisfied after sending "{title}" back {n} times: {feedback}',
+  '「{title}」委派的工作流「{name}」失败：{error}': 'The workflow "{name}" delegated from "{title}" failed: {error}',
+  '主 Agent 整理结果失败：{error}': 'Main Agent failed to write the final result: {error}',
+  '「{title}」派出 {n} 个子 Agent：{list}': '"{title}" started {n} sub-agents: {list}',
+  '「{title}」向主 Agent 提问：{question}': '"{title}" asked the main Agent: {question}',
+  '「{from}」→「{to}」：{text}': '"{from}" → "{to}": {text}',
+  委派: 'Delegated',
 }

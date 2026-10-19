@@ -175,6 +175,22 @@ export function flowTemplate(members: { agent: Agent; responsibility: string }[]
 /** 节点的执行 Agent：没指定时是主 Agent */
 export const nodeAgent = (w: Pick<Workflow, 'mainAgentId'>, agentId: string) => agentId || w.mainAgentId
 
+/** 主 Agent 在任务节点里的 id（流程节点、委派里的主 Agent 是 `<父节点>/<入口>/@main`） */
+export const MAIN_STEP = '@main'
+export const isMainStep = (s: { kind: string }) => s.kind === 'main'
+
+/**
+ * 这个流程执行时要不要主 Agent 调度：工作流打开了调度、选了主 Agent，并且流程里有事可调度
+ * （有子 Agent 的节点、调用流程的节点，或者不止一个节点）。只有一个主 Agent 自己做的节点时不需要，
+ * 免得「默认」这类单节点工作流多花两轮
+ */
+export function dispatches(w: Pick<Workflow, 'dispatch' | 'mainAgentId'>, f: Flow) {
+  if (w.dispatch === false || !w.mainAgentId) return false
+  const live = reachable(f)
+  const nodes = f.nodes.filter((n) => live.has(n.id))
+  return nodes.length > 1 || nodes.some((n) => n.kind === 'flow' || nodeAgent(w, n.agentId) !== w.mainAgentId)
+}
+
 /** 引用的流程：同工作流的子流程，或另一个工作流的主流程 */
 export function resolveRef(
   ref: FlowRef | null,
@@ -261,27 +277,44 @@ export function blankStep(o: Partial<TaskStep> & Pick<TaskStep, 'id' | 'title'>)
   }
 }
 
-/** 把工作流的主流程展开成任务节点（子流程在执行时才展开） */
+/** 把工作流的主流程展开成任务节点（子流程在执行时才展开）；要调度时主 Agent 排在最前面 */
 export function planTask(workflow: Workflow | undefined): { steps: TaskStep[] } {
   if (!workflow) return { steps: [] }
   const flow = entryFlow(workflow)
+  const main = dispatches(workflow, flow)
+    ? [
+        blankStep({
+          id: MAIN_STEP,
+          workflowId: workflow.id,
+          flowId: flow.id,
+          kind: 'main',
+          title: t('主 Agent'),
+          agentId: workflow.mainAgentId,
+        }),
+      ]
+    : []
   return {
-    steps: topoOrder(flow).map((n, i) =>
-      blankStep({
-        id: n.id,
-        workflowId: workflow.id,
-        flowId: flow.id,
-        nodeId: n.id,
-        kind: n.kind,
-        title: n.title.trim() || t('节点 {n}', { n: i + 1 }),
-        agentId: n.kind === 'agent' ? nodeAgent(workflow, n.agentId) : '',
-      }),
-    ),
+    steps: [
+      ...main,
+      ...topoOrder(flow).map((n, i) =>
+        blankStep({
+          id: n.id,
+          workflowId: workflow.id,
+          flowId: flow.id,
+          nodeId: n.id,
+          kind: n.kind,
+          title: n.title.trim() || t('节点 {n}', { n: i + 1 }),
+          agentId: n.kind === 'agent' ? nodeAgent(workflow, n.agentId) : '',
+        }),
+      ),
+    ],
   }
 }
 
-/** 任务里主流程的节点（不含子节点） */
-export const topSteps = (task: { steps: TaskStep[] }) => task.steps.filter((s) => !s.parentId)
+/** 任务里主流程的节点（不含子节点和主 Agent） */
+export const topSteps = (task: { steps: TaskStep[] }) => task.steps.filter((s) => !s.parentId && !isMainStep(s))
+/** 任务最外层的主 Agent；工作流没有调度时没有 */
+export const mainStep = (task: { steps: TaskStep[] }) => task.steps.find((s) => s.id === MAIN_STEP)
 /** 某个节点下面的直接子节点 */
 export const childSteps = (task: { steps: TaskStep[] }, id: string) => task.steps.filter((s) => s.parentId === id)
 /** 某个节点的所有后代 */
@@ -301,6 +334,8 @@ export const SLOT_LABEL: Record<string, string> = {
   review: t('验收'),
   end: t('结束'),
   body: t('执行'),
+  sub: t('子 Agent'),
+  call: t('委派'),
 }
 
 const stripTitle = (s: string) =>
