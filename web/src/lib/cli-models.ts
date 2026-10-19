@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { getCli, type CliDefinition } from '@shared/clis'
 import type { CliModels } from '@shared/schema'
 import { api } from './api'
-import { effortName } from './cli-style'
 
 /**
  * 本机 CLI 实际支持的模型：从服务端读一次，所有页面共用。
@@ -67,10 +66,7 @@ export function useCliDef(id: string | undefined): CliDefinition | undefined {
     }),
     efforts: sortEfforts(
       data.efforts.length
-        ? data.efforts.map((e) => ({
-            id: e,
-            label: base.efforts.find((x) => x.id === e)?.label ?? effortName(e),
-          }))
+        ? data.efforts.map((e) => ({ id: e, label: base.efforts.find((x) => x.id === e)?.label ?? e }))
         : base.efforts,
       (e) => e.id,
     ),
