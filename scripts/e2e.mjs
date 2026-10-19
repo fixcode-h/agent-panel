@@ -874,14 +874,21 @@ try {
       a.messages.some((m) => m.role === 'user' && m.text === '顺便看看测试'),
       '插话的内容马上出现在对话里',
     )
-    assert.equal(q.queue.length, 0, 'Command Code 也直接插话，不排队')
+    // Command Code 的 RPC 插话先挂起等下一次模型请求（页面上显示「等待读取」），
+    // 被 CLI 取走后才是正常消息；这里两种状态都算已经交给正在跑的这一轮
     assert.ok(
-      q.messages.some((m) => m.role === 'user' && m.text === '排队吧'),
-      'Command Code 的插话也马上出现在对话里',
+      q.messages.some((m) => m.role === 'user' && m.text === '排队吧') ||
+        q.queue.some((m) => m.note && m.text === '排队吧'),
+      'Command Code 的插话交给 CLI 了（取走前显示等待读取）',
     )
     a = await waitDone(a.id)
     b = await waitDone(b.id)
-    await waitDone(q.id)
+    q = await waitDone(q.id)
+    assert.ok(
+      q.messages.some((m) => m.role === 'user' && m.text === '排队吧'),
+      'Command Code 取走插话后成了正常消息',
+    )
+    assert.equal(q.queue.length, 0, '取走后队列清空')
     assert.equal(a.status, 'done')
     assert.equal(b.status, 'done')
     const sl = steerLog()
