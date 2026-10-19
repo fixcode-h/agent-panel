@@ -174,6 +174,55 @@ if (args[0] === 'app-server') {
   }
   if (!input) process.exit(0)
 }
+// Command Code 的 --experimental --rpc：常驻 JSON-RPC，一轮执行中还能 turn/steer。
+// 收到 turn/start 后沿用下面一次性的输出逻辑；事件包成 {type:"event"}，最后发 turn/completed。
+let rpcMode = false
+let rpcSession = ''
+let rpcSeq = 0
+let rpcExit
+if (args.includes('--rpc')) {
+  rpcMode = true
+  const ri = args.indexOf('--resume')
+  rpcSession = ri >= 0 && !args.includes('--fork-session') ? args[ri + 1] : randomUUID()
+  const { createInterface } = await import('node:readline')
+  const reqs = createInterface({ input: process.stdin })[Symbol.asyncIterator]()
+  const say = (o) => process.stdout.write(JSON.stringify(o) + '\n')
+  let started = false
+  let exited
+  rpcExit = new Promise((r) => (exited = r))
+  ;(async () => {
+    for (;;) {
+      const { value, done } = await reqs.next()
+      if (done) return exited()
+      const m = JSON.parse(value)
+      if (m.method === 'initialize')
+        say({
+          jsonrpc: '2.0',
+          id: m.id,
+          result: {
+            protocolVersion: 1,
+            session: { id: rpcSession, model: 'cmd-fake', effort: 'low', permissionMode: 'accept-edits', turn: null },
+          },
+        })
+      else if (m.method === 'turn/start') {
+        input = typeof m.params?.input === 'string' ? m.params.input : ''
+        say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1' } })
+        say({ jsonrpc: '2.0', method: 'turn/started', params: { seq: ++rpcSeq, turnId: 'turn_1' } })
+        started = true
+      } else if (m.method === 'turn/steer') {
+        steered.push(String(m.params?.input ?? ''))
+        say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1', queued: steered.length } })
+      } else if (m.method === 'turn/interrupt') {
+        interrupted = true
+        say({ jsonrpc: '2.0', id: m.id, result: {} })
+      } else if (m.method === 'session/exit') {
+        say({ jsonrpc: '2.0', id: m.id, result: {} })
+        return exited()
+      }
+    }
+  })()
+  while (!started) await new Promise((r) => setTimeout(r, 10))
+}
 // Pi 的 --list-models（面板带着 --offline 调）：一个提供方一行
 if (args.includes('--list-models') && args.includes('--offline')) {
   console.log(
@@ -216,7 +265,7 @@ if (streamIn) {
   globalThis.nextLine = next
   const first = await next()
   input = typeof first.message.content === 'string' ? first.message.content : ''
-} else if (kind !== 'codex') for await (const chunk of process.stdin) input += chunk
+} else if (kind !== 'codex' && !rpcMode) for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
   const extra =
@@ -245,14 +294,48 @@ process.on('exit', () => {
   if (process.env.FAKE_CLI_LOG && steered.length)
     appendFileSync(process.env.FAKE_CLI_LOG + '.steer', JSON.stringify({ kind, steered }) + '\n')
 })
-const out = (o) => process.stdout.write(JSON.stringify(o) + '\n')
+const out = (o) => {
+  if (!rpcMode) return process.stdout.write(JSON.stringify(o) + '\n')
+  if (o.type === 'event')
+    return process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: o.event }) + '\n')
+  if (o.type !== 'result') return
+  const ok = o.subtype === 'success'
+  const stopReason = ok ? 'end_turn' : 'run_error'
+  const usage = o.usage ?? {}
+  process.stdout.write(
+    JSON.stringify({
+      type: 'event',
+      seq: ++rpcSeq,
+      event: { type: 'run_end', result: { finalText: o.finalText, stopReason, usage } },
+    }) + '\n',
+  )
+  process.stdout.write(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      method: 'turn/completed',
+      params: {
+        seq: ++rpcSeq,
+        turnId: 'turn_1',
+        stopReason,
+        finalText: o.finalText,
+        ...(ok ? {} : { error: { message: o.error ?? '模拟的失败' } }),
+      },
+    }) + '\n',
+  )
+}
+const exitTurn = async (code = 0) => {
+  if (rpcMode) await rpcExit
+  process.exit(code)
+}
 // 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
 const slow = input.includes('SLOW') && !input.includes('上游节点的结果')
 const fail = input.includes('FAIL')
 // Pi 续接用 --session，分叉用 --fork（开新会话）
 const resumeIdx = args.indexOf(kind === 'pi' ? '--session' : '--resume')
 const session =
-  kind === 'codex' ? appThread : resumeIdx >= 0 && !args.includes('--fork-session') ? args[resumeIdx + 1] : randomUUID()
+  kind === 'codex'
+    ? appThread
+    : rpcSession || (resumeIdx >= 0 && !args.includes('--fork-session') ? args[resumeIdx + 1] : randomUUID())
 // app-server 的通知
 const note = (method, params) => out({ method, params: { threadId: session, turnId: 't1', ...params } })
 const codexDone = (status, error) => {
@@ -304,7 +387,7 @@ const panelMcpUrl = () =>
 // 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求先排在队列里，模型用面板的工具取走。
 // FAKE_NOTES 时反复取（等页面把补充发过来，最多 6 秒），拿到的话写进回复和日志
 let notesGot = ''
-if (input.includes('FAKE_NOTES') && (kind === 'commandcode' || kind === 'gemini' || kind === 'pi')) {
+if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind === 'gemini' || kind === 'pi')) {
   const url = panelMcpUrl()
   // 像真实 CLI 一样按 SSE 读：面板的提问工具用流式响应（等用户回答期间发心跳），别的接口是普通 JSON
   const rpc = (id, method, params) =>
@@ -353,6 +436,16 @@ if (interrupted) {
       session_id: session,
       usage: {},
     })
+  } else if (rpcMode) {
+    // 告诉面板这一轮被中断了，然后等 session/exit
+    process.stdout.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'interrupted' },
+      }) + '\n',
+    )
+    await rpcExit
   }
   process.exit(0)
 }
@@ -387,7 +480,7 @@ if (input.startsWith('你在帮忙优化项目根目录下的说明文件') && k
   out({ type: 'event', event: { type: 'run_start', sessionId: session } })
   out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
   out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
-  process.exit(0)
+  await exitTurn(0)
 }
 // 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
 // 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
@@ -913,6 +1006,17 @@ if (kind === 'claude') {
     process.stderr.write(
       'Note: "fake/flash" routes via Command Code; your providers.json also declares it — use "me/fake/flash" to route there instead.\nError: Unable to connect to the API. Please check your network connection.\nStream connection failed mid-response: terminated\n',
     )
+    if (rpcMode) {
+      const error = { message: 'Stream connection failed mid-response: terminated' }
+      process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n')
+      process.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'turn/completed',
+          params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'run_error', error },
+        }) + '\n',
+      )
+    }
     process.exit(6)
   }
   ev({ type: 'message_start' })
@@ -940,7 +1044,7 @@ if (kind === 'claude') {
       finalText: '',
       error: '模拟的失败',
     })
-    process.exit(1)
+    await exitTurn(1)
   }
   out({
     type: 'result',
@@ -950,4 +1054,5 @@ if (kind === 'claude') {
     durationMs: 10,
     finalText: reply,
   })
+  await exitTurn(0)
 }

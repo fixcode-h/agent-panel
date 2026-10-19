@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
 import { codexAppSession } from './codex-app.ts'
+import { commandCodeRpcSession } from './commandcode-rpc.ts'
 import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
@@ -91,7 +92,9 @@ export async function invokeCli(o: {
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
-  const notes = def.notes ? o.readNotes : undefined
+  // Command Code 走常驻 RPC 时有真正的插话通道（turn/steer），不用再靠 MCP 工具拉取补充
+  const rpc = def.protocol === 'commandcode-rpc'
+  const notes = def.notes && !rpc ? o.readNotes : undefined
   if (def.mcp && (askable || notes) && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
     // 用户开着「提问」时把问题交给页面；关着时让模型自己选最合适的做法
     const ask: Ask = (ev) => (o.askUser?.() ? (o.onAsk ? o.onAsk(ev) : o.onEvent(ev)) : ev.reply(AUTO_ANSWER))
@@ -176,6 +179,30 @@ async function invoke(
     if (!session.finished && !r.killed && !r.spawnError)
       o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
     return r
+  }
+
+  if (def.protocol === 'commandcode-rpc') {
+    const session = commandCodeRpcSession({ cwd: o.cwd, input: o.input, onEvent: emit })
+    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
+    try {
+      const r = await runProcess({
+        command: o.command,
+        args,
+        cwd: o.cwd,
+        env: o.env,
+        signal,
+        timeoutMs: o.timeoutMs,
+        idle: o.idle,
+        onSpawn: (io) => void session.start(io),
+        onLine: (line) => session.line(line),
+      })
+      // 没等到 turn/completed 就退出了（崩溃、配置错误），算失败
+      if (!session.finished && !r.killed && !r.spawnError)
+        o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
+      return r
+    } finally {
+      session.close()
+    }
   }
 
   const parse = parserFor(o.cliId, o.cwd)

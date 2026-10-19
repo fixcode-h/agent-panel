@@ -240,13 +240,12 @@ test('Gemini CLI：按配置文件拼参数', () => {
     '/a,/b',
     '--debug',
   ])
-  // Command Code 也是配置文件写的：跳过确认换成专门的参数，没写 maxTurns 时用默认值
+  // Command Code 也是配置文件写的：走常驻 RPC（带 --experimental --rpc），跳过确认换成专门的参数，没写 maxTurns 时用默认值
   assert.deepEqual(
     getCli('commandcode')!.buildArgs({ model: '', permission: 'yolo', extraArgs: [], resume: 's', fork: {} }),
     [
-      '-p',
-      '--output-format',
-      'json',
+      '--experimental',
+      '--rpc',
       '--skip-onboarding',
       '--trust',
       '--no-auto-update',
