@@ -14,11 +14,18 @@ import type {
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
-import { changesSince, mergeChanges, questionAnswers, stepUsage, withTaskModel } from '../../shared/task.ts'
+import {
+  changesSince,
+  mergeChanges,
+  questionAnswers,
+  stepUsage,
+  withAttachments,
+  withTaskModel,
+} from '../../shared/task.ts'
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
-import { cachedModels, knownWindows } from '../models.ts'
+import { cachedModels, knownWindows, supportedEffort } from '../models.ts'
 import { limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
@@ -71,25 +78,51 @@ const steers = new Map<string, Set<Steerer>>()
 /** 工作流里正在跑的节点都收不了补充（Command Code）时，留给下一个开始的节点 */
 const notes = new Map<string, string[]>()
 
+/**
+ * 对话里 CLI 没有插话协议、但能用面板的工具取补充时（见 CLI 配置的 notes）：任务 id → 正在跑的那个。
+ * 补充先排进队列（页面上照样看得到、能改能撤回），同时登记给它；取走时从队列里去掉，
+ * 没取走的这一轮结束后照常按队列处理
+ */
+interface NoteTaker {
+  /** 新排进来一条补充 */
+  add: (queueId: string) => void
+  /** 面板的工具调用：把还没取走的交给模型，并从队列里去掉（返回给模型的文字） */
+  read: () => string[]
+}
+const noteTakers = new Map<string, Set<NoteTaker>>()
+
 /** 交给 CLI 的补充：说清楚是执行中补充的信息，结合它接着做，不要从头开始 */
 const noteText = (text: string) => `用户在执行中补充了信息，请结合它继续当前的任务：\n${text}`
 
 /**
- * 补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理；成功时把用户消息加进对话。
- * 工作流里交给所有正在跑的节点；它们都不支持（Command Code）时留给下一个开始的节点。
- * 对话没在跑、CLI 不支持或拒绝时返回 false，由调用方排队
+ * 执行中的补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理。
+ * 有插话协议的直接插话；没有协议但能用面板的工具取的（见 CLI 配置的 notes）先排进队列、登记给它取；
+ * 工作流里交给所有正在跑的节点，它们都不支持（Command Code）时留给下一个开始的节点。
+ * 任务没在跑、CLI 收不下时返回 false，由调用方排队
  */
 export async function steerTask(task: Task, text: string, msg: TaskMessage) {
+  const all = steers.get(task.id) ?? []
   const took: Steerer[] = []
-  for (const s of steers.get(task.id) ?? []) if (await s.steer(noteText(text))) took.push(s)
+  for (const s of all) if (await s.steer(noteText(text))) took.push(s)
+  if (took.length) {
+    // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
+    const at = took[0]
+    task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
+    for (const s of took) s.accepted()
+    return true
+  }
+  const takers = noteTakers.get(task.id)
+  if (takers?.size) {
+    // 对话的 CLI 没有插话协议：排进队列，让正在跑的它自己取；取走时这条会从队列里去掉
+    task.queue.push({ id: msg.id, text: msg.text, attachments: msg.attachments ?? [], at: msg.at, note: true })
+    for (const k of takers) k.add(msg.id)
+    return true
+  }
   // 主 Agent 在调度（评估、整理结果）时也算工作流在跑：补充留给下一个开始的调用，不用排队
   const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
-  if (!took.length && !(task.mode === 'workflow' && running)) return false
-  if (!took.length) (notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
-  // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
-  const at = took[0] ?? { step: running?.id ?? '', agentId: '' }
-  task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
-  for (const s of took) s.accepted()
+  if (!(task.mode === 'workflow' && running)) return false
+  ;(notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
+  task.messages.push({ ...msg, step: running.id, agentId: msg.agentId })
   return true
 }
 
@@ -326,6 +359,8 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
 
   const model = run.model
+  // 模型不认的思考强度会让 CLI 启动即报错退出：挡在这里，下面记下的启动命令和日志才和实际调用的参数一致
+  const effort = await supportedEffort(cliId, model, run.effort)
   // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，不传
   const limits: ModelLimits = run.tier
     ? { context: cs.tiers[run.tier.id].context, maxOutput: cs.tiers[run.tier.id].maxOutput }
@@ -396,7 +431,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const pct = cs.autoCompact
   const build: BuildOptions = {
     model,
-    effort: run.effort,
+    effort,
     permission: agentPermission(agent, settings),
     extraArgs: [...cs.extraArgs, ...agent.extraArgs],
     resume,
@@ -452,7 +487,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       text: '',
       tools: [],
       // 对话中途可以换 CLI 和模型，每条回复记下自己用的
-      ...(chat ? { run: { cli: cliId, model, effort: run.effort } } : {}),
+      ...(chat ? { run: { cli: cliId, model, effort } } : {}),
       at: new Date().toISOString(),
     }
     task.messages.push(cur)
@@ -669,6 +704,37 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
+  // 对话的 CLI 没有插话协议、但能用面板的工具取补充（见 CLI 配置的 notes）：登记自己，等它调 read_user_notes
+  let taker: NoteTaker | undefined
+  if (chat && !op && def.notes && def.mcp && def.protocol === 'stdin') {
+    const pending = new Set<string>()
+    taker = {
+      add: (id) => pending.add(id),
+      read: () => {
+        const mine = task.queue.filter((q) => pending.has(q.id))
+        if (!mine.length) return []
+        pending.clear()
+        task.queue = task.queue.filter((q) => !mine.some((m) => m.id === q.id))
+        for (const q of mine) {
+          // 拿到就算交出去了：和插话一样记进对话，之后的输出另起一条
+          task.messages.push({
+            id: ctx.newId(),
+            role: 'user',
+            agentId: '',
+            step: '',
+            text: q.text,
+            tools: [],
+            ...(q.attachments.length ? { attachments: q.attachments } : {}),
+            at: q.at,
+          })
+        }
+        cur = undefined
+        ctx.changed(true)
+        return mine.map((q) => noteText(withAttachments(q.text, q.attachments)))
+      },
+    }
+    ;(noteTakers.get(task.id) ?? noteTakers.set(task.id, new Set()).get(task.id)!).add(taker)
+  }
 
   const r = await invokeCli({
     cliId,
@@ -707,6 +773,7 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
     askUser: () => task.askUser,
     // 对话、工作流节点和工作流跑完后的追加要求都能接收补充；压缩、审查这类操作不接收
     onControl: chat || (!op && (step || task.mode === 'workflow')) ? (c) => register(c) : undefined,
+    readNotes: taker ? () => taker.read() : undefined,
     mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true
@@ -716,6 +783,11 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       const set = steers.get(task.id)
       set?.delete(steerer)
       if (!set?.size) steers.delete(task.id)
+    }
+    if (taker) {
+      const set = noteTakers.get(task.id)
+      set?.delete(taker)
+      if (!set?.size) noteTakers.delete(task.id)
     }
     meter.stop()
     // 进程结束了（完成、停止、超时），还没回答的请求作废

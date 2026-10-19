@@ -231,142 +231,147 @@ export function TaskPanel({
         onOpenChange={(o) => !o && setDiffPath(null)}
         onReverted={(x) => upsertTask(taskSummary(x))}
       />
-      <Section
-        title={t('任务进度')}
-        className={progressClass}
-        extra={
-          task.mode === 'workflow'
-            ? tops.length
-              ? `${done}/${tops.length}`
-              : undefined
-            : (task.todos ?? []).length
-              ? `${task.todos.filter((td) => td.status === 'done').length}/${task.todos.length}`
-              : undefined
-        }
-      >
-        <TimeSummary task={task} now={now} />
-        {task.mode === 'workflow' && main && (
-          <MainRow step={main} agent={byId.get(main.agentId)} now={now} onStep={onStep} />
-        )}
-        {task.mode === 'workflow' ? (
-          <ol className={cn('flex flex-col', main && 'ml-[7px] border-l border-line-strong pt-2 pl-3')}>
-            {tops.map((st, si) => {
-              const a = byId.get(st.agentId)
-              const kids = stepTree(task, st.id)
-              return (
-                <li key={st.id} className="relative flex gap-2.5 pb-3 last:pb-0">
-                  {si < tops.length - 1 && <span className="absolute top-5 bottom-0 left-[7px] w-px bg-line-strong" />}
-                  <span className="relative mt-0.5 bg-card">
-                    <StepIcon status={st.status} />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-1">
-                    <button
-                      type="button"
-                      disabled={!onStep}
-                      onClick={() => onStep?.(st.id)}
-                      title={onStep ? t('在流程图里查看这一步') : undefined}
-                      className="-mx-1.5 -my-0.5 flex flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
-                    >
-                      <span
-                        className={cn(
-                          'text-[0.8125rem]',
-                          st.status === 'pending' ? 'text-muted' : 'text-fg',
-                          st.status === 'running' && 'font-medium',
-                        )}
-                      >
-                        {st.title}
-                      </span>
-                      <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
-                        {a && (
-                          <span className="flex items-center gap-1.5">
-                            <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
-                            {a.name}
-                          </span>
-                        )}
-                        {st.kind === 'flow' && <span>{t('调用流程')}</span>}
-                        {st.rounds > 0 && (
-                          <span className={st.verdict === 'fail' ? 'text-warning' : 'text-success'}>
-                            {verdictText(st)}
-                          </span>
-                        )}
-                        {/* 耗时、token、命中率接在 Agent 后面，放不下再换行 */}
-                        <StepStats step={st} kids={kids} now={now} />
-                      </span>
-                    </button>
-                    {kids.length > 0 && (
-                      <ul className="mt-0.5 flex flex-col gap-1 border-l border-line-strong pl-2.5">
-                        {kids.map((k) => (
-                          <li
-                            key={k.id}
-                            className="flex items-center gap-1.5 text-xs"
-                            style={{ paddingLeft: (stepDepth(k) - 1) * 12 }}
-                          >
-                            <StepIcon status={k.status} className="h-3.5 w-3.5" />
-                            {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
-                            {isMainStep(k) ? (
-                              <Crown className="h-3 w-3 shrink-0 text-accent" />
-                            ) : (
-                              k.slot === 'sub' &&
-                              byId.get(k.agentId) && (
-                                <AgentAvatar
-                                  icon={byId.get(k.agentId)!.icon}
-                                  cli={byId.get(k.agentId)!.cli}
-                                  size="xs"
-                                />
-                              )
-                            )}
-                            <span
-                              className={cn(
-                                'min-w-0 flex-1 truncate',
-                                k.status === 'pending' ? 'text-subtle' : 'text-muted',
-                              )}
-                              title={stepLabel(k)}
-                            >
-                              {stepLabel(k)}
-                            </span>
-                            {k.verdict && (
-                              <span className={k.verdict === 'fail' ? 'text-warning' : 'text-success'}>
-                                {k.verdict === 'fail' ? t('不通过') : t('通过')}
-                              </span>
-                            )}
-                            {stepDuration(k, now) && (
-                              <span
-                                className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
-                                title={spanTitle(k)}
-                              >
-                                {stepDuration(k, now)}
-                              </span>
-                            )}
-                          </li>
-                        ))}
-                      </ul>
+      {/* 聊天没有固定步骤，不显示任务进度 */}
+      {task.mode !== 'chat' && (
+        <Section
+          title={t('任务进度')}
+          className={progressClass}
+          extra={
+            task.mode === 'workflow'
+              ? tops.length
+                ? `${done}/${tops.length}`
+                : undefined
+              : (task.todos ?? []).length
+                ? `${task.todos.filter((td) => td.status === 'done').length}/${task.todos.length}`
+                : undefined
+          }
+        >
+          <TimeSummary task={task} now={now} />
+          {task.mode === 'workflow' && main && (
+            <MainRow step={main} agent={byId.get(main.agentId)} now={now} onStep={onStep} />
+          )}
+          {task.mode === 'workflow' ? (
+            <ol className={cn('flex flex-col', main && 'ml-[7px] border-l border-line-strong pt-2 pl-3')}>
+              {tops.map((st, si) => {
+                const a = byId.get(st.agentId)
+                const kids = stepTree(task, st.id)
+                return (
+                  <li key={st.id} className="relative flex gap-2.5 pb-3 last:pb-0">
+                    {si < tops.length - 1 && (
+                      <span className="absolute top-5 bottom-0 left-[7px] w-px bg-line-strong" />
                     )}
-                  </span>
-                </li>
-              )
-            })}
-          </ol>
-        ) : (task.todos ?? []).length ? (
-          <Todos todos={task.todos} />
-        ) : (task.turns ?? []).length ? null : (
-          <p className="text-xs leading-relaxed text-subtle">
-            {t('直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。')}
-          </p>
-        )}
-        {(task.turns ?? []).length > 0 && (
-          <TurnRows
-            task={task}
-            now={now}
-            byAgent={byId}
-            label={task.mode === 'workflow' ? t('追加要求') : t('对话轮次')}
-          />
-        )}
-        {task.mode === 'workflow' && (task.todos ?? []).length > 0 && (
-          <div className="mt-3 border-t pt-2.5">
-            <Todos todos={task.todos} byAgent={byId} />
-          </div>
-        )}
-      </Section>
+                    <span className="relative mt-0.5 bg-card">
+                      <StepIcon status={st.status} />
+                    </span>
+                    <span className="flex min-w-0 flex-1 flex-col gap-1">
+                      <button
+                        type="button"
+                        disabled={!onStep}
+                        onClick={() => onStep?.(st.id)}
+                        title={onStep ? t('在流程图里查看这一步') : undefined}
+                        className="-mx-1.5 -my-0.5 flex flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
+                      >
+                        <span
+                          className={cn(
+                            'text-[0.8125rem]',
+                            st.status === 'pending' ? 'text-muted' : 'text-fg',
+                            st.status === 'running' && 'font-medium',
+                          )}
+                        >
+                          {st.title}
+                        </span>
+                        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
+                          {a && (
+                            <span className="flex items-center gap-1.5">
+                              <AgentAvatar icon={a.icon} cli={a.cli} size="xs" />
+                              {a.name}
+                            </span>
+                          )}
+                          {st.kind === 'flow' && <span>{t('调用流程')}</span>}
+                          {st.rounds > 0 && (
+                            <span className={st.verdict === 'fail' ? 'text-warning' : 'text-success'}>
+                              {verdictText(st)}
+                            </span>
+                          )}
+                          {/* 耗时、token、命中率接在 Agent 后面，放不下再换行 */}
+                          <StepStats step={st} kids={kids} now={now} />
+                        </span>
+                      </button>
+                      {kids.length > 0 && (
+                        <ul className="mt-0.5 flex flex-col gap-1 border-l border-line-strong pl-2.5">
+                          {kids.map((k) => (
+                            <li
+                              key={k.id}
+                              className="flex items-center gap-1.5 text-xs"
+                              style={{ paddingLeft: (stepDepth(k) - 1) * 12 }}
+                            >
+                              <StepIcon status={k.status} className="h-3.5 w-3.5" />
+                              {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
+                              {isMainStep(k) ? (
+                                <Crown className="h-3 w-3 shrink-0 text-accent" />
+                              ) : (
+                                k.slot === 'sub' &&
+                                byId.get(k.agentId) && (
+                                  <AgentAvatar
+                                    icon={byId.get(k.agentId)!.icon}
+                                    cli={byId.get(k.agentId)!.cli}
+                                    size="xs"
+                                  />
+                                )
+                              )}
+                              <span
+                                className={cn(
+                                  'min-w-0 flex-1 truncate',
+                                  k.status === 'pending' ? 'text-subtle' : 'text-muted',
+                                )}
+                                title={stepLabel(k)}
+                              >
+                                {stepLabel(k)}
+                              </span>
+                              {k.verdict && (
+                                <span className={k.verdict === 'fail' ? 'text-warning' : 'text-success'}>
+                                  {k.verdict === 'fail' ? t('不通过') : t('通过')}
+                                </span>
+                              )}
+                              {stepDuration(k, now) && (
+                                <span
+                                  className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
+                                  title={spanTitle(k)}
+                                >
+                                  {stepDuration(k, now)}
+                                </span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </span>
+                  </li>
+                )
+              })}
+            </ol>
+          ) : (task.todos ?? []).length ? (
+            <Todos todos={task.todos} />
+          ) : (task.turns ?? []).length ? null : (
+            <p className="text-xs leading-relaxed text-subtle">
+              {t('直接对话没有固定步骤；Agent 列出待办清单或计划后会显示在这里。')}
+            </p>
+          )}
+          {(task.turns ?? []).length > 0 && (
+            <TurnRows
+              task={task}
+              now={now}
+              byAgent={byId}
+              label={task.mode === 'workflow' ? t('追加要求') : t('对话轮次')}
+            />
+          )}
+          {task.mode === 'workflow' && (task.todos ?? []).length > 0 && (
+            <div className="mt-3 border-t pt-2.5">
+              <Todos todos={task.todos} byAgent={byId} />
+            </div>
+          )}
+        </Section>
+      )}
 
       {only !== 'progress' && (
         <>

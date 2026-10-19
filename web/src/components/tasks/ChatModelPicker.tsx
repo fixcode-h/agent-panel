@@ -3,7 +3,7 @@ import { agentRun, defaultSettings } from '@shared/settings'
 import type { CliDefinition } from '@shared/clis'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
-import { cliColor, defaultEffortOptions } from '@/lib/cli-style'
+import { cliColor, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { modelOptions } from '@/components/agents/ModelSelect'
@@ -86,15 +86,17 @@ export function useChatRun(pick: ChatRun) {
   const base = agentRun({ cli, model: '', effort: '' }, s)
   const defModel = base.model || def?.models.find((m) => m.isDefault)?.id || def?.models[0]?.id || ''
   const model = pick.model || defModel
+  const efforts = def ? modelEfforts(def, model) : []
   const defEffort = def ? effortDefault(def, model, model === defModel ? base.effort : '') : ''
-  const effort = def?.efforts.some((e) => e.id === pick.effort) ? pick.effort : defEffort
+  // 换成别的模型后旧强度可能不适用（CLI 会直接报错退出），回到这个模型的默认
+  const effort = efforts.some((e) => e.id === pick.effort) ? pick.effort : defEffort
   return { usable, defCli, cli, def, defModel, defEffort, run: { cli, model, effort } }
 }
 
-/** 模型的默认思考强度：CLI 设置里的、模型自己标的，都没有时取中间那档 */
+/** 模型的默认思考强度：CLI 设置里的、模型自己标的，都没有时取中间那档（只看这个模型支持的） */
 function effortDefault(def: CliDefinition, model: string, configured: string) {
-  if (!def.efforts.length) return ''
-  const ids = def.efforts.map((e) => e.id)
+  const ids = modelEfforts(def, model).map((e) => e.id)
+  if (!ids.length) return ''
   const own = def.models.find((m) => m.id === model)?.defaultEffort
   for (const e of [configured, own, 'medium']) if (e && ids.includes(e)) return e
   return ids[Math.floor(ids.length / 2)]
@@ -123,7 +125,8 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
   }))
   const models = def ? modelOptions(def, { defaultValue: defModel, extra: [run.model] }) : []
-  const efforts = def?.efforts.length ? defaultEffortOptions(def, defEffort) : []
+  // 只列这个模型支持的强度；一个都不支持（模型不能思考）时不显示这一项
+  const efforts = def ? defaultEffortOptions(def, defEffort, modelEfforts(def, run.model)) : []
   return (
     <div className="flex min-w-0 items-center">
       <ChipSelect
@@ -145,7 +148,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
           className="max-w-[200px]"
         />
       )}
-      {efforts.length > 0 && (
+      {efforts.length > 1 && (
         <ChipSelect
           title={t('思考强度')}
           value={run.effort === defEffort ? '' : run.effort}

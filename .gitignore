@@ -9,3 +9,13 @@ build/
 ui-shots
 logs/
 /comfyui/
+
+# 本机编码助手（Claude Code、Codex、Command Code、Gemini CLI、Pi 等）留下的项目设置、MCP 配置和状态
+.commandcode/
+.claude/
+.codex/
+.gemini/
+.pi/
+.agents/
+.mcp.json
+.claude.json

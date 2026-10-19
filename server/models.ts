@@ -170,14 +170,20 @@ export function parseCommandCodeModels(out: string): CliModel[] {
  * 没登录只能用 ~/.commandcode/providers.json 里接的 BYOK 接口，只列这些。
  */
 async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
-  const [r, st, windows] = await Promise.all([
+  const [r, st, catalog] = await Promise.all([
     capture(command, ['--list-models'], homedir(), env, 30_000),
     capture(command, ['status'], homedir(), env, 15_000).catch(() => null),
-    commandCodeWindows(command, env).catch(() => new Map<string, number>()),
+    commandCodeCatalog(command, env).catch(() => new Map<string, CatalogInfo>()),
   ])
   const models = parseCommandCodeModels(r.stdout).map((m) => {
-    const w = windows.get(m.id) ?? windows.get(m.id.slice(m.id.lastIndexOf('/') + 1))
-    return w ? { ...m, contextWindow: w } : m
+    const info = catalog.get(m.id) ?? catalog.get(m.id.slice(m.id.lastIndexOf('/') + 1))
+    if (!info) return m
+    // 目录里写了窗口和思考强度就用它：模型不认的强度 CLI 会启动即报错退出，下拉里不能再给
+    return {
+      ...m,
+      ...(info.window ? { contextWindow: info.window } : {}),
+      ...(info.efforts ? { efforts: info.efforts } : {}),
+    }
   })
   if (!models.length) {
     if (r.spawnError) throw new Error(r.spawnError)
@@ -252,24 +258,42 @@ export function parseContextSize(s: string) {
   return Math.round(Number(m[1]) * (m[2].toUpperCase() === 'M' ? 1_000_000 : 1_000))
 }
 
-/** Command Code 安装包里的模型目录（reference/models.md）：表格的 Context 列是每个模型的上下文窗口 */
-export function parseCommandCodeCatalog(md: string) {
-  const out = new Map<string, number>()
+/** 模型目录里的一条：上下文窗口和能用的思考强度（目录里没有的项不写） */
+export type CatalogInfo = { window?: number; efforts?: string[] }
+
+/**
+ * Command Code 安装包里的模型目录（reference/models.md）：Context 列是上下文窗口，
+ * Efforts 列是这个模型能用的思考强度（「—」表示不支持思考，列不认识时当不知道）。
+ * 表格列：Id | Name | Context | Efforts | $/1M in/out | Min plan | Best for
+ */
+export function parseCommandCodeCatalog(md: string): Map<string, CatalogInfo> {
+  const out = new Map<string, CatalogInfo>()
   for (const line of md.split('\n')) {
     const cells = line.split('|').map((c) => c.trim())
     const id = /^`([^`]+)`$/.exec(cells[1] ?? '')?.[1]
-    const w = id && parseContextSize(cells[3] ?? '')
-    if (id && w) out.set(id, w)
+    if (!id) continue
+    const info: CatalogInfo = {}
+    const w = parseContextSize(cells[3] ?? '')
+    if (w) info.window = w
+    const cell = cells[4] ?? ''
+    // 只认「off, low, high」和「—」这种写法；目录改版、这一列是别的内容时当不知道，不当成强度
+    const efforts = /^[—–-]$/.test(cell)
+      ? []
+      : /^[a-z][a-z0-9]*(\s*,\s*[a-z][a-z0-9]*)*$/i.test(cell)
+        ? cell.split(',').map((s) => s.trim())
+        : undefined
+    if (efforts) info.efforts = efforts
+    if (info.window || efforts) out.set(id, info)
   }
   return out
 }
 
 /**
- * Command Code 每个模型的上下文窗口。--list-models 不输出窗口，从两处补：
+ * Command Code 每个模型的上下文窗口和思考强度。--list-models 不输出这些，从两处补：
  * 安装包里随版本更新的模型目录，以及 ~/.commandcode/providers.json 里自己接的模型写的 contextWindow / limit.context。
  */
-async function commandCodeWindows(command: string, env: NodeJS.ProcessEnv) {
-  const out = new Map<string, number>()
+async function commandCodeCatalog(command: string, env: NodeJS.ProcessEnv) {
+  const out = new Map<string, CatalogInfo>()
   const pkg = packageDir(command, env, 'command-code')
   if (pkg) {
     const md = await readFile(path.join(pkg, 'dist/bundled/command-code-knowledge/reference/models.md'), 'utf8').catch(
@@ -285,8 +309,8 @@ async function commandCodeWindows(command: string, env: NodeJS.ProcessEnv) {
       const w = Number(v.contextWindow ?? v.limit?.context)
       const id = typeof v.id === 'string' ? v.id : key
       if (w > 0 && id) {
-        out.set(id, w)
-        if (prefix) out.set(`${prefix}/${id}`, w)
+        out.set(id, { ...out.get(id), window: w })
+        if (prefix) out.set(`${prefix}/${id}`, { ...out.get(`${prefix}/${id}`), window: w })
       }
       for (const [k, c] of Object.entries(v)) walk(c, Array.isArray(v) ? '' : k, key && !w ? key : prefix)
     }
@@ -422,9 +446,33 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
 
 /** Command Code 的上下文窗口只要读文件，不用跑 CLI，执行任务时模型列表还没读过也能查到 */
 export async function knownWindows(id: string): Promise<Map<string, number>> {
+  const out = new Map<string, number>()
+  for (const [k, v] of await knownCatalog(id)) if (v.window) out.set(k, v.window)
+  return out
+}
+
+/** 这个 CLI 的模型目录（目前只有 Command Code 有）；读不到时是空的 */
+async function knownCatalog(id: string): Promise<Map<string, CatalogInfo>> {
   if (CLIS.find((c) => c.id === id)?.modelsFrom !== 'commandcode') return new Map()
   const cs = cliSettings(await getSettings(), id)
-  return commandCodeWindows(cs.command, childEnv(cs.env)).catch(() => new Map())
+  return commandCodeCatalog(cs.command, childEnv(cs.env)).catch(() => new Map<string, CatalogInfo>())
+}
+
+/**
+ * 执行前挡一下模型不认的思考强度：CLI 会启动即报错退出（退出码 1），整个任务就白跑了。
+ * 依据是 CLI 报的模型列表（Codex、Pi、Command Code）和 Command Code 安装包里的模型目录；
+ * 这个模型不知道该怎么判时照原样传，交给 CLI 自己决定。
+ */
+export async function supportedEffort(id: string, model: string, effort?: string): Promise<string> {
+  if (!effort || !model) return effort ?? ''
+  const known = new Map<string, string[]>()
+  for (const m of cachedModels(id)?.models ?? []) if (m.efforts) known.set(m.id, m.efforts)
+  for (const [k, v] of await knownCatalog(id).catch(() => new Map<string, CatalogInfo>()))
+    if (v.efforts) known.set(k, v.efforts)
+  if (!known.size) return effort
+  // 模型名可能写成完整的 id，也可能只有后半段（providers.json 里自己接的）
+  const list = known.get(model) ?? known.get(model.slice(model.lastIndexOf('/') + 1))
+  return !list || list.includes(effort) ? effort : ''
 }
 
 /** 已经读过的模型列表（不触发读取）：执行任务时查上下文窗口用，不能为此再去跑一次 CLI */

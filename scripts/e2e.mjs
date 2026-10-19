@@ -3852,7 +3852,8 @@ try {
       const rec = readLog(log + '.askbridge')
         .slice(before)
         .at(-1)
-      assert.deepEqual(rec.tools, ['ask_user'])
+      // Command Code 没有插话协议：还多一个取执行中补充的工具
+      assert.deepEqual(rec.tools, cli === 'commandcode' ? ['ask_user', 'read_user_notes'] : ['ask_user'])
       assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
       assert.ok(rec.hint, '提示里告诉模型有 ask_user')
       assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
@@ -3875,6 +3876,46 @@ try {
     rmSync(mcpFile, { force: true })
   }
   step('没有提问通道的 CLI：临时接 ask_user 工具，回答后交回模型，开关关着时让模型自己选，项目里原有的配置还原')
+
+  // 没有插话协议的 CLI（Command Code）：执行中发的要求先排进队列，正在跑的它用面板的工具 read_user_notes 取走，
+  // 取走的从队列里去掉（不会当成新一轮重跑）；没取走的这一轮结束后照常处理
+  {
+    let n = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: 'SLOW FAKE_NOTES 先看代码',
+    })
+    await sleep(1500)
+    n = await call('POST', `/tasks/${n.id}/messages`, { text: '顺便看看测试', steer: true })
+    // 可能刚好被取走了（取走就从队列里去掉），所以两种状态都算对
+    const queued = n.queue.map((x) => [x.text, x.note])
+    assert.ok(
+      queued.length === 0 || JSON.stringify(queued) === JSON.stringify([['顺便看看测试', true]]),
+      `不支持插话的 CLI 应该先排进队列并标成等 Agent 取走：${JSON.stringify(queued)}`,
+    )
+    n = await waitDone(n.id, 30000)
+    assert.equal(n.status, 'done')
+    assert.deepEqual(n.queue, [], '取走的补充不再排队')
+    assert.equal(n.turns.length, 1, '取走的补充不算新一轮')
+    assert.equal(
+      n.messages.filter((m) => m.role === 'user' && m.text === '顺便看看测试').length,
+      1,
+      '取走的补充在对话里只记一次',
+    )
+    const rec = readLog(log + '.notes').at(-1)
+    assert.deepEqual(rec.tools, ['ask_user', 'read_user_notes'], '这一轮挂上了取补充的工具')
+    assert.ok(rec.hint, '提示里告诉模型可以取补充')
+    assert.match(rec.got, /用户在执行中补充了信息/, '取的正是补充的内容')
+    assert.match(rec.got, /顺便看看测试/)
+    assert.ok(
+      n.messages.some((m) => m.role === 'agent' && /取到的补充：[\s\S]*顺便看看测试/.test(m.text)),
+      '模型拿到补充后接着做',
+    )
+  }
+  step('执行中补充：没有插话协议的 CLI 排队后由正在跑的那一轮取走，取走的不再当新一轮重跑')
 
   // Skills / 命令库：读写各 CLI 用户目录下的 Skill 和命令，复制给别的 CLI 时命令自动换格式
   {

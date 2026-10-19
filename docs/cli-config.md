@@ -102,32 +102,41 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 
 ## 面板的工具 `mcp`
 
-UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计，没有提问通道的 CLI 也通过它向用户提问（`ask_user`）。
+UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计，没有提问通道的 CLI 也通过它向用户提问（`ask_user`）、
+取用户在执行中补充的要求（`read_user_notes`，见 `features.notes`）。
 `args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容，用完还原）；内容是字符串时原样写成文本文件。
 里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址。
 
-CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.json` 写了一个项目扩展 `.pi/extensions/agent-panel-{name}.ts`，
-启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具，调用时转发过去。
+提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
+HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答：
 
 ```json
+"env": { "MCP_TOOL_TIMEOUT": "86400000" },
 "mcp": {
   "files": {
-    ".gemini/settings.json": { "mcpServers": { "{name}": { "httpUrl": "{url}", "trust": true } } }
+    ".gemini/settings.json": { "mcpServers": { "{name}": { "httpUrl": "{url}", "timeout": 86400000 } } }
   }
 }
 ```
 
+Command Code 读环境变量 `MCP_TOOL_TIMEOUT`（毫秒），Gemini CLI 读 `mcpServers.<名字>.timeout`；Pi 的桥接脚本用 Node 自己的
+http 客户端，没有这一步。
+
+CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.json` 写了一个项目扩展 `.pi/extensions/agent-panel-{name}.ts`，
+启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具，调用时转发过去。
+
 ## 能力 `features`
 
-| 字段            | 说明                                                                                                                                                                |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compact`       | 压缩上下文：`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                  |
-| `fork`          | 分叉、撤回对话：`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话                                                               |
-| `autoCompact`   | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                    |
-| `slash`         | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                 |
-| `steer`         | 执行中能插话（需要协议支持，配置文件写的 CLI 目前都是排队）                                                                                                         |
-| `contextWindow` | 上下文窗口的默认估计                                                                                                                                                |
-| `limitEnv`      | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明 |
+| 字段            | 说明                                                                                                                                                                       |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compact`       | 压缩上下文：`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                         |
+| `fork`          | 分叉、撤回对话：`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话                                                                      |
+| `autoCompact`   | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                           |
+| `slash`         | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                        |
+| `steer`         | 执行中能插话（需要协议支持，配置文件写的 CLI 用不了，改成下面的 `notes`）                                                                                                  |
+| `notes`         | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求先排进队列，模型取走时从队列里去掉，没取走的这一轮结束后照常处理 |
+| `contextWindow` | 上下文窗口的默认估计                                                                                                                                                       |
+| `limitEnv`      | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明        |
 
 审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`；Pi 没有审批，用 `--tools` 限制能用的工具）。
 

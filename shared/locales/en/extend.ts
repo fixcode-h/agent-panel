@@ -83,8 +83,6 @@ export const EN_EXTEND: Record<string, string> = {
   '还没有标签，输入名字新建；也可以在设置里管理': 'No tags yet. Type a name to create one, or manage them in Settings',
   按标签筛选: 'Filter by tag',
   '请先选择参数：{list}': 'Choose parameters first: {list}',
-  '和哪个 Agent 对话': 'Which agent to chat with',
-  '选择 Agent': 'Choose agent',
   '节点都用默认 CLI 执行，{cli} 未安装或已停用':
     'Nodes run on the default CLI, and {cli} is not installed or is disabled',
   '{names} 已停用': '{names} disabled',

@@ -62,11 +62,65 @@ const readBase64 = (f: Blob) =>
     r.readAsDataURL(f)
   })
 
-/** 附件列表：选文件、粘贴、拖进来都走 add，选完马上上传 */
-export function useAttachments() {
-  const [items, setItems] = useState<Item[]>([])
+const ATTACH = 'chat-attach:'
+
+/** 上次没发出去的附件；只记上传好的，还在上传的切回来也续不上 */
+function readAttachments(key: string): Item[] {
+  try {
+    const raw = localStorage.getItem(ATTACH + key)
+    if (!raw) return []
+    const list = JSON.parse(raw) as { key: string; name: string; mime: string; size: number; done: Attachment }[]
+    if (!Array.isArray(list)) return []
+    return list
+      .filter((x) => x?.done?.path)
+      .map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.size, done: x.done }))
+  } catch {
+    return []
+  }
+}
+
+/**
+ * 附件列表：选文件、粘贴、拖进来都走 add，选完马上上传。
+ * 传了 draftKey（和文字草稿用同一个）就按对话记住，切到别的对话再回来还在。
+ */
+export function useAttachments(draftKey?: string) {
+  const [items, setItems] = useState<Item[]>(() => (draftKey ? readAttachments(draftKey) : []))
   const count = useRef(0)
   count.current = items.length
+  // 同一个输入框换了对话：换成那个对话的附件
+  const shown = useRef(draftKey)
+  if (shown.current !== draftKey) {
+    shown.current = draftKey
+    setItems(draftKey ? readAttachments(draftKey) : [])
+  }
+
+  // 记住没发出去的附件；发出去清空后连同记录一起删掉
+  useEffect(() => {
+    if (!draftKey) return
+    try {
+      const done = items
+        .filter((x) => x.done)
+        .map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.size, done: x.done }))
+      if (done.length) localStorage.setItem(ATTACH + draftKey, JSON.stringify(done))
+      else localStorage.removeItem(ATTACH + draftKey)
+    } catch {}
+  }, [items, draftKey])
+
+  // 恢复的图片没有本地预览，从服务端把缩略图取回来
+  useEffect(() => {
+    const need = items.filter((x) => !x.preview && x.done && isImage(x.done.mime, x.done.name))
+    if (!need.length) return
+    let alive = true
+    void Promise.all(need.map(async (x) => [x.key, (await attachmentUrl(x.done!)) ?? ''] as const)).then((pairs) => {
+      if (!alive) return
+      const urls = Object.fromEntries(pairs.filter(([, u]) => u))
+      if (Object.keys(urls).length)
+        setItems((xs) => xs.map((x) => (urls[x.key] && !x.preview ? { ...x, preview: urls[x.key] } : x)))
+    })
+    return () => {
+      alive = false
+    }
+  }, [items])
 
   const add = useCallback(async (files: File[]) => {
     const room = MAX_ATTACHMENTS - count.current

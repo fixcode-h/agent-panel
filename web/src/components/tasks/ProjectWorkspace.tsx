@@ -21,16 +21,18 @@ import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/t
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { TaskComposer, projectWorkflowId } from './TaskComposer'
 import { TaskControlButton } from './TaskControl'
+import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { TaskView } from './TaskView'
 import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面直接输入新任务，下面是这个项目的任务 */
 function ProjectHome({ project }: { project: Project }) {
-  const { tasks, tasksLoaded, workflows, agents, projectCategories, upsertTask } = useData()
+  const { tasks, tasksLoaded, workflows, projectCategories, upsertTask } = useData()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
   // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）
@@ -117,50 +119,72 @@ function ProjectHome({ project }: { project: Project }) {
             </p>
           ) : (
             <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
-              {list.map((tk) => {
-                const a = agents.find((x) => x.id === tk.agentId)
-                const w = workflows.find((x) => x.id === tk.workflowId)
-                const tops = tk.steps.filter((s) => !s.parentId && s.kind !== 'main')
-                const done = tops.filter((s) => s.status === 'done').length
-                return (
-                  // 暂停 / 继续按钮不能套在整行的按钮里，放在行的右边
-                  <li key={tk.id} className="flex items-center transition-colors hover:bg-sel/60">
-                    <button
-                      onClick={() => open(tk.id)}
-                      className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
-                    >
-                      <TaskStatusIcon status={tk.status} />
-                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                        <span className="truncate text-[0.875rem]">{tk.title}</span>
-                        <span className="truncate text-xs text-subtle">
-                          {tk.mode === 'workflow'
-                            ? `${tk.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
-                            : t('对话 · {name}', { name: a?.name ?? t('Agent 已删除') })}
-                        </span>
-                        <TaskStats task={tk} now={now} />
-                      </span>
-                      <span
-                        className={cn(
-                          'hidden shrink-0 text-xs sm:block',
-                          tk.status === 'failed'
-                            ? 'text-danger'
-                            : tk.status === 'running'
-                              ? 'text-accent'
-                              : 'text-subtle',
-                        )}
-                      >
-                        {tk.status === 'done' ? timeAgo(tk.updatedAt, now) : statusLabel[tk.status]}
-                      </span>
-                    </button>
-                    <TaskControlButton task={tk} className="mr-4" />
-                  </li>
-                )
-              })}
+              {list.map((tk) => (
+                <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
+              ))}
             </ul>
           )}
         </section>
       </div>
     </main>
+  )
+}
+
+/** 任务列表里的一行：点开任务，右键可以暂停 / 继续、重命名、归档、删除 */
+function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen: () => void }) {
+  const { agents, workflows } = useData()
+  const menu = useTaskRowMenu(task)
+  const a = agents.find((x) => x.id === task.agentId)
+  const w = workflows.find((x) => x.id === task.workflowId)
+  const tops = task.steps.filter((s) => !s.parentId && s.kind !== 'main')
+  const done = tops.filter((s) => s.status === 'done').length
+  if (menu.renaming)
+    return (
+      <li className="flex items-center px-4 py-3">
+        <TaskRenameInput
+          task={task}
+          onCommit={menu.rename}
+          onCancel={() => menu.setRenaming(false)}
+          className="min-w-0 flex-1 text-[0.875rem]"
+        />
+      </li>
+    )
+  return (
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          {/* 暂停 / 继续按钮不能套在整行的按钮里，放在行的右边 */}
+          <li className="flex items-center transition-colors hover:bg-sel/60">
+            <button
+              onClick={onOpen}
+              className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
+            >
+              <TaskStatusIcon status={task.status} />
+              <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-[0.875rem]">{task.title}</span>
+                <span className="truncate text-xs text-subtle">
+                  {task.mode === 'workflow'
+                    ? `${task.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
+                    : t('对话 · {name}', { name: a?.name ?? t('Agent 已删除') })}
+                </span>
+                <TaskStats task={task} now={now} />
+              </span>
+              <span
+                className={cn(
+                  'hidden shrink-0 text-xs sm:block',
+                  task.status === 'failed' ? 'text-danger' : task.status === 'running' ? 'text-accent' : 'text-subtle',
+                )}
+              >
+                {task.status === 'done' ? timeAgo(task.updatedAt, now) : statusLabel[task.status]}
+              </span>
+            </button>
+            <TaskControlButton task={task} className="mr-4" />
+          </li>
+        </ContextMenuTrigger>
+        <ContextMenuContent>{menu.items}</ContextMenuContent>
+      </ContextMenu>
+      {menu.confirm}
+    </>
   )
 }
 

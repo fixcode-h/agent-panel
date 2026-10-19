@@ -1,0 +1,128 @@
+import { useState } from 'react'
+import { Archive, ArchiveRestore, Pause, PencilLine, Play, Trash2 } from 'lucide-react'
+import { toast } from 'sonner'
+import type { Task } from '@shared/schema'
+import { api } from '@/lib/api'
+import { useData } from '@/lib/data'
+import { cn } from '@/lib/utils'
+import { ConfirmDialog } from '@/components/ui/dialog'
+import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
+import { useTaskControl } from './TaskControl'
+import { t } from '@shared/i18n'
+
+/**
+ * 任务行右键菜单的动作（工作区任务列表、侧栏共用）：暂停 / 继续、重命名、归档、删除。
+ * items 放进 ContextMenuContent，confirm 放在行外面；重命名时把行换成 TaskRenameInput。
+ */
+export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
+  const { removeTask, upsertTask } = useData()
+  const control = useTaskControl(task)
+  const [renaming, setRenaming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const chat = !task.projectId
+  const rename = async (title: string) => {
+    setRenaming(false)
+    title = title.trim()
+    if (!title || title === task.title) return
+    try {
+      upsertTask(await api.renameTask(task.id, title))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const archive = async (archived: boolean) => {
+    try {
+      upsertTask(await api.archiveTask(task.id, archived))
+      toast.success(archived ? t('已归档，可以在筛选里选「已归档」找到') : t('已取消归档'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const remove = async () => {
+    try {
+      await api.deleteTask(task.id)
+      removeTask(task.id)
+      onDeleted?.()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setDeleting(false)
+    }
+  }
+  const items = (
+    <>
+      {control.action && (
+        <>
+          <ContextMenuItem disabled={control.busy} onSelect={control.run}>
+            {control.action === 'pause' ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+            {control.label}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
+        </>
+      )}
+      <ContextMenuItem onSelect={() => setRenaming(true)}>
+        <PencilLine className="h-4 w-4" />
+        {t('重命名')}
+      </ContextMenuItem>
+      {task.archived ? (
+        <ContextMenuItem onSelect={() => archive(false)}>
+          <ArchiveRestore className="h-4 w-4" />
+          {t('取消归档')}
+        </ContextMenuItem>
+      ) : (
+        <ContextMenuItem disabled={task.status === 'running'} onSelect={() => archive(true)}>
+          <Archive className="h-4 w-4" />
+          {t('归档')}
+        </ContextMenuItem>
+      )}
+      <ContextMenuSeparator />
+      <ContextMenuItem danger onSelect={() => setDeleting(true)}>
+        <Trash2 className="h-4 w-4" />
+        {t('删除')}
+      </ContextMenuItem>
+    </>
+  )
+  const confirm = (
+    <ConfirmDialog
+      open={deleting}
+      onOpenChange={setDeleting}
+      title={t('删除「{name}」？', { name: task.title })}
+      description={chat ? t('这次聊天的记录会一起删除。') : t('任务的记录会一起删除，项目里的文件不受影响。')}
+      onConfirm={remove}
+    />
+  )
+  return { renaming, setRenaming, rename, items, confirm }
+}
+
+/** 重命名任务的行内输入框：回车或失焦提交，Esc 取消 */
+export function TaskRenameInput({
+  task,
+  onCommit,
+  onCancel,
+  className,
+}: {
+  task: Task
+  onCommit: (title: string) => void
+  onCancel: () => void
+  className?: string
+}) {
+  const chat = !task.projectId
+  return (
+    <input
+      autoFocus
+      aria-label={chat ? t('聊天标题') : t('任务标题')}
+      defaultValue={task.title}
+      maxLength={80}
+      onFocus={(e) => e.currentTarget.select()}
+      onBlur={(e) => onCommit(e.currentTarget.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+        if (e.key === 'Escape') onCancel()
+      }}
+      className={cn(
+        'h-8 rounded-lg border border-accent bg-field px-2 text-[0.8125rem] text-fg outline-none',
+        className,
+      )}
+    />
+  )
+}

@@ -72,8 +72,18 @@ export interface CliDefinition {
   /** 默认可执行文件名；可以在设置里改成完整路径 */
   command: string
   versionArgs: string[]
-  /** 模型建议；用户仍可以手填任意模型名 */
-  models: { id: string; label: string; isDefault?: boolean; defaultEffort?: string; origin?: 'cli' | 'config' }[]
+  /**
+   * 模型建议；用户仍可以手填任意模型名。
+   * efforts 是 CLI 报的这个模型支持的思考强度，不给表示不知道（按 CLI 的全部列）
+   */
+  models: {
+    id: string
+    label: string
+    isDefault?: boolean
+    defaultEffort?: string
+    efforts?: string[]
+    origin?: 'cli' | 'config'
+  }[]
   /** 支持的思考强度（从低到高）；为空表示不支持 */
   efforts: { id: string; label: string }[]
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
@@ -101,6 +111,11 @@ export interface CliDefinition {
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */
   steer: boolean
+  /**
+   * 没有插话协议，但能用面板的 MCP 工具（read_user_notes）取执行中的补充：
+   * 补充先排进队列，模型取走时从队列里去掉；没取走的这一轮结束后照常处理
+   */
+  notes: boolean
   /** 压缩上下文：native 走协议，slash 发「/compact」，summary 让它写摘要、下一轮开新会话 */
   compact: 'native' | 'slash' | 'summary'
   /** 审查改动：native 走 CLI 的审查模式，prompt 按审查要求跑一轮 */
@@ -232,6 +247,7 @@ export const CLIS: CliDefinition[] = [
     protocol: 'claude-stream',
     parser: 'claude',
     steer: true,
+    notes: false,
     compact: 'slash',
     review: 'prompt',
     fork: 'end',
@@ -397,6 +413,7 @@ export const CLIS: CliDefinition[] = [
     protocol: 'codex-app',
     parser: '',
     steer: true,
+    notes: false,
     compact: 'native',
     review: 'native',
     fork: 'turn',
@@ -516,6 +533,12 @@ export const CLIS: CliDefinition[] = [
 CLIS.push(...BUILTIN_SPECS.map((s) => specToDefinition(s as CliSpecInput)))
 
 export const getCli = (id: string) => CLIS.find((c) => c.id === id)
+
+/** 执行中的补充能不能交给正在跑的 CLI：有插话协议，或者没有协议但能用面板的 MCP 工具取（见 notes） */
+export const steerable = (cli: string | undefined) => {
+  const def = cli ? getCli(cli) : undefined
+  return !!def && (def.steer || def.notes)
+}
 
 /**
  * 换上用户自己加的 CLI（数据目录 config/clis/ 下的配置）：服务端启动和重新读取时调用，页面从接口拿到后也调一遍。

@@ -7,6 +7,7 @@ import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FoldedRun, SystemNote } from './Messages'
+import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
@@ -44,13 +45,14 @@ function running(task: Task, rootId: string) {
     .map((s) => s.agentId)
 }
 
-/** 连续属于同一个节点的消息归成一段 */
+/** 连续属于同一个节点的消息归成一段；执行中补发的要求自成一段，不和节点输出混在一起 */
 function runs(msgs: TaskMessage[]) {
-  const out: { step: string; msgs: TaskMessage[] }[] = []
+  const out: { step: string; user: boolean; msgs: TaskMessage[] }[] = []
   for (const m of msgs) {
     const last = out.at(-1)
-    if (last && last.step === m.step) last.msgs.push(m)
-    else out.push({ step: m.step, msgs: [m] })
+    const user = m.role === 'user'
+    if (last && last.step === m.step && last.user === user) last.msgs.push(m)
+    else out.push({ step: m.step, user, msgs: [m] })
   }
   return out
 }
@@ -133,6 +135,15 @@ export function StepSection({
       )}
       <div className={cn('flex flex-col gap-4', !bare && 'ml-[7px] border-l pl-5')}>
         {runs(msgs).map((r, i) => {
+          // 执行中补发的要求：跟着节点的竖线显示，不另起一段，也不再显示一遍节点头部
+          if (r.user)
+            return (
+              <div key={i} className="flex flex-col gap-4">
+                {r.msgs.map((m) => (
+                  <UserMessage key={m.id} text={m.text} at={m.at} attachments={m.attachments} />
+                ))}
+              </div>
+            )
           if (r.step === rootId)
             return <FoldedRun key={i} msgs={r.msgs} teamNames={teamNames} live={root.status === 'running'} />
           const s = task.steps.find((x) => x.id === r.step)

@@ -28,7 +28,7 @@ import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatM
 import { blockedStep, flowUnfinished, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
-import { getCli } from '@shared/clis'
+import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
@@ -68,15 +68,33 @@ type Block =
 /** 把消息分段：连续的节点输出归到一段，段里再按主流程节点分开，同时执行的节点输出不会交错 */
 function toBlocks(task: Task): Block[] {
   const blocks: Block[] = []
-  for (const m of task.messages) {
-    if (!m.step && m.role === 'agent') {
+  const msgs = task.messages
+  // 往后找第一条带节点的消息：判断这条用户消息后面还有没有同一个节点的输出
+  const nextRoot = (from: number) => {
+    for (let i = from; i < msgs.length; i++) if (msgs[i].step) return rootStepId(msgs[i].step)
+    return undefined
+  }
+  for (let i = 0; i < msgs.length; i++) {
+    const m = msgs[i]
+    // 没有节点的用户消息（对话里、工作流外的追加要求）单独成一段；
+    // 执行中补发的要求后面还有同一个节点的输出时，留在那个节点的竖线里，不另起一段
+    if (m.role === 'user' && !m.step) {
       const b = blocks.at(-1)
-      if (b?.kind === 'turn') b.msgs.push(m)
-      else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
+      const root = b?.kind === 'steps' ? b.roots.at(-1) : undefined
+      if (b?.kind === 'steps' && root && nextRoot(i + 1) === root) {
+        b.byRoot.get(root)!.push(m)
+        continue
+      }
+      blocks.push({ kind: 'msg', m })
       continue
     }
-    if (!m.step || m.role === 'user') {
-      blocks.push({ kind: 'msg', m })
+    if (!m.step) {
+      // 对话里 Agent 连续的回复归到一轮
+      if (m.role === 'agent') {
+        const b = blocks.at(-1)
+        if (b?.kind === 'turn') b.msgs.push(m)
+        else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
+      } else blocks.push({ kind: 'msg', m })
       continue
     }
     let b = blocks.at(-1)
@@ -132,7 +150,7 @@ export function TaskView({
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<HTMLTextAreaElement>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
-  const files = useAttachments()
+  const files = useAttachments(`task:${taskId}`)
   const mention = useFileMention(project?.id, text, setText, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
@@ -248,7 +266,9 @@ export function TaskView({
     stick.current = true
     try {
       const r = await api.sendMessage(task.id, text, files.attachments, false, running && how === 'steer')
-      if (running && how === 'steer' && r.queue.length > task.queue.length) toast(t('这一轮刚好结束，已改成排队'))
+      // 有插话协议的 CLI 刚结束这一轮时收不下，改成了排队；靠面板工具取的本来就会排队，不用提醒
+      if (running && how === 'steer' && chatDef?.steer && r.queue.length > task.queue.length)
+        toast(t('这一轮刚好结束，已改成排队'))
       apply(r)
       setText('')
       files.clear()
@@ -323,10 +343,13 @@ export function TaskView({
   const roots = task.steps.filter((s) => !s.parentId)
   const runningSteps = task.steps.filter((s) => s.status === 'running')
   const chatAgent = agents.find((a) => a.id === task.agentId)
-  // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 只能排队
+  // 对话实际用的 CLI：Codex、Claude Code 能在执行中插话，Command Code 这类靠面板的工具取
   const chatCli = chatAgent ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli : ''
+  const chatDef = getCli(chatCli)
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
-  const canSteer = running && (task.mode === 'workflow' || !!getCli(chatCli)?.steer)
+  const canSteer = running && (task.mode === 'workflow' || steerable(chatCli))
+  // 没有插话协议、靠面板的工具取补充的 CLI：发出去先排进队列，它执行中会自己取走
+  const byNotes = task.mode === 'chat' && !!chatDef?.notes && !chatDef.steer
   // 用默认 Agent 的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换，下一轮生效
   const byCli = task.mode === 'chat' && task.agentId === DEFAULT_AGENT_ID
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
@@ -770,7 +793,9 @@ export function TaskView({
                     !running
                       ? t('继续输入要求')
                       : canSteer
-                        ? t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
+                        ? byNotes
+                          ? t('执行中也可以输入，Agent 执行时会取走；没取到的等这一轮结束后接着处理')
+                          : t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
                         : t('执行中也可以输入，这一轮完成后接着处理')
                   }
                 />
@@ -1025,7 +1050,13 @@ function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => voi
                 {q.text}
               </span>
               <span className="shrink-0 text-xs text-subtle">
-                {paused ? t('排队中 · 任务没在执行，点「继续执行」后处理') : i === 0 ? t('下一条') : t('排队中')}
+                {paused
+                  ? t('排队中 · 任务没在执行，点「继续执行」后处理')
+                  : q.note
+                    ? t('Agent 执行中会取走')
+                    : i === 0
+                      ? t('下一条')
+                      : t('排队中')}
               </span>
               <button
                 type="button"

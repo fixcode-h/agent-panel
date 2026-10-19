@@ -28,16 +28,23 @@ export const modelSuggestions = (def: CliDefinition | undefined) =>
   }))
 /** CLI 自己的默认模型和它的默认思考强度 */
 export const cliDefaultModel = (def: CliDefinition) => def.models.find((m) => m.isDefault)
+/** 这个模型支持的思考强度：CLI 报了这个模型的（读到的模型列表、安装包里的模型目录）就按它，不知道时按 CLI 的全部 */
+export function modelEfforts(def: CliDefinition, model: string) {
+  const m = def.models.find((x) => x.id === model)
+  if (!m?.efforts) return def.efforts
+  return m.efforts.map((id) => def.efforts.find((e) => e.id === id) ?? { id, label: id })
+}
 /**
  * 「不指定」时用 CLI 默认的思考强度：不单独放默认选项，默认的那个值是 ''，后面标上（默认）；
- * 不知道 CLI 默认是哪个时才有一项「auto · 自动（默认）」。
+ * 不知道 CLI 默认是哪个时才有一项「auto · 自动（默认）」。list 给某个模型的强度时只列这个模型支持的那些
+ * （选了模型不认的强度时 CLI 会直接报错退出）。
  */
-export function defaultEffortOptions(def: CliDefinition, defaultId?: string) {
-  const opts = def.efforts.map((e) => ({
+export function defaultEffortOptions(def: CliDefinition, defaultId?: string, list = def.efforts) {
+  const opts = list.map((e) => ({
     value: e.id === defaultId ? '' : e.id,
     label: e.id === defaultId ? t('{name}（默认）', { name: `${e.id} · ${e.label}` }) : `${e.id} · ${e.label}`,
   }))
-  if (!defaultId || !def.efforts.some((e) => e.id === defaultId))
+  if (!defaultId || !list.some((e) => e.id === defaultId))
     opts.unshift({ value: '', label: defaultId ? t('{name}（默认）', { name: defaultId }) : t('auto · 自动（默认）') })
   return opts
 }

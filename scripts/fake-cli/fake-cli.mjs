@@ -292,7 +292,46 @@ const dispatch = input.includes('## 事件：节点完成')
     : input.includes('## 事件：子 Agent 提问')
       ? '\n主 Agent 的回答：用方案一'
       : ''
-const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}`
+// 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
+const panelMcpUrl = () =>
+  kind === 'pi'
+    ? /new URL\('([^']+)'\)/.exec(readFileSync('.pi/extensions/agent-panel-panel.ts', 'utf8'))[1]
+    : (() => {
+        const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
+        return cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
+      })()
+
+// 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求先排在队列里，模型用面板的工具取走。
+// FAKE_NOTES 时反复取（等页面把补充发过来，最多 6 秒），拿到的话写进回复和日志
+let notesGot = ''
+if (input.includes('FAKE_NOTES') && (kind === 'commandcode' || kind === 'gemini' || kind === 'pi')) {
+  const url = panelMcpUrl()
+  // 像真实 CLI 一样按 SSE 读：面板的提问工具用流式响应（等用户回答期间发心跳），别的接口是普通 JSON
+  const rpc = (id, method, params) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    }).then(async (r) => {
+      const text = await r.text()
+      const data = text.split('\n').filter((l) => l.startsWith('data:'))
+      return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+    })
+  await rpc(1, 'initialize', {})
+  const tools = (await rpc(2, 'tools/list', {})).result.tools.map((x) => x.name)
+  for (let i = 0; i < 40 && !notesGot; i++) {
+    const text = (await rpc(3, 'tools/call', { name: 'read_user_notes', arguments: {} })).result.content[0].text
+    if (text === '没有新的补充') await sleep(150)
+    else notesGot = `\n取到的补充：${text}`
+  }
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(
+      process.env.FAKE_CLI_LOG + '.notes',
+      JSON.stringify({ kind, tools, got: notesGot, hint: input.includes('read_user_notes') }) + '\n',
+    )
+}
+
+const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
@@ -538,20 +577,18 @@ if (input.includes('HANG')) {
 // 等用户回答后把工具返回的话当作回复
 const askArgs = input.match(/FAKE_ASK:(.*)/)?.[1]
 if (askArgs && (kind === 'gemini' || kind === 'commandcode' || kind === 'pi')) {
-  // Pi 没有 MCP：面板写的是一个扩展脚本，地址在脚本里
-  const url =
-    kind === 'pi'
-      ? /new URL\('([^']+)'\)/.exec(readFileSync('.pi/extensions/agent-panel-panel.ts', 'utf8'))[1]
-      : (() => {
-          const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-          return cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
-        })()
+  const url = panelMcpUrl()
+  // 像真实 CLI 一样按 SSE 读：面板的提问工具用流式响应（等用户回答期间发心跳），别的接口是普通 JSON
   const rpc = (id, method, params) =>
     fetch(url, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
-    }).then((r) => r.json())
+    }).then(async (r) => {
+      const text = await r.text()
+      const data = text.split('\n').filter((l) => l.startsWith('data:'))
+      return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+    })
   await rpc(1, 'initialize', {})
   const tools = (await rpc(2, 'tools/list', {})).result.tools.map((x) => x.name)
   const got = (await rpc(3, 'tools/call', { name: 'ask_user', arguments: JSON.parse(askArgs) })).result.content[0].text

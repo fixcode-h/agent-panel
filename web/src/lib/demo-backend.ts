@@ -51,7 +51,7 @@ import {
   type LocalJob,
   type LocalStatus,
 } from '@shared/local-image'
-import { defaultCli, orderClis } from '@shared/settings'
+import { agentRun, defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
@@ -63,6 +63,7 @@ import {
   taskSummary,
   trackWait,
   withAttachments,
+  withTaskModel,
 } from '@shared/task'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
@@ -1160,6 +1161,12 @@ function projectWorkflow(d: Db, p: Project) {
   return d.workflows.find((w) => w.id === (id || DEFAULT_WORKFLOW_ID))
 }
 
+/** 这个对话实际用的 CLI（和正式版一样：默认 Agent 的对话用任务上选的，其他 Agent 用自己配置的） */
+function demoChatCli(d: Db, task: Task) {
+  const a = d.agents.find((x) => x.id === task.agentId)
+  return a ? agentRun(withTaskModel(a, task), d.settings ?? Settings.parse({})).cli : ''
+}
+
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false, resume = false) {
   const entry: { stop: boolean; done?: Promise<unknown> } = { stop: false }
   live.set(task.id, entry)
@@ -1387,6 +1394,19 @@ function tasksRoute(
     const cur = live.get(task.id)
     // 补充：演示的模拟执行不会真的读它，记进对话（工作流里记在正在跑的节点上）
     if (cur && f.steer) {
+      // 没有插话协议、靠面板的工具取补充的 CLI：演示里没人取，先排进队列，这一轮完成后照常处理
+      const def = task.mode === 'chat' ? getCli(demoChatCli(d, task)) : undefined
+      if (def?.notes && !def.steer) {
+        ;(task.queue ??= []).push({
+          id: `demo-${crypto.randomUUID()}`,
+          text: f.text,
+          attachments: f.attachments,
+          at: new Date().toISOString(),
+          note: true,
+        })
+        persist()
+        return task
+      }
       const step =
         task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : ''
       task.messages.push({
@@ -1408,6 +1428,7 @@ function tasksRoute(
         text: f.text,
         attachments: f.attachments,
         at: new Date().toISOString(),
+        note: false,
       })
       persist()
       return task
