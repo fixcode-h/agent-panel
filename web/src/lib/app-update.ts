@@ -4,7 +4,8 @@ import { api } from './api'
 import { t } from '@shared/i18n'
 
 /**
- * 面板版本更新的全局状态：打开页面时检查一次（服务端缓存 10 分钟），侧栏的「设置」和设置里的「版本更新」共用；
+ * 面板版本更新的全局状态：打开页面时自动检查（服务端记着上次检查的时间，最多每 6 小时真去问一次 GitHub），
+ * 页面一直开着就每小时问一次服务端；侧栏的「设置」和设置里的「版本更新」共用；
  * 安装进度也放在这里，关掉设置再打开不会丢。
  */
 interface State {
@@ -44,6 +45,10 @@ export function useAppUpdate() {
     if (started) return
     started = true
     void loadReleases()
+    // 不用 refresh：没到 6 小时服务端直接回上次的结果
+    setInterval(() => {
+      if (!state.loading && !state.job && !state.restarting) void loadReleases()
+    }, 3600_000)
   }, [])
   return s
 }

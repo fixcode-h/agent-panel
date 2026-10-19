@@ -32,6 +32,8 @@ export interface AppReleases {
   releases: AppRelease[]
   /** 比当前新的包（正式版只看正式版，预览版看全部） */
   update?: AppRelease
+  /** 上次从 GitHub 读到发布列表的时间 */
+  checkedAt?: string
   error?: string
 }
 

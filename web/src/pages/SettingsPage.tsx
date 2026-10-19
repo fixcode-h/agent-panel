@@ -69,10 +69,10 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'categories', label: t('项目分类'), icon: Layers },
   { id: 'tags', label: t('标签'), icon: TagIcon },
   { id: 'models', label: t('默认 CLI'), icon: Cpu },
-  // 部署也是 CLI 的事（写全局说明、放技能），放在 CLI 二级列表里默认 CLI 下面
+  // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
-  ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
+  ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: t('AI 创建'), icon: Sparkles },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon },
   { id: 'styles', label: t('风格库'), icon: Palette },
@@ -241,7 +241,7 @@ function SettingsBody({
 
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
   const statusOf = (id: string) => clis.find((c) => c.id === id)
-  const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || !!s.cli
+  const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
 
