@@ -19,6 +19,7 @@ import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
 import {
   beginRun,
   closeFlow,
+  dropEndNotes,
   endRun,
   messageStamp,
   pauseStep,
@@ -109,6 +110,7 @@ export function tasksApi(deps: {
               '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
             ),
             tools: [],
+            transient: true,
             at: new Date().toISOString(),
           },
         ],
@@ -270,6 +272,7 @@ export function tasksApi(deps: {
       m = q
     }
     const expanded = await expandForWorkflow(next, m.text)
+    dropEndNotes(next)
     next.messages.push({
       id: randomUUID(),
       role: 'user',
@@ -569,6 +572,7 @@ export function tasksApi(deps: {
       if (!fresh) return bad(c, t('工作流已经被删除，只能按任务创建时的工作流继续'))
     }
     const entry = reserve(task)
+    dropEndNotes(entry.task)
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
       if (fresh) {

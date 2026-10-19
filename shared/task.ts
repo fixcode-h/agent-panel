@@ -347,6 +347,14 @@ export function stripToolMarkup(text: string) {
   return (text.slice(0, open.index).trimEnd() + '\n\n' + text.slice(end).trimStart()).trim()
 }
 
+/**
+ * 继续执行前去掉上一轮结束时写的状态说明（已暂停、失败后可以重试）：接着跑以后它已经不成立，
+ * 留着还会把同一个节点的前后输出隔成两段
+ */
+export function dropEndNotes(task: Pick<Task, 'messages'>) {
+  while (task.messages.at(-1)?.transient) task.messages.pop()
+}
+
 /** 结束工作流：没完成的节点标成跳过，不再执行；之后的要求由主 Agent 直接处理。真实执行和在线演示共用 */
 export function closeFlow(task: Task, id: string, now = new Date().toISOString()) {
   for (const s of task.steps)

@@ -217,7 +217,7 @@ export function parseVerdict(text: string): 'pass' | 'fail' | '' {
   return ''
 }
 
-export function system(host: EngineHost, text: string, step = '', error = false) {
+export function system(host: EngineHost, text: string, step = '', error = false, transient = false) {
   host.task.messages.push({
     id: host.newId(),
     role: 'system',
@@ -226,6 +226,7 @@ export function system(host: EngineHost, text: string, step = '', error = false)
     text,
     tools: [],
     ...(error && { error }),
+    ...(transient && { transient }),
     at: now(),
   })
 }
@@ -1325,13 +1326,16 @@ function finish(host: EngineHost, r: Fail) {
       if (r.stopped) pauseStep(s)
       s.endedAt = now()
     }
-  if (r.budget) system(host, r.error)
+  if (r.budget) system(host, r.error, '', false, true)
   else if (r.stopped)
     system(
       host,
       host.task.mode === 'workflow'
         ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
         : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。'),
+      '',
+      false,
+      true,
     )
   else {
     const failed = host.task.steps
@@ -1345,6 +1349,7 @@ function finish(host: EngineHost, r: Fail) {
           })
         : r.error || t('执行失败'),
       '',
+      true,
       true,
     )
   }
@@ -1403,6 +1408,9 @@ export async function runEngineTurn(host: EngineHost) {
           '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。',
           { title: stuck.title },
         ),
+        '',
+        false,
+        true,
       )
     return true
   }
