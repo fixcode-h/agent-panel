@@ -52,18 +52,17 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
 export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], workflows: Workflow[] = []): Check[] {
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(w.mainAgentId)
-  const team = [main, ...w.members.map((m) => byId.get(m.agentId))].filter(Boolean) as Agent[]
-  const teamIds = new Set(team.map((a) => a.id))
   const nodes = w.flows.flatMap((f) => f.nodes)
-  const outside = [
+  // 子 Agent 在节点上选：用到的 Agent 就是主 Agent 加上节点上的
+  const used = [...new Set(nodes.filter((n) => n.kind === 'agent' && n.agentId).map((n) => n.agentId))]
+  const team = [main, ...used.filter((id) => id !== w.mainAgentId).map((id) => byId.get(id))].filter(Boolean) as Agent[]
+  const missing = [
     ...new Set(
       nodes
-        .filter((n) => n.kind === 'agent' && n.agentId && !teamIds.has(n.agentId))
+        .filter((n) => n.kind === 'agent' && n.agentId && !byId.has(n.agentId))
         .map((n) => n.title || t('未命名节点')),
     ),
   ]
-  const used = new Set(nodes.map((n) => n.agentId))
-  const unassigned = w.members.map((m) => byId.get(m.agentId)).filter((a) => a && !used.has(a.id)) as Agent[]
   // 工作流里的节点都用默认 CLI 执行，看默认 CLI 能不能用
   const defCli = clis.find((c) => c.isDefault) ?? clis[0]
   const cliOk = !clis.length || (!!defCli?.installed && defCli.enabled)
@@ -136,10 +135,10 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
           : t('没有循环调用'),
     },
     {
-      ok: outside.length === 0,
-      label: t('节点的 Agent 都在团队中'),
-      hint: outside.length
-        ? t('这些节点的 Agent 不在团队里：{names}', { names: outside.join(t('、')) })
+      ok: missing.length === 0,
+      label: t('节点的 Agent 都还在'),
+      hint: missing.length
+        ? t('这些节点的 Agent 已经删除：{names}', { names: missing.join(t('、')) })
         : t('没指定 Agent 的节点由主 Agent 执行'),
     },
     {
@@ -148,14 +147,6 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
       hint: loose.length
         ? t('没有从开始连到、不会执行：{names}', { names: loose.slice(0, 4).join(t('、')) })
         : t('所有节点都会执行'),
-      optional: true,
-    },
-    {
-      ok: unassigned.length === 0,
-      label: t('每个子 Agent 都有节点'),
-      hint: unassigned.length
-        ? t('没有分到节点：{names}', { names: unassigned.map((a) => a.name).join(t('、')) })
-        : t('子 Agent 都参与了流程'),
       optional: true,
     },
     {

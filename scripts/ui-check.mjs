@@ -86,6 +86,9 @@ try {
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
   await check(p, '任务', ['上下文', '启动命令'])
+  // 工作流任务：任务进度是主 Agent → 节点 → 子 Agent 的层级
+  await p.getByText('商品详情页增加', { exact: false }).first().click()
+  await check(p, '任务-主Agent调度', ['主 Agent', '调度', '子 Agent · 单元测试'])
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])
   // 内置工作流：添加后连同 Agent 一起建好，直接打开

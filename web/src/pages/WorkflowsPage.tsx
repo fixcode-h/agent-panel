@@ -3,7 +3,7 @@ import { toast } from 'sonner'
 import { Copy, Download, LayoutTemplate, Plus, Sparkles, Trash2, Upload, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Category, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { newFlow } from '@shared/flow'
+import { newFlow, subAgentIds } from '@shared/flow'
 import { isDefaultWorkflow } from '@shared/builtin/default'
 import { api } from '@/lib/api'
 import { exportWorkflow, importWorkflow } from '@/lib/transfer'
@@ -190,7 +190,7 @@ export function WorkflowsPage() {
                 }
                 title={w.name}
                 monoSubtitle={false}
-                subtitle={`${nameOf(w.mainAgentId) ?? t('未选主 Agent')} · ${t('{n} 个子 Agent', { n: w.members.length })}`}
+                subtitle={`${nameOf(w.mainAgentId) ?? t('未选主 Agent')} · ${t('{n} 个子 Agent', { n: subAgentIds(w).length })}`}
                 tags={w.tags.length ? <TagList ids={w.tags} /> : undefined}
                 // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
                 trailing={

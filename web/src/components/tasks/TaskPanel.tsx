@@ -2,6 +2,7 @@ import { useState } from 'react'
 import {
   ChevronDown,
   Clock,
+  Crown,
   Coins,
   FolderOpen,
   Hourglass,
@@ -33,7 +34,7 @@ import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { useDirInfo } from '@/components/projects/DirPicker'
-import { stepTree, topSteps } from '@shared/flow'
+import { isMainStep, mainStep, stepTree, topSteps } from '@shared/flow'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
 import { Terminal } from '@/components/agents/CommandPreview'
@@ -192,6 +193,8 @@ export function TaskPanel({
     return { ...a, cli, name: getCli(cli)?.name ?? a.name }
   }
   const tops = topSteps(task)
+  // 主 Agent 调度整个流程：任务进度里它在最上面，流程节点挂在它下面
+  const main = mainStep(task)
   const done = tops.filter((s) => s.status === 'done').length
   // 执行中每秒刷新，节点耗时和总耗时实时走
   const now = useNow(task.status === 'running')
@@ -242,8 +245,11 @@ export function TaskPanel({
         }
       >
         <TimeSummary task={task} now={now} />
+        {task.mode === 'workflow' && main && (
+          <MainRow step={main} agent={byId.get(main.agentId)} now={now} onStep={onStep} />
+        )}
         {task.mode === 'workflow' ? (
-          <ol className="flex flex-col">
+          <ol className={cn('flex flex-col', main && 'ml-[7px] border-l border-line-strong pt-2 pl-3')}>
             {tops.map((st, si) => {
               const a = byId.get(st.agentId)
               const kids = stepTree(task, st.id)
@@ -296,6 +302,19 @@ export function TaskPanel({
                             style={{ paddingLeft: (stepDepth(k) - 1) * 12 }}
                           >
                             <StepIcon status={k.status} className="h-3.5 w-3.5" />
+                            {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
+                            {isMainStep(k) ? (
+                              <Crown className="h-3 w-3 shrink-0 text-accent" />
+                            ) : (
+                              k.slot === 'sub' &&
+                              byId.get(k.agentId) && (
+                                <AgentAvatar
+                                  icon={byId.get(k.agentId)!.icon}
+                                  cli={byId.get(k.agentId)!.cli}
+                                  size="xs"
+                                />
+                              )
+                            )}
                             <span
                               className={cn(
                                 'min-w-0 flex-1 truncate',
@@ -521,6 +540,49 @@ export function TaskPanel({
           </Section>
         </>
       )}
+    </div>
+  )
+}
+
+/** 任务进度最上面的主 Agent：调度了几轮、整个流程的耗时，和它自己的用量 */
+function MainRow({
+  step,
+  agent,
+  now,
+  onStep,
+}: {
+  step: TaskStep
+  agent?: { name: string; icon: string; cli: string }
+  now: number
+  onStep?: (id: string) => void
+}) {
+  return (
+    <div className="flex gap-2.5">
+      <span className="relative mt-0.5 bg-card">
+        <StepIcon status={step.status} />
+      </span>
+      <button
+        type="button"
+        disabled={!onStep}
+        onClick={() => onStep?.(step.id)}
+        title={t('主 Agent 评估子 Agent 的结果、决定流程怎么走，最后整理结果')}
+        className="-mx-1.5 -my-0.5 flex min-w-0 flex-1 flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
+      >
+        <span className={cn('flex items-center gap-1.5 text-[13px]', step.status === 'running' && 'font-medium')}>
+          <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />
+          {t('主 Agent')}
+        </span>
+        <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
+          {agent && (
+            <span className="flex items-center gap-1.5">
+              <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+              {agent.name}
+            </span>
+          )}
+          <span>{step.rounds ? t('调度 {n} 轮', { n: step.rounds }) : t('等节点交回结果')}</span>
+        </span>
+        <StepStats step={step} kids={[]} now={now} />
+      </button>
     </div>
   )
 }

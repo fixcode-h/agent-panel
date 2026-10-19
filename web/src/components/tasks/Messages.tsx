@@ -7,6 +7,7 @@ import { ToolRow } from './ToolRow'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
+import { stripDispatch } from '@shared/dispatch'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
@@ -213,7 +214,7 @@ const MessageBody = memo(
               ))}
             </div>
           )}
-          {m.text && <Markdown text={stripNext(m.text)} teamNames={teamNames} live={live} />}
+          {m.text && <Markdown text={stripDispatch(stripNext(m.text))} teamNames={teamNames} live={live} />}
         </div>
       </div>
     )

@@ -69,8 +69,18 @@ export function WorkflowDetail({
 
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(draft.mainAgentId)
-  const team = draft.members
-    .map((m) => ({ agent: byId.get(m.agentId), responsibility: m.responsibility }))
+  // 子 Agent 在节点上选：节点用到的 Agent 加上旧版团队里写过职责的
+  const team = [
+    ...new Set([
+      ...draft.members.map((m) => m.agentId),
+      ...draft.flows.flatMap((f) => f.nodes.map((n) => n.agentId)).filter(Boolean),
+    ]),
+  ]
+    .filter((id) => id !== draft.mainAgentId)
+    .map((id) => ({
+      agent: byId.get(id),
+      responsibility: draft.members.find((m) => m.agentId === id)?.responsibility ?? '',
+    }))
     .filter((m): m is { agent: Agent; responsibility: string } => !!m.agent)
   const checks = workflowChecks({ ...workflow, ...draft }, agents, clis, workflows)
   const nodeCount = draft.flows.reduce((n, f) => n + f.nodes.length, 0)
@@ -204,12 +214,15 @@ export function WorkflowDetail({
               </div>
             </FormSection>
 
-            <FormSection title={t('团队')}>
+            <FormSection title={t('主 Agent 与子 Agent')}>
               <TeamEditor
                 mainAgentId={draft.mainAgentId}
-                members={draft.members}
                 onMainChange={(id) => set('mainAgentId', id)}
-                onMembersChange={(m) => set('members', m)}
+                team={team}
+                dispatch={draft.dispatch !== false}
+                onDispatchChange={(v) => set('dispatch', v)}
+                mainTier={draft.mainTier ?? ''}
+                onMainTierChange={(v) => set('mainTier', v)}
               />
             </FormSection>
 

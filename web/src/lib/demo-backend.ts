@@ -1459,10 +1459,15 @@ function spreadSteps(t: Task) {
   }
   const end = Date.parse(t.updatedAt)
   place(
-    t.steps.filter((s) => !s.parentId && s.startedAt),
+    t.steps.filter((s) => !s.parentId && s.startedAt && s.kind !== 'main'),
     end - t.runMs,
     end,
   )
+  // 主 Agent 调度整个流程：从头到尾
+  for (const m of t.steps.filter((s) => s.kind === 'main' && !s.parentId && s.startedAt)) {
+    m.startedAt = iso(end - t.runMs)
+    m.endedAt = iso(end)
+  }
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */

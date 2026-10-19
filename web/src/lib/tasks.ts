@@ -135,7 +135,7 @@ export function fmtClock(iso: string) {
 
 /** 子节点的说明：「验收 第 2 轮 · 审查改动」 */
 export function stepLabel(s: TaskStep) {
-  if (!s.parentId) return s.title
+  if (!s.parentId || s.kind === 'main') return s.title
   return `${SLOT_LABEL[s.slot] ?? ''}${s.round ? t(' 第 {n} 轮', { n: s.round }) : ''} · ${s.title}`
 }
 
@@ -144,6 +144,7 @@ export const stepDepth = (s: TaskStep) => (s.id.split('/').length - 1) / 2
 
 /** 验收情况：「验收 2 轮 · 通过」 */
 export function verdictText(s: TaskStep) {
-  if (!s.rounds) return ''
+  // 主 Agent 的 rounds 是调度轮数，不是验收
+  if (!s.rounds || s.kind === 'main') return ''
   return s.verdict === 'fail' ? t('验收 {n} 轮 · 未通过', { n: s.rounds }) : t('验收 {n} 轮 · 通过', { n: s.rounds })
 }

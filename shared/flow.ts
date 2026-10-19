@@ -175,6 +175,13 @@ export function flowTemplate(members: { agent: Agent; responsibility: string }[]
 /** 节点的执行 Agent：没指定时是主 Agent */
 export const nodeAgent = (w: Pick<Workflow, 'mainAgentId'>, agentId: string) => agentId || w.mainAgentId
 
+/** 工作流用到的子 Agent：节点上选的（子 Agent 现在在节点上配），加上旧版团队里列过的；不含主 Agent */
+export function subAgentIds(w: Pick<Workflow, 'mainAgentId' | 'members' | 'flows'>) {
+  return [
+    ...new Set([...w.flows.flatMap((f) => f.nodes.map((n) => n.agentId)), ...(w.members ?? []).map((m) => m.agentId)]),
+  ].filter((id) => id && id !== w.mainAgentId)
+}
+
 /** 主 Agent 在任务节点里的 id（流程节点、委派里的主 Agent 是 `<父节点>/<入口>/@main`） */
 export const MAIN_STEP = '@main'
 export const isMainStep = (s: { kind: string }) => s.kind === 'main'
