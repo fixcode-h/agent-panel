@@ -7,9 +7,10 @@ import {
   type FlowRef,
   type WorkflowInput,
 } from '@shared/schema'
-import { MODEL_TIERS } from '@shared/clis'
+import { MODEL_TIERS, getCli } from '@shared/clis'
 import { agentTier } from '@shared/agent-role'
 import { cliSettings, defaultCli, defaultSettings } from '@shared/settings'
+import { effortLabel } from '@/lib/cli-style'
 import { Segmented } from '@/components/ui/segmented'
 import { ParamsForm } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
@@ -179,7 +180,8 @@ export function NodeInspector({
           />
           <span className="font-mono text-[0.71875rem] text-subtle">
             {cs.tiers[tier].model || t('自动')}
-            {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
+            {cs.tiers[tier].effort &&
+              ` · ${cs.tiers[tier].effort} · ${effortLabel(getCli(defCliId), cs.tiers[tier].effort)}`}
           </span>
         </div>
       )}
