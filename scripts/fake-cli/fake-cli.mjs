@@ -303,8 +303,11 @@ const out = (o) => {
   const stopReason = ok ? 'end_turn' : 'run_error'
   const usage = o.usage ?? {}
   process.stdout.write(
-    JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_end', result: { finalText: o.finalText, stopReason, usage } } }) +
-      '\n',
+    JSON.stringify({
+      type: 'event',
+      seq: ++rpcSeq,
+      event: { type: 'run_end', result: { finalText: o.finalText, stopReason, usage } },
+    }) + '\n',
   )
   process.stdout.write(
     JSON.stringify({
@@ -436,8 +439,11 @@ if (interrupted) {
   } else if (rpcMode) {
     // 告诉面板这一轮被中断了，然后等 session/exit
     process.stdout.write(
-      JSON.stringify({ jsonrpc: '2.0', method: 'turn/completed', params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'interrupted' } }) +
-        '\n',
+      JSON.stringify({
+        jsonrpc: '2.0',
+        method: 'turn/completed',
+        params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'interrupted' },
+      }) + '\n',
     )
     await rpcExit
   }
@@ -1002,9 +1008,7 @@ if (kind === 'claude') {
     )
     if (rpcMode) {
       const error = { message: 'Stream connection failed mid-response: terminated' }
-      process.stdout.write(
-        JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n',
-      )
+      process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n')
       process.stdout.write(
         JSON.stringify({
           jsonrpc: '2.0',

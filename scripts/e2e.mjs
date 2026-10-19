@@ -3878,10 +3878,7 @@ try {
         .slice(before)
         .at(-1)
       // Command Code 现在用 RPC 的 turn/steer 插话，只剩「等下一句」的 MCP 工具
-      assert.deepEqual(
-        rec.tools,
-        cli === 'commandcode' ? ['ask_user', 'wait_user_message'] : ['ask_user'],
-      )
+      assert.deepEqual(rec.tools, cli === 'commandcode' ? ['ask_user', 'wait_user_message'] : ['ask_user'])
       assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
       assert.ok(rec.hint, '提示里告诉模型有 ask_user')
       assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
