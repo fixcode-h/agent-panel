@@ -581,7 +581,8 @@ try {
   })
   chat = await waitDone(chat.id)
   assert.equal(chat.status, 'done')
-  assert.equal(calls().at(-1).input, '解释一下项目结构')
+  // 丙是 Command Code：没有插话协议，末尾会附上取执行中补充的用法说明（见 CLI 配置的 notes），任务描述仍在开头
+  assert.equal(calls().at(-1).input.split('\n\n')[0], '解释一下项目结构')
   await call('POST', `/tasks/${chat.id}/messages`, { text: '继续' })
   chat = await waitDone(chat.id)
   c = calls().at(-1)
