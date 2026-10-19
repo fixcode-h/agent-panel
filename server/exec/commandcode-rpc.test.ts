@@ -9,7 +9,12 @@ test('Command Code 常驻 RPC：初始化、开始一轮、插话、结束', asy
   const sent: any[] = []
   const events: CliEvent[] = []
   let ended = false
-  const session = commandCodeRpcSession({ cwd: process.cwd(), input: '先看代码', onEvent: (e) => events.push(e) })
+  const session = commandCodeRpcSession({
+    cwd: process.cwd(),
+    input: '先看代码',
+    maxTurns: 50,
+    onEvent: (e) => events.push(e),
+  })
   const starting = session.start({ write: (line) => sent.push(JSON.parse(line)), end: () => (ended = true) })
 
   assert.equal(sent[0].method, 'initialize')
@@ -17,6 +22,7 @@ test('Command Code 常驻 RPC：初始化、开始一轮、插话、结束', asy
   await tick()
   assert.equal(sent[1].method, 'turn/start')
   assert.equal(sent[1].params.input, '先看代码')
+  assert.equal(sent[1].params.maxTurns, 50, '回合上限走 turn/start 的参数')
   session.line(JSON.stringify({ jsonrpc: '2.0', id: 2, result: { turnId: 't1' } }))
   await starting
   assert.ok(events.some((e) => e.type === 'session' && e.id === 's1'))

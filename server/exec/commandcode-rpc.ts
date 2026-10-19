@@ -13,7 +13,13 @@ type Io = { write: (s: string) => void; end: () => void }
 /** 初始化、开始一轮、插话这些请求等多久；CLI 正常都是立刻回 */
 const REQUEST_TIMEOUT_MS = 15_000
 
-export function commandCodeRpcSession(o: { cwd: string; input: string; onEvent: (e: CliEvent) => void }) {
+export function commandCodeRpcSession(o: {
+  cwd: string
+  input: string
+  /** 一轮最多多少回合（模型请求次数）；RPC 模式由 turn/start 的参数控制，--max-turns 只对 -p 生效 */
+  maxTurns?: number
+  onEvent: (e: CliEvent) => void
+}) {
   const parse = commandCodeParser(o.cwd)
   let io: Io | undefined
   let nextId = 1
@@ -69,7 +75,10 @@ export function commandCodeRpcSession(o: { cwd: string; input: string; onEvent: 
     if (init?.error) return stop('run_error', init.error)
     const id = init?.result?.session?.id
     if (id) emit([{ type: 'session', id }])
-    const turn = await request('turn/start', { input: o.input })
+    const turn = await request('turn/start', {
+      input: o.input,
+      ...(o.maxTurns ? { maxTurns: o.maxTurns } : {}),
+    })
     if (turn?.error) return stop('run_error', turn.error)
     turnId = String(turn?.result?.turnId ?? '')
   }

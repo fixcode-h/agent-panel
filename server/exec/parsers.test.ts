@@ -253,8 +253,6 @@ test('Gemini CLI：按配置文件拼参数', () => {
       '--resume',
       's',
       '--fork-session',
-      '--max-turns',
-      '200',
     ],
   )
 })
