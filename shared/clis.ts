@@ -104,9 +104,11 @@ export interface CliDefinition {
   brew?: string[]
   /**
    * 怎么调用：claude-stream 是 Claude Code 的 stdin / stdout 控制协议（插话、审批、中断），
-   * codex-app 是 codex app-server 的 JSON-RPC，stdin 是任务描述从 stdin 传入、stdout 一行一个 JSON 事件
+   * codex-app 是 codex app-server 的 JSON-RPC，
+   * commandcode-rpc 是 Command Code 的常驻 JSON-RPC（turn/start、turn/steer、turn/interrupt），
+   * stdin 是任务描述从 stdin 传入、stdout 一行一个 JSON 事件
    */
-  protocol: 'claude-stream' | 'codex-app' | 'stdin'
+  protocol: 'claude-stream' | 'codex-app' | 'commandcode-rpc' | 'stdin'
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、claude-stream 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */

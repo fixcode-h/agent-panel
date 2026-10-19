@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import {
   FollowUpInput,
+  PresenceInput,
   TaskPatch,
   NewTaskInput,
   Task,
@@ -31,12 +32,22 @@ import {
   withTaskModel,
 } from '../shared/task.ts'
 import { agentRun, defaultCli } from '../shared/settings.ts'
+import { getCli } from '../shared/clis.ts'
 import { expandSlash } from './slash.ts'
 import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
-import { answerRequest, autoAnswerQuestions, runRealTurn, steerTask, type RealContext } from './exec/runner.ts'
+import {
+  answerRequest,
+  autoAnswerQuestions,
+  cancelWait,
+  deliverWait,
+  runRealTurn,
+  steerTask,
+  type RealContext,
+} from './exec/runner.ts'
+import { forgetPresence, setPresenceIdleHandler, setViewer } from './presence.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
@@ -49,6 +60,10 @@ import { importTask, parseTaskExport } from '../shared/task-export.ts'
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
+
+/** 打开对话页时后台启动 CLI 用的提示：只让它停在等下一句上，不做任何事 */
+const PREWARM_PROMPT =
+  '（面板预热：用户还没有发新消息。不要回复任何内容，也不要调用其他工具，直接调用 wait_user_message 等用户的下一条消息。）'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -63,6 +78,8 @@ export function tasksApi(deps: {
   /** rev：执行中每次有变化加一，实时推送靠它判断要不要比较内容 */
   type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void>; rev: number }
   const live = new Map<string, Live>()
+  // 对话页切走一分钟后就别让 CLI 一直等下一句了，结束这一轮
+  setPresenceIdleHandler(cancelWait)
   /** 服务正在退出：不再接着处理排队的要求 */
   let shuttingDown = false
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
@@ -82,6 +99,8 @@ export function tasksApi(deps: {
         ...task,
         status: 'stopped',
         requests: [],
+        awaitingUser: false,
+        prewarming: false,
         // 中断前最后一次落盘的时间当作这一轮的结束
         runMs:
           (task.runMs ?? 0) +
@@ -163,10 +182,20 @@ export function tasksApi(deps: {
     agents: Agent[],
     op?: RealContext['op'],
     resume = false,
+    prewarm = false,
   ) {
     const task = entry.task
+    const before = task.status
     // 先标成执行中，接口返回时页面就能开始轮询
     entry.task.status = 'running'
+    entry.task.awaitingUser = false
+    entry.task.prewarming = prewarm
+    // 对话新的一轮从 0 开始显示速度，接口返回时页面不会还停在上一轮的数字上
+    const active = entry.task.mode === 'chat' ? entry.task.usage.agents[entry.task.agentId] : undefined
+    if (active) {
+      active.tps = 0
+      active.lastTps = 0
+    }
     beginRun(entry.task)
     const [settings, found] = await Promise.all([
       getSettings(),
@@ -217,6 +246,8 @@ export function tasksApi(deps: {
         isGit: snapshot !== null,
         op,
         resume,
+        prewarm,
+        prewarmFrom: before,
       })
     })()
     entry.done = run
@@ -236,6 +267,8 @@ export function tasksApi(deps: {
       })
       .finally(async () => {
         log.info('task', `任务结束：${entry.task.status}`, { task: task.id })
+        entry.task.awaitingUser = false
+        entry.task.prewarming = false
         endRun(entry.task)
         await flush()
         live.delete(task.id)
@@ -474,8 +507,9 @@ export function tasksApi(deps: {
     if ((await current(id))?.imported) return bad(c, READONLY, 409)
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
-      // 补充：直接交给正在跑的 CLI，接着当前的任务做；对话的 CLI 不支持或这一轮刚好结束时改成排队
-      if (p.data.steer && !interrupt) {
+      // 直接接着当前任务处理：CLI 停在等下一句的工具上时交回同一个进程（不用结束再 --resume），
+      // 否则按插话交给正在跑的 CLI；都收不下时排队
+      if (!interrupt) {
         const expanded = await expandForWorkflow(prev.task, text)
         const msg = {
           id: randomUUID(),
@@ -488,7 +522,12 @@ export function tasksApi(deps: {
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        if (await steerTask(prev.task, withAttachments(expanded || text, attachments), msg)) {
+        if (deliverWait(prev.task, msg)) {
+          prev.task.updatedAt = new Date().toISOString()
+          await store.update(id, prev.task)
+          return c.json(prev.task)
+        }
+        if (p.data.steer && (await steerTask(prev.task, withAttachments(expanded || text, attachments), msg))) {
           prev.task.updatedAt = new Date().toISOString()
           await store.update(id, prev.task)
           return c.json(prev.task)
@@ -509,6 +548,49 @@ export function tasksApi(deps: {
     if (prev) await prev.done
     if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
     return c.json(await followUp(id, { text, attachments }))
+  })
+
+  /**
+   * 打开对话页时在后台用 --resume 启动：模型直接停在等下一句的工具上。
+   * 这样用户切回一个旧对话后马上发消息，不用再等 CLI 启动和会话加载。
+   */
+  routes.post('/:id/prewarm', async (c) => {
+    const id = c.req.param('id')
+    if (live.has(id)) return c.json(await current(id))
+    const task = await store.get(id)
+    if (!task) return bad(c, t('任务不存在'), 404)
+    if (task.imported || task.mode !== 'chat' || task.status === 'running') return c.json(task)
+    // 没有会话、刚撤回、或者换过 CLI 时下一轮本来就要重开，预热没有意义
+    if (!task.sessions[task.agentId] || task.rewind) return c.json(task)
+    const settings = await getSettings()
+    const agents = await deps.agents.list()
+    const agent = agents.find((a) => a.id === task.agentId)
+    if (!agent?.enabled) return c.json(task)
+    const run = agentRun(withTaskModel(agent, task), settings)
+    const def = getCli(run.cli)
+    if (!def?.notes || !def.mcp) return c.json(task)
+    // Claude Code、Codex 有自己的协议，不走面板的等待工具
+    if (def.protocol === 'claude-stream' || def.protocol === 'codex-app') return c.json(task)
+    if (task.sessionCli && task.sessionCli !== run.cli) return c.json(task)
+    if (live.has(id)) return c.json(live.get(id)!.task)
+    const entry = reserve(task)
+    try {
+      return c.json(await start(entry, PREWARM_PROMPT, false, agents, undefined, false, true))
+    } catch (e) {
+      live.delete(id)
+      log.warn('task', '对话预热失败', { task: id, error: (e as Error).message })
+      return c.json(task)
+    }
+  })
+
+  // 对话页还开着：CLI 回复完才能停在等下一句的工具上；切走一分钟内切回来还能接着发
+  routes.post('/:id/presence', async (c) => {
+    const id = c.req.param('id')
+    const p = PresenceInput.safeParse(await c.req.json().catch(() => null))
+    if (!p.success) return bad(c, z.prettifyError(p.error))
+    if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    setViewer(id, p.data.viewerId, p.data.active)
+    return c.body(null, 204)
   })
 
   // 撤回一条排队的要求
@@ -795,7 +877,7 @@ export function tasksApi(deps: {
     const { through, session, latest } = turnBefore(task, next < 0 ? task.messages.length : next)
     const { id: _id, createdAt: _c, updatedAt: _u, ...rest } = task
     const agents = Object.fromEntries(
-      Object.entries(task.usage.agents).map(([k, v]) => [k, { ...v, tps: 0, outputTokens: 0, genMs: 0 }]),
+      Object.entries(task.usage.agents).map(([k, v]) => [k, { ...v, tps: 0, lastTps: 0, outputTokens: 0, genMs: 0 }]),
     )
     const forked = await store.create({
       ...rest,
@@ -877,6 +959,7 @@ export function tasksApi(deps: {
     stopTask(id)
     const task = await store.get(id)
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
+    forgetPresence(id)
     await dropUploads([task])
     await dropWorktree(task)
     // 聊天的工作目录、节点交接的文件跟着删掉
@@ -901,6 +984,7 @@ export function tasksApi(deps: {
       for (const t of removed) {
         stopTask(t.id)
         await store.remove(t.id)
+        forgetPresence(t.id)
         await dropWorktree(t, repo)
         await rm(path.join(HANDOFF_DIR, t.id), { recursive: true, force: true }).catch(() => {})
       }

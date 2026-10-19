@@ -29,7 +29,7 @@ import {
   type Workflow,
 } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { fmtClock, fmtDuration, fmtTokens, stepDepth, stepDuration, stepLabel, verdictText } from '@/lib/tasks'
+import { fmtClock, fmtDuration, fmtTokens, liveTps, stepDepth, stepDuration, stepLabel, verdictText } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -389,7 +389,7 @@ export function TaskPanel({
                         agent={byId.get(s.agentId)}
                         label={s === node ? undefined : stepLabel(s)}
                         u={s.usage!}
-                        live={s.status === 'running' ? task.usage.agents[s.agentId] : undefined}
+                        live={task.usage.agents[s.agentId]}
                       />
                     ))}
                 </ul>
@@ -405,7 +405,7 @@ export function TaskPanel({
                     agent={byId.get(st.agentId)}
                     label={st.title}
                     u={u}
-                    live={st.status === 'running' ? task.usage.agents[st.agentId] : undefined}
+                    live={task.usage.agents[st.agentId]}
                   />
                 ))}
               </ul>
@@ -440,16 +440,11 @@ export function TaskPanel({
           {scope ? (
             <TokenUsage
               usage={sumUsage(scope)}
-              tps={scope
-                .filter((s) => s.status === 'running')
-                .reduce((n, s) => n + (task.usage.agents[s.agentId]?.tps ?? 0), 0)}
+              tps={liveTps(task, [...new Set(scope.map((s) => s.agentId))])}
               extra={nodeTag}
             />
           ) : !task.simulated || task.usage.inputTokens > 0 ? (
-            <TokenUsage
-              usage={task.usage}
-              tps={Object.values(task.usage.agents).reduce((n, a) => n + (a.tps ?? 0), 0)}
-            />
+            <TokenUsage usage={task.usage} tps={liveTps(task)} />
           ) : null}
 
           {(!workflowMode || scope) && (
@@ -775,7 +770,7 @@ function sumChanges(steps: TaskStep[]) {
   return out
 }
 
-/** 一个 Agent（或节点）的上下文占用；live 是正在输出时的速度 */
+/** 一个 Agent（或节点）的上下文占用；live 是实时速度，没在输出时用 lastTps */
 function ContextRow({
   agent,
   label,
@@ -785,7 +780,7 @@ function ContextRow({
   agent?: { name: string; icon: string; cli: string }
   label?: string
   u: { context: number; window: number; model: string }
-  live?: { tps: number; outputTokens: number; genMs: number }
+  live?: { tps: number; lastTps?: number; outputTokens: number; genMs: number }
 }) {
   const p = Math.min(100, (u.context / u.window) * 100)
   return (
@@ -809,16 +804,10 @@ function ContextRow({
         <span>
           {u.model || t('默认模型')} · {t('已使用 {n}%', { n: p.toFixed(1) })}
         </span>
-        {live && live.tps > 0 ? (
-          <span className="text-accent">· {live.tps.toFixed(1)} token/s</span>
-        ) : (
-          live &&
-          live.genMs > 3000 &&
-          live.outputTokens > 0 && (
-            <span title={t('输出 token ÷ 生成用时')}>
-              · {t('平均 {n} token/s', { n: ((live.outputTokens / live.genMs) * 1000).toFixed(1) })}
-            </span>
-          )
+        {live && (
+          <span className="text-accent" title={t('实时输出速度')}>
+            · {(live.tps > 0 ? live.tps : (live.lastTps ?? 0)).toFixed(1)} token/s
+          </span>
         )}
       </span>
     </li>
@@ -842,7 +831,12 @@ function TokenUsage({ usage: u, tps, extra }: { usage: Usage; tps: number; extra
   return (
     <Section
       title={t('Token 用量')}
-      extra={tps > 0 ? <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span> : extra}
+      extra={
+        <>
+          <span className="font-mono text-accent">{tps.toFixed(1)} token/s</span>
+          {extra && <> · {extra}</>}
+        </>
+      }
     >
       {total === 0 ? (
         <p className="text-xs text-subtle">{t('CLI 报告用量后会显示在这里。')}</p>

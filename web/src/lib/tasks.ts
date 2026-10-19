@@ -23,11 +23,15 @@ export function timeAgo(iso: string, now = Date.now()) {
 export const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(Math.round(n))
 
-/** 实时速度：正在输出的 Agent 的 token/s 之和（工作流里可能几个节点同时输出） */
+/**
+ * 实时速度：正在输出的 Agent 的 token/s 之和（工作流里可能几个节点同时输出）。
+ * 没有输出时显示这一轮最后一次的速度；刚开始还没有输出时为 0
+ */
 export function liveTps(task: Task, agentIds?: string[]) {
-  return Object.entries(task.usage.agents)
-    .filter(([id]) => !agentIds || agentIds.includes(id))
-    .reduce((n, [, u]) => n + (u.tps ?? 0), 0)
+  const list = Object.entries(task.usage.agents).filter(([id]) => !agentIds || agentIds.includes(id))
+  const live = list.reduce((n, [, u]) => n + (u.tps ?? 0), 0)
+  if (live > 0) return live
+  return list.reduce((n, [, u]) => n + (u.lastTps ?? 0), 0)
 }
 
 /** 缓存命中率：输入里命中缓存的比例 */

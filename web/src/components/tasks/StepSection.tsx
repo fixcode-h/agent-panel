@@ -182,7 +182,7 @@ export function StepSection({
           <span className="flex items-center gap-2 text-xs text-subtle">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" />
             {msgs.length ? t('执行中…') : t('正在启动…')}
-            <LiveStats task={task} agentIds={running(task, rootId)} />
+            <LiveStats task={task} agentIds={running(task, rootId).length ? running(task, rootId) : [root.agentId]} />
           </span>
         )}
       </div>

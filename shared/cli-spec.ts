@@ -111,6 +111,13 @@ export const CliSpec = z.object({
   /** 只读的权限（只分析不改文件时用，例如优化项目说明）；非交互时会拦下改动的权限也算 */
   readOnlyPermission: z.string().default(''),
   args: z.array(ArgRule),
+  /**
+   * 怎么调用：默认 stdin（任务描述从 stdin 传入、进程一轮后退出）；
+   * commandcode-rpc 是 Command Code 常驻的 JSON-RPC（可以中途插话）
+   */
+  protocol: z.enum(['stdin', 'commandcode-rpc']).default('stdin'),
+  /** protocol 为 commandcode-rpc 时用这套参数（不带 -p / --output-format） */
+  rpcArgs: z.array(ArgRule).optional(),
   /** stdout 怎么解析：内置解析器的名字（claude、commandcode），或者事件映射 */
   output: z.union([z.string(), OutputSpec]),
   /** 角色说明怎么给：flag 是追加系统提示词的参数（如 --append-system-prompt），不给时拼进任务描述 */
@@ -258,18 +265,21 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     permissions: spec.permissions.map((p) => ({ id: p.id, label: tr(p.label), hint: tr(p.hint) })),
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,
     systemPromptFlag: !!spec.systemPromptFlag,
-    buildArgs: (o) =>
-      buildFromRules(
+    buildArgs: (o) => {
+      // 常驻协议和一次性执行的参数不一样（不能再带 -p / --output-format）
+      const rules = spec.protocol === 'commandcode-rpc' ? (spec.rpcArgs ?? spec.args) : spec.args
+      return buildFromRules(
         spec.systemPromptFlag
-          ? [...spec.args, { if: 'systemPrompt', args: [spec.systemPromptFlag, '{systemPrompt}'] }]
-          : spec.args,
+          ? [...rules, { if: 'systemPrompt', args: [spec.systemPromptFlag, '{systemPrompt}'] }]
+          : rules,
         o,
-      ),
+      )
+    },
     installHint: spec.installHint || (spec.npmPackage ? `npm install -g ${spec.npmPackage}` : ''),
     npmPackage: spec.npmPackage,
     brew: spec.brew,
     docsUrl: spec.docsUrl,
-    protocol: 'stdin',
+    protocol: spec.protocol,
     parser: spec.output,
     steer: f.steer,
     notes: f.notes,

@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
 import { codexAppSession } from './codex-app.ts'
+import { commandCodeRpcSession } from './commandcode-rpc.ts'
 import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
@@ -14,9 +15,13 @@ import { log } from '../log.ts'
 
 /** 交给没有提问通道的 CLI 的一句用法说明 */
 const ASK_HINT = '（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）'
-/** 没有插话协议的 CLI：用户可能中途补充要求，让它自己取 */
+/** 没有插话协议的 CLI：用户可能中途补充要求，让它自己多次取 */
 const NOTES_HINT =
-  '（用户可能在你执行中补充要求；做比较久的事中间用工具 read_user_notes 看一眼，取到就结合它继续当前的任务。）'
+  '（重要：开始动手前先调用 read_user_notes；之后每完成 2~3 个工具调用、以及准备执行耗时操作前再调用一次。' +
+  '用户可能在你执行中补充要求，取到就结合它继续当前的任务，不要从头重做。）'
+/** 对话页开着时：回复完停在进程里等下一句，不用结束进程再 --resume */
+const WAIT_HINT =
+  '（每轮回复完成后调用 wait_user_message 等用户的下一条消息：返回用户消息时接着处理，返回「用户已经离开了这个对话」时结束本轮。没有新要求时不要自己开始别的工作。）'
 
 /** 执行中控制 CLI：插话（把要求交给正在跑的这一轮）、中断（让 CLI 自己停下这一轮，会话保存完整） */
 export interface CliControl {
@@ -58,6 +63,11 @@ export async function invokeCli(o: {
    * 这一轮里模型可以用面板的工具 read_user_notes 取走，取走的那些不再排队
    */
   readNotes?: () => string[]
+  /**
+   * 对话页还开着时：回复完让模型停在 wait_user_message 上等用户下一句，
+   * 用户发消息时由面板直接交回这个进程（不用结束再 --resume）；用户离开时返回空
+   */
+  waitUser?: () => Promise<string | null>
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
   images?: string[]
   /** 这一轮额外交给 CLI 的面板工具（例如工作流的编排工具）；CLI 定义里没写怎么接 MCP 时忽略 */
@@ -90,16 +100,26 @@ export async function invokeCli(o: {
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
-  const notes = def.notes ? o.readNotes : undefined
-  if (def.mcp && (askable || notes) && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
+  // Command Code 走常驻 RPC 时有真正的插话通道（turn/steer），补充不用再靠 MCP 工具拉取；
+  // 「等下一句」仍然要用 wait_user_message：一轮执行中把进程留住，用户下一句直接交回同一个进程
+  const rpc = def.protocol === 'commandcode-rpc'
+  const notes = def.notes && !rpc ? o.readNotes : undefined
+  const wait = def.notes ? o.waitUser : undefined
+  if (def.mcp && (askable || notes || wait) && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
     // 用户开着「提问」时把问题交给页面；关着时让模型自己选最合适的做法
     const ask: Ask = (ev) => (o.askUser?.() ? (o.onAsk ? o.onAsk(ev) : o.onEvent(ev)) : ev.reply(AUTO_ANSWER))
-    bridge = openAskBridge({ ...(askable ? { ask } : {}), ...(notes ? { notes } : {}) })
+    bridge = openAskBridge({
+      ...(askable ? { ask } : {}),
+      ...(notes ? { notes } : {}),
+      ...(wait ? { wait } : {}),
+    })
     servers.unshift({ name: 'panel', url: bridge.url })
     // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
     if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
     // 没有插话协议的 CLI：补充排在队列里，让模型中途自己取
     if (notes) input = `${input}\n\n${NOTES_HINT}`
+    // 对话页开着：回复完停在等下一句的工具上
+    if (wait) input = `${input}\n\n${WAIT_HINT}`
   }
   if (def.mcp && servers.length) {
     const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url))
@@ -175,6 +195,30 @@ async function invoke(
     if (!session.finished && !r.killed && !r.spawnError)
       o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
     return r
+  }
+
+  if (def.protocol === 'commandcode-rpc') {
+    const session = commandCodeRpcSession({ cwd: o.cwd, input: o.input, onEvent: emit })
+    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
+    try {
+      const r = await runProcess({
+        command: o.command,
+        args,
+        cwd: o.cwd,
+        env: o.env,
+        signal,
+        timeoutMs: o.timeoutMs,
+        idle: o.idle,
+        onSpawn: (io) => void session.start(io),
+        onLine: (line) => session.line(line),
+      })
+      // 没等到 turn/completed 就退出了（崩溃、配置错误），算失败
+      if (!session.finished && !r.killed && !r.spawnError)
+        o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
+      return r
+    } finally {
+      session.close()
+    }
   }
 
   const parse = parserFor(o.cliId, o.cwd)
