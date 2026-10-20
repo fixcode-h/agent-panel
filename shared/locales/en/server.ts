@@ -206,7 +206,7 @@ export const EN_SERVER: Record<string, string> = {
   下载中: 'Downloading',
   '等待任务结束（还有 {n} 个）': 'Waiting for tasks to finish ({n} still running)',
   '正在停止正在执行的任务…': 'Stopping running tasks…',
-  '这次更新已经结束': 'This update has already finished',
+  这次更新已经结束: 'This update has already finished',
   '还在下载，下载完才能强制更新': 'Still downloading; force update is available once the download finishes',
   '新版本 {version} 已下载，等所有任务结束后再替换并重启':
     'Version {version} downloaded; files will be replaced after all tasks finish',
