@@ -86,7 +86,7 @@ export function tasksApi(deps: {
     restart?: boolean
   }
   const live = new Map<string, Live>()
-  // 对话页切走一分钟后就别让 CLI 一直等下一句了，结束这一轮
+  // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）
   setPresenceIdleHandler(cancelWait)
   /** 服务正在退出：不再接着处理排队的要求 */
   let shuttingDown = false

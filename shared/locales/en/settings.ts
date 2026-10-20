@@ -251,6 +251,11 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 turns it off. When a CLI prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so a CLI stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
   '没有输出时提醒（分钟）': 'Warn when there is no output (minutes)',
   '填 0 到 1440 之间的整数，0 表示不检测': 'Enter a whole number from 0 to 1440; 0 turns it off',
+  离开对话后保留多久: 'Keep the conversation alive after you leave',
+  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，CLI 还停在等下一句的工具上，这段时间内回来发消息能直接接着说，不用重新启动 CLI；每个还在等的对话会占用一个 CLI 进程。':
+    'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the CLI keeps waiting for your next message, so coming back within this window lets you keep talking without restarting the CLI. Each waiting conversation holds one CLI process.',
+  '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
+  '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':

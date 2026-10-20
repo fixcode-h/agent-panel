@@ -223,7 +223,7 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
-  // 告诉服务端这个对话页还开着：CLI 回复完会停在等下一句的工具上；切走一分钟内切回来还能接着说
+  // 告诉服务端这个对话页还开着：CLI 回复完会停在等下一句的工具上；宽限期内切回来还能接着说（时长在设置里改）
   useEffect(() => {
     const viewer = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
     const send = (active: boolean) => {

@@ -103,6 +103,7 @@ function SettingsBody({
   const { setSettings, clis, refreshClis } = useData()
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
+  const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
@@ -217,6 +218,8 @@ function SettingsBody({
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
   const idleMin = Number(idle)
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
+  const presenceMin = Number(presence)
+  const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     openBrowser,
@@ -230,6 +233,7 @@ function SettingsBody({
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
+    presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     defaultCli: defCli,
     clis: Object.fromEntries(
       Object.entries(drafts).map(([id, d]) => [
@@ -465,6 +469,26 @@ function SettingsBody({
                   />
                   {!idleValid && (
                     <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不检测')}</span>
+                  )}
+                </div>
+              </Row>
+              <Row
+                title={t('离开对话后保留多久')}
+                desc={t(
+                  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，CLI 还停在等下一句的工具上，这段时间内回来发消息能直接接着说，不用重新启动 CLI；每个还在等的对话会占用一个 CLI 进程。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={presence}
+                    onChange={(e) => setPresence(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!presenceValid}
+                    className={cn('h-9', !presenceValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('离开对话后保留多久（分钟）')}
+                  />
+                  {!presenceValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
                   )}
                 </div>
               </Row>
