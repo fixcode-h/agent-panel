@@ -1531,7 +1531,7 @@ try {
       mine.every((c) => c.args.some((x) => x.includes('/api/mcp/orch/'))),
       '工作流里的调用都接上编排工具',
     )
-    assert.match(mainCalls[0].input, /编排工具 orch：get_status/)
+    assert.match(mainCalls[0].input, /编排工具 orch：run_workflow/)
     assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子 Agent/)
     const impl = mine.filter((c) => /本节点「实现」|继续完善本节点「实现」/.test(c.input))
     assert.equal(impl.length, 2, '实现被退回后返工一次')
