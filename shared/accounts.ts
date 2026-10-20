@@ -127,6 +127,41 @@ export const sameApi = (a: Pick<ApiConfig, 'baseUrl' | 'apiKey'>, b: typeof a) =
   apiBase(a.baseUrl) === apiBase(b.baseUrl) && a.apiKey === b.apiKey
 
 /**
+ * API 方式只保留一份接口配置：把地址（忽略 /v1）和密钥都一样的旧 provider 删掉，
+ * 保留正在用的那一个；不同接口的 provider 不动。返回有没有改动。
+ */
+export function pruneProviderEntries(
+  data: unknown,
+  at: string,
+  active: string,
+  api: Pick<ApiConfig, 'baseUrl' | 'apiKey'>,
+  keys: { baseUrl: string; apiKey: string },
+): boolean {
+  if (!api.baseUrl || !api.apiKey) return false
+  let box: unknown = data
+  for (const part of at.split('.')) {
+    if (!box || typeof box !== 'object' || Array.isArray(box)) return false
+    box = (box as Record<string, unknown>)[part]
+  }
+  if (!box || typeof box !== 'object' || Array.isArray(box)) return false
+  const providers = box as Record<string, unknown>
+  if (!(active in providers)) return false
+  let changed = false
+  for (const [name, p] of Object.entries(providers)) {
+    if (name === active || !p || typeof p !== 'object' || Array.isArray(p)) continue
+    const rec = p as Record<string, unknown>
+    const baseUrl = rec[keys.baseUrl]
+    const apiKey = rec[keys.apiKey]
+    if (typeof baseUrl !== 'string' || typeof apiKey !== 'string') continue
+    if (sameApi({ baseUrl, apiKey }, api)) {
+      delete providers[name]
+      changed = true
+    }
+  }
+  return changed
+}
+
+/**
  * 把模型条目里的思考强度改成 effortsFor 返回的列表；返回有没有改动。
  * effortsFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
  */
@@ -210,6 +245,20 @@ export const CliAuth = z.object({
           at: z.string(),
           /** 写进模型条目的键名 */
           key: z.string().default('reasoningEfforts'),
+        })
+        .optional(),
+      /**
+       * API 方式只保留一份接口配置：地址（忽略 /v1）和密钥都一样的旧 provider 删掉，
+       * 保留正在用的。不写表示不处理。
+       */
+      pruneProviders: z
+        .object({
+          file: z.string(),
+          /** provider 对象所在的位置，例如 provider */
+          at: z.string(),
+          /** provider 里接口地址、密钥的键名 */
+          baseUrl: z.string().default('baseUrl'),
+          apiKey: z.string().default('apiKey'),
         })
         .optional(),
     })

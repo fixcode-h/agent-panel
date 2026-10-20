@@ -10,6 +10,7 @@ import {
   apiModelList,
   apiProvider,
   fillEdits,
+  pruneProviderEntries,
   sameApi,
   setModelEfforts,
 } from '../shared/accounts.ts'
@@ -153,6 +154,32 @@ test('同一个 API：地址和密钥一样就算，协议和 /v1 不影响', ()
   assert.ok(sameApi({ baseUrl: 'https://x.example', apiKey: 'k' }, { baseUrl: 'https://x.example/v1/', apiKey: 'k' }))
   assert.ok(!sameApi({ baseUrl: 'https://x.example', apiKey: 'k' }, { baseUrl: 'https://x.example/v1', apiKey: 'k2' }))
   assert.ok(!sameApi({ baseUrl: 'https://x.example/a', apiKey: 'k' }, { baseUrl: 'https://x.example/b', apiKey: 'k' }))
+})
+
+test('只留一份接口配置：同地址和密钥的旧 provider 删掉，不同接口保留', () => {
+  const data = {
+    provider: {
+      active: { baseURL: 'https://x.example', apiKey: 'k' },
+      old: { baseURL: 'https://x.example/v1', apiKey: 'k' },
+      other: { baseURL: 'https://y.example', apiKey: 'k' },
+    },
+  }
+  const keys = { baseUrl: 'baseURL', apiKey: 'apiKey' }
+  assert.equal(
+    pruneProviderEntries(data, 'provider', 'active', { baseUrl: 'https://x.example', apiKey: 'k' }, keys),
+    true,
+  )
+  assert.deepEqual(Object.keys(data.provider), ['active', 'other'])
+  assert.equal(
+    pruneProviderEntries(data, 'provider', 'active', { baseUrl: 'https://x.example', apiKey: 'k' }, keys),
+    false,
+  )
+  // 正在用的 provider 不在配置里时不动，避免把配置删空
+  const missing = { provider: { old: { baseURL: 'https://x.example', apiKey: 'k' } } }
+  assert.equal(
+    pruneProviderEntries(missing, 'provider', 'active', { baseUrl: 'https://x.example', apiKey: 'k' }, keys),
+    false,
+  )
 })
 
 test('写回思考强度：匹配到的模型按目录重写，不认识的保持原样', () => {

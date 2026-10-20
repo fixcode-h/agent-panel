@@ -205,18 +205,19 @@ CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.jso
 ## 把 API 交给 CLI `auth.api`
 
 设置里给 CLI 选了一个 API 后，面板在**保存设置时**就会按 `auth.api` 的规则写进 CLI 自己的配置（执行前还会再写一次，保证配置没被别的工具改掉）。
-如果 CLI 支持直接读模型，模型下拉也从 CLI 的配置读，而不是只看全局 API 里填的模型。
+模型下拉只列这个 API 里配的模型，CLI 配置文件里以前留下的其他模型不再列出。
 
 | 字段              | 说明                                                                                                                             |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `protocols`       | 能接受哪些协议的 API                                                                                                             |
 | `defaultProvider` | API 没有指定 provider 时，写进 CLI 配置的 provider 名，默认 `agentpanel`                                                         |
-| `modelSource`     | `api`（默认）用全局 API 的模型；`cli` 先让 CLI 列模型（API 会先写进 CLI 配置），列不到再回退到 API 的模型                        |
+| `modelSource`     | `api`（默认）用全局 API 的模型；`cli` 也从 CLI 读取这些模型的上下文和强度，但列表仍只保留 API 里配的模型                         |
 | `modelPrefix`     | 模型 ID 的 provider 前缀模板，例如 `{provider}/`；写进 provider 配置时会把重复的前缀去掉，执行旧的无前缀模型 ID 时会补上         |
 | `env` / `args`    | 只在 CLI 只能通过环境变量/参数接收 API 时用；能写配置文件的优先写 `edits`，执行时不再重复传 API 和密钥                           |
 | `edits`           | 切到 API 时改的配置文件，保存设置时写；`format` 可以是 `json`（默认）、`toml`、`env`；`merge: true` 时对象递归合并，保留已有配置 |
 | `accountEdits`    | 切回账号时还原的配置文件                                                                                                         |
 | `wire`            | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                        |
+| `pruneProviders`  | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                    |
 
 已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code、Gemini CLI）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
 `{provider}` 来自 API 的 `provider`：识别到的 API 用 CLI 配置里的键（例如 `providers.tokenapi` 的 `tokenapi`），新建的从 API 名称生成。

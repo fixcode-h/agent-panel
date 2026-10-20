@@ -13,6 +13,7 @@ import {
   apiVars,
   fillEdits,
   fillTemplate,
+  pruneProviderEntries,
   setModelEfforts,
   ApiConfig,
   type JsonEdit,
@@ -529,6 +530,22 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
 }
 
 /**
+ * API 方式只留一份接口配置：同一个地址（忽略 /v1）和密钥的旧 provider 从 CLI 配置里删掉，
+ * 保留正在用的那个；不同接口的 provider 不动。
+ */
+async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+  const spec = def.auth?.api?.pruneProviders
+  if (!spec) return
+  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const file = expand(fillTemplate(spec.file, vars), env)
+  const data = await readJsonFile(file)
+  if (!isObj(data)) return
+  if (!pruneProviderEntries(data, fillTemplate(spec.at, vars), provider, api, spec)) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, data)
+}
+
+/**
  * 调用 CLI 之前：按这个 CLI 现在用账号还是 API，把配置文件改成对应的样子
  * （例如 Gemini CLI 的登录方式、Command Code 的自定义接口）。没有这类配置的 CLI 什么都不做
  */
@@ -544,6 +561,7 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
       const injection = apiInjection(def.auth, cs.api)
       await applyEdits(injection.edits, env)
       await writeModelEfforts(def, cs.api, injection.provider, env)
+      await pruneApiProviders(def, cs.api, injection.provider, env)
     } else {
       // 切回账号时优先用上一次真正写进去的 provider；没有时再用当前选中的 API
       const selected = settings.apis.find((a) => a.id === cs.apiId)
