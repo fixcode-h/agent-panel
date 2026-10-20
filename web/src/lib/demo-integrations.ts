@@ -1,15 +1,21 @@
 import { INTEGRATIONS, getIntegration, type IntegrationLoginJob, type IntegrationView } from '@shared/integrations'
 
 /**
- * 在线演示里的授权：不碰本机的 gh，模拟一次浏览器授权过程。
+ * 在线演示里的授权：不碰本机的 gh、cloudflared，模拟一次浏览器授权过程。
  * 页面上的流程和真实环境一样（检测、授权中、授权码、完成、退出）。
  */
-let authed = false
-let job: IntegrationLoginJob | null = null
-let timer: ReturnType<typeof setTimeout> | undefined
+const authed = new Set<string>()
+const jobs = new Map<string, IntegrationLoginJob>()
+const timers = new Map<string, ReturnType<typeof setTimeout>>()
+
+const VERSION: Record<string, string> = {
+  github: 'gh version 2.97.0（演示）',
+  cloudflared: 'cloudflared version 2026.1.0（演示）',
+}
 
 const view = (id: string): IntegrationView => {
   const def = getIntegration(id) ?? INTEGRATIONS[0]
+  const on = authed.has(def.id)
   return {
     id: def.id,
     name: def.name,
@@ -18,38 +24,46 @@ const view = (id: string): IntegrationView => {
     docsUrl: def.docsUrl ?? '',
     installHint: Object.values(def.install)[0] ?? '',
     installed: true,
-    version: def.id === 'github' ? 'gh version 2.97.0（演示）' : '演示',
-    authed,
-    account: authed ? 'demo-user' : '',
+    version: VERSION[def.id] ?? '演示',
+    authed: on,
+    account: on && def.id === 'github' ? 'demo-user' : '',
     browserAuth: def.auth.login.length > 0,
     tokenAuth: !!def.auth.token,
-    canLogout: def.auth.logout.length > 0,
-    hint: authed ? '' : (def.auth.hint ?? ''),
-    detail: authed ? '' : '演示：还没有授权',
+    canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
+    hint: on ? '' : (def.auth.hint ?? ''),
+    detail: on ? '' : '演示：还没有授权',
   }
 }
 
-const loginView = () => (job ? { ...job } : null)
+const loginView = (id: string) => jobs.get(id) ?? null
 
-function start(): IntegrationLoginJob {
-  if (job?.status === 'running') return { ...job }
-  clearTimeout(timer)
-  const def = getIntegration('github')!
-  job = {
+function start(id: string): IntegrationLoginJob {
+  const running = jobs.get(id)
+  if (running?.status === 'running') return { ...running }
+  clearTimeout(timers.get(id))
+  const def = getIntegration(id) ?? INTEGRATIONS[0]
+  // cloudflared 没有一次性授权码：浏览器里选完域名就写完证书
+  const cloudflare = def.id === 'cloudflared'
+  const job: IntegrationLoginJob = {
     id: `demo-${crypto.randomUUID()}`,
     integration: def.id,
     status: 'running',
-    url: 'https://github.com/login/device',
-    code: 'ABCD-1234',
-    output: '! First copy your one-time code: ABCD-1234\nPress Enter to open github.com in your browser…',
+    url: cloudflare ? 'https://dash.cloudflare.com/argotunnel' : 'https://github.com/login/device',
+    code: cloudflare ? '' : 'ABCD-1234',
+    output: cloudflare
+      ? 'A browser window should have opened at the following URL. If it failed to open, visit it manually.'
+      : '! First copy your one-time code: ABCD-1234\nPress Enter to open github.com in your browser…',
     startedAt: Date.now(),
   }
-  const current = job
-  timer = setTimeout(() => {
-    if (job !== current || job.status !== 'running') return
-    job.status = 'done'
-    authed = true
-  }, 2500)
+  jobs.set(id, job)
+  timers.set(
+    id,
+    setTimeout(() => {
+      if (jobs.get(id) !== job || job.status !== 'running') return
+      job.status = 'done'
+      authed.add(def.id)
+    }, 2500),
+  )
   return { ...job }
 }
 
@@ -59,23 +73,24 @@ export function demoIntegrations(method: string, seg: string[], body: any): unkn
   if (action === 'login') {
     if (sub === 'token' && method === 'POST') {
       if (!String(body?.token ?? '').trim()) throw new Error('Token 不对')
-      authed = true
-      job = null
+      authed.add(id)
+      jobs.delete(id)
       return view(id)
     }
     if (method === 'DELETE') {
+      const job = jobs.get(id)
       if (job?.status === 'running') {
-        clearTimeout(timer)
-        job = { ...job, status: 'failed', error: '已取消' }
+        clearTimeout(timers.get(id))
+        jobs.set(id, { ...job, status: 'failed', error: '已取消' })
       }
       return { ok: true }
     }
-    if (method === 'POST') return start()
-    return loginView()
+    if (method === 'POST') return start(id)
+    return loginView(id)
   }
   if (action === 'logout' && method === 'POST') {
-    authed = false
-    job = null
+    authed.delete(id)
+    jobs.delete(id)
     return view(id)
   }
   return INTEGRATIONS.map((def) => view(def.id))
