@@ -24,6 +24,11 @@ const projectDir = path.join(tmp, 'project')
 const log = path.join(tmp, 'calls.jsonl')
 const port = 8900 + Math.floor(Math.random() * 90)
 const base = `http://127.0.0.1:${port}/api`
+// 1×1 的透明 PNG，用来测图片文件按原图读取
+const PNG_1PX = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==',
+  'base64',
+)
 
 // 项目目录：一个已有提交、并且有一处未提交改动的 git 仓库
 execFileSync('mkdir', ['-p', projectDir])
@@ -2054,6 +2059,13 @@ try {
   assert.equal(rd.content, '# demo\n')
   assert.equal((await call('GET', `/tasks/${tCommit.id}/file?path=nope.ts`)).exists, false)
   assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file?path=../../etc/passwd`)).status, 400)
+  // 读到的文件是图片时按原图查看，同样只能读项目目录里的
+  writeFileSync(path.join(projectDir, 'shot.png'), PNG_1PX)
+  const img = await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=shot.png`)
+  assert.equal(img.headers.get('content-type'), 'image/png')
+  assert.deepEqual(Buffer.from(await img.arrayBuffer()), PNG_1PX)
+  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=README.md`)).status, 400, '不是图片不能当图片读')
+  assert.equal((await fetch(`${base}/tasks/${tCommit.id}/file/raw?path=../../etc/passwd`)).status, 400)
   // 删除任务时它的附件一起删掉；还在用的附件不会因为时间久了被清理
   const attDir = path.dirname(att.path)
   await call('DELETE', `/tasks/${tAtt.id}`)

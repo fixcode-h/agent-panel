@@ -282,6 +282,8 @@ export const EN_SERVER: Record<string, string> = {
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
   缺少文件路径: 'Missing file path',
   只能查看项目目录里的文件: 'Only files inside the project folder can be viewed',
+  不是图片: 'Not an image',
+  文件已经不在了: 'The file is gone',
   校验中: 'Verifying',
   '下载校验文件失败：{status}': 'Failed to download the checksum file: {status}',
   '校验文件里没有 {name}': '{name} is missing from the checksum file',
