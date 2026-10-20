@@ -4072,6 +4072,8 @@ try {
       await sleep(50)
     }
     assert.ok(w.awaitingUser, '再次打开也预热好了')
+    // 打开过这个对话：之后切走才会按宽限期回收；没打开过的话会一直留着等用户回来
+    await call('POST', `/tasks/${w.id}/seen`, {})
     await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
     w = await waitDone(w.id, 15000)
     assert.equal(w.status, 'done')

@@ -725,12 +725,9 @@ export function tasksApi(deps: {
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (tk.turnDoneAt && tk.turnSeenAt !== tk.turnDoneAt) {
       tk.turnSeenAt = tk.turnDoneAt
-      // 正在跑的对话直接改内存里的；否则落盘
-      if (!entry) await store.update(id, tk)
-      else {
-        tk.updatedAt = new Date().toISOString()
-        entry.rev++
-      }
+      // 只是记「看过了」，不算任务有更新：列表顺序和更新时间都不动
+      if (!entry) await store.update(id, tk, { keepUpdatedAt: true })
+      else entry.rev++
       // 看过之后不再因为未读一直留着 CLI：如果已经没人在看，现在就开始算宽限期
       rescheduleIfUnwatched(id)
     }
