@@ -6,9 +6,20 @@ import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
-import { apiFits, apiInjection, apiProvider, fillEdits, ApiConfig, type JsonEdit } from '../shared/accounts.ts'
+import {
+  apiFits,
+  apiInjection,
+  apiProvider,
+  apiVars,
+  fillEdits,
+  fillTemplate,
+  setModelEfforts,
+  ApiConfig,
+  type JsonEdit,
+} from '../shared/accounts.ts'
 import { CliSettings, type CliAccounts, type LoginJob, type SavedAccount, type Settings } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
+import { modelLimitsFor } from '../shared/model-catalog.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { invalidateClis } from './detect.ts'
@@ -16,6 +27,7 @@ import { invalidateModels } from './models.ts'
 import { log } from './log.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { detectApis } from './api-detect.ts'
+import { mergedModelCatalog } from './model-catalog-store.ts'
 import { parseToml } from './mcp-store.ts'
 import { dataPath, writeJsonAtomic, readJson } from './store.ts'
 
@@ -493,6 +505,33 @@ async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
 }
 
 /**
+ * 把模型目录里的思考强度写回 CLI 配置的模型条目。
+ * Command Code 的自定义接口只认 providers.json 里面声明的 reasoningEfforts：没写就当成不可调，
+ * 面板传了 --effort 会启动即报错退出。设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
+ */
+async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+  const spec = def.auth?.api?.modelEfforts
+  if (!spec) return
+  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const file = expand(fillTemplate(spec.file, vars), env)
+  const data = await readJsonFile(file)
+  if (!isObj(data)) return
+  const entries = await mergedModelCatalog().catch(() => [])
+  const allowed = def.efforts.map((e) => e.id)
+  const changed = setModelEfforts(data, fillTemplate(spec.at, vars), spec.key, (model) => {
+    const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+    if (!info.matched || !info.entry) return undefined
+    // 模型确实不支持思考时写空数组；目录里的值这个 CLI 都不认识时保持原样
+    if (!info.entry.efforts.length) return []
+    const efforts = allowed.length ? info.entry.efforts.filter((e) => allowed.includes(e)) : info.entry.efforts
+    return efforts.length ? efforts : undefined
+  })
+  if (!changed) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, data)
+}
+
+/**
  * 调用 CLI 之前：按这个 CLI 现在用账号还是 API，把配置文件改成对应的样子
  * （例如 Gemini CLI 的登录方式、Command Code 的自定义接口）。没有这类配置的 CLI 什么都不做
  */
@@ -504,8 +543,11 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
     const settings = await getSettings()
     const cs = cliSettings(settings, cliId)
     const env = childEnv(cs.env)
-    if (cs.api && apiFits(def.auth, cs.api)) await applyEdits(apiInjection(def.auth, cs.api).edits, env)
-    else {
+    if (cs.api && apiFits(def.auth, cs.api)) {
+      const injection = apiInjection(def.auth, cs.api)
+      await applyEdits(injection.edits, env)
+      await writeModelEfforts(def, cs.api, injection.provider, env)
+    } else {
       // 切回账号时优先用上一次真正写进去的 provider；没有时再用当前选中的 API
       const selected = settings.apis.find((a) => a.id === cs.apiId)
       const cleanup = lastProvider ? undefined : selected && apiFits(def.auth, selected) ? selected : undefined

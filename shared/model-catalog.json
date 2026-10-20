@@ -193,8 +193,8 @@
       "context": 1000000,
       "maxOutput": 128000,
       "tier": "low",
-      "efforts": ["low", "medium", "high"],
-      "defaultEffort": "low"
+      "efforts": ["low", "high", "max"],
+      "defaultEffort": "high"
     },
     {
       "vendor": "deepseek",

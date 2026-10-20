@@ -26,7 +26,7 @@ import {
 import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
-import { cachedModels, knownWindows, supportedEffort } from '../models.ts'
+import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { modelLimitsFor } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
@@ -345,6 +345,10 @@ function speedMeter(onIdle: () => void) {
 const MAX_NET_RETRIES = 2
 const NETWORK_ERROR =
   /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+
+/** 模型不支持调整思考强度：去掉 --effort 重跑一次，并在进程内记住 */
+const EFFORT_REJECTED =
+  /推理强度不可调整|推理强度.{0,10}(不支持|无法)|(effort|reasoning).{0,40}(not (supported|available|adjustable)|can't|cannot|unable)|(not (supported|adjustable)|can't|cannot|unable).{0,40}(effort|reasoning)/i
 
 const NOT_LOGGED_IN =
   /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token|No API key found/i
@@ -1099,6 +1103,16 @@ async function runAgent(
     const detail = [result?.error, ...errors, r.stderr.trim().split('\n').slice(-6).join('\n')]
       .filter(Boolean)
       .join('\n')
+    // 自定义接口的模型不支持调整思考强度：记住，去掉强度再跑一次（CLI 启动时就退出，没有实际输出）
+    if (effort && !retried && EFFORT_REJECTED.test(detail)) {
+      markNoEffort(cliId, model)
+      log.warn('agent', `${def.name} 的模型 ${model} 不支持设置思考强度，去掉后重试`, {
+        task: task.id,
+        step,
+        detail: detail.slice(0, 500),
+      })
+      return runAgent(ctx, call, true)
+    }
     // 会话找不到时（例如 CLI 清理了历史），丢掉会话重新开始一次
     if (
       resume &&

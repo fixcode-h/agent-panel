@@ -16,6 +16,10 @@ test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
   assert.equal(opus.defaultEffort, 'high')
   assert.equal(knownLimits('anthropic/claude-haiku-5-5').tier, 'low')
   assert.equal(knownLimits('gemini-3-pro').context, 1_048_576)
+  // deepseek-flash 和带协议后缀的 BYOK 写法都用同一份目录：low / high / max
+  assert.deepEqual(knownLimits('deepseek/deepseek-v4-flash').efforts, ['low', 'high', 'max'])
+  assert.equal(knownLimits('deepseek/deepseek-v4-flash').defaultEffort, 'high')
+  assert.deepEqual(knownLimits('tokenapi/deepseek/deepseek-v4-flash-anthropic').efforts, ['low', 'high', 'max'])
   assert.deepEqual(knownLimits('some-new-model'), {})
   assert.deepEqual(knownLimits(''), {})
 })

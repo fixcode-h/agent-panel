@@ -524,6 +524,11 @@ async function knownCatalog(id: string): Promise<Map<string, CatalogInfo>> {
   return commandCodeCatalog(cs.command, childEnv(cs.env)).catch(() => new Map<string, CatalogInfo>())
 }
 
+/** CLI 明确说过不能调整思考强度的模型：进程内记住，之后不再传 */
+const noEffort = new Set<string>()
+const noEffortKey = (cli: string, model: string) => `${cli}\n${model}`
+export const markNoEffort = (cli: string, model: string) => noEffort.add(noEffortKey(cli, model))
+
 /**
  * 执行前挡一下模型不认的思考强度：CLI 会启动即报错退出（退出码 1），整个任务就白跑了。
  * 依据是 CLI 报的模型列表（Codex、Pi、Command Code）和 Command Code 安装包里的模型目录；
@@ -531,6 +536,8 @@ async function knownCatalog(id: string): Promise<Map<string, CatalogInfo>> {
  */
 export async function supportedEffort(id: string, model: string, effort?: string): Promise<string> {
   if (!effort || !model) return effort ?? ''
+  // CLI 已经说过这个模型不能调强度（自定义接口的模型常这样）：之后都不传
+  if (noEffort.has(noEffortKey(id, model))) return ''
   const known = new Map<string, string[]>()
   for (const m of cachedModels(id)?.models ?? []) if (m.efforts) known.set(m.id, m.efforts)
   for (const [k, v] of await knownCatalog(id).catch(() => new Map<string, CatalogInfo>()))

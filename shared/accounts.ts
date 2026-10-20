@@ -115,11 +115,45 @@ export interface DetectedApi {
   api: ApiConfig
 }
 
-/** 两个 API 是不是同一个：协议、地址（忽略末尾的 /）和密钥都一样 */
-export const sameApi = (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey'>, b: typeof a) =>
-  a.protocol === b.protocol &&
-  a.baseUrl.trim().replace(/\/+$/, '') === b.baseUrl.trim().replace(/\/+$/, '') &&
-  a.apiKey === b.apiKey
+/** 接口地址的比较键：忽略末尾的 / 和常见的 /v1、/v1beta 后缀 */
+const apiBase = (url: string) =>
+  url
+    .trim()
+    .replace(/\/+$/, '')
+    .replace(/\/v1(?:beta)?$/i, '')
+
+/** 两个 API 是不是同一个：接口地址和密钥一样；协议只是使用方式，不参与判断 */
+export const sameApi = (a: Pick<ApiConfig, 'baseUrl' | 'apiKey'>, b: typeof a) =>
+  apiBase(a.baseUrl) === apiBase(b.baseUrl) && a.apiKey === b.apiKey
+
+/**
+ * 把模型条目里的思考强度改成 effortsFor 返回的列表；返回有没有改动。
+ * effortsFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
+ */
+export function setModelEfforts(
+  data: unknown,
+  at: string,
+  key: string,
+  effortsFor: (model: string) => string[] | undefined,
+): boolean {
+  let models: unknown = data
+  for (const part of at.split('.')) {
+    if (!models || typeof models !== 'object' || Array.isArray(models)) return false
+    models = (models as Record<string, unknown>)[part]
+  }
+  if (!models || typeof models !== 'object' || Array.isArray(models)) return false
+  let changed = false
+  for (const [id, entry] of Object.entries(models as Record<string, unknown>)) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const rec = entry as Record<string, unknown>
+    const model = typeof rec.id === 'string' && rec.id ? rec.id : id
+    const efforts = effortsFor(model)
+    if (!efforts || JSON.stringify(rec[key]) === JSON.stringify(efforts)) continue
+    rec[key] = efforts
+    changed = true
+  }
+  return changed
+}
 
 /** CLI 怎么用账号登录、凭据存在哪、怎么改用 API */
 export const CliAuth = z.object({
@@ -165,6 +199,19 @@ export const CliAuth = z.object({
       accountEdits: z.array(JsonEdit).default([]),
       /** 协议在这个 CLI 配置里的写法，用 {wire} 引用 */
       wire: z.record(z.string(), z.string()).default({}),
+      /**
+       * CLI 只认配置里模型条目自己声明的思考强度时（例如 Command Code 的 providers.json），
+       * 把模型目录里的强度写回这个位置；不写表示不处理。
+       */
+      modelEfforts: z
+        .object({
+          file: z.string(),
+          /** 模型条目所在的位置，例如 provider.{provider}.models */
+          at: z.string(),
+          /** 写进模型条目的键名 */
+          key: z.string().default('reasoningEfforts'),
+        })
+        .optional(),
     })
     .optional(),
   /** CLI 自己配置的 API 写在哪，用来识别 */

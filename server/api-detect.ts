@@ -117,7 +117,7 @@ export function toApi(
   return api
 }
 
-/** 所有 CLI 里识别到的 API；同一个（协议、地址、密钥一样）只留第一个，模型合在一起 */
+/** 所有 CLI 里识别到的 API；同一个 CLI 里地址和密钥一样的算一份（忽略协议和 /v1），模型合在一起 */
 export async function detectApis(): Promise<DetectedApi[]> {
   const settings = await getSettings()
   const skip = new Set([PANEL_PROVIDER, ...settings.apis.map((a) => apiProvider(a))])
@@ -135,7 +135,7 @@ export async function detectApis(): Promise<DetectedApi[]> {
       for (const [key, obj] of entries) {
         const api = toApi(def, src, key, obj, env, skip)
         if (!api) continue
-        const dup = out.find((d) => sameApi(d.api, api))
+        const dup = out.find((d) => d.cli === def.id && sameApi(d.api, api))
         if (dup) dup.api.models = [...new Set([...dup.api.models, ...api.models])]
         else out.push({ cli: def.id, source: src.file ? expandHome(src.file) : t('环境变量'), api })
       }
