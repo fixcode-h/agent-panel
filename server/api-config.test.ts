@@ -265,11 +265,7 @@ test('写回上下文窗口：Pi 的 models.json 是数组，同时写最大输�
   const data = {
     providers: {
       tokenapi: {
-        models: [
-          { id: 'gpt-6.1-sol' },
-          { id: 'gpt-6.1-sol', name: 'custom' },
-          { id: 'custom/unknown' },
-        ],
+        models: [{ id: 'gpt-6.1-sol' }, { id: 'gpt-6.1-sol', name: 'custom' }, { id: 'custom/unknown' }],
       },
     },
   }
@@ -278,11 +274,8 @@ test('写回上下文窗口：Pi 的 models.json 是数组，同时写最大输�
     ['custom/unknown', undefined],
   ])
   const run = () =>
-    setModelLimits(
-      data,
-      'providers.tokenapi.models',
-      { context: 'contextWindow', maxOutput: 'maxTokens' },
-      (m) => limits.get(m),
+    setModelLimits(data, 'providers.tokenapi.models', { context: 'contextWindow', maxOutput: 'maxTokens' }, (m) =>
+      limits.get(m),
     )
   assert.equal(run(), true)
   assert.deepEqual(data.providers.tokenapi.models[0], { id: 'gpt-6.1-sol', contextWindow: 1000000, maxTokens: 128000 })
