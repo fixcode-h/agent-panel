@@ -336,8 +336,10 @@ function SettingsBody({
             const st = s.cli && statusOf(s.cli.id)
             const at = s.cli ? ordered.findIndex((c) => c.id === s.cli!.id) : -1
             // 已接入的排在前面；已安装但停用、没安装的都归到「未启用」
-            const firstReady = !!s.cli && !list.slice(0, i).some((x) => !!x.cli && isReady(x.cli.id))
-            const firstOff = !!s.cli && !list.slice(0, i).some((x) => !!x.cli && !isReady(x.cli.id))
+            // 组头还要跟当前项自己的状态一致，否则已接入的 CLI 也会被当成未启用组的开头
+            const ready = !!s.cli && isReady(s.cli.id)
+            const firstReady = ready && !list.slice(0, i).some((x) => !!x.cli && isReady(x.cli.id))
+            const firstOff = !!s.cli && !ready && !list.slice(0, i).some((x) => !!x.cli && !isReady(x.cli.id))
             return (
               <div key={s.id} className="contents">
                 {firstReady && (
