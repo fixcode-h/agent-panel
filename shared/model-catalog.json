@@ -132,6 +132,45 @@
       "defaultEffort": "low"
     },
     {
+      "vendor": "openai",
+      "id": "gpt-5.6-sol",
+      "label": "GPT-5.6 Sol",
+      "type": "sol",
+      "version": "5.6",
+      "protocols": ["openai-responses", "openai-chat"],
+      "context": 1050000,
+      "maxOutput": 128000,
+      "tier": "high",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "defaultEffort": "medium"
+    },
+    {
+      "vendor": "openai",
+      "id": "gpt-5.6-terra",
+      "label": "GPT-5.6 Terra",
+      "type": "terra",
+      "version": "5.6",
+      "protocols": ["openai-responses", "openai-chat"],
+      "context": 1050000,
+      "maxOutput": 128000,
+      "tier": "medium",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "defaultEffort": "medium"
+    },
+    {
+      "vendor": "openai",
+      "id": "gpt-5.6-luna",
+      "label": "GPT-5.6 Luna",
+      "type": "luna",
+      "version": "5.6",
+      "protocols": ["openai-responses", "openai-chat"],
+      "context": 1050000,
+      "maxOutput": 128000,
+      "tier": "low",
+      "efforts": ["low", "medium", "high", "xhigh", "max"],
+      "defaultEffort": "low"
+    },
+    {
       "vendor": "google",
       "id": "gemini-3-ultra",
       "label": "Gemini 3 Ultra",
