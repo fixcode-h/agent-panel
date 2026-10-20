@@ -52,6 +52,7 @@ export function useCliDef(id: string | undefined): CliDefinition | undefined {
   if (!base || !data) return base
   return {
     ...base,
+    apiMode: data.auth === 'api',
     models: data.models.map((m) => {
       // 下拉里第二行显示的说明：有展示名用展示名，没有用描述
       const label = (m.label !== m.id ? m.label : m.description) ?? ''

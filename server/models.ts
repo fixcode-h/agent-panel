@@ -474,19 +474,20 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
   if (cs.api) {
     const fallback = apiModelsFor(def, cs.api)
     const spec = def.auth?.api
-    // 能写进 CLI 配置、CLI 也能列模型的（Command Code、Pi），以 CLI 为准；
-    // 只通过环境变量接收 API 的 CLI 还是用 API 里配的模型。
+    // 能写进 CLI 配置、CLI 也能列模型的（Command Code、Pi），只取 API 里配的那几个模型；
+    // 配置文件里以前留下的其他模型不再显示。
     if (spec?.modelSource !== 'cli' || !def.modelsFrom) return applyCatalog(fallback)
     const st = (await detectClis()).find((c) => c.id === id)
     if (!st?.installed || !cs.enabled) return applyCatalog(fallback)
     try {
       const listed = await modelsFromCli(def, cs.command, childEnv(cs.env))
       if (!listed) return applyCatalog(fallback)
-      const prefix = apiModelPrefix(def.auth, cs.api)
-      if (!prefix) return applyCatalog({ ...listed, models: listed.models, auth: 'api', from: cs.api.name })
-      const selected = listed.models.filter((m) => m.id.startsWith(prefix))
-      if (!selected.length) return applyCatalog(fallback)
-      return applyCatalog({ ...listed, models: selected, auth: 'api', from: cs.api.name })
+      const byId = new Map(listed.models.map((m) => [m.id, m]))
+      const models = fallback.models.map((m) => {
+        const hit = byId.get(m.id)
+        return hit ? { ...hit, id: m.id, isDefault: m.isDefault } : m
+      })
+      return applyCatalog({ ...fallback, source: listed.source, models, from: cs.api.name })
     } catch {
       return applyCatalog(fallback)
     }

@@ -1,6 +1,7 @@
 import { Check, ChevronDown } from 'lucide-react'
-import { agentRun, defaultSettings } from '@shared/settings'
-import type { CliDefinition } from '@shared/clis'
+import { agentRun, cliSettings, defaultSettings } from '@shared/settings'
+import { getCli, type CliDefinition } from '@shared/clis'
+import { apiModelIdFor } from '@shared/accounts'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
 import { cliColor, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
@@ -84,8 +85,11 @@ export function useChatRun(pick: ChatRun) {
   const cli = usable.some((c) => c.id === pick.cli) ? pick.cli : defCli
   const def = useCliDef(cli || undefined)
   const base = agentRun({ cli, model: '', effort: '' }, s)
+  const cs = cliSettings(s, cli)
+  const picked = apiModelIdFor(pick.model, getCli(cli)?.auth, cs.api)
   const defModel = base.model || def?.models.find((m) => m.isDefault)?.id || def?.models[0]?.id || ''
-  const model = pick.model || defModel
+  // API 方式只认 API 里配的模型：任务里以前存的模型不在列表里时回到默认
+  const model = def?.apiMode && picked && !def.models.some((m) => m.id === picked) ? defModel : picked || defModel
   const efforts = def ? modelEfforts(def, model) : []
   const defEffort = def ? effortDefault(def, model, model === defModel ? base.effort : '') : ''
   // 换成别的模型后旧强度可能不适用（CLI 会直接报错退出），回到这个模型的默认

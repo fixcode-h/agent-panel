@@ -17,9 +17,10 @@ export function modelOptions(
   def: CliDefinition,
   o: { tiers?: Tiers; defaultValue?: string; extra?: string[] },
 ): { value: string; label: string; group?: string }[] {
+  const apiMode = !!def.apiMode
   const opts: { value: string; label: string; group?: string }[] = [
     ...(o.tiers
-      ? MODEL_TIERS.map((m) => ({
+      ? MODEL_TIERS.filter((m) => !apiMode || def.models.some((x) => x.id === o.tiers![m.id].model)).map((m) => ({
           value: `@${m.id}`,
           label: t('{tier}档 · {model}', { tier: m.label, model: o.tiers![m.id].model || t('自动') }),
           group: t('档位'),
@@ -29,8 +30,9 @@ export function modelOptions(
   ]
   // 组按固定顺序：档位、CLI 读取、配置文件
   opts.sort((a, b) => rank(a.group) - rank(b.group))
+  // API 方式只列 API 里配的模型：以前存的、自己填的都不再放进「其他」组
   for (const v of [o.defaultValue, ...(o.extra ?? [])])
-    if (v && !opts.some((x) => x.value === v)) opts.push({ value: v, label: v, group: t('其他') })
+    if (v && !opts.some((x) => x.value === v) && !apiMode) opts.push({ value: v, label: v, group: t('其他') })
   const d = o.defaultValue
   return [
     ...(d ? [] : [{ value: '', label: t('自动（默认）') }]),
@@ -74,7 +76,7 @@ export function ModelSelect({
           setCustom(v === CUSTOM)
           if (v !== CUSTOM) onChange(v)
         }}
-        options={[...options, { value: CUSTOM, label: t('其他模型…'), group: t('其他') }]}
+        options={[...options, ...(def.apiMode ? [] : [{ value: CUSTOM, label: t('其他模型…'), group: t('其他') }])]}
         className="font-mono text-[0.8125rem]"
       />
       {custom && (
