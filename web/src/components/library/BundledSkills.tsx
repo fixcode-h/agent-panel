@@ -1,14 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { Check, Download, Loader2, Package, RefreshCw } from 'lucide-react'
-import { BUNDLED_CATEGORIES, type BundledSkill, type LibraryCli } from '@shared/library'
+import { BUNDLED_CATEGORIES, type BundledSkill } from '@shared/library'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
-import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 
 const STATUS_LABEL: Record<BundledSkill['status'][string], string> = {
   missing: t('未安装'),
@@ -17,19 +14,13 @@ const STATUS_LABEL: Record<BundledSkill['status'][string], string> = {
 }
 
 /**
- * 面板自带的 Skill：按分类列出，在各 CLI 里装了没有；可以装进选中的 CLI。
+ * 面板自带的 Skill：按分类列出，统一看用户目录 ~/.agents/skills 里装了没有。
  * Agent 用到的自带 Skill 执行时会自动补齐，这里主要用来提前装好、或者把改过的换回自带的版本。
  */
-export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: string }) {
-  const { clis: status } = useData()
+export function BundledSkills({ query }: { query: string }) {
   const [items, setItems] = useState<BundledSkill[] | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const targetsAll = clis.filter((c) => c.skillDir)
-  // 默认装到已安装、已启用的 CLI
-  const [targets, setTargets] = useState<string[]>(() =>
-    targetsAll.filter((c) => status.some((s) => s.id === c.id && s.installed && s.enabled)).map((c) => c.id),
-  )
   const load = () =>
     api
       .bundledSkills()
@@ -55,10 +46,9 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
   }, [items, query])
 
   const install = async (names: string[], key: string, overwrite: boolean) => {
-    if (!targets.length) return toast.error(t('先选要装到哪些 CLI'))
     setBusy(key)
     try {
-      const r = await api.installBundled({ names, clis: targets, overwrite })
+      const r = await api.installBundled({ names, clis: [], overwrite })
       toast.success(r.done.length ? t('装好了 {n} 项', { n: r.done.length }) : t('都已经是最新的了'))
       await load()
     } catch (e) {
@@ -67,8 +57,7 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
       setBusy('')
     }
   }
-  const need = (i: BundledSkill) => targets.some((id) => i.status[id] !== 'same')
-  const cliName = (id: string) => clis.find((c) => c.id === id)?.name ?? id
+  const need = (i: BundledSkill) => i.status.shared !== 'same'
 
   if (error) return <p className="text-[0.8125rem] text-warning">{t('读取失败：{error}', { error })}</p>
   if (!items) return <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
@@ -76,23 +65,12 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card px-4 py-3">
         <span className="text-[0.8125rem] text-muted">{t('装到')}</span>
-        {targetsAll.map((c) => (
-          <Checkbox
-            key={c.id}
-            checked={targets.includes(c.id)}
-            onChange={(v) => setTargets((ts) => (v ? [...ts, c.id] : ts.filter((x) => x !== c.id)))}
-            label={
-              <span className="flex items-center gap-1.5">
-                <span className="h-2 w-2 rounded-full" style={{ background: cliColor(c.id) }} />
-                {c.name}
-              </span>
-            }
-          />
-        ))}
+        <span className="font-mono text-[0.8125rem] text-muted">~/.agents/skills</span>
+        <span className="text-[0.75rem] text-subtle">{t('所有 CLI 共用')}</span>
         <Button
           size="sm"
           className="ml-auto"
-          disabled={!!busy || !targets.length || !items.some((i) => targets.some((id) => i.status[id] === 'missing'))}
+          disabled={!!busy || !items.some((i) => i.status.shared === 'missing')}
           onClick={() =>
             void install(
               items.map((i) => i.name),
@@ -118,7 +96,7 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
           </h2>
           <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
             {g.items.map((i) => {
-              const changed = targets.some((id) => i.status[id] === 'changed')
+              const changed = i.status.shared === 'changed'
               return (
                 <li key={i.name} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-3">
                   <Package className="h-4 w-4 shrink-0 text-accent" />
@@ -134,26 +112,22 @@ export function BundledSkills({ clis, query }: { clis: LibraryCli[]; query: stri
                     {i.description && <p className="line-clamp-2 text-[0.78125rem] text-muted">{i.description}</p>}
                   </div>
                   <span className="flex flex-wrap gap-1.5">
-                    {targetsAll
-                      .filter((c) => i.status[c.id] !== 'missing')
-                      .map((c) => (
-                        <span
-                          key={c.id}
-                          title={STATUS_LABEL[i.status[c.id]]}
-                          className={cn(
-                            'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted',
-                            i.status[c.id] === 'changed' && 'border-dashed',
-                          )}
-                        >
-                          <span className="h-2 w-2 rounded-full" style={{ background: cliColor(c.id) }} />
-                          {cliName(c.id)}
-                          {i.status[c.id] === 'same' ? (
-                            <Check className="h-3 w-3 text-success" />
-                          ) : (
-                            <RefreshCw className="h-3 w-3 text-warning" />
-                          )}
-                        </span>
-                      ))}
+                    {i.status.shared !== 'missing' && (
+                      <span
+                        title={STATUS_LABEL[i.status.shared]}
+                        className={cn(
+                          'inline-flex items-center gap-1.5 rounded-full border bg-card px-2 py-px text-[0.71875rem] text-muted',
+                          changed && 'border-dashed',
+                        )}
+                      >
+                        {STATUS_LABEL[i.status.shared]}
+                        {i.status.shared === 'same' ? (
+                          <Check className="h-3 w-3 text-success" />
+                        ) : (
+                          <RefreshCw className="h-3 w-3 text-warning" />
+                        )}
+                      </span>
+                    )}
                   </span>
                   <Button
                     variant="secondary"

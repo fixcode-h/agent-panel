@@ -114,7 +114,7 @@ export function LibraryPage() {
 
       {tab === 'bundled' ? (
         data ? (
-          <BundledSkills clis={data.clis} query={query} />
+          <BundledSkills query={query} />
         ) : (
           <p className="text-[0.8125rem] text-subtle">{t('读取中…')}</p>
         )

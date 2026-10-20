@@ -173,6 +173,8 @@ export interface CliDefinition {
   spec?: boolean
   /** 用户放在数据目录里的配置（不是面板内置的） */
   user?: boolean
+  /** 这个 CLI 正在用 API 方式：模型只能从 API 配置里选，配置文件里的其他模型不再列出来 */
+  apiMode?: boolean
 }
 
 const opt = (cond: unknown, ...args: string[]) => (cond ? args : [])

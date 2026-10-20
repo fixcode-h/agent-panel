@@ -521,8 +521,8 @@ async function runAgent(
     )
   }
   const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params)).trim()
-  // Agent 要用的自带 Skill，这个 CLI 里没有的先装上，提示里点名的 Skill 才找得到
-  await ensureBundled(cliId, [
+  // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
+  await ensureBundled([
     ...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)]),
   ])
   let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt

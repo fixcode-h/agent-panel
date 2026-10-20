@@ -99,7 +99,7 @@ test('内置工作流：结构合法，节点的 Agent、验收流程和参数�
   }
 })
 
-test('自带 Skill：装进 CLI 的用户目录，已有的不覆盖，执行前自动补齐缺的', async () => {
+test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行前自动补齐缺的', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'bundled-'))
   const old = { ...process.env }
   process.env.HOME = home
@@ -107,28 +107,28 @@ test('自带 Skill：装进 CLI 的用户目录，已有的不覆盖，执行前
   try {
     const list = await listBundled()
     assert.equal(list.length, skillDirs.length)
-    assert.ok(list.every((s) => s.status.claude === 'missing'))
+    assert.ok(list.every((s) => s.status.shared === 'missing'))
     const one = list.find((s) => s.name === 'blender')!
     assert.ok(one.files > 5, '带上了脚本和参考资料')
 
-    const r = await installBundled(['blender'], ['claude'], false)
-    assert.deepEqual(r.done, ['claude/blender'])
-    const dir = path.join(home, '.claude/skills/blender')
+    const r = await installBundled(['blender'], [], false)
+    assert.deepEqual(r.done, ['blender'])
+    const dir = path.join(home, '.agents/skills/blender')
     assert.ok(existsSync(path.join(dir, 'SKILL.md')))
     assert.ok(existsSync(path.join(dir, 'scripts/inspect_scene.py')))
-    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.claude, 'same')
+    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.shared, 'same')
 
     // 用户改过的：不覆盖，状态是「不同」；明确覆盖时换回自带的
     writeFileSync(path.join(dir, 'SKILL.md'), '改过')
-    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.claude, 'changed')
-    assert.deepEqual((await installBundled(['blender'], ['claude'], false)).skipped, ['claude/blender'])
+    assert.equal((await listBundled()).find((s) => s.name === 'blender')!.status.shared, 'changed')
+    assert.deepEqual((await installBundled(['blender'], [], false)).skipped, ['blender'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
-    await installBundled(['blender'], ['claude'], true)
+    await installBundled(['blender'], [], true)
     assert.notEqual(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '改过')
 
     // 执行前补齐：只装缺的、只装自带的，用户的同名 Skill 不动
     writeFileSync(path.join(dir, 'SKILL.md'), '用户的')
-    const added = await ensureBundled('claude', ['blender', 'grilling', '不存在的'])
+    const added = await ensureBundled(['blender', 'grilling', '不存在的'])
     assert.deepEqual(added, ['grilling'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {

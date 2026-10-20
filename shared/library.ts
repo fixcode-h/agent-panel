@@ -62,7 +62,7 @@ export interface McpTestResult {
   tools: { name: string; description: string }[]
 }
 
-/** 面板自带的 Skill（仓库的 skills/<分类>/<名字>/），可以装进各 CLI 的用户 Skill 目录 */
+/** 面板自带的 Skill（仓库的 skills/<分类>/<名字>/），统一装到用户目录 ~/.agents/skills，各 CLI 共用 */
 export interface BundledSkill {
   name: string
   /** 分类文件夹名，显示名见 BUNDLED_CATEGORIES */
@@ -70,7 +70,7 @@ export interface BundledSkill {
   description: string
   /** SKILL.md 以外的文件数 */
   files: number
-  /** 在各 CLI 里的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
+  /** 在用户共享目录里的状态：没装、和自带的一样、装了但内容不同（自带的更新了或用户改过） */
   status: Record<string, 'missing' | 'same' | 'changed'>
 }
 

@@ -106,13 +106,11 @@ const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
   eager: true,
 }) as Record<string, string>
 const installedBundled = new Set<string>()
-function bundledList(active: string[]): BundledSkill[] {
+function bundledList(): BundledSkill[] {
   return Object.entries(BUNDLED)
     .map(([file, text]) => {
       const [category, name] = file.split('/skills/')[1].split('/')
-      const status: BundledSkill['status'] = {}
-      for (const c of libClis(active))
-        if (c.skillDir) status[c.id] = installedBundled.has(`${c.id}/${name}`) ? 'same' : 'missing'
+      const status: BundledSkill['status'] = { shared: installedBundled.has(name) ? 'same' : 'missing' }
       return { name, category, description: frontField(text, 'description'), files: 0, status }
     })
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
@@ -151,18 +149,16 @@ export function demoLibrary(
     if (seg[2] === 'install') {
       const done: string[] = []
       const skipped: string[] = []
-      for (const c of body.clis as string[])
-        for (const n of body.names as string[]) {
-          const k = `${c}/${n}`
-          if (installedBundled.has(k)) skipped.push(k)
-          else {
-            installedBundled.add(k)
-            done.push(k)
-          }
+      for (const n of body.names as string[]) {
+        if (installedBundled.has(n)) skipped.push(n)
+        else {
+          installedBundled.add(n)
+          done.push(n)
         }
+      }
       return { done, skipped }
     }
-    return { items: bundledList(active) }
+    return { items: bundledList() }
   }
   // library
   const kind = (query.get('kind') ?? body.kind) as Kind

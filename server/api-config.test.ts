@@ -15,6 +15,8 @@ import {
 } from '../shared/accounts.ts'
 import { mergeJson, fetchApiModels } from './accounts.ts'
 import { toApi } from './api-detect.ts'
+import { agentRun, defaultSettings } from '../shared/settings.ts'
+import { CliSettings } from '../shared/schema.ts'
 
 const auth = CliAuth.parse({
   home: '~',
@@ -200,4 +202,23 @@ test('API 测试连接：成功返回模型，失败带状态和原因', async (
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+})
+
+test('API 方式：执行时只认 API 里配的模型，其它模型换成第一个并补前缀', () => {
+  const s = defaultSettings()
+  s.apis = [
+    ApiConfig.parse({
+      id: 'a1',
+      name: '接口',
+      provider: 'p',
+      protocol: 'openai-responses',
+      baseUrl: 'https://x.example',
+      apiKey: 'k',
+      models: ['cc-1', 'cc-2'],
+    }),
+  ]
+  s.clis.commandcode = CliSettings.parse({ authMode: 'api', apiId: 'a1' })
+  assert.equal(agentRun({ cli: 'commandcode', model: 'cc-2' }, s).model, 'p/cc-2')
+  assert.equal(agentRun({ cli: 'commandcode', model: 'old-model' }, s).model, 'p/cc-1')
+  assert.equal(agentRun({ cli: 'commandcode', model: 'p/cc-2' }, s).model, 'p/cc-2')
 })
