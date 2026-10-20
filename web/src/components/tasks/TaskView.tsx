@@ -48,7 +48,7 @@ import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
 import { AnalyzeDialog, EvolutionCard } from './Evolution'
 import { StepSection } from './StepSection'
-import { RunCard, RunDrawer } from './RunCard'
+import { RunCard, RunPanel } from './RunCard'
 import { TaskPanel } from './TaskPanel'
 import { TaskMeta } from './TaskMeta'
 import { TaskFiles } from './TaskFiles'
@@ -216,17 +216,17 @@ export function TaskView({
   useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
   useEscape(progressOpen, () => setProgressOpen(false))
+  // 对话里点开的运行卡片：右边看这一次运行的实时输出
+  const [openRun, setOpenRun] = useState(0)
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
-  useEscape(!!task?.working && !panel && !stopAsk, () => setStopAsk(true))
+  useEscape(!!task?.working && !panel && !stopAsk && !openRun, () => setStopAsk(true))
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 流程图里选中的节点，右栏只看它
   const [flowSel, setFlowSel] = useState('')
-  // 对话里点开的运行卡片：右边看这一次运行的实时输出
-  const [openRun, setOpenRun] = useState(0)
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
@@ -741,18 +741,20 @@ export function TaskView({
                   </MenuItem>
                 </MenuContent>
               </Menu>
-              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="hidden xl:inline-flex"
-                aria-label={t('收起文件面板')}
-                title={t('收起文件面板')}
-                aria-expanded={!filesFolded}
-                onClick={() => setFilesFolded((v) => !v)}
-              >
-                {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-              </Button>
+              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板开着时这一栏不归文件面板 */}
+              {openRun === 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="hidden xl:inline-flex"
+                  aria-label={t('收起文件面板')}
+                  title={t('收起文件面板')}
+                  aria-expanded={!filesFolded}
+                  onClick={() => setFilesFolded((v) => !v)}
+                >
+                  {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                </Button>
+              )}
               {embed?.actions}
             </header>
 
@@ -978,23 +980,24 @@ export function TaskView({
             </div>
           </main>
 
-          {/* 右栏是文件系统：外面不滚动，拖动条才不会被 overflow 裁掉；文件树自己滚 */}
+          {/* 右栏是文件系统：外面不滚动，拖动条才不会被 overflow 裁掉；文件树自己滚。
+              点开运行卡片时，这一栏换成这次运行的输出，宽度和拖动条沿用文件面板 */}
           <aside
-            aria-label={t('文件')}
+            aria-label={openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')}
             data-task-panel
             style={{ width: taskPanel.width }}
             className={cn(
               'shrink-0 flex-col border-l bg-rail',
-              panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
+              panel || openRun > 0 ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
               // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
               'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
-              filesFolded && 'xl:hidden',
+              filesFolded && openRun === 0 && 'xl:hidden',
             )}
           >
             {!panel && (
               <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
             )}
-            {panel && (
+            {panel && openRun === 0 && (
               <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 xl:hidden">
                 <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
                 <Button
@@ -1008,14 +1011,29 @@ export function TaskView({
                 </Button>
               </div>
             )}
-            <TaskFiles
-              task={task}
-              dir={project?.path}
-              node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
-              onTask={apply}
-            />
+            {openRun > 0 ? (
+              <RunPanel
+                task={task}
+                run={openRun}
+                name={task.workflowName || workflow?.name}
+                onClose={() => setOpenRun(0)}
+                footer={composer}
+              />
+            ) : (
+              <TaskFiles
+                task={task}
+                dir={project?.path}
+                node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+                onTask={apply}
+              />
+            )}
           </aside>
-          {panel && <div className="fixed inset-0 z-30 bg-black/40 xl:hidden" onClick={() => setPanel(false)} />}
+          {(panel || openRun > 0) && (
+            <div
+              className="fixed inset-0 z-30 bg-black/40 xl:hidden"
+              onClick={() => (openRun > 0 ? setOpenRun(0) : setPanel(false))}
+            />
+          )}
         </div>
         <ConfirmDialog
           open={stopAsk && working}
@@ -1056,15 +1074,6 @@ export function TaskView({
           onConfirm={remove}
         />
         <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
-        {openRun > 0 && (
-          <RunDrawer
-            task={task}
-            run={openRun}
-            name={task.workflowName || workflow?.name}
-            onClose={() => setOpenRun(0)}
-            footer={composer}
-          />
-        )}
         <AnalyzeDialog
           open={analyzing}
           onOpenChange={setAnalyzing}
