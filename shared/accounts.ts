@@ -52,6 +52,8 @@ export const ApiConfig = z.object({
    * 发给 CLI 的仍然是原来的模型名
    */
   modelMap: z.record(z.string(), z.string()).default({}),
+  /** 每个模型的默认思考强度：模型名 → 强度 id；没有时用模型目录里的默认值 */
+  modelEfforts: z.record(z.string(), z.string()).default({}),
 })
 export type ApiConfig = z.infer<typeof ApiConfig>
 
@@ -256,6 +258,7 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
     authHeader: 'x-api-key',
     models: [],
     modelMap: {},
+    modelEfforts: {},
   }
   const vars = apiVars(base, spec.wire, provider)
   const prefix = api && spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''

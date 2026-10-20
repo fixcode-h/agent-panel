@@ -233,6 +233,7 @@ export const EN_SERVER: Record<string, string> = {
   '找不到版本 {tag}': 'Version not found: {tag}',
   准备中: 'Preparing',
   找不到这次更新: 'Update not found',
+  '找不到这个 API': 'API not found',
 
   // 附件
   上传的内容不对: 'Invalid upload',

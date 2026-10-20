@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
-  ArrowRight,
   Check,
   CircleAlert,
   CircleCheck,
@@ -11,6 +10,7 @@ import {
   Loader2,
   Plus,
   PlugZap,
+  RefreshCw,
   Trash2,
   X,
 } from 'lucide-react'
@@ -27,6 +27,7 @@ import { t } from '@shared/i18n'
 import { fmtTokens } from '@shared/model-limits'
 import { matchModel } from '@shared/model-catalog'
 import { useModelCatalog } from '@/lib/model-catalog'
+import { loadCliModels } from '@/lib/cli-models'
 
 /** 新建时可以从常用的开始 */
 const PRESETS: { label: string; protocol: ApiProtocol; baseUrl: string }[] = [
@@ -57,13 +58,14 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
         authHeader: 'x-api-key',
         models: [],
         modelMap: {},
+        modelEfforts: {},
       },
     ])
   return (
     <Group>
       <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。支持写配置的 CLI 保存后会立即写进它自己的配置，模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
+          '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 CLI 配置文件；模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
         )}
       </p>
       <div className="flex flex-col gap-4">
@@ -109,8 +111,9 @@ function ApiCard({
   const [found, setFound] = useState<string[]>()
   const [filter, setFilter] = useState('')
   const [draft, setDraft] = useState('')
-  /** 正在添加映射的模型；选好映射目标后写进 modelMap */
-  const [mapFrom, setMapFrom] = useState('')
+  /** 名称先存草稿，点「保存」才写进设置（改名称会改变写进 CLI 配置的 provider） */
+  const [name, setName] = useState(a.name)
+  const [updating, setUpdating] = useState(false)
   const modelCatalog = useModelCatalog()
   const busy = fetching || testing
   const canProbe = !!a.baseUrl.trim() || a.protocol === 'gemini'
@@ -167,38 +170,83 @@ function ApiCard({
     if (m && !a.models.includes(m)) onChange({ models: [...a.models, m] })
     setDraft('')
   }
-  // 已有映射的模型，和还能添加映射的模型
-  const mapped = a.models.filter((m) => a.modelMap[m])
-  const unmapped = a.models.filter((m) => !a.modelMap[m])
-  const setMap = (from: string, to: string) => {
+  const setMap = (m: string, to: string) => {
     const modelMap = { ...a.modelMap }
-    if (to) modelMap[from] = to
-    else delete modelMap[from]
+    if (to) modelMap[m] = to
+    else delete modelMap[m]
     onChange({ modelMap })
   }
-  // 模型配置的选项：先按模型名推测厂商，只列这个厂商的模型；推测不出来时列全部
-  const mapOptions = (from: string, current = '') => {
+  const setEffort = (m: string, v: string) => {
+    const modelEfforts = { ...a.modelEfforts }
+    if (v) modelEfforts[m] = v
+    else delete modelEfforts[m]
+    onChange({ modelEfforts })
+  }
+  /** 模型目录里自动识别到的配置：用户没改映射时用它 */
+  const autoModel = (m: string) => matchModel(m, { entries: modelCatalog?.entries ?? [] })?.entry.id ?? ''
+  // 映射选项：先按模型名推测厂商，只列这个厂商的模型；第一项是自动识别
+  const mapOptions = (m: string, current = '') => {
     const entries = modelCatalog?.entries ?? []
-    const vendor = matchModel(from, { entries })?.entry.vendor
+    const auto = autoModel(m)
+    const vendor = matchModel(m, { entries })?.entry.vendor
     const pool = vendor ? entries.filter((e) => e.vendor.toLowerCase() === vendor.toLowerCase()) : entries
-    const list = pool.map((e) => ({
-      value: e.id,
-      label: `${e.id} · ${fmtTokens(e.context)} / ${fmtTokens(e.maxOutput)}`,
-      group: e.vendor,
-    }))
+    const list = [
+      { value: '', label: auto ? t('自动识别（{model}）', { model: auto }) : t('自动识别'), group: '' },
+      ...pool.map((e) => ({
+        value: e.id,
+        label: `${e.id} · ${fmtTokens(e.context)} / ${fmtTokens(e.maxOutput)}`,
+        group: e.vendor,
+      })),
+    ]
     // 目录变了、已选的值不在里面时也要能显示
     return current && !list.some((o) => o.value === current) ? [...list, { value: current, label: current }] : list
+  }
+  /** 默认思考强度：模型目录里这个模型支持的强度 */
+  const effortOptions = (m: string) => [
+    { value: '', label: t('模型默认') },
+    ...(matchModel(m, { entries: modelCatalog?.entries ?? [] })?.entry.efforts ?? []).map((e) => ({
+      value: e,
+      label: e,
+    })),
+  ]
+  const saveName = () => {
+    const v = name.trim()
+    if (!v) return
+    onChange({ name: v })
+    setName(v)
+    toast.success(t('已保存'))
+  }
+  /** 一键更新：把这个 API 的当前设置写进正在用它的 CLI 配置文件 */
+  const applyApi = async () => {
+    setUpdating(true)
+    try {
+      const { clis } = await api.applyApi(a.id)
+      if (!clis.length) toast.info(t('还没有 CLI 在用这个 API'))
+      else {
+        toast.success(t('已更新 {n} 个 CLI 的配置文件', { n: clis.length }))
+        // 写进配置文件后模型列表可能变了：重新读一次
+        void Promise.all(clis.map((id) => loadCliModels(id, true).catch(() => {})))
+      }
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setUpdating(false)
+    }
   }
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-field/30 p-4">
       <div className="flex items-center gap-2">
         <Input
-          value={a.name}
+          value={name}
           maxLength={60}
-          onChange={(e) => onChange({ name: e.target.value })}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && saveName()}
           aria-label={t('API 名称')}
           className="h-9 min-w-0 flex-1 font-medium"
         />
+        <Button size="sm" variant="secondary" disabled={!name.trim() || name.trim() === a.name} onClick={saveName}>
+          {t('保存')}
+        </Button>
         <Button variant="ghost" size="icon-sm" aria-label={t('删除 {name}', { name: a.name })} onClick={onRemove}>
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -328,43 +376,69 @@ function ApiCard({
             )}
           </div>
         )}
-        <div className="flex flex-wrap gap-1.5">
-          {a.models.map((m, i) => (
-            <span
-              key={m}
-              className="inline-flex h-7 items-center gap-1 rounded-md bg-sel pr-1 pl-2 font-mono text-[0.75rem]"
-              title={i === 0 ? t('第一个是默认模型') : undefined}
-            >
-              {m}
-              {i === 0 && <span className="rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>}
-              <button
-                type="button"
-                aria-label={t('移除 {name}', { name: m })}
-                onClick={() => toggle(m)}
-                className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle hover:bg-card hover:text-fg"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </span>
-          ))}
-          <form
-            className="inline-flex"
-            onSubmit={(e) => {
-              e.preventDefault()
-              addDraft()
-            }}
+        {/* 一个模型一行：默认思考强度和映射模型都按模型配 */}
+        {a.models.map((m, i) => (
+          <div
+            key={m}
+            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-2.5 py-2"
+            title={i === 0 ? t('第一个是默认模型') : undefined}
           >
-            <Input
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              onBlur={addDraft}
-              placeholder={t('自己输入模型名，回车添加')}
-              aria-label={t('添加模型')}
-              spellCheck={false}
-              className="h-7 w-52 font-mono text-[0.75rem]"
-            />
-          </form>
-        </div>
+            <span className="min-w-0 flex-1 basis-48 truncate font-mono text-[0.78125rem]">
+              {m}
+              {i === 0 && (
+                <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>
+              )}
+            </span>
+            <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
+              {t('默认思考强度')}
+              <Select
+                aria-label={t('{model} 的默认思考强度', { model: m })}
+                className="h-7 w-28 text-[0.75rem]"
+                value={a.modelEfforts[m] ?? ''}
+                options={effortOptions(m)}
+                onChange={(e) => setEffort(m, e.target.value)}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
+              {t('映射模型')}
+              <Select
+                aria-label={t('{model} 的映射模型', { model: m })}
+                className="h-7 w-56 font-mono text-[0.75rem]"
+                value={a.modelMap[m] ?? ''}
+                options={mapOptions(m, a.modelMap[m])}
+                onChange={(e) => setMap(m, e.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              aria-label={t('移除 {name}', { name: m })}
+              onClick={() => toggle(m)}
+              className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        ))}
+        <form
+          className="flex flex-wrap items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            addDraft()
+          }}
+        >
+          <Input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={addDraft}
+            placeholder={t('自己输入模型名，回车添加')}
+            aria-label={t('添加模型')}
+            spellCheck={false}
+            className="h-8 w-56 font-mono text-[0.75rem]"
+          />
+          <span className="text-[0.71875rem] text-subtle">
+            {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 CLI 的仍然是这里的模型名。')}
+          </span>
+        </form>
         {found && (
           <div className="flex flex-col gap-2 rounded-lg border bg-card p-2.5">
             <div className="flex items-center gap-2">
@@ -410,71 +484,22 @@ function ApiCard({
           </div>
         )}
       </div>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[0.75rem] text-subtle">{t('模型映射')}</span>
-          <span className="flex-1" />
-          <Button
-            size="sm"
-            variant="ghost"
-            disabled={!unmapped.length || !!mapFrom}
-            onClick={() => setMapFrom(unmapped[0] ?? '')}
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t('添加映射')}
-          </Button>
-        </div>
-        <p className="text-[0.71875rem] leading-relaxed text-subtle">
-          {t('自动识别不准时，指定按哪个模型的配置读取上下文和最大输出；发给 CLI 的仍然是这里的模型名。')}
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="min-w-0 flex-1 text-[0.75rem] text-subtle">
+          {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
         </p>
-        {mapped.map((m) => (
-          <div key={m} className="flex flex-wrap items-center gap-2">
-            <span className="w-52 truncate font-mono text-[0.75rem]" title={m}>
-              {m}
-            </span>
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <Select
-              aria-label={t('{model} 的模型映射', { model: m })}
-              className="h-8 w-64 font-mono text-[0.78125rem]"
-              value={a.modelMap[m]}
-              options={mapOptions(m, a.modelMap[m])}
-              onChange={(e) => setMap(m, e.target.value)}
-            />
-            <Button size="icon-sm" variant="ghost" aria-label={t('移除映射')} onClick={() => setMap(m, '')}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ))}
-        {mapFrom && (
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              aria-label={t('添加映射的模型')}
-              className="h-8 w-52 font-mono text-[0.78125rem]"
-              value={mapFrom}
-              options={unmapped.map((m) => ({ value: m, label: m }))}
-              onChange={(e) => setMapFrom(e.target.value)}
-            />
-            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <Select
-              aria-label={t('按哪个模型的配置')}
-              className="h-8 w-64 font-mono text-[0.78125rem]"
-              value=""
-              placeholder={t('选择模型配置')}
-              options={mapOptions(mapFrom)}
-              onChange={(e) => {
-                setMap(mapFrom, e.target.value)
-                setMapFrom('')
-              }}
-            />
-            <Button size="icon-sm" variant="ghost" aria-label={t('取消添加映射')} onClick={() => setMapFrom('')}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
+        {/* 改 API 不会自动改 CLI 的配置文件，点这里才写进去 */}
+        <Button
+          size="sm"
+          variant="secondary"
+          disabled={updating}
+          onClick={() => void applyApi()}
+          title={t('把现在的接口地址、密钥和模型写进正在用这个 API 的 CLI 配置文件')}
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', updating && 'animate-spin')} />
+          {t('一键更新')}
+        </Button>
       </div>
-      <p className="text-[0.75rem] text-subtle">
-        {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
-      </p>
     </div>
   )
 }

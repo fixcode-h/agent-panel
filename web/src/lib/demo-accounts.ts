@@ -42,6 +42,8 @@ const list = (cli: string): CliAccounts => {
 }
 
 export function demoAccounts(method: string, seg: string[], body: Record<string, any>): unknown {
+  // 一键更新：演示时没有真正的 CLI 配置文件可写
+  if (seg[0] === 'apis' && seg[2] === 'apply') return { clis: [] }
   const [, cli, sub, id] = seg
   if (!cli) return CLIS.filter((c) => c.auth).map((c) => list(c.id))
   // 演示：像是在本机 Claude Code 和 Codex 的配置里识别到的两个网关
@@ -60,6 +62,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
           authHeader: 'bearer',
           models: ['claude-sonnet-5-5'],
           modelMap: {},
+          modelEfforts: {},
         },
       },
       {
@@ -75,6 +78,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
           authHeader: 'x-api-key',
           models: [],
           modelMap: {},
+          modelEfforts: {},
         },
       },
     ] satisfies DetectedApi[]

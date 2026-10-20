@@ -161,6 +161,7 @@ export const api = {
     request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
   apiModels: (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
+  applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
   /** 模型目录：内置的加上用户补充的 */
   modelCatalog: () => request<ModelCatalogInfo>('/model-catalog'),

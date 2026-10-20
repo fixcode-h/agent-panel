@@ -516,18 +516,20 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
   }
 }
 
-/** 和配置写入有关的设置指纹：只有这些变了才重写 CLI 配置文件 */
+/**
+ * 和配置写入有关的设置指纹：只有这些变了才重写 CLI 配置文件。
+ * 只算选了哪个 API，不算 API 自己的地址、密钥、模型：改 API 不自动改 CLI 的配置文件，
+ * 由设置里的「一键更新」写进去
+ */
 function authSignature(settings: Settings, cliId: string) {
   const cs = cliSettings(settings, cliId)
-  const api = cs.api
-  return JSON.stringify([
-    cs.enabled,
-    cs.authMode,
-    api && [api.id, apiProvider(api), api.protocol, api.baseUrl, api.apiKey, api.authHeader, api.models],
-  ])
+  return JSON.stringify([cs.enabled, cs.authMode, cs.apiId])
 }
 
-/** 设置保存后：把切到 API 的 CLI 配置立即写进 CLI 自己的配置文件（不用等到执行） */
+/**
+ * 设置保存后：切换了登录方式、或换了 API 的 CLI，立即把配置写进 CLI 自己的配置文件（不用等到执行）。
+ * 改 API 自己的地址、密钥、模型不在这里写，由设置里的「一键更新」写
+ */
 export async function syncCliAuths(prev: Settings, next: Settings) {
   for (const def of CLIS) {
     if (!def.auth?.api) continue
@@ -538,6 +540,24 @@ export async function syncCliAuths(prev: Settings, next: Settings) {
     await prepareAuth(def.id, lastProvider)
     invalidateModels(def.id)
   }
+}
+
+/**
+ * 把某个 API 当前的设置（地址、密钥、模型）写进所有正在用它的 CLI 配置文件。
+ * 设置页里改 API 不自动写，用户点「一键更新」才调这里；返回更新了哪些 CLI
+ */
+export async function applyApiToClis(apiId: string) {
+  const settings = await getSettings()
+  const clis: string[] = []
+  for (const def of CLIS) {
+    if (!def.auth?.api) continue
+    const cs = cliSettings(settings, def.id)
+    if (cs.authMode !== 'api' || cs.apiId !== apiId) continue
+    await prepareAuth(def.id)
+    invalidateModels(def.id)
+    clis.push(def.id)
+  }
+  return clis
 }
 
 // ---- 登录 ----
@@ -707,6 +727,16 @@ export function accountsApi() {
       .get(
         '/detected-apis',
         guard(async (c) => c.json(await detectApis())),
+      )
+      // 把某个 API 当前的设置写进正在用它的 CLI 配置文件（设置页的「一键更新」）
+      .post(
+        '/apis/:id/apply',
+        guard(async (c) => {
+          const id = c.req.param('id')
+          const settings = await getSettings()
+          if (!settings.apis.some((a) => a.id === id)) return c.json({ error: t('找不到这个 API') }, 404)
+          return c.json({ clis: await applyApiToClis(id) })
+        }),
       )
       // 读 API 的模型列表（在服务端请求，页面直接请求会被跨域挡住）
       .post(

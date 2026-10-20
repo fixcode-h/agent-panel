@@ -394,7 +394,7 @@ try {
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 CLI 的配置里识别到 2 个 API', 'Codex · openrouter'])
   await p.getByRole('button', { name: '存到 API 配置' }).first().click()
-  await check(p, '设置-API-已存', ['已在列表中', '模型映射', '添加映射'])
+  await check(p, '设置-API-已存', ['已在列表中', '一键更新', '映射模型'])
   // 授权：检测外部 CLI，在面板里完成浏览器授权（演示里模拟），退出后回到未授权
   await p.getByRole('button', { name: '授权', exact: true }).first().click()
   await check(p, '设置-授权', ['GitHub CLI', '浏览器授权', '用 Token 授权'])
