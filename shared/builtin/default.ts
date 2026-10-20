@@ -57,6 +57,7 @@ export function defaultWorkflow(): Workflow {
     categoryId: '',
     tags: [],
     document: DOCUMENT,
+    expose: [],
     flows: [
       autoLayout({
         id: 'main',

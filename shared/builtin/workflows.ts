@@ -1,4 +1,4 @@
-import type { FlowEdge, FlowNode, NodeHooks, ParamValues, WorkflowInput } from '../schema.ts'
+import type { FlowEdge, FlowNode, NodeHooks, ParamValues, WorkflowExpose, WorkflowInput } from '../schema.ts'
 import { autoLayout, END, START } from '../flow.ts'
 
 /**
@@ -38,6 +38,8 @@ export interface BuiltinWorkflow {
   main: string
   members: [string, string][]
   document: string
+  /** 对外暴露给项目的配置项 */
+  expose?: WorkflowExpose[]
   flows: FlowSpec[]
 }
 
@@ -598,6 +600,7 @@ export function buildWorkflow(
     members: [],
     entryFlowId: 'main',
     document: w.document,
+    expose: w.expose ?? [],
     flows: w.flows.map((f) =>
       autoLayout({
         id: f.id,

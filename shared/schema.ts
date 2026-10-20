@@ -262,6 +262,33 @@ function migrateWorkflow(v: unknown) {
 }
 
 /**
+ * 工作流对外暴露的配置项：项目设置里按它渲染表单，值存在项目的 workflowParams 里。
+ * target 决定值作用到哪里，新建对话时解析成快照写进任务，之后改工作流不影响已开始的对话。
+ */
+export const WorkflowExpose = z.object({
+  key: z
+    .string()
+    .trim()
+    .min(1, t('配置项名不能为空'))
+    .max(40)
+    .regex(/^[A-Za-z_][\w-]*$/, t('配置项名只能用字母、数字、下划线和横线')),
+  label: z.string().trim().max(40).default(''),
+  type: z.enum(['select', 'multi', 'bool', 'text']).default('select'),
+  options: z.array(z.string().trim().min(1).max(80)).max(30).default([]),
+  /** 默认值；多选是字符串数组，开关是布尔 */
+  default: ParamValue.optional(),
+  /**
+   * skill：替换技能槽（targetId 是槽名，例如 projectStructure）；
+   * agent：覆盖 Agent 的参数（targetId 是参数 key）；node：覆盖节点的参数；document：注入工作流说明
+   */
+  target: z.enum(['skill', 'agent', 'node', 'document']).default('skill'),
+  /** skill 时是槽名，agent / node 时是目标 id，document 时是注入位置的小标题 */
+  targetId: z.string().trim().max(80).default(''),
+  description: z.string().trim().max(200).default(''),
+})
+export type WorkflowExpose = z.infer<typeof WorkflowExpose>
+
+/**
  * 工作流：一个主 Agent 和若干子 Agent 组成团队，用流程图编排执行顺序。
  * 主 Agent 执行没指定 Agent 的节点，并在流程完成后处理用户的追加要求。
  */
@@ -288,6 +315,8 @@ const WorkflowFields = z.object({
   tags: z.array(z.string()).max(20).default([]),
   /** 工作流说明（Markdown）：目标、规范、完成标准等，每个节点执行时都会带上 */
   document: z.string().max(50000).default(''),
+  /** 对外暴露的配置项：项目设置里按它渲染表单 */
+  expose: z.array(WorkflowExpose).max(20).default([]),
   /** 每次执行的上限：花费（美元）、token（输入 + 输出）超过就暂停，免得验收来回循环一直烧钱；0 表示不限 */
   budgetUsd: z.number().min(0).max(100000).optional(),
   budgetTokens: z.number().int().min(0).optional(),
@@ -443,6 +472,10 @@ export const ProjectInput = z.object({
   categoryId: z.string().default(''),
   /** 单独指定的工作流；为空时使用分类的默认工作流 */
   workflowId: z.string().default(''),
+  /** 工作流暴露项的取值（key 是 Workflow.expose 里的 key） */
+  workflowParams: z.record(z.string(), ParamValue).default({}),
+  /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
+  gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
 })
 export type ProjectInput = z.infer<typeof ProjectInput>
 
@@ -694,6 +727,8 @@ export const TaskStep = z.object({
   usage: StepUsage.optional(),
   /** 这个节点执行期间改动的文件 */
   changes: z.array(FileChange).default([]),
+  /** 第几次工作流运行（从 1 开始）：同一个对话里工作流可以按顺序跑多次，每次的节点互相隔离 */
+  runId: z.number().int().default(1),
 })
 export type TaskStep = z.infer<typeof TaskStep>
 
@@ -868,6 +903,10 @@ export const TaskData = z.object({
   askedAt: z.string().optional(),
   /** 用户结束了工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理 */
   flowClosed: z.boolean().optional(),
+  /** 这个对话里用户对推送的选择：问过一次就记住，不再重复问 */
+  remotePush: z.enum(['allowed', 'denied']).optional(),
+  /** 已经跑了几次工作流：每次运行按顺序执行节点，运行之间互相隔离 */
+  runSeq: z.number().int().default(0),
   /** 从别人导出的文件导入的任务：只读，不能继续执行；agents 是导出时带来的 Agent，本机没有时用来显示名字 */
   imported: z
     .object({

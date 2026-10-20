@@ -67,6 +67,8 @@ export const EN_SHARED: Record<string, string> = {
 
   // schema.ts
   名称不能为空: 'Name is required',
+  配置项名不能为空: 'Setting name is required',
+  '配置项名只能用字母、数字、下划线和横线': 'Setting names may only use letters, digits, underscores and hyphens',
   分类名不能为空: 'Category name is required',
   请描述任务: 'Please describe the task',
   内容不能为空: 'Content is required',

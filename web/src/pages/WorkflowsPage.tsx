@@ -71,6 +71,7 @@ export function WorkflowsPage() {
         flows: [newFlow(t('主流程'), 'main')],
         entryFlowId: 'main',
         document: '',
+        expose: [],
         categoryId: selected?.categoryId ?? '',
         tags: [],
         ...input,

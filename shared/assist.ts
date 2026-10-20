@@ -655,6 +655,7 @@ export function resolveProposal(
         flows,
         entryFlowId,
         document: d.document,
+        expose: target?.expose ?? [],
         categoryId: target?.categoryId ?? '',
         tags: target?.tags ?? [],
       },

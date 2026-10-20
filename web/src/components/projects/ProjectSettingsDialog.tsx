@@ -28,7 +28,15 @@ const folderName = (p: string) =>
     .replace(/[\\/]+$/, '')
     .split(/[\\/]/)
     .pop() ?? ''
-const blank: ProjectInput = { name: '', description: '', path: '', categoryId: '', workflowId: '' }
+const blank: ProjectInput = {
+  name: '',
+  description: '',
+  path: '',
+  categoryId: '',
+  workflowId: '',
+  workflowParams: {},
+  gitPolicy: 'ask',
+}
 
 /** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
 export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {

@@ -154,6 +154,8 @@ export function tasksApi(deps: {
     path: dir,
     categoryId: '',
     workflowId: '',
+    workflowParams: {},
+    gitPolicy: 'ask',
     createdAt: '',
     updatedAt: '',
   })

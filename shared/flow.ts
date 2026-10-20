@@ -280,6 +280,7 @@ export function blankStep(o: Partial<TaskStep> & Pick<TaskStep, 'id' | 'title'>)
     interrupted: false,
     command: [],
     changes: [],
+    runId: 1,
     ...o,
   }
 }

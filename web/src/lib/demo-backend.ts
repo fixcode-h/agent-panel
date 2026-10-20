@@ -372,6 +372,7 @@ function seed(): Db {
     ],
     flows: [webMain, reviewFlow, ctxFlow],
     entryFlowId: 'main',
+    expose: [],
     document: `# 目标
 根据用户描述，在现有 Web 项目里完成一个新功能，并保证测试通过。
 
@@ -410,6 +411,7 @@ function seed(): Db {
     ],
     entryFlowId: 'main',
     document: '',
+    expose: [],
   }
   const web: ProjectCategory = {
     ...meta(),
@@ -418,7 +420,12 @@ function seed(): Db {
     workflowId: webFlow.id,
   }
   const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
-  const project = (o: ProjectInput): Project => ({ ...meta(), ...o })
+  const project = (o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'>): Project => ({
+    ...meta(),
+    workflowParams: {},
+    gitPolicy: 'ask',
+    ...o,
+  })
   return {
     categories: [plan, dev, qa, wfDev, wfFix],
     tags: [tWeb, tQuality, tCommon],
@@ -470,6 +477,7 @@ function load(): Db {
   db.agents = db.agents.map((a) => Agent.parse(a))
   db.workflows = db.workflows.map((w) => Workflow.parse(w))
   db.categories = db.categories.map((c) => Category.parse(c))
+  db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
   // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
   if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
