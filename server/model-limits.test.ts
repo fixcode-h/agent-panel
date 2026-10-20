@@ -28,7 +28,7 @@ test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
 test('Command Code 的思考强度跟着模型走，不用全局列表', () => {
   const cc = getCli('commandcode')!
   assert.equal(cc.effortsFromModel, true)
-  assert.equal(cc.modelBoundSession, true)
+  assert.equal(cc.effortBoundSession, true)
   assert.deepEqual(cc.efforts, [])
   // 交给执行前按模型判断，这里先放行
   assert.equal(supportsEffort('commandcode', 'xhigh'), true)

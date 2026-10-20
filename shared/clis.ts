@@ -113,10 +113,10 @@ export interface CliDefinition {
   /** 常驻协议怎么握手、开始一轮、插话、判断结束；protocol 为 rpc 时必填 */
   rpc?: RpcSpecInput
   /**
-   * 会话和模型绑定：换了模型就不能再续接原来的会话。
-   * Codex 的线程里存着上一个模型的工具调用（例如 gpt 系的 exec 自定义工具），换成别的模型后接口不认这些历史
+   * 会话不支持中途换思考强度：换了强度也要开新会话，把之前的对话带过去。
+   * 例如 Command Code 的强度是启动参数，续接旧会话时换了强度会接不上。
    */
-  modelBoundSession?: boolean
+  effortBoundSession?: boolean
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */
@@ -453,8 +453,7 @@ export const CLIS: CliDefinition[] = [
         { method: 'initialized', notify: true },
       ],
     },
-    // 线程里会留下模型自己的工具调用：换了模型之后不能接着用
-    modelBoundSession: true,
+    // 线程里会留下模型自己的工具调用：换了模型之后不能接着用（现在所有 CLI 换模型都开新会话）
     parser: '',
     steer: true,
     notes: false,
