@@ -116,8 +116,16 @@ try {
   await p.keyboard.press('Escape')
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
-  // 右栏是文件系统（带 git 状态），启动命令在名字那行最右边，上下文和用量在输入框下面
-  await check(p, '任务', ['src', '命中', 'package.json', 'acceptEdits'])
+  // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
+  await check(p, '任务', ['src', '命中', 'package.json'])
+  // 启动命令只留图标，点开才显示完整命令
+  const cmd = p.getByRole('button', { name: '查看启动命令' }).first()
+  if (!(await cmd.count())) errors.push('任务：没有启动命令按钮')
+  else {
+    await cmd.click()
+    await check(p, '任务-启动命令', ['acceptEdits'])
+    await p.keyboard.press('Escape')
+  }
   if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
   // 工作流任务：任务进度是主 Agent → 节点 → 子 Agent 的层级，窄窗口里从标题栏点开
