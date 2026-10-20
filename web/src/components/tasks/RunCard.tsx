@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { ChevronRight, CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { stepMs } from '@shared/task'
@@ -98,11 +99,14 @@ export function RunDrawer({
   run,
   name,
   onClose,
+  footer,
 }: {
   task: Task
   run: number
   name?: string
   onClose: () => void
+  /** 输入框：跟着这次运行放在底下，不用关掉面板再回到对话里写 */
+  footer?: ReactNode
 }) {
   const { agents } = useData()
   const teamNames = new Set(agents.map((a) => a.name))
@@ -153,6 +157,7 @@ export function RunDrawer({
             {!steps.length && <p className="text-[0.8125rem] text-subtle">{t('这次运行还没有节点。')}</p>}
           </div>
         </div>
+        {footer && <div className="shrink-0 border-t bg-bg px-3 py-3 md:px-4">{footer}</div>}
       </aside>
     </>
   )

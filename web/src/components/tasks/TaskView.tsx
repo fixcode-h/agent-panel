@@ -10,6 +10,7 @@ import {
   MessageSquareText,
   MoreHorizontal,
   PanelRight,
+  PanelRightClose,
   Undo2,
   Pencil,
   RotateCw,
@@ -197,6 +198,8 @@ export function TaskView({
   const mention = useFileMention(project?.id, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
+  // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
+  const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
   // 右栏可以拖宽，但中间至少留出能读对话的宽度；上限按这一行的实际宽度算
@@ -229,24 +232,6 @@ export function TaskView({
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
-  // 对话区左右的空白宽度：内容区宽度固定居中，窗口宽时两边留白
-  const mainRef = useRef<HTMLElement>(null)
-  const [gutter, setGutter] = useState(0)
-  useEffect(() => {
-    const el = mainRef.current
-    if (!el) return
-    const measure = () => {
-      const cw = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--content-w')) || 1000
-      setGutter(Math.max(0, (el.clientWidth - cw) / 2))
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    return () => ro.disconnect()
-    // 任务加载出来之前页面上还没有 main
-    // 任务从无到有时开始量尺寸
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [!task])
   const stick = useRef(true)
   // 这次打开对话有没有试过后台预热：每个任务只试一次，任务后续变化不用再发
   const prewarmed = useRef('')
@@ -508,15 +493,6 @@ export function TaskView({
     setAway(false)
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }
-  // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏是文件系统，不重复显示。
-  // 对话模式没有节点，也就没有任务进度
-  const progressCard =
-    task.mode === 'workflow' && tops.length > 0 && gutter >= 200 ? (
-      // 节点行里要放耗时、等待、token 和命中率，宽一点才能排在一行
-      <div className="absolute top-4 left-4 z-10" style={{ width: Math.min(320, gutter - 24) }}>
-        <TaskPanel task={task} onStep={openStep} />
-      </div>
-    ) : null
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
@@ -524,11 +500,109 @@ export function TaskView({
 
   const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
 
+  // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
+  const composer = !task.imported && !asksQuestion(task.requests) && (
+    <ChatComposer
+      id="follow-up"
+      value={text}
+      onChange={setText}
+      onSubmit={() => void send()}
+      files={files}
+      taRef={followTa}
+      menus={
+        <>
+          {mention.menu}
+          {slash.menu}
+        </>
+      }
+      onSync={() => {
+        mention.sync()
+        slash.sync()
+      }}
+      onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
+      canSend={!!text.trim() || files.attachments.length > 0}
+      attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
+      tools={
+        <>
+          <AskToggle
+            value={task.askUser}
+            onChange={(v) => {
+              setTask({ ...task, askUser: v })
+              api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+            }}
+          />
+          {task.mode === 'chat' && !byCli && chatAgent && chatAgent.params.length > 0 && (
+            <ParamsChip
+              params={chatAgent.params}
+              values={task.params}
+              onChange={(v) => {
+                setTask({ ...task, params: v })
+                api.setTaskParams(task.id, v).then(apply, (e) => toast.error((e as Error).message))
+              }}
+            />
+          )}
+          {byCli ? (
+            <ChatModelPicker value={chatRun} onChange={changeRun} />
+          ) : (
+            <span className="min-w-0 truncate pl-1 text-xs text-subtle">
+              {working
+                ? tops.filter((s) => s.status === 'running').length > 1
+                  ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
+                  : t('执行中，可以随时暂停')
+                : task.mode === 'workflow'
+                  ? blocked
+                    ? t('主 Agent 处理后会接着走流程')
+                    : roots.every((s) => s.status === 'done')
+                      ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                      : task.status === 'failed'
+                        ? t('会从失败的节点重新执行')
+                        : t('会从没完成的节点继续执行')
+                  : t('发给 {name}', { name: chatLabel })}
+            </span>
+          )}
+        </>
+      }
+      running={working}
+      onStop={stop}
+      onQueue={() => void send('queue')}
+      leading={
+        !working &&
+        canResume && (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="rounded-lg"
+            disabled={resuming}
+            onClick={() => resume()}
+            title={
+              task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
+                ? t('从没完成的节点继续执行')
+                : t('重新执行最后一条要求')
+            }
+          >
+            {resuming ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCw className="h-3.5 w-3.5" />}
+            {task.status === 'failed' ? t('重试') : t('继续执行')}
+          </Button>
+        )
+      }
+      label={t('继续输入要求')}
+      placeholder={
+        !working
+          ? t('继续输入要求')
+          : canSteer
+            ? byNotes
+              ? t('执行中也可以输入：Agent 执行时会取走，相关的调整方向，无关的等这一轮结束后处理')
+              : t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
+            : t('执行中也可以输入，这一轮完成后接着处理')
+      }
+    />
+  )
+
   return (
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
         <div className="relative flex min-h-[70vh] min-w-0 flex-1 md:h-full md:min-h-0">
-          <main ref={mainRef} className="flex min-w-0 flex-1 flex-col md:h-full">
+          <main className="flex min-w-0 flex-1 flex-col md:h-full">
             <header
               className={cn(
                 'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
@@ -616,7 +690,7 @@ export function TaskView({
                   ))}
                 </div>
               )}
-              {task.mode === 'workflow' && !progressCard && tops.length > 0 && (
+              {task.mode === 'workflow' && tops.length > 0 && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -637,6 +711,18 @@ export function TaskView({
                 onClick={() => setPanel(true)}
               >
                 <PanelRight className="h-4 w-4" />
+              </Button>
+              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="hidden xl:inline-flex"
+                aria-label={t('收起文件面板')}
+                title={t('收起文件面板')}
+                aria-expanded={!filesFolded}
+                onClick={() => setFilesFolded((v) => !v)}
+              >
+                {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
               </Button>
               <Menu>
                 <MenuTrigger asChild>
@@ -673,8 +759,7 @@ export function TaskView({
             </header>
 
             <div className="relative flex min-h-0 flex-1 flex-col">
-              {!isFlow && progressCard}
-              {progressOpen && !progressCard && (
+              {progressOpen && (
                 <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
                   <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
                 </div>
@@ -695,7 +780,6 @@ export function TaskView({
                     <TaskFlow
                       task={task}
                       focus={focus}
-                      gutter={progressCard}
                       onSelect={setFlowSel}
                       onOpenChat={() => {
                         stick.current = true
@@ -882,107 +966,8 @@ export function TaskView({
               )}
               <QueuedList task={task} onChange={apply} />
               {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
-              {/* AI 在问问题时，问题面板换掉输入框；导入的任务只读，没有输入框 */}
-              {!task.imported && !asksQuestion(task.requests) && (
-                <ChatComposer
-                  id="follow-up"
-                  value={text}
-                  onChange={setText}
-                  onSubmit={() => void send()}
-                  files={files}
-                  taRef={followTa}
-                  menus={
-                    <>
-                      {mention.menu}
-                      {slash.menu}
-                    </>
-                  }
-                  onSync={() => {
-                    mention.sync()
-                    slash.sync()
-                  }}
-                  onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
-                  canSend={!!text.trim() || files.attachments.length > 0}
-                  attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
-                  tools={
-                    <>
-                      <AskToggle
-                        value={task.askUser}
-                        onChange={(v) => {
-                          setTask({ ...task, askUser: v })
-                          api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
-                        }}
-                      />
-                      {task.mode === 'chat' && !byCli && chatAgent && chatAgent.params.length > 0 && (
-                        <ParamsChip
-                          params={chatAgent.params}
-                          values={task.params}
-                          onChange={(v) => {
-                            setTask({ ...task, params: v })
-                            api.setTaskParams(task.id, v).then(apply, (e) => toast.error((e as Error).message))
-                          }}
-                        />
-                      )}
-                      {byCli ? (
-                        <ChatModelPicker value={chatRun} onChange={changeRun} />
-                      ) : (
-                        <span className="min-w-0 truncate pl-1 text-xs text-subtle">
-                          {working
-                            ? tops.filter((s) => s.status === 'running').length > 1
-                              ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
-                              : t('执行中，可以随时暂停')
-                            : task.mode === 'workflow'
-                              ? blocked
-                                ? t('主 Agent 处理后会接着走流程')
-                                : roots.every((s) => s.status === 'done')
-                                  ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
-                                  : task.status === 'failed'
-                                    ? t('会从失败的节点重新执行')
-                                    : t('会从没完成的节点继续执行')
-                              : t('发给 {name}', { name: chatLabel })}
-                        </span>
-                      )}
-                    </>
-                  }
-                  running={working}
-                  onStop={stop}
-                  onQueue={() => void send('queue')}
-                  leading={
-                    !working &&
-                    canResume && (
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        className="rounded-lg"
-                        disabled={resuming}
-                        onClick={() => resume()}
-                        title={
-                          task.mode === 'workflow' && !roots.every((s) => s.status === 'done')
-                            ? t('从没完成的节点继续执行')
-                            : t('重新执行最后一条要求')
-                        }
-                      >
-                        {resuming ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <RotateCw className="h-3.5 w-3.5" />
-                        )}
-                        {task.status === 'failed' ? t('重试') : t('继续执行')}
-                      </Button>
-                    )
-                  }
-                  label={t('继续输入要求')}
-                  placeholder={
-                    !working
-                      ? t('继续输入要求')
-                      : canSteer
-                        ? byNotes
-                          ? t('执行中也可以输入：Agent 执行时会取走，相关的调整方向，无关的等这一轮结束后处理')
-                          : t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
-                        : t('执行中也可以输入，这一轮完成后接着处理')
-                  }
-                />
-              )}
+              {/* 点开运行面板时输入框挪进面板，这里先空着，避免出现两个输入框 */}
+              {!openRun && composer}
               {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
               <TaskMeta
                 task={task}
@@ -1005,6 +990,7 @@ export function TaskView({
               panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
               // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
               'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
+              filesFolded && 'xl:hidden',
             )}
           >
             {!panel && (
@@ -1078,6 +1064,7 @@ export function TaskView({
             run={openRun}
             name={task.workflowName || workflow?.name}
             onClose={() => setOpenRun(0)}
+            footer={composer}
           />
         )}
         <AnalyzeDialog

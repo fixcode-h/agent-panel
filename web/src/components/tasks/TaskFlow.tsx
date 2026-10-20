@@ -23,12 +23,9 @@ export function TaskFlow({
   task,
   focus,
   onOpenChat,
-  gutter,
   onSelect,
 }: {
   task: Task
-  /** 放在节点输出左边空白处的内容（任务进度），宽度够时才有 */
-  gutter?: React.ReactNode
   /** 外面（右栏的任务进度）要求选中的节点；at 变了就重新选中 */
   focus?: { id: string; at: number }
   onOpenChat: () => void
@@ -148,7 +145,6 @@ export function TaskFlow({
       />
       {step && (
         <div className="relative flex min-h-0 flex-1 flex-col">
-          {gutter}
           <div
             ref={scroller}
             onScroll={(e) => {
