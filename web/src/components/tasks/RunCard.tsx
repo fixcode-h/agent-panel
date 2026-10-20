@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { ChevronRight, CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { stepMs } from '@shared/task'
@@ -112,6 +112,13 @@ export function RunDrawer({
   const teamNames = new Set(agents.map((a) => a.name))
   const steps = topSteps(task, run)
   const state = runState(task, run)
+  // 和对话窗口一样：打开时停在最新的输出，停在底部时跟着新输出走，往上翻看时不打扰
+  const scroller = useRef<HTMLDivElement>(null)
+  const stick = useRef(true)
+  useLayoutEffect(() => {
+    const el = scroller.current
+    if (el && stick.current) el.scrollTop = el.scrollHeight
+  }, [task])
   useEscape(true, onClose)
   return (
     <>
@@ -136,7 +143,14 @@ export function RunDrawer({
             <X className="h-4 w-4" />
           </Button>
         </header>
-        <div className="min-h-0 flex-1 overflow-y-auto">
+        <div
+          ref={scroller}
+          onScroll={(e) => {
+            const el = e.currentTarget
+            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+          }}
+          className="min-h-0 flex-1 overflow-y-auto"
+        >
           <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
             {steps.map((s) => {
               const msgs = task.messages.filter(
