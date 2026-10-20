@@ -15,23 +15,28 @@ const msg = (run?: TaskMessage['run']): TaskMessage => ({
 })
 
 test('会话：换了 CLI 必须开新会话', () => {
-  assert.equal(sessionChanged({ sessionCli: 'codex', messages: [] }, 'claude', 'x', true), true)
-  assert.equal(sessionChanged({ sessionCli: 'codex', messages: [] }, 'codex', 'x', true), false)
+  assert.equal(sessionChanged({ sessionCli: 'codex', messages: [] }, 'claude', 'x'), true)
+  assert.equal(sessionChanged({ sessionCli: 'codex', messages: [] }, 'codex', 'x'), false)
 })
 
-test('会话：换了模型时，只有和模型绑定的 CLI 要开新会话', () => {
-  const messages = [msg({ cli: 'codex', model: 'gpt-6-astra', effort: '' })]
-  // Codex 的线程里存着上一个模型的工具调用，换模型后不能再续接
-  assert.equal(sessionChanged({ sessionCli: 'codex', messages }, 'codex', 'deepseek', true), true)
-  // 其他 CLI 的会话不绑定模型，续接即可
-  assert.equal(sessionChanged({ sessionCli: 'claude', messages }, 'claude', 'other', false), false)
+test('会话：换了模型都开新会话', () => {
+  const codex = [msg({ cli: 'codex', model: 'gpt-6-astra', effort: '' })]
+  assert.equal(sessionChanged({ sessionCli: 'codex', messages: codex }, 'codex', 'deepseek'), true)
+  const claude = [msg({ cli: 'claude', model: 'sonnet', effort: '' })]
+  assert.equal(sessionChanged({ sessionCli: 'claude', messages: claude }, 'claude', 'other'), true)
 })
 
-test('会话：模型没变、或者最后一条回复是别的 CLI 的，不用重开', () => {
-  const same = [msg({ cli: 'codex', model: 'gpt-6-astra', effort: '' })]
-  assert.equal(sessionChanged({ sessionCli: 'codex', messages: same }, 'codex', 'gpt-6-astra', true), false)
+test('会话：不支持中途换强度的 CLI，换了强度也开新会话', () => {
+  const messages = [msg({ cli: 'commandcode', model: 'fake/pro', effort: 'high' })]
+  assert.equal(sessionChanged({ sessionCli: 'commandcode', messages }, 'commandcode', 'fake/pro', 'low', true), true)
+  assert.equal(sessionChanged({ sessionCli: 'commandcode', messages }, 'commandcode', 'fake/pro', 'low', false), false)
+})
+
+test('会话：模型和强度没变、或者最后一条回复是别的 CLI 的，不用重开', () => {
+  const same = [msg({ cli: 'codex', model: 'gpt-6-astra', effort: 'high' })]
+  assert.equal(sessionChanged({ sessionCli: 'codex', messages: same }, 'codex', 'gpt-6-astra', 'high', true), false)
 
   const other = [msg({ cli: 'claude', model: 'opus', effort: '' })]
-  assert.equal(sessionChanged({ sessionCli: 'codex', messages: other }, 'codex', 'deepseek', true), false)
-  assert.equal(sessionChanged({ messages: [] }, 'codex', 'deepseek', true), false)
+  assert.equal(sessionChanged({ sessionCli: 'codex', messages: other }, 'codex', 'deepseek'), false)
+  assert.equal(sessionChanged({ messages: [] }, 'codex', 'deepseek'), false)
 })

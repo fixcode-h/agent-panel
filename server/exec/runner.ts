@@ -209,6 +209,17 @@ function transcript(task: Task, upto: number) {
   return lines.join('\n\n')
 }
 
+/** 新会话接手旧对话：先压缩上下文，再继续；已经做完的不要重做 */
+function carryPrompt(task: Task, upto: number) {
+  return [
+    '## 之前的对话',
+    transcript(task, upto),
+    '',
+    '请先把上面的对话压缩成继续任务需要的上下文摘要（要做的事、已经完成的工作、关键决定和原因、还没做完的部分），',
+    '再完成「现在的要求」；已经做完的不要重做。',
+  ].join('\n')
+}
+
 /** 审查改动时给不支持审查模式的 CLI 的要求 */
 function reviewPrompt(target: Extract<NonNullable<BuildOptions['op']>, { kind: 'review' }>['target']) {
   const what =
@@ -471,8 +482,8 @@ async function runAgent(
   const asker =
     chat && !op && !prewarm ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
-  // 对话中途换了 CLI 或模型：原来的会话接不上，开新会话把之前的对话带过去
-  const switched = chat && sessionChanged(task, cliId, model, def.modelBoundSession)
+  // 对话中途换了 CLI、模型或（不支持中途换强度的 CLI 换了）思考强度：原来的会话接不上，开新会话把之前的对话带过去
+  const switched = chat && sessionChanged(task, cliId, model, effort, def.effortBoundSession)
   if (switched) resume = undefined
   if (retryCarry) {
     // 接口拒绝了旧会话的历史：丢掉它重开，把之前的对话带上
@@ -484,14 +495,14 @@ async function runAgent(
     if (rewind?.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
     else if (switched) {
       const upto = asker ? task.messages.indexOf(asker) : task.messages.length
-      carry = `## 之前的对话\n${transcript(task, upto)}`
+      carry = carryPrompt(task, upto)
     } else if (th && def.fork === 'turn' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
     else if (th && def.fork === 'end' && th.end) [resume, fork] = [th.session, { end: th.end }]
     else if (th && rewind?.latest && def.fork !== 'none') [resume, fork] = [th.session, {}]
     else if (th) {
       // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上
       const upto = asker ? task.messages.indexOf(asker) : task.messages.length
-      carry = `## 之前的对话\n${transcript(task, upto)}`
+      carry = carryPrompt(task, upto)
     }
   }
   // 只用已经读过的模型列表（设置页、Agent 页打开时会读），不为了查窗口再跑一次 CLI
