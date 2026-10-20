@@ -50,6 +50,10 @@ export function modelForProtocol(model: string, protocol: ApiProtocol | undefine
     const swapped = model.slice(0, -suffix.length) + target
     if (models.includes(swapped)) return swapped
   }
+  // 没有当前协议的版本时用同名的通用模型（不带后缀也支持所有协议），
+  // 别直接跳到第一个模型：那会把整档的模型都换成另一个
+  const base = model.slice(0, -suffix.length)
+  if (models.includes(base)) return base
   return models[0] ?? model
 }
 
