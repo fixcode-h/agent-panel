@@ -8,10 +8,12 @@ import {
   FolderGit2,
   GitBranch,
   Hourglass,
+  PanelRight,
   Settings2,
   Workflow as WorkflowIcon,
+  X,
 } from 'lucide-react'
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { Project, Task } from '@shared/schema'
 import { byAskedAt, taskDuration, taskSummary, waitDuration } from '@shared/task'
@@ -28,6 +30,7 @@ import { TaskControlButton } from './TaskControl'
 import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { TaskView } from './TaskView'
+import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { t } from '@shared/i18n'
 
 /** 项目首页：参考 Claude Code，上面直接输入新任务，下面是这个项目的任务 */
@@ -35,6 +38,7 @@ function ProjectHome({ project }: { project: Project }) {
   const { tasks, tasksLoaded, workflows, projectCategories, upsertTask } = useData()
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
+  const [filesOpen, setFilesOpen] = useState(false)
   // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）
   const all = tasks.filter((t) => t.projectId === project.id)
   const archived = all.filter((t) => t.archived).length
@@ -77,7 +81,24 @@ function ProjectHome({ project }: { project: Project }) {
           <Settings2 className="h-4 w-4" />
           {t('项目设置')}
         </Button>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={filesOpen ? t('关闭文件') : t('显示文件')}
+          title={filesOpen ? t('关闭文件') : t('显示文件')}
+          aria-expanded={filesOpen}
+          onClick={() => setFilesOpen((v) => !v)}
+        >
+          {filesOpen ? <X className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+        </Button>
       </header>
+      {filesOpen && (
+        <div className="flex min-h-0 justify-end border-b bg-rail px-3 py-2 md:px-5">
+          <div className="flex h-[min(560px,65vh)] w-[min(460px,100%)] min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-card">
+            <ProjectFileExplorer projectId={project.id} dir={project.path} />
+          </div>
+        </div>
+      )}
       <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-16 md:px-6 md:pt-12">
         <div className="flex flex-col gap-2">
           <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
