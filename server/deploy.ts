@@ -63,6 +63,7 @@ async function fileStatus(file: string, content: string): Promise<DeployStatus> 
 async function state(): Promise<DeployState> {
   const config = await loadConfig()
   const all = await entries()
+  const settings = await getSettings()
   const root = skillRoot()
   const skills = await Promise.all(
     all.map(async (e) => ({
@@ -73,13 +74,16 @@ async function state(): Promise<DeployState> {
   )
   skills.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
   const content = composeAgentsMd(config.agentsMd, all.filter((e) => config.skills.includes(e.name)).map(describe))
+  // 停用的 CLI 不在部署目标里出现
   const targets = await Promise.all(
-    docClis().map(async (d) => ({
-      cli: d.id,
-      name: d.name,
-      path: docPath(d),
-      status: await fileStatus(docPath(d), content),
-    })),
+    docClis()
+      .filter((d) => cliSettings(settings, d.id).enabled)
+      .map(async (d) => ({
+        cli: d.id,
+        name: d.name,
+        path: docPath(d),
+        status: await fileStatus(docPath(d), content),
+      })),
   )
   return { config, template: deployTemplate(), skillRoot: root, skills, targets }
 }
@@ -166,7 +170,11 @@ export function deployApi(deps: {
     .post('/optimize', async (c) => {
       const p = GlobalDocOptimize.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
-      const readers = docClis().map((d) => d.name)
+      const settings = await getSettings()
+      // 说明里只提启用的 CLI
+      const readers = docClis()
+        .filter((d) => cliSettings(settings, d.id).enabled)
+        .map((d) => d.name)
       // 在用户目录里只读运行：全局说明和具体项目无关
       return deps.startDoc(c, { ...p.data, path: 'AGENTS.md', prompt: globalDocPrompt(p.data, readers) }, homedir())
     })

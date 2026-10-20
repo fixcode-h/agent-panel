@@ -671,7 +671,7 @@ try {
   await waitDone(gm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
-  // Pi：按配置文件（shared/clis/pi.json）拼参数、解析 --mode json
+  // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
   let pm = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
@@ -683,9 +683,9 @@ try {
   assert.equal(pm.status, 'done', pm.messages.at(-1)?.text)
   c = calls().at(-1)
   assert.equal(c.kind, 'pi')
-  assert.deepEqual(c.args.slice(0, 3), ['-p', '--mode', 'json'])
+  assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
   assert.ok(!c.args.includes('--tools'), '默认全部工具，不限制')
-  assert.equal(c.input, '用 Pi', '任务描述从 stdin 传入')
+  assert.equal(c.input, '用 Pi', '任务描述走 RPC 的 prompt 命令')
   const pReply = pm.messages.filter((m) => m.role === 'agent').at(-1)
   assert.match(pReply.text, /这是 pi 的回复/)
   assert.deepEqual(
@@ -697,7 +697,7 @@ try {
   await waitDone(pm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--session') + 1], pm.sessions[pm.agentId], '继续时用 --session 续接会话')
-  // Pi 出错时退出码也是 0，按最后的 agent_end 判断失败
+  // Pi 出错时退出码也是 0，按最后的 agent_settled 和 assistant 的 stopReason 判断失败
   let pf = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',

@@ -78,8 +78,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'A task is running with it. Wait for the task to finish or stop it first.',
   模型: 'Model',
   三档模型: 'Model tiers',
-  'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文和最大输出按模型自动填，也可以手动改。':
-    'The model and effort used when an Agent picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set. Context and max output are filled in from the model automatically, and you can change them.',
+  'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。':
+    'The model and effort used when an Agent picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set. Context, max output and reasoning efforts are filled in from the model catalog; models missing from it default to 1M / 128K. You can change them manually.',
   默认模型: 'Default model',
   'Agent 没有指定模型时使用，可以选一个档位': 'Used when an Agent has no model set. Can be a tier',
   默认思考强度: 'Default effort',
@@ -547,6 +547,21 @@ export const EN_SETTINGS: Record<string, string> = {
     '{cli} has no max output setting; only the context window can be changed.',
   '{cli} 没有设置上下文窗口的参数，上下文只用于面板估算占用。':
     '{cli} has no context window setting; context is only used by the panel to estimate usage.',
+  // 模型目录
+  模型目录: 'Model catalog',
+  '未知模型用 AI 补全': 'Use AI to fill in unknown models',
+  '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 CLI 联网查上下文窗口、最大输出、默认和可选的思考强度。':
+    'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the CLI set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
+  补充目录: 'Supplement file',
+  'AI 补全的模型信息写在这里，和内置目录合并使用；目前收录 {n} 个模型。':
+    'Model info filled in by AI is written here and merged with the built-in catalog. {n} models are currently listed.',
+  '模型配置里没有 {model}，按 {context} / {maxOutput} 估算':
+    '{model} isn’t in the model catalog; estimating {context} / {maxOutput}',
+  'AI 补全': 'AI fill in',
+  '查询中…': 'Looking up…',
+  补全失败: 'Lookup failed',
+  '已补全 {model} 的模型信息': 'Filled in model info for {model}',
+  '查询超时，请稍后再试': 'Lookup timed out; try again later',
   在聊天里打开: 'Open in chat',
   '在聊天里打开（排查照常进行）': 'Open in chat (troubleshooting keeps running)',
   '最小化（排查照常进行）': 'Minimize (troubleshooting keeps running)',

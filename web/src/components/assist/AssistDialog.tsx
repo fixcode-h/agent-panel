@@ -723,29 +723,31 @@ export function AssistDialog({
               <section className="flex min-h-0 flex-1 flex-col border-b md:max-w-[540px] md:border-r md:border-b-0">
                 <div className="flex flex-wrap items-center gap-1.5 border-b px-4 py-2.5">
                   <span className="mr-1 text-xs text-subtle">{t('使用')}</span>
-                  {orderClis(CLIS, settings?.cliOrder ?? []).map((c) => {
-                    const st = clis.find((x) => x.id === c.id)
-                    const ok = !!st?.installed && st.enabled
-                    // 停用或没安装的不显示；正选着的照常显示（变灰）
-                    if (st && !ok && cli !== c.id) return null
-                    return (
-                      <button
-                        key={c.id}
-                        onClick={() => pickCli(c.id)}
-                        aria-pressed={cli === c.id}
-                        disabled={running}
-                        title={ok ? st?.version : t('未安装或已停用')}
-                        className={cn(
-                          'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs',
-                          cli === c.id ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:text-fg',
-                          !ok && 'opacity-50',
-                        )}
-                      >
-                        <span className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.id) }} />
-                        {c.name}
-                      </button>
-                    )
-                  })}
+                  {orderClis(CLIS, settings?.cliOrder ?? [], (c) => !!clis.find((x) => x.id === c.id)?.enabled).map(
+                    (c) => {
+                      const st = clis.find((x) => x.id === c.id)
+                      const ok = !!st?.installed && st.enabled
+                      // 停用或没安装的不显示；正选着的照常显示（变灰）
+                      if (st && !ok && cli !== c.id) return null
+                      return (
+                        <button
+                          key={c.id}
+                          onClick={() => pickCli(c.id)}
+                          aria-pressed={cli === c.id}
+                          disabled={running}
+                          title={ok ? st?.version : t('未安装或已停用')}
+                          className={cn(
+                            'flex h-7 cursor-pointer items-center gap-1.5 rounded-md border px-2 text-xs',
+                            cli === c.id ? 'border-accent bg-accent-soft text-fg' : 'text-muted hover:text-fg',
+                            !ok && 'opacity-50',
+                          )}
+                        >
+                          <span className="h-1.5 w-1.5 rounded-full" style={{ background: cliColor(c.id) }} />
+                          {c.name}
+                        </button>
+                      )
+                    },
+                  )}
                 </div>
                 <div ref={scroller} className="flex min-h-[200px] flex-1 flex-col gap-4 overflow-y-auto px-4 py-4">
                   {turns.length === 0 && !running && (

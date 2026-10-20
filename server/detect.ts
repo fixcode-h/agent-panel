@@ -24,13 +24,17 @@ let running: { key: string; p: Promise<CliStatus[]> } | null = null
  */
 export async function detectClis(force = false): Promise<CliStatus[]> {
   const settings = await getSettings()
-  // 启用状态、默认 CLI 不走缓存，设置改了立即生效
+  // 启用状态、默认 CLI 不走缓存，设置改了立即生效；启用的排在前面
   const mark = (data: CliStatus[]) =>
-    orderClis(data, settings.cliOrder).map((c) => ({
-      ...c,
-      enabled: cliSettings(settings, c.id).enabled,
-      isDefault: c.id === defaultCli(settings),
-    }))
+    orderClis(
+      data.map((c) => ({
+        ...c,
+        enabled: cliSettings(settings, c.id).enabled,
+        isDefault: c.id === defaultCli(settings),
+      })),
+      settings.cliOrder,
+      (c) => c.enabled,
+    )
   const key = JSON.stringify(CLIS.map((c) => [cliSettings(settings, c.id).command, cliSettings(settings, c.id).env]))
   if (!force && cached?.key === key) {
     if (Date.now() - cached.at > TTL) void probe(key, settings).catch(() => {})

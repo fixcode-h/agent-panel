@@ -17,7 +17,7 @@ import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
 import { CLIS } from '@shared/clis'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
-import { orderClis } from '@shared/settings'
+import { cliSettings, orderClis } from '@shared/settings'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
@@ -115,7 +115,10 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   )
   const isChanged = (files: DocFile[]) => changedDocs.some(([f]) => files.includes(f))
   const hasDoc = (files: DocFile[]) => files.some((f) => docOf(f)?.exists)
-  const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter((c) => c.docs.length)
+  // 停用的 CLI 不在项目设置里出现
+  const cliPages = orderClis(CLIS, settings?.cliOrder ?? []).filter(
+    (c) => c.docs.length && (!settings || cliSettings(settings, c.id).enabled),
+  )
 
   const confirm = async () => {
     if (!valid || saving) return

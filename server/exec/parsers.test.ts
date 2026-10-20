@@ -8,9 +8,10 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { claudeParser, commandCodeParser, parserFor, type CliEvent } from './parsers.ts'
 import { getCli } from '../../shared/clis.ts'
-import { codexAppSession, unwrapShell } from './codex-app.ts'
+import { codexAppSession, unwrapShell } from './rpc/codex.ts'
 
 const CWD = '/work/shop'
+const tick = () => new Promise((r) => setTimeout(r, 0))
 const fixture = (name: string) =>
   readFileSync(path.join(import.meta.dirname, 'fixtures', name), 'utf8')
     .split('\n')
@@ -105,8 +106,9 @@ test('Claude Code：出错的结果', () => {
   assert.deepEqual(s.results, [{ ok: false, error: 'error_max_turns' }])
 })
 
-test('Codex app-server：推理摘要、命令、改文件、计划和累计用量', () => {
+test('Codex app-server：推理摘要、命令、改文件、计划和累计用量', async () => {
   const sent: any[] = []
+  const events: CliEvent[] = []
   const session = codexAppSession({
     cwd: CWD,
     input: '修角标',
@@ -115,9 +117,15 @@ test('Codex app-server：推理摘要、命令、改文件、计划和累计用�
     permission: '',
     extraArgs: [],
     platform: 'linux',
+    onEvent: (e) => events.push(e),
   })
   session.start({ write: (s) => sent.push(JSON.parse(s)), end: () => {} })
-  const s = summarize(fixture('codex-app.jsonl').flatMap((m) => session.handle(m)))
+  // 握手和开一轮是异步的：每处理一条消息让出一次，等下一步的请求发出去
+  for (const m of fixture('codex-app.jsonl')) {
+    session.handle(m)
+    await tick()
+  }
+  const s = summarize(events)
   // 握手：initialize → initialized → thread/start → turn/start
   assert.deepEqual(
     sent.map((m) => m.method),
@@ -257,7 +265,7 @@ test('Gemini CLI：按配置文件拼参数', () => {
   )
 })
 
-test('Pi：按配置文件里的事件映射解析 --mode json', () => {
+test('Pi：按配置文件里的事件映射解析会话事件', () => {
   const parse = parserFor('pi', CWD)
   const s = summarize(fixture('pi-json.jsonl').flatMap((o) => parse(o)))
   assert.equal(s.session, '01a14e97-a046-7582-8d1a-98d858e416c5')
@@ -288,18 +296,11 @@ test('Pi：按配置文件里的事件映射解析 --mode json', () => {
     { input: 2300, output: 120, read: 6300, context: 2310, model: 'claude-sonnet-4-6' },
   )
   assert.ok(s.usage.cost > 0, '费用按每条回复加起来')
-  assert.deepEqual(s.results, [{ ok: true, error: undefined }])
+  // agent_end 只是一个底层 agent 跑完了，后面可能还有重试、压缩或插话；这一轮以 agent_settled 结束（见 pi-rpc.test）
+  assert.deepEqual(s.results, [])
 })
 
-test('Pi：接口出错时自动重试，最后一次的结果算数', () => {
-  const parse = parserFor('pi', CWD)
-  const s = summarize(fixture('pi-error.jsonl').flatMap((o) => parse(o)))
-  // 每次重试都有一个 agent_end，面板以最后一个为准
-  assert.ok(s.results.length > 1)
-  assert.deepEqual(s.results.at(-1), { ok: false, error: 'Connection error.' })
-})
-
-test('Pi：按配置文件拼参数', () => {
+test('Pi：按配置文件拼参数（默认走 RPC）', () => {
   const def = getCli('pi')!
   assert.deepEqual(
     def.buildArgs({
@@ -311,9 +312,8 @@ test('Pi：按配置文件拼参数', () => {
       systemPrompt: '你是审查员',
     }),
     [
-      '-p',
       '--mode',
-      'json',
+      'rpc',
       '--model',
       'anthropic/claude-sonnet-4-6',
       '--thinking',
@@ -329,13 +329,12 @@ test('Pi：按配置文件拼参数', () => {
   )
   // 全部工具时不限制工具（--tools 会连扩展的工具一起限制）；分叉用 --fork
   assert.deepEqual(def.buildArgs({ model: '', permission: 'full', extraArgs: [], resume: 's', fork: {} }), [
-    '-p',
     '--mode',
-    'json',
+    'rpc',
     '--fork',
     's',
   ])
-  assert.deepEqual(def.buildArgs({ model: '', permission: 'edit', extraArgs: [] }).slice(3), [
+  assert.deepEqual(def.buildArgs({ model: '', permission: 'edit', extraArgs: [] }).slice(2), [
     '--tools',
     'read,edit,write,grep,find,ls,ask_user',
   ])

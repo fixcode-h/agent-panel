@@ -27,7 +27,9 @@ import { UPLOADS_DIR } from '../uploads.ts'
 import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows, supportedEffort } from '../models.ts'
-import { limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
+import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
+import { modelLimitsFor } from '../../shared/model-catalog.ts'
+import { mergedModelCatalog } from '../model-catalog-store.ts'
 import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { ensureBundled } from '../bundled-skills.ts'
@@ -258,15 +260,6 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
 
 const clip = (s: string, n: number) => (s.length > n ? s.slice(0, n) + '…' : s)
 
-/**
- * 上下文窗口大小。优先用 CLI 在执行中报告的（Claude Code 的 result.modelUsage、Codex 的 tokenUsage），
- * 其次是读模型列表时拿到的（Command Code 安装包里的模型目录、providers.json），最后才按模型名估计。
- */
-function guessWindow(cli: string, model: string) {
-  if (/1m/i.test(model)) return 1_000_000
-  return getCli(cli)?.contextWindow ?? 200_000
-}
-
 /** 估算一段文字的 token 数：中日韩字符约一个字一个 token，其余约四个字符一个 token。只用于显示实时速度 */
 export function estTokens(s: string) {
   const cjk = s.match(/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af\uff00-\uffef]/g)?.length ?? 0
@@ -415,7 +408,14 @@ async function runAgent(
 
   const model = run.model
   // 模型不认的思考强度会让 CLI 启动即报错退出：挡在这里，下面记下的启动命令和日志才和实际调用的参数一致
-  const effort = await supportedEffort(cliId, model, run.effort)
+  // 模型目录里的默认思考强度：没有手动指定时用它；目录里没有的模型交给 CLI 自己决定
+  const entries = await mergedModelCatalog().catch(() => [])
+  const catalogInfo = modelLimitsFor(model, { entries, protocol: cs.api?.protocol })
+  const effort = await supportedEffort(
+    cliId,
+    model,
+    run.effort || (catalogInfo.matched ? catalogInfo.defaultEffort : ''),
+  )
   // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，不传
   const limits: ModelLimits = run.tier
     ? { context: cs.tiers[run.tier.id].context, maxOutput: cs.tiers[run.tier.id].maxOutput }
@@ -459,12 +459,13 @@ async function runAgent(
   // 只用已经读过的模型列表（设置页、Agent 页打开时会读），不为了查窗口再跑一次 CLI
   const catalog = cachedModels(cliId)?.models ?? []
   const files = await knownWindows(cliId)
-  const windowFor = (cli: string, m: string) =>
+  // 模型目录里没有时按 1M 估算；API 模式按当前接口的协议优先选
+  const windowFor = (m: string) =>
     (m === model && limits.context ? limits.context : undefined) ??
     catalog.find((x) => x.id === m || x.id.endsWith(`/${m}`))?.contextWindow ??
     files.get(m) ??
     files.get(m.slice(m.lastIndexOf('/') + 1)) ??
-    guessWindow(cli, m)
+    autoLimits(m, catalog, { entries, protocol: cs.api?.protocol }).context
   const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params)).trim()
   // Agent 要用的自带 Skill，这个 CLI 里没有的先装上，提示里点名的 Skill 才找得到
   await ensureBundled(cliId, [
@@ -509,8 +510,7 @@ async function runAgent(
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
-    autoCompactTokens:
-      pct && def.autoCompact === 'config' ? Math.floor((windowFor(cliId, model) * pct) / 100) : undefined,
+    autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
     contextWindow: limits.context || undefined,
     maxOutput: limits.maxOutput || undefined,
   }
@@ -564,8 +564,8 @@ async function runAgent(
 
   // 中途换了模型（改了 Agent 或设置）：记录换成这次实际用的，CLI 报告了模型时再以报告的为准
   const prevUsage = task.usage.agents[agentId]
-  if (prevUsage && prevUsage.model !== model) Object.assign(prevUsage, { model, window: windowFor(cliId, model) })
-  if (owner) Object.assign(stepUsage(owner), { model, window: windowFor(cliId, model) })
+  if (prevUsage && prevUsage.model !== model) Object.assign(prevUsage, { model, window: windowFor(model) })
+  if (owner) Object.assign(stepUsage(owner), { model, window: windowFor(model) })
 
   /** 这个 Agent 的用量记录，没有就建一条 */
   const au = (): AgentUsage => {
@@ -573,7 +573,7 @@ async function runAgent(
     if (prev) return prev
     return (task.usage.agents[agentId] = {
       context: 0,
-      window: windowFor(cliId, model),
+      window: windowFor(model),
       model,
       tps: 0,
       lastTps: 0,
@@ -670,7 +670,7 @@ async function runAgent(
         if (ev.window) {
           u.window = ev.window
           reported = true
-        } else if (!reported) u.window = windowFor(cliId, u.model || model)
+        } else if (!reported) u.window = windowFor(u.model || model)
         if (compaction && ev.context !== undefined) {
           describeCompaction(compaction.tool, compaction.before, ev.context, u.window)
           compaction = undefined
@@ -818,9 +818,10 @@ async function runAgent(
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
-  // 对话的 CLI 能用面板的工具：没有插话协议时取补充（read_user_notes），回复完等下一句（wait_user_message）
+  // 对话的 CLI 能用面板的工具：没有插话协议时取补充（read_user_notes）；有协议自己提问的（Claude、Codex）不用 MCP
+  const canWait = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
   let taker: NoteTaker | undefined
-  if (chat && !op && def.notes && def.mcp && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
+  if (canWait && !def.steer) {
     const pending = new Set<string>()
     taker = {
       add: (id) => pending.add(id),
@@ -869,9 +870,10 @@ async function runAgent(
     ctx.changed(true)
     return all.map((q) => withAttachments(q.text, q.attachments)).join('\n\n')
   }
-  // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume
+  // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume。
+  // 有插话协议（Command Code、Pi）的对话也要这个工具，只是不用它取补充
   let waiter: Waiter | undefined
-  const waitUser = taker
+  const waitUser = canWait
     ? async (): Promise<string | null> => {
         if (finished) return null
         // 回复期间还在排队的要求：一起交回去，不用等进程结束

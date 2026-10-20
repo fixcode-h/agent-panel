@@ -4,9 +4,14 @@ import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { CLIS, type CliDefinition } from '../shared/clis.ts'
+import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
-import { capture, childEnv, runProcess } from './exec/process.ts'
+import { modelLimitsFor, type ModelCatalogEntry } from '../shared/model-catalog.ts'
+import type { ApiProtocol } from '../shared/accounts.ts'
+import { mergedModelCatalog } from './model-catalog-store.ts'
+import { capture, childEnv } from './exec/process.ts'
+import { rpcQuery } from './exec/rpc/query.ts'
 import { getSettings } from './settings.ts'
 import { resolveCommand } from './cli-source.ts'
 import { detectClis } from './detect.ts'
@@ -46,54 +51,45 @@ type Picked = { models: CliModel[]; auth?: 'account' | 'api'; from?: string }
  * model/list 只是内置预设，改用 config.toml 里配的模型（model、review_model、各 profile 的 model）。
  */
 async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
-  const ac = new AbortController()
   const got: { list?: CliModel[]; account?: any; config?: any } = {}
-  let rpcError = ''
-  const req = (o: object) => JSON.stringify(o) + '\n'
-  const r = await runProcess({
+  const def = CLIS.find((c) => c.id === 'codex')
+  const rpc = RpcSpec.parse(def?.rpc ?? {})
+  // 和任务执行共用同一条 RPC 会话引擎：握手、请求配对、超时和收尾都一样
+  const r = await rpcQuery({
     command,
-    args: ['app-server'],
+    args: rpc.queryArgs,
     cwd: homedir(),
     env,
-    signal: ac.signal,
-    timeoutMs: 20_000,
-    keepStdinOpen: true,
-    stdin:
-      req({ id: 0, method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } }) +
-      req({ method: 'initialized' }) +
-      req({ id: 2, method: 'account/read', params: {} }) +
-      req({ id: 3, method: 'config/read', params: {} }) +
-      req({ id: 1, method: 'model/list', params: { limit: 200 } }),
-    onLine: (line) => {
-      let msg: { id?: number; result?: any; error?: { message?: string } }
-      try {
-        msg = JSON.parse(line)
-      } catch {
-        return
-      }
-      if (msg.id === 2) got.account = msg.error ? null : (msg.result ?? null)
-      else if (msg.id === 3) got.config = msg.error ? null : (msg.result?.config ?? null)
-      else if (msg.id === 1) {
-        if (msg.error) rpcError = msg.error.message ?? t('未知错误')
-        else
-          got.list = (msg.result?.data ?? [])
-            .map((x: unknown) => x as Record<string, any>)
-            .filter((m: Record<string, any>) => !m.hidden && typeof m.id === 'string')
-            .map((m: Record<string, any>) => ({
-              id: m.model || m.id,
-              label: m.displayName || m.id,
-              description: m.description || undefined,
-              efforts: Array.isArray(m.supportedReasoningEfforts)
-                ? m.supportedReasoningEfforts.map((e: any) => e.reasoningEffort).filter(Boolean)
-                : undefined,
-              isDefault: !!m.isDefault || undefined,
-              defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : undefined,
-            }))
-      }
-      // 三个都回来就停掉服务（旧版本不认识 account/read、config/read 时回的是错误，也算回来了）
-      if ((got.list || rpcError) && got.account !== undefined && got.config !== undefined) ac.abort()
-    },
+    handshake: rpc.handshake,
+    jsonrpc: rpc.jsonrpc,
+    requests: [
+      // 旧版本的 Codex 不认识这两个请求，回错误或没有响应也继续读模型列表
+      { method: 'account/read', params: {}, timeoutMs: 3000 },
+      { method: 'config/read', params: {}, timeoutMs: 3000 },
+      { method: 'model/list', params: { limit: 200 } },
+    ],
   })
+  const accountReply = r[0]
+  const configReply = r[1]
+  const listReply = r[2]
+  got.account = accountReply?.error ? null : (accountReply?.result ?? null)
+  got.config = configReply?.error ? null : (configReply?.result?.config ?? null)
+  let rpcError = ''
+  if (listReply?.error) rpcError = listReply.error.message ?? t('未知错误')
+  else
+    got.list = (listReply?.result?.data ?? [])
+      .map((x: unknown) => x as Record<string, any>)
+      .filter((m: Record<string, any>) => !m.hidden && typeof m.id === 'string')
+      .map((m: Record<string, any>) => ({
+        id: m.model || m.id,
+        label: m.displayName || m.id,
+        description: m.description || undefined,
+        efforts: Array.isArray(m.supportedReasoningEfforts)
+          ? m.supportedReasoningEfforts.map((e: any) => e.reasoningEffort).filter(Boolean)
+          : undefined,
+        isDefault: !!m.isDefault || undefined,
+        defaultEffort: typeof m.defaultReasoningEffort === 'string' ? m.defaultReasoningEffort : undefined,
+      }))
   const configured = codexConfigured(got.config).map((m) => ({ ...m, origin: 'config' as const }))
   const listed = (got.list ?? []).map((m) => ({ ...m, origin: 'cli' as const }))
   const account = got.account?.account
@@ -110,9 +106,7 @@ async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Pic
       from: account?.type === 'chatgpt' ? t('ChatGPT 账号') : configured.length ? 'config.toml' : undefined,
     }
   if (rpcError) throw new Error(t('Codex 返回错误：{error}', { error: rpcError }))
-  if (r.spawnError) throw new Error(r.spawnError)
-  if (r.killed === 'timeout') throw new Error(t('Codex 没有在 20 秒内返回模型列表'))
-  throw new Error(r.stderr.trim().split('\n').at(-1) || t('Codex 退出了（退出码 {code}）', { code: String(r.code) }))
+  throw new Error(t('Codex 没有返回模型列表'))
 }
 
 /** config.toml 里配的模型：顶层 model 是默认，其次 review_model 和各 profile 的 model */
@@ -387,20 +381,54 @@ async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'acc
   return undefined
 }
 
+/**
+ * 用模型目录补齐 CLI 没有报告的项：上下文窗口、最大输出、可选思考强度和默认强度。
+ * 目录里没有的模型保持原样，执行时按 1M / 128K 估算，思考强度交给 CLI 自己判断。
+ */
+function withCatalog(
+  models: CliModel[],
+  entries: ModelCatalogEntry[],
+  allowed: string[],
+  protocol?: ApiProtocol,
+): CliModel[] {
+  return models.map((m) => {
+    const info = modelLimitsFor(m.id, { entries, protocol })
+    if (!info.matched || !info.entry) return m
+    const entry = info.entry
+    // 只保留这个 CLI 认识的强度 id；目录里有、CLI 没有的不往下拉里放
+    const efforts = allowed.length ? entry.efforts.filter((e) => allowed.includes(e)) : entry.efforts
+    const defaultEffort = efforts.includes(entry.defaultEffort) ? entry.defaultEffort : (efforts[0] ?? '')
+    return {
+      ...m,
+      contextWindow: m.contextWindow ?? entry.context,
+      maxOutput: m.maxOutput ?? entry.maxOutput,
+      ...(m.efforts ? {} : { efforts }),
+      ...(m.defaultEffort ? {} : { defaultEffort: defaultEffort || undefined }),
+    }
+  })
+}
+
 export async function cliModels(id: string, refresh = false): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
   if (!def) throw new Error(t('未知的 CLI：{cli}', { cli: id }))
   const cs = cliSettings(await getSettings(), id)
+  const entries = await mergedModelCatalog().catch(() => [])
+  const protocol = cs.api?.protocol
   // API 模式：只列这个 API 里配的模型（用账号时才列 CLI 自己读到的）
   if (cs.api)
     return {
       source: 'builtin',
-      models: cs.api.models.map((m, i) => ({
-        id: m,
-        label: m,
-        isDefault: i === 0 || undefined,
-        origin: 'config' as const,
-      })),
+      models: withCatalog(
+        cs.api.models.map((m, i) => ({
+          id: m,
+          label: m,
+          isDefault: i === 0 || undefined,
+          origin: 'config' as const,
+        })),
+        entries,
+        def.efforts.map((e) => e.id),
+        protocol,
+      ),
       efforts: [],
       auth: 'api',
       from: cs.api.name,
@@ -438,7 +466,12 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }
   }
   if (data.source === 'cli' && !data.models.length) data = { source: 'builtin', models: builtin(def), efforts: [] }
-  data.models = uniq(data.models)
+  data.models = withCatalog(
+    uniq(data.models),
+    entries,
+    def.efforts.map((e) => e.id),
+    protocol,
+  )
   data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
   cache.set(id, { at: Date.now(), data })
   return data
@@ -469,6 +502,13 @@ export async function supportedEffort(id: string, model: string, effort?: string
   for (const m of cachedModels(id)?.models ?? []) if (m.efforts) known.set(m.id, m.efforts)
   for (const [k, v] of await knownCatalog(id).catch(() => new Map<string, CatalogInfo>()))
     if (v.efforts) known.set(k, v.efforts)
+  // 模型目录里的可选强度：CLI 没报告时用这个挡住模型不认的值
+  const catalog = await mergedModelCatalog().catch(() => [])
+  const hit = modelLimitsFor(model, { entries: catalog })
+  if (hit.matched && hit.entry) {
+    const allowed = CLIS.find((c) => c.id === id)?.efforts.map((e) => e.id) ?? []
+    known.set(model, allowed.length ? hit.entry.efforts.filter((e) => allowed.includes(e)) : hit.entry.efforts)
+  }
   if (!known.size) return effort
   // 模型名可能写成完整的 id，也可能只有后半段（providers.json 里自己接的）
   const list = known.get(model) ?? known.get(model.slice(model.lastIndexOf('/') + 1))

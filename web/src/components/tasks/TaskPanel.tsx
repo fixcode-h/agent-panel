@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import {
+  Check,
   ChevronDown,
   Clock,
   Crown,
@@ -33,7 +34,8 @@ import { fmtClock, fmtDuration, fmtTokens, liveTps, stepDepth, stepDuration, ste
 import { useNow } from '@/lib/useNow'
 import { cn } from '@/lib/utils'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { useDirInfo } from '@/components/projects/DirPicker'
+import { useDirInfo, refreshDirInfo } from '@/components/projects/DirPicker'
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { isMainStep, mainStep, stepTree, topSteps } from '@shared/flow'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { useAgentView } from '@/lib/agent-view'
@@ -140,6 +142,85 @@ function Section({
       {/* 每块限制高度，节点、Agent 多的时候在块里滚动，不把下面的块挤到很远 */}
       {open && <div className="max-h-[320px] overflow-y-auto overscroll-contain px-3.5 pb-3.5">{children}</div>}
     </section>
+  )
+}
+
+/** 环境里的分支行：点开列出本地分支，选中就切过去 */
+function BranchRow({ path, branch, disabled }: { path: string; branch: string; disabled?: boolean }) {
+  const [open, setOpen] = useState(false)
+  const [current, setCurrent] = useState(branch)
+  const [list, setList] = useState<string[] | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState('')
+
+  // 每次展开都重新读一次：切完分支后顺序（按最近提交）也跟着变
+  useEffect(() => {
+    if (!open) return
+    let alive = true
+    setError('')
+    setList(null)
+    api
+      .dirBranches(path)
+      .then((r) => {
+        if (!alive) return
+        setList(r.branches)
+        if (r.current) setCurrent(r.current)
+      })
+      .catch((e) => alive && setError((e as Error).message))
+    return () => {
+      alive = false
+    }
+  }, [open, path])
+
+  const pick = async (name: string) => {
+    if (name === current || busy) return
+    setBusy(name)
+    try {
+      const info = await api.checkoutBranch(path, name)
+      setCurrent(info.gitBranch ?? name)
+      // 项目标题、目录检测等也换成新分支
+      refreshDirInfo()
+      toast.success(t('已切换到分支 {branch}', { branch: name }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  return (
+    <li className="flex items-center gap-2">
+      <Popover open={open} onOpenChange={(o) => !disabled && setOpen(o)}>
+        <PopoverTrigger
+          disabled={disabled}
+          title={disabled ? t('任务执行中，不能切换分支') : t('切换分支')}
+          aria-label={t('切换分支')}
+          className="-mx-1.5 flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded-md px-1.5 py-0.5 text-left transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-muted"
+        >
+          {busy ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          ) : (
+            <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
+          )}
+          <span className="min-w-0 flex-1 truncate font-mono">{current}</span>
+          {!disabled && <ChevronDown className="h-3 w-3 shrink-0 text-subtle" />}
+        </PopoverTrigger>
+        {/* 宽高跟着分支名走，分支多时在列表里滚动 */}
+        <PopoverContent className="w-max max-w-[min(420px,calc(100vw-24px))] min-w-[200px]">
+          <div className="max-h-72 overflow-y-auto">
+            {!list && !error && <p className="px-2.5 py-2 text-xs text-subtle">{t('正在读取分支…')}</p>}
+            {error && <p className="px-2.5 py-2 text-xs text-danger">{error}</p>}
+            {list?.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">{t('没有其他分支')}</p>}
+            {list?.map((b) => (
+              <PopoverClose key={b} className={cn(menuItem, 'gap-2 py-1.5')} onClick={() => void pick(b)}>
+                <span className="min-w-0 flex-1 truncate font-mono text-[0.78125rem]">{b}</span>
+                {b === current && <Check className="h-4 w-4 shrink-0 text-accent" />}
+              </PopoverClose>
+            ))}
+          </div>
+        </PopoverContent>
+      </Popover>
+    </li>
   )
 }
 
@@ -513,10 +594,12 @@ export function TaskPanel({
                 )}
               </li>
               {dir?.gitBranch && (
-                <li className="flex items-center gap-2">
-                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
-                  <span className="truncate font-mono">{dir.gitBranch}</span>
-                </li>
+                <BranchRow
+                  key={project?.path}
+                  path={project?.path ?? ''}
+                  branch={dir.gitBranch}
+                  disabled={!idle || !!busy}
+                />
               )}
               <li className="flex items-center gap-2">
                 {task.mode === 'workflow' ? (

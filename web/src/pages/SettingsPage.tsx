@@ -29,6 +29,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
 import { loadCliModels, useCliDef } from '@/lib/cli-models'
+import { useModelCatalog } from '@/lib/model-catalog'
 import { resumeInstallJobs, setInstallFinish } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
 import { useAutosave } from '@/lib/useAutosave'
@@ -107,27 +108,42 @@ function SettingsBody({
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [language, setLanguage] = useState(initial.language)
   const [appearance, setAppearance] = useState(initial.appearance)
-  const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
-  const ordered = orderClis(CLIS, cliOrder)
+  const [cliOrder, setCliOrder] = useState(() =>
+    orderClis(CLIS, initial.cliOrder, (c) => initial.clis[c.id]?.enabled !== false).map((c) => c.id),
+  )
   const demo = !!import.meta.env.VITE_DEMO
-  // 在线演示没有服务端，外网访问的开关不显示
-  const SECTIONS = sectionsFor(ordered).filter((s) => !(demo && s.id === 'remote'))
   // 侧栏里拖动 CLI 调整顺序：拖到哪一项上就插到那里
   const [dragging, setDragging] = useState('')
+  const [drafts, setDrafts] = useState(() => toDraft(initial))
+  const isOn = (id: string) => drafts[id]?.enabled ?? true
+  // 启用的排在停用的前面；同一组里按拖动过的顺序，没拖过的按名字比较
+  const ordered = orderClis(CLIS, cliOrder, (c) => isOn(c.id))
+  // 在线演示没有服务端，外网访问的开关不显示
+  const SECTIONS = sectionsFor(ordered).filter((s) => !(demo && s.id === 'remote'))
+  // 拖动只改同一组里的顺序，不能跨过启用和停用的分界
   const moveCli = (id: string, to: number) =>
     setCliOrder((o) => {
-      const from = o.indexOf(id)
-      if (from < 0 || to < 0 || to >= o.length || from === to) return o
-      const next = o.filter((x) => x !== id)
-      next.splice(to, 0, id)
+      const list = orderClis(CLIS, o, (c) => isOn(c.id)).map((c) => c.id)
+      const from = list.indexOf(id)
+      if (from < 0 || to < 0 || to >= list.length || from === to) return o
+      const on = isOn(id)
+      let start = from
+      let end = from
+      while (start > 0 && isOn(list[start - 1]) === on) start--
+      while (end < list.length - 1 && isOn(list[end + 1]) === on) end++
+      const dest = Math.max(start, Math.min(end, to))
+      if (dest === from) return o
+      const next = list.filter((x) => x !== id)
+      next.splice(dest, 0, id)
       return next
     })
-  const [drafts, setDrafts] = useState(() => toDraft(initial))
   // 每个 CLI 上次保存时的登录方式和 API，变了才重新读模型
   const modelSig = useRef<Record<string, string>>({})
   const [detecting, setDetecting] = useState(false)
   const [assist, setAssist] = useState(initial.assist)
   const [imageGen, setImageGen] = useState(initial.imageGen)
+  const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
+  const catalogInfo = useModelCatalog()
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const [apis, setApis] = useState(initial.apis)
   // 默认 CLI 被停用、又有别的启用了（例如新装后第一次打开一个）：默认换成按顺序第一个启用的
@@ -218,6 +234,7 @@ function SettingsBody({
     apis,
     assist: { ...assist, model: assist.model.trim() },
     imageGen: { ...imageGen, model: imageGen.model.trim() },
+    modelCatalog,
   }
   const save = useAutosave(
     value,
@@ -256,6 +273,8 @@ function SettingsBody({
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
+  const defDraft = drafts[defCli]
+  const defProtocol = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId)?.protocol : undefined
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -300,6 +319,7 @@ function SettingsBody({
           {SECTIONS.filter(cliPage).map((s, i, list) => {
             const on = s.id === cur.id
             const st = s.cli && statusOf(s.cli.id)
+            const at = s.cli ? ordered.findIndex((c) => c.id === s.cli!.id) : -1
             return (
               <div key={s.id} className="contents">
                 {s.cli && !list[i - 1]?.cli && (
@@ -307,6 +327,10 @@ function SettingsBody({
                     {t('已接入')}
                     <span className="text-[0.65625rem] text-subtle/80">{t('拖动调整顺序')}</span>
                   </span>
+                )}
+                {/* 启用的排在前面，停用的另外列一段 */}
+                {s.cli && !isOn(s.cli.id) && !list.slice(0, i).some((x) => x.cli && !isOn(x.cli.id)) && (
+                  <span className="hidden px-2.5 pt-3 pb-1 text-[0.6875rem] text-subtle md:flex">{t('未启用')}</span>
                 )}
                 <button
                   onClick={() => onSection(s.id)}
@@ -322,14 +346,14 @@ function SettingsBody({
                   onDragOver={(e) => {
                     if (!dragging || !s.cli) return
                     e.preventDefault()
-                    if (s.cli.id !== dragging) moveCli(dragging, cliOrder.indexOf(s.cli.id))
+                    if (s.cli.id !== dragging) moveCli(dragging, at)
                   }}
                   onDrop={(e) => e.preventDefault()}
                   onDragEnd={() => setDragging('')}
                   onKeyDown={(e) => {
                     if (!s.cli || !e.altKey || (e.key !== 'ArrowUp' && e.key !== 'ArrowDown')) return
                     e.preventDefault()
-                    moveCli(s.cli.id, cliOrder.indexOf(s.cli.id) + (e.key === 'ArrowUp' ? -1 : 1))
+                    moveCli(s.cli.id, at + (e.key === 'ArrowUp' ? -1 : 1))
                   }}
                   className={cn(
                     'group flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
@@ -594,8 +618,9 @@ function SettingsBody({
                 >
                   <TierTable
                     def={defDef}
-                    value={drafts[defCli].tiers}
-                    defaultModel={drafts[defCli].defaultModel}
+                    value={defDraft.tiers}
+                    defaultModel={defDraft.defaultModel}
+                    protocol={defProtocol}
                     readOnly
                   />
                 </Row>
@@ -610,7 +635,29 @@ function SettingsBody({
                   title={t('默认思考强度')}
                   desc={t('Agent 和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
                 >
-                  <ReadValue>{defaultEffortText(defDef, drafts[defCli])}</ReadValue>
+                  <ReadValue>{defaultEffortText(defDef, defDraft)}</ReadValue>
+                </Row>
+              </Group>
+              <Group title={t('模型目录')}>
+                <Row
+                  title={t('未知模型用 AI 补全')}
+                  desc={t(
+                    '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 CLI 联网查上下文窗口、最大输出、默认和可选的思考强度。',
+                  )}
+                >
+                  <Switch
+                    aria-label={t('未知模型用 AI 补全')}
+                    checked={modelCatalog.aiLookup}
+                    onCheckedChange={(v) => setModelCatalog({ ...modelCatalog, aiLookup: v })}
+                  />
+                </Row>
+                <Row
+                  title={t('补充目录')}
+                  desc={t('AI 补全的模型信息写在这里，和内置目录合并使用；目前收录 {n} 个模型。', {
+                    n: catalogInfo?.entries.length ?? 0,
+                  })}
+                >
+                  <ReadValue mono>{catalogInfo?.file || '~/.agent-panel/config/models.json'}</ReadValue>
                 </Row>
               </Group>
               <Group title={t('图片生成')}>

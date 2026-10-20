@@ -68,6 +68,89 @@ export const McpStore = z.object({
 })
 export type McpStore = z.infer<typeof McpStore>
 
+/**
+ * 常驻协议里的一条消息：JSON-RPC 写 method + params，按 type 区分的记录流写 record。
+ * 里面的字符串可以用 {input}、{text}、{model}、{resume}、{maxTurns} 这些占位；
+ * 整条就是占位、运行时又没有值时，这个字段直接不传（例如没设置回合上限时的 maxTurns）。
+ */
+export const RpcAction = z.object({
+  /** 条件：resume、fork、model 等；写数组时全部满足才发 */
+  if: z.union([z.string(), z.array(z.string())]).optional(),
+  method: z.string().optional(),
+  params: z.record(z.string(), z.unknown()).optional(),
+  /** 记录流直接写整条记录（例如 Pi 的 { "type": "prompt", "message": "{input}" }） */
+  record: z.record(z.string(), z.unknown()).optional(),
+  /** 只发不等回复（通知） */
+  notify: z.boolean().default(false),
+  /** 回复存进变量，后面的 id 路径和条件可以用 */
+  save: z.string().optional(),
+  timeoutMs: z.number().int().positive().optional(),
+})
+export type RpcAction = z.infer<typeof RpcAction>
+
+export const RpcDone = z.object({
+  /** 收到这样的记录算这一轮结束（键可以是 method、type、message.role 这样的路径） */
+  when: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  /** 成功的条件；路径以 $. 开头是这条记录里的字段，否则是 remember 存下的记录 */
+  ok: z.union([z.string(), z.array(z.string())]).optional(),
+  error: z.union([z.string(), z.array(z.string())]).optional(),
+})
+export type RpcDone = z.infer<typeof RpcDone>
+
+export const RpcRemember = z.object({
+  when: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  as: z.string(),
+})
+export type RpcRemember = z.infer<typeof RpcRemember>
+
+/**
+ * 常驻 RPC 的配置。kind 为 spec 时完全按这里的声明执行；codex / claude
+ * 用各自适配器处理协议里特殊的地方（审批请求、控制消息），但同样走统一的会话引擎。
+ */
+export const RpcSpec = z.object({
+  kind: z.enum(['spec', 'codex', 'claude']).default('spec'),
+  /** 发出去的请求带 jsonrpc: "2.0"（标准 JSON-RPC） */
+  jsonrpc: z.boolean().default(false),
+  /** 进程起来后的握手，按顺序发 */
+  handshake: z.array(RpcAction).default([]),
+  /** 开始一轮；续接、分叉时可以用 resume / fork 换一套 */
+  start: z.array(RpcAction).default([]),
+  resume: z.array(RpcAction).optional(),
+  fork: z.array(RpcAction).optional(),
+  steer: RpcAction.optional(),
+  interrupt: RpcAction.optional(),
+  /** 这一轮结束后、关 stdin 前发的消息（例如 Command Code 的 session/exit） */
+  exit: RpcAction.optional(),
+  /** 会话 id、轮次 id 从哪个回复的哪个字段取（路径相对 save 的变量） */
+  sessionId: z.string().default(''),
+  turnId: z.string().default(''),
+  /** 事件包了一层时解开的路径，例如 Command Code 的 $.event */
+  unwrap: z.string().default(''),
+  /** 记住某类记录，供 done 里的成功条件使用（例如 Pi 最后的 assistant 消息） */
+  remember: z.array(RpcRemember).default([]),
+  /** 这一轮怎么算结束 */
+  done: z.array(RpcDone).default([]),
+  /** 结束后等多久再关 stdin；期间有新输出会取消 */
+  closeDelayMs: z.number().int().nonnegative().default(0),
+  /** 没设置回合上限时的默认值（0 表示不传） */
+  defaultMaxTurns: z.number().int().nonnegative().default(0),
+  /** 插话要等 CLI 的下一个模型请求才取走，页面上先显示成「待取走」 */
+  deferSteer: z.boolean().default(false),
+  /** 协议自己处理提问和审批，不用面板的 MCP 工具 */
+  nativeAsk: z.boolean().default(false),
+  /** 能主动查账号额度、列 Skill */
+  limitsQuery: z.boolean().default(false),
+  skillsQuery: z.boolean().default(false),
+  /** Skill 列表里包含已安装插件的 */
+  pluginSkills: z.boolean().default(false),
+  /** 内置 Skill 装到哪个目录（列表走协议、不从目录读时用） */
+  skillsDir: z.string().default(''),
+  /** 只查询、不跑任务时的启动参数（例如 Codex 的 ["app-server"]） */
+  queryArgs: z.array(z.string()).default([]),
+})
+export type RpcSpec = z.infer<typeof RpcSpec>
+export type RpcSpecInput = z.input<typeof RpcSpec>
+
 /** 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件 */
 export function mcpConfig(spec: McpSpec, name: string, url: string) {
   const fillStr = (s: string) => s.replaceAll('{name}', name).replaceAll('{url}', url)
@@ -113,10 +196,12 @@ export const CliSpec = z.object({
   args: z.array(ArgRule),
   /**
    * 怎么调用：默认 stdin（任务描述从 stdin 传入、进程一轮后退出）；
-   * commandcode-rpc 是 Command Code 常驻的 JSON-RPC（可以中途插话）
+   * rpc 是常驻的双向协议（stdin/stdout 一行一条 JSON），可以执行中插话、中断，具体写法见 rpc
    */
-  protocol: z.enum(['stdin', 'commandcode-rpc']).default('stdin'),
-  /** protocol 为 commandcode-rpc 时用这套参数（不带 -p / --output-format） */
+  protocol: z.enum(['stdin', 'rpc']).default('stdin'),
+  /** 常驻协议怎么握手、开始一轮、插话、判断结束，见 RpcSpec */
+  rpc: RpcSpec.optional(),
+  /** protocol 为 rpc 时用这套参数（不带 -p / --output-format） */
   rpcArgs: z.array(ArgRule).optional(),
   /** stdout 怎么解析：内置解析器的名字（claude、commandcode），或者事件映射 */
   output: z.union([z.string(), OutputSpec]),
@@ -137,8 +222,6 @@ export const CliSpec = z.object({
       autoCompactEnv: z.string().default(''),
       /** 会话里认识「/命令」和「/Skill」，原样发过去；否则面板展开 */
       slash: z.boolean().default(false),
-      /** 上下文窗口的默认估计 */
-      contextWindow: z.number().int().positive().default(200_000),
       /** 设置里手动改的上下文窗口、最大输出用哪个环境变量传给 CLI；不写表示 CLI 不接受 */
       limitEnv: z.object({ context: z.string().optional(), maxOutput: z.string().optional() }).default({}),
     })
@@ -150,7 +233,6 @@ export const CliSpec = z.object({
       autoCompact: 'panel',
       autoCompactEnv: '',
       slash: false,
-      contextWindow: 200_000,
       limitEnv: {},
     }),
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
@@ -267,7 +349,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     systemPromptFlag: !!spec.systemPromptFlag,
     buildArgs: (o) => {
       // 常驻协议和一次性执行的参数不一样（不能再带 -p / --output-format）
-      const rules = spec.protocol === 'commandcode-rpc' ? (spec.rpcArgs ?? spec.args) : spec.args
+      const rules = spec.protocol === 'rpc' ? (spec.rpcArgs ?? spec.args) : spec.args
       return buildFromRules(
         spec.systemPromptFlag
           ? [...rules, { if: 'systemPrompt', args: [spec.systemPromptFlag, '{systemPrompt}'] }]
@@ -280,6 +362,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     brew: spec.brew,
     docsUrl: spec.docsUrl,
     protocol: spec.protocol,
+    rpc: spec.rpc,
     parser: spec.output,
     steer: f.steer,
     notes: f.notes,
@@ -289,7 +372,6 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     autoCompact: f.autoCompact,
     autoCompactEnv: f.autoCompactEnv,
     slash: f.slash,
-    contextWindow: f.contextWindow,
     limitEnv: f.limitEnv,
     limits: 'none',
     docs: spec.docs,

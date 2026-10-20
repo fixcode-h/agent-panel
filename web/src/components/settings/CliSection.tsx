@@ -8,6 +8,7 @@ import {
   Loader2,
   RefreshCw,
   RotateCcw,
+  Sparkles,
   SquareTerminal,
   Trash2,
   X,
@@ -28,6 +29,7 @@ import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor, cliDefaultModel, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
 import { useCliDef, useCliModels } from '@/lib/cli-models'
+import { lookupModel, refreshModelCatalog, useModelCatalog } from '@/lib/model-catalog'
 import { clearInstallJob, startInstall, useInstallJob } from '@/lib/cli-install'
 import { cn, joinArgs, splitArgs } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -40,7 +42,7 @@ import { AiFixButton } from '@/components/ui/ai-fix'
 import { ModelSelect } from '@/components/agents/ModelSelect'
 import { CopyText, Group, Row } from './parts'
 import { CliAuthPanel } from './CliAuthPanel'
-import type { ApiConfig } from '@shared/accounts'
+import type { ApiConfig, ApiProtocol } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
 
@@ -249,6 +251,7 @@ export function TierTable({
   defaultModel,
   onChange,
   readOnly,
+  protocol,
 }: {
   def: CliDefinition
   value: CliDraft['tiers']
@@ -257,11 +260,30 @@ export function TierTable({
   onChange?: (v: CliDraft['tiers']) => void
   /** 只展示：「默认 CLI」里跟随那个 CLI 自己的档位设置 */
   readOnly?: boolean
+  /** API 模式的协议：同分时优先选支持它的模型 */
+  protocol?: ApiProtocol
 }) {
   const catalog = useCliModels(def.id)?.models
+  const modelCatalog = useModelCatalog()
+  const settings = useData().settings
+  const aiLookup = settings?.modelCatalog.aiLookup ?? true
+  const [looking, setLooking] = useState('')
   const can = limitSupport(def)
   const set = <K extends keyof CliDraft['tiers']['high']>(tier: ModelTier, k: K, v: CliDraft['tiers']['high'][K]) =>
     onChange?.({ ...value, [tier]: { ...value[tier], [k]: v } })
+  const lookup = async (model: string) => {
+    setLooking(model)
+    try {
+      const job = await lookupModel(model, protocol)
+      if (job.status !== 'done') throw new Error(job.error || t('补全失败'))
+      await refreshModelCatalog()
+      toast.success(t('已补全 {model} 的模型信息', { model }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setLooking('')
+    }
+  }
   return (
     <div className="overflow-hidden rounded-xl border">
       <div className="hidden grid-cols-[120px_1fr_170px] gap-3 border-b bg-field/50 px-3.5 py-2 text-xs text-subtle sm:grid">
@@ -271,8 +293,16 @@ export function TierTable({
       </div>
       {MODEL_TIERS.map((tr) => {
         const sug = { ...def.tiers[tr.id], model: tierFallback(def, defaultModel, tr.id) }
-        // 自动值按这一档实际用的模型识别：换了模型，空着的上下文和最大输出跟着变
-        const auto = autoLimits(value[tr.id].model || sug.model, catalog)
+        const model = value[tr.id].model || sug.model
+        // 自动值按这一档实际用的模型识别：换了模型，空着的上下文、最大输出和思考强度跟着变
+        const auto = autoLimits(model, catalog, { entries: modelCatalog?.entries, protocol })
+        const allowed = def.efforts.map((e) => e.id)
+        const effortList = def.models.some((m) => m.id === model)
+          ? modelEfforts(def, model)
+          : auto.matched
+            ? auto.efforts.filter((e) => !allowed.length || allowed.includes(e)).map((id) => ({ id }))
+            : def.efforts
+        const defaultEffort = sug.effort || auto.defaultEffort
         return (
           <div
             key={tr.id}
@@ -289,8 +319,8 @@ export function TierTable({
             </span>
             {readOnly ? (
               <>
-                <span className="truncate font-mono text-[0.8125rem]">{value[tr.id].model || sug.model}</span>
-                <span className="truncate text-[0.8125rem] text-muted">{value[tr.id].effort || sug.effort}</span>
+                <span className="truncate font-mono text-[0.8125rem]">{model}</span>
+                <span className="truncate text-[0.8125rem] text-muted">{value[tr.id].effort || defaultEffort}</span>
               </>
             ) : (
               <>
@@ -304,15 +334,10 @@ export function TierTable({
                 />
                 <Select
                   aria-label={t('{cli} {tier}档思考强度', { cli: def.name, tier: tr.label })}
-                  value={value[tr.id].effort === sug.effort ? '' : value[tr.id].effort}
+                  value={value[tr.id].effort === defaultEffort ? '' : value[tr.id].effort}
                   onChange={(e) => set(tr.id, 'effort', e.target.value)}
                   // 只列这一档实际用的模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                  options={defaultEffortOptions(
-                    def,
-                    sug.effort,
-                    modelEfforts(def, value[tr.id].model || sug.model),
-                    value[tr.id].effort,
-                  )}
+                  options={defaultEffortOptions(def, defaultEffort, effortList, value[tr.id].effort)}
                 />
               </>
             )}
@@ -335,6 +360,27 @@ export function TierTable({
                 title={can.maxOutput ? undefined : t('{cli} 不接受最大输出的设置', { cli: def.name })}
               />
             </div>
+            {!readOnly && model && !auto.matched && aiLookup && (
+              <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-subtle sm:col-span-2 sm:col-start-2">
+                <span>
+                  {t('模型配置里没有 {model}，按 {context} / {maxOutput} 估算', {
+                    model,
+                    context: fmtTokens(auto.context),
+                    maxOutput: fmtTokens(auto.maxOutput),
+                  })}
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-1.5 text-[0.6875rem]"
+                  disabled={!!looking}
+                  onClick={() => void lookup(model)}
+                >
+                  {looking === model ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                  {looking === model ? t('查询中…') : t('AI 补全')}
+                </Button>
+              </div>
+            )}
           </div>
         )
       })}
@@ -493,6 +539,8 @@ export function CliSection({
   // 模型和思考强度用本机 CLI 实际支持的
   const full = useCliDef(def.id) ?? def
   const models = useCliModels(def.id)
+  // API 模式：模型目录按这个接口的协议优先选
+  const apiConfig = draft.authMode === 'api' ? apis.find((a) => a.id === draft.apiId) : undefined
   const perm = def.permissions.find((p) => p.id === draft.permission) ?? def.permissions[0]
   // 默认思考强度用在实际的默认模型上：默认模型是档位时是那一档的模型
   const defTier = tierOf(draft.defaultModel)
@@ -670,7 +718,7 @@ export function CliSection({
         <Row
           title={t('三档模型')}
           desc={t(
-            'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文和最大输出按模型自动填，也可以手动改。',
+            'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。',
           )}
           stack
         >
@@ -678,6 +726,7 @@ export function CliSection({
             def={full}
             value={draft.tiers}
             defaultModel={draft.defaultModel}
+            protocol={apiConfig?.protocol}
             onChange={(v) => set('tiers', v)}
           />
         </Row>
@@ -818,10 +867,10 @@ export function CliSection({
       {ok && (
         <Group title="Skills">
           <p className="pb-2 text-[0.75rem] text-muted">
-            {def.protocol === 'codex-app'
+            {def.rpc?.skillsQuery
               ? t('{cli} 加载的 Skill（用户目录、系统自带和插件里的）', { cli: def.name })
               : t('{dirs} 里的 Skill；项目里的在项目设置里看', {
-                  dirs: [...def.skills.user, ...(def.protocol === 'claude-stream' ? [t('已装插件')] : [])].join('、'),
+                  dirs: [...def.skills.user, ...(def.rpc?.pluginSkills ? [t('已装插件')] : [])].join('、'),
                 })}
           </p>
           <CliSkills cli={def.id} />

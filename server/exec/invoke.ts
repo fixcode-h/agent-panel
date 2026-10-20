@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs'
-import { randomUUID } from 'node:crypto'
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
-import { codexAppSession } from './codex-app.ts'
-import { commandCodeRpcSession } from './commandcode-rpc.ts'
-import { clipDetail, oneLine, parserFor, type CliEvent } from './parsers.ts'
+import { rpcSessionFor } from './rpc/index.ts'
+import { parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
@@ -102,12 +99,12 @@ export async function invokeCli(o: {
   const servers = def.mcp ? [...(o.mcp ?? [])] : []
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
-  // Command Code 走常驻 RPC 时有真正的插话通道（turn/steer），补充不用再靠 MCP 工具拉取；
+  // 常驻 RPC 有真正的插话通道（turn/steer、Pi 的 steer），补充不用再靠 MCP 工具拉取；
   // 「等下一句」仍然要用 wait_user_message：一轮执行中把进程留住，用户下一句直接交回同一个进程
-  const rpc = def.protocol === 'commandcode-rpc'
-  const notes = def.notes && !rpc ? o.readNotes : undefined
-  const wait = def.notes ? o.waitUser : undefined
-  if (def.mcp && (askable || notes || wait) && def.protocol !== 'claude-stream' && def.protocol !== 'codex-app') {
+  const nativeAsk = def.rpc?.nativeAsk
+  const notes = def.notes && !def.steer ? o.readNotes : undefined
+  const wait = def.notes && !nativeAsk ? o.waitUser : undefined
+  if (def.mcp && (askable || notes || wait) && !nativeAsk) {
     // 用户开着「提问」时把问题交给页面；关着时让模型自己选最合适的做法
     const ask: Ask = (ev) => (o.askUser?.() ? (o.onAsk ? o.onAsk(ev) : o.onEvent(ev)) : ev.reply(AUTO_ANSWER))
     bridge = openAskBridge({
@@ -176,38 +173,23 @@ async function invoke(
     return o.onAsk ? o.onAsk(ev) : o.onEvent(ev)
   }
 
-  if (def.protocol === 'codex-app') {
-    const session = codexAppSession({ ...o.build, cwd: o.cwd, input: o.input, images: o.images })
-    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt() })
-    const r = await runProcess({
-      command: o.command,
-      args,
-      cwd: o.cwd,
-      env: o.env,
-      signal,
-      timeoutMs: o.timeoutMs,
-      idle: o.idle,
-      onSpawn: (io) => session.start(io),
-      onLine: (line) => {
-        const obj = toJson(line)
-        if (obj) for (const ev of session.handle(obj)) emit(ev)
-      },
-    })
-    // 没等到 turn/completed 就退出了（崩溃、配置错误），算失败
-    if (!session.finished && !r.killed && !r.spawnError)
-      o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
-    return r
-  }
+  const parse = parserFor(o.cliId, o.cwd)
 
-  if (def.protocol === 'commandcode-rpc') {
-    const session = commandCodeRpcSession({
+  if (def.protocol === 'rpc') {
+    // 所有常驻协议走同一个会话引擎：握手、请求/回复配对、超时、插话、中断、收尾都一样，
+    // 各家发什么、怎么判断结束由定义里的 rpc 配置或 codex / claude 适配器决定
+    const session = rpcSessionFor(def, {
       cwd: o.cwd,
       input: o.input,
-      // -p 的 --max-turns 在 RPC 模式不生效，改由 turn/start 的参数限制；没设置时用 CLI 的默认上限
-      maxTurns: o.build.maxTurns ?? 1000,
+      images: o.images,
+      build: o.build,
       onEvent: emit,
     })
-    setControl({ steer: (text) => session.steer(text), interrupt: () => session.interrupt(), deferSteer: true })
+    setControl({
+      steer: (text) => session.steer(text),
+      interrupt: () => session.interrupt(),
+      deferSteer: def.rpc?.deferSteer,
+    })
     try {
       const r = await runProcess({
         command: o.command,
@@ -217,97 +199,16 @@ async function invoke(
         signal,
         timeoutMs: o.timeoutMs,
         idle: o.idle,
-        onSpawn: (io) => void session.start(io),
+        onSpawn: (io) => session.start(io),
         onLine: (line) => session.line(line),
       })
-      // 没等到 turn/completed 就退出了（崩溃、配置错误），算失败
+      // 没等到这一轮结束就退出了（崩溃、配置错误），算失败
       if (!session.finished && !r.killed && !r.spawnError)
         o.onEvent({ type: 'result', ok: false, error: t('{cli} 没有完成这一轮就退出了', { cli: def.name }) })
       return r
     } finally {
       session.close()
     }
-  }
-
-  const parse = parserFor(o.cliId, o.cwd)
-
-  // Claude Code 的控制协议：任务描述是 stdin 上的一条 user 消息，审批请求是 control_request（can_use_tool），
-  // 回 control_response；stdin 要一直开着，收到 result 再关掉，CLI 读到 EOF 退出。
-  // 执行中插话是再写一条 user 消息（priority next：在这一轮里接着处理），中断是 control_request（interrupt）
-  if (def.protocol === 'claude-stream') {
-    let io: { write: (s: string) => void; end: () => void } | undefined
-    const line = (m: object) => io?.write(JSON.stringify(m) + '\n')
-    let ended = false
-    let steered = false
-    let closeTimer: ReturnType<typeof setTimeout> | undefined
-    const close = () => {
-      ended = true
-      io?.end()
-    }
-    setControl({
-      steer: async (text) => {
-        if (ended || !io) return false
-        steered = true
-        line({ type: 'user', message: { role: 'user', content: text }, priority: 'next', parent_tool_use_id: null })
-        return true
-      },
-      interrupt: () => {
-        if (ended || !io) return false
-        line({ type: 'control_request', request_id: randomUUID(), request: { subtype: 'interrupt' } })
-        return true
-      },
-    })
-    return runProcess({
-      command: o.command,
-      args,
-      cwd: o.cwd,
-      env: o.env,
-      onSpawn: (w) => {
-        io = w
-        line({ type: 'user', message: { role: 'user', content: withImages(o.input, o.images) } })
-      },
-      signal,
-      timeoutMs: o.timeoutMs,
-      idle: o.idle,
-      onLine: (l) => {
-        const obj = toJson(l)
-        if (!obj) return
-        // 插过话：这一轮结束后 CLI 可能接着处理插进来的要求，有新输出就先不关
-        if (closeTimer && obj.type !== 'control_response') {
-          clearTimeout(closeTimer)
-          closeTimer = undefined
-        }
-        if (obj.type === 'control_response') return
-        if (obj.type === 'control_request') {
-          const respond = (response: object) =>
-            line({ type: 'control_response', response: { subtype: 'success', request_id: obj.request_id, response } })
-          if (obj.request?.subtype !== 'can_use_tool')
-            return line({
-              type: 'control_response',
-              response: { subtype: 'error', request_id: obj.request_id, error: '面板不支持这个请求' },
-            })
-          const name = String(obj.request.tool_name ?? '')
-          const input = obj.request.input ?? {}
-          return emit({
-            type: 'ask',
-            ...claudeAsk(name, input),
-            reply: (r) =>
-              respond(
-                r.allow
-                  ? { behavior: 'allow', updatedInput: claudeAnswer(name, input, r.answer, r.answers) }
-                  : {
-                      behavior: 'deny',
-                      message: r.message ?? (r.answer ? `用户拒绝了：${r.answer}` : '用户拒绝了这个操作'),
-                    },
-              ),
-          })
-        }
-        for (const ev of parse(obj)) {
-          emit(ev)
-          if (ev.type === 'result') closeTimer = setTimeout(close, steered ? 2500 : 0)
-        }
-      },
-    })
   }
 
   return runProcess({
@@ -324,71 +225,4 @@ async function invoke(
       if (obj) for (const ev of parse(obj)) emit(ev)
     },
   })
-}
-
-/** Claude Code 要确认的工具调用，换成给用户看的一句话 */
-export function claudeAsk(name: string, input: any): Omit<Extract<CliEvent, { type: 'ask' }>, 'reply' | 'type'> {
-  const str = (v: unknown) => (typeof v === 'string' ? v : '')
-  if (name === 'AskUserQuestion') {
-    const qs = (Array.isArray(input?.questions) ? input.questions : []).map((q: any) => ({
-      header: str(q?.header),
-      question: str(q?.question),
-      options: (Array.isArray(q?.options) ? q.options : [])
-        .map((x: any) => ({ label: str(x?.label), description: str(x?.description) }))
-        .filter((x: { label: string }) => x.label),
-      multiSelect: !!q?.multiSelect,
-    }))
-    const q = qs[0] ?? { header: '', question: '', options: [] }
-    return {
-      kind: 'question',
-      title: q.question || t('有一个问题需要你回答'),
-      detail: q.header,
-      options: q.options.map((x: { label: string }) => x.label),
-      questions: qs.length ? qs : undefined,
-    }
-  }
-  if (name === 'Bash')
-    return {
-      kind: 'command',
-      title: t('运行命令：{cmd}', { cmd: oneLine(str(input.command)) }),
-      detail: str(input.description),
-    }
-  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(name))
-    return {
-      kind: 'file',
-      title:
-        name === 'Write'
-          ? t('写入文件：{file}', { file: str(input.file_path || input.notebook_path) })
-          : t('修改文件：{file}', { file: str(input.file_path || input.notebook_path) }),
-      detail: '',
-    }
-  if (name === 'WebFetch')
-    return { kind: 'tool', title: t('访问网页：{url}', { url: str(input.url) }), detail: str(input.prompt) }
-  return { kind: 'tool', title: t('使用工具：{name}', { name }), detail: clipDetail(JSON.stringify(input, null, 2)) }
-}
-
-/** 允许时交回给 CLI 的参数：问题要带上用户的回答（一次问了几个时每个问题一条） */
-function claudeAnswer(name: string, input: any, answer?: string, answers?: string[]) {
-  if (name !== 'AskUserQuestion' || (!answer && !answers?.length)) return input
-  const qs: any[] = Array.isArray(input?.questions) ? input.questions : []
-  const got = answers?.length ? answers : [answer ?? '']
-  const map = Object.fromEntries(qs.map((q, i) => [String(q?.question ?? ''), got[i] ?? '']).filter(([, v]) => v))
-  return { ...input, answers: { ...(input.answers ?? {}), ...map } }
-}
-
-/** Claude Code 的用户消息：有图片时把图片（base64）跟文字放在一起，模型直接看得到 */
-function withImages(text: string, images: string[] | undefined) {
-  const blocks = (images ?? []).flatMap((p) => {
-    const ext = p.split('.').pop()?.toLowerCase() ?? ''
-    const media = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp' }[ext]
-    if (!media) return []
-    try {
-      return [
-        { type: 'image', source: { type: 'base64', media_type: media, data: readFileSync(p).toString('base64') } },
-      ]
-    } catch {
-      return []
-    }
-  })
-  return blocks.length ? [{ type: 'text', text }, ...blocks] : text
 }

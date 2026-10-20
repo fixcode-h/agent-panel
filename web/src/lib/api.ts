@@ -17,6 +17,7 @@ import type {
   Tag,
   TagInput,
   CliStatus,
+  DirBranches,
   DirInfo,
   DirListing,
   Project,
@@ -31,7 +32,8 @@ import type {
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
-import type { ApiConfig, DetectedApi } from '@shared/accounts'
+import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
+import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { FixInput, FixStart } from '@shared/fix'
 import type {
@@ -150,6 +152,12 @@ export const api = {
   apiModels: (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
   cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
+  /** 模型目录：内置的加上用户补充的 */
+  modelCatalog: () => request<ModelCatalogInfo>('/model-catalog'),
+  lookupModel: (body: { model: string; protocol?: ApiProtocol; cli?: string }) =>
+    request<ModelLookupJob>('/model-catalog/lookup', json('POST', body)),
+  modelLookup: (id: string) => request<ModelLookupJob>(`/model-catalog/lookup/${id}`),
+  stopModelLookup: (id: string) => request<ModelLookupJob>(`/model-catalog/lookup/${id}/stop`, { method: 'POST' }),
   cliLimits: (id: string) => request<CliLimits | null>(`/clis/${id}/limits`),
   /** 用户在数据目录 config/clis/ 里加的 CLI 配置 */
   cliSpecs: () => request<UserClis>('/clis/specs'),
@@ -302,6 +310,8 @@ export const api = {
   stopDocJob: (id: string) => request<DocJob>(`/doc-jobs/${id}/stop`, { method: 'POST' }),
 
   inspectDir: (path: string) => request<DirInfo>(`/fs/inspect?path=${encodeURIComponent(path)}`),
+  dirBranches: (path: string) => request<DirBranches>(`/fs/branches?path=${encodeURIComponent(path)}`),
+  checkoutBranch: (path: string, branch: string) => request<DirInfo>('/fs/checkout', json('POST', { path, branch })),
   listDir: (path: string) => request<DirListing>(`/fs/list?path=${encodeURIComponent(path)}`),
   makeDir: (parent: string, name: string) => request<{ path: string }>('/fs/mkdir', json('POST', { parent, name })),
   dataUsage: () => request<DataUsage>('/data'),

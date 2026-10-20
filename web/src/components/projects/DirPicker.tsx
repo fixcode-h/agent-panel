@@ -239,6 +239,13 @@ function DirBrowser({
 }
 
 const dirCache = new Map<string, DirInfo | null>()
+// 切了分支之类的改动后，让正在用这个目录的地方重新读一次
+const dirListeners = new Set<() => void>()
+
+/** 切了分支之类的改动后，让正在用这个目录的地方重新读一次（先留着旧结果，读完再换，不闪） */
+export function refreshDirInfo() {
+  for (const f of dirListeners) f()
+}
 
 /**
  * 检测路径：停止输入 400ms 后请求一次。
@@ -247,10 +254,18 @@ const dirCache = new Map<string, DirInfo | null>()
  */
 export function useDirInfo(path: string): DirInfo | null | undefined {
   const key = path.trim()
+  const [version, setVersion] = useState(0)
   const [state, setState] = useState<{ key: string; info: DirInfo | null }>(() => ({
     key,
     info: dirCache.get(key) ?? null,
   }))
+  useEffect(() => {
+    const bump = () => setVersion((v) => v + 1)
+    dirListeners.add(bump)
+    return () => {
+      dirListeners.delete(bump)
+    }
+  }, [])
   useEffect(() => {
     if (!key) return
     let alive = true
@@ -270,7 +285,7 @@ export function useDirInfo(path: string): DirInfo | null | undefined {
       alive = false
       clearTimeout(t)
     }
-  }, [key])
+  }, [key, version])
   if (!key) return null
   if (state.key === key) return state.info
   return dirCache.has(key) ? dirCache.get(key)! : undefined

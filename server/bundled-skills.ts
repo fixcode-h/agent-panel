@@ -60,7 +60,7 @@ export async function entries(): Promise<Entry[]> {
 
 /** CLI 装 Skill 的用户目录（第一个） */
 function skillRoot(d: CliDefinition) {
-  const dir = d.skills.user[0] ?? (d.protocol === 'codex-app' ? '${CODEX_HOME:-~/.codex}/skills' : '')
+  const dir = d.skills.user[0] ?? d.rpc?.skillsDir ?? ''
   return dir ? expandHome(dir) : ''
 }
 

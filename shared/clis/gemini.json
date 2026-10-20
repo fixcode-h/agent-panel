@@ -193,8 +193,7 @@
   "features": {
     "fork": "none",
     "compact": "summary",
-    "autoCompact": "panel",
-    "contextWindow": 1000000
+    "autoCompact": "panel"
   },
   "docs": ["GEMINI.md", "AGENTS.md"],
   "docsNote": "Gemini CLI 每次启动读项目里的 GEMINI.md（可以在 settings.json 的 context.fileName 里改成也读 AGENTS.md）。",

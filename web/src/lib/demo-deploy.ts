@@ -32,7 +32,7 @@ const deployed = new Set<string>()
 const docs = new Map<string, string>()
 const home = (p: string) => p.replace(/\$\{\w+:-([^}]*)\}/g, '$1').replace(/^~/, '/Users/demo')
 
-function state(): DeployState {
+function state(active: string[]): DeployState {
   const list = skills()
   const content = composeAgentsMd(
     config.agentsMd,
@@ -43,7 +43,7 @@ function state(): DeployState {
     template: deployTemplate(),
     skillRoot: home(SKILL_TARGET),
     skills: list.map((s) => ({ ...s, status: deployed.has(s.name) ? 'same' : 'missing' })),
-    targets: CLIS.filter((d) => d.globalDoc).map((d) => {
+    targets: CLIS.filter((d) => d.globalDoc && active.includes(d.id)).map((d) => {
       const cur = docs.get(d.id)
       return {
         cli: d.id,
@@ -55,7 +55,7 @@ function state(): DeployState {
   }
 }
 
-export function demoDeploy(method: string, sub: string | undefined, body: unknown): unknown {
+export function demoDeploy(method: string, sub: string | undefined, body: unknown, active: string[]): unknown {
   if (sub === 'optimize') return startDemoGlobalDocJob(body as { content?: string; request?: string })
   if (sub === 'run') {
     const run = DeployRun.parse(body)
@@ -71,7 +71,7 @@ export function demoDeploy(method: string, sub: string | undefined, body: unknow
       run.agentsMd,
       skills().filter((s) => run.skills.includes(s.name)),
     )
-    for (const d of CLIS.filter((x) => x.globalDoc && run.clis.includes(x.id))) {
+    for (const d of CLIS.filter((x) => x.globalDoc && run.clis.includes(x.id) && active.includes(x.id))) {
       const cur = docs.get(d.id)
       docs.set(d.id, content)
       out.docs.push({
@@ -80,8 +80,8 @@ export function demoDeploy(method: string, sub: string | undefined, body: unknow
         result: cur === undefined ? 'created' : cur === content ? 'same' : 'updated',
       })
     }
-    return { result: out, state: state() }
+    return { result: out, state: state(active) }
   }
   if (method === 'PUT') config = DeployConfig.parse(body)
-  return state()
+  return state(active)
 }

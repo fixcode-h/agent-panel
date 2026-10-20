@@ -8,6 +8,8 @@ import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
 import { readCommand, scanCommands } from './slash.ts'
 import { installBundled, listBundled } from './bundled-skills.ts'
+import { getSettings } from './settings.ts'
+import { cliSettings } from '../shared/settings.ts'
 
 /**
  * Skills / 命令库：管各 CLI 用户目录下的 Skill 和自定义命令（项目里的归项目管）。
@@ -16,16 +18,21 @@ import { installBundled, listBundled } from './bundled-skills.ts'
 
 type Kind = 'skill' | 'command'
 
-const skillRoot = (d: CliDefinition) =>
-  d.skills.user[0] ?? (d.protocol === 'codex-app' ? '${CODEX_HOME:-~/.codex}/skills' : '')
+const skillRoot = (d: CliDefinition) => d.skills.user[0] ?? d.rpc?.skillsDir ?? ''
 
 const roots = (d: CliDefinition) => ({
   skill: skillRoot(d) && expandHome(skillRoot(d)),
   command: d.commands.user[0] ? expandHome(d.commands.user[0]) : '',
 })
 
-export function libraryClis(): LibraryCli[] {
-  return CLIS.flatMap((d) => {
+/** 只处理启用的 CLI：停用的不在技能库、复制目标这些地方出现 */
+async function activeClis() {
+  const settings = await getSettings()
+  return CLIS.filter((d) => cliSettings(settings, d.id).enabled)
+}
+
+export async function libraryClis(): Promise<LibraryCli[]> {
+  return (await activeClis()).flatMap((d) => {
     const r = roots(d)
     return r.skill || r.command
       ? [{ id: d.id, name: d.name, skillDir: r.skill, commandDir: r.command, commandFormat: d.commands.format }]
@@ -48,7 +55,7 @@ function target(cli: string, kind: Kind, name: string) {
 
 export async function listLibrary(kind: Kind): Promise<LibraryItem[]> {
   const out: LibraryItem[] = []
-  for (const d of CLIS) {
+  for (const d of await activeClis()) {
     const root = roots(d)[kind]
     if (!root || !existsSync(root)) continue
     if (kind === 'skill') {
@@ -154,7 +161,7 @@ export function libraryApi() {
   return new Hono()
     .get(
       '/',
-      guard(async (c) => c.json({ clis: libraryClis(), items: await listLibrary(kindOf(c.req.query('kind'))) })),
+      guard(async (c) => c.json({ clis: await libraryClis(), items: await listLibrary(kindOf(c.req.query('kind'))) })),
     )
     .get(
       '/file',

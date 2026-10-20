@@ -602,7 +602,7 @@ export function tasksApi(deps: {
     const def = getCli(run.cli)
     if (!def?.notes || !def.mcp) return c.json(task)
     // Claude Code、Codex 有自己的协议，不走面板的等待工具
-    if (def.protocol === 'claude-stream' || def.protocol === 'codex-app') return c.json(task)
+    if (def.rpc?.nativeAsk) return c.json(task)
     if (task.sessionCli && task.sessionCli !== run.cli) return c.json(task)
     if (live.has(id)) return c.json(live.get(id)!.task)
     const entry = reserve(task)

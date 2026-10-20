@@ -57,6 +57,32 @@ export async function gitChanges(
     })
 }
 
+/** 本地分支，最近提交的排在前面；current 是当前所在的分支（分离 HEAD 时为空） */
+export async function gitBranches(cwd: string): Promise<{ current: string | null; branches: string[] }> {
+  const list = await git(cwd, 'for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads')
+  if (list.code !== 0) throw new Error(t('这个目录不是 git 仓库'))
+  const head = await git(cwd, 'rev-parse', '--abbrev-ref', 'HEAD')
+  const current = head.code === 0 && head.stdout.trim() !== 'HEAD' ? head.stdout.trim() : null
+  return {
+    current,
+    branches: list.stdout
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  }
+}
+
+/**
+ * 切换到已有分支。只接受本地分支，分支名不从界面上随便传；
+ * 有未提交的改动挡住时把 git 的说明原样交给用户。
+ */
+export async function gitCheckout(cwd: string, branch: string) {
+  const { branches } = await gitBranches(cwd)
+  if (!branches.includes(branch)) throw new Error(t('没有这个分支：{branch}', { branch }))
+  const r = await capture('git', ['-c', 'core.quotepath=off', 'checkout', branch], cwd, process.env, 60_000)
+  if (r.code !== 0) throw new Error(r.stderr.trim() || r.stdout.trim() || t('切换分支失败'))
+}
+
 const MAX_DIFF = 400_000
 
 /** 起点：任务开始时的提交还在就用它，否则用当前提交 */

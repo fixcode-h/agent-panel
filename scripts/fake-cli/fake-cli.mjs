@@ -14,7 +14,7 @@ import { crc32, deflateSync } from 'node:zlib'
 import { execFileSync } from 'node:child_process'
 
 const args = process.argv.slice(2)
-// Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p；Pi 是 --mode json
+// Claude Code 和 Gemini CLI 都输出 stream-json，Claude Code 带 -p，Gemini CLI 从 stdin 读任务描述、不带 -p；Pi 默认 --mode rpc
 const kind =
   args[0] === 'app-server'
     ? 'codex'
@@ -25,6 +25,8 @@ const kind =
           ? 'claude'
           : 'gemini'
         : 'commandcode'
+// Pi 的 RPC 模式：stdin 一行一条命令，stdout 一行一条记录（和 --mode json 的会话事件同一套）
+const piRpc = kind === 'pi' && args.includes('--mode') && args[args.indexOf('--mode') + 1] === 'rpc'
 // 登录：按 FAKE_AUTH 把凭据文件写到各个 CLI 放凭据的地方（每次登录换一个邮箱），打印一个登录网址
 const isLogin =
   (args[0] === 'auth' && args[1] === 'login') || args[0] === 'login' || (args[0] === '-p' && args[1] === 'hello')
@@ -93,6 +95,12 @@ if (args[0] === 'app-server') {
     if (done) break
     const req = JSON.parse(line)
     if (req.method === 'initialize') console.log(JSON.stringify({ id: req.id, result: { userAgent: 'fake' } }))
+    if (req.method === 'windowsSandbox/readiness')
+      console.log(JSON.stringify({ id: req.id, result: { status: 'ready' } }))
+    if (req.method === 'windowsSandbox/setupStart') {
+      console.log(JSON.stringify({ id: req.id, result: { started: true } }))
+      console.log(JSON.stringify({ method: 'windowsSandbox/setupCompleted', params: { success: true } }))
+    }
     if (req.method === 'thread/start' || req.method === 'thread/resume' || req.method === 'thread/fork') {
       appResume = req.params.threadId ?? ''
       appThread = req.method === 'thread/fork' ? `fork-${randomUUID()}` : appResume || randomUUID()
@@ -101,6 +109,15 @@ if (args[0] === 'app-server') {
       policy = { approval: req.params.approvalPolicy, sandbox: req.params.sandbox }
       console.log(JSON.stringify({ id: req.id, result: { thread: { id: appThread } } }))
     }
+    if (req.method === 'account/read') {
+      console.log(
+        JSON.stringify({
+          id: req.id,
+          result: { account: { type: 'chatgpt', email: 'fake@example.com' }, requiresOpenaiAuth: true },
+        }),
+      )
+    }
+    if (req.method === 'config/read') console.log(JSON.stringify({ id: req.id, result: { config: {} } }))
     if (req.method === 'account/rateLimits/read') {
       const w = (usedPercent, windowDurationMins) => ({ usedPercent, windowDurationMins, resetsAt: 2000000000 })
       console.log(
@@ -242,6 +259,43 @@ if (args.includes('--list-models')) {
   process.exit(0)
 }
 
+// 续接参数：Pi 用 --session，其他 CLI 用 --resume（Codex 走 thread 参数）
+const resumeIdx = args.indexOf(kind === 'pi' ? '--session' : '--resume')
+const session =
+  kind === 'codex'
+    ? appThread
+    : rpcSession || (resumeIdx >= 0 && !args.includes('--fork-session') ? args[resumeIdx + 1] : randomUUID())
+
+// Pi 的 RPC 模式：先回 get_state（RPC 没有会话头），等 prompt 到了再往下走
+let piRpcExit
+if (piRpc) {
+  const rl = (await import('node:readline')).createInterface({ input: process.stdin })
+  const say = (o) => process.stdout.write(JSON.stringify(o) + '\n')
+  let onPrompt
+  let answered = false
+  piRpcExit = new Promise((r) => rl.on('close', r))
+  rl.on('line', (l) => {
+    const m = JSON.parse(l)
+    if (m.type === 'get_state') {
+      say({ type: 'response', command: 'get_state', id: m.id, success: true, data: { sessionId: session } })
+    } else if (m.type === 'prompt') {
+      input = String(m.message ?? '')
+      say({ type: 'response', command: 'prompt', id: m.id, success: true, data: { disposition: 'started' } })
+      if (!answered) {
+        answered = true
+        onPrompt?.()
+      }
+    } else if (m.type === 'steer') {
+      steered.push(String(m.message ?? ''))
+      say({ type: 'response', command: 'steer', id: m.id, success: true, data: { disposition: 'queued' } })
+    } else if (m.type === 'abort') {
+      interrupted = true
+      say({ type: 'response', command: 'abort', id: m.id, success: true })
+    }
+  })
+  await new Promise((r) => (onPrompt = r))
+}
+
 // Claude Code 用 --input-format stream-json 时，stdin 一行一个 JSON：第一行是任务描述，之后是面板回的 control_response
 const streamIn = kind === 'claude' && args.includes('--input-format')
 const lines = []
@@ -265,7 +319,7 @@ if (streamIn) {
   globalThis.nextLine = next
   const first = await next()
   input = typeof first.message.content === 'string' ? first.message.content : ''
-} else if (kind !== 'codex' && !rpcMode) for await (const chunk of process.stdin) input += chunk
+} else if (kind !== 'codex' && !rpcMode && !piRpc) for await (const chunk of process.stdin) input += chunk
 if (process.env.FAKE_CLI_LOG) {
   const log = process.env.FAKE_CLI_LOG
   const extra =
@@ -330,12 +384,6 @@ const exitTurn = async (code = 0) => {
 // 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
 const slow = input.includes('SLOW') && !input.includes('上游节点的结果')
 const fail = input.includes('FAIL')
-// Pi 续接用 --session，分叉用 --fork（开新会话）
-const resumeIdx = args.indexOf(kind === 'pi' ? '--session' : '--resume')
-const session =
-  kind === 'codex'
-    ? appThread
-    : rpcSession || (resumeIdx >= 0 && !args.includes('--fork-session') ? args[resumeIdx + 1] : randomUUID())
 // app-server 的通知
 const note = (method, params) => out({ method, params: { threadId: session, turnId: 't1', ...params } })
 const codexDone = (status, error) => {
@@ -446,6 +494,10 @@ if (interrupted) {
       }) + '\n',
     )
     await rpcExit
+  } else if (piRpc) {
+    // Pi 中断后以 agent_settled(aborted) 结束这一轮
+    out({ type: 'agent_settled', aborted: true })
+    await piRpcExit
   }
   process.exit(0)
 }
@@ -693,9 +745,16 @@ if (askArgs && (kind === 'gemini' || kind === 'commandcode' || kind === 'pi')) {
   const text = `收到：${got}`
   if (kind === 'pi') {
     const msg = { role: 'assistant', content: [{ type: 'text', text }], stopReason: 'stop', usage: {} }
-    out({ type: 'session', version: 3, id: session, cwd: process.cwd() })
+    // RPC 模式没有会话头，以 agent_settled 结束；JSON 模式还是以会话头开始
+    if (!piRpc) out({ type: 'session', version: 3, id: session, cwd: process.cwd() })
+    if (piRpc) out({ type: 'turn_start' })
     out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: text } })
+    if (piRpc) out({ type: 'message_end', message: msg })
     out({ type: 'agent_end', messages: [msg] })
+    if (piRpc) {
+      out({ type: 'agent_settled', aborted: false })
+      await piRpcExit
+    }
   } else if (kind === 'gemini') {
     const at = new Date().toISOString()
     out({ type: 'init', timestamp: at, session_id: session, model: 'gemini-fake' })
@@ -748,7 +807,7 @@ if (kind === 'gemini') {
   process.exit(fail ? 1 : 0)
 }
 
-// Pi 的 --mode json：第一行是会话头，之后是 agent 的事件；每次（含自动重试）以 agent_end 结束
+// Pi 的会话事件（--mode json / --mode rpc 共用）：JSON 模式第一行是会话头，RPC 模式用 get_state 拿会话 id
 if (kind === 'pi') {
   const usage = (input, output) => ({
     input,
@@ -768,8 +827,10 @@ if (kind === 'pi') {
     stopReason: 'stop',
     ...extra,
   })
-  out({ type: 'session', version: 3, id: session, timestamp: new Date().toISOString(), cwd: process.cwd() })
+  // RPC 模式没有会话头，面板用 get_state 拿会话 id
+  if (!piRpc) out({ type: 'session', version: 3, id: session, timestamp: new Date().toISOString(), cwd: process.cwd() })
   out({ type: 'agent_start' })
+  out({ type: 'turn_start' })
   out({ type: 'message_end', message: { role: 'user', content: [{ type: 'text', text: input }] } })
   out({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', contentIndex: 0, delta: '先看看' } })
   out({ type: 'tool_execution_start', toolCallId: 'p1', toolName: 'read', args: { path: 'README.md' } })
@@ -796,6 +857,11 @@ if (kind === 'pi') {
     : assistant([{ type: 'text', text: reply }])
   out({ type: 'message_end', message: last })
   out({ type: 'agent_end', messages: [last] })
+  if (piRpc) {
+    out({ type: 'agent_settled', aborted: !!interrupted })
+    // 常驻进程：等面板关 stdin 再退出（和真的 Pi 一样）
+    await piRpcExit
+  }
   // Pi 出错时退出码也是 0
   process.exit(0)
 }
@@ -1019,6 +1085,7 @@ if (kind === 'claude') {
     }
     process.exit(6)
   }
+  ev({ type: 'model_request_start' })
   ev({ type: 'message_start' })
   ev({ type: 'thinking_start' })
   ev({ type: 'thinking_delta', delta: '想想先读哪个文件' })
@@ -1031,6 +1098,7 @@ if (kind === 'claude') {
     model: 'cmd-fake',
     usage: { inputTokens: 9000, outputTokens: 80, cacheReadTokens: 1000, cacheWriteTokens: 0 },
   })
+  ev({ type: 'model_request_start' })
   ev({ type: 'message_start' })
   for (const part of reply.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
   ev({ type: 'message_end', content: [{ type: 'text', text: reply }] })

@@ -49,16 +49,35 @@ export function cliSettings(
 export function defaultCli(settings: Settings) {
   const set = getCli(settings.defaultCli) ? settings.defaultCli : CLIS[0].id
   if (cliSettings(settings, set).enabled) return set
-  return orderClis(CLIS, settings.cliOrder).find((c) => cliSettings(settings, c.id).enabled)?.id ?? set
+  return (
+    orderClis(CLIS, settings.cliOrder, (c) => cliSettings(settings, c.id).enabled).find(
+      (c) => cliSettings(settings, c.id).enabled,
+    )?.id ?? set
+  )
 }
 
-/** 按设置里的顺序排列 CLI；新加的、没排过的 CLI 按内置顺序跟在后面 */
-export function orderClis<T extends { id: string }>(list: T[], order: string[]): T[] {
+/**
+ * 按激活状态和拖动顺序排列 CLI：启用的排在停用的前面，拖动也不能跨过这条线；
+ * 同一组里按拖动过的顺序，没拖过的按名字比较。
+ */
+export function orderClis<T extends { id: string; name?: string }>(
+  list: T[],
+  order: string[],
+  isEnabled: (item: T) => boolean = () => true,
+): T[] {
   const rank = (id: string) => {
     const i = order.indexOf(id)
-    return i < 0 ? order.length + CLIS.findIndex((c) => c.id === id) : i
+    return i < 0 ? Number.POSITIVE_INFINITY : i
   }
-  return [...list].sort((a, b) => rank(a.id) - rank(b.id))
+  const name = (x: T) => x.name ?? getCli(x.id)?.name ?? x.id
+  return [...list].sort((a, b) => {
+    const group = Number(!isEnabled(a)) - Number(!isEnabled(b))
+    if (group) return group
+    const ra = rank(a.id)
+    const rb = rank(b.id)
+    if (ra !== rb) return ra < rb ? -1 : 1
+    return name(a).localeCompare(name(b))
+  })
 }
 
 export const tierToken = (t: ModelTier) => `@${t}`

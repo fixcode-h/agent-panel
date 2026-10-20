@@ -6,8 +6,10 @@ import type { CliLimits, CliSkill } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { getSettings } from './settings.ts'
 import { codexLimits } from './exec/parsers.ts'
-import { childEnv, runProcess } from './exec/process.ts'
+import { childEnv } from './exec/process.ts'
+import { rpcQuery } from './exec/rpc/query.ts'
 import { getCli } from '../shared/clis.ts'
+import { RpcSpec } from '../shared/cli-spec.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -25,59 +27,25 @@ export function setLimits(cli: string, l: CliLimits) {
   limits.set(cli, { ...prev, ...l, windows, plan: l.plan ?? prev?.plan })
 }
 
-/** 额度：Codex 每次都去查一遍最新的；其他 CLI 给最近一次执行时收到的 */
+/** 额度：能主动查的每次都去查一遍最新的；其他 CLI 给最近一次执行时收到的 */
 export async function getLimits(cli: string): Promise<CliLimits | null> {
-  if (getCli(cli)?.limits === 'query' && getCli(cli)?.protocol === 'codex-app') {
+  const def = getCli(cli)
+  if (def?.rpc?.limitsQuery) {
+    const rpc = RpcSpec.parse(def.rpc)
     const s = cliSettings(await getSettings(), cli)
-    const r = await codexRpc(s.command, childEnv(s.env), homedir(), [{ method: 'account/rateLimits/read', params: {} }])
-    const l = codexLimits(r[0]?.rateLimits)
+    const r = await rpcQuery({
+      command: s.command,
+      args: rpc.queryArgs,
+      cwd: homedir(),
+      env: childEnv(s.env),
+      handshake: rpc.handshake,
+      jsonrpc: rpc.jsonrpc,
+      requests: [{ method: 'account/rateLimits/read', params: {} }],
+    })
+    const l = codexLimits(r[0]?.result?.rateLimits)
     if (l) setLimits(cli, l)
   }
   return limits.get(cli) ?? null
-}
-
-/** 起一个 codex app-server，按顺序发几个请求，全部回来后停掉；回答出错的位置是 undefined */
-async function codexRpc(
-  command: string,
-  env: NodeJS.ProcessEnv,
-  cwd: string,
-  reqs: { method: string; params: object }[],
-) {
-  const ac = new AbortController()
-  const out: any[] = []
-  let got = 0
-  let error = ''
-  const line = (o: object) => JSON.stringify(o) + '\n'
-  const r = await runProcess({
-    command,
-    args: ['app-server'],
-    cwd,
-    env,
-    signal: ac.signal,
-    timeoutMs: 20_000,
-    keepStdinOpen: true,
-    stdin:
-      line({ id: 0, method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } }) +
-      line({ method: 'initialized' }) +
-      reqs.map((q, i) => line({ id: i + 1, ...q })).join(''),
-    onLine: (l) => {
-      let m: any
-      try {
-        m = JSON.parse(l)
-      } catch {
-        return
-      }
-      if (typeof m.id !== 'number' || m.id < 1 || m.method) return
-      out[m.id - 1] = m.error ? undefined : m.result
-      if (m.error) error = String(m.error.message ?? '')
-      if (++got >= reqs.length) ac.abort()
-    },
-  })
-  if (got < reqs.length) {
-    if (r.spawnError) throw new Error(r.spawnError)
-    throw new Error(error || r.stderr.trim().split('\n').at(-1) || t('Codex 没有返回'))
-  }
-  return out
 }
 
 /** 配置里的目录：~ 是用户目录，${ENV:-默认值} 先取环境变量 */
@@ -154,13 +122,21 @@ export async function listSkills(cli: string, cwd: string): Promise<CliSkill[]> 
 async function rawSkills(cli: string, cwd: string): Promise<CliSkill[]> {
   const def = getCli(cli)
   if (!def) throw new Error(t('未知的 CLI：{cli}', { cli }))
-  if (def.protocol === 'codex-app') {
+  if (def.rpc?.skillsQuery) {
+    const rpc = RpcSpec.parse(def.rpc)
     const s = cliSettings(await getSettings(), cli)
-    const r = await codexRpc(s.command, childEnv(s.env), cwd || homedir(), [
-      { method: 'skills/list', params: cwd ? { cwds: [cwd] } : {} },
-    ])
+    const r = await rpcQuery({
+      command: s.command,
+      args: rpc.queryArgs,
+      cwd: cwd || homedir(),
+      env: childEnv(s.env),
+      handshake: rpc.handshake,
+      jsonrpc: rpc.jsonrpc,
+      requests: [{ method: 'skills/list', params: cwd ? { cwds: [cwd] } : {} }],
+    })
+    if (r[0]?.error) throw new Error(String(r[0].error.message ?? t('执行失败')))
     const seen = new Set<string>()
-    return (r[0]?.data ?? [])
+    return (r[0]?.result?.data ?? [])
       .flatMap((e: any) => e.skills ?? [])
       .filter((x: any) => x?.name && !seen.has(x.path) && seen.add(x.path))
       .map((x: any) => ({
@@ -178,7 +154,7 @@ async function rawSkills(cli: string, cwd: string): Promise<CliSkill[]> {
   ]
   const found = (await Promise.all(dirs.map(([d, scope]) => scanDir(d, scope)))).flat()
   // Claude Code 装的插件里也带 Skill
-  if (def.protocol === 'claude-stream') found.push(...(await claudePluginSkills()))
+  if (def.rpc?.pluginSkills) found.push(...(await claudePluginSkills()))
   return found.sort(
     (a, b) => a.scope.localeCompare(b.scope) || a.path.localeCompare(b.path) || a.name.localeCompare(b.name),
   )

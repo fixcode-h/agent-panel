@@ -631,6 +631,9 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         case 'files_changed':
           out.push({ type: 'files_changed' })
           break
+        case 'request_start':
+          out.push({ type: 'request_start' })
+          break
         case 'result': {
           const ok = g('ok') !== false && g('ok') !== undefined
           out.push({ type: 'result', ok, error: ok ? undefined : str(g('error')) || t('执行失败') })
@@ -642,7 +645,7 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
   }
 }
 
-/** 一行一个 JSON 事件的 CLI：内置解析器按名字找，配置文件写的事件映射用 specParser；Codex 走 codex-app.ts 的 app-server 协议 */
+/** 一行一个 JSON 事件的 CLI：内置解析器按名字找，配置文件写的事件映射用 specParser；Codex 走 rpc/codex.ts 的 app-server 协议 */
 export function parserFor(cliId: string, cwd: string): Parser {
   const p = getCli(cliId)?.parser
   if (p && typeof p === 'object') return specParser(p, cwd)

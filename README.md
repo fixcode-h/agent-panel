@@ -34,8 +34,10 @@
   失败或停止的任务可以一键「重试 / 继续执行」，从没完成的节点接着跑；任务可以重命名；
   页面不在前台时任务完成会弹出系统通知（设置里打开）。每个页面都有自己的地址，刷新、前进后退、复制链接都能回到原处
 - **设置**（左下角，参考 Claude 的设置弹窗）：单步超时、系统默认 CLI、AI 创建的默认 CLI 和补充规则，
-  以及每个 CLI 的三档模型（模型 + 思考强度）、默认模型（可以是某一档）、默认思考强度、权限、可执行文件路径、额外参数、环境变量；
+  以及每个 CLI 的三档模型（模型 + 思考强度）、默认模型（可以是某一档）、默认思考强度、上下文窗口、最大输出、权限、可执行文件路径、额外参数、环境变量；
   每个 CLI 可以一键安装、更新、卸载，模型列表从本机 CLI 读取（Codex、Command Code），跟着 CLI 的版本和账号走；
+  模型的上下文窗口、最大输出和思考强度按[模型目录](docs/model-catalog.md)识别，目录里没有的按 1M / 128K 估算，
+  也可以让 AI 联网补全，结果写进 `~/.agent-panel/config/models.json`；
   「版本更新」对比 GitHub Releases 上的包，有新版本时可以一键更新，也可以下载或切换到最近的五个包（数据保留）
 - 编辑自动保存，深色 / 浅色主题
 
@@ -43,11 +45,11 @@
 
 需要 Node.js 20+、git，以及至少安装一个 CLI：
 
-| CLI | 安装 | 设置里的默认命令 |
-| --- | --- | --- |
-| Claude Code | `npm install -g @anthropic-ai/claude-code` | `claude` |
-| Codex | `npm install -g @openai/codex` | `codex` |
-| Command Code | `npm install -g command-code` | `cmdc` |
+| CLI          | 安装                                       | 设置里的默认命令 |
+| ------------ | ------------------------------------------ | ---------------- |
+| Claude Code  | `npm install -g @anthropic-ai/claude-code` | `claude`         |
+| Codex        | `npm install -g @openai/codex`             | `codex`          |
+| Command Code | `npm install -g command-code`              | `cmdc`           |
 
 CLI 需要先在终端里登录一次（或在设置的「环境变量」里填 API Key）。
 
@@ -68,17 +70,19 @@ npm start          # http://127.0.0.1:8787
 
 ## 任务是怎么执行的
 
-- 每次调用 CLI 都用非交互 + 结构化输出模式，任务描述通过 stdin 传入：
-  - Claude Code：`claude -p --output-format stream-json --verbose --include-partial-messages …`
+- 每次调用 CLI 都用结构化输出；有常驻双向协议的走统一的 RPC 会话模块（`server/exec/rpc/`），任务通过协议传入：
+  - Claude Code：`claude -p --output-format stream-json --verbose --include-partial-messages --input-format stream-json …`（控制消息）
   - Codex：`codex app-server`（JSON-RPC，任务描述通过 `turn/start` 传入；`exec --json` 没有流式输出）
-  - Command Code：`cmdc -p --output-format json --skip-onboarding --trust …`
+  - Command Code：`cmdc --experimental --rpc …`（`turn/start`、`turn/steer`、`turn/interrupt`）
+  - Pi：`pi --mode rpc …`（`get_state`、`prompt`、`steer`、`abort`，以 `agent_settled` 结束）
+  - Gemini CLI 等没有常驻协议的：任务描述通过 stdin 传入，stdout 一行一个 JSON 事件
 - 工作流从主流程的「开始」出发，一个节点的上游都完成后启动它的 CLI 进程，没有依赖的节点同时运行；
   某个节点失败后不再启动新节点，正在跑的节点跑完后任务停下。
   每个节点的提示包含：原始需求、补充要求、工作流说明、本节点要做的事、开始流程的结果、上游节点的结果、同时进行的节点（避免改同一个文件）。
 - 挂载的流程和流程节点在执行时展开成子节点（最多嵌套 6 层），验收不通过时把意见交给节点，续接节点自己的会话修改，再重新验收。
 - 思考强度：Claude Code 用 `--effort`，Codex 用 `-c model_reasoning_effort=…`（并在 `turn/start` 里传），Command Code 用 `--effort`。
-  每个模型支持的强度不一样（Command Code 从安装包的模型目录读，Codex 从 `model/list` 读），设置里只列选中的模型支持的那些；
-  保存过的强度模型不认时不传给 CLI（CLI 会直接报错退出），这一轮用模型自己的默认。
+  每个模型支持的强度不一样（CLI 报告的优先，其次模型目录里的 `efforts`），设置里只列选中的模型支持的那些；
+  没有手动指定时用模型目录里的 `defaultEffort`；保存过的强度模型不认时不传给 CLI（CLI 会直接报错退出），这一轮用模型自己的默认。
 - 每个节点有自己的 CLI 会话。工作流全部完成后的追加要求交给主 Agent，续接它最后执行的节点的会话；
   失败或停止后再发消息，会从没完成的节点继续。对话任务用 `--resume` / app-server 的 `thread/resume` 续接。
 - 旧版把步骤写在工作流文档 `##` 标题里的工作流，服务启动时会自动迁移成流程图。
@@ -110,11 +114,11 @@ GitHub Actions：`.github/workflows/ci.yml` 在推送到 dev 和 PR 时跑类型
 
 全 TypeScript，前后端共享类型和校验：
 
-| 部分 | 选型 |
-| --- | --- |
+| 部分 | 选型                                                       |
+| ---- | ---------------------------------------------------------- |
 | 前端 | React 19 + Vite + Tailwind CSS v4 + Radix UI + lucide 图标 |
-| 后端 | Hono（Node）+ zod + cross-spawn |
-| 存储 | 本地 JSON 文件 |
+| 后端 | Hono（Node）+ zod + cross-spawn                            |
+| 存储 | 本地 JSON 文件                                             |
 
 ## 目录结构
 

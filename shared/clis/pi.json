@@ -129,6 +129,54 @@
       "args": ["--fork", "{resume}"]
     }
   ],
+  "protocol": "rpc",
+  "rpcArgs": [
+    {
+      "args": ["--mode", "rpc"]
+    },
+    {
+      "if": "model",
+      "args": ["--model", "{model}"]
+    },
+    {
+      "if": "effort",
+      "args": ["--thinking", "{effort}"]
+    },
+    {
+      "if": "permission=edit",
+      "args": ["--tools", "read,edit,write,grep,find,ls,ask_user"]
+    },
+    {
+      "if": "permission=readonly",
+      "args": ["--tools", "read,grep,find,ls,ask_user"]
+    },
+    {
+      "if": ["resume", "!fork"],
+      "args": ["--session", "{resume}"]
+    },
+    {
+      "if": ["resume", "fork"],
+      "args": ["--fork", "{resume}"]
+    }
+  ],
+  "rpc": {
+    "start": [
+      { "record": { "type": "get_state" }, "save": "state" },
+      { "record": { "type": "prompt", "message": "{input}" }, "save": "prompt" }
+    ],
+    "steer": { "record": { "type": "steer", "message": "{text}" } },
+    "interrupt": { "record": { "type": "abort" } },
+    "sessionId": "state.data.sessionId",
+    "deferSteer": true,
+    "remember": [{ "when": { "type": "message_end", "message.role": "assistant" }, "as": "assistant" }],
+    "done": [
+      {
+        "when": { "type": "agent_settled" },
+        "ok": ["assistant.message.stopReason != error", "$.aborted != true"],
+        "error": "assistant.message.errorMessage"
+      }
+    ]
+  },
   "systemPromptFlag": "--append-system-prompt",
   "output": {
     "format": "ndjson",
@@ -141,6 +189,16 @@
           {
             "type": "session",
             "id": "$.id"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "turn_start"
+        },
+        "emit": [
+          {
+            "type": "request_start"
           }
         ]
       },
@@ -246,26 +304,14 @@
             "failed": "$.isError == true"
           }
         ]
-      },
-      {
-        "when": {
-          "type": "agent_end"
-        },
-        "emit": [
-          {
-            "type": "result",
-            "ok": "$.messages.-1.stopReason != error",
-            "error": "$.messages.-1.errorMessage"
-          }
-        ]
       }
     ]
   },
   "features": {
+    "steer": true,
     "fork": "latest",
     "compact": "summary",
-    "autoCompact": "panel",
-    "contextWindow": 200000
+    "autoCompact": "panel"
   },
   "docs": ["AGENTS.md", "CLAUDE.md"],
   "docsNote": "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。",

@@ -77,8 +77,8 @@ const servers: McpEntry[] = [
   },
 ]
 
-const libClis = (): LibraryCli[] =>
-  CLIS.map((c) => ({
+const libClis = (active: string[]): LibraryCli[] =>
+  CLIS.filter((c) => active.includes(c.id)).map((c) => ({
     id: c.id,
     name: c.name,
     skillDir: `~/.${c.id}/skills`,
@@ -86,10 +86,18 @@ const libClis = (): LibraryCli[] =>
     commandFormat: c.commands.format,
   }))
 
-const mcpClis = () => CLIS.filter((c) => c.mcpStore).map((c) => ({ id: c.id, name: c.name, file: c.mcpStore!.file }))
-const overview = (): McpOverview => ({
-  clis: mcpClis(),
-  servers: [...servers].sort((a, b) => a.name.localeCompare(b.name)),
+const mcpClis = (active: string[]) =>
+  CLIS.filter((c) => c.mcpStore && active.includes(c.id)).map((c) => ({
+    id: c.id,
+    name: c.name,
+    file: c.mcpStore!.file,
+  }))
+const overview = (active: string[]): McpOverview => ({
+  clis: mcpClis(active),
+  // 停用的 CLI 不在「装在哪些 CLI」里显示
+  servers: servers
+    .map((s) => ({ ...s, clis: s.clis.filter((id) => active.includes(id)) }))
+    .sort((a, b) => a.name.localeCompare(b.name)),
 })
 
 const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
@@ -98,19 +106,25 @@ const BUNDLED = import.meta.glob('../../../skills/*/*/SKILL.md', {
   eager: true,
 }) as Record<string, string>
 const installedBundled = new Set<string>()
-function bundledList(): BundledSkill[] {
+function bundledList(active: string[]): BundledSkill[] {
   return Object.entries(BUNDLED)
     .map(([file, text]) => {
       const [category, name] = file.split('/skills/')[1].split('/')
       const status: BundledSkill['status'] = {}
-      for (const c of libClis())
+      for (const c of libClis(active))
         if (c.skillDir) status[c.id] = installedBundled.has(`${c.id}/${name}`) ? 'same' : 'missing'
       return { name, category, description: frontField(text, 'description'), files: 0, status }
     })
     .sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
 }
 
-export function demoLibrary(method: string, seg: string[], query: URLSearchParams, body: any): unknown {
+export function demoLibrary(
+  method: string,
+  seg: string[],
+  query: URLSearchParams,
+  body: any,
+  active: string[],
+): unknown {
   const [res, id] = seg
   if (res === 'mcp-tools') {
     if (id === 'test') {
@@ -125,12 +139,12 @@ export function demoLibrary(method: string, seg: string[], query: URLSearchParam
         ],
       }
     }
-    if (!id) return overview()
+    if (!id) return overview(active)
     const name = decodeURIComponent(id)
     const at = servers.findIndex((s) => s.name === name)
     if (at >= 0) servers.splice(at, 1)
     if (method === 'PUT') servers.push({ ...(body.server as McpServer), name, clis: body.clis ?? [] })
-    return overview()
+    return overview(active)
   }
   // 自带 Skill：内容取仓库 skills/ 下的 SKILL.md，装没装记在内存里
   if (id === 'bundled') {
@@ -148,7 +162,7 @@ export function demoLibrary(method: string, seg: string[], query: URLSearchParam
         }
       return { done, skipped }
     }
-    return { items: bundledList() }
+    return { items: bundledList(active) }
   }
   // library
   const kind = (query.get('kind') ?? body.kind) as Kind
@@ -156,7 +170,12 @@ export function demoLibrary(method: string, seg: string[], query: URLSearchParam
   const name = query.get('name') ?? body.name
   const find = (c: string, n: string) => items.findIndex((x) => x.kind === kind && x.cli === c && x.name === n)
   if (!id)
-    return { clis: libClis(), items: items.filter((x) => x.kind === kind).map(({ content: _c, files: _f, ...i }) => i) }
+    return {
+      clis: libClis(active),
+      items: items
+        .filter((x) => x.kind === kind && active.includes(x.cli))
+        .map(({ content: _c, files: _f, ...i }) => i),
+    }
   if (id === 'copy') {
     const src = items[find(cli, name)]
     const done: string[] = []

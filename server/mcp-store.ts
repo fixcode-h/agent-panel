@@ -9,6 +9,8 @@ import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
 import { childEnv, runProcess } from './exec/process.ts'
 import { writeJsonAtomic } from './store.ts'
+import { getSettings } from './settings.ts'
+import { cliSettings } from '../shared/settings.ts'
 
 /**
  * 用户自己装的 MCP 工具：直接读写各 CLI 自己的配置文件（定义里的 mcpStore），装在哪个 CLI 里就在哪个文件里。
@@ -304,7 +306,9 @@ async function dropServer(d: Def, name: string) {
 }
 
 export async function mcpOverview(): Promise<McpOverview> {
-  const defs = managed()
+  // 停用的 CLI 不在列表和安装目标里出现
+  const settings = await getSettings()
+  const defs = managed().filter((d) => cliSettings(settings, d.id).enabled)
   const per = await Promise.all(defs.map((d) => readServers(d).catch(() => ({}) as Record<string, McpServer>)))
   const by = new Map<string, McpEntry>()
   defs.forEach((d, i) => {

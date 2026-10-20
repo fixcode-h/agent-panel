@@ -5,13 +5,13 @@
  * 新增一种 CLI：写一份 JSON 配置（格式见 shared/cli-spec.ts 和 docs/cli-config.md）。
  * - 内置：放在 shared/clis/ 下，在下面的 BUILTIN_SPECS 里引入，再在 shared/locales/en/ 里补上文案的英文（也可以写在配置的 i18n 里）
  * - 用户自己加：放在数据目录的 config/clis/ 下，面板启动时读取，不用改代码
- * Claude Code 和 Codex 有自己的通信协议（stdin 控制消息、app-server），直接写在这个文件里。
+ * Claude Code 和 Codex 的协议差别较大，分别用 server/exec/rpc/ 下的 claude、codex 适配器；其余 CLI 的常驻协议写在配置里。
  *
- * CLI 都用「非交互 + 结构化输出」模式运行，任务描述通过 stdin 传入，
+ * CLI 都用「非交互 + 结构化输出」模式运行；常驻协议的任务描述走协议，其余 CLI 从 stdin 传入，
  * 避免长文本、换行和引号在不同系统的命令行里转义出错。
  */
 import { t } from './i18n.ts'
-import { CliSpec, specToDefinition, type CliSpecInput } from './cli-spec.ts'
+import { CliSpec, specToDefinition, type CliSpecInput, type RpcSpecInput } from './cli-spec.ts'
 import commandcode from './clis/commandcode.json'
 import gemini from './clis/gemini.json'
 import pi from './clis/pi.json'
@@ -103,18 +103,19 @@ export interface CliDefinition {
   /** Homebrew 的包（brew install 的参数） */
   brew?: string[]
   /**
-   * 怎么调用：claude-stream 是 Claude Code 的 stdin / stdout 控制协议（插话、审批、中断），
-   * codex-app 是 codex app-server 的 JSON-RPC，
-   * commandcode-rpc 是 Command Code 的常驻 JSON-RPC（turn/start、turn/steer、turn/interrupt），
-   * stdin 是任务描述从 stdin 传入、stdout 一行一个 JSON 事件
+   * 怎么调用：stdin 是任务描述从 stdin 传入、stdout 一行一个 JSON 事件、进程一轮后退出；
+   * rpc 是常驻的双向协议（Codex 的 app-server、Command Code 的 --rpc、Claude Code 的 stream-json、Pi 的 --mode rpc），
+   * 具体怎么写见 rpc
    */
-  protocol: 'claude-stream' | 'codex-app' | 'commandcode-rpc' | 'stdin'
+  protocol: 'stdin' | 'rpc'
+  /** 常驻协议怎么握手、开始一轮、插话、判断结束；protocol 为 rpc 时必填 */
+  rpc?: RpcSpecInput
   /**
    * 会话和模型绑定：换了模型就不能再续接原来的会话。
    * Codex 的线程里存着上一个模型的工具调用（例如 gpt 系的 exec 自定义工具），换成别的模型后接口不认这些历史
    */
   modelBoundSession?: boolean
-  /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、claude-stream 时用） */
+  /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */
   steer: boolean
@@ -134,8 +135,6 @@ export interface CliDefinition {
   autoCompactEnv?: string
   /** 会话里认识「/命令」「/Skill」，原样发过去；否则面板展开成普通要求 */
   slash: boolean
-  /** 上下文窗口的默认估计 */
-  contextWindow: number
   /** 手动设的上下文窗口、最大输出用哪个环境变量告诉 CLI；没有的项 CLI 不接受，只用于面板估算 */
   limitEnv?: { context?: string; maxOutput?: string }
   /** buildArgs 里会把这几项写成参数（BuildOptions 的 contextWindow、maxOutput） */
@@ -251,7 +250,8 @@ export const CLIS: CliDefinition[] = [
     npmPackage: '@anthropic-ai/claude-code',
     brew: ['--cask', 'claude-code'],
     docsUrl: 'https://code.claude.com/docs',
-    protocol: 'claude-stream',
+    protocol: 'rpc',
+    rpc: { kind: 'claude', nativeAsk: true, pluginSkills: true },
     parser: 'claude',
     steer: true,
     notes: false,
@@ -262,7 +262,6 @@ export const CLIS: CliDefinition[] = [
     autoCompactEnv: 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE',
     limitEnv: { context: 'CLAUDE_CODE_MAX_CONTEXT_TOKENS', maxOutput: 'CLAUDE_CODE_MAX_OUTPUT_TOKENS' },
     slash: true,
-    contextWindow: 200_000,
     limits: 'push',
     docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
     globalDoc: '${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md',
@@ -417,7 +416,19 @@ export const CLIS: CliDefinition[] = [
     npmPackage: '@openai/codex',
     brew: ['codex'],
     docsUrl: 'https://github.com/openai/codex',
-    protocol: 'codex-app',
+    protocol: 'rpc',
+    rpc: {
+      kind: 'codex',
+      nativeAsk: true,
+      limitsQuery: true,
+      skillsQuery: true,
+      skillsDir: '${CODEX_HOME:-~/.codex}/skills',
+      queryArgs: ['app-server'],
+      handshake: [
+        { method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } },
+        { method: 'initialized', notify: true },
+      ],
+    },
     // 线程里会留下模型自己的工具调用：换了模型之后不能接着用
     modelBoundSession: true,
     parser: '',
@@ -429,7 +440,6 @@ export const CLIS: CliDefinition[] = [
     autoCompact: 'config',
     limitArgs: ['context'],
     slash: false,
-    contextWindow: 272_000,
     limits: 'query',
     docs: ['AGENTS.md', 'AGENTS.override.md'],
     globalDoc: '${CODEX_HOME:-~/.codex}/AGENTS.md',

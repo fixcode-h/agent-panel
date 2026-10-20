@@ -458,6 +458,14 @@ export interface DirInfo {
   gitBranch: string | null
 }
 
+/** 目录所在 git 仓库的本地分支 */
+export interface DirBranches {
+  /** 当前所在的分支；分离 HEAD 时为空 */
+  current: string | null
+  /** 最近提交的排在前面 */
+  branches: string[]
+}
+
 export interface DirListing {
   path: string
   parent: string | null
@@ -1037,6 +1045,16 @@ export const Settings = z.object({
       concurrency: 3,
       local: { mirror: false, port: 8188, url: '' },
     }),
+  /** 模型目录：三档模型的上下文窗口和最大输出按模型自动识别 */
+  modelCatalog: z
+    .object({
+      /**
+       * 模型目录里没有的模型，允许在设置里点「AI 补全」联网查官方数字，
+       * 结果写进数据目录的 config/models.json
+       */
+      aiLookup: z.boolean().default(true),
+    })
+    .default({ aiLookup: true }),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({

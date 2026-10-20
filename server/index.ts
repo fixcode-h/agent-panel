@@ -49,6 +49,7 @@ import { libraryApi } from './library.ts'
 import { mcpApi } from './mcp-store.ts'
 import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
+import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
@@ -56,6 +57,7 @@ import { getSettings, saveSettings } from './settings.ts'
 import { Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
+import { gitBranches, gitCheckout } from './exec/git.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
@@ -206,6 +208,7 @@ app.route('/mcp-tools', mcpApi())
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/clis', modelsApi())
+app.route('/model-catalog', modelCatalogApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
 app.get('/clis/:id/limits', async (c) => {
   try {
@@ -493,6 +496,27 @@ app.get('/projects/:id/files', async (c) => {
 
 // ---- 本地目录 ----
 app.get('/fs/inspect', async (c) => c.json(await inspectDir(c.req.query('path') ?? '')))
+
+// 本地分支：环境里点分支名展开的下拉用
+app.get('/fs/branches', async (c) => {
+  try {
+    return c.json(await gitBranches(resolvePath(c.req.query('path') ?? '')))
+  } catch (e) {
+    return bad(c, (e as Error).message)
+  }
+})
+
+// 切换到另一个本地分支；有未提交的改动挡住时把 git 的说明带回去
+app.post('/fs/checkout', async (c) => {
+  const { path: p, branch } = (await c.req.json().catch(() => ({}))) as { path?: string; branch?: string }
+  const dir = resolvePath(String(p ?? ''))
+  try {
+    await gitCheckout(dir, String(branch ?? ''))
+    return c.json(await inspectDir(dir))
+  } catch (e) {
+    return bad(c, t('切换分支失败：{error}', { error: (e as Error).message }))
+  }
+})
 
 // 在系统的文件管理器里打开项目目录；只接受已有项目的目录，不能用来打开任意路径
 app.post('/fs/reveal', async (c) => {

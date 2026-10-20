@@ -8,9 +8,10 @@
 - **内置到面板**：放在仓库的 `shared/clis/` 下，在 `shared/clis.ts` 的 `BUILTIN_SPECS` 里引入，
   界面文案的英文写进配置的 `i18n.en`（或 `shared/locales/en/`），再给 `scripts/fake-cli` 和 `server/exec/fixtures/` 补上样本和测试。
 
-前提：CLI 要有**非交互模式**（任务描述从 stdin 读，跑完就退出）和**结构化输出**（stdout 一行一个 JSON 事件）。
-Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Command Code、Gemini CLI、Pi 是用这个格式写的，
-可以直接参考 [`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
+前提：CLI 要有**结构化输出**。一次性执行的 CLI 用非交互模式（任务描述从 stdin 读，跑完就退出）；有常驻双向协议的 CLI 把 `protocol` 写成 `rpc`，
+按下面的 `rpc` 配置握手、开始一轮、插话和判断结束。Claude Code、Codex 的协议差别较大，走内置的 `codex` / `claude` 适配器（同样经过统一的 RPC 会话引擎），
+其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Gemini CLI、Pi 的配置可以直接参考
+[`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
 
 ## 字段
 
@@ -22,7 +23,7 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 | `versionArgs`                     | 检测是否安装、显示版本用的参数，默认 `["--version"]`                                                      |
 | `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                        |
 | `color`                           | 界面上的标识色                                                                                            |
-| `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填                                               |
+| `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别 |
 | `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                              |
 | `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                              |
 | `permissions`                     | 权限选项 `[{ "id", "label", "hint" }]`，`id` 会作为 `{permission}` 填进参数                               |
@@ -66,6 +67,60 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 - 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`systemPrompt`、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
 
+## 常驻 RPC `protocol` / `rpc`
+
+一次性执行的 CLI 不写 `protocol`（默认 `stdin`）。有常驻双向协议的写 `"protocol": "rpc"`，参数用 `rpcArgs`（不带 `-p`、`--output-format` 这类一次性参数），
+协议本身写在 `rpc` 里。所有 RPC 走同一个会话引擎：stdin/stdout 上的 JSON 行、请求 id 配对、超时、插话、中断和收尾都一样。
+
+```json
+"protocol": "rpc",
+"rpcArgs": [{ "args": ["--mode", "rpc"] }],
+"rpc": {
+  "start": [
+    { "record": { "type": "get_state" }, "save": "state" },
+    { "record": { "type": "prompt", "message": "{input}" }, "save": "prompt" }
+  ],
+  "steer": { "record": { "type": "steer", "message": "{text}" } },
+  "interrupt": { "record": { "type": "abort" } },
+  "sessionId": "state.data.sessionId",
+  "remember": [{ "when": { "type": "message_end", "message.role": "assistant" }, "as": "assistant" }],
+  "done": [
+    {
+      "when": { "type": "agent_settled" },
+      "ok": ["assistant.message.stopReason != error", "$.aborted != true"],
+      "error": "assistant.message.errorMessage"
+    }
+  ]
+}
+```
+
+| 字段                                           | 说明                                                                                                     |
+| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                |
+| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                          |
+| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                             |
+| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                     |
+| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                         |
+| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`                             |
+| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                              |
+| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                       |
+| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录 |
+| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                       |
+| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                   |
+| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走，页面上先显示「待取走」                                              |
+| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                          |
+| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                             |
+| `skillsDir`                                    | 列表走协议时，内置 Skill 装到哪个目录                                                                    |
+| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                   |
+
+一条消息的写法：
+
+- JSON-RPC：`{ "method": "turn/start", "params": { "input": "{input}" } }`
+- 记录流：`{ "record": { "type": "prompt", "message": "{input}" } }`
+- `notify: true` 只发不等回复；`save` 把回复存起来给后面的字段和条件用；`if` 可以按 `resume`、`fork`、`model` 等条件跳过
+
+占位符：`{input}`、`{text}`（插话内容）、`{model}`、`{effort}`、`{resume}`、`{maxTurns}`、`{cwd}`。整条就是占位、运行时又没有值时，这个字段不传。
+
 ## 输出解析 `output`
 
 内置解析器写名字（`"commandcode"`）；其他的写事件映射：按顺序找第一条 `when` 全部相等的规则，按 `emit` 产生面板的事件。
@@ -97,6 +152,7 @@ Claude Code、Codex 有自己的通信协议，写在 `shared/clis.ts` 里；Com
 | `tool_result`         | `id`、`output`、`error`、`failed`                                                                                                                             |
 | `usage`               | `context`、`window`、`model`、`addInput`、`addOutput`、`addCacheRead`、`addCacheWrite`、`addCost`                                                             |
 | `error`               | `message`                                                                                                                                                     |
+| `request_start`       | 开始一次模型请求：插话排进队列时，用它把「待取走」的补充移到正文（Command Code 用 `model_request_start`，Pi 用 `turn_start`）                                 |
 | `files_changed`       | 改了文件，面板去 git 里重新读改动                                                                                                                             |
 | `result`              | `ok`、`error`：这一轮结束                                                                                                                                     |
 
@@ -138,9 +194,8 @@ CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.jso
 | `fork`          | 分叉、撤回对话：`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话                                                                                                                                              |
 | `autoCompact`   | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                   |
 | `slash`         | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                |
-| `steer`         | 执行中能插话（需要协议支持，配置文件写的 CLI 用不了，改成下面的 `notes`）                                                                                                                                                                          |
+| `steer`         | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                  |
 | `notes`         | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求先排进队列，模型取走时从队列里去掉，没取走的这一轮结束后照常处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句 |
-| `contextWindow` | 上下文窗口的默认估计                                                                                                                                                                                                                               |
 | `limitEnv`      | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                |
 
 审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`；Pi 没有审批，用 `--tools` 限制能用的工具）。

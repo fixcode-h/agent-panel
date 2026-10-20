@@ -1,33 +1,24 @@
 import path from 'node:path'
-import type { BuildOptions } from '../../shared/clis.ts'
-import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type CliEvent } from './parsers.ts'
-import { t } from '../../shared/i18n.ts'
+import type { BuildOptions } from '../../../shared/clis.ts'
+import { t } from '../../../shared/i18n.ts'
+import { clipDetail, codexLimits, codexUsage, oneLine, toolText, type CliEvent } from '../parsers.ts'
+import { createRpcSession, type RpcSession } from './session.ts'
+import type { RpcAdapter, RpcContext } from './types.ts'
+
+const START_TIMEOUT_MS = 60_000
 
 /**
- * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行：`codex exec --json` 只在每一项完成时输出整段文字，
- * 看不到流式输出和实时用量；app-server 会逐字推送回复、推理摘要、token 用量和计划。
- *
- * 流程：initialize → thread/start（续接时 thread/resume，分叉时 thread/fork）→ turn/start（压缩时 thread/compact/start，
- * 审查时 review/start）→ 收通知直到 turn/completed，然后关掉 stdin 让它退出。执行中可以插话（turn/steer）和中断（turn/interrupt）。
+ * Codex 用 `codex app-server`（stdin / stdout 上的 JSON-RPC）执行。
+ * 流程：initialize → thread/start（续接时 thread/resume，分叉时 thread/fork）→ turn/start
+ * （压缩时 thread/compact/start，审查时 review/start）→ 收通知直到 turn/completed。
+ * 执行中可以插话（turn/steer）和中断（turn/interrupt）。
  */
-export function codexAppSession(
-  o: BuildOptions & { cwd: string; input: string; platform?: string; images?: string[] },
-) {
-  let io: { write: (s: string) => void; end: () => void } | undefined
+export function codexAdapter(
+  o: BuildOptions & { cwd: string; input: string; images?: string[]; platform?: string },
+): RpcAdapter {
   let thread = ''
   let turnId = ''
-  let finished = false
-  // 插话、中断这类中途发的请求：id → 收到回答时的处理
-  let nextId = 100
-  const pending = new Map<number, (m: any) => void>()
-  const call = (method: string, params: object) =>
-    new Promise<any>((resolve) => {
-      const id = nextId++
-      pending.set(id, resolve)
-      send({ id, method, params })
-    })
-  // 命令开始时就显示出来，输出边跑边追加；已经显示过的命令完成时只更新结果
-  const startedCmds = new Set<string>()
+  let startedCmds = new Set<string>()
   const review = o.op?.kind === 'review'
   // 回复和推理摘要是否已经流式输出过：输出过的在 item/completed 时不再重复整段
   const streamed = new Set<string>()
@@ -35,7 +26,6 @@ export function codexAppSession(
   let thinkingSeen = false
   // 用量按累计值做差，重复推送不会算两遍
   let prevTotal: Record<string, number> | undefined
-  const send = (m: object) => io?.write(JSON.stringify(m) + '\n')
   const sandbox = o.permission === 'danger-full-access' ? 'danger-full-access' : o.permission || 'workspace-write'
   const overrides = {
     cwd: o.cwd,
@@ -46,24 +36,59 @@ export function codexAppSession(
     developerInstructions: o.systemPrompt || undefined,
   }
 
-  const finish = (ok: boolean, error?: string): CliEvent[] => {
-    if (finished) return []
-    finished = true
-    // 关掉 stdin，app-server 读到 EOF 就会退出
-    setTimeout(() => io?.end(), 0)
-    return [{ type: 'result', ok, error }]
+  const startThread = async (ctx: RpcContext) => {
+    const [method, params] =
+      o.resume && o.fork
+        ? ['thread/fork', { threadId: o.resume, lastTurnId: o.fork.turnId || undefined, ...overrides }]
+        : o.resume
+          ? ['thread/resume', { threadId: o.resume, ...overrides }]
+          : ['thread/start', overrides]
+    const r = await ctx.request({ method, params }, { timeoutMs: START_TIMEOUT_MS })
+    if (r?.error) {
+      const msg = String(r.error.message ?? t('启动会话失败'))
+      // 续接失败多半是会话被清理了；带上 thread not found 让上层丢掉旧会话重来
+      ctx.emit({
+        type: 'error',
+        message: o.resume ? t('无法续接之前的会话（thread not found）：{error}', { error: msg }) : msg,
+      })
+      ctx.finish(false)
+      return
+    }
+    thread = r?.result?.thread?.id ?? o.resume ?? ''
+    if (thread) ctx.emit({ type: 'session', id: thread })
+    if (o.op?.kind === 'compact') {
+      const c = await ctx.request({ method: 'thread/compact/start', params: { threadId: thread } })
+      if (c?.error) ctx.finish(false, String(c.error.message))
+    } else if (review) {
+      const rv = await ctx.request({
+        method: 'review/start',
+        params: { threadId: thread, target: reviewTarget(), delivery: 'inline' },
+      })
+      if (rv?.error) ctx.finish(false, String(rv.error.message))
+    } else {
+      const turn = await ctx.request({
+        method: 'turn/start',
+        params: {
+          threadId: thread,
+          input: [
+            { type: 'text', text: o.input, text_elements: [] },
+            // 附上的图片（参考图、截图）直接给模型看
+            ...(o.images ?? []).map((p) => ({ type: 'localImage', path: p })),
+          ],
+          effort: o.effort || undefined,
+        },
+      })
+      if (turn?.error) {
+        ctx.finish(false, String(turn.error.message))
+        return
+      }
+      if (turn?.result?.turn?.id) {
+        turnId = turn.result.turn.id
+        ctx.emit({ type: 'turn', id: turnId })
+      }
+    }
   }
 
-  const startThread = () => {
-    if (o.resume && o.fork)
-      send({
-        id: 2,
-        method: 'thread/fork',
-        params: { threadId: o.resume, lastTurnId: o.fork.turnId || undefined, ...overrides },
-      })
-    else if (o.resume) send({ id: 2, method: 'thread/resume', params: { threadId: o.resume, ...overrides } })
-    else send({ id: 2, method: 'thread/start', params: overrides })
-  }
   const reviewTarget = () => {
     const tg = o.op?.kind === 'review' ? o.op.target : { type: 'uncommitted' as const }
     if (tg.type === 'base') return { type: 'baseBranch', branch: tg.branch }
@@ -72,118 +97,44 @@ export function codexAppSession(
   }
   // Windows 上沙箱要先初始化一次（Codex 自己的界面会弹提示），没初始化时每条命令都报 helper_unknown_error
   const needsWinSandbox = (o.platform ?? process.platform) === 'win32' && sandbox !== 'danger-full-access'
-  const sandboxFailed = (why: string): CliEvent[] => [
-    {
+  const sandboxFailed = (ctx: RpcContext, why: string) => {
+    ctx.emit({
       type: 'error',
       message: t(
         'Codex 的 Windows 沙箱初始化失败（{reason}），命令和改文件都无法执行。可以在终端里运行一次 codex 按提示完成沙箱设置，或在设置里把 Codex 的权限改成「完全访问」。',
         { reason: why },
       ),
-    },
-    ...finish(false),
-  ]
-
-  function onResponse(m: any): CliEvent[] {
-    const waiter = pending.get(m.id)
-    if (waiter) {
-      pending.delete(m.id)
-      waiter(m)
-      return []
-    }
-    if (m.id === 1) {
-      send({ method: 'initialized' })
-      if (needsWinSandbox) send({ id: 10, method: 'windowsSandbox/readiness', params: {} })
-      else startThread()
-      return []
-    }
-    if (m.id === 10) {
-      // 旧版本没有这个接口，直接开始
-      if (m.error || m.result?.status === 'ready') startThread()
-      // 用不需要管理员权限的方式初始化，不会弹出系统授权框；完成后会收到 windowsSandbox/setupCompleted
-      else send({ id: 11, method: 'windowsSandbox/setupStart', params: { mode: 'unelevated', cwd: o.cwd } })
-      return []
-    }
-    if (m.id === 11) {
-      if (m.error) return sandboxFailed(String(m.error.message ?? t('未知错误')))
-      if (m.result?.started === false) startThread()
-      return []
-    }
-    if (m.id === 2) {
-      if (m.error) {
-        const msg = String(m.error.message ?? t('启动会话失败'))
-        // 续接失败多半是会话被清理了；带上 thread not found 让上层丢掉旧会话重来
-        return [
-          {
-            type: 'error',
-            message: o.resume ? t('无法续接之前的会话（thread not found）：{error}', { error: msg }) : msg,
-          },
-          ...finish(false),
-        ]
-      }
-      thread = m.result?.thread?.id ?? o.resume ?? ''
-      if (o.op?.kind === 'compact') send({ id: 3, method: 'thread/compact/start', params: { threadId: thread } })
-      else if (review)
-        send({
-          id: 3,
-          method: 'review/start',
-          params: { threadId: thread, target: reviewTarget(), delivery: 'inline' },
-        })
-      else
-        send({
-          id: 3,
-          method: 'turn/start',
-          params: {
-            threadId: thread,
-            input: [
-              { type: 'text', text: o.input, text_elements: [] },
-              // 附上的图片（参考图、截图）直接给模型看
-              ...(o.images ?? []).map((p) => ({ type: 'localImage', path: p })),
-            ],
-            effort: o.effort || undefined,
-          },
-        })
-      return thread ? [{ type: 'session', id: thread }] : []
-    }
-    if (m.id === 3 && m.error) return [{ type: 'error', message: String(m.error.message) }, ...finish(false)]
-    if (m.id === 3 && m.result?.turn?.id) {
-      turnId = m.result.turn.id
-      return [{ type: 'turn', id: turnId }]
-    }
-    return []
+    })
+    ctx.finish(false)
   }
 
-  /** app-server 发来的请求：命令和改文件的审批交给用户确认，其余回不支持 */
-  function onRequest(m: any): CliEvent[] {
+  const onRequest = (ctx: RpcContext, m: any) => {
     const p = m.params ?? {}
-    const answer = (result: unknown) => send({ id: m.id, result })
+    const answer = (result: unknown) => ctx.send({ id: m.id, result })
     if (m.method === 'item/commandExecution/requestApproval' || m.method === 'execCommandApproval') {
       const legacy = m.method === 'execCommandApproval'
       const cmd = unwrapShell(p.command ?? '')
-      return [
-        {
-          type: 'ask',
-          kind: 'command',
-          title: cmd ? t('运行命令：{cmd}', { cmd: oneLine(cmd) }) : t('运行一条需要越过沙箱的命令'),
-          detail: [p.reason, cmd && clipDetail(cmd), p.cwd && t('目录：{dir}', { dir: p.cwd })]
-            .filter(Boolean)
-            .join('\n\n'),
-          reply: (r) =>
-            answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
-        },
-      ]
+      ctx.emit({
+        type: 'ask',
+        kind: 'command',
+        title: cmd ? t('运行命令：{cmd}', { cmd: oneLine(cmd) }) : t('运行一条需要越过沙箱的命令'),
+        detail: [p.reason, cmd && clipDetail(cmd), p.cwd && t('目录：{dir}', { dir: p.cwd })]
+          .filter(Boolean)
+          .join('\n\n'),
+        reply: (r) => answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+      })
+      return
     }
     if (m.method === 'item/fileChange/requestApproval' || m.method === 'applyPatchApproval') {
       const legacy = m.method === 'applyPatchApproval'
-      return [
-        {
-          type: 'ask',
-          kind: 'file',
-          title: p.grantRoot ? t('允许写入目录：{dir}', { dir: p.grantRoot }) : t('修改沙箱以外的文件'),
-          detail: String(p.reason ?? ''),
-          reply: (r) =>
-            answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
-        },
-      ]
+      ctx.emit({
+        type: 'ask',
+        kind: 'file',
+        title: p.grantRoot ? t('允许写入目录：{dir}', { dir: p.grantRoot }) : t('修改沙箱以外的文件'),
+        detail: String(p.reason ?? ''),
+        reply: (r) => answer({ decision: legacy ? (r.allow ? 'approved' : 'denied') : r.allow ? 'accept' : 'decline' }),
+      })
+      return
     }
     // 沙箱里要额外的权限（联网、写沙箱外的目录）：同意就按请求的范围给这一轮，拒绝就一项都不给
     if (m.method === 'item/permissions/requestApproval') {
@@ -193,21 +144,19 @@ export function codexAppSession(
         want.network?.enabled && t('联网'),
         fsPaths.length && t('访问 {paths}', { paths: fsPaths.join(t('、')) }),
       ].filter(Boolean)
-      return [
-        {
-          type: 'ask',
-          kind: 'command',
-          title: t('需要额外权限：{what}', { what: what.join(t('，')) || t('越过沙箱') }),
-          detail: String(p.reason ?? ''),
-          reply: (r) => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} }),
-        },
-      ]
+      ctx.emit({
+        type: 'ask',
+        kind: 'command',
+        title: t('需要额外权限：{what}', { what: what.join(t('，')) || t('越过沙箱') }),
+        detail: String(p.reason ?? ''),
+        reply: (r) => answer(r.allow ? { permissions: want, scope: 'turn' } : { permissions: {} }),
+      })
+      return
     }
-    send({ id: m.id, error: { code: -32601, message: `面板不支持 ${m.method}` } })
-    return []
+    ctx.send({ id: m.id, error: { code: -32601, message: `面板不支持 ${m.method}` } })
   }
 
-  function onItem(item: any): CliEvent[] {
+  const onItem = (item: any): CliEvent[] => {
     switch (item?.type) {
       case 'agentMessage':
         // 审查时审查员的原始输出不显示，结果在 exitedReviewMode 里
@@ -337,7 +286,7 @@ export function codexAppSession(
   }
 
   // 同一轮里第二段回复 / 推理和前一段之间空一行
-  function sep(kind: 'text' | 'thinking') {
+  const sep = (kind: 'text' | 'thinking') => {
     if (kind === 'text') {
       const s = textSeen ? '\n\n' : ''
       textSeen = true
@@ -348,123 +297,161 @@ export function codexAppSession(
     return s
   }
 
-  function onNotification(m: any): CliEvent[] {
+  const onNotification = (ctx: RpcContext, m: any) => {
     const p = m.params ?? {}
     switch (m.method) {
       case 'windowsSandbox/setupCompleted':
-        if (thread || finished) return []
-        if (m.params?.success === false) return sandboxFailed(String(m.params?.error ?? t('未知错误')))
-        startThread()
-        return []
+        if (thread || ctx.finished) return
+        if (p.success === false) return sandboxFailed(ctx, String(p.error ?? t('未知错误')))
+        void startThread(ctx)
+        return
       case 'item/started':
         // 新的一段回复开始，之前的段落要和它分开
-        if (p.item?.type === 'agentMessage' && textSeen && !review) return [{ type: 'text_delta', text: '\n\n' }]
+        if (p.item?.type === 'agentMessage' && textSeen && !review) ctx.emit({ type: 'text_delta', text: '\n\n' })
         if (p.item?.type === 'commandExecution' && p.item.id) {
           startedCmds.add(p.item.id)
           const cmd = unwrapShell(p.item.command)
-          return [
-            {
-              type: 'tool',
-              id: p.item.id,
-              tool: { kind: 'run', label: oneLine(cmd), detail: '', input: clipDetail(cmd), running: true },
-            },
-          ]
+          ctx.emit({
+            type: 'tool',
+            id: p.item.id,
+            tool: { kind: 'run', label: oneLine(cmd), detail: '', input: clipDetail(cmd), running: true },
+          })
         }
-        return []
+        return
       case 'item/commandExecution/outputDelta':
-        return p.itemId && p.delta ? [{ type: 'tool_delta', id: p.itemId, text: String(p.delta) }] : []
+        if (p.itemId && p.delta) ctx.emit({ type: 'tool_delta', id: p.itemId, text: String(p.delta) })
+        return
       case 'turn/diff/updated':
-        return [{ type: 'files_changed' }]
+        ctx.emit({ type: 'files_changed' })
+        return
       case 'account/rateLimits/updated': {
         const l = codexLimits(p.rateLimits)
-        return l ? [{ type: 'limits', limits: l }] : []
+        if (l) ctx.emit({ type: 'limits', limits: l })
+        return
       }
       case 'thread/compacted':
-        return [{ type: 'compacted' }]
+        ctx.emit({ type: 'compacted' })
+        return
       case 'turn/started':
-        if (!p.turn?.id || p.turn.id === turnId) return []
+        if (!p.turn?.id || p.turn.id === turnId) return
         turnId = p.turn.id
-        return [{ type: 'turn', id: turnId }]
-      case 'item/agentMessage/delta': {
-        if (!p.delta || review) return []
+        ctx.emit({ type: 'turn', id: turnId })
+        return
+      case 'item/agentMessage/delta':
+        if (!p.delta || review) return
         streamed.add(p.itemId)
         textSeen = true
-        return [{ type: 'text_delta', text: p.delta }]
-      }
+        ctx.emit({ type: 'text_delta', text: p.delta })
+        return
       case 'item/reasoning/summaryTextDelta':
       case 'item/reasoning/textDelta': {
-        if (!p.delta) return []
+        if (!p.delta) return
         const first = !streamed.has(p.itemId)
         streamed.add(p.itemId)
-        return [{ type: 'thinking', text: (first ? sep('thinking') : '') + p.delta, delta: true }]
+        ctx.emit({ type: 'thinking', text: (first ? sep('thinking') : '') + p.delta, delta: true })
+        return
       }
       case 'item/reasoning/summaryPartAdded':
-        return streamed.has(p.itemId) ? [{ type: 'thinking', text: '\n\n', delta: true }] : []
+        if (streamed.has(p.itemId)) ctx.emit({ type: 'thinking', text: '\n\n', delta: true })
+        return
       case 'item/completed':
-        return onItem(p.item)
+        for (const ev of onItem(p.item)) ctx.emit(ev)
+        return
       case 'thread/tokenUsage/updated': {
         const u = p.tokenUsage
-        if (!u?.total) return []
+        if (!u?.total) return
         const base = prevTotal ?? minus(u.total, u.last ?? {})
         prevTotal = u.total
-        return [codexUsage(minus(u.total, base), u.last ?? u.total, u.modelContextWindow)]
+        ctx.emit(codexUsage(minus(u.total, base), u.last ?? u.total, u.modelContextWindow))
+        return
       }
       case 'turn/plan/updated':
-        return [
-          {
-            type: 'todos',
-            todos: (p.plan ?? []).map((s: any) => ({
-              text: String(s.step ?? ''),
-              status: s.status === 'completed' ? 'done' : s.status === 'inProgress' ? 'running' : 'pending',
-            })),
-          },
-        ]
+        ctx.emit({
+          type: 'todos',
+          todos: (p.plan ?? []).map((s: any) => ({
+            text: String(s.step ?? ''),
+            status: s.status === 'completed' ? 'done' : s.status === 'inProgress' ? 'running' : 'pending',
+          })),
+        })
+        return
       case 'model/rerouted':
-        return p.toModel ? [{ type: 'usage', model: String(p.toModel) }] : []
+        if (p.toModel) ctx.emit({ type: 'usage', model: String(p.toModel) })
+        return
       case 'error':
         // 会自动重试的错误不算失败
-        return p.willRetry ? [] : [{ type: 'error', message: String(p.error?.message ?? t('执行出错')) }]
+        if (!p.willRetry) ctx.emit({ type: 'error', message: String(p.error?.message ?? t('执行出错')) })
+        return
       case 'turn/completed': {
         const turn = p.turn ?? {}
-        if (turn.status === 'completed') return finish(true)
-        return finish(false, turn.error?.message ?? (turn.status === 'interrupted' ? t('已中断') : t('执行失败')))
+        if (turn.status === 'completed') return ctx.finish(true)
+        ctx.finish(false, turn.error?.message ?? (turn.status === 'interrupted' ? t('已中断') : t('执行失败')))
+        return
       }
-      default:
-        return []
     }
   }
 
   return {
-    /** 插话：把一段要求交给正在跑的这一轮；没在跑或 Codex 拒绝时返回 false，由上层排队 */
-    async steer(text: string) {
-      if (finished || !thread || !turnId || review || o.op) return false
-      const r = await call('turn/steer', {
-        threadId: thread,
-        input: [{ type: 'text', text, text_elements: [] }],
-        expectedTurnId: turnId,
-      })
-      return !r.error
+    async start(ctx) {
+      const init = await ctx.request(
+        { method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } },
+        { timeoutMs: START_TIMEOUT_MS },
+      )
+      if (init?.error) return ctx.finish(false, String(init.error.message))
+      ctx.send({ method: 'initialized' })
+      if (needsWinSandbox) {
+        const ready = await ctx.request(
+          { method: 'windowsSandbox/readiness', params: {} },
+          { timeoutMs: START_TIMEOUT_MS },
+        )
+        // 旧版本没有这个接口，直接开始
+        if (!ready?.error && ready?.result?.status !== 'ready') {
+          // 用不需要管理员权限的方式初始化，不会弹出系统授权框；完成后会收到 windowsSandbox/setupCompleted
+          const setup = await ctx.request(
+            { method: 'windowsSandbox/setupStart', params: { mode: 'unelevated', cwd: o.cwd } },
+            { timeoutMs: START_TIMEOUT_MS },
+          )
+          if (setup?.error) return sandboxFailed(ctx, String(setup.error.message ?? t('未知错误')))
+          if (setup?.result?.started === false) await startThread(ctx)
+          return
+        }
+      }
+      await startThread(ctx)
     },
-    /** 中断这一轮：Codex 会把已经做的保存在会话里，回 turn/completed（interrupted） */
-    interrupt() {
-      if (finished || !thread || !turnId) return false
-      void call('turn/interrupt', { threadId: thread, turnId })
+    message: onNotification,
+    request: onRequest,
+    async steer(ctx, text) {
+      if (ctx.finished || !thread || !turnId || review || o.op) return false
+      const r = await ctx.request({
+        method: 'turn/steer',
+        params: { threadId: thread, input: [{ type: 'text', text, text_elements: [] }], expectedTurnId: turnId },
+      })
+      return !r?.error
+    },
+    interrupt(ctx) {
+      if (ctx.finished || !thread || !turnId) return false
+      void ctx.request({ method: 'turn/interrupt', params: { threadId: thread, turnId } })
       return true
     },
-    start(w: typeof io) {
-      io = w
-      send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } })
-    },
-    handle(m: any): CliEvent[] {
-      if (m.id !== undefined && m.method) return onRequest(m)
-      if (m.id !== undefined) return onResponse(m)
-      if (m.method) return onNotification(m)
-      return []
-    },
-    get finished() {
-      return finished
-    },
   }
+}
+
+/** 给测试用的入口：返回和原来一样的 start / handle / steer / interrupt */
+export function codexAppSession(
+  o: BuildOptions & {
+    cwd: string
+    input: string
+    images?: string[]
+    platform?: string
+    onEvent?: (e: CliEvent) => void
+  },
+): RpcSession {
+  return createRpcSession({
+    adapter: codexAdapter(o),
+    cwd: o.cwd,
+    input: o.input,
+    images: o.images,
+    onEvent: (e) => o.onEvent?.(e),
+  })
 }
 
 const minus = (a: Record<string, number>, b: Record<string, number>) =>

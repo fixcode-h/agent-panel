@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Check, ChevronDown, CircleAlert, ListFilter, Search, X } from 'lucide-react'
+import { Check, ChevronDown, CircleAlert, ListFilter, MessageSquare, Search, Workflow, X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -60,6 +60,17 @@ export function TaskRow({
   const menu = useTaskRowMenu(task, onDeleted)
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
+  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：不重复显示前置图标，用虚线边框表示
+  const online = task.status === 'running' && !task.working
+  const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
+  const showMode = !(online && task.mode === 'chat')
+  const attention = task.requests?.length
+    ? 'ask'
+    : task.status === 'running' && task.working
+      ? 'running'
+      : task.status === 'failed'
+        ? 'failed'
+        : ''
   return (
     <>
       <ContextMenu>
@@ -68,9 +79,11 @@ export function TaskRow({
             onClick={onOpen}
             aria-current={active || undefined}
             title={task.title}
+            data-cli-online={online || undefined}
             className={cn(
-              'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg text-left text-[0.8125rem] transition-colors',
+              'flex h-8 w-full cursor-pointer items-center gap-2 rounded-lg border border-transparent text-left text-[0.8125rem] transition-colors',
               active ? 'bg-sel text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+              online && 'border-dashed border-line-strong',
               className,
             )}
           >
@@ -82,16 +95,26 @@ export function TaskRow({
                 className="h-2 w-2 shrink-0 rounded-full bg-accent"
               />
             )}
-            {task.requests?.length ? (
-              // Agent 在等你确认操作或回答问题
-              <CircleAlert
-                aria-label={t('需要你处理')}
-                className="h-3.5 w-3.5 shrink-0 text-warning"
-                strokeWidth={2.4}
-              />
-            ) : task.status === 'running' || task.status === 'failed' ? (
-              <TaskStatusIcon status={task.status} working={task.working} className="h-3.5 w-3.5" />
-            ) : null}
+            {(showMode || attention) && (
+              <span className="flex shrink-0 items-center gap-1">
+                {showMode && (
+                  <ModeIcon
+                    aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
+                    className="h-3.5 w-3.5 text-subtle"
+                  />
+                )}
+                {attention === 'ask' ? (
+                  // Agent 在等你确认操作或回答问题
+                  <CircleAlert
+                    aria-label={t('需要你处理')}
+                    className="h-3.5 w-3.5 shrink-0 text-warning"
+                    strokeWidth={2.4}
+                  />
+                ) : attention === 'running' || attention === 'failed' ? (
+                  <TaskStatusIcon status={task.status} working={task.working} className="h-3.5 w-3.5" />
+                ) : null}
+              </span>
+            )}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
             {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
             <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">

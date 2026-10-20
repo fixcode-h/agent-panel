@@ -42,6 +42,7 @@ import {
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
+import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import {
   BUILTIN_WORKFLOWS,
   ComfyWorkflow,
@@ -109,15 +110,15 @@ const fail = (msg: string): never => {
 
 // ---- 模拟的本机目录 ----
 const HOME = '/home/demo'
-const TREE: Record<string, { git?: string }> = {
+const TREE: Record<string, { git?: string; branches?: string[] }> = {
   '/home/demo': {},
   '/home/demo/code': {},
-  '/home/demo/code/web-shop': { git: 'main' },
+  '/home/demo/code/web-shop': { git: 'main', branches: ['main', 'feat/checkout', 'fix/cart-total'] },
   '/home/demo/code/web-shop/src': {},
   '/home/demo/code/web-shop/tests': {},
-  '/home/demo/code/admin-console': { git: 'develop' },
+  '/home/demo/code/admin-console': { git: 'develop', branches: ['develop', 'main', 'release/2.0'] },
   '/home/demo/code/admin-console/src': {},
-  '/home/demo/code/game-client': { git: 'release/1.2' },
+  '/home/demo/code/game-client': { git: 'release/1.2', branches: ['release/1.2', 'develop', 'main'] },
   '/home/demo/code/game-client/Source': {},
   '/home/demo/code/game-client/Content': {},
   '/home/demo/code/notes': {},
@@ -603,24 +604,34 @@ const LATEST: Record<string, string> = {
   pi: '0.85.1',
 }
 
+/** 启用的 CLI：演示里也是停用的不出现在部署、技能库这些地方 */
+function activeClis(): string[] {
+  const s = load().settings
+  return CLIS.filter((c) => s?.clis[c.id]?.enabled ?? true).map((c) => c.id)
+}
+
 function clis(): CliStatus[] {
   const d = load()
   const s = d.settings
-  return orderClis(CLIS, s?.cliOrder ?? []).map((c) => {
-    const installed = d.installed?.[c.id] ?? c.id === 'claude'
-    return {
-      id: c.id,
-      name: c.name,
-      command: s?.clis[c.id]?.command || c.command,
-      enabled: s?.clis[c.id]?.enabled ?? true,
-      installed,
-      isDefault: c.id === (s ? defaultCli(s) : 'claude'),
-      version: installed ? VERSIONS[c.id] : undefined,
-      error: installed ? undefined : '在线演示：模拟为未安装',
-      models: c.models,
-      docsUrl: c.docsUrl,
-    }
-  })
+  return orderClis(
+    CLIS.map((c) => {
+      const installed = d.installed?.[c.id] ?? c.id === 'claude'
+      return {
+        id: c.id,
+        name: c.name,
+        command: s?.clis[c.id]?.command || c.command,
+        enabled: s?.clis[c.id]?.enabled ?? true,
+        installed,
+        isDefault: c.id === (s ? defaultCli(s) : 'claude'),
+        version: installed ? VERSIONS[c.id] : undefined,
+        error: installed ? undefined : '在线演示：模拟为未安装',
+        models: c.models,
+        docsUrl: c.docsUrl,
+      }
+    }),
+    s?.cliOrder ?? [],
+    (c) => c.enabled,
+  )
 }
 
 // 模拟安装 / 卸载：几秒内逐行输出，然后切换安装状态
@@ -859,9 +870,19 @@ function route(method: string, url: string, body: unknown): unknown {
     persist()
     return Settings.parse((d.settings ??= Settings.parse({})))
   }
+  if (res === 'model-catalog') {
+    if (method === 'POST' && id === 'lookup') fail('在线演示不能联网补全模型信息')
+    const settings = Settings.parse(d.settings ?? {})
+    return {
+      entries: BUILTIN_MODEL_CATALOG,
+      file: '~/.agent-panel/config/models.json',
+      dir: '~/.agent-panel/config',
+      aiLookup: settings.modelCatalog.aiLookup,
+    }
+  }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
-  if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {})
+  if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
   if (res === 'clis') {
     if (id === 'jobs' && !sub) {
       const latest = new Map<string, CliInstallJob>()
@@ -981,7 +1002,7 @@ function route(method: string, url: string, body: unknown): unknown {
     if (sub === 'optimize') return startDemoDocJob(body)
     return method === 'PUT' ? saveDemoDoc(id, body) : demoDocs(id, p.path)
   }
-  if (res === 'deploy') return demoDeploy(method, id, body)
+  if (res === 'deploy') return demoDeploy(method, id, body, activeClis())
   if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
@@ -990,6 +1011,21 @@ function route(method: string, url: string, body: unknown): unknown {
     return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)
   }
   if (res === 'fs' && id === 'inspect') return inspectDir(query.get('path') ?? '')
+  if (res === 'fs' && id === 'branches') {
+    const path = normalize(query.get('path') ?? '')
+    const node = TREE[path]
+    if (!node?.git) throw new Error('这个目录不是 git 仓库')
+    return { current: node.git, branches: node.branches ?? [node.git] }
+  }
+  if (res === 'fs' && id === 'checkout') {
+    const b = body as { path: string; branch: string }
+    const path = normalize(b.path)
+    const node = TREE[path]
+    if (!node?.git) throw new Error('切换分支失败：这个目录不是 git 仓库')
+    if (!(node.branches ?? []).includes(b.branch)) throw new Error(`切换分支失败：没有这个分支：${b.branch}`)
+    node.git = b.branch
+    return inspectDir(path)
+  }
   if (res === 'fs' && id === 'list') return listDir(query.get('path') ?? '')
   if (res === 'fs' && id === 'mkdir') {
     const b = body as { parent: string; name: string }

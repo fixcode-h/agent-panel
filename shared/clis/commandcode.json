@@ -118,7 +118,26 @@
       "args": ["--max-turns", "{maxTurns:200}"]
     }
   ],
-  "protocol": "commandcode-rpc",
+  "protocol": "rpc",
+  "rpc": {
+    "jsonrpc": true,
+    "handshake": [{ "method": "initialize", "params": {}, "save": "init" }],
+    "start": [{ "method": "turn/start", "params": { "input": "{input}", "maxTurns": "{maxTurns}" }, "save": "turn" }],
+    "steer": { "method": "turn/steer", "params": { "input": "{text}" } },
+    "interrupt": { "method": "turn/interrupt", "params": {} },
+    "exit": { "method": "session/exit", "params": {} },
+    "sessionId": "init.result.session.id",
+    "turnId": "turn.result.turnId",
+    "deferSteer": true,
+    "defaultMaxTurns": 1000,
+    "done": [
+      {
+        "when": { "method": "turn/completed" },
+        "ok": ["$.params.stopReason != run_error", "$.params.stopReason != interrupted"],
+        "error": "$.params.error.message"
+      }
+    ]
+  },
   "rpcArgs": [
     {
       "args": ["--experimental", "--rpc", "--skip-onboarding", "--trust", "--no-auto-update"]
