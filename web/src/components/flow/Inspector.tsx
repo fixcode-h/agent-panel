@@ -1,10 +1,11 @@
-import { Bot, Crown, MousePointerClick, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bot, Crown, MousePointerClick, Plus, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
 import {
   DEFAULT_AGENT_ID,
   type Agent,
   type Flow,
   type FlowNode,
   type FlowRef,
+  type NodeStep,
   type WorkflowInput,
 } from '@shared/schema'
 import { MODEL_TIERS } from '@shared/clis'
@@ -13,7 +14,7 @@ import { cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import { Segmented } from '@/components/ui/segmented'
 import { ParamsForm } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
-import { END, START, entryFlow, flowLabel, preds, succs } from '@shared/flow'
+import { END, START, entryFlow, flowLabel, newNodeStep, nodeSteps, preds, refLabel, succs } from '@shared/flow'
 import { useData } from '@/lib/data'
 import type { Check } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
@@ -36,9 +37,13 @@ export const HOOK_HINT: Record<HookSlot, string> = {
 }
 
 export const usesFlow = (n: FlowNode, id: string) =>
-  [n.kind === 'flow' ? n.flow : null, n.hooks.start, n.hooks.review, n.hooks.end].some(
-    (r) => r?.kind === 'sub' && r.id === id,
-  )
+  [
+    n.kind === 'flow' ? n.flow : null,
+    n.hooks.start,
+    n.hooks.review,
+    n.hooks.end,
+    ...n.steps.flatMap((s) => [s.kind === 'flow' ? s.flow : null, s.review]),
+  ].some((r) => r?.kind === 'sub' && r.id === id)
 
 export function Label({ children, hint }: { children: React.ReactNode; hint?: string }) {
   return (
@@ -69,21 +74,36 @@ export function NodeInspector({
   const { workflows, agents, settings, clis } = useData()
   const name = (id: string) =>
     id === START ? t('开始') : id === END ? t('结束') : flow.nodes.find((n) => n.id === id)?.title || t('未命名节点')
+  // 旧的单执行者节点第一次修改时变成显式的一步，确认、验收随之下沉到步骤上
+  const materialize = (n: FlowNode): FlowNode =>
+    n.steps.length
+      ? n
+      : { ...n, steps: nodeSteps(n), hooks: { ...n.hooks, review: null, maxRounds: 3, confirm: undefined } }
   const setNode = (p: Partial<FlowNode>) =>
-    setFlow({ ...flow, nodes: flow.nodes.map((n) => (n.id === node.id ? { ...n, ...p } : n)) })
+    setFlow({ ...flow, nodes: flow.nodes.map((n) => (n.id === node.id ? { ...materialize(n), ...p } : n)) })
+  const steps = node.steps.length ? node.steps : nodeSteps(node)
+  const setSteps = (list: NodeStep[]) => setNode({ steps: list })
+  const patchStep = (id: string, p: Partial<NodeStep>) => setSteps(steps.map((s) => (s.id === id ? { ...s, ...p } : s)))
+  const moveStep = (i: number, by: -1 | 1) => {
+    const next = [...steps]
+    const [x] = next.splice(i, 1)
+    next.splice(i + by, 0, x)
+    setSteps(next)
+  }
+  const addStep = (kind: NodeStep['kind']) =>
+    setSteps([...steps, newNodeStep({ kind, ...(kind === 'agent' ? { agentId: '' } : {}) })])
   const up = preds(flow, node.id).map(name)
   const down = succs(flow, node.id).map(name)
   const opts = refOptions(w, workflows, flow.id)
-  // 子 Agent 直接在节点上选：这个工作流已经用到的排在前面，其余的 Agent 都能选
-  const used = new Set(team.map((m) => m.agent.id))
-  const rest = agents.filter((a) => a.id !== main?.id && !used.has(a.id) && (a.enabled || a.id === node.agentId))
-  // 节点只能用默认 CLI 的三档模型，思考强度跟着档位
-  const runner = node.agentId ? agents.find((a) => a.id === node.agentId) : main
+  // 子 Agent 在步骤上选：这个工作流已经用到的排在前面，其余的 Agent 都能选
+  const used = new Set([...team.map((m) => m.agent.id), ...steps.map((s) => s.agentId)])
   const s = settings ?? defaultSettings()
   const defCliId = defaultCli(s)
   const cs = cliSettings(s, defCliId)
-  const tier = node.tier || (runner ? agentTier(runner) : 'medium')
-  const params = runner && runner.id !== DEFAULT_AGENT_ID ? runner.params : []
+  const runnerOf = (u: NodeStep) => (u.agentId ? agents.find((a) => a.id === u.agentId) : main)
+  const stepName = (u: NodeStep) =>
+    u.title.trim() ||
+    (u.kind === 'flow' ? refLabel(u.flow, w, workflows) || t('调用流程') : runnerOf(u)?.name || t('主 Agent'))
 
   return (
     <div className="flex flex-col gap-5 p-5">
@@ -116,95 +136,231 @@ export function NodeInspector({
           className="h-9"
         />
       </label>
-      <div className="flex flex-col gap-1.5">
-        <Label>{t('由谁执行')}</Label>
-        <div role="radiogroup" aria-label={t('执行方式')} className="grid grid-cols-2 rounded-lg bg-field p-0.5">
-          {(
-            [
-              { id: 'agent', label: 'Agent', icon: Bot },
-              { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
-            ] as const
-          ).map((k) => (
-            <button
-              key={k.id}
-              role="radio"
-              aria-checked={node.kind === k.id}
-              onClick={() => setNode({ kind: k.id })}
-              className={cn(
-                'flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
-                node.kind === k.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
+      <div className="flex flex-col gap-3">
+        <div className="flex items-end gap-2">
+          <Label hint={t('按顺序执行，上一步的输出作为下一步的输入')}>{t('执行步骤')}</Label>
+          <span className="ml-auto text-[0.6875rem] text-subtle">{t('共 {n} 步', { n: steps.length })}</span>
+        </div>
+        {steps.map((u, i) => {
+          const runner = runnerOf(u)
+          const tier = u.tier || (runner ? agentTier(runner) : 'medium')
+          const params = runner && runner.id !== DEFAULT_AGENT_ID ? runner.params : []
+          return (
+            <section key={u.id} className="flex flex-col gap-3 rounded-xl border p-3.5">
+              <div className="flex items-center gap-1.5">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field font-mono text-[0.6875rem] text-muted">
+                  {i + 1}
+                </span>
+                <Input
+                  value={u.title}
+                  maxLength={60}
+                  onChange={(e) => patchStep(u.id, { title: e.target.value })}
+                  placeholder={stepName(u)}
+                  aria-label={t('步骤标题')}
+                  className="h-8 flex-1"
+                />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={i === 0}
+                  onClick={() => moveStep(i, -1)}
+                  aria-label={t('上移')}
+                  title={t('上移')}
+                >
+                  <ArrowUp className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={i === steps.length - 1}
+                  onClick={() => moveStep(i, 1)}
+                  aria-label={t('下移')}
+                  title={t('下移')}
+                >
+                  <ArrowDown className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={steps.length <= 1}
+                  onClick={() => setSteps(steps.filter((x) => x.id !== u.id))}
+                  aria-label={t('删除这一步')}
+                  title={t('删除这一步')}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              <div role="radiogroup" aria-label={t('执行方式')} className="grid grid-cols-2 rounded-lg bg-field p-0.5">
+                {(
+                  [
+                    { id: 'agent', label: 'Agent', icon: Bot },
+                    { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
+                  ] as const
+                ).map((k) => (
+                  <button
+                    key={k.id}
+                    role="radio"
+                    aria-checked={u.kind === k.id}
+                    onClick={() => patchStep(u.id, { kind: k.id })}
+                    className={cn(
+                      'flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
+                      u.kind === k.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
+                    )}
+                  >
+                    <k.icon className="h-3.5 w-3.5" />
+                    {k.label}
+                  </button>
+                ))}
+              </div>
+              {u.kind === 'agent' ? (
+                <Select
+                  aria-label={t('执行的 Agent')}
+                  value={u.agentId}
+                  onChange={(e) => patchStep(u.id, { agentId: e.target.value })}
+                  options={[
+                    {
+                      value: '',
+                      label: main ? t('主 Agent · {name}', { name: main.name }) : t('主 Agent（还没有选择）'),
+                    },
+                    ...team
+                      .filter((m) => m.agent.id !== main?.id)
+                      .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
+                    ...agents
+                      .filter((a) => a.id !== main?.id && a.enabled && (!used.has(a.id) || a.id === u.agentId))
+                      .map((a) => ({ value: a.id, label: a.name, group: t('其他 Agent') })),
+                  ]}
+                />
+              ) : (
+                <Select
+                  aria-label={t('调用的流程')}
+                  value={refValue(u.flow)}
+                  onChange={(e) => patchStep(u.id, { flow: parseRef(e.target.value) })}
+                  options={refOptions(w, workflows, flow.id, t('选择流程'))}
+                />
               )}
-            >
-              <k.icon className="h-3.5 w-3.5" />
-              {k.label}
-            </button>
-          ))}
+              {u.kind === 'agent' && (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <Label
+                      hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。', {
+                        cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
+                      })}
+                    >
+                      {t('模型档位')}
+                    </Label>
+                    <Segmented
+                      label={t('模型档位')}
+                      value={tier}
+                      onChange={(v) => patchStep(u.id, { tier: v })}
+                      options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
+                    />
+                    <span className="font-mono text-[0.71875rem] text-subtle">
+                      {cs.tiers[tier].model || t('自动')}
+                      {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
+                    </span>
+                  </div>
+                  {params.length > 0 && runner && (
+                    <section className="flex flex-col gap-3 rounded-lg border p-2.5">
+                      <Label
+                        hint={t('{name} 暴露的参数，在这一步上的取值；没改的用 Agent 的默认值。', {
+                          name: runner.name,
+                        })}
+                      >
+                        {t('参数')}
+                      </Label>
+                      <ParamsForm
+                        params={params}
+                        values={u.params}
+                        onChange={(v) => patchStep(u.id, { params: v })}
+                        compact
+                      />
+                    </section>
+                  )}
+                </>
+              )}
+              <label className="flex flex-col gap-1.5">
+                <Label hint={t('会和工作流说明、上游结果一起发给执行者')}>{t('这一步要做的事')}</Label>
+                <Textarea
+                  rows={4}
+                  value={u.instructions}
+                  onChange={(e) => patchStep(u.id, { instructions: e.target.value })}
+                  placeholder={t('例如：按分析结论实现接口，补充单元测试，完成后列出改动的文件。')}
+                  className="text-[0.8125rem]"
+                />
+              </label>
+              <div className="flex flex-col gap-2 rounded-lg border p-2.5">
+                <Label hint={t('这一步完成后执行验收；不通过就把意见交回这一步继续完善')}>{t('验收流程')}</Label>
+                <Select
+                  aria-label={t('验收流程')}
+                  value={refValue(u.review)}
+                  onChange={(e) => patchStep(u.id, { review: parseRef(e.target.value) })}
+                  options={opts}
+                />
+                {u.review && (
+                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                    {t('最多验收')}
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10}
+                      value={u.maxRounds}
+                      aria-label={t('最多验收')}
+                      onChange={(e) =>
+                        patchStep(u.id, {
+                          maxRounds: Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 1))),
+                        })
+                      }
+                      className="h-8 w-16 text-center"
+                    />
+                    {t('轮，仍不通过时节点失败')}
+                  </label>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="flex flex-1 cursor-pointer items-center gap-2 text-xs text-muted">
+                  <Switch
+                    checked={!!u.confirm}
+                    onCheckedChange={(v) => patchStep(u.id, { confirm: v })}
+                    aria-label={t('完成后等我确认')}
+                  />
+                  {t('完成后等我确认')}
+                </label>
+                {u.kind === 'agent' && (
+                  <label className="flex items-center gap-2 text-xs text-muted">
+                    {t('失败自动重试')}
+                    <Input
+                      type="number"
+                      min={0}
+                      max={5}
+                      value={u.retries}
+                      aria-label={t('失败自动重试')}
+                      onChange={(e) =>
+                        patchStep(u.id, { retries: Math.min(5, Math.max(0, Math.round(Number(e.target.value) || 0))) })
+                      }
+                      className="h-8 w-16 text-center"
+                    />
+                    {t('次')}
+                  </label>
+                )}
+              </div>
+            </section>
+          )
+        })}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" size="sm" disabled={steps.length >= 20} onClick={() => addStep('agent')}>
+            <Plus className="h-3.5 w-3.5" />
+            {t('添加 Agent')}
+          </Button>
+          <Button variant="secondary" size="sm" disabled={steps.length >= 20} onClick={() => addStep('flow')}>
+            <WorkflowIcon className="h-3.5 w-3.5" />
+            {t('添加工作流')}
+          </Button>
         </div>
-        {node.kind === 'agent' ? (
-          <Select
-            aria-label={t('执行的 Agent')}
-            value={node.agentId}
-            onChange={(e) => setNode({ agentId: e.target.value })}
-            options={[
-              { value: '', label: main ? t('主 Agent · {name}', { name: main.name }) : t('主 Agent（还没有选择）') },
-              ...team
-                .filter((m) => m.agent.id !== main?.id)
-                .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
-              ...rest.map((a) => ({ value: a.id, label: a.name, group: t('其他 Agent') })),
-            ]}
-          />
-        ) : (
-          <Select
-            aria-label={t('调用的流程')}
-            value={refValue(node.flow)}
-            onChange={(e) => setNode({ flow: parseRef(e.target.value) })}
-            options={refOptions(w, workflows, flow.id, t('选择流程'))}
-          />
-        )}
       </div>
-      {node.kind === 'agent' && (
-        <div className="flex flex-col gap-1.5">
-          <Label
-            hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。', {
-              cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
-            })}
-          >
-            {t('模型档位')}
-          </Label>
-          <Segmented
-            label={t('模型档位')}
-            value={tier}
-            onChange={(v) => setNode({ tier: v })}
-            options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
-          />
-          <span className="font-mono text-[0.71875rem] text-subtle">
-            {cs.tiers[tier].model || t('自动')}
-            {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
-          </span>
-        </div>
-      )}
-      {node.kind === 'agent' && params.length > 0 && (
-        <section className="flex flex-col gap-3 rounded-xl border p-3.5">
-          <Label hint={t('{name} 暴露的参数，在这个节点上的取值；没改的用 Agent 的默认值。', { name: runner!.name })}>
-            {t('参数')}
-          </Label>
-          <ParamsForm params={params} values={node.params} onChange={(v) => setNode({ params: v })} compact />
-        </section>
-      )}
-      <label className="flex flex-col gap-1.5">
-        <Label hint={t('会和工作流说明、上游节点的结果一起发给执行者')}>{t('要做的事')}</Label>
-        <Textarea
-          rows={6}
-          value={node.instructions}
-          onChange={(e) => setNode({ instructions: e.target.value })}
-          placeholder={t('例如：\n按分析结论实现接口，补充单元测试，完成后列出改动的文件。')}
-          className="text-[0.8125rem]"
-        />
-      </label>
 
       <section className="flex flex-col gap-4 rounded-xl border p-3.5">
         <h4 className="text-[0.8125rem] font-semibold">{t('挂载流程')}</h4>
-        {(['start', 'review', 'end'] as HookSlot[]).map((s) => (
+        {(['start', 'end'] as HookSlot[]).map((s) => (
           <div key={s} className="flex flex-col gap-1.5">
             <Label hint={HOOK_HINT[s]}>{HOOK_LABEL[s]}</Label>
             <Select
@@ -213,27 +369,6 @@ export function NodeInspector({
               onChange={(e) => setNode({ hooks: { ...node.hooks, [s]: parseRef(e.target.value) } })}
               options={opts}
             />
-            {s === 'review' && node.hooks.review && (
-              <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                {t('最多验收')}
-                <Input
-                  type="number"
-                  min={1}
-                  max={10}
-                  value={node.hooks.maxRounds}
-                  onChange={(e) =>
-                    setNode({
-                      hooks: {
-                        ...node.hooks,
-                        maxRounds: Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 1))),
-                      },
-                    })
-                  }
-                  className="h-8 w-16 text-center"
-                />
-                {t('轮，仍不通过时节点失败')}
-              </label>
-            )}
           </div>
         ))}
         {opts.length === 1 && (
@@ -242,43 +377,6 @@ export function NodeInspector({
           </p>
         )}
       </section>
-
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl border p-3.5">
-        <span className="flex flex-1 flex-col gap-0.5">
-          <span className="text-[0.8125rem] font-semibold">{t('完成后等我确认')}</span>
-          <span className="text-[0.71875rem] leading-relaxed text-subtle">
-            {t(
-              '节点做完（验收通过）后暂停，在任务页上看过结果点「通过」才往下走；退回时写上意见，节点按意见继续完善。',
-            )}
-          </span>
-        </span>
-        <Switch
-          checked={!!node.hooks.confirm}
-          onCheckedChange={(v) => setNode({ hooks: { ...node.hooks, confirm: v } })}
-          aria-label={t('完成后等我确认')}
-        />
-      </label>
-
-      {node.kind === 'agent' && (
-        <label className="flex flex-wrap items-center gap-2 rounded-xl border p-3.5 text-xs text-muted">
-          <span className="flex flex-1 flex-col gap-0.5">
-            <span className="text-[0.8125rem] font-semibold text-fg">{t('失败自动重试')}</span>
-            <span className="text-[0.71875rem] leading-relaxed text-subtle">
-              {t('连接断开、偶发报错时接着上次的会话再试，不用等你点「继续执行」。')}
-            </span>
-          </span>
-          <Input
-            type="number"
-            min={0}
-            max={5}
-            value={node.retries}
-            aria-label={t('失败自动重试')}
-            onChange={(e) => setNode({ retries: Math.min(5, Math.max(0, Math.round(Number(e.target.value) || 0))) })}
-            className="h-8 w-16 text-center"
-          />
-          {t('次')}
-        </label>
-      )}
 
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1.5 text-xs">
         <dt className="text-subtle">{t('上游')}</dt>
@@ -319,6 +417,11 @@ export function FlowInspector({
           nodes: f.nodes.map((n) => ({
             ...n,
             flow: drop(n.flow),
+            steps: n.steps.map((s) => ({
+              ...s,
+              flow: s.kind === 'flow' ? drop(s.flow) : s.flow,
+              review: drop(s.review),
+            })),
             hooks: { ...n.hooks, start: drop(n.hooks.start), review: drop(n.hooks.review), end: drop(n.hooks.end) },
           })),
         })),
