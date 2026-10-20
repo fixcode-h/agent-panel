@@ -339,6 +339,12 @@
       "defaultProvider": "agentpanel",
       "modelSource": "cli",
       "modelPrefix": "{provider}/",
+      "pruneProviders": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers",
+        "baseUrl": "baseUrl",
+        "apiKey": "apiKey"
+      },
       "wire": {
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",

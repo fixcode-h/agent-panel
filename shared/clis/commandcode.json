@@ -220,6 +220,12 @@
         "at": "provider.{provider}.models",
         "key": "reasoningEfforts"
       },
+      "pruneProviders": {
+        "file": "~/.commandcode/providers.json",
+        "at": "provider",
+        "baseUrl": "baseURL",
+        "apiKey": "apiKey"
+      },
       "edits": [
         {
           "file": "~/.commandcode/providers.json",
