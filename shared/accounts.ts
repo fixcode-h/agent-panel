@@ -251,30 +251,38 @@ export function setModelEfforts(
 }
 
 /**
- * 把模型条目里的上下文窗口改成 limitsFor 返回的数值；返回有没有改动。
+ * 把模型条目里的上下文窗口、最大输出改成 limitsFor 返回的数值；返回有没有改动。
+ * 模型条目可以是对象（键是模型名，例如 Command Code 的 providers.json），也可以是数组（每项有 id，例如 Pi 的 models.json）。
  * limitsFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
  */
 export function setModelLimits(
   data: unknown,
   at: string,
-  key: string,
-  limitsFor: (model: string) => number | undefined,
+  keys: { context?: string; maxOutput?: string },
+  limitsFor: (model: string) => { context?: number; maxOutput?: number } | undefined,
 ): boolean {
   let models: unknown = data
   for (const part of at.split('.')) {
     if (!models || typeof models !== 'object' || Array.isArray(models)) return false
     models = (models as Record<string, unknown>)[part]
   }
-  if (!models || typeof models !== 'object' || Array.isArray(models)) return false
+  if (!models || typeof models !== 'object') return false
   let changed = false
   for (const [id, entry] of Object.entries(models as Record<string, unknown>)) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
     const rec = entry as Record<string, unknown>
     const model = typeof rec.id === 'string' && rec.id ? rec.id : id
     const limit = limitsFor(model)
-    if (!limit || rec[key] === limit) continue
-    rec[key] = limit
-    changed = true
+    if (!limit) continue
+    for (const [field, key] of [
+      ['context', keys.context],
+      ['maxOutput', keys.maxOutput],
+    ] as const) {
+      const value = limit[field]
+      if (!key || !value || rec[key] === value) continue
+      rec[key] = value
+      changed = true
+    }
   }
   return changed
 }
@@ -337,7 +345,7 @@ export const CliAuth = z.object({
         })
         .optional(),
       /**
-       * CLI 只认配置里模型条目自己声明的上下文窗口时（例如 Command Code 的 providers.json），
+       * CLI 只认配置里模型条目自己声明的上下文窗口时（例如 Command Code 的 providers.json、Pi 的 models.json），
        * 把模型目录里的窗口写回这个位置；不写表示不处理。
        */
       modelLimits: z
@@ -347,6 +355,8 @@ export const CliAuth = z.object({
           at: z.string(),
           /** 写进模型条目的键名 */
           key: z.string().default('contextWindow'),
+          /** 最大输出写进哪个键；不写表示这个 CLI 不接受（Command Code 的 maxOutput 只能收窄，写了没意义） */
+          maxOutputKey: z.string().optional(),
         })
         .optional(),
       /**

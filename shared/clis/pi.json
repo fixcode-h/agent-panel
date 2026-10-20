@@ -345,6 +345,12 @@
         "baseUrl": "baseUrl",
         "apiKey": "apiKey"
       },
+      "modelLimits": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers.{provider}.models",
+        "key": "contextWindow",
+        "maxOutputKey": "maxTokens"
+      },
       "wire": {
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",
