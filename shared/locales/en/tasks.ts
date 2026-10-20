@@ -292,6 +292,11 @@ export const EN_TASKS: Record<string, string> = {
   'Agent 执行中会取走': 'The agent picks this up while running',
   等待读取: 'Waiting to be read',
   等待你的下一条消息: 'Waiting for your next message',
+  等待执行: 'Waiting to run',
+  '运行 {n}': 'Run {n}',
+  '{done}/{total} 个节点': '{done}/{total} nodes',
+  查看这次运行的实时输出: 'Open this run to see its live output',
+  '这次运行还没有节点。': 'This run has no nodes yet.',
   排队: 'Queue',
   '排队中 · 任务没在执行，点「继续执行」后处理':
     'Queued · the task is not running; it will be handled after you resume',
