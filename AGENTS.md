@@ -44,6 +44,9 @@ npm run package      # 出包到 release/（正式版，不含演示内容）
 
 ## 分支与发布
 
+- **开发前必须先切换到 `dev` 分支**：开始任何代码、文档或配置改动之前，先跑 `git switch dev`（本地没有就用 `git switch -c dev origin/dev`），确认 `git status --short --branch` 显示在 `dev` 上再动手。
+- **禁止在 `main` 上直接开发**：不在 `main` 上改文件、提交或推送，包括小改动、文档修改和临时调试。误留在 `main` 时先切回 `dev`，不要在 `main` 上先改完再搬。
+- 如果在 `main` 上发现未提交改动，先确认这些改动是谁的、要不要带走；不要用 `git checkout .`、`git reset --hard` 或覆盖式 stash 把它们清掉。
 - **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。
 - **只有用户明确说「合并到主干」时，才把 `dev` 合并到 `main`**。不要自行合并，也不要直接往 `main` 提交。
 - 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、代码检查、解析测试、端到端测试、构建、界面检查；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
