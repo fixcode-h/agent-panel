@@ -405,6 +405,15 @@ const exitTurn = async (code = 0) => {
   if (rpcMode) return await Promise.race([rpcExit.then(() => true), waitRpcTurn().then(() => false)])
   process.exit(code)
 }
+/**
+ * 专用回复（优化说明文件、AI 创建这些提示）跑完一轮后：RPC 常驻时等面板关 stdin，
+ * 不要往下走去跑通用的回复逻辑；非 RPC 直接退出
+ */
+const endSpecialTurn = async () => {
+  if (!rpcMode) process.exit(0)
+  await rpcExit
+  process.exit(0)
+}
 // 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
 const slow = input.includes('SLOW') && !input.includes('上游节点的结果')
 const fail = input.includes('FAIL')
@@ -561,7 +570,7 @@ if (input.startsWith('你在帮忙优化项目根目录下的说明文件') && k
   out({ type: 'event', event: { type: 'run_start', sessionId: session } })
   out({ type: 'event', event: { type: 'message_end', content: [{ type: 'text', text }] } })
   out({ type: 'result', subtype: 'success', sessionId: session, usage: {}, durationMs: 1, finalText: text })
-  await exitTurn(0)
+  await endSpecialTurn()
 }
 // 「AI 创建」的提示：只回一段说明 + JSON。JSON 由用户消息里的 FAKE_JSON: 指定（一行），
 // 带 FAKE_JSON2: 时，收到「不符合要求」的重试提示后改用它，用来测试自动修正
