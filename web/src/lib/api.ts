@@ -1,4 +1,5 @@
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
+import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
   Attachment,
   TaskRequest,
@@ -239,6 +240,8 @@ export const api = {
   deleteProjectCategory: (id: string) => request<void>(`/project-categories/${id}`, { method: 'DELETE' }),
 
   projects: () => request<Project[]>('/projects'),
+  /** 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单 */
+  analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
@@ -255,6 +258,8 @@ export const api = {
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
+  /** 用户打开了这个对话：侧栏的橙点消失，服务端可以按宽限期回收 CLI 了 */
+  markTaskSeen: (id: string) => request<Task>(`/tasks/${id}/seen`, json('POST', {})),
   /** 打开旧对话时在后台用 --resume 启动，先停在等下一句上 */
   prewarmTask: (id: string) => request<Task>(`/tasks/${id}/prewarm`, { method: 'POST' }),
   /** 撤回到某条消息：返回撤回后的任务和被撤回的那条内容 */
@@ -309,6 +314,9 @@ export const api = {
   /** 任务目录里按文件内容搜索 */
   searchTaskFiles: (id: string, q: string) =>
     request<ContentSearch>(`/tasks/${id}/files/search?q=${encodeURIComponent(q)}`),
+  /** 在系统的文件管理器里打开这个文件所在的文件夹并选中它 */
+  revealTaskFile: (id: string, path: string) =>
+    request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
   /** 独立分支：合并进项目当前的分支，或丢弃 */
   finishWorktree: (id: string, merge: boolean) =>

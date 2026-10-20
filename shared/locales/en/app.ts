@@ -138,9 +138,29 @@ export const EN_APP: Record<string, string> = {
   '例如：官网前端': 'e.g. Website frontend',
   分类: 'Category',
   这个项目是做什么的: 'What this project is for',
-  执行任务时使用的工作流: 'Workflow used to run tasks',
   '使用分类默认：{name}': 'Category default: {name}',
-  '使用分类默认（分类还没有指定）': 'Category default (none set yet)',
+  '未选择，将使用「{name}」': 'Not selected; "{name}" will be used',
+  请选择工作流: 'Choose a workflow',
+  '这个项目的对话按哪套流程走（必选）': 'Which flow conversations in this project follow (required)',
+  'AI 分析这个目录': 'Analyze this folder',
+  '只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单':
+    'Read-only scan: infers the stack, build and test commands from the files and fills in the form below',
+  '已按本地目录填好，检查一下再保存': 'Filled in from the folder. Review it, then save',
+  '已填好，但没找到内置工作流「{name}」，请手动选择':
+    'Filled in, but the built-in workflow "{name}" was not found. Choose one manually',
+  '没有单独指定时使用内置的「{name}」，它会一直跟着这个项目。':
+    'Without an explicit choice, the built-in "{name}" applies to this project.',
+  '「{name}」的配置，改完保存后对新开的对话生效':
+    'Settings for "{name}". Saved changes apply to conversations started afterwards',
+  版本与推送: 'Version control and push',
+  推送到远端: 'Push to remote',
+  '第一次需要推送时问一次（推荐）': 'Ask once when a push is first needed (recommended)',
+  允许直接推送: 'Allow pushes directly',
+  '不推送，只做本地提交': 'Never push; local commits only',
+  '本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。':
+    'Local commits are unaffected. Pushes, PRs and P4 submits follow this setting and the choice made in each conversation.',
+  是: 'Yes',
+  否: 'No',
   '这个项目单独指定了工作流，不受分类默认的影响。':
     'This project uses its own workflow and ignores the category default.',
   '跟随项目分类「{name}」的默认工作流，分类可以在':

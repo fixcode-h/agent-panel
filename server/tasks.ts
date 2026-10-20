@@ -17,6 +17,8 @@ import {
 } from '../shared/schema.ts'
 import { blockedStep, taskFlow, taskWorkflows } from '../shared/flow.ts'
 import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
+import { GENERAL_NAME, GENERAL_ORIGIN } from '../shared/builtin/workflows.ts'
+import { exposeSlots } from '../shared/expose.ts'
 import {
   beginRun,
   closeFlow,
@@ -38,6 +40,7 @@ import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
+import { revealItem } from './open.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -47,7 +50,13 @@ import {
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
-import { forgetPresence, setPresenceIdleHandler, setViewer } from './presence.ts'
+import {
+  forgetPresence,
+  rescheduleIfUnwatched,
+  setPresenceIdleHandler,
+  setPresenceUnreadKeeper,
+  setViewer,
+} from './presence.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
@@ -89,6 +98,12 @@ export function tasksApi(deps: {
   const live = new Map<string, Live>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）
   setPresenceIdleHandler(cancelWait)
+  // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
+  setPresenceUnreadKeeper((id) => {
+    const tk = live.get(id)?.task
+    if (!tk) return false
+    return !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
+  })
   /** 服务正在退出：不再接着处理排队的要求 */
   let shuttingDown = false
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
@@ -180,11 +195,20 @@ export function tasksApi(deps: {
   /** 导入的任务只读：只能看、改名、归档、删除 */
   const READONLY = t('这是导入的任务，只能查看，不能继续执行')
 
+  /**
+   * 项目默认的工作流：项目自己指定 → 分类默认 → 内置的「通用项目」。
+   * 项目必须能解析出一个工作流：对话里的常驻编排器、文档和版本的规范都来自它
+   */
   async function projectWorkflow(p: Project) {
     const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
     const id = p.workflowId || cat?.workflowId
-    // 项目没指定工作流时用自带的「默认」工作流
-    return (await deps.workflows.get(id || DEFAULT_WORKFLOW_ID)) ?? undefined
+    if (id) {
+      const hit = await deps.workflows.get(id)
+      if (hit) return hit
+    }
+    const all = await deps.workflows.list()
+    const general = all.find((w) => w.origin === GENERAL_ORIGIN) ?? all.find((w) => w.name === GENERAL_NAME)
+    return general ?? (await deps.workflows.get(DEFAULT_WORKFLOW_ID)) ?? undefined
   }
 
   async function start(
@@ -543,8 +567,18 @@ export function tasksApi(deps: {
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
-    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list()) : []
-    const draft = { ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot), id: randomUUID() }
+    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), project.workflowParams) : []
+    const draft = {
+      ...newTask(
+        input,
+        workflow,
+        new Date().toISOString(),
+        randomUUID(),
+        snapshot,
+        exposeSlots(workflow ?? { expose: [] }, project.workflowParams),
+      ),
+      id: randomUUID(),
+    }
     if (input.isolate && input.projectId) {
       try {
         draft.worktree = await createWorktree(project.path, draft.id, draft.title)
@@ -683,6 +717,26 @@ export function tasksApi(deps: {
     return c.body(null, 204)
   })
 
+  // 用户打开了这个对话：侧栏的橙点消失，CLI 也可以按宽限期回收了
+  routes.post('/:id/seen', async (c) => {
+    const id = c.req.param('id')
+    const entry = live.get(id)
+    const tk = entry?.task ?? (await store.get(id))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.turnDoneAt && tk.turnSeenAt !== tk.turnDoneAt) {
+      tk.turnSeenAt = tk.turnDoneAt
+      // 正在跑的对话直接改内存里的；否则落盘
+      if (!entry) await store.update(id, tk)
+      else {
+        tk.updatedAt = new Date().toISOString()
+        entry.rev++
+      }
+      // 看过之后不再因为未读一直留着 CLI：如果已经没人在看，现在就开始算宽限期
+      rescheduleIfUnwatched(id)
+    }
+    return c.json(tk)
+  })
+
   // 撤回一条排队的要求
   routes.delete('/:id/queue/:qid', async (c) => {
     const id = c.req.param('id')
@@ -748,7 +802,10 @@ export function tasksApi(deps: {
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
       if (fresh) {
-        entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list())
+        const project = task.projectId ? await deps.projects.get(task.projectId) : null
+        const params = project?.workflowParams ?? {}
+        entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list(), params)
+        entry.task.skillSlots = exposeSlots(fresh, params)
         entry.task.workflowName = fresh.name
       }
       const last = users.at(-1)
@@ -872,6 +929,18 @@ export function tasksApi(deps: {
     return inTaskDir(c, async (dir) => {
       const { type, buf } = await rawInDir(dir, want)
       return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+    })
+  })
+
+  // 在系统的文件管理器里打开这个文件所在的文件夹并选中它（只能打开任务目录里面的文件）
+  routes.post('/:id/reveal', async (c) => {
+    const { path: file } = (await c.req.json().catch(() => ({}))) as { path?: string }
+    const want = String(file ?? '').trim()
+    if (!want) return bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => {
+      // 文件已经被删掉时打开它所在的文件夹，不让整个操作失败
+      revealItem(path.resolve(dir, want))
+      return c.json({ ok: true, dir })
     })
   })
 

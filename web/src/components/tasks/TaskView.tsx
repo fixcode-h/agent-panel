@@ -230,6 +230,20 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
+  // 打开了这个对话：告诉服务端这一轮已经看过（侧栏的橙点消失），
+  // 之后离开时 CLI 才能按宽限期回收；没看过就一直留着，回来能直接接着说
+  const marked = useRef('')
+  useEffect(() => {
+    if (marked.current === taskId) return
+    marked.current = taskId
+    api
+      .markTaskSeen(taskId)
+      .then(apply)
+      .catch(() => {})
+    // 只在换到新的对话时报一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId])
+
   // 告诉服务端这个对话页还开着：CLI 回复完会停在等下一句的工具上；宽限期内切回来还能接着说（时长在设置里改）
   useEffect(() => {
     const viewer = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)
@@ -667,6 +681,7 @@ export function TaskView({
                         <div key={b.key} className="flex flex-col gap-4">
                           <ChatTurn
                             msgs={b.msgs}
+                            task={task}
                             teamNames={teamNames}
                             live={working && i + hidden === blocks.length - 1}
                             last={!working && i + hidden === blocks.length - 1}
@@ -724,7 +739,7 @@ export function TaskView({
                       ) : b.m.role === 'system' ? (
                         <NoteMessage key={b.m.id} m={b.m} className="justify-center text-center" />
                       ) : (
-                        <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
+                        <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
                       ),
                     )}
                     <NextWorkflows task={task} />
@@ -1283,6 +1298,7 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
 /** 对话的一轮回复：署名用这条回复记下的 CLI 和模型；以前的回复没记，用对话现在的设置 */
 function ChatTurn({
   msgs,
+  task,
   teamNames,
   live,
   last,
@@ -1290,6 +1306,7 @@ function ChatTurn({
   command,
 }: {
   msgs: TaskMessage[]
+  task?: Task
   teamNames: Set<string>
   live: boolean
   last: boolean
@@ -1299,17 +1316,18 @@ function ChatTurn({
 }) {
   const run = msgs.find((m) => m.run)?.run
   const cur = useChatRun(fallback ?? { cli: '', model: '', effort: '' }).run
-  const base = useRunAuthor(fallback ? (run ?? cur) : undefined)
+  const author = useRunAuthor(fallback ? (run ?? cur) : undefined)
   // 这一轮实际启动的命令：署名行最右边显示，和工作流节点标题旁的一样；按 Agent 显示的对话没有署名行，交给名字那行
-  const author = base ? { ...base, command } : undefined
+  const withCommand = author ? { ...author, command } : undefined
   return (
     <ChatReply
       msgs={msgs}
+      task={task}
       teamNames={teamNames}
       live={live}
       last={last}
-      author={author}
-      command={author ? undefined : command}
+      author={withCommand}
+      command={withCommand ? undefined : command}
     />
   )
 }

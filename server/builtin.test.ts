@@ -48,7 +48,9 @@ test('内置 Agent：引用的 Skill 都是自带的，引入的 Agent 存在，
   const keys = new Set(BUILTIN_AGENTS.map((b) => b.key))
   assert.equal(keys.size, BUILTIN_AGENTS.length, 'key 重复')
   for (const b of BUILTIN_AGENTS) {
-    for (const s of b.agent.skills) assert.ok(names.has(s), `${b.agent.name} 引用的 Skill「${s}」不存在`)
+    for (const s of b.agent.skills)
+      // {{槽名}} 是工作流暴露项的技能槽，新建对话时按项目设置换成具体的技能
+      if (!/^\{\{[\w-]+\}\}$/.test(s)) assert.ok(names.has(s), `${b.agent.name} 引用的 Skill「${s}」不存在`)
     for (const k of b.includes) assert.ok(keys.has(k), `${b.agent.name} 引入的「${k}」不存在`)
     const a = agents.find((x) => x.id === b.key)!
     const role = composeRole(a, agents)

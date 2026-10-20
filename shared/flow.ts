@@ -187,6 +187,18 @@ export const MAIN_STEP = '@main'
 export const isMainStep = (s: { kind: string }) => s.kind === 'main'
 
 /**
+ * 同一个对话里工作流可以按顺序跑多次，每次是一个「运行」，节点互相隔离。
+ * 第 1 次运行的节点沿用原来的 id（旧任务也按第 1 次算），之后的加 `r2/`、`r3/` 前缀。
+ */
+export const runPrefix = (run: number) => (run > 1 ? `r${run}/` : '')
+
+/** 这个 id 是不是属于第 run 次运行 */
+export const inRun = (id: string, run: number) => (run > 1 ? id.startsWith(runPrefix(run)) : !/^r\d+\//.test(id))
+
+/** 任务现在跑到第几次运行（还没开始时算第 1 次） */
+export const currentRun = (task: { runSeq?: number }) => Math.max(1, task.runSeq ?? 0)
+
+/**
  * 这个流程执行时要不要主 Agent 调度：工作流打开了调度、选了主 Agent，并且流程里有事可调度
  * （有子 Agent 的节点、调用流程的节点，或者不止一个节点）。只有一个主 Agent 自己做的节点时不需要，
  * 免得「默认」这类单节点工作流多花两轮
@@ -285,50 +297,62 @@ export function blankStep(o: Partial<TaskStep> & Pick<TaskStep, 'id' | 'title'>)
   }
 }
 
-/** 把工作流的主流程展开成任务节点（子流程在执行时才展开）；要调度时主 Agent 排在最前面 */
-export function planTask(workflow: Workflow | undefined): { steps: TaskStep[] } {
+/**
+ * 把工作流的主流程展开成任务节点（子流程在执行时才展开）。
+ * 主 Agent 是常驻编排器：只在第 1 次运行时建一个，一直活到对话结束，负责起停每一次运行；
+ * 第 2 次起只建流程节点，节点 id 加 `r{n}/` 前缀和上一次运行隔离。
+ */
+export function planTask(workflow: Workflow | undefined, run = 1): { steps: TaskStep[] } {
   if (!workflow) return { steps: [] }
   const flow = entryFlow(workflow)
-  const main = dispatches(workflow, flow)
-    ? [
-        blankStep({
-          id: MAIN_STEP,
-          workflowId: workflow.id,
-          flowId: flow.id,
-          kind: 'main',
-          title: t('主 Agent'),
-          agentId: workflow.mainAgentId,
-        }),
-      ]
-    : []
+  const p = runPrefix(run)
+  const main =
+    run === 1 && dispatches(workflow, flow)
+      ? [
+          blankStep({
+            id: MAIN_STEP,
+            workflowId: workflow.id,
+            flowId: flow.id,
+            kind: 'main',
+            title: t('主 Agent'),
+            agentId: workflow.mainAgentId,
+          }),
+        ]
+      : []
   return {
     steps: [
       ...main,
       ...topoOrder(flow).map((n, i) =>
         blankStep({
-          id: n.id,
+          id: `${p}${n.id}`,
           workflowId: workflow.id,
           flowId: flow.id,
           nodeId: n.id,
           kind: n.kind,
           title: n.title.trim() || t('节点 {n}', { n: i + 1 }),
           agentId: n.kind === 'agent' ? nodeAgent(workflow, n.agentId) : '',
+          runId: run,
         }),
       ),
     ],
   }
 }
 
-/** 任务里主流程的节点（不含子节点和主 Agent） */
-export const topSteps = (task: { steps: TaskStep[] }) => task.steps.filter((s) => !s.parentId && !isMainStep(s))
-/** 任务最外层的主 Agent；工作流没有调度时没有 */
+/** 第 run 次运行的主流程节点（不含子节点和常驻编排器） */
+export const topSteps = (task: { steps: TaskStep[] }, run = currentRun(task as { runSeq?: number })) =>
+  task.steps.filter((s) => !s.parentId && !isMainStep(s) && inRun(s.id, run))
+/**
+ * 常驻编排器：一个对话只有一个（`@main`），历次运行都用它，所以不带运行前缀；
+ * 委派给其他工作流时的主 Agent 挂在发起的节点下面，不在这里找
+ */
 export const mainStep = (task: { steps: TaskStep[] }) => task.steps.find((s) => s.id === MAIN_STEP)
 
-type FlowTask = { mode: string; steps: TaskStep[]; flowClosed?: boolean }
+type FlowTask = { mode: string; steps: TaskStep[]; flowClosed?: boolean; runSeq?: number }
 
-/** 任务走的主流程：第一个节点记下的流程，还没有节点时是入口流程 */
-export function taskFlow(task: { steps: TaskStep[] }, w: Workflow | undefined): Flow | undefined {
-  return w && (w.flows.find((f) => f.id === (task.steps[0]?.flowId || w.entryFlowId)) ?? w.flows[0])
+/** 任务这次运行走的主流程：这次运行的节点记下的流程，还没有节点时是入口流程 */
+export function taskFlow(task: { steps: TaskStep[]; runSeq?: number }, w: Workflow | undefined): Flow | undefined {
+  const mine = topSteps(task)
+  return w && (w.flows.find((f) => f.id === (mine[0]?.flowId || w.entryFlowId)) ?? w.flows[0])
 }
 
 /**
@@ -345,33 +369,22 @@ export function blockedStep(task: FlowTask, flow: Flow | undefined): TaskStep | 
 }
 
 /**
- * 工作流还没走完：有节点没完成（失败、暂停、还没开始）、停在了某个节点的结论上，或者主 Agent 的整理还没做完。
- * 用户结束了流程后不算
+ * 这次运行还没走完：有节点没完成（失败、暂停、还没开始），或者停在了某个节点的结论上。
+ * 主 Agent 是常驻编排器，不算在内（它一直活着，等用户的下一条要求）；用户结束了流程后也不算
  */
 export function flowUnfinished(task: FlowTask, w: Workflow | undefined): boolean {
   if (task.mode !== 'workflow' || task.flowClosed) return false
   const flow = taskFlow(task, w)
   const tops = topSteps(task)
-  const top = mainStep(task)
-  return (
-    !tops.length ||
-    tops.some((s) => s.status !== 'done' && s.status !== 'skipped') ||
-    (!!w && !!flow && dispatches(w, flow) && !!top && top.status !== 'done' && top.status !== 'skipped') ||
-    !!blockedStep(task, flow)
-  )
+  return !tops.length || tops.some((s) => s.status !== 'done' && s.status !== 'skipped') || !!blockedStep(task, flow)
 }
 
-/** 让停住的流程接着走：停住的节点重新执行（重新检查），主 Agent 最后重新整理；被跳过的节点由流程重新判断 */
+/** 让停住的流程接着走：停住的节点重新执行（重新检查），被跳过的节点由流程重新判断；主 Agent 一直在，不用动 */
 export function reopenFlow(task: { steps: TaskStep[] }, step: TaskStep) {
   step.status = 'pending'
   step.branch = ''
   step.verdict = ''
   step.endedAt = ''
-  const top = mainStep(task)
-  if (top?.status === 'done') {
-    top.status = 'pending'
-    top.endedAt = ''
-  }
 }
 /** 某个节点下面的直接子节点 */
 export const childSteps = (task: { steps: TaskStep[] }, id: string) => task.steps.filter((s) => s.parentId === id)
@@ -384,8 +397,8 @@ export function stepTree(task: { steps: TaskStep[] }, id: string): TaskStep[] {
   walk(id)
   return out
 }
-/** 节点属于哪个主流程节点 */
-export const rootStepId = (id: string) => id.split('/')[0]
+/** 节点属于哪个主流程节点（去掉运行前缀，第 2 次起的节点 id 是 `r2/xxx`） */
+export const rootStepId = (id: string) => id.replace(/^r\d+\//, '').split('/')[0]
 
 export const SLOT_LABEL: Record<string, string> = {
   start: t('开始'),

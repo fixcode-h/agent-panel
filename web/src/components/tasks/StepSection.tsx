@@ -61,7 +61,7 @@ export function StepSection({
   const { agents } = useData()
   const now = useNow(task.status === 'running')
   const root = task.steps.find((s) => s.id === rootId)
-  if (!root) return <FoldedRun msgs={msgs} teamNames={teamNames} />
+  if (!root) return <FoldedRun msgs={msgs} task={task} teamNames={teamNames} />
   const a = agents.find((x) => x.id === root.agentId)
   const time = stepDuration(root, now)
   const vt = verdictText(root)
@@ -122,7 +122,9 @@ export function StepSection({
               </div>
             )
           if (r.step === rootId)
-            return <FoldedRun key={i} msgs={r.msgs} teamNames={teamNames} live={root.status === 'running'} />
+            return (
+              <FoldedRun key={i} msgs={r.msgs} task={task} teamNames={teamNames} live={root.status === 'running'} />
+            )
           const s = task.steps.find((x) => x.id === r.step)
           const v =
             s?.slot === 'review'
@@ -151,7 +153,7 @@ export function StepSection({
                   </span>
                 )}
               </div>
-              <FoldedRun msgs={r.msgs} teamNames={teamNames} live={s?.status === 'running'} />
+              <FoldedRun msgs={r.msgs} task={task} teamNames={teamNames} live={s?.status === 'running'} />
             </div>
           )
         })}

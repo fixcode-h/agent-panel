@@ -12,17 +12,26 @@ import {
   Terminal,
   Wrench,
 } from 'lucide-react'
-import type { ToolUse } from '@shared/schema'
+import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { toolVerb } from '@/lib/tasks'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
+import { DiffDialog } from './DiffDialog'
+import { CommandDialog, OutputDialog } from './ToolDialog'
 
 /** 读取的工具行里 label 是不是一个能打开的文件：像路径，而不是「读取 3 个文件」这类说明 */
 function isFilePath(label: string) {
   const s = label.trim()
   if (!s || /\s/.test(s)) return false
   return /[\\/]/.test(s) || /\.[A-Za-z0-9]{1,10}$/.test(s)
+}
+
+/** 哪些工具的输出值得在独立窗口里看：命令、改动、读取的文件已经有自己的窗口 */
+function hasWindow(tool: ToolUse) {
+  if (tool.kind === 'run' || tool.kind === 'edit') return true
+  // 搜索、网页、MCP（other）的输出经常很长，展开会把对话挤满
+  return tool.kind === 'search' || tool.kind === 'web' || tool.kind === 'other'
 }
 
 export const toolIcon = {
@@ -143,8 +152,9 @@ function Block({ label, text, tone }: { label: string; text: string; tone?: 'dan
  * 一次工具调用：收起时一行（图标、命令或文件、结果摘要），点开参照 Claude Code：
  * 命令显示 IN / OUT，改文件显示 diff，读文件和其他工具显示参数和输出
  */
-export function ToolRow({ tool }: { tool: ToolUse }) {
+export function ToolRow({ tool, task }: { tool: ToolUse; task?: Task }) {
   const [open, setOpen] = useState(false)
+  const [win, setWin] = useState<'' | 'run' | 'edit' | 'out'>('')
   const openFile = useFileOpen()
   const Icon = toolIcon[tool.kind] ?? Wrench
   const verb = toolVerb(tool)
@@ -154,6 +164,8 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
   const isDiff = tool.kind === 'edit' && /^[+\-@ ]/m.test(input)
   // 读取的文件：点名字直接打开，点「读取」只展开收起
   const file = tool.kind === 'read' && openFile && isFilePath(tool.label) ? tool.label.trim() : ''
+  // 命令点命令本身、改动点文件名：直接开对应的窗口；其余工具点「展开」时在行内看，输出长的再开窗口
+  const windowed = hasWindow(tool)
 
   const glyph = tool.running ? (
     <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
@@ -176,6 +188,11 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
       )}
     />
   )
+  // 行内展开时的输出：长的只留前一段，后面提示去窗口里看
+  const short = output.length > 400 ? `${output.slice(0, 400).trimEnd()}…` : output
+  // 命令还在跑：展开时只显示最新的三行，像终端一样滚动；跑完再按现有高度显示完整输出
+  const live = !!tool.running && tool.kind === 'run'
+  const liveRows = live ? output.trimEnd().split('\n').slice(-3) : []
 
   return (
     <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', tool.failed && 'border-danger/30')}>
@@ -203,6 +220,30 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
             {chevron}
           </button>
         </div>
+      ) : windowed ? (
+        // 命令、改动、搜索等：点这一行打开独立窗口；「展开」仍在行内看，方便快速瞄一眼
+        <div className="group flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 font-mono text-xs text-muted">
+          <button
+            onClick={() => setWin(tool.kind === 'run' ? 'run' : tool.kind === 'edit' ? 'edit' : 'out')}
+            title={tool.kind === 'run' ? t('打开命令行窗口') : tool.kind === 'edit' ? t('打开差异窗口') : t('打开窗口')}
+            className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left hover:text-fg"
+          >
+            {glyph}
+            <span className="min-w-0 flex-1 truncate">
+              {verb && <span className="mr-1.5 font-sans font-medium text-fg/80">{verb}</span>}
+              {tool.label}
+            </span>
+            {detail}
+          </button>
+          <button
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            title={open ? t('收起') : t('展开')}
+            className="shrink-0 cursor-pointer"
+          >
+            {chevron}
+          </button>
+        </div>
       ) : (
         // 命令还在跑：转圈代替图标，输出边跑边追加，点开能看到
         <button
@@ -222,22 +263,88 @@ export function ToolRow({ tool }: { tool: ToolUse }) {
       {open && (
         <div className="divide-y border-t bg-card/60">
           {isDiff ? (
-            <DiffView diff={input} />
+            <div className="relative">
+              <DiffView diff={input} />
+              <button
+                onClick={() => setWin('edit')}
+                className="absolute top-1.5 right-2 cursor-pointer rounded-md bg-card/90 px-2 py-1 font-sans text-[0.6875rem] text-muted hover:text-fg"
+              >
+                {t('窗口里查看')}
+              </button>
+            </div>
           ) : tool.kind === 'read' ? (
             input && input !== tool.label && <Block label="IN" text={input} />
           ) : (
             <Block label="IN" text={input || tool.label} />
           )}
           {output ? (
-            <Block label="OUT" text={output} tone={tool.failed ? 'danger' : undefined} />
+            <>
+              {live ? (
+                // 命令还在跑：只跟显示最新三行，高度固定，不会把对话越撑越长；
+                // 完整输出点命令打开命令行窗口看
+                <div className="flex gap-3 px-3 py-2">
+                  <span className="w-8 shrink-0 pt-px font-sans text-[0.65625rem] font-medium tracking-wider text-subtle">
+                    OUT
+                  </span>
+                  {/* 最多三行：高度按这个字号的行高算（3 × 1.3em），字号跟着设置变也不会错位 */}
+                  <pre
+                    style={{ maxHeight: '3.9em' }}
+                    className="min-w-0 flex-1 overflow-hidden font-mono text-[0.75rem] leading-[1.3] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]"
+                  >
+                    {liveRows.join('\n')}
+                  </pre>
+                </div>
+              ) : (
+                <Block label="OUT" text={short} tone={tool.failed ? 'danger' : undefined} />
+              )}
+              {!live && short !== output && (
+                <button
+                  onClick={() => setWin('out')}
+                  className="w-full cursor-pointer px-3 py-2 text-left font-sans text-xs text-muted hover:bg-sel hover:text-fg"
+                >
+                  {t('输出较长，在窗口里查看全部')}
+                </button>
+              )}
+            </>
           ) : (
             !isDiff && (
               <div className="px-3 py-2 font-sans text-xs text-subtle">
-                {tool.kind === 'read' && !input ? tool.label : t('没有输出')}
+                {tool.kind === 'read' && !input ? tool.label : live ? t('正在执行…') : t('没有输出')}
               </div>
             )
           )}
         </div>
+      )}
+      {win === 'run' && (
+        <CommandDialog
+          command={input || tool.label}
+          output={output}
+          failed={tool.failed}
+          running={tool.running}
+          open
+          onOpenChange={(o) => !o && setWin('')}
+        />
+      )}
+      {win === 'edit' && task && (
+        <DiffDialog
+          task={task}
+          diff={input}
+          title={tool.label}
+          onOpenChange={(o) => !o && setWin('')}
+          onReverted={() => {}}
+        />
+      )}
+      {win === 'out' && (
+        <OutputDialog
+          title={tool.kind === 'search' ? t('搜索结果') : tool.kind === 'web' ? t('网页') : tool.name || tool.label}
+          detail={tool.label}
+          input={tool.kind === 'search' || tool.kind === 'web' ? '' : input}
+          output={output}
+          failed={tool.failed}
+          running={tool.running}
+          open
+          onOpenChange={(o) => !o && setWin('')}
+        />
       )}
     </div>
   )

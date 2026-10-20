@@ -1,5 +1,6 @@
-import { DEFAULT_AGENT_ID, type Workflow } from '../schema.ts'
+import { DEFAULT_AGENT_ID, type ParamValues, type Workflow } from '../schema.ts'
 import { autoLayout, END, entryFlow, START, topoOrder, workflowClosure } from '../flow.ts'
+import { applyExpose } from '../expose.ts'
 import { t } from '../i18n.ts'
 
 /**
@@ -112,8 +113,15 @@ export function withCatalog(w: Workflow, all: Workflow[]): Workflow {
   return { ...w, document: `${w.document.trim()}\n\n${catalog}`.slice(0, 50000) }
 }
 
-/** 任务存的工作流快照（见 workflowClosure），默认工作流附上可推荐的工作流 */
-export const taskSnapshot = (w: Workflow, all: Workflow[]) => workflowClosure(w, all).map((x) => withCatalog(x, all))
+/**
+ * 任务里存的那份工作流快照（见 workflowClosure）。项目里填的暴露项在这里落进快照：
+ * 说明、节点参数、注入的配置定下来，技能槽另存到任务上（见 exposeSlots）。
+ * 之后改项目设置或工作流都不影响已经开始的对话。
+ */
+export function taskSnapshot(w: Workflow, all: Workflow[], params: ParamValues = {}) {
+  const filled = applyExpose(w, params)
+  return workflowClosure(filled, all).map((x) => withCatalog(x, all))
+}
 
 export interface NextWorkflow {
   id: string

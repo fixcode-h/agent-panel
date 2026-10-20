@@ -1266,8 +1266,13 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function projectWorkflow(d: Db, p: Project) {
   const id = p.workflowId || d.projectCategories.find((c) => c.id === p.categoryId)?.workflowId
-  // 项目没指定工作流时用自带的「默认」工作流
-  return d.workflows.find((w) => w.id === (id || DEFAULT_WORKFLOW_ID))
+  if (id) return d.workflows.find((w) => w.id === id)
+  // 和正式版一样：没指定时落到「通用项目」，再不行才用「默认」
+  return (
+    d.workflows.find((w) => w.origin === 'builtin:project-general') ??
+    d.workflows.find((w) => w.name === '通用项目') ??
+    d.workflows.find((w) => w.id === DEFAULT_WORKFLOW_ID)
+  )
 }
 
 /** 这个对话实际用的 CLI（和正式版一样：默认 Agent 的对话用任务上选的，其他 Agent 用自己配置的） */
@@ -1408,6 +1413,12 @@ function tasksRoute(
   }
   // 演示里没有常驻 CLI，页面在场状态和预热都不用处理
   if (sub === 'presence' || sub === 'prewarm') return task
+  // 打开看过这一轮：清掉侧栏的橙点
+  if (sub === 'seen') {
+    task.turnSeenAt = task.turnDoneAt
+    persist()
+    return task
+  }
   if (sub === 'queue' && method === 'DELETE') {
     task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
     persist()
@@ -1603,6 +1614,8 @@ function tasksRoute(
       truncated: false,
     }
   }
+  // 演示里没有本机的文件管理器
+  if (sub === 'reveal') return { ok: true, dir: '', demo: true }
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''

@@ -1,6 +1,25 @@
-import type { Agent, AgentInput, Category, Tag, TagInput, Workflow, WorkflowInput } from '../schema.ts'
+import type {
+  Agent,
+  AgentInput,
+  Category,
+  Project,
+  ProjectCategory,
+  Tag,
+  TagInput,
+  Workflow,
+  WorkflowInput,
+} from '../schema.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, type BuiltinAgent } from './agents.ts'
-import { BUILTIN_WORKFLOWS, buildWorkflow, builtinAgentKeys, type BuiltinWorkflow } from './workflows.ts'
+import {
+  BUILTIN_WORKFLOWS,
+  buildWorkflow,
+  builtinAgentKeys,
+  GENERAL_KEY,
+  GENERAL_NAME,
+  GENERAL_ORIGIN,
+  UE_PROJECT_KEY,
+  type BuiltinWorkflow,
+} from './workflows.ts'
 
 /**
  * 把内置工作流、内置 Agent 建进数据：不自动装，由用户在工作流页、Agent 页的「内置」里明确添加。
@@ -142,7 +161,49 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
   return { workflow, created, newCategories, newTags }
 }
 
-/** 一次装上多个内置工作流（默认全部；已有同名工作流的跳过），返回装完后的数据 */
+/** 「通用项目」「UE 项目」：启动时自动装一次，项目默认流程要用 */
+const GLOBAL_WORKFLOWS = BUILTIN_WORKFLOWS.filter((w) => w.key === GENERAL_KEY || w.key === UE_PROJECT_KEY)
+
+/**
+ * 启动时安装一次项目用的内置工作流（「通用项目」「UE 项目」）：同名或同来源的跳过，不覆盖用户改过的。
+ * 返回装完后的数据，调用方据此更新集合。
+ */
+export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps) {
+  const rest = GLOBAL_WORKFLOWS.filter(
+    (w) => !state.workflows.some((x) => x.origin === originOf(w.key) || x.name === w.name),
+  )
+  if (!rest.length) return { state, created: [] as Workflow[] }
+  const { workflows, categories, tags, agents } = await seedBuiltins(state, api, rest)
+  return {
+    state: { workflows, categories, tags, agents },
+    created: workflows.filter((w) => !state.workflows.some((x) => x.id === w.id)),
+  }
+}
+
+/**
+ * 旧项目迁移：以前项目可以不指定工作流，现在必须有。
+ * 没指定、分类也没有默认时，指向内置的「通用项目」；已经指定（而且还存在）的不动。
+ */
+export async function migrateProjectsToGeneral(
+  projects: Project[],
+  workflows: Workflow[],
+  categories: ProjectCategory[],
+): Promise<{ id: string; workflowId: string }[]> {
+  const general = workflows.find((w) => w.origin === GENERAL_ORIGIN) ?? workflows.find((w) => w.name === GENERAL_NAME)
+  if (!general) return []
+  const ids = new Set(workflows.map((w) => w.id))
+  const out: { id: string; workflowId: string }[] = []
+  for (const p of projects) {
+    if (p.workflowId && ids.has(p.workflowId)) continue
+    const cat = categories.find((c) => c.id === p.categoryId)
+    if (!p.workflowId && cat?.workflowId && ids.has(cat.workflowId)) continue
+    out.push({ id: p.id, workflowId: general.id })
+  }
+  return out
+}
+/**
+ * 一次装上多个内置工作流（默认全部；已有同名工作流的跳过），返回装完后的数据
+ */
 export async function seedBuiltins(state: BuiltinState, api: BuiltinOps, list = BUILTIN_WORKFLOWS) {
   const cur = {
     agents: [...state.agents],

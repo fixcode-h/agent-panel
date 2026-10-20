@@ -17,6 +17,9 @@
 |                  | `verification-before-completion`   | 没有新鲜验证证据不声称完成                                |
 |                  | `software-architecture-design`     | 项目、子系统架构的设计与评审（含 UE、Lua、C# 参考）       |
 | 文档 `docs/`     | `project-documentation`            | PROJECT_ROOT / DOC_ROOT、模块文档、bugs.md 与文档更新规则 |
+| 项目 `project/`  | `project-structure`                | 陌生项目的目录、构建、测试、运行方式和常见坑              |
+|                  | `ue-project-structure`             | UE 模块与插件、UHT/UBT、自动化测试、Cook、资产规则        |
+|                  | `project-testing`                  | 按改动选测试、找项目自己的验证命令、写验收证据            |
 | 版本控制 `vcs/`  | `project-workflow`                 | 识别 Git / P4 / 无版本控制，保护既有改动，收尾核对        |
 |                  | `git-workflow`                     | Git 基线、限定 diff、按需本地提交，不推送                 |
 |                  | `p4-workflow`                      | P4 default changelist、pending 分桶、中文描述编码安全     |

@@ -8,6 +8,8 @@ import {
 } from './schema.ts'
 import { t } from './i18n.ts'
 import { tierOf } from './settings.ts'
+import { fillSkills } from './expose.ts'
+import { skillLine } from './skill-guide.ts'
 
 /**
  * Agent 的角色设定：引入其他 Agent、参数和条件分支、要用的 Skill，最后拼成交给 CLI 的一段说明。
@@ -242,8 +244,14 @@ export const commonAgents = (agents: Agent[]) => agents.filter((a) => a.common &
 /**
  * 交给 CLI 的完整角色设定：自己的设定（套上参数）、引入的 Agent 的设定、参数的取值、要用的 Skill。
  * 引入的 Agent 用它们自己的参数默认值；同名参数跟着这个 Agent 的取值走，方便一个开关管住一串。
+ * slots 是项目里定的技能槽取值：Skill 名写 `{{槽名}}` 时按它换掉（见 shared/expose.ts）。
  */
-export function composeRole(agent: Agent, agents: Agent[], given: ParamValues = {}) {
+export function composeRole(
+  agent: Agent,
+  agents: Agent[],
+  given: ParamValues = {},
+  slots: Record<string, string> = {},
+) {
   const { values } = resolveParams(agent.params, given)
   const parts: string[] = []
   const own = renderTemplate(agent.instructions, values).trim()
@@ -258,10 +266,10 @@ export function composeRole(agent: Agent, agents: Agent[], given: ParamValues = 
     const lines = agent.params.map((p) => `- ${paramLabel(p)}（${p.key}）：${valueText(values[p.key]) || '（空）'}`)
     parts.push(`## 本次的参数\n按这些参数决定做法：\n${lines.join('\n')}`)
   }
-  const skills = [...new Set([...agent.skills, ...subs.flatMap((s) => s.agent.skills)])]
+  const skills = [...new Set(fillSkills([...agent.skills, ...subs.flatMap((s) => s.agent.skills)], slots))]
   if (skills.length)
     parts.push(
-      `## 要用的 Skill\n做相关的事时优先使用这些 Skill（找不到就按自己的方式做）：${skills.map((s) => `\`${s}\``).join('、')}`,
+      `## 要用的 Skill\n遇到下面的情况时先读对应的 SKILL.md，按里面的规则做（找不到就按自己的方式做）：\n${skills.map(skillLine).join('\n')}`,
     )
   return parts.join('\n\n')
 }

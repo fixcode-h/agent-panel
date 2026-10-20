@@ -105,6 +105,7 @@ test('编排工具：派子 Agent 并行、取结果、问主 Agent、传话，�
   await runEngineTurn(host(task, log))
   assert.equal(task.status, 'done', JSON.stringify(task.messages.map((m) => m.text)))
   const by = (id: string) => task.steps.find((s) => s.id === id)!
+  // 主 Agent 是常驻编排器：这次运行走完了标成完成只表示它空闲，会话还在，下一条要求接着用
   assert.equal(by('@main').status, 'done')
   assert.equal(by('@main').output, '最终：都好了')
   assert.equal(by('a/sub/h1').parentId, 'a')
@@ -138,6 +139,7 @@ test('编排工具的 MCP：列出工具、调用、结束后失效', async () =
     app.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
   const list = await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()
   const names = list.result.tools.map((x: { name: string }) => x.name)
+  // 节点里的调用没有起停运行的工具（只有常驻编排器有）
   assert.deepEqual(names, ['get_status', 'spawn_agents', 'wait_agents', 'ask_main', 'send_message', 'read_messages'])
   const st = await (
     await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_status', arguments: {} } })

@@ -1,6 +1,6 @@
 ---
 name: project-documentation
-description: 管理项目文档：确定 PROJECT_ROOT 与 DOC_ROOT（P4 项目文档放外部目录）、文档入口与模块地图、模块 README 状态与 bugs.md、按变化选择要更新的文档。项目任务开始时使用；需要初始化文档结构、阅读项目、写模块摘要、更新 CONTEXT 或架构说明、ADR、技术契约、runbook、OpenSpec 文档位置或发布说明时也使用。
+description: 管理项目文档：确定 PROJECT_ROOT 与 DOC_ROOT、文档入口与模块地图、模块 README 状态与 bugs.md、按变化选择要更新的文档。项目任务开始时使用；需要初始化文档结构、阅读项目、写模块摘要、更新 CONTEXT 或架构说明、ADR、技术契约、runbook、发布说明时也使用。任何技术栈、任何版本控制系统通用的规则；版本控制的专项命令见 project-workflow。
 user-invocable: true
 ---
 
@@ -23,9 +23,14 @@ user-invocable: true
 - `PROJECT_ROOT`：代码、资源、构建配置和可执行测试所在的项目根目录；
 - `DOC_ROOT`：设计、规范、架构、验收和过程文档所在的根目录。
 
-普通项目：`DOC_ROOT = PROJECT_ROOT\docs`。P4 项目：`DOC_ROOT = <共同外层目录>\ProjectDoc\doc\<实际项目文件夹名>`。P4 文档不得写回 `PROJECT_ROOT`。
+默认规则：
 
-代码、构建和测试命令在 `PROJECT_ROOT` 执行；文档和 OpenSpec 状态在 `DOC_ROOT` 管理。无法唯一确定两个根时先询问，不要猜路径。
+1. 项目里已经有文档目录（`docs/`、`doc/` 或配置里指定的位置）时，`DOC_ROOT` 就是它，不要另起一套。
+2. 没有时普通项目用 `PROJECT_ROOT/docs`。
+3. 项目由 P4 管理、文档和代码要分开提交时，`DOC_ROOT = <共同外层目录>/ProjectDoc/doc/<实际项目文件夹名>`，文档不写回 `PROJECT_ROOT`。
+4. 仓库是只读、或者项目根下不宜放文档时，问用户要一个位置，不要猜。
+
+代码、构建和测试命令在 `PROJECT_ROOT` 执行；文档和变更状态在 `DOC_ROOT` 管理。无法唯一确定两个根时先询问，不要猜路径。
 
 ## 推荐结构
 
@@ -104,11 +109,11 @@ DOC_ROOT/
 
 区分三个状态：
 
-1. **工作区已实现**：代码和资源在本地通过验证，但可能仍在 pending；
-2. **已提交**：用户完成 P4 submit 或其他版本控制提交；
+1. **工作区已实现**：代码和资源在本地通过验证，但可能还没提交；
+2. **已提交**：已经进入版本控制的历史（Git 的 commit、P4 的 submit、其他系统的提交）；
 3. **已发布**：用户可获得或使用的版本已更新。
 
-P4 pending 阶段不得把“仅工作区已实现”写成已提交或已发布。正式 `openspec/specs/`、架构快照和发布记录应根据项目约定在提交或发布状态确认后更新；若提前记录，必须明确标注“已验收，待提交”。
+未提交的阶段不得把「仅工作区已实现」写成已提交或已发布。正式 `openspec/specs/`、架构快照和发布记录应根据项目约定在提交或发布状态确认后更新；若提前记录，必须明确标注「已验收，待提交」。
 
 ## 读取与更新顺序
 

@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
-import type { TaskMessage } from '@shared/schema'
+import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { ToolRow } from './ToolRow'
@@ -123,6 +123,7 @@ export type Author = {
 
 export function AgentMessage({
   m,
+  task,
   teamNames,
   compact,
   live,
@@ -133,6 +134,8 @@ export function AgentMessage({
   command,
 }: {
   m: TaskMessage
+  /** 工具行的窗口要拿任务里的改动信息（编辑记录没有的话可以看任务级的差异） */
+  task?: Task
   teamNames: Set<string>
   compact?: boolean
   /** 这条消息正在流式输出 */
@@ -155,6 +158,7 @@ export function AgentMessage({
   return (
     <MessageBody
       m={text === m.text ? m : { ...m, text }}
+      task={task}
       teamNames={teamNames}
       compact={compact}
       live={live}
@@ -172,6 +176,7 @@ export function AgentMessage({
 
 type BodyProps = {
   m: TaskMessage
+  task?: Task
   teamNames: Set<string>
   compact?: boolean
   live?: boolean
@@ -226,6 +231,7 @@ export function PendingAuthor({ author, children }: { author: Author; children: 
 const MessageBody = memo(
   function MessageBody({
     m,
+    task,
     teamNames,
     compact,
     live,
@@ -265,7 +271,7 @@ const MessageBody = memo(
           {!hideProcess && m.tools.length > 0 && (
             <div className="flex flex-col gap-1">
               {m.tools.map((t, i) => (
-                <ToolRow key={i} tool={t} />
+                <ToolRow key={i} tool={t} task={task} />
               ))}
             </div>
           )}
@@ -289,12 +295,15 @@ const MessageBody = memo(
     a.model === b.model &&
     a.icon === b.icon &&
     a.cli === b.cli &&
-    a.command === b.command,
+    a.command === b.command &&
+    // 工具行的窗口要用任务里的改动信息：只有任务对象换了才重画
+    a.task === b.task,
 )
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
 export function Msgs({
   msgs,
+  task,
   teamNames,
   live,
   slot,
@@ -304,6 +313,7 @@ export function Msgs({
   hideAuthor,
 }: {
   msgs: TaskMessage[]
+  task?: Task
   teamNames: Set<string>
   live?: boolean
   /** 放在第一条 Agent 消息名字下面的内容（展开后的折叠开关） */
@@ -327,6 +337,7 @@ export function Msgs({
           <AgentMessage
             key={m.id}
             m={m}
+            task={task}
             teamNames={teamNames}
             live={live && k === lastAgent}
             slot={k === firstAgent ? slot : undefined}
@@ -347,12 +358,14 @@ export function Msgs({
  */
 export function FoldedRun({
   msgs,
+  task,
   teamNames,
   live,
   author,
   command,
 }: {
   msgs: TaskMessage[]
+  task?: Task
   teamNames: Set<string>
   live?: boolean
   author?: Author
@@ -366,7 +379,7 @@ export function FoldedRun({
   const thoughts = process.filter((m) => m.thinking?.trim()).length
   const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
   if (live || last < 0 || (!tools && !thoughts && !notes))
-    return <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} command={command} />
+    return <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} author={author} command={command} />
 
   const parts = [
     thoughts && t('思考 {n} 次', { n: thoughts }),
@@ -386,16 +399,25 @@ export function FoldedRun({
   if (open)
     return (
       // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方
-      <Msgs msgs={msgs} teamNames={teamNames} slot={toggle} author={author} command={command} />
+      <Msgs msgs={msgs} task={task} teamNames={teamNames} slot={toggle} author={author} command={command} />
     )
   // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
   const tail = msgs.slice(last + 1)
   return (
     <>
       {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} />)}
-      <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} command={command} />
+      <AgentMessage
+        m={msgs[last]}
+        task={task}
+        teamNames={teamNames}
+        hideProcess
+        slot={toggle}
+        author={author}
+        command={command}
+      />
       <Msgs
         msgs={tail}
+        task={task}
         teamNames={teamNames}
         author={author}
         command={command}
@@ -411,6 +433,7 @@ export function FoldedRun({
  */
 export function ChatReply({
   msgs,
+  task,
   teamNames,
   live,
   author,
@@ -420,6 +443,7 @@ export function ChatReply({
   children,
 }: {
   msgs: TaskMessage[]
+  task?: Task
   teamNames: Set<string>
   live?: boolean
   author?: Author
@@ -434,7 +458,15 @@ export function ChatReply({
   const body = (
     <>
       {author && <StickyAuthor author={author} />}
-      <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} command={command} hideAuthor={!!author} />
+      <Msgs
+        msgs={msgs}
+        task={task}
+        teamNames={teamNames}
+        live={live}
+        author={author}
+        command={command}
+        hideAuthor={!!author}
+      />
       {children}
     </>
   )

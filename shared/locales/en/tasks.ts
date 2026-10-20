@@ -153,6 +153,17 @@ export const EN_TASKS: Record<string, string> = {
   '没有执行。': 'Not run.',
   '没有输出。': 'No output.',
   在对话中查看完整过程: 'View full process in chat',
+  左右对照: 'Side by side',
+  上下对照: 'Stacked',
+  打开所在文件夹: 'Open containing folder',
+  '这次修改没有给出改动内容。': 'This edit did not include the change content.',
+  '还在执行…': 'Still running…',
+  打开命令行窗口: 'Open command window',
+  打开差异窗口: 'Open diff window',
+  打开窗口: 'Open window',
+  窗口里查看: 'View in window',
+  '输出较长，在窗口里查看全部': 'Output is long — view all in a window',
+  搜索结果: 'Search results',
 
   // 任务面板
   任务进度: 'Progress',
@@ -231,6 +242,7 @@ export const EN_TASKS: Record<string, string> = {
   '会删除这个任务的对话记录，不会撤销已经改动的文件。':
     "This deletes the task's conversation history. Files that were already changed won't be reverted.",
   没有输出: 'No output',
+  '正在执行…': 'Running…',
 
   // 时间、工具、上下文（web/src/lib/tasks.ts）
   刚刚: 'Just now',
@@ -256,6 +268,8 @@ export const EN_TASKS: Record<string, string> = {
   '验收 {n} 轮 · 通过': 'Review: {n} rounds · Passed',
   按最新的工作流继续: 'Resume with the latest workflow',
   '已撤销「{path}」的改动': 'Reverted changes to "{path}"',
+  复制命令: 'Copy command',
+  命令: 'Command',
   '任务正在执行，停下后才能撤销': 'The task is running; pause it before reverting',
   恢复成任务开始时的样子: 'Restore to how it was when the task started',
   撤销改动: 'Revert changes',
@@ -407,8 +421,8 @@ export const EN_TASKS: Record<string, string> = {
   '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
     'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main Agent to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
   '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
-  '已结束流程，没完成的节点不再执行。之后输入的要求由主 Agent 直接处理。':
-    "Flow ended. Unfinished nodes won't run; later requests go straight to the main Agent.",
+  '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。':
+    "This run is over; unfinished nodes won't execute. Tell the main Agent what you need next and it will run the flow again when needed.",
   要求不能为空: "The request can't be empty",
   '任务正在执行，请先停止': 'The task is running; stop it first',
   只有工作流任务可以结束流程: 'Only workflow tasks can end a flow',

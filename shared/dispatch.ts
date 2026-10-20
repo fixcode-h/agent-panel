@@ -15,6 +15,12 @@ export type Dispatch =
   | { action: 'rework'; feedback: string }
   | { action: 'delegate'; workflow: string; input: string }
   | { action: 'stop'; reason: string }
+  /** 常驻编排器：起一次新的运行（节点全部新建，按流程图执行） */
+  | { action: 'run'; input?: string }
+  /** 常驻编排器：重跑（当作用户要求重新走一遍，重新发起新的一次运行） */
+  | { action: 'restart'; feedback: string }
+  /** 常驻编排器：不起运行，直接回答用户 */
+  | { action: 'answer' }
 
 // 语言名后面可以跟别的字（```dispatch json），JSON 也可能和语言名写在同一行
 const BLOCK = new RegExp('```' + DISPATCH_LANG + '\\b[^\\n{]*\\n?([\\s\\S]*?)```', 'g')
@@ -35,6 +41,15 @@ export function parseDispatch(text: string): Dispatch | null {
   const action = str(o.action).toLowerCase()
   const branch = str(o.branch).toLowerCase()
   switch (action) {
+    case 'run':
+    case 'start':
+      return { action: 'run', ...(str(o.input) || str(o.note) ? { input: str(o.input) || str(o.note) } : {}) }
+    case 'restart':
+    case 'rerun':
+      return { action: 'restart', feedback: str(o.feedback) || str(o.reason) || str(o.note) }
+    case 'answer':
+    case 'reply':
+      return { action: 'answer' }
     case 'rework':
     case 'retry':
       return { action: 'rework', feedback: str(o.feedback) || str(o.reason) || str(o.note) }
@@ -101,7 +116,12 @@ export function mainDuties(
     .slice(0, 20)
     .map((x) => `- ${x.id}｜${x.name}${x.description ? `：${clip(x.description, 80)}` : ''}`)
   return [
-    `你是工作流「${w.name}」流程「${flowLabel(f, w)}」的主 Agent，负责调度：节点交给各自的子 Agent 执行，完成后结果交给你评估，由你决定流程怎么走；流程全部完成后由你整理交给用户的最终结果。`,
+    `你是工作流「${w.name}」流程「${flowLabel(f, w)}」的常驻编排器。这个对话从头到尾都由你负责：决定什么时候按流程图跑一次、跑完把结果整理给用户、之后接着处理用户的要求。节点交给各自的子 Agent 执行，完成后结果交给你评估，由你决定流程怎么走。`,
+    `## 运行
+- 一次「运行」是从开始节点起、按流程图顺序执行一遍：节点可以很多，但必须按连线的顺序走，同一层没有依赖的节点同时执行。这次运行走完就停下，不会自己再跑一遍。
+- 用户的每条新要求由你决定：起一次新的运行（节点全部新建，按流程图再走一遍；你的会话保留，上一轮的结论还在），还是直接回答、不起运行。
+- 每个对话同时只有一次运行在走；要重做就等下一次运行。
+- 决定改动范围、文档格式、测试流程和版本管理时，按你 Agent 里带的 Skill 的规则做：文档要有固定结构和更新时机，测试要按项目的流程跑，版本管理的提交和推送保持一致。`,
     `## 流程\n${flowOverview(w, f, agents)}`,
     [
       '## 你的职责',
@@ -118,6 +138,7 @@ export function mainDuties(
         ? '- `{"action": "delegate", "workflow": "工作流 id", "input": "交给它的任务"}`：先交给另一个工作流处理（它有自己的主 Agent），结果回来后再评估这个节点。'
         : '',
       '- `{"action": "stop", "reason": "…"}`：遇到不能继续的问题（需求矛盾、不可逆的风险、反复退回仍做不好），停下交给用户。',
+      '- 用户提出新要求、这次运行已经走完时：`{"action": "run", "input": "这次要做什么"}` 起一次新的运行（节点全部新建，按流程图再走一遍）；`{"action": "restart", "feedback": "哪里没做好"}` 重做；`{"action": "answer"}` 直接回答、不起运行。',
     ]
       .filter(Boolean)
       .join('\n'),
@@ -152,6 +173,29 @@ export function evaluateEvent(o: {
       : '',
     o.reworksLeft > 0 ? `还可以退回 ${o.reworksLeft} 次。` : '退回次数已经用完，这次只能继续或停下。',
     `请评估，回复最后写 ${DISPATCH_LANG} 代码块。`,
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/**
+ * 常驻编排器收到用户的新要求（这次运行已经走完）：说清楚现在的情况，让它决定怎么处理。
+ * notes 是这次运行没能走通的地方（停住的节点、不通过的原因）
+ */
+export function planEvent(prompt: string, run: number, blocked?: { title: string; output: string }) {
+  return [
+    `## 事件：用户的新要求\n针对这个对话，用户说：\n${prompt}`,
+    `这是第 ${Math.max(1, run)} 次运行。之前的运行已经走完（节点全部完成），结果已经交给用户。`,
+    blocked
+      ? `上一次运行停在节点「${blocked.title}」：它的结论是不通过，后面的节点没有执行。它的结果：\n${clip(blocked.output, 3000)}`
+      : '',
+    [
+      '## 你要决定怎么处理',
+      '需求是新的、要再走一遍流程（实现、验收、文档、提交这些按流程图来）时，起一次新的运行：节点全部新建，按流程图顺序执行，上一轮的结果作为参考。',
+      '同一件事没做好要重做时，也起新的运行，把要做的事写清楚。',
+      '只是问问题、解释、查一下情况，或者改动小到不值得走流程时，直接回答，不起运行。',
+    ].join('\n'),
+    '回复最后写一个 dispatch 代码块说明决定，见上面的格式。',
   ]
     .filter(Boolean)
     .join('\n\n')
@@ -198,5 +242,11 @@ export function dispatchText(d: Dispatch, title: string) {
       return t('主 Agent 把「{title}」相关的事委派给工作流「{workflow}」', { title, workflow: d.workflow })
     case 'stop':
       return t('主 Agent 停下了流程：{reason}', { reason: d.reason || t('（没有写原因）') })
+    case 'run':
+      return t('主 Agent 起了新的一次运行：{input}', { input: d.input || t('按流程图再走一遍') })
+    case 'restart':
+      return t('主 Agent 重做这次运行：{feedback}', { feedback: d.feedback || t('（没有写具体原因）') })
+    case 'answer':
+      return t('主 Agent 直接回答，没有起运行')
   }
 }

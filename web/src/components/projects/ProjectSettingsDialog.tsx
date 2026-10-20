@@ -2,20 +2,21 @@ import { CliSkills } from '@/components/settings/CliSkills'
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { FileText, Loader2, Settings2, Trash2, X } from 'lucide-react'
-import type { Project, ProjectInput } from '@shared/schema'
+import { FileText, Loader2, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import type { Project, ProjectInput, WorkflowExpose } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Field, FormSection, Input } from '@/components/ui/input'
+import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
 import { CLIS } from '@shared/clis'
+import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
 import { cliSettings, orderClis } from '@shared/settings'
 import { cliColor } from '@/lib/cli-style'
@@ -87,7 +88,9 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const [draft, setDraft] = useState<ProjectInput>(() => (project ? toInput(project) : blank))
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
-  const valid = !!draft.name.trim()
+  const [analyzing, setAnalyzing] = useState(false)
+  const [signals, setSignals] = useState<string[]>([])
+  const valid = !!draft.name.trim() && !!draft.workflowId
   const set = <K extends keyof ProjectInput>(k: K, v: ProjectInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
   // 名称没填，或者名称就是原来的文件夹名时，换目录后名称跟着变成新的文件夹名；手动改过的名称不动
   const pickDir = (path: string) =>
@@ -100,8 +103,41 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const category = projectCategories.find((c) => c.id === draft.categoryId)
   const inherited = workflows.find((w) => w.id === category?.workflowId)
   const own = workflows.find((w) => w.id === draft.workflowId)
-  const checks = projectChecks(draft, dir, own ?? inherited, agents, clis)
+  // 没有单独指定时落到「通用项目」（服务端也是这么解析的），表单上显示实际会用的那个
+  const general =
+    workflows.find((w) => w.origin === 'builtin:project-general') ?? workflows.find((w) => w.name === GENERAL_NAME)
+  const active = own ?? inherited ?? general
+  const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
   const { settings } = useData()
+
+  // 项目的「AI 分析」：读本地目录给出名称、简介、工作流和配置项，填进表单；用户确认后才保存
+  const analyze = async () => {
+    if (!draft.path.trim() || analyzing) return
+    setAnalyzing(true)
+    try {
+      const r = await api.analyzeProject(draft.path)
+      setSignals(r.signals)
+      const want = r.workflow === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
+      const wf =
+        workflows.find((w) => w.origin === `builtin:project-${r.workflow}`) ?? workflows.find((w) => w.name === want)
+      setDraft((d) => ({
+        ...d,
+        name: d.name.trim() || r.name,
+        description: r.description || d.description,
+        ...(wf ? { workflowId: wf.id } : {}),
+        workflowParams: { ...d.workflowParams, ...r.workflowParams },
+      }))
+      toast.success(
+        wf
+          ? t('已按本地目录填好，检查一下再保存')
+          : t('已填好，但没找到内置工作流「{name}」，请手动选择', { name: want }),
+      )
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setAnalyzing(false)
+    }
+  }
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
   const [section, setSection] = useState('general')
@@ -326,26 +362,53 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
 
               <FormSection title={t('本地目录')}>
                 <DirPicker value={draft.path} onChange={pickDir} info={dir} />
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => void analyze()}
+                    disabled={!draft.path.trim() || analyzing}
+                  >
+                    {analyzing ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3.5 w-3.5" />
+                    )}
+                    {t('AI 分析这个目录')}
+                  </Button>
+                  <span className="text-xs text-subtle">
+                    {t('只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单')}
+                  </span>
+                </div>
+                {signals.length > 0 && (
+                  <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
+                    {signals.map((s) => (
+                      <li key={s}>· {s}</li>
+                    ))}
+                  </ul>
+                )}
               </FormSection>
 
               <FormSection title={t('工作流')}>
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted">{t('执行任务时使用的工作流')}</span>
+                  <span className="text-xs text-muted">{t('这个项目的对话按哪套流程走（必选）')}</span>
                   <WorkflowPicker
                     value={draft.workflowId}
                     onChange={(id) => set('workflowId', id)}
                     emptyLabel={
                       inherited
                         ? t('使用分类默认：{name}', { name: inherited.name })
-                        : t('使用分类默认（分类还没有指定）')
+                        : general
+                          ? t('未选择，将使用「{name}」', { name: general.name })
+                          : t('请选择工作流')
                     }
                   />
                   <span className="text-xs text-subtle">
                     {own ? (
                       t('这个项目单独指定了工作流，不受分类默认的影响。')
-                    ) : category ? (
+                    ) : inherited ? (
                       <>
-                        {t('跟随项目分类「{name}」的默认工作流，分类可以在', { name: category.name })}
+                        {t('跟随项目分类「{name}」的默认工作流，分类可以在', { name: category!.name })}
                         <button
                           type="button"
                           className="cursor-pointer text-accent hover:underline"
@@ -358,11 +421,45 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                         </button>
                         {t('中修改。')}
                       </>
+                    ) : general ? (
+                      t('没有单独指定时使用内置的「{name}」，它会一直跟着这个项目。', { name: general.name })
                     ) : (
                       t('项目没有分类，需要在这里单独指定工作流。')
                     )}
                   </span>
+                  {active && active.expose.length > 0 && (
+                    <div className="mt-3 flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
+                      <span className="text-xs text-muted">
+                        {t('「{name}」的配置，改完保存后对新开的对话生效', { name: active.name })}
+                      </span>
+                      {active.expose.map((e) => (
+                        <ExposeField
+                          key={e.key}
+                          e={e}
+                          value={draft.workflowParams[e.key] as string | boolean | undefined}
+                          onChange={(v) => set('workflowParams', { ...draft.workflowParams, [e.key]: v })}
+                        />
+                      ))}
+                    </div>
+                  )}
                 </div>
+              </FormSection>
+
+              <FormSection title={t('版本与推送')}>
+                <Field label={t('推送到远端')}>
+                  <Select
+                    value={draft.gitPolicy}
+                    onChange={(v) => set('gitPolicy', v.target.value as ProjectInput['gitPolicy'])}
+                    options={[
+                      { value: 'ask', label: t('第一次需要推送时问一次（推荐）') },
+                      { value: 'allow', label: t('允许直接推送') },
+                      { value: 'deny', label: t('不推送，只做本地提交') },
+                    ]}
+                  />
+                </Field>
+                <span className="text-xs text-subtle">
+                  {t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
+                </span>
               </FormSection>
             </div>
             <aside className="flex shrink-0 flex-col gap-4 md:w-[260px]">
@@ -406,6 +503,53 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         />
       )}
     </>
+  )
+}
+
+/** 工作流暴露的一项配置：按类型渲染成下拉、多选、开关或文本框 */
+function ExposeField({
+  e,
+  value,
+  onChange,
+}: {
+  e: WorkflowExpose
+  value: string | boolean | undefined
+  onChange: (v: string | boolean) => void
+}) {
+  const label = e.label || e.key
+  const text = typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : (value ?? '')
+  const fallback = Array.isArray(e.default) ? e.default.join(', ') : (e.default ?? '')
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-xs text-muted">{label}</span>
+      {e.type === 'select' ? (
+        <Select
+          value={text}
+          onChange={(ev) => onChange(ev.target.value)}
+          options={[
+            ...(text || fallback ? [] : [{ value: '', label: t('未选择') }]),
+            ...e.options.map((o) => ({ value: o, label: o })),
+          ]}
+        />
+      ) : e.type === 'bool' ? (
+        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={value === true || value === 'true'}
+            onChange={(ev) => onChange(ev.target.checked ? 'true' : 'false')}
+          />
+          {text === 'true' || value === true ? t('是') : t('否')}
+        </label>
+      ) : (
+        <Input
+          value={text}
+          onChange={(ev) => onChange(ev.target.value)}
+          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+        />
+      )}
+      {e.description && <span className="text-xs text-subtle">{e.description}</span>}
+    </div>
   )
 }
 
