@@ -155,6 +155,33 @@ export const NodeHooks = z.object({
 })
 export type NodeHooks = z.infer<typeof NodeHooks>
 
+/**
+ * 节点里的一个执行步骤：按顺序串行执行，每一步一条执行记录、一个独立的 CLI 会话。
+ * 旧的单执行者节点没有 steps，读取时用 nodeSteps() 合成一步。
+ */
+export const NodeStep = z.object({
+  /** 稳定 id：新步骤是 st_xxx；旧节点合成的一步用节点 id，保证旧会话键不变 */
+  id: z.string().min(1).max(40),
+  /** 显示名；为空时用 Agent 或流程的名字 */
+  title: z.string().trim().max(60).default(''),
+  /** agent：由 Agent 执行；flow：执行引用的流程 */
+  kind: z.enum(['agent', 'flow']).default('agent'),
+  agentId: z.string().default(''),
+  flow: FlowRef.nullable().default(null),
+  tier: NodeTier.default(''),
+  params: z.record(z.string(), ParamValue).default({}),
+  instructions: z.string().max(20000).default(''),
+  /** 失败后自动重试几次（CLI 断线、偶发错误）；0 不重试 */
+  retries: z.number().int().min(0).max(5).default(0),
+  /** 这一步完成后等用户确认 */
+  confirm: z.boolean().optional(),
+  /** 这一步完成后执行验收；不通过就把意见交回这一步继续完善 */
+  review: FlowRef.nullable().default(null),
+  /** 验收最多几轮，超过仍不通过时整个节点失败 */
+  maxRounds: z.number().int().min(1).max(10).default(3),
+})
+export type NodeStep = z.infer<typeof NodeStep>
+
 /** 流程里的一个节点：交给某个 Agent 完成的一件事，或者执行另一个流程 */
 export const FlowNode = z.object({
   id: z.string().min(1),
@@ -173,6 +200,8 @@ export const FlowNode = z.object({
   retries: z.number().int().min(0).max(5).default(0),
   /** 这个节点要做什么、产出什么（Markdown） */
   instructions: z.string().max(20000).default(''),
+  /** 按顺序执行的步骤；为空表示旧的单执行者节点 */
+  steps: z.array(NodeStep).max(20).default([]),
   x: z.number().default(0),
   y: z.number().default(0),
   hooks: NodeHooks.default({ start: null, review: null, end: null, maxRounds: 3 }),
@@ -691,9 +720,10 @@ export const TaskStep = z.object({
   parentId: z.string().default(''),
   /**
    * 在父节点里的位置：start / review / end 是三个入口，body 是流程节点执行的流程，
-   * sub 是节点执行中自己派出的子 Agent，call 是主 Agent 评估时委派的另一个工作流
+   * step 是节点里按顺序执行的一步，sub 是节点执行中自己派出的子 Agent，
+   * call 是主 Agent 评估时委派的另一个工作流
    */
-  slot: z.enum(['', 'start', 'review', 'end', 'body', 'sub', 'call']).default(''),
+  slot: z.enum(['', 'start', 'review', 'end', 'body', 'step', 'sub', 'call']).default(''),
   /** 验收的第几轮（从 1 开始）；不是验收流程里的节点为 0 */
   round: z.number().int().default(0),
   workflowId: z.string().default(''),

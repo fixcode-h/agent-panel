@@ -13,6 +13,7 @@ import {
   flowLabel,
   newFlow,
   newNode,
+  newNodeStep,
   reachable,
   refLabel,
   wouldCycle,
@@ -105,6 +106,24 @@ export const WorkflowDraft = z.object({
               review: z.string().trim().default(''),
               end: z.string().trim().default(''),
               maxRounds: z.number().int().min(1).max(10).default(3),
+              confirm: z.boolean().default(false),
+              /** 按顺序执行的步骤；有 steps 时节点自己的 agent / review / confirm 不生效 */
+              steps: z
+                .array(
+                  z.object({
+                    title: z.string().trim().max(60).default(''),
+                    agent: z.string().trim().default(''),
+                    flow: z.string().trim().default(''),
+                    tier: z.enum(['', 'high', 'medium', 'low']).default(''),
+                    instructions: z.string().max(20000).default(''),
+                    retries: z.number().int().min(0).max(5).default(0),
+                    confirm: z.boolean().default(false),
+                    review: z.string().trim().default(''),
+                    maxRounds: z.number().int().min(1).max(10).default(3),
+                  }),
+                )
+                .max(20)
+                .default([]),
             }),
           )
           .max(60),
@@ -205,6 +224,7 @@ const WORKFLOW_RULES = `- 流程是节点和连线组成的图：从 start 出�
 - members 列出除主 Agent 外参与流程的 Agent 和它在这个工作流里的职责；节点里用到的 Agent 都要在 members 里
 - 已有的 Agent 能胜任就复用，确实缺少某种角色时才在 newAgents 里新建（字段和 Agent 草稿相同）
 - 每个节点的 instructions 写清楚：要做什么、产出什么、完成标准
+- 一个节点可以按顺序挂多步（steps）：每步写 agent 或 flow，串行执行，上一步的输出作为下一步的输入；每步可以有自己的 tier、retries、review、maxRounds、confirm。有 steps 时节点自己的 agent、review、confirm 不生效
 - document 是工作流说明（Markdown）：目标、规范、完成标准，每个节点执行时都会带上；不要在里面重复写步骤`
 
 const AGENT_SHAPE = `{
@@ -229,7 +249,13 @@ const WORKFLOW_SHAPE = `{
       "main": true,
       "nodes": [
         { "key": "plan", "title": "分析需求、拆分任务", "agent": "", "instructions": "…" },
-        { "key": "api", "title": "实现接口", "agent": "后端开发", "instructions": "…", "review": "代码验收", "maxRounds": 3 },
+        {
+          "key": "api", "title": "方案与实现", "instructions": "…",
+          "steps": [
+            { "title": "方案确认", "agent": "架构师", "confirm": true, "instructions": "…" },
+            { "title": "实现接口", "agent": "后端开发", "review": "代码验收", "maxRounds": 3, "retries": 1, "instructions": "…" }
+          ]
+        },
         { "key": "ui", "title": "实现页面", "agent": "前端开发", "instructions": "…" },
         { "key": "check", "title": "整体验收", "agent": "", "instructions": "…" }
       ],
@@ -276,6 +302,18 @@ export function workflowToDraft(w: Workflow, agents: Agent[], workflows: Workflo
           review: ref(n.hooks.review),
           end: ref(n.hooks.end),
           maxRounds: n.hooks.maxRounds,
+          confirm: !!n.hooks.confirm,
+          steps: n.steps.map((s) => ({
+            title: s.title,
+            agent: s.kind === 'agent' ? name(s.agentId) : '',
+            flow: s.kind === 'flow' ? ref(s.flow) : '',
+            tier: s.tier,
+            instructions: s.instructions,
+            retries: s.retries,
+            confirm: !!s.confirm,
+            review: ref(s.review),
+            maxRounds: s.maxRounds,
+          })),
         })),
         edges: f.edges.map((e) => [k(e.from), k(e.to)] as [string, string]),
       }
@@ -582,18 +620,38 @@ export function resolveProposal(
       const where = `流程「${f.name}」的节点「${n.title}」`
       const agentId = n.flow ? '' : n.agent && n.agent !== d.mainAgent ? idOf(n.agent) : ''
       addMember(agentId)
+      const steps = n.steps.map((s, si) => {
+        const swhere = `${where}的第 ${si + 1} 步「${s.title || s.agent || '未命名'}」`
+        const stepAgent = s.flow ? '' : s.agent && s.agent !== d.mainAgent ? idOf(s.agent) : ''
+        addMember(stepAgent)
+        return newNodeStep({
+          id: `st${si + 1}`,
+          title: s.title,
+          kind: s.flow ? 'flow' : 'agent',
+          agentId: stepAgent,
+          flow: s.flow ? refOf(s.flow, swhere) : null,
+          tier: s.tier,
+          instructions: s.instructions,
+          retries: s.retries,
+          confirm: s.confirm || undefined,
+          review: s.flow ? null : refOf(s.review, swhere),
+          maxRounds: s.maxRounds,
+        })
+      })
       return newNode({
         id: keys.get(n.key)!,
         title: n.title,
-        kind: n.flow ? 'flow' : 'agent',
-        agentId,
-        flow: n.flow ? refOf(n.flow, where) : null,
+        kind: steps.length ? 'agent' : n.flow ? 'flow' : 'agent',
+        agentId: steps.length ? '' : agentId,
+        flow: steps.length ? null : n.flow ? refOf(n.flow, where) : null,
         instructions: n.instructions,
+        steps,
         hooks: {
           start: refOf(n.start, where),
-          review: refOf(n.review, where),
+          review: steps.length ? null : refOf(n.review, where),
           end: refOf(n.end, where),
           maxRounds: n.maxRounds,
+          ...(!steps.length && n.confirm && { confirm: true }),
         },
         x: 0,
         y: 0,
@@ -704,7 +762,14 @@ export async function applyProposal(
       ...w,
       mainAgentId: id(w.mainAgentId),
       members: w.members.map((m) => ({ ...m, agentId: id(m.agentId) })),
-      flows: w.flows.map((f) => ({ ...f, nodes: f.nodes.map((n) => ({ ...n, agentId: id(n.agentId) })) })),
+      flows: w.flows.map((f) => ({
+        ...f,
+        nodes: f.nodes.map((n) => ({
+          ...n,
+          agentId: id(n.agentId),
+          steps: n.steps.map((s) => ({ ...s, agentId: id(s.agentId) })),
+        })),
+      })),
     },
     created,
     categories: cats,

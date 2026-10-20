@@ -1,7 +1,7 @@
 /**
  * 保存和删除前的检查：服务端和在线演示的模拟后端共用，两边的规则和提示一致。
  */
-import { END, START, findRefCycle } from './flow.ts'
+import { END, RESERVED_STEP_IDS, START, findRefCycle, nodeSteps } from './flow.ts'
 import { DEFAULT_AGENT_ID, type Project, type ProjectCategory, type Workflow, type WorkflowInput } from './schema.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
@@ -51,7 +51,21 @@ export function checkWorkflow(
     if (nodeIds.size !== f.nodes.length) return t('流程「{flow}」里有重复的节点 id', { flow: f.name })
     if (nodeIds.has(START) || nodeIds.has(END)) return t('流程「{flow}」的节点 id 不能是 start / end', { flow: f.name })
     // 节点指定的 Agent 不存在时改由主 Agent 执行
-    for (const n of f.nodes) if (n.agentId && !agentIds.has(n.agentId)) n.agentId = ''
+    for (const n of f.nodes) {
+      if (n.agentId && !agentIds.has(n.agentId)) n.agentId = ''
+      if (!n.steps.length) continue
+      if (new Set(n.steps.map((s) => s.id)).size !== n.steps.length)
+        return t('节点「{node}」里有重复的步骤 id', { node: n.title || n.id })
+      for (const s of n.steps) {
+        if (RESERVED_STEP_IDS.includes(s.id))
+          return t('节点「{node}」的步骤 id「{id}」不能用 {reserved}', {
+            node: n.title || n.id,
+            id: s.id,
+            reserved: RESERVED_STEP_IDS.join('、'),
+          })
+        if (s.agentId && !agentIds.has(s.agentId)) s.agentId = ''
+      }
+    }
     // 去掉悬空、重复、方向不对的连线
     const keys = new Set<string>()
     f.edges = f.edges.filter((e) => {
@@ -81,7 +95,7 @@ export function agentDeleteError(id: string, workflows: Workflow[]): string | nu
     (w) =>
       w.mainAgentId === id ||
       w.members.some((m) => m.agentId === id) ||
-      w.flows.some((f) => f.nodes.some((n) => n.agentId === id)),
+      w.flows.some((f) => f.nodes.some((n) => nodeSteps(n).some((s) => s.agentId === id))),
   )
   return used.length
     ? t('正在被工作流使用：{names}，请先从工作流中移除', {

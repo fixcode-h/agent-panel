@@ -19,7 +19,11 @@ const Bundle = z.object({
 
 export function workflowAgents(w: Workflow, agents: Agent[]) {
   const ids = new Set([w.mainAgentId, ...w.members.map((m) => m.agentId)])
-  for (const f of w.flows) for (const n of f.nodes) if (n.agentId) ids.add(n.agentId)
+  for (const f of w.flows)
+    for (const n of f.nodes) {
+      if (n.agentId) ids.add(n.agentId)
+      for (const s of n.steps) if (s.agentId) ids.add(s.agentId)
+    }
   // 引入的 Agent 也要带上，不然导入后角色设定不完整
   for (const id of [...ids]) {
     const a = agents.find((x) => x.id === id)
@@ -96,7 +100,14 @@ export async function importWorkflow(text: string, agents: Agent[], workflows: W
     name,
     mainAgentId: re(w.data.mainAgentId),
     members: w.data.members.map((m) => ({ ...m, agentId: re(m.agentId) })).filter((m) => m.agentId),
-    flows: w.data.flows.map((f) => ({ ...f, nodes: f.nodes.map((n) => ({ ...n, agentId: re(n.agentId) })) })),
+    flows: w.data.flows.map((f) => ({
+      ...f,
+      nodes: f.nodes.map((n) => ({
+        ...n,
+        agentId: re(n.agentId),
+        steps: n.steps.map((s) => ({ ...s, agentId: re(s.agentId) })),
+      })),
+    })),
   })
   return { workflow, created }
 }

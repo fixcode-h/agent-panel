@@ -1,6 +1,6 @@
 import { shortVersion } from './cli-style'
 import { DEFAULT_AGENT_ID, type Agent, type CliStatus, type DirInfo, type Workflow } from '@shared/schema'
-import { entryFlow, findRefCycle, flowLabel, getFlow, reachable, refsOf, topoOrder } from '@shared/flow'
+import { entryFlow, findRefCycle, flowLabel, getFlow, nodeSteps, reachable, refsOf, topoOrder } from '@shared/flow'
 import { t } from '@shared/i18n'
 import { nodeMissingParams, paramLabel } from '@shared/agent-role'
 
@@ -53,25 +53,29 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
   const byId = new Map(agents.map((a) => [a.id, a]))
   const main = byId.get(w.mainAgentId)
   const nodes = w.flows.flatMap((f) => f.nodes)
-  // 子 Agent 在节点上选：用到的 Agent 就是主 Agent 加上节点上的
-  const used = [...new Set(nodes.filter((n) => n.kind === 'agent' && n.agentId).map((n) => n.agentId))]
+  // 子 Agent 在节点 / 步骤上选：用到的 Agent 就是主 Agent 加上这些
+  const units = nodes.flatMap((n) => nodeSteps(n).map((s) => ({ n, s })))
+  const used = [...new Set(units.filter(({ s }) => s.kind === 'agent' && s.agentId).map(({ s }) => s.agentId))]
   const team = [main, ...used.filter((id) => id !== w.mainAgentId).map((id) => byId.get(id))].filter(Boolean) as Agent[]
   const missing = [
     ...new Set(
-      nodes
-        .filter((n) => n.kind === 'agent' && n.agentId && !byId.has(n.agentId))
-        .map((n) => n.title || t('未命名节点')),
+      units
+        .filter(({ s }) => s.kind === 'agent' && s.agentId && !byId.has(s.agentId))
+        .map(({ n, s }) =>
+          n.steps.length ? `${n.title || t('未命名节点')} · ${s.title || s.id}` : n.title || t('未命名节点'),
+        ),
     ),
   ]
   // 工作流里的节点都用默认 CLI 执行，看默认 CLI 能不能用
   const defCli = clis.find((c) => c.isDefault) ?? clis[0]
   const cliOk = !clis.length || (!!defCli?.installed && defCli.enabled)
   const notRunnable = team.filter((a) => !a.enabled)
-  // 节点上必填（没有默认值）的参数还没填
-  const lacking = nodes.flatMap((n) => {
-    if (n.kind !== 'agent') return []
-    const miss = nodeMissingParams(byId.get(n.agentId || w.mainAgentId), n.params)
-    return miss.length ? [`${n.title || t('未命名节点')}（${miss.map(paramLabel).join(t('、'))}）`] : []
+  // 节点 / 步骤上必填（没有默认值）的参数还没填
+  const lacking = units.flatMap(({ n, s }) => {
+    if (s.kind !== 'agent') return []
+    const miss = nodeMissingParams(byId.get(s.agentId || w.mainAgentId), s.params)
+    const where = n.steps.length ? `${n.title || t('未命名节点')} · ${s.title || s.id}` : n.title || t('未命名节点')
+    return miss.length ? [`${where}（${miss.map(paramLabel).join(t('、'))}）`] : []
   })
   const entry = entryFlow(w)
   const live = topoOrder(entry)
@@ -79,7 +83,7 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
     const r = reachable(f)
     return f.nodes.filter((n) => !r.has(n.id)).map((n) => `${flowLabel(f, w)} · ${n.title || t('未命名节点')}`)
   })
-  const emptyFlowNode = nodes.filter((n) => n.kind === 'flow' && !n.flow).map((n) => n.title || t('未命名节点'))
+  const emptyFlowNode = units.filter(({ s }) => s.kind === 'flow' && !s.flow).map(({ n }) => n.title || t('未命名节点'))
   const all = workflows.some((x) => x.id === w.id) ? workflows.map((x) => (x.id === w.id ? w : x)) : [w, ...workflows]
   const cycle = findRefCycle(w, all)
   const broken = w.flows.flatMap((f) =>
@@ -89,7 +93,7 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
       )
       .map(() => flowLabel(f, w)),
   )
-  const hooks = nodes.filter((n) => n.hooks.review).length
+  const hooks = nodes.filter((n) => n.hooks.review || n.steps.some((s) => s.review)).length
   const subs = w.flows.length - 1
 
   return [
