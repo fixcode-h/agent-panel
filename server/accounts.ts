@@ -535,10 +535,10 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
 }
 
 /**
- * 把模型目录里的上下文窗口写回 CLI 配置的模型条目。
+ * 把模型目录里的上下文窗口、最大输出写回 CLI 配置的模型条目。
  * Command Code 的自定义接口不写 contextWindow 就按 200k 算，压缩在 100k 就会触发，
- * 同一个会话要反复带上完整历史；写进去之后压缩点才按真实窗口走。
- * 设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
+ * 同一个会话要反复带上完整历史；Pi 的 models.json 不写就按 128k / 16k 算，情况一样。
+ * 写进去之后压缩点和输出上限才按模型自己的来。设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
  */
 async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.modelLimits
@@ -548,10 +548,16 @@ async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: st
   const data = await readJsonFile(file)
   if (!isObj(data)) return
   const entries = await mergedModelCatalog().catch(() => [])
-  const changed = setModelLimits(data, fillTemplate(spec.at, vars), spec.key, (model) => {
-    const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
-    return info.matched ? info.context : undefined
-  })
+  const changed = setModelLimits(
+    data,
+    fillTemplate(spec.at, vars),
+    { context: spec.key, maxOutput: spec.maxOutputKey },
+    (model) => {
+      const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+      if (!info.matched) return undefined
+      return { context: info.context, maxOutput: spec.maxOutputKey ? info.maxOutput : undefined }
+    },
+  )
   if (!changed) return
   await mkdir(path.dirname(file), { recursive: true })
   await writeJsonAtomic(file, data)

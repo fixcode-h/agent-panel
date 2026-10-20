@@ -248,15 +248,52 @@ test('写回上下文窗口：匹配到的模型按目录重写，不认识的�
     },
   }
   const windows = new Map([
-    ['deepseek/deepseek-v4-flash', 1000000],
-    ['deepseek/deepseek-v4-flash-anthropic', 1000000],
+    ['deepseek/deepseek-v4-flash', { context: 1000000 }],
+    ['deepseek/deepseek-v4-flash-anthropic', { context: 1000000 }],
   ])
-  const run = () => setModelLimits(data, 'provider.tokenapi.models', 'contextWindow', (m) => windows.get(m))
+  const run = () =>
+    setModelLimits(data, 'provider.tokenapi.models', { context: 'contextWindow' }, (m) => windows.get(m))
   assert.equal(run(), true)
   assert.equal(data.provider.tokenapi.models['deepseek/deepseek-v4-flash'].contextWindow, 1000000)
   assert.deepEqual(data.provider.tokenapi.models['deepseek/deepseek-v4-flash-anthropic'], { contextWindow: 1000000 })
   assert.deepEqual(data.provider.tokenapi.models['custom/unknown'], {})
   // 已经是目标值，第二次不用再改
+  assert.equal(run(), false)
+})
+
+test('写回上下文窗口：Pi 的 models.json 是数组，同时写最大输出', () => {
+  const data = {
+    providers: {
+      tokenapi: {
+        models: [
+          { id: 'gpt-6.1-sol' },
+          { id: 'gpt-6.1-sol', name: 'custom' },
+          { id: 'custom/unknown' },
+        ],
+      },
+    },
+  }
+  const limits = new Map([
+    ['gpt-6.1-sol', { context: 1000000, maxOutput: 128000 }],
+    ['custom/unknown', undefined],
+  ])
+  const run = () =>
+    setModelLimits(
+      data,
+      'providers.tokenapi.models',
+      { context: 'contextWindow', maxOutput: 'maxTokens' },
+      (m) => limits.get(m),
+    )
+  assert.equal(run(), true)
+  assert.deepEqual(data.providers.tokenapi.models[0], { id: 'gpt-6.1-sol', contextWindow: 1000000, maxTokens: 128000 })
+  // 名字和已有的项保留，只补窗口
+  assert.deepEqual(data.providers.tokenapi.models[1], {
+    id: 'gpt-6.1-sol',
+    name: 'custom',
+    contextWindow: 1000000,
+    maxTokens: 128000,
+  })
+  assert.deepEqual(data.providers.tokenapi.models[2], { id: 'custom/unknown' })
   assert.equal(run(), false)
 })
 

@@ -459,10 +459,19 @@ async function runAgent(
   // 模型不认 Agent 自己或档位给的强度时，再试档位 / 模型默认的强度，不能直接变成不传
   const fallback = (run.tier ? cs.tiers[run.tier.id].effort : '') || defaultEffort
   if (!effort && requested && fallback && fallback !== requested) effort = await supportedEffort(cliId, model, fallback)
-  // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，不传
-  const limits: ModelLimits = run.tier
+  // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，用下面算出来的值
+  const manual: ModelLimits = run.tier
     ? { context: cs.tiers[run.tier.id].context, maxOutput: cs.tiers[run.tier.id].maxOutput }
     : {}
+  // 自动值也传给 CLI：Claude Code、Codex 只认全局的窗口（环境变量 / 配置），
+  // 接第三方接口时模型不在它们认识的内置表里，不传就按默认窗口截断，压缩点会小很多。
+  // 只传上下文：最大输出在它们那里也是全局的，按目录传会把这个 CLI 的所有模型都改成同一个值。
+  // 目录里没有的模型不传，交给 CLI 自己判断
+  const known = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries, protocol: cs.api?.protocol })
+  const limits: ModelLimits = {
+    context: manual.context || (known.matched ? known.context : undefined),
+    maxOutput: manual.maxOutput || undefined,
+  }
   const op = call.op
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
