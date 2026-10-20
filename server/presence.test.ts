@@ -7,6 +7,7 @@ const {
   forgetPresence,
   isWatched,
   rescheduleIfUnwatched,
+  seenWhileWatched,
   setPresenceIdleHandler,
   setPresenceGraceMs,
   setPresenceUnreadKeeper,
@@ -143,6 +144,29 @@ test('宽限期里才看过：计时照旧走完，到点回收', async () => {
   await wait(60)
   assert.equal(isWatched(id), false)
   assert.equal(idle, 1)
+
+  setPresenceUnreadKeeper(() => false)
+  forgetPresence(id)
+})
+
+test('这一轮完成时页面正开着：算看过，不留橙点也不留着进程', async () => {
+  const id = 'presence-seen-while-watched'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  let unread = true
+  setPresenceUnreadKeeper((taskId) => taskId === id && unread)
+
+  assert.equal(seenWhileWatched(id), false, '页面还没上报时没人看')
+  setViewer(id, 'tab-a', true)
+  assert.equal(seenWhileWatched(id), true, '页面开着')
+
+  // 完成时页面正开着：调用方直接把 turnSeenAt 一起写上，不再算未读
+  if (seenWhileWatched(id)) unread = false
+  setViewer(id, 'tab-a', false)
+  await wait(60)
+  assert.equal(idle, 1, '按宽限期正常回收')
 
   setPresenceUnreadKeeper(() => false)
   forgetPresence(id)

@@ -45,7 +45,14 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { openOrchSession, orchHint } from '../orch-mcp.ts'
-import { isWatched } from '../presence.ts'
+import { isWatched, seenWhileWatched } from '../presence.ts'
+
+/** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
+function markTurnDone(task: Task) {
+  const now = new Date().toISOString()
+  task.turnDoneAt = now
+  if (seenWhileWatched(task.id)) task.turnSeenAt = now
+}
 
 export interface RealContext {
   task: Task
@@ -815,7 +822,7 @@ async function runAgent(
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
         if (chat && !op) {
           task.working = false
-          if (ev.ok && !prewarmMode) task.turnDoneAt = new Date().toISOString()
+          if (ev.ok && !prewarmMode) markTurnDone(task)
         }
         break
       case 'ask': {
@@ -950,7 +957,7 @@ async function runAgent(
         const queued = drainQueue()
         if (queued) {
           // 上一轮已经回复完，只是还有排队的消息没处理
-          if (!prewarmMode && chat && !op) task.turnDoneAt = new Date().toISOString()
+          if (!prewarmMode && chat && !op) markTurnDone(task)
           prewarmMode = false
           task.prewarming = false
           task.working = true
@@ -962,7 +969,7 @@ async function runAgent(
         // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
         task.working = false
         // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
-        if (!prewarmMode && chat && !op) task.turnDoneAt = new Date().toISOString()
+        if (!prewarmMode && chat && !op) markTurnDone(task)
         ctx.changed(true)
         try {
           return await new Promise<string | null>((resolve) => {

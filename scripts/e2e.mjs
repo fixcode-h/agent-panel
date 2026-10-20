@@ -1520,7 +1520,7 @@ try {
     const mine = calls().slice(n0)
     const mainCalls = mine.filter((c) => /## 事件：/.test(c.input))
     assert.equal(mainCalls.length, 6)
-    assert.match(mainCalls[0].input, /你是工作流「主 Agent 调度」流程「主流程」的主 Agent/, '第一轮带完整的职责说明')
+    assert.match(mainCalls[0].input, /你是工作流「主 Agent 调度」流程「主流程」的常驻编排器/, '第一轮带完整的职责说明')
     assert.match(mainCalls[0].input, /帮忙检查/, '列出可以委派的工作流')
     assert.ok(
       mainCalls.slice(1).every((c) => c.input.startsWith('## 事件：') && c.args.includes(main && dm.sessions['@main'])),
@@ -1531,7 +1531,7 @@ try {
       mine.every((c) => c.args.some((x) => x.includes('/api/mcp/orch/'))),
       '工作流里的调用都接上编排工具',
     )
-    assert.match(mainCalls[0].input, /编排工具 orch：get_status/)
+    assert.match(mainCalls[0].input, /编排工具 orch：run_workflow/)
     assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子 Agent/)
     const impl = mine.filter((c) => /本节点「实现」|继续完善本节点「实现」/.test(c.input))
     assert.equal(impl.length, 2, '实现被退回后返工一次')
@@ -2209,14 +2209,15 @@ try {
     cli: 'codex',
     model: 'gpt-5.6',
     icon: 'shield',
-    category: '质量',
+    // 启动时会装上内置项目工作流，用的 Agent 已经建出了「质量」分类；这里用一个肯定不会有的
+    category: '自定义分类',
     instructions: '## 职责\n审查',
   }
   let job = await assist('agent', `要一个审查员\nFAKE_JSON:${JSON.stringify(draftAgent)}`)
   assert.equal(job.status, 'done', job.error)
   assert.equal(job.text, '这是按你的要求生成的配置。')
   assert.equal(job.proposal.agent.cli, 'codex')
-  assert.equal(job.proposal.newCategory, '质量', '不存在的分类标记为新建')
+  assert.equal(job.proposal.newCategory, '自定义分类', '不存在的分类标记为新建')
   c = calls().at(-1)
   assert.match(c.input, /配置助手[\s\S]*## 已有的 Agent[\s\S]*甲（claude[\s\S]*## 创建规则[\s\S]*## 输出格式/)
   // 权限按设置里的；Claude Code 的审批交给面板（弹出卡片），不再一律拒绝
@@ -3458,6 +3459,9 @@ try {
       error: '还能找到 pi.cmd',
       command: 'npm uninstall -g @mariozechner/pi-coding-agent',
       output: 'up to date in 364ms',
+      // 对话里的报错会带上项目路径和出错前后的对话
+      conversation: '用户：帮我把 Pi 卸载干净\n\nAI：好的，先看安装位置\n\n报错：还能找到 pi.cmd',
+      cwd: 'F:\\Project\\demo',
       topic: 'cli:pi',
     })
     assert.equal(s.cli, 'commandcode')
@@ -3467,6 +3471,9 @@ try {
       'npm uninstall -g',
       'up to date in 364ms',
       '相关的 CLI：Pi',
+      '报错前后的对话：',
+      'AI：好的，先看安装位置',
+      '相关目录（项目路径）：F:\\Project\\demo',
     ])
       assert.ok(s.prompt.includes(part), part)
     let task = await call('POST', '/tasks', {
@@ -3959,6 +3966,8 @@ try {
       askUser: false,
       prompt: 'FAKE_WAIT 先看代码',
     })
+    // 打开对话页时前端会先报已读，再报页面开着
+    await call('POST', `/tasks/${w.id}/seen`, {})
     await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: true })
     for (let i = 0; i < 100; i++) {
       w = await call('GET', `/tasks/${w.id}`)

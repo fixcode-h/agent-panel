@@ -737,7 +737,13 @@ export function TaskView({
                           }
                         />
                       ) : b.m.role === 'system' ? (
-                        <NoteMessage key={b.m.id} m={b.m} className="justify-center text-center" />
+                        <NoteMessage
+                          key={b.m.id}
+                          m={b.m}
+                          msgs={task.messages}
+                          task={task}
+                          className="justify-center text-center"
+                        />
                       ) : (
                         <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
                       ),

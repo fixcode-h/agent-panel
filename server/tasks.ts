@@ -900,7 +900,8 @@ export function tasksApi(deps: {
     try {
       return await run(await readableDir(c.req.param('id')))
     } catch (e) {
-      const status = (e as { status?: 400 | 404 }).status ?? 404
+      // 路径越界、不是图片这类参数问题按 400；任务或目录找不到的情况自己带上 404
+      const status = (e as { status?: 400 | 404 }).status ?? 400
       return bad(c, (e as Error).message, status)
     }
   }
