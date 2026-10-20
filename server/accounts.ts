@@ -9,10 +9,13 @@ import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
 import {
   apiFits,
   apiInjection,
+  apiModelPrefix,
   apiProvider,
   apiVars,
   fillEdits,
   fillTemplate,
+  nativeModelId,
+  pruneModelEntries,
   pruneProviderEntries,
   setModelEfforts,
   ApiConfig,
@@ -546,6 +549,24 @@ async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: s
 }
 
 /**
+ * API 方式只留 API 里配的模型：provider 的 models 对象里旧模型删掉，
+ * 保留 API 配置里的那几个；metadata 由前面的写回保留。
+ */
+async function pruneApiModels(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+  const spec = def.auth?.api?.pruneModels
+  if (!spec) return
+  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const file = expand(fillTemplate(spec.file, vars), env)
+  const data = await readJsonFile(file)
+  if (!isObj(data)) return
+  const prefix = apiModelPrefix(def.auth, api)
+  const keep = api.models.map((m) => nativeModelId(m, prefix))
+  if (!pruneModelEntries(data, fillTemplate(spec.at, vars), keep)) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, data)
+}
+
+/**
  * 调用 CLI 之前：按这个 CLI 现在用账号还是 API，把配置文件改成对应的样子
  * （例如 Gemini CLI 的登录方式、Command Code 的自定义接口）。没有这类配置的 CLI 什么都不做
  */
@@ -562,6 +583,7 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
       await applyEdits(injection.edits, env)
       await writeModelEfforts(def, cs.api, injection.provider, env)
       await pruneApiProviders(def, cs.api, injection.provider, env)
+      await pruneApiModels(def, cs.api, injection.provider, env)
     } else {
       // 切回账号时优先用上一次真正写进去的 provider；没有时再用当前选中的 API
       const selected = settings.apis.find((a) => a.id === cs.apiId)

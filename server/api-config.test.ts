@@ -10,6 +10,7 @@ import {
   apiModelList,
   apiProvider,
   fillEdits,
+  pruneModelEntries,
   pruneProviderEntries,
   sameApi,
   setModelEfforts,
@@ -180,6 +181,16 @@ test('只留一份接口配置：同地址和密钥的旧 provider 删掉，不�
     pruneProviderEntries(missing, 'provider', 'active', { baseUrl: 'https://x.example', apiKey: 'k' }, keys),
     false,
   )
+})
+
+test('provider 的 models 只保留 API 里配的模型', () => {
+  const data = { provider: { tokenapi: { models: { 'gpt-6.1-sol': {}, old: {}, 'gpt-5.6-sol': {} } } } }
+  assert.equal(pruneModelEntries(data, 'provider.tokenapi.models', ['gpt-6.1-sol', 'gpt-5.6-sol']), true)
+  assert.deepEqual(Object.keys(data.provider.tokenapi.models), ['gpt-6.1-sol', 'gpt-5.6-sol'])
+  assert.equal(pruneModelEntries(data, 'provider.tokenapi.models', ['gpt-6.1-sol', 'gpt-5.6-sol']), false)
+  // API 没配模型时不动，避免把配置删空
+  const empty = { provider: { tokenapi: { models: { 'gpt-6.1-sol': {} } } } }
+  assert.equal(pruneModelEntries(empty, 'provider.tokenapi.models', []), false)
 })
 
 test('写回思考强度：匹配到的模型按目录重写，不认识的保持原样', () => {

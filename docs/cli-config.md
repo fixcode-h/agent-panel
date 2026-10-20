@@ -218,6 +218,7 @@ CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.jso
 | `accountEdits`    | 切回账号时还原的配置文件                                                                                                         |
 | `wire`            | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                        |
 | `pruneProviders`  | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                    |
+| `pruneModels`     | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                      |
 
 已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code、Gemini CLI）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
 `{provider}` 来自 API 的 `provider`：识别到的 API 用 CLI 配置里的键（例如 `providers.tokenapi` 的 `tokenapi`），新建的从 API 名称生成。
