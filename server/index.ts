@@ -128,9 +128,11 @@ async function ensureProjectWorkflows() {
       createCategory: (name, scope) => categories.create({ name, scope }),
       createTag: (input) => tags.create(input),
       createWorkflow: (input) => workflows.create(input),
+      updateWorkflow: (id, input) => workflows.update(id, input),
     },
   )
   if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
+  if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
   const migrations = await migrateProjectsToGeneral(
     await projects.list(),
     await workflows.list(),

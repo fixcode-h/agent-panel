@@ -3,13 +3,25 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { AgentInput, WorkflowInput, type Agent } from '../shared/schema.ts'
+import { AgentInput, WorkflowInput, type Agent, type Workflow } from '../shared/schema.ts'
 import { composeRole, nodeMissingParams, resolveParams } from '../shared/agent-role.ts'
-import { findRefCycle, topoOrder } from '../shared/flow.ts'
+import { findRefCycle, nodeSteps, topoOrder } from '../shared/flow.ts'
 import { frontField } from '../shared/library.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS } from '../shared/builtin/agents.ts'
-import { BUILTIN_WORKFLOWS, buildWorkflow, builtinAgentKeys } from '../shared/builtin/workflows.ts'
-import { seedBuiltins, type BuiltinOps } from '../shared/builtin/install.ts'
+import {
+  BUILTIN_WORKFLOWS,
+  buildWorkflow,
+  builtinAgentKeys,
+  GENERAL,
+  GENERAL_LEGACY,
+  GENERAL_ORIGIN,
+} from '../shared/builtin/workflows.ts'
+import {
+  migrateGeneralWorkflow,
+  seedBuiltins,
+  seedProjectWorkflows,
+  type BuiltinOps,
+} from '../shared/builtin/install.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
@@ -83,22 +95,101 @@ test('内置工作流：结构合法，节点的 Agent、验收流程和参数�
         assert.ok(ids.has(e.to) || e.to === 'end', `${w.name}/${f.name} 连线终点 ${e.to} 不存在`)
       }
       for (const n of f.nodes) {
-        if (n.hooks.review)
-          assert.ok(
-            built.flows.some((x) => x.id === n.hooks.review!.id),
-            `${n.title} 的验收流程不存在`,
-          )
-        const a = agents.find((x) => x.id === n.agentId)!
-        // 节点上写的参数都是这个 Agent 的，值也合法
-        for (const [k, v] of Object.entries(n.params)) {
-          const p = a.params.find((x) => x.key === k)
-          assert.ok(p, `${w.name}/${n.title} 的参数 ${k} 不是「${a.name}」的`)
-          assert.deepEqual(resolveParams([p], { [k]: v }).values[k], v, `${w.name}/${n.title} 的参数 ${k} 值不合法`)
+        for (const s of nodeSteps(n)) {
+          if (s.review)
+            assert.ok(
+              built.flows.some((x) => x.id === s.review!.id),
+              `${n.title}/${s.title} 的验收流程不存在`,
+            )
+          if (s.kind !== 'agent') continue
+          const a = agents.find((x) => x.id === s.agentId)
+          assert.ok(a, `${w.name}/${n.title}/${s.title} 的 Agent 不存在`)
+          // 节点 / 步骤上写的参数都是这个 Agent 的，值也合法
+          for (const [k, v] of Object.entries(s.params)) {
+            const param: Agent['params'][number] | undefined = a.params.find((x) => x.key === k)
+            assert.ok(param, `${w.name}/${n.title}/${s.title} 的参数 ${k} 不是「${a.name}」的`)
+            assert.deepEqual(
+              resolveParams([param], { [k]: v }).values[k],
+              v,
+              `${w.name}/${n.title}/${s.title} 的参数 ${k} 值不合法`,
+            )
+          }
+          assert.deepEqual(nodeMissingParams(a, s.params), [], `${w.name}/${n.title}/${s.title} 有没填的参数`)
         }
-        assert.deepEqual(nodeMissingParams(a, n.params), [], `${w.name}/${n.title} 有没填的参数`)
       }
     }
   }
+})
+
+test('旧「通用项目」副本：语义没改时升级成合并后的主流程，保留坐标，重复启动不再改', async () => {
+  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
+  const legacy = WorkflowInput.parse({
+    ...buildWorkflow(GENERAL_LEGACY, (k) => k),
+    name: '通用项目',
+    categoryId: 'cat',
+    tags: ['tag'],
+    origin: GENERAL_ORIGIN,
+  })
+  const mainOld = legacy.flows.find((f) => f.id === 'main')!
+  mainOld.nodes.find((n) => n.id === 'discover')!.x = 111
+  mainOld.nodes.find((n) => n.id === 'design')!.x = 222
+  mainOld.nodes.find((n) => n.id === 'docs')!.x = 333
+  mainOld.startPos = { x: -5, y: 6 }
+  const w: Workflow = { ...legacy, id: 'w1', createdAt: '', updatedAt: '' }
+
+  let saved: Workflow | null = null
+  const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })
+  const ops: BuiltinOps = {
+    createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
+    createCategory: async (name, scope) => ({ ...CategoryInput.parse({ name, scope }), ...meta() }),
+    createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
+    createWorkflow: async (x) => ({ ...WorkflowInput.parse(x), ...meta() }),
+    updateWorkflow: async (id, input) => {
+      saved = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
+      return saved
+    },
+  }
+  const state = { agents: mine, categories: [], tags: [], workflows: [w] }
+  const r = await seedProjectWorkflows(state, ops)
+  assert.ok(saved, '旧副本被升级')
+  const next = r.state.workflows.find((x) => x.id === 'w1')!
+  const main = next.flows.find((f) => f.id === 'main')!
+  assert.deepEqual(
+    main.nodes.map((n) => n.id),
+    ['discover', 'design', 'docs'],
+  )
+  assert.deepEqual(
+    main.nodes.find((n) => n.id === 'design')!.steps.map((s) => s.id),
+    ['plan', 'impl'],
+  )
+  assert.deepEqual(
+    main.nodes.find((n) => n.id === 'docs')!.steps.map((s) => s.id),
+    ['docsync', 'deliver'],
+  )
+  // 坐标和工作流级字段都保留
+  assert.equal(main.nodes.find((n) => n.id === 'design')!.x, 222)
+  assert.deepEqual(main.startPos, { x: -5, y: 6 })
+  assert.equal(next.name, '通用项目')
+  assert.equal(next.categoryId, 'cat')
+  assert.deepEqual(next.tags, ['tag'])
+  assert.equal(next.origin, GENERAL_ORIGIN)
+  // 再启动一次：结构已经不匹配，不再更新
+  let again = 0
+  const r2 = await seedProjectWorkflows(r.state, {
+    ...ops,
+    updateWorkflow: async () => {
+      again++
+      return null
+    },
+  })
+  assert.equal(again, 0)
+  assert.equal(r2.updated.length, 0)
+  // 用户改过的副本不动
+  const edited = structuredClone(r.state)
+  const em = edited.workflows.find((x) => x.id === 'w1')!.flows.find((f) => f.id === 'main')!
+  em.nodes.find((n) => n.id === 'discover')!.title = '我改过的'
+  assert.equal(await migrateGeneralWorkflow(edited, ops), null)
+  assert.ok(GENERAL.flows.find((f) => f.id === 'main')!.nodes.some((n) => n.steps?.length))
 })
 
 test('自带 Skill：统一装到 ~/.agents/skills，已有的不覆盖，执行前自动补齐缺的', async () => {
@@ -160,7 +251,9 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   // 工作流节点都指向建好的 Agent
   const ids = new Set(r.agents.map((a) => a.id))
   for (const w of r.workflows)
-    for (const f of w.flows) for (const nd of f.nodes) assert.ok(ids.has(nd.agentId), nd.title)
+    for (const f of w.flows)
+      for (const nd of f.nodes)
+        for (const s of nodeSteps(nd)) if (s.kind === 'agent') assert.ok(ids.has(s.agentId), `${nd.title}/${s.title}`)
   assert.equal(r.tags.filter((x) => x.name === '内置').length, 1)
   assert.equal(new Set(r.categories.map((c) => `${c.scope}/${c.name}`)).size, r.categories.length, '分类没有重复')
   // 通用 Agent 跟着工作流一起建，标成通用

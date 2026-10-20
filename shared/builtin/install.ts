@@ -14,7 +14,9 @@ import {
   BUILTIN_WORKFLOWS,
   buildWorkflow,
   builtinAgentKeys,
+  GENERAL,
   GENERAL_KEY,
+  GENERAL_LEGACY,
   GENERAL_NAME,
   GENERAL_ORIGIN,
   UE_PROJECT_KEY,
@@ -30,6 +32,8 @@ export interface BuiltinOps {
   createCategory: (name: string, scope: Category['scope']) => Promise<Category>
   createTag: (input: TagInput) => Promise<Tag>
   createWorkflow: (input: WorkflowInput) => Promise<Workflow>
+  /** 升级旧的「通用项目」副本；没有时跳过迁移 */
+  updateWorkflow?: (id: string, input: WorkflowInput) => Promise<Workflow | null>
 }
 
 /** 内置模板建出来的东西统一打上这个标签，方便在列表里筛 */
@@ -164,20 +168,119 @@ export async function addBuiltinWorkflow(w: BuiltinWorkflow, state: BuiltinState
 /** 「通用项目」「UE 项目」：启动时自动装一次，项目默认流程要用 */
 const GLOBAL_WORKFLOWS = BUILTIN_WORKFLOWS.filter((w) => w.key === GENERAL_KEY || w.key === UE_PROJECT_KEY)
 
+/** 参数表是否一致（忽略键的顺序） */
+const sameParams = (a: Record<string, unknown>, b: Record<string, unknown>) => {
+  const ka = Object.keys(a).sort()
+  const kb = Object.keys(b).sort()
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i] && JSON.stringify(a[k]) === JSON.stringify(b[k]))
+}
+
+type FlowNodeLike = Workflow['flows'][number]['nodes'][number]
+
+/** 两个节点的语义是否一致：忽略 id 和坐标 */
+function sameNode(a: FlowNodeLike, b: FlowNodeLike) {
+  return (
+    a.title === b.title &&
+    a.kind === b.kind &&
+    a.agentId === b.agentId &&
+    (a.flow?.kind ?? '') === (b.flow?.kind ?? '') &&
+    (a.flow?.id ?? '') === (b.flow?.id ?? '') &&
+    a.tier === b.tier &&
+    sameParams(a.params, b.params) &&
+    a.retries === b.retries &&
+    a.instructions === b.instructions &&
+    a.steps.length === b.steps.length &&
+    (a.hooks.start?.kind ?? '') === (b.hooks.start?.kind ?? '') &&
+    (a.hooks.start?.id ?? '') === (b.hooks.start?.id ?? '') &&
+    (a.hooks.review?.kind ?? '') === (b.hooks.review?.kind ?? '') &&
+    (a.hooks.review?.id ?? '') === (b.hooks.review?.id ?? '') &&
+    (a.hooks.end?.kind ?? '') === (b.hooks.end?.kind ?? '') &&
+    (a.hooks.end?.id ?? '') === (b.hooks.end?.id ?? '') &&
+    a.hooks.maxRounds === b.hooks.maxRounds &&
+    !!a.hooks.confirm === !!b.hooks.confirm
+  )
+}
+
+const edgeKey = (e: { from: string; to: string; when?: string }) => `${e.from}>${e.to}>${e.when ?? ''}`
+const sameEdges = (
+  a: { from: string; to: string; when?: string }[],
+  b: { from: string; to: string; when?: string }[],
+) => a.map(edgeKey).sort().join('|') === b.map(edgeKey).sort().join('|')
+
+/**
+ * 本机的「通用项目」还是没改过的旧 5 节点版本：
+ * Agent 按来源比较（本机 id 因机器而异），其余语义字段一致、忽略坐标和工作流说明以外的顺序
+ */
+function isLegacyGeneral(w: Workflow, agents: Agent[]) {
+  if (w.origin !== GENERAL_ORIGIN || w.entryFlowId !== 'main') return false
+  const expected = buildWorkflow(GENERAL_LEGACY, (key) => findBuiltin(agents, key)?.id ?? '')
+  const exp = expected.flows.find((f) => f.id === 'main')
+  const main = w.flows.find((f) => f.id === 'main')
+  if (!exp || !main || main.nodes.length !== exp.nodes.length) return false
+  if (!sameEdges(main.edges, exp.edges)) return false
+  if (w.document.trim() !== expected.document.trim()) return false
+  const byId = new Map(main.nodes.map((n) => [n.id, n]))
+  return exp.nodes.every((e) => {
+    const n = byId.get(e.id)
+    return !!n && sameNode(n, e)
+  })
+}
+
+/**
+ * 把本机没改过的旧「通用项目」升级成合并后的主流程：
+ * 保留工作流 id、名称、分类、标签、说明、暴露项和其他流程，discover / design / docs 的坐标不动。
+ * 用户改过语义字段时跳过；升级后结构不再匹配，重复启动不会再改
+ */
+export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOps): Promise<Workflow | null> {
+  if (!api.updateWorkflow) return null
+  const cur = state.workflows.find((w) => w.origin === GENERAL_ORIGIN)
+  if (!cur || !isLegacyGeneral(cur, state.agents)) return null
+  const built = buildWorkflow(GENERAL, (key) => findBuiltin(state.agents, key)?.id ?? '')
+  const oldMain = cur.flows.find((f) => f.id === 'main')!
+  const newMain = built.flows.find((f) => f.id === built.entryFlowId)!
+  const pos = new Map(oldMain.nodes.map((n) => [n.id, n]))
+  const flows = built.flows.map((f) => {
+    // 其他流程（文档初始化、测试、验收）保留本机的版本，用户可能改过
+    const old = cur.flows.find((x) => x.id === f.id)
+    if (f.id !== newMain.id) return old ?? f
+    return {
+      ...f,
+      startPos: oldMain.startPos,
+      endPos: oldMain.endPos,
+      nodes: f.nodes.map((n) => {
+        const o = pos.get(n.id)
+        return o ? { ...n, x: o.x, y: o.y } : n
+      }),
+    }
+  })
+  const { id, createdAt, updatedAt, ...rest } = cur
+  return api.updateWorkflow(id, {
+    ...rest,
+    mainAgentId: built.mainAgentId,
+    entryFlowId: built.entryFlowId,
+    flows,
+  })
+}
+
 /**
  * 启动时安装一次项目用的内置工作流（「通用项目」「UE 项目」）：同名或同来源的跳过，不覆盖用户改过的。
+ * 再把本机没改过的旧「通用项目」副本升级成合并后的主流程。
  * 返回装完后的数据，调用方据此更新集合。
  */
 export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps) {
   const rest = GLOBAL_WORKFLOWS.filter(
     (w) => !state.workflows.some((x) => x.origin === originOf(w.key) || x.name === w.name),
   )
-  if (!rest.length) return { state, created: [] as Workflow[] }
-  const { workflows, categories, tags, agents } = await seedBuiltins(state, api, rest)
-  return {
-    state: { workflows, categories, tags, agents },
-    created: workflows.filter((w) => !state.workflows.some((x) => x.id === w.id)),
+  let cur = state
+  let created: Workflow[] = []
+  if (rest.length) {
+    const seeded = await seedBuiltins(state, api, rest)
+    cur = seeded
+    created = seeded.workflows.filter((w) => !state.workflows.some((x) => x.id === w.id))
   }
+  const updated = await migrateGeneralWorkflow(cur, api)
+  if (updated) cur = { ...cur, workflows: cur.workflows.map((w) => (w.id === updated.id ? updated : w)) }
+  return { state: cur, created, updated: updated ? [updated] : [] }
 }
 
 /**
