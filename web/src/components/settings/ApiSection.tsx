@@ -201,14 +201,20 @@ function ApiCard({
     // 目录变了、已选的值不在里面时也要能显示
     return current && !list.some((o) => o.value === current) ? [...list, { value: current, label: current }] : list
   }
-  /** 默认思考强度：模型目录里这个模型支持的强度 */
-  const effortOptions = (m: string) => [
-    { value: '', label: t('模型默认') },
-    ...(matchModel(m, { entries: modelCatalog?.entries ?? [] })?.entry.efforts ?? []).map((e) => ({
-      value: e,
-      label: e,
-    })),
-  ]
+  /** 默认思考强度：映射到的模型优先，没设映射时用自动识别到的模型 */
+  const effortOptions = (m: string) => {
+    const efforts = matchModel(a.modelMap[m] || m, { entries: modelCatalog?.entries ?? [] })?.entry.efforts ?? []
+    const current = a.modelEfforts[m] ?? ''
+    // 目录变了、已选的值不在里面时也要能显示
+    const list = current && !efforts.includes(current) ? [...efforts, current] : efforts
+    return [
+      { value: '', label: t('模型默认') },
+      ...list.map((e) => ({
+        value: e,
+        label: e,
+      })),
+    ]
+  }
   const saveName = () => {
     const v = name.trim()
     if (!v) return

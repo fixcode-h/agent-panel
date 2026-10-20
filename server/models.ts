@@ -542,9 +542,11 @@ export async function supportedEffort(id: string, model: string, effort?: string
   for (const m of cachedModels(id)?.models ?? []) if (m.efforts) known.set(m.id, m.efforts)
   for (const [k, v] of await knownCatalog(id).catch(() => new Map<string, CatalogInfo>()))
     if (v.efforts) known.set(k, v.efforts)
-  // 模型目录里的可选强度：CLI 没报告时用这个挡住模型不认的值
+  // 模型目录里的可选强度：CLI 没报告时用这个挡住模型不认的值；
+  // API 设置里给这个模型配了映射时按映射到的模型算
   const catalog = await mergedModelCatalog().catch(() => [])
-  const hit = modelLimitsFor(model, { entries: catalog })
+  const cs = cliSettings(await getSettings(), id)
+  const hit = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries: catalog })
   if (hit.matched && hit.entry) {
     const allowed = CLIS.find((c) => c.id === id)?.efforts.map((e) => e.id) ?? []
     known.set(model, allowed.length ? hit.entry.efforts.filter((e) => allowed.includes(e)) : hit.entry.efforts)

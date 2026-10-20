@@ -314,19 +314,33 @@ export function TierTable({
         const model = value[tr.id].model || sug.model
         // 自动值按这一档实际用的模型识别：换了模型，空着的上下文、最大输出和思考强度跟着变
         const own = autoLimits(model, catalog, { entries: modelCatalog?.entries, protocol })
-        // API 配置里给这个模型配了映射：上下文和最大输出按映射到的模型算；思考强度还按实际的模型
+        // API 配置里给这个模型配了映射：上下文、最大输出和思考强度都按映射到的模型算
         const mapTo = apiModelMap?.[model] ?? ''
         const mappedAuto = mapTo ? autoLimits(mapTo, catalog, { entries: modelCatalog?.entries, protocol }) : undefined
-        const auto = mappedAuto ? { ...own, context: mappedAuto.context, maxOutput: mappedAuto.maxOutput } : own
+        const auto = mappedAuto?.matched
+          ? {
+              ...own,
+              context: mappedAuto.context,
+              maxOutput: mappedAuto.maxOutput,
+              efforts: mappedAuto.efforts,
+              defaultEffort: mappedAuto.defaultEffort,
+              matched: true,
+            }
+          : own
         const open = expanded.has(tr.id)
         const context = value[tr.id].context || auto.context
         const maxOutput = value[tr.id].maxOutput || auto.maxOutput
         const allowed = def.efforts.map((e) => e.id)
-        const effortList = def.models.some((m) => m.id === model)
-          ? modelEfforts(def, model)
-          : auto.matched
-            ? auto.efforts.filter((e) => !allowed.length || allowed.includes(e)).map((id) => ({ id }))
-            : def.efforts
+        const mappedEfforts = mappedAuto?.matched
+          ? mappedAuto.efforts.filter((e) => !allowed.length || allowed.includes(e))
+          : undefined
+        const effortList = mappedEfforts
+          ? mappedEfforts.map((id) => ({ id }))
+          : def.models.some((m) => m.id === model)
+            ? modelEfforts(def, model)
+            : auto.matched
+              ? auto.efforts.filter((e) => !allowed.length || allowed.includes(e)).map((id) => ({ id }))
+              : def.efforts
         // 默认思考强度：API 设置里按模型配的优先，其次才是模型目录的默认值
         const defaultEffort = sug.effort || apiModelEfforts?.[model] || auto.defaultEffort
         return (

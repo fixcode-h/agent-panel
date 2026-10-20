@@ -439,7 +439,8 @@ async function runAgent(
   // 模型不认的思考强度会让 CLI 启动即报错退出：挡在这里，下面记下的启动命令和日志才和实际调用的参数一致
   // 模型目录里的默认思考强度：没有手动指定时用它；目录里没有的模型交给 CLI 自己决定
   const entries = await mergedModelCatalog().catch(() => [])
-  const catalogInfo = modelLimitsFor(model, { entries, protocol: cs.api?.protocol })
+  // API 设置里给这个模型配了映射时，默认思考强度按映射到的模型算
+  const catalogInfo = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries, protocol: cs.api?.protocol })
   // API 设置里给这个模型配的默认思考强度优先，其次才是模型目录的默认值
   const defaultEffort = cs.api?.modelEfforts?.[model] || (catalogInfo.matched ? catalogInfo.defaultEffort : '')
   const requested = run.effort || defaultEffort
