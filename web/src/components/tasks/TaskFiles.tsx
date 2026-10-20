@@ -1,7 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { ChevronDown, GitBranch, Loader2, RefreshCw, ScanSearch } from 'lucide-react'
 import { toast } from 'sonner'
-import type { ContentFile, FileTree, SearchMode } from '@shared/files'
 import { type Task, type TaskStep } from '@shared/schema'
 import { mergeChanges, taskSummary } from '@shared/task'
 import { t } from '@shared/i18n'
@@ -10,11 +9,13 @@ import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { FileExplorer } from '@/components/files/FileTree'
+import { ProjectFileDialog } from '@/components/files/ProjectFileDialog'
+import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
 import { DiffDialog } from './DiffDialog'
-import { useFileOpen } from './FileDialog'
+import { FileDialog } from './FileDialog'
 
 /**
- * 任务页右栏：任务工作目录（独立分支时是 worktree）的文件树，带 git 状态。
+ * 任务页右栏：当前项目的文件树，带 git 状态；没有项目的聊天用任务工作目录。
  * 「更改」也在这里：树上的状态标出改过哪些文件，上面的按钮列出改动、看差异、撤销或让 CLI 审查。
  */
 export function TaskFiles({
@@ -32,17 +33,10 @@ export function TaskFiles({
   onTask?: (task: Task) => void
 }) {
   const { upsertTask } = useData()
-  const openFile = useFileOpen()
-  const [tree, setTree] = useState<FileTree | null>(null)
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [hits, setHits] = useState<ContentFile[]>([])
-  const [hitsTruncated, setHitsTruncated] = useState(false)
-  const [searching, setSearching] = useState(false)
   const [onlyChanged, setOnlyChanged] = useState(false)
   const [diffPath, setDiffPath] = useState<string | null>(null)
   const [reviewing, setReviewing] = useState(false)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
 
   // 改动过一次（新增、改了行数）才重新读：执行中每秒都在更新任务，不能跟着刷
   const changes = node
@@ -56,57 +50,18 @@ export function TaskFiles({
       })()
     : task.changes
   const stamp = changes.map((c) => `${c.path}:${c.add}:${c.del}`).join('|')
-  const idle = task.status !== 'running'
-
-  const load = () => {
-    setLoading(true)
-    setError('')
-    api
-      .taskFiles(task.id)
-      .then(setTree)
-      .catch((e) => setError((e as Error).message))
-      .finally(() => setLoading(false))
-  }
-  useEffect(() => {
-    load()
-    // 任务换掉、改动过、执行结束后重新读一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [task.id, stamp, idle])
-
-  // 按内容搜索：停顿一下再搜，输入过程中不发请求
-  const search = (q: string, mode: SearchMode) => {
-    const needle = q.trim()
-    clearTimeout(timer.current)
-    if (mode !== 'content' || !needle) {
-      setHits([])
-      setHitsTruncated(false)
-      setSearching(false)
-      return
-    }
-    setSearching(true)
-    timer.current = setTimeout(() => {
-      api
-        .searchTaskFiles(task.id, needle)
-        .then((r) => {
-          setHits(r.files)
-          setHitsTruncated(r.truncated)
-        })
-        .catch((e) => setError((e as Error).message))
-        .finally(() => setSearching(false))
-    }, 250)
-  }
-  useEffect(() => () => clearTimeout(timer.current), [])
-
+  const files = useProjectFiles(task.projectId, `${task.id}|${stamp}|${task.status !== 'running'}`, task.id)
   const add = changes.reduce((n, c) => n + c.add, 0)
   const del = changes.reduce((n, c) => n + c.del, 0)
-  const shown = onlyChanged && tree ? { ...tree, files: tree.files.filter((f) => f.status) } : tree
+  const shown =
+    onlyChanged && files.tree ? { ...files.tree, files: files.tree.files.filter((f) => f.status) } : files.tree
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex h-9 shrink-0 items-center gap-0.5 border-b px-1.5">
         <span className="flex min-w-0 items-center gap-1 px-1 text-[0.75rem] text-subtle">
           <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate font-mono" title={tree?.dir ?? dir}>
-            {tree?.branch ?? t('没有分支')}
+          <span className="truncate font-mono" title={files.tree?.dir ?? dir}>
+            {files.tree?.branch ?? t('没有分支')}
           </span>
         </span>
         <ChangesMenu
@@ -117,7 +72,7 @@ export function TaskFiles({
           onOnly={setOnlyChanged}
           onDiff={setDiffPath}
           scoped={!!node}
-          canReview={!node && idle && !task.simulated && !!tree?.isGit && changes.length > 0}
+          canReview={!node && task.status !== 'running' && !task.simulated && !!files.tree?.isGit && changes.length > 0}
           reviewing={reviewing}
           onReview={async () => {
             setReviewing(true)
@@ -134,23 +89,33 @@ export function TaskFiles({
           type="button"
           aria-label={t('刷新文件')}
           title={t('刷新文件')}
-          onClick={load}
+          onClick={files.load}
           className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
         >
-          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+          <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
         </button>
       </div>
       <FileExplorer
         tree={shown}
-        error={error}
-        hits={hits}
-        hitsTruncated={hitsTruncated}
-        searching={searching}
-        loading={loading}
-        onSearch={search}
-        onOpen={(path, line) => openFile?.(path, line)}
+        error={files.error}
+        hits={files.hits}
+        hitsTruncated={files.hitsTruncated}
+        searching={files.searching}
+        loading={files.loading}
+        onSearch={files.search}
+        onOpen={(path, line) => setTarget({ path, line })}
         compact
       />
+      {task.projectId ? (
+        <ProjectFileDialog
+          projectId={task.projectId}
+          dir={files.tree?.dir ?? dir ?? ''}
+          target={target}
+          onOpenChange={(open) => !open && setTarget(null)}
+        />
+      ) : (
+        <FileDialog taskId={task.id} target={target} onOpenChange={(open) => !open && setTarget(null)} />
+      )}
       <DiffDialog
         task={task}
         path={diffPath}
@@ -158,7 +123,7 @@ export function TaskFiles({
         onReverted={(x) => {
           upsertTask(taskSummary(x))
           // 撤销后文件状态变了，重新读一遍
-          load()
+          files.load()
         }}
       />
     </div>
