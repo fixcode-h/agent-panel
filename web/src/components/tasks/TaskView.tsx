@@ -314,9 +314,6 @@ export function TaskView({
     stick.current = true
     try {
       const r = await api.sendMessage(task.id, content, files.attachments, false, working && how === 'steer')
-      // 有插话协议的 CLI 刚结束这一轮时收不下，改成了排队；靠面板工具取的本来就会排队，不用提醒
-      if (working && how === 'steer' && chatDef?.steer && r.queue.length > task.queue.length)
-        toast(t('这一轮刚好结束，已改成排队'))
       apply(r)
       setText('')
       files.clear()

@@ -310,7 +310,6 @@ export const EN_TASKS: Record<string, string> = {
   '让 CLI 审查还没提交的改动，只列问题，不改文件':
     'Have the CLI review uncommitted changes. It only lists issues and changes no files',
   审查改动: 'Review changes',
-  '这一轮刚好结束，已改成排队': 'This turn just finished, so it was queued instead',
   已分叉成新的对话: 'Forked into a new chat',
   '从这里分叉：新建一个对话，带着到这条为止的内容':
     'Fork from here: start a new chat with everything up to this message',
