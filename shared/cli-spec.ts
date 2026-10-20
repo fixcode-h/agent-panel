@@ -186,6 +186,8 @@ export const CliSpec = z.object({
   color: z.string().default('#64748b'),
   models: z.array(z.object({ id: z.string(), label: z.string(), isDefault: z.boolean().optional() })).default([]),
   efforts: z.array(z.object({ id: z.string(), label: z.string() })).default([]),
+  /** 思考强度跟着模型走，不用 efforts 的全局列表过滤 */
+  effortsFromModel: z.boolean().default(false),
   tiers: z.object({ high: Tier, medium: Tier, low: Tier }).optional(),
   permissions: z.array(z.object({ id: z.string(), label: z.string(), hint: z.string().default('') })).min(1),
   defaultPermission: z.string().optional(),
@@ -343,6 +345,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     versionArgs: spec.versionArgs,
     models: spec.models.map((m) => ({ ...m, label: tr(m.label) })),
     efforts: spec.efforts.map((e) => ({ id: e.id, label: tr(e.label) })),
+    effortsFromModel: spec.effortsFromModel,
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
     permissions: spec.permissions.map((p) => ({ id: p.id, label: tr(p.label), hint: tr(p.hint) })),
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,

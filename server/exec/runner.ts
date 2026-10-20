@@ -442,7 +442,11 @@ async function runAgent(
   const catalogInfo = modelLimitsFor(model, { entries, protocol: cs.api?.protocol })
   // API 设置里给这个模型配的默认思考强度优先，其次才是模型目录的默认值
   const defaultEffort = cs.api?.modelEfforts?.[model] || (catalogInfo.matched ? catalogInfo.defaultEffort : '')
-  const effort = await supportedEffort(cliId, model, run.effort || defaultEffort)
+  const requested = run.effort || defaultEffort
+  let effort = await supportedEffort(cliId, model, requested)
+  // 模型不认 Agent 自己或档位给的强度时，再试档位 / 模型默认的强度，不能直接变成不传
+  const fallback = (run.tier ? cs.tiers[run.tier.id].effort : '') || defaultEffort
+  if (!effort && requested && fallback && fallback !== requested) effort = await supportedEffort(cliId, model, fallback)
   // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，不传
   const limits: ModelLimits = run.tier
     ? { context: cs.tiers[run.tier.id].context, maxOutput: cs.tiers[run.tier.id].maxOutput }
