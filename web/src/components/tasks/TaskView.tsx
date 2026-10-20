@@ -41,7 +41,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
+import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
@@ -166,8 +166,6 @@ function toBlocks(task: Task): Block[] {
 /** project 为空时是 Chat 模式的聊天，不属于任何项目 */
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
-/** 右栏拖宽时中间至少留这么宽：比「内容宽度」小，窄一些的窗口里也能把右栏拖宽一点 */
-const MIN_CHAT = 480
 
 export function TaskView({
   taskId,
@@ -202,11 +200,11 @@ export function TaskView({
   const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
-  // 右栏可以拖宽，但中间至少留出能读对话的宽度；上限按这一行的实际宽度算
+  // 右栏可以拖宽，但中间要留出内容宽度（输入框的宽度）；除此之外不设上限，上限按这一行的实际宽度算
   const taskPanel = usePaneWidth('task-panel', 340, 280, () => {
     const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
     // 保留中间的内容宽度和一点边距；窗口窄到放不下时上限就是默认宽度，不会反而变窄
-    return Math.max(340, Math.min(560, row - MIN_CHAT - 48))
+    return Math.max(340, row - contentPaneWidth() - 48)
   })
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -712,18 +710,6 @@ export function TaskView({
               >
                 <PanelRight className="h-4 w-4" />
               </Button>
-              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="hidden xl:inline-flex"
-                aria-label={t('收起文件面板')}
-                title={t('收起文件面板')}
-                aria-expanded={!filesFolded}
-                onClick={() => setFilesFolded((v) => !v)}
-              >
-                {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-              </Button>
               <Menu>
                 <MenuTrigger asChild>
                   <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
@@ -755,6 +741,18 @@ export function TaskView({
                   </MenuItem>
                 </MenuContent>
               </Menu>
+              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度 */}
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="hidden xl:inline-flex"
+                aria-label={t('收起文件面板')}
+                title={t('收起文件面板')}
+                aria-expanded={!filesFolded}
+                onClick={() => setFilesFolded((v) => !v)}
+              >
+                {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+              </Button>
               {embed?.actions}
             </header>
 
