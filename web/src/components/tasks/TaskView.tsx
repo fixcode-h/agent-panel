@@ -305,7 +305,7 @@ export function TaskView({
       </main>
     )
 
-  // 执行中也能发：补充（交给正在做的 Agent，接着当前的任务做；能补充时默认）、排队（这一轮完成后处理）
+  // 执行中也能发：补充（相关的调整方向，无关的等这一轮完成后再处理；能补充时默认）、排队（这一轮完成后处理）
   const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
     const content = forSend(text, files.attachments.length ? ATTACHMENT_PROMPT : '')
@@ -881,8 +881,8 @@ export function TaskView({
                       ? t('继续输入要求')
                       : canSteer
                         ? byNotes
-                          ? t('执行中也可以输入，Agent 执行时会取走；没取到的等这一轮结束后接着处理')
-                          : t('执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做')
+                          ? t('执行中也可以输入：Agent 执行时会取走，相关的调整方向，无关的等这一轮结束后处理')
+                          : t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
                         : t('执行中也可以输入，这一轮完成后接着处理')
                   }
                 />

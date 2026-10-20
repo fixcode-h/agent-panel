@@ -252,8 +252,8 @@ export const EN_TASKS: Record<string, string> = {
   '查看「{path}」的改动': 'View changes to "{path}"',
   // 执行中排队、打断
   '执行中也可以输入，这一轮完成后接着处理': 'You can type while it runs; it will be handled after this turn',
-  '执行中也可以输入，Agent 执行时会取走；没取到的等这一轮结束后接着处理':
-    'You can type while it runs; the agent picks it up during the turn, or it is handled after this turn',
+  '执行中也可以输入：Agent 执行时会取走，相关的调整方向，无关的等这一轮结束后处理':
+    'You can type while it runs: the agent picks it up during the turn, follows it if it relates to the current work, and handles unrelated notes after this turn',
   'Agent 执行中会取走': 'The agent picks this up while running',
   等待读取: 'Waiting to be read',
   等待你的下一条消息: 'Waiting for your next message',
@@ -318,8 +318,8 @@ export const EN_TASKS: Record<string, string> = {
   '撤回到这里：去掉这条和之后的对话，改了再发':
     'Rewind to here: remove this message and everything after, then edit and resend',
   撤回到这里: 'Rewind to here',
-  '执行中也可以输入，补充给正在做的 Agent，它会接着当前的任务做':
-    'You can type while it runs; the agent takes it into account and keeps going',
+  '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
+    'You can type while it runs: related notes change the current direction, unrelated ones wait until this turn finishes',
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',

@@ -543,7 +543,7 @@ export const FollowUpInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则排队，这一轮完成后自动接着处理 */
   interrupt: z.boolean().default(false),
-  /** 任务正在执行时：插话，直接交给正在跑的 CLI，不停下这一轮；CLI 收不下时排队（见 CLI 配置的 steer、notes） */
+  /** 任务正在执行时：插话交给正在跑的 CLI，由它判断相关性（相关的调整方向，无关的等这一轮完成后再处理）；CLI 收不下时排队（见 CLI 配置的 steer、notes） */
   steer: z.boolean().default(false),
 })
 /** 执行中发来、排队等这一轮完成后再处理的要求 */

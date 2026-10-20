@@ -144,8 +144,18 @@ export function cancelWait(taskId: string) {
   return canceled
 }
 
-/** 交给 CLI 的补充：说清楚是执行中补充的信息，结合它接着做，不要从头开始 */
-const noteText = (text: string) => `用户在执行中补充了信息，请结合它继续当前的任务：\n${text}`
+/**
+ * 交给 CLI 的补充。对话里先让模型判断这条补充和当前任务的关系：
+ * 相关就调整方向；无关就先做完手上的事，再处理这条，别把当前任务丢在半路。
+ * 工作流里交给正在跑的节点，按原来的说法结合当前任务处理。
+ */
+export const steerNote = (text: string, chat: boolean) =>
+  chat
+    ? '用户在你执行中补充了信息。先判断它和当前任务的关系：\n' +
+      '- 相关（对当前任务的调整、修改或补充）：按它调整方向，继续当前任务；\n' +
+      '- 无关：先简短说明会等当前任务完成后再处理，然后继续手上的事，不要现在开始做它；当前任务做完后再处理这条内容。\n\n' +
+      `补充的内容：\n${text}`
+    : `用户在执行中补充了信息，请结合它继续当前的任务：\n${text}`
 
 /**
  * 执行中的补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理。
@@ -156,7 +166,7 @@ const noteText = (text: string) => `用户在执行中补充了信息，请结�
 export async function steerTask(task: Task, text: string, msg: TaskMessage) {
   const all = steers.get(task.id) ?? []
   const took: Steerer[] = []
-  for (const s of all) if (await s.steer(noteText(text))) took.push(s)
+  for (const s of all) if (await s.steer(steerNote(text, task.mode === 'chat'))) took.push(s)
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]
@@ -866,7 +876,7 @@ async function runAgent(
         }
         cur = undefined
         ctx.changed(true)
-        return mine.map((q) => noteText(withAttachments(q.text, q.attachments)))
+        return mine.map((q) => steerNote(withAttachments(q.text, q.attachments), task.mode === 'chat'))
       },
     }
     ;(noteTakers.get(task.id) ?? noteTakers.set(task.id, new Set()).get(task.id)!).add(taker)
