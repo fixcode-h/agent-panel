@@ -163,7 +163,8 @@
 UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计，没有提问通道的 CLI 也通过它向用户提问（`ask_user`）、
 取用户在执行中补充的要求（`read_user_notes`，见 `features.notes`）、在对话页开着时停在 `wait_user_message` 上等下一句。
 最后一类只在 `features.notes` 的对话任务里挂上：模型回复完调用它，进程不退出；用户再发消息时面板把内容作为工具结果交回同一个进程，
-不用结束再 `--resume`。切走对话页后有 1 分钟宽限（`AGENT_PANEL_PRESENCE_GRACE_MS` 可改），过了宽限工具返回「用户已经离开了这个对话」，
+不用结束再 `--resume`。切走对话页后有宽限（设置里的「离开对话后保留多久」，默认 60 分钟；
+环境变量 `AGENT_PANEL_PRESENCE_GRACE_MS` 优先，测试用），过了宽限工具返回「用户已经离开了这个对话」，
 模型结束这一轮、进程正常退出。`tools/list` 里多了这个工具，不算插话协议。
 打开一个已有会话的对话页时，面板会先在后台用 `--resume` 启动一次（合成一句「只调用 wait_user_message」的提示，
 预热期间的输出不记进对话），把 CLI 启动和会话加载放到发消息之前。

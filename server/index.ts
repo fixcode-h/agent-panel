@@ -55,6 +55,7 @@ import { getLimits, listSkills } from './cli-extras.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
+import { setPresenceGraceMs } from './presence.ts'
 import { Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
@@ -610,6 +611,7 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
   void applyRemote()
+  void getSettings().then((s) => setPresenceGraceMs(s.presenceGraceMinutes * 60_000))
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
   if (tray) {
     // 托盘程序读这两行：显示地址，并由它打开浏览器（服务自己打开会经过 cmd）

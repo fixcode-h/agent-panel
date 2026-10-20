@@ -1,8 +1,21 @@
 /**
  * 对话页面是否还开着：CLI 在 MCP 工具上等用户下一句时，只有页面还开着才继续等。
- * 切走（页面卸载或隐藏）后给一分钟宽限，期间切回来还能直接接着说；过了宽限让 CLI 结束这一轮。
+ * 切走（页面卸载或隐藏）后给一段宽限，期间切回来还能直接接着说；过了宽限让 CLI 结束这一轮。
+ * 宽限时长在设置里改（presenceGraceMinutes），环境变量 AGENT_PANEL_PRESENCE_GRACE_MS 优先，测试用
  */
-const GRACE_MS = Number(process.env.AGENT_PANEL_PRESENCE_GRACE_MS) || 60_000
+const FIXED_GRACE_MS = process.env.AGENT_PANEL_PRESENCE_GRACE_MS
+  ? Number(process.env.AGENT_PANEL_PRESENCE_GRACE_MS)
+  : undefined
+const DEFAULT_GRACE_MS = 60 * 60_000
+
+let graceMs = DEFAULT_GRACE_MS
+
+/** 改宽限期（设置保存后调用）；0 表示页面切走就让 CLI 结束这一轮 */
+export function setPresenceGraceMs(ms: number) {
+  graceMs = Number.isFinite(ms) ? Math.max(0, ms) : DEFAULT_GRACE_MS
+}
+
+const grace = () => FIXED_GRACE_MS ?? graceMs
 
 /** 任务 id → 正在看这个任务的页面 */
 const viewers = new Map<string, Set<string>>()
@@ -35,11 +48,14 @@ export function setViewer(taskId: string, viewerId: string, active: boolean) {
   if (set?.size || timers.has(taskId)) return
   timers.set(
     taskId,
-    setTimeout(() => {
-      timers.delete(taskId)
-      left.add(taskId)
-      onIdle?.(taskId)
-    }, GRACE_MS),
+    setTimeout(
+      () => {
+        timers.delete(taskId)
+        left.add(taskId)
+        onIdle?.(taskId)
+      },
+      Math.max(0, grace()),
+    ),
   )
 }
 
