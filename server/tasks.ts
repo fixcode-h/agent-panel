@@ -253,6 +253,7 @@ export function tasksApi(deps: {
         resume,
         prewarm,
         prewarmFrom: before,
+        prewarmTurnDoneAt: beforeTurnDoneAt,
       })
     })()
     entry.done = run
@@ -281,9 +282,12 @@ export function tasksApi(deps: {
         entry.task.awaitingUser = false
         entry.task.prewarming = false
         // 预热只是把 CLI 启动好，没有处理新消息就退出时不要算完成，也不要把列表时间改成现在
-        if (prewarm && entry.task.status === 'done' && (entry.task.turnDoneAt ?? '') === beforeTurnDoneAt) {
-          entry.task.status = before
+        if (prewarm && (entry.task.turnDoneAt ?? '') === beforeTurnDoneAt) {
+          // 引擎这时不会标完成，任务还停在 running；状态和时间都回到打开前
+          if (entry.task.status === 'done' || entry.task.status === 'running') entry.task.status = before
           entry.task.updatedAt = beforeUpdatedAt
+          // 引擎收尾没有走 changed，这里补一次推送
+          entry.rev++
         }
         // 工作流跑完一整轮才算完成；对话在 CLI 回复完时已经记了 turnDoneAt
         if (!prewarm && entry.task.mode !== 'chat' && entry.task.status === 'done')
