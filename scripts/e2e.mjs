@@ -1520,7 +1520,7 @@ try {
     const mine = calls().slice(n0)
     const mainCalls = mine.filter((c) => /## 事件：/.test(c.input))
     assert.equal(mainCalls.length, 6)
-    assert.match(mainCalls[0].input, /你是工作流「主 Agent 调度」流程「主流程」的主 Agent/, '第一轮带完整的职责说明')
+    assert.match(mainCalls[0].input, /你是工作流「主 Agent 调度」流程「主流程」的常驻编排器/, '第一轮带完整的职责说明')
     assert.match(mainCalls[0].input, /帮忙检查/, '列出可以委派的工作流')
     assert.ok(
       mainCalls.slice(1).every((c) => c.input.startsWith('## 事件：') && c.args.includes(main && dm.sessions['@main'])),
