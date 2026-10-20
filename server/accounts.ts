@@ -19,6 +19,7 @@ import {
   pruneModelEntries,
   pruneProviderEntries,
   setModelEfforts,
+  setModelLimits,
   ApiConfig,
   type JsonEdit,
 } from '../shared/accounts.ts'
@@ -534,6 +535,29 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
 }
 
 /**
+ * 把模型目录里的上下文窗口写回 CLI 配置的模型条目。
+ * Command Code 的自定义接口不写 contextWindow 就按 200k 算，压缩在 100k 就会触发，
+ * 同一个会话要反复带上完整历史；写进去之后压缩点才按真实窗口走。
+ * 设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
+ */
+async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+  const spec = def.auth?.api?.modelLimits
+  if (!spec) return
+  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const file = expand(fillTemplate(spec.file, vars), env)
+  const data = await readJsonFile(file)
+  if (!isObj(data)) return
+  const entries = await mergedModelCatalog().catch(() => [])
+  const changed = setModelLimits(data, fillTemplate(spec.at, vars), spec.key, (model) => {
+    const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+    return info.matched ? info.context : undefined
+  })
+  if (!changed) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, data)
+}
+
+/**
  * API 方式只留一份接口配置：同一个地址（忽略 /v1）和密钥的旧 provider 从 CLI 配置里删掉，
  * 保留正在用的那个；不同接口的 provider 不动。
  */
@@ -583,6 +607,7 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
       const injection = apiInjection(def.auth, cs.api)
       await applyEdits(injection.edits, env)
       await writeModelEfforts(def, cs.api, injection.provider, env)
+      await writeModelLimits(def, cs.api, injection.provider, env)
       await pruneApiProviders(def, cs.api, injection.provider, env)
       await pruneApiModels(def, cs.api, injection.provider, env)
     } else {
