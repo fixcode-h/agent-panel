@@ -15,6 +15,7 @@ import {
   fillEdits,
   fillTemplate,
   nativeModelId,
+  modelsForProtocol,
   pruneModelEntries,
   pruneProviderEntries,
   setModelEfforts,
@@ -560,7 +561,7 @@ async function pruneApiModels(def: CliDefinition, api: ApiConfig, provider: stri
   const data = await readJsonFile(file)
   if (!isObj(data)) return
   const prefix = apiModelPrefix(def.auth, api)
-  const keep = api.models.map((m) => nativeModelId(m, prefix))
+  const keep = modelsForProtocol(api.models, api.protocol).map((m) => nativeModelId(m, prefix))
   if (!pruneModelEntries(data, fillTemplate(spec.at, vars), keep)) return
   await mkdir(path.dirname(file), { recursive: true })
   await writeJsonAtomic(file, data)

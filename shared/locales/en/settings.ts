@@ -329,6 +329,7 @@ export const EN_SETTINGS: Record<string, string> = {
   可用的模型: 'Available models',
   从接口获取: 'Fetch from API',
   '连接可用，读到 {n} 个模型': 'Connection works — {n} models available',
+  模型名和当前协议不匹配: 'Model name does not match the current protocol',
   第一个是默认模型: 'The first one is the default model',
   '自己输入模型名，回车添加': 'Type a model name, Enter to add',
   添加模型: 'Add model',

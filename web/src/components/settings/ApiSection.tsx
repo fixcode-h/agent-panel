@@ -15,7 +15,14 @@ import {
   X,
 } from 'lucide-react'
 import { CLIS } from '@shared/clis'
-import { API_PROTOCOLS, API_PROTOCOL_LABEL, apiProvider, type ApiConfig, type ApiProtocol } from '@shared/accounts'
+import {
+  API_PROTOCOLS,
+  API_PROTOCOL_LABEL,
+  apiProvider,
+  modelsForProtocol,
+  type ApiConfig,
+  type ApiProtocol,
+} from '@shared/accounts'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -132,10 +139,12 @@ function ApiCard({
     setFetching(true)
     try {
       const { models } = await api.apiModels(a)
-      setFound(models)
+      // 从接口读到的模型也按协议过滤：带别的协议后缀的不显示，不带后缀的通用模型保留
+      const list = modelsForProtocol(models, a.protocol)
+      setFound(list)
       setFilter('')
-      if (!a.models.length) onChange({ models: models.slice(0, 1) })
-      setProbe({ ok: true, message: t('连接可用，读到 {n} 个模型', { n: models.length }) })
+      if (!a.models.length) onChange({ models: list.slice(0, 1) })
+      setProbe({ ok: true, message: t('连接可用，读到 {n} 个模型', { n: list.length }) })
     } catch (e) {
       fail(e)
     } finally {
@@ -146,7 +155,8 @@ function ApiCard({
     setTesting(true)
     try {
       const { models } = await api.apiModels(a)
-      const message = t('连接可用，读到 {n} 个模型', { n: models.length })
+      const list = modelsForProtocol(models, a.protocol)
+      const message = t('连接可用，读到 {n} 个模型', { n: list.length })
       setProbe({ ok: true, message })
       toast.success(message)
     } catch (e) {
@@ -167,7 +177,13 @@ function ApiCard({
   )
   const addDraft = () => {
     const m = draft.trim()
-    if (m && !a.models.includes(m)) onChange({ models: [...a.models, m] })
+    if (!m) return
+    // 带别的协议后缀的模型不给加，免得加了又因为协议不匹配被隐藏
+    if (!modelsForProtocol([m], a.protocol).length) {
+      toast.error(t('模型名和当前协议不匹配'))
+      return
+    }
+    if (!a.models.includes(m)) onChange({ models: [...a.models, m] })
     setDraft('')
   }
   const setMap = (m: string, to: string) => {
@@ -382,8 +398,8 @@ function ApiCard({
             )}
           </div>
         )}
-        {/* 一个模型一行：默认思考强度和映射模型都按模型配 */}
-        {a.models.map((m, i) => (
+        {/* 一个模型一行：默认思考强度和映射模型都按模型配；别的协议后缀的模型不显示 */}
+        {modelsForProtocol(a.models, a.protocol).map((m, i) => (
           <div
             key={m}
             className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-2.5 py-2"

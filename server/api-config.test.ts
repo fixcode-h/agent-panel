@@ -10,6 +10,8 @@ import {
   apiModelList,
   apiProvider,
   fillEdits,
+  modelForProtocol,
+  modelsForProtocol,
   pruneModelEntries,
   pruneProviderEntries,
   sameApi,
@@ -157,6 +159,18 @@ test('同一个 API：地址和密钥一样就算，协议和 /v1 不影响', ()
   assert.ok(!sameApi({ baseUrl: 'https://x.example/a', apiKey: 'k' }, { baseUrl: 'https://x.example/b', apiKey: 'k' }))
 })
 
+test('按协议过滤模型：不带后缀通用，别的协议后缀隐藏，换协议自动换后缀', () => {
+  const all = ['x', 'x-anthropic', 'x-anthropic-messages', 'x-responses', 'x-chat', 'x-gemini']
+  assert.deepEqual(modelsForProtocol(all, 'anthropic'), ['x', 'x-anthropic', 'x-anthropic-messages'])
+  assert.deepEqual(modelsForProtocol(all, 'openai-responses'), ['x', 'x-responses'])
+  assert.deepEqual(modelsForProtocol(all, 'openai-chat'), ['x', 'x-chat'])
+  assert.deepEqual(modelsForProtocol(all, 'gemini'), ['x', 'x-gemini'])
+  const a = modelsForProtocol(all, 'anthropic')
+  assert.equal(modelForProtocol('x-responses', 'anthropic', a), 'x-anthropic')
+  assert.equal(modelForProtocol('x', 'anthropic', a), 'x')
+  assert.equal(modelForProtocol('unknown', 'anthropic', a), 'x')
+})
+
 test('只留一份接口配置：同地址和密钥的旧 provider 删掉，不同接口保留', () => {
   const data = {
     provider: {
@@ -259,4 +273,22 @@ test('API 方式：执行时只认 API 里配的模型，其它模型换成第�
   assert.equal(agentRun({ cli: 'commandcode', model: 'cc-2' }, s).model, 'p/cc-2')
   assert.equal(agentRun({ cli: 'commandcode', model: 'old-model' }, s).model, 'p/cc-1')
   assert.equal(agentRun({ cli: 'commandcode', model: 'p/cc-2' }, s).model, 'p/cc-2')
+})
+
+test('API 方式：模型后缀按协议自动切换', () => {
+  const s = defaultSettings()
+  s.apis = [
+    ApiConfig.parse({
+      id: 'a2',
+      name: '接口',
+      provider: 'p',
+      protocol: 'anthropic',
+      baseUrl: 'https://x.example',
+      apiKey: 'k',
+      models: ['m-anthropic', 'm-responses'],
+    }),
+  ]
+  s.clis.commandcode = CliSettings.parse({ authMode: 'api', apiId: 'a2' })
+  assert.equal(agentRun({ cli: 'commandcode', model: 'm-responses' }, s).model, 'p/m-anthropic')
+  assert.equal(agentRun({ cli: 'commandcode', model: 'm-anthropic' }, s).model, 'p/m-anthropic')
 })
