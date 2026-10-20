@@ -160,6 +160,8 @@ export interface EngineHost {
   /** 预热：打开对话页时后台启动 CLI，不算一轮；失败时回到 prewarmFrom */
   prewarm?: boolean
   prewarmFrom?: Task['status']
+  /** 预热开始前的 turnDoneAt：结束时没变说明没有处理新消息 */
+  prewarmTurnDoneAt?: string
   changed: (flush?: boolean) => void
   newId: () => string
   runAgent: (call: AgentCall) => Promise<AgentResult>
@@ -1451,8 +1453,8 @@ export async function runEngineTurn(host: EngineHost) {
     // 预热失败（CLI 没装好、会话续不上等）不算这一轮：回到原来的状态，等用户发消息时再按正常流程报错
     if (!r.ok) {
       if (host.prewarm) {
-        task.status = host.prewarmFrom ?? 'done'
-        host.changed(true)
+        task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
+        // 列表时间留给收尾恢复，不要因为预热失败改成现在
         return
       }
       return finish(host, r)
@@ -1465,6 +1467,8 @@ export async function runEngineTurn(host: EngineHost) {
       if (!(await runWorkflow())) return
     }
   }
+  // 预热没有处理新消息：不标完成、不刷新列表时间，交给 start 收尾恢复
+  if (host.prewarm && (task.turnDoneAt ?? '') === host.prewarmTurnDoneAt) return
   task.status = 'done'
   host.changed(true)
 }

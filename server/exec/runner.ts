@@ -64,6 +64,7 @@ export interface RealContext {
   /** 打开对话页时后台用 --resume 启动，只等下一句 */
   prewarm?: boolean
   prewarmFrom?: Task['status']
+  prewarmTurnDoneAt?: string
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -1151,6 +1152,7 @@ export async function runRealTurn(ctx: RealContext) {
     resume: ctx.resume,
     prewarm: ctx.prewarm,
     prewarmFrom: ctx.prewarmFrom,
+    prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
     changed: ctx.changed,
     newId: ctx.newId,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
