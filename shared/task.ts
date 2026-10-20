@@ -262,6 +262,23 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
 }
 
 /**
+ * 对话中途换了 CLI 或模型：原来的会话接不上，要开新会话把之前的对话带过去。
+ * 模型只有配置了 modelBoundSession 的 CLI 才要求一致（Codex 的线程里存着上一个模型的工具调用，
+ * 换成别的模型后接口不认这些历史，整条线程会一直失败）
+ */
+export function sessionChanged(
+  task: Pick<Task, 'messages' | 'sessionCli'>,
+  cli: string,
+  model: string,
+  modelBound = false,
+) {
+  if (task.sessionCli && task.sessionCli !== cli) return true
+  if (!modelBound) return false
+  const last = [...task.messages].reverse().find((m) => m.run?.cli === cli)
+  return !!last?.run && last.run.model !== model
+}
+
+/**
  * 用户最近一次发消息的时间（含排队还没处理的），没有就用创建时间。
  * 列表按它排序、显示它：Agent 回复、执行状态变化不改变顺序，只有用户发了新消息才排到前面
  */

@@ -18,6 +18,7 @@ import {
   changesSince,
   mergeChanges,
   questionAnswers,
+  sessionChanged,
   stepUsage,
   withAttachments,
   withTaskModel,
@@ -375,11 +376,24 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
         '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
       ),
     )
+  // Codex 的线程里存着上一个模型的工具调用时，换成别的模型后接口会一直拒绝这条历史
+  if (/input\.content/i.test(detail))
+    hints.push(
+      t(
+        '· 模型接口拒绝了这段聊天记录（input.content 无效或缺失）。常见于在同一个对话里换了模型：Codex 的会话里留着上一个模型的工具调用，新模型接不上。如果反复出现，请新建一个对话。',
+      ),
+    )
   return hints
 }
 
 /** 调用一次 Agent 对应的 CLI，把输出写进任务消息 */
-async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netRetries = 0): Promise<AgentResult> {
+async function runAgent(
+  ctx: RealContext,
+  call: AgentCall,
+  retried = false,
+  netRetries = 0,
+  retryCarry = '',
+): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
@@ -419,10 +433,14 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
   const asker =
     chat && !op && !prewarm ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
-  // 对话中途换了 CLI：原来的会话是另一个 CLI 的，接不上，开新会话把之前的对话带过去
-  const switched = chat && !!task.sessionCli && task.sessionCli !== cliId
+  // 对话中途换了 CLI 或模型：原来的会话接不上，开新会话把之前的对话带过去
+  const switched = chat && sessionChanged(task, cliId, model, def.modelBoundSession)
   if (switched) resume = undefined
-  if (rewind || switched) {
+  if (retryCarry) {
+    // 接口拒绝了旧会话的历史：丢掉它重开，把之前的对话带上
+    resume = undefined
+    carry = retryCarry
+  } else if (rewind || switched) {
     const th = rewind?.through ?? null
     resume = undefined
     if (rewind?.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
@@ -1052,6 +1070,20 @@ async function runAgent(ctx: RealContext, call: AgentCall, retried = false, netR
       delete task.sessions[sessionKey]
       // 新会话没有之前的上下文，要用完整提示
       return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
+    }
+    // 接口拒绝了这条会话的历史（换过模型，或网关把同一个模型名路由到了别的上游）：
+    // 之后每次请求都会失败，丢掉会话重开一次；对话把之前的记录带上，节点用完整提示
+    if (resume && !prewarm && !op && !retried && /input\.content/i.test(detail)) {
+      delete task.sessions[sessionKey]
+      const carry = chat
+        ? `## 之前的对话\n${transcript(task, asker ? task.messages.indexOf(asker) : task.messages.length)}`
+        : ''
+      log.warn('agent', `${def.name} 的会话和当前模型不兼容，丢掉旧会话重开`, {
+        task: task.id,
+        step,
+        detail: detail.slice(0, 500),
+      })
+      return runAgent(ctx, chat ? call : { ...call, prompt: call.fresh ?? call.prompt }, true, netRetries, carry)
     }
     const hints = failureHints(detail, def)
     const head =
