@@ -162,6 +162,29 @@ export function pruneProviderEntries(
 }
 
 /**
+ * API 方式只保留 API 里配的模型：provider 的 models 对象里多出来的旧模型删掉。
+ * keep 为空时不动，避免把配置删空。返回有没有改动。
+ */
+export function pruneModelEntries(data: unknown, at: string, keep: string[]): boolean {
+  if (!keep.length) return false
+  let box: unknown = data
+  for (const part of at.split('.')) {
+    if (!box || typeof box !== 'object' || Array.isArray(box)) return false
+    box = (box as Record<string, unknown>)[part]
+  }
+  if (!box || typeof box !== 'object' || Array.isArray(box)) return false
+  const models = box as Record<string, unknown>
+  const want = new Set(keep)
+  let changed = false
+  for (const name of Object.keys(models)) {
+    if (want.has(name)) continue
+    delete models[name]
+    changed = true
+  }
+  return changed
+}
+
+/**
  * 把模型条目里的思考强度改成 effortsFor 返回的列表；返回有没有改动。
  * effortsFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
  */
@@ -259,6 +282,17 @@ export const CliAuth = z.object({
           /** provider 里接口地址、密钥的键名 */
           baseUrl: z.string().default('baseUrl'),
           apiKey: z.string().default('apiKey'),
+        })
+        .optional(),
+      /**
+       * API 方式只保留 API 里配的模型：provider 的 models 对象里旧模型删掉，
+       * 保留 API 配置里的那几个。不写表示不处理。
+       */
+      pruneModels: z
+        .object({
+          file: z.string(),
+          /** models 对象所在的位置，例如 provider.{provider}.models */
+          at: z.string(),
         })
         .optional(),
     })

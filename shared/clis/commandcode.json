@@ -226,6 +226,10 @@
         "baseUrl": "baseURL",
         "apiKey": "apiKey"
       },
+      "pruneModels": {
+        "file": "~/.commandcode/providers.json",
+        "at": "provider.{provider}.models"
+      },
       "edits": [
         {
           "file": "~/.commandcode/providers.json",
