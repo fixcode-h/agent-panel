@@ -32,12 +32,16 @@ import {
 } from './schema.ts'
 import {
   blankStep,
+  currentRun,
   flowLabel,
+  inRun,
   nodeAgent,
   parallelTo,
+  planTask,
   preds,
   reachable,
   resolveRef,
+  runPrefix,
   stepTree,
   topoOrder,
   topSteps,
@@ -54,6 +58,7 @@ import {
   evaluateEvent,
   mainDuties,
   parseDispatch,
+  planEvent,
   questionEvent,
   stripDispatch,
   summaryEvent,
@@ -101,8 +106,8 @@ export interface AgentCall {
   tier?: NodeTier
   /** Agent 参数的值（节点上填的）；不传时对话用任务里选的 */
   params?: ParamValues
-  /** 主 Agent 的调度轮：评估节点、整理最终结果、回答子 Agent 的提问（模拟执行据此给出示例输出） */
-  dispatching?: 'evaluate' | 'summary' | 'answer'
+  /** 主 Agent 的调度轮：评估节点、整理最终结果、回答子 Agent 的提问、决定用户新要求怎么处理（模拟执行据此给出示例输出） */
+  dispatching?: 'evaluate' | 'summary' | 'answer' | 'plan'
   /** 工作流里的调用都带编排工具：派子 Agent、查状态、提问、传话（真实执行交给 CLI 的 MCP） */
   orch?: Orchestra
   /** 预热：打开对话页时先用 --resume 启动，只等下一句，不算一轮、不记输出 */
@@ -137,6 +142,8 @@ export interface Orchestra {
   self: string
   /** 这个工作流有没有主 Agent 调度（没有时不能提问） */
   hasMain: boolean
+  /** 这条调用是不是常驻编排器自己的（只有它能起停运行） */
+  planner: boolean
   /** 可以直接派的通用 Agent（名字和简介），spawn_agents 里列出来 */
   common: { name: string; description: string }[]
   status(): string
@@ -145,6 +152,10 @@ export interface Orchestra {
   ask(question: string, ms: number): Promise<{ answer?: string; pending?: boolean; error?: string }>
   send(to: string, text: string): Promise<{ ok: boolean; info: string }>
   inbox(): string[]
+  /** 起一次新的运行：节点全部新建，按流程图执行。同一次运行里不能嵌套起运行 */
+  run(input: string): { ok: boolean; info: string }
+  /** 结束这次运行：没完成的节点不再执行，之后的要求由编排器直接处理 */
+  closeRun(): { ok: boolean; info: string }
 }
 
 export interface EngineHost {
@@ -155,6 +166,18 @@ export interface EngineHost {
   workflow?: Workflow
   /** 本轮的用户输入 */
   prompt: string
+  /**
+   * 项目设置和本机环境里已经确认的授权，写进每次调用的公共部分：
+   * 推送策略（ask 第一次问、allow 直接推、deny 一律不推）、这个对话里用户已经做的选择、
+   * 以及已经授权可用的外部工具（gh、cloudflared 等，只列已登录的）
+   */
+  policy?: {
+    push: 'ask' | 'allow' | 'deny'
+    /** 这个对话里用户对推送的回答 */
+    answered?: 'allowed' | 'denied'
+    /** 已安装并登录的外部工具 */
+    tools: string[]
+  }
   /** 这一轮是「继续流程」，不是新的要求：停在某个节点结论上的流程从那个节点重新检查后接着走 */
   resume?: boolean
   /** 预热：打开对话页时后台启动 CLI，不算一轮；失败时回到 prewarmFrom */
@@ -195,6 +218,8 @@ interface Invocation {
   /** 入口流程的发起节点标题 */
   owner?: string
   depth: number
+  /** 第几次运行：同一个对话里工作流可以按顺序跑多次，节点 id 按它隔离 */
+  run: number
   /** 调度这个流程的主 Agent；同一工作流里的子流程、入口流程沿用发起它的那个 */
   main?: MainCtl
 }
@@ -269,7 +294,9 @@ function userRequests(task: Task) {
 }
 
 const stepPath = (inv: Invocation, nodeId: string) =>
-  inv.parentId ? `${inv.parentId}/${inv.slot}${inv.round ? `.${inv.round}` : ''}/${nodeId}` : nodeId
+  inv.parentId
+    ? `${inv.parentId}/${inv.slot}${inv.round ? `.${inv.round}` : ''}/${nodeId}`
+    : `${runPrefix(inv.run)}${nodeId}`
 
 function ensureStep(host: EngineHost, inv: Invocation, node: FlowNode, index: number): TaskStep {
   const id = stepPath(inv, node.id)
@@ -311,6 +338,27 @@ function dropRerun(host: EngineHost, step: TaskStep) {
 }
 
 /**
+ * 同一轮执行里的授权情况：项目设置的推送策略、这个对话里用户已经做过的选择、本机已经登录的外部工具。
+ * 只写已经具备的能力，没装的、没授权的不要列出来，免得模型去试。
+ */
+function policyPart(host: EngineHost) {
+  const p = host.policy
+  if (!p) return ''
+  const push =
+    p.push === 'deny'
+      ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
+      : p.answered === 'denied'
+        ? '推送：这个对话里用户已经拒绝过推送，这次不要再问，也不要推。'
+        : p.answered === 'allowed' || p.push === 'allow'
+          ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
+          : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
+  const tools = p.tools.length
+    ? `已经授权可用的工具：${p.tools.join('、')}（直接用，不要重新登录）。`
+    : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
+  return `## 授权情况\n${push}\n${tools}`
+}
+
+/**
  * 同一个任务里各个节点（包括主 Agent、派出的子 Agent）都一样的开头：需求、工作流说明、通用要求。
  * 放在最前面，按前缀匹配缓存的模型服务（Codex 等）能多命中一段
  */
@@ -320,6 +368,7 @@ function commonPart(host: EngineHost, w: Workflow) {
     `## 用户需求\n${original}`,
     extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
     w.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
+    policyPart(host),
     '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
       '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。',
@@ -719,8 +768,9 @@ async function runNode(
         extra = `### 委派给工作流「${target.name}」的结果\n${clip(r.output, 6000)}`
         continue
       }
-      if (branchy) step.branch = d.branch ?? 'pass'
-      if (d.note) text = `${text}\n\n主 Agent 的交代：${d.note}`
+      const ok = d.action === 'continue' ? d : undefined
+      if (branchy) step.branch = ok?.branch ?? 'pass'
+      if (ok?.note) text = `${text}\n\n主 Agent 的交代：${ok.note}`
       break
     }
   }
@@ -773,7 +823,14 @@ async function runRef(
   if (!target) return { ok: false, error: t('引用的流程不存在，可能已被删除') }
   if (from.depth >= MAX_DEPTH)
     return { ok: false, error: t('流程嵌套超过 {max} 层，请检查是否循环引用', { max: MAX_DEPTH }) }
-  const inv: Invocation = { ...o, workflow: target.workflow, flow: target.flow, depth: from.depth + 1, main: from.main }
+  const inv: Invocation = {
+    ...o,
+    workflow: target.workflow,
+    flow: target.flow,
+    depth: from.depth + 1,
+    run: from.run,
+    main: from.main,
+  }
   if (target.workflow.id === from.workflow.id) return runFlow(host, inv)
   // 另一个工作流：流程节点调用它、主 Agent 委派给它时，它有自己的主 Agent（挂在发起的节点下面）。
   // 开始 / 验收 / 结束入口只要它的结果（验收要的是「验收结论」），不另开主 Agent
@@ -812,7 +869,7 @@ function branchTargets(inv: Invocation, node: FlowNode, when: 'pass' | 'fail') {
     .join('、')
 }
 
-/** 这次执行的主 Agent 节点：最外层是 @main，嵌套的挂在发起的节点下（`n2/body/@main`） */
+/** 这次执行的主 Agent 节点：常驻编排器（`@main`），一个对话只有一个，历次运行都用它 */
 function openMain(host: EngineHost, inv: Omit<Invocation, 'main'>): MainCtl {
   const id = inv.parentId ? stepPath(inv as Invocation, MAIN_STEP) : MAIN_STEP
   let step = host.task.steps.find((s) => s.id === id)
@@ -830,12 +887,11 @@ function openMain(host: EngineHost, inv: Omit<Invocation, 'main'>): MainCtl {
     })
     host.task.steps.push(step)
   }
-  if (step.status !== 'done') {
-    step.status = 'running'
-    step.interrupted = false
-    if (!step.startedAt) step.startedAt = now()
-    step.endedAt = ''
-  }
+  // 常驻：不因为一轮调度结束就标成完成，下一条要求回来还是它
+  step.status = 'running'
+  step.interrupted = false
+  if (!step.startedAt) step.startedAt = now()
+  step.endedAt = ''
   return { step, workflow: inv.workflow, flow: inv.flow, chain: Promise.resolve(), nested: !!inv.parentId }
 }
 
@@ -896,6 +952,7 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
     }
     return r
   }
+  // 这一轮已经整理过了（例如主 Agent 自己起停的运行）
   if (main.step.status === 'done') return { ok: true, output: main.step.output }
   const results = topoOrder(inv.flow)
     .map((n) => host.task.steps.find((s) => s.id === stepPath(inv, n.id)))
@@ -913,8 +970,12 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
   }
   const text = stripDispatch(s.text).trim() || r.output
   main.step.output = clip(text, MAX_OUTPUT)
-  main.step.status = 'done'
-  main.step.endedAt = now()
+  // 最外层的编排器常驻：这一轮只是把结果整理给用户，不结束它，下一条要求回来还是同一个会话；
+  // 嵌套的（委派给另一个工作流）属于那次调用，照常结束
+  if (main.nested) {
+    main.step.status = 'done'
+    main.step.endedAt = now()
+  } else main.step.status = 'running'
   host.changed(true)
   return { ok: true, output: main.step.output }
 }
@@ -1022,6 +1083,23 @@ function statusTree(host: EngineHost, self: string) {
   return lines.join('\n') || '（还没有节点）'
 }
 
+/**
+ * 编排器通过 run_workflow 工具要求的运行：工具调用不能在里面直接跑整个流程（会和当前这一轮套在一起），
+ * 先记下来，等这一轮结束、回到引擎的主循环时再起
+ */
+const pendingRuns = new WeakMap<EngineHost, string[]>()
+
+function askRun(host: EngineHost, input: string) {
+  pendingRuns.set(host, [...(pendingRuns.get(host) ?? []), input])
+}
+
+function takePendingRun(host: EngineHost) {
+  const list = pendingRuns.get(host)
+  if (!list?.length) return ''
+  pendingRuns.delete(host)
+  return list.join('\n\n')
+}
+
 /** 编排工具，绑定在调用它的节点上（主 Agent 的调度轮也有一份） */
 function makeOrchestra(
   host: EngineHost,
@@ -1030,6 +1108,7 @@ function makeOrchestra(
 ): Orchestra {
   const st = orchState(host)
   const { task } = host
+  const planner = isMainStep(self) && !self.parentId
   const findStep = (key: string) => {
     const k = key.trim()
     if (/^(main|@main|主 ?Agent)$/i.test(k)) return ctx.main?.step
@@ -1042,9 +1121,32 @@ function makeOrchestra(
   return {
     self: self.id,
     hasMain: !!ctx.main,
+    planner,
     common: commonAgents(host.agents)
       .filter((a) => a.id !== self.agentId)
       .map((a) => ({ name: a.name, description: a.description })),
+    run(input) {
+      if (!planner) return { ok: false, info: '只有编排器能起运行，节点里按流程走' }
+      const run = currentRun(task)
+      if (task.steps.some((s) => !s.parentId && inRun(s.id, run) && s.status === 'running' && !isMainStep(s)))
+        return { ok: false, info: '这次运行还有节点在执行，等它走完再起新的运行' }
+      askRun(host, input)
+      system(
+        host,
+        t('主 Agent 起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }),
+        self.id,
+      )
+      host.changed(true)
+      return { ok: true, info: '这一轮结束后会按流程图跑一次新的运行，节点全部新建' }
+    },
+    closeRun() {
+      if (!planner) return { ok: false, info: '只有编排器能结束运行' }
+      const run = currentRun(task)
+      for (const s of task.steps)
+        if (!s.parentId && inRun(s.id, run) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'
+      task.flowClosed = true
+      return { ok: true, info: '这次运行已经结束，没完成的节点不再执行' }
+    },
     status: () => statusTree(host, self.id),
     spawn(tasks) {
       const depth = (self.id.match(/\/sub\//g) ?? []).length
@@ -1367,7 +1469,12 @@ function finish(host: EngineHost, r: Fail) {
   host.changed(true)
 }
 
-/** 执行一轮：工作流还没跑完时按流程图执行；跑完后由主 Agent 处理追加要求；对话模式直接发给对应 Agent */
+/**
+ * 执行一轮：
+ * - 对话模式直接发给对应 Agent
+ * - 工作流模式由常驻编排器（`@main`）负责：这次运行还没走完就按流程图接着执行；
+ *   走完了就把用户的新要求交给它，由它决定起一次新的运行、重跑，还是直接回答
+ */
 export async function runEngineTurn(host: EngineHost) {
   const { task } = host
   task.status = 'running'
@@ -1376,10 +1483,11 @@ export async function runEngineTurn(host: EngineHost) {
   host.changed(true)
 
   const wf = host.workflow
+  const run = currentRun(task)
   const flow = taskFlow(task, wf)
-  const tops = topSteps(task)
+  let tops = topSteps(task)
   if (task.mode === 'workflow' && flow && !task.flowClosed) {
-    // 任务开始后工作流改过：已经不在流程图里的节点不会再执行，标成跳过，免得任务永远「没跑完」
+    // 任务开始后工作流改过：已经不在流程图里的节点不会再执行，标成跳过，免得这次运行永远「没跑完」
     const live = reachable(flow)
     for (const s of tops) if (s.status !== 'done' && !live.has(s.nodeId)) s.status = 'skipped'
     if (!tops.length && !live.size)
@@ -1388,22 +1496,27 @@ export async function runEngineTurn(host: EngineHost) {
         error: t('工作流的主流程还没有连到「开始」的节点，请先在流程图里从「开始」连线'),
       })
   }
-  // 主 Agent 也算没跑完：节点都完成了、最后的整理还没做（或者被打断）
-  const top = mainStep(task)
   const dispatching = !!wf && !!flow && dispatches(wf, flow)
-  // 任务开始后关掉了调度：主 Agent 不再参与
-  if (top && !dispatching && top.status !== 'done') top.status = 'skipped'
   // 流程停在某个节点的结论上（例如前置检查不通过）：继续流程时从它重新检查；追加要求先交给主 Agent 处理，再接着走
   const blocked = task.mode === 'workflow' ? blockedStep(task, flow) : undefined
   if (blocked && host.resume) reopenFlow(task, blocked)
   const unfinished =
+    task.mode === 'workflow' &&
     !task.flowClosed &&
-    (!tops.length ||
-      tops.some((s) => s.status !== 'done' && s.status !== 'skipped') ||
-      (dispatching && !!top && top.status !== 'done' && top.status !== 'skipped'))
-  /** 按流程图执行（没完成的节点接着做） */
-  const runWorkflow = async (): Promise<boolean> => {
-    const inv: Invocation = { workflow: wf!, flow: flow!, parentId: '', slot: '', round: 0, input: '', depth: 0 }
+    (tops.length === 0 || tops.some((s) => s.status !== 'done' && s.status !== 'skipped'))
+
+  /** 按流程图执行第 n 次运行（没完成的节点接着做） */
+  const runWorkflow = async (n: number): Promise<boolean> => {
+    const inv: Invocation = {
+      workflow: wf!,
+      flow: flow!,
+      parentId: '',
+      slot: '',
+      round: 0,
+      input: '',
+      depth: 0,
+      run: n,
+    }
     if (dispatching) inv.main = openMain(host, inv)
     const r = await runInvocation(host, inv)
     if (!r.ok) {
@@ -1424,15 +1537,54 @@ export async function runEngineTurn(host: EngineHost) {
       )
     return true
   }
+
+  /** 起一次新的运行：节点全部新建（只复用编排器的会话），按流程图执行 */
+  const newRun = async (input: string): Promise<boolean> => {
+    const n = run + 1
+    task.runSeq = n
+    task.flowClosed = false
+    // 新一次运行的节点：编排器还是原来那个，其余全部新建
+    const fresh = planTask(wf, n).steps.filter((s) => !isMainStep(s))
+    for (const s of fresh) if (!task.steps.some((x) => x.id === s.id)) task.steps.push(s)
+    if (input) system(host, t('主 Agent 起了第 {n} 次运行：{input}', { n, input: clip(input, 300) }), '')
+    tops = topSteps(task)
+    host.changed(true)
+    return runWorkflow(n)
+  }
+
   if (task.mode === 'workflow' && wf && flow && unfinished) {
-    if (!(await runWorkflow())) return
+    if (!(await runWorkflow(run))) return
   } else if (task.mode === 'workflow' && unfinished) {
     return finish(host, { ok: false, error: t('工作流不存在，可能已被删除') })
+  } else if (task.mode === 'workflow' && wf && flow && dispatching) {
+    // 这次运行已经走完：新要求交给常驻编排器，由它决定起新运行、重跑还是直接回答
+    const inv: Invocation = { workflow: wf, flow, parentId: '', slot: '', round: 0, input: '', depth: 0, run }
+    const main = openMain(host, inv)
+    const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, main.step.agentId)
+    if (turn) host.changed(true)
+    const r = await mainTurn(host, main, 'plan', planEvent(host.prompt, run, blocked ?? undefined))
+    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
+    if (!r.ok) {
+      if (host.prewarm) {
+        task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
+        return
+      }
+      return finish(host, r)
+    }
+    const d = parseDispatch(r.text) ?? { action: 'answer' as const }
+    main.step.output = clip(stripDispatch(r.text).trim(), MAX_OUTPUT)
+    system(host, dispatchText(d, t('这次要求')), main.step.id)
+    host.changed(true)
+    // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定
+    const asked = takePendingRun(host)
+    if (asked) {
+      if (!(await newRun(asked))) return
+    } else if (d.action === 'run' || d.action === 'restart') {
+      if (!(await newRun(d.action === 'run' ? (d.input ?? '') : d.feedback))) return
+    }
   } else {
     const who = task.mode === 'chat' ? task.agentId : (host.workflow?.mainAgentId ?? topSteps(task)[0]?.agentId ?? '')
-    // 追加要求：续接主 Agent 的会话（它调度过整个流程，最了解全局）；没有调度时续接主 Agent 最近执行过的节点
-    if (task.mode === 'workflow' && !task.sessions[who] && top && task.sessions[top.id])
-      task.sessions[who] = task.sessions[top.id]
+    // 追加要求（工作流关掉了调度时）：续接主 Agent 最近执行过的节点
     if (task.mode === 'workflow' && !task.sessions[who]) {
       const last = [...task.steps].reverse().find((s) => s.agentId === who && task.sessions[s.id])
       if (last) task.sessions[who] = task.sessions[last.id]
@@ -1464,11 +1616,17 @@ export async function runEngineTurn(host: EngineHost) {
       reopenFlow(task, blocked)
       system(host, t('处理完了，从「{title}」重新检查，接着走流程', { title: blocked.title }))
       host.changed(true)
-      if (!(await runWorkflow())) return
+      if (!(await runWorkflow(run))) return
     }
   }
   // 预热没有处理新消息：不标完成、不刷新列表时间，交给 start 收尾恢复
   if (host.prewarm && (task.turnDoneAt ?? '') === host.prewarmTurnDoneAt) return
+  // 编排器这一轮忙完了：标成完成只表示它空闲，会话还在，下一条要求接着用同一个会话
+  const idle = mainStep(task)
+  if (idle?.status === 'running') {
+    idle.status = 'done'
+    idle.endedAt = now()
+  }
   task.status = 'done'
   host.changed(true)
 }

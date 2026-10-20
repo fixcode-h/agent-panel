@@ -385,7 +385,7 @@ export const EN_DESIGN: Record<string, string> = {
   拖动调整控件树的宽度: 'Drag to resize the widget tree',
   '拖动调整 AI 对话的宽度': 'Drag to resize the AI chat',
   拖动调整侧栏的宽度: 'Drag to resize the sidebar',
-  拖动调整任务面板的宽度: 'Drag to resize the task panel',
+  拖动调整文件面板的宽度: 'Drag to resize the file panel',
   '项目风格 · {n} 条': 'Project style · {n}',
   项目美术提示词: 'Project art prompts',
   '{n} 条启用中，项目里所有界面共用': '{n} enabled, shared by every screen in the project',

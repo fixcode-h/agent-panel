@@ -13,6 +13,7 @@ import {
   FolderOpen,
   FolderPlus,
   FolderSearch,
+  Files,
   Layers,
   MessageSquarePlus,
   PencilLine,
@@ -56,7 +57,7 @@ import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
-import { useUnreadTasks } from '@/lib/task-unread'
+import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
 import { askedAt, byAskedAt } from '@shared/task'
 
 export function Logo({ className }: { className?: string }) {
@@ -82,6 +83,7 @@ export function Logo({ className }: { className?: string }) {
 }
 
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
+  { id: 'files', label: t('文件'), icon: Files },
   { id: 'agents', label: 'Agent', icon: Bot },
   { id: 'workflows', label: t('工作流'), icon: Workflow },
   { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
@@ -284,6 +286,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const { route, go, openSettings, openProject } = useNav()
   const { tasks, projects, setProjects, reloadTasks } = useData()
   const unread = useUnreadTasks()
+  // 橙点以服务端的 turnDoneAt / turnSeenAt 为准：本地缓存只用来补刚完成、列表还没刷新的那一小段时间
+  const isUnread = (tk: Task) => isTaskUnread(tk) || unread.includes(tk.id)
   // 有可以安装的新版本时在「设置」上提示（在线演示不提示）
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
@@ -468,7 +472,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                 task={tk}
                 hint={projectName(tk.projectId)}
                 active={route.page === 'projects' && route.sub === tk.id}
-                unread={unread.includes(tk.id)}
+                unread={isUnread(tk)}
                 onOpen={() => go({ page: 'projects', id: tk.projectId, sub: tk.id })}
                 onDeleted={() =>
                   route.page === 'projects' && route.sub === tk.id && go({ page: 'projects', id: tk.projectId })
@@ -666,7 +670,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                           key={t.id}
                           task={t}
                           active={route.page === 'projects' && route.sub === t.id}
-                          unread={unread.includes(t.id)}
+                          unread={isUnread(t)}
                           onOpen={() => go({ page: 'projects', id: t.projectId, sub: t.id })}
                           onDeleted={() =>
                             route.page === 'projects' && route.sub === t.id && go({ page: 'projects', id: pid })

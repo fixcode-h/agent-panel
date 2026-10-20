@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
@@ -48,6 +48,8 @@ import { NextWorkflows } from './NextWorkflows'
 import { AnalyzeDialog, EvolutionCard } from './Evolution'
 import { StepSection } from './StepSection'
 import { TaskPanel } from './TaskPanel'
+import { TaskMeta } from './TaskMeta'
+import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
@@ -128,6 +130,8 @@ function toBlocks(task: Task): Block[] {
 /** project 为空时是 Chat 模式的聊天，不属于任何项目 */
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
+/** 右栏拖宽时中间至少留这么宽：比「内容宽度」小，窄一些的窗口里也能把右栏拖宽一点 */
+const MIN_CHAT = 480
 
 export function TaskView({
   taskId,
@@ -158,11 +162,13 @@ export function TaskView({
   const mention = useFileMention(project?.id, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
-  // 右栏可以拖宽，但中间要留出内容宽度（输入框的宽度）：上限按这一行的实际宽度算
+  // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
+  const [progressOpen, setProgressOpen] = useState(false)
+  // 右栏可以拖宽，但中间至少留出能读对话的宽度；上限按这一行的实际宽度算
   const taskPanel = usePaneWidth('task-panel', 340, 280, () => {
     const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-    // 保留中间的内容宽度；窗口不够宽时上限就是默认宽度，不会反而变窄
-    return Math.max(340, Math.min(560, row - contentPaneWidth() - 48))
+    // 保留中间的内容宽度和一点边距；窗口窄到放不下时上限就是默认宽度，不会反而变窄
+    return Math.max(340, Math.min(560, row - MIN_CHAT - 48))
   })
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
@@ -173,6 +179,7 @@ export function TaskView({
   const [limit, setLimit] = useState(BLOCK_LIMIT)
   useEffect(() => setLimit(BLOCK_LIMIT), [taskId])
   useEscape(panel, () => setPanel(false))
+  useEscape(progressOpen, () => setProgressOpen(false))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // Agent 输出里点了文件路径：在弹窗里看文件内容
@@ -220,6 +227,20 @@ export function TaskView({
       .then(apply)
       .catch((e) => toast.error((e as Error).message))
     // 换任务时取一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskId])
+
+  // 打开了这个对话：告诉服务端这一轮已经看过（侧栏的橙点消失），
+  // 之后离开时 CLI 才能按宽限期回收；没看过就一直留着，回来能直接接着说
+  const marked = useRef('')
+  useEffect(() => {
+    if (marked.current === taskId) return
+    marked.current = taskId
+    api
+      .markTaskSeen(taskId)
+      .then(apply)
+      .catch(() => {})
+    // 只在换到新的对话时报一次
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
@@ -450,12 +471,12 @@ export function TaskView({
     setAway(false)
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }
-  // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏里就不再重复显示
+  // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏是文件系统，不重复显示
   const progressCard =
     task.mode === 'workflow' && tops.length > 0 && gutter >= 200 ? (
       // 节点行里要放耗时、等待、token 和命中率，宽一点才能排在一行
       <div className="absolute top-4 left-4 z-10" style={{ width: Math.min(320, gutter - 24) }}>
-        <TaskPanel task={task} project={project} workflow={workflow} only="progress" onStep={openStep} />
+        <TaskPanel task={task} onStep={openStep} />
       </div>
     ) : null
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
@@ -557,12 +578,24 @@ export function TaskView({
                   ))}
                 </div>
               )}
+              {task.mode === 'workflow' && !progressCard && tops.length > 0 && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={t('任务进度')}
+                  title={t('任务进度')}
+                  aria-expanded={progressOpen}
+                  onClick={() => setProgressOpen((v) => !v)}
+                >
+                  <ListPlus className="h-4 w-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
                 className="xl:hidden"
-                aria-label={t('显示任务面板')}
-                title={t('任务进度、上下文和更改')}
+                aria-label={t('显示文件')}
+                title={t('文件')}
                 onClick={() => setPanel(true)}
               >
                 <PanelRight className="h-4 w-4" />
@@ -603,6 +636,11 @@ export function TaskView({
 
             <div className="relative flex min-h-0 flex-1 flex-col">
               {!isFlow && progressCard}
+              {progressOpen && !progressCard && (
+                <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
+                  <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
+                </div>
+              )}
               <div
                 ref={scroller}
                 onScroll={(e) => {
@@ -643,10 +681,12 @@ export function TaskView({
                         <div key={b.key} className="flex flex-col gap-4">
                           <ChatTurn
                             msgs={b.msgs}
+                            task={task}
                             teamNames={teamNames}
                             live={working && i + hidden === blocks.length - 1}
                             last={!working && i + hidden === blocks.length - 1}
                             fallback={byCli ? chatRun : undefined}
+                            command={task.command}
                           />
                         </div>
                       ) : b.kind === 'steps' ? (
@@ -699,7 +739,7 @@ export function TaskView({
                       ) : b.m.role === 'system' ? (
                         <NoteMessage key={b.m.id} m={b.m} className="justify-center text-center" />
                       ) : (
-                        <AgentMessage key={b.m.id} m={b.m} teamNames={teamNames} />
+                        <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
                       ),
                     )}
                     <NextWorkflows task={task} />
@@ -891,25 +931,36 @@ export function TaskView({
                   }
                 />
               )}
+              {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
+              <TaskMeta
+                task={task}
+                projectName={project?.name}
+                projectPath={project?.path}
+                workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
+                node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+                onTask={apply}
+              />
             </div>
           </main>
 
+          {/* 右栏是文件系统：外面不滚动，拖动条才不会被 overflow 裁掉；文件树自己滚 */}
           <aside
-            aria-label={t('任务面板')}
+            aria-label={t('文件')}
             data-task-panel
             style={{ width: taskPanel.width }}
             className={cn(
-              'relative shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
+              'shrink-0 flex-col border-l bg-rail',
               panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
-              'xl:static xl:z-auto xl:flex xl:h-full xl:shadow-none',
+              // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
+              'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
             )}
           >
             {!panel && (
-              <ResizeHandle pane={taskPanel} label={t('拖动调整任务面板的宽度')} className="hidden xl:block" />
+              <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
             )}
             {panel && (
-              <div className="mb-2 flex items-center justify-between xl:hidden">
-                <span className="px-1 text-[0.8125rem] font-semibold">{t('任务面板')}</span>
+              <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 xl:hidden">
+                <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
                 <Button
                   autoFocus
                   variant="ghost"
@@ -921,12 +972,9 @@ export function TaskView({
                 </Button>
               </div>
             )}
-            <TaskPanel
+            <TaskFiles
               task={task}
-              project={project}
-              workflow={workflow}
-              onStep={openStep}
-              progressClass={progressCard ? 'hidden' : undefined}
+              dir={project?.path}
               node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
               onTask={apply}
             />
@@ -1250,21 +1298,38 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
 /** 对话的一轮回复：署名用这条回复记下的 CLI 和模型；以前的回复没记，用对话现在的设置 */
 function ChatTurn({
   msgs,
+  task,
   teamNames,
   live,
   last,
   fallback,
+  command,
 }: {
   msgs: TaskMessage[]
+  task?: Task
   teamNames: Set<string>
   live: boolean
   last: boolean
   fallback?: ChatRun
+  /** 对话任务最近一次启动 Agent 的命令 */
+  command?: string[]
 }) {
   const run = msgs.find((m) => m.run)?.run
   const cur = useChatRun(fallback ?? { cli: '', model: '', effort: '' }).run
   const author = useRunAuthor(fallback ? (run ?? cur) : undefined)
-  return <ChatReply msgs={msgs} teamNames={teamNames} live={live} last={last} author={author} />
+  // 这一轮实际启动的命令：署名行最右边显示，和工作流节点标题旁的一样；按 Agent 显示的对话没有署名行，交给名字那行
+  const withCommand = author ? { ...author, command } : undefined
+  return (
+    <ChatReply
+      msgs={msgs}
+      task={task}
+      teamNames={teamNames}
+      live={live}
+      last={last}
+      author={withCommand}
+      command={withCommand ? undefined : command}
+    />
+  )
 }
 
 /** 回复还没开始输出时的署名：按 CLI 显示的对话用现在选的 CLI 和模型，其他对话用 Agent */

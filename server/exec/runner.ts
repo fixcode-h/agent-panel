@@ -30,8 +30,10 @@ import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../mo
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { modelLimitsFor } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
-import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult } from '../../shared/engine.ts'
+import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult, type EngineHost } from '../../shared/engine.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
+import { fillSkills } from '../../shared/expose.ts'
+import { listIntegrations } from '../integrations.ts'
 import { ensureBundled } from '../bundled-skills.ts'
 import { gitChanges } from './git.ts'
 import { invokeCli, type CliControl } from './invoke.ts'
@@ -529,11 +531,14 @@ async function runAgent(
       autoLimits(key, catalog, { entries, protocol: cs.api?.protocol }).context
     )
   }
-  const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params)).trim()
+  const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params), task.skillSlots).trim()
   // Agent 要用的自带 Skill 统一补到 ~/.agents/skills，提示里点名的 Skill 才找得到
-  await ensureBundled([
-    ...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)]),
-  ])
+  await ensureBundled(
+    fillSkills(
+      [...new Set([...agent.skills, ...includedAgents(agent, ctx.agents).flatMap((x) => x.agent.skills)])],
+      task.skillSlots,
+    ),
+  )
   let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined
@@ -1256,6 +1261,19 @@ async function runAgent(
   return done
 }
 
+/**
+ * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
+ * 本机已经装好并登录的外部工具（gh、cloudflared 等）。列进提示词，模型不用重新探测
+ */
+async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
+  const views = await listIntegrations().catch(() => [])
+  return {
+    push: ctx.project.gitPolicy ?? 'ask',
+    answered: ctx.task.remotePush,
+    tools: views.filter((v) => v.installed && v.authed).map((v) => v.name),
+  }
+}
+
 /** 真实执行一轮：调度交给执行引擎，调用 Agent 时启动对应 CLI */
 export async function runRealTurn(ctx: RealContext) {
   ctx.task.simulated = false
@@ -1265,6 +1283,7 @@ export async function runRealTurn(ctx: RealContext) {
     workflows: ctx.workflows,
     workflow: ctx.workflow,
     prompt: ctx.prompt,
+    policy: await taskPolicy(ctx),
     resume: ctx.resume,
     prewarm: ctx.prewarm,
     prewarmFrom: ctx.prewarmFrom,

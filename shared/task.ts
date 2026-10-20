@@ -13,7 +13,7 @@ import {
   type Workflow,
 } from './schema.ts'
 import { getCli } from './clis.ts'
-import { planTask } from './flow.ts'
+import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
 
 export function taskTitle(prompt: string) {
@@ -65,6 +65,8 @@ export function newTask(
   id: string,
   /** 存进任务的工作流（连同引用的其他工作流），见 workflowClosure */
   snapshot: Workflow[] = workflow ? [workflow] : [],
+  /** 项目里定的技能槽取值（见 shared/expose.ts 的 exposeSlots） */
+  skillSlots: Record<string, string> = {},
 ): TaskData {
   const wf = input.mode === 'workflow' ? workflow : undefined
   return {
@@ -107,12 +109,14 @@ export function newTask(
     baseline: {},
     baseRef: '',
     workflows: wf ? snapshot : [],
+    skillSlots: wf ? skillSlots : {},
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
     queue: [],
     working: false,
     turnDoneAt: '',
+    turnSeenAt: '',
     awaitingUser: false,
     prewarming: false,
     worktree: null,
@@ -438,10 +442,15 @@ export function dropEndNotes(task: Pick<Task, 'messages'>) {
   while (task.messages.at(-1)?.transient) task.messages.pop()
 }
 
-/** 结束工作流：没完成的节点标成跳过，不再执行；之后的要求由主 Agent 直接处理。真实执行和在线演示共用 */
+/**
+ * 结束这次运行：没完成的节点标成跳过，不再执行。
+ * 主 Agent 是常驻编排器，一直在；之后的要求交给它处理（可以起新的一次运行）
+ */
 export function closeFlow(task: Task, id: string, now = new Date().toISOString()) {
+  // 只结束这次运行：之前几次运行的节点已经走完，不动
+  const run = currentRun(task)
   for (const s of task.steps)
-    if (s.status !== 'done' && s.status !== 'skipped') {
+    if (inRun(s.id, run) && s.status !== 'done' && s.status !== 'skipped') {
       s.status = 'skipped'
       s.interrupted = false
     }
@@ -453,7 +462,7 @@ export function closeFlow(task: Task, id: string, now = new Date().toISOString()
     role: 'system',
     agentId: '',
     step: '',
-    text: t('已结束流程，没完成的节点不再执行。之后输入的要求由主 Agent 直接处理。'),
+    text: t('这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。'),
     tools: [],
     at: now,
   })

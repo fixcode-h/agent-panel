@@ -63,9 +63,12 @@ import { gitBranches, gitCheckout } from './exec/git.ts'
 import { killAllProcesses } from './exec/process.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
+import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
+import { migrateProjectsToGeneral, seedProjectWorkflows } from '../shared/builtin/install.ts'
+import { analyzeProject } from './projects-analyze.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
@@ -107,6 +110,39 @@ for (const w of await workflows.list()) {
     })
   }
 }
+
+/**
+ * 项目必须有工作流：「通用项目」「UE 项目」启动时装一次（已经有了就跳过），
+ * 旧项目没指定工作流的指向「通用项目」，之后改项目设置也不影响已经开始的对话（任务里存了快照）。
+ */
+async function ensureProjectWorkflows() {
+  const seeded = await seedProjectWorkflows(
+    {
+      agents: await agents.list(),
+      categories: await categories.list(),
+      tags: await tags.list(),
+      workflows: await workflows.list(),
+    },
+    {
+      createAgent: (input) => agents.create(input),
+      createCategory: (name, scope) => categories.create({ name, scope }),
+      createTag: (input) => tags.create(input),
+      createWorkflow: (input) => workflows.create(input),
+    },
+  )
+  if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
+  const migrations = await migrateProjectsToGeneral(
+    await projects.list(),
+    await workflows.list(),
+    await projectCategories.list(),
+  )
+  for (const m of migrations) {
+    const p = await projects.get(m.id)
+    if (p) await projects.update(m.id, { ...p, workflowId: m.workflowId })
+  }
+  if (migrations.length) log.info('project', '旧项目指向「通用项目」', { n: migrations.length })
+}
+void ensureProjectWorkflows().catch((e) => log.warn('project', `安装项目工作流失败：${(e as Error).message}`))
 
 const app = new Hono().basePath('/api')
 
@@ -188,6 +224,8 @@ app.put('/settings', async (c) => {
   const prev = await getSettings()
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
+  // 对话页切走后 CLI 还等多久：保存后立即生效，不用重启服务
+  setPresenceGraceMs(saved.presenceGraceMinutes * 60_000)
   // API / 账号方式或 API 配置变了：立即写进 CLI 自己的配置，不用等到下一次执行
   await syncCliAuths(prev, saved)
   // 只有外网访问的开关、方式、地址变了才重启隧道；其他设置每次自动保存都把 quick 地址换掉会断线
@@ -405,16 +443,33 @@ app.delete('/project-categories/:id', async (c) => {
 })
 
 // ---- 项目 ----
+/**
+ * 项目必须有工作流：它决定这个项目的对话走哪套流程，编排器带哪些规范。
+ * 界面新建时默认带上「通用项目」；这里挡一下没带的情况，错误里说清怎么办
+ */
 async function parseProject(body: unknown) {
   const p = ProjectInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
+  if (!p.data.workflowId) {
+    const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
+    if (!cat?.workflowId) return { error: t('请为项目选择工作流，它决定对话按哪套流程走') }
+  }
   if (p.data.path) p.data.path = resolvePath(p.data.path)
   return { data: p.data }
 }
 
 app.get('/projects', async (c) => c.json(await projects.list()))
+
+// 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单
+app.post('/projects/analyze', async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { path?: string }
+  const p = typeof body.path === 'string' ? body.path.trim() : ''
+  if (!p) return bad(c, t('请先选择本地目录'))
+  const r = await analyzeProject(p)
+  return 'error' in r ? bad(c, r.error) : c.json(r)
+})
 
 app.post('/projects', async (c) => {
   const r = await parseProject(await c.req.json())
@@ -491,6 +546,8 @@ app.route('/deploy', deployApi({ startDoc: docs.start }))
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())
 app.route('/uploads', uploadsApi())
+// 文件浏览页：项目里的文件树、内容搜索、看单个文件
+app.route('/project-files', filesApi({ projects }))
 app.get('/projects/:id/files', async (c) => {
   const p = await projects.get(c.req.param('id'))
   if (!p?.path) return bad(c, t('这个项目还没有选择目录'))

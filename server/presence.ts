@@ -29,6 +29,17 @@ export function setPresenceIdleHandler(fn: (taskId: string) => void) {
   onIdle = fn
 }
 
+/**
+ * 这一轮回复完成、但用户还没打开看过（侧栏的橙点）时要不要留着进程。
+ * 这类对话没有页面开着，不能按宽限期回收，否则用户回来时 CLI 已经退出了。
+ * 由调用方提供判断，只有它知道任务现在的 turnDoneAt / turnSeenAt
+ */
+let keepUnread: ((taskId: string) => boolean) | undefined
+
+export function setPresenceUnreadKeeper(fn: (taskId: string) => boolean) {
+  keepUnread = fn
+}
+
 /** 页面打开、切到前台时 active；卸载、切到后台时 false */
 export function setViewer(taskId: string, viewerId: string, active: boolean) {
   if (active) {
@@ -45,18 +56,37 @@ export function setViewer(taskId: string, viewerId: string, active: boolean) {
   }
   const set = viewers.get(taskId)
   set?.delete(viewerId)
-  if (set?.size || timers.has(taskId)) return
+  if (set?.size) return
+  scheduleIdle(taskId)
+}
+
+/**
+ * 没人在看时开始宽限计时。这一轮完成但还没看过（侧栏橙点）时先不计时：
+ * 用户回来还要接着聊，回收了就得重新启动 CLI。
+ * 看过之后要再调一次（见 rescheduleIfUnwatched），否则没人再触发计时，进程会一直留着
+ */
+function scheduleIdle(taskId: string) {
+  if (timers.has(taskId)) return
+  if (keepUnread?.(taskId)) return
   timers.set(
     taskId,
     setTimeout(
       () => {
         timers.delete(taskId)
+        // 宽限期内用户还是没看这一轮完成：继续留着
+        if (keepUnread?.(taskId)) return
         left.add(taskId)
         onIdle?.(taskId)
       },
       Math.max(0, grace()),
     ),
   )
+}
+
+/** 这一轮已经看过了：如果已经没人在看，现在就按宽限期开始计时 */
+export function rescheduleIfUnwatched(taskId: string) {
+  if (viewers.get(taskId)?.size) return
+  scheduleIdle(taskId)
 }
 
 /** 还有人在看吗：页面还没上报过时当作在看，避免刚开始执行就结束 */

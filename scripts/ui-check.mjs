@@ -116,9 +116,13 @@ try {
   await p.keyboard.press('Escape')
   await p.goto(base)
   await p.getByText('购物车右上角', { exact: false }).first().click()
-  await check(p, '任务', ['上下文', '启动命令'])
-  // 工作流任务：任务进度是主 Agent → 节点 → 子 Agent 的层级
+  // 右栏是文件系统（带 git 状态），启动命令在名字那行最右边，上下文和用量在输入框下面
+  await check(p, '任务', ['src', '命中', 'package.json', 'acceptEdits'])
+  if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
+  if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
+  // 工作流任务：任务进度是主 Agent → 节点 → 子 Agent 的层级，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
+  await p.getByRole('button', { name: '任务进度' }).click()
   await check(p, '任务-主Agent调度', ['主 Agent', '调度', '子 Agent · 单元测试'])
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])

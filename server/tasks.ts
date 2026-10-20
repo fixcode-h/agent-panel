@@ -17,6 +17,8 @@ import {
 } from '../shared/schema.ts'
 import { blockedStep, taskFlow, taskWorkflows } from '../shared/flow.ts'
 import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
+import { GENERAL_NAME, GENERAL_ORIGIN } from '../shared/builtin/workflows.ts'
+import { exposeSlots } from '../shared/expose.ts'
 import {
   beginRun,
   closeFlow,
@@ -38,6 +40,7 @@ import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
+import { revealItem } from './open.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -47,12 +50,19 @@ import {
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
-import { forgetPresence, setPresenceIdleHandler, setViewer } from './presence.ts'
+import {
+  forgetPresence,
+  rescheduleIfUnwatched,
+  setPresenceIdleHandler,
+  setPresenceUnreadKeeper,
+  setViewer,
+} from './presence.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
-import { mkdir, readFile, rm, stat } from 'node:fs/promises'
-import { IMAGE_TYPES, cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { mkdir, rm } from 'node:fs/promises'
+import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { listDir, rawInDir, readInDir, searchInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -88,6 +98,12 @@ export function tasksApi(deps: {
   const live = new Map<string, Live>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）
   setPresenceIdleHandler(cancelWait)
+  // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
+  setPresenceUnreadKeeper((id) => {
+    const tk = live.get(id)?.task
+    if (!tk) return false
+    return !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
+  })
   /** 服务正在退出：不再接着处理排队的要求 */
   let shuttingDown = false
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
@@ -179,11 +195,20 @@ export function tasksApi(deps: {
   /** 导入的任务只读：只能看、改名、归档、删除 */
   const READONLY = t('这是导入的任务，只能查看，不能继续执行')
 
+  /**
+   * 项目默认的工作流：项目自己指定 → 分类默认 → 内置的「通用项目」。
+   * 项目必须能解析出一个工作流：对话里的常驻编排器、文档和版本的规范都来自它
+   */
   async function projectWorkflow(p: Project) {
     const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
     const id = p.workflowId || cat?.workflowId
-    // 项目没指定工作流时用自带的「默认」工作流
-    return (await deps.workflows.get(id || DEFAULT_WORKFLOW_ID)) ?? undefined
+    if (id) {
+      const hit = await deps.workflows.get(id)
+      if (hit) return hit
+    }
+    const all = await deps.workflows.list()
+    const general = all.find((w) => w.origin === GENERAL_ORIGIN) ?? all.find((w) => w.name === GENERAL_NAME)
+    return general ?? (await deps.workflows.get(DEFAULT_WORKFLOW_ID)) ?? undefined
   }
 
   async function start(
@@ -542,8 +567,18 @@ export function tasksApi(deps: {
     } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
-    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list()) : []
-    const draft = { ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot), id: randomUUID() }
+    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), project.workflowParams) : []
+    const draft = {
+      ...newTask(
+        input,
+        workflow,
+        new Date().toISOString(),
+        randomUUID(),
+        snapshot,
+        exposeSlots(workflow ?? { expose: [] }, project.workflowParams),
+      ),
+      id: randomUUID(),
+    }
     if (input.isolate && input.projectId) {
       try {
         draft.worktree = await createWorktree(project.path, draft.id, draft.title)
@@ -682,6 +717,26 @@ export function tasksApi(deps: {
     return c.body(null, 204)
   })
 
+  // 用户打开了这个对话：侧栏的橙点消失，CLI 也可以按宽限期回收了
+  routes.post('/:id/seen', async (c) => {
+    const id = c.req.param('id')
+    const entry = live.get(id)
+    const tk = entry?.task ?? (await store.get(id))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.turnDoneAt && tk.turnSeenAt !== tk.turnDoneAt) {
+      tk.turnSeenAt = tk.turnDoneAt
+      // 正在跑的对话直接改内存里的；否则落盘
+      if (!entry) await store.update(id, tk)
+      else {
+        tk.updatedAt = new Date().toISOString()
+        entry.rev++
+      }
+      // 看过之后不再因为未读一直留着 CLI：如果已经没人在看，现在就开始算宽限期
+      rescheduleIfUnwatched(id)
+    }
+    return c.json(tk)
+  })
+
   // 撤回一条排队的要求
   routes.delete('/:id/queue/:qid', async (c) => {
     const id = c.req.param('id')
@@ -747,7 +802,10 @@ export function tasksApi(deps: {
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
       if (fresh) {
-        entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list())
+        const project = task.projectId ? await deps.projects.get(task.projectId) : null
+        const params = project?.workflowParams ?? {}
+        entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list(), params)
+        entry.task.skillSlots = exposeSlots(fresh, params)
         entry.task.workflowName = fresh.name
       }
       const last = users.at(-1)
@@ -827,49 +885,63 @@ export function tasksApi(deps: {
     return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
   })
 
-  /** 任务目录里的一个文件：解析成绝对地址和相对路径；路径越出目录时给错误说明 */
-  const taskPath = async (
-    tk: Task,
-    want: string,
-  ): Promise<{ error: string } | { dir: string; full: string; rel: string }> => {
+  /** 任务的工作目录；导入的任务没有本机目录，读文件时直接拒绝 */
+  const readableDir = async (id: string | undefined) => {
+    const tk = id ? await current(id) : null
+    if (!tk) throw Object.assign(new Error(t('任务不存在')), { status: 404 })
+    if (tk.imported) throw Object.assign(new Error(t('导入的任务看不到对方电脑上的文件')), { status: 400 })
     const dir = await taskDir(tk)
-    if (!dir || !want) return { error: t('缺少文件路径') } as const
-    const full = path.resolve(dir, want)
-    const rel = path.relative(dir, full)
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return { error: t('只能查看项目目录里的文件') } as const
-    return { dir, full, rel }
+    if (!dir) throw Object.assign(new Error(t('任务没有工作目录')), { status: 404 })
+    return dir
   }
+
+  /** 拿到任务目录跑一段；读不了时按原因返回错误 */
+  const inTaskDir = async (c: Context, run: (dir: string) => Promise<Response>) => {
+    try {
+      return await run(await readableDir(c.req.param('id')))
+    } catch (e) {
+      const status = (e as { status?: 400 | 404 }).status ?? 404
+      return bad(c, (e as Error).message, status)
+    }
+  }
+
+  // 任务目录里的文件树：右栏的文件系统，独立分支时是 worktree 目录
+  routes.get('/:id/files', (c) => inTaskDir(c, async (dir) => c.json(await listDir(dir))))
+
+  // 任务目录里按内容搜索
+  routes.get('/:id/files/search', async (c) => {
+    const q = (c.req.query('q') ?? '').trim()
+    if (!q) return c.json({ files: [], truncated: false })
+    return inTaskDir(c, async (dir) => c.json(await searchInDir(dir, q)))
+  })
 
   // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件
   routes.get('/:id/file', async (c) => {
-    const tk = await current(c.req.param('id'))
-    if (!tk) return bad(c, t('任务不存在'), 404)
-    if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
-    const p = await taskPath(tk, (c.req.query('path') ?? '').trim())
-    if ('error' in p) return bad(c, p.error)
-    const { dir, full, rel } = p
-    const info = await stat(full).catch(() => null)
-    if (!info?.isFile()) return c.json({ path: rel, dir, exists: false, content: '', truncated: false })
-    const LIMIT = 400_000
-    const buf = await readFile(full)
-    const head = buf.subarray(0, LIMIT)
-    // 有 0 字节的多半是二进制文件，不显示内容
-    if (head.includes(0)) return c.json({ path: rel, dir, exists: true, binary: true, content: '', truncated: false })
-    return c.json({ path: rel, dir, exists: true, content: head.toString('utf8'), truncated: buf.length > LIMIT })
+    const want = (c.req.query('path') ?? '').trim()
+    if (!want) return bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => c.json({ ...(await readInDir(dir, want)), dir }))
   })
 
   // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件
   routes.get('/:id/file/raw', async (c) => {
-    const tk = await current(c.req.param('id'))
-    if (!tk) return bad(c, t('任务不存在'), 404)
-    if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
-    const p = await taskPath(tk, (c.req.query('path') ?? '').trim())
-    if ('error' in p) return bad(c, p.error)
-    const type = IMAGE_TYPES[path.extname(p.full).slice(1).toLowerCase()]
-    if (!type) return bad(c, t('不是图片'))
-    const buf = await readFile(p.full).catch(() => null)
-    if (!buf) return bad(c, t('文件已经不在了'), 404)
-    return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+    const want = (c.req.query('path') ?? '').trim()
+    if (!want) return bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => {
+      const { type, buf } = await rawInDir(dir, want)
+      return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+    })
+  })
+
+  // 在系统的文件管理器里打开这个文件所在的文件夹并选中它（只能打开任务目录里面的文件）
+  routes.post('/:id/reveal', async (c) => {
+    const { path: file } = (await c.req.json().catch(() => ({}))) as { path?: string }
+    const want = String(file ?? '').trim()
+    if (!want) return bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => {
+      // 文件已经被删掉时打开它所在的文件夹，不让整个操作失败
+      revealItem(path.resolve(dir, want))
+      return c.json({ ok: true, dir })
+    })
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子

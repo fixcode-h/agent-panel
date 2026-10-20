@@ -877,6 +877,11 @@ export const TaskData = z.object({
   baseline: z.record(z.string(), z.string()).default({}),
   /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */
   workflows: z.array(Workflow).default([]),
+  /**
+   * 新建对话时解析好的技能槽取值（工作流 expose 里 target=skill 的项）：Agent 的 skills 写 `{{槽名}}`，
+   * 执行时按这里换成具体的技能名。和上面的工作流快照一起定下来，之后改项目设置不影响这个对话
+   */
+  skillSlots: z.record(z.string(), z.string()).default({}),
   /** 工作流的名字，列表里显示（摘要不带上面的完整工作流） */
   workflowName: z.string().default(''),
   /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */
@@ -893,6 +898,11 @@ export const TaskData = z.object({
   working: z.boolean().default(false),
   /** CLI 最近一次完成一轮回复的时间：判断「完成但没看」用，和进程是否结束无关 */
   turnDoneAt: z.string().default(''),
+  /**
+   * 用户看过的最新一轮完成时间：和 turnDoneAt 相同时表示这一轮已经看过。
+   * 侧栏的橙点就是「完成但没看」，服务端靠它判断还要不要留着 CLI 进程等下一句
+   */
+  turnSeenAt: z.string().default(''),
   /** CLI 回复完停在面板的 MCP 工具上，等用户在这个对话里的下一句 */
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */

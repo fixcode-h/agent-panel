@@ -719,6 +719,67 @@ const DEMO_FILES = [
   'tests/cart.test.ts',
 ]
 
+/** 演示里几个文件有内容，其余只显示路径 */
+const DEMO_CONTENTS: Record<string, string> = {
+  'README.md': '# 示例商店\n\n演示用的前端项目，故意留了几处没改完的地方。\n',
+  'src/App.tsx':
+    "import { Routes, Route } from 'react-router-dom'\nimport { Login } from './pages/Login'\nimport { ProductDetail } from './pages/ProductDetail'\nimport { OrderList } from './pages/OrderList'\n\nexport function App() {\n  return (\n    <Routes>\n      <Route path=\"/login\" element={<Login />} />\n      <Route path=\"/products/:id\" element={<ProductDetail />} />\n      <Route path=\"/orders\" element={<OrderList />} />\n    </Routes>\n  )\n}\n",
+  'src/api/cart.ts':
+    "const BASE = '/api/cart'\n\nexport async function addToCart(productId: string, count: number) {\n  const res = await fetch(BASE, {\n    method: 'POST',\n    headers: { 'Content-Type': 'application/json' },\n    body: JSON.stringify({ productId, count }),\n  })\n  if (!res.ok) throw new Error('加入购物车失败')\n  return res.json()\n}\n\nexport async function removeFromCart(id: string) {\n  await fetch(`${BASE}/${id}`, { method: 'DELETE' })\n}\n",
+  'src/components/ProductCard.tsx':
+    'import { Link } from \'react-router-dom\'\n\nexport function ProductCard({ product }: { product: { id: string; name: string; price: number } }) {\n  return (\n    <Link to={`/products/${product.id}`} className="block rounded-xl border p-4">\n      <div className="font-medium">{product.name}</div>\n      <div className="text-sm text-muted">￥{product.price.toFixed(2)}</div>\n    </Link>\n  )\n}\n',
+  'src/store/cart.ts':
+    "import { addToCart } from '../api/cart'\n\ntype Item = { productId: string; count: number }\n\nlet items: Item[] = []\n\nexport const cart = {\n  get items() {\n    return items\n  },\n  async add(productId: string, count = 1) {\n    await addToCart(productId, count)\n    const hit = items.find((i) => i.productId === productId)\n    if (hit) hit.count += count\n    else items = [...items, { productId, count }]\n  },\n}\n",
+  'package.json':
+    '{\n  "name": "demo-shop",\n  "private": true,\n  "scripts": { "dev": "vite", "test": "vitest" },\n  "dependencies": { "react": "^19.0.0", "react-router-dom": "^7.0.0" },\n  "devDependencies": { "vite": "^6.0.0", "vitest": "^3.0.0" }\n}\n',
+}
+
+/** 演示里故意标出的改动：让文件树上的 git 状态有东西可看 */
+const DEMO_STATUS: Record<string, string> = {
+  'src/api/cart.ts': 'M',
+  'src/store/cart.ts': 'M',
+  'src/components/CartBadge.tsx': 'A',
+  'src/pages/OrderList.tsx': '?',
+  'tests/cart.test.ts': 'D',
+}
+
+/** 演示的项目文件树：固定一份数据，搜索在前端/local 里过滤 */
+function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
+  const [id, kind] = seg.slice(1)
+  const p = load().projects.find((x) => x.id === id) ?? fail('项目不存在')
+  if (kind === 'search') {
+    const q = (query.get('q') ?? '').trim().toLowerCase()
+    if (!q) return { files: [], truncated: false }
+    const files = DEMO_FILES.filter((f) => (DEMO_CONTENTS[f] ?? '').toLowerCase().includes(q)).map((f) => ({
+      path: f,
+      hits: (DEMO_CONTENTS[f] ?? '')
+        .split('\n')
+        .map((text, i) => ({ line: i + 1, text }))
+        .filter((h) => h.text.toLowerCase().includes(q))
+        .slice(0, 5),
+    }))
+    return { files, truncated: false }
+  }
+  if (kind === 'content') {
+    const want = query.get('path') ?? ''
+    const text = DEMO_CONTENTS[want]
+    return {
+      path: want,
+      exists: want in DEMO_CONTENTS || DEMO_FILES.includes(want),
+      content: text ?? '',
+      truncated: false,
+    }
+  }
+  if (kind === 'raw') fail('在线演示里没有图片')
+  return {
+    dir: p.path || '~/demo/shop',
+    branch: p.path ? 'main' : null,
+    isGit: !!p.path,
+    files: DEMO_FILES.map((f) => ({ path: f, status: (DEMO_STATUS[f] ?? '') as never })),
+    truncated: false,
+  }
+}
+
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
 const DEMO_SKILLS: CliSkill[] = [
   {
@@ -890,6 +951,7 @@ function route(method: string, url: string, body: unknown): unknown {
     }
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
+  if (res === 'project-files') return demoProjectFiles(seg, query)
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
@@ -1204,8 +1266,13 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function projectWorkflow(d: Db, p: Project) {
   const id = p.workflowId || d.projectCategories.find((c) => c.id === p.categoryId)?.workflowId
-  // 项目没指定工作流时用自带的「默认」工作流
-  return d.workflows.find((w) => w.id === (id || DEFAULT_WORKFLOW_ID))
+  if (id) return d.workflows.find((w) => w.id === id)
+  // 和正式版一样：没指定时落到「通用项目」，再不行才用「默认」
+  return (
+    d.workflows.find((w) => w.origin === 'builtin:project-general') ??
+    d.workflows.find((w) => w.name === '通用项目') ??
+    d.workflows.find((w) => w.id === DEFAULT_WORKFLOW_ID)
+  )
 }
 
 /** 这个对话实际用的 CLI（和正式版一样：默认 Agent 的对话用任务上选的，其他 Agent 用自己配置的） */
@@ -1346,6 +1413,12 @@ function tasksRoute(
   }
   // 演示里没有常驻 CLI，页面在场状态和预热都不用处理
   if (sub === 'presence' || sub === 'prewarm') return task
+  // 打开看过这一轮：清掉侧栏的橙点
+  if (sub === 'seen') {
+    task.turnSeenAt = task.turnDoneAt
+    persist()
+    return task
+  }
   if (sub === 'queue' && method === 'DELETE') {
     task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
     persist()
@@ -1529,6 +1602,20 @@ function tasksRoute(
   // 演示里没有真的项目目录，看不到文件内容
   if (sub === 'file')
     return { path: query.get('path') ?? '', dir: '', exists: false, content: '', truncated: false, demo: true }
+  // 任务右栏的文件树：用演示项目的那份文件列表，改过的文件带上状态
+  if (sub === 'files') {
+    const p = d.projects.find((x) => x.id === task.projectId)
+    const changed = new Set((task.changes ?? []).map((c) => c.path))
+    return {
+      dir: p?.path || '~/demo/shop',
+      branch: p?.path ? 'main' : null,
+      isGit: !!p?.path,
+      files: DEMO_FILES.map((f) => ({ path: f, status: (changed.has(f) ? 'M' : (DEMO_STATUS[f] ?? '')) as never })),
+      truncated: false,
+    }
+  }
+  // 演示里没有本机的文件管理器
+  if (sub === 'reveal') return { ok: true, dir: '', demo: true }
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''
@@ -1602,6 +1689,20 @@ async function seedTasks(d: Db) {
     t.createdAt = shift(t.createdAt)
     t.updatedAt = shift(t.updatedAt)
     t.messages.forEach((m) => (m.at = shift(m.at)))
+    // 启动命令：演示里没有真的跑 CLI，写一条像样的，署名行最右边能点开看
+    const argv = [
+      'claude',
+      '--model',
+      'claude-sonnet-5-5',
+      '--permission-mode',
+      'acceptEdits',
+      '-p',
+      t.title.slice(0, 40),
+    ]
+    t.command = argv
+    t.steps.forEach((s) => {
+      if (s.startedAt) s.command = argv
+    })
     // 示例任务是瞬间跑完的，给一个像样的执行时长
     if (t.status !== 'running') {
       t.runMs = (2 + (minutes % 7)) * 60_000 + 23_000

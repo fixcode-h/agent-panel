@@ -12,7 +12,7 @@ import {
   Workflow as WorkflowIcon,
 } from 'lucide-react'
 import { exportWorkflow } from '@/lib/transfer'
-import type { Agent, Workflow, WorkflowInput } from '@shared/schema'
+import type { Agent, Workflow, WorkflowExpose, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { isDefaultWorkflow } from '@shared/builtin/default'
 import { api } from '@/lib/api'
@@ -24,7 +24,7 @@ import { StatusDot } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { ConfirmDialog } from '@/components/ui/dialog'
-import { Field, FormSection, Input } from '@/components/ui/input'
+import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -292,6 +292,15 @@ export function WorkflowDetail({
                 onTemplate={() => docTemplate(main, team)}
               />
             </FormSection>
+
+            <FormSection title={t('项目配置项')}>
+              <p className="-mt-2 text-xs leading-relaxed text-subtle">
+                {t(
+                  '项目用这个工作流时，可以在项目设置里填这些值。新建对话时解析一次写进任务，之后改设置不影响已经开始的对话。',
+                )}
+              </p>
+              <ExposeEditor value={draft.expose} agents={agents} onChange={(v) => set('expose', v)} />
+            </FormSection>
           </>
         }
         aside={
@@ -348,6 +357,131 @@ export function WorkflowDetail({
         projectId={runs[0]?.projectId ?? ''}
       />
     </>
+  )
+}
+
+/**
+ * 工作流的「项目配置项」编辑器：项目设置里哪些字段可以填、填了作用到哪。
+ * 目标按项目实际用得到的分三类：技能槽（Agent 的 skills 里写 {{槽名}}）、Agent 参数、工作流说明。
+ */
+function ExposeEditor({
+  value,
+  agents,
+  onChange,
+}: {
+  value: WorkflowExpose[]
+  agents: Agent[]
+  onChange: (v: WorkflowExpose[]) => void
+}) {
+  const kinds: { id: WorkflowExpose['target']; label: string; hint: string }[] = [
+    { id: 'skill', label: t('技能槽'), hint: t('Agent 的 Skill 名写 {{槽名}}，这里选实际用哪个技能') },
+    { id: 'agent', label: t('Agent 参数'), hint: t('覆盖节点上同名参数的值') },
+    { id: 'document', label: t('工作流说明'), hint: t('把填的内容追加到工作流说明后面') },
+  ]
+  const patch = (i: number, p: Partial<WorkflowExpose>) => onChange(value.map((e, j) => (j === i ? { ...e, ...p } : e)))
+  return (
+    <div className="flex flex-col gap-3">
+      {value.map((e, i) => (
+        <div key={i} className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="h-9 flex-[1_1_120px]"
+              value={e.key}
+              placeholder={t('名字，例如 projectStructure')}
+              onChange={(ev) => patch(i, { key: ev.target.value })}
+            />
+            <Input
+              className="h-9 flex-[1_1_120px]"
+              value={e.label}
+              placeholder={t('显示的名字')}
+              onChange={(ev) => patch(i, { label: ev.target.value })}
+            />
+            <Select
+              className="h-9 w-auto min-w-[7rem]"
+              value={e.target}
+              onChange={(ev) => patch(i, { target: ev.target.value as WorkflowExpose['target'] })}
+              options={kinds.map((k) => ({ value: k.id, label: k.label }))}
+            />
+            <Button size="sm" variant="ghost" onClick={() => onChange(value.filter((_, j) => j !== i))}>
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+          <span className="text-xs text-subtle">{kinds.find((k) => k.id === e.target)?.hint}</span>
+          <div className="flex flex-wrap gap-2">
+            <Select
+              className="h-9 w-auto min-w-[7rem]"
+              value={e.type}
+              onChange={(ev) => patch(i, { type: ev.target.value as WorkflowExpose['type'] })}
+              options={[
+                { value: 'select', label: t('下拉单选') },
+                { value: 'text', label: t('文本') },
+                { value: 'bool', label: t('开关') },
+                { value: 'multi', label: t('多选') },
+              ]}
+            />
+            <Input
+              className="h-9 flex-[2_1_180px]"
+              value={Array.isArray(e.default) ? e.default.join(', ') : String(e.default ?? '')}
+              placeholder={t('默认值')}
+              onChange={(ev) =>
+                patch(i, {
+                  default: e.type === 'multi' ? ev.target.value.split(',').map((s) => s.trim()) : ev.target.value,
+                })
+              }
+            />
+            {e.type === 'select' || e.type === 'multi' ? (
+              <Input
+                className="h-9 flex-[2_1_180px]"
+                value={e.options.join(', ')}
+                placeholder={t('选项，用逗号分开')}
+                onChange={(ev) =>
+                  patch(i, {
+                    options: ev.target.value
+                      .split(',')
+                      .map((s) => s.trim())
+                      .filter(Boolean),
+                  })
+                }
+              />
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              className="h-9 flex-[1_1_160px]"
+              value={e.targetId}
+              placeholder={e.target === 'skill' ? t('槽名，例如 projectStructure') : t('参数名')}
+              onChange={(ev) => patch(i, { targetId: ev.target.value })}
+            />
+            <Input
+              className="h-9 flex-[2_1_200px]"
+              value={e.description}
+              placeholder={t('说明（项目设置里会显示）')}
+              onChange={(ev) => patch(i, { description: ev.target.value })}
+            />
+          </div>
+          {e.target === 'agent' && e.targetId && (
+            <span className="text-xs text-subtle">
+              {t('Agent 没有这个参数时忽略，不会报错')}：
+              {[...new Set(agents.filter((a) => a.params.some((p) => p.key === e.targetId)).map((a) => a.name))].join(
+                '、',
+              ) || t('没有 Agent 用这个参数')}
+            </span>
+          )}
+        </div>
+      ))}
+      <Button
+        size="sm"
+        variant="secondary"
+        onClick={() =>
+          onChange([
+            ...value,
+            { key: '', label: '', type: 'select', options: [], target: 'skill', targetId: '', description: '' },
+          ])
+        }
+      >
+        {t('加一项配置')}
+      </Button>
+    </div>
   )
 }
 

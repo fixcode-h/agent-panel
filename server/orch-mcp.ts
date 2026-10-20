@@ -47,6 +47,28 @@ function tools(o: Orchestra) {
         '查看这个任务里所有 Agent（主 Agent、各节点、派出的子 Agent）的状态和结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
       inputSchema: { type: 'object', properties: {} },
     },
+    ...(o.planner
+      ? [
+          {
+            name: 'run_workflow',
+            description:
+              '起一次新的工作流运行：节点全部新建，从开始节点按流程图顺序执行一遍（同一层没有依赖的节点同时执行）。这次运行走完就停下，不会自己再跑。你的会话保留，前面几轮的结论还在。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                input: { type: 'string', description: '这次运行要做什么：目标、范围、和上一轮的区别' },
+              },
+              required: ['input'],
+            },
+          },
+          {
+            name: 'close_run',
+            description:
+              '结束这次运行：还没执行的节点不再执行，之后的要求由你直接处理。用户说不用再走了、或者走不下去时用。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ]
+      : []),
     {
       name: 'spawn_agents',
       description:
@@ -113,6 +135,16 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
   switch (name) {
     case 'get_status':
       return text(o.status())
+    case 'run_workflow': {
+      const input = str(a?.input).trim()
+      if (!input) return text('input 是空的：写清楚这次运行要做什么', true)
+      const r = o.run(input)
+      return text(r.info, !r.ok)
+    }
+    case 'close_run': {
+      const r = o.closeRun()
+      return text(r.info, !r.ok)
+    }
     case 'spawn_agents': {
       const list: HelperSpec[] = (Array.isArray(a?.tasks) ? a.tasks : [])
         .filter((x: unknown) => x && typeof x === 'object')
@@ -205,7 +237,7 @@ export function orchHint(o: Orchestra) {
     ? `；可以派的通用 Agent：${o.common.map((a) => `「${a.name}」`).join('、')}（spawn_agents 的 agent 写名字）`
     : ''
   return o.self.endsWith('@main')
-    ? `（你有编排工具 orch：get_status 查看各 Agent 的状态和结果；send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
+    ? `（你有编排工具 orch：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
     : `（你有编排工具 orch：能拆成互不相关的几块时用 spawn_agents 派子 Agent 同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态${o.hasMain ? '；拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜' : ''}；send_message 传话，read_messages 看别人发给你的${common}。）`
 }
 

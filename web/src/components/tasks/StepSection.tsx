@@ -1,4 +1,4 @@
-import { Crown, Loader2, SquareTerminal, Workflow as WorkflowIcon } from 'lucide-react'
+import { Crown, Loader2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { parseVerdict } from '@shared/engine'
 import { useData } from '@/lib/data'
@@ -10,31 +10,8 @@ import { FoldedRun, SystemNote } from './Messages'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
-import { Terminal } from '@/components/agents/CommandPreview'
+import { StepCommand } from './StepCommand'
 import { t } from '@shared/i18n'
-
-/** 节点标题旁的小按钮：看这个节点的 Agent 是用什么命令启动的，可以复制出来自己跑 */
-function StepCommand({ argv, className }: { argv: string[]; className?: string }) {
-  if (!argv.length) return null
-  return (
-    <Popover>
-      <PopoverTrigger
-        title={t('查看启动命令')}
-        aria-label={t('查看启动命令')}
-        className={cn(
-          'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
-          className,
-        )}
-      >
-        <SquareTerminal className="h-3.5 w-3.5" />
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(560px,90vw)] p-0">
-        <Terminal argv={argv} title={t('启动命令')} className="rounded-[inherit] border-0" />
-      </PopoverContent>
-    </Popover>
-  )
-}
 
 export { SystemNote }
 
@@ -84,7 +61,7 @@ export function StepSection({
   const { agents } = useData()
   const now = useNow(task.status === 'running')
   const root = task.steps.find((s) => s.id === rootId)
-  if (!root) return <FoldedRun msgs={msgs} teamNames={teamNames} />
+  if (!root) return <FoldedRun msgs={msgs} task={task} teamNames={teamNames} />
   const a = agents.find((x) => x.id === root.agentId)
   const time = stepDuration(root, now)
   const vt = verdictText(root)
@@ -145,7 +122,9 @@ export function StepSection({
               </div>
             )
           if (r.step === rootId)
-            return <FoldedRun key={i} msgs={r.msgs} teamNames={teamNames} live={root.status === 'running'} />
+            return (
+              <FoldedRun key={i} msgs={r.msgs} task={task} teamNames={teamNames} live={root.status === 'running'} />
+            )
           const s = task.steps.find((x) => x.id === r.step)
           const v =
             s?.slot === 'review'
@@ -174,7 +153,7 @@ export function StepSection({
                   </span>
                 )}
               </div>
-              <FoldedRun msgs={r.msgs} teamNames={teamNames} live={s?.status === 'running'} />
+              <FoldedRun msgs={r.msgs} task={task} teamNames={teamNames} live={s?.status === 'running'} />
             </div>
           )
         })}

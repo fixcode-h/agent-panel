@@ -20,6 +20,7 @@ const AgentsPage = lazy(() => import('@/pages/AgentsPage').then((m) => ({ defaul
 const WorkflowsPage = lazy(() => import('@/pages/WorkflowsPage').then((m) => ({ default: m.WorkflowsPage })))
 const LibraryPage = lazy(() => import('@/pages/LibraryPage').then((m) => ({ default: m.LibraryPage })))
 const McpPage = lazy(() => import('@/pages/McpPage').then((m) => ({ default: m.McpPage })))
+const FilesPage = lazy(() => import('@/pages/FilesPage').then((m) => ({ default: m.FilesPage })))
 const DesignPage = lazy(() => import('@/pages/DesignPage').then((m) => ({ default: m.DesignPage })))
 const ComfyPage = lazy(() => import('@/pages/ComfyPage').then((m) => ({ default: m.ComfyPage })))
 const AiFixDialog = lazy(() => import('@/components/ai-fix/AiFixDialog').then((m) => ({ default: m.AiFixDialog })))
@@ -29,6 +30,7 @@ const SettingsDialog = lazy(() => import('@/pages/SettingsPage').then((m) => ({ 
 const PAGES: Record<Route['page'], () => React.ReactNode> = {
   home: () => <HomePage />,
   projects: () => <ProjectsPage />,
+  files: () => <FilesPage />,
   agents: () => <AgentsPage />,
   workflows: () => <WorkflowsPage />,
   chat: () => <ChatPage />,

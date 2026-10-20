@@ -34,7 +34,7 @@ export interface BuiltinWorkflow {
   description: string
   /** 放进哪个工作流分类（按名字找，没有就建） */
   category: string
-  /** 主 Agent（处理流程完成后的追加要求） */
+  /** 主 Agent（常驻编排器，也是处理追加要求的那一个） */
   main: string
   members: [string, string][]
   document: string
@@ -42,6 +42,15 @@ export interface BuiltinWorkflow {
   expose?: WorkflowExpose[]
   flows: FlowSpec[]
 }
+
+/** 「通用项目」的 key：项目没有指定工作流时用它（启动时自动装一次） */
+export const GENERAL_KEY = 'project-general'
+export const GENERAL_ORIGIN = `builtin:${GENERAL_KEY}`
+export const GENERAL_NAME = '通用项目'
+
+/** 「UE 项目」的 key */
+export const UE_PROJECT_KEY = 'project-ue'
+export const UE_PROJECT_NAME = 'UE 项目'
 
 /** 串起来：a → b → c */
 const chain = (...ids: string[]) => ids.slice(1).map((id, i) => [ids[i], id] as [string, string])
@@ -66,6 +75,279 @@ const CHECK: FlowSpec = {
     },
   ],
   edges: chain(START, 'verify', END),
+}
+
+/** 项目结构技能的选择项：通用项目和 UE 项目各一份，能用 expose 换 */
+const STRUCTURE: WorkflowExpose = {
+  key: 'projectStructure',
+  label: '项目结构技能',
+  type: 'select',
+  options: ['project-structure', 'ue-project-structure'],
+  default: 'project-structure',
+  target: 'skill',
+  targetId: 'projectStructure',
+  description: '编排器用来了解这个项目的目录、构建、测试和运行方式',
+}
+
+/** 文档根：填了就直接用，留空按 project-documentation 的规则自己确定 */
+const DOC_ROOT: WorkflowExpose = {
+  key: 'docRoot',
+  label: '文档根',
+  type: 'text',
+  options: [],
+  default: '',
+  target: 'agent',
+  targetId: 'docRoot',
+  description: '项目文档放在哪；P4 项目的文档一般在项目目录外面',
+}
+
+/** 提交方式：本地提交 / 只检查 */
+const COMMIT: WorkflowExpose = {
+  key: 'commitPolicy',
+  label: '提交方式',
+  type: 'select',
+  options: ['本地提交', '只检查'],
+  default: '本地提交',
+  target: 'node',
+  targetId: 'deliver',
+  description: '本地提交只做本地 commit / pending；推送和 submit 要单独授权',
+}
+
+/** 「通用项目」：任何类型的项目都能用的常驻流程 */
+const GENERAL: BuiltinWorkflow = {
+  key: GENERAL_KEY,
+  name: GENERAL_NAME,
+  description:
+    '项目默认的常驻流程：常驻编排器管住文档、测试和版本管理，按流程图走 需求 → 方案 → 实现 → 测试 → 文档 → 交付',
+  category: '项目',
+  main: 'orchestrator',
+  members: [
+    ['orchestrator', '常驻编排器：评估节点结果、起停运行、守住文档 / 测试 / 版本管理的一致性'],
+    ['analyst', '识别现场，收敛需求，出方案等你确认'],
+    ['developer', '按确认的方案实现'],
+    ['projecttest', '按项目的测试流程验证，给带证据的结论'],
+    ['docsync', '同步项目文档'],
+    ['deliver', '版本控制收尾'],
+  ],
+  document: `## 适用
+项目里的日常开发：需求、方案、实现、测试、文档、交付。工作流可以按顺序跑很多次，每次都是完整的一遍。
+
+## 约定
+- 版本控制和文档根由「常驻编排器」统一确定，后面的节点按它的结论操作。
+- 方案确认之前不写代码；确认之后中途不再逐步确认，遇到不可逆操作、需求矛盾、和方案冲突时才停下。
+- 测试按项目的流程跑，没有本轮的新鲜证据不算完成。
+- 版本管理：本地提交 / pending 保持一致；推送、PR、submit 这类对外操作要得到授权。
+- 只改任务范围内的文件，不覆盖、不认领用户已有的改动。`,
+  expose: [STRUCTURE, DOC_ROOT, COMMIT],
+  flows: [
+    {
+      id: 'main',
+      name: '主流程',
+      nodes: [
+        {
+          id: 'discover',
+          title: '需求与现状',
+          agent: 'analyst',
+          tier: 'medium',
+          params: { scene: true, scale: 'bounded' },
+          instructions:
+            '先识别现场（版本控制、文档根、已有改动、相关模块和构建 / 测试命令），再用一两句复述这次要做什么；不清楚的地方问用户。',
+        },
+        {
+          id: 'design',
+          title: '方案确认',
+          agent: 'analyst',
+          tier: 'high',
+          params: { scale: 'bounded' },
+          confirm: true,
+          instructions:
+            '结合上面的现场结果给出简短方案：做法、要改的文件、验证方式、验收标准。等用户确认后再进入实现。',
+        },
+        {
+          id: 'impl',
+          title: '实现',
+          agent: 'developer',
+          tier: 'high',
+          params: { lang: '多种', tdd: false },
+          review: 'check',
+          maxRounds: 3,
+          retries: 1,
+          instructions:
+            '按已确认的方案实现并自测。改动分成几块互不依赖、不改同一个文件时，用 spawn_agents 派子 Agent 并行做，自己负责拆分、取回结果后统一检查。',
+        },
+        {
+          id: 'docs',
+          title: '文档同步',
+          agent: 'docsync',
+          tier: 'low',
+          instructions: '把这次改动同步进项目文档；没有要更新的写明原因。',
+        },
+        {
+          id: 'deliver',
+          title: '交付',
+          agent: 'deliver',
+          tier: 'low',
+          params: { docs: false, commit: '本地提交' },
+          instructions: '文档节点已经同步过了，这里只做版本控制收尾。推送 / submit 没有授权时不做，写清楚等用户授权。',
+        },
+      ],
+      edges: chain(START, 'discover', 'design', 'impl', 'docs', 'deliver', END),
+    },
+    {
+      id: 'docs-init',
+      name: '文档初始化',
+      description: '第一次接触这个项目时确定 PROJECT_ROOT / DOC_ROOT，补最小必要的文档',
+      nodes: [
+        {
+          id: 'init',
+          title: '文档初始化',
+          agent: 'docsync',
+          tier: 'low',
+          instructions:
+            '读项目入口和一级目录，确定 PROJECT_ROOT 和 DOC_ROOT。文档入口或模块地图缺失时按 project-documentation 初始化最小必要的一套；已经齐了就直接说明现状，不要重写。',
+        },
+      ],
+      edges: chain(START, 'init', END),
+    },
+    {
+      id: 'test',
+      name: '测试验证',
+      description: '按项目的测试流程跑构建、测试和检查，给带证据的结论',
+      nodes: [
+        {
+          id: 'verify',
+          title: '测试验证',
+          agent: 'projecttest',
+          tier: 'medium',
+          params: { scene: false },
+          instructions:
+            '验证上面「输入」里的改动：先找项目自己的验证命令，再跑改动的单元、受影响的回归、构建和静态检查。跑不了的登记为延期验证。',
+        },
+      ],
+      edges: chain(START, 'verify', END),
+    },
+    CHECK,
+  ],
+}
+
+/** 「UE 项目」：在「通用项目」的基础上换成 UE 的结构技能和编译验收 */
+const UE_PROJECT: BuiltinWorkflow = {
+  key: UE_PROJECT_KEY,
+  name: UE_PROJECT_NAME,
+  description: 'UE 项目的常驻流程：UE 结构规范和编译验收，按 C++ / Lua、资源、Cook 的规则走',
+  category: '项目',
+  main: 'orchestrator',
+  members: [
+    ['orchestrator', '常驻编排器：按 UE 的结构、编译和资产规则调度'],
+    ['uescout', '只读侦察架构、构建、资产和影响面'],
+    ['analyst', '出方案等你确认'],
+    ['developer', 'C++ / Lua 实现'],
+    ['ueintegrator', '唯一负责编译和 Lua 检查'],
+    ['projecttest', '验收，登记需要 Editor 的延期验证'],
+    ['deliver', '版本控制收尾'],
+  ],
+  document: `## 适用
+Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑很多次。
+
+## 约定
+- 模块、Build.cs / Target.cs、UHT/UBT、资产和 Cook 的规则按 ue-project-structure 技能。
+- 编译只由「UE 集成员」做，同一时间只编译一次（-WaitMutex）；需要 Editor、PIE 或设备的验证登记为延期验证。
+- 文档、测试、版本管理沿用在「通用项目」里的规则。
+- Git 只提交本次任务的文件、按功能拆本地提交；P4 只分 pending，不 sync、不 submit。推送 / submit 要授权。`,
+  expose: [{ ...STRUCTURE, default: 'ue-project-structure' }, DOC_ROOT, COMMIT],
+  flows: [
+    {
+      id: 'main',
+      name: '主流程',
+      nodes: [
+        {
+          id: 'scout',
+          title: '识别现场与侦察',
+          agent: 'uescout',
+          tier: 'medium',
+          params: { scene: true, focus: '综合' },
+          instructions:
+            '先识别现场（Git 的分支和未提交改动，P4 的 client、stream 和限定路径的 opened，或者没有版本控制）和文档根；再侦察模块、构建和影响面，包括 C++ 与 Lua 的调用边界。',
+        },
+        {
+          id: 'design',
+          title: '确认方案',
+          agent: 'analyst',
+          tier: 'high',
+          params: { scale: 'bounded' },
+          confirm: true,
+          instructions:
+            '结合侦察结果给出方案：改动的模块和文件、C++ / Lua 分工、导出和反射边界、验证方式。等用户确认。',
+        },
+        {
+          id: 'impl',
+          title: '实现',
+          agent: 'developer',
+          tier: 'high',
+          params: { lang: '多种', tdd: false },
+          review: 'compile',
+          maxRounds: 3,
+          retries: 1,
+          instructions:
+            '按已确认的方案实现。C++ 和 Lua 两边互不依赖时可以派子 Agent 并行改，导出和反射边界由你统一核对。不要自己编译。',
+        },
+        {
+          id: 'docs',
+          title: '文档同步',
+          agent: 'docsync',
+          tier: 'low',
+          instructions: '把这次改动同步进识别出的文档根里的模块文档；没有要更新的写明原因。',
+        },
+        {
+          id: 'deliver',
+          title: '交付',
+          agent: 'deliver',
+          tier: 'low',
+          params: { docs: false, commit: '本地提交' },
+          instructions: '按识别出的版本控制做收尾；推送 / submit 没有授权时不做。',
+        },
+      ],
+      edges: chain(START, 'scout', 'design', 'impl', 'docs', 'deliver', END),
+    },
+    {
+      id: 'docs-init',
+      name: '文档初始化',
+      description: '确定 PROJECT_ROOT / DOC_ROOT，补最小必要的文档',
+      nodes: [
+        {
+          id: 'init',
+          title: '文档初始化',
+          agent: 'docsync',
+          tier: 'low',
+          instructions: '确定两个根并按 project-documentation 补齐最小必要的文档入口和模块地图；已经齐了就说明现状。',
+        },
+      ],
+      edges: chain(START, 'init', END),
+    },
+    {
+      id: 'compile',
+      name: '编译验收',
+      description: '编译一次、Lua 语法检查，再按验收标准检查',
+      nodes: [
+        {
+          id: 'build',
+          title: '编译',
+          agent: 'ueintegrator',
+          tier: 'medium',
+          instructions: '编译这次的改动，有 Lua 改动时做语法检查。',
+        },
+        {
+          id: 'verify',
+          title: '验收',
+          agent: 'verifier',
+          tier: 'medium',
+          instructions:
+            '编译不通过就直接判不通过。编译通过后对照方案逐条检查；需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+        },
+      ],
+      edges: chain(START, 'build', 'verify', END),
+    },
+  ],
 }
 
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
@@ -578,6 +860,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
       },
     ],
   },
+  // 项目工作流放最后：默认选中项仍然是「日常开发」，旧项目迁移按 origin 找
+  GENERAL,
+  UE_PROJECT,
 ]
 
 /** 内置工作流里用到的所有 Agent（key） */

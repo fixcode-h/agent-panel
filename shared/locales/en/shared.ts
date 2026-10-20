@@ -135,6 +135,13 @@ export const EN_SHARED: Record<string, string> = {
     'Main Agent delegated work on "{title}" to the workflow "{workflow}"',
   '主 Agent 停下了流程：{reason}': 'Main Agent stopped the flow: {reason}',
   '（没有写原因）': '(no reason given)',
+  '主 Agent 起了新的一次运行：{input}': 'Main Agent started a new run: {input}',
+  按流程图再走一遍: 'go through the flow again',
+  '主 Agent 重做这次运行：{feedback}': 'Main Agent is redoing this run: {feedback}',
+  '（没有写具体原因）': '(no specific reason)',
+  '主 Agent 直接回答，没有起运行': 'Main Agent answered directly without starting a run',
+  '主 Agent 起了第 {n} 次运行：{input}': 'Main Agent started run {n}: {input}',
+  这次要求: 'This request',
   '主 Agent 评估「{title}」失败：{error}': 'Main Agent failed to review "{title}": {error}',
   '主 Agent 没有写调度决定，「{title}」按通过处理。':
     'Main Agent did not write a decision; treating "{title}" as a pass.',
