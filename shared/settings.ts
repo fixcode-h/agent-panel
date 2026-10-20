@@ -84,8 +84,11 @@ export const tierToken = (t: ModelTier) => `@${t}`
 /** 模型字段是档位时返回档位 */
 export const tierOf = (model: string) => MODEL_TIERS.find((t) => model === `@${t.id}`)
 
-/** CLI 支持这个思考强度吗；内置列表里没有的当作不支持 */
-export const supportsEffort = (cli: string, effort: string) => !!getCli(cli)?.efforts.some((e) => e.id === effort)
+/** CLI 支持这个思考强度吗；模型驱动的 CLI 交给执行前按模型判断，这里先放行 */
+export const supportsEffort = (cli: string, effort: string) => {
+  const def = getCli(cli)
+  return !!def && (def.effortsFromModel || def.efforts.some((e) => e.id === effort))
+}
 
 /** Agent 实际使用的 CLI：没选时用系统默认 */
 export const agentCli = (a: { cli: string }, settings: Settings) => a.cli || defaultCli(settings)

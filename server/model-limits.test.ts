@@ -6,6 +6,7 @@ import assert from 'node:assert/strict'
 import { autoLimits, fmtTokens, knownLimits, limitEnvVars, limitSupport, parseTokens } from '../shared/model-limits.ts'
 import { DEFAULT_MODEL_CONTEXT, DEFAULT_MODEL_MAX_OUTPUT, matchModel } from '../shared/model-catalog.ts'
 import { getCli } from '../shared/clis.ts'
+import { supportsEffort } from '../shared/settings.ts'
 
 test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
   const opus = knownLimits('claude-opus-5-5')
@@ -22,6 +23,14 @@ test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
   assert.deepEqual(knownLimits('tokenapi/deepseek/deepseek-v4-flash-anthropic').efforts, ['low', 'high', 'max'])
   assert.deepEqual(knownLimits('some-new-model'), {})
   assert.deepEqual(knownLimits(''), {})
+})
+
+test('Command Code 的思考强度跟着模型走，不用全局列表', () => {
+  const cc = getCli('commandcode')!
+  assert.equal(cc.effortsFromModel, true)
+  assert.deepEqual(cc.efforts, [])
+  // 交给执行前按模型判断，这里先放行
+  assert.equal(supportsEffort('commandcode', 'xhigh'), true)
 })
 
 test('模型名带协议、速度后缀：类型优先于版本', () => {

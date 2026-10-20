@@ -86,6 +86,8 @@ export interface CliDefinition {
   }[]
   /** 支持的思考强度（从低到高）；为空表示不支持 */
   efforts: { id: string; label: string }[]
+  /** 思考强度跟着模型走（模型目录/配置里这个模型有哪些就能选哪些），不按上面的全局列表过滤 */
+  effortsFromModel?: boolean
   /** 高 / 中 / 低三档默认对应的模型和思考强度，设置里可以改 */
   tiers: Record<ModelTier, { model: string; effort: string }>
   permissions: PermissionOption[]

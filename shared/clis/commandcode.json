@@ -33,24 +33,7 @@
       "label": "Claude Sonnet 5.5"
     }
   ],
-  "efforts": [
-    {
-      "id": "low",
-      "label": "低"
-    },
-    {
-      "id": "medium",
-      "label": "中"
-    },
-    {
-      "id": "high",
-      "label": "高"
-    },
-    {
-      "id": "max",
-      "label": "最高"
-    }
-  ],
+  "effortsFromModel": true,
   "tiers": {
     "high": {
       "model": "claude-sonnet-5-5",
