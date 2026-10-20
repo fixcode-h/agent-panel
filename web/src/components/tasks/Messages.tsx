@@ -119,6 +119,7 @@ export function AgentMessage({
   compact,
   live,
   hideProcess,
+  hideAuthor,
   slot,
   author,
 }: {
@@ -129,6 +130,8 @@ export function AgentMessage({
   live?: boolean
   /** 只显示回复文字，思考和工具收在外面的折叠里 */
   hideProcess?: boolean
+  /** 名字和模型由外面统一显示（对话一轮的吸顶署名） */
+  hideAuthor?: boolean
   /** 放在名字下面、回复上面的内容（折叠起来的过程） */
   slot?: React.ReactNode
   /** 不是某个 Agent 说的（例如「AI 创建」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
@@ -145,6 +148,7 @@ export function AgentMessage({
       compact={compact}
       live={live}
       hideProcess={hideProcess}
+      hideAuthor={hideAuthor}
       slot={slot}
       name={author?.name ?? a?.name ?? t('已删除的 Agent')}
       model={author ? author.model : a ? modelOf(a) : undefined}
@@ -160,6 +164,7 @@ type BodyProps = {
   compact?: boolean
   live?: boolean
   hideProcess?: boolean
+  hideAuthor?: boolean
   slot?: React.ReactNode
   name: string
   model?: string
@@ -172,17 +177,27 @@ type BodyProps = {
 const sig = (m: TaskMessage) =>
   `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.tools.map((x) => `${x.output?.length ?? 0}${x.failed ? '!' : ''}`).join(',')}`
 
+/** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
+function StickyAuthor({ author }: { author: Author }) {
+  return (
+    <div className="sticky top-0 z-10 -mx-2 flex items-center gap-3 bg-bg px-2 py-2">
+      <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
+      <div className="flex min-w-0 flex-1 items-center gap-2 text-[0.8125rem]">
+        <span className="truncate font-medium">{author.name}</span>
+        {author.model && <span className="truncate font-mono text-xs text-subtle">{author.model}</span>}
+      </div>
+    </div>
+  )
+}
+
 /** 回复还没开始输出时的占位：发出消息马上显示是谁在回复、用的模型，下面放进度 */
 export function PendingAuthor({ author, children }: { author: Author; children: React.ReactNode }) {
   return (
-    <div className="flex gap-3">
-      <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
-      <div className="flex min-w-0 flex-1 flex-col gap-2">
-        <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
-          <span className="font-medium">{author.name}</span>
-          {author.model && <span className="font-mono text-xs text-subtle">{author.model}</span>}
-        </div>
-        {children}
+    <div className="flex flex-col gap-2">
+      <StickyAuthor author={author} />
+      <div className="flex gap-3">
+        <span className="w-[26px] shrink-0" />
+        <div className="flex min-w-0 flex-1 flex-col gap-2">{children}</div>
       </div>
     </div>
   )
@@ -193,10 +208,23 @@ export function PendingAuthor({ author, children }: { author: Author; children: 
  * 只在这条消息的内容或显示方式变了时才重新渲染
  */
 const MessageBody = memo(
-  function MessageBody({ m, teamNames, compact, live, hideProcess, slot, name, model, icon, cli }: BodyProps) {
+  function MessageBody({
+    m,
+    teamNames,
+    compact,
+    live,
+    hideProcess,
+    hideAuthor,
+    slot,
+    name,
+    model,
+    icon,
+    cli,
+  }: BodyProps) {
+    const noHeader = !!compact || !!hideAuthor
     return (
       <div className="flex gap-3">
-        {compact ? (
+        {noHeader ? (
           <span className="w-[26px] shrink-0" />
         ) : icon ? (
           <AgentAvatar icon={icon} cli={cli} size="sm" />
@@ -204,7 +232,7 @@ const MessageBody = memo(
           <span className="h-[26px] w-[26px] shrink-0 rounded-[7px] bg-field" />
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
-          {!compact && (
+          {!noHeader && (
             <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
               <span className="font-medium">{name}</span>
               {model && <span className="font-mono text-xs text-subtle">{model}</span>}
@@ -237,6 +265,7 @@ const MessageBody = memo(
     a.compact === b.compact &&
     a.live === b.live &&
     a.hideProcess === b.hideProcess &&
+    a.hideAuthor === b.hideAuthor &&
     a.name === b.name &&
     a.model === b.model &&
     a.icon === b.icon &&
@@ -251,6 +280,7 @@ export function Msgs({
   slot,
   author,
   compactFirst,
+  hideAuthor,
 }: {
   msgs: TaskMessage[]
   teamNames: Set<string>
@@ -260,6 +290,8 @@ export function Msgs({
   author?: Author
   /** 这段前面已经显示了同一个 Agent 的名字：第一条不再重复 */
   compactFirst?: boolean
+  /** 名字和模型由外面统一显示（对话一轮的吸顶署名） */
+  hideAuthor?: boolean
 }) {
   const lastAgent = lastIndex(msgs, (m) => m.role === 'agent')
   const firstAgent = msgs.findIndex((m) => m.role === 'agent')
@@ -276,6 +308,7 @@ export function Msgs({
             live={live && k === lastAgent}
             slot={k === firstAgent ? slot : undefined}
             author={author}
+            hideAuthor={hideAuthor}
             compact={k === 0 ? !!compactFirst : msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
           />
         ),
@@ -369,7 +402,8 @@ export function ChatReply({
 }) {
   const body = (
     <>
-      <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} />
+      {author && <StickyAuthor author={author} />}
+      <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} hideAuthor={!!author} />
       {children}
     </>
   )
