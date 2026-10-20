@@ -101,8 +101,9 @@ test('内置工作流：结构合法，节点的 Agent、验收流程和参数�
 
 test('自带 Skill：装进 CLI 的用户目录，已有的不覆盖，执行前自动补齐缺的', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'bundled-'))
-  const old = process.env.HOME
+  const old = { ...process.env }
   process.env.HOME = home
+  process.env.USERPROFILE = home
   try {
     const list = await listBundled()
     assert.equal(list.length, skillDirs.length)
@@ -131,7 +132,7 @@ test('自带 Skill：装进 CLI 的用户目录，已有的不覆盖，执行前
     assert.deepEqual(added, ['grilling'])
     assert.equal(readFileSync(path.join(dir, 'SKILL.md'), 'utf8'), '用户的')
   } finally {
-    process.env.HOME = old
+    process.env = old
     rmSync(home, { recursive: true, force: true })
   }
 })
