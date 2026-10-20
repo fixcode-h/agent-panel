@@ -905,11 +905,7 @@ export function TaskView({
             )}
           >
             {!panel && (
-              <ResizeHandle
-                pane={taskPanel}
-                label={t('拖动调整任务面板的宽度')}
-                className="hidden xl:block"
-              />
+              <ResizeHandle pane={taskPanel} label={t('拖动调整任务面板的宽度')} className="hidden xl:block" />
             )}
             {panel && (
               <div className="mb-2 flex items-center justify-between xl:hidden">
