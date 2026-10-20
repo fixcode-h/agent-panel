@@ -31,6 +31,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
+import type { ContentSearch, FileContent, FileTree } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
@@ -276,6 +277,16 @@ export const api = {
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
+  /** 文件浏览页：项目里的文件树和 git 状态 */
+  fileTree: (projectId: string) => request<FileTree>(`/project-files/${projectId}`),
+  /** 按文件内容搜索 */
+  searchFileContent: (projectId: string, q: string) =>
+    request<ContentSearch>(`/project-files/${projectId}/search?mode=content&q=${encodeURIComponent(q)}`),
+  projectFile: (projectId: string, path: string) =>
+    request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
+  /** 项目里的图片：按原图查看 */
+  projectFileRaw: (projectId: string, path: string) =>
+    `/project-files/${projectId}/raw?path=${encodeURIComponent(path)}`,
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
   resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
   taskDiff: (id: string, path: string) =>
@@ -293,6 +304,11 @@ export const api = {
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
   /** 任务目录里的图片：读到的文件是图片时按原图查看 */
   taskFileRaw: (id: string, path: string) => `/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
+  /** 任务页右栏的文件系统：任务工作目录（独立分支时是 worktree）里的文件树 */
+  taskFiles: (id: string) => request<FileTree>(`/tasks/${id}/files`),
+  /** 任务目录里按文件内容搜索 */
+  searchTaskFiles: (id: string, q: string) =>
+    request<ContentSearch>(`/tasks/${id}/files/search?q=${encodeURIComponent(q)}`),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
   /** 独立分支：合并进项目当前的分支，或丢弃 */
   finishWorktree: (id: string, merge: boolean) =>

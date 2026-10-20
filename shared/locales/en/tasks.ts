@@ -1,5 +1,39 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_TASKS: Record<string, string> = {
+  // 文件浏览
+  文件: 'Files',
+  '先添加一个项目，再浏览项目里的文件。': 'Add a project first to browse its files.',
+  切换项目: 'Switch project',
+  查找文件: 'Find file',
+  搜索文件内容: 'Search file contents',
+  搜索方式: 'Search mode',
+  '共 {n} 个文件': '{n} files',
+  '搜索中…': 'Searching…',
+  '{n} 个文件有匹配': '{n} files match',
+  '没有匹配的文件。': 'No matching files.',
+  '这个目录里没有文件。': 'No files in this directory.',
+  '文件太多，只列出了前面一部分。': 'Too many files; only the first ones are listed.',
+  '输入关键词，搜索文件里的内容。': 'Type a keyword to search file contents.',
+  '没有匹配的内容。': 'No matching contents.',
+  '还有 {n} 处匹配': '{n} more matches',
+  '匹配太多，只显示了前面一部分。': 'Too many matches; only the first ones are shown.',
+  复制路径: 'Copy path',
+  在编辑器中打开: 'Open in editor',
+  '项目目录里找不到这个文件，可能已经被移动或删除。':
+    'This file is not in the project directory; it may have been moved or deleted.',
+  '这是二进制文件，不显示内容。': 'This is a binary file, contents are not shown.',
+  '文件太大，只显示了前面一部分。完整内容请在编辑器里查看。':
+    'The file is too large; only the first part is shown. Open it in the editor for the full contents.',
+  '在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。':
+    'The live demo has no real project folder. Run it locally to view files here.',
+  // 任务页右栏的文件系统
+  没有分支: 'No branch',
+  刷新文件: 'Refresh files',
+  改动过的文件: 'Changed files',
+  没有改动: 'No changes',
+  '改动 {n} 个文件': '{n} files changed',
+  只看改动: 'Changed only',
+
   // 附件
   '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
   '「{name}」超过 {n} MB': '"{name}" is larger than {n} MB',
@@ -127,17 +161,12 @@ export const EN_TASKS: Record<string, string> = {
     'Chats have no fixed steps. When the Agent writes a to-do list or plan, it shows up here.',
   上下文: 'Context',
   '已使用 {n}%': '{n}% used',
-  'CLI 报告': 'Reported by CLI',
-  'CLI 开始运行后会显示上下文占用。': 'Context usage appears once the CLI starts running.',
   默认模型: 'Default model',
-  更改: 'Changes',
   '还没有改动文件。': 'No files changed yet.',
   回到底部: 'Back to bottom',
   '显示更早的 {n} 段': 'Show {n} earlier sections',
   这一步还没有输出: 'This step has no output yet',
   '这个节点没有改动文件。': 'This node changed no files.',
-  '这个节点还没有启动过 CLI。': 'This node has not started a CLI yet.',
-  '这个节点的 CLI 运行后会显示上下文占用。': "Context usage appears once this node's CLI runs.",
   环境: 'Environment',
   切换分支: 'Switch branch',
   '任务执行中，不能切换分支': "Can't switch branches while the task is running",
@@ -151,16 +180,12 @@ export const EN_TASKS: Record<string, string> = {
   输入: 'Input',
   输出: 'Output',
   缓存命中: 'Cache hits',
-  缓存写入: 'Cache writes',
-  未命中缓存: 'Cache misses',
   'Token 用量': 'Token usage',
-  'CLI 报告用量后会显示在这里。': 'Usage appears here once the CLI reports it.',
   '累计 token': 'Total tokens',
-  '缓存命中率 · 累计': 'Cache hit rate · Total',
-  '读缓存 {hit} / 输入 {input}': 'Cache reads {hit} / input {input}',
-  '缓存命中率 {n}%': 'Cache hit rate {n}%',
   费用: 'Cost',
   '{name} 的待办': "{name}'s to-dos",
+  上下文占用: 'Context usage',
+  '命中 {n}%': '{n}% hit',
 
   // 状态
   等待: 'Pending',
@@ -181,8 +206,7 @@ export const EN_TASKS: Record<string, string> = {
   模拟: 'Simulated',
   视图: 'View',
   流程图: 'Flowchart',
-  显示任务面板: 'Show task panel',
-  '任务进度、上下文和更改': 'Progress, context and changes',
+  显示文件: 'Show files',
   更多操作: 'More actions',
   重命名: 'Rename',
   删除任务: 'Delete task',
@@ -202,7 +226,6 @@ export const EN_TASKS: Record<string, string> = {
   继续执行: 'Resume',
   发送: 'Send',
   '发送（Enter）': 'Send (Enter)',
-  任务面板: 'Task panel',
   关闭面板: 'Close panel',
   '删除任务「{title}」？': 'Delete task "{title}"?',
   '会删除这个任务的对话记录，不会撤销已经改动的文件。':
@@ -233,8 +256,6 @@ export const EN_TASKS: Record<string, string> = {
   '验收 {n} 轮 · 通过': 'Review: {n} rounds · Passed',
   按最新的工作流继续: 'Resume with the latest workflow',
   '已撤销「{path}」的改动': 'Reverted changes to "{path}"',
-  复制路径: 'Copy path',
-  在编辑器中打开: 'Open in editor',
   '任务正在执行，停下后才能撤销': 'The task is running; pause it before reverting',
   恢复成任务开始时的样子: 'Restore to how it was when the task started',
   撤销改动: 'Revert changes',
@@ -296,13 +317,6 @@ export const EN_TASKS: Record<string, string> = {
   '正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。':
     'The running CLI will be stopped. You can click "Continue" later to pick up where it left off.',
   查看文件: 'View file',
-  '在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。':
-    'The live demo has no real project folder. Run it locally to view files here.',
-  '项目目录里找不到这个文件，可能已经被移动或删除。':
-    "This file isn't in the project folder. It may have been moved or deleted.",
-  '这是二进制文件，不显示内容。': "This is a binary file, so its content isn't shown.",
-  '文件太大，只显示了前面一部分。完整内容请在编辑器里查看。':
-    'The file is too large, so only the beginning is shown. Open it in an editor to see all of it.',
   执行后会显示: 'Shown after it runs',
   '让 CLI 把之前的对话压缩成摘要，腾出上下文':
     'Have the CLI compress the conversation so far into a summary to free up context',

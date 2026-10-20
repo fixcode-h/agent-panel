@@ -10,6 +10,7 @@ import { stripNext } from '@shared/builtin/default'
 import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { StepCommand } from './StepCommand'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { t } from '@shared/i18n'
@@ -111,7 +112,14 @@ function Thinking({ text, live, ms }: { text: string; live: boolean; ms?: number
   )
 }
 
-export type Author = { name: string; cli: string; icon?: string; model?: string }
+export type Author = {
+  name: string
+  cli: string
+  icon?: string
+  model?: string
+  /** 启动这条回复的 CLI 命令：署名行最右边给个小按钮，点开看完整命令 */
+  command?: string[]
+}
 
 export function AgentMessage({
   m,
@@ -122,6 +130,7 @@ export function AgentMessage({
   hideAuthor,
   slot,
   author,
+  command,
 }: {
   m: TaskMessage
   teamNames: Set<string>
@@ -136,6 +145,8 @@ export function AgentMessage({
   slot?: React.ReactNode
   /** 不是某个 Agent 说的（例如「AI 创建」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
   author?: Author
+  /** 启动这条回复的命令：没有 author 时（按 Agent 显示的对话）用这个 */
+  command?: string[]
 }) {
   const { modelOf } = useAgentView()
   const { agents } = useData()
@@ -154,6 +165,7 @@ export function AgentMessage({
       model={author ? author.model : a ? modelOf(a) : undefined}
       icon={a || author ? (a?.icon ?? author!.icon ?? 'sparkles') : undefined}
       cli={a?.cli ?? author?.cli ?? ''}
+      command={author?.command ?? command}
     />
   )
 }
@@ -171,6 +183,8 @@ type BodyProps = {
   /** 没有时显示空白头像（Agent 已删除） */
   icon?: string
   cli: string
+  /** 启动这条回复的命令：名字那行最右边显示 */
+  command?: string[]
 }
 
 /** 消息内容会变的部分：文字、思考长度、模型耗时和每个工具调用的结果 */
@@ -186,6 +200,8 @@ function StickyAuthor({ author }: { author: Author }) {
         <span className="truncate font-medium">{author.name}</span>
         {author.model && <span className="truncate font-mono text-xs text-subtle">{author.model}</span>}
       </div>
+      {/* 启动命令放在最右边，和工作流节点标题旁的那个按钮一样，这里显示命令本身 */}
+      {author.command?.length ? <StepCommand argv={author.command} showText className="ml-auto min-w-0 -my-1" /> : null}
     </div>
   )
 }
@@ -220,6 +236,7 @@ const MessageBody = memo(
     model,
     icon,
     cli,
+    command,
   }: BodyProps) {
     const noHeader = !!compact || !!hideAuthor
     return (
@@ -236,6 +253,8 @@ const MessageBody = memo(
             <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
               <span className="font-medium">{name}</span>
               {model && <span className="font-mono text-xs text-subtle">{model}</span>}
+              {/* 启动命令放在最右边，和工作流节点标题旁的那个按钮一样，这里显示命令本身 */}
+              {command?.length ? <StepCommand argv={command} showText className="ml-auto -my-1" /> : null}
             </div>
           )}
           {slot}
@@ -269,7 +288,8 @@ const MessageBody = memo(
     a.name === b.name &&
     a.model === b.model &&
     a.icon === b.icon &&
-    a.cli === b.cli,
+    a.cli === b.cli &&
+    a.command === b.command,
 )
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
@@ -279,6 +299,7 @@ export function Msgs({
   live,
   slot,
   author,
+  command,
   compactFirst,
   hideAuthor,
 }: {
@@ -288,6 +309,8 @@ export function Msgs({
   /** 放在第一条 Agent 消息名字下面的内容（展开后的折叠开关） */
   slot?: React.ReactNode
   author?: Author
+  /** 启动这些回复的命令 */
+  command?: string[]
   /** 这段前面已经显示了同一个 Agent 的名字：第一条不再重复 */
   compactFirst?: boolean
   /** 名字和模型由外面统一显示（对话一轮的吸顶署名） */
@@ -308,6 +331,7 @@ export function Msgs({
             live={live && k === lastAgent}
             slot={k === firstAgent ? slot : undefined}
             author={author}
+            command={command}
             hideAuthor={hideAuthor}
             compact={k === 0 ? !!compactFirst : msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
           />
@@ -326,11 +350,14 @@ export function FoldedRun({
   teamNames,
   live,
   author,
+  command,
 }: {
   msgs: TaskMessage[]
   teamNames: Set<string>
   live?: boolean
   author?: Author
+  /** 启动这些回复的命令 */
+  command?: string[]
 }) {
   const [open, setOpen] = useState(false)
   const last = lastIndex(msgs, (m) => m.role === 'agent' && !!replyText(m).trim())
@@ -339,7 +366,7 @@ export function FoldedRun({
   const thoughts = process.filter((m) => m.thinking?.trim()).length
   const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
   if (live || last < 0 || (!tools && !thoughts && !notes))
-    return <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} />
+    return <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} command={command} />
 
   const parts = [
     thoughts && t('思考 {n} 次', { n: thoughts }),
@@ -359,18 +386,19 @@ export function FoldedRun({
   if (open)
     return (
       // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方
-      <Msgs msgs={msgs} teamNames={teamNames} slot={toggle} author={author} />
+      <Msgs msgs={msgs} teamNames={teamNames} slot={toggle} author={author} command={command} />
     )
   // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
   const tail = msgs.slice(last + 1)
   return (
     <>
       {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} />)}
-      <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} />
+      <AgentMessage m={msgs[last]} teamNames={teamNames} hideProcess slot={toggle} author={author} command={command} />
       <Msgs
         msgs={tail}
         teamNames={teamNames}
         author={author}
+        command={command}
         compactFirst={tail[0]?.role === 'agent' && tail[0].agentId === msgs[last].agentId}
       />
     </>
@@ -386,6 +414,7 @@ export function ChatReply({
   teamNames,
   live,
   author,
+  command,
   actions,
   last,
   children,
@@ -394,6 +423,8 @@ export function ChatReply({
   teamNames: Set<string>
   live?: boolean
   author?: Author
+  /** 启动这一轮的命令：按 Agent 显示的对话没有 author，用这个显示在名字那行最右边 */
+  command?: string[]
   actions?: React.ReactNode
   /** 最后一轮：操作一直显示 */
   last?: boolean
@@ -403,7 +434,7 @@ export function ChatReply({
   const body = (
     <>
       {author && <StickyAuthor author={author} />}
-      <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} hideAuthor={!!author} />
+      <Msgs msgs={msgs} teamNames={teamNames} live={live} author={author} command={command} hideAuthor={!!author} />
       {children}
     </>
   )

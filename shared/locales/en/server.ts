@@ -281,6 +281,8 @@ export const EN_SERVER: Record<string, string> = {
   '你退回了「{title}」：{answer}': 'You sent "{title}" back: {answer}',
   '「{title}」完成了，看一下结果再继续': '"{title}" is done. Check the result before continuing',
   缺少文件路径: 'Missing file path',
+  不支持的搜索方式: 'Unsupported search mode',
+  任务没有工作目录: 'The task has no working directory',
   只能查看项目目录里的文件: 'Only files inside the project folder can be viewed',
   不是图片: 'Not an image',
   文件已经不在了: 'The file is gone',

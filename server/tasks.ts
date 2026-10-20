@@ -51,8 +51,9 @@ import { forgetPresence, setPresenceIdleHandler, setViewer } from './presence.ts
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
-import { mkdir, readFile, rm, stat } from 'node:fs/promises'
-import { IMAGE_TYPES, cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { mkdir, rm } from 'node:fs/promises'
+import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { listDir, rawInDir, readInDir, searchInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -827,49 +828,51 @@ export function tasksApi(deps: {
     return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
   })
 
-  /** 任务目录里的一个文件：解析成绝对地址和相对路径；路径越出目录时给错误说明 */
-  const taskPath = async (
-    tk: Task,
-    want: string,
-  ): Promise<{ error: string } | { dir: string; full: string; rel: string }> => {
+  /** 任务的工作目录；导入的任务没有本机目录，读文件时直接拒绝 */
+  const readableDir = async (id: string | undefined) => {
+    const tk = id ? await current(id) : null
+    if (!tk) throw Object.assign(new Error(t('任务不存在')), { status: 404 })
+    if (tk.imported) throw Object.assign(new Error(t('导入的任务看不到对方电脑上的文件')), { status: 400 })
     const dir = await taskDir(tk)
-    if (!dir || !want) return { error: t('缺少文件路径') } as const
-    const full = path.resolve(dir, want)
-    const rel = path.relative(dir, full)
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return { error: t('只能查看项目目录里的文件') } as const
-    return { dir, full, rel }
+    if (!dir) throw Object.assign(new Error(t('任务没有工作目录')), { status: 404 })
+    return dir
   }
+
+  /** 拿到任务目录跑一段；读不了时按原因返回错误 */
+  const inTaskDir = async (c: Context, run: (dir: string) => Promise<Response>) => {
+    try {
+      return await run(await readableDir(c.req.param('id')))
+    } catch (e) {
+      const status = (e as { status?: 400 | 404 }).status ?? 404
+      return bad(c, (e as Error).message, status)
+    }
+  }
+
+  // 任务目录里的文件树：右栏的文件系统，独立分支时是 worktree 目录
+  routes.get('/:id/files', (c) => inTaskDir(c, async (dir) => c.json(await listDir(dir))))
+
+  // 任务目录里按内容搜索
+  routes.get('/:id/files/search', async (c) => {
+    const q = (c.req.query('q') ?? '').trim()
+    if (!q) return c.json({ files: [], truncated: false })
+    return inTaskDir(c, async (dir) => c.json(await searchInDir(dir, q)))
+  })
 
   // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件
   routes.get('/:id/file', async (c) => {
-    const tk = await current(c.req.param('id'))
-    if (!tk) return bad(c, t('任务不存在'), 404)
-    if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
-    const p = await taskPath(tk, (c.req.query('path') ?? '').trim())
-    if ('error' in p) return bad(c, p.error)
-    const { dir, full, rel } = p
-    const info = await stat(full).catch(() => null)
-    if (!info?.isFile()) return c.json({ path: rel, dir, exists: false, content: '', truncated: false })
-    const LIMIT = 400_000
-    const buf = await readFile(full)
-    const head = buf.subarray(0, LIMIT)
-    // 有 0 字节的多半是二进制文件，不显示内容
-    if (head.includes(0)) return c.json({ path: rel, dir, exists: true, binary: true, content: '', truncated: false })
-    return c.json({ path: rel, dir, exists: true, content: head.toString('utf8'), truncated: buf.length > LIMIT })
+    const want = (c.req.query('path') ?? '').trim()
+    if (!want) return bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => c.json({ ...(await readInDir(dir, want)), dir }))
   })
 
   // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件
   routes.get('/:id/file/raw', async (c) => {
-    const tk = await current(c.req.param('id'))
-    if (!tk) return bad(c, t('任务不存在'), 404)
-    if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
-    const p = await taskPath(tk, (c.req.query('path') ?? '').trim())
-    if ('error' in p) return bad(c, p.error)
-    const type = IMAGE_TYPES[path.extname(p.full).slice(1).toLowerCase()]
-    if (!type) return bad(c, t('不是图片'))
-    const buf = await readFile(p.full).catch(() => null)
-    if (!buf) return bad(c, t('文件已经不在了'), 404)
-    return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+    const want = (c.req.query('path') ?? '').trim()
+    if (!want) return bad(c, t('缺少文件路径'))
+    return inTaskDir(c, async (dir) => {
+      const { type, buf } = await rawInDir(dir, want)
+      return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+    })
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子

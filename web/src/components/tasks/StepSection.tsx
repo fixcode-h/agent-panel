@@ -1,4 +1,4 @@
-import { Crown, Loader2, SquareTerminal, Workflow as WorkflowIcon } from 'lucide-react'
+import { Crown, Loader2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { parseVerdict } from '@shared/engine'
 import { useData } from '@/lib/data'
@@ -10,31 +10,8 @@ import { FoldedRun, SystemNote } from './Messages'
 import { UserMessage } from '@/components/chat/ChatMessage'
 import { LiveStats } from './LiveStats'
 import { StepIcon } from './TaskStatusIcon'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
-import { Terminal } from '@/components/agents/CommandPreview'
+import { StepCommand } from './StepCommand'
 import { t } from '@shared/i18n'
-
-/** 节点标题旁的小按钮：看这个节点的 Agent 是用什么命令启动的，可以复制出来自己跑 */
-function StepCommand({ argv, className }: { argv: string[]; className?: string }) {
-  if (!argv.length) return null
-  return (
-    <Popover>
-      <PopoverTrigger
-        title={t('查看启动命令')}
-        aria-label={t('查看启动命令')}
-        className={cn(
-          'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel data-[state=open]:text-fg',
-          className,
-        )}
-      >
-        <SquareTerminal className="h-3.5 w-3.5" />
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(560px,90vw)] p-0">
-        <Terminal argv={argv} title={t('启动命令')} className="rounded-[inherit] border-0" />
-      </PopoverContent>
-    </Popover>
-  )
-}
 
 export { SystemNote }
 
