@@ -9,7 +9,9 @@ import { deploy } from './deploy.ts'
 test('部署：技能按分类放进 ~/.agents/skills，全局说明附上技能清单写进各 CLI，原文件备份', async () => {
   const home = mkdtempSync(path.join(tmpdir(), 'deploy-'))
   const old = { ...process.env }
+  // Windows 上 os.homedir() 读 USERPROFILE，两个都设才能真的隔离到临时目录
   process.env.HOME = home
+  process.env.USERPROFILE = home
   for (const k of ['CLAUDE_CONFIG_DIR', 'CODEX_HOME', 'GEMINI_CLI_HOME', 'PI_CODING_AGENT_DIR']) delete process.env[k]
   try {
     const gemini = path.join(home, '.gemini/GEMINI.md')
