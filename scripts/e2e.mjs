@@ -4043,10 +4043,16 @@ try {
     assert.equal(w.working, false, '等下一句不算执行中')
     assert.ok(w.turnDoneAt, 'CLI 完成一轮时记了时间')
 
-    // 回来发消息：同一个进程接着跑，不再启动新的 CLI
+    // 回来发消息：同一个进程接着跑，不再启动新的 CLI（跑完这一轮又会保活，所以任务还是 running）
+    const beforeMsgs = w.messages.length
     await call('POST', `/tasks/${w.id}/messages`, { text: '接着说' })
-    w = await waitDone(w.id, 30000)
-    assert.equal(w.status, 'done')
+    for (let i = 0; i < 120; i++) {
+      w = await call('GET', `/tasks/${w.id}`)
+      // 新的一句已经回复完、又回到等下一句：这一轮处理过了
+      if (w.awaitingUser && w.messages.length > beforeMsgs) break
+      await sleep(100)
+    }
+    assert.ok(w.messages.length > beforeMsgs, '用户消息和回复都记进对话')
     const pids = readLog(log)
       .filter((x) => !beforePids.has(x.pid))
       .map((x) => x.pid)
@@ -4058,6 +4064,11 @@ try {
       w.messages.slice(at + 1).some((m) => m.role === 'agent' && m.text.trim()),
       'AI 在用户消息下面继续输出',
     )
+
+    // 用户走开（过了宽限）：保活结束，进程退出
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
+    w = await waitDone(w.id, 15000)
+    assert.equal(w.status, 'done', '切走宽限到了，CLI 自己结束')
   }
   step('模型没调用等待工具时，面板也把进程留着：回来发消息复用同一个 CLI')
 
