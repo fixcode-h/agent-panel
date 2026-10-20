@@ -32,6 +32,7 @@ import type {
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, DetectedApi } from '@shared/accounts'
+import type { RemoteAccessStatus } from '@shared/remote'
 import type { FixInput, FixStart } from '@shared/fix'
 import type {
   BundledSkill,
@@ -105,6 +106,10 @@ export interface UserClis {
 export const api = {
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
+
+  remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
+  remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
+  remoteInstall: () => request<RemoteAccessStatus>('/remote/install', { method: 'POST' }),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>

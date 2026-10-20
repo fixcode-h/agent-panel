@@ -5,6 +5,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { DATA_DIR } from './store.ts'
 import { getSettings } from './settings.ts'
+import { isAllowedHost, isLocalHost } from './hosts.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -43,6 +44,10 @@ export const grantCookie = (c: Parameters<MiddlewareHandler>[0]) =>
   })
 
 export const tokenGuard: MiddlewareHandler = async (c, next) => {
+  const host = c.req.header('host') ?? ''
+  const local = isLocalHost(host)
+  // 外网访问关着的时候只认本机地址；开着时也只认当前隧道 / 反代地址
+  if (!local && !isAllowedHost(host)) return c.text(t('这个地址不能访问面板'), 403)
   const q = c.req.query('token')
   // 带令牌的地址：发 Cookie，再跳到去掉令牌的地址，免得令牌留在地址栏和历史记录里
   if (q && q === accessToken() && c.req.method === 'GET' && !c.req.path.startsWith('/api/')) {
@@ -51,7 +56,9 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
     url.searchParams.delete('token')
     return c.redirect(url.pathname + url.search, 302)
   }
-  if (!(await getSettings()).requireToken || getCookie(c, COOKIE) === accessToken()) return next()
+  // 外网来源一律要求令牌：本机访问可以按设置决定，外部不行
+  const requireToken = (await getSettings()).requireToken || !local
+  if (!requireToken || getCookie(c, COOKIE) === accessToken()) return next()
   // AI 改设计用的工具由 CLI 调，没有 Cookie；地址里的随机令牌只在那一轮设计里有效，由接口自己核对
   if (c.req.path.startsWith('/api/mcp/design/')) return next()
   // 浏览器扩展拿不到面板的 Cookie；它能调的只有 /bridge 下面的几个接口（index.ts 里按来源限制了）

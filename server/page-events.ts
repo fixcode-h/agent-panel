@@ -17,8 +17,11 @@ export function signalPages(s: PageSignal) {
 
 /** 每个面板页面连一条（SSE），托盘有事时推过去 */
 export const pageEventsApi = () =>
-  new Hono().get('/events', (c) =>
-    streamSSE(c, async (stream) => {
+  new Hono().get('/events', (c) => {
+    // 经过 cloudflared / nginx 时不要缓冲，事件要马上到页面
+    c.header('Cache-Control', 'no-cache, no-transform')
+    c.header('X-Accel-Buffering', 'no')
+    return streamSSE(c, async (stream) => {
       const queue: PageSignal[] = []
       let wake: (() => void) | undefined
       const push = (s: PageSignal) => {
@@ -51,8 +54,8 @@ export const pageEventsApi = () =>
         else await stream.writeSSE({ event: 'ping', data: '' })
       }
       pages.delete(push)
-    }),
-  )
+    })
+  })
 
 /** 解析托盘写进服务输入的一行命令：「focus <mark> [settings]」「update」 */
 export function parseTrayCommand(line: string) {

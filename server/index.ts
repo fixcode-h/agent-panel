@@ -62,6 +62,8 @@ import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
+import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
+import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -109,11 +111,10 @@ const app = new Hono().basePath('/api')
  * - 跨站请求：任意网页都能向 127.0.0.1 发 text/plain 的 POST（不触发预检）→ 检查 Origin，写操作必须是 JSON
  * 这些接口能启动本机 CLI、读写目录，被外部网页调用等于远程执行命令。
  */
-const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1'])
-const hostOf = (h: string) => (h.startsWith('[') ? h.slice(0, h.indexOf(']') + 1) : h.split(':')[0]).toLowerCase()
 app.use('*', async (c, next) => {
   const host = c.req.header('host') ?? ''
-  if (!LOCAL_HOSTS.has(hostOf(host))) return c.json({ error: t('只接受来自本机的访问') }, 403)
+  // 本机地址，或者当前开着的外网访问地址（见 remote.ts）
+  if (!isAllowedHost(host)) return c.json({ error: t('只接受来自本机的访问') }, 403)
   const origin = c.req.header('origin')
   // 浏览器扩展只能调 /bridge 下面的接口（报标签页、取指令、交图片），别的一律不行
   if (/^(chrome|moz)-extension:\/\//.test(origin ?? '')) {
@@ -123,7 +124,9 @@ app.use('*', async (c, next) => {
   if (origin !== undefined) {
     let ok = false
     try {
-      ok = LOCAL_HOSTS.has(new URL(origin).hostname.toLowerCase())
+      const from = new URL(origin)
+      // 外网页面：Origin 必须是本机、当前外网地址，或者和请求的 Host 同源
+      ok = isLocalHost(from.hostname) || from.hostname.toLowerCase() === hostOf(host) || isAllowedHost(from.hostname)
     } catch {}
     if (!ok) return c.json({ error: t('不接受其他网站发来的请求') }, 403)
   }
@@ -177,7 +180,11 @@ app.put('/settings', async (c) => {
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
   // 打开访问令牌的是这个浏览器：先给它发 Cookie，免得刚打开就把自己关在外面
   if (p.data.requireToken) grantCookie(c)
-  return c.json(await saveSettings(p.data))
+  const before = JSON.stringify((await getSettings()).remoteAccess)
+  const saved = await saveSettings(p.data)
+  // 只有外网访问的开关、方式、地址变了才重启隧道；其他设置每次自动保存都把 quick 地址换掉会断线
+  if (JSON.stringify(saved.remoteAccess) !== before) void applyRemote()
+  return c.json(saved)
 })
 
 // 用户在数据目录里加的 CLI 配置：页面拿去注册；改了配置文件后可以重新读
@@ -528,6 +535,7 @@ const updater = updateApi({
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())
+app.route('/remote', remoteApi({ link: withToken }))
 
 void tasks.cleanupUploads()
 // 启动时先在后台检测一遍 CLI，打开页面时直接用结果
@@ -556,13 +564,17 @@ const restarted = !!process.env.AGENT_PANEL_RESTARTED
 // 由 Windows 托盘程序（AgentPanel.exe）启动
 const tray = !!process.env.AGENT_PANEL_TRAY
 delete process.env.AGENT_PANEL_RESTARTED
-// 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网
+// 只监听本机：这个服务之后会启动本地 CLI，不应暴露到局域网。
+// 要从外网访问时，由 cloudflared（或用户自己的反向代理）把请求转到 127.0.0.1，见 remote.ts
+configureRemote(port)
 const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async () => {
   // 地址带上访问令牌：设置里打开令牌后，只有从这里打开的浏览器能访问
   const url = withToken(`http://127.0.0.1:${port}`)
   console.log(`Agent 面板服务已启动: ${url}`)
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
+  // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
+  void applyRemote()
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
   if (tray) {
     // 托盘程序读这两行：显示地址，并由它打开浏览器（服务自己打开会经过 cmd）
@@ -580,6 +592,7 @@ async function shutdown(code = 0) {
   exiting = true
   log.info('server', '正在退出，停止正在执行的任务')
   server.close()
+  await Promise.race([stopRemote(), new Promise((r) => setTimeout(r, 5000))])
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
   process.exit(code)
 }

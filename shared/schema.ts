@@ -964,6 +964,23 @@ export const Appearance = z.object({
 })
 export type Appearance = z.infer<typeof Appearance>
 
+/**
+ * 从外网访问面板：默认关闭，服务仍然只监听 127.0.0.1，由 cloudflared 或用户自己的反向代理把请求转进来。
+ * 外网的请求一律要求访问令牌，和本机访问不同。
+ */
+export const RemoteAccess = z.object({
+  enabled: z.boolean().default(false),
+  /** quick：Cloudflare 临时地址（重启后变）；token：Cloudflare Tunnel（固定域名）；custom：自己搭的反向代理 */
+  mode: z.enum(['quick', 'token', 'custom']).catch('quick').default('quick'),
+  /** Cloudflare Tunnel 的 token（mode=token 时用），也可以在 cloudflared 里预先配置好 */
+  tunnelToken: z.string().trim().max(4000).default(''),
+  /** 外网地址：token 模式填隧道的域名，custom 模式填反向代理后的地址；quick 模式自动生成 */
+  publicUrl: z.string().trim().max(300).default(''),
+  /** cloudflared 可执行文件；留空时依次找数据目录的 bin/ 和 PATH */
+  command: z.string().trim().max(500).default(''),
+})
+export type RemoteAccess = z.infer<typeof RemoteAccess>
+
 export const Settings = z.object({
   /** 单个步骤最长运行时间（分钟），超时会停止；0 表示不限制 */
   stepTimeoutMinutes: z.number().int().min(0).max(1440).default(0),
@@ -982,6 +999,8 @@ export const Settings = z.object({
   proxy: z.string().trim().default(''),
   /** 访问令牌：打开后只有用启动时显示的地址打开过的浏览器能访问，挡住本机其他程序直接调接口 */
   requireToken: z.boolean().default(false),
+  /** 外网访问：默认关闭 */
+  remoteAccess: RemoteAccess.prefault({}),
   /** 项目首页的输入框和任务列表、任务页的对话和节点内容的宽度（像素） */
   /** 最宽 1280：再宽两边的任务进度、右栏会被挤得太窄；以前存的更大的值收到上限 */
   contentWidth: z

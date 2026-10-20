@@ -593,4 +593,48 @@ export const EN_SETTINGS: Record<string, string> = {
   空格宽度: 'Space width',
   '调整空格的宽度，中英文之间的空隙主要来自它。等宽字体的空格比较宽，默认收窄；代码里的空格不调。':
     'Adjusts the width of spaces, which make most of the gap between Chinese and Latin text. Monospaced fonts have wide spaces, so they are narrowed by default; spaces in code are left alone.',
+  // 外部访问
+  外部访问: 'Remote access',
+  允许外部访问: 'Allow remote access',
+  '默认关闭。打开后，服务仍然只监听 127.0.0.1，由隧道或反向代理把外网的请求转进来；本机和其他电脑打开的是同一个面板，数据、任务进度和对话实时同步。外网访问一律要求访问令牌。':
+    'Off by default. When on, the server still listens only on 127.0.0.1 and a tunnel or reverse proxy forwards outside requests. This computer and other computers open the same panel, with data, task progress and conversations syncing in real time. Remote requests always require the access token.',
+  访问方式: 'Connection method',
+  方式: 'Method',
+  '用 cloudflared 生成一个临时地址，不用账号，重启后地址会变。适合临时给别的电脑看。':
+    'Use cloudflared to create a temporary address. No account needed, but the address changes after a restart. Good for temporary access.',
+  '在 Cloudflare 后台建好 Tunnel，把 token 和域名填进来，地址固定不变。':
+    'Create a Tunnel in the Cloudflare dashboard, then fill in the token and domain. The address stays the same.',
+  '已经用 frp、nginx 等把 127.0.0.1:8787 转到了外网时选这个，面板只负责校验地址。':
+    'Choose this if frp, nginx or similar already exposes 127.0.0.1:8787; the panel only validates the address.',
+  临时地址: 'Temporary address',
+  固定域名: 'Fixed domain',
+  自建反向代理: 'Own reverse proxy',
+  'Tunnel Token': 'Tunnel token',
+  'Cloudflare 后台创建 Tunnel 时给出的 token，只保存在本机数据目录里。':
+    'The token shown when creating a Tunnel in the Cloudflare dashboard. It is stored only in the local data directory.',
+  外部访问地址: 'Public address',
+  '这个 Tunnel 对外提供服务的域名，例如 https://panel.example.com。':
+    'The domain this Tunnel serves, e.g. https://panel.example.com.',
+  '反向代理后的完整地址，例如 https://panel.example.com。':
+    'The full address after the reverse proxy, e.g. https://panel.example.com.',
+  环境检测: 'Environment check',
+  '外网访问靠 cloudflared 建立隧道，不需要在路由器上开放端口。没有安装时可以直接下载到面板的数据目录。':
+    "cloudflared creates the tunnel, so no router ports need to be opened. If it isn't installed, you can download it into the panel's data directory.",
+  '已安装 {version}': 'Installed {version}',
+  '正在下载 {n}%': 'Downloading {n}%',
+  '正在下载…': 'Downloading…',
+  '下载 cloudflared': 'Download cloudflared',
+  '自己装好了 cloudflared（例如用 Homebrew、winget）时点一下。':
+    'Click this after installing cloudflared yourself (e.g. with Homebrew or winget).',
+  'cloudflared 路径': 'cloudflared path',
+  '自动找到的不用填；装在别处时填可执行文件的完整路径。':
+    'Leave empty if it was found automatically; otherwise enter the full path to the executable.',
+  连接状态: 'Connection status',
+  外网地址: 'Public address',
+  '在其他电脑的浏览器里打开。第一次打开会要求访问令牌，这个链接里已经带上了。':
+    'Open this in a browser on another computer. The first visit asks for the access token; this link already includes it.',
+  复制地址: 'Copy address',
+  正在连接: 'Connecting',
+  已连接: 'Connected',
+  出错: 'Error',
 }

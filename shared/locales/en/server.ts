@@ -334,4 +334,17 @@ export const EN_SERVER: Record<string, string> = {
   没有这张原画: 'Concept not found',
   这张截图已经不需要了: 'This screenshot is no longer needed',
   出原画要先在对话框下面选生成图片的方式: 'To draw concepts, first pick an image source below the chat box',
+  // 外部访问
+  这个地址不能访问面板: "This address can't access the panel",
+  '没有找到 cloudflared': 'cloudflared not found',
+  '请填写外部访问地址，例如 https://panel.example.com': 'Enter the public address, e.g. https://panel.example.com',
+  '没有找到 cloudflared：请先在设置里下载，或安装后把路径填到「cloudflared 路径」。':
+    'cloudflared not found. Download it in settings, or install it and set its path.',
+  '请填写 Cloudflare Tunnel 的 token': 'Enter the Cloudflare Tunnel token',
+  '请填写隧道的域名，例如 https://panel.example.com': 'Enter the tunnel domain, e.g. https://panel.example.com',
+  'cloudflared 已退出（退出码 {code}）：{log}': 'cloudflared exited (code {code}): {log}',
+  'cloudflared 已经启动，但 30 秒内没有拿到外网地址。请检查网络，或在设置里填写代理。':
+    'cloudflared started but no public address arrived within 30 seconds. Check the network or set a proxy in settings.',
+  '这个系统不支持自动下载，请手动安装 cloudflared。':
+    'Automatic download is not supported on this system. Install cloudflared manually.',
 }

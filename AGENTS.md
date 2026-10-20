@@ -38,6 +38,10 @@ npm run package      # 出包到 release/（正式版，不含演示内容）
 
 代码格式：`npx prettier --write <文件>`（配置在 `.prettierrc.json`）。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。注释用中文，写「为什么」。
 
+## 测试环境
+
+- 在 Windows 上测试时，端到端测试（`npm run test:e2e`）放到本机的 WSL（Ubuntu 24.04）里运行，不在 Windows 本机直接跑。
+
 ## 分支与发布
 
 - **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。
