@@ -253,15 +253,19 @@
     "identity": "gemini",
     "api": {
       "protocols": ["gemini"],
-      "env": {
-        "GEMINI_API_KEY": "{apiKey}",
-        "GOOGLE_GEMINI_BASE_URL": "{baseUrl}"
-      },
       "edits": [
         {
           "file": "${GEMINI_CLI_HOME:-~}/.gemini/settings.json",
           "set": {
             "security.auth.selectedType": "gemini-api-key"
+          }
+        },
+        {
+          "file": "${GEMINI_CLI_HOME:-~}/.gemini/.env",
+          "format": "env",
+          "set": {
+            "GEMINI_API_KEY": "{apiKey}",
+            "GOOGLE_GEMINI_BASE_URL": "{baseUrl}"
           }
         }
       ],
@@ -271,6 +275,11 @@
           "set": {
             "security.auth.selectedType": "oauth-personal"
           }
+        },
+        {
+          "file": "${GEMINI_CLI_HOME:-~}/.gemini/.env",
+          "format": "env",
+          "unset": ["GEMINI_API_KEY", "GOOGLE_GEMINI_BASE_URL"]
         }
       ]
     },

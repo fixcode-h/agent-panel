@@ -342,12 +342,19 @@ try {
   await check(p, '设置-CLI', ['添加其他 CLI', 'Gemini CLI'])
   // 三档模型的上下文、最大输出：默认按模型自动填，手动改了能恢复自动；Codex 不接受最大输出
   await p.getByRole('dialog').getByText('Claude Code', { exact: true }).first().click()
+  // 上下文和最大输出默认收在折叠里，点开第一档才看得到输入框
+  await p
+    .getByRole('dialog')
+    .getByRole('button', { name: /^上下文/ })
+    .first()
+    .click()
   const ctx = p.getByRole('dialog').getByLabel('上下文', { exact: true }).first()
   await ctx.scrollIntoViewIfNeeded()
   await ctx.fill('500k')
   await ctx.press('Enter')
   await check(p, '设置-CLI-三档上下文', ['三档模型'])
-  if (!(await p.getByRole('dialog').getByPlaceholder('自动 · 128K').count()))
+  // 输入框里直接用灰字显示按模型估出来的值，不再带「自动 ·」
+  if (!(await p.getByRole('dialog').getByPlaceholder('128K').count()))
     errors.push('设置-CLI-三档上下文：最大输出没有按模型自动填')
   if ((await ctx.inputValue()) !== '500K')
     errors.push(`设置-CLI-三档上下文：手填的值显示成了「${await ctx.inputValue()}」`)
@@ -387,7 +394,7 @@ try {
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
   await check(p, '设置-API-识别', ['在本机 CLI 的配置里识别到 2 个 API', 'Codex · openrouter'])
   await p.getByRole('button', { name: '存到 API 配置' }).first().click()
-  await check(p, '设置-API-已存', ['已在列表中'])
+  await check(p, '设置-API-已存', ['已在列表中', '模型映射', '添加映射'])
   // 授权：检测外部 CLI，在面板里完成浏览器授权（演示里模拟），退出后回到未授权
   await p.getByRole('button', { name: '授权', exact: true }).first().click()
   await check(p, '设置-授权', ['GitHub CLI', '浏览器授权', '用 Token 授权'])

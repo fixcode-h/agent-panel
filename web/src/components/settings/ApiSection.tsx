@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, CircleAlert, CircleCheck, Download, Eye, EyeOff, Loader2, Plus, PlugZap, Trash2, X } from 'lucide-react'
+import {
+  ArrowRight,
+  Check,
+  CircleAlert,
+  CircleCheck,
+  Download,
+  Eye,
+  EyeOff,
+  Loader2,
+  Plus,
+  PlugZap,
+  Trash2,
+  X,
+} from 'lucide-react'
 import { CLIS } from '@shared/clis'
 import { API_PROTOCOLS, API_PROTOCOL_LABEL, apiProvider, type ApiConfig, type ApiProtocol } from '@shared/accounts'
 import { api } from '@/lib/api'
@@ -11,6 +24,9 @@ import { AiFixButton } from '@/components/ui/ai-fix'
 import { Group } from './parts'
 import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
+import { fmtTokens } from '@shared/model-limits'
+import { matchModel } from '@shared/model-catalog'
+import { useModelCatalog } from '@/lib/model-catalog'
 
 /** 新建时可以从常用的开始 */
 const PRESETS: { label: string; protocol: ApiProtocol; baseUrl: string }[] = [
@@ -40,6 +56,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
         apiKey: '',
         authHeader: 'x-api-key',
         models: [],
+        modelMap: {},
       },
     ])
   return (
@@ -92,6 +109,9 @@ function ApiCard({
   const [found, setFound] = useState<string[]>()
   const [filter, setFilter] = useState('')
   const [draft, setDraft] = useState('')
+  /** 正在添加映射的模型；选好映射目标后写进 modelMap */
+  const [mapFrom, setMapFrom] = useState('')
+  const modelCatalog = useModelCatalog()
   const busy = fetching || testing
   const canProbe = !!a.baseUrl.trim() || a.protocol === 'gemini'
 
@@ -132,8 +152,12 @@ function ApiCard({
       setTesting(false)
     }
   }
-  const toggle = (m: string) =>
-    onChange({ models: a.models.includes(m) ? a.models.filter((x) => x !== m) : [...a.models, m] })
+  const toggle = (m: string) => {
+    const models = a.models.includes(m) ? a.models.filter((x) => x !== m) : [...a.models, m]
+    // 移除模型后它的映射也没用了，一起清掉
+    const modelMap = Object.fromEntries(Object.entries(a.modelMap).filter(([k]) => models.includes(k)))
+    onChange({ models, modelMap })
+  }
   const shown = useMemo(
     () => (found ?? []).filter((m) => m.toLowerCase().includes(filter.trim().toLowerCase())),
     [found, filter],
@@ -142,6 +166,28 @@ function ApiCard({
     const m = draft.trim()
     if (m && !a.models.includes(m)) onChange({ models: [...a.models, m] })
     setDraft('')
+  }
+  // 已有映射的模型，和还能添加映射的模型
+  const mapped = a.models.filter((m) => a.modelMap[m])
+  const unmapped = a.models.filter((m) => !a.modelMap[m])
+  const setMap = (from: string, to: string) => {
+    const modelMap = { ...a.modelMap }
+    if (to) modelMap[from] = to
+    else delete modelMap[from]
+    onChange({ modelMap })
+  }
+  // 模型配置的选项：先按模型名推测厂商，只列这个厂商的模型；推测不出来时列全部
+  const mapOptions = (from: string, current = '') => {
+    const entries = modelCatalog?.entries ?? []
+    const vendor = matchModel(from, { entries })?.entry.vendor
+    const pool = vendor ? entries.filter((e) => e.vendor.toLowerCase() === vendor.toLowerCase()) : entries
+    const list = pool.map((e) => ({
+      value: e.id,
+      label: `${e.id} · ${fmtTokens(e.context)} / ${fmtTokens(e.maxOutput)}`,
+      group: e.vendor,
+    }))
+    // 目录变了、已选的值不在里面时也要能显示
+    return current && !list.some((o) => o.value === current) ? [...list, { value: current, label: current }] : list
   }
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-field/30 p-4">
@@ -361,6 +407,68 @@ function ApiCard({
               })}
               {!shown.length && <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>}
             </div>
+          </div>
+        )}
+      </div>
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <span className="text-[0.75rem] text-subtle">{t('模型映射')}</span>
+          <span className="flex-1" />
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!unmapped.length || !!mapFrom}
+            onClick={() => setMapFrom(unmapped[0] ?? '')}
+          >
+            <Plus className="h-3.5 w-3.5" />
+            {t('添加映射')}
+          </Button>
+        </div>
+        <p className="text-[0.71875rem] leading-relaxed text-subtle">
+          {t('自动识别不准时，指定按哪个模型的配置读取上下文和最大输出；发给 CLI 的仍然是这里的模型名。')}
+        </p>
+        {mapped.map((m) => (
+          <div key={m} className="flex flex-wrap items-center gap-2">
+            <span className="w-52 truncate font-mono text-[0.75rem]" title={m}>
+              {m}
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            <Select
+              aria-label={t('{model} 的模型映射', { model: m })}
+              className="h-8 w-64 font-mono text-[0.78125rem]"
+              value={a.modelMap[m]}
+              options={mapOptions(m, a.modelMap[m])}
+              onChange={(e) => setMap(m, e.target.value)}
+            />
+            <Button size="icon-sm" variant="ghost" aria-label={t('移除映射')} onClick={() => setMap(m, '')}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+        {mapFrom && (
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              aria-label={t('添加映射的模型')}
+              className="h-8 w-52 font-mono text-[0.78125rem]"
+              value={mapFrom}
+              options={unmapped.map((m) => ({ value: m, label: m }))}
+              onChange={(e) => setMapFrom(e.target.value)}
+            />
+            <ArrowRight className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            <Select
+              aria-label={t('按哪个模型的配置')}
+              className="h-8 w-64 font-mono text-[0.78125rem]"
+              value=""
+              placeholder={t('选择模型配置')}
+              options={mapOptions(mapFrom)}
+              onChange={(e) => {
+                setMap(mapFrom, e.target.value)
+                setMapFrom('')
+              }}
+            />
+            <Button size="icon-sm" variant="ghost" aria-label={t('取消添加映射')} onClick={() => setMapFrom('')}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
       </div>

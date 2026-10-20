@@ -103,13 +103,17 @@ test('识别 API：provider 用 CLI 配置里的键', () => {
 
 test('账号还原：provider 占位用最后选用的 API 填', () => {
   const api = ApiConfig.parse({ id: '1', name: 'codeg' })
-  const edits = fillEdits([{ file: 'x.json', set: {}, merge: false, unset: ['provider.{provider}'] }], auth, api)
+  const edits = fillEdits(
+    [{ file: 'x.json', format: 'json', set: {}, merge: false, unset: ['provider.{provider}'] }],
+    auth,
+    api,
+  )
   assert.deepEqual(edits[0].unset, ['provider.codeg'])
 })
 
 test('账号还原：API 已被移除时仍按上一次的 provider 删除接口', () => {
   const edits = fillEdits(
-    [{ file: 'x.json', set: {}, merge: false, unset: ['provider.{provider}'] }],
+    [{ file: 'x.json', format: 'json', set: {}, merge: false, unset: ['provider.{provider}'] }],
     auth,
     undefined,
     'cc',

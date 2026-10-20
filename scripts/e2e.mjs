@@ -3663,22 +3663,28 @@ try {
     await waitDone(t2.id)
     const used = calls().slice(before)
     const codexCall = used.find((x) => x.kind === 'codex')
-    assert.ok(
-      codexCall.args.includes('model_providers.relay-a.base_url="https://relay.example/v1"'),
-      'Codex 的接口地址写进了 -c 参数',
-    )
-    assert.ok(codexCall.args.includes('model_provider="relay-a"'))
-    assert.equal(codexCall.apiEnv.agentpanel, 'sk-relay', '密钥走环境变量，不出现在参数里')
+    const codexConfig = readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8')
+    assert.ok(codexConfig.includes('model_provider = "relay-a"'), 'Codex 的 provider 写进 config.toml')
+    assert.ok(codexConfig.includes('[model_providers.relay-a]'))
+    assert.ok(codexConfig.includes('base_url = "https://relay.example/v1"'))
+    assert.ok(codexConfig.includes('wire_api = "responses"'))
+    assert.ok(codexConfig.includes('experimental_bearer_token = "sk-relay"'), '密钥也写进配置文件')
+    assert.ok(!codexCall.args.some((a) => a.includes('model_providers')), '不再用 -c 传接口')
+    assert.ok(!codexCall.args.includes('model_provider="relay-a"'))
+    assert.equal(codexCall.apiEnv.agentpanel, undefined, '不再把密钥放在环境变量里')
     assert.ok(!codexCall.args.join(' ').includes('sk-relay'))
     const claudeCall = used.find((x) => x.kind === 'claude')
-    assert.deepEqual(
-      claudeCall.apiEnv.anthropic,
-      ['https://claude.example', null, 'sk-ant'],
-      'Bearer 方式用 ANTHROPIC_AUTH_TOKEN',
-    )
+    const claudeSettings = JSON.parse(readFileSync(path.join(homeDir, '.claude', 'settings.json'), 'utf8'))
+    assert.equal(claudeSettings.env?.ANTHROPIC_BASE_URL, 'https://claude.example')
+    assert.equal(claudeSettings.env?.ANTHROPIC_AUTH_TOKEN, 'sk-ant', 'Bearer 方式写进 settings.json')
+    assert.deepEqual(claudeCall.apiEnv.anthropic, [null, null, null], '不再走环境变量')
     // 协议对不上的 API 不会交给 CLI（Codex 选了 Anthropic 的 API）
     await call('PUT', '/settings', withAuth({ apis, clis: { codex: { authMode: 'api', apiId: 'ap2' } } }))
     assert.notEqual((await call('GET', '/clis/codex/models?refresh=1')).auth, 'api')
+    assert.ok(
+      !readFileSync(path.join(homeDir, '.codex', 'config.toml'), 'utf8').includes('model_providers.relay-a'),
+      '协议对不上时清掉上一次写进去的 provider',
+    )
     // 改用 API 需要改配置文件的 CLI：Gemini CLI 选了 gemini-api-key，改回账号时还原；Command Code 写进自定义接口
     await call(
       'PUT',
@@ -3722,8 +3728,12 @@ try {
     })
     await waitDone(g.id)
     const geminiSettings = () => JSON.parse(readFileSync(path.join(homeDir, '.gemini', 'settings.json'), 'utf8'))
+    const geminiEnvFile = path.join(homeDir, '.gemini', '.env')
+    const geminiEnv = () => readFileSync(geminiEnvFile, 'utf8')
     assert.equal(geminiSettings().security.auth.selectedType, 'gemini-api-key')
-    assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], 'gk')
+    assert.match(geminiEnv(), /GEMINI_API_KEY=gk/, '密钥写进 .gemini/.env')
+    assert.match(geminiEnv(), /GOOGLE_GEMINI_BASE_URL=/)
+    assert.equal(calls().findLast((x) => x.kind === 'gemini').apiEnv.gemini[0], null, '不再走环境变量')
     assert.equal(
       calls().findLast((x) => x.kind === 'gemini').apiEnv.trust,
       'true',
@@ -3743,12 +3753,15 @@ try {
     assert.deepEqual(JSON.parse(readFileSync(ccProviders, 'utf8')).provider.cc, {
       name: 'CC 接口',
       baseURL: 'https://cc.example/v1',
-      apiKey: '$AGENT_PANEL_API_KEY',
+      apiKey: 'ck',
       api: 'openai-completions',
       models: { 'cc-1': {} },
     })
     assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined, '不再写旧的 settings.json')
-    // Pi：自己接的接口写进 models.json 的 providers，用 --provider 指定
+    const ccCall = calls().findLast((x) => x.kind === 'commandcode')
+    assert.equal(ccCall.apiEnv.agentpanel, undefined, '密钥不再走环境变量')
+    assert.ok(!ccCall.args.join(' ').includes('ck'))
+    // Pi：自己接的接口写进 models.json 的 providers，模型 ID 自带 provider
     const pa = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -3762,15 +3775,13 @@ try {
     assert.deepEqual(JSON.parse(readFileSync(piModels, 'utf8')).providers.cc, {
       baseUrl: 'https://cc.example/v1',
       api: 'openai-completions',
-      apiKey: 'AGENT_PANEL_API_KEY',
+      apiKey: 'ck',
       models: [{ id: 'cc-1' }],
     })
     const piCall = calls().findLast((x) => x.kind === 'pi')
-    assert.equal(piCall.apiEnv.agentpanel, 'ck')
-    assert.deepEqual(piCall.args.slice(piCall.args.indexOf('--provider'), piCall.args.indexOf('--provider') + 2), [
-      '--provider',
-      'cc',
-    ])
+    assert.equal(piCall.apiEnv.agentpanel, undefined, '密钥不再走环境变量')
+    assert.ok(!piCall.args.includes('--provider'), '不再额外传 provider，模型 ID 自带前缀')
+    assert.equal(piCall.args[piCall.args.indexOf('--model') + 1], 'cc/cc-1')
     await call(
       'PUT',
       '/settings',
@@ -3788,6 +3799,12 @@ try {
     })
     await waitDone(g2.id)
     assert.equal(geminiSettings().security.auth.selectedType, 'oauth-personal', '改回账号还原登录方式')
+    assert.ok(!geminiEnv().includes('GEMINI_API_KEY'), '改回账号删掉 .env 里的 API 配置')
+    assert.equal(
+      JSON.parse(readFileSync(path.join(homeDir, '.claude', 'settings.json'), 'utf8')).env?.ANTHROPIC_AUTH_TOKEN,
+      undefined,
+      '改回账号删掉 Claude settings.json 里的 API 配置',
+    )
     const cc2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -3812,7 +3829,7 @@ try {
     assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')
     await call('PUT', '/settings', base0)
     step(
-      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息）；API 模式传地址和密钥、模型只列这个 API 的、协议对不上不用、按 CLI 改配置文件',
+      '账号和 API：登录、保存、切换、登出（Claude Code 的 .claude.json 只动账号信息）；API 模式把地址和密钥写进 CLI 自己的配置、执行只传模型、协议对不上不用',
     )
   }
 

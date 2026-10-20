@@ -491,12 +491,17 @@ async function runAgent(
   const catalog = cachedModels(cliId)?.models ?? []
   const files = await knownWindows(cliId)
   // 模型目录里没有时按 1M 估算；API 模式按当前接口的协议优先选
-  const windowFor = (m: string) =>
-    (m === model && limits.context ? limits.context : undefined) ??
-    catalog.find((x) => x.id === m || x.id.endsWith(`/${m}`))?.contextWindow ??
-    files.get(m) ??
-    files.get(m.slice(m.lastIndexOf('/') + 1)) ??
-    autoLimits(m, catalog, { entries, protocol: cs.api?.protocol }).context
+  const windowFor = (m: string) => {
+    if (m === model && limits.context) return limits.context
+    // API 设置里给这个模型配了映射：按映射到的模型配置查；CLI 收到的模型名不受影响
+    const key = cs.api?.modelMap?.[m] || m
+    return (
+      catalog.find((x) => x.id === key || x.id.endsWith(`/${key}`))?.contextWindow ??
+      files.get(key) ??
+      files.get(key.slice(key.lastIndexOf('/') + 1)) ??
+      autoLimits(key, catalog, { entries, protocol: cs.api?.protocol }).context
+    )
+  }
   const instructions = composeRole(agent, ctx.agents, call.params ?? (step ? {} : task.params)).trim()
   // Agent 要用的自带 Skill，这个 CLI 里没有的先装上，提示里点名的 Skill 才找得到
   await ensureBundled(cliId, [

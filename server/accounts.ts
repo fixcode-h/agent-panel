@@ -16,6 +16,7 @@ import { invalidateModels } from './models.ts'
 import { log } from './log.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { detectApis } from './api-detect.ts'
+import { parseToml } from './mcp-store.ts'
 import { dataPath, writeJsonAtomic, readJson } from './store.ts'
 
 /**
@@ -324,22 +325,170 @@ export function mergeJson(base: unknown, patch: unknown): unknown {
 }
 
 /** 只改要改的键，文件里别的内容原样保留；文件存在但解析不了时不动它 */
+async function applyJsonEdit(e: JsonEdit, env: NodeJS.ProcessEnv) {
+  const file = expand(e.file, env)
+  const exists = existsSync(file)
+  const obj = await readJsonFile(file)
+  if (exists && !obj) {
+    log.warn('accounts', '配置文件解析不了，没有改', { file })
+    return
+  }
+  const next = obj ?? {}
+  const before = JSON.stringify(next)
+  for (const [k, v] of Object.entries(e.set)) setPath(next, k, e.merge ? mergeJson(getPath(next, k), v) : v)
+  for (const k of e.unset) unsetPath(next, k)
+  if (JSON.stringify(next) === before && exists) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, next)
+}
+
+// ---- TOML：只改命中的顶层键和表，文件里别的段和注释原样保留 ----
+
+const tomlKey = (k: string) => (/^[A-Za-z0-9_-]+$/.test(k) ? k : JSON.stringify(k))
+
+function tomlLiteral(v: unknown): string {
+  if (typeof v === 'string') return JSON.stringify(v)
+  if (typeof v === 'number' || typeof v === 'boolean') return String(v)
+  if (Array.isArray(v)) return `[${v.map(tomlLiteral).join(', ')}]`
+  if (isObj(v))
+    return `{ ${Object.entries(v)
+      .map(([k, x]) => `${tomlKey(k)} = ${tomlLiteral(x)}`)
+      .join(', ')} }`
+  return '""'
+}
+
+function tomlHeader(line: string): string[] | undefined {
+  const m = /^\s*\[(?!\[)((?:[^\]"']|"(?:[^"\\]|\\.)*"|'[^']*')+)\]\s*(?:#.*)?$/.exec(line)
+  if (!m) return undefined
+  return m[1].split('.').map((s) => s.trim().replace(/^["']|["']$/g, ''))
+}
+
+function tomlRange(lines: string[], parts: string[]) {
+  const target = parts.join('.')
+  const from = lines.findIndex((l) => tomlHeader(l)?.join('.') === target)
+  if (from < 0) return undefined
+  let to = lines.length
+  for (let i = from + 1; i < lines.length; i++)
+    if (tomlHeader(lines[i])) {
+      to = i
+      break
+    }
+  return { from, to }
+}
+
+function tomlRootIndex(lines: string[], key: string) {
+  const firstSection = lines.findIndex((l) => tomlHeader(l))
+  const end = firstSection < 0 ? lines.length : firstSection
+  const re = new RegExp(`^\\s*${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`)
+  for (let i = 0; i < end; i++) if (re.test(lines[i])) return i
+  return -1
+}
+
+function setToml(text: string, dotted: string, value: unknown, merge: boolean) {
+  const lines = text ? text.split(/\r?\n/) : []
+  while (lines.length && lines.at(-1) === '') lines.pop()
+  const parts = dotted.split('.')
+  if (parts.length === 1) {
+    const line = `${tomlKey(parts[0])} = ${tomlLiteral(value)}`
+    const at = tomlRootIndex(lines, parts[0])
+    if (at >= 0) lines[at] = line
+    else {
+      const firstSection = lines.findIndex((l) => tomlHeader(l))
+      lines.splice(firstSection < 0 ? lines.length : firstSection, 0, line)
+    }
+  } else {
+    const range = tomlRange(lines, parts)
+    let obj: Record<string, unknown> = {}
+    if (range && merge) {
+      const parsed = parseToml(lines.slice(range.from, range.to).join('\n'))
+      let cur: any = parsed
+      for (const p of parts) cur = cur?.[p]
+      if (isObj(cur)) obj = { ...cur }
+    }
+    if (isObj(value)) obj = { ...obj, ...value }
+    const block = [
+      `[${parts.map(tomlKey).join('.')}]`,
+      ...Object.entries(obj).map(([k, v]) => `${tomlKey(k)} = ${tomlLiteral(v)}`),
+    ]
+    if (range) lines.splice(range.from, range.to - range.from, ...block)
+    else {
+      if (lines.length) lines.push('')
+      lines.push(...block)
+    }
+  }
+  return (
+    lines
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trimEnd() + '\n'
+  )
+}
+
+function unsetToml(text: string, dotted: string) {
+  const lines = text ? text.split(/\r?\n/) : []
+  while (lines.length && lines.at(-1) === '') lines.pop()
+  const parts = dotted.split('.')
+  if (parts.length === 1) {
+    const at = tomlRootIndex(lines, parts[0])
+    if (at >= 0) lines.splice(at, 1)
+  } else {
+    const range = tomlRange(lines, parts)
+    if (range) lines.splice(range.from, range.to - range.from)
+  }
+  return (
+    lines
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trimEnd() + '\n'
+  )
+}
+
+async function applyTomlEdit(e: JsonEdit, env: NodeJS.ProcessEnv) {
+  const file = expand(e.file, env)
+  const exists = existsSync(file)
+  const before = exists ? await readFile(file, 'utf8') : ''
+  let next = before
+  for (const [k, v] of Object.entries(e.set)) next = setToml(next, k, v, e.merge)
+  for (const k of e.unset) next = unsetToml(next, k)
+  if (next === before && exists) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeFile(file, next, 'utf8')
+}
+
+// ---- .env：只改命中的键，注释和别的变量原样保留 ----
+
+const envLine = (key: string) => new RegExp(`^\\s*(?:export\\s+)?${key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*=`)
+
+function envValue(v: unknown) {
+  const s = String(v)
+  return s && /^[A-Za-z0-9_./:@%+-]*$/.test(s) ? s : JSON.stringify(s)
+}
+
+async function applyEnvEdit(e: JsonEdit, env: NodeJS.ProcessEnv) {
+  const file = expand(e.file, env)
+  const exists = existsSync(file)
+  const before = exists ? await readFile(file, 'utf8') : ''
+  const lines = before ? before.split(/\r?\n/) : []
+  while (lines.length && lines.at(-1) === '') lines.pop()
+  for (const key of e.unset)
+    for (let i = lines.length - 1; i >= 0; i--) if (envLine(key).test(lines[i])) lines.splice(i, 1)
+  for (const [key, value] of Object.entries(e.set)) {
+    const line = `${key}=${envValue(value)}`
+    const at = lines.findIndex((l) => envLine(key).test(l))
+    if (at >= 0) lines[at] = line
+    else lines.push(line)
+  }
+  const next = lines.length ? lines.join('\n').trimEnd() + '\n' : ''
+  if (next === before && exists) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeFile(file, next, 'utf8')
+}
+
 async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
   for (const e of edits) {
-    const file = expand(e.file, env)
-    const exists = existsSync(file)
-    const obj = await readJsonFile(file)
-    if (exists && !obj) {
-      log.warn('accounts', '配置文件解析不了，没有改', { file })
-      continue
-    }
-    const next = obj ?? {}
-    const before = JSON.stringify(next)
-    for (const [k, v] of Object.entries(e.set)) setPath(next, k, e.merge ? mergeJson(getPath(next, k), v) : v)
-    for (const k of e.unset) unsetPath(next, k)
-    if (JSON.stringify(next) === before && exists) continue
-    await mkdir(path.dirname(file), { recursive: true })
-    await writeJsonAtomic(file, next)
+    if (e.format === 'toml') await applyTomlEdit(e, env)
+    else if (e.format === 'env') await applyEnvEdit(e, env)
+    else await applyJsonEdit(e, env)
   }
 }
 
@@ -357,9 +506,10 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
     const env = childEnv(cs.env)
     if (cs.api && apiFits(def.auth, cs.api)) await applyEdits(apiInjection(def.auth, cs.api).edits, env)
     else {
-      // 切回账号时用最后选用的 API 填 {provider}，把写进去的那一份接口删掉
+      // 切回账号时优先用上一次真正写进去的 provider；没有时再用当前选中的 API
       const selected = settings.apis.find((a) => a.id === cs.apiId)
-      await applyEdits(fillEdits(spec.accountEdits, def.auth, selected, lastProvider), env)
+      const cleanup = lastProvider ? undefined : selected && apiFits(def.auth, selected) ? selected : undefined
+      await applyEdits(fillEdits(spec.accountEdits, def.auth, cleanup, lastProvider), env)
     }
   } catch (e) {
     log.warn('accounts', '切换账号 / API 的配置没写成功', { cli: cliId, error: (e as Error).message })

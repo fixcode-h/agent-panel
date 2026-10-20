@@ -47,6 +47,11 @@ export const ApiConfig = z.object({
   authHeader: z.enum(['x-api-key', 'bearer']).default('x-api-key'),
   /** 这个 API 可用的模型（可以从接口读取，也可以自己填）；第一个是默认 */
   models: z.array(z.string().trim().min(1)).default([]),
+  /**
+   * 模型映射：模型名 → 模型目录里的另一个模型。自动识别不准时，上下文和最大输出按映射到的配置算；
+   * 发给 CLI 的仍然是原来的模型名
+   */
+  modelMap: z.record(z.string(), z.string()).default({}),
 })
 export type ApiConfig = z.infer<typeof ApiConfig>
 
@@ -55,9 +60,11 @@ export function apiProvider(api: Pick<ApiConfig, 'name' | 'provider'>, fallback 
   return (api.provider.trim() || providerSlug(api.name) || fallback).slice(0, 60)
 }
 
-/** 改 JSON 配置文件里的一些键：set 的键可以写成 a.b.c；值里的 {baseUrl} 等占位见 fillTemplate */
+/** 改配置文件里的一些键（JSON / TOML / .env）：set 的键可以写成 a.b.c；占位见 fillTemplate */
 export const JsonEdit = z.object({
   file: z.string().min(1),
+  /** 配置文件格式：JSON、TOML（Codex）或 .env（Gemini） */
+  format: z.enum(['json', 'toml', 'env']).default('json'),
   set: z.record(z.string(), z.unknown()).default({}),
   /** 浅合并还是直接替换；合并时对象递归合并，数组仍然替换 */
   merge: z.boolean().default(false),
@@ -248,11 +255,13 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
     apiKey: '',
     authHeader: 'x-api-key',
     models: [],
+    modelMap: {},
   }
   const vars = apiVars(base, spec.wire, provider)
   const prefix = api && spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''
   return edits.map((e) => ({
     file: fillTemplate(e.file, vars),
+    format: e.format,
     merge: e.merge,
     set: fillValue(e.set, vars, base, prefix) as Record<string, unknown>,
     unset: e.unset.map((u) => fillTemplate(u, vars)),
@@ -274,6 +283,7 @@ export function apiInjection(auth: CliAuth, api: ApiConfig) {
     args: spec.args.map((a) => fillTemplate(a, vars)),
     edits: spec.edits.map((e) => ({
       file: fillTemplate(e.file, vars),
+      format: e.format,
       merge: e.merge,
       set: fillValue(e.set, vars, api, prefix) as Record<string, unknown>,
       unset: e.unset.map((u) => fillTemplate(u, vars)),

@@ -336,6 +336,16 @@ export const EN_SETTINGS: Record<string, string> = {
   搜索模型: 'Search models',
   添加全部: 'Add all',
   没有匹配的模型: 'No matching models',
+  模型映射: 'Model mapping',
+  添加映射: 'Add mapping',
+  移除映射: 'Remove mapping',
+  添加映射的模型: 'Model to map',
+  按哪个模型的配置: 'Config source model',
+  选择模型配置: 'Choose a model config',
+  取消添加映射: 'Cancel adding a mapping',
+  '{model} 的模型映射': 'Model mapping for {model}',
+  '自动识别不准时，指定按哪个模型的配置读取上下文和最大输出；发给 CLI 的仍然是这里的模型名。':
+    "When auto-detection is off, pick another model's config for context and max output. The CLI still receives this model's name.",
   '可以用在：{clis}': 'Usable by: {clis}',
   登录方式: 'Sign-in method',
   '用浏览器登录的账号，可以保存几个账号随时切换':
@@ -546,8 +556,10 @@ export const EN_SETTINGS: Record<string, string> = {
   已在列表中: 'Already saved',
   '存到 API 配置': 'Save to API settings',
   // 三档模型的上下文和最大输出
-  '自动 · {n}': 'Auto · {n}',
   恢复自动: 'Reset to auto',
+  '映射 {model}': 'mapped to {model}',
+  '这个模型在 API 配置里映射到了 {model}：上下文和最大输出按它的配置估算。':
+    "This model is mapped to {model} in the API settings; context and max output come from that model's config.",
   最大输出: 'Max output',
   '{cli} 不接受这项设置，只用于面板估算上下文占用':
     "{cli} doesn't accept this setting; it's only used to estimate context usage in the panel",

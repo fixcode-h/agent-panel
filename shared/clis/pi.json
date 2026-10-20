@@ -339,10 +339,6 @@
       "defaultProvider": "agentpanel",
       "modelSource": "cli",
       "modelPrefix": "{provider}/",
-      "env": {
-        "AGENT_PANEL_API_KEY": "{apiKey}"
-      },
-      "args": ["--provider", "{provider}"],
       "wire": {
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",
@@ -357,7 +353,7 @@
             "providers.{provider}": {
               "baseUrl": "{baseUrl}",
               "api": "{wire}",
-              "apiKey": "AGENT_PANEL_API_KEY",
+              "apiKey": "{apiKey}",
               "models": "{modelList}"
             }
           }

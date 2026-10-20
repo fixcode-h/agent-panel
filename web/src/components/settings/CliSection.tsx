@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUpCircle,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   Download,
@@ -181,8 +182,8 @@ function InstallLog({
 }
 
 /**
- * 上下文窗口 / 最大输出的输入框：0 是自动，显示成灰色的「自动 · 1M」；手填「1M」「200K」「128000」都认，
- * 改过的旁边有恢复自动的按钮。CLI 不接受的项只读（disabled 时只显示自动值）
+ * 上下文窗口 / 最大输出的输入框：0 是自动，输入框里用灰色显示按模型估出来的值；手填「1M」「200K」「128000」都认，
+ * 改过的旁边有恢复默认的按钮。CLI 不接受的项只读（disabled 时只显示估出来的值）
  */
 function TokenField({
   label,
@@ -203,7 +204,7 @@ function TokenField({
 }) {
   const [text, setText] = useState(value ? fmtTokens(value) : '')
   useEffect(() => setText(value ? fmtTokens(value) : ''), [value])
-  const autoText = auto ? t('自动 · {n}', { n: fmtTokens(auto) }) : t('自动')
+  const autoText = auto ? fmtTokens(auto) : ''
   const commit = () => {
     if (!text.trim()) return onChange(0)
     const n = parseTokens(text)
@@ -214,7 +215,9 @@ function TokenField({
     <label className="flex min-w-0 items-center gap-2 text-xs text-subtle" title={title}>
       <span className="shrink-0">{label}</span>
       {readOnly ? (
-        <span className="truncate font-mono text-[0.8125rem] text-fg">{value ? fmtTokens(value) : autoText}</span>
+        <span className="truncate font-mono text-[0.8125rem] text-fg">
+          {value ? fmtTokens(value) : autoText || '—'}
+        </span>
       ) : (
         <span className="relative min-w-0 flex-1">
           <Input
@@ -252,6 +255,7 @@ export function TierTable({
   onChange,
   readOnly,
   protocol,
+  apiModelMap,
 }: {
   def: CliDefinition
   value: CliDraft['tiers']
@@ -262,15 +266,26 @@ export function TierTable({
   readOnly?: boolean
   /** API 模式的协议：同分时优先选支持它的模型 */
   protocol?: ApiProtocol
+  /** 当前 API 配置里的模型映射：模型名 → 按哪个模型配置估算 */
+  apiModelMap?: Record<string, string>
 }) {
   const catalog = useCliModels(def.id)?.models
   const modelCatalog = useModelCatalog()
   const settings = useData().settings
   const aiLookup = settings?.modelCatalog.aiLookup ?? true
   const [looking, setLooking] = useState('')
+  /** 上下文、最大输出和模型映射默认收起，避免表格太长 */
+  const [expanded, setExpanded] = useState<Set<ModelTier>>(() => new Set())
   const can = limitSupport(def)
   const set = <K extends keyof CliDraft['tiers']['high']>(tier: ModelTier, k: K, v: CliDraft['tiers']['high'][K]) =>
     onChange?.({ ...value, [tier]: { ...value[tier], [k]: v } })
+  const toggle = (tier: ModelTier) =>
+    setExpanded((s) => {
+      const next = new Set(s)
+      if (next.has(tier)) next.delete(tier)
+      else next.add(tier)
+      return next
+    })
   const lookup = async (model: string) => {
     setLooking(model)
     try {
@@ -295,7 +310,14 @@ export function TierTable({
         const sug = { ...def.tiers[tr.id], model: tierFallback(def, defaultModel, tr.id) }
         const model = value[tr.id].model || sug.model
         // 自动值按这一档实际用的模型识别：换了模型，空着的上下文、最大输出和思考强度跟着变
-        const auto = autoLimits(model, catalog, { entries: modelCatalog?.entries, protocol })
+        const own = autoLimits(model, catalog, { entries: modelCatalog?.entries, protocol })
+        // API 配置里给这个模型配了映射：上下文和最大输出按映射到的模型算；思考强度还按实际的模型
+        const mapTo = apiModelMap?.[model] ?? ''
+        const mappedAuto = mapTo ? autoLimits(mapTo, catalog, { entries: modelCatalog?.entries, protocol }) : undefined
+        const auto = mappedAuto ? { ...own, context: mappedAuto.context, maxOutput: mappedAuto.maxOutput } : own
+        const open = expanded.has(tr.id)
+        const context = value[tr.id].context || auto.context
+        const maxOutput = value[tr.id].maxOutput || auto.maxOutput
         const allowed = def.efforts.map((e) => e.id)
         const effortList = def.models.some((m) => m.id === model)
           ? modelEfforts(def, model)
@@ -341,26 +363,55 @@ export function TierTable({
                 />
               </>
             )}
-            <div className="grid grid-cols-1 gap-2 sm:col-span-2 sm:col-start-2 sm:grid-cols-2 sm:gap-3">
-              <TokenField
-                label={t('上下文')}
-                value={value[tr.id].context}
-                auto={auto.context}
-                readOnly={readOnly}
-                onChange={(v) => set(tr.id, 'context', v)}
-                title={can.context ? undefined : t('{cli} 不接受这项设置，只用于面板估算上下文占用', { cli: def.name })}
-              />
-              <TokenField
-                label={t('最大输出')}
-                value={value[tr.id].maxOutput}
-                auto={auto.maxOutput}
-                readOnly={readOnly}
-                disabled={!can.maxOutput}
-                onChange={(v) => set(tr.id, 'maxOutput', v)}
-                title={can.maxOutput ? undefined : t('{cli} 不接受最大输出的设置', { cli: def.name })}
-              />
+            <div className="flex flex-col gap-2 sm:col-span-2 sm:col-start-2">
+              <button
+                type="button"
+                onClick={() => toggle(tr.id)}
+                aria-expanded={open}
+                className="flex w-fit cursor-pointer flex-wrap items-center gap-x-1.5 gap-y-1 text-[0.6875rem] text-subtle hover:text-fg"
+              >
+                <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
+                <span>
+                  {t('上下文')} <span className="font-mono text-[0.75rem] text-muted">{fmtTokens(context)}</span>
+                </span>
+                <span aria-hidden>·</span>
+                <span>
+                  {t('最大输出')} <span className="font-mono text-[0.75rem] text-muted">{fmtTokens(maxOutput)}</span>
+                </span>
+                {mapTo && <span className="text-accent">{t('映射 {model}', { model: mapTo })}</span>}
+              </button>
+              {open && (
+                <div className="flex flex-col gap-2 rounded-lg border bg-field/30 p-2.5">
+                  {mapTo && (
+                    <p className="text-[0.6875rem] leading-relaxed text-subtle">
+                      {t('这个模型在 API 配置里映射到了 {model}：上下文和最大输出按它的配置估算。', { model: mapTo })}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-3">
+                    <TokenField
+                      label={t('上下文')}
+                      value={value[tr.id].context}
+                      auto={auto.context}
+                      readOnly={readOnly}
+                      onChange={(v) => set(tr.id, 'context', v)}
+                      title={
+                        can.context ? undefined : t('{cli} 不接受这项设置，只用于面板估算上下文占用', { cli: def.name })
+                      }
+                    />
+                    <TokenField
+                      label={t('最大输出')}
+                      value={value[tr.id].maxOutput}
+                      auto={auto.maxOutput}
+                      readOnly={readOnly}
+                      disabled={!can.maxOutput}
+                      onChange={(v) => set(tr.id, 'maxOutput', v)}
+                      title={can.maxOutput ? undefined : t('{cli} 不接受最大输出的设置', { cli: def.name })}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
-            {!readOnly && model && !auto.matched && aiLookup && (
+            {!readOnly && model && !auto.matched && !mapTo && aiLookup && (
               <div className="flex flex-wrap items-center gap-2 text-[0.6875rem] text-subtle sm:col-span-2 sm:col-start-2">
                 <span>
                   {t('模型配置里没有 {model}，按 {context} / {maxOutput} 估算', {
@@ -727,6 +778,7 @@ export function CliSection({
             value={draft.tiers}
             defaultModel={draft.defaultModel}
             protocol={apiConfig?.protocol}
+            apiModelMap={apiConfig?.modelMap}
             onChange={(v) => set('tiers', v)}
           />
         </Row>

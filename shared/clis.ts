@@ -288,10 +288,29 @@ export const CLIS: CliDefinition[] = [
         defaultProvider: 'agentpanel',
         modelSource: 'api',
         modelPrefix: '',
-        env: { ANTHROPIC_BASE_URL: '{baseUrl}', '{keyEnv}': '{apiKey}' },
+        env: {},
         args: [],
-        edits: [],
-        accountEdits: [],
+        edits: [
+          {
+            file: '${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json',
+            format: 'json',
+            merge: false,
+            set: {
+              'env.ANTHROPIC_BASE_URL': '{baseUrl}',
+              'env.{keyEnv}': '{apiKey}',
+            },
+            unset: [],
+          },
+        ],
+        accountEdits: [
+          {
+            file: '${CLAUDE_CONFIG_DIR:-~/.claude}/settings.json',
+            format: 'json',
+            merge: false,
+            set: {},
+            unset: ['env.ANTHROPIC_BASE_URL', 'env.ANTHROPIC_AUTH_TOKEN', 'env.ANTHROPIC_API_KEY'],
+          },
+        ],
         wire: {},
       },
       // 环境变量和 settings.json 的 env 里配的网关、密钥
@@ -470,22 +489,35 @@ export const CLIS: CliDefinition[] = [
         defaultProvider: 'agentpanel',
         modelSource: 'api',
         modelPrefix: '',
-        env: { AGENT_PANEL_API_KEY: '{apiKey}' },
-        args: [
-          '-c',
-          'model_providers.{provider}.name={name|json}',
-          '-c',
-          'model_providers.{provider}.base_url={baseUrl|json}',
-          '-c',
-          'model_providers.{provider}.env_key="AGENT_PANEL_API_KEY"',
-          '-c',
-          'model_providers.{provider}.wire_api="responses"',
-          '-c',
-          'model_provider="{provider}"',
+        env: {},
+        args: [],
+        edits: [
+          {
+            file: '${CODEX_HOME:-~/.codex}/config.toml',
+            format: 'toml',
+            merge: true,
+            set: {
+              model_provider: '{provider}',
+              'model_providers.{provider}': {
+                name: '{name}',
+                base_url: '{baseUrl}',
+                wire_api: '{wire}',
+                experimental_bearer_token: '{apiKey}',
+              },
+            },
+            unset: [],
+          },
         ],
-        edits: [],
-        accountEdits: [],
-        wire: {},
+        accountEdits: [
+          {
+            file: '${CODEX_HOME:-~/.codex}/config.toml',
+            format: 'toml',
+            merge: false,
+            set: {},
+            unset: ['model_provider', 'model_providers.{provider}'],
+          },
+        ],
+        wire: { 'openai-responses': 'responses' },
       },
       // config.toml 里自己接的 model_providers，环境变量和 auth.json 里的 OPENAI_API_KEY
       apiSources: [

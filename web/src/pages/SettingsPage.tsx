@@ -293,7 +293,8 @@ function SettingsBody({
   const inCli = cliPage(cur)
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
   const defDraft = drafts[defCli]
-  const defProtocol = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId)?.protocol : undefined
+  const defApi = defDraft.authMode === 'api' ? apis.find((a) => a.id === defDraft.apiId) : undefined
+  const defProtocol = defApi?.protocol
 
   return (
     <div className="flex h-full min-h-0 flex-col md:flex-row">
@@ -645,6 +646,7 @@ function SettingsBody({
                     value={defDraft.tiers}
                     defaultModel={defDraft.defaultModel}
                     protocol={defProtocol}
+                    apiModelMap={defApi?.modelMap}
                     readOnly
                   />
                 </Row>

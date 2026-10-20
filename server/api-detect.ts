@@ -111,6 +111,7 @@ export function toApi(
     apiKey,
     authHeader: bearer ? 'bearer' : 'x-api-key',
     models: modelsOf(obj, src.models),
+    modelMap: {},
   }
   return api
 }
