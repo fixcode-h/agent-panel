@@ -25,7 +25,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
-import { blockedStep, flowUnfinished, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
+import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import { chatName, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
@@ -47,6 +47,7 @@ import { LiveStats } from './LiveStats'
 import { NextWorkflows } from './NextWorkflows'
 import { AnalyzeDialog, EvolutionCard } from './Evolution'
 import { StepSection } from './StepSection'
+import { RunCard, RunDrawer } from './RunCard'
 import { TaskPanel } from './TaskPanel'
 import { TaskMeta } from './TaskMeta'
 import { TaskFiles } from './TaskFiles'
@@ -70,11 +71,26 @@ type Block =
   /** 对话里 Agent 连续的回复（一轮），完成后折叠过程 */
   | { kind: 'turn'; key: string; msgs: TaskMessage[] }
   | { kind: 'steps'; key: string; roots: string[]; byRoot: Map<string, TaskMessage[]> }
+  /** 工作流的一次运行：节点输出去右边的面板里看 */
+  | { kind: 'run'; key: string; run: number }
 
-/** 把消息分段：连续的节点输出归到一段，段里再按主流程节点分开，同时执行的节点输出不会交错 */
+/** 这条消息属于第几次运行（节点 id 带 `r2/` 前缀的算第 2 次） */
+function runOf(step: string) {
+  const m = /^r(\d+)\//.exec(step)
+  return m ? Number(m[1]) : 1
+}
+
+/**
+ * 把消息分段：连续的节点输出归到一段，段里再按主流程节点分开，同时执行的节点输出不会交错。
+ * 工作流任务（主 Agent 是编排器）里节点输出不铺在对话里，按运行归成一张卡片
+ */
 function toBlocks(task: Task): Block[] {
   const blocks: Block[] = []
   const msgs = task.messages
+  // 工作流任务：一次运行一张卡片，没有单独的节点段。主 Agent 的消息插在节点输出之间，
+  // 所以按「第一次出现这次运行」的位置放卡片，后面的节点消息都跳过
+  const byRun = task.mode === 'workflow'
+  const carded = new Set<number>()
   // 往后找第一条带节点的消息：判断这条用户消息后面还有没有同一个节点的输出
   const nextRoot = (from: number) => {
     for (let i = from; i < msgs.length; i++) if (msgs[i].step) return rootStepId(msgs[i].step)
@@ -87,20 +103,29 @@ function toBlocks(task: Task): Block[] {
     if (m.role === 'user' && !m.step) {
       const b = blocks.at(-1)
       const root = b?.kind === 'steps' ? b.roots.at(-1) : undefined
-      if (b?.kind === 'steps' && root && nextRoot(i + 1) === root) {
+      if (!byRun && b?.kind === 'steps' && root && nextRoot(i + 1) === root) {
         b.byRoot.get(root)!.push(m)
         continue
       }
       blocks.push({ kind: 'msg', m })
       continue
     }
-    if (!m.step) {
+    // 主 Agent 自己的会话（编排器，`@main` 或委派里的 `<父节点>/…/@main`）留在对话里，不属于任何一次运行
+    if (!m.step || m.step.endsWith(MAIN_STEP)) {
       // 对话里 Agent 连续的回复归到一轮
       if (m.role === 'agent') {
         const b = blocks.at(-1)
         if (b?.kind === 'turn') b.msgs.push(m)
         else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
       } else blocks.push({ kind: 'msg', m })
+      continue
+    }
+    if (byRun) {
+      // 同一个运行的节点输出只在第一次出现时放一张卡片，其余的都去卡片里看
+      const run = runOf(m.step)
+      if (carded.has(run)) continue
+      carded.add(run)
+      blocks.push({ kind: 'run', key: `run${run}`, run })
       continue
     }
     let b = blocks.at(-1)
@@ -115,13 +140,23 @@ function toBlocks(task: Task): Block[] {
   // 正在执行但还没有输出的节点也显示出来
   if (task.status === 'running') {
     const running = task.steps.filter((s) => !s.parentId && s.status === 'running' && s.kind !== 'main')
-    let b = blocks.at(-1)
-    if (running.length && b?.kind !== 'steps') {
-      b = { kind: 'steps', key: 'live', roots: [], byRoot: new Map() }
-      blocks.push(b)
+    if (byRun) {
+      // 运行开始执行、还没有任何输出时也要有一张卡片
+      for (const s of running) {
+        const run = runOf(s.id)
+        if (carded.has(run)) continue
+        carded.add(run)
+        blocks.push({ kind: 'run', key: `run${run}-live`, run })
+      }
+    } else {
+      let b = blocks.at(-1)
+      if (running.length && b?.kind !== 'steps') {
+        b = { kind: 'steps', key: 'live', roots: [], byRoot: new Map() }
+        blocks.push(b)
+      }
+      if (b?.kind === 'steps')
+        for (const s of running) if (!b.byRoot.has(s.id)) (b.roots.push(s.id), b.byRoot.set(s.id, []))
     }
-    if (b?.kind === 'steps')
-      for (const s of running) if (!b.byRoot.has(s.id)) (b.roots.push(s.id), b.byRoot.set(s.id, []))
   }
   return blocks
 }
@@ -189,6 +224,8 @@ export function TaskView({
   const [view, setView] = useState<'chat' | 'flow'>('chat')
   // 流程图里选中的节点，右栏只看它
   const [flowSel, setFlowSel] = useState('')
+  // 对话里点开的运行卡片：右边看这一次运行的实时输出
+  const [openRun, setOpenRun] = useState(0)
   // 右栏「任务进度」里点了哪一步：切到流程视图并选中它，和点流程图的节点一样
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
@@ -471,7 +508,8 @@ export function TaskView({
     setAway(false)
     el.scrollTo({ top: el.scrollHeight, behavior: 'smooth' })
   }
-  // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏是文件系统，不重复显示
+  // 对话两边空白够宽时，任务进度放在左边空白处，固定在那里不跟着内容滚动；右栏是文件系统，不重复显示。
+  // 对话模式没有节点，也就没有任务进度
   const progressCard =
     task.mode === 'workflow' && tops.length > 0 && gutter >= 200 ? (
       // 节点行里要放耗时、等待、token 和命中率，宽一点才能排在一行
@@ -689,6 +727,14 @@ export function TaskView({
                             command={task.command}
                           />
                         </div>
+                      ) : b.kind === 'run' ? (
+                        <RunCard
+                          key={b.key}
+                          task={task}
+                          run={b.run}
+                          name={task.workflowName || workflow?.name}
+                          onOpen={() => setOpenRun(b.run)}
+                        />
                       ) : b.kind === 'steps' ? (
                         <div key={b.key} className="flex flex-col gap-7">
                           {b.roots.map((r) => (
@@ -1026,6 +1072,14 @@ export function TaskView({
           onConfirm={remove}
         />
         <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+        {openRun > 0 && (
+          <RunDrawer
+            task={task}
+            run={openRun}
+            name={task.workflowName || workflow?.name}
+            onClose={() => setOpenRun(0)}
+          />
+        )}
         <AnalyzeDialog
           open={analyzing}
           onOpenChange={setAnalyzing}
