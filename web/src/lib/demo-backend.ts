@@ -3,6 +3,7 @@
  * 只在 VITE_DEMO 构建中使用；本机版本走真正的 Node 服务。
  */
 import { demoAccounts } from './demo-accounts'
+import { demoIntegrations } from './demo-integrations'
 import { demoLibrary } from './demo-library'
 import { z } from 'zod'
 import {
@@ -882,6 +883,7 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
+  if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
   if (res === 'clis') {
     if (id === 'jobs' && !sub) {

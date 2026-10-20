@@ -1091,8 +1091,11 @@ export function tasksApi(deps: {
 
   return {
     routes,
-    /** 正在执行的任务数；更新面板前要等它们结束 */
-    running: () => live.size,
+    /**
+     * 正在执行的任务数；更新、备份前要等它们结束。
+     * 对话停在等下一句、预热时进程还活着但不改任何东西，不算执行中，否则更新会一直等下去
+     */
+    running: () => [...live.values()].filter((e) => e.task.working).length,
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     stopAll() {
       shuttingDown = true

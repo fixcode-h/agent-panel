@@ -388,6 +388,30 @@ try {
   await check(p, '设置-API-识别', ['在本机 CLI 的配置里识别到 2 个 API', 'Codex · openrouter'])
   await p.getByRole('button', { name: '存到 API 配置' }).first().click()
   await check(p, '设置-API-已存', ['已在列表中'])
+  // 授权：检测外部 CLI，在面板里完成浏览器授权（演示里模拟），退出后回到未授权
+  await p.getByRole('button', { name: '授权', exact: true }).first().click()
+  await check(p, '设置-授权', ['GitHub CLI', '浏览器授权', '用 Token 授权'])
+  await p.getByRole('button', { name: '浏览器授权' }).first().click()
+  await p
+    .getByText('一次性授权码')
+    .first()
+    .waitFor({ timeout: 8000 })
+    .catch(() => errors.push('授权：没有显示一次性授权码'))
+  await check(p, '设置-授权-进行中', ['等待浏览器完成授权', 'ABCD-1234', '取消授权'])
+  await p
+    .getByText('已授权', { exact: true })
+    .first()
+    .waitFor({ timeout: 10000 })
+    .catch(() => errors.push('授权：浏览器授权没有完成'))
+  await check(p, '设置-授权-完成', ['已授权', 'demo-user'])
+  await p.getByRole('button', { name: '退出登录' }).first().click()
+  await p.getByRole('dialog').getByRole('button', { name: '退出登录' }).click()
+  await p
+    .getByRole('button', { name: '浏览器授权' })
+    .first()
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('授权：退出后没有回到未授权'))
+  await check(p, '设置-授权-已退出', ['未授权', '浏览器授权'])
   // 回到 CLI 的默认 CLI 页（部署在它下面）
   await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
   await p.getByRole('dialog').getByText('默认 CLI', { exact: true }).first().click()

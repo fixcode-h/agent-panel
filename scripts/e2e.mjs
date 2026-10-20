@@ -3611,6 +3611,7 @@ try {
       {
         id: 'ap1',
         name: '中转 A',
+        provider: 'relay-a',
         protocol: 'openai-responses',
         baseUrl: 'https://relay.example/v1',
         apiKey: 'sk-relay',
@@ -3620,6 +3621,7 @@ try {
       {
         id: 'ap2',
         name: 'Claude 中转',
+        provider: 'claude-relay',
         protocol: 'anthropic',
         baseUrl: 'https://claude.example',
         apiKey: 'sk-ant',
@@ -3662,10 +3664,10 @@ try {
     const used = calls().slice(before)
     const codexCall = used.find((x) => x.kind === 'codex')
     assert.ok(
-      codexCall.args.includes('model_providers.agentpanel.base_url="https://relay.example/v1"'),
+      codexCall.args.includes('model_providers.relay-a.base_url="https://relay.example/v1"'),
       'Codex 的接口地址写进了 -c 参数',
     )
-    assert.ok(codexCall.args.includes('model_provider="agentpanel"'))
+    assert.ok(codexCall.args.includes('model_provider="relay-a"'))
     assert.equal(codexCall.apiEnv.agentpanel, 'sk-relay', '密钥走环境变量，不出现在参数里')
     assert.ok(!codexCall.args.join(' ').includes('sk-relay'))
     const claudeCall = used.find((x) => x.kind === 'claude')
@@ -3695,6 +3697,7 @@ try {
           {
             id: 'c1',
             name: 'CC 接口',
+            provider: 'cc',
             protocol: 'openai-chat',
             baseUrl: 'https://cc.example/v1',
             apiKey: 'ck',
@@ -3736,12 +3739,15 @@ try {
     })
     await waitDone(cc.id)
     const ccFile = path.join(homeDir, '.commandcode', 'settings.json')
-    assert.deepEqual(JSON.parse(readFileSync(ccFile, 'utf8')).provider.agentpanel, {
+    const ccProviders = path.join(homeDir, '.commandcode', 'providers.json')
+    assert.deepEqual(JSON.parse(readFileSync(ccProviders, 'utf8')).provider.cc, {
+      name: 'CC 接口',
       baseURL: 'https://cc.example/v1',
       apiKey: '$AGENT_PANEL_API_KEY',
       api: 'openai-completions',
       models: { 'cc-1': {} },
     })
+    assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined, '不再写旧的 settings.json')
     // Pi：自己接的接口写进 models.json 的 providers，用 --provider 指定
     const pa = await call('POST', '/tasks', {
       projectId: project.id,
@@ -3753,7 +3759,7 @@ try {
     })
     await waitDone(pa.id)
     const piModels = path.join(homeDir, '.pi', 'agent', 'models.json')
-    assert.deepEqual(JSON.parse(readFileSync(piModels, 'utf8')).providers.agentpanel, {
+    assert.deepEqual(JSON.parse(readFileSync(piModels, 'utf8')).providers.cc, {
       baseUrl: 'https://cc.example/v1',
       api: 'openai-completions',
       apiKey: 'AGENT_PANEL_API_KEY',
@@ -3763,7 +3769,7 @@ try {
     assert.equal(piCall.apiEnv.agentpanel, 'ck')
     assert.deepEqual(piCall.args.slice(piCall.args.indexOf('--provider'), piCall.args.indexOf('--provider') + 2), [
       '--provider',
-      'agentpanel',
+      'cc',
     ])
     await call(
       'PUT',
@@ -3791,6 +3797,7 @@ try {
     })
     await waitDone(cc2.id)
     assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined)
+    assert.equal(JSON.parse(readFileSync(ccProviders, 'utf8')).provider?.cc, undefined)
     const pa2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
@@ -3799,7 +3806,7 @@ try {
       prompt: '改回账号 pi',
     })
     await waitDone(pa2.id)
-    assert.equal(JSON.parse(readFileSync(piModels, 'utf8')).providers?.agentpanel, undefined, '改回账号删掉接口')
+    assert.equal(JSON.parse(readFileSync(piModels, 'utf8')).providers?.cc, undefined, '改回账号删掉接口')
     // 凭据不进数据导出
     const backup = await call('GET', '/data/export?kinds=config,projects,tasks,uploads')
     assert.ok(!Object.keys(backup.files).some((f) => f.startsWith('accounts')), '账号凭据不在备份里')

@@ -6,8 +6,8 @@ import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
-import { apiFits, apiInjection, ApiConfig, type JsonEdit } from '../shared/accounts.ts'
-import { CliSettings, type CliAccounts, type LoginJob, type SavedAccount } from '../shared/schema.ts'
+import { apiFits, apiInjection, apiProvider, fillEdits, ApiConfig, type JsonEdit } from '../shared/accounts.ts'
+import { CliSettings, type CliAccounts, type LoginJob, type SavedAccount, type Settings } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
@@ -301,11 +301,26 @@ const setPath = (obj: Record<string, any>, dotted: string, value: unknown) => {
   }
   cur[keys.at(-1)!] = value
 }
+const getPath = (obj: any, dotted: string) => {
+  let cur = obj
+  for (const k of dotted.split('.')) cur = cur?.[k]
+  return cur
+}
 const unsetPath = (obj: Record<string, any>, dotted: string) => {
   const keys = dotted.split('.')
   let cur: any = obj
   for (const k of keys.slice(0, -1)) cur = cur?.[k]
   if (cur && typeof cur === 'object') delete cur[keys.at(-1)!]
+}
+
+const isObj = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/** 深度合并 JSON 对象；数组和标量直接替换，已有对象里的键保留 */
+export function mergeJson(base: unknown, patch: unknown): unknown {
+  if (!isObj(base) || !isObj(patch)) return patch
+  const out: Record<string, any> = { ...base }
+  for (const [k, v] of Object.entries(patch)) out[k] = mergeJson(base[k], v)
+  return out
 }
 
 /** 只改要改的键，文件里别的内容原样保留；文件存在但解析不了时不动它 */
@@ -320,7 +335,7 @@ async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
     }
     const next = obj ?? {}
     const before = JSON.stringify(next)
-    for (const [k, v] of Object.entries(e.set)) setPath(next, k, v)
+    for (const [k, v] of Object.entries(e.set)) setPath(next, k, e.merge ? mergeJson(getPath(next, k), v) : v)
     for (const k of e.unset) unsetPath(next, k)
     if (JSON.stringify(next) === before && exists) continue
     await mkdir(path.dirname(file), { recursive: true })
@@ -341,9 +356,34 @@ export async function prepareAuth(cliId: string) {
     const cs = cliSettings(settings, cliId)
     const env = childEnv(cs.env)
     if (cs.api && apiFits(def.auth, cs.api)) await applyEdits(apiInjection(def.auth, cs.api).edits, env)
-    else await applyEdits(spec.accountEdits, env)
+    else {
+      // 切回账号时用最后选用的 API 填 {provider}，把写进去的那一份接口删掉
+      const selected = settings.apis.find((a) => a.id === cs.apiId)
+      await applyEdits(fillEdits(spec.accountEdits, def.auth, selected), env)
+    }
   } catch (e) {
     log.warn('accounts', '切换账号 / API 的配置没写成功', { cli: cliId, error: (e as Error).message })
+  }
+}
+
+/** 和配置写入有关的设置指纹：只有这些变了才重写 CLI 配置文件 */
+function authSignature(settings: Settings, cliId: string) {
+  const cs = cliSettings(settings, cliId)
+  const api = cs.api
+  return JSON.stringify([
+    cs.enabled,
+    cs.authMode,
+    api && [api.id, apiProvider(api), api.protocol, api.baseUrl, api.apiKey, api.authHeader, api.models],
+  ])
+}
+
+/** 设置保存后：把切到 API 的 CLI 配置立即写进 CLI 自己的配置文件（不用等到执行） */
+export async function syncCliAuths(prev: Settings, next: Settings) {
+  for (const def of CLIS) {
+    if (!def.auth?.api) continue
+    if (authSignature(prev, def.id) === authSignature(next, def.id)) continue
+    await prepareAuth(def.id)
+    invalidateModels(def.id)
   }
 }
 

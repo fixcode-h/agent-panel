@@ -35,6 +35,7 @@ import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptim
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
+import type { IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type {
   BundledSkill,
@@ -112,6 +113,15 @@ export const api = {
   remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
   remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
   remoteInstall: () => request<RemoteAccessStatus>('/remote/install', { method: 'POST' }),
+
+  /** 外部 CLI 的授权：检测、浏览器授权、token 授权、退出 */
+  integrations: (refresh = false) => request<IntegrationView[]>(`/integrations${refresh ? '?refresh=1' : ''}`),
+  integrationLogin: (id: string) => request<IntegrationLoginJob>(`/integrations/${id}/login`, json('POST', {})),
+  integrationLoginStatus: (id: string) => request<IntegrationLoginJob | null>(`/integrations/${id}/login`),
+  integrationToken: (id: string, token: string) =>
+    request<IntegrationView>(`/integrations/${id}/login/token`, json('POST', { token })),
+  integrationCancel: (id: string) => request<{ ok: true }>(`/integrations/${id}/login`, { method: 'DELETE' }),
+  integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
   localImageAction: (action: 'install' | 'cancel' | 'start' | 'stop' | 'detect') =>
@@ -195,6 +205,7 @@ export const api = {
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
+  appForceInstall: (id: string) => request<AppUpdateJob>(`/app/install/${id}/force`, json('POST', {})),
   appRollback: () => request<{ version: string }>('/app/rollback', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),

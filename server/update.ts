@@ -166,10 +166,16 @@ const sha256 = (file: string) =>
   })
 
 /** 版本更新：对比 GitHub Releases 上的包，下载后替换当前目录里的程序文件并重启 */
-export function updateApi(deps: { running: () => number; restart: () => void }) {
+export function updateApi(deps: {
+  running: () => number
+  restart: () => void
+  /** 停掉所有正在执行的 CLI：用户点「强制更新」时用 */
+  stopAll: () => Promise<void>
+}) {
   // 上次检查的结果存在缓存目录里，重启面板也记得，不会每次打开都去问 GitHub
   let cache: { at: number; list: AppRelease[] } | undefined = readCache()
-  const jobs = new Map<string, AppUpdateJob>()
+  /** force：用户点了「强制更新」，停掉正在执行的任务后不再等 */
+  const jobs = new Map<string, AppUpdateJob & { force?: boolean }>()
 
   async function releases(refresh: boolean): Promise<AppRelease[]> {
     // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
@@ -210,7 +216,7 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     return list
   }
 
-  async function install(job: AppUpdateJob, rel: AppRelease, onWait?: () => void) {
+  async function install(job: AppUpdateJob & { force?: boolean }, rel: AppRelease, onWait?: () => void) {
     const dir = appDir()
     // 下载的包放在数据目录的缓存里，设置的「数据」里能看到占用、可以清理
     await mkdir(path.join(CACHE_DIR, 'updates'), { recursive: true })
@@ -249,11 +255,19 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
       let running = deps.running()
       if (running > 0) {
         onWait?.()
+        job.waiting = true
         while (running > 0) {
+          // 用户点了「强制更新」：中断所有正在执行的 CLI，不再等它们自然结束
+          if (job.force) {
+            job.phase = t('正在停止正在执行的任务…')
+            await deps.stopAll()
+            break
+          }
           job.phase = t('等待任务结束（还有 {n} 个）', { n: running })
           await new Promise((r) => setTimeout(r, 1000))
           running = deps.running()
         }
+        job.waiting = false
       }
 
       // 2. 解压：Windows 10 起自带 tar，macOS / Linux 都有
@@ -420,6 +434,15 @@ export function updateApi(deps: { running: () => number; restart: () => void }) 
     .get('/install/:id', (c) => {
       const j = jobs.get(c.req.param('id'))
       return j ? c.json(j) : c.json({ error: t('找不到这次更新') }, 404)
+    })
+    // 下载完了但还有任务在执行：中断所有 CLI，马上替换并重启
+    .post('/install/:id/force', (c) => {
+      const j = jobs.get(c.req.param('id'))
+      if (!j) return c.json({ error: t('找不到这次更新') }, 404)
+      if (j.status !== 'running') return c.json({ error: t('这次更新已经结束') }, 409)
+      if (!j.waiting) return c.json({ error: t('还在下载，下载完才能强制更新') }, 409)
+      j.force = true
+      return c.json(j)
     })
   return { api, checkAndInstall }
 }

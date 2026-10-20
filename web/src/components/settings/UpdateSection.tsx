@@ -9,9 +9,10 @@ import {
   Loader2,
   RefreshCw,
   Undo2,
+  Zap,
 } from 'lucide-react'
 import { compareVersions, type AppRelease } from '@shared/version'
-import { installRelease, loadReleases, rollbackRelease, useAppUpdate } from '@/lib/app-update'
+import { forceInstallRelease, installRelease, loadReleases, rollbackRelease, useAppUpdate } from '@/lib/app-update'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -134,6 +135,7 @@ export function UpdateSection() {
   const { data, loading, job, restarting } = useAppUpdate()
   const [confirm, setConfirm] = useState<AppRelease | null>(null)
   const [undo, setUndo] = useState(false)
+  const [force, setForce] = useState(false)
   const demo = !!import.meta.env.VITE_DEMO
   const current = data?.current ?? ''
   const canInstall = !!data?.packaged && !demo
@@ -204,6 +206,15 @@ export function UpdateSection() {
                 }}
               />
             </div>
+            {!restarting && job?.waiting && (
+              // 下载完了却还有任务在执行：不用一个个去停，直接中断所有 CLI 立刻更新
+              <div className="flex justify-end">
+                <Button size="sm" variant="secondary" onClick={() => setForce(true)}>
+                  <Zap className="h-3.5 w-3.5" />
+                  {t('强制更新')}
+                </Button>
+              </div>
+            )}
           </div>
         ) : data?.error ? (
           <p className="text-[0.8125rem] leading-relaxed text-warning">
@@ -319,6 +330,19 @@ export function UpdateSection() {
         onConfirm={() => {
           setUndo(false)
           rollbackRelease().catch((e) => toast.error((e as Error).message))
+        }}
+      />
+      <ConfirmDialog
+        open={force}
+        onOpenChange={setForce}
+        title={t('强制更新？')}
+        description={t(
+          '会中断所有正在执行的 CLI 对话，没做完的内容可能丢失；然后马上替换程序文件并重启，data 目录里的数据会保留。',
+        )}
+        confirmText={t('强制更新')}
+        onConfirm={() => {
+          setForce(false)
+          forceInstallRelease().catch((e) => toast.error((e as Error).message))
         }}
       />
     </div>

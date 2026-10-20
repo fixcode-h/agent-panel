@@ -72,6 +72,13 @@ export async function installRelease(tag: string) {
   await waitRestart(tag.replace(/^v/, ''))
 }
 
+/** 下载完了但还有任务在执行：中断所有 CLI，马上替换并重启；安装轮询会接着更新进度 */
+export async function forceInstallRelease() {
+  const job = state.job
+  if (!job) return
+  set({ job: await api.appForceInstall(job.id) })
+}
+
 /** 回到更新前的版本：服务端换回程序文件后重启 */
 export async function rollbackRelease() {
   const { version } = await api.appRollback()

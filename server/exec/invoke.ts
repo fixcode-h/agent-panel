@@ -1,10 +1,13 @@
 import { getCli, type BuildOptions } from '../../shared/clis.ts'
+import { apiModelIdFor } from '../../shared/accounts.ts'
+import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
+import { getSettings } from '../settings.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import { supportedEffort } from '../models.ts'
@@ -73,11 +76,15 @@ export async function invokeCli(o: {
   mcp?: { name: string; url: string }[]
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
+  // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
+  const cs = cliSettings(await getSettings(), o.cliId)
+  const model = apiModelIdFor(o.build.model ?? '', def.auth, cs.api)
+  const req = model === o.build.model ? o.build : { ...o.build, model }
   // 模型不认的思考强度会让 CLI 启动即报错退出（退出码 1），整个任务白跑：按读到的模型能力挡一下，这一轮不传
-  const effort = await supportedEffort(o.cliId, o.build.model ?? '', o.build.effort)
-  if (effort !== (o.build.effort ?? ''))
-    log.info('agent', `模型 ${o.build.model} 不支持 ${o.build.effort}，这次不带思考强度`, { cli: o.cliId })
-  const build = effort === o.build.effort ? o.build : { ...o.build, effort }
+  const effort = await supportedEffort(o.cliId, model, req.effort)
+  if (effort !== (req.effort ?? ''))
+    log.info('agent', `模型 ${model} 不支持 ${req.effort}，这次不带思考强度`, { cli: o.cliId })
+  const build = effort === req.effort ? req : { ...req, effort }
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
   let control: CliControl = { steer: async () => false, interrupt: () => false }
   const setControl = (c: CliControl) => {

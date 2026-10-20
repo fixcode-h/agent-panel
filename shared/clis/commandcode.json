@@ -219,6 +219,9 @@
     "identity": "none",
     "api": {
       "protocols": ["anthropic", "openai-responses", "openai-chat"],
+      "defaultProvider": "agentpanel",
+      "modelSource": "cli",
+      "modelPrefix": "{provider}/",
       "env": {
         "AGENT_PANEL_API_KEY": "{apiKey}"
       },
@@ -229,25 +232,51 @@
       },
       "edits": [
         {
-          "file": "~/.commandcode/settings.json",
+          "file": "~/.commandcode/providers.json",
+          "merge": true,
           "set": {
-            "provider.agentpanel": {
+            "provider.{provider}": {
+              "name": "{name}",
               "baseURL": "{baseUrl}",
               "apiKey": "$AGENT_PANEL_API_KEY",
               "api": "{wire}",
               "models": "{models}"
             }
           }
+        },
+        {
+          "file": "~/.commandcode/settings.json",
+          "unset": ["provider.agentpanel"]
         }
       ],
       "accountEdits": [
         {
           "file": "~/.commandcode/settings.json",
           "unset": ["provider.agentpanel"]
+        },
+        {
+          "file": "~/.commandcode/providers.json",
+          "unset": ["provider.{provider}"]
         }
       ]
     },
     "apiSources": [
+      {
+        "file": "~/.commandcode/providers.json",
+        "at": "provider",
+        "each": true,
+        "protocol": "anthropic",
+        "wire": {
+          "anthropic-messages": "anthropic",
+          "openai-responses": "openai-responses",
+          "openai-completions": "openai-chat"
+        },
+        "baseUrl": ["baseURL", "baseUrl"],
+        "apiKey": ["apiKey"],
+        "models": ["models"],
+        "wireKey": ["api"],
+        "name": ["name"]
+      },
       {
         "file": "~/.commandcode/settings.json",
         "at": "provider",

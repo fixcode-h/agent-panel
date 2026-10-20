@@ -336,10 +336,13 @@
     "accountNote": "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。",
     "api": {
       "protocols": ["anthropic", "openai-responses", "openai-chat", "gemini"],
+      "defaultProvider": "agentpanel",
+      "modelSource": "cli",
+      "modelPrefix": "{provider}/",
       "env": {
         "AGENT_PANEL_API_KEY": "{apiKey}"
       },
-      "args": ["--provider", "agentpanel"],
+      "args": ["--provider", "{provider}"],
       "wire": {
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",
@@ -349,8 +352,9 @@
       "edits": [
         {
           "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+          "merge": true,
           "set": {
-            "providers.agentpanel": {
+            "providers.{provider}": {
               "baseUrl": "{baseUrl}",
               "api": "{wire}",
               "apiKey": "AGENT_PANEL_API_KEY",
@@ -362,7 +366,7 @@
       "accountEdits": [
         {
           "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
-          "unset": ["providers.agentpanel"]
+          "unset": ["providers.{provider}", "providers.agentpanel"]
         }
       ]
     },

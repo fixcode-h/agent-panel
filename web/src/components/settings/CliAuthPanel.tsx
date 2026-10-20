@@ -47,7 +47,9 @@ export function CliAuthPanel({
         desc={
           mode === 'account'
             ? t('用浏览器登录的账号，可以保存几个账号随时切换')
-            : t('用全局设置里配的 API（接口地址和密钥），模型下拉只列这个 API 的模型')
+            : t(
+                '用全局设置里配的 API（接口地址和密钥）；支持写配置的 CLI 会立即保存到它自己的配置，模型下拉优先从 CLI 读取',
+              )
         }
         stack
       >

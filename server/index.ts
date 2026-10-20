@@ -42,7 +42,8 @@ import { docsApi } from './docs.ts'
 import { fixApi } from './fix.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
-import { accountsApi } from './accounts.ts'
+import { accountsApi, syncCliAuths } from './accounts.ts'
+import { integrationsApi } from './integrations.ts'
 import { installApi } from './install.ts'
 import { comfyApi } from './comfy.ts'
 import { libraryApi } from './library.ts'
@@ -183,8 +184,11 @@ app.put('/settings', async (c) => {
   for (const id of Object.keys(p.data.clis)) if (!getCli(id)) delete p.data.clis[id]
   // 打开访问令牌的是这个浏览器：先给它发 Cookie，免得刚打开就把自己关在外面
   if (p.data.requireToken) grantCookie(c)
-  const before = JSON.stringify((await getSettings()).remoteAccess)
+  const prev = await getSettings()
+  const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
+  // API / 账号方式或 API 配置变了：立即写进 CLI 自己的配置，不用等到下一次执行
+  await syncCliAuths(prev, saved)
   // 只有外网访问的开关、方式、地址变了才重启隧道；其他设置每次自动保存都把 quick 地址换掉会断线
   if (JSON.stringify(saved.remoteAccess) !== before) void applyRemote()
   return c.json(saved)
@@ -204,6 +208,7 @@ app.post('/clis/specs/reload', async (c) => {
 })
 app.get('/clis', async (c) => c.json(await detectClis(c.req.query('refresh') === '1')))
 app.route('/accounts', accountsApi())
+app.route('/integrations', integrationsApi())
 app.route('/library', libraryApi())
 app.route('/mcp-tools', mcpApi())
 app.route('/clis', installApi())
@@ -557,6 +562,11 @@ const updater = updateApi({
   running: () => tasks.running() + designs.running(),
   // server 在下面才创建，重启时一定已经有了
   restart: () => (process.env.AGENT_PANEL_NO_RESTART ? undefined : restartProcess(() => server.close())),
+  // 强制更新：先让任务里的 CLI 收尾；设计、文档、模型补全这些不在任务里的也一起结束
+  stopAll: async () => {
+    await tasks.stopAll()
+    killAllProcesses()
+  },
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())

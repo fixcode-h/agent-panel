@@ -1,12 +1,13 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Download, Eye, EyeOff, Loader2, Plus, Trash2, X } from 'lucide-react'
+import { Check, CircleAlert, CircleCheck, Download, Eye, EyeOff, Loader2, Plus, PlugZap, Trash2, X } from 'lucide-react'
 import { CLIS } from '@shared/clis'
-import { API_PROTOCOLS, API_PROTOCOL_LABEL, type ApiConfig, type ApiProtocol } from '@shared/accounts'
+import { API_PROTOCOLS, API_PROTOCOL_LABEL, apiProvider, type ApiConfig, type ApiProtocol } from '@shared/accounts'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Input, Select } from '@/components/ui/input'
+import { AiFixButton } from '@/components/ui/ai-fix'
 import { Group } from './parts'
 import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
@@ -33,6 +34,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
       {
         id: crypto.randomUUID().slice(0, 8),
         name: preset?.label ?? t('自定义 API'),
+        provider: '',
         protocol: preset?.protocol ?? 'openai-chat',
         baseUrl: preset?.baseUrl ?? '',
         apiKey: '',
@@ -44,7 +46,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
     <Group>
       <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
+          '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。支持写配置的 CLI 保存后会立即写进它自己的配置，模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
         )}
       </p>
       <div className="flex flex-col gap-4">
@@ -85,9 +87,24 @@ function ApiCard({
 }) {
   const [show, setShow] = useState(false)
   const [fetching, setFetching] = useState(false)
+  const [testing, setTesting] = useState(false)
+  const [probe, setProbe] = useState<{ ok: boolean; message: string }>()
   const [found, setFound] = useState<string[]>()
   const [filter, setFilter] = useState('')
   const [draft, setDraft] = useState('')
+  const busy = fetching || testing
+  const canProbe = !!a.baseUrl.trim() || a.protocol === 'gemini'
+
+  // 连接相关的字段一改，上一次的测试结果就过期了
+  useEffect(() => {
+    setProbe(undefined)
+  }, [a.protocol, a.baseUrl, a.apiKey, a.authHeader])
+
+  const fail = (e: unknown) => {
+    const message = (e as Error).message
+    setProbe({ ok: false, message })
+    toast.error(message)
+  }
   const fetchModels = async () => {
     setFetching(true)
     try {
@@ -95,10 +112,24 @@ function ApiCard({
       setFound(models)
       setFilter('')
       if (!a.models.length) onChange({ models: models.slice(0, 1) })
+      setProbe({ ok: true, message: t('连接可用，读到 {n} 个模型', { n: models.length }) })
     } catch (e) {
-      toast.error((e as Error).message)
+      fail(e)
     } finally {
       setFetching(false)
+    }
+  }
+  const testConnection = async () => {
+    setTesting(true)
+    try {
+      const { models } = await api.apiModels(a)
+      const message = t('连接可用，读到 {n} 个模型', { n: models.length })
+      setProbe({ ok: true, message })
+      toast.success(message)
+    } catch (e) {
+      fail(e)
+    } finally {
+      setTesting(false)
     }
   }
   const toggle = (m: string) =>
@@ -148,6 +179,22 @@ function ApiCard({
           />
         </label>
         <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+          {t('提供方 ID')}
+          <Input
+            value={a.provider}
+            onChange={(e) => onChange({ provider: e.target.value })}
+            placeholder={t('留空时用 API 名称生成')}
+            spellCheck={false}
+            aria-label={t('提供方 ID')}
+            className="h-9 font-mono text-[0.8125rem]"
+          />
+          <span className="text-[0.71875rem] text-subtle">
+            {t('写进 CLI 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 CLI 也用它拼模型 ID。', {
+              provider: apiProvider(a),
+            })}
+          </span>
+        </label>
+        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
           {t('密钥')}
           <span className="flex gap-1.5">
             <Input
@@ -191,16 +238,50 @@ function ApiCard({
         <div className="flex items-center gap-2">
           <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
           <span className="flex-1" />
-          <Button
-            size="sm"
-            variant="secondary"
-            disabled={fetching || (!a.baseUrl && a.protocol !== 'gemini')}
-            onClick={fetchModels}
-          >
+          <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={testConnection}>
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
+            {t('测试连接')}
+          </Button>
+          <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={fetchModels}>
             {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
             {t('从接口获取')}
           </Button>
         </div>
+        {probe && (
+          <div
+            className={cn(
+              'flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[0.75rem]',
+              probe.ok ? 'border-success/40 bg-success/5 text-success' : 'border-danger/40 bg-danger/5 text-danger',
+            )}
+          >
+            {probe.ok ? (
+              <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 break-words">{probe.message}</span>
+            {!probe.ok && (
+              <AiFixButton
+                variant="ghost"
+                className="h-6 shrink-0 px-1.5 text-xs"
+                label={t('AI 修复')}
+                issue={() => ({
+                  title: t('API 连接失败：{name}', { name: a.name }),
+                  error: probe.message,
+                  context: [
+                    `API 名称：${a.name}`,
+                    `协议：${a.protocol}`,
+                    `接口地址：${a.baseUrl || '（空）'}`,
+                    `提供方 ID：${apiProvider(a)}`,
+                    `密钥：${a.apiKey ? '已填写' : '未填写'}`,
+                    `已选模型：${a.models.join(', ') || '（空）'}`,
+                  ].join('\n'),
+                  topic: 'api',
+                })}
+              />
+            )}
+          </div>
+        )}
         <div className="flex flex-wrap gap-1.5">
           {a.models.map((m, i) => (
             <span

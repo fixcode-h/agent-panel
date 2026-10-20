@@ -16,10 +16,30 @@ export const API_PROTOCOL_LABEL: Record<ApiProtocol, string> = {
   gemini: 'Gemini',
 }
 
+/** 从展示名生成 CLI 配置里的 provider 名；只保留 ASCII 标识符字符 */
+export function providerSlug(name: string) {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+}
+
 /** 全局设置里的一个 API：接口地址、密钥和可用的模型 */
 export const ApiConfig = z.object({
   id: z.string().min(1),
   name: z.string().trim().min(1).max(60),
+  /**
+   * 写进 CLI 配置的 provider 名。识别到的 API 用配置文件里的键（如 tokenapi），
+   * 新建的留空时从 name 生成，避免把展示名直接当成机器标识。
+   */
+  provider: z
+    .string()
+    .trim()
+    .max(60)
+    .regex(/^[A-Za-z0-9_-]*$/)
+    .default(''),
   protocol: z.enum(API_PROTOCOLS).default('openai-chat'),
   baseUrl: z.string().trim().default(''),
   apiKey: z.string().default(''),
@@ -30,10 +50,17 @@ export const ApiConfig = z.object({
 })
 export type ApiConfig = z.infer<typeof ApiConfig>
 
+/** CLI 配置里的 provider 名：显式值优先，否则从 API 名称生成 */
+export function apiProvider(api: Pick<ApiConfig, 'name' | 'provider'>, fallback = 'agentpanel') {
+  return (api.provider.trim() || providerSlug(api.name) || fallback).slice(0, 60)
+}
+
 /** 改 JSON 配置文件里的一些键：set 的键可以写成 a.b.c；值里的 {baseUrl} 等占位见 fillTemplate */
 export const JsonEdit = z.object({
   file: z.string().min(1),
   set: z.record(z.string(), z.unknown()).default({}),
+  /** 浅合并还是直接替换；合并时对象递归合并，数组仍然替换 */
+  merge: z.boolean().default(false),
   unset: z.array(z.string()).default([]),
 })
 export type JsonEdit = z.infer<typeof JsonEdit>
@@ -110,6 +137,15 @@ export const CliAuth = z.object({
     .object({
       /** 能用哪些协议的 API */
       protocols: z.array(z.enum(API_PROTOCOLS)).min(1),
+      /** API 没有指定 provider 时用这个名字写进 CLI 配置 */
+      defaultProvider: z.string().default('agentpanel'),
+      /**
+       * API 模式下模型从哪里来：cli 从 CLI 自己的配置/列表读（API 会先写进 CLI 配置）；
+       * api 直接用全局 API 里配的模型（例如只通过环境变量接收配置的 CLI）
+       */
+      modelSource: z.enum(['cli', 'api']).default('api'),
+      /** 模型 ID 的前缀模板，例如 "{provider}/"；配置里写模型时会把同样的前缀去掉 */
+      modelPrefix: z.string().default(''),
       /** 加的环境变量；值为空的不加 */
       env: z.record(z.string(), z.string()).default({}),
       /** 加的命令行参数 */
@@ -132,12 +168,13 @@ export type CliAuth = z.infer<typeof CliAuth>
  * ANTHROPIC_AUTH_TOKEN）；{x|json} 填成 JSON 字符串（带引号，写进 TOML 参数时用）。
  * 整个值正好是 {models} 时换成 { 模型: {} } 的对象，正好是 {modelList} 时换成 [{ id: 模型 }] 的数组（Pi 的 models.json）
  */
-export function apiVars(api: ApiConfig, wire: Record<string, string> = {}) {
+export function apiVars(api: ApiConfig, wire: Record<string, string> = {}, provider = apiProvider(api)) {
   return {
     baseUrl: api.baseUrl,
     apiKey: api.apiKey,
     name: api.name,
     id: api.id,
+    provider,
     protocol: api.protocol,
     wire: wire[api.protocol] ?? api.protocol,
     keyEnv: api.authHeader === 'bearer' ? 'ANTHROPIC_AUTH_TOKEN' : 'ANTHROPIC_API_KEY',
@@ -150,16 +187,47 @@ export function fillTemplate(s: string, vars: Record<string, string>) {
   )
 }
 
-function fillValue(v: unknown, vars: Record<string, string>, api: ApiConfig): unknown {
+/** 写进 provider 配置时去掉模型 ID 上重复的 provider 前缀 */
+export function nativeModelId(model: string, prefix: string) {
+  return prefix && model.startsWith(prefix) ? model.slice(prefix.length) : model
+}
+
+/** 显示和传给 CLI 的完整模型 ID：没有前缀的补上，已有的不重复 */
+export function apiModelList(api: ApiConfig, prefix: string) {
+  return api.models.map((m) => (prefix && !m.startsWith(prefix) ? prefix + m : m))
+}
+
+/** 这个 CLI 在 API 模式下给模型加的前缀，例如 codeg/ */
+export function apiModelPrefix(auth: CliAuth | undefined, api: ApiConfig) {
+  const spec = auth?.api
+  if (!spec?.modelPrefix) return ''
+  return fillTemplate(spec.modelPrefix, apiVars(api, spec.wire, apiProvider(api, spec.defaultProvider)))
+}
+
+/**
+ * 执行时把旧的、没带 provider 前缀的模型 ID 补上当前 API 的前缀。
+ * 已经带前缀的、档位（@high）和不在这个 API 模型列表里的值保持原样。
+ */
+export function apiModelIdFor(model: string, auth: CliAuth | undefined, api: ApiConfig | undefined) {
+  if (!api || !model || model.startsWith('@')) return model
+  const prefix = apiModelPrefix(auth, api)
+  if (!prefix || model.startsWith(prefix)) return model
+  const native = api.models.map((m) => nativeModelId(m, prefix))
+  return !native.length || native.includes(model) ? prefix + model : model
+}
+
+function fillValue(v: unknown, vars: Record<string, string>, api: ApiConfig, prefix: string): unknown {
   if (typeof v === 'string')
     return v === '{models}'
-      ? Object.fromEntries(api.models.map((m) => [m, {}]))
+      ? Object.fromEntries(api.models.map((m) => [nativeModelId(m, prefix), {}]))
       : v === '{modelList}'
-        ? api.models.map((id) => ({ id }))
+        ? api.models.map((m) => ({ id: nativeModelId(m, prefix) }))
         : fillTemplate(v, vars)
-  if (Array.isArray(v)) return v.map((x) => fillValue(x, vars, api))
+  if (Array.isArray(v)) return v.map((x) => fillValue(x, vars, api, prefix))
   if (v && typeof v === 'object')
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [fillTemplate(k, vars), fillValue(x, vars, api)]))
+    return Object.fromEntries(
+      Object.entries(v).map(([k, x]) => [fillTemplate(k, vars), fillValue(x, vars, api, prefix)]),
+    )
   return v
 }
 
@@ -167,19 +235,48 @@ function fillValue(v: unknown, vars: Record<string, string>, api: ApiConfig): un
 export const apiFits = (auth: CliAuth | undefined, api: ApiConfig | undefined) =>
   !!auth?.api && !!api && auth.api.protocols.includes(api.protocol)
 
+/** 填一份配置编辑；没有 API（切回账号）时仍可用最后选用的 API 填 {provider} */
+export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig): JsonEdit[] {
+  const spec = auth.api!
+  const provider = api ? apiProvider(api, spec.defaultProvider) : spec.defaultProvider
+  const base: ApiConfig = api ?? {
+    id: '',
+    name: '',
+    provider,
+    protocol: 'openai-chat',
+    baseUrl: '',
+    apiKey: '',
+    authHeader: 'x-api-key',
+    models: [],
+  }
+  const vars = apiVars(base, spec.wire, provider)
+  const prefix = api && spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''
+  return edits.map((e) => ({
+    file: fillTemplate(e.file, vars),
+    merge: e.merge,
+    set: fillValue(e.set, vars, base, prefix) as Record<string, unknown>,
+    unset: e.unset.map((u) => fillTemplate(u, vars)),
+  }))
+}
+
 /** 用 API 时要加给 CLI 的环境变量、参数和要改的配置文件 */
 export function apiInjection(auth: CliAuth, api: ApiConfig) {
   const spec = auth.api!
-  const vars = apiVars(api, spec.wire)
+  const provider = apiProvider(api, spec.defaultProvider)
+  const vars = apiVars(api, spec.wire, provider)
+  const prefix = spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''
   return {
+    provider,
+    modelPrefix: prefix,
     env: Object.entries(spec.env)
       .map(([k, v]) => ({ key: fillTemplate(k, vars), value: fillTemplate(v, vars) }))
       .filter((e) => e.key && e.value),
     args: spec.args.map((a) => fillTemplate(a, vars)),
     edits: spec.edits.map((e) => ({
-      file: e.file,
-      set: fillValue(e.set, vars, api) as Record<string, unknown>,
-      unset: e.unset,
+      file: fillTemplate(e.file, vars),
+      merge: e.merge,
+      set: fillValue(e.set, vars, api, prefix) as Record<string, unknown>,
+      unset: e.unset.map((u) => fillTemplate(u, vars)),
     })),
   }
 }

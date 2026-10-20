@@ -235,6 +235,10 @@ export const EN_SETTINGS: Record<string, string> = {
     'Downloads this package, replaces the current app and restarts automatically. Data in the data folder is kept.',
   更新: 'Update',
   切换: 'Switch',
+  强制更新: 'Force update',
+  '强制更新？': 'Force update?',
+  '会中断所有正在执行的 CLI 对话，没做完的内容可能丢失；然后马上替换程序文件并重启，data 目录里的数据会保留。':
+    'This interrupts every running CLI conversation — unfinished work may be lost — then replaces the app files and restarts right away. Data in the data folder is kept.',
   更新失败: 'Update failed',
   '新版本已经装好，但服务没有自动重启成功，请手动重新启动面板':
     "The new version is installed, but the server didn't restart automatically. Please restart the panel manually.",
@@ -306,8 +310,12 @@ export const EN_SETTINGS: Record<string, string> = {
   '共 {n} 个': '{n} total',
   '还没有装 Skill': 'No skills installed yet',
   '自定义 API': 'Custom API',
-  '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
-    'Set up APIs here, then switch a CLI\'s "Sign-in method" to API on its page. Only CLIs that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
+  '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。支持写配置的 CLI 保存后会立即写进它自己的配置，模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
+    'Set up APIs here, then switch a CLI\'s "Sign-in method" to API on its page. CLIs that support config files get the API written into their own config on save, and their model list comes from the CLI first. Only CLIs that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
+  '提供方 ID': 'Provider ID',
+  '留空时用 API 名称生成': 'Leave empty to derive it from the API name',
+  '写进 CLI 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 CLI 也用它拼模型 ID。':
+    'Provider name written into the CLI config; when empty, {provider} is used. CLIs that need a provider prefix also use it for model IDs.',
   '添加 API': 'Add API',
   '从常用的开始：': 'Start from:',
   'API 名称': 'API name',
@@ -320,6 +328,7 @@ export const EN_SETTINGS: Record<string, string> = {
   密钥的发送方式: 'How the key is sent',
   可用的模型: 'Available models',
   从接口获取: 'Fetch from API',
+  '连接可用，读到 {n} 个模型': 'Connection works — {n} models available',
   第一个是默认模型: 'The first one is the default model',
   '自己输入模型名，回车添加': 'Type a model name, Enter to add',
   添加模型: 'Add model',
@@ -331,8 +340,8 @@ export const EN_SETTINGS: Record<string, string> = {
   登录方式: 'Sign-in method',
   '用浏览器登录的账号，可以保存几个账号随时切换':
     'Use an account signed in through the browser; you can save several and switch any time',
-  '用全局设置里配的 API（接口地址和密钥），模型下拉只列这个 API 的模型':
-    "Use an API configured in global settings (base URL and key); the model list only shows that API's models",
+  '用全局设置里配的 API（接口地址和密钥）；支持写配置的 CLI 会立即保存到它自己的配置，模型下拉优先从 CLI 读取':
+    'Use an API configured in global settings (base URL and key); CLIs that support config files save it immediately, and their model list comes from the CLI first',
   '{cli} 登录方式': '{cli} sign-in method',
   账号: 'Account',
   API: 'API',
@@ -358,6 +367,7 @@ export const EN_SETTINGS: Record<string, string> = {
     'Sign out of {cli}; the account stays saved so you can switch back later',
   已登出: 'Signed out',
   登出: 'Sign out',
+  退出登录: 'Sign out',
   保存的账号: 'Saved accounts',
   账号名称: 'Account name',
   保存名称: 'Save name',
@@ -513,6 +523,8 @@ export const EN_SETTINGS: Record<string, string> = {
   部署: 'Deploy',
   // AI 处理报错
   'AI 处理': 'Handle with AI',
+  'AI 修复': 'Fix with AI',
+  'API 连接失败：{name}': 'API connection failed: {name}',
   '生成图片失败：{name}': 'Image generation failed: {name}',
   '{cli} 登录没有完成': '{cli} sign-in did not complete',
   '本机生图：{step}': 'Local image generation: {step}',
@@ -651,4 +663,42 @@ export const EN_SETTINGS: Record<string, string> = {
   正在连接: 'Connecting',
   已连接: 'Connected',
   出错: 'Error',
+
+  // 授权（外部 CLI）
+  授权: 'Authorizations',
+  '给本机的命令行工具授权后，Agent 在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。':
+    'After authorizing a local command-line tool, agents can use it directly on remote repositories, e.g. merge branches, view and create PRs, or file issues. The tool stores the credentials itself; the panel never keeps them.',
+  '授权后 Agent 可以直接用 gh 操作 GitHub 远端：合并分支、查看和创建 PR、提交 issue 等。':
+    'Once authorized, agents can use gh directly on GitHub: merge branches, view and create PRs, file issues and more.',
+  已授权: 'Authorized',
+  未授权: 'Not authorized',
+  '还没有登录 GitHub。点「浏览器授权」，或者用 Personal Access Token 授权。':
+    'Not signed in to GitHub yet. Choose "Authorize in browser", or authorize with a personal access token.',
+  '没有检测到 {command}，先安装再授权。': 'Could not find {command}. Install it before authorizing.',
+  浏览器授权: 'Authorize in browser',
+  '用 Token 授权': 'Authorize with a token',
+  '粘贴 Token，只传给本机的 {command}，面板不保存。':
+    'Paste a token. It is passed only to the local {command}; the panel does not store it.',
+  Token: 'Token',
+  授权完成: 'Authorized',
+  '退出 {name} 的授权？': 'Revoke the authorization for {name}?',
+  '退出后 Agent 在任务里不能再用它操作远端，需要时可以重新授权。':
+    'Agents will no longer be able to use it on remote repositories. You can authorize again later.',
+  已退出登录: 'Signed out',
+  '等待浏览器完成授权…': 'Waiting for the browser to finish…',
+  一次性授权码: 'One-time code',
+  复制授权码: 'Copy code',
+  在浏览器里输入这个码: 'Enter this code in the browser',
+  打开授权页面: 'Open authorization page',
+  取消授权: 'Cancel authorization',
+  授权没有完成: 'Authorization did not complete',
+  没有这个授权工具: 'Unknown authorization tool',
+  '没有检测到 {name}，先安装再授权': 'Could not find {name}. Install it before authorizing',
+  '超过 5 分钟没有完成授权，已取消': 'Authorization was not completed within 5 minutes and was cancelled',
+  '{name} 没有完成授权（退出码 {code}）': '{name} did not finish authorizing (exit code {code})',
+  '{name} 不支持用 Token 授权': '{name} does not support token authorization',
+  'Token 不对': 'Invalid token',
+  '{name} 没有接受这个 Token（退出码 {code}）': '{name} did not accept this token (exit code {code})',
+  '退出登录没有成功（退出码 {code}）': 'Sign-out failed (exit code {code})',
+  退出登录后没能读回状态: 'Could not read the status after signing out',
 }

@@ -6,7 +6,14 @@
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { CLIS, type CliDefinition } from '../shared/clis.ts'
-import { sameApi, type ApiConfig, type ApiProtocol, type ApiSource, type DetectedApi } from '../shared/accounts.ts'
+import {
+  apiProvider,
+  sameApi,
+  type ApiConfig,
+  type ApiProtocol,
+  type ApiSource,
+  type DetectedApi,
+} from '../shared/accounts.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
@@ -74,8 +81,16 @@ function modelsOf(obj: Obj, keys: string[]) {
 }
 
 /** 一条配置换成 API；什么都没配（没有密钥也没有自定义地址）时不算 */
-export function toApi(def: CliDefinition, src: ApiSource, key: string, obj: Obj, env: NodeJS.ProcessEnv) {
-  if (key === PANEL_PROVIDER) return null
+export function toApi(
+  def: CliDefinition,
+  src: ApiSource,
+  key: string,
+  obj: Obj,
+  env: NodeJS.ProcessEnv,
+  skip: Set<string> = new Set([PANEL_PROVIDER]),
+) {
+  // 面板自己写进 CLI 配置的 provider 不算用户配置，否则会在「识别到的 API」里重复出现
+  if (skip.has(key)) return null
   const bearer = resolveValue(pick(obj, src.bearerKey), env)
   const keyEnv = pick(obj, src.keyEnv)
   const apiKey = bearer || resolveValue(pick(obj, src.apiKey), env) || (keyEnv ? (env[keyEnv] ?? '') : '')
@@ -89,6 +104,8 @@ export function toApi(def: CliDefinition, src: ApiSource, key: string, obj: Obj,
   const api: ApiConfig = {
     id: createHash('sha1').update(`${def.id}\n${src.file}\n${src.at}\n${key}`).digest('hex').slice(0, 8),
     name: (name ? `${def.name} · ${name}` : def.name).slice(0, 60),
+    // each 的 key 就是 CLI 配置里的 provider 名（如 providers.tokenapi）；不是 each 的来源没有
+    provider: key,
     protocol: map[wire] ?? src.protocol,
     baseUrl: url || src.defaultBaseUrl,
     apiKey,
@@ -101,6 +118,7 @@ export function toApi(def: CliDefinition, src: ApiSource, key: string, obj: Obj,
 /** 所有 CLI 里识别到的 API；同一个（协议、地址、密钥一样）只留第一个，模型合在一起 */
 export async function detectApis(): Promise<DetectedApi[]> {
   const settings = await getSettings()
+  const skip = new Set([PANEL_PROVIDER, ...settings.apis.map((a) => apiProvider(a))])
   const out: DetectedApi[] = []
   for (const def of CLIS) {
     if (!def.auth?.apiSources.length) continue
@@ -113,7 +131,7 @@ export async function detectApis(): Promise<DetectedApi[]> {
     for (const src of def.auth.apiSources) {
       const entries = await readSource(src, env).catch(() => [] as [string, Obj][])
       for (const [key, obj] of entries) {
-        const api = toApi(def, src, key, obj, env)
+        const api = toApi(def, src, key, obj, env, skip)
         if (!api) continue
         const dup = out.find((d) => sameApi(d.api, api))
         if (dup) dup.api.models = [...new Set([...dup.api.models, ...api.models])]

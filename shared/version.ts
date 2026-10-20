@@ -45,6 +45,8 @@ export interface AppUpdateJob {
   phase: string
   received: number
   total: number
+  /** 下载完了，在等正在执行的任务结束；这时可以强制更新 */
+  waiting?: boolean
   error?: string
 }
 

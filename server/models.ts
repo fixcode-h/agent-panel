@@ -8,7 +8,7 @@ import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { modelLimitsFor, type ModelCatalogEntry } from '../shared/model-catalog.ts'
-import type { ApiProtocol } from '../shared/accounts.ts'
+import { apiModelList, apiModelPrefix, type ApiConfig, type ApiProtocol } from '../shared/accounts.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { rpcQuery } from './exec/rpc/query.ts'
@@ -231,13 +231,15 @@ export function parsePiModels(out: string, efforts: string[]): CliModel[] {
 async function piModels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
   // --offline：只读本机的模型表，不去联网检查更新
   const r = await capture(command, ['--list-models', '--offline'], homedir(), env, 30_000)
+  // Pi 的模型表写在 stderr（stdout 是空的），错误信息和提示也在 stderr，合起来解析
+  const text = [r.stdout, r.stderr].filter((s) => s.trim()).join('\n')
   const models = parsePiModels(
-    r.stdout,
+    text,
     def.efforts.map((e) => e.id),
   )
   if (!models.length) {
     if (r.spawnError) throw new Error(r.spawnError)
-    const msg = (r.stderr || r.stdout).trim().split('\n').at(-1)
+    const msg = text.trim().split('\n').at(-1)
     // 一个提供方都没配时 Pi 只说没有模型，这时用内置的建议
     if (r.code === 0) return { models: [] }
     throw new Error(msg || t('退出码 {code}', { code: String(r.code) }))
@@ -408,71 +410,102 @@ function withCatalog(
   })
 }
 
+/** API 模式：用全局 API 里配的模型，并按 CLI 的要求补 provider 前缀 */
+function apiModelsFor(def: CliDefinition, api: ApiConfig): CliModels {
+  const prefix = apiModelPrefix(def.auth, api)
+  return {
+    source: 'builtin',
+    models: apiModelList(api, prefix).map((m, i) => ({
+      id: m,
+      label: m,
+      isDefault: i === 0 || undefined,
+      origin: 'config' as const,
+    })),
+    efforts: [],
+    auth: 'api',
+    from: api.name,
+  }
+}
+
+/** 从 CLI 自己的配置/列表读模型 */
+async function modelsFromCli(
+  def: CliDefinition,
+  command: string,
+  env: NodeJS.ProcessEnv,
+): Promise<CliModels | undefined> {
+  if (def.modelsFrom === 'codex' || def.modelsFrom === 'commandcode') {
+    const p = def.modelsFrom === 'codex' ? await codexModels(command, env) : await commandCodeModels(command, env)
+    return { source: 'cli', models: p.models, efforts: [], auth: p.auth, from: p.from }
+  }
+  if (def.modelsFrom === 'pi') {
+    const p = await piModels(def, command, env)
+    return { source: 'cli', models: p.models, efforts: [], from: p.from }
+  }
+  if (def.modelsFrom === 'claude') {
+    const [auth, found] = await Promise.all([claudeAuth(command, env), claudeConfigured(env)])
+    const configured = found.map((m) => ({ ...m, origin: 'config' as const }))
+    const base = builtin(def).map((m) => ({ ...m, origin: 'cli' as const }))
+    // settings.json 里写了 model 时它才是默认
+    if (configured.some((m) => m.isDefault)) base.forEach((m) => delete m.isDefault)
+    return auth === 'api' && configured.length
+      ? { source: 'cli', models: [...configured, ...base], efforts: [], auth, from: t('settings.json / 环境变量') }
+      : { source: 'builtin', models: [...base, ...configured], efforts: [], auth }
+  }
+  return undefined
+}
+
 export async function cliModels(id: string, refresh = false): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
   if (!def) throw new Error(t('未知的 CLI：{cli}', { cli: id }))
   const cs = cliSettings(await getSettings(), id)
   const entries = await mergedModelCatalog().catch(() => [])
   const protocol = cs.api?.protocol
-  // API 模式：只列这个 API 里配的模型（用账号时才列 CLI 自己读到的）
-  if (cs.api)
-    return {
-      source: 'builtin',
-      models: withCatalog(
-        cs.api.models.map((m, i) => ({
-          id: m,
-          label: m,
-          isDefault: i === 0 || undefined,
-          origin: 'config' as const,
-        })),
-        entries,
-        def.efforts.map((e) => e.id),
-        protocol,
-      ),
-      efforts: [],
-      auth: 'api',
-      from: cs.api.name,
+  const applyCatalog = (data: CliModels) => {
+    data.models = withCatalog(
+      uniq(data.models),
+      entries,
+      def.efforts.map((e) => e.id),
+      protocol,
+    )
+    data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
+    return data
+  }
+
+  if (cs.api) {
+    const fallback = apiModelsFor(def, cs.api)
+    const spec = def.auth?.api
+    // 能写进 CLI 配置、CLI 也能列模型的（Command Code、Pi），以 CLI 为准；
+    // 只通过环境变量接收 API 的 CLI 还是用 API 里配的模型。
+    if (spec?.modelSource !== 'cli' || !def.modelsFrom) return applyCatalog(fallback)
+    const st = (await detectClis()).find((c) => c.id === id)
+    if (!st?.installed || !cs.enabled) return applyCatalog(fallback)
+    try {
+      const listed = await modelsFromCli(def, cs.command, childEnv(cs.env))
+      if (!listed) return applyCatalog(fallback)
+      const prefix = apiModelPrefix(def.auth, cs.api)
+      if (!prefix) return applyCatalog({ ...listed, models: listed.models, auth: 'api', from: cs.api.name })
+      const selected = listed.models.filter((m) => m.id.startsWith(prefix))
+      if (!selected.length) return applyCatalog(fallback)
+      return applyCatalog({ ...listed, models: selected, auth: 'api', from: cs.api.name })
+    } catch {
+      return applyCatalog(fallback)
     }
+  }
+
   const hit = cache.get(id)
   if (!refresh && hit && Date.now() - hit.at < TTL) return hit.data
   const env = childEnv(cs.env)
-  let data: CliModels
   // 没安装或停用的 CLI 不去启动它读模型，用内置列表
   const st = (await detectClis()).find((c) => c.id === id)
   if (!st?.installed || !cs.enabled) return { source: 'builtin', models: builtin(def), efforts: [] }
+  let data: CliModels
   try {
-    if (def.modelsFrom === 'codex' || def.modelsFrom === 'commandcode') {
-      const p =
-        def.modelsFrom === 'codex' ? await codexModels(cs.command, env) : await commandCodeModels(cs.command, env)
-      data = { source: 'cli', models: p.models, efforts: [], auth: p.auth, from: p.from }
-    } else if (def.modelsFrom === 'pi') {
-      const p = await piModels(def, cs.command, env)
-      data = { source: 'cli', models: p.models, efforts: [], from: p.from }
-    } else if (def.modelsFrom === 'claude') {
-      const [auth, found] = await Promise.all([claudeAuth(cs.command, env), claudeConfigured(env)])
-      const configured = found.map((m) => ({ ...m, origin: 'config' as const }))
-      const base = builtin(def).map((m) => ({ ...m, origin: 'cli' as const }))
-      // settings.json 里写了 model 时它才是默认
-      if (configured.some((m) => m.isDefault)) base.forEach((m) => delete m.isDefault)
-      data =
-        auth === 'api' && configured.length
-          ? { source: 'cli', models: [...configured, ...base], efforts: [], auth, from: t('settings.json / 环境变量') }
-          : { source: 'builtin', models: [...base, ...configured], efforts: [], auth }
-    } else {
-      // 配置文件加的 CLI 没有列模型的命令，用配置里写的
-      data = { source: 'builtin', models: builtin(def), efforts: [] }
-    }
+    data = (await modelsFromCli(def, cs.command, env)) ?? { source: 'builtin', models: builtin(def), efforts: [] }
   } catch (e) {
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }
   }
   if (data.source === 'cli' && !data.models.length) data = { source: 'builtin', models: builtin(def), efforts: [] }
-  data.models = withCatalog(
-    uniq(data.models),
-    entries,
-    def.efforts.map((e) => e.id),
-    protocol,
-  )
-  data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
+  data = applyCatalog(data)
   cache.set(id, { at: Date.now(), data })
   return data
 }

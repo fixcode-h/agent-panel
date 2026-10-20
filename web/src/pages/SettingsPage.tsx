@@ -19,6 +19,7 @@ import {
   Rocket,
   Type,
   Globe,
+  ShieldCheck,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -45,6 +46,7 @@ import { DataSection } from '@/components/settings/DataSection'
 import { LocalImageSection } from '@/components/settings/LocalImageSection'
 import { TagsSection } from '@/components/settings/TagsSection'
 import { RemoteSection } from '@/components/settings/RemoteSection'
+import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
@@ -79,6 +81,8 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
+  // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
+  { id: 'integrations', label: t('授权'), icon: ShieldCheck },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
   { id: 'assist', label: t('AI 创建'), icon: Sparkles },
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon },
@@ -262,7 +266,7 @@ function SettingsBody({
       for (const c of CLIS) {
         const cs = v.clis[c.id]
         const a = cs?.authMode === 'api' ? v.apis.find((x) => x.id === cs.apiId) : undefined
-        const sig = `${cs?.authMode ?? 'account'}|${a ? `${a.id}|${a.protocol}|${a.models.join(',')}` : ''}`
+        const sig = `${cs?.authMode ?? 'account'}|${a ? `${a.id}|${a.name}|${a.provider}|${a.protocol}|${a.baseUrl}|${a.apiKey}|${a.models.join(',')}` : ''}`
         if (modelSig.current[c.id] !== undefined && modelSig.current[c.id] !== sig)
           void loadCliModels(c.id, true).catch(() => {})
         modelSig.current[c.id] = sig
@@ -418,6 +422,7 @@ function SettingsBody({
           {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
           {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
           {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
+          {cur.id === 'integrations' && <IntegrationsSection />}
           {cur.id === 'general' && (
             <Group>
               {demo && (
