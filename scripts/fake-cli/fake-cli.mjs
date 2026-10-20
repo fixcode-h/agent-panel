@@ -241,11 +241,14 @@ if (args.includes('--rpc')) {
         say({ jsonrpc: '2.0', method: 'turn/started', params: { seq: ++rpcSeq, turnId: 'turn_1' } })
         started = true
         rpcTurns++
-        if (rpcTurnWait) {
-          const wake = rpcTurnWait
-          rpcTurnWait = null
-          wake()
-        } else rpcTurnArrived = true
+        // 第一轮是启动这一轮（while (!started) 在等它），不是在等「下一轮」
+        if (rpcTurns > 1) {
+          if (rpcTurnWait) {
+            const wake = rpcTurnWait
+            rpcTurnWait = null
+            wake()
+          } else rpcTurnArrived = true
+        }
       } else if (m.method === 'turn/steer') {
         steered.push(String(m.params?.input ?? ''))
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1', queued: steered.length } })
@@ -412,38 +415,42 @@ const codexDone = (status, error) => {
   process.exit(0)
 }
 const file = `${kind}-output.txt`
-const verdict = input.includes('最后单独一行写「验收结论')
-  ? input.includes('第 1 轮验收')
-    ? '\n验收结论：不通过'
-    : '\n验收结论：通过'
-  : ''
-// LONGOUT：第一个节点输出一份很长的结果（测试交接内容超过上限时存成文件）
-const long =
-  input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
-// 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」，用户补充了 GATEFIXED（修好了）后给「通过」
-const branch = input.includes('「结论：通过」或「结论：不通过」')
-  ? `\n结论：${input.includes('BRANCHNO') && !input.includes('GATEFIXED') ? '不通过' : '通过'}`
-  : ''
-// 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，
-// 有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选；流程完成时给一段最终结果
-const firstEval = input.includes('这是对它的第 1 次评估')
-const dispatch = input.includes('## 事件：节点完成')
-  ? '\n```dispatch\n' +
-    JSON.stringify(
-      input.includes('MAINREWORK') && firstEval
-        ? { action: 'rework', feedback: '补上错误处理' }
-        : /MAINDELEGATE:(\S+)/.test(input) && firstEval
-          ? { action: 'delegate', workflow: /MAINDELEGATE:(\S+)/.exec(input)[1], input: '帮忙检查一遍' }
-          : input.includes('dispatch 里必须写 branch')
-            ? { action: 'continue', branch: input.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
-            : { action: 'continue' },
-    ) +
-    '\n```'
-  : input.includes('## 事件：流程完成')
-    ? '\n最终结果：主 Agent 整理好了'
-    : input.includes('## 事件：子 Agent 提问')
-      ? '\n主 Agent 的回答：用方案一'
-      : ''
+// 回复按当前 input 算：RPC 保活时同一进程会跑下一轮，input 已经换成新的那句
+const turnReply = () => {
+  const verdict = input.includes('最后单独一行写「验收结论')
+    ? input.includes('第 1 轮验收')
+      ? '\n验收结论：不通过'
+      : '\n验收结论：通过'
+    : ''
+  // LONGOUT：第一个节点输出一份很长的结果（测试交接内容超过上限时存成文件）
+  const long =
+    input.includes('LONGOUT') && !input.includes('上游节点的结果') ? `\n${'很长的方案。'.repeat(1000)}结尾` : ''
+  // 后面有条件连线的节点要给出结论：任务里有 BRANCHNO 时给「不通过」，用户补充了 GATEFIXED（修好了）后给「通过」
+  const branch = input.includes('「结论：通过」或「结论：不通过」')
+    ? `\n结论：${input.includes('BRANCHNO') && !input.includes('GATEFIXED') ? '不通过' : '通过'}`
+    : ''
+  // 主 Agent 的调度轮：评估节点时写 dispatch 决定。节点说明里有 MAINREWORK 时第一次评估退回，
+  // 有 MAINDELEGATE:<工作流 id> 时第一次评估委派给它，有分支时按 BRANCHNO 选；流程完成时给一段最终结果
+  const firstEval = input.includes('这是对它的第 1 次评估')
+  const dispatch = input.includes('## 事件：节点完成')
+    ? '\n```dispatch\n' +
+      JSON.stringify(
+        input.includes('MAINREWORK') && firstEval
+          ? { action: 'rework', feedback: '补上错误处理' }
+          : /MAINDELEGATE:(\S+)/.test(input) && firstEval
+            ? { action: 'delegate', workflow: /MAINDELEGATE:(\S+)/.exec(input)[1], input: '帮忙检查一遍' }
+            : input.includes('dispatch 里必须写 branch')
+              ? { action: 'continue', branch: input.includes('BRANCHNO') ? 'fail' : 'pass', note: '注意兼容旧数据' }
+              : { action: 'continue' },
+      ) +
+      '\n```'
+    : input.includes('## 事件：流程完成')
+      ? '\n最终结果：主 Agent 整理好了'
+      : input.includes('## 事件：子 Agent 提问')
+        ? '\n主 Agent 的回答：用方案一'
+        : ''
+  return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
+}
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
 const panelMcpUrl = () =>
   kind === 'pi'
@@ -483,7 +490,8 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
     )
 }
 
-const reply = `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
+// 一次性执行（stdin 传一个任务、跑一轮就退出）用的回复；RPC 保活时每轮用 turnReply() 重算
+const reply = turnReply()
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
@@ -1083,32 +1091,36 @@ if (kind === 'claude') {
   note('thread/tokenUsage/updated', { tokenUsage: { total: usage, last: usage, modelContextWindow: 258400 } })
   if (fail) codexDone('failed', '模拟的失败')
   codexDone('completed')
-} else if (rpcMode) {
-  // Command Code 的 RPC 常驻：一轮结束后，面板可能在同一进程里发下一次 turn/start（保活复用），
-  // 所以按轮循环，直到面板关 stdin（session/exit）才退出
+} else {
   const ev = (e) => out({ type: 'event', event: e })
-  for (;;) {
-    const turnInput = input
-    const turnReply = `这是 ${kind} 的回复。收到 ${turnInput.length} 个字符的任务描述。`
-    ev({ type: 'run_start', sessionId: session })
+  // 跑一轮：回复内容按当前 input 算（验收结论、dispatch、补充这些都带在里面）。
+  // RPC 常驻时同一进程可以接着跑下一轮（面板保活复用）。返回 true 表示进程要退出
+  const commandTurn = async () => {
     // NETFAIL：像真的 Command Code 一样连接中途断开，退出码 6；NETDOWN 每次都断（续接也断）
     const downMark = path.join(tmpdir(), `fake-netdown-${session}`)
-    if (turnInput.includes('NETDOWN')) writeFileSync(downMark, '')
-    if (existsSync(downMark) || (turnInput.includes('NETFAIL') && resumeIdx < 0)) {
+    if (input.includes('NETDOWN')) writeFileSync(downMark, '')
+    if (existsSync(downMark) || (input.includes('NETFAIL') && resumeIdx < 0)) {
       process.stderr.write(
         'Note: "fake/flash" routes via Command Code; your providers.json also declares it — use "me/fake/flash" to route there instead.\nError: Unable to connect to the API. Please check your network connection.\nStream connection failed mid-response: terminated\n',
       )
-      const error = { message: 'Stream connection failed mid-response: terminated' }
-      process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n')
-      process.stdout.write(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'turn/completed',
-          params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'run_error', error },
-        }) + '\n',
-      )
+      if (rpcMode) {
+        const error = { message: 'Stream connection failed mid-response: terminated' }
+        process.stdout.write(
+          JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n',
+        )
+        process.stdout.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'turn/completed',
+            params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'run_error', error },
+          }) + '\n',
+        )
+      }
       process.exit(6)
     }
+    const r = turnReply()
+    const bad = input.includes('FAIL')
+    ev({ type: 'run_start', sessionId: session })
     ev({ type: 'model_request_start' })
     ev({ type: 'message_start' })
     ev({ type: 'thinking_start' })
@@ -1124,10 +1136,38 @@ if (kind === 'claude') {
     })
     ev({ type: 'model_request_start' })
     ev({ type: 'message_start' })
-    for (const part of turnReply.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
-    ev({ type: 'message_end', content: [{ type: 'text', text: turnReply }] })
-    const turnFail = turnInput.includes('FAIL')
-    if (turnFail) {
+    for (const part of r.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
+    ev({ type: 'message_end', content: [{ type: 'text', text: r }] })
+    // FAKE_WAIT / 打开对话页的预热：像按提示停在 wait_user_message 上一样，等用户下一句再接着输出
+    let finalReply = r
+    if ((input.includes('FAKE_WAIT') || input.includes('面板预热')) && !bad) {
+      const url = panelMcpUrl()
+      const call = (id, method, params) =>
+        fetch(url, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+          body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+        }).then(async (res) => {
+          const text = await res.text()
+          const data = text.split('\n').filter((l) => l.startsWith('data:'))
+          return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+        })
+      await call(1, 'initialize', {})
+      const got = (await call(3, 'tools/call', { name: 'wait_user_message' })).result.content[0].text
+      if (process.env.FAKE_CLI_LOG)
+        appendFileSync(
+          process.env.FAKE_CLI_LOG + '.wait',
+          JSON.stringify({ kind, got, hint: input.includes('wait_user_message') }) + '\n',
+        )
+      if (!got.includes('用户已经离开了这个对话')) {
+        const text = `\n等到的下一句：${got}`
+        ev({ type: 'message_start' })
+        for (const part of text.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
+        ev({ type: 'message_end', content: [{ type: 'text', text }] })
+        finalReply += text
+      }
+    }
+    if (bad) {
       out({
         type: 'result',
         subtype: 'error',
@@ -1137,8 +1177,7 @@ if (kind === 'claude') {
         finalText: '',
         error: '模拟的失败',
       })
-      if (await exitTurn(1)) break
-      continue
+      return await exitTurn(1)
     }
     out({
       type: 'result',
@@ -1146,97 +1185,11 @@ if (kind === 'claude') {
       sessionId: session,
       usage: { inputTokens: 10000, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
       durationMs: 10,
-      finalText: turnReply,
+      finalText: finalReply,
     })
-    // 等面板：下一轮 turn/start（保活）或者 session/exit
-    if (await exitTurn(0)) break
+    return await exitTurn(0)
   }
-} else {
-  // NETFAIL：像真的 Command Code 一样连接中途断开，退出码 6；NETDOWN 每次都断（续接也断）
-  const downMark = path.join(tmpdir(), `fake-netdown-${session}`)
-  if (input.includes('NETDOWN')) writeFileSync(downMark, '')
-  if (existsSync(downMark) || (input.includes('NETFAIL') && resumeIdx < 0)) {
-    process.stderr.write(
-      'Note: "fake/flash" routes via Command Code; your providers.json also declares it — use "me/fake/flash" to route there instead.\nError: Unable to connect to the API. Please check your network connection.\nStream connection failed mid-response: terminated\n',
-    )
-    if (rpcMode) {
-      const error = { message: 'Stream connection failed mid-response: terminated' }
-      process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n')
-      process.stdout.write(
-        JSON.stringify({
-          jsonrpc: '2.0',
-          method: 'turn/completed',
-          params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'run_error', error },
-        }) + '\n',
-      )
-    }
-    process.exit(6)
-  }
-  ev({ type: 'model_request_start' })
-  ev({ type: 'message_start' })
-  ev({ type: 'thinking_start' })
-  ev({ type: 'thinking_delta', delta: '想想先读哪个文件' })
-  ev({ type: 'thinking_end', text: '想想先读哪个文件' })
-  ev({ type: 'tool_queued', toolCallId: 'c1', toolName: 'read_file', input: { path: 'README.md' } })
-  writeFileSync(file, 'x\n')
-  ev({ type: 'tool_queued', toolCallId: 'c2', toolName: 'write_file', input: { path: file, content: 'x\n' } })
-  ev({
-    type: 'model_request_end',
-    model: 'cmd-fake',
-    usage: { inputTokens: 9000, outputTokens: 80, cacheReadTokens: 1000, cacheWriteTokens: 0 },
-  })
-  ev({ type: 'model_request_start' })
-  ev({ type: 'message_start' })
-  for (const part of reply.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
-  ev({ type: 'message_end', content: [{ type: 'text', text: reply }] })
-  // FAKE_WAIT / 打开对话页的预热：像按提示停在 wait_user_message 上一样，等用户下一句再接着输出
-  let finalReply = reply
-  if ((input.includes('FAKE_WAIT') || input.includes('面板预热')) && !fail) {
-    const url = panelMcpUrl()
-    const rpc = (id, method, params) =>
-      fetch(url, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-        body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
-      }).then(async (r) => {
-        const text = await r.text()
-        const data = text.split('\n').filter((l) => l.startsWith('data:'))
-        return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
-      })
-    await rpc(1, 'initialize', {})
-    const got = (await rpc(3, 'tools/call', { name: 'wait_user_message' })).result.content[0].text
-    if (process.env.FAKE_CLI_LOG)
-      appendFileSync(
-        process.env.FAKE_CLI_LOG + '.wait',
-        JSON.stringify({ kind, got, hint: input.includes('wait_user_message') }) + '\n',
-      )
-    if (!got.includes('用户已经离开了这个对话')) {
-      const text = `\n等到的下一句：${got}`
-      ev({ type: 'message_start' })
-      for (const part of text.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
-      ev({ type: 'message_end', content: [{ type: 'text', text }] })
-      finalReply += text
-    }
-  }
-  if (fail) {
-    out({
-      type: 'result',
-      subtype: 'error',
-      sessionId: session,
-      usage: {},
-      durationMs: 1,
-      finalText: '',
-      error: '模拟的失败',
-    })
-    await exitTurn(1)
-  }
-  out({
-    type: 'result',
-    subtype: 'success',
-    sessionId: session,
-    usage: { inputTokens: 10000, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
-    durationMs: 10,
-    finalText: finalReply,
-  })
-  await exitTurn(0)
+  // RPC 常驻：一轮结束后面板可能在同一进程里发下一次 turn/start（保活复用），循环到关 stdin
+  if (!rpcMode) await commandTurn()
+  else for (;;) if (await commandTurn()) break
 }
