@@ -1129,9 +1129,15 @@ async function runAgent(
       // 新会话没有之前的上下文，要用完整提示
       return runAgent(ctx, { ...call, prompt: call.fresh ?? call.prompt }, true)
     }
-    // 接口拒绝了这条会话的历史（换过模型，或网关把同一个模型名路由到了别的上游）：
+    // 接口拒绝了这条会话的历史（换过模型、网关换了上游，或历史里的内容片段丢了）：
     // 之后每次请求都会失败，丢掉会话重开一次；对话把之前的记录带上，节点用完整提示
-    if (resume && !prewarm && !op && !retried && /input\.content/i.test(detail)) {
+    if (
+      resume &&
+      !prewarm &&
+      !op &&
+      !retried &&
+      (/input\.content/i.test(detail) || /text part\b[^\n]*\bnot found/i.test(detail))
+    ) {
       delete task.sessions[sessionKey]
       const carry = chat
         ? `## 之前的对话\n${transcript(task, asker ? task.messages.indexOf(asker) : task.messages.length)}`

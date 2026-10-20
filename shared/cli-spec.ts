@@ -188,6 +188,8 @@ export const CliSpec = z.object({
   efforts: z.array(z.object({ id: z.string(), label: z.string() })).default([]),
   /** 思考强度跟着模型走，不用 efforts 的全局列表过滤 */
   effortsFromModel: z.boolean().default(false),
+  /** 会话和模型绑定：换了模型就不再续接原来的会话 */
+  modelBoundSession: z.boolean().default(false),
   tiers: z.object({ high: Tier, medium: Tier, low: Tier }).optional(),
   permissions: z.array(z.object({ id: z.string(), label: z.string(), hint: z.string().default('') })).min(1),
   defaultPermission: z.string().optional(),
@@ -346,6 +348,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     models: spec.models.map((m) => ({ ...m, label: tr(m.label) })),
     efforts: spec.efforts.map((e) => ({ id: e.id, label: tr(e.label) })),
     effortsFromModel: spec.effortsFromModel,
+    modelBoundSession: spec.modelBoundSession,
     tiers: { high: tier('high'), medium: tier('medium'), low: tier('low') },
     permissions: spec.permissions.map((p) => ({ id: p.id, label: tr(p.label), hint: tr(p.hint) })),
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,

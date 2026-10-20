@@ -25,6 +25,8 @@
 | `color`                           | 界面上的标识色                                                                                                                  |
 | `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别 |
 | `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                    |
+| `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                  |
+| `modelBoundSession`               | 会话和模型绑定：换了模型就不再续接原来的会话                                                                                    |
 | `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                                                    |
 | `permissions`                     | 权限选项 `[{ "id", "label", "hint" }]`，`id` 会作为 `{permission}` 填进参数                                                     |
 | `defaultPermission`               | 默认权限，不写时用第一个                                                                                                        |
