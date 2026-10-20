@@ -110,23 +110,38 @@ interface Waiter {
   deliver: (msg: TaskMessage) => void
   /** 用户离开了：结束等待 */
   cancel: () => void
+  /** 输入框里的 CLI/模型/强度还是启动这个进程时的那一套 */
+  current: () => boolean
 }
 const waiters = new Map<string, Set<Waiter>>()
 
 /** 预热时不记进对话的事件：正文、思考、工具和待办 */
 const PREWARM_QUIET = new Set(['thinking', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
-/** 把用户消息交给正在等下一句的 CLI；没有在等时返回 false，由调用方按原来的方式处理 */
-export function deliverWait(task: Task, msg: TaskMessage) {
+/**
+ * 把用户消息交给正在等下一句的 CLI。
+ * 没有在等时返回 none；等着的进程已经不是输入框里的选择时返回 stale，
+ * 调用方等它退出后按新的选择重新开始，不能把消息交给旧 CLI。
+ */
+export function deliverWait(task: Task, msg: TaskMessage): 'ok' | 'stale' | 'none' {
   const w = waiters.get(task.id)?.values().next().value
-  if (!w) return false
+  if (!w) return 'none'
+  if (!w.current()) {
+    w.cancel()
+    return 'stale'
+  }
   w.deliver(msg)
-  return true
+  return 'ok'
 }
 
-/** 用户离开了这个对话：让还在等下一句的 CLI 结束这一轮 */
+/** 用户离开了这个对话：让还在等下一句的 CLI 结束这一轮；返回有没有真的取消到 */
 export function cancelWait(taskId: string) {
-  for (const w of waiters.get(taskId) ?? []) w.cancel()
+  let canceled = false
+  for (const w of waiters.get(taskId) ?? []) {
+    w.cancel()
+    canceled = true
+  }
+  return canceled
 }
 
 /** 交给 CLI 的补充：说清楚是执行中补充的信息，结合它接着做，不要从头开始 */
@@ -424,6 +439,12 @@ async function runAgent(
   // 对话（不属于节点的调用）才能插话、分叉、撤回
   const chat = !step && sessionKey === task.agentId && task.mode === 'chat'
   const prewarm = chat && !!call.prewarm
+  // 启动这一轮时的选择；执行中换了 CLI/模型/强度，结束时不能还停在旧进程上等下一句
+  const startPick = { cli: task.cli, model: task.model, effort: task.effort }
+  const stillCurrent = () => {
+    const now = agentRun(withTaskModel(found, task), settings)
+    return now.cli === cliId && now.model === model && task.effort === startPick.effort
+  }
   // 预热期间的输出不记进对话；用户发来第一句后开始正常记
   let prewarmMode = prewarm
   let resume: string | undefined = task.sessions[sessionKey]
@@ -876,6 +897,8 @@ async function runAgent(
   const waitUser = canWait
     ? async (): Promise<string | null> => {
         if (finished) return null
+        // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
+        if (chat && !stillCurrent()) return null
         // 回复期间还在排队的要求：一起交回去，不用等进程结束
         const queued = drainQueue()
         if (queued) {
@@ -924,6 +947,7 @@ async function runAgent(
                 done(withAttachments(msg.text, msg.attachments ?? []))
               },
               cancel: () => done(null),
+              current: stillCurrent,
             }
             ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
             ctx.signal.addEventListener('abort', onAbort, { once: true })

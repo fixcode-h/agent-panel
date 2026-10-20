@@ -406,7 +406,8 @@ export function TaskView({
     setTask({ ...task, ...v })
     try {
       apply(await api.setChatRun(task.id, v))
-      if (running) toast(t('改好了，下一轮回复开始生效'))
+      // 空闲时服务端会马上换进程；只有真正在回复这一轮才需要等到下一轮
+      if (working) toast(t('改好了，下一轮回复开始生效'))
     } catch (e) {
       toast.error((e as Error).message)
     }

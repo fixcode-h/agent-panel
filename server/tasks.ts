@@ -76,7 +76,15 @@ export function tasksApi(deps: {
 }) {
   const store = createTaskStore()
   /** rev：执行中每次有变化加一，实时推送靠它判断要不要比较内容 */
-  type Live = { task: Task; stop: boolean; abort: AbortController; done?: Promise<void>; rev: number }
+  type Live = {
+    task: Task
+    stop: boolean
+    abort: AbortController
+    done?: Promise<void>
+    rev: number
+    /** 换 CLI/模型/强度时由 PATCH 负责重启，收尾不要重复预热 */
+    restart?: boolean
+  }
   const live = new Map<string, Live>()
   // 对话页切走一分钟后就别让 CLI 一直等下一句了，结束这一轮
   setPresenceIdleHandler(cancelWait)
@@ -211,6 +219,9 @@ export function tasksApi(deps: {
     })
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录
     const project = found && isolated(task) ? { ...found, path: task.worktree!.path } : found
+    // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度
+    const startAgent = agents.find((a) => a.id === task.agentId)
+    const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
     let last = 0
     // 预热退出要恢复列表时间：最后一次写不能把它改成现在
     const flush = (keepUpdatedAt = false) =>
@@ -298,12 +309,29 @@ export function tasksApi(deps: {
         // 工作流跑完一整轮才算完成；对话在 CLI 回复完时已经记了 turnDoneAt
         if (!prewarm && entry.task.mode !== 'chat' && entry.task.status === 'done')
           entry.task.turnDoneAt = new Date().toISOString()
+        // 执行中用户换了 CLI/模型/强度：旧进程的命令和上下文不能留给新的选择
+        const nowRun =
+          !prewarm && entry.task.mode === 'chat' && startAgent
+            ? agentRun(withTaskModel(startAgent, entry.task), settings)
+            : undefined
+        const switchedRun =
+          !!startedRun &&
+          !!nowRun &&
+          (startedRun.cli !== nowRun.cli || startedRun.model !== nowRun.model || startedRun.effort !== nowRun.effort)
+        if (switchedRun) {
+          entry.task.command = []
+          delete entry.task.usage.agents[entry.task.agentId]
+        }
         endRun(entry.task)
         await flush(keepTime)
         live.delete(task.id)
         // 这一轮顺利完成：接着处理排队的要求；失败或暂停时留着，等用户决定
         if (entry.task.status === 'done' && entry.task.queue.length && !shuttingDown)
-          void followUp(task.id).catch((e) => console.error(`处理排队的要求失败：${(e as Error).message}`))
+          await followUp(task.id).catch((e) => console.error(`处理排队的要求失败：${(e as Error).message}`))
+        // 没有排队时按新的选择直接预热，下一条消息不会再交给旧 CLI；
+        // PATCH 自己负责的重启不要在这里重复做
+        if (switchedRun && !entry.restart && entry.task.status === 'done' && !entry.task.queue.length && !shuttingDown)
+          void prewarmChat(entry.task, true).catch((e) => console.error(`按新的选择预热失败：${(e as Error).message}`))
       })
     return entry.task
   }
@@ -554,10 +582,30 @@ export function tasksApi(deps: {
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        if (deliverWait(prev.task, msg)) {
+        const delivered = deliverWait(prev.task, msg)
+        if (delivered === 'ok') {
           prev.task.updatedAt = new Date().toISOString()
           await store.update(id, prev.task)
           return c.json(prev.task)
+        }
+        // 等着的还是旧 CLI：让它退出，按输入框里现在的选择重新开始这一轮
+        if (delivered === 'stale') {
+          prev.restart = true
+          if (prev.done) await prev.done
+          const next = live.get(id)
+          if (next) {
+            // 新进程已经起来了：直接交给它；还没进入等待时排进队列，它启动后会取走
+            if (deliverWait(next.task, msg) === 'ok') {
+              next.task.updatedAt = new Date().toISOString()
+              await store.update(id, next.task)
+              return c.json(next.task)
+            }
+            next.task.queue.push({ id: msg.id, text, attachments, at: msg.at, note: false })
+            next.task.updatedAt = new Date().toISOString()
+            await store.update(id, next.task)
+            return c.json(next.task)
+          }
+          return c.json(await followUp(id, { text, attachments }))
         }
         if (p.data.steer && (await steerTask(prev.task, withAttachments(expanded || text, attachments), msg))) {
           prev.task.updatedAt = new Date().toISOString()
@@ -583,36 +631,43 @@ export function tasksApi(deps: {
   })
 
   /**
-   * 打开对话页时在后台用 --resume 启动：模型直接停在等下一句的工具上。
-   * 这样用户切回一个旧对话后马上发消息，不用再等 CLI 启动和会话加载。
+   * 在后台用 --resume 启动对话的 CLI，让它停在等下一句的工具上。
+   * force：用户刚换了 CLI/模型/强度，即使会话属于旧 CLI 也要按新的选择重开，
+   * 把之前的对话带过去，下一条消息直接交给新进程。
    */
+  async function prewarmChat(task: Task, force = false): Promise<Task> {
+    if (live.has(task.id)) return live.get(task.id)!.task
+    if (task.imported || task.mode !== 'chat' || task.status === 'running') return task
+    // 没有会话、刚撤回时下一轮本来就要重开，预热没有意义
+    if (!task.sessions[task.agentId] || task.rewind) return task
+    try {
+      const settings = await getSettings()
+      const agents = await deps.agents.list()
+      const agent = agents.find((a) => a.id === task.agentId)
+      if (!agent?.enabled) return task
+      const run = agentRun(withTaskModel(agent, task), settings)
+      const def = getCli(run.cli)
+      if (!def?.notes || !def.mcp) return task
+      // Claude Code、Codex 有自己的协议，不走面板的等待工具
+      if (def.rpc?.nativeAsk) return task
+      if (!force && task.sessionCli && task.sessionCli !== run.cli) return task
+      if (live.has(task.id)) return live.get(task.id)!.task
+      const entry = reserve(task)
+      return await start(entry, PREWARM_PROMPT, false, agents, undefined, false, true)
+    } catch (e) {
+      live.delete(task.id)
+      log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
+      return task
+    }
+  }
+
+  // 打开对话页时调用
   routes.post('/:id/prewarm', async (c) => {
     const id = c.req.param('id')
     if (live.has(id)) return c.json(await current(id))
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
-    if (task.imported || task.mode !== 'chat' || task.status === 'running') return c.json(task)
-    // 没有会话、刚撤回、或者换过 CLI 时下一轮本来就要重开，预热没有意义
-    if (!task.sessions[task.agentId] || task.rewind) return c.json(task)
-    const settings = await getSettings()
-    const agents = await deps.agents.list()
-    const agent = agents.find((a) => a.id === task.agentId)
-    if (!agent?.enabled) return c.json(task)
-    const run = agentRun(withTaskModel(agent, task), settings)
-    const def = getCli(run.cli)
-    if (!def?.notes || !def.mcp) return c.json(task)
-    // Claude Code、Codex 有自己的协议，不走面板的等待工具
-    if (def.rpc?.nativeAsk) return c.json(task)
-    if (task.sessionCli && task.sessionCli !== run.cli) return c.json(task)
-    if (live.has(id)) return c.json(live.get(id)!.task)
-    const entry = reserve(task)
-    try {
-      return c.json(await start(entry, PREWARM_PROMPT, false, agents, undefined, false, true))
-    } catch (e) {
-      live.delete(id)
-      log.warn('task', '对话预热失败', { task: id, error: (e as Error).message })
-      return c.json(task)
-    }
+    return c.json(await prewarmChat(task))
   })
 
   // 对话页还开着：CLI 回复完才能停在等下一句的工具上；切走一分钟内切回来还能接着发
@@ -835,21 +890,55 @@ export function tasksApi(deps: {
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
     if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
-    if ((p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined) && cur.mode !== 'chat')
-      return bad(c, t('只有对话任务可以这样做'))
+    const touchesRun = p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined
+    if (touchesRun && cur.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
+    const settings = touchesRun ? await getSettings() : undefined
+    const agents = touchesRun ? await deps.agents.list() : undefined
+    const runOf = (t: Task) => {
+      const agent = agents?.find((a) => a.id === t.agentId)
+      return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined
+    }
+    const beforeRun = runOf(cur)
     // 换 CLI 前记下会话是哪个 CLI 的（以前的任务没记），下一轮才知道要开新会话
     if (p.data.cli !== undefined && !cur.sessionCli && cur.sessions[cur.agentId]) {
-      const agent = (await deps.agents.list()).find((a) => a.id === cur.agentId)
-      if (agent) cur.sessionCli = agentRun(withTaskModel(agent, cur), await getSettings()).cli
+      const agent = agents?.find((a) => a.id === cur.agentId)
+      if (agent && settings) cur.sessionCli = agentRun(withTaskModel(agent, cur), settings).cli
     }
+    const task = cur
+    Object.assign(task, p.data)
+    if (p.data.askUser === false) autoAnswerQuestions(task)
+    // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
+    await store.update(id, task)
+    if (!touchesRun) return c.json(task)
+    const afterRun = runOf(task)
+    const runChanged =
+      !!beforeRun &&
+      !!afterRun &&
+      (beforeRun.cli !== afterRun.cli || beforeRun.model !== afterRun.model || beforeRun.effort !== afterRun.effort)
+    if (!runChanged) return c.json(task)
+    // 正在回复这一轮：不能现在换进程；这一轮结束时 start 的收尾会按新的选择重开
+    if (e?.task.working) return c.json(task)
+    // 空闲的常驻 CLI：让它结束，按新的选择重新预热，命令和上下文不再显示旧 CLI
     if (e) {
-      Object.assign(e.task, p.data)
-      if (p.data.askUser === false) autoAnswerQuestions(e.task)
-      // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
-      await store.update(id, e.task)
-      return c.json(e.task)
+      e.restart = true
+      const canceled = cancelWait(id)
+      if (!canceled) {
+        e.stop = true
+        e.abort.abort()
+      }
+      if (!e.done) return c.json(task)
+      await e.done
+      // 排队的要求由收尾的 followUp 用新的选择接着跑，不要在这里和它抢执行位
+      if (live.has(id)) return c.json(live.get(id)!.task)
+      if (!canceled) task.status = 'done'
     }
-    return c.json(await store.update(id, { ...cur, ...p.data }))
+    task.command = []
+    delete task.usage.agents[task.agentId]
+    task.working = false
+    task.awaitingUser = false
+    task.prewarming = false
+    await store.update(id, task)
+    return c.json(await prewarmChat(task, true))
   })
 
   /** 停着的对话任务（没在执行）：分叉、撤回、压缩、审查都要先停下 */
