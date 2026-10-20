@@ -1,5 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { existsSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
+import path from 'node:path'
 import { Hono } from 'hono'
 import {
   INTEGRATIONS,
@@ -12,6 +15,7 @@ import { t } from '../shared/i18n.ts'
 import { resolveCommand } from './cli-source.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
+import { DATA_DIR } from './store.ts'
 
 /**
  * 外部 CLI 的授权：检测是否装了、是否已经登录，在面板里跑一次浏览器授权或 token 授权。
@@ -37,6 +41,18 @@ const quietEnv = (def: Integration) =>
 
 const installHint = (def: Integration) => def.install[platform] ?? Object.values(def.install)[0] ?? ''
 
+/** 面板下载到数据目录里的可执行文件（例如 cloudflared），不在 PATH 里也认 */
+const dataBin = (def: Integration) =>
+  def.dataBin ? path.join(DATA_DIR, 'bin', process.platform === 'win32' ? `${def.command}.exe` : def.command) : ''
+
+/** 实际用来跑命令的文件：PATH 里找到的优先，没有就用数据目录里下载的 */
+function commandPath(def: Integration) {
+  return resolveCommand(def.command) ?? (dataBin(def) && existsSync(dataBin(def)) ? dataBin(def) : undefined)
+}
+
+/** 凭据文件（相对用户目录）的完整路径 */
+const credentialFile = (def: Integration) => (def.auth.file ? path.join(homedir(), def.auth.file) : '')
+
 const lines = (s: string, max = 4) =>
   s
     .split('\n')
@@ -46,7 +62,9 @@ const lines = (s: string, max = 4) =>
 
 /** 只跑一次登录检测：登录中轮询时不用每次都读版本 */
 async function readAuth(def: Integration) {
-  const s = await capture(def.command, def.auth.status, homedir(), quietEnv(def), 15_000)
+  // 凭据就是一个文件时没有可问的命令：文件在即已登录，也没有账号可认
+  if (def.auth.file) return { authed: existsSync(credentialFile(def)), account: '', output: '' }
+  const s = await capture(def.command, def.auth.status ?? [], homedir(), quietEnv(def), 15_000)
   const output = sanitize([s.stdout, s.stderr].filter(Boolean).join('\n'))
   const authed = s.code === 0
   const account = authed && def.auth.account ? (output.match(def.auth.account)?.[1] ?? '') : ''
@@ -68,12 +86,12 @@ async function detect(def: Integration): Promise<IntegrationView> {
     account: '',
     browserAuth: def.auth.login.length > 0,
     tokenAuth: !!def.auth.token,
-    canLogout: def.auth.logout.length > 0,
+    canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
     hint: def.auth.hint ?? '',
     detail: '',
   }
-  if (!resolveCommand(def.command)) return view
-  const v = await capture(def.command, def.versionArgs, homedir(), baseEnv(def), 8_000)
+  if (!commandPath(def)) return view
+  const v = await capture(commandPath(def)!, def.versionArgs, homedir(), baseEnv(def), 8_000)
   view.installed = !v.spawnError
   view.version = (v.stdout || v.stderr).split('\n')[0]?.trim().slice(0, 160) ?? ''
   if (!view.installed) return view
@@ -99,7 +117,7 @@ function fallback(def: Integration, error: string): IntegrationView {
     account: '',
     browserAuth: def.auth.login.length > 0,
     tokenAuth: !!def.auth.token,
-    canLogout: def.auth.logout.length > 0,
+    canLogout: !!def.auth.logout?.length || !!def.auth.logoutFile,
     hint: def.auth.hint ?? '',
     detail: error,
   }
@@ -192,7 +210,7 @@ async function startLogin(id: string): Promise<IntegrationLoginJob> {
   }, 1_200)
 
   void runProcess({
-    command: def.command,
+    command: commandPath(def) ?? def.command,
     args: def.auth.login,
     cwd: homedir(),
     env: baseEnv(def),
@@ -243,9 +261,10 @@ async function loginWithToken(id: string, token: string): Promise<IntegrationVie
   if (!def.auth.token) throw new Error(t('{name} 不支持用 Token 授权', { name: def.name }))
   const clean = token.trim()
   if (!clean || clean.length > 500 || /\s/.test(clean)) throw new Error(t('Token 不对'))
-  if (!resolveCommand(def.command)) throw new Error(t('没有检测到 {name}，先安装再授权', { name: def.name }))
+  const bin = commandPath(def)
+  if (!bin) throw new Error(t('没有检测到 {name}，先安装再授权', { name: def.name }))
   const r = await runProcess({
-    command: def.command,
+    command: bin,
     args: def.auth.token,
     cwd: homedir(),
     env: quietEnv(def),
@@ -272,22 +291,28 @@ async function logout(id: string): Promise<IntegrationView> {
   if (!def) throw new Error(t('没有这个授权工具'))
   const now = await detect(def).catch(() => null)
   if (!now?.installed) throw new Error(t('没有检测到 {name}，先安装再授权', { name: def.name }))
-  // 有的工具在多个账号时要指定退出哪一个；没有账号信息时去掉这个参数
-  const args = def.auth.logout.flatMap((a) => (a === '{account}' ? (now.account ? [now.account] : []) : [a]))
-  const r = await runProcess({
-    command: def.command,
-    args,
-    cwd: homedir(),
-    env: quietEnv(def),
-    timeoutMs: 30_000,
-  })
+  // 凭据就是一个文件时直接删掉；有的工具刷了凭据就再也退不掉
+  if (def.auth.logoutFile) {
+    await rm(credentialFile(def), { force: true })
+  } else {
+    // 有的工具在多个账号时要指定退出哪一个；没有账号信息时去掉这个参数
+    const args = (def.auth.logout ?? []).flatMap((a) => (a === '{account}' ? (now.account ? [now.account] : []) : [a]))
+    const r = await runProcess({
+      command: commandPath(def) ?? def.command,
+      args,
+      cwd: homedir(),
+      env: quietEnv(def),
+      timeoutMs: 30_000,
+    })
+    if (r.code !== 0)
+      throw new Error(
+        [t('退出登录没有成功（退出码 {code}）', { code: String(r.code) }), ...lines(sanitize(r.stderr), 3)]
+          .filter(Boolean)
+          .join('\n'),
+      )
+  }
   const after = await detect(def).catch(() => null)
-  if (after?.authed)
-    throw new Error(
-      [t('退出登录没有成功（退出码 {code}）', { code: String(r.code) }), ...lines(sanitize(r.stderr), 3)]
-        .filter(Boolean)
-        .join('\n'),
-    )
+  if (after?.authed) throw new Error(t('退出登录后仍然是已登录状态'))
   if (!after) throw new Error(t('退出登录后没能读回状态'))
   cache.set(id, { at: Date.now(), view: after })
   return after

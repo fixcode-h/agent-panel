@@ -74,7 +74,7 @@ export function uploadsRawApi() {
   })
   return routes
 }
-const IMAGE_TYPES: Record<string, string> = {
+export const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',

@@ -686,10 +686,14 @@ export const EN_SETTINGS: Record<string, string> = {
     'After authorizing a local command-line tool, agents can use it directly on remote repositories, e.g. merge branches, view and create PRs, or file issues. The tool stores the credentials itself; the panel never keeps them.',
   '授权后 Agent 可以直接用 gh 操作 GitHub 远端：合并分支、查看和创建 PR、提交 issue 等。':
     'Once authorized, agents can use gh directly on GitHub: merge branches, view and create PRs, file issues and more.',
+  '授权后 Agent 可以用 cloudflared 把本机服务通过 Cloudflare Tunnel 暴露到外网，例如给远程电脑看正在开发的面板。':
+    'Once authorized, agents can expose local services to the internet through Cloudflare Tunnel with cloudflared, e.g. to show a panel under development on a remote machine.',
   已授权: 'Authorized',
   未授权: 'Not authorized',
   '还没有登录 GitHub。点「浏览器授权」，或者用 Personal Access Token 授权。':
     'Not signed in to GitHub yet. Choose "Authorize in browser", or authorize with a personal access token.',
+  '还没有登录 Cloudflare。点「浏览器授权」，在打开的页面里选一个域名即可。':
+    'Not signed in to Cloudflare yet. Choose "Authorize in browser" and pick a domain on the page that opens.',
   '没有检测到 {command}，先安装再授权。': 'Could not find {command}. Install it before authorizing.',
   浏览器授权: 'Authorize in browser',
   '用 Token 授权': 'Authorize with a token',
@@ -717,4 +721,5 @@ export const EN_SETTINGS: Record<string, string> = {
   '{name} 没有接受这个 Token（退出码 {code}）': '{name} did not accept this token (exit code {code})',
   '退出登录没有成功（退出码 {code}）': 'Sign-out failed (exit code {code})',
   退出登录后没能读回状态: 'Could not read the status after signing out',
+  退出登录后仍然是已登录状态: 'Still signed in after signing out',
 }

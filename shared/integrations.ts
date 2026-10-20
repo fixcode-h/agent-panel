@@ -16,15 +16,21 @@ export interface Integration {
   docsUrl?: string
   /** 装这个 CLI 的命令，按平台给 */
   install: Partial<Record<'win32' | 'darwin' | 'linux', string>>
+  /** 面板会把它下载到数据目录的 bin 下（例如 cloudflared），不在 PATH 里也能找到 */
+  dataBin?: boolean
   auth: {
-    /** 检测是否已登录：退出码 0 表示已登录 */
-    status: string[]
+    /** 检测是否已登录：退出码 0 表示已登录；凭据是文件时不用这个 */
+    status?: string[]
+    /** 凭据文件（相对用户目录）：文件在就算已登录，没有查状态的命令时用它 */
+    file?: string
     /** 浏览器授权 */
     login: string[]
     /** 用粘贴的 token 授权，token 从 stdin 传入 */
     token?: string[]
     /** 退出登录 */
-    logout: string[]
+    logout?: string[]
+    /** 退出登录就是删掉这个文件（相对用户目录），没有退出命令时用它 */
+    logoutFile?: string
     /** 从检测输出里认出账号：第一个捕获组是账号名 */
     account?: RegExp
     /** 从授权输出里找一次性授权码：第一个捕获组是码 */
@@ -110,7 +116,35 @@ const github: Integration = {
   quietEnv: { GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' },
 }
 
+/** cloudflared：授权后 Agent 可以在任务里建隧道、把本机服务临时暴露到外网 */
+const cloudflared: Integration = {
+  id: 'cloudflared',
+  name: 'cloudflared',
+  description: t(
+    '授权后 Agent 可以用 cloudflared 把本机服务通过 Cloudflare Tunnel 暴露到外网，例如给远程电脑看正在开发的面板。',
+  ),
+  command: 'cloudflared',
+  versionArgs: ['--version'],
+  docsUrl: 'https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/',
+  // 「外部访问」里能直接下载到数据目录，这里也认那个文件
+  dataBin: true,
+  install: {
+    win32: 'winget install --id Cloudflare.cloudflared',
+    darwin: 'brew install cloudflared',
+    linux: 'sudo apt install cloudflared',
+  },
+  auth: {
+    // 登录后 cloudflared 把证书写到 ~/.cloudflared/cert.pem，没有查状态的命令
+    file: '.cloudflared/cert.pem',
+    // 打开浏览器登录，回调时写出 cert.pem；没有一次性授权码
+    login: ['tunnel', 'login'],
+    // 退出就是删掉证书：面板之外没法吊销账号级证书
+    logoutFile: '.cloudflared/cert.pem',
+    hint: t('还没有登录 Cloudflare。点「浏览器授权」，在打开的页面里选一个域名即可。'),
+  },
+}
+
 /** 内置的授权工具；以后加 GitLab 之类只管往这里加一份定义 */
-export const INTEGRATIONS: Integration[] = [github]
+export const INTEGRATIONS: Integration[] = [github, cloudflared]
 
 export const getIntegration = (id: string) => INTEGRATIONS.find((x) => x.id === id)

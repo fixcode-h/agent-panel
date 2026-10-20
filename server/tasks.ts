@@ -52,7 +52,7 @@ import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
 import { mkdir, readFile, rm, stat } from 'node:fs/promises'
-import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
+import { IMAGE_TYPES, cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -154,6 +154,8 @@ export function tasksApi(deps: {
     path: dir,
     categoryId: '',
     workflowId: '',
+    workflowParams: {},
+    gitPolicy: 'ask',
     createdAt: '',
     updatedAt: '',
   })
@@ -825,17 +827,27 @@ export function tasksApi(deps: {
     return c.json({ path: file, dir, diff: patches.join('\n'), git: false, before: false })
   })
 
+  /** 任务目录里的一个文件：解析成绝对地址和相对路径；路径越出目录时给错误说明 */
+  const taskPath = async (
+    tk: Task,
+    want: string,
+  ): Promise<{ error: string } | { dir: string; full: string; rel: string }> => {
+    const dir = await taskDir(tk)
+    if (!dir || !want) return { error: t('缺少文件路径') } as const
+    const full = path.resolve(dir, want)
+    const rel = path.relative(dir, full)
+    if (rel.startsWith('..') || path.isAbsolute(rel)) return { error: t('只能查看项目目录里的文件') } as const
+    return { dir, full, rel }
+  }
+
   // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件
   routes.get('/:id/file', async (c) => {
     const tk = await current(c.req.param('id'))
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
-    const dir = await taskDir(tk)
-    const want = (c.req.query('path') ?? '').trim()
-    if (!dir || !want) return bad(c, t('缺少文件路径'))
-    const full = path.resolve(dir, want)
-    const rel = path.relative(dir, full)
-    if (rel.startsWith('..') || path.isAbsolute(rel)) return bad(c, t('只能查看项目目录里的文件'))
+    const p = await taskPath(tk, (c.req.query('path') ?? '').trim())
+    if ('error' in p) return bad(c, p.error)
+    const { dir, full, rel } = p
     const info = await stat(full).catch(() => null)
     if (!info?.isFile()) return c.json({ path: rel, dir, exists: false, content: '', truncated: false })
     const LIMIT = 400_000
@@ -844,6 +856,20 @@ export function tasksApi(deps: {
     // 有 0 字节的多半是二进制文件，不显示内容
     if (head.includes(0)) return c.json({ path: rel, dir, exists: true, binary: true, content: '', truncated: false })
     return c.json({ path: rel, dir, exists: true, content: head.toString('utf8'), truncated: buf.length > LIMIT })
+  })
+
+  // 读到的文件是图片时给页面看图：返回原始内容，只能读任务目录里面的文件
+  routes.get('/:id/file/raw', async (c) => {
+    const tk = await current(c.req.param('id'))
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    if (tk.imported) return bad(c, t('导入的任务看不到对方电脑上的文件'))
+    const p = await taskPath(tk, (c.req.query('path') ?? '').trim())
+    if ('error' in p) return bad(c, p.error)
+    const type = IMAGE_TYPES[path.extname(p.full).slice(1).toLowerCase()]
+    if (!type) return bad(c, t('不是图片'))
+    const buf = await readFile(p.full).catch(() => null)
+    if (!buf) return bad(c, t('文件已经不在了'), 404)
+    return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
   })
 
   // 撤销一个文件的改动：恢复成任务开始时的样子

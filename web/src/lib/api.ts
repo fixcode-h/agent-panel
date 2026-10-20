@@ -283,9 +283,16 @@ export const api = {
       `/tasks/${id}/diff?path=${encodeURIComponent(path)}`,
     ),
   taskFile: (id: string, path: string) =>
-    request<{ path: string; dir: string; exists: boolean; binary?: boolean; content: string; truncated: boolean }>(
-      `/tasks/${id}/file?path=${encodeURIComponent(path)}`,
-    ),
+    request<{
+      path: string
+      dir: string
+      exists: boolean
+      binary?: boolean
+      content: string
+      truncated: boolean
+    }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
+  /** 任务目录里的图片：读到的文件是图片时按原图查看 */
+  taskFileRaw: (id: string, path: string) => `/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
   /** 独立分支：合并进项目当前的分支，或丢弃 */
   finishWorktree: (id: string, merge: boolean) =>

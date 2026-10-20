@@ -108,6 +108,7 @@ export function newTask(
     baseRef: '',
     workflows: wf ? snapshot : [],
     workflowName: wf?.name ?? '',
+    runSeq: 0,
     requests: [],
     queue: [],
     working: false,
