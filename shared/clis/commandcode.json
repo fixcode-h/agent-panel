@@ -34,6 +34,7 @@
     }
   ],
   "effortsFromModel": true,
+  "modelBoundSession": true,
   "tiers": {
     "high": {
       "model": "claude-sonnet-5-5",
