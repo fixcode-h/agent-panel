@@ -33,6 +33,12 @@ test('Pi 没配 API Key：提示在终端里登录', () => {
   assert.match(hints[0], /运行 pi，在里面输入 \/login/)
 })
 
+test('Command Code 的响应流中途断开：按断流处理，给出续接说明', () => {
+  const hints = failureHints('Failed to process successful response', { id: 'commandcode', name: 'Command Code' })
+  assert.equal(hints.length, 1)
+  assert.match(hints[0], /连接中途断开/)
+})
+
 test('压缩上下文：写明压缩了多少、现在占上下文窗口多少', () => {
   const tool = { kind: 'compact' as const, label: '', detail: '' }
   describeCompaction(tool, 96_000, 14_000, 200_000)

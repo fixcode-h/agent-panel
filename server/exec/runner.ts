@@ -325,7 +325,7 @@ function speedMeter(onIdle: () => void) {
 /** 连接断开时自动续接的次数上限 */
 const MAX_NET_RETRIES = 2
 const NETWORK_ERROR =
-  /Connection error|APIConnectionError|Unable to connect to the API|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
+  /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
 const NOT_LOGGED_IN =
   /Please run \/login|Invalid API key|not logged in|log ?in (again|first)|authentication[_ ](error|failed)|OAuth token (has )?expired|token (has )?expired|401 Unauthorized|codex login|refresh token|No API key found/i
