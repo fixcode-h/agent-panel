@@ -86,7 +86,14 @@ test('Agent 参数的覆盖写进节点参数，布尔值转成真正的布尔',
 
 test('解析后的工作流：说明和节点指令都换好值，说明后面追加文档类配置，expose 清空', () => {
   const w = workflow([
-    { key: 'projectStructure', label: '项目结构', type: 'select', options: ['通用', 'UE'], default: '通用', target: 'skill' },
+    {
+      key: 'projectStructure',
+      label: '项目结构',
+      type: 'select',
+      options: ['通用', 'UE'],
+      default: '通用',
+      target: 'skill',
+    },
     { key: 'docRoot', label: '文档目录', type: 'text', default: 'docs' },
     { key: 'rule', label: '交付规则', type: 'text', target: 'document', targetId: '交付' },
   ])
@@ -100,7 +107,14 @@ test('解析后的工作流：说明和节点指令都换好值，说明后面�
 
 test('技能槽只取 target=skill 的项：别的项已经落进说明和节点参数了', () => {
   const w = workflow([
-    { key: 'projectStructure', label: '项目结构', type: 'select', options: ['通用', 'UE'], default: '通用', target: 'skill' },
+    {
+      key: 'projectStructure',
+      label: '项目结构',
+      type: 'select',
+      options: ['通用', 'UE'],
+      default: '通用',
+      target: 'skill',
+    },
     { key: 'docRoot', label: '文档目录', type: 'text', default: 'docs', target: 'document', targetId: '文档' },
   ])
   assert.deepEqual(exposeSlots(w, {}), { projectStructure: '通用' })
