@@ -2,6 +2,7 @@
 export const EN_TASKS: Record<string, string> = {
   // 文件浏览
   文件: 'Files',
+  关闭文件: 'Close files',
   '先添加一个项目，再浏览项目里的文件。': 'Add a project first to browse its files.',
   切换项目: 'Switch project',
   查找文件: 'Find file',
@@ -218,6 +219,7 @@ export const EN_TASKS: Record<string, string> = {
   视图: 'View',
   流程图: 'Flowchart',
   显示文件: 'Show files',
+  收起文件面板: 'Collapse file panel',
   更多操作: 'More actions',
   重命名: 'Rename',
   删除任务: 'Delete task',

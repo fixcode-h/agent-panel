@@ -243,8 +243,8 @@ function StickyAuthor({ author }: { author: Author }) {
         <span className="truncate font-medium">{author.name}</span>
         {author.model && <span className="truncate font-mono text-xs text-subtle">{author.model}</span>}
       </div>
-      {/* 启动命令放在最右边，和工作流节点标题旁的那个按钮一样，这里显示命令本身 */}
-      {author.command?.length ? <StepCommand argv={author.command} showText className="ml-auto min-w-0 -my-1" /> : null}
+      {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
+      {author.command?.length ? <StepCommand argv={author.command} className="ml-auto -my-1" /> : null}
     </div>
   )
 }
@@ -297,8 +297,8 @@ const MessageBody = memo(
             <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
               <span className="font-medium">{name}</span>
               {model && <span className="font-mono text-xs text-subtle">{model}</span>}
-              {/* 启动命令放在最右边，和工作流节点标题旁的那个按钮一样，这里显示命令本身 */}
-              {command?.length ? <StepCommand argv={command} showText className="ml-auto -my-1" /> : null}
+              {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
+              {command?.length ? <StepCommand argv={command} className="ml-auto -my-1" /> : null}
             </div>
           )}
           {slot}
