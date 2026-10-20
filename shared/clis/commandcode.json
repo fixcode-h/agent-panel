@@ -45,6 +45,14 @@
     {
       "id": "high",
       "label": "高"
+    },
+    {
+      "id": "xhigh",
+      "label": "极高"
+    },
+    {
+      "id": "max",
+      "label": "最高"
     }
   ],
   "tiers": {
@@ -226,6 +234,11 @@
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",
         "openai-chat": "openai-completions"
+      },
+      "modelEfforts": {
+        "file": "~/.commandcode/providers.json",
+        "at": "provider.{provider}.models",
+        "key": "reasoningEfforts"
       },
       "edits": [
         {

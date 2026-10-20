@@ -10,6 +10,8 @@ import {
   apiModelList,
   apiProvider,
   fillEdits,
+  sameApi,
+  setModelEfforts,
 } from '../shared/accounts.ts'
 import { mergeJson, fetchApiModels } from './accounts.ts'
 import { toApi } from './api-detect.ts'
@@ -143,6 +145,39 @@ test('JSON 编辑 merge：保留已有 provider 的模型元数据', () => {
   assert.deepEqual(mergeJson(base, patch), {
     provider: { codeg: { name: 'new', models: { a: { contextWindow: 1000 }, b: {} } } },
   })
+})
+
+test('同一个 API：地址和密钥一样就算，协议和 /v1 不影响', () => {
+  assert.ok(sameApi({ baseUrl: 'https://x.example', apiKey: 'k' }, { baseUrl: 'https://x.example/v1/', apiKey: 'k' }))
+  assert.ok(!sameApi({ baseUrl: 'https://x.example', apiKey: 'k' }, { baseUrl: 'https://x.example/v1', apiKey: 'k2' }))
+  assert.ok(!sameApi({ baseUrl: 'https://x.example/a', apiKey: 'k' }, { baseUrl: 'https://x.example/b', apiKey: 'k' }))
+})
+
+test('写回思考强度：匹配到的模型按目录重写，不认识的保持原样', () => {
+  const data = {
+    provider: {
+      tokenapi: {
+        models: {
+          'deepseek/deepseek-v4-flash': { reasoningEfforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+          'deepseek/deepseek-v4-flash-anthropic': {},
+          'custom/unknown': {},
+        },
+      },
+    },
+  }
+  const efforts = new Map([
+    ['deepseek/deepseek-v4-flash', ['low', 'high', 'max']],
+    ['deepseek/deepseek-v4-flash-anthropic', ['low', 'high', 'max']],
+  ])
+  const run = () => setModelEfforts(data, 'provider.tokenapi.models', 'reasoningEfforts', (m) => efforts.get(m))
+  assert.equal(run(), true)
+  assert.deepEqual(data.provider.tokenapi.models['deepseek/deepseek-v4-flash'].reasoningEfforts, ['low', 'high', 'max'])
+  assert.deepEqual(data.provider.tokenapi.models['deepseek/deepseek-v4-flash-anthropic'], {
+    reasoningEfforts: ['low', 'high', 'max'],
+  })
+  assert.deepEqual(data.provider.tokenapi.models['custom/unknown'], {})
+  // 已经是目标值，第二次不用再改
+  assert.equal(run(), false)
 })
 
 test('API 测试连接：成功返回模型，失败带状态和原因', async () => {
