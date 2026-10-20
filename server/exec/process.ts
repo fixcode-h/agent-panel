@@ -1,4 +1,4 @@
-import { spawn as nodeSpawn } from 'node:child_process'
+import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
@@ -14,21 +14,56 @@ export interface ProcessResult {
   stderr: string
 }
 
+/** 还在跑的子进程：程序退出时按这上面的 pid 统一清理 */
+const live = new Map<number, ReturnType<typeof spawn>>()
+
 /** 结束整个进程树：CLI 往往会再起子进程（shell、MCP 服务等） */
-export function killTree(pid: number) {
+export function killTree(pid: number, force = false) {
   if (isWin) {
     nodeSpawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true }).on('error', () => {})
     return
   }
   try {
-    process.kill(-pid, 'SIGTERM')
+    process.kill(-pid, force ? 'SIGKILL' : 'SIGTERM')
   } catch {}
+  if (force) return
   setTimeout(() => {
     try {
       process.kill(-pid, 'SIGKILL')
     } catch {}
   }, 3000).unref()
 }
+
+/** 同步结束进程树；只在进程退出、不能等异步任务时用 */
+export function killTreeSync(pid: number) {
+  if (isWin) {
+    try {
+      nodeSpawnSync('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true, timeout: 5000 })
+    } catch {}
+    return
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+  } catch {}
+}
+
+/**
+ * 退出前清理所有还在跑的 CLI（任务、AI 创建、设计、文档、模型补全、检测命令……），
+ * 连同它们起 MCP 服务、shell 之类的子进程。能在进程退出事件里同步调用。
+ */
+export function killAllProcesses() {
+  for (const [pid, child] of live) {
+    killTreeSync(pid)
+    // taskkill 有时先结束了父进程；再兜底结束一次直接子进程
+    try {
+      child.kill('SIGKILL')
+    } catch {}
+  }
+  live.clear()
+}
+
+// 正常退出、Ctrl+C、托盘关闭都会走到这里；进程被 SIGKILL 时操作系统直接结束，来不及执行
+process.on('exit', killAllProcesses)
 
 /** 子进程的环境变量：继承当前环境，去掉会让 CLI 以为自己被嵌套调用的变量，再加上设置里的变量 */
 export function childEnv(extra: { key: string; value: string }[]) {
@@ -115,9 +150,15 @@ export function runProcess(o: {
       idleMs ? Math.min(30_000, Math.max(50, idleMs / 4)) : 2 ** 31 - 1,
     )
 
-    child.on('error', (e: NodeJS.ErrnoException) =>
-      done({ code: null, spawnError: e.code === 'ENOENT' ? t('找不到命令「{cmd}」', { cmd: o.command }) : e.message }),
-    )
+    const pid = child.pid
+    if (pid) live.set(pid, child)
+    const forget = () => {
+      if (pid) live.delete(pid)
+    }
+    child.on('error', (e: NodeJS.ErrnoException) => {
+      forget()
+      done({ code: null, spawnError: e.code === 'ENOENT' ? t('找不到命令「{cmd}」', { cmd: o.command }) : e.message })
+    })
     child.stderr!.setEncoding('utf8')
     child.stderr!.on('data', (d: string) => {
       stderr = (stderr + d).slice(-16000)
@@ -134,6 +175,7 @@ export function runProcess(o: {
       }
     })
     child.on('close', (code) => {
+      forget()
       rl.close()
       done({ code })
     })

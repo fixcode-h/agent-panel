@@ -58,6 +58,7 @@ import { Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { gitBranches, gitCheckout } from './exec/git.ts'
+import { killAllProcesses } from './exec/process.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
@@ -618,6 +619,8 @@ async function shutdown(code = 0) {
   server.close()
   await Promise.race([stopRemote(), new Promise((r) => setTimeout(r, 5000))])
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
+  // 不在任务里的 CLI（AI 创建、设计、文档、模型补全、检测命令）也要一起结束
+  killAllProcesses()
   process.exit(code)
 }
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP'] as const) process.on(sig, () => void shutdown())

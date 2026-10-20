@@ -30,7 +30,7 @@ import { getCli } from '../shared/clis.ts'
 import { localPrompts } from '../shared/design.ts'
 import { DATA_DIR, readJson, writeJsonAtomic } from './store.ts'
 import { invokeCli } from './exec/invoke.ts'
-import { capture, childEnv, killTree, runProcess } from './exec/process.ts'
+import { capture, childEnv, killTreeSync, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { netFetch } from './net.ts'
 import { getSettings } from './settings.ts'
@@ -357,7 +357,8 @@ export async function startComfy(): Promise<string> {
 export function stopComfy() {
   const pid = server?.child.pid
   server = undefined
-  if (pid) killTree(pid)
+  // 退出事件里只能同步操作：Windows 上异步起的 taskkill 进程可能来不及执行
+  if (pid) killTreeSync(pid)
 }
 process.on('exit', stopComfy)
 

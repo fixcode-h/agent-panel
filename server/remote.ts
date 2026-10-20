@@ -28,6 +28,12 @@ let state: RemoteState = 'off'
 let url = ''
 let error = ''
 let child: ChildProcess | null = null
+// 正常退出时 shutdown 会等 stopRemote；进程意外退出时这里兜底结束隧道
+process.on('exit', () => {
+  try {
+    child?.kill('SIGKILL')
+  } catch {}
+})
 let output = ''
 let startTimer: NodeJS.Timeout | undefined
 let cache: { key: string; at: number; data: CloudflaredInfo } | null = null

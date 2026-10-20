@@ -115,22 +115,38 @@ function SettingsBody({
   // 侧栏里拖动 CLI 调整顺序：拖到哪一项上就插到那里
   const [dragging, setDragging] = useState('')
   const [drafts, setDrafts] = useState(() => toDraft(initial))
+  const statusOf = (id: string) => clis.find((c) => c.id === id)
   const isOn = (id: string) => drafts[id]?.enabled ?? true
-  // 启用的排在停用的前面；同一组里按拖动过的顺序，没拖过的按名字比较
-  const ordered = orderClis(CLIS, cliOrder, (c) => isOn(c.id))
+  // 没安装的 CLI 一律不启用：开关不显示，分组也按未启用算；装好后由安装完成的逻辑重新打开
+  useEffect(() => {
+    setDrafts((ds) => {
+      let changed = false
+      const next = { ...ds }
+      for (const c of clis)
+        if (c.installed === false && next[c.id]?.enabled) {
+          next[c.id] = { ...next[c.id], enabled: false }
+          changed = true
+        }
+      return changed ? next : ds
+    })
+  }, [clis])
+  // 已安装并且启用才算已接入；没安装的统一归到「未启用」，免得和真在用的混在一起
+  const isReady = (id: string) => isOn(id) && statusOf(id)?.installed !== false
+  // 已接入的排在前面；同一组里按拖动过的顺序，没拖过的按名字比较
+  const ordered = orderClis(CLIS, cliOrder, (c) => isReady(c.id))
   // 在线演示没有服务端，外网访问的开关不显示
   const SECTIONS = sectionsFor(ordered).filter((s) => !(demo && s.id === 'remote'))
   // 拖动只改同一组里的顺序，不能跨过启用和停用的分界
   const moveCli = (id: string, to: number) =>
     setCliOrder((o) => {
-      const list = orderClis(CLIS, o, (c) => isOn(c.id)).map((c) => c.id)
+      const list = orderClis(CLIS, o, (c) => isReady(c.id)).map((c) => c.id)
       const from = list.indexOf(id)
       if (from < 0 || to < 0 || to >= list.length || from === to) return o
-      const on = isOn(id)
+      const on = isReady(id)
       let start = from
       let end = from
-      while (start > 0 && isOn(list[start - 1]) === on) start--
-      while (end < list.length - 1 && isOn(list[end + 1]) === on) end++
+      while (start > 0 && isReady(list[start - 1]) === on) start--
+      while (end < list.length - 1 && isReady(list[end + 1]) === on) end++
       const dest = Math.max(start, Math.min(end, to))
       if (dest === from) return o
       const next = list.filter((x) => x !== id)
@@ -269,7 +285,6 @@ function SettingsBody({
   }
 
   const cur = SECTIONS.find((s) => s.id === section) ?? SECTIONS[0]
-  const statusOf = (id: string) => clis.find((c) => c.id === id)
   const cliPage = (s: Section) => s.id === 'models' || s.id === 'deploy' || s.id === 'apis' || !!s.cli
   const inCli = cliPage(cur)
   const defDef = useCliDef(defCli) ?? CLIS.find((c) => c.id === defCli)!
@@ -320,16 +335,18 @@ function SettingsBody({
             const on = s.id === cur.id
             const st = s.cli && statusOf(s.cli.id)
             const at = s.cli ? ordered.findIndex((c) => c.id === s.cli!.id) : -1
+            // 已接入的排在前面；已安装但停用、没安装的都归到「未启用」
+            const firstReady = !!s.cli && !list.slice(0, i).some((x) => !!x.cli && isReady(x.cli.id))
+            const firstOff = !!s.cli && !list.slice(0, i).some((x) => !!x.cli && !isReady(x.cli.id))
             return (
               <div key={s.id} className="contents">
-                {s.cli && !list[i - 1]?.cli && (
+                {firstReady && (
                   <span className="hidden items-center justify-between px-2.5 pt-3 pb-1 text-[0.6875rem] text-subtle md:flex">
                     {t('已接入')}
                     <span className="text-[0.65625rem] text-subtle/80">{t('拖动调整顺序')}</span>
                   </span>
                 )}
-                {/* 启用的排在前面，停用的另外列一段 */}
-                {s.cli && !isOn(s.cli.id) && !list.slice(0, i).some((x) => x.cli && !isOn(x.cli.id)) && (
+                {firstOff && (
                   <span className="hidden px-2.5 pt-3 pb-1 text-[0.6875rem] text-subtle md:flex">{t('未启用')}</span>
                 )}
                 <button

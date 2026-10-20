@@ -60,10 +60,9 @@ export function TaskRow({
   const menu = useTaskRowMenu(task, onDeleted)
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
-  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：不重复显示前置图标，用虚线边框表示
+  // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示
   const online = task.status === 'running' && !task.working
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
-  const showMode = !(online && task.mode === 'chat')
   const attention = task.requests?.length
     ? 'ask'
     : task.status === 'running' && task.working
@@ -95,26 +94,22 @@ export function TaskRow({
                 className="h-2 w-2 shrink-0 rounded-full bg-accent"
               />
             )}
-            {(showMode || attention) && (
-              <span className="flex shrink-0 items-center gap-1">
-                {showMode && (
-                  <ModeIcon
-                    aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
-                    className="h-3.5 w-3.5 text-subtle"
-                  />
-                )}
-                {attention === 'ask' ? (
-                  // Agent 在等你确认操作或回答问题
-                  <CircleAlert
-                    aria-label={t('需要你处理')}
-                    className="h-3.5 w-3.5 shrink-0 text-warning"
-                    strokeWidth={2.4}
-                  />
-                ) : attention === 'running' || attention === 'failed' ? (
-                  <TaskStatusIcon status={task.status} working={task.working} className="h-3.5 w-3.5" />
-                ) : null}
-              </span>
-            )}
+            <span className="flex shrink-0 items-center gap-1">
+              <ModeIcon
+                aria-label={task.mode === 'workflow' ? t('工作流') : t('对话')}
+                className="h-3.5 w-3.5 text-subtle"
+              />
+              {attention === 'ask' ? (
+                // Agent 在等你确认操作或回答问题
+                <CircleAlert
+                  aria-label={t('需要你处理')}
+                  className="h-3.5 w-3.5 shrink-0 text-warning"
+                  strokeWidth={2.4}
+                />
+              ) : attention === 'running' || attention === 'failed' ? (
+                <TaskStatusIcon status={task.status} working={task.working} className="h-3.5 w-3.5" />
+              ) : null}
+            </span>
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
             {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
             <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">

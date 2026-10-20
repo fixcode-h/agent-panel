@@ -255,7 +255,6 @@ export const EN_SETTINGS: Record<string, string> = {
   访问令牌: 'Access token',
   '打开后，只有用启动时显示的地址（带 token）打开过的浏览器能访问面板，本机的其他程序不能直接调用接口。这个浏览器会自动获得授权。':
     "When on, only browsers that opened the address shown at startup (with the token) can use the panel, and other programs on this computer can't call the API directly. This browser is authorized automatically.",
-  安装后自动启用: 'Enabled automatically once installed',
   运行日志: 'Logs',
   '{n} 个文件 · {size}': '{n} files · {size}',
   '报错和关键操作都记在这里。每次启动写一个新文件，单个文件超过 5 MB 换下一个，只保留最近 30 个。遇到问题时把最新的日志文件发出来就能查原因。':

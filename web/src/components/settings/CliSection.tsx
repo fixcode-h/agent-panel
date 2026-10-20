@@ -656,14 +656,14 @@ export function CliSection({
         >
           <RefreshCw className={cn('h-3.5 w-3.5', detecting && 'animate-spin')} />
         </Button>
-        {/* 没安装的 CLI 用不了，开关显示为关；装好后自动打开 */}
-        <Switch
-          checked={!!ok && draft.enabled}
-          disabled={!ok}
-          title={ok ? undefined : t('安装后自动启用')}
-          onCheckedChange={(v) => set('enabled', v)}
-          aria-label={t('启用 {cli}', { cli: def.name })}
-        />
+        {/* 没安装的 CLI 不显示启动按钮；装好后自动打开 */}
+        {ok && (
+          <Switch
+            checked={draft.enabled}
+            onCheckedChange={(v) => set('enabled', v)}
+            aria-label={t('启用 {cli}', { cli: def.name })}
+          />
+        )}
       </div>
       {installer.job ? (
         <InstallLog
