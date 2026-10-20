@@ -212,8 +212,11 @@ export function tasksApi(deps: {
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录
     const project = found && isolated(task) ? { ...found, path: task.worktree!.path } : found
     let last = 0
-    const flush = () =>
-      store.update(task.id, entry.task).catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
+    // 预热退出要恢复列表时间：最后一次写不能把它改成现在
+    const flush = (keepUpdatedAt = false) =>
+      store
+        .update(task.id, entry.task, { keepUpdatedAt })
+        .catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
       trackWait(entry.task)
@@ -281,6 +284,8 @@ export function tasksApi(deps: {
         entry.task.working = false
         entry.task.awaitingUser = false
         entry.task.prewarming = false
+        // 预热收尾要把原来的列表时间写回去，不能让它变成现在
+        let keepTime = false
         // 预热只是把 CLI 启动好，没有处理新消息就退出时不要算完成，也不要把列表时间改成现在
         if (prewarm && (entry.task.turnDoneAt ?? '') === beforeTurnDoneAt) {
           // 引擎这时不会标完成，任务还停在 running；状态和时间都回到打开前
@@ -288,12 +293,13 @@ export function tasksApi(deps: {
           entry.task.updatedAt = beforeUpdatedAt
           // 引擎收尾没有走 changed，这里补一次推送
           entry.rev++
+          keepTime = true
         }
         // 工作流跑完一整轮才算完成；对话在 CLI 回复完时已经记了 turnDoneAt
         if (!prewarm && entry.task.mode !== 'chat' && entry.task.status === 'done')
           entry.task.turnDoneAt = new Date().toISOString()
         endRun(entry.task)
-        await flush()
+        await flush(keepTime)
         live.delete(task.id)
         // 这一轮顺利完成：接着处理排队的要求；失败或暂停时留着，等用户决定
         if (entry.task.status === 'done' && entry.task.queue.length && !shuttingDown)

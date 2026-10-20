@@ -175,10 +175,12 @@ export function createTaskStore() {
       await persist(item)
       return item
     },
-    async update(id: string, input: TaskData) {
+    async update(id: string, input: TaskData & { updatedAt?: string }, opts?: { keepUpdatedAt?: boolean }) {
       const old = await getFull(id)
       if (!old) return null
-      const item = { ...old, ...input, id, projectId: old.projectId, updatedAt: new Date().toISOString() } as Task
+      // 默认用现在的时间；预热收尾这类要保留原来的列表时间时，用调用方给的值
+      const updatedAt = opts?.keepUpdatedAt ? (input.updatedAt ?? old.updatedAt) : new Date().toISOString()
+      const item = { ...old, ...input, id, projectId: old.projectId, updatedAt } as Task
       ;(await all()).set(id, head(item))
       remember(item)
       await persist(item)
