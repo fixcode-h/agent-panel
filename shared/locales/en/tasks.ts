@@ -8,6 +8,7 @@ export const EN_TASKS: Record<string, string> = {
   '「{name}」上传失败：{error}': 'Failed to upload "{name}": {error}',
   上传中: 'Uploading',
   '移除 {name}': 'Remove {name}',
+  按退格键删除: 'Press Backspace to remove',
   '添加文件、图片或引用': 'Add files, images or references',
   上传文件或图片: 'Upload files or images',
   '可粘贴 / 拖入': 'Paste or drop',

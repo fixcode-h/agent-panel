@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CircleAlert, Check, ListFilter, Search, X } from 'lucide-react'
+import { Check, ChevronDown, CircleAlert, ListFilter, Search, X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { useData, useNav } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -15,12 +15,14 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt } from '@shared/task'
+import { askedAt, byAskedAt, groupByDay } from '@shared/task'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
-export function shortTime(iso: string) {
+/** timeOnly：分组已经写了日期，行里只留时分 */
+export function shortTime(iso: string, timeOnly = false) {
   const d = new Date(iso)
+  if (timeOnly) return d.toTimeString().slice(0, 5)
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   // 跨夏令时的那天相差 23 / 25 小时，取整
@@ -40,6 +42,7 @@ export function TaskRow({
   onDeleted,
   hint,
   unread,
+  timeOnly,
   className,
 }: {
   task: Task
@@ -50,6 +53,8 @@ export function TaskRow({
   hint?: string
   /** 项目里的对话完成了、用户还没打开看过 */
   unread?: boolean
+  /** 分组已经写了日期，行里只显示时分 */
+  timeOnly?: boolean
   className?: string
 }) {
   const menu = useTaskRowMenu(task, onDeleted)
@@ -89,7 +94,9 @@ export function TaskRow({
             ) : null}
             <span className="min-w-0 flex-1 truncate">{task.title}</span>
             {hint && <span className="max-w-[40%] shrink truncate text-[0.6875rem] text-subtle">{hint}</span>}
-            <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">{shortTime(askedAt(task))}</span>
+            <span className="shrink-0 text-[0.6875rem] text-subtle tabular-nums">
+              {shortTime(askedAt(task), timeOnly)}
+            </span>
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent>{menu.items}</ContextMenuContent>
@@ -190,14 +197,37 @@ export function TaskSearch({
   )
 }
 
-/** Chat 模式的侧栏：最近的聊天，右键可以重命名、归档、删除 */
+/** 收起的「按日分组」记在本机浏览器里，下次打开还是收起的 */
+function useFoldedDays() {
+  const [v, set] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('sidebar-chat-days') ?? '[]'))
+    } catch {
+      return new Set()
+    }
+  })
+  const toggle = (key: string) =>
+    set((prev) => {
+      const next = new Set(prev)
+      if (!next.delete(key)) next.add(key)
+      try {
+        localStorage.setItem('sidebar-chat-days', JSON.stringify([...next]))
+      } catch {}
+      return next
+    })
+  return [v, toggle] as const
+}
+
+/** Chat 模式的侧栏：聊天按天分组，组可以收起；右键可以重命名、归档、删除 */
 export function ChatList() {
   const { route, go } = useNav()
   const { tasks } = useData()
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
-  const chats = tasks.filter((t) => !t.projectId && matchTask(t, query, filter)).sort(byAskedAt)
+  const [folded, toggleDay] = useFoldedDays()
+  const chats = tasks.filter((x) => !x.projectId && matchTask(x, query, filter)).sort(byAskedAt)
   const filtering = !!query.trim() || filter !== 'all'
+  const days = groupByDay(chats, askedAt)
   return (
     <div className="mt-3 flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2">
       <TaskSearch query={query} onQuery={setQuery} filter={filter} onFilter={setFilter} placeholder={t('搜索聊天')} />
@@ -207,18 +237,34 @@ export function ChatList() {
       {chats.length === 0 && (
         <p className="px-2.5 py-1 text-xs text-subtle">{filtering ? t('没有符合的聊天。') : t('还没有聊天。')}</p>
       )}
-      <div className="flex flex-col gap-px">
-        {chats.map((t) => (
-          <TaskRow
-            key={t.id}
-            task={t}
-            active={route.page === 'chat' && route.id === t.id}
-            onOpen={() => go({ page: 'chat', id: t.id })}
-            onDeleted={() => route.page === 'chat' && route.id === t.id && go({ page: 'chat' })}
-            className="px-2.5"
-          />
-        ))}
-      </div>
+      {days.map((d) => {
+        const open = !folded.has(d.key)
+        return (
+          <div key={d.key} className="flex flex-col gap-px">
+            <button
+              onClick={() => toggleDay(d.key)}
+              aria-expanded={open}
+              className="flex h-7 shrink-0 cursor-pointer items-center gap-1 px-2.5 text-xs text-subtle hover:text-fg"
+            >
+              <ChevronDown className={cn('h-3 w-3 shrink-0 transition-transform', !open && '-rotate-90')} />
+              <span className="truncate">{d.label}</span>
+              <span className="shrink-0">· {d.items.length}</span>
+            </button>
+            {open &&
+              d.items.map((tk) => (
+                <TaskRow
+                  key={tk.id}
+                  task={tk}
+                  timeOnly
+                  active={route.page === 'chat' && route.id === tk.id}
+                  onOpen={() => go({ page: 'chat', id: tk.id })}
+                  onDeleted={() => route.page === 'chat' && route.id === tk.id && go({ page: 'chat' })}
+                  className="px-2.5"
+                />
+              ))}
+          </div>
+        )
+      })}
     </div>
   )
 }

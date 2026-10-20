@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUp,
@@ -9,7 +9,8 @@ import {
   MessageSquare,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMode } from '@shared/schema'
+import { DEFAULT_AGENT_ID, type Attachment, type Project, type Task, type TaskMode } from '@shared/schema'
+import { dropChip, forSend } from '@shared/composer'
 import { DEFAULT_WORKFLOW_ID } from '@shared/builtin/default'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
@@ -24,12 +25,15 @@ import {
   ATTACHMENT_PROMPT,
   AttachMenu,
   AttachmentChips,
+  chipKind,
   DropHint,
   useAttachments,
   useDropPaste,
   useFileMention,
+  type AttachHooks,
 } from '@/components/chat/Attachments'
-import { SlashChip, useSlashMenu } from '@/components/chat/SlashMenu'
+import { useSlashMenu } from '@/components/chat/SlashMenu'
+import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { t } from '@shared/i18n'
@@ -78,19 +82,50 @@ export function TaskComposer({
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
   const [askUser, setAskUser] = useNewAskUser()
-  const ta = useRef<HTMLTextAreaElement>(null)
+  const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
-  const drop = useDropPaste(files.add)
-  const mention = useFileMention(project?.id, prompt, setPrompt, ta)
+  const mention = useFileMention(project?.id, editor)
+  /** 附件加进来时在光标处放一张卡片；上传失败就把卡片撤掉 */
+  const addFiles = useCallback(
+    (list: File[]) => {
+      void files.add(list, {
+        added: (items) =>
+          items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
+        failed: (name) => setPrompt(dropChip(editor.current?.text() ?? '', name)),
+      })
+    },
+    [files, editor, setPrompt],
+  )
+  const addReady = useCallback(
+    (a: Attachment) => {
+      const hooks: AttachHooks = {
+        added: (items) =>
+          items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
+      }
+      files.addReady(a, hooks)
+    },
+    [files, editor],
+  )
+  /** 附件从附件条上删掉时，输入框里的那张卡片也一起去掉 */
+  const removeFile = useCallback(
+    (key: string) => {
+      const item = files.items.find((x) => x.key === key)
+      files.remove(key)
+      if (item) setPrompt(dropChip(editor.current?.text() ?? '', item.name))
+    },
+    [files, editor, setPrompt],
+  )
+  /** 图片卡片显示小缩略图 */
+  const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
+  const drop = useDropPaste(addFiles)
   // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const isChat = standalone || mode === 'chat'
   const slash = useSlashMenu({
     cli: isChat ? chatRun.cli : defaultCli(settings ?? defaultSettings()),
     projectId: project?.id,
     scope: 'new',
-    text: prompt,
     setText: setPrompt,
-    ta,
+    editor,
   })
 
   // 独立分支要靠 git worktree，只有 git 仓库能用
@@ -106,7 +141,7 @@ export function TaskComposer({
   const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
   const canStart =
     (standalone || !!project) &&
-    (!!prompt.trim() || files.attachments.length > 0 || !!slash.picked) &&
+    (!!prompt.trim() || files.attachments.length > 0) &&
     (effMode === 'workflow' ? !!workflow : !!chatRun.cli) &&
     !busy &&
     !files.uploading
@@ -128,7 +163,7 @@ export function TaskComposer({
           model: effMode === 'chat' ? chatRun.model : '',
           effort: effMode === 'chat' ? chatRun.effort : '',
           params: {},
-          prompt: slash.build(prompt.trim() || (files.attachments.length ? ATTACHMENT_PROMPT : '')),
+          prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
           isolate: canIsolate && isolate,
           askUser,
@@ -136,7 +171,6 @@ export function TaskComposer({
       )
       setPrompt('')
       files.clear()
-      slash.clear()
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -156,44 +190,34 @@ export function TaskComposer({
         {mention.menu}
         {slash.menu}
         {drop.over && <DropHint />}
-        <AttachmentChips items={files.items} onRemove={files.remove} />
-        {slash.picked && (
-          <div className="flex flex-wrap gap-2 px-3 pt-3">
-            <SlashChip item={slash.picked} onRemove={slash.clear} />
-          </div>
-        )}
-        <label htmlFor="task-prompt" className="sr-only">
-          {t('任务描述')}
-        </label>
-        <textarea
-          ref={ta}
+        <AttachmentChips items={files.items} onRemove={removeFile} />
+        <RichInput
           id="task-prompt"
+          handle={editor}
+          label={t('任务描述')}
           autoFocus={autoFocus}
-          rows={3}
           value={prompt}
-          onChange={(e) => {
-            setPrompt(e.target.value)
-            e.target.style.height = 'auto'
-            e.target.style.height = `${Math.min(e.target.scrollHeight, 320)}px`
+          onChange={setPrompt}
+          onSync={() => {
             mention.sync()
             slash.sync()
           }}
-          onSelect={() => {
-            mention.sync()
-            slash.sync()
-          }}
-          onPaste={drop.onPaste}
           onKeyDown={(e) => {
-            if (slash.onKeyDown(e) || mention.onKeyDown(e)) return
+            if (slash.onKeyDown(e) || mention.onKeyDown(e)) return true
             if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
               e.preventDefault()
               start()
+              return true
             }
+            return false
           }}
+          onPaste={drop.onPaste}
+          preview={preview}
           placeholder={
             effMode === 'workflow' ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')
           }
-          className="block max-h-80 min-h-[84px] w-full resize-none bg-transparent px-4 pt-4 text-[0.9375rem] leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none"
+          pad="px-4 pt-4"
+          className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
         />
         {loading ? (
           // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成工作流
@@ -206,10 +230,10 @@ export function TaskComposer({
         ) : (
           <div className="flex flex-wrap items-center gap-1 px-2.5 pt-1 pb-2.5">
             <AttachMenu
-              onFiles={files.add}
+              onFiles={addFiles}
               onMention={mention.start}
               canMention={!!project?.path}
-              onSession={files.addReady}
+              onSession={addReady}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             {!standalone && (

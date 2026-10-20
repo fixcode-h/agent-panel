@@ -39,6 +39,15 @@ test('Command Code 的响应流中途断开：按断流处理，给出续接说�
   assert.match(hints[0], /连接中途断开/)
 })
 
+test('模型接口拒绝聊天记录：说明换模型后旧会话接不上', () => {
+  const detail =
+    'litellm.BadRequestError: OpenAIException - {"error":{"type":"invalid_request_error","code":"400002","message":"The request parameter input.content is invalid or missing.","param":"input.content"}}'
+  const hints = failureHints(detail, { id: 'codex', name: 'Codex' })
+  assert.equal(hints.length, 1)
+  assert.match(hints[0], /input\.content/)
+  assert.match(hints[0], /新建一个对话/)
+})
+
 test('压缩上下文：写明压缩了多少、现在占上下文窗口多少', () => {
   const tool = { kind: 'compact' as const, label: '', detail: '' }
   describeCompaction(tool, 96_000, 14_000, 200_000)

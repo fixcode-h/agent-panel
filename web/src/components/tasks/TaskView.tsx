@@ -49,12 +49,14 @@ import { StepSection } from './StepSection'
 import { TaskPanel } from './TaskPanel'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
-import { SlashChip, useSlashMenu } from '@/components/chat/SlashMenu'
+import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { ParamsChip } from '@/components/agents/ParamFields'
 import { TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
+import type { RichInputHandle } from '@/components/chat/RichInput'
+import { forSend } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
@@ -149,10 +151,10 @@ export function TaskView({
   const [analyzing, setAnalyzing] = useState(false)
   // 没发出去的内容按对话分开记，切到别的对话再回来还在
   const [text, setText] = useDraft(`task:${taskId}`)
-  const followTa = useRef<HTMLTextAreaElement>(null)
+  const followTa = useRef<RichInputHandle>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments(`task:${taskId}`)
-  const mention = useFileMention(project?.id, text, setText, followTa)
+  const mention = useFileMention(project?.id, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -284,9 +286,8 @@ export function TaskView({
     projectId: project?.id,
     // 压缩、审查是对话的操作，工作流里不提供
     scope: task?.mode === 'workflow' ? 'new' : 'task',
-    text,
     setText,
-    ta: followTa,
+    editor: followTa,
     onAction: (a, arg) => {
       if (!task) return
       if (running) return void toast.error(t('任务正在执行，请等它完成或先停止'))
@@ -306,8 +307,8 @@ export function TaskView({
 
   // 执行中也能发：补充（交给正在做的 Agent，接着当前的任务做；能补充时默认）、排队（这一轮完成后处理）
   const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
-    if ((!text.trim() && !files.attachments.length && !slash.picked) || sending || files.uploading) return
-    const content = slash.build(text.trim() || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
+    if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
+    const content = forSend(text, files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     setSending(true)
     stick.current = true
@@ -319,7 +320,6 @@ export function TaskView({
       apply(r)
       setText('')
       files.clear()
-      slash.clear()
       setTimeout(
         () =>
           api
@@ -805,14 +805,7 @@ export function TaskView({
                     slash.sync()
                   }}
                   onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
-                  above={
-                    slash.picked && (
-                      <div className="px-3 pt-3">
-                        <SlashChip item={slash.picked} onRemove={slash.clear} />
-                      </div>
-                    )
-                  }
-                  canSend={!!text.trim() || files.attachments.length > 0 || !!slash.picked}
+                  canSend={!!text.trim() || files.attachments.length > 0}
                   attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
                   tools={
                     <>

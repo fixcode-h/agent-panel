@@ -77,7 +77,38 @@ try {
   await p.locator('#task-prompt').fill('/')
   await p.locator('#task-prompt').press('End')
   await check(p, '斜杠命令', ['/init', '/commit', 'frontend-design'])
+  // 选中后是文字原位的一张卡片；光标停在它后面，按一次退格整张删掉
+  await p.locator('#task-prompt').fill('前 ')
+  await p.locator('#task-prompt').pressSequentially('/frontend-design')
+  await p.getByRole('listbox').getByText('/frontend-design', { exact: true }).click()
+  const skillChip = p.locator('#task-prompt [data-chip="skill"]')
+  await skillChip.waitFor({ timeout: 5000 }).catch(() => errors.push('行内技能卡片：选中后没有出现在文字里'))
+  await check(p, '斜杠命令-行内技能', ['前', '/frontend-design'])
+  await p.keyboard.press('Backspace')
+  await skillChip
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('行内技能卡片：按一次退格没有整张删掉'))
   await p.locator('#task-prompt').fill('')
+  // 图片也是文字原位的一张卡片，带缩略图；附件条上同时有一份，两边各自都能删
+  await p
+    .locator('input[type=file]')
+    .first()
+    .setInputFiles({
+      name: '截图.png',
+      mimeType: 'image/png',
+      buffer: Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+        'base64',
+      ),
+    })
+  const imageChip = p.locator('#task-prompt [data-chip="image"]')
+  await imageChip.waitFor({ timeout: 10000 }).catch(() => errors.push('行内图片卡片：附上图片后没有出现在文字里'))
+  if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
+  await check(p, '行内图片卡片', ['截图.png'])
+  await p.getByRole('button', { name: '移除 截图.png' }).click()
+  await imageChip
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => errors.push('行内图片卡片：从附件条移除后文字里的卡片还在'))
   // 「+」里引入会话
   await p.getByRole('button', { name: '添加文件、图片或引用' }).click()
   await p.getByRole('button', { name: '引入会话' }).click()
@@ -150,7 +181,7 @@ try {
   await p.getByText('commit-message', { exact: true }).first().click()
   await check(p, 'Skill编辑', ['复制给别的 CLI', '保存'])
   await p.getByRole('button', { name: 'AI 优化' }).click()
-  await p.getByPlaceholder('继续说要改的地方').or(p.getByPlaceholder('描述你想要的 Skill')).fill('步骤写得再具体一些')
+  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
   await p.keyboard.press('Enter')
   await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
   await p.getByRole('button', { name: '应用修改' }).click()

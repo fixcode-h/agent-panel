@@ -1,23 +1,34 @@
 // 通用的 AI 对话输入框：附件（选文件、粘贴截图、拖进来）、自动长高、Enter 发送、发送 / 停止按钮。
 // 任务对话和 UI 设计的对话共用这一个，不同的地方通过插槽扩展：
 // menus（「/」「@」弹出的列表）、above（输入框上面的标注等）、tools（左下角的开关和选项）、actions（换掉右下角的按钮）
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowUp, ListPlus, Loader2, Square } from 'lucide-react'
 import type { DesignKind, SavedStyle } from '@shared/design'
+import { dropChip } from '@shared/composer'
+import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
-import { AttachMenu, AttachmentChips, DropHint, useDropPaste, type useAttachments } from './Attachments'
+import {
+  AttachMenu,
+  AttachmentChips,
+  chipKind,
+  DropHint,
+  useDropPaste,
+  type AttachHooks,
+  type useAttachments,
+} from './Attachments'
+import { RichInput, type RichInputHandle } from './RichInput'
 
 const DRAFT = 'chat-draft:'
 
 /**
- * 输入框里还没发出去的内容：每个对话各自记住，切到别的对话再回来还在（刷新页面也在），发出去后清空
+ * 输入框里还没发出去的内容：每个对话各自记住，切到别的对话再回来还在（刷新页面也在），发出去后清空。
+ * 行内卡片（Skill、图片）也是文字的一部分，按原样存着。
  */
 export function useDraft(key: string) {
   const read = (k: string) => {
     try {
-      // 旧版附件会把「[图片:文件名]」插进文字，现在附件只显示成卡片：读到旧草稿时去掉这些标记
-      return (localStorage.getItem(DRAFT + k) ?? '').replace(/\[(?:图片|文件):[^\]]+\]\s?/g, '')
+      return localStorage.getItem(DRAFT + k) ?? ''
     } catch {
       return ''
     }
@@ -69,7 +80,7 @@ export function ChatComposer({
   onChange: (v: string) => void
   onSubmit: () => void
   files: ReturnType<typeof useAttachments>
-  taRef?: React.RefObject<HTMLTextAreaElement | null>
+  taRef?: React.RefObject<RichInputHandle | null>
   id?: string
   label: string
   placeholder: string
@@ -81,7 +92,7 @@ export function ChatComposer({
   /** 文字或光标变了（「/」「@」列表跟着更新） */
   onSync?: () => void
   /** 先交给「/」「@」列表处理按键；返回 true 表示处理掉了 */
-  onKeyDown?: (e: React.KeyboardEvent<HTMLTextAreaElement>) => boolean
+  onKeyDown?: (e: React.KeyboardEvent<HTMLDivElement>) => boolean
   /** 左下角「+」菜单的选项；false 不显示 */
   attach?:
     | {
@@ -112,22 +123,48 @@ export function ChatComposer({
   size?: 'sm' | 'md'
   className?: string
 }) {
-  const own = useRef<HTMLTextAreaElement>(null)
-  const ta = taRef ?? own
-  const drop = useDropPaste(files.add)
+  const own = useRef<RichInputHandle>(null)
+  const editor = taRef ?? own
   const sm = size === 'sm'
   const typed = canSend ?? (!!value.trim() || files.attachments.length > 0)
   const ready = typed && !sending && !files.uploading
-  // 跟着内容长高，到上限后出滚动条
-  useLayoutEffect(() => {
-    const el = ta.current
-    if (!el) return
-    el.style.height = 'auto'
-    el.style.height = `${Math.min(sm ? 200 : 192, el.scrollHeight)}px`
-  }, [value, ta, sm])
+
+  /** 附件加进来时在光标处放一张卡片；上传失败就把卡片撤掉 */
+  const addFiles = useCallback(
+    (list: File[]) => {
+      void files.add(list, {
+        added: (items) =>
+          items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
+        failed: (name) => onChange(dropChip(editor.current?.text() ?? '', name)),
+      })
+    },
+    [files, editor, onChange],
+  )
+  const addReady = useCallback(
+    (a: Attachment) => {
+      const hooks: AttachHooks = {
+        added: (items) =>
+          items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
+      }
+      files.addReady(a, hooks)
+    },
+    [files, editor],
+  )
+  /** 附件从附件条上删掉时，输入框里的那张卡片也一起去掉 */
+  const removeFile = useCallback(
+    (key: string) => {
+      const item = files.items.find((x) => x.key === key)
+      files.remove(key)
+      if (item) onChange(dropChip(editor.current?.text() ?? '', item.name))
+    },
+    [files, editor, onChange],
+  )
+  /** 图片卡片显示小缩略图 */
+  const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
+  const drop = useDropPaste(addFiles)
   // 切到这个对话时光标放进输入框，接着写
   useEffect(() => {
-    if (!disabled && window.matchMedia?.('(pointer: fine)').matches) ta.current?.focus({ preventScroll: true })
+    if (!disabled && window.matchMedia?.('(pointer: fine)').matches) editor.current?.focus()
     // 只在打开时
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -145,46 +182,41 @@ export function ChatComposer({
     >
       {menus}
       {drop.over && <DropHint />}
-      <AttachmentChips items={files.items} onRemove={files.remove} />
+      <AttachmentChips items={files.items} onRemove={removeFile} />
       {above}
-      {id && (
-        <label htmlFor={id} className="sr-only">
-          {label}
-        </label>
-      )}
-      <textarea
+      <RichInput
         id={id}
-        ref={ta}
-        rows={2}
+        handle={editor}
         value={value}
-        disabled={disabled}
-        onChange={(e) => {
-          onChange(e.target.value)
-          onSync?.()
-        }}
-        onSelect={onSync}
-        onPaste={drop.onPaste}
+        onChange={onChange}
+        onSync={onSync}
         onKeyDown={(e) => {
-          if (onKeyDown?.(e)) return
+          if (onKeyDown?.(e)) return true
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
             onSubmit()
+            return true
           }
+          return false
         }}
+        onPaste={drop.onPaste}
+        label={label}
         placeholder={placeholder}
-        aria-label={id ? undefined : label}
+        disabled={disabled}
+        preview={preview}
+        pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
-          'block w-full resize-none bg-transparent leading-relaxed outline-none placeholder:text-subtle focus-visible:outline-none',
-          sm ? 'max-h-[200px] px-3.5 pt-3 pb-1 text-[0.84375rem]' : 'max-h-48 px-4 pt-3.5 text-[0.90625rem]',
+          'leading-relaxed',
+          sm ? 'max-h-[200px] min-h-[60px] text-[0.84375rem]' : 'max-h-48 min-h-[62px] text-[0.90625rem]',
         )}
       />
       <div className={cn('flex min-w-0 items-center gap-1', sm ? 'px-2 pb-2' : 'px-2.5 pb-2.5')}>
         {attach !== false && (
           <AttachMenu
-            onFiles={files.add}
+            onFiles={addFiles}
             onMention={attach?.onMention}
             canMention={!!attach?.canMention}
-            onSession={files.addReady}
+            onSession={addReady}
             self={attach?.self}
             onStyle={attach?.onStyle}
             styleKind={attach?.styleKind}

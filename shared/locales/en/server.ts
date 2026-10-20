@@ -97,6 +97,8 @@ export const EN_SERVER: Record<string, string> = {
     '· Model “{model}” is routed through Command Code’s own service, not the provider you set up in providers.json. To use your own provider, switch the model to “{alt}” (under the “Config file” group in the model dropdown).',
   '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。':
     '· The connection to the model service dropped. This often happens when a single response is very long (such as writing a large file) and the server or a proxy cuts the connection. Click “Resume” to retry, switch to another provider, or have the Agent write in smaller pieces.',
+  '· 模型接口拒绝了这段聊天记录（input.content 无效或缺失）。常见于在同一个对话里换了模型：Codex 的会话里留着上一个模型的工具调用，新模型接不上。如果反复出现，请新建一个对话。':
+    '· The model API rejected this conversation history (input.content is invalid or missing). This often happens after switching models in the same conversation: the Codex session still contains tool calls from the previous model, which the new model cannot use. If it keeps happening, start a new conversation.',
   '找不到执行这一步的 Agent，可能已被删除': 'The Agent for this step wasn’t found; it may have been deleted',
   'Agent「{name}」已停用': 'Agent “{name}” is disabled',
   '项目目录不存在：{dir}': 'Project directory doesn’t exist: {dir}',
