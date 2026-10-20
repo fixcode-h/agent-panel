@@ -16,6 +16,7 @@ import {
   pruneProviderEntries,
   sameApi,
   setModelEfforts,
+  setModelLimits,
 } from '../shared/accounts.ts'
 import { mergeJson, fetchApiModels } from './accounts.ts'
 import { toApi } from './api-detect.ts'
@@ -229,6 +230,31 @@ test('写回思考强度：匹配到的模型按目录重写，不认识的保�
   assert.deepEqual(data.provider.tokenapi.models['deepseek/deepseek-v4-flash-anthropic'], {
     reasoningEfforts: ['low', 'high', 'max'],
   })
+  assert.deepEqual(data.provider.tokenapi.models['custom/unknown'], {})
+  // 已经是目标值，第二次不用再改
+  assert.equal(run(), false)
+})
+
+test('写回上下文窗口：匹配到的模型按目录重写，不认识的保持原样', () => {
+  const data = {
+    provider: {
+      tokenapi: {
+        models: {
+          'deepseek/deepseek-v4-flash': { contextWindow: 200000 },
+          'deepseek/deepseek-v4-flash-anthropic': {},
+          'custom/unknown': {},
+        },
+      },
+    },
+  }
+  const windows = new Map([
+    ['deepseek/deepseek-v4-flash', 1000000],
+    ['deepseek/deepseek-v4-flash-anthropic', 1000000],
+  ])
+  const run = () => setModelLimits(data, 'provider.tokenapi.models', 'contextWindow', (m) => windows.get(m))
+  assert.equal(run(), true)
+  assert.equal(data.provider.tokenapi.models['deepseek/deepseek-v4-flash'].contextWindow, 1000000)
+  assert.deepEqual(data.provider.tokenapi.models['deepseek/deepseek-v4-flash-anthropic'], { contextWindow: 1000000 })
   assert.deepEqual(data.provider.tokenapi.models['custom/unknown'], {})
   // 已经是目标值，第二次不用再改
   assert.equal(run(), false)

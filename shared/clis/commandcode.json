@@ -220,6 +220,11 @@
         "at": "provider.{provider}.models",
         "key": "reasoningEfforts"
       },
+      "modelLimits": {
+        "file": "~/.commandcode/providers.json",
+        "at": "provider.{provider}.models",
+        "key": "contextWindow"
+      },
       "pruneProviders": {
         "file": "~/.commandcode/providers.json",
         "at": "provider",
