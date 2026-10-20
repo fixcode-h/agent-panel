@@ -14,7 +14,7 @@ import {
 } from './schema.ts'
 import { getCli } from './clis.ts'
 import { planTask } from './flow.ts'
-import { t } from './i18n.ts'
+import { getLang, t } from './i18n.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
@@ -291,6 +291,41 @@ export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'> & { 
 
 /** 按用户最近发消息的时间排，新的在前 */
 export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(a))
+
+/**
+ * 任务列表按自然日分组：同一天的归到一组，组内保持传进来的顺序（列表本来就按时间倒序）。
+ * 今天、昨天用相对说法，更早的写日期；不是今年的带上年份。
+ * now 只有测试会传，正常用当前时间。
+ */
+export function groupByDay<T>(list: T[], at: (x: T) => string, now = new Date()) {
+  const dayStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
+  const today = dayStart(now)
+  const yesterday = dayStart(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1))
+  const loc = getLang() === 'en' ? 'en-US' : 'zh-CN'
+  const groups = new Map<string, { key: string; label: string; items: T[] }>()
+  for (const x of list) {
+    const d = new Date(at(x))
+    const key = `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
+    let g = groups.get(key)
+    if (!g) {
+      const day = dayStart(d)
+      g = {
+        key,
+        label: day === today ? t('今天') : day === yesterday ? t('昨天') : dayLabel(d, now, loc),
+        items: [],
+      }
+      groups.set(key, g)
+    }
+    g.items.push(x)
+  }
+  return [...groups.values()]
+}
+
+/** 更早那天的写法：今年的不写年份，别的年份写上 */
+function dayLabel(d: Date, now: Date, loc: string) {
+  const sameYear = d.getFullYear() === now.getFullYear()
+  return d.toLocaleDateString(loc, { ...(sameYear ? {} : { year: 'numeric' as const }), month: 'long', day: 'numeric' })
+}
 
 /**
  * 列表用的任务摘要：侧栏、项目首页只要标题、状态、进度和用量。去掉消息内容、节点输出这些大块数据，

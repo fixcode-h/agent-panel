@@ -1629,6 +1629,35 @@ async function seedTasks(d: Db) {
     await followUp(d, task, '按钮文案改成「到货通知我」，已经登记过的用户显示「已登记」并置灰。', true)
     back(task, 25)
   }
+  // Chat 模式（不属于任何项目）的聊天：侧栏按天分组，演示里留两条不同日期的
+  if (fe) {
+    const chats = [
+      { prompt: '整理一份 Claude Code 和 Codex 的能力对照', minutes: 60 * 3 },
+      { prompt: '排查：侧栏任务的时间显示偶尔不对', minutes: 60 * 26 },
+    ]
+    for (const c of chats) {
+      const { task, done } = createTask(
+        d,
+        {
+          projectId: '',
+          mode: 'chat',
+          workflowId: '',
+          agentId: fe.id,
+          prompt: c.prompt,
+          attachments: [],
+          cli: '',
+          model: '',
+          effort: '',
+          isolate: false,
+          askUser: false,
+          params: {},
+        },
+        true,
+      )
+      await done
+      back(task, c.minutes)
+    }
+  }
 }
 
 /**

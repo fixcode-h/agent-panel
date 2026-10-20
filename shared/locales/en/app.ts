@@ -30,6 +30,7 @@ export const EN_APP: Record<string, string> = {
   // 侧栏
   'Agent 面板': 'Agent Panel',
   工作流: 'Workflow',
+  今天: 'Today',
   昨天: 'Yesterday',
   '{n} 天前': '{n}d ago',
   'Chat 模式：直接聊天，不用选项目': 'Chat mode: chat directly, no project needed',

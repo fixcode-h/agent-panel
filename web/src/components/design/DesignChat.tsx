@@ -43,8 +43,10 @@ import * as D from '@radix-ui/react-dialog'
 import { Button } from '@/components/ui/button'
 import { AnnotationChips, KIND_COLOR, kindLabel } from './Annotations'
 import { ATTACHMENT_PROMPT, useAttachments } from '@/components/chat/Attachments'
+import type { RichInputHandle } from '@/components/chat/RichInput'
+import { forSend } from '@shared/composer'
 import { QuestionPanel } from '@/components/chat/QuestionPanel'
-import { SlashChip, useSlashMenu } from '@/components/chat/SlashMenu'
+import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle, useAskUser, useScopeRequests } from '@/components/chat/AskToggle'
 import { RequestCard, asksQuestion } from '@/components/tasks/RequestCard'
 import { t } from '@shared/i18n'
@@ -581,7 +583,7 @@ export function DesignChat({
   const [concept, setConcept] = useConceptFirst(designId, conceptDefault)
   const { run } = useChatRun(pick)
   const list = useRef<HTMLDivElement>(null)
-  const box = useRef<HTMLTextAreaElement>(null)
+  const box = useRef<RichInputHandle>(null)
   // 参考图、需求文档：选文件、粘贴截图、拖进来都行，在输入框上方以附件卡片显示
   const files = useAttachments()
   const running = job?.status === 'running'
@@ -595,7 +597,7 @@ export function DesignChat({
   const [dismissed, setDismissed] = useState('')
   const askDesign = !running && designQs.length > 0 && dismissed !== lastMsg?.id
   // 「/」：用选的 CLI 自己带的命令和 Skill，展开后放进设计要求里
-  const slash = useSlashMenu({ cli: run.cli, scope: 'skills', text, setText, ta: box })
+  const slash = useSlashMenu({ cli: run.cli, scope: 'skills', setText, editor: box })
 
   // 新消息、输出变化时滚到底（用户往上翻看时不打扰）
   const stick = useRef(true)
@@ -611,7 +613,7 @@ export function DesignChat({
   const [queue, setQueue] = useState<{ id: string; text: string; attachments: Attachment[]; style?: SavedStyle }[]>([])
   const enqueue = () => {
     // 只选了风格、没写字也能排队：风格要跟着这条一起发，不然这一轮结束后就丢了
-    const v = slash.build(text.trim() || styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
+    const v = forSend(text, styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
     if (!v || files.uploading) return
     setQueue((q) => [
       ...q,
@@ -620,7 +622,6 @@ export function DesignChat({
     setText('')
     files.clear()
     setStyleRef(null)
-    slash.clear()
   }
   useEffect(() => {
     const next = queue[0]
@@ -638,7 +639,7 @@ export function DesignChat({
   }, [running, sending, queue, askDesign])
 
   const send = async () => {
-    const v = slash.build(text.trim() || styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
+    const v = forSend(text, styleText || (files.attachments.length ? ATTACHMENT_PROMPT : ''))
     // 正在回复：补充给这一轮；CLI 不能插话或这一轮刚好结束时改成排队。
     // 选了风格时也排队：插话只能带文字，风格要等这一轮结束、随下一轮一起定到设计里
     if (running) {
@@ -678,7 +679,6 @@ export function DesignChat({
         setText('')
         files.clear()
         setStyleRef(null)
-        slash.clear()
       }
     } finally {
       setSending(false)
@@ -842,9 +842,8 @@ export function DesignChat({
             onSync={slash.sync}
             onKeyDown={slash.onKeyDown}
             above={
-              (annotations.length > 0 || styleRef || slash.picked) && (
+              (annotations.length > 0 || styleRef) && (
                 <div className="flex flex-col gap-1.5 border-b px-2.5 pt-2.5 pb-2">
-                  {slash.picked && <SlashChip item={slash.picked} onRemove={slash.clear} />}
                   {styleRef && (
                     <span className="inline-flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-accent-soft px-2 py-1 text-[0.75rem] text-accent">
                       <Palette className="h-3.5 w-3.5 shrink-0" />
@@ -899,12 +898,8 @@ export function DesignChat({
             sending={sending}
             canSend={
               running
-                ? !!text.trim() || files.attachments.length > 0 || !!slash.picked
-                : !!text.trim() ||
-                  !!styleRef ||
-                  annotations.length > 0 ||
-                  files.attachments.length > 0 ||
-                  !!slash.picked
+                ? !!text.trim() || files.attachments.length > 0
+                : !!text.trim() || !!styleRef || annotations.length > 0 || files.attachments.length > 0
             }
             label={t('告诉 AI 要做什么')}
             placeholder={

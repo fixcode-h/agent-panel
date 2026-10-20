@@ -26,7 +26,15 @@ import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { Lightbox } from '@/components/ui/lightbox'
+import type { RichInputHandle } from './RichInput'
+import type { ChipKind } from '@shared/composer'
 import { t } from '@shared/i18n'
+
+/** 附件加进来、上传失败时通知输入框：照着在光标处放一张卡片 */
+export interface AttachHooks {
+  added?: (items: { name: string; mime: string }[]) => void
+  failed?: (name: string) => void
+}
 
 /** 输入框里正在上传或已经上传好的一个附件 */
 interface Item {
@@ -41,6 +49,9 @@ interface Item {
 
 export const isImage = (mime: string, name = '') =>
   mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(name)
+
+/** 附件在输入框里的卡片类型：图片是图片卡片，其他都是文件卡片 */
+export const chipKind = (mime: string, name: string): ChipKind => (isImage(mime, name) ? 'image' : 'file')
 
 export function formatSize(n: number) {
   if (n < 1024) return `${n} B`
@@ -97,7 +108,8 @@ function readAttachments(key: string): Item[] {
 /**
  * 附件列表：选文件、粘贴、拖进来都走 add，选完马上上传。
  * 传了 draftKey（和文字草稿用同一个）就按对话记住，切到别的对话再回来还在。
- * 附件只在输入框上方以缩略图显示，不往文字里插引用。
+ * 附件同时在输入框上方显示缩略图，并在光标处插一张行内卡片（图片卡片带缩略图）；
+ * 从上面删掉时输入框里对应的卡片也一起去掉。
  */
 export function useAttachments(draftKey?: string) {
   const [items, setItems] = useState<Item[]>(() => (draftKey ? readAttachments(draftKey) : []))
@@ -140,7 +152,10 @@ export function useAttachments(draftKey?: string) {
     }
   }, [items])
 
-  const add = useCallback(async (files: File[]) => {
+  /**
+   * 加附件。added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：上传失败时回调
+   */
+  const add = useCallback(async (files: File[], hooks?: AttachHooks) => {
     const room = MAX_ATTACHMENTS - count.current
     if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     const taken = new Set(names.current)
@@ -170,6 +185,7 @@ export function useAttachments(draftKey?: string) {
       ...xs,
       ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
     ])
+    hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime })))
     for (const x of accepted) {
       try {
         const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
@@ -177,13 +193,15 @@ export function useAttachments(draftKey?: string) {
       } catch (e) {
         toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
         setItems((xs) => xs.filter((i) => i.key !== x.key))
+        hooks?.failed?.(x.name)
       }
     }
   }, [])
   /** 已经在服务端生成好的附件（引入的会话记录） */
-  const addReady = useCallback((a: Attachment) => {
+  const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
     if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
+    hooks?.added?.([{ name: a.name, mime: a.mime }])
   }, [])
   const remove = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key))
   // 发送成功后页面可能马上切走，等不到 effect 删草稿；这里直接删，免得下次新建时附件又冒出来
@@ -667,12 +685,7 @@ function SessionPicker({
  * 输入 @ 引用项目里的文件：光标前是「@关键字」时列出匹配的文件，上下键选、回车或 Tab 确认，
  * 选中后换成「@相对路径 」。Agent 在项目目录里执行，看到路径就能自己读。
  */
-export function useFileMention(
-  projectId: string | undefined,
-  text: string,
-  setText: (v: string) => void,
-  ta: React.RefObject<HTMLTextAreaElement | null>,
-) {
+export function useFileMention(projectId: string | undefined, editor: React.RefObject<RichInputHandle | null>) {
   const [query, setQuery] = useState<{ q: string; start: number } | null>(null)
   const [files, setFiles] = useState<string[]>([])
   const [active, setActive] = useState(0)
@@ -680,13 +693,13 @@ export function useFileMention(
 
   /** 根据光标位置判断是不是在输入 @ */
   const sync = useCallback(() => {
-    const el = ta.current
+    const el = editor.current
     if (!el) return
-    const before = el.value.slice(0, el.selectionStart ?? el.value.length)
+    const before = el.text().slice(0, el.caret())
     const m = /(^|\s)@([^\s@]*)$/.exec(before)
     setQuery(m ? { q: m[2], start: before.length - m[2].length - 1 } : null)
     if (!m) setClosed(false)
-  }, [ta])
+  }, [editor])
 
   useEffect(() => {
     if (!query || !projectId || closed) return
@@ -710,19 +723,10 @@ export function useFileMention(
   const open = !!query && !!projectId && !closed && files.length > 0
 
   const pick = (f: string) => {
-    if (!query) return
-    const el = ta.current
-    const end = el?.selectionStart ?? text.length
-    const ins = `@${f} `
-    const next = text.slice(0, query.start) + ins + text.slice(end)
-    setText(next)
+    const el = editor.current
+    if (!query || !el) return
+    el.replace(query.start, el.caret(), `@${f} `)
     setQuery(null)
-    requestAnimationFrame(() => {
-      if (!el) return
-      el.focus()
-      const pos = query.start + ins.length
-      el.setSelectionRange(pos, pos)
-    })
   }
 
   /** 菜单打开时接管上下键、回车、Tab、Esc；返回 true 表示已处理 */
@@ -749,18 +753,14 @@ export function useFileMention(
 
   /** 菜单里的「引用项目文件」：在光标处插入 @ */
   const start = () => {
-    const el = ta.current
+    const el = editor.current
     if (!el) return
-    const pos = el.selectionStart ?? text.length
-    const pre = text.slice(0, pos)
-    const ins = pre && !/\s$/.test(pre) ? ' @' : '@'
-    setText(pre + ins + text.slice(pos))
+    const pos = el.caret()
+    const ins = pos > 0 && !/\s$/.test(el.text().slice(0, pos)) ? ' @' : '@'
+    el.replace(pos, pos, ins)
     setClosed(false)
-    requestAnimationFrame(() => {
-      el.focus()
-      el.setSelectionRange(pos + ins.length, pos + ins.length)
-      sync()
-    })
+    el.focus()
+    sync()
   }
 
   const menu = open ? (
