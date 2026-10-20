@@ -112,7 +112,7 @@
 | `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走，页面上先显示「待取走」                                              |
 | `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                          |
 | `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                             |
-| `skillsDir`                                    | 列表走协议时，内置 Skill 装到哪个目录                                                                    |
+| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`        |
 | `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                   |
 
 一条消息的写法：

@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs'
 import { chmod, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import { CLIS, getCli, type CliDefinition } from '../shared/clis.ts'
 import { frontField, type BundledSkill } from '../shared/library.ts'
 import { t } from '../shared/i18n.ts'
 import { expandHome } from './cli-extras.ts'
@@ -9,7 +8,7 @@ import { log } from './log.ts'
 
 /**
  * 面板自带的 Skill：仓库里的 skills/<分类>/<名字>/。
- * 装到 CLI 时按名字平铺在用户 Skill 目录下（<目录>/<名字>/SKILL.md），各 CLI 都认这种结构；分类只用于面板里展示。
+ * 统一装到用户目录 ~/.agents/skills（<目录>/<名字>/SKILL.md），各 CLI 共用这一份；分类只用于面板里展示。
  * 出包时整个目录由 esbuild 写进 server.mjs（同浏览器扩展：旧版的「版本更新」不会复制新目录）。
  */
 declare const __BUNDLED_SKILLS__: Record<string, string> | undefined
@@ -58,13 +57,8 @@ export async function entries(): Promise<Entry[]> {
   return (cache ??= load())
 }
 
-/** CLI 装 Skill 的用户目录（第一个） */
-function skillRoot(d: CliDefinition) {
-  const dir = d.skills.user[0] ?? d.rpc?.skillsDir ?? ''
-  return dir ? expandHome(dir) : ''
-}
-
-const bundledClis = () => CLIS.filter((d) => skillRoot(d))
+/** 自带 Skill 统一装到用户目录，各 CLI 共用这一份 */
+const sharedRoot = () => expandHome('~/.agents/skills')
 
 export async function statusIn(e: Entry, root: string): Promise<BundledSkill['status'][string]> {
   const dir = path.join(root, e.name)
@@ -77,18 +71,16 @@ export async function statusIn(e: Entry, root: string): Promise<BundledSkill['st
 }
 
 export async function listBundled(): Promise<BundledSkill[]> {
-  const clis = bundledClis()
+  const root = sharedRoot()
   const out: BundledSkill[] = []
   for (const e of await entries()) {
     const text = e.files.get('SKILL.md')!.toString('utf8')
-    const status: BundledSkill['status'] = {}
-    for (const d of clis) status[d.id] = await statusIn(e, skillRoot(d))
     out.push({
       name: e.name,
       category: e.category,
       description: frontField(text, 'description'),
       files: e.files.size - 1,
-      status,
+      status: { shared: await statusIn(e, root) },
     })
   }
   return out.sort((a, b) => a.category.localeCompare(b.category) || a.name.localeCompare(b.name))
@@ -105,41 +97,35 @@ export async function writeSkill(e: Entry, root: string) {
   }
 }
 
-/** 装进指定的 CLI；已经装了的只有 overwrite 时才覆盖（用户可能改过） */
-export async function installBundled(names: string[], clis: string[], overwrite: boolean) {
+/** 装到用户共享目录；已经装了的只有 overwrite 时才覆盖（用户可能改过）。clis 只为接口兼容保留 */
+export async function installBundled(names: string[], _clis: string[], overwrite: boolean) {
   const all = await entries()
+  const root = sharedRoot()
   const done: string[] = []
   const skipped: string[] = []
-  for (const id of clis) {
-    const d = getCli(id)
-    const root = d && skillRoot(d)
-    if (!root) throw new Error(t('这个 CLI 没有用户级的{kind}目录', { kind: 'Skill' }))
-    for (const name of names) {
-      const e = all.find((x) => x.name === name)
-      if (!e) throw new Error(t('没有自带的 Skill「{name}」', { name }))
-      const s = await statusIn(e, root)
-      if (s === 'same' || (s === 'changed' && !overwrite)) {
-        skipped.push(`${id}/${name}`)
-        continue
-      }
-      await writeSkill(e, root)
-      done.push(`${id}/${name}`)
+  for (const name of names) {
+    const e = all.find((x) => x.name === name)
+    if (!e) throw new Error(t('没有自带的 Skill「{name}」', { name }))
+    const s = await statusIn(e, root)
+    if (s === 'same' || (s === 'changed' && !overwrite)) {
+      skipped.push(name)
+      continue
     }
+    await writeSkill(e, root)
+    done.push(name)
   }
   return { done, skipped }
 }
 
 /**
- * 执行前补齐 Agent 要用的自带 Skill：CLI 里没有的装上，已有的不动。
+ * 执行前补齐 Agent 要用的自带 Skill：统一装到 ~/.agents/skills，已有的不动。
  * 失败只记日志，不影响执行（CLI 找不到 Skill 时会按自己的方式做）。
  */
-export async function ensureBundled(cliId: string, names: string[]) {
+export async function ensureBundled(names: string[]) {
   if (!names.length) return []
-  const d = getCli(cliId)
-  const root = d && skillRoot(d)
-  if (!root) return []
   try {
     const all = await entries()
+    const root = sharedRoot()
     const added: string[] = []
     for (const name of names) {
       const e = all.find((x) => x.name === name)
