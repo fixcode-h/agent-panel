@@ -47,10 +47,6 @@
       "label": "高"
     },
     {
-      "id": "xhigh",
-      "label": "极高"
-    },
-    {
       "id": "max",
       "label": "最高"
     }

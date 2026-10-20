@@ -517,14 +517,11 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
   const data = await readJsonFile(file)
   if (!isObj(data)) return
   const entries = await mergedModelCatalog().catch(() => [])
-  const allowed = def.efforts.map((e) => e.id)
   const changed = setModelEfforts(data, fillTemplate(spec.at, vars), spec.key, (model) => {
     const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
     if (!info.matched || !info.entry) return undefined
-    // 模型确实不支持思考时写空数组；目录里的值这个 CLI 都不认识时保持原样
-    if (!info.entry.efforts.length) return []
-    const efforts = allowed.length ? info.entry.efforts.filter((e) => allowed.includes(e)) : info.entry.efforts
-    return efforts.length ? efforts : undefined
+    // 目录里的强度都是 CLI 认的；空数组表示这个模型不能调思考强度
+    return info.entry.efforts
   })
   if (!changed) return
   await mkdir(path.dirname(file), { recursive: true })
