@@ -45,7 +45,7 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { openOrchSession, orchHint } from '../orch-mcp.ts'
-import { isWatched, seenWhileWatched } from '../presence.ts'
+import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
 function markTurnDone(task: Task) {
@@ -948,75 +948,81 @@ async function runAgent(
   // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume。
   // 有插话协议（Command Code、Pi）的对话也要这个工具，只是不用它取补充
   let waiter: Waiter | undefined
-  const waitUser = canWait
-    ? async (): Promise<string | null> => {
-        if (finished) return null
-        // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
-        if (chat && !stillCurrent()) return null
-        // 回复期间还在排队的要求：一起交回去，不用等进程结束
-        const queued = drainQueue()
-        if (queued) {
-          // 上一轮已经回复完，只是还有排队的消息没处理
-          if (!prewarmMode && chat && !op) markTurnDone(task)
-          prewarmMode = false
+  /**
+   * 等用户的下一条消息。fromTool 是模型正在调 wait_user_message（这一轮还没结束）；
+   * 否则是面板在这一轮结束后保活：不靠模型自觉调工具，回复完就把进程留着
+   */
+  const waitNext = async (fromTool: boolean): Promise<string | null> => {
+    if (fromTool && finished) return null
+    // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
+    if (chat && !stillCurrent()) return null
+    // 回复期间还在排队的要求：一起交回去，不用等进程结束
+    const queued = drainQueue()
+    if (queued) {
+      // 上一轮已经回复完，只是还有排队的消息没处理
+      if (!prewarmMode && chat && !op) markTurnDone(task)
+      prewarmMode = false
+      task.prewarming = false
+      task.working = true
+      ctx.changed(true)
+      return queued
+    }
+    task.prewarming = false
+    task.awaitingUser = true
+    // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
+    task.working = false
+    // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
+    if (!prewarmMode && chat && !op) markTurnDone(task)
+    ctx.changed(true)
+    try {
+      return await new Promise<string | null>((resolve) => {
+        let settled = false
+        const done = (value: string | null) => {
+          if (settled) return
+          settled = true
+          ctx.signal.removeEventListener('abort', onAbort)
+          const set = waiters.get(task.id)
+          if (waiter) set?.delete(waiter)
+          if (!set?.size) waiters.delete(task.id)
+          waiter = undefined
+          task.awaitingUser = false
           task.prewarming = false
-          task.working = true
-          ctx.changed(true)
-          return queued
+          if (value === null && chat) task.working = false
+          if (!finished) ctx.changed(true)
+          resolve(value)
         }
+        const onAbort = () => done(null)
+        waiter = {
+          deliver: (msg) => {
+            // 用户发来第一句：预热结束，之后模型的输出正常记进对话
+            prewarmMode = false
+            task.messages.push(msg)
+            // 收到用户消息，CLI 开始处理这一轮
+            task.working = true
+            // 之后的输出另起一条，排在用户消息后面
+            cur = undefined
+            done(withAttachments(msg.text, msg.attachments ?? []))
+          },
+          cancel: () => done(null),
+          current: stillCurrent,
+        }
+        ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
+        ctx.signal.addEventListener('abort', onAbort, { once: true })
+        // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮
+        if (!isWatched(task.id)) done(null)
+      })
+    } finally {
+      if (task.awaitingUser || task.prewarming) {
+        task.awaitingUser = false
         task.prewarming = false
-        task.awaitingUser = true
-        // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
-        task.working = false
-        // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
-        if (!prewarmMode && chat && !op) markTurnDone(task)
-        ctx.changed(true)
-        try {
-          return await new Promise<string | null>((resolve) => {
-            let settled = false
-            const done = (value: string | null) => {
-              if (settled) return
-              settled = true
-              ctx.signal.removeEventListener('abort', onAbort)
-              const set = waiters.get(task.id)
-              if (waiter) set?.delete(waiter)
-              if (!set?.size) waiters.delete(task.id)
-              waiter = undefined
-              task.awaitingUser = false
-              task.prewarming = false
-              if (value === null && chat) task.working = false
-              if (!finished) ctx.changed(true)
-              resolve(value)
-            }
-            const onAbort = () => done(null)
-            waiter = {
-              deliver: (msg) => {
-                // 用户发来第一句：预热结束，之后模型的输出正常记进对话
-                prewarmMode = false
-                task.messages.push(msg)
-                // 收到用户消息，CLI 开始处理这一轮
-                task.working = true
-                // 之后的输出另起一条，排在用户消息后面
-                cur = undefined
-                done(withAttachments(msg.text, msg.attachments ?? []))
-              },
-              cancel: () => done(null),
-              current: stillCurrent,
-            }
-            ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
-            ctx.signal.addEventListener('abort', onAbort, { once: true })
-            // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮
-            if (!isWatched(task.id)) done(null)
-          })
-        } finally {
-          if (task.awaitingUser || task.prewarming) {
-            task.awaitingUser = false
-            task.prewarming = false
-            if (!finished) ctx.changed(true)
-          }
-        }
+        if (!finished) ctx.changed(true)
       }
-    : undefined
+    }
+  }
+  const waitUser = canWait ? () => waitNext(true) : undefined
+  // 面板保活：回复完这一轮不关进程，用户的下一条消息交给同一个进程开下一轮（不靠模型主动调等待工具）。
+  // 只在对话页确实开着时这样做：没人看的时候留着一个 CLI 也没人会回来发消息
+  const keepAlive = canWait ? () => (hasViewer(task.id) ? waitNext(false) : Promise.resolve(null)) : undefined
 
   const r = await invokeCli({
     cliId,
@@ -1057,6 +1063,8 @@ async function runAgent(
     onControl: chat || (!op && (step || task.mode === 'workflow')) ? (c) => register(c) : undefined,
     readNotes: taker ? () => taker.read() : undefined,
     waitUser,
+    // 回复完把进程留着等下一句：对话页开着时不靠模型主动调 wait_user_message
+    keepAlive,
     mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true

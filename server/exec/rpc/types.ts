@@ -27,8 +27,11 @@ export interface RpcContext {
   request: (record: Record<string, unknown>, options?: RpcRequestOptions) => Promise<any>
   /** 交给面板的事件 */
   emit: (event: CliEvent | CliEvent[]) => void
-  /** 这一轮结束：先给面板结果，再关 stdin 让 CLI 退出；delayMs 内又有输出时可以 hold 住不关 */
-  finish: (ok: boolean, error?: string, delayMs?: number) => void
+  /**
+   * 这一轮结束：先给面板结果，再关 stdin 让 CLI 退出。
+   * 面板还可能接着用这个进程（保活）时不关，返回 true；这时别再发退出消息
+   */
+  finish: (ok: boolean, error?: string, delayMs?: number) => Promise<boolean>
   /** 取消已经排好的关闭（例如插话后 CLI 还在接着输出） */
   hold: () => void
 }
@@ -44,6 +47,13 @@ export interface RpcAdapter {
   message: (ctx: RpcContext, msg: any) => void
   /** 服务端发来的请求（例如审批）；不实现时回「不支持」 */
   request?: (ctx: RpcContext, msg: any) => void
+  /**
+   * 在同一个进程里开下一轮。面板保活时，用户的下一条消息直接交给它，不用重启 CLI 再 --resume。
+   * 不实现的 CLI 一轮结束后进程就退出（保活对它们不生效）
+   */
+  next?: (ctx: RpcContext, input: string) => void | Promise<void>
+  /** 让 CLI 结束会话、退出进程；不实现时由会话引擎关 stdin */
+  exit?: (ctx: RpcContext) => void
   /** 执行中插话；返回是否交给了 CLI */
   steer: (ctx: RpcContext, text: string) => Promise<boolean>
   /** 中断这一轮；返回是否发出去了 */

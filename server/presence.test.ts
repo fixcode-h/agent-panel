@@ -5,6 +5,7 @@ import test from 'node:test'
 process.env.AGENT_PANEL_PRESENCE_GRACE_MS = '30'
 const {
   forgetPresence,
+  hasViewer,
   isWatched,
   rescheduleIfUnwatched,
   seenWhileWatched,
@@ -170,4 +171,31 @@ test('这一轮完成时页面正开着：算看过，不留橙点也不留着�
 
   setPresenceUnreadKeeper(() => false)
   forgetPresence(id)
+})
+
+test('保活只在对话页真的开着时生效：没上报过、过了宽限都不留进程', async () => {
+  const id = 'presence-has-viewer'
+  let idle = 0
+  setPresenceIdleHandler((taskId) => {
+    if (taskId === id) idle++
+  })
+  setPresenceUnreadKeeper(() => false)
+
+  // 只调接口、没有页面（脚本、测试）：不留 CLI 等下一句
+  assert.equal(hasViewer(id), false)
+
+  setViewer(id, 'tab-a', true)
+  assert.equal(hasViewer(id), true, '页面开着：回复完可以留进程')
+
+  setViewer(id, 'tab-a', false)
+  assert.equal(hasViewer(id), true, '宽限期内切回来还能接着说')
+  await wait(60)
+  assert.equal(hasViewer(id), false, '过了宽限没人看，不再留进程')
+  assert.equal(idle, 1)
+
+  // 清掉记录后回到「没有页面」的状态
+  forgetPresence(id)
+  assert.equal(hasViewer(id), false)
+
+  setPresenceUnreadKeeper(() => false)
 })

@@ -1,4 +1,5 @@
 import { t } from '../../../shared/i18n.ts'
+import { log } from '../../log.ts'
 import type { CliEvent } from '../parsers.ts'
 import type { RpcAdapter, RpcContext, RpcIo, RpcRequestOptions } from './types.ts'
 
@@ -17,11 +18,17 @@ export interface RpcSession {
   /** 进程结束、或者外层不再需要它了 */
   close: () => void
   readonly finished: boolean
+  /** 在等用户的下一条消息（保活中）：CLI 这时没有输出，不算卡住 */
+  readonly waiting: boolean
 }
 
 /**
  * 一条常驻协议会话的公共部分：stdin/stdout 上的 JSON 行、请求和回复配对、超时、
  * 这一轮结束后的收尾。具体发什么、怎么判断结束由适配器决定。
+ *
+ * 保活（对话页还开着时）：一轮结束后先不关进程，用 next() 等用户的下一条消息，
+ * 交给适配器在同一个进程里开下一轮，不用重启 CLI 再 --resume。
+ * next() 返回 null（用户离开了这个对话）才让进程退出。
  */
 export function createRpcSession(o: {
   adapter: RpcAdapter
@@ -30,6 +37,10 @@ export function createRpcSession(o: {
   images?: string[]
   onEvent: (e: CliEvent) => void
   requestTimeoutMs?: number
+  /** 这一轮结束后要不要留着进程等下一句 */
+  hold?: () => boolean
+  /** 等用户的下一条消息；返回 null 表示用户已经不在这个对话了。不给时不留进程 */
+  next?: () => Promise<string | null>
 }): RpcSession {
   let io: RpcIo | undefined
   let nextId = 1
@@ -37,20 +48,48 @@ export function createRpcSession(o: {
   let ended = false
   let endTimer: ReturnType<typeof setTimeout> | undefined
   const pending = new Map<string | number, (msg: any) => void>()
+  /** 保活期间在等用户下一句：CLI 这时本来就没有输出，不算卡住 */
+  let waiting = false
 
   const send = (record: Record<string, unknown>) => {
     if (ended || !io) return
     io.write(JSON.stringify(record) + '\n')
   }
 
+  /** 结束进程：先按协议让它自己退出（会话记录完整），再关 stdin */
   const end = () => {
     if (ended) return
+    o.adapter.exit?.(ctx)
     ended = true
+    waiting = false
     clearTimeout(endTimer)
     endTimer = undefined
     for (const resolve of pending.values()) resolve({ error: { message: t('已关闭') } })
     pending.clear()
     io?.end()
+  }
+
+  /** 保活：这一轮结束后等用户下一句，有就同一进程开下一轮 */
+  const keepAlive = async () => {
+    if (ended || !o.next) return false
+    waiting = true
+    let text: string | null = null
+    try {
+      text = await o.next()
+    } catch (e) {
+      // 等下一句时出错（任务被删、服务在退出）：按离开处理，正常结束进程
+      log.warn('rpc', '保活时等下一句出错', e)
+    } finally {
+      waiting = false
+    }
+    if (ended) return false
+    if (text === null || !o.adapter.next) {
+      end()
+      return false
+    }
+    finished = false
+    Promise.resolve(o.adapter.next(ctx, text)).catch((e: Error) => void ctx.finish(false, e.message))
+    return true
   }
 
   const ctx: RpcContext = {
@@ -87,14 +126,17 @@ export function createRpcSession(o: {
     emit(event) {
       for (const e of Array.isArray(event) ? event : [event]) o.onEvent(e)
     },
-    finish(ok, error, delayMs = 0) {
+    async finish(ok, error, delayMs = 0) {
       // 已经关掉了：还挂着的请求是 end() 里用「已关闭」结束的，别再报一次结果
-      if (ended) return
+      if (ended) return false
       finished = true
       o.onEvent({ type: 'result', ok, error })
       clearTimeout(endTimer)
+      endTimer = undefined
+      if (o.adapter.next && o.next && o.hold?.()) return keepAlive()
       if (delayMs > 0) endTimer = setTimeout(end, delayMs)
       else end()
+      return false
     },
     hold() {
       clearTimeout(endTimer)
@@ -124,7 +166,7 @@ export function createRpcSession(o: {
   return {
     start(startIo) {
       io = startIo
-      Promise.resolve(o.adapter.start(ctx)).catch((e: Error) => ctx.finish(false, e.message))
+      Promise.resolve(o.adapter.start(ctx)).catch((e: Error) => void ctx.finish(false, e.message))
     },
     line(raw) {
       let msg: any
@@ -145,11 +187,13 @@ export function createRpcSession(o: {
       return o.adapter.interrupt(ctx)
     },
     close() {
-      o.adapter.close?.(ctx)
       end()
     },
     get finished() {
       return finished
+    },
+    get waiting() {
+      return waiting
     },
   }
 }

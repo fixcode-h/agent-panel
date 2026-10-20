@@ -197,6 +197,20 @@ let rpcMode = false
 let rpcSession = ''
 let rpcSeq = 0
 let rpcExit
+// 面板保活：一轮结束后面板可能直接在同一进程里发下一次 turn/start（不重启动进程）。
+// 真 CLI 支持这样，假的也按同样方式等下一轮
+let rpcTurns = 0
+/** 有下一轮 turn/start 时醒过来（没有就等 rpcTurnWait） */
+let rpcTurnArrived = false
+let rpcTurnWait = null
+const waitRpcTurn = () =>
+  new Promise((resolve) => {
+    if (rpcTurnArrived) {
+      rpcTurnArrived = false
+      return resolve()
+    }
+    rpcTurnWait = resolve
+  })
 if (args.includes('--rpc')) {
   rpcMode = true
   const ri = args.indexOf('--resume')
@@ -226,6 +240,12 @@ if (args.includes('--rpc')) {
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1' } })
         say({ jsonrpc: '2.0', method: 'turn/started', params: { seq: ++rpcSeq, turnId: 'turn_1' } })
         started = true
+        rpcTurns++
+        if (rpcTurnWait) {
+          const wake = rpcTurnWait
+          rpcTurnWait = null
+          wake()
+        } else rpcTurnArrived = true
       } else if (m.method === 'turn/steer') {
         steered.push(String(m.params?.input ?? ''))
         say({ jsonrpc: '2.0', id: m.id, result: { turnId: 'turn_1', queued: steered.length } })
@@ -377,8 +397,9 @@ const out = (o) => {
     }) + '\n',
   )
 }
+/** 一轮结束：非 RPC 直接退出；RPC 等下一次 turn/start（保活）或 session/exit，返回 true 表示进程要退出 */
 const exitTurn = async (code = 0) => {
-  if (rpcMode) await rpcExit
+  if (rpcMode) return await Promise.race([rpcExit.then(() => true), waitRpcTurn().then(() => false)])
   process.exit(code)
 }
 // 工作流里只让第一个节点慢（后面的节点带着上游结果，也会含有 SLOW）
@@ -1062,9 +1083,75 @@ if (kind === 'claude') {
   note('thread/tokenUsage/updated', { tokenUsage: { total: usage, last: usage, modelContextWindow: 258400 } })
   if (fail) codexDone('failed', '模拟的失败')
   codexDone('completed')
-} else {
+} else if (rpcMode) {
+  // Command Code 的 RPC 常驻：一轮结束后，面板可能在同一进程里发下一次 turn/start（保活复用），
+  // 所以按轮循环，直到面板关 stdin（session/exit）才退出
   const ev = (e) => out({ type: 'event', event: e })
-  ev({ type: 'run_start', sessionId: session })
+  for (;;) {
+    const turnInput = input
+    const turnReply = `这是 ${kind} 的回复。收到 ${turnInput.length} 个字符的任务描述。`
+    ev({ type: 'run_start', sessionId: session })
+    // NETFAIL：像真的 Command Code 一样连接中途断开，退出码 6；NETDOWN 每次都断（续接也断）
+    const downMark = path.join(tmpdir(), `fake-netdown-${session}`)
+    if (turnInput.includes('NETDOWN')) writeFileSync(downMark, '')
+    if (existsSync(downMark) || (turnInput.includes('NETFAIL') && resumeIdx < 0)) {
+      process.stderr.write(
+        'Note: "fake/flash" routes via Command Code; your providers.json also declares it — use "me/fake/flash" to route there instead.\nError: Unable to connect to the API. Please check your network connection.\nStream connection failed mid-response: terminated\n',
+      )
+      const error = { message: 'Stream connection failed mid-response: terminated' }
+      process.stdout.write(JSON.stringify({ type: 'event', seq: ++rpcSeq, event: { type: 'run_error', error } }) + '\n')
+      process.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'turn/completed',
+          params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'run_error', error },
+        }) + '\n',
+      )
+      process.exit(6)
+    }
+    ev({ type: 'model_request_start' })
+    ev({ type: 'message_start' })
+    ev({ type: 'thinking_start' })
+    ev({ type: 'thinking_delta', delta: '想想先读哪个文件' })
+    ev({ type: 'thinking_end', text: '想想先读哪个文件' })
+    ev({ type: 'tool_queued', toolCallId: 'c1', toolName: 'read_file', input: { path: 'README.md' } })
+    writeFileSync(file, 'x\n')
+    ev({ type: 'tool_queued', toolCallId: 'c2', toolName: 'write_file', input: { path: file, content: 'x\n' } })
+    ev({
+      type: 'model_request_end',
+      model: 'cmd-fake',
+      usage: { inputTokens: 9000, outputTokens: 80, cacheReadTokens: 1000, cacheWriteTokens: 0 },
+    })
+    ev({ type: 'model_request_start' })
+    ev({ type: 'message_start' })
+    for (const part of turnReply.match(/.{1,6}/g)) ev({ type: 'text_delta', delta: part })
+    ev({ type: 'message_end', content: [{ type: 'text', text: turnReply }] })
+    const turnFail = turnInput.includes('FAIL')
+    if (turnFail) {
+      out({
+        type: 'result',
+        subtype: 'error',
+        sessionId: session,
+        usage: {},
+        durationMs: 1,
+        finalText: '',
+        error: '模拟的失败',
+      })
+      if (await exitTurn(1)) break
+      continue
+    }
+    out({
+      type: 'result',
+      subtype: 'success',
+      sessionId: session,
+      usage: { inputTokens: 10000, outputTokens: 80, cacheReadTokens: 0, cacheWriteTokens: 0 },
+      durationMs: 10,
+      finalText: turnReply,
+    })
+    // 等面板：下一轮 turn/start（保活）或者 session/exit
+    if (await exitTurn(0)) break
+  }
+} else {
   // NETFAIL：像真的 Command Code 一样连接中途断开，退出码 6；NETDOWN 每次都断（续接也断）
   const downMark = path.join(tmpdir(), `fake-netdown-${session}`)
   if (input.includes('NETDOWN')) writeFileSync(downMark, '')

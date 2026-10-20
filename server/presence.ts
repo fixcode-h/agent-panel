@@ -21,6 +21,8 @@ const grace = () => FIXED_GRACE_MS ?? graceMs
 const viewers = new Map<string, Set<string>>()
 /** 过了宽限、确认没人在看的任务 */
 const left = new Set<string>()
+/** 上报过在场的任务：没有页面在用（只调接口、测试）时不要替它把 CLI 留着 */
+const reported = new Set<string>()
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 let onIdle: ((taskId: string) => void) | undefined
 
@@ -42,6 +44,7 @@ export function setPresenceUnreadKeeper(fn: (taskId: string) => boolean) {
 
 /** 页面打开、切到前台时 active；卸载、切到后台时 false */
 export function setViewer(taskId: string, viewerId: string, active: boolean) {
+  reported.add(taskId)
   if (active) {
     const set = viewers.get(taskId) ?? new Set()
     set.add(viewerId)
@@ -95,6 +98,14 @@ export function isWatched(taskId: string) {
 }
 
 /**
+ * 这个对话有没有页面在用（上报过在场、还没过宽限期）。
+ * 没有页面时不要替用户把 CLI 留着等下一句：交互都在页面上，没有人会回来发消息
+ */
+export function hasViewer(taskId: string) {
+  return reported.has(taskId) && !left.has(taskId)
+}
+
+/**
  * 这一轮刚完成：页面正开着就直接算看过（不亮橙点，也不因为未读一直留着进程）。
  * 没人在看时才需要等用户回来打开。
  */
@@ -109,4 +120,5 @@ export function forgetPresence(taskId: string) {
   timers.delete(taskId)
   viewers.delete(taskId)
   left.delete(taskId)
+  reported.delete(taskId)
 }
