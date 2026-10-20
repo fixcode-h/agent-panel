@@ -40,6 +40,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
+import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
@@ -157,6 +158,12 @@ export function TaskView({
   const mention = useFileMention(project?.id, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
+  // 右栏可以拖宽，但中间要留出内容宽度（输入框的宽度）：上限按这一行的实际宽度算
+  const taskPanel = usePaneWidth('task-panel', 340, 280, () => {
+    const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
+    // 保留中间的内容宽度；窗口不够宽时上限就是默认宽度，不会反而变窄
+    return Math.max(340, Math.min(560, row - contentPaneWidth() - 48))
+  })
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [resuming, setResuming] = useState(false)
@@ -889,12 +896,21 @@ export function TaskView({
 
           <aside
             aria-label={t('任务面板')}
+            data-task-panel
+            style={{ width: taskPanel.width }}
             className={cn(
-              'w-[340px] shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
+              'relative shrink-0 flex-col overflow-y-auto border-l bg-rail p-3',
               panel ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop' : 'hidden',
               'xl:static xl:z-auto xl:flex xl:h-full xl:shadow-none',
             )}
           >
+            {!panel && (
+              <ResizeHandle
+                pane={taskPanel}
+                label={t('拖动调整任务面板的宽度')}
+                className="hidden xl:block"
+              />
+            )}
             {panel && (
               <div className="mb-2 flex items-center justify-between xl:hidden">
                 <span className="px-1 text-[0.8125rem] font-semibold">{t('任务面板')}</span>

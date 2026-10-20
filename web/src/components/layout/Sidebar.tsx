@@ -49,6 +49,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { TOGGLE_SIDEBAR } from './CommandPalette'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
@@ -287,6 +288,12 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const appUpdate = useAppUpdate().data
   const update = !import.meta.env.VITE_DEMO && appUpdate?.packaged ? appUpdate.update : undefined
   const [collapsed, toggleCollapsed] = useCollapsed()
+  // 侧栏可以拖宽，但中间要留出内容宽度（输入框的宽度），右边有任务面板时也要算进去
+  const pane = usePaneWidth('sidebar', 264, 200, () => {
+    const panel = document.querySelector('[data-task-panel]')?.getBoundingClientRect().width ?? 0
+    // 窗口不够宽时上限不会把侧栏压得比默认还窄，只是不允许再拖宽
+    return Math.max(264, Math.min(340, window.innerWidth - panel - contentPaneWidth() - 48))
+  })
   const [mobileOpen, setMobileOpen] = useState(false)
   useEffect(() => setMobileOpen(false), [route])
   const chatMode = route.page === 'chat'
@@ -756,12 +763,15 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
       )}
       <aside
         aria-label={t('侧栏')}
+        data-sidebar
+        style={{ width: collapsed ? 56 : pane.width }}
         className={cn(
-          'hidden shrink-0 flex-col border-r bg-rail transition-[width] duration-200 md:flex',
-          collapsed ? 'w-[56px]' : 'w-[264px]',
+          'relative hidden shrink-0 flex-col border-r bg-rail md:flex',
+          !pane.dragging && 'transition-[width] duration-200',
         )}
       >
         {body(collapsed)}
+        {!collapsed && <ResizeHandle pane={pane} side="right" label={t('拖动调整侧栏的宽度')} />}
       </aside>
       <ConfirmDialog
         open={!!deleting}
