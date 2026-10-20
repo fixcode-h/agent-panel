@@ -172,6 +172,16 @@ test('按协议过滤模型：不带后缀通用，别的协议后缀隐藏，�
   assert.equal(modelForProtocol('unknown', 'anthropic', a), 'x')
 })
 
+test('换协议时没有对应后缀，就用同名的通用模型，不跳到列表第一个', () => {
+  const models = ['gpt-6.1-sol', 'deepseek/deepseek-v4-flash-responses', 'deepseek/deepseek-v4-flash']
+  const allowed = modelsForProtocol(models, 'openai-chat')
+  assert.deepEqual(allowed, ['gpt-6.1-sol', 'deepseek/deepseek-v4-flash'])
+  assert.equal(
+    modelForProtocol('deepseek/deepseek-v4-flash-responses', 'openai-chat', allowed),
+    'deepseek/deepseek-v4-flash',
+  )
+})
+
 test('只留一份接口配置：同地址和密钥的旧 provider 删掉，不同接口保留', () => {
   const data = {
     provider: {

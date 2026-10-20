@@ -94,49 +94,52 @@ const editorUrl = (dir: string, file: string) => {
   return `vscode://file/${full.startsWith('/') ? full.slice(1) : full}`
 }
 
-/** 左右对照：左边改前、右边改后；配对的两行都变了才标红标绿，只在一侧出现的是删除或新增 */
+/**
+ * 左右对照：左边改前、右边改后；配对的两行都变了才标红标绿，只在一侧出现的是删除或新增。
+ * 两列各自按内容撑开、至少各占一半：长行只把整块撑宽（外面横向滚动），不会盖到另一边
+ */
 function SplitView({ lines }: { lines: string[] }) {
   return (
     <div className="min-w-max font-mono text-[0.78125rem] leading-[1.6]">
-      {sideBySide(lines).map((r, i) => {
-        if (r.kind === 'hunk')
-          return (
-            <div key={i} className="whitespace-pre bg-field px-3 py-0.5 text-subtle">
-              {r.l}
-            </div>
-          )
-        if (r.kind === 'note')
-          return (
-            <div key={i} className="whitespace-pre px-3 py-0.5 text-subtle/70">
-              {r.l}
-            </div>
-          )
-        const changed = !!r.left && !!r.right
-        const cell = (side: 'left' | 'right') => {
-          const c = side === 'left' ? r.left : r.right
-          const tone = !c
-            ? side === 'left'
-              ? 'bg-danger/5'
-              : 'bg-success/5'
-            : changed
+      <div className="grid grid-cols-[minmax(max-content,1fr)_minmax(max-content,1fr)]">
+        {sideBySide(lines).map((r, i) => {
+          if (r.kind === 'hunk')
+            return (
+              <div key={i} className="col-span-2 whitespace-pre bg-field px-3 py-0.5 text-subtle">
+                {r.l}
+              </div>
+            )
+          if (r.kind === 'note')
+            return (
+              <div key={i} className="col-span-2 whitespace-pre px-3 py-0.5 text-subtle/70">
+                {r.l}
+              </div>
+            )
+          const changed = !!r.left && !!r.right
+          const cell = (side: 'left' | 'right') => {
+            const c = side === 'left' ? r.left : r.right
+            const tone = !c
               ? side === 'left'
-                ? 'bg-danger/10 text-danger'
-                : 'bg-success/10 text-success'
-              : 'text-muted'
-          return (
-            <div className={cn('flex min-w-0 flex-1 whitespace-pre', tone)}>
-              <span className="w-11 shrink-0 pr-2 text-right text-subtle/70 select-none">{c?.n ?? ''}</span>
-              <span className="pr-4">{c ? c.l || ' ' : ''}</span>
-            </div>
-          )
-        }
-        return (
-          <div key={i} className="flex">
-            <div className="min-w-0 flex-1 border-r border-line">{cell('left')}</div>
-            <div className="min-w-0 flex-1">{cell('right')}</div>
-          </div>
-        )
-      })}
+                ? 'bg-danger/5'
+                : 'bg-success/5'
+              : changed
+                ? side === 'left'
+                  ? 'bg-danger/10 text-danger'
+                  : 'bg-success/10 text-success'
+                : 'text-muted'
+            return (
+              <div
+                key={`${i}-${side}`}
+                className={cn('flex whitespace-pre', tone, side === 'left' && 'border-r border-line')}
+              >
+                <span className="w-11 shrink-0 pr-2 text-right text-subtle/70 select-none">{c?.n ?? ''}</span>
+                <span className="pr-4">{c ? c.l || ' ' : ''}</span>
+              </div>
+            )
+          }
+          return [cell('left'), cell('right')]
+        })}
+      </div>
     </div>
   )
 }
