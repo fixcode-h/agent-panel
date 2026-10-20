@@ -3960,6 +3960,8 @@ try {
       askUser: false,
       prompt: 'FAKE_WAIT 先看代码',
     })
+    // 打开对话页时前端会先报已读，再报页面开着
+    await call('POST', `/tasks/${w.id}/seen`, {})
     await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: true })
     for (let i = 0; i < 100; i++) {
       w = await call('GET', `/tasks/${w.id}`)

@@ -94,6 +94,14 @@ export function isWatched(taskId: string) {
   return !left.has(taskId)
 }
 
+/**
+ * 这一轮刚完成：页面正开着就直接算看过（不亮橙点，也不因为未读一直留着进程）。
+ * 没人在看时才需要等用户回来打开。
+ */
+export function seenWhileWatched(taskId: string) {
+  return (viewers.get(taskId)?.size ?? 0) > 0
+}
+
 /** 任务删除、结束后清掉记录 */
 export function forgetPresence(taskId: string) {
   const timer = timers.get(taskId)
