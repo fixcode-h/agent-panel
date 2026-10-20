@@ -107,6 +107,16 @@ test('账号还原：provider 占位用最后选用的 API 填', () => {
   assert.deepEqual(edits[0].unset, ['provider.codeg'])
 })
 
+test('账号还原：API 已被移除时仍按上一次的 provider 删除接口', () => {
+  const edits = fillEdits(
+    [{ file: 'x.json', set: {}, merge: false, unset: ['provider.{provider}'] }],
+    auth,
+    undefined,
+    'cc',
+  )
+  assert.deepEqual(edits[0].unset, ['provider.cc'])
+})
+
 test('识别 API：面板自己写入的 provider 不算', () => {
   const def = getCli('commandcode')!
   const src = def.auth!.apiSources.find((s) => s.file.includes('providers.json'))!

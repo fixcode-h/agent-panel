@@ -256,7 +256,7 @@
         },
         {
           "file": "~/.commandcode/providers.json",
-          "unset": ["provider.{provider}"]
+          "unset": ["provider.{provider}", "provider.agentpanel"]
         }
       ]
     },

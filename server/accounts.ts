@@ -347,7 +347,7 @@ async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
  * 调用 CLI 之前：按这个 CLI 现在用账号还是 API，把配置文件改成对应的样子
  * （例如 Gemini CLI 的登录方式、Command Code 的自定义接口）。没有这类配置的 CLI 什么都不做
  */
-export async function prepareAuth(cliId: string) {
+export async function prepareAuth(cliId: string, lastProvider?: string) {
   const def = getCli(cliId)
   const spec = def?.auth?.api
   if (!def?.auth || !spec || (!spec.edits.length && !spec.accountEdits.length)) return
@@ -359,7 +359,7 @@ export async function prepareAuth(cliId: string) {
     else {
       // 切回账号时用最后选用的 API 填 {provider}，把写进去的那一份接口删掉
       const selected = settings.apis.find((a) => a.id === cs.apiId)
-      await applyEdits(fillEdits(spec.accountEdits, def.auth, selected), env)
+      await applyEdits(fillEdits(spec.accountEdits, def.auth, selected, lastProvider), env)
     }
   } catch (e) {
     log.warn('accounts', '切换账号 / API 的配置没写成功', { cli: cliId, error: (e as Error).message })
@@ -382,7 +382,10 @@ export async function syncCliAuths(prev: Settings, next: Settings) {
   for (const def of CLIS) {
     if (!def.auth?.api) continue
     if (authSignature(prev, def.id) === authSignature(next, def.id)) continue
-    await prepareAuth(def.id)
+    const prevCs = cliSettings(prev, def.id)
+    const prevApi = prev.apis.find((a) => a.id === prevCs.apiId)
+    const lastProvider = prevApi ? apiProvider(prevApi, def.auth.api.defaultProvider) : undefined
+    await prepareAuth(def.id, lastProvider)
     invalidateModels(def.id)
   }
 }

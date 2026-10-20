@@ -236,9 +236,9 @@ export const apiFits = (auth: CliAuth | undefined, api: ApiConfig | undefined) =
   !!auth?.api && !!api && auth.api.protocols.includes(api.protocol)
 
 /** 填一份配置编辑；没有 API（切回账号）时仍可用最后选用的 API 填 {provider} */
-export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig): JsonEdit[] {
+export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, lastProvider?: string): JsonEdit[] {
   const spec = auth.api!
-  const provider = api ? apiProvider(api, spec.defaultProvider) : spec.defaultProvider
+  const provider = api ? apiProvider(api, spec.defaultProvider) : lastProvider?.trim() || spec.defaultProvider
   const base: ApiConfig = api ?? {
     id: '',
     name: '',
