@@ -1456,6 +1456,7 @@ function Designer({ id }: { id: string }) {
               onStop={() => void api.stopDesign(id).then(() => ed.reload())}
               kind={server.kind}
               designId={id}
+              dir={project?.path}
               onRetry={async (imageId) => {
                 try {
                   ed.absorb(await api.retryDesignImage(id, imageId, { source, count }))

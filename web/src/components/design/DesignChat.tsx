@@ -36,6 +36,7 @@ import { useCliDef } from '@/lib/cli-models'
 import { cn } from '@/lib/utils'
 import { Select } from '@/components/ui/input'
 import { ChatReply, PendingAuthor, SystemNote } from '@/components/tasks/Messages'
+import { conversationAround } from '@shared/fix'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import { AnswerMessage, UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from '@/components/tasks/ChatModelPicker'
@@ -533,6 +534,7 @@ export function DesignChat({
   onRetry,
   kind = 'game',
   designId,
+  dir,
   annotations = [],
   onRemoveAnnotation,
   hasTemplate,
@@ -567,6 +569,8 @@ export function DesignChat({
   conceptDefault?: boolean
   /** 哪个设计：对话的 CLI、模型各个设计分开记 */
   designId: string
+  /** 设计所属项目的目录：出错交给 AI 排查时一起带上 */
+  dir?: string
   /** 游戏 UI 还是网页 UI：示例要求不一样 */
   kind?: 'game' | 'web'
   /** 重新排队生成一张失败的图 */
@@ -769,6 +773,8 @@ export function DesignChat({
             <ChatMessage
               key={msg.id}
               msg={msg}
+              msgs={messages}
+              dir={dir}
               last={i === messages.length - 1 && !running}
               onResend={
                 running
@@ -922,10 +928,16 @@ export function DesignChat({
 
 function ChatMessage({
   msg,
+  msgs,
+  dir,
   last,
   onResend,
 }: {
   msg: DesignMessage
+  /** 整个对话：系统消息出错时，把前后几条一起交给 AI 排查 */
+  msgs: DesignMessage[]
+  /** 设计所属项目的目录：出错时一起交给 AI 排查 */
+  dir?: string
   /** 最后一条回复：时间和操作一直显示 */
   last?: boolean
   /** 把这条要求放回输入框重新编辑 */
@@ -980,7 +992,15 @@ function ChatMessage({
         }
       />
     )
-  if (msg.role === 'system') return <SystemNote text={msg.text} error={msg.error} />
+  if (msg.role === 'system')
+    return (
+      <SystemNote
+        text={msg.text}
+        error={msg.error}
+        conversation={msg.error ? conversationAround(msgs, msgs.indexOf(msg)) : ''}
+        cwd={dir}
+      />
+    )
   // 旧的消息没有分段：思考和工具调用放在回复前面
   const parts: ReplyPart[] = msg.parts ?? [
     { text: msg.text, thinking: msg.thinking, tools: (msg.tools ?? []) as ToolUse[] },

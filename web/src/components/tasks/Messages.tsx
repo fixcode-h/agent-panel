@@ -13,6 +13,7 @@ import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
+import { conversationAround } from '@shared/fix'
 import { t } from '@shared/i18n'
 import { stripToolMarkup } from '@shared/task'
 
@@ -25,7 +26,21 @@ function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
   return -1
 }
 
-export function SystemNote({ text, error, className }: { text: string; error?: boolean; className?: string }) {
+export function SystemNote({
+  text,
+  error,
+  className,
+  conversation,
+  cwd,
+}: {
+  text: string
+  error?: boolean
+  className?: string
+  /** 报错前后的对话：交给 AI 时一起带上，它才知道出错时在做什么 */
+  conversation?: string
+  /** 报错所在的项目目录 */
+  cwd?: string
+}) {
   // 错误用醒目的卡片、左对齐：多行的 CLI 报错居中排时很难读
   if (error)
     return (
@@ -48,6 +63,8 @@ export function SystemNote({ text, error, className }: { text: string; error?: b
               title: t('对话里的报错：{line}', { line: text.split('\n')[0].slice(0, 80) }),
               error: text,
               context: '这条报错出现在 Agent 面板的对话（任务或 UI 设计）里，通常是调用 CLI 时出的问题。',
+              conversation: conversation ?? '',
+              cwd: cwd ?? '',
             }}
           />
           <CopyButton text={text} label={t('复制报错')} className="h-6 w-6 bg-card/60" />
@@ -64,10 +81,31 @@ export function SystemNote({ text, error, className }: { text: string; error?: b
   )
 }
 
-/** 对话里的系统消息：用户对提问的回答像用户消息一样显示在正文里，其他的是一行说明 */
-export function NoteMessage({ m, className }: { m: TaskMessage; className?: string }) {
+/**
+ * 对话里的系统消息：用户对提问的回答像用户消息一样显示在正文里，其他的是一行说明。
+ * 报错的「AI 处理」带上这条所在的对话（前后几条）和项目路径，AI 才看得出出错时在做什么
+ */
+export function NoteMessage({
+  m,
+  msgs,
+  task,
+  className,
+}: {
+  m: TaskMessage
+  /** 整个对话：出错时把这条前后的几条一起交给 AI */
+  msgs?: TaskMessage[]
+  /** 任务：出错时带上项目路径（独立分支里执行时是分支目录） */
+  task?: Task
+  className?: string
+}) {
+  const { projects } = useData()
   if (m.answers?.length) return <AnswerMessage answers={m.answers} at={m.at} />
-  return <SystemNote text={m.text} error={m.error} className={className} />
+  const around = msgs && m.error ? conversationAround(msgs, msgs.indexOf(m)) : ''
+  const cwd =
+    task?.worktree?.state === 'active'
+      ? task.worktree.path
+      : (projects.find((p) => p.id === task?.projectId)?.path ?? '')
+  return <SystemNote text={m.text} error={m.error} className={className} conversation={around} cwd={cwd} />
 }
 
 /** 这一轮模型请求用了多久：两步之间看起来在等的时间基本都在这里 */
@@ -332,7 +370,7 @@ export function Msgs({
     <>
       {msgs.map((m, k) =>
         m.role === 'system' ? (
-          <NoteMessage key={m.id} m={m} />
+          <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
         ) : (
           <AgentMessage
             key={m.id}
@@ -405,7 +443,7 @@ export function FoldedRun({
   const tail = msgs.slice(last + 1)
   return (
     <>
-      {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} />)}
+      {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />)}
       <AgentMessage
         m={msgs[last]}
         task={task}

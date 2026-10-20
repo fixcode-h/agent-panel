@@ -3459,6 +3459,9 @@ try {
       error: '还能找到 pi.cmd',
       command: 'npm uninstall -g @mariozechner/pi-coding-agent',
       output: 'up to date in 364ms',
+      // 对话里的报错会带上项目路径和出错前后的对话
+      conversation: '用户：帮我把 Pi 卸载干净\n\nAI：好的，先看安装位置\n\n报错：还能找到 pi.cmd',
+      cwd: 'F:\\Project\\demo',
       topic: 'cli:pi',
     })
     assert.equal(s.cli, 'commandcode')
@@ -3468,6 +3471,9 @@ try {
       'npm uninstall -g',
       'up to date in 364ms',
       '相关的 CLI：Pi',
+      '报错前后的对话：',
+      'AI：好的，先看安装位置',
+      '相关目录（项目路径）：F:\\Project\\demo',
     ])
       assert.ok(s.prompt.includes(part), part)
     let task = await call('POST', '/tasks', {
