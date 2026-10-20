@@ -55,7 +55,9 @@ jobs:
           fi
           gh release create "$tag" \
             "release/agent-panel-${VERSION}.zip" \
-            "release/agent-panel-${VERSION}.tar.gz" \
+            "release/agent-panel-${VERSION}-mac.tar.gz" \
+            "release/agent-panel-${VERSION}-mac.zip" \
+            "release/agent-panel-${VERSION}-linux.tar.gz" \
             "release/SHA256SUMS" \
             --target "$GITHUB_SHA" \
             --title "$tag" \
