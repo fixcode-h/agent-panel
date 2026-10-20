@@ -2209,14 +2209,15 @@ try {
     cli: 'codex',
     model: 'gpt-5.6',
     icon: 'shield',
-    category: '质量',
+    // 启动时会装上内置项目工作流，用的 Agent 已经建出了「质量」分类；这里用一个肯定不会有的
+    category: '自定义分类',
     instructions: '## 职责\n审查',
   }
   let job = await assist('agent', `要一个审查员\nFAKE_JSON:${JSON.stringify(draftAgent)}`)
   assert.equal(job.status, 'done', job.error)
   assert.equal(job.text, '这是按你的要求生成的配置。')
   assert.equal(job.proposal.agent.cli, 'codex')
-  assert.equal(job.proposal.newCategory, '质量', '不存在的分类标记为新建')
+  assert.equal(job.proposal.newCategory, '自定义分类', '不存在的分类标记为新建')
   c = calls().at(-1)
   assert.match(c.input, /配置助手[\s\S]*## 已有的 Agent[\s\S]*甲（claude[\s\S]*## 创建规则[\s\S]*## 输出格式/)
   // 权限按设置里的；Claude Code 的审批交给面板（弹出卡片），不再一律拒绝
