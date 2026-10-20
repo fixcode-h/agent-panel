@@ -21,6 +21,11 @@ test('模型目录按厂商和类型识别，provider 前缀不影响', () => {
   assert.deepEqual(knownLimits('deepseek/deepseek-v4-flash').efforts, ['low', 'high', 'max'])
   assert.equal(knownLimits('deepseek/deepseek-v4-flash').defaultEffort, 'high')
   assert.deepEqual(knownLimits('tokenapi/deepseek/deepseek-v4-flash-anthropic').efforts, ['low', 'high', 'max'])
+  // gpt-5.6 系列也能直接按模型名匹配，不用再手工映射
+  assert.equal(knownLimits('gpt-5.6-sol').context, 1_050_000)
+  assert.deepEqual(knownLimits('gpt-5.6-sol').efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
+  assert.equal(knownLimits('tokenapi/gpt-5.6-sol').tier, 'high')
+  assert.equal(knownLimits('gpt-5.6-luna').tier, 'low')
   assert.deepEqual(knownLimits('some-new-model'), {})
   assert.deepEqual(knownLimits(''), {})
 })
