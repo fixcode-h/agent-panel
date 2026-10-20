@@ -165,6 +165,33 @@ const sha256 = (file: string) =>
       .on('error', reject)
   })
 
+/** 一个 Release 里的文件 */
+interface Asset {
+  name: string
+  browser_download_url: string
+  size: number
+}
+
+/**
+ * 这个系统该下载哪个包：三个平台各自一个包，Windows 是 zip（带托盘程序），
+ * macOS 是 <名字>-mac.tar.gz，Linux 是 <名字>-linux.tar.gz。
+ * 早期版本只有一个通用包（名字里没有平台后缀），找不到本平台的包时才用它。
+ * 返回主要下载地址，以及 zip 的名字（Windows 装的就是 zip；macOS / Linux 用它兜底）
+ */
+export function platformAsset(assets: Asset[], platform: string): { url: string; size: number; zip: string } {
+  const os = platform === 'win32' ? 'win' : platform === 'darwin' ? 'mac' : 'linux'
+  const names = assets.map((a) => a.name)
+  // 先找带本平台后缀的，再找不带任何平台后缀的通用包
+  const pick = (ext: string) =>
+    names.find((n) => n.includes(`-${os}.`) && n.endsWith(ext)) ??
+    names.find((n) => n.endsWith(ext) && !/-(mac|linux|win)\./.test(n))
+  // Windows 只发 zip；macOS / Linux 发 tar.gz，没有时退到 zip
+  const tar = os === 'win' ? undefined : pick('.tar.gz')
+  const zip = pick('.zip')
+  const hit = assets.find((a) => a.name === (os === 'win' ? zip : (tar ?? zip)))
+  return { url: hit?.browser_download_url ?? '', size: hit?.size ?? 0, zip: zip ?? '' }
+}
+
 /** 版本更新：对比 GitHub Releases 上的包，下载后替换当前目录里的程序文件并重启 */
 export function updateApi(deps: {
   running: () => number
@@ -194,7 +221,8 @@ export function updateApi(deps: {
     const list = data
       .filter((r) => !r.draft)
       .map((r): AppRelease => {
-        const asset = (ext: string) => (r.assets ?? []).find((a: any) => String(a.name).endsWith(ext))
+        const assets = (r.assets ?? []) as { name: string; browser_download_url: string; size: number }[]
+        const main = platformAsset(assets, process.platform)
         return {
           tag: r.tag_name,
           version: String(r.tag_name).replace(/^v/, ''),
@@ -202,10 +230,10 @@ export function updateApi(deps: {
           publishedAt: r.published_at ?? r.created_at ?? '',
           notes: r.body ?? '',
           url: r.html_url ?? '',
-          tarUrl: asset('.tar.gz')?.browser_download_url ?? '',
-          zipUrl: asset('.zip')?.browser_download_url ?? '',
-          sumsUrl: asset('SHA256SUMS')?.browser_download_url ?? '',
-          size: asset('.tar.gz')?.size ?? 0,
+          tarUrl: main.url,
+          zipUrl: assets.find((a) => a.name === main.zip)?.browser_download_url ?? '',
+          sumsUrl: assets.find((a) => a.name === 'SHA256SUMS')?.browser_download_url ?? '',
+          size: main.size,
         }
       })
       .filter((r) => r.tarUrl)
@@ -227,7 +255,9 @@ export function updateApi(deps: {
       const res = await netFetch(rel.tarUrl, { headers: { 'User-Agent': 'agent-panel' } })
       if (!res.ok || !res.body) throw new Error(t('下载失败：{status}', { status: res.status }))
       job.total = Number(res.headers.get('content-length')) || rel.size
-      const file = path.join(work, 'package.tar.gz')
+      // 扩展名按实际下载的包来：Windows 是 zip，macOS / Linux 是 tar.gz
+      const isZip = /\.zip$/i.test(new URL(rel.tarUrl).pathname)
+      const file = path.join(work, isZip ? 'package.zip' : 'package.tar.gz')
       const out = createWriteStream(file)
       for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
         job.received += chunk.length
@@ -270,11 +300,11 @@ export function updateApi(deps: {
         job.waiting = false
       }
 
-      // 2. 解压：Windows 10 起自带 tar，macOS / Linux 都有
+      // 2. 解压：Windows 10 起自带 tar，也能解 zip（bsdtar）；macOS / Linux 都有 tar
       job.phase = t('解压中')
       const stage = path.join(work, 'stage')
       await mkdir(stage)
-      const r = await capture('tar', ['-xzf', file, '-C', stage], work, process.env, 120_000)
+      const r = await capture('tar', ['-xf', file, '-C', stage], work, process.env, 120_000)
       if (r.spawnError || r.code !== 0)
         throw new Error(t('解压失败：{error}', { error: r.spawnError ?? r.stderr.trim() }))
       const [top] = await readdir(stage)

@@ -44,6 +44,24 @@ export default defineConfig(({ mode }) => {
           assetsInlineLimit: 100_000_000,
           rollupOptions: { output: { inlineDynamicImports: true } },
         }
-      : { outDir: '../dist', emptyOutDir: true },
+      : {
+          outDir: '../dist',
+          emptyOutDir: true,
+          // 字体有 400 多个文件，和 js、css 堆在 assets/ 里很难翻；按类型分到子目录。
+          // 文件名带哈希，按类型分不影响缓存；引用路径由 Vite 统一重写
+          rollupOptions: {
+            output: {
+              entryFileNames: 'assets/js/[name]-[hash].js',
+              chunkFileNames: 'assets/js/[name]-[hash].js',
+              assetFileNames: (info) => {
+                const name = info.names?.[0] ?? ''
+                if (name.endsWith('.css')) return 'assets/css/[name]-[hash][extname]'
+                if (/\.(woff2?|ttf|otf|eot)$/.test(name)) return 'assets/fonts/[name]-[hash][extname]'
+                if (/\.(png|jpe?g|gif|svg|webp|avif|ico)$/.test(name)) return 'assets/img/[name]-[hash][extname]'
+                return 'assets/[name]-[hash][extname]'
+              },
+            },
+          },
+        },
   }
 })
