@@ -310,8 +310,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '共 {n} 个': '{n} total',
   '还没有装 Skill': 'No skills installed yet',
   '自定义 API': 'Custom API',
-  '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。支持写配置的 CLI 保存后会立即写进它自己的配置，模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
-    'Set up APIs here, then switch a CLI\'s "Sign-in method" to API on its page. CLIs that support config files get the API written into their own config on save, and their model list comes from the CLI first. Only CLIs that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
+  '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 CLI 配置文件；模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
+    'Set up APIs here, then switch a CLI\'s "Sign-in method" to API on its page. After editing an API, click "Update all" to write it into the config files of the CLIs using it; model lists still come from the CLI first. Only CLIs that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
   '提供方 ID': 'Provider ID',
   '留空时用 API 名称生成': 'Leave empty to derive it from the API name',
   '写进 CLI 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 CLI 也用它拼模型 ID。':
@@ -336,16 +336,19 @@ export const EN_SETTINGS: Record<string, string> = {
   搜索模型: 'Search models',
   添加全部: 'Add all',
   没有匹配的模型: 'No matching models',
-  模型映射: 'Model mapping',
-  添加映射: 'Add mapping',
-  移除映射: 'Remove mapping',
-  添加映射的模型: 'Model to map',
-  按哪个模型的配置: 'Config source model',
-  选择模型配置: 'Choose a model config',
-  取消添加映射: 'Cancel adding a mapping',
-  '{model} 的模型映射': 'Model mapping for {model}',
-  '自动识别不准时，指定按哪个模型的配置读取上下文和最大输出；发给 CLI 的仍然是这里的模型名。':
-    "When auto-detection is off, pick another model's config for context and max output. The CLI still receives this model's name.",
+  映射模型: 'Mapped model',
+  模型默认: 'Model default',
+  自动识别: 'Auto-detect',
+  '自动识别（{model}）': 'Auto-detected ({model})',
+  '{model} 的默认思考强度': 'Default effort for {model}',
+  '{model} 的映射模型': 'Mapped model for {model}',
+  '映射模型默认按模型名自动识别，改过就以你选的为准；发给 CLI 的仍然是这里的模型名。':
+    "Mapped models are auto-detected from the model name; once changed, your choice wins. The CLI still receives this model's name.",
+  一键更新: 'Update all',
+  '把现在的接口地址、密钥和模型写进正在用这个 API 的 CLI 配置文件':
+    'Write the current base URL, key and models into the CLI configs that use this API',
+  '已更新 {n} 个 CLI 的配置文件': 'Updated the config files of {n} CLI(s)',
+  '还没有 CLI 在用这个 API': 'No CLI is using this API yet',
   '可以用在：{clis}': 'Usable by: {clis}',
   登录方式: 'Sign-in method',
   '用浏览器登录的账号，可以保存几个账号随时切换':

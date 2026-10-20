@@ -34,6 +34,13 @@ const day = (iso: string) => {
     ? ''
     : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+/** 发布这些包的时间：日期后面带上时分秒 */
+const dateTime = (iso: string) => {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const two = (n: number) => String(n).padStart(2, '0')
+  return `${day(iso)} ${two(d.getHours())}:${two(d.getMinutes())}:${two(d.getSeconds())}`
+}
 
 function Channel({ pre }: { pre: boolean }) {
   return (
@@ -82,7 +89,7 @@ function ReleaseRow({
         {isCur && (
           <span className="rounded-full bg-accent-soft px-1.5 py-px text-[0.6875rem] text-accent">{t('当前')}</span>
         )}
-        <span className="text-xs text-subtle">{day(r.publishedAt)}</span>
+        <span className="font-mono text-xs text-subtle">{dateTime(r.publishedAt)}</span>
         <span className="ml-auto flex items-center gap-1.5">
           <a
             href={r.zipUrl || r.tarUrl}
@@ -249,7 +256,7 @@ export function UpdateSection() {
             <ArrowUpCircle className="h-4 w-4 shrink-0 text-accent" />
             <span className="min-w-0 flex-1 text-[0.8125rem]">
               {t('有新版本')} <span className="font-mono font-medium">{data.update.tag}</span>
-              <span className="text-subtle"> · {day(data.update.publishedAt)}</span>
+              <span className="text-subtle"> · {dateTime(data.update.publishedAt)}</span>
             </span>
             {canInstall && (
               <Button size="sm" onClick={() => setConfirm(data.update!)}>

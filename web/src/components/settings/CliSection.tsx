@@ -256,6 +256,7 @@ export function TierTable({
   readOnly,
   protocol,
   apiModelMap,
+  apiModelEfforts,
 }: {
   def: CliDefinition
   value: CliDraft['tiers']
@@ -268,6 +269,8 @@ export function TierTable({
   protocol?: ApiProtocol
   /** 当前 API 配置里的模型映射：模型名 → 按哪个模型配置估算 */
   apiModelMap?: Record<string, string>
+  /** 当前 API 配置里每个模型的默认思考强度 */
+  apiModelEfforts?: Record<string, string>
 }) {
   const catalog = useCliModels(def.id)?.models
   const modelCatalog = useModelCatalog()
@@ -324,7 +327,8 @@ export function TierTable({
           : auto.matched
             ? auto.efforts.filter((e) => !allowed.length || allowed.includes(e)).map((id) => ({ id }))
             : def.efforts
-        const defaultEffort = sug.effort || auto.defaultEffort
+        // 默认思考强度：API 设置里按模型配的优先，其次才是模型目录的默认值
+        const defaultEffort = sug.effort || apiModelEfforts?.[model] || auto.defaultEffort
         return (
           <div
             key={tr.id}
@@ -779,6 +783,7 @@ export function CliSection({
             defaultModel={draft.defaultModel}
             protocol={apiConfig?.protocol}
             apiModelMap={apiConfig?.modelMap}
+            apiModelEfforts={apiConfig?.modelEfforts}
             onChange={(v) => set('tiers', v)}
           />
         </Row>

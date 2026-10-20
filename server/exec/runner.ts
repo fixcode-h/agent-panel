@@ -436,11 +436,9 @@ async function runAgent(
   // 模型目录里的默认思考强度：没有手动指定时用它；目录里没有的模型交给 CLI 自己决定
   const entries = await mergedModelCatalog().catch(() => [])
   const catalogInfo = modelLimitsFor(model, { entries, protocol: cs.api?.protocol })
-  const effort = await supportedEffort(
-    cliId,
-    model,
-    run.effort || (catalogInfo.matched ? catalogInfo.defaultEffort : ''),
-  )
+  // API 设置里给这个模型配的默认思考强度优先，其次才是模型目录的默认值
+  const defaultEffort = cs.api?.modelEfforts?.[model] || (catalogInfo.matched ? catalogInfo.defaultEffort : '')
+  const effort = await supportedEffort(cliId, model, run.effort || defaultEffort)
   // 档位在设置里手动改过的上下文窗口和最大输出；0 是自动，不传
   const limits: ModelLimits = run.tier
     ? { context: cs.tiers[run.tier.id].context, maxOutput: cs.tiers[run.tier.id].maxOutput }

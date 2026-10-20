@@ -190,8 +190,8 @@
       "type": "flash",
       "version": "",
       "protocols": ["openai-chat", "openai-responses"],
-      "context": 256000,
-      "maxOutput": 64000,
+      "context": 1000000,
+      "maxOutput": 128000,
       "tier": "low",
       "efforts": ["low", "medium", "high"],
       "defaultEffort": "low"

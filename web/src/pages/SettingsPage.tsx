@@ -647,6 +647,7 @@ function SettingsBody({
                     defaultModel={defDraft.defaultModel}
                     protocol={defProtocol}
                     apiModelMap={defApi?.modelMap}
+                    apiModelEfforts={defApi?.modelEfforts}
                     readOnly
                   />
                 </Row>
