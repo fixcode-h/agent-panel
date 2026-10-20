@@ -8,7 +8,13 @@ import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { modelLimitsFor, type ModelCatalogEntry } from '../shared/model-catalog.ts'
-import { apiModelList, apiModelPrefix, type ApiConfig, type ApiProtocol } from '../shared/accounts.ts'
+import {
+  apiModelList,
+  apiModelPrefix,
+  modelsForProtocol,
+  type ApiConfig,
+  type ApiProtocol,
+} from '../shared/accounts.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { rpcQuery } from './exec/rpc/query.ts'
@@ -413,9 +419,11 @@ function withCatalog(
 /** API 模式：用全局 API 里配的模型，并按 CLI 的要求补 provider 前缀 */
 function apiModelsFor(def: CliDefinition, api: ApiConfig): CliModels {
   const prefix = apiModelPrefix(def.auth, api)
+  // 按协议只列匹配后缀的模型；不带后缀的通用模型都列
+  const list = modelsForProtocol(apiModelList(api, prefix), api.protocol)
   return {
     source: 'builtin',
-    models: apiModelList(api, prefix).map((m, i) => ({
+    models: list.map((m, i) => ({
       id: m,
       label: m,
       isDefault: i === 0 || undefined,

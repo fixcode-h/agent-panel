@@ -1,7 +1,15 @@
 import { t } from './i18n.ts'
 import { CLIS, getCli, MODEL_TIERS, type CliDefinition, type ModelTier } from './clis.ts'
 import { CliSettings, Settings } from './schema.ts'
-import { apiFits, apiInjection, apiModelIdFor, apiModelPrefix, type ApiConfig } from './accounts.ts'
+import {
+  apiFits,
+  apiInjection,
+  apiModelIdFor,
+  apiModelPrefix,
+  modelForProtocol,
+  modelsForProtocol,
+  type ApiConfig,
+} from './accounts.ts'
 
 export const defaultSettings = (): Settings => Settings.parse({})
 
@@ -104,12 +112,13 @@ export function agentRun(a: { cli: string; model: string; effort?: string }, set
   const pick = a.model || cs.defaultModel
   const t = tierOf(pick)
   let model = t ? cs.tiers[t.id].model : pick
-  // API 方式只认 API 里配的模型：设置里以前留下的其它模型换成 API 的第一个，补上 provider 前缀
+  // API 方式只认 API 里配的模型：别的协议后缀换成当前协议的，找不到就换成第一个可用模型
   if (cs.api?.models.length) {
     const auth = getCli(cli)?.auth
     const prefix = apiModelPrefix(auth, cs.api)
     const native = prefix && model.startsWith(prefix) ? model.slice(prefix.length) : model
-    model = cs.api.models.includes(native) ? apiModelIdFor(model, auth, cs.api) : prefix + cs.api.models[0]
+    const allowed = modelsForProtocol(cs.api.models, cs.api.protocol)
+    model = apiModelIdFor(modelForProtocol(native, cs.api.protocol, allowed), auth, cs.api)
   }
   // Agent 自己选的思考强度换了 CLI 后可能不支持（例如跟随默认 CLI 换成了 Command Code），这时用档位的
   const own = a.effort && supportsEffort(cli, a.effort) ? a.effort : ''

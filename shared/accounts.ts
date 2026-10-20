@@ -16,6 +16,43 @@ export const API_PROTOCOL_LABEL: Record<ApiProtocol, string> = {
   gemini: 'Gemini',
 }
 
+/** 模型名里的协议后缀；不带后缀的是通用模型，所有协议都能用 */
+const PROTOCOL_MODEL_SUFFIX: Record<ApiProtocol, string[]> = {
+  anthropic: ['-anthropic', '-anthropic-messages'],
+  'openai-responses': ['-responses'],
+  'openai-chat': ['-chat', '-completions'],
+  gemini: ['-gemini'],
+}
+const MODEL_SUFFIXES = [...new Set(Object.values(PROTOCOL_MODEL_SUFFIX).flat())]
+const modelSuffix = (model: string) => {
+  const lower = model.toLowerCase()
+  return MODEL_SUFFIXES.find((s) => lower.endsWith(s)) ?? ''
+}
+
+/** 按协议过滤模型：带其他协议后缀的隐藏，不带后缀的通用模型保留 */
+export function modelsForProtocol(models: string[], protocol?: ApiProtocol): string[] {
+  if (!protocol) return models
+  const own = PROTOCOL_MODEL_SUFFIX[protocol] ?? []
+  return models.filter((m) => {
+    const s = modelSuffix(m)
+    return !s || own.includes(s)
+  })
+}
+
+/** 当前模型是别的协议后缀时，换成同一个模型在当前协议下的后缀；没有就回退到第一个可用的 */
+export function modelForProtocol(model: string, protocol: ApiProtocol | undefined, models: string[]): string {
+  if (!protocol || !model) return model
+  const own = PROTOCOL_MODEL_SUFFIX[protocol] ?? []
+  const suffix = modelSuffix(model)
+  if (!suffix) return models.includes(model) ? model : (models[0] ?? model)
+  if (own.includes(suffix)) return models.includes(model) ? model : (models[0] ?? model)
+  for (const target of own) {
+    const swapped = model.slice(0, -suffix.length) + target
+    if (models.includes(swapped)) return swapped
+  }
+  return models[0] ?? model
+}
+
 /** 从展示名生成 CLI 配置里的 provider 名；只保留 ASCII 标识符字符 */
 export function providerSlug(name: string) {
   return name
