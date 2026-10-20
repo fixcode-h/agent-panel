@@ -64,14 +64,27 @@ export function createTaskStore() {
     await writeJsonAtomic(fileOf(t), head(t))
   }
 
+  /**
+   * 早期版本没有 turnSeenAt：那时的已完成对话都算看过，
+   * 否则升级后旧会话会全部亮成未读，还会一直留着 CLI 进程
+   */
+  function parseTask(raw: unknown): Task | undefined {
+    const p = Task.safeParse(raw)
+    if (!p.success) return undefined
+    const t = p.data
+    if (raw && typeof raw === 'object' && !Object.prototype.hasOwnProperty.call(raw, 'turnSeenAt'))
+      t.turnSeenAt = t.turnDoneAt
+    return t
+  }
+
   /** 旧格式：一个文件里是完整任务，拆成新的两个文件 */
   async function migrate(map: Map<string, Task>) {
     const olds: Task[] = []
     if (existsSync(LEGACY)) {
       const raw = await readJson(LEGACY)
       for (const r of Array.isArray(raw) ? raw : []) {
-        const p = Task.safeParse(r)
-        if (p.success && safeId(p.data.id)) olds.push(p.data)
+        const t = parseTask(r)
+        if (t && safeId(t.id)) olds.push(t)
       }
       const backup = path.join(CACHE_DIR, 'migrated', `tasks-${Date.now()}.json`)
       await mkdir(path.dirname(backup), { recursive: true })
@@ -80,8 +93,8 @@ export function createTaskStore() {
     if (existsSync(ITEMS_DIR)) {
       for (const f of await readdir(ITEMS_DIR)) {
         if (!f.endsWith('.json')) continue
-        const p = Task.safeParse(await readJson(path.join(ITEMS_DIR, f)))
-        if (p.success && safeId(p.data.id)) olds.push(p.data)
+        const t = parseTask(await readJson(path.join(ITEMS_DIR, f)))
+        if (t && safeId(t.id)) olds.push(t)
       }
     }
     for (const t of olds) {
@@ -107,8 +120,8 @@ export function createTaskStore() {
       for (const f of await readdir(dir)) {
         if (!f.endsWith('.json') || f.endsWith(MSG)) continue
         const raw = await readJson(path.join(dir, f))
-        const p = Task.safeParse(raw)
-        if (p.success) map.set(p.data.id, p.data)
+        const t = parseTask(raw)
+        if (t) map.set(t.id, t)
         else if (raw !== undefined) console.error(`任务记录格式不对，已跳过：${f}`)
       }
     }
