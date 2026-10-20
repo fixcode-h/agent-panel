@@ -42,7 +42,7 @@ export function Group({ title, children }: { title?: string; children: React.Rea
   )
 }
 
-export function CopyText({ text }: { text: string }) {
+export function CopyText({ text, title = t('复制安装命令') }: { text: string; title?: string }) {
   const [done, setDone] = useState(false)
   return (
     <button
@@ -57,7 +57,7 @@ export function CopyText({ text }: { text: string }) {
           .catch(() => {})
       }
       className="inline-flex max-w-full cursor-pointer items-center gap-1.5 rounded-md border bg-field px-2 py-1 font-mono text-xs text-muted hover:text-fg"
-      title={t('复制安装命令')}
+      title={title}
     >
       <span className="truncate">{text}</span>
       {done ? <Check className="h-3 w-3 shrink-0 text-success" /> : <Copy className="h-3 w-3 shrink-0" />}

@@ -377,6 +377,9 @@ export function tasksApi(deps: {
   routes.get('/:id/events', async (c) => {
     const id = c.req.param('id')
     if (!(await current(id))) return bad(c, t('任务不存在'), 404)
+    // 经过 cloudflared / nginx 时不要缓冲，事件要马上到页面
+    c.header('Cache-Control', 'no-cache, no-transform')
+    c.header('X-Accel-Buffering', 'no')
     return streamSSE(c, async (stream) => {
       let closed = false
       stream.onAbort(() => void (closed = true))

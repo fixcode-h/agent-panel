@@ -18,6 +18,7 @@ import {
   Tag as TagIcon,
   Rocket,
   Type,
+  Globe,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -42,6 +43,7 @@ import { ApiSection } from '@/components/settings/ApiSection'
 import { DataSection } from '@/components/settings/DataSection'
 import { LocalImageSection } from '@/components/settings/LocalImageSection'
 import { TagsSection } from '@/components/settings/TagsSection'
+import { RemoteSection } from '@/components/settings/RemoteSection'
 import { DeploySection } from '@/components/settings/DeploySection'
 import { FontSection } from '@/components/settings/FontSection'
 import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
@@ -69,6 +71,7 @@ interface Section {
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'general', label: t('常规'), icon: Settings2 },
   { id: 'fonts', label: t('字体'), icon: Type },
+  { id: 'remote', label: t('外部访问'), icon: Globe },
   { id: 'categories', label: t('项目分类'), icon: Layers },
   { id: 'tags', label: t('标签'), icon: TagIcon },
   { id: 'models', label: t('默认 CLI'), icon: Cpu },
@@ -98,6 +101,7 @@ function SettingsBody({
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
+  const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
@@ -105,7 +109,9 @@ function SettingsBody({
   const [appearance, setAppearance] = useState(initial.appearance)
   const [cliOrder, setCliOrder] = useState(() => orderClis(CLIS, initial.cliOrder).map((c) => c.id))
   const ordered = orderClis(CLIS, cliOrder)
-  const SECTIONS = sectionsFor(ordered)
+  const demo = !!import.meta.env.VITE_DEMO
+  // 在线演示没有服务端，外网访问的开关不显示
+  const SECTIONS = sectionsFor(ordered).filter((s) => !(demo && s.id === 'remote'))
   // 侧栏里拖动 CLI 调整顺序：拖到哪一项上就插到那里
   const [dragging, setDragging] = useState('')
   const moveCli = (id: string, to: number) =>
@@ -132,7 +138,6 @@ function SettingsBody({
     // 只跟着开关变化；ordered、defCli 变了不需要重新判断
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [drafts])
-  const demo = !!import.meta.env.VITE_DEMO
   const update = useAppUpdate().data?.update
   // 安装 / 卸载结束后重新检测，并提示结果；进度在 cli-install 里，切换页面不会丢
   useEffect(() => {
@@ -180,6 +185,7 @@ function SettingsBody({
   const value: Settings = {
     openBrowser,
     requireToken,
+    remoteAccess,
     askUserDefault,
     proxy: proxy.trim(),
     contentWidth,
@@ -367,6 +373,7 @@ function SettingsBody({
         <div className="min-h-0 flex-1 overflow-y-auto px-5 pb-10 md:px-8">
           {cur.id === 'styles' && <StylesSettings />}
           {cur.id === 'fonts' && <FontSection value={appearance} onChange={setAppearance} />}
+          {cur.id === 'remote' && <RemoteSection value={remoteAccess} onChange={setRemoteAccess} />}
           {cur.id === 'apis' && <ApiSection apis={apis} onChange={setApis} />}
           {cur.id === 'general' && (
             <Group>

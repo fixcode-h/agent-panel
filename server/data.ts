@@ -3,7 +3,9 @@ import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
 import { DATA_KINDS, type DataKind, type DataUsage } from '../shared/data.ts'
+import { Settings } from '../shared/schema.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
+import { getSettings } from './settings.ts'
 import { revealDir } from './open.ts'
 import { logDir, logFile } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -31,6 +33,18 @@ async function files(rel: string): Promise<{ rel: string; size: number }[]> {
 
 const kindFiles = async (k: DataKind) => (await Promise.all(PATHS[k].map(files))).flat()
 const toPosix = (p: string) => p.split(path.sep).join('/')
+
+/** 导出时去掉隧道 token：它相当于让别人接管这条隧道，不该跟着备份文件传出去 */
+function withoutTunnelToken(b64: string) {
+  try {
+    const s = Settings.parse(JSON.parse(Buffer.from(b64, 'base64').toString('utf8')))
+    if (!s.remoteAccess.tunnelToken) return b64
+    s.remoteAccess.tunnelToken = ''
+    return Buffer.from(JSON.stringify(s)).toString('base64')
+  } catch {
+    return b64
+  }
+}
 
 /** 导出的备份文件：一个 JSON，里面是各个文件的 base64 内容 */
 const Backup = z.object({
@@ -112,6 +126,7 @@ export function dataApi(deps: { running: () => number }) {
     for (const k of kinds)
       for (const f of await kindFiles(k))
         out[toPosix(f.rel)] = (await readFile(path.join(DATA_DIR, f.rel))).toString('base64')
+    if (out['settings.json']) out['settings.json'] = withoutTunnelToken(out['settings.json'])
     const backup: z.infer<typeof Backup> = {
       app: 'agent-panel',
       version: 1,
@@ -130,6 +145,17 @@ export function dataApi(deps: { running: () => number }) {
     const { kinds, files: fs } = p.data
     const bad = Object.keys(fs).find((r) => !allowed(r, kinds))
     if (bad) return c.json({ error: t('数据文件里有不认识的路径：{path}', { path: bad }) }, 400)
+    // 导出时去掉了隧道 token：导入时沿用本机现有的，免得导入后隧道连不上
+    if (fs['settings.json']) {
+      try {
+        const backup = Settings.parse(JSON.parse(Buffer.from(fs['settings.json'], 'base64').toString('utf8')))
+        const current = await getSettings()
+        if (!backup.remoteAccess.tunnelToken && current.remoteAccess.tunnelToken) {
+          backup.remoteAccess.tunnelToken = current.remoteAccess.tunnelToken
+          fs['settings.json'] = Buffer.from(JSON.stringify(backup)).toString('base64')
+        }
+      } catch {}
+    }
     for (const k of kinds) for (const r of PATHS[k]) await rm(path.join(DATA_DIR, r), { recursive: true, force: true })
     for (const [rel, b64] of Object.entries(fs)) {
       const full = path.join(DATA_DIR, ...rel.split('/'))
