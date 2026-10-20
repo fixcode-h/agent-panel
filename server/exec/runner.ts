@@ -948,12 +948,17 @@ async function runAgent(
   // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume。
   // 有插话协议（Command Code、Pi）的对话也要这个工具，只是不用它取补充
   let waiter: Waiter | undefined
+  /** 模型在这一轮里调用过 wait_user_message：结束时不用再保活一次 */
+  let toolWaited = false
   /**
    * 等用户的下一条消息。fromTool 是模型正在调 wait_user_message（这一轮还没结束）；
    * 否则是面板在这一轮结束后保活：不靠模型自觉调工具，回复完就把进程留着
    */
   const waitNext = async (fromTool: boolean): Promise<string | null> => {
-    if (fromTool && finished) return null
+    if (fromTool) {
+      if (finished) return null
+      toolWaited = true
+    }
     // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
     if (chat && !stillCurrent()) return null
     // 回复期间还在排队的要求：一起交回去，不用等进程结束
@@ -1022,7 +1027,15 @@ async function runAgent(
   const waitUser = canWait ? () => waitNext(true) : undefined
   // 面板保活：回复完这一轮不关进程，用户的下一条消息交给同一个进程开下一轮（不靠模型主动调等待工具）。
   // 只在对话页确实开着时这样做：没人看的时候留着一个 CLI 也没人会回来发消息
-  const keepAlive = canWait ? () => (hasViewer(task.id) ? waitNext(false) : Promise.resolve(null)) : undefined
+  const keepAlive = canWait
+    ? async () => {
+        if (!hasViewer(task.id)) return null
+        const text = await waitNext(false)
+        // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关
+        if (text !== null) toolWaited = false
+        return text
+      }
+    : undefined
 
   const r = await invokeCli({
     cliId,
@@ -1065,6 +1078,8 @@ async function runAgent(
     waitUser,
     // 回复完把进程留着等下一句：对话页开着时不靠模型主动调 wait_user_message
     keepAlive,
+    // 模型自己等过下一句的，结束时不再保活一次
+    waited: () => toolWaited,
     mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true

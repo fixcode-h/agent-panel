@@ -75,8 +75,8 @@ export async function invokeCli(o: {
    * 对话页还开着、用户还在这个对话里时返回 true；用户离开后返回 null，进程正常退出
    */
   keepAlive?: () => Promise<string | null>
-  /** 保活期间在等用户下一句：CLI 这时没有输出，不算卡住 */
-  waiting?: () => boolean
+  /** 模型这一轮已经调过 wait_user_message 等过下一句：结束时不用再保活一次 */
+  waited?: () => boolean
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
   images?: string[]
   /** 这一轮额外交给 CLI 的面板工具（例如工作流的编排工具）；CLI 定义里没写怎么接 MCP 时忽略 */
@@ -203,6 +203,7 @@ async function invoke(
       hold: () => !!o.keepAlive && !signal.aborted && !o.signal?.aborted,
       next: () =>
         signal.aborted || o.signal?.aborted ? Promise.resolve(null) : (o.keepAlive?.() ?? Promise.resolve(null)),
+      waited: o.waited,
     })
     setControl({
       steer: (text) => session.steer(text),

@@ -41,6 +41,11 @@ export function createRpcSession(o: {
   hold?: () => boolean
   /** 等用户的下一条消息；返回 null 表示用户已经不在这个对话了。不给时不留进程 */
   next?: () => Promise<string | null>
+  /**
+   * 模型在这一轮里已经调过 wait_user_message 等过下一句了：结束时就不用再保活一次，
+   * 否则用户发来的那句话会被等两遍
+   */
+  waited?: () => boolean
 }): RpcSession {
   let io: RpcIo | undefined
   let nextId = 1
@@ -133,7 +138,7 @@ export function createRpcSession(o: {
       o.onEvent({ type: 'result', ok, error })
       clearTimeout(endTimer)
       endTimer = undefined
-      if (o.adapter.next && o.next && o.hold?.()) return keepAlive()
+      if (o.adapter.next && o.next && !o.waited?.() && o.hold?.()) return keepAlive()
       if (delayMs > 0) endTimer = setTimeout(end, delayMs)
       else end()
       return false
