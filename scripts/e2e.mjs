@@ -1265,6 +1265,8 @@ try {
       !gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
       '提交在子对话的分支上，项目目录不受影响',
     )
+    const wtList = await call('GET', `/tasks/${wtParent.id}/children`)
+    assert.equal(wtList.find((x) => x.id === wtKid.id)?.branch, wtKid.worktree.branch, '子对话列表带上分支')
     const wtPrompt = JSON.stringify(calls().at(-1))
     assert.match(wtPrompt, /别的子对话改不到这里/, '提示里说明了在独立分支里改')
     assert.match(wtPrompt, /编译交给面板/, '提示里说明编译交给面板')

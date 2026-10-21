@@ -1135,6 +1135,9 @@ export function tasksApi(deps: {
           cliAlive: live.has(liveTask.id),
           // 排序按真正的最近消息时间：updatedAt 也会被改名、看过的标记改动
           lastMessageAt: lastMessageAt(liveTask),
+          // 总览分组用：等用户确认的请求数、独立 worktree 的分支
+          requests: liveTask.requests.length,
+          branch: liveTask.worktree?.branch ?? '',
         }
       })
     return c.json(kids)

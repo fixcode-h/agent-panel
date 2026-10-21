@@ -276,6 +276,10 @@ export const api = {
         cliAlive: boolean
         /** 最近一条消息的时间，列表按它排序 */
         lastMessageAt: string
+        /** 正在等用户确认的请求数 */
+        requests?: number
+        /** 在独立 worktree 里改时的分支 */
+        branch?: string
       }[]
     >(`/tasks/${id}/children`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),

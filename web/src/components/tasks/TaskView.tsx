@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
 import { useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
@@ -178,6 +178,10 @@ interface ChildSummary {
   cliAlive: boolean
   /** 最近一条消息的时间，列表按它排序 */
   lastMessageAt: string
+  /** 正在等用户确认的请求数 */
+  requests?: number
+  /** 在独立 worktree 里改时的分支 */
+  branch?: string
 }
 
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
@@ -1400,37 +1404,54 @@ function ChildrenBar({
               </div>
             </div>
             <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
-              {shown.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => {
-                    onOpen(c.id)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
-                    c.id === openChild && 'bg-sel',
+              {childGroups(shown, all).map((g) => (
+                <Fragment key={g.key}>
+                  {g.label && (
+                    <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                      {g.label} · {g.items.length}
+                    </p>
                   )}
-                >
-                  <span className="mt-0.5 shrink-0">
-                    <TaskStatusIcon status={c.status} working={c.working} />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                        {c.title}
-                      </span>
-                      {!c.cliAlive && (
-                        <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                          {t('已关闭')}
-                        </span>
+                  {g.items.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        onOpen(c.id)
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
+                        c.id === openChild && 'bg-sel',
                       )}
-                      {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
-                    </span>
-                    {!c.working && c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
-                  </span>
-                </button>
+                    >
+                      <span className="mt-0.5 shrink-0">
+                        <TaskStatusIcon status={c.status} working={c.working} />
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
+                            {c.title}
+                          </span>
+                          {!c.cliAlive && (
+                            <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                              {t('已关闭')}
+                            </span>
+                          )}
+                          {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
+                        </span>
+                        {!c.working && c.summary && (
+                          <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>
+                        )}
+                        {c.branch && (
+                          <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
+                            <GitBranch className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{c.branch}</span>
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </Fragment>
               ))}
               {!shown.length && (
                 <p className="px-2.5 py-3 text-xs text-subtle">{all ? t('还没有子对话') : t('没有正在运行的子对话')}</p>
@@ -1441,6 +1462,32 @@ function ChildrenBar({
       </div>
     </div>
   )
+}
+
+/**
+ * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、做完的、停下的；
+ * 「运行中」只有活着的几个，不分组
+ */
+function childGroups(list: ChildSummary[], grouped: boolean) {
+  if (!grouped) return [{ key: 'all', label: '', items: list }]
+  const groups = [
+    { key: 'you', label: t('需要你处理'), items: [] as ChildSummary[] },
+    { key: 'running', label: t('执行中'), items: [] as ChildSummary[] },
+    { key: 'done', label: t('已完成'), items: [] as ChildSummary[] },
+    { key: 'stopped', label: t('已停止'), items: [] as ChildSummary[] },
+  ]
+  for (const c of list) {
+    const g =
+      c.requests || c.status === 'failed'
+        ? groups[0]
+        : c.working || c.status === 'running'
+          ? groups[1]
+          : c.status === 'done'
+            ? groups[2]
+            : groups[3]
+    g.items.push(c)
+  }
+  return groups.filter((g) => g.items.length)
 }
 
 /** 输入框上面一行的提示条（没走完的流程）共用的样式 */
