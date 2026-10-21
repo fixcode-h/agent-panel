@@ -141,6 +141,25 @@ try {
   await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子 Agent · 单元测试'])
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])
+  // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
+  await p.getByText('处理并推荐').first().click()
+  const inspector = p.locator('aside[aria-label="属性"]')
+  const grip = p.locator('[role="separator"][aria-label="拖动调整属性栏的宽度"]')
+  const width = async () => (await inspector.boundingBox())?.width ?? 0
+  const before = await width().catch(() => 0)
+  const g = await grip.boundingBox().catch(() => null)
+  if (!g) errors.push('工作流-属性栏：找不到拖动条')
+  else {
+    await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(g.x - 160, g.y + g.height / 2, { steps: 10 })
+    await p.mouse.up()
+    await p.waitForTimeout(300)
+    if (Math.abs(before - 380) > 2) errors.push(`工作流-属性栏：默认宽度是 ${before}，不是 380`)
+    const after = await width()
+    if (after < before + 100) errors.push(`工作流-属性栏：拖动后宽度是 ${after}，没有变宽`)
+  }
+  await check(p, '工作流-属性栏宽度')
   // 内置工作流：添加后连同 Agent 一起建好，直接打开
   await p.getByRole('button', { name: '添加内置或导入的工作流' }).click()
   await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()
