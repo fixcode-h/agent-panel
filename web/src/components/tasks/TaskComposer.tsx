@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowUp, Bot, Check, ChevronDown, FolderGit2, GitBranch, Workflow as WorkflowIcon, X } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
@@ -14,7 +14,6 @@ import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
 import {
   ATTACHMENT_PROMPT,
   AttachMenu,
-  AttachmentChips,
   chipKind,
   DropHint,
   useAttachments,
@@ -23,7 +22,8 @@ import {
   type AttachHooks,
 } from '@/components/chat/Attachments'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
-import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
+import { RichInput, type ChipActions, type RichInputHandle } from '@/components/chat/RichInput'
+import { Lightbox } from '@/components/ui/lightbox'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { ParamsChip } from '@/components/agents/ParamFields'
@@ -131,7 +131,7 @@ export function TaskComposer({
     },
     [files, editor],
   )
-  /** 附件从附件条上删掉时，输入框里的那张卡片也一起去掉 */
+  /** 附件从输入框里的卡片删掉：卡片和附件一起去掉 */
   const removeFile = useCallback(
     (key: string) => {
       const item = files.items.find((x) => x.key === key)
@@ -140,8 +140,24 @@ export function TaskComposer({
     },
     [files, editor, setPrompt],
   )
-  /** 图片卡片显示小缩略图 */
+  /** 图片卡片直接显示图片本身 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
+  /** 点卡片上的图看大图、点右上角删除 */
+  const lightbox = files.items.flatMap((x) => (x.preview ? [{ src: x.preview, name: x.name }] : []))
+  const [openImage, setOpenImage] = useState<number>()
+  const chipActions = useMemo<ChipActions>(
+    () => ({
+      preview: (name) => {
+        const at = lightbox.findIndex((x) => x.name === name)
+        if (at >= 0) setOpenImage(at)
+      },
+      remove: (name) => {
+        const item = files.items.find((x) => x.name === name)
+        if (item) removeFile(item.key)
+      },
+    }),
+    [lightbox, files.items, removeFile],
+  )
   const drop = useDropPaste(addFiles)
   // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slash = useSlashMenu({
@@ -213,7 +229,7 @@ export function TaskComposer({
         {mention.menu}
         {slash.menu}
         {drop.over && <DropHint />}
-        <AttachmentChips items={files.items} onRemove={removeFile} />
+        <Lightbox images={lightbox} index={openImage} onClose={() => setOpenImage(undefined)} />
         <RichInput
           id="task-prompt"
           handle={editor}
@@ -236,6 +252,7 @@ export function TaskComposer({
           }}
           onPaste={drop.onPaste}
           preview={preview}
+          actions={chipActions}
           placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"

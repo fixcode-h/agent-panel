@@ -89,7 +89,7 @@ try {
     .waitFor({ state: 'detached', timeout: 5000 })
     .catch(() => errors.push('行内技能卡片：按一次退格没有整张删掉'))
   await p.locator('#task-prompt').fill('')
-  // 图片也是文字原位的一张卡片，带缩略图；附件条上同时有一份，两边各自都能删
+  // 图片是文字原位的一张图：直接显示图片本身，点开看大图，右上角有删除按钮
   await p
     .locator('input[type=file]')
     .first()
@@ -104,11 +104,20 @@ try {
   const imageChip = p.locator('#task-prompt [data-chip="image"]')
   await imageChip.waitFor({ timeout: 10000 }).catch(() => errors.push('行内图片卡片：附上图片后没有出现在文字里'))
   if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
-  await check(p, '行内图片卡片', ['截图.png'])
-  await p.getByRole('button', { name: '移除 截图.png' }).click()
+  // 输入框上方不再有附件条
+  if (await p.getByRole('button', { name: '移除 截图.png' }).count()) errors.push('输入框上方还有附件条')
+  // 点图片能看大图
+  await imageChip.locator('img').click()
+  await p
+    .getByRole('dialog')
+    .waitFor({ timeout: 3000 })
+    .catch(() => errors.push('行内图片卡片：点图片没有打开大图'))
+  await p.keyboard.press('Escape')
+  // 卡片右上角的删除按钮能删掉这张卡片
+  await imageChip.locator('[data-chip-action="remove"]').click()
   await imageChip
     .waitFor({ state: 'detached', timeout: 5000 })
-    .catch(() => errors.push('行内图片卡片：从附件条移除后文字里的卡片还在'))
+    .catch(() => errors.push('行内图片卡片：点卡片上的删除后卡片还在'))
   // 「+」里引入会话
   await p.getByRole('button', { name: '添加文件、图片或引用' }).click()
   await p.getByRole('button', { name: '引入会话' }).click()
@@ -216,7 +225,7 @@ try {
         inputHighlighted,
         textPrevented: textEvent.defaultPrevented,
         hintAfterDrop: document.body.textContent.includes('松开鼠标，把文件附到要求里'),
-        chip: !!document.querySelector('[title="页面拖入.txt"]'),
+        chip: !!document.querySelector('[data-chip="file"][data-name="页面拖入.txt"]'),
         inline: document.body.textContent.includes('页面拖入.txt'),
       }
     })
@@ -226,15 +235,15 @@ try {
       if (dropped.inputHighlighted) errors.push('拖文件：页面提示和输入框高亮同时出现，叠了两层提示')
       if (dropped.textPrevented) errors.push('拖文件：只拖文字时被拦截了（应该保持浏览器默认行为）')
       if (dropped.hintAfterDrop) errors.push('拖文件：松开后整页提示没有消失')
-      if (!dropped.chip) errors.push('拖文件：在消息区松开后附件条里没有这个文件')
+      if (!dropped.chip) errors.push('拖文件：在消息区松开后要求里没有这张卡片')
       if (!dropped.inline) errors.push('拖文件：附件没有出现在要求里')
     }
     await check(p, '任务-页面拖文件')
     // 这个附件只用于检查拖入，清掉以免影响后面的步骤
     await p
-      .getByRole('button', { name: '移除 页面拖入.txt' })
+      .locator('[data-chip="file"][data-name="页面拖入.txt"]')
       .first()
-      .click()
+      .press('Backspace')
       .catch(() => {})
   }
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
@@ -303,6 +312,23 @@ try {
     if (after < before + 100) errors.push(`工作流-属性栏：拖动后宽度是 ${after}，没有变宽`)
   }
   await check(p, '工作流-属性栏宽度')
+  // 执行步骤可以折叠：收起后只剩标题行和一行摘要，输入框不再占高度；再点一下展开回来
+  {
+    const fold = p.getByRole('button', { name: '收起这一步' }).first()
+    if (!(await fold.count())) errors.push('工作流-步骤折叠：步骤上没有折叠按钮')
+    else {
+      await fold.click()
+      await p.waitForTimeout(300)
+      if (!(await p.getByRole('button', { name: '展开这一步' }).count()))
+        errors.push('工作流-步骤折叠：收起后按钮没有变成「展开这一步」')
+      if (await p.getByLabel('这一步要做的事').count())
+        errors.push('工作流-步骤折叠：收起后「这一步要做的事」还占着位置')
+      await check(p, '工作流-步骤折叠')
+      await p.getByRole('button', { name: '展开这一步' }).first().click()
+      await p.waitForTimeout(300)
+      if (!(await p.getByLabel('这一步要做的事').count())) errors.push('工作流-步骤折叠：再点一下没有展开')
+    }
+  }
   // 内置工作流：添加后连同 Agent 一起建好，直接打开
   await p.getByRole('button', { name: '添加内置或导入的工作流' }).click()
   await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()

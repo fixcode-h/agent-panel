@@ -1,4 +1,15 @@
-import { ArrowDown, ArrowUp, Bot, Crown, MousePointerClick, Plus, Trash2, Workflow as WorkflowIcon } from 'lucide-react'
+import { useState } from 'react'
+import {
+  ArrowDown,
+  ArrowUp,
+  Bot,
+  ChevronRight,
+  Crown,
+  MousePointerClick,
+  Plus,
+  Trash2,
+  Workflow as WorkflowIcon,
+} from 'lucide-react'
 import {
   DEFAULT_AGENT_ID,
   type Agent,
@@ -92,6 +103,14 @@ export function NodeInspector({
   }
   const addStep = (kind: NodeStep['kind']) =>
     setSteps([...steps, newNodeStep({ kind, ...(kind === 'agent' ? { agentId: '' } : {}) })])
+  // 收起的步骤只记在这里，不写进流程：换台机器打开仍然全部展开
+  const [folded, setFolded] = useState<Set<string>>(() => new Set())
+  const foldStep = (id: string) =>
+    setFolded((f) => {
+      const next = new Set(f)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
   const up = preds(flow, node.id).map(name)
   const down = succs(flow, node.id).map(name)
   const opts = refOptions(w, workflows, flow.id)
@@ -145,9 +164,21 @@ export function NodeInspector({
           const runner = runnerOf(u)
           const tier = u.tier || (runner ? agentTier(runner) : 'medium')
           const params = runner && runner.id !== DEFAULT_AGENT_ID ? runner.params : []
+          const open = !folded.has(u.id)
           return (
             <section key={u.id} className="flex flex-col gap-3 rounded-xl border p-3.5">
               <div className="flex items-center gap-1.5">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => foldStep(u.id)}
+                  aria-expanded={open}
+                  aria-label={open ? t('收起这一步') : t('展开这一步')}
+                  title={open ? t('收起这一步') : t('展开这一步')}
+                  className="-ml-1"
+                >
+                  <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
+                </Button>
                 <span className="grid h-5 w-5 shrink-0 place-items-center rounded-full bg-field font-mono text-[0.6875rem] text-muted">
                   {i + 1}
                 </span>
@@ -190,159 +221,184 @@ export function NodeInspector({
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
               </div>
-              <div role="radiogroup" aria-label={t('执行方式')} className="grid grid-cols-2 rounded-lg bg-field p-0.5">
-                {(
-                  [
-                    { id: 'agent', label: 'Agent', icon: Bot },
-                    { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
-                  ] as const
-                ).map((k) => (
-                  <button
-                    key={k.id}
-                    role="radio"
-                    aria-checked={u.kind === k.id}
-                    onClick={() => patchStep(u.id, { kind: k.id })}
-                    className={cn(
-                      'flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
-                      u.kind === k.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
-                    )}
-                  >
-                    <k.icon className="h-3.5 w-3.5" />
-                    {k.label}
-                  </button>
-                ))}
-              </div>
-              {u.kind === 'agent' ? (
-                <Select
-                  aria-label={t('执行的 Agent')}
-                  value={u.agentId}
-                  onChange={(e) => patchStep(u.id, { agentId: e.target.value })}
-                  options={[
-                    {
-                      value: '',
-                      label: main ? t('主 Agent · {name}', { name: main.name }) : t('主 Agent（还没有选择）'),
-                    },
-                    ...team
-                      .filter((m) => m.agent.id !== main?.id)
-                      .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
-                    ...agents
-                      .filter((a) => a.id !== main?.id && a.enabled && (!used.has(a.id) || a.id === u.agentId))
-                      .map((a) => ({ value: a.id, label: a.name, group: t('其他 Agent') })),
-                  ]}
-                />
-              ) : (
-                <Select
-                  aria-label={t('调用的流程')}
-                  value={refValue(u.flow)}
-                  onChange={(e) => patchStep(u.id, { flow: parseRef(e.target.value) })}
-                  options={refOptions(w, workflows, flow.id, t('选择流程'))}
-                />
+              {!open && (
+                <p className="-mt-1 truncate text-[0.71875rem] text-subtle">
+                  {[
+                    stepName(u),
+                    u.kind === 'agent'
+                      ? t('{tier}档', { tier: MODEL_TIERS.find((m) => m.id === tier)?.label ?? tier })
+                      : '',
+                    u.review ? t('有验收流程') : '',
+                    u.confirm ? t('完成后等我确认') : '',
+                    u.retries > 0 ? t('失败重试 {n} 次', { n: u.retries }) : '',
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
               )}
-              {u.kind === 'agent' && (
+              {open && (
                 <>
-                  <div className="flex flex-col gap-1.5">
-                    <Label
-                      hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。', {
-                        cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
-                      })}
-                    >
-                      {t('模型档位')}
-                    </Label>
-                    <Segmented
-                      label={t('模型档位')}
-                      value={tier}
-                      onChange={(v) => patchStep(u.id, { tier: v })}
-                      options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
-                    />
-                    <span className="font-mono text-[0.71875rem] text-subtle">
-                      {cs.tiers[tier].model || t('自动')}
-                      {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
-                    </span>
-                  </div>
-                  {params.length > 0 && runner && (
-                    <section className="flex flex-col gap-3 rounded-lg border p-2.5">
-                      <Label
-                        hint={t('{name} 暴露的参数，在这一步上的取值；没改的用 Agent 的默认值。', {
-                          name: runner.name,
-                        })}
+                  <div
+                    role="radiogroup"
+                    aria-label={t('执行方式')}
+                    className="grid grid-cols-2 rounded-lg bg-field p-0.5"
+                  >
+                    {(
+                      [
+                        { id: 'agent', label: 'Agent', icon: Bot },
+                        { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
+                      ] as const
+                    ).map((k) => (
+                      <button
+                        key={k.id}
+                        role="radio"
+                        aria-checked={u.kind === k.id}
+                        onClick={() => patchStep(u.id, { kind: k.id })}
+                        className={cn(
+                          'flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-md text-[0.8125rem] transition-colors',
+                          u.kind === k.id ? 'bg-card font-medium text-fg shadow-card' : 'text-muted hover:text-fg',
+                        )}
                       >
-                        {t('参数')}
-                      </Label>
-                      <ParamsForm
-                        params={params}
-                        values={u.params}
-                        onChange={(v) => patchStep(u.id, { params: v })}
-                        compact
-                      />
-                    </section>
+                        <k.icon className="h-3.5 w-3.5" />
+                        {k.label}
+                      </button>
+                    ))}
+                  </div>
+                  {u.kind === 'agent' ? (
+                    <Select
+                      aria-label={t('执行的 Agent')}
+                      value={u.agentId}
+                      onChange={(e) => patchStep(u.id, { agentId: e.target.value })}
+                      options={[
+                        {
+                          value: '',
+                          label: main ? t('主 Agent · {name}', { name: main.name }) : t('主 Agent（还没有选择）'),
+                        },
+                        ...team
+                          .filter((m) => m.agent.id !== main?.id)
+                          .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
+                        ...agents
+                          .filter((a) => a.id !== main?.id && a.enabled && (!used.has(a.id) || a.id === u.agentId))
+                          .map((a) => ({ value: a.id, label: a.name, group: t('其他 Agent') })),
+                      ]}
+                    />
+                  ) : (
+                    <Select
+                      aria-label={t('调用的流程')}
+                      value={refValue(u.flow)}
+                      onChange={(e) => patchStep(u.id, { flow: parseRef(e.target.value) })}
+                      options={refOptions(w, workflows, flow.id, t('选择流程'))}
+                    />
                   )}
+                  {u.kind === 'agent' && (
+                    <>
+                      <div className="flex flex-col gap-1.5">
+                        <Label
+                          hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。', {
+                            cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
+                          })}
+                        >
+                          {t('模型档位')}
+                        </Label>
+                        <Segmented
+                          label={t('模型档位')}
+                          value={tier}
+                          onChange={(v) => patchStep(u.id, { tier: v })}
+                          options={MODEL_TIERS.map((m) => ({ id: m.id, label: t('{tier}档', { tier: m.label }) }))}
+                        />
+                        <span className="font-mono text-[0.71875rem] text-subtle">
+                          {cs.tiers[tier].model || t('自动')}
+                          {cs.tiers[tier].effort ? ` · ${cs.tiers[tier].effort}` : ''}
+                        </span>
+                      </div>
+                      {params.length > 0 && runner && (
+                        <section className="flex flex-col gap-3 rounded-lg border p-2.5">
+                          <Label
+                            hint={t('{name} 暴露的参数，在这一步上的取值；没改的用 Agent 的默认值。', {
+                              name: runner.name,
+                            })}
+                          >
+                            {t('参数')}
+                          </Label>
+                          <ParamsForm
+                            params={params}
+                            values={u.params}
+                            onChange={(v) => patchStep(u.id, { params: v })}
+                            compact
+                          />
+                        </section>
+                      )}
+                    </>
+                  )}
+                  <label className="flex flex-col gap-1.5">
+                    <Label hint={t('会和工作流说明、上游结果一起发给执行者')}>{t('这一步要做的事')}</Label>
+                    <Textarea
+                      rows={4}
+                      value={u.instructions}
+                      onChange={(e) => patchStep(u.id, { instructions: e.target.value })}
+                      placeholder={t('例如：按分析结论实现接口，补充单元测试，完成后列出改动的文件。')}
+                      className="text-[0.8125rem]"
+                    />
+                  </label>
+                  <div className="flex flex-col gap-2 rounded-lg border p-2.5">
+                    <Label hint={t('这一步完成后执行验收；不通过就把意见交回这一步继续完善')}>{t('验收流程')}</Label>
+                    <Select
+                      aria-label={t('验收流程')}
+                      value={refValue(u.review)}
+                      onChange={(e) => patchStep(u.id, { review: parseRef(e.target.value) })}
+                      options={opts}
+                    />
+                    {u.review && (
+                      <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
+                        {t('最多验收')}
+                        <Input
+                          type="number"
+                          min={1}
+                          max={10}
+                          value={u.maxRounds}
+                          aria-label={t('最多验收')}
+                          onChange={(e) =>
+                            patchStep(u.id, {
+                              maxRounds: Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 1))),
+                            })
+                          }
+                          className="h-8 w-16 text-center"
+                        />
+                        {t('轮，仍不通过时节点失败')}
+                      </label>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label className="flex flex-1 cursor-pointer items-center gap-2 text-xs text-muted">
+                      <Switch
+                        checked={!!u.confirm}
+                        onCheckedChange={(v) => patchStep(u.id, { confirm: v })}
+                        aria-label={t('完成后等我确认')}
+                      />
+                      {t('完成后等我确认')}
+                    </label>
+                    {u.kind === 'agent' && (
+                      <label className="flex items-center gap-2 text-xs text-muted">
+                        {t('失败自动重试')}
+                        <Input
+                          type="number"
+                          min={0}
+                          max={5}
+                          value={u.retries}
+                          aria-label={t('失败自动重试')}
+                          onChange={(e) =>
+                            patchStep(u.id, {
+                              retries: Math.min(5, Math.max(0, Math.round(Number(e.target.value) || 0))),
+                            })
+                          }
+                          className="h-8 w-16 text-center"
+                        />
+                        {t('次')}
+                      </label>
+                    )}
+                  </div>
                 </>
               )}
-              <label className="flex flex-col gap-1.5">
-                <Label hint={t('会和工作流说明、上游结果一起发给执行者')}>{t('这一步要做的事')}</Label>
-                <Textarea
-                  rows={4}
-                  value={u.instructions}
-                  onChange={(e) => patchStep(u.id, { instructions: e.target.value })}
-                  placeholder={t('例如：按分析结论实现接口，补充单元测试，完成后列出改动的文件。')}
-                  className="text-[0.8125rem]"
-                />
-              </label>
-              <div className="flex flex-col gap-2 rounded-lg border p-2.5">
-                <Label hint={t('这一步完成后执行验收；不通过就把意见交回这一步继续完善')}>{t('验收流程')}</Label>
-                <Select
-                  aria-label={t('验收流程')}
-                  value={refValue(u.review)}
-                  onChange={(e) => patchStep(u.id, { review: parseRef(e.target.value) })}
-                  options={opts}
-                />
-                {u.review && (
-                  <label className="flex flex-wrap items-center gap-2 text-xs text-muted">
-                    {t('最多验收')}
-                    <Input
-                      type="number"
-                      min={1}
-                      max={10}
-                      value={u.maxRounds}
-                      aria-label={t('最多验收')}
-                      onChange={(e) =>
-                        patchStep(u.id, {
-                          maxRounds: Math.min(10, Math.max(1, Math.round(Number(e.target.value) || 1))),
-                        })
-                      }
-                      className="h-8 w-16 text-center"
-                    />
-                    {t('轮，仍不通过时节点失败')}
-                  </label>
-                )}
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="flex flex-1 cursor-pointer items-center gap-2 text-xs text-muted">
-                  <Switch
-                    checked={!!u.confirm}
-                    onCheckedChange={(v) => patchStep(u.id, { confirm: v })}
-                    aria-label={t('完成后等我确认')}
-                  />
-                  {t('完成后等我确认')}
-                </label>
-                {u.kind === 'agent' && (
-                  <label className="flex items-center gap-2 text-xs text-muted">
-                    {t('失败自动重试')}
-                    <Input
-                      type="number"
-                      min={0}
-                      max={5}
-                      value={u.retries}
-                      aria-label={t('失败自动重试')}
-                      onChange={(e) =>
-                        patchStep(u.id, { retries: Math.min(5, Math.max(0, Math.round(Number(e.target.value) || 0))) })
-                      }
-                      className="h-8 w-16 text-center"
-                    />
-                    {t('次')}
-                  </label>
-                )}
-              </div>
             </section>
           )
         })}

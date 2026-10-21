@@ -12,7 +12,14 @@ import {
   Zap,
 } from 'lucide-react'
 import { compareVersions, type AppRelease } from '@shared/version'
-import { forceInstallRelease, installRelease, loadReleases, rollbackRelease, useAppUpdate } from '@/lib/app-update'
+import {
+  adoptRunningJob,
+  forceInstallRelease,
+  installRelease,
+  loadReleases,
+  rollbackRelease,
+  useAppUpdate,
+} from '@/lib/app-update'
 import { renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -157,9 +164,19 @@ export function UpdateSection() {
 
   const install = (r: AppRelease) => {
     setConfirm(null)
+    // 撞上「已经在更新」时 installRelease 会把那一次的进度放进 job，这里刷新页面也不会丢
     installRelease(r.tag).catch((e) => toast.error((e as Error).message))
   }
   const cur = data?.releases.find((r) => r.version === current)
+
+  // 上次的更新还在跑（页面刷新过、上次没等到结束）：接管它，把进度和「强制更新」显示出来，
+  // 否则界面看起来像什么都没发生，再点更新也只会收到一句「正在更新」
+  useEffect(() => {
+    if (job?.status === 'running' || restarting) return
+    void adoptRunningJob().catch(() => {})
+    // 只在打开时接一次；之后由 job 自己的轮询更新
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="flex flex-col gap-5">
@@ -215,7 +232,10 @@ export function UpdateSection() {
             </div>
             {!restarting && job?.waiting && (
               // 下载完了却还有任务在执行：不用一个个去停，直接中断所有 CLI 立刻更新
-              <div className="flex justify-end">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <span className="mr-auto text-xs text-subtle">
+                  {t('新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。')}
+                </span>
                 <Button size="sm" variant="secondary" onClick={() => setForce(true)}>
                   <Zap className="h-3.5 w-3.5" />
                   {t('强制更新')}

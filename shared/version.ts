@@ -66,8 +66,24 @@ export interface AppUpdateJob {
   total: number
   /** 下载完了，在等正在执行的任务结束；这时可以强制更新 */
   waiting?: boolean
+  /** 最近一次有进展的时间（ISO）：判断卡住了没有用 */
+  updatedAt?: string
   error?: string
 }
+
+/**
+ * 已经开始、还没结束的更新（在 /app/install 撞上 409 时一并返回）。
+ * 光有一句「正在更新」看不出来卡在哪，页面拿到它就能直接显示进度和「强制更新」
+ */
+export interface AppUpdateBusy {
+  /** 正在跑的那个更新；可能已经卡住，见 stale */
+  job: AppUpdateJob
+  /** 超过 STALE_UPDATE_MS 没有进展，下一次点更新会把它作废重新开始 */
+  stale: boolean
+}
+
+/** 更新多久没有进展算卡住：下载卡住、等任务结束等太久都按这个算 */
+export const STALE_UPDATE_MS = 10 * 60_000
 
 /** v0.11.22-dev → [0, 11, 22, 预览版] */
 export function parseVersion(v: string) {

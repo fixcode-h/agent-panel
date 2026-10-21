@@ -42,13 +42,14 @@ export const EN_TASKS: Record<string, string> = {
 
   // 附件
   '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
-  '「{name}」超过 {n} MB': '"{name}" is larger than {n} MB',
+  选择文件的窗口一直没有响应: 'The file picker did not respond',
+  '打不开选择文件的窗口：{error}': 'Could not open the file picker: {error}',
   截图: 'Screenshot',
   请查看附件: 'Please see the attachment',
   '「{name}」上传失败：{error}': 'Failed to upload "{name}": {error}',
-  上传中: 'Uploading',
   '移除 {name}': 'Remove {name}',
   按退格键删除: 'Press Backspace to remove',
+  移除: 'Remove',
   '添加文件、图片或引用': 'Add files, images or references',
   上传文件或图片: 'Upload files or images',
   '可粘贴 / 拖入': 'Paste or drop',
@@ -339,6 +340,8 @@ export const EN_TASKS: Record<string, string> = {
   项目当前的分支: "the project's current branch",
   '没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。':
     'Could not create a separate branch ({reason}); running in the current directory without isolation.',
+  '新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。':
+    'The new version is downloaded; it replaces the current one and restarts after running tasks finish. You can also force the update now.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
   已丢弃独立分支: 'Separate branch discarded',
   '独立分支已合并到「{branch}」': 'Separate branch merged into "{branch}"',

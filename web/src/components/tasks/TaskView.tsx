@@ -1329,103 +1329,106 @@ function ChildrenBar({
   const current = children.find((c) => c.id === openChild)
 
   return (
-    <div ref={ref} className="relative shrink-0 px-3 md:px-6">
-      <div className="mx-auto flex max-w-(--content-w) items-center gap-2 py-1.5">
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label={t('子对话')}
-          onClick={() => setOpen((v) => !v)}
-          className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
-        >
-          <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
-          <span className="shrink-0 font-medium">{t('子对话 {n}', { n: alive.length })}</span>
-          {working > 0 && (
-            <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent">
-              <span className="text-subtle">·</span>
-              <Loader2 className="h-3 w-3 animate-spin" />
-              {t('{n} 个在执行', { n: working })}
-            </span>
-          )}
-          {current && <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>}
-        </button>
-        {current && (
+    <div ref={ref} className="shrink-0 px-3 md:px-6">
+      {/* 弹窗以这一行内容为基准：左边和「子对话」按钮对齐，不跟着外层的内边距和居中偏移走 */}
+      <div className="relative mx-auto max-w-(--content-w)">
+        <div className="flex items-center gap-2 py-1.5">
           <button
             type="button"
-            onClick={onClose}
-            aria-label={t('关闭子对话')}
-            title={t('关闭子对话')}
-            className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+            aria-expanded={open}
+            aria-label={t('子对话')}
+            onClick={() => setOpen((v) => !v)}
+            className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
           >
-            <X className="h-3.5 w-3.5" />
+            <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
+            <span className="shrink-0 font-medium">{t('子对话 {n}', { n: alive.length })}</span>
+            {working > 0 && (
+              <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent">
+                <span className="text-subtle">·</span>
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t('{n} 个在执行', { n: working })}
+              </span>
+            )}
+            {current && <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>}
           </button>
-        )}
-      </div>
-      {open && (
-        <div className="absolute bottom-full left-3 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop md:left-6">
-          <div className="flex items-center gap-2 border-b px-3 py-2">
-            <span className="text-[0.8125rem] font-medium">{t('子对话')}</span>
-            <div className="ml-auto flex shrink-0 rounded-md bg-field p-0.5">
-              {(
-                [
-                  [false, t('运行中')],
-                  [true, t('全部')],
-                ] as const
-              ).map(([v, label]) => (
+          {current && (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t('关闭子对话')}
+              title={t('关闭子对话')}
+              className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
+        {open && (
+          <div className="absolute bottom-full left-0 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop">
+            <div className="flex items-center gap-2 border-b px-3 py-2">
+              <span className="text-[0.8125rem] font-medium">{t('子对话')}</span>
+              <div className="ml-auto flex shrink-0 rounded-md bg-field p-0.5">
+                {(
+                  [
+                    [false, t('运行中')],
+                    [true, t('全部')],
+                  ] as const
+                ).map(([v, label]) => (
+                  <button
+                    key={String(v)}
+                    type="button"
+                    aria-pressed={all === v}
+                    onClick={() => setAll(v)}
+                    className={cn(
+                      'cursor-pointer rounded px-2 py-0.5 text-xs',
+                      all === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                    )}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
+              {shown.map((c) => (
                 <button
-                  key={String(v)}
+                  key={c.id}
                   type="button"
-                  aria-pressed={all === v}
-                  onClick={() => setAll(v)}
+                  onClick={() => {
+                    onOpen(c.id)
+                    setOpen(false)
+                  }}
                   className={cn(
-                    'cursor-pointer rounded px-2 py-0.5 text-xs',
-                    all === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                    'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
+                    c.id === openChild && 'bg-sel',
                   )}
                 >
-                  {label}
+                  <span className="mt-0.5 shrink-0">
+                    <TaskStatusIcon status={c.status} working={c.working} />
+                  </span>
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="flex min-w-0 items-center gap-1.5">
+                      <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
+                        {c.title}
+                      </span>
+                      {!c.cliAlive && (
+                        <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                          {t('已关闭')}
+                        </span>
+                      )}
+                      {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
+                    </span>
+                    {!c.working && c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
+                  </span>
                 </button>
               ))}
+              {!shown.length && (
+                <p className="px-2.5 py-3 text-xs text-subtle">{all ? t('还没有子对话') : t('没有正在运行的子对话')}</p>
+              )}
             </div>
           </div>
-          <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
-            {shown.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  onOpen(c.id)
-                  setOpen(false)
-                }}
-                className={cn(
-                  'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
-                  c.id === openChild && 'bg-sel',
-                )}
-              >
-                <span className="mt-0.5 shrink-0">
-                  <TaskStatusIcon status={c.status} working={c.working} />
-                </span>
-                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span className="flex min-w-0 items-center gap-1.5">
-                    <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                      {c.title}
-                    </span>
-                    {!c.cliAlive && (
-                      <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                        {t('已关闭')}
-                      </span>
-                    )}
-                    {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
-                  </span>
-                  {!c.working && c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
-                </span>
-              </button>
-            ))}
-            {!shown.length && (
-              <p className="px-2.5 py-3 text-xs text-subtle">{all ? t('还没有子对话') : t('没有正在运行的子对话')}</p>
-            )}
-          </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   )
 }

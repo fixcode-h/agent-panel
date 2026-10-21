@@ -5,6 +5,7 @@ import { Hono } from 'hono'
 import { z } from 'zod'
 import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
 import { capture } from './exec/process.ts'
+import { pickFiles } from './pick-file.ts'
 import { DATA_DIR } from './store.ts'
 import { resolvePath } from './fs.ts'
 import { t } from '../shared/i18n.ts'
@@ -39,6 +40,29 @@ export function uploadsApi() {
     const file = path.join(dir, safeName(p.data.name))
     await writeFile(file, buf)
     return c.json({ name: p.data.name, path: file, size: buf.length, mime: p.data.mime } satisfies Attachment, 201)
+  })
+  /**
+   * 在面板所在的本机弹文件选择框，直接拿绝对路径。
+   * 浏览器只能给出文件名，大文件（超过上限）要「只引用原路径」就靠这个入口。
+   */
+  routes.post('/pick', async (c) => {
+    try {
+      const picked = await pickFiles()
+      const files: Attachment[] = []
+      for (const file of picked) {
+        const s = await stat(file).catch(() => null)
+        if (!s?.isFile()) continue
+        files.push({
+          name: path.basename(file),
+          path: file,
+          size: s.size,
+          mime: IMAGE_TYPES[path.extname(file).slice(1).toLowerCase()] ?? '',
+        })
+      }
+      return c.json({ files })
+    } catch (e) {
+      return c.json({ error: t('打不开选择文件的窗口：{error}', { error: (e as Error).message }) }, 400)
+    }
   })
   return routes
 }

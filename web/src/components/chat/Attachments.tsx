@@ -19,7 +19,6 @@ import {
   Paperclip,
   Plus,
   Workflow as WorkflowIcon,
-  X,
 } from 'lucide-react'
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
 import type { DesignKind, SavedStyle } from '@shared/design'
@@ -158,49 +157,77 @@ export function useAttachments(draftKey?: string) {
 
   /**
    * 加附件。added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：上传失败时回调
+   *
+   * 超过上限的文件不经过浏览器上传（浏览器给不出原路径，也传不动）：改成在面板所在的本机弹选择框，
+   * 拿到的就是原始路径，发给 Agent 时直接引用它。
    */
-  const add = useCallback(async (files: File[], hooks?: AttachHooks) => {
+  const pickLarge = useCallback(async (hooks?: AttachHooks) => {
     const room = MAX_ATTACHMENTS - count.current
-    if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-    const taken = new Set(names.current)
-    const accepted: { file: File; key: string; name: string; mime: string; preview?: string }[] = []
-    for (const f of files.slice(0, Math.max(room, 0))) {
-      if (f.size > MAX_ATTACHMENT_BYTES) {
-        toast.error(t('「{name}」超过 {n} MB', { name: f.name, n: MAX_ATTACHMENT_BYTES / 1024 / 1024 }))
-        continue
-      }
-      // 粘贴的截图没有像样的文件名
-      const base =
-        f.name && f.name !== 'image.png'
-          ? f.name
-          : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
-      const name = uniqueName(base, taken)
-      taken.add(name)
-      accepted.push({
-        file: f,
-        key: crypto.randomUUID(),
-        name,
-        mime: f.type,
-        preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
-      })
-    }
-    if (!accepted.length) return
-    setItems((xs) => [
-      ...xs,
-      ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
-    ])
-    hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime })))
-    for (const x of accepted) {
-      try {
-        const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
-        setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, done } : i)))
-      } catch (e) {
-        toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
-        setItems((xs) => xs.filter((i) => i.key !== x.key))
-        hooks?.failed?.(x.name)
-      }
+    try {
+      const { files } = await api.pickFiles()
+      if (!files.length) return
+      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+      const accepted = files.slice(0, Math.max(room, 0))
+      if (!accepted.length) return
+      setItems((xs) => [
+        ...xs,
+        ...accepted.map((a) => ({ key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a })),
+      ])
+      hooks?.added?.(accepted.map((a) => ({ name: a.name, mime: a.mime })))
+    } catch (e) {
+      toast.error((e as Error).message)
     }
   }, [])
+
+  const add = useCallback(
+    async (files: File[], hooks?: AttachHooks) => {
+      const room = MAX_ATTACHMENTS - count.current
+      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+      const taken = new Set(names.current)
+      const accepted: { file: File; key: string; name: string; mime: string; preview?: string }[] = []
+      let large = false
+      for (const f of files.slice(0, Math.max(room, 0))) {
+        if (f.size > MAX_ATTACHMENT_BYTES) {
+          large = true
+          continue
+        }
+        // 粘贴的截图没有像样的文件名
+        const base =
+          f.name && f.name !== 'image.png'
+            ? f.name
+            : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
+        const name = uniqueName(base, taken)
+        taken.add(name)
+        accepted.push({
+          file: f,
+          key: crypto.randomUUID(),
+          name,
+          mime: f.type,
+          preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
+        })
+      }
+      if (!accepted.length) {
+        if (large) await pickLarge(hooks)
+        return
+      }
+      setItems((xs) => [
+        ...xs,
+        ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
+      ])
+      hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime })))
+      for (const x of accepted) {
+        try {
+          const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
+          setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, done } : i)))
+        } catch (e) {
+          toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
+          setItems((xs) => xs.filter((i) => i.key !== x.key))
+          hooks?.failed?.(x.name)
+        }
+      }
+    },
+    [pickLarge],
+  )
   /** 已经在服务端生成好的附件（引入的会话记录） */
   const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
     if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
@@ -219,6 +246,8 @@ export function useAttachments(draftKey?: string) {
   return {
     items,
     add,
+    /** 在面板所在的本机选文件，直接引用原路径（大文件用，也能选小文件） */
+    pick: pickLarge,
     addReady,
     remove,
     clear,
@@ -322,56 +351,6 @@ export function DropOverlay() {
       <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent shadow-pop">
         {t('松开鼠标，把文件附到要求里')}
       </span>
-    </div>
-  )
-}
-
-/** 输入框上方的附件条：图片显示缩略图，其他文件显示名字和大小 */
-export function AttachmentChips({ items, onRemove }: { items: Item[]; onRemove: (key: string) => void }) {
-  const [open, setOpen] = useState<number>()
-  if (!items.length) return null
-  const images = items.flatMap((x) => (x.preview ? [{ src: x.preview, name: x.name }] : []))
-  return (
-    <div className="flex flex-wrap gap-2 px-3 pt-3">
-      <Lightbox images={images} index={open} onClose={() => setOpen(undefined)} />
-      {items.map((x) => (
-        <div
-          key={x.key}
-          className="relative flex h-14 max-w-[240px] items-center gap-2.5 rounded-xl border bg-field/60 pr-3 pl-1.5"
-          title={x.name}
-        >
-          {x.preview ? (
-            <button
-              type="button"
-              aria-label={t('查看 {name}', { name: x.name })}
-              onClick={() => setOpen(images.findIndex((i) => i.src === x.preview))}
-              className="shrink-0 cursor-zoom-in"
-            >
-              <img src={x.preview} alt="" className="h-11 w-11 rounded-lg object-cover" />
-            </button>
-          ) : (
-            <span className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-card text-subtle">
-              <FileIcon className="h-5 w-5" strokeWidth={1.6} />
-            </span>
-          )}
-          <span className="flex min-w-0 flex-col">
-            <span className="truncate text-[0.78125rem]">{x.name}</span>
-            <span className="flex items-center gap-1 text-[0.6875rem] text-subtle">
-              {!x.done && <Loader2 className="h-3 w-3 animate-spin" />}
-              {x.done ? formatSize(x.size) : t('上传中')}
-            </span>
-          </span>
-          <button
-            type="button"
-            aria-label={t('移除 {name}', { name: x.name })}
-            onClick={() => onRemove(x.key)}
-            title={t('移除 {name}', { name: x.name })}
-            className="absolute -top-1.5 -right-1.5 z-10 grid h-5 w-5 cursor-pointer place-items-center rounded-full border bg-card text-muted shadow-card transition-colors hover:border-line-strong hover:bg-sel hover:text-fg"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      ))}
     </div>
   )
 }

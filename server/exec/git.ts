@@ -8,6 +8,12 @@ import { lines } from './parsers.ts'
 const git = (cwd: string, ...args: string[]) => capture('git', ['-c', 'core.quotepath=off', ...args], cwd)
 
 /**
+ * 面板自己往任务目录里放的东西不算 Agent 的改动：附件拷进 attachments/ 后
+ * git 会把它当未跟踪文件列出来，看起来像是 Agent 新加的文件。
+ */
+const PANEL_DIR = /^attachments\//
+
+/**
  * 当前未提交的改动：path → "增加/删除" 行数。不是 git 仓库时返回 null。
  * 包含未跟踪的新文件（按行数算新增）。
  */
@@ -25,6 +31,7 @@ export async function gitNumstat(cwd: string, ref = ''): Promise<Record<string, 
   }
   const untracked = await git(cwd, 'ls-files', '--others', '--exclude-standard')
   for (const p of untracked.stdout.split('\n').filter(Boolean).slice(0, 300)) {
+    if (PANEL_DIR.test(p)) continue
     try {
       const full = path.join(cwd, p)
       const s = await stat(full)

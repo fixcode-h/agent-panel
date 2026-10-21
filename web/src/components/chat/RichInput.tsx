@@ -34,6 +34,12 @@ export interface RichInputHandle {
 /** 图片卡片要显示缩略图：按附件名字取本地预览地址 */
 type Preview = (name: string) => string | undefined
 
+/** 卡片上的两个操作：点图片看大图、点右上角删除 */
+export interface ChipActions {
+  preview?: (name: string) => void
+  remove?: (name: string) => void
+}
+
 const isCommand = (kind: ChipKind) => kind === 'skill' || kind === 'command'
 
 /** 把一段 DOM 读回带标记的文字 */
@@ -49,25 +55,58 @@ function serialize(node: Node): string {
   return out
 }
 
+/** 卡片上的操作按钮（删除） */
+function closeNode(onClick: () => void): HTMLElement {
+  const btn = document.createElement('button')
+  btn.type = 'button'
+  btn.contentEditable = 'false'
+  btn.dataset.chipAction = 'remove'
+  btn.title = t('移除')
+  btn.setAttribute('aria-label', t('移除'))
+  btn.className =
+    'absolute -top-1.5 -right-1.5 grid h-4 w-4 cursor-pointer place-items-center rounded-full border bg-card text-muted hover:bg-sel hover:text-fg'
+  btn.innerHTML =
+    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="h-2.5 w-2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>'
+  btn.addEventListener('mousedown', (e) => e.preventDefault())
+  btn.addEventListener('click', (e) => {
+    e.preventDefault()
+    e.stopPropagation()
+    onClick()
+  })
+  return btn
+}
+
 /** 一张卡片在输入框里的样子 */
-function chipNode(chip: Chip, preview?: Preview): HTMLElement {
+function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | undefined): HTMLElement {
   const el = document.createElement('span')
   el.contentEditable = 'false'
   el.dataset.chip = chip.kind
   el.dataset.name = chip.name
-  el.title = t('按退格键删除')
   el.className = cn(
-    'mx-0.5 inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
+    'mx-0.5 inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border align-middle text-[0.8125rem] leading-[1.7]',
     isCommand(chip.kind) ? 'border-accent/35 bg-accent-soft text-accent' : 'border-line-strong bg-field/70 text-fg',
+    // 图片卡片单独包一层，删除按钮才好定位到图的右上角
+    chip.kind === 'image' && preview?.(chip.name) ? 'relative p-0.5' : 'shrink-0 px-1.5',
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
+  const act = actions?.()
   if (src) {
+    // 图片直接显示图片本身：点开看大图，右上角删除
     const img = document.createElement('img')
     img.src = src
-    img.alt = ''
-    img.className = 'h-4 w-4 shrink-0 rounded object-cover'
+    img.alt = chip.name
+    img.className = 'h-16 w-16 cursor-zoom-in rounded object-cover'
+    img.addEventListener('mousedown', (e) => e.preventDefault())
+    img.addEventListener('click', (e) => {
+      e.preventDefault()
+      act?.preview?.(chip.name)
+    })
     el.append(img)
+    el.title = chip.name
+    if (act?.remove) el.append(closeNode(() => act.remove?.(chip.name)))
+    return el
   }
+  el.title = t('按退格键删除')
   const label = document.createElement('span')
   label.className = cn('truncate', isCommand(chip.kind) && 'font-mono')
   label.textContent = isCommand(chip.kind) ? `/${chip.name}` : chip.name
@@ -76,13 +115,15 @@ function chipNode(chip: Chip, preview?: Preview): HTMLElement {
 }
 
 /** 一段带标记的文字对应的 DOM 节点：标记变成真卡片 */
-function nodesOf(value: string, preview?: Preview): Node[] {
-  return segments(value).map((s) => ('text' in s ? document.createTextNode(s.text) : chipNode(s.chip, preview)))
+function nodesOf(value: string, preview?: Preview, actions?: () => ChipActions | undefined): Node[] {
+  return segments(value).map((s) =>
+    'text' in s ? document.createTextNode(s.text) : chipNode(s.chip, preview, actions),
+  )
 }
 
 /** 按文字重新画一遍输入框 */
-function paint(root: HTMLElement, value: string, preview?: Preview) {
-  root.replaceChildren(...nodesOf(value, preview))
+function paint(root: HTMLElement, value: string, preview?: Preview, actions?: () => ChipActions | undefined) {
+  root.replaceChildren(...nodesOf(value, preview, actions))
 }
 
 /** 一张卡片在文字里的起点 */
@@ -133,6 +174,7 @@ export function RichInput({
   pad,
   className,
   preview,
+  actions,
 }: {
   value: string
   onChange: (v: string) => void
@@ -152,13 +194,15 @@ export function RichInput({
   pad?: string
   className?: string
   preview?: Preview
+  /** 卡片上的操作：点图片看大图、点右上角删除 */
+  actions?: ChipActions
 }) {
   const el = useRef<HTMLDivElement>(null)
   // 最后一次画进 DOM 的内容：自己输入引起的变化不再画一遍，否则光标会跳。
   // 预览地址也要记：图片缩略图是上传完才有的，那时文字没变也得重画一次。
   const painted = useRef<{ value: string; preview?: Preview } | null>(null)
-  const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview })
-  cb.current = { onChange, onSync, onKeyDown, onPaste, preview }
+  const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions })
+  cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions }
 
   const emit = useCallback(() => {
     const node = el.current
@@ -232,7 +276,7 @@ export function RichInput({
       text: () => serialize(el.current ?? document.createElement('div')),
       caret: () => caretNow(),
       setCaret: (pos) => place(pos),
-      insert: (text) => put(nodesOf(text, cb.current.preview)),
+      insert: (text) => put(nodesOf(text, cb.current.preview, () => cb.current.actions)),
       insertChip: (chip) => {
         const node = el.current
         if (!node) return
@@ -245,7 +289,7 @@ export function RichInput({
         after.setStart(r.endContainer, r.endOffset)
         const left = serialize(before.cloneContents())
         const right = serialize(after.cloneContents())
-        const chipEl = chipNode(chip, cb.current.preview)
+        const chipEl = chipNode(chip, cb.current.preview, () => cb.current.actions)
         const nodes: Node[] = []
         if (left && !/\s$/.test(left)) nodes.push(document.createTextNode(' '))
         nodes.push(chipEl)
@@ -278,7 +322,7 @@ export function RichInput({
         r.deleteContents()
         if (text) {
           const frag = document.createDocumentFragment()
-          nodesOf(text, cb.current.preview).forEach((n) => frag.append(n))
+          nodesOf(text, cb.current.preview, () => cb.current.actions).forEach((n) => frag.append(n))
           const last = frag.lastChild
           r.insertNode(frag)
           const sel = window.getSelection()
@@ -308,7 +352,7 @@ export function RichInput({
         kind: chipEl.dataset.chip as ChipKind,
         name: chipEl.dataset.name ?? '',
       })
-      paint(node, next, cb.current.preview)
+      paint(node, next, cb.current.preview, () => cb.current.actions)
       painted.current = { value: next, preview: cb.current.preview }
       cb.current.onChange(next)
       cb.current.onSync?.()
@@ -376,7 +420,7 @@ export function RichInput({
     if (painted.current?.value === value && painted.current?.preview === preview) return
     const focused = document.activeElement === node
     const at = focused ? caretNow() : -1
-    paint(node, value, preview)
+    paint(node, value, preview, () => cb.current.actions)
     painted.current = { value, preview }
     if (at >= 0) place(Math.min(at, serialize(node).length))
   }, [value, preview, caretNow, place])
