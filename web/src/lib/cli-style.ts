@@ -7,7 +7,8 @@ export const cliColor = (id: string) => getCli(id)?.color ?? '#64748b'
 export const modelGroup = (def: CliDefinition, m: { origin?: 'cli' | 'config' }) =>
   m.origin === 'config'
     ? CONFIG_GROUP()
-    : def.id === 'claude' || def.spec
+    : // cli-id-ok: Claude Code 没有列模型的命令，模型是面板内置的；以后有字段表达「模型来源」时换掉
+      def.id === 'claude' || def.spec
       ? t('{cli} 内置', { cli: def.name })
       : t('{cli} 读取', { cli: def.name })
 /** 配置文件里第三方 API 模型的组名；排序时按它认组，不按中文前缀 */

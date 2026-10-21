@@ -13,6 +13,20 @@
 其余标准的 JSON-RPC 或按 `type` 区分的记录流只写配置就能接。Command Code、Gemini CLI、Pi 的配置可以直接参考
 [`shared/clis/commandcode.json`](../shared/clis/commandcode.json)、[`shared/clis/gemini.json`](../shared/clis/gemini.json)、[`shared/clis/pi.json`](../shared/clis/pi.json)。
 
+## 接入检查清单
+
+接新 CLI（或给已有 CLI 加一种能力）时逐项过一遍，漏掉的项以前都返工过（见 [lessons/cli.md](./lessons/cli.md)）：
+
+1. **思考强度**：CLI 支持哪几档写进 `efforts`；强度由模型决定的写 `effortsFromModel`；会话中途不能换的写 `effortBoundSession`；
+   `tiers` 三档各配好默认的模型和强度。不要在代码里按 CLI 名字补档位。
+2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
+3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelLimits`，
+   写完用 CLI 自己的列表或界面核对能选几档。
+4. **参数和协议**：`args` 覆盖 model、effort、permission、resume、fork；常驻协议的握手、插话、中断、结束判断都有。
+5. **能力** `features`：压缩、自动压缩、分叉、插话（`steer` 或 `notes`）、「/命令」，按 CLI 实际支持的写，不支持的面板会走兜底做法。
+6. **测试**：`scripts/fake-cli` 能模拟它（含 RPC 多轮），`server/exec/fixtures/` 录一段真实输出并加解析测试。
+7. **文案**：界面上的名字、说明的英文写进 `i18n.en`。新加的字段登记进本文档的表格，并回头看已有的 CLI 要不要填。
+
 ## 字段
 
 | 字段                              | 说明                                                                                                                            |

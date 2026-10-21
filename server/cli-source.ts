@@ -75,6 +75,7 @@ export async function cliSource(cliId: string, file: string | undefined): Promis
   if (pkgs.some((p) => normalized.includes(`/node_modules/${p}/`))) return 'npm'
   if (/[\\/](homebrew|Cellar|Caskroom|linuxbrew)[\\/]/i.test(target) || /[\\/](homebrew|linuxbrew)[\\/]/i.test(file))
     return 'brew'
+  // cli-id-ok: Claude Code 原生安装包的位置是它独有的，只在识别安装来源时用
   if (cliId === 'claude') {
     const n = claudeNative()
     if (same(file, n.bin) || target.startsWith(n.data)) return 'native'

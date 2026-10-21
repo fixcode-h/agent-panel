@@ -58,6 +58,7 @@ type Picked = { models: CliModel[]; auth?: 'account' | 'api'; from?: string }
  */
 async function codexModels(command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
   const got: { list?: CliModel[]; account?: any; config?: any } = {}
+  // cli-id-ok: 这里就是 Codex 适配器内部，取它自己的定义
   const def = CLIS.find((c) => c.id === 'codex')
   const rpc = RpcSpec.parse(def?.rpc ?? {})
   // 和任务执行共用同一条 RPC 会话引擎：握手、请求配对、超时和收尾都一样

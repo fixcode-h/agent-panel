@@ -4,7 +4,7 @@
  * 依赖升级从 package.json 的差异自动得出，最后附上下载说明。
  *
  * 提交说明的写法（见 AGENTS.md）：标题或正文里以「新功能：」「改进：」「修复：」「依赖：」开头的行各成一条，
- * 「标题 — 说明」会把标题加粗；一个提交里没有这些前缀时，用它的标题作为一条「改进与调整」。
+ * 「标题 — 说明」会把标题加粗；一个提交里没有这些前缀时，用它的标题作为一条「改进与调整」；「内部：」开头的行和标题不进说明。
  *
  * 用法：node scripts/release-notes.mjs <版本号> <main|dev> [上一个标签]
  */
@@ -43,6 +43,11 @@ for (const c of commits) {
   const lines = c.split('\n').map((l) => l.replace(/^\s*[-*]\s*/, '').trim())
   let found = false
   for (const l of lines) {
+    // 「内部：」是开发文档、测试这类用户感受不到的改动，不进更新说明
+    if (/^内部\s*[:：]/.test(l)) {
+      found = true
+      continue
+    }
     const m = l.match(/^(新功能|改进|调整|修复|依赖)\s*[:：]\s*(.+)$/)
     if (!m) continue
     sections[KINDS[m[1]]].push(item(m[2]))
