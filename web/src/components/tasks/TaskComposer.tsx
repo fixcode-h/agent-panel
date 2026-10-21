@@ -259,9 +259,11 @@ export function TaskComposer({
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             {workflow ? (
-              <span className={cn(chip, 'cursor-default gap-1.5')} title={t('按这个工作流的流程图执行')}>
+              <span
+                className={cn(chip, 'cursor-default')}
+                title={t('按工作流「{name}」的流程图执行', { name: workflow.name })}
+              >
                 <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
-                <span className="truncate">{workflow.name}</span>
                 <button
                   type="button"
                   onClick={() => setWorkflowId('')}

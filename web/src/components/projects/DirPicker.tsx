@@ -247,6 +247,18 @@ export function refreshDirInfo() {
   for (const f of dirListeners) f()
 }
 
+// 分支也可能在面板外面改（编辑器、命令行里切分支）：页面重新出现或窗口获得焦点时重读一次，
+// 否则目录信息一直停在缓存里的旧分支上
+if (typeof window !== 'undefined') {
+  const wake = () => {
+    if (document.hidden) return
+    dirCache.clear()
+    refreshDirInfo()
+  }
+  window.addEventListener('focus', wake)
+  document.addEventListener('visibilitychange', wake)
+}
+
 /**
  * 检测路径：停止输入 400ms 后请求一次。
  * 返回 undefined 表示还在检查（不要当成「目录不存在」），null 表示没有路径或检查失败；

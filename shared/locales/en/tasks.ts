@@ -28,12 +28,12 @@ export const EN_TASKS: Record<string, string> = {
   '在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。':
     'The live demo has no real project folder. Run it locally to view files here.',
   // 任务页右栏的文件系统
+  文件视图: 'File view',
   没有分支: 'No branch',
   刷新文件: 'Refresh files',
-  改动过的文件: 'Changed files',
-  没有改动: 'No changes',
+  改动: 'Changes',
   '改动 {n} 个文件': '{n} files changed',
-  只看改动: 'Changed only',
+  '按工作流「{name}」的流程图执行': 'Runs along the flow of workflow "{name}"',
 
   // 附件
   '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
@@ -129,7 +129,6 @@ export const EN_TASKS: Record<string, string> = {
   '选了工作流就按它的流程图执行；不选时直接和 Agent 对话。':
     'With a workflow selected, it runs along that workflow’s flow; without one you chat with the Agent directly.',
   '描述要做的事，Agent 会按工作流分工完成': 'Describe what to do and the Agents will split it up by the workflow',
-  按这个工作流的流程图执行: 'Runs along this workflow’s flow',
   改回直接对话: 'Back to a direct chat',
   '对话用的 CLI': 'CLI to chat with',
   '没有可用的 CLI': 'No CLI available',
