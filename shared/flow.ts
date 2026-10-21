@@ -249,18 +249,11 @@ export const inRun = (id: string, run: number) => (run > 1 ? id.startsWith(runPr
 export const currentRun = (task: { runSeq?: number }) => Math.max(1, task.runSeq ?? 0)
 
 /**
- * 这个流程执行时要不要主 Agent 调度：工作流打开了调度、选了主 Agent，并且流程里有事可调度
- * （有子 Agent 的节点、调用流程的节点，或者不止一个节点）。只有一个主 Agent 自己做的节点时不需要，
- * 免得「默认」这类单节点工作流多花两轮
+ * 工作流不再有常驻的编排器（@main）：节点按连线并发执行，验收结论决定条件分支。
+ * 函数保留是为了读旧任务——旧任务里可能还挂着 @main 步骤，界面和迁移要靠它认出来。
  */
-export function dispatches(w: Pick<Workflow, 'dispatch' | 'mainAgentId'>, f: Flow) {
-  if (w.dispatch === false || !w.mainAgentId) return false
-  const live = reachable(f)
-  const nodes = f.nodes.filter((n) => live.has(n.id))
-  return (
-    nodes.length > 1 ||
-    nodes.some((n) => nodeSteps(n).some((s) => s.kind === 'flow' || nodeAgent(w, s.agentId) !== w.mainAgentId))
-  )
+export function dispatches(_w: Pick<Workflow, 'dispatch' | 'mainAgentId'>, _f: Flow) {
+  return false
 }
 
 /** 引用的流程：同工作流的子流程，或另一个工作流的主流程 */

@@ -141,7 +141,17 @@ export const EN_APP: Record<string, string> = {
   '使用分类默认：{name}': 'Category default: {name}',
   '未选择，将使用「{name}」': 'Not selected; "{name}" will be used',
   请选择工作流: 'Choose a workflow',
-  '这个项目的对话按哪套流程走（必选）': 'Which flow conversations in this project follow (required)',
+  '默认对话 Agent': 'Default chat Agent',
+  '项目设置的默认对话 Agent': 'The project default chat Agent',
+  '无（直接用 CLI，不注入 Agent 角色）': 'None (use the CLI directly, no Agent role)',
+  '在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。':
+    'Used by default for new conversations in this project. Agents allowed to create sub-conversations will dispatch requests to them; capabilities are toggled in Agent settings.',
+  子对话工作流: 'Sub-conversation workflows',
+  '子对话默认工作流（必选）': 'Default workflow for sub-conversations (required)',
+  可选工作流: 'Optional workflows',
+  '子对话默认用上面的工作流；需求更适合下面某个工作流时，Agent 会优先用它。':
+    'Sub-conversations use the workflow above by default; when a request fits another workflow below better, the Agent prefers it.',
+  还没有其他工作流: 'No other workflows yet',
   'AI 分析这个目录': 'Analyze this folder',
   '只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单':
     'Read-only scan: infers the stack, build and test commands from the files and fills in the form below',

@@ -83,6 +83,8 @@ export function AgentsPage() {
         extraArgs: [],
         enabled: true,
         common: false,
+        canDelegate: false,
+        canPlan: false,
         includes: [],
         params: [],
         skills: [],

@@ -81,6 +81,8 @@ const base = (
     extraArgs: [],
     enabled: true,
     common: false,
+    canDelegate: false,
+    canPlan: false,
     ...agent,
   },
 })
@@ -446,12 +448,47 @@ ${VCS_TEXT}
 不认领、不提交用户原有的改动。输出：{{#if docs}}改了哪些文档，{{/if}}提交 / pending 清单和验证结果。`,
   }),
 
-  // ── 项目编排 ──
+  // ── 项目对话 ──
   base('orchestrator', '项目', {
-    name: '工作流 Agent',
-    description: '常驻的项目编排器：决定什么时候按流程图跑一次，管住文档格式、测试流程和版本管理的一致性',
+    name: '项目协调 Agent',
+    description: '项目对话的入口：判断用户的每条消息该交给哪个子对话，没有合适的就新建一个',
     icon: 'workflow',
     model: '@high',
+    canDelegate: true,
+    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}'],
+    params: [
+      VCS,
+      p({
+        key: 'docRoot',
+        label: '文档根',
+        type: 'text',
+        default: '',
+        description: '项目文档放在哪；留空按 project-documentation 的规则自己确定',
+      }),
+    ],
+    instructions: `你是这个项目对话的协调者。你不亲自做具体的开发任务，负责把用户的消息分配到合适的子对话。
+
+${VCS_TEXT}
+
+## 怎么处理每条消息
+1. 先看现有子对话的标题、状态和最近结果，判断这条消息和它们的关联强度。
+2. 明确相关：用 send_to_conversation 把消息交给最合适的那个子对话，写清楚和原任务的关系。
+3. 现有子对话都不相关，而且需求需要修改代码或者做较大的研究：用 create_conversation 新建子对话，标题写清任务，message 写完整的需求、背景和验收标准。
+4. 一般问题、讨论、查询或很小的请求：自己直接回答或处理，不要新建子对话。
+5. 同一条消息只交给一个子对话，不要广播。子对话不能再创建子对话。
+
+## 你要守住的一致
+- 文档：格式和存放位置按 project-documentation 的规则；子对话的交付要留下该更新的模块文档。{{#if docRoot}}这个项目的文档根是 {{docRoot}}。{{/if}}
+- 版本管理：按 project-workflow 的规则，本地提交 / pending 由子对话完成；推送、PR、submit 这类操作要用户明确授权。
+- 用户后续的消息也要重新判断关联，不要默认继续上一次的子对话。
+- 向用户说明你把消息分到了哪里、为什么；没有分派就直接回答。`,
+  }),
+  base('worker', '项目', {
+    name: '任务 Agent',
+    description: '子对话的执行者：判断直接执行还是按工作流做计划，只负责当前任务，不再分派子对话',
+    icon: 'code',
+    model: '@high',
+    canPlan: true,
     skills: ['project-workflow', 'project-documentation', '{{projectStructure}}', 'project-testing'],
     params: [
       VCS,
@@ -463,16 +500,21 @@ ${VCS_TEXT}
         description: '项目文档放在哪；留空按 project-documentation 的规则自己确定',
       }),
     ],
-    instructions: `你是这个项目的常驻编排器。这个对话从一开始到结束都由你负责，按流程图指挥各个节点做事。
+    instructions: `你是项目里一个子对话的执行者，只负责当前这个任务。
 
 ${VCS_TEXT}
 
-## 你要守住的一致
-- 每个节点交回结果时先评估：对照节点要做的事、需求，以及下面这些规矩，不合适的退回并写清改什么。
-- 文档：格式和存放位置按 project-documentation 的规则，入口、模块文档、bugs.md 该更新的时候必须更新。{{#if docRoot}}这个项目的文档根是 {{docRoot}}。{{/if}}
-- 测试：按 project-testing 的规则决定跑什么、怎么留证据；没有本轮新鲜证据的改动不算完成。
-- 版本管理：按 project-workflow 和对应专项的规则做，本地提交 / pending 收尾保持一致；推送、submits 这类操作要先得到授权。
-- 用户的追加要求由你判断：要按流程重做就起一次新的运行，只是问问题就直接答。`,
+## 怎么执行
+- 先判断任务：问题解答、分析、排查、小改动直接在对话里做完，给出有依据的结果。
+- 需要完整流程、跨模块改动、正式的功能或 Bug 修复、较大的研究：用 start_plan 启动工作流，让它按流程图执行；可以在 input 里写清目标、范围、验收标准。
+- 项目的默认工作流不一定最合适：提示里列出了可选工作流，选更合适的那个；只是日常小改动就用默认的。
+- 启动计划后等它跑完，再把结果整理给用户，写清楚改了什么、验证结果和遗留问题。
+- 你没有创建子对话的能力，也不要假装分派给别的对话；需要用户决定的事直接问。
+
+## 规范
+- 文档按 project-documentation 的规则更新入口、模块 README 和 bugs.md。{{#if docRoot}}这个项目的文档根是 {{docRoot}}。{{/if}}
+- 测试按 project-testing 的规则跑，没有本轮新鲜证据不说完成。
+- 版本管理按 project-workflow：只做本地提交 / pending；推送、PR、submit 要用户明确授权。`,
   }),
   base('docsync', '项目', {
     name: '文档同步',

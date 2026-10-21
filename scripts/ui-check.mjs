@@ -128,10 +128,16 @@ try {
   }
   if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
-  // 工作流任务：任务进度是主 Agent → 节点 → 子 Agent 的层级，窄窗口里从标题栏点开
+  // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
   await p.getByRole('button', { name: '任务进度' }).click()
-  await check(p, '任务-主Agent调度', ['主 Agent', '调度', '子 Agent · 单元测试'])
+  // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
+  await p
+    .getByText('子 Agent · 单元测试', { exact: false })
+    .first()
+    .waitFor({ timeout: 30000 })
+    .catch(() => {})
+  await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子 Agent · 单元测试'])
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])
   // 内置工作流：添加后连同 Agent 一起建好，直接打开

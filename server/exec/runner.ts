@@ -1,16 +1,17 @@
 import { existsSync } from 'node:fs'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
-import type {
-  Agent,
-  AgentUsage,
-  CliStatus,
-  Project,
-  Settings,
-  Task,
-  TaskMessage,
-  ToolUse,
-  Workflow,
+import {
+  defaultAgent,
+  type Agent,
+  type AgentUsage,
+  type CliStatus,
+  type Project,
+  type Settings,
+  type Task,
+  type TaskMessage,
+  type ToolUse,
+  type Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
@@ -77,6 +78,12 @@ export interface RealContext {
   prewarm?: boolean
   prewarmFrom?: Task['status']
   prewarmTurnDoneAt?: string
+  /** 对话 Agent 启动计划、分派子对话用的项目数据（见 EngineHost） */
+  workflowCatalog?: EngineHost['workflowCatalog']
+  resolveWorkflow?: EngineHost['resolveWorkflow']
+  listConversations?: EngineHost['listConversations']
+  createConversation?: EngineHost['createConversation']
+  sendToConversation?: EngineHost['sendToConversation']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -439,7 +446,10 @@ async function runAgent(
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
-  const found = ctx.agents.find((a) => a.id === agentId)
+  // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
+  const found = agentId
+    ? ctx.agents.find((a) => a.id === agentId)
+    : { ...defaultAgent(), id: '', name: '', description: '' }
   if (!found) return { ok: false, error: t('找不到执行这一步的 Agent，可能已被删除') }
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
@@ -1320,6 +1330,11 @@ export async function runRealTurn(ctx: RealContext) {
     prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
     changed: ctx.changed,
     newId: ctx.newId,
+    workflowCatalog: ctx.workflowCatalog,
+    resolveWorkflow: ctx.resolveWorkflow,
+    listConversations: ctx.listConversations,
+    createConversation: ctx.createConversation,
+    sendToConversation: ctx.sendToConversation,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {

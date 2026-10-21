@@ -249,6 +249,10 @@ export const api = {
   allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
+  taskChildren: (id: string) =>
+    request<{ id: string; title: string; status: Task['status']; summary: string; working: boolean; updatedAt: string }[]>(
+      `/tasks/${id}/children`,
+    ),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
   importTask: (projectId: string, bundle: unknown) =>
@@ -334,6 +338,8 @@ export const api = {
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
     request<Task>(`/tasks/${id}`, json('PATCH', run)),
+  /** 换对话的 Agent；空字符串表示不用 Agent 角色 */
+  setTaskAgent: (id: string, agentId: string) => request<Task>(`/tasks/${id}`, json('PATCH', { agentId })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),

@@ -1,23 +1,11 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import {
-  ArrowUp,
-  Check,
-  ChevronDown,
-  FolderGit2,
-  GitBranch,
-  MessageSquare,
-  Workflow as WorkflowIcon,
-} from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Attachment, type Project, type Task, type TaskMode } from '@shared/schema'
+import { ArrowUp, Check, ChevronDown, FolderGit2, GitBranch } from 'lucide-react'
+import { DEFAULT_AGENT_ID, type Attachment, type Project, type Task } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
-import { projectDefaultWorkflow } from '@shared/project-workflow'
-import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { isReady, workflowChecks } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
-import { defaultCli, defaultSettings } from '@shared/settings'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
@@ -57,7 +45,7 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { workflows, agents, clis, projects, projectCategories, tasks, loading, settings } = useData()
+  const { agents, projects, tasks, loading } = useData()
   const [projectId, setProjectId] = useState(() => {
     try {
       return fixed?.id ?? localStorage.getItem('last-project') ?? ''
@@ -66,9 +54,10 @@ export function TaskComposer({
     }
   })
   const project = standalone ? undefined : (fixed ?? projects.find((p) => p.id === projectId) ?? projects[0])
-  const defaultWf = projectDefaultWorkflow(project, projectCategories, workflows)
-  const [mode, setMode] = useState<TaskMode | ''>('')
-  const [workflowId, setWorkflowId] = useState('')
+  // 项目里新建的对话默认用项目设置的 Agent；没有设置时不用角色，直接跟随 CLI
+  const agentId = standalone ? DEFAULT_AGENT_ID : (project?.defaultAgentId ?? '')
+  const agent = agents.find((a) => a.id === agentId)
+  const byCli = !agentId || agentId === DEFAULT_AGENT_ID
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
@@ -114,10 +103,9 @@ export function TaskComposer({
   /** 图片卡片显示小缩略图 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
   const drop = useDropPaste(addFiles)
-  // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
-  const isChat = standalone || mode === 'chat'
+  // 「/」菜单：按对话实际用的 CLI 列
   const slash = useSlashMenu({
-    cli: isChat ? chatRun.cli : defaultCli(settings ?? defaultSettings()),
+    cli: chatRun.cli,
     projectId: project?.id,
     scope: 'new',
     setText: setPrompt,
@@ -129,16 +117,10 @@ export function TaskComposer({
   const canIsolate = !!project && !!dir?.gitBranch
   const busyProject = !!project && tasks.some((x) => x.projectId === project.id && x.working)
 
-  // 项目默认走「通用项目」：主 Agent 是工作流 Agent，先分析再按流程图执行
-  const workflow = workflows.find((w) => w.id === (workflowId || defaultWf?.id)) ?? defaultWf
-  // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
-  const effMode: TaskMode = standalone ? 'chat' : mode || 'workflow'
-  const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0
-  const notReady = effMode === 'workflow' && workflow && !isReady(workflowChecks(workflow, agents, clis, workflows))
   const canStart =
     (standalone || !!project) &&
     (!!prompt.trim() || files.attachments.length > 0) &&
-    (effMode === 'workflow' ? !!workflow : !!chatRun.cli) &&
+    (byCli ? !!chatRun.cli : !!agent) &&
     !busy &&
     !files.uploading
 
@@ -152,12 +134,12 @@ export function TaskComposer({
       onCreated(
         await api.createTask({
           projectId: project?.id ?? '',
-          mode: effMode,
-          workflowId: effMode === 'workflow' ? workflow!.id : '',
-          agentId: effMode === 'chat' ? DEFAULT_AGENT_ID : '',
-          cli: effMode === 'chat' ? chatRun.cli : '',
-          model: effMode === 'chat' ? chatRun.model : '',
-          effort: effMode === 'chat' ? chatRun.effort : '',
+          mode: 'chat',
+          workflowId: '',
+          agentId,
+          cli: byCli ? chatRun.cli : '',
+          model: byCli ? chatRun.model : '',
+          effort: byCli ? chatRun.effort : '',
           params: {},
           prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
@@ -209,9 +191,7 @@ export function TaskComposer({
           }}
           onPaste={drop.onPaste}
           preview={preview}
-          placeholder={
-            effMode === 'workflow' ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')
-          }
+          placeholder={t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
         />
@@ -232,69 +212,12 @@ export function TaskComposer({
               onSession={addReady}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
-            {!standalone && (
-              <div
-                role="radiogroup"
-                aria-label={t('选择执行方式')}
-                className="flex items-center rounded-lg bg-field/60 p-0.5"
-              >
-                {(
-                  [
-                    { id: 'workflow', label: t('工作流'), icon: WorkflowIcon },
-                    { id: 'chat', label: t('对话'), icon: MessageSquare },
-                  ] as const
-                ).map((m) => (
-                  <button
-                    key={m.id}
-                    role="radio"
-                    aria-checked={effMode === m.id}
-                    onClick={() => setMode(m.id)}
-                    className={cn(
-                      'inline-flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-[0.8125rem] transition-colors',
-                      effMode === m.id ? 'bg-card text-fg shadow-card' : 'text-subtle hover:text-fg',
-                    )}
-                  >
-                    <m.icon className="h-3.5 w-3.5" />
-                    {m.label}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {effMode === 'workflow' ? (
-              <Popover>
-                <PopoverTrigger className={chip} title={t('执行的工作流')}>
-                  <span className="truncate">{workflow?.name ?? t('选择工作流')}</span>
-                  {workflow && <span className="shrink-0 text-xs text-subtle">{t('{n} 个节点', { n: nodes })}</span>}
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                </PopoverTrigger>
-                <PopoverContent className="w-[280px]">
-                  <div className="max-h-72 overflow-y-auto">
-                    {workflows.map((w) => (
-                      <PopoverClose key={w.id} className={menuItem} onClick={() => setWorkflowId(w.id)}>
-                        <span
-                          title={isReady(workflowChecks(w, agents, clis, workflows)) ? t('就绪') : t('未就绪')}
-                          className={cn(
-                            'h-2 w-2 shrink-0 rounded-full',
-                            isReady(workflowChecks(w, agents, clis, workflows)) ? 'bg-success' : 'bg-warning',
-                          )}
-                        />
-                        <span className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate">{w.name}</span>
-                          <span className="truncate text-xs text-subtle">
-                            {w.id === defaultWf?.id ? t('项目默认 · ') : ''}
-                            {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
-                          </span>
-                        </span>
-                        {w.id === workflow?.id && <Check className="h-4 w-4 text-accent" />}
-                      </PopoverClose>
-                    ))}
-                    {workflows.length === 0 && <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有工作流')}</p>}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            ) : (
+            {byCli ? (
               <ChatModelPicker value={chat} onChange={setChat} />
+            ) : (
+              <span className={chip} title={agent?.description || t('项目设置的默认对话 Agent')}>
+                <span className="truncate">{agent?.name ?? t('已删除的 Agent')}</span>
+              </span>
             )}
 
             <button
@@ -357,11 +280,6 @@ export function TaskComposer({
       {busyProject && canIsolate && !isolate && (
         <p className="px-1 text-xs text-subtle">
           {t('这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。')}
-        </p>
-      )}
-      {notReady && (
-        <p className="px-1 text-xs text-warning">
-          {t('工作流还没就绪，执行可能会失败。可以先到工作流页面看看未通过的检查。')}
         </p>
       )}
     </div>

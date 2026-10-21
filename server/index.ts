@@ -67,7 +67,7 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
-import { migrateProjectsToGeneral, seedProjectWorkflows } from '../shared/builtin/install.ts'
+import { ensureProjectAgents, migrateProjectsToGeneral, seedProjectWorkflows } from '../shared/builtin/install.ts'
 import { analyzeProject } from './projects-analyze.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
@@ -133,6 +133,31 @@ async function ensureProjectWorkflows() {
   )
   if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
+  // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
+  const projectAgents = await ensureProjectAgents(
+    {
+      agents: await agents.list(),
+      categories: await categories.list(),
+      tags: await tags.list(),
+      workflows: await workflows.list(),
+    },
+    {
+      createAgent: (input) => agents.create(input),
+      createCategory: (name, scope) => categories.create({ name, scope }),
+      createTag: (input) => tags.create(input),
+      createWorkflow: (input) => workflows.create(input),
+      updateWorkflow: (id, input) => workflows.update(id, input),
+    },
+  )
+  if (projectAgents.created.length)
+    log.info('agent', '已安装项目对话 Agent', { list: projectAgents.created.map((a) => a.name) })
+  // 内置 Agent 的能力开关在升级后补上（本机已有的 Agent 不会被模板覆盖，只补能力）
+  for (const a of await agents.list()) {
+    if (a.origin === 'builtin:orchestrator' && !a.canDelegate)
+      await agents.update(a.id, { ...a, canDelegate: true })
+    if (a.origin === 'builtin:worker' && !a.canPlan) await agents.update(a.id, { ...a, canPlan: true })
+  }
+  const coordinator = (await agents.list()).find((a) => a.origin === 'builtin:orchestrator')
   const migrations = await migrateProjectsToGeneral(
     await projects.list(),
     await workflows.list(),
@@ -143,6 +168,16 @@ async function ensureProjectWorkflows() {
     if (p) await projects.update(m.id, { ...p, workflowId: m.workflowId })
   }
   if (migrations.length) log.info('project', '旧项目指向「通用项目」', { n: migrations.length })
+  // 升级前没有「默认对话 Agent」这个设置：自动指向协调 Agent；用户设过「无」的（agentSet）不再覆盖
+  if (coordinator) {
+    let n = 0
+    for (const p of await projects.list()) {
+      if (p.agentSet) continue
+      await projects.update(p.id, { ...p, defaultAgentId: coordinator.id, agentSet: true })
+      n++
+    }
+    if (n) log.info('project', '旧项目默认使用协调 Agent', { n })
+  }
 }
 void ensureProjectWorkflows().catch((e) => log.warn('project', `安装项目工作流失败：${(e as Error).message}`))
 
@@ -453,11 +488,22 @@ async function parseProject(body: unknown) {
   const p = ProjectInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
+  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId)))
+    return { error: t('默认对话 Agent 不存在') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   if (!p.data.workflowId) {
     const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
-    if (!cat?.workflowId) return { error: t('请为项目选择工作流，它决定对话按哪套流程走') }
+    if (!cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }
   }
+  const optional = [...new Set(p.data.workflowIds)].filter((id) => id && id !== p.data.workflowId)
+  for (const id of optional) if (!(await workflows.get(id))) return { error: t('可选工作流不存在') }
+  p.data.workflowIds = optional
+  const known = new Set([p.data.workflowId, ...optional])
+  p.data.workflowParams = Object.fromEntries(
+    Object.entries(p.data.workflowParams).filter(([id]) => known.has(id)),
+  )
+  // 请求里带了默认 Agent 字段就说明用户设置过：以后不再用升级迁移覆盖
+  if (body && typeof body === 'object' && 'defaultAgentId' in body) p.data.agentSet = true
   if (p.data.path) p.data.path = resolvePath(p.data.path)
   return { data: p.data }
 }

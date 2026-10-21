@@ -207,7 +207,6 @@ export const EN_FLOW: Record<string, string> = {
   '描述需求，让本机 CLI 生成工作流': 'Describe what you need and let a local CLI generate the workflow',
   'AI 创建': 'Create with AI',
   没有匹配的工作流: 'No matching workflows',
-  还没有工作流: 'No workflows yet',
   创建第一个工作流: 'Create your first workflow',
   '工作流把 Agent 组成团队：选一个主 Agent 负责推进，再加几个子 Agent，然后在流程图里编排执行顺序。':
     'A workflow organizes Agents into a team: pick a main Agent to drive the work, add a few sub-agents, then arrange the execution order in the flowchart.',

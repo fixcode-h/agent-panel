@@ -35,6 +35,9 @@ const blank: ProjectInput = {
   path: '',
   categoryId: '',
   workflowId: '',
+  workflowIds: [],
+  defaultAgentId: '',
+  agentSet: true,
   workflowParams: {},
   gitPolicy: 'ask',
 }
@@ -107,6 +110,19 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const general =
     workflows.find((w) => w.origin === 'builtin:project-general') ?? workflows.find((w) => w.name === GENERAL_NAME)
   const active = own ?? inherited ?? general
+  // 每个工作流一份配置：默认工作流和每个可选工作流各自保存
+  const paramsOf = (id: string) => draft.workflowParams[id] ?? {}
+  const setParam = (id: string, key: string, value: string | boolean) =>
+    setDraft((d) => ({
+      ...d,
+      workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), [key]: value } },
+    }))
+  const optionalWorkflows = draft.workflowIds
+    .map((id) => workflows.find((w) => w.id === id))
+    .filter((w): w is (typeof workflows)[number] => !!w)
+  const configurable = [active, ...optionalWorkflows]
+    .filter((w): w is (typeof workflows)[number] => !!w)
+    .filter((w, i, list) => list.findIndex((x) => x.id === w.id) === i)
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
   const { settings } = useData()
 
@@ -124,8 +140,15 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         ...d,
         name: d.name.trim() || r.name,
         description: r.description || d.description,
-        ...(wf ? { workflowId: wf.id } : {}),
-        workflowParams: { ...d.workflowParams, ...r.workflowParams },
+        ...(wf
+          ? {
+              workflowId: wf.id,
+              workflowParams: {
+                ...d.workflowParams,
+                [wf.id]: { ...(d.workflowParams[wf.id] ?? {}), ...r.workflowParams },
+              },
+            }
+          : {}),
       }))
       toast.success(
         wf
@@ -389,9 +412,28 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                 )}
               </FormSection>
 
-              <FormSection title={t('工作流')}>
+              <FormSection title={t('对话')}>
+                <Field label={t('默认对话 Agent')}>
+                  <Select
+                    value={draft.defaultAgentId}
+                    onChange={(e) => {
+                      set('defaultAgentId', e.target.value)
+                      set('agentSet', true)
+                    }}
+                    options={[
+                      { value: '', label: t('无（直接用 CLI，不注入 Agent 角色）') },
+                      ...agents.map((a) => ({ value: a.id, label: a.name })),
+                    ]}
+                  />
+                </Field>
+                <span className="text-xs text-subtle">
+                  {t('在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。')}
+                </span>
+              </FormSection>
+
+              <FormSection title={t('子对话工作流')}>
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted">{t('这个项目的对话按哪套流程走（必选）')}</span>
+                  <span className="text-xs text-muted">{t('子对话默认工作流（必选）')}</span>
                   <WorkflowPicker
                     value={draft.workflowId}
                     onChange={(id) => set('workflowId', id)}
@@ -427,22 +469,60 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                       t('项目没有分类，需要在这里单独指定工作流。')
                     )}
                   </span>
-                  {active && active.expose.length > 0 && (
-                    <div className="mt-3 flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
-                      <span className="text-xs text-muted">
-                        {t('「{name}」的配置，改完保存后对新开的对话生效', { name: active.name })}
-                      </span>
-                      {active.expose.map((e) => (
-                        <ExposeField
-                          key={e.key}
-                          e={e}
-                          value={draft.workflowParams[e.key] as string | boolean | undefined}
-                          onChange={(v) => set('workflowParams', { ...draft.workflowParams, [e.key]: v })}
-                        />
-                      ))}
-                    </div>
-                  )}
                 </div>
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('可选工作流')}</span>
+                  <span className="text-xs text-subtle">
+                    {t('子对话默认用上面的工作流；需求更适合下面某个工作流时，Agent 会优先用它。')}
+                  </span>
+                  <div className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-lg border bg-field/40 p-2">
+                    {workflows.filter((w) => w.id !== draft.workflowId).length === 0 && (
+                      <span className="px-1 py-0.5 text-xs text-subtle">{t('还没有其他工作流')}</span>
+                    )}
+                    {workflows
+                      .filter((w) => w.id !== draft.workflowId)
+                      .map((w) => (
+                        <label key={w.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-[0.8125rem] hover:bg-sel/60">
+                          <input
+                            type="checkbox"
+                            className="accent-accent"
+                            checked={draft.workflowIds.includes(w.id)}
+                            onChange={(e) =>
+                              set(
+                                'workflowIds',
+                                e.target.checked
+                                  ? [...draft.workflowIds, w.id]
+                                  : draft.workflowIds.filter((id) => id !== w.id),
+                              )
+                            }
+                          />
+                          <span className="min-w-0 flex-1 truncate">{w.name}</span>
+                          {w.description && <span className="max-w-[45%] truncate text-xs text-subtle">{w.description}</span>}
+                        </label>
+                      ))}
+                  </div>
+                </div>
+                {configurable.some((w) => w.expose.length > 0) && (
+                  <div className="flex flex-col gap-3">
+                    {configurable
+                      .filter((w) => w.expose.length > 0)
+                      .map((w) => (
+                        <div key={w.id} className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
+                          <span className="text-xs text-muted">
+                            {t('「{name}」的配置，改完保存后对新开的对话生效', { name: w.name })}
+                          </span>
+                          {w.expose.map((e) => (
+                            <ExposeField
+                              key={e.key}
+                              e={e}
+                              value={paramsOf(w.id)[e.key] as string | boolean | undefined}
+                              onChange={(v) => setParam(w.id, e.key, v)}
+                            />
+                          ))}
+                        </div>
+                      ))}
+                  </div>
+                )}
               </FormSection>
 
               <FormSection title={t('版本与推送')}>
