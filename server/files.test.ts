@@ -101,8 +101,7 @@ const OUTSIDE = [
 
 test('列目录拒绝各种绝对路径和越权路径', async () => {
   const dir = project()
-  for (const [label, bad] of OUTSIDE)
-    await assert.rejects(() => listLevel(dir, bad), /只能查看项目目录里的文件/, label)
+  for (const [label, bad] of OUTSIDE) await assert.rejects(() => listLevel(dir, bad), /只能查看项目目录里的文件/, label)
 })
 
 test('在系统里打开时同样拒绝绝对路径和越权路径', async () => {

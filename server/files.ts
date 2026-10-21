@@ -174,8 +174,7 @@ const hidden = (name: string) => name.startsWith('.') && name !== '.github'
  * 绝对路径的各种写法：POSIX 的 /x、Windows 的 C:\x 与 C:/x、UNC 的 \\server\share。
  * 跨平台都要认：Linux 上 path.isAbsolute('C:/x') 是 false，只靠它挡不住。
  */
-const absoluteLike = (p: string) =>
-  path.isAbsolute(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]{2}/.test(p)
+const absoluteLike = (p: string) => path.isAbsolute(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]{2}/.test(p)
 
 /**
  * 相对路径落在这个目录里才接受。
@@ -187,8 +186,7 @@ function into(dir: string, rel: string) {
   const full = path.resolve(dir, rel)
   const r = path.relative(dir, full)
   // 只有真正的上级目录才算越界；..foo 这种名字是项目里的普通文件
-  if (r === '..' || r.startsWith(`..${path.sep}`) || path.isAbsolute(r))
-    throw new Error(t('只能查看项目目录里的文件'))
+  if (r === '..' || r.startsWith(`..${path.sep}`) || path.isAbsolute(r)) throw new Error(t('只能查看项目目录里的文件'))
   return full
 }
 
