@@ -173,9 +173,11 @@ export const sameApi = (a: Pick<ApiConfig, 'baseUrl' | 'apiKey'>, b: typeof a) =
  * 清理时也不要求密钥对得上——环境变量早就不传了，那个值已经不是能用的密钥。
  */
 export const LEGACY_PANEL_KEY = 'AGENT_PANEL_API_KEY'
+/** 配置里的值是 $NAME、${NAME} 或 NAME 时取出名字 */
+const KEY_REF = /^\$?\{?(\w+)\}?$/
 export function isLegacyPanelKey(v: unknown) {
   if (typeof v !== 'string') return false
-  return v.trim().replace(/^\$?\{?/, '').replace(/\}$/, '') === LEGACY_PANEL_KEY
+  return KEY_REF.exec(v.trim())?.[1] === LEGACY_PANEL_KEY
 }
 
 /**
