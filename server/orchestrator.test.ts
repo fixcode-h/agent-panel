@@ -153,7 +153,10 @@ test('常驻编排器：第一条要求只是问问题就不起运行', async ()
     id: 't4',
   } as Task
   const log: AgentCall[] = []
-  const h = host(task, log, ['这个项目用的是 TypeScript。\n```dispatch\n{"action":"answer"}\n```'])
+  const h = host(task, log, [
+    '这个项目用的是 TypeScript。\n```dispatch\n{"action":"answer"}\n```',
+    '```dispatch\n{"action":"run","input":"实现登录"}\n```',
+  ])
   h.prompt = '这个项目用什么语言'
   await runEngineTurn(h)
   assert.equal(currentRun(task), 1, '没有起运行')
@@ -164,4 +167,16 @@ test('常驻编排器：第一条要求只是问问题就不起运行', async ()
   assert.match(mainStep(task)!.output, /TypeScript/)
   assert.equal(log.filter((c) => c.dispatching === 'plan').length, 1)
   assert.ok(!log.some((c) => c.step && c.step.kind !== 'main'), '没有执行流程节点')
+
+  // 回答之后用户再提要做的事：仍然先交给编排器，但不再是「第一条要求」
+  h.prompt = '实现登录'
+  await runEngineTurn(h)
+  const plans = log.filter((c) => c.dispatching === 'plan')
+  assert.equal(plans.length, 2)
+  assert.match(plans[1].prompt, /用户的新要求/)
+  assert.doesNotMatch(plans[1].prompt, /第一条要求/)
+  assert.ok(
+    topSteps(task).some((s) => s.status === 'done'),
+    '起了一次运行并按流程执行',
+  )
 })
