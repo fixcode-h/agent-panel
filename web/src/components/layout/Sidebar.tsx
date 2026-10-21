@@ -31,6 +31,7 @@ import {
   Sun,
   Workflow,
   X,
+  GripVertical,
   type LucideIcon,
 } from 'lucide-react'
 import type { Project, Task } from '@shared/schema'
@@ -57,7 +58,9 @@ import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { askedAt, byAskedAt } from '@shared/task'
+import { byAskedAt } from '@shared/task'
+import { moveItem, useDragSort } from '@/lib/useDragSort'
+import { sortProjects } from '@shared/project-order'
 
 export function Logo({ className }: { className?: string }) {
   return (
@@ -306,7 +309,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   else lastAgentRoute = route
   useEscape(mobileOpen, () => setMobileOpen(false))
 
-  // 按项目分组，用户最近发过消息的项目排在前面；组内按用户最近发消息的时间
+  // 按项目分组：项目分组只按添加时间（或拖拽后的顺序）排，不受任务时间、执行状态影响；组内任务仍按最近发言排
   const [folded, toggleFolded, setFolded] = useFolded()
   const [more, setMore] = useState<Set<string>>(new Set())
   const [query, setQuery] = useState('')
@@ -319,14 +322,25 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const recent = projectTasks.filter((t) => !t.archived).sort(byAskedAt)
   const byProject = new Map<string, Task[]>()
   for (const t of recent) byProject.set(t.projectId, [...(byProject.get(t.projectId) ?? []), t])
-  // 所有项目都列出来（还没有对话的也在），最近有动静的排前面
-  const last = (p: { id: string; updatedAt: string }) => {
-    const first = byProject.get(p.id)?.[0]
-    return first ? askedAt(first) : p.updatedAt
+  // 所有项目都列出来（还没有对话的也在），顺序只看添加时间或用户拖出来的顺序
+  const ordered = sortProjects(projects)
+  const groups: [string, Task[]][] = ordered.map((p) => [p.id, byProject.get(p.id) ?? []])
+  // 拖拽排序：立刻生效，再写回服务端；失败时换回原来的顺序并提示
+  const saveOrder = async (next: Project[]) => {
+    const before = projects
+    setProjects(next)
+    try {
+      const saved = await api.orderProjects(next.map((p) => p.id))
+      setProjects(saved)
+    } catch (e) {
+      setProjects(before)
+      toast.error(t('保存项目顺序失败：{msg}', { msg: (e as Error).message }))
+    }
   }
-  const groups: [string, Task[]][] = [...projects]
-    .sort((a, b) => last(b).localeCompare(last(a)))
-    .map((p) => [p.id, byProject.get(p.id) ?? []])
+  const sort = useDragSort((from, to) => {
+    const next = moveItem(ordered, from, to)
+    if (next !== ordered) void saveOrder(next)
+  })
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? t('已删除的项目')
   const allOpen = !folded.has(ALL)
   // 右键菜单里的重命名就地改名，删除先确认
@@ -543,7 +557,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
             </p>
           )}
           {allOpen &&
-            groups.map(([pid, ts]) => {
+            groups.map(([pid, ts], gi) => {
               const open = !folded.has(pid)
               const running = ts.filter((t) => t.working).length
               // 收起「更多」时也要露出正在看的那个任务
@@ -552,8 +566,25 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                 : ts.filter((t, i) => i < PER_PROJECT || (route.page === 'projects' && route.sub === t.id))
               const onProject = route.page === 'projects' && route.id === pid && !route.sub
               const p = projects.find((x) => x.id === pid)!
+              const dragging = sort.drag === gi
+              // 拖拽只从手柄开始，分组本身只当放置目标：点展开、打开、右键都不会误触拖拽
+              const handle = sort.itemProps(gi, groups.length)
               return (
-                <section key={pid} className="mb-2">
+                <section
+                  key={pid}
+                  onDragOver={handle.onDragOver}
+                  onDrop={handle.onDrop}
+                  className={cn('relative mb-2 rounded-lg', dragging && 'opacity-40')}
+                >
+                  {sort.drag !== null && sort.over === gi && sort.drag !== gi && (
+                    <div
+                      aria-hidden
+                      className={cn(
+                        'pointer-events-none absolute inset-x-0 z-10 h-0.5 rounded-full bg-accent',
+                        sort.drag < gi ? '-bottom-1' : '-top-1',
+                      )}
+                    />
+                  )}
                   <ContextMenu>
                     <ContextMenuTrigger asChild>
                       <div
@@ -622,6 +653,23 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                             </span>
                           )
                         )}
+                        <span
+                          {...handle}
+                          tabIndex={0}
+                          role="button"
+                          aria-label={t('拖动调整「{name}」的顺序', { name: projectName(pid) })}
+                          title={t('拖动调整顺序（也可以按 Alt + ↑ / ↓）')}
+                          // 手柄放在行尾，原有对齐不变；只负责拖拽，按下不会展开或打开项目，右键也不弹项目菜单
+                          onClick={(e) => e.preventDefault()}
+                          onContextMenu={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') e.preventDefault()
+                            handle.onKeyDown(e)
+                          }}
+                          className="grid h-6 w-4 shrink-0 cursor-grab place-items-center rounded text-subtle opacity-0 group-hover/proj:opacity-60 hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none active:cursor-grabbing"
+                        >
+                          <GripVertical className="h-3.5 w-3.5" />
+                        </span>
                         <button
                           onClick={() => go({ page: 'projects', id: pid })}
                           aria-label={t('在「{name}」新建对话', { name: projectName(pid) })}

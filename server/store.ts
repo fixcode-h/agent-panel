@@ -179,3 +179,7 @@ export function createCollection<I extends object, T extends I & Entity>(
     },
   }
 }
+    /** 整体替换：重排这类操作要一次写成，不会出现只改了一半的顺序 */
+    async setAll(items: T[]) {
+      await persist(items)
+    },

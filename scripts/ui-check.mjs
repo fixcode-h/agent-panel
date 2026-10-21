@@ -537,3 +537,74 @@ if (errors.length) {
 }
 console.log(`\n界面检查通过，截图在 ui-shots/`)
 assert.ok(n > 0)
+  // 侧栏项目分组：默认按添加时间排（演示项目的时间各不相同），拖拽手柄能调整顺序并持久化，刷新后还是新顺序
+  const projectRows = () =>
+    p
+      .locator('[data-sidebar] section button[title^="打开项目「"]')
+      .evaluateAll((els) => els.map((e) => (e.getAttribute('title') ?? '').match(/「(.+?)」/)?.[1] ?? ''))
+  await p.goto(base + '#/projects')
+  const order0 = await projectRows()
+  assert.deepEqual(
+    order0.slice(0, 4),
+    ['商城前台', '运营后台', '客户端主工程', '旧官网'],
+    `侧栏项目没有按添加时间排序：${order0.join('、')}`,
+  )
+  await check(p, '侧栏-项目按添加时间', ['商城前台', '运营后台'])
+  // 拖住「运营后台」的手柄，放到「商城前台」上：出现插入提示
+  const orderGrip = p.getByRole('button', { name: '拖动调整「运营后台」的顺序' })
+  const target = (await p.locator('[data-sidebar] section').nth(0).boundingBox()) ?? null
+  if (!(await orderGrip.count()) || !target) errors.push('侧栏-拖拽：没有拖拽手柄')
+  else {
+    // 无头浏览器的鼠标拖不出 HTML5 拖放，用脚本发拖放事件（和 UI 设计拖图片的写法一样）
+    await p.evaluate(() => {
+      window.__dt = new DataTransfer()
+      const handle = document.querySelector('[aria-label="拖动调整「运营后台」的顺序"]')
+      handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__dt }))
+    })
+    await p.waitForTimeout(150)
+    await p.evaluate(() => {
+      const section = document.querySelectorAll('[data-sidebar] section')[0]
+      const r = section.getBoundingClientRect()
+      section.dispatchEvent(
+        new DragEvent('dragover', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: window.__dt,
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        }),
+      )
+    })
+    await p.waitForTimeout(150)
+    await check(p, '侧栏-拖拽插入提示')
+    await p.evaluate(() => {
+      const section = document.querySelectorAll('[data-sidebar] section')[0]
+      const r = section.getBoundingClientRect()
+      section.dispatchEvent(
+        new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: window.__dt,
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        }),
+      )
+      document
+        .querySelector('[aria-label="拖动调整「运营后台」的顺序"]')
+        .dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt }))
+    })
+    await p.waitForTimeout(400)
+    const order1 = await projectRows()
+    assert.deepEqual(order1.slice(0, 2), ['运营后台', '商城前台'], `拖拽后顺序不对：${order1.join('、')}`)
+    await check(p, '侧栏-拖拽后顺序', ['运营后台', '商城前台'])
+    // 刷新后仍是新顺序（演示版把顺序存在浏览器里，等价于真实服务端写盘）
+    const saved = await p.evaluate(() => JSON.parse(localStorage.getItem('agent-panel-demo-v3') ?? '{}'))
+    assert.ok(
+      saved.projects?.every((x) => typeof x.sortOrder === 'number'),
+      '拖拽后没有把顺序存下来',
+    )
+    await p.reload()
+    await p.waitForTimeout(600)
+    assert.deepEqual((await projectRows()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
+    await check(p, '侧栏-刷新后顺序', ['运营后台', '商城前台'])
+  }

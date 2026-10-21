@@ -4303,3 +4303,67 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
 } finally {
   stop()
 }
+  // 项目分组顺序：默认按添加时间，拖拽后的顺序存进数据文件，重新读出来（刷新、重启）还在
+  {
+    const names = ['排序A', '排序B', '排序C']
+    const created = []
+    for (const name of names) {
+      // 添加时间只有毫秒精度，逐个创建时中间间隔一下，保证顺序确定
+      await sleep(20)
+      created.push(
+        await call('POST', '/projects', { name, description: '', path: '', categoryId: '', workflowId: wf.id }),
+      )
+    }
+    const listOf = async () => (await call('GET', '/projects')).map((p) => p.id)
+    const order = (await listOf()).filter((id) => created.some((p) => p.id === id))
+    assert.deepEqual(
+      order,
+      created.map((p) => p.id),
+      '默认按添加时间排序，先添加的在前',
+    )
+
+    // 重排：拖拽后整个顺序写回，服务端重新编号 1、2、3…
+    const all = await listOf()
+    const moved = [created[2].id, ...all.filter((id) => id !== created[2].id)]
+    const sorted = await call('PUT', '/projects/order', moved)
+    assert.deepEqual(
+      sorted.map((p) => p.id),
+      moved,
+      '按请求的顺序返回',
+    )
+    // 服务端把全部项目从 1 连续编号；这里只看这三个项目的相对顺序和编号是否连续
+    const mine = sorted.filter((p) => created.some((c) => c.id === p.id))
+    assert.deepEqual(
+      mine.map((p) => p.name),
+      ['排序C', '排序A', '排序B'],
+      '重新编号后相对顺序正确',
+    )
+    const nums = mine.map((p) => p.sortOrder)
+    assert.ok(
+      nums.every((n, i) => i === 0 || n > nums[i - 1]),
+      `编号按拖拽后的顺序递增：${nums.join(',')}`,
+    )
+    // 持久化：直接读数据文件，相当于刷新页面或重启服务后再读
+    const saved = JSON.parse(readFileSync(path.join(dataDir, 'projects/projects.json'), 'utf8'))
+    assert.deepEqual(
+      saved
+        .filter((p) => created.some((c) => c.id === p.id))
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        .map((p) => p.name),
+      ['排序C', '排序A', '排序B'],
+      '顺序写进了数据文件',
+    )
+    assert.deepEqual(await listOf(), moved, '再读一次顺序不变')
+
+    // 校验：重复、不存在、漏掉项目都拒绝，原顺序不变
+    const bad = (ids) => assert.rejects(call('PUT', '/projects/order', ids))
+    await bad([moved[0], moved[0], ...moved.slice(1)])
+    await bad([...moved.slice(0, -1), 'no-such-project'])
+    await bad(moved.slice(0, -1))
+    assert.deepEqual(await listOf(), moved, '校验失败时不改顺序')
+
+    // 清理，别影响后面的用例
+    for (const p of created) await call('DELETE', `/projects/${p.id}`)
+  }
+  step('项目分组：默认按添加时间排序，拖拽后的顺序持久化，重复 / 不存在 / 漏项的重排请求被拒绝')
+

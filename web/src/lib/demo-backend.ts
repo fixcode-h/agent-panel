@@ -41,6 +41,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
+import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
@@ -420,8 +421,13 @@ function seed(): Db {
     workflowId: webFlow.id,
   }
   const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
-  const project = (o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'>): Project => ({
+  // 演示项目的添加时间各不相同：侧栏默认就按它排，和真实的项目列表一致
+  const project = (
+    o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'>,
+    createdAt: string,
+  ): Project => ({
     ...meta(),
+    createdAt,
     workflowIds: [],
     defaultAgentId: '',
     agentSet: true,
@@ -436,34 +442,46 @@ function seed(): Db {
     workflows: [webFlow, bugFlow],
     projectCategories: [web, game],
     projects: [
-      project({
-        name: '商城前台',
-        description: '面向用户的商城网站',
-        path: '/home/demo/code/web-shop',
-        categoryId: web.id,
-        workflowId: '',
-      }),
-      project({
-        name: '运营后台',
-        description: '内部运营管理系统',
-        path: '/home/demo/code/admin-console',
-        categoryId: web.id,
-        workflowId: bugFlow.id,
-      }),
-      project({
-        name: '客户端主工程',
-        description: '',
-        path: '/home/demo/code/game-client',
-        categoryId: game.id,
-        workflowId: '',
-      }),
-      project({
-        name: '旧官网',
-        description: '已经下线的旧站点',
-        path: '/home/demo/code/old-site',
-        categoryId: '',
-        workflowId: '',
-      }),
+      project(
+        {
+          name: '商城前台',
+          description: '面向用户的商城网站',
+          path: '/home/demo/code/web-shop',
+          categoryId: web.id,
+          workflowId: '',
+        },
+        '2026-09-02T09:00:00.000Z',
+      ),
+      project(
+        {
+          name: '运营后台',
+          description: '内部运营管理系统',
+          path: '/home/demo/code/admin-console',
+          categoryId: web.id,
+          workflowId: bugFlow.id,
+        },
+        '2026-09-20T09:00:00.000Z',
+      ),
+      project(
+        {
+          name: '客户端主工程',
+          description: '',
+          path: '/home/demo/code/game-client',
+          categoryId: game.id,
+          workflowId: '',
+        },
+        '2026-10-03T09:00:00.000Z',
+      ),
+      project(
+        {
+          name: '旧官网',
+          description: '已经下线的旧站点',
+          path: '/home/demo/code/old-site',
+          categoryId: '',
+          workflowId: '',
+        },
+        '2026-10-12T09:00:00.000Z',
+      ),
     ],
   }
 }
@@ -1205,7 +1223,17 @@ function route(method: string, url: string, body: unknown): unknown {
   }
 
   if (res === 'projects') {
-    if (method === 'GET') return d.projects
+    // 和真正的服务端一样：按添加时间或拖拽后的顺序排，返回给前端的顺序就是侧栏顺序
+    if (method === 'GET') return sortProjects(d.projects)
+    if (method === 'PUT' && id === 'order') {
+      if (!Array.isArray(body) || !body.every((x) => typeof x === 'string' && x.trim())) fail('项目顺序格式不对')
+      const ids = body as string[]
+      const error = projectOrderError(d.projects, ids)
+      if (error) fail(error)
+      d.projects = orderProjects(d.projects, ids)
+      persist()
+      return sortProjects(d.projects)
+    }
     if (method === 'DELETE') {
       remove('projects', id, '项目不存在')
       d.tasks = (d.tasks ?? []).filter((t) => t.projectId !== id)

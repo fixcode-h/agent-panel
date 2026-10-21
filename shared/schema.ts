@@ -1282,3 +1282,8 @@ export interface LoginJob {
   error?: string
   startedAt: number
 }
+  /**
+   * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
+   * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
+   */
+  sortOrder: z.number().int().min(0).optional(),

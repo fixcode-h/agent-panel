@@ -402,3 +402,7 @@ export const EN_SERVER: Record<string, string> = {
   '这个系统不支持自动下载，请手动安装 cloudflared。':
     'Automatic download is not supported on this system. Install cloudflared manually.',
 }
+  项目顺序格式不对: 'Invalid project order',
+  '项目顺序里有不存在的项目：{id}': 'Project order contains an unknown project: {id}',
+  '项目顺序里有重复的项目：{id}': 'Project order contains a duplicate project: {id}',
+  '项目顺序里缺了项目，要列出全部项目': 'Project order is missing projects; list every project',

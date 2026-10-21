@@ -249,3 +249,6 @@ export const EN_APP: Record<string, string> = {
   '：先安装并启用一个 CLI，才能运行 Agent 和工作流。': ': Install and enable a CLI to run Agents and workflows.',
   '去启用 {name}': 'Enable {name}',
 }
+  '拖动调整「{name}」的顺序': 'Drag to reorder “{name}”',
+  '拖动调整顺序（也可以按 Alt + ↑ / ↓）': 'Drag to reorder (or press Alt + ↑ / ↓)',
+  '保存项目顺序失败：{msg}': 'Couldn’t save the project order: {msg}',
