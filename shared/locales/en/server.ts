@@ -416,4 +416,10 @@ export const EN_SERVER: Record<string, string> = {
   '{method} 退出码 {code}': '{method} exited with code {code}',
   '{name} 没有装上': '{name} was not installed',
   '正在下载 cloudflared，稍后再试': 'cloudflared is already downloading, try again later',
+  '没能接上面板的工具（{error}），这一轮不能向你提问、也收不到执行中的补充':
+    "Couldn't attach the panel's tools ({error}), so this turn can't ask you questions or receive notes you add while it runs",
+  '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
+  '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
+  '压缩上下文失败：{error}': 'Context compaction failed: {error}',
+  提示: 'Notice',
 }

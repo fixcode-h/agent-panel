@@ -118,12 +118,20 @@
       "args": ["--thinking", "{effort}"]
     },
     {
+      "if": "permission=full",
+      "args": ["--tools", "+grep,+find,+ls"]
+    },
+    {
       "if": "permission=edit",
-      "args": ["--tools", "read,edit,write,grep,find,ls,ask_user"]
+      "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell"]
     },
     {
       "if": "permission=readonly",
-      "args": ["--tools", "read,grep,find,ls,ask_user"]
+      "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell,edit,write"]
+    },
+    {
+      "if": "title",
+      "args": ["--name", "{title}"]
     },
     {
       "if": ["resume", "!fork"],
@@ -148,12 +156,20 @@
       "args": ["--thinking", "{effort}"]
     },
     {
+      "if": "permission=full",
+      "args": ["--tools", "+grep,+find,+ls"]
+    },
+    {
       "if": "permission=edit",
-      "args": ["--tools", "read,edit,write,grep,find,ls,ask_user"]
+      "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell"]
     },
     {
       "if": "permission=readonly",
-      "args": ["--tools", "read,grep,find,ls,ask_user"]
+      "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell,edit,write"]
+    },
+    {
+      "if": "title",
+      "args": ["--name", "{title}"]
     },
     {
       "if": ["resume", "!fork"],
@@ -166,19 +182,151 @@
   ],
   "rpc": {
     "start": [
-      { "record": { "type": "get_state" }, "save": "state" },
-      { "record": { "type": "prompt", "message": "{input}" }, "save": "prompt" }
+      {
+        "record": {
+          "type": "get_state"
+        },
+        "save": "state"
+      },
+      {
+        "record": {
+          "type": "prompt",
+          "message": "{input}"
+        },
+        "save": "prompt"
+      }
     ],
-    "steer": { "record": { "type": "steer", "message": "{text}" } },
-    "interrupt": { "record": { "type": "abort" } },
+    "steer": {
+      "record": {
+        "type": "steer",
+        "message": "{text}"
+      }
+    },
+    "interrupt": {
+      "record": {
+        "type": "abort"
+      }
+    },
     "sessionId": "state.data.sessionId",
     "deferSteer": true,
-    "remember": [{ "when": { "type": "message_end", "message.role": "assistant" }, "as": "assistant" }],
+    "remember": [
+      {
+        "when": {
+          "type": "message_end",
+          "message.role": "assistant"
+        },
+        "as": "assistant"
+      }
+    ],
     "done": [
       {
-        "when": { "type": "agent_settled" },
+        "when": {
+          "type": "agent_settled"
+        },
         "ok": ["assistant.message.stopReason != error", "$.aborted != true"],
         "error": "assistant.message.errorMessage"
+      }
+    ],
+    "compact": [
+      {
+        "record": {
+          "type": "get_state"
+        },
+        "save": "state"
+      },
+      {
+        "record": {
+          "type": "compact"
+        },
+        "timeoutMs": 900000
+      }
+    ],
+    "after": [
+      {
+        "record": {
+          "type": "get_session_stats"
+        },
+        "optional": true,
+        "parse": true,
+        "timeoutMs": 5000
+      }
+    ],
+    "asks": [
+      {
+        "when": {
+          "type": "extension_ui_request",
+          "method": "confirm"
+        },
+        "kind": "tool",
+        "title": "$.title",
+        "detail": "$.message",
+        "allow": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "confirmed": true
+        },
+        "deny": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "confirmed": false
+        }
+      },
+      {
+        "when": {
+          "type": "extension_ui_request",
+          "method": "select"
+        },
+        "kind": "question",
+        "title": "$.title",
+        "options": "$.options",
+        "allow": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "value": "{answer}"
+        },
+        "deny": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "cancelled": true
+        }
+      },
+      {
+        "when": {
+          "type": "extension_ui_request",
+          "method": "input"
+        },
+        "kind": "question",
+        "title": "$.title",
+        "detail": "$.placeholder",
+        "allow": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "value": "{answer}"
+        },
+        "deny": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "cancelled": true
+        }
+      },
+      {
+        "when": {
+          "type": "extension_ui_request",
+          "method": "editor"
+        },
+        "kind": "question",
+        "title": "$.title",
+        "detail": "$.prefill",
+        "allow": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "value": "{answer}"
+        },
+        "deny": {
+          "type": "extension_ui_response",
+          "id": "{id}",
+          "cancelled": true
+        }
       }
     ]
   },
@@ -186,6 +334,79 @@
   "output": {
     "format": "ndjson",
     "events": [
+      {
+        "when": {
+          "type": "compaction_end",
+          "aborted": false
+        },
+        "emit": [
+          {
+            "type": "compacted",
+            "before": "$.result.tokensBefore",
+            "context": "$.result.estimatedTokensAfter"
+          },
+          {
+            "type": "notice",
+            "kind": "compact_failed",
+            "error": "$.errorMessage"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "auto_retry_start"
+        },
+        "emit": [
+          {
+            "type": "notice",
+            "kind": "retry",
+            "attempt": "$.attempt",
+            "maxAttempts": "$.maxAttempts",
+            "delayMs": "$.delayMs",
+            "error": "$.errorMessage"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "auto_retry_end",
+          "success": false
+        },
+        "emit": [
+          {
+            "type": "notice",
+            "kind": "retry_failed",
+            "attempt": "$.attempt",
+            "error": "$.finalError"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "extension_ui_request",
+          "method": "notify"
+        },
+        "emit": [
+          {
+            "type": "notice",
+            "text": "$.message",
+            "failed": "$.notifyType == error"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "response",
+          "command": "get_session_stats"
+        },
+        "emit": [
+          {
+            "type": "usage",
+            "context": "$.data.contextUsage.tokens",
+            "window": "$.data.contextUsage.contextWindow"
+          }
+        ]
+      },
       {
         "when": {
           "type": "session"
@@ -328,8 +549,15 @@
   "features": {
     "steer": true,
     "fork": "latest",
-    "compact": "summary",
-    "autoCompact": "panel"
+    "compact": "native",
+    "autoCompact": "panel",
+    "modelSwitch": true,
+    "limitFile": {
+      "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+      "at": "providers.{provider}.modelOverrides.{model}",
+      "context": "contextWindow",
+      "maxOutput": "maxTokens"
+    }
   },
   "docs": ["AGENTS.md", "CLAUDE.md"],
   "docsNote": "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。",
@@ -415,9 +643,9 @@
     ]
   },
   "mcp": {
-    "args": ["-e", ".pi/extensions/agent-panel-{name}.ts"],
+    "args": ["-e", "{dir}/agent-panel-{name}.ts"],
     "files": {
-      ".pi/extensions/agent-panel-{name}.ts": "// Agent 面板这一轮临时写进来的：把面板的工具（MCP）交给 Pi，跑完就删掉\nimport { request } from 'node:http'\n\nconst url = new URL('{url}')\nlet seq = 0\n\n// 用 node:http 而不是 fetch：等用户回答提问可能很久，fetch 默认 5 分钟就超时\nfunction rpc(method: string, params: unknown): Promise<any> {\n  const body = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params })\n  return new Promise((resolve, reject) => {\n    const req = request(\n      url,\n      { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } },\n      (res) => {\n        let text = ''\n        res.setEncoding('utf8')\n        res.on('data', (c) => (text += c))\n        res.on('end', () => {\n          try {\n            const raw = text.trim().startsWith('{')\n              ? text\n              : (text.split('\\n').filter((l) => l.startsWith('data:')).pop() ?? '').slice(5)\n            const msg = JSON.parse(raw)\n            if (msg.error) reject(new Error(msg.error.message))\n            else resolve(msg.result)\n          } catch {\n            reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`))\n          }\n        })\n      },\n    )\n    req.on('error', reject)\n    req.end(body)\n  })\n}\n\nexport default async function (pi: any) {\n  let tools: any[] = []\n  try {\n    await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pi', version: '1' } })\n    tools = (await rpc('tools/list', {}))?.tools ?? []\n  } catch (e) {\n    // 连不上面板时不拦着 Pi 启动，只是这一轮没有面板的工具\n    console.error(`agent-panel: ${(e as Error).message}`)\n  }\n  for (const tool of tools)\n    pi.registerTool({\n      name: tool.name,\n      label: tool.title ?? tool.name,\n      description: tool.description ?? '',\n      parameters: tool.inputSchema ?? { type: 'object', properties: {} },\n      async execute(_id: string, args: unknown) {\n        const r = await rpc('tools/call', { name: tool.name, arguments: args ?? {} })\n        const content = (r?.content ?? []).map((c: any) =>\n          c.type === 'image'\n            ? { type: 'image', data: c.data, mimeType: c.mimeType }\n            : { type: 'text', text: c.type === 'text' ? c.text : JSON.stringify(c) },\n        )\n        if (r?.isError) throw new Error(content.map((c: any) => c.text ?? '').join('\\n'))\n        return { content, details: {} }\n      },\n    })\n}\n"
+      "{dir}/agent-panel-{name}.ts": "// Agent 面板这一轮放在自己数据目录里的桥接扩展：把面板的工具（MCP）交给 Pi，跑完就删掉\nimport { request } from 'node:http'\n\nconst url = new URL('{url}')\nlet seq = 0\n\n// 用 node:http 而不是 fetch：等用户回答提问可能很久，fetch 默认 5 分钟就超时\nfunction rpc(method: string, params: unknown): Promise<any> {\n  const body = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params })\n  return new Promise((resolve, reject) => {\n    const req = request(\n      url,\n      { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } },\n      (res) => {\n        let text = ''\n        res.setEncoding('utf8')\n        res.on('data', (c) => (text += c))\n        res.on('end', () => {\n          try {\n            const raw = text.trim().startsWith('{')\n              ? text\n              : (text.split('\\n').filter((l) => l.startsWith('data:')).pop() ?? '').slice(5)\n            const msg = JSON.parse(raw)\n            if (msg.error) reject(new Error(msg.error.message))\n            else resolve(msg.result)\n          } catch {\n            reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`))\n          }\n        })\n      },\n    )\n    req.on('error', reject)\n    req.end(body)\n  })\n}\n\nexport default async function (pi: any) {\n  let tools: any[] = []\n  try {\n    await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pi', version: '1' } })\n    tools = (await rpc('tools/list', {}))?.tools ?? []\n  } catch (e) {\n    // 连不上面板时不拦着 Pi 启动，只是这一轮没有面板的工具\n    console.error(`agent-panel: ${(e as Error).message}`)\n  }\n  for (const tool of tools)\n    pi.registerTool({\n      name: tool.name,\n      label: tool.title ?? tool.name,\n      description: tool.description ?? '',\n      parameters: tool.inputSchema ?? { type: 'object', properties: {} },\n      async execute(_id: string, args: unknown) {\n        const r = await rpc('tools/call', { name: tool.name, arguments: args ?? {} })\n        const content = (r?.content ?? []).map((c: any) =>\n          c.type === 'image'\n            ? { type: 'image', data: c.data, mimeType: c.mimeType }\n            : { type: 'text', text: c.type === 'text' ? c.text : JSON.stringify(c) },\n        )\n        if (r?.isError) throw new Error(content.map((c: any) => c.text ?? '').join('\\n'))\n        return { content, details: {} }\n      },\n    })\n}\n"
     }
   },
   "i18n": {
@@ -435,5 +663,14 @@
       "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。": "Pi reads AGENTS.md (or CLAUDE.md when there is none) in the project and its parent directories, plus ~/.pi/agent/AGENTS.md, on every start.",
       "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。": "Pi accounts can only be signed in from a terminal: run pi and type /login to sign in with a Claude Pro/Max, ChatGPT, GitHub Copilot or similar subscription. Then come back here and save it to switch between accounts. You can also set ANTHROPIC_API_KEY, OPENAI_API_KEY and so on under Environment variables above."
     }
+  },
+  "mcpStore": {
+    "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/mcp.json",
+    "format": "json",
+    "key": "mcpServers",
+    "urlKey": "url",
+    "remoteType": "",
+    "stdioType": false,
+    "headersKey": "headers"
   }
 }

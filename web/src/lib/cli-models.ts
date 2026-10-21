@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { getCli, type CliDefinition } from '@shared/clis'
 import type { CliModels } from '@shared/schema'
+import { t } from '@shared/i18n'
 import { api } from './api'
 
 /**
@@ -58,7 +59,8 @@ export function useCliDef(id: string | undefined): CliDefinition | undefined {
       const label = (m.label !== m.id ? m.label : m.description) ?? ''
       return {
         id: m.id,
-        label,
+        // 看不到图片的模型在说明里写出来：附图给它也是白附
+        label: m.images === false ? [label, t('只支持文字')].filter(Boolean).join(' · ') : label,
         isDefault: m.isDefault,
         defaultEffort: m.defaultEffort,
         efforts: m.efforts,

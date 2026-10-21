@@ -693,7 +693,9 @@ try {
   c = calls().at(-1)
   assert.equal(c.kind, 'pi')
   assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
-  assert.ok(!c.args.includes('--tools'), '默认全部工具，不限制')
+  assert.equal(c.args[c.args.indexOf('--tools') + 1], '+grep,+find,+ls', '全部工具：在 Pi 默认工具上补搜索')
+  assert.ok(!c.args.includes('--exclude-tools'), '全部工具时不去掉任何工具')
+  assert.equal(c.args[c.args.indexOf('--name') + 1], pm.title, '对话标题交给 Pi 当会话名')
   assert.match(c.input, /^## 用户这次的消息\n用 Pi\n\n/, '任务描述走 RPC 的 prompt 命令')
   const pReply = pm.messages.filter((m) => m.role === 'agent').at(-1)
   assert.match(pReply.text, /这是 pi 的回复/)
@@ -706,6 +708,22 @@ try {
   await waitDone(pm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--session') + 1], pm.sessions[pm.agentId], '继续时用 --session 续接会话')
+  pm = await call('GET', `/tasks/${pm.id}`)
+  assert.equal(pm.usage.agents[pm.agentId].context, 4321, '上下文占用以 get_session_stats 为准')
+  // 压缩走 Pi 的 compact 命令，原地压缩会话；下一轮仍然续接同一个会话，不用写摘要开新会话
+  const piSession = pm.sessions[pm.agentId]
+  await call('POST', `/tasks/${pm.id}/compact`)
+  pm = await waitDone(pm.id)
+  c = calls().at(-1)
+  assert.equal(c.op, 'compact', 'Pi 用 RPC 的 compact')
+  assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩的是当前会话')
+  const piCompact = pm.messages.flatMap((m) => (m.role === 'agent' ? m.tools : [])).find((x) => x.kind === 'compact')
+  assert.ok(piCompact, '压缩显示成回复里的一次工具调用（来自 compaction_end）')
+  await call('POST', `/tasks/${pm.id}/messages`, { text: '压缩后继续' })
+  pm = await waitDone(pm.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩后仍然续接原来的会话')
+  assert.ok(!c.input.includes('之前对话的摘要'), '不用带摘要')
   // Pi 出错时退出码也是 0，按最后的 agent_settled 和 assistant 的 stopReason 判断失败
   let pf = await call('POST', '/tasks', {
     projectId: project.id,
@@ -4232,13 +4250,13 @@ try {
     }
     assert.equal(readFileSync(mcpFile, 'utf8'), original, '项目里原有的 MCP 配置还原')
     assert.ok(!existsSync(path.join(project.path, '.gemini', 'settings.json')), '临时写的配置删掉了')
-    assert.ok(
-      !(
-        existsSync(path.join(project.path, '.pi', 'extensions')) &&
-        readdirSync(path.join(project.path, '.pi', 'extensions')).some((f) => f.startsWith('agent-panel-panel'))
-      ),
-      'Pi 的桥接扩展删掉了',
-    )
+    assert.ok(!existsSync(path.join(project.path, '.pi')), 'Pi 的桥接扩展不写进项目')
+    const piExt = calls()
+      .filter((x) => x.kind === 'pi')
+      .map((x) => x.args[x.args.indexOf('-e') + 1])
+      .find((x) => x && /agent-panel-panel/.test(x))
+    assert.ok(piExt && path.isAbsolute(piExt) && piExt.startsWith(dataDir), `桥接扩展在面板的数据目录里：${piExt}`)
+    assert.ok(!existsSync(piExt), 'Pi 的桥接扩展用完删掉了')
     // 提问开关关着：不弹出，工具让模型自己选
     const off = await call('POST', '/tasks', {
       projectId: project.id,

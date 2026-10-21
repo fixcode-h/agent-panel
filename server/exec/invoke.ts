@@ -13,6 +13,14 @@ import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
 import type { Orchestra } from '../../shared/engine.ts'
 import { supportedEffort } from '../models.ts'
 import { log } from '../log.ts'
+import { randomUUID } from 'node:crypto'
+import { rm } from 'node:fs/promises'
+import path from 'node:path'
+import { CACHE_DIR } from '../store.ts'
+import { expandHome } from '../cli-extras.ts'
+
+/** 这一轮面板自己的临时目录（绝对路径）：放 CLI 要加载的桥接脚本等，用完删掉 */
+export const scratchDir = () => path.join(CACHE_DIR, 'cli-run', randomUUID().slice(0, 12))
 
 /** 交给没有提问通道的 CLI 的一句用法说明 */
 const ASK_HINT = '（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）'
@@ -84,6 +92,8 @@ export async function invokeCli(o: {
   mcp?: { name: string; url: string }[]
   /** 编排工具：和提问、等下一句一起挂在面板的 MCP 上 */
   orch?: Orchestra
+  /** 设置里手动改的上下文窗口、最大输出：CLI 定义里写了 limitFile 时，这一轮写进它的配置文件 */
+  limits?: { context?: number; maxOutput?: number }
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
   // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
@@ -145,8 +155,11 @@ export async function invokeCli(o: {
       if (wait) input = `${input}\n\n${WAIT_HINT}`
     }
   }
+  // 配置里写 {dir} 的文件（Pi 的桥接扩展）放进面板自己的临时目录，不进用户的项目：
+  // 项目只读、目录被占用时也不受影响，进程崩溃后留下的也只在面板的缓存里
+  const dir = def.mcp && servers.length ? scratchDir() : ''
   if (def.mcp && servers.length) {
-    const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url))
+    const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url, dir))
     // 几个工具写进同一个配置文件（Gemini CLI 的 settings.json）时先合在一起，一次写进去
     const files = new Map<string, unknown>()
     for (const f of tools.flatMap((x) => x.files))
@@ -154,23 +167,64 @@ export async function invokeCli(o: {
         f.path,
         files.has(f.path) && typeof f.content !== 'string' ? merge(files.get(f.path), f.content) : f.content,
       )
-    restore = await applyConfigFiles(
-      o.cwd,
-      [...files].map(([p, content]) => ({ path: p, content })),
-    ).catch(() => undefined)
-    run = {
-      ...o,
-      build: { ...build, extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args)] },
-      input,
+    try {
+      restore = await applyConfigFiles(
+        o.cwd,
+        [...files].map(([p, content]) => ({ path: p, content })),
+      )
+      run = {
+        ...o,
+        build: { ...build, extraArgs: [...(build.extraArgs ?? []), ...tools.flatMap((x) => x.args)] },
+        input,
+      }
+    } catch (e) {
+      // 配置没写成：参数也不加（Pi 的 -e 指向不存在的文件会直接退出），这一轮没有面板的工具，但照常执行。
+      // 提示里也不提这些工具，免得模型去调一个不存在的工具
+      const message = t('没能接上面板的工具（{error}），这一轮不能向你提问、也收不到执行中的补充', {
+        error: (e as Error).message,
+      })
+      log.warn('agent', `${def.name} 的面板工具配置写入失败`, { cwd: o.cwd, error: (e as Error).message })
+      o.onEvent({ type: 'notice', text: message, failed: true })
     }
   }
+  const restoreLimits = await applyLimitFile(def, o.cwd, model, cs.api ? undefined : o.limits)
   try {
     return await invoke(run, def, setControl, hard.signal)
   } finally {
     o.signal?.removeEventListener('abort', onStop)
     bridge?.close()
     await restore?.().catch(() => {})
+    await restoreLimits?.().catch(() => {})
+    if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
   }
+}
+
+/**
+ * 账号方式下手动改的上下文窗口、最大输出：CLI 只从配置文件读时（Pi 的 models.json modelOverrides），
+ * 这一轮里写进去，结束后还原。写不成不拦着执行，CLI 按模型自己的窗口来
+ */
+async function applyLimitFile(
+  def: NonNullable<ReturnType<typeof getCli>>,
+  cwd: string,
+  model: string,
+  limits: { context?: number; maxOutput?: number } | undefined,
+) {
+  const spec = def.limitFile
+  const at = model.indexOf('/')
+  if (!spec || !limits || at <= 0) return undefined
+  const entry: Record<string, number> = {}
+  if (spec.context && limits.context) entry[spec.context] = limits.context
+  if (spec.maxOutput && limits.maxOutput) entry[spec.maxOutput] = limits.maxOutput
+  if (!Object.keys(entry).length) return undefined
+  const keys = spec.at
+    .replaceAll('{provider}', model.slice(0, at))
+    .split('.')
+    .map((k) => (k === '{model}' ? model.slice(at + 1) : k))
+  const content = keys.reduceRight<unknown>((v, k) => ({ [k]: v }), entry)
+  return applyConfigFiles(cwd, [{ path: expandHome(spec.file), content }]).catch((e: Error) => {
+    log.warn('agent', `${def.name} 的上下文窗口写入配置失败`, { error: e.message })
+    return undefined
+  })
 }
 
 async function invoke(

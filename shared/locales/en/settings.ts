@@ -871,4 +871,5 @@ export const EN_SETTINGS: Record<string, string> = {
   规则不能为空: 'Rule cannot be empty',
   '项目教训已经有 {n} 条，先在项目设置里合并同类项再记':
     'There are already {n} project lessons; merge similar ones in project settings first',
+  只支持文字: 'Text only',
 }

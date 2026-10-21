@@ -15,7 +15,7 @@ const Tier = z.object({ model: z.string().default(''), effort: z.string().defaul
 /**
  * 一条参数规则：条件都满足时加上 args。
  * if：「model」有值、「!resume」没值、「permission=yolo」等于、「permission!=yolo」不等于；多个条件写成数组，全部满足才加
- * args 里的占位：{model}、{effort}、{permission}、{resume}、{systemPrompt}、{maxTurns}；
+ * args 里的占位：{model}、{effort}、{permission}、{resume}、{systemPrompt}、{maxTurns}、{title}；
  * {addDirs|,} 把数组用逗号连起来；{maxTurns:200} 没值时用 200。each：对数组的每一项加一次，{item} 是那一项
  */
 export const ArgRule = z.object({
@@ -82,6 +82,10 @@ export const RpcAction = z.object({
   record: z.record(z.string(), z.unknown()).optional(),
   /** 只发不等回复（通知） */
   notify: z.boolean().default(false),
+  /** 失败了也不影响这一轮（例如查统计、起会话名这种锦上添花的请求） */
+  optional: z.boolean().default(false),
+  /** 回复也交给输出映射（output.events），例如 Pi 的 get_session_stats 回复里有准确的上下文占用 */
+  parse: z.boolean().default(false),
   /** 回复存进变量，后面的 id 路径和条件可以用 */
   save: z.string().optional(),
   timeoutMs: z.number().int().positive().optional(),
@@ -104,6 +108,22 @@ export const RpcRemember = z.object({
 export type RpcRemember = z.infer<typeof RpcRemember>
 
 /**
+ * CLI 发来的、要用户回答的请求（例如 Pi 扩展的确认框、选择框）：按 when 认出来，交给页面的提问卡片，
+ * 用户的选择按 allow / deny 的模板回给 CLI。模板里 {id} 是请求的 id，{answer} 是用户选的或填的内容；
+ * title、detail、options 写「$.路径」取请求里的字段
+ */
+export const RpcAsk = z.object({
+  when: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])),
+  kind: z.enum(['command', 'file', 'tool', 'question']).default('question'),
+  title: z.string().default(''),
+  detail: z.string().default(''),
+  options: z.string().optional(),
+  allow: z.record(z.string(), z.unknown()),
+  deny: z.record(z.string(), z.unknown()),
+})
+export type RpcAsk = z.infer<typeof RpcAsk>
+
+/**
  * 常驻 RPC 的配置。kind 为 spec 时完全按这里的声明执行；codex / claude
  * 用各自适配器处理协议里特殊的地方（审批请求、控制消息），但同样走统一的会话引擎。
  */
@@ -119,6 +139,12 @@ export const RpcSpec = z.object({
   fork: z.array(RpcAction).optional(),
   steer: RpcAction.optional(),
   interrupt: RpcAction.optional(),
+  /** 压缩上下文（features.compact 为 native 时）：续接会话后按顺序发，最后一个回复成功就算压缩完了 */
+  compact: z.array(RpcAction).optional(),
+  /** 这一轮结束、交结果之前再发的请求（例如查一次准确的用量），一般配 optional 和 parse */
+  after: z.array(RpcAction).default([]),
+  /** CLI 发来的要用户回答的请求；没对上的请求当普通记录交给输出映射 */
+  asks: z.array(RpcAsk).default([]),
   /** 这一轮结束后、关 stdin 前发的消息（例如 Command Code 的 session/exit） */
   exit: RpcAction.optional(),
   /** 会话 id、轮次 id 从哪个回复的哪个字段取（路径相对 save 的变量） */
@@ -151,9 +177,12 @@ export const RpcSpec = z.object({
 export type RpcSpec = z.infer<typeof RpcSpec>
 export type RpcSpecInput = z.input<typeof RpcSpec>
 
-/** 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件 */
-export function mcpConfig(spec: McpSpec, name: string, url: string) {
-  const fillStr = (s: string) => s.replaceAll('{name}', name).replaceAll('{url}', url)
+/**
+ * 把工具的名字和地址填进 CLI 定义里的 MCP 配置，得到参数和要写的文件。
+ * dir 是面板这一轮自己的临时目录（绝对路径），配置里写 {dir} 的文件放这里，不进用户的项目
+ */
+export function mcpConfig(spec: McpSpec, name: string, url: string, dir = '') {
+  const fillStr = (s: string) => s.replaceAll('{name}', name).replaceAll('{url}', url).replaceAll('{dir}', dir)
   const fillAny = (v: unknown): unknown =>
     typeof v === 'string'
       ? fillStr(v)
@@ -219,8 +248,10 @@ export const CliSpec = z.object({
       steer: z.boolean().default(false),
       /** 没有插话协议，但能用面板的 MCP 工具（read_user_notes）取执行中的补充 */
       notes: z.boolean().default(false),
-      /** 压缩上下文：slash 是发「/compact」，summary 是让它写摘要、下一轮开新会话 */
-      compact: z.enum(['slash', 'summary']).default('summary'),
+      /** 压缩上下文：native 走协议（rpc.compact），slash 是发「/compact」，summary 是让它写摘要、下一轮开新会话 */
+      compact: z.enum(['native', 'slash', 'summary']).default('summary'),
+      /** 会话中途能换模型（换了模型续接同一个会话，不用开新会话带上对话记录） */
+      modelSwitch: z.boolean().default(false),
       /** 会话能分叉到哪：latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话） */
       fork: z.enum(['latest', 'none']).default('none'),
       /** 自动压缩：env 是用环境变量告诉 CLI 百分比（autoCompactEnv），panel 是面板在一轮结束后压缩 */
@@ -230,6 +261,19 @@ export const CliSpec = z.object({
       slash: z.boolean().default(false),
       /** 设置里手动改的上下文窗口、最大输出用哪个环境变量传给 CLI；不写表示 CLI 不接受 */
       limitEnv: z.object({ context: z.string().optional(), maxOutput: z.string().optional() }).default({}),
+      /**
+       * 或者写进 CLI 的配置文件（账号方式下用，API 方式由 auth.api.modelLimits 写）：只在这一轮里加上，结束后还原。
+       * at 是模型条目的位置，{provider}、{model} 是模型 ID「provider/model」的两段，例如 Pi 的
+       * providers.{provider}.modelOverrides.{model}；context / maxOutput 是写进条目的键名
+       */
+      limitFile: z
+        .object({
+          file: z.string(),
+          at: z.string(),
+          context: z.string().optional(),
+          maxOutput: z.string().optional(),
+        })
+        .optional(),
     })
     .default({
       steer: false,
@@ -240,6 +284,7 @@ export const CliSpec = z.object({
       autoCompactEnv: '',
       slash: false,
       limitEnv: {},
+      modelSwitch: false,
     }),
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */
   docs: z.array(z.string().regex(/^(?!\/)(?!.*\.\.)[\w.\-/]+$/, '只能是项目目录里的相对路径')).default(['AGENTS.md']),
@@ -295,6 +340,8 @@ function value(o: BuildOptions, key: string): unknown {
       return o.addDirs?.length ? o.addDirs : undefined
     case 'fork':
       return o.fork
+    case 'title':
+      return o.title
     default:
       return undefined
   }
@@ -382,6 +429,8 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     autoCompactEnv: f.autoCompactEnv,
     slash: f.slash,
     limitEnv: f.limitEnv,
+    limitFile: f.limitFile,
+    modelSwitch: f.modelSwitch,
     limits: 'none',
     docs: spec.docs,
     docsNote: tr(spec.docsNote),

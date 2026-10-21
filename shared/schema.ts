@@ -470,6 +470,8 @@ export interface CliModel {
   contextWindow?: number
   /** 最大输出（token）；CLI 没给出时省略 */
   maxOutput?: number
+  /** 能不能看图片：false 时附上的图片它看不到；CLI 没给出时省略 */
+  images?: boolean
 }
 
 export interface CliModels {

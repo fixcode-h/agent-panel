@@ -40,6 +40,7 @@ export function rpcSessionFor(def: CliDefinition, o: RpcRunOptions): RpcSession 
             resume: o.build.resume,
             fork: !!o.build.fork,
             images: o.images,
+            op: o.build.op,
           })
   return createRpcSession({
     adapter,

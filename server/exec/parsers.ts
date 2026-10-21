@@ -48,6 +48,8 @@ export type CliEvent =
   /** CLI 的待办清单 / 计划，每次给出完整列表 */
   | { type: 'todos'; todos: { text: string; status: 'pending' | 'running' | 'done' }[] }
   | { type: 'error'; message: string }
+  /** 不影响这一轮结果、但用户应该看到的情况（CLI 自动重试、面板工具没接上）；failed 时标成失败的样子 */
+  | { type: 'notice'; text: string; failed?: boolean }
   /** 生成了一张图片（Codex 的 image_gen）：path 是 CLI 存下的文件，data 是 base64；失败时 failed 是原因 */
   | { type: 'image'; path?: string; data?: string; failed?: string }
   | { type: 'result'; ok: boolean; error?: string }
@@ -644,6 +646,38 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         case 'files_changed':
           out.push({ type: 'files_changed' })
           break
+        // 文字由面板按 kind 拼（跟着界面语言），配置里只给字段；没有 kind 时用 text 原文
+        case 'notice': {
+          const err = oneLine(str(g('error')), 300)
+          const n = num(g('attempt')) ?? 1
+          const text =
+            e.kind === 'retry'
+              ? t('模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}', {
+                  s: Math.max(1, Math.round((num(g('delayMs')) ?? 0) / 1000)),
+                  n,
+                  max: num(g('maxAttempts')) ?? '?',
+                  error: err,
+                })
+              : e.kind === 'retry_failed'
+                ? t('自动重试 {n} 次后仍然失败：{error}', { n, error: err })
+                : e.kind === 'compact_failed'
+                  ? err && t('压缩上下文失败：{error}', { error: err })
+                  : str(g('text'))
+          if (text)
+            out.push({
+              type: 'notice',
+              text,
+              failed: e.kind === 'retry_failed' || e.kind === 'compact_failed' || !!g('failed'),
+            })
+          break
+        }
+        // 压缩前后的 token 数都没有时（例如压缩被中断）不算压缩过
+        case 'compacted': {
+          const before = num(g('before'))
+          const context = num(g('context'))
+          if (before !== undefined || context !== undefined) out.push({ type: 'compacted', before, context })
+          break
+        }
         case 'request_start':
           out.push({ type: 'request_start' })
           break

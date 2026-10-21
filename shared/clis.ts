@@ -42,6 +42,8 @@ export interface BuildOptions {
    * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid
    */
   fork?: { turnId?: string; end?: string }
+  /** 对话的标题：能给会话起名的 CLI 用它（例如 Pi 的 --name），在 CLI 自己的会话列表里认得出来 */
+  title?: string
   /** 不是普通的一轮对话：压缩上下文，或者审查代码 */
   op?: { kind: 'compact' } | { kind: 'review'; target: ReviewTarget }
   /** 上下文达到这么多 token 时自动压缩（Codex 的 model_auto_compact_token_limit） */
@@ -119,6 +121,8 @@ export interface CliDefinition {
    * 例如 Command Code 的强度是启动参数，续接旧会话时换了强度会接不上。
    */
   effortBoundSession?: boolean
+  /** 会话中途能换模型：换了模型仍然续接原来的会话（例如 Pi，模型是每次启动的参数，会话里可以混用） */
+  modelSwitch?: boolean
   /** stdout 的解析：内置解析器的名字，或者配置文件里的事件映射（protocol 为 stdin、rpc 时用） */
   parser: string | import('./cli-spec.ts').OutputSpec
   /** 执行中能插话 */
@@ -143,6 +147,8 @@ export interface CliDefinition {
   limitEnv?: { context?: string; maxOutput?: string }
   /** buildArgs 里会把这几项写成参数（BuildOptions 的 contextWindow、maxOutput） */
   limitArgs?: ('context' | 'maxOutput')[]
+  /** 手动设的上下文窗口、最大输出写进 CLI 配置文件的哪里（这一轮里临时加上），见 cli-spec.ts 的 features.limitFile */
+  limitFile?: { file: string; at: string; context?: string; maxOutput?: string }
   /** 账号额度：query 能主动查，push 执行时才报告，none 没有 */
   limits: 'query' | 'push' | 'none'
   /** 项目里每次启动会读的说明文件；第一个是还没有文件时新建的那个 */

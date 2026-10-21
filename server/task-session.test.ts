@@ -32,6 +32,12 @@ test('会话：不支持中途换强度的 CLI，换了强度也开新会话', (
   assert.equal(sessionChanged({ sessionCli: 'commandcode', messages }, 'commandcode', 'fake/pro', 'low', false), false)
 })
 
+test('会话：会话里能换模型的 CLI（Pi），换了模型仍然续接', () => {
+  const messages = [msg({ cli: 'pi', model: 'anthropic/claude-sonnet-4-6', effort: 'high' })]
+  assert.equal(sessionChanged({ sessionCli: 'pi', messages }, 'pi', 'openai/gpt-5.5', 'high', false, true), false)
+  assert.equal(sessionChanged({ sessionCli: 'pi', messages }, 'pi', 'openai/gpt-5.5', 'high', false, false), true)
+})
+
 test('会话：模型和强度没变、或者最后一条回复是别的 CLI 的，不用重开', () => {
   const same = [msg({ cli: 'codex', model: 'gpt-6-astra', effort: 'high' })]
   assert.equal(sessionChanged({ sessionCli: 'codex', messages: same }, 'codex', 'gpt-6-astra', 'high', true), false)

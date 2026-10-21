@@ -330,7 +330,9 @@ test('Pi：按配置文件拼参数（默认走 RPC）', () => {
       '--thinking',
       'high',
       '--tools',
-      'read,grep,find,ls,ask_user',
+      '+grep,+find,+ls',
+      '--exclude-tools',
+      'bash,powershell,edit,write',
       '--session',
       'sess-1',
       '--append-system-prompt',
@@ -338,15 +340,16 @@ test('Pi：按配置文件拼参数（默认走 RPC）', () => {
       '--verbose',
     ],
   )
-  // 全部工具时不限制工具（--tools 会连扩展的工具一起限制）；分叉用 --fork
-  assert.deepEqual(def.buildArgs({ model: '', permission: 'full', extraArgs: [], resume: 's', fork: {} }), [
-    '--mode',
-    'rpc',
-    '--fork',
-    's',
-  ])
+  // 权限用「+工具」在默认工具上加、--exclude-tools 去掉，不写白名单：白名单会把面板桥接的工具（提问、编排）一起挡掉
+  // 全部工具时补上 grep / find / ls（Pi 默认只有 read、bash、edit、write）；分叉用 --fork；对话标题用 --name
+  assert.deepEqual(
+    def.buildArgs({ model: '', permission: 'full', extraArgs: [], resume: 's', fork: {}, title: '修登录页' }),
+    ['--mode', 'rpc', '--tools', '+grep,+find,+ls', '--name', '修登录页', '--fork', 's'],
+  )
   assert.deepEqual(def.buildArgs({ model: '', permission: 'edit', extraArgs: [] }).slice(2), [
     '--tools',
-    'read,edit,write,grep,find,ls,ask_user',
+    '+grep,+find,+ls',
+    '--exclude-tools',
+    'bash,powershell',
   ])
 })

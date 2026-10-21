@@ -311,7 +311,7 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
 }
 
 /**
- * 对话中途换了 CLI、模型或（不支持中途换强度的 CLI 换了）思考强度：
+ * 对话中途换了 CLI、模型（会话里能换模型的 CLI 除外）或（不支持中途换强度的 CLI 换了）思考强度：
  * 原来的会话接不上，要开新会话把之前的对话带过去。
  */
 export function sessionChanged(
@@ -320,11 +320,12 @@ export function sessionChanged(
   model: string,
   effort = '',
   effortBound = false,
+  modelSwitch = false,
 ) {
   if (task.sessionCli && task.sessionCli !== cli) return true
   const last = [...task.messages].reverse().find((m) => m.run?.cli === cli)
   if (!last?.run) return false
-  return last.run.model !== model || (effortBound && (last.run.effort ?? '') !== effort)
+  return (!modelSwitch && last.run.model !== model) || (effortBound && (last.run.effort ?? '') !== effort)
 }
 
 /**
