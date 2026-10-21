@@ -787,8 +787,8 @@ export function TaskView({
                   </MenuItem>
                 </MenuContent>
               </Menu>
-              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板开着时这一栏不归文件面板 */}
-              {!pane && openRun === 0 && (
+              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
+              {!pane && openRun === 0 && !openChild && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -956,9 +956,6 @@ export function TaskView({
                               <span className="flex min-w-0 items-center gap-2">
                                 <TaskStatusIcon status={c.status} working={c.working} />
                                 <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">{c.title}</span>
-                              </span>
-                              <span className="line-clamp-2 min-h-[2.2em] text-xs leading-relaxed text-subtle">
-                                {c.summary || t('还没有结果')}
                               </span>
                             </button>
                           ))}

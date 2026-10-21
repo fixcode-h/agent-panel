@@ -156,7 +156,6 @@ export const EN_TASKS: Record<string, string> = {
   子对话: 'Sub-conversation',
   关闭子对话: 'Close sub-conversation',
   '点开在右侧查看，同一时间只显示一个': 'Open on the right; only one is shown at a time',
-  还没有结果: 'No result yet',
   '第 {n} 次运行': 'Run {n}',
   '正在准备节点…': 'Preparing nodes…',
   '「提问」已打开，后续问题会交给你回答': 'Questions are on; you will be asked to answer them',

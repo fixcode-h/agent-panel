@@ -40,8 +40,8 @@ function ProjectHome({ project }: { project: Project }) {
   const { go, openProject } = useNav()
   const dir = useDirInfo(project.path)
   const [filesOpen, setFilesOpen] = useState(false)
-  // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）
-  const all = tasks.filter((t) => t.projectId === project.id)
+  // 归档的任务不在这里列出（侧栏筛选「已归档」可以找到）；子对话只在父对话页里看
+  const all = tasks.filter((t) => t.projectId === project.id && !t.parentTaskId)
   const archived = all.filter((t) => t.archived).length
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务真的在跑时每秒刷新，耗时跟着走
