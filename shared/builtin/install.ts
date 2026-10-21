@@ -10,6 +10,7 @@ import type {
   WorkflowInput,
 } from '../schema.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, type BuiltinAgent } from './agents.ts'
+import { DEFAULT_WORKFLOW_ID } from './default.ts'
 import {
   BUILTIN_WORKFLOWS,
   buildWorkflow,
@@ -285,7 +286,8 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps)
 
 /**
  * 旧项目迁移：以前项目可以不指定工作流，现在必须有。
- * 没指定、分类也没有默认时，指向内置的「通用项目」；已经指定（而且还存在）的不动。
+ * 没指定、分类也没有默认时，指向内置的「通用项目」；
+ * 指向内置「默认」工作流的也换过去——项目对话要用常驻编排器，不是通用入口。
  */
 export async function migrateProjectsToGeneral(
   projects: Project[],
@@ -295,11 +297,12 @@ export async function migrateProjectsToGeneral(
   const general = workflows.find((w) => w.origin === GENERAL_ORIGIN) ?? workflows.find((w) => w.name === GENERAL_NAME)
   if (!general) return []
   const ids = new Set(workflows.map((w) => w.id))
+  const usable = (id?: string) => !!id && id !== DEFAULT_WORKFLOW_ID && ids.has(id)
   const out: { id: string; workflowId: string }[] = []
   for (const p of projects) {
-    if (p.workflowId && ids.has(p.workflowId)) continue
+    if (usable(p.workflowId)) continue
     const cat = categories.find((c) => c.id === p.categoryId)
-    if (!p.workflowId && cat?.workflowId && ids.has(cat.workflowId)) continue
+    if (!p.workflowId && usable(cat?.workflowId)) continue
     out.push({ id: p.id, workflowId: general.id })
   }
   return out

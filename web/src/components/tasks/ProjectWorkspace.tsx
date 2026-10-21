@@ -25,7 +25,8 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
-import { TaskComposer, projectWorkflowId } from './TaskComposer'
+import { TaskComposer } from './TaskComposer'
+import { projectDefaultWorkflow } from '@shared/project-workflow'
 import { TaskControlButton } from './TaskControl'
 import { TaskRenameInput, useTaskRowMenu } from './TaskMenu'
 import { TaskStatusIcon } from './TaskStatusIcon'
@@ -45,7 +46,7 @@ function ProjectHome({ project }: { project: Project }) {
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务真的在跑时每秒刷新，耗时跟着走
   const now = useNow(list.some((t) => t.working))
-  const wf = workflows.find((w) => w.id === projectWorkflowId(project, projectCategories))
+  const wf = projectDefaultWorkflow(project, projectCategories, workflows)
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
   // 导入别人导出的任务：放进这个项目，只能查看
   const file = useRef<HTMLInputElement>(null)

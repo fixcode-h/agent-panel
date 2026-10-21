@@ -54,6 +54,7 @@ function host(task: Task, log: AgentCall[]): EngineHost {
     newId: () => `id${++n}`,
     runAgent: async (call) => {
       log.push(call)
+      if (call.dispatching === 'plan') return { ok: true, text: '```dispatch\n{"action":"run","input":"做功能"}\n```' }
       if (call.dispatching === 'evaluate') return { ok: true, text: '好。\n```dispatch\n{"action":"continue"}\n```' }
       if (call.dispatching === 'summary') return { ok: true, text: '最终：都好了' }
       if (call.dispatching === 'answer') return { ok: true, text: '用方案二' }
@@ -113,8 +114,8 @@ test('编排工具：派子 Agent 并行、取结果、问主 Agent、传话，�
   assert.equal(by('a/sub/h2').agentId, 'q', '按名字交给指定的 Agent')
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
-  // 主 Agent：两个节点各评估一次、回答一次提问、最后整理一次
-  assert.equal(log.filter((c) => c.dispatching).length, 4)
+  // 主 Agent：第一条要求分析一次、两个节点各评估一次、回答一次提问、最后整理一次
+  assert.equal(log.filter((c) => c.dispatching).length, 5)
   assert.ok(log.filter((c) => c.dispatching).every((c) => c.sessionKey === '@main'))
   assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子 Agent/.test(m.text)))
 })
@@ -126,6 +127,7 @@ test('编排工具的 MCP：列出工具、调用、结束后失效', async () =
   let orch: AgentCall['orch']
   const h = host(task, log)
   h.runAgent = async (call) => {
+    if (call.dispatching === 'plan') return { ok: true, text: '```dispatch\n{"action":"run","input":"x"}\n```' }
     if (call.step?.id === 'a') orch = call.orch
     return call.dispatching === 'evaluate'
       ? { ok: true, text: '```dispatch\n{"action":"continue"}\n```' }

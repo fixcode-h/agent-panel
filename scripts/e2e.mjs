@@ -1506,11 +1506,11 @@ try {
     const main = by('@main')
     assert.equal(main.kind, 'main')
     assert.equal(main.status, 'done')
-    // 评估：实现 2 次（退回一次）、测试 2 次（委派一次）；修复是子 Agent 做的也评估 1 次；最后整理 1 次
+    // 评估：先分析第一条要求 1 次；实现 2 次（退回一次）、测试 2 次（委派一次）；修复是子 Agent 做的也评估 1 次；最后整理 1 次
     assert.equal(
       main.rounds,
-      6,
-      '主 Agent 调度了 6 轮 ' + JSON.stringify(dm.messages.map((m) => [m.step, m.text.slice(0, 160)])),
+      7,
+      '主 Agent 调度了 7 轮 ' + JSON.stringify(dm.messages.map((m) => [m.step, m.text.slice(0, 160)])),
     )
     assert.match(main.output, /最终结果：主 Agent 整理好了/)
     assert.equal(by('d3').branch, 'fail', '分支由主 Agent 选')
@@ -1519,7 +1519,8 @@ try {
     assert.equal(by('d3/call.1/c1')?.status, 'done', '委派的工作流挂在节点下面执行')
     const mine = calls().slice(n0)
     const mainCalls = mine.filter((c) => /## 事件：/.test(c.input))
-    assert.equal(mainCalls.length, 6)
+    assert.equal(mainCalls.length, 7)
+    assert.match(mainCalls[0].input, /## 事件：这个对话的第一条要求/, '第一条要求先交给主 Agent 分析')
     assert.match(mainCalls[0].input, /你是工作流「主 Agent 调度」流程「主流程」的常驻编排器/, '第一轮带完整的职责说明')
     assert.match(mainCalls[0].input, /帮忙检查/, '列出可以委派的工作流')
     assert.ok(

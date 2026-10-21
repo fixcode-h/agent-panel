@@ -58,6 +58,7 @@ import {
 import {
   dispatchText,
   evaluateEvent,
+  firstPlanEvent,
   mainDuties,
   parseDispatch,
   planEvent,
@@ -2056,15 +2057,15 @@ export async function runEngineTurn(host: EngineHost) {
     !task.flowClosed &&
     (tops.length === 0 || tops.some((s) => s.status !== 'done' && s.status !== 'skipped'))
 
-  /** 按流程图执行第 n 次运行（没完成的节点接着做） */
-  const runWorkflow = async (n: number): Promise<boolean> => {
+  /** 按流程图执行第 n 次运行（没完成的节点接着做）；input 是编排器为这次运行补充的要求 */
+  const runWorkflow = async (n: number, input = ''): Promise<boolean> => {
     const inv: Invocation = {
       workflow: wf!,
       flow: flow!,
       parentId: '',
       slot: '',
       round: 0,
-      input: '',
+      input,
       depth: 0,
       run: n,
     }
@@ -2103,7 +2104,46 @@ export async function runEngineTurn(host: EngineHost) {
     return runWorkflow(n)
   }
 
-  if (task.mode === 'workflow' && wf && flow && unfinished) {
+  // 新对话的第一条要求先交给常驻编排器分析，由它决定要不要起运行；没有编排器的单节点工作流照旧直接执行。
+  // 新建任务时节点已经按流程排好（都是待执行），第一次运行还没开始
+  const first =
+    task.mode === 'workflow' &&
+    !!wf &&
+    !!flow &&
+    dispatching &&
+    !task.flowClosed &&
+    run === 1 &&
+    tops.every((s) => s.status === 'pending')
+
+  if (first) {
+    const inv: Invocation = { workflow: wf!, flow: flow!, parentId: '', slot: '', round: 0, input: '', depth: 0, run }
+    const main = openMain(host, inv)
+    const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, main.step.agentId)
+    if (turn) host.changed(true)
+    const r = await mainTurn(host, main, 'plan', firstPlanEvent(host.prompt))
+    if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
+    if (!r.ok) {
+      if (host.prewarm) {
+        task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
+        return
+      }
+      return finish(host, r)
+    }
+    const d = parseDispatch(r.text) ?? { action: 'answer' as const }
+    main.step.output = clip(stripDispatch(r.text).trim(), MAX_OUTPUT)
+    host.changed(true)
+    // 编排器用工具直接要求的运行（run_workflow）优先，其次才是 dispatch 里的决定
+    const asked = takePendingRun(host)
+    const input = asked || (d.action === 'run' ? (d.input ?? '') : d.action === 'restart' ? d.feedback : '')
+    if (asked || d.action === 'run' || d.action === 'restart') {
+      if (input)
+        system(host, t('主 Agent 起了第 {n} 次运行：{input}', { n: run, input: clip(input, 300) }), main.step.id)
+      if (!(await runWorkflow(run, input))) return
+    } else {
+      system(host, dispatchText(d, t('第一条要求')), main.step.id)
+      host.changed(true)
+    }
+  } else if (task.mode === 'workflow' && wf && flow && unfinished) {
     if (!(await runWorkflow(run))) return
   } else if (task.mode === 'workflow' && unfinished) {
     return finish(host, { ok: false, error: t('工作流不存在，可能已被删除') })

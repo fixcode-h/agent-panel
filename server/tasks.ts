@@ -16,8 +16,8 @@ import {
   RequestAnswer,
 } from '../shared/schema.ts'
 import { blockedStep, taskFlow, taskWorkflows } from '../shared/flow.ts'
-import { DEFAULT_WORKFLOW_ID, taskSnapshot } from '../shared/builtin/default.ts'
-import { GENERAL_NAME, GENERAL_ORIGIN } from '../shared/builtin/workflows.ts'
+import { taskSnapshot } from '../shared/builtin/default.ts'
+import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'
 import {
   beginRun,
@@ -197,18 +197,11 @@ export function tasksApi(deps: {
 
   /**
    * 项目默认的工作流：项目自己指定 → 分类默认 → 内置的「通用项目」。
-   * 项目必须能解析出一个工作流：对话里的常驻编排器、文档和版本的规范都来自它
+   * 内置的「默认」不作为项目默认（它没有常驻编排器）；项目必须能解析出一个工作流
    */
   async function projectWorkflow(p: Project) {
     const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
-    const id = p.workflowId || cat?.workflowId
-    if (id) {
-      const hit = await deps.workflows.get(id)
-      if (hit) return hit
-    }
-    const all = await deps.workflows.list()
-    const general = all.find((w) => w.origin === GENERAL_ORIGIN) ?? all.find((w) => w.name === GENERAL_NAME)
-    return general ?? (await deps.workflows.get(DEFAULT_WORKFLOW_ID)) ?? undefined
+    return projectDefaultWorkflow(p, cat ? [cat] : [], await deps.workflows.list())
   }
 
   async function start(
