@@ -456,6 +456,7 @@ function seed(): Db {
     testSteps: [],
     wslDistro: '',
     gitPolicy: 'ask',
+    childIsolate: true,
     ...o,
   })
   return {
@@ -882,6 +883,7 @@ function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
     }
   }
   if (kind === 'raw') fail('在线演示里没有图片')
+  if (kind === 'reveal') fail('在线演示不能打开本机目录')
   return { dir, branch: p.path ? 'main' : null, isGit: !!p.path }
 }
 
@@ -1469,8 +1471,10 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     testSteps: workflow ? (project?.testSteps ?? []) : [],
     platform: workflow ? 'win32' : '',
   })
-  // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃
-  if (input.isolate && project)
+  // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃。
+  // 和服务端一致：没传 isolate 时，子对话按项目设置默认隔离
+  const isolate = input.isolate ?? (!!input.parentTaskId && !!project && project.childIsolate !== false)
+  if (isolate && project)
     task.worktree = {
       path: '',
       branch: `agent-panel/${task.id.slice(5, 13)}`,
@@ -1730,8 +1734,8 @@ function tasksRoute(
     }
     return { dir, branch: p?.path ? 'main' : null, isGit: !!p?.path }
   }
-  // 演示里没有本机的文件管理器
-  if (sub === 'reveal') return { ok: true, dir: '', demo: true }
+  // 演示里没有本机的文件管理器：和「打开数据目录」一样明说打不开，不假装成功
+  if (sub === 'reveal') fail('在线演示不能打开本机目录')
   // 演示里没有真的目录：差异用 Agent 修改文件时给出的改动拼出来，不能撤销
   if (sub === 'diff') {
     const file = query.get('path') ?? ''

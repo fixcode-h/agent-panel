@@ -2223,10 +2223,18 @@ async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: bool
 /** 对话 Agent 的提示：这次的消息、可选工作流、子对话目录，以及分派规则 */
 async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', planning: boolean, coordinator: boolean) {
   const catalog = host.workflowCatalog?.() ?? []
+  const wt = host.task.worktree?.state === 'active' ? host.task.worktree : null
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     policyPart(host),
     statePart(host.task),
+    // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
+    wt
+      ? `## 执行目录
+你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
+提交留在这个分支上，由用户决定合并还是丢弃：不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
+${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
+      : '',
     catalog.length && planning
       ? `## 可用工作流\n${catalog
           .map(
@@ -2252,7 +2260,8 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
 2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会自己列计划并执行。
 3. 只是一般问题、讨论或很小的请求：自己回答或直接处理，不要新建子对话。
-不要同时把同一条消息发给多个子对话。子对话不能再创建子对话。`,
+不要同时把同一条消息发给多个子对话。子对话不能再创建子对话。
+子对话默认在独立分支的单独目录里执行：写 message 时不要把「在项目目录里直接改」写进去，也不要让子对话去碰主分支。`,
     )
   } else if (kind === 'top') {
     parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。`)

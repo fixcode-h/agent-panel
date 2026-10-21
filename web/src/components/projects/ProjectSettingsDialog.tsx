@@ -45,6 +45,7 @@ const blank: ProjectInput = {
   testSteps: [],
   wslDistro: '',
   gitPolicy: 'ask',
+  childIsolate: true,
 }
 
 /** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
@@ -627,6 +628,21 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                 </Field>
                 <span className="text-xs text-subtle">
                   {t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
+                </span>
+                <Field label={t('子对话用独立分支')}>
+                  <Select
+                    value={draft.childIsolate ? 'on' : 'off'}
+                    onChange={(v) => set('childIsolate', v.target.value === 'on')}
+                    options={[
+                      { value: 'on', label: t('默认隔离（推荐）') },
+                      { value: 'off', label: t('直接用项目目录') },
+                    ]}
+                  />
+                </Field>
+                <span className="text-xs text-subtle">
+                  {t(
+                    '子对话在各自的 git 工作目录里执行，几个子对话同时改同一个项目也不会互相覆盖；完成后再决定合并到父对话还是丢弃。不是 git 仓库、还没有提交时自动退回项目目录。',
+                  )}
                 </span>
               </FormSection>
             </div>

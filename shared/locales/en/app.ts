@@ -69,6 +69,9 @@ export const EN_APP: Record<string, string> = {
   项目名称: 'Project name',
   '打开项目「{name}」，右键查看更多操作': 'Open project “{name}” (right-click for more actions)',
   有对话需要你处理: 'A conversation needs your attention',
+  '拖动调整「{name}」的顺序': 'Drag to reorder “{name}”',
+  '拖动调整顺序（也可以按 Alt + ↑ / ↓）': 'Drag to reorder (or press Alt + ↑ / ↓)',
+  '保存项目顺序失败：{msg}': 'Couldn’t save the project order: {msg}',
   '对话已完成，还没查看': 'Conversation finished — not viewed yet',
   '{n} 个执行中': '{n} running',
   '在「{name}」新建对话': 'New conversation in “{name}”',
@@ -168,6 +171,11 @@ export const EN_APP: Record<string, string> = {
   '不推送，只做本地提交': 'Never push; local commits only',
   '本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。':
     'Local commits are unaffected. Pushes, PRs and P4 submits follow this setting and the choice made in each conversation.',
+  子对话用独立分支: 'Separate branch for sub-conversations',
+  '默认隔离（推荐）': 'Isolated by default (recommended)',
+  直接用项目目录: 'Use the project directory directly',
+  '子对话在各自的 git 工作目录里执行，几个子对话同时改同一个项目也不会互相覆盖；完成后再决定合并到父对话还是丢弃。不是 git 仓库、还没有提交时自动退回项目目录。':
+    'Sub-conversations run in their own git worktrees, so several of them can work on the same project without overwriting each other; merge back into the parent or discard when done. Falls back to the project directory when it is not a git repository or has no commits yet.',
   是: 'Yes',
   否: 'No',
   '这个项目单独指定了工作流，不受分类默认的影响。':
@@ -248,7 +256,4 @@ export const EN_APP: Record<string, string> = {
     ': {name} is installed on this machine. Enable it to run Agents and workflows.',
   '：先安装并启用一个 CLI，才能运行 Agent 和工作流。': ': Install and enable a CLI to run Agents and workflows.',
   '去启用 {name}': 'Enable {name}',
-  '拖动调整「{name}」的顺序': 'Drag to reorder “{name}”',
-  '拖动调整顺序（也可以按 Alt + ↑ / ↓）': 'Drag to reorder (or press Alt + ↑ / ↓)',
-  '保存项目顺序失败：{msg}': 'Couldn’t save the project order: {msg}',
 }

@@ -571,6 +571,11 @@ const ProjectFields = z.object({
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
+   * 子对话默认在独立分支（git worktree）里执行：几个子对话同时改一个目录时互不干扰。
+   * 不是 git 仓库、没有提交或建不出来时退回项目目录，不挡住子对话创建
+   */
+  childIsolate: z.boolean().default(true),
+  /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
    */
@@ -650,8 +655,11 @@ export const NewTaskInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** chat 模式：Agent 参数的值（没给的用默认值） */
   params: z.record(z.string(), ParamValue).default({}),
-  /** 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以 */
-  isolate: z.boolean().default(false),
+  /**
+   * 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以。
+   * 不传时按项目设置：子对话默认隔离（见 Project.childIsolate），其他任务默认不隔离
+   */
+  isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
 })

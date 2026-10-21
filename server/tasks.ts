@@ -42,7 +42,6 @@ import { chatMissingParams } from '../shared/agent-role.ts'
 import { getSettings } from './settings.ts'
 import { detectClis } from './detect.ts'
 import { gitChanges, gitFileDiff, gitHead, gitNumstat, gitRevertFile } from './exec/git.ts'
-import { revealItem } from './open.ts'
 import {
   answerRequest,
   autoAnswerQuestions,
@@ -64,8 +63,9 @@ import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
 import { mkdir, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
-import { listDir, listLevel, rawInDir, readInDir, searchInDir, searchNameInDir } from './files.ts'
+import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -185,6 +185,7 @@ export function tasksApi(deps: {
     testSteps: [],
     wslDistro: '',
     gitPolicy: 'ask',
+    childIsolate: false,
     createdAt: '',
     updatedAt: '',
   })
@@ -444,10 +445,12 @@ export function tasksApi(deps: {
             agentId: worker?.id ?? project.defaultAgentId,
             prompt: message,
           })
-          const draft = newTask(input, undefined, at, subId, [], {})
+          const draft = { ...newTask(input, undefined, at, subId, [], {}), id: subId }
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
           // 只有直接调接口没给时才退回用户消息开头
           if (title.trim()) draft.title = title.trim().slice(0, 80)
+          // 和接口创建的子对话一致：项目开着「子对话用独立分支」时先起一个独立目录
+          if (project?.id && project.childIsolate) await isolateChild(draft, project, entry.task)
           const sub = await store.create({ ...draft, id: subId })
           void start(reserve(sub), withAttachments(message, []), true, agents).catch((e) =>
             log.error('task', '子对话执行出错', { task: sub.id, error: (e as Error).message }),
@@ -854,8 +857,9 @@ export function tasksApi(deps: {
     if (!project) return bad(c, t('项目不存在'), 404)
     const agents = await deps.agents.list()
     // 子对话：挂在父对话下，固定用任务 Agent，不能再建下一层
+    let parent: Task | undefined
     if (input.parentTaskId) {
-      const parent = await store.get(input.parentTaskId)
+      parent = (await store.get(input.parentTaskId)) ?? undefined
       if (!parent) return bad(c, t('父对话不存在'), 404)
       if (parent.parentTaskId) return bad(c, t('子对话不能再创建子对话'))
       if (parent.projectId !== input.projectId) return bad(c, t('子对话必须和父对话在同一个项目'))
@@ -892,12 +896,15 @@ export function tasksApi(deps: {
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
     }
-    if (input.isolate && input.projectId) {
-      try {
-        draft.worktree = await createWorktree(project.path, draft.id, draft.title)
-      } catch (e) {
-        return bad(c, (e as Error).message)
-      }
+    // 显式传了 isolate 就按它；没传时子对话按项目设置默认隔离，其他任务不隔离
+    if ((input.isolate ?? (!!parent && project.childIsolate)) && input.projectId) {
+      if (input.isolate) {
+        try {
+          draft.worktree = await createWorktree(project.path, draft.id, draft.title)
+        } catch (e) {
+          return bad(c, (e as Error).message)
+        }
+      } else await isolateChild(draft, project, parent)
     }
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
     const expanded = await expandForWorkflow(draft, input.prompt)
@@ -1105,7 +1112,10 @@ export function tasksApi(deps: {
         ? ((await deps.projects.get(tk.projectId))?.path ?? '')
         : path.join(CHATS_DIR, tk.id)
 
-  /** 合并或丢弃独立分支：只在任务停下时做，免得 Agent 还在往里写 */
+  /**
+   * 合并或丢弃独立分支：只在任务停下时做，免得 Agent 还在往里写。
+   * 子对话合并进父对话的分支（父也在独立分支时），否则合并进项目当前的分支。
+   */
   async function finishWorktree(c: Context, merge: boolean) {
     const id = c.req.param('id')!
     if (live.has(id)) return bad(c, t('任务正在执行，等它停下后再处理独立分支'), 409)
@@ -1115,10 +1125,13 @@ export function tasksApi(deps: {
     const project = await deps.projects.get(tk.projectId)
     if (!project) return bad(c, t('任务所属的项目已经不存在'))
     const wt = tk.worktree!
+    // 父对话也在独立分支、而且目录还在：先并回父的分支，父再并回项目
+    const parent = tk.parentTaskId ? await store.get(tk.parentTaskId) : null
+    const target = parent && isolated(parent) && existsSync(parent.worktree!.path) ? parent.worktree!.path : project.path
     try {
       if (merge) {
-        const target = await mergeWorktree(project.path, wt, `Agent 面板：${tk.title}`)
-        return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'merged', note: target } }))
+        const into = await mergeWorktree(project.path, wt, `Agent 面板：${tk.title}`, target)
+        return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'merged', note: into } }))
       }
       await removeWorktree(project.path, wt, true)
       return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'discarded', note: '' } }))
@@ -1135,6 +1148,34 @@ export function tasksApi(deps: {
     repo ??= (await deps.projects.get(tk.projectId))?.path
     if (repo) await removeWorktree(repo, tk.worktree!, true).catch(() => {})
     else await rm(tk.worktree!.path, { recursive: true, force: true }).catch(() => {})
+  }
+
+  /**
+   * 子对话默认起独立分支：父对话也在独立分支时接着父的分支开，形成「子 → 父 → 项目」。
+   * 建不出来（不是 git 仓库、还没有提交、分支重名）就退回上层目录，留一条说明，不挡住创建。
+   */
+  async function isolateChild<T extends { id: string; title: string; worktree: Task['worktree']; messages: TaskMessage[] }>(
+    draft: T,
+    project: Project,
+    parent?: Task,
+  ) {
+    const base = parent && isolated(parent) ? parent.worktree!.path : project.path
+    try {
+      draft.worktree = await createWorktree(base, draft.id, draft.title)
+    } catch (e) {
+      draft.worktree = null
+      draft.messages.push({
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: t('没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。', {
+          reason: (e as Error).message,
+        }),
+        tools: [],
+        at: new Date().toISOString(),
+      })
+    }
   }
 
   // 一个改动文件的差异：git 仓库和任务开始时的提交比；不是仓库时拼出 Agent 改这个文件时给出的改动
@@ -1213,14 +1254,13 @@ export function tasksApi(deps: {
     })
   })
 
-  // 在系统的文件管理器里打开这个文件所在的文件夹并选中它（只能打开任务目录里面的文件）
+  // 在系统的文件管理器里打开这个文件所在的文件夹并选中它；传空路径时打开任务目录
+  // （只能打开任务目录里面的文件）
   routes.post('/:id/reveal', async (c) => {
     const { path: file } = (await c.req.json().catch(() => ({}))) as { path?: string }
     const want = String(file ?? '').trim()
-    if (!want) return bad(c, t('缺少文件路径'))
     return inTaskDir(c, async (dir) => {
-      // 文件已经被删掉时打开它所在的文件夹，不让整个操作失败
-      revealItem(path.resolve(dir, want))
+      await revealInDir(dir, want)
       return c.json({ ok: true, dir })
     })
   })

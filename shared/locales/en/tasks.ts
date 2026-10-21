@@ -20,6 +20,10 @@ export const EN_TASKS: Record<string, string> = {
   '还有 {n} 处匹配': '{n} more matches',
   '匹配太多，只显示了前面一部分。': 'Too many matches; only the first ones are shown.',
   复制路径: 'Copy path',
+  复制相对路径: 'Copy relative path',
+  复制绝对路径: 'Copy absolute path',
+  复制项目路径: 'Copy project path',
+  折叠: 'Collapse',
   在编辑器中打开: 'Open in editor',
   '项目目录里找不到这个文件，可能已经被移动或删除。':
     'This file is not in the project directory; it may have been moved or deleted.',
@@ -333,6 +337,8 @@ export const EN_TASKS: Record<string, string> = {
   '这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。':
     'A task is already running in this project. Two tasks editing one directory can overwrite each other; turn on "Separate branch" to keep them apart.',
   项目当前的分支: "the project's current branch",
+  '没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。':
+    'Could not create a separate branch ({reason}); running in the current directory without isolation.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
   已丢弃独立分支: 'Separate branch discarded',
   '独立分支已合并到「{branch}」': 'Separate branch merged into "{branch}"',
