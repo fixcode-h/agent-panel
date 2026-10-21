@@ -11,7 +11,7 @@ import { encodeText, projectFormat } from '../shared/file-format.ts'
 test('默认是 UTF-8 无 BOM、LF：shebang 在 Linux 里能直接执行', () => {
   const bytes = encodeText('#!/usr/bin/env node\nconsole.log(1)\n', DEFAULT_FILE_FORMAT)
   assert.equal(bytes[0], 0x23, '第一个字节就是 #，没有 BOM')
-  assert.ok(!(bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf]))), '不能有 UTF-8 BOM')
+  assert.ok(!bytes.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])), '不能有 UTF-8 BOM')
   assert.ok(!bytes.includes(0x0d), '不能有 CR')
 })
 
