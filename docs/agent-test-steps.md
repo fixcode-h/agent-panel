@@ -57,6 +57,7 @@ type TestStep = {
   cwd: string // 相对项目根的工作目录，空表示项目根
   when: string // 执行条件，例如「仅改了 web/ 时」
   timeoutSec: number // 0 表示不限
+  merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
   note: string // 给执行者看的说明
   enabled: boolean
 }
@@ -182,3 +183,15 @@ type TestStep = {
 | `server/assist.ts`                                      | AI 配置的执行（项目目录只读）                                |
 | `web/src/components/projects/ProjectSettingsDialog.tsx` | 项目设置：测试步骤、Agent 参数、AI 按钮                      |
 | `server/agent-params.test.ts`                           | 派生、合并、快照、步骤校验、AI 结果校验的测试                |
+
+## 子对话的隔离和合并编译
+
+项目设置「常规 → 子对话」选隔离方式，默认「独立 worktree」：
+
+- 子对话第一次执行时从父对话所在的目录建 worktree，只用来隔离文件编辑（建的时候跳过 LFS 内容）。
+- 子对话改完调用 `submit_build`：面板提交它的分支，排队试合回**建 worktree 的那个目录、那个分支**（不限定 dev），
+  在原目录跑勾了「合并时编译」的步骤；通过才提交合并，失败撤回、原目录不变。结果推回子对话，同时告诉父对话。
+- 选「共用目录 + 认领文件」时，子对话都在项目目录里改，先 `claim_files` 认领，编译一次只跑一个。
+
+长命令（完整测试、编译）可以用 `run_background` 交给面板在后台跑，CLI 先去做别的，跑完结果自动推回对话；
+标成独占的命令按目录排队，跑的期间文件变了会提醒结果可能不准。

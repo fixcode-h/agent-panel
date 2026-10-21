@@ -556,4 +556,15 @@ export const EN_TASKS: Record<string, string> = {
   '按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤':
     "Based on this project's current scripts and config, generate test steps for type checking, unit tests, end-to-end tests and the build",
   '这个工作流没有需要配置的参数。': 'This workflow has no parameters to configure.',
+  子对话隔离: 'Sub-conversation isolation',
+  '独立 worktree（推荐）': 'Separate worktree (recommended)',
+  '共用目录 + 认领文件': 'Shared folder + file claims',
+  '每个子对话在自己的独立分支目录里改文件，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。':
+    "Each sub-conversation edits files in its own branch folder without getting in the others' way. Builds don't run there: when it's done, its changes queue up to be merged back into the original folder and built with the test steps marked \"Build on merge\". They're committed only if the build passes; otherwise the merge is undone and the errors go back to the sub-conversation. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
+    "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
+  '子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交':
+    'When a sub-conversation submits its branch for a build, this step runs after merging back into the original folder; the merge is committed only if it passes',
+  合并时编译: 'Build on merge',
+  '已提交编译，等面板合回原目录编译': 'Submitted for build; waiting for the panel to merge it back and build',
 }

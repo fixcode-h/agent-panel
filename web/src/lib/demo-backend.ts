@@ -452,6 +452,7 @@ function seed(): Db {
     ...meta(),
     createdAt,
     agentParams: {},
+    childIsolation: 'worktree',
     workflowIds: [],
     defaultAgentId: '',
     agentSet: true,
@@ -487,6 +488,7 @@ function seed(): Db {
               timeoutSec: 0,
               note: '',
               enabled: true,
+              merge: true,
             },
             {
               id: 'demo-e2e',
@@ -498,6 +500,7 @@ function seed(): Db {
               timeoutSec: 600,
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
+              merge: false,
             },
           ],
           wslDistro: 'Ubuntu-24.04',

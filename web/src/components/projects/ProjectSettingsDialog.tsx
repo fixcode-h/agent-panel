@@ -39,6 +39,7 @@ import { cliSettings, orderClis } from '@shared/settings'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
+import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { ParamsForm } from '@/components/agents/ParamFields'
@@ -64,6 +65,7 @@ const blank: ProjectInput = {
   agentSet: true,
   workflowParams: {},
   agentParams: {},
+  childIsolation: 'worktree',
   testSteps: [],
   wslDistro: '',
   fileFormat: undefined,
@@ -773,6 +775,31 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   </span>
                 </FormSection>
 
+                <FormSection title={t('子对话')}>
+                  <Field label={t('子对话隔离')}>
+                    <div>
+                      <Segmented
+                        label={t('子对话隔离')}
+                        value={draft.childIsolation}
+                        onChange={(v) => set('childIsolation', v as ProjectInput['childIsolation'])}
+                        options={[
+                          { id: 'worktree', label: t('独立 worktree（推荐）') },
+                          { id: 'claim', label: t('共用目录 + 认领文件') },
+                        ]}
+                      />
+                    </div>
+                  </Field>
+                  <span className="text-xs leading-relaxed text-subtle">
+                    {draft.childIsolation === 'worktree'
+                      ? t(
+                          '每个子对话在自己的独立分支目录里改文件，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。',
+                        )
+                      : t(
+                          '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',
+                        )}
+                  </span>
+                </FormSection>
+
                 <FormSection title={t('版本与推送')}>
                   <Field label={t('推送到远端')}>
                     <Select
@@ -1113,6 +1140,18 @@ function TestStepsEditor({
                 />
                 {t('启用')}
               </label>
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
+                title={t('子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交')}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={s.merge}
+                  onChange={(e) => patch(i, { merge: e.target.checked })}
+                />
+                {t('合并时编译')}
+              </label>
             </div>
             {s.note && <span className="text-xs text-subtle">{s.note}</span>}
           </li>
@@ -1135,6 +1174,7 @@ function TestStepsEditor({
                 timeoutSec: 0,
                 note: '',
                 enabled: true,
+                merge: false,
               },
             ])
           }

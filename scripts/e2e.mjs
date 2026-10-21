@@ -336,6 +336,8 @@ try {
     path: projectDir,
     categoryId: '',
     workflowId: wf.id,
+    // 下面大部分子对话的测试按共用目录写；独立 worktree 有单独的测试
+    childIsolation: 'claim',
   })
 
   // ---- 工作流任务 ----
@@ -1237,6 +1239,47 @@ try {
     assert.equal(parentDropped.worktree.state, 'discarded')
     await call('DELETE', `/tasks/${isoParent.id}`)
     step('子对话不建独立分支：和父对话共用目录，父对话在独立分支里时就在父的目录里改')
+
+    // ---- 项目设成「独立 worktree」：子对话各自开分支改，编译交给面板合回原目录 ----
+    const { id: _pid, createdAt: _c, updatedAt: _u, ...projectInput } = project
+    await call('PUT', `/projects/${project.id}`, { ...projectInput, childIsolation: 'worktree' })
+    const wtParent = await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: '父对话' })).id,
+      20000,
+    )
+    assert.equal(wtParent.worktree, null, '父对话没开独立分支')
+    const wtKid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: wtParent.id,
+          prompt: 'COMMIT 子对话在自己的分支里改',
+        })
+      ).id,
+      20000,
+    )
+    assert.equal(wtKid.worktree?.state, 'active', '子对话第一次执行时开了独立分支')
+    assert.ok(
+      !gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
+      '提交在子对话的分支上，项目目录不受影响',
+    )
+    const wtPrompt = JSON.stringify(calls().at(-1))
+    assert.match(wtPrompt, /别的子对话改不到这里/, '提示里说明了在独立分支里改')
+    assert.match(wtPrompt, /编译交给面板/, '提示里说明编译交给面板')
+    assert.ok(!wtPrompt.includes('claim_files 认领'), '独立分支里不用认领文件')
+    // 假 CLI 每次都在工作目录写输出文件：项目目录里前面测试留下的那份没进版本控制，会挡住合并
+    for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+    const merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
+    assert.equal(merged.worktree.state, 'merged')
+    assert.ok(
+      gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
+      '合并后提交回到项目目录',
+    )
+    await call('DELETE', `/tasks/${wtParent.id}`)
+    await call('PUT', `/projects/${project.id}`, projectInput)
+    step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
 
     // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----
     const ruleParent = await waitDone(
@@ -4546,6 +4589,7 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
         await call('POST', '/projects', { name, description: '', path: '', categoryId: '', workflowId: wf.id }),
       )
     }
+    assert.equal(created[0].childIsolation, 'worktree', '新项目默认子对话用独立 worktree')
     const listOf = async () => (await call('GET', '/projects')).map((p) => p.id)
     const order = (await listOf()).filter((id) => created.some((p) => p.id === id))
     assert.deepEqual(

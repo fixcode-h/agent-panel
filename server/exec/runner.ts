@@ -94,6 +94,10 @@ export interface RealContext {
   messageParent?: EngineHost['messageParent']
   claimFiles?: EngineHost['claimFiles']
   releaseFiles?: EngineHost['releaseFiles']
+  childIsolation?: EngineHost['childIsolation']
+  submitBuild?: EngineHost['submitBuild']
+  runBackground?: EngineHost['runBackground']
+  checkBackground?: EngineHost['checkBackground']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -1330,6 +1334,10 @@ export async function runRealTurn(ctx: RealContext) {
     messageParent: ctx.messageParent,
     claimFiles: ctx.claimFiles,
     releaseFiles: ctx.releaseFiles,
+    childIsolation: ctx.childIsolation,
+    submitBuild: ctx.submitBuild,
+    runBackground: ctx.runBackground,
+    checkBackground: ctx.checkBackground,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {

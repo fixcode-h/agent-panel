@@ -179,6 +179,18 @@ export interface Orchestra {
   sendToConversation(id: string, message: string): Promise<{ ok: boolean; info: string }>
   /** 子对话（连同它的工作流节点）：和父对话通讯、认领要改的文件；子对话之间不能直接通讯 */
   child: boolean
+  /** 子对话和兄弟共用目录、需要认领文件（独立分支里的不用） */
+  claims: boolean
+  /** 对话（项目对话、子对话）：长命令交给面板在后台跑，跑完把结果推回这个对话 */
+  canBackground: boolean
+  runBackground(input: { command: string; name: string; cwd: string; exclusive: boolean }): Promise<{
+    ok: boolean
+    info: string
+  }>
+  checkBackground(id: string): string
+  /** 独立分支里的子对话：把改动交给面板合回原目录编译（排队，结果推回来） */
+  canSubmit: boolean
+  submitBuild(note: string): Promise<{ ok: boolean; info: string }>
   toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
@@ -251,6 +263,20 @@ export interface EngineHost {
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
+  /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、合回原目录编译，claim 共用目录认领文件 */
+  childIsolation?: 'claim' | 'worktree'
+  /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
+  submitBuild?: (note: string) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
+   * exclusive 的（编译这类）按项目排队，同一时间只跑一个
+   */
+  runBackground?: (input: { command: string; name: string; cwd: string; exclusive: boolean }) => Promise<{
+    ok: boolean
+    info: string
+  }>
+  /** 查后台命令：不传编号列出这个对话的全部 */
+  checkBackground?: (id: string) => string
   /**
    * 父对话发布的全局规则（「/rule」）：子对话和它的工作流节点每次调用都带上，必须遵守。
    * 父对话自己也带上，分派时提醒子对话
@@ -599,6 +625,30 @@ function fileFormatPart(host: EngineHost) {
  * 同一个任务里各个节点（包括主 Agent、派出的子 Agent）都一样的开头：需求、工作流说明、通用要求。
  * 放在最前面，按前缀匹配缓存的模型服务（Codex 等）能多命中一段
  */
+/**
+ * 独立分支里的子对话（连同它的工作流节点）：分支只用来隔离改文件，里面没有编译产物和依赖的构建结果，
+ * 编译、构建这类步骤交给面板合回原目录统一跑，不在这里跑
+ */
+function buildPart(host: EngineHost) {
+  if (!host.submitBuild) return ''
+  return `## 编译交给面板
+你在独立分支的目录里改文件，这里只隔离编辑：不要在这里跑编译、构建、打包或会写构建产物的命令（UE 的 Build.bat、npm run build 这类），也不要为了编译去装依赖。
+- 可以跑不写构建产物的快速检查：类型检查、lint、单个文件的语法检查。
+- 改完一批后调用 submit_build：面板把改动排队合回原目录，按项目里标了「合并时编译」的步骤编译，通过才算合进去；失败会撤回，并把报错推回给你，在这里修好再提交一次。
+- 提交后不用干等，可以接着做别的部分；结果到了再处理。没有编译通过，不说完成。`
+}
+
+/** 能用后台命令时说清楚什么时候用：不说的话模型照样同步跑长命令，一直卡着 */
+function backgroundPart(host: EngineHost) {
+  if (!host.runBackground) return ''
+  return `## 长命令放到后台
+预计超过一分钟的命令（完整测试、端到端测试、长时间的检查${host.submitBuild ? '' : '、编译'}）用 run_background 交给面板在后台跑，它马上返回，结果跑完会自动推回给你：
+- 等结果的时候接着做不依赖它的事：读代码、写文档、改和这条命令无关的文件。不要改这条命令要检查的文件，改了结果就不算数（面板会标出期间被改过）。
+- 编译、打包这类会抢文件锁的命令把 exclusive 设为 true，面板按项目排队，同一时间只跑一个。
+- 手上没有别的事时直接结束这一轮，结果到了会接着处理；不要反复调用 check_background 轮询。
+- 几秒就能跑完的命令照常直接执行。`
+}
+
 function commonPart(host: EngineHost, w?: Workflow) {
   const { original, extra } = userRequests(host.task)
   return [
@@ -608,6 +658,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     statePart(host.task),
     policyPart(host),
     rulesPart(host),
+    buildPart(host),
     fileFormatPart(host),
     '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
@@ -1950,6 +2001,28 @@ function makeOrchestra(
       return r
     },
     child: !!task.parentTaskId && !!host.messageParent,
+    claims: !!host.claimFiles,
+    canBackground: !!host.runBackground,
+    async runBackground(input) {
+      if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
+      if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
+      const r = await host.runBackground(input)
+      if (r.ok) host.changed(true)
+      return r
+    },
+    checkBackground(id) {
+      return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
+    },
+    canSubmit: !!host.submitBuild,
+    async submitBuild(note) {
+      if (!host.submitBuild) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
+      const r = await host.submitBuild(note.trim())
+      if (r.ok) {
+        system(host, t('已提交编译，等面板合回原目录编译'), where)
+        host.changed(true)
+      }
+      return r
+    },
     async toParent(text, question) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
@@ -2324,12 +2397,18 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
     policyPart(host),
     rulesPart(host),
     inboxPart(host),
+    buildPart(host),
+    backgroundPart(host),
     statePart(host.task),
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
       ? `## 执行目录
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
-提交留在这个分支上，由用户决定合并还是丢弃：不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
+${
+  host.task.parentTaskId
+    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译不在这里跑，改完用 submit_build 交给面板合回原目录编译，见下面的「编译交给面板」。'
+    : '提交留在这个分支上，由用户决定合并还是丢弃。'
+}不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
 ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       : '',
     catalog.length && planning
@@ -2356,14 +2435,24 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       `## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
 2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会按项目的默认工作流列计划并执行。
-3. 只是一般问题、讨论或很小的请求：自己回答或直接处理，不要新建子对话。
+3. 只是一般问题、讨论或很小的请求（改一两行、改个文案）：自己当场处理，比新建子对话快得多。
 一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
+分派时把你已经查到的东西一起交过去：相关文件和行号、已经确认的结论、用户的原话和验收标准都写进 message，子对话不用从头再摸一遍。
 
-## 子对话共用一个目录
-所有子对话都在项目目录里直接改，不建独立分支。为了不互相覆盖：
+${
+  host.childIsolation === 'worktree'
+    ? `## 子对话各自在独立分支里改
+要改代码的子对话都有自己的独立分支目录，只用来隔离改文件，互相看不到对方改到一半的文件。
+- 编译不在子对话里跑：子对话改完调用 submit_build，面板排队把它合回原目录（这个对话所在的目录）试编译，通过才提交，失败撤回并把报错推回给那个子对话。一次只合一个，相当于构建锁。
+- 每次合并编译的结果会告诉你。子对话反复失败、或者报错其实是别的子对话的改动引起的，由你协调。
+- 几个子对话都合进去之后，需要的话派「测试验收」在原目录里跑一遍完整的测试。`
+    : `## 子对话共用一个目录
+所有子对话都在同一个目录里直接改，不建独立分支。为了不互相覆盖：
 - 新建子对话时用 files 写清它负责的文件或目录（相对项目根），面板替它认领；别的子对话改这些文件要等它做完。
 - 两件事会改同一批文件时，交给同一个子对话，或者等前一个做完再交给下一个。
-- 子对话报告文件冲突或者提问时，由你决定谁先做、怎么分，再用 send_to_conversation 告诉它们。`,
+- 编译、全量测试会读到别的子对话改到一半的文件：同一时间只让一个子对话跑编译，结果不对时先确认是不是别人的改动造成的。
+- 子对话报告文件冲突或者提问时，由你决定谁先做、怎么分，再用 send_to_conversation 告诉它们。`
+}`,
     )
   } else if (kind === 'top') {
     parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。`)
@@ -2376,11 +2465,18 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
 你只负责当前这个子对话的任务，直接在对话里执行。你没有创建子对话或按工作流启动计划的能力。`,
     )
     if (host.messageParent)
-      parts.push(`## 和父对话、其他子对话的协作
+      parts.push(
+        host.claimFiles
+          ? `## 和父对话、其他子对话的协作
 你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
 - 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent 请父对话协调。做完一部分可以用 release_files 释放。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
-- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`)
+- 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
+- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`
+          : `## 和父对话的协作
+你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
+需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`,
+      )
   }
   return parts.filter(Boolean).join('\n\n')
 }

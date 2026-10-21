@@ -44,6 +44,33 @@ export function orchTools(o: Orchestra) {
       description: '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
       inputSchema: { type: 'object', properties: {} },
     },
+    ...(o.canBackground
+      ? [
+          {
+            name: 'run_background',
+            description:
+              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                command: { type: 'string', description: '要执行的命令原文' },
+                name: { type: 'string', description: '给这条命令起个短名字，例如「端到端测试」' },
+                cwd: { type: 'string', description: '相对当前目录的工作目录，不写就是当前目录' },
+                exclusive: {
+                  type: 'boolean',
+                  description: '编译、打包这类会抢文件锁的命令设为 true：按项目排队，同一时间只跑一个',
+                },
+              },
+              required: ['command'],
+            },
+          },
+          {
+            name: 'check_background',
+            description: '查后台命令的状态和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
+            inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+          },
+        ]
+      : []),
     ...(o.planning
       ? [
           {
@@ -145,21 +172,38 @@ export function orchTools(o: Orchestra) {
               required: ['text'],
             },
           },
-          {
-            name: 'claim_files',
-            description:
-              '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。这一轮结束时自动释放。',
-            inputSchema: {
-              type: 'object',
-              properties: { paths: { type: 'array', items: { type: 'string' } } },
-              required: ['paths'],
-            },
-          },
-          {
-            name: 'release_files',
-            description: '提前释放认领的文件（做完一部分、让给别的子对话时用）；不写 paths 释放全部。',
-            inputSchema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } } },
-          },
+          ...(o.canSubmit
+            ? [
+                {
+                  name: 'submit_build',
+                  description:
+                    '改完、在独立分支里做完快速检查后调用：面板把你现在的改动提交到你的分支，排队合回原目录跑编译，通过才算合进去，失败会撤回并把报错推回给你。马上返回，不用干等结果。',
+                  inputSchema: {
+                    type: 'object',
+                    properties: { note: { type: 'string', description: '这次改了什么，一句话' } },
+                  },
+                },
+              ]
+            : []),
+          ...(o.claims
+            ? [
+                {
+                  name: 'claim_files',
+                  description:
+                    '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。这一轮结束时自动释放。',
+                  inputSchema: {
+                    type: 'object',
+                    properties: { paths: { type: 'array', items: { type: 'string' } } },
+                    required: ['paths'],
+                  },
+                },
+                {
+                  name: 'release_files',
+                  description: '提前释放认领的文件（做完一部分、让给别的子对话时用）；不写 paths 释放全部。',
+                  inputSchema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } } },
+                },
+              ]
+            : []),
         ]
       : []),
     {
@@ -279,6 +323,23 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.sendToConversation(id, message)
       return text(r.info, !r.ok)
     }
+    case 'run_background': {
+      const command = str(a?.command).trim()
+      if (!command) return text('command 是空的：写要执行的命令', true)
+      const r = await o.runBackground({
+        command,
+        name: str(a?.name).trim() || command.slice(0, 40),
+        cwd: str(a?.cwd).trim(),
+        exclusive: a?.exclusive === true,
+      })
+      return text(r.info, !r.ok)
+    }
+    case 'check_background':
+      return text(o.checkBackground(str(a?.id)))
+    case 'submit_build': {
+      const r = await o.submitBuild(str(a?.note))
+      return text(r.info, !r.ok)
+    }
     case 'message_parent': {
       const body = str(a?.text).trim()
       if (!body) return text('text 是空的', true)
@@ -366,13 +427,16 @@ export function orchHint(o: Orchestra) {
     : ''
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
-  const child = o.child
-    ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、message_parent 向父对话汇报或提问；'
-    : ''
+  const bg = o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : ''
+  const child =
+    bg +
+    (o.child
+      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_build 改完提交编译（结果会推回来）、' : ''}message_parent 向父对话汇报或提问；`
+      : '')
   if (o.planning)
-    return `（你有面板工具 panel：${o.coordinator ? 'list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；' : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
+    return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
   if (o.coordinator)
-    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；get_status 查看节点状态；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
+    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${bg}get_status 查看节点状态；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
   return o.self.endsWith('@main')
     ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
     : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子 Agent 同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。）`

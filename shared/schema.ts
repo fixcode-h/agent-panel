@@ -545,6 +545,8 @@ export const TestStep = z.object({
     .default(0),
   note: z.string().trim().max(300).default(''),
   enabled: z.boolean().default(true),
+  /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
+  merge: z.boolean().default(false),
 })
 export type TestStep = z.infer<typeof TestStep>
 
@@ -594,6 +596,14 @@ const ProjectFields = z.object({
    * 留空时跟随设置里的全局格式（默认 UTF-8 无 BOM + LF）
    */
   fileFormat: FileFormat.optional(),
+  /**
+   * 子对话怎么避免互相干扰：
+   * - worktree：Git 项目里每个子对话在自己的独立分支目录里改文件（只隔离编辑，不在里面编译）；
+   *   改完提交编译，面板把它合回开分支的那个目录试编译，通过才提交、失败撤回并把报错交回子对话。
+   *   不是 Git 仓库（P4、没有版本控制）时自动退回 claim
+   * - claim：和父对话共用一个目录，改文件前认领（同一个文件同一时间只归一个子对话）
+   */
+  childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**

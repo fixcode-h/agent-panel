@@ -104,12 +104,14 @@ export function defaultTestSteps(
     timeoutSec: 0,
     note: '',
     enabled: true,
+    merge: false,
     ...extra,
   })
   if (kind === 'ue')
     return [
       step('ue-build', t('编译'), 'Build.bat <Target> Win64 Development -Project=<项目>.uproject -WaitMutex', {
         env: 'cmd',
+        merge: true,
         note: t('同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字'),
       }),
       step('ue-lua', t('Lua 语法检查'), 'luac -p <文件>', {
@@ -130,13 +132,13 @@ export function defaultTestSteps(
       step('rust-fmt', t('格式检查'), 'cargo fmt --check'),
       step('rust-clippy', t('静态检查'), 'cargo clippy --all-targets -- -D warnings'),
       step('rust-test', t('单元测试'), 'cargo test'),
-      step('rust-build', t('构建'), 'cargo build'),
+      step('rust-build', t('构建'), 'cargo build', { merge: true }),
     ]
   if (kind === 'go')
     return [
       step('go-vet', t('静态检查'), 'go vet ./...'),
       step('go-test', t('单元测试'), 'go test ./...'),
-      step('go-build', t('构建'), 'go build ./...'),
+      step('go-build', t('构建'), 'go build ./...', { merge: true }),
     ]
   if (kind === 'python')
     return [
@@ -144,13 +146,19 @@ export function defaultTestSteps(
       step('py-build', t('构建'), 'python -m build', { enabled: false }),
     ]
   if (kind === 'dotnet')
-    return [step('net-build', t('构建'), 'dotnet build'), step('net-test', t('单元测试'), 'dotnet test')]
+    return [
+      step('net-build', t('构建'), 'dotnet build', { merge: true }),
+      step('net-test', t('单元测试'), 'dotnet test'),
+    ]
   if (kind === 'cmake')
-    return [step('cmake-build', t('构建'), 'cmake --build build'), step('cmake-test', t('测试'), 'ctest')]
+    return [
+      step('cmake-build', t('构建'), 'cmake --build build', { merge: true }),
+      step('cmake-test', t('测试'), 'ctest'),
+    ]
   // Node / TypeScript：只列出项目里真的有的 scripts，不编不存在的命令
   const has = (k: string) => !!opts.scripts?.[k]
   const node: TestStep[] = []
-  if (has('typecheck')) node.push(step('node-typecheck', t('类型检查'), 'npm run typecheck'))
+  if (has('typecheck')) node.push(step('node-typecheck', t('类型检查'), 'npm run typecheck', { merge: true }))
   if (has('lint')) node.push(step('node-lint', t('代码检查'), 'npm run lint'))
   if (has('test:unit')) node.push(step('node-unit', t('单元测试'), 'npm run test:unit'))
   if (has('test:e2e'))
@@ -161,7 +169,7 @@ export function defaultTestSteps(
         note: opts.windows ? t('Windows 上在 WSL 里执行，不要在 PowerShell 里直接跑') : '',
       }),
     )
-  if (has('build')) node.push(step('node-build', t('构建'), 'npm run build'))
+  if (has('build')) node.push(step('node-build', t('构建'), 'npm run build', { merge: true }))
   return node
 }
 
