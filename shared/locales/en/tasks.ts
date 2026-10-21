@@ -339,6 +339,8 @@ export const EN_TASKS: Record<string, string> = {
   项目当前的分支: "the project's current branch",
   '没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。':
     'Could not create a separate branch ({reason}); running in the current directory without isolation.',
+  '新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。':
+    'The new version is downloaded; it replaces the current one and restarts after running tasks finish. You can also force the update now.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
   已丢弃独立分支: 'Separate branch discarded',
   '独立分支已合并到「{branch}」': 'Separate branch merged into "{branch}"',

@@ -68,7 +68,7 @@ import type {
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage } from '@shared/data'
-import type { AppReleases, AppUpdateJob, InterruptedTasks } from '@shared/version'
+import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
 
 /** 设计连同正在进行的 AI 对话 / 生成图片 */
@@ -93,7 +93,14 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error(body.error ?? t('请求失败（{status}）', { status: res.status }))
+    // 把响应体挂到错误上：有些接口（例如更新撞上「已经在更新」）会在里面带上要继续处理的信息
+    const err = new Error(body.error ?? t('请求失败（{status}）', { status: res.status })) as Error & {
+      status?: number
+      body?: unknown
+    }
+    err.status = res.status
+    err.body = body
+    throw err
   }
   return res.status === 204 ? (undefined as T) : res.json()
 }
@@ -207,6 +214,8 @@ export const api = {
   appReleases: (refresh = false) => request<AppReleases>(`/app/releases${refresh ? '?refresh=1' : ''}`),
   appInstall: (tag: string) => request<AppUpdateJob>('/app/install', json('POST', { tag })),
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
+  /** 正在跑的那次更新；没有时是 null */
+  appInstallCurrent: () => request<AppUpdateBusy | null>('/app/install-current'),
   appForceInstall: (id: string) => request<AppUpdateJob>(`/app/install/${id}/force`, json('POST', {})),
   appRollback: () => request<{ version: string }>('/app/rollback', json('POST', {})),
   /** 被上次「强制更新」打断的任务：新版本启动后问用户要不要继续 */

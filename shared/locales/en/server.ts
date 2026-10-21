@@ -263,7 +263,12 @@ export const EN_SERVER: Record<string, string> = {
   '已更新到 {version}，正在重启': 'Updated to {version}, restarting',
   '从源码运行时请用 git 更新，只有发布的包能在这里更新':
     'Running from source: update with git. Only released packages can update here.',
-  '正在更新，请稍等': 'Update in progress, please wait',
+  '正在更新到 {tag}（{phase}），请稍等': 'Updating to {tag} ({phase}), please wait',
+  '新版本已经下载完，正在等任务结束（{phase}）；可以直接强制更新':
+    'The new version is downloaded and waiting for tasks to finish ({phase}); you can force the update',
+  '超过 {n} 分钟没有进展，已作废，重新开始': 'No progress for over {n} minutes, so it was abandoned and restarted',
+  '正在更新到 {tag}（{phase}），等它结束再退回':
+    'Updating to {tag} ({phase}); wait for it to finish before rolling back',
   '有任务正在执行，请等它完成或先停止再更新':
     'Tasks are running. Wait for them to finish or stop them before updating.',
   '读取版本列表失败：{error}': 'Failed to load releases: {error}',

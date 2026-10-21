@@ -6,7 +6,15 @@ import { chmod, cp, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { CACHE_DIR } from './store.ts'
-import { REPO, pickUpdate, type AppRelease, type AppReleases, type AppUpdateJob } from '../shared/version.ts'
+import {
+  REPO,
+  STALE_UPDATE_MS,
+  pickUpdate,
+  type AppRelease,
+  type AppReleases,
+  type AppUpdateBusy,
+  type AppUpdateJob,
+} from '../shared/version.ts'
 import { capture } from './exec/process.ts'
 import { recordInterrupted } from './interrupted.ts'
 import { netFetch } from './net.ts'
@@ -220,6 +228,23 @@ export function updateApi(deps: {
   /** force：用户点了「强制更新」，停掉正在执行的任务后不再等 */
   const jobs = new Map<string, AppUpdateJob & { force?: boolean }>()
 
+  /**
+   * 记一次进展。更新卡住时靠它判断：下载没动静、等任务结束等了很久，
+   * 都会让 updatedAt 停住，超过 STALE_UPDATE_MS 就当这次更新已经死了
+   */
+  const touch = (job: AppUpdateJob) => {
+    job.updatedAt = new Date().toISOString()
+  }
+
+  /** 还没结束的更新；按最近有进展的时间排序，新的在前 */
+  const runningJobs = () =>
+    [...jobs.values()]
+      .filter((j) => j.status === 'running')
+      .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+
+  const isStale = (job: AppUpdateJob & { force?: boolean }) =>
+    Date.now() - Date.parse(job.updatedAt ?? '') > STALE_UPDATE_MS
+
   async function releases(refresh: boolean): Promise<AppRelease[]> {
     // 自动检查最多每 6 小时一次；设置里打开「版本更新」或点「检查更新」时 refresh，马上检查
     if (!refresh && cache && Date.now() - cache.at < CHECK_EVERY) return cache.list
@@ -268,6 +293,7 @@ export function updateApi(deps: {
     try {
       // 1. 下载
       job.phase = t('下载中')
+      touch(job)
       const res = await netFetch(rel.tarUrl, { headers: { 'User-Agent': 'agent-panel' } })
       if (!res.ok || !res.body) throw new Error(t('下载失败：{status}', { status: res.status }))
       job.total = Number(res.headers.get('content-length')) || rel.size
@@ -277,6 +303,7 @@ export function updateApi(deps: {
       const out = createWriteStream(file)
       for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
         job.received += chunk.length
+        touch(job)
         if (!out.write(chunk)) await new Promise((r) => out.once('drain', r))
       }
       await new Promise<void>((resolve, reject) => out.end((e?: Error | null) => (e ? reject(e) : resolve())))
@@ -302,6 +329,7 @@ export function updateApi(deps: {
       if (running > 0) {
         onWait?.()
         job.waiting = true
+        touch(job)
         while (running > 0) {
           // 用户点了「强制更新」：中断所有正在执行的 CLI，不再等它们自然结束
           if (job.force) {
@@ -309,6 +337,8 @@ export function updateApi(deps: {
             break
           }
           job.phase = t('等待任务结束（还有 {n} 个）', { n: running })
+          // 等任务结束也算有进展：任务数在变、用户还在看着，这段时间不能算卡住
+          touch(job)
           await new Promise((r) => setTimeout(r, 1000))
           running = deps.running()
         }
@@ -360,13 +390,31 @@ export function updateApi(deps: {
     }
   }
 
-  /** 开始装某个版本；不能装时返回原因和状态码 */
+  /**
+   * 开始装某个版本；不能装时返回原因和状态码。
+   * busy 是还没结束的那次更新：让页面能显示它的进度和「强制更新」，不是只给一句提示。
+   * 它已经超过 STALE_UPDATE_MS 没有进展时作废它，让这次能重新开始。
+   */
   function startInstall(
     rel: AppRelease,
     onWait?: () => void,
-  ): { job: AppUpdateJob; done: Promise<void> } | { error: string; status: 400 | 409 } {
+  ): { job: AppUpdateJob; done: Promise<void> } | { error: string; status: 400 | 409; busy?: AppUpdateBusy } {
     if (!packaged()) return { error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新'), status: 400 }
-    if ([...jobs.values()].some((j) => j.status === 'running')) return { error: t('正在更新，请稍等'), status: 409 }
+    const live = runningJobs()[0]
+    if (live && !isStale(live))
+      return {
+        error: live.waiting
+          ? t('新版本已经下载完，正在等任务结束（{phase}）；可以直接强制更新', { phase: live.phase })
+          : t('正在更新到 {tag}（{phase}），请稍等', { tag: live.tag, phase: live.phase }),
+        status: 409,
+        busy: { job: live, stale: false },
+      }
+    if (live) {
+      // 卡住的更新：作废它，让这次重新开始。它自己的循环还在跑，但不会再挡住新的一次
+      live.status = 'failed'
+      live.error = t('超过 {n} 分钟没有进展，已作废，重新开始', { n: Math.round(STALE_UPDATE_MS / 60_000) })
+      log.warn('update', `更新卡住了，作废后重新开始：${live.tag}`)
+    }
     const job: AppUpdateJob = {
       id: randomUUID(),
       tag: rel.tag,
@@ -374,6 +422,7 @@ export function updateApi(deps: {
       phase: t('准备中'),
       received: 0,
       total: 0,
+      updatedAt: new Date().toISOString(),
     }
     // 只有页面正在看的这一次有用，以前的记录丢掉
     for (const [id, j] of jobs) if (j.status !== 'running') jobs.delete(id)
@@ -383,6 +432,7 @@ export function updateApi(deps: {
       log.error('update', `更新到 ${rel.tag} 失败`, e)
       job.status = 'failed'
       job.error = (e as Error).message
+      touch(job)
     })
     return { job, done }
   }
@@ -442,7 +492,6 @@ export function updateApi(deps: {
     .post('/install', async (c) => {
       const { tag } = (await c.req.json().catch(() => ({}))) as { tag?: string }
       if (!packaged()) return c.json({ error: t('从源码运行时请用 git 更新，只有发布的包能在这里更新') }, 400)
-      if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
       let rel: AppRelease | undefined
       try {
         rel = (await releases(false)).find((r) => r.tag === tag) ?? (await releases(true)).find((r) => r.tag === tag)
@@ -451,13 +500,22 @@ export function updateApi(deps: {
       }
       if (!rel) return c.json({ error: t('找不到版本 {tag}', { tag: tag ?? '' }) }, 404)
       const started = startInstall(rel)
-      if ('error' in started) return c.json({ error: started.error }, started.status)
+      if ('error' in started)
+        return c.json({ error: started.error, ...(started.busy ? { busy: started.busy } : {}) }, started.status)
       return c.json(started.job, 201)
     })
     // 回到上一个版本：和当前版本互换，换完还可以再换回来
     .post('/rollback', async (c) => {
       if (!packaged()) return c.json({ error: t('从源码运行时请用 git 切换版本') }, 400)
-      if ([...jobs.values()].some((j) => j.status === 'running')) return c.json({ error: t('正在更新，请稍等') }, 409)
+      const live = runningJobs()[0]
+      if (live && !isStale(live))
+        return c.json(
+          {
+            error: t('正在更新到 {tag}（{phase}），等它结束再退回', { tag: live.tag, phase: live.phase }),
+            busy: { job: live, stale: false },
+          },
+          409,
+        )
       if (deps.running() > 0) return c.json({ error: t('有任务正在执行，请等它完成或先停止再更新') }, 409)
       const version = previousVersion()
       if (!version || !existsSync(path.join(PREVIOUS(), 'dist'))) return c.json({ error: t('没有可以退回的版本') }, 404)
@@ -475,6 +533,12 @@ export function updateApi(deps: {
       }
       setTimeout(() => deps.restart(), 800)
       return c.json({ version })
+    })
+    // 当前正在跑的那次更新：页面刷新后 job 丢了，靠它把进度条和「强制更新」接回来。
+    // 必须放在 /install/:id 前面，否则会被当成 id 匹配
+    .get('/install-current', (c) => {
+      const live = runningJobs()[0]
+      return c.json(live ? ({ job: live, stale: isStale(live) } satisfies AppUpdateBusy) : null)
     })
     .get('/install/:id', (c) => {
       const j = jobs.get(c.req.param('id'))

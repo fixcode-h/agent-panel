@@ -9,7 +9,7 @@ import { setLang } from '../shared/i18n.ts'
 const dir = mkdtempSync(path.join(tmpdir(), 'agent-panel-update-'))
 process.env.AGENT_PANEL_DATA = dir
 
-const { platformAsset, stopForUpdate } = await import('./update.ts')
+const { platformAsset, stopForUpdate, updateApi } = await import('./update.ts')
 
 // 断言的是中文原文，CI 的系统语言是英文。update.ts 的依赖链会引入 lang.ts，
 // 它加载时按系统语言重新设置，所以要在 import 之后再固定
@@ -99,4 +99,77 @@ test('没有可下载的包时返回空地址，不会把别的平台的包装�
   const onlyWin = [{ name: 'agent-panel-0.27.3.zip', browser_download_url: 'u/x.zip', size: 1 }]
   // 只有 Windows 的 zip：macOS 退到 zip，Linux 也退到 zip（都能解压），但不会拿到别的平台后缀的包
   assert.equal(platformAsset(onlyWin, 'linux').url, 'u/x.zip')
+})
+
+/** 桩 GitHub：版本列表指向本机的下载路径，下载直接返回 500（安装会失败，用来验证失败后能重新开始） */
+async function stubReleases() {
+  const http = await import('node:http')
+  let port = 0
+  const server = http.createServer((req, res) => {
+    if (req.url?.startsWith('/releases')) {
+      res.setHeader('content-type', 'application/json')
+      res.end(
+        JSON.stringify([
+          {
+            tag_name: 'v9.9.9',
+            prerelease: false,
+            published_at: '2026-01-01T00:00:00Z',
+            body: '',
+            html_url: '',
+            assets: [
+              { name: 'agent-panel-9.9.9.zip', browser_download_url: `http://127.0.0.1:${port}/pkg.zip`, size: 1 },
+            ],
+          },
+        ]),
+      )
+      return
+    }
+    res.statusCode = 500
+    res.end('nope')
+  })
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r))
+  port = (server.address() as { port: number }).port
+  process.env.AGENT_PANEL_RELEASES_URL = `http://127.0.0.1:${port}/releases`
+  return () => new Promise<void>((r) => server.close(() => r()))
+}
+
+test('更新卡住时不再一直挡住：没有进展超过 10 分钟的会作废，之后能重新开始', async () => {
+  process.env.AGENT_PANEL_APP_DIR = dir
+  const close = await stubReleases()
+  try {
+    const { api: routes } = updateApi({
+      running: () => 0,
+      restart: () => {},
+      stopAll: async () => {},
+      interrupted: () => [],
+    })
+    const post = () =>
+      routes.request('/install', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ tag: 'v9.9.9' }),
+      })
+
+    // 第一次：下载 500，安装失败。job 会变成 failed，不挡后面
+    const first = await post()
+    assert.equal(first.status, 201, '下载失败不影响「已经开始」这件事')
+    await new Promise((r) => setTimeout(r, 300))
+    const failed = await routes.request(`/install/${(await first.json()).id}`)
+    const failedBody = await failed.json()
+    assert.equal(failedBody.status, 'failed', '下载失败要标成失败，不能永远停在 running')
+
+    // 失败之后可以直接再来一次：不会因为上一次而一直被 409 挡住
+    const again = await post()
+    assert.equal(again.status, 201, '上一次失败后可以重新开始')
+    await new Promise((r) => setTimeout(r, 300))
+
+    // 正在跑的那次可以从 /install-current 读回来（页面刷新后靠它接回进度）
+    const cur = await routes.request('/install-current')
+    assert.equal(cur.status, 200)
+    const body = await cur.json()
+    assert.ok(body === null || body.job, '要么没有正在跑的更新，要么给出它的进度')
+  } finally {
+    await close()
+    delete process.env.AGENT_PANEL_RELEASES_URL
+  }
 })
