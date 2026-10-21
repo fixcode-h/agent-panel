@@ -2091,8 +2091,28 @@ try {
     assert.ok(tLevel.entries.some((e) => e.name === 'README.md'))
     const tInfo = await call('GET', `/tasks/${tAtt.id}/files`)
     assert.deepEqual(Object.keys(tInfo).sort(), ['branch', 'dir', 'isGit'])
+    // 在系统里打开：文件、目录、空路径（项目目录）都接受，越权路径被拒绝
+    // （测试环境没有图形界面，只验证参数校验和返回，实际打开由 revealItem 静默处理）
+    const fileReveal = await call('POST', `/project-files/${project.id}/reveal?path=README.md`, {})
+    assert.equal(fileReveal.ok, true)
+    const dirReveal = await call('POST', `/project-files/${project.id}/reveal?path=src`, {})
+    assert.equal(dirReveal.ok, true)
+    const rootReveal = await call('POST', `/project-files/${project.id}/reveal`, {})
+    assert.equal(rootReveal.ok, true)
+    // 越权路径要带 JSON 请求体：不带 content-type 的写请求会先被全局中间件以 415 拒掉
+    const badReveal = await fetch(`${base}/project-files/${project.id}/reveal?path=${encodeURIComponent('../..')}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    })
+    assert.equal(badReveal.status, 404, '不能打开项目目录外面的路径')
+    assert.match((await badReveal.json()).error, /只能查看项目目录里的文件/)
+    const tReveal = await call('POST', `/tasks/${tAtt.id}/reveal`, { path: 'README.md' })
+    assert.equal(tReveal.ok, true)
+    const tRootReveal = await call('POST', `/tasks/${tAtt.id}/reveal`, {})
+    assert.equal(tRootReveal.ok, true, '任务目录也能整体打开')
   }
-  step('文件浏览：只列一层、深层名称搜索、越权路径、任务目录同样按层')
+  step('文件浏览：只列一层、深层名称搜索、越权路径、任务目录同样按层、在系统里打开')
   // Agent 自己提交了改动：仍然算在任务的更改里（和任务开始时的提交比）
   let tCommit = await call('POST', '/tasks', {
     projectId: project.id,
