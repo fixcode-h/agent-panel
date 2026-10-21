@@ -176,7 +176,10 @@ test('编排工具：通用 Agent 列在 spawn_agents 和用法说明里', async
 test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', async () => {
   // 对话没有节点：@chat 只是传给 runAgent 的一个构造对象，不在 task.steps 里，
   // 子 Agent 的 parentId 是 @chat，从空 parentId 往下遍历会一个都找不到
-  const task = { ...newTask({ projectId: 'p', mode: 'chat', prompt: '做功能' } as never, undefined, '', 't3'), id: 't3' } as Task
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '做功能' } as never, undefined, '', 't3'),
+    id: 't3',
+  } as Task
   let orch: AgentCall['orch']
   const h: EngineHost = {
     task,
