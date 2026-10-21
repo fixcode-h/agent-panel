@@ -1329,7 +1329,7 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
   if (input.mode === 'workflow' && project) {
     workflow = input.workflowId ? d.workflows.find((w) => w.id === input.workflowId) : projectWorkflow(d, project)
     if (!workflow) fail('项目还没有指定工作流，请选择一个工作流或改用直接对话')
-  } else if (!d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
+  } else if (input.agentId && !d.agents.some((a) => a.id === input.agentId)) fail('请选择对话的 Agent')
   const lack = chatMissingParams(input, d.agents)
   if (lack) fail(lack)
   const task = create<Task>('tasks', {

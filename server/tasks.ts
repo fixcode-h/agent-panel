@@ -261,14 +261,11 @@ export function tasksApi(deps: {
     })
     parent.updatedAt = new Date().toISOString()
     const entry = live.get(parent.id)
-    if (entry) {
-      entry.task.messages = parent.messages
-      entry.rev++
-    } else {
-      await store
-        .update(parent.id, parent)
-        .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
-    }
+    if (entry) entry.rev++
+    // 父对话空闲时也要马上落盘，否则页面刷新后看不到子对话的回报
+    await store
+      .update(parent.id, parent)
+      .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
   }
 
   async function start(
@@ -359,17 +356,20 @@ export function tasksApi(deps: {
         prewarmFrom: before,
         prewarmTurnDoneAt: beforeTurnDoneAt,
         workflowCatalog: () => (defaultWf ? workflowCatalog(project, allWorkflows, defaultWf) : []),
-        resolveWorkflow: (id) =>
-          project?.id ? planWorkflow(project, allWorkflows, defaultWf, id) : undefined,
+        resolveWorkflow: (id) => (project?.id ? planWorkflow(project, allWorkflows, defaultWf, id) : undefined),
         listConversations: async () => {
           const kids = (await store.list()).filter((x) => x.parentTaskId === entry.task.id)
-          return kids.map((k) => ({
-            id: k.id,
-            title: k.title,
-            status: k.status,
-            summary: k.summary || lastReply(k),
-            at: k.updatedAt,
-          }))
+          // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
+          return kids.map((k) => {
+            const cur = live.get(k.id)?.task ?? k
+            return {
+              id: cur.id,
+              title: cur.title,
+              status: cur.status,
+              summary: cur.summary || lastReply(cur),
+              at: cur.updatedAt,
+            }
+          })
         },
         createConversation: async ({ title, message }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
@@ -739,7 +739,14 @@ export function tasksApi(deps: {
     const params = workflow ? paramsOf(project, workflow.id) : {}
     const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), params) : []
     const draft = {
-      ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot, workflow ? exposeSlots(workflow, params) : {}),
+      ...newTask(
+        input,
+        workflow,
+        new Date().toISOString(),
+        randomUUID(),
+        snapshot,
+        workflow ? exposeSlots(workflow, params) : {},
+      ),
       id: randomUUID(),
     }
     if (input.isolate && input.projectId) {
@@ -1156,8 +1163,7 @@ export function tasksApi(deps: {
     if (touchesRun && cur.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await deps.agents.list() : undefined
-    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId))
-      return bad(c, t('找不到这个 Agent'))
+    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return bad(c, t('找不到这个 Agent'))
     const runOf = (t: Task) => {
       const agent = agents?.find((a) => a.id === t.agentId)
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined
@@ -1377,11 +1383,22 @@ export function tasksApi(deps: {
 
   routes.delete('/:id', async (c) => {
     const id = c.req.param('id')
+    // 删父对话时把它的子对话一起删掉，不留孤儿
+    const kids = (await store.list()).filter((x) => x.parentTaskId === id)
     stopTask(id)
     const task = await store.get(id)
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
     forgetPresence(id)
-    await dropUploads([task])
+    const dropped = [task]
+    for (const k of kids) {
+      stopTask(k.id)
+      await store.remove(k.id)
+      forgetPresence(k.id)
+      dropped.push(k)
+      await dropWorktree(k)
+      await rm(path.join(HANDOFF_DIR, k.id), { recursive: true, force: true }).catch(() => {})
+    }
+    await dropUploads(dropped)
     await dropWorktree(task)
     // 聊天的工作目录、节点交接的文件跟着删掉
     await rm(path.join(CHATS_DIR, id), { recursive: true, force: true }).catch(() => {})

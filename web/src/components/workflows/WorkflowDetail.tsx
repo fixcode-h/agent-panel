@@ -245,7 +245,7 @@ export function WorkflowDetail({
               </div>
             </FormSection>
 
-            <FormSection title={t('主 Agent 与子 Agent')}>
+            <FormSection title={t('Agent 分工')}>
               <TeamEditor
                 mainAgentId={draft.mainAgentId}
                 onMainChange={(id) => set('mainAgentId', id)}

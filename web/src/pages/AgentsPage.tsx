@@ -85,6 +85,7 @@ export function AgentsPage() {
         common: false,
         canDelegate: false,
         canPlan: false,
+        capsSet: true,
         includes: [],
         params: [],
         skills: [],

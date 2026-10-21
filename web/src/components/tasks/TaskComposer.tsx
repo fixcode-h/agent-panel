@@ -54,9 +54,10 @@ export function TaskComposer({
     }
   })
   const project = standalone ? undefined : (fixed ?? projects.find((p) => p.id === projectId) ?? projects[0])
-  // 项目里新建的对话默认用项目设置的 Agent；没有设置时不用角色，直接跟随 CLI
-  const agentId = standalone ? DEFAULT_AGENT_ID : (project?.defaultAgentId ?? '')
-  const agent = agents.find((a) => a.id === agentId)
+  // 项目里新建的对话默认用项目设置的 Agent；没有设置、或那个 Agent 已删除/停用时不用角色，直接跟随 CLI
+  const wanted = standalone ? DEFAULT_AGENT_ID : (project?.defaultAgentId ?? '')
+  const agent = agents.find((a) => a.id === wanted && (a.enabled || a.id === DEFAULT_AGENT_ID))
+  const agentId = wanted && wanted !== DEFAULT_AGENT_ID && !agent ? '' : wanted
   const byCli = !agentId || agentId === DEFAULT_AGENT_ID
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })

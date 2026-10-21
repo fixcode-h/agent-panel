@@ -166,7 +166,7 @@ const stop = () => {
 process.on('exit', stop)
 
 const call = async (method, url, body) => {
-  // 下面大部分用例测的是按连线自动执行（每次调用的顺序、提示词都按这个断言）；主 Agent 调度单独测，写明 dispatch: true
+  // 下面大部分用例测的是按连线自动执行（每次调用的顺序、提示词都按这个断言）；没有编排器的那条单独写明 dispatch: true
   if (
     (method === 'POST' || method === 'PUT') &&
     /^\/workflows(\/[^/]+)?$/.test(url) &&
@@ -1443,29 +1443,13 @@ try {
   await call('DELETE', `/workflows/${wfBudget.id}`)
   step('工作流：条件连线按结论选路，完成后等我确认（可以退回），超过预算上限暂停')
 
-  // ---- 主 Agent 调度：子 Agent 的结果交给主 Agent 评估，退回、委派、选分支，最后整理结果 ----
+  // ---- 工作流不再有常驻编排器：节点直接执行，条件分支看节点自己的结论 ----
   {
-    const helper = await call('POST', '/workflows', {
-      name: '帮忙检查',
-      description: '检查一遍',
-      mainAgentId: B.id,
-      flows: [
-        flow(
-          'main',
-          '主流程',
-          [node('c1', '检查', '', '检查一遍。')],
-          [
-            ['start', 'c1'],
-            ['c1', 'end'],
-          ],
-        ),
-      ],
-      entryFlowId: 'main',
-    })
     const wfMain = await call('POST', '/workflows', {
-      name: '主 Agent 调度',
+      name: '没有编排器的工作流',
       description: '',
       mainAgentId: A.id,
+      // 旧字段，升级后也不会再生成 @main
       dispatch: true,
       flows: [
         {
@@ -1474,7 +1458,7 @@ try {
           nodes: [
             node('d1', '实现', B.id, 'MAINREWORK 写代码。'),
             node('d2', '自己看一眼', '', '看一眼。'),
-            node('d3', '测试', C.id, `MAINDELEGATE:${helper.id} BRANCHNO 跑测试。`),
+            node('d3', '测试', C.id, 'BRANCHNO 跑测试。'),
             node('ok', '发布', '', '发布。'),
             node('fix', '修复', B.id, '修复。'),
           ],
@@ -1497,63 +1481,36 @@ try {
       projectId: project.id,
       mode: 'workflow',
       workflowId: wfMain.id,
-      prompt: '主 Agent 调度一遍',
+      prompt: '没有编排器跑一遍',
     })
-    assert.equal(dm.steps[0].id, '@main', '主 Agent 排在任务节点最前面')
+    assert.equal(dm.steps[0].id, 'd1', '不再生成 @main，直接是第一个节点')
     dm = await waitDone(dm.id)
     assert.equal(dm.status, 'done', JSON.stringify(dm.messages.filter((m) => m.role === 'system')))
     const by = (id) => dm.steps.find((s) => s.id === id)
-    const main = by('@main')
-    assert.equal(main.kind, 'main')
-    assert.equal(main.status, 'done')
-    // 评估：先分析第一条要求 1 次；实现 2 次（退回一次）、测试 2 次（委派一次）；修复是子 Agent 做的也评估 1 次；最后整理 1 次
-    assert.equal(
-      main.rounds,
-      7,
-      '主 Agent 调度了 7 轮 ' + JSON.stringify(dm.messages.map((m) => [m.step, m.text.slice(0, 160)])),
-    )
-    assert.match(main.output, /最终结果：主 Agent 整理好了/)
-    assert.equal(by('d3').branch, 'fail', '分支由主 Agent 选')
+    assert.ok(!dm.steps.some((s) => s.kind === 'main'), '没有常驻编排器')
+    assert.equal(by('d3').branch, 'fail', '分支由节点自己的结论决定')
     assert.equal(by('fix').status, 'done')
     assert.equal(by('ok').status, 'skipped')
-    assert.equal(by('d3/call.1/c1')?.status, 'done', '委派的工作流挂在节点下面执行')
+    assert.ok(!by('d3/call.1/c1'), '不再有主 Agent 委派')
     const mine = calls().slice(n0)
-    const mainCalls = mine.filter((c) => /## 事件：/.test(c.input))
-    assert.equal(mainCalls.length, 7)
-    assert.match(mainCalls[0].input, /## 事件：这个对话的第一条要求/, '第一条要求先交给主 Agent 分析')
-    assert.match(mainCalls[0].input, /你是工作流「主 Agent 调度」流程「主流程」的常驻编排器/, '第一轮带完整的职责说明')
-    assert.match(mainCalls[0].input, /帮忙检查/, '列出可以委派的工作流')
-    assert.ok(
-      mainCalls.slice(1).every((c) => c.input.startsWith('## 事件：') && c.args.includes(main && dm.sessions['@main'])),
-      '之后续接主 Agent 的会话，只交事件',
-    )
-    // 节点和主 Agent 都带上编排工具（MCP），第一轮告诉它什么时候用
+    assert.ok(!mine.some((c) => /## 事件：/.test(c.input)), '节点之间不经过主 Agent')
+    assert.ok(!mine.some((c) => /常驻编排器/.test(c.input)), '提示词里没有编排器')
+    assert.equal(mine.filter((c) => /本节点「实现」|继续完善本节点「实现」/.test(c.input)).length, 1, '节点只执行一次')
+    // 节点仍然带编排工具，可以派子 Agent、传话、读写共享状态
     assert.ok(
       mine.every((c) => c.args.some((x) => x.includes('/api/mcp/orch/'))),
-      '工作流里的调用都接上编排工具',
+      '节点都接上编排工具',
     )
-    assert.match(mainCalls[0].input, /编排工具 orch：run_workflow/)
     assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子 Agent/)
-    const impl = mine.filter((c) => /本节点「实现」|继续完善本节点「实现」/.test(c.input))
-    assert.equal(impl.length, 2, '实现被退回后返工一次')
-    assert.match(impl[1].input, /主 Agent 评估后要求修改：\n补上错误处理/)
-    assert.ok(!mine.some((c) => /## 结论\n后面的流程按你的结论走/.test(c.input)), '有主 Agent 时节点不用自己写结论')
-    const fixCall = mine.find((c) => /节点：修复/.test(c.input))
-    assert.match(fixCall.input, /主 Agent 的交代：注意兼容旧数据/, '主 Agent 的交代交给后续节点')
-    assert.ok(dm.messages.some((m) => m.step === 'd1' && /主 Agent 把「实现」退回修改：补上错误处理/.test(m.text)))
-    assert.ok(dm.messages.some((m) => m.step === 'd3' && /委派给工作流/.test(m.text)))
-    // 追加要求续接主 Agent 的会话
+    // 追加要求交给工作流的默认执行 Agent（不再有 @main 会话）
     const n1 = calls().length
     await call('POST', `/tasks/${dm.id}/messages`, { text: '再改一下' })
     dm = await waitDone(dm.id)
     const follow = calls()[n1]
-    assert.equal(follow.args[follow.args.indexOf('--resume') + 1], dm.sessions['@main'], '追加要求续接主 Agent 的会话')
+    assert.match(follow.input, /再改一下/)
     await call('DELETE', `/workflows/${wfMain.id}`)
-    await call('DELETE', `/workflows/${helper.id}`)
   }
-  step(
-    '主 Agent 调度：评估子 Agent 的结果，退回返工、委派其他工作流、选分支、交代后续，最后整理结果；追加要求续接它的会话',
-  )
+  step('工作流没有再常驻编排器：节点直接执行、自己的结论决定分支，追加要求交给默认执行 Agent')
 
   // ---- 失败 ----
   let bad = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: A.id, prompt: 'FAIL 请失败' })

@@ -499,6 +499,7 @@ const agentExtras = (a?: Agent) => ({
   common: a?.common ?? false,
   canDelegate: a?.canDelegate ?? false,
   canPlan: a?.canPlan ?? false,
+  capsSet: a?.capsSet ?? true,
   origin: a?.origin ?? '',
 })
 

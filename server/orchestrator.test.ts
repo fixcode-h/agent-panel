@@ -3,27 +3,25 @@ import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
-import { currentRun, mainStep, topSteps } from '../shared/flow.ts'
 
 /**
- * 常驻编排器：一个对话里只有一个主 Agent，它起停每一次运行。
- * 每次运行节点全部新建、按流程图顺序走，编排器的会话一直沿用。
+ * 项目对话：Agent 在对话里直接执行，或者用 start_plan 按工作流执行一次计划；
+ * 消耗的是 Agent 自己配置的能力（canPlan / canDelegate），不再有常驻编排器。
  */
-const agent = (id: string, name: string): Agent => ({
+const agent = (id: string, name: string, extra: Partial<Agent> = {}): Agent => ({
   ...AgentInput.parse({ name }),
   id,
   createdAt: '',
   updatedAt: '',
+  ...extra,
 })
-const agents = [agent('m', '主管'), agent('w', '开发')]
 
 const workflow = (): Workflow =>
   Workflow.parse({
     id: 'wf',
     createdAt: '',
     updatedAt: '',
-    name: '常驻',
-    mainAgentId: 'm',
+    name: '执行计划',
     flows: [
       {
         id: 'main',
@@ -41,142 +39,135 @@ const workflow = (): Workflow =>
     ],
   })
 
-/** 主 Agent 每次调度按 dispatch 里写的回答，用来驱动「第一轮跑完 → 用户提新要求 → 起第二次运行」 */
-function host(task: Task, log: AgentCall[], decide: string[]): EngineHost {
+function host(task: Task, log: AgentCall[], runAgent: EngineHost['runAgent']): EngineHost {
   const w = workflow()
+  const workers = [agent('w', '开发')]
   let n = 0
   return {
     task,
-    agents,
+    agents: workers,
     workflows: [w],
-    workflow: w,
     prompt: '做功能',
     changed: () => {},
     newId: () => `id${++n}`,
+    workflowCatalog: () => [{ id: w.id, name: w.name, description: '', steps: ['实现', '验收'] }],
+    resolveWorkflow: (id) => (id === w.id || !id ? { workflow: w, workflows: [w], skillSlots: {} } : undefined),
     runAgent: async (call) => {
       log.push(call)
-      if (call.dispatching === 'evaluate') return { ok: true, text: '```dispatch\n{"action":"continue"}\n```' }
-      if (call.dispatching === 'summary') return { ok: true, text: '这次的结果' }
-      if (call.dispatching === 'plan')
-        return { ok: true, text: decide.shift() ?? '```dispatch\n{"action":"answer"}\n```' }
-      return { ok: true, text: `${call.step?.title}好了` }
+      return runAgent(call)
     },
   }
 }
 
-test('常驻编排器：第一次要求跑一次运行，新要求起第二次运行，节点全部新建、编排器会话沿用', async () => {
+test('对话里启动计划：同步跑完工作流，再把结果交回同一个会话', async () => {
   const w = workflow()
   const task = {
-    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't'),
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '做功能' } as never, undefined, '', 't'),
     id: 't',
   } as Task
   const log: AgentCall[] = []
-  const h = host(task, log, [
-    '```dispatch\n{"action":"run","input":"做功能"}\n```',
-    '```dispatch\n{"action":"run","input":"再补充一个接口"}\n```',
-  ])
+  let turn = 0
+  const h = host(task, log, async (call) => {
+    if (call.step) return { ok: true, text: `${call.step.title}好了` }
+    if (turn++ === 0) {
+      assert.match(call.prompt, /## 用户这次的消息\n做功能/)
+      assert.equal(call.orch?.planning, true)
+      assert.equal(call.orch?.coordinator, false)
+      const r = call.orch!.plan(w.id, '做功能')
+      assert.equal(r.ok, true)
+      return { ok: true, text: '开始处理' }
+    }
+    assert.match(call.prompt, /## 计划执行结果/)
+    return { ok: true, text: '做完了' }
+  })
+  h.agents = [agent('m', '协调', { canPlan: true }), agent('w', '开发')]
 
-  // 第一条要求先交给编排器分析，由它起第一次运行
   await runEngineTurn(h)
-  assert.equal(log[0].dispatching, 'plan')
-  assert.match(log[0].prompt, /第一条要求/)
-  assert.match(log[0].prompt, /做功能/)
-  assert.equal(currentRun(task), 1)
+  assert.equal(task.status, 'done')
+  assert.equal(task.runSeq, 1)
+  assert.equal(task.runs.length, 1)
+  assert.equal(task.runs[0].status, 'done')
+  const steps = task.steps.filter((s) => s.runId === 1)
   assert.deepEqual(
-    topSteps(task).map((s) => s.id),
+    steps.map((s) => s.id),
     ['a', 'b'],
   )
-  assert.ok(topSteps(task).every((s) => s.status === 'done'))
-  // 编排器补的要求作为第一次运行的输入交给第一个节点
-  assert.match(log.find((c) => c.step?.id === 'a')!.prompt, /## 输入\n做功能/)
-
-  // 用户提新要求：这次运行已经走完，交给编排器决定，它起第二次运行
-  h.prompt = '再补充一个接口'
-  await runEngineTurn(h)
-  assert.equal(currentRun(task), 2)
-  // 上一次运行的节点还在（记录保留），这一次是新的一批，id 带 r2/ 前缀
-  assert.deepEqual(
-    topSteps(task).map((s) => s.id),
-    ['r2/a', 'r2/b'],
+  assert.ok(steps.every((s) => s.status === 'done'))
+  assert.equal(
+    task.steps.some((s) => s.kind === 'main'),
+    false,
+    '不再有常驻编排器',
   )
-  assert.ok(topSteps(task).every((s) => s.status === 'done'))
-  assert.equal(task.steps.filter((s) => s.id === 'a' || s.id === 'r2/a').length, 2, '两次运行的节点互相隔离')
-  // 编排器只有一个，会话一直沿用
-  const mains = task.steps.filter((s) => s.kind === 'main')
-  assert.equal(mains.length, 1)
-  assert.equal(mainStep(task)?.id, '@main')
-  const plans = log.filter((c) => c.dispatching === 'plan')
-  assert.equal(plans.length, 2)
-  assert.ok(plans.every((c) => c.sessionKey === '@main'))
-  // 编排器的第二轮决策用到了上一次运行的结果小结
-  assert.match(plans[1].prompt, /再补充一个接口/)
-  assert.match(plans[1].prompt, /已经走完/)
+  const talks = log.filter((c) => !c.step)
+  assert.equal(talks.length, 2, '对话一轮 + 计划结果一轮')
+  assert.equal(talks[1].sessionKey, 'm')
+  assert.equal(log.filter((c) => !!c.step).length, 2, '两个节点各执行一次')
 })
 
-test('常驻编排器：不是新对话时直接按流程图执行，不再先问一遍', async () => {
-  const w = workflow()
-  // 单个主 Agent 自己做的工作流没有调度，不需要先让编排器分析
-  const flow = w.flows[0]
-  const single = {
-    ...w,
-    flows: [
-      {
-        ...flow,
-        nodes: [{ ...flow.nodes[0], agentId: 'm' }],
-        edges: [
-          { id: 'e1', from: 'start', to: 'a' },
-          { id: 'e2', from: 'a', to: 'end' },
-        ],
-      },
-    ],
+test('对话 Agent 没开「按工作流执行计划」：没有 start_plan 能力，直接回答', async () => {
+  const task = {
+    ...newTask(
+      { projectId: 'p', mode: 'chat', agentId: 'm', prompt: '这个项目用什么语言' } as never,
+      undefined,
+      '',
+      't2',
+    ),
+    id: 't2',
+  } as Task
+  const log: AgentCall[] = []
+  const h = host(task, log, async (call) => {
+    assert.equal(call.orch?.planning, false)
+    assert.match(call.orch!.plan('', '做功能').info, /没有开启/)
+    return { ok: true, text: '用的是 TypeScript。' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+
+  await runEngineTurn(h)
+  assert.equal(task.runs.length, 0, '没有起运行')
+  assert.equal(task.steps.length, 0, '没有执行流程节点')
+  assert.equal(log.length, 1)
+})
+
+test('协调 Agent：新建子对话并交给它，子对话自己不能再分派', async () => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '实现登录' } as never, undefined, '', 'p1'),
+    id: 'p1',
+  } as Task
+  const log: AgentCall[] = []
+  const made: { title: string; message: string }[] = []
+  const h = host(task, log, async (call) => {
+    assert.equal(call.orch?.coordinator, true)
+    assert.match(await call.orch!.conversations(), /还没有子对话/)
+    const r = await call.orch!.createConversation('登录改造', '实现登录，带手机号验证码')
+    assert.equal(r.ok, true)
+    return { ok: true, text: '已交给子对话。' }
+  })
+  h.agents = [agent('m', '协调', { canDelegate: true })]
+  h.listConversations = async () => []
+  h.createConversation = async ({ title, message }) => {
+    made.push({ title, message })
+    return { ok: true, id: 'c1', title, info: '已新建' }
   }
-  const task = {
-    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, single, '', 't3'),
-    id: 't3',
-  } as Task
-  const log: AgentCall[] = []
-  const h = host(task, log, ['```dispatch\n{"action":"answer"}\n```'])
-  h.workflow = single
-  h.workflows = [single]
-  await runEngineTurn(h)
-  assert.equal(log.filter((c) => c.dispatching === 'plan').length, 0)
-  assert.deepEqual(
-    topSteps(task).map((s) => s.id),
-    ['a'],
-  )
-})
 
-test('常驻编排器：第一条要求只是问问题就不起运行', async () => {
-  const w = workflow()
-  const task = {
-    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '这个项目用什么语言' } as never, w, '', 't4'),
-    id: 't4',
-  } as Task
-  const log: AgentCall[] = []
-  const h = host(task, log, [
-    '这个项目用的是 TypeScript。\n```dispatch\n{"action":"answer"}\n```',
-    '```dispatch\n{"action":"run","input":"实现登录"}\n```',
-  ])
-  h.prompt = '这个项目用什么语言'
   await runEngineTurn(h)
-  assert.equal(currentRun(task), 1, '没有起运行')
-  assert.ok(
-    topSteps(task).every((s) => s.status === 'pending'),
-    '没有执行流程节点',
-  )
-  assert.match(mainStep(task)!.output, /TypeScript/)
-  assert.equal(log.filter((c) => c.dispatching === 'plan').length, 1)
-  assert.ok(!log.some((c) => c.step && c.step.kind !== 'main'), '没有执行流程节点')
+  assert.deepEqual(made, [{ title: '登录改造', message: '实现登录，带手机号验证码' }])
+  assert.ok(task.messages.some((m) => m.role === 'system' && /新建了子对话「登录改造」/.test(m.text)))
+  assert.equal(log.length, 1)
 
-  // 回答之后用户再提要做的事：仍然先交给编排器，但不再是「第一条要求」
-  h.prompt = '实现登录'
-  await runEngineTurn(h)
-  const plans = log.filter((c) => c.dispatching === 'plan')
-  assert.equal(plans.length, 2)
-  assert.match(plans[1].prompt, /用户的新要求/)
-  assert.doesNotMatch(plans[1].prompt, /第一条要求/)
-  assert.ok(
-    topSteps(task).some((s) => s.status === 'done'),
-    '起了一次运行并按流程执行',
-  )
+  // 子对话里即使 Agent 配了 canDelegate，也不能再创建子对话
+  const sub = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '继续' } as never, undefined, '', 'c1'),
+    id: 'c1',
+    parentTaskId: 'p1',
+    rootTaskId: 'p1',
+  } as Task
+  const subLog: AgentCall[] = []
+  const sh = host(sub, subLog, async (call) => {
+    assert.equal(call.orch?.coordinator, false)
+    assert.match(await call.orch!.conversations(), /不能分派子对话/)
+    return { ok: true, text: '好的' }
+  })
+  sh.agents = [agent('m', '协调', { canDelegate: true })]
+  await runEngineTurn(sh)
+  assert.equal(subLog.length, 1)
 })

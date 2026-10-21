@@ -264,6 +264,26 @@ function statePart(task: Task) {
   return `## 共享状态\n这是本次运行里所有节点共同维护的状态，可以用 read_state / write_state 读写；写之前先看版本，别覆盖别人刚写的内容：\n${clip(lines.join('\n'), 12000)}`
 }
 
+/** 这次运行的记录：新架构在启动运行时建；旧版工作流任务也在开始执行时补一条，共享状态和消息才有地方存 */
+function ensureTaskRun(host: EngineHost, workflow: Workflow, run: number, skillSlots = host.task.skillSlots) {
+  const has = host.task.runs.find((r) => r.id === run)
+  if (has) return has
+  const rec: TaskRun = {
+    id: run,
+    workflowId: workflow.id,
+    workflowName: workflow.name,
+    workflows: host.workflows.length ? host.workflows : [workflow],
+    skillSlots,
+    status: 'running',
+    startedAt: now(),
+    endedAt: '',
+    state: {},
+    messages: [],
+  }
+  host.task.runs.push(rec)
+  return rec
+}
+
 /** 写共享状态：版本号加一，后写的覆盖先写的 */
 function writeRunState(host: EngineHost, by: string, key: string, value: string) {
   const rec = runRecord(host.task)
@@ -1803,11 +1823,7 @@ function makeOrchestra(
       if (task.steps.some((s) => !s.parentId && inRun(s.id, run) && s.status === 'running' && !isMainStep(s)))
         return { ok: false, info: '这次运行还有节点在执行，等它走完再起新的运行' }
       askRun(host, input)
-      system(
-        host,
-        t('主 Agent 起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }),
-        where,
-      )
+      system(host, t('主 Agent 起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }), where)
       host.changed(true)
       return { ok: true, info: '这一轮结束后会按流程图跑一次新的运行，节点全部新建' }
     },
@@ -1823,7 +1839,8 @@ function makeOrchestra(
     planning: !!ctx.planning,
     plan(workflowId, input) {
       if (!ctx.chat) return { ok: false, info: '节点里不能启动计划，按流程执行' }
-      if (!ctx.planning) return { ok: false, info: '这个 Agent 没有开启「按工作流执行计划」的能力，直接在当前对话里执行' }
+      if (!ctx.planning)
+        return { ok: false, info: '这个 Agent 没有开启「按工作流执行计划」的能力，直接在当前对话里执行' }
       if (task.steps.some((s) => !s.parentId && inRun(s.id, currentRun(task)) && s.status === 'running'))
         return { ok: false, info: '上一次计划还在执行，等它结束再启动新的' }
       askPlan(host, { workflowId: workflowId.trim(), input: input.trim() })
@@ -1843,10 +1860,7 @@ function makeOrchestra(
       const list = await host.listConversations()
       if (!list.length) return '（还没有子对话）'
       return list
-        .map(
-          (c) =>
-            `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`,
-        )
+        .map((c) => `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`)
         .join('\n')
     },
     async createConversation(title, message) {
@@ -2155,10 +2169,7 @@ function chatStep(host: EngineHost, agentId: string): TaskStep {
 }
 
 /** 对话里启动一次工作流运行：节点全部新建，同步跑完，结果交回对话 */
-async function startPlan(
-  host: EngineHost,
-  plan: PlannedRun,
-): Promise<{ ok: boolean; text: string; error?: string }> {
+async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: boolean; text: string; error?: string }> {
   const snap = host.resolveWorkflow?.(plan.workflowId)
   const workflow =
     snap?.workflow ?? (plan.workflowId ? host.workflows.find((w) => w.id === plan.workflowId) : host.workflow)
@@ -2170,7 +2181,8 @@ async function startPlan(
     }
   const workflows = snap?.workflows ?? workflowClosure(workflow, host.workflows)
   const skillSlots = snap?.skillSlots ?? host.task.skillSlots
-  const run = currentRun(host.task) + 1
+  // runSeq 是已经跑完的次数：第一次计划是第 1 次运行
+  const run = (host.task.runSeq ?? 0) + 1
   host.task.runSeq = run
   host.task.flowClosed = false
   host.workflow = workflow
@@ -2179,18 +2191,7 @@ async function startPlan(
   host.task.workflowName = workflow.name
   host.task.workflows = workflows
   host.task.skillSlots = skillSlots
-  host.task.runs.push({
-    id: run,
-    workflowId: workflow.id,
-    workflowName: workflow.name,
-    workflows,
-    skillSlots,
-    status: 'running',
-    startedAt: now(),
-    endedAt: '',
-    state: {},
-    messages: [],
-  })
+  ensureTaskRun(host, workflow, run, skillSlots)
   for (const s of planTask(workflow, run).steps)
     if (!host.task.steps.some((x) => x.id === s.id)) host.task.steps.push(s)
   host.changed(true)
@@ -2217,7 +2218,7 @@ async function startPlan(
 }
 
 /** 对话 Agent 的提示：这次的消息、可选工作流、子对话目录，以及分派规则 */
-async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', planning: boolean) {
+async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', planning: boolean, coordinator: boolean) {
   const catalog = host.workflowCatalog?.() ?? []
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
@@ -2234,7 +2235,7 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
         ? '## 可用工作流\n项目还没有配置工作流，直接在对话里执行。'
         : '## 工作流\n当前 Agent 没有开启「按工作流执行计划」的能力，直接在对话里执行。',
   ]
-  if (kind === 'top') {
+  if (coordinator) {
     const list = host.listConversations ? await host.listConversations() : []
     parts.push(
       `## 现有子对话\n${
@@ -2246,10 +2247,12 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
       }`,
       `## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
-2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题写清任务，message 写完整的需求和背景；子对话会自己列计划并执行。
+2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会自己列计划并执行。
 3. 只是一般问题、讨论或很小的请求：自己回答或直接处理，不要新建子对话。
 不要同时把同一条消息发给多个子对话。子对话不能再创建子对话。`,
     )
+  } else if (kind === 'top') {
+    parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。`)
   } else {
     parts.push(
       planning
@@ -2273,12 +2276,13 @@ async function runConversationTurn(host: EngineHost, who: string) {
   const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
   if (turn) host.changed(true)
   try {
-    let prompt = await conversationPrompt(host, kind, planning)
+    let prompt = await conversationPrompt(host, kind, planning, coordinator)
     for (let i = 0; i < 4; i++) {
       const r = await host.runAgent({
         agentId: who,
         prompt,
-        sessionKey: who || 'chat',
+        // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
+        sessionKey: who,
         ...(host.prewarm ? { prewarm: true } : {}),
         orch: makeOrchestra(
           host,
@@ -2394,8 +2398,7 @@ export async function runEngineTurn(host: EngineHost) {
   // 预算按每次执行算：从这一轮开始时的用量起算
   task.budgetFrom = { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行
-  for (const s of task.steps)
-    if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'
+  for (const s of task.steps) if (isMainStep(s) && s.status !== 'done' && s.status !== 'skipped') s.status = 'skipped'
   host.changed(true)
 
   // 新架构里项目对话都是对话：Agent 自己决定直接执行，还是用 start_plan 启动工作流
@@ -2426,6 +2429,12 @@ export async function runEngineTurn(host: EngineHost) {
 
   /** 按流程图执行第 n 次运行（没完成的节点接着做）；input 是编排器为这次运行补充的要求 */
   const runWorkflow = async (n: number, input = ''): Promise<boolean> => {
+    // 旧版工作流任务没有运行记录：这里补一条，节点共享状态和消息按运行保存
+    const rec = wf ? ensureTaskRun(host, wf, n) : undefined
+    if (rec) {
+      rec.status = 'running'
+      rec.endedAt = ''
+    }
     const inv: Invocation = {
       workflow: wf!,
       flow: flow!,
@@ -2438,6 +2447,10 @@ export async function runEngineTurn(host: EngineHost) {
     }
     if (dispatching) inv.main = openMain(host, inv)
     const r = await runInvocation(host, inv)
+    if (rec) {
+      rec.status = r.ok ? 'done' : r.stopped ? 'stopped' : 'failed'
+      rec.endedAt = now()
+    }
     if (!r.ok) {
       finish(host, r)
       return false

@@ -130,6 +130,7 @@ try {
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
+  const workflowTaskUrl = p.url()
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p
@@ -148,19 +149,15 @@ try {
   // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
   await check(p, '内置工作流-添加后', ['识别现场与设计', '文档与提交'])
-  // 「默认」工作流：什么都能交给它，做完推荐已有的工作流，点一下就带着上下文执行
+  // 项目里新建对话：项目没设置默认 Agent 时就是「无 Agent」，直接和 CLI 对话
   await p.goto(base)
-  await p.getByTitle('执行的工作流').click()
-  await p.getByRole('dialog').getByText('默认', { exact: true }).click()
   await p.locator('#task-prompt').fill('分析一下这个项目的结构')
+  await p.waitForTimeout(300)
   await p.locator('#task-prompt').press('Enter')
-  await p.getByText('推荐的下一步').waitFor({ timeout: 20000 })
-  await check(p, '默认工作流-推荐', ['推荐的下一步', '执行'])
-  const doneTask = p.url()
-  await p.getByRole('region', { name: '推荐的下一步' }).getByRole('button').first().click()
-  await check(p, '默认工作流-执行推荐', ['之前的上下文'])
+  await p.getByText('无 Agent', { exact: false }).first().waitFor({ timeout: 20000 })
+  await check(p, '对话-无Agent', ['无 Agent'])
   // AI 分析执行结果：新建分析对话，给出修改建议的差异和框架问题，勾选后应用到工作流
-  await p.goto(doneTask)
+  await p.goto(workflowTaskUrl)
   await p.getByRole('button', { name: '更多操作' }).click()
   await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
@@ -169,15 +166,6 @@ try {
   await check(p, 'AI分析-建议', ['工作流优化建议', '面板框架的问题', '先确认范围'])
   await p.getByRole('button', { name: /应用选中的 2 项/ }).click()
   await check(p, 'AI分析-已应用', ['已应用'])
-  // 工作流停下后没走完：输入框上面一行「继续流程」，旁边的关闭是结束流程
-  await p.goto(base)
-  await p.locator('#task-prompt').fill('给登录页加一个记住我')
-  // 刚打开时数据还在加载，等输入框下面的选项出来再发
-  await p.waitForTimeout(300)
-  await p.locator('#task-prompt').press('Enter')
-  await p.getByRole('button', { name: '停止', exact: true }).first().click({ timeout: 20000 })
-  await p.getByRole('button', { name: '继续流程' }).waitFor({ timeout: 20000 })
-  await check(p, '流程没走完', ['继续流程', '流程没有完成'])
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
@@ -190,7 +178,7 @@ try {
   await p.getByRole('textbox', { name: '新选项' }).fill('svn')
   await p.getByRole('textbox', { name: '新选项' }).press('Enter')
   await p.getByRole('button', { name: '删除选项「svn」' }).scrollIntoViewIfNeeded()
-  await check(p, 'Agent-参数选项', ['通用约束', 'svn'])
+  await check(p, 'Agent-参数选项', ['通用约束', 'svn', '能开启子对话', '能启动计划'])
   await p.goto(base + '#/library')
   await check(p, 'Skills与命令', ['commit-message', 'code-review'])
   await p.getByRole('radio', { name: '自带 Skill' }).click()

@@ -154,7 +154,6 @@ export const EN_FLOW: Record<string, string> = {
 
   // 团队
   更换: 'Change',
-  '选择主 Agent': 'Select main Agent',
   上移: 'Move up',
   下移: 'Move down',
 
@@ -191,7 +190,7 @@ export const EN_FLOW: Record<string, string> = {
   '正在被 {list} 使用，请先改用其他工作流。': 'In use by {list}. Switch them to another workflow first.',
 
   // 工作流选择与摘要
-  '未选主 Agent': 'No main Agent',
+  '未选默认 Agent': 'No default Agent',
   '{n} 个子 Agent': '{n} sub-agents',
   '还没有工作流，先去工作流页面创建': 'No workflows yet. Create one on the Workflows page first',
   工作流: 'Workflow',
@@ -245,17 +244,14 @@ export const EN_FLOW: Record<string, string> = {
   '默认工作流是自带的，不能删除': 'The Default workflow is built in and cannot be deleted',
   这个工作流用到的: 'Used in this workflow',
   '其他 Agent': 'Other Agents',
-  '调度流程：评估子 Agent 的结果、决定往哪走、最后整理结果':
-    'Runs the flow: reviews sub-agent results, decides where to go next, and writes the final result',
-  '主 Agent 调度': 'Main Agent dispatch',
-  '子 Agent 做完的节点交给主 Agent 评估：通过、退回修改、委派给别的工作流或停下，条件分支也由它选，流程结束后它整理最终结果。关掉时按连线自动往下走，少花几轮。':
-    'Nodes finished by sub-agents go to the main Agent for review: pass, send back for changes, delegate to another workflow, or stop. It also picks conditional branches and writes the final result when the flow ends. Turn it off to follow the connections automatically and save a few rounds.',
-  调度用的模型档位: 'Model tier for dispatch',
-  '跟随 Agent': 'Same as Agent',
+  '默认执行 Agent': 'Default Agent',
+  '节点没有单独指定 Agent 时用它；节点按连线并发执行，不再由它调度':
+    'Used by nodes that do not pick an Agent; nodes run concurrently along the connections and it no longer dispatches.',
+  '选择默认执行 Agent': 'Select default Agent',
   '在流程图的节点上选；节点执行中还可以自己再派子 Agent 并发处理':
     'Chosen on the nodes in the flow chart; a running node can also start more sub-agents to work in parallel',
-  '节点还都由主 Agent 自己做。': 'All nodes are still done by the main Agent.',
+  '节点还都由默认执行 Agent 自己做。': 'All nodes are still done by the default Agent.',
   '节点的 Agent 都还在': 'Node Agents all exist',
   '这些节点的 Agent 已经删除：{names}': 'The Agents of these nodes were deleted: {names}',
-  '主 Agent 与子 Agent': 'Main Agent and sub-agents',
+  'Agent 分工': 'Agent roles',
 }
