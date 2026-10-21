@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { chipMarker, removeChip, segments, type Chip, type ChipKind } from '@shared/composer'
 import { cn } from '@/lib/utils'
+import { scrollCaretIntoView } from '@/lib/caret'
 import { t } from '@shared/i18n'
 
 export interface RichInputHandle {
@@ -179,6 +180,8 @@ export function RichInput({
     r.collapse(true)
     sel.removeAllRanges()
     sel.addRange(r)
+    // 程序设的光标浏览器不会帮着滚，内容变多后光标可能落在可视区外
+    scrollCaretIntoView(node)
   }, [])
 
   const caretNow = useCallback(() => {
@@ -222,6 +225,7 @@ export function RichInput({
         sel.removeAllRanges()
         sel.addRange(after)
       }
+      scrollCaretIntoView(node)
       emit()
     }
     return {
@@ -260,6 +264,7 @@ export function RichInput({
           sel.removeAllRanges()
           sel.addRange(at)
         }
+        scrollCaretIntoView(node)
         emit()
       },
       replace: (from, to, text) => {
@@ -285,6 +290,7 @@ export function RichInput({
             sel.addRange(after)
           }
         }
+        scrollCaretIntoView(node)
         emit()
       },
       focus: () => el.current?.focus(),

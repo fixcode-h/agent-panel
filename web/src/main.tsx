@@ -4,8 +4,11 @@ import { App } from './App'
 import './index.css'
 import './maple-mono.css'
 import { getLang } from '@shared/i18n'
+import { installCaretAutoScroll } from './lib/caret'
 
 document.documentElement.lang = getLang() === 'zh' ? 'zh-CN' : 'en'
+// 所有输入框统一：光标跑到可视区外时把输入框滚过去
+installCaretAutoScroll()
 
 if (!import.meta.env.VITE_DEMO) void import('./fonts.css')
 else {
