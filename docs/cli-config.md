@@ -191,6 +191,10 @@ http 客户端，没有这一步。
 CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.json` 写了一个项目扩展 `.pi/extensions/agent-panel-{name}.ts`，
 启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具，调用时转发过去。
 
+Pi 1.3 起项目里的 `.pi/extensions` 受「项目信任」管控，而 print / json / rpc 模式不会弹信任提示，没被信任的项目会直接跳过它，
+桥接注册的工具一个都不生效。所以 `mcp.args` 里用 `-e` 显式加载（`["-e", ".pi/extensions/agent-panel-{name}.ts"]`）：
+显式加载不受项目信任影响，也不用为了一个临时扩展去信任整个项目。
+
 ## 能力 `features`
 
 | 字段          | 说明                                                                                                                                                                                                                                                                       |

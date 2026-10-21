@@ -66,6 +66,10 @@
     {
       "id": "xhigh",
       "label": "超高"
+    },
+    {
+      "id": "max",
+      "label": "最高"
     }
   ],
   "tiers": {
@@ -393,6 +397,7 @@
     ]
   },
   "mcp": {
+    "args": ["-e", ".pi/extensions/agent-panel-{name}.ts"],
     "files": {
       ".pi/extensions/agent-panel-{name}.ts": "// Agent 面板这一轮临时写进来的：把面板的工具（MCP）交给 Pi，跑完就删掉\nimport { request } from 'node:http'\n\nconst url = new URL('{url}')\nlet seq = 0\n\n// 用 node:http 而不是 fetch：等用户回答提问可能很久，fetch 默认 5 分钟就超时\nfunction rpc(method: string, params: unknown): Promise<any> {\n  const body = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params })\n  return new Promise((resolve, reject) => {\n    const req = request(\n      url,\n      { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } },\n      (res) => {\n        let text = ''\n        res.setEncoding('utf8')\n        res.on('data', (c) => (text += c))\n        res.on('end', () => {\n          try {\n            const raw = text.trim().startsWith('{')\n              ? text\n              : (text.split('\\n').filter((l) => l.startsWith('data:')).pop() ?? '').slice(5)\n            const msg = JSON.parse(raw)\n            if (msg.error) reject(new Error(msg.error.message))\n            else resolve(msg.result)\n          } catch {\n            reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`))\n          }\n        })\n      },\n    )\n    req.on('error', reject)\n    req.end(body)\n  })\n}\n\nexport default async function (pi: any) {\n  let tools: any[] = []\n  try {\n    await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pi', version: '1' } })\n    tools = (await rpc('tools/list', {}))?.tools ?? []\n  } catch (e) {\n    // 连不上面板时不拦着 Pi 启动，只是这一轮没有面板的工具\n    console.error(`agent-panel: ${(e as Error).message}`)\n  }\n  for (const tool of tools)\n    pi.registerTool({\n      name: tool.name,\n      label: tool.title ?? tool.name,\n      description: tool.description ?? '',\n      parameters: tool.inputSchema ?? { type: 'object', properties: {} },\n      async execute(_id: string, args: unknown) {\n        const r = await rpc('tools/call', { name: tool.name, arguments: args ?? {} })\n        const content = (r?.content ?? []).map((c: any) =>\n          c.type === 'image'\n            ? { type: 'image', data: c.data, mimeType: c.mimeType }\n            : { type: 'text', text: c.type === 'text' ? c.text : JSON.stringify(c) },\n        )\n        if (r?.isError) throw new Error(content.map((c: any) => c.text ?? '').join('\\n'))\n        return { content, details: {} }\n      },\n    })\n}\n"
     }
@@ -402,6 +407,7 @@
       "关闭": "Off",
       "最低": "Minimal",
       "超高": "Extra high",
+      "最高": "Max",
       "全部工具": "All tools",
       "可以改文件、执行任意命令；Pi 没有确认环节，只在信任的项目里用": "Can edit files and run any command. Pi never asks for confirmation, so use it only in trusted projects",
       "只改文件": "Files only",
