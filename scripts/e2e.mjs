@@ -1543,11 +1543,10 @@ try {
   assert.equal(net.status, 'done', '断开后自动续接完成')
   c = calls().at(-1)
   assert.ok(c.args.includes('--resume') && /连接中断了/.test(c.input) && /分几次写/.test(c.input))
-  // 续接前把这次的报错写进对话，不悄悄重试
-  const shown = net.messages.find(
-    (m) => m.role === 'system' && m.error && /正在自动续接会话重试（第 1\/2 次）/.test(m.text),
-  )
-  assert.ok(shown && /Unable to connect to the API/.test(shown.text), '断开的报错要显示出来再续接')
+  // 续接成功后，断开时的报错收成普通说明：这一轮实际没有失败，不能一直挂着一张红色错误
+  const shown = net.messages.find((m) => m.role === 'system' && /已自动续接会话（第 1 次）/.test(m.text))
+  assert.ok(shown && /Unable to connect to the API/.test(shown.text), '断开的原因要留着能查')
+  assert.ok(!shown.error && shown.transient, '续接成功后不再显示成错误')
   net = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',

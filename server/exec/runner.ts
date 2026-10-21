@@ -370,6 +370,24 @@ function speedMeter(onIdle: () => void) {
 
 /** 连接断开时自动续接的次数上限 */
 const MAX_NET_RETRIES = 2
+/** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
+export interface NetNote {
+  msg: TaskMessage
+  base: string
+  n: number
+}
+
+/**
+ * 续接成功了：之前那次断开的报错已经不成立，收成普通说明。
+ * 不收的话对话里会一直挂着一张红色的「执行失败」卡片，用户以为这一轮失败了。
+ */
+export function settleNetNotes(notes: NetNote[]) {
+  for (const { msg, base, n } of notes) {
+    msg.error = undefined
+    msg.transient = true
+    msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
+  }
+}
 const NETWORK_ERROR =
   /Connection error|APIConnectionError|Unable to connect to the API|Failed to process successful response|Stream connection failed|stream (disconnected|closed|error)|ECONNRESET|ETIMEDOUT|socket hang up|network (error|connection)/i
 
@@ -442,6 +460,8 @@ async function runAgent(
   retried = false,
   netRetries = 0,
   retryCarry = '',
+  /** 这一串自动续接里已经写进对话的报错：续接成功后要收回成普通说明 */
+  netNotes: NetNote[] = [],
 ): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
@@ -1232,7 +1252,7 @@ async function runAgent(
     // 每次断开都把完整报错写进节点里再续接，不能悄悄重试，否则页面上只看到 Agent 反复说同一句话
     const session = task.sessions[sessionKey]
     if (NETWORK_ERROR.test(detail) && session && !prewarm && netRetries < MAX_NET_RETRIES && !ctx.signal.aborted) {
-      task.messages.push({
+      const note: TaskMessage = {
         id: ctx.newId(),
         role: 'system',
         agentId,
@@ -1245,7 +1265,9 @@ async function runAgent(
         tools: [],
         error: true,
         at: new Date().toISOString(),
-      })
+      }
+      task.messages.push(note)
+      netNotes = [...netNotes, { msg: note, base: message, n: netRetries + 1 }]
       log.warn('agent', `${def.name} 连接中断，自动续接第 ${netRetries + 1} 次`, { task: task.id, step, detail })
       ctx.changed(true)
       return runAgent(
@@ -1258,6 +1280,8 @@ async function runAgent(
         },
         retried,
         netRetries + 1,
+        '',
+        netNotes,
       )
     }
     log.error('agent', `${def.name} 执行失败`, { task: task.id, step, code: r.code, detail })
@@ -1267,6 +1291,9 @@ async function runAgent(
     }
   }
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
+  // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）
+  settleNetNotes(netNotes)
+  if (netNotes.length) ctx.changed(true)
   const done: AgentResult = { ok: true, text: texts.join('\n\n') }
   // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
   if (rewind) task.rewind = undefined
