@@ -1,13 +1,10 @@
 import { Crown, Plus, ArrowLeftRight } from 'lucide-react'
 import type { Agent, NodeTier } from '@shared/schema'
-import { MODEL_TIERS } from '@shared/clis'
 import { t } from '@shared/i18n'
 import { useData } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { AgentPicker } from '@/components/agents/AgentPicker'
-import { Switch } from '@/components/ui/switch'
-import { Segmented } from '@/components/ui/segmented'
 import { useAgentView } from '@/lib/agent-view'
 
 function AgentLine({ agent }: { agent: Agent }) {
@@ -26,17 +23,13 @@ function AgentLine({ agent }: { agent: Agent }) {
 }
 
 /**
- * 工作流的 Agent：只配主 Agent（调度整个流程、评估子 Agent 的结果、整理最终结果）；
+ * 工作流的 Agent：配一个默认执行 Agent（节点没单独指定时用它）；
  * 子 Agent 在流程节点上选，这里列出节点上用到了哪些
  */
 export function TeamEditor({
   mainAgentId,
   onMainChange,
   team,
-  dispatch,
-  onDispatchChange,
-  mainTier,
-  onMainTierChange,
 }: {
   mainAgentId: string
   onMainChange: (id: string) => void
@@ -56,8 +49,8 @@ export function TeamEditor({
       <div className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5 text-xs text-muted">
           <Crown className="h-3.5 w-3.5 text-accent" />
-          {t('主 Agent')}
-          <span className="text-subtle">· {t('调度流程：评估子 Agent 的结果、决定往哪走、最后整理结果')}</span>
+          {t('默认执行 Agent')}
+          <span className="text-subtle">· {t('节点没有单独指定 Agent 时用它；节点按连线并发执行，不再由它调度')}</span>
         </span>
         {main ? (
           <div className="flex items-center gap-3 rounded-[10px] border border-accent/50 bg-accent-soft p-3">
@@ -73,37 +66,9 @@ export function TeamEditor({
           <AgentPicker exclude={[]} onPick={(a) => onMainChange(a.id)}>
             <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[0.8125rem] text-accent hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
-              {t('选择主 Agent')}
+              {t('选择默认执行 Agent')}
             </button>
           </AgentPicker>
-        )}
-      </div>
-
-      <div className="flex flex-col gap-2.5 rounded-[10px] border bg-card p-3">
-        <label className="flex cursor-pointer items-start gap-3">
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span className="text-[0.8125rem] font-medium">{t('主 Agent 调度')}</span>
-            <span className="text-xs leading-relaxed text-subtle">
-              {t(
-                '子 Agent 做完的节点交给主 Agent 评估：通过、退回修改、委派给别的工作流或停下，条件分支也由它选，流程结束后它整理最终结果。关掉时按连线自动往下走，少花几轮。',
-              )}
-            </span>
-          </span>
-          <Switch checked={dispatch} onCheckedChange={onDispatchChange} aria-label={t('主 Agent 调度')} />
-        </label>
-        {dispatch && (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">{t('调度用的模型档位')}</span>
-            <Segmented
-              label={t('调度用的模型档位')}
-              value={mainTier}
-              onChange={(v) => onMainTierChange(v)}
-              options={[
-                { id: '' as NodeTier, label: t('跟随 Agent') },
-                ...MODEL_TIERS.map((m) => ({ id: m.id as NodeTier, label: t('{tier}档', { tier: m.label }) })),
-              ]}
-            />
-          </div>
         )}
       </div>
 
@@ -122,7 +87,7 @@ export function TeamEditor({
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-subtle">{t('节点还都由主 Agent 自己做。')}</p>
+          <p className="text-xs text-subtle">{t('节点还都由默认执行 Agent 自己做。')}</p>
         )}
       </div>
     </>

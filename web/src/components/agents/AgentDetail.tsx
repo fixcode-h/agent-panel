@@ -297,27 +297,25 @@ export function AgentDetail({
                 />
               </Field>
               {!builtin && (
-                <>
-                  <Checkbox
-                    checked={draft.common}
-                    onChange={(v) => set('common', v)}
-                    label={t('通用 Agent')}
-                    hint={t('工作流里任何 Agent 执行时都可以把子任务派给它，不用写进工作流。')}
-                  />
-                  <Checkbox
-                    checked={draft.canDelegate}
-                    onChange={(v) => set('canDelegate', v)}
-                    label={t('能开启子对话')}
-                    hint={t('项目顶层的对话里可以把消息交给子对话，或者新建子对话；子对话本身不能再分派。')}
-                  />
-                  <Checkbox
-                    checked={draft.canPlan}
-                    onChange={(v) => set('canPlan', v)}
-                    label={t('能启动计划')}
-                    hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
-                  />
-                </>
+                <Checkbox
+                  checked={draft.common}
+                  onChange={(v) => set('common', v)}
+                  label={t('通用 Agent')}
+                  hint={t('工作流里任何 Agent 执行时都可以把子任务派给它，不用写进工作流。')}
+                />
               )}
+              <Checkbox
+                checked={draft.canDelegate}
+                onChange={(v) => set('canDelegate', v)}
+                label={t('能开启子对话')}
+                hint={t('项目顶层的对话里可以把消息交给子对话，或者新建子对话；子对话本身不能再分派。')}
+              />
+              <Checkbox
+                checked={draft.canPlan}
+                onChange={(v) => set('canPlan', v)}
+                label={t('能启动计划')}
+                hint={t('需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。')}
+              />
               <div className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted">{t('标签')}</span>
                 <TagPicker value={draft.tags} onChange={(v) => set('tags', v)} />

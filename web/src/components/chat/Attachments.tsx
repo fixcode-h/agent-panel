@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   AtSign,
+  Check,
   ChevronLeft,
   ChevronRight,
   File as FileIcon,
@@ -17,13 +18,16 @@ import {
   Palette,
   Paperclip,
   Plus,
+  Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '@shared/schema'
 import type { DesignKind, SavedStyle } from '@shared/design'
+import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
+import { isReady, workflowChecks } from '@/lib/readiness'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { Lightbox } from '@/components/ui/lightbox'
 import type { RichInputHandle } from './RichInput'
@@ -365,6 +369,8 @@ export function AttachMenu({
   onStyle,
   styleKind,
   self,
+  workflowId,
+  onWorkflow,
   className,
 }: {
   onFiles: (f: File[]) => void
@@ -373,6 +379,10 @@ export function AttachMenu({
   canMention: boolean
   /** 引入会话：选好的会话整理成附件交回来；不传就没有这一项 */
   onSession?: (a: Attachment) => void
+  /** 按工作流执行：选好的工作流 id 交回来；不传就没有这一项（例如不属于项目的聊天） */
+  onWorkflow?: (id: string) => void
+  /** 现在选中的工作流，列表里打勾 */
+  workflowId?: string
   /** 引入风格：选好的风格交回来（UI 设计的对话用）；不传就没有这一项 */
   onStyle?: (s: SavedStyle) => void
   /** 引入风格时只列这一类（游戏 / 网页）的风格；不写列两类，分开显示 */
@@ -385,7 +395,7 @@ export function AttachMenu({
   // 选了「引用项目文件」：焦点要留在输入框里弹出文件列表，不能被还给「+」按钮
   const mentioning = useRef(false)
   const [open, setOpen] = useState(false)
-  const [view, setView] = useState<'menu' | 'sessions' | 'styles'>('menu')
+  const [view, setView] = useState<'menu' | 'sessions' | 'styles' | 'workflows'>('menu')
   return (
     <>
       <input
@@ -434,6 +444,16 @@ export function AttachMenu({
                 setView('menu')
               }}
             />
+          ) : view === 'workflows' && onWorkflow ? (
+            <WorkflowList
+              value={workflowId}
+              onBack={() => setView('menu')}
+              onPick={(id) => {
+                onWorkflow(id)
+                setOpen(false)
+                setView('menu')
+              }}
+            />
           ) : view === 'sessions' && onSession ? (
             <SessionPicker
               self={self}
@@ -465,6 +485,13 @@ export function AttachMenu({
                   <span className="font-mono text-[0.6875rem] text-subtle">@</span>
                 </PopoverClose>
               )}
+              {onWorkflow && (
+                <button type="button" className={menuItem} onClick={() => setView('workflows')}>
+                  <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
+                  <span className="flex-1">{t('按工作流执行')}</span>
+                  <ChevronRight className="h-3.5 w-3.5 text-subtle" />
+                </button>
+              )}
               {onStyle && (
                 <button type="button" className={menuItem} onClick={() => setView('styles')}>
                   <Palette className="h-4 w-4 shrink-0 text-subtle" />
@@ -484,6 +511,57 @@ export function AttachMenu({
         </PopoverContent>
       </Popover>
     </>
+  )
+}
+
+/** 按工作流执行时选工作流：第一项是不用工作流，直接对话；每项标出节点数和是否就绪 */
+function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () => void; onPick: (id: string) => void }) {
+  const { workflows, agents, clis } = useData()
+  return (
+    <div className="flex flex-col">
+      <div className="flex items-center gap-1 border-b px-1.5 py-1.5">
+        <button
+          type="button"
+          onClick={onBack}
+          aria-label={t('返回')}
+          className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <span className="px-1 text-[0.8125rem]">{t('按工作流执行')}</span>
+      </div>
+      <div className="max-h-80 overflow-y-auto p-1">
+        <button type="button" className={menuItem} onClick={() => onPick('')}>
+          <MessageSquare className="h-4 w-4 shrink-0 text-subtle" />
+          <span className="flex-1">{t('不用工作流，直接对话')}</span>
+          {!value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+        </button>
+        {workflows.map((w) => {
+          const ready = isReady(workflowChecks(w, agents, clis, workflows))
+          return (
+            <button key={w.id} type="button" className={menuItem} onClick={() => onPick(w.id)}>
+              <span
+                title={ready ? t('就绪') : t('未就绪')}
+                className={cn('h-2 w-2 shrink-0 rounded-full', ready ? 'bg-success' : 'bg-warning')}
+              />
+              <span className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate">{w.name}</span>
+                <span className="truncate text-[0.6875rem] text-subtle">
+                  {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
+                </span>
+              </span>
+              {w.id === value && <Check className="h-4 w-4 shrink-0 text-accent" />}
+            </button>
+          )
+        })}
+        {workflows.length === 0 && (
+          <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有工作流，先去工作流页面创建')}</p>
+        )}
+      </div>
+      <p className="border-t px-3 py-2 text-[0.6875rem] leading-relaxed text-subtle">
+        {t('选了工作流就按它的流程图执行；不选时直接和 Agent 对话。')}
+      </p>
+    </div>
   )
 }
 

@@ -83,6 +83,7 @@ const base = (
     common: false,
     canDelegate: false,
     canPlan: false,
+    capsSet: true,
     ...agent,
   },
 })

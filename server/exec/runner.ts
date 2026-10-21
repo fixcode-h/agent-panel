@@ -564,8 +564,15 @@ async function runAgent(
     input = `${input}\n\n## 用户在执行中补充的信息\n${pending.join('\n\n')}`
   }
   if (op?.kind === 'compact') input = def.compact === 'slash' ? '/compact' : SUMMARY_PROMPT
-  // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求
-  if (chat && !op && input.startsWith('/')) input = await expandSlash(input, cliId, cwd, def.slash && !carry)
+  // 对话里打的「/命令」：Claude Code 新会话开头原样认得，其他情况展开成普通要求。
+  // 对话提示把用户原话放在「## 用户这次的消息」下面，所以按原话判断，把那一行换成展开后的要求
+  if (chat && !op && ctx.prompt.trim().startsWith('/')) {
+    const head = '## 用户这次的消息\n'
+    const at = input.indexOf(head + ctx.prompt)
+    const expanded = await expandSlash(ctx.prompt, cliId, cwd, def.slash && !carry)
+    if (at >= 0 && expanded !== ctx.prompt)
+      input = `${input.slice(0, at + head.length)}${expanded}${input.slice(at + head.length + ctx.prompt.length)}`
+  }
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? openOrchSession(call.orch) : undefined

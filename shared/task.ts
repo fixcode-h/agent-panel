@@ -352,6 +352,8 @@ export function taskSummary(t: Task): Task {
     sessions: {},
     command: [],
     workflows: [],
+    // 运行记录里有共享状态和节点消息，列表用不到；任务页会取完整内容
+    runs: [],
     workflowName: t.workflowName || t.workflows.find((w) => w.id === t.workflowId)?.name || '',
   }
 }

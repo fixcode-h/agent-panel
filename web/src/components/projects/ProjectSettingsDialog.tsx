@@ -88,7 +88,12 @@ export function ProjectSettingsDialog({
 function Body({ project, onClose }: { project?: Project; onClose: () => void }) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
   const { go, route, openSettings } = useNav()
-  const [draft, setDraft] = useState<ProjectInput>(() => (project ? toInput(project) : blank))
+  const [draft, setDraft] = useState<ProjectInput>(() =>
+    project
+      ? toInput(project)
+      : // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
+        { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' },
+  )
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -422,12 +427,14 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                     }}
                     options={[
                       { value: '', label: t('无（直接用 CLI，不注入 Agent 角色）') },
-                      ...agents.map((a) => ({ value: a.id, label: a.name })),
+                      ...agents.filter((a) => a.enabled).map((a) => ({ value: a.id, label: a.name })),
                     ]}
                   />
                 </Field>
                 <span className="text-xs text-subtle">
-                  {t('在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。')}
+                  {t(
+                    '在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。',
+                  )}
                 </span>
               </FormSection>
 
@@ -482,7 +489,10 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                     {workflows
                       .filter((w) => w.id !== draft.workflowId)
                       .map((w) => (
-                        <label key={w.id} className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-[0.8125rem] hover:bg-sel/60">
+                        <label
+                          key={w.id}
+                          className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-[0.8125rem] hover:bg-sel/60"
+                        >
                           <input
                             type="checkbox"
                             className="accent-accent"
@@ -497,7 +507,9 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                             }
                           />
                           <span className="min-w-0 flex-1 truncate">{w.name}</span>
-                          {w.description && <span className="max-w-[45%] truncate text-xs text-subtle">{w.description}</span>}
+                          {w.description && (
+                            <span className="max-w-[45%] truncate text-xs text-subtle">{w.description}</span>
+                          )}
                         </label>
                       ))}
                   </div>

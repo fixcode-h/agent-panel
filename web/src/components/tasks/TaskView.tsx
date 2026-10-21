@@ -42,7 +42,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/menu'
-import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { AgentMessage, ChatReply, NoteMessage, PendingAuthor } from './Messages'
 import { useAgentView } from '@/lib/agent-view'
 import { LiveStats } from './LiveStats'
@@ -221,17 +221,16 @@ export function TaskView({
   const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
   const [progressOpen, setProgressOpen] = useState(false)
-  // 右栏可以拖宽，但中间要留出内容宽度（输入框的宽度）；除此之外不设上限，上限按这一行的实际宽度算
-  // 文件面板默认和中间区域对半；手动拖过之后按拖动后的宽度
+  // 文件面板默认和中间区域对半（左边栏约 224）；手动拖过之后按拖动后的宽度，至少给中间留 320
   const taskPanel = usePaneWidth(
     'task-panel',
-    typeof window === 'undefined' ? 340 : Math.max(320, Math.round(window.innerWidth / 2)),
+    typeof window === 'undefined' ? 340 : Math.max(320, Math.round((window.innerWidth - 224) / 2)),
     280,
     () => {
-    const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
-    // 保留中间的内容宽度和一点边距；窗口窄到放不下时上限就是默认宽度，不会反而变窄
-    return Math.max(340, row - contentPaneWidth() - 48)
-  })
+      const row = document.querySelector('[data-task-panel]')?.parentElement?.clientWidth ?? window.innerWidth
+      return Math.max(340, row - 320)
+    },
+  )
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [resuming, setResuming] = useState(false)
@@ -606,7 +605,12 @@ export function TaskView({
                 className="inline-flex h-8 max-w-[240px] cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
                 title={chatAgent?.description || t('这个对话使用的 Agent，点一下可以换')}
               >
-                <AgentAvatar icon={chatAgent?.icon ?? 'sparkles'} cli={chatCli} size="sm" dim={!!chatAgent && !chatAgent.enabled} />
+                <AgentAvatar
+                  icon={chatAgent?.icon ?? 'sparkles'}
+                  cli={chatCli}
+                  size="sm"
+                  dim={!!chatAgent && !chatAgent.enabled}
+                />
                 <span className="truncate">{chatAgent?.name ?? t('无 Agent')}</span>
                 <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
               </button>
@@ -685,10 +689,7 @@ export function TaskView({
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
         <div
-          className={cn(
-            'relative flex min-w-0 flex-1',
-            pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0',
-          )}
+          className={cn('relative flex min-w-0 flex-1', pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0')}
         >
           <main className="flex min-w-0 flex-1 flex-col md:h-full">
             <header
@@ -1117,9 +1118,7 @@ export function TaskView({
               点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
           {!pane && (
             <aside
-              aria-label={
-                openChild ? t('子对话') : openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')
-              }
+              aria-label={openChild ? t('子对话') : openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')}
               data-task-panel
               style={{ width: openChild ? '50%' : taskPanel.width }}
               className={cn(
@@ -1136,29 +1135,14 @@ export function TaskView({
                 <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
               )}
               {openChild ? (
-                <div className="flex min-h-0 w-full flex-col">
-                  <div className="flex shrink-0 items-center gap-2 border-b px-3 py-2">
-                    <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-semibold">
-                      {children.find((c) => c.id === openChild)?.title ?? t('子对话')}
-                    </span>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={t('关闭子对话')}
-                      onClick={() => setOpenChild('')}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                  <div className="min-h-0 flex-1">
-                    <TaskView
-                      key={openChild}
-                      taskId={openChild}
-                      project={project}
-                      pane
-                      onClose={() => setOpenChild('')}
-                    />
-                  </div>
+                <div className="min-h-0 w-full flex-1">
+                  <TaskView
+                    key={openChild}
+                    taskId={openChild}
+                    project={project}
+                    pane
+                    onClose={() => setOpenChild('')}
+                  />
                 </div>
               ) : (
                 <>
@@ -1264,13 +1248,11 @@ function RunChecklist({ task, run, onOpen }: { task: Task; run: number; onOpen: 
   const roots = steps.filter((s) => !s.parentId)
   const kids = (id: string) => steps.filter((s) => s.parentId === id && (s.slot === 'step' || s.slot === 'sub'))
   const working = steps.some((s) => s.status === 'running')
-  const status: Task['status'] = rec?.status === 'running' || (!rec?.status && working) ? 'running' : (rec?.status ?? 'done')
+  const status: Task['status'] =
+    rec?.status === 'running' || (!rec?.status && working) ? 'running' : (rec?.status ?? 'done')
   const who = (id: string) => agents.find((a) => a.id === id)?.name ?? ''
   const row = (s: TaskStep, child = false) => (
-    <div
-      key={s.id}
-      className={cn('flex min-w-0 items-center gap-2 py-1.5', child ? 'pr-3 pl-10' : 'px-3')}
-    >
+    <div key={s.id} className={cn('flex min-w-0 items-center gap-2 py-1.5', child ? 'pr-3 pl-10' : 'px-3')}>
       {child && <span className="h-px w-3 shrink-0 bg-line-strong" />}
       <StepIcon status={s.status} />
       <span className="min-w-0 flex-1 truncate text-[0.8125rem]">{s.title}</span>

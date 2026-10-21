@@ -8,6 +8,7 @@ import { readFile } from 'node:fs/promises'
 import { CLIS, type CliDefinition } from '../shared/clis.ts'
 import {
   apiProvider,
+  isLegacyPanelKey,
   sameApi,
   type ApiConfig,
   type ApiProtocol,
@@ -93,9 +94,13 @@ export function toApi(
   if (skip.has(key)) return null
   const bearer = resolveValue(pick(obj, src.bearerKey), env)
   const keyEnv = pick(obj, src.keyEnv)
-  const apiKey = bearer || resolveValue(pick(obj, src.apiKey), env) || (keyEnv ? (env[keyEnv] ?? '') : '')
+  const rawKey = pick(obj, src.apiKey)
+  const apiKey = bearer || resolveValue(rawKey, env) || (keyEnv ? (env[keyEnv] ?? '') : '')
   const url = resolveValue(pick(obj, src.baseUrl), env)
   if (!apiKey && !url) return null
+  // 面板旧版本写的密钥占位名不算用户的配置，留着也用不了（见 isLegacyPanelKey）
+  // 旧版 Codex 是写在 env_key 里、旧版 Command Code / Pi 是写在 apiKey 里
+  if (isLegacyPanelKey(rawKey) || isLegacyPanelKey(keyEnv)) return null
   const wire = pick(obj, src.wireKey)
   const map: Record<string, ApiProtocol> = Object.keys(src.wire).length
     ? src.wire

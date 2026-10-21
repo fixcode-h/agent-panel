@@ -43,8 +43,7 @@ function tools(o: Orchestra) {
   return [
     {
       name: 'get_status',
-      description:
-        '查看这个任务里所有 Agent（主 Agent、各节点、派出的子 Agent）的状态和结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
+      description: '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
       inputSchema: { type: 'object', properties: {} },
     },
     ...(o.planning
@@ -114,7 +113,8 @@ function tools(o: Orchestra) {
           },
           {
             name: 'send_to_conversation',
-            description: '把消息交给一个已有的子对话继续处理（异步执行）。它和这条消息相关时用，id 从 list_conversations 取。',
+            description:
+              '把消息交给一个已有的子对话继续处理（异步执行）。它和这条消息相关时用，id 从 list_conversations 取。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -183,7 +183,10 @@ function tools(o: Orchestra) {
       inputSchema: {
         type: 'object',
         properties: {
-          to: { type: 'string', description: '节点 id 或标题；main 表示主 Agent' },
+          to: {
+            type: 'string',
+            description: o.hasMain ? '节点 id 或标题；main 表示主 Agent' : '节点 id 或标题',
+          },
           text: { type: 'string' },
         },
         required: ['to', 'text'],
@@ -191,7 +194,7 @@ function tools(o: Orchestra) {
     },
     {
       name: 'read_messages',
-      description: '看别的 Agent 发给你的消息和主 Agent 的回答（看过就清掉）。做比较久的事时中途看一下。',
+      description: '看别的 Agent 发给你的消息（看过就清掉）。做比较久的事时中途看一下。',
       inputSchema: { type: 'object', properties: {} },
     },
   ]
@@ -343,6 +346,8 @@ export function orchHint(o: Orchestra) {
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   if (o.planning)
     return `（你有编排工具 orch：${o.coordinator ? 'list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；' : ''}start_plan 按工作流启动一次计划；get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
+  if (o.coordinator)
+    return `（你有编排工具 orch：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；get_status 查看节点状态；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
   return o.self.endsWith('@main')
     ? `（你有编排工具 orch：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。）`
     : `（你有编排工具 orch：能拆成互不相关的几块时用 spawn_agents 派子 Agent 同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。）`

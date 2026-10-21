@@ -124,6 +124,13 @@ export const EN_TASKS: Record<string, string> = {
   工作流: 'Workflow',
   对话: 'Chat',
   '{n} 个节点': '{n} nodes',
+  按工作流执行: 'Run as workflow',
+  '不用工作流，直接对话': 'No workflow, just chat',
+  '选了工作流就按它的流程图执行；不选时直接和 Agent 对话。':
+    'With a workflow selected, it runs along that workflow’s flow; without one you chat with the Agent directly.',
+  '描述要做的事，Agent 会按工作流分工完成': 'Describe what to do and the Agents will split it up by the workflow',
+  按这个工作流的流程图执行: 'Runs along this workflow’s flow',
+  改回直接对话: 'Back to a direct chat',
   '对话用的 CLI': 'CLI to chat with',
   '没有可用的 CLI': 'No CLI available',
   开始执行: 'Start',

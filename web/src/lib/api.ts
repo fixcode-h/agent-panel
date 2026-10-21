@@ -250,9 +250,9 @@ export const api = {
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
   taskChildren: (id: string) =>
-    request<{ id: string; title: string; status: Task['status']; summary: string; working: boolean; updatedAt: string }[]>(
-      `/tasks/${id}/children`,
-    ),
+    request<
+      { id: string; title: string; status: Task['status']; summary: string; working: boolean; updatedAt: string }[]
+    >(`/tasks/${id}/children`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
   importTask: (projectId: string, bundle: unknown) =>

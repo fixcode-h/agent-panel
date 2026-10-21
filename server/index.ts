@@ -151,11 +151,12 @@ async function ensureProjectWorkflows() {
   )
   if (projectAgents.created.length)
     log.info('agent', '已安装项目对话 Agent', { list: projectAgents.created.map((a) => a.name) })
-  // 内置 Agent 的能力开关在升级后补上（本机已有的 Agent 不会被模板覆盖，只补能力）
+  // 内置 Agent 的能力开关在升级后补一次（本机已有的 Agent 不会被模板覆盖，只补能力）；
+  // 补过之后 capsSet 为真，用户关掉的能力不会在下次启动时又被打开
   for (const a of await agents.list()) {
-    if (a.origin === 'builtin:orchestrator' && !a.canDelegate)
-      await agents.update(a.id, { ...a, canDelegate: true })
-    if (a.origin === 'builtin:worker' && !a.canPlan) await agents.update(a.id, { ...a, canPlan: true })
+    if (a.capsSet) continue
+    if (a.origin === 'builtin:orchestrator') await agents.update(a.id, { ...a, canDelegate: true, capsSet: true })
+    else if (a.origin === 'builtin:worker') await agents.update(a.id, { ...a, canPlan: true, capsSet: true })
   }
   const coordinator = (await agents.list()).find((a) => a.origin === 'builtin:orchestrator')
   const migrations = await migrateProjectsToGeneral(
@@ -222,6 +223,8 @@ const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json
 async function parseAgent(body: unknown, selfId = '') {
   const p = AgentInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
+  // 界面保存过能力开关：之后升级不再用内置默认值覆盖用户的选择
+  if (body && typeof body === 'object' && ('canDelegate' in body || 'canPlan' in body)) p.data.capsSet = true
   // 引入：去掉自己和重复的；改了之后会绕回自己就拒绝，免得配置里留下死循环
   p.data.includes = [...new Set(p.data.includes)].filter((id) => id !== selfId)
   // 以前就有的循环（旧数据、导入的）不拦，不然连改个名字都存不了；配置页会把它提出来
@@ -481,27 +484,24 @@ app.delete('/project-categories/:id', async (c) => {
 
 // ---- 项目 ----
 /**
- * 项目必须有工作流：它决定这个项目的对话走哪套流程，编排器带哪些规范。
- * 界面新建时默认带上「通用项目」；这里挡一下没带的情况，错误里说清怎么办
+ * 项目要有子对话默认工作流：子对话接到任务时先用它，可选工作流里更合适的优先。
+ * 界面新建时默认带上「通用项目」；没有单独指定时跟随项目分类
  */
 async function parseProject(body: unknown) {
   const p = ProjectInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
-  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId)))
-    return { error: t('默认对话 Agent 不存在') }
+  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话 Agent 不存在') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
-  if (!p.data.workflowId) {
-    const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
-    if (!cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }
-  }
-  const optional = [...new Set(p.data.workflowIds)].filter((id) => id && id !== p.data.workflowId)
+  const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
+  if (!p.data.workflowId && !cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }
+  const effective = p.data.workflowId || cat?.workflowId || ''
+  const optional = [...new Set(p.data.workflowIds)].filter((id) => id && id !== effective)
   for (const id of optional) if (!(await workflows.get(id))) return { error: t('可选工作流不存在') }
   p.data.workflowIds = optional
-  const known = new Set([p.data.workflowId, ...optional])
-  p.data.workflowParams = Object.fromEntries(
-    Object.entries(p.data.workflowParams).filter(([id]) => known.has(id)),
-  )
+  // 跟随分类时配置也存在分类那个工作流名下，不能当成未知工作流丢掉
+  const known = new Set([effective, ...optional])
+  p.data.workflowParams = Object.fromEntries(Object.entries(p.data.workflowParams).filter(([id]) => known.has(id)))
   // 请求里带了默认 Agent 字段就说明用户设置过：以后不再用升级迁移覆盖
   if (body && typeof body === 'object' && 'defaultAgentId' in body) p.data.agentSet = true
   if (p.data.path) p.data.path = resolvePath(p.data.path)

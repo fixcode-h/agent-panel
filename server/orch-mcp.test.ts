@@ -40,7 +40,7 @@ const workflow = (): Workflow =>
 
 const text = (r: { content: { text: string }[] }) => r.content.map((c) => c.text).join('\n')
 
-/** 模拟 CLI：实现节点派两个子 Agent、问主 Agent、给测试节点传话；主 Agent 一律通过 */
+/** 模拟 CLI：实现节点派两个子 Agent、写共享状态、给测试节点传话 */
 function host(task: Task, log: AgentCall[]): EngineHost {
   const w = workflow()
   let n = 0
@@ -54,10 +54,6 @@ function host(task: Task, log: AgentCall[]): EngineHost {
     newId: () => `id${++n}`,
     runAgent: async (call) => {
       log.push(call)
-      if (call.dispatching === 'plan') return { ok: true, text: '```dispatch\n{"action":"run","input":"做功能"}\n```' }
-      if (call.dispatching === 'evaluate') return { ok: true, text: '好。\n```dispatch\n{"action":"continue"}\n```' }
-      if (call.dispatching === 'summary') return { ok: true, text: '最终：都好了' }
-      if (call.dispatching === 'answer') return { ok: true, text: '用方案二' }
       const o = call.orch!
       if (call.step?.id === 'a') {
         const r = await callOrchTool(o, 'spawn_agents', {
@@ -67,8 +63,8 @@ function host(task: Task, log: AgentCall[]): EngineHost {
           ],
         })
         assert.match(text(r), /a\/sub\/h1、a\/sub\/h2/)
-        const asked = text(await callOrchTool(o, 'ask_main', { question: '用哪个方案？' }))
-        assert.match(asked, /用方案二/)
+        assert.match(text(await callOrchTool(o, 'write_state', { key: 'interface', value: '接口改名了' })), /v1/)
+        assert.match(text(await callOrchTool(o, 'read_state', {})), /interface（v1/)
         assert.match(text(await callOrchTool(o, 'send_message', { to: '测试', text: '接口改名了' })), /测试/)
         const got = text(await callOrchTool(o, 'wait_agents', { seconds: 5 }))
         assert.match(got, /做完 2 个/)
@@ -96,7 +92,7 @@ function host(task: Task, log: AgentCall[]): EngineHost {
   }
 }
 
-test('编排工具：派子 Agent 并行、取结果、问主 Agent、传话，任务进度里是主 Agent → 节点 → 子 Agent 的层级', async () => {
+test('编排工具：派子 Agent 并行、读写共享状态、传话，节点不再经过主 Agent', async () => {
   const w = workflow()
   const task = {
     ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't1'),
@@ -106,17 +102,17 @@ test('编排工具：派子 Agent 并行、取结果、问主 Agent、传话，�
   await runEngineTurn(host(task, log))
   assert.equal(task.status, 'done', JSON.stringify(task.messages.map((m) => m.text)))
   const by = (id: string) => task.steps.find((s) => s.id === id)!
-  // 主 Agent 是常驻编排器：这次运行走完了标成完成只表示它空闲，会话还在，下一条要求接着用
-  assert.equal(by('@main').status, 'done')
-  assert.equal(by('@main').output, '最终：都好了')
+  assert.equal(
+    task.steps.some((s) => s.kind === 'main'),
+    false,
+    '不再有常驻编排器',
+  )
   assert.equal(by('a/sub/h1').parentId, 'a')
   assert.equal(by('a/sub/h1/sub/h1').status, 'done', '子 Agent 再派的一层')
   assert.equal(by('a/sub/h2').agentId, 'q', '按名字交给指定的 Agent')
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
-  // 主 Agent：第一条要求分析一次、两个节点各评估一次、回答一次提问、最后整理一次
-  assert.equal(log.filter((c) => c.dispatching).length, 5)
-  assert.ok(log.filter((c) => c.dispatching).every((c) => c.sessionKey === '@main'))
+  assert.equal(log.filter((c) => c.dispatching).length, 0, '没有主 Agent 调度轮')
   assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子 Agent/.test(m.text)))
 })
 
@@ -127,11 +123,8 @@ test('编排工具的 MCP：列出工具、调用、结束后失效', async () =
   let orch: AgentCall['orch']
   const h = host(task, log)
   h.runAgent = async (call) => {
-    if (call.dispatching === 'plan') return { ok: true, text: '```dispatch\n{"action":"run","input":"x"}\n```' }
     if (call.step?.id === 'a') orch = call.orch
-    return call.dispatching === 'evaluate'
-      ? { ok: true, text: '```dispatch\n{"action":"continue"}\n```' }
-      : { ok: true, text: 'ok' }
+    return { ok: true, text: 'ok' }
   }
   await runEngineTurn(h)
   const s = openOrchSession(orch!)
@@ -141,12 +134,19 @@ test('编排工具的 MCP：列出工具、调用、结束后失效', async () =
     app.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
   const list = await (await post({ jsonrpc: '2.0', id: 1, method: 'tools/list' })).json()
   const names = list.result.tools.map((x: { name: string }) => x.name)
-  // 节点里的调用没有起停运行的工具（只有常驻编排器有）
-  assert.deepEqual(names, ['get_status', 'spawn_agents', 'wait_agents', 'ask_main', 'send_message', 'read_messages'])
+  // 节点里的调用没有起停运行、分派子对话的工具
+  assert.deepEqual(names, [
+    'get_status',
+    'read_state',
+    'write_state',
+    'spawn_agents',
+    'wait_agents',
+    'send_message',
+    'read_messages',
+  ])
   const st = await (
     await post({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'get_status', arguments: {} } })
   ).json()
-  assert.match(st.result.content[0].text, /- @main｜主 Agent（主管）：完成/)
   assert.match(st.result.content[0].text, /- a｜实现（开发）【你】：完成/)
   s.close()
   assert.equal((await post({ jsonrpc: '2.0', id: 3, method: 'tools/list' })).status, 404)
