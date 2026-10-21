@@ -62,6 +62,20 @@ test('识别 API：Pi 的 models.json 协议按 wire 反查，模型取 id', () 
   assert.deepEqual(api.models, ['a', 'b'])
 })
 
+test('识别 API：面板旧版本写的密钥占位名不算用户的配置', () => {
+  const def = getCli('pi')!
+  const src = def.auth!.apiSources[0]
+  const entry = {
+    baseUrl: 'https://tokenapi.happyelements.net/v1',
+    api: 'openai-responses',
+    apiKey: 'AGENT_PANEL_API_KEY',
+    models: [{ id: 'a' }],
+  }
+  // 环境变量早就没有值了，配置里剩下的是面板留下的旧 provider
+  assert.equal(toApi(def, src, 'codeg', entry, {}), null)
+  assert.equal(toApi(def, src, 'codeg', { ...entry, apiKey: '$AGENT_PANEL_API_KEY' }, {}), null)
+})
+
 test('识别 API：值的写法和 .env', () => {
   assert.equal(resolveValue('$K', { K: 'v' }), 'v')
   assert.equal(resolveValue('${K}', { K: 'v' }), 'v')

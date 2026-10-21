@@ -168,8 +168,20 @@ export const sameApi = (a: Pick<ApiConfig, 'baseUrl' | 'apiKey'>, b: typeof a) =
   apiBase(a.baseUrl) === apiBase(b.baseUrl) && a.apiKey === b.apiKey
 
 /**
+ * 面板早期版本写进 CLI 配置里的密钥占位名（真正的密钥从环境变量 AGENT_PANEL_API_KEY 传给 CLI）。
+ * 现在直接写密钥，配置里还是这个名字的 provider 是面板留下的旧配置：既不算用户自己配的 API，
+ * 清理时也不要求密钥对得上——环境变量早就不传了，那个值已经不是能用的密钥。
+ */
+export const LEGACY_PANEL_KEY = 'AGENT_PANEL_API_KEY'
+export function isLegacyPanelKey(v: unknown) {
+  if (typeof v !== 'string') return false
+  return v.trim().replace(/^\$?\{?/, '').replace(/\}$/, '') === LEGACY_PANEL_KEY
+}
+
+/**
  * API 方式只保留一份接口配置：把地址（忽略 /v1）和密钥都一样的旧 provider 删掉，
  * 保留正在用的那一个；不同接口的 provider 不动。返回有没有改动。
+ * 密钥还是面板旧占位名的，只看地址：那个值不是能用的密钥，留着也用不了。
  */
 export function pruneProviderEntries(
   data: unknown,
@@ -194,7 +206,7 @@ export function pruneProviderEntries(
     const baseUrl = rec[keys.baseUrl]
     const apiKey = rec[keys.apiKey]
     if (typeof baseUrl !== 'string' || typeof apiKey !== 'string') continue
-    if (sameApi({ baseUrl, apiKey }, api)) {
+    if (sameApi(isLegacyPanelKey(apiKey) ? { baseUrl, apiKey: api.apiKey } : { baseUrl, apiKey }, api)) {
       delete providers[name]
       changed = true
     }

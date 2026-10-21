@@ -208,6 +208,29 @@ test('只留一份接口配置：同地址和密钥的旧 provider 删掉，不�
   )
 })
 
+test('只留一份接口配置：密钥是面板旧占位名的 provider 只看地址也能删掉', () => {
+  const data = {
+    providers: {
+      tokenapi: { baseUrl: 'https://tokenapi.happyelements.net', apiKey: 'sk-real' },
+      codeg: { baseUrl: 'https://tokenapi.happyelements.net/v1', apiKey: 'AGENT_PANEL_API_KEY' },
+      other: { baseUrl: 'https://y.example', apiKey: 'AGENT_PANEL_API_KEY' },
+    },
+  }
+  const keys = { baseUrl: 'baseUrl', apiKey: 'apiKey' }
+  assert.equal(
+    pruneProviderEntries(
+      data,
+      'providers',
+      'tokenapi',
+      { baseUrl: 'https://tokenapi.happyelements.net', apiKey: 'sk-real' },
+      keys,
+    ),
+    true,
+  )
+  // 别的接口的旧占位 provider 不动，用户可能还在用
+  assert.deepEqual(Object.keys(data.providers), ['tokenapi', 'other'])
+})
+
 test('provider 的 models 只保留 API 里配的模型', () => {
   const data = { provider: { tokenapi: { models: { 'gpt-6.1-sol': {}, old: {}, 'gpt-5.6-sol': {} } } } }
   assert.equal(pruneModelEntries(data, 'provider.tokenapi.models', ['gpt-6.1-sol', 'gpt-5.6-sol']), true)
