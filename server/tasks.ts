@@ -15,6 +15,7 @@ import {
   type TaskMessage,
   type Workflow,
   RequestAnswer,
+  defaultAgent,
 } from '../shared/schema.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
@@ -194,7 +195,21 @@ export function tasksApi(deps: {
     await removeUploads(removed.flatMap((t) => [...uploadDirs(t)]).filter((d) => !keep.has(d)))
   }
 
-  const current = async (id: string) => live.get(id)?.task ?? (await store.get(id))
+  /**
+   * 落盘里还写着「执行中」、内存里却没有这个任务：进程早就不在了（面板重启过、崩溃过）。
+   * 按已停止返回，否则页面会一直显示执行中，也不会把 CLI 重新启动回来。
+   */
+  const idle = (task: Task): Task =>
+    task.status === 'running' && !live.has(task.id)
+      ? { ...task, status: 'stopped' as const, working: false, awaitingUser: false, prewarming: false }
+      : task
+
+  const current = async (id: string) => {
+    const entry = live.get(id)
+    if (entry) return entry.task
+    const task = await store.get(id)
+    return task ? idle(task) : task
+  }
   const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
   /** 导入的任务只读：只能看、改名、归档、删除 */
   const READONLY = t('这是导入的任务，只能查看，不能继续执行')
@@ -552,7 +567,7 @@ export function tasksApi(deps: {
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢
-    let all = (await store.list()).map((t) => taskSummary(live.get(t.id)?.task ?? t))
+    let all = (await store.list()).map((t) => taskSummary(idle(live.get(t.id)?.task ?? t)))
     // 子对话不进入项目列表：按 parentId 查询时才返回它们
     const parent = c.req.query('parentId')
     all = parent ? all.filter((t) => t.parentTaskId === parent) : all.filter((t) => !t.parentTaskId)
@@ -844,15 +859,28 @@ export function tasksApi(deps: {
    */
   async function prewarmChat(task: Task, force = false): Promise<Task> {
     if (live.has(task.id)) return live.get(task.id)!.task
-    if (task.imported || task.mode !== 'chat' || task.status === 'running') return task
+    if (task.imported || task.mode !== 'chat') return task
     // 没有会话、刚撤回时下一轮本来就要重开，预热没有意义
     if (!task.sessions[task.agentId] || task.rewind) return task
+    // 落盘里还写着「执行中」但内存里没有这个任务：进程早就不在了（面板重启、崩溃），
+    // 当成空闲处理，否则重新打开对话时永远不会把 CLI 启动回来
+    if (task.status === 'running') {
+      task.status = 'stopped'
+      task.working = false
+      task.awaitingUser = false
+      task.prewarming = false
+    }
     try {
       const settings = await getSettings()
       const agents = await deps.agents.list()
-      const agent = agents.find((a) => a.id === task.agentId)
-      if (!agent?.enabled) return task
-      const run = agentRun(withTaskModel(agent, task), settings)
+      // 没选 Agent 的对话（agentId 为空）直接跟默认 CLI 对话，用默认 Agent 的配置预热；
+      // CLI、模型按对话里选的那一套，和真正发消息时一致
+      const noAgent = !task.agentId
+      const found = noAgent ? defaultAgent() : agents.find((a) => a.id === task.agentId)
+      if (!found) return task
+      if (!noAgent && !found.enabled) return task
+      const agent = withTaskModel(noAgent ? { ...found, id: '' } : found, task)
+      const run = agentRun(agent, settings)
       const def = getCli(run.cli)
       if (!def?.notes || !def.mcp) return task
       // Claude Code、Codex 有自己的协议，不走面板的等待工具
