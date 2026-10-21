@@ -179,6 +179,8 @@ export const CliSpec = z.object({
   command: z.string().min(1),
   versionArgs: z.array(z.string()).default(['--version']),
   npmPackage: z.string().default(''),
+  /** 改了包名之后，以前用过的包名：安装新包前先卸掉旧的，否则两个包都提供同一个命令，npm 会报 EEXIST */
+  npmRenameFrom: z.array(z.string()).default([]),
   brew: z.array(z.string()).default([]),
   installHint: z.string().default(''),
   docsUrl: z.string().default(''),
@@ -365,6 +367,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     },
     installHint: spec.installHint || (spec.npmPackage ? `npm install -g ${spec.npmPackage}` : ''),
     npmPackage: spec.npmPackage,
+    npmRenameFrom: spec.npmRenameFrom,
     brew: spec.brew,
     docsUrl: spec.docsUrl,
     protocol: spec.protocol,

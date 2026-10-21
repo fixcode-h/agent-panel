@@ -114,10 +114,11 @@ export function newTask(
     workflows: wf ? snapshot : [],
     runs: [],
     skillSlots: wf ? skillSlots : {},
+    testSteps: [],
+    platform: '',
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
-    queue: [],
     working: false,
     turnDoneAt: '',
     turnSeenAt: '',
@@ -131,11 +132,40 @@ export function newTask(
 export function beginRun(task: { runStartedAt: string }, now = new Date()) {
   task.runStartedAt = now.toISOString()
 }
-export function endRun(task: TurnHost & { runMs: number; runStartedAt: string; steps: Timed[] }, now = new Date()) {
+
+type Pausable = { runStartedAt: string; runMs: number; waitMs: number; waitStartedAt: string }
+
+/**
+ * 执行中停在等待上（等用户确认 / 回答 / 下一句）：先把已经跑的执行时间结算进 runMs，
+ * 停下的这一刻开始算等待，之后的空闲不再算执行。
+ * keepAlive 让一次 CLI 调用一直不返回，不在这里断开的话整段空闲都会被算成执行时间。
+ */
+export function pauseRun(task: Pausable, now = Date.now()) {
+  if (!task.runStartedAt) return
+  task.runMs += Math.max(0, now - Date.parse(task.runStartedAt))
+  task.runStartedAt = ''
+  if (!task.waitStartedAt) task.waitStartedAt = new Date(now).toISOString()
+}
+
+/** 等到了（用户回答 / 发来下一句）：等待结算进 waitMs，从这一刻继续算执行 */
+export function resumeRun(task: Pausable, now = Date.now()) {
+  if (task.waitStartedAt) {
+    task.waitMs = (task.waitMs ?? 0) + Math.max(0, now - Date.parse(task.waitStartedAt))
+    task.waitStartedAt = ''
+  }
+  if (!task.runStartedAt) task.runStartedAt = new Date(now).toISOString()
+}
+
+export function endRun(
+  task: TurnHost & { runMs: number; runStartedAt: string; waitMs: number; waitStartedAt: string; steps: Timed[] },
+  now = new Date(),
+) {
   if (task.runStartedAt) task.runMs += Math.max(0, now.getTime() - Date.parse(task.runStartedAt))
   task.runStartedAt = ''
-  // 停下时还挂着的请求随这一轮结束，等待也到此为止
-  for (const o of [task, ...task.steps]) closeWait(o, now.getTime())
+  // 停下时还挂着的请求随这一轮结束，等待也到此为止（包含停在等待工具上的那段）
+  task.waitMs = waitDuration(task, now.getTime())
+  task.waitStartedAt = ''
+  for (const o of task.steps) closeWait(o, now.getTime())
   for (const turn of task.turns ?? []) if (turn.status === 'running') endTurn(task, turn, 'stopped', now.getTime())
 }
 
@@ -236,12 +266,15 @@ export function pauseStep(step: { startedAt: string; spentMs: number }, now = Da
   step.startedAt = ''
 }
 
-/** 任务执行了多久（毫秒）：已完成的几轮加上正在执行的这一轮；旧任务没有记录时按创建到最后更新估算 */
+/**
+ * 任务执行了多久（毫秒）：已完成的几段加上正在执行的这一段；停在等用户时 runStartedAt 已经清空，
+ * 这段空闲不算执行（见 pauseRun）。旧任务没有记录时按创建到最后更新估算
+ */
 export function taskDuration(
   task: { status: string; runMs?: number; runStartedAt?: string; createdAt: string; updatedAt: string },
   now = Date.now(),
 ) {
-  const live = task.status === 'running' && task.runStartedAt ? Math.max(0, now - Date.parse(task.runStartedAt)) : 0
+  const live = task.runStartedAt ? Math.max(0, now - Date.parse(task.runStartedAt)) : 0
   const ms = (task.runMs ?? 0) + live
   if (ms > 0 || task.status === 'running') return ms
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
@@ -291,18 +324,37 @@ export function sessionChanged(
 }
 
 /**
- * 用户最近一次发消息的时间（含排队还没处理的），没有就用创建时间。
+ * 用户最近一次发消息的时间，没有就用创建时间。
  * 列表按它排序、显示它：Agent 回复、执行状态变化不改变顺序，只有用户发了新消息才排到前面
  */
-export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'> & { queue?: { at: string }[] }) {
+export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'>) {
   let at = t.askedAt ?? ''
   for (const m of t.messages) if (m.role === 'user' && m.at > at) at = m.at
-  for (const q of t.queue ?? []) if (q.at > at) at = q.at
   return at || t.createdAt
 }
 
 /** 按用户最近发消息的时间排，新的在前 */
 export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(a))
+
+/** 父对话下的子对话入口要显示的信息 */
+export interface ChildEntry {
+  id: string
+  title: string
+  working: boolean
+  cliAlive: boolean
+  lastMessageAt: string
+}
+
+/**
+ * 子对话列表的顺序：正在执行的排最上面，其余按最近一条消息的时间倒序。
+ * 父对话里显示子对话、悬浮窗列表都用它。
+ */
+export function sortChildren<T extends ChildEntry>(list: T[]): T[] {
+  return list.slice().sort((a, b) => {
+    if (a.working !== b.working) return a.working ? -1 : 1
+    return (b.lastMessageAt || '').localeCompare(a.lastMessageAt || '')
+  })
+}
 
 /**
  * 任务列表按自然日分组：同一天的归到一组，组内保持传进来的顺序（列表本来就按时间倒序）。

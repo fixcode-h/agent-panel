@@ -194,14 +194,20 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               <span
                 className={cn(
                   'hidden shrink-0 text-xs sm:block',
-                  task.status === 'failed' ? 'text-danger' : task.working ? 'text-accent' : 'text-subtle',
+                  task.status === 'failed'
+                    ? 'text-danger'
+                    : task.working || task.childrenWorking
+                      ? 'text-accent'
+                      : 'text-subtle',
                 )}
               >
                 {task.status === 'done'
                   ? timeAgo(task.updatedAt, now)
-                  : task.status === 'running' && !task.working
+                  : task.status === 'running' && !task.working && !task.childrenWorking
                     ? t('等待你的下一条消息')
-                    : statusLabel[task.status]}
+                    : task.childrenWorking && !task.working
+                      ? t('子对话执行中')
+                      : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

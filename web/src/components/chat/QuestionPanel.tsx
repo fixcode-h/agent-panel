@@ -153,7 +153,11 @@ export function QuestionPanel({
       </div>
       <p className="px-4 pt-2 pb-2.5 text-[0.875rem] leading-relaxed font-medium [overflow-wrap:anywhere]">
         {q.question}
-        {q.multiSelect && <span className="ml-2 text-xs font-normal text-subtle">{t('可以选多个')}</span>}
+        {q.multiSelect && (
+          <span className="ml-2 inline-flex shrink-0 translate-y-[-1px] items-center rounded-md bg-accent-soft px-1.5 py-0.5 align-middle text-[0.6875rem] font-normal text-accent">
+            {t('多选')}
+          </span>
+        )}
       </p>
       <div className="flex max-h-[min(46vh,420px)] flex-col gap-1 overflow-y-auto px-2.5">
         {q.options.map((o, i) => {
@@ -222,6 +226,10 @@ export function QuestionPanel({
           </button>
         )}
         <span className="flex-1" />
+        {/* 多选：已经选了几个，提示可以接着选 */}
+        {q.multiSelect && a.picked.length > 0 && (
+          <span className="text-[0.71875rem] text-subtle">{t('已选 {n} 个', { n: a.picked.length })}</span>
+        )}
         {at > 0 && (
           <button
             type="button"

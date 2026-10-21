@@ -1,7 +1,7 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useState } from 'react'
-import { Check, Copy, Loader2 } from 'lucide-react'
+import { Check, Copy } from 'lucide-react'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
@@ -87,7 +87,6 @@ export function UserMessage({
   extra,
   actions,
   size = 'md',
-  pending,
 }: {
   text: string
   at?: string
@@ -96,8 +95,6 @@ export function UserMessage({
   extra?: React.ReactNode
   actions?: React.ReactNode
   size?: 'sm' | 'md'
-  /** CLI 还没取走：显示「等待读取」，取走后这条变成正常消息 */
-  pending?: boolean
 }) {
   return (
     <div className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
@@ -114,12 +111,6 @@ export function UserMessage({
           {text}
           {extra}
         </div>
-      )}
-      {pending && (
-        <span className="flex items-center gap-1 text-[0.71875rem] text-subtle">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          {t('等待读取')}
-        </span>
       )}
       <MessageMeta text={text} at={at} actions={actions} align="end" />
     </div>

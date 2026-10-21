@@ -1,6 +1,7 @@
 import { readdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import type { ProjectSuggestion } from '../shared/project-scan.ts'
+import { defaultTestSteps } from '../shared/test-steps.ts'
 import { resolvePath } from './fs.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -48,6 +49,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: 'Unreal Engine',
       structure: 'ue-project-structure' as const,
       workflow: 'ue' as const,
+      kind: 'ue' as const,
       build: 'Build.bat <Target> Win64 Development -Project=<项目>.uproject -WaitMutex',
       test: 'Automation RunTests（编辑器或 -game 模式）',
     }
@@ -73,8 +75,11 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: labels.length ? labels.join(' + ') : 'Node.js',
       structure: 'project-structure' as const,
       workflow: 'general' as const,
+      kind: 'node' as const,
       build: run('build'),
       test: run('test') || run('test:unit') || run('typecheck'),
+      // 默认测试步骤只列项目里真的有的 scripts，不编不存在的命令
+      scripts: pkg.scripts,
     }
   }
   if (has('Cargo.toml'))
@@ -82,6 +87,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: 'Rust',
       structure: 'project-structure' as const,
       workflow: 'general' as const,
+      kind: 'rust' as const,
       build: 'cargo build',
       test: 'cargo test',
     }
@@ -90,6 +96,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: 'Go',
       structure: 'project-structure' as const,
       workflow: 'general' as const,
+      kind: 'go' as const,
       build: 'go build ./...',
       test: 'go test ./...',
     }
@@ -98,6 +105,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: 'Python',
       structure: 'project-structure' as const,
       workflow: 'general' as const,
+      kind: 'python' as const,
       build: '',
       test: has('pyproject.toml') ? 'pytest' : 'pytest',
     }
@@ -106,6 +114,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: '.NET',
       structure: 'project-structure' as const,
       workflow: 'general' as const,
+      kind: 'dotnet' as const,
       build: 'dotnet build',
       test: 'dotnet test',
     }
@@ -114,6 +123,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
       label: 'C/C++（CMake）',
       structure: 'project-structure' as const,
       workflow: 'general' as const,
+      kind: 'cmake' as const,
       build: 'cmake --build build',
       test: 'ctest',
     }
@@ -121,6 +131,7 @@ async function detectStack(dir: string, files: string[], dirs: string[]) {
     label: '',
     structure: 'project-structure' as const,
     workflow: 'general' as const,
+    kind: 'other' as const,
     build: '',
     test: '',
   }
@@ -184,6 +195,12 @@ export async function analyzeProject(input: string): Promise<ProjectSuggestion |
       projectStructure: stack.structure,
       ...(docs ? { docRoot: docs } : {}),
     },
+    // 默认测试步骤：按识别出的技术栈给一份，用户确认后保存才生效
+    testSteps: defaultTestSteps(stack.kind, {
+      windows: process.platform === 'win32',
+      scripts: 'scripts' in stack ? stack.scripts : undefined,
+    }),
+    wslDistro: process.platform === 'win32' && stack.kind === 'node' ? 'Ubuntu-24.04' : '',
     category: '',
     /** 界面上给用户看的分析依据 */
     signals: [

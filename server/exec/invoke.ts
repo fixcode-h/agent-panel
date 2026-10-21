@@ -62,7 +62,7 @@ export async function invokeCli(o: {
   onControl?: (c: CliControl) => void
   /**
    * 用户在执行中补充的信息（CLI 配置里 notes 为真时由调用方挂上）：
-   * 这一轮里模型可以用面板的工具 read_user_notes 取走，取走的那些不再排队
+   * 这一轮里模型可以用面板的工具 read_user_notes 取走
    */
   readNotes?: () => string[]
   /**
@@ -130,7 +130,7 @@ export async function invokeCli(o: {
     servers.unshift({ name: 'panel', url: bridge.url })
     // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
     if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
-    // 没有插话协议的 CLI：补充排在队列里，让模型中途自己取
+    // 没有插话协议的 CLI：补充登记给它，让模型中途自己取
     if (notes) input = `${input}\n\n${NOTES_HINT}`
     // 对话页开着：回复完停在等下一句的工具上
     if (wait) input = `${input}\n\n${WAIT_HINT}`

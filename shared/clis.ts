@@ -99,6 +99,8 @@ export interface CliDefinition {
   installHint: string
   /** 用 npm 全局安装的包名；设置里的「安装 / 卸载」按钮用它 */
   npmPackage: string
+  /** 以前用过的 npm 包名：安装新包前先卸掉，否则两个包提供同一个命令时 npm 会报 EEXIST */
+  npmRenameFrom?: string[]
   docsUrl: string
   /** 内置了生成图片的工具（UI 设计里用） */
   images?: boolean
@@ -123,7 +125,7 @@ export interface CliDefinition {
   steer: boolean
   /**
    * 没有插话协议，但能用面板的 MCP 工具（read_user_notes）取执行中的补充：
-   * 补充先排进队列，模型取走时从队列里去掉；没取走的这一轮结束后照常处理
+   * 补充直接记进对话并登记给正在跑的调用，模型取走时交给它；没取走的这一轮结束后立刻接着处理
    */
   notes: boolean
   /** 压缩上下文：native 走协议，slash 发「/compact」，summary 让它写摘要、下一轮开新会话 */

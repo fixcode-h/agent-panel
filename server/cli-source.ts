@@ -67,9 +67,12 @@ export async function cliSource(cliId: string, file: string | undefined): Promis
   const npmBin = await npmGlobalBin()
   if (npmBin && same(path.dirname(file), npmBin)) return 'npm'
   const target = real(file)
-  // 没装在 npm 的全局目录，但最后指向某个 node_modules 里的包（例如 nvm、自定义 prefix）
-  const pkg = getCli(cliId)?.npmPackage
-  if (pkg && target.replaceAll('\\', '/').includes(`/node_modules/${pkg}/`)) return 'npm'
+  // 没装在 npm 的全局目录，但最后指向某个 node_modules 里的包（例如 nvm、自定义 prefix）；
+  // 改名前用过的包（npmRenameFrom）也算 npm 装的，才能用 npm 的方式更新它
+  const def = getCli(cliId)
+  const pkgs = [def?.npmPackage, ...(def?.npmRenameFrom ?? [])].filter(Boolean) as string[]
+  const normalized = target.replaceAll('\\', '/')
+  if (pkgs.some((p) => normalized.includes(`/node_modules/${p}/`))) return 'npm'
   if (/[\\/](homebrew|Cellar|Caskroom|linuxbrew)[\\/]/i.test(target) || /[\\/](homebrew|linuxbrew)[\\/]/i.test(file))
     return 'brew'
   if (cliId === 'claude') {

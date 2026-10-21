@@ -3,7 +3,7 @@
  * 配置存在 config/deploy.json；全局说明的 AI 生成 / 优化复用项目说明文件的那套任务（/doc-jobs 查进度）。
  */
 import { existsSync } from 'node:fs'
-import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono, type Context } from 'hono'
@@ -27,6 +27,7 @@ import { expandHome } from './cli-extras.ts'
 import { log } from './log.ts'
 import { dataPath, readJson, writeJsonAtomic } from './store.ts'
 import { getSettings } from './settings.ts'
+import { writeTextFile } from '../shared/file-format.ts'
 import { cliSettings } from '../shared/settings.ts'
 
 const FILE = dataPath('config/deploy.json')
@@ -123,7 +124,8 @@ export async function deploy(run: DeployRun): Promise<DeployResult> {
       // 原来的文件可能是用户自己写的，先备份
       const backup = s === 'changed' ? `${file}.bak` : undefined
       if (backup) await copyFile(file, backup)
-      await writeFile(file, content)
+      // 全局说明也按设置里的文件格式写：默认 UTF-8 无 BOM + LF
+      await writeTextFile(file, content, (await getSettings()).fileFormat)
       out.docs.push({ cli: d.id, path: file, result: s === 'missing' ? 'created' : 'updated', backup })
     }
   log.info('deploy', '部署完成', {

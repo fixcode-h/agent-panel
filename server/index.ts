@@ -70,6 +70,7 @@ import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { ensureProjectAgents, migrateProjectsToGeneral, seedProjectWorkflows } from '../shared/builtin/install.ts'
 import { analyzeProject } from './projects-analyze.ts'
+import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
@@ -130,6 +131,7 @@ async function ensureProjectWorkflows() {
       createTag: (input) => tags.create(input),
       createWorkflow: (input) => workflows.create(input),
       updateWorkflow: (id, input) => workflows.update(id, input),
+      updateAgent: (id, input) => agents.update(id, input),
     },
   )
   if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
@@ -148,6 +150,7 @@ async function ensureProjectWorkflows() {
       createTag: (input) => tags.create(input),
       createWorkflow: (input) => workflows.create(input),
       updateWorkflow: (id, input) => workflows.update(id, input),
+      updateAgent: (id, input) => agents.update(id, input),
     },
   )
   if (projectAgents.created.length)
@@ -509,7 +512,7 @@ async function parseProject(body: unknown) {
   return { data: p.data }
 }
 
-app.get('/projects', async (c) => c.json(await projects.list()))
+app.get('/projects', async (c) => c.json(sortProjects(await projects.list())))
 
 // 新建项目时的 AI 分析：只读扫描本地目录，给出填好一半的表单
 app.post('/projects/analyze', async (c) => {
@@ -523,6 +526,23 @@ app.post('/projects/analyze', async (c) => {
 app.post('/projects', async (c) => {
   const r = await parseProject(await c.req.json())
   return r.error ? bad(c, r.error) : c.json(await projects.create(r.data!), 201)
+})
+
+/**
+ * 侧栏拖拽后的顺序：body 是全部项目的 id，按新顺序排列。
+ * 先整体校验再一次写盘，重复、不存在的 id 和漏掉的项目都直接拒绝，不会只改一半。
+ */
+app.put('/projects/order', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as unknown
+  if (!Array.isArray(body) || !body.every((id) => typeof id === 'string' && id.trim()))
+    return bad(c, t('项目顺序格式不对'))
+  const list = await projects.list()
+  const ids = body as string[]
+  const error = projectOrderError(list, ids)
+  if (error) return bad(c, error)
+  const ordered = orderProjects(list, ids)
+  await projects.setAll(ordered)
+  return c.json(sortProjects(ordered))
 })
 
 app.put('/projects/:id', async (c) => {
@@ -543,7 +563,7 @@ app.delete('/projects/:id', async (c) => {
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
-app.route('/assist', assistApi({ agents, categories, workflows }))
+app.route('/assist', assistApi({ agents, categories, workflows, projects }))
 // ---- UI 设计和连接浏览器的扩展 ----
 const designs = designsApi({ projects })
 app.post('/designs/browser/reveal', (c) => {

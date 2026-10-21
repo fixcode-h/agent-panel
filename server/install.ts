@@ -56,7 +56,9 @@ export function installApi() {
     job: CliInstallJob,
     pkg: string,
     before?: CliStatus,
-  ): { command: string; args: string[]; text: string } | 'native-remove' {
+  ):
+    | { command: string; args: string[]; text: string; pre?: { command: string; args: string[]; text: string }[] }
+    | 'native-remove' {
     const npm = (args: string[]) => ({
       command: NPM,
       // npm 默认在下载完之前什么都不输出，http 级别的日志能让页面看到它在下载
@@ -64,7 +66,14 @@ export function installApi() {
       text: `npm ${args.join(' ')}`,
     })
     const install = job.action === 'install'
-    if (!before?.installed) return npm(install ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg])
+    // 包改过名（例如 Pi 从 @mariozechner 搬到 @earendil-works）：两个包提供同一个命令，
+    // 装新包前先卸掉旧的，否则 npm 会报 EEXIST
+    const pre = install
+      ? (getCli(job.cli)?.npmRenameFrom ?? []).filter((n) => n && n !== pkg).map((n) => npm(['uninstall', '-g', n]))
+      : []
+    const withPre = <T extends { command: string; args: string[]; text: string }>(step: T) =>
+      pre.length ? { ...step, pre } : step
+    if (!before?.installed) return withPre(npm(install ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg]))
     if (before.source === 'native' && before.path)
       return install ? { command: before.path, args: ['update'], text: 'claude update' } : 'native-remove'
     if (before.source === 'brew') {
@@ -72,7 +81,7 @@ export function installApi() {
       const args = [install ? 'upgrade' : 'uninstall', ...name]
       return { command: 'brew', args, text: `brew ${args.join(' ')}` }
     }
-    return npm(install ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg])
+    return withPre(npm(install ? ['install', '-g', `${pkg}@latest`] : ['uninstall', '-g', pkg]))
   }
 
   async function run(job: CliInstallJob, pkg: string) {
@@ -100,6 +109,19 @@ export function installApi() {
       }
     } else {
       job.command = how.text
+      // 先卸掉改名前的旧包；卸不掉也不拦着，npm 装新包时会再报具体原因
+      for (const step of how.pre ?? []) {
+        append(`$ ${step.text}\n`)
+        await runProcess({
+          command: step.command,
+          args: step.args,
+          cwd: homedir(),
+          env: childEnv([]),
+          timeoutMs: TIMEOUT,
+          onLine: (l) => append(l + '\n'),
+          onStderr: append,
+        })
+      }
       r = await runProcess({
         command: how.command,
         args: how.args,

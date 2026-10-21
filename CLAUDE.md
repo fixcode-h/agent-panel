@@ -14,6 +14,11 @@
 - 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现 `web/src/lib/demo-backend.ts`、`demo-assist.ts`。
 - 自带 Skill 在 `skills/<分类>/<名字>/`（说明见 `skills/README.md`），出包时写进 `server.mjs`，统一装到用户目录 `~/.agents/skills` 由 `server/bundled-skills.ts` 负责；
   内置 Agent 和工作流模板在 `shared/builtin/`，引用的 Skill 名必须在 `skills/` 里（`server/builtin.test.ts` 会检查）。
+- 内置 Agent 按**能力块**划分（一个 Agent 管一类事，具体做法交给参数和项目配置），测试、构建、编译、回归都由「测试与验收」（`tester`）一个 Agent 负责；
+  不要再为「编译 A」「跑单测」新增角色。项目级的测试步骤在 `Project.testSteps`，新建对话时快照进任务；工作流用到的 Agent 参数按 Agent 派生，
+  不再要求工作流作者手工加 `expose`。详见 `docs/agent-test-steps.md`；改内置定义时同步维护 `shared/builtin/legacy.ts`，升级要幂等。
+- 新增、合并或删除内置 Agent / 工作流前，先对照 `docs/agent-catalog.md` 的判定标准和职责清单：删除看是否被完整覆盖，合并看是否同一能力块被切碎，
+  扩充看是否缺参数或缺交付标准，新增要回答「为什么现有 Agent 做不了」。合并掉的 Agent 记进 `MERGED_AGENTS`（旧副本会补说明、旧工作流会重定向）。
 - 界面参考 Claude Code 的风格，视觉质量很重要。
 - 界面支持中文和英文：文案用 `t('中文原文')`（`shared/i18n.ts`，中文原文就是键，插值写 `t('共 {n} 个', { n })`），
   英文写在 `shared/locales/en/` 下对应的文件里。`npm run typecheck` 会跑 `scripts/i18n-check.mjs`，有漏翻的就失败。

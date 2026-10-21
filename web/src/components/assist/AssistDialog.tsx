@@ -5,7 +5,9 @@ import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Wand2, X } from 'l
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
-import type { Agent, AgentInput, Settings, TaskMessage, Workflow } from '@shared/schema'
+import type { Agent, AgentInput, ParamValues, Settings, TaskMessage, TestStep, Workflow } from '@shared/schema'
+import type { DerivedParam } from '@shared/agent-params'
+import { ENV_LABEL } from '@shared/test-steps'
 import { api } from '@/lib/api'
 import { cliColor, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
@@ -49,6 +51,14 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('帮我写技术方案文档的 Skill，包含背景、方案对比、风险和排期'),
   ],
   mcp: [],
+  params: [
+    t('按这个项目的情况，把测试与验收的参数配一下'),
+    t('这个项目在 Windows 上，端到端测试要在 WSL 里跑，按这个填'),
+  ],
+  teststeps: [
+    t('按项目现在的脚本，生成一套类型检查、单元测试、端到端和构建的步骤'),
+    t('这是 UE 项目，补上编译和 Lua 语法检查的步骤'),
+  ],
 }
 
 /** Skill 的预览：优化时和当前内容对比，标出改没改 */
@@ -373,6 +383,53 @@ function RunPicker({
   )
 }
 
+/** 参数和测试步骤的预览：都是「这次要填进表单草稿」的值，确认后才生效 */
+function ParamPreview({ values, spec }: { values: ParamValues; spec: DerivedParam[] }) {
+  const rows = spec.filter((d) => d.key in values)
+  return (
+    <div className="flex flex-col gap-3">
+      <span className="text-xs text-muted">{t('这些值只会填进表单，保存项目设置后才生效')}</span>
+      {rows.length === 0 ? (
+        <span className="text-[0.8125rem] text-subtle">{t('没有给出可用的值')}</span>
+      ) : (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
+          {rows.map((d) => (
+            <div key={d.key} className="contents">
+              <dt className="text-subtle">
+                {d.label}
+                <span className="ml-1 font-mono text-[0.6875rem]">{d.key}</span>
+              </dt>
+              <dd className="font-mono text-xs break-all">{JSON.stringify(values[d.key])?.replace(/^"|"$/g, '')}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  )
+}
+
+function TestStepsPreview({ steps }: { steps: TestStep[] }) {
+  return (
+    <div className="flex flex-col gap-3">
+      <span className="text-xs text-muted">{t('这些步骤只会填进表单，保存项目设置后才生效')}</span>
+      <ol className="flex flex-col gap-2">
+        {steps.map((s) => (
+          <li key={s.id} className="rounded-lg border bg-field/40 p-2.5">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[0.8125rem] font-medium">{s.name}</span>
+              <Badge>{ENV_LABEL[s.env]}</Badge>
+              {s.when && <span className="text-xs text-subtle">{s.when}</span>}
+              {!s.enabled && <span className="text-xs text-subtle">{t('停用')}</span>}
+            </div>
+            <code className="mt-1 block font-mono text-xs break-all whitespace-pre-wrap">{s.command}</code>
+            {s.note && <p className="mt-1 text-xs text-subtle">{s.note}</p>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
 /**
  * 用本机 CLI 对话生成 / 优化 Agent 或工作流。左边对话，右边预览最新的结果，确认后应用。
  */
@@ -386,21 +443,30 @@ export function AssistDialog({
   title,
   autoStart,
   onApply,
+  projectId,
+  paramSpec,
+  paramAgentId,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
   kind: AssistKind
-  /** 有值表示优化它，没有表示新建 */
+  /** 有值表示优化它，没有表示新建；params 时是要配的工作流 */
   target?: Agent | Workflow
   onApplied?: (r: { agent?: Agent; workflow?: Workflow }) => void
-  /** Skill、MCP 工具的当前内容（见 AssistInput.subject） */
+  /** Skill、MCP 工具的当前内容（见 AssistInput.subject）；params 时用 agentId 指定只配一个 Agent */
   subject?: Record<string, string>
   /** Skill、MCP 工具优化 / 修复时显示的名字 */
   title?: string
   /** 打开后自动发出的第一句话（例如让 AI 排查测试连接的报错） */
   autoStart?: string
-  /** Skill、MCP 工具的结果交给页面去应用 */
+  /** Skill、MCP、参数、测试步骤的结果交给页面去应用 */
   onApply?: (p: Proposal) => Promise<void> | void
+  /** params / teststeps：只读分析这个项目 */
+  projectId?: string
+  /** params：预览用的参数说明（和项目设置里派生的同一份） */
+  paramSpec?: DerivedParam[]
+  /** params：只配这一个 Agent 分组的参数 */
+  paramAgentId?: string
 }) {
   const shown = target?.name ?? title
   const { clis, settings, categories, agents, setAgents, setCategories, setWorkflows } = useData()
@@ -453,14 +519,32 @@ export function AssistDialog({
               empty: t('生成的 Agent 会显示在这里'),
               button: t('创建 Agent'),
             }
-          : {
-              create: t('用 AI 创建工作流'),
-              desc: t('本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
-              intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
-              placeholder: t('描述你想要的工作流'),
-              empty: t('生成的工作流会显示在这里'),
-              button: t('创建工作流'),
-            }
+          : kind === 'params'
+            ? {
+                create: t('AI 配置参数'),
+                desc: t('在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单'),
+                intro: t('说说你的要求，或者直接让它按项目情况填。'),
+                placeholder: t('补充要求，例如「端到端测试在 WSL 里跑」'),
+                empty: t('参数值会显示在这里'),
+                button: t('填进表单'),
+              }
+            : kind === 'teststeps'
+              ? {
+                  create: t('AI 生成测试步骤'),
+                  desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
+                  intro: t('说说你的要求，或者直接让它按项目情况生成。'),
+                  placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
+                  empty: t('测试步骤会显示在这里'),
+                  button: t('填进表单'),
+                }
+              : {
+                  create: t('用 AI 创建工作流'),
+                  desc: t('本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+                  intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+                  placeholder: t('描述你想要的工作流'),
+                  empty: t('生成的工作流会显示在这里'),
+                  button: t('创建工作流'),
+                }
 
   useEffect(() => {
     if (!open) return
@@ -581,12 +665,13 @@ export function AssistDialog({
         await api.assist({
           kind,
           targetId: target?.id ?? '',
-          subject: subject ?? {},
+          subject: { ...(subject ?? {}), ...(paramAgentId ? { agentId: paramAgentId } : {}) },
           cli,
           model,
           effort,
           messages: next.map(({ role, text }) => ({ role, text })),
           askUser,
+          projectId: projectId ?? '',
         }),
       )
     } catch (e) {
@@ -621,7 +706,7 @@ export function AssistDialog({
     if (!latest) return
     setApplying(true)
     try {
-      if (latest.kind === 'skill' || latest.kind === 'mcp') {
+      if (latest.kind === 'skill' || latest.kind === 'mcp' || latest.kind === 'params' || latest.kind === 'teststeps') {
         await onApply?.(latest)
         onOpenChange(false)
         return
@@ -864,6 +949,10 @@ export function AssistDialog({
                         server={latest.server}
                         before={subject?.server ? (JSON.parse(subject.server) as McpServer) : undefined}
                       />
+                    ) : latest.kind === 'params' ? (
+                      <ParamPreview values={latest.values} spec={paramSpec ?? []} />
+                    ) : latest.kind === 'teststeps' ? (
+                      <TestStepsPreview steps={latest.steps} />
                     ) : latest.kind === 'agent' ? (
                       <AgentPreview
                         agent={latest.agent}

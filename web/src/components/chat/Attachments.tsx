@@ -227,33 +227,84 @@ export function useAttachments(draftKey?: string) {
   }
 }
 
-/** 粘贴、拖放文件到输入框：返回要挂到外层容器和输入框上的事件 */
-export function useDropPaste(add: (f: File[]) => void) {
+/**
+ * 粘贴、拖放文件到输入框：返回要挂到外层容器和输入框上的事件。
+ * scope：拖放的接收范围（例如整个对话页）。给了就在这个元素上监听，页面任何位置都能接住文件；
+ * 只带文字、链接、节点时不拦截，交给浏览器和页面上原本的拖拽逻辑。
+ */
+export function useDropPaste(add: (f: File[]) => void, scope?: HTMLElement | null) {
   const [over, setOver] = useState(false)
   const depth = useRef(0)
-  const hasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes('Files')
+  const hasFiles = (e: React.DragEvent | DragEvent) => e.dataTransfer?.types.includes('Files') ?? false
+  // add 每次渲染都是新的（依赖附件和输入框的状态），放进依赖会让监听反复重建、
+  // 刚显示的拖入提示被清理函数立刻关掉；只保留最新的引用
+  const addRef = useRef(add)
+  addRef.current = add
+  // 范围上的监听用原生事件：外层容器的 React 事件只覆盖它自己，消息流、状态行都收不到
+  useEffect(() => {
+    if (!scope) return
+    const enter = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth.current++
+      setOver(true)
+    }
+    const overIt = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      // 不 preventDefault 的话浏览器会打开这个文件，drop 也不会触发
+      e.preventDefault()
+      e.dataTransfer!.dropEffect = 'copy'
+    }
+    const leave = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      // 拖到子元素也会触发 leave：按进入次数配对，到 0 才算真的离开
+      if (--depth.current > 0) return
+      depth.current = 0
+      setOver(false)
+    }
+    const drop = (e: DragEvent) => {
+      if (!hasFiles(e)) return
+      e.preventDefault()
+      depth.current = 0
+      setOver(false)
+      addRef.current([...(e.dataTransfer?.files ?? [])])
+    }
+    scope.addEventListener('dragenter', enter)
+    scope.addEventListener('dragover', overIt)
+    scope.addEventListener('dragleave', leave)
+    scope.addEventListener('drop', drop)
+    return () => {
+      scope.removeEventListener('dragenter', enter)
+      scope.removeEventListener('dragover', overIt)
+      scope.removeEventListener('dragleave', leave)
+      scope.removeEventListener('drop', drop)
+      depth.current = 0
+    }
+  }, [scope])
   return {
     over,
-    container: {
-      onDragEnter: (e: React.DragEvent) => {
-        if (!hasFiles(e)) return
-        e.preventDefault()
-        depth.current++
-        setOver(true)
-      },
-      onDragOver: (e: React.DragEvent) => hasFiles(e) && e.preventDefault(),
-      onDragLeave: (e: React.DragEvent) => {
-        if (!hasFiles(e)) return
-        if (--depth.current <= 0) setOver(false)
-      },
-      onDrop: (e: React.DragEvent) => {
-        if (!hasFiles(e)) return
-        e.preventDefault()
-        depth.current = 0
-        setOver(false)
-        add([...e.dataTransfer.files])
-      },
-    },
+    container: scope
+      ? {}
+      : {
+          onDragEnter: (e: React.DragEvent) => {
+            if (!hasFiles(e)) return
+            e.preventDefault()
+            depth.current++
+            setOver(true)
+          },
+          onDragOver: (e: React.DragEvent) => hasFiles(e) && e.preventDefault(),
+          onDragLeave: (e: React.DragEvent) => {
+            if (!hasFiles(e)) return
+            if (--depth.current <= 0) setOver(false)
+          },
+          onDrop: (e: React.DragEvent) => {
+            if (!hasFiles(e)) return
+            e.preventDefault()
+            depth.current = 0
+            setOver(false)
+            add([...e.dataTransfer.files])
+          },
+        },
     onPaste: (e: React.ClipboardEvent) => {
       const files = [...e.clipboardData.files]
       if (!files.length) return
@@ -262,6 +313,17 @@ export function useDropPaste(add: (f: File[]) => void) {
       add(files)
     },
   }
+}
+
+/** 拖文件到整个对话页面上时盖住页面的提示 */
+export function DropOverlay() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-30 grid place-items-center bg-bg/80 backdrop-blur-[1px]">
+      <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent shadow-pop">
+        {t('松开鼠标，把文件附到要求里')}
+      </span>
+    </div>
+  )
 }
 
 /** 输入框上方的附件条：图片显示缩略图，其他文件显示名字和大小 */

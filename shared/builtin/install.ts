@@ -11,8 +11,10 @@ import type {
 } from '../schema.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, type BuiltinAgent } from './agents.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
+import { LEGACY_AGENT_FIELDS, LEGACY_WORKFLOWS, MERGED_AGENTS, type LegacyWorkflow } from './legacy.ts'
 import {
   BUILTIN_WORKFLOWS,
+  buildFlow,
   buildWorkflow,
   builtinAgentKeys,
   GENERAL,
@@ -33,8 +35,10 @@ export interface BuiltinOps {
   createCategory: (name: string, scope: Category['scope']) => Promise<Category>
   createTag: (input: TagInput) => Promise<Tag>
   createWorkflow: (input: WorkflowInput) => Promise<Workflow>
-  /** 升级旧的「通用项目」副本；没有时跳过迁移 */
+  /** 升级没改过的内置副本、旧「通用项目」副本；没有时跳过迁移 */
   updateWorkflow?: (id: string, input: WorkflowInput) => Promise<Workflow | null>
+  /** 升级没改过的旧内置 Agent；没有时跳过 */
+  updateAgent?: (id: string, input: AgentInput) => Promise<Agent | null>
 }
 
 /** 内置模板建出来的东西统一打上这个标签，方便在列表里筛 */
@@ -228,15 +232,136 @@ function isLegacyGeneral(w: Workflow, agents: Agent[]) {
 }
 
 /**
- * 把本机没改过的旧「通用项目」升级成合并后的主流程：
- * 保留工作流 id、名称、分类、标签、说明、暴露项和其他流程，discover / design / docs 的坐标不动。
- * 用户改过语义字段时跳过；升级后结构不再匹配，重复启动不会再改
+ * 本机副本是不是「没改过的旧版本」：和某个旧定义的流程逐个比较，
+ * 节点语义、连线和说明都一致（忽略坐标），并且这个名字对应的流程在两边都有。
+ * 只比较旧定义里出现过的流程 id，用户新增的流程不影响判断。
+ */
+function matchesLegacy(cur: Workflow, legacy: LegacyWorkflow, agentId: (key: string) => string) {
+  if (cur.document.trim() !== legacy.document.trim()) return false
+  const expected = legacy.flows.map((f) => buildFlow(f, agentId))
+  for (const exp of expected) {
+    const mine = cur.flows.find((f) => f.id === exp.id)
+    if (!mine || mine.nodes.length !== exp.nodes.length) return false
+    if (!sameEdges(mine.edges, exp.edges)) return false
+    const byId = new Map(mine.nodes.map((n) => [n.id, n]))
+    if (
+      !exp.nodes.every((e) => {
+        const n = byId.get(e.id)
+        return !!n && sameNode(n, e)
+      })
+    )
+      return false
+  }
+  return true
+}
+
+/**
+ * 旧副本里引用了已合并 Agent 的节点，改成指向合并后的 Agent（`MERGED_AGENTS`），
+ * 让用户改过、没自动升级的工作流也仍然能跑，不会因为 Agent 不再出现在「内置」里就断掉。
+ * 只改 agentId、保留节点说明和参数；返回改过的流程，没有命中时返回 null。幂等：改完就不再引用旧 id。
+ */
+function redirectMergedAgents(cur: Workflow, agents: Agent[]): Workflow | null {
+  const target = new Map<string, string>()
+  for (const [key, m] of Object.entries(MERGED_AGENTS)) {
+    const from = findBuiltin(agents, key)?.id
+    const to = findBuiltin(agents, m.into)?.id
+    if (from && to && from !== to) target.set(from, to)
+  }
+  if (!target.size) return null
+  let changed = false
+  const fix = (id: string) => {
+    const next = target.get(id)
+    if (!next) return id
+    changed = true
+    return next
+  }
+  const flows = cur.flows.map((f) => ({
+    ...f,
+    nodes: f.nodes.map((n) => ({
+      ...n,
+      agentId: n.kind === 'agent' && n.agentId ? fix(n.agentId) : n.agentId,
+      steps: n.steps.map((s) => (s.kind === 'agent' && s.agentId ? { ...s, agentId: fix(s.agentId) } : s)),
+    })),
+  }))
+  return changed ? { ...cur, flows } : null
+}
+
+/**
+ * 把旧副本里指向已合并 Agent 的引用重定向到新 Agent（见 redirectMergedAgents）。
+ * 放在升级之后跑：没改过的副本已经被整体换掉了，这里只处理用户改过、没自动升级的那些。
+ */
+export async function redirectMergedWorkflows(state: BuiltinState, api: BuiltinOps): Promise<Workflow[]> {
+  if (!api.updateWorkflow) return []
+  const out: Workflow[] = []
+  for (const cur of state.workflows) {
+    const next = redirectMergedAgents(cur, state.agents)
+    if (!next) continue
+    const { id, createdAt, updatedAt, ...rest } = next
+    const saved = await api.updateWorkflow(id, rest)
+    if (saved) out.push(saved)
+  }
+  return out
+}
+
+/**
+ * 升级没改过的内置工作流副本（用户机器上已经装过旧版）。
+ * 判定按 origin + 语义比较：只有旧副本和 LEGACY_WORKFLOWS 里的旧定义一致时才升级，保留 id、名称、
+ * 分类、标签等本机字段；用户改过的副本不动。
+ * 升级后结构不再匹配旧定义，重复启动不会重复改（幂等）。
+ */
+export async function upgradeBuiltinWorkflows(state: BuiltinState, api: BuiltinOps): Promise<Workflow[]> {
+  if (!api.updateWorkflow) return []
+  const out: Workflow[] = []
+  for (const w of BUILTIN_WORKFLOWS) {
+    const cur = state.workflows.find((x) => x.origin === originOf(w.key))
+    if (!cur) continue
+    const legacy = LEGACY_WORKFLOWS[w.key]
+    if (!legacy?.length) continue
+    const agentId = (key: string) => findBuiltin(state.agents, key)?.id ?? ''
+    const hit = legacy.find((l) => matchesLegacy(cur, l, agentId))
+    if (!hit) continue
+    const built = buildWorkflow(w, agentId)
+    // 用户可能调过坐标：按流程 id + 节点 id 沿用原来的位置
+    const flows = built.flows.map((f) => {
+      const old = cur.flows.find((x) => x.id === f.id)
+      if (!old) return f
+      const pos = new Map(old.nodes.map((n) => [n.id, n]))
+      return {
+        ...f,
+        startPos: old.startPos,
+        endPos: old.endPos,
+        nodes: f.nodes.map((n) => {
+          const o = pos.get(n.id)
+          return o ? { ...n, x: o.x, y: o.y } : n
+        }),
+      }
+    })
+    const { id, createdAt, updatedAt, ...rest } = cur
+    const next = await api.updateWorkflow(id, {
+      ...rest,
+      description: built.description,
+      mainAgentId: built.mainAgentId,
+      entryFlowId: built.entryFlowId,
+      document: built.document,
+      expose: built.expose,
+      flows,
+    })
+    if (next) out.push(next)
+  }
+  return out
+}
+
+/**
+ * 本机没改过的旧「通用项目」升级成合并后的主流程。
+ * 已在 upgradeBuiltinWorkflows 里按 LEGACY_WORKFLOWS 做过通用处理；这里保留给旧调用方，
+ * 语义一致时返回 null（已经升级过或结构不匹配）。
  */
 export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOps): Promise<Workflow | null> {
   if (!api.updateWorkflow) return null
   const cur = state.workflows.find((w) => w.origin === GENERAL_ORIGIN)
   if (!cur || !isLegacyGeneral(cur, state.agents)) return null
-  const built = buildWorkflow(GENERAL, (key) => findBuiltin(state.agents, key)?.id ?? '')
+  const agentId = (key: string) => findBuiltin(state.agents, key)?.id ?? ''
+  const built = buildWorkflow(GENERAL, agentId)
   const oldMain = cur.flows.find((f) => f.id === 'main')!
   const newMain = built.flows.find((f) => f.id === built.entryFlowId)!
   const pos = new Map(oldMain.nodes.map((n) => [n.id, n]))
@@ -275,7 +400,8 @@ export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) 
 
 /**
  * 启动时安装一次项目用的内置工作流（「通用项目」「UE 项目」）：同名或同来源的跳过，不覆盖用户改过的。
- * 再把本机没改过的旧「通用项目」副本升级成合并后的主流程。
+ * 再把本机没改过的旧副本升级到新定义（工作流节点引用、Agent 的角色设定和参数），旧副本引用了
+ * 已合并的 Agent 时仍能运行，结果里由调用方提示。
  * 返回装完后的数据，调用方据此更新集合。
  */
 export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps) {
@@ -289,9 +415,72 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps)
     cur = seeded
     created = seeded.workflows.filter((w) => !state.workflows.some((x) => x.id === w.id))
   }
-  const updated = await migrateGeneralWorkflow(cur, api)
-  if (updated) cur = { ...cur, workflows: cur.workflows.map((w) => (w.id === updated.id ? updated : w)) }
-  return { state: cur, created, updated: updated ? [updated] : [] }
+  const upgradedAgents = await upgradeBuiltinAgents(cur, api)
+  if (upgradedAgents.length)
+    cur = { ...cur, agents: cur.agents.map((a) => upgradedAgents.find((x) => x.id === a.id) ?? a) }
+  const noted = await annotateMergedAgents(cur, api)
+  if (noted.length) cur = { ...cur, agents: cur.agents.map((a) => noted.find((x) => x.id === a.id) ?? a) }
+  const updated = await upgradeBuiltinWorkflows(cur, api)
+  if (updated.length) cur = { ...cur, workflows: cur.workflows.map((w) => updated.find((x) => x.id === w.id) ?? w) }
+  // 用户改过、没自动升级的副本：至少把指向已合并 Agent 的引用换掉，保证还能跑
+  const redirected = await redirectMergedWorkflows(cur, api)
+  if (redirected.length)
+    cur = { ...cur, workflows: cur.workflows.map((w) => redirected.find((x) => x.id === w.id) ?? w) }
+  return { state: cur, created, updated }
+}
+
+/**
+ * 没改过的旧内置 Agent 升级到新定义：只按 origin 找，并且角色设定、名称、简介都和旧指纹完全一致才升级。
+ * 用户改过、或者已经升级过（名字变了）的保留原样，重复启动不会重复改。
+ * 参数、Skill 一起换成新定义；ID、分类、标签、引入关系、能力开关保留本机的。
+ */
+export async function upgradeBuiltinAgents(state: BuiltinState, api: { updateAgent?: BuiltinOps['updateAgent'] }) {
+  if (!api.updateAgent) return []
+  const out: Agent[] = []
+  for (const b of BUILTIN_AGENTS) {
+    const old = LEGACY_AGENT_FIELDS[b.key]
+    const cur = findBuiltin(state.agents, b.key)
+    if (!old || !cur) continue
+    if (
+      cur.name !== old.name ||
+      cur.description !== old.description ||
+      cur.instructions.trim() !== old.instructions.trim()
+    )
+      continue
+    const next = await api.updateAgent!(cur.id, {
+      ...cur,
+      name: b.agent.name,
+      description: b.agent.description,
+      instructions: b.agent.instructions,
+      params: b.agent.params,
+      skills: b.agent.skills,
+      common: b.agent.common,
+      enabled: cur.enabled,
+    })
+    if (next) out.push(next)
+  }
+  return out
+}
+
+/**
+ * 已合并的内置 Agent 在本机还有副本时，给简介补一句说明（幂等）。
+ * 旧工作流可能还在引用它们，所以不删除；用户看到简介就知道去哪找新的角色。
+ */
+export async function annotateMergedAgents(state: BuiltinState, api: { updateAgent?: BuiltinOps['updateAgent'] }) {
+  if (!api.updateAgent) return []
+  const out: Agent[] = []
+  for (const [key, m] of Object.entries(MERGED_AGENTS)) {
+    const cur = findBuiltin(state.agents, key)
+    if (!cur) continue
+    const note = `（${m.note}）`
+    if (cur.description.includes(note)) continue
+    const next = await api.updateAgent(cur.id, {
+      ...cur,
+      description: `${cur.description}${cur.description ? ' ' : ''}${note}`.slice(0, 200),
+    })
+    if (next) out.push(next)
+  }
+  return out
 }
 
 /**

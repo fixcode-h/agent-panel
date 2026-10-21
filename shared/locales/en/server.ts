@@ -164,10 +164,15 @@ export const EN_SERVER: Record<string, string> = {
   '构建命令：{cmd}': 'Build command: {cmd}',
   '测试命令：{cmd}': 'Test command: {cmd}',
   项目不存在: 'Project not found',
+  项目顺序格式不对: 'Invalid project order',
+  '项目顺序里有不存在的项目：{id}': 'Project order contains an unknown project: {id}',
+  '项目顺序里有重复的项目：{id}': 'Project order contains a duplicate project: {id}',
+  '项目顺序里缺了项目，要列出全部项目': 'Project order is missing projects; list every project',
   这个项目还没有选择目录: 'No directory selected for this project yet',
   '无法读取项目文件：{error}': 'Couldn’t read project files: {error}',
   '目录不存在：{dir}': 'Directory doesn’t exist: {dir}',
   '无法读取目录：{error}': 'Couldn’t read directory: {error}',
+  目录已经不在了: 'The folder is gone',
   请输入文件夹名: 'Enter a folder name',
   '文件夹名不能包含 \\ / : * ? " < > |，也不能以点或空格结尾':
     'Folder names can’t contain \\ / : * ? " < > | or end with a dot or space',
@@ -274,7 +279,6 @@ export const EN_SERVER: Record<string, string> = {
   附件已经不在了: 'The attachment no longer exists',
   '工作流已经被删除，只能按任务创建时的工作流继续':
     'The workflow was deleted; you can only resume with the workflow the task was created with',
-  这条要求已经开始处理了: 'This message is already being handled',
   这个文件不在任务的改动里: "This file is not among the task's changes",
   '任务正在执行，等它停下后再撤销': 'The task is running; revert after it stops',
   '项目不是 git 仓库，没法知道改动前的内容，不能自动撤销':
@@ -293,8 +297,8 @@ export const EN_SERVER: Record<string, string> = {
   切换分支失败: 'Failed to switch branches',
   '切换分支失败：{error}': 'Failed to switch branches: {error}',
   提交改动失败: 'Failed to commit the changes',
-  '合并到「{branch}」时有冲突或项目目录里有未提交的改动挡住了，项目目录没有改动。可以在项目里手动合并分支 {name}。':
-    'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in the project; the project directory was not changed. You can merge branch {name} manually in the project.',
+  '合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。':
+    'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in that directory; the directory was not changed. You can merge branch {name} manually there.',
   '任务正在执行，等它停下后再处理独立分支':
     'The task is running; wait until it stops before handling its separate branch',
   这个任务没有待处理的独立分支: 'This task has no pending separate branch',

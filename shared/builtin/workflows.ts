@@ -1,4 +1,13 @@
-import type { FlowEdge, FlowNode, NodeHooks, NodeStep, ParamValues, WorkflowExpose, WorkflowInput } from '../schema.ts'
+import type {
+  Flow,
+  FlowEdge,
+  FlowNode,
+  NodeHooks,
+  NodeStep,
+  ParamValues,
+  WorkflowExpose,
+  WorkflowInput,
+} from '../schema.ts'
 import { autoLayout, END, START } from '../flow.ts'
 
 /**
@@ -45,6 +54,7 @@ interface FlowSpec {
   /** [from, to, 条件]；start / end 是流程的开始和结束 */
   edges: [string, string, ('pass' | 'fail')?][]
 }
+export type { FlowSpec, NodeSpec, NodeStepSpec }
 export interface BuiltinWorkflow {
   key: string
   name: string
@@ -73,22 +83,22 @@ export const UE_PROJECT_NAME = 'UE 项目'
 const chain = (...ids: string[]) => ids.slice(1).map((id, i) => [ids[i], id] as [string, string])
 
 /**
- * 通用的验收流程：一个验收员节点查回归、跑验证、给结论。
+ * 通用的验收流程：测试与验收 Agent 查回归、按项目测试步骤跑验证、给结论。
  * 原来是「回归审查 → 跑验证」两个节点，合成一个少一轮交接；返工时续接这个节点的会话
  */
 const CHECK: FlowSpec = {
   id: 'check',
   name: '验收',
-  description: '查回归 + 跑验证，不通过时把意见交回节点继续完善',
+  description: '按项目的测试步骤跑验证、查回归，不通过时把意见交回节点继续完善',
   nodes: [
     {
       id: 'verify',
-      title: '验收',
-      agent: 'verifier',
+      title: '测试与验收',
+      agent: 'tester',
       tier: 'medium',
-      params: { regress: true },
+      params: { scope: '本次改动', env: '自动', regress: true, onFail: '只报告' },
       instructions:
-        '验收上面「输入」里这次的改动：先查有没有破坏已有行为、相关模块 bugs.md 里的历史 Bug 有没有复发，再对照验收标准跑构建、测试和检查。逐条写证据，最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+        '验收上面「输入」里这次的改动：先读工作流说明里「## 项目测试步骤」，按它执行构建、测试和检查；再对照验收标准逐条写证据。项目没有配置步骤时自己找命令并建议用户补上。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
     },
   ],
   edges: chain(START, 'verify', END),
@@ -178,7 +188,7 @@ export const GENERAL_MAIN_LEGACY: FlowSpec = {
     {
       id: 'deliver',
       title: '交付',
-      agent: 'deliver',
+      agent: 'vcs',
       tier: 'low',
       params: { docs: false, commit: '本地提交' },
       instructions: '文档节点已经同步过了，这里只做版本控制收尾。推送 / submit 没有授权时不做，写清楚等用户授权。',
@@ -200,9 +210,9 @@ export const GENERAL: BuiltinWorkflow = {
     ['worker', '子对话的执行者：直接执行或按工作流做计划'],
     ['analyst', '识别现场，收敛需求，出方案等你确认'],
     ['developer', '按确认的方案实现'],
-    ['projecttest', '按项目的测试流程验证，给带证据的结论'],
+    ['tester', '按项目的测试步骤跑构建、测试和验收'],
     ['docsync', '同步项目文档'],
-    ['deliver', '版本控制收尾'],
+    ['vcs', '版本控制收尾'],
   ],
   document: `## 适用
 项目里的日常开发：需求、方案、实现、测试、文档、交付。工作流可以按顺序跑很多次，每次都是完整的一遍。
@@ -210,7 +220,7 @@ export const GENERAL: BuiltinWorkflow = {
 ## 约定
 - 版本控制和文档根由「常驻编排器」统一确定，后面的节点按它的结论操作。
 - 方案确认之前不写代码；确认之后中途不再逐步确认，遇到不可逆操作、需求矛盾、和方案冲突时才停下。
-- 测试按项目的流程跑，没有本轮的新鲜证据不算完成。
+- 测试按项目设置里的「测试步骤」跑（新建对话时快照进任务），没有本轮的新鲜证据不算完成。
 - 版本管理：本地提交 / pending 保持一致；推送、PR、submit 这类对外操作要得到授权。
 - 只改任务范围内的文件，不覆盖、不认领用户已有的改动。`,
   expose: [STRUCTURE, DOC_ROOT, COMMIT],
@@ -272,7 +282,7 @@ export const GENERAL: BuiltinWorkflow = {
             {
               id: 'deliver',
               title: '交付',
-              agent: 'deliver',
+              agent: 'vcs',
               tier: 'low',
               params: { docs: false, commit: '本地提交' },
               instructions:
@@ -302,16 +312,16 @@ export const GENERAL: BuiltinWorkflow = {
     {
       id: 'test',
       name: '测试验证',
-      description: '按项目的测试流程跑构建、测试和检查，给带证据的结论',
+      description: '按项目配置的测试步骤跑构建、测试和检查，给带证据的结论',
       nodes: [
         {
           id: 'verify',
-          title: '测试验证',
-          agent: 'projecttest',
+          title: '测试与验收',
+          agent: 'tester',
           tier: 'medium',
-          params: { scene: false },
+          params: { scope: '本次改动', env: '自动', regress: true },
           instructions:
-            '验证上面「输入」里的改动：先找项目自己的验证命令，再跑改动的单元、受影响的回归、构建和静态检查。跑不了的登记为延期验证。',
+            '验证上面「输入」里的改动：按工作流说明里的「## 项目测试步骤」依次执行，看条件是否成立、标了 WSL 的真的在 WSL 里跑；逐条给证据。跑不了的登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
         },
       ],
       edges: chain(START, 'verify', END),
@@ -338,16 +348,16 @@ const UE_PROJECT: BuiltinWorkflow = {
     ['uescout', '只读侦察架构、构建、资产和影响面'],
     ['analyst', '出方案等你确认'],
     ['developer', 'C++ / Lua 实现'],
-    ['ueintegrator', '唯一负责编译和 Lua 检查'],
-    ['projecttest', '验收，登记需要 Editor 的延期验证'],
-    ['deliver', '版本控制收尾'],
+    ['tester', '按项目测试步骤编译、检查和验收（编译也在里面）'],
+    ['vcs', '版本控制收尾'],
   ],
   document: `## 适用
 Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑很多次。
 
 ## 约定
 - 模块、Build.cs / Target.cs、UHT/UBT、资产和 Cook 的规则按 ue-project-structure 技能。
-- 编译只由「UE 集成员」做，同一时间只编译一次（-WaitMutex）；需要 Editor、PIE 或设备的验证登记为延期验证。
+- 编译是项目测试步骤里的一条（例如 \`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`），由「测试与验收」节点执行，同一时间只编译一次；不要把编译拆成独立节点，也不要让实现节点自己编译。需要 Editor、PIE 或设备的验证登记为延期验证。
+- 测试步骤在项目设置里维护（编译、Lua 语法检查、可选的 AutomationTest），新建对话时快照进任务。
 - 文档、测试、版本管理沿用在「通用项目」里的规则。
 - Git 只提交本次任务的文件、按功能拆本地提交；P4 只分 pending，不 sync、不 submit。推送 / submit 要授权。`,
   expose: [{ ...STRUCTURE, default: 'ue-project-structure' }, DOC_ROOT, COMMIT],
@@ -397,7 +407,7 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
         {
           id: 'deliver',
           title: '交付',
-          agent: 'deliver',
+          agent: 'vcs',
           tier: 'low',
           params: { docs: false, commit: '本地提交' },
           instructions: '按识别出的版本控制做收尾；推送 / submit 没有授权时不做。',
@@ -426,25 +436,293 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
       description: '编译一次、Lua 语法检查，再按验收标准检查',
       nodes: [
         {
-          id: 'build',
-          title: '编译',
-          agent: 'ueintegrator',
-          tier: 'medium',
-          instructions: '编译这次的改动，有 Lua 改动时做语法检查。',
-        },
-        {
           id: 'verify',
-          title: '验收',
-          agent: 'verifier',
+          title: '编译与验收',
+          agent: 'tester',
           tier: 'medium',
+          params: { scope: '本次改动', env: '自动', regress: true, serial: true },
           instructions:
-            '编译不通过就直接判不通过。编译通过后对照方案逐条检查；需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+            '按工作流说明里的「## 项目测试步骤」执行：先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），有 Lua 改动时做语法检查，再按验收标准逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
         },
       ],
-      edges: chain(START, 'build', 'verify', END),
+      edges: chain(START, 'verify', END),
     },
   ],
 }
+
+/**
+ * 新增 4 个工作流：补的是现有链路里缺的环节，不是把已有流程再拆一遍。
+ * - 项目初始化：第一次接一个项目，把文档、测试步骤、Agent 参数一次配好（现有流程都假设这些已经配好）。
+ * - 依赖升级与安全：现有流程里没有任何一步会看依赖的漏洞和过期（tester 只跑配好的步骤）。
+ * - 数据与配置迁移：改 schema / 配置格式时，需要「迁移脚本 + 回滚 + 旧数据验证」，和普通功能开发不同。
+ * - 发布与回滚：出包、验证产物、回滚预案，现有流程只做到本地提交。
+ */
+export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
+  {
+    key: 'bootstrap',
+    name: '项目初始化',
+    description: '第一次接一个项目：识别技术栈与版本控制，确定文档根和测试步骤，补齐最小文档和参数配置',
+    category: '项目',
+    main: 'orchestrator',
+    members: [
+      ['orchestrator', '确定 PROJECT_ROOT / DOC_ROOT，汇总要写进项目设置的配置'],
+      ['explorer', '只读扫目录、依赖和构建入口，判断技术栈'],
+      ['docsync', '补齐最小必要的文档入口和模块地图'],
+      ['tester', '按识别出的技术栈给出默认测试步骤，并实际跑一遍'],
+    ],
+    document: `## 适用
+第一次把某个项目接进面板：文档还没有、测试步骤还没配、Agent 参数都是默认值。
+
+## 约定
+- 全程先识别再写：技术栈、包管理器、版本控制、构建和测试入口都要有证据（文件路径或命令输出），认不出来的写「待确认」，不要猜。
+- 只补最小必要的一套文档和步骤，不做完整的文档工程。
+- 测试步骤要真的跑一遍再交：跑不起来的步骤标出来，不要留一堆看起来能用的命令。
+- 写进项目设置的东西（测试步骤、Agent 参数）由用户在设置面板里确认后保存；这里只给出建议值和理由。`,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          {
+            id: 'scan',
+            title: '识别项目',
+            agent: 'explorer',
+            tier: 'medium',
+            params: { depth: '彻底' },
+            instructions:
+              '只读扫描项目：目录结构、包管理文件和锁文件、构建入口（Makefile / Build.bat / package.json scripts / CI 配置）、版本控制、已有的文档目录。判断技术栈和会用到的包管理器，每项都写清依据的文件路径。',
+          },
+          {
+            id: 'docs',
+            title: '补最小文档',
+            agent: 'docsync',
+            tier: 'low',
+            params: { adr: '不写' },
+            instructions:
+              '确定 PROJECT_ROOT 和 DOC_ROOT。文档入口或模块地图缺失时按 project-documentation 初始化最小必要的一套（入口、一级模块列表、状态）；已经齐了就只说明现状。',
+          },
+          {
+            id: 'steps',
+            title: '确认测试步骤',
+            agent: 'tester',
+            tier: 'medium',
+            params: { scope: '整体', env: '自动', regress: false, onFail: '只报告' },
+            confirm: true,
+            instructions:
+              '按识别出的技术栈给出这份项目该配的测试步骤（名称、命令、环境、工作目录、条件），本项目要跑的步骤在这一轮真的跑一遍，报出每条的实际结果。把建议的步骤原文列清楚，请用户确认后到项目设置里保存；不确认的标成「待用户确认」，不要当成已配置。',
+          },
+        ],
+        edges: chain(START, 'scan', 'docs', 'steps', END),
+      },
+    ],
+  },
+  {
+    key: 'deps',
+    name: '依赖升级与安全',
+    description: '查过期依赖、已知漏洞和许可问题，按风险分批升级，每批都有验证',
+    category: '质量',
+    main: 'deps',
+    members: [
+      ['deps', '查过期 / 漏洞 / 许可，按可回滚的批次升级并验证'],
+      ['tester', '每批升级后按项目测试步骤跑回归'],
+      ['vcs', '同步依赖策略文档，本地提交 / P4 分桶'],
+    ],
+    document: `## 适用
+依赖过期、收到安全告警、要升大版本，或者定期做一次依赖体检。
+
+## 约定
+- 先体检再动手：\`mode\` 默认「只体检」，只出清单和风险，不改 lock 文件。
+- 升级按可回滚的批次：一次一组相关依赖，装完跑项目测试步骤，通过再进下一批；一批不过就回退这一批，写明原因。
+- 漏洞按可利用性排序，不夸大：没有被利用路径的要说明为什么。
+- 不擅自改包管理器、不混用锁文件；不动用户已有的未提交改动。`,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          {
+            id: 'audit',
+            title: '依赖体检',
+            agent: 'deps',
+            tier: 'medium',
+            params: { mode: '只体检', audit: true, license: true },
+            instructions:
+              '查这个项目的依赖现状：过期清单、安全漏洞（按严重程度）、许可证冲突、大版本升级的破坏性变更。每条都带命令输出或文件路径。最后给出建议的升级批次和每批的风险。',
+          },
+          {
+            id: 'upgrade',
+            title: '分批升级',
+            agent: 'deps',
+            tier: 'high',
+            params: { mode: '升级补丁版', audit: true },
+            review: 'check',
+            maxRounds: 3,
+            retries: 1,
+            instructions:
+              '按上一节点给出的批次升级（先确认用户的 \`mode\` 是不是允许改依赖）。每批升级后装依赖、跑项目测试步骤，通过才进下一批；失败就按 systematic-debugging 找根因，修不好就回退这一批并说明。',
+          },
+          {
+            id: 'commit',
+            title: '文档与提交',
+            agent: 'vcs',
+            tier: 'low',
+            params: { docs: true },
+            instructions:
+              '更新依赖策略或升级记录相关的文档（有长期决策时写 ADR），再把依赖文件、锁文件和文档一起做版本控制收尾。',
+          },
+        ],
+        edges: chain(START, 'audit', 'upgrade', 'commit', END),
+      },
+      CHECK,
+    ],
+  },
+  {
+    key: 'migration',
+    name: '数据与配置迁移',
+    description: '改 schema、数据格式或配置结构：先写迁移和回滚，再验证旧数据，最后切默认值',
+    category: '开发',
+    main: 'developer',
+    members: [
+      ['analyst', '确认迁移范围和兼容策略（一次性 / 双写 / 懒迁移）'],
+      ['developer', '写迁移脚本、回滚和兼容读取'],
+      ['impact', '分析受影响的读写路径和外部契约'],
+      ['tester', '用旧数据样本验证迁移与回滚'],
+      ['vcs', '同步文档，本地提交 / P4 分桶'],
+    ],
+    document: `## 适用
+表结构、本地数据文件、配置格式、存档格式这类「旧数据还在用」的改动。普通功能开发用「日常开发」，不要为了改字段走这个流程。
+
+## 约定
+- 先定兼容策略再写代码：一次性迁移 / 双读写 / 懒迁移，三选一并写理由；不可逆的步骤要单独标出来。
+- 迁移和回滚必须成对写，并且都能重跑（幂等）；没有回滚方案的迁移不算完成。
+- 用真实的旧数据样本验证，不能只验证新格式；样本从哪来、怎么脱敏要写清楚。
+- 切默认值（删旧字段、删旧读取路径）放到最后一步，确认线上 / 用户数据都迁完再做。`,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          {
+            id: 'plan',
+            title: '范围与兼容策略',
+            agent: 'analyst',
+            tier: 'high',
+            params: { scene: true, scale: 'architectural' },
+            confirm: true,
+            instructions:
+              '识别现场后确认：要迁哪些数据结构、有哪些读写方、能不能停服、选哪种兼容策略（一次性 / 双写 / 懒迁移）。给出迁移和回滚的步骤，等用户确认。',
+          },
+          {
+            id: 'impact',
+            title: '影响面',
+            agent: 'impact',
+            tier: 'low',
+            params: { tests: true },
+            instructions: '列出所有读写这些数据的路径（含外部调用方和已有数据文件），以及现有的测试和缺的边界。',
+          },
+          {
+            id: 'impl',
+            title: '实现迁移与回滚',
+            agent: 'developer',
+            tier: 'high',
+            params: { tdd: true },
+            review: 'check',
+            maxRounds: 3,
+            retries: 1,
+            instructions:
+              '先写迁移失败的测试（用旧数据样本），再写迁移、回滚和兼容读取。迁移脚本必须幂等、能重跑；每一步在大数据量下的耗时和失败处理写清楚。',
+          },
+          {
+            id: 'verify',
+            title: '旧数据验证',
+            agent: 'tester',
+            tier: 'medium',
+            params: { scope: '整体', env: '自动', regress: true, onFail: '只报告', write: true },
+            confirm: true,
+            instructions:
+              '在旧数据样本上跑迁移 → 校验 → 回滚 → 再迁移，确认数据没有丢失或重复。跑完把结果和剩下的风险列清楚，请用户决定是否可以切默认值。',
+          },
+          {
+            id: 'commit',
+            title: '文档与提交',
+            agent: 'vcs',
+            tier: 'low',
+            params: { docs: true },
+            instructions: '把迁移方案、兼容策略和回滚步骤写进文档（长期决策写 ADR），再做版本控制收尾。',
+          },
+        ],
+        edges: chain(START, 'plan', 'impact', 'impl', 'verify', 'commit', END),
+      },
+      CHECK,
+    ],
+  },
+  {
+    key: 'release',
+    name: '发布与回滚',
+    description: '出包前检查、构建产物、验证和发布；准备好回滚方案再上线',
+    category: '交付',
+    main: 'vcs',
+    members: [
+      ['vcs', '汇总改动、确认发布范围、做版本号和变更说明'],
+      ['tester', '按项目测试步骤跑发布前验证，检查构建产物'],
+      ['docsync', '写发布说明和 runbook'],
+    ],
+    document: `## 适用
+要把一次改动真正发出去：出包、发版本、上线，以及需要回滚预案的场景。
+
+## 约定
+- 先确认授权：推送、打 tag、发布、部署都算对外操作，用户明确授权后才做；没授权就出到「可以发布」为止并写清下一步。
+- 发布前验证必须用本轮的新鲜产物：构建一次、在产物上跑验证，不能拿开发环境的结果代替。
+- 回滚方案先写再发：怎么回、回哪个版本、回滚后怎么验证，写在发布说明里。
+- 版本号和变更说明按项目自己的规则（AGENTS.md / CONTRIBUTING / 已有的 tag 风格）。`,
+    flows: [
+      {
+        id: 'main',
+        name: '主流程',
+        nodes: [
+          {
+            id: 'prepare',
+            title: '发布准备',
+            agent: 'vcs',
+            tier: 'medium',
+            params: { vcs: '自动', docs: false, commit: '只检查' },
+            instructions:
+              '确认发布范围（哪些提交 / pending 会进这次发布）、目标版本号、项目自己的发布规则。列出还没进这次发布但相关的改动，指出阻塞项。',
+          },
+          {
+            id: 'build',
+            title: '构建与产物验证',
+            agent: 'tester',
+            tier: 'high',
+            params: { scope: '整体', env: '自动', regress: true, onFail: '只报告', serial: true },
+            instructions:
+              '按工作流说明里的「## 项目测试步骤」跑一遍发布前验证，重点检查构建产物本身（产物在不在、版本号对不对、包内容有没有多带文件）。每条都写命令和结果；跑不了的登记为延期验证。',
+          },
+          {
+            id: 'notes',
+            title: '发布说明与回滚',
+            agent: 'docsync',
+            tier: 'low',
+            params: { adr: '不写' },
+            confirm: true,
+            instructions:
+              '按项目自己的格式写发布说明（新功能 / 改进 / 修复 / 依赖，写给用户看），并写回滚方案：回滚触发条件、回滚步骤、回滚后怎么验证。请用户确认后再发布。',
+          },
+          {
+            id: 'publish',
+            title: '发布',
+            agent: 'vcs',
+            tier: 'medium',
+            params: { docs: false, commit: '本地提交' },
+            instructions:
+              '按用户已授权的范围执行发布：打 tag、推送、触发发布流程或部署。没有授权时停在这里，写清需要哪一步授权。发布后回读确认产物和版本号，并记录发布结果。',
+          },
+        ],
+        edges: chain(START, 'prepare', 'build', 'notes', 'publish', END),
+      },
+    ],
+  },
+]
 
 export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
   {
@@ -456,7 +734,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     members: [
       ['analyst', '识别现场，收敛需求，出设计摘要等你确认'],
       ['developer', '按确认的设计实现'],
-      ['verifier', '验收：查回归、跑验证'],
+      ['tester', '验收：按项目测试步骤跑验证、查回归'],
       ['vcs', '同步文档，本地提交 / P4 分桶'],
     ],
     document: `## 适用
@@ -465,6 +743,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
 ## 约定
 - 设计确认之前不写代码；设计确认后中途不再逐步确认，遇到不可逆操作、需求矛盾、和设计冲突时才停下。
 - 只改任务范围内的文件，不认领、不覆盖已有的改动。
+- 验收按项目设置里的测试步骤跑（新建对话时快照进任务）。
 - 版本控制只做本地提交（P4 只分 pending），push、submit 由你自己做。`,
     flows: [
       {
@@ -518,7 +797,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
       ['analyst', '收敛需求并压测设计'],
       ['impact', '实现前分析影响面和测试缺口'],
       ['developer', '按 tasks 实现'],
-      ['verifier', '验收和延期验证'],
+      ['tester', '验收和延期验证'],
       ['vcs', '同步文档，本地提交 / P4 分桶'],
     ],
     document: `## 适用
@@ -588,12 +867,12 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
           {
             id: 'deferred',
             title: '延期验证',
-            agent: 'verifier',
+            agent: 'tester',
             tier: 'medium',
             params: { scope: '整体', regress: false },
             confirm: true,
             instructions:
-              '整体验收一遍，并把所有登记的延期验证项列出来，每项写怎么验证，请用户决定立即验证还是暂缓（暂缓的标为「待用户完成」）。',
+              '整体验收一遍（按工作流说明里的项目测试步骤跑），并把所有登记的延期验证项列出来，每项写怎么验证，请用户决定立即验证还是暂缓（暂缓的标为「待用户完成」）。',
           },
           {
             id: 'archive',
@@ -646,7 +925,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     main: 'debugger',
     members: [
       ['debugger', '识别现场，找根因、写失败测试、修复'],
-      ['verifier', '验收：查回归、跑验证'],
+      ['tester', '验收：按项目测试步骤跑验证、查回归'],
       ['vcs', '写 Bug 记录、同步文档，本地提交 / P4 分桶'],
     ],
     document: `## 适用
@@ -696,8 +975,7 @@ Bug、测试失败、线上问题。
       ['uescout', '识别版本控制和文档根，架构、构建和影响面的只读侦察'],
       ['analyst', '出设计摘要等你确认'],
       ['developer', 'C++ / Lua 实现'],
-      ['ueintegrator', '唯一负责编译和 Lua 检查'],
-      ['verifier', '验收，登记需要 Editor 的延期验证'],
+      ['tester', '按测试步骤编译、做 Lua 检查并验收'],
       ['vcs', '同步文档，Git 本地提交 / P4 按类型分 pending'],
     ],
     document: `## 适用
@@ -708,8 +986,8 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
 - Git：只提交本次任务的文件，按功能拆本地提交，不 push。
 - P4：只读识别 client / stream；修改前先 p4 edit / add 进 default；不 sync、不 submit、不 revert；最后按 [C++]、[XLSX]、[Lua]、[Other] 分 pending。
 - 文档根：Git 项目用项目下的 docs；P4 项目用共同外层目录下的 ProjectDoc/doc/<项目文件夹名>，不写回 P4 项目目录。
-- 编译只由「UE 集成员」做，同一时间只编译一次（-WaitMutex）。
-- push、submit 由你自己做。`,
+- 编译是项目测试步骤里的一条（例如 \`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`），由验收流程里的「测试与验收」节点执行，同一时间只编译一次；不把编译拆成独立节点，实现节点自己也不编译。
+- 推送 / submit 由你自己做。`,
     flows: [
       {
         id: 'main',
@@ -744,7 +1022,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
             maxRounds: 3,
             retries: 1,
             instructions:
-              '按已确认的设计实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子 Agent 并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要自己编译（子 Agent 也不要），编译由验收流程里的 UE 集成员统一做。',
+              '按已确认的设计实现。C++ 和 Lua 两边互不依赖时可以用 spawn_agents 派子 Agent 并行改，导出和反射边界由你统一核对。P4 项目修改前先 p4 edit / add。不要自己编译（子 Agent 也不要），编译由验收流程里的测试与验收节点统一做。',
           },
           {
             id: 'commit',
@@ -761,25 +1039,19 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
       {
         id: 'compile',
         name: '编译验收',
-        description: '编译一次、Lua 语法检查，再按验收标准检查',
+        description: '一次跑完项目测试步骤（含编译、Lua 检查），再按验收标准检查',
         nodes: [
           {
-            id: 'build',
-            title: '编译',
-            agent: 'ueintegrator',
-            tier: 'medium',
-            instructions: '编译这次的改动，有 Lua 改动时做语法检查。',
-          },
-          {
             id: 'verify',
-            title: '验收',
-            agent: 'verifier',
+            title: '编译与验收',
+            agent: 'tester',
             tier: 'medium',
+            params: { scope: '本次改动', env: '自动', regress: true, serial: true },
             instructions:
-              '编译不通过就直接判不通过。编译通过后对照设计逐条检查；需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
+              '按工作流说明里的「## 项目测试步骤」执行：先编译（Build.bat 带 -WaitMutex，同一时间只编译一次），有 Lua 改动时做语法检查，再对照设计逐条检查。编译不通过就直接判不通过，把错误原文和文件、行列出来。需要 Editor、PIE 或设备的验证登记为延期验证。最后单独一行写「验收结论：通过」或「验收结论：不通过」。',
           },
         ],
-        edges: chain(START, 'build', 'verify', END),
+        edges: chain(START, 'verify', END),
       },
     ],
   },
@@ -792,7 +1064,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
     members: [
       ['architect', '识别现场，读已有的架构文档，给候选方案和架构契约'],
       ['analyst', '压测方案'],
-      ['docs', '写架构文档和 ADR'],
+      ['docsync', '写架构文档和 ADR'],
     ],
     document: `## 适用
 新项目、新模块的架构，或者现有架构的评审和调整。只出设计和文档，不写实现代码。`,
@@ -822,8 +1094,10 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           {
             id: 'docs',
             title: '写文档',
-            agent: 'docs',
+            agent: 'docsync',
             tier: 'medium',
+            // 架构流程定下来的都是长期决策，ADR 一律写
+            params: { adr: '总是' },
             instructions: '把确认的方案写进架构文档；长期决策写成 ADR 并登记索引；新术语更新 CONTEXT.md。',
           },
         ],
@@ -957,6 +1231,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
     ],
   },
   // 项目工作流放最后：默认选中项仍然是「日常开发」，旧项目迁移按 origin 找
+  ...EXTRA_WORKFLOWS,
   GENERAL,
   UE_PROJECT,
 ]
@@ -986,54 +1261,60 @@ export function buildWorkflow(
     entryFlowId: 'main',
     document: w.document,
     expose: w.expose ?? [],
-    flows: w.flows.map((f) =>
-      autoLayout({
-        id: f.id,
-        name: f.name,
-        description: f.description ?? '',
-        startPos: { x: 0, y: 0 },
-        endPos: { x: 600, y: 0 },
-        nodes: f.nodes.map((n): FlowNode => {
-          const steps = (n.steps ?? []).map(
-            (s, i): NodeStep => ({
-              id: s.id || `st${i + 1}`,
-              title: s.title,
-              kind: 'agent',
-              agentId: agentId(s.agent),
-              flow: null,
-              tier: s.tier ?? '',
-              params: s.params ?? {},
-              instructions: s.instructions,
-              retries: s.retries ?? 0,
-              ...(s.confirm && { confirm: true }),
-              review: s.review ? { kind: 'sub', id: s.review } : null,
-              maxRounds: s.maxRounds ?? 3,
-            }),
-          )
-          return {
-            id: n.id,
-            title: n.title,
-            kind: 'agent',
-            agentId: steps.length ? '' : agentId(n.agent ?? ''),
-            flow: null,
-            tier: n.tier ?? '',
-            params: n.params ?? {},
-            steps,
-            retries: steps.length ? 0 : (n.retries ?? 0),
-            instructions: steps.length ? '' : n.instructions,
-            x: 0,
-            y: 0,
-            hooks: {
-              start: null,
-              review: steps.length || !n.review ? null : { kind: 'sub', id: n.review },
-              end: null,
-              maxRounds: n.maxRounds ?? 3,
-              ...(!steps.length && n.confirm && { confirm: true }),
-            } satisfies NodeHooks,
-          }
-        }),
-        edges: f.edges.map(([from, to, when], i): FlowEdge => ({ id: `e${i + 1}`, from, to, ...(when && { when }) })),
-      }),
-    ),
+    flows: w.flows.map((f) => buildFlow(f, agentId)),
   }
+}
+
+/**
+ * 一个流程定义换成本机的 Agent id：升级旧副本时比较语义也要用同一套转换，
+ * 保证「旧定义」和「本机副本」在同样的字段上比较。
+ */
+export function buildFlow(f: FlowSpec, agentId: (key: string) => string): Flow {
+  return autoLayout({
+    id: f.id,
+    name: f.name,
+    description: f.description ?? '',
+    startPos: { x: 0, y: 0 },
+    endPos: { x: 600, y: 0 },
+    nodes: f.nodes.map((n): FlowNode => {
+      const steps = (n.steps ?? []).map(
+        (s, i): NodeStep => ({
+          id: s.id || `st${i + 1}`,
+          title: s.title,
+          kind: 'agent',
+          agentId: agentId(s.agent),
+          flow: null,
+          tier: s.tier ?? '',
+          params: s.params ?? {},
+          instructions: s.instructions,
+          retries: s.retries ?? 0,
+          ...(s.confirm && { confirm: true }),
+          review: s.review ? { kind: 'sub', id: s.review } : null,
+          maxRounds: s.maxRounds ?? 3,
+        }),
+      )
+      return {
+        id: n.id,
+        title: n.title,
+        kind: 'agent',
+        agentId: steps.length ? '' : agentId(n.agent ?? ''),
+        flow: null,
+        tier: n.tier ?? '',
+        params: n.params ?? {},
+        steps,
+        retries: steps.length ? 0 : (n.retries ?? 0),
+        instructions: steps.length ? '' : n.instructions,
+        x: 0,
+        y: 0,
+        hooks: {
+          start: null,
+          review: steps.length || !n.review ? null : { kind: 'sub', id: n.review },
+          end: null,
+          maxRounds: n.maxRounds ?? 3,
+          ...(!steps.length && n.confirm && { confirm: true }),
+        } satisfies NodeHooks,
+      }
+    }),
+    edges: f.edges.map(([from, to, when], i): FlowEdge => ({ id: `e${i + 1}`, from, to, ...(when && { when }) })),
+  })
 }

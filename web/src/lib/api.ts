@@ -31,7 +31,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
-import type { ContentSearch, FileContent, FileTree } from '@shared/files'
+import type { ContentSearch, DirLevel, FileContent, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
@@ -247,6 +247,8 @@ export const api = {
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
+  orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   allTasks: () => request<Task[]>('/tasks'),
@@ -254,14 +256,25 @@ export const api = {
   task: (id: string) => request<Task>(`/tasks/${id}`),
   taskChildren: (id: string) =>
     request<
-      { id: string; title: string; status: Task['status']; summary: string; working: boolean; updatedAt: string }[]
+      {
+        id: string
+        title: string
+        status: Task['status']
+        summary: string
+        working: boolean
+        updatedAt: string
+        /** 进程还活着（预热、等下一句、正在执行） */
+        cliAlive: boolean
+        /** 最近一条消息的时间，列表按它排序 */
+        lastMessageAt: string
+      }[]
     >(`/tasks/${id}/children`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
   importTask: (projectId: string, bundle: unknown) =>
     request<Task>('/tasks/import', json('POST', { projectId, bundle })),
-  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, steer = false) =>
-    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt, steer })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
@@ -278,9 +291,6 @@ export const api = {
   forkTask: (id: string, messageId: string) => request<Task>(`/tasks/${id}/fork`, json('POST', { messageId })),
   compactTask: (id: string) => request<Task>(`/tasks/${id}/compact`, json('POST', {})),
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
-  unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
-  editQueued: (id: string, qid: string, text: string) =>
-    request<Task>(`/tasks/${id}/queue/${qid}`, json('PATCH', { text })),
   /** 结束工作流：没完成的节点不再执行 */
   endFlow: (id: string) => request<Task>(`/tasks/${id}/end-flow`, json('POST', {})),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
@@ -289,11 +299,24 @@ export const api = {
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
-  /** 文件浏览页：项目里的文件树和 git 状态 */
+  /** 文件浏览页：项目的目录、分支和是不是 git 仓库（文件按层读） */
   fileTree: (projectId: string) => request<FileTree>(`/project-files/${projectId}`),
+  /** 列一层：展开目录时读它的直接子项；refresh 时不用缓存的状态 */
+  fileLevel: (projectId: string, path: string, refresh = false) =>
+    request<DirLevel>(
+      `/project-files/${projectId}/list?path=${encodeURIComponent(path)}${refresh ? '&refresh=1' : ''}`,
+    ),
+  /** 按文件名搜索：服务端搜，还没展开的深层文件也能找到 */
+  searchFileNames: (projectId: string, q: string) =>
+    request<NameSearch>(`/project-files/${projectId}/search?mode=name&q=${encodeURIComponent(q)}`),
   /** 按文件内容搜索 */
   searchFileContent: (projectId: string, q: string) =>
     request<ContentSearch>(`/project-files/${projectId}/search?mode=content&q=${encodeURIComponent(q)}`),
+  /** 在系统的文件管理器里打开文件或目录；不传路径时打开项目目录 */
+  revealProjectFile: (projectId: string, path = '') =>
+    request<{ ok: boolean; dir: string }>(`/project-files/${projectId}/reveal?path=${encodeURIComponent(path)}`, {
+      method: 'POST',
+    }),
   projectFile: (projectId: string, path: string) =>
     request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
   /** 项目里的图片：按原图查看 */
@@ -316,13 +339,19 @@ export const api = {
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
   /** 任务目录里的图片：读到的文件是图片时按原图查看 */
   taskFileRaw: (id: string, path: string) => `/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
-  /** 任务页右栏的文件系统：任务工作目录（独立分支时是 worktree）里的文件树 */
+  /** 任务页右栏的根信息：任务工作目录（独立分支时是 worktree）的目录和分支 */
   taskFiles: (id: string) => request<FileTree>(`/tasks/${id}/files`),
+  /** 任务目录里列一层 */
+  taskFileLevel: (id: string, path: string, refresh = false) =>
+    request<DirLevel>(`/tasks/${id}/files/list?path=${encodeURIComponent(path)}${refresh ? '&refresh=1' : ''}`),
+  /** 任务目录里按文件名搜索 */
+  searchTaskFileNames: (id: string, q: string) =>
+    request<NameSearch>(`/tasks/${id}/files/search?mode=name&q=${encodeURIComponent(q)}`),
   /** 任务目录里按文件内容搜索 */
   searchTaskFiles: (id: string, q: string) =>
-    request<ContentSearch>(`/tasks/${id}/files/search?q=${encodeURIComponent(q)}`),
-  /** 在系统的文件管理器里打开这个文件所在的文件夹并选中它 */
-  revealTaskFile: (id: string, path: string) =>
+    request<ContentSearch>(`/tasks/${id}/files/search?mode=content&q=${encodeURIComponent(q)}`),
+  /** 在系统的文件管理器里打开这个文件所在的文件夹并选中它；不传路径时打开任务目录 */
+  revealTaskFile: (id: string, path = '') =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
   /** 独立分支：合并进项目当前的分支，或丢弃 */

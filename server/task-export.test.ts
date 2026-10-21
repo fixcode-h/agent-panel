@@ -163,6 +163,50 @@ test('修改建议：解析、对比、应用；不合法的值和找不到的�
   assert.equal(wf.flows[0].nodes[0].tier, 'high', '原来的工作流不动')
 })
 
+test('报告：用户要求不截断、失败工具单独统计、改动按节点归属、过程带时间', () => {
+  const long = `## 约束\n${'不要动 server/tasks.ts 里的并发逻辑。'.repeat(400)}`
+  const withTools = Task.parse({
+    ...task,
+    changes: [
+      { path: 'mine.ts', add: 3, del: 1 },
+      { path: 'other-task.ts', add: 90, del: 90 },
+    ],
+    steps: [
+      { ...task.steps[0], changes: [{ path: 'mine.ts', add: 3, del: 1 }] },
+      { ...task.steps[0], id: 'other', title: '别人的节点', changes: [{ path: '别人的.ts', add: 90, del: 90 }] },
+    ],
+    messages: [
+      { id: 'u1', role: 'user', text: long, at: '2026-10-19T00:00:00.000Z' },
+      { id: 'u2', role: 'user', text: '再补一句', at: '2026-10-19T00:05:00.000Z' },
+      {
+        id: 'a2',
+        role: 'agent',
+        agentId: coder.id,
+        step: 'handle',
+        text: '跑了一下',
+        at: '2026-10-19T00:20:00.000Z',
+        tools: [
+          { kind: 'run', label: 'npm test', output: 'FAIL 3 tests', failed: true },
+          { kind: 'read', label: 'a.ts' },
+        ],
+      },
+    ],
+  })
+  const report = analysisReport([exportTask(withTools, [coder])])
+  assert.match(report, /不要动 server\/tasks\.ts 里的并发逻辑/, '用户的要求不截断')
+  assert.ok(!report.includes('后面省略'), '要求里没有省略标记')
+  assert.match(report, /失败的工具调用 1 次/, '失败的工具调用进统计')
+  assert.match(report, /失败详情：[\s\S]*FAIL 3 tests/, '失败工具带输出，能看原因')
+  assert.match(report, /\*\*用户\*\*：\d{2}:\d{2}:\d{2} ## 约束/, '用户消息带时间')
+  assert.match(report, /\*\*AI（开发）\*\*：\d{2}:\d{2}:\d{2} 跑了一下/, 'AI 回复带时间')
+  assert.match(report, /距上一条 15m0s/, '间隔大的单独提示，能看出等待在哪')
+  assert.match(report, /追加要求\/对话 0 轮（对话页开着时/, '轮数的口径写清楚')
+  assert.match(report, /用户消息 2 条：\d{2}:\d{2}、\d{2}:\d{2}/, '列出每条用户消息的时间')
+  assert.match(report, /## 改动的文件（按节点记录）/, '改动按节点列')
+  assert.match(report, /### 别人的节点[\s\S]*别人的\.ts/)
+  assert.ok(!/## 改动的文件\n/.test(report), '不再用任务级差额冒充本任务的产出')
+})
+
 test('按行对比', () => {
   assert.deepEqual(lineDiff('a\nb\nc', 'a\nx\nc'), [
     { kind: 'same', text: 'a' },

@@ -18,12 +18,15 @@ import {
   GENERAL_ORIGIN,
 } from '../shared/builtin/workflows.ts'
 import {
+  annotateMergedAgents,
   migrateGeneralWorkflow,
   migrateProjectsToGeneral,
   seedBuiltins,
   seedProjectWorkflows,
+  upgradeBuiltinAgents,
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
+import { LEGACY_AGENT_FIELDS } from '../shared/builtin/legacy.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
@@ -266,6 +269,96 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const again = await seedBuiltins(r, ops)
   assert.equal(again.workflows.length, r.workflows.length)
   assert.equal(again.agents.length, r.agents.length)
+})
+
+test('没改过的旧「测试运行」升级成「测试与验收」，改过的不动；重复启动不再改', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  const oldTester = {
+    ...agents.find((a) => a.id === 'tester')!,
+    ...LEGACY_AGENT_FIELDS.tester,
+    id: 'local-tester',
+    origin: 'builtin:tester',
+    params: [],
+    skills: [],
+  }
+  const state = { agents: [oldTester], categories: [], tags: [], workflows: [] }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 1)
+  const next = updated[0]
+  assert.equal(next.name, '测试与验收')
+  assert.ok(next.params.some((p) => p.key === 'scope'))
+  assert.equal(next.enabled, oldTester.enabled)
+  // 再启动：名字已经不是旧指纹，不再改
+  saved.length = 0
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
+
+  // 用户改过简介的不升级
+  const edited = { ...oldTester, id: 'my-tester', description: '我自己改过的说明' }
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
+})
+
+test('没改过的旧「通用约束」「任务 Agent」跟着升级到新规则；改过的不动', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  const old = (key: 'rules' | 'worker', id: string) => ({
+    ...agents.find((a) => a.id === key)!,
+    ...LEGACY_AGENT_FIELDS[key],
+    id,
+    origin: `builtin:${key}`,
+    params: [],
+    skills: [],
+  })
+  const state = {
+    agents: [old('rules', 'local-rules'), old('worker', 'local-worker')],
+    categories: [],
+    tags: [],
+    workflows: [],
+  }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 2, '两个旧副本都升级')
+  const rules = updated.find((a) => a.name === '通用约束')!
+  assert.match(rules.instructions, /共用工作区/, '补上共用工作区规则')
+  assert.match(rules.instructions, /单次不超过 60 秒/, '补上长等待上限')
+  const worker = updated.find((a) => a.name === '任务 Agent')!
+  assert.match(worker.instructions, /没有开启按工作流执行计划的能力/, '补上不能起计划时怎么退化成对话')
+  // 再启动：已经不是旧指纹，不再改
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
+
+  // 用户改过的保留原样
+  const edited = { ...old('rules', 'mine'), instructions: `${LEGACY_AGENT_FIELDS.rules.instructions}\n我自己加的一条` }
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
+})
+
+test('已合并的内置 Agent 在本机还有时补一句说明，重复启动不重复加', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  const verifier = {
+    ...agents.find((a) => a.id === 'reviewer')!,
+    id: 'local-verifier',
+    name: '验收员',
+    description: '查回归',
+    origin: 'builtin:verifier',
+  }
+  const state = { agents: [verifier], categories: [], tags: [], workflows: [] }
+  const [next] = await annotateMergedAgents(state, ops)
+  assert.match(next.description, /已合并到「测试与验收」/)
+  assert.equal((await annotateMergedAgents({ ...state, agents: [next] }, ops)).length, 0)
 })
 
 test('旧项目迁移：指向内置「默认」工作流的也改用「通用项目」', async () => {

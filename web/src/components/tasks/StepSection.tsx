@@ -72,6 +72,8 @@ export function StepSection({
         <header
           className={cn(
             'flex flex-wrap items-center gap-x-2.5 gap-y-1',
+            // 粘顶的背景必须和对话内容区的背景一致：内容区统一 bg-bg（父对话、右栏、运行面板都是），
+            // 这里就只用 bg-bg，不要再按容器换颜色，否则滚动时会透出一条色带
             sticky === 'flow' && 'sticky top-0 z-10 -mx-1 border-b bg-bg px-1 pt-5 pb-3',
             sticky === 'chat' && 'sticky top-0 z-10 -mx-2 -my-2 bg-bg px-2 py-2',
           )}

@@ -1,0 +1,23 @@
+# 统一换行符：仓库里一律存 LF，检出到任何系统都不转换。
+# 项目在 Windows 上编辑、在 WSL / Linux 里跑测试，工作区被 autocrlf 转成 CRLF 会让
+# 带 shebang 的脚本（scripts/fake-cli/*.mjs）在 WSL 里执行时报 "bad interpreter"。
+* text=auto eol=lf
+
+# 二进制文件不做换行符转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.zip binary
+*.gz binary
+*.tgz binary
+*.wasm binary
+
+# 必须在 Linux 里执行的脚本：固定 LF，且不许把 CRLF 带进仓库
+*.sh text eol=lf
+scripts/fake-cli/*.mjs text eol=lf

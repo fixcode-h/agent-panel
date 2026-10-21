@@ -167,7 +167,6 @@ export function AgentMessage({
   live,
   hideProcess,
   hideAuthor,
-  stickyAuthor,
   slot,
   author,
   command,
@@ -183,8 +182,6 @@ export function AgentMessage({
   hideProcess?: boolean
   /** 名字和模型由外面统一显示（对话一轮的吸顶署名） */
   hideAuthor?: boolean
-  /** 名字行吸顶：对话里滚到回复中部时还能看到是谁、用的什么模型 */
-  stickyAuthor?: boolean
   /** 放在名字下面、回复上面的内容（折叠起来的过程） */
   slot?: React.ReactNode
   /** 不是某个 Agent 说的（例如「AI 创建」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
@@ -205,7 +202,6 @@ export function AgentMessage({
       live={live}
       hideProcess={hideProcess}
       hideAuthor={hideAuthor}
-      stickyAuthor={stickyAuthor}
       slot={slot}
       name={author?.name ?? a?.name ?? t('已删除的 Agent')}
       model={author ? author.model : a ? modelOf(a) : undefined}
@@ -224,8 +220,6 @@ type BodyProps = {
   live?: boolean
   hideProcess?: boolean
   hideAuthor?: boolean
-  /** 名字行吸顶：对话里滚到回复中部时还能看到是谁、用的什么模型 */
-  stickyAuthor?: boolean
   slot?: React.ReactNode
   name: string
   model?: string
@@ -281,7 +275,6 @@ const MessageBody = memo(
     live,
     hideProcess,
     hideAuthor,
-    stickyAuthor,
     slot,
     name,
     model,
@@ -301,13 +294,7 @@ const MessageBody = memo(
         )}
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {!noHeader && (
-            <div
-              className={cn(
-                'flex items-center gap-2 pt-0.5 text-[0.8125rem]',
-                // 和按 CLI 显示的对话一样：滚到回复中部时名字和模型固定在顶部，下一轮顶走
-                stickyAuthor && 'sticky top-0 z-10 -mx-2 bg-bg px-2 py-2',
-              )}
-            >
+            <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
               <span className="font-medium">{name}</span>
               {model && <span className="font-mono text-xs text-subtle">{model}</span>}
               {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
@@ -342,7 +329,6 @@ const MessageBody = memo(
     a.live === b.live &&
     a.hideProcess === b.hideProcess &&
     a.hideAuthor === b.hideAuthor &&
-    a.stickyAuthor === b.stickyAuthor &&
     a.name === b.name &&
     a.model === b.model &&
     a.icon === b.icon &&
@@ -383,8 +369,19 @@ export function Msgs({
 }) {
   const lastAgent = lastIndex(msgs, (m) => m.role === 'agent')
   const firstAgent = msgs.findIndex((m) => m.role === 'agent')
+  const { agents } = useData()
+  const { modelOf } = useAgentView()
+  // 署名行必须放在整段输出外面：放在单条消息里时，sticky 的包含块只有那一条消息的高度，
+  // 滚过去就跟着滚出视口了（按 CLI 显示的对话 StickyAuthor 在整轮外面，所以不受影响）
+  const firstMsg = firstAgent >= 0 ? msgs[firstAgent] : undefined
+  const sticky = !author && stickyAuthor && !compactFirst && firstMsg && agents.find((x) => x.id === firstMsg.agentId)
   return (
     <>
+      {sticky && (
+        <StickyAuthor
+          author={{ name: sticky.name, cli: sticky.cli, icon: sticky.icon, model: modelOf(sticky), command }}
+        />
+      )}
       {msgs.map((m, k) =>
         m.role === 'system' ? (
           <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
@@ -398,8 +395,7 @@ export function Msgs({
             slot={k === firstAgent ? slot : undefined}
             author={author}
             command={command}
-            hideAuthor={hideAuthor}
-            stickyAuthor={stickyAuthor && k === firstAgent}
+            hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
             compact={k === 0 ? !!compactFirst : msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
           />
         ),

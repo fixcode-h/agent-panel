@@ -187,7 +187,8 @@ export function TaskComposer({
           params: byWorkflow || byCli ? {} : params,
           prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
-          isolate: canIsolate && isolate,
+          // 只有打开了「独立分支」才显式传；不传时由服务端按项目设置决定（子对话默认隔离）
+          isolate: canIsolate && isolate ? true : undefined,
           askUser,
         }),
       )

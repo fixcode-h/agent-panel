@@ -471,7 +471,7 @@ const panelMcpUrl = () =>
         return cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
       })()
 
-// 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求先排在队列里，模型用面板的工具取走。
+// 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求会登记给它，模型用面板的工具取走。
 // FAKE_NOTES 时反复取（等页面把补充发过来，最多 6 秒），拿到的话写进回复和日志
 let notesGot = ''
 if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind === 'gemini' || kind === 'pi')) {
@@ -957,7 +957,7 @@ if (kind === 'claude') {
     writeFileSync('committed.txt', 'one\ntwo\nthree\n')
     const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
     g('add', 'committed.txt')
-    g('commit', '-qm', 'agent commit')
+    g('commit', '-qm', input.includes('子对话') ? '子对话提交' : 'agent commit')
   }
   out({
     type: 'assistant',

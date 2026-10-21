@@ -1,4 +1,5 @@
-import type { FlowNode, ParamValues, Workflow, WorkflowExpose } from './schema.ts'
+import type { Agent, FlowNode, ParamValues, Workflow, WorkflowExpose } from './schema.ts'
+import { projectAgentValues, workflowAgentIds } from './agent-params.ts'
 
 /**
  * 工作流暴露项：工作流里用 `{{槽名}}` 在技能列表、节点参数、工作流说明里占位，
@@ -88,11 +89,28 @@ function documentPart(w: Pick<Workflow, 'expose'>, values: Record<string, string
 /**
  * 解析成任务里存的那份工作流：说明和节点参数按配置落好，技能槽留给角色拼装
  * （技能在 Agent 上，不在工作流里），expose 清空。
+ *
+ * 项目里填的 Agent 参数（按工作流实际用到的 Agent 派生，见 shared/agent-params.ts）先落到节点上，
+ * 再走 expose：expose 是最具体的配置源，同名时覆盖派生值。派生只作用于声明了这个参数的 Agent 的节点，
+ * 节点上其他值不动。
  */
-export function applyExpose(w: Workflow, params: ParamValues): Workflow {
-  if (!w.expose.length) return w
+export function applyExpose(w: Workflow, params: ParamValues, agents: Agent[] = []): Workflow {
+  const derived = agents.length ? projectAgentValues(w, agents, params) : {}
+  if (!w.expose.length && !Object.keys(derived).length) return w
   const values = exposeValues(w, params)
   const doc = [fillSlots(w.document, values), documentPart(w, values)].filter(Boolean).join('\n\n')
+  // 哪些节点用到了带项目值的 Agent：没声明这个参数的 Agent 不写，免得把无关参数塞进节点
+  const owners = new Map<string, Set<string>>()
+  for (const id of workflowAgentIds(w)) {
+    const agent = agents.find((a) => a.id === id)
+    owners.set(id, new Set(agent?.params.map((p) => p.key) ?? []))
+  }
+  const nodeValues = (agentId: string) => {
+    if (!Object.keys(derived).length) return {}
+    const keys = owners.get(agentId)
+    if (!keys?.size) return {}
+    return Object.fromEntries(Object.entries(derived).filter(([k]) => keys.has(k)))
+  }
   return {
     ...w,
     document: doc,
@@ -100,7 +118,9 @@ export function applyExpose(w: Workflow, params: ParamValues): Workflow {
     flows: w.flows.map((f) => ({
       ...f,
       nodes: f.nodes.map((n) => {
-        const node = applyAgentExpose(applyNodeExpose(n, w, values), w, values)
+        // 先把项目里的 Agent 参数合进节点，再走 expose：expose 是最具体的配置源，同名时覆盖派生值
+        const withDerived = applyDerived(n, w, nodeValues)
+        const node = applyAgentExpose(applyNodeExpose(withDerived, w, values), w, values)
         return {
           ...node,
           instructions: fillSlots(n.instructions, values),
@@ -108,6 +128,21 @@ export function applyExpose(w: Workflow, params: ParamValues): Workflow {
         }
       }),
     })),
+  }
+}
+
+/** 把项目里的 Agent 参数写进节点和它的步骤；只写这个 Agent 真的声明了的参数 */
+function applyDerived(
+  n: FlowNode,
+  w: Pick<Workflow, 'mainAgentId'>,
+  nodeValues: (agentId: string) => ParamValues,
+): FlowNode {
+  const own = nodeValues(n.agentId || w.mainAgentId)
+  const params = { ...n.params, ...own }
+  return {
+    ...n,
+    params,
+    steps: n.steps.map((s) => ({ ...s, params: { ...s.params, ...nodeValues(s.agentId || w.mainAgentId) } })),
   }
 }
 

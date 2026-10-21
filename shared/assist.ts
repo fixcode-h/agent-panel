@@ -23,17 +23,21 @@ import { McpServer } from './library.ts'
 import {
   END,
   START,
+  TEST_STEP_ENVS,
   type Agent,
   type AgentInput,
   type Category,
   type Flow,
   type FlowRef,
+  type ParamValues,
   type TaskMessage,
+  type TestStep,
   type Workflow,
   type WorkflowInput,
 } from './schema.ts'
+import type { DerivedParam } from './agent-params.ts'
 
-export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp'])
+export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps'])
 export type AssistKind = z.infer<typeof AssistKind>
 
 export const AssistMessage = z.object({
@@ -60,6 +64,11 @@ export const AssistInput = z.object({
    * skill 是 cli、name、content；mcp 是 name、server（JSON）、error（测试连接的报错）、clis（装在哪些 CLI 里）
    */
   subject: z.record(z.string(), z.string().max(60000)).default({}),
+  /**
+   * 项目目录里的只读分析（params / teststeps）：在项目目录里执行，让 CLI 自己看代码判断参数和测试命令。
+   * 传项目 id，服务端按它取目录；提示词里写死只读约束。
+   */
+  projectId: z.string().trim().max(100).default(''),
 })
 export type AssistInput = z.infer<typeof AssistInput>
 
@@ -163,7 +172,28 @@ export type McpProposal = {
   kind: 'mcp'
   server: McpServer
 }
-export type Proposal = AgentProposal | WorkflowProposal | SkillProposal | McpProposal
+/**
+ * 项目设置里的 Agent 参数值：只填「这次要配的参数」，key 必须是派生出来的参数 key。
+ * 值按参数类型校验（select 必须在 options 里，bool 是布尔，number 是数字）。
+ */
+export type ParamsProposal = {
+  kind: 'params'
+  /** workflowId 是这次配置对应的工作流，界面上按它写进 workflowParams */
+  workflowId: string
+  values: ParamValues
+}
+/** 项目测试步骤：整份列表，用户确认后替换表单里的草稿 */
+export type TestStepsProposal = {
+  kind: 'teststeps'
+  steps: TestStep[]
+}
+export type Proposal =
+  | AgentProposal
+  | WorkflowProposal
+  | SkillProposal
+  | McpProposal
+  | ParamsProposal
+  | TestStepsProposal
 
 export interface AssistJob {
   id: string
@@ -199,9 +229,25 @@ export interface AssistContext {
   defaultCli?: string
   /** Skill、MCP 工具的当前内容，见 AssistInput.subject */
   subject?: Record<string, string>
+  /** 只读分析的项目目录和名称：params / teststeps 在项目目录里执行 */
+  projectPath?: string
+  projectName?: string
+  /** params 的校验依据：工作流派生出来的 Agent 参数（服务端按 workflowId 算好传进来） */
+  paramSpec?: DerivedParam[]
+  /** params 只配某一个 Agent 时，只校验这个 Agent 用到的参数 */
+  paramAgentId?: string
+  /** teststeps 校验和展示用的系统 */
+  platform?: string
 }
 
-const KIND_NAME = { agent: 'Agent', workflow: '工作流', skill: 'Skill', mcp: 'MCP 工具' }
+const KIND_NAME = {
+  agent: 'Agent',
+  workflow: '工作流',
+  skill: 'Skill',
+  mcp: 'MCP 工具',
+  params: '参数配置',
+  teststeps: '测试步骤',
+}
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
 - description 一句话说明它擅长什么，不超过 60 字
@@ -342,6 +388,8 @@ export function buildAssistPrompt(
   installed: string[],
 ) {
   if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
+  if (kind === 'params') return buildParamsPrompt(ctx, messages)
+  if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -468,7 +516,185 @@ const SkillDraft = z.object({
   content: z.string().min(1, 'content 不能为空').max(60000),
 })
 
-/** 取出回复里最后一个 JSON 代码块；没有代码块时取最外层的大括号 */
+/**
+ * 项目设置里的 Agent 参数：在项目目录里只读看代码，给出每个参数的合理值。
+ * 只读约束写进提示词；需要跑命令时先说明并等用户确认。
+ */
+function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
+  const convo = messages
+    .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
+    .join('\n\n')
+  const spec = paramSpecFor(ctx)
+  const params = spec
+    .map((d) => {
+      const options = d.options.length ? `，可选值：${d.options.map((o) => `"${o}"`).join('、')}` : ''
+      const def = d.defaultValue === undefined ? '，没有默认值' : `，默认值：${JSON.stringify(d.defaultValue)}`
+      const who = [...new Set(d.agents.map((a) => a.name))].join('、')
+      return `- ${d.key}（${d.label}，类型 ${d.type}${options}${def}${d.required ? '，必须填' : ''}）${
+        d.description ? `：${d.description}` : ''
+      }\n  影响：${who}`
+    })
+    .join('\n')
+  const where = ctx.projectPath
+    ? `项目「${ctx.projectName || ctx.projectPath}」的目录是 ${ctx.projectPath}。
+只读地看这个目录里的代码和配置（依赖清单、构建 / 测试脚本、目录结构、README、CI 配置），据此判断参数值。
+**不许修改任何文件、不许安装依赖、不许执行有副作用的命令。** 需要跑命令确认时，先说清楚要跑什么并等用户确认。`
+    : '没有项目目录：只按对话内容和参数说明给出合理值，不要编造项目里不存在的命令。'
+  return [
+    '你是「Agent 面板」里的配置助手，正在帮用户填一个项目里某个工作流的 Agent 参数。',
+    where,
+    `## 要配置的参数\n${params || '（没有可配置的参数）'}`,
+    ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
+    `## 输出格式
+先用两三句中文说明你的判断依据（看到了哪些文件、为什么这样填）${ctx.projectPath ? '，以及还有哪些参数需要用户确认' : ''}。
+然后输出且只输出一个 \`\`\`json 代码块，形如：
+\`\`\`json
+{ "values": { "scope": "本次改动", "env": "wsl", "regress": true } }
+\`\`\`
+- 只能出现上面列出的参数 key；不确定的可以不写（留空表示用默认值），不要瞎填。
+- 值必须符合类型：下拉写可选值之一，开关写 true / false，数字写数字，多选写字符串数组。
+- 命令、路径这类字符串要能直接用，不要写占位符。`,
+    `## 对话\n${convo}`,
+    '请回复用户最后一条消息。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** teststeps 的提示词：读项目实际的技术栈和脚本，生成可以直接执行的步骤 */
+function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
+  const convo = messages
+    .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
+    .join('\n\n')
+  const platform = ctx.platform || ''
+  const where = ctx.projectPath
+    ? `项目「${ctx.projectName || ctx.projectPath}」的目录是 ${ctx.projectPath}。
+只读地看这个目录：依赖清单（package.json / Cargo.toml / go.mod / .uproject 等）、scripts、Makefile、CI 配置、README，读出现有的构建、测试、检查命令，按实际存在的方式写步骤。
+**不许修改任何文件、不许安装依赖、不许执行有副作用的命令。** 需要跑命令确认时，先说清楚要跑什么并等用户确认。`
+    : '没有项目目录：按对话里描述的技术栈给出步骤，命令写通用的形式，并说明需要用户按项目实际情况改。'
+  return [
+    '你是「Agent 面板」里的配置助手，正在帮用户写**这个项目的测试步骤**。测试步骤属于项目：Agent 按它执行构建、测试、检查，所以每条都要能直接跑。',
+    where,
+    `当前系统：${platform || '未知'}。标了 wsl 的步骤会在 WSL 里执行（Windows 上用 wsl.exe），非 Windows 上按 bash；不确定环境就不要标 wsl。`,
+    `## 步骤的字段
+- name：显示名，例如「类型检查」「单元测试」「编译」
+- command：要执行的命令原文，必须是项目里真实存在的命令
+- env：auto / wsl / powershell / cmd / bash。auto 按系统自己判断；Windows 上必须在 WSL 里跑的（例如 agent-panel 的 e2e）标 wsl
+- cwd：相对项目根的工作目录，没有就留空
+- when：执行条件，例如「仅在改了 web/ 时」「仅发布前」，没有就留空
+- timeoutSec：超时秒数，0 表示不限
+- note：给执行者看的说明，例如「同一时间只编译一次」
+- enabled：默认 true`,
+    `## 写步骤的规则
+- 按执行顺序排：先静态检查和单元测试，再端到端和构建；编译类放在需要它之前。
+- 只写项目里真的有的命令：先看 package.json 的 scripts，没有脚本就不要编 \`npm run xxx\`。
+- UE 项目给编译（\`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex\`）、Lua 语法检查、可选的 AutomationTest；需要 Editor 的标成 enabled: false 并在 note 里说明。
+- 每条 id 用简短的英文标识（例如 node-typecheck），同一份里不要重复。`,
+    ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
+    `## 输出格式
+先用两三句中文说明你看到了什么、为什么这样排${ctx.projectPath ? '' : '，以及哪些命令要用户按项目实际情况改'}。
+然后输出且只输出一个 \`\`\`json 代码块：
+\`\`\`json
+{ "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "cwd": "", "when": "", "timeoutSec": 0, "note": "", "enabled": true } ] }
+\`\`\`
+字段名不能改；没有的字段可以不写（会按默认值补）。`,
+    `## 对话\n${convo}`,
+    '请回复用户最后一条消息。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+/** params 这个 Agent 分组会用到的参数；指定了 paramAgentId 时只留那个 Agent 的 */
+function paramSpecFor(ctx: AssistContext) {
+  const all = ctx.paramSpec ?? []
+  if (!ctx.paramAgentId) return all
+  return all.filter((d) => d.agents.some((a) => a.id === ctx.paramAgentId))
+}
+
+const TEST_STEP_SHAPE = z.object({
+  id: z.string().trim().max(40).optional(),
+  name: z.string().trim().min(1, 'name 不能为空').max(60),
+  command: z.string().trim().min(1, 'command 不能为空').max(2000),
+  env: z.enum(TEST_STEP_ENVS).default('auto'),
+  cwd: z.string().trim().max(300).default(''),
+  when: z.string().trim().max(120).default(''),
+  timeoutSec: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .default(0),
+  note: z.string().trim().max(300).default(''),
+  enabled: z.boolean().default(true),
+})
+
+/**
+ * 校验 AI 给出的参数值：key 必须是派生出来的参数，值按类型校验。
+ * 不通过的逐条说明，服务端据此让 CLI 修正一次。
+ */
+export function resolveParamValues(json: unknown, spec: DerivedParam[]): { values?: ParamValues; error?: string } {
+  const obj = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  const raw = obj?.values ?? obj
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+    return { error: '要输出一个 JSON 对象：{ "values": { … } }' }
+  const problems: string[] = []
+  const values: ParamValues = {}
+  for (const [key, v] of Object.entries(raw as Record<string, unknown>)) {
+    const d = spec.find((x) => x.key === key)
+    if (!d) {
+      problems.push(`「${key}」不是这里可配置的参数`)
+      continue
+    }
+    const bad = (what: string) => problems.push(`「${key}」${what}`)
+    if (d.type === 'bool') {
+      if (typeof v !== 'boolean') bad('要是 true 或 false')
+      else values[key] = v
+    } else if (d.type === 'number') {
+      const n = typeof v === 'number' ? v : Number(v)
+      if (!Number.isFinite(n)) bad('要是数字')
+      else values[key] = n
+    } else if (d.type === 'multi') {
+      if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) bad('要是字符串数组')
+      else {
+        const bad2 = v.filter((x) => d.options.length && !d.options.includes(x))
+        if (bad2.length) bad(`里有不在可选项中的值：${bad2.join('、')}`)
+        else values[key] = v as string[]
+      }
+    } else if (d.type === 'select') {
+      if (typeof v !== 'string') bad('要是字符串')
+      else if (d.options.length && !d.options.includes(v)) bad(`要是 ${d.options.join(' / ')} 之一`)
+      else values[key] = v
+    } else {
+      if (typeof v === 'object') bad('要是文字')
+      else values[key] = String(v)
+    }
+  }
+  return problems.length ? { error: problems.join('；') } : { values }
+}
+
+/** 校验 AI 给出的测试步骤：字段和类型、id 不重复、至少一条、环境合法 */
+export function resolveTestSteps(json: unknown): { steps?: TestStep[]; error?: string } {
+  const obj = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  const raw = Array.isArray(obj) ? obj : obj?.steps
+  const arr = z.array(TEST_STEP_SHAPE).max(40).safeParse(raw)
+  if (!arr.success) return { error: z.prettifyError(arr.error) }
+  if (!arr.data.length) return { error: '至少要有一步；项目确实没有可执行的命令时就留在说明里，不要输出空列表' }
+  const ids = new Set<string>()
+  const steps = arr.data.map((s, i): TestStep => {
+    const base =
+      (s.id || `step-${i + 1}`)
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, '-')
+        .slice(0, 40) || `step-${i + 1}`
+    let id = base
+    for (let n = 2; ids.has(id); n++) id = `${base.slice(0, 36)}-${n}`
+    ids.add(id)
+    return { ...s, id }
+  })
+  return { steps }
+}
+
 export function extractJson(text: string): { json?: unknown; rest: string; error?: string } {
   const blocks = [...text.matchAll(/```(?:json)?\s*\n([\s\S]*?)```/g)]
   let raw = blocks.at(-1)?.[1]
@@ -538,6 +764,15 @@ export function resolveProposal(
   json: unknown,
   ctx: AssistContext,
 ): { proposal?: Proposal; error?: string } {
+  if (kind === 'params') {
+    const r = resolveParamValues(json, paramSpecFor(ctx))
+    if (r.error) return { error: r.error }
+    return { proposal: { kind: 'params', workflowId: ctx.target?.id ?? '', values: r.values! } }
+  }
+  if (kind === 'teststeps') {
+    const r = resolveTestSteps(json)
+    return r.error ? { error: r.error } : { proposal: { kind: 'teststeps', steps: r.steps! } }
+  }
   if (kind === 'skill') {
     const p = SkillDraft.safeParse(json)
     if (!p.success) return { error: issues(p.error) }
@@ -743,8 +978,9 @@ export async function applyProposal(
     cats.push(c)
     return c.id
   }
-  // Skill 和 MCP 工具由各自的页面应用
-  if (p.kind === 'skill' || p.kind === 'mcp') return { created: [], categories: [] }
+  // Skill、MCP 工具由各自的页面应用；参数和测试步骤只填进项目设置的表单草稿
+  if (p.kind === 'skill' || p.kind === 'mcp' || p.kind === 'params' || p.kind === 'teststeps')
+    return { created: [], categories: [] }
   if (p.kind === 'agent')
     return {
       agent: { ...p.agent, categoryId: await categoryId(p.newCategory, p.agent.categoryId) },

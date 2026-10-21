@@ -1,5 +1,85 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SETTINGS: Record<string, string> = {
+  // 项目设置：测试步骤和 Agent 参数
+  测试步骤: 'Test steps',
+  停用: 'Disabled',
+  '，已停用': ', disabled',
+  'AI 生成步骤': 'AI generate steps',
+  'AI 生成测试步骤': 'AI generate test steps',
+  'AI 配置': 'AI configure',
+  'AI 配置参数': 'AI configure parameters',
+  'AI 配置全部': 'AI configure all',
+  'AI 配置「{name}」的参数': 'AI configure the parameters of "{name}"',
+  'AI 配置「{name}」': 'AI configure "{name}"',
+  '在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单':
+    'Reads the project folder without changing anything and suggests parameter values; they are applied to the form only after you confirm',
+  '在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单':
+    'Reads the project folder without changing anything and writes test steps from the actual scripts and commands; they are applied to the form only after you confirm',
+  '说说你的要求，或者直接让它按项目情况填。': 'Describe what you need, or just let it fill things in from the project.',
+  '说说你的要求，或者直接让它按项目情况生成。':
+    'Describe what you need, or just let it generate them from the project.',
+  '补充要求，例如「端到端测试在 WSL 里跑」': 'Extra instructions, e.g. "run end-to-end tests in WSL"',
+  '补充要求，例如「编译要放在单元测试前面」': 'Extra instructions, e.g. "compile before the unit tests"',
+  参数值会显示在这里: 'Parameter values show up here',
+  测试步骤会显示在这里: 'Test steps show up here',
+  填进表单: 'Fill into the form',
+  '这些值只会填进表单，保存项目设置后才生效':
+    'These values only fill the form; they take effect after you save the project settings',
+  '这些步骤只会填进表单，保存项目设置后才生效':
+    'These steps only fill the form; they take effect after you save the project settings',
+  '已填进表单，确认保存后生效': 'Filled into the form; confirm and save to apply',
+  没有给出可用的值: 'No usable values were given',
+  '测试 Agent 按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时 Agent 会自己找命令并建议你补上。':
+    'The test Agent runs builds, tests and checks following these steps. They are snapshotted into a task when it starts, so later edits here do not affect conversations already under way; without any steps the Agent finds commands itself and suggests adding them.',
+  '还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。':
+    'No test steps yet. For a new Node project, "AI analyze this folder" fills in a set based on the scripts.',
+  '步骤名，例如「单元测试」': 'Step name, e.g. "Unit tests"',
+  步骤名: 'Step name',
+  要执行的命令: 'Command to run',
+  工作目录: 'Working directory',
+  '工作目录（相对项目根，可空）': 'Working directory (relative to the project root, optional)',
+  执行条件: 'Condition',
+  '执行条件，例如「仅改了 web/ 时」': 'Condition, e.g. "only when web/ changed"',
+  超时秒数: 'Timeout (seconds)',
+  '超时（秒）': 'Timeout (s)',
+  加一条步骤: 'Add a step',
+  'WSL 发行版': 'WSL distro',
+  '{n} 个参数': '{n} parameters',
+  必须填: 'Required',
+  '同时影响 {names}': 'Also affects {names}',
+  步骤名不能为空: 'Step name is required',
+  命令不能为空: 'Command is required',
+  '第 {n} 条：步骤名不能为空': 'Step {n}: name is required',
+  '第 {n} 条：命令不能为空': 'Step {n}: command is required',
+  '第 {n} 条：环境只能是 {list}': 'Step {n}: environment must be one of {list}',
+  '这条标了 WSL，但当前不是 Windows，只能按 bash 执行；执行不了就登记为延期验证':
+    'This step is marked WSL but the current system is not Windows, so it can only run through bash; register it as deferred verification if it cannot run',
+  '在 WSL 里执行，不要直接在本机的 PowerShell / cmd 里跑': 'Run it in WSL, not in the local PowerShell / cmd',
+  按项目所在系统和命令自己选择执行环境: 'Pick the environment from the system and the command',
+  '同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字':
+    'Compile one at a time; replace <Target> and <.uproject> with the real names in the project',
+  '有 Lua 改动时执行；按项目实际用的 Lua 版本换命令':
+    'Runs when Lua changed; adjust the command for the Lua version the project uses',
+  '可选；需要 Editor 的验证登记为延期验证':
+    'Optional; checks that need the Editor are registered as deferred verification',
+  编译: 'Compile',
+  'Lua 语法检查': 'Lua syntax check',
+  自动化测试: 'Automation tests',
+  格式检查: 'Format check',
+  静态检查: 'Static analysis',
+  单元测试: 'Unit tests',
+  构建: 'Build',
+  类型检查: 'Type check',
+  代码检查: 'Lint',
+  端到端测试: 'End-to-end tests',
+  'Windows 上在 WSL 里执行，不要在 PowerShell 里直接跑': 'On Windows run it in WSL, not directly in PowerShell',
+  '按这个项目的情况，把测试与验收的参数配一下': 'Fill in the test and verification parameters for this project',
+  '这个项目在 Windows 上，端到端测试要在 WSL 里跑，按这个填':
+    'This project is on Windows and its end-to-end tests run in WSL; fill it in accordingly',
+  '按项目现在的脚本，生成一套类型检查、单元测试、端到端和构建的步骤':
+    'Generate type check, unit test, end-to-end and build steps from the current scripts',
+  '这是 UE 项目，补上编译和 Lua 语法检查的步骤': 'This is an Unreal project; add compile and Lua syntax check steps',
+
   // 设置弹窗与分类
   设置: 'Settings',
   设置分类: 'Settings sections',
@@ -42,6 +122,18 @@ export const EN_SETTINGS: Record<string, string> = {
     'Show a system notification when a task finishes or fails while the page is in the background. Requires browser notification permission.',
   '浏览器没有允许通知，可以在地址栏左侧的网站设置里打开':
     'Notifications are blocked by the browser. You can allow them in the site settings next to the address bar.',
+  新建文件的格式: 'Format of new files',
+  '面板写说明文件、部署全局说明，以及交给 Agent 的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。':
+    'Applies to the doc files the panel writes, the global instructions it deploys, and the convention it gives Agents. The default is UTF-8 without BOM and LF line endings: when you edit on Windows and run tests in WSL or Linux, scripts do not fail with "bad interpreter" because of CRLF or a BOM. Each project can override this.',
+  编码: 'Encoding',
+  文件编码: 'File encoding',
+  'UTF-8（不带 BOM）': 'UTF-8 (no BOM)',
+  换行符: 'Line endings',
+  文件格式: 'File format',
+  '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。':
+    'Used for text files created or rewritten in this project, and the convention Agents follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
+  '和全局设置不同时，在这里单独指定': 'Override the global setting here',
+  跟随全局设置: 'Follow the global setting',
 
   // 默认 CLI
   'Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。':

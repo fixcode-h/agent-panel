@@ -501,6 +501,53 @@ export type ProjectCategory = z.infer<typeof ProjectCategory>
 /** 每个工作流一份暴露项取值（key 是工作流 id，值是 Workflow.expose 里的 key → 值） */
 export const WorkflowParamsById = z.record(z.string(), z.record(z.string(), ParamValue))
 
+/**
+ * 项目里的一条测试步骤：按顺序执行命令、检查环境。
+ * 步骤属于项目而不是工作流——同一个工作流给不同项目用时，命令各不相同。
+ * 新建对话时整份步骤快照进任务，之后改项目设置不影响已经开始的对话。
+ */
+export const TEST_STEP_ENVS = ['auto', 'wsl', 'powershell', 'cmd', 'bash'] as const
+
+/**
+ * 文本文件的写法：编码（带不带 BOM）和换行符。
+ * 项目在 Windows 上编辑、在 WSL / Linux 里跑脚本时，CRLF 和 BOM 会让 shebang 失效，
+ * 所以默认 UTF-8 无 BOM + LF。
+ */
+export const FILE_FORMATS = ['utf8', 'utf8-bom'] as const
+export const FILE_EOLS = ['lf', 'crlf'] as const
+export const FileFormat = z.object({
+  encoding: z.enum(FILE_FORMATS).catch('utf8').default('utf8'),
+  eol: z.enum(FILE_EOLS).catch('lf').default('lf'),
+})
+export type FileFormat = z.infer<typeof FileFormat>
+/** 没配置时用的格式：UTF-8 无 BOM、LF */
+export const DEFAULT_FILE_FORMAT: FileFormat = { encoding: 'utf8', eol: 'lf' }
+
+export const TestStep = z.object({
+  id: z.string().trim().min(1).max(40),
+  /** 显示名，例如「类型检查」「编译」 */
+  name: z.string().trim().min(1, t('步骤名不能为空')).max(60),
+  /** 要执行的命令原文 */
+  command: z.string().trim().min(1, t('命令不能为空')).max(2000),
+  /** 在哪执行：auto 按项目所在系统和命令自己判断 */
+  env: z.enum(TEST_STEP_ENVS).catch('auto').default('auto'),
+  /** 相对项目根的工作目录；空表示项目根 */
+  cwd: z.string().trim().max(300).default(''),
+  /** 执行条件，例如「仅在改了 web/ 时」「仅发布前」；空表示总是执行 */
+  when: z.string().trim().max(120).default(''),
+  /** 超时（秒）；0 表示不限 */
+  timeoutSec: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .catch(0)
+    .default(0),
+  note: z.string().trim().max(300).default(''),
+  enabled: z.boolean().default(true),
+})
+export type TestStep = z.infer<typeof TestStep>
+
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
 function migrateProject(v: unknown) {
   if (!v || typeof v !== 'object') return v
@@ -530,8 +577,30 @@ const ProjectFields = z.object({
   agentSet: z.boolean().default(false),
   /** 工作流暴露项的取值，每个工作流一份（key 是工作流 id） */
   workflowParams: WorkflowParamsById.default({}),
+  /**
+   * 这个项目的测试步骤：新建对话时快照进任务，测试 Agent 按它执行。
+   * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
+   */
+  testSteps: z.array(TestStep).max(40).default([]),
+  /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
+  wslDistro: z.string().trim().max(60).default(''),
+  /**
+   * 这个项目里新建 / 改写的文本文件用什么编码和换行符；
+   * 留空时跟随设置里的全局格式（默认 UTF-8 无 BOM + LF）
+   */
+  fileFormat: FileFormat.optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
+  /**
+   * 子对话默认在独立分支（git worktree）里执行：几个子对话同时改一个目录时互不干扰。
+   * 不是 git 仓库、没有提交或建不出来时退回项目目录，不挡住子对话创建
+   */
+  childIsolate: z.boolean().default(true),
+  /**
+   * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
+   * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
+   */
+  sortOrder: z.number().int().min(0).optional(),
 })
 export const ProjectInput = z.preprocess(migrateProject, ProjectFields)
 export type ProjectInput = z.infer<typeof ProjectFields>
@@ -607,8 +676,11 @@ export const NewTaskInput = z.object({
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
   /** chat 模式：Agent 参数的值（没给的用默认值） */
   params: z.record(z.string(), ParamValue).default({}),
-  /** 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以 */
-  isolate: z.boolean().default(false),
+  /**
+   * 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以。
+   * 不传时按项目设置：子对话默认隔离（见 Project.childIsolate），其他任务默认不隔离
+   */
+  isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
   askUser: z.boolean().default(false),
 })
@@ -635,21 +707,9 @@ export const PresenceInput = z.object({
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
-  /** 任务正在执行时：true 先停下当前这一轮再发送；否则排队，这一轮完成后自动接着处理 */
+  /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
-  /** 任务正在执行时：插话交给正在跑的 CLI，由它判断相关性（相关的调整方向，无关的等这一轮完成后再处理）；CLI 收不下时排队（见 CLI 配置的 steer、notes） */
-  steer: z.boolean().default(false),
 })
-/** 执行中发来、排队等这一轮完成后再处理的要求 */
-export const QueuedMessage = z.object({
-  id: z.string(),
-  text: z.string(),
-  attachments: z.array(Attachment).default([]),
-  at: z.string(),
-  /** 已经登记给正在跑的调用，等它用面板的工具取走（见 CLI 配置的 notes）；取走了会从队列里去掉 */
-  note: z.boolean().default(false),
-})
-export type QueuedMessage = z.infer<typeof QueuedMessage>
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z
   .object({
@@ -998,6 +1058,13 @@ export const TaskData = z.object({
    * 执行时按这里换成具体的技能名。和上面的工作流快照一起定下来，之后改项目设置不影响这个对话
    */
   skillSlots: z.record(z.string(), z.string()).default({}),
+  /**
+   * 新建对话时项目里的测试步骤快照：测试 Agent 按它执行，并把原文交给 CLI。
+   * 之后改项目设置不影响已经开始的对话。旧任务没有时为空（Agent 自己找命令）。
+   */
+  testSteps: z.array(TestStep).default([]),
+  /** 新建对话时面板所在系统（windows / linux / darwin）：决定标了 wsl 的步骤怎么执行 */
+  platform: z.string().default(''),
   /** 工作流的名字，列表里显示（摘要不带上面的完整工作流） */
   workflowName: z.string().default(''),
   /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */
@@ -1006,8 +1073,6 @@ export const TaskData = z.object({
   requests: z.array(TaskRequest).default([]),
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
   worktree: TaskWorktree.nullable().default(null),
-  /** 执行中排队的要求：这一轮完成后按顺序处理；失败或暂停时留着，由用户决定 */
-  queue: z.array(QueuedMessage).default([]),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
@@ -1023,6 +1088,11 @@ export const TaskData = z.object({
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
   prewarming: z.boolean().default(false),
+  /**
+   * 名下正在执行的子对话数：只在列表摘要里带，由服务端按子对话的 working 算好。
+   * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
+   */
+  childrenWorking: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /** 用户最近一次发消息的时间：只在列表摘要里带（摘要去掉了消息），排序和显示用 askedAt() 取 */
@@ -1045,10 +1115,18 @@ export const TaskData = z.object({
 })
 export type TaskData = z.infer<typeof TaskData>
 
-/** 旧任务的消息用节点下标记录所属节点，换成节点 id */
+/**
+ * 旧任务的消息用节点下标记录所属节点，换成节点 id。
+ * 更早的版本还有 queue（执行中排队的追加要求）：现在执行中收到的消息直接进对话，
+ * 读旧数据时把没处理的普通要求补到对话末尾，让用户仍然看得到；等 CLI 取走的补充已经不成立了，丢掉。
+ */
 function migrateTask(v: unknown) {
   if (!v || typeof v !== 'object') return v
-  const t = v as { steps?: { id?: string }[]; messages?: { step?: unknown }[] }
+  const t = v as {
+    steps?: { id?: string }[]
+    messages?: { step?: unknown; at?: string }[]
+    queue?: { id?: string; text?: unknown; attachments?: unknown; at?: unknown; note?: unknown }[]
+  }
   const steps = (t.steps ?? []).map((s, i) => ({
     ...s,
     id: s.id ?? `s${i}`,
@@ -1057,7 +1135,22 @@ function migrateTask(v: unknown) {
   const messages = (t.messages ?? []).map((m) =>
     typeof m.step === 'number' ? { ...m, step: m.step >= 0 ? (steps[m.step]?.id ?? '') : '' } : m,
   )
-  return { ...t, steps, messages }
+  const { queue, ...rest } = t
+  if (!Array.isArray(queue) || !queue.length) return { ...rest, steps, messages }
+  const now = new Date().toISOString()
+  const moved = queue
+    .filter((q) => q && q.note !== true && typeof q.text === 'string' && q.text.trim())
+    .map((q, i) => ({
+      id: typeof q.id === 'string' && q.id ? q.id : `q${i}`,
+      role: 'user' as const,
+      agentId: '',
+      step: '',
+      text: q.text as string,
+      tools: [],
+      ...(Array.isArray(q.attachments) && q.attachments.length ? { attachments: q.attachments } : {}),
+      at: typeof q.at === 'string' && q.at ? q.at : now,
+    }))
+  return { ...rest, steps, messages: [...messages, ...moved] }
 }
 
 export const Task = z.preprocess(migrateTask, TaskData.extend(Meta.shape))
@@ -1187,6 +1280,11 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /**
+   * 全局的文本文件格式：项目没单独设置时用它，默认 UTF-8 无 BOM + LF。
+   * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来
+   */
+  fileFormat: FileFormat.prefault({}),
   /** 界面语言：auto 跟随浏览器 */
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /** UI 设计里生成图片用的 CLI 和模型（目前只有 Codex 内置了生图工具）；模型为空用这个 CLI 的高档 */

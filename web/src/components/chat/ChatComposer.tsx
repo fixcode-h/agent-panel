@@ -74,6 +74,8 @@ export function ChatComposer({
   sending,
   canSend,
   size = 'md',
+  dropScope,
+  onDropOver,
   className,
 }: {
   value: string
@@ -111,8 +113,8 @@ export function ChatComposer({
   /** 右下角默认按钮前面再加的按钮（例如「重试」） */
   leading?: React.ReactNode
   /**
-   * 正在回复时：没写东西只显示停止；写了东西显示「排队」「发送」「停止」——
-   * 发送（Enter）是补充给正在进行的这一轮，排队是等这一轮结束再发
+   * 正在回复时：没写东西只显示停止；写了东西显示「发送」「停止」——
+   * 发送（Enter）把要求交给正在进行的这一轮。给了 onQueue 时另外显示「排队」（UI 设计的对话用来等这一轮结束）
    */
   running?: boolean
   onStop?: () => void
@@ -121,6 +123,13 @@ export function ChatComposer({
   /** 能不能发：默认是有文字或附件 */
   canSend?: boolean
   size?: 'sm' | 'md'
+  /**
+   * 拖放文件的接收范围：给了就在这个元素上接收（对话页任意位置都能拖进来），
+   * 提示和拖入状态由外面显示，输入框自己不再画第二层提示
+   */
+  dropScope?: HTMLElement | null
+  /** 页面级的拖入状态交给外面画（传了 dropScope 时用） */
+  onDropOver?: (over: boolean) => void
   className?: string
 }) {
   const own = useRef<RichInputHandle>(null)
@@ -161,7 +170,13 @@ export function ChatComposer({
   )
   /** 图片卡片显示小缩略图 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
-  const drop = useDropPaste(addFiles)
+  const drop = useDropPaste(addFiles, dropScope)
+  // 页面级的拖入进度交给外面画整页提示，输入框自己不再叠一层
+  const overCb = useRef(onDropOver)
+  overCb.current = onDropOver
+  useEffect(() => {
+    overCb.current?.(drop.over)
+  }, [drop.over])
   // 切到这个对话时光标放进输入框，接着写
   useEffect(() => {
     if (!disabled && window.matchMedia?.('(pointer: fine)').matches) editor.current?.focus()
@@ -176,12 +191,12 @@ export function ChatComposer({
         sm
           ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
           : 'mx-auto max-w-(--content-w) rounded-[20px] bg-card focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
-        drop.over && 'border-accent ring-2 ring-accent/25',
+        drop.over && !dropScope && 'border-accent ring-2 ring-accent/25',
         className,
       )}
     >
       {menus}
-      {drop.over && <DropHint />}
+      {drop.over && !dropScope && <DropHint />}
       <AttachmentChips items={files.items} onRemove={removeFile} />
       {above}
       <RichInput
@@ -250,7 +265,7 @@ export function ChatComposer({
                   disabled={!ready || !!disabled}
                   sending={sending}
                   size={size}
-                  title={t('补充给正在进行的这一轮（Enter）')}
+                  title={t('交给正在进行的这一轮（Enter）')}
                 />
               )}
               {onStop && <StopButton onClick={onStop} size={size} />}

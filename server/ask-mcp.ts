@@ -13,7 +13,8 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
  * Claude Code、Codex 有自己的提问协议，不走这里。
  *
  * 同一轮里还能挂上 read_user_notes：CLI 没有插话协议时（见 CLI 配置的 notes），
- * 用户在它执行中发的要求先排进队列，模型用这个工具取走——取走的那些从队列里去掉，没取的等这一轮结束后照常处理。
+ * 用户在它执行中发的要求会直接记进对话并登记给它，模型用这个工具取走；这一轮结束还没取走的，
+ * 面板会马上开新一轮接着处理。
  *
  * 对话页开着时再挂上 wait_user_message：模型回复完调用它停在进程里等用户下一句，
  * 面板把新消息直接作为工具结果交回去，不用结束进程再 --resume。
@@ -39,7 +40,8 @@ const sessions = new Map<
 const TOOL = {
   name: 'ask_user',
   description:
-    '向用户提问并等他在界面上回答。需要用户做选择、补充信息、确认方向时用它，不要把问题写成普通文字。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」；用户也能自己填写别的答案。',
+    '向用户提问并等他在界面上回答。需要用户做选择、补充信息、确认方向时用它，不要把问题写成普通文字。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」；用户也能自己填写别的答案。' +
+    '问题本身可以同时选好几项时（例如「现在修哪些」「要包含哪些」「要改哪几个文件」），必须把 multiSelect 设为 true：界面会变成方框、可以多选，标题后面也会标出「多选」。只有一个答案能选时才用单选（不写或 false）。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -58,7 +60,11 @@ const TOOL = {
                 required: ['label'],
               },
             },
-            multiSelect: { type: 'boolean', description: '能不能多选' },
+            multiSelect: {
+              type: 'boolean',
+              description:
+                '问题可以同时选好几项时为 true（例如「现在修哪些」「要包含哪些」）。为 true 时界面按多选显示，用户能勾选多个选项',
+            },
           },
           required: ['question'],
         },
@@ -142,7 +148,7 @@ async function callAsk(s: NonNullable<ReturnType<typeof sessions.get>>, args: un
 /** 没有补充时等一会儿再回答：用户可能在模型检查之后的几秒里发来补充 */
 const NOTES_WAIT_MS = 5000
 
-/** 取执行中的补充：拿到的同时从排队里去掉（队列里已经没有了就不算数，例如用户刚撤回了） */
+/** 取执行中的补充：拿到的同时交出去，之后再取只给新的 */
 async function callNotes(s: NonNullable<ReturnType<typeof sessions.get>>) {
   let list = s.notes?.() ?? []
   const until = Date.now() + NOTES_WAIT_MS
