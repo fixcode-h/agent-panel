@@ -53,6 +53,7 @@ function ProjectHome({ project }: { project: Project }) {
   const list = all.filter((t) => !t.archived).sort(byAskedAt)
   // 有任务真的在跑时每秒刷新，耗时跟着走
   const now = useNow(list.some((t) => t.working))
+  const groups = groupByState(list)
   const wf = projectDefaultWorkflow(project, projectCategories, workflows)
   const open = (sub?: string) => go({ page: 'projects', id: project.id, sub })
   // 导入别人导出的任务：放进这个项目，只能查看
@@ -131,23 +132,37 @@ function ProjectHome({ project }: { project: Project }) {
             }}
           />
 
-          <section className="flex flex-col">
-            <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
-              <span className="flex-1">{t('任务 · {n}', { n: list.length })}</span>
-              {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
-            </h2>
-            {list.length === 0 && tasksLoaded ? (
+          {list.length === 0 && tasksLoaded ? (
+            <section className="flex flex-col">
+              <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
+                <span className="flex-1">{t('任务 · {n}', { n: 0 })}</span>
+                {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
+              </h2>
               <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.8125rem] text-subtle">
                 {t('还没有任务。在上面描述要做的事，Agent 会按工作流完成。')}
               </p>
-            ) : (
-              <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
-                {list.map((tk) => (
-                  <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
-                ))}
-              </ul>
-            )}
-          </section>
+            </section>
+          ) : (
+            groups.map((g, i) => (
+              <section key={g.key} className="flex flex-col">
+                <h2 className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium text-subtle">
+                  <span className={cn('h-1.5 w-1.5 rounded-full', g.dot)} aria-hidden />
+                  <span className="flex-1">
+                    {g.label} · {g.items.length}
+                  </span>
+                  {/* 归档数只在最后一组的标题上说一次 */}
+                  {i === groups.length - 1 && archived > 0 && (
+                    <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>
+                  )}
+                </h2>
+                <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+                  {g.items.map((tk) => (
+                    <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
+                  ))}
+                </ul>
+              </section>
+            ))
+          )}
         </div>
       </main>
       {/* 文件栏：宽屏是右侧常驻的一列（宽度可拖），窄屏放不下时从右边滑出，盖住主内容而不是把它挤扁 */}
@@ -181,6 +196,33 @@ function ProjectHome({ project }: { project: Project }) {
       )}
     </div>
   )
+}
+
+/** 这个任务现在要不要你处理：有确认请求、出错了、或者做完了还没看 */
+function needsYou(tk: Task) {
+  if (tk.working) return tk.requests.length > 0
+  return (
+    tk.requests.length > 0 ||
+    tk.status === 'failed' ||
+    (!!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt && !tk.childrenWorking)
+  )
+}
+
+/**
+ * 项目首页按状态分组：要你处理的放最上面，然后是正在执行的，其余按最近的要求排。
+ * 组里保持原来的顺序（最近发过要求的在前），空的组不显示
+ */
+function groupByState(list: Task[]) {
+  const all = [
+    { key: 'you', label: t('需要你处理'), dot: 'bg-warning', items: [] as Task[] },
+    { key: 'running', label: t('执行中'), dot: 'bg-accent', items: [] as Task[] },
+    { key: 'rest', label: t('其他对话'), dot: 'bg-subtle', items: [] as Task[] },
+  ]
+  for (const tk of list) {
+    const g = needsYou(tk) ? all[0] : tk.working || tk.childrenWorking ? all[1] : all[2]
+    g.items.push(tk)
+  }
+  return all.filter((g) => g.items.length)
 }
 
 /** 任务列表里的一行：点开任务，右键可以暂停 / 继续、重命名、归档、删除 */

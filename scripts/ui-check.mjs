@@ -953,6 +953,12 @@ try {
       .click()
     await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '合并时编译'])
     await p.keyboard.press('Escape')
+    // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
+    await p.locator('#task-prompt').click()
+    await p.keyboard.type('到货通知的按钮在详情页上点了没反应')
+    await check(p, '项目首页-相关对话', ['发到这里', '需要你处理'])
+    await p.keyboard.press('ControlOrMeta+a')
+    await p.keyboard.press('Backspace')
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
 
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

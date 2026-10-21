@@ -1,9 +1,21 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, Bot, Check, ChevronDown, FolderGit2, GitBranch, Workflow as WorkflowIcon, X } from 'lucide-react'
+import {
+  ArrowUp,
+  Bot,
+  Check,
+  ChevronDown,
+  CornerDownRight,
+  FolderGit2,
+  GitBranch,
+  MessageSquare,
+  Workflow as WorkflowIcon,
+  X,
+} from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
 import { resolveParams } from '@shared/agent-role'
+import { relatedTasks } from '@shared/related'
 import { defaultCli, defaultSettings } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -172,6 +184,38 @@ export function TaskComposer({
     (workflow || !missing.length) &&
     !busy &&
     !files.uploading
+
+  // 项目首页：要求看起来和已有的对话是同一件事时，提示可以直接发过去接着做，不用新开一个对话从头了解
+  const asked = useDeferredValue(prompt)
+  const related = useMemo(
+    () =>
+      fixed && !workflow
+        ? relatedTasks(
+            asked,
+            tasks.filter((x) => x.projectId === fixed.id && !x.parentTaskId && !x.archived && !x.imported),
+          )
+        : [],
+    [asked, tasks, fixed, workflow],
+  )
+  const sendTo = async (id: string) => {
+    if ((!prompt.trim() && !files.attachments.length) || busy || files.uploading) return
+    setBusy(true)
+    try {
+      onCreated(
+        await api.sendMessage(
+          id,
+          forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
+          files.attachments,
+        ),
+      )
+      setPrompt('')
+      files.clear()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const start = async () => {
     if (!canStart) return
@@ -379,6 +423,28 @@ export function TaskComposer({
               </PopoverContent>
             </Popover>
           )}
+        </div>
+      )}
+      {related.length > 0 && (
+        <div className="-mt-1 flex flex-col gap-1 px-1" aria-label={t('可能相关的对话')}>
+          <span className="text-xs text-subtle">{t('看起来和这些对话是同一件事，可以直接发过去接着做：')}</span>
+          {related.map(({ task: x }) => (
+            <button
+              key={x.id}
+              type="button"
+              disabled={busy}
+              onClick={() => sendTo(x.id)}
+              title={t('把这条要求发到「{title}」', { title: x.title })}
+              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
+              <span className="min-w-0 flex-1 truncate">{x.title}</span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-subtle group-hover:text-accent">
+                <CornerDownRight className="h-3.5 w-3.5" />
+                {t('发到这里')}
+              </span>
+            </button>
+          ))}
         </div>
       )}
       {busyProject && canIsolate && !isolate && (

@@ -567,4 +567,10 @@ export const EN_TASKS: Record<string, string> = {
     'When a sub-conversation submits its branch for a build, this step runs after merging back into the original folder; the merge is committed only if it passes',
   合并时编译: 'Build on merge',
   '已提交编译，等面板合回原目录编译': 'Submitted for build; waiting for the panel to merge it back and build',
+  可能相关的对话: 'Possibly related chats',
+  '看起来和这些对话是同一件事，可以直接发过去接着做：':
+    'These chats look like the same piece of work. You can send it there and continue:',
+  '把这条要求发到「{title}」': 'Send this request to “{title}”',
+  发到这里: 'Send here',
+  其他对话: 'Other chats',
 }
