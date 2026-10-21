@@ -312,6 +312,23 @@ try {
     if (after < before + 100) errors.push(`工作流-属性栏：拖动后宽度是 ${after}，没有变宽`)
   }
   await check(p, '工作流-属性栏宽度')
+  // 执行步骤可以折叠：收起后只剩标题行和一行摘要，输入框不再占高度；再点一下展开回来
+  {
+    const fold = p.getByRole('button', { name: '收起这一步' }).first()
+    if (!(await fold.count())) errors.push('工作流-步骤折叠：步骤上没有折叠按钮')
+    else {
+      await fold.click()
+      await p.waitForTimeout(300)
+      if (!(await p.getByRole('button', { name: '展开这一步' }).count()))
+        errors.push('工作流-步骤折叠：收起后按钮没有变成「展开这一步」')
+      if (await p.getByLabel('这一步要做的事').count())
+        errors.push('工作流-步骤折叠：收起后「这一步要做的事」还占着位置')
+      await check(p, '工作流-步骤折叠')
+      await p.getByRole('button', { name: '展开这一步' }).first().click()
+      await p.waitForTimeout(300)
+      if (!(await p.getByLabel('这一步要做的事').count())) errors.push('工作流-步骤折叠：再点一下没有展开')
+    }
+  }
   // 内置工作流：添加后连同 Agent 一起建好，直接打开
   await p.getByRole('button', { name: '添加内置或导入的工作流' }).click()
   await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()
