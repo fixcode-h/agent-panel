@@ -2117,10 +2117,12 @@ export async function runEngineTurn(host: EngineHost) {
 
   if (first) {
     const inv: Invocation = { workflow: wf!, flow: flow!, parentId: '', slot: '', round: 0, input: '', depth: 0, run }
+    // 前面已经直接回答过几条时，这次不是这个对话的第一条要求
+    const replanned = (mainStep(task)?.rounds ?? 0) > 0
     const main = openMain(host, inv)
     const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, main.step.agentId)
     if (turn) host.changed(true)
-    const r = await mainTurn(host, main, 'plan', firstPlanEvent(host.prompt))
+    const r = await mainTurn(host, main, 'plan', firstPlanEvent(host.prompt, !replanned))
     if (turn) endTurn(task, turn, r.ok ? 'done' : r.stopped ? 'stopped' : 'failed')
     if (!r.ok) {
       if (host.prewarm) {

@@ -209,13 +209,15 @@ export function planEvent(prompt: string, run: number, blocked?: { title: string
 }
 
 /**
- * 常驻编排器收到这个项目对话的第一条要求：先分析，再决定起不起运行。
- * 只有带常驻编排器的工作流（多节点 / 有调度）在第一次要求时才会走这里。
+ * 常驻编排器收到这个项目对话的要求时（还没有起过运行）：先分析，再决定起不起运行。
+ * first 表示这是第一条要求；前面已经直接回答过几条时用「用户的新要求」。
  */
-export function firstPlanEvent(prompt: string) {
+export function firstPlanEvent(prompt: string, first = true) {
   return [
-    `## 事件：这个对话的第一条要求\n用户说：\n${prompt}`,
-    '这个对话还没有执行过流程图。先分析这条要求，再决定怎么处理。',
+    first ? `## 事件：这个对话的第一条要求\n用户说：\n${prompt}` : `## 事件：用户的新要求\n用户说：\n${prompt}`,
+    first
+      ? '这个对话还没有执行过流程图。先分析这条要求，再决定怎么处理。'
+      : '这个对话还没有执行过流程图（前面只是直接回答）。先分析这条要求，再决定怎么处理。',
     [
       '## 你要决定怎么处理',
       '要按流程图做的事（需求、方案、实现、测试、文档、交付这些按流程图来）时，起一次运行：把这次要做的事写进 input，节点会按顺序执行。',
