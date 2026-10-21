@@ -171,8 +171,17 @@ export interface Orchestra {
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
-  createConversation(title: string, message: string): Promise<{ ok: boolean; id?: string; info: string }>
+  createConversation(
+    title: string,
+    message: string,
+    files?: string[],
+  ): Promise<{ ok: boolean; id?: string; info: string }>
   sendToConversation(id: string, message: string): Promise<{ ok: boolean; info: string }>
+  /** 子对话（连同它的工作流节点）：和父对话通讯、认领要改的文件；子对话之间不能直接通讯 */
+  child: boolean
+  toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
+  claim(paths: string[]): { ok: boolean; info: string }
+  release(paths: string[]): { ok: boolean; info: string }
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
@@ -237,9 +246,23 @@ export interface EngineHost {
     title: string
     message: string
     agentId?: string
+    /** 父对话划给这个子对话的文件 / 目录：创建时替它认领 */
+    files?: string[]
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 父对话发布的全局规则（「/rule」）：子对话和它的工作流节点每次调用都带上，必须遵守。
+   * 父对话自己也带上，分派时提醒子对话
+   */
+  rules?: string[]
+  /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
+  takeInbox?: () => { title: string; text: string }[]
+  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
+  messageParent?: (text: string, question: boolean) => Promise<{ ok: boolean; info: string }>
+  /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
+  claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
+  releaseFiles?: (paths: string[]) => number
 }
 
 const MAX_DEPTH = 6
@@ -539,6 +562,23 @@ function policyPart(host: EngineHost) {
   return `## 授权情况\n${push}\n${tools}`
 }
 
+/** 父对话发布的全局规则：子对话和它的所有节点都要遵守；父对话自己看到的是「你发布的」 */
+function rulesPart(host: EngineHost) {
+  const rules = (host.rules ?? []).map((r) => r.trim()).filter(Boolean)
+  if (!rules.length) return ''
+  const list = rules.map((r, i) => `${i + 1}. ${clip(r, 2000)}`).join('\n')
+  return host.task.parentTaskId
+    ? `## 全局规则（父对话发布，必须遵守）\n${list}\n和其他要求冲突时以这些规则为准；做不到的地方用 message_parent 告诉父对话，不要自己绕过。`
+    : `## 这个对话的全局规则\n你和用户在这个对话里发布的规则，所有子对话都会收到并遵守：\n${list}`
+}
+
+/** 父对话：上一轮之后子对话发来的消息（汇报、提问），这一轮一起处理 */
+function inboxPart(host: EngineHost) {
+  const got = host.takeInbox?.() ?? []
+  if (!got.length) return ''
+  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。`
+}
+
 /**
  * 写文件的格式：项目设置在全局设置里定的编码和换行符。
  * 说清楚是为了避免 Windows 上写出的 CRLF / BOM 让脚本在 WSL / Linux 里跑不起来。
@@ -567,6 +607,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
     statePart(host.task),
     policyPart(host),
+    rulesPart(host),
     fileFormatPart(host),
     '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
@@ -1888,13 +1929,13 @@ function makeOrchestra(
         .map((c) => `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`)
         .join('\n')
     },
-    async createConversation(title, message) {
+    async createConversation(title, message, files) {
       if (!coordinator || !host.createConversation) return { ok: false, info: '这个对话不能创建子对话' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
       if (!title.trim())
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
-      const r = await host.createConversation({ title: title.trim(), message })
+      const r = await host.createConversation({ title: title.trim(), message, files })
       if (r.ok) {
         system(host, t('新建了子对话「{title}」，这条消息交给它处理', { title: r.title || title }), where)
         host.changed(true)
@@ -1908,6 +1949,30 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
+    child: !!task.parentTaskId && !!host.messageParent,
+    async toParent(text, question) {
+      if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
+      if (!text.trim()) return { ok: false, info: 'text 不能为空' }
+      return host.messageParent(text.trim(), question)
+    },
+    claim(paths) {
+      if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
+      const list = paths.map((p) => p.trim()).filter(Boolean)
+      if (!list.length) return { ok: false, info: 'paths 是空的：写要改的文件或目录（相对项目根）' }
+      const r = host.claimFiles(list)
+      const lines = [
+        r.granted.length ? `已认领：${r.granted.join('、')}` : '',
+        r.held.length
+          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。先做别的部分，过一会儿再认领；绕不开就用 message_parent 请父对话协调。`
+          : '',
+      ]
+      return { ok: !r.held.length, info: lines.filter(Boolean).join('\n') }
+    },
+    release(paths) {
+      if (!host.releaseFiles) return { ok: false, info: '这个对话不需要认领文件' }
+      const n = host.releaseFiles(paths.map((p) => p.trim()).filter(Boolean))
+      return { ok: true, info: n ? `已释放 ${n} 条认领` : '没有要释放的认领' }
+    },
     readState() {
       const entries = Object.entries(runState(task))
       if (!entries.length) return '（共享状态还是空的）'
@@ -1919,7 +1984,15 @@ function makeOrchestra(
     status: () => statusTree(host, self.id),
     spawn(tasks) {
       const depth = (self.id.match(/\/sub\//g) ?? []).length
-      if (depth >= MAX_HELPER_DEPTH) return { ids: [], error: '子 Agent 最多派两层，这一层不能再派了，请自己完成' }
+      // 子对话本身已经是父对话派出来的一层：里面再派子 Agent 只允许一层，免得一个项目对话开出太多 CLI
+      const maxDepth = task.parentTaskId ? 1 : MAX_HELPER_DEPTH
+      if (depth >= maxDepth)
+        return {
+          ids: [],
+          error: task.parentTaskId
+            ? '子对话里的子 Agent 只能派一层，这一层不能再派了，请自己完成'
+            : '子 Agent 最多派两层，这一层不能再派了，请自己完成',
+        }
       const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
       if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
       const have = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').length
@@ -2249,6 +2322,8 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     policyPart(host),
+    rulesPart(host),
+    inboxPart(host),
     statePart(host.task),
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
@@ -2280,10 +2355,15 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       }`,
       `## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
-2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会自己列计划并执行。
+2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会按项目的默认工作流列计划并执行。
 3. 只是一般问题、讨论或很小的请求：自己回答或直接处理，不要新建子对话。
-不要同时把同一条消息发给多个子对话。子对话不能再创建子对话。
-子对话默认在独立分支的单独目录里执行：写 message 时不要把「在项目目录里直接改」写进去，也不要让子对话去碰主分支。`,
+一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
+
+## 子对话共用一个目录
+所有子对话都在项目目录里直接改，不建独立分支。为了不互相覆盖：
+- 新建子对话时用 files 写清它负责的文件或目录（相对项目根），面板替它认领；别的子对话改这些文件要等它做完。
+- 两件事会改同一批文件时，交给同一个子对话，或者等前一个做完再交给下一个。
+- 子对话报告文件冲突或者提问时，由你决定谁先做、怎么分，再用 send_to_conversation 告诉它们。`,
     )
   } else if (kind === 'top') {
     parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。`)
@@ -2291,10 +2371,16 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     parts.push(
       planning
         ? `## 执行方式
-你只负责当前这个子对话的任务。简单的问题、分析和小改动直接在对话里做；需要完整流程、跨模块改动或较大的研究时，调用 start_plan 启动工作流，让它按计划执行。你没有创建子对话的能力。`
+你只负责当前这个子对话的任务。要修改代码、跨模块改动或较大的研究时，调用 start_plan 按项目的默认工作流执行（更合适的可选工作流写它的 id）；只是问题、分析或一两行的小改动直接在对话里做。你没有创建子对话的能力。`
         : `## 执行方式
 你只负责当前这个子对话的任务，直接在对话里执行。你没有创建子对话或按工作流启动计划的能力。`,
     )
+    if (host.messageParent)
+      parts.push(`## 和父对话、其他子对话的协作
+你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
+- 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent 请父对话协调。做完一部分可以用 release_files 释放。
+- 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
+- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`)
   }
   return parts.filter(Boolean).join('\n\n')
 }

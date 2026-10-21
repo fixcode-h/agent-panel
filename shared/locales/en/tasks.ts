@@ -329,14 +329,10 @@ export const EN_TASKS: Record<string, string> = {
   查看这次运行的实时输出: 'Open this run to see its live output',
   '这次运行还没有节点。': 'This run has no nodes yet.',
   撤回: 'Withdraw',
-  '在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃':
-    'Run on a separate git branch and directory without touching the project; merge or discard when done',
   独立分支: 'Separate branch',
   '这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。':
     'A task is already running in this project. Two tasks editing one directory can overwrite each other; turn on "Separate branch" to keep them apart.',
   项目当前的分支: "the project's current branch",
-  '没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。':
-    'Could not create a separate branch ({reason}); running in the current directory without isolation.',
   '新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。':
     'The new version is downloaded; it replaces the current one and restarts after running tasks finish. You can also force the update now.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
@@ -513,4 +509,27 @@ export const EN_TASKS: Record<string, string> = {
   工作流里没有这个节点: 'The workflow has no such node',
   '这是导入的任务，只能查看，不能继续执行': 'This is an imported task. It is read-only and cannot be continued',
   导入的任务看不到对方电脑上的文件: "Imported tasks can't show files from the other computer",
+  引用到输入框: 'Quote in the input box',
+  引用: 'Quote',
+  这里没有可以引用到的输入框: 'There is no input box to quote into here',
+  '独立分支：在单独的 git 分支和目录里执行，不改动项目目录，完成后再决定合并还是丢弃；它分出的子对话也在这个目录里':
+    'Separate branch: run on its own git branch and directory without touching the project directory, then merge or discard when done; its sub-conversations work in the same directory',
+  同时执行的子对话: 'Concurrent sub-conversations',
+  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 CLI 进程，跑工作流时更多。':
+    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one CLI process, more when running a workflow.',
+  '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
+  '全局规则只能在项目对话里发布，子对话会自动遵守父对话的规则':
+    "Global rules can only be published in a project conversation; sub-conversations follow their parent's rules automatically",
+  '这个对话的全局规则：\n{list}': 'Global rules of this conversation:\n{list}',
+  '这个对话还没有全局规则。输入「/rule 内容」发布一条，所有子对话都会遵守。':
+    'This conversation has no global rules yet. Type "/rule <text>" to publish one; every sub-conversation will follow it.',
+  已清空全局规则: 'Global rules cleared',
+  '没有第 {n} 条规则': 'There is no rule {n}',
+  '已删除全局规则：{text}': 'Global rule removed: {text}',
+  '已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。':
+    "Global rule published: {text}. Every sub-conversation of this conversation will follow it; it is not written to the project's AGENTS.md.",
+  '这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。':
+    'These files were also changed by other sub-conversations: {list}. The parent conversation has been asked to coordinate; check the content before merging.',
+  '对话正在执行，等这一轮结束或停止后再归档':
+    'The conversation is running. Archive it after this turn ends or after stopping it',
 }

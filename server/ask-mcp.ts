@@ -6,6 +6,8 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import type { AskQuestion } from '../shared/schema.ts'
 import type { AskReply, CliEvent } from './exec/parsers.ts'
+import type { Orchestra } from '../shared/engine.ts'
+import { callOrchTool, orchTools } from './orch-mcp.ts'
 
 /**
  * 给没有「向用户提问」通道的 CLI（无界面运行的 Command Code、Gemini CLI）一个提问工具：
@@ -18,6 +20,9 @@ import type { AskReply, CliEvent } from './exec/parsers.ts'
  *
  * 对话页开着时再挂上 wait_user_message：模型回复完调用它停在进程里等用户下一句，
  * 面板把新消息直接作为工具结果交回去，不用结束进程再 --resume。
+ *
+ * 编排工具（派子 Agent、分派子对话、和父对话通讯、认领文件，见 orch-mcp.ts）也挂在这同一个服务上：
+ * 一次调用只给 CLI 一个面板 MCP，少一个连接，配置文件里也只多一项。
  */
 
 type AskEvent = Extract<CliEvent, { type: 'ask' }>
@@ -33,6 +38,8 @@ const sessions = new Map<
     notes?: () => string[]
     /** 等用户在这个对话里的下一句；用户离开时返回空 */
     wait?: () => Promise<string | null>
+    /** 编排工具：工作流节点和对话的调用才有 */
+    orch?: Orchestra
     pending: Set<(r: AskReply) => void>
   }
 >()
@@ -162,13 +169,14 @@ async function callNotes(s: NonNullable<ReturnType<typeof sessions.get>>) {
 async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any) {
   if (msg?.id === undefined || msg?.id === null) return undefined
   const reply = (result: unknown) => ({ jsonrpc: '2.0', id: msg.id, result })
-  const tools = [...(s.ask ? [TOOL] : []), ...(s.notes ? [NOTES_TOOL] : []), ...(s.wait ? [WAIT_TOOL] : [])]
+  const orch = s.orch ? orchTools(s.orch) : []
+  const tools = [...(s.ask ? [TOOL] : []), ...(s.notes ? [NOTES_TOOL] : []), ...(s.wait ? [WAIT_TOOL] : []), ...orch]
   switch (msg.method) {
     case 'initialize':
       return reply({
         protocolVersion: msg.params?.protocolVersion ?? '2025-03-26',
         capabilities: { tools: {} },
-        serverInfo: { name: 'agent-panel-ask', version: '1.0.0' },
+        serverInfo: { name: 'agent-panel', version: '1.0.0' },
       })
     case 'ping':
       return reply({})
@@ -178,6 +186,8 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
       const name = msg.params?.name
       if (name === TOOL.name && s.ask) return reply(await callAsk(s, msg.params?.arguments ?? {}))
       if (name === NOTES_TOOL.name && s.notes) return reply(await callNotes(s))
+      if (s.orch && orch.some((x) => x.name === name))
+        return reply(await callOrchTool(s.orch, String(name), msg.params?.arguments ?? {}))
       if (name === WAIT_TOOL.name && s.wait) {
         const text = await s.wait()
         return reply({
@@ -194,9 +204,14 @@ async function handle(s: NonNullable<ReturnType<typeof sessions.get>>, msg: any)
 /**
  * 开一个面板工具通道：url 交给 CLI，close 在这一轮结束时调用（还没回答的问题作废）。
  * ask 是向用户提问；notes 取用户在这轮执行中补充的信息（CLI 没有插话协议时用）；
- * wait 等用户在这个对话里的下一句。都不给就别开
+ * wait 等用户在这个对话里的下一句；orch 是编排工具。都不给就别开
  */
-export function openAskBridge(o: { ask?: Ask; notes?: () => string[]; wait?: () => Promise<string | null> }) {
+export function openAskBridge(o: {
+  ask?: Ask
+  notes?: () => string[]
+  wait?: () => Promise<string | null>
+  orch?: Orchestra
+}) {
   const token = randomUUID()
   const s = { ...o, pending: new Set<(r: AskReply) => void>() }
   sessions.set(token, s)
@@ -245,6 +260,15 @@ export function askMcpApi() {
 
 // ---- 配置文件：在用户的项目目录里写 MCP 配置，要合并进已有的内容，用完还原 ----
 
+const parseJson = (text: string): unknown => {
+  if (!text.trim()) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
 export const merge = (a: any, b: any): any =>
   Array.isArray(a) && Array.isArray(b)
     ? [...new Set([...a, ...b])]
@@ -253,6 +277,17 @@ export const merge = (a: any, b: any): any =>
       : b
 
 const held = new Map<string, { count: number; original: string | null }>()
+/** 同一个文件的读改写排队做：几个子对话共用一个目录时会同时往同一个配置文件里加自己的工具 */
+const locks = new Map<string, Promise<unknown>>()
+function locked<T>(file: string, fn: () => Promise<T>) {
+  const prev = locks.get(file) ?? Promise.resolve()
+  const next = prev.then(fn, fn)
+  locks.set(
+    file,
+    next.catch(() => {}),
+  )
+  return next
+}
 
 /** 把配置合并进工作目录里的文件（没有就新建），返回还原的方法；同一个文件被几轮同时用时，最后一轮结束才还原 */
 export async function applyConfigFiles(cwd: string, files: { path: string; content: unknown }[]) {
@@ -271,20 +306,15 @@ export async function applyConfigFiles(cwd: string, files: { path: string; conte
       await writeFile(to, f.content)
       continue
     }
-    let base: unknown = {}
+    // 读不懂的原配置不动它，这一轮没有面板工具
     const original = held.get(to)!.original
-    if (original) {
-      try {
-        base = JSON.parse(original)
-      } catch {
-        // 读不懂的配置不动它，这一轮没有提问工具
-        base = undefined
-      }
-    }
-    if (base === undefined) continue
-    await mkdir(path.dirname(to), { recursive: true })
-    // 并行的几轮各自合并同一份原文，内容一样，不会互相覆盖
-    await writeFile(to, JSON.stringify(merge(base, f.content), null, 2))
+    if (original && parseJson(original) === undefined) continue
+    // 合并进文件现在的内容：同一个目录里同时在跑的几轮各用一个名字，谁都不会把别人的那一项冲掉
+    await locked(to, async () => {
+      const now = existsSync(to) ? parseJson(await readFile(to, 'utf8').catch(() => '')) : undefined
+      await mkdir(path.dirname(to), { recursive: true })
+      await writeFile(to, JSON.stringify(merge(now ?? parseJson(original ?? '') ?? {}, f.content), null, 2))
+    })
   }
   return async () => {
     for (const to of done) {

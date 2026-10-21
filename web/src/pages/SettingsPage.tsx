@@ -104,6 +104,7 @@ function SettingsBody({
   const [timeout, setTimeoutMin] = useState(String(initial.stepTimeoutMinutes))
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
+  const [children, setChildren] = useState(String(initial.childConcurrency))
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
@@ -221,6 +222,8 @@ function SettingsBody({
   const idleValid = idle !== '' && Number.isInteger(idleMin) && idleMin >= 0 && idleMin <= 1440
   const presenceMin = Number(presence)
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
+  const childN = Number(children)
+  const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     openBrowser,
@@ -236,6 +239,7 @@ function SettingsBody({
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
+    childConcurrency: childValid ? childN : initial.childConcurrency,
     defaultCli: defCli,
     clis: Object.fromEntries(
       Object.entries(drafts).map(([id, d]) => [
@@ -492,6 +496,24 @@ function SettingsBody({
                   {!presenceValid && (
                     <span className="text-xs text-danger">{t('填 0 到 1440 之间的整数，0 表示不保留')}</span>
                   )}
+                </div>
+              </Row>
+              <Row
+                title={t('同时执行的子对话')}
+                desc={t(
+                  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 CLI 进程，跑工作流时更多。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={children}
+                    onChange={(e) => setChildren(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!childValid}
+                    className={cn('h-9', !childValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时执行的子对话')}
+                  />
+                  {!childValid && <span className="text-xs text-danger">{t('填 1 到 20 之间的整数')}</span>}
                 </div>
               </Row>
               <Row title="语言 · Language" desc={t('界面显示的语言，切换后页面会重新加载。')}>

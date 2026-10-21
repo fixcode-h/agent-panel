@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
+import { useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
   ChevronRight,
@@ -292,6 +293,15 @@ export function TaskView({
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
+  // 消息下面的「引用」：引用块接在输入框已有内容的后面，光标停到最后接着写
+  useQuoteTarget(dropArea, (block) => {
+    const cur = followTa.current?.text() ?? text
+    setText(cur.trim() ? `${cur.trimEnd()}\n\n${block}` : block)
+    requestAnimationFrame(() => {
+      followTa.current?.focus()
+      followTa.current?.setCaret(Number.MAX_SAFE_INTEGER)
+    })
+  })
   const [dropOver, setDropOver] = useState(false)
   const [rewindAsk, setRewindAsk] = useState('')
 
@@ -475,6 +485,9 @@ export function TaskView({
         <Loader2 className="h-5 w-5 animate-spin" />
       </main>
     )
+
+  // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
+  const noFiles = !task.projectId
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async () => {
@@ -829,7 +842,7 @@ export function TaskView({
                   <ListPlus className="h-4 w-4" />
                 </Button>
               )}
-              {!pane && (
+              {!pane && !noFiles && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -873,7 +886,7 @@ export function TaskView({
                 </MenuContent>
               </Menu>
               {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
-              {!pane && openRun === 0 && !openChild && (
+              {!pane && !noFiles && openRun === 0 && !openChild && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1118,7 +1131,7 @@ export function TaskView({
                   : 'hidden',
                 // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
                 'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
-                filesFolded && openRun === 0 && !openChild && 'xl:hidden',
+                (filesFolded || noFiles) && openRun === 0 && !openChild && 'xl:hidden',
               )}
             >
               {!openChild && !panel && (

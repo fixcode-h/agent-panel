@@ -49,7 +49,7 @@ import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
-import { openOrchSession, orchHint } from '../orch-mcp.ts'
+import { orchHint } from '../orch-mcp.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
@@ -88,6 +88,12 @@ export interface RealContext {
   listConversations?: EngineHost['listConversations']
   createConversation?: EngineHost['createConversation']
   sendToConversation?: EngineHost['sendToConversation']
+  /** 父子对话之间的通讯和文件认领（见 EngineHost） */
+  rules?: EngineHost['rules']
+  takeInbox?: EngineHost['takeInbox']
+  messageParent?: EngineHost['messageParent']
+  claimFiles?: EngineHost['claimFiles']
+  releaseFiles?: EngineHost['releaseFiles']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -585,8 +591,8 @@ async function runAgent(
   }
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
-  const orch = call.orch && def.mcp && !op ? openOrchSession(call.orch) : undefined
-  if (orch && !resume) input = `${input}\n\n${orchHint(call.orch!)}`
+  const orch = call.orch && def.mcp && !op ? call.orch : undefined
+  if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
@@ -1060,7 +1066,7 @@ async function runAgent(
     keepAlive,
     // 模型自己等过下一句的，结束时不再保活一次
     waited: () => toolWaited,
-    mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
+    orch,
   }).finally(() => {
     finished = true
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
@@ -1070,7 +1076,6 @@ async function runAgent(
     }
     // 进程先结束了（崩溃、被停掉）：还在等下一句的那次请求也结束，别一直挂着
     cancelWait(task.id)
-    orch?.close()
     clearTimeout(gitTimer)
     if (steerer) {
       const set = steers.get(task.id)
@@ -1320,6 +1325,11 @@ export async function runRealTurn(ctx: RealContext) {
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,
+    rules: ctx.rules,
+    takeInbox: ctx.takeInbox,
+    messageParent: ctx.messageParent,
+    claimFiles: ctx.claimFiles,
+    releaseFiles: ctx.releaseFiles,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {

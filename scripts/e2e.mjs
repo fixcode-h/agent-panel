@@ -1205,8 +1205,7 @@ try {
     await waitDone(parent.id, 15000)
     step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
 
-    // ---- 子对话默认在独立分支里执行，合并时先并回父对话的分支 ----
-    // 项目默认开着 childIsolate：接口创建的子对话不用传 isolate 也会隔离
+    // ---- 子对话不建独立分支：和父对话共用一个目录；父对话在独立分支里时就在父的那个目录 ----
     const isoParent = await waitDone(
       (
         await call('POST', '/tasks', {
@@ -1226,47 +1225,60 @@ try {
       agentId: B.id,
       parentTaskId: isoParent.id,
       prompt: 'COMMIT 子对话在父分支上改',
+      isolate: true,
     })
-    assert.equal(isoKid.worktree?.state, 'active', '子对话默认建独立分支，不用传 isolate')
-    assert.equal(isoKid.worktree.branch.startsWith('agent-panel/'), true, '分支名带 agent-panel/ 前缀')
+    assert.equal(isoKid.worktree, null, '子对话传了 isolate 也不建独立分支')
     isoKid = await waitDone(isoKid.id, 20000)
-    // 子分支是从父的目录开出来的：父分支上的提交在子目录里看得到
-    assert.equal(
-      gitIn(isoKid.worktree.path, 'rev-parse', '--abbrev-ref', 'HEAD').toString().trim(),
-      isoKid.worktree.branch,
-      '子对话在自己的分支上',
-    )
-    const kidMerged = await call('POST', `/tasks/${isoKid.id}/worktree/merge`)
-    assert.equal(kidMerged.worktree.state, 'merged')
-    assert.equal(kidMerged.worktree.note, isoParent.worktree.branch, '子对话合并进父对话的分支')
     assert.ok(
       gitIn(isoParent.worktree.path, 'log', '--oneline').toString().includes('子对话'),
-      '父分支上能看到子对话的提交',
+      '子对话直接在父对话的分支目录里提交',
     )
-    // 父对话并回项目目录已经由后面的「独立分支」用例覆盖，这里只验证子 → 父这一段，父直接丢弃
     const parentDropped = await call('POST', `/tasks/${isoParent.id}/worktree/discard`)
     assert.equal(parentDropped.worktree.state, 'discarded')
     await call('DELETE', `/tasks/${isoParent.id}`)
+    step('子对话不建独立分支：和父对话共用目录，父对话在独立分支里时就在父的目录里改')
 
-    // 项目设置里关掉之后，子对话直接用项目目录
-    const off = await call('PUT', `/projects/${project.id}`, { ...project, childIsolate: false })
-    assert.equal(off.childIsolate, false)
-    const plainParent = await waitDone(
+    // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----
+    const ruleParent = await waitDone(
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,
       20000,
     )
-    const plainKid = await call('POST', '/tasks', {
-      projectId: project.id,
-      mode: 'chat',
-      agentId: B.id,
-      parentTaskId: plainParent.id,
-      prompt: '不隔离的子对话',
-    })
-    assert.equal(plainKid.worktree, null, '关掉设置后子对话不隔离')
-    await waitDone(plainKid.id, 20000)
-    await call('PUT', `/projects/${project.id}`, { ...project, childIsolate: true })
-    await call('DELETE', `/tasks/${plainParent.id}`)
-    step('子对话默认独立分支：从父分支开出，合并先并回父对话，关掉设置后直接用项目目录')
+    const ruled = await call('POST', `/tasks/${ruleParent.id}/messages`, { text: '/rule 不要改 package.json' })
+    assert.deepEqual(
+      ruled.rules.map((r) => r.text),
+      ['不要改 package.json'],
+      '规则存在父对话上',
+    )
+    assert.match(ruled.messages.at(-1).text, /已发布全局规则/)
+    assert.notEqual(ruled.status, 'running', '/rule 由面板处理，不启动 CLI')
+    const ruleKid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: ruleParent.id,
+          prompt: '子对话看规则',
+        })
+      ).id,
+      20000,
+    )
+    assert.equal(ruleKid.worktree, null)
+    const kidLog = JSON.stringify(calls().at(-1))
+    assert.ok(
+      kidLog.includes('全局规则（父对话发布，必须遵守）') && kidLog.includes('不要改 package.json'),
+      '子对话的提示里带上了父对话的全局规则',
+    )
+    const listed = await call('POST', `/tasks/${ruleParent.id}/messages`, { text: '/rule' })
+    assert.match(listed.messages.at(-1).text, /1\. 不要改 package\.json/)
+    const cleared = await call('POST', `/tasks/${ruleParent.id}/messages`, { text: '/rule clear' })
+    assert.deepEqual(cleared.rules, [])
+    const childRule = await call('POST', `/tasks/${ruleKid.id}/messages`, { text: '/rule 子对话不能发' }).catch(
+      (e) => e,
+    )
+    assert.match(String(childRule.message ?? childRule), /只能在项目对话里发布/)
+    await call('DELETE', `/tasks/${ruleParent.id}`)
+    step('全局规则：/rule 发布、列出、清空，子对话的提示里带上，子对话自己不能发')
   }
 
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----
@@ -1648,7 +1660,7 @@ try {
     assert.equal(mine.filter((c) => /本节点「实现」|继续完善本节点「实现」/.test(c.input)).length, 1, '节点只执行一次')
     // 节点仍然带编排工具，可以派子 Agent、传话、读写共享状态
     assert.ok(
-      mine.every((c) => c.args.some((x) => x.includes('/api/mcp/orch/'))),
+      mine.every((c) => c.args.some((x) => x.includes('/api/mcp/ask/'))),
       '节点都接上编排工具',
     )
     assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子 Agent/)
@@ -4102,14 +4114,24 @@ try {
         .slice(before)
         .at(-1)
       // Command Code 现在用 RPC 的 turn/steer 插话，只剩「等下一句」的 MCP 工具
-      assert.deepEqual(rec.tools, cli === 'commandcode' ? ['ask_user', 'wait_user_message'] : ['ask_user'])
+      // 编排工具也挂在同一个面板服务上，这里只看提问这一组
+      assert.deepEqual(
+        rec.tools.filter((n) => ['ask_user', 'wait_user_message', 'read_user_notes'].includes(n)),
+        cli === 'commandcode' ? ['ask_user', 'wait_user_message'] : ['ask_user'],
+      )
       assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
       assert.ok(rec.hint, '提示里告诉模型有 ask_user')
       assert.ok(done.messages.some((m) => /收到：用户的回答/.test(m.text)))
     }
     assert.equal(readFileSync(mcpFile, 'utf8'), original, '项目里原有的 MCP 配置还原')
     assert.ok(!existsSync(path.join(project.path, '.gemini', 'settings.json')), '临时写的配置删掉了')
-    assert.ok(!existsSync(path.join(project.path, '.pi', 'extensions', 'agent-panel-panel.ts')), 'Pi 的桥接扩展删掉了')
+    assert.ok(
+      !(
+        existsSync(path.join(project.path, '.pi', 'extensions')) &&
+        readdirSync(path.join(project.path, '.pi', 'extensions')).some((f) => f.startsWith('agent-panel-panel'))
+      ),
+      'Pi 的桥接扩展删掉了',
+    )
     // 提问开关关着：不弹出，工具让模型自己选
     const off = await call('POST', '/tasks', {
       projectId: project.id,

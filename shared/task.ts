@@ -76,6 +76,8 @@ export function newTask(
     parentTaskId: input.parentTaskId ?? '',
     rootTaskId: input.rootTaskId ?? '',
     summary: '',
+    rules: [],
+    inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
     // 默认 Agent 和不用 Agent 角色的对话（agentId 为空）都能在对话时选 CLI 和模型；其他 Agent 用自己配置的

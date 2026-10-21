@@ -10,6 +10,7 @@ import { prepareAuth } from '../accounts.ts'
 import { getSettings } from '../settings.ts'
 import { mcpConfig } from '../../shared/cli-spec.ts'
 import { applyConfigFiles, merge, openAskBridge, type Ask } from '../ask-mcp.ts'
+import type { Orchestra } from '../../shared/engine.ts'
 import { supportedEffort } from '../models.ts'
 import { log } from '../log.ts'
 
@@ -79,8 +80,10 @@ export async function invokeCli(o: {
   waited?: () => boolean
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
   images?: string[]
-  /** 这一轮额外交给 CLI 的面板工具（例如工作流的编排工具）；CLI 定义里没写怎么接 MCP 时忽略 */
+  /** 这一轮额外交给 CLI 的其他 MCP 服务；CLI 定义里没写怎么接 MCP 时忽略 */
   mcp?: { name: string; url: string }[]
+  /** 编排工具：和提问、等下一句一起挂在面板的 MCP 上 */
+  orch?: Orchestra
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
   // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
@@ -119,21 +122,28 @@ export async function invokeCli(o: {
   const nativeAsk = def.rpc?.nativeAsk
   const notes = def.notes && !def.steer ? o.readNotes : undefined
   const wait = def.notes && !nativeAsk ? o.waitUser : undefined
-  if (def.mcp && (askable || notes || wait) && !nativeAsk) {
+  const own = (askable || notes || wait) && !nativeAsk
+  if (def.mcp && (own || o.orch)) {
     // 用户开着「提问」时把问题交给页面；关着时让模型自己选最合适的做法
     const ask: Ask = (ev) => (o.askUser?.() ? (o.onAsk ? o.onAsk(ev) : o.onEvent(ev)) : ev.reply(AUTO_ANSWER))
     bridge = openAskBridge({
-      ...(askable ? { ask } : {}),
-      ...(notes ? { notes } : {}),
-      ...(wait ? { wait } : {}),
+      ...(own && askable ? { ask } : {}),
+      ...(own && notes ? { notes } : {}),
+      ...(own && wait ? { wait } : {}),
+      ...(o.orch ? { orch: o.orch } : {}),
     })
-    servers.unshift({ name: 'panel', url: bridge.url })
-    // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
-    if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
-    // 没有插话协议的 CLI：补充登记给它，让模型中途自己取
-    if (notes) input = `${input}\n\n${NOTES_HINT}`
-    // 对话页开着：回复完停在等下一句的工具上
-    if (wait) input = `${input}\n\n${WAIT_HINT}`
+    // 写配置文件接 MCP 的 CLI（Command Code、Gemini CLI、Pi）：子对话共用一个目录，同时在跑的几轮各用一个名字，
+    // 不然后写的会把先写的那一项冲掉。用参数传的不受影响，保持固定的名字
+    const fileBased = Object.keys(def.mcp.files ?? {}).length > 0
+    servers.unshift({ name: fileBased ? `panel-${bridge.url.slice(-6)}` : 'panel', url: bridge.url })
+    if (own) {
+      // 用户开着「提问」时告诉模型有这个工具，免得它把问题写成普通文字
+      if (askable && o.askUser?.()) input = `${input}\n\n${ASK_HINT}`
+      // 没有插话协议的 CLI：补充登记给它，让模型中途自己取
+      if (notes) input = `${input}\n\n${NOTES_HINT}`
+      // 对话页开着：回复完停在等下一句的工具上
+      if (wait) input = `${input}\n\n${WAIT_HINT}`
+    }
   }
   if (def.mcp && servers.length) {
     const tools = servers.map((s) => mcpConfig(def.mcp!, s.name, s.url))

@@ -58,9 +58,8 @@ function Editor({
   const { modelOf } = useAgentView()
   const [flowId, setFlowId] = useState(() => entryFlow(w).id)
   const [selected, setSelected] = useState('')
-  // 右边的属性栏默认收起，把宽度让给画布；选中节点或连线时自动打开。
-  // 还没有节点的新流程默认打开，那里有怎么连线的说明和就绪检查
-  const [inspector, setInspector] = useState(() => !entryFlow(w).nodes.some((n) => n.kind === 'agent'))
+  // 右边的属性栏默认展开：流程的说明、就绪检查和节点配置都在这里，打开工作流就能看到；可以手动收起
+  const [inspector, setInspector] = useState(true)
   // 属性栏可以拖宽：节点的字段和说明比较长，默认比原来的 320 宽一些；拖动时至少给画布留 480
   const pane = usePaneWidth('flow-inspector', 380, 280, () => Math.min(720, Math.max(280, window.innerWidth - 480)))
   useEffect(() => {

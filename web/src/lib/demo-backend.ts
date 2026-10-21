@@ -456,7 +456,6 @@ function seed(): Db {
     testSteps: [],
     wslDistro: '',
     gitPolicy: 'ask',
-    childIsolate: true,
     ...o,
   })
   return {
@@ -1472,8 +1471,8 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     platform: workflow ? 'win32' : '',
   })
   // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃。
-  // 和服务端一致：没传 isolate 时，子对话按项目设置默认隔离
-  const isolate = input.isolate ?? (!!input.parentTaskId && !!project && project.childIsolate !== false)
+  // 和服务端一致：只有顶层对话能选独立分支，子对话和父对话共用目录
+  const isolate = !!input.isolate && !input.parentTaskId
   if (isolate && project)
     task.worktree = {
       path: '',

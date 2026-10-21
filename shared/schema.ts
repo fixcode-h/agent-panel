@@ -592,11 +592,6 @@ const ProjectFields = z.object({
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
-   * 子对话默认在独立分支（git worktree）里执行：几个子对话同时改一个目录时互不干扰。
-   * 不是 git 仓库、没有提交或建不出来时退回项目目录，不挡住子对话创建
-   */
-  childIsolate: z.boolean().default(true),
-  /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
    */
@@ -678,7 +673,7 @@ export const NewTaskInput = z.object({
   params: z.record(z.string(), ParamValue).default({}),
   /**
    * 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以。
-   * 不传时按项目设置：子对话默认隔离（见 Project.childIsolate），其他任务默认不隔离
+   * 只对项目里的顶层对话有效：子对话一律和父对话用同一个目录，不建独立分支（几个子对话同时改由文件认领协调）
    */
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
@@ -985,6 +980,13 @@ export const TaskData = z.object({
   rootTaskId: z.string().default(''),
   /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
   summary: z.string().default(''),
+  /**
+   * 父对话发布的全局规则（输入「/rule 内容」）：名下所有子对话和它们的工作流节点都必须遵守。
+   * 只对这个对话有效，不写进项目的 AGENTS.md
+   */
+  rules: z.array(z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })).default([]),
+  /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
+  inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
@@ -1257,6 +1259,11 @@ export const Settings = z.object({
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
+  /**
+   * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
+   * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
+   */
+  childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),
