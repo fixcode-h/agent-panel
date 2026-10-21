@@ -114,6 +114,8 @@ export function newTask(
     workflows: wf ? snapshot : [],
     runs: [],
     skillSlots: wf ? skillSlots : {},
+    testSteps: [],
+    platform: '',
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],

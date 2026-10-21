@@ -223,6 +223,28 @@ function seed(): Db {
     model: '@medium',
     description: '编写并运行单元测试与端到端测试',
     tags: [tQuality.id, tWeb.id],
+    // 测试与验收这类通用 Agent 的参数：项目设置里按它派生配置项
+    params: [
+      {
+        key: 'scope',
+        label: '范围',
+        type: 'select',
+        options: ['本次改动', '整体'],
+        default: '本次改动',
+        ask: false,
+        description: '',
+      },
+      {
+        key: 'env',
+        label: '环境',
+        type: 'select',
+        options: ['自动', 'wsl', 'powershell', 'bash'],
+        default: '自动',
+        ask: false,
+        description: '',
+      },
+      { key: 'regress', label: '查回归', type: 'bool', default: true, options: [], ask: false, description: '' },
+    ],
   })
   const review = agent({
     name: '代码审查',
@@ -423,12 +445,14 @@ function seed(): Db {
   const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
   // 演示项目的添加时间各不相同：侧栏默认就按它排，和真实的项目列表一致
   const project = (
-    o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'>,
+    o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'> & Partial<ProjectInput>,
     createdAt: string,
   ): Project => ({
     ...meta(),
     createdAt,
     workflowIds: [],
+    testSteps: [],
+    wslDistro: '',
     defaultAgentId: '',
     agentSet: true,
     workflowParams: {},
@@ -448,6 +472,32 @@ function seed(): Db {
           description: '面向用户的商城网站',
           path: '/home/demo/code/web-shop',
           categoryId: web.id,
+          // 演示里的测试步骤：项目设置里能看到增删、排序和启停
+          testSteps: [
+            {
+              id: 'demo-typecheck',
+              name: '类型检查',
+              command: 'npm run typecheck',
+              env: 'auto',
+              cwd: '',
+              when: '',
+              timeoutSec: 0,
+              note: '',
+              enabled: true,
+            },
+            {
+              id: 'demo-e2e',
+              name: '端到端测试',
+              command: 'npm run test:e2e',
+              env: 'wsl',
+              cwd: '',
+              when: '仅改了 web/ 时',
+              timeoutSec: 600,
+              note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
+              enabled: true,
+            },
+          ],
+          wslDistro: 'Ubuntu-24.04',
           workflowId: '',
         },
         '2026-09-02T09:00:00.000Z',
@@ -1407,9 +1457,24 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
       workflow,
       new Date().toISOString(),
       `demo-${crypto.randomUUID()}`,
-      workflow ? taskSnapshot(workflow, d.workflows) : [],
+      workflow
+        ? taskSnapshot(
+            workflow,
+            d.workflows,
+            {},
+            {
+              agents: d.agents,
+              testSteps: project?.testSteps ?? [],
+              platform: 'win32',
+              wslDistro: project?.wslDistro ?? '',
+            },
+          )
+        : [],
     ),
     simulated: true,
+    // 演示里按 Windows 展示测试步骤的环境说明（WSL 步骤怎么跑）
+    testSteps: workflow ? (project?.testSteps ?? []) : [],
+    platform: workflow ? 'win32' : '',
   })
   // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃
   if (input.isolate && project)
@@ -1728,7 +1793,23 @@ function tasksRoute(
     if ((body as { latest?: boolean } | undefined)?.latest && task.workflowId) {
       const fresh =
         d.workflows.find((w) => w.id === task.workflowId) ?? fail('工作流已经被删除，只能按任务创建时的工作流继续')
-      task.workflows = taskSnapshot(fresh, d.workflows)
+      const project = d.projects.find((p) => p.id === task.projectId)
+      const agents = d.agents
+      task.workflows = taskSnapshot(
+        fresh,
+        d.workflows,
+        {},
+        {
+          agents,
+          testSteps: project?.testSteps ?? [],
+          platform: 'win32',
+          wslDistro: project?.wslDistro ?? '',
+        },
+      )
+      if (project) {
+        task.testSteps = project.testSteps
+        task.platform = 'win32'
+      }
       task.workflowName = fresh.name
     }
     dropEndNotes(task)

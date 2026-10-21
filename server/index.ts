@@ -131,6 +131,7 @@ async function ensureProjectWorkflows() {
       createTag: (input) => tags.create(input),
       createWorkflow: (input) => workflows.create(input),
       updateWorkflow: (id, input) => workflows.update(id, input),
+      updateAgent: (id, input) => agents.update(id, input),
     },
   )
   if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
@@ -149,6 +150,7 @@ async function ensureProjectWorkflows() {
       createTag: (input) => tags.create(input),
       createWorkflow: (input) => workflows.create(input),
       updateWorkflow: (id, input) => workflows.update(id, input),
+      updateAgent: (id, input) => agents.update(id, input),
     },
   )
   if (projectAgents.created.length)
@@ -561,7 +563,7 @@ app.delete('/projects/:id', async (c) => {
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories })
 app.route('/tasks', tasks.routes)
-app.route('/assist', assistApi({ agents, categories, workflows }))
+app.route('/assist', assistApi({ agents, categories, workflows, projects }))
 // ---- UI 设计和连接浏览器的扩展 ----
 const designs = designsApi({ projects })
 app.post('/designs/browser/reveal', (c) => {
