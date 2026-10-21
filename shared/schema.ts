@@ -1027,6 +1027,8 @@ export type TaskRun = z.infer<typeof TaskRun>
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
+  /** 标题还是从第一条消息截的：AI 第一次回复后按对话内容起一个标题换上，只做一次；用户改过名就不再换 */
+  autoTitle: z.boolean().default(false),
   mode: TaskMode,
   /** 子对话的父对话 id；空表示项目里的顶层对话 */
   parentTaskId: z.string().default(''),

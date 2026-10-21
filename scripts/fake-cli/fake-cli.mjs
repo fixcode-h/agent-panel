@@ -358,7 +358,16 @@ if (streamIn) {
   const first = await next()
   input = typeof first.message.content === 'string' ? first.message.content : ''
 } else if (kind !== 'codex' && !rpcMode && !piRpc) for await (const chunk of process.stdin) input += chunk
-if (process.env.FAKE_CLI_LOG) {
+// 面板自动起标题（server/task-title.ts）：不记进调用日志，免得打乱各个测试数的调用次数；
+// 用户消息里的 FAIL、SLOW 这些标记也不能生效，回复改成按用户消息的第一行起的标题
+const titleFor = input.startsWith('给下面这段对话起一个标题。')
+  ? (input.split('## 用户\n')[1] ?? '').split('\n')[0].slice(0, 20)
+  : null
+if (titleFor !== null) {
+  if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.title', JSON.stringify({ kind }) + '\n')
+  input = ''
+}
+if (process.env.FAKE_CLI_LOG && titleFor === null) {
   const log = process.env.FAKE_CLI_LOG
   const extra =
     kind === 'codex'
@@ -443,6 +452,7 @@ const codexDone = (status, error) => {
 const file = `${kind}-output.txt`
 // 回复按当前 input 算：RPC 保活时同一进程会跑下一轮，input 已经换成新的那句
 const turnReply = () => {
+  if (titleFor !== null) return `「${titleFor}·AI」`
   const verdict = input.includes('最后单独一行写「验收结论')
     ? input.includes('第 1 轮验收')
       ? '\n验收结论：不通过'

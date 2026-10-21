@@ -82,6 +82,7 @@ import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDi
 import { listDir, listLevel, rawInDir, readInDir, revealInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
+import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
@@ -341,6 +342,28 @@ export function tasksApi(deps: {
   function lastReply(task: Task) {
     const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
     return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+  }
+
+  /**
+   * 顶层对话的 AI 第一次回复后，按对话内容起一个标题换掉从消息里截的那段。只做一次（失败也不再试），
+   * 在后台跑，不耽误对话；起好时用户已经改过名就不动
+   */
+  function nameOnce(task: Task, cli: string) {
+    if (!task.autoTitle || task.parentTaskId || task.imported || !titleInput(task)) return
+    task.autoTitle = false
+    const before = task.title
+    const snapshot = { ...task, messages: [...task.messages] }
+    void (async () => {
+      const title = await suggestTitle(snapshot, cli)
+      if (!title) return
+      const e = live.get(task.id)
+      const cur = e?.task ?? (await store.get(task.id))
+      if (!cur || cur.title !== before) return
+      cur.title = title.slice(0, 80)
+      if (e) e.rev++
+      await store.update(task.id, cur)
+      log.info('task', '自动起了标题', { task: task.id, title: cur.title })
+    })().catch((e) => log.warn('task', '自动起标题失败', (e as Error).message))
   }
 
   /** 最近一条消息的时间：子对话列表按它排序（updatedAt 会被改名、看过之类的操作改动） */
@@ -798,6 +821,8 @@ export function tasksApi(deps: {
       entry.task.updatedAt = new Date().toISOString()
       trackWait(entry.task)
       entry.rev++
+      // 对话的 CLI 回复完会常驻等下一句，不等进程结束：第一次回复完就起标题
+      if (entry.task.turnDoneAt) nameOnce(entry.task, startedRun?.cli ?? '')
       // 流式输出时最多每秒落盘一次，关键节点立即落盘
       if (f || Date.now() - last > 1000) {
         last = Date.now()
@@ -989,6 +1014,8 @@ export function tasksApi(deps: {
           delete entry.task.usage.agents[entry.task.agentId]
         }
         endRun(entry.task)
+        // 工作流跑完（成功或失败）才有结果可看，这时起标题
+        if (!prewarm) nameOnce(entry.task, startedRun?.cli ?? '')
         // 子对话这一轮结束了：释放认领的文件，查一下和同时在改的兄弟子对话有没有改到同一个文件
         if (entry.task.parentTaskId) {
           claims.release(entry.task.parentTaskId, task.id)
@@ -1788,6 +1815,8 @@ export function tasksApi(deps: {
     Object.assign(task, rest)
     // null 表示改回按执行角色自己的配置
     if (childRun !== undefined) task.childRun = childRun ?? undefined
+    // 用户自己起了名：之后不再自动换标题
+    if (p.data.title !== undefined) task.autoTitle = false
     if (agentChanged) {
       // 换了角色后旧会话里是另一个 Agent 的设定：清掉会话，下一轮新开会话并带上之前的对话摘要
       delete task.sessions[task.agentId]
@@ -1922,6 +1951,7 @@ export function tasksApi(deps: {
     const forked = await store.create({
       ...rest,
       title: t('{title}（分叉）', { title: task.title }).slice(0, 80),
+      autoTitle: false,
       // 消息 id 换新的，免得两个任务里的消息 id 相同
       messages: kept.map((m) => ({ ...m, id: randomUUID() })),
       rewind: { through, session, latest },

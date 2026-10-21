@@ -72,6 +72,8 @@ export function newTask(
   return {
     projectId: input.projectId,
     title: taskTitle(input.prompt),
+    // 子对话的标题是父对话起的，不用再换
+    autoTitle: !input.parentTaskId,
     mode: input.mode,
     parentTaskId: input.parentTaskId ?? '',
     rootTaskId: input.rootTaskId ?? '',
