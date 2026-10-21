@@ -92,9 +92,9 @@ export function RunCard({
 
 /**
  * 右边打开的这一次运行：主流程每个节点的输出按顺序排下来，跟着任务实时更新。
- * 还没开始的节点也列出来，能看出这次运行还有哪些事
+ * 占文件面板那一栏，沿用它的宽度和拖动条；还没开始的节点也列出来，能看出这次运行还有哪些事
  */
-export function RunDrawer({
+export function RunPanel({
   task,
   run,
   name,
@@ -115,64 +115,60 @@ export function RunDrawer({
   // 和对话窗口一样：打开时停在最新的输出，停在底部时跟着新输出走，往上翻看时不打扰
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  // 换看另一次运行时回到最新输出
+  useLayoutEffect(() => {
+    stick.current = true
+  }, [run])
   useLayoutEffect(() => {
     const el = scroller.current
     if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [task])
+  }, [task, run])
   useEscape(true, onClose)
   return (
-    <>
-      <div className="fixed inset-0 z-30 bg-black/30" onClick={onClose} aria-hidden />
-      <aside
-        aria-label={t('运行 {n}', { n: run })}
-        className="fixed inset-y-0 right-0 z-40 flex w-[min(760px,100vw)] flex-col border-l bg-bg shadow-pop"
+    <div className="flex min-h-0 flex-1 flex-col bg-bg">
+      <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+        <WorkflowIcon className="h-4 w-4 shrink-0 text-muted" />
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="truncate text-[0.875rem] font-medium">{t('运行 {n}', { n: run })}</span>
+          {name && <span className="truncate text-xs text-subtle">{name}</span>}
+          {state === 'running' && (
+            <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t('执行中')}
+            </span>
+          )}
+        </span>
+        <Button variant="ghost" size="icon-sm" aria-label={t('关闭')} onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
+      </header>
+      <div
+        ref={scroller}
+        onScroll={(e) => {
+          const el = e.currentTarget
+          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+        }}
+        className="min-h-0 flex-1 overflow-y-auto"
       >
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <WorkflowIcon className="h-4 w-4 shrink-0 text-muted" />
-          <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="truncate text-[0.875rem] font-medium">{t('运行 {n}', { n: run })}</span>
-            {name && <span className="truncate text-xs text-subtle">{name}</span>}
-            {state === 'running' && (
-              <span className="flex shrink-0 items-center gap-1 text-xs text-accent">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {t('执行中')}
-              </span>
-            )}
-          </span>
-          <Button variant="ghost" size="icon-sm" aria-label={t('关闭')} onClick={onClose}>
-            <X className="h-4 w-4" />
-          </Button>
-        </header>
-        <div
-          ref={scroller}
-          onScroll={(e) => {
-            const el = e.currentTarget
-            stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-          }}
-          className="min-h-0 flex-1 overflow-y-auto"
-        >
-          <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
-            {steps.map((s) => {
-              const msgs = task.messages.filter(
-                (m) => m.role !== 'user' && (m.step === s.id || m.step.startsWith(s.id + '/')),
-              )
-              if (!msgs.length && s.status === 'pending')
-                return (
-                  <div key={s.id} className="flex items-center gap-2 text-[0.8125rem] text-subtle">
-                    <StepIcon status={s.status} />
-                    <span className="min-w-0 truncate">{s.title}</span>
-                    <span className="shrink-0 text-xs">{t('等待执行')}</span>
-                  </div>
-                )
+        <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
+          {steps.map((s) => {
+            const msgs = task.messages.filter(
+              (m) => m.role !== 'user' && (m.step === s.id || m.step.startsWith(s.id + '/')),
+            )
+            if (!msgs.length && s.status === 'pending')
               return (
-                <StepSection key={s.id} task={task} rootId={s.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
+                <div key={s.id} className="flex items-center gap-2 text-[0.8125rem] text-subtle">
+                  <StepIcon status={s.status} />
+                  <span className="min-w-0 truncate">{s.title}</span>
+                  <span className="shrink-0 text-xs">{t('等待执行')}</span>
+                </div>
               )
-            })}
-            {!steps.length && <p className="text-[0.8125rem] text-subtle">{t('这次运行还没有节点。')}</p>}
-          </div>
+            return <StepSection key={s.id} task={task} rootId={s.id} msgs={msgs} teamNames={teamNames} sticky="flow" />
+          })}
+          {!steps.length && <p className="text-[0.8125rem] text-subtle">{t('这次运行还没有节点。')}</p>}
         </div>
-        {footer && <div className="shrink-0 border-t bg-bg px-3 py-3 md:px-4">{footer}</div>}
-      </aside>
-    </>
+      </div>
+      {footer && <div className="shrink-0 border-t bg-bg px-3 py-3 md:px-4">{footer}</div>}
+    </div>
   )
 }

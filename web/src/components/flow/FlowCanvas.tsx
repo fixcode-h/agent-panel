@@ -57,6 +57,8 @@ export interface NodeView {
   loose?: boolean
   /** 完成后等用户确认 */
   confirm?: boolean
+  /** 节点里有几步执行者 */
+  count?: number
 }
 
 type CardData = { view: NodeView }
@@ -110,11 +112,17 @@ const CardNode = memo(function CardNode({ data, selected }: NodeProps<Node<CardD
               </span>
             ) : agent ? (
               <>
-                <span className="truncate">{agent.name}</span>
-                {v.main && (
-                  <span className="shrink-0 rounded px-1 text-[0.65625rem] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
-                    {t('主')}
+                <span className="truncate">{v.count && v.count > 1 ? v.sub : agent.name}</span>
+                {v.count && v.count > 1 ? (
+                  <span className="shrink-0 rounded bg-field px-1 text-[0.65625rem] leading-4 font-medium text-muted ring-1 ring-line ring-inset">
+                    +{v.count - 1}
                   </span>
+                ) : (
+                  v.main && (
+                    <span className="shrink-0 rounded px-1 text-[0.65625rem] leading-4 font-medium text-accent ring-1 ring-accent/30 ring-inset">
+                      {t('主')}
+                    </span>
+                  )
                 )}
                 {/* 模型放在同一行，节点高度不变，已经排好的流程图不会重叠 */}
                 {v.model && (

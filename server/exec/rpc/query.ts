@@ -40,7 +40,8 @@ export async function rpcQuery(o: {
         const r = await ctx.request(msg)
         if (r?.error) {
           error = String(r.error.message ?? '')
-          return ctx.finish(false, error)
+          void ctx.finish(false, error)
+          return
         }
       }
       for (const q of o.requests) {
@@ -48,7 +49,7 @@ export async function rpcQuery(o: {
         const { timeoutMs, ...req } = q
         results.push(await ctx.request({ ...req, ...(o.jsonrpc ? { jsonrpc: '2.0' } : {}) }, { timeoutMs }))
       }
-      ctx.finish(true)
+      void ctx.finish(true)
     },
     message() {},
     steer: async () => false,

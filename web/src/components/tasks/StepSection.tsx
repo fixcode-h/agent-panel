@@ -136,7 +136,7 @@ export function StepSection({
                 )
               : null
           return (
-            <div key={i} className="flex flex-col gap-3 rounded-xl border bg-panel px-3.5 py-3">
+            <div key={i} data-step={r.step} className="flex flex-col gap-3 rounded-xl border bg-panel px-3.5 py-3">
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 {s && <StepIcon status={s.status} className="h-3.5 w-3.5" />}
                 <span className="min-w-0 truncate font-medium text-muted">{s ? stepLabel(s) : t('子流程')}</span>

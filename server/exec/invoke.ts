@@ -70,6 +70,13 @@ export async function invokeCli(o: {
    * 用户发消息时由面板直接交回这个进程（不用结束再 --resume）；用户离开时返回空
    */
   waitUser?: () => Promise<string | null>
+  /**
+   * 面板保活：这一轮结束后先不关进程，用户的下一条消息在同一进程里开下一轮（不用重启 CLI 再 --resume）。
+   * 对话页还开着、用户还在这个对话里时返回 true；用户离开后返回 null，进程正常退出
+   */
+  keepAlive?: () => Promise<string | null>
+  /** 模型这一轮已经调过 wait_user_message 等过下一句：结束时不用再保活一次 */
+  waited?: () => boolean
   /** 随这一轮一起给模型看的图片（本机路径）：Codex 用 localImage，Claude Code 把图片放进消息里 */
   images?: string[]
   /** 这一轮额外交给 CLI 的面板工具（例如工作流的编排工具）；CLI 定义里没写怎么接 MCP 时忽略 */
@@ -107,7 +114,8 @@ export async function invokeCli(o: {
   let input = o.input
   const askable = !!o.askUser && !o.noAskTool
   // 常驻 RPC 有真正的插话通道（turn/steer、Pi 的 steer），补充不用再靠 MCP 工具拉取；
-  // 「等下一句」仍然要用 wait_user_message：一轮执行中把进程留住，用户下一句直接交回同一个进程
+  // 「等下一句」现在由面板在自己这一轮结束时保活（见 keepAlive），工具留着给模型主动等的场景：
+  // 模型在回复里调用它时，这一轮不结束、把进程留住，用户下一句交回同一个进程
   const nativeAsk = def.rpc?.nativeAsk
   const notes = def.notes && !def.steer ? o.readNotes : undefined
   const wait = def.notes && !nativeAsk ? o.waitUser : undefined
@@ -191,12 +199,19 @@ async function invoke(
       images: o.images,
       build: o.build,
       onEvent: emit,
+      // 对话页还开着、用户也没点停止：一轮结束后留住进程，下一条消息在同一进程里开下一轮
+      hold: () => !!o.keepAlive && !signal.aborted && !o.signal?.aborted,
+      next: () =>
+        signal.aborted || o.signal?.aborted ? Promise.resolve(null) : (o.keepAlive?.() ?? Promise.resolve(null)),
+      waited: o.waited,
     })
     setControl({
       steer: (text) => session.steer(text),
       interrupt: () => session.interrupt(),
       deferSteer: def.rpc?.deferSteer,
     })
+    // 面板保活：一轮结束后不关进程，用户的下一条消息在同一进程里开下一轮。
+    // 只在适配器支持时启用；不支持的一轮一个进程
     try {
       const r = await runProcess({
         command: o.command,
@@ -205,8 +220,13 @@ async function invoke(
         env: o.env,
         signal,
         timeoutMs: o.timeoutMs,
-        idle: o.idle,
-        onSpawn: (io) => session.start(io),
+        // 保活期间在等用户下一句，不算卡住
+        idle: o.idle && o.keepAlive ? { ...o.idle, busy: () => session.waiting || !!o.idle?.busy?.() } : o.idle,
+        onSpawn: (io) =>
+          session.start({
+            write: (s) => io.write(s),
+            end: () => io.end(),
+          }),
         onLine: (line) => session.line(line),
       })
       // 没等到这一轮结束就退出了（崩溃、配置错误），算失败

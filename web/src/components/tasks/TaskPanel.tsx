@@ -110,47 +110,51 @@ export function TaskPanel({
                       {kids.length > 0 && (
                         <ul className="mt-0.5 flex flex-col gap-1 border-l border-line-strong pl-2.5">
                           {kids.map((k) => (
-                            <li
-                              key={k.id}
-                              className="flex items-center gap-1.5 text-xs"
-                              style={{ paddingLeft: (stepDepth(k) - 1) * 12 }}
-                            >
-                              <StepIcon status={k.status} className="h-3.5 w-3.5" />
-                              {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
-                              {isMainStep(k) ? (
-                                <Crown className="h-3 w-3 shrink-0 text-accent" />
-                              ) : (
-                                k.slot === 'sub' &&
-                                byId.get(k.agentId) && (
-                                  <AgentAvatar
-                                    icon={byId.get(k.agentId)!.icon}
-                                    cli={byId.get(k.agentId)!.cli}
-                                    size="xs"
-                                  />
-                                )
-                              )}
-                              <span
-                                className={cn(
-                                  'min-w-0 flex-1 truncate',
-                                  k.status === 'pending' ? 'text-subtle' : 'text-muted',
-                                )}
-                                title={stepLabel(k)}
+                            <li key={k.id} style={{ paddingLeft: (stepDepth(k) - 1) * 12 }}>
+                              <button
+                                type="button"
+                                disabled={!onStep}
+                                onClick={() => onStep?.(k.id)}
+                                title={onStep ? t('查看这一步的输出') : undefined}
+                                className="flex w-full items-center gap-1.5 rounded-md px-1 py-0.5 text-left text-xs enabled:cursor-pointer enabled:hover:bg-sel"
                               >
-                                {stepLabel(k)}
-                              </span>
-                              {k.verdict && (
-                                <span className={k.verdict === 'fail' ? 'text-warning' : 'text-success'}>
-                                  {k.verdict === 'fail' ? t('不通过') : t('通过')}
-                                </span>
-                              )}
-                              {stepDuration(k, now) && (
+                                <StepIcon status={k.status} className="h-3.5 w-3.5" />
+                                {/* 嵌套的主 Agent（调用的工作流）、派出的子 Agent：标出是谁在做 */}
+                                {isMainStep(k) ? (
+                                  <Crown className="h-3 w-3 shrink-0 text-accent" />
+                                ) : (
+                                  k.slot === 'sub' &&
+                                  byId.get(k.agentId) && (
+                                    <AgentAvatar
+                                      icon={byId.get(k.agentId)!.icon}
+                                      cli={byId.get(k.agentId)!.cli}
+                                      size="xs"
+                                    />
+                                  )
+                                )}
                                 <span
-                                  className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
-                                  title={spanTitle(k)}
+                                  className={cn(
+                                    'min-w-0 flex-1 truncate',
+                                    k.status === 'pending' ? 'text-subtle' : 'text-muted',
+                                  )}
+                                  title={stepLabel(k)}
                                 >
-                                  {stepDuration(k, now)}
+                                  {stepLabel(k)}
                                 </span>
-                              )}
+                                {k.verdict && (
+                                  <span className={k.verdict === 'fail' ? 'text-warning' : 'text-success'}>
+                                    {k.verdict === 'fail' ? t('不通过') : t('通过')}
+                                  </span>
+                                )}
+                                {stepDuration(k, now) && (
+                                  <span
+                                    className="shrink-0 font-mono text-[0.6875rem] text-subtle tabular-nums"
+                                    title={spanTitle(k)}
+                                  >
+                                    {stepDuration(k, now)}
+                                  </span>
+                                )}
+                              </button>
                             </li>
                           ))}
                         </ul>

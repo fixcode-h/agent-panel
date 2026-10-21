@@ -60,11 +60,7 @@ export const EN_EXTEND: Record<string, string> = {
   '用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。':
     "Uses this tier's model and effort on the default CLI ({cli}). Follows the agent's tier until changed.",
   模型档位: 'Model tier',
-  '{name} 暴露的参数，在这个节点上的取值；没改的用 Agent 的默认值。':
-    "Parameters exposed by {name}, set for this node; unchanged ones use the agent's defaults.",
   失败自动重试: 'Retry on failure',
-  '连接断开、偶发报错时接着上次的会话再试，不用等你点「继续执行」。':
-    'On a dropped connection or a transient error, retry in the same session without waiting for you to click “Continue”.',
   次: 'times',
   '已删除标签「{name}」': 'Deleted tag “{name}”',
   '标签是全局的，Agent 和工作流共用。列表上方可以按标签筛选，搜索时也会匹配标签名。':

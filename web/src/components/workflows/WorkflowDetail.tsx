@@ -15,6 +15,7 @@ import { exportWorkflow } from '@/lib/transfer'
 import type { Agent, Workflow, WorkflowExpose, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { isDefaultWorkflow } from '@shared/builtin/default'
+import { nodeSteps } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
@@ -90,7 +91,7 @@ export function WorkflowDetail({
   const team = [
     ...new Set([
       ...draft.members.map((m) => m.agentId),
-      ...draft.flows.flatMap((f) => f.nodes.map((n) => n.agentId)).filter(Boolean),
+      ...draft.flows.flatMap((f) => f.nodes.flatMap((n) => nodeSteps(n).map((s) => s.agentId))).filter(Boolean),
     ]),
   ]
     .filter((id) => id !== draft.mainAgentId)

@@ -4,7 +4,7 @@
  * 提示词固定用中文（和节点提示词一样，不跟界面语言走：结论靠固定格式识别）。
  */
 import { END, START, type Agent, type Flow, type Workflow } from './schema.ts'
-import { flowLabel, nodeAgent, topoOrder } from './flow.ts'
+import { flowLabel, nodeAgent, nodeSteps, topoOrder } from './flow.ts'
 import { t } from './i18n.ts'
 
 /** 主 Agent 回复里写决定的代码块语言名 */
@@ -88,13 +88,20 @@ export function flowOverview(w: Workflow, f: Flow, agents: Agent[]) {
   const title = (id: string) =>
     id === START ? '开始' : id === END ? '结束' : `「${f.nodes.find((n) => n.id === id)?.title || '未命名节点'}」`
   const nodes = topoOrder(f).map((n) => {
-    const who =
-      n.kind === 'flow'
-        ? '调用流程'
-        : nodeAgent(w, n.agentId) === w.mainAgentId
-          ? `${name(w.mainAgentId)}（你自己）`
-          : name(n.agentId)
-    const what = n.instructions.trim().split('\n')[0] ?? ''
+    const units = nodeSteps(n)
+    const who = units
+      .map((u) =>
+        u.kind === 'flow'
+          ? '调用流程'
+          : nodeAgent(w, u.agentId) === w.mainAgentId
+            ? `${name(w.mainAgentId)}（你自己）`
+            : name(u.agentId),
+      )
+      .join(' → ')
+    const what = units
+      .map((u) => u.instructions.trim().split('\n')[0])
+      .filter(Boolean)
+      .join('；')
     return `- ${title(n.id)}：${who}${what ? `。${clip(what, 100)}` : ''}`
   })
   const edges = f.edges

@@ -1,4 +1,4 @@
-import type { FlowEdge, FlowNode, NodeHooks, ParamValues, WorkflowExpose, WorkflowInput } from '../schema.ts'
+import type { FlowEdge, FlowNode, NodeHooks, NodeStep, ParamValues, WorkflowExpose, WorkflowInput } from '../schema.ts'
 import { autoLayout, END, START } from '../flow.ts'
 
 /**
@@ -6,13 +6,30 @@ import { autoLayout, END, START } from '../flow.ts'
  * 节点里的 agent 写内置 Agent 的 key（./agents.ts），添加时换成本机的 Agent id。
  * 节点说明是交给 CLI 的提示词，不翻译。
  */
-interface NodeSpec {
+interface NodeStepSpec {
   id: string
   title: string
   agent: string
   tier?: FlowNode['tier']
   params?: ParamValues
   instructions: string
+  /** 这一步完成后执行的验收流程（同一工作流里的流程 id） */
+  review?: string
+  maxRounds?: number
+  /** 这一步完成后等用户确认 */
+  confirm?: boolean
+  retries?: number
+}
+interface NodeSpec {
+  id: string
+  title: string
+  /** 单执行者节点用；有 steps 时不需要 */
+  agent?: string
+  tier?: FlowNode['tier']
+  params?: ParamValues
+  instructions: string
+  /** 按顺序执行的步骤：上一步的输出作为下一步的输入 */
+  steps?: NodeStepSpec[]
   /** 完成后执行的验收流程（同一工作流里的流程 id） */
   review?: string
   maxRounds?: number
@@ -113,8 +130,65 @@ const COMMIT: WorkflowExpose = {
   description: '本地提交只做本地 commit / pending；推送和 submit 要单独授权',
 }
 
+/**
+ * 「通用项目」原来的主流程（5 个节点）：只用于迁移本机已经装过的旧副本。
+ * 方案确认和实现、文档同步和交付后来各自合并成一个多步骤节点，这里的定义保持原样
+ */
+export const GENERAL_MAIN_LEGACY: FlowSpec = {
+  id: 'main',
+  name: '主流程',
+  nodes: [
+    {
+      id: 'discover',
+      title: '需求与现状',
+      agent: 'analyst',
+      tier: 'medium',
+      params: { scene: true, scale: 'bounded' },
+      instructions:
+        '先识别现场（版本控制、文档根、已有改动、相关模块和构建 / 测试命令），再用一两句复述这次要做什么；不清楚的地方问用户。',
+    },
+    {
+      id: 'design',
+      title: '方案确认',
+      agent: 'analyst',
+      tier: 'high',
+      params: { scale: 'bounded' },
+      confirm: true,
+      instructions: '结合上面的现场结果给出简短方案：做法、要改的文件、验证方式、验收标准。等用户确认后再进入实现。',
+    },
+    {
+      id: 'impl',
+      title: '实现',
+      agent: 'developer',
+      tier: 'high',
+      params: { lang: '多种', tdd: false },
+      review: 'check',
+      maxRounds: 3,
+      retries: 1,
+      instructions:
+        '按已确认的方案实现并自测。改动分成几块互不依赖、不改同一个文件时，用 spawn_agents 派子 Agent 并行做，自己负责拆分、取回结果后统一检查。',
+    },
+    {
+      id: 'docs',
+      title: '文档同步',
+      agent: 'docsync',
+      tier: 'low',
+      instructions: '把这次改动同步进项目文档；没有要更新的写明原因。',
+    },
+    {
+      id: 'deliver',
+      title: '交付',
+      agent: 'deliver',
+      tier: 'low',
+      params: { docs: false, commit: '本地提交' },
+      instructions: '文档节点已经同步过了，这里只做版本控制收尾。推送 / submit 没有授权时不做，写清楚等用户授权。',
+    },
+  ],
+  edges: chain(START, 'discover', 'design', 'impl', 'docs', 'deliver', END),
+}
+
 /** 「通用项目」：任何类型的项目都能用的常驻流程 */
-const GENERAL: BuiltinWorkflow = {
+export const GENERAL: BuiltinWorkflow = {
   key: GENERAL_KEY,
   name: GENERAL_NAME,
   description:
@@ -155,43 +229,58 @@ const GENERAL: BuiltinWorkflow = {
         },
         {
           id: 'design',
-          title: '方案确认',
-          agent: 'analyst',
-          tier: 'high',
-          params: { scale: 'bounded' },
-          confirm: true,
-          instructions:
-            '结合上面的现场结果给出简短方案：做法、要改的文件、验证方式、验收标准。等用户确认后再进入实现。',
-        },
-        {
-          id: 'impl',
-          title: '实现',
-          agent: 'developer',
-          tier: 'high',
-          params: { lang: '多种', tdd: false },
-          review: 'check',
-          maxRounds: 3,
-          retries: 1,
-          instructions:
-            '按已确认的方案实现并自测。改动分成几块互不依赖、不改同一个文件时，用 spawn_agents 派子 Agent 并行做，自己负责拆分、取回结果后统一检查。',
+          title: '方案与实现',
+          instructions: '',
+          steps: [
+            {
+              id: 'plan',
+              title: '方案确认',
+              agent: 'analyst',
+              tier: 'high',
+              params: { scale: 'bounded' },
+              confirm: true,
+              instructions:
+                '结合上面的现场结果给出简短方案：做法、要改的文件、验证方式、验收标准。等用户确认后再进入实现。',
+            },
+            {
+              id: 'impl',
+              title: '实现',
+              agent: 'developer',
+              tier: 'high',
+              params: { lang: '多种', tdd: false },
+              review: 'check',
+              maxRounds: 3,
+              retries: 1,
+              instructions:
+                '按已确认的方案实现并自测。改动分成几块互不依赖、不改同一个文件时，用 spawn_agents 派子 Agent 并行做，自己负责拆分、取回结果后统一检查。',
+            },
+          ],
         },
         {
           id: 'docs',
-          title: '文档同步',
-          agent: 'docsync',
-          tier: 'low',
-          instructions: '把这次改动同步进项目文档；没有要更新的写明原因。',
-        },
-        {
-          id: 'deliver',
-          title: '交付',
-          agent: 'deliver',
-          tier: 'low',
-          params: { docs: false, commit: '本地提交' },
-          instructions: '文档节点已经同步过了，这里只做版本控制收尾。推送 / submit 没有授权时不做，写清楚等用户授权。',
+          title: '文档与交付',
+          instructions: '',
+          steps: [
+            {
+              id: 'docsync',
+              title: '文档同步',
+              agent: 'docsync',
+              tier: 'low',
+              instructions: '把这次改动同步进项目文档；没有要更新的写明原因。',
+            },
+            {
+              id: 'deliver',
+              title: '交付',
+              agent: 'deliver',
+              tier: 'low',
+              params: { docs: false, commit: '本地提交' },
+              instructions:
+                '上一步已经同步过文档，这里只做版本控制收尾。推送 / submit 没有授权时不做，写清楚等用户授权。',
+            },
+          ],
         },
       ],
-      edges: chain(START, 'discover', 'design', 'impl', 'docs', 'deliver', END),
+      edges: chain(START, 'discover', 'design', 'docs', END),
     },
     {
       id: 'docs-init',
@@ -228,6 +317,12 @@ const GENERAL: BuiltinWorkflow = {
     },
     CHECK,
   ],
+}
+
+/** 「通用项目」旧版的完整定义：迁移用，和新的只差主流程 */
+export const GENERAL_LEGACY: BuiltinWorkflow = {
+  ...GENERAL,
+  flows: [GENERAL_MAIN_LEGACY, ...GENERAL.flows.slice(1)],
 }
 
 /** 「UE 项目」：在「通用项目」的基础上换成 UE 的结构技能和编译验收 */
@@ -868,7 +963,11 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
 /** 内置工作流里用到的所有 Agent（key） */
 export function builtinAgentKeys(w: BuiltinWorkflow) {
   const keys = new Set([w.main, ...w.members.map((m) => m[0])])
-  for (const f of w.flows) for (const n of f.nodes) keys.add(n.agent)
+  for (const f of w.flows)
+    for (const n of f.nodes) {
+      if (n.agent) keys.add(n.agent)
+      for (const s of n.steps ?? []) keys.add(s.agent)
+    }
   return [...keys]
 }
 
@@ -893,28 +992,45 @@ export function buildWorkflow(
         description: f.description ?? '',
         startPos: { x: 0, y: 0 },
         endPos: { x: 600, y: 0 },
-        nodes: f.nodes.map(
-          (n): FlowNode => ({
+        nodes: f.nodes.map((n): FlowNode => {
+          const steps = (n.steps ?? []).map(
+            (s, i): NodeStep => ({
+              id: s.id || `st${i + 1}`,
+              title: s.title,
+              kind: 'agent',
+              agentId: agentId(s.agent),
+              flow: null,
+              tier: s.tier ?? '',
+              params: s.params ?? {},
+              instructions: s.instructions,
+              retries: s.retries ?? 0,
+              ...(s.confirm && { confirm: true }),
+              review: s.review ? { kind: 'sub', id: s.review } : null,
+              maxRounds: s.maxRounds ?? 3,
+            }),
+          )
+          return {
             id: n.id,
             title: n.title,
             kind: 'agent',
-            agentId: agentId(n.agent),
+            agentId: steps.length ? '' : agentId(n.agent ?? ''),
             flow: null,
             tier: n.tier ?? '',
             params: n.params ?? {},
-            retries: n.retries ?? 0,
-            instructions: n.instructions,
+            steps,
+            retries: steps.length ? 0 : (n.retries ?? 0),
+            instructions: steps.length ? '' : n.instructions,
             x: 0,
             y: 0,
             hooks: {
               start: null,
-              review: n.review ? { kind: 'sub', id: n.review } : null,
+              review: steps.length || !n.review ? null : { kind: 'sub', id: n.review },
               end: null,
               maxRounds: n.maxRounds ?? 3,
-              ...(n.confirm && { confirm: true }),
+              ...(!steps.length && n.confirm && { confirm: true }),
             } satisfies NodeHooks,
-          }),
-        ),
+          }
+        }),
         edges: f.edges.map(([from, to, when], i): FlowEdge => ({ id: `e${i + 1}`, from, to, ...(when && { when }) })),
       }),
     ),

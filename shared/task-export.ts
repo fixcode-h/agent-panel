@@ -144,7 +144,11 @@ export function taskAgents(task: Pick<Task, 'agentId' | 'steps' | 'messages' | '
   for (const w of task.workflows) {
     ids.add(w.mainAgentId)
     for (const m of w.members) ids.add(m.agentId)
-    for (const f of w.flows) for (const n of f.nodes) ids.add(n.agentId)
+    for (const f of w.flows)
+      for (const n of f.nodes) {
+        ids.add(n.agentId)
+        for (const s of n.steps) ids.add(s.agentId)
+      }
   }
   for (const id of [...ids]) {
     const a = agents.find((x) => x.id === id)
@@ -342,9 +346,18 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
         lines.push(
           '',
           `#### 节点「${n.title || n.id}」（node id: ${n.id}）`,
-          `类型 ${n.kind}${n.flow ? `（执行 ${n.flow.kind}:${n.flow.id}）` : ''}　Agent：${agentName(n.agentId)}　档位：${n.tier || '默认'}　重试：${n.retries}　验收最多 ${n.hooks.maxRounds} 轮${hooks.length ? `　入口：${hooks.join('，')}` : ''}${n.hooks.confirm ? '　完成后等用户确认' : ''}`,
+          n.steps.length
+            ? `按顺序执行 ${n.steps.length} 步${hooks.length ? `　入口：${hooks.join('，')}` : ''}`
+            : `类型 ${n.kind}${n.flow ? `（执行 ${n.flow.kind}:${n.flow.id}）` : ''}　Agent：${agentName(n.agentId)}　档位：${n.tier || '默认'}　重试：${n.retries}　验收最多 ${n.hooks.maxRounds} 轮${hooks.length ? `　入口：${hooks.join('，')}` : ''}${n.hooks.confirm ? '　完成后等用户确认' : ''}`,
         )
-        if (n.instructions.trim()) lines.push('要求：', clip(n.instructions.trim(), 3000))
+        if (n.steps.length) {
+          for (const [i, s] of n.steps.entries()) {
+            lines.push(
+              `${i + 1}. ${s.title || s.id}：${s.kind === 'flow' ? `执行 ${s.flow?.kind}:${s.flow?.id}` : agentName(s.agentId)}　档位：${s.tier || '默认'}　重试：${s.retries}　验收最多 ${s.maxRounds} 轮${s.review ? `（${s.review.kind}:${s.review.id}）` : ''}${s.confirm ? '　完成后等用户确认' : ''}`,
+            )
+            if (s.instructions.trim()) lines.push('   要求：', clip(s.instructions.trim(), 3000))
+          }
+        } else if (n.instructions.trim()) lines.push('要求：', clip(n.instructions.trim(), 3000))
       }
     }
   }

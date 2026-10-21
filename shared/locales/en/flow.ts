@@ -33,7 +33,16 @@ export const EN_FLOW: Record<string, string> = {
   '删除节点（Delete）': 'Delete node (Delete)',
   标题: 'Title',
   这个节点做什么: 'What this node does',
-  由谁执行: 'Run by',
+  '按顺序执行，上一步的输出作为下一步的输入': 'Runs in order; each step receives the previous step’s output',
+  执行步骤: 'Steps',
+  '共 {n} 步': '{n} steps',
+  步骤标题: 'Step title',
+  删除这一步: 'Delete this step',
+  步骤: 'Step',
+  '步骤 {n}': 'Step {n}',
+  '调用流程「{name}」': 'Call flow “{name}”',
+  '节点「{node}」里有重复的步骤 id': 'Node “{node}” has duplicate step ids',
+  '节点「{node}」的步骤 id「{id}」不能用 {reserved}': 'Step id “{id}” in node “{node}” cannot be one of: {reserved}',
   执行方式: 'Execution type',
   '执行的 Agent': 'Executing Agent',
   '主 Agent · {name}': 'Main Agent · {name}',
@@ -41,11 +50,17 @@ export const EN_FLOW: Record<string, string> = {
   '子 Agent': 'Sub-agents',
   调用的流程: 'Flow to call',
   选择流程: 'Select a flow',
-  '会和工作流说明、上游节点的结果一起发给执行者':
-    'Sent to the executor along with the workflow doc and upstream results',
-  要做的事: 'Instructions',
-  '例如：\n按分析结论实现接口，补充单元测试，完成后列出改动的文件。':
-    'For example:\nImplement the API based on the analysis, add unit tests, and list the changed files when done.',
+  '会和工作流说明、上游结果一起发给执行者': 'Sent to the executor along with the workflow doc and upstream results',
+  这一步要做的事: 'Step instructions',
+  '{name} 暴露的参数，在这一步上的取值；没改的用 Agent 的默认值。':
+    'Parameters exposed by {name}, set for this step; unchanged ones use the Agent default.',
+  '例如：按分析结论实现接口，补充单元测试，完成后列出改动的文件。':
+    'e.g. Implement the API based on the analysis, add unit tests, and list the changed files when done.',
+  '这一步完成后执行验收；不通过就把意见交回这一步继续完善':
+    'Reviews this step when it finishes; if it fails, the feedback goes back to this step for another pass',
+  验收流程: 'Review flow',
+  '添加 Agent': 'Add Agent',
+  添加工作流: 'Add workflow',
   挂载流程: 'Attached flows',
   '{slot}流程': '{slot} flow',
   最多验收: 'Review up to',
@@ -207,8 +222,6 @@ export const EN_FLOW: Record<string, string> = {
   '{name}（导入）': '{name} (imported)',
   等我确认: 'Needs my OK',
   完成后等我确认: 'Wait for my OK when done',
-  '节点做完（验收通过）后暂停，在任务页上看过结果点「通过」才往下走；退回时写上意见，节点按意见继续完善。':
-    'After the node finishes (and passes review) the task pauses. It moves on once you check the result on the task page and approve; if you send it back with comments, the node keeps improving based on them.',
   '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。':
     'With a condition, "{from}" must end with a verdict (pass / fail) and only the matching lines are followed; nodes that are not reached are skipped. For example, route to a fix node when tests fail.',
   条件: 'Condition',

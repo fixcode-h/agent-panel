@@ -75,6 +75,7 @@ export function defaultWorkflow(): Workflow {
             flow: null,
             tier: 'high',
             params: {},
+            steps: [],
             retries: 1,
             instructions: INSTRUCTIONS,
             x: 0,

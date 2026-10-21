@@ -32,18 +32,24 @@ export function fillSlots(text: string, values: Record<string, string>): string 
   return text.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (all, key: string) => values[key] ?? all)
 }
 
-/** 节点上的参数覆盖（target=node，targetId 为空表示这个节点没有同名参数就不动） */
+/** 把一项配置写进参数；targetId 可以是节点 id，也可以是节点里某一步的 id */
+function setParam(params: ParamValues, e: WorkflowExpose, v: string) {
+  const cur = params[e.key]
+  params[e.key] = typeof cur === 'boolean' ? v === 'true' : typeof cur === 'number' && Number.isFinite(+v) ? +v : v
+}
+
+/** 节点上的参数覆盖（target=node，targetId 为空表示这个节点和它的步骤上没有同名参数就不动） */
 export function applyNodeExpose(n: FlowNode, w: Pick<Workflow, 'expose'>, values: Record<string, string>): FlowNode {
   const params = { ...n.params }
+  const steps = n.steps.map((s) => ({ ...s, params: { ...s.params } }))
   for (const e of w.expose) {
-    if (e.target !== 'node' || (e.targetId && e.targetId !== n.id)) continue
+    if (e.target !== 'node') continue
     const v = values[e.key]
     if (v === undefined) continue
-    // 按节点原来的参数类型写回，布尔和数字不要变成字符串
-    const cur = params[e.key]
-    params[e.key] = typeof cur === 'boolean' ? v === 'true' : typeof cur === 'number' && Number.isFinite(+v) ? +v : v
+    if (!e.targetId || e.targetId === n.id) setParam(params, e, v)
+    for (const s of steps) if (!e.targetId || e.targetId === s.id) setParam(s.params, e, v)
   }
-  return { ...n, params }
+  return { ...n, params, steps }
 }
 
 /**
@@ -51,14 +57,22 @@ export function applyNodeExpose(n: FlowNode, w: Pick<Workflow, 'expose'>, values
  * Agent 没声明这个参数时会被忽略，声明了的节点就用这里定的值。
  */
 export function applyAgentExpose(n: FlowNode, w: Pick<Workflow, 'expose'>, values: Record<string, string>): FlowNode {
-  const params = { ...n.params }
-  for (const e of w.expose) {
-    if (e.target !== 'agent' || !e.targetId) continue
-    const v = values[e.key]
-    if (v === undefined) continue
-    params[e.targetId] = v === 'true' ? true : v === 'false' ? false : v
+  const add = (params: ParamValues) => {
+    for (const e of w.expose) {
+      if (e.target !== 'agent' || !e.targetId) continue
+      const v = values[e.key]
+      if (v === undefined) continue
+      params[e.targetId] = v === 'true' ? true : v === 'false' ? false : v
+    }
   }
-  return { ...n, params }
+  const params = { ...n.params }
+  add(params)
+  const steps = n.steps.map((s) => {
+    const p = { ...s.params }
+    add(p)
+    return { ...s, params: p }
+  })
+  return { ...n, params, steps }
 }
 
 /** 注入到工作流说明后面的配置（target=document） */
@@ -87,7 +101,11 @@ export function applyExpose(w: Workflow, params: ParamValues): Workflow {
       ...f,
       nodes: f.nodes.map((n) => {
         const node = applyAgentExpose(applyNodeExpose(n, w, values), w, values)
-        return { ...node, instructions: fillSlots(n.instructions, values) }
+        return {
+          ...node,
+          instructions: fillSlots(n.instructions, values),
+          steps: node.steps.map((s) => ({ ...s, instructions: fillSlots(s.instructions, values) })),
+        }
       }),
     })),
   }

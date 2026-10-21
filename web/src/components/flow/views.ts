@@ -1,6 +1,6 @@
 import type { Agent, Flow, FlowRef, Workflow, WorkflowInput } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { flowLabel, nodeAgent, reachable, refLabel } from '@shared/flow'
+import { flowLabel, nodeAgent, nodeSteps, reachable, refLabel } from '@shared/flow'
 import { plainLine } from '@/lib/tasks'
 import { nodeAgentRun } from '@shared/agent-role'
 import type { HookSlot, NodeView } from './FlowCanvas'
@@ -19,30 +19,43 @@ export function nodeViews(
   const byId = new Map(agents.map((a) => [a.id, a]))
   return Object.fromEntries(
     flow.nodes.map((n) => {
-      // 节点固定用默认 CLI 的档位：画布上显示的模型、颜色按节点实际用的
-      const found = byId.get(nodeAgent(w, n.agentId))
-      const agent = found && n.kind === 'agent' ? nodeAgentRun(found, n.tier) : found
-      const hooks = (['start', 'review', 'end'] as HookSlot[])
-        .filter((s) => n.hooks[s])
-        .map((s) => ({
-          slot: s,
-          label: refLabel(n.hooks[s], w, workflows),
-          extra: s === 'review' ? t('≤{n} 轮', { n: n.hooks.maxRounds }) : undefined,
-        }))
+      const units = nodeSteps(n)
+      const first = units[0]
+      // 节点固定用默认 CLI 的档位：画布上显示的模型、颜色按实际执行的第一个 Agent 算
+      const found = byId.get(nodeAgent(w, first.agentId))
+      const agent = found && first.kind === 'agent' ? nodeAgentRun(found, first.tier) : found
+      const stepName = (u: (typeof units)[number]) =>
+        u.title.trim() ||
+        (u.kind === 'flow'
+          ? refLabel(u.flow, w, workflows) || t('调用流程')
+          : byId.get(nodeAgent(w, u.agentId))?.name || t('主 Agent'))
+      const reviewRef = n.steps.length ? (n.steps.find((s) => s.review)?.review ?? null) : n.hooks.review
+      const maxRounds = n.steps.length
+        ? Math.max(1, ...n.steps.filter((s) => s.review).map((s) => s.maxRounds))
+        : n.hooks.maxRounds
+      const hooks = (['start', ...(reviewRef ? ['review'] : []), 'end'] as HookSlot[]).map((s) => ({
+        slot: s,
+        label: refLabel(s === 'review' ? reviewRef : n.hooks[s], w, workflows),
+        extra: s === 'review' ? t('≤{n} 轮', { n: maxRounds }) : undefined,
+      }))
+      const multi = units.length > 1
       const view: NodeView = {
-        title: n.title.trim() || (n.kind === 'flow' ? t('调用流程') : t('未命名节点')),
-        kind: n.kind,
+        title: n.title.trim() || (first.kind === 'flow' ? t('调用流程') : t('未命名节点')),
+        kind: first.kind,
         agent,
-        sub: agent
-          ? `${agent.name}${n.agentId ? '' : ` · ${t('主 Agent')}`} · ${modelOf(agent)}`
-          : t('还没有选择主 Agent'),
-        main: !n.agentId,
+        sub: multi
+          ? units.map(stepName).join(' → ')
+          : agent
+            ? `${agent.name}${first.agentId ? '' : ` · ${t('主 Agent')}`} · ${modelOf(agent)}`
+            : t('还没有选择主 Agent'),
+        main: !first.agentId,
         model: agent ? modelOf(agent) : undefined,
-        flowText: refLabel(n.flow, w, workflows),
-        note: plainLine(n.instructions),
+        flowText: refLabel(first.flow, w, workflows),
+        note: plainLine(n.instructions || first.instructions),
         hooks,
         loose: !live.has(n.id),
-        confirm: !!n.hooks.confirm,
+        confirm: n.steps.length ? n.steps.some((s) => s.confirm) : !!n.hooks.confirm,
+        count: units.length,
       }
       return [n.id, view]
     }),

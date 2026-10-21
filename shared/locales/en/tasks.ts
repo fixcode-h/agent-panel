@@ -78,6 +78,7 @@ export const EN_TASKS: Record<string, string> = {
   还没有选择目录: 'No folder selected yet',
   没有默认工作流: 'No default workflow',
   '任务 · {n}': 'Tasks · {n}',
+  查看这一步的输出: 'View this step’s output',
   '还没有任务。在上面描述要做的事，Agent 会按工作流完成。':
     'No tasks yet. Describe what you need above and Agents will get it done following the workflow.',
   工作流已删除: 'Workflow deleted',

@@ -10,6 +10,7 @@ import {
   type Flow,
   type FlowNode,
   type FlowRef,
+  type NodeStep,
   type TaskStep,
   type Workflow,
   type WorkflowInput,
@@ -18,7 +19,7 @@ import {
 import { t } from './i18n.ts'
 
 const rand = () => Math.random().toString(36).slice(2, 10)
-export const flowId = (prefix: 'nd' | 'e' | 'fl') => `${prefix}_${rand()}`
+export const flowId = (prefix: 'nd' | 'e' | 'fl' | 'st') => `${prefix}_${rand()}`
 export { START, END }
 
 export const COL = 300
@@ -36,6 +37,7 @@ export function newNode(o: Partial<FlowNode> & { x: number; y: number }): FlowNo
     agentId: '',
     flow: null,
     instructions: '',
+    steps: [],
     tier: '',
     params: {},
     retries: 0,
@@ -43,6 +45,51 @@ export function newNode(o: Partial<FlowNode> & { x: number; y: number }): FlowNo
     ...o,
   }
 }
+
+/** 新的一步：稳定 id 用 st_xxx */
+export function newNodeStep(o: Partial<NodeStep> = {}): NodeStep {
+  return {
+    id: flowId('st'),
+    title: '',
+    kind: 'agent',
+    agentId: '',
+    flow: null,
+    tier: '',
+    params: {},
+    instructions: '',
+    retries: 0,
+    review: null,
+    maxRounds: 3,
+    ...o,
+  }
+}
+
+/**
+ * 节点实际执行的步骤：有显式 steps 就用它；旧的单执行者节点合成一步，
+ * id 用节点 id，执行记录和会话键都和以前一致
+ */
+export function nodeSteps(n: FlowNode): NodeStep[] {
+  if (n.steps.length) return n.steps
+  return [
+    {
+      id: n.id,
+      title: '',
+      kind: n.kind,
+      agentId: n.agentId,
+      flow: n.flow,
+      tier: n.tier,
+      params: n.params,
+      instructions: n.instructions,
+      retries: n.retries,
+      confirm: n.hooks.confirm,
+      review: n.hooks.review,
+      maxRounds: n.hooks.maxRounds,
+    },
+  ]
+}
+
+/** 步骤 id 不能占用的路径段：执行记录的 id 是路径，这些会和多记录的结构冲突 */
+export const RESERVED_STEP_IDS = ['start', 'review', 'end', 'body', 'step', 'sub', 'call']
 
 export const getFlow = (w: Pick<WorkflowInput, 'flows'>, id: string) => w.flows.find((f) => f.id === id)
 /** 主流程：任务从这里开始 */
@@ -178,7 +225,10 @@ export const nodeAgent = (w: Pick<Workflow, 'mainAgentId'>, agentId: string) => 
 /** 工作流用到的子 Agent：节点上选的（子 Agent 现在在节点上配），加上旧版团队里列过的；不含主 Agent */
 export function subAgentIds(w: Pick<Workflow, 'mainAgentId' | 'members' | 'flows'>) {
   return [
-    ...new Set([...w.flows.flatMap((f) => f.nodes.map((n) => n.agentId)), ...(w.members ?? []).map((m) => m.agentId)]),
+    ...new Set([
+      ...w.flows.flatMap((f) => f.nodes.flatMap((n) => nodeSteps(n).map((s) => s.agentId))),
+      ...(w.members ?? []).map((m) => m.agentId),
+    ]),
   ].filter((id) => id && id !== w.mainAgentId)
 }
 
@@ -207,7 +257,10 @@ export function dispatches(w: Pick<Workflow, 'dispatch' | 'mainAgentId'>, f: Flo
   if (w.dispatch === false || !w.mainAgentId) return false
   const live = reachable(f)
   const nodes = f.nodes.filter((n) => live.has(n.id))
-  return nodes.length > 1 || nodes.some((n) => n.kind === 'flow' || nodeAgent(w, n.agentId) !== w.mainAgentId)
+  return (
+    nodes.length > 1 ||
+    nodes.some((n) => nodeSteps(n).some((s) => s.kind === 'flow' || nodeAgent(w, s.agentId) !== w.mainAgentId))
+  )
 }
 
 /** 引用的流程：同工作流的子流程，或另一个工作流的主流程 */
@@ -240,9 +293,12 @@ export function refLabel(
 
 /** 一个流程直接引用的流程 */
 export function refsOf(f: Flow): FlowRef[] {
-  return f.nodes.flatMap((n) =>
-    [n.kind === 'flow' ? n.flow : null, n.hooks.start, n.hooks.review, n.hooks.end].filter((r): r is FlowRef => !!r),
-  )
+  return f.nodes
+    .flatMap((n) => [
+      ...[n.kind === 'flow' ? n.flow : null, n.hooks.start, n.hooks.review, n.hooks.end],
+      ...nodeSteps(n).flatMap((s) => [s.kind === 'flow' ? s.flow : null, s.review]),
+    ])
+    .filter((r): r is FlowRef => !!r)
 }
 
 /** 找出循环引用（A 的节点调用 B，B 又调用 A），返回环上的流程名 */
@@ -322,18 +378,19 @@ export function planTask(workflow: Workflow | undefined, run = 1): { steps: Task
   return {
     steps: [
       ...main,
-      ...topoOrder(flow).map((n, i) =>
-        blankStep({
+      ...topoOrder(flow).map((n, i) => {
+        const first = nodeSteps(n)[0]
+        return blankStep({
           id: `${p}${n.id}`,
           workflowId: workflow.id,
           flowId: flow.id,
           nodeId: n.id,
-          kind: n.kind,
+          kind: first.kind,
           title: n.title.trim() || t('节点 {n}', { n: i + 1 }),
-          agentId: n.kind === 'agent' ? nodeAgent(workflow, n.agentId) : '',
+          agentId: first.kind === 'agent' ? nodeAgent(workflow, first.agentId) : '',
           runId: run,
-        }),
-      ),
+        })
+      }),
     ],
   }
 }
@@ -405,6 +462,7 @@ export const SLOT_LABEL: Record<string, string> = {
   review: t('验收'),
   end: t('结束'),
   body: t('执行'),
+  step: t('步骤'),
   sub: t('子 Agent'),
   call: t('委派'),
 }

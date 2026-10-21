@@ -396,7 +396,10 @@ export function codexAdapter(
         { method: 'initialize', params: { clientInfo: { name: 'agent-panel', version: '1' } } },
         { timeoutMs: START_TIMEOUT_MS },
       )
-      if (init?.error) return ctx.finish(false, String(init.error.message))
+      if (init?.error) {
+        void ctx.finish(false, String(init.error.message))
+        return
+      }
       ctx.send({ method: 'initialized' })
       if (needsWinSandbox) {
         const ready = await ctx.request(
@@ -410,7 +413,10 @@ export function codexAdapter(
             { method: 'windowsSandbox/setupStart', params: { mode: 'unelevated', cwd: o.cwd } },
             { timeoutMs: START_TIMEOUT_MS },
           )
-          if (setup?.error) return sandboxFailed(ctx, String(setup.error.message ?? t('未知错误')))
+          if (setup?.error) {
+            sandboxFailed(ctx, String(setup.error.message ?? t('未知错误')))
+            return
+          }
           if (setup?.result?.started === false) await startThread(ctx)
           return
         }

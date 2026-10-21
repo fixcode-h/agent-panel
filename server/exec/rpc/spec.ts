@@ -99,8 +99,10 @@ const first = (expr: string | string[] | undefined, msg: any, saved: Record<stri
 export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdapter {
   const saved: Record<string, any> = {}
   let last: any
+  // 保活时同一进程里会开下一轮，输入换成新的那句
+  let input = o.input ?? ''
   const vars = (extra: SpecVars = {}): SpecVars => ({
-    input: o.input ?? '',
+    input,
     model: o.model,
     effort: o.effort,
     maxTurns: o.maxTurns,
@@ -177,12 +179,21 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       const event = spec.unwrap ? (getPath(msg, spec.unwrap) ?? msg) : msg
       for (const ev of o.parser(event)) ctx.emit(ev)
       if (!done) return
-      if (spec.exit) {
-        const exit = record(spec.exit, {})
-        if (spec.exit.notify) ctx.send(exit)
-        else void ctx.request(exit, { timeoutMs: 3000 })
-      }
-      ctx.finish(ok, ok ? undefined : error || t('执行失败'), spec.closeDelayMs)
+      // 退出消息等确认真的不用这个进程了再发（见 exit）；保活时进程要留着开下一轮
+      void ctx.finish(ok, ok ? undefined : error || t('执行失败'), spec.closeDelayMs)
+    },
+    async next(ctx, text) {
+      // 同一进程里开下一轮：会话已经开着，直接按 start 里的步骤把新的那句交过去
+      input = text
+      turnSent = ''
+      if (!(await run(ctx, spec.start))) return
+      emitIds(ctx)
+    },
+    exit(ctx) {
+      if (!spec.exit) return
+      const exit = record(spec.exit, {})
+      if (spec.exit.notify) ctx.send(exit)
+      else void ctx.request(exit, { timeoutMs: 3000 })
     },
     async steer(ctx, text) {
       if (!spec.steer) return false

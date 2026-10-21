@@ -4020,6 +4020,58 @@ try {
   }
   step('对话页开着时 CLI 停在等下一句上：下一句直接交给同一个进程，切走后结束')
 
+  // 对话页开着、模型没有调用 wait_user_message：面板自己把进程留着，回来发消息不再启动新进程
+  {
+    const beforePids = new Set(readLog(log).map((x) => x.pid))
+    let w = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      askUser: false,
+      prompt: '先看代码',
+    })
+    // 打开对话页时前端会先报已读，再报页面开着
+    await call('POST', `/tasks/${w.id}/seen`, {})
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: true })
+    for (let i = 0; i < 120; i++) {
+      w = await call('GET', `/tasks/${w.id}`)
+      if (w.awaitingUser) break
+      await sleep(100)
+    }
+    assert.ok(w.awaitingUser, '回复完停在等下一句上，不靠模型调用等待工具')
+    assert.equal(w.working, false, '等下一句不算执行中')
+    assert.ok(w.turnDoneAt, 'CLI 完成一轮时记了时间')
+
+    // 回来发消息：同一个进程接着跑，不再启动新的 CLI（跑完这一轮又会保活，所以任务还是 running）
+    const beforeMsgs = w.messages.length
+    await call('POST', `/tasks/${w.id}/messages`, { text: '接着说' })
+    for (let i = 0; i < 120; i++) {
+      w = await call('GET', `/tasks/${w.id}`)
+      // 新的一句已经回复完、又回到等下一句：这一轮处理过了
+      if (w.awaitingUser && w.messages.length > beforeMsgs) break
+      await sleep(100)
+    }
+    assert.ok(w.messages.length > beforeMsgs, '用户消息和回复都记进对话')
+    const pids = readLog(log)
+      .filter((x) => !beforePids.has(x.pid))
+      .map((x) => x.pid)
+    assert.equal(new Set(pids).size, 1, '整个过程只启动了一个 CLI 进程')
+    assert.deepEqual(w.queue, [], '不排队')
+    const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着说')
+    assert.ok(at > 0, '用户消息记进对话')
+    assert.ok(
+      w.messages.slice(at + 1).some((m) => m.role === 'agent' && m.text.trim()),
+      'AI 在用户消息下面继续输出',
+    )
+
+    // 用户走开（过了宽限）：保活结束，进程退出
+    await call('POST', `/tasks/${w.id}/presence`, { viewerId: 'e2e', active: false })
+    w = await waitDone(w.id, 15000)
+    assert.equal(w.status, 'done', '切走宽限到了，CLI 自己结束')
+  }
+  step('模型没调用等待工具时，面板也把进程留着：回来发消息复用同一个 CLI')
+
   // 打开旧对话时后台预热：不用先发消息，--resume 已经启动好停在等下一句上
   {
     let w = await call('POST', '/tasks', {

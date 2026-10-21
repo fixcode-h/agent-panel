@@ -130,6 +130,8 @@ const dn = (
   review: '',
   end: '',
   maxRounds: 3,
+  confirm: false,
+  steps: [],
   ...o,
 })
 const reviewFlow = (agent: string): DraftFlow => ({
