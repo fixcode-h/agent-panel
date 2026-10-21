@@ -514,6 +514,51 @@ try {
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色')
+  // 文件页：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存
+  {
+    await p.goto(base + '#/files')
+    await p.waitForTimeout(800)
+    const calls = () => p.evaluate(() => (window.__fileCalls ?? []).filter((x, i, a) => a.indexOf(x) === i).join(','))
+    const first = await calls()
+    if (first !== '') errors.push(`文件页：首屏不该读整棵树，实际读了「${first || '(根)'}」，应该只读根目录一层`)
+    const row = (name) => p.locator(`main button[title="${name}"]`).first()
+    // 根目录这一层有 src、tests 和几个文件，没有更深层的内容
+    await row('src')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件页：根目录没有列出 src'))
+    await row('tests')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('文件页：根目录没有列出 tests'))
+    if (await row('src/App.tsx').count()) errors.push('文件页：没展开 src 就列出了它下面的文件')
+    if (await p.getByText('共 20000 个文件', { exact: false }).count()) errors.push('文件页：还在显示全量文件数量')
+    await check(p, '文件-根目录一层', ['src', 'README.md'])
+    // 展开 src：这时才读 src 这一层
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件页：展开 src 后没有读它这一层'))
+    if (!(await calls()).split(',').includes('src')) errors.push('文件页：展开 src 时没有请求这一层')
+    await check(p, '文件-展开一层', ['api', 'App.tsx'])
+    // 收起再展开：不重复请求
+    await row('src').click()
+    await p.waitForTimeout(200)
+    const before = await p.evaluate(() => (window.__fileCalls ?? []).length)
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    const after = await p.evaluate(() => (window.__fileCalls ?? []).length)
+    if (after !== before) errors.push(`文件页：收起再展开又请求了一次（${before} → ${after}）`)
+    // 名称搜索：还没展开的深层文件也能搜到，结果是平铺的
+    await p.getByPlaceholder('查找文件').fill('Restock')
+    await p
+      .locator('main button[title="src/components/RestockButton.tsx"]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件页：名称搜索没有找到还没展开的深层文件'))
+    await check(p, '文件-名称搜索', ['RestockButton'])
+    await p.getByPlaceholder('查找文件').fill('')
+    await p.waitForTimeout(400)
+  }
 
   const m = await page({ width: 390, height: 844 })
   await m.goto(base)
