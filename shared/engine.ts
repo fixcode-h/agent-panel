@@ -1726,11 +1726,14 @@ function statusTree(host: EngineHost, self: string) {
   const { task } = host
   const name = (id: string) => host.agents.find((a) => a.id === id)?.name ?? ''
   const lines: string[] = []
-  const walk = (pid: string, depth: number) => {
-    const kids = task.steps.filter((s) => s.parentId === pid)
+  const ids = new Set(task.steps.map((s) => s.id))
+  // 对话里派的子 Agent 挂在 @chat 下，@chat 自己不是 steps 里的一条：父节点不在的步骤也当作顶层列出来，
+  // 否则对话里派出的子 Agent 一个都查不到（get_status 显示「还没有节点」）
+  const roots = task.steps.filter((s) => !s.parentId || !ids.has(s.parentId))
+  const kidsOf = (pid: string) => task.steps.filter((s) => s.parentId === pid)
+  const walk = (list: TaskStep[], depth: number) => {
     // 主 Agent 排在它调度的节点前面
-    kids.sort((a, b) => Number(isMainStep(b)) - Number(isMainStep(a)))
-    for (const s of kids) {
+    for (const s of [...list].sort((a, b) => Number(isMainStep(b)) - Number(isMainStep(a)))) {
       if (lines.length >= 80) return
       const label = s.parentId && !isMainStep(s) ? `${SLOT_PROMPT[s.slot] ?? ''} · ${s.title}` : s.title
       const who = name(s.agentId)
@@ -1738,10 +1741,10 @@ function statusTree(host: EngineHost, self: string) {
       lines.push(
         `${'  '.repeat(depth)}- ${s.id}｜${label}${who ? `（${who}）` : ''}${s.id === self ? '【你】' : ''}：${STATUS_TEXT[s.status] ?? s.status}${out}`,
       )
-      walk(s.id, depth + 1)
+      walk(kidsOf(s.id), depth + 1)
     }
   }
-  walk('', 0)
+  walk(roots, 0)
   return lines.join('\n') || '（还没有节点）'
 }
 
