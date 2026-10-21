@@ -903,7 +903,7 @@ async function runChat(
         {
           text: '主色调偏向哪种？',
           header: '配色',
-          multiSelect: false,
+          multiSelect: true,
           options: [
             { label: '冷色', desc: '蓝、青、紫为主，沉静克制', style: '' },
             { label: '暖色', desc: '金、橙、红为主，热烈醒目', style: '' },

@@ -305,7 +305,7 @@ const TOOLS = [
   {
     name: 'ask_user',
     description:
-      '动手之前先问用户（例如整体风格还没定），一次可以问几个问题，用户全部回答后一起交回来。每个问题写 question、header（4 个字以内的标签）、options（3~4 个，每个 label、desc；问风格时再写 style：选了以后用的英文风格描述），multiSelect 表示可以多选。用户总能自己输入别的答案。问了就不要再改设计，回复一句为什么先问。',
+      '动手之前先问用户（例如整体风格还没定），一次可以问几个问题，用户全部回答后一起交回来。每个问题写 question、header（4 个字以内的标签）、options（3~4 个，每个 label、desc；问风格时再写 style：选了以后用的英文风格描述），multiSelect 表示可以多选。问题本身能同时选好几项时（例如「要包含哪些页面」「要参考哪些风格」）把 multiSelect 设为 true，界面会按多选显示。用户总能自己输入别的答案。问了就不要再改设计，回复一句为什么先问。',
     inputSchema: obj(
       {
         questions: {

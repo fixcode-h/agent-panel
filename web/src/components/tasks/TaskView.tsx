@@ -379,6 +379,26 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
+  // 这一轮完成时页面正开着：直接记为看过，不亮橙点。
+  // 不能只靠服务端的在场记录：那是内存里的，面板重启过就没了，用户明明开着却还是标成未读
+  useEffect(() => {
+    const done = task?.turnDoneAt ?? ''
+    if (!done || done === task?.turnSeenAt) return
+    const mark = () => {
+      // 切到后台时不算看过，等用户切回来再记
+      if (document.hidden) return
+      api
+        .markTaskSeen(taskId)
+        .then(apply)
+        .catch(() => {})
+    }
+    mark()
+    document.addEventListener('visibilitychange', mark)
+    return () => document.removeEventListener('visibilitychange', mark)
+    // apply 每次渲染都是新的，只按这一轮完成和看过的时间重跑
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [task?.turnDoneAt, task?.turnSeenAt, taskId])
+
   // 告诉服务端这个对话页还开着：CLI 回复完会停在等下一句的工具上；宽限期内切回来还能接着说（时长在设置里改）
   useEffect(() => {
     const viewer = globalThis.crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2)

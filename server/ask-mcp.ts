@@ -40,7 +40,8 @@ const sessions = new Map<
 const TOOL = {
   name: 'ask_user',
   description:
-    '向用户提问并等他在界面上回答。需要用户做选择、补充信息、确认方向时用它，不要把问题写成普通文字。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」；用户也能自己填写别的答案。',
+    '向用户提问并等他在界面上回答。需要用户做选择、补充信息、确认方向时用它，不要把问题写成普通文字。一次可以问几个相关的问题；每个问题给 2~4 个选项，推荐的放第一位并在 label 末尾标「（推荐）」；用户也能自己填写别的答案。' +
+    '问题本身可以同时选好几项时（例如「现在修哪些」「要包含哪些」「要改哪几个文件」），必须把 multiSelect 设为 true：界面会变成方框、可以多选，标题后面也会标出「多选」。只有一个答案能选时才用单选（不写或 false）。',
   inputSchema: {
     type: 'object',
     properties: {
@@ -59,7 +60,11 @@ const TOOL = {
                 required: ['label'],
               },
             },
-            multiSelect: { type: 'boolean', description: '能不能多选' },
+            multiSelect: {
+              type: 'boolean',
+              description:
+                '问题可以同时选好几项时为 true（例如「现在修哪些」「要包含哪些」）。为 true 时界面按多选显示，用户能勾选多个选项',
+            },
           },
           required: ['question'],
         },
