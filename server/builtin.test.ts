@@ -303,6 +303,38 @@ test('没改过的旧「测试运行」升级成「测试与验收」，改过�
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
 })
 
+test('没改过的旧「通用约束」「任务 Agent」跟着升级到新规则；改过的不动', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  const old = (key: 'rules' | 'worker', id: string) => ({
+    ...agents.find((a) => a.id === key)!,
+    ...LEGACY_AGENT_FIELDS[key],
+    id,
+    origin: `builtin:${key}`,
+    params: [],
+    skills: [],
+  })
+  const state = { agents: [old('rules', 'local-rules'), old('worker', 'local-worker')], categories: [], tags: [], workflows: [] }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 2, '两个旧副本都升级')
+  const rules = updated.find((a) => a.name === '通用约束')!
+  assert.match(rules.instructions, /共用工作区/, '补上共用工作区规则')
+  assert.match(rules.instructions, /单次不超过 60 秒/, '补上长等待上限')
+  const worker = updated.find((a) => a.name === '任务 Agent')!
+  assert.match(worker.instructions, /没有开启按工作流执行计划的能力/, '补上不能起计划时怎么退化成对话')
+  // 再启动：已经不是旧指纹，不再改
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
+
+  // 用户改过的保留原样
+  const edited = { ...old('rules', 'mine'), instructions: `${LEGACY_AGENT_FIELDS.rules.instructions}\n我自己加的一条` }
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
+})
+
 test('已合并的内置 Agent 在本机还有时补一句说明，重复启动不重复加', async () => {
   const saved: Agent[] = []
   const ops = {
