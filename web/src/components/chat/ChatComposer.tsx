@@ -1,23 +1,16 @@
 // 通用的 AI 对话输入框：附件（选文件、粘贴截图、拖进来）、自动长高、Enter 发送、发送 / 停止按钮。
 // 任务对话和 UI 设计的对话共用这一个，不同的地方通过插槽扩展：
 // menus（「/」「@」弹出的列表）、above（输入框上面的标注等）、tools（左下角的开关和选项）、actions（换掉右下角的按钮）
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowUp, ListPlus, Loader2, Square } from 'lucide-react'
 import type { DesignKind, SavedStyle } from '@shared/design'
 import { dropChip } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
-import {
-  AttachMenu,
-  AttachmentChips,
-  chipKind,
-  DropHint,
-  useDropPaste,
-  type AttachHooks,
-  type useAttachments,
-} from './Attachments'
-import { RichInput, type RichInputHandle } from './RichInput'
+import { AttachMenu, chipKind, DropHint, useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
+import { RichInput, type ChipActions, type RichInputHandle } from './RichInput'
+import { Lightbox } from '@/components/ui/lightbox'
 
 const DRAFT = 'chat-draft:'
 
@@ -159,7 +152,7 @@ export function ChatComposer({
     },
     [files, editor],
   )
-  /** 附件从附件条上删掉时，输入框里的那张卡片也一起去掉 */
+  /** 附件从输入框里的卡片删掉：卡片和附件一起去掉 */
   const removeFile = useCallback(
     (key: string) => {
       const item = files.items.find((x) => x.key === key)
@@ -168,8 +161,24 @@ export function ChatComposer({
     },
     [files, editor, onChange],
   )
-  /** 图片卡片显示小缩略图 */
+  /** 图片卡片显示图片本身 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
+  /** 点卡片上的图看大图、点右上角删除 */
+  const lightbox = files.items.flatMap((x) => (x.preview ? [{ src: x.preview, name: x.name }] : []))
+  const [openImage, setOpenImage] = useState<number>()
+  const chipActions = useMemo<ChipActions>(
+    () => ({
+      preview: (name) => {
+        const at = lightbox.findIndex((x) => x.name === name)
+        if (at >= 0) setOpenImage(at)
+      },
+      remove: (name) => {
+        const item = files.items.find((x) => x.name === name)
+        if (item) removeFile(item.key)
+      },
+    }),
+    [lightbox, files.items, removeFile],
+  )
   const drop = useDropPaste(addFiles, dropScope)
   // 页面级的拖入进度交给外面画整页提示，输入框自己不再叠一层
   const overCb = useRef(onDropOver)
@@ -197,7 +206,7 @@ export function ChatComposer({
     >
       {menus}
       {drop.over && !dropScope && <DropHint />}
-      <AttachmentChips items={files.items} onRemove={removeFile} />
+      <Lightbox images={lightbox} index={openImage} onClose={() => setOpenImage(undefined)} />
       {above}
       <RichInput
         id={id}
@@ -219,6 +228,7 @@ export function ChatComposer({
         placeholder={placeholder}
         disabled={disabled}
         preview={preview}
+        actions={chipActions}
         pad={sm ? 'px-3.5 pt-3 pb-1' : 'px-4 pt-3.5'}
         className={cn(
           'leading-relaxed',

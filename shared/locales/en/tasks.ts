@@ -42,13 +42,14 @@ export const EN_TASKS: Record<string, string> = {
 
   // 附件
   '一次最多附上 {n} 个文件': 'You can attach up to {n} files at a time',
-  '「{name}」超过 {n} MB': '"{name}" is larger than {n} MB',
+  选择文件的窗口一直没有响应: 'The file picker did not respond',
+  '打不开选择文件的窗口：{error}': 'Could not open the file picker: {error}',
   截图: 'Screenshot',
   请查看附件: 'Please see the attachment',
   '「{name}」上传失败：{error}': 'Failed to upload "{name}": {error}',
-  上传中: 'Uploading',
   '移除 {name}': 'Remove {name}',
   按退格键删除: 'Press Backspace to remove',
+  移除: 'Remove',
   '添加文件、图片或引用': 'Add files, images or references',
   上传文件或图片: 'Upload files or images',
   '可粘贴 / 拖入': 'Paste or drop',

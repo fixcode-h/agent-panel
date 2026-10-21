@@ -303,6 +303,8 @@ export const api = {
   /** 结束工作流：没完成的节点不再执行 */
   endFlow: (id: string) => request<Task>(`/tasks/${id}/end-flow`, json('POST', {})),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
+  /** 在面板所在的本机弹出系统的文件选择框，返回选中文件的绝对路径（取消时为空） */
+  pickFiles: () => request<{ files: Attachment[] }>('/uploads/pick', json('POST', {})),
   /** 引入会话：把任务或设计的对话整理成一份附件 */
   taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),

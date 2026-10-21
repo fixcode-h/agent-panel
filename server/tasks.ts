@@ -59,6 +59,7 @@ import {
   setPresenceUnreadKeeper,
   setViewer,
 } from './presence.ts'
+import { placeAttachments } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
@@ -202,6 +203,18 @@ export function tasksApi(deps: {
   async function dropUploads(removed: Task[]) {
     const keep = new Set((await store.list()).flatMap((t) => [...uploadDirs(t)]))
     await removeUploads(removed.flatMap((t) => [...uploadDirs(t)]).filter((d) => !keep.has(d)))
+  }
+
+  /**
+   * 附件拷进任务自己的执行目录，路径换成相对 Agent 的那一份。
+   * Chat 的执行目录要先建出来（它本来只在第一次执行时才建）。
+   */
+  async function placeInTask(tk: Pick<Task, 'worktree' | 'projectId' | 'id'>, attachments: Attachment[]) {
+    if (!attachments.length) return attachments
+    const dir = await taskDir(tk)
+    if (!dir) return attachments
+    if (!tk.projectId && !isolated(tk)) await mkdir(dir, { recursive: true })
+    return placeAttachments(dir, attachments)
   }
 
   /**
@@ -600,6 +613,8 @@ export function tasksApi(deps: {
     }
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
+    // 附件拷进这个任务的执行目录，交给 Agent 的是这一份（对话里显示、导出仍用原来的那份）
+    const placed = await placeInTask(next, m.attachments)
     if (!m.recorded) {
       next.messages.push({
         id: randomUUID(),
@@ -614,7 +629,7 @@ export function tasksApi(deps: {
       })
     }
     try {
-      return await start(entry, withAttachments(expanded || m.text, m.attachments), false, await deps.agents.list())
+      return await start(entry, withAttachments(expanded || m.text, placed), false, await deps.agents.list())
     } catch (e) {
       live.delete(id)
       throw e
@@ -626,9 +641,17 @@ export function tasksApi(deps: {
    * CLI 正停在等下一句 → 直接交回同一个进程；支持插话 → 插话；
    * 能用面板工具取补充 → 登记给它取；都收不下就记下来，这一轮结束后马上开始新一轮。
    */
-  async function deliver(entry: Live, msg: TaskMessage, text: string, attachments: Attachment[]) {
+  async function deliver(
+    entry: Live,
+    msg: TaskMessage,
+    text: string,
+    attachments: Attachment[],
+    placed: Attachment[] = attachments,
+  ) {
     const task = entry.task
-    const wait = deliverWait(task, msg)
+    // 交给 CLI 的是拷进任务目录的那一份（placed）；记进对话的 msg 仍是用户原来的附件，缩略图从附件目录读
+    const forCli = { ...msg, attachments: placed }
+    const wait = deliverWait(task, forCli)
     if (wait === 'ok') {
       task.updatedAt = new Date().toISOString()
       await store.update(task.id, task)
@@ -640,16 +663,16 @@ export function tasksApi(deps: {
       if (entry.done) await entry.done
       const next = live.get(task.id)
       if (next) {
-        if (deliverWait(next.task, msg) === 'ok') {
+        if (deliverWait(next.task, forCli) === 'ok') {
           next.task.updatedAt = new Date().toISOString()
           await store.update(task.id, next.task)
           return { task: next.task, how: 'wait' as const }
         }
-        return intoTurn(next, msg, text, attachments)
+        return intoTurn(next, msg, text, placed)
       }
-      return { task: await followUp(task.id, { text, attachments }), how: 'next' as const }
+      return { task: await followUp(task.id, { text, attachments: placed }), how: 'next' as const }
     }
-    return intoTurn(entry, msg, text, attachments)
+    return intoTurn(entry, msg, text, placed)
   }
 
   /** CLI 没在等下一句：插话 → 登记给 read_user_notes → 记下来这一轮结束后接着处理 */
@@ -909,11 +932,11 @@ export function tasksApi(deps: {
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
     const expanded = await expandForWorkflow(draft, input.prompt)
     if (expanded && draft.messages[0]) draft.messages[0].prompt = expanded
+    // 附件拷进这个任务自己的目录：Agent 用得着相对路径，也不用为工作目录外的文件单独放行。
+    // 对话里显示的仍是原来那份（缩略图从附件目录读）
+    const placed = await placeInTask(draft, input.attachments ?? [])
     const task = await store.create(draft)
-    return c.json(
-      await start(reserve(task), withAttachments(expanded || input.prompt, input.attachments), true, agents),
-      201,
-    )
+    return c.json(await start(reserve(task), withAttachments(expanded || input.prompt, placed), true, agents), 201)
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -928,6 +951,8 @@ export function tasksApi(deps: {
       // 都收不下就把消息记进对话，这一轮结束后马上开始新一轮接着处理
       if (!interrupt) {
         const expanded = await expandForWorkflow(prev.task, text)
+        // 附件先拷进任务的执行目录，交给 CLI 的是那一份
+        const placed = await placeInTask(prev.task, attachments)
         const msg: TaskMessage = {
           id: randomUUID(),
           role: 'user' as const,
@@ -939,7 +964,7 @@ export function tasksApi(deps: {
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        return c.json((await deliver(prev, msg, expanded || text, attachments)).task)
+        return c.json((await deliver(prev, msg, expanded || text, placed)).task)
       }
       // 打断：停下当前这一轮再发
       stopTask(id)

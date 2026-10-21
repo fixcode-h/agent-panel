@@ -5,7 +5,7 @@ import { Check, Copy } from 'lucide-react'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
-import { MessageAttachments } from './Attachments'
+import { MessageAttachments, attachmentUrl, isImage } from './Attachments'
 
 /** 消息时间：今天只写时分，今年写月日，更早的带上年份；悬停看完整时间 */
 export function formatAt(at: string) {
@@ -26,8 +26,55 @@ export function formatAt(at: string) {
 export const msgAction =
   'grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-40'
 
+/** 附件在复制出来的文字里怎么写：图片和文件都直接给路径，粘贴到别处还知道原文在哪 */
+const attachLines = (items: Attachment[]) =>
+  items.length ? `\n\n${items.map((a) => `${a.name}：${a.path}`).join('\n')}` : ''
+
+/**
+ * 复制：文字后面补上附件路径。
+ * 有图片时把图片也一起写进剪贴板：粘贴到能接图片的地方得到图片，别的编辑器仍然拿到文字
+ */
+async function copyWithAttachments(text: string, items: Attachment[]) {
+  const full = text + attachLines(items)
+  const images = items.filter((a) => isImage(a.mime, a.name))
+  if (!images.length || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
+    await navigator.clipboard?.writeText(full)
+    return
+  }
+  const blobs = await Promise.all(
+    images.map((a) =>
+      attachmentUrl(a)
+        .then((url) => (url ? fetch(url) : null))
+        .then((r) => (r?.ok ? r.blob() : null))
+        .catch(() => null),
+    ),
+  )
+  // 同一次写入里带上文字和图片：分成两次写，后一次会把前一次覆盖掉
+  const entry: Record<string, Blob> = { 'text/plain': new Blob([full], { type: 'text/plain' }) }
+  blobs.forEach((b, i) => {
+    if (b) entry[b.type || images[i].mime || 'image/png'] = b
+  })
+  try {
+    await navigator.clipboard.write([new ClipboardItem(entry)])
+  } catch {
+    // 有的浏览器只认文字：退回去只复制文字和路径，不让整个操作失败
+    await navigator.clipboard.writeText(full)
+  }
+}
+
 /** 复制按钮：点了显示一下「已复制」 */
-export function CopyButton({ text, className, label }: { text: string; className?: string; label?: string }) {
+export function CopyButton({
+  text,
+  attachments,
+  className,
+  label,
+}: {
+  text: string
+  /** 连附件一起复制：文字后面补路径，图片写进剪贴板 */
+  attachments?: Attachment[]
+  className?: string
+  label?: string
+}) {
   const [done, setDone] = useState(false)
   return (
     <button
@@ -36,10 +83,12 @@ export function CopyButton({ text, className, label }: { text: string; className
       title={done ? t('已复制') : (label ?? t('复制'))}
       aria-label={label ?? t('复制')}
       onClick={() => {
-        void navigator.clipboard?.writeText(text).then(() => {
-          setDone(true)
-          setTimeout(() => setDone(false), 1500)
-        })
+        void (attachments?.length ? copyWithAttachments(text, attachments) : navigator.clipboard?.writeText(text)).then(
+          () => {
+            setDone(true)
+            setTimeout(() => setDone(false), 1500)
+          },
+        )
       }}
     >
       {done ? <Check className="h-3.5 w-3.5 text-success" /> : <Copy className="h-3.5 w-3.5" />}
@@ -51,11 +100,14 @@ export function CopyButton({ text, className, label }: { text: string; className
 export function MessageMeta({
   text,
   at,
+  attachments,
   actions,
   align = 'start',
 }: {
   text: string
   at?: string
+  /** 连附件一起复制 */
+  attachments?: Attachment[]
   actions?: React.ReactNode
   align?: 'start' | 'end'
   always?: boolean
@@ -68,7 +120,7 @@ export function MessageMeta({
         align === 'end' && 'flex-row-reverse',
       )}
     >
-      {text && <CopyButton text={text} />}
+      {text && <CopyButton text={text} attachments={attachments} />}
       {actions}
       {time?.short && (
         <time dateTime={at} title={time.full} className="px-1.5 tabular-nums">
@@ -112,7 +164,7 @@ export function UserMessage({
           {extra}
         </div>
       )}
-      <MessageMeta text={text} at={at} actions={actions} align="end" />
+      <MessageMeta text={text} at={at} attachments={attachments} actions={actions} align="end" />
     </div>
   )
 }
