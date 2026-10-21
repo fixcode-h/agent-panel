@@ -99,6 +99,7 @@ export interface RealContext {
   releaseFiles?: EngineHost['releaseFiles']
   childIsolation?: EngineHost['childIsolation']
   submitBuild?: EngineHost['submitBuild']
+  beginEdit?: EngineHost['beginEdit']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
   lessons?: EngineHost['lessons']
@@ -523,7 +524,9 @@ async function runAgent(
   const startPick = { cli: task.cli, model: task.model, effort: task.effort }
   const stillCurrent = () => {
     const now = agentRun(withTaskModel(found, task), settings)
-    return now.cli === cliId && now.model === model && task.effort === startPick.effort
+    // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
+    const wt = task.worktree?.state === 'active' ? task.worktree.path : ''
+    return now.cli === cliId && now.model === model && task.effort === startPick.effort && (!wt || wt === cwd)
   }
   // 预热期间的输出不记进对话；用户发来第一句后开始正常记
   let prewarmMode = prewarm
@@ -535,8 +538,11 @@ async function runAgent(
     chat && !op && !prewarm ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
   // 对话中途换了 CLI、（不能中途换模型的 CLI 换了）模型或（不支持中途换强度的 CLI 换了）思考强度：
-  // 原来的会话接不上，开新会话把之前的对话带过去
-  const switched = chat && sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch)
+  // 原来的会话接不上，开新会话把之前的对话带过去。
+  // 会话开在别的目录里（中途开了独立分支）也接不上：CLI 的会话按目录存，换了目录 --resume 找不到
+  const moved = chat && !!task.sessionDir && task.sessionDir !== cwd
+  const switched =
+    chat && (sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch) || moved)
   if (switched) resume = undefined
   if (retryCarry) {
     // 接口拒绝了旧会话的历史：丢掉它重开，把之前的对话带上
@@ -547,7 +553,8 @@ async function runAgent(
     resume = undefined
     if (rewind?.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
     else if (switched) {
-      const upto = asker ? task.messages.indexOf(asker) : task.messages.length
+      // 开了独立分支后接着做：触发这一轮的是面板，不是新的用户消息，上一轮的要求和回复都要带过去
+      const upto = asker && !moved ? task.messages.indexOf(asker) : task.messages.length
       carry = carryPrompt(task, upto)
     } else if (th && def.fork === 'turn' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
     else if (th && def.fork === 'end' && th.end) [resume, fork] = [th.session, { end: th.end }]
@@ -632,6 +639,7 @@ async function runAgent(
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
+    noEdit: chat && !!ctx.beginEdit,
     autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
     contextWindow: limits.context || undefined,
     maxOutput: limits.maxOutput || undefined,
@@ -758,7 +766,10 @@ async function runAgent(
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
-        if (chat) task.sessionCli = cliId
+        if (chat) {
+          task.sessionCli = cliId
+          task.sessionDir = cwd
+        }
         break
       case 'thinking': {
         // 思考属于接下来的那段回复：当前消息已经有文字或工具时另起一条
@@ -1363,6 +1374,7 @@ export async function runRealTurn(ctx: RealContext) {
     releaseFiles: ctx.releaseFiles,
     childIsolation: ctx.childIsolation,
     submitBuild: ctx.submitBuild,
+    beginEdit: ctx.beginEdit,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
     lessons: ctx.lessons,

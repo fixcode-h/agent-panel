@@ -104,7 +104,13 @@ export function TaskComposer({
   const [workflowId, setWorkflowId] = useState('')
   const workflow = workflowId ? workflows.find((w) => w.id === workflowId) : undefined
   const [busy, setBusy] = useState(false)
-  const [isolate, setIsolate] = useState(false)
+  // 「独立分支」的初始值按项目设置；换了项目重新按那个项目的设置来
+  const [isolate, setIsolate] = useState(!!project?.isolateDefault)
+  const [isolateFor, setIsolateFor] = useState(project?.id)
+  if (isolateFor !== project?.id) {
+    setIsolateFor(project?.id)
+    setIsolate(!!project?.isolateDefault)
+  }
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
@@ -257,7 +263,7 @@ export function TaskComposer({
       aria-label={t('独立分支')}
       onClick={() => setIsolate((v) => !v)}
       title={t(
-        '独立分支：在单独的 git 分支和目录里执行，不改动项目目录，完成后再决定合并还是丢弃；它分出的子对话也在这个目录里',
+        '独立分支：确定要改文件时才开单独的 git 分支和目录，在里面改，不改动项目目录，完成后再决定合并还是丢弃；之前只看代码、回答问题时仍在项目目录里',
       )}
       className={cn(
         chip,

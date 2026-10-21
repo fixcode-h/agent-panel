@@ -73,6 +73,7 @@ import {
   mergeWorktree,
   removeWorktree,
   trialMerge,
+  checkRepo,
 } from './exec/worktree.ts'
 import { runMergeSteps } from './merge-build.ts'
 import { createBackground } from './background.ts'
@@ -233,6 +234,7 @@ export function tasksApi(deps: {
     workflowParams: {},
     agentParams: {},
     childIsolation: 'claim',
+    isolateDefault: false,
     testSteps: [],
     lessons: [],
     wslDistro: '',
@@ -397,18 +399,63 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 「独立 worktree」模式：子对话第一次执行时，从父对话所在的目录开一个独立分支，只用来隔离改文件。
+   * 「独立 worktree」模式：子对话第一次执行时只记下「要改文件时开独立分支」，真要改时（begin_edit）
+   * 才从父对话所在的目录开，只用来隔离改文件；只是查资料、回答问题的子对话不用开。
    * 不是 Git 仓库（P4、没有版本控制）时退回共用目录，靠认领文件避免冲突
    */
   async function ensureChildWorktree(entry: Live, project: Project | null | undefined) {
     const tk = entry.task
-    if (!tk.parentTaskId || !project?.path || isolated(tk) || project.childIsolation !== 'worktree') return
+    if (!tk.parentTaskId || !project?.path || tk.worktree || tk.wantsWorktree) return
+    if (project.childIsolation !== 'worktree') return
     const base = await taskDir({ ...tk, worktree: null })
     try {
-      entry.task.worktree = await createWorktree(base, tk.id, tk.title)
+      await checkRepo(base)
+      entry.task.wantsWorktree = true
       await store.update(tk.id, entry.task)
     } catch (e) {
-      log.info('task', '子对话没有建独立分支，共用目录', { task: tk.id, reason: (e as Error).message })
+      log.info('task', '子对话不能开独立分支，共用目录', { task: tk.id, reason: (e as Error).message })
+    }
+  }
+
+  /** 对话要改文件了：从它现在的目录开独立分支，这一轮结束后在新目录里开新会话接着做 */
+  async function beginEdit(entry: Live, changed: (f?: boolean) => void): Promise<{ ok: boolean; info: string }> {
+    const tk = entry.task
+    if (isolated(tk)) return { ok: true, info: `已经在独立分支 ${tk.worktree!.branch} 里，直接改` }
+    const base = await taskDir({ ...tk, worktree: null })
+    try {
+      tk.worktree = await createWorktree(base, tk.id, tk.title)
+    } catch (e) {
+      log.warn('task', '开独立分支失败', { task: tk.id, error: (e as Error).message })
+      return { ok: false, info: `开独立分支失败：${(e as Error).message}\n先不要改文件，把情况告诉用户。` }
+    }
+    tk.wantsWorktree = false
+    // 改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的
+    tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
+    tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef).catch(() => null)) ?? {}
+    tk.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t('要改文件了，已开独立分支 {branch}，接下来在里面修改', { branch: tk.worktree.branch }),
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    // 这一轮结束后马上接着做：消息已经记在对话里（上面那条），这里只登记交给新会话的要求
+    holdForNextTurn(tk.id, {
+      id: randomUUID(),
+      role: 'user',
+      agentId: '',
+      step: '',
+      text: `（面板）已经开好独立分支 ${tk.worktree.branch}，你现在在它的目录里。接着刚才的任务开始修改；已经查清楚的不用重查。`,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    changed(true)
+    log.info('task', '对话开了独立分支', { task: tk.id, branch: tk.worktree.branch })
+    return {
+      ok: true,
+      info: `已开独立分支 ${tk.worktree.branch}（目录 ${tk.worktree.path}）。现在用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮，不要在当前目录改任何文件；面板会在独立分支的目录里开新会话，带上这段对话接着做。`,
     }
   }
 
@@ -877,15 +924,19 @@ export function tasksApi(deps: {
         messageParent: task.parentTaskId ? (text, question) => messageParent(entry.task, text, question) : undefined,
         childIsolation: found?.childIsolation,
         submitBuild: task.parentTaskId && isolated(entry.task) ? (note) => submitBuild(task.id, note) : undefined,
+        beginEdit:
+          task.mode === 'chat' && entry.task.wantsWorktree && !isolated(entry.task)
+            ? () => beginEdit(entry, changed)
+            : undefined,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
             ? async (input) => background.start({ ...input, taskId: task.id, root: dir })
             : undefined,
         checkBackground: (id) => background.check(task.id, id),
-        // 独立分支里的子对话改不到别人的文件，不用认领
+        // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样
         claimFiles:
-          task.parentTaskId && !isolated(entry.task)
+          task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
             : undefined,
         // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
@@ -899,7 +950,7 @@ export function tasksApi(deps: {
             }
           : undefined,
         releaseFiles:
-          task.parentTaskId && !isolated(entry.task)
+          task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => claims.release(rootId, task.id, paths.length ? paths : undefined)
             : undefined,
         listConversations: async () => {
@@ -1388,10 +1439,15 @@ export function tasksApi(deps: {
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
     }
-    // 只有顶层对话能选独立分支：子对话一律和父对话用同一个目录，同时改文件靠认领协调
+    // 这里是顶层对话选的独立分支（子对话由项目设置决定）。
+    // 对话要改文件时才建：先在项目目录里看代码、回答问题，用不着改就不白开一个分支；
+    // 工作流的节点一开始就会改，创建时直接建好
     if (input.isolate && !parent && input.projectId) {
       try {
-        draft.worktree = await createWorktree(project.path, draft.id, draft.title)
+        if (input.mode === 'chat') {
+          await checkRepo(project.path)
+          draft.wantsWorktree = true
+        } else draft.worktree = await createWorktree(project.path, draft.id, draft.title)
       } catch (e) {
         return bad(c, (e as Error).message)
       }

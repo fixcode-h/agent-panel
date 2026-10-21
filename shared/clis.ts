@@ -37,6 +37,8 @@ export interface BuildOptions {
   maxTurns?: number
   /** 工作目录之外还允许读写的目录（例如附件所在的目录） */
   addDirs?: string[]
+  /** 还没开独立分支、现在不能改文件：能按名字关掉工具的 CLI 把改文件的工具关掉 */
+  noEdit?: boolean
   /**
    * 从 resume 的会话分叉出一个新会话（原会话不动）；给了 turn 时只保留到那一轮（含）：
    * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid
@@ -256,9 +258,10 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
       ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
-      // 关掉 Claude 自带的子 Agent：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见
+      // 关掉 Claude 自带的子 Agent：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见。
+      // 要改文件时才开独立分支的对话，开之前连改文件的工具一起关掉，免得直接改到原目录
       '--disallowedTools',
-      'Task,Agent',
+      ['Task', 'Agent', ...(o.noEdit ? ['Edit', 'Write', 'MultiEdit', 'NotebookEdit'] : [])].join(','),
       ...o.extraArgs,
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',

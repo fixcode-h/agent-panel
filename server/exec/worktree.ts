@@ -62,25 +62,42 @@ async function prepare(dir: string, repo: string) {
   }
 }
 
+/** 能不能开独立分支：要是 git 仓库、至少有一个提交；不能时抛出给用户看的原因 */
+export async function checkRepo(repo: string) {
+  const inside = await git(repo, 'rev-parse', '--is-inside-work-tree')
+  if (inside.code !== 0 || inside.stdout.trim() !== 'true') throw new Error(t('项目不是 git 仓库，不能用独立分支执行'))
+  const head = await git(repo, 'rev-parse', '--verify', 'HEAD')
+  if (head.code !== 0) throw new Error(t('项目还没有任何提交，不能用独立分支执行'))
+}
+
+/** UE 这类大项目：项目目录或仓库根目录里有 .uproject */
+async function isBigProject(repo: string) {
+  const root = (await git(repo, 'rev-parse', '--show-toplevel')).stdout.trim() || repo
+  for (const dir of new Set([repo, root])) {
+    const names = await readdir(dir).catch(() => [] as string[])
+    if (names.some((n) => n.toLowerCase().endsWith('.uproject'))) return true
+  }
+  return false
+}
+
 /**
  * 给任务建一个独立的 git 工作目录（git worktree）和分支，从项目当前的提交出发。
  * Agent 在里面改，不影响项目目录，也不和同时执行的其他任务互相干扰；做完后再合并或丢弃。
  */
 export async function createWorktree(repo: string, taskId: string, title: string): Promise<TaskWorktree> {
-  const inside = await git(repo, 'rev-parse', '--is-inside-work-tree')
-  if (inside.code !== 0 || inside.stdout.trim() !== 'true') throw new Error(t('项目不是 git 仓库，不能用独立分支执行'))
-  const head = await git(repo, 'rev-parse', '--verify', 'HEAD')
-  if (head.code !== 0) throw new Error(t('项目还没有任何提交，不能用独立分支执行'))
+  await checkRepo(repo)
   const baseBranch = (await git(repo, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim()
   const dir = path.join(WORKTREES_DIR, taskId)
   await mkdir(WORKTREES_DIR, { recursive: true })
   const branch = branchName(taskId, title)
-  // 不下载 LFS 大文件（贴图、uasset 这类）：独立分支只用来改代码，检出时只留指针文件，快很多也省磁盘
+  // 一般项目完整检出（包括 LFS 文件），编译、写代码要用的都在；git 不管的中间文件和临时文件本来就不会带过去。
+  // 只有 UE 这类大项目不下载 LFS 大文件（贴图、uasset），只留指针文件：改代码用不着，全量下载太慢也太占磁盘
+  const big = await isBigProject(repo)
   const r = await capture(
     'git',
     ['-c', 'core.quotepath=off', 'worktree', 'add', '-b', branch, dir, 'HEAD'],
     repo,
-    { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' },
+    big ? { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' } : process.env,
     10 * 60_000,
   )
   if (r.code !== 0) throw fail(r, t('创建独立分支失败'))

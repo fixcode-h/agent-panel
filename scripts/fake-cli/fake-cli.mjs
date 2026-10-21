@@ -392,6 +392,38 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
+// 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
+let beganEdit = false
+if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
+  const cfg = args.find((a) => a.startsWith('{"mcpServers"'))
+  const servers = cfg ? JSON.parse(cfg).mcpServers : {}
+  const url =
+    servers[
+      Object.keys(servers)
+        .filter((k) => k.startsWith('panel'))
+        .at(-1)
+    ]?.url ??
+    args
+      .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
+      .filter(Boolean)
+      .at(-1)
+  const rpc = (id, method, params) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    }).then(async (r) => {
+      const text = await r.text()
+      const data = text.split('\n').filter((l) => l.startsWith('data:'))
+      return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+    })
+  await rpc(1, 'initialize', {})
+  const got = (await rpc(2, 'tools/call', { name: 'begin_edit', arguments: {} })).result
+  beganEdit = !got.isError
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.edit', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+}
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {
   if (process.env.FAKE_CLI_LOG && steered.length)
@@ -994,7 +1026,7 @@ if (kind === 'claude') {
   out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 40 } } })
   writeFileSync(file, 'line1\nline2\n')
   // 任务里有 COMMIT 时像真的 Agent 一样自己提交一次（测试提交后改动仍然统计在内）
-  if (input.includes('COMMIT')) {
+  if (input.includes('COMMIT') && !beganEdit) {
     writeFileSync('committed.txt', 'one\ntwo\nthree\n')
     const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
     g('add', 'committed.txt')

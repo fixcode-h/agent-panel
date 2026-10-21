@@ -686,6 +686,8 @@ const ProjectFields = z.object({
    * - claim：和父对话共用一个目录，改文件前认领（同一个文件同一时间只归一个子对话）
    */
   childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
+  /** 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改） */
+  isolateDefault: z.boolean().default(false),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
@@ -1134,6 +1136,13 @@ export const TaskData = z.object({
   sessions: z.record(z.string(), z.string()).default({}),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
+  /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
+  sessionDir: z.string().optional(),
+  /**
+   * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
+   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
+   */
+  wantsWorktree: z.boolean().default(false),
   /**
    * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
    * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话

@@ -44,6 +44,16 @@ export function orchTools(o: Orchestra) {
       description: '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
       inputSchema: { type: 'object', properties: {} },
     },
+    ...(o.canBeginEdit
+      ? [
+          {
+            name: 'begin_edit',
+            description:
+              '确定要改文件时先调用：面板从当前目录开一个独立分支。成功后用一两句写下查到的情况和打算怎么改，然后马上结束这一轮，面板会在独立分支的目录里开新会话接着做。调用前不要改任何文件。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ]
+      : []),
     ...(o.canBackground
       ? [
           {
@@ -387,6 +397,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     }
     case 'check_background':
       return text(o.checkBackground(str(a?.id)))
+    case 'begin_edit': {
+      const r = await o.beginEdit()
+      return text(r.info, !r.ok)
+    }
     case 'submit_build': {
       const r = await o.submitBuild(str(a?.note))
       return text(r.info, !r.ok)
@@ -478,7 +492,9 @@ export function orchHint(o: Orchestra) {
     : ''
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
-  const bg = o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : ''
+  const bg =
+    (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
+    (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
   const child =
     bg +
     (o.child

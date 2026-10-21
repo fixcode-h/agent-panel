@@ -195,6 +195,16 @@ async function waitDone(id, timeout = 20000) {
     await sleep(150)
   }
 }
+/** 等到条件成立（任务停下且 ok(t) 为真）：开独立分支后面板会马上接着开下一轮，中间可能短暂停下 */
+async function waitTask(id, ok, timeout = 30000) {
+  const t0 = Date.now()
+  for (;;) {
+    const t = await call('GET', `/tasks/${id}`)
+    if (t.status !== 'running' && ok(t)) return t
+    if (Date.now() - t0 > timeout) throw new Error(`任务 ${id} 超时：${t.status}`)
+    await sleep(150)
+  }
+}
 const readLog = (f) =>
   existsSync(f)
     ? readFileSync(f, 'utf8')
@@ -1229,18 +1239,16 @@ try {
     step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
 
     // ---- 子对话不建独立分支：和父对话共用一个目录；父对话在独立分支里时就在父的那个目录 ----
-    const isoParent = await waitDone(
-      (
-        await call('POST', '/tasks', {
-          projectId: project.id,
-          mode: 'chat',
-          agentId: A.id,
-          prompt: 'COMMIT 父对话在独立分支',
-          isolate: true,
-        })
-      ).id,
-      20000,
-    )
+    const isoNew = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: A.id,
+      prompt: 'COMMIT BEGIN_EDIT 父对话在独立分支',
+      isolate: true,
+    })
+    assert.equal(isoNew.worktree, null, '对话要改文件时才开独立分支，创建时还没开')
+    assert.equal(isoNew.wantsWorktree, true)
+    const isoParent = await waitTask(isoNew.id, (t) => t.worktree?.state === 'active' && !t.wantsWorktree)
     assert.equal(isoParent.worktree?.state, 'active', '顶层对话传了 isolate 才隔离')
     let isoKid = await call('POST', '/tasks', {
       projectId: project.id,
@@ -1269,19 +1277,27 @@ try {
       20000,
     )
     assert.equal(wtParent.worktree, null, '父对话没开独立分支')
-    const wtKid = await waitDone(
+    let wtKid = await waitDone(
       (
         await call('POST', '/tasks', {
           projectId: project.id,
           mode: 'chat',
           agentId: B.id,
           parentTaskId: wtParent.id,
-          prompt: 'COMMIT 子对话在自己的分支里改',
+          prompt: 'COMMIT BEGIN_EDIT 子对话在自己的分支里改',
         })
       ).id,
       20000,
     )
-    assert.equal(wtKid.worktree?.state, 'active', '子对话第一次执行时开了独立分支')
+    // 第一轮在原目录里查看，调用 begin_edit 后才开分支，面板马上在分支目录里开新会话接着做
+    const editLog = readLog(log + '.edit')
+    assert.ok(editLog.length && !editLog.at(-1).got.isError, '子对话调用 begin_edit 开了分支')
+    assert.equal(editLog.at(-1).cwd, project.path, '开分支前在原目录里')
+    wtKid = await waitTask(wtKid.id, () => calls().at(-1)?.cwd !== project.path)
+    assert.equal(wtKid.worktree?.state, 'active', '子对话要改文件时开了独立分支')
+    assert.equal(calls().at(-1).cwd, wtKid.worktree.path, '开分支后的一轮在分支目录里执行')
+    assert.match(calls().at(-1).input, /之前的对话[\s\S]*BEGIN_EDIT/, '新会话带上了之前的对话')
+    assert.ok(!calls().at(-1).args.includes('--resume'), '换了目录不续接旧会话')
     assert.ok(
       !gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
       '提交在子对话的分支上，项目目录不受影响',
@@ -2289,11 +2305,12 @@ try {
     projectId: project.id,
     mode: 'chat',
     agentId: A.id,
-    prompt: 'COMMIT 在独立分支上改',
+    prompt: 'COMMIT BEGIN_EDIT 在独立分支上改',
     isolate: true,
   })
+  assert.equal(tIso.worktree, null, '要改文件时才开独立分支')
+  tIso = await waitTask(tIso.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
   assert.equal(tIso.worktree?.state, 'active', '建了独立分支')
-  tIso = await waitDone(tIso.id)
   assert.ok(existsSync(path.join(tIso.worktree.path, 'committed.txt')), 'Agent 在独立目录里改')
   assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '项目目录没被改动')
   assert.ok(
@@ -2333,10 +2350,10 @@ try {
     projectId: project.id,
     mode: 'chat',
     agentId: A.id,
-    prompt: 'COMMIT 这个不要了',
+    prompt: 'COMMIT BEGIN_EDIT 这个不要了',
     isolate: true,
   })
-  tDrop = await waitDone(tDrop.id)
+  tDrop = await waitTask(tDrop.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
   // 状态变成完成的一瞬间，服务端还没把任务从执行中的列表里放掉：等一下再丢弃
   let dropped
   for (let i = 0; ; i++) {

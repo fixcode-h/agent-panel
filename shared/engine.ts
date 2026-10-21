@@ -192,6 +192,9 @@ export interface Orchestra {
   checkBackground(id: string): string
   /** 独立分支里的子对话：把改动交给面板合回原目录编译（排队，结果推回来） */
   canSubmit: boolean
+  /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
+  canBeginEdit: boolean
+  beginEdit(): Promise<{ ok: boolean; info: string }>
   submitBuild(note: string): Promise<{ ok: boolean; info: string }>
   toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
@@ -274,6 +277,11 @@ export interface EngineHost {
   childIsolation?: 'claim' | 'worktree'
   /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
   submitBuild?: (note: string) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
+   * 只有对话有（工作流在创建时就建好了）
+   */
+  beginEdit?: () => Promise<{ ok: boolean; info: string }>
   /**
    * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
    * exclusive 的（编译这类）按项目排队，同一时间只跑一个
@@ -667,6 +675,16 @@ function buildPart(host: EngineHost) {
 - 可以跑不写构建产物的快速检查：类型检查、lint、单个文件的语法检查。
 - 改完一批后调用 submit_build：面板把改动排队合回原目录，按项目里标了「合并时编译」的步骤编译，通过才算合进去；失败会撤回，并把报错推回给你，在这里修好再提交一次。
 - 提交后不用干等，可以接着做别的部分；结果到了再处理。没有编译通过，不说完成。`
+}
+
+/** 要改文件时才开独立分支：不说清楚的话模型会直接在原目录里改，隔离就落空了 */
+function editPart(host: EngineHost) {
+  if (!host.beginEdit) return ''
+  return `## 改文件前先开独立分支
+这个对话设成了在独立分支里改文件，现在你还在原目录里：看代码、回答问题、跑只读的命令都可以直接做，但不要在这里改、新建或删除任何文件，也不要跑会写文件的命令。
+- 确定要改文件时先调用 begin_edit，面板从当前目录开一个独立分支。
+- 调用成功后用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮；面板会在独立分支的目录里开新会话，带上这段对话接着改。
+- 只是回答问题、出方案时不用调用。`
 }
 
 /** 能用后台命令时说清楚什么时候用：不说的话模型照样同步跑长命令，一直卡着 */
@@ -2046,6 +2064,14 @@ function makeOrchestra(
       return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
     },
     canSubmit: !!host.submitBuild,
+    // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
+    canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
+    async beginEdit() {
+      if (!host.beginEdit || !ctx.chat || self.parentId) return { ok: false, info: '这个对话不用开独立分支，直接改' }
+      const r = await host.beginEdit()
+      if (r.ok) host.changed(true)
+      return r
+    },
     async submitBuild(note) {
       if (!host.submitBuild) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
       const r = await host.submitBuild(note.trim())
@@ -2439,6 +2465,7 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
     rulesPart(host),
     inboxPart(host),
     buildPart(host),
+    editPart(host),
     backgroundPart(host),
     statePart(host.task),
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方

@@ -1640,6 +1640,14 @@ function FlowBar({
 function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
   const [asking, setAsking] = useState<'merge' | 'discard' | null>(null)
   const wt = task.worktree
+  // 要改文件时才开：还没开时说明现在在哪个目录，免得以为已经在分支里了
+  if (!wt && task.wantsWorktree)
+    return (
+      <div className="mx-auto mb-2 flex max-w-(--content-w) items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[0.8125rem]">
+        <GitBranch className="h-3.5 w-3.5 shrink-0 text-subtle" />
+        <span className="min-w-0 flex-1 text-muted">{t('还在项目目录里查看，要改文件时才开独立分支')}</span>
+      </div>
+    )
   if (!wt) return null
   const running = task.status === 'running'
   const target = wt.baseBranch || t('项目当前的分支')

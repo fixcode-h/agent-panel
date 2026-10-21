@@ -29,6 +29,7 @@ import { projectChecks } from '@/lib/readiness'
 import { Button } from '@/components/ui/button'
 import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
@@ -68,6 +69,7 @@ const blank: ProjectInput = {
   workflowParams: {},
   agentParams: {},
   childIsolation: 'worktree',
+  isolateDefault: false,
   testSteps: [],
   lessons: [],
   wslDistro: '',
@@ -796,6 +798,17 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   </span>
                 </FormSection>
 
+                <FormSection title={t('独立分支')}>
+                  <Checkbox
+                    checked={draft.isolateDefault}
+                    onChange={(v) => set('isolateDefault', v)}
+                    label={t('新建对话时默认勾选「独立分支」')}
+                    hint={t(
+                      '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。',
+                    )}
+                  />
+                </FormSection>
+
                 <FormSection title={t('子对话')}>
                   <Field label={t('子对话隔离')}>
                     <div>
@@ -813,7 +826,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   <span className="text-xs leading-relaxed text-subtle">
                     {draft.childIsolation === 'worktree'
                       ? t(
-                          '每个子对话在自己的独立分支目录里改文件，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。',
+                          '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。',
                         )
                       : t(
                           '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',

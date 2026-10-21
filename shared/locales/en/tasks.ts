@@ -509,8 +509,8 @@ export const EN_TASKS: Record<string, string> = {
   引用到输入框: 'Quote in the input box',
   引用: 'Quote',
   这里没有可以引用到的输入框: 'There is no input box to quote into here',
-  '独立分支：在单独的 git 分支和目录里执行，不改动项目目录，完成后再决定合并还是丢弃；它分出的子对话也在这个目录里':
-    'Separate branch: run on its own git branch and directory without touching the project directory, then merge or discard when done; its sub-conversations work in the same directory',
+  '独立分支：确定要改文件时才开单独的 git 分支和目录，在里面改，不改动项目目录，完成后再决定合并还是丢弃；之前只看代码、回答问题时仍在项目目录里':
+    'Separate branch: once it needs to edit files, it opens its own git branch and directory and edits there without touching the project directory, then you merge or discard when done; reading code and answering questions still happen in the project directory',
   同时执行的子对话: 'Concurrent sub-conversations',
   '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 CLI 进程，跑工作流时更多。':
     'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one CLI process, more when running a workflow.',
@@ -556,8 +556,8 @@ export const EN_TASKS: Record<string, string> = {
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',
-  '每个子对话在自己的独立分支目录里改文件，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。':
-    "Each sub-conversation edits files in its own branch folder without getting in the others' way. Builds don't run there: when it's done, its changes queue up to be merged back into the original folder and built with the test steps marked \"Build on merge\". They're committed only if the build passes; otherwise the merge is undone and the errors go back to the sub-conversation. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。':
+    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. Builds don't run there: when it's done, its changes queue up to be merged back into the original folder and built with the test steps marked \"Build on merge\". They're committed only if the build passes; otherwise the merge is undone and the errors go back to the sub-conversation. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
   '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
     "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
   '子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交':
@@ -592,4 +592,11 @@ export const EN_TASKS: Record<string, string> = {
   '正在执行的停下来，输出和状态都保留，之后可以接着说。':
     'Running ones stop; their output and state are kept so you can continue later.',
   '已开始，还没有输出': 'Started, no output yet',
+  '还在项目目录里查看，要改文件时才开独立分支':
+    'Still reading in the project directory; a separate branch opens once files need editing',
+  '新建对话时默认勾选「独立分支」': 'Turn on "Separate branch" for new conversations by default',
+  '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。':
+    'Such conversations read code and answer questions in the project directory first, and open a separate branch (git worktree) only once they need to edit files, continuing there. Most projects get a full checkout; large projects such as UE skip downloading LFS files.',
+  '要改文件了，已开独立分支 {branch}，接下来在里面修改':
+    'Ready to edit files: opened separate branch {branch} and will continue there',
 }
