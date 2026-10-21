@@ -23,6 +23,7 @@ const view = (id: string): IntegrationView => {
     command: def.command,
     docsUrl: def.docsUrl ?? '',
     installHint: Object.values(def.install)[0] ?? '',
+    canInstall: !!def.setup,
     installed: true,
     version: VERSION[def.id] ?? '演示',
     authed: on,
@@ -88,6 +89,8 @@ export function demoIntegrations(method: string, seg: string[], body: any): unkn
     if (method === 'POST') return start(id)
     return loginView(id)
   }
+  // 演示里都当已安装，不会走到一键安装
+  if (action === 'install') return null
   if (action === 'logout' && method === 'POST') {
     authed.delete(id)
     jobs.delete(id)

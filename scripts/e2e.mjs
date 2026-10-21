@@ -1160,7 +1160,12 @@ try {
     kid = await waitDone(kid.id, 20000)
     assert.equal(kid.status, 'done')
 
+    // 状态先标成完成、进程随后才退出：等一小会儿再看，免得偶尔撞上进程还没退干净
     let kids = await call('GET', `/tasks/${parent.id}/children`)
+    for (let i = 0; i < 20 && kids.find((x) => x.id === kid.id)?.cliAlive; i++) {
+      await sleep(100)
+      kids = await call('GET', `/tasks/${parent.id}/children`)
+    }
     const one = kids.find((x) => x.id === kid.id)
     assert.ok(one, '子对话出现在父对话的列表里')
     assert.equal(one.cliAlive, false, '跑完、进程已经结束：cliAlive 为 false')
@@ -1322,8 +1327,29 @@ try {
       (e) => e,
     )
     assert.match(String(childRule.message ?? childRule), /只能在项目对话里发布/)
+    // 对话设置：目标和规则交给子对话，子对话按指定的 CLI 跑，并发上限和停止全部子对话
+    const conf = await call('PATCH', `/tasks/${ruleParent.id}`, {
+      goal: '商品页支持到货通知',
+      rules: [{ id: 'r1', text: '只改 src 下的文件', at: new Date().toISOString() }],
+      childRun: { cli: 'codex', model: '', effort: '' },
+      childLimit: 2,
+    })
+    assert.equal(conf.goal, '商品页支持到货通知')
+    assert.equal(conf.childLimit, 2)
+    assert.equal(conf.childRun.cli, 'codex')
+    await waitDone((await call('POST', `/tasks/${ruleKid.id}/messages`, { text: '按设置再做一次' })).id, 20000)
+    const confLog = calls().at(-1)
+    assert.equal(confLog.kind, 'codex', '子对话按父对话设置里的 CLI 执行')
+    const confText = JSON.stringify(confLog)
+    assert.ok(confText.includes('父对话的目标') && confText.includes('商品页支持到货通知'), '子对话看得到父对话的目标')
+    assert.ok(confText.includes('只改 src 下的文件'), '设置里改的规则交给子对话')
+    const back = await call('PATCH', `/tasks/${ruleParent.id}`, { childRun: null })
+    assert.equal(back.childRun, undefined, '改回按角色自己的配置')
+    assert.equal(typeof (await call('POST', `/tasks/${ruleParent.id}/children/stop`)).stopped, 'number')
     await call('DELETE', `/tasks/${ruleParent.id}`)
-    step('全局规则：/rule 发布、列出、清空，子对话的提示里带上，子对话自己不能发')
+    step(
+      '全局规则：/rule 发布、列出、清空，子对话的提示里带上，子对话自己不能发；对话设置的目标、规则、子对话 CLI 生效',
+    )
   }
 
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----

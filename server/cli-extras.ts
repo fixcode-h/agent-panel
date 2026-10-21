@@ -102,6 +102,14 @@ async function claudePluginSkills(): Promise<CliSkill[]> {
   return out
 }
 
+/** 用户目录下 .agents/skills 里共用的 Skill（面板自带的 Skill 也装在这里），不是哪个 CLI 自己的 */
+export function isSharedSkill(s: CliSkill) {
+  if (!s.path) return false
+  const shared = path.join(homedir(), '.agents') + path.sep
+  const p = path.resolve(s.path)
+  return process.platform === 'win32' ? p.toLowerCase().startsWith(shared.toLowerCase()) : p.startsWith(shared)
+}
+
 /**
  * CLI 能用的 Skill：Codex 用 skills/list（含系统自带和插件的）；Claude Code 和 Command Code 读 Skill 目录
  * （用户目录下的、项目目录下的，Claude Code 另外读插件里的）。cwd 为空时只列用户级的。

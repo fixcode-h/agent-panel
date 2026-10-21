@@ -1,7 +1,7 @@
 // AI 问你的问题：显示在输入框的位置（换掉输入框），一次可以问好几个，全部回答完再一起交回去。
 // 每个问题的选项最后一项都是「自己输入」。任务对话（CLI 的提问）和 UI 设计（AI 问风格等）共用
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronLeft, Loader2, MessageCircleQuestion, PencilLine } from 'lucide-react'
+import { Check, ChevronLeft, Loader2, MessageCircleQuestion, PencilLine, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 
@@ -36,6 +36,7 @@ export function QuestionPanel({
   onSubmit,
   onSkip,
   skipLabel,
+  onClose,
   who,
   className,
 }: {
@@ -45,6 +46,8 @@ export function QuestionPanel({
   /** 不回答（让 AI 自己选）或改用输入框；不给就没有这个按钮 */
   onSkip?: () => unknown
   skipLabel?: string
+  /** 右上角的关闭：先不回答，暂停对话；不给就没有这个按钮 */
+  onClose?: () => unknown
   /** 谁在问：Agent 的名字 */
   who?: React.ReactNode
   className?: string
@@ -53,6 +56,7 @@ export function QuestionPanel({
   const [at, setAt] = useState(0)
   const [answers, setAnswers] = useState<Answer[]>(() => questions.map(empty))
   const [busy, setBusy] = useState(false)
+  const [closing, setClosing] = useState(false)
   const own = useRef<HTMLInputElement>(null)
   const box = useRef<HTMLDivElement>(null)
   // 换了一组问题（下一个请求）：从头开始
@@ -126,8 +130,9 @@ export function QuestionPanel({
         <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0 text-accent" />
         <span className="shrink-0 font-medium text-accent">{t('需要你回答')}</span>
         {who && <span className="flex min-w-0 items-center gap-1.5 text-muted">{who}</span>}
+        <span className="flex-1" />
         {n > 1 && (
-          <div role="tablist" className="ml-auto flex min-w-0 gap-1 overflow-x-auto">
+          <div role="tablist" className="flex min-w-0 gap-1 overflow-x-auto">
             {questions.map((x, i) => (
               <button
                 key={i}
@@ -149,6 +154,25 @@ export function QuestionPanel({
               </button>
             ))}
           </div>
+        )}
+        {onClose && (
+          <button
+            type="button"
+            aria-label={t('关闭并暂停对话')}
+            title={t('关闭并暂停对话')}
+            disabled={closing || busy}
+            onClick={async () => {
+              setClosing(true)
+              try {
+                await onClose()
+              } finally {
+                setClosing(false)
+              }
+            }}
+            className="-mr-1.5 grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-50"
+          >
+            {closing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />}
+          </button>
         )}
       </div>
       <p className="px-4 pt-2 pb-2.5 text-[0.875rem] leading-relaxed font-medium [overflow-wrap:anywhere]">

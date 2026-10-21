@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { KeyRound, Loader2, LogIn, LogOut, RefreshCw, ShieldCheck, SquareTerminal } from 'lucide-react'
+import { Download, KeyRound, Loader2, LogIn, LogOut, RefreshCw, ShieldCheck, SquareTerminal } from 'lucide-react'
 import { toast } from 'sonner'
-import type { IntegrationLoginJob, IntegrationView } from '@shared/integrations'
+import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -26,6 +26,7 @@ export function IntegrationsSection() {
   const [token, setToken] = useState('')
   // 确认退出登录的那个工具
   const [removing, setRemoving] = useState('')
+  const [installs, setInstalls] = useState<Record<string, IntegrationInstallJob | null>>({})
 
   const load = async (refresh = false) => {
     try {
@@ -48,6 +49,11 @@ export function IntegrationsSection() {
       if (!alive) return
       setJobs(Object.fromEntries(list.map((v, i) => [v.id, found[i]])))
     })
+    void Promise.all(
+      list
+        .filter((v) => !v.installed)
+        .map(async (v) => [v.id, await api.integrationInstallStatus(v.id).catch(() => null)] as const),
+    ).then((found) => alive && setInstalls((prev) => ({ ...prev, ...Object.fromEntries(found) })))
     return () => {
       alive = false
     }
@@ -68,6 +74,33 @@ export function IntegrationsSection() {
     // 只跟着「哪些任务在跑」变化；load 每次渲染都是新函数，不放进依赖
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [running.join(',')])
+
+  // 一键安装在跑时轮询；装完重新检测
+  const installing = Object.entries(installs)
+    .filter(([, j]) => j?.status === 'running')
+    .map(([id]) => id)
+  useEffect(() => {
+    if (!installing.length) return
+    const timer = setInterval(async () => {
+      const found = await Promise.all(
+        installing.map(async (id) => [id, await api.integrationInstallStatus(id).catch(() => null)] as const),
+      )
+      setInstalls((prev) => ({ ...prev, ...Object.fromEntries(found) }))
+      if (found.some(([, j]) => j && j.status !== 'running')) void load(true)
+    }, 1500)
+    return () => clearInterval(timer)
+    // 只跟着「哪些在装」变化；load 每次渲染都是新函数，不放进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [installing.join(',')])
+
+  const install = async (id: string) => {
+    try {
+      const job = await api.integrationInstall(id)
+      setInstalls((prev) => ({ ...prev, [id]: job }))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
 
   const check = async () => {
     setRefreshing(true)
@@ -144,6 +177,8 @@ export function IntegrationsSection() {
         const job = jobs[v.id]
         // 正在授权时不再提供第二个入口，先取消或等它完成
         const inProgress = job?.status === 'running'
+        const setup = installs[v.id]
+        const settingUp = setup?.status === 'running'
         return (
           <section key={v.id} className="rounded-xl border bg-card p-4">
             <div className="flex flex-wrap items-start gap-3">
@@ -184,13 +219,26 @@ export function IntegrationsSection() {
             </div>
 
             {!v.installed ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2 text-[0.78125rem] text-muted">
-                <span>{t('没有检测到 {command}，先安装再授权。', { command: v.command })}</span>
-                {v.installHint && <CopyText text={v.installHint} title={t('复制安装命令')} />}
-                <Button size="sm" variant="ghost" onClick={check} disabled={refreshing}>
-                  <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
-                  {t('重新检测')}
-                </Button>
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="flex flex-wrap items-center gap-2 text-[0.78125rem] text-muted">
+                  <span>{t('没有检测到 {command}，先安装再授权。', { command: v.command })}</span>
+                  {v.canInstall && (
+                    <Button size="sm" onClick={() => void install(v.id)} disabled={settingUp}>
+                      {settingUp ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Download className="h-3.5 w-3.5" />
+                      )}
+                      {settingUp ? t('安装中…') : t('一键安装')}
+                    </Button>
+                  )}
+                  {v.installHint && <CopyText text={v.installHint} title={t('复制安装命令')} />}
+                  <Button size="sm" variant="ghost" onClick={check} disabled={refreshing || settingUp}>
+                    <RefreshCw className={cn('h-3.5 w-3.5', refreshing && 'animate-spin')} />
+                    {t('重新检测')}
+                  </Button>
+                </div>
+                {setup && <InstallBox job={setup} />}
               </div>
             ) : v.authed ? (
               <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -301,6 +349,35 @@ export function IntegrationsSection() {
         confirmText={t('退出登录')}
         onConfirm={() => removing && logout(removing)}
       />
+    </div>
+  )
+}
+
+/** 一键安装的进度：正在用的安装方式和输出，失败时给出原因 */
+function InstallBox({ job }: { job: IntegrationInstallJob }) {
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border bg-field/40 p-3">
+      {job.status === 'running' ? (
+        <p className="flex items-center gap-2 text-[0.8125rem] text-muted">
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          <span className="min-w-0">
+            {t('正在安装：')}
+            <span className="font-mono text-[0.75rem]">{job.method}</span>
+          </span>
+        </p>
+      ) : (
+        <p
+          className={cn('text-[0.8125rem] whitespace-pre-wrap', job.status === 'done' ? 'text-success' : 'text-danger')}
+        >
+          {job.status === 'done' ? t('安装完成') : job.error || t('安装没有完成')}
+        </p>
+      )}
+      {job.status === 'running' && (
+        <p className="text-[0.71875rem] text-subtle">{t('Windows 上可能会弹出系统的权限确认，点「是」继续。')}</p>
+      )}
+      {job.output && job.status !== 'done' && (
+        <pre className="max-h-32 overflow-auto text-[0.71875rem] whitespace-pre-wrap text-subtle">{job.output}</pre>
+      )}
     </div>
   )
 }

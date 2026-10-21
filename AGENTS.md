@@ -1,58 +1,84 @@
 # Agent 面板 · 开发约定
 
-给在这个仓库里工作的 AI 编码助手（Codex、Claude Code 等）和开发者看。`CLAUDE.md` 与本文件内容保持一致，改一个就同步改另一个。
+给在这个仓库里工作的 AI 编码助手（Codex、Claude Code、Command Code 等）和开发者看。`CLAUDE.md` 只是引用本文件，规则只改这一份。
+
+这份文件每次对话都会读，只放所有改动都适用的规则；具体领域的做法在下面「文档地图」里，用到再读。
+
+## 开工前
+
+1. **切到 `dev`**：`git switch dev`（本地没有就 `git switch -c dev origin/dev`），`git status --short --branch` 确认在 `dev` 上再动手。
+2. **查教训**：想好要改哪些文件，跑 `node scripts/lessons.mjs <文件...>`，只输出和这些文件相关的踩坑记录；拿不准就 `--list` 看标题。
+3. **读专题文档**：按下面的文档地图，只读这次用得上的。
 
 ## 项目
 
-本机运行的网页控制台，按项目分类调度本机的编码 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi），按工作流的流程图执行。
+本机运行的网页控制台，按项目调度本机的编码 CLI（Claude Code、Codex、Command Code、Gemini CLI、Pi），按工作流的流程图执行。
 
-- 全部 TypeScript：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），服务端 `server/`（Hono，只监听 127.0.0.1），
-  前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。不用 Python。
-- 数据是 `data/` 下的 JSON 文件。
-- CLI 的差异都写在定义里（`shared/clis.ts`，Command Code、Gemini CLI、Pi 是 `shared/clis/*.json` 配置）：参数规则、输出解析、能力、Skill 和说明文件的位置。
-  其他代码按定义里的能力走，不要按 CLI 的名字写分支。接入新 CLI 写一份配置，格式见 `docs/cli-config.md`；用户也能把配置放进数据目录的 `config/clis/`。
-- 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现 `web/src/lib/demo-backend.ts`、`demo-assist.ts`。
-- 自带 Skill 在 `skills/<分类>/<名字>/`（说明见 `skills/README.md`），出包时写进 `server.mjs`，统一装到用户目录 `~/.agents/skills` 由 `server/bundled-skills.ts` 负责；
-  内置 Agent 和工作流模板在 `shared/builtin/`，引用的 Skill 名必须在 `skills/` 里（`server/builtin.test.ts` 会检查）。
-- 内置 Agent 按**能力块**划分（一个 Agent 管一类事，具体做法交给参数和项目配置），测试、构建、编译、回归都由「测试与验收」（`tester`）一个 Agent 负责；
-  不要再为「编译 A」「跑单测」新增角色。项目级的测试步骤在 `Project.testSteps`，新建对话时快照进任务；工作流用到的 Agent 参数按 Agent 派生，
-  不再要求工作流作者手工加 `expose`。详见 `docs/agent-test-steps.md`；改内置定义时同步维护 `shared/builtin/legacy.ts`，升级要幂等。
-- 新增、合并或删除内置 Agent / 工作流前，先对照 `docs/agent-catalog.md` 的判定标准和职责清单：删除看是否被完整覆盖，合并看是否同一能力块被切碎，
-  扩充看是否缺参数或缺交付标准，新增要回答「为什么现有 Agent 做不了」。合并掉的 Agent 记进 `MERGED_AGENTS`（旧副本会补说明、旧工作流会重定向）。
-- 界面参考 Claude Code 的风格，视觉质量很重要。
-- 界面支持中文和英文：文案用 `t('中文原文')`（`shared/i18n.ts`，中文原文就是键，插值写 `t('共 {n} 个', { n })`），
-  英文写在 `shared/locales/en/` 下对应的文件里。`npm run typecheck` 会跑 `scripts/i18n-check.mjs`，有漏翻的就失败。
-  发给 Agent 的提示词、注释、演示数据不翻译。
+- 全部 TypeScript，不用 Python：前端 `web/`（React 19 + Vite + Tailwind v4 + Radix UI + @xyflow/react），
+  服务端 `server/`（Hono，只监听 127.0.0.1），前后端共用的结构和逻辑在 `shared/`（zod schema、流程图、执行引擎）。
+- 用户数据是数据目录（默认 `~/.agent-panel`）下的 JSON 文件。
+- 在线演示（`vite build --mode demo`）把 API 换成浏览器里的模拟实现（`web/src/lib/demo-*.ts`），正式包里不能有这些内容。
+- 自带 Skill 在 `skills/`，内置角色和工作流模板在 `shared/builtin/`，浏览器扩展在 `extension/`。
+
+## 硬规则
+
+- **CLI 的差异写进 CLI 定义**（`shared/clis.ts`、`shared/clis/*.json`），代码按定义里的字段走，不按 CLI 的名字写分支（`scripts/rules-check.mjs` 会拦）。
+- **界面文案用 `t('中文原文')`**，英文同一个提交写进 `shared/locales/en/`；漏翻 `npm run typecheck` 会失败。发给 Agent 的提示词、注释、演示数据不翻译。
+- **界面参考 Claude Code 的风格，视觉质量很重要**。界面细则见 `docs/lessons/ui.md`。
+- 注释用中文，写「为什么」。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。
+- Agent 执行出的错误一律显示给用户，不悄悄重试。
+
+## 文档地图
+
+| 要做的事                                     | 先读                                                                                   |
+| -------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 接新 CLI、改参数 / 输出解析 / 思考强度 / API | [docs/cli-config.md](docs/cli-config.md)（开头有接入检查清单）                         |
+| 模型的上下文、最大输出、强度                 | [docs/model-catalog.md](docs/model-catalog.md)                                         |
+| 增删合并内置角色或工作流                     | [docs/agent-catalog.md](docs/agent-catalog.md)（判定标准）                             |
+| 测试步骤、角色参数、子对话隔离和合并编译     | [docs/agent-test-steps.md](docs/agent-test-steps.md)                                   |
+| 自带 Skill                                   | [skills/README.md](skills/README.md)                                                   |
+| UI 设计导出格式                              | [docs/umg-export.md](docs/umg-export.md)                                               |
+| CLI 输出样本                                 | [server/exec/fixtures/README.md](server/exec/fixtures/README.md)                       |
+| 踩过的坑、怎么记新的                         | [docs/lessons/README.md](docs/lessons/README.md)，平时用 `node scripts/lessons.mjs` 取 |
 
 ## 常用命令
 
 ```bash
 npm run dev          # 前端 :5173 + 后端 :8787
-npm run typecheck    # 类型检查
-npm run lint         # 代码检查（oxlint：Hook 依赖、没用到的变量）和格式检查
-npm run test:unit    # CLI 输出解析测试（样本在 server/exec/fixtures/，CLI 升级后重新录）
+npm run typecheck    # 类型检查 + 漏翻检查
+npm run lint         # oxlint、Prettier 格式检查、规则检查（scripts/rules-check.mjs）
+npm run test:unit    # 单元测试和 CLI 输出解析测试
 npm run test:e2e     # 端到端测试（用 scripts/fake-cli 模拟各个 CLI）
 node scripts/ui-check.mjs   # 界面检查：先 vite build --mode demo，截图在 ui-shots/
 npm run build        # 正式版前端
 npx vite build --mode demo   # 在线演示版
 npm run package      # 出包到 release/（正式版，不含演示内容）
+npx prettier --write <文件>  # 格式化（配置在 .prettierrc.json）
 ```
 
-- 界面字号用 rem（`text-[0.8125rem]` 即 13px，不要写 `text-[13px]`）：设置里的「字号」改的是根字号，间距 `--spacing` 固定用像素，字号写死像素就不会跟着变。
-  字体走 `--app-sans` / `--app-mono`（`web/src/lib/appearance.ts`），默认是内置的 Maple Mono NL（无连字版，`web/src/assets/fonts/maple-mono-nl/`）配思源黑体。
+在 Windows 上测试时，端到端测试放到本机的 WSL（Ubuntu 24.04）里运行，不在 Windows 本机直接跑。
 
-代码格式：`npx prettier --write <文件>`（配置在 `.prettierrc.json`）。`useEffect` 故意少写依赖时，在依赖数组上一行写明原因再加 `// oxlint-disable-next-line react-hooks/exhaustive-deps`。注释用中文，写「为什么」。
+## 提交前
 
-## 测试环境
+以前反复返工的几件事，提交前过一遍：
 
-- 在 Windows 上测试时，端到端测试（`npm run test:e2e`）放到本机的 WSL（Ubuntu 24.04）里运行，不在 Windows 本机直接跑。
+1. `git status --short` 看清楚要提交的文件：新文件都 add 了，测试或 CLI 留下的临时输出没混进来。
+2. `npm run typecheck && npm run lint` 通过（格式问题 `npx prettier --write` 改掉，别留给下一个提交）。
+3. 改了提示词或文案，搜一下测试里有没有断言原句；动了执行流程，跑 `npm run test:e2e`。
+4. `node scripts/lessons.mjs` 对照这次改动的相关教训。
+
+## 被纠正之后
+
+用户纠正了做法、或者你在修之前（自己或别的 AI）改出来的问题时，在同一个提交里把教训写进 `docs/lessons/` 对应的分片：
+写成下次能直接照做的通用规则，附上起因的提交号。能写成检查的，加进 `scripts/rules-check.mjs` 或测试，文档里只留一行指针。
+格式和取舍见 [docs/lessons/README.md](docs/lessons/README.md)。
 
 ## 分支与发布
 
 - **开发前必须先切换到 `dev` 分支**：开始任何代码、文档或配置改动之前，先跑 `git switch dev`（本地没有就用 `git switch -c dev origin/dev`），确认 `git status --short --branch` 显示在 `dev` 上再动手。
 - **禁止在 `main` 上直接开发**：不在 `main` 上改文件、提交或推送，包括小改动、文档修改和临时调试。误留在 `main` 时先切回 `dev`，不要在 `main` 上先改完再搬。
 - 如果在 `main` 上发现未提交改动，先确认这些改动是谁的、要不要带走；不要用 `git checkout .`、`git reset --hard` 或覆盖式 stash 把它们清掉。
-- **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。
+- **所有开发都在 `dev` 分支上进行**，提交并推送到 `dev`。多个助手可能同时往 `dev` 推，推送前先 `git pull --rebase origin dev`。
 - **只有用户明确说「合并到主干」时，才把 `dev` 合并到 `main`**。不要自行合并，也不要直接往 `main` 提交。
 - 推送到 `dev` 运行「检查」（`.github/workflows/ci.yml`）：类型检查、代码检查、解析测试、端到端测试、构建、界面检查；合并到 `main` 运行「出包」（`.github/workflows/release.yml`），先跑同样的检查再出包。
   - 推送到 `dev`：**只检查，不出包**，不会出现出包的步骤。
@@ -78,4 +104,6 @@ Release 的说明由 `scripts/release-notes.mjs` 从上一个同类版本以来�
 
 - 前缀：`新功能：`、`改进：`、`修复：`、`依赖：`。依赖版本变化会从 `package.json` 自动整理，一般不用手写。
 - 没有前缀的提交，标题会作为一条「改进与调整」。
+- 用户感受不到的改动（开发文档、教训、测试、格式、误提交的临时文件）标题以 `内部：` 开头，不进更新说明；
+  同一个提交里还有用户能感受到的改动时，那几行照常写前缀，`内部：` 的行会被跳过。
 - 说明写给用户看：讲用户能感受到的变化，不写内部实现细节。

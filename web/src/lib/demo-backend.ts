@@ -1147,7 +1147,12 @@ function route(method: string, url: string, body: unknown): unknown {
           source: x.source ?? '',
         })),
       ] satisfies SlashCommand[]
-    if (id && sub === 'skills') return DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo')
+    if (id && sub === 'skills')
+      return DEMO_SKILLS.filter(
+        (x) =>
+          (query.get('projectId') || x.scope !== 'repo') &&
+          !(query.get('own') === '1' && x.source === '~/.agents/skills'),
+      )
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
       const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)
@@ -1676,6 +1681,8 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
+  if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
     const cur = live.get(task.id)
@@ -1821,7 +1828,9 @@ function tasksRoute(
     return task
   }
   if (method === 'PATCH') {
-    Object.assign(task, parse(TaskPatch, body))
+    const { childRun, ...rest } = parse(TaskPatch, body)
+    Object.assign(task, rest)
+    if (childRun !== undefined) task.childRun = childRun ?? undefined
     persist()
     return task
   }

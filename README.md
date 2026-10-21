@@ -147,13 +147,15 @@ web/      React 前端
   src/components/flow/    流程图布局（Pipeline）和工作流流程编辑器
   src/components/tasks/   任务列表、对话页、任务流程图、右侧面板
   src/pages/              页面（含 SettingsPage）
-scripts/  端到端测试和模拟 CLI
+scripts/  端到端测试、模拟 CLI、出包、规则检查
+skills/   自带的 Skill（见 skills/README.md）
+extension/ 浏览器扩展（UI 设计用网页生图）
+docs/     专题文档；docs/lessons/ 是开发时踩过的坑，按改动的文件取用
 ```
 
 ## 如何扩展
 
-- **加一种 CLI**：在 `shared/clis.ts` 加一项（命令、模型、权限、参数拼装），
-  在 `server/exec/parsers.ts` 加输出解析，在 `web/src/lib/cli-style.ts` 配个颜色。
+- **加一种 CLI**：写一份 JSON 配置，不用改代码，格式和接入检查清单见 [docs/cli-config.md](docs/cli-config.md)。
 - **加一个页面**：在 `web/src/pages/` 写页面，然后在 `web/src/App.tsx` 登记。
 - **改主题**：`web/src/index.css` 顶部的颜色 token。
 
@@ -166,4 +168,4 @@ scripts/  端到端测试和模拟 CLI
 5. ✅ 真实执行：Claude Code、Codex、Command Code，真实上下文用量和 git 改动
 6. ✅ 流程图：自由编排的图、子流程、开始 / 验收 / 结束挂载流程，任务流程图视图
 7. ✅ 用本机 CLI 对话创建、优化 Agent 和工作流
-8. 审批（CLI 请求权限时在页面上确认）
+8. ✅ 审批（CLI 请求权限时在页面上确认）

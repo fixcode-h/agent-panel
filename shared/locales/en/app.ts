@@ -230,4 +230,18 @@ export const EN_APP: Record<string, string> = {
     ': {name} is installed on this machine. Enable it to run roles and workflows.',
   '：先安装并启用一个 CLI，才能运行角色和工作流。': ': Install and enable a CLI to run roles and workflows.',
   '去启用 {name}': 'Enable {name}',
+  // 提问弹窗关闭、项目右键一键归档/删除未运行的对话
+  关闭并暂停对话: 'Close and pause the conversation',
+  归档所有未运行的对话: 'Archive all idle conversations',
+  删除所有未运行的对话: 'Delete all idle conversations',
+  '{ok} 个成功，{failed} 个失败': '{ok} succeeded, {failed} failed',
+  '已删除 {n} 个对话': 'Deleted {n} conversations',
+  '已归档 {n} 个对话，可以在筛选里选「已归档」找到':
+    'Archived {n} conversations; pick “Archived” in the filter to find them',
+  '删除「{name}」里 {n} 个未运行的对话？': 'Delete {n} idle conversations in “{name}”?',
+  '归档「{name}」里 {n} 个未运行的对话？': 'Archive {n} idle conversations in “{name}”?',
+  '正在执行的对话不受影响。删除后对话记录和它们的子对话都找不回来，不会动本地目录里的文件。':
+    'Running conversations are left alone. Deleted conversations and their child conversations cannot be recovered. Files in the local folder are not touched.',
+  '正在执行的对话不受影响。归档的对话不会删除，可以在筛选里选「已归档」找到。':
+    'Running conversations are left alone. Archived conversations are not deleted; pick “Archived” in the filter to find them.',
 }

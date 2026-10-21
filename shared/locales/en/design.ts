@@ -461,7 +461,6 @@ export const EN_DESIGN: Record<string, string> = {
   '↑↓ 选择，回车确认': '↑↓ to select, Enter to confirm',
   '正在读取 CLI 的命令和 Skill…': "Loading the CLI's commands and skills…",
   会话: 'Conversation',
-  '{cli} 加载的 Skill（用户目录、系统自带和插件里的）': 'Skills loaded by {cli} (user folder, built-in and plugins)',
   '{dirs} 里的 Skill；项目里的在项目设置里看': 'Skills in {dirs}; project skills are in project settings',
   已装插件: 'installed plugins',
   '有 {n} 份配置读不进来': "{n} config file(s) couldn't be loaded",

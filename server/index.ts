@@ -50,7 +50,7 @@ import { mcpApi } from './mcp-store.ts'
 import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
-import { getLimits, listSkills } from './cli-extras.ts'
+import { getLimits, isSharedSkill, listSkills } from './cli-extras.ts'
 import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
@@ -305,7 +305,9 @@ app.get('/clis/:id/skills', async (c) => {
   const pid = c.req.query('projectId')
   const dir = pid ? ((await projects.get(pid))?.path ?? '') : ''
   try {
-    return c.json(await listSkills(c.req.param('id'), dir))
+    const list = await listSkills(c.req.param('id'), dir)
+    // 设置里的 CLI 页只看 CLI 自己的 Skill：~/.agents/skills 是各 CLI 共用的，不在这里列
+    return c.json(c.req.query('own') === '1' ? list.filter((s) => !isSharedSkill(s)) : list)
   } catch (e) {
     return bad(c, (e as Error).message)
   }

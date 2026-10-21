@@ -282,6 +282,8 @@ export interface EngineHost {
    * 父对话自己也带上，分派时提醒子对话
    */
   rules?: string[]
+  /** 父对话在对话设置里写的目标：父对话和子对话都看得到 */
+  goal?: string
   /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
   takeInbox?: () => { title: string; text: string }[]
   /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
@@ -588,6 +590,15 @@ function policyPart(host: EngineHost) {
   return `## 授权情况\n${push}\n${tools}`
 }
 
+/** 对话的目标：用户在父对话设置里写的，父对话按它取舍，子对话知道自己这部分是为了什么 */
+function goalPart(host: EngineHost) {
+  const goal = host.goal?.trim()
+  if (!goal) return ''
+  return host.task.parentTaskId
+    ? `## 父对话的目标\n${clip(goal, 4000)}\n你做的是其中一部分，取舍时以这个目标为准。`
+    : `## 这个对话的目标\n${clip(goal, 4000)}\n判断要不要做、做到哪一步、怎么分派时以这个目标为准。`
+}
+
 /** 父对话发布的全局规则：子对话和它的所有节点都要遵守；父对话自己看到的是「你发布的」 */
 function rulesPart(host: EngineHost) {
   const rules = (host.rules ?? []).map((r) => r.trim()).filter(Boolean)
@@ -657,6 +668,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
     statePart(host.task),
     policyPart(host),
+    goalPart(host),
     rulesPart(host),
     buildPart(host),
     fileFormatPart(host),
@@ -2395,6 +2407,7 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     policyPart(host),
+    goalPart(host),
     rulesPart(host),
     inboxPart(host),
     buildPart(host),

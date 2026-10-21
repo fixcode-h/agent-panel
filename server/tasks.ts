@@ -123,8 +123,13 @@ export function tasksApi(deps: {
    * 前面的做完一轮再开始。用户自己在子对话里发消息不排队
    */
   const slots = new Map<string, { running: number; queue: (() => void)[] }>()
+  /** 父对话同时执行的子对话上限：对话设置里定了就用它，否则跟随设置 */
+  async function childLimit(parentId: string) {
+    const parent = live.get(parentId)?.task ?? (await store.get(parentId))
+    return parent?.childLimit || (await getSettings()).childConcurrency
+  }
   async function takeSlot(parentId: string) {
-    const limit = (await getSettings()).childConcurrency
+    const limit = await childLimit(parentId)
     const s = slots.get(parentId) ?? slots.set(parentId, { running: 0, queue: [] }).get(parentId)!
     if (s.running >= limit) await new Promise<void>((r) => s.queue.push(r))
     s.running++
@@ -760,6 +765,21 @@ export function tasksApi(deps: {
       ? (live.get(task.parentTaskId)?.task ?? (await store.get(task.parentTaskId)) ?? undefined)
       : undefined
     const rootId = task.parentTaskId || task.id
+    // 父对话在对话设置里给子对话定了 CLI / 模型 / 思考强度：子对话的角色按它跑。
+    // 换了 CLI 时角色原来的模型、强度是另一个 CLI 的，没另外指定就用新 CLI 的默认
+    const childRun = parentTask?.childRun
+    if (childRun && (childRun.cli || childRun.model || childRun.effort))
+      agents = agents.map((a) => {
+        if (a.id !== task.agentId) return a
+        const cli = childRun.cli || a.cli
+        const same = cli === a.cli
+        return {
+          ...a,
+          cli,
+          model: childRun.model || (same ? a.model : ''),
+          effort: childRun.effort || (same ? a.effort : ''),
+        }
+      })
     // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度。
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
     const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
@@ -817,6 +837,7 @@ export function tasksApi(deps: {
         resolveWorkflow: (id) => (project?.id ? planWorkflow(project, allWorkflows, defaultWf, id) : undefined),
         // 全局规则：父对话自己的，子对话用父对话的（这一轮开始时读一次，执行中新发的靠实时推送）
         rules: (task.parentTaskId ? (parentTask?.rules ?? []) : entry.task.rules).map((r) => r.text),
+        goal: (task.parentTaskId ? parentTask?.goal : entry.task.goal) || '',
         takeInbox: task.parentTaskId
           ? undefined
           : () => {
@@ -878,8 +899,8 @@ export function tasksApi(deps: {
             ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
             : { granted: [], held: [] }
           const sub = await store.create({ ...draft, id: subId })
-          const wait =
-            queued(entry.task.id) > 0 || (slots.get(entry.task.id)?.running ?? 0) >= settings.childConcurrency
+          const limit = await childLimit(entry.task.id)
+          const wait = queued(entry.task.id) > 0 || (slots.get(entry.task.id)?.running ?? 0) >= limit
           void startChild(entry.task.id, sub, message, agents)
           return {
             ok: true,
@@ -887,7 +908,7 @@ export function tasksApi(deps: {
             title: sub.title,
             info: [
               wait
-                ? `已新建子对话「${sub.title}」。同时执行的子对话已经到上限（${settings.childConcurrency} 个），它在排队，前面的做完一个就开始`
+                ? `已新建子对话「${sub.title}」。同时执行的子对话已经到上限（${limit} 个），它在排队，前面的做完一个就开始`
                 : `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
               got.granted.length ? `已替它认领：${got.granted.join('、')}` : '',
               got.held.length
@@ -1141,6 +1162,15 @@ export function tasksApi(deps: {
         }
       })
     return c.json(kids)
+  })
+
+  /** 对话设置里的「停止全部子对话」：正在执行的停下（输出和状态保留），等下一句的结束这一轮 */
+  routes.post('/:id/children/stop', async (c) => {
+    const parent = await current(c.req.param('id'))
+    if (!parent) return bad(c, t('任务不存在'), 404)
+    const before = (await store.list()).filter((x) => x.parentTaskId === parent.id && live.has(x.id)).length
+    await closeChildren(parent.id)
+    return c.json({ stopped: before })
   })
 
   /**
@@ -1740,7 +1770,10 @@ export function tasksApi(deps: {
       if (agent && settings) cur.sessionCli = agentRun(withTaskModel(agent, cur), settings).cli
     }
     const task = cur
-    Object.assign(task, p.data)
+    const { childRun, ...rest } = p.data
+    Object.assign(task, rest)
+    // null 表示改回按执行角色自己的配置
+    if (childRun !== undefined) task.childRun = childRun ?? undefined
     if (agentChanged) {
       // 换了角色后旧会话里是另一个 Agent 的设定：清掉会话，下一轮新开会话并带上之前的对话摘要
       delete task.sessions[task.agentId]

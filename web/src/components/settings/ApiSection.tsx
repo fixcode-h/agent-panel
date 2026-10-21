@@ -26,11 +26,12 @@ import {
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Input, Select } from '@/components/ui/input'
+import { ComboInput, Input, Select } from '@/components/ui/input'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { Group } from './parts'
 import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
+import { API_VENDORS, findVendor, vendorEndpoint } from '@shared/api-vendors'
 import { fmtTokens } from '@shared/model-limits'
 import { matchModel } from '@shared/model-catalog'
 import { useModelCatalog } from '@/lib/model-catalog'
@@ -231,6 +232,24 @@ function ApiCard({
       })),
     ]
   }
+  /** 从下拉里选了厂家：名称、协议、接口地址一起填好；provider 没自己填过时也换成厂家的 */
+  const pickVendor = (v: string) => {
+    const vendor = findVendor(v)
+    if (!vendor) return
+    const old = findVendor(a.name)
+    setName(vendor.name)
+    onChange({
+      name: vendor.name,
+      ...vendorEndpoint(vendor, a.protocol),
+      ...(!a.provider.trim() || a.provider === old?.provider ? { provider: vendor.provider } : {}),
+    })
+  }
+  /** 换协议时，地址还是厂家给的那个就跟着换成这个协议的地址 */
+  const setProtocol = (protocol: ApiProtocol) => {
+    const vendor = findVendor(a.name)
+    const auto = vendor && (!a.baseUrl.trim() || Object.values(vendor.urls).includes(a.baseUrl.trim()))
+    onChange({ protocol, ...(auto && vendor.urls[protocol] ? { baseUrl: vendor.urls[protocol] } : {}) })
+  }
   const saveName = () => {
     const v = name.trim()
     if (!v) return
@@ -258,14 +277,19 @@ function ApiCard({
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-field/30 p-4">
       <div className="flex items-center gap-2">
-        <Input
-          value={name}
-          maxLength={60}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === 'Enter' && saveName()}
-          aria-label={t('API 名称')}
-          className="h-9 min-w-0 flex-1 font-medium"
-        />
+        <div className="min-w-0 flex-1">
+          <ComboInput
+            value={name}
+            maxLength={60}
+            onChange={setName}
+            onPick={pickVendor}
+            onKeyDown={(e) => e.key === 'Enter' && saveName()}
+            suggestions={API_VENDORS.map((v) => ({ value: v.name, label: Object.values(v.urls)[0] }))}
+            placeholder={t('选择厂家，或输入名称')}
+            aria-label={t('API 名称')}
+            className="h-9 font-medium"
+          />
+        </div>
         <Button size="sm" variant="secondary" disabled={!name.trim() || name.trim() === a.name} onClick={saveName}>
           {t('保存')}
         </Button>
@@ -279,7 +303,7 @@ function ApiCard({
           <Select
             aria-label={t('协议')}
             value={a.protocol}
-            onChange={(e) => onChange({ protocol: e.target.value as ApiProtocol })}
+            onChange={(e) => setProtocol(e.target.value as ApiProtocol)}
             options={API_PROTOCOLS.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
           />
         </label>

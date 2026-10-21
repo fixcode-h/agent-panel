@@ -27,6 +27,7 @@ import type {
   Settings,
   NewTaskInput,
   Task,
+  TaskPatch,
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
@@ -36,7 +37,7 @@ import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptim
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
-import type { IntegrationLoginJob, IntegrationView } from '@shared/integrations'
+import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type {
   BundledSkill,
@@ -129,6 +130,8 @@ export const api = {
   integrationToken: (id: string, token: string) =>
     request<IntegrationView>(`/integrations/${id}/login/token`, json('POST', { token })),
   integrationCancel: (id: string) => request<{ ok: true }>(`/integrations/${id}/login`, { method: 'DELETE' }),
+  integrationInstall: (id: string) => request<IntegrationInstallJob>(`/integrations/${id}/install`, json('POST', {})),
+  integrationInstallStatus: (id: string) => request<IntegrationInstallJob | null>(`/integrations/${id}/install`),
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
@@ -184,8 +187,11 @@ export const api = {
   revealCliSpecs: () => request<{ ok: boolean }>('/clis/specs/reveal', json('POST', {})),
   cliCommands: (id: string, projectId = '') =>
     request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
-  cliSkills: (id: string, projectId = '') =>
-    request<CliSkill[]>(`/clis/${id}/skills${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
+  /** own：只要 CLI 自己的 Skill，不含 ~/.agents/skills 里共用的 */
+  cliSkills: (id: string, projectId = '', own = false) =>
+    request<CliSkill[]>(
+      `/clis/${id}/skills?${new URLSearchParams({ ...(projectId && { projectId }), ...(own && { own: '1' }) })}`,
+    ),
 
   /** Skills / 命令库 */
   library: (kind: 'skill' | 'command') =>
@@ -282,6 +288,7 @@ export const api = {
         branch?: string
       }[]
     >(`/tasks/${id}/children`),
+  stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
   importTask: (projectId: string, bundle: unknown) =>
@@ -380,6 +387,9 @@ export const api = {
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
+  /** 父对话的设置：目标、全局规则、子对话的执行配置和并发上限 */
+  updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'childLimit' | 'title'>) =>
+    request<Task>(`/tasks/${id}`, json('PATCH', patch)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>

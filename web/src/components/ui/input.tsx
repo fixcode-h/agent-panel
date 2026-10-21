@@ -114,12 +114,15 @@ export function Select({
 export function ComboInput({
   value,
   onChange,
+  onPick,
   suggestions,
   className,
   ...props
 }: Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value'> & {
   value: string
   onChange: (v: string) => void
+  /** 从建议里选中时另外回调：和手动输入区分开（例如选了厂家顺便填好地址） */
+  onPick?: (v: string) => void
   /** 带 group 的建议按组显示 */
   suggestions: { value: string; label?: string; group?: string }[]
 }) {
@@ -133,6 +136,7 @@ export function ComboInput({
       : suggestions
   const pick = (v: string) => {
     onChange(v)
+    onPick?.(v)
     setOpen(false)
   }
   return (

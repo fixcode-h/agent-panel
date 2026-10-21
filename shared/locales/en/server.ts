@@ -410,4 +410,10 @@ export const EN_SERVER: Record<string, string> = {
     'cloudflared started but no public address arrived within 30 seconds. Check the network or set a proxy in settings.',
   '这个系统不支持自动下载，请手动安装 cloudflared。':
     'Automatic download is not supported on this system. Install cloudflared manually.',
+  下载到数据目录: 'Download to the data folder',
+  '这台电脑上没有可用的一键安装方式，请手动安装。':
+    'No one-click install method is available on this computer. Install it manually.',
+  '{method} 退出码 {code}': '{method} exited with code {code}',
+  '{name} 没有装上': '{name} was not installed',
+  '正在下载 cloudflared，稍后再试': 'cloudflared is already downloading, try again later',
 }

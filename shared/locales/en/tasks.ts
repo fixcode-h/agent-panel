@@ -573,4 +573,25 @@ export const EN_TASKS: Record<string, string> = {
   '把这条要求发到「{title}」': 'Send this request to “{title}”',
   发到这里: 'Send here',
   其他对话: 'Other chats',
+  已保存对话设置: 'Chat settings saved',
+  '已停止 {n} 个子对话': 'Stopped {n} sub-chats',
+  对话设置: 'Chat settings',
+  目标: 'Goal',
+  '这个对话最终要做成什么。父对话和它的子对话每一轮都看得到，判断要不要做、做到哪一步时以它为准。':
+    'What this chat should achieve. The parent chat and its sub-chats see it every turn and use it to decide what to do and how far to go.',
+  '例如：商品详情页支持到货通知，上线前补齐单元测试':
+    'e.g. Add back-in-stock alerts to the product page, with unit tests before release',
+  全局规则: 'Global rules',
+  '所有子对话和它们的工作流节点都必须遵守，只对这个对话有效，不写进 AGENTS.md。对话里输入「/rule 内容」也能发布。':
+    'Every sub-chat and its workflow nodes must follow these. They apply to this chat only and are not written to AGENTS.md. You can also post one by typing “/rule text” in the chat.',
+  删除规则: 'Delete rule',
+  新规则: 'New rule',
+  '例如：不要改 package.json': "e.g. Don't change package.json",
+  '子对话用指定的 CLI 和模型': 'Use a specific CLI and model for sub-chats',
+  '不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。':
+    "When unchecked, sub-chats use the Worker role's own settings. Applies only to this chat's sub-chats, starting from their next turn.",
+  '{n} 个（跟随设置）': '{n} (from Settings)',
+  停止全部子对话: 'Stop all sub-chats',
+  '正在执行的停下来，输出和状态都保留，之后可以接着说。':
+    'Running ones stop; their output and state are kept so you can continue later.',
 }

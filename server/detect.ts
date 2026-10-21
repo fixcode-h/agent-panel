@@ -4,6 +4,7 @@ import { cliSettings, defaultCli, orderClis } from '../shared/settings.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { cliSource, resolveCommand } from './cli-source.ts'
 import { getSettings } from './settings.ts'
+import { refreshWinPath } from './win-path.ts'
 import { t } from '../shared/i18n.ts'
 
 // 检测要把每个 CLI 都跑一遍 --version（Windows 上一次要一两秒），结果多留一会儿；
@@ -23,6 +24,8 @@ let running: { key: string; p: Promise<CliStatus[]> } | null = null
  * 结果过期后先返回上次的结果、在后台重新检测，打开页面不用等每个 CLI 跑完 --version
  */
 export async function detectClis(force = false): Promise<CliStatus[]> {
+  // 在面板外面装的 CLI（Windows 安装包、winget）只改了注册表里的 PATH，重新检测时补进来
+  if (force) await refreshWinPath(true)
   const settings = await getSettings()
   // 启用状态、默认 CLI 不走缓存，设置改了立即生效；启用的排在前面
   const mark = (data: CliStatus[]) =>
