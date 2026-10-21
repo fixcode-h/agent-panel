@@ -69,26 +69,29 @@ interface Section {
   label: string
   icon?: LucideIcon
   cli?: CliDefinition
+  /** 左栏里的分组（CLI 二级列表里的页不用） */
+  group?: string
 }
 
+// 左栏按分组列出，组内顺序就是这里的顺序
 const sectionsFor = (clis: CliDefinition[]): Section[] => [
-  { id: 'general', label: t('常规'), icon: Settings2 },
-  { id: 'fonts', label: t('字体'), icon: Type },
-  { id: 'remote', label: t('外部访问'), icon: Globe },
-  { id: 'categories', label: t('项目分类'), icon: Layers },
-  { id: 'tags', label: t('标签'), icon: TagIcon },
-  { id: 'models', label: t('默认 CLI'), icon: Cpu },
+  { id: 'general', label: t('常规'), icon: Settings2, group: t('通用') },
+  { id: 'fonts', label: t('字体'), icon: Type, group: t('通用') },
+  { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
+  { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
+  { id: 'models', label: t('默认 CLI'), icon: Cpu, group: t('CLI 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
-  // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
-  { id: 'integrations', label: t('授权'), icon: ShieldCheck },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
-  { id: 'assist', label: t('AI 创建'), icon: Sparkles },
-  { id: 'local-image', label: t('本机生图'), icon: ImageIcon },
-  { id: 'styles', label: t('风格库'), icon: Palette },
-  { id: 'data', label: t('数据'), icon: HardDrive },
-  { id: 'update', label: t('版本更新'), icon: ArrowUpCircle },
+  { id: 'assist', label: t('AI 创建'), icon: Sparkles, group: t('CLI 与 AI') },
+  // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
+  { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
+  { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
+  { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
+  { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
+  { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
+  { id: 'update', label: t('版本更新'), icon: ArrowUpCircle, group: t('系统') },
 ]
 
 function SettingsBody({
@@ -310,32 +313,42 @@ function SettingsBody({
     <div className="flex h-full min-h-0 flex-col md:flex-row">
       <nav
         aria-label={t('设置分类')}
-        className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3"
+        className="flex shrink-0 gap-0.5 overflow-x-auto border-b bg-rail p-2 md:w-[220px] md:flex-col md:overflow-x-visible md:overflow-y-auto md:border-r md:border-b-0 md:p-3"
       >
         <span className="hidden px-2.5 pt-1 pb-3 font-serif text-[1.25rem] font-semibold md:block">{t('设置')}</span>
-        {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s) => {
+        {SECTIONS.filter((s) => !cliPage(s) || s.id === 'models').map((s, i, list) => {
           // CLI 相关的几页（默认 CLI 和各个 CLI）在左栏里合成一项「CLI」
           const on = s.id === 'models' ? inCli : s.id === cur.id
+          const head = s.group && s.group !== list[i - 1]?.group
           return (
-            <button
-              key={s.id}
-              onClick={() => onSection(s.id)}
-              aria-current={on ? 'page' : undefined}
-              className={cn(
-                'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
-                on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+            <div key={s.id} className="contents">
+              {head && (
+                // 窄屏左栏是横向的一行，不显示组名
+                <span
+                  className={cn('hidden px-2.5 pb-1 text-[0.6875rem] text-subtle md:block', i > 0 ? 'pt-3' : 'pt-0')}
+                >
+                  {s.group}
+                </span>
               )}
-            >
-              {s.id === 'models' ? (
-                <SquareTerminal className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-              ) : (
-                s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
-              )}
-              <span className="truncate">{s.id === 'models' ? 'CLI' : s.label}</span>
-              {s.id === 'update' && update && (
-                <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
-              )}
-            </button>
+              <button
+                onClick={() => onSection(s.id)}
+                aria-current={on ? 'page' : undefined}
+                className={cn(
+                  'flex h-9 shrink-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-[0.84375rem] whitespace-nowrap transition-colors',
+                  on ? 'bg-sel font-medium text-fg' : 'text-muted hover:bg-sel/70 hover:text-fg',
+                )}
+              >
+                {s.id === 'models' ? (
+                  <SquareTerminal className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                ) : (
+                  s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+                )}
+                <span className="truncate">{s.id === 'models' ? 'CLI' : s.label}</span>
+                {s.id === 'update' && update && (
+                  <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
+                )}
+              </button>
+            </div>
           )
         })}
       </nav>

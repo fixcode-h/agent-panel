@@ -818,4 +818,16 @@ export const EN_SETTINGS: Record<string, string> = {
   '退出登录没有成功（退出码 {code}）': 'Sign-out failed (exit code {code})',
   退出登录后没能读回状态: 'Could not read the status after signing out',
   退出登录后仍然是已登录状态: 'Still signed in after signing out',
+  '选择厂家，或输入名称': 'Pick a provider or type a name',
+  '{cli} 自己的 Skill（用户目录、系统自带和插件里的）；~/.agents/skills 里共用的不在这里列':
+    "{cli}'s own skills (user folder, built-in and plugins); shared skills in ~/.agents/skills are not listed here",
+  '安装中…': 'Installing…',
+  '正在安装：': 'Installing: ',
+  安装没有完成: 'Install did not finish',
+  'Windows 上可能会弹出系统的权限确认，点「是」继续。':
+    'Windows may show a permission prompt; click "Yes" to continue.',
+  'CLI 与 AI': 'CLI & AI',
+  连接: 'Connections',
+  生图: 'Images',
+  系统: 'System',
 }

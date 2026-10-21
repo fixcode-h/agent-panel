@@ -22,15 +22,18 @@ function groups(list: CliSkill[]) {
   return [...m]
 }
 
-/** CLI 能用的 Skill：Codex 问 app-server，其他 CLI 读 Skill 目录；projectId 给了时也列项目里的 */
-export function CliSkills({ cli, projectId = '' }: { cli: string; projectId?: string }) {
+/**
+ * CLI 能用的 Skill：Codex 问 app-server，其他 CLI 读 Skill 目录；projectId 给了时也列项目里的。
+ * own 时只列 CLI 自己的，~/.agents/skills 里各 CLI 共用的不列（设置里的 CLI 页）
+ */
+export function CliSkills({ cli, projectId = '', own = false }: { cli: string; projectId?: string; own?: boolean }) {
   const [list, setList] = useState<CliSkill[] | null>(null)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
   const load = () => {
     setLoading(true)
     api
-      .cliSkills(cli, projectId)
+      .cliSkills(cli, projectId, own)
       .then((l) => {
         setList(l)
         setError('')
@@ -43,7 +46,7 @@ export function CliSkills({ cli, projectId = '' }: { cli: string; projectId?: st
     load()
     // load 每次渲染都是新的函数，只在 CLI 或项目变化时重新读
     // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [cli, projectId])
+  }, [cli, projectId, own])
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center text-[0.75rem] text-subtle">

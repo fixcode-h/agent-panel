@@ -939,12 +939,18 @@ export function CliSection({
         <Group title="Skills">
           <p className="pb-2 text-[0.75rem] text-muted">
             {def.rpc?.skillsQuery
-              ? t('{cli} 加载的 Skill（用户目录、系统自带和插件里的）', { cli: def.name })
+              ? t('{cli} 自己的 Skill（用户目录、系统自带和插件里的）；~/.agents/skills 里共用的不在这里列', {
+                  cli: def.name,
+                })
               : t('{dirs} 里的 Skill；项目里的在项目设置里看', {
-                  dirs: [...def.skills.user, ...(def.rpc?.pluginSkills ? [t('已装插件')] : [])].join('、'),
+                  // ~/.agents/skills 是各 CLI 共用的，这一页只列 CLI 自己的
+                  dirs: [
+                    ...def.skills.user.filter((d) => d !== '~/.agents/skills'),
+                    ...(def.rpc?.pluginSkills ? [t('已装插件')] : []),
+                  ].join('、'),
                 })}
           </p>
-          <CliSkills cli={def.id} />
+          <CliSkills cli={def.id} own />
         </Group>
       )}
     </>

@@ -1147,7 +1147,12 @@ function route(method: string, url: string, body: unknown): unknown {
           source: x.source ?? '',
         })),
       ] satisfies SlashCommand[]
-    if (id && sub === 'skills') return DEMO_SKILLS.filter((x) => query.get('projectId') || x.scope !== 'repo')
+    if (id && sub === 'skills')
+      return DEMO_SKILLS.filter(
+        (x) =>
+          (query.get('projectId') || x.scope !== 'repo') &&
+          !(query.get('own') === '1' && x.source === '~/.agents/skills'),
+      )
     if (id && sub === 'models') {
       // 演示没有本机 CLI，给出内置的建议列表
       const def = CLIS.find((c) => c.id === id) ?? fail(`未知的 CLI：${id}`)

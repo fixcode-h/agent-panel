@@ -37,7 +37,7 @@ import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptim
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
-import type { IntegrationLoginJob, IntegrationView } from '@shared/integrations'
+import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
 import type { FixInput, FixStart } from '@shared/fix'
 import type {
   BundledSkill,
@@ -130,6 +130,8 @@ export const api = {
   integrationToken: (id: string, token: string) =>
     request<IntegrationView>(`/integrations/${id}/login/token`, json('POST', { token })),
   integrationCancel: (id: string) => request<{ ok: true }>(`/integrations/${id}/login`, { method: 'DELETE' }),
+  integrationInstall: (id: string) => request<IntegrationInstallJob>(`/integrations/${id}/install`, json('POST', {})),
+  integrationInstallStatus: (id: string) => request<IntegrationInstallJob | null>(`/integrations/${id}/install`),
   integrationLogout: (id: string) => request<IntegrationView>(`/integrations/${id}/logout`, json('POST', {})),
 
   localImage: () => request<LocalStatus>('/local-image/status'),
@@ -185,8 +187,11 @@ export const api = {
   revealCliSpecs: () => request<{ ok: boolean }>('/clis/specs/reveal', json('POST', {})),
   cliCommands: (id: string, projectId = '') =>
     request<SlashCommand[]>(`/clis/${id}/commands${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
-  cliSkills: (id: string, projectId = '') =>
-    request<CliSkill[]>(`/clis/${id}/skills${projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''}`),
+  /** own：只要 CLI 自己的 Skill，不含 ~/.agents/skills 里共用的 */
+  cliSkills: (id: string, projectId = '', own = false) =>
+    request<CliSkill[]>(
+      `/clis/${id}/skills?${new URLSearchParams({ ...(projectId && { projectId }), ...(own && { own: '1' }) })}`,
+    ),
 
   /** Skills / 命令库 */
   library: (kind: 'skill' | 'command') =>

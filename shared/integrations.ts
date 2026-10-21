@@ -14,8 +14,15 @@ export interface Integration {
   command: string
   versionArgs: string[]
   docsUrl?: string
-  /** 装这个 CLI 的命令，按平台给 */
-  install: Partial<Record<'win32' | 'darwin' | 'linux', string>>
+  /** 装这个 CLI 的命令，按平台给（复制到终端里跑的那条） */
+  install: Partial<Record<Platform, string>>
+  /**
+   * 一键安装：按平台给几种做法，按顺序用第一个能跑的（命令找得到），失败了再试下一个。
+   * 'download' 表示下载到数据目录的 bin 下（要有 dataBin），不需要包管理器和管理员权限
+   */
+  setup?: Partial<Record<Platform, (string[] | 'download')[]>>
+  /** Windows 上常见的安装目录（可以写 %ProgramFiles% 这类变量）：安装包没把它加进 PATH 时也能找到 */
+  winDirs?: string[]
   /** 面板会把它下载到数据目录的 bin 下（例如 cloudflared），不在 PATH 里也能找到 */
   dataBin?: boolean
   auth: {
@@ -46,6 +53,8 @@ export interface Integration {
   quietEnv?: Record<string, string>
 }
 
+export type Platform = 'win32' | 'darwin' | 'linux'
+
 /** 设置页和接口里的授权状态 */
 export interface IntegrationView {
   id: string
@@ -55,6 +64,8 @@ export interface IntegrationView {
   docsUrl: string
   /** 当前平台能直接复制的安装命令 */
   installHint: string
+  /** 当前平台支持一键安装 */
+  canInstall: boolean
   installed: boolean
   /** 第一行版本信息；没安装时为空 */
   version: string
@@ -88,6 +99,18 @@ export interface IntegrationLoginJob {
   startedAt: number
 }
 
+/** 正在进行的一键安装 */
+export interface IntegrationInstallJob {
+  integration: string
+  status: 'running' | 'done' | 'failed'
+  /** 正在用的安装方式，例如 winget install --id GitHub.cli */
+  method: string
+  /** 安装命令的输出（最后一部分） */
+  output: string
+  error?: string
+  startedAt: number
+}
+
 /** GitHub CLI：授权后 Agent 可以直接用 gh 合并分支、看/建 PR、提交 issue */
 const github: Integration = {
   id: 'github',
@@ -101,6 +124,27 @@ const github: Integration = {
     darwin: 'brew install gh',
     linux: 'sudo apt install gh',
   },
+  setup: {
+    win32: [
+      [
+        'winget',
+        'install',
+        '--id',
+        'GitHub.cli',
+        '-e',
+        '--silent',
+        '--accept-source-agreements',
+        '--accept-package-agreements',
+      ],
+    ],
+    darwin: [['brew', 'install', 'gh']],
+    // sudo -n：没有免密 sudo 时直接失败，不会卡在输密码上
+    linux: [
+      ['brew', 'install', 'gh'],
+      ['sudo', '-n', 'apt-get', 'install', '-y', 'gh'],
+    ],
+  },
+  winDirs: ['%ProgramFiles%\\GitHub CLI', '%LOCALAPPDATA%\\Microsoft\\WinGet\\Links'],
   auth: {
     status: ['auth', 'status'],
     // --web 打开浏览器；一次性授权码自己解析出来给用户复制
@@ -133,6 +177,28 @@ const cloudflared: Integration = {
     darwin: 'brew install cloudflared',
     linux: 'sudo apt install cloudflared',
   },
+  setup: {
+    win32: [
+      [
+        'winget',
+        'install',
+        '--id',
+        'Cloudflare.cloudflared',
+        '-e',
+        '--silent',
+        '--accept-source-agreements',
+        '--accept-package-agreements',
+      ],
+      'download',
+    ],
+    darwin: [['brew', 'install', 'cloudflared'], 'download'],
+    linux: [['brew', 'install', 'cloudflared'], 'download'],
+  },
+  winDirs: [
+    '%ProgramFiles(x86)%\\cloudflared',
+    '%ProgramFiles%\\cloudflared',
+    '%LOCALAPPDATA%\\Microsoft\\WinGet\\Links',
+  ],
   auth: {
     // 登录后 cloudflared 把证书写到 ~/.cloudflared/cert.pem，没有查状态的命令
     file: '.cloudflared/cert.pem',

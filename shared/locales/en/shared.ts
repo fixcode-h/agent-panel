@@ -156,4 +156,12 @@ export const EN_SHARED: Record<string, string> = {
   '「{title}」向主角色提问：{question}': '"{title}" asked the main role: {question}',
   '「{from}」→「{to}」：{text}': '"{from}" → "{to}": {text}',
   委派: 'Delegated',
+  'Kimi（月之暗面）': 'Kimi (Moonshot)',
+  '智谱 GLM': 'GLM (Zhipu)',
+  '通义千问（阿里云百炼）': 'Qwen (Alibaba Bailian)',
+  '豆包（火山方舟）': 'Doubao (Volcano Ark)',
+  腾讯混元: 'Tencent Hunyuan',
+  百度千帆: 'Baidu Qianfan',
+  硅基流动: 'SiliconFlow',
+  'Ollama（本机）': 'Ollama (local)',
 }

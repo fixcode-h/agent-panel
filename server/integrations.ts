@@ -8,6 +8,7 @@ import {
   INTEGRATIONS,
   getIntegration,
   type Integration,
+  type IntegrationInstallJob,
   type IntegrationLoginJob,
   type IntegrationView,
 } from '../shared/integrations.ts'
@@ -16,6 +17,8 @@ import { resolveCommand } from './cli-source.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { log } from './log.ts'
 import { DATA_DIR } from './store.ts'
+import { installCloudflared } from './remote.ts'
+import { expandWinVars, refreshWinPath } from './win-path.ts'
 
 /**
  * 外部 CLI 的授权：检测是否装了、是否已经登录，在面板里跑一次浏览器授权或 token 授权。
@@ -45,10 +48,27 @@ const installHint = (def: Integration) => def.install[platform] ?? Object.values
 const dataBin = (def: Integration) =>
   def.dataBin ? path.join(DATA_DIR, 'bin', process.platform === 'win32' ? `${def.command}.exe` : def.command) : ''
 
-/** 实际用来跑命令的文件：PATH 里找到的优先，没有就用数据目录里下载的 */
-function commandPath(def: Integration) {
-  return resolveCommand(def.command) ?? (dataBin(def) && existsSync(dataBin(def)) ? dataBin(def) : undefined)
+/** Windows 上常见安装目录里的可执行文件：安装包没把目录加进 PATH 时用 */
+const winDirFile = (def: Integration) => {
+  if (process.platform !== 'win32') return undefined
+  for (const d of def.winDirs ?? []) {
+    const file = path.join(expandWinVars(d), `${def.command}.exe`)
+    if (!file.includes('%') && existsSync(file)) return file
+  }
+  return undefined
 }
+
+/** 实际用来跑命令的文件：PATH 里找到的优先，再找常见安装目录，最后用数据目录里下载的 */
+function commandPath(def: Integration) {
+  return (
+    resolveCommand(def.command) ??
+    winDirFile(def) ??
+    (dataBin(def) && existsSync(dataBin(def)) ? dataBin(def) : undefined)
+  )
+}
+
+/** 当前平台的一键安装方式 */
+const setupSteps = (def: Integration) => def.setup?.[platform] ?? []
 
 /** 凭据文件（相对用户目录）的完整路径 */
 const credentialFile = (def: Integration) => (def.auth.file ? path.join(homedir(), def.auth.file) : '')
@@ -64,7 +84,7 @@ const lines = (s: string, max = 4) =>
 async function readAuth(def: Integration) {
   // 凭据就是一个文件时没有可问的命令：文件在即已登录，也没有账号可认
   if (def.auth.file) return { authed: existsSync(credentialFile(def)), account: '', output: '' }
-  const s = await capture(def.command, def.auth.status ?? [], homedir(), quietEnv(def), 15_000)
+  const s = await capture(commandPath(def) ?? def.command, def.auth.status ?? [], homedir(), quietEnv(def), 15_000)
   const output = sanitize([s.stdout, s.stderr].filter(Boolean).join('\n'))
   const authed = s.code === 0
   const account = authed && def.auth.account ? (output.match(def.auth.account)?.[1] ?? '') : ''
@@ -80,6 +100,7 @@ async function detect(def: Integration): Promise<IntegrationView> {
     command: def.command,
     docsUrl: def.docsUrl ?? '',
     installHint: installHint(def),
+    canInstall: setupSteps(def).length > 0,
     installed: false,
     version: '',
     authed: false,
@@ -111,6 +132,7 @@ function fallback(def: Integration, error: string): IntegrationView {
     command: def.command,
     docsUrl: def.docsUrl ?? '',
     installHint: installHint(def),
+    canInstall: setupSteps(def).length > 0,
     installed: false,
     version: '',
     authed: false,
@@ -125,6 +147,8 @@ function fallback(def: Integration, error: string): IntegrationView {
 
 /** 所有授权工具的状态；refresh 时跳过缓存（刚授权完、刚改过配置） */
 export async function listIntegrations(refresh = false): Promise<IntegrationView[]> {
+  // 在面板外面装好的工具（winget、安装包）只改了注册表里的 PATH，先补进来再检测
+  if (await refreshWinPath(refresh)) invalidate()
   return Promise.all(
     INTEGRATIONS.map(async (def) => {
       const hit = cache.get(def.id)
@@ -318,6 +342,92 @@ async function logout(id: string): Promise<IntegrationView> {
   return after
 }
 
+// ---- 一键安装 ----
+
+const installs = new Map<string, IntegrationInstallJob>()
+const INSTALL_TIMEOUT = 15 * 60_000
+
+/** 安装方式的文字：给用户看正在跑什么 */
+const stepText = (step: string[] | 'download') => (step === 'download' ? t('下载到数据目录') : step.join(' '))
+
+/** 这一步能不能在本机跑：包管理器找得到才算；下载只要求定义里允许 */
+const runnable = (def: Integration, step: string[] | 'download') =>
+  step === 'download' ? !!def.dataBin : !!resolveCommand(step[0]) && (step[0] !== 'sudo' || !!resolveCommand(step[2]))
+
+async function startInstall(id: string): Promise<IntegrationInstallJob> {
+  const def = getIntegration(id)
+  if (!def) throw new Error(t('没有这个授权工具'))
+  const running = installs.get(id)
+  if (running?.status === 'running') return running
+  const steps = setupSteps(def).filter((s) => runnable(def, s))
+  if (!steps.length)
+    throw new Error([t('这台电脑上没有可用的一键安装方式，请手动安装。'), installHint(def)].filter(Boolean).join('\n'))
+  const job: IntegrationInstallJob = {
+    integration: id,
+    status: 'running',
+    method: stepText(steps[0]),
+    output: '',
+    startedAt: Date.now(),
+  }
+  installs.set(id, job)
+  // winget 的进度条用 \r 刷新同一行，只留每行最后的样子
+  const take = (text: string) => {
+    const clean = text
+      .split('\n')
+      .map(
+        (l) =>
+          l
+            .split('\r')
+            .filter((x) => x.trim())
+            .at(-1) ?? '',
+      )
+      .filter((l) => l.trim() && !/^[\s\-\\|/█▒░]+$/.test(l))
+      .join('\n')
+    if (clean) job.output = (job.output + clean + '\n').slice(-4000)
+  }
+  void (async () => {
+    const errors: string[] = []
+    for (const step of steps) {
+      job.method = stepText(step)
+      take(`> ${job.method}`)
+      log.info('integrations', '开始安装', { tool: id, method: job.method })
+      if (step === 'download') {
+        const error = await installCloudflared()
+        if (error) errors.push(error)
+      } else {
+        const r = await runProcess({
+          command: resolveCommand(step[0]) ?? step[0],
+          args: step.slice(1),
+          cwd: homedir(),
+          env: quietEnv(def),
+          timeoutMs: INSTALL_TIMEOUT,
+          onLine: take,
+          onStderr: take,
+        })
+        // 退出码不为 0 也可能已经装上了（例如 winget 报「已经安装」），以检测结果为准
+        if (r.code !== 0)
+          errors.push(r.spawnError || t('{method} 退出码 {code}', { method: job.method, code: String(r.code) }))
+      }
+      await refreshWinPath(true)
+      invalidate(id)
+      const now = await detect(def).catch(() => null)
+      if (now?.installed) {
+        job.status = 'done'
+        cache.set(id, { at: Date.now(), view: now })
+        log.info('integrations', '安装完成', { tool: id, version: now.version })
+        return
+      }
+    }
+    job.status = 'failed'
+    job.error = [t('{name} 没有装上', { name: def.name }), ...errors].join('\n')
+    log.warn('integrations', '安装失败', { tool: id, error: job.error })
+  })().catch((e) => {
+    job.status = 'failed'
+    job.error = (e as Error).message
+  })
+  return job
+}
+
 /** 设置里的「授权」 */
 export function integrationsApi() {
   const guard = (fn: (c: any) => Promise<Response>) => async (c: any) => {
@@ -350,6 +460,14 @@ export function integrationsApi() {
     .delete(
       '/:id/login',
       guard(async (c) => c.json(cancelLogin(c.req.param('id')))),
+    )
+    .post(
+      '/:id/install',
+      guard(async (c) => c.json(await startInstall(c.req.param('id')))),
+    )
+    .get(
+      '/:id/install',
+      guard(async (c) => c.json(installs.get(c.req.param('id')) ?? null)),
     )
     .post(
       '/:id/logout',

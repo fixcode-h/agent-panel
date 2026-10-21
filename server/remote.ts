@@ -16,6 +16,7 @@ import { capture, childEnv } from './exec/process.ts'
 import { resolveCommand } from './cli-source.ts'
 import { netFetch } from './net.ts'
 import { log } from './log.ts'
+import { refreshWinPath } from './win-path.ts'
 
 const execFileAsync = promisify(execFile)
 const isWin = process.platform === 'win32'
@@ -82,6 +83,8 @@ export function hostOfUrl(value: string): string {
 async function probe(command: string, force = false): Promise<CloudflaredInfo> {
   const key = `${command}|${BIN_FILE}`
   if (!force && cache?.key === key && Date.now() - cache.at < 60_000) return cache.data
+  // 用 winget、安装包装好后新的 PATH 只在注册表里，补进当前进程再找
+  await refreshWinPath(force)
   const candidates = [...new Set([command.trim(), BIN_FILE, 'cloudflared'].filter(Boolean))]
   let reason = ''
   let data: CloudflaredInfo = { installed: false, version: '', path: '', error: t('没有找到 cloudflared') }
@@ -276,15 +279,17 @@ async function downloadFile(from: string, to: string, onPercent: (n: number) => 
   await rename(part, to)
 }
 
-export async function installCloudflared() {
-  if (download?.running) return
+/** 下载 cloudflared 到数据目录；返回错误信息，成功时为空 */
+export async function installCloudflared(): Promise<string> {
+  if (download?.running) return t('正在下载 cloudflared，稍后再试')
   const a = asset()
   if (!a) {
     download = { running: false, percent: -1, error: t('这个系统不支持自动下载，请手动安装 cloudflared。') }
-    return
+    return download.error
   }
   download = { running: true, percent: -1, error: '' }
-  const file = path.join(BIN, a.name)
+  // 不用解压的直接存成 cloudflared(.exe)：检测只认这个名字
+  const file = a.tgz ? path.join(BIN, a.name) : BIN_FILE
   const url = `https://github.com/cloudflare/cloudflared/releases/latest/download/${a.name}`
   try {
     await mkdir(BIN, { recursive: true })
@@ -309,9 +314,10 @@ export async function installCloudflared() {
   } catch (e) {
     download = { running: false, percent: -1, error: (e as Error).message }
     log.error('remote', '下载 cloudflared 失败', e)
-    return
+    return download.error
   }
   download = { running: false, percent: 100, error: '' }
+  return ''
 }
 
 async function status(link: (url: string) => string): Promise<RemoteAccessStatus> {
