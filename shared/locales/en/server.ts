@@ -421,4 +421,10 @@ export const EN_SERVER: Record<string, string> = {
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
   提示: 'Notice',
+  '这个 CLI 不支持扩展包': "This CLI doesn't support packages",
+  不支持这个操作: 'Unsupported action',
+  先填包的来源: 'Enter a package source first',
+  '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',
+  '命令失败（退出码 {code}）': 'Command failed (exit code {code})',
+  '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
 }

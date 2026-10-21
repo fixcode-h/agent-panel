@@ -69,6 +69,28 @@ export const McpStore = z.object({
 export type McpStore = z.infer<typeof McpStore>
 
 /**
+ * 扩展包（例如 Pi 的 pi install）：已装的从配置文件 file 的 key 数组里读（每项是来源字符串，或带 source 字段的对象），
+ * 装、删、更新跑 CLI 自己的命令，{source} 是包的来源。相对路径的来源按配置文件所在目录换成绝对路径再交给命令
+ */
+export const CliPackages = z.object({
+  file: z.string(),
+  key: z.string().default('packages'),
+  install: z.array(z.string()).min(1),
+  remove: z.array(z.string()).min(1),
+  /** 更新一个；updateAll 更新全部 */
+  update: z.array(z.string()).optional(),
+  updateAll: z.array(z.string()).optional(),
+  /** 输入框的示例 */
+  placeholder: z.string().default(''),
+})
+export type CliPackages = z.infer<typeof CliPackages>
+/** 已装的一个包：source 是配置里写的，target 是交给命令用的（相对路径换成了绝对路径） */
+export interface InstalledPackage {
+  source: string
+  target: string
+}
+
+/**
  * 常驻协议里的一条消息：JSON-RPC 写 method + params，按 type 区分的记录流写 record。
  * 里面的字符串可以用 {input}、{text}、{model}、{resume}、{maxTurns} 这些占位；
  * 整条就是占位、运行时又没有值时，这个字段直接不传（例如没设置回合上限时的 maxTurns）。
@@ -160,6 +182,11 @@ export const RpcSpec = z.object({
   closeDelayMs: z.number().int().nonnegative().default(0),
   /** 没设置回合上限时的默认值（0 表示不传） */
   defaultMaxTurns: z.number().int().nonnegative().default(0),
+  /**
+   * CLI 自己没有回合上限参数时，面板数这类记录（一次模型请求一条，例如 Pi 的 turn_start），
+   * 超过设置里的回合上限就按 interrupt 停下，这一轮算失败
+   */
+  turnLimit: z.object({ when: z.record(z.string(), z.unknown()) }).optional(),
   /** 插话要等 CLI 的下一个模型请求才取走，页面上先显示成「待取走」 */
   deferSteer: z.boolean().default(false),
   /** 协议自己处理提问和审批，不用面板的 MCP 工具 */
@@ -252,8 +279,11 @@ export const CliSpec = z.object({
       compact: z.enum(['native', 'slash', 'summary']).default('summary'),
       /** 会话中途能换模型（换了模型续接同一个会话，不用开新会话带上对话记录） */
       modelSwitch: z.boolean().default(false),
-      /** 会话能分叉到哪：latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话） */
-      fork: z.enum(['latest', 'none']).default('none'),
+      /**
+       * 会话能分叉到哪：before 能分叉到任意一轮之前（rpc.turnId 记下每轮的位置，分叉时 {forkBefore} 是要丢掉的第一轮），
+       * latest 只能从最后分叉（要有分叉参数，见 args 里的 fork 条件），none 不能分叉（带上对话记录开新会话）
+       */
+      fork: z.enum(['before', 'latest', 'none']).default('none'),
       /** 自动压缩：env 是用环境变量告诉 CLI 百分比（autoCompactEnv），panel 是面板在一轮结束后压缩 */
       autoCompact: z.enum(['env', 'panel']).default('panel'),
       autoCompactEnv: z.string().default(''),
@@ -303,6 +333,21 @@ export const CliSpec = z.object({
   }),
   /** 设置里环境变量的示例 */
   envExample: z.string().default(''),
+  /**
+   * 设置里给用户的开关：打开时加上 env，参数规则里用条件「opt.<id>」判断（例如 Pi 的离线运行、codemode）。
+   * default 是没改过时的状态
+   */
+  options: z
+    .array(
+      z.object({
+        id: z.string().regex(/^[a-z][a-zA-Z0-9]*$/),
+        label: z.string(),
+        hint: z.string().default(''),
+        default: z.boolean().default(false),
+        env: z.record(z.string(), z.string()).default({}),
+      }),
+    )
+    .default([]),
   /** 每次运行都加的环境变量（用户在设置里写的同名变量优先）：例如让无界面运行信任工作目录 */
   env: z.record(z.string(), z.string()).default({}),
   /**
@@ -313,6 +358,7 @@ export const CliSpec = z.object({
   mcp: McpSpec.optional(),
   /** 用户自己装的 MCP 工具存在哪个配置文件里；不写时面板不管这个 CLI 的 MCP 工具 */
   mcpStore: McpStore.optional(),
+  packages: CliPackages.optional(),
   /** 账号和 API：怎么登录、凭据存在哪、怎么改用 API；不写时设置里没有账号和 API 的选项 */
   auth: CliAuth.optional(),
   /** 界面文案的翻译：{ "en": { "中文": "English" } } */
@@ -340,15 +386,18 @@ function value(o: BuildOptions, key: string): unknown {
       return o.addDirs?.length ? o.addDirs : undefined
     case 'fork':
       return o.fork
+    case 'forkBefore':
+      return o.fork?.before
     case 'title':
       return o.title
     default:
-      return undefined
+      // opt.<id>：设置里这个开关开着
+      return key.startsWith('opt.') ? o.options?.[key.slice(4)] || undefined : undefined
   }
 }
 
 function holds(o: BuildOptions, cond: string) {
-  const m = /^(!?)(\w+)(?:(!?=)(.*))?$/.exec(cond.trim())
+  const m = /^(!?)([\w.]+)(?:(!?=)(.*))?$/.exec(cond.trim())
   if (!m) return false
   const [, not, key, op, want] = m
   const v = value(o, key)
@@ -442,8 +491,10 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     color: spec.color,
     envExample: spec.envExample,
     env: spec.env,
+    options: spec.options.map((x) => ({ ...x, label: tr(x.label), hint: tr(x.hint) })),
     mcp: spec.mcp,
     mcpStore: spec.mcpStore,
+    packages: spec.packages && { ...spec.packages, placeholder: tr(spec.packages.placeholder) },
     auth: spec.auth && { ...spec.auth, accountNote: tr(spec.auth.accountNote) },
     spec: true,
   }

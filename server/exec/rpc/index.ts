@@ -39,6 +39,7 @@ export function rpcSessionFor(def: CliDefinition, o: RpcRunOptions): RpcSession 
             maxTurns: (o.build.maxTurns ?? rpc.defaultMaxTurns) || undefined,
             resume: o.build.resume,
             fork: !!o.build.fork,
+            forkBefore: o.build.fork?.before,
             images: o.images,
             op: o.build.op,
           })

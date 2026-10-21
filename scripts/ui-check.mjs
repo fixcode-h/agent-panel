@@ -593,6 +593,9 @@ try {
   await p.getByRole('dialog').getByText('Pi', { exact: true }).first().click()
   await p.getByRole('button', { name: '安装', exact: true }).first().click()
   await p.getByText('安装完成').first().waitFor({ timeout: 8000 })
+  // 装好后才有的：开关（离线运行默认开着）和扩展包
+  await p.getByRole('list', { name: '已装的扩展包' }).scrollIntoViewIfNeeded()
+  await check(p, '设置-CLI-Pi扩展包', ['离线运行', '扩展包', 'npm:@example/pi-web-tools'])
   await p.getByRole('button', { name: '卸载', exact: true }).first().click()
   await p.getByRole('dialog').last().getByRole('button', { name: '卸载', exact: true }).click()
   await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })

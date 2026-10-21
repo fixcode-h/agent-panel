@@ -259,6 +259,7 @@ function SettingsBody({
           showLimits: d.showLimits,
           autoCompact: d.autoCompact,
           maxTurns: d.maxTurns,
+          options: d.options,
           authMode: d.authMode,
           apiId: d.apiId,
         },

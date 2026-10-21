@@ -730,6 +730,22 @@ try {
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩后仍然续接原来的会话')
   assert.ok(!c.input.includes('之前对话的摘要'), '不用带摘要')
+  // 撤回到某条消息：Pi 用 RPC 的 fork 截到那条消息之前，不用带上之前的对话开新会话
+  pm = await call('GET', `/tasks/${pm.id}`)
+  const piUsers = pm.messages.filter((m) => m.role === 'user' && !m.step)
+  const piCut = piUsers.at(-1)
+  assert.ok(piCut.turn?.id, `每一轮记下这一轮用户消息的 entryId：${JSON.stringify(piCut.turn)}`)
+  assert.notEqual(piCut.turn.id, piUsers.at(-2).turn?.id, '每一轮的 entryId 不一样')
+  await call('POST', `/tasks/${pm.id}/rewind`, { messageId: piCut.id })
+  await call('POST', `/tasks/${pm.id}/messages`, { text: '换个做法' })
+  pm = await waitDone(pm.id)
+  assert.equal(pm.status, 'done', pm.messages.at(-1)?.text)
+  c = calls().at(-1)
+  assert.equal(c.forkAt, piCut.turn.id, '分叉到撤回的那条消息之前')
+  assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '先打开原来的会话再分叉')
+  assert.ok(!c.args.includes('--fork'))
+  assert.ok(!c.input.includes('之前的对话'), '不用把之前的对话塞进提示词')
+  assert.notEqual(pm.sessions[pm.agentId], piSession, '分叉出来的是新会话')
   // Pi 出错时退出码也是 0，按最后的 agent_settled 和 assistant 的 stopReason 判断失败
   let pf = await call('POST', '/tasks', {
     projectId: project.id,

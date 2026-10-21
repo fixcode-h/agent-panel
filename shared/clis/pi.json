@@ -118,16 +118,28 @@
       "args": ["--thinking", "{effort}"]
     },
     {
-      "if": "permission=full",
+      "if": ["permission=full", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls"]
     },
     {
-      "if": "permission=edit",
+      "if": ["permission=full", "opt.codemode"],
+      "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search"]
+    },
+    {
+      "if": ["permission=edit", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell"]
     },
     {
-      "if": "permission=readonly",
+      "if": ["permission=edit", "opt.codemode"],
+      "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search", "--exclude-tools", "bash,powershell"]
+    },
+    {
+      "if": ["permission=readonly", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell,edit,write"]
+    },
+    {
+      "if": ["permission=readonly", "opt.codemode"],
+      "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search", "--exclude-tools", "bash,powershell,edit,write"]
     },
     {
       "if": "title",
@@ -156,16 +168,28 @@
       "args": ["--thinking", "{effort}"]
     },
     {
-      "if": "permission=full",
+      "if": ["permission=full", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls"]
     },
     {
-      "if": "permission=edit",
+      "if": ["permission=full", "opt.codemode"],
+      "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search"]
+    },
+    {
+      "if": ["permission=edit", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell"]
     },
     {
-      "if": "permission=readonly",
+      "if": ["permission=edit", "opt.codemode"],
+      "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search", "--exclude-tools", "bash,powershell"]
+    },
+    {
+      "if": ["permission=readonly", "!opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls", "--exclude-tools", "bash,powershell,edit,write"]
+    },
+    {
+      "if": ["permission=readonly", "opt.codemode"],
+      "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search", "--exclude-tools", "bash,powershell,edit,write"]
     },
     {
       "if": "title",
@@ -176,7 +200,11 @@
       "args": ["--session", "{resume}"]
     },
     {
-      "if": ["resume", "fork"],
+      "if": ["resume", "forkBefore"],
+      "args": ["--session", "{resume}"]
+    },
+    {
+      "if": ["resume", "fork", "!forkBefore"],
       "args": ["--fork", "{resume}"]
     }
   ],
@@ -187,6 +215,13 @@
           "type": "get_state"
         },
         "save": "state"
+      },
+      {
+        "record": {
+          "type": "get_fork_messages"
+        },
+        "save": "pre",
+        "optional": true
       },
       {
         "record": {
@@ -248,6 +283,14 @@
         },
         "optional": true,
         "parse": true,
+        "timeoutMs": 5000
+      },
+      {
+        "record": {
+          "type": "get_fork_messages"
+        },
+        "save": "post",
+        "optional": true,
         "timeoutMs": 5000
       }
     ],
@@ -328,7 +371,43 @@
           "cancelled": true
         }
       }
-    ]
+    ],
+    "fork": [
+      {
+        "if": "forkBefore",
+        "record": {
+          "type": "fork",
+          "entryId": "{forkBefore}"
+        },
+        "save": "forked"
+      },
+      {
+        "record": {
+          "type": "get_state"
+        },
+        "save": "state"
+      },
+      {
+        "record": {
+          "type": "get_fork_messages"
+        },
+        "save": "pre",
+        "optional": true
+      },
+      {
+        "record": {
+          "type": "prompt",
+          "message": "{input}"
+        },
+        "save": "prompt"
+      }
+    ],
+    "turnId": "post.data.messages.{pre.data.messages.length}.entryId",
+    "turnLimit": {
+      "when": {
+        "type": "turn_start"
+      }
+    }
   },
   "systemPromptFlag": "--append-system-prompt",
   "output": {
@@ -548,7 +627,7 @@
   },
   "features": {
     "steer": true,
-    "fork": "latest",
+    "fork": "before",
     "compact": "native",
     "autoCompact": "panel",
     "modelSwitch": true,
@@ -572,12 +651,29 @@
     "format": "md"
   },
   "envExample": "ANTHROPIC_API_KEY=...",
-  "env": {
-    "PI_OFFLINE": "1"
-  },
+  "options": [
+    {
+      "id": "offline",
+      "label": "离线运行",
+      "hint": "不让 Pi 自己联网（例如刷新模型列表），模型请求不受影响（PI_OFFLINE=1）",
+      "default": true,
+      "env": {
+        "PI_OFFLINE": "1"
+      }
+    },
+    {
+      "id": "codemode",
+      "label": "codemode 和工具搜索",
+      "hint": "让模型写脚本批量调用工具、按需搜索工具；MCP 工具多时省上下文",
+      "default": false
+    }
+  ],
   "auth": {
     "home": "${PI_CODING_AGENT_DIR:-~/.pi/agent}",
     "files": ["auth.json"],
+    "check": {
+      "args": ["auth", "check", "--json", "--no-refresh", "--provider", "{provider}"]
+    },
     "identity": "none",
     "accountNote": "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。",
     "api": {
@@ -661,7 +757,12 @@
       "只读": "Read-only",
       "只能读代码和搜索，不能改文件、不能执行命令": "Can only read and search code; no edits and no commands",
       "Pi 每次启动读项目目录和上级目录里的 AGENTS.md（没有时读 CLAUDE.md），以及 ~/.pi/agent/AGENTS.md。": "Pi reads AGENTS.md (or CLAUDE.md when there is none) in the project and its parent directories, plus ~/.pi/agent/AGENTS.md, on every start.",
-      "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。": "Pi accounts can only be signed in from a terminal: run pi and type /login to sign in with a Claude Pro/Max, ChatGPT, GitHub Copilot or similar subscription. Then come back here and save it to switch between accounts. You can also set ANTHROPIC_API_KEY, OPENAI_API_KEY and so on under Environment variables above."
+      "Pi 的账号登录只能在终端里做：运行 pi，输入 /login 选择 Claude Pro/Max、ChatGPT、GitHub Copilot 等订阅登录。登录后回到这里保存，就能在多个账号之间切换。也可以在上面的「环境变量」里填 ANTHROPIC_API_KEY、OPENAI_API_KEY 等。": "Pi accounts can only be signed in from a terminal: run pi and type /login to sign in with a Claude Pro/Max, ChatGPT, GitHub Copilot or similar subscription. Then come back here and save it to switch between accounts. You can also set ANTHROPIC_API_KEY, OPENAI_API_KEY and so on under Environment variables above.",
+      "离线运行": "Offline mode",
+      "不让 Pi 自己联网（例如刷新模型列表），模型请求不受影响（PI_OFFLINE=1）": "Stops Pi's own network activity, such as model catalog refreshes. Model requests are not affected (PI_OFFLINE=1)",
+      "codemode 和工具搜索": "Codemode and tool search",
+      "让模型写脚本批量调用工具、按需搜索工具；MCP 工具多时省上下文": "Lets the model write scripts that call tools in batches and search for tools on demand. Saves context when there are many MCP tools",
+      "npm:@scope/包名、git:github.com/用户/仓库 或本机目录": "npm:@scope/name, git:github.com/user/repo, or a local folder"
     }
   },
   "mcpStore": {
@@ -672,5 +773,14 @@
     "remoteType": "",
     "stdioType": false,
     "headersKey": "headers"
+  },
+  "packages": {
+    "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+    "key": "packages",
+    "install": ["install", "{source}"],
+    "remove": ["remove", "{source}"],
+    "update": ["update", "{source}"],
+    "updateAll": ["update", "--extensions"],
+    "placeholder": "npm:@scope/包名、git:github.com/用户/仓库 或本机目录"
   }
 }

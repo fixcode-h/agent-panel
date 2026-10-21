@@ -884,7 +884,7 @@ export const TaskMessage = z.object({
   turn: z
     .object({
       session: z.string(),
-      /** Codex 的 turn id */
+      /** Codex 的 turn id；Pi 是这一轮用户消息的 entryId（分叉到它之前） */
       id: z.string().default(''),
       /** Claude Code 这一轮最后一条回复的 uuid（--resume-session-at 用） */
       end: z.string().default(''),
@@ -1156,6 +1156,11 @@ export const TaskData = z.object({
     .object({
       session: z.string(),
       through: z.object({ session: z.string(), id: z.string().default(''), end: z.string().default('') }).nullable(),
+      /** 要丢掉的第一轮（只能分叉到某一轮之前的 CLI 用它的 id，例如 Pi）；没有丢掉的轮次时为空 */
+      cut: z
+        .object({ session: z.string(), id: z.string().default(''), end: z.string().default('') })
+        .nullable()
+        .optional(),
       /** through 是不是这个会话的最后一轮（Command Code 只能从最后分叉） */
       latest: z.boolean().default(false),
       /** 压缩上下文时 CLI 写的摘要（不能压缩会话的 CLI 开新会话时带上） */
@@ -1334,6 +1339,8 @@ export const CliSettings = z.object({
   autoCompact: z.number().int().min(0).max(100).default(0),
   /** 一轮任务最多执行多少回合（模型请求次数）；0 表示用 CLI 自己的默认值（Command Code 是 1000） */
   maxTurns: z.number().int().min(0).max(1000).default(0),
+  /** CLI 定义里开关（options）的状态；没改过的按定义里的默认值 */
+  options: z.record(z.string(), z.boolean()).default({}),
 })
 export type CliSettings = z.infer<typeof CliSettings>
 
@@ -1508,6 +1515,17 @@ export interface CliAccounts {
 }
 
 /** 正在进行的登录 */
+/** 一个提供方的凭据检查结果（CLI 定义里 auth.check 的输出） */
+export interface ProviderAuthCheck {
+  provider: string
+  ready: boolean
+  /** CLI 给的状态和原因，原样显示 */
+  status: string
+  reason?: string
+  /** 就绪时的凭据类型，例如 oauth、api_key */
+  authType?: string
+}
+
 export interface LoginJob {
   id: string
   cli: string

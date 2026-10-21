@@ -8,6 +8,8 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { claudeParser, commandCodeParser, parserFor, type CliEvent } from './parsers.ts'
 import { getCli } from '../../shared/clis.ts'
+import { Settings } from '../../shared/schema.ts'
+import { cliSettings } from '../../shared/settings.ts'
 import { codexAppSession, unwrapShell } from './rpc/codex.ts'
 
 const CWD = '/work/shop'
@@ -352,4 +354,17 @@ test('Pi：按配置文件拼参数（默认走 RPC）', () => {
     '--exclude-tools',
     'bash,powershell',
   ])
+  // codemode 开关要并进同一个 --tools：Pi 有多个 --tools 时只认最后一个
+  assert.deepEqual(
+    def.buildArgs({ model: '', permission: 'edit', extraArgs: [], options: { codemode: true } }).slice(2),
+    ['--tools', '+grep,+find,+ls,+codemode,+tool_search', '--exclude-tools', 'bash,powershell'],
+  )
+})
+
+test('Pi：离线运行是默认开着的开关，关掉就不加 PI_OFFLINE', () => {
+  const env = (options: Record<string, boolean>) =>
+    cliSettings(Settings.parse({ clis: { pi: { options } } }), 'pi').env.filter((e) => e.key === 'PI_OFFLINE')
+  assert.deepEqual(env({}), [{ key: 'PI_OFFLINE', value: '1' }])
+  assert.deepEqual(env({ offline: false }), [])
+  assert.deepEqual(cliSettings(Settings.parse({}), 'pi').options, { offline: true, codemode: false })
 })

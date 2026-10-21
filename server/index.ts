@@ -50,6 +50,7 @@ import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, isSharedSkill, listSkills } from './cli-extras.ts'
+import { packagesApi } from './cli-packages.ts'
 import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
@@ -341,6 +342,7 @@ app.route('/mcp-tools', mcpApi())
 app.route('/clis', installApi())
 app.route('/local-image', comfyApi())
 app.route('/clis', modelsApi())
+app.route('/clis', packagesApi())
 app.route('/model-catalog', modelCatalogApi())
 // 账号额度、加载的 Skill；查不到时给出原因，页面上显示
 app.get('/clis/:id/limits', async (c) => {

@@ -41,9 +41,12 @@ export interface BuildOptions {
   noEdit?: boolean
   /**
    * 从 resume 的会话分叉出一个新会话（原会话不动）；给了 turn 时只保留到那一轮（含）：
-   * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid
+   * Codex 用 turn id，Claude Code 用那一轮最后一条回复的 uuid；
+   * before 是要丢掉的第一轮的 id，分叉到它之前（Pi 用那一轮用户消息的 entryId）
    */
-  fork?: { turnId?: string; end?: string }
+  fork?: { turnId?: string; end?: string; before?: string }
+  /** 设置里各个开关的状态（含默认值），参数规则用「opt.<id>」判断 */
+  options?: Record<string, boolean>
   /** 对话的标题：能给会话起名的 CLI 用它（例如 Pi 的 --name），在 CLI 自己的会话列表里认得出来 */
   title?: string
   /** 不是普通的一轮对话：压缩上下文，或者审查代码 */
@@ -138,8 +141,11 @@ export interface CliDefinition {
   compact: 'native' | 'slash' | 'summary'
   /** 审查改动：native 走 CLI 的审查模式，prompt 按审查要求跑一轮 */
   review: 'native' | 'prompt'
-  /** 会话分叉：turn 能截到某一轮（Codex），end 能截到某条回复（Claude Code），latest 只能从最后分叉，none 不能 */
-  fork: 'turn' | 'end' | 'latest' | 'none'
+  /**
+   * 会话分叉：turn 能截到某一轮（Codex），end 能截到某条回复（Claude Code），
+   * before 能分叉到某一轮之前（Pi，按要丢掉的第一轮），latest 只能从最后分叉，none 不能
+   */
+  fork: 'turn' | 'end' | 'before' | 'latest' | 'none'
   /** 自动压缩：config 是告诉 CLI token 数（Codex），env 是用环境变量告诉百分比，panel 是面板在一轮结束后压缩 */
   autoCompact: 'config' | 'env' | 'panel'
   autoCompactEnv?: string
@@ -169,6 +175,8 @@ export interface CliDefinition {
   envExample: string
   /** 每次运行都加的环境变量，用户在设置里写的同名变量优先 */
   env?: Record<string, string>
+  /** 设置里给用户的开关（见 cli-spec.ts 的 options）：打开时加上 env，参数规则用「opt.<id>」判断 */
+  options?: { id: string; label: string; hint: string; default: boolean; env: Record<string, string> }[]
   /** 从哪里读可用模型：codex（app-server）、commandcode（安装包里的模型目录）、pi（pi --list-models）、claude（配置和环境变量）；为空时只用 models 里写的 */
   modelsFrom: string
   /** 只读的权限：在用户的项目里只分析不改文件时用（例如优化说明文件）；为空时用设置里的权限 */
@@ -179,6 +187,7 @@ export interface CliDefinition {
   mcp?: import('./cli-spec.ts').McpSpec
   /** 用户自己装的 MCP 工具存在哪（「MCP 工具」页读写）；没有时不管 */
   mcpStore?: import('./cli-spec.ts').McpStore
+  packages?: import('./cli-spec.ts').CliPackages
   /** 来自配置文件（不是写在代码里的） */
   spec?: boolean
   /** 用户放在数据目录里的配置（不是面板内置的） */

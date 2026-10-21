@@ -2022,7 +2022,7 @@ export function tasksApi(deps: {
     const updated = await store.update(task.id, {
       ...task,
       messages: task.messages.slice(0, i),
-      rewind: turnBefore(task, i),
+      rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
       status: 'done',
       todos: [],
     })
@@ -2050,7 +2050,8 @@ export function tasksApi(deps: {
       autoTitle: false,
       // 消息 id 换新的，免得两个任务里的消息 id 相同
       messages: kept.map((m) => ({ ...m, id: randomUUID() })),
-      rewind: { through, session, latest },
+      // 下一条用户消息那一轮是丢掉的第一轮：只能分叉到某一轮之前的 CLI 按它截
+      rewind: { through, session, latest, cut: next < 0 ? null : (task.messages[next].turn ?? null) },
       status: 'done',
       runMs: 0,
       runStartedAt: '',

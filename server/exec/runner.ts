@@ -558,6 +558,9 @@ async function runAgent(
       carry = carryPrompt(task, upto)
     } else if (th && def.fork === 'turn' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
     else if (th && def.fork === 'end' && th.end) [resume, fork] = [th.session, { end: th.end }]
+    // 只能分叉到某一轮之前（Pi）：按丢掉的第一轮截，那一轮要和留下的在同一个会话里
+    else if (th && def.fork === 'before' && rewind?.cut?.id && rewind.cut.session === th.session)
+      [resume, fork] = [th.session, { before: rewind.cut.id }]
     else if (th && rewind?.latest && def.fork !== 'none') [resume, fork] = [th.session, {}]
     else if (th) {
       // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上

@@ -46,6 +46,7 @@ import { CliAuthPanel } from './CliAuthPanel'
 import type { ApiConfig, ApiProtocol } from '@shared/accounts'
 import { CliLimitsPanel, hasLimits } from './CliLimits'
 import { CliSkills } from './CliSkills'
+import { CliPackages } from './CliPackages'
 
 export const envToText = (env: CliSettings['env']) => env.map((e) => `${e.key}=${e.value}`).join('\n')
 export const textToEnv = (text: string) =>
@@ -847,6 +848,15 @@ export function CliSection({
             className="h-9 w-28 font-mono text-[0.8125rem]"
           />
         </Row>
+        {(def.options ?? []).map((o) => (
+          <Row key={o.id} title={o.label} desc={o.hint}>
+            <Switch
+              checked={draft.options[o.id] ?? o.default}
+              onCheckedChange={(v) => set('options', { ...draft.options, [o.id]: v })}
+              aria-label={`${def.name} ${o.label}`}
+            />
+          </Row>
+        ))}
         <Row title={t('可执行文件')} desc={t('留空时从 PATH 查找 {command}', { command: def.command })}>
           <Input
             value={draft.command}
@@ -914,6 +924,7 @@ export function CliSection({
               extraArgs: splitArgs(draft.args),
               env: textToEnv(draft.envText),
               maxTurns: draft.maxTurns,
+              options: draft.options,
             }}
           />
         </div>
@@ -933,6 +944,18 @@ export function CliSection({
               <CliLimitsPanel cli={def.id} />
             </div>
           )}
+        </Group>
+      )}
+
+      {ok && def.packages && (
+        <Group title={t('扩展包')}>
+          <p className="pb-2 text-[0.75rem] text-muted">
+            {t('包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源', {
+              // ${ENV:-默认值} 只显示默认值，用户一般没设这个环境变量
+              file: def.packages.file.replace(/\$\{\w+:-([^}]*)\}/g, '$1'),
+            })}
+          </p>
+          <CliPackages def={def} />
         </Group>
       )}
 
@@ -979,6 +1002,7 @@ export const toDraft = (s: Settings): Record<string, CliDraft> =>
           showLimits: eff.showLimits,
           autoCompact: eff.autoCompact,
           maxTurns: own.maxTurns,
+          options: own.options,
           authMode: eff.authMode,
           apiId: eff.apiId,
         },

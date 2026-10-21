@@ -29,36 +29,38 @@
 
 ## 字段
 
-| 字段                              | 说明                                                                                                                            |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `id`                              | 唯一标识，小写字母、数字和 `-`，写进设置和 Agent 配置里，定了就别改                                                             |
-| `name`                            | 界面上显示的名字                                                                                                                |
-| `command`                         | 可执行文件名（设置里可以改成完整路径）                                                                                          |
-| `versionArgs`                     | 检测是否安装、显示版本用的参数，默认 `["--version"]`                                                                            |
-| `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                                              |
-| `npmRenameFrom`                   | 改名前用过的 npm 包名：安装新包前先卸掉旧的，否则两个包提供同一个命令时 npm 会报 `EEXIST`                                       |
-| `color`                           | 界面上的标识色                                                                                                                  |
-| `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别 |
-| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                    |
-| `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                  |
-| `effortBoundSession`              | 会话不支持中途换思考强度：换了强度也开新会话，把之前的对话带过去                                                                |
-| `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                                                    |
-| `permissions`                     | 权限选项 `[{ "id", "label", "hint" }]`，`id` 会作为 `{permission}` 填进参数                                                     |
-| `defaultPermission`               | 默认权限，不写时用第一个                                                                                                        |
-| `readOnlyPermission`              | 只分析、不改文件时用的权限（例如优化项目说明）                                                                                  |
-| `args`                            | 参数规则，见下面                                                                                                                |
-| `output`                          | 输出解析，见下面                                                                                                                |
-| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                 |
-| `features`                        | 能力，见下面                                                                                                                    |
-| `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                                        |
-| `docsNote`                        | 项目设置里说明文件那一页的说明                                                                                                  |
-| `globalDoc`                       | 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持                                              |
-| `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`                                      |
-| `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来                                  |
-| `envExample`                      | 设置里环境变量的示例                                                                                                            |
-| `env`                             | 每次运行都加的环境变量 `{ "KEY": "VALUE" }`，用户在设置里写的同名变量优先（例如让无界面运行信任工作目录）                       |
-| `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                                                              |
-| `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                                                |
+| 字段                              | 说明                                                                                                                                                    |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                              | 唯一标识，小写字母、数字和 `-`，写进设置和 Agent 配置里，定了就别改                                                                                     |
+| `name`                            | 界面上显示的名字                                                                                                                                        |
+| `command`                         | 可执行文件名（设置里可以改成完整路径）                                                                                                                  |
+| `versionArgs`                     | 检测是否安装、显示版本用的参数，默认 `["--version"]`                                                                                                    |
+| `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                                                                      |
+| `npmRenameFrom`                   | 改名前用过的 npm 包名：安装新包前先卸掉旧的，否则两个包提供同一个命令时 npm 会报 `EEXIST`                                                               |
+| `color`                           | 界面上的标识色                                                                                                                                          |
+| `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别                         |
+| `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                                            |
+| `effortsFromModel`                | 思考强度跟着模型走：模型目录/配置里这个模型支持哪些就能选哪些；为 `true` 时不用 `efforts` 过滤                                                          |
+| `effortBoundSession`              | 会话不支持中途换思考强度：换了强度也开新会话，把之前的对话带过去                                                                                        |
+| `tiers`                           | 高、中、低三档默认的 `{ "model", "effort" }`                                                                                                            |
+| `permissions`                     | 权限选项 `[{ "id", "label", "hint" }]`，`id` 会作为 `{permission}` 填进参数                                                                             |
+| `defaultPermission`               | 默认权限，不写时用第一个                                                                                                                                |
+| `readOnlyPermission`              | 只分析、不改文件时用的权限（例如优化项目说明）                                                                                                          |
+| `args`                            | 参数规则，见下面                                                                                                                                        |
+| `output`                          | 输出解析，见下面                                                                                                                                        |
+| `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                                         |
+| `features`                        | 能力，见下面                                                                                                                                            |
+| `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                                                                |
+| `docsNote`                        | 项目设置里说明文件那一页的说明                                                                                                                          |
+| `globalDoc`                       | 用户目录里的全局说明文件（所有项目都读），设置的「部署」页往这里写；为空表示不支持                                                                      |
+| `skills`                          | Skill 目录 `{ "user": ["~/.x/skills"], "repo": [".x/skills"] }`，每个子目录一个 `SKILL.md`                                                              |
+| `commands`                        | 自定义命令目录 `{ "user", "repo", "format": "md" \| "toml", "prefix" }`，输入框打「/」时列出来                                                          |
+| `envExample`                      | 设置里环境变量的示例                                                                                                                                    |
+| `env`                             | 每次运行都加的环境变量 `{ "KEY": "VALUE" }`，用户在设置里写的同名变量优先（例如让无界面运行信任工作目录）                                               |
+| `mcp`                             | 怎么把面板的工具（MCP）交给 CLI，见下面；不写时用不了 UI 设计的 AI                                                                                      |
+| `options`                         | 设置里给用户的开关 `[{ "id", "label", "hint", "default", "env" }]`：打开时加上 `env`，参数规则里用条件 `opt.<id>` 判断（Pi 的「离线运行」「codemode」） |
+| `packages`                        | CLI 自己的扩展包，设置里能装、删、更新，见下面「扩展包」                                                                                                |
+| `i18n`                            | 界面文案的翻译 `{ "en": { "中文": "English" } }`                                                                                                        |
 
 目录里的 `~` 是用户目录，`${ENV:-默认值}` 先取环境变量。
 
@@ -80,8 +82,9 @@
 ]
 ```
 
-- 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于；写成数组时全部满足才加。
-- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`systemPrompt`、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
+- 条件：`model` 有值、`!resume` 没值、`permission=yolo` 等于、`permission!=yolo` 不等于、`opt.codemode` 设置里这个开关开着；写成数组时全部满足才加。
+  同一个参数只认最后一次的 CLI（例如 Pi 的 `--tools`），开关要和权限组合成几条规则，并进同一个值里。
+- 能用的值：`model`、`effort`、`permission`、`resume`（续接的会话 id）、`fork`（要分叉会话）、`forkBefore`（`features.fork` 为 `before` 时要丢掉的第一轮的 id）、`systemPrompt`、`maxTurns`、`addDirs`（工作目录外还要读的目录，例如附件）。
 - 占位：`{model}`；`{addDirs|,}` 把数组用逗号连起来；`{maxTurns:200}` 没值时用 200；`each` 对数组每一项加一次，`{item}` 是那一项。
 
 ## 常驻 RPC `protocol` / `rpc`
@@ -111,27 +114,28 @@
 }
 ```
 
-| 字段                                           | 说明                                                                                                            |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                       |
-| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                                 |
-| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                                    |
-| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                            |
-| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                                |
-| `compact`                                      | 压缩上下文（`features.compact` 为 `native`）：续接会话后按顺序发，最后一个回复成功就算压缩完了，不发 `start`    |
-| `after`                                        | 这一轮结束、交结果之前再发的请求，例如 Pi 的 `get_session_stats` 查准确的上下文占用；一般配 `optional`、`parse` |
-| `asks`                                         | CLI 发来的、要用户回答的请求（Pi 扩展的确认框、选择框），见下面「要用户回答的请求」                             |
-| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`                                    |
-| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                                     |
-| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                              |
-| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录        |
-| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                              |
-| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                          |
-| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                         |
-| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                                 |
-| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                                    |
-| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`               |
-| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                          |
+| 字段                                           | 说明                                                                                                                                                                                                                                                   |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                                                                                                                                                              |
+| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                                                                                                                                                                        |
+| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                                                                                                                                                                           |
+| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                                                                                                                                                                   |
+| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                                                                                                                                                                       |
+| `compact`                                      | 压缩上下文（`features.compact` 为 `native`）：续接会话后按顺序发，最后一个回复成功就算压缩完了，不发 `start`                                                                                                                                           |
+| `after`                                        | 这一轮结束、交结果之前再发的请求，例如 Pi 的 `get_session_stats` 查准确的上下文占用；一般配 `optional`、`parse`                                                                                                                                        |
+| `asks`                                         | CLI 发来的、要用户回答的请求（Pi 扩展的确认框、选择框），见下面「要用户回答的请求」                                                                                                                                                                    |
+| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`；路径里的 `{路径}` 先换成存下的值，例如 Pi 的 `post.data.messages.{pre.data.messages.length}.entryId`（这一轮开始前有几条用户消息，结束后列表里那个位置就是这一轮自己的） |
+| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                                                                                                                                                                            |
+| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                                                                                                                                                                     |
+| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录                                                                                                                                               |
+| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                                                                                                                                                                     |
+| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                                                                                                                                                                 |
+| `turnLimit`                                    | CLI 没有回合上限参数时由面板数：`{ "when": { "type": "turn_start" } }`，一次模型请求一条，超过设置里的回合上限就按 `interrupt` 停下，这一轮算失败并显示原因                                                                                            |
+| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                                                                                                                                                                |
+| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                                                                                                                                                                        |
+| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                                                                                                                                                                           |
+| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`                                                                                                                                                      |
+| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                                                                                                                                                                 |
 
 一条消息的写法：
 
@@ -251,22 +255,40 @@ Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json
 
 ## 能力 `features`
 
-| 字段          | 说明                                                                                                                                                                                                                                                                       |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compact`     | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                 |
-| `modelSwitch` | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                          |
-| `fork`        | 分叉、撤回对话：`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话                                                                                                                                                                      |
-| `autoCompact` | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                           |
-| `slash`       | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                        |
-| `steer`       | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                          |
-| `notes`       | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句 |
-| `limitEnv`    | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                        |
-| `limitFile`   | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名 |
+| 字段          | 说明                                                                                                                                                                                                                                                                          |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compact`     | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                    |
+| `modelSwitch` | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                             |
+| `fork`        | 分叉、撤回对话：`before` 能从任意一轮分叉（每轮记下自己的 id，见 `rpc.turnId`；续接原会话后按 `rpc.fork` 里带 `if: forkBefore` 的动作分叉到那一轮之前，Pi 是 `fork` 命令的 `entryId`）；`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话 |
+| `autoCompact` | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                              |
+| `slash`       | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                           |
+| `steer`       | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                             |
+| `notes`       | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句    |
+| `limitEnv`    | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                           |
+| `limitFile`   | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名    |
 
 审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`）。
 Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上补搜索）加 `--exclude-tools` 去掉命令或写文件的工具；
 不用 `--tools` 白名单，白名单会把面板桥接的工具（提问、编排）一起挡掉。用户装了带确认框的 Pi 扩展（例如 permission-gate）时，
 确认框通过 `rpc.asks` 交给页面。
+
+## 扩展包 `packages`
+
+CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多一组「扩展包」：
+
+| 字段                   | 说明                                                                                                     |
+| ---------------------- | -------------------------------------------------------------------------------------------------------- |
+| `file` / `key`         | 已装的包记在哪个 JSON 配置文件的哪个数组里，每项是来源字符串，或带 `source` 字段的对象；直接读，不跑命令 |
+| `install` / `remove`   | 装、删的参数，`{source}` 是包的来源                                                                      |
+| `update` / `updateAll` | 更新一个、全部更新的参数，不写就不显示按钮                                                               |
+| `placeholder`          | 来源输入框的示例                                                                                         |
+
+配置里相对路径的来源是相对配置文件写的，面板交给命令前换成绝对路径（Pi 从别的目录跑 `pi remove ../x` 会找不到）。命令的输出原样显示，失败时用户能看到原因。
+
+## 凭据检查 `auth.check`
+
+`{ "args": ["auth", "check", "--json", "--provider", "{provider}"] }`：设置的账号区按三档模型和默认模型里用到的提供方（模型 ID「provider/model」的前一段）
+各跑一次，读输出 JSON 里的 `status`（等于 `ready` 的值算可以用）、`reason`、`authType`，字段名可以用同名的键改。
 
 ## 把 API 交给 CLI `auth.api`
 

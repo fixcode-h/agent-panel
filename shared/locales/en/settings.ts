@@ -874,4 +874,21 @@ export const EN_SETTINGS: Record<string, string> = {
   '项目教训已经有 {n} 条，先在项目设置里合并同类项再记':
     'There are already {n} project lessons; merge similar ones in project settings first',
   只支持文字: 'Text only',
+  没有配置凭据: 'No credentials configured',
+  没有这个提供方: 'Unknown provider',
+  凭据或配置文件有问题: 'Credentials or config file are invalid',
+  设置里用到的提供方: 'Providers used in these settings',
+  重新检查凭据: 'Check credentials again',
+  提供方凭据: 'Provider credentials',
+  '可以用（{type}）': 'Ready ({type})',
+  可以用: 'Ready',
+  包的来源: 'Package source',
+  全部更新: 'Update all',
+  还没有装扩展包: 'No packages installed',
+  已装的扩展包: 'Installed packages',
+  '更新 {name}': 'Update {name}',
+  '卸载 {name}': 'Uninstall {name}',
+  扩展包: 'Packages',
+  '包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源':
+    'Packages can bundle extensions, Skills, prompt templates and themes, and are recorded in {file}. Extensions run code on this machine, so only install sources you trust',
 }

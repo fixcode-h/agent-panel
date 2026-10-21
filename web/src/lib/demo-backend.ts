@@ -961,6 +961,8 @@ function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
 }
 
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
+const demoPackages = ['npm:@example/pi-web-tools', 'git:github.com/example/pi-review@v1']
+
 const DEMO_SKILLS: CliSkill[] = [
   {
     name: 'frontend-design',
@@ -1186,6 +1188,19 @@ function route(method: string, url: string, body: unknown): unknown {
           source: x.source ?? '',
         })),
       ] satisfies SlashCommand[]
+    // 演示里的扩展包：内存里记着，装、删都直接成功
+    if (id && sub === 'packages') {
+      if (method === 'POST') {
+        const b = (body ?? {}) as { action?: string; source?: string }
+        const source = String(b.source ?? '').trim()
+        if (b.action === 'install' && source && !demoPackages.includes(source)) demoPackages.push(source)
+        if (b.action === 'remove' && demoPackages.includes(source)) demoPackages.splice(demoPackages.indexOf(source), 1)
+        const output =
+          b.action === 'install' ? `Installed ${source}` : b.action === 'remove' ? `Removed ${source}` : 'Up to date'
+        return { ok: true, output, packages: demoPackages.map((x) => ({ source: x, target: x })) }
+      }
+      return demoPackages.map((x) => ({ source: x, target: x }))
+    }
     if (id && sub === 'skills')
       return DEMO_SKILLS.filter(
         (x) =>

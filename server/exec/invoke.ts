@@ -104,7 +104,9 @@ export async function invokeCli(o: {
   const effort = await supportedEffort(o.cliId, model, req.effort)
   if (effort !== (req.effort ?? ''))
     log.info('agent', `模型 ${model} 不支持 ${req.effort}，这次不带思考强度`, { cli: o.cliId })
-  const build = effort === req.effort ? req : { ...req, effort }
+  const picked = effort === req.effort ? req : { ...req, effort }
+  // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
+  const build = picked.options ? picked : { ...picked, options: cs.options }
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
   let control: CliControl = { steer: async () => false, interrupt: () => false }
   const setControl = (c: CliControl) => {
