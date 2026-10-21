@@ -31,13 +31,14 @@ import { HelperCards } from './HelperCards'
 import { type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import { sortChildren, taskSummary, withTaskModel } from '@shared/task'
+import { sortChildren, taskSummary, withTaskModel, type ChildActivity } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
+import { plainLine, toolVerb } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -81,6 +82,10 @@ type Block =
   /** 对话里派出的子角色：一行一个「子任务」，点开看它的实时对话流 */
   | { kind: 'helpers'; key: string; ids: string[] }
 
+/** 以前新建子对话时记的系统提示（中文、英文界面各一种写法） */
+const OLD_CREATED =
+  /^(新建了子对话「.*」，这条消息交给它处理|Created sub-conversation “.*”; this message is handed to it)$/
+
 /** 这条消息属于第几次运行（节点 id 带 `r2/` 前缀的算第 2 次） */
 function runOf(step: string) {
   const m = /^r(\d+)\//.exec(step)
@@ -108,11 +113,21 @@ function toBlocks(task: Task): Block[] {
   const inHelper = (step: string) => helpers.some((id) => step === id || step.startsWith(`${id}/`))
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i]
+    if (m.step && helpers.length && inHelper(m.step)) continue
+    // 旧对话里新建子对话时记的居中提示：现在这次工具调用本身就显示成「新建子对话 标题」，不再重复
+    if (m.role === 'system' && !m.step && OLD_CREATED.test(m.text)) continue
+    // 派出的子任务、面板推回的结果（后台命令、合并编译、子任务结果）都是 AI 这一轮回复里的一行，
+    // 归进当前这轮回复，不单独成段，也不显示成用户消息
+    if (!m.step && ((!byRun && m.spawned?.length) || m.panel)) {
+      const b = blocks.at(-1)
+      if (b?.kind === 'turn') b.msgs.push(m)
+      else blocks.push({ kind: 'turn', key: m.id, msgs: [m] })
+      continue
+    }
     if (!byRun && m.spawned?.length) {
       blocks.push({ kind: 'helpers', key: m.id, ids: m.spawned })
       continue
     }
-    if (m.step && helpers.length && inHelper(m.step)) continue
     // 没有节点的用户消息（对话里、工作流外的追加要求）单独成一段；
     // 执行中补发的要求后面还有同一个节点的输出时，留在那个节点的竖线里，不另起一段
     if (m.role === 'user' && !m.step) {
@@ -197,6 +212,18 @@ interface ChildSummary {
   requests?: number
   /** 在独立 worktree 里改时的分支 */
   branch?: string
+  /** 正在执行时这会儿在做什么 */
+  activity?: ChildActivity
+}
+
+/** 子对话这会儿在做什么，一句话：跑的节点、等的子任务、正在用的工具或正在说的话 */
+function activityText(a: ChildActivity | undefined) {
+  if (!a) return ''
+  if (a.steps?.length) return a.steps.join(t('、'))
+  if (a.tool) return `${toolVerb({ ...a.tool, detail: '' })} ${a.tool.label}`.trim()
+  if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
+  if (a.text) return plainLine(a.text)
+  return t('正在思考…')
 }
 
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
@@ -471,6 +498,19 @@ export function TaskView({
     const el = scroller.current
     if (el && stick.current && view === 'chat') el.scrollTop = el.scrollHeight
   }, [task, view])
+  // 消息区自己变矮（输入框上方多了子对话栏、确认卡片，切回窗口后重新排版）时也贴住底部：
+  // 内容没变不会触发上面那个，最后一行会被下面的栏挡住一截
+  useEffect(() => {
+    const el = scroller.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => {
+      if (stick.current && view === 'chat') el.scrollTop = el.scrollHeight
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+    // 滚动容器在任务加载出来后才挂上：按任务和视图重新绑定
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, !!task])
 
   // 任务创建时存下的工作流；现在的版本改过时，可以选择按新的继续
   const workflow = task ? taskWorkflows(task, workflows).workflow : undefined
@@ -1400,7 +1440,8 @@ function ChildrenBar({
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  const working = children.filter((c) => c.working).length
+  const busy = sortChildren(children.filter((c) => c.working))
+  const working = busy.length
   const alive = children.filter((c) => c.cliAlive)
   const shown = sortChildren(all ? children : alive)
   const current = children.find((c) => c.id === openChild)
@@ -1426,8 +1467,35 @@ function ChildrenBar({
                 {t('{n} 个在执行', { n: working })}
               </span>
             )}
-            {current && <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>}
+            {current && !busy.some((c) => c.id === current.id) && (
+              <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>
+            )}
           </button>
+          {/* 正在执行的子对话一个一块：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
+          {busy.length > 0 && (
+            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+              {busy.slice(0, 3).map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => onOpen(c.id)}
+                  title={`${c.title}${activityText(c.activity) ? ` · ${activityText(c.activity)}` : ''}`}
+                  className={cn(
+                    'flex h-7 min-w-0 flex-1 basis-0 cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                    c.id === openChild ? 'border-line-strong' : 'border-line',
+                  )}
+                >
+                  <span className="relative flex h-1.5 w-1.5 shrink-0">
+                    <span className="absolute inset-0 animate-ping rounded-full bg-accent/60" />
+                    <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
+                  </span>
+                  <span className="min-w-0 truncate font-medium text-fg">{c.title}</span>
+                  <span className="min-w-0 flex-1 truncate text-subtle">{activityText(c.activity)}</span>
+                </button>
+              ))}
+              {busy.length > 3 && <span className="shrink-0 text-xs text-subtle">+{busy.length - 3}</span>}
+            </div>
+          )}
           {current && (
             <button
               type="button"
@@ -1502,9 +1570,11 @@ function ChildrenBar({
                           )}
                           {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
                         </span>
-                        {!c.working && c.summary && (
-                          <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>
-                        )}
+                        {c.working
+                          ? activityText(c.activity) && (
+                              <span className="line-clamp-1 text-xs text-subtle">{activityText(c.activity)}</span>
+                            )
+                          : c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
                         {c.branch && (
                           <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
                             <GitBranch className="h-3 w-3 shrink-0" />
@@ -1766,5 +1836,8 @@ function RunPhase({ task, label }: { task: Task; label: string }) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
   const busy = !!task.requests.length || (task.messages.at(-1)?.tools ?? []).some((x) => x.running)
+  // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
+  const helpers = task.steps.filter((s) => s.slot === 'sub' && s.parentId === '@chat' && s.status === 'running')
+  if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>
   return <>{busy || idle < 1500 ? label : t('等待模型 · 已 {n} 秒', { n: Math.floor(idle / 1000) })}</>
 }

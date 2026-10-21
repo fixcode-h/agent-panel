@@ -481,7 +481,7 @@ export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOp
 }
 
 /**
- * 启动时确保四个必备角色（统筹、执行、文档、测试验收）都在，并按内置定义同步一遍（见 ./core.ts）：
+ * 启动时确保五个必备角色（统筹、执行、文档、测试验收、子任务）都在，并按内置定义同步一遍（见 ./core.ts）：
  * 缺的建出来，已有的把名称、设定、Skill、能力、参数定义换成当前版本，保留用户填的参数值和运行配置。
  * 没有变化的不写盘，重复启动不会反复改文件。
  */

@@ -599,4 +599,28 @@ export const EN_TASKS: Record<string, string> = {
     'Such conversations read code and answer questions in the project directory first, and open a separate branch (git worktree) only once they need to edit files, continuing there. Most projects get a full checkout; large projects such as UE skip downloading LFS files.',
   '要改文件了，已开独立分支 {branch}，接下来在里面修改':
     'Ready to edit files: opened separate branch {branch} and will continue there',
+  打开子任务: 'Open subtask',
+  '子任务执行中，做完后结果会自动交回给派它的对话':
+    'Subtask running; its result goes back to the chat that started it when done',
+  '子任务在排队，前面的做完就开始': 'Subtask queued; it starts when an earlier one finishes',
+  '子任务失败了，派它的对话会收到失败原因。这里只能查看':
+    'Subtask failed; the chat that started it gets the reason. View only',
+  '子任务已结束，结果已交回给派它的对话。这里只能查看':
+    'Subtask finished; its result went back to the chat that started it. View only',
+  后台命令: 'Background command',
+  合并编译: 'Merge build',
+  子任务结果: 'Subtask results',
+  '{n} 个子任务交回了结果': '{n} subtask(s) returned results',
+  '等待子任务：{list}': 'Waiting for subtasks: {list}',
+  '等待 {n} 个子任务完成': 'Waiting for {n} subtask(s) to finish',
+  新建子对话: 'New sub-chat',
+  交给子对话: 'Hand to sub-chat',
+  查看子对话: 'List sub-chats',
+  派出子任务: 'Start subtasks',
+  等待子任务: 'Wait for subtasks',
+  查看后台命令: 'Check background command',
+  请父对话决定: 'Ask parent chat',
+  回报父对话: 'Report to parent chat',
+  提交编译: 'Submit build',
+  启动工作流: 'Start workflow',
 }

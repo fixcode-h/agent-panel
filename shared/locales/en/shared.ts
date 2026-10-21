@@ -3,7 +3,6 @@ export const EN_SHARED: Record<string, string> = {
   '开始执行计划（{name}）：{input}': 'Starting plan ({name}): {input}',
   按工作流走一遍: 'run through the workflow',
   '找不到要执行的工作流：{id}': 'Workflow to run not found: {id}',
-  '新建了子对话「{title}」，这条消息交给它处理': 'Created sub-conversation “{title}”; this message is handed to it',
   // clis.ts：模型档位、思考强度、权限模式
   高: 'High',
   中: 'Medium',

@@ -36,6 +36,7 @@ import {
   taskSummary,
   withAttachments,
   withTaskModel,
+  type ChildActivity,
 } from '../shared/task.ts'
 import { agentRun, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
@@ -341,6 +342,30 @@ export function tasksApi(deps: {
   const refreshAgents = async () => (liveAgents = await deps.agents.list())
 
   /** 子对话的摘要：最近一条 Agent 回复的开头 */
+  /**
+   * 子对话这会儿在做什么（父对话的子对话栏里接在名字后面）：在跑的工作流节点、在等的子任务、
+   * 正在调用的工具，或者正在说的最后一句。没在执行时没有
+   */
+  function activityOf(tk: Task): ChildActivity | undefined {
+    if (!tk.working) return undefined
+    const running = tk.steps.filter((s) => s.status === 'running' && s.kind !== 'main')
+    const nodes = running.filter((s) => !s.parentId).map((s) => s.title)
+    if (nodes.length) return { steps: nodes }
+    const helpers = running.filter((s) => s.slot === 'sub').map((s) => s.title)
+    const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && !m.step)
+    const tool =
+      [...(last?.tools ?? [])].reverse().find((x) => x.running) ?? (last?.text.trim() ? undefined : last?.tools.at(-1))
+    if (tool) return { tool: { kind: tool.kind, name: tool.name, label: tool.label.slice(0, 200) } }
+    if (helpers.length) return { helpers }
+    const line = (last?.text ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .at(-1)
+    if (line) return { text: line.slice(0, 200) }
+    return { thinking: true }
+  }
+
   function lastReply(task: Task) {
     const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
     return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
@@ -491,7 +516,13 @@ export function tasksApi(deps: {
    * 把一条消息交给子对话：它正在执行就实时送达，空闲就占一个并发名额开新的一轮。
    * 父对话的 send_to_conversation 和面板自己推的编译结果都走这里
    */
-  async function sendToChild(parentId: string, id: string, message: string): Promise<{ ok: boolean; info: string }> {
+  async function sendToChild(
+    parentId: string,
+    id: string,
+    message: string,
+    /** 面板自己推的结果（后台命令、合并编译）：对话里显示成 AI 回复里的一行，不是用户消息 */
+    panel?: TaskMessage['panel'],
+  ): Promise<{ ok: boolean; info: string }> {
     const child = live.get(id)?.task ?? (await store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: READONLY }
@@ -500,11 +531,12 @@ export function tasksApi(deps: {
       // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
       const msg: TaskMessage = {
         id: randomUUID(),
-        role: 'user',
+        role: panel ? 'system' : 'user',
         agentId: '',
         step: '',
         text: message,
         tools: [],
+        ...(panel ? { panel } : {}),
         at: new Date().toISOString(),
       }
       const r = await deliver(running, msg, message, [])
@@ -523,7 +555,7 @@ export function tasksApi(deps: {
     void (async () => {
       const free = await takeSlot(parentId)
       try {
-        await followUp(id, { text: message, attachments: [] })
+        await followUp(id, { text: message, attachments: [], panel })
         await live.get(id)?.done
       } finally {
         free()
@@ -540,23 +572,25 @@ export function tasksApi(deps: {
     void (async () => {
       const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
       if (!tk || tk.archived) return
+      // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
       if (tk.parentTaskId) {
-        await sendToChild(tk.parentTaskId, tk.id, text)
+        await sendToChild(tk.parentTaskId, tk.id, text, 'background')
         return
       }
       const running = live.get(tk.id)
       if (running?.task.status === 'running') {
         const msg: TaskMessage = {
           id: randomUUID(),
-          role: 'user',
+          role: 'system',
           agentId: '',
           step: '',
           text,
           tools: [],
+          panel: 'background',
           at: new Date().toISOString(),
         }
         await deliver(running, msg, text, [])
-      } else await followUp(tk.id, { text, attachments: [] })
+      } else await followUp(tk.id, { text, attachments: [], panel: 'background' })
     })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
   })
 
@@ -589,6 +623,7 @@ export function tasksApi(deps: {
         parentId,
         childId,
         `【面板】${head}${r.ok ? '' : '\n在你的分支里修好后再调用 submit_build 提交一次。'}`,
+        'build',
       )
       await noteParent(parentId, tk, `子对话「${tk.title}」${head.split('\n')[0]}`, head.slice(0, 2000))
     }).catch((e) => log.error('task', '合并编译出错', { task: childId, error: (e as Error).message }))
@@ -1105,7 +1140,10 @@ export function tasksApi(deps: {
    * 发一条追加要求。msg 为空时取这一轮结束后要接着处理的那条（CLI 执行中收不下的消息）。
    * recorded：这条消息已经在对话里了（执行中收到时就记下了），不要再加一条。
    */
-  async function followUp(id: string, msg?: { text: string; attachments: Attachment[]; recorded?: boolean }) {
+  async function followUp(
+    id: string,
+    msg?: { text: string; attachments: Attachment[]; recorded?: boolean; panel?: TaskMessage['panel'] },
+  ) {
     const task = await store.get(id)
     if (!task) throw new Error('任务不存在')
     const entry = reserve(task)
@@ -1126,10 +1164,11 @@ export function tasksApi(deps: {
     if (!m.recorded) {
       next.messages.push({
         id: randomUUID(),
-        role: 'user',
+        role: m.panel ? 'system' : 'user',
         agentId: '',
         step: '',
         text: m.text,
+        ...(m.panel ? { panel: m.panel } : {}),
         ...(expanded ? { prompt: expanded } : {}),
         tools: [],
         ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -1251,6 +1290,7 @@ export function tasksApi(deps: {
           // 总览分组用：等用户确认的请求数、独立 worktree 的分支
           requests: liveTask.requests.length,
           branch: liveTask.worktree?.branch ?? '',
+          activity: activityOf(liveTask),
         }
       })
     return c.json(kids)

@@ -151,7 +151,8 @@ test('协调 Agent：新建子对话并交给它，子对话自己不能再分�
 
   await runEngineTurn(h)
   assert.deepEqual(made, [{ title: '登录改造', message: '实现登录，带手机号验证码' }])
-  assert.ok(task.messages.some((m) => m.role === 'system' && /新建了子对话「登录改造」/.test(m.text)))
+  // 新建子对话不再另记居中的系统提示：工具调用本身显示成「新建子对话 登录改造」
+  assert.ok(!task.messages.some((m) => m.role === 'system' && /新建了子对话/.test(m.text)))
   assert.equal(log.length, 1)
 
   // 子对话里即使 Agent 配了 canDelegate，也不能再创建子对话

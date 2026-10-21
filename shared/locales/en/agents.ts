@@ -259,6 +259,7 @@ export const EN_AGENTS: Record<string, string> = {
   子对话默认使用: 'Default for sub-conversations',
   所有项目文档按规则落盘: 'Writes every project document by the rules',
   '构建、测试和验收': 'Build, test and acceptance',
+  派出的并行子任务默认使用: 'Default for parallel subtasks that get spawned',
   必备角色不能删除: "Core roles can't be deleted",
   角色: 'Roles',
   交给角色: 'Role',

@@ -30,3 +30,9 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 
 - 规则：改了布局、弹窗、列表就跑 `node scripts/ui-check.mjs`，到 `ui-shots/` 看深浅两套主题；对照 Claude Code 的风格。用户会逐个指出小瑕疵，自己先挑掉。
 - 防线：`scripts/ui-check.mjs`（只检查文案在不在，不看好不好看）。
+
+## 面板自己产生的东西不冒充用户、不另起居中提示
+
+- 规则：面板推给 CLI 的内容（后台命令、合并编译、子任务结果）记成 `TaskMessage.panel` 的系统消息，界面画成 AI 回复里的一行；面板工具调用按「做了什么 + 对象名」显示（`panelTool`），不再另记居中的系统提示。
+- 起因：15c1a1d 把后台命令结果当用户消息推回，新建子对话又多记一条居中提示，用户要求改成工具条目。
+- 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`。

@@ -9,6 +9,7 @@ import {
   type TaskMessage,
   type TaskRequest,
   type TaskTurn,
+  type ToolUse,
   type Workflow,
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
@@ -343,6 +344,20 @@ export interface ChildEntry {
   working: boolean
   cliAlive: boolean
   lastMessageAt: string
+}
+
+/** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（只有一项有值） */
+export interface ChildActivity {
+  /** 正在跑的工作流节点 */
+  steps?: string[]
+  /** 在等的子任务 */
+  helpers?: string[]
+  /** 正在调用（或刚调用完）的工具 */
+  tool?: Pick<ToolUse, 'kind' | 'name' | 'label'>
+  /** 正在说的最后一句 */
+  text?: string
+  /** 还没有输出，在想 */
+  thinking?: boolean
 }
 
 /**

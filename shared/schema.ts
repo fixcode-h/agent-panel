@@ -873,6 +873,11 @@ export const TaskMessage = z.object({
   transient: z.boolean().optional(),
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
+  /**
+   * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、子任务结果）：不是用户说的话，
+   * 对话里显示成 AI 回复里的一行，点开看全文
+   */
+  panel: z.enum(['background', 'build', 'helpers']).optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */

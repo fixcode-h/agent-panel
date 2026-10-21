@@ -3,7 +3,7 @@ import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost, type Orchestra } from '../shared/engine.ts'
-import { callOrchTool, orchHint } from './orch-mcp.ts'
+import { callOrchTool, orchHint, orchTools } from './orch-mcp.ts'
 import { askMcpApi, openAskBridge } from './ask-mcp.ts'
 
 const agent = (id: string, name: string): Agent => ({
@@ -74,16 +74,17 @@ function host(task: Task, log: AgentCall[]): EngineHost {
         return { ok: true, text: '实现好了' }
       }
       if (call.step?.slot === 'sub') {
-        // 子 Agent 还能再派一层，再往下不行
+        // 子任务不能再派子任务、不能启动工作流，工具列表里也没有这些
         if (call.step.id === 'a/sub/h1') {
-          await callOrchTool(o, 'spawn_agents', { tasks: [{ title: '更细', instructions: '拆得更细' }] })
-          assert.match(text(await callOrchTool(o, 'wait_agents', {})), /做完 1 个/)
-        }
-        if (call.step.id === 'a/sub/h1/sub/h1')
+          assert.equal(o.helper, true)
           assert.match(
-            text(await callOrchTool(o, 'spawn_agents', { tasks: [{ title: 'x', instructions: 'y' }] })),
-            /两层/,
+            text(await callOrchTool(o, 'spawn_agents', { tasks: [{ title: '更细', instructions: '拆得更细' }] })),
+            /不能再派子任务/,
           )
+          assert.match(text(await callOrchTool(o, 'start_plan', { input: '跑一遍' })), /不能启动工作流/)
+          const names = orchTools(o).map((x) => x.name)
+          assert.ok(!names.includes('spawn_agents') && !names.includes('start_plan'), names.join(','))
+        }
         return { ok: true, text: `子 Agent「${call.step.title}」做完了` }
       }
       // 测试节点晚一点开始读消息：实现节点传的话要在
@@ -109,7 +110,11 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
     '不再有常驻编排器',
   )
   assert.equal(by('a/sub/h1').parentId, 'a')
-  assert.equal(by('a/sub/h1/sub/h1').status, 'done', '子 Agent 再派的一层')
+  assert.equal(
+    task.steps.some((s) => s.id.startsWith('a/sub/h1/sub/')),
+    false,
+    '子任务里不能再派子任务',
+  )
   assert.equal(by('a/sub/h2').agentId, 'q', '按名字交给指定的 Agent')
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
@@ -182,6 +187,7 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
     id: 't3',
   } as Task
   let orch: AgentCall['orch']
+  const prompts: string[] = []
   const h: EngineHost = {
     task,
     agents,
@@ -190,14 +196,24 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
     changed: () => {},
     newId: () => `id${task.messages.length}`,
     runAgent: async (call) => {
+      if (call.step?.slot === 'sub') return { ok: true, text: '页面查好了' }
+      prompts.push(call.prompt)
       orch = call.orch
-      if (!call.step?.slot) {
+      if (prompts.length === 1) {
         const r = await callOrchTool(call.orch!, 'spawn_agents', { tasks: [{ title: '页面', instructions: '写页面' }] })
         assert.match(text(r), /sub\/h1/)
+        assert.match(text(r), /结果会自动交回/)
       }
       return { ok: true, text: '好了' }
     },
   }
   await runEngineTurn(h)
   assert.match(text(await callOrchTool(orch!, 'get_status', {})), /@chat\/sub\/h1/)
+  // 对话这一轮结束后停下等子任务，结果交回同一个会话接着做；对话里记成面板消息，不是用户消息
+  assert.equal(prompts.length, 2)
+  assert.match(prompts[1], /页面查好了/)
+  const back = task.messages.find((m) => m.panel === 'helpers')
+  assert.equal(back?.role, 'system')
+  assert.match(back!.text, /### 页面/)
+  assert.equal(task.status, 'done')
 })

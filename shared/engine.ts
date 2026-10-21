@@ -157,6 +157,15 @@ export interface Orchestra {
   planner: boolean
   /** 可以直接派的通用 Agent（名字和简介），spawn_agents 里列出来 */
   common: { name: string; description: string }[]
+  /** 调用者自己就是子任务：不能再派子任务、不能启动工作流、不能开子对话 */
+  helper: boolean
+  /** 对话里派的子任务：这一轮结束后对话停下等它们，结果自动交回，不用模型自己轮询 */
+  autoReturn: boolean
+  /**
+   * 还没交回的子任务：等它们全部结束，把结果作为一条面板消息记进对话并返回交给 CLI 的文字；
+   * 没有要交回的返回 undefined。对话这一轮结束时调用，对话就停在这里等子任务
+   */
+  helperResults(signal?: AbortSignal): Promise<string> | undefined
   status(): string
   spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -1810,8 +1819,6 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
 const MAX_HELPERS_RUNNING = 6
 /** 一个节点最多派几个子 Agent */
 const MAX_HELPERS_PER_STEP = 12
-/** 子 Agent 还能再派子 Agent，最多两层 */
-const MAX_HELPER_DEPTH = 2
 
 interface OrchState {
   /** 节点 id → 还没读的消息 */
@@ -1956,15 +1963,18 @@ function makeOrchestra(
     chat?: boolean
     planning?: boolean
     coordinator?: boolean
+    /** 调用者是派出去的子任务：只做并行的收集、核实、出计划，不能再往外派 */
+    helper?: boolean
   },
   self: TaskStep,
 ): Orchestra {
   const st = orchState(host)
   const { task } = host
+  const helper = !!ctx.helper
   // 能力由 Agent 配置决定：canPlan 才能启动计划，canDelegate 才能分派子对话。
-  // 旧的常驻编排器（@main）还能看到，但它们不会出现在新对话里
-  const planner = !!ctx.planning || (isMainStep(self) && !self.parentId)
-  const coordinator = !!ctx.coordinator
+  // 旧的常驻编排器（@main）还能看到，但它们不会出现在新对话里。子任务一样都没有
+  const planner = !helper && (!!ctx.planning || (isMainStep(self) && !self.parentId))
+  const coordinator = !helper && !!ctx.coordinator
   // 对话的工具调用不属于任何节点：系统消息不挂 step，免得被当成一次运行的节点输出
   const where = self.id === CHAT_STEP ? '' : self.id
   const findStep = (key: string) => {
@@ -1983,7 +1993,31 @@ function makeOrchestra(
     common: commonAgents(host.agents)
       .filter((a) => a.id !== self.agentId)
       .map((a) => ({ name: a.name, description: a.description })),
+    helper,
+    autoReturn: !!ctx.chat && !helper,
+    helperResults(signal) {
+      const kids = () => task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
+      if (!kids().some((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))) return undefined
+      const stop = new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true }))
+      return Promise.race([settleHelpers(host, self), stop.then(() => '')]).then((late) => {
+        if (!late) return ''
+        // 交回的结果记成面板消息：对话里显示成 AI 回复里的一行，不当作用户说的话
+        task.messages.push({
+          id: host.newId(),
+          role: 'system',
+          agentId: '',
+          step: where,
+          text: late,
+          tools: [],
+          panel: 'helpers',
+          at: now(),
+        })
+        host.changed(true)
+        return `【面板】你派出的子任务都结束了，结果如下：\n\n${late}\n\n请根据这些结果接着做。`
+      })
+    },
     run(input) {
+      if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
       if (ctx.chat) return { ok: false, info: '对话里用 start_plan 启动工作流' }
       if (!planner) return { ok: false, info: '只有编排器能起运行，节点里按流程走' }
       const run = currentRun(task)
@@ -2005,6 +2039,7 @@ function makeOrchestra(
     },
     planning: !!ctx.planning,
     plan(workflowId, input) {
+      if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
       if (!ctx.chat) return { ok: false, info: '节点里不能启动计划，按流程执行' }
       if (!ctx.planning)
         return { ok: false, info: '这个 Agent 没有开启「按工作流执行计划」的能力，直接在当前对话里执行' }
@@ -2037,10 +2072,8 @@ function makeOrchestra(
       if (!title.trim())
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
       const r = await host.createConversation({ title: title.trim(), message, files })
-      if (r.ok) {
-        system(host, t('新建了子对话「{title}」，这条消息交给它处理', { title: r.title || title }), where)
-        host.changed(true)
-      }
+      // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
+      if (r.ok) host.changed(true)
       return { ok: r.ok, id: r.id, info: r.info }
     },
     async sendToConversation(id, message) {
@@ -2050,9 +2083,10 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    child: !!task.parentTaskId && !!host.messageParent,
-    claims: !!host.claimFiles,
-    canBackground: !!host.runBackground,
+    // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件、不用后台命令（推回的结果没有地方接）
+    child: !helper && !!task.parentTaskId && !!host.messageParent,
+    claims: !helper && !!host.claimFiles,
+    canBackground: !helper && !!host.runBackground,
     async runBackground(input) {
       if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
       if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
@@ -2063,7 +2097,7 @@ function makeOrchestra(
     checkBackground(id) {
       return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
     },
-    canSubmit: !!host.submitBuild,
+    canSubmit: !helper && !!host.submitBuild,
     // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
     canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
     async beginEdit() {
@@ -2120,26 +2154,24 @@ function makeOrchestra(
       : undefined,
     status: () => statusTree(host, self.id),
     spawn(tasks) {
-      const depth = (self.id.match(/\/sub\//g) ?? []).length
-      // 子对话本身已经是父对话派出来的一层：里面再派子 Agent 只允许一层，免得一个项目对话开出太多 CLI
-      const maxDepth = task.parentTaskId ? 1 : MAX_HELPER_DEPTH
-      if (depth >= maxDepth)
-        return {
-          ids: [],
-          error: task.parentTaskId
-            ? '子对话里的子 Agent 只能派一层，这一层不能再派了，请自己完成'
-            : '子 Agent 最多派两层，这一层不能再派了，请自己完成',
-        }
+      if (helper) return { ids: [], error: '子任务里不能再派子任务，请自己完成' }
       const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
       if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
-      const have = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').length
-      if (have + list.length > MAX_HELPERS_PER_STEP)
-        return { ids: [], error: `一个节点最多派 ${MAX_HELPERS_PER_STEP} 个子 Agent，已经派了 ${have} 个` }
+      const mine = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
+      const have = mine.length
+      // 对话会一直聊下去：上限只算还没结束的，做完的不占名额
+      const busy =
+        self.id === CHAT_STEP ? mine.filter((s) => s.status === 'running' || s.status === 'pending').length : have
+      if (busy + list.length > MAX_HELPERS_PER_STEP)
+        return { ids: [], error: `一个节点最多同时派 ${MAX_HELPERS_PER_STEP} 个子任务，已经派了 ${busy} 个` }
       if (host.halted) return { ids: [], error: '任务已经停止或有节点失败，不再派新的子 Agent' }
+      // 子任务默认用必备角色「子任务」；点名要「测试验收」「文档」这类通用角色时用点名的
+      const helperRole = host.agents.find((a) => a.origin === 'builtin:helper' && a.enabled)
       const made = list.map((spec, i) => {
         const want = spec.agent?.trim() ?? ''
         const agent =
           (want && host.agents.find((a) => a.id === want || a.name === want)) ||
+          helperRole ||
           host.agents.find((a) => a.id === self.agentId)
         const n = have + i + 1
         const step = blankStep({
@@ -2287,7 +2319,8 @@ async function runHelper(
       prompt,
       sessionKey: step.id,
       tier,
-      orch: makeOrchestra(host, { ...ctx, tier }, step),
+      // 子任务的工具只剩查状态、读写共享状态、传话：不能再派子任务、启动工作流或开子对话
+      orch: makeOrchestra(host, { workflow: ctx.workflow, main: ctx.main, tier, helper: true }, step),
     })
     if (r.ok) {
       const late = await settleHelpers(host, step)
@@ -2561,18 +2594,20 @@ async function runConversationTurn(host: EngineHost, who: string) {
   if (turn) host.changed(true)
   try {
     let prompt = await conversationPrompt(host, kind, planning, coordinator)
-    for (let i = 0; i < 4; i++) {
+    // 子任务交回结果也算一圈：派几次就要接着几次，上限放宽一些
+    for (let i = 0; i < 12; i++) {
+      const orch = makeOrchestra(
+        host,
+        { workflow: host.workflow, tier: '', chat: true, planning, coordinator },
+        chatStep(host, who),
+      )
       const r = await host.runAgent({
         agentId: who,
         prompt,
         // 会话键就是 Agent id；选了「无」时用空字符串，runner 仍然按对话处理
         sessionKey: who,
         ...(host.prewarm ? { prewarm: true } : {}),
-        orch: makeOrchestra(
-          host,
-          { workflow: host.workflow, tier: '', chat: true, planning, coordinator },
-          chatStep(host, who),
-        ),
+        orch,
       })
       if (!r.ok) {
         if (turn) endTurn(task, turn, r.stopped ? 'stopped' : 'failed')
@@ -2581,6 +2616,14 @@ async function runConversationTurn(host: EngineHost, who: string) {
           return
         }
         return finish(host, r)
+      }
+      // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回给同一个会话接着做
+      const back = orch.helperResults()
+      if (back) {
+        const text = await back
+        if (host.halted || !text) break
+        prompt = text
+        continue
       }
       const plans = takePendingPlans(host)
       if (!plans.length) break

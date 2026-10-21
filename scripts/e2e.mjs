@@ -1808,7 +1808,7 @@ try {
       mine.every((c) => c.args.some((x) => x.includes('/api/mcp/ask/'))),
       '节点都接上编排工具',
     )
-    assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子 Agent/)
+    assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子任务/)
     // 追加要求交给工作流的默认执行 Agent（不再有 @main 会话）
     const n1 = calls().length
     await call('POST', `/tasks/${dm.id}/messages`, { text: '再改一下' })

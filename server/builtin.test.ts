@@ -248,7 +248,8 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
   assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
   const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
-  assert.equal(built.length, BUILTIN_AGENTS.length, '每个内置 Agent 只建一份')
+  // 必备角色「子任务」不在任何工作流里，由启动时的必备角色检查装上
+  assert.equal(built.length, BUILTIN_AGENTS.filter((b) => b.key !== 'helper').length, '每个内置 Agent 只建一份')
   // 和用户自己的 Agent 重名时加后缀，两个都在
   assert.ok(r.agents.some((a) => a.name === '开发（内置）' && a.origin === 'builtin:developer'))
   const rules = built.find((a) => a.origin === 'builtin:rules')!

@@ -25,11 +25,11 @@
 
 ## 必备角色
 
-`orchestrator`（统筹）、`worker`（执行）、`docsync`（文档）、`tester`（测试验收）是项目对话离不开的四个能力块，
+`orchestrator`（统筹）、`worker`（执行）、`docsync`（文档）、`tester`（测试验收）、`helper`（子任务）是项目对话离不开的五个能力块，
 定义在 `shared/builtin/core.ts`：启动时自动装好、不能删除，名称、角色设定、Skill、能力开关和参数定义每次启动按内置定义同步，
 用户只能改参数取值和运行配置（CLI、模型、思考强度、权限），项目里还能在 `Project.agentParams` 按项目覆盖参数。
 它们之间靠名字协作（统筹和执行把要落盘的文档派给「文档」、把验证派给「测试验收」），所以不能被改成别的角色。
-改这四个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
+改这几个的定义时不用补旧指纹，同步会直接换成新版本；只要保证参数 key 不乱改（改了 key 用户填的值会丢）。
 
 ## Agent 清单
 
@@ -38,6 +38,7 @@
 | `rules`        | 通用约束         | 常驻规则             | —    | 全部（includes）                                                                      | —                                                                               |
 | `orchestrator` | 统筹（必备）     | 项目对话调度         |      | general、ue、bootstrap                                                                | `vcs` `route` `split` `confirm` `report`                                        |
 | `worker`       | 执行（必备）     | 子对话执行           |      | 项目对话运行路径                                                                      | `vcs` `mode` `batch` `verify` `commit`                                          |
+| `helper`       | 子任务（必备）   | 并行收集、核实、计划 |      | —（spawn_agents 不点名时默认用它）                                                    | —                                                                               |
 | `docsync`      | 文档（必备）     | 文档落盘             | ✓    | general、ue、ue-dev、architecture、bootstrap、release、migration                      | `docRoot` `lang` `index` `adr` `bug`                                            |
 | `tester`       | 测试验收（必备） | 构建/测试/验收       | ✓    | general、ue、daily-dev、openspec、bugfix、ue-dev、bootstrap、deps、migration、release | `scope` `env` `regress` `onFail` `write` `serial`                               |
 | `explorer`     | 调研             | 只读调研             | ✓    | ue、ue-dev、bootstrap、openspec、review、migration                                    | `target`（定位代码 / 影响面 / 外部资料）`depth` `stack` `focus` `tests` `scene` |

@@ -989,6 +989,16 @@ async function runAgent(
       if (finished) return null
       toolWaited = true
     }
+    // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回同一个进程接着做，不等用户的下一句
+    const back = chat ? orch?.helperResults(ctx.signal) : undefined
+    if (back) {
+      const text = await back
+      if (!text || ctx.signal.aborted) return null
+      // 之后的输出另起一条，排在交回的结果后面
+      cur = undefined
+      ctx.changed(true)
+      return text
+    }
     // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
     if (chat && !stillCurrent()) return null
     // 这一轮没取走的补充：不再挂着等下一句，直接结束这一轮，由调用方马上开始新一轮接着处理

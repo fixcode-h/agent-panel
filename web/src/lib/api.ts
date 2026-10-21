@@ -32,6 +32,7 @@ import type {
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
+import type { ChildActivity } from '@shared/task'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -290,6 +291,8 @@ export const api = {
         requests?: number
         /** 在独立 worktree 里改时的分支 */
         branch?: string
+        /** 正在执行时这会儿在做什么 */
+        activity?: ChildActivity
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
