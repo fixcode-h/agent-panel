@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
+  aliasAgent,
   defaultAgent,
   type Agent,
   type AgentUsage,
@@ -470,9 +471,9 @@ async function runAgent(
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
   // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  const found = agentId
-    ? ctx.agents.find((a) => a.id === agentId)
-    : { ...defaultAgent(), id: '', name: '', description: '' }
+  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）
+  const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
+  const found = id ? ctx.agents.find((a) => a.id === id) : { ...defaultAgent(), id: '', name: '', description: '' }
   if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =

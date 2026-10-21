@@ -191,7 +191,7 @@ export function WorkflowsPage() {
                 }
                 title={w.name}
                 monoSubtitle={false}
-                subtitle={`${nameOf(w.mainAgentId) ?? t('未选默认角色')} · ${t('{n} 个子角色', { n: subAgentIds(w).length })}`}
+                subtitle={`${nameOf(w.mainAgentId) ?? t('直接用 CLI')} · ${t('{n} 个子角色', { n: subAgentIds(w).length })}`}
                 tags={w.tags.length ? <TagList ids={w.tags} /> : undefined}
                 // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
                 trailing={

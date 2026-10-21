@@ -244,13 +244,13 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
     createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
     createWorkflow: async (w) => ({ ...WorkflowInput.parse(w), ...meta() }),
   }
-  const mine = { ...AgentInput.parse({ name: '开发者' }), ...meta() }
+  const mine = { ...AgentInput.parse({ name: '开发' }), ...meta() }
   const r = await seedBuiltins({ agents: [mine], categories: [], tags: [], workflows: [] }, ops)
   assert.equal(r.workflows.length, BUILTIN_WORKFLOWS.length)
   const built = r.agents.filter((a) => a.origin.startsWith('builtin:'))
   assert.equal(built.length, BUILTIN_AGENTS.length, '每个内置 Agent 只建一份')
   // 和用户自己的 Agent 重名时加后缀，两个都在
-  assert.ok(r.agents.some((a) => a.name === '开发者（内置）' && a.origin === 'builtin:developer'))
+  assert.ok(r.agents.some((a) => a.name === '开发（内置）' && a.origin === 'builtin:developer'))
   const rules = built.find((a) => a.origin === 'builtin:rules')!
   for (const a of built.filter((x) => x !== rules)) assert.deepEqual(a.includes, [rules.id], a.name)
   // 工作流节点都指向建好的 Agent
@@ -340,7 +340,7 @@ test('没改过的旧「通用约束」「任务 Agent」（现在的「执行�
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
 })
 
-test('停在上一版的「通用约束」「代码侦察」也能升级：补回合推进和派工失败的交付底线', async () => {
+test('停在上一版的「通用约束」「代码侦察」也能升级（「代码侦察」现在是「调研」）：补回合推进和派工失败的交付底线', async () => {
   const saved: Agent[] = []
   const ops = {
     async updateAgent(id: string, input: AgentInput) {
@@ -369,7 +369,7 @@ test('停在上一版的「通用约束」「代码侦察」也能升级：补�
   assert.match(rules.instructions, /## 回合怎么推进/, '补上一句就停、报错不交结果的规则')
   assert.match(rules.instructions, /我先读取/, '点名只说一句「我先读取…」就结束回合的写法')
   assert.match(rules.instructions, /共用工作区/, '更早一版的规则不能被覆盖掉')
-  const explorer = updated.find((a) => a.name === '代码侦察')!
+  const explorer = updated.find((a) => a.name === '调研')!
   assert.match(explorer.instructions, /不要空手结束/, '派工失败也要交出已确认的部分')
   assert.match(explorer.instructions, /不要重复读/, '不重复读父对话已经查过的资料')
 

@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_ID, type Agent, type ParamValues, type TestStep, type Workflow } from '../schema.ts'
+import { type Agent, type ParamValues, type TestStep, type Workflow } from '../schema.ts'
 import { autoLayout, END, entryFlow, START, topoOrder, workflowClosure } from '../flow.ts'
 import { applyExpose } from '../expose.ts'
 import { isTestAgent, testStepsBlock } from '../test-steps.ts'
@@ -8,8 +8,8 @@ import { t } from '../i18n.ts'
 /**
  * 自带的「默认」工作流：什么都可以丢给它（问问题、找资料、分析项目、排查问题、小改动……），
  * 它给出结果，再从用户已有的工作流里推荐下一步，界面上点一下就执行。
- * 和默认 Agent 一样是唯一不用手动添加的内置项：它是新建任务的默认入口，不能删除。
- * 节点交给默认 Agent（跟随默认 CLI），不另建 Agent，Agent 页不会多出一个删不掉的条目。
+ * 它是唯一不用手动添加的内置项：新建任务的默认入口，不能删除。
+ * 节点不用角色、直接跟随默认 CLI，角色页不会多出一个删不掉的条目。
  */
 export const DEFAULT_WORKFLOW_ID = 'default-workflow'
 
@@ -54,7 +54,7 @@ export function defaultWorkflow(): Workflow {
     updatedAt: at,
     name: t('默认'),
     description: t('什么都可以交给它：分析、排查、找资料、小改动，给出结果并推荐下一步用哪个工作流'),
-    mainAgentId: DEFAULT_AGENT_ID,
+    mainAgentId: '',
     members: [],
     entryFlowId: 'main',
     categoryId: '',

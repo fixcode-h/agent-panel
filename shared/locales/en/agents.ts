@@ -47,8 +47,6 @@ export const EN_AGENTS: Record<string, string> = {
   一句话说明它擅长什么: 'One line on what it’s good at',
   图标: 'Icon',
   运行环境: 'Runtime',
-  '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。':
-    'The built-in default role always uses the default CLI with its default model and effort, currently {cli} · {model} · {effort}. They follow the default CLI and model in Settings. In a chat, you can switch model and effort for the moment next to the input box.',
   '跟随默认 CLI（现在是 {cli}）': 'Follow the default CLI ({cli} for now)',
   '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。':
     'When the default CLI changes in Settings, this role switches too, using the same tier’s model on the new CLI. Uncheck to pin a specific CLI.',
@@ -199,8 +197,8 @@ export const EN_AGENTS: Record<string, string> = {
   建议写清楚它的职责和交付标准: 'Describe its responsibilities and what it should deliver',
   未命名节点: 'Untitled node',
   已选择主角色: 'Main role selected',
-  '主角色执行没指定角色的节点，并处理追加要求':
-    'The main role runs nodes without an assigned role and handles follow-up requests',
+  '没选时，没指定角色的节点直接用默认 CLI，不带角色设定':
+    'When none is chosen, nodes without a role run on the default CLI with no role prompt',
   团队成员都可运行: 'All team members can run',
   '共 {n} 个角色': '{n} roles',
   已设计流程: 'Flow designed',

@@ -8,8 +8,7 @@ import { demoLibrary } from './demo-library'
 import { z } from 'zod'
 import {
   Agent,
-  DEFAULT_AGENT_ID,
-  defaultAgent,
+  LEGACY_DEFAULT_AGENT_ID,
   Attachment,
   AgentInput,
   Category,
@@ -594,8 +593,8 @@ function load(): Db {
   db.categories = db.categories.map((c) => Category.parse(c))
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
-  // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
-  if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
+  // 以前自带的默认 Agent 已经去掉（不用角色就是直接用 CLI），旧的演示数据里还有时删掉
+  db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
   ensureDemoCore(db)
   return db
@@ -1344,7 +1343,6 @@ function route(method: string, url: string, body: unknown): unknown {
     if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
-    if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
     // 必备角色只能改参数取值和运行配置；复制出来的是普通角色
     const coreBefore = method === 'POST' ? undefined : d.agents.find((a) => a.id === id && isCoreAgent(a))
     if (method === 'POST' && isCoreAgent(input)) input.origin = ''

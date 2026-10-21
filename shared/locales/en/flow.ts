@@ -194,7 +194,7 @@ export const EN_FLOW: Record<string, string> = {
   '正在被 {list} 使用，请先改用其他工作流。': 'In use by {list}. Switch them to another workflow first.',
 
   // 工作流选择与摘要
-  未选默认角色: 'No default role',
+  '直接用 CLI': 'Plain CLI',
   '{n} 个子角色': '{n} sub-roles',
   '还没有工作流，先去工作流页面创建': 'No workflows yet. Create one on the Workflows page first',
   工作流: 'Workflow',

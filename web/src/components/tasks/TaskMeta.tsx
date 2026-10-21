@@ -15,7 +15,6 @@ import { toast } from 'sonner'
 import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import type { StepUsage, Task, TaskStep } from '@shared/schema'
-import { DEFAULT_AGENT_ID } from '@shared/schema'
 import { topSteps } from '@shared/flow'
 import { fmtTokens, liveTps, stepLabel } from '@/lib/tasks'
 import { useData } from '@/lib/data'
@@ -270,8 +269,8 @@ function EnvChip({
   const idle = task.status !== 'running'
   const s = settings ?? defaultSettings()
   const found = agents.find((a) => a.id === task.agentId)
-  // 没有 Agent 角色（选了「无」或默认 Agent）的对话按 CLI 显示：名字和模型跟着对话现在用的 CLI
-  const byCli = task.mode === 'chat' && (!task.agentId || task.agentId === DEFAULT_AGENT_ID)
+  // 不用角色的对话按 CLI 显示：名字和模型跟着对话现在用的 CLI
+  const byCli = task.mode === 'chat' && !task.agentId
   const chatAgent = found && withTaskModel(found, task)
   const name =
     task.mode === 'workflow'

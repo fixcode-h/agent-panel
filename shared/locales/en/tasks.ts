@@ -144,15 +144,12 @@ export const EN_TASKS: Record<string, string> = {
   '无角色，直接用 CLI': 'No role, use the CLI directly',
   无角色: 'No role',
   使用项目设置的角色: 'Use the project role',
-  默认角色: 'Default role',
   '直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）':
     'Chat with the CLI directly, without the role’s instructions (click to use the project role again)',
   '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）':
     'This chat uses “{name}” with its instructions and parameters and cannot be changed once started (click to use no role)',
   '项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）':
     'The project role was deleted or disabled, so this chat goes straight to the CLI (click to use no role)',
-  '这个对话用默认角色，CLI、模型和思考强度可以在开始前选（点一下改成不用角色）':
-    'This chat uses the default role; pick the CLI, model and thinking effort before starting (click to use no role)',
   '项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
     'The project is set to “No role”, so this chat goes straight to the CLI; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',

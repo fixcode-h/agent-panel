@@ -10,15 +10,7 @@ import {
   Trash2,
   Workflow as WorkflowIcon,
 } from 'lucide-react'
-import {
-  DEFAULT_AGENT_ID,
-  type Agent,
-  type Flow,
-  type FlowNode,
-  type FlowRef,
-  type NodeStep,
-  type WorkflowInput,
-} from '@shared/schema'
+import { type Agent, type Flow, type FlowNode, type FlowRef, type NodeStep, type WorkflowInput } from '@shared/schema'
 import { MODEL_TIERS } from '@shared/clis'
 import { agentTier } from '@shared/agent-role'
 import { cliSettings, defaultCli, defaultSettings } from '@shared/settings'
@@ -163,7 +155,7 @@ export function NodeInspector({
         {steps.map((u, i) => {
           const runner = runnerOf(u)
           const tier = u.tier || (runner ? agentTier(runner) : 'medium')
-          const params = runner && runner.id !== DEFAULT_AGENT_ID ? runner.params : []
+          const params = runner?.params ?? []
           const open = !folded.has(u.id)
           return (
             <section key={u.id} className="flex flex-col gap-3 rounded-xl border p-3.5">

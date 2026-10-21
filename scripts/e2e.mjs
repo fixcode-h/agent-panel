@@ -609,23 +609,10 @@ try {
   assert.ok(c.args.includes('--resume') && c.args.includes(chat.sessions[C.id]))
   step('对话任务：直接发给选中的 Agent，继续对话会续接会话')
 
-  // ---- 自带的默认 Agent ----
+  // ---- 不用角色：直接用默认 CLI（以前的「默认 Agent」去掉了） ----
   const allAgents = await call('GET', '/agents')
-  const def = allAgents.find((x) => x.id === 'default-agent')
-  assert.ok(def && def.cli === '' && def.model === '', '自带默认 Agent，跟随默认 CLI 的默认模型')
-  assert.equal(
-    (await fetch(`${base}/agents/default-agent`, { method: 'DELETE', headers: { 'content-type': 'application/json' } }))
-      .status,
-    409,
-    '默认 Agent 不能删除',
-  )
-  const renamed = await call('PUT', '/agents/default-agent', { ...def, name: '助手', cli: 'codex', model: '@high' })
-  assert.deepEqual(
-    [renamed.name, renamed.cli, renamed.model],
-    ['助手', '', ''],
-    '默认 Agent 只能改名称这些，模型固定跟随默认',
-  )
-  await call('PUT', '/agents/default-agent', def)
+  assert.ok(!allAgents.some((x) => x.id === 'default-agent'), '不再有自带的默认 Agent')
+  const def = { id: '' }
   let dc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '默认' })
   dc = await waitDone(dc.id)
   c = calls().at(-1)
@@ -857,8 +844,10 @@ try {
   assert.equal(other.model, '', '其他 Agent 不接受临时模型')
   await waitDone(other.id)
   // Chat 模式：不属于项目的聊天，在数据目录里单独的工作目录执行
+  // 旧客户端还会传以前默认 Agent 的 id：按不用角色处理
   let free = await call('POST', '/tasks', { mode: 'chat', agentId: 'default-agent', prompt: '随便聊聊' })
   assert.equal(free.projectId, '')
+  assert.equal(free.agentId, '', '旧的默认 Agent id 当成不用角色')
   free = await waitDone(free.id)
   assert.equal(free.status, 'done')
   c = calls().at(-1)
@@ -880,7 +869,7 @@ try {
   await fetch(`${base}/tasks/${free.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' } })
   assert.ok(!existsSync(path.join(dataDir, 'chats', free.id)), '删除聊天时工作目录一起删掉')
   step(
-    '默认 Agent：跟随默认 CLI，不能删除，对话时可以临时换模型和思考强度；任务记录执行时间；Chat 模式的聊天不属于项目',
+    '不用角色：直接用默认 CLI，对话时可以临时换模型和思考强度，旧的默认 Agent id 当成不用角色；任务记录执行时间；Chat 模式的聊天不属于项目',
   )
 
   // ---- 停止 ----
@@ -897,7 +886,7 @@ try {
   {
     const steerLog = () => readLog(`${log}.steer`)
     const chatWith = (extra, prompt) =>
-      call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: 'default-agent', prompt, ...extra })
+      call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: '', prompt, ...extra })
     let a = await chatWith({ cli: 'codex' }, 'SLOW 插话 codex')
     let b = await chatWith({ cli: 'claude' }, 'SLOW 插话 claude')
     let q = await chatWith({ cli: 'commandcode' }, 'SLOW 插话 cmd')
@@ -1112,7 +1101,7 @@ try {
     let c = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       prompt: 'SLOW 执行中发给命令行',
     })
@@ -1135,7 +1124,7 @@ try {
     let g = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'gemini',
       prompt: 'SLOW 交不出去的消息',
     })
@@ -1468,7 +1457,7 @@ try {
     let c = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'codex',
       prompt: '记住暗号是蓝鲸',
     })
@@ -3805,7 +3794,7 @@ try {
     let task = await call('POST', '/tasks', {
       projectId: '',
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: s.cli,
       model: s.model,
       prompt: s.prompt,
@@ -3991,7 +3980,7 @@ try {
     const t1 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'codex',
       model: 'relay-1',
       prompt: '用 API 跑',
@@ -4000,7 +3989,7 @@ try {
     const t2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'claude',
       model: 'claude-x',
       prompt: '用 API 跑 claude',
@@ -4066,7 +4055,7 @@ try {
     const g = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'gemini',
       model: 'gem-1',
       prompt: '用 gemini API',
@@ -4087,7 +4076,7 @@ try {
     const cc = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       model: 'cc-1',
       prompt: '用 cc API',
@@ -4110,7 +4099,7 @@ try {
     const pa = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'pi',
       model: 'cc-1',
       prompt: '用 pi API',
@@ -4138,7 +4127,7 @@ try {
     const g2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'gemini',
       prompt: '改回账号',
     })
@@ -4153,7 +4142,7 @@ try {
     const cc2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       prompt: '改回账号 cc',
     })
@@ -4163,7 +4152,7 @@ try {
     const pa2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'pi',
       prompt: '改回账号 pi',
     })
@@ -4234,7 +4223,7 @@ try {
       const t = await call('POST', '/tasks', {
         projectId: project.id,
         mode: 'chat',
-        agentId: 'default-agent',
+        agentId: '',
         cli,
         askUser: true,
         prompt: `想做什么 FAKE_ASK:${JSON.stringify({ questions: [{ header: '方向', question: '想做什么？', options: [{ label: '修 bug（推荐）' }, { label: '写文档' }] }] })}`,
@@ -4276,7 +4265,7 @@ try {
     const off = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: `FAKE_ASK:${JSON.stringify({ questions: [{ question: '选哪个？', options: [{ label: 'a' }] }] })}`,
@@ -4297,7 +4286,7 @@ try {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: 'FAKE_WAIT 先看代码',
@@ -4334,7 +4323,7 @@ try {
     let left = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: 'FAKE_WAIT 等一会儿',
@@ -4362,7 +4351,7 @@ try {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: '先看代码',
@@ -4413,14 +4402,14 @@ try {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: '普通对话',
     })
     w = await waitDone(w.id, 30000)
     assert.equal(w.status, 'done')
-    assert.ok(w.sessions['default-agent'], '第一轮留下了会话')
+    assert.ok(w.sessions[''], '第一轮留下了会话')
     assert.ok(w.turnDoneAt, '第一轮完成时记了时间')
     const doneAt = w.turnDoneAt
     const beforeMsgs = w.messages.length

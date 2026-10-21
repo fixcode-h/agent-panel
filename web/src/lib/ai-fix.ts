@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { DEFAULT_AGENT_ID, type Task } from '@shared/schema'
+import { type Task } from '@shared/schema'
 import type { FixInput } from '@shared/fix'
 import { t } from '@shared/i18n'
 import { api } from './api'
@@ -67,7 +67,7 @@ async function start(issue: FixIssue) {
       projectId: '',
       mode: 'chat',
       workflowId: '',
-      agentId: DEFAULT_AGENT_ID,
+      agentId: '',
       cli: s.cli,
       model: s.model,
       effort: '',

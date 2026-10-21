@@ -12,8 +12,7 @@ import { createInterface } from 'node:readline'
 import { z } from 'zod'
 import {
   Agent,
-  DEFAULT_AGENT_ID,
-  defaultAgent,
+  LEGACY_DEFAULT_AGENT_ID,
   AgentInput,
   Category,
   CategoryInput,
@@ -68,7 +67,14 @@ import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
 import { coreDefinition, coreKey, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
-import { ensureProjectAgents, migrateProjectsToGeneral, seedProjectWorkflows } from '../shared/builtin/install.ts'
+import {
+  ensureProjectAgents,
+  migrateProjectsToGeneral,
+  pruneMergedAgents,
+  redirectMergedProjects,
+  seedProjectWorkflows,
+} from '../shared/builtin/install.ts'
+import { addAgentAliases, backupRemovedAgents, loadAgentAliases } from './agent-aliases.ts'
 import { analyzeProject } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
 import { grantCookie, tokenGuard, withToken } from './auth.ts'
@@ -83,8 +89,10 @@ installLogging()
 
 // 先把旧版本的数据搬到用户目录的新结构，后面的集合才读得到
 migrateDataDir()
+// 删掉的角色该转到哪个：要在读工作流、对话之前装上，读出来的旧引用才会被改写
+loadAgentAliases()
 
-const agents = createCollection<AgentInput, Agent>('agents.json', Agent, () => [defaultAgent()])
+const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
 const tags = createCollection<TagInput, Tag>('tags.json', Tag)
 /** 只留存在的标签（标签删掉后，前端还没刷新时可能带着旧 id） */
@@ -119,6 +127,7 @@ for (const w of await workflows.list()) {
  * 旧项目没指定工作流的指向「通用项目」，之后改项目设置也不影响已经开始的对话（任务里存了快照）。
  */
 async function ensureProjectWorkflows() {
+  await removeLegacyDefaultAgent()
   const seeded = await seedProjectWorkflows(
     {
       agents: await agents.list(),
@@ -137,6 +146,7 @@ async function ensureProjectWorkflows() {
   )
   if (seeded.created.length) log.info('workflow', '已安装内置项目工作流', { list: seeded.created.map((w) => w.name) })
   if (seeded.updated.length) log.info('workflow', '已升级旧的内置工作流', { list: seeded.updated.map((w) => w.name) })
+  await pruneMerged()
   // 已有「通用项目」时不会重新 build 工作流，协调 Agent / 任务 Agent 可能还没建出来
   const projectAgents = await ensureProjectAgents(
     {
@@ -180,6 +190,44 @@ async function ensureProjectWorkflows() {
     if (n) log.info('project', '旧项目默认使用协调 Agent', { n })
   }
 }
+/**
+ * 以前自带的「默认 Agent」去掉了：不用角色就是直接用 CLI，引用它的旧数据读出来已经改成空（见 schema 的 dropLegacyAgent）。
+ * 用户改过它的名字或设定时先备份一份再删。
+ */
+async function removeLegacyDefaultAgent() {
+  const old = await agents.get(LEGACY_DEFAULT_AGENT_ID)
+  if (!old) return
+  if (old.instructions.trim() || old.includes.length || old.params.length) {
+    const file = await backupRemovedAgents([old], '默认 Agent 去掉了：不用角色就是直接用 CLI')
+    log.info('agent', '默认 Agent 改过设定，已备份', { file })
+  }
+  await agents.remove(old.id)
+  log.info('agent', '已去掉默认 Agent，旧对话改为直接用 CLI')
+}
+
+/**
+ * 合并掉的内置角色：工作流里的引用已经在 seedProjectWorkflows 里重定向了，这里再把项目的默认对话角色改过去，
+ * 然后删掉没人用、也没改过的旧副本（先备份），旧对话里记着旧 id 的按登记的转到合并目标。
+ */
+async function pruneMerged() {
+  const list = await agents.list()
+  for (const m of redirectMergedProjects(await projects.list(), list)) {
+    const p = await projects.get(m.id)
+    if (p) await projects.update(m.id, { ...p, defaultAgentId: m.defaultAgentId })
+  }
+  const state = {
+    agents: list,
+    categories: await categories.list(),
+    tags: await tags.list(),
+    workflows: await workflows.list(),
+  }
+  const pruned = await pruneMergedAgents(state, await projects.list(), { deleteAgent: (id) => agents.remove(id) })
+  if (!pruned.removed.length) return
+  const file = await backupRemovedAgents(pruned.removed, '已合并到通用角色')
+  await addAgentAliases(pruned.aliases)
+  log.info('agent', '已删除合并掉的旧角色', { list: pruned.removed.map((a) => a.name), backup: file })
+}
+
 void ensureProjectWorkflows().catch((e) => log.warn('project', `安装项目工作流失败：${(e as Error).message}`))
 
 const app = new Hono().basePath('/api')
@@ -412,8 +460,6 @@ app.put('/agents/:id', async (c) => {
   const id = c.req.param('id')
   const r = await parseAgent(await c.req.json(), id)
   if (r.error) return bad(c, r.error)
-  // 默认 Agent 的 CLI、模型、思考强度固定跟随默认 CLI，只能改名称、角色设定这些
-  if (id === DEFAULT_AGENT_ID) Object.assign(r.data!, { cli: '', model: '', effort: '', enabled: true })
   // 必备角色只能改参数取值和运行配置，其余按内置定义写回（AI 优化、导入改了也一样纠正）
   const before = await agents.get(id)
   const core = coreKey(before ?? undefined)

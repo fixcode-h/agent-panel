@@ -2818,7 +2818,7 @@ export async function runEngineTurn(host: EngineHost) {
       const last = [...task.steps].reverse().find((s) => s.agentId === who && task.sessions[s.id])
       if (last) task.sessions[who] = task.sessions[last.id]
     }
-    if (!who) return finish(host, { ok: false, error: t('没有可以回答的角色，请先给工作流选择主角色') })
+    // 没选主角色（例如自带的「默认」工作流）时直接用默认 CLI 回答，不带角色设定
     // 每一轮单独记耗时和用量，任务进度里能看到工作流跑完后的追加要求；预热不算一轮
     const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
     if (turn) host.changed(true)

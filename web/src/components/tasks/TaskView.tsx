@@ -28,10 +28,10 @@ import {
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
-import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
+import { type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import { chatName, sortChildren, taskSummary, withTaskModel } from '@shared/task'
+import { sortChildren, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
@@ -602,10 +602,10 @@ export function TaskView({
       : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
   const canSteer = working && (task.mode === 'workflow' || steerable(chatCli))
-  // 没有 Agent 角色（选了「无」或默认 Agent）的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
-  const byCli = task.mode === 'chat' && (!task.agentId || task.agentId === DEFAULT_AGENT_ID)
+  // 不用角色的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
+  const byCli = task.mode === 'chat' && !task.agentId
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
-  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || t('无角色')
+  const chatLabel = (byCli ? getCli(chatCli)?.name : chatAgent?.name) || t('无角色')
   const changeRun = async (v: ChatRun) => {
     setTask({ ...task, ...v })
     try {

@@ -382,11 +382,11 @@ try {
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
-  await check(p, '内置Agent', ['通用约束', 'UE 侦察', '代码侦察', '已添加'])
+  await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
   await p.keyboard.press('Escape')
   // Agent 的引入层级和参数的选项编辑（带序号的卡片、回车添加）
   // 角色页按「概览 / 角色设定 / 参数 / Skill 与开场白」分页
-  await p.getByText('开发者', { exact: true }).first().click()
+  await p.getByText('评审', { exact: true }).first().click()
   await p.getByRole('tab', { name: /^参数/ }).click()
   await p.getByRole('button', { name: /\{\{vcs\}\}/ }).click()
   await p.getByRole('textbox', { name: '新选项' }).fill('svn')

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { Bot, Copy, LayoutTemplate, Plus, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
 import { isCoreAgent } from '@shared/builtin/core'
-import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type Category } from '@shared/schema'
+import { type Agent, type AgentInput, type Category } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { cliColor, shortVersion } from '@/lib/cli-style'
@@ -23,8 +23,7 @@ import { defaultCli } from '@shared/settings'
 import { cliToEnable } from '@/components/layout/NoCliBanner'
 import { t } from '@shared/i18n'
 
-/** 「默认」分类的分组 id，和用户分类的 id 不会冲突 */
-const DEFAULT_GROUP = '#default'
+/** 「必备」分组的 id，和用户分类的 id 不会冲突 */
 const CORE_GROUP = '#core'
 
 export function AgentsPage() {
@@ -57,13 +56,7 @@ export function AgentsPage() {
     (!tag || a.tags.includes(tag)) &&
     (!q || `${a.name}${a.description}${modelOf(a)}${tagNames(a.tags)}`.toLowerCase().includes(q))
   const coreCats = new Set(agents.filter(isCoreAgent).map((a) => a.categoryId))
-  // 自带的默认 Agent 单独放在最上面的「默认」分类，不跟着用户的分类走
   const groups = [
-    {
-      category: null as Category | null,
-      id: DEFAULT_GROUP,
-      items: agents.filter((a) => a.id === DEFAULT_AGENT_ID && match(a)),
-    },
     // 必备角色也单独成组：它们的分类由面板维护，放在用户的分类里反而像是能挪走
     { category: null as Category | null, id: CORE_GROUP, items: agents.filter((a) => isCoreAgent(a) && match(a)) },
     ...[
@@ -73,10 +66,10 @@ export function AgentsPage() {
       { category: null, id: '' },
     ].map((g) => ({
       ...g,
-      items: agents.filter((a) => a.id !== DEFAULT_AGENT_ID && !isCoreAgent(a) && a.categoryId === g.id && match(a)),
+      items: agents.filter((a) => !isCoreAgent(a) && a.categoryId === g.id && match(a)),
     })),
   ]
-    // 搜索、筛选时隐藏空分类；「默认」「未分类」为空时也不显示
+    // 搜索、筛选时隐藏空分类；「未分类」为空时也不显示
     .filter((g) => g.items.length || (!q && !tag && g.category))
 
   const create = async (input: Partial<AgentInput> = {}) => {
@@ -87,7 +80,7 @@ export function AgentsPage() {
         cli: '',
         model: '@medium',
         effort: '',
-        categoryId: selected?.id === DEFAULT_AGENT_ID ? '' : (selected?.categoryId ?? ''),
+        categoryId: selected?.categoryId ?? '',
         icon: 'bot',
         instructions: '',
         permission: '',
@@ -219,10 +212,7 @@ export function AgentsPage() {
                   onAdd={() => create({ categoryId: g.id })}
                 />
               ) : (
-                <GroupHeader
-                  label={g.id === DEFAULT_GROUP ? t('默认') : g.id === CORE_GROUP ? t('必备') : t('未分类')}
-                  count={g.items.length}
-                />
+                <GroupHeader label={g.id === CORE_GROUP ? t('必备') : t('未分类')} count={g.items.length} />
               )
             }
           >
@@ -245,7 +235,7 @@ export function AgentsPage() {
                     <ContextMenuSeparator />
                     <ContextMenuItem
                       danger
-                      disabled={a.id === DEFAULT_AGENT_ID || isCoreAgent(a)}
+                      disabled={isCoreAgent(a)}
                       onSelect={() => {
                         go({ page: 'agents', id: a.id })
                         setDelReq({ id: a.id, at: Date.now() })
@@ -262,8 +252,8 @@ export function AgentsPage() {
           </ListGroup>
         ))}
         {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
-        {/* 只有默认 Agent 时提示可以添加内置的：内置的不会自动装 */}
-        {!loading && !query && !tag && agents.every((a) => a.id === DEFAULT_AGENT_ID) && (
+        {/* 只有必备角色时提示可以添加内置的：其他内置角色不会自动装 */}
+        {!loading && !query && !tag && agents.every(isCoreAgent) && (
           <ListEmpty>
             <p>{t('还可以添加整理好的内置角色')}</p>
             <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>

@@ -17,7 +17,9 @@ import {
   LEGACY_AGENT_FIELDS_MORE,
   LEGACY_WORKFLOWS,
   MERGED_AGENTS,
+  mergedParams,
   type LegacyWorkflow,
+  type MergedAgent,
 } from './legacy.ts'
 import {
   BUILTIN_WORKFLOWS,
@@ -262,35 +264,118 @@ function matchesLegacy(cur: Workflow, legacy: LegacyWorkflow, agentId: (key: str
   return true
 }
 
+/** 本机已合并 Agent 的副本 id → 合并目标的 id 和换算规则（两边都在本机才算） */
+function mergedTargets(agents: Pick<Agent, 'id' | 'origin'>[]) {
+  const target = new Map<string, { to: string; merged: MergedAgent }>()
+  for (const [key, m] of Object.entries(MERGED_AGENTS)) {
+    const from = findBuiltin(agents as Agent[], key)?.id
+    const to = findBuiltin(agents as Agent[], m.into)?.id
+    if (from && to && from !== to) target.set(from, { to, merged: m })
+  }
+  return target
+}
+
 /**
  * 旧副本里引用了已合并 Agent 的节点，改成指向合并后的 Agent（`MERGED_AGENTS`），
  * 让用户改过、没自动升级的工作流也仍然能跑，不会因为 Agent 不再出现在「内置」里就断掉。
- * 只改 agentId、保留节点说明和参数；返回改过的流程，没有命中时返回 null。幂等：改完就不再引用旧 id。
+ * 节点说明保留，参数按 MERGED_AGENTS 换算成目标 Agent 的（例如调试员的「性能问题」换成开发的「任务」）；
+ * 主 Agent 和成员一起换。返回改过的流程，没有命中时返回 null。幂等：改完就不再引用旧 id。
  */
 function redirectMergedAgents(cur: Workflow, agents: Agent[]): Workflow | null {
-  const target = new Map<string, string>()
-  for (const [key, m] of Object.entries(MERGED_AGENTS)) {
-    const from = findBuiltin(agents, key)?.id
-    const to = findBuiltin(agents, m.into)?.id
-    if (from && to && from !== to) target.set(from, to)
-  }
+  const target = mergedTargets(agents)
   if (!target.size) return null
   let changed = false
-  const fix = (id: string) => {
-    const next = target.get(id)
-    if (!next) return id
+  const fix = <U extends { agentId: string; params: Workflow['flows'][number]['nodes'][number]['params'] }>(
+    u: U,
+  ): U => {
+    const hit = target.get(u.agentId)
+    if (!hit) return u
     changed = true
-    return next
+    return { ...u, agentId: hit.to, params: mergedParams(hit.merged, u.params) }
   }
   const flows = cur.flows.map((f) => ({
     ...f,
-    nodes: f.nodes.map((n) => ({
-      ...n,
-      agentId: n.kind === 'agent' && n.agentId ? fix(n.agentId) : n.agentId,
-      steps: n.steps.map((s) => (s.kind === 'agent' && s.agentId ? { ...s, agentId: fix(s.agentId) } : s)),
-    })),
+    nodes: f.nodes.map((n) => {
+      const node = n.kind === 'agent' && n.agentId ? fix(n) : n
+      return { ...node, steps: node.steps.map((s) => (s.kind === 'agent' && s.agentId ? fix(s) : s)) }
+    }),
   }))
-  return changed ? { ...cur, flows } : null
+  const main = target.get(cur.mainAgentId)
+  if (main) changed = true
+  const members = cur.members.map((m) => {
+    const hit = target.get(m.agentId)
+    if (!hit) return m
+    changed = true
+    return { ...m, agentId: hit.to }
+  })
+  if (!changed) return null
+  return {
+    ...cur,
+    mainAgentId: main?.to ?? cur.mainAgentId,
+    // 合并到同一个 Agent 后可能重复，留第一条
+    members: members.filter((m, i) => members.findIndex((x) => x.agentId === m.agentId) === i),
+    flows,
+  }
+}
+
+/** 项目的默认对话角色指向已合并的 Agent 时，改成合并目标；返回要改的项目 */
+export function redirectMergedProjects(projects: Project[], agents: Agent[]) {
+  const target = mergedTargets(agents)
+  return projects
+    .filter((p) => target.has(p.defaultAgentId))
+    .map((p) => ({ id: p.id, defaultAgentId: target.get(p.defaultAgentId)!.to }))
+}
+
+/** 这个 Agent 是否还被用着：工作流（主 Agent、成员、节点、步骤）、项目的默认对话角色、其他 Agent 的引入 */
+function agentInUse(id: string, state: BuiltinState, projects: Pick<Project, 'defaultAgentId'>[]) {
+  return (
+    state.workflows.some(
+      (w) =>
+        w.mainAgentId === id ||
+        w.members.some((m) => m.agentId === id) ||
+        w.flows.some((f) => f.nodes.some((n) => n.agentId === id || n.steps.some((s) => s.agentId === id))),
+    ) ||
+    projects.some((p) => p.defaultAgentId === id) ||
+    state.agents.some((a) => a.id !== id && a.includes.includes(id))
+  )
+}
+
+/** 已合并 Agent 的本机副本是不是没改过：和它的旧指纹一致（简介后面补的合并说明不算改动） */
+function untouchedMerged(a: Agent, key: string) {
+  const olds = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])].filter(Boolean)
+  // 更早合并的几个没留指纹：它们早就只剩一条说明，引用也在上一版重定向过了
+  if (!olds.length) return true
+  const note = `（${MERGED_AGENTS[key].note}）`
+  const desc = a.description.replace(note, '').trim()
+  return olds.some(
+    (o) => a.name === o.name && desc === o.description.trim() && a.instructions.trim() === o.instructions.trim(),
+  )
+}
+
+/**
+ * 删掉已经没用的已合并 Agent 副本：引用都重定向过了、没人再用、也没被用户改过的才删。
+ * 返回删掉的 Agent（调用方备份）和「旧 id → 合并目标 id」，旧对话里还记着旧 id 的照这个转过去。
+ * 用户改过的、还被用着的保留，只在简介里补合并说明（见 annotateMergedAgents）。
+ */
+export async function pruneMergedAgents(
+  state: BuiltinState,
+  projects: Pick<Project, 'defaultAgentId'>[],
+  api: { deleteAgent?: (id: string) => Promise<unknown> },
+) {
+  const removed: Agent[] = []
+  const aliases: Record<string, string> = {}
+  if (!api.deleteAgent) return { removed, aliases }
+  const target = mergedTargets(state.agents)
+  for (const [key] of Object.entries(MERGED_AGENTS)) {
+    const cur = findBuiltin(state.agents, key)
+    const hit = cur && target.get(cur.id)
+    if (!cur || !hit) continue
+    if (agentInUse(cur.id, state, projects) || !untouchedMerged(cur, key)) continue
+    await api.deleteAgent(cur.id)
+    removed.push(cur)
+    aliases[cur.id] = hit.to
+  }
+  return { removed, aliases }
 }
 
 /**
@@ -442,6 +527,19 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps)
     const seeded = await seedBuiltins(state, api, rest)
     cur = seeded
     created = seeded.workflows.filter((w) => !state.workflows.some((x) => x.id === w.id))
+  }
+  // 本机还有已合并的旧副本、却没有合并目标时（例如只装过「Bug 修复」，没有「开发」）先把目标建出来，下面才能重定向
+  const targets = Object.entries(MERGED_AGENTS)
+    .filter(([key, m]) => findBuiltin(cur.agents, key) && !findBuiltin(cur.agents, m.into))
+    .map(([, m]) => m.into)
+  if (targets.length) {
+    const r = await addBuiltinAgents(targets, cur, api)
+    cur = {
+      ...cur,
+      agents: [...cur.agents, ...r.created],
+      categories: [...cur.categories, ...r.newCategories],
+      tags: [...cur.tags, ...r.newTags],
+    }
   }
   const upgradedAgents = await upgradeBuiltinAgents(cur, api)
   if (upgradedAgents.length)

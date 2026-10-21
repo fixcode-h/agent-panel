@@ -85,22 +85,75 @@ export const Agent = AgentInput.extend(Meta.shape)
 export type Agent = z.infer<typeof Agent>
 
 /**
- * 自带的默认 Agent：不能删除，CLI、模型、思考强度固定跟随设置里的默认 CLI，
- * 对话时可以在输入框旁边临时换模型和思考强度。新建的对话没选过 Agent 时用它。
+ * 以前自带的「默认 Agent」的 id。它其实就是「不带角色、直接用 CLI」，现在去掉了：
+ * 旧数据里引用它的地方读出来一律当成空字符串（不用角色），见 dropLegacyAgent。
  */
-export const DEFAULT_AGENT_ID = 'default-agent'
+export const LEGACY_DEFAULT_AGENT_ID = 'default-agent'
+
+/** 不用角色时的运行配置模板：CLI、模型、思考强度跟随默认 CLI，没有角色设定 */
 export const defaultAgent = (): Agent => {
   const at = new Date(0).toISOString()
   return {
-    ...AgentInput.parse({
-      name: t('默认角色'),
-      description: t('使用默认 CLI 的默认模型和思考强度，对话时可以临时调整'),
-      icon: 'sparkles',
-    }),
-    id: DEFAULT_AGENT_ID,
+    ...AgentInput.parse({ name: t('无角色'), icon: 'sparkles' }),
+    id: '',
     createdAt: at,
     updatedAt: at,
   }
+}
+
+const AGENT_REF_KEYS = new Set(['agentId', 'mainAgentId', 'defaultAgentId'])
+
+/**
+ * 已经不存在的角色 id → 现在该用的 id（空字符串表示不用角色）。读旧数据时按它改写引用：
+ * 默认 Agent 固定在这里；合并后被删掉的内置副本由服务端启动时登记（见 setAgentAliases）。
+ */
+const agentAliases = new Map<string, string>([[LEGACY_DEFAULT_AGENT_ID, '']])
+
+/** 登记被删掉的角色该转到哪个角色：之后读到的工作流、项目、对话里的引用都会改过去 */
+export function setAgentAliases(map: Record<string, string>) {
+  for (const [from, to] of Object.entries(map)) if (from && from !== to) agentAliases.set(from, to)
+}
+
+/** 这个角色 id 现在该用哪个（没登记过的原样返回） */
+export const aliasAgent = (id: string) => agentAliases.get(id) ?? id
+
+/** 旧数据里指向已去掉的角色的引用改成现在的（默认 Agent 改成空字符串，不用角色）；工作流成员里转成空的直接去掉 */
+function dropLegacyAgent(v: unknown): unknown {
+  if (Array.isArray(v)) {
+    const arr = v.map(dropLegacyAgent)
+    return arr.some((x, i) => x !== v[i]) ? arr : v
+  }
+  if (!v || typeof v !== 'object') return v
+  const o = v as Record<string, unknown>
+  let out: Record<string, unknown> | null = null
+  for (const [k, x] of Object.entries(o)) {
+    let next = x
+    if (AGENT_REF_KEYS.has(k) && typeof x === 'string' && agentAliases.has(x)) next = agentAliases.get(x)
+    else if (k === 'members' && Array.isArray(x))
+      next = dropLegacyAgent(
+        x.filter((m) => {
+          const id = (m as { agentId?: unknown })?.agentId
+          return typeof id !== 'string' || agentAliases.get(id) !== ''
+        }),
+      )
+    else if (x && typeof x === 'object') next = dropLegacyAgent(x)
+    if (next !== x) (out ??= { ...o })[k] = next
+  }
+  return out ?? o
+}
+
+/** 对话的 CLI 会话按角色 id 记：角色换了 id，会话跟着搬过去，接着原来的会话聊 */
+function moveSessions(v: unknown) {
+  const t = v as { sessions?: unknown }
+  if (!t?.sessions || typeof t.sessions !== 'object') return v
+  const cur = t.sessions as Record<string, unknown>
+  if (!Object.keys(cur).some((k) => agentAliases.has(k))) return v
+  const sessions: Record<string, unknown> = {}
+  for (const [k, id] of Object.entries(cur)) {
+    const to = aliasAgent(k)
+    if (!(to in sessions) || to === k) sessions[to] = id
+  }
+  return { ...t, sessions }
 }
 
 /** Agent 和工作流的分类，例如「开发」「测试」「文档」，只用于组织列表；两边的分类各管各的 */
@@ -287,7 +340,8 @@ export function stagesToFlow(stages: { title?: string; nodes?: Record<string, un
 }
 
 /** 读旧数据时把阶段转换成流程 */
-function migrateWorkflow(v: unknown) {
+function migrateWorkflow(raw: unknown) {
+  const v = dropLegacyAgent(raw)
   if (!v || typeof v !== 'object') return v
   const w = v as Record<string, unknown>
   if (Array.isArray(w.flows) && w.flows.length) return w
@@ -576,7 +630,8 @@ export const ProjectLesson = z.object({
 export type ProjectLesson = z.infer<typeof ProjectLesson>
 
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
-function migrateProject(v: unknown) {
+function migrateProject(input: unknown) {
+  const v = dropLegacyAgent(input)
   if (!v || typeof v !== 'object') return v
   const p = v as Record<string, unknown>
   const raw = p.workflowParams
@@ -703,8 +758,8 @@ export const NewTaskInput = z.object({
   rootTaskId: z.string().optional(),
   /** workflow 模式：为空时用项目的工作流 */
   workflowId: z.string().default(''),
-  /** chat 模式：对话的 Agent */
-  agentId: z.string().default(''),
+  /** chat 模式：对话的 Agent（旧客户端可能还传已经去掉的角色 id，按登记的换过去） */
+  agentId: z.string().default('').transform(aliasAgent),
   /** chat 模式用的 CLI、模型和思考强度（只对默认 Agent 有效）；为空跟随默认 CLI 的设置 */
   cli: z.string().trim().max(40).default(''),
   model: z.string().trim().max(200).default(''),
@@ -1184,7 +1239,8 @@ export type TaskData = z.infer<typeof TaskData>
  * 更早的版本还有 queue（执行中排队的追加要求）：现在执行中收到的消息直接进对话，
  * 读旧数据时把没处理的普通要求补到对话末尾，让用户仍然看得到；等 CLI 取走的补充已经不成立了，丢掉。
  */
-function migrateTask(v: unknown) {
+function migrateTask(raw: unknown) {
+  const v = moveSessions(dropLegacyAgent(raw))
   if (!v || typeof v !== 'object') return v
   const t = v as {
     steps?: { id?: string }[]

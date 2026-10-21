@@ -73,7 +73,10 @@ export function WorkflowDetail({
     if (deleteSignal) setDeleting(true)
   }, [deleteSignal])
   const [assist, setAssist] = useState(false)
-  const [tab, setTab] = useState<'flow' | 'settings'>(() => (workflow.mainAgentId ? 'flow' : 'settings'))
+  // 主角色可以不选（直接用 CLI），所以按有没有节点判断：刚新建的空工作流先填基本信息
+  const [tab, setTab] = useState<'flow' | 'settings'>(() =>
+    workflow.mainAgentId || workflow.flows.some((f) => f.nodes.length) ? 'flow' : 'settings',
+  )
   const valid = !!draft.name.trim()
   const save = useAutosave(
     draft,
