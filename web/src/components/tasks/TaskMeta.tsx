@@ -153,7 +153,7 @@ function ContextChip({ lines }: { lines: ContextLine[] }) {
           />
         </span>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(440px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
         <ul className="flex flex-col gap-3 p-2.5">
           {lines.map((l) => (
             <ContextRow key={l.key} line={l} />
@@ -223,7 +223,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(320px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(320px,calc(100vw-24px))]">
         <div className="flex flex-col gap-2 p-2.5">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-base font-semibold tabular-nums">{fmtTokens(total)}</span>
@@ -305,7 +305,7 @@ function EnvChip({
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(440px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
         <div className="flex flex-col gap-2.5 p-2.5 text-xs text-muted">
           <div className="flex items-center gap-2">
             <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />

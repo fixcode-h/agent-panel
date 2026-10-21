@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import { useQuoteTarget } from '@/lib/quote'
+import { expandQuotes, quoteChip, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
   ChevronRight,
@@ -64,7 +64,7 @@ import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
-import { forSend } from '@shared/composer'
+import { chipMarker, forSend } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 
@@ -313,14 +313,17 @@ export function TaskView({
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
-  // 消息下面的「引用」：引用块接在输入框已有内容的后面，光标停到最后接着写
-  useQuoteTarget(dropArea, (block) => {
-    const cur = followTa.current?.text() ?? text
-    setText(cur.trim() ? `${cur.trimEnd()}\n\n${block}` : block)
-    requestAnimationFrame(() => {
-      followTa.current?.focus()
-      followTa.current?.setCaret(Number.MAX_SAFE_INTEGER)
-    })
+  // 消息下面的「引用」：像附件一样在输入框末尾放一张引用卡片，不把整段原文铺进输入框；发送时才换回引用块
+  useQuoteTarget(dropArea, (quoted) => {
+    const chip = quoteChip(quoted)
+    const ed = followTa.current
+    if (!ed) {
+      setText(`${text.trimEnd()} ${chipMarker(chip.kind, chip.name)} `.trimStart())
+      return
+    }
+    ed.focus()
+    ed.setCaret(Number.MAX_SAFE_INTEGER)
+    ed.insertChip(chip)
   })
   const [dropOver, setDropOver] = useState(false)
   const [rewindAsk, setRewindAsk] = useState('')
@@ -514,7 +517,7 @@ export function TaskView({
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async () => {
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
-    const content = forSend(text, files.attachments.length ? ATTACHMENT_PROMPT : '')
+    const content = forSend(expandQuotes(text), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     setSending(true)
     stick.current = true
@@ -594,11 +597,12 @@ export function TaskView({
   const roots = task.steps.filter((s) => !s.parentId)
   const runningSteps = task.steps.filter((s) => s.status === 'running')
   const chatAgent = agents.find((a) => a.id === task.agentId)
-  // 对话实际用的 CLI：没有 Agent 角色时用默认 CLI；Codex、Claude Code 能在执行中插话，Command Code 这类靠面板的工具取
+  // 对话实际用的 CLI；Codex、Claude Code 能在执行中插话，Command Code 这类靠面板的工具取
   const chatCli = chatAgent
     ? agentRun(withTaskModel(chatAgent, task), settings ?? defaultSettings()).cli
     : task.mode === 'chat'
-      ? defaultCli(settings ?? defaultSettings())
+      ? // 不用角色的对话：服务端按对话自己选的 CLI 跑，没选才用默认 CLI，这里要跟它一致
+        task.cli || defaultCli(settings ?? defaultSettings())
       : ''
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
   const canSteer = working && (task.mode === 'workflow' || steerable(chatCli))

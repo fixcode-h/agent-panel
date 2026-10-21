@@ -462,6 +462,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '管理 API': 'Manage APIs',
   默认地址: 'default address',
   '{n} 个模型': '{n} models',
+  还没有模型: 'No models yet',
   '还没有填模型，去 API 配置里添加': 'No models yet; add some in the API settings',
   '还没选 API，现在会按 CLI 自己的登录运行': "No API chosen; it runs with the CLI's own sign-in for now",
   '还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的':
