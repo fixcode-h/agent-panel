@@ -2,7 +2,6 @@ import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRe
 import { t } from '@shared/i18n'
 import { toast } from 'sonner'
 import {
-  ChevronDown,
   ChevronRight,
   FlaskConical,
   GitBranch,
@@ -57,9 +56,6 @@ import { FileDialog, FileOpenCtx } from './FileDialog'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
-import { ParamsChip } from '@/components/agents/ParamFields'
-import { AgentPicker } from '@/components/agents/AgentPicker'
-import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
@@ -511,16 +507,6 @@ export function TaskView({
       toast.error((e as Error).message)
     }
   }
-  // 换 Agent：服务端清掉旧角色的 CLI 会话，下一轮开新会话并带上之前的对话摘要
-  const changeAgent = async (agentId: string) => {
-    if (agentId === task.agentId) return
-    try {
-      apply(await api.setTaskAgent(task.id, agentId))
-      toast.success(agentId ? t('已切换 Agent，下一轮开新会话') : t('已改为不使用 Agent 角色'))
-    } catch (e) {
-      toast.error((e as Error).message)
-    }
-  }
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
   const blocks = toBlocks(task)
   // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
@@ -593,39 +579,6 @@ export function TaskView({
               api.setTaskAskUser(task.id, v).then(apply, (e) => toast.error((e as Error).message))
             }}
           />
-          {task.mode === 'chat' && !task.imported && (
-            <AgentPicker
-              onPick={(a) => void changeAgent(a.id)}
-              onNone={() => void changeAgent('')}
-              noneLabel={t('无 Agent，直接用 CLI')}
-              align="start"
-            >
-              <button
-                type="button"
-                className="inline-flex h-8 max-w-[240px] cursor-pointer items-center gap-1.5 rounded-lg px-1.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
-                title={chatAgent?.description || t('这个对话使用的 Agent，点一下可以换')}
-              >
-                <AgentAvatar
-                  icon={chatAgent?.icon ?? 'sparkles'}
-                  cli={chatCli}
-                  size="sm"
-                  dim={!!chatAgent && !chatAgent.enabled}
-                />
-                <span className="truncate">{chatAgent?.name ?? t('无 Agent')}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-              </button>
-            </AgentPicker>
-          )}
-          {task.mode === 'chat' && !byCli && chatAgent && chatAgent.params.length > 0 && (
-            <ParamsChip
-              params={chatAgent.params}
-              values={task.params}
-              onChange={(v) => {
-                setTask({ ...task, params: v })
-                api.setTaskParams(task.id, v).then(apply, (e) => toast.error((e as Error).message))
-              }}
-            />
-          )}
           {byCli && <ChatModelPicker value={chatRun} onChange={changeRun} />}
           {task.mode === 'workflow' && (
             <span className="min-w-0 truncate pl-1 text-xs text-subtle">

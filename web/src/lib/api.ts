@@ -14,7 +14,6 @@ import type {
   Agent,
   AgentInput,
   Category,
-  ParamValues,
   Tag,
   TagInput,
   CliStatus,
@@ -332,7 +331,6 @@ export const api = {
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
-  setTaskParams: (id: string, params: ParamValues) => request<Task>(`/tasks/${id}`, json('PATCH', { params })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
@@ -342,8 +340,6 @@ export const api = {
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
     request<Task>(`/tasks/${id}`, json('PATCH', run)),
-  /** 换对话的 Agent；空字符串表示不用 Agent 角色 */
-  setTaskAgent: (id: string, agentId: string) => request<Task>(`/tasks/${id}`, json('PATCH', { agentId })),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
 
   assist: (input: AssistInput) => request<AssistJob>('/assist', json('POST', input)),

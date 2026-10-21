@@ -138,6 +138,21 @@ export const EN_TASKS: Record<string, string> = {
   '松开鼠标，把文件附到要求里': 'Drop to attach files to your request',
   '无 Agent，直接用 CLI': 'No Agent, use the CLI directly',
   '无 Agent': 'No Agent',
+  '使用项目设置的 Agent': 'Use the project Agent',
+  '不用 Agent': 'No Agent',
+  '默认 Agent': 'Default Agent',
+  'Agent 已停用': 'Agent disabled',
+  '项目没设置 Agent': 'No project Agent',
+  '直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）':
+    'Chat with the CLI directly, without the Agent role (click to use the project Agent again)',
+  '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用 Agent）':
+    'This chat uses “{name}” with its role and parameters and cannot be changed once started (click to use no Agent)',
+  '项目设置的 Agent 已删除或停用，这个对话直接和 CLI 对话（点一下改成不用 Agent）':
+    'The project Agent was deleted or disabled, so this chat goes straight to the CLI (click to use no Agent)',
+  '这个对话用默认 Agent，CLI、模型和思考强度可以在开始前选（点一下改成不用 Agent）':
+    'This chat uses the default Agent; pick the CLI, model and thinking effort before starting (click to use no Agent)',
+  '项目设置里选了「无 Agent」，这个对话直接和 CLI 对话；在项目设置里选一个 Agent 才会用角色（点一下改成不用 Agent）':
+    'The project is set to “No Agent”, so this chat goes straight to the CLI; pick an Agent in the project settings to use a role (click to use no Agent)',
   子对话: 'Sub-conversation',
   关闭子对话: 'Close sub-conversation',
   '点开在右侧查看，同一时间只显示一个': 'Open on the right; only one is shown at a time',
@@ -146,9 +161,6 @@ export const EN_TASKS: Record<string, string> = {
   '正在准备节点…': 'Preparing nodes…',
   '「提问」已打开，后续问题会交给你回答': 'Questions are on; you will be asked to answer them',
   '「提问」已关闭，后续问题由 AI 自己决定': 'Questions are off; the AI decides by itself',
-  '已切换 Agent，下一轮开新会话': 'Agent switched; a new session starts next turn',
-  '已改为不使用 Agent 角色': 'Switched to no Agent role',
-  '这个对话使用的 Agent，点一下可以换': 'Agent used by this conversation; click to change',
 
   // 暂停、继续
   暂停: 'Pause',
