@@ -1127,7 +1127,8 @@ export function tasksApi(deps: {
     const wt = tk.worktree!
     // 父对话也在独立分支、而且目录还在：先并回父的分支，父再并回项目
     const parent = tk.parentTaskId ? await store.get(tk.parentTaskId) : null
-    const target = parent && isolated(parent) && existsSync(parent.worktree!.path) ? parent.worktree!.path : project.path
+    const target =
+      parent && isolated(parent) && existsSync(parent.worktree!.path) ? parent.worktree!.path : project.path
     try {
       if (merge) {
         const into = await mergeWorktree(project.path, wt, `Agent 面板：${tk.title}`, target)
@@ -1154,11 +1155,9 @@ export function tasksApi(deps: {
    * 子对话默认起独立分支：父对话也在独立分支时接着父的分支开，形成「子 → 父 → 项目」。
    * 建不出来（不是 git 仓库、还没有提交、分支重名）就退回上层目录，留一条说明，不挡住创建。
    */
-  async function isolateChild<T extends { id: string; title: string; worktree: Task['worktree']; messages: TaskMessage[] }>(
-    draft: T,
-    project: Project,
-    parent?: Task,
-  ) {
+  async function isolateChild<
+    T extends { id: string; title: string; worktree: Task['worktree']; messages: TaskMessage[] },
+  >(draft: T, project: Project, parent?: Task) {
     const base = parent && isolated(parent) ? parent.worktree!.path : project.path
     try {
       draft.worktree = await createWorktree(base, draft.id, draft.title)

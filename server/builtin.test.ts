@@ -319,7 +319,12 @@ test('没改过的旧「通用约束」「任务 Agent」跟着升级到新规�
     params: [],
     skills: [],
   })
-  const state = { agents: [old('rules', 'local-rules'), old('worker', 'local-worker')], categories: [], tags: [], workflows: [] }
+  const state = {
+    agents: [old('rules', 'local-rules'), old('worker', 'local-worker')],
+    categories: [],
+    tags: [],
+    workflows: [],
+  }
   const updated = await upgradeBuiltinAgents(state, ops)
   assert.equal(updated.length, 2, '两个旧副本都升级')
   const rules = updated.find((a) => a.name === '通用约束')!

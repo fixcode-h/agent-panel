@@ -106,13 +106,10 @@ export async function mergeWorktree(repo: string, wt: TaskWorktree, message: str
   if (m.code !== 0) {
     await git(target, 'merge', '--abort')
     throw new Error(
-      t(
-        '合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。',
-        {
-          branch: into,
-          name: wt.branch,
-        },
-      ) + `\n\n${(m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n')}`,
+      t('合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。', {
+        branch: into,
+        name: wt.branch,
+      }) + `\n\n${(m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n')}`,
     )
   }
   await removeWorktree(repo, wt, false)
