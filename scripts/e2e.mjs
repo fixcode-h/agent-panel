@@ -33,6 +33,8 @@ const PNG_1PX = Buffer.from(
 // 项目目录：一个已有提交、并且有一处未提交改动的 git 仓库
 execFileSync('mkdir', ['-p', projectDir])
 const git = (...a) => execFileSync('git', a, { cwd: projectDir, stdio: 'pipe' })
+/** 在别的目录（任务的独立分支目录）里跑 git */
+const gitIn = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'pipe' })
 git('init', '-q')
 writeFileSync(path.join(projectDir, 'README.md'), '# demo\n')
 writeFileSync(path.join(projectDir, 'pre.txt'), 'old\n')
@@ -1202,6 +1204,69 @@ try {
     // 父对话自己也停掉，后面的用例从干净状态开始
     await waitDone(parent.id, 15000)
     step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
+
+    // ---- 子对话默认在独立分支里执行，合并时先并回父对话的分支 ----
+    // 项目默认开着 childIsolate：接口创建的子对话不用传 isolate 也会隔离
+    const isoParent = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: A.id,
+          prompt: 'COMMIT 父对话在独立分支',
+          isolate: true,
+        })
+      ).id,
+      20000,
+    )
+    assert.equal(isoParent.worktree?.state, 'active', '顶层对话传了 isolate 才隔离')
+    let isoKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      parentTaskId: isoParent.id,
+      prompt: 'COMMIT 子对话在父分支上改',
+    })
+    assert.equal(isoKid.worktree?.state, 'active', '子对话默认建独立分支，不用传 isolate')
+    assert.equal(isoKid.worktree.branch.startsWith('agent-panel/'), true, '分支名带 agent-panel/ 前缀')
+    isoKid = await waitDone(isoKid.id, 20000)
+    // 子分支是从父的目录开出来的：父分支上的提交在子目录里看得到
+    assert.equal(
+      gitIn(isoKid.worktree.path, 'rev-parse', '--abbrev-ref', 'HEAD').toString().trim(),
+      isoKid.worktree.branch,
+      '子对话在自己的分支上',
+    )
+    const kidMerged = await call('POST', `/tasks/${isoKid.id}/worktree/merge`)
+    assert.equal(kidMerged.worktree.state, 'merged')
+    assert.equal(kidMerged.worktree.note, isoParent.worktree.branch, '子对话合并进父对话的分支')
+    assert.ok(
+      gitIn(isoParent.worktree.path, 'log', '--oneline').toString().includes('子对话'),
+      '父分支上能看到子对话的提交',
+    )
+    // 父对话并回项目目录已经由后面的「独立分支」用例覆盖，这里只验证子 → 父这一段，父直接丢弃
+    const parentDropped = await call('POST', `/tasks/${isoParent.id}/worktree/discard`)
+    assert.equal(parentDropped.worktree.state, 'discarded')
+    await call('DELETE', `/tasks/${isoParent.id}`)
+
+    // 项目设置里关掉之后，子对话直接用项目目录
+    const off = await call('PUT', `/projects/${project.id}`, { ...project, childIsolate: false })
+    assert.equal(off.childIsolate, false)
+    const plainParent = await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })).id,
+      20000,
+    )
+    const plainKid = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: B.id,
+      parentTaskId: plainParent.id,
+      prompt: '不隔离的子对话',
+    })
+    assert.equal(plainKid.worktree, null, '关掉设置后子对话不隔离')
+    await waitDone(plainKid.id, 20000)
+    await call('PUT', `/projects/${project.id}`, { ...project, childIsolate: true })
+    await call('DELETE', `/tasks/${plainParent.id}`)
+    step('子对话默认独立分支：从父分支开出，合并先并回父对话，关掉设置后直接用项目目录')
   }
 
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----

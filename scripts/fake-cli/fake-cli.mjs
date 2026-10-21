@@ -957,7 +957,7 @@ if (kind === 'claude') {
     writeFileSync('committed.txt', 'one\ntwo\nthree\n')
     const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
     g('add', 'committed.txt')
-    g('commit', '-qm', 'agent commit')
+    g('commit', '-qm', input.includes('子对话') ? '子对话提交' : 'agent commit')
   }
   out({
     type: 'assistant',
