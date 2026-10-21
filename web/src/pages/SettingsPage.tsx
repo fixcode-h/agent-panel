@@ -111,6 +111,7 @@ function SettingsBody({
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
+  const [fileFormat, setFileFormat] = useState(initial.fileFormat)
   const [language, setLanguage] = useState(initial.language)
   const [appearance, setAppearance] = useState(initial.appearance)
   const [cliOrder, setCliOrder] = useState(() =>
@@ -229,6 +230,7 @@ function SettingsBody({
     proxy: proxy.trim(),
     contentWidth,
     appearance,
+    fileFormat,
     language,
     cliOrder,
     stepTimeoutMinutes: valid ? minutes : initial.stepTimeoutMinutes,
@@ -595,6 +597,44 @@ function SettingsBody({
                   checked={askUserDefault}
                   onCheckedChange={setAskUserDefault}
                 />
+              </Row>
+              <Row
+                title={t('新建文件的格式')}
+                desc={t(
+                  '面板写说明文件、部署全局说明，以及交给 Agent 的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。',
+                )}
+                stack
+              >
+                <div className="flex flex-wrap gap-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-muted">{t('编码')}</span>
+                    <Select
+                      aria-label={t('文件编码')}
+                      value={fileFormat.encoding}
+                      onChange={(e) =>
+                        setFileFormat({ ...fileFormat, encoding: e.target.value as typeof fileFormat.encoding })
+                      }
+                      className="w-[190px]"
+                      options={[
+                        { value: 'utf8', label: t('UTF-8（不带 BOM）') },
+                        { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
+                      ]}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-muted">{t('换行符')}</span>
+                    <Select
+                      aria-label={t('换行符')}
+                      value={fileFormat.eol}
+                      onChange={(e) => setFileFormat({ ...fileFormat, eol: e.target.value as typeof fileFormat.eol })}
+                      className="w-[190px]"
+                      options={[
+                        { value: 'lf', label: 'LF（Linux / macOS）' },
+                        { value: 'crlf', label: 'CRLF（Windows）' },
+                      ]}
+                    />
+                  </label>
+                </div>
               </Row>
               <Row
                 title={t('任务完成时通知我')}

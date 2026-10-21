@@ -507,6 +507,22 @@ export const WorkflowParamsById = z.record(z.string(), z.record(z.string(), Para
  * 新建对话时整份步骤快照进任务，之后改项目设置不影响已经开始的对话。
  */
 export const TEST_STEP_ENVS = ['auto', 'wsl', 'powershell', 'cmd', 'bash'] as const
+
+/**
+ * 文本文件的写法：编码（带不带 BOM）和换行符。
+ * 项目在 Windows 上编辑、在 WSL / Linux 里跑脚本时，CRLF 和 BOM 会让 shebang 失效，
+ * 所以默认 UTF-8 无 BOM + LF。
+ */
+export const FILE_FORMATS = ['utf8', 'utf8-bom'] as const
+export const FILE_EOLS = ['lf', 'crlf'] as const
+export const FileFormat = z.object({
+  encoding: z.enum(FILE_FORMATS).catch('utf8').default('utf8'),
+  eol: z.enum(FILE_EOLS).catch('lf').default('lf'),
+})
+export type FileFormat = z.infer<typeof FileFormat>
+/** 没配置时用的格式：UTF-8 无 BOM、LF */
+export const DEFAULT_FILE_FORMAT: FileFormat = { encoding: 'utf8', eol: 'lf' }
+
 export const TestStep = z.object({
   id: z.string().trim().min(1).max(40),
   /** 显示名，例如「类型检查」「编译」 */
@@ -568,6 +584,11 @@ const ProjectFields = z.object({
   testSteps: z.array(TestStep).max(40).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
+  /**
+   * 这个项目里新建 / 改写的文本文件用什么编码和换行符；
+   * 留空时跟随设置里的全局格式（默认 UTF-8 无 BOM + LF）
+   */
+  fileFormat: FileFormat.optional(),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
@@ -1259,6 +1280,11 @@ export const Settings = z.object({
   appearance: Appearance.prefault({}),
   /** 新开的会话「提问」开关默认打开：AI 有问题时弹卡片问用户，而不是自己选 */
   askUserDefault: z.boolean().default(false),
+  /**
+   * 全局的文本文件格式：项目没单独设置时用它，默认 UTF-8 无 BOM + LF。
+   * 面板自己写的文件（说明文件、部署的全局说明）和交给 Agent 的约定都按它来
+   */
+  fileFormat: FileFormat.prefault({}),
   /** 界面语言：auto 跟随浏览器 */
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /** UI 设计里生成图片用的 CLI 和模型（目前只有 Codex 内置了生图工具）；模型为空用这个 CLI 的高档 */

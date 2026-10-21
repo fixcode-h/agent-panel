@@ -221,6 +221,11 @@ export interface EngineHost {
   steer?: (stepId: string, text: string) => Promise<boolean>
   /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
   workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
+  /**
+   * 写文件的格式（项目设置优先，没设时跟随全局），写进公共部分让 Agent 照着做；
+   * 不传时说明文件不带这一段（在线演示）
+   */
+  fileFormat?: { encoding: 'utf8' | 'utf8-bom'; eol: 'lf' | 'crlf' }
   /** 按 id 取工作流和这次运行要用的快照、技能槽；id 为空表示项目的默认工作流 */
   resolveWorkflow?: (
     id: string,
@@ -535,6 +540,22 @@ function policyPart(host: EngineHost) {
 }
 
 /**
+ * 写文件的格式：项目设置在全局设置里定的编码和换行符。
+ * 说清楚是为了避免 Windows 上写出的 CRLF / BOM 让脚本在 WSL / Linux 里跑不起来。
+ */
+function fileFormatPart(host: EngineHost) {
+  const f = host.fileFormat
+  if (!f) return ''
+  const enc = f.encoding === 'utf8-bom' ? 'UTF-8（带 BOM）' : 'UTF-8（不带 BOM）'
+  const eol = f.eol === 'crlf' ? 'CRLF（Windows）' : 'LF'
+  const tip =
+    f.eol === 'lf' && f.encoding === 'utf8'
+      ? '这样在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。'
+      : '和项目设置保持一致，不要自己改成别的换行符。'
+  return `## 文件格式\n新建或改写的文本文件统一用 ${enc}、换行符 ${eol}。${tip}\n已经有文件的编码和换行符不要批量转换，只改这次任务涉及的内容。`
+}
+
+/**
  * 同一个任务里各个节点（包括主 Agent、派出的子 Agent）都一样的开头：需求、工作流说明、通用要求。
  * 放在最前面，按前缀匹配缓存的模型服务（Codex 等）能多命中一段
  */
@@ -546,6 +567,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
     statePart(host.task),
     policyPart(host),
+    fileFormatPart(host),
     '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
       '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。',

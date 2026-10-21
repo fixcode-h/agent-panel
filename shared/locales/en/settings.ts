@@ -122,6 +122,18 @@ export const EN_SETTINGS: Record<string, string> = {
     'Show a system notification when a task finishes or fails while the page is in the background. Requires browser notification permission.',
   '浏览器没有允许通知，可以在地址栏左侧的网站设置里打开':
     'Notifications are blocked by the browser. You can allow them in the site settings next to the address bar.',
+  新建文件的格式: 'Format of new files',
+  '面板写说明文件、部署全局说明，以及交给 Agent 的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。':
+    'Applies to the doc files the panel writes, the global instructions it deploys, and the convention it gives Agents. The default is UTF-8 without BOM and LF line endings: when you edit on Windows and run tests in WSL or Linux, scripts do not fail with "bad interpreter" because of CRLF or a BOM. Each project can override this.',
+  编码: 'Encoding',
+  文件编码: 'File encoding',
+  'UTF-8（不带 BOM）': 'UTF-8 (no BOM)',
+  换行符: 'Line endings',
+  文件格式: 'File format',
+  '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。':
+    'Used for text files created or rewritten in this project, and the convention Agents follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
+  '和全局设置不同时，在这里单独指定': 'Override the global setting here',
+  跟随全局设置: 'Follow the global setting',
 
   // 默认 CLI
   'Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。':

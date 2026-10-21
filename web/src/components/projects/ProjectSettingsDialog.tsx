@@ -4,6 +4,7 @@ import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import { FileText, ChevronDown, ChevronUp, Loader2, Settings2, Sparkles, Trash2, X } from 'lucide-react'
 import type { ParamValue, Project, ProjectInput, TestStep, WorkflowExpose } from '@shared/schema'
+import { DEFAULT_FILE_FORMAT } from '@shared/schema'
 import { derivedParams, agentParamGroups, type AgentParamGroup, type DerivedParam } from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId } from '@shared/test-steps'
 import { AssistDialog } from '@/components/assist/AssistDialog'
@@ -44,6 +45,7 @@ const blank: ProjectInput = {
   workflowParams: {},
   testSteps: [],
   wslDistro: '',
+  fileFormat: undefined,
   gitPolicy: 'ask',
   childIsolate: true,
 }
@@ -143,6 +145,9 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   }
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
   const { settings } = useData()
+  // 项目没单独设置时跟随全局的格式，下拉框里直接显示实际生效的那个
+  const globalFormat = settings?.fileFormat ?? DEFAULT_FILE_FORMAT
+  const format = draft.fileFormat ?? globalFormat
   // AI 配置：一次只开一个，结果只填草稿；用户取消不会改数据
   const [ai, setAi] = useState<{
     kind: 'params' | 'teststeps'
@@ -612,6 +617,62 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   aiRunning={false}
                   onAi={() => setAi({ kind: 'teststeps', title: t('AI 生成测试步骤') })}
                 />
+              </FormSection>
+
+              <FormSection title={t('文件格式')}>
+                <div className="flex flex-wrap gap-3">
+                  <Field label={t('编码')} className="flex-[1_1_200px]">
+                    <Select
+                      value={format.encoding}
+                      onChange={(e) =>
+                        set('fileFormat', { ...format, encoding: e.target.value as typeof format.encoding })
+                      }
+                      options={[
+                        { value: 'utf8', label: t('UTF-8（不带 BOM）') },
+                        { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
+                      ]}
+                    />
+                  </Field>
+                  <Field label={t('换行符')} className="flex-[1_1_200px]">
+                    <Select
+                      value={format.eol}
+                      onChange={(e) => set('fileFormat', { ...format, eol: e.target.value as typeof format.eol })}
+                      options={[
+                        { value: 'lf', label: 'LF（Linux / macOS）' },
+                        { value: 'crlf', label: 'CRLF（Windows）' },
+                      ]}
+                    />
+                  </Field>
+                </div>
+                <span className="text-xs text-subtle">
+                  {t(
+                    '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
+                  )}
+                  {!draft.fileFormat && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className="cursor-pointer text-accent hover:underline"
+                        onClick={() => set('fileFormat', { ...globalFormat })}
+                      >
+                        {t('和全局设置不同时，在这里单独指定')}
+                      </button>
+                    </>
+                  )}
+                  {draft.fileFormat && (
+                    <>
+                      {' '}
+                      <button
+                        type="button"
+                        className="cursor-pointer text-accent hover:underline"
+                        onClick={() => set('fileFormat', undefined)}
+                      >
+                        {t('跟随全局设置')}
+                      </button>
+                    </>
+                  )}
+                </span>
               </FormSection>
 
               <FormSection title={t('版本与推送')}>

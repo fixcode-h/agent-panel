@@ -5,7 +5,7 @@
 import { askSession } from './asks.ts'
 import { Hono, type Context } from 'hono'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { z } from 'zod'
 import { CLIS, getCli } from '../shared/clis.ts'
@@ -28,6 +28,7 @@ import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { log } from './log.ts'
 import { getSettings } from './settings.ts'
+import { projectFormat, writeTextFile } from '../shared/file-format.ts'
 import { t } from '../shared/i18n.ts'
 
 const TIMEOUT = 10 * 60_000
@@ -54,7 +55,9 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
     const s = await stat(full).catch(() => null)
     if (!s?.isFile()) return { path: file, exists: false, content: '', bytes: 0 }
     if (s.size > DOC_MAX) return { path: file, exists: true, content: '', bytes: s.size, tooLarge: true }
-    return { path: file, exists: true, content: await readFile(full, 'utf8'), bytes: s.size }
+    // 去掉 UTF-8 的 BOM：编辑器里看不到，留在内容里会让「有没有改动」的判断一直不相等
+    const raw = await readFile(full, 'utf8')
+    return { path: file, exists: true, content: raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw, bytes: s.size }
   }
 
   type RunInput = { cli: string; model: string; effort: string; path: string; prompt: string }
@@ -145,7 +148,9 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
         const dir = await dirOf(c.req.param('id'))
         const full = path.join(dir, p.data.path)
         await mkdir(path.dirname(full), { recursive: true })
-        await writeFile(full, p.data.content)
+        // 按项目设置（没设时跟随全局）的编码和换行符写：默认 UTF-8 无 BOM + LF
+        const project = await deps.projects.get(c.req.param('id'))
+        await writeTextFile(full, p.data.content, projectFormat(project ?? undefined, await getSettings()))
         log.info('docs', `保存 ${p.data.path}`, { dir, bytes: Buffer.byteLength(p.data.content) })
         return c.json(await read(dir, p.data.path))
       } catch (e) {
