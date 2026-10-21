@@ -10,11 +10,16 @@ import { t } from '@shared/i18n'
 export function AgentPicker({
   exclude = [],
   onPick,
+  onNone,
+  noneLabel,
   children,
   align,
 }: {
   exclude?: string[]
   onPick: (a: Agent) => void
+  /** 选「无」：不用 Agent 角色，直接用 CLI */
+  onNone?: () => void
+  noneLabel?: string
   children: React.ReactNode
   align?: 'start' | 'end'
 }) {
@@ -45,6 +50,14 @@ export function AgentPicker({
           className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
         />
         <div className="max-h-72 overflow-y-auto">
+          {onNone && (
+            <PopoverClose className={menuItem} onClick={onNone}>
+              <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-field text-xs text-subtle">
+                —
+              </span>
+              <span className="truncate">{noneLabel || t('无 Agent，直接用 CLI')}</span>
+            </PopoverClose>
+          )}
           {groups.map((g) => (
             <div key={g.id || 'none'}>
               <div className="px-2.5 pt-2 pb-1 text-xs text-subtle">{g.name}</div>

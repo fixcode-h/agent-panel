@@ -140,6 +140,12 @@ export const EN_EXTEND: Record<string, string> = {
   '通用 Agent': 'Shared Agent',
   '工作流里任何 Agent 执行时都可以把子任务派给它，不用写进工作流。':
     'Any Agent running in a workflow can hand subtasks to it, without adding it to the workflow.',
+  能开启子对话: 'Can start sub-conversations',
+  '项目顶层的对话里可以把消息交给子对话，或者新建子对话；子对话本身不能再分派。':
+    'In a top-level project conversation it can hand messages to a sub-conversation or create one. Sub-conversations cannot delegate further.',
+  能启动计划: 'Can start plans',
+  '需要完整流程或较大改动时按工作流启动计划；关掉时只在当前对话里直接执行。':
+    'Runs a workflow plan for full processes or larger changes. When off, it only works directly in the current conversation.',
   '拖动调整顺序（也可以按 Alt + 方向键），越靠前的设定越先交给它':
     'Drag to reorder (or press Alt + arrow keys). Earlier roles are given to it first',
   '引入关系有循环：{chain}。执行时绕回的那一环会被跳过，设定很可能不完整，请去掉其中一个引入。':

@@ -68,6 +68,10 @@ export const AgentInput = z.object({
   enabled: z.boolean().default(true),
   /** 通用 Agent：工作流里任何 Agent 执行时都可以把子任务派给它（编排工具 spawn_agents 里列出来） */
   common: z.boolean().default(false),
+  /** 可以创建子对话、把用户消息分派给子对话（只有项目顶层对话里生效，子对话不能再分派） */
+  canDelegate: z.boolean().default(false),
+  /** 可以按工作流启动计划（start_plan）；关掉时只能在当前对话里直接执行 */
+  canPlan: z.boolean().default(false),
   /** 从内置模板建出来的 Agent 记下来源（builtin:<key>），再次添加内置工作流时复用，不重复建 */
   origin: z.string().max(80).default(''),
 })
@@ -492,24 +496,46 @@ export type ProjectCategoryInput = z.infer<typeof ProjectCategoryInput>
 export const ProjectCategory = ProjectCategoryInput.extend(Meta.shape)
 export type ProjectCategory = z.infer<typeof ProjectCategory>
 
-/** 项目：本机上的一个目录，Agent 会在这个目录里按工作流执行任务 */
-export const ProjectInput = z.object({
+/** 每个工作流一份暴露项取值（key 是工作流 id，值是 Workflow.expose 里的 key → 值） */
+export const WorkflowParamsById = z.record(z.string(), z.record(z.string(), ParamValue))
+
+/** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
+function migrateProject(v: unknown) {
+  if (!v || typeof v !== 'object') return v
+  const p = v as Record<string, unknown>
+  const raw = p.workflowParams
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return p
+  const vals = Object.values(raw)
+  const single = vals.length > 0 && vals.every((x) => x === null || typeof x !== 'object' || Array.isArray(x))
+  if (!single) return p
+  return { ...p, workflowParams: p.workflowId ? { [String(p.workflowId)]: raw } : {} }
+}
+
+/** 项目：本机上的一个目录，项目对话和子对话都在这个目录里执行 */
+const ProjectFields = z.object({
   name: z.string().trim().min(1, t('名称不能为空')).max(40),
   description: z.string().trim().max(200).default(''),
   /** 本机绝对路径 */
   path: z.string().trim().default(''),
   categoryId: z.string().default(''),
-  /** 单独指定的工作流；为空时使用分类的默认工作流 */
+  /** 子对话默认用的工作流；为空时使用分类的默认工作流 */
   workflowId: z.string().default(''),
-  /** 工作流暴露项的取值（key 是 Workflow.expose 里的 key） */
-  workflowParams: z.record(z.string(), ParamValue).default({}),
+  /** 子对话可以挑选的其他工作流：默认工作流不合适时优先用更合适的那个 */
+  workflowIds: z.array(z.string()).max(50).default([]),
+  /** 默认对话 Agent：项目里新建对话时用它，可以设为无（空字符串） */
+  defaultAgentId: z.string().default(''),
+  /** 用户有没有设置过默认 Agent：升级时没设置过的旧项目自动指向协调 Agent，设过「无」的不再覆盖 */
+  agentSet: z.boolean().default(false),
+  /** 工作流暴露项的取值，每个工作流一份（key 是工作流 id） */
+  workflowParams: WorkflowParamsById.default({}),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
 })
-export type ProjectInput = z.infer<typeof ProjectInput>
+export const ProjectInput = z.preprocess(migrateProject, ProjectFields)
+export type ProjectInput = z.infer<typeof ProjectFields>
 
-export const Project = ProjectInput.extend(Meta.shape)
-export type Project = z.infer<typeof Project>
+export const Project = z.preprocess(migrateProject, ProjectFields.extend(Meta.shape))
+export type Project = z.infer<typeof ProjectFields> & z.infer<typeof Meta>
 
 /** 本地目录检测结果 */
 export interface DirInfo {
@@ -563,6 +589,10 @@ export const NewTaskInput = z.object({
   /** 为空表示 Chat 模式的聊天：不属于任何项目，只能直接对话 */
   projectId: z.string().default(''),
   mode: TaskMode,
+  /** 由哪个对话分出：协调 Agent 新建子对话时填父对话的 id */
+  parentTaskId: z.string().optional(),
+  /** 顶层对话 id；为空表示自己就是顶层对话 */
+  rootTaskId: z.string().optional(),
   /** workflow 模式：为空时用项目的工作流 */
   workflowId: z.string().default(''),
   /** chat 模式：对话的 Agent */
@@ -631,6 +661,8 @@ export const TaskPatch = z
     askUser: z.boolean(),
     // 对话的 Agent 参数，下一轮生效
     params: z.record(z.string(), ParamValue),
+    // 对话的 Agent；空字符串表示不用 Agent 角色，直接用 CLI
+    agentId: z.string(),
   })
   .partial()
 
@@ -837,10 +869,60 @@ export const TaskRequest = z.object({
 })
 export type TaskRequest = z.infer<typeof TaskRequest>
 
+/** 运行级共享状态的一个键：并发节点都能读写，后写的覆盖先写的，版本号用来判断谁更新 */
+export const RunStateEntry = z.object({
+  value: z.string().max(20000),
+  version: z.number().int().min(1).default(1),
+  /** 最后写这个键的节点 id */
+  by: z.string().default(''),
+  at: z.string().default(''),
+})
+export type RunStateEntry = z.infer<typeof RunStateEntry>
+
+/** 一次运行里节点之间发的消息：并发节点靠它传话 */
+export const RunMessage = z.object({
+  id: z.string(),
+  from: z.string().default(''),
+  to: z.string().default(''),
+  text: z.string().max(20000),
+  /** 收件人已经取走：历史留在运行记录里，但不再重复交给节点 */
+  read: z.boolean().default(false),
+  at: z.string(),
+})
+export type RunMessage = z.infer<typeof RunMessage>
+
+/**
+ * 一次工作流运行：对话里可以按顺序跑很多次，每次用一份独立的工作流快照、共享状态和消息。
+ * 节点本身仍在 task.steps 里，用 runId 和这里对应。
+ */
+export const TaskRun = z.object({
+  /** 第几次运行，从 1 开始 */
+  id: z.number().int(),
+  workflowId: z.string().default(''),
+  workflowName: z.string().default(''),
+  /** 这次运行用的工作流快照（连同引用的其他工作流） */
+  workflows: z.array(Workflow).default([]),
+  skillSlots: z.record(z.string(), z.string()).default({}),
+  status: TaskStatus.default('running'),
+  startedAt: z.string().default(''),
+  endedAt: z.string().default(''),
+  /** 并发节点共享的键值状态 */
+  state: z.record(z.string(), RunStateEntry).default({}),
+  /** 节点之间的消息 */
+  messages: z.array(RunMessage).default([]),
+})
+export type TaskRun = z.infer<typeof TaskRun>
+
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
   mode: TaskMode,
+  /** 子对话的父对话 id；空表示项目里的顶层对话 */
+  parentTaskId: z.string().default(''),
+  /** 顶层对话的 id：子对话从哪个项目对话分出来的；顶层对话自己为空 */
+  rootTaskId: z.string().default(''),
+  /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
+  summary: z.string().default(''),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
@@ -907,6 +989,8 @@ export const TaskData = z.object({
   baseline: z.record(z.string(), z.string()).default({}),
   /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */
   workflows: z.array(Workflow).default([]),
+  /** 历次工作流运行：每次一份工作流快照、共享状态和节点消息。旧任务没有 */
+  runs: z.array(TaskRun).default([]),
   /**
    * 新建对话时解析好的技能槽取值（工作流 expose 里 target=skill 的项）：Agent 的 skills 写 `{{槽名}}`，
    * 执行时按这里换成具体的技能名。和上面的工作流快照一起定下来，之后改项目设置不影响这个对话

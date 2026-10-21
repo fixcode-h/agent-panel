@@ -422,6 +422,9 @@ function seed(): Db {
   const game: ProjectCategory = { ...meta(), name: '游戏客户端', description: 'Unreal 客户端工程', workflowId: '' }
   const project = (o: Pick<ProjectInput, 'name' | 'description' | 'path' | 'categoryId' | 'workflowId'>): Project => ({
     ...meta(),
+    workflowIds: [],
+    defaultAgentId: '',
+    agentSet: true,
     workflowParams: {},
     gitPolicy: 'ask',
     ...o,

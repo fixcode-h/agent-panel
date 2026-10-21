@@ -12,10 +12,11 @@ import {
   type Attachment,
   type Project,
   type ProjectCategory,
+  type TaskMessage,
   type Workflow,
   RequestAnswer,
 } from '../shared/schema.ts'
-import { blockedStep, taskFlow, taskWorkflows } from '../shared/flow.ts'
+import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'
@@ -170,6 +171,9 @@ export function tasksApi(deps: {
     path: dir,
     categoryId: '',
     workflowId: '',
+    workflowIds: [],
+    defaultAgentId: '',
+    agentSet: true,
     workflowParams: {},
     gitPolicy: 'ask',
     createdAt: '',
@@ -195,13 +199,76 @@ export function tasksApi(deps: {
   /** 导入的任务只读：只能看、改名、归档、删除 */
   const READONLY = t('这是导入的任务，只能查看，不能继续执行')
 
-  /**
-   * 项目默认的工作流：项目自己指定 → 分类默认 → 内置的「通用项目」。
-   * 内置的「默认」不作为项目默认（它没有常驻编排器）；项目必须能解析出一个工作流
-   */
+  /** 项目默认的工作流：项目自己指定 → 分类默认 → 内置的「通用项目」 */
   async function projectWorkflow(p: Project) {
     const cat = p.categoryId ? await deps.projectCategories.get(p.categoryId) : null
     return projectDefaultWorkflow(p, cat ? [cat] : [], await deps.workflows.list())
+  }
+
+  /** 项目设置里这个工作流的暴露项取值（每个工作流一份） */
+  const paramsOf = (p: Project, workflowId: string) => p.workflowParams[workflowId] ?? {}
+
+  /** 子对话 Agent 能选的工作流：项目默认 + 可选列表，按名称、说明和节点概览交给它挑 */
+  function workflowCatalog(project: Project, all: Workflow[], fallback?: Workflow) {
+    const picked = [fallback, ...project.workflowIds.map((id) => all.find((w) => w.id === id))]
+      .filter((w): w is Workflow => !!w)
+      .filter((w, i, list) => list.findIndex((x) => x.id === w.id) === i)
+    return picked.map((w) => ({
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      steps: topoOrder(entryFlow(w))
+        .map((n) => n.title.trim())
+        .filter(Boolean)
+        .slice(0, 8),
+    }))
+  }
+
+  /** 对话 Agent 启动计划时按 id 取工作流；id 为空用项目默认工作流 */
+  function planWorkflow(project: Project, all: Workflow[], fallback: Workflow | undefined, id: string) {
+    const target = id ? (all.find((w) => w.id === id) ?? fallback) : fallback
+    if (!target) return undefined
+    const params = paramsOf(project, target.id)
+    const snapshot = taskSnapshot(target, all, params)
+    return {
+      workflow: snapshot.find((w) => w.id === target.id) ?? target,
+      workflows: snapshot,
+      skillSlots: exposeSlots(target, params),
+    }
+  }
+
+  /** 子对话的摘要：最近一条 Agent 回复的开头 */
+  function lastReply(task: Task) {
+    const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
+    return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+  }
+
+  /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
+  async function reportToParent(task: Task) {
+    if (!task.parentTaskId) return
+    const parent = live.get(task.parentTaskId)?.task ?? (await store.get(task.parentTaskId))
+    if (!parent) return
+    const status = task.status === 'done' ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
+    const summary = task.summary || lastReply(task)
+    parent.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}`,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    parent.updatedAt = new Date().toISOString()
+    const entry = live.get(parent.id)
+    if (entry) {
+      entry.task.messages = parent.messages
+      entry.rev++
+    } else {
+      await store
+        .update(parent.id, parent)
+        .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
+    }
   }
 
   async function start(
@@ -264,6 +331,9 @@ export function tasksApi(deps: {
       project: found?.name,
       workflow: task.workflowId,
     })
+    const allWorkflows = await deps.workflows.list()
+    // 项目对话的子对话默认用项目的工作流；独立聊天没有项目工作流
+    const defaultWf = project?.id ? ((await projectWorkflow(project)) ?? undefined) : undefined
     const run = (async () => {
       // 项目被删掉后任务还在，这时没有目录可以执行
       if (!project) throw new Error(t('任务所属的项目已经不存在'))
@@ -274,7 +344,7 @@ export function tasksApi(deps: {
         task: entry.task,
         agents,
         // 用任务创建时存下的工作流：之后改了、删了工作流都不影响这个任务
-        ...taskWorkflows(entry.task, await deps.workflows.list()),
+        ...taskWorkflows(entry.task, allWorkflows),
         project,
         settings,
         clis: await detectClis(),
@@ -288,6 +358,69 @@ export function tasksApi(deps: {
         prewarm,
         prewarmFrom: before,
         prewarmTurnDoneAt: beforeTurnDoneAt,
+        workflowCatalog: () => (defaultWf ? workflowCatalog(project, allWorkflows, defaultWf) : []),
+        resolveWorkflow: (id) =>
+          project?.id ? planWorkflow(project, allWorkflows, defaultWf, id) : undefined,
+        listConversations: async () => {
+          const kids = (await store.list()).filter((x) => x.parentTaskId === entry.task.id)
+          return kids.map((k) => ({
+            id: k.id,
+            title: k.title,
+            status: k.status,
+            summary: k.summary || lastReply(k),
+            at: k.updatedAt,
+          }))
+        },
+        createConversation: async ({ title, message }) => {
+          if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
+          const worker = agents.find((a) => a.origin === 'builtin:worker')
+          const subId = randomUUID()
+          const at = new Date().toISOString()
+          const input = NewTaskInput.parse({
+            projectId: entry.task.projectId,
+            mode: 'chat',
+            parentTaskId: entry.task.id,
+            rootTaskId: entry.task.rootTaskId || entry.task.id,
+            agentId: worker?.id ?? project.defaultAgentId,
+            prompt: message,
+          })
+          const draft = newTask(input, undefined, at, subId, [], {})
+          // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
+          // 只有直接调接口没给时才退回用户消息开头
+          if (title.trim()) draft.title = title.trim().slice(0, 80)
+          const sub = await store.create({ ...draft, id: subId })
+          void start(reserve(sub), withAttachments(message, []), true, agents).catch((e) =>
+            log.error('task', '子对话执行出错', { task: sub.id, error: (e as Error).message }),
+          )
+          return {
+            ok: true,
+            id: sub.id,
+            title: sub.title,
+            info: `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
+          }
+        },
+        sendToConversation: async (id, message) => {
+          const child = live.get(id)?.task ?? (await store.get(id))
+          if (!child || child.parentTaskId !== entry.task.id) return { ok: false, info: '找不到这个子对话' }
+          if (child.imported) return { ok: false, info: READONLY }
+          const running = live.get(id)
+          if (running?.task.status === 'running') {
+            running.task.queue.push({
+              id: randomUUID(),
+              text: message,
+              attachments: [],
+              at: new Date().toISOString(),
+              note: false,
+            })
+            running.task.updatedAt = new Date().toISOString()
+            await store.update(id, running.task)
+            return { ok: true, info: `「${child.title}」正在执行，消息排在它这一轮之后` }
+          }
+          void followUp(id, { text: message, attachments: [] }).catch((e) =>
+            log.error('task', '子对话执行出错', { task: id, error: (e as Error).message }),
+          )
+          return { ok: true, info: `已交给子对话「${child.title}」，它在后台执行` }
+        },
       })
     })()
     entry.done = run
@@ -343,7 +476,12 @@ export function tasksApi(deps: {
           delete entry.task.usage.agents[entry.task.agentId]
         }
         endRun(entry.task)
-        await flush(keepTime)
+        // 子对话这一轮结束了：更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
+        if (!prewarm && entry.task.parentTaskId) {
+          entry.task.summary = lastReply(entry.task)
+          await flush(keepTime)
+          await reportToParent(entry.task)
+        } else await flush(keepTime)
         live.delete(task.id)
         // 这一轮顺利完成：接着处理排队的要求；失败或暂停时留着，等用户决定
         if (entry.task.status === 'done' && entry.task.queue.length && !shuttingDown)
@@ -414,8 +552,31 @@ export function tasksApi(deps: {
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢
-    const all = (await store.list()).map((t) => taskSummary(live.get(t.id)?.task ?? t))
+    let all = (await store.list()).map((t) => taskSummary(live.get(t.id)?.task ?? t))
+    // 子对话不进入项目列表：按 parentId 查询时才返回它们
+    const parent = c.req.query('parentId')
+    all = parent ? all.filter((t) => t.parentTaskId === parent) : all.filter((t) => !t.parentTaskId)
     return c.json(pid ? all.filter((t) => t.projectId === pid) : all)
+  })
+
+  // 父对话的子对话卡片：标题、状态、摘要和最近更新时间
+  routes.get('/:id/children', async (c) => {
+    const parent = await current(c.req.param('id'))
+    if (!parent) return bad(c, t('任务不存在'), 404)
+    const kids = (await store.list())
+      .filter((t) => t.parentTaskId === parent.id)
+      .map((t) => {
+        const liveTask = live.get(t.id)?.task ?? t
+        return {
+          id: liveTask.id,
+          title: liveTask.title,
+          status: liveTask.status,
+          summary: liveTask.summary || lastReply(liveTask),
+          working: liveTask.working,
+          updatedAt: liveTask.updatedAt,
+        }
+      })
+    return c.json(kids)
   })
 
   /**
@@ -543,7 +704,8 @@ export function tasksApi(deps: {
   })
 
   routes.post('/', async (c) => {
-    const p = NewTaskInput.safeParse(await c.req.json())
+    const body = await c.req.json().catch(() => null)
+    const p = NewTaskInput.safeParse(body)
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const input = p.data
     // 没有项目的是 Chat 模式的聊天，只能直接对话
@@ -551,25 +713,33 @@ export function tasksApi(deps: {
     const project = input.projectId ? await deps.projects.get(input.projectId) : chatProject('')
     if (!project) return bad(c, t('项目不存在'), 404)
     const agents = await deps.agents.list()
+    // 子对话：挂在父对话下，固定用任务 Agent，不能再建下一层
+    if (input.parentTaskId) {
+      const parent = await store.get(input.parentTaskId)
+      if (!parent) return bad(c, t('父对话不存在'), 404)
+      if (parent.parentTaskId) return bad(c, t('子对话不能再创建子对话'))
+      if (parent.projectId !== input.projectId) return bad(c, t('子对话必须和父对话在同一个项目'))
+      input.mode = 'chat'
+      input.rootTaskId = parent.rootTaskId || parent.id
+    }
     let workflow: Workflow | undefined
     if (input.mode === 'workflow') {
       workflow = input.workflowId
         ? ((await deps.workflows.get(input.workflowId)) ?? undefined)
         : await projectWorkflow(project)
       if (!workflow) return bad(c, t('项目还没有指定工作流，请选择一个工作流或改用直接对话'))
-    } else if (!agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
+    } else {
+      // 旧界面不传 agentId 时跟着项目的默认对话 Agent；传了空字符串表示不用 Agent 角色
+      if (!(body && typeof body === 'object' && 'agentId' in body) && project.defaultAgentId)
+        input.agentId = project.defaultAgentId
+      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
+    }
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
-    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), project.workflowParams) : []
+    const params = workflow ? paramsOf(project, workflow.id) : {}
+    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), params) : []
     const draft = {
-      ...newTask(
-        input,
-        workflow,
-        new Date().toISOString(),
-        randomUUID(),
-        snapshot,
-        exposeSlots(workflow ?? { expose: [] }, project.workflowParams),
-      ),
+      ...newTask(input, workflow, new Date().toISOString(), randomUUID(), snapshot, workflow ? exposeSlots(workflow, params) : {}),
       id: randomUUID(),
     }
     if (input.isolate && input.projectId) {
@@ -793,7 +963,7 @@ export function tasksApi(deps: {
     try {
       if (fresh) {
         const project = task.projectId ? await deps.projects.get(task.projectId) : null
-        const params = project?.workflowParams ?? {}
+        const params = project ? paramsOf(project, fresh.id) : {}
         entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list(), params)
         entry.task.skillSlots = exposeSlots(fresh, params)
         entry.task.workflowName = fresh.name
@@ -979,10 +1149,15 @@ export function tasksApi(deps: {
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
     if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
-    const touchesRun = p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined
+    const beforeAgentId = cur.agentId
+    const agentChanged = p.data.agentId !== undefined && p.data.agentId !== beforeAgentId
+    const touchesRun =
+      p.data.cli !== undefined || p.data.model !== undefined || p.data.effort !== undefined || agentChanged
     if (touchesRun && cur.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await deps.agents.list() : undefined
+    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId))
+      return bad(c, t('找不到这个 Agent'))
     const runOf = (t: Task) => {
       const agent = agents?.find((a) => a.id === t.agentId)
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined
@@ -995,15 +1170,51 @@ export function tasksApi(deps: {
     }
     const task = cur
     Object.assign(task, p.data)
+    if (agentChanged) {
+      // 换了角色后旧会话里是另一个 Agent 的设定：清掉会话，下一轮新开会话并带上之前的对话摘要
+      delete task.sessions[task.agentId]
+      delete task.sessions[beforeAgentId]
+      task.sessionCli = undefined
+      const history = task.messages
+        .filter((m) => !m.transient && m.text.trim())
+        .slice(-20)
+        .map((m) => `${m.role === 'user' ? '用户' : 'Agent'}：${m.text.trim().slice(0, 300)}`)
+        .join('\n')
+      task.rewind = history
+        ? { session: '', through: null, latest: false, summary: history }
+        : { session: '', through: null, latest: false }
+    }
     if (p.data.askUser === false) autoAnswerQuestions(task)
+    // 执行中改「提问」：直接把新设置插话给正在跑的 CLI，后续的问题按新设置处理；
+    // 关掉时还没回答的问题已经由 autoAnswerQuestions 交给 AI 自己选
+    if (p.data.askUser !== undefined && e?.task.working) {
+      const on = p.data.askUser
+      const msg: TaskMessage = {
+        id: randomUUID(),
+        role: 'system',
+        agentId: '',
+        step: '',
+        text: on ? t('「提问」已打开，后续问题会交给你回答') : t('「提问」已关闭，后续问题由 AI 自己决定'),
+        tools: [],
+        at: new Date().toISOString(),
+      }
+      void steerTask(
+        task,
+        on
+          ? '用户打开了「提问」：接下来有问题时用提问工具交给用户回答，不要自己替用户决定。'
+          : '用户关闭了「提问」：接下来有问题时自己选最合适的做法，不要再等用户回答。',
+        msg,
+      ).catch(() => {})
+    }
     // 执行中的任务平时按节点落盘，改名这类操作要马上写下去，否则重启后会丢
     await store.update(id, task)
     if (!touchesRun) return c.json(task)
     const afterRun = runOf(task)
     const runChanged =
-      !!beforeRun &&
-      !!afterRun &&
-      (beforeRun.cli !== afterRun.cli || beforeRun.model !== afterRun.model || beforeRun.effort !== afterRun.effort)
+      agentChanged ||
+      (!!beforeRun &&
+        !!afterRun &&
+        (beforeRun.cli !== afterRun.cli || beforeRun.model !== afterRun.model || beforeRun.effort !== afterRun.effort))
     if (!runChanged) return c.json(task)
     // 正在回复这一轮：不能现在换进程；这一轮结束时 start 的收尾会按新的选择重开
     if (e?.task.working) return c.json(task)

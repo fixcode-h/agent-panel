@@ -73,6 +73,9 @@ export function newTask(
     projectId: input.projectId,
     title: taskTitle(input.prompt),
     mode: input.mode,
+    parentTaskId: input.parentTaskId ?? '',
+    rootTaskId: input.rootTaskId ?? '',
+    summary: '',
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
     // 只有默认 Agent 能在对话时选 CLI 和模型；其他 Agent 用自己配置的
@@ -109,6 +112,7 @@ export function newTask(
     baseline: {},
     baseRef: '',
     workflows: wf ? snapshot : [],
+    runs: [],
     skillSlots: wf ? skillSlots : {},
     workflowName: wf?.name ?? '',
     runSeq: 0,

@@ -264,6 +264,16 @@ export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOp
 }
 
 /**
+ * 启动时确保项目对话要用的两个 Agent 存在：项目协调 Agent（orchestrator）和任务 Agent（worker）。
+ * 「通用项目」已经装过时不会重新 build 工作流，但这两个 Agent 可能还没建出来，旧项目升级也要用。
+ */
+export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) {
+  const ctx = context(state, api)
+  await ctx.createAgents([...builtinAgentKeys(GENERAL), 'worker'])
+  return { created: ctx.created, newCategories: ctx.newCategories, newTags: ctx.newTags }
+}
+
+/**
  * 启动时安装一次项目用的内置工作流（「通用项目」「UE 项目」）：同名或同来源的跳过，不覆盖用户改过的。
  * 再把本机没改过的旧「通用项目」副本升级成合并后的主流程。
  * 返回装完后的数据，调用方据此更新集合。

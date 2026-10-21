@@ -196,7 +196,8 @@ export const GENERAL: BuiltinWorkflow = {
   category: '项目',
   main: 'orchestrator',
   members: [
-    ['orchestrator', '常驻编排器：评估节点结果、起停运行、守住文档 / 测试 / 版本管理的一致性'],
+    ['orchestrator', '项目对话的协调者：把用户需求分配给合适的子对话'],
+    ['worker', '子对话的执行者：直接执行或按工作流做计划'],
     ['analyst', '识别现场，收敛需求，出方案等你确认'],
     ['developer', '按确认的方案实现'],
     ['projecttest', '按项目的测试流程验证，给带证据的结论'],
