@@ -3,10 +3,11 @@ import assert from 'node:assert/strict'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { AgentInput, WorkflowInput, type Agent, type Workflow } from '../shared/schema.ts'
+import { AgentInput, Project, ProjectCategory, Workflow, WorkflowInput, type Agent } from '../shared/schema.ts'
 import { composeRole, nodeMissingParams, resolveParams } from '../shared/agent-role.ts'
 import { findRefCycle, nodeSteps, topoOrder } from '../shared/flow.ts'
 import { frontField } from '../shared/library.ts'
+import { DEFAULT_WORKFLOW_ID, defaultWorkflow } from '../shared/builtin/default.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS } from '../shared/builtin/agents.ts'
 import {
   BUILTIN_WORKFLOWS,
@@ -18,6 +19,7 @@ import {
 } from '../shared/builtin/workflows.ts'
 import {
   migrateGeneralWorkflow,
+  migrateProjectsToGeneral,
   seedBuiltins,
   seedProjectWorkflows,
   type BuiltinOps,
@@ -264,4 +266,49 @@ test('首次启动装上全部内置工作流：Agent 只建一份并互相引�
   const again = await seedBuiltins(r, ops)
   assert.equal(again.workflows.length, r.workflows.length)
   assert.equal(again.agents.length, r.agents.length)
+})
+
+test('旧项目迁移：指向内置「默认」工作流的也改用「通用项目」', async () => {
+  const general = Workflow.parse({
+    ...buildWorkflow(GENERAL, (k) => k),
+    id: 'g',
+    name: '通用项目',
+    origin: GENERAL_ORIGIN,
+    createdAt: '',
+    updatedAt: '',
+  })
+  const fallback = Workflow.parse(defaultWorkflow())
+  const custom = Workflow.parse({ ...defaultWorkflow(), id: 'w', name: '自定义' })
+  const cat = ProjectCategory.parse({ id: 'cat', name: '分类', workflowId: 'w', createdAt: '', updatedAt: '' })
+  const catDefault = ProjectCategory.parse({
+    id: 'cat-default',
+    name: '默认分类',
+    workflowId: DEFAULT_WORKFLOW_ID,
+    createdAt: '',
+    updatedAt: '',
+  })
+  const project = (id: string, workflowId: string, categoryId = '') =>
+    Project.parse({ id, name: id, workflowId, categoryId, createdAt: '', updatedAt: '' })
+
+  const moved = await migrateProjectsToGeneral(
+    [
+      project('custom', 'w'),
+      project('follow-cat', '', 'cat'),
+      project('default-wf', DEFAULT_WORKFLOW_ID),
+      project('follow-default-cat', '', 'cat-default'),
+      project('empty', ''),
+      project('missing', 'gone'),
+    ],
+    [general, fallback, custom],
+    [cat, catDefault],
+  )
+  assert.deepEqual(
+    moved.sort((a, b) => a.id.localeCompare(b.id)),
+    [
+      { id: 'default-wf', workflowId: 'g' },
+      { id: 'empty', workflowId: 'g' },
+      { id: 'follow-default-cat', workflowId: 'g' },
+      { id: 'missing', workflowId: 'g' },
+    ],
+  )
 })

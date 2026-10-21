@@ -11,7 +11,7 @@ import {
 } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Attachment, type Project, type Task, type TaskMode } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
-import { DEFAULT_WORKFLOW_ID } from '@shared/builtin/default'
+import { projectDefaultWorkflow } from '@shared/project-workflow'
 import { entryFlow, topoOrder } from '@shared/flow'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -41,10 +41,6 @@ import { t } from '@shared/i18n'
 export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
-export function projectWorkflowId(p: Project | undefined, cats: { id: string; workflowId: string }[]) {
-  return p ? p.workflowId || cats.find((c) => c.id === p.categoryId)?.workflowId || '' : ''
-}
-
 /**
  * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、执行方式、工作流或 Agent。
  * 传了 project 时项目固定。
@@ -70,7 +66,7 @@ export function TaskComposer({
     }
   })
   const project = standalone ? undefined : (fixed ?? projects.find((p) => p.id === projectId) ?? projects[0])
-  const defaultWf = projectWorkflowId(project, projectCategories)
+  const defaultWf = projectDefaultWorkflow(project, projectCategories, workflows)
   const [mode, setMode] = useState<TaskMode | ''>('')
   const [workflowId, setWorkflowId] = useState('')
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
@@ -133,8 +129,8 @@ export function TaskComposer({
   const canIsolate = !!project && !!dir?.gitBranch
   const busyProject = !!project && tasks.some((x) => x.projectId === project.id && x.working)
 
-  // 项目没指定工作流时用自带的「默认」工作流：什么都能交给它，做完推荐下一步用哪个工作流
-  const workflow = workflows.find((w) => w.id === (workflowId || defaultWf || DEFAULT_WORKFLOW_ID))
+  // 项目默认走「通用项目」：主 Agent 是工作流 Agent，先分析再按流程图执行
+  const workflow = workflows.find((w) => w.id === (workflowId || defaultWf?.id)) ?? defaultWf
   // 默认按工作流执行；项目没有默认工作流时也停在工作流，让用户选一个
   const effMode: TaskMode = standalone ? 'chat' : mode || 'workflow'
   const nodes = workflow ? topoOrder(entryFlow(workflow)).length : 0
@@ -286,7 +282,7 @@ export function TaskComposer({
                         <span className="flex min-w-0 flex-1 flex-col">
                           <span className="truncate">{w.name}</span>
                           <span className="truncate text-xs text-subtle">
-                            {w.id === defaultWf ? t('项目默认 · ') : ''}
+                            {w.id === defaultWf?.id ? t('项目默认 · ') : ''}
                             {t('{n} 个节点', { n: topoOrder(entryFlow(w)).length })}
                           </span>
                         </span>

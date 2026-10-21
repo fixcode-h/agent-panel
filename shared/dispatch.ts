@@ -208,6 +208,23 @@ export function planEvent(prompt: string, run: number, blocked?: { title: string
     .join('\n\n')
 }
 
+/**
+ * 常驻编排器收到这个项目对话的第一条要求：先分析，再决定起不起运行。
+ * 只有带常驻编排器的工作流（多节点 / 有调度）在第一次要求时才会走这里。
+ */
+export function firstPlanEvent(prompt: string) {
+  return [
+    `## 事件：这个对话的第一条要求\n用户说：\n${prompt}`,
+    '这个对话还没有执行过流程图。先分析这条要求，再决定怎么处理。',
+    [
+      '## 你要决定怎么处理',
+      '要按流程图做的事（需求、方案、实现、测试、文档、交付这些按流程图来）时，起一次运行：把这次要做的事写进 input，节点会按顺序执行。',
+      '只是问问题、解释、查一下情况，或者改动小到不值得走流程时，直接回答，不起运行。',
+    ].join('\n'),
+    '回复最后写一个 dispatch 代码块说明决定，见上面的格式。',
+  ].join('\n\n')
+}
+
 /** 流程完成后请主 Agent 整理最终结果；nested 表示结果交回上一级流程而不是用户 */
 export function summaryEvent(results: { title: string; text: string }[], nested: boolean) {
   let room = 12000

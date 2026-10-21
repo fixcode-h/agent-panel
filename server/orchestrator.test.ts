@@ -71,16 +71,24 @@ test('常驻编排器：第一次要求跑一次运行，新要求起第二次�
     id: 't',
   } as Task
   const log: AgentCall[] = []
-  const h = host(task, log, ['```dispatch\n{"action":"run","input":"再补充一个接口"}\n```'])
+  const h = host(task, log, [
+    '```dispatch\n{"action":"run","input":"做功能"}\n```',
+    '```dispatch\n{"action":"run","input":"再补充一个接口"}\n```',
+  ])
 
-  // 第一次要求：按流程图走一遍
+  // 第一条要求先交给编排器分析，由它起第一次运行
   await runEngineTurn(h)
+  assert.equal(log[0].dispatching, 'plan')
+  assert.match(log[0].prompt, /第一条要求/)
+  assert.match(log[0].prompt, /做功能/)
   assert.equal(currentRun(task), 1)
   assert.deepEqual(
     topSteps(task).map((s) => s.id),
     ['a', 'b'],
   )
   assert.ok(topSteps(task).every((s) => s.status === 'done'))
+  // 编排器补的要求作为第一次运行的输入交给第一个节点
+  assert.match(log.find((c) => c.step?.id === 'a')!.prompt, /## 输入\n做功能/)
 
   // 用户提新要求：这次运行已经走完，交给编排器决定，它起第二次运行
   h.prompt = '再补充一个接口'
@@ -97,25 +105,63 @@ test('常驻编排器：第一次要求跑一次运行，新要求起第二次�
   const mains = task.steps.filter((s) => s.kind === 'main')
   assert.equal(mains.length, 1)
   assert.equal(mainStep(task)?.id, '@main')
-  assert.ok(log.filter((c) => c.dispatching === 'plan').every((c) => c.sessionKey === '@main'))
+  const plans = log.filter((c) => c.dispatching === 'plan')
+  assert.equal(plans.length, 2)
+  assert.ok(plans.every((c) => c.sessionKey === '@main'))
   // 编排器的第二轮决策用到了上一次运行的结果小结
-  const plan = log.find((c) => c.dispatching === 'plan')
-  assert.match(plan!.prompt, /再补充一个接口/)
-  assert.match(plan!.prompt, /已经走完/)
+  assert.match(plans[1].prompt, /再补充一个接口/)
+  assert.match(plans[1].prompt, /已经走完/)
 })
 
-test('常驻编排器：只是问问题就不起运行', async () => {
+test('常驻编排器：不是新对话时直接按流程图执行，不再先问一遍', async () => {
+  const w = workflow()
+  // 单个主 Agent 自己做的工作流没有调度，不需要先让编排器分析
+  const flow = w.flows[0]
+  const single = {
+    ...w,
+    flows: [
+      {
+        ...flow,
+        nodes: [{ ...flow.nodes[0], agentId: 'm' }],
+        edges: [
+          { id: 'e1', from: 'start', to: 'a' },
+          { id: 'e2', from: 'a', to: 'end' },
+        ],
+      },
+    ],
+  }
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, single, '', 't3'),
+    id: 't3',
+  } as Task
+  const log: AgentCall[] = []
+  const h = host(task, log, ['```dispatch\n{"action":"answer"}\n```'])
+  h.workflow = single
+  h.workflows = [single]
+  await runEngineTurn(h)
+  assert.equal(log.filter((c) => c.dispatching === 'plan').length, 0)
+  assert.deepEqual(
+    topSteps(task).map((s) => s.id),
+    ['a'],
+  )
+})
+
+test('常驻编排器：第一条要求只是问问题就不起运行', async () => {
   const w = workflow()
   const task = {
-    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '做功能' } as never, w, '', 't2'),
-    id: 't2',
+    ...newTask({ projectId: 'p', mode: 'workflow', prompt: '这个项目用什么语言' } as never, w, '', 't4'),
+    id: 't4',
   } as Task
   const log: AgentCall[] = []
   const h = host(task, log, ['这个项目用的是 TypeScript。\n```dispatch\n{"action":"answer"}\n```'])
-  await runEngineTurn(h)
   h.prompt = '这个项目用什么语言'
   await runEngineTurn(h)
-  assert.equal(currentRun(task), 1, '没有起新的运行')
-  // 回答进了编排器的输出，界面上能看到
+  assert.equal(currentRun(task), 1, '没有起运行')
+  assert.ok(
+    topSteps(task).every((s) => s.status === 'pending'),
+    '没有执行流程节点',
+  )
   assert.match(mainStep(task)!.output, /TypeScript/)
+  assert.equal(log.filter((c) => c.dispatching === 'plan').length, 1)
+  assert.ok(!log.some((c) => c.step && c.step.kind !== 'main'), '没有执行流程节点')
 })

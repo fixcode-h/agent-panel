@@ -142,6 +142,7 @@ export const EN_SHARED: Record<string, string> = {
   '主 Agent 直接回答，没有起运行': 'Main Agent answered directly without starting a run',
   '主 Agent 起了第 {n} 次运行：{input}': 'Main Agent started run {n}: {input}',
   这次要求: 'This request',
+  第一条要求: 'First request',
   '主 Agent 评估「{title}」失败：{error}': 'Main Agent failed to review "{title}": {error}',
   '主 Agent 没有写调度决定，「{title}」按通过处理。':
     'Main Agent did not write a decision; treating "{title}" as a pass.',
