@@ -22,6 +22,7 @@
 | `command`                         | 可执行文件名（设置里可以改成完整路径）                                                                                          |
 | `versionArgs`                     | 检测是否安装、显示版本用的参数，默认 `["--version"]`                                                                            |
 | `npmPackage` / `brew` / `docsUrl` | 设置里的安装、卸载、更新和文档链接                                                                                              |
+| `npmRenameFrom`                   | 改名前用过的 npm 包名：安装新包前先卸掉旧的，否则两个包提供同一个命令时 npm 会报 `EEXIST`                                       |
 | `color`                           | 界面上的标识色                                                                                                                  |
 | `models`                          | 模型建议 `[{ "id", "label", "isDefault" }]`，用户也可以手填；上下文窗口、最大输出和思考强度按[模型目录](./model-catalog.md)识别 |
 | `efforts`                         | 思考强度 `[{ "id", "label" }]`，不支持就不写                                                                                    |

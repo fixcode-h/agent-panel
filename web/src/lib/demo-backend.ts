@@ -672,7 +672,7 @@ const VERSIONS: Record<string, string> = {
   codex: 'codex-cli 0.150.0',
   commandcode: 'command-code 1.8.2',
   gemini: '0.40.0',
-  pi: '0.85.1',
+  pi: '1.3.0',
 }
 // npm 上的「最新版本」：Claude Code 演示有更新可装
 const LATEST: Record<string, string> = {
@@ -680,7 +680,7 @@ const LATEST: Record<string, string> = {
   codex: '0.150.0',
   commandcode: '1.8.2',
   gemini: '0.40.0',
-  pi: '0.85.1',
+  pi: '1.3.0',
 }
 
 /** 启用的 CLI：演示里也是停用的不出现在部署、技能库这些地方 */

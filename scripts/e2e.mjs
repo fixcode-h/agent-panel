@@ -3398,12 +3398,27 @@ try {
     ],
   )
   await assert.rejects(call('POST', '/clis/nope/install'), /未知的 CLI/)
+  // Pi 改过包名：装新包前先卸掉旧的，否则两个包提供同一个 pi 命令时 npm 会报 EEXIST
+  const pj = await waitJob((await call('POST', '/clis/pi/install')).id)
+  assert.equal(pj.status, 'done', pj.error)
+  assert.equal(pj.command, 'npm install -g @earendil-works/pi-coding-agent@latest')
+  assert.deepEqual(
+    readLog(log + '.npm')
+      .filter((a) => a[0] === 'install' || a[0] === 'uninstall')
+      .map((a) => a.slice(0, 3))
+      .slice(-2),
+    [
+      ['uninstall', '-g', '@mariozechner/pi-coding-agent'],
+      ['install', '-g', '@earendil-works/pi-coding-agent@latest'],
+    ],
+  )
   // 切走再回来能找到最近一次操作
   assert.deepEqual(
     (await call('GET', '/clis/jobs')).map((j) => [j.cli, j.status]),
     [
       ['claude', 'done'],
       ['codex', 'failed'],
+      ['pi', 'done'],
     ],
   )
   // 有新版本才显示更新：假 npm 说最新是 9.9.9，假 CLI 回到 0.0.1

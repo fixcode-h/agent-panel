@@ -2,8 +2,9 @@
   "id": "pi",
   "name": "Pi",
   "command": "pi",
-  "npmPackage": "@mariozechner/pi-coding-agent",
-  "docsUrl": "https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent",
+  "npmPackage": "@earendil-works/pi-coding-agent",
+  "npmRenameFrom": ["@mariozechner/pi-coding-agent"],
+  "docsUrl": "https://github.com/earendil-works/pi/tree/main/packages/coding-agent",
   "color": "#7c3aed",
   "modelsFrom": "pi",
   "models": [

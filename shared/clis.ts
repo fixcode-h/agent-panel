@@ -99,6 +99,8 @@ export interface CliDefinition {
   installHint: string
   /** 用 npm 全局安装的包名；设置里的「安装 / 卸载」按钮用它 */
   npmPackage: string
+  /** 以前用过的 npm 包名：安装新包前先卸掉，否则两个包提供同一个命令时 npm 会报 EEXIST */
+  npmRenameFrom?: string[]
   docsUrl: string
   /** 内置了生成图片的工具（UI 设计里用） */
   images?: boolean
