@@ -118,6 +118,34 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 窄版右栏的右键菜单：能弹出，而且整个菜单都在视口里（不能溢出去）
+  {
+    const compactRow = p.locator('button[title="package.json"]').first()
+    const cb = await compactRow.boundingBox()
+    if (!cb) errors.push('任务右栏：没有列出 package.json')
+    else {
+      await p.mouse.click(cb.x + 40, cb.y + cb.height / 2, { button: 'right' })
+      const box = await p
+        .locator('[role="menu"]')
+        .first()
+        .boundingBox()
+        .catch(() => null)
+      if (!box) errors.push('任务右栏：右键没有弹出菜单')
+      else {
+        const vw = p.viewportSize().width
+        const vh = p.viewportSize().height
+        if (box.x < 0 || box.y < 0 || box.x + box.width > vw || box.y + box.height > vh)
+          errors.push(`任务右栏：右键菜单超出视口（${JSON.stringify(box)}，视口 ${vw}×${vh}）`)
+        await check(p, '任务-右栏右键菜单')
+      }
+      await p.keyboard.press('Escape')
+      await p
+        .locator('[role="menu"]')
+        .first()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+  }
   // 按 Agent 显示的对话：滚到回复中部时「谁 + 什么模型」固定在滚动区顶部，下一轮顶走。
   // 演示内容不够长，先把这一轮撑高，再滚到中部看署名行的位置
   {
@@ -774,29 +802,90 @@ try {
     const dirMenu = await menuText().catch(() => '')
     for (const item of ['展开', '复制相对路径', '在文件夹中打开'])
       if (!dirMenu.includes(item)) errors.push(`文件夹右键：菜单里没有「${item}」`)
-    if (dirMenu.includes('打开')) errors.push('文件夹右键：出现了只给文件的「打开」')
+    // 第一项必须是「展开」；整行比较，避免「在文件夹中打开」里的「打开」被误判
+    const dirItems = await menu()
+      .locator('[role="menuitem"]')
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()))
+    if (dirItems[0] !== '展开') errors.push(`文件夹右键：第一项是「${dirItems[0]}」，不是「展开」`)
+    if (dirItems.includes('打开')) errors.push('文件夹右键：出现了只给文件的「打开」')
     if (await row('tests/cart.test.ts').count()) errors.push('文件夹右键：右键把目录展开了')
     await check(p, '文件-文件夹右键菜单')
     await closeMenu()
-    // 空白处右键：整棵树的菜单
-    await p.locator('main button[title="APP"]').count()
-    const box = await p.locator('main [class*="overflow-auto"]').last().boundingBox()
-    if (box) await p.mouse.click(box.x + box.width - 40, box.y + box.height - 20, { button: 'right' })
-    await menu()
-      .waitFor({ timeout: 5000 })
-      .catch(() => errors.push('空白处右键：没有弹出菜单'))
+    // 空白处右键：整棵树的菜单。
+    // 行的按钮是整宽的，右上角又被搜索栏占着，所以在树的右键触发元素（min-h-full 那层）
+    // 右下角的空白上点真实鼠标。每次先把滚动区滚到底，保证这块空白在视口里。
+    const scroll = p.locator('main div.min-h-full').first().locator('..')
+    const blankTrigger = () => p.locator('main div.min-h-full').first()
+    const openBlankMenu = async (label) => {
+      await scroll
+        .evaluate((el) => {
+          el.scrollTop = el.scrollHeight
+        })
+        .catch(() => {})
+      const tb = await blankTrigger()
+        .boundingBox()
+        .catch(() => null)
+      if (!tb) {
+        errors.push(`${label}：找不到文件树容器`)
+        return
+      }
+      await p.mouse.click(tb.x + tb.width - 24, tb.y + tb.height - 8, { button: 'right' })
+      await menu()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push(`${label}：没有弹出菜单`))
+    }
+    await openBlankMenu('空白处右键')
     const blankMenu = await menuText().catch(() => '')
     for (const item of ['刷新', '全部展开', '全部收起', '复制项目路径', '在文件夹中打开'])
       if (!blankMenu.includes(item)) errors.push(`空白处右键：菜单里没有「${item}」`)
     await check(p, '文件-空白处右键菜单')
     await closeMenu()
-    // 全部展开只作用于已经读过的层：展开后不再多读没有出现过的目录
-    const beforeExpand = await calls()
-    await p.mouse.click(box.x + box.width - 40, box.y + box.height - 20, { button: 'right' })
     await menu()
-      .waitFor({ timeout: 5000 })
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
       .catch(() => {})
-    await menu().getByText('全部展开', { exact: true }).click()
+    // 先测「全部收起」：此时 src 还开着，收起后子项应该消失
+    await openBlankMenu('空白处右键')
+    const collapse = menu().locator('[role="menuitem"]').filter({ hasText: '全部收起' })
+    if (!(await collapse.count())) errors.push('空白处右键：没有「全部收起」')
+    else {
+      // 用真实鼠标点：Radix 的菜单项要按下和抬起都落在同一个元素上才触发
+      const cb = await collapse.boundingBox()
+      if (!cb) errors.push('空白处右键：「全部收起」不可见')
+      else {
+        await p.mouse.click(cb.x + cb.width / 2, cb.y + cb.height / 2)
+        await p.waitForTimeout(400)
+        if (await p.locator('[role="menu"]').count())
+          errors.push('空白处右键：点了「全部收起」菜单没有关闭（可能没点中）')
+      }
+    }
+    await menu()
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    const collapsedRows = await p
+      .locator('main button[title="src/App.tsx"]')
+      .count()
+      .catch(() => 0)
+    if (collapsedRows) errors.push('全部收起：收起后目录下面还显示着子项')
+    // 收起后没有展开的目录：这一项应该变灰
+    await openBlankMenu('空白处右键')
+    const collapseItem = menu().locator('[role="menuitem"]').filter({ hasText: '全部收起' })
+    const disabled = await collapseItem.getAttribute('data-disabled').catch(() => null)
+    if (disabled === null) errors.push('全部收起：没有展开的目录时菜单项没有禁用')
+    await p.keyboard.press('Escape')
+    await menu()
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    // 最后测「全部展开」：只作用于已经读过的层，不会新读没有出现过的目录。
+    // 放在最后是因为展开后行会铺满可视区，右侧就不再有空白能点开菜单了。
+    const beforeExpand = await calls()
+    await openBlankMenu('空白处右键')
+    const expandItem = menu().locator('[role="menuitem"]').filter({ hasText: '全部展开' })
+    const eb = await expandItem.boundingBox().catch(() => null)
+    if (!eb) errors.push('空白处右键：没有「全部展开」')
+    else await p.mouse.click(eb.x + eb.width / 2, eb.y + eb.height / 2)
     await p.waitForTimeout(900)
     const afterExpand = await calls()
     const requested = afterExpand.split(',').filter((x) => x && !beforeExpand.split(',').includes(x))
@@ -805,6 +894,7 @@ try {
       .evaluateAll((els) => els.map((e) => e.getAttribute('title') ?? ''))
     const unknown = requested.filter((p2) => !known.some((k) => k.startsWith(p2 + '/')))
     if (unknown.length) errors.push(`全部展开：读了界面上还没有的目录「${unknown.join('、')}」`)
+    await p.waitForTimeout(300)
     await check(p, '文件-全部展开')
     await p.keyboard.press('Escape')
   }

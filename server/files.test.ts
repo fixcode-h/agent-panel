@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { listDir, listLevel, searchNameInDir } from './files.ts'
+import { listDir, listLevel, revealInDir, searchNameInDir } from './files.ts'
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-files-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
@@ -82,6 +82,63 @@ test('路径不能逃出项目目录', async () => {
   await assert.rejects(() => listLevel(dir, 'src/../../..'), /只能查看项目目录里的文件/)
   await assert.rejects(() => listLevel(dir, tmp), /只能查看项目目录里的文件/)
   await assert.rejects(() => listLevel(dir, path.resolve(tmp, 'x')), /只能查看项目目录里的文件/)
+})
+
+/**
+ * 越权路径的几种写法在各平台都要拒绝。
+ * 尤其是 POSIX 绝对路径：以前先剥掉开头的 / 会让它变成项目里的相对路径，校验被绕过。
+ */
+const OUTSIDE = [
+  ['POSIX 绝对路径', '/tmp/agent-panel-outside'],
+  ['根目录', '/'],
+  ['Windows 盘符（反斜杠）', 'C:\\Windows\\System32'],
+  ['Windows 盘符（正斜杠）', 'C:/Windows/System32'],
+  ['UNC 路径', '\\\\server\\share\\x'],
+  ['上一级', '..'],
+  ['绕出去', 'src/../../..'],
+  ['上一级的写法', '../outside'],
+]
+
+test('列目录拒绝各种绝对路径和越权路径', async () => {
+  const dir = project()
+  for (const [label, bad] of OUTSIDE)
+    await assert.rejects(() => listLevel(dir, bad), /只能查看项目目录里的文件/, label)
+})
+
+test('在系统里打开时同样拒绝绝对路径和越权路径', async () => {
+  const dir = project()
+  // 校验在 stat 和打开文件管理器之前就失败，不会真的弹出窗口
+  for (const [label, bad] of OUTSIDE)
+    await assert.rejects(() => revealInDir(dir, bad), /只能查看项目目录里的文件/, label)
+  await assert.rejects(() => revealInDir(dir, `${dir}/src`), /只能查看项目目录里的文件/)
+})
+
+test('项目里的合法路径照常能用（中文、空格、点开头的约定目录）', async () => {
+  const dir = path.join(tmp, `ok${Math.random().toString(36).slice(2, 8)}`)
+  mkdirSync(path.join(dir, '.github'), { recursive: true })
+  mkdirSync(path.join(dir, '我的 目录'), { recursive: true })
+  writeFileSync(path.join(dir, '.github/workflow.yml'), 'x\n')
+  writeFileSync(path.join(dir, '我的 目录/a.ts'), 'a\n')
+  const root = await listLevel(dir, '')
+  assert.deepEqual(
+    root.entries.map((e) => e.name),
+    ['.github', '我的 目录'],
+  )
+  // 正斜杠、反斜杠、结尾带分隔符都指向同一个目录
+  for (const p of ['我的 目录', '我的 目录/', '我的 目录\\']) {
+    const level = await listLevel(dir, p)
+    assert.deepEqual(
+      level.entries.map((e) => e.path),
+      ['我的 目录/a.ts'],
+      p,
+    )
+  }
+  // 以点开头的文件在列目录时按原有规则隐藏，这里只确认它们的路径不被当成越权
+  const inside = await listLevel(dir, '.github')
+  assert.deepEqual(
+    inside.entries.map((e) => e.path),
+    ['.github/workflow.yml'],
+  )
 })
 
 test('按文件名搜索能找到还没展开的深层文件', async () => {

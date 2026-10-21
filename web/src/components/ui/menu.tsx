@@ -38,7 +38,13 @@ export const ContextMenuTrigger = C.Trigger
 export function ContextMenuContent({ children }: { children: React.ReactNode }) {
   return (
     <C.Portal>
-      <C.Content className={cn(popoverPanel, 'min-w-[180px]')}>{children}</C.Content>
+      {/* 窄窗口、右栏里也放得下：和视口留 8px 边距，超过一屏时菜单自己滚动 */}
+      <C.Content
+        className={cn(popoverPanel, 'max-h-[calc(100dvh-16px)] min-w-[180px] max-w-[calc(100vw-16px)] overflow-y-auto')}
+        collisionPadding={8}
+      >
+        {children}
+      </C.Content>
     </C.Portal>
   )
 }

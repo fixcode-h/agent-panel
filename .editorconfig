@@ -1,0 +1,17 @@
+# 编辑器统一设置：项目在 Windows 上编辑、在 WSL / Linux 里跑测试，
+# 换行符固定 LF、编码固定 UTF-8 无 BOM，避免脚本在 Linux 里因 CRLF 或 BOM 报错。
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{bat,cmd,ps1}]
+end_of_line = crlf

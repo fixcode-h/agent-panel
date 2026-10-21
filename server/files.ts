@@ -22,6 +22,7 @@ import type {
 } from '../shared/files.ts'
 import { capture } from './exec/process.ts'
 import { resolvePath } from './fs.ts'
+import { revealItem } from './open.ts'
 import { IMAGE_TYPES } from './uploads.ts'
 import { t } from '../shared/i18n.ts'
 
@@ -169,11 +170,25 @@ async function statusCached(dir: string, rel: string, prefix: string, refresh: b
 /** 隐藏文件除 .github、.env 这些约定文件外都不列 */
 const hidden = (name: string) => name.startsWith('.') && name !== '.github'
 
-/** 相对路径落在这个目录里才接受 */
+/**
+ * 绝对路径的各种写法：POSIX 的 /x、Windows 的 C:\x 与 C:/x、UNC 的 \\server\share。
+ * 跨平台都要认：Linux 上 path.isAbsolute('C:/x') 是 false，只靠它挡不住。
+ */
+const absoluteLike = (p: string) =>
+  path.isAbsolute(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]{2}/.test(p)
+
+/**
+ * 相对路径落在这个目录里才接受。
+ * 传进来的必须是相对路径：先剥掉开头的 / 再校验，会把 Linux 的 /tmp/x 变成项目里的 tmp/x，
+ * 越权校验就被绕过了，所以绝对路径在做任何规整之前就拒绝。
+ */
 function into(dir: string, rel: string) {
+  if (absoluteLike(rel)) throw new Error(t('只能查看项目目录里的文件'))
   const full = path.resolve(dir, rel)
   const r = path.relative(dir, full)
-  if (r.startsWith('..') || path.isAbsolute(r)) throw new Error(t('只能查看项目目录里的文件'))
+  // 只有真正的上级目录才算越界；..foo 这种名字是项目里的普通文件
+  if (r === '..' || r.startsWith(`..${path.sep}`) || path.isAbsolute(r))
+    throw new Error(t('只能查看项目目录里的文件'))
   return full
 }
 
@@ -190,8 +205,10 @@ const byEntry = (a: DirEntry, b: DirEntry) =>
  * 目录里的隐藏项按以前的规则跳过（.github 这类约定目录保留）。
  */
 export async function listLevel(dir: string, rel: string, opts: { refresh?: boolean } = {}): Promise<DirLevel> {
-  const want = norm(rel).replace(/^\/+|\/+$/g, '')
-  const full = into(dir, want)
+  // 先校验原始路径：只统一分隔符，不能先剥掉开头的 /，否则绝对路径会变成项目里的相对路径
+  const full = into(dir, norm(rel))
+  // 校验通过后再去掉结尾的分隔符，用于拼 pathspec 和子项路径
+  const want = norm(rel).replace(/\/+$/, '')
   const info = await stat(full).catch(() => null)
   if (!info?.isDirectory()) throw new Error(t('目录已经不在了'))
 
@@ -362,6 +379,22 @@ export async function rawInDir(dir: string, want: string): Promise<{ type: strin
   return { type, buf }
 }
 
+/**
+ * 在系统的文件管理器里打开一个文件或目录。
+ * 传空路径时打开项目目录本身；不存在的路径退回打开它的上一级，不让整个操作失败。
+ */
+export async function revealInDir(dir: string, want: string): Promise<void> {
+  // 原始路径直接校验：剥掉结尾的分隔符会把 '/' 变成空串，当成项目根，绝对路径的语义就丢了
+  const full = into(dir, norm(want))
+  const info = await stat(full).catch(() => null)
+  if (info?.isDirectory()) {
+    revealItem(full)
+    return
+  }
+  // 文件：选中它；文件已经被删掉时打开所在的文件夹
+  revealItem(info?.isFile() ? full : path.dirname(full))
+}
+
 /** 项目里的文件；不是 git 仓库时没有状态 */
 function filesApi(deps: { projects: { get(id: string): Promise<Project | null> } }) {
   const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
@@ -435,6 +468,17 @@ function filesApi(deps: { projects: { get(id: string): Promise<Project | null> }
         const dir = await dirOf(c.req.param('id'))
         const { type, buf } = await rawInDir(dir, want)
         return c.body(new Uint8Array(buf), 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=60' })
+      } catch (e) {
+        return bad(c, (e as Error).message, 404)
+      }
+    })
+    // 在系统的文件管理器里打开文件或目录；不传路径时打开项目目录
+    .post('/:id/reveal', async (c) => {
+      const want = (c.req.query('path') ?? '').trim()
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        await revealInDir(dir, want)
+        return c.json({ ok: true, dir })
       } catch (e) {
         return bad(c, (e as Error).message, 404)
       }

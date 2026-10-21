@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@shared/files'
 import { api } from '@/lib/api'
 import { type FileBrowser, type LevelState, FileExplorer } from './FileTree'
@@ -187,6 +188,22 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
 
   useEffect(() => () => clearTimeout(timer.current), [])
 
+  /** 在系统的文件管理器里打开；传空路径时打开项目（任务）目录本身 */
+  const reveal = (path = '') => {
+    if (projectId) void api.revealProjectFile(projectId, path).catch((e) => toast.error((e as Error).message))
+    else if (taskId) void api.revealTaskFile(taskId, path).catch((e) => toast.error((e as Error).message))
+  }
+
+  /** 相对路径 → 绝对路径；目录还没读到时只能给相对路径 */
+  const absolute = (path: string) => {
+    const root = info?.dir ?? ''
+    if (!root) return path
+    const sep = root.includes('\\') ? '\\' : '/'
+    const base = root.replace(/[\\/]+$/, '')
+    const rel = path.replace(/\//g, sep)
+    return rel ? `${base}${sep}${rel}` : base
+  }
+
   return {
     info,
     error,
@@ -203,6 +220,8 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     hitsTruncated,
     searching,
     search,
+    reveal,
+    absolute,
   }
 }
 

@@ -312,6 +312,11 @@ export const api = {
   /** 按文件内容搜索 */
   searchFileContent: (projectId: string, q: string) =>
     request<ContentSearch>(`/project-files/${projectId}/search?mode=content&q=${encodeURIComponent(q)}`),
+  /** 在系统的文件管理器里打开文件或目录；不传路径时打开项目目录 */
+  revealProjectFile: (projectId: string, path = '') =>
+    request<{ ok: boolean; dir: string }>(`/project-files/${projectId}/reveal?path=${encodeURIComponent(path)}`, {
+      method: 'POST',
+    }),
   projectFile: (projectId: string, path: string) =>
     request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
   /** 项目里的图片：按原图查看 */
@@ -345,8 +350,8 @@ export const api = {
   /** 任务目录里按文件内容搜索 */
   searchTaskFiles: (id: string, q: string) =>
     request<ContentSearch>(`/tasks/${id}/files/search?mode=content&q=${encodeURIComponent(q)}`),
-  /** 在系统的文件管理器里打开这个文件所在的文件夹并选中它 */
-  revealTaskFile: (id: string, path: string) =>
+  /** 在系统的文件管理器里打开这个文件所在的文件夹并选中它；不传路径时打开任务目录 */
+  revealTaskFile: (id: string, path = '') =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
   /** 独立分支：合并进项目当前的分支，或丢弃 */
