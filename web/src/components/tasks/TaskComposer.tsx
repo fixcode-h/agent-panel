@@ -74,16 +74,7 @@ export function TaskComposer({
   }
   const agentParams = agent?.id === DEFAULT_AGENT_ID ? [] : (agent?.params ?? [])
   const missing = byCli || !agent ? [] : resolveParams(agentParams, params).missing
-  // 开关上的文字和说明：项目没设置 Agent 时勾着也等于不用角色，要说清楚
-  const agentLabel = !useAgent
-    ? t('不用 Agent')
-    : agent && agent.id !== DEFAULT_AGENT_ID
-      ? agent.name
-      : wanted && !agent
-        ? t('Agent 已停用')
-        : agentId === DEFAULT_AGENT_ID
-          ? t('默认 Agent')
-          : t('项目没设置 Agent')
+  // 开关只放图标，用来说明的话：项目没设置 Agent 时勾着也等于不用角色，要说清楚
   const agentTitle = !useAgent
     ? t('直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）')
     : agent && agent.id !== DEFAULT_AGENT_ID
@@ -305,11 +296,11 @@ export function TaskComposer({
                     onClick={() => setUseAgent((v) => !v)}
                     className={cn(
                       chip,
+                      'w-8 justify-center px-0',
                       useAgent ? 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent' : 'text-subtle',
                     )}
                   >
                     <Bot className="h-4 w-4 shrink-0" />
-                    <span className="truncate">{agentLabel}</span>
                   </button>
                 )}
                 {byCli ? (
