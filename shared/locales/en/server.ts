@@ -226,6 +226,18 @@ export const EN_SERVER: Record<string, string> = {
   下载中: 'Downloading',
   '等待任务结束（还有 {n} 个）': 'Waiting for tasks to finish ({n} still running)',
   '正在停止正在执行的任务…': 'Stopping running tasks…',
+  // 强制更新后，问用户要不要继续被打断的任务
+  '有 {n} 个任务被强制更新打断': '{n} tasks were interrupted by the forced update',
+  '强制更新时停掉了这些正在执行的任务。勾选的任务会从被打断的节点接着执行，没勾选的不处理。':
+    'The forced update stopped these running tasks. Checked tasks resume from the interrupted step; unchecked ones are left as they are.',
+  '被打断时：{doing}': 'Interrupted at: {doing}',
+  '继续执行选中的任务（{n}）': 'Resume selected tasks ({n})',
+  稍后再说: 'Later',
+  '已在后台继续 {ok} 个任务': 'Resuming {ok} tasks in the background',
+  '已在后台继续 {ok} 个任务，{failed} 个没能继续':
+    'Resuming {ok} tasks in the background; {failed} could not be resumed',
+  '{failed} 个任务没能继续，可能已经被删除或状态不允许':
+    '{failed} tasks could not be resumed; they may have been deleted or are in a state that cannot resume',
   这次更新已经结束: 'This update has already finished',
   '还在下载，下载完才能强制更新': 'Still downloading; force update is available once the download finishes',
   '新版本 {version} 已下载，等所有任务结束后再替换并重启':

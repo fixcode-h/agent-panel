@@ -69,7 +69,7 @@ import type {
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage } from '@shared/data'
-import type { AppReleases, AppUpdateJob } from '@shared/version'
+import type { AppReleases, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
 
 /** 设计连同正在进行的 AI 对话 / 生成图片 */
@@ -210,6 +210,10 @@ export const api = {
   appInstallJob: (id: string) => request<AppUpdateJob>(`/app/install/${id}`),
   appForceInstall: (id: string) => request<AppUpdateJob>(`/app/install/${id}/force`, json('POST', {})),
   appRollback: () => request<{ version: string }>('/app/rollback', json('POST', {})),
+  /** 被上次「强制更新」打断的任务：新版本启动后问用户要不要继续 */
+  appInterrupted: () => request<InterruptedTasks>('/app/interrupted'),
+  /** 处理过了：保留记录，但不再自动弹 */
+  appInterruptedAck: () => request<InterruptedTasks>('/app/interrupted/ack', json('POST', {})),
 
   categories: () => request<Category[]>('/categories'),
   createCategory: (name: string, scope: Category['scope'] = 'agent') =>

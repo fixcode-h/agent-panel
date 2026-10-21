@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { CACHE_DIR } from './store.ts'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type AppUpdateJob } from '../shared/version.ts'
 import { capture } from './exec/process.ts'
+import { recordInterrupted } from './interrupted.ts'
 import { netFetch } from './net.ts'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -192,12 +193,27 @@ export function platformAsset(assets: Asset[], platform: string): { url: string;
   return { url: hit?.browser_download_url ?? '', size: hit?.size ?? 0, zip: zip ?? '' }
 }
 
+/**
+ * 强制更新：先记下被打断的任务再停 CLI，新版本启动后据此问用户要不要继续。
+ * 记录失败也照常停：最多丢一次「接着跑」的提示，不能因为写文件失败就不更新
+ */
+export async function stopForUpdate(
+  job: { phase: string },
+  deps: { interrupted: () => { id: string; doing: string }[]; stopAll: () => Promise<void> },
+) {
+  job.phase = t('正在停止正在执行的任务…')
+  await recordInterrupted(deps.interrupted()).catch((e) => log.warn('update', '记录被打断的任务失败', e))
+  await deps.stopAll()
+}
+
 /** 版本更新：对比 GitHub Releases 上的包，下载后替换当前目录里的程序文件并重启 */
 export function updateApi(deps: {
   running: () => number
   restart: () => void
   /** 停掉所有正在执行的 CLI：用户点「强制更新」时用 */
   stopAll: () => Promise<void>
+  /** 正在执行的任务和它正在做的节点：强制更新打断它们之前记下来 */
+  interrupted: () => { id: string; doing: string }[]
 }) {
   // 上次检查的结果存在缓存目录里，重启面板也记得，不会每次打开都去问 GitHub
   let cache: { at: number; list: AppRelease[] } | undefined = readCache()
@@ -289,8 +305,7 @@ export function updateApi(deps: {
         while (running > 0) {
           // 用户点了「强制更新」：中断所有正在执行的 CLI，不再等它们自然结束
           if (job.force) {
-            job.phase = t('正在停止正在执行的任务…')
-            await deps.stopAll()
+            await stopForUpdate(job, deps)
             break
           }
           job.phase = t('等待任务结束（还有 {n} 个）', { n: running })

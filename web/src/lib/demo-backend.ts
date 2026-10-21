@@ -41,7 +41,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
-import { REPO, pickUpdate, type AppRelease, type AppReleases } from '@shared/version'
+import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
 import { BUILTIN_MODEL_CATALOG } from '@shared/model-catalog'
 import {
@@ -1815,6 +1815,8 @@ async function seedTasks(d: Db) {
  */
 async function demoApp(url: string): Promise<unknown> {
   if (url.startsWith('/app/install') || url.startsWith('/app/rollback')) fail('在线演示不能安装，可以下载包到本机运行')
+  // 演示里不会真的强制更新，也就没有被打断的任务
+  if (url.startsWith('/app/interrupted')) return { at: '', acknowledged: false, tasks: [] } satisfies InterruptedTasks
   let list: AppRelease[] = []
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases?per_page=30`)

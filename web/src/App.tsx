@@ -12,6 +12,7 @@ import { DemoBanner } from '@/components/layout/DemoBanner'
 import { NoCliBanner } from '@/components/layout/NoCliBanner'
 import { CommandPalette, useShortcuts } from '@/components/layout/CommandPalette'
 import { Sidebar } from '@/components/layout/Sidebar'
+import { UpdateResumeDialog } from '@/components/layout/UpdateResumeDialog'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
 import { useAiFix } from '@/lib/ai-fix'
 
@@ -163,6 +164,8 @@ export function App() {
           </Suspense>
         )}
         <ProjectDialog {...project} onOpenChange={(open) => setProject((s) => ({ ...s, open }))} />
+        {/* 上次「强制更新」打断的任务：只挂一次，启动后问要不要接着跑 */}
+        <UpdateResumeDialog />
         <Toaster theme={dark ? 'dark' : 'light'} position="bottom-right" />
       </NavCtx.Provider>
     </DataProvider>
