@@ -802,10 +802,11 @@ ${prompt}`,
       },
       { conceptOnly: mode === 'concept', conceptCount: mode === 'concept' ? input.count : undefined },
     )
-    const tools = mcpConfig(def.mcp, 'design', mcp.url)
-    // 要配置文件的 CLI（Command Code、Gemini CLI）读工作目录里的配置
+    // 工作目录本来就是面板这一轮的临时目录，{dir} 的文件（Pi 的桥接扩展）也放这里，结束时一起删
+    const tools = mcpConfig(def.mcp, 'design', mcp.url, cwd)
+    // 要配置文件的 CLI（Command Code、Gemini CLI）读工作目录里的配置；写不成直接报错，没有设计工具这一轮没法做
     for (const f of tools.files) {
-      const to = path.join(cwd, f.path)
+      const to = path.resolve(cwd, f.path)
       await mkdir(path.dirname(to), { recursive: true })
       // 字符串是整个文件的内容（例如 Pi 的扩展脚本），其余写成 JSON
       await writeFile(to, typeof f.content === 'string' ? f.content : JSON.stringify(f.content, null, 2))

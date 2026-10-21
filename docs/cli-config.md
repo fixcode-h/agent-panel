@@ -111,32 +111,67 @@
 }
 ```
 
-| 字段                                           | 说明                                                                                                     |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                |
-| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                          |
-| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                             |
-| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                     |
-| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                         |
-| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`                             |
-| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                              |
-| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                       |
-| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录 |
-| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                       |
-| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                   |
-| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                  |
-| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                          |
-| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                             |
-| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`        |
-| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                   |
+| 字段                                           | 说明                                                                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `kind`                                         | `spec`（默认，按下面的配置执行）、`codex`、`claude`。后两个用内置适配器处理审批和控制消息                       |
+| `jsonrpc`                                      | 发请求时带 `jsonrpc: "2.0"`（标准 JSON-RPC，例如 Command Code）                                                 |
+| `handshake`                                    | 进程起来后按顺序发的消息，例如 `initialize` 和 `initialized`                                                    |
+| `start` / `resume` / `fork`                    | 开始一轮；续接、分叉时换成对应的动作                                                                            |
+| `steer` / `interrupt` / `exit`                 | 插话、中断、这一轮结束前发的消息                                                                                |
+| `compact`                                      | 压缩上下文（`features.compact` 为 `native`）：续接会话后按顺序发，最后一个回复成功就算压缩完了，不发 `start`    |
+| `after`                                        | 这一轮结束、交结果之前再发的请求，例如 Pi 的 `get_session_stats` 查准确的上下文占用；一般配 `optional`、`parse` |
+| `asks`                                         | CLI 发来的、要用户回答的请求（Pi 扩展的确认框、选择框），见下面「要用户回答的请求」                             |
+| `sessionId` / `turnId`                         | 从哪个 `save` 的回复的哪个字段取会话、轮次 id，例如 `init.result.session.id`                                    |
+| `unwrap`                                       | 事件外面包了一层时解开的路径，例如 `$.event`；Parser 自己能处理包装时不要写                                     |
+| `remember`                                     | 记住某类记录，供 `done` 的条件使用                                                                              |
+| `done`                                         | 收到什么样的记录算这一轮结束；`ok` / `error` 是条件或路径，`$.` 开头取当前记录，其余取 `remember` 的记录        |
+| `closeDelayMs`                                 | 结束后等多久再关 stdin；期间有新输出会取消（Claude Code 插话后用）                                              |
+| `defaultMaxTurns`                              | 没设置回合上限时传给 `{maxTurns}` 的默认值，0 表示不传                                                          |
+| `deferSteer`                                   | 插话要等 CLI 的下一个模型请求才取走：消息立刻进对话，等它开始下一次请求再把输出另起一条                         |
+| `nativeAsk`                                    | 协议自己处理提问和审批，不挂面板的 MCP 提问工具                                                                 |
+| `limitsQuery` / `skillsQuery` / `pluginSkills` | 能主动查额度、列 Skill、Skill 里包含已装插件                                                                    |
+| `skillsDir`                                    | 列表走协议时，从哪个目录读用户 Skill；面板自带的 Skill 不按 CLI 安装，统一放在 `~/.agents/skills`               |
+| `queryArgs`                                    | 只查额度 / Skill、不跑任务时的启动参数，例如 Codex 的 `["app-server"]`                                          |
 
 一条消息的写法：
 
 - JSON-RPC：`{ "method": "turn/start", "params": { "input": "{input}" } }`
 - 记录流：`{ "record": { "type": "prompt", "message": "{input}" } }`
 - `notify: true` 只发不等回复；`save` 把回复存起来给后面的字段和条件用；`if` 可以按 `resume`、`fork`、`model` 等条件跳过
+- `optional: true` 失败了（回复报错、超时）也不影响这一轮；`parse: true` 把回复也交给输出映射（`output.events` 里按 `type`、`command` 认）
+- 回复里的错误两种写法都认：JSON-RPC 的 `error.message`，记录流的 `success: false` 加一句 `error`（Pi）
 
 占位符：`{input}`、`{text}`（插话内容）、`{model}`、`{effort}`、`{resume}`、`{maxTurns}`、`{cwd}`。整条就是占位、运行时又没有值时，这个字段不传。
+命令行参数规则（`args` / `rpcArgs`）另外还能用 `{title}`：对话的标题，例如 Pi 的 `--name`，在 CLI 自己的会话列表里认得出是哪个对话。
+
+### 要用户回答的请求 `asks`
+
+带 `id` 和 `method` 的记录是 CLI 发来的请求。按 `when` 认出来的交给页面的提问卡片，用户的选择按模板回给 CLI；
+没对上的请求当普通记录交给输出映射（例如 Pi 扩展的 `notify` 显示成一行提示，`setStatus` 这类不显示）。
+
+```json
+"asks": [
+  {
+    "when": { "type": "extension_ui_request", "method": "confirm" },
+    "kind": "tool",
+    "title": "$.title",
+    "detail": "$.message",
+    "allow": { "type": "extension_ui_response", "id": "{id}", "confirmed": true },
+    "deny": { "type": "extension_ui_response", "id": "{id}", "confirmed": false }
+  },
+  {
+    "when": { "type": "extension_ui_request", "method": "select" },
+    "title": "$.title",
+    "options": "$.options",
+    "allow": { "type": "extension_ui_response", "id": "{id}", "value": "{answer}" },
+    "deny": { "type": "extension_ui_response", "id": "{id}", "cancelled": true }
+  }
+]
+```
+
+`kind` 是卡片的样子（`command`、`file`、`tool` 是允许 / 拒绝，`question` 是选项或填写，默认 `question`）；
+`title`、`detail`、`options` 写 `$.路径` 取请求里的字段；模板里 `{id}` 是请求的 id，`{answer}` 是用户选的或填的内容。
+对话的「提问」开关关着时，问题类的请求直接按 `deny` 回，让 CLI 自己决定。
 
 ## 输出解析 `output`
 
@@ -158,20 +193,23 @@
 
 `when` 的键也可以是 `a.b` 这样的路径（例如 Pi 的 `"assistantMessageEvent.type": "text_delta"`）。
 `emit` 里的值：`$.a.b` 取事件里的字段（数组用 `-1` 取最后一项，如 `$.messages.-1.stopReason`），`$.a == x`、`$.a != x` 比较，其余是字面值。
-同一轮里出现多个 `result` 时以最后一个为准（例如 Pi 自动重试时每次都有 `agent_end`）。面板认识的事件：
+同一轮里出现多个 `result` 时以最后一个为准。常驻 RPC 的结束条件写在 `rpc.done`，不靠 `result`：例如 Pi 以 `agent_settled` 结束，
+`agent_end` 只是一个底层 agent 跑完了（后面可能还有自动重试、压缩、插话），配置里不映射它。面板认识的事件：
 
-| 事件                  | 字段                                                                                                                                                             |
-| --------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `session`             | `id`：会话 id，继续对话时作为 `{resume}`                                                                                                                         |
-| `text_delta` / `text` | `text`：回复的一段（流式）/ 一整段                                                                                                                               |
-| `thinking`            | `text`、`delta`                                                                                                                                                  |
-| `tool`                | `name`、`id`、`input`：按工具名认出读文件、改文件、跑命令、搜索、网页等，`input` 里的 `command`、`file_path`、`content`、`old_string`/`new_string` 会显示出来    |
-| `tool_result`         | `id`、`output`、`error`、`failed`                                                                                                                                |
-| `usage`               | `context`、`window`、`model`、`addInput`、`addOutput`、`addCacheRead`、`addCacheWrite`、`addCost`                                                                |
-| `error`               | `message`                                                                                                                                                        |
-| `request_start`       | 开始一次模型请求：CLI 没有插话协议时，登记给 `read_user_notes` 的补充在它真正被读到时把输出另起一条（Command Code 用 `model_request_start`，Pi 用 `turn_start`） |
-| `files_changed`       | 改了文件，面板去 git 里重新读改动                                                                                                                                |
-| `result`              | `ok`、`error`：这一轮结束                                                                                                                                        |
+| 事件                  | 字段                                                                                                                                                                                                                                                   |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `session`             | `id`：会话 id，继续对话时作为 `{resume}`                                                                                                                                                                                                               |
+| `text_delta` / `text` | `text`：回复的一段（流式）/ 一整段                                                                                                                                                                                                                     |
+| `thinking`            | `text`、`delta`                                                                                                                                                                                                                                        |
+| `tool`                | `name`、`id`、`input`：按工具名认出读文件、改文件、跑命令、搜索、网页等，`input` 里的 `command`、`file_path`、`content`、`old_string`/`new_string` 会显示出来                                                                                          |
+| `tool_result`         | `id`、`output`、`error`、`failed`                                                                                                                                                                                                                      |
+| `usage`               | `context`、`window`、`model`、`addInput`、`addOutput`、`addCacheRead`、`addCacheWrite`、`addCost`                                                                                                                                                      |
+| `error`               | `message`：只记下来，这一轮失败时一起显示                                                                                                                                                                                                              |
+| `notice`              | 不影响结果、但用户应该看到的情况，显示成回复里的一行：`text`、`failed`；或者给 `kind` 由面板按界面语言拼文字：`retry`（`attempt`、`maxAttempts`、`delayMs`、`error`）、`retry_failed`（`attempt`、`error`）、`compact_failed`（`error`，为空时不显示） |
+| `compacted`           | 压缩了上下文：`before`、`context` 是压缩前后的 token 数，两个都没有时不算压缩过（例如压缩失败）                                                                                                                                                        |
+| `request_start`       | 开始一次模型请求：CLI 没有插话协议时，登记给 `read_user_notes` 的补充在它真正被读到时把输出另起一条（Command Code 用 `model_request_start`，Pi 用 `turn_start`）                                                                                       |
+| `files_changed`       | 改了文件，面板去 git 里重新读改动                                                                                                                                                                                                                      |
+| `result`              | `ok`、`error`：这一轮结束                                                                                                                                                                                                                              |
 
 ## 面板的工具 `mcp`
 
@@ -185,7 +223,9 @@ UI 设计的 AI 通过面板提供的工具（MCP，Streamable HTTP）改设计�
 打开一个已有会话的对话页不会启动 CLI：只有真正发消息时才按当前选择启动这一轮。
 代价是第一条消息要等 CLI 启动和会话加载，换来的是「只是看一眼」不会在后台起一堆进程。
 `args` 是加在命令行上的参数，`files` 是写进这一轮工作目录的配置文件（路径 → JSON 内容，用完还原）；内容是字符串时原样写成文本文件。
-里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址。
+里面的 `{name}` 换成工具名（如 `design`），`{url}` 换成工具地址，`{dir}` 换成面板这一轮自己的临时目录（数据目录的 `cache/cli-run/` 下，绝对路径，用完删掉）。
+路径以 `{dir}/` 开头的文件写进这个临时目录，不进用户的项目。文件写不成时（目录只读、被占用）参数也不加，这一轮没有面板的工具，
+对话里会显示一行提示，但照常执行。
 
 提问要一直等到用户回答，可能很久（用户不在电脑前）。这条请求面板用 SSE 流式响应，等待期间定期发心跳，
 HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请求超时还要在配置里放宽，否则等不到用户回答：
@@ -202,26 +242,31 @@ HTTP 客户端不会因为长时间没有数据而断开；CLI 自己的 MCP 请
 Command Code 读环境变量 `MCP_TOOL_TIMEOUT`（毫秒），Gemini CLI 读 `mcpServers.<名字>.timeout`；Pi 的桥接脚本用 Node 自己的
 http 客户端，没有这一步。
 
-CLI 不支持 MCP 时可以写一个桥接：Pi 没有 MCP，`shared/clis/pi.json` 写了一个项目扩展 `.pi/extensions/agent-panel-{name}.ts`，
-启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具，调用时转发过去。
+也可以写一个扩展做桥接：`shared/clis/pi.json` 把面板的工具交给 Pi 用的是一个扩展脚本 `{dir}/agent-panel-{name}.ts`，
+启动时从 `{url}` 读工具列表，注册成 Pi 自己的工具（直接声明给模型），调用时转发过去，用 `-e` 按绝对路径加载。
 
-Pi 1.3 起项目里的 `.pi/extensions` 受「项目信任」管控，而 print / json / rpc 模式不会弹信任提示，没被信任的项目会直接跳过它，
-桥接注册的工具一个都不生效。所以 `mcp.args` 里用 `-e` 显式加载（`["-e", ".pi/extensions/agent-panel-{name}.ts"]`）：
-显式加载不受项目信任影响，也不用为了一个临时扩展去信任整个项目。
+Pi 1.3 自己也支持 MCP（`~/.pi/agent/mcp.json`，项目里的 `.pi/mcp.json` 要先信任项目），用户自己的 MCP 服务器通过 `mcpStore`
+出现在「MCP 工具」页、写进 Pi 自己的 `mcp.json`。面板的工具仍然走扩展：Pi 的 MCP 工具默认是 `codemode` 暴露（不直接声明给模型），
+而项目里的配置受「项目信任」管控，print / json / rpc 模式不会弹信任提示；`-e` 显式加载的扩展不受这两点影响。
 
 ## 能力 `features`
 
 | 字段          | 说明                                                                                                                                                                                                                                                                       |
 | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `compact`     | 压缩上下文：`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                                                                                                         |
+| `compact`     | 压缩上下文：`native` 走协议（常驻 RPC 的 `rpc.compact`，Pi 的 `compact` 命令，原地压缩、会话不变）；`slash` 发 `/compact`；`summary`（默认）让它写摘要，下一轮开新会话带上                                                                                                 |
+| `modelSwitch` | 会话中途能换模型：对话里换了模型仍然续接原来的会话（Pi 的模型是每次启动的参数，会话里可以混用）；默认换模型就开新会话带上对话记录                                                                                                                                          |
 | `fork`        | 分叉、撤回对话：`latest` 只能从最后分叉（配合 `fork` 条件的参数）；`none`（默认）带上对话记录开新会话                                                                                                                                                                      |
 | `autoCompact` | 自动压缩：`env` 用环境变量 `autoCompactEnv` 告诉 CLI 百分比；`panel`（默认）面板在一轮结束后压缩                                                                                                                                                                           |
 | `slash`       | 会话里认识「/命令」「/Skill」，原样发过去；默认面板把命令文件、Skill 展开成普通要求                                                                                                                                                                                        |
 | `steer`       | 执行中能插话。常驻 RPC 在 `rpc.steer` 里写要发的消息；一次性输出的 CLI 用不了，改用下面的 `notes`                                                                                                                                                                          |
 | `notes`       | 没有插话协议，但能用面板的 MCP 工具 `read_user_notes` 取执行中的补充（需要 `mcp`）：用户在它执行中发的要求直接记进对话、登记给它，模型取走时交给它；这一轮结束还没取走的，面板立刻开新一轮接着处理；对话页开着时还会挂 `wait_user_message`，回复完停在同一个进程里等下一句 |
 | `limitEnv`    | 设置里三档模型手动改的上下文窗口、最大输出用哪个环境变量传给 CLI，如 `{"context": "X_MAX_CONTEXT", "maxOutput": "X_MAX_OUTPUT"}`；不写表示 CLI 不接受，界面上会说明                                                                                                        |
+| `limitFile`   | 或者写进 CLI 的配置文件（账号方式下用；API 方式由 `auth.api.modelLimits` 写），只在这一轮里加上、结束后还原：`file`、`at`（`{provider}`、`{model}` 是模型 ID「provider/model」的两段，Pi 是 `providers.{provider}.modelOverrides.{model}`）、`context`、`maxOutput` 是键名 |
 
-审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`；Pi 没有审批，用 `--tools` 限制能用的工具）。
+审批：非交互模式下 CLI 不能请用户确认，用权限选项控制它能做什么（参考 Gemini CLI 的 `--approval-mode`）。
+Pi 本身没有审批，权限用 `--tools +grep,+find,+ls`（在默认工具上补搜索）加 `--exclude-tools` 去掉命令或写文件的工具；
+不用 `--tools` 白名单，白名单会把面板桥接的工具（提问、编排）一起挡掉。用户装了带确认框的 Pi 扩展（例如 permission-gate）时，
+确认框通过 `rpc.asks` 交给页面。
 
 ## 把 API 交给 CLI `auth.api`
 
@@ -240,7 +285,7 @@ Pi 1.3 起项目里的 `.pi/extensions` 受「项目信任」管控，而 print 
 | `wire`            | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                        |
 | `pruneProviders`  | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                    |
 | `pruneModels`     | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                      |
-| `modelEfforts`    | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动              |
+| `modelEfforts`    | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动               |
 | `modelReasoning`  | CLI 只认模型条目自己声明的「能不能调思考强度」时（Pi 的 `reasoning` 是布尔），目录里有强度的模型写 `true`，下拉才不止一档        |
 | `modelLimits`     | CLI 只认模型条目自己声明的上下文窗口时，按模型目录写回这个键；`maxOutputKey` 是最大输出写进哪个键，不写表示不接受                |
 

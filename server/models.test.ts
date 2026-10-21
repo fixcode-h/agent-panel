@@ -41,6 +41,7 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
       contextWindow: 1_000_000,
       maxOutput: 64_000,
       efforts: ['low', 'high'],
+      images: true,
     },
     {
       id: 'google/gemini-2.5-flash',
@@ -49,6 +50,7 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
       contextWindow: 1_000_000,
       maxOutput: 65_500,
       efforts: ['low', 'high'],
+      images: true,
     },
     {
       id: 'ollama/qwen2.5-coder:7b',
@@ -57,6 +59,7 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
       contextWindow: 128_000,
       maxOutput: 16_400,
       efforts: [],
+      images: false,
     },
   ])
   // 一个提供方都没配时只有一句提示，没有模型

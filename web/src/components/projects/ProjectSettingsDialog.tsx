@@ -8,6 +8,7 @@ import {
   ChevronUp,
   FileText,
   FlaskConical,
+  GraduationCap,
   Loader2,
   Plus,
   Settings2,
@@ -39,6 +40,7 @@ import { cliSettings, orderClis } from '@shared/settings'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
+import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -67,6 +69,7 @@ const blank: ProjectInput = {
   agentParams: {},
   childIsolation: 'worktree',
   testSteps: [],
+  lessons: [],
   wslDistro: '',
   fileFormat: undefined,
   gitPolicy: 'ask',
@@ -372,6 +375,14 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             {t('测试步骤')}
           </NavItem>
           <NavItem
+            on={section === 'lessons'}
+            onClick={() => setSection('lessons')}
+            hint={draft.lessons.length ? t('{n} 条', { n: draft.lessons.length }) : undefined}
+          >
+            <GraduationCap className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('项目教训')}
+          </NavItem>
+          <NavItem
             on={section === 'doc'}
             onClick={() => setSection('doc')}
             dot={isChanged([SHARED_DOC, 'AGENT.md'])}
@@ -627,6 +638,16 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                     }
                   />
                 ))}
+              </div>
+            ) : section === 'lessons' ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('项目教训')}
+                  desc={t(
+                    '角色在这个项目里返工过的地方，写成下次能直接照做的规则。新会话开头只带「所有改动」的全文和其余条目的标题，角色改到哪些文件再取对应的全文，条目多了也不占满上下文。被纠正时角色会自己记一条，标「角色记录」，有空看一下写得对不对。',
+                  )}
+                />
+                <LessonsEditor lessons={draft.lessons} onChange={(v) => set('lessons', v)} />
               </div>
             ) : section === 'tests' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">

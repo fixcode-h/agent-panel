@@ -24,6 +24,7 @@ import type {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  ProjectLesson,
   Settings,
   NewTaskInput,
   Task,
@@ -262,6 +263,9 @@ export const api = {
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  /** 记一条项目教训（同名的会更新），返回更新后的项目 */
+  addProjectLesson: (id: string, lesson: Partial<ProjectLesson> & { title: string }) =>
+    request<Project>(`/projects/${id}/lessons`, json('POST', lesson)),
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
   orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),

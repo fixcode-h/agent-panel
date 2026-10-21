@@ -107,8 +107,8 @@ export function fmtTokens(n: number) {
 /** 这个 CLI 能接受哪几项：环境变量或参数里有对应的设置 */
 export function limitSupport(def: CliDefinition | undefined) {
   return {
-    context: !!def?.limitEnv?.context || !!def?.limitArgs?.includes('context'),
-    maxOutput: !!def?.limitEnv?.maxOutput || !!def?.limitArgs?.includes('maxOutput'),
+    context: !!def?.limitEnv?.context || !!def?.limitArgs?.includes('context') || !!def?.limitFile?.context,
+    maxOutput: !!def?.limitEnv?.maxOutput || !!def?.limitArgs?.includes('maxOutput') || !!def?.limitFile?.maxOutput,
   }
 }
 

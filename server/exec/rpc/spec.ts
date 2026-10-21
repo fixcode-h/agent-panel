@@ -1,4 +1,5 @@
 import type { RpcAction, RpcSpec } from '../../../shared/cli-spec.ts'
+import type { BuildOptions } from '../../../shared/clis.ts'
 import { t } from '../../../shared/i18n.ts'
 import type { Parser } from '../parsers.ts'
 import type { RpcAdapter, RpcContext } from './types.ts'
@@ -16,6 +17,8 @@ export interface SpecAdapterOptions {
   resume?: string
   fork?: boolean
   images?: string[]
+  /** 不是普通的一轮：压缩上下文时按 rpc.compact 发，不发 start */
+  op?: BuildOptions['op']
 }
 
 const getPath = (obj: any, path: string): any => {
@@ -84,6 +87,13 @@ const every = (expr: string | string[] | undefined, msg: any, saved: Record<stri
   return (Array.isArray(expr) ? expr : [expr]).every((x) => !!evalExpr(x, msg, saved))
 }
 
+/** 回复里的错误：JSON-RPC 是 error.message，记录流（Pi）是 success: false 加一句 error */
+const replyError = (reply: any): string | undefined => {
+  if (!reply || (reply.error === undefined && reply.success !== false)) return undefined
+  const e = reply.error
+  return typeof e === 'string' && e ? e : typeof e?.message === 'string' ? e.message : t('执行失败')
+}
+
 const first = (expr: string | string[] | undefined, msg: any, saved: Record<string, any>) => {
   for (const x of expr === undefined ? [] : Array.isArray(expr) ? expr : [expr]) {
     const v = evalExpr(x, msg, saved)
@@ -131,13 +141,19 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
         ctx.send(msg)
         continue
       }
-      const reply = await ctx.request(msg, { timeoutMs: action.timeoutMs })
+      const reply = await ctx.request(msg, { timeoutMs: action.timeoutMs }).catch((e: Error) => {
+        if (!action.optional) throw e
+        return undefined
+      })
+      const error = replyError(reply)
+      if (action.optional && (error || reply === undefined)) continue
       last = reply
       if (action.save) saved[action.save] = reply
-      if (reply?.error) {
-        ctx.finish(false, String(reply.error.message ?? t('执行失败')))
+      if (error) {
+        ctx.finish(false, error)
         return false
       }
+      if (action.parse) for (const ev of o.parser(reply)) ctx.emit(ev)
       emitIds(ctx)
     }
     return true
@@ -162,6 +178,13 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
   const adapter: RpcAdapter = {
     async start(ctx) {
       if (!(await run(ctx, spec.handshake))) return
+      // 压缩：续接会话后直接压缩，回复成功就是压缩完了（压缩前后的大小走输出里的压缩事件）
+      if (o.op?.kind === 'compact' && spec.compact?.length) {
+        if (!(await run(ctx, spec.compact))) return
+        emitIds(ctx)
+        void ctx.finish(true)
+        return
+      }
       const actions =
         o.resume && o.fork && spec.fork?.length ? spec.fork : o.resume && spec.resume?.length ? spec.resume : spec.start
       if (!(await run(ctx, actions))) return
@@ -180,7 +203,28 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       for (const ev of o.parser(event)) ctx.emit(ev)
       if (!done) return
       // 退出消息等确认真的不用这个进程了再发（见 exit）；保活时进程要留着开下一轮
-      void ctx.finish(ok, ok ? undefined : error || t('执行失败'), spec.closeDelayMs)
+      const end = () => void ctx.finish(ok, ok ? undefined : error || t('执行失败'), spec.closeDelayMs)
+      // 交结果前再问一次（例如准确的上下文占用）；这些请求都是可选的，失败了照常结束
+      if (spec.after.length) void run(ctx, spec.after).then(end, end)
+      else end()
+    },
+    request(ctx, msg) {
+      const ask = spec.asks.find((a) => matches(a.when, msg))
+      // 不用回答的（例如 Pi 扩展的通知、状态栏）当普通记录，按输出映射显示或忽略
+      if (!ask) return adapter.message(ctx, msg)
+      const field = (v: string) => (v.startsWith('$.') ? getPath(msg, v) : v)
+      const options = ask.options ? field(ask.options) : undefined
+      ctx.emit({
+        type: 'ask',
+        kind: ask.kind,
+        title: String(field(ask.title) ?? ''),
+        detail: String(field(ask.detail) ?? ''),
+        ...(Array.isArray(options) && options.length ? { options: options.map(String) } : {}),
+        reply: (r) => {
+          if (ctx.finished) return
+          ctx.send(fill(r.allow ? ask.allow : ask.deny, { id: msg.id, answer: r.answer }) as Record<string, unknown>)
+        },
+      })
     },
     async next(ctx, text) {
       // 同一进程里开下一轮：会话已经开着，直接按 start 里的步骤把新的那句交过去

@@ -50,6 +50,7 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { orchHint } from '../orch-mcp.ts'
+import { lessonsPrompt } from '../../shared/lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
@@ -99,6 +100,7 @@ export interface RealContext {
   submitBuild?: EngineHost['submitBuild']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
+  lessons?: EngineHost['lessons']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -531,8 +533,9 @@ async function runAgent(
   const asker =
     chat && !op && !prewarm ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
-  // 对话中途换了 CLI、模型或（不支持中途换强度的 CLI 换了）思考强度：原来的会话接不上，开新会话把之前的对话带过去
-  const switched = chat && sessionChanged(task, cliId, model, effort, def.effortBoundSession)
+  // 对话中途换了 CLI、（不能中途换模型的 CLI 换了）模型或（不支持中途换强度的 CLI 换了）思考强度：
+  // 原来的会话接不上，开新会话把之前的对话带过去
+  const switched = chat && sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch)
   if (switched) resume = undefined
   if (retryCarry) {
     // 接口拒绝了旧会话的历史：丢掉它重开，把之前的对话带上
@@ -598,6 +601,11 @@ async function runAgent(
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
   if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
+  // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取
+  if (!resume && !op && task.projectId) {
+    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons)
+    if (lessons) input = `${input}\n\n${lessons}`
+  }
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
@@ -626,6 +634,8 @@ async function runAgent(
     autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
     contextWindow: limits.context || undefined,
     maxOutput: limits.maxOutput || undefined,
+    // 对话的标题交给能给会话起名的 CLI，在它自己的会话列表里认得出是哪个对话
+    title: chat && task.title ? task.title : undefined,
   }
   const env = childEnv([
     ...cs.env,
@@ -863,6 +873,18 @@ async function runAgent(
       case 'error':
         errors.push(ev.message)
         break
+      case 'notice': {
+        // 放进回复里当一行状态，不打断回复：例如「模型请求失败，2 秒后第 1 次重试」
+        const m = !cur || cur.text.trim() ? newMsg() : cur
+        m.tools.push({
+          kind: 'other',
+          name: t('提示'),
+          label: ev.text,
+          detail: '',
+          ...(ev.failed ? { failed: true } : {}),
+        })
+        break
+      }
       case 'result':
         result = ev
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
@@ -1072,6 +1094,8 @@ async function runAgent(
     // 模型自己等过下一句的，结束时不再保活一次
     waited: () => toolWaited,
     orch,
+    // 只交手动改过的：自动值是面板按模型目录估的，不该写进 CLI 的配置盖掉它自己的
+    limits: manual,
   }).finally(() => {
     finished = true
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
@@ -1340,6 +1364,7 @@ export async function runRealTurn(ctx: RealContext) {
     submitBuild: ctx.submitBuild,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
+    lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {

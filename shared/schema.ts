@@ -470,6 +470,8 @@ export interface CliModel {
   contextWindow?: number
   /** 最大输出（token）；CLI 没给出时省略 */
   maxOutput?: number
+  /** 能不能看图片：false 时附上的图片它看不到；CLI 没给出时省略 */
+  images?: boolean
 }
 
 export interface CliModels {
@@ -550,6 +552,29 @@ export const TestStep = z.object({
 })
 export type TestStep = z.infer<typeof TestStep>
 
+/**
+ * 项目教训：Agent 在这个项目里返工过的地方，写成下次能直接照做的规则。
+ * 按 paths 命中要改的文件才给全文，提示里平时只放标题，条目多了也不会占满上下文（见 shared/lessons.ts）
+ */
+export const ProjectLesson = z.object({
+  id: z.string().min(1),
+  /** 一句话的规则：该怎么做，不是发生了什么 */
+  title: z.string().trim().min(1, t('规则不能为空')).max(120),
+  /** 展开说明：具体到文件、字段、做法 */
+  rule: z.string().trim().max(1500).default(''),
+  /** 起因：哪次返工、被怎么纠正 */
+  cause: z.string().trim().max(500).default(''),
+  /** 管哪些文件（相对项目根的 glob，`**` 跨目录）；空表示所有改动都适用 */
+  paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  enabled: z.boolean().default(true),
+  /** 谁记的：用户手动加的，还是 Agent 被纠正后自己记的（方便用户复查） */
+  source: z.enum(['user', 'agent']).catch('user').default('user'),
+  /** 在哪个对话里记的 */
+  taskId: z.string().default(''),
+  createdAt: z.string().default(''),
+})
+export type ProjectLesson = z.infer<typeof ProjectLesson>
+
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
 function migrateProject(v: unknown) {
   if (!v || typeof v !== 'object') return v
@@ -589,6 +614,8 @@ const ProjectFields = z.object({
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
   testSteps: z.array(TestStep).max(40).default([]),
+  /** 项目教训：旧项目没有时是空数组 */
+  lessons: z.array(ProjectLesson).max(200).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
   /**
@@ -787,6 +814,8 @@ export const TaskMessage = z.object({
   error: z.boolean().optional(),
   /** 这次执行结束时写的状态说明（已暂停、失败后可以重试）：继续执行时它已经不成立，会被去掉 */
   transient: z.boolean().optional(),
+  /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
+  spawned: z.array(z.string()).optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */
@@ -998,6 +1027,8 @@ export type TaskRun = z.infer<typeof TaskRun>
 export const TaskData = z.object({
   projectId: z.string(),
   title: z.string(),
+  /** 标题还是从第一条消息截的：AI 第一次回复后按对话内容起一个标题换上，只做一次；用户改过名就不再换 */
+  autoTitle: z.boolean().default(false),
   mode: TaskMode,
   /** 子对话的父对话 id；空表示项目里的顶层对话 */
   parentTaskId: z.string().default(''),

@@ -958,6 +958,12 @@ try {
       .first()
       .click()
     await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '合并时编译'])
+    // 项目教训：演示项目里有手动记的和角色记的，按文件生效的显示范围
+    await dlg
+      .getByRole('button', { name: /^项目教训/ })
+      .first()
+      .click()
+    await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
     await p.keyboard.press('Escape')
     // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
     await p.locator('#task-prompt').click()

@@ -529,6 +529,15 @@ try {
     assert.ok(cx, '对话用 Agent 自己的 CLI')
     assert.equal(cx.developer, '你是乙，负责实现。', 'Codex 的角色说明通过 developerInstructions 传入')
     assert.ok(!cx.input.includes('## 你的角色'))
+    // AI 第一次回复后按对话内容自动起标题（换掉从消息截的那段），只起一次
+    let named = ''
+    for (let i = 0; i < 100 && !named; i++) {
+      const x = await call('GET', `/tasks/${ct.id}`)
+      if (x.title !== '看看代码') named = x.title
+      else await sleep(100)
+    }
+    assert.equal(named, '看看代码·AI', 'AI 回复后自动起了标题')
+    assert.equal((await call('GET', `/tasks/${ct.id}`)).autoTitle, false, '一个对话只起一次标题')
     assert.equal(cx.args[0], 'app-server', 'Codex 用 app-server 执行才有流式输出')
     assert.ok(cx.args.includes('model="gpt-5.6"'))
     assert.ok(cx.args.includes('approval_policy="on-request"'), '参数里的确认方式和 thread/start 一致')
@@ -693,7 +702,9 @@ try {
   c = calls().at(-1)
   assert.equal(c.kind, 'pi')
   assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
-  assert.ok(!c.args.includes('--tools'), '默认全部工具，不限制')
+  assert.equal(c.args[c.args.indexOf('--tools') + 1], '+grep,+find,+ls', '全部工具：在 Pi 默认工具上补搜索')
+  assert.ok(!c.args.includes('--exclude-tools'), '全部工具时不去掉任何工具')
+  assert.equal(c.args[c.args.indexOf('--name') + 1], pm.title, '对话标题交给 Pi 当会话名')
   assert.match(c.input, /^## 用户这次的消息\n用 Pi\n\n/, '任务描述走 RPC 的 prompt 命令')
   const pReply = pm.messages.filter((m) => m.role === 'agent').at(-1)
   assert.match(pReply.text, /这是 pi 的回复/)
@@ -706,6 +717,22 @@ try {
   await waitDone(pm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--session') + 1], pm.sessions[pm.agentId], '继续时用 --session 续接会话')
+  pm = await call('GET', `/tasks/${pm.id}`)
+  assert.equal(pm.usage.agents[pm.agentId].context, 4321, '上下文占用以 get_session_stats 为准')
+  // 压缩走 Pi 的 compact 命令，原地压缩会话；下一轮仍然续接同一个会话，不用写摘要开新会话
+  const piSession = pm.sessions[pm.agentId]
+  await call('POST', `/tasks/${pm.id}/compact`)
+  pm = await waitDone(pm.id)
+  c = calls().at(-1)
+  assert.equal(c.op, 'compact', 'Pi 用 RPC 的 compact')
+  assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩的是当前会话')
+  const piCompact = pm.messages.flatMap((m) => (m.role === 'agent' ? m.tools : [])).find((x) => x.kind === 'compact')
+  assert.ok(piCompact, '压缩显示成回复里的一次工具调用（来自 compaction_end）')
+  await call('POST', `/tasks/${pm.id}/messages`, { text: '压缩后继续' })
+  pm = await waitDone(pm.id)
+  c = calls().at(-1)
+  assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩后仍然续接原来的会话')
+  assert.ok(!c.input.includes('之前对话的摘要'), '不用带摘要')
   // Pi 出错时退出码也是 0，按最后的 agent_settled 和 assistant 的 stopReason 判断失败
   let pf = await call('POST', '/tasks', {
     projectId: project.id,
@@ -1319,6 +1346,12 @@ try {
       kidLog.includes('全局规则（父对话发布，必须遵守）') && kidLog.includes('不要改 package.json'),
       '子对话的提示里带上了父对话的全局规则',
     )
+    // 子对话完成后才回报父对话：等回报进来，免得它插在下面 /rule 的回复后面
+    for (let i = 0; i < 30; i++) {
+      const p = await call('GET', `/tasks/${ruleParent.id}`)
+      if (p.messages.some((m) => m.text.includes('子对话「子对话看规则」'))) break
+      await sleep(100)
+    }
     const listed = await call('POST', `/tasks/${ruleParent.id}/messages`, { text: '/rule' })
     assert.match(listed.messages.at(-1).text, /1\. 不要改 package\.json/)
     const cleared = await call('POST', `/tasks/${ruleParent.id}/messages`, { text: '/rule clear' })
@@ -1350,6 +1383,42 @@ try {
     step(
       '全局规则：/rule 发布、列出、清空，子对话的提示里带上，子对话自己不能发；对话设置的目标、规则、子对话 CLI 生效',
     )
+
+    // ---- 项目教训：单独的接口记一条（同名更新），新会话的提示里带全局条目全文和按文件条目的标题 ----
+    await call('POST', `/projects/${project.id}/lessons`, {
+      title: '价格一律用整数分',
+      rule: '格式化统一走 formatPrice',
+    })
+    await call('POST', `/projects/${project.id}/lessons`, {
+      title: '支付方式写进配置',
+      rule: '下单流程只读配置字段，不按名字判断',
+      paths: ['src/payment/**'],
+    })
+    const relearned = await call('POST', `/projects/${project.id}/lessons`, {
+      title: '价格一律用整数分',
+      rule: '格式化统一走 src/utils/money.ts',
+    })
+    assert.equal(relearned.lessons.length, 2, '同名的规则更新原来那条')
+    assert.equal(relearned.lessons[0].rule, '格式化统一走 src/utils/money.ts')
+    assert.equal(relearned.lessons[0].source, 'user')
+    const emptyLesson = await call('POST', `/projects/${project.id}/lessons`, { title: ' ' }).catch((e) => e)
+    assert.ok(emptyLesson instanceof Error, '空规则不能记')
+    // 不带 lessons 的项目设置请求不清空教训
+    const { lessons: _lessons, ...withoutLessons } = projectInput
+    const kept = await call('PUT', `/projects/${project.id}`, withoutLessons)
+    assert.equal(kept.lessons.length, 2)
+    const learned = await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '看看教训' })).id,
+      20000,
+    )
+    const lessonLog = JSON.stringify(calls().at(-1))
+    assert.ok(lessonLog.includes('## 项目教训'), '新会话带上项目教训')
+    assert.ok(lessonLog.includes('格式化统一走 src/utils/money.ts'), '所有改动都适用的给全文')
+    assert.ok(lessonLog.includes('支付方式写进配置'), '按文件的列标题')
+    assert.ok(!lessonLog.includes('下单流程只读配置字段'), '按文件的全文不放进提示，按需用工具取')
+    await call('DELETE', `/tasks/${learned.id}`)
+    await call('PUT', `/projects/${project.id}`, { ...projectInput, lessons: [] })
+    step('项目教训：接口记录和同名更新，新会话的提示只带全局条目全文和其余标题')
   }
 
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----
@@ -4196,13 +4265,13 @@ try {
     }
     assert.equal(readFileSync(mcpFile, 'utf8'), original, '项目里原有的 MCP 配置还原')
     assert.ok(!existsSync(path.join(project.path, '.gemini', 'settings.json')), '临时写的配置删掉了')
-    assert.ok(
-      !(
-        existsSync(path.join(project.path, '.pi', 'extensions')) &&
-        readdirSync(path.join(project.path, '.pi', 'extensions')).some((f) => f.startsWith('agent-panel-panel'))
-      ),
-      'Pi 的桥接扩展删掉了',
-    )
+    assert.ok(!existsSync(path.join(project.path, '.pi')), 'Pi 的桥接扩展不写进项目')
+    const piExt = calls()
+      .filter((x) => x.kind === 'pi')
+      .map((x) => x.args[x.args.indexOf('-e') + 1])
+      .find((x) => x && /agent-panel-panel/.test(x))
+    assert.ok(piExt && path.isAbsolute(piExt) && piExt.startsWith(dataDir), `桥接扩展在面板的数据目录里：${piExt}`)
+    assert.ok(!existsSync(piExt), 'Pi 的桥接扩展用完删掉了')
     // 提问开关关着：不弹出，工具让模型自己选
     const off = await call('POST', '/tasks', {
       projectId: project.id,

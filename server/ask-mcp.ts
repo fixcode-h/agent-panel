@@ -289,11 +289,33 @@ function locked<T>(file: string, fn: () => Promise<T>) {
   return next
 }
 
-/** 把配置合并进工作目录里的文件（没有就新建），返回还原的方法；同一个文件被几轮同时用时，最后一轮结束才还原 */
+/**
+ * 把配置合并进工作目录里的文件（没有就新建；绝对路径原样用），返回还原的方法；同一个文件被几轮同时用时，最后一轮结束才还原。
+ * 写到一半失败时把已经写的还原再抛出：调用方据此不加引用这些文件的参数（例如 Pi 的 -e 指向不存在的文件会直接起不来）
+ */
 export async function applyConfigFiles(cwd: string, files: { path: string; content: unknown }[]) {
   const done: string[] = []
+  const restore = async () => {
+    for (const to of done) {
+      const h = held.get(to)
+      if (!h || --h.count > 0) continue
+      held.delete(to)
+      if (h.original === null) await rm(to, { force: true })
+      else await writeFile(to, h.original)
+    }
+  }
+  try {
+    await writeAll(cwd, files, done)
+  } catch (e) {
+    await restore().catch(() => {})
+    throw e
+  }
+  return restore
+}
+
+async function writeAll(cwd: string, files: { path: string; content: unknown }[], done: string[]) {
   for (const f of files) {
-    const to = path.join(cwd, f.path)
+    const to = path.resolve(cwd, f.path)
     const cur = held.get(to)
     if (cur) cur.count++
     else {
@@ -315,14 +337,5 @@ export async function applyConfigFiles(cwd: string, files: { path: string; conte
       await mkdir(path.dirname(to), { recursive: true })
       await writeFile(to, JSON.stringify(merge(now ?? parseJson(original ?? '') ?? {}, f.content), null, 2))
     })
-  }
-  return async () => {
-    for (const to of done) {
-      const h = held.get(to)
-      if (!h || --h.count > 0) continue
-      held.delete(to)
-      if (h.original === null) await rm(to, { force: true })
-      else await writeFile(to, h.original)
-    }
   }
 }

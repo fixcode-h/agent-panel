@@ -291,6 +291,8 @@ const session =
 
 // Pi 的 RPC 模式：先回 get_state（RPC 没有会话头），等 prompt 到了再往下走
 let piRpcExit
+// 面板发的是 compact（压缩）而不是 prompt 时记下来：下面按压缩回事件
+let piCompact
 if (piRpc) {
   const rl = (await import('node:readline')).createInterface({ input: process.stdin })
   const say = (o) => process.stdout.write(JSON.stringify(o) + '\n')
@@ -314,6 +316,19 @@ if (piRpc) {
     } else if (m.type === 'abort') {
       interrupted = true
       say({ type: 'response', command: 'abort', id: m.id, success: true })
+    } else if (m.type === 'get_session_stats') {
+      // 一轮结束后面板查一次准确的上下文占用
+      say({
+        type: 'response',
+        command: 'get_session_stats',
+        id: m.id,
+        success: true,
+        data: { sessionId: session, contextUsage: { tokens: 4321, contextWindow: 200000, percent: 2 } },
+      })
+    } else if (m.type === 'compact' && !answered) {
+      answered = true
+      piCompact = m.id
+      onPrompt?.()
     }
   })
   await new Promise((r) => (onPrompt = r))
@@ -343,12 +358,23 @@ if (streamIn) {
   const first = await next()
   input = typeof first.message.content === 'string' ? first.message.content : ''
 } else if (kind !== 'codex' && !rpcMode && !piRpc) for await (const chunk of process.stdin) input += chunk
-if (process.env.FAKE_CLI_LOG) {
+// 面板自动起标题（server/task-title.ts）：不记进调用日志，免得打乱各个测试数的调用次数；
+// 用户消息里的 FAIL、SLOW 这些标记也不能生效，回复改成按用户消息的第一行起的标题
+const titleFor = input.startsWith('给下面这段对话起一个标题。')
+  ? (input.split('## 用户\n')[1] ?? '').split('\n')[0].slice(0, 20)
+  : null
+if (titleFor !== null) {
+  if (process.env.FAKE_CLI_LOG) appendFileSync(process.env.FAKE_CLI_LOG + '.title', JSON.stringify({ kind }) + '\n')
+  input = ''
+}
+if (process.env.FAKE_CLI_LOG && titleFor === null) {
   const log = process.env.FAKE_CLI_LOG
   const extra =
     kind === 'codex'
       ? { resume: appResume, developer, ...policy, op: appOp, fork: appFork, reviewTarget }
-      : { compactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }
+      : kind === 'pi'
+        ? { op: piCompact ? 'compact' : undefined }
+        : { compactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }
   // 用 API 时交给 CLI 的环境变量：测试检查接口地址和密钥传进来了
   const apiEnv = {
     anthropic: [process.env.ANTHROPIC_BASE_URL, process.env.ANTHROPIC_API_KEY, process.env.ANTHROPIC_AUTH_TOKEN],
@@ -426,6 +452,7 @@ const codexDone = (status, error) => {
 const file = `${kind}-output.txt`
 // 回复按当前 input 算：RPC 保活时同一进程会跑下一轮，input 已经换成新的那句
 const turnReply = () => {
+  if (titleFor !== null) return `「${titleFor}·AI」`
   const verdict = input.includes('最后单独一行写「验收结论')
     ? input.includes('第 1 轮验收')
       ? '\n验收结论：不通过'
@@ -464,10 +491,11 @@ const turnReply = () => {
 }
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
 // 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
-const panelName = () => args.map((a) => /agent-panel-(panel[\w-]*)\.ts/.exec(a)?.[1]).find(Boolean)
+// Pi 的桥接扩展在面板自己的临时目录里，用 -e 的绝对路径加载
+const panelExt = () => args.find((a, i) => args[i - 1] === '-e' && /agent-panel-panel[\w-]*\.ts$/.test(a))
 const panelMcpUrl = () =>
   kind === 'pi'
-    ? /new URL\('([^']+)'\)/.exec(readFileSync(`.pi/extensions/agent-panel-${panelName() ?? 'panel'}.ts`, 'utf8'))[1]
+    ? /new URL\('([^']+)'\)/.exec(readFileSync(panelExt(), 'utf8'))[1]
     : (() => {
         const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
         const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
@@ -871,6 +899,15 @@ if (kind === 'pi') {
     stopReason: 'stop',
     ...extra,
   })
+  // 压缩：和真的 Pi 一样先发 compaction_start / compaction_end，再回 compact 的结果
+  if (piCompact) {
+    const result = { summary: '摘要', firstKeptEntryId: 'e1', tokensBefore: 9000, estimatedTokensAfter: 1200 }
+    out({ type: 'compaction_start', reason: 'manual' })
+    out({ type: 'compaction_end', reason: 'manual', result, aborted: false, willRetry: false })
+    out({ type: 'response', command: 'compact', id: piCompact, success: true, data: result })
+    await piRpcExit
+    process.exit(0)
+  }
   // RPC 模式没有会话头，面板用 get_state 拿会话 id
   if (!piRpc) out({ type: 'session', version: 3, id: session, timestamp: new Date().toISOString(), cwd: process.cwd() })
   out({ type: 'agent_start' })

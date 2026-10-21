@@ -27,6 +27,7 @@ import {
   type NodeStep,
   type NodeTier,
   type ParamValues,
+  type ProjectLesson,
   type RunMessage,
   type RunStateEntry,
   type Task,
@@ -73,6 +74,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { findLessons } from './lessons.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 
@@ -197,6 +199,11 @@ export interface Orchestra {
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
+  /** 项目教训：按文件取全文、记一条；不在项目里时没有 */
+  lessons?: {
+    find(files: string[]): Promise<string>
+    record(input: LessonInput): Promise<{ ok: boolean; info: string }>
+  }
 }
 
 export interface EngineHost {
@@ -291,6 +298,19 @@ export interface EngineHost {
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
   claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
   releaseFiles?: (paths: string[]) => number
+  /** 项目教训：按要改的文件查，Agent 被纠正后自己记一条（只有项目里的对话和节点有） */
+  lessons?: {
+    list: () => Promise<ProjectLesson[]>
+    record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
+  }
+}
+
+/** Agent 用 record_lesson 记的一条教训 */
+export interface LessonInput {
+  title: string
+  rule: string
+  cause: string
+  paths: string[]
 }
 
 const MAX_DEPTH = 6
@@ -2066,6 +2086,12 @@ function makeOrchestra(
         .join('\n\n')
     },
     writeState: (key, value) => writeRunState(host, self.id, key, value),
+    lessons: host.lessons
+      ? {
+          find: async (files) => findLessons(await host.lessons!.list(), files),
+          record: (input) => host.lessons!.record(input),
+        }
+      : undefined,
     status: () => statusTree(host, self.id),
     spawn(tasks) {
       const depth = (self.id.match(/\/sub\//g) ?? []).length
@@ -2126,6 +2152,8 @@ function makeOrchestra(
         }),
         where,
       )
+      // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
+      task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
       host.changed(true)
       return { ids: made.map((m) => m.step.id) }
     },

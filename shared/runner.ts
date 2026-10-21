@@ -367,6 +367,21 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
       }
     }
   }
+  // 演示对话里派子角色：排查原因类的提问，把复现和翻代码分给两个子角色同时做，对话里显示成可展开的「子任务」
+  if (!call.step && call.orch && ctx.first && !task.parentTaskId && /原因|排查/.test(ctx.prompt)) {
+    const { ids } = call.orch.spawn([
+      { title: '复现问题', instructions: '按描述的操作步骤复现，记录出现的条件。' },
+      { title: '查找相关代码', instructions: '找出相关的状态更新和渲染代码，列出可疑的地方。' },
+    ])
+    if (ids.length) {
+      const got = await call.orch.wait(ids, 120_000)
+      if (ctx.stopped()) return { ok: false, stopped: true, error: '已停止' }
+      out = {
+        ...out,
+        text: `${out.text}\n\n子角色的结果：${got.done.map((d) => `「${d.title}」${d.status === 'done' ? '完成' : '未完成'}`).join('，')}。`,
+      }
+    }
+  }
   // AI 分析执行记录：回复后面带上修改建议，演示里也能看到差异和应用
   if (!call.step && ctx.first && ctx.prompt.includes('```' + EVOLUTION_LANG))
     out = {

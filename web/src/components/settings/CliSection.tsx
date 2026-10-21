@@ -878,7 +878,8 @@ export function CliSection({
         <Row
           title={t('自动压缩上下文')}
           desc={
-            def.autoCompact === 'panel'
+            // 能原地压缩会话的（Pi 走协议压缩）不用开新会话，只有写摘要的才这样说明
+            def.autoCompact === 'panel' && def.compact === 'summary'
               ? t('上下文占用达到这个比例时，对话结束一轮后自动压缩（写一份摘要，下一轮开新会话带上）')
               : t('上下文占用达到这个比例时自动压缩')
           }
