@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, Check, ChevronDown, FolderGit2, GitBranch } from 'lucide-react'
+import { ArrowUp, Check, ChevronDown, FolderGit2, GitBranch, Workflow as WorkflowIcon, X } from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Attachment, type Project, type Task } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
+import { defaultCli, defaultSettings } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -30,8 +31,8 @@ export const chip =
   'inline-flex h-8 max-w-full cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg data-[state=open]:bg-sel'
 
 /**
- * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、执行方式、工作流或 Agent。
- * 传了 project 时项目固定。
+ * 新建任务的输入框，参考 Claude Code：上面写要做的事，下面一排选项选项目、Agent，从「+」里可以改成按工作流执行。
+ * 默认直接对话。传了 project 时项目固定。
  */
 export function TaskComposer({
   project: fixed,
@@ -45,7 +46,7 @@ export function TaskComposer({
   /** Chat 模式的聊天：不属于任何项目，只能直接和 Agent 对话 */
   standalone?: boolean
 }) {
-  const { agents, projects, tasks, loading } = useData()
+  const { workflows, agents, projects, tasks, loading, settings } = useData()
   const [projectId, setProjectId] = useState(() => {
     try {
       return fixed?.id ?? localStorage.getItem('last-project') ?? ''
@@ -65,6 +66,9 @@ export function TaskComposer({
   // 没发出去的内容按模式各自记住：切到别的模式再回来还在
   const draftKey = standalone ? 'new:chat' : fixed ? `new:project:${fixed.id}` : 'new:agent'
   const [prompt, setPrompt] = useDraft(draftKey)
+  // 默认对话；在「+」里选了工作流才按流程执行
+  const [workflowId, setWorkflowId] = useState('')
+  const workflow = workflowId ? workflows.find((w) => w.id === workflowId) : undefined
   const [busy, setBusy] = useState(false)
   const [isolate, setIsolate] = useState(false)
   const [askUser, setAskUser] = useNewAskUser()
@@ -104,9 +108,9 @@ export function TaskComposer({
   /** 图片卡片显示小缩略图 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
   const drop = useDropPaste(addFiles)
-  // 「/」菜单：按对话实际用的 CLI 列
+  // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slash = useSlashMenu({
-    cli: chatRun.cli,
+    cli: workflow ? defaultCli(settings ?? defaultSettings()) : chatRun.cli,
     projectId: project?.id,
     scope: 'new',
     setText: setPrompt,
@@ -121,7 +125,7 @@ export function TaskComposer({
   const canStart =
     (standalone || !!project) &&
     (!!prompt.trim() || files.attachments.length > 0) &&
-    (byCli ? !!chatRun.cli : !!agent) &&
+    (workflow ? true : byCli ? !!chatRun.cli : !!agent) &&
     !busy &&
     !files.uploading
 
@@ -132,15 +136,16 @@ export function TaskComposer({
       try {
         if (project) localStorage.setItem('last-project', project.id)
       } catch {}
+      const byWorkflow = !!workflow
       onCreated(
         await api.createTask({
           projectId: project?.id ?? '',
-          mode: 'chat',
-          workflowId: '',
-          agentId,
-          cli: byCli ? chatRun.cli : '',
-          model: byCli ? chatRun.model : '',
-          effort: byCli ? chatRun.effort : '',
+          mode: byWorkflow ? 'workflow' : 'chat',
+          workflowId: workflow?.id ?? '',
+          agentId: byWorkflow ? '' : agentId,
+          cli: byWorkflow || !byCli ? '' : chatRun.cli,
+          model: byWorkflow || !byCli ? '' : chatRun.model,
+          effort: byWorkflow || !byCli ? '' : chatRun.effort,
           params: {},
           prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
@@ -192,12 +197,12 @@ export function TaskComposer({
           }}
           onPaste={drop.onPaste}
           preview={preview}
-          placeholder={t('想问什么，或者让它做什么')}
+          placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"
         />
         {loading ? (
-          // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成工作流
+          // 数据还没到时先占位，不要闪一下「选择项目」「对话」再跳成别的
           <div className="flex items-center gap-2 px-3.5 pt-1 pb-3" aria-hidden>
             {[96, 120, 110].map((w) => (
               <span key={w} className="h-7 animate-pulse rounded-lg bg-field" style={{ width: w }} />
@@ -211,9 +216,25 @@ export function TaskComposer({
               onMention={mention.start}
               canMention={!!project?.path}
               onSession={addReady}
+              onWorkflow={standalone || !project ? undefined : setWorkflowId}
+              workflowId={workflowId}
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
-            {byCli ? (
+            {workflow ? (
+              <span className={cn(chip, 'cursor-default gap-1.5')} title={t('按这个工作流的流程图执行')}>
+                <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
+                <span className="truncate">{workflow.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setWorkflowId('')}
+                  aria-label={t('改回直接对话')}
+                  title={t('改回直接对话')}
+                  className="-mr-1 grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </span>
+            ) : byCli ? (
               <ChatModelPicker value={chat} onChange={setChat} />
             ) : (
               <span className={chip} title={agent?.description || t('项目设置的默认对话 Agent')}>
