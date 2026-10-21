@@ -153,7 +153,7 @@ export function FileExplorer({
       <div
         className={cn(
           'flex shrink-0 flex-col gap-2',
-          compact ? 'gap-1.5 px-2 pb-2' : 'gap-2.5 border-b px-3 pb-3 md:px-5',
+          compact ? 'gap-1.5 px-2 pt-2 pb-2' : 'gap-2.5 border-b px-3 pt-3 pb-3 md:px-5',
         )}
       >
         <div className="relative">
