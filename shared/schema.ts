@@ -720,6 +720,10 @@ export const FollowUpInput = z.object({
   /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
 })
+/** 父对话发布的一条全局规则 */
+export const TaskRule = z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })
+export type TaskRule = z.infer<typeof TaskRule>
+
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z
   .object({
@@ -735,8 +739,14 @@ export const TaskPatch = z
     params: z.record(z.string(), ParamValue),
     // 对话的 Agent；空字符串表示不用 Agent 角色，直接用 CLI
     agentId: z.string(),
+    // 父对话的设置：目标、全局规则、子对话的执行配置和并发上限
+    goal: z.string().trim().max(4000),
+    rules: z.array(TaskRule).max(50),
+    childRun: z.object({ cli: z.string().max(40), model: z.string().max(200), effort: z.string().max(40) }).nullable(),
+    childLimit: z.number().int().min(0).max(20),
   })
   .partial()
+export type TaskPatch = z.infer<typeof TaskPatch>
 
 /** Agent 在一条消息里做的操作：读文件、改文件、跑命令、搜索 */
 export const ToolUse = z.object({
@@ -999,7 +1009,13 @@ export const TaskData = z.object({
    * 父对话发布的全局规则（输入「/rule 内容」）：名下所有子对话和它们的工作流节点都必须遵守。
    * 只对这个对话有效，不写进项目的 AGENTS.md
    */
-  rules: z.array(z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })).default([]),
+  rules: z.array(TaskRule).default([]),
+  /** 父对话的目标：用户在对话设置里写的，父对话和名下子对话每一轮都看得到，判断要不要做、做到哪一步 */
+  goal: z.string().max(4000).default(''),
+  /** 父对话给子对话定的 CLI、模型和思考强度；空表示按执行角色自己的配置 */
+  childRun: z.object({ cli: z.string(), model: z.string(), effort: z.string() }).optional(),
+  /** 这个父对话同时执行的子对话上限；0 表示跟随设置里的 childConcurrency */
+  childLimit: z.number().int().min(0).max(20).default(0),
   /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
   inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
   workflowId: z.string().default(''),

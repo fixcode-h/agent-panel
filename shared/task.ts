@@ -77,6 +77,8 @@ export function newTask(
     rootTaskId: input.rootTaskId ?? '',
     summary: '',
     rules: [],
+    goal: '',
+    childLimit: 0,
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',

@@ -23,7 +23,9 @@ import {
   Download,
   FileInput,
   Sparkles,
+  Settings2,
 } from 'lucide-react'
+import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
@@ -243,6 +245,7 @@ export function TaskView({
   const imported = task?.imported
   const agents = useMemo(() => withImportedAgents(localAgents, { imported }), [localAgents, imported])
   const [analyzing, setAnalyzing] = useState(false)
+  const [convSettings, setConvSettings] = useState(false)
   // 没发出去的内容按对话分开记，切到别的对话再回来还在
   const [text, setText] = useDraft(`task:${taskId}`)
   const followTa = useRef<RichInputHandle>(null)
@@ -865,6 +868,13 @@ export function TaskView({
                   </Button>
                 </MenuTrigger>
                 <MenuContent>
+                  {/* 项目里的父对话有自己的设置：目标、全局规则、子对话 */}
+                  {task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported && (
+                    <MenuItem onSelect={() => setConvSettings(true)}>
+                      <Settings2 className="h-4 w-4" />
+                      {t('对话设置')}
+                    </MenuItem>
+                  )}
                   <MenuItem onSelect={() => setRenaming(task.title)}>
                     <Pencil className="h-4 w-4" />
                     {t('重命名')}
@@ -1225,6 +1235,9 @@ export function TaskView({
           onConfirm={remove}
         />
         <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+        {convSettings && (
+          <ConversationSettingsDialog task={task} open={convSettings} onOpenChange={setConvSettings} onSaved={apply} />
+        )}
         <AnalyzeDialog
           open={analyzing}
           onOpenChange={setAnalyzing}

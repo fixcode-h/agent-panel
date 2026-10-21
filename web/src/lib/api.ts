@@ -27,6 +27,7 @@ import type {
   Settings,
   NewTaskInput,
   Task,
+  TaskPatch,
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
@@ -282,6 +283,7 @@ export const api = {
         branch?: string
       }[]
     >(`/tasks/${id}/children`),
+  stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
   importTask: (projectId: string, bundle: unknown) =>
@@ -380,6 +382,9 @@ export const api = {
   answerAsk: (id: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<{ ok: true }>(`/asks/${id}`, json('POST', body)),
   setAskUser: (scope: string, askUser: boolean) => request<{ ok: true }>('/asks/flag', json('PUT', { scope, askUser })),
+  /** 父对话的设置：目标、全局规则、子对话的执行配置和并发上限 */
+  updateConversation: (id: string, patch: Pick<TaskPatch, 'goal' | 'rules' | 'childRun' | 'childLimit' | 'title'>) =>
+    request<Task>(`/tasks/${id}`, json('PATCH', patch)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>

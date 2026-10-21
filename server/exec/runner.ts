@@ -90,6 +90,7 @@ export interface RealContext {
   sendToConversation?: EngineHost['sendToConversation']
   /** 父子对话之间的通讯和文件认领（见 EngineHost） */
   rules?: EngineHost['rules']
+  goal?: EngineHost['goal']
   takeInbox?: EngineHost['takeInbox']
   messageParent?: EngineHost['messageParent']
   claimFiles?: EngineHost['claimFiles']
@@ -1330,6 +1331,7 @@ export async function runRealTurn(ctx: RealContext) {
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,
     rules: ctx.rules,
+    goal: ctx.goal,
     takeInbox: ctx.takeInbox,
     messageParent: ctx.messageParent,
     claimFiles: ctx.claimFiles,
