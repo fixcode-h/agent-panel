@@ -2126,6 +2126,8 @@ function makeOrchestra(
         }),
         where,
       )
+      // 记下派出了哪几个：对话里把它们收进这条消息的位置，做成可以展开的子任务卡片
+      task.messages.at(-1)!.spawned = made.map((m) => m.step.id)
       host.changed(true)
       return { ids: made.map((m) => m.step.id) }
     },

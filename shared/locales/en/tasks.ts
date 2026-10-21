@@ -594,4 +594,5 @@ export const EN_TASKS: Record<string, string> = {
   停止全部子对话: 'Stop all sub-chats',
   '正在执行的停下来，输出和状态都保留，之后可以接着说。':
     'Running ones stop; their output and state are kept so you can continue later.',
+  '已开始，还没有输出': 'Started, no output yet',
 }

@@ -250,6 +250,9 @@ export const CLIS: CliDefinition[] = [
       ...opt(o.systemPrompt, '--append-system-prompt', o.systemPrompt!),
       ...opt(o.maxTurns, '--max-turns', String(o.maxTurns)),
       ...(o.addDirs ?? []).flatMap((d) => ['--add-dir', d]),
+      // 关掉 Claude 自带的子 Agent：拆出去的活都走面板的 spawn_agents，进度、并发和结果才看得见
+      '--disallowedTools',
+      'Task,Agent',
       ...o.extraArgs,
     ],
     installHint: 'npm install -g @anthropic-ai/claude-code',

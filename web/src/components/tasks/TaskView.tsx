@@ -26,6 +26,7 @@ import {
   Settings2,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
+import { HelperCards } from './HelperCards'
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
@@ -75,6 +76,8 @@ type Block =
   | { kind: 'steps'; key: string; roots: string[]; byRoot: Map<string, TaskMessage[]> }
   /** 工作流的一次运行：节点输出去右边的面板里看 */
   | { kind: 'run'; key: string; run: number }
+  /** 对话里派出的子角色：一行一个「子任务」，点开看它的实时对话流 */
+  | { kind: 'helpers'; key: string; ids: string[] }
 
 /** 这条消息属于第几次运行（节点 id 带 `r2/` 前缀的算第 2 次） */
 function runOf(step: string) {
@@ -98,8 +101,16 @@ function toBlocks(task: Task): Block[] {
     for (let i = from; i < msgs.length; i++) if (msgs[i].step) return rootStepId(msgs[i].step)
     return undefined
   }
+  // 对话里派出的子角色：它们的输出收进派出时那张子任务卡片，不平铺在父对话里打断父对话的回复
+  const helpers = byRun ? [] : msgs.flatMap((m) => m.spawned ?? [])
+  const inHelper = (step: string) => helpers.some((id) => step === id || step.startsWith(`${id}/`))
   for (let i = 0; i < msgs.length; i++) {
     const m = msgs[i]
+    if (!byRun && m.spawned?.length) {
+      blocks.push({ kind: 'helpers', key: m.id, ids: m.spawned })
+      continue
+    }
+    if (m.step && helpers.length && inHelper(m.step)) continue
     // 没有节点的用户消息（对话里、工作流外的追加要求）单独成一段；
     // 执行中补发的要求后面还有同一个节点的输出时，留在那个节点的竖线里，不另起一段
     if (m.role === 'user' && !m.step) {
@@ -986,6 +997,8 @@ export function TaskView({
                             onOpen={() => openRunIn(b.run)}
                           />
                         )
+                      ) : b.kind === 'helpers' ? (
+                        <HelperCards key={b.key} task={task} ids={b.ids} teamNames={teamNames} />
                       ) : b.kind === 'steps' ? (
                         <div key={b.key} className="flex flex-col gap-7">
                           {b.roots.map((r) => (
