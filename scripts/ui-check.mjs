@@ -118,6 +118,34 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 按 Agent 显示的对话：滚到回复中部时「谁 + 什么模型」固定在滚动区顶部，下一轮顶走。
+  // 演示内容不够长，先把这一轮撑高，再滚到中部看署名行的位置
+  {
+    const stuck = await p.evaluate(async () => {
+      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      const row = [...document.querySelectorAll('*')].find((el) => getComputedStyle(el).position === 'sticky')
+      if (!sc || !row) return 'no-sticky'
+      const col = row.parentElement
+      const pad = document.createElement('div')
+      pad.style.height = '1800px'
+      col.appendChild(pad)
+      sc.scrollTop = 700
+      await new Promise((r) => setTimeout(r, 250))
+      const top = Math.round(row.getBoundingClientRect().top - sc.getBoundingClientRect().top)
+      sc.scrollTop = 900
+      await new Promise((r) => setTimeout(r, 250))
+      const top2 = Math.round(row.getBoundingClientRect().top - sc.getBoundingClientRect().top)
+      return { top, top2, bg: getComputedStyle(row).backgroundColor }
+    })
+    if (stuck === 'no-sticky') errors.push('署名吸顶：按 Agent 显示的对话里没有吸顶的署名行')
+    else if (stuck.top !== 0 || stuck.top2 !== 0)
+      errors.push(`署名吸顶：滚到回复中部时署名行没固定在顶部（top=${stuck.top}/${stuck.top2}）`)
+    await p.evaluate(() => {
+      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      sc.scrollTop = 0
+    })
+    await check(p, '任务-署名吸顶')
+  }
   // 启动命令只留图标，点开才显示完整命令
   const cmd = p.getByRole('button', { name: '查看启动命令' }).first()
   if (!(await cmd.count())) errors.push('任务：没有启动命令按钮')
@@ -128,6 +156,59 @@ try {
   }
   if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
+  // 从外面把文件拖到消息区（不是输入框）也算引入到要求里：拖入时整页提示，松开后进附件条和内联卡片；
+  // 只拖文字时不拦截浏览器默认行为
+  {
+    const dropped = await p.evaluate(async () => {
+      const sc = [...document.querySelectorAll('div')].find((el) => el.className === 'flex-1 overflow-y-auto')
+      if (!sc) return { error: '没有消息区' }
+      const box = sc.getBoundingClientRect()
+      const at = (dt, x, y) => ({ bubbles: true, cancelable: true, dataTransfer: dt, clientX: x, clientY: y })
+      const file = new DataTransfer()
+      file.items.add(new File(['dropped from the message area'], '页面拖入.txt', { type: 'text/plain' }))
+      // 模拟真实拖拽：先在消息区进入、在子元素之间移动（enter/leave 交错），提示不能闪掉
+      sc.dispatchEvent(new DragEvent('dragenter', at(file, box.left + 80, box.top + 70)))
+      sc.dispatchEvent(new DragEvent('dragover', at(file, box.left + 90, box.top + 80)))
+      await new Promise((r) => setTimeout(r, 200))
+      const inner = sc.querySelector('div')
+      if (inner) inner.dispatchEvent(new DragEvent('dragenter', at(file, box.left + 100, box.top + 90)))
+      sc.dispatchEvent(new DragEvent('dragleave', at(file, box.left + 100, box.top + 90)))
+      await new Promise((r) => setTimeout(r, 250))
+      const hint = document.body.textContent.includes('松开鼠标，把文件附到要求里')
+      const inputHighlighted = !!document.querySelector('#follow-up')?.closest('.border-accent')
+      // 只拖文字：不能 preventDefault
+      const text = new DataTransfer()
+      text.setData('text/plain', '一段文字')
+      const textEvent = new DragEvent('dragover', at(text, box.left + 90, box.top + 80))
+      sc.dispatchEvent(textEvent)
+      sc.dispatchEvent(new DragEvent('drop', at(file, box.left + 90, box.top + 80)))
+      await new Promise((r) => setTimeout(r, 1200))
+      return {
+        hint,
+        inputHighlighted,
+        textPrevented: textEvent.defaultPrevented,
+        hintAfterDrop: document.body.textContent.includes('松开鼠标，把文件附到要求里'),
+        chip: !!document.querySelector('[title="页面拖入.txt"]'),
+        inline: document.body.textContent.includes('页面拖入.txt'),
+      }
+    })
+    if (dropped.error) errors.push(`拖文件：${dropped.error}`)
+    else {
+      if (!dropped.hint) errors.push('拖文件：在消息区拖入时没有整页提示')
+      if (dropped.inputHighlighted) errors.push('拖文件：页面提示和输入框高亮同时出现，叠了两层提示')
+      if (dropped.textPrevented) errors.push('拖文件：只拖文字时被拦截了（应该保持浏览器默认行为）')
+      if (dropped.hintAfterDrop) errors.push('拖文件：松开后整页提示没有消失')
+      if (!dropped.chip) errors.push('拖文件：在消息区松开后附件条里没有这个文件')
+      if (!dropped.inline) errors.push('拖文件：附件没有出现在要求里')
+    }
+    await check(p, '任务-页面拖文件')
+    // 这个附件只用于检查拖入，清掉以免影响后面的步骤
+    await p
+      .getByRole('button', { name: '移除 页面拖入.txt' })
+      .first()
+      .click()
+      .catch(() => {})
+  }
   // 工作流任务：任务进度按节点列出，节点下面挂验收和它自己派出的子 Agent，窄窗口里从标题栏点开
   await p.getByText('商品详情页增加', { exact: false }).first().click()
   const workflowTaskUrl = p.url()
@@ -139,8 +220,42 @@ try {
     .waitFor({ timeout: 30000 })
     .catch(() => {})
   await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子 Agent · 单元测试'])
+  // 执行中发消息：在聊天页新建一个对话，趁它还在回复时再发一条。消息立刻出现在对话里，
+  // 没有「排队」卡片、也没有「下一条」的排队提示
+  await p.goto(base + '#/chat')
+  await p.locator('#task-prompt').fill('整理一下这个项目的模块结构')
+  await p.waitForTimeout(300)
+  const opened = await p
+    .locator('#task-prompt')
+    .press('Enter')
+    .then(
+      () => p.locator('#follow-up').waitFor({ timeout: 20000 }),
+      () => undefined,
+    )
+    .then(
+      () => true,
+      () => false,
+    )
+  if (!opened) errors.push('执行中发消息：新建对话后没有进入任务页')
+  else {
+    await p.locator('#follow-up').fill('顺手看看测试配置')
+    await p.locator('#follow-up').press('Enter')
+    await p
+      .getByText('顺手看看测试配置', { exact: false })
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('执行中发消息：消息没有立刻出现在对话里'))
+    if (await p.getByText('排队', { exact: false }).count()) errors.push('执行中发消息：还能看到「排队」')
+    if (await p.getByText('下一条', { exact: true }).count()) errors.push('执行中发消息：还能看到「下一条」的排队卡片')
+    await check(p, '任务-执行中发消息')
+  }
   await p.goto(base + '#/workflows')
   await check(p, '工作流', ['流程图', '主流程'])
+  // 内置工作流列表：整理后的能力块和新补的四个流程都要能正常显示，不重复、不溢出
+  await p.getByRole('button', { name: '添加内置或导入的工作流' }).first().click()
+  await p.getByText('从内置工作流添加').first().click()
+  await check(p, '工作流-内置列表', ['日常开发', '依赖升级与安全', '发布与回滚', '项目初始化'])
+  await p.keyboard.press('Escape')
   // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
   await p.getByText('处理并推荐').first().click()
   const inspector = p.locator('aside[aria-label="属性"]')
@@ -510,78 +625,6 @@ try {
   await p.keyboard.press('Control+k')
   await check(p, '命令面板', ['新建聊天'])
   await p.keyboard.press('Escape')
-  // 浅色主题
-  await p.evaluate(() => document.documentElement.classList.remove('dark'))
-  await p.goto(base + '#/projects')
-  await check(p, '项目-浅色')
-  // 文件页：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存
-  {
-    await p.goto(base + '#/files')
-    await p.waitForTimeout(800)
-    const calls = () => p.evaluate(() => (window.__fileCalls ?? []).filter((x, i, a) => a.indexOf(x) === i).join(','))
-    const first = await calls()
-    if (first !== '') errors.push(`文件页：首屏不该读整棵树，实际读了「${first || '(根)'}」，应该只读根目录一层`)
-    const row = (name) => p.locator(`main button[title="${name}"]`).first()
-    // 根目录这一层有 src、tests 和几个文件，没有更深层的内容
-    await row('src')
-      .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('文件页：根目录没有列出 src'))
-    await row('tests')
-      .waitFor({ timeout: 3000 })
-      .catch(() => errors.push('文件页：根目录没有列出 tests'))
-    if (await row('src/App.tsx').count()) errors.push('文件页：没展开 src 就列出了它下面的文件')
-    if (await p.getByText('共 20000 个文件', { exact: false }).count()) errors.push('文件页：还在显示全量文件数量')
-    await check(p, '文件-根目录一层', ['src', 'README.md'])
-    // 展开 src：这时才读 src 这一层
-    await row('src').click()
-    await row('src/App.tsx')
-      .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('文件页：展开 src 后没有读它这一层'))
-    if (!(await calls()).split(',').includes('src')) errors.push('文件页：展开 src 时没有请求这一层')
-    await check(p, '文件-展开一层', ['api', 'App.tsx'])
-    // 收起再展开：不重复请求
-    await row('src').click()
-    await p.waitForTimeout(200)
-    const before = await p.evaluate(() => (window.__fileCalls ?? []).length)
-    await row('src').click()
-    await row('src/App.tsx')
-      .waitFor({ timeout: 3000 })
-      .catch(() => {})
-    const after = await p.evaluate(() => (window.__fileCalls ?? []).length)
-    if (after !== before) errors.push(`文件页：收起再展开又请求了一次（${before} → ${after}）`)
-    // 名称搜索：还没展开的深层文件也能搜到，结果是平铺的
-    await p.getByPlaceholder('查找文件').fill('Restock')
-    await p
-      .locator('main button[title="src/components/RestockButton.tsx"]')
-      .waitFor({ timeout: 8000 })
-      .catch(() => errors.push('文件页：名称搜索没有找到还没展开的深层文件'))
-    await check(p, '文件-名称搜索', ['RestockButton'])
-    await p.getByPlaceholder('查找文件').fill('')
-    await p.waitForTimeout(400)
-  }
-
-  const m = await page({ width: 390, height: 844 })
-  await m.goto(base)
-  await check(m, '手机-首页', ['今天要做什么'])
-  await m.goto(base + '#/workflows')
-  await check(m, '手机-工作流')
-} catch (e) {
-  // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
-  if (process.env.GITHUB_ACTIONS)
-    console.log(`::error title=界面检查::第 ${n} 步之后出错：${String(e?.message ?? e).split('\n')[0]}`)
-  throw e
-} finally {
-  await browser.close()
-  server.close()
-}
-
-if (errors.length) {
-  if (process.env.GITHUB_ACTIONS) for (const e of errors) console.log(`::error title=界面检查::${e.split('\n')[0]}`)
-  console.error('\n' + errors.join('\n'))
-  process.exit(1)
-}
-console.log(`\n界面检查通过，截图在 ui-shots/`)
-assert.ok(n > 0)
   // 侧栏项目分组：默认按添加时间排（演示项目的时间各不相同），拖拽手柄能调整顺序并持久化，刷新后还是新顺序
   const projectRows = () =>
     p
@@ -653,3 +696,209 @@ assert.ok(n > 0)
     assert.deepEqual((await projectRows()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
     await check(p, '侧栏-刷新后顺序', ['运营后台', '商城前台'])
   }
+  // 浅色主题
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+  await p.goto(base + '#/projects')
+  await check(p, '项目-浅色', ['任务', '设置'])
+  // 文件页：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存
+  {
+    await p.goto(base + '#/files')
+    await p.waitForTimeout(800)
+    const calls = () => p.evaluate(() => (window.__fileCalls ?? []).filter((x, i, a) => a.indexOf(x) === i).join(','))
+    const first = await calls()
+    if (first !== '') errors.push(`文件页：首屏不该读整棵树，实际读了「${first || '(根)'}」，应该只读根目录一层`)
+    const row = (name) => p.locator(`main button[title="${name}"]`).first()
+    // 根目录这一层有 src、tests 和几个文件，没有更深层的内容
+    await row('src')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件页：根目录没有列出 src'))
+    await row('tests')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('文件页：根目录没有列出 tests'))
+    if (await row('src/App.tsx').count()) errors.push('文件页：没展开 src 就列出了它下面的文件')
+    if (await p.getByText('共 20000 个文件', { exact: false }).count()) errors.push('文件页：还在显示全量文件数量')
+    await check(p, '文件-根目录一层', ['src', 'README.md'])
+    // 展开 src：这时才读 src 这一层
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件页：展开 src 后没有读它这一层'))
+    if (!(await calls()).split(',').includes('src')) errors.push('文件页：展开 src 时没有请求这一层')
+    await check(p, '文件-展开一层', ['api', 'App.tsx'])
+    // 收起再展开：不重复请求
+    await row('src').click()
+    await p.waitForTimeout(200)
+    const before = await p.evaluate(() => (window.__fileCalls ?? []).length)
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    const after = await p.evaluate(() => (window.__fileCalls ?? []).length)
+    if (after !== before) errors.push(`文件页：收起再展开又请求了一次（${before} → ${after}）`)
+    // 名称搜索：还没展开的深层文件也能搜到，结果是平铺的
+    await p.getByPlaceholder('查找文件').fill('Restock')
+    await p
+      .locator('main button[title="src/components/RestockButton.tsx"]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件页：名称搜索没有找到还没展开的深层文件'))
+    await check(p, '文件-名称搜索', ['RestockButton'])
+    await p.getByPlaceholder('查找文件').fill('')
+    await p.waitForTimeout(400)
+
+    // 右键菜单：文件行、文件夹行、空白处各一次；右键本身不能打开文件或展开目录
+    const menu = () => p.locator('[role="menu"]')
+    const menuText = async () => (await menu().innerText()).replace(/\s+/g, ' ')
+    const closeMenu = async () => {
+      await p.keyboard.press('Escape')
+      await menu()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+    // 文件行右键：出现菜单项，但文件没有被打开（没有弹出文件窗口）
+    await row('package.json').click({ button: 'right' })
+    await menu()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('文件右键：没有弹出菜单'))
+    const fileMenu = await menuText().catch(() => '')
+    for (const item of ['打开', '复制相对路径', '复制绝对路径', '在文件夹中打开'])
+      if (!fileMenu.includes(item)) errors.push(`文件右键：菜单里没有「${item}」`)
+    if (await p.getByRole('dialog').count()) errors.push('文件右键：右键打开了文件窗口')
+    await check(p, '文件-右键菜单')
+    await closeMenu()
+    if (await p.getByRole('dialog').count()) errors.push('文件右键：菜单项没点，文件窗口却开着')
+    // 文件夹行右键：菜单是「展开」，目录没有被展开
+    await row('tests').click({ button: 'right' })
+    await menu()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('文件夹右键：没有弹出菜单'))
+    const dirMenu = await menuText().catch(() => '')
+    for (const item of ['展开', '复制相对路径', '在文件夹中打开'])
+      if (!dirMenu.includes(item)) errors.push(`文件夹右键：菜单里没有「${item}」`)
+    if (dirMenu.includes('打开')) errors.push('文件夹右键：出现了只给文件的「打开」')
+    if (await row('tests/cart.test.ts').count()) errors.push('文件夹右键：右键把目录展开了')
+    await check(p, '文件-文件夹右键菜单')
+    await closeMenu()
+    // 空白处右键：整棵树的菜单
+    await p.locator('main button[title="APP"]').count()
+    const box = await p.locator('main [class*="overflow-auto"]').last().boundingBox()
+    if (box) await p.mouse.click(box.x + box.width - 40, box.y + box.height - 20, { button: 'right' })
+    await menu()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('空白处右键：没有弹出菜单'))
+    const blankMenu = await menuText().catch(() => '')
+    for (const item of ['刷新', '全部展开', '全部收起', '复制项目路径', '在文件夹中打开'])
+      if (!blankMenu.includes(item)) errors.push(`空白处右键：菜单里没有「${item}」`)
+    await check(p, '文件-空白处右键菜单')
+    await closeMenu()
+    // 全部展开只作用于已经读过的层：展开后不再多读没有出现过的目录
+    const beforeExpand = await calls()
+    await p.mouse.click(box.x + box.width - 40, box.y + box.height - 20, { button: 'right' })
+    await menu()
+      .waitFor({ timeout: 5000 })
+      .catch(() => {})
+    await menu().getByText('全部展开', { exact: true }).click()
+    await p.waitForTimeout(900)
+    const afterExpand = await calls()
+    const requested = afterExpand.split(',').filter((x) => x && !beforeExpand.split(',').includes(x))
+    const known = await p
+      .locator('main button[title]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('title') ?? ''))
+    const unknown = requested.filter((p2) => !known.some((k) => k.startsWith(p2 + '/')))
+    if (unknown.length) errors.push(`全部展开：读了界面上还没有的目录「${unknown.join('、')}」`)
+    await check(p, '文件-全部展开')
+    await p.keyboard.press('Escape')
+  }
+  // 项目设置：测试步骤和按 Agent 派生的参数都要能正常显示，不能溢出、不能串行
+  // 先点侧栏的项目（title 是「打开项目「名字」」）进入项目首页，管理区里有「项目设置」按钮
+  const settingsButton = p.getByRole('button', { name: '项目设置' })
+  if (!(await settingsButton.count()))
+    await p
+      .locator('[data-sidebar] button[title^="打开项目「"]')
+      // 演示里只有「商城前台」配了测试步骤，按名字点它，不依赖侧栏顺序
+      .filter({ hasText: '商城前台' })
+      .first()
+      .click()
+      .catch(() => {})
+  if (await settingsButton.count()) {
+    await settingsButton.first().click()
+    await check(p, '项目设置-测试步骤', ['测试步骤', 'AI 生成步骤', 'WSL 发行版'])
+    const scroller = p.getByRole('dialog').locator('form').first()
+    await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight))
+    await check(p, '项目设置-底部', ['推送到远端', 'AI 配置'])
+    await p.keyboard.press('Escape')
+  } else errors.push('项目设置：项目页上没有「项目设置」按钮')
+
+  // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue
+  await p.goto(base)
+  await p.getByRole('button', { name: '设置', exact: true }).first().click()
+  await p.waitForTimeout(1200)
+  const lang = p.getByRole('combobox', { name: '语言' })
+  if (await lang.count()) {
+    // 下拉是把选项渲染在弹层里的自定义列表，不是原生 select
+    await lang.click()
+    await p
+      .getByRole('option', { name: /English/ })
+      .first()
+      .click()
+    await p.waitForTimeout(800)
+    await p.goto(base + '#/chat')
+    await p.waitForTimeout(1200)
+    await p.locator('#task-prompt').fill('Check the module layout')
+    await p.waitForTimeout(300)
+    await p.locator('#task-prompt').press('Enter')
+    await p
+      .locator('#follow-up')
+      .waitFor({ timeout: 20000 })
+      .catch(() => errors.push('英文界面：没有打开对话页'))
+    await p.locator('#follow-up').fill('Also check the test setup')
+    await p.waitForTimeout(300)
+    await p.locator('#follow-up').press('Enter')
+    // 发送成功时输入框会被清空；没清空说明没送出去（英文界面里按钮旁边容易看不出状态）
+    let cleared = false
+    for (let i = 0; i < 30 && !cleared; i++) {
+      cleared = (await p.locator('#follow-up').innerText()).trim() === ''
+      if (!cleared) await p.waitForTimeout(150)
+    }
+    if (!cleared) errors.push('英文界面：执行中的消息没有发出去（输入框没清空）')
+    await p
+      .getByText('Also check the test setup', { exact: false })
+      .first()
+      .waitFor({ timeout: 10000 })
+      .catch(() => errors.push('英文界面：执行中发的消息没有立刻出现'))
+    if (await p.getByText('Queue', { exact: false }).count()) errors.push('英文界面：还能看到 Queue')
+    await check(p, '英文-执行中发消息')
+    // 英文的文件页：搜索框、计数文案都换成英文
+    await p.goto(base + '#/files')
+    await p.waitForTimeout(900)
+    if (!(await p.getByPlaceholder('Find file').count())) errors.push('英文界面：文件页的搜索框没有换成 Find file')
+    if (!(await p.getByText('files read', { exact: false }).count())) errors.push('英文界面：文件页的计数还是中文')
+    await p.locator('main button[title="src"]').first().click()
+    await p
+      .locator('main button[title="src/App.tsx"]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => {})
+    await check(p, '文件-英文', ['files read'])
+  } else errors.push('英文界面：设置里没有语言选择')
+
+  const m = await page({ width: 390, height: 844 })
+  await m.goto(base)
+  await check(m, '手机-首页', ['今天要做什么'])
+  await m.goto(base + '#/workflows')
+  await check(m, '手机-工作流')
+} catch (e) {
+  // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
+  if (process.env.GITHUB_ACTIONS)
+    console.log(`::error title=界面检查::第 ${n} 步之后出错：${String(e?.message ?? e).split('\n')[0]}`)
+  throw e
+} finally {
+  await browser.close()
+  server.close()
+}
+
+if (errors.length) {
+  if (process.env.GITHUB_ACTIONS) for (const e of errors) console.log(`::error title=界面检查::${e.split('\n')[0]}`)
+  console.error('\n' + errors.join('\n'))
+  process.exit(1)
+}
+console.log(`\n界面检查通过，截图在 ui-shots/`)
+assert.ok(n > 0)

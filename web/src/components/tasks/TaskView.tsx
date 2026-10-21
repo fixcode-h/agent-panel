@@ -56,7 +56,7 @@ import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
-import { ATTACHMENT_PROMPT, useAttachments, useFileMention } from '@/components/chat/Attachments'
+import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { forSend } from '@shared/composer'
@@ -289,6 +289,10 @@ export function TaskView({
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
+  // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
+  // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
+  const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
+  const [dropOver, setDropOver] = useState(false)
   const [rewindAsk, setRewindAsk] = useState('')
 
   const apply = (next: Task) => {
@@ -607,6 +611,9 @@ export function TaskView({
       onSubmit={() => void send()}
       files={files}
       taRef={followTa}
+      // 拖文件到页面任何位置都算引入到要求里；流程图视图里节点自己有自己的拖拽，不接管
+      dropScope={isFlow ? null : dropArea}
+      onDropOver={setDropOver}
       menus={
         <>
           {mention.menu}
@@ -691,7 +698,9 @@ export function TaskView({
         <div
           className={cn('relative flex min-w-0 flex-1', pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0')}
         >
-          <main className="flex min-w-0 flex-1 flex-col bg-bg md:h-full">
+          <main ref={setDropArea} className="relative flex min-w-0 flex-1 flex-col bg-bg md:h-full">
+            {/* 从外面把文件拖到对话页任何位置都算引入到要求里；右栏和流程图有自己的拖拽语义，不在范围内 */}
+            {dropOver && <DropOverlay />}
             <header
               className={cn(
                 'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
