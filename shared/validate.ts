@@ -39,7 +39,7 @@ export function checkWorkflow(
   others: Workflow[],
   selfId = '',
 ): string | null {
-  if (wf.mainAgentId && !agentIds.has(wf.mainAgentId)) return t('主 Agent 不存在')
+  if (wf.mainAgentId && !agentIds.has(wf.mainAgentId)) return t('主角色不存在')
   // 去掉不存在的、重复的成员，以及和主 Agent 相同的成员
   const seen = new Set<string>([wf.mainAgentId])
   wf.members = wf.members.filter((m) => agentIds.has(m.agentId) && !seen.has(m.agentId) && !!seen.add(m.agentId))
@@ -90,7 +90,7 @@ export function checkWorkflow(
 
 /** 能不能删这个 Agent：自带的默认 Agent 不能删，被工作流用着的要先移除 */
 export function agentDeleteError(id: string, workflows: Workflow[]): string | null {
-  if (id === DEFAULT_AGENT_ID) return t('默认 Agent 是自带的，不能删除')
+  if (id === DEFAULT_AGENT_ID) return t('默认角色是自带的，不能删除')
   const used = workflows.filter(
     (w) =>
       w.mainAgentId === id ||

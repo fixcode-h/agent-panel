@@ -93,7 +93,7 @@ export const defaultAgent = (): Agent => {
   const at = new Date(0).toISOString()
   return {
     ...AgentInput.parse({
-      name: t('默认 Agent'),
+      name: t('默认角色'),
       description: t('使用默认 CLI 的默认模型和思考强度，对话时可以临时调整'),
       icon: 'sparkles',
     }),

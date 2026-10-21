@@ -623,7 +623,7 @@ function SettingsBody({
               <Row
                 title={t('新建文件的格式')}
                 desc={t(
-                  '面板写说明文件、部署全局说明，以及交给 Agent 的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。',
+                  '面板写说明文件、部署全局说明，以及交给角色的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。',
                 )}
                 stack
               >
@@ -680,11 +680,11 @@ function SettingsBody({
             <>
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {t(
-                  'Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。',
+                  '角色可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。',
                 )}
               </p>
               <Group>
-                <Row title={t('默认 CLI')} desc={t('Agent 选了「系统默认」或没有指定 CLI 时使用')}>
+                <Row title={t('默认 CLI')} desc={t('角色选了「系统默认」或没有指定 CLI 时使用')}>
                   <Select
                     aria-label={t('默认 CLI')}
                     value={defCli}
@@ -738,15 +738,12 @@ function SettingsBody({
                   />
                 </Row>
                 {/* 默认模型和思考强度也只展示，在对应 CLI 里改 */}
-                <Row
-                  title={t('默认模型')}
-                  desc={t('Agent 没有指定模型时使用，跟随 {cli} 的设置', { cli: defDef.name })}
-                >
+                <Row title={t('默认模型')} desc={t('角色没有指定模型时使用，跟随 {cli} 的设置', { cli: defDef.name })}>
                   <ReadValue mono>{defaultModelText(defDef, drafts[defCli])}</ReadValue>
                 </Row>
                 <Row
                   title={t('默认思考强度')}
-                  desc={t('Agent 和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
+                  desc={t('角色和档位都没有指定时使用，跟随 {cli} 的设置', { cli: defDef.name })}
                 >
                   <ReadValue>{defaultEffortText(defDef, defDraft)}</ReadValue>
                 </Row>
@@ -866,9 +863,7 @@ function SettingsBody({
           {cur.id === 'assist' && (
             <>
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
-                {t(
-                  '在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。',
-                )}
+                {t('在角色和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。')}
               </p>
               <Group>
                 <Row title={t('使用的 CLI')} desc={t('默认用「CLI」里设为默认的那个')}>
@@ -900,13 +895,13 @@ function SettingsBody({
                     onChange={(v) => setAssist({ ...assist, model: v })}
                   />
                 </Row>
-                <Row title={t('创建 Agent 的补充规则')} desc={t('会加进提示词，例如命名习惯、团队约定')} stack>
+                <Row title={t('创建角色的补充规则')} desc={t('会加进提示词，例如命名习惯、团队约定')} stack>
                   <Textarea
                     rows={4}
                     value={assist.agentRules}
                     onChange={(e) => setAssist({ ...assist, agentRules: e.target.value })}
                     placeholder={t(
-                      '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的 Agent 默认用 Claude Code',
+                      '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code',
                     )}
                     className="font-mono text-[0.8125rem]"
                   />

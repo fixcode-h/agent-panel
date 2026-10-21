@@ -255,24 +255,24 @@ export function dispatchText(d: Dispatch, title: string) {
   switch (d.action) {
     case 'continue': {
       const head = d.branch
-        ? t('主 Agent 评估「{title}」：通过，走「{branch}」分支', {
+        ? t('主角色评估「{title}」：通过，走「{branch}」分支', {
             title,
             branch: d.branch === 'pass' ? t('通过') : t('不通过'),
           })
-        : t('主 Agent 评估「{title}」：通过', { title })
+        : t('主角色评估「{title}」：通过', { title })
       return d.note ? `${head}${t('。交代后续：{note}', { note: d.note })}` : head
     }
     case 'rework':
-      return t('主 Agent 把「{title}」退回修改：{feedback}', { title, feedback: d.feedback || t('（没有写具体意见）') })
+      return t('主角色把「{title}」退回修改：{feedback}', { title, feedback: d.feedback || t('（没有写具体意见）') })
     case 'delegate':
-      return t('主 Agent 把「{title}」相关的事委派给工作流「{workflow}」', { title, workflow: d.workflow })
+      return t('主角色把「{title}」相关的事委派给工作流「{workflow}」', { title, workflow: d.workflow })
     case 'stop':
-      return t('主 Agent 停下了流程：{reason}', { reason: d.reason || t('（没有写原因）') })
+      return t('主角色停下了流程：{reason}', { reason: d.reason || t('（没有写原因）') })
     case 'run':
-      return t('主 Agent 起了新的一次运行：{input}', { input: d.input || t('按流程图再走一遍') })
+      return t('主角色起了新的一次运行：{input}', { input: d.input || t('按流程图再走一遍') })
     case 'restart':
-      return t('主 Agent 重做这次运行：{feedback}', { feedback: d.feedback || t('（没有写具体原因）') })
+      return t('主角色重做这次运行：{feedback}', { feedback: d.feedback || t('（没有写具体原因）') })
     case 'answer':
-      return t('主 Agent 直接回答，没有起运行')
+      return t('主角色直接回答，没有起运行')
   }
 }

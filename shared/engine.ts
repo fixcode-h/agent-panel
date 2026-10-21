@@ -860,7 +860,7 @@ async function runNodeSingle(
       return r.ok ? { ok: true, text: r.output } : r
     }
     if (!step.agentId)
-      return { ok: false, error: t('「{title}」没有可执行的 Agent，请先给工作流选择主 Agent', { title: step.title }) }
+      return { ok: false, error: t('「{title}」没有可执行的角色，请先给工作流选择主角色', { title: step.title }) }
     const full = unitPrompt(
       host,
       inv,
@@ -1024,18 +1024,18 @@ async function runNodeSingle(
         return fail(
           ev.stopped || ev.halted
             ? ev
-            : { ...ev, error: t('主 Agent 评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
+            : { ...ev, error: t('主角色评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
         )
       let d: Dispatch | null = parseDispatch(ev.text)
       if (!d) {
-        system(host, t('主 Agent 没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
+        system(host, t('主角色没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
         d = { action: 'continue' }
       }
       // 退回次数用完、委派来回太多次：只能继续或停下
       if (d.action === 'rework' && reworks >= node.hooks.maxRounds)
         return fail({
           ok: false,
-          error: t('主 Agent 退回「{title}」{n} 次后仍不满意：{feedback}', {
+          error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
             title: step.title,
             n: reworks,
             feedback: clip(d.feedback, 1500),
@@ -1270,7 +1270,7 @@ async function runNodeSteps(
       return res.ok ? { ok: true, text: res.output } : res
     }
     if (!r.agentId)
-      return { ok: false, error: t('「{title}」没有可执行的 Agent，请先给工作流选择主 Agent', { title: r.title }) }
+      return { ok: false, error: t('「{title}」没有可执行的角色，请先给工作流选择主角色', { title: r.title }) }
     const decidingHere = deciding && i === units.length - 1 && inv.slot !== 'review'
     const full = unitPrompt(host, inv, node, unit, r, before, i === 0 ? start : '', decidingHere, true)
     const prev =
@@ -1449,12 +1449,12 @@ async function runNodeSteps(
         return fail(
           ev.stopped || ev.halted
             ? ev
-            : { ...ev, error: t('主 Agent 评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
+            : { ...ev, error: t('主角色评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
           recordOf(last),
         )
       let d: Dispatch | null = parseDispatch(ev.text)
       if (!d) {
-        system(host, t('主 Agent 没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
+        system(host, t('主角色没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
         d = { action: 'continue' }
       }
       // 退回次数用完、委派来回太多次：只能继续或停下
@@ -1462,7 +1462,7 @@ async function runNodeSteps(
         return fail(
           {
             ok: false,
-            error: t('主 Agent 退回「{title}」{n} 次后仍不满意：{feedback}', {
+            error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
               title: step.title,
               n: reworks,
               feedback: clip(d.feedback, 1500),
@@ -1656,7 +1656,7 @@ function openMain(host: EngineHost, inv: Omit<Invocation, 'main'>): MainCtl {
       workflowId: inv.workflow.id,
       flowId: inv.flow.id,
       kind: 'main',
-      title: inv.parentId ? t('主 Agent · {name}', { name: inv.workflow.name }) : t('主 Agent'),
+      title: inv.parentId ? t('主角色 · {name}', { name: inv.workflow.name }) : t('主角色'),
       agentId: inv.workflow.mainAgentId,
     })
     host.task.steps.push(step)
@@ -1735,7 +1735,7 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
   const s = await mainTurn(host, main, 'summary', summaryEvent(results, main.nested))
   if (!s.ok) {
     if (s.stopped || s.halted) return s
-    const error = t('主 Agent 整理结果失败：{error}', { error: s.error })
+    const error = t('主角色整理结果失败：{error}', { error: s.error })
     main.step.status = 'failed'
     main.step.endedAt = now()
     system(host, error, main.step.id, true)
@@ -1940,7 +1940,7 @@ function makeOrchestra(
       if (task.steps.some((s) => !s.parentId && inRun(s.id, run) && s.status === 'running' && !isMainStep(s)))
         return { ok: false, info: '这次运行还有节点在执行，等它走完再起新的运行' }
       askRun(host, input)
-      system(host, t('主 Agent 起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }), where)
+      system(host, t('主角色起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }), where)
       host.changed(true)
       return { ok: true, info: '这一轮结束后会按流程图跑一次新的运行，节点全部新建' }
     },
@@ -2107,7 +2107,7 @@ function makeOrchestra(
         )
       system(
         host,
-        t('「{title}」派出 {n} 个子 Agent：{list}', {
+        t('「{title}」派出 {n} 个子角色：{list}', {
           title: self.title,
           n: made.length,
           list: made.map((m) => m.step.title).join(t('、')),
@@ -2137,7 +2137,7 @@ function makeOrchestra(
       if (main.step.id === self.id) return { error: '你就是主 Agent，自己决定' }
       system(
         host,
-        t('「{title}」向主 Agent 提问：{question}', { title: self.title, question: clip(question, 500) }),
+        t('「{title}」向主角色提问：{question}', { title: self.title, question: clip(question, 500) }),
         where,
       )
       host.changed(true)
@@ -2676,7 +2676,7 @@ export async function runEngineTurn(host: EngineHost) {
       system(
         host,
         t(
-          '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。',
+          '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。',
           { title: stuck.title },
         ),
         '',
@@ -2694,7 +2694,7 @@ export async function runEngineTurn(host: EngineHost) {
     // 新一次运行的节点：编排器还是原来那个，其余全部新建
     const fresh = planTask(wf, n).steps.filter((s) => !isMainStep(s))
     for (const s of fresh) if (!task.steps.some((x) => x.id === s.id)) task.steps.push(s)
-    if (input) system(host, t('主 Agent 起了第 {n} 次运行：{input}', { n, input: clip(input, 300) }), '')
+    if (input) system(host, t('主角色起了第 {n} 次运行：{input}', { n, input: clip(input, 300) }), '')
     tops = topSteps(task)
     host.changed(true)
     return runWorkflow(n)
@@ -2734,8 +2734,7 @@ export async function runEngineTurn(host: EngineHost) {
     const asked = takePendingRun(host)
     const input = asked || (d.action === 'run' ? (d.input ?? '') : d.action === 'restart' ? d.feedback : '')
     if (asked || d.action === 'run' || d.action === 'restart') {
-      if (input)
-        system(host, t('主 Agent 起了第 {n} 次运行：{input}', { n: run, input: clip(input, 300) }), main.step.id)
+      if (input) system(host, t('主角色起了第 {n} 次运行：{input}', { n: run, input: clip(input, 300) }), main.step.id)
       if (!(await runWorkflow(run, input))) return
     } else {
       system(host, dispatchText(d, t('第一条要求')), main.step.id)
@@ -2778,7 +2777,7 @@ export async function runEngineTurn(host: EngineHost) {
       const last = [...task.steps].reverse().find((s) => s.agentId === who && task.sessions[s.id])
       if (last) task.sessions[who] = task.sessions[last.id]
     }
-    if (!who) return finish(host, { ok: false, error: t('没有可以回答的 Agent，请先给工作流选择主 Agent') })
+    if (!who) return finish(host, { ok: false, error: t('没有可以回答的角色，请先给工作流选择主角色') })
     // 每一轮单独记耗时和用量，任务进度里能看到工作流跑完后的追加要求；预热不算一轮
     const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
     if (turn) host.changed(true)

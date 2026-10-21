@@ -44,7 +44,7 @@ export function BuiltinDialog({
       setWorkflows((ws) => [...ws, r.workflow])
       toast.success(
         r.created.length
-          ? t('已添加「{name}」，新建了 {n} 个 Agent', { name: r.workflow.name, n: r.created.length })
+          ? t('已添加「{name}」，新建了 {n} 个角色', { name: r.workflow.name, n: r.created.length })
           : t('已添加「{name}」', { name: r.workflow.name }),
       )
       onAdded(r.workflow)
@@ -60,7 +60,7 @@ export function BuiltinDialog({
       <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
         <p className="text-[0.8125rem] leading-relaxed text-muted">
           {t(
-            '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的 Agent（已经有的直接复用），Agent 引用的自带 Skill 在执行时自动装进 CLI。',
+            '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 CLI。',
           )}
         </p>
         {groups.map((g) => (
@@ -86,7 +86,7 @@ export function BuiltinDialog({
                       <p className="mt-0.5 text-[0.78125rem] leading-relaxed text-muted">{w.description}</p>
                       <p className="mt-1 text-[0.71875rem] text-subtle">
                         {t('{n} 步', { n: steps })} · {builtinAgentKeys(w).map(agentName).join(t('、'))}
-                        {lack > 0 && ` · ${t('将新建 {n} 个 Agent', { n: lack })}`}
+                        {lack > 0 && ` · ${t('将新建 {n} 个角色', { n: lack })}`}
                       </p>
                     </div>
                     {added ? (
@@ -115,7 +115,7 @@ export function BuiltinDialog({
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
         title={t('删除工作流「{name}」？', { name: removing?.name ?? '' })}
-        description={t('只删除工作流，用到的 Agent 会留着。')}
+        description={t('只删除工作流，用到的角色会留着。')}
         onConfirm={async () => {
           if (!removing) return
           try {

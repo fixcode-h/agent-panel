@@ -18,7 +18,7 @@ export const EN_FLOW: Record<string, string> = {
   小地图: 'Minimap',
   '≤{n} 轮': '≤{n} rounds',
   未命名节点: 'Untitled node',
-  '还没有选择主 Agent': 'No main Agent selected',
+  还没有选择主角色: 'No main role selected',
   不配置: 'None',
   这个工作流的流程: 'Flows in this workflow',
   其他工作流: 'Other workflows',
@@ -48,22 +48,22 @@ export const EN_FLOW: Record<string, string> = {
   '节点「{node}」里有重复的步骤 id': 'Node “{node}” has duplicate step ids',
   '节点「{node}」的步骤 id「{id}」不能用 {reserved}': 'Step id “{id}” in node “{node}” cannot be one of: {reserved}',
   执行方式: 'Execution type',
-  '执行的 Agent': 'Executing Agent',
-  '主 Agent · {name}': 'Main Agent · {name}',
-  '主 Agent（还没有选择）': 'Main Agent (not selected yet)',
-  '子 Agent': 'Sub-agents',
+  执行的角色: 'Executing role',
+  '主角色 · {name}': 'Main role · {name}',
+  '主角色（还没有选择）': 'Main role (not selected yet)',
+  子角色: 'Sub-roles',
   调用的流程: 'Flow to call',
   选择流程: 'Select a flow',
   '会和工作流说明、上游结果一起发给执行者': 'Sent to the executor along with the workflow doc and upstream results',
   这一步要做的事: 'Step instructions',
-  '{name} 暴露的参数，在这一步上的取值；没改的用 Agent 的默认值。':
-    'Parameters exposed by {name}, set for this step; unchanged ones use the Agent default.',
+  '{name} 暴露的参数，在这一步上的取值；没改的用角色的默认值。':
+    'Parameters exposed by {name}, set for this step; unchanged ones use the role default.',
   '例如：按分析结论实现接口，补充单元测试，完成后列出改动的文件。':
     'e.g. Implement the API based on the analysis, add unit tests, and list the changed files when done.',
   '这一步完成后执行验收；不通过就把意见交回这一步继续完善':
     'Reviews this step when it finishes; if it fails, the feedback goes back to this step for another pass',
   验收流程: 'Review flow',
-  '添加 Agent': 'Add Agent',
+  添加角色: 'Add role',
   添加工作流: 'Add workflow',
   挂载流程: 'Attached flows',
   '{slot}流程': '{slot} flow',
@@ -102,7 +102,7 @@ export const EN_FLOW: Record<string, string> = {
   新节点: 'New node',
   '子流程 {n}': 'Subflow {n}',
   '新建子流程，可以挂到节点的开始、验收、结束上': 'New subflow, which can be attached to a node’s Start, Review or End',
-  'Agent 节点': 'Agent node',
+  角色节点: 'Role node',
   执行另一个流程的节点: 'A node that runs another flow',
   流程节点: 'Flow node',
   自动排列: 'Auto layout',
@@ -112,7 +112,7 @@ export const EN_FLOW: Record<string, string> = {
   新建节点: 'New node',
   '新建节点，连到「{name}」前面': 'New node before “{name}”',
   '新建节点，接在「{name}」后面': 'New node after “{name}”',
-  '主 Agent': 'Main Agent',
+  主角色: 'Main role',
   '从「开始」连过来': 'Connect from Start',
   '连到「结束」': 'Connect to End',
   从这里设计工作流: 'Design your workflow here',
@@ -129,17 +129,17 @@ export const EN_FLOW: Record<string, string> = {
   // 工作流说明
   编辑: 'Edit',
   预览: 'Preview',
-  '引用 Agent': 'Mention Agent',
-  '在光标处插入 Agent 名称': 'Insert an Agent name at the cursor',
+  引用角色: 'Mention role',
+  在光标处插入角色名称: 'Insert a role name at the cursor',
   插入模板: 'Insert template',
   工作流说明: 'Workflow doc',
   项目配置项: 'Project fields',
   '项目用这个工作流时，可以在项目设置里填这些值。新建对话时解析一次写进任务，之后改设置不影响已经开始的对话。':
     'When a project uses this workflow, these fields can be filled in project settings. Values are resolved once when a conversation starts, so later edits do not affect conversations already running.',
   技能槽: 'Skill slot',
-  'Agent 的 Skill 名写 {{槽名}}，这里选实际用哪个技能':
-    'Agents list {{slot}} in their skills; choose which skill it resolves to',
-  'Agent 参数': 'Agent param',
+  '角色的 Skill 名写 {{槽名}}，这里选实际用哪个技能':
+    'Roles list {{slot}} in their skills; choose which skill it resolves to',
+  角色参数: 'Role param',
   覆盖节点上同名参数的值: 'Overrides the value of the same param on nodes',
   把填的内容追加到工作流说明后面: 'Appends the value to the workflow doc',
   '名字，例如 projectStructure': 'Name, e.g. projectStructure',
@@ -148,8 +148,8 @@ export const EN_FLOW: Record<string, string> = {
   '槽名，例如 projectStructure': 'Slot name, e.g. projectStructure',
   参数名: 'Param name',
   '说明（项目设置里会显示）': 'Description (shown in project settings)',
-  'Agent 没有这个参数时忽略，不会报错': 'Ignored when an Agent has no such param; no error',
-  '没有 Agent 用这个参数': 'No Agent uses this param',
+  '角色没有这个参数时忽略，不会报错': 'Ignored when a role has no such param; no error',
+  没有角色用这个参数: 'No role uses this param',
   加一项配置: 'Add a field',
   '用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。':
     'Use Markdown to describe the goals, guidelines and definition of done.\nNot sure where to start? Click “Insert template” at the top right.',
@@ -174,8 +174,8 @@ export const EN_FLOW: Record<string, string> = {
   'AI 优化': 'AI refine',
   复制一份: 'Duplicate',
   导出: 'Export',
-  '导出成文件（连同用到的 Agent），可以在别的电脑上导入':
-    'Export to a file (including the Agents it uses) that can be imported on another computer',
+  '导出成文件（连同用到的角色），可以在别的电脑上导入':
+    'Export to a file (including the roles it uses) that can be imported on another computer',
   删除: 'Delete',
   流程图: 'Flowchart',
   团队与说明: 'Team & doc',
@@ -184,18 +184,18 @@ export const EN_FLOW: Record<string, string> = {
   '例如：Web 功能开发': 'e.g. Web feature development',
   简介: 'Description',
   适合什么样的任务: 'What kinds of tasks it suits',
-  '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给 Agent；具体每一步做什么在「流程图」里编辑。':
-    'Describe the goals, guidelines and definition of done. This doc is sent to the Agent for every node; edit what each step does in the Flowchart tab.',
+  '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给角色；具体每一步做什么在「流程图」里编辑。':
+    'Describe the goals, guidelines and definition of done. This doc is sent to the role for every node; edit what each step does in the Flowchart tab.',
   团队结构: 'Team structure',
-  '还没有主 Agent': 'No main Agent yet',
-  '还没有子 Agent': 'No sub-agents yet',
+  还没有主角色: 'No main role yet',
+  还没有子角色: 'No sub-roles yet',
   '删除「{name}」？': 'Delete “{name}”?',
-  '团队里的 Agent 不会被删除。此操作无法撤销。': 'Agents on the team won’t be deleted. This can’t be undone.',
+  '团队里的角色不会被删除。此操作无法撤销。': 'Roles on the team won’t be deleted. This can’t be undone.',
   '正在被 {list} 使用，请先改用其他工作流。': 'In use by {list}. Switch them to another workflow first.',
 
   // 工作流选择与摘要
-  '未选默认 Agent': 'No default Agent',
-  '{n} 个子 Agent': '{n} sub-agents',
+  未选默认角色: 'No default role',
+  '{n} 个子角色': '{n} sub-roles',
   '还没有工作流，先去工作流页面创建': 'No workflows yet. Create one on the Workflows page first',
   工作流: 'Workflow',
   '还没有指定工作流。': 'No workflow assigned yet.',
@@ -203,7 +203,7 @@ export const EN_FLOW: Record<string, string> = {
 
   // 工作流页面
   新工作流: 'New workflow',
-  '已导入「{name}」，新建了 {n} 个 Agent：{list}': 'Imported “{name}” and created {n} Agents: {list}',
+  '已导入「{name}」，新建了 {n} 个角色：{list}': 'Imported “{name}” and created {n} roles: {list}',
   '已导入「{name}」': 'Imported “{name}”',
   '{name} 副本': '{name} copy',
   导入工作流文件: 'Import a workflow file',
@@ -211,14 +211,14 @@ export const EN_FLOW: Record<string, string> = {
   'AI 创建': 'Create with AI',
   没有匹配的工作流: 'No matching workflows',
   创建第一个工作流: 'Create your first workflow',
-  '工作流把 Agent 组成团队：选一个主 Agent 负责推进，再加几个子 Agent，然后在流程图里编排执行顺序。':
-    'A workflow organizes Agents into a team: pick a main Agent to drive the work, add a few sub-agents, then arrange the execution order in the flowchart.',
+  '工作流把角色组成团队：选一个主角色负责推进，再加几个子角色，然后在流程图里编排执行顺序。':
+    'A workflow organizes roles into a team: pick a main role to drive the work, add a few sub-roles, then arrange the execution order in the flowchart.',
   新建工作流: 'New workflow',
 
   // 导入导出
   '不是有效的 JSON 文件': 'Not a valid JSON file',
   '这不是 Agent 面板导出的工作流文件': 'This isn’t a workflow file exported from Agent Panel',
-  '文件里的 Agent「{name}」格式不对': 'Agent “{name}” in the file is invalid',
+  '文件里的角色「{name}」格式不对': 'Role “{name}” in the file is invalid',
   文件里的工作流格式不对: 'The workflow in the file is invalid',
   '{name}（导入 {n}）': '{name} (imported {n})',
   '{name}（导入）': '{name} (imported)',
@@ -248,15 +248,15 @@ export const EN_FLOW: Record<string, string> = {
     'Hand it anything: analysis, debugging, research, small changes. It returns the result and suggests which workflow to run next',
   '默认工作流是自带的，不能删除': 'The Default workflow is built in and cannot be deleted',
   这个工作流用到的: 'Used in this workflow',
-  '其他 Agent': 'Other Agents',
-  '默认执行 Agent': 'Default Agent',
-  '节点没有单独指定 Agent 时用它；节点按连线并发执行，不再由它调度':
-    'Used by nodes that do not pick an Agent; nodes run concurrently along the connections and it no longer dispatches.',
-  '选择默认执行 Agent': 'Select default Agent',
-  '在流程图的节点上选；节点执行中还可以自己再派子 Agent 并发处理':
-    'Chosen on the nodes in the flow chart; a running node can also start more sub-agents to work in parallel',
-  '节点还都由默认执行 Agent 自己做。': 'All nodes are still done by the default Agent.',
-  '节点的 Agent 都还在': 'Node Agents all exist',
-  '这些节点的 Agent 已经删除：{names}': 'The Agents of these nodes were deleted: {names}',
-  'Agent 分工': 'Agent roles',
+  其他角色: 'Other roles',
+  默认执行角色: 'Default role',
+  '节点没有单独指定角色时用它；节点按连线并发执行，不再由它调度':
+    'Used by nodes that do not pick a role; nodes run concurrently along the connections and it no longer dispatches.',
+  选择默认执行角色: 'Select default role',
+  '在流程图的节点上选；节点执行中还可以自己再派子角色并发处理':
+    'Chosen on the nodes in the flow chart; a running node can also start more sub-roles to work in parallel',
+  '节点还都由默认执行角色自己做。': 'All nodes are still done by the default role.',
+  节点的角色都还在: 'Node roles all exist',
+  '这些节点的角色已经删除：{names}': 'The roles of these nodes were deleted: {names}',
+  角色分工: 'Roles',
 }

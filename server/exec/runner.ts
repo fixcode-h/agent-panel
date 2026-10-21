@@ -440,7 +440,7 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
   if (NETWORK_ERROR.test(detail))
     hints.push(
       t(
-        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让角色分几次写。',
       ),
     )
   // Codex 的线程里存着上一个模型的工具调用时，换成别的模型后接口会一直拒绝这条历史
@@ -470,7 +470,7 @@ async function runAgent(
   const found = agentId
     ? ctx.agents.find((a) => a.id === agentId)
     : { ...defaultAgent(), id: '', name: '', description: '' }
-  if (!found) return { ok: false, error: t('找不到执行这一步的 Agent，可能已被删除') }
+  if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
     call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
@@ -480,7 +480,7 @@ async function runAgent(
   if (!def) return { ok: false, error: t('未知的 CLI：{cli}', { cli: cliId }) }
   const cs = cliSettings(settings, cliId)
   if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
-  if (!agent.enabled) return { ok: false, error: t('Agent「{name}」已停用', { name: agent.name }) }
+  if (!agent.enabled) return { ok: false, error: t('角色「{name}」已停用', { name: agent.name }) }
   const cwd = project.path
   const dir = await stat(cwd).catch(() => null)
   if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }

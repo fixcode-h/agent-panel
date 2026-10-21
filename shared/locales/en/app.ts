@@ -181,7 +181,7 @@ export const EN_APP: Record<string, string> = {
   打开设置: 'Open settings',
   任务: 'Tasks',
   命令面板: 'Command palette',
-  '搜索项目、任务、Agent、工作流，或者输入操作': 'Search projects, tasks, Agents, workflows or actions',
+  '搜索项目、任务、角色、工作流，或者输入操作': 'Search projects, tasks, roles, workflows or actions',
   没有找到: 'Nothing found',
   '↑↓ 选择 · Enter 打开': '↑↓ to select · Enter to open',
   '{mod}K 命令面板': '{mod}K command palette',
@@ -226,8 +226,8 @@ export const EN_APP: Record<string, string> = {
     'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
   '{n} 个说明文件有改动': '{n} notes files changed',
   '还没有启用 CLI': 'No CLI enabled yet',
-  '：检测到本机已安装 {name}，启用后就能运行 Agent 和工作流。':
-    ': {name} is installed on this machine. Enable it to run Agents and workflows.',
-  '：先安装并启用一个 CLI，才能运行 Agent 和工作流。': ': Install and enable a CLI to run Agents and workflows.',
+  '：检测到本机已安装 {name}，启用后就能运行角色和工作流。':
+    ': {name} is installed on this machine. Enable it to run roles and workflows.',
+  '：先安装并启用一个 CLI，才能运行角色和工作流。': ': Install and enable a CLI to run roles and workflows.',
   '去启用 {name}': 'Enable {name}',
 }

@@ -24,8 +24,8 @@ export function NoCliBanner() {
         <b className="font-medium">{t('还没有启用 CLI')}</b>
         <span className="text-subtle">
           {target.installed
-            ? t('：检测到本机已安装 {name}，启用后就能运行 Agent 和工作流。', { name: target.name })
-            : t('：先安装并启用一个 CLI，才能运行 Agent 和工作流。')}
+            ? t('：检测到本机已安装 {name}，启用后就能运行角色和工作流。', { name: target.name })
+            : t('：先安装并启用一个 CLI，才能运行角色和工作流。')}
         </span>
       </span>
       <button

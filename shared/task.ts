@@ -525,7 +525,7 @@ export function closeFlow(task: Task, id: string, now = new Date().toISOString()
     role: 'system',
     agentId: '',
     step: '',
-    text: t('这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。'),
+    text: t('这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。'),
     tools: [],
     at: now,
   })

@@ -49,8 +49,8 @@ export function TeamEditor({
       <div className="flex flex-col gap-1.5">
         <span className="flex items-center gap-1.5 text-xs text-muted">
           <Crown className="h-3.5 w-3.5 text-accent" />
-          {t('默认执行 Agent')}
-          <span className="text-subtle">· {t('节点没有单独指定 Agent 时用它；节点按连线并发执行，不再由它调度')}</span>
+          {t('默认执行角色')}
+          <span className="text-subtle">· {t('节点没有单独指定角色时用它；节点按连线并发执行，不再由它调度')}</span>
         </span>
         {main ? (
           <div className="flex items-center gap-3 rounded-[10px] border border-accent/50 bg-accent-soft p-3">
@@ -66,7 +66,7 @@ export function TeamEditor({
           <AgentPicker exclude={[]} onPick={(a) => onMainChange(a.id)}>
             <button className="flex h-[62px] w-full cursor-pointer items-center justify-center gap-2 rounded-[10px] border border-dashed border-accent/60 text-[0.8125rem] text-accent hover:bg-accent-soft">
               <Plus className="h-4 w-4" />
-              {t('选择默认执行 Agent')}
+              {t('选择默认执行角色')}
             </button>
           </AgentPicker>
         )}
@@ -74,8 +74,8 @@ export function TeamEditor({
 
       <div className="flex flex-col gap-1.5">
         <span className="text-xs text-muted">
-          {t('子 Agent')}{' '}
-          <span className="text-subtle">· {t('在流程图的节点上选；节点执行中还可以自己再派子 Agent 并发处理')}</span>
+          {t('子角色')}{' '}
+          <span className="text-subtle">· {t('在流程图的节点上选；节点执行中还可以自己再派子角色并发处理')}</span>
         </span>
         {subs.length ? (
           <ul className="flex flex-wrap gap-2">
@@ -87,7 +87,7 @@ export function TeamEditor({
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-subtle">{t('节点还都由默认执行 Agent 自己做。')}</p>
+          <p className="text-xs text-subtle">{t('节点还都由默认执行角色自己做。')}</p>
         )}
       </div>
     </>

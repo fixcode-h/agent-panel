@@ -1294,7 +1294,7 @@ export function tasksApi(deps: {
       // 旧界面不传 agentId 时跟着项目的默认对话 Agent；传了空字符串表示不用 Agent 角色
       if (!(body && typeof body === 'object' && 'agentId' in body) && project.defaultAgentId)
         input.agentId = project.defaultAgentId
-      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
+      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的角色'))
     }
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
@@ -1725,7 +1725,7 @@ export function tasksApi(deps: {
     if (touchesRun && cur.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await deps.agents.list() : undefined
-    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return bad(c, t('找不到这个 Agent'))
+    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return bad(c, t('找不到这个角色'))
     const runOf = (t: Task) => {
       const agent = t.agentId ? agents?.find((a) => a.id === t.agentId) : { ...defaultAgent(), id: '' }
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined

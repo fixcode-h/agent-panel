@@ -28,8 +28,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'These steps only fill the form; they take effect after you save the project settings',
   '已填进表单，确认保存后生效': 'Filled into the form; confirm and save to apply',
   没有给出可用的值: 'No usable values were given',
-  '测试 Agent 按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时 Agent 会自己找命令并建议你补上。':
-    'The test Agent runs builds, tests and checks following these steps. They are snapshotted into a task when it starts, so later edits here do not affect conversations already under way; without any steps the Agent finds commands itself and suggests adding them.',
+  '测试角色按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时角色会自己找命令并建议你补上。':
+    'The test role runs builds, tests and checks following these steps. They are snapshotted into a task when it starts, so later edits here do not affect conversations already under way; without any steps the role finds commands itself and suggests adding them.',
   '还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。':
     'No test steps yet. For a new Node project, "AI analyze this folder" fills in a set based on the scripts.',
   '步骤名，例如「单元测试」': 'Step name, e.g. "Unit tests"',
@@ -122,30 +122,30 @@ export const EN_SETTINGS: Record<string, string> = {
   '浏览器没有允许通知，可以在地址栏左侧的网站设置里打开':
     'Notifications are blocked by the browser. You can allow them in the site settings next to the address bar.',
   新建文件的格式: 'Format of new files',
-  '面板写说明文件、部署全局说明，以及交给 Agent 的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。':
-    'Applies to the doc files the panel writes, the global instructions it deploys, and the convention it gives Agents. The default is UTF-8 without BOM and LF line endings: when you edit on Windows and run tests in WSL or Linux, scripts do not fail with "bad interpreter" because of CRLF or a BOM. Each project can override this.',
+  '面板写说明文件、部署全局说明，以及交给角色的约定都按这里来。默认 UTF-8（不带 BOM）+ LF：Windows 上编辑、WSL / Linux 里跑测试时，脚本不会因为 CRLF 或 BOM 报 bad interpreter。项目可以单独设置。':
+    'Applies to the doc files the panel writes, the global instructions it deploys, and the convention it gives roles. The default is UTF-8 without BOM and LF line endings: when you edit on Windows and run tests in WSL or Linux, scripts do not fail with "bad interpreter" because of CRLF or a BOM. Each project can override this.',
   编码: 'Encoding',
   文件编码: 'File encoding',
   'UTF-8（不带 BOM）': 'UTF-8 (no BOM)',
   换行符: 'Line endings',
   文件格式: 'File format',
-  '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。':
-    'Used for text files created or rewritten in this project, and the convention Agents follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
+  '这个项目里新建和改写的文本文件用它，角色写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。':
+    'Used for text files created or rewritten in this project, and the convention roles follow when writing files. The default is UTF-8 without BOM and LF line endings, so scripts with a shebang run in WSL or Linux without a "bad interpreter" error.',
   '和全局设置不同时，在这里单独指定': 'Override the global setting here',
   跟随全局设置: 'Follow the global setting',
 
   // 默认 CLI
-  'Agent 可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的 Agent 一起切换。':
-    'Agents can leave the CLI unset: "System default" uses the CLI chosen here. A model can be just a High, Medium or Low tier, which resolves to that CLI\'s model and effort for the tier at run time. Changing this switches every Agent that uses the defaults.',
-  'Agent 选了「系统默认」或没有指定 CLI 时使用': 'Used when an Agent picks "System default" or has no CLI set',
+  '角色可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
+    'Roles can leave the CLI unset: "System default" uses the CLI chosen here. A model can be just a High, Medium or Low tier, which resolves to that CLI\'s model and effort for the tier at run time. Changing this switches every role that uses the defaults.',
+  '角色选了「系统默认」或没有指定 CLI 时使用': 'Used when a role picks "System default" or has no CLI set',
   已停用: 'Disabled',
   未安装: 'Not installed',
   '{cli} 的模型': '{cli} models',
   '跟随 {cli} 自己的档位设置，要改请到': "Follows {cli}'s own tier settings. To change them, go to",
   '里修改。': 'settings.',
-  'Agent 没有指定模型时使用，跟随 {cli} 的设置': "Used when an Agent has no model set. Follows {cli}'s settings",
-  'Agent 和档位都没有指定时使用，跟随 {cli} 的设置':
-    "Used when neither the Agent nor the tier sets one. Follows {cli}'s settings",
+  '角色没有指定模型时使用，跟随 {cli} 的设置': "Used when a role has no model set. Follows {cli}'s settings",
+  '角色和档位都没有指定时使用，跟随 {cli} 的设置':
+    "Used when neither the role nor the tier sets one. Follows {cli}'s settings",
 
   // 单个 CLI
   系统默认: 'System default',
@@ -163,18 +163,18 @@ export const EN_SETTINGS: Record<string, string> = {
   '自己装好后点右边的刷新重新检测。': 'After installing it yourself, click refresh on the right to detect again.',
   '卸载 {cli}？': 'Uninstall {cli}?',
   会运行: 'This runs',
-  '。用这个 CLI 的 Agent 之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。':
-    ". Agents that use this CLI can't run until it's reinstalled. Sign-in info and its own config are kept.",
+  '。用这个 CLI 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。':
+    ". Roles that use this CLI can't run until it's reinstalled. Sign-in info and its own config are kept.",
   '有任务正在用它执行，请等任务完成或先停止。':
     'A task is running with it. Wait for the task to finish or stop it first.',
   模型: 'Model',
   三档模型: 'Model tiers',
-  'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。':
-    'The model and effort used when an Agent picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set. Context, max output and reasoning efforts are filled in from the model catalog; models missing from it default to 1M / 128K. You can change them manually.',
+  '角色选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。':
+    'The model and effort used when a role picks the High, Medium or Low tier. An empty model follows the default model below, or the suggested one if no default is set. Context, max output and reasoning efforts are filled in from the model catalog; models missing from it default to 1M / 128K. You can change them manually.',
   默认模型: 'Default model',
-  'Agent 没有指定模型时使用，可以选一个档位': 'Used when an Agent has no model set. Can be a tier',
+  '角色没有指定模型时使用，可以选一个档位': 'Used when a role has no model set. Can be a tier',
   默认思考强度: 'Default effort',
-  'Agent 和档位都没有指定时使用': 'Used when neither the Agent nor the tier sets one',
+  角色和档位都没有指定时使用: 'Used when neither the role nor the tier sets one',
   '{cli} 默认模型': '{cli} default model',
   '{cli} 默认思考强度': '{cli} default effort',
   运行: 'Execution',
@@ -183,7 +183,7 @@ export const EN_SETTINGS: Record<string, string> = {
   可执行文件: 'Executable',
   '留空时从 PATH 查找 {command}': 'Leave empty to look up {command} in PATH',
   额外参数: 'Extra arguments',
-  '每次调用都会追加，Agent 自己的参数排在后面': "Appended to every call; the Agent's own arguments come after",
+  '每次调用都会追加，角色自己的参数排在后面': "Appended to every call; the role's own arguments come after",
   '例如 --add-dir ../shared': 'e.g. --add-dir ../shared',
   环境变量: 'Environment variables',
   '每行一个 KEY=VALUE，只传给这个 CLI': 'One KEY=VALUE per line, passed only to this CLI',
@@ -237,17 +237,17 @@ export const EN_SETTINGS: Record<string, string> = {
   '{name} 卸载失败': '{name} uninstall failed',
 
   // AI 创建
-  '在 Agent 和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。':
-    'On the Agent and Workflow pages, you can chat with a local CLI to generate or refine configs. The CLI replies in a fixed format, and changes apply only after the panel validates them.',
+  '在角色和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。':
+    'On the Roles and Workflows pages, you can chat with a local CLI to generate or refine configs. The CLI replies in a fixed format, and changes apply only after the panel validates them.',
   '使用的 CLI': 'CLI',
   '默认用「CLI」里设为默认的那个': 'Defaults to the one set as default under "CLI"',
   'AI 创建使用的 CLI': 'CLI for AI assist',
   'AI 创建使用的模型': 'Model for AI assist',
   '默认用这个 CLI 设置里的默认模型': "Defaults to this CLI's default model",
-  '创建 Agent 的补充规则': 'Extra rules for creating Agents',
+  创建角色的补充规则: 'Extra rules for creating roles',
   '会加进提示词，例如命名习惯、团队约定': 'Added to the prompt, e.g. naming habits or team conventions',
-  '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的 Agent 默认用 Claude Code':
-    'For example:\n- Every role definition has three sections: Responsibilities / Way of working / Deliverables\n- Frontend Agents use Claude Code by default',
+  '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code':
+    'For example:\n- Every role definition has three sections: Responsibilities / Way of working / Deliverables\n- Frontend roles use Claude Code by default',
   创建工作流的补充规则: 'Extra rules for creating Workflows',
   '例如：\n- 写代码的节点都要配一个代码审查的验收流程\n- 验收最多 2 轮':
     'For example:\n- Every coding node gets a code review step\n- At most 2 review rounds',
@@ -778,8 +778,8 @@ export const EN_SETTINGS: Record<string, string> = {
 
   // 授权（外部 CLI）
   授权: 'Authorizations',
-  '给本机的命令行工具授权后，Agent 在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。':
-    'After authorizing a local command-line tool, agents can use it directly on remote repositories, e.g. merge branches, view and create PRs, or file issues. The tool stores the credentials itself; the panel never keeps them.',
+  '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。':
+    'After authorizing a local command-line tool, roles can use it directly on remote repositories, e.g. merge branches, view and create PRs, or file issues. The tool stores the credentials itself; the panel never keeps them.',
   '授权后 Agent 可以直接用 gh 操作 GitHub 远端：合并分支、查看和创建 PR、提交 issue 等。':
     'Once authorized, agents can use gh directly on GitHub: merge branches, view and create PRs, file issues and more.',
   '授权后 Agent 可以用 cloudflared 把本机服务通过 Cloudflare Tunnel 暴露到外网，例如给远程电脑看正在开发的面板。':

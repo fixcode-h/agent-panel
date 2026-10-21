@@ -211,12 +211,12 @@ function MainRow({
         type="button"
         disabled={!onStep}
         onClick={() => onStep?.(step.id)}
-        title={t('主 Agent 评估子 Agent 的结果、决定流程怎么走，最后整理结果')}
+        title={t('主角色评估子角色的结果、决定流程怎么走，最后整理结果')}
         className="-mx-1.5 -my-0.5 flex min-w-0 flex-1 flex-col gap-1 rounded-md px-1.5 py-0.5 text-left enabled:cursor-pointer enabled:hover:bg-sel"
       >
         <span className={cn('flex items-center gap-1.5 text-[0.8125rem]', step.status === 'running' && 'font-medium')}>
           <Crown className="h-3.5 w-3.5 shrink-0 text-accent" />
-          {t('主 Agent')}
+          {t('主角色')}
         </span>
         <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-subtle">
           {agent && (
@@ -420,7 +420,7 @@ function Todos({ todos, byAgent }: { todos: TaskTodo[]; byAgent?: Map<string, { 
         <div key={id} className="flex flex-col gap-1">
           {byAgent && (
             <span className="text-[0.6875rem] text-subtle">
-              {t('{name} 的待办', { name: byAgent.get(id)?.name ?? 'Agent' })}
+              {t('{name} 的待办', { name: byAgent.get(id)?.name ?? t('未命名角色') })}
             </span>
           )}
           <ul className="flex flex-col gap-1">

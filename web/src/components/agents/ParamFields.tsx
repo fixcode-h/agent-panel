@@ -186,7 +186,7 @@ export function ParamsChip({
         </span>
       </PopoverTrigger>
       <PopoverContent align="start" className="max-h-[min(480px,70vh)] w-[300px] overflow-y-auto p-3">
-        <p className="mb-3 text-xs leading-relaxed text-subtle">{t('这个 Agent 会按参数决定做法，没改的用默认值。')}</p>
+        <p className="mb-3 text-xs leading-relaxed text-subtle">{t('这个角色会按参数决定做法，没改的用默认值。')}</p>
         <ParamsForm params={params} values={values} onChange={onChange} compact />
       </PopoverContent>
     </Popover>

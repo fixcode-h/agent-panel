@@ -583,7 +583,7 @@ export function TaskView({
   // 没有 Agent 角色（选了「无」或默认 Agent）的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
   const byCli = task.mode === 'chat' && (!task.agentId || task.agentId === DEFAULT_AGENT_ID)
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
-  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || t('无 Agent')
+  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || t('无角色')
   const changeRun = async (v: ChatRun) => {
     setTask({ ...task, ...v })
     try {
@@ -677,9 +677,9 @@ export function TaskView({
                   ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
                   : t('执行中，可以随时暂停')
                 : blocked
-                  ? t('主 Agent 处理后会接着走流程')
+                  ? t('主角色处理后会接着走流程')
                   : roots.every((s) => s.status === 'done')
-                    ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                    ? t('由主角色 {name} 处理追加要求', { name: mainAgent?.name ?? '' })
                     : task.status === 'failed'
                       ? t('会从失败的节点重新执行')
                       : t('会从没完成的节点继续执行')}
@@ -1062,10 +1062,7 @@ export function TaskView({
                     {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        <RunPhase
-                          task={task}
-                          label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
-                        />
+                        <RunPhase task={task} label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })} />
                         <LiveStats task={task} />
                       </div>
                     )}
@@ -1476,7 +1473,7 @@ function FlowBar({
       ? t('流程没有完成：「{title}」执行失败', { title: failed.title })
       : left
         ? t('流程没有完成，还有 {n} 个节点没执行', { n: left })
-        : t('流程没有完成，主 Agent 还没整理结果')
+        : t('流程没有完成，主角色还没整理结果')
   return (
     <div className="mx-auto mb-2 max-w-(--content-w)">
       <div className={barRow}>
@@ -1510,7 +1507,7 @@ function FlowBar({
         open={asking}
         onOpenChange={setAsking}
         title={t('结束这个流程？')}
-        description={t('没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。')}
+        description={t('没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。')}
         confirmText={t('结束流程')}
         onConfirm={() =>
           api

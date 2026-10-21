@@ -28,7 +28,7 @@ export function nodeViews(
         u.title.trim() ||
         (u.kind === 'flow'
           ? refLabel(u.flow, w, workflows) || t('调用流程')
-          : byId.get(nodeAgent(w, u.agentId))?.name || t('主 Agent'))
+          : byId.get(nodeAgent(w, u.agentId))?.name || t('主角色'))
       const reviewRef = n.steps.length ? (n.steps.find((s) => s.review)?.review ?? null) : n.hooks.review
       const maxRounds = n.steps.length
         ? Math.max(1, ...n.steps.filter((s) => s.review).map((s) => s.maxRounds))
@@ -46,8 +46,8 @@ export function nodeViews(
         sub: multi
           ? units.map(stepName).join(' → ')
           : agent
-            ? `${agent.name}${first.agentId ? '' : ` · ${t('主 Agent')}`} · ${modelOf(agent)}`
-            : t('还没有选择主 Agent'),
+            ? `${agent.name}${first.agentId ? '' : ` · ${t('主角色')}`} · ${modelOf(agent)}`
+            : t('还没有选择主角色'),
         main: !first.agentId,
         model: agent ? modelOf(agent) : undefined,
         flowText: refLabel(first.flow, w, workflows),

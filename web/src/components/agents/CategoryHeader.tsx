@@ -75,8 +75,8 @@ export function CategoryHeader({ category, count, onAdd }: { category: Category;
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label={isWf ? t('在此分类新建工作流') : t('在此分类新建 Agent')}
-              title={isWf ? t('在此分类新建工作流') : t('在此分类新建 Agent')}
+              aria-label={isWf ? t('在此分类新建工作流') : t('在此分类新建角色')}
+              title={isWf ? t('在此分类新建工作流') : t('在此分类新建角色')}
               onClick={onAdd}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -106,7 +106,7 @@ export function CategoryHeader({ category, count, onAdd }: { category: Category;
         onOpenChange={setDeleting}
         title={t('删除分类「{name}」？', { name: category.name })}
         description={
-          isWf ? t('分类里的工作流不会被删除，会移到「未分类」。') : t('分类里的 Agent 不会被删除，会移到「未分类」。')
+          isWf ? t('分类里的工作流不会被删除，会移到「未分类」。') : t('分类里的角色不会被删除，会移到「未分类」。')
         }
         onConfirm={remove}
       />

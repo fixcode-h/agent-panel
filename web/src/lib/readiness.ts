@@ -99,8 +99,8 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
   return [
     {
       ok: !!main,
-      label: t('已选择主 Agent'),
-      hint: main ? main.name : t('主 Agent 执行没指定 Agent 的节点，并处理追加要求'),
+      label: t('已选择主角色'),
+      hint: main ? main.name : t('主角色执行没指定角色的节点，并处理追加要求'),
     },
     {
       ok: notRunnable.length === 0 && cliOk,
@@ -109,7 +109,7 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
         ? t('节点都用默认 CLI 执行，{cli} 未安装或已停用', { cli: defCli?.name ?? '' })
         : notRunnable.length
           ? t('{names} 已停用', { names: notRunnable.map((a) => a.name).join(t('、')) })
-          : t('共 {n} 个 Agent', { n: team.length }),
+          : t('共 {n} 个角色', { n: team.length }),
     },
     {
       ok: lacking.length === 0,
@@ -140,10 +140,10 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
     },
     {
       ok: missing.length === 0,
-      label: t('节点的 Agent 都还在'),
+      label: t('节点的角色都还在'),
       hint: missing.length
-        ? t('这些节点的 Agent 已经删除：{names}', { names: missing.join(t('、')) })
-        : t('没指定 Agent 的节点由主 Agent 执行'),
+        ? t('这些节点的角色已经删除：{names}', { names: missing.join(t('、')) })
+        : t('没指定角色的节点由主角色执行'),
     },
     {
       ok: loose.length === 0,

@@ -191,7 +191,7 @@ function Editor({
           <div className="ml-auto flex items-center gap-1.5">
             <Button variant="secondary" size="sm" onClick={() => add('agent')}>
               <Bot className="h-3.5 w-3.5" />
-              {t('Agent 节点')}
+              {t('角色节点')}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => add('flow')} title={t('执行另一个流程的节点')}>
               <WorkflowIcon className="h-3.5 w-3.5" />
@@ -278,7 +278,7 @@ function Editor({
                 <button role="menuitem" className={menuItem} onClick={() => createFrom({ agentId: '' })}>
                   <Bot className="h-4 w-4 shrink-0 text-subtle" />
                   <span className="truncate">
-                    {t('主 Agent')}
+                    {t('主角色')}
                     {main ? ` · ${main.name}` : ''}
                   </span>
                 </button>

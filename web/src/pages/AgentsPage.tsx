@@ -82,7 +82,7 @@ export function AgentsPage() {
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
       const a = await api.createAgent({
-        name: t('新 Agent'),
+        name: t('新角色'),
         description: '',
         cli: '',
         model: '@medium',
@@ -142,7 +142,7 @@ export function AgentsPage() {
   return (
     <>
       <ListPane
-        title="Agent"
+        title={t('角色')}
         count={agents.length}
         onNew={() => create()}
         extra={
@@ -150,8 +150,8 @@ export function AgentsPage() {
             <Button
               size="icon-sm"
               variant="secondary"
-              aria-label={t('添加内置 Agent')}
-              title={t('添加内置 Agent')}
+              aria-label={t('添加内置角色')}
+              title={t('添加内置角色')}
               onClick={() => setBuiltin(true)}
             >
               <LayoutTemplate className="h-4 w-4" />
@@ -160,7 +160,7 @@ export function AgentsPage() {
               size="sm"
               variant="secondary"
               onClick={() => setAssist(true)}
-              title={t('描述需求，让本机 CLI 生成 Agent')}
+              title={t('描述需求，让本机 CLI 生成角色')}
             >
               <Sparkles className="h-4 w-4 text-accent" />
               {t('AI 创建')}
@@ -258,17 +258,17 @@ export function AgentsPage() {
                 }
               />
             ))}
-            {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">{t('这个分类还没有 Agent')}</p>}
+            {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">{t('这个分类还没有角色')}</p>}
           </ListGroup>
         ))}
-        {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的 Agent')}</ListEmpty>}
+        {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
         {/* 只有默认 Agent 时提示可以添加内置的：内置的不会自动装 */}
         {!loading && !query && !tag && agents.every((a) => a.id === DEFAULT_AGENT_ID) && (
           <ListEmpty>
-            <p>{t('还可以添加整理好的内置 Agent')}</p>
+            <p>{t('还可以添加整理好的内置角色')}</p>
             <Button variant="secondary" size="sm" className="mt-3" onClick={() => setBuiltin(true)}>
               <LayoutTemplate className="h-4 w-4" />
-              {t('添加内置 Agent')}
+              {t('添加内置角色')}
             </Button>
           </ListEmpty>
         )}
@@ -285,11 +285,11 @@ export function AgentsPage() {
         />
       ) : (
         !loading && (
-          <DetailEmpty icon={<Bot className="h-6 w-6" />} title={t('创建第一个 Agent')}>
-            <p>{t('Agent 是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。')}</p>
+          <DetailEmpty icon={<Bot className="h-6 w-6" />} title={t('创建第一个角色')}>
+            <p>{t('角色是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。')}</p>
             <Button className="mt-5" onClick={() => create()}>
               <Plus className="h-4 w-4" />
-              {t('新建 Agent')}
+              {t('新建角色')}
             </Button>
           </DetailEmpty>
         )

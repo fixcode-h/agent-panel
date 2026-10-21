@@ -218,7 +218,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                 <span className="truncate text-xs text-subtle">
                   {task.mode === 'workflow'
                     ? `${task.workflowName || w?.name || t('工作流已删除')}${tops.length ? t(' · {done}/{total} 个节点', { done, total: tops.length }) : ''}`
-                    : t('对话 · {name}', { name: a?.name ?? t('Agent 已删除') })}
+                    : t('对话 · {name}', { name: a?.name ?? t('角色已删除') })}
                 </span>
                 <TaskStats task={task} now={now} />
               </span>

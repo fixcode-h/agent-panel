@@ -17,7 +17,7 @@ export function DocEditor({
   onTemplate,
   label = t('工作流说明'),
   placeholder = t('用 Markdown 写清楚目标、规范和完成标准。\n不知道怎么写可以先点右上角「插入模板」。'),
-  mentionHint = t('在光标处插入 Agent 名称'),
+  mentionHint = t('在光标处插入角色名称'),
   onMention,
   tools,
   minHeight = 420,
@@ -77,7 +77,7 @@ export function DocEditor({
             <PopoverTrigger asChild>
               <Button variant="ghost" size="sm" disabled={mode !== 'edit' || team.length === 0}>
                 <AtSign className="h-3.5 w-3.5" />
-                {t('引用 Agent')}
+                {t('引用角色')}
               </Button>
             </PopoverTrigger>
             <PopoverContent align="end" className="max-h-80 w-[240px] overflow-y-auto">

@@ -101,7 +101,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       })),
       ...agents.map((a) => ({
         id: `a:${a.id}`,
-        group: 'Agent',
+        group: t('角色'),
         label: a.name,
         sub: a.description,
         icon: Bot,
@@ -171,7 +171,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   pick(shown[cur])
                 }
               }}
-              placeholder={t('搜索项目、任务、Agent、工作流，或者输入操作')}
+              placeholder={t('搜索项目、任务、角色、工作流，或者输入操作')}
               aria-label={t('搜索')}
               role="combobox"
               aria-expanded

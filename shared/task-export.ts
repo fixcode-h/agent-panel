@@ -687,8 +687,8 @@ export function resolveChange(c: EvolutionChange, workflows: Workflow[], agents:
   const after = 'value' in norm ? text(norm.value) : text(c.value)
   if (c.target === 'agent') {
     const a = agents.find((x) => x.id === c.agentId)
-    const label = t('Agent「{name}」· {field}', { name: a?.name ?? c.agentId, field: f })
-    if (!a) return { change: c, label, before: '', after, error: t('本机没有这个 Agent') }
+    const label = t('角色「{name}」· {field}', { name: a?.name ?? c.agentId, field: f })
+    if (!a) return { change: c, label, before: '', after, error: t('本机没有这个角色') }
     return { change: c, label, before: text(a[c.field]), after, error: 'error' in norm ? norm.error : undefined }
   }
   const w = workflows.find((x) => x.id === c.workflowId)

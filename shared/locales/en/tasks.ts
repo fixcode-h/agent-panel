@@ -72,7 +72,7 @@ export const EN_TASKS: Record<string, string> = {
   复制: 'Copy',
   '正在思考…': 'Thinking…',
   思考过程: 'Thinking',
-  '已删除的 Agent': 'Deleted Agent',
+  已删除的角色: 'Deleted role',
   '思考 {n} 次': 'Thinking ×{n}',
   '{n} 次工具调用': 'Tool calls ×{n}',
   '{n} 段说明': 'Notes ×{n}',
@@ -90,7 +90,7 @@ export const EN_TASKS: Record<string, string> = {
   工作流已删除: 'Workflow deleted',
   ' · {done}/{total} 个节点': ' · {done}/{total} steps',
   '对话 · {name}': 'Chat · {name}',
-  'Agent 已删除': 'Agent deleted',
+  角色已删除: 'Role deleted',
   '执行时间（不含等待继续对话的时间）': 'Run time (excluding time waiting for follow-ups)',
   'Token 总数（输入 + 输出）': 'Total tokens (input + output)',
   '输入 Token（含缓存命中）': 'Input tokens (including cache hits)',
@@ -132,8 +132,8 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个节点': '{n} nodes',
   按工作流执行: 'Run as workflow',
   '不用工作流，直接对话': 'No workflow, just chat',
-  '选了工作流就按它的流程图执行；不选时直接和 Agent 对话。':
-    'With a workflow selected, it runs along that workflow’s flow; without one you chat with the Agent directly.',
+  '选了工作流就按它的流程图执行；不选时直接和角色对话。':
+    'With a workflow selected, it runs along that workflow’s flow; without one you chat with the role directly.',
   '描述要做的事，Agent 会按工作流分工完成': 'Describe what to do and the Agents will split it up by the workflow',
   改回直接对话: 'Back to a direct chat',
   '对话用的 CLI': 'CLI to chat with',
@@ -141,20 +141,20 @@ export const EN_TASKS: Record<string, string> = {
   开始执行: 'Start',
   '开始执行（Enter）': 'Start (Enter)',
   '松开鼠标，把文件附到要求里': 'Drop to attach files to your request',
-  '无 Agent，直接用 CLI': 'No Agent, use the CLI directly',
-  '无 Agent': 'No Agent',
-  '使用项目设置的 Agent': 'Use the project Agent',
-  '默认 Agent': 'Default Agent',
-  '直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）':
-    'Chat with the CLI directly, without the Agent role (click to use the project Agent again)',
-  '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用 Agent）':
-    'This chat uses “{name}” with its role and parameters and cannot be changed once started (click to use no Agent)',
-  '项目设置的 Agent 已删除或停用，这个对话直接和 CLI 对话（点一下改成不用 Agent）':
-    'The project Agent was deleted or disabled, so this chat goes straight to the CLI (click to use no Agent)',
-  '这个对话用默认 Agent，CLI、模型和思考强度可以在开始前选（点一下改成不用 Agent）':
-    'This chat uses the default Agent; pick the CLI, model and thinking effort before starting (click to use no Agent)',
-  '项目设置里选了「无 Agent」，这个对话直接和 CLI 对话；在项目设置里选一个 Agent 才会用角色（点一下改成不用 Agent）':
-    'The project is set to “No Agent”, so this chat goes straight to the CLI; pick an Agent in the project settings to use a role (click to use no Agent)',
+  '无角色，直接用 CLI': 'No role, use the CLI directly',
+  无角色: 'No role',
+  使用项目设置的角色: 'Use the project role',
+  默认角色: 'Default role',
+  '直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）':
+    'Chat with the CLI directly, without the role’s instructions (click to use the project role again)',
+  '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）':
+    'This chat uses “{name}” with its instructions and parameters and cannot be changed once started (click to use no role)',
+  '项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）':
+    'The project role was deleted or disabled, so this chat goes straight to the CLI (click to use no role)',
+  '这个对话用默认角色，CLI、模型和思考强度可以在开始前选（点一下改成不用角色）':
+    'This chat uses the default role; pick the CLI, model and thinking effort before starting (click to use no role)',
+  '项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
+    'The project is set to “No role”, so this chat goes straight to the CLI; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
   关闭子对话: 'Close sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
@@ -256,11 +256,11 @@ export const EN_TASKS: Record<string, string> = {
   删除任务: 'Delete task',
   '{name} 正在回复': '{name} is replying',
   '{name} 正在处理': '{name} is working',
-  '主 Agent': 'Main Agent',
+  主角色: 'Main role',
   继续输入要求: 'Add a follow-up',
   '{n} 个节点同时执行中': '{n} steps running in parallel',
   '执行中，可以随时暂停': 'Running. You can pause at any time',
-  '由主 Agent {name} 处理追加要求': 'Follow-ups are handled by the main Agent {name}',
+  '由主角色 {name} 处理追加要求': 'Follow-ups are handled by the main role {name}',
   会从失败的节点重新执行: 'Will rerun from the failed step',
   会从没完成的节点继续执行: 'Will resume from the unfinished step',
   '发给 {name}': 'Send to {name}',
@@ -428,28 +428,28 @@ export const EN_TASKS: Record<string, string> = {
   追加要求: 'Follow-ups',
   对话轮次: 'Turns',
   '（最近 {n} 轮，共 {total} 轮）': ' (last {n} of {total})',
-  '主 Agent 评估子 Agent 的结果、决定流程怎么走，最后整理结果':
-    'The main Agent reviews sub-agent results, decides where the flow goes, and writes the final result',
+  '主角色评估子角色的结果、决定流程怎么走，最后整理结果':
+    'The main role reviews sub-role results, decides where the flow goes, and writes the final result',
   '调度 {n} 轮': '{n} dispatch rounds',
   等节点交回结果: 'Waiting for nodes to report back',
-  '主 Agent 处理后会接着走流程': 'The main Agent handles it, then the flow continues',
+  主角色处理后会接着走流程: 'The main role handles it, then the flow continues',
   '流程停在「{title}」：结论不通过，后面的节点还没执行':
     'Flow stopped at "{title}": it did not pass, later nodes haven\'t run',
   '流程没有完成：「{title}」执行失败': 'Flow not finished: "{title}" failed',
   '流程没有完成，还有 {n} 个节点没执行': "Flow not finished: {n} nodes haven't run",
-  '流程没有完成，主 Agent 还没整理结果': "Flow not finished: the main Agent hasn't summarized the results",
+  '流程没有完成，主角色还没整理结果': "Flow not finished: the main role hasn't summarized the results",
   '从「{title}」重新检查，接着走流程': 'Re-check "{title}" and continue the flow',
   继续流程: 'Continue flow',
   结束流程: 'End flow',
   '结束流程，不再继续': 'End the flow without continuing',
   '结束这个流程？': 'End this flow?',
-  '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。':
-    "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main Agent.",
-  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
-    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main Agent to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
+  '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。':
+    "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main role.",
+  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
+    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main role to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
   '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
-  '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。':
-    "This run is over; unfinished nodes won't execute. Tell the main Agent what you need next and it will run the flow again when needed.",
+  '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。':
+    "This run is over; unfinished nodes won't execute. Tell the main role what you need next and it will run the flow again when needed.",
   '任务正在执行，请先停止': 'The task is running; stop it first',
   只有工作流任务可以结束流程: 'Only workflow tasks can end a flow',
   // 导出、导入、AI 分析
@@ -458,14 +458,14 @@ export const EN_TASKS: Record<string, string> = {
   '已应用 {n} 项修改': 'Applied {n} changes',
   复制失败: 'Copy failed',
   工作流优化建议: 'Workflow suggestions',
-  '看过差异再应用；应用后工作流和 Agent 马上按新的内容执行':
-    'Review the diffs before applying; workflows and Agents use the new content right away',
+  '看过差异再应用；应用后工作流和角色马上按新的内容执行':
+    'Review the diffs before applying; workflows and roles use the new content right away',
   '应用选中的 {n} 项': 'Apply {n} selected',
   面板框架的问题: 'Panel framework issues',
   还没有可以分析的执行记录: 'No runs to analyze yet',
   'AI 分析执行结果': 'AI run analysis',
-  '用默认 Agent 新建一个对话来分析，只分析不改文件':
-    'Starts a chat with the default Agent; it only analyzes and changes no files',
+  '用默认角色新建一个对话来分析，只分析不改文件':
+    'Starts a chat with the default role; it only analyzes and changes no files',
   开始分析: 'Analyze',
   'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
     "The AI reads the full run record (messages, each node's result, time, tokens and cache hits), judges the result quality, what in the workflow needs work and whether the panel itself has issues, and suggests changes you can apply. Nothing is applied until you review the diff.",
@@ -501,8 +501,8 @@ export const EN_TASKS: Record<string, string> = {
   '应该是 true 或 false': 'Must be true or false',
   应该是文字: 'Must be text',
   '超过 {n} 字': 'Longer than {n} characters',
-  'Agent「{name}」· {field}': 'Agent "{name}" · {field}',
-  '本机没有这个 Agent': "This Agent doesn't exist here",
+  '角色「{name}」· {field}': 'Role "{name}" · {field}',
+  本机没有这个角色: "This role doesn't exist here",
   '工作流「{name}」· {field}': 'Workflow "{name}" · {field}',
   本机没有这个工作流: "This workflow doesn't exist here",
   '工作流「{name}」· 节点「{node}」· {field}': 'Workflow "{name}" · node "{node}" · {field}',

@@ -122,7 +122,7 @@ export function NodeInspector({
   const runnerOf = (u: NodeStep) => (u.agentId ? agents.find((a) => a.id === u.agentId) : main)
   const stepName = (u: NodeStep) =>
     u.title.trim() ||
-    (u.kind === 'flow' ? refLabel(u.flow, w, workflows) || t('调用流程') : runnerOf(u)?.name || t('主 Agent'))
+    (u.kind === 'flow' ? refLabel(u.flow, w, workflows) || t('调用流程') : runnerOf(u)?.name || t('主角色'))
 
   return (
     <div className="flex flex-col gap-5 p-5">
@@ -245,7 +245,7 @@ export function NodeInspector({
                   >
                     {(
                       [
-                        { id: 'agent', label: 'Agent', icon: Bot },
+                        { id: 'agent', label: t('交给角色'), icon: Bot },
                         { id: 'flow', label: t('调用流程'), icon: WorkflowIcon },
                       ] as const
                     ).map((k) => (
@@ -266,20 +266,20 @@ export function NodeInspector({
                   </div>
                   {u.kind === 'agent' ? (
                     <Select
-                      aria-label={t('执行的 Agent')}
+                      aria-label={t('执行的角色')}
                       value={u.agentId}
                       onChange={(e) => patchStep(u.id, { agentId: e.target.value })}
                       options={[
                         {
                           value: '',
-                          label: main ? t('主 Agent · {name}', { name: main.name }) : t('主 Agent（还没有选择）'),
+                          label: main ? t('主角色 · {name}', { name: main.name }) : t('主角色（还没有选择）'),
                         },
                         ...team
                           .filter((m) => m.agent.id !== main?.id)
                           .map((m) => ({ value: m.agent.id, label: m.agent.name, group: t('这个工作流用到的') })),
                         ...agents
                           .filter((a) => a.id !== main?.id && a.enabled && (!used.has(a.id) || a.id === u.agentId))
-                          .map((a) => ({ value: a.id, label: a.name, group: t('其他 Agent') })),
+                          .map((a) => ({ value: a.id, label: a.name, group: t('其他角色') })),
                       ]}
                     />
                   ) : (
@@ -294,7 +294,7 @@ export function NodeInspector({
                     <>
                       <div className="flex flex-col gap-1.5">
                         <Label
-                          hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着 Agent 的档位。', {
+                          hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着角色的档位。', {
                             cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
                           })}
                         >
@@ -314,7 +314,7 @@ export function NodeInspector({
                       {params.length > 0 && runner && (
                         <section className="flex flex-col gap-3 rounded-lg border p-2.5">
                           <Label
-                            hint={t('{name} 暴露的参数，在这一步上的取值；没改的用 Agent 的默认值。', {
+                            hint={t('{name} 暴露的参数，在这一步上的取值；没改的用角色的默认值。', {
                               name: runner.name,
                             })}
                           >
@@ -405,7 +405,7 @@ export function NodeInspector({
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" size="sm" disabled={steps.length >= 20} onClick={() => addStep('agent')}>
             <Plus className="h-3.5 w-3.5" />
-            {t('添加 Agent')}
+            {t('添加角色')}
           </Button>
           <Button variant="secondary" size="sm" disabled={steps.length >= 20} onClick={() => addStep('flow')}>
             <WorkflowIcon className="h-3.5 w-3.5" />

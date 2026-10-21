@@ -600,7 +600,7 @@ function WorkflowList({ value, onBack, onPick }: { value?: string; onBack: () =>
         )}
       </div>
       <p className="border-t px-3 py-2 text-[0.6875rem] leading-relaxed text-subtle">
-        {t('选了工作流就按它的流程图执行；不选时直接和 Agent 对话。')}
+        {t('选了工作流就按它的流程图执行；不选时直接和角色对话。')}
       </p>
     </div>
   )

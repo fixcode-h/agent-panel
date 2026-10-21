@@ -202,7 +202,7 @@ export function AgentDetail({
   const usedIn = workflows
     .map((w) => ({
       w,
-      role: w.mainAgentId === agent.id ? t('主 Agent') : subAgentIds(w).includes(agent.id) ? t('子 Agent') : '',
+      role: w.mainAgentId === agent.id ? t('主角色') : subAgentIds(w).includes(agent.id) ? t('子角色') : '',
     }))
     .filter((x) => x.role)
 
@@ -231,7 +231,7 @@ export function AgentDetail({
         header={
           <DetailHeader
             leading={<AgentAvatar icon={draft.icon} cli={draft.cli} size="lg" dim={!draft.enabled} />}
-            title={draft.name || t('未命名 Agent')}
+            title={draft.name || t('未命名角色')}
             meta={
               <>
                 {core ? (
@@ -263,7 +263,7 @@ export function AgentDetail({
                   variant="secondary"
                   onClick={startChat}
                   disabled={!draft.enabled}
-                  title={t('用这个 Agent 开一个新对话')}
+                  title={t('用这个角色开一个新对话')}
                 >
                   <MessageSquare className="h-4 w-4" />
                   {t('对话')}
@@ -341,8 +341,8 @@ export function AgentDetail({
                   <Checkbox
                     checked={draft.common}
                     onChange={(v) => set('common', v)}
-                    label={t('通用 Agent')}
-                    hint={t('工作流里任何 Agent 执行时都可以把子任务派给它，不用写进工作流。')}
+                    label={t('通用角色')}
+                    hint={t('工作流里任何角色执行时都可以把子任务派给它，不用写进工作流。')}
                   />
                 )}
                 <Checkbox
@@ -388,7 +388,7 @@ export function AgentDetail({
               {builtin ? (
                 <p className="rounded-lg border bg-field px-3 py-2.5 text-[0.8125rem] leading-relaxed text-muted">
                   {t(
-                    '自带的默认 Agent 固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
+                    '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
                     {
                       cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
                       model: usedModel || t('自动'),
@@ -405,7 +405,7 @@ export function AgentDetail({
                       cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
                     })}
                     hint={t(
-                      '在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
+                      '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
                     )}
                   />
                   <div className="flex flex-wrap gap-4">
@@ -540,7 +540,7 @@ export function AgentDetail({
                     placeholder={t(
                       '例如：\n# 角色\n你是资深前端工程师，负责按照设计稿实现页面。\n\n# 输出要求\n完成后运行测试并汇报结果。',
                     )}
-                    mentionHint={t('插入 Agent 名称，并引入它的角色设定')}
+                    mentionHint={t('插入角色名称，并引入它的角色设定')}
                     onMention={(a) => include(a.id)}
                     minHeight={300}
                     tools={(insert) => (
@@ -581,11 +581,9 @@ export function AgentDetail({
                     )}
                   />
                   <div className="flex flex-col gap-2">
-                    <span className="text-xs text-muted">{t('引入的 Agent')}</span>
+                    <span className="text-xs text-muted">{t('引入的角色')}</span>
                     <p className="-mt-1 text-[0.71875rem] leading-relaxed text-subtle">
-                      {t(
-                        '引入的 Agent 的角色设定会一起交给这个 Agent，可以把通用的规范、领域知识做成单独的 Agent 复用。',
-                      )}
+                      {t('引入的角色的角色设定会一起交给这个角色，可以把通用的规范、领域知识做成单独的角色复用。')}
                     </p>
                     <div className="flex flex-wrap items-center gap-1.5">
                       {draft.includes.map((id, i) => {
@@ -644,7 +642,7 @@ export function AgentDetail({
                       >
                         <Button variant="secondary" size="sm">
                           <Plus className="h-3.5 w-3.5" />
-                          {t('引入 Agent')}
+                          {t('引入角色')}
                         </Button>
                       </AgentPicker>
                     </div>
@@ -680,7 +678,7 @@ export function AgentDetail({
                           {tooDeep.length > 0 && (
                             <span>
                               {t(
-                                '引入了 {depth} 层，超过 {max} 层的不会交给它：{list}。把深层的 Agent 直接引入到上面几层，或者精简引入链。',
+                                '引入了 {depth} 层，超过 {max} 层的不会交给它：{list}。把深层的角色直接引入到上面几层，或者精简引入链。',
                                 {
                                   depth,
                                   max: MAX_INCLUDE_DEPTH,
@@ -766,7 +764,7 @@ export function AgentDetail({
                 <FormSection title={t('参数')}>
                   <p className="-mt-2 text-xs leading-relaxed text-subtle">
                     {t(
-                      '把可变的部分做成参数暴露出去：对话时用默认值（没有默认值的先问你），工作流节点上可以直接改。同一个 Agent 换个参数就能走不同的做法。',
+                      '把可变的部分做成参数暴露出去：对话时用默认值（没有默认值的先问你），工作流节点上可以直接改。同一个角色换个参数就能走不同的做法。',
                     )}
                   </p>
                   <ParamsEditor value={draft.params} onChange={(v) => set('params', v)} />
@@ -811,7 +809,7 @@ export function AgentDetail({
               <details className="group rounded-xl border bg-card p-4">
                 <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
                 <p className="mt-2 text-[0.71875rem] text-subtle">
-                  {t('按参数默认值展开，包含引入的 Agent 和 Skill 提示。')}
+                  {t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
                 </p>
                 <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap">
                   {preview}
@@ -820,7 +818,7 @@ export function AgentDetail({
             )}
             {includedBy.length > 0 && (
               <section className="flex flex-col gap-2 rounded-xl border bg-card p-4">
-                <h3 className="text-[0.8125rem] font-semibold">{t('被这些 Agent 引入')}</h3>
+                <h3 className="text-[0.8125rem] font-semibold">{t('被这些角色引入')}</h3>
                 {includedBy.map((a) => (
                   <button
                     key={a.id}
@@ -844,7 +842,7 @@ export function AgentDetail({
                 >
                   <WorkflowIcon className="h-4 w-4 text-subtle" />
                   <span className="flex-1 truncate">{w.name}</span>
-                  <Badge tone={role === t('主 Agent') ? 'accent' : 'neutral'}>{role}</Badge>
+                  <Badge tone={role === t('主角色') ? 'accent' : 'neutral'}>{role}</Badge>
                 </button>
               ))}
             </section>

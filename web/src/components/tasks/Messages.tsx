@@ -203,7 +203,7 @@ export function AgentMessage({
       hideProcess={hideProcess}
       hideAuthor={hideAuthor}
       slot={slot}
-      name={author?.name ?? a?.name ?? t('已删除的 Agent')}
+      name={author?.name ?? a?.name ?? t('已删除的角色')}
       model={author ? author.model : a ? modelOf(a) : undefined}
       icon={a || author ? (a?.icon ?? author!.icon ?? 'sparkles') : undefined}
       cli={a?.cli ?? author?.cli ?? ''}

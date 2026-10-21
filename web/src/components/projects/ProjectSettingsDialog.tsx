@@ -746,7 +746,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   </div>
                   <span className="text-xs text-subtle">
                     {t(
-                      '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
+                      '这个项目里新建和改写的文本文件用它，角色写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
                     )}
                     {!draft.fileFormat && (
                       <>
@@ -1037,7 +1037,7 @@ function TestStepsEditor({
       <div className="flex flex-wrap items-center gap-2">
         <span className="min-w-0 flex-1 text-xs leading-relaxed text-subtle">
           {t(
-            '测试 Agent 按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时 Agent 会自己找命令并建议你补上。',
+            '测试角色按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时角色会自己找命令并建议你补上。',
           )}
         </span>
         <Button size="sm" variant="secondary" onClick={onAi} disabled={aiRunning}>

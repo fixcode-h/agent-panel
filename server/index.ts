@@ -421,7 +421,7 @@ app.put('/agents/:id', async (c) => {
       origin: before.origin,
     }
   const a = await agents.update(id, r.data!)
-  return a ? c.json(a) : bad(c, t('Agent 不存在'), 404)
+  return a ? c.json(a) : bad(c, t('角色不存在'), 404)
 })
 
 app.delete('/agents/:id', async (c) => {
@@ -429,7 +429,7 @@ app.delete('/agents/:id', async (c) => {
   if (isCoreAgent((await agents.get(id)) ?? undefined)) return bad(c, t('必备角色不能删除'), 409)
   const err = agentDeleteError(id, await workflows.list())
   if (err) return bad(c, err, 409)
-  if (!(await agents.remove(id))) return bad(c, t('Agent 不存在'), 404)
+  if (!(await agents.remove(id))) return bad(c, t('角色不存在'), 404)
   // 引入了它的 Agent 去掉这条引入
   for (const a of await agents.list())
     if (a.includes.includes(id)) await agents.update(a.id, { ...a, includes: a.includes.filter((x) => x !== id) })
@@ -502,7 +502,7 @@ async function parseProject(body: unknown) {
   const p = ProjectInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
-  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话 Agent 不存在') }
+  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话角色不存在') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
   if (!p.data.workflowId && !cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }

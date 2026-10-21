@@ -2,7 +2,7 @@ import { t } from './i18n.ts'
 
 /** 用户数据目录里的几类数据，设置的「数据」里按类显示占用、清理、导入导出 */
 export const DATA_KINDS = [
-  { id: 'config', label: t('配置'), hint: t('设置、Agent、工作流和分类'), clearable: false },
+  { id: 'config', label: t('配置'), hint: t('设置、角色、工作流和分类'), clearable: false },
   {
     id: 'projects',
     label: t('项目'),

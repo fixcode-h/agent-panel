@@ -114,7 +114,7 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
   assert.equal(log.filter((c) => c.dispatching).length, 0, '没有主 Agent 调度轮')
-  assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子 Agent/.test(m.text)))
+  assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子角色/.test(m.text)))
 })
 
 test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失效', async () => {
