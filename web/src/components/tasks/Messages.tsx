@@ -231,8 +231,12 @@ type BodyProps = {
 }
 
 /** 消息内容会变的部分：文字、思考长度、模型耗时和每个工具调用的结果 */
+// 工具输出在跑的时候服务端只留最后一段（长度到了上限就不再变），只比长度会漏掉更新：
+// 再带上末尾几十个字、是否还在跑和摘要，命令窗口和行内输出才会跟着刷新
+const toolSig = (x: TaskMessage['tools'][number]) =>
+  `${x.output?.length ?? 0}:${x.output?.slice(-48) ?? ''}${x.failed ? '!' : ''}${x.running ? '~' : ''}:${x.detail}:${x.input?.length ?? 0}`
 const sig = (m: TaskMessage) =>
-  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.tools.map((x) => `${x.output?.length ?? 0}${x.failed ? '!' : ''}`).join(',')}`
+  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.tools.map(toolSig).join(',')}`
 
 /** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
 function StickyAuthor({ author }: { author: Author }) {

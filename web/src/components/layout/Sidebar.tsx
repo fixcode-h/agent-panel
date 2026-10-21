@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useEscape } from '@/lib/useEscape'
 import {
+  Archive,
   CircleAlert,
   Bot,
   Code2,
@@ -285,7 +286,7 @@ function ModeSwitch({ narrow }: { narrow: boolean }) {
  */
 export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme: () => void }) {
   const { route, go, openSettings, openProject } = useNav()
-  const { tasks, projects, setProjects, reloadTasks } = useData()
+  const { tasks, projects, setProjects, reloadTasks, removeTask, upsertTask } = useData()
   const unread = useUnreadTasks()
   // 橙点以服务端的 turnDoneAt / turnSeenAt 为准：本地缓存只用来补刚完成、列表还没刷新的那一小段时间
   const isUnread = (tk: Task) => isTaskUnread(tk) || unread.includes(tk.id)
@@ -370,6 +371,35 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     } finally {
       setDeleting(undefined)
     }
+  }
+  // 一键清理：只动这个项目下没在执行的对话（子对话在跑的父对话也算在执行，删它会连带结束子对话）
+  const [bulk, setBulk] = useState<{ project: Project; action: 'archive' | 'delete'; n: number }>()
+  const idleTasks = (pid: string) => recent.filter((x) => x.projectId === pid && !x.working && !x.childrenWorking)
+  const runBulk = async () => {
+    if (!bulk) return
+    const { project, action } = bulk
+    // 确认框开着时可能有对话开始执行了：按确认那一刻的状态重新挑一遍
+    const list = idleTasks(project.id)
+    let ok = 0
+    let failed = 0
+    for (const tk of list) {
+      try {
+        if (action === 'delete') {
+          await api.deleteTask(tk.id)
+          removeTask(tk.id)
+        } else upsertTask(await api.archiveTask(tk.id, true))
+        ok++
+      } catch {
+        failed++
+      }
+    }
+    setBulk(undefined)
+    // 正在看的对话被删掉了：回到项目首页
+    if (action === 'delete' && route.page === 'projects' && route.sub && list.some((x) => x.id === route.sub))
+      go({ page: 'projects', id: project.id })
+    if (failed) toast.error(t('{ok} 个成功，{failed} 个失败', { ok, failed }))
+    else if (action === 'delete') toast.success(t('已删除 {n} 个对话', { n: ok }))
+    else toast.success(t('已归档 {n} 个对话，可以在筛选里选「已归档」找到', { n: ok }))
   }
   const reveal = (p: Project) => {
     if (!p.path) return toast.error(t('这个项目还没有选择本地目录'))
@@ -704,6 +734,22 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
                         {t('重命名')}
                       </ContextMenuItem>
                       <ContextMenuSeparator />
+                      <ContextMenuItem
+                        disabled={!idleTasks(pid).length}
+                        onSelect={() => setBulk({ project: p, action: 'archive', n: idleTasks(pid).length })}
+                      >
+                        <Archive className="h-4 w-4" />
+                        {t('归档所有未运行的对话')}
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        danger
+                        disabled={!idleTasks(pid).length}
+                        onSelect={() => setBulk({ project: p, action: 'delete', n: idleTasks(pid).length })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        {t('删除所有未运行的对话')}
+                      </ContextMenuItem>
+                      <ContextMenuSeparator />
                       <ContextMenuItem danger onSelect={() => setDeleting(p)}>
                         <Trash2 className="h-4 w-4" />
                         {t('删除')}
@@ -830,6 +876,22 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         title={t('删除「{name}」？', { name: deleting?.name ?? '' })}
         description={t('会删除面板里的配置和这个项目的所有对话，不会动本地目录里的文件。')}
         onConfirm={() => deleting && remove(deleting)}
+      />
+      <ConfirmDialog
+        open={!!bulk}
+        onOpenChange={(o) => !o && setBulk(undefined)}
+        title={
+          bulk?.action === 'delete'
+            ? t('删除「{name}」里 {n} 个未运行的对话？', { name: bulk.project.name, n: bulk.n })
+            : t('归档「{name}」里 {n} 个未运行的对话？', { name: bulk?.project.name ?? '', n: bulk?.n ?? 0 })
+        }
+        description={
+          bulk?.action === 'delete'
+            ? t('正在执行的对话不受影响。删除后对话记录和它们的子对话都找不回来，不会动本地目录里的文件。')
+            : t('正在执行的对话不受影响。归档的对话不会删除，可以在筛选里选「已归档」找到。')
+        }
+        confirmText={bulk?.action === 'delete' ? t('删除') : t('归档')}
+        onConfirm={runBulk}
       />
     </>
   )

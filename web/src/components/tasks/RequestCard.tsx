@@ -45,6 +45,8 @@ export function TaskRequestCard({ task, onAnswered }: { task: Task; onAnswered: 
       requests={task.requests ?? []}
       agent={a ? { name: a.name, icon: a.icon, cli: a.cli } : undefined}
       onAnswer={async (id, r) => onAnswered(await api.answerRequest(task.id, id, r))}
+      // 关掉提问：先不回答，把对话暂停；之后发消息或继续执行时 AI 再接着做
+      onClose={async () => onAnswered(await api.stopTask(task.id))}
     />
   )
 }
@@ -57,11 +59,14 @@ export function RequestCard({
   requests,
   onAnswer,
   agent,
+  onClose,
   className,
 }: {
   requests: TaskRequest[]
   onAnswer: (id: string, r: { allow: boolean; answer?: string; answers?: string[] }) => Promise<void>
   agent?: { name: string; icon: string; cli: string }
+  /** 提问右上角的关闭（暂停对话）；不给就没有关闭按钮 */
+  onClose?: () => Promise<void>
   className?: string
 }) {
   const req = requests[0]
@@ -113,6 +118,16 @@ export function RequestCard({
           }
         }}
         skipLabel={t('不回答，让 AI 自己决定')}
+        onClose={
+          onClose &&
+          (async () => {
+            try {
+              await onClose()
+            } catch (e) {
+              toast.error((e as Error).message)
+            }
+          })
+        }
       />
     )
 
