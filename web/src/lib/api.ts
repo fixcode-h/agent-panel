@@ -440,6 +440,6 @@ export const api = {
     request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
-}
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
   orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
+}

@@ -570,6 +570,11 @@ const ProjectFields = z.object({
   wslDistro: z.string().trim().max(60).default(''),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
+  /**
+   * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
+   * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
+   */
+  sortOrder: z.number().int().min(0).optional(),
 })
 export const ProjectInput = z.preprocess(migrateProject, ProjectFields)
 export type ProjectInput = z.infer<typeof ProjectFields>
@@ -1327,8 +1332,3 @@ export interface LoginJob {
   error?: string
   startedAt: number
 }
-  /**
-   * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
-   * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
-   */
-  sortOrder: z.number().int().min(0).optional(),
