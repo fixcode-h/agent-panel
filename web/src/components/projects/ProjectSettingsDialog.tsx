@@ -2,8 +2,11 @@ import { CliSkills } from '@/components/settings/CliSkills'
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { FileText, Loader2, Settings2, Sparkles, Trash2, X } from 'lucide-react'
-import type { Project, ProjectInput, WorkflowExpose } from '@shared/schema'
+import { FileText, ChevronDown, ChevronUp, Loader2, Settings2, Sparkles, Trash2, X } from 'lucide-react'
+import type { ParamValue, Project, ProjectInput, TestStep, WorkflowExpose } from '@shared/schema'
+import { derivedParams, agentParamGroups, type AgentParamGroup, type DerivedParam } from '@shared/agent-params'
+import { ENV_LABEL, newTestStepId } from '@shared/test-steps'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { projectChecks } from '@/lib/readiness'
@@ -39,6 +42,8 @@ const blank: ProjectInput = {
   defaultAgentId: '',
   agentSet: true,
   workflowParams: {},
+  testSteps: [],
+  wslDistro: '',
   gitPolicy: 'ask',
 }
 
@@ -128,8 +133,22 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const configurable = [active, ...optionalWorkflows]
     .filter((w): w is (typeof workflows)[number] => !!w)
     .filter((w, i, list) => list.findIndex((x) => x.id === w.id) === i)
+  // 每个工作流暴露的 Agent 参数：按它实际用到的 Agent 派生，不用工作流作者手工加 expose。
+  // 工作流 expose 里 target=agent 的 key 由 expose 表单管，这里不重复渲染（同一个参数只有一处配置源）
+  const paramsFor = (w: (typeof workflows)[number]) => {
+    const derived = derivedParams(w, agents)
+    const exposed = new Set(w.expose.filter((e) => e.target === 'agent').map((e) => e.targetId))
+    return { derived, exposed, groups: agentParamGroups(w, agents) }
+  }
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
   const { settings } = useData()
+  // AI 配置：一次只开一个，结果只填草稿；用户取消不会改数据
+  const [ai, setAi] = useState<{
+    kind: 'params' | 'teststeps'
+    workflowId?: string
+    agentId?: string
+    title: string
+  } | null>(null)
 
   // 项目的「AI 分析」：读本地目录给出名称、简介、工作流和配置项，填进表单；用户确认后才保存
   const analyze = async () => {
@@ -145,6 +164,9 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         ...d,
         name: d.name.trim() || r.name,
         description: r.description || d.description,
+        // 已经填过步骤的不覆盖：用户可能自己调过
+        ...(r.testSteps.length && !d.testSteps.length ? { testSteps: r.testSteps } : {}),
+        ...(r.wslDistro && !d.wslDistro ? { wslDistro: r.wslDistro } : {}),
         ...(wf
           ? {
               workflowId: wf.id,
@@ -514,15 +536,38 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                       ))}
                   </div>
                 </div>
-                {configurable.some((w) => w.expose.length > 0) && (
+                {configurable.some((w) => w.expose.length > 0 || agentParamGroups(w, agents).length > 0) && (
                   <div className="flex flex-col gap-3">
-                    {configurable
-                      .filter((w) => w.expose.length > 0)
-                      .map((w) => (
+                    {configurable.map((w) => {
+                      const { derived, exposed, groups } = paramsFor(w)
+                      // 有可配的派生参数才算：只看真有值的分组，避免空标题
+                      const hasParams = groups.some((g) =>
+                        derived.some((d) => d.agents.some((a) => a.id === g.agentId)),
+                      )
+                      if (!w.expose.length && !hasParams) return null
+                      return (
                         <div key={w.id} className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
-                          <span className="text-xs text-muted">
-                            {t('「{name}」的配置，改完保存后对新开的对话生效', { name: w.name })}
-                          </span>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="min-w-0 flex-1 text-xs text-muted">
+                              {t('「{name}」的配置，改完保存后对新开的对话生效', { name: w.name })}
+                            </span>
+                            {hasParams && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() =>
+                                  setAi({
+                                    kind: 'params',
+                                    workflowId: w.id,
+                                    title: t('AI 配置「{name}」的参数', { name: w.name }),
+                                  })
+                                }
+                              >
+                                <Sparkles className="h-3.5 w-3.5" />
+                                {t('AI 配置全部')}
+                              </Button>
+                            )}
+                          </div>
                           {w.expose.map((e) => (
                             <ExposeField
                               key={e.key}
@@ -531,10 +576,41 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                               onChange={(v) => setParam(w.id, e.key, v)}
                             />
                           ))}
+                          {groups.map((g) => (
+                            <AgentParamsEditor
+                              key={g.agentId}
+                              group={g}
+                              agents={derived}
+                              hidden={exposed}
+                              values={paramsOf(w.id)}
+                              onChange={(k, v) => setParam(w.id, k, v)}
+                              aiRunning={false}
+                              onAi={() =>
+                                setAi({
+                                  kind: 'params',
+                                  workflowId: w.id,
+                                  agentId: g.agentId,
+                                  title: t('AI 配置「{name}」', { name: g.agentName }),
+                                })
+                              }
+                            />
+                          ))}
                         </div>
-                      ))}
+                      )
+                    })}
                   </div>
                 )}
+              </FormSection>
+
+              <FormSection title={t('测试步骤')}>
+                <TestStepsEditor
+                  steps={draft.testSteps}
+                  distro={draft.wslDistro}
+                  onChange={(v) => set('testSteps', v)}
+                  onDistro={(v) => set('wslDistro', v)}
+                  aiRunning={false}
+                  onAi={() => setAi({ kind: 'teststeps', title: t('AI 生成测试步骤') })}
+                />
               </FormSection>
 
               <FormSection title={t('版本与推送')}>
@@ -594,7 +670,320 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
           onConfirm={remove}
         />
       )}
+
+      {ai && (
+        <AssistDialog
+          open={!!ai}
+          onOpenChange={(o) => !o && setAi(null)}
+          kind={ai.kind}
+          projectId={project?.id ?? ''}
+          title={ai.title}
+          paramAgentId={ai.agentId}
+          paramSpec={
+            ai.kind === 'params'
+              ? (() => {
+                  const wf = workflows.find((w) => w.id === (ai.workflowId || active?.id))
+                  return wf ? derivedParams(wf, agents) : []
+                })()
+              : undefined
+          }
+          // params 时 target 是工作流：结果按它的 id 写进 workflowParams
+          target={ai.kind === 'params' ? workflows.find((w) => w.id === (ai.workflowId || active?.id)) : undefined}
+          onApply={(p) => {
+            if (p.kind === 'params') {
+              const id = ai.workflowId || p.workflowId || active?.id
+              if (id)
+                setDraft((d) => ({
+                  ...d,
+                  workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), ...p.values } },
+                }))
+              toast.success(t('已填进表单，确认保存后生效'))
+            } else if (p.kind === 'teststeps') {
+              set('testSteps', p.steps)
+              toast.success(t('已填进表单，确认保存后生效'))
+            }
+          }}
+        />
+      )}
     </>
+  )
+}
+
+/**
+ * 测试步骤编辑器：增删、排序、启停，每条写明名称、命令、环境和工作目录。
+ * 步骤属于项目，新建对话时会快照进任务，所以这里改完要点「确认」保存。
+ */
+function TestStepsEditor({
+  steps,
+  distro,
+  onChange,
+  onDistro,
+  onAi,
+  aiRunning,
+}: {
+  steps: TestStep[]
+  distro: string
+  onChange: (v: TestStep[]) => void
+  onDistro: (v: string) => void
+  onAi: () => void
+  aiRunning: boolean
+}) {
+  const patch = (i: number, p: Partial<TestStep>) => onChange(steps.map((s, j) => (j === i ? { ...s, ...p } : s)))
+  const move = (i: number, d: number) => {
+    const j = i + d
+    if (j < 0 || j >= steps.length) return
+    const next = [...steps]
+    ;[next[i], next[j]] = [next[j], next[i]]
+    onChange(next)
+  }
+  const hasWsl = steps.some((s) => s.env === 'wsl')
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="min-w-0 flex-1 text-xs leading-relaxed text-subtle">
+          {t(
+            '测试 Agent 按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时 Agent 会自己找命令并建议你补上。',
+          )}
+        </span>
+        <Button size="sm" variant="secondary" onClick={onAi} disabled={aiRunning}>
+          {aiRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {t('AI 生成步骤')}
+        </Button>
+      </div>
+      {steps.length === 0 && (
+        <p className="rounded-lg border border-dashed p-3 text-xs text-subtle">
+          {t('还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。')}
+        </p>
+      )}
+      <ul className="flex flex-col gap-2">
+        {steps.map((s, i) => (
+          <li
+            key={s.id}
+            className={cn('flex flex-col gap-2 rounded-xl border bg-field/40 p-3', !s.enabled && 'opacity-60')}
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-xs text-subtle">{i + 1}</span>
+              <Input
+                className="h-8 flex-[1_1_140px]"
+                value={s.name}
+                aria-label={t('步骤名')}
+                placeholder={t('步骤名，例如「单元测试」')}
+                onChange={(e) => patch(i, { name: e.target.value })}
+              />
+              <Select
+                className="h-8 w-auto min-w-[6.5rem]"
+                aria-label={t('环境')}
+                value={s.env}
+                onChange={(e) => patch(i, { env: e.target.value as TestStep['env'] })}
+                options={(Object.keys(ENV_LABEL) as TestStep['env'][]).map((k) => ({ value: k, label: ENV_LABEL[k] }))}
+              />
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('上移')}
+                title={t('上移')}
+                onClick={() => move(i, -1)}
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('下移')}
+                title={t('下移')}
+                onClick={() => move(i, 1)}
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t('删除这一步')}
+                title={t('删除这一步')}
+                onClick={() => onChange(steps.filter((_, j) => j !== i))}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+            <Input
+              className="h-8 font-mono text-xs"
+              value={s.command}
+              aria-label={t('命令')}
+              placeholder={t('要执行的命令')}
+              onChange={(e) => patch(i, { command: e.target.value })}
+            />
+            <div className="flex flex-wrap items-center gap-2">
+              <Input
+                className="h-8 flex-[1_1_120px] font-mono text-xs"
+                value={s.cwd}
+                aria-label={t('工作目录')}
+                placeholder={t('工作目录（相对项目根，可空）')}
+                onChange={(e) => patch(i, { cwd: e.target.value })}
+              />
+              <Input
+                className="h-8 flex-[1_1_140px] text-xs"
+                value={s.when}
+                aria-label={t('执行条件')}
+                placeholder={t('执行条件，例如「仅改了 web/ 时」')}
+                onChange={(e) => patch(i, { when: e.target.value })}
+              />
+              <Input
+                className="h-8 w-[7rem] text-xs"
+                type="number"
+                min={0}
+                value={s.timeoutSec || ''}
+                aria-label={t('超时秒数')}
+                placeholder={t('超时（秒）')}
+                onChange={(e) => patch(i, { timeoutSec: Math.max(0, Number(e.target.value) || 0) })}
+              />
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={s.enabled}
+                  onChange={(e) => patch(i, { enabled: e.target.checked })}
+                />
+                {t('启用')}
+              </label>
+            </div>
+            {s.note && <span className="text-xs text-subtle">{s.note}</span>}
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() =>
+            onChange([
+              ...steps,
+              {
+                id: newTestStepId(steps),
+                name: '',
+                command: '',
+                env: 'auto',
+                cwd: '',
+                when: '',
+                timeoutSec: 0,
+                note: '',
+                enabled: true,
+              },
+            ])
+          }
+        >
+          {t('加一条步骤')}
+        </Button>
+        {hasWsl && (
+          <label className="flex items-center gap-2 text-xs text-subtle">
+            {t('WSL 发行版')}
+            <Input
+              className="h-8 w-[10rem] font-mono text-xs"
+              value={distro}
+              placeholder="Ubuntu-24.04"
+              onChange={(e) => onDistro(e.target.value)}
+            />
+          </label>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/** 按 Agent 分组的参数表单：值来自 AgentParam.default，留空即用默认；同一 key 只出现一次，注明影响哪些 Agent */
+function AgentParamsEditor({
+  group,
+  agents,
+  values,
+  onChange,
+  onAi,
+  aiRunning,
+  hidden,
+}: {
+  group: AgentParamGroup
+  /** 同一个 key 在其他 Agent 里也有的情况，派生结果里已经合并，这里只用来显示影响面 */
+  agents: DerivedParam[]
+  values: Record<string, ParamValue | undefined>
+  onChange: (key: string, v: string | boolean) => void
+  onAi: () => void
+  aiRunning: boolean
+  /** 工作流 expose 已经管着的参数 key：同 key 只渲染一次，由 expose 那边负责 */
+  hidden: Set<string>
+}) {
+  const mine = agents.filter((d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key))
+  if (!mine.length) return null
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
+      <div className="flex items-center gap-2">
+        <span className="truncate text-[0.8125rem] font-medium">{group.agentName}</span>
+        <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>
+        <Button size="sm" variant="ghost" className="ml-auto" onClick={onAi} disabled={aiRunning}>
+          {aiRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+          {t('AI 配置')}
+        </Button>
+      </div>
+      {mine.map((d) => (
+        <DerivedParamField key={d.key} d={d} value={values[d.key]} onChange={(v) => onChange(d.key, v)} />
+      ))}
+    </div>
+  )
+}
+
+/** 一项派生参数：按类型渲染，显示默认值；多个 Agent 共用同一个 key 时注明影响面 */
+function DerivedParamField({
+  d,
+  value,
+  onChange,
+}: {
+  d: DerivedParam
+  value: ParamValue | undefined
+  onChange: (v: string | boolean) => void
+}) {
+  const label = d.label || d.key
+  const fallback = Array.isArray(d.defaultValue) ? d.defaultValue.join(', ') : (d.defaultValue ?? '')
+  const shared = d.agents.length > 1
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
+        {label}
+        <span className="font-mono text-[0.6875rem] text-subtle">{d.key}</span>
+        {d.required && <span className="text-[0.6875rem] text-warning">{t('必须填')}</span>}
+        {shared && (
+          <span className="text-[0.6875rem] text-subtle">
+            {t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) })}
+          </span>
+        )}
+      </span>
+      {d.type === 'select' ? (
+        <Select
+          value={String(value ?? '')}
+          onChange={(e) => onChange(e.target.value)}
+          options={[
+            { value: '', label: fallback ? t('默认：{v}', { v: String(fallback) }) : t('未选择') },
+            ...d.options.map((o) => ({ value: o, label: o })),
+          ]}
+        />
+      ) : d.type === 'bool' ? (
+        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
+          <input
+            type="checkbox"
+            className="accent-accent"
+            checked={value === true}
+            onChange={(e) => onChange(e.target.checked)}
+          />
+          {value === true ? t('是') : t('否')}
+          {d.defaultValue !== undefined && (
+            <span className="text-xs text-subtle">{t('默认：{v}', { v: d.defaultValue ? t('是') : t('否') })}</span>
+          )}
+        </label>
+      ) : (
+        <Input
+          value={typeof value === 'string' ? value : ''}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+        />
+      )}
+      {d.description && <span className="text-xs text-subtle">{d.description}</span>}
+    </div>
   )
 }
 

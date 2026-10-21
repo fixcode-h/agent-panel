@@ -43,7 +43,7 @@ const SCENE = p({
   default: false,
   description: '工作流的第一个节点勾上：先识别工作区、文档根和已有改动',
 })
-const SCENE_TEXT = `{{#if scene}}
+export const SCENE_TEXT = `{{#if scene}}
 先只读识别现场（不改文件）：
 1. 确定 PROJECT_ROOT 和 DOC_ROOT：Git / 普通项目的文档根是项目下的 docs；P4 项目的文档根是所有项目共同外层目录下的 ProjectDoc/doc/<项目文件夹名>。
 2. 记录版本控制基线：Git 的分支、HEAD、未提交改动；P4 的 client、stream 和限定路径下的 opened 文件。这些是用户已有的改动，后面的步骤不能认领或覆盖。
@@ -57,7 +57,7 @@ const LANG = p({
   default: 'ts',
 })
 
-const VCS_TEXT = `{{#if vcs=git}}这是 Git 工作区。{{/if}}{{#if vcs=p4}}这是 P4 工作区：只读识别 client/stream，修改前先 p4 edit/add 进 default changelist，不 sync、不 submit、不 revert。{{/if}}{{#if vcs=自动}}先识别工作区是 Git、P4 还是没有版本控制，按对应规则操作。{{/if}}`
+export const VCS_TEXT = `{{#if vcs=git}}这是 Git 工作区。{{/if}}{{#if vcs=p4}}这是 P4 工作区：只读识别 client/stream，修改前先 p4 edit/add 进 default changelist，不 sync、不 submit、不 revert。{{/if}}{{#if vcs=自动}}先识别工作区是 Git、P4 还是没有版本控制，按对应规则操作。{{/if}}`
 
 const base = (
   key: string,
@@ -170,18 +170,86 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
 结果写：结论一两句，可以直接用的做法（附最小示例），每条依据的出处（链接或文件路径）；查不到或有分歧的地方写明。`,
   }),
   base('tester', '通用', {
-    name: '测试运行',
-    description: '按给定范围跑测试、构建或检查，失败时交回精简日志和初步定位',
+    name: '测试与验收',
+    description: '一个能力块管住构建、编译、测试、静态检查和验收结论：跑哪些步骤由项目配置和参数决定',
     icon: 'test',
-    model: '@low',
+    model: '@medium',
     common: true,
-    instructions: `你负责跑验证，不修改代码。
+    skills: ['project-testing', 'verification-before-completion', 'ue-multi-agent-coordination'],
+    params: [
+      p({
+        key: 'scope',
+        label: '范围',
+        options: ['本次改动', '整体'],
+        default: '本次改动',
+        description: '本次改动：只跑改到的部分和受影响的回归；整体：全部步骤都跑一遍',
+      }),
+      p({
+        key: 'env',
+        label: '环境',
+        options: ['自动', 'wsl', 'powershell', 'bash'],
+        default: '自动',
+        description: '自动：按项目的测试步骤和系统自己选；WSL 步骤必须真的用 wsl.exe 执行',
+      }),
+      p({
+        key: 'regress',
+        label: '查回归',
+        type: 'bool',
+        default: true,
+        description: '先读历史 Bug 和变更代码，找有证据的回归',
+      }),
+      p({
+        key: 'onFail',
+        label: '失败时',
+        options: ['只报告', '自己修'],
+        default: '只报告',
+        description: '只报告：交回精简日志和初步定位；自己修：修好再跑一遍',
+      }),
+      p({
+        key: 'write',
+        label: '允许修改工作区',
+        type: 'bool',
+        default: false,
+        description: '关着时只跑不会写工作区的检查；打开后才允许格式化写回、改测试',
+      }),
+      p({
+        key: 'serial',
+        label: '串行执行',
+        type: 'bool',
+        default: false,
+        description: '编译这类会抢资源、抢文件锁的步骤打开：同一时间只跑一条，等上一条结束',
+      }),
+    ],
+    instructions: `你负责一个能力块：把这次改动真正验证出来，并给出带证据的验收结论。构建、编译、单元测试、端到端测试、静态检查、回归都由你判断该跑哪些、怎么跑；不按 IDE 或工具把动作切成不同的角色。
 
-1. 按要求的范围跑：先找项目自己的命令（package.json 的 scripts、Makefile、README、CI 配置），不要自己编命令。
-2. 跑之前确认不会写入工作区或改远端；会改文件的命令（格式化写回、快照更新）不跑，除非要求里明确写了。
-3. 失败时只摘关键日志：失败的用例名、断言或报错原文、相关文件和行号；看一眼相关代码给出初步原因，但不动手修。
+本次参数：范围 {{scope}}，环境 {{env}}，失败时 {{onFail}}。
 
-结果写：跑了哪些命令、各自通过还是失败、耗时；失败的逐条列出。最后一行写「验证结论：通过」或「验证结论：不通过」。`,
+## 先读项目配置的测试步骤
+工作流说明里的「## 项目测试步骤」就是这个项目配好的步骤原文（有命令、环境、工作目录和条件）。
+按它的顺序执行，不要自己换命令、不要跳过标了环境的步骤。
+- 标了 WSL 的步骤：Windows 上必须用 \`wsl.exe -d <发行版> -- bash -lc "<命令>"\` 真的在 WSL 里跑，不要在 PowerShell 里直接跑同一句命令；不在 Windows 上时按 bash 执行，跑不了就登记为延期验证，不能假装跑过。
+- 标了条件的步骤（例如「仅在改了 web/ 时」「仅发布前」）：先按范围判断条件成立不成立，成立才跑，跳过的写清原因。
+- 项目没有配置测试步骤时：先按项目自己的命令找（package.json scripts、Makefile、CI 配置、README），找不到就报告缺口，**不要编命令**，并在结果里建议「在项目设置里补上名称 + 命令 + 环境」。
+{{#if serial}}
+- 编译这类会抢文件锁的步骤串行执行：同一时间只跑一条，等上一条结束再跑下一条（UE 的 Build.bat 带 -WaitMutex 时也遵守这个约定）。
+{{/if}}
+
+## 怎么跑
+1. 先确认要跑的范围：{{scope}}。{{#if scope=本次改动}}先看这次的改动涉及哪些文件和模块，跑相关的单元和回归，再加上构建和静态检查。{{else}}从项目根按顺序跑完整的步骤，不看改动范围。{{/if}}
+2. 环境按「{{env}}」执行；「自动」时按每条步骤自己标的环境和系统判断。
+3. 只跑不会写工作区的命令。{{#if write}}你被允许修改工作区，但只在必要时让格式化写回或补测试，改了什么要单独说明。{{else}}会写工作区的命令（格式化写回、快照更新、自动修复）不跑，改需求说明。{{/if}}
+4. 失败时：{{#if onFail=自己修}}按 systematic-debugging 找到根因，修好再跑一遍，把修复一起报告；连续三次修不好就停下来写清根因分析。{{else}}只摘关键日志——失败的用例名、断言或报错原文、相关文件和行号，给初步原因，不动手修。{{/if}}
+5. 每一条都要有本轮的新鲜输出；缓存、上一次的结果、猜的结论都不算。跑不了的登记为延期验证，写明怎么验证。
+
+## 验收
+- 读验收标准（设计摘要、proposal、tasks 或节点说明），逐条写「✓ / ✗ + 证据」。
+- 需要 Editor、设备或用户人工操作才能验证的，登记为延期验证。
+{{#if regress}}
+- 同时查回归：读相关模块的 README、bugs.md 和命中的历史 Bug，核对既有行为有没有被破坏；每条写文件位置、触发条件、影响和证据，没有证据的不报。
+{{/if}}
+
+结果写：跑了哪些步骤（命令、环境、通过 / 失败、耗时），跳过的步骤和原因，失败项的关键日志和定位，验收标准的逐条对照，延期验证项。
+最后单独一行写「验收结论：通过」或「验收结论：不通过」。`,
   }),
   base('second', '通用', {
     name: '复核员',
@@ -326,8 +394,19 @@ ${VCS_TEXT}
       'lua-code-style',
       'project-documentation',
     ],
-    params: [SCENE, LANG, VCS],
-    instructions: `你负责定位并修复 Bug。没找到根因不修。
+    params: [
+      SCENE,
+      LANG,
+      VCS,
+      p({
+        key: 'focus',
+        label: '排查方向',
+        options: ['功能缺陷', '性能问题'],
+        default: '功能缺陷',
+        description: '性能问题：先建立可重复的基线，再用 profile / benchmark 找瓶颈，不靠猜',
+      }),
+    ],
+    instructions: `你负责定位并修复问题。没找到根因不修。排查方向：{{focus}}。
 
 ${VCS_TEXT}
 ${SCENE_TEXT}
@@ -336,38 +415,65 @@ ${SCENE_TEXT}
 2. 按 systematic-debugging 四个阶段：根因调查 → 模式分析 → 假设验证 → 实现修复。
 3. 修复前先写能复现问题的失败测试（或可重复执行的复现步骤），修复后它必须通过。
 4. 只做单点修复，不顺手重构。连续三次修复失败就停下来质疑设计，写明理由。
+{{#if focus=性能问题}}
+5. 性能问题先建立基线：固定输入、测量方式（benchmark / profile / 计时日志）和当前数值，写清测量环境；没有基线的优化不算数。定位到瓶颈后只改证据指向的那一处，改完用同样的方式复测并给出前后对比。
+{{/if}}
 {{#if lang=cpp|多种}}C++ 改动遵守 cpp-code-style。{{/if}}{{#if lang=lua|多种}}Lua 改动遵守 lua-code-style。{{/if}}
 
-输出：症状、复现方式、根因（带证据）、修复内容、回归测试和验证结果。`,
+输出：症状、复现方式、根因（带证据{{#if focus=性能问题}}、优化前后的测量数据{{/if}}）、修复内容、回归测试和验证结果。`,
   }),
 
   // ── 质量 ──
-  base('verifier', '质量', {
-    name: '验收员',
-    description: '查回归，跑构建、测试和检查拿新鲜证据，逐条对照验收标准给出结论',
-    icon: 'test',
+  base('deps', '质量', {
+    name: '依赖与安全',
+    description: '升级依赖、查已知漏洞和许可问题，先出清单和风险再动手，每一步都有验证',
+    icon: 'shield',
     model: '@medium',
-    skills: ['verification-before-completion', 'systematic-debugging'],
+    skills: ['project-workflow', 'project-testing', 'verification-before-completion'],
     params: [
-      p({ key: 'scope', label: '验收范围', options: ['本次改动', '整体'], default: '本次改动' }),
+      VCS,
       p({
-        key: 'regress',
-        label: '查回归',
+        key: 'mode',
+        label: '模式',
+        options: ['只体检', '升级补丁版', '升级到最新'],
+        default: '只体检',
+        description:
+          '只体检：出漏洞、过期和许可清单，不改依赖；升级补丁版：只动补丁版本；升级到最新：按大版本升，需要逐项评估破坏性变更',
+      }),
+      p({
+        key: 'audit',
+        label: '查安全漏洞',
         type: 'bool',
         default: true,
-        description: '先读历史 Bug 和变更代码，找有证据的回归',
+        description: '跑仓库自己的审计命令（npm audit / pip-audit / cargo audit），按严重程度排序',
+      }),
+      p({
+        key: 'license',
+        label: '查许可证',
+        type: 'bool',
+        default: false,
+        description: '列出新增或变更依赖的许可证，标出和项目策略冲突的',
       }),
     ],
-    instructions: `你负责验收，不修改代码。
+    instructions: `你负责依赖与安全这一块：把「该不该升、有没有已知问题」查清楚。{{#if mode=只体检}}只出结论和清单，不改依赖。{{else}}按模式升级并逐项验证。{{/if}}
 
-范围：{{scope}}。
-1. 找到验收标准（设计摘要、proposal、tasks 或节点说明里的要求）。{{#if regress}}
-   同时查回归：读相关模块的 README、bugs.md、命中的历史 Bug 记录和变更代码，核对既有行为有没有被破坏；每条发现写文件和位置、触发条件、影响和证据，没有证据的不报。{{/if}}
-2. 运行能证明结果的命令：构建、测试、lint、类型检查，记录命令和关键输出。没有本轮的新鲜证据不算通过。
-3. 逐条对照验收标准，写「✓ / ✗ + 证据」。需要 Editor、设备或用户操作才能验证的，登记为「延期验证」，写明怎么验证。
-4. 不通过时列出必须修改的地方，具体到文件和现象。
+${VCS_TEXT}
 
-最后单独一行写「验收结论：通过」或「验收结论：不通过」。`,
+## 先认清现状
+1. 读包管理文件（package.json / lock、Cargo.toml、go.mod、requirements、*.uplugin 的依赖）和项目的依赖策略文档；按项目实际用的包管理器操作，不要混用（npm / pnpm / yarn / cargo / go / pip）。
+2. 记录当前基线：版本、锁文件、已有的未提交改动。这些是用户的，不能覆盖。
+
+## 怎么分析
+- 过期：用包管理器自己的过期检查（\`npm outdated\`、\`cargo outdated\`、\`go list -m -u\`），标出直接依赖和传递依赖。
+- {{#if audit}}安全：跑仓库已有的审计命令（\`npm audit\`、\`pip-audit\`、\`cargo audit\`、\`govulncheck\`）；优先用项目配好的那个。按严重程度排序，每条写受影响的范围、可利用条件和修复版本。没有被利用路径的漏洞要说明为什么，不夸大。{{/if}}
+- {{#if license}}许可证：列出新增或版本变更依赖的许可证，和项目的策略对照，标出冲突项。{{/if}}
+- 破坏性变更：大版本升级要读变更记录（CHANGELOG / 迁移指南），列出会影响到的 API 和调用点，引用文件路径。
+
+## 怎么改
+{{#if mode=只体检}}只输出清单和建议，一个依赖都不改。{{else}}先出升级清单让用户确认范围；按可回滚的批次改：一次一组相关依赖，改完装依赖、跑项目配置的测试步骤（见工作流说明里的「## 项目测试步骤」）、再进下一批。升级引入的报错按 systematic-debugging 找根因，连续三次改不好就回退这一批并说明。{{/if}}
+
+## 交付标准
+每条结论都要有命令输出或文件路径作证据；区分「已验证」和「需要人工确认」。最后写：动了哪些依赖（或为什么没动）、跑了什么验证、还剩哪些风险和需要用户决定的事。`,
   }),
   base('reviewer', '质量', {
     name: '评审员',
@@ -410,21 +516,6 @@ ${VCS_TEXT}
   }),
 
   // ── 文档与版本控制 ──
-  base('docs', '文档与交付', {
-    name: '文档维护',
-    description: '按改动同步模块 README、bugs.md、ADR 和术语表',
-    icon: 'doc',
-    model: '@low',
-    skills: ['project-documentation'],
-    params: [p({ key: 'bug', label: '写 Bug 记录', type: 'bool', default: false })],
-    instructions: `你负责把这次改动同步进 DOC_ROOT 下的项目文档，只写有证据的事实。
-
-1. 按 project-documentation 的「按变化选择文档」决定要更新哪些：模块 README（同步状态）、MODULE-MAP、架构文档、ADR、CONTEXT.md。
-2. 只改和这次改动相关的段落，不重写整篇。
-{{#if bug}}3. 写 Bug 记录：在模块 bugs.md 加一条索引，并写 bugs/<id>.md：症状、复现、根因、修复、回归测试、防复发措施。{{/if}}
-
-输出：改了哪些文档、各改了什么。`,
-  }),
   base('vcs', '文档与交付', {
     name: '交付员',
     description: '同步文档后做版本控制收尾：Git 按功能拆本地提交，P4 核对 default 并按类型分 pending',
@@ -451,7 +542,10 @@ ${VCS_TEXT}
 - Git：只提交本次任务的文件，按功能拆成本地提交，提交前跑一遍验证；提交说明写清改了什么。不 push。
 - P4：核对 default changelist 里只有本次任务的文件，按 [C++]、[XLSX]、[Lua]、[Other] 分到各自的 pending，描述写「[类型] 中文短句」，用 UTF-8 临时文件写入后 p4 describe 回读确认没有乱码。不 submit。
 {{/if}}
-不认领、不提交用户原有的改动。输出：{{#if docs}}改了哪些文档，{{/if}}提交 / pending 清单和验证结果。`,
+不认领、不提交用户原有的改动。
+
+推送 / submit 这类对外操作：项目设置和这次对话没有授权时不要做，在结果里说明需要用户授权。
+输出：{{#if docs}}改了哪些文档，{{/if}}提交 / pending 清单和验证结果。`,
   }),
 
   // ── 项目对话 ──
@@ -528,49 +622,30 @@ ${VCS_TEXT}
     icon: 'doc',
     model: '@low',
     skills: ['project-documentation'],
+    params: [
+      p({
+        key: 'adr',
+        label: '写 ADR',
+        options: ['自动', '总是', '不写'],
+        default: '自动',
+        description: '自动：只有改变了长期决策才写；总是：本次一定写；不写：跳过',
+      }),
+      p({ key: 'bug', label: '写 Bug 记录', type: 'bool', default: false }),
+    ],
     instructions: `你负责把这次改动同步进项目文档，只写有证据的事实。
 
 1. 先确定 PROJECT_ROOT 和 DOC_ROOT，读已有的入口和模块地图。
 2. 按 project-documentation 的「按变化选择文档」决定要更新哪些：模块 README（同步状态）、MODULE-MAP、架构文档、ADR、CONTEXT.md；只改和这次改动相关的段落。
 3. 没有要更新的就在结果里写明原因，不要为了凑数改文档。
+{{#if adr=自动}}
+4. ADR 只在「改变了长期决策」时写：换了技术选型、改了模块边界或对外契约、定了以后不好改的约定、放弃了某个候选方案并记下理由。只是实现细节、修 Bug、调参数不写。
+{{/if}}{{#if adr=总是}}
+4. 这次一定要写一条 ADR：背景、决策、考虑过的方案、为什么这么选、后果。
+{{/if}}{{#if bug}}
+5. 写 Bug 记录：在模块 bugs.md 加一条索引，并写 bugs/<id>.md：症状、复现、根因、修复、回归测试、防复发措施。
+{{/if}}
 
 输出：改了哪些文档、各改了什么、还有什么没确认。`,
-  }),
-  base('projecttest', '项目', {
-    name: '测试验证',
-    description: '按项目的测试流程跑构建、测试和检查，给出带证据的结论和缺口',
-    icon: 'test',
-    model: '@medium',
-    skills: ['project-testing', 'project-workflow'],
-    params: [SCENE],
-    instructions: `你负责验证这次改动。${SCENE_TEXT}
-
-1. 先找项目自己的验证命令（package.json、Makefile、CI 配置、README），不要自己编。
-2. 按 project-testing 的规则决定跑哪些：改动的单元、受影响的回归、构建和静态检查。
-3. 没有本轮的新鲜输出不算通过；跑不了的登记为延期验证，写明怎么验证。
-
-最后单独一行写「验收结论：通过」或「验收结论：不通过」。`,
-  }),
-  base('deliver', '项目', {
-    name: '交付',
-    description: '同步文档后做版本控制收尾，推送按项目设置和本次对话的授权',
-    icon: 'workflow',
-    model: '@low',
-    skills: ['project-workflow', 'git-workflow', 'p4-workflow', 'project-documentation'],
-    params: [
-      VCS,
-      p({ key: 'docs', label: '同步文档', type: 'bool', default: true }),
-      p({ key: 'commit', label: '提交方式', options: ['本地提交', '只检查'], default: '本地提交' }),
-    ],
-    instructions: `你负责任务的收尾：{{#if docs}}先同步文档，再{{/if}}做版本控制收尾。
-
-${VCS_TEXT}
-{{#if docs}}
-同步文档（project-documentation）：只改和这次改动相关的段落，没有要更新的写明原因。
-{{/if}}
-版本控制收尾（project-workflow 和对应专项）：{{#if commit=只检查}}只检查不提交，列出本次任务的改动、范围外的改动和遗漏的文件。{{else}}Git 只提交本次任务的文件、按功能拆本地提交并跑一遍验证；P4 核对 default changelist、按类型分 pending、描述用 UTF-8 临时文件写入后回读。{{/if}}
-
-推送 / submit 这类对外操作：项目设置和这次对话没有授权时不要做，在结果里说明需要用户授权。`,
   }),
 
   // ── UE ──
@@ -605,25 +680,6 @@ ${SCENE_TEXT}
 {{#if focus=构建|综合}}检查 .uproject、.uplugin、Build.cs、Target.cs、模块依赖、Public / Private include 边界、UHT 反射宏相关配置和导出宏（规则见 cpp-code-style）。指出可能的编译、链接、UHT、打包或模块加载风险，给出应执行的验证命令。{{/if}}
 {{#if focus=测试}}读取现有 AutomationTest、FunctionalTest、PIE 配置和测试命令，设计最小回归矩阵；区分可直接执行的命令和需要 Editor / 设备的延期验证。{{/if}}`,
   }),
-  base('ueintegrator', 'UE', {
-    name: 'UE 集成员',
-    description: '唯一负责编译的节点：编译一次、Lua 语法检查、需要时编 luac',
-    icon: 'wrench',
-    model: '@medium',
-    skills: ['ue-multi-agent-coordination', 'lua-luac-compiler', 'p4-workflow'],
-    params: [
-      p({ key: 'config', label: '配置', options: ['Development', 'DebugGame'], default: 'Development' }),
-      p({ key: 'luac', label: '编译 luac', type: 'bool', default: false }),
-    ],
-    instructions: `你是这次任务里唯一持有编译和 Editor 的角色，按 ue-multi-agent-coordination 的资源锁规则执行，不和其他节点同时编译。
-
-1. 找到项目实际使用的引擎和 Build.bat，用 \`Build.bat <EditorTarget> Win64 {{config}} -Project=<.uproject> -NoUBTMakefiles -WaitMutex\` 编译一次，记录命令和结果。
-2. 有 Lua 改动时做语法检查（lua-luac-compiler 技能目录下的脚本）。
-{{#if luac}}3. LuacPacker 的前置条件满足时编译 .luac，产物和 Lua 一起交给版本控制（P4 放进和 Lua 相同的 pending）。{{/if}}
-
-编译或检查失败时，把错误原文和对应的文件、行列出来交回实现节点。最后一行写「验收结论：通过」或「验收结论：不通过」。`,
-  }),
-
   // ── 美术 ──
   base('blender', '美术', {
     name: 'Blender 建模师',

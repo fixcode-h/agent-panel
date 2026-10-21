@@ -1,6 +1,6 @@
 import { askSession, setAskUser } from './asks.ts'
 import { Hono, type Context } from 'hono'
-import { mkdir } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -14,14 +14,16 @@ import {
   type AssistJob,
   type AssistMessage,
 } from '../shared/assist.ts'
+import { derivedParams } from '../shared/agent-params.ts'
 import { getCli } from '../shared/clis.ts'
-import type { Agent, Category, TaskMessage, ToolUse, Workflow } from '../shared/schema.ts'
+import type { Agent, Category, Project, TaskMessage, ToolUse, Workflow } from '../shared/schema.ts'
 import { agentRun, cliSettings, defaultCli } from '../shared/settings.ts'
 import { detectClis } from './detect.ts'
 import { failureHints } from './exec/runner.ts'
 import { invokeCli } from './exec/invoke.ts'
 import { childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
+import { resolvePath } from './fs.ts'
 import { t } from '../shared/i18n.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
@@ -48,7 +50,12 @@ export function safeArgs(args: string[]) {
 const TIMEOUT = 5 * 60_000
 
 /** AI 创建 / 优化 Agent 和工作流：调用本机 CLI 生成，校验格式，不合格时让 CLI 自己修正一次 */
-export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Category>; workflows: Lister<Workflow> }) {
+export function assistApi(deps: {
+  agents: Lister<Agent>
+  categories: Lister<Category>
+  workflows: Lister<Workflow>
+  projects: Lister<Project>
+}) {
   const jobs = new Map<string, AssistJob & { abort: AbortController; at: number }>()
   const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
   const view = ({ abort, at, ...j }: AssistJob & { abort: AbortController; at: number }): AssistJob => j
@@ -64,8 +71,21 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
     const cs = cliSettings(settings, input.cli)
     const run = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
     const installed = (await detectClis()).filter((c) => c.installed && c.enabled).map((c) => c.id)
-    const cwd = path.join(tmpdir(), 'agent-panel-assist')
-    await mkdir(cwd, { recursive: true })
+    // 只读分析（params / teststeps）在项目目录里执行，让 CLI 自己看代码；
+    // 其他生成在临时目录里执行，碰不到项目文件
+    const project = input.projectId ? await deps.projects.get(input.projectId) : null
+    const projectDir = project?.path ?? ''
+    const readOnlyProject = (input.kind === 'params' || input.kind === 'teststeps') && !!projectDir
+    const cwd = readOnlyProject ? resolvePath(projectDir) : path.join(tmpdir(), 'agent-panel-assist')
+    if (!readOnlyProject) await mkdir(cwd, { recursive: true })
+    // 项目目录可能在只读分析期间被删掉：先确认还在，避免 CLI 启动就失败
+    if (
+      readOnlyProject &&
+      !(await stat(cwd)
+        .then((s) => s.isDirectory())
+        .catch(() => false))
+    )
+      return fail(job, t('项目目录不存在：{dir}', { dir: cwd }))
     let messages: AssistMessage[] = input.messages
 
     // 消息流的拼法和任务页一样：思考、工具各自成段，文字接在后面；每一段的文字只保留 JSON 前面的说明
@@ -123,7 +143,8 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
           model: run.model,
           effort: run.effort,
           // 审批按设置里的权限：CLI 要确认时弹出卡片等用户
-          permission: cs.permission,
+          // 在项目目录里只读分析时用 CLI 的只读权限，保证不会改项目文件
+          permission: readOnlyProject ? def.readOnly || cs.permission : cs.permission,
           extraArgs: cs.extraArgs,
         },
         cwd,
@@ -226,10 +247,17 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
       if (input.targetId && !target)
         return bad(c, input.kind === 'agent' ? t('要优化的 Agent 不存在') : t('要优化的工作流不存在'), 404)
       const settings = await getSettings()
+      const agents = await deps.agents.list()
+      const workflows = await deps.workflows.list()
+      // params / teststeps：只读分析一个项目。targetId 是要配的工作流，subject.agentId 是只配一个 Agent 分组
+      const analyzeProject = input.kind === 'params' || input.kind === 'teststeps'
+      const project = analyzeProject && input.projectId ? await deps.projects.get(input.projectId) : null
+      if (analyzeProject && input.projectId && !project) return bad(c, t('项目不存在'), 404)
+      const wf = input.kind === 'params' && input.targetId ? workflows.find((w) => w.id === input.targetId) : undefined
       const ctx: AssistContext = {
-        agents: await deps.agents.list(),
+        agents,
         categories: (await deps.categories.list()).filter((c) => c.scope !== 'workflow'),
-        workflows: await deps.workflows.list(),
+        workflows,
         rules:
           input.kind === 'agent'
             ? settings.assist.agentRules
@@ -239,6 +267,10 @@ export function assistApi(deps: { agents: Lister<Agent>; categories: Lister<Cate
         subject: input.subject,
         target: target ?? undefined,
         defaultCli: defaultCli(settings),
+        ...(project ? { projectPath: project.path, projectName: project.name } : {}),
+        ...(wf ? { paramSpec: derivedParams(wf, agents), target: wf } : {}),
+        ...(input.subject.agentId ? { paramAgentId: input.subject.agentId } : {}),
+        platform: process.platform,
       }
       const job = {
         id: randomUUID(),

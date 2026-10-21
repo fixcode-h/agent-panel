@@ -501,6 +501,37 @@ export type ProjectCategory = z.infer<typeof ProjectCategory>
 /** 每个工作流一份暴露项取值（key 是工作流 id，值是 Workflow.expose 里的 key → 值） */
 export const WorkflowParamsById = z.record(z.string(), z.record(z.string(), ParamValue))
 
+/**
+ * 项目里的一条测试步骤：按顺序执行命令、检查环境。
+ * 步骤属于项目而不是工作流——同一个工作流给不同项目用时，命令各不相同。
+ * 新建对话时整份步骤快照进任务，之后改项目设置不影响已经开始的对话。
+ */
+export const TEST_STEP_ENVS = ['auto', 'wsl', 'powershell', 'cmd', 'bash'] as const
+export const TestStep = z.object({
+  id: z.string().trim().min(1).max(40),
+  /** 显示名，例如「类型检查」「编译」 */
+  name: z.string().trim().min(1, t('步骤名不能为空')).max(60),
+  /** 要执行的命令原文 */
+  command: z.string().trim().min(1, t('命令不能为空')).max(2000),
+  /** 在哪执行：auto 按项目所在系统和命令自己判断 */
+  env: z.enum(TEST_STEP_ENVS).catch('auto').default('auto'),
+  /** 相对项目根的工作目录；空表示项目根 */
+  cwd: z.string().trim().max(300).default(''),
+  /** 执行条件，例如「仅在改了 web/ 时」「仅发布前」；空表示总是执行 */
+  when: z.string().trim().max(120).default(''),
+  /** 超时（秒）；0 表示不限 */
+  timeoutSec: z
+    .number()
+    .int()
+    .min(0)
+    .max(24 * 3600)
+    .catch(0)
+    .default(0),
+  note: z.string().trim().max(300).default(''),
+  enabled: z.boolean().default(true),
+})
+export type TestStep = z.infer<typeof TestStep>
+
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
 function migrateProject(v: unknown) {
   if (!v || typeof v !== 'object') return v
@@ -530,6 +561,13 @@ const ProjectFields = z.object({
   agentSet: z.boolean().default(false),
   /** 工作流暴露项的取值，每个工作流一份（key 是工作流 id） */
   workflowParams: WorkflowParamsById.default({}),
+  /**
+   * 这个项目的测试步骤：新建对话时快照进任务，测试 Agent 按它执行。
+   * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
+   */
+  testSteps: z.array(TestStep).max(40).default([]),
+  /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
+  wslDistro: z.string().trim().max(60).default(''),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
 })
@@ -998,6 +1036,13 @@ export const TaskData = z.object({
    * 执行时按这里换成具体的技能名。和上面的工作流快照一起定下来，之后改项目设置不影响这个对话
    */
   skillSlots: z.record(z.string(), z.string()).default({}),
+  /**
+   * 新建对话时项目里的测试步骤快照：测试 Agent 按它执行，并把原文交给 CLI。
+   * 之后改项目设置不影响已经开始的对话。旧任务没有时为空（Agent 自己找命令）。
+   */
+  testSteps: z.array(TestStep).default([]),
+  /** 新建对话时面板所在系统（windows / linux / darwin）：决定标了 wsl 的步骤怎么执行 */
+  platform: z.string().default(''),
   /** 工作流的名字，列表里显示（摘要不带上面的完整工作流） */
   workflowName: z.string().default(''),
   /** 任务开始时的提交（git 仓库才有）；统计改动和看差异都和它比，Agent 中途提交了也不丢 */

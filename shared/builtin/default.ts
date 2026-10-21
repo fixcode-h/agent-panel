@@ -1,6 +1,8 @@
-import { DEFAULT_AGENT_ID, type ParamValues, type Workflow } from '../schema.ts'
+import { DEFAULT_AGENT_ID, type Agent, type ParamValues, type TestStep, type Workflow } from '../schema.ts'
 import { autoLayout, END, entryFlow, START, topoOrder, workflowClosure } from '../flow.ts'
 import { applyExpose } from '../expose.ts'
+import { isTestAgent, testStepsBlock } from '../test-steps.ts'
+import { workflowAgentIds } from '../agent-params.ts'
 import { t } from '../i18n.ts'
 
 /**
@@ -115,13 +117,44 @@ export function withCatalog(w: Workflow, all: Workflow[]): Workflow {
 }
 
 /**
- * 任务里存的那份工作流快照（见 workflowClosure）。项目里填的暴露项在这里落进快照：
+ * 任务里存的那份工作流快照（见 workflowClosure）。项目里填的暴露项和 Agent 参数在这里落进快照：
  * 说明、节点参数、注入的配置定下来，技能槽另存到任务上（见 exposeSlots）。
- * 之后改项目设置或工作流都不影响已经开始的对话。
+ * 项目配置的测试步骤也在这时写成工作流说明的一部分，之后改项目设置或工作流都不影响已经开始的对话。
  */
-export function taskSnapshot(w: Workflow, all: Workflow[], params: ParamValues = {}) {
-  const filled = applyExpose(w, params)
-  return workflowClosure(filled, all).map((x) => withCatalog(x, all))
+export function taskSnapshot(
+  w: Workflow,
+  all: Workflow[],
+  params: ParamValues = {},
+  opts: { agents?: Agent[]; testSteps?: TestStep[]; platform?: string; wslDistro?: string } = {},
+) {
+  const filled = applyExpose(w, params, opts.agents ?? [])
+  const withTests =
+    opts.testSteps && opts.agents
+      ? withTestSteps(filled, opts.testSteps, opts.platform ?? '', opts.agents, opts.wslDistro)
+      : filled
+  return workflowClosure(withTests, all).map((x) => withCatalog(x, all))
+}
+
+/** 快照里测试步骤那一段的标题，用来在重新生成时替换而不是叠加 */
+const TEST_PART = '## 项目测试步骤'
+
+/**
+ * 把项目的测试步骤注入工作流说明。
+ * 只注入真的用到了测试 Agent 的工作流：评审、建模这类流程看到这份步骤没有意义，还占上下文。
+ * 说明里已经有这一段时替换掉，重复解析不会叠加。
+ */
+export function withTestSteps(
+  w: Workflow,
+  steps: TestStep[],
+  platform: string,
+  agents: Agent[],
+  wslDistro = '',
+): Workflow {
+  const ids = new Set(workflowAgentIds(w))
+  const used = agents.some((a) => ids.has(a.id) && isTestAgent(a))
+  if (!used) return w
+  const base = w.document.split(TEST_PART)[0].trim()
+  return { ...w, document: [base, testStepsBlock(steps, platform, wslDistro)].filter(Boolean).join('\n\n') }
 }
 
 export interface NextWorkflow {

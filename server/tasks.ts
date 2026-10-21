@@ -177,6 +177,8 @@ export function tasksApi(deps: {
     defaultAgentId: '',
     agentSet: true,
     workflowParams: {},
+    testSteps: [],
+    wslDistro: '',
     gitPolicy: 'ask',
     createdAt: '',
     updatedAt: '',
@@ -240,12 +242,26 @@ export function tasksApi(deps: {
     }))
   }
 
+  /**
+   * 项目级测试步骤和平台：新建对话时快照进任务，测试 Agent 按它执行，之后改项目设置不影响已开始的对话。
+   * agents 用来判断某个工作流里有没有测试 Agent（见 withTestSteps）。
+   */
+  const testOpts = (project: Project) => ({
+    agents: liveAgents,
+    testSteps: project.testSteps,
+    platform: process.platform,
+    wslDistro: project.wslDistro,
+  })
+  /** 最近一次读到的 Agent 列表：测试步骤注入要判断哪些工作流用到了测试 Agent；新建任务前会刷新 */
+  let liveAgents: Agent[] = []
+  const refreshAgents = async () => (liveAgents = await deps.agents.list())
+
   /** 对话 Agent 启动计划时按 id 取工作流；id 为空用项目默认工作流 */
   function planWorkflow(project: Project, all: Workflow[], fallback: Workflow | undefined, id: string) {
     const target = id ? (all.find((w) => w.id === id) ?? fallback) : fallback
     if (!target) return undefined
     const params = paramsOf(project, target.id)
-    const snapshot = taskSnapshot(target, all, params)
+    const snapshot = taskSnapshot(target, all, params, testOpts(project))
     return {
       workflow: snapshot.find((w) => w.id === target.id) ?? target,
       workflows: snapshot,
@@ -754,7 +770,8 @@ export function tasksApi(deps: {
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
     const params = workflow ? paramsOf(project, workflow.id) : {}
-    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), params) : []
+    await refreshAgents()
+    const snapshot = workflow ? taskSnapshot(workflow, await deps.workflows.list(), params, testOpts(project)) : []
     const draft = {
       ...newTask(
         input,
@@ -765,6 +782,8 @@ export function tasksApi(deps: {
         workflow ? exposeSlots(workflow, params) : {},
       ),
       id: randomUUID(),
+      testSteps: workflow ? project.testSteps : [],
+      platform: workflow ? process.platform : '',
     }
     if (input.isolate && input.projectId) {
       try {
@@ -1001,7 +1020,15 @@ export function tasksApi(deps: {
       if (fresh) {
         const project = task.projectId ? await deps.projects.get(task.projectId) : null
         const params = project ? paramsOf(project, fresh.id) : {}
-        entry.task.workflows = taskSnapshot(fresh, await deps.workflows.list(), params)
+        await refreshAgents()
+        entry.task.workflows = taskSnapshot(
+          fresh,
+          await deps.workflows.list(),
+          params,
+          project ? testOpts(project) : {},
+        )
+        entry.task.testSteps = project ? project.testSteps : []
+        entry.task.platform = project ? process.platform : ''
         entry.task.skillSlots = exposeSlots(fresh, params)
         entry.task.workflowName = fresh.name
       }
