@@ -195,6 +195,16 @@ async function waitDone(id, timeout = 20000) {
     await sleep(150)
   }
 }
+/** 等到条件成立（任务停下且 ok(t) 为真）：开独立分支后面板会马上接着开下一轮，中间可能短暂停下 */
+async function waitTask(id, ok, timeout = 30000) {
+  const t0 = Date.now()
+  for (;;) {
+    const t = await call('GET', `/tasks/${id}`)
+    if (t.status !== 'running' && ok(t)) return t
+    if (Date.now() - t0 > timeout) throw new Error(`任务 ${id} 超时：${t.status}`)
+    await sleep(150)
+  }
+}
 const readLog = (f) =>
   existsSync(f)
     ? readFileSync(f, 'utf8')
@@ -609,23 +619,10 @@ try {
   assert.ok(c.args.includes('--resume') && c.args.includes(chat.sessions[C.id]))
   step('对话任务：直接发给选中的 Agent，继续对话会续接会话')
 
-  // ---- 自带的默认 Agent ----
+  // ---- 不用角色：直接用默认 CLI（以前的「默认 Agent」去掉了） ----
   const allAgents = await call('GET', '/agents')
-  const def = allAgents.find((x) => x.id === 'default-agent')
-  assert.ok(def && def.cli === '' && def.model === '', '自带默认 Agent，跟随默认 CLI 的默认模型')
-  assert.equal(
-    (await fetch(`${base}/agents/default-agent`, { method: 'DELETE', headers: { 'content-type': 'application/json' } }))
-      .status,
-    409,
-    '默认 Agent 不能删除',
-  )
-  const renamed = await call('PUT', '/agents/default-agent', { ...def, name: '助手', cli: 'codex', model: '@high' })
-  assert.deepEqual(
-    [renamed.name, renamed.cli, renamed.model],
-    ['助手', '', ''],
-    '默认 Agent 只能改名称这些，模型固定跟随默认',
-  )
-  await call('PUT', '/agents/default-agent', def)
+  assert.ok(!allAgents.some((x) => x.id === 'default-agent'), '不再有自带的默认 Agent')
+  const def = { id: '' }
   let dc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '默认' })
   dc = await waitDone(dc.id)
   c = calls().at(-1)
@@ -733,6 +730,22 @@ try {
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '压缩后仍然续接原来的会话')
   assert.ok(!c.input.includes('之前对话的摘要'), '不用带摘要')
+  // 撤回到某条消息：Pi 用 RPC 的 fork 截到那条消息之前，不用带上之前的对话开新会话
+  pm = await call('GET', `/tasks/${pm.id}`)
+  const piUsers = pm.messages.filter((m) => m.role === 'user' && !m.step)
+  const piCut = piUsers.at(-1)
+  assert.ok(piCut.turn?.id, `每一轮记下这一轮用户消息的 entryId：${JSON.stringify(piCut.turn)}`)
+  assert.notEqual(piCut.turn.id, piUsers.at(-2).turn?.id, '每一轮的 entryId 不一样')
+  await call('POST', `/tasks/${pm.id}/rewind`, { messageId: piCut.id })
+  await call('POST', `/tasks/${pm.id}/messages`, { text: '换个做法' })
+  pm = await waitDone(pm.id)
+  assert.equal(pm.status, 'done', pm.messages.at(-1)?.text)
+  c = calls().at(-1)
+  assert.equal(c.forkAt, piCut.turn.id, '分叉到撤回的那条消息之前')
+  assert.equal(c.args[c.args.indexOf('--session') + 1], piSession, '先打开原来的会话再分叉')
+  assert.ok(!c.args.includes('--fork'))
+  assert.ok(!c.input.includes('之前的对话'), '不用把之前的对话塞进提示词')
+  assert.notEqual(pm.sessions[pm.agentId], piSession, '分叉出来的是新会话')
   // Pi 出错时退出码也是 0，按最后的 agent_settled 和 assistant 的 stopReason 判断失败
   let pf = await call('POST', '/tasks', {
     projectId: project.id,
@@ -857,8 +870,10 @@ try {
   assert.equal(other.model, '', '其他 Agent 不接受临时模型')
   await waitDone(other.id)
   // Chat 模式：不属于项目的聊天，在数据目录里单独的工作目录执行
+  // 旧客户端还会传以前默认 Agent 的 id：按不用角色处理
   let free = await call('POST', '/tasks', { mode: 'chat', agentId: 'default-agent', prompt: '随便聊聊' })
   assert.equal(free.projectId, '')
+  assert.equal(free.agentId, '', '旧的默认 Agent id 当成不用角色')
   free = await waitDone(free.id)
   assert.equal(free.status, 'done')
   c = calls().at(-1)
@@ -880,7 +895,7 @@ try {
   await fetch(`${base}/tasks/${free.id}`, { method: 'DELETE', headers: { 'content-type': 'application/json' } })
   assert.ok(!existsSync(path.join(dataDir, 'chats', free.id)), '删除聊天时工作目录一起删掉')
   step(
-    '默认 Agent：跟随默认 CLI，不能删除，对话时可以临时换模型和思考强度；任务记录执行时间；Chat 模式的聊天不属于项目',
+    '不用角色：直接用默认 CLI，对话时可以临时换模型和思考强度，旧的默认 Agent id 当成不用角色；任务记录执行时间；Chat 模式的聊天不属于项目',
   )
 
   // ---- 停止 ----
@@ -897,7 +912,7 @@ try {
   {
     const steerLog = () => readLog(`${log}.steer`)
     const chatWith = (extra, prompt) =>
-      call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: 'default-agent', prompt, ...extra })
+      call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: '', prompt, ...extra })
     let a = await chatWith({ cli: 'codex' }, 'SLOW 插话 codex')
     let b = await chatWith({ cli: 'claude' }, 'SLOW 插话 claude')
     let q = await chatWith({ cli: 'commandcode' }, 'SLOW 插话 cmd')
@@ -1112,7 +1127,7 @@ try {
     let c = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       prompt: 'SLOW 执行中发给命令行',
     })
@@ -1135,7 +1150,7 @@ try {
     let g = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'gemini',
       prompt: 'SLOW 交不出去的消息',
     })
@@ -1240,18 +1255,16 @@ try {
     step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
 
     // ---- 子对话不建独立分支：和父对话共用一个目录；父对话在独立分支里时就在父的那个目录 ----
-    const isoParent = await waitDone(
-      (
-        await call('POST', '/tasks', {
-          projectId: project.id,
-          mode: 'chat',
-          agentId: A.id,
-          prompt: 'COMMIT 父对话在独立分支',
-          isolate: true,
-        })
-      ).id,
-      20000,
-    )
+    const isoNew = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: A.id,
+      prompt: 'COMMIT BEGIN_EDIT 父对话在独立分支',
+      isolate: true,
+    })
+    assert.equal(isoNew.worktree, null, '对话要改文件时才开独立分支，创建时还没开')
+    assert.equal(isoNew.wantsWorktree, true)
+    const isoParent = await waitTask(isoNew.id, (t) => t.worktree?.state === 'active' && !t.wantsWorktree)
     assert.equal(isoParent.worktree?.state, 'active', '顶层对话传了 isolate 才隔离')
     let isoKid = await call('POST', '/tasks', {
       projectId: project.id,
@@ -1280,19 +1293,27 @@ try {
       20000,
     )
     assert.equal(wtParent.worktree, null, '父对话没开独立分支')
-    const wtKid = await waitDone(
+    let wtKid = await waitDone(
       (
         await call('POST', '/tasks', {
           projectId: project.id,
           mode: 'chat',
           agentId: B.id,
           parentTaskId: wtParent.id,
-          prompt: 'COMMIT 子对话在自己的分支里改',
+          prompt: 'COMMIT BEGIN_EDIT 子对话在自己的分支里改',
         })
       ).id,
       20000,
     )
-    assert.equal(wtKid.worktree?.state, 'active', '子对话第一次执行时开了独立分支')
+    // 第一轮在原目录里查看，调用 begin_edit 后才开分支，面板马上在分支目录里开新会话接着做
+    const editLog = readLog(log + '.edit')
+    assert.ok(editLog.length && !editLog.at(-1).got.isError, '子对话调用 begin_edit 开了分支')
+    assert.equal(editLog.at(-1).cwd, project.path, '开分支前在原目录里')
+    wtKid = await waitTask(wtKid.id, () => calls().at(-1)?.cwd !== project.path)
+    assert.equal(wtKid.worktree?.state, 'active', '子对话要改文件时开了独立分支')
+    assert.equal(calls().at(-1).cwd, wtKid.worktree.path, '开分支后的一轮在分支目录里执行')
+    assert.match(calls().at(-1).input, /之前的对话[\s\S]*BEGIN_EDIT/, '新会话带上了之前的对话')
+    assert.ok(!calls().at(-1).args.includes('--resume'), '换了目录不续接旧会话')
     assert.ok(
       !gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
       '提交在子对话的分支上，项目目录不受影响',
@@ -1468,7 +1489,7 @@ try {
     let c = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'codex',
       prompt: '记住暗号是蓝鲸',
     })
@@ -1803,7 +1824,7 @@ try {
       mine.every((c) => c.args.some((x) => x.includes('/api/mcp/ask/'))),
       '节点都接上编排工具',
     )
-    assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子 Agent/)
+    assert.match(mine.find((c) => /节点：修复/.test(c.input)).input, /spawn_agents 派子任务/)
     // 追加要求交给工作流的默认执行 Agent（不再有 @main 会话）
     const n1 = calls().length
     await call('POST', `/tasks/${dm.id}/messages`, { text: '再改一下' })
@@ -2300,11 +2321,12 @@ try {
     projectId: project.id,
     mode: 'chat',
     agentId: A.id,
-    prompt: 'COMMIT 在独立分支上改',
+    prompt: 'COMMIT BEGIN_EDIT 在独立分支上改',
     isolate: true,
   })
+  assert.equal(tIso.worktree, null, '要改文件时才开独立分支')
+  tIso = await waitTask(tIso.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
   assert.equal(tIso.worktree?.state, 'active', '建了独立分支')
-  tIso = await waitDone(tIso.id)
   assert.ok(existsSync(path.join(tIso.worktree.path, 'committed.txt')), 'Agent 在独立目录里改')
   assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '项目目录没被改动')
   assert.ok(
@@ -2344,10 +2366,10 @@ try {
     projectId: project.id,
     mode: 'chat',
     agentId: A.id,
-    prompt: 'COMMIT 这个不要了',
+    prompt: 'COMMIT BEGIN_EDIT 这个不要了',
     isolate: true,
   })
-  tDrop = await waitDone(tDrop.id)
+  tDrop = await waitTask(tDrop.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
   // 状态变成完成的一瞬间，服务端还没把任务从执行中的列表里放掉：等一下再丢弃
   let dropped
   for (let i = 0; ; i++) {
@@ -3634,7 +3656,7 @@ try {
       ['uninstall', '-g', '@openai/codex'],
     ],
   )
-  await assert.rejects(call('POST', '/clis/nope/install'), /未知的 CLI/)
+  await assert.rejects(call('POST', '/clis/nope/install'), /未知的 Agent/)
   // Pi 改过包名：装新包前先卸掉旧的，否则两个包提供同一个 pi 命令时 npm 会报 EEXIST
   const pj = await waitJob((await call('POST', '/clis/pi/install')).id)
   assert.equal(pj.status, 'done', pj.error)
@@ -3805,7 +3827,7 @@ try {
     let task = await call('POST', '/tasks', {
       projectId: '',
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: s.cli,
       model: s.model,
       prompt: s.prompt,
@@ -3991,7 +4013,7 @@ try {
     const t1 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'codex',
       model: 'relay-1',
       prompt: '用 API 跑',
@@ -4000,7 +4022,7 @@ try {
     const t2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'claude',
       model: 'claude-x',
       prompt: '用 API 跑 claude',
@@ -4066,7 +4088,7 @@ try {
     const g = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'gemini',
       model: 'gem-1',
       prompt: '用 gemini API',
@@ -4087,7 +4109,7 @@ try {
     const cc = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       model: 'cc-1',
       prompt: '用 cc API',
@@ -4110,7 +4132,7 @@ try {
     const pa = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'pi',
       model: 'cc-1',
       prompt: '用 pi API',
@@ -4138,7 +4160,7 @@ try {
     const g2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'gemini',
       prompt: '改回账号',
     })
@@ -4153,7 +4175,7 @@ try {
     const cc2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       prompt: '改回账号 cc',
     })
@@ -4163,7 +4185,7 @@ try {
     const pa2 = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'pi',
       prompt: '改回账号 pi',
     })
@@ -4234,7 +4256,7 @@ try {
       const t = await call('POST', '/tasks', {
         projectId: project.id,
         mode: 'chat',
-        agentId: 'default-agent',
+        agentId: '',
         cli,
         askUser: true,
         prompt: `想做什么 FAKE_ASK:${JSON.stringify({ questions: [{ header: '方向', question: '想做什么？', options: [{ label: '修 bug（推荐）' }, { label: '写文档' }] }] })}`,
@@ -4276,7 +4298,7 @@ try {
     const off = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: `FAKE_ASK:${JSON.stringify({ questions: [{ question: '选哪个？', options: [{ label: 'a' }] }] })}`,
@@ -4297,7 +4319,7 @@ try {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: 'FAKE_WAIT 先看代码',
@@ -4334,7 +4356,7 @@ try {
     let left = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: 'FAKE_WAIT 等一会儿',
@@ -4362,7 +4384,7 @@ try {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: '先看代码',
@@ -4413,14 +4435,14 @@ try {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
-      agentId: 'default-agent',
+      agentId: '',
       cli: 'commandcode',
       askUser: false,
       prompt: '普通对话',
     })
     w = await waitDone(w.id, 30000)
     assert.equal(w.status, 'done')
-    assert.ok(w.sessions['default-agent'], '第一轮留下了会话')
+    assert.ok(w.sessions[''], '第一轮留下了会话')
     assert.ok(w.turnDoneAt, '第一轮完成时记了时间')
     const doneAt = w.turnDoneAt
     const beforeMsgs = w.messages.length

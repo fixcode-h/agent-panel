@@ -17,7 +17,7 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Agent, type AgentInput, type ParamValues } from '@shared/schema'
+import { type Agent, type AgentInput, type ParamValues } from '@shared/schema'
 import { getCli, MODEL_TIERS } from '@shared/clis'
 import {
   agentCli,
@@ -166,7 +166,6 @@ export function AgentDetail({
       permission: '',
     }))
   const follow = !draft.cli
-  const builtin = agent.id === DEFAULT_AGENT_ID
   // 必备角色：设定、能力、Skill 由面板维护，这里只能改参数取值和运行配置
   const core = coreKey(agent)
   const coreDef = core ? coreDefinition(core) : undefined
@@ -255,18 +254,14 @@ export function AgentDetail({
             title={draft.name || t('未命名角色')}
             meta={
               <>
-                {core ? (
-                  <Badge tone="accent">{t('必备')}</Badge>
-                ) : (
-                  <Badge>{builtin ? t('默认') : (category?.name ?? t('未分类'))}</Badge>
-                )}
+                {core ? <Badge tone="accent">{t('必备')}</Badge> : <Badge>{category?.name ?? t('未分类')}</Badge>}
                 {draft.common && <Badge tone="accent">{t('通用')}</Badge>}
                 {!draft.enabled ? (
                   <StatusDot tone="muted" label={t('已停用')} />
                 ) : isReady(checks) ? (
                   <StatusDot tone="success" label={t('就绪')} />
                 ) : (
-                  <StatusDot tone="warning" label={t('CLI 未安装')} />
+                  <StatusDot tone="warning" label={t('Agent 未安装')} />
                 )}
               </>
             }
@@ -274,7 +269,7 @@ export function AgentDetail({
             save={{ ...save, invalid: valid ? undefined : t('名称为空，未保存') }}
             actions={
               <>
-                {!builtin && !core && (
+                {!core && (
                   <label className="flex h-9 cursor-pointer items-center gap-2 px-2 text-[0.8125rem] text-muted">
                     <Switch checked={draft.enabled} onCheckedChange={(v) => set('enabled', v)} />
                     {t('启用')}
@@ -290,7 +285,7 @@ export function AgentDetail({
                   {t('对话')}
                 </Button>
                 {!core && (
-                  <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
+                  <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
                     <Sparkles className="h-4 w-4 text-accent" />
                     {t('AI 优化')}
                   </Button>
@@ -304,7 +299,7 @@ export function AgentDetail({
                 >
                   <Copy className="h-4 w-4" />
                 </Button>
-                {!builtin && !core && (
+                {!core && (
                   <Button
                     variant="danger-outline"
                     size="icon"
@@ -374,12 +369,10 @@ export function AgentDetail({
                       placeholder={t('例如：前端开发')}
                     />
                   </Field>
-                  {!builtin && (
-                    <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                      <span className="text-xs text-muted">{t('分类')}</span>
-                      <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
-                    </div>
-                  )}
+                  <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                    <span className="text-xs text-muted">{t('分类')}</span>
+                    <CategoryPicker value={draft.categoryId} onChange={(id) => set('categoryId', id)} />
+                  </div>
                 </div>
                 <Field label={t('简介')}>
                   <Input
@@ -388,14 +381,12 @@ export function AgentDetail({
                     placeholder={t('一句话说明它擅长什么')}
                   />
                 </Field>
-                {!builtin && (
-                  <Checkbox
-                    checked={draft.common}
-                    onChange={(v) => set('common', v)}
-                    label={t('通用角色')}
-                    hint={t('工作流里任何角色执行时都可以把子任务派给它，不用写进工作流。')}
-                  />
-                )}
+                <Checkbox
+                  checked={draft.common}
+                  onChange={(v) => set('common', v)}
+                  label={t('通用角色')}
+                  hint={t('工作流里任何角色执行时都可以把子任务派给它，不用写进工作流。')}
+                />
                 <Checkbox
                   checked={draft.canDelegate}
                   onChange={(v) => set('canDelegate', v)}
@@ -437,83 +428,70 @@ export function AgentDetail({
 
             {tab === 'basic' && (
               <FormSection title={t('运行环境')}>
-                {builtin ? (
-                  <p className="rounded-lg border bg-field px-3 py-2.5 text-[0.8125rem] leading-relaxed text-muted">
-                    {t(
-                      '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
-                      {
-                        cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
-                        model: usedModel || t('自动'),
-                        effort: defEffort || t('自动'),
-                      },
+                <>
+                  <Checkbox
+                    checked={follow}
+                    onChange={(v) => pickCli(v ? '' : defCli)}
+                    label={t('跟随默认 Agent（现在是 {cli}）', {
+                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                    })}
+                    hint={t(
+                      '在设置里换了默认 Agent，这个角色也跟着换，模型换成新 Agent 同一档位的模型。取消后可以固定用某个 Agent。',
                     )}
-                  </p>
-                ) : (
-                  <>
-                    <Checkbox
-                      checked={follow}
-                      onChange={(v) => pickCli(v ? '' : defCli)}
-                      label={t('跟随默认 CLI（现在是 {cli}）', {
-                        cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
-                      })}
-                      hint={t(
-                        '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
-                      )}
-                    />
-                    <div className="flex flex-wrap gap-4">
-                      <Field label="CLI" className="flex-[1_1_220px]">
-                        <Select
-                          aria-label="CLI"
-                          value={cliId}
-                          disabled={follow}
-                          onChange={(e) => pickCli(e.target.value)}
-                          // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
-                          options={clis
-                            .filter((c) => (c.installed && c.enabled) || c.id === cliId)
-                            .map((c) => ({
-                              value: c.id,
-                              label:
-                                (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
-                                (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
-                            }))}
-                        />
-                      </Field>
-                      <Field
-                        label={t('模型')}
-                        className="flex-[2_1_280px]"
-                        hint={t('三档对应的模型在设置里每个 CLI 下配置')}
-                      >
-                        <Select
-                          aria-label={t('模型')}
-                          value={draft.model}
-                          onChange={(e) => set('model', e.target.value)}
-                          options={tierOptions}
-                          className="font-mono text-[0.8125rem]"
-                        />
-                      </Field>
-                    </div>
-                    {cliDef && (
-                      <Field
-                        label={t('思考强度')}
-                        hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
-                        className="max-w-[320px]"
-                      >
-                        <Select
-                          aria-label={t('思考强度')}
-                          value={draft.effort === defEffort ? '' : draft.effort}
-                          onChange={(e) => set('effort', e.target.value)}
-                          // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                          options={defaultEffortOptions(
-                            cliDef,
-                            defEffort,
-                            modelEfforts(cliDef, usedModel ?? ''),
-                            draft.effort,
-                          )}
-                        />
-                      </Field>
-                    )}
-                  </>
-                )}
+                  />
+                  <div className="flex flex-wrap gap-4">
+                    <Field label="Agent" className="flex-[1_1_220px]">
+                      <Select
+                        aria-label="Agent"
+                        value={cliId}
+                        disabled={follow}
+                        onChange={(e) => pickCli(e.target.value)}
+                        // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
+                        options={clis
+                          .filter((c) => (c.installed && c.enabled) || c.id === cliId)
+                          .map((c) => ({
+                            value: c.id,
+                            label:
+                              (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
+                              (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
+                          }))}
+                      />
+                    </Field>
+                    <Field
+                      label={t('模型')}
+                      className="flex-[2_1_280px]"
+                      hint={t('三档对应的模型在设置里每个 Agent 下配置')}
+                    >
+                      <Select
+                        aria-label={t('模型')}
+                        value={draft.model}
+                        onChange={(e) => set('model', e.target.value)}
+                        options={tierOptions}
+                        className="font-mono text-[0.8125rem]"
+                      />
+                    </Field>
+                  </div>
+                  {cliDef && (
+                    <Field
+                      label={t('思考强度')}
+                      hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
+                      className="max-w-[320px]"
+                    >
+                      <Select
+                        aria-label={t('思考强度')}
+                        value={draft.effort === defEffort ? '' : draft.effort}
+                        onChange={(e) => set('effort', e.target.value)}
+                        // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
+                        options={defaultEffortOptions(
+                          cliDef,
+                          defEffort,
+                          modelEfforts(cliDef, usedModel ?? ''),
+                          draft.effort,
+                        )}
+                      />
+                    </Field>
+                  )}
+                </>
                 {cliDef && (
                   <Field
                     label={t('权限')}
@@ -556,7 +534,7 @@ export function AgentDetail({
             {tab === 'extras' && core && (
               <FormSection title={t('开场白')}>
                 <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
-                <Field label={t('额外参数')} hint={t('追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。')}>
+                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
                   <Input
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}
@@ -830,14 +808,14 @@ export function AgentDetail({
               <FormSection title={t('Skill 与开场白')}>
                 <Field
                   label="Skill"
-                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 CLI 里，在「Skills 与命令」页面管理。')}
+                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills 与命令」页面管理。')}
                 >
                   <SkillsPicker value={draft.skills} onChange={(v) => set('skills', v)} cli={cliId} />
                 </Field>
                 <Field label={t('开场白')} hint={t('常用的要求，和它对话时显示在输入框上方，点一下就填进去。')}>
                   <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
                 </Field>
-                <Field label={t('额外参数')} hint={t('追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。')}>
+                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
                   <Input
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}

@@ -176,7 +176,7 @@ export function DocPage({
 export function Optimizer({
   title,
   hint = t(
-    'CLI 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。',
+    'Agent 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。',
   ),
   placeholder = t('想怎么改（可以不填），例如：补上测试命令，写得更简洁'),
   busyText = t('正在看项目…'),
@@ -268,14 +268,14 @@ export function Optimizer({
             />
             {usable.length ? (
               <Select
-                aria-label="CLI"
+                aria-label="Agent"
                 value={cli}
                 onChange={(e) => setCli(e.target.value)}
                 className="h-9 w-[160px]"
                 options={usable.map((c) => ({ value: c.id, label: c.name }))}
               />
             ) : (
-              <span className="text-xs text-warning">{t('没有可用的 CLI，请先在设置里安装并启用')}</span>
+              <span className="text-xs text-warning">{t('没有可用的 Agent，请先在设置里安装并启用')}</span>
             )}
             <Button size="sm" className="h-9" disabled={!cli} onClick={start}>
               {job ? t('重试') : t('开始优化')}

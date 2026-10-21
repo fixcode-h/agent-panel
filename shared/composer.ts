@@ -3,9 +3,10 @@
  * 光标停在卡片旁边按一次退格就整张删掉。
  *
  * 发送时的规矩：Skill / 命令决定这一轮怎么跑，必须提到最前面交给服务端展开；
- * 图片、文件留在原来的位置，由 withAttachments 换成真实路径（没引用到的追加在末尾）。
+ * 图片、文件留在原来的位置，由 withAttachments 换成真实路径（没引用到的追加在末尾）；
+ * 引用卡片只是对话里某段内容的占位，发送前由网页换回引用块。
  */
-export type ChipKind = 'image' | 'file' | 'skill' | 'command'
+export type ChipKind = 'image' | 'file' | 'skill' | 'command' | 'quote'
 
 export interface Chip {
   kind: ChipKind
@@ -14,11 +15,11 @@ export interface Chip {
 
 export type Segment = { text: string } | { chip: Chip }
 
-const LABEL: Record<ChipKind, string> = { image: '图片', file: '文件', skill: '技能', command: '命令' }
-const KIND: Record<string, ChipKind> = { 图片: 'image', 文件: 'file', 技能: 'skill', 命令: 'command' }
+const LABEL: Record<ChipKind, string> = { image: '图片', file: '文件', skill: '技能', command: '命令', quote: '引用' }
+const KIND: Record<string, ChipKind> = { 图片: 'image', 文件: 'file', 技能: 'skill', 命令: 'command', 引用: 'quote' }
 
 /** 标记是「[类型:名字]」，名字里不会再有方括号；没写全的（例如用户在讲数组）当普通文字 */
-const marker = () => /\[(图片|文件|技能|命令):([^\[\]]+)\]/g
+const marker = () => /\[(图片|文件|技能|命令|引用):([^\[\]\n]+)\]/g
 
 /** 卡片存进文字里的样子 */
 export const chipMarker = (kind: ChipKind, name: string) => `[${LABEL[kind]}:${name}]`

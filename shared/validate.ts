@@ -2,7 +2,7 @@
  * 保存和删除前的检查：服务端和在线演示的模拟后端共用，两边的规则和提示一致。
  */
 import { END, RESERVED_STEP_IDS, START, findRefCycle, nodeSteps } from './flow.ts'
-import { DEFAULT_AGENT_ID, type Project, type ProjectCategory, type Workflow, type WorkflowInput } from './schema.ts'
+import { type Project, type ProjectCategory, type Workflow, type WorkflowInput } from './schema.ts'
 import { t } from './i18n.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 
@@ -88,9 +88,8 @@ export function checkWorkflow(
   return cycle ? t('流程之间循环调用：{cycle}', { cycle: cycle.join(' → ') }) : null
 }
 
-/** 能不能删这个 Agent：自带的默认 Agent 不能删，被工作流用着的要先移除 */
+/** 能不能删这个 Agent：被工作流用着的要先移除 */
 export function agentDeleteError(id: string, workflows: Workflow[]): string | null {
-  if (id === DEFAULT_AGENT_ID) return t('默认角色是自带的，不能删除')
   const used = workflows.filter(
     (w) =>
       w.mainAgentId === id ||

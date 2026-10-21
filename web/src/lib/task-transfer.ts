@@ -1,4 +1,4 @@
-import { DEFAULT_AGENT_ID, type Agent, type Task } from '@shared/schema'
+import { type Agent, type Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import {
   analysisPrompt,
@@ -77,7 +77,7 @@ export async function startAnalysis(opts: { tasks: Task[]; agents: Agent[]; proj
     projectId: opts.projectId,
     mode: 'chat',
     workflowId: '',
-    agentId: DEFAULT_AGENT_ID,
+    agentId: '',
     cli: '',
     model: '',
     effort: '',

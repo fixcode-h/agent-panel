@@ -2,6 +2,7 @@ import { existsSync } from 'node:fs'
 import { mkdir, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import {
+  aliasAgent,
   defaultAgent,
   type Agent,
   type AgentUsage,
@@ -98,6 +99,7 @@ export interface RealContext {
   releaseFiles?: EngineHost['releaseFiles']
   childIsolation?: EngineHost['childIsolation']
   submitBuild?: EngineHost['submitBuild']
+  beginEdit?: EngineHost['beginEdit']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
   lessons?: EngineHost['lessons']
@@ -470,9 +472,9 @@ async function runAgent(
   const step = call.step?.id ?? ''
   const { task, settings, project } = ctx
   // agentId 为空表示这个对话不用 Agent 角色：直接用默认 CLI，不注入角色设定
-  const found = agentId
-    ? ctx.agents.find((a) => a.id === agentId)
-    : { ...defaultAgent(), id: '', name: '', description: '' }
+  // 旧快照里记着已经合并删掉的角色时，按登记的转到合并目标（转成空就是不用角色）
+  const id = ctx.agents.some((a) => a.id === agentId) ? agentId : aliasAgent(agentId)
+  const found = id ? ctx.agents.find((a) => a.id === id) : { ...defaultAgent(), id: '', name: '', description: '' }
   if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
@@ -480,7 +482,7 @@ async function runAgent(
   const run = agentRun(agent, settings)
   const cliId = run.cli
   const def = getCli(cliId)
-  if (!def) return { ok: false, error: t('未知的 CLI：{cli}', { cli: cliId }) }
+  if (!def) return { ok: false, error: t('未知的 Agent：{cli}', { cli: cliId }) }
   const cs = cliSettings(settings, cliId)
   if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
   if (!agent.enabled) return { ok: false, error: t('角色「{name}」已停用', { name: agent.name }) }
@@ -522,7 +524,9 @@ async function runAgent(
   const startPick = { cli: task.cli, model: task.model, effort: task.effort }
   const stillCurrent = () => {
     const now = agentRun(withTaskModel(found, task), settings)
-    return now.cli === cliId && now.model === model && task.effort === startPick.effort
+    // 这一轮里开了独立分支：进程还在原目录里，不能再等下一句，结束后在新目录里重开
+    const wt = task.worktree?.state === 'active' ? task.worktree.path : ''
+    return now.cli === cliId && now.model === model && task.effort === startPick.effort && (!wt || wt === cwd)
   }
   // 预热期间的输出不记进对话；用户发来第一句后开始正常记
   let prewarmMode = prewarm
@@ -534,8 +538,11 @@ async function runAgent(
     chat && !op && !prewarm ? [...task.messages].reverse().find((m) => m.role === 'user' && !m.step) : undefined
   const rewind = chat ? task.rewind : undefined
   // 对话中途换了 CLI、（不能中途换模型的 CLI 换了）模型或（不支持中途换强度的 CLI 换了）思考强度：
-  // 原来的会话接不上，开新会话把之前的对话带过去
-  const switched = chat && sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch)
+  // 原来的会话接不上，开新会话把之前的对话带过去。
+  // 会话开在别的目录里（中途开了独立分支）也接不上：CLI 的会话按目录存，换了目录 --resume 找不到
+  const moved = chat && !!task.sessionDir && task.sessionDir !== cwd
+  const switched =
+    chat && (sessionChanged(task, cliId, model, effort, def.effortBoundSession, def.modelSwitch) || moved)
   if (switched) resume = undefined
   if (retryCarry) {
     // 接口拒绝了旧会话的历史：丢掉它重开，把之前的对话带上
@@ -546,10 +553,14 @@ async function runAgent(
     resume = undefined
     if (rewind?.summary) carry = `## 之前对话的摘要\n${rewind.summary}`
     else if (switched) {
-      const upto = asker ? task.messages.indexOf(asker) : task.messages.length
+      // 开了独立分支后接着做：触发这一轮的是面板，不是新的用户消息，上一轮的要求和回复都要带过去
+      const upto = asker && !moved ? task.messages.indexOf(asker) : task.messages.length
       carry = carryPrompt(task, upto)
     } else if (th && def.fork === 'turn' && th.id) [resume, fork] = [th.session, { turnId: th.id }]
     else if (th && def.fork === 'end' && th.end) [resume, fork] = [th.session, { end: th.end }]
+    // 只能分叉到某一轮之前（Pi）：按丢掉的第一轮截，那一轮要和留下的在同一个会话里
+    else if (th && def.fork === 'before' && rewind?.cut?.id && rewind.cut.session === th.session)
+      [resume, fork] = [th.session, { before: rewind.cut.id }]
     else if (th && rewind?.latest && def.fork !== 'none') [resume, fork] = [th.session, {}]
     else if (th) {
       // CLI 截不了会话：开新会话，把留下的对话（这条要求之前的）带上
@@ -631,6 +642,7 @@ async function runAgent(
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
+    noEdit: chat && !!ctx.beginEdit,
     autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
     contextWindow: limits.context || undefined,
     maxOutput: limits.maxOutput || undefined,
@@ -757,7 +769,10 @@ async function runAgent(
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
-        if (chat) task.sessionCli = cliId
+        if (chat) {
+          task.sessionCli = cliId
+          task.sessionDir = cwd
+        }
         break
       case 'thinking': {
         // 思考属于接下来的那段回复：当前消息已经有文字或工具时另起一条
@@ -976,6 +991,16 @@ async function runAgent(
     if (fromTool) {
       if (finished) return null
       toolWaited = true
+    }
+    // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回同一个进程接着做，不等用户的下一句
+    const back = chat ? orch?.helperResults(ctx.signal) : undefined
+    if (back) {
+      const text = await back
+      if (!text || ctx.signal.aborted) return null
+      // 之后的输出另起一条，排在交回的结果后面
+      cur = undefined
+      ctx.changed(true)
+      return text
     }
     // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
     if (chat && !stillCurrent()) return null
@@ -1362,6 +1387,7 @@ export async function runRealTurn(ctx: RealContext) {
     releaseFiles: ctx.releaseFiles,
     childIsolation: ctx.childIsolation,
     submitBuild: ctx.submitBuild,
+    beginEdit: ctx.beginEdit,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
     lessons: ctx.lessons,

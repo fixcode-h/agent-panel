@@ -1,7 +1,7 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_SERVER: Record<string, string> = {
   // 生成 Agent / 工作流
-  '格式不对，已让 CLI 修正。': 'Output was malformed; asked the CLI to fix it.',
+  '格式不对，已让 Agent 修正。': 'Output was malformed; asked the agent to fix it.',
   已停止: 'Stopped',
   '超过 5 分钟没有完成，已停止': 'Stopped after not finishing within 5 minutes',
   '{error}。请确认已安装 {cli}（{hint}），或在设置里填写路径。':
@@ -9,7 +9,7 @@ export const EN_SERVER: Record<string, string> = {
   '{cli} 执行失败：{detail}': '{cli} failed: {detail}',
   没有更多信息: 'No further details',
   '{cli} 两次都没有按格式输出：{error}': '{cli} returned malformed output twice: {error}',
-  '未知的 CLI：{cli}': 'Unknown CLI: {cli}',
+  '未知的 Agent：{cli}': 'Unknown agent: {cli}',
   '{cli} 没有配置 RPC 协议': '{cli} has no RPC protocol configured',
   '{cli} 在设置里被停用了': '{cli} is disabled in Settings',
   要优化的角色不存在: 'The role to refine no longer exists',
@@ -21,7 +21,7 @@ export const EN_SERVER: Record<string, string> = {
   '{cli} 退出码 {code}': '{cli} exited with code {code}',
   '回复里没有 JSON': 'The reply contains no JSON',
   '模型信息格式不对：{error}': 'Malformed model info: {error}',
-  '模型信息补全已关闭，请先在「设置 · CLI」里打开': 'Model info lookup is off. Turn it on in Settings → CLI first.',
+  '模型信息补全已关闭，请先在「设置 · Agent」里打开': 'Model info lookup is off. Turn it on in Settings → Agent first.',
 
   // 数据导入导出
   '有任务正在执行，等它们结束后再操作': 'Tasks are running. Try again after they finish.',
@@ -135,7 +135,6 @@ export const EN_SERVER: Record<string, string> = {
   '流程之间循环调用：{cycle}': 'Flows call each other in a loop: {cycle}',
   '分类「{name}」已存在': 'Category “{name}” already exists',
   角色不存在: 'Role not found',
-  '默认角色是自带的，不能删除': 'The default role is built in and can’t be deleted',
   '正在被工作流使用：{names}，请先从工作流中移除': 'Used by workflows: {names}. Remove it from them first.',
   '「{name}」': '“{name}”',
   工作流不存在: 'Workflow not found',
@@ -204,14 +203,14 @@ export const EN_SERVER: Record<string, string> = {
     'Installed, but “{command}” still can’t be found. You may need to reopen your terminal or restart this server for PATH to update, or enter the full path to the executable below.',
   '更新命令执行完了，但运行的 {path} 还是 {version}。可能还有另一份旧的装在别处，请在下面的「可执行文件」里填新版本的完整路径。':
     'The update command finished, but {path} is still {version}. An older copy may be installed elsewhere; enter the full path to the new version under “Executable” below.',
-  '未知的 CLI': 'Unknown CLI',
+  '未知的 Agent': 'Unknown agent',
   '有一个安装 / 卸载还在进行，请等它完成': 'An install / uninstall is in progress. Wait for it to finish.',
   查不到最新版本: 'Couldn’t find the latest version',
   没有这个操作: 'Operation not found',
 
   // 任务
-  '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。':
-    'The task was interrupted because the panel closed or restarted while it was running. Click “Resume” to pick up from the interrupted step (its CLI session will be resumed).',
+  '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。':
+    'The task was interrupted because the panel closed or restarted while it was running. Click “Resume” to pick up from the interrupted step (its agent session will be resumed).',
   聊天: 'Chat',
   任务所属的项目已经不存在: 'The task’s project no longer exists',
   '执行出错：{error}': 'Execution error: {error}',
@@ -384,7 +383,7 @@ export const EN_SERVER: Record<string, string> = {
   '项目不是 git 仓库，没法审查改动': "The project isn't a git repository, so changes can't be reviewed",
   '审查相对 {branch} 的改动': 'Review changes against {branch}',
   审查还没提交的改动: 'Review uncommitted changes',
-  '这个 CLI 没有用户级的{kind}目录': 'This CLI has no user-level {kind} directory',
+  '这个 Agent 没有用户级的{kind}目录': 'This agent has no user-level {kind} directory',
   '名字只能用字母、数字、. _ -': 'Names may only use letters, digits, . _ -',
   名字不对: 'Invalid name',
   没有这一项: 'No such item',
@@ -422,4 +421,10 @@ export const EN_SERVER: Record<string, string> = {
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
   提示: 'Notice',
+  '这个 CLI 不支持扩展包': "This CLI doesn't support packages",
+  不支持这个操作: 'Unsupported action',
+  先填包的来源: 'Enter a package source first',
+  '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',
+  '命令失败（退出码 {code}）': 'Command failed (exit code {code})',
+  '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
 }

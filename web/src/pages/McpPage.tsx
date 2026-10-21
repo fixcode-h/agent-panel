@@ -57,7 +57,7 @@ export function McpPage() {
     <PageFrame
       title={t('MCP 工具')}
       intro={t(
-        'MCP 工具让 CLI 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 CLI 自己的配置文件，装在哪个 CLI 里由右边的开关决定；用 CLI 自己的命令装的也会列出来。',
+        'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 Agent 自己的配置文件，装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。',
       )}
       actions={
         <Button onClick={() => setEdit('new')} disabled={!data}>
@@ -148,7 +148,7 @@ export function McpPage() {
         open={!!del}
         onOpenChange={(o) => !o && setDel(null)}
         title={t('删除「{name}」？', { name: del?.name ?? '' })}
-        description={t('会从所有 CLI 的配置文件里移除这个工具。')}
+        description={t('会从所有 Agent 的配置文件里移除这个工具。')}
         onConfirm={async () => {
           try {
             setData(await api.deleteMcpTool(del!.name))
@@ -327,7 +327,7 @@ function EditDialog({
         </>
       )}
       <div className="flex flex-col gap-2">
-        <span className="text-[0.8125rem] font-medium">{t('装进哪些 CLI')}</span>
+        <span className="text-[0.8125rem] font-medium">{t('装进哪些 Agent')}</span>
         <div className="flex flex-wrap gap-x-5 gap-y-2">
           {data.clis.map((c) => (
             <Checkbox

@@ -45,7 +45,7 @@ function target(cli: string, kind: Kind, name: string) {
   const d = getCli(cli)
   const root = d && roots(d)[kind]
   if (!d || !root)
-    throw new Error(t('这个 CLI 没有用户级的{kind}目录', { kind: kind === 'skill' ? 'Skill' : t('命令') }))
+    throw new Error(t('这个 Agent 没有用户级的{kind}目录', { kind: kind === 'skill' ? 'Skill' : t('命令') }))
   if (!libraryName(kind, name)) throw new Error(t('名字只能用字母、数字、. _ -'))
   const sub = kind === 'skill' ? name : name.split(':').join(path.sep) + `.${d.commands.format}`
   const p = path.join(root, sub)

@@ -1,4 +1,5 @@
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
+import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
 import type {
   Attachment,
@@ -9,6 +10,7 @@ import type {
   SlashCommand,
   CliAccounts,
   LoginJob,
+  ProviderAuthCheck,
   CliModels,
   CliUpdate,
   Agent,
@@ -32,6 +34,7 @@ import type {
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
+import type { ChildActivity } from '@shared/task'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -161,6 +164,7 @@ export const api = {
   detectedApis: () => request<DetectedApi[]>('/accounts/detected-apis'),
   loginStart: (cli: string) => request<LoginJob>(`/accounts/${cli}/login`, json('POST', {})),
   loginStatus: (cli: string) => request<LoginJob | null>(`/accounts/${cli}/login`),
+  checkProviders: (cli: string) => request<ProviderAuthCheck[]>(`/accounts/${cli}/check`),
   loginInput: (cli: string, text: string) =>
     request<{ ok: true }>(`/accounts/${cli}/login/input`, json('POST', { text })),
   loginCancel: (cli: string) => request<{ ok: true }>(`/accounts/${cli}/login`, { method: 'DELETE' }),
@@ -192,6 +196,14 @@ export const api = {
   cliSkills: (id: string, projectId = '', own = false) =>
     request<CliSkill[]>(
       `/clis/${id}/skills?${new URLSearchParams({ ...(projectId && { projectId }), ...(own && { own: '1' }) })}`,
+    ),
+
+  /** CLI 自己的扩展包（定义里的 packages） */
+  cliPackages: (id: string) => request<InstalledPackage[]>(`/clis/${id}/packages`),
+  cliPackageAction: (id: string, action: 'install' | 'remove' | 'update' | 'updateAll', source = '') =>
+    request<{ ok: boolean; output: string; packages: InstalledPackage[] }>(
+      `/clis/${id}/packages`,
+      json('POST', { action, source }),
     ),
 
   /** Skills / 命令库 */
@@ -290,6 +302,8 @@ export const api = {
         requests?: number
         /** 在独立 worktree 里改时的分支 */
         branch?: string
+        /** 正在执行时这会儿在做什么 */
+        activity?: ChildActivity
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),

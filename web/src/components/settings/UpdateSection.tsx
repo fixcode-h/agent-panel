@@ -364,7 +364,7 @@ export function UpdateSection() {
         onOpenChange={setForce}
         title={t('强制更新？')}
         description={t(
-          '会中断所有正在执行的 CLI 对话，没做完的内容可能丢失；然后马上替换程序文件并重启，data 目录里的数据会保留。',
+          '会中断所有正在执行的 Agent 对话，没做完的内容可能丢失；然后马上替换程序文件并重启，data 目录里的数据会保留。',
         )}
         confirmText={t('强制更新')}
         onConfirm={() => {

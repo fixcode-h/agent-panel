@@ -1,6 +1,5 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
 import {
-  DEFAULT_AGENT_ID,
   type Attachment,
   type FileChange,
   type NewTaskInput,
@@ -10,9 +9,9 @@ import {
   type TaskMessage,
   type TaskRequest,
   type TaskTurn,
+  type ToolUse,
   type Workflow,
 } from './schema.ts'
-import { getCli } from './clis.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
 
@@ -81,6 +80,7 @@ export function newTask(
     rules: [],
     goal: '',
     childLimit: 0,
+    wantsWorktree: false,
     inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
@@ -286,22 +286,16 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
-/** 对话里能不能临时选 CLI、模型和思考强度：默认 Agent、以及不用 Agent 角色（空 id）时可以 */
-export const canPickRun = (agentId: string) => !agentId || agentId === DEFAULT_AGENT_ID
+/** 对话里能不能临时选 CLI、模型和思考强度：不用角色（空 id）时可以 */
+export const canPickRun = (agentId: string) => !agentId
 
-/** 对话里显示的名字：用默认 Agent 选了 CLI 的对话显示 CLI 的名字（用户选的就是 CLI） */
-export function chatName(agent: { id: string; name: string } | undefined, task: { cli?: string }) {
-  if (!agent) return ''
-  return (agent.id === DEFAULT_AGENT_ID && task.cli && getCli(task.cli)?.name) || agent.name
-}
-
-/** 对话任务给默认 Agent 选的 CLI、模型和思考强度 */
+/** 不用角色的对话任务选的 CLI、模型和思考强度 */
 export function withTaskModel<A extends { id: string; cli: string; model: string; effort: string }>(
   agent: A,
   task: { mode: string; agentId: string; cli?: string; model?: string; effort?: string },
 ): A {
   if (task.mode !== 'chat' || task.agentId !== agent.id || !canPickRun(agent.id)) return agent
-  // 换了 CLI 时不能沿用默认 Agent 原来的模型（那是另一个 CLI 的）
+  // 换了 CLI 时不能沿用原来的模型（那是另一个 CLI 的）
   const cli = task.cli || agent.cli
   const same = cli === agent.cli
   return {
@@ -350,6 +344,20 @@ export interface ChildEntry {
   working: boolean
   cliAlive: boolean
   lastMessageAt: string
+}
+
+/** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（只有一项有值） */
+export interface ChildActivity {
+  /** 正在跑的工作流节点 */
+  steps?: string[]
+  /** 在等的子任务 */
+  helpers?: string[]
+  /** 正在调用（或刚调用完）的工具 */
+  tool?: Pick<ToolUse, 'kind' | 'name' | 'label'>
+  /** 正在说的最后一句 */
+  text?: string
+  /** 还没有输出，在想 */
+  thinking?: boolean
 }
 
 /**

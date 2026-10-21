@@ -1,5 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react'
-import { Brain, ChevronRight, CircleAlert, Info } from 'lucide-react'
+import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
@@ -11,6 +11,7 @@ import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
+import { HelperCards } from './HelperCards'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
@@ -342,6 +343,77 @@ const MessageBody = memo(
     a.task === b.task,
 )
 
+/** 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）：AI 回复里的一行，点开看全文 */
+const PANEL_KIND = {
+  background: { icon: Terminal, verb: () => t('后台命令') },
+  build: { icon: GitMerge, verb: () => t('合并编译') },
+  helpers: { icon: Bot, verb: () => t('子任务结果') },
+} as const
+
+function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
+  const [open, setOpen] = useState(false)
+  const kind = PANEL_KIND[m.panel ?? 'background']
+  const Icon = kind.icon
+  const body = m.text.replace(/^【面板】/, '').trim()
+  // 一行里放第一句：后台命令「名字」跑完了：失败……；子任务结果放交回了几个
+  const head =
+    m.panel === 'helpers'
+      ? t('{n} 个子任务交回了结果', { n: Math.max(1, (body.match(/^### /gm) ?? []).length) })
+      : body
+          .split('\n')[0]
+          .replace(/^(后台命令|合并编译)/, '')
+          .trim()
+  const failed = m.panel !== 'helpers' && /跑完了：失败|被停止了|没通过/.test(body.split('\n')[0])
+  return (
+    <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30')}>
+      <button
+        type="button"
+        onClick={() => setOpen(!open)}
+        aria-expanded={open}
+        className="group flex w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-muted hover:text-fg"
+      >
+        <Icon className={cn('h-3.5 w-3.5 shrink-0', failed ? 'text-danger' : 'text-subtle')} />
+        <span className="shrink-0 font-sans font-medium text-fg/80">{kind.verb()}</span>
+        <span className="min-w-0 flex-1 truncate">{head}</span>
+        <ChevronRight
+          className={cn(
+            'h-3.5 w-3.5 shrink-0 text-subtle opacity-0 transition group-hover:opacity-100',
+            open && 'rotate-90 opacity-100',
+          )}
+        />
+      </button>
+      {open && (
+        <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-[0.8125rem]">
+          <Markdown text={body} teamNames={teamNames} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 夹在 AI 回复里、不是谁说的话的几种消息：派出的子任务、面板推回的结果。
+ * 和工具调用一样缩进在头像后面；不是这几种返回 null
+ */
+function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
+  const body =
+    m.spawned?.length && task ? (
+      <HelperCards task={task} ids={m.spawned} teamNames={teamNames} />
+    ) : m.panel ? (
+      <PanelRow m={m} teamNames={teamNames} />
+    ) : null
+  if (!body) return null
+  return (
+    <div key={m.id} className="flex gap-3">
+      <span className="w-[26px] shrink-0" />
+      <div className="min-w-0 flex-1">{body}</div>
+    </div>
+  )
+}
+
+/** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字） */
+const transparent = (m: TaskMessage) => !!m.panel || !!m.spawned?.length
+
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
 export function Msgs({
   msgs,
@@ -386,10 +458,14 @@ export function Msgs({
           author={{ name: sticky.name, cli: sticky.cli, icon: sticky.icon, model: modelOf(sticky), command }}
         />
       )}
-      {msgs.map((m, k) =>
-        m.role === 'system' ? (
-          <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
-        ) : (
+      {msgs.map((m, k) => {
+        const inline = inlineEntry(m, task, teamNames)
+        if (inline) return inline
+        if (m.role === 'system') return <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />
+        // 前面隔着子任务、面板结果时仍算同一段回复：不再重复名字
+        let j = k - 1
+        while (j >= 0 && transparent(msgs[j])) j--
+        return (
           <AgentMessage
             key={m.id}
             m={m}
@@ -400,10 +476,10 @@ export function Msgs({
             author={author}
             command={command}
             hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
-            compact={k === 0 ? !!compactFirst : msgs[k - 1].role === 'agent' && msgs[k - 1].agentId === m.agentId}
+            compact={j < 0 ? !!compactFirst : msgs[j].role === 'agent' && msgs[j].agentId === m.agentId}
           />
-        ),
-      )}
+        )
+      })}
     </>
   )
 }
@@ -461,7 +537,13 @@ export function FoldedRun({
   const tail = msgs.slice(last + 1)
   return (
     <>
-      {msgs.slice(0, last).map((m) => m.role === 'system' && <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />)}
+      {msgs
+        .slice(0, last)
+        .map(
+          (m) =>
+            inlineEntry(m, task, teamNames) ??
+            (m.role === 'system' && <NoteMessage key={m.id} m={m} msgs={msgs} task={task} />),
+        )}
       <AgentMessage
         m={msgs[last]}
         task={task}

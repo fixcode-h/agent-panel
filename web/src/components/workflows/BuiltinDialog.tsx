@@ -60,7 +60,7 @@ export function BuiltinDialog({
       <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
         <p className="text-[0.8125rem] leading-relaxed text-muted">
           {t(
-            '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 CLI。',
+            '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 Agent。',
           )}
         </p>
         {groups.map((g) => (

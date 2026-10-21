@@ -92,10 +92,10 @@ export function DetectedApis({
         <ScanSearch className="h-4 w-4 shrink-0 text-accent" />
         <span className="min-w-0 flex-1 text-[0.8125rem] font-medium">
           {!list
-            ? t('正在识别本机 CLI 配置的 API…')
+            ? t('正在识别本机 Agent 配置的 API…')
             : shown.length
-              ? t('在本机 CLI 的配置里识别到 {n} 个 API', { n: shown.length })
-              : t('本机 CLI 的配置里没有识别到 API')}
+              ? t('在本机 Agent 的配置里识别到 {n} 个 API', { n: shown.length })
+              : t('本机 Agent 的配置里没有识别到 API')}
         </span>
         <Button
           size="sm"
@@ -110,7 +110,7 @@ export function DetectedApis({
       </div>
       {!!shown.length && (
         <p className="text-[0.75rem] leading-relaxed text-subtle">
-          {t('读的是各个 CLI 自己的环境变量和配置文件。确认是你要用的再存进来，存好后其他 CLI 也能选用。')}
+          {t('读的是各个 Agent 自己的环境变量和配置文件。确认是你要用的再存进来，存好后其他 Agent 也能选用。')}
         </p>
       )}
       {shown.map((d) => {

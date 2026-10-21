@@ -345,7 +345,7 @@ const UE_PROJECT: BuiltinWorkflow = {
   main: 'orchestrator',
   members: [
     ['orchestrator', '常驻编排器：按 UE 的结构、编译和资产规则调度'],
-    ['uescout', '只读侦察架构、构建、资产和影响面'],
+    ['explorer', '调研：只读侦察架构、构建、资产和影响面'],
     ['analyst', '出方案等你确认'],
     ['developer', 'C++ / Lua 实现'],
     ['tester', '按项目测试步骤编译、检查和验收（编译也在里面）'],
@@ -369,9 +369,9 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
         {
           id: 'scout',
           title: '识别现场与侦察',
-          agent: 'uescout',
+          agent: 'explorer',
           tier: 'medium',
-          params: { scene: true, focus: '综合' },
+          params: { scene: true, focus: '综合', stack: 'ue', target: '影响面' },
           instructions:
             '先识别现场（Git 的分支和未提交改动，P4 的 client、stream 和限定路径的 opened，或者没有版本控制）和文档根；再侦察模块、构建和影响面，包括 C++ 与 Lua 的调用边界。',
         },
@@ -585,7 +585,7 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
     members: [
       ['analyst', '确认迁移范围和兼容策略（一次性 / 双写 / 懒迁移）'],
       ['developer', '写迁移脚本、回滚和兼容读取'],
-      ['impact', '分析受影响的读写路径和外部契约'],
+      ['explorer', '调研：分析受影响的读写路径和外部契约'],
       ['tester', '用旧数据样本验证迁移与回滚'],
       ['vcs', '同步文档，本地提交 / P4 分桶'],
     ],
@@ -615,9 +615,9 @@ export const EXTRA_WORKFLOWS: BuiltinWorkflow[] = [
           {
             id: 'impact',
             title: '影响面',
-            agent: 'impact',
+            agent: 'explorer',
             tier: 'low',
-            params: { tests: true },
+            params: { tests: true, target: '影响面' },
             instructions: '列出所有读写这些数据的路径（含外部调用方和已有数据文件），以及现有的测试和缺的边界。',
           },
           {
@@ -795,7 +795,7 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     members: [
       ['spec', '识别现场与前置检查、写规范、规范门禁、归档'],
       ['analyst', '收敛需求并压测设计'],
-      ['impact', '实现前分析影响面和测试缺口'],
+      ['explorer', '调研：实现前分析影响面和测试缺口'],
       ['developer', '按 tasks 实现'],
       ['tester', '验收和延期验证'],
       ['vcs', '同步文档，本地提交 / P4 分桶'],
@@ -846,9 +846,9 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
           {
             id: 'impact',
             title: '影响面与测试缺口',
-            agent: 'impact',
+            agent: 'explorer',
             tier: 'low',
-            params: { tests: true },
+            params: { tests: true, target: '影响面' },
             instructions:
               '按 specs 和 tasks 分析这次变更波及的模块、入口和契约，并找出已有测试和需要补的边界、回归用例，给实现节点参考。',
           },
@@ -922,9 +922,9 @@ export const BUILTIN_WORKFLOWS: BuiltinWorkflow[] = [
     name: 'Bug 修复',
     description: '先查历史 Bug，找到根因再修，验收通过后写 Bug 记录并提交',
     category: '问题处理',
-    main: 'debugger',
+    main: 'developer',
     members: [
-      ['debugger', '识别现场，找根因、写失败测试、修复'],
+      ['developer', '修 Bug：识别现场，找根因、写失败测试、修复'],
       ['tester', '验收：按项目测试步骤跑验证、查回归'],
       ['vcs', '写 Bug 记录、同步文档，本地提交 / P4 分桶'],
     ],
@@ -943,9 +943,9 @@ Bug、测试失败、线上问题。
           {
             id: 'fix',
             title: '定位并修复',
-            agent: 'debugger',
+            agent: 'developer',
             tier: 'high',
-            params: { scene: true },
+            params: { scene: true, task: '修 Bug' },
             review: 'check',
             maxRounds: 3,
             retries: 1,
@@ -972,7 +972,7 @@ Bug、测试失败、线上问题。
     category: 'UE',
     main: 'developer',
     members: [
-      ['uescout', '识别版本控制和文档根，架构、构建和影响面的只读侦察'],
+      ['explorer', '调研：识别版本控制和文档根，架构、构建和影响面的只读侦察'],
       ['analyst', '出设计摘要等你确认'],
       ['developer', 'C++ / Lua 实现'],
       ['tester', '按测试步骤编译、做 Lua 检查并验收'],
@@ -996,9 +996,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           {
             id: 'scout',
             title: '识别现场与侦察',
-            agent: 'uescout',
+            agent: 'explorer',
             tier: 'medium',
-            params: { scene: true, focus: '综合' },
+            params: { scene: true, focus: '综合', stack: 'ue', target: '影响面' },
             instructions:
               '先识别现场（Git 的分支和未提交改动，P4 的 client、stream 和限定路径的 opened，或者没有版本控制）和文档根，结果里写明是哪种版本控制，后面的节点按它操作；再围绕这次需求做架构和构建方向的侦察，并分析波及的模块、入口和契约，包括 C++ 和 Lua 之间的调用边界。',
           },
@@ -1060,10 +1060,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
     name: '架构设计',
     description: '识别现场并出候选方案 → 压测并确认 → 写成架构文档和 ADR',
     category: '规划',
-    main: 'architect',
+    main: 'analyst',
     members: [
-      ['architect', '识别现场，读已有的架构文档，给候选方案和架构契约'],
-      ['analyst', '压测方案'],
+      ['analyst', '识别现场，读已有的架构文档，给候选方案和架构契约，再压测方案'],
       ['docsync', '写架构文档和 ADR'],
     ],
     document: `## 适用
@@ -1076,9 +1075,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           {
             id: 'arch',
             title: '识别现场与候选方案',
-            agent: 'architect',
+            agent: 'analyst',
             tier: 'high',
-            params: { scene: true },
+            params: { scene: true, scale: 'architectural' },
             instructions:
               '先识别现场，读已有的架构文档、ADR 和相关模块的 README；再给出 2–4 个候选方案和推荐方案的架构契约。',
           },
@@ -1112,7 +1111,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
     category: '质量',
     main: 'reviewer',
     members: [
-      ['impact', '分析影响面和测试缺口'],
+      ['explorer', '调研：分析影响面和测试缺口'],
       ['reviewer', '查回归风险，汇总成分级评审意见'],
     ],
     document: `## 适用
@@ -1126,9 +1125,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           {
             id: 'impact',
             title: '影响面与测试缺口',
-            agent: 'impact',
+            agent: 'explorer',
             tier: 'low',
-            params: { tests: true },
+            params: { tests: true, target: '影响面' },
             instructions: '分析评审范围内的改动波及的模块、入口和契约，并找出缺少的测试。',
           },
           {
@@ -1150,10 +1149,7 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
     description: '规格确认 → 分件建模 → 装配、动画与减面 → 质检确认 → 导出 UE',
     category: '美术',
     main: 'blender',
-    members: [
-      ['blender', '建模、装配、动画、减面和导出'],
-      ['blenderqa', '体检、多视角对照、可拆分测试'],
-    ],
+    members: [['blender', '建模、装配、动画、减面、质检（体检、多视角对照、可拆分测试）和导出']],
     document: `## 适用
 用无头 Blender 做可拆分的模型和动画，并导出到 UE。
 
@@ -1197,8 +1193,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           {
             id: 'qa',
             title: '质检',
-            agent: 'blenderqa',
+            agent: 'blender',
             tier: 'medium',
+            params: { stage: '质检' },
             confirm: true,
             instructions: '对完整模型做质检，把并排对照图列出来请用户确认外观。',
           },
@@ -1221,8 +1218,9 @@ UE 项目里的 C++ / Lua 改动，Git、P4 或没有版本控制的项目都能
           {
             id: 'qa',
             title: '质检',
-            agent: 'blenderqa',
+            agent: 'blender',
             tier: 'medium',
+            params: { stage: '质检' },
             instructions: '检查上面「输入」里完成的部件：单件体检、和参考裁切并排对照。',
           },
         ],

@@ -23,7 +23,14 @@ import {
   ApiConfig,
   type JsonEdit,
 } from '../shared/accounts.ts'
-import { CliSettings, type CliAccounts, type LoginJob, type SavedAccount, type Settings } from '../shared/schema.ts'
+import {
+  CliSettings,
+  type CliAccounts,
+  type LoginJob,
+  type ProviderAuthCheck,
+  type SavedAccount,
+  type Settings,
+} from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { modelLimitsFor } from '../shared/model-catalog.ts'
 import { t } from '../shared/i18n.ts'
@@ -252,6 +259,46 @@ async function envOf(cli: string) {
     cli,
   )
   return { cs, env: childEnv(cs.env) }
+}
+
+/**
+ * 按 CLI 定义里的 auth.check 查设置里用到的提供方：三档模型和默认模型的「provider/」前缀。
+ * 只查本机的凭据文件和环境变量，不刷新令牌、不联网（参数里自己写 --no-refresh 这类）
+ */
+export async function checkProviders(def: CliDefinition): Promise<ProviderAuthCheck[]> {
+  const spec = def.auth?.check
+  if (!spec) return []
+  const { cs, env } = await envOf(def.id)
+  const models = [
+    ...(['high', 'medium', 'low'] as const).map((k) => cs.tiers[k].model || def.tiers[k].model),
+    cs.defaultModel.startsWith('@') ? '' : cs.defaultModel,
+  ]
+  const providers = [...new Set(models.filter((m) => m.indexOf('/') > 0).map((m) => m.slice(0, m.indexOf('/'))))]
+  return Promise.all(
+    providers.map(async (provider): Promise<ProviderAuthCheck> => {
+      const args = spec.args.map((a) => a.replaceAll('{provider}', provider))
+      const r = await capture(cs.command, args, homedir(), env, 20_000).catch(() => null)
+      let out: Record<string, unknown> = {}
+      try {
+        out = JSON.parse(r?.stdout.trim() || '{}')
+      } catch {}
+      const status = String(out[spec.status] ?? '')
+      if (!status)
+        return {
+          provider,
+          ready: false,
+          status: 'error',
+          reason: (r?.spawnError || r?.stderr.trim().split('\n').at(-1) || t('没有输出')).slice(0, 300),
+        }
+      return {
+        provider,
+        ready: status === spec.ready,
+        status,
+        ...(out[spec.reason] ? { reason: String(out[spec.reason]) } : {}),
+        ...(out[spec.authType] ? { authType: String(out[spec.authType]) } : {}),
+      }
+    }),
+  )
 }
 
 /** 把现在的登录同步回对应的已存账号（CLI 刷新过凭据后，保存的也要跟着更新） */
@@ -828,7 +875,7 @@ export async function fetchApiModels(api: Pick<ApiConfig, 'protocol' | 'baseUrl'
 export function accountsApi() {
   const need = (c: { req: { param: (k: string) => string } }) => {
     const def = getCli(c.req.param('cli'))
-    if (!def?.auth) throw new Error(t('这个 CLI 没有账号设置'))
+    if (!def?.auth) throw new Error(t('这个 Agent 没有账号设置'))
     return def
   }
   const guard = (fn: (c: any) => Promise<Response>) => async (c: any) => {
@@ -873,6 +920,11 @@ export function accountsApi() {
       .post(
         '/:cli/login',
         guard(async (c) => c.json(await startLogin(need(c)))),
+      )
+      // 设置里用到的模型的提供方，凭据是否就绪（CLI 定义里写了 auth.check 才有）
+      .get(
+        '/:cli/check',
+        guard(async (c) => c.json(await checkProviders(need(c)))),
       )
       .get('/:cli/login', (c) => {
         const j = logins.get(c.req.param('cli'))

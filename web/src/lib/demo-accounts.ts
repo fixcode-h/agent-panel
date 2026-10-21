@@ -94,6 +94,12 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
     }
   }
   const s = demo(cli)
+  // 演示里的凭据检查：一家能用、一家没配
+  if (sub === 'check')
+    return [
+      { provider: 'anthropic', ready: true, status: 'ready', authType: 'oauth' },
+      { provider: 'openai', ready: false, status: 'not_ready', reason: 'credentials_not_configured' },
+    ]
   if (sub === 'login') {
     if (method === 'GET') return jobs.get(cli) ?? null
     if (method === 'DELETE') {

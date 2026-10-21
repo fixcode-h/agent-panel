@@ -17,18 +17,18 @@ function agentField(o: Orchestra) {
   const list = o.common.map((a) => `「${a.name}」${a.description ? `（${a.description}）` : ''}`).join('、')
   return {
     type: 'string',
-    description: `交给哪个 Agent（名字）；不写用你自己的 Agent${list ? `。可以直接派的通用 Agent：${list}` : ''}`,
+    description: `交给哪个角色（名字）；不写用必备角色「子任务」${list ? `。也可以点名这些通用角色：${list}` : ''}`,
   }
 }
 
 const tasksField = (o: Orchestra) => ({
   type: 'array',
-  description: '每个子任务交给一个子 Agent，互相之间不能有依赖',
+  description: '每一项是一个子任务，互相之间不能有依赖',
   items: {
     type: 'object',
     properties: {
       title: { type: 'string', description: '子任务的短标题（显示在任务进度里）' },
-      instructions: { type: 'string', description: '要做什么、范围、产出；子 Agent 只看得到这些和用户需求' },
+      instructions: { type: 'string', description: '要做什么、范围、产出；子任务只看得到这些和用户需求' },
       agent: agentField(o),
       tier: { type: 'string', enum: ['high', 'medium', 'low'], description: '模型档位；不写跟你一样' },
     },
@@ -44,6 +44,16 @@ export function orchTools(o: Orchestra) {
       description: '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
       inputSchema: { type: 'object', properties: {} },
     },
+    ...(o.canBeginEdit
+      ? [
+          {
+            name: 'begin_edit',
+            description:
+              '确定要改文件时先调用：面板从当前目录开一个独立分支。成功后用一两句写下查到的情况和打算怎么改，然后马上结束这一轮，面板会在独立分支的目录里开新会话接着做。调用前不要改任何文件。',
+            inputSchema: { type: 'object', properties: {} },
+          },
+        ]
+      : []),
     ...(o.canBackground
       ? [
           {
@@ -262,23 +272,29 @@ export function orchTools(o: Orchestra) {
         required: ['key', 'value'],
       },
     },
-    {
-      name: 'spawn_agents',
-      description:
-        '派子 Agent 并行处理互不相关的几块工作（例如几个模块分别改、几类测试分别跑），马上返回它们的 id，不等它们做完；之后用 wait_agents 取结果。子 Agent 也能再派一层。只拆真正能同时做、不会改同一个文件的事，小事自己做更快。',
-      inputSchema: { type: 'object', properties: { tasks: tasksField(o) }, required: ['tasks'] },
-    },
-    {
-      name: 'wait_agents',
-      description: `等派出的子 Agent 做完并取回结果。一次最多等 ${MAX_WAIT_S} 秒，没做完的会列出来，过一会儿再调用；做完前不要自己重复它们的工作。`,
-      inputSchema: {
-        type: 'object',
-        properties: {
-          ids: { type: 'array', items: { type: 'string' }, description: '子 Agent 的 id；不写等你派出的全部' },
-          seconds: { type: 'number', description: `最多等几秒（默认 ${DEFAULT_WAIT_S}，最多 ${MAX_WAIT_S}）` },
-        },
-      },
-    },
+    // 子任务不能再派子任务
+    ...(o.helper
+      ? []
+      : [
+          {
+            name: 'spawn_agents',
+            description: o.autoReturn
+              ? '派子任务并行处理互不相关的几件事（收集资料、查代码、核实结论、出计划），马上返回它们的 id。派完就可以结束这一轮回复：对话会停下等它们全部做完，结果自动交回给你接着做，不用轮询。子任务不能再派子任务、不能启动工作流或子对话。只拆真正能同时做的事，小事自己做更快。'
+              : '派子任务并行处理互不相关的几块工作（收集资料、查代码、核实结论、出计划），马上返回它们的 id，不等它们做完；之后用 wait_agents 取结果，节点结束前没取的结果也会并进你的输出。子任务不能再派子任务。只拆真正能同时做、不会改同一个文件的事，小事自己做更快。',
+            inputSchema: { type: 'object', properties: { tasks: tasksField(o) }, required: ['tasks'] },
+          },
+          {
+            name: 'wait_agents',
+            description: `等派出的子任务做完并取回结果。一次最多等 ${MAX_WAIT_S} 秒，没做完的会列出来，过一会儿再调用；做完前不要自己重复它们的工作。${o.autoReturn ? '一般不用调用：这一轮结束后结果会自动交回。' : ''}`,
+            inputSchema: {
+              type: 'object',
+              properties: {
+                ids: { type: 'array', items: { type: 'string' }, description: '子任务的 id；不写等你派出的全部' },
+                seconds: { type: 'number', description: `最多等几秒（默认 ${DEFAULT_WAIT_S}，最多 ${MAX_WAIT_S}）` },
+              },
+            },
+          },
+        ]),
     ...(o.hasMain && !main
       ? [
           {
@@ -387,6 +403,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     }
     case 'check_background':
       return text(o.checkBackground(str(a?.id)))
+    case 'begin_edit': {
+      const r = await o.beginEdit()
+      return text(r.info, !r.ok)
+    }
     case 'submit_build': {
       const r = await o.submitBuild(str(a?.note))
       return text(r.info, !r.ok)
@@ -428,13 +448,17 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         }))
       const r = o.spawn(list)
       if (r.error) return text(r.error, true)
-      return text(`已派出 ${r.ids.length} 个子 Agent：${r.ids.join('、')}\n用 wait_agents 取结果。`)
+      return text(
+        o.autoReturn
+          ? `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n可以结束这一轮回复了，它们全部做完后结果会自动交回给你。`
+          : `已派出 ${r.ids.length} 个子任务：${r.ids.join('、')}\n用 wait_agents 取结果。`,
+      )
     }
     case 'wait_agents': {
       const ids = Array.isArray(a?.ids) ? a.ids.map(String) : []
       const s = Math.min(MAX_WAIT_S, Math.max(1, Number(a?.seconds) || DEFAULT_WAIT_S))
       const r = await o.wait(ids, s * 1000)
-      if (!r.done.length && !r.running.length) return text('你还没有派出子 Agent')
+      if (!r.done.length && !r.running.length) return text('你还没有派出子任务')
       return text(
         [
           r.done.length ? `做完 ${r.done.length} 个：\n\n${r.done.map(reportText).join('\n\n')}` : '',
@@ -472,23 +496,28 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
 
 /** 交给 CLI 的一句用法说明：工具列表模型自己看得到，这里说什么时候用 */
 export function orchHint(o: Orchestra) {
+  // 子任务只做派给它的那件事：不提派子任务、工作流、子对话这些它用不了的工具
+  if (o.helper)
+    return '（你有面板工具 panel：get_status 查看其他节点和子任务的状态；read_state / write_state 读写共享状态；send_message 给同时执行的节点传话、read_messages 看别人发给你的。你不能再派子任务、不能启动工作流或子对话。不要用 CLI 自带的子 Agent（Task / agent 这类工具）。）'
   // 通用 Agent 写进说明里：不写的话模型很少想到去派别的 Agent
   const common = o.common.length
     ? `；可以派的通用 Agent：${o.common.map((a) => `「${a.name}」`).join('、')}（spawn_agents 的 agent 写名字）`
     : ''
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
-  const bg = o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : ''
+  const bg =
+    (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
+    (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
   const child =
     bg +
     (o.child
       ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_build 改完提交编译（结果会推回来）、' : ''}message_parent 向父对话汇报或提问；`
       : '')
   if (o.planning)
-    return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   if (o.coordinator)
-    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${bg}get_status 查看节点状态；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   return o.self.endsWith('@main')
-    ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子 Agent、wait_agents 取结果${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
-    : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子 Agent 同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子任务、wait_agents 取结果${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子任务同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
 }

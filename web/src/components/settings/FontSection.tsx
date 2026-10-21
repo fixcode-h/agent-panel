@@ -167,7 +167,7 @@ export function FontSection({ value, onChange }: { value: Appearance; onChange: 
       <div className="mt-4 rounded-xl border bg-card p-4">
         <p className="text-[0.75rem] text-subtle">{t('预览')}</p>
         <p className="mt-2 text-[0.875rem]">
-          {t('Agent 面板按工作流调度本机的编码 CLI。')} The quick brown fox jumps over the lazy dog.
+          {t('Agent 面板按工作流调度本机的编码 Agent。')} The quick brown fox jumps over the lazy dog.
         </p>
         <pre className="mt-2 rounded-md bg-field px-3 py-2 font-mono text-[0.78125rem]">
           {'const ok = a => b !== c && x >= 0 // 0O 1lI 中文注释'}

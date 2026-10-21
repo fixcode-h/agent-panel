@@ -129,7 +129,7 @@ export async function listSkills(cli: string, cwd: string): Promise<CliSkill[]> 
 
 async function rawSkills(cli: string, cwd: string): Promise<CliSkill[]> {
   const def = getCli(cli)
-  if (!def) throw new Error(t('未知的 CLI：{cli}', { cli }))
+  if (!def) throw new Error(t('未知的 Agent：{cli}', { cli }))
   if (def.rpc?.skillsQuery) {
     const rpc = RpcSpec.parse(def.rpc)
     const s = cliSettings(await getSettings(), cli)

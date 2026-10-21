@@ -85,22 +85,75 @@ export const Agent = AgentInput.extend(Meta.shape)
 export type Agent = z.infer<typeof Agent>
 
 /**
- * 自带的默认 Agent：不能删除，CLI、模型、思考强度固定跟随设置里的默认 CLI，
- * 对话时可以在输入框旁边临时换模型和思考强度。新建的对话没选过 Agent 时用它。
+ * 以前自带的「默认 Agent」的 id。它其实就是「不带角色、直接用 CLI」，现在去掉了：
+ * 旧数据里引用它的地方读出来一律当成空字符串（不用角色），见 dropLegacyAgent。
  */
-export const DEFAULT_AGENT_ID = 'default-agent'
+export const LEGACY_DEFAULT_AGENT_ID = 'default-agent'
+
+/** 不用角色时的运行配置模板：CLI、模型、思考强度跟随默认 CLI，没有角色设定 */
 export const defaultAgent = (): Agent => {
   const at = new Date(0).toISOString()
   return {
-    ...AgentInput.parse({
-      name: t('默认角色'),
-      description: t('使用默认 CLI 的默认模型和思考强度，对话时可以临时调整'),
-      icon: 'sparkles',
-    }),
-    id: DEFAULT_AGENT_ID,
+    ...AgentInput.parse({ name: t('无角色'), icon: 'sparkles' }),
+    id: '',
     createdAt: at,
     updatedAt: at,
   }
+}
+
+const AGENT_REF_KEYS = new Set(['agentId', 'mainAgentId', 'defaultAgentId'])
+
+/**
+ * 已经不存在的角色 id → 现在该用的 id（空字符串表示不用角色）。读旧数据时按它改写引用：
+ * 默认 Agent 固定在这里；合并后被删掉的内置副本由服务端启动时登记（见 setAgentAliases）。
+ */
+const agentAliases = new Map<string, string>([[LEGACY_DEFAULT_AGENT_ID, '']])
+
+/** 登记被删掉的角色该转到哪个角色：之后读到的工作流、项目、对话里的引用都会改过去 */
+export function setAgentAliases(map: Record<string, string>) {
+  for (const [from, to] of Object.entries(map)) if (from && from !== to) agentAliases.set(from, to)
+}
+
+/** 这个角色 id 现在该用哪个（没登记过的原样返回） */
+export const aliasAgent = (id: string) => agentAliases.get(id) ?? id
+
+/** 旧数据里指向已去掉的角色的引用改成现在的（默认 Agent 改成空字符串，不用角色）；工作流成员里转成空的直接去掉 */
+function dropLegacyAgent(v: unknown): unknown {
+  if (Array.isArray(v)) {
+    const arr = v.map(dropLegacyAgent)
+    return arr.some((x, i) => x !== v[i]) ? arr : v
+  }
+  if (!v || typeof v !== 'object') return v
+  const o = v as Record<string, unknown>
+  let out: Record<string, unknown> | null = null
+  for (const [k, x] of Object.entries(o)) {
+    let next = x
+    if (AGENT_REF_KEYS.has(k) && typeof x === 'string' && agentAliases.has(x)) next = agentAliases.get(x)
+    else if (k === 'members' && Array.isArray(x))
+      next = dropLegacyAgent(
+        x.filter((m) => {
+          const id = (m as { agentId?: unknown })?.agentId
+          return typeof id !== 'string' || agentAliases.get(id) !== ''
+        }),
+      )
+    else if (x && typeof x === 'object') next = dropLegacyAgent(x)
+    if (next !== x) (out ??= { ...o })[k] = next
+  }
+  return out ?? o
+}
+
+/** 对话的 CLI 会话按角色 id 记：角色换了 id，会话跟着搬过去，接着原来的会话聊 */
+function moveSessions(v: unknown) {
+  const t = v as { sessions?: unknown }
+  if (!t?.sessions || typeof t.sessions !== 'object') return v
+  const cur = t.sessions as Record<string, unknown>
+  if (!Object.keys(cur).some((k) => agentAliases.has(k))) return v
+  const sessions: Record<string, unknown> = {}
+  for (const [k, id] of Object.entries(cur)) {
+    const to = aliasAgent(k)
+    if (!(to in sessions) || to === k) sessions[to] = id
+  }
+  return { ...t, sessions }
 }
 
 /** Agent 和工作流的分类，例如「开发」「测试」「文档」，只用于组织列表；两边的分类各管各的 */
@@ -287,7 +340,8 @@ export function stagesToFlow(stages: { title?: string; nodes?: Record<string, un
 }
 
 /** 读旧数据时把阶段转换成流程 */
-function migrateWorkflow(v: unknown) {
+function migrateWorkflow(raw: unknown) {
+  const v = dropLegacyAgent(raw)
   if (!v || typeof v !== 'object') return v
   const w = v as Record<string, unknown>
   if (Array.isArray(w.flows) && w.flows.length) return w
@@ -576,7 +630,8 @@ export const ProjectLesson = z.object({
 export type ProjectLesson = z.infer<typeof ProjectLesson>
 
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
-function migrateProject(v: unknown) {
+function migrateProject(input: unknown) {
+  const v = dropLegacyAgent(input)
   if (!v || typeof v !== 'object') return v
   const p = v as Record<string, unknown>
   const raw = p.workflowParams
@@ -631,6 +686,8 @@ const ProjectFields = z.object({
    * - claim：和父对话共用一个目录，改文件前认领（同一个文件同一时间只归一个子对话）
    */
   childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
+  /** 新建对话时「独立分支」默认勾上（只是输入框里的默认值，每次新建仍可以改） */
+  isolateDefault: z.boolean().default(false),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
   /**
@@ -703,8 +760,8 @@ export const NewTaskInput = z.object({
   rootTaskId: z.string().optional(),
   /** workflow 模式：为空时用项目的工作流 */
   workflowId: z.string().default(''),
-  /** chat 模式：对话的 Agent */
-  agentId: z.string().default(''),
+  /** chat 模式：对话的 Agent（旧客户端可能还传已经去掉的角色 id，按登记的换过去） */
+  agentId: z.string().default('').transform(aliasAgent),
   /** chat 模式用的 CLI、模型和思考强度（只对默认 Agent 有效）；为空跟随默认 CLI 的设置 */
   cli: z.string().trim().max(40).default(''),
   model: z.string().trim().max(200).default(''),
@@ -816,13 +873,18 @@ export const TaskMessage = z.object({
   transient: z.boolean().optional(),
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
+  /**
+   * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、子任务结果）：不是用户说的话，
+   * 对话里显示成 AI 回复里的一行，点开看全文
+   */
+  panel: z.enum(['background', 'build', 'helpers']).optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */
   turn: z
     .object({
       session: z.string(),
-      /** Codex 的 turn id */
+      /** Codex 的 turn id；Pi 是这一轮用户消息的 entryId（分叉到它之前） */
       id: z.string().default(''),
       /** Claude Code 这一轮最后一条回复的 uuid（--resume-session-at 用） */
       end: z.string().default(''),
@@ -1079,6 +1141,13 @@ export const TaskData = z.object({
   sessions: z.record(z.string(), z.string()).default({}),
   /** 对话的会话是哪个 CLI 的：对话中途换了 CLI 时，下一轮开新会话，把之前的对话带过去 */
   sessionCli: z.string().optional(),
+  /** 对话的会话是在哪个目录里开的：改文件前开了独立分支、换了目录时，下一轮开新会话，把之前的对话带过去 */
+  sessionDir: z.string().optional(),
+  /**
+   * 要改文件时才开独立分支：对话先在原目录里看代码、回答问题，
+   * 真要改文件时调用 begin_edit，面板这时才建 worktree，再在里面开新会话接着做
+   */
+  wantsWorktree: z.boolean().default(false),
   /**
    * 对话分叉或撤回后，下一轮从哪里接着：session 里保留到 through 这一轮（含），之后的丢掉；
    * through 为空表示一轮都不留，开新会话。CLI 不能截断会话时，把留下的对话整理成文字带给新会话
@@ -1087,6 +1156,11 @@ export const TaskData = z.object({
     .object({
       session: z.string(),
       through: z.object({ session: z.string(), id: z.string().default(''), end: z.string().default('') }).nullable(),
+      /** 要丢掉的第一轮（只能分叉到某一轮之前的 CLI 用它的 id，例如 Pi）；没有丢掉的轮次时为空 */
+      cut: z
+        .object({ session: z.string(), id: z.string().default(''), end: z.string().default('') })
+        .nullable()
+        .optional(),
       /** through 是不是这个会话的最后一轮（Command Code 只能从最后分叉） */
       latest: z.boolean().default(false),
       /** 压缩上下文时 CLI 写的摘要（不能压缩会话的 CLI 开新会话时带上） */
@@ -1184,7 +1258,8 @@ export type TaskData = z.infer<typeof TaskData>
  * 更早的版本还有 queue（执行中排队的追加要求）：现在执行中收到的消息直接进对话，
  * 读旧数据时把没处理的普通要求补到对话末尾，让用户仍然看得到；等 CLI 取走的补充已经不成立了，丢掉。
  */
-function migrateTask(v: unknown) {
+function migrateTask(raw: unknown) {
+  const v = moveSessions(dropLegacyAgent(raw))
   if (!v || typeof v !== 'object') return v
   const t = v as {
     steps?: { id?: string }[]
@@ -1264,6 +1339,8 @@ export const CliSettings = z.object({
   autoCompact: z.number().int().min(0).max(100).default(0),
   /** 一轮任务最多执行多少回合（模型请求次数）；0 表示用 CLI 自己的默认值（Command Code 是 1000） */
   maxTurns: z.number().int().min(0).max(1000).default(0),
+  /** CLI 定义里开关（options）的状态；没改过的按定义里的默认值 */
+  options: z.record(z.string(), z.boolean()).default({}),
 })
 export type CliSettings = z.infer<typeof CliSettings>
 
@@ -1438,6 +1515,17 @@ export interface CliAccounts {
 }
 
 /** 正在进行的登录 */
+/** 一个提供方的凭据检查结果（CLI 定义里 auth.check 的输出） */
+export interface ProviderAuthCheck {
+  provider: string
+  ready: boolean
+  /** CLI 给的状态和原因，原样显示 */
+  status: string
+  reason?: string
+  /** 就绪时的凭据类型，例如 oauth、api_key */
+  authType?: string
+}
+
 export interface LoginJob {
   id: string
   cli: string

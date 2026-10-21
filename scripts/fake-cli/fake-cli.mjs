@@ -293,7 +293,15 @@ const session =
 let piRpcExit
 // 面板发的是 compact（压缩）而不是 prompt 时记下来：下面按压缩回事件
 let piCompact
+// 分叉到某一轮之前（RPC 的 fork）：记下截在哪条用户消息，测试检查
+let piForkAt
 if (piRpc) {
+  // 每个会话的用户消息 entryId 存在一个文件里（跨进程续接时还在），get_fork_messages 按它回
+  const histFile = `${process.env.FAKE_CLI_LOG ?? path.join(tmpdir(), 'fake-pi')}.pi-sessions.json`
+  const hist = () => (existsSync(histFile) ? JSON.parse(readFileSync(histFile, 'utf8')) : {})
+  const saveHist = (h) => writeFileSync(histFile, JSON.stringify(h))
+  let piSession = session
+  let added = false
   const rl = (await import('node:readline')).createInterface({ input: process.stdin })
   const say = (o) => process.stdout.write(JSON.stringify(o) + '\n')
   let onPrompt
@@ -302,7 +310,30 @@ if (piRpc) {
   rl.on('line', (l) => {
     const m = JSON.parse(l)
     if (m.type === 'get_state') {
-      say({ type: 'response', command: 'get_state', id: m.id, success: true, data: { sessionId: session } })
+      say({ type: 'response', command: 'get_state', id: m.id, success: true, data: { sessionId: piSession } })
+    } else if (m.type === 'get_fork_messages') {
+      const h = hist()
+      // 这一轮的 prompt 收到后第一次查：把它记成一条新的用户消息
+      if (answered && !added && !piCompact) {
+        added = true
+        h[piSession] = [...(h[piSession] ?? []), `u-${randomUUID().slice(0, 8)}`]
+        saveHist(h)
+      }
+      const messages = (h[piSession] ?? []).map((entryId) => ({ entryId, text: '' }))
+      say({ type: 'response', command: 'get_fork_messages', id: m.id, success: true, data: { messages } })
+    } else if (m.type === 'fork') {
+      const h = hist()
+      const list = h[piSession] ?? []
+      const at = list.indexOf(m.entryId)
+      if (at < 0) {
+        say({ type: 'response', command: 'fork', id: m.id, success: false, error: `Entry ${m.entryId} not found` })
+        return
+      }
+      piForkAt = m.entryId
+      piSession = randomUUID()
+      h[piSession] = list.slice(0, at)
+      saveHist(h)
+      say({ type: 'response', command: 'fork', id: m.id, success: true, data: { text: '', cancelled: false } })
     } else if (m.type === 'prompt') {
       input = String(m.message ?? '')
       say({ type: 'response', command: 'prompt', id: m.id, success: true, data: { disposition: 'started' } })
@@ -373,7 +404,7 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
     kind === 'codex'
       ? { resume: appResume, developer, ...policy, op: appOp, fork: appFork, reviewTarget }
       : kind === 'pi'
-        ? { op: piCompact ? 'compact' : undefined }
+        ? { op: piCompact ? 'compact' : undefined, forkAt: piForkAt }
         : { compactPct: process.env.CLAUDE_AUTOCOMPACT_PCT_OVERRIDE }
   // 用 API 时交给 CLI 的环境变量：测试检查接口地址和密钥传进来了
   const apiEnv = {
@@ -392,6 +423,38 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+// 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
+// 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
+let beganEdit = false
+if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
+  const cfg = args.find((a) => a.startsWith('{"mcpServers"'))
+  const servers = cfg ? JSON.parse(cfg).mcpServers : {}
+  const url =
+    servers[
+      Object.keys(servers)
+        .filter((k) => k.startsWith('panel'))
+        .at(-1)
+    ]?.url ??
+    args
+      .map((a) => a.match(/^mcp_servers\.(panel[\w-]*)\.url="(.*)"$/)?.[2])
+      .filter(Boolean)
+      .at(-1)
+  const rpc = (id, method, params) =>
+    fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+    }).then(async (r) => {
+      const text = await r.text()
+      const data = text.split('\n').filter((l) => l.startsWith('data:'))
+      return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
+    })
+  await rpc(1, 'initialize', {})
+  const got = (await rpc(2, 'tools/call', { name: 'begin_edit', arguments: {} })).result
+  beganEdit = !got.isError
+  if (process.env.FAKE_CLI_LOG)
+    appendFileSync(process.env.FAKE_CLI_LOG + '.edit', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+}
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {
   if (process.env.FAKE_CLI_LOG && steered.length)
@@ -994,7 +1057,7 @@ if (kind === 'claude') {
   out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 40 } } })
   writeFileSync(file, 'line1\nline2\n')
   // 任务里有 COMMIT 时像真的 Agent 一样自己提交一次（测试提交后改动仍然统计在内）
-  if (input.includes('COMMIT')) {
+  if (input.includes('COMMIT') && !beganEdit) {
     writeFileSync('committed.txt', 'one\ntwo\nthree\n')
     const g = (...a) => execFileSync('git', ['-c', 'user.name=a', '-c', 'user.email=a@a', ...a], { stdio: 'ignore' })
     g('add', 'committed.txt')

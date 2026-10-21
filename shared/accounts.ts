@@ -314,6 +314,19 @@ export function setModelLimits(
 export const CliAuth = z.object({
   /** 账号登录页上的提醒（例如这个 CLI 对账号类型有限制） */
   accountNote: z.string().default(''),
+  /**
+   * 检查某个提供方的凭据能不能用（例如 Pi 的 `auth check --json --provider {provider}`）：输出 JSON，
+   * status 字段等于 ready 算就绪，reason 是原因。查的是设置里用到的模型的提供方（模型 ID「provider/model」的前一段）
+   */
+  check: z
+    .object({
+      args: z.array(z.string()).min(1),
+      status: z.string().default('status'),
+      ready: z.string().default('ready'),
+      reason: z.string().default('reason'),
+      authType: z.string().default('authType'),
+    })
+    .optional(),
   /** 登录的命令行参数（会打开浏览器）；不写表示这个 CLI 不能在面板里登录 */
   login: z.array(z.string()).default([]),
   /** 登录时从 stdin 写进去的内容（例如要确认的 y） */

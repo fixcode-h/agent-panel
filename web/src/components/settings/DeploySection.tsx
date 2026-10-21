@@ -92,7 +92,7 @@ export function DeploySection() {
       const docs = r.docs.filter((d) => d.result !== 'same').length
       toast.success(
         r.skills.length || r.removed.length || docs
-          ? t('部署好了：技能新装 {a} 个、移除 {b} 个，全局说明写入 {c} 个 CLI', {
+          ? t('部署好了：技能新装 {a} 个、移除 {b} 个，全局说明写入 {c} 个 Agent', {
               a: r.skills.length,
               b: r.removed.length,
               c: docs,
@@ -112,7 +112,7 @@ export function DeploySection() {
     <div className="flex flex-col">
       <p className="text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '全局说明会写进下面选中的 CLI 的用户目录，在所有项目里每次启动时读入。选中的技能放到 {dir}/<分类>/<名字>/，默认不加载：全局说明末尾会附上技能清单，任务用得上时再去读。',
+          '全局说明会写进下面选中的 Agent 的用户目录，在所有项目里每次启动时读入。选中的技能放到 {dir}/<分类>/<名字>/，默认不加载：全局说明末尾会附上技能清单，任务用得上时再去读。',
           { dir: SKILL_TARGET },
         )}
       </p>
@@ -165,7 +165,9 @@ export function DeploySection() {
           {optimizing && (
             <Optimizer
               title={draft.agentsMd.trim() ? t('用 AI 优化全局说明') : t('用 AI 生成全局说明')}
-              hint={t('CLI 在用户目录里只读运行，只写跨项目都成立的约束，不会改任何文件。结果先给你看，采用后再保存。')}
+              hint={t(
+                'Agent 在用户目录里只读运行，只写跨项目都成立的约束，不会改任何文件。结果先给你看，采用后再保存。',
+              )}
               placeholder={t('想怎么写（可以不填），例如：加上 Windows 下的编码注意事项')}
               busyText={t('正在整理…')}
               start={(request, cli) =>
@@ -200,12 +202,12 @@ export function DeploySection() {
         </div>
       </Group>
 
-      <Group title={t('写到哪些 CLI')}>
+      <Group title={t('写到哪些 Agent')}>
         <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
           {st.targets.map((d) => (
             <li
               key={d.cli}
-              title={active(d.cli) ? undefined : t('没有启用，先在这个 CLI 的设置里启用')}
+              title={active(d.cli) ? undefined : t('没有启用，先在这个 Agent 的设置里启用')}
               className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-2.5"
             >
               <Checkbox

@@ -8,8 +8,7 @@ import { demoLibrary } from './demo-library'
 import { z } from 'zod'
 import {
   Agent,
-  DEFAULT_AGENT_ID,
-  defaultAgent,
+  LEGACY_DEFAULT_AGENT_ID,
   Attachment,
   AgentInput,
   Category,
@@ -455,6 +454,7 @@ function seed(): Db {
     createdAt,
     agentParams: {},
     childIsolation: 'worktree',
+    isolateDefault: false,
     workflowIds: [],
     defaultAgentId: '',
     agentSet: true,
@@ -594,8 +594,8 @@ function load(): Db {
   db.categories = db.categories.map((c) => Category.parse(c))
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
-  // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
-  if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
+  // 以前自带的默认 Agent 已经去掉（不用角色就是直接用 CLI），旧的演示数据里还有时删掉
+  db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
   ensureDemoCore(db)
   return db
@@ -790,7 +790,7 @@ function clis(): CliStatus[] {
 // 模拟安装 / 卸载：几秒内逐行输出，然后切换安装状态
 const installJobs = new Map<string, CliInstallJob>()
 function cliAction(id: string, action: CliInstallJob['action']) {
-  const def = getCli(id) ?? fail('未知的 CLI')
+  const def = getCli(id) ?? fail('未知的 Agent')
   if ([...installJobs.values()].some((j) => j.status === 'running')) fail('有一个安装 / 卸载还在进行，请等它完成')
   const job: CliInstallJob = {
     id: `demo-${crypto.randomUUID()}`,
@@ -961,6 +961,8 @@ function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
 }
 
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
+const demoPackages = ['npm:@example/pi-web-tools', 'git:github.com/example/pi-review@v1']
+
 const DEMO_SKILLS: CliSkill[] = [
   {
     name: 'frontend-design',
@@ -1186,6 +1188,19 @@ function route(method: string, url: string, body: unknown): unknown {
           source: x.source ?? '',
         })),
       ] satisfies SlashCommand[]
+    // 演示里的扩展包：内存里记着，装、删都直接成功
+    if (id && sub === 'packages') {
+      if (method === 'POST') {
+        const b = (body ?? {}) as { action?: string; source?: string }
+        const source = String(b.source ?? '').trim()
+        if (b.action === 'install' && source && !demoPackages.includes(source)) demoPackages.push(source)
+        if (b.action === 'remove' && demoPackages.includes(source)) demoPackages.splice(demoPackages.indexOf(source), 1)
+        const output =
+          b.action === 'install' ? `Installed ${source}` : b.action === 'remove' ? `Removed ${source}` : 'Up to date'
+        return { ok: true, output, packages: demoPackages.map((x) => ({ source: x, target: x })) }
+      }
+      return demoPackages.map((x) => ({ source: x, target: x }))
+    }
     if (id && sub === 'skills')
       return DEMO_SKILLS.filter(
         (x) =>
@@ -1344,7 +1359,6 @@ function route(method: string, url: string, body: unknown): unknown {
     if (input.cli && !getCli(input.cli)) fail(`未知的 CLI：${input.cli}`)
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
-    if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
     // 必备角色只能改参数取值和运行配置；复制出来的是普通角色
     const coreBefore = method === 'POST' ? undefined : d.agents.find((a) => a.id === id && isCoreAgent(a))
     if (method === 'POST' && isCoreAgent(input)) input.origin = ''

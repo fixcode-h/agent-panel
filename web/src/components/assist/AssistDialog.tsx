@@ -151,7 +151,7 @@ function AgentPreview({ agent, before, newCategory }: { agent: AgentInput; befor
         </div>
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-[0.8125rem]">
-        <dt className="text-subtle">CLI</dt>
+        <dt className="text-subtle">Agent</dt>
         <dd className="flex items-center gap-2">
           <span className="h-2 w-2 rounded-full" style={{ background: cliColor(cliOf(agent)) }} />
           {agent.cli
@@ -291,7 +291,7 @@ function JobProgress({
   const writingJson = (job.outChars ?? 0) > job.text.length + 20
   const phase =
     job.attempt > 1
-      ? t('格式不对，正在让 CLI 修正')
+      ? t('格式不对，正在让 Agent 修正')
       : writingJson
         ? t('正在写配置（已写 {n} 字）', { n: (job.outChars ?? 0).toLocaleString() })
         : job.text
@@ -354,7 +354,7 @@ function RunPicker({
     <div
       className="flex min-w-0 items-center gap-0.5"
       title={
-        t('这次用 {model}', { model: run.model || defaultModel || t('CLI 自动选择的模型') }) +
+        t('这次用 {model}', { model: run.model || defaultModel || t('Agent 自动选择的模型') }) +
         (run.effort ? ` · ${run.effort}` : '')
       }
     >
@@ -495,7 +495,7 @@ export function AssistDialog({
     kind === 'skill'
       ? {
           create: t('用 AI 创建 Skill'),
-          desc: t('本机 CLI 写出 SKILL.md，在右侧预览，确认再应用'),
+          desc: t('本机 Agent 写出 SKILL.md，在右侧预览，确认再应用'),
           intro: t('描述你想要的 Skill，越具体越好。可以从下面的例子开始：'),
           placeholder: t('描述你想要的 Skill'),
           empty: t('生成的 Skill 会显示在这里'),
@@ -504,7 +504,7 @@ export function AssistDialog({
       : kind === 'mcp'
         ? {
             create: t('用 AI 排查 MCP 工具'),
-            desc: t('本机 CLI 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
+            desc: t('本机 Agent 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用'),
             intro: t('说说遇到的问题，或者直接让它排查。'),
             placeholder: t('补充你知道的情况'),
             empty: t('修复后的配置会显示在这里'),
@@ -513,7 +513,7 @@ export function AssistDialog({
         : kind === 'agent'
           ? {
               create: t('用 AI 创建角色'),
-              desc: t('本机 CLI 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
+              desc: t('本机 Agent 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
               intro: t('描述你想要的角色，越具体越好。可以从下面的例子开始：'),
               placeholder: t('描述你想要的角色'),
               empty: t('生成的角色会显示在这里'),
@@ -539,7 +539,7 @@ export function AssistDialog({
                 }
               : {
                   create: t('用 AI 创建工作流'),
-                  desc: t('本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+                  desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
                   intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
                   placeholder: t('描述你想要的工作流'),
                   empty: t('生成的工作流会显示在这里'),

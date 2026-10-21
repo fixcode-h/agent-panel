@@ -525,7 +525,7 @@ function AssistModal({
       footer={
         <>
           <span className="flex-1 text-[0.75rem] text-subtle">
-            {t('用「AI 创建」里设置的 CLI；ComfyUI 在运行时会按它装的节点来写')}
+            {t('用「AI 创建」里设置的 Agent；ComfyUI 在运行时会按它装的节点来写')}
           </span>
           <Button onClick={() => void run()} disabled={busy || !text.trim()}>
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}

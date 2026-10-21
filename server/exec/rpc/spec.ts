@@ -16,6 +16,8 @@ export interface SpecAdapterOptions {
   maxTurns?: number
   resume?: string
   fork?: boolean
+  /** 分叉到这一轮之前（features.fork 为 before 时，要丢掉的第一轮的 id） */
+  forkBefore?: string
   images?: string[]
   /** 不是普通的一轮：压缩上下文时按 rpc.compact 发，不发 start */
   op?: BuildOptions['op']
@@ -119,6 +121,7 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
     resume: o.resume,
     cwd: o.cwd,
     fork: o.fork ? true : undefined,
+    forkBefore: o.forkBefore || undefined,
     ...extra,
   })
   const record = (action: RpcAction, extra: SpecVars) => {
@@ -158,9 +161,22 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
     }
     return true
   }
-  const idOf = (path: string) => (path ? getPath(saved, path) : undefined)
+  // 路径里可以用 {变量路径} 取存下的值，例如 post.data.messages.{pre.data.messages.length}.entryId：
+  // 这一轮开始前有几条用户消息，结束后的列表里那个位置就是这一轮自己的（插话的排在它后面）
+  const resolve = (path: string) =>
+    path.replace(/\{([\w.$-]+)\}/g, (_, p: string) => {
+      const v = getPath(saved, p)
+      return v === undefined || v === null ? '\u0000' : String(v)
+    })
+  const idOf = (path: string) => {
+    const p = path ? resolve(path) : ''
+    return p && !p.includes('\u0000') ? getPath(saved, p) : undefined
+  }
   let sessionSent = ''
   let turnSent = ''
+  // 面板自己数的回合（见 turnLimit），每轮重新数
+  let turns = 0
+  let limited = false
   // 会话、轮次 id 一拿到就发，后面的输出不用等所有启动步骤走完
   function emitIds(ctx: RpcContext) {
     const session = idOf(spec.sessionId) ?? getPath(last, spec.sessionId)
@@ -168,7 +184,7 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       sessionSent = String(session)
       ctx.emit({ type: 'session', id: sessionSent })
     }
-    const turn = idOf(spec.turnId) ?? getPath(last, spec.turnId)
+    const turn = idOf(spec.turnId) ?? (spec.turnId.includes('{') ? undefined : getPath(last, spec.turnId))
     if (turn && String(turn) !== turnSent) {
       turnSent = String(turn)
       ctx.emit({ type: 'turn', id: turnSent })
@@ -192,12 +208,17 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
     },
     message(ctx, msg) {
       for (const r of spec.remember) if (matches(r.when, msg)) saved[r.as] = msg
+      if (spec.turnLimit && o.maxTurns && !limited && matches(spec.turnLimit.when, msg) && ++turns > o.maxTurns) {
+        // 停下后 CLI 照常报结束，结束时再把原因作为这一轮的错误显示
+        limited = true
+        adapter.interrupt(ctx)
+      }
       const done = spec.done.find((d) => matches(d.when, msg))
       let ok = true
       let error = ''
       if (done) {
-        ok = every(done.ok, msg, saved)
-        error = first(done.error, msg, saved)
+        ok = !limited && every(done.ok, msg, saved)
+        error = limited ? t('达到回合上限（{n}），停止这一轮', { n: o.maxTurns ?? 0 }) : first(done.error, msg, saved)
       }
       const event = spec.unwrap ? (getPath(msg, spec.unwrap) ?? msg) : msg
       for (const ev of o.parser(event)) ctx.emit(ev)
@@ -230,6 +251,8 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       // 同一进程里开下一轮：会话已经开着，直接按 start 里的步骤把新的那句交过去
       input = text
       turnSent = ''
+      turns = 0
+      limited = false
       if (!(await run(ctx, spec.start))) return
       emitIds(ctx)
     },

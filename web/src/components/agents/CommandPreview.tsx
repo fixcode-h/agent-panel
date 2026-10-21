@@ -43,6 +43,7 @@ export function CommandPreview({
     effort: run.effort,
     permission: agentPermission({ cli, permission }, s),
     extraArgs: [...cs.extraArgs, ...extraArgs],
+    options: cs.options,
   })
   return <Terminal argv={[cs.command, ...args]} title={title} className={className} />
 }

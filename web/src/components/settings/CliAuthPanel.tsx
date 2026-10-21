@@ -1,9 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, ExternalLink, Loader2, LogIn, LogOut, Pencil, Save, Trash2, User, X } from 'lucide-react'
+import {
+  AlertCircle,
+  Check,
+  CheckCircle2,
+  ExternalLink,
+  Loader2,
+  LogIn,
+  LogOut,
+  Pencil,
+  RefreshCw,
+  Save,
+  Trash2,
+  User,
+  X,
+} from 'lucide-react'
 import { getCli, type CliDefinition } from '@shared/clis'
 import { API_PROTOCOL_LABEL, apiFits, type ApiConfig } from '@shared/accounts'
-import type { CliAccounts, LoginJob } from '@shared/schema'
+import type { CliAccounts, LoginJob, ProviderAuthCheck } from '@shared/schema'
 import { api } from '@/lib/api'
 import { DetectedApis } from './DetectedApis'
 import { AiFixButton } from '@/components/ui/ai-fix'
@@ -48,7 +62,7 @@ export function CliAuthPanel({
           mode === 'account'
             ? t('用浏览器登录的账号，可以保存几个账号随时切换')
             : t(
-                '用全局设置里配的 API（接口地址和密钥）；支持写配置的 CLI 会立即保存到它自己的配置，模型下拉优先从 CLI 读取',
+                '用全局设置里配的 API（接口地址和密钥）；支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取',
               )
         }
         stack
@@ -94,7 +108,7 @@ export function CliAuthPanel({
             ) : (
               <p className="text-[0.78125rem] leading-relaxed text-warning">
                 {fitting.length
-                  ? t('还没选 API，现在会按 CLI 自己的登录运行')
+                  ? t('还没选 API，现在会按 Agent 自己的登录运行')
                   : t('还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的', {
                       protocols: (def.auth?.api?.protocols ?? []).map((p) => API_PROTOCOL_LABEL[p]).join(' / '),
                     })}
@@ -234,6 +248,9 @@ function AccountList({ def }: { def: CliDefinition }) {
           </Button>
         )}
       </div>
+      {def.auth?.check && (
+        <ProviderChecks def={def} stamp={`${data.live.label}|${data.accounts.find((a) => a.active)?.id ?? ''}`} />
+      )}
       {def.auth?.accountNote && (
         <p className="rounded-xl border border-warning/40 bg-warning/8 px-3 py-2.5 text-[0.78125rem] leading-relaxed">
           {def.auth.accountNote}
@@ -326,7 +343,7 @@ function AccountList({ def }: { def: CliDefinition }) {
                   <button
                     type="button"
                     aria-label={t('删除 {name}', { name: a.name })}
-                    title={t('删除（只删除保存的，不影响 CLI 现在的登录）')}
+                    title={t('删除（只删除保存的，不影响 Agent 现在的登录）')}
                     onClick={() => run(`d:${a.id}`, () => api.deleteAccount(def.id, a.id))}
                     className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-danger focus-visible:opacity-100"
                   >
@@ -348,6 +365,67 @@ function AccountList({ def }: { def: CliDefinition }) {
 }
 
 /** 登录进行中：浏览器会自动打开；没打开就点链接，要粘贴授权码时在这里输入 */
+/** CLI 自己的凭据检查不认识的原因原样显示，认识的换成一句话 */
+const REASONS: Record<string, () => string> = {
+  credentials_not_configured: () => t('没有配置凭据'),
+  provider_not_found: () => t('没有这个提供方'),
+  invalid_state: () => t('凭据或配置文件有问题'),
+}
+
+/**
+ * 设置里用到的模型的提供方，凭据是否就绪：Pi 这类一个 CLI 接好几家的，账号登录了不代表每家都能用。
+ * 登录、切换账号后（stamp 变了）重新查
+ */
+function ProviderChecks({ def, stamp }: { def: CliDefinition; stamp: string }) {
+  const [list, setList] = useState<ProviderAuthCheck[]>()
+  const [loading, setLoading] = useState(false)
+  const load = useCallback(() => {
+    setLoading(true)
+    api
+      .checkProviders(def.id)
+      .then(setList)
+      .catch((e) => toast.error((e as Error).message))
+      .finally(() => setLoading(false))
+  }, [def.id])
+  // stamp 只用来在账号变化后触发重查
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => load(), [load, stamp])
+  if (list && !list.length) return null
+  return (
+    <div className="rounded-xl border px-3 py-2.5">
+      <div className="mb-1.5 flex items-center gap-2">
+        <p className="flex-1 text-[0.78125rem] font-medium">{t('设置里用到的提供方')}</p>
+        <Button size="sm" variant="ghost" disabled={loading} onClick={load} aria-label={t('重新检查凭据')}>
+          <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
+        </Button>
+      </div>
+      {!list ? (
+        <Loader2 className="my-1 h-3.5 w-3.5 animate-spin text-subtle" />
+      ) : (
+        <ul className="flex flex-col gap-1" aria-label={t('提供方凭据')}>
+          {list.map((p) => (
+            <li key={p.provider} className="flex items-center gap-2 text-[0.78125rem]">
+              {p.ready ? (
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+              ) : (
+                <AlertCircle className="h-3.5 w-3.5 shrink-0 text-danger" />
+              )}
+              <span className="font-mono">{p.provider}</span>
+              <span className="min-w-0 truncate text-subtle" title={p.reason}>
+                {p.ready
+                  ? p.authType
+                    ? t('可以用（{type}）', { type: p.authType })
+                    : t('可以用')
+                  : (REASONS[p.reason ?? '']?.() ?? p.reason ?? p.status)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
 function LoginProgress({ cli, job, onClose }: { cli: string; job: LoginJob; onClose: () => void }) {
   const [code, setCode] = useState('')
   const box = useRef<HTMLPreElement>(null)

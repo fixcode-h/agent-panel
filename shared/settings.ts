@@ -38,11 +38,19 @@ export function cliSettings(
     context: s.tiers[t].context,
     maxOutput: s.tiers[t].maxOutput,
   })
+  // 定义里的开关：没改过的用默认值；开着的把它的环境变量加上
+  const options = Object.fromEntries((def?.options ?? []).map((o) => [o.id, s.options[o.id] ?? o.default]))
+  const optionEnv = (def?.options ?? []).filter((o) => options[o.id]).flatMap((o) => Object.entries(o.env))
   return {
     ...s,
+    options,
     api: inject ? api : undefined,
-    // CLI 定义自带的环境变量在最前，用户和 API 的覆盖它
-    env: [...Object.entries(def?.env ?? {}).map(([key, value]) => ({ key, value })), ...s.env, ...(inject?.env ?? [])],
+    // CLI 定义自带的环境变量在最前，开关的其次，用户和 API 的覆盖它们
+    env: [
+      ...[...Object.entries(def?.env ?? {}), ...optionEnv].map(([key, value]) => ({ key, value })),
+      ...s.env,
+      ...(inject?.env ?? []),
+    ],
     extraArgs: inject ? [...s.extraArgs, ...inject.args] : s.extraArgs,
     command: s.command || def?.command || cliId,
     permission: s.permission || def?.defaultPermission || '',
@@ -139,7 +147,7 @@ export const agentModel = (a: { cli: string; model: string }, settings: Settings
 export function modelText(a: { cli: string; model: string; effort?: string }, settings: Settings) {
   const r = agentRun(a, settings)
   const tier = tierOf(a.model)
-  const m = r.model || t('CLI 默认')
+  const m = r.model || t('Agent 默认')
   return tier
     ? t('{tier}档 · {model}', { tier: tier.label, model: m })
     : a.model

@@ -254,7 +254,7 @@ export function useSlashMenu({
         )
       })}
       {cmds === null && !items.length && (
-        <div className="px-2.5 py-2 text-[0.75rem] text-subtle">{t('正在读取 CLI 的命令和 Skill…')}</div>
+        <div className="px-2.5 py-2 text-[0.75rem] text-subtle">{t('正在读取 Agent 的命令和 Skill…')}</div>
       )}
     </div>
   ) : null

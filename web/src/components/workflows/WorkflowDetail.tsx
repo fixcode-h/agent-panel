@@ -73,7 +73,10 @@ export function WorkflowDetail({
     if (deleteSignal) setDeleting(true)
   }, [deleteSignal])
   const [assist, setAssist] = useState(false)
-  const [tab, setTab] = useState<'flow' | 'settings'>(() => (workflow.mainAgentId ? 'flow' : 'settings'))
+  // 主角色可以不选（直接用 CLI），所以按有没有节点判断：刚新建的空工作流先填基本信息
+  const [tab, setTab] = useState<'flow' | 'settings'>(() =>
+    workflow.mainAgentId || workflow.flows.some((f) => f.nodes.length) ? 'flow' : 'settings',
+  )
   const valid = !!draft.name.trim()
   const save = useAutosave(
     draft,
@@ -151,7 +154,7 @@ export function WorkflowDetail({
                   <Activity className="h-4 w-4" />
                   {t('分析执行')}
                 </Button>
-                <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
+                <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
                   <Sparkles className="h-4 w-4 text-accent" />
                   {t('AI 优化')}
                 </Button>

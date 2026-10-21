@@ -86,6 +86,67 @@ export function toolVerb(tool: ToolUse) {
   return tool.name ?? VERB_TEXT[tool.kind]
 }
 
+/** 面板自己的工具（panel MCP）调用名：各家 CLI 显示成「panel-xxxx · create_conversation」「panel_create_conversation」等 */
+const PANEL_TOOL =
+  /panel[\w-]*\W{1,4}(create_conversation|send_to_conversation|list_conversations|spawn_agents|wait_agents|run_background|check_background|message_parent|submit_build|start_plan)\b/
+
+/** 工具调用的参数：多数 CLI 给的是 JSON，解析不了就当没有 */
+function toolArgs(tool: ToolUse): Record<string, unknown> {
+  try {
+    const v = JSON.parse(tool.input ?? '')
+    return v && typeof v === 'object' ? v : {}
+  } catch {
+    return {}
+  }
+}
+
+const firstLine = (v: unknown) =>
+  String(v ?? '')
+    .split('\n')
+    .map((l) => l.trim())
+    .find(Boolean) ?? ''
+
+/**
+ * 面板工具在对话里怎么显示：说做了什么（新建子对话 + 子对话名字），不显示 MCP 服务名和原始工具名。
+ * 返回 undefined 表示不是面板工具，照常显示；null 表示不用显示（派出的子任务另有自己的一行）
+ */
+export function panelTool(tool: ToolUse): ToolUse | null | undefined {
+  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
+  if (!hit) return undefined
+  const a = toolArgs(tool)
+  const quoted = /「([^」]+)」/.exec(tool.output ?? '')?.[1] ?? ''
+  const as = (name: string, label: string, kind: ToolUse['kind'] = 'other'): ToolUse => ({
+    ...tool,
+    kind,
+    name,
+    label,
+  })
+  switch (hit[1]) {
+    case 'create_conversation':
+      return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent')
+    case 'send_to_conversation':
+      return as(t('交给子对话'), quoted || firstLine(a.id), 'agent')
+    case 'list_conversations':
+      return as(t('查看子对话'), '')
+    // 成功派出时子任务各有一行（转圈、完成、失败），这次调用不再单独显示；失败了要让人看到原因
+    case 'spawn_agents':
+      return tool.failed ? as(t('派出子任务'), '', 'agent') : null
+    case 'wait_agents':
+      return as(t('等待子任务'), '', 'agent')
+    case 'run_background':
+      return as(t('后台命令'), firstLine(a.name) || firstLine(a.command))
+    case 'check_background':
+      return as(t('查看后台命令'), firstLine(a.id))
+    case 'message_parent':
+      return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text))
+    case 'submit_build':
+      return as(t('提交编译'), firstLine(a.note))
+    case 'start_plan':
+      return as(t('启动工作流'), firstLine(a.input))
+  }
+  return undefined
+}
+
 /** 「正在做什么」的一句话 */
 export function currentActivity(a: ReturnType<typeof stepActivity>) {
   if (a.last?.text.trim()) return t('正在输出：{text}', { text: plainLine(a.last.text, true) })
@@ -94,7 +155,7 @@ export function currentActivity(a: ReturnType<typeof stepActivity>) {
   const thinking = a.last?.thinking ? plainLine(a.last.thinking, true) : ''
   if (thinking) return t('正在思考：{text}', { text: thinking })
   if (a.last) return t('正在思考…')
-  return t('正在启动 CLI…')
+  return t('正在启动 Agent…')
 }
 
 /** 去掉 Markdown 记号后的第一行（last = 取最后一行） */

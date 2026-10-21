@@ -121,7 +121,7 @@ export function assistApi(deps: {
           role: 'system',
           agentId: '',
           step: '',
-          text: t('格式不对，已让 CLI 修正。'),
+          text: t('格式不对，已让 Agent 修正。'),
           raw: '',
           tools: [],
           at: new Date().toISOString(),
@@ -236,7 +236,7 @@ export function assistApi(deps: {
       const p = AssistInput.safeParse(await c.req.json())
       if (!p.success) return bad(c, z.prettifyError(p.error))
       const input = p.data
-      if (!getCli(input.cli)) return bad(c, t('未知的 CLI：{cli}', { cli: input.cli }))
+      if (!getCli(input.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: input.cli }))
       if (!cliSettings(await getSettings(), input.cli).enabled)
         return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
       const target = input.targetId

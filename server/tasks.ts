@@ -36,6 +36,7 @@ import {
   taskSummary,
   withAttachments,
   withTaskModel,
+  type ChildActivity,
 } from '../shared/task.ts'
 import { agentRun, defaultCli } from '../shared/settings.ts'
 import { getCli } from '../shared/clis.ts'
@@ -73,6 +74,7 @@ import {
   mergeWorktree,
   removeWorktree,
   trialMerge,
+  checkRepo,
 } from './exec/worktree.ts'
 import { runMergeSteps } from './merge-build.ts'
 import { createBackground } from './background.ts'
@@ -208,7 +210,7 @@ export function tasksApi(deps: {
             agentId: '',
             step: '',
             text: t(
-              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
+              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
             ),
             tools: [],
             transient: true,
@@ -233,6 +235,7 @@ export function tasksApi(deps: {
     workflowParams: {},
     agentParams: {},
     childIsolation: 'claim',
+    isolateDefault: false,
     testSteps: [],
     lessons: [],
     wslDistro: '',
@@ -339,6 +342,30 @@ export function tasksApi(deps: {
   const refreshAgents = async () => (liveAgents = await deps.agents.list())
 
   /** 子对话的摘要：最近一条 Agent 回复的开头 */
+  /**
+   * 子对话这会儿在做什么（父对话的子对话栏里接在名字后面）：在跑的工作流节点、在等的子任务、
+   * 正在调用的工具，或者正在说的最后一句。没在执行时没有
+   */
+  function activityOf(tk: Task): ChildActivity | undefined {
+    if (!tk.working) return undefined
+    const running = tk.steps.filter((s) => s.status === 'running' && s.kind !== 'main')
+    const nodes = running.filter((s) => !s.parentId).map((s) => s.title)
+    if (nodes.length) return { steps: nodes }
+    const helpers = running.filter((s) => s.slot === 'sub').map((s) => s.title)
+    const last = [...tk.messages].reverse().find((m) => m.role === 'agent' && !m.step)
+    const tool =
+      [...(last?.tools ?? [])].reverse().find((x) => x.running) ?? (last?.text.trim() ? undefined : last?.tools.at(-1))
+    if (tool) return { tool: { kind: tool.kind, name: tool.name, label: tool.label.slice(0, 200) } }
+    if (helpers.length) return { helpers }
+    const line = (last?.text ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .at(-1)
+    if (line) return { text: line.slice(0, 200) }
+    return { thinking: true }
+  }
+
   function lastReply(task: Task) {
     const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
     return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
@@ -397,18 +424,63 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 「独立 worktree」模式：子对话第一次执行时，从父对话所在的目录开一个独立分支，只用来隔离改文件。
+   * 「独立 worktree」模式：子对话第一次执行时只记下「要改文件时开独立分支」，真要改时（begin_edit）
+   * 才从父对话所在的目录开，只用来隔离改文件；只是查资料、回答问题的子对话不用开。
    * 不是 Git 仓库（P4、没有版本控制）时退回共用目录，靠认领文件避免冲突
    */
   async function ensureChildWorktree(entry: Live, project: Project | null | undefined) {
     const tk = entry.task
-    if (!tk.parentTaskId || !project?.path || isolated(tk) || project.childIsolation !== 'worktree') return
+    if (!tk.parentTaskId || !project?.path || tk.worktree || tk.wantsWorktree) return
+    if (project.childIsolation !== 'worktree') return
     const base = await taskDir({ ...tk, worktree: null })
     try {
-      entry.task.worktree = await createWorktree(base, tk.id, tk.title)
+      await checkRepo(base)
+      entry.task.wantsWorktree = true
       await store.update(tk.id, entry.task)
     } catch (e) {
-      log.info('task', '子对话没有建独立分支，共用目录', { task: tk.id, reason: (e as Error).message })
+      log.info('task', '子对话不能开独立分支，共用目录', { task: tk.id, reason: (e as Error).message })
+    }
+  }
+
+  /** 对话要改文件了：从它现在的目录开独立分支，这一轮结束后在新目录里开新会话接着做 */
+  async function beginEdit(entry: Live, changed: (f?: boolean) => void): Promise<{ ok: boolean; info: string }> {
+    const tk = entry.task
+    if (isolated(tk)) return { ok: true, info: `已经在独立分支 ${tk.worktree!.branch} 里，直接改` }
+    const base = await taskDir({ ...tk, worktree: null })
+    try {
+      tk.worktree = await createWorktree(base, tk.id, tk.title)
+    } catch (e) {
+      log.warn('task', '开独立分支失败', { task: tk.id, error: (e as Error).message })
+      return { ok: false, info: `开独立分支失败：${(e as Error).message}\n先不要改文件，把情况告诉用户。` }
+    }
+    tk.wantsWorktree = false
+    // 改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的
+    tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
+    tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef).catch(() => null)) ?? {}
+    tk.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t('要改文件了，已开独立分支 {branch}，接下来在里面修改', { branch: tk.worktree.branch }),
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    // 这一轮结束后马上接着做：消息已经记在对话里（上面那条），这里只登记交给新会话的要求
+    holdForNextTurn(tk.id, {
+      id: randomUUID(),
+      role: 'user',
+      agentId: '',
+      step: '',
+      text: `（面板）已经开好独立分支 ${tk.worktree.branch}，你现在在它的目录里。接着刚才的任务开始修改；已经查清楚的不用重查。`,
+      tools: [],
+      at: new Date().toISOString(),
+    })
+    changed(true)
+    log.info('task', '对话开了独立分支', { task: tk.id, branch: tk.worktree.branch })
+    return {
+      ok: true,
+      info: `已开独立分支 ${tk.worktree.branch}（目录 ${tk.worktree.path}）。现在用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮，不要在当前目录改任何文件；面板会在独立分支的目录里开新会话，带上这段对话接着做。`,
     }
   }
 
@@ -444,7 +516,13 @@ export function tasksApi(deps: {
    * 把一条消息交给子对话：它正在执行就实时送达，空闲就占一个并发名额开新的一轮。
    * 父对话的 send_to_conversation 和面板自己推的编译结果都走这里
    */
-  async function sendToChild(parentId: string, id: string, message: string): Promise<{ ok: boolean; info: string }> {
+  async function sendToChild(
+    parentId: string,
+    id: string,
+    message: string,
+    /** 面板自己推的结果（后台命令、合并编译）：对话里显示成 AI 回复里的一行，不是用户消息 */
+    panel?: TaskMessage['panel'],
+  ): Promise<{ ok: boolean; info: string }> {
     const child = live.get(id)?.task ?? (await store.get(id))
     if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
     if (child.imported) return { ok: false, info: READONLY }
@@ -453,11 +531,12 @@ export function tasksApi(deps: {
       // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
       const msg: TaskMessage = {
         id: randomUUID(),
-        role: 'user',
+        role: panel ? 'system' : 'user',
         agentId: '',
         step: '',
         text: message,
         tools: [],
+        ...(panel ? { panel } : {}),
         at: new Date().toISOString(),
       }
       const r = await deliver(running, msg, message, [])
@@ -476,7 +555,7 @@ export function tasksApi(deps: {
     void (async () => {
       const free = await takeSlot(parentId)
       try {
-        await followUp(id, { text: message, attachments: [] })
+        await followUp(id, { text: message, attachments: [], panel })
         await live.get(id)?.done
       } finally {
         free()
@@ -493,23 +572,25 @@ export function tasksApi(deps: {
     void (async () => {
       const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
       if (!tk || tk.archived) return
+      // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
       if (tk.parentTaskId) {
-        await sendToChild(tk.parentTaskId, tk.id, text)
+        await sendToChild(tk.parentTaskId, tk.id, text, 'background')
         return
       }
       const running = live.get(tk.id)
       if (running?.task.status === 'running') {
         const msg: TaskMessage = {
           id: randomUUID(),
-          role: 'user',
+          role: 'system',
           agentId: '',
           step: '',
           text,
           tools: [],
+          panel: 'background',
           at: new Date().toISOString(),
         }
         await deliver(running, msg, text, [])
-      } else await followUp(tk.id, { text, attachments: [] })
+      } else await followUp(tk.id, { text, attachments: [], panel: 'background' })
     })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
   })
 
@@ -542,6 +623,7 @@ export function tasksApi(deps: {
         parentId,
         childId,
         `【面板】${head}${r.ok ? '' : '\n在你的分支里修好后再调用 submit_build 提交一次。'}`,
+        'build',
       )
       await noteParent(parentId, tk, `子对话「${tk.title}」${head.split('\n')[0]}`, head.slice(0, 2000))
     }).catch((e) => log.error('task', '合并编译出错', { task: childId, error: (e as Error).message }))
@@ -877,15 +959,19 @@ export function tasksApi(deps: {
         messageParent: task.parentTaskId ? (text, question) => messageParent(entry.task, text, question) : undefined,
         childIsolation: found?.childIsolation,
         submitBuild: task.parentTaskId && isolated(entry.task) ? (note) => submitBuild(task.id, note) : undefined,
+        beginEdit:
+          task.mode === 'chat' && entry.task.wantsWorktree && !isolated(entry.task)
+            ? () => beginEdit(entry, changed)
+            : undefined,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
             ? async (input) => background.start({ ...input, taskId: task.id, root: dir })
             : undefined,
         checkBackground: (id) => background.check(task.id, id),
-        // 独立分支里的子对话改不到别人的文件，不用认领
+        // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样
         claimFiles:
-          task.parentTaskId && !isolated(entry.task)
+          task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
             : undefined,
         // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
@@ -899,7 +985,7 @@ export function tasksApi(deps: {
             }
           : undefined,
         releaseFiles:
-          task.parentTaskId && !isolated(entry.task)
+          task.parentTaskId && !isolated(entry.task) && !entry.task.wantsWorktree
             ? (paths) => claims.release(rootId, task.id, paths.length ? paths : undefined)
             : undefined,
         listConversations: async () => {
@@ -1054,7 +1140,10 @@ export function tasksApi(deps: {
    * 发一条追加要求。msg 为空时取这一轮结束后要接着处理的那条（CLI 执行中收不下的消息）。
    * recorded：这条消息已经在对话里了（执行中收到时就记下了），不要再加一条。
    */
-  async function followUp(id: string, msg?: { text: string; attachments: Attachment[]; recorded?: boolean }) {
+  async function followUp(
+    id: string,
+    msg?: { text: string; attachments: Attachment[]; recorded?: boolean; panel?: TaskMessage['panel'] },
+  ) {
     const task = await store.get(id)
     if (!task) throw new Error('任务不存在')
     const entry = reserve(task)
@@ -1075,10 +1164,11 @@ export function tasksApi(deps: {
     if (!m.recorded) {
       next.messages.push({
         id: randomUUID(),
-        role: 'user',
+        role: m.panel ? 'system' : 'user',
         agentId: '',
         step: '',
         text: m.text,
+        ...(m.panel ? { panel: m.panel } : {}),
         ...(expanded ? { prompt: expanded } : {}),
         tools: [],
         ...(m.attachments.length ? { attachments: m.attachments } : {}),
@@ -1200,6 +1290,7 @@ export function tasksApi(deps: {
           // 总览分组用：等用户确认的请求数、独立 worktree 的分支
           requests: liveTask.requests.length,
           branch: liveTask.worktree?.branch ?? '',
+          activity: activityOf(liveTask),
         }
       })
     return c.json(kids)
@@ -1388,10 +1479,15 @@ export function tasksApi(deps: {
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
     }
-    // 只有顶层对话能选独立分支：子对话一律和父对话用同一个目录，同时改文件靠认领协调
+    // 这里是顶层对话选的独立分支（子对话由项目设置决定）。
+    // 对话要改文件时才建：先在项目目录里看代码、回答问题，用不着改就不白开一个分支；
+    // 工作流的节点一开始就会改，创建时直接建好
     if (input.isolate && !parent && input.projectId) {
       try {
-        draft.worktree = await createWorktree(project.path, draft.id, draft.title)
+        if (input.mode === 'chat') {
+          await checkRepo(project.path)
+          draft.wantsWorktree = true
+        } else draft.worktree = await createWorktree(project.path, draft.id, draft.title)
       } catch (e) {
         return bad(c, (e as Error).message)
       }
@@ -1926,7 +2022,7 @@ export function tasksApi(deps: {
     const updated = await store.update(task.id, {
       ...task,
       messages: task.messages.slice(0, i),
-      rewind: turnBefore(task, i),
+      rewind: { ...turnBefore(task, i), cut: removed.turn ?? null },
       status: 'done',
       todos: [],
     })
@@ -1954,7 +2050,8 @@ export function tasksApi(deps: {
       autoTitle: false,
       // 消息 id 换新的，免得两个任务里的消息 id 相同
       messages: kept.map((m) => ({ ...m, id: randomUUID() })),
-      rewind: { through, session, latest },
+      // 下一条用户消息那一轮是丢掉的第一轮：只能分叉到某一轮之前的 CLI 按它截
+      rewind: { through, session, latest, cut: next < 0 ? null : (task.messages[next].turn ?? null) },
       status: 'done',
       runMs: 0,
       runStartedAt: '',

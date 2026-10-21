@@ -203,7 +203,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             )}
             {job.status === 'failed' && (
               <p className="mt-2 text-[0.75rem] text-subtle">
-                {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 CLI，让它在安装目录里排查并修好环境。')}
+                {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。')}
               </p>
             )}
           </div>

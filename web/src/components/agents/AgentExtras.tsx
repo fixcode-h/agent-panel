@@ -53,7 +53,7 @@ export function SkillsPicker({
       {value.map((n) => (
         <span
           key={n}
-          title={has(n) ? undefined : t('当前 CLI 的用户目录里没有这个 Skill（可能在项目里或插件里）')}
+          title={has(n) ? undefined : t('当前 Agent 的用户目录里没有这个 Skill（可能在项目里或插件里）')}
           className={cn(
             'inline-flex h-7 items-center gap-1 rounded-md border bg-card pr-0.5 pl-2 font-mono text-[0.75rem]',
             !has(n) && items.length > 0 && 'border-dashed text-muted',

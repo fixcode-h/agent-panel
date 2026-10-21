@@ -3,7 +3,6 @@ export const EN_SHARED: Record<string, string> = {
   '开始执行计划（{name}）：{input}': 'Starting plan ({name}): {input}',
   按工作流走一遍: 'run through the workflow',
   '找不到要执行的工作流：{id}': 'Workflow to run not found: {id}',
-  '新建了子对话「{title}」，这条消息交给它处理': 'Created sub-conversation “{title}”; this message is handed to it',
   // clis.ts：模型档位、思考强度、权限模式
   高: 'High',
   中: 'Medium',
@@ -66,7 +65,7 @@ export const EN_SHARED: Record<string, string> = {
   创意: 'Creative',
 
   // settings.ts
-  'CLI 默认': 'CLI default',
+  'Agent 默认': 'Agent default',
   '{tier}档 · {model}': '{tier} tier · {model}',
 
   // schema.ts
@@ -77,9 +76,6 @@ export const EN_SHARED: Record<string, string> = {
   请描述任务: 'Please describe the task',
   内容不能为空: 'Content is required',
   标题不能为空: 'Title is required',
-  默认角色: 'Default role',
-  '使用默认 CLI 的默认模型和思考强度，对话时可以临时调整':
-    'Uses the default model and effort of the default CLI. You can adjust them during a chat',
   主流程: 'Main flow',
 
   // flow.ts
@@ -122,8 +118,6 @@ export const EN_SHARED: Record<string, string> = {
   '工作流的主流程还没有连到「开始」的节点，请先在流程图里从「开始」连线':
     'No node in the main flow is connected to "Start" yet. Draw a connection from "Start" in the flow chart first',
   '工作流不存在，可能已被删除': 'The workflow does not exist. It may have been deleted',
-  '没有可以回答的角色，请先给工作流选择主角色':
-    'No role is available to respond. Choose a main role for the workflow first',
   '这次执行已经花了 ${used}，达到工作流设定的上限 ${limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has spent ${used}, reaching the workflow limit of ${limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':

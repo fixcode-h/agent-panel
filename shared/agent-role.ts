@@ -1,11 +1,4 @@
-import {
-  DEFAULT_AGENT_ID,
-  type Agent,
-  type AgentParam,
-  type NodeTier,
-  type ParamValue,
-  type ParamValues,
-} from './schema.ts'
+import { type Agent, type AgentParam, type NodeTier, type ParamValue, type ParamValues } from './schema.ts'
 import { t } from './i18n.ts'
 import { tierOf } from './settings.ts'
 import { fillSkills } from './expose.ts'
@@ -294,7 +287,7 @@ export function nodeAgentRun<A extends Agent>(agent: A, tier: NodeTier, defaultC
 
 /** 节点上的参数还缺哪些（要问用户的参数在节点上必须填） */
 export function nodeMissingParams(agent: Agent | undefined, values: ParamValues) {
-  if (!agent || agent.id === DEFAULT_AGENT_ID) return []
+  if (!agent || !agent.id) return []
   return resolveParams(agent.params, values).missing
 }
 

@@ -204,7 +204,7 @@ function ChangesList({
             type="button"
             onClick={onReview}
             disabled={reviewing}
-            title={t('让 CLI 审查还没提交的改动，只列问题，不改文件')}
+            title={t('让 Agent 审查还没提交的改动，只列问题，不改文件')}
             className={cn(menuItem, 'text-xs')}
           >
             {reviewing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanSearch className="h-3.5 w-3.5" />}

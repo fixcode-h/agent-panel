@@ -165,7 +165,7 @@ export function ConversationSettingsDialog({
           <Checkbox
             checked={custom}
             onChange={setCustom}
-            label={t('子对话用指定的 CLI 和模型')}
+            label={t('子对话用指定的 Agent 和模型')}
             hint={t('不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。')}
           />
           {custom && (

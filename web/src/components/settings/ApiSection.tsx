@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import {
   Check,
+  ChevronRight,
   CircleAlert,
   CircleCheck,
   Download,
@@ -44,6 +45,9 @@ const PRESETS: { label: string; protocol: ApiProtocol; baseUrl: string }[] = [
   { label: 'Gemini', protocol: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com' },
 ]
 
+/** API 卡片展开还是收起，按 API 记在本地 */
+const FOLD = 'api-open:'
+
 /** 哪些 CLI 能用这个协议的 API */
 const usedBy = (p: ApiProtocol) => CLIS.filter((c) => c.auth?.api?.protocols.includes(p)).map((c) => c.name)
 
@@ -53,35 +57,39 @@ const usedBy = (p: ApiProtocol) => CLIS.filter((c) => c.auth?.api?.protocols.inc
  */
 export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (list: ApiConfig[]) => void }) {
   const patch = (id: string, p: Partial<ApiConfig>) => onChange(apis.map((a) => (a.id === id ? { ...a, ...p } : a)))
+  // 这次打开设置后新加的 API 展开显示，接着就要填；之前配好的默认收起
+  const [fresh, setFresh] = useState<string[]>([])
+  const append = (a: ApiConfig) => {
+    setFresh((f) => [...f, a.id])
+    onChange([...apis, a])
+  }
   const add = (preset?: (typeof PRESETS)[number]) =>
-    onChange([
-      ...apis,
-      {
-        id: crypto.randomUUID().slice(0, 8),
-        name: preset?.label ?? t('自定义 API'),
-        provider: '',
-        protocol: preset?.protocol ?? 'openai-chat',
-        baseUrl: preset?.baseUrl ?? '',
-        apiKey: '',
-        authHeader: 'x-api-key',
-        models: [],
-        modelMap: {},
-        modelEfforts: {},
-      },
-    ])
+    append({
+      id: crypto.randomUUID().slice(0, 8),
+      name: preset?.label ?? t('自定义 API'),
+      provider: '',
+      protocol: preset?.protocol ?? 'openai-chat',
+      baseUrl: preset?.baseUrl ?? '',
+      apiKey: '',
+      authHeader: 'x-api-key',
+      models: [],
+      modelMap: {},
+      modelEfforts: {},
+    })
   return (
     <Group>
       <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 CLI 配置文件；模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
+          '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
         )}
       </p>
       <div className="flex flex-col gap-4">
-        <DetectedApis apis={apis} onAdd={(a) => onChange([...apis, a])} />
+        <DetectedApis apis={apis} onAdd={append} />
         {apis.map((a) => (
           <ApiCard
             key={a.id}
             a={a}
+            fresh={fresh.includes(a.id)}
             onChange={(p) => patch(a.id, p)}
             onRemove={() => onChange(apis.filter((x) => x.id !== a.id))}
           />
@@ -105,10 +113,13 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
 
 function ApiCard({
   a,
+  fresh,
   onChange,
   onRemove,
 }: {
   a: ApiConfig
+  /** 刚加进来的：默认展开 */
+  fresh?: boolean
   onChange: (p: Partial<ApiConfig>) => void
   onRemove: () => void
 }) {
@@ -122,6 +133,20 @@ function ApiCard({
   /** 名称先存草稿，点「保存」才写进设置（改名称会改变写进 CLI 配置的 provider） */
   const [name, setName] = useState(a.name)
   const [updating, setUpdating] = useState(false)
+  // 每个 API 都能收起；配好的（有地址或密钥、有模型）默认收起，刚加的和没配完的默认展开。手动展开收起过就按记下的来
+  const [open, setOpenState] = useState(() => {
+    try {
+      const saved = localStorage.getItem(FOLD + a.id)
+      if (saved) return saved === 'open'
+    } catch {}
+    return !!fresh || !a.models.length || !(a.apiKey || a.baseUrl)
+  })
+  const setOpen = (v: boolean) => {
+    setOpenState(v)
+    try {
+      localStorage.setItem(FOLD + a.id, v ? 'open' : 'closed')
+    } catch {}
+  }
   const modelCatalog = useModelCatalog()
   const busy = fetching || testing
   const canProbe = !!a.baseUrl.trim() || a.protocol === 'gemini'
@@ -262,9 +287,9 @@ function ApiCard({
     setUpdating(true)
     try {
       const { clis } = await api.applyApi(a.id)
-      if (!clis.length) toast.info(t('还没有 CLI 在用这个 API'))
+      if (!clis.length) toast.info(t('还没有 Agent 在用这个 API'))
       else {
-        toast.success(t('已更新 {n} 个 CLI 的配置文件', { n: clis.length }))
+        toast.success(t('已更新 {n} 个 Agent 的配置文件', { n: clis.length }))
         // 写进配置文件后模型列表可能变了：重新读一次
         void Promise.all(clis.map((id) => loadCliModels(id, true).catch(() => {})))
       }
@@ -277,275 +302,312 @@ function ApiCard({
   return (
     <div className="flex flex-col gap-3 rounded-xl border bg-field/30 p-4">
       <div className="flex items-center gap-2">
-        <div className="min-w-0 flex-1">
-          <ComboInput
-            value={name}
-            maxLength={60}
-            onChange={setName}
-            onPick={pickVendor}
-            onKeyDown={(e) => e.key === 'Enter' && saveName()}
-            suggestions={API_VENDORS.map((v) => ({ value: v.name, label: Object.values(v.urls)[0] }))}
-            placeholder={t('选择厂家，或输入名称')}
-            aria-label={t('API 名称')}
-            className="h-9 font-medium"
-          />
-        </div>
-        <Button size="sm" variant="secondary" disabled={!name.trim() || name.trim() === a.name} onClick={saveName}>
-          {t('保存')}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-expanded={open}
+          aria-label={open ? t('收起') : t('展开')}
+          title={open ? t('收起') : t('展开')}
+          onClick={() => setOpen(!open)}
+          className="-ml-1.5 shrink-0"
+        >
+          <ChevronRight className={cn('h-4 w-4 transition-transform', open && 'rotate-90')} />
         </Button>
+        {!open ? (
+          // 收起时只留一行：名字和协议、模型数，点哪里都能展开
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="flex min-w-0 flex-1 items-baseline gap-2 truncate rounded-md py-1 text-left"
+          >
+            <span className="truncate font-medium">{a.name}</span>
+            <span className="truncate text-[0.75rem] text-subtle">
+              {[
+                API_PROTOCOL_LABEL[a.protocol],
+                a.models.length ? t('{n} 个模型', { n: a.models.length }) : t('还没有模型'),
+              ].join(' · ')}
+            </span>
+          </button>
+        ) : (
+          <div className="min-w-0 flex-1">
+            <ComboInput
+              value={name}
+              maxLength={60}
+              onChange={setName}
+              onPick={pickVendor}
+              onKeyDown={(e) => e.key === 'Enter' && saveName()}
+              suggestions={API_VENDORS.map((v) => ({ value: v.name, label: Object.values(v.urls)[0] }))}
+              placeholder={t('选择厂家，或输入名称')}
+              aria-label={t('API 名称')}
+              className="h-9 font-medium"
+            />
+          </div>
+        )}
+        {open && (
+          <Button size="sm" variant="secondary" disabled={!name.trim() || name.trim() === a.name} onClick={saveName}>
+            {t('保存')}
+          </Button>
+        )}
         <Button variant="ghost" size="icon-sm" aria-label={t('删除 {name}', { name: a.name })} onClick={onRemove}>
           <Trash2 className="h-4 w-4" />
         </Button>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
-          {t('协议')}
-          <Select
-            aria-label={t('协议')}
-            value={a.protocol}
-            onChange={(e) => setProtocol(e.target.value as ApiProtocol)}
-            options={API_PROTOCOLS.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
-          {t('接口地址')}
-          <Input
-            value={a.baseUrl}
-            onChange={(e) => onChange({ baseUrl: e.target.value })}
-            placeholder="https://api.example.com/v1"
-            spellCheck={false}
-            aria-label={t('接口地址')}
-            className="h-9 font-mono text-[0.8125rem]"
-          />
-        </label>
-        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
-          {t('提供方 ID')}
-          <Input
-            value={a.provider}
-            onChange={(e) => onChange({ provider: e.target.value })}
-            placeholder={t('留空时用 API 名称生成')}
-            spellCheck={false}
-            aria-label={t('提供方 ID')}
-            className="h-9 font-mono text-[0.8125rem]"
-          />
-          <span className="text-[0.71875rem] text-subtle">
-            {t('写进 CLI 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 CLI 也用它拼模型 ID。', {
-              provider: apiProvider(a),
-            })}
-          </span>
-        </label>
-        <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
-          {t('密钥')}
-          <span className="flex gap-1.5">
-            <Input
-              type={show ? 'text' : 'password'}
-              value={a.apiKey}
-              onChange={(e) => onChange({ apiKey: e.target.value })}
-              placeholder="sk-…"
-              spellCheck={false}
-              autoComplete="off"
-              aria-label={t('密钥')}
-              className="h-9 min-w-0 flex-1 font-mono text-[0.8125rem]"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              className="h-9 w-9"
-              aria-label={show ? t('隐藏密钥') : t('显示密钥')}
-              onClick={() => setShow(!show)}
-            >
-              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </Button>
-          </span>
-        </label>
-        {a.protocol === 'anthropic' && (
-          <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
-            {t('密钥的发送方式')}
-            <Select
-              aria-label={t('密钥的发送方式')}
-              value={a.authHeader}
-              onChange={(e) => onChange({ authHeader: e.target.value as ApiConfig['authHeader'] })}
-              options={[
-                { value: 'x-api-key', label: 'x-api-key（ANTHROPIC_API_KEY）' },
-                { value: 'bearer', label: 'Authorization: Bearer（ANTHROPIC_AUTH_TOKEN）' },
-              ]}
-            />
-          </label>
-        )}
-      </div>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
-          <span className="flex-1" />
-          <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={testConnection}>
-            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
-            {t('测试连接')}
-          </Button>
-          <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={fetchModels}>
-            {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-            {t('从接口获取')}
-          </Button>
-        </div>
-        {probe && (
-          <div
-            className={cn(
-              'flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[0.75rem]',
-              probe.ok ? 'border-success/40 bg-success/5 text-success' : 'border-danger/40 bg-danger/5 text-danger',
-            )}
-          >
-            {probe.ok ? (
-              <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            ) : (
-              <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            )}
-            <span className="min-w-0 flex-1 break-words">{probe.message}</span>
-            {!probe.ok && (
-              <AiFixButton
-                variant="ghost"
-                className="h-6 shrink-0 px-1.5 text-xs"
-                label={t('AI 修复')}
-                issue={() => ({
-                  title: t('API 连接失败：{name}', { name: a.name }),
-                  error: probe.message,
-                  context: [
-                    `API 名称：${a.name}`,
-                    `协议：${a.protocol}`,
-                    `接口地址：${a.baseUrl || '（空）'}`,
-                    `提供方 ID：${apiProvider(a)}`,
-                    `密钥：${a.apiKey ? '已填写' : '未填写'}`,
-                    `已选模型：${a.models.join(', ') || '（空）'}`,
-                  ].join('\n'),
-                  topic: 'api',
-                })}
-              />
-            )}
-          </div>
-        )}
-        {/* 一个模型一行：默认思考强度和映射模型都按模型配；别的协议后缀的模型不显示 */}
-        {modelsForProtocol(a.models, a.protocol).map((m, i) => (
-          <div
-            key={m}
-            className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-2.5 py-2"
-            title={i === 0 ? t('第一个是默认模型') : undefined}
-          >
-            <span className="min-w-0 flex-1 basis-48 truncate font-mono text-[0.78125rem]">
-              {m}
-              {i === 0 && (
-                <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>
-              )}
-            </span>
-            <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
-              {t('默认思考强度')}
+      {open && (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
+              {t('协议')}
               <Select
-                aria-label={t('{model} 的默认思考强度', { model: m })}
-                className="h-7 w-28 text-[0.75rem]"
-                value={a.modelEfforts[m] ?? ''}
-                options={effortOptions(m)}
-                onChange={(e) => setEffort(m, e.target.value)}
+                aria-label={t('协议')}
+                value={a.protocol}
+                onChange={(e) => setProtocol(e.target.value as ApiProtocol)}
+                options={API_PROTOCOLS.map((p) => ({ value: p, label: API_PROTOCOL_LABEL[p] }))}
               />
             </label>
-            <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
-              {t('映射模型')}
-              <Select
-                aria-label={t('{model} 的映射模型', { model: m })}
-                className="h-7 w-56 font-mono text-[0.75rem]"
-                value={a.modelMap[m] ?? ''}
-                options={mapOptions(m, a.modelMap[m])}
-                onChange={(e) => setMap(m, e.target.value)}
-              />
-            </label>
-            <button
-              type="button"
-              aria-label={t('移除 {name}', { name: m })}
-              onClick={() => toggle(m)}
-              className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
-            >
-              <X className="h-3 w-3" />
-            </button>
-          </div>
-        ))}
-        <form
-          className="flex flex-wrap items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault()
-            addDraft()
-          }}
-        >
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={addDraft}
-            placeholder={t('自己输入模型名，回车添加')}
-            aria-label={t('添加模型')}
-            spellCheck={false}
-            className="h-8 w-56 font-mono text-[0.75rem]"
-          />
-          <span className="text-[0.71875rem] text-subtle">
-            {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 CLI 的仍然是这里的模型名。')}
-          </span>
-        </form>
-        {found && (
-          <div className="flex flex-col gap-2 rounded-lg border bg-card p-2.5">
-            <div className="flex items-center gap-2">
+            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
+              {t('接口地址')}
               <Input
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                placeholder={t('在 {n} 个模型里搜索', { n: found.length })}
-                aria-label={t('搜索模型')}
-                className="h-8 min-w-0 flex-1 text-[0.78125rem]"
+                value={a.baseUrl}
+                onChange={(e) => onChange({ baseUrl: e.target.value })}
+                placeholder="https://api.example.com/v1"
+                spellCheck={false}
+                aria-label={t('接口地址')}
+                className="h-9 font-mono text-[0.8125rem]"
               />
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => onChange({ models: [...new Set([...a.models, ...shown])] })}
-              >
-                {t('添加全部')}
-              </Button>
-              <Button size="icon-sm" variant="ghost" aria-label={t('收起')} onClick={() => setFound(undefined)}>
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-            <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
-              {shown.map((m) => {
-                const on = a.models.includes(m)
-                return (
-                  <button
-                    key={m}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => toggle(m)}
-                    className={cn(
-                      'inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 font-mono text-[0.75rem] transition-colors',
-                      on ? 'border-accent/50 bg-accent-soft text-accent' : 'hover:bg-sel',
-                    )}
-                  >
-                    {on && <Check className="h-3 w-3" strokeWidth={3} />}
-                    {m}
-                  </button>
-                )
-              })}
-              {!shown.length && <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>}
-            </div>
+            </label>
+            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+              {t('提供方 ID')}
+              <Input
+                value={a.provider}
+                onChange={(e) => onChange({ provider: e.target.value })}
+                placeholder={t('留空时用 API 名称生成')}
+                spellCheck={false}
+                aria-label={t('提供方 ID')}
+                className="h-9 font-mono text-[0.8125rem]"
+              />
+              <span className="text-[0.71875rem] text-subtle">
+                {t(
+                  '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。',
+                  {
+                    provider: apiProvider(a),
+                  },
+                )}
+              </span>
+            </label>
+            <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
+              {t('密钥')}
+              <span className="flex gap-1.5">
+                <Input
+                  type={show ? 'text' : 'password'}
+                  value={a.apiKey}
+                  onChange={(e) => onChange({ apiKey: e.target.value })}
+                  placeholder="sk-…"
+                  spellCheck={false}
+                  autoComplete="off"
+                  aria-label={t('密钥')}
+                  className="h-9 min-w-0 flex-1 font-mono text-[0.8125rem]"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  className="h-9 w-9"
+                  aria-label={show ? t('隐藏密钥') : t('显示密钥')}
+                  onClick={() => setShow(!show)}
+                >
+                  {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </Button>
+              </span>
+            </label>
+            {a.protocol === 'anthropic' && (
+              <label className="flex flex-col gap-1 text-[0.75rem] text-subtle">
+                {t('密钥的发送方式')}
+                <Select
+                  aria-label={t('密钥的发送方式')}
+                  value={a.authHeader}
+                  onChange={(e) => onChange({ authHeader: e.target.value as ApiConfig['authHeader'] })}
+                  options={[
+                    { value: 'x-api-key', label: 'x-api-key（ANTHROPIC_API_KEY）' },
+                    { value: 'bearer', label: 'Authorization: Bearer（ANTHROPIC_AUTH_TOKEN）' },
+                  ]}
+                />
+              </label>
+            )}
           </div>
-        )}
-      </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <p className="min-w-0 flex-1 text-[0.75rem] text-subtle">
-          {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
-        </p>
-        {/* 改 API 不会自动改 CLI 的配置文件，点这里才写进去 */}
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={updating}
-          onClick={() => void applyApi()}
-          title={t('把现在的接口地址、密钥和模型写进正在用这个 API 的 CLI 配置文件')}
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', updating && 'animate-spin')} />
-          {t('一键更新')}
-        </Button>
-      </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
+              <span className="flex-1" />
+              <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={testConnection}>
+                {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlugZap className="h-3.5 w-3.5" />}
+                {t('测试连接')}
+              </Button>
+              <Button size="sm" variant="secondary" disabled={busy || !canProbe} onClick={fetchModels}>
+                {fetching ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+                {t('从接口获取')}
+              </Button>
+            </div>
+            {probe && (
+              <div
+                className={cn(
+                  'flex items-start gap-2 rounded-lg border px-2.5 py-2 text-[0.75rem]',
+                  probe.ok ? 'border-success/40 bg-success/5 text-success' : 'border-danger/40 bg-danger/5 text-danger',
+                )}
+              >
+                {probe.ok ? (
+                  <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="min-w-0 flex-1 break-words">{probe.message}</span>
+                {!probe.ok && (
+                  <AiFixButton
+                    variant="ghost"
+                    className="h-6 shrink-0 px-1.5 text-xs"
+                    label={t('AI 修复')}
+                    issue={() => ({
+                      title: t('API 连接失败：{name}', { name: a.name }),
+                      error: probe.message,
+                      context: [
+                        `API 名称：${a.name}`,
+                        `协议：${a.protocol}`,
+                        `接口地址：${a.baseUrl || '（空）'}`,
+                        `提供方 ID：${apiProvider(a)}`,
+                        `密钥：${a.apiKey ? '已填写' : '未填写'}`,
+                        `已选模型：${a.models.join(', ') || '（空）'}`,
+                      ].join('\n'),
+                      topic: 'api',
+                    })}
+                  />
+                )}
+              </div>
+            )}
+            {/* 一个模型一行：默认思考强度和映射模型都按模型配；别的协议后缀的模型不显示 */}
+            {modelsForProtocol(a.models, a.protocol).map((m, i) => (
+              <div
+                key={m}
+                className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-2.5 py-2"
+                title={i === 0 ? t('第一个是默认模型') : undefined}
+              >
+                <span className="min-w-0 flex-1 basis-48 truncate font-mono text-[0.78125rem]">
+                  {m}
+                  {i === 0 && (
+                    <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>
+                  )}
+                </span>
+                <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
+                  {t('默认思考强度')}
+                  <Select
+                    aria-label={t('{model} 的默认思考强度', { model: m })}
+                    className="h-7 w-28 text-[0.75rem]"
+                    value={a.modelEfforts[m] ?? ''}
+                    options={effortOptions(m)}
+                    onChange={(e) => setEffort(m, e.target.value)}
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
+                  {t('映射模型')}
+                  <Select
+                    aria-label={t('{model} 的映射模型', { model: m })}
+                    className="h-7 w-56 font-mono text-[0.75rem]"
+                    value={a.modelMap[m] ?? ''}
+                    options={mapOptions(m, a.modelMap[m])}
+                    onChange={(e) => setMap(m, e.target.value)}
+                  />
+                </label>
+                <button
+                  type="button"
+                  aria-label={t('移除 {name}', { name: m })}
+                  onClick={() => toggle(m)}
+                  className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            ))}
+            <form
+              className="flex flex-wrap items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault()
+                addDraft()
+              }}
+            >
+              <Input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={addDraft}
+                placeholder={t('自己输入模型名，回车添加')}
+                aria-label={t('添加模型')}
+                spellCheck={false}
+                className="h-8 w-56 font-mono text-[0.75rem]"
+              />
+              <span className="text-[0.71875rem] text-subtle">
+                {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 Agent 的仍然是这里的模型名。')}
+              </span>
+            </form>
+            {found && (
+              <div className="flex flex-col gap-2 rounded-lg border bg-card p-2.5">
+                <div className="flex items-center gap-2">
+                  <Input
+                    value={filter}
+                    onChange={(e) => setFilter(e.target.value)}
+                    placeholder={t('在 {n} 个模型里搜索', { n: found.length })}
+                    aria-label={t('搜索模型')}
+                    className="h-8 min-w-0 flex-1 text-[0.78125rem]"
+                  />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => onChange({ models: [...new Set([...a.models, ...shown])] })}
+                  >
+                    {t('添加全部')}
+                  </Button>
+                  <Button size="icon-sm" variant="ghost" aria-label={t('收起')} onClick={() => setFound(undefined)}>
+                    <X className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto">
+                  {shown.map((m) => {
+                    const on = a.models.includes(m)
+                    return (
+                      <button
+                        key={m}
+                        type="button"
+                        aria-pressed={on}
+                        onClick={() => toggle(m)}
+                        className={cn(
+                          'inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 font-mono text-[0.75rem] transition-colors',
+                          on ? 'border-accent/50 bg-accent-soft text-accent' : 'hover:bg-sel',
+                        )}
+                      >
+                        {on && <Check className="h-3 w-3" strokeWidth={3} />}
+                        {m}
+                      </button>
+                    )
+                  })}
+                  {!shown.length && <span className="text-[0.75rem] text-subtle">{t('没有匹配的模型')}</span>}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 text-[0.75rem] text-subtle">
+              {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
+            </p>
+            {/* 改 API 不会自动改 CLI 的配置文件，点这里才写进去 */}
+            <Button
+              size="sm"
+              variant="secondary"
+              disabled={updating}
+              onClick={() => void applyApi()}
+              title={t('把现在的接口地址、密钥和模型写进正在用这个 API 的 Agent 配置文件')}
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', updating && 'animate-spin')} />
+              {t('一键更新')}
+            </Button>
+          </div>
+        </>
+      )}
     </div>
   )
 }

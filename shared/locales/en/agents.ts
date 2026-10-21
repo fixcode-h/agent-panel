@@ -36,10 +36,10 @@ export const EN_AGENTS: Record<string, string> = {
   子角色: 'Sub-roles',
   '已删除「{name}」': 'Deleted “{name}”',
   未命名角色: 'Untitled role',
-  'CLI 未安装': 'CLI not installed',
+  'Agent 未安装': 'Agent not installed',
   还没有简介: 'No description yet',
   '名称为空，未保存': 'Name is empty, not saved',
-  '让本机 CLI 按你的要求优化': 'Have a local CLI refine it to your requirements',
+  '让本机 Agent 按你的要求优化': 'Have a local agent refine it to your requirements',
   'AI 优化': 'AI refine',
   基本信息: 'Basics',
   名称不能为空: 'Name is required',
@@ -47,18 +47,16 @@ export const EN_AGENTS: Record<string, string> = {
   一句话说明它擅长什么: 'One line on what it’s good at',
   图标: 'Icon',
   运行环境: 'Runtime',
-  '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。':
-    'The built-in default role always uses the default CLI with its default model and effort, currently {cli} · {model} · {effort}. They follow the default CLI and model in Settings. In a chat, you can switch model and effort for the moment next to the input box.',
-  '跟随默认 CLI（现在是 {cli}）': 'Follow the default CLI ({cli} for now)',
-  '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。':
-    'When the default CLI changes in Settings, this role switches too, using the same tier’s model on the new CLI. Uncheck to pin a specific CLI.',
-  '三档对应的模型在设置里每个 CLI 下配置': 'The model for each tier is configured per CLI in Settings',
+  '跟随默认 Agent（现在是 {cli}）': 'Follow the default agent ({cli} for now)',
+  '在设置里换了默认 Agent，这个角色也跟着换，模型换成新 Agent 同一档位的模型。取消后可以固定用某个 Agent。':
+    'When the default agent changes in Settings, this role switches too, using the same tier’s model on the new agent. Uncheck to pin a specific agent.',
+  '三档对应的模型在设置里每个 Agent 下配置': 'The model for each tier is configured per agent in Settings',
   '越高想得越久、越慢。选档位时默认用档位的思考强度。':
     'Higher means more thinking and slower responses. With a tier, the tier’s effort is used by default.',
   权限: 'Permissions',
   额外参数: 'Extra arguments',
-  '追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。':
-    'Arguments appended to the CLI, separated by spaces. Quote values that contain spaces.',
+  '追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。':
+    'Arguments appended to the agent, separated by spaces. Quote values that contain spaces.',
   '例如：--add-dir ../shared': 'e.g. --add-dir ../shared',
   所在工作流: 'Used in workflows',
   '还没有工作流使用它。': 'No workflow uses it yet.',
@@ -117,25 +115,25 @@ export const EN_AGENTS: Record<string, string> = {
   子流程: 'Subflow',
   '应用时会先创建 {n} 个新角色：{names}。': 'Applying will first create {n} new roles: {names}.',
   工作流说明: 'Workflow doc',
-  '格式不对，正在让 CLI 修正': 'Invalid format, asking the CLI to fix it',
+  '格式不对，正在让 Agent 修正': 'Invalid format, asking the agent to fix it',
   '正在写配置（已写 {n} 字）': 'Writing config ({n} characters so far)',
   正在写说明: 'Writing',
   正在思考: 'Thinking',
   '{cli} 正在生成': '{cli} is generating',
   '{n} 秒': '{n}s',
   '这次用 {model}': 'Using {model} this time',
-  'CLI 自动选择的模型': 'the model the CLI picks',
+  'Agent 自动选择的模型': 'the model the agent picks',
   '用 AI 创建角色': 'Create role with AI',
-  '本机 CLI 按固定格式生成角色，校验通过后在右侧预览，确认再应用':
-    'A local CLI generates the role in a fixed format. Once validated, preview it on the right and apply when ready',
+  '本机 Agent 按固定格式生成角色，校验通过后在右侧预览，确认再应用':
+    'A local agent generates the role in a fixed format. Once validated, preview it on the right and apply when ready',
   '描述你想要的角色，越具体越好。可以从下面的例子开始：':
     'Describe the role you want. The more specific, the better. Start from an example:',
   描述你想要的角色: 'Describe the role you want',
   生成的角色会显示在这里: 'The generated role will appear here',
   创建角色: 'Create role',
   '用 AI 创建工作流': 'Create workflow with AI',
-  '本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用':
-    'A local CLI generates the workflow in a fixed format. Once validated, preview it on the right and apply when ready',
+  '本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用':
+    'A local agent generates the workflow in a fixed format. Once validated, preview it on the right and apply when ready',
   '描述你想要的工作流，越具体越好。可以从下面的例子开始：':
     'Describe the workflow you want. The more specific, the better. Start from an example:',
   描述你想要的工作流: 'Describe the workflow you want',
@@ -171,21 +169,21 @@ export const EN_AGENTS: Record<string, string> = {
   新角色: 'New role',
   '{name} 副本': '{name} copy',
   '检测失败：{error}': 'Detection failed: {error}',
-  '还没有启用 CLI，去设置里启用': 'No CLI enabled yet. Enable one in Settings',
-  '描述需求，让本机 CLI 生成角色': 'Describe what you need and let a local CLI generate the role',
+  '还没有启用 Agent，去设置里启用': 'No agent enabled yet. Enable one in Settings',
+  '描述需求，让本机 Agent 生成角色': 'Describe what you need and let a local agent generate the role',
   'AI 创建': 'Create with AI',
   重新检测: 'Detect again',
   '可用 · {version}': 'Available · {version}',
   这个分类还没有角色: 'No roles in this category yet',
   没有匹配的角色: 'No matching roles',
   创建第一个角色: 'Create your first role',
-  '角色是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。':
-    'A role combines a CLI, a model and instructions. Organize them by category, then team them up in workflows.',
+  '角色是「Agent + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。':
+    'A role combines an agent, a model and instructions. Organize them by category, then team them up in workflows.',
   新建角色: 'New role',
 
   // 就绪检查
-  'CLI 已安装': 'CLI installed',
-  '未知的 CLI：{cli}': 'Unknown CLI: {cli}',
+  'Agent 已安装': 'Agent installed',
+  '未知的 Agent：{cli}': 'Unknown agent: {cli}',
   '{cli} 已在设置中停用': '{cli} is disabled in Settings',
   '没有找到 {cmd}，安装后或在设置里填写路径': '{cmd} not found. Install it or set its path in Settings',
   已启用: 'Enabled',
@@ -199,8 +197,8 @@ export const EN_AGENTS: Record<string, string> = {
   建议写清楚它的职责和交付标准: 'Describe its responsibilities and what it should deliver',
   未命名节点: 'Untitled node',
   已选择主角色: 'Main role selected',
-  '主角色执行没指定角色的节点，并处理追加要求':
-    'The main role runs nodes without an assigned role and handles follow-up requests',
+  '没选时，没指定角色的节点直接用默认 Agent，不带角色设定':
+    'When none is chosen, nodes without a role run on the default agent with no role prompt',
   团队成员都可运行: 'All team members can run',
   '共 {n} 个角色': '{n} roles',
   已设计流程: 'Flow designed',
@@ -261,6 +259,7 @@ export const EN_AGENTS: Record<string, string> = {
   子对话默认使用: 'Default for sub-conversations',
   所有项目文档按规则落盘: 'Writes every project document by the rules',
   '构建、测试和验收': 'Build, test and acceptance',
+  派出的并行子任务默认使用: 'Default for parallel subtasks that get spawned',
   必备角色不能删除: "Core roles can't be deleted",
   角色: 'Roles',
   交给角色: 'Role',

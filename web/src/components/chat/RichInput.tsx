@@ -1,4 +1,4 @@
-// 输入框本体：能放文字，也能放行内卡片（Skill、命令、图片、文件）。
+// 输入框本体：能放文字，也能放行内卡片（Skill、命令、图片、文件、引用）。
 // 卡片是 contenteditable="false" 的元素，光标停在它旁边按一次退格就整张删掉；
 // 文字里的表示见 shared/composer.ts 的标记。
 import {
@@ -13,6 +13,7 @@ import {
 import { chipMarker, removeChip, segments, type Chip, type ChipKind } from '@shared/composer'
 import { cn } from '@/lib/utils'
 import { scrollCaretIntoView } from '@/lib/caret'
+import { quoteLabel, quoteText } from '@/lib/quote'
 import { t } from '@shared/i18n'
 
 export interface RichInputHandle {
@@ -62,6 +63,10 @@ const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string; accent?: boo
     icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 17 6-10"/>',
     prefix: '/',
     accent: true,
+  },
+  // 引用对话里的一段：lucide 的 text-quote
+  quote: {
+    icon: '<path d="M17 6H3"/><path d="M21 12H8"/><path d="M21 18H8"/><path d="M3 12v6"/>',
   },
 }
 
@@ -116,7 +121,8 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   const act = actions?.()
-  el.title = t('按退格键删除')
+  // 引用卡片只显示开头一小段，鼠标停上去看完整原文
+  el.title = chip.kind === 'quote' ? quoteText(chip.name) || t('按退格键删除') : t('按退格键删除')
   if (!src) {
     // 没有缩略图的卡片前面放类型图标：文件、技能、命令一眼能分开
     const icon = document.createElement('span')
@@ -139,7 +145,7 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   }
   const label = document.createElement('span')
   label.className = cn('truncate', isCommand(chip.kind) && 'font-mono')
-  label.textContent = `${style.prefix ?? ''}${chip.name}`
+  label.textContent = `${style.prefix ?? ''}${chip.kind === 'quote' ? quoteLabel(chip.name) : chip.name}`
   el.append(label)
   // 每张卡片都能点右上角删除：附件交给页面去掉（连同上传的文件），其他的直接从输入框里拿掉
   el.append(

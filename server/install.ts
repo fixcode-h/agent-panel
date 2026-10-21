@@ -206,7 +206,7 @@ export function installApi() {
 
   routes.post('/:id/:action{install|uninstall}', (c) => {
     const def = getCli(c.req.param('id'))
-    if (!def) return c.json({ error: t('未知的 CLI') }, 404)
+    if (!def) return c.json({ error: t('未知的 Agent') }, 404)
     const action = c.req.param('action') as CliInstallJob['action']
     if ([...jobs.values()].some((j) => j.status === 'running'))
       return c.json({ error: t('有一个安装 / 卸载还在进行，请等它完成') }, 409)
@@ -231,7 +231,7 @@ export function installApi() {
 
   routes.get('/:id/update', async (c) => {
     const def = getCli(c.req.param('id'))
-    if (!def) return c.json({ error: t('未知的 CLI') }, 404)
+    if (!def) return c.json({ error: t('未知的 Agent') }, 404)
     const status = (await detectClis()).find((x) => x.id === def.id)
     let hit = latest.get(def.id)
     if (!hit || c.req.query('refresh') === '1' || Date.now() - hit.at > 30 * 60_000) {

@@ -351,7 +351,7 @@ try {
     await agentSwitch.click()
     await p.waitForTimeout(300)
     if ((await agentSwitch.getAttribute('aria-checked')) !== 'false') errors.push('新建任务：开关点一下没有关掉')
-    if (!(await p.getByTitle('对话用的 CLI').count())) errors.push('新建任务：关掉 Agent 后没有显示 CLI 选择')
+    if (!(await p.getByTitle('对话用的 Agent').count())) errors.push('新建任务：关掉 Agent 后没有显示 CLI 选择')
     await check(p, '新建任务-不用Agent')
     await agentSwitch.click()
   }
@@ -364,7 +364,7 @@ try {
     .catch(() => errors.push('对话页：没有打开输入框'))
   // 对话页输入框里只剩「提问」开关和 CLI / 模型，没有换 Agent 和改参数的地方
   if (!(await p.getByRole('button', { name: 'AI 有问题时问我' }).count())) errors.push('对话页：没有「提问」开关')
-  for (const name of ['参数', '无角色，直接用 CLI']) {
+  for (const name of ['参数', '无角色，直接用 Agent']) {
     if (await p.getByText(name, { exact: false }).count()) errors.push(`对话页：还能看到「${name}」`)
   }
   await check(p, '对话-不能换Agent和参数')
@@ -382,11 +382,11 @@ try {
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
   await p.getByRole('button', { name: '添加内置角色' }).first().click()
-  await check(p, '内置Agent', ['通用约束', 'UE 侦察', '代码侦察', '已添加'])
+  await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
   await p.keyboard.press('Escape')
   // Agent 的引入层级和参数的选项编辑（带序号的卡片、回车添加）
   // 角色页按「概览 / 角色设定 / 参数 / Skill 与开场白」分页
-  await p.getByText('开发者', { exact: true }).first().click()
+  await p.getByText('评审', { exact: true }).first().click()
   await p.getByRole('tab', { name: /^参数/ }).click()
   await p.getByRole('button', { name: /\{\{vcs\}\}/ }).click()
   await p.getByRole('textbox', { name: '新选项' }).fill('svn')
@@ -403,7 +403,7 @@ try {
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
   await p.getByRole('radio', { name: 'Skill', exact: true }).click()
   await p.getByText('commit-message', { exact: true }).first().click()
-  await check(p, 'Skill编辑', ['复制给别的 CLI', '保存'])
+  await check(p, 'Skill编辑', ['复制给别的 Agent', '保存'])
   await p.getByRole('button', { name: 'AI 优化' }).click()
   await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
   await p.keyboard.press('Enter')
@@ -561,9 +561,9 @@ try {
   await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
   await p.getByRole('button', { name: '风格库' }).click()
   await check(p, '设置-风格库', ['暗黑奇幻'])
-  await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
-  await p.getByText('添加其他 CLI').scrollIntoViewIfNeeded()
-  await check(p, '设置-CLI', ['添加其他 CLI', 'Gemini CLI'])
+  await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
+  await p.getByText('添加其他 Agent').scrollIntoViewIfNeeded()
+  await check(p, '设置-CLI', ['添加其他 Agent', 'Gemini CLI'])
   // 三档模型的上下文、最大输出：默认按模型自动填，手动改了能恢复自动；Codex 不接受最大输出
   await p.getByRole('dialog').getByText('Claude Code', { exact: true }).first().click()
   // 上下文和最大输出默认收在折叠里，点开第一档才看得到输入框
@@ -593,6 +593,9 @@ try {
   await p.getByRole('dialog').getByText('Pi', { exact: true }).first().click()
   await p.getByRole('button', { name: '安装', exact: true }).first().click()
   await p.getByText('安装完成').first().waitFor({ timeout: 8000 })
+  // 装好后才有的：开关（离线运行默认开着）和扩展包
+  await p.getByRole('list', { name: '已装的扩展包' }).scrollIntoViewIfNeeded()
+  await check(p, '设置-CLI-Pi扩展包', ['离线运行', '扩展包', 'npm:@example/pi-web-tools'])
   await p.getByRole('button', { name: '卸载', exact: true }).first().click()
   await p.getByRole('dialog').last().getByRole('button', { name: '卸载', exact: true }).click()
   await p.getByText('卸载没有成功').first().waitFor({ timeout: 8000 })
@@ -616,7 +619,7 @@ try {
   }
   // API 配置：识别到各个 CLI 自己配的 API，确认后存进列表
   await p.getByRole('button', { name: 'API 配置', exact: true }).first().click()
-  await check(p, '设置-API-识别', ['在本机 CLI 的配置里识别到 2 个 API', 'Codex · openrouter'])
+  await check(p, '设置-API-识别', ['在本机 Agent 的配置里识别到 2 个 API', 'Codex · openrouter'])
   await p.getByRole('button', { name: '存到 API 配置' }).first().click()
   await check(p, '设置-API-已存', ['已在列表中', '一键更新', '映射模型'])
   // 授权：检测外部 CLI，在面板里完成浏览器授权（演示里模拟），退出后回到未授权
@@ -644,11 +647,11 @@ try {
     .catch(() => errors.push('授权：退出后没有回到未授权'))
   await check(p, '设置-授权-已退出', ['未授权', '浏览器授权'])
   // 回到 CLI 的默认 CLI 页（部署在它下面）
-  await p.getByRole('button', { name: 'CLI', exact: true }).first().click()
-  await p.getByRole('dialog').getByText('默认 CLI', { exact: true }).first().click()
+  await p.getByRole('button', { name: 'Agent', exact: true }).first().click()
+  await p.getByRole('dialog').getByText('默认 Agent', { exact: true }).first().click()
   // 部署：全局说明写进各 CLI，技能默认不选，选了再部署
   await p.getByRole('button', { name: '部署', exact: true }).first().click()
-  await check(p, '设置-部署', ['全局说明（AGENTS.md）', '写到哪些 CLI', '要部署的技能', 'grilling'])
+  await check(p, '设置-部署', ['全局说明（AGENTS.md）', '写到哪些 Agent', '要部署的技能', 'grilling'])
   await p.getByRole('switch', { name: 'grilling' }).click()
   await p.getByRole('button', { name: '部署', exact: true }).last().click()
   await p

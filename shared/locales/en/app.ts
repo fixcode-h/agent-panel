@@ -197,11 +197,11 @@ export const EN_APP: Record<string, string> = {
     '# Project conventions\n\nNotes for coding assistants: common commands, layout, code style, gotchas…',
   还没有内容: 'Nothing here yet',
   '用 AI 优化 {file}': 'Optimize {file} with AI',
-  'CLI 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。':
-    "The CLI runs read-only in the project directory: it looks at the code, commands and layout, checks and fills in the notes, and doesn't change project files. You review the result first, then confirm to save.",
+  'Agent 会在项目目录里只读运行：看一下代码、命令和目录，核对并补全说明，不会改项目里的文件。结果先给你看，采用后再确认保存。':
+    "The agent runs read-only in the project directory: it looks at the code, commands and layout, checks and fills in the notes, and doesn't change project files. You review the result first, then confirm to save.",
   '想怎么改（可以不填），例如：补上测试命令，写得更简洁':
     'What to change (optional), e.g. add the test commands, make it more concise',
-  '没有可用的 CLI，请先在设置里安装并启用': 'No CLI available; install and enable one in Settings',
+  '没有可用的 Agent，请先在设置里安装并启用': 'No agent available; install and enable one in Settings',
   开始优化: 'Optimize',
   '正在查看：{files}': 'Looking at: {files}',
   '正在看项目…': 'Reading the project…',
@@ -211,24 +211,24 @@ export const EN_APP: Record<string, string> = {
   放弃: 'Discard',
   项目设置分类: 'Project settings sections',
   项目说明: 'Project notes',
-  '各个 CLI 读的说明': 'Notes each CLI reads',
+  '各个 Agent 读的说明': 'Notes each agent reads',
   '先创建项目，再编辑项目里的说明文件。': 'Create the project first, then edit its notes files.',
   '本地目录改了，先点「确认」保存，再编辑新目录里的说明文件。':
     'The local directory changed. Click Confirm to save first, then edit the notes in the new directory.',
   'AGENTS.md 放在项目根目录，Codex 和 Command Code 每次启动都会读它，写这个项目的约定、常用命令和注意事项。Claude Code 读的是 CLAUDE.md，可以在左边的 Claude Code 里编辑，或在 CLAUDE.md 里写一行 @AGENTS.md 引用它。':
     "AGENTS.md lives in the project root. Codex and Command Code read it on every start: put the project's conventions, common commands and gotchas here. Claude Code reads CLAUDE.md instead; edit it under Claude Code on the left, or add a line @AGENTS.md to CLAUDE.md to include this file.",
-  '检测到 AGENT.md，但各个 CLI 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。':
-    "Found AGENT.md, but the CLIs only read AGENTS.md (with an s), so this file isn't being read.",
+  '检测到 AGENT.md，但各个 Agent 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。':
+    "Found AGENT.md, but the agents only read AGENTS.md (with an s), so this file isn't being read.",
   '复制到 AGENTS.md': 'Copy to AGENTS.md',
-  'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。':
-    "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other CLIs, add a line @AGENTS.md to CLAUDE.md.",
+  'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。':
+    "Claude Code reads CLAUDE.md and .claude/CLAUDE.md on every start; CLAUDE.local.md holds personal notes and usually isn't committed. To share AGENTS.md with the other agents, add a line @AGENTS.md to CLAUDE.md.",
   'Codex 每次启动读 AGENTS.md，同目录有 AGENTS.override.md 时用它代替。AGENTS.md 和「项目说明」是同一个文件。':
     'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
   '{n} 个说明文件有改动': '{n} notes files changed',
-  '还没有启用 CLI': 'No CLI enabled yet',
+  '还没有启用 Agent': 'No agent enabled yet',
   '：检测到本机已安装 {name}，启用后就能运行角色和工作流。':
     ': {name} is installed on this machine. Enable it to run roles and workflows.',
-  '：先安装并启用一个 CLI，才能运行角色和工作流。': ': Install and enable a CLI to run roles and workflows.',
+  '：先安装并启用一个 Agent，才能运行角色和工作流。': ': Install and enable an agent to run roles and workflows.',
   '去启用 {name}': 'Enable {name}',
   // 提问弹窗关闭、项目右键一键归档/删除未运行的对话
   关闭并暂停对话: 'Close and pause the conversation',

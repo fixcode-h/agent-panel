@@ -7,7 +7,7 @@
  * 服务端和在线演示共用。
  */
 import { z } from 'zod'
-import { Agent, DEFAULT_AGENT_ID, TaskData, Workflow, type Task, type TaskStep } from './schema.ts'
+import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts'
 import { includedAgents } from './agent-role.ts'
 import { stepMs, stepUsage } from './task.ts'
 import { t } from './i18n.ts'
@@ -164,7 +164,7 @@ export function taskAgents(task: Pick<Task, 'agentId' | 'steps' | 'messages' | '
     const a = agents.find((x) => x.id === id)
     if (a) for (const x of includedAgents(a, agents)) ids.add(x.agent.id)
   }
-  return agents.filter((a) => ids.has(a.id))
+  return agents.filter((a) => a.id && ids.has(a.id))
 }
 
 /** 导出文件里的任务：去掉只在本机有意义的字段（会话、命令、项目、独立分支和等待中的请求） */
@@ -172,6 +172,8 @@ const ExportedTask = TaskData.omit({
   projectId: true,
   sessions: true,
   sessionCli: true,
+  sessionDir: true,
+  wantsWorktree: true,
   rewind: true,
   command: true,
   baseline: true,
@@ -209,6 +211,8 @@ export function exportTask(task: Task, agents: Agent[], app = '', now = new Date
     projectId: _p,
     sessions: _s,
     sessionCli: _sc,
+    sessionDir: _sd,
+    wantsWorktree: _ww,
     rewind: _r,
     command: _c,
     baseline: _b,
@@ -273,6 +277,7 @@ export function importTask(bundle: TaskExport, projectId: string, id: string, no
     projectId,
     title: b.task.title,
     sessions: {},
+    wantsWorktree: false,
     command: [],
     baseline: {},
     baseRef: '',
@@ -507,7 +512,7 @@ export function analysisPrompt(bundles: TaskExport[], focus = '') {
           .flatMap((f) => f.nodes.map((n) => `  - 节点 flowId: ${f.id}, nodeId: ${n.id}｜${n.title || n.id}`))
           .join('\n')}`,
     ),
-    ...[...agents.values()].filter((a) => a.id !== DEFAULT_AGENT_ID).map((a) => `- Agent agentId: ${a.id}｜${a.name}`),
+    ...[...agents.values()].filter((a) => a.id).map((a) => `- Agent agentId: ${a.id}｜${a.name}`),
   ]
   const one = bundles.length === 1 ? bundles[0].task : null
   const head = one

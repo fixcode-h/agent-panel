@@ -20,12 +20,19 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 起因：用户多次指出（v0.18 前后）。
 - 防线：人工。
 
-## 界面上 Agent 叫「角色」
+## 界面上配置的 Agent 叫「角色」，编码工具叫「Agent」
 
-- 规则：除了产品名、「Agent 模式」和「让 CLI 以 Agent 身份做事」这类说法，界面文案里的 Agent 都写「角色」（2dbcf97）。代码里的类型名不改。
+- 规则：配置出来的 Agent（角色设定 + CLI + 模型）在界面上写「角色」（2dbcf97）；编码工具本身（Claude Code、Codex、Pi…）在界面上写「Agent」，不写「CLI」，例如「默认 Agent」「本机 Agent」。「Gemini CLI」这类产品名、给开发者看的说明（CLI 定义、配置字段）照旧写 CLI。代码里的类型名、变量名不改。
+- 起因：用户问设置里的「默认 CLI」能不能叫 Agent，角色改名后 Agent 这个词空出来了。
 - 防线：人工。
 
 ## 视觉改动自己先截图看一遍
 
 - 规则：改了布局、弹窗、列表就跑 `node scripts/ui-check.mjs`，到 `ui-shots/` 看深浅两套主题；对照 Claude Code 的风格。用户会逐个指出小瑕疵，自己先挑掉。
 - 防线：`scripts/ui-check.mjs`（只检查文案在不在，不看好不好看）。
+
+## 面板自己产生的东西不冒充用户、不另起居中提示
+
+- 规则：面板推给 CLI 的内容（后台命令、合并编译、子任务结果）记成 `TaskMessage.panel` 的系统消息，界面画成 AI 回复里的一行；面板工具调用按「做了什么 + 对象名」显示（`panelTool`），不再另记居中的系统提示。
+- 起因：15c1a1d 把后台命令结果当用户消息推回，新建子对话又多记一条居中提示，用户要求改成工具条目。
+- 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`。

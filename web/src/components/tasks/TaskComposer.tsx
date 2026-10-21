@@ -12,7 +12,7 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
+import { type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
 import { resolveParams } from '@shared/agent-role'
 import { relatedTasks } from '@shared/related'
@@ -72,11 +72,11 @@ export function TaskComposer({
   // 项目里新建的对话默认用项目设置的 Agent。勾选「用项目 Agent」时按项目设置解析：
   // 没有设置、或那个 Agent 已删除/停用时不用角色，直接跟随 CLI；不勾选时一律不用 Agent 角色
   const [useAgent, setUseAgent] = useState(true)
-  // Chat 页的聊天不属于任何项目，固定用默认 Agent（和以前一样），不显示这个开关
-  const wanted = standalone ? DEFAULT_AGENT_ID : useAgent ? (project?.defaultAgentId ?? '') : ''
-  const agent = agents.find((a) => a.id === wanted && (a.enabled || a.id === DEFAULT_AGENT_ID))
-  const agentId = wanted && wanted !== DEFAULT_AGENT_ID && !agent ? '' : wanted
-  const byCli = !agentId || agentId === DEFAULT_AGENT_ID
+  // Chat 页的聊天不属于任何项目，不用角色、直接选 CLI，不显示这个开关
+  const wanted = standalone ? '' : useAgent ? (project?.defaultAgentId ?? '') : ''
+  const agent = agents.find((a) => a.id === wanted && a.enabled)
+  const agentId = agent ? wanted : ''
+  const byCli = !agentId
   // Agent 的参数在新建时选好，对话开始后不能再改。换 Agent 时把上一个 Agent 的值清掉
   const [params, setParams] = useState<ParamValues>({})
   const [paramsFor, setParamsFor] = useState(agentId)
@@ -84,20 +84,18 @@ export function TaskComposer({
     setParamsFor(agentId)
     setParams({})
   }
-  const agentParams = agent?.id === DEFAULT_AGENT_ID ? [] : (agent?.params ?? [])
+  const agentParams = agent?.params ?? []
   const missing = byCli || !agent ? [] : resolveParams(agentParams, params).missing
   // 开关只放图标，用来说明的话：项目没设置 Agent 时勾着也等于不用角色，要说清楚
   const agentTitle = !useAgent
-    ? t('直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）')
-    : agent && agent.id !== DEFAULT_AGENT_ID
+    ? t('直接和 Agent 对话，不带角色的角色设定（点一下改回用项目设置的角色）')
+    : agent
       ? t('这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）', { name: agent.name })
       : wanted && !agent
-        ? t('项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）')
-        : agentId === DEFAULT_AGENT_ID
-          ? t('这个对话用默认角色，CLI、模型和思考强度可以在开始前选（点一下改成不用角色）')
-          : t(
-              '项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）',
-            )
+        ? t('项目设置的角色已删除或停用，这个对话直接和 Agent 对话（点一下改成不用角色）')
+        : t(
+            '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）',
+          )
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
@@ -108,7 +106,13 @@ export function TaskComposer({
   const [workflowId, setWorkflowId] = useState('')
   const workflow = workflowId ? workflows.find((w) => w.id === workflowId) : undefined
   const [busy, setBusy] = useState(false)
-  const [isolate, setIsolate] = useState(false)
+  // 「独立分支」的初始值按项目设置；换了项目重新按那个项目的设置来
+  const [isolate, setIsolate] = useState(!!project?.isolateDefault)
+  const [isolateFor, setIsolateFor] = useState(project?.id)
+  if (isolateFor !== project?.id) {
+    setIsolateFor(project?.id)
+    setIsolate(!!project?.isolateDefault)
+  }
   const [askUser, setAskUser] = useNewAskUser()
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
@@ -261,7 +265,7 @@ export function TaskComposer({
       aria-label={t('独立分支')}
       onClick={() => setIsolate((v) => !v)}
       title={t(
-        '独立分支：在单独的 git 分支和目录里执行，不改动项目目录，完成后再决定合并还是丢弃；它分出的子对话也在这个目录里',
+        '独立分支：确定要改文件时才开单独的 git 分支和目录，在里面改，不改动项目目录，完成后再决定合并还是丢弃；之前只看代码、回答问题时仍在项目目录里',
       )}
       className={cn(
         chip,

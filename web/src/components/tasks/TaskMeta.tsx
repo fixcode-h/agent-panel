@@ -15,7 +15,6 @@ import { toast } from 'sonner'
 import { getCli } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, defaultSettings } from '@shared/settings'
 import type { StepUsage, Task, TaskStep } from '@shared/schema'
-import { DEFAULT_AGENT_ID } from '@shared/schema'
 import { topSteps } from '@shared/flow'
 import { fmtTokens, liveTps, stepLabel } from '@/lib/tasks'
 import { useData } from '@/lib/data'
@@ -154,7 +153,7 @@ function ContextChip({ lines }: { lines: ContextLine[] }) {
           />
         </span>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(440px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
         <ul className="flex flex-col gap-3 p-2.5">
           {lines.map((l) => (
             <ContextRow key={l.key} line={l} />
@@ -224,7 +223,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(320px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(320px,calc(100vw-24px))]">
         <div className="flex flex-col gap-2 p-2.5">
           <div className="flex items-baseline justify-between">
             <span className="font-mono text-base font-semibold tabular-nums">{fmtTokens(total)}</span>
@@ -270,8 +269,8 @@ function EnvChip({
   const idle = task.status !== 'running'
   const s = settings ?? defaultSettings()
   const found = agents.find((a) => a.id === task.agentId)
-  // 没有 Agent 角色（选了「无」或默认 Agent）的对话按 CLI 显示：名字和模型跟着对话现在用的 CLI
-  const byCli = task.mode === 'chat' && (!task.agentId || task.agentId === DEFAULT_AGENT_ID)
+  // 不用角色的对话按 CLI 显示：名字和模型跟着对话现在用的 CLI
+  const byCli = task.mode === 'chat' && !task.agentId
   const chatAgent = found && withTaskModel(found, task)
   const name =
     task.mode === 'workflow'
@@ -306,7 +305,7 @@ function EnvChip({
           </span>
         )}
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[min(440px,calc(100vw-24px))]">
+      <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
         <div className="flex flex-col gap-2.5 p-2.5 text-xs text-muted">
           <div className="flex items-center gap-2">
             <FolderOpen className="h-3.5 w-3.5 shrink-0 text-subtle" />
@@ -344,7 +343,7 @@ function EnvChip({
             <button
               type="button"
               disabled={!idle}
-              title={t('让 CLI 把之前的对话压缩成摘要，腾出上下文')}
+              title={t('让 Agent 把之前的对话压缩成摘要，腾出上下文')}
               onClick={async () => {
                 try {
                   onTask(await api.compactTask(task.id))
