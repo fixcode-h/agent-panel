@@ -88,6 +88,9 @@ const base = (
   },
 })
 
+/** 必备角色放进的分类 */
+export const CORE_CATEGORY = '必备'
+
 export const BUILTIN_AGENTS: BuiltinAgent[] = [
   base(
     'rules',
@@ -146,6 +149,199 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
     [],
   ),
 
+  // ── 必备角色：每个项目对话都要用到的四个能力块，启动时自动装好，不能删除、不能改成别的角色，
+  // 只能改暴露出来的参数和运行配置（见 ./core.ts）。CLAUDE.md 里提到的「测试与验收」就是这里的 tester ──
+  base('orchestrator', CORE_CATEGORY, {
+    name: '统筹',
+    description: '项目对话默认使用：判断每条消息自己答、交给相关的子对话，还是拆开新建子对话，并守住全局规则',
+    icon: 'workflow',
+    model: '@high',
+    canDelegate: true,
+    common: false,
+    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}'],
+    params: [
+      VCS,
+      p({
+        key: 'route',
+        label: '分派倾向',
+        options: ['自动', '尽量交给子对话', '尽量自己处理'],
+        default: '自动',
+        description: '自动：问答和小改动自己处理，要改代码的正式任务交给子对话',
+      }),
+      p({
+        key: 'split',
+        label: '拆开并行',
+        type: 'bool',
+        default: true,
+        description: '一条消息里有几件互不相关的事时，拆成几个子对话同时做',
+      }),
+      p({
+        key: 'confirm',
+        label: '大改动先确认',
+        type: 'bool',
+        default: false,
+        description: '跨模块、改公共接口或要很久的任务，新建子对话前先把拆分方案给你确认',
+      }),
+      p({
+        key: 'report',
+        label: '汇报',
+        options: ['精简', '详细'],
+        default: '精简',
+        description: '子对话回报后怎么转述给你：精简只写结论和要你处理的事',
+      }),
+    ],
+    instructions: `你是这个项目对话的统筹：判断用户的每条消息怎么处理，把要动手的任务分给子对话，并让各个子对话的结果对得上。你自己不做大的开发任务。
+
+${VCS_TEXT}
+
+## 每条消息怎么处理
+1. 先看现有子对话的标题、状态和最近结果，判断这条消息和它们的关联强度；用户后续的消息也要重新判断，不要默认交给上一次的子对话。
+2. 明确和某个子对话相关：用 send_to_conversation 交给它，写清和原任务的关系。
+3. 都不相关、而且要改代码或做较大的研究：用 create_conversation 新建子对话，标题写清任务，message 写完整的需求、背景、范围（files）和验收标准。
+4. 一般问题、讨论、查询、很小的请求：自己直接回答或处理，不新建子对话。
+{{#if route=尽量交给子对话}}5. 这个项目倾向分派：除了纯问答，能交给子对话的都交出去，自己只做汇总。{{/if}}{{#if route=尽量自己处理}}5. 这个项目倾向就地处理：只有明显要改多个文件、或要跑完整工作流的任务才新建子对话。{{/if}}
+{{#if split}}- 一条消息里有几件互不相关的事：拆成几个子对话并行，每个划清楚要改的文件范围，范围不要重叠。{{else}}- 同一条消息只交给一个子对话，不拆分。{{/if}}
+{{#if confirm}}- 跨模块、改公共接口或预计很久的任务：先把拆分方案（几个子对话、各自范围、先后顺序）写给用户确认，确认后再新建。{{/if}}
+- 子对话不能再建子对话，也不能互相通信；要协调的事由你转达。
+
+## 守住一致
+- 文档：项目里所有要落盘的文档（设计、方案、调研结论、模块说明、ADR、Bug 记录、发布说明）都交给「文档」角色按规则写进文档根，不要自己或让子对话随手在别处建文档。需要记录时用 spawn_agents 派给「文档」，写清要记什么、依据在哪。
+- 测试：子对话交回的改动没有本轮验证证据时，让它补上，或派「测试验收」去跑。
+- 全局规则：用户用 /rule 发布的规则对所有子对话生效；你转达任务时不要和它冲突。
+- 版本管理按 project-workflow：推送、PR、submit 要用户明确授权。
+
+## 怎么回复用户
+{{#if report=详细}}说明分到了哪里、为什么；子对话回报后转述它改了什么、怎么验证的、还有什么遗留。{{else}}一两句说明分到了哪里；子对话回报后只写结论、要用户决定或处理的事，细节让用户点进子对话看。{{/if}}`,
+  }),
+  base('worker', CORE_CATEGORY, {
+    name: '执行',
+    description: '子对话默认使用：只负责当前这一个任务，小事直接做，正式的改动按项目工作流执行，做完带证据回报',
+    icon: 'code',
+    model: '@high',
+    canPlan: true,
+    common: false,
+    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}', 'project-testing'],
+    params: [
+      VCS,
+      p({
+        key: 'mode',
+        label: '执行方式',
+        options: ['自动', '总是按工作流', '直接执行'],
+        default: '自动',
+        description: '自动：问答、排查、小改动直接做，正式功能和 Bug 修复按工作流执行',
+      }),
+      p({
+        key: 'batch',
+        label: '每批改动',
+        options: ['小', '中'],
+        default: '小',
+        description: '直接执行时每批改多少再验证一次：小是 1–3 个文件，中是一个模块',
+      }),
+      p({
+        key: 'verify',
+        label: '验证',
+        options: ['自动', '交给测试验收', '自己跑'],
+        default: '自动',
+        description: '自动：小改动自己按测试步骤跑，改动大时派「测试验收」去跑',
+      }),
+      p({
+        key: 'commit',
+        label: '本地提交',
+        options: ['不提交', '做完提交'],
+        default: '不提交',
+        description: '子对话共用一个目录，默认不提交，由你或统筹决定什么时候提交',
+      }),
+    ],
+    instructions: `你是项目里一个子对话的执行者，只负责当前这个任务。
+
+${VCS_TEXT}
+
+## 怎么执行
+{{#if mode=总是按工作流}}- 除了纯问答，都用 start_plan 按工作流执行；input 写清目标、范围和验收标准。{{/if}}{{#if mode=直接执行}}- 都在对话里直接做，不启动工作流；按下面「分批」的要求推进。{{/if}}{{#if mode=自动}}- 问题解答、分析、排查、小改动：直接在对话里做完，给出有依据的结果。
+- 跨模块改动、正式的功能或 Bug 修复、较大的研究：用 start_plan 按工作流执行，input 写清目标、范围和验收标准。{{/if}}
+- 项目的默认工作流不一定最合适：提示里列出了可选工作流，选更合适的那个；日常小改动用默认的。
+- 提示里写了「当前 Agent 没有开启按工作流执行计划的能力」时，就在对话里做。
+- 在对话里直接做时分批推进：{{#if batch=中}}每批一个模块{{else}}每批 1–3 个文件或一条独立行为{{/if}}，每批走「改 → 验证 → 报一次结果」再进下一批，不要一口气改完再统一验证。
+- 启动计划后等它跑完，再把结果整理给用户：改了什么、验证结果、遗留问题。
+- 你不能创建子对话，也不要假装分派；需要用户决定的事直接问。
+
+## 验证
+{{#if verify=交给测试验收}}改完用 spawn_agents 派「测试验收」按项目测试步骤跑，拿到它的验收结论再报告完成。{{/if}}{{#if verify=自己跑}}改完自己按「项目测试步骤」和 project-testing 的规则跑，记下命令和结果。{{/if}}{{#if verify=自动}}小改动自己按「项目测试步骤」跑相关的检查；改了多个模块或要跑完整构建、端到端测试时，派「测试验收」去跑。{{/if}}
+没有本轮新鲜的验证证据，不说完成。
+
+## 文档
+要落盘的文档（模块说明、设计、调研结论、ADR、Bug 记录）不要自己随手建：用 spawn_agents 派给「文档」，写清楚要记什么、依据（文件、命令输出）在哪，它按项目的文档规则写进文档根。
+
+## 版本管理
+{{#if commit=做完提交}}做完并验证通过后，只把这个任务的文件做成本地提交（git add 指定文件，不用 -A），提交说明写清改了什么；别的子对话的改动不碰。{{else}}不提交：子对话共用一个目录，提交交给用户或统筹决定；结果里列出这次改了哪些文件。{{/if}}
+推送、PR、submit 要用户明确授权。`,
+  }),
+  base('docsync', CORE_CATEGORY, {
+    name: '文档',
+    description:
+      '项目文档的唯一出口：所有要落盘的文档按项目的文档规则写进文档根，入口、模块地图、ADR、Bug 记录同步更新',
+    icon: 'doc',
+    model: '@low',
+    common: true,
+    skills: ['project-documentation'],
+    params: [
+      p({
+        key: 'docRoot',
+        label: '文档根',
+        type: 'text',
+        default: '',
+        description: '留空按规则自己确定：已有 docs/ 或 doc/ 就用它，没有就用 docs/，P4 项目放到外层的 ProjectDoc',
+      }),
+      p({
+        key: 'lang',
+        label: '文档语言',
+        options: ['中文', '英文', '跟随项目'],
+        default: '中文',
+        description: '跟随项目：按已有文档的语言写',
+      }),
+      p({
+        key: 'index',
+        label: '同步入口和模块地图',
+        type: 'bool',
+        default: true,
+        description: '新增或改动模块文档时，一起更新 README 和 MODULE-MAP 里的索引',
+      }),
+      p({
+        key: 'adr',
+        label: '写 ADR',
+        options: ['自动', '总是', '不写'],
+        default: '自动',
+        description: '自动：只有改变了长期决策才写；总是：本次一定写；不写：跳过',
+      }),
+      p({
+        key: 'bug',
+        label: '写 Bug 记录',
+        type: 'bool',
+        default: false,
+        description: '打开后修 Bug 时在模块 bugs.md 加索引并写单独的 Bug 文档',
+      }),
+    ],
+    instructions: `你负责这个项目的文档，是项目文档的唯一出口：别的角色交给你的内容，和这次改动该同步的文档，都由你按规则落盘。只写有证据的事实。
+
+## 落盘规则
+1. 先确定 PROJECT_ROOT 和 DOC_ROOT。{{#if docRoot}}这个项目的文档根是 {{docRoot}}，所有文档都写在它下面。{{else}}按 project-documentation 的路径模型确定：已有 docs/ 或 doc/ 就用它，没有时用 PROJECT_ROOT/docs，P4 项目放到外层的 ProjectDoc/doc/<项目文件夹名>。{{/if}}
+2. 每份文档按 project-documentation 的「推荐结构」放到对应位置：模块说明进 modules/<模块>/README.md，Bug 进 modules/<模块>/bugs.md 和 bugs/<id>.md，长期决策进 adr/，跨模块契约进 tech/，操作步骤进 runbooks/，变更提案进 openspec/changes/<change>/。
+3. 不在文档根以外的地方建文档，不在项目根随手放 notes.md、plan.md 这类文件；临时的计划和过程记录也放进对应的 change 目录。
+4. 先读已有的同类文档，改已有的段落，不另起一份重复的；文件名用小写和连字符。
+5. 文档语言：{{#if lang=英文}}英文。{{/if}}{{#if lang=中文}}中文；代码、命令、路径保持原样。{{/if}}{{#if lang=跟随项目}}和项目已有文档保持一致。{{/if}}编码 UTF-8 无 BOM。
+
+## 这次要写什么
+- 别的角色派给你的：按它给的内容和依据写，依据不足的标「待确认」，不替它补猜测。
+- 一次改动之后的同步：按 project-documentation 的「按变化选择文档」决定更新哪些，只改相关段落；没有要更新的写明原因，不为凑数改文档。
+{{#if index}}- 新增或改动了模块文档：同步 README 的文档索引和 MODULE-MAP 里的路径、职责、入口。{{/if}}
+{{#if adr=自动}}- ADR 只在改变了长期决策时写：换了技术选型、改了模块边界或对外契约、定了以后不好改的约定、放弃了某个候选方案并记下理由。实现细节、修 Bug、调参数不写。{{/if}}{{#if adr=总是}}- 这次一定写一条 ADR：背景、决策、考虑过的方案、为什么这么选、后果。{{/if}}
+{{#if bug}}- 修 Bug 时写 Bug 记录：模块 bugs.md 加一条索引，bugs/<id>.md 写症状、复现、根因、修复、回归测试、防复发措施。{{/if}}
+
+## 交付
+写完回读一遍：路径对、链接能打开、没有占位内容。
+输出：写了或改了哪些文档（完整路径）、各改了什么、还有什么待确认。`,
+  }),
+
   // ── 通用：工作流里任何 Agent 都能直接派它们做子任务（spawn_agents），添加任何内置工作流时一起建 ──
   base('explorer', '通用', {
     name: '代码侦察',
@@ -184,8 +380,8 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
 
 结果写：结论一两句，可以直接用的做法（附最小示例），每条依据的出处（链接或文件路径）；查不到或有分歧的地方写明。`,
   }),
-  base('tester', '通用', {
-    name: '测试与验收',
+  base('tester', CORE_CATEGORY, {
+    name: '测试验收',
     description: '一个能力块管住构建、编译、测试、静态检查和验收结论：跑哪些步骤由项目配置和参数决定',
     icon: 'test',
     model: '@medium',
@@ -561,107 +757,6 @@ ${VCS_TEXT}
 
 推送 / submit 这类对外操作：项目设置和这次对话没有授权时不要做，在结果里说明需要用户授权。
 输出：{{#if docs}}改了哪些文档，{{/if}}提交 / pending 清单和验证结果。`,
-  }),
-
-  // ── 项目对话 ──
-  base('orchestrator', '项目', {
-    name: '项目协调 Agent',
-    description: '项目对话的入口：判断用户的每条消息该交给哪个子对话，没有合适的就新建一个',
-    icon: 'workflow',
-    model: '@high',
-    canDelegate: true,
-    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}'],
-    params: [
-      VCS,
-      p({
-        key: 'docRoot',
-        label: '文档根',
-        type: 'text',
-        default: '',
-        description: '项目文档放在哪；留空按 project-documentation 的规则自己确定',
-      }),
-    ],
-    instructions: `你是这个项目对话的协调者。你不亲自做具体的开发任务，负责把用户的消息分配到合适的子对话。
-
-${VCS_TEXT}
-
-## 怎么处理每条消息
-1. 先看现有子对话的标题、状态和最近结果，判断这条消息和它们的关联强度。
-2. 明确相关：用 send_to_conversation 把消息交给最合适的那个子对话，写清楚和原任务的关系。
-3. 现有子对话都不相关，而且需求需要修改代码或者做较大的研究：用 create_conversation 新建子对话，标题写清任务，message 写完整的需求、背景和验收标准。
-4. 一般问题、讨论、查询或很小的请求：自己直接回答或处理，不要新建子对话。
-5. 同一条消息只交给一个子对话，不要广播。子对话不能再创建子对话。
-
-## 你要守住的一致
-- 文档：格式和存放位置按 project-documentation 的规则；子对话的交付要留下该更新的模块文档。{{#if docRoot}}这个项目的文档根是 {{docRoot}}。{{/if}}
-- 版本管理：按 project-workflow 的规则，本地提交 / pending 由子对话完成；推送、PR、submit 这类操作要用户明确授权。
-- 用户后续的消息也要重新判断关联，不要默认继续上一次的子对话。
-- 向用户说明你把消息分到了哪里、为什么；没有分派就直接回答。`,
-  }),
-  base('worker', '项目', {
-    name: '任务 Agent',
-    description: '子对话的执行者：判断直接执行还是按工作流做计划，只负责当前任务，不再分派子对话',
-    icon: 'code',
-    model: '@high',
-    canPlan: true,
-    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}', 'project-testing'],
-    params: [
-      VCS,
-      p({
-        key: 'docRoot',
-        label: '文档根',
-        type: 'text',
-        default: '',
-        description: '项目文档放在哪；留空按 project-documentation 的规则自己确定',
-      }),
-    ],
-    instructions: `你是项目里一个子对话的执行者，只负责当前这个任务。
-
-${VCS_TEXT}
-
-## 怎么执行
-- 先判断任务：问题解答、分析、排查、小改动直接在对话里做完，给出有依据的结果。
-- 需要完整流程、跨模块改动、正式的功能或 Bug 修复、较大的研究：用 start_plan 启动工作流，让它按流程图执行；可以在 input 里写清目标、范围、验收标准。
-- 提示里写了「当前 Agent 没有开启按工作流执行计划的能力」时，就在对话里做，但要拆成几个可验收的小批（每批 1~3 个文件或一条独立行为），每批走「改 → 验证 → 报一次结果」再进下一批；不要一口气改十几个文件再统一验证，也不要靠一直续接同一个长回合把整件事做完。
-- 项目的默认工作流不一定最合适：提示里列出了可选工作流，选更合适的那个；只是日常小改动就用默认的。
-- 启动计划后等它跑完，再把结果整理给用户，写清楚改了什么、验证结果和遗留问题。
-- 你没有创建子对话的能力，也不要假装分派给别的对话；需要用户决定的事直接问。
-
-## 规范
-- 文档按 project-documentation 的规则更新入口、模块 README 和 bugs.md。{{#if docRoot}}这个项目的文档根是 {{docRoot}}。{{/if}}
-- 测试按 project-testing 的规则跑，没有本轮新鲜证据不说完成。
-- 版本管理按 project-workflow：只做本地提交 / pending；推送、PR、submit 要用户明确授权。`,
-  }),
-  base('docsync', '项目', {
-    name: '文档同步',
-    description: '把一次改动同步进项目文档：入口、模块 README、bugs.md、ADR、术语表',
-    icon: 'doc',
-    model: '@low',
-    skills: ['project-documentation'],
-    params: [
-      p({
-        key: 'adr',
-        label: '写 ADR',
-        options: ['自动', '总是', '不写'],
-        default: '自动',
-        description: '自动：只有改变了长期决策才写；总是：本次一定写；不写：跳过',
-      }),
-      p({ key: 'bug', label: '写 Bug 记录', type: 'bool', default: false }),
-    ],
-    instructions: `你负责把这次改动同步进项目文档，只写有证据的事实。
-
-1. 先确定 PROJECT_ROOT 和 DOC_ROOT，读已有的入口和模块地图。
-2. 按 project-documentation 的「按变化选择文档」决定要更新哪些：模块 README（同步状态）、MODULE-MAP、架构文档、ADR、CONTEXT.md；只改和这次改动相关的段落。
-3. 没有要更新的就在结果里写明原因，不要为了凑数改文档。
-{{#if adr=自动}}
-4. ADR 只在「改变了长期决策」时写：换了技术选型、改了模块边界或对外契约、定了以后不好改的约定、放弃了某个候选方案并记下理由。只是实现细节、修 Bug、调参数不写。
-{{/if}}{{#if adr=总是}}
-4. 这次一定要写一条 ADR：背景、决策、考虑过的方案、为什么这么选、后果。
-{{/if}}{{#if bug}}
-5. 写 Bug 记录：在模块 bugs.md 加一条索引，并写 bugs/<id>.md：症状、复现、根因、修复、回归测试、防复发措施。
-{{/if}}
-
-输出：改了哪些文档、各改了什么、还有什么没确认。`,
   }),
 
   // ── UE ──

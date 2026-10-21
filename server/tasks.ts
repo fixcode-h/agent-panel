@@ -1,3 +1,4 @@
+import { withProjectParams } from '../shared/builtin/core.ts'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
@@ -210,6 +211,7 @@ export function tasksApi(deps: {
     defaultAgentId: '',
     agentSet: true,
     workflowParams: {},
+    agentParams: {},
     testSteps: [],
     wslDistro: '',
     gitPolicy: 'ask',
@@ -537,6 +539,8 @@ export function tasksApi(deps: {
       live.delete(task.id)
       throw e
     })
+    // 项目里给必备角色填的参数当作这个项目里的默认值（对话、节点、派出去的子 Agent 都按它）
+    agents = withProjectParams(agents, found ?? undefined)
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
     // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
     const dir = found ? await taskDir(task).catch(() => found.path) : ''

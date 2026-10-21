@@ -8,7 +8,6 @@ export const EN_SETTINGS: Record<string, string> = {
   'AI 生成测试步骤': 'AI generate test steps',
   'AI 配置': 'AI configure',
   'AI 配置参数': 'AI configure parameters',
-  'AI 配置全部': 'AI configure all',
   'AI 配置「{name}」的参数': 'AI configure the parameters of "{name}"',
   'AI 配置「{name}」': 'AI configure "{name}"',
   '在项目目录里只读分析代码，按项目情况给出参数值；确认后才填进表单':

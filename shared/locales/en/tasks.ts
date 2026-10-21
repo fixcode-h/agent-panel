@@ -532,4 +532,28 @@ export const EN_TASKS: Record<string, string> = {
     'These files were also changed by other sub-conversations: {list}. The parent conversation has been asked to coordinate; check the content before merging.',
   '对话正在执行，等这一轮结束或停止后再归档':
     'The conversation is running. Archive it after this turn ends or after stopping it',
+  '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
+    'Read this project\'s folders, scripts and config, then fill in the parameters of "{name}" to fit the project, explaining why for each one',
+  必备角色: 'Core roles',
+  '项目对话靠这四个角色运转：统筹分派、执行做事、文档落盘、测试验收。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
+    "Project conversations run on these four roles: the coordinator routes, the executor does the work, docs writes everything to disk, and test & acceptance verifies. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
+  '改了 {n} 项': '{n} changed',
+  去角色页改所有项目的默认值和模型: 'Change the defaults and model for all projects on the Roles page',
+  角色设置: 'Role settings',
+  '这个角色没有可调的参数。': 'This role has no adjustable parameters.',
+  '必备角色还没装好，重启面板后会自动补上。':
+    "Core roles aren't installed yet. They'll be added when the panel restarts.",
+  '子对话要改代码时按工作流执行：默认用下面这一个，需求更适合某个可选工作流时，执行角色会改用它。每个工作流的配置分开保存，对新开的对话生效。':
+    "Sub-conversations follow a workflow when they change code: the default one below, or an optional workflow when it fits the request better. Each workflow's settings are saved separately and apply to new conversations.",
+  '跟随分类：{name}': 'Follow category: {name}',
+  '只能从「{cat}」分类里选：这类工作流是为项目常驻流程设计的。':
+    'Only workflows in the "{cat}" category can be picked: they\'re designed as the project\'s standing flow.',
+  添加可选工作流: 'Add optional workflow',
+  '还没有可选工作流。像 Bug 修复、发布这类流程可以加进来，需求合适时执行角色会自动选它。':
+    'No optional workflows yet. Add flows like bug fixing or releasing, and the executor will pick one when it fits.',
+  '测试验收角色按这里的顺序执行，新建对话时快照进任务。写清楚命令、在哪执行和什么时候跑，没有配置时它会自己找命令并提醒你补上。':
+    "The test & acceptance role runs these in order; they're snapshotted into each new conversation. Spell out the command, where it runs and when. Without steps it finds commands itself and reminds you to add them.",
+  '按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤':
+    "Based on this project's current scripts and config, generate test steps for type checking, unit tests, end-to-end tests and the build",
+  '这个工作流没有需要配置的参数。': 'This workflow has no parameters to configure.',
 }

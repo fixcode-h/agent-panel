@@ -141,29 +141,15 @@ export const EN_APP: Record<string, string> = {
   '例如：官网前端': 'e.g. Website frontend',
   分类: 'Category',
   这个项目是做什么的: 'What this project is for',
-  '使用分类默认：{name}': 'Category default: {name}',
   '未选择，将使用「{name}」': 'Not selected; "{name}" will be used',
   请选择工作流: 'Choose a workflow',
-  '默认对话 Agent': 'Default chat Agent',
-  '无（直接用 CLI，不注入 Agent 角色）': 'None (use the CLI directly, no Agent role)',
-  '在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。':
-    'Used by default for new conversations in this project. Agents allowed to create sub-conversations will dispatch requests to them; capabilities are toggled in Agent settings.',
-  子对话工作流: 'Sub-conversation workflows',
-  '子对话默认工作流（必选）': 'Default workflow for sub-conversations (required)',
   可选工作流: 'Optional workflows',
-  '子对话默认用上面的工作流；需求更适合下面某个工作流时，Agent 会优先用它。':
-    'Sub-conversations use the workflow above by default; when a request fits another workflow below better, the Agent prefers it.',
-  还没有其他工作流: 'No other workflows yet',
   'AI 分析这个目录': 'Analyze this folder',
   '只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单':
     'Read-only scan: infers the stack, build and test commands from the files and fills in the form below',
   '已按本地目录填好，检查一下再保存': 'Filled in from the folder. Review it, then save',
   '已填好，但没找到内置工作流「{name}」，请手动选择':
     'Filled in, but the built-in workflow "{name}" was not found. Choose one manually',
-  '没有单独指定时使用内置的「{name}」，它会一直跟着这个项目。':
-    'Without an explicit choice, the built-in "{name}" applies to this project.',
-  '「{name}」的配置，改完保存后对新开的对话生效':
-    'Settings for "{name}". Saved changes apply to conversations started afterwards',
   版本与推送: 'Version control and push',
   推送到远端: 'Push to remote',
   '第一次需要推送时问一次（推荐）': 'Ask once when a push is first needed (recommended)',
@@ -173,13 +159,6 @@ export const EN_APP: Record<string, string> = {
     'Local commits are unaffected. Pushes, PRs and P4 submits follow this setting and the choice made in each conversation.',
   是: 'Yes',
   否: 'No',
-  '这个项目单独指定了工作流，不受分类默认的影响。':
-    'This project uses its own workflow and ignores the category default.',
-  '跟随项目分类「{name}」的默认工作流，分类可以在':
-    'Follows the default workflow of category “{name}”. You can change it in ',
-  '设置 · 项目分类': 'Settings · Project categories',
-  '中修改。': '.',
-  '项目没有分类，需要在这里单独指定工作流。': 'This project has no category, so choose a workflow here.',
   删除项目: 'Delete project',
   确认: 'Confirm',
   创建: 'Create',

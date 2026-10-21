@@ -578,6 +578,11 @@ const ProjectFields = z.object({
   /** 工作流暴露项的取值，每个工作流一份（key 是工作流 id） */
   workflowParams: WorkflowParamsById.default({}),
   /**
+   * 这个项目里给必备角色（统筹、执行、文档、测试验收）填的参数，key 是角色 id：
+   * 执行时当作这个项目里的默认值，见 shared/builtin/core.ts 的 withProjectParams
+   */
+  agentParams: WorkflowParamsById.default({}),
+  /**
    * 这个项目的测试步骤：新建对话时快照进任务，测试 Agent 按它执行。
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */

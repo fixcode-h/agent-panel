@@ -2,8 +2,22 @@ import { CliSkills } from '@/components/settings/CliSkills'
 import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { FileText, ChevronDown, ChevronUp, Loader2, Settings2, Sparkles, Trash2, X } from 'lucide-react'
-import type { ParamValue, Project, ProjectInput, TestStep, WorkflowExpose } from '@shared/schema'
+import {
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  FileText,
+  FlaskConical,
+  Loader2,
+  Plus,
+  Settings2,
+  Sparkles,
+  Trash2,
+  Users,
+  Workflow as WorkflowIcon,
+  X,
+} from 'lucide-react'
+import type { Agent, ParamValue, Project, ProjectInput, TestStep, Workflow, WorkflowExpose } from '@shared/schema'
 import { DEFAULT_FILE_FORMAT } from '@shared/schema'
 import { derivedParams, agentParamGroups, type AgentParamGroup, type DerivedParam } from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId } from '@shared/test-steps'
@@ -16,7 +30,6 @@ import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
-import { WorkflowPicker } from '@/components/workflows/WorkflowPicker'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
 import { CLIS } from '@shared/clis'
@@ -26,6 +39,13 @@ import { cliSettings, orderClis } from '@shared/settings'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
+import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
+import { AgentAvatar } from '@/components/agents/AgentAvatar'
+import { ParamsForm } from '@/components/agents/ParamFields'
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
+
+/** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
+const PROJECT_WF_CATEGORY = '项目'
 
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Project): ProjectInput => rest
 const folderName = (p: string) =>
@@ -43,6 +63,7 @@ const blank: ProjectInput = {
   defaultAgentId: '',
   agentSet: true,
   workflowParams: {},
+  agentParams: {},
   testSteps: [],
   wslDistro: '',
   fileFormat: undefined,
@@ -94,7 +115,7 @@ export function ProjectSettingsDialog({
 
 function Body({ project, onClose }: { project?: Project; onClose: () => void }) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
-  const { go, route, openSettings } = useNav()
+  const { go, route } = useNav()
   const [draft, setDraft] = useState<ProjectInput>(() =>
     project
       ? toInput(project)
@@ -105,7 +126,9 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const [deleting, setDeleting] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [signals, setSignals] = useState<string[]>([])
-  const valid = !!draft.name.trim() && !!draft.workflowId
+  // 没单独选工作流时跟随分类的默认工作流，同样算选好了（服务端也是这么解析的）
+  const valid =
+    !!draft.name.trim() && !!(draft.workflowId || projectCategories.find((c) => c.id === draft.categoryId)?.workflowId)
   const set = <K extends keyof ProjectInput>(k: K, v: ProjectInput[K]) => setDraft((d) => ({ ...d, [k]: v }))
   // 名称没填，或者名称就是原来的文件夹名时，换目录后名称跟着变成新的文件夹名；手动改过的名称不动
   const pickDir = (path: string) =>
@@ -132,10 +155,6 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   const optionalWorkflows = draft.workflowIds
     .map((id) => workflows.find((w) => w.id === id))
     .filter((w): w is (typeof workflows)[number] => !!w)
-  const configurable = [active, ...optionalWorkflows]
-    .filter((w): w is (typeof workflows)[number] => !!w)
-    .filter((w, i, list) => list.findIndex((x) => x.id === w.id) === i)
-  // 每个工作流暴露的 Agent 参数：按它实际用到的 Agent 派生，不用工作流作者手工加 expose。
   // 工作流 expose 里 target=agent 的 key 由 expose 表单管，这里不重复渲染（同一个参数只有一处配置源）
   const paramsFor = (w: (typeof workflows)[number]) => {
     const derived = derivedParams(w, agents)
@@ -143,7 +162,57 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
     return { derived, exposed, groups: agentParamGroups(w, agents) }
   }
   const checks = projectChecks(draft, dir, own ?? inherited ?? general, agents, clis)
-  const { settings } = useData()
+  const { settings, categories } = useData()
+  const coreAgents = CORE_AGENTS.map((c) => findCore(agents, c.key)).filter((a): a is Agent => !!a)
+  // 默认工作流只从「项目」分类里选：项目常驻流程按子对话的需要设计，别的流程放进可选工作流
+  const projectCat = categories.find((c) => c.scope === 'workflow' && c.name === PROJECT_WF_CATEGORY)
+  const inProjectCat = workflows.filter((w) => projectCat && w.categoryId === projectCat.id)
+  const defaultChoices = (inProjectCat.length ? inProjectCat : workflows).filter((w, i, list) => list.indexOf(w) === i)
+  if (own && !defaultChoices.includes(own)) defaultChoices.unshift(own)
+  const addable = workflows.filter((w) => w.id !== active?.id && !draft.workflowIds.includes(w.id))
+  const hasAgentParams = (w: (typeof workflows)[number]) => {
+    const { derived, groups } = paramsFor(w)
+    return groups.some((g) => derived.some((d) => d.agents.some((a) => a.id === g.agentId)))
+  }
+  const aiParams = (w: (typeof workflows)[number], agentId?: string, name?: string) =>
+    setAi({
+      kind: 'params',
+      workflowId: w.id,
+      agentId,
+      title: name ? t('AI 配置「{name}」', { name }) : t('AI 配置「{name}」的参数', { name: w.name }),
+      start: t('读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填', {
+        name: name ?? w.name,
+      }),
+    })
+  // 一个工作流的配置：暴露项 + 它用到的角色的参数（按角色分组）
+  const workflowParamsBody = (w: (typeof workflows)[number]) => {
+    const { derived, exposed, groups } = paramsFor(w)
+    if (!w.expose.length && !hasAgentParams(w)) return null
+    return (
+      <div className="flex flex-col gap-3">
+        {w.expose.map((e) => (
+          <ExposeField
+            key={e.key}
+            e={e}
+            value={paramsOf(w.id)[e.key] as string | boolean | undefined}
+            onChange={(v) => setParam(w.id, e.key, v)}
+          />
+        ))}
+        {groups.map((g) => (
+          <AgentParamsEditor
+            key={g.agentId}
+            group={g}
+            agents={derived}
+            hidden={exposed}
+            values={paramsOf(w.id)}
+            onChange={(k, v) => setParam(w.id, k, v)}
+            aiRunning={false}
+            onAi={() => aiParams(w, g.agentId, g.agentName)}
+          />
+        ))}
+      </div>
+    )
+  }
   // 项目没单独设置时跟随全局的格式，下拉框里直接显示实际生效的那个
   const globalFormat = settings?.fileFormat ?? DEFAULT_FILE_FORMAT
   const format = draft.fileFormat ?? globalFormat
@@ -153,6 +222,8 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
     workflowId?: string
     agentId?: string
     title: string
+    /** 打开就直接发给 CLI 的要求：点「AI 配置」不用再自己写一遍 */
+    start?: string
   } | null>(null)
 
   // 项目的「AI 分析」：读本地目录给出名称、简介、工作流和配置项，填进表单；用户确认后才保存
@@ -279,6 +350,26 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             {t('常规')}
           </NavItem>
           <NavItem
+            on={section === 'roles'}
+            onClick={() => setSection('roles')}
+            dot={Object.values(draft.agentParams).some((v) => Object.keys(v).length > 0)}
+          >
+            <Users className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('必备角色')}
+          </NavItem>
+          <NavItem on={section === 'workflows'} onClick={() => setSection('workflows')}>
+            <WorkflowIcon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('工作流')}
+          </NavItem>
+          <NavItem
+            on={section === 'tests'}
+            onClick={() => setSection('tests')}
+            hint={draft.testSteps.length ? t('{n} 步', { n: draft.testSteps.length }) : undefined}
+          >
+            <FlaskConical className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('测试步骤')}
+          </NavItem>
+          <NavItem
             on={section === 'doc'}
             onClick={() => setSection('doc')}
             dot={isChanged([SHARED_DOC, 'AGENT.md'])}
@@ -303,7 +394,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             </NavItem>
           ))}
         </nav>
-        {section !== 'general' ? (
+        {section === 'doc' || section.startsWith('cli:') ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-6 py-6">
             {!docsReady || !docs ? (
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
@@ -381,319 +472,330 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             }}
             className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
           >
-            <div className="flex min-w-0 flex-1 flex-col gap-7">
-              <FormSection title={t('基本信息')}>
-                <div className="flex flex-wrap gap-4">
-                  <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
-                    <Input
-                      autoFocus={!project}
-                      value={draft.name}
-                      onChange={(e) => set('name', e.target.value)}
-                      placeholder={t('例如：官网前端')}
-                    />
-                  </Field>
-                  <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
-                    <span className="text-xs text-muted">{t('分类')}</span>
-                    <CategoryPicker
-                      value={draft.categoryId}
-                      onChange={(id) => set('categoryId', id)}
-                      options={projectCategories}
-                      onCreate={async (name) => {
-                        const c = await api.createProjectCategory({ name, description: '', workflowId: '' })
-                        setProjectCategories((cs) => [...cs, c])
-                        return c
-                      }}
-                    />
-                  </div>
-                </div>
-                <Field label={t('简介')}>
-                  <Input
-                    value={draft.description}
-                    onChange={(e) => set('description', e.target.value)}
-                    placeholder={t('这个项目是做什么的')}
-                  />
-                </Field>
-              </FormSection>
-
-              <FormSection title={t('本地目录')}>
-                <DirPicker value={draft.path} onChange={pickDir} info={dir} />
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void analyze()}
-                    disabled={!draft.path.trim() || analyzing}
+            {section === 'roles' ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('必备角色')}
+                  desc={t(
+                    '项目对话靠这四个角色运转：统筹分派、执行做事、文档落盘、测试验收。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。',
+                  )}
+                />
+                {coreAgents.map((a) => (
+                  <Collapsible
+                    key={a.id}
+                    defaultOpen={coreAgents.indexOf(a) === 0}
+                    leading={<AgentAvatar icon={a.icon} cli={a.cli} size="sm" />}
+                    title={a.name}
+                    subtitle={coreUse(coreKey(a)!)}
+                    badge={
+                      Object.keys(draft.agentParams[a.id] ?? {}).length
+                        ? t('改了 {n} 项', { n: Object.keys(draft.agentParams[a.id] ?? {}).length })
+                        : undefined
+                    }
+                    actions={
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => go({ page: 'agents', id: a.id })}
+                        title={t('去角色页改所有项目的默认值和模型')}
+                      >
+                        {t('角色设置')}
+                      </Button>
+                    }
                   >
-                    {analyzing ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    {a.params.length ? (
+                      <ParamsForm
+                        params={a.params}
+                        values={draft.agentParams[a.id] ?? {}}
+                        onChange={(v) =>
+                          setDraft((d) => {
+                            const next = { ...d.agentParams }
+                            if (Object.keys(v).length) next[a.id] = v
+                            else delete next[a.id]
+                            return { ...d, agentParams: next }
+                          })
+                        }
+                      />
                     ) : (
-                      <Sparkles className="h-3.5 w-3.5" />
+                      <p className="text-xs text-subtle">{t('这个角色没有可调的参数。')}</p>
                     )}
-                    {t('AI 分析这个目录')}
-                  </Button>
-                  <span className="text-xs text-subtle">
-                    {t('只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单')}
-                  </span>
-                </div>
-                {signals.length > 0 && (
-                  <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
-                    {signals.map((s) => (
-                      <li key={s}>· {s}</li>
-                    ))}
-                  </ul>
+                  </Collapsible>
+                ))}
+                {!coreAgents.length && (
+                  <p className="text-xs text-subtle">{t('必备角色还没装好，重启面板后会自动补上。')}</p>
                 )}
-              </FormSection>
-
-              <FormSection title={t('对话')}>
-                <Field label={t('默认对话 Agent')}>
+              </div>
+            ) : section === 'workflows' ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('工作流')}
+                  desc={t(
+                    '子对话要改代码时按工作流执行：默认用下面这一个，需求更适合某个可选工作流时，执行角色会改用它。每个工作流的配置分开保存，对新开的对话生效。',
+                  )}
+                />
+                <div className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted">{t('默认工作流')}</span>
                   <Select
-                    value={draft.defaultAgentId}
-                    onChange={(e) => {
-                      set('defaultAgentId', e.target.value)
-                      set('agentSet', true)
-                    }}
+                    aria-label={t('默认工作流')}
+                    value={draft.workflowId}
+                    onChange={(e) =>
+                      setDraft((d) => ({
+                        ...d,
+                        workflowId: e.target.value,
+                        workflowIds: d.workflowIds.filter((x) => x !== e.target.value),
+                      }))
+                    }
                     options={[
-                      { value: '', label: t('无（直接用 CLI，不注入 Agent 角色）') },
-                      ...agents.filter((a) => a.enabled).map((a) => ({ value: a.id, label: a.name })),
+                      ...(!draft.workflowId
+                        ? [
+                            {
+                              value: '',
+                              label: inherited
+                                ? t('跟随分类：{name}', { name: inherited.name })
+                                : general
+                                  ? t('未选择，将使用「{name}」', { name: general.name })
+                                  : t('请选择工作流'),
+                            },
+                          ]
+                        : []),
+                      ...defaultChoices.map((w) => ({ value: w.id, label: w.name })),
                     ]}
                   />
-                </Field>
-                <span className="text-xs text-subtle">
-                  {t(
-                    '在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。',
-                  )}
-                </span>
-              </FormSection>
-
-              <FormSection title={t('子对话工作流')}>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted">{t('子对话默认工作流（必选）')}</span>
-                  <WorkflowPicker
-                    value={draft.workflowId}
-                    onChange={(id) => set('workflowId', id)}
-                    emptyLabel={
-                      inherited
-                        ? t('使用分类默认：{name}', { name: inherited.name })
-                        : general
-                          ? t('未选择，将使用「{name}」', { name: general.name })
-                          : t('请选择工作流')
+                  <span className="text-xs text-subtle">
+                    {t('只能从「{cat}」分类里选：这类工作流是为项目常驻流程设计的。', { cat: PROJECT_WF_CATEGORY })}
+                  </span>
+                </div>
+                {active && (
+                  <WorkflowCard
+                    key={active.id}
+                    w={active}
+                    isDefault
+                    defaultOpen
+                    body={workflowParamsBody(active)}
+                    onAi={hasAgentParams(active) ? () => aiParams(active) : undefined}
+                  />
+                )}
+                <div className="flex items-center gap-2 pt-2">
+                  <span className="text-xs text-muted">{t('可选工作流')}</span>
+                  <span className="text-xs text-subtle">{t('{n} 个', { n: optionalWorkflows.length })}</span>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button size="sm" variant="secondary" className="ml-auto" disabled={!addable.length}>
+                        <Plus className="h-3.5 w-3.5" />
+                        {t('添加可选工作流')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent align="end" className="w-[320px]">
+                      <div className="max-h-72 overflow-y-auto">
+                        {addable.map((w) => (
+                          <PopoverClose
+                            key={w.id}
+                            className={menuItem}
+                            onClick={() => set('workflowIds', [...draft.workflowIds, w.id])}
+                          >
+                            <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
+                            <span className="flex min-w-0 flex-1 flex-col">
+                              <span className="truncate">{w.name}</span>
+                              {w.description && (
+                                <span className="truncate text-[0.71875rem] text-subtle">{w.description}</span>
+                              )}
+                            </span>
+                          </PopoverClose>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+                {optionalWorkflows.length === 0 && (
+                  <p className="rounded-xl border border-dashed px-4 py-5 text-center text-xs text-subtle">
+                    {t('还没有可选工作流。像 Bug 修复、发布这类流程可以加进来，需求合适时执行角色会自动选它。')}
+                  </p>
+                )}
+                {optionalWorkflows.map((w) => (
+                  <WorkflowCard
+                    key={w.id}
+                    w={w}
+                    body={workflowParamsBody(w)}
+                    onAi={hasAgentParams(w) ? () => aiParams(w) : undefined}
+                    onRemove={() =>
+                      set(
+                        'workflowIds',
+                        draft.workflowIds.filter((x) => x !== w.id),
+                      )
                     }
                   />
-                  <span className="text-xs text-subtle">
-                    {own ? (
-                      t('这个项目单独指定了工作流，不受分类默认的影响。')
-                    ) : inherited ? (
-                      <>
-                        {t('跟随项目分类「{name}」的默认工作流，分类可以在', { name: category!.name })}
-                        <button
-                          type="button"
-                          className="cursor-pointer text-accent hover:underline"
-                          onClick={() => {
-                            onClose()
-                            openSettings('categories')
-                          }}
-                        >
-                          {t('设置 · 项目分类')}
-                        </button>
-                        {t('中修改。')}
-                      </>
-                    ) : general ? (
-                      t('没有单独指定时使用内置的「{name}」，它会一直跟着这个项目。', { name: general.name })
-                    ) : (
-                      t('项目没有分类，需要在这里单独指定工作流。')
-                    )}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted">{t('可选工作流')}</span>
-                  <span className="text-xs text-subtle">
-                    {t('子对话默认用上面的工作流；需求更适合下面某个工作流时，Agent 会优先用它。')}
-                  </span>
-                  <div className="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-lg border bg-field/40 p-2">
-                    {workflows.filter((w) => w.id !== draft.workflowId).length === 0 && (
-                      <span className="px-1 py-0.5 text-xs text-subtle">{t('还没有其他工作流')}</span>
-                    )}
-                    {workflows
-                      .filter((w) => w.id !== draft.workflowId)
-                      .map((w) => (
-                        <label
-                          key={w.id}
-                          className="flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-[0.8125rem] hover:bg-sel/60"
-                        >
-                          <input
-                            type="checkbox"
-                            className="accent-accent"
-                            checked={draft.workflowIds.includes(w.id)}
-                            onChange={(e) =>
-                              set(
-                                'workflowIds',
-                                e.target.checked
-                                  ? [...draft.workflowIds, w.id]
-                                  : draft.workflowIds.filter((id) => id !== w.id),
-                              )
-                            }
-                          />
-                          <span className="min-w-0 flex-1 truncate">{w.name}</span>
-                          {w.description && (
-                            <span className="max-w-[45%] truncate text-xs text-subtle">{w.description}</span>
-                          )}
-                        </label>
-                      ))}
-                  </div>
-                </div>
-                {configurable.some((w) => w.expose.length > 0 || agentParamGroups(w, agents).length > 0) && (
-                  <div className="flex flex-col gap-3">
-                    {configurable.map((w) => {
-                      const { derived, exposed, groups } = paramsFor(w)
-                      // 有可配的派生参数才算：只看真有值的分组，避免空标题
-                      const hasParams = groups.some((g) =>
-                        derived.some((d) => d.agents.some((a) => a.id === g.agentId)),
-                      )
-                      if (!w.expose.length && !hasParams) return null
-                      return (
-                        <div key={w.id} className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <span className="min-w-0 flex-1 text-xs text-muted">
-                              {t('「{name}」的配置，改完保存后对新开的对话生效', { name: w.name })}
-                            </span>
-                            {hasParams && (
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() =>
-                                  setAi({
-                                    kind: 'params',
-                                    workflowId: w.id,
-                                    title: t('AI 配置「{name}」的参数', { name: w.name }),
-                                  })
-                                }
-                              >
-                                <Sparkles className="h-3.5 w-3.5" />
-                                {t('AI 配置全部')}
-                              </Button>
-                            )}
-                          </div>
-                          {w.expose.map((e) => (
-                            <ExposeField
-                              key={e.key}
-                              e={e}
-                              value={paramsOf(w.id)[e.key] as string | boolean | undefined}
-                              onChange={(v) => setParam(w.id, e.key, v)}
-                            />
-                          ))}
-                          {groups.map((g) => (
-                            <AgentParamsEditor
-                              key={g.agentId}
-                              group={g}
-                              agents={derived}
-                              hidden={exposed}
-                              values={paramsOf(w.id)}
-                              onChange={(k, v) => setParam(w.id, k, v)}
-                              aiRunning={false}
-                              onAi={() =>
-                                setAi({
-                                  kind: 'params',
-                                  workflowId: w.id,
-                                  agentId: g.agentId,
-                                  title: t('AI 配置「{name}」', { name: g.agentName }),
-                                })
-                              }
-                            />
-                          ))}
-                        </div>
-                      )
-                    })}
-                  </div>
-                )}
-              </FormSection>
-
-              <FormSection title={t('测试步骤')}>
+                ))}
+              </div>
+            ) : section === 'tests' ? (
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <PageIntro
+                  title={t('测试步骤')}
+                  desc={t(
+                    '测试验收角色按这里的顺序执行，新建对话时快照进任务。写清楚命令、在哪执行和什么时候跑，没有配置时它会自己找命令并提醒你补上。',
+                  )}
+                />
                 <TestStepsEditor
                   steps={draft.testSteps}
                   distro={draft.wslDistro}
                   onChange={(v) => set('testSteps', v)}
                   onDistro={(v) => set('wslDistro', v)}
                   aiRunning={false}
-                  onAi={() => setAi({ kind: 'teststeps', title: t('AI 生成测试步骤') })}
+                  onAi={() =>
+                    setAi({
+                      kind: 'teststeps',
+                      title: t('AI 生成测试步骤'),
+                      start: t('按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤'),
+                    })
+                  }
                 />
-              </FormSection>
+              </div>
+            ) : (
+              <div className="flex min-w-0 flex-1 flex-col gap-7">
+                <FormSection title={t('基本信息')}>
+                  <div className="flex flex-wrap gap-4">
+                    <Field
+                      label={t('名称')}
+                      className="flex-[1_1_200px]"
+                      error={draft.name.trim() ? undefined : t('名称不能为空')}
+                    >
+                      <Input
+                        autoFocus={!project}
+                        value={draft.name}
+                        onChange={(e) => set('name', e.target.value)}
+                        placeholder={t('例如：官网前端')}
+                      />
+                    </Field>
+                    <div className="flex min-w-0 flex-[1_1_200px] flex-col gap-1.5">
+                      <span className="text-xs text-muted">{t('分类')}</span>
+                      <CategoryPicker
+                        value={draft.categoryId}
+                        onChange={(id) => set('categoryId', id)}
+                        options={projectCategories}
+                        onCreate={async (name) => {
+                          const c = await api.createProjectCategory({ name, description: '', workflowId: '' })
+                          setProjectCategories((cs) => [...cs, c])
+                          return c
+                        }}
+                      />
+                    </div>
+                  </div>
+                  <Field label={t('简介')}>
+                    <Input
+                      value={draft.description}
+                      onChange={(e) => set('description', e.target.value)}
+                      placeholder={t('这个项目是做什么的')}
+                    />
+                  </Field>
+                </FormSection>
 
-              <FormSection title={t('文件格式')}>
-                <div className="flex flex-wrap gap-3">
-                  <Field label={t('编码')} className="flex-[1_1_200px]">
+                <FormSection title={t('本地目录')}>
+                  <DirPicker value={draft.path} onChange={pickDir} info={dir} />
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void analyze()}
+                      disabled={!draft.path.trim() || analyzing}
+                    >
+                      {analyzing ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3.5 w-3.5" />
+                      )}
+                      {t('AI 分析这个目录')}
+                    </Button>
+                    <span className="text-xs text-subtle">
+                      {t('只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单')}
+                    </span>
+                  </div>
+                  {signals.length > 0 && (
+                    <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
+                      {signals.map((s) => (
+                        <li key={s}>· {s}</li>
+                      ))}
+                    </ul>
+                  )}
+                </FormSection>
+
+                <FormSection title={t('文件格式')}>
+                  <div className="flex flex-wrap gap-3">
+                    <Field label={t('编码')} className="flex-[1_1_200px]">
+                      <Select
+                        value={format.encoding}
+                        onChange={(e) =>
+                          set('fileFormat', { ...format, encoding: e.target.value as typeof format.encoding })
+                        }
+                        options={[
+                          { value: 'utf8', label: t('UTF-8（不带 BOM）') },
+                          { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
+                        ]}
+                      />
+                    </Field>
+                    <Field label={t('换行符')} className="flex-[1_1_200px]">
+                      <Select
+                        value={format.eol}
+                        onChange={(e) => set('fileFormat', { ...format, eol: e.target.value as typeof format.eol })}
+                        options={[
+                          { value: 'lf', label: 'LF（Linux / macOS）' },
+                          { value: 'crlf', label: 'CRLF（Windows）' },
+                        ]}
+                      />
+                    </Field>
+                  </div>
+                  <span className="text-xs text-subtle">
+                    {t(
+                      '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
+                    )}
+                    {!draft.fileFormat && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          className="cursor-pointer text-accent hover:underline"
+                          onClick={() => set('fileFormat', { ...globalFormat })}
+                        >
+                          {t('和全局设置不同时，在这里单独指定')}
+                        </button>
+                      </>
+                    )}
+                    {draft.fileFormat && (
+                      <>
+                        {' '}
+                        <button
+                          type="button"
+                          className="cursor-pointer text-accent hover:underline"
+                          onClick={() => set('fileFormat', undefined)}
+                        >
+                          {t('跟随全局设置')}
+                        </button>
+                      </>
+                    )}
+                  </span>
+                </FormSection>
+
+                <FormSection title={t('版本与推送')}>
+                  <Field label={t('推送到远端')}>
                     <Select
-                      value={format.encoding}
-                      onChange={(e) =>
-                        set('fileFormat', { ...format, encoding: e.target.value as typeof format.encoding })
-                      }
+                      value={draft.gitPolicy}
+                      onChange={(v) => set('gitPolicy', v.target.value as ProjectInput['gitPolicy'])}
                       options={[
-                        { value: 'utf8', label: t('UTF-8（不带 BOM）') },
-                        { value: 'utf8-bom', label: 'UTF-8（带 BOM）' },
+                        { value: 'ask', label: t('第一次需要推送时问一次（推荐）') },
+                        { value: 'allow', label: t('允许直接推送') },
+                        { value: 'deny', label: t('不推送，只做本地提交') },
                       ]}
                     />
                   </Field>
-                  <Field label={t('换行符')} className="flex-[1_1_200px]">
-                    <Select
-                      value={format.eol}
-                      onChange={(e) => set('fileFormat', { ...format, eol: e.target.value as typeof format.eol })}
-                      options={[
-                        { value: 'lf', label: 'LF（Linux / macOS）' },
-                        { value: 'crlf', label: 'CRLF（Windows）' },
-                      ]}
-                    />
-                  </Field>
-                </div>
-                <span className="text-xs text-subtle">
-                  {t(
-                    '这个项目里新建和改写的文本文件用它，Agent 写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
-                  )}
-                  {!draft.fileFormat && (
-                    <>
-                      {' '}
-                      <button
-                        type="button"
-                        className="cursor-pointer text-accent hover:underline"
-                        onClick={() => set('fileFormat', { ...globalFormat })}
-                      >
-                        {t('和全局设置不同时，在这里单独指定')}
-                      </button>
-                    </>
-                  )}
-                  {draft.fileFormat && (
-                    <>
-                      {' '}
-                      <button
-                        type="button"
-                        className="cursor-pointer text-accent hover:underline"
-                        onClick={() => set('fileFormat', undefined)}
-                      >
-                        {t('跟随全局设置')}
-                      </button>
-                    </>
-                  )}
-                </span>
-              </FormSection>
-
-              <FormSection title={t('版本与推送')}>
-                <Field label={t('推送到远端')}>
-                  <Select
-                    value={draft.gitPolicy}
-                    onChange={(v) => set('gitPolicy', v.target.value as ProjectInput['gitPolicy'])}
-                    options={[
-                      { value: 'ask', label: t('第一次需要推送时问一次（推荐）') },
-                      { value: 'allow', label: t('允许直接推送') },
-                      { value: 'deny', label: t('不推送，只做本地提交') },
-                    ]}
-                  />
-                </Field>
-                <span className="text-xs text-subtle">
-                  {t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
-                </span>
-              </FormSection>
-            </div>
-            <aside className="flex shrink-0 flex-col gap-4 md:w-[260px]">
-              <ReadinessCard checks={checks} />
-            </aside>
+                  <span className="text-xs text-subtle">
+                    {t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
+                  </span>
+                </FormSection>
+              </div>
+            )}
+            {section === 'general' && (
+              <aside className="flex shrink-0 flex-col gap-4 md:w-[260px]">
+                <ReadinessCard checks={checks} />
+              </aside>
+            )}
           </form>
         )}
       </div>
@@ -739,6 +841,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
           kind={ai.kind}
           projectId={project?.id ?? ''}
           title={ai.title}
+          autoStart={ai.start}
           paramAgentId={ai.agentId}
           paramSpec={
             ai.kind === 'params'
@@ -767,6 +870,110 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
         />
       )}
     </>
+  )
+}
+
+/** 每个设置页顶上的标题和一句说明 */
+function PageIntro({ title, desc }: { title: string; desc: string }) {
+  return (
+    <div className="flex flex-col gap-1 pb-1">
+      <h3 className="text-[0.9375rem] font-semibold">{title}</h3>
+      <p className="text-[0.78125rem] leading-relaxed text-subtle">{desc}</p>
+    </div>
+  )
+}
+
+/** 可以折叠的卡片：标题行常驻（图标、名称、说明、角标、操作），内容点开才显示 */
+function Collapsible({
+  leading,
+  title,
+  subtitle,
+  badge,
+  actions,
+  defaultOpen = false,
+  children,
+}: {
+  leading?: React.ReactNode
+  title: string
+  subtitle?: string
+  badge?: string
+  actions?: React.ReactNode
+  defaultOpen?: boolean
+  children?: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="rounded-xl border bg-card">
+      <div className="flex items-center gap-3 px-3.5 py-2.5">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          aria-expanded={open}
+          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
+        >
+          <ChevronRight
+            className={cn('h-4 w-4 shrink-0 text-subtle transition-transform', open && 'rotate-90')}
+            strokeWidth={2}
+          />
+          {leading}
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-[0.8125rem] font-medium">{title}</span>
+            {subtitle && <span className="truncate text-[0.71875rem] text-subtle">{subtitle}</span>}
+          </span>
+          {badge && (
+            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+              {badge}
+            </span>
+          )}
+        </button>
+        {actions}
+      </div>
+      {open && children && <div className="border-t px-3.5 py-3.5">{children}</div>}
+    </section>
+  )
+}
+
+/** 一个工作流的卡片：默认的标「默认」，可选的能移除；有参数时点开配置 */
+function WorkflowCard({
+  w,
+  isDefault,
+  defaultOpen,
+  body,
+  onAi,
+  onRemove,
+}: {
+  w: Workflow
+  isDefault?: boolean
+  defaultOpen?: boolean
+  body: React.ReactNode
+  onAi?: () => void
+  onRemove?: () => void
+}) {
+  return (
+    <Collapsible
+      defaultOpen={defaultOpen}
+      leading={<WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />}
+      title={w.name}
+      subtitle={w.description || undefined}
+      badge={isDefault ? t('默认') : undefined}
+      actions={
+        <>
+          {onAi && (
+            <Button size="sm" variant="ghost" onClick={onAi}>
+              <Sparkles className="h-3.5 w-3.5" />
+              {t('AI 配置')}
+            </Button>
+          )}
+          {onRemove && (
+            <Button size="icon-sm" variant="ghost" aria-label={t('移除')} title={t('移除')} onClick={onRemove}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </>
+      }
+    >
+      {body ?? <p className="text-xs text-subtle">{t('这个工作流没有需要配置的参数。')}</p>}
+    </Collapsible>
   )
 }
 
