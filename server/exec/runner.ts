@@ -50,6 +50,7 @@ import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { orchHint } from '../orch-mcp.ts'
+import { lessonsPrompt } from '../../shared/lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
@@ -99,6 +100,7 @@ export interface RealContext {
   submitBuild?: EngineHost['submitBuild']
   runBackground?: EngineHost['runBackground']
   checkBackground?: EngineHost['checkBackground']
+  lessons?: EngineHost['lessons']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -598,6 +600,11 @@ async function runAgent(
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
   const orch = call.orch && def.mcp && !op ? call.orch : undefined
   if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
+  // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取
+  if (!resume && !op && task.projectId) {
+    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons)
+    if (lessons) input = `${input}\n\n${lessons}`
+  }
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
@@ -1340,6 +1347,7 @@ export async function runRealTurn(ctx: RealContext) {
     submitBuild: ctx.submitBuild,
     runBackground: ctx.runBackground,
     checkBackground: ctx.checkBackground,
+    lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {

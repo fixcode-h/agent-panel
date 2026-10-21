@@ -75,6 +75,7 @@ import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
+import { projectLessons, type LessonDraft } from './lessons.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -555,10 +556,27 @@ app.put('/projects/order', async (c) => {
 })
 
 app.put('/projects/:id', async (c) => {
-  const r = await parseProject(await c.req.json())
+  const body = await c.req.json()
+  const r = await parseProject(body)
   if (r.error) return bad(c, r.error)
+  // 没带教训的请求（旧版界面、脚本）不清空已有的教训：它们大多是角色在对话里记的
+  if (body && typeof body === 'object' && !('lessons' in body))
+    r.data!.lessons = (await projects.get(c.req.param('id')))?.lessons ?? []
   const x = await projects.update(c.req.param('id'), r.data!)
   return x ? c.json(x) : bad(c, t('项目不存在'), 404)
+})
+
+// 记一条项目教训（对话里「记成项目教训」）：单独的接口，不用把整个项目设置发回来，也不会盖掉 Agent 刚记的
+const lessons = projectLessons(projects)
+app.post('/projects/:id/lessons', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null
+  if (!body || typeof body.title !== 'string') return bad(c, t('规则不能为空'))
+  const r = await lessons.record(c.req.param('id'), {
+    ...(body as Partial<LessonDraft>),
+    title: body.title,
+    source: 'user',
+  })
+  return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
 })
 
 app.delete('/projects/:id', async (c) => {
@@ -570,7 +588,7 @@ app.delete('/projects/:id', async (c) => {
 })
 
 // ---- 任务 ----
-const tasks = tasksApi({ agents, workflows, projects, projectCategories })
+const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
 app.route('/tasks', tasks.routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))
 // ---- UI 设计和连接浏览器的扩展 ----

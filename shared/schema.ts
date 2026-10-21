@@ -550,6 +550,29 @@ export const TestStep = z.object({
 })
 export type TestStep = z.infer<typeof TestStep>
 
+/**
+ * 项目教训：Agent 在这个项目里返工过的地方，写成下次能直接照做的规则。
+ * 按 paths 命中要改的文件才给全文，提示里平时只放标题，条目多了也不会占满上下文（见 shared/lessons.ts）
+ */
+export const ProjectLesson = z.object({
+  id: z.string().min(1),
+  /** 一句话的规则：该怎么做，不是发生了什么 */
+  title: z.string().trim().min(1, t('规则不能为空')).max(120),
+  /** 展开说明：具体到文件、字段、做法 */
+  rule: z.string().trim().max(1500).default(''),
+  /** 起因：哪次返工、被怎么纠正 */
+  cause: z.string().trim().max(500).default(''),
+  /** 管哪些文件（相对项目根的 glob，`**` 跨目录）；空表示所有改动都适用 */
+  paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  enabled: z.boolean().default(true),
+  /** 谁记的：用户手动加的，还是 Agent 被纠正后自己记的（方便用户复查） */
+  source: z.enum(['user', 'agent']).catch('user').default('user'),
+  /** 在哪个对话里记的 */
+  taskId: z.string().default(''),
+  createdAt: z.string().default(''),
+})
+export type ProjectLesson = z.infer<typeof ProjectLesson>
+
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
 function migrateProject(v: unknown) {
   if (!v || typeof v !== 'object') return v
@@ -589,6 +612,8 @@ const ProjectFields = z.object({
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
   testSteps: z.array(TestStep).max(40).default([]),
+  /** 项目教训：旧项目没有时是空数组 */
+  lessons: z.array(ProjectLesson).max(200).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
   wslDistro: z.string().trim().max(60).default(''),
   /**

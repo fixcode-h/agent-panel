@@ -24,5 +24,5 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 
 ## 在 Claude Code 里开发时别嵌套跑 claude
 
-- 规则：沙盒里直接跑 `claude` 会继承当前会话的环境和会话 id；Claude 的协议用假 CLI 测。Codex 在沙盒里没装。
+- 规则：沙盒里直接跑 `claude` 会继承当前会话的环境和会话 id；Claude 的协议用假 CLI 测。Codex 在沙盒里没装。沙盒设了 `ANTHROPIC_BASE_URL`，会混进 API 配置的断言，跑 e2e 用 `env -u ANTHROPIC_BASE_URL npm run test:e2e`。
 - 防线：人工。

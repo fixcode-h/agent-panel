@@ -24,6 +24,7 @@ import {
   FileInput,
   Sparkles,
   Settings2,
+  GraduationCap,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
@@ -65,6 +66,7 @@ import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
 import { forSend } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
+import { RecordLessonDialog } from '@/components/projects/Lessons'
 
 /** 流程图视图用到的画布库比较大，切到流程图时才加载 */
 const TaskFlow = lazy(() => import('./TaskFlow').then((m) => ({ default: m.TaskFlow })))
@@ -322,6 +324,8 @@ export function TaskView({
   })
   const [dropOver, setDropOver] = useState(false)
   const [rewindAsk, setRewindAsk] = useState('')
+  // 「记成项目教训」弹窗：存的是那条用户消息的原文
+  const [lessonOf, setLessonOf] = useState('')
 
   const apply = (next: Task) => {
     setTask(next)
@@ -1019,31 +1023,42 @@ export function TaskView({
                           at={b.m.at}
                           attachments={b.m.attachments}
                           actions={
-                            // 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回）
-                            task.mode === 'chat' &&
-                            !running &&
-                            !task.imported && (
-                              <>
+                            <>
+                              {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
+                              {project && !task.imported && (
                                 <button
                                   className={msgAction}
-                                  title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                  aria-label={t('从这里分叉')}
-                                  onClick={() => fork(b.m.id)}
+                                  title={t('记成项目教训：以后这个项目里的角色都会照着做')}
+                                  aria-label={t('记成项目教训')}
+                                  onClick={() => setLessonOf(b.m.text)}
                                 >
-                                  <GitFork className="h-3.5 w-3.5" />
+                                  <GraduationCap className="h-3.5 w-3.5" />
                                 </button>
-                                {b.m.id !== firstUser && (
+                              )}
+                              {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
+                              {task.mode === 'chat' && !running && !task.imported && (
+                                <>
                                   <button
                                     className={msgAction}
-                                    title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                    aria-label={t('撤回到这里')}
-                                    onClick={() => setRewindAsk(b.m.id)}
+                                    title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
+                                    aria-label={t('从这里分叉')}
+                                    onClick={() => fork(b.m.id)}
                                   >
-                                    <Undo2 className="h-3.5 w-3.5" />
+                                    <GitFork className="h-3.5 w-3.5" />
                                   </button>
-                                )}
-                              </>
-                            )
+                                  {b.m.id !== firstUser && (
+                                    <button
+                                      className={msgAction}
+                                      title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
+                                      aria-label={t('撤回到这里')}
+                                      onClick={() => setRewindAsk(b.m.id)}
+                                    >
+                                      <Undo2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </>
+                              )}
+                            </>
                           }
                         />
                       ) : b.m.role === 'system' ? (
@@ -1220,6 +1235,24 @@ export function TaskView({
             setStopAsk(false)
           }}
         />
+        {lessonOf && project && (
+          <RecordLessonDialog
+            project={project}
+            text={lessonOf}
+            taskId={task.id}
+            taskTitle={task.title}
+            onClose={() => setLessonOf('')}
+            // 对话里的角色知道刚才哪里做错了，交给它整理；工作流任务和导入的任务没有能接话的角色
+            onAskAgent={
+              task.mode === 'chat'
+                ? async (message) => {
+                    stick.current = true
+                    apply(await api.sendMessage(task.id, message, [], false))
+                  }
+                : undefined
+            }
+          />
+        )}
         <ConfirmDialog
           open={!!rewindAsk}
           onOpenChange={(o) => !o && setRewindAsk('')}

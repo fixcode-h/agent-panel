@@ -830,4 +830,45 @@ export const EN_SETTINGS: Record<string, string> = {
   连接: 'Connections',
   生图: 'Images',
   系统: 'System',
+  // 项目教训
+  '搜索规则、起因或文件': 'Search rules, causes or files',
+  搜索教训: 'Search lessons',
+  '其中 {n} 条是角色自己记的': '{n} recorded by roles themselves',
+  加一条: 'Add one',
+  '还没有教训。对话里纠正了角色的做法时，它会自己记一条；也可以在对话里用户消息下面的「记成项目教训」，或者在这里手动加。':
+    'No lessons yet. When you correct a role in a conversation it records one itself; you can also use “Save as project lesson” under a user message, or add one here.',
+  没有匹配的教训: 'No matching lessons',
+  '（还没写规则）': '(No rule yet)',
+  所有改动: 'All changes',
+  '角色被纠正后自己记的，看一下写得对不对': 'Recorded by a role after being corrected — check that it is right',
+  角色记录: 'Recorded by role',
+  删除这条教训: 'Delete this lesson',
+  规则: 'Rule',
+  '一句话写该怎么做，不是发生了什么': 'One sentence on what to do, not what happened',
+  '例如：CLI 才有的能力写进 CLI 的配置字段，代码按字段走':
+    "e.g. CLI-specific capabilities go into the CLI's config fields; code reads the fields",
+  '具体到文件、字段、做法和不要做的事': 'Be specific: files, fields, what to do and what not to do',
+  起因: 'Cause',
+  '哪次返工、怎么被纠正的': 'Which rework, and how it was corrected',
+  管哪些文件: 'Applies to files',
+  '相对项目根，** 跨目录，写目录名也行，逗号分隔；不写表示所有改动都适用。按文件生效的条目平时只给角色看标题，改到这些文件时它再取全文。':
+    'Relative to the project root; ** spans folders, folder names work too; comma-separated. Leave empty to apply to every change. File-scoped lessons only show their title until a role edits those files, then it fetches the full text.',
+  '对话「{title}」里的纠正': 'Correction in conversation “{title}”',
+  '已记进「{name}」的项目教训': 'Saved to the project lessons of “{name}”',
+  记成项目教训: 'Save as project lesson',
+  '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。':
+    'Once saved, every role in this project sees it when editing related files. Write it as a general rule (e.g. “new capabilities go into the config file”) so it applies elsewhere too.',
+  '把这条消息交给对话里的角色，由它结合刚才的上下文整理成规则再记':
+    'Hand this message to the role in the conversation; it turns it into a rule using the context and records it',
+  让角色整理: 'Let the role write it',
+  记下: 'Save',
+  '{n} 条': '{n}',
+  项目教训: 'Project lessons',
+  '角色在这个项目里返工过的地方，写成下次能直接照做的规则。新会话开头只带「所有改动」的全文和其余条目的标题，角色改到哪些文件再取对应的全文，条目多了也不占满上下文。被纠正时角色会自己记一条，标「角色记录」，有空看一下写得对不对。':
+    "Places where roles had to redo work in this project, written as rules to follow next time. A new session only gets the full text of “All changes” lessons plus the titles of the rest; roles fetch the full text for the files they edit, so many lessons don't fill the context. When corrected, a role records one itself, marked “Recorded by role” — review them when you can.",
+  '记成项目教训：以后这个项目里的角色都会照着做':
+    'Save as project lesson: roles in this project will follow it from now on',
+  规则不能为空: 'Rule cannot be empty',
+  '项目教训已经有 {n} 条，先在项目设置里合并同类项再记':
+    'There are already {n} project lessons; merge similar ones in project settings first',
 }

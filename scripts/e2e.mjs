@@ -1350,6 +1350,42 @@ try {
     step(
       '全局规则：/rule 发布、列出、清空，子对话的提示里带上，子对话自己不能发；对话设置的目标、规则、子对话 CLI 生效',
     )
+
+    // ---- 项目教训：单独的接口记一条（同名更新），新会话的提示里带全局条目全文和按文件条目的标题 ----
+    await call('POST', `/projects/${project.id}/lessons`, {
+      title: '价格一律用整数分',
+      rule: '格式化统一走 formatPrice',
+    })
+    await call('POST', `/projects/${project.id}/lessons`, {
+      title: '支付方式写进配置',
+      rule: '下单流程只读配置字段，不按名字判断',
+      paths: ['src/payment/**'],
+    })
+    const relearned = await call('POST', `/projects/${project.id}/lessons`, {
+      title: '价格一律用整数分',
+      rule: '格式化统一走 src/utils/money.ts',
+    })
+    assert.equal(relearned.lessons.length, 2, '同名的规则更新原来那条')
+    assert.equal(relearned.lessons[0].rule, '格式化统一走 src/utils/money.ts')
+    assert.equal(relearned.lessons[0].source, 'user')
+    const emptyLesson = await call('POST', `/projects/${project.id}/lessons`, { title: ' ' }).catch((e) => e)
+    assert.ok(emptyLesson instanceof Error, '空规则不能记')
+    // 不带 lessons 的项目设置请求不清空教训
+    const { lessons: _lessons, ...withoutLessons } = projectInput
+    const kept = await call('PUT', `/projects/${project.id}`, withoutLessons)
+    assert.equal(kept.lessons.length, 2)
+    const learned = await waitDone(
+      (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '看看教训' })).id,
+      20000,
+    )
+    const lessonLog = JSON.stringify(calls().at(-1))
+    assert.ok(lessonLog.includes('## 项目教训'), '新会话带上项目教训')
+    assert.ok(lessonLog.includes('格式化统一走 src/utils/money.ts'), '所有改动都适用的给全文')
+    assert.ok(lessonLog.includes('支付方式写进配置'), '按文件的列标题')
+    assert.ok(!lessonLog.includes('下单流程只读配置字段'), '按文件的全文不放进提示，按需用工具取')
+    await call('DELETE', `/tasks/${learned.id}`)
+    await call('PUT', `/projects/${project.id}`, { ...projectInput, lessons: [] })
+    step('项目教训：接口记录和同名更新，新会话的提示只带全局条目全文和其余标题')
   }
 
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----

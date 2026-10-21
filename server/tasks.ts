@@ -18,6 +18,7 @@ import {
   RequestAnswer,
   defaultAgent,
 } from '../shared/schema.ts'
+import type { LessonDraft } from './lessons.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -103,6 +104,8 @@ export function tasksApi(deps: {
   workflows: Lister<Workflow>
   projects: Lister<Project>
   projectCategories: Lister<ProjectCategory>
+  /** 记项目教训（和界面上的「记成教训」共用一个队列） */
+  recordLesson?: (projectId: string, draft: LessonDraft) => Promise<{ ok: boolean; info: string }>
 }) {
   const store = createTaskStore()
   /** rev：执行中每次有变化加一，实时推送靠它判断要不要比较内容 */
@@ -230,6 +233,7 @@ export function tasksApi(deps: {
     agentParams: {},
     childIsolation: 'claim',
     testSteps: [],
+    lessons: [],
     wslDistro: '',
     gitPolicy: 'ask',
     createdAt: '',
@@ -859,6 +863,16 @@ export function tasksApi(deps: {
           task.parentTaskId && !isolated(entry.task)
             ? (paths) => claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
             : undefined,
+        // 项目教训：每次查都读最新的（别的对话刚记的也能看到）；Agent 记的标上来源，用户在项目设置里复查
+        lessons: task.projectId
+          ? {
+              list: async () => (await deps.projects.get(task.projectId))?.lessons ?? [],
+              record: async (input) =>
+                deps.recordLesson
+                  ? deps.recordLesson(task.projectId, { ...input, source: 'agent', taskId: task.id })
+                  : { ok: false, info: '这里记不了项目教训' },
+            }
+          : undefined,
         releaseFiles:
           task.parentTaskId && !isolated(entry.task)
             ? (paths) => claims.release(rootId, task.id, paths.length ? paths : undefined)

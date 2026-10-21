@@ -20,6 +20,7 @@ import {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  ProjectLesson,
   Workflow,
   WorkflowInput,
   type Flow,
@@ -41,6 +42,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
+import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
 import { CLIS, getCli } from '@shared/clis'
@@ -458,6 +460,7 @@ function seed(): Db {
     agentSet: true,
     workflowParams: {},
     testSteps: [],
+    lessons: [],
     wslDistro: '',
     gitPolicy: 'ask',
     ...o,
@@ -504,6 +507,42 @@ function seed(): Db {
             },
           ],
           wslDistro: 'Ubuntu-24.04',
+          // 演示里的项目教训：一条手动记的全局规则，两条 Agent 被纠正后记的按文件生效
+          lessons: [
+            {
+              id: 'demo-lesson-1',
+              title: '价格一律用分（整数）存和算，只在显示时转成元',
+              rule: '接口、数据库、购物车计算都用整数分；格式化统一走 src/utils/money.ts 的 formatPrice，不要在组件里自己除以 100。',
+              cause: '结算页用浮点数相加，0.1 + 0.2 显示成 0.30000000000000004 元。',
+              paths: [],
+              enabled: true,
+              source: 'user',
+              taskId: '',
+              createdAt: '2026-09-05T10:00:00.000Z',
+            },
+            {
+              id: 'demo-lesson-2',
+              title: '新增支付方式写进 payment/providers 的配置，不在下单流程里按名字判断',
+              rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。',
+              cause: '加微信支付时分期开关写死在下单流程里，后来接 PayPal 又改了一遍。',
+              paths: ['src/payment/**', 'src/pages/checkout/**'],
+              enabled: true,
+              source: 'agent',
+              taskId: '',
+              createdAt: '2026-09-12T15:30:00.000Z',
+            },
+            {
+              id: 'demo-lesson-3',
+              title: '改接口字段时同步改 mock 数据和类型',
+              rule: 'src/api/types.ts 改了，mock/ 下对应的 JSON 一起改，否则本地开发和 e2e 用的还是旧结构。',
+              cause: '订单接口加了 couponId，mock 没跟上，e2e 一直测的旧结构。',
+              paths: ['src/api/**', 'mock/**'],
+              enabled: true,
+              source: 'agent',
+              taskId: '',
+              createdAt: '2026-09-18T11:20:00.000Z',
+            },
+          ],
         },
         '2026-09-02T09:00:00.000Z',
       ),
@@ -1356,6 +1395,21 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
   }
 
+  if (res === 'projects' && id && sub === 'lessons' && method === 'POST') {
+    const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
+    const b = (body ?? {}) as Partial<ProjectLesson>
+    const l = parse(ProjectLesson, {
+      ...b,
+      id: b.id || newLessonId(),
+      source: 'user',
+      createdAt: b.createdAt || new Date().toISOString(),
+    })
+    const r = upsertLesson(p.lessons, l)
+    if (r.full) fail('项目教训已经有 200 条，先在项目设置里合并同类项再记')
+    Object.assign(p, { lessons: r.list, updatedAt: new Date().toISOString() })
+    persist()
+    return p
+  }
   if (res === 'projects') {
     // 和真正的服务端一样：按添加时间或拖拽后的顺序排，返回给前端的顺序就是侧栏顺序
     if (method === 'GET') return sortProjects(d.projects)
