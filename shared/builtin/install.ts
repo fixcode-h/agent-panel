@@ -11,7 +11,13 @@ import type {
 } from '../schema.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, type BuiltinAgent } from './agents.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
-import { LEGACY_AGENT_FIELDS, LEGACY_WORKFLOWS, MERGED_AGENTS, type LegacyWorkflow } from './legacy.ts'
+import {
+  LEGACY_AGENT_FIELDS,
+  LEGACY_AGENT_FIELDS_MORE,
+  LEGACY_WORKFLOWS,
+  MERGED_AGENTS,
+  type LegacyWorkflow,
+} from './legacy.ts'
 import {
   BUILTIN_WORKFLOWS,
   buildFlow,
@@ -430,23 +436,25 @@ export async function seedProjectWorkflows(state: BuiltinState, api: BuiltinOps)
 }
 
 /**
- * 没改过的旧内置 Agent 升级到新定义：只按 origin 找，并且角色设定、名称、简介都和旧指纹完全一致才升级。
- * 用户改过、或者已经升级过（名字变了）的保留原样，重复启动不会重复改。
+ * 没改过的旧内置 Agent 升级到新定义：只按 origin 找，并且角色设定、名称、简介和某个旧指纹完全一致才升级。
+ * 旧指纹分两处：LEGACY_AGENT_FIELDS 是最早的一版，LEGACY_AGENT_FIELDS_MORE 是后来的各个已发布版本，
+ * 停在任一版的副本都能升级。用户改过、或者已经升级过（名字变了）的保留原样，重复启动不会重复改。
  * 参数、Skill 一起换成新定义；ID、分类、标签、引入关系、能力开关保留本机的。
  */
 export async function upgradeBuiltinAgents(state: BuiltinState, api: { updateAgent?: BuiltinOps['updateAgent'] }) {
   if (!api.updateAgent) return []
   const out: Agent[] = []
   for (const b of BUILTIN_AGENTS) {
-    const old = LEGACY_AGENT_FIELDS[b.key]
+    const olds = [LEGACY_AGENT_FIELDS[b.key], ...(LEGACY_AGENT_FIELDS_MORE[b.key] ?? [])].filter(Boolean)
     const cur = findBuiltin(state.agents, b.key)
-    if (!old || !cur) continue
-    if (
-      cur.name !== old.name ||
-      cur.description !== old.description ||
-      cur.instructions.trim() !== old.instructions.trim()
+    if (!olds.length || !cur) continue
+    const untouched = olds.some(
+      (old) =>
+        cur.name === old.name &&
+        cur.description === old.description &&
+        cur.instructions.trim() === old.instructions.trim(),
     )
-      continue
+    if (!untouched) continue
     const next = await api.updateAgent!(cur.id, {
       ...cur,
       name: b.agent.name,
