@@ -1278,9 +1278,9 @@ function projectWorkflow(d: Db, p: Project) {
   )
 }
 
-/** 这个对话实际用的 CLI（和正式版一样：默认 Agent 的对话用任务上选的，其他 Agent 用自己配置的） */
+/** 这个对话实际用的 CLI（和正式版一样：默认 Agent、不用 Agent 角色时用任务上选的，其他 Agent 用自己配置的） */
 function demoChatCli(d: Db, task: Task) {
-  const a = d.agents.find((x) => x.id === task.agentId)
+  const a = task.agentId ? d.agents.find((x) => x.id === task.agentId) : { ...defaultAgent(), id: '' }
   return a ? agentRun(withTaskModel(a, task), d.settings ?? Settings.parse({})).cli : ''
 }
 

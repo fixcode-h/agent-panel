@@ -142,7 +142,6 @@ export const EN_APP: Record<string, string> = {
   '未选择，将使用「{name}」': 'Not selected; "{name}" will be used',
   请选择工作流: 'Choose a workflow',
   '默认对话 Agent': 'Default chat Agent',
-  '项目设置的默认对话 Agent': 'The project default chat Agent',
   '无（直接用 CLI，不注入 Agent 角色）': 'None (use the CLI directly, no Agent role)',
   '在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。':
     'Used by default for new conversations in this project. Agents allowed to create sub-conversations will dispatch requests to them; capabilities are toggled in Agent settings.',

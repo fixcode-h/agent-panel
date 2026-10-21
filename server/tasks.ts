@@ -319,8 +319,9 @@ export function tasksApi(deps: {
     })
     // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录
     const project = found && isolated(task) ? { ...found, path: task.worktree!.path } : found
-    // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度
-    const startAgent = agents.find((a) => a.id === task.agentId)
+    // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度。
+    // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
+    const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
     let last = 0
     // 预热退出要恢复列表时间：最后一次写不能把它改成现在
@@ -1194,13 +1195,13 @@ export function tasksApi(deps: {
     const agents = touchesRun ? await deps.agents.list() : undefined
     if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return bad(c, t('找不到这个 Agent'))
     const runOf = (t: Task) => {
-      const agent = agents?.find((a) => a.id === t.agentId)
+      const agent = t.agentId ? agents?.find((a) => a.id === t.agentId) : { ...defaultAgent(), id: '' }
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined
     }
     const beforeRun = runOf(cur)
     // 换 CLI 前记下会话是哪个 CLI 的（以前的任务没记），下一轮才知道要开新会话
     if (p.data.cli !== undefined && !cur.sessionCli && cur.sessions[cur.agentId]) {
-      const agent = agents?.find((a) => a.id === cur.agentId)
+      const agent = cur.agentId ? agents?.find((a) => a.id === cur.agentId) : { ...defaultAgent(), id: '' }
       if (agent && settings) cur.sessionCli = agentRun(withTaskModel(agent, cur), settings).cli
     }
     const task = cur

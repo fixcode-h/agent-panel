@@ -312,7 +312,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   const [query, setQuery] = useState('')
   const [filter, setFilter] = useState<TaskFilter>('all')
   const filtering = !!query.trim() || filter !== 'all'
-  const projectTasks = tasks.filter((t) => t.projectId)
+  // 子对话只在父对话页的「子对话」一栏里看，不占项目下的任务列表
+  const projectTasks = tasks.filter((t) => t.projectId && !t.parentTaskId)
   const found = filtering ? projectTasks.filter((t) => matchTask(t, query, filter)).sort(byAskedAt) : []
   // 归档的不在项目分组里显示
   const recent = projectTasks.filter((t) => !t.archived).sort(byAskedAt)

@@ -78,10 +78,10 @@ export function newTask(
     summary: '',
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
-    // 只有默认 Agent 能在对话时选 CLI 和模型；其他 Agent 用自己配置的
-    cli: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.cli ?? '') : '',
-    model: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.model ?? '') : '',
-    effort: input.mode === 'chat' && input.agentId === DEFAULT_AGENT_ID ? (input.effort ?? '') : '',
+    // 默认 Agent 和不用 Agent 角色的对话（agentId 为空）都能在对话时选 CLI 和模型；其他 Agent 用自己配置的
+    cli: input.mode === 'chat' && canPickRun(input.agentId) ? (input.cli ?? '') : '',
+    model: input.mode === 'chat' && canPickRun(input.agentId) ? (input.model ?? '') : '',
+    effort: input.mode === 'chat' && canPickRun(input.agentId) ? (input.effort ?? '') : '',
     askUser: input.askUser ?? false,
     params: input.mode === 'chat' ? (input.params ?? {}) : {},
     status: 'running',
@@ -247,6 +247,9 @@ export function taskDuration(
   return Math.max(0, Date.parse(task.updatedAt) - Date.parse(task.createdAt))
 }
 
+/** 对话里能不能临时选 CLI、模型和思考强度：默认 Agent、以及不用 Agent 角色（空 id）时可以 */
+export const canPickRun = (agentId: string) => !agentId || agentId === DEFAULT_AGENT_ID
+
 /** 对话里显示的名字：用默认 Agent 选了 CLI 的对话显示 CLI 的名字（用户选的就是 CLI） */
 export function chatName(agent: { id: string; name: string } | undefined, task: { cli?: string }) {
   if (!agent) return ''
@@ -258,7 +261,7 @@ export function withTaskModel<A extends { id: string; cli: string; model: string
   agent: A,
   task: { mode: string; agentId: string; cli?: string; model?: string; effort?: string },
 ): A {
-  if (task.mode !== 'chat' || task.agentId !== agent.id || agent.id !== DEFAULT_AGENT_ID) return agent
+  if (task.mode !== 'chat' || task.agentId !== agent.id || !canPickRun(agent.id)) return agent
   // 换了 CLI 时不能沿用默认 Agent 原来的模型（那是另一个 CLI 的）
   const cli = task.cli || agent.cli
   const same = cli === agent.cli

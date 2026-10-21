@@ -168,13 +168,34 @@ try {
   // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
   await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
   await check(p, '内置工作流-添加后', ['识别现场与设计', '文档与提交'])
-  // 项目里新建对话：项目没设置默认 Agent 时就是「无 Agent」，直接和 CLI 对话
+  // 项目里新建对话：输入框上可以选择用不用项目设置的 Agent，对话页不能再换 Agent 和参数
   await p.goto(base)
+  const agentSwitch = p.getByRole('switch', { name: '使用项目设置的 Agent' })
+  await agentSwitch.waitFor({ timeout: 10000 }).catch(() => errors.push('新建任务：没有「使用项目设置的 Agent」开关'))
+  if (await agentSwitch.count()) {
+    if ((await agentSwitch.getAttribute('aria-checked')) !== 'true') errors.push('新建任务：开关默认没有勾选')
+    await check(p, '新建任务-Agent开关', [(await agentSwitch.textContent())?.trim()])
+    // 不勾选后换成 CLI / 模型的选择
+    await agentSwitch.click()
+    await p.waitForTimeout(300)
+    if ((await agentSwitch.getAttribute('aria-checked')) !== 'false') errors.push('新建任务：开关点一下没有关掉')
+    if (!(await p.getByTitle('对话用的 CLI').count())) errors.push('新建任务：关掉 Agent 后没有显示 CLI 选择')
+    await check(p, '新建任务-不用Agent')
+    await agentSwitch.click()
+  }
   await p.locator('#task-prompt').fill('分析一下这个项目的结构')
   await p.waitForTimeout(300)
   await p.locator('#task-prompt').press('Enter')
-  await p.getByText('无 Agent', { exact: false }).first().waitFor({ timeout: 20000 })
-  await check(p, '对话-无Agent', ['无 Agent'])
+  await p
+    .locator('#follow-up')
+    .waitFor({ timeout: 20000 })
+    .catch(() => errors.push('对话页：没有打开输入框'))
+  // 对话页输入框里只剩「提问」开关和 CLI / 模型，没有换 Agent 和改参数的地方
+  if (!(await p.getByRole('button', { name: 'AI 有问题时问我' }).count())) errors.push('对话页：没有「提问」开关')
+  for (const name of ['参数', '无 Agent，直接用 CLI']) {
+    if (await p.getByText(name, { exact: false }).count()) errors.push(`对话页：还能看到「${name}」`)
+  }
+  await check(p, '对话-不能换Agent和参数')
   // AI 分析执行结果：新建分析对话，给出修改建议的差异和框架问题，勾选后应用到工作流
   await p.goto(workflowTaskUrl)
   await p.getByRole('button', { name: '更多操作' }).click()

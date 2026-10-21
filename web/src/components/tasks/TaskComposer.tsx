@@ -1,8 +1,9 @@
 import { useCallback, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, Check, ChevronDown, FolderGit2, GitBranch, Workflow as WorkflowIcon, X } from 'lucide-react'
-import { DEFAULT_AGENT_ID, type Attachment, type Project, type Task } from '@shared/schema'
+import { ArrowUp, Bot, Check, ChevronDown, FolderGit2, GitBranch, Workflow as WorkflowIcon, X } from 'lucide-react'
+import { DEFAULT_AGENT_ID, type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
+import { resolveParams } from '@shared/agent-role'
 import { defaultCli, defaultSettings } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -25,6 +26,7 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
+import { ParamsChip } from '@/components/agents/ParamFields'
 import { t } from '@shared/i18n'
 
 export const chip =
@@ -55,11 +57,44 @@ export function TaskComposer({
     }
   })
   const project = standalone ? undefined : (fixed ?? projects.find((p) => p.id === projectId) ?? projects[0])
-  // 项目里新建的对话默认用项目设置的 Agent；没有设置、或那个 Agent 已删除/停用时不用角色，直接跟随 CLI
-  const wanted = standalone ? DEFAULT_AGENT_ID : (project?.defaultAgentId ?? '')
+  // 项目里新建的对话默认用项目设置的 Agent。勾选「用项目 Agent」时按项目设置解析：
+  // 没有设置、或那个 Agent 已删除/停用时不用角色，直接跟随 CLI；不勾选时一律不用 Agent 角色
+  const [useAgent, setUseAgent] = useState(true)
+  // Chat 页的聊天不属于任何项目，固定用默认 Agent（和以前一样），不显示这个开关
+  const wanted = standalone ? DEFAULT_AGENT_ID : useAgent ? (project?.defaultAgentId ?? '') : ''
   const agent = agents.find((a) => a.id === wanted && (a.enabled || a.id === DEFAULT_AGENT_ID))
   const agentId = wanted && wanted !== DEFAULT_AGENT_ID && !agent ? '' : wanted
   const byCli = !agentId || agentId === DEFAULT_AGENT_ID
+  // Agent 的参数在新建时选好，对话开始后不能再改。换 Agent 时把上一个 Agent 的值清掉
+  const [params, setParams] = useState<ParamValues>({})
+  const [paramsFor, setParamsFor] = useState(agentId)
+  if (paramsFor !== agentId) {
+    setParamsFor(agentId)
+    setParams({})
+  }
+  const agentParams = agent?.id === DEFAULT_AGENT_ID ? [] : (agent?.params ?? [])
+  const missing = byCli || !agent ? [] : resolveParams(agentParams, params).missing
+  // 开关上的文字和说明：项目没设置 Agent 时勾着也等于不用角色，要说清楚
+  const agentLabel = !useAgent
+    ? t('不用 Agent')
+    : agent && agent.id !== DEFAULT_AGENT_ID
+      ? agent.name
+      : wanted && !agent
+        ? t('Agent 已停用')
+        : agentId === DEFAULT_AGENT_ID
+          ? t('默认 Agent')
+          : t('项目没设置 Agent')
+  const agentTitle = !useAgent
+    ? t('直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）')
+    : agent && agent.id !== DEFAULT_AGENT_ID
+      ? t('这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用 Agent）', { name: agent.name })
+      : wanted && !agent
+        ? t('项目设置的 Agent 已删除或停用，这个对话直接和 CLI 对话（点一下改成不用 Agent）')
+        : agentId === DEFAULT_AGENT_ID
+          ? t('这个对话用默认 Agent，CLI、模型和思考强度可以在开始前选（点一下改成不用 Agent）')
+          : t(
+              '项目设置里选了「无 Agent」，这个对话直接和 CLI 对话；在项目设置里选一个 Agent 才会用角色（点一下改成不用 Agent）',
+            )
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run
@@ -126,6 +161,8 @@ export function TaskComposer({
     (standalone || !!project) &&
     (!!prompt.trim() || files.attachments.length > 0) &&
     (workflow ? true : byCli ? !!chatRun.cli : !!agent) &&
+    // 要问用户的参数没选好时不能开始：服务端也会拒绝，这里先挡住并让「参数」按钮显示警告
+    (workflow || !missing.length) &&
     !busy &&
     !files.uploading
 
@@ -146,7 +183,8 @@ export function TaskComposer({
           cli: byWorkflow || !byCli ? '' : chatRun.cli,
           model: byWorkflow || !byCli ? '' : chatRun.model,
           effort: byWorkflow || !byCli ? '' : chatRun.effort,
-          params: {},
+          // 参数跟着 Agent 走：没有 Agent 角色（直接对话）时没有参数可选
+          params: byWorkflow || byCli ? {} : params,
           prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
           isolate: canIsolate && isolate,
@@ -234,12 +272,32 @@ export function TaskComposer({
                   <X className="h-3.5 w-3.5" />
                 </button>
               </span>
-            ) : byCli ? (
-              <ChatModelPicker value={chat} onChange={setChat} />
             ) : (
-              <span className={chip} title={agent?.description || t('项目设置的默认对话 Agent')}>
-                <span className="truncate">{agent?.name ?? t('已删除的 Agent')}</span>
-              </span>
+              <>
+                {/* 用不用项目设置的 Agent 在新建时决定，对话开始后就不能再改 */}
+                {!standalone && project && (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={useAgent}
+                    aria-label={t('使用项目设置的 Agent')}
+                    title={agentTitle}
+                    onClick={() => setUseAgent((v) => !v)}
+                    className={cn(
+                      chip,
+                      useAgent ? 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent' : 'text-subtle',
+                    )}
+                  >
+                    <Bot className="h-4 w-4 shrink-0" />
+                    <span className="truncate">{agentLabel}</span>
+                  </button>
+                )}
+                {byCli ? (
+                  <ChatModelPicker value={chat} onChange={setChat} />
+                ) : (
+                  agentParams.length > 0 && <ParamsChip params={agentParams} values={params} onChange={setParams} />
+                )}
+              </>
             )}
 
             <button
