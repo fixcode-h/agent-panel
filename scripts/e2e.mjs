@@ -588,8 +588,8 @@ try {
   })
   chat = await waitDone(chat.id)
   assert.equal(chat.status, 'done')
-  // 丙是 Command Code：没有插话协议，末尾会附上取执行中补充的用法说明（见 CLI 配置的 notes），任务描述仍在开头
-  assert.equal(calls().at(-1).input.split('\n\n')[0], '解释一下项目结构')
+  // 对话提示由「用户这次的消息」和授权、工作流、执行方式等几段拼成，任务描述在最前面
+  assert.match(calls().at(-1).input, /^## 用户这次的消息\n解释一下项目结构\n\n/, '任务描述在对话提示的开头')
   await call('POST', `/tasks/${chat.id}/messages`, { text: '继续' })
   chat = await waitDone(chat.id)
   c = calls().at(-1)
@@ -663,7 +663,7 @@ try {
   c = calls().at(-1)
   assert.equal(c.kind, 'gemini')
   assert.ok(c.args.includes('--approval-mode') && c.args.includes('auto_edit'), c.args.join(' '))
-  assert.equal(c.input, '用 Gemini', '任务描述从 stdin 传入')
+  assert.match(c.input, /^## 用户这次的消息\n用 Gemini\n\n/, '任务描述从 stdin 传入')
   const gReply = gm.messages.filter((m) => m.role === 'agent').at(-1)
   assert.match(gReply.text, /这是 gemini 的回复/)
   assert.deepEqual(
@@ -690,7 +690,7 @@ try {
   assert.equal(c.kind, 'pi')
   assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
   assert.ok(!c.args.includes('--tools'), '默认全部工具，不限制')
-  assert.equal(c.input, '用 Pi', '任务描述走 RPC 的 prompt 命令')
+  assert.match(c.input, /^## 用户这次的消息\n用 Pi\n\n/, '任务描述走 RPC 的 prompt 命令')
   const pReply = pm.messages.filter((m) => m.role === 'agent').at(-1)
   assert.match(pReply.text, /这是 pi 的回复/)
   assert.deepEqual(
@@ -740,7 +740,7 @@ try {
   })
   mine = await waitDone(mine.id)
   assert.equal(mine.status, 'done', mine.messages.at(-1)?.text)
-  assert.equal(calls().at(-1).input, '自己加的')
+  assert.match(calls().at(-1).input, /^## 用户这次的消息\n自己加的\n\n/)
   rmSync(path.join(dataDir, 'config/clis'), { recursive: true })
   assert.ok(!(await call('POST', '/clis/specs/reload', {})).specs.length, '删掉配置后不再有')
   step('Gemini CLI 按配置执行；数据目录里加一份配置就能接入新的 CLI')
@@ -766,7 +766,7 @@ try {
   )
   let sc = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: def.id, prompt: '/hello 小明' })
   await waitDone(sc.id)
-  assert.match(calls().at(-1).input, /^\/hello 小明/, 'Claude Code 自己认得命令，原样发')
+  assert.match(calls().at(-1).input, /^## 用户这次的消息\n\/hello 小明/, 'Claude Code 自己认得命令，原样发')
   sc = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',
