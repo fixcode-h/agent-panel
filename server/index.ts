@@ -36,7 +36,6 @@ import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
 import { askMcpApi } from './ask-mcp.ts'
-import { orchMcpApi } from './orch-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { fixApi } from './fix.ts'
@@ -68,6 +67,7 @@ import { filesApi } from './files.ts'
 import { t } from '../shared/i18n.ts'
 import { defaultWorkflow } from '../shared/builtin/default.ts'
 import { agentDeleteError, checkWorkflow, workflowDeleteError } from '../shared/validate.ts'
+import { coreDefinition, coreKey, isCoreAgent, syncCore } from '../shared/builtin/core.ts'
 import { ensureProjectAgents, migrateProjectsToGeneral, seedProjectWorkflows } from '../shared/builtin/install.ts'
 import { analyzeProject } from './projects-analyze.ts'
 import { orderProjects, projectOrderError, sortProjects } from '../shared/project-order.ts'
@@ -154,14 +154,9 @@ async function ensureProjectWorkflows() {
     },
   )
   if (projectAgents.created.length)
-    log.info('agent', '已安装项目对话 Agent', { list: projectAgents.created.map((a) => a.name) })
-  // 内置 Agent 的能力开关在升级后补一次（本机已有的 Agent 不会被模板覆盖，只补能力）；
-  // 补过之后 capsSet 为真，用户关掉的能力不会在下次启动时又被打开
-  for (const a of await agents.list()) {
-    if (a.capsSet) continue
-    if (a.origin === 'builtin:orchestrator') await agents.update(a.id, { ...a, canDelegate: true, capsSet: true })
-    else if (a.origin === 'builtin:worker') await agents.update(a.id, { ...a, canPlan: true, capsSet: true })
-  }
+    log.info('agent', '已安装必备角色', { list: projectAgents.created.map((a) => a.name) })
+  if (projectAgents.synced.length)
+    log.info('agent', '必备角色已按内置定义同步', { list: projectAgents.synced.map((a) => a.name) })
   const coordinator = (await agents.list()).find((a) => a.origin === 'builtin:orchestrator')
   const migrations = await migrateProjectsToGeneral(
     await projects.list(),
@@ -405,6 +400,8 @@ app.get('/agents', async (c) => c.json(await agents.list()))
 
 app.post('/agents', async (c) => {
   const r = await parseAgent(await c.req.json())
+  // 复制出来的必备角色是普通角色：来源去掉，不然会被当成第二个必备角色
+  if (r.data && isCoreAgent(r.data)) r.data.origin = ''
   return r.error ? bad(c, r.error) : c.json(await agents.create(r.data!), 201)
 })
 
@@ -414,15 +411,25 @@ app.put('/agents/:id', async (c) => {
   if (r.error) return bad(c, r.error)
   // 默认 Agent 的 CLI、模型、思考强度固定跟随默认 CLI，只能改名称、角色设定这些
   if (id === DEFAULT_AGENT_ID) Object.assign(r.data!, { cli: '', model: '', effort: '', enabled: true })
+  // 必备角色只能改参数取值和运行配置，其余按内置定义写回（AI 优化、导入改了也一样纠正）
+  const before = await agents.get(id)
+  const core = coreKey(before ?? undefined)
+  if (before && core)
+    r.data = {
+      ...syncCore(r.data!, coreDefinition(core), { categoryId: before.categoryId, includes: before.includes }),
+      name: before.name,
+      origin: before.origin,
+    }
   const a = await agents.update(id, r.data!)
-  return a ? c.json(a) : bad(c, t('Agent 不存在'), 404)
+  return a ? c.json(a) : bad(c, t('角色不存在'), 404)
 })
 
 app.delete('/agents/:id', async (c) => {
   const id = c.req.param('id')
+  if (isCoreAgent((await agents.get(id)) ?? undefined)) return bad(c, t('必备角色不能删除'), 409)
   const err = agentDeleteError(id, await workflows.list())
   if (err) return bad(c, err, 409)
-  if (!(await agents.remove(id))) return bad(c, t('Agent 不存在'), 404)
+  if (!(await agents.remove(id))) return bad(c, t('角色不存在'), 404)
   // 引入了它的 Agent 去掉这条引入
   for (const a of await agents.list())
     if (a.includes.includes(id)) await agents.update(a.id, { ...a, includes: a.includes.filter((x) => x !== id) })
@@ -495,7 +502,7 @@ async function parseProject(body: unknown) {
   const p = ProjectInput.safeParse(body)
   if (!p.success) return { error: z.prettifyError(p.error) }
   if (p.data.categoryId && !(await projectCategories.get(p.data.categoryId))) return { error: t('项目分类不存在') }
-  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话 Agent 不存在') }
+  if (p.data.defaultAgentId && !(await agents.get(p.data.defaultAgentId))) return { error: t('默认对话角色不存在') }
   if (p.data.workflowId && !(await workflows.get(p.data.workflowId))) return { error: t('工作流不存在') }
   const cat = p.data.categoryId ? await projectCategories.get(p.data.categoryId) : null
   if (!p.data.workflowId && !cat?.workflowId) return { error: t('请为项目选择子对话默认工作流') }
@@ -605,7 +612,6 @@ app.route('/asks', asksApi())
 // AI 改设计用的工具（MCP）：CLI 直接调，地址里带这一轮的随机令牌
 app.route('/mcp', designMcpApi())
 app.route('/mcp', askMcpApi())
-app.route('/mcp', orchMcpApi())
 const docs = docsApi({ projects })
 app.route('/project-docs', docs.routes)
 app.route('/doc-jobs', docs.jobRoutes)

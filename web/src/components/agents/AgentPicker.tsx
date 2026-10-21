@@ -46,7 +46,7 @@ export function AgentPicker({
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
-          placeholder={t('搜索 Agent')}
+          placeholder={t('搜索角色')}
           className="mb-1 h-9 w-full rounded-lg border-0 bg-field px-2.5 text-[0.8125rem] outline-none placeholder:text-subtle"
         />
         <div className="max-h-72 overflow-y-auto">
@@ -55,7 +55,7 @@ export function AgentPicker({
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-field text-xs text-subtle">
                 —
               </span>
-              <span className="truncate">{noneLabel || t('无 Agent，直接用 CLI')}</span>
+              <span className="truncate">{noneLabel || t('无角色，直接用 CLI')}</span>
             </PopoverClose>
           )}
           {groups.map((g) => (
@@ -73,7 +73,7 @@ export function AgentPicker({
             </div>
           ))}
           {groups.length === 0 && (
-            <p className="px-2.5 py-3 text-xs text-subtle">{t('没有可选的 Agent，先去 Agent 页面创建')}</p>
+            <p className="px-2.5 py-3 text-xs text-subtle">{t('没有可选的角色，先去角色页面创建')}</p>
           )}
         </div>
       </PopoverContent>

@@ -96,7 +96,7 @@ export function WorkflowsPage() {
       go({ page: 'workflows', id: workflow.id })
       toast.success(
         created.length
-          ? t('已导入「{name}」，新建了 {n} 个 Agent：{list}', {
+          ? t('已导入「{name}」，新建了 {n} 个角色：{list}', {
               name: workflow.name,
               n: created.length,
               list: created.map((a) => a.name).join(t('、')),
@@ -191,7 +191,7 @@ export function WorkflowsPage() {
                 }
                 title={w.name}
                 monoSubtitle={false}
-                subtitle={`${nameOf(w.mainAgentId) ?? t('未选默认 Agent')} · ${t('{n} 个子 Agent', { n: subAgentIds(w).length })}`}
+                subtitle={`${nameOf(w.mainAgentId) ?? t('未选默认角色')} · ${t('{n} 个子角色', { n: subAgentIds(w).length })}`}
                 tags={w.tags.length ? <TagList ids={w.tags} /> : undefined}
                 // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
                 trailing={
@@ -260,9 +260,7 @@ export function WorkflowsPage() {
       ) : (
         !loading && (
           <DetailEmpty icon={<WorkflowIcon className="h-6 w-6" />} title={t('创建第一个工作流')}>
-            <p>
-              {t('工作流把 Agent 组成团队：选一个主 Agent 负责推进，再加几个子 Agent，然后在流程图里编排执行顺序。')}
-            </p>
+            <p>{t('工作流把角色组成团队：选一个主角色负责推进，再加几个子角色，然后在流程图里编排执行顺序。')}</p>
             <div className="mt-5 flex flex-wrap justify-center gap-2">
               <Button onClick={() => create()}>
                 <Plus className="h-4 w-4" />

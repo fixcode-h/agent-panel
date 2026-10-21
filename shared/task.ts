@@ -76,6 +76,8 @@ export function newTask(
     parentTaskId: input.parentTaskId ?? '',
     rootTaskId: input.rootTaskId ?? '',
     summary: '',
+    rules: [],
+    inbox: [],
     workflowId: input.mode === 'workflow' ? (workflow?.id ?? '') : '',
     agentId: input.mode === 'chat' ? input.agentId : '',
     // 默认 Agent 和不用 Agent 角色的对话（agentId 为空）都能在对话时选 CLI 和模型；其他 Agent 用自己配置的
@@ -523,7 +525,7 @@ export function closeFlow(task: Task, id: string, now = new Date().toISOString()
     role: 'system',
     agentId: '',
     step: '',
-    text: t('这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。'),
+    text: t('这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。'),
     tools: [],
     at: now,
   })

@@ -1,5 +1,6 @@
-import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
+import { useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
   ChevronRight,
@@ -177,6 +178,10 @@ interface ChildSummary {
   cliAlive: boolean
   /** 最近一条消息的时间，列表按它排序 */
   lastMessageAt: string
+  /** 正在等用户确认的请求数 */
+  requests?: number
+  /** 在独立 worktree 里改时的分支 */
+  branch?: string
 }
 
 /** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
@@ -292,6 +297,15 @@ export function TaskView({
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
+  // 消息下面的「引用」：引用块接在输入框已有内容的后面，光标停到最后接着写
+  useQuoteTarget(dropArea, (block) => {
+    const cur = followTa.current?.text() ?? text
+    setText(cur.trim() ? `${cur.trimEnd()}\n\n${block}` : block)
+    requestAnimationFrame(() => {
+      followTa.current?.focus()
+      followTa.current?.setCaret(Number.MAX_SAFE_INTEGER)
+    })
+  })
   const [dropOver, setDropOver] = useState(false)
   const [rewindAsk, setRewindAsk] = useState('')
 
@@ -476,6 +490,9 @@ export function TaskView({
       </main>
     )
 
+  // Chat 模式的聊天不属于项目：没有可看的项目文件，右边的文件栏和展开按钮都不显示
+  const noFiles = !task.projectId
+
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
   const send = async () => {
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
@@ -570,7 +587,7 @@ export function TaskView({
   // 没有 Agent 角色（选了「无」或默认 Agent）的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
   const byCli = task.mode === 'chat' && (!task.agentId || task.agentId === DEFAULT_AGENT_ID)
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
-  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || t('无 Agent')
+  const chatLabel = (byCli ? getCli(chatCli)?.name : chatName(chatAgent, task)) || t('无角色')
   const changeRun = async (v: ChatRun) => {
     setTask({ ...task, ...v })
     try {
@@ -664,9 +681,9 @@ export function TaskView({
                   ? t('{n} 个节点同时执行中', { n: tops.filter((s) => s.status === 'running').length })
                   : t('执行中，可以随时暂停')
                 : blocked
-                  ? t('主 Agent 处理后会接着走流程')
+                  ? t('主角色处理后会接着走流程')
                   : roots.every((s) => s.status === 'done')
-                    ? t('由主 Agent {name} 处理追加要求', { name: mainAgent?.name ?? '' })
+                    ? t('由主角色 {name} 处理追加要求', { name: mainAgent?.name ?? '' })
                     : task.status === 'failed'
                       ? t('会从失败的节点重新执行')
                       : t('会从没完成的节点继续执行')}
@@ -829,7 +846,7 @@ export function TaskView({
                   <ListPlus className="h-4 w-4" />
                 </Button>
               )}
-              {!pane && (
+              {!pane && !noFiles && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -873,7 +890,7 @@ export function TaskView({
                 </MenuContent>
               </Menu>
               {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
-              {!pane && openRun === 0 && !openChild && (
+              {!pane && !noFiles && openRun === 0 && !openChild && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
@@ -1049,10 +1066,7 @@ export function TaskView({
                     {working && task.mode === 'workflow' && runningSteps.length === 0 && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
                         <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        <RunPhase
-                          task={task}
-                          label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主 Agent') })}
-                        />
+                        <RunPhase task={task} label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })} />
                         <LiveStats task={task} />
                       </div>
                     )}
@@ -1118,7 +1132,7 @@ export function TaskView({
                   : 'hidden',
                 // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
                 'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
-                filesFolded && openRun === 0 && !openChild && 'xl:hidden',
+                (filesFolded || noFiles) && openRun === 0 && !openChild && 'xl:hidden',
               )}
             >
               {!openChild && !panel && (
@@ -1390,37 +1404,54 @@ function ChildrenBar({
               </div>
             </div>
             <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
-              {shown.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  onClick={() => {
-                    onOpen(c.id)
-                    setOpen(false)
-                  }}
-                  className={cn(
-                    'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
-                    c.id === openChild && 'bg-sel',
+              {childGroups(shown, all).map((g) => (
+                <Fragment key={g.key}>
+                  {g.label && (
+                    <p className="px-2.5 pt-2 pb-1 text-[0.6875rem] font-medium text-subtle">
+                      {g.label} · {g.items.length}
+                    </p>
                   )}
-                >
-                  <span className="mt-0.5 shrink-0">
-                    <TaskStatusIcon status={c.status} working={c.working} />
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <span className="flex min-w-0 items-center gap-1.5">
-                      <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
-                        {c.title}
-                      </span>
-                      {!c.cliAlive && (
-                        <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                          {t('已关闭')}
-                        </span>
+                  {g.items.map((c) => (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => {
+                        onOpen(c.id)
+                        setOpen(false)
+                      }}
+                      className={cn(
+                        'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
+                        c.id === openChild && 'bg-sel',
                       )}
-                      {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
-                    </span>
-                    {!c.working && c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
-                  </span>
-                </button>
+                    >
+                      <span className="mt-0.5 shrink-0">
+                        <TaskStatusIcon status={c.status} working={c.working} />
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                        <span className="flex min-w-0 items-center gap-1.5">
+                          <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
+                            {c.title}
+                          </span>
+                          {!c.cliAlive && (
+                            <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                              {t('已关闭')}
+                            </span>
+                          )}
+                          {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
+                        </span>
+                        {!c.working && c.summary && (
+                          <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>
+                        )}
+                        {c.branch && (
+                          <span className="flex min-w-0 items-center gap-1 font-mono text-[0.6875rem] text-subtle">
+                            <GitBranch className="h-3 w-3 shrink-0" />
+                            <span className="truncate">{c.branch}</span>
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))}
+                </Fragment>
               ))}
               {!shown.length && (
                 <p className="px-2.5 py-3 text-xs text-subtle">{all ? t('还没有子对话') : t('没有正在运行的子对话')}</p>
@@ -1431,6 +1462,32 @@ function ChildrenBar({
       </div>
     </div>
   )
+}
+
+/**
+ * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、做完的、停下的；
+ * 「运行中」只有活着的几个，不分组
+ */
+function childGroups(list: ChildSummary[], grouped: boolean) {
+  if (!grouped) return [{ key: 'all', label: '', items: list }]
+  const groups = [
+    { key: 'you', label: t('需要你处理'), items: [] as ChildSummary[] },
+    { key: 'running', label: t('执行中'), items: [] as ChildSummary[] },
+    { key: 'done', label: t('已完成'), items: [] as ChildSummary[] },
+    { key: 'stopped', label: t('已停止'), items: [] as ChildSummary[] },
+  ]
+  for (const c of list) {
+    const g =
+      c.requests || c.status === 'failed'
+        ? groups[0]
+        : c.working || c.status === 'running'
+          ? groups[1]
+          : c.status === 'done'
+            ? groups[2]
+            : groups[3]
+    g.items.push(c)
+  }
+  return groups.filter((g) => g.items.length)
 }
 
 /** 输入框上面一行的提示条（没走完的流程）共用的样式 */
@@ -1463,7 +1520,7 @@ function FlowBar({
       ? t('流程没有完成：「{title}」执行失败', { title: failed.title })
       : left
         ? t('流程没有完成，还有 {n} 个节点没执行', { n: left })
-        : t('流程没有完成，主 Agent 还没整理结果')
+        : t('流程没有完成，主角色还没整理结果')
   return (
     <div className="mx-auto mb-2 max-w-(--content-w)">
       <div className={barRow}>
@@ -1497,7 +1554,7 @@ function FlowBar({
         open={asking}
         onOpenChange={setAsking}
         title={t('结束这个流程？')}
-        description={t('没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。')}
+        description={t('没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。')}
         confirmText={t('结束流程')}
         onConfirm={() =>
           api

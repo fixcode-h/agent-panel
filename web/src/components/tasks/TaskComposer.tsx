@@ -1,9 +1,21 @@
-import { useCallback, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUp, Bot, Check, ChevronDown, FolderGit2, GitBranch, Workflow as WorkflowIcon, X } from 'lucide-react'
+import {
+  ArrowUp,
+  Bot,
+  Check,
+  ChevronDown,
+  CornerDownRight,
+  FolderGit2,
+  GitBranch,
+  MessageSquare,
+  Workflow as WorkflowIcon,
+  X,
+} from 'lucide-react'
 import { DEFAULT_AGENT_ID, type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
 import { dropChip, forSend } from '@shared/composer'
 import { resolveParams } from '@shared/agent-role'
+import { relatedTasks } from '@shared/related'
 import { defaultCli, defaultSettings } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -76,15 +88,15 @@ export function TaskComposer({
   const missing = byCli || !agent ? [] : resolveParams(agentParams, params).missing
   // 开关只放图标，用来说明的话：项目没设置 Agent 时勾着也等于不用角色，要说清楚
   const agentTitle = !useAgent
-    ? t('直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）')
+    ? t('直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）')
     : agent && agent.id !== DEFAULT_AGENT_ID
-      ? t('这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用 Agent）', { name: agent.name })
+      ? t('这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）', { name: agent.name })
       : wanted && !agent
-        ? t('项目设置的 Agent 已删除或停用，这个对话直接和 CLI 对话（点一下改成不用 Agent）')
+        ? t('项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）')
         : agentId === DEFAULT_AGENT_ID
-          ? t('这个对话用默认 Agent，CLI、模型和思考强度可以在开始前选（点一下改成不用 Agent）')
+          ? t('这个对话用默认角色，CLI、模型和思考强度可以在开始前选（点一下改成不用角色）')
           : t(
-              '项目设置里选了「无 Agent」，这个对话直接和 CLI 对话；在项目设置里选一个 Agent 才会用角色（点一下改成不用 Agent）',
+              '项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）',
             )
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
@@ -173,6 +185,38 @@ export function TaskComposer({
     !busy &&
     !files.uploading
 
+  // 项目首页：要求看起来和已有的对话是同一件事时，提示可以直接发过去接着做，不用新开一个对话从头了解
+  const asked = useDeferredValue(prompt)
+  const related = useMemo(
+    () =>
+      fixed && !workflow
+        ? relatedTasks(
+            asked,
+            tasks.filter((x) => x.projectId === fixed.id && !x.parentTaskId && !x.archived && !x.imported),
+          )
+        : [],
+    [asked, tasks, fixed, workflow],
+  )
+  const sendTo = async (id: string) => {
+    if ((!prompt.trim() && !files.attachments.length) || busy || files.uploading) return
+    setBusy(true)
+    try {
+      onCreated(
+        await api.sendMessage(
+          id,
+          forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
+          files.attachments,
+        ),
+      )
+      setPrompt('')
+      files.clear()
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const start = async () => {
     if (!canStart) return
     setBusy(true)
@@ -194,7 +238,7 @@ export function TaskComposer({
           params: byWorkflow || byCli ? {} : params,
           prompt: forSend(prompt, files.attachments.length ? ATTACHMENT_PROMPT : ''),
           attachments: files.attachments,
-          // 只有打开了「独立分支」才显式传；不传时由服务端按项目设置决定（子对话默认隔离）
+          // 只有打开了「独立分支」才传；子对话一律不建独立分支
           isolate: canIsolate && isolate ? true : undefined,
           askUser,
         }),
@@ -207,6 +251,27 @@ export function TaskComposer({
       setBusy(false)
     }
   }
+
+  // 独立分支：和 Agent 开关一样只显示图标，放在输入框里。只有顶层对话能开，子对话都跟着父对话的目录
+  const isolateSwitch = canIsolate && (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={isolate}
+      aria-label={t('独立分支')}
+      onClick={() => setIsolate((v) => !v)}
+      title={t(
+        '独立分支：在单独的 git 分支和目录里执行，不改动项目目录，完成后再决定合并还是丢弃；它分出的子对话也在这个目录里',
+      )}
+      className={cn(
+        chip,
+        'w-8 justify-center px-0',
+        isolate ? 'bg-accent-soft text-accent hover:bg-accent-soft hover:text-accent' : 'text-subtle',
+      )}
+    >
+      <GitBranch className="h-4 w-4 shrink-0" />
+    </button>
+  )
 
   return (
     <div className="flex flex-col gap-3">
@@ -268,21 +333,24 @@ export function TaskComposer({
             />
             <AskToggle value={askUser} onChange={setAskUser} className="h-8 w-8 rounded-lg" />
             {workflow ? (
-              <span
-                className={cn(chip, 'cursor-default')}
-                title={t('按工作流「{name}」的流程图执行', { name: workflow.name })}
-              >
-                <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
-                <button
-                  type="button"
-                  onClick={() => setWorkflowId('')}
-                  aria-label={t('改回直接对话')}
-                  title={t('改回直接对话')}
-                  className="-mr-1 grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+              <>
+                {isolateSwitch}
+                <span
+                  className={cn(chip, 'cursor-default')}
+                  title={t('按工作流「{name}」的流程图执行', { name: workflow.name })}
                 >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </span>
+                  <WorkflowIcon className="h-4 w-4 shrink-0 text-subtle" />
+                  <button
+                    type="button"
+                    onClick={() => setWorkflowId('')}
+                    aria-label={t('改回直接对话')}
+                    title={t('改回直接对话')}
+                    className="-mr-1 grid h-5 w-5 shrink-0 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              </>
             ) : (
               <>
                 {/* 用不用项目设置的 Agent 在新建时决定，对话开始后就不能再改 */}
@@ -291,7 +359,7 @@ export function TaskComposer({
                     type="button"
                     role="switch"
                     aria-checked={useAgent}
-                    aria-label={t('使用项目设置的 Agent')}
+                    aria-label={t('使用项目设置的角色')}
                     title={agentTitle}
                     onClick={() => setUseAgent((v) => !v)}
                     className={cn(
@@ -303,6 +371,7 @@ export function TaskComposer({
                     <Bot className="h-4 w-4 shrink-0" />
                   </button>
                 )}
+                {isolateSwitch}
                 {byCli ? (
                   <ChatModelPicker value={chat} onChange={setChat} />
                 ) : (
@@ -324,7 +393,7 @@ export function TaskComposer({
         )}
       </div>
       {/* 在哪里执行（项目、独立分支）放在输入框外面左下角，和「怎么执行」分开 */}
-      {!loading && ((!fixed && !standalone) || canIsolate) && (
+      {!loading && !fixed && !standalone && (
         <div className="-mt-2 flex flex-wrap items-center gap-1 px-1">
           {!fixed && !standalone && (
             <Popover>
@@ -354,18 +423,28 @@ export function TaskComposer({
               </PopoverContent>
             </Popover>
           )}
-          {canIsolate && (
+        </div>
+      )}
+      {related.length > 0 && (
+        <div className="-mt-1 flex flex-col gap-1 px-1" aria-label={t('可能相关的对话')}>
+          <span className="text-xs text-subtle">{t('看起来和这些对话是同一件事，可以直接发过去接着做：')}</span>
+          {related.map(({ task: x }) => (
             <button
-              role="switch"
-              aria-checked={isolate}
-              onClick={() => setIsolate((v) => !v)}
-              title={t('在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃')}
-              className={cn(chip, isolate && 'bg-accent/10 text-accent hover:bg-accent/15 hover:text-accent')}
+              key={x.id}
+              type="button"
+              disabled={busy}
+              onClick={() => sendTo(x.id)}
+              title={t('把这条要求发到「{title}」', { title: x.title })}
+              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <GitBranch className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t('独立分支')}</span>
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
+              <span className="min-w-0 flex-1 truncate">{x.title}</span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-subtle group-hover:text-accent">
+                <CornerDownRight className="h-3.5 w-3.5" />
+                {t('发到这里')}
+              </span>
             </button>
-          )}
+          ))}
         </div>
       )}
       {busyProject && canIsolate && !isolate && (

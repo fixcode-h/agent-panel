@@ -363,7 +363,7 @@ export function planTask(workflow: Workflow | undefined, run = 1): { steps: Task
             workflowId: workflow.id,
             flowId: flow.id,
             kind: 'main',
-            title: t('主 Agent'),
+            title: t('主角色'),
             agentId: workflow.mainAgentId,
           }),
         ]
@@ -456,7 +456,7 @@ export const SLOT_LABEL: Record<string, string> = {
   end: t('结束'),
   body: t('执行'),
   step: t('步骤'),
-  sub: t('子 Agent'),
+  sub: t('子角色'),
   call: t('委派'),
 }
 

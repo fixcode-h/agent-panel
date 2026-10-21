@@ -75,7 +75,14 @@ export async function createWorktree(repo: string, taskId: string, title: string
   const dir = path.join(WORKTREES_DIR, taskId)
   await mkdir(WORKTREES_DIR, { recursive: true })
   const branch = branchName(taskId, title)
-  const r = await git(repo, 'worktree', 'add', '-b', branch, dir, 'HEAD')
+  // 不下载 LFS 大文件（贴图、uasset 这类）：独立分支只用来改代码，检出时只留指针文件，快很多也省磁盘
+  const r = await capture(
+    'git',
+    ['-c', 'core.quotepath=off', 'worktree', 'add', '-b', branch, dir, 'HEAD'],
+    repo,
+    { ...process.env, GIT_LFS_SKIP_SMUDGE: '1' },
+    10 * 60_000,
+  )
   if (r.code !== 0) throw fail(r, t('创建独立分支失败'))
   await prepare(dir, repo)
   return { path: dir, branch, baseBranch: baseBranch === 'HEAD' ? '' : baseBranch, state: 'active', note: '' }
@@ -129,4 +136,53 @@ export async function removeWorktree(repo: string, wt: TaskWorktree, force: bool
   }
   await git(repo, 'worktree', 'prune')
   await git(repo, 'branch', force ? '-D' : '-d', wt.branch)
+}
+
+/** 目录当前所在的分支；分离 HEAD 时返回空 */
+export async function currentBranch(dir: string) {
+  const b = (await git(dir, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim()
+  return b === 'HEAD' ? '' : b
+}
+
+/** 独立目录里还没提交的改动提交到任务分支；没有改动返回 false */
+export async function commitWorktree(wt: TaskWorktree, message: string) {
+  if (!existsSync(wt.path)) return false
+  await git(wt.path, 'add', '-A')
+  if ((await git(wt.path, 'diff', '--cached', '--quiet')).code === 0) return false
+  const c = await git(wt.path, ...(await identity(wt.path)), 'commit', '-q', '-m', message)
+  if (c.code !== 0) throw fail(c, t('提交改动失败'))
+  return true
+}
+
+/**
+ * 试合并：把分支合进目标目录但先不提交（编译通过再提交，失败就撤回）。
+ * 有冲突时直接撤回，目标目录保持原样；分支没有新提交时返回 nothing
+ */
+export async function trialMerge(target: string, branch: string) {
+  const m = await git(target, ...(await identity(target)), 'merge', '--no-commit', '--no-ff', branch)
+  if (m.code !== 0) {
+    const conflicts = (await git(target, 'diff', '--name-only', '--diff-filter=U')).stdout.trim()
+    await abortMerge(target)
+    return {
+      ok: false as const,
+      error:
+        (conflicts ? `冲突的文件：\n${conflicts}\n\n` : '') +
+        (m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n'),
+    }
+  }
+  const pending = (await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0
+  const files = (await git(target, 'diff', '--cached', '--name-only')).stdout.trim()
+  return { ok: true as const, nothing: !pending, files: files ? files.split('\n') : [] }
+}
+
+/** 试合并通过后提交 */
+export async function commitMerge(target: string, message: string) {
+  const c = await git(target, ...(await identity(target)), 'commit', '-q', '--no-edit', '-m', message)
+  if (c.code !== 0) throw fail(c, t('提交改动失败'))
+  return (await git(target, 'rev-parse', '--short', 'HEAD')).stdout.trim()
+}
+
+/** 撤回试合并：目标目录回到合并前的样子 */
+export async function abortMerge(target: string) {
+  if ((await git(target, 'merge', '--abort')).code !== 0) await git(target, 'reset', '--merge')
 }

@@ -19,3 +19,6 @@ logs/
 .agents/
 .mcp.json
 .claude.json
+
+# 测试里假 CLI 偶尔留在仓库根目录的输出
+/commandcode-output.txt

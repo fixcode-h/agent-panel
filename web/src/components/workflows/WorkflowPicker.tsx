@@ -19,7 +19,7 @@ export function WorkflowPicker({
 }) {
   const { workflows, agents, clis } = useData()
   const current = workflows.find((w) => w.id === value)
-  const mainName = (id: string) => agents.find((a) => a.id === id)?.name ?? t('未选默认 Agent')
+  const mainName = (id: string) => agents.find((a) => a.id === id)?.name ?? t('未选默认角色')
   return (
     <Popover>
       <PopoverTrigger className={cn(fieldClass, 'flex h-10 cursor-pointer items-center gap-2 text-left')}>
@@ -45,7 +45,7 @@ export function WorkflowPicker({
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate">{w.name}</span>
                 <span className="truncate text-xs text-subtle">
-                  {mainName(w.mainAgentId)} · {t('{n} 个子 Agent', { n: subAgentIds(w).length })}
+                  {mainName(w.mainAgentId)} · {t('{n} 个子角色', { n: subAgentIds(w).length })}
                 </span>
               </span>
               {w.id === value && <Check className="h-4 w-4 text-accent" />}

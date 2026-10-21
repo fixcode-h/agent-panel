@@ -70,6 +70,8 @@ import {
 } from '@shared/task'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
+import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
+import { BUILTIN_AGENTS, CORE_CATEGORY } from '@shared/builtin/agents'
 import { importTask, parseTaskExport } from '@shared/task-export'
 import { AssistInput } from '@shared/assist'
 import { demoAssistJob, startDemoAssist, stopDemoAssist } from './demo-assist'
@@ -449,6 +451,8 @@ function seed(): Db {
   ): Project => ({
     ...meta(),
     createdAt,
+    agentParams: {},
+    childIsolation: 'worktree',
     workflowIds: [],
     defaultAgentId: '',
     agentSet: true,
@@ -456,7 +460,6 @@ function seed(): Db {
     testSteps: [],
     wslDistro: '',
     gitPolicy: 'ask',
-    childIsolate: true,
     ...o,
   })
   return {
@@ -485,6 +488,7 @@ function seed(): Db {
               timeoutSec: 0,
               note: '',
               enabled: true,
+              merge: true,
             },
             {
               id: 'demo-e2e',
@@ -496,6 +500,7 @@ function seed(): Db {
               timeoutSec: 600,
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
+              merge: false,
             },
           ],
           wslDistro: 'Ubuntu-24.04',
@@ -553,7 +558,36 @@ function load(): Db {
   // 自带的默认 Agent：旧的演示数据、导入的数据里没有时补上
   if (!db.agents.some((a) => a.id === DEFAULT_AGENT_ID)) db.agents.unshift(defaultAgent())
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
+  ensureDemoCore(db)
   return db
+}
+
+/** 和服务端启动时一样：必备角色（和它们引入的「通用约束」）缺了就补上，已有的按内置定义同步 */
+function ensureDemoCore(d: Db) {
+  const at = new Date(0).toISOString()
+  let cat = d.categories.find((c) => c.scope === 'agent' && c.name === CORE_CATEGORY)
+  if (!cat) {
+    cat = { id: 'demo-core', name: CORE_CATEGORY, scope: 'agent', createdAt: at, updatedAt: at }
+    d.categories.push(cat)
+  }
+  for (const key of ['rules', ...CORE_AGENTS.map((c) => c.key)]) {
+    if (d.agents.some((a) => a.origin === `builtin:${key}`)) continue
+    const def = BUILTIN_AGENTS.find((b) => b.key === key)!
+    d.agents.push({
+      ...AgentInput.parse({ ...def.agent, origin: `builtin:${key}`, categoryId: key === 'rules' ? '' : cat.id }),
+      id: `demo-${key}`,
+      createdAt: at,
+      updatedAt: at,
+    })
+  }
+  const rules = d.agents.find((a) => a.origin === 'builtin:rules')
+  d.agents = d.agents.map((a) => {
+    const key = coreKey(a)
+    if (!key) return a
+    const def = coreDefinition(key)
+    const includes = def.includes.map((k) => (k === 'rules' ? (rules?.id ?? '') : '')).filter(Boolean)
+    return { ...a, ...syncCore(a, def, { categoryId: cat.id, includes }), name: a.name || def.agent.name }
+  })
 }
 function persist() {
   try {
@@ -1254,6 +1288,7 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'agents') {
     if (method === 'GET') return d.agents
     if (method === 'DELETE') {
+      if (isCoreAgent(d.agents.find((a) => a.id === id))) fail('必备角色不能删除')
       const err = agentDeleteError(id, d.workflows)
       if (err) fail(err)
       remove('agents', id, 'Agent 不存在')
@@ -1266,6 +1301,14 @@ function route(method: string, url: string, body: unknown): unknown {
     if (input.categoryId && !d.categories.some((c) => c.id === input.categoryId)) fail('分类不存在')
     input.tags = input.tags.filter((t) => d.tags?.some((x) => x.id === t))
     if (id === DEFAULT_AGENT_ID) Object.assign(input, { cli: '', model: '', effort: '', enabled: true })
+    // 必备角色只能改参数取值和运行配置；复制出来的是普通角色
+    const coreBefore = method === 'POST' ? undefined : d.agents.find((a) => a.id === id && isCoreAgent(a))
+    if (method === 'POST' && isCoreAgent(input)) input.origin = ''
+    if (coreBefore) {
+      const def = coreDefinition(coreKey(coreBefore)!)
+      const next = syncCore(input, def, { categoryId: coreBefore.categoryId, includes: coreBefore.includes })
+      return update('agents', id, { ...next, name: coreBefore.name, origin: coreBefore.origin }, 'Agent 不存在')
+    }
     // 和服务端一样：去掉引入自己的，会形成循环就拒绝
     const self = method === 'POST' ? '' : id
     input.includes = [...new Set(input.includes)].filter((x) => x !== self)
@@ -1472,8 +1515,8 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
     platform: workflow ? 'win32' : '',
   })
   // 演示里没有真的仓库：只记下分支信息，让界面能展示合并 / 丢弃。
-  // 和服务端一致：没传 isolate 时，子对话按项目设置默认隔离
-  const isolate = input.isolate ?? (!!input.parentTaskId && !!project && project.childIsolate !== false)
+  // 和服务端一致：只有顶层对话能选独立分支，子对话和父对话共用目录
+  const isolate = !!input.isolate && !input.parentTaskId
   if (isolate && project)
     task.worktree = {
       path: '',

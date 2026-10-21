@@ -34,7 +34,7 @@ export const EN_SHARED: Record<string, string> = {
 
   // data.ts：数据分类
   配置: 'Configuration',
-  '设置、Agent、工作流和分类': 'Settings, Agents, workflows and categories',
+  '设置、角色、工作流和分类': 'Settings, roles, workflows and categories',
   项目: 'Projects',
   '添加的项目（不会动项目目录里的文件）；清理时任务记录一起清掉':
     'Added projects (files in project directories are never touched); clearing also removes their task history',
@@ -77,7 +77,7 @@ export const EN_SHARED: Record<string, string> = {
   请描述任务: 'Please describe the task',
   内容不能为空: 'Content is required',
   标题不能为空: 'Title is required',
-  '默认 Agent': 'Default Agent',
+  默认角色: 'Default role',
   '使用默认 CLI 的默认模型和思考强度，对话时可以临时调整':
     'Uses the default model and effort of the default CLI. You can adjust them during a chat',
   主流程: 'Main flow',
@@ -97,8 +97,8 @@ export const EN_SHARED: Record<string, string> = {
   // engine.ts：写进任务对话的系统消息和错误
   执行失败: 'Run failed',
   '「{title}」的开始流程失败：{error}': 'Start flow of "{title}" failed: {error}',
-  '「{title}」没有可执行的 Agent，请先给工作流选择主 Agent':
-    '"{title}" has no Agent to run it. Choose a main Agent for the workflow first',
+  '「{title}」没有可执行的角色，请先给工作流选择主角色':
+    '"{title}" has no role to run it. Choose a main role for the workflow first',
   '「{title}」的验收流程失败：{error}': 'Review flow of "{title}" failed: {error}',
   '「{title}」的验收流程没有写「验收结论」，按通过处理。':
     'The review flow of "{title}" gave no verdict, so it was treated as passed.',
@@ -122,40 +122,38 @@ export const EN_SHARED: Record<string, string> = {
   '工作流的主流程还没有连到「开始」的节点，请先在流程图里从「开始」连线':
     'No node in the main flow is connected to "Start" yet. Draw a connection from "Start" in the flow chart first',
   '工作流不存在，可能已被删除': 'The workflow does not exist. It may have been deleted',
-  '没有可以回答的 Agent，请先给工作流选择主 Agent':
-    'No Agent is available to respond. Choose a main Agent for the workflow first',
+  '没有可以回答的角色，请先给工作流选择主角色':
+    'No role is available to respond. Choose a main role for the workflow first',
   '这次执行已经花了 ${used}，达到工作流设定的上限 ${limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has spent ${used}, reaching the workflow limit of ${limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '这次执行已经用了 {used} token，达到工作流设定的上限 {limit}，已暂停。点「继续执行」会再给一份同样的额度。':
     'This run has used {used} tokens, reaching the workflow limit of {limit}, so it is paused. Click "Continue" to grant the same amount again.',
   '「{title}」没有写「结论」，按通过处理。': '"{title}" did not state a verdict; treating it as a pass.',
-  '主 Agent 评估「{title}」：通过，走「{branch}」分支':
-    'Main Agent reviewed "{title}": pass, taking the "{branch}" branch',
-  '主 Agent 评估「{title}」：通过': 'Main Agent reviewed "{title}": pass',
+  '主角色评估「{title}」：通过，走「{branch}」分支': 'Main role reviewed "{title}": pass, taking the "{branch}" branch',
+  '主角色评估「{title}」：通过': 'Main role reviewed "{title}": pass',
   '。交代后续：{note}': '. Note for the next nodes: {note}',
-  '主 Agent 把「{title}」退回修改：{feedback}': 'Main Agent sent "{title}" back for changes: {feedback}',
+  '主角色把「{title}」退回修改：{feedback}': 'Main role sent "{title}" back for changes: {feedback}',
   '（没有写具体意见）': '(no specific feedback)',
-  '主 Agent 把「{title}」相关的事委派给工作流「{workflow}」':
-    'Main Agent delegated work on "{title}" to the workflow "{workflow}"',
-  '主 Agent 停下了流程：{reason}': 'Main Agent stopped the flow: {reason}',
+  '主角色把「{title}」相关的事委派给工作流「{workflow}」':
+    'Main role delegated work on "{title}" to the workflow "{workflow}"',
+  '主角色停下了流程：{reason}': 'Main role stopped the flow: {reason}',
   '（没有写原因）': '(no reason given)',
-  '主 Agent 起了新的一次运行：{input}': 'Main Agent started a new run: {input}',
+  '主角色起了新的一次运行：{input}': 'Main role started a new run: {input}',
   按流程图再走一遍: 'go through the flow again',
-  '主 Agent 重做这次运行：{feedback}': 'Main Agent is redoing this run: {feedback}',
+  '主角色重做这次运行：{feedback}': 'Main role is redoing this run: {feedback}',
   '（没有写具体原因）': '(no specific reason)',
-  '主 Agent 直接回答，没有起运行': 'Main Agent answered directly without starting a run',
-  '主 Agent 起了第 {n} 次运行：{input}': 'Main Agent started run {n}: {input}',
+  '主角色直接回答，没有起运行': 'Main role answered directly without starting a run',
+  '主角色起了第 {n} 次运行：{input}': 'Main role started run {n}: {input}',
   这次要求: 'This request',
   第一条要求: 'First request',
-  '主 Agent 评估「{title}」失败：{error}': 'Main Agent failed to review "{title}": {error}',
-  '主 Agent 没有写调度决定，「{title}」按通过处理。':
-    'Main Agent did not write a decision; treating "{title}" as a pass.',
-  '主 Agent 退回「{title}」{n} 次后仍不满意：{feedback}':
-    'Main Agent is still not satisfied after sending "{title}" back {n} times: {feedback}',
+  '主角色评估「{title}」失败：{error}': 'Main role failed to review "{title}": {error}',
+  '主角色没有写调度决定，「{title}」按通过处理。': 'Main role did not write a decision; treating "{title}" as a pass.',
+  '主角色退回「{title}」{n} 次后仍不满意：{feedback}':
+    'Main role is still not satisfied after sending "{title}" back {n} times: {feedback}',
   '「{title}」委派的工作流「{name}」失败：{error}': 'The workflow "{name}" delegated from "{title}" failed: {error}',
-  '主 Agent 整理结果失败：{error}': 'Main Agent failed to write the final result: {error}',
-  '「{title}」派出 {n} 个子 Agent：{list}': '"{title}" started {n} sub-agents: {list}',
-  '「{title}」向主 Agent 提问：{question}': '"{title}" asked the main Agent: {question}',
+  '主角色整理结果失败：{error}': 'Main role failed to write the final result: {error}',
+  '「{title}」派出 {n} 个子角色：{list}': '"{title}" started {n} sub-roles: {list}',
+  '「{title}」向主角色提问：{question}': '"{title}" asked the main role: {question}',
   '「{from}」→「{to}」：{text}': '"{from}" → "{to}": {text}',
   委派: 'Delegated',
 }

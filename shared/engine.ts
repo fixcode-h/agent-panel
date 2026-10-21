@@ -171,8 +171,29 @@ export interface Orchestra {
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
-  createConversation(title: string, message: string): Promise<{ ok: boolean; id?: string; info: string }>
+  createConversation(
+    title: string,
+    message: string,
+    files?: string[],
+  ): Promise<{ ok: boolean; id?: string; info: string }>
   sendToConversation(id: string, message: string): Promise<{ ok: boolean; info: string }>
+  /** 子对话（连同它的工作流节点）：和父对话通讯、认领要改的文件；子对话之间不能直接通讯 */
+  child: boolean
+  /** 子对话和兄弟共用目录、需要认领文件（独立分支里的不用） */
+  claims: boolean
+  /** 对话（项目对话、子对话）：长命令交给面板在后台跑，跑完把结果推回这个对话 */
+  canBackground: boolean
+  runBackground(input: { command: string; name: string; cwd: string; exclusive: boolean }): Promise<{
+    ok: boolean
+    info: string
+  }>
+  checkBackground(id: string): string
+  /** 独立分支里的子对话：把改动交给面板合回原目录编译（排队，结果推回来） */
+  canSubmit: boolean
+  submitBuild(note: string): Promise<{ ok: boolean; info: string }>
+  toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
+  claim(paths: string[]): { ok: boolean; info: string }
+  release(paths: string[]): { ok: boolean; info: string }
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
@@ -237,9 +258,37 @@ export interface EngineHost {
     title: string
     message: string
     agentId?: string
+    /** 父对话划给这个子对话的文件 / 目录：创建时替它认领 */
+    files?: string[]
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
+  /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、合回原目录编译，claim 共用目录认领文件 */
+  childIsolation?: 'claim' | 'worktree'
+  /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
+  submitBuild?: (note: string) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 后台命令：面板在这个对话的目录里跑，马上返回编号；跑完把结果推回对话（正在执行就插话，空闲就开新的一轮）。
+   * exclusive 的（编译这类）按项目排队，同一时间只跑一个
+   */
+  runBackground?: (input: { command: string; name: string; cwd: string; exclusive: boolean }) => Promise<{
+    ok: boolean
+    info: string
+  }>
+  /** 查后台命令：不传编号列出这个对话的全部 */
+  checkBackground?: (id: string) => string
+  /**
+   * 父对话发布的全局规则（「/rule」）：子对话和它的工作流节点每次调用都带上，必须遵守。
+   * 父对话自己也带上，分派时提醒子对话
+   */
+  rules?: string[]
+  /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
+  takeInbox?: () => { title: string; text: string }[]
+  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
+  messageParent?: (text: string, question: boolean) => Promise<{ ok: boolean; info: string }>
+  /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
+  claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
+  releaseFiles?: (paths: string[]) => number
 }
 
 const MAX_DEPTH = 6
@@ -539,6 +588,23 @@ function policyPart(host: EngineHost) {
   return `## 授权情况\n${push}\n${tools}`
 }
 
+/** 父对话发布的全局规则：子对话和它的所有节点都要遵守；父对话自己看到的是「你发布的」 */
+function rulesPart(host: EngineHost) {
+  const rules = (host.rules ?? []).map((r) => r.trim()).filter(Boolean)
+  if (!rules.length) return ''
+  const list = rules.map((r, i) => `${i + 1}. ${clip(r, 2000)}`).join('\n')
+  return host.task.parentTaskId
+    ? `## 全局规则（父对话发布，必须遵守）\n${list}\n和其他要求冲突时以这些规则为准；做不到的地方用 message_parent 告诉父对话，不要自己绕过。`
+    : `## 这个对话的全局规则\n你和用户在这个对话里发布的规则，所有子对话都会收到并遵守：\n${list}`
+}
+
+/** 父对话：上一轮之后子对话发来的消息（汇报、提问），这一轮一起处理 */
+function inboxPart(host: EngineHost) {
+  const got = host.takeInbox?.() ?? []
+  if (!got.length) return ''
+  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。`
+}
+
 /**
  * 写文件的格式：项目设置在全局设置里定的编码和换行符。
  * 说清楚是为了避免 Windows 上写出的 CRLF / BOM 让脚本在 WSL / Linux 里跑不起来。
@@ -559,6 +625,30 @@ function fileFormatPart(host: EngineHost) {
  * 同一个任务里各个节点（包括主 Agent、派出的子 Agent）都一样的开头：需求、工作流说明、通用要求。
  * 放在最前面，按前缀匹配缓存的模型服务（Codex 等）能多命中一段
  */
+/**
+ * 独立分支里的子对话（连同它的工作流节点）：分支只用来隔离改文件，里面没有编译产物和依赖的构建结果，
+ * 编译、构建这类步骤交给面板合回原目录统一跑，不在这里跑
+ */
+function buildPart(host: EngineHost) {
+  if (!host.submitBuild) return ''
+  return `## 编译交给面板
+你在独立分支的目录里改文件，这里只隔离编辑：不要在这里跑编译、构建、打包或会写构建产物的命令（UE 的 Build.bat、npm run build 这类），也不要为了编译去装依赖。
+- 可以跑不写构建产物的快速检查：类型检查、lint、单个文件的语法检查。
+- 改完一批后调用 submit_build：面板把改动排队合回原目录，按项目里标了「合并时编译」的步骤编译，通过才算合进去；失败会撤回，并把报错推回给你，在这里修好再提交一次。
+- 提交后不用干等，可以接着做别的部分；结果到了再处理。没有编译通过，不说完成。`
+}
+
+/** 能用后台命令时说清楚什么时候用：不说的话模型照样同步跑长命令，一直卡着 */
+function backgroundPart(host: EngineHost) {
+  if (!host.runBackground) return ''
+  return `## 长命令放到后台
+预计超过一分钟的命令（完整测试、端到端测试、长时间的检查${host.submitBuild ? '' : '、编译'}）用 run_background 交给面板在后台跑，它马上返回，结果跑完会自动推回给你：
+- 等结果的时候接着做不依赖它的事：读代码、写文档、改和这条命令无关的文件。不要改这条命令要检查的文件，改了结果就不算数（面板会标出期间被改过）。
+- 编译、打包这类会抢文件锁的命令把 exclusive 设为 true，面板按项目排队，同一时间只跑一个。
+- 手上没有别的事时直接结束这一轮，结果到了会接着处理；不要反复调用 check_background 轮询。
+- 几秒就能跑完的命令照常直接执行。`
+}
+
 function commonPart(host: EngineHost, w?: Workflow) {
   const { original, extra } = userRequests(host.task)
   return [
@@ -567,6 +657,8 @@ function commonPart(host: EngineHost, w?: Workflow) {
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
     statePart(host.task),
     policyPart(host),
+    rulesPart(host),
+    buildPart(host),
     fileFormatPart(host),
     '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
@@ -768,7 +860,7 @@ async function runNodeSingle(
       return r.ok ? { ok: true, text: r.output } : r
     }
     if (!step.agentId)
-      return { ok: false, error: t('「{title}」没有可执行的 Agent，请先给工作流选择主 Agent', { title: step.title }) }
+      return { ok: false, error: t('「{title}」没有可执行的角色，请先给工作流选择主角色', { title: step.title }) }
     const full = unitPrompt(
       host,
       inv,
@@ -932,18 +1024,18 @@ async function runNodeSingle(
         return fail(
           ev.stopped || ev.halted
             ? ev
-            : { ...ev, error: t('主 Agent 评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
+            : { ...ev, error: t('主角色评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
         )
       let d: Dispatch | null = parseDispatch(ev.text)
       if (!d) {
-        system(host, t('主 Agent 没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
+        system(host, t('主角色没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
         d = { action: 'continue' }
       }
       // 退回次数用完、委派来回太多次：只能继续或停下
       if (d.action === 'rework' && reworks >= node.hooks.maxRounds)
         return fail({
           ok: false,
-          error: t('主 Agent 退回「{title}」{n} 次后仍不满意：{feedback}', {
+          error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
             title: step.title,
             n: reworks,
             feedback: clip(d.feedback, 1500),
@@ -1178,7 +1270,7 @@ async function runNodeSteps(
       return res.ok ? { ok: true, text: res.output } : res
     }
     if (!r.agentId)
-      return { ok: false, error: t('「{title}」没有可执行的 Agent，请先给工作流选择主 Agent', { title: r.title }) }
+      return { ok: false, error: t('「{title}」没有可执行的角色，请先给工作流选择主角色', { title: r.title }) }
     const decidingHere = deciding && i === units.length - 1 && inv.slot !== 'review'
     const full = unitPrompt(host, inv, node, unit, r, before, i === 0 ? start : '', decidingHere, true)
     const prev =
@@ -1357,12 +1449,12 @@ async function runNodeSteps(
         return fail(
           ev.stopped || ev.halted
             ? ev
-            : { ...ev, error: t('主 Agent 评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
+            : { ...ev, error: t('主角色评估「{title}」失败：{error}', { title: step.title, error: ev.error }) },
           recordOf(last),
         )
       let d: Dispatch | null = parseDispatch(ev.text)
       if (!d) {
-        system(host, t('主 Agent 没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
+        system(host, t('主角色没有写调度决定，「{title}」按通过处理。', { title: step.title }), step.id)
         d = { action: 'continue' }
       }
       // 退回次数用完、委派来回太多次：只能继续或停下
@@ -1370,7 +1462,7 @@ async function runNodeSteps(
         return fail(
           {
             ok: false,
-            error: t('主 Agent 退回「{title}」{n} 次后仍不满意：{feedback}', {
+            error: t('主角色退回「{title}」{n} 次后仍不满意：{feedback}', {
               title: step.title,
               n: reworks,
               feedback: clip(d.feedback, 1500),
@@ -1564,7 +1656,7 @@ function openMain(host: EngineHost, inv: Omit<Invocation, 'main'>): MainCtl {
       workflowId: inv.workflow.id,
       flowId: inv.flow.id,
       kind: 'main',
-      title: inv.parentId ? t('主 Agent · {name}', { name: inv.workflow.name }) : t('主 Agent'),
+      title: inv.parentId ? t('主角色 · {name}', { name: inv.workflow.name }) : t('主角色'),
       agentId: inv.workflow.mainAgentId,
     })
     host.task.steps.push(step)
@@ -1643,7 +1735,7 @@ async function runInvocation(host: EngineHost, inv: Invocation): Promise<FlowRes
   const s = await mainTurn(host, main, 'summary', summaryEvent(results, main.nested))
   if (!s.ok) {
     if (s.stopped || s.halted) return s
-    const error = t('主 Agent 整理结果失败：{error}', { error: s.error })
+    const error = t('主角色整理结果失败：{error}', { error: s.error })
     main.step.status = 'failed'
     main.step.endedAt = now()
     system(host, error, main.step.id, true)
@@ -1848,7 +1940,7 @@ function makeOrchestra(
       if (task.steps.some((s) => !s.parentId && inRun(s.id, run) && s.status === 'running' && !isMainStep(s)))
         return { ok: false, info: '这次运行还有节点在执行，等它走完再起新的运行' }
       askRun(host, input)
-      system(host, t('主 Agent 起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }), where)
+      system(host, t('主角色起了新的一次运行：{input}', { input: clip(input || t('按流程图再走一遍'), 300) }), where)
       host.changed(true)
       return { ok: true, info: '这一轮结束后会按流程图跑一次新的运行，节点全部新建' }
     },
@@ -1888,13 +1980,13 @@ function makeOrchestra(
         .map((c) => `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`)
         .join('\n')
     },
-    async createConversation(title, message) {
+    async createConversation(title, message, files) {
       if (!coordinator || !host.createConversation) return { ok: false, info: '这个对话不能创建子对话' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
       if (!title.trim())
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
-      const r = await host.createConversation({ title: title.trim(), message })
+      const r = await host.createConversation({ title: title.trim(), message, files })
       if (r.ok) {
         system(host, t('新建了子对话「{title}」，这条消息交给它处理', { title: r.title || title }), where)
         host.changed(true)
@@ -1908,6 +2000,52 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
+    child: !!task.parentTaskId && !!host.messageParent,
+    claims: !!host.claimFiles,
+    canBackground: !!host.runBackground,
+    async runBackground(input) {
+      if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
+      if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
+      const r = await host.runBackground(input)
+      if (r.ok) host.changed(true)
+      return r
+    },
+    checkBackground(id) {
+      return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
+    },
+    canSubmit: !!host.submitBuild,
+    async submitBuild(note) {
+      if (!host.submitBuild) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
+      const r = await host.submitBuild(note.trim())
+      if (r.ok) {
+        system(host, t('已提交编译，等面板合回原目录编译'), where)
+        host.changed(true)
+      }
+      return r
+    },
+    async toParent(text, question) {
+      if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
+      if (!text.trim()) return { ok: false, info: 'text 不能为空' }
+      return host.messageParent(text.trim(), question)
+    },
+    claim(paths) {
+      if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
+      const list = paths.map((p) => p.trim()).filter(Boolean)
+      if (!list.length) return { ok: false, info: 'paths 是空的：写要改的文件或目录（相对项目根）' }
+      const r = host.claimFiles(list)
+      const lines = [
+        r.granted.length ? `已认领：${r.granted.join('、')}` : '',
+        r.held.length
+          ? `被其他子对话占着（不要改）：${r.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。先做别的部分，过一会儿再认领；绕不开就用 message_parent 请父对话协调。`
+          : '',
+      ]
+      return { ok: !r.held.length, info: lines.filter(Boolean).join('\n') }
+    },
+    release(paths) {
+      if (!host.releaseFiles) return { ok: false, info: '这个对话不需要认领文件' }
+      const n = host.releaseFiles(paths.map((p) => p.trim()).filter(Boolean))
+      return { ok: true, info: n ? `已释放 ${n} 条认领` : '没有要释放的认领' }
+    },
     readState() {
       const entries = Object.entries(runState(task))
       if (!entries.length) return '（共享状态还是空的）'
@@ -1919,7 +2057,15 @@ function makeOrchestra(
     status: () => statusTree(host, self.id),
     spawn(tasks) {
       const depth = (self.id.match(/\/sub\//g) ?? []).length
-      if (depth >= MAX_HELPER_DEPTH) return { ids: [], error: '子 Agent 最多派两层，这一层不能再派了，请自己完成' }
+      // 子对话本身已经是父对话派出来的一层：里面再派子 Agent 只允许一层，免得一个项目对话开出太多 CLI
+      const maxDepth = task.parentTaskId ? 1 : MAX_HELPER_DEPTH
+      if (depth >= maxDepth)
+        return {
+          ids: [],
+          error: task.parentTaskId
+            ? '子对话里的子 Agent 只能派一层，这一层不能再派了，请自己完成'
+            : '子 Agent 最多派两层，这一层不能再派了，请自己完成',
+        }
       const list = tasks.filter((x) => x && (x.title?.trim() || x.instructions?.trim()))
       if (!list.length) return { ids: [], error: 'tasks 是空的：每个子任务要写 title 和 instructions' }
       const have = task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub').length
@@ -1961,7 +2107,7 @@ function makeOrchestra(
         )
       system(
         host,
-        t('「{title}」派出 {n} 个子 Agent：{list}', {
+        t('「{title}」派出 {n} 个子角色：{list}', {
           title: self.title,
           n: made.length,
           list: made.map((m) => m.step.title).join(t('、')),
@@ -1991,7 +2137,7 @@ function makeOrchestra(
       if (main.step.id === self.id) return { error: '你就是主 Agent，自己决定' }
       system(
         host,
-        t('「{title}」向主 Agent 提问：{question}', { title: self.title, question: clip(question, 500) }),
+        t('「{title}」向主角色提问：{question}', { title: self.title, question: clip(question, 500) }),
         where,
       )
       host.changed(true)
@@ -2249,12 +2395,20 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
     policyPart(host),
+    rulesPart(host),
+    inboxPart(host),
+    buildPart(host),
+    backgroundPart(host),
     statePart(host.task),
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
       ? `## 执行目录
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
-提交留在这个分支上，由用户决定合并还是丢弃：不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
+${
+  host.task.parentTaskId
+    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译不在这里跑，改完用 submit_build 交给面板合回原目录编译，见下面的「编译交给面板」。'
+    : '提交留在这个分支上，由用户决定合并还是丢弃。'
+}不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
 ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       : '',
     catalog.length && planning
@@ -2280,10 +2434,25 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       }`,
       `## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
-2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会自己列计划并执行。
-3. 只是一般问题、讨论或很小的请求：自己回答或直接处理，不要新建子对话。
-不要同时把同一条消息发给多个子对话。子对话不能再创建子对话。
-子对话默认在独立分支的单独目录里执行：写 message 时不要把「在项目目录里直接改」写进去，也不要让子对话去碰主分支。`,
+2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会按项目的默认工作流列计划并执行。
+3. 只是一般问题、讨论或很小的请求（改一两行、改个文案）：自己当场处理，比新建子对话快得多。
+一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
+分派时把你已经查到的东西一起交过去：相关文件和行号、已经确认的结论、用户的原话和验收标准都写进 message，子对话不用从头再摸一遍。
+
+${
+  host.childIsolation === 'worktree'
+    ? `## 子对话各自在独立分支里改
+要改代码的子对话都有自己的独立分支目录，只用来隔离改文件，互相看不到对方改到一半的文件。
+- 编译不在子对话里跑：子对话改完调用 submit_build，面板排队把它合回原目录（这个对话所在的目录）试编译，通过才提交，失败撤回并把报错推回给那个子对话。一次只合一个，相当于构建锁。
+- 每次合并编译的结果会告诉你。子对话反复失败、或者报错其实是别的子对话的改动引起的，由你协调。
+- 几个子对话都合进去之后，需要的话派「测试验收」在原目录里跑一遍完整的测试。`
+    : `## 子对话共用一个目录
+所有子对话都在同一个目录里直接改，不建独立分支。为了不互相覆盖：
+- 新建子对话时用 files 写清它负责的文件或目录（相对项目根），面板替它认领；别的子对话改这些文件要等它做完。
+- 两件事会改同一批文件时，交给同一个子对话，或者等前一个做完再交给下一个。
+- 编译、全量测试会读到别的子对话改到一半的文件：同一时间只让一个子对话跑编译，结果不对时先确认是不是别人的改动造成的。
+- 子对话报告文件冲突或者提问时，由你决定谁先做、怎么分，再用 send_to_conversation 告诉它们。`
+}`,
     )
   } else if (kind === 'top') {
     parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。`)
@@ -2291,10 +2460,23 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
     parts.push(
       planning
         ? `## 执行方式
-你只负责当前这个子对话的任务。简单的问题、分析和小改动直接在对话里做；需要完整流程、跨模块改动或较大的研究时，调用 start_plan 启动工作流，让它按计划执行。你没有创建子对话的能力。`
+你只负责当前这个子对话的任务。要修改代码、跨模块改动或较大的研究时，调用 start_plan 按项目的默认工作流执行（更合适的可选工作流写它的 id）；只是问题、分析或一两行的小改动直接在对话里做。你没有创建子对话的能力。`
         : `## 执行方式
 你只负责当前这个子对话的任务，直接在对话里执行。你没有创建子对话或按工作流启动计划的能力。`,
     )
+    if (host.messageParent)
+      parts.push(
+        host.claimFiles
+          ? `## 和父对话、其他子对话的协作
+你是项目对话分出来的子对话，和其他子对话在同一个目录里同时工作（没有独立分支）：
+- 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent 请父对话协调。做完一部分可以用 release_files 释放。
+- 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
+- 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
+- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`
+          : `## 和父对话的协作
+你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
+需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`,
+      )
   }
   return parts.filter(Boolean).join('\n\n')
 }
@@ -2494,7 +2676,7 @@ export async function runEngineTurn(host: EngineHost) {
       system(
         host,
         t(
-          '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。',
+          '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。',
           { title: stuck.title },
         ),
         '',
@@ -2512,7 +2694,7 @@ export async function runEngineTurn(host: EngineHost) {
     // 新一次运行的节点：编排器还是原来那个，其余全部新建
     const fresh = planTask(wf, n).steps.filter((s) => !isMainStep(s))
     for (const s of fresh) if (!task.steps.some((x) => x.id === s.id)) task.steps.push(s)
-    if (input) system(host, t('主 Agent 起了第 {n} 次运行：{input}', { n, input: clip(input, 300) }), '')
+    if (input) system(host, t('主角色起了第 {n} 次运行：{input}', { n, input: clip(input, 300) }), '')
     tops = topSteps(task)
     host.changed(true)
     return runWorkflow(n)
@@ -2552,8 +2734,7 @@ export async function runEngineTurn(host: EngineHost) {
     const asked = takePendingRun(host)
     const input = asked || (d.action === 'run' ? (d.input ?? '') : d.action === 'restart' ? d.feedback : '')
     if (asked || d.action === 'run' || d.action === 'restart') {
-      if (input)
-        system(host, t('主 Agent 起了第 {n} 次运行：{input}', { n: run, input: clip(input, 300) }), main.step.id)
+      if (input) system(host, t('主角色起了第 {n} 次运行：{input}', { n: run, input: clip(input, 300) }), main.step.id)
       if (!(await runWorkflow(run, input))) return
     } else {
       system(host, dispatchText(d, t('第一条要求')), main.step.id)
@@ -2596,7 +2777,7 @@ export async function runEngineTurn(host: EngineHost) {
       const last = [...task.steps].reverse().find((s) => s.agentId === who && task.sessions[s.id])
       if (last) task.sessions[who] = task.sessions[last.id]
     }
-    if (!who) return finish(host, { ok: false, error: t('没有可以回答的 Agent，请先给工作流选择主 Agent') })
+    if (!who) return finish(host, { ok: false, error: t('没有可以回答的角色，请先给工作流选择主角色') })
     // 每一轮单独记耗时和用量，任务进度里能看到工作流跑完后的追加要求；预热不算一轮
     const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
     if (turn) host.changed(true)

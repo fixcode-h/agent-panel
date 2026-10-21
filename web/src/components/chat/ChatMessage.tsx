@@ -1,7 +1,9 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
 import { useState } from 'react'
-import { Check, Copy } from 'lucide-react'
+import { Check, Copy, Quote } from 'lucide-react'
+import { toast } from 'sonner'
+import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
@@ -96,6 +98,23 @@ export function CopyButton({
   )
 }
 
+/** 引用：把这段内容作为引用块放进当前对话的输入框 */
+export function QuoteButton({ text }: { text: string }) {
+  return (
+    <button
+      type="button"
+      className={msgAction}
+      title={t('引用到输入框')}
+      aria-label={t('引用')}
+      onClick={(e) => {
+        if (!quoteFrom(e.currentTarget, text)) toast(t('这里没有可以引用到的输入框'))
+      }}
+    >
+      <Quote className="h-3.5 w-3.5" />
+    </button>
+  )
+}
+
 /** 消息下面的一行：时间和操作按钮，一直显示（always 保留给调用方，不再控制显隐） */
 export function MessageMeta({
   text,
@@ -121,6 +140,7 @@ export function MessageMeta({
       )}
     >
       {text && <CopyButton text={text} attachments={attachments} />}
+      {text && <QuoteButton text={text} />}
       {actions}
       {time?.short && (
         <time dateTime={at} title={time.full} className="px-1.5 tabular-nums">

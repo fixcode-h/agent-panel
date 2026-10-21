@@ -42,6 +42,32 @@ export interface ChipActions {
 
 const isCommand = (kind: ChipKind) => kind === 'skill' || kind === 'command'
 
+/**
+ * 各类卡片的样子：图标（lucide 的路径）、文字前缀和配色。加新的卡片类型时在 composer.ts 加标记、在这里加一行，
+ * 删除按钮、看大图这些交互所有卡片通用
+ */
+const CHIP_STYLE: Record<ChipKind, { icon: string; prefix?: string; accent?: boolean }> = {
+  image: {
+    icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>',
+  },
+  file: {
+    icon: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  },
+  skill: {
+    icon: '<path d="M9.94 14.06 4 20"/><path d="m14 4 6 6"/><path d="M12 2v2M19 12h2M5 5l1.5 1.5"/><path d="m14 4-4 4 6 6 4-4Z"/>',
+    prefix: '/',
+    accent: true,
+  },
+  command: {
+    icon: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m9 17 6-10"/>',
+    prefix: '/',
+    accent: true,
+  },
+}
+
+const svg = (paths: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-[1.05em] w-[1.05em] shrink-0 opacity-70">${paths}</svg>`
+
 /** 把一段 DOM 读回带标记的文字 */
 function serialize(node: Node): string {
   if (node.nodeType === Node.TEXT_NODE) return (node.nodeValue ?? '').replace(/\u00a0/g, ' ')
@@ -83,13 +109,21 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   el.dataset.chip = chip.kind
   el.dataset.name = chip.name
   // 图片卡片：缩略图和文件名排在一行，和文字卡片一样高；删除按钮叠在右上角，位置靠外层定位
+  const style = CHIP_STYLE[chip.kind]
   el.className = cn(
     'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
-    isCommand(chip.kind) ? 'border-accent/35 bg-accent-soft text-accent' : 'border-line-strong bg-field/70 text-fg',
+    style.accent ? 'border-accent/35 bg-accent-soft text-accent' : 'border-line-strong bg-field/70 text-fg',
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   const act = actions?.()
   el.title = t('按退格键删除')
+  if (!src) {
+    // 没有缩略图的卡片前面放类型图标：文件、技能、命令一眼能分开
+    const icon = document.createElement('span')
+    icon.className = 'inline-flex shrink-0'
+    icon.innerHTML = svg(style.icon)
+    el.append(icon)
+  }
   if (src) {
     // 图片：一行高的小缩略图，后面接文件名；点缩略图看大图，鼠标停在卡片上时可点右上角删除
     const img = document.createElement('img')
@@ -105,9 +139,17 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   }
   const label = document.createElement('span')
   label.className = cn('truncate', isCommand(chip.kind) && 'font-mono')
-  label.textContent = isCommand(chip.kind) ? `/${chip.name}` : chip.name
+  label.textContent = `${style.prefix ?? ''}${chip.name}`
   el.append(label)
-  if (src && act?.remove) el.append(closeNode(() => act.remove?.(chip.name)))
+  // 每张卡片都能点右上角删除：附件交给页面去掉（连同上传的文件），其他的直接从输入框里拿掉
+  el.append(
+    closeNode(() => {
+      if ((chip.kind === 'image' || chip.kind === 'file') && act?.remove) return act.remove(chip.name)
+      const root = el.closest('[contenteditable="true"]')
+      el.remove()
+      root?.dispatchEvent(new Event('input', { bubbles: true }))
+    }),
+  )
   return el
 }
 

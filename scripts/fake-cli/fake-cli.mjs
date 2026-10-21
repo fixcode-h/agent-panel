@@ -463,12 +463,16 @@ const turnReply = () => {
   return `这是 ${kind} 的回复。收到 ${input.length} 个字符的任务描述。${verdict}${branch}${dispatch}${long}${notesGot}`
 }
 // 没有插话协议的 CLI（Command Code、Gemini CLI）、Pi 的工具地址写在面板这一轮临时接上的配置里
+// 写配置文件接的 CLI 每一轮用自己的名字（panel-xxxxxx），按参数和文件名找这一轮的那一项
+const panelName = () => args.map((a) => /agent-panel-(panel[\w-]*)\.ts/.exec(a)?.[1]).find(Boolean)
 const panelMcpUrl = () =>
   kind === 'pi'
-    ? /new URL\('([^']+)'\)/.exec(readFileSync('.pi/extensions/agent-panel-panel.ts', 'utf8'))[1]
+    ? /new URL\('([^']+)'\)/.exec(readFileSync(`.pi/extensions/agent-panel-${panelName() ?? 'panel'}.ts`, 'utf8'))[1]
     : (() => {
         const cfg = JSON.parse(readFileSync(kind === 'gemini' ? '.gemini/settings.json' : '.mcp.json', 'utf8'))
-        return cfg.mcpServers.panel.httpUrl ?? cfg.mcpServers.panel.url
+        const keys = Object.keys(cfg.mcpServers).filter((k) => k.startsWith('panel'))
+        const hit = cfg.mcpServers[keys.at(-1)]
+        return hit.httpUrl ?? hit.url
       })()
 
 // 没有插话协议的 CLI（Command Code）：用户在执行中补充的要求会登记给它，模型用面板的工具取走。

@@ -70,7 +70,8 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
           {t('取消归档')}
         </ContextMenuItem>
       ) : (
-        <ContextMenuItem disabled={task.status === 'running'} onSelect={() => archive(true)}>
+        /* 只有正在执行这一轮的不能归档；CLI 只是活着（等下一句、预热）的可以，归档时由服务端结束进程 */
+        <ContextMenuItem disabled={!!task.working} onSelect={() => archive(true)}>
           <Archive className="h-4 w-4" />
           {t('归档')}
         </ContextMenuItem>

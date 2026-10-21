@@ -5,6 +5,6 @@ export const EN_DEMO: Record<string, string> = {
     ': data lives only in your browser; the CLIs and local folders are simulated.',
   恢复示例数据: 'Restore sample data',
   '恢复示例数据？': 'Restore sample data?',
-  '你在演示里新建和修改的 Agent、工作流、项目和任务都会被清掉，换回最初的示例。':
-    'Agents, workflows, projects and tasks you created or changed in the demo will be cleared and replaced with the original samples.',
+  '你在演示里新建和修改的角色、工作流、项目和任务都会被清掉，换回最初的示例。':
+    'Roles, workflows, projects and tasks you created or changed in the demo will be cleared and replaced with the original samples.',
 }

@@ -168,7 +168,7 @@ export function WorkflowDetail({
                   variant="secondary"
                   size="icon"
                   aria-label={t('导出')}
-                  title={t('导出成文件（连同用到的 Agent），可以在别的电脑上导入')}
+                  title={t('导出成文件（连同用到的角色），可以在别的电脑上导入')}
                   onClick={() => exportWorkflow({ ...workflow, ...draft }, agents)}
                 >
                   <Download className="h-4 w-4" />
@@ -245,7 +245,7 @@ export function WorkflowDetail({
               </div>
             </FormSection>
 
-            <FormSection title={t('Agent 分工')}>
+            <FormSection title={t('角色分工')}>
               <TeamEditor
                 mainAgentId={draft.mainAgentId}
                 onMainChange={(id) => set('mainAgentId', id)}
@@ -283,7 +283,7 @@ export function WorkflowDetail({
             <FormSection title={t('工作流说明')}>
               <p className="-mt-2 text-xs leading-relaxed text-subtle">
                 {t(
-                  '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给 Agent；具体每一步做什么在「流程图」里编辑。',
+                  '写清楚目标、规范和完成标准。执行每个节点时都会把这份说明发给角色；具体每一步做什么在「流程图」里编辑。',
                 )}
               </p>
               <DocEditor
@@ -318,7 +318,7 @@ export function WorkflowDetail({
                   <Crown className="h-3.5 w-3.5 text-accent" />
                 </button>
               ) : (
-                <p className="rounded-lg border border-dashed p-2 text-xs text-subtle">{t('还没有主 Agent')}</p>
+                <p className="rounded-lg border border-dashed p-2 text-xs text-subtle">{t('还没有主角色')}</p>
               )}
               <div className="mt-1 ml-5 flex flex-col gap-0.5 border-l border-line-strong pt-1 pl-3">
                 {team.map(({ agent: a, responsibility }) => (
@@ -332,7 +332,7 @@ export function WorkflowDetail({
                     <span className="truncate">{a.name}</span>
                   </button>
                 ))}
-                {team.length === 0 && <p className="px-2 py-1.5 text-xs text-subtle">{t('还没有子 Agent')}</p>}
+                {team.length === 0 && <p className="px-2 py-1.5 text-xs text-subtle">{t('还没有子角色')}</p>}
               </div>
             </section>
 
@@ -344,7 +344,7 @@ export function WorkflowDetail({
         open={deleting}
         onOpenChange={setDeleting}
         title={t('删除「{name}」？', { name: workflow.name })}
-        description={t('团队里的 Agent 不会被删除。此操作无法撤销。')}
+        description={t('团队里的角色不会被删除。此操作无法撤销。')}
         blocked={
           usedBy.length ? t('正在被 {list} 使用，请先改用其他工作流。', { list: usedBy.join(t('、')) }) : undefined
         }
@@ -375,8 +375,8 @@ function ExposeEditor({
   onChange: (v: WorkflowExpose[]) => void
 }) {
   const kinds: { id: WorkflowExpose['target']; label: string; hint: string }[] = [
-    { id: 'skill', label: t('技能槽'), hint: t('Agent 的 Skill 名写 {{槽名}}，这里选实际用哪个技能') },
-    { id: 'agent', label: t('Agent 参数'), hint: t('覆盖节点上同名参数的值') },
+    { id: 'skill', label: t('技能槽'), hint: t('角色的 Skill 名写 {{槽名}}，这里选实际用哪个技能') },
+    { id: 'agent', label: t('角色参数'), hint: t('覆盖节点上同名参数的值') },
     { id: 'document', label: t('工作流说明'), hint: t('把填的内容追加到工作流说明后面') },
   ]
   const patch = (i: number, p: Partial<WorkflowExpose>) => onChange(value.map((e, j) => (j === i ? { ...e, ...p } : e)))
@@ -462,10 +462,10 @@ function ExposeEditor({
           </div>
           {e.target === 'agent' && e.targetId && (
             <span className="text-xs text-subtle">
-              {t('Agent 没有这个参数时忽略，不会报错')}：
+              {t('角色没有这个参数时忽略，不会报错')}：
               {[...new Set(agents.filter((a) => a.params.some((p) => p.key === e.targetId)).map((a) => a.name))].join(
                 '、',
-              ) || t('没有 Agent 用这个参数')}
+              ) || t('没有角色用这个参数')}
             </span>
           )}
         </div>

@@ -1,3 +1,4 @@
+import { withProjectParams } from '../shared/builtin/core.ts'
 import { Hono, type Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { randomUUID } from 'node:crypto'
@@ -62,7 +63,18 @@ import {
 import { placeAttachments } from './attachments.ts'
 import { CHATS_DIR, HANDOFF_DIR } from './store.ts'
 import { createTaskStore } from './task-store.ts'
-import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
+import {
+  abortMerge,
+  commitMerge,
+  commitWorktree,
+  createWorktree,
+  currentBranch,
+  mergeWorktree,
+  removeWorktree,
+  trialMerge,
+} from './exec/worktree.ts'
+import { runMergeSteps } from './merge-build.ts'
+import { createBackground } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
@@ -71,6 +83,10 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
+import { collisions, createClaims } from './claims.ts'
+
+/** 发布全局规则的命令：/rule 或 /rules */
+const RULE_CMD = /^\/rules?(?=\s|$)/i
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
@@ -100,6 +116,29 @@ export function tasksApi(deps: {
     restart?: boolean
   }
   const live = new Map<string, Live>()
+  /** 子对话共用父对话的目录：改文件前的认领，按父对话分组 */
+  const claims = createClaims()
+  /**
+   * 每个项目对话同时执行的子对话数：父对话分派的子对话超过上限（设置里的 childConcurrency）就排队，
+   * 前面的做完一轮再开始。用户自己在子对话里发消息不排队
+   */
+  const slots = new Map<string, { running: number; queue: (() => void)[] }>()
+  async function takeSlot(parentId: string) {
+    const limit = (await getSettings()).childConcurrency
+    const s = slots.get(parentId) ?? slots.set(parentId, { running: 0, queue: [] }).get(parentId)!
+    if (s.running >= limit) await new Promise<void>((r) => s.queue.push(r))
+    s.running++
+    let done = false
+    return () => {
+      if (done) return
+      done = true
+      s.running--
+      const next = s.queue.shift()
+      if (next) next()
+      else if (!s.running) slots.delete(parentId)
+    }
+  }
+  const queued = (parentId: string) => slots.get(parentId)?.queue.length ?? 0
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）；
   // 父对话的 CLI 结束时它名下子对话的进程一起结束，不留孤儿
   setPresenceIdleHandler((id) => {
@@ -183,10 +222,11 @@ export function tasksApi(deps: {
     defaultAgentId: '',
     agentSet: true,
     workflowParams: {},
+    agentParams: {},
+    childIsolation: 'claim',
     testSteps: [],
     wslDistro: '',
     gitPolicy: 'ask',
-    childIsolate: false,
     createdAt: '',
     updatedAt: '',
   })
@@ -304,6 +344,225 @@ export function tasksApi(deps: {
    * 它名下子对话的进程一起结束，不留孤儿。子对话已产出的内容和状态都在，下次发消息会重新启动。
    * 统一在这里做，各个路由只管调用它。
    */
+  /**
+   * 同一个父对话下的合并 + 编译一个一个来：合并改的是原目录，编译也在那里跑，
+   * 排成队就不会互相打断，也相当于一把构建锁
+   */
+  const mergeChains = new Map<string, Promise<unknown>>()
+  const mergeWaiting = new Map<string, number>()
+  function mergeLock<T>(rootId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = mergeChains.get(rootId) ?? Promise.resolve()
+    mergeWaiting.set(rootId, (mergeWaiting.get(rootId) ?? 0) + 1)
+    const next = prev
+      .catch(() => {})
+      .then(fn)
+      .finally(() => mergeWaiting.set(rootId, (mergeWaiting.get(rootId) ?? 1) - 1))
+    mergeChains.set(
+      rootId,
+      next.catch(() => {}),
+    )
+    return next
+  }
+
+  /**
+   * 「独立 worktree」模式：子对话第一次执行时，从父对话所在的目录开一个独立分支，只用来隔离改文件。
+   * 不是 Git 仓库（P4、没有版本控制）时退回共用目录，靠认领文件避免冲突
+   */
+  async function ensureChildWorktree(entry: Live, project: Project | null | undefined) {
+    const tk = entry.task
+    if (!tk.parentTaskId || !project?.path || isolated(tk) || project.childIsolation !== 'worktree') return
+    const base = await taskDir({ ...tk, worktree: null })
+    try {
+      entry.task.worktree = await createWorktree(base, tk.id, tk.title)
+      await store.update(tk.id, entry.task)
+    } catch (e) {
+      log.info('task', '子对话没有建独立分支，共用目录', { task: tk.id, reason: (e as Error).message })
+    }
+  }
+
+  /** 父对话的聊天里记一条系统消息并放进收件箱：它正在执行就实时交给它 */
+  async function noteParent(parentId: string, from: Task, text: string, inboxText = text) {
+    const parent = live.get(parentId)?.task ?? (await store.get(parentId))
+    if (!parent) return
+    const msg: TaskMessage = {
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      at: new Date().toISOString(),
+    }
+    // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理
+    const entry = live.get(parent.id)
+    const how = entry?.task.working ? await steerTask(entry.task, text, msg).catch(() => false) : false
+    if (!how) {
+      parent.messages.push(msg)
+      parent.inbox.push({ from: from.id, title: from.title, text: inboxText, at: msg.at })
+    }
+    parent.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    // 父对话空闲时也要马上落盘，否则页面刷新后看不到子对话的回报
+    await store
+      .update(parent.id, parent)
+      .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
+  }
+
+  /**
+   * 把一条消息交给子对话：它正在执行就实时送达，空闲就占一个并发名额开新的一轮。
+   * 父对话的 send_to_conversation 和面板自己推的编译结果都走这里
+   */
+  async function sendToChild(parentId: string, id: string, message: string): Promise<{ ok: boolean; info: string }> {
+    const child = live.get(id)?.task ?? (await store.get(id))
+    if (!child || child.parentTaskId !== parentId) return { ok: false, info: '找不到这个子对话' }
+    if (child.imported) return { ok: false, info: READONLY }
+    const running = live.get(id)
+    if (running?.task.status === 'running') {
+      // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
+      const msg: TaskMessage = {
+        id: randomUUID(),
+        role: 'user',
+        agentId: '',
+        step: '',
+        text: message,
+        tools: [],
+        at: new Date().toISOString(),
+      }
+      const r = await deliver(running, msg, message, [])
+      const how =
+        r.how === 'wait'
+          ? '已直接交给子对话，它正在处理'
+          : r.how === 'steer'
+            ? '子对话正在执行，已实时送达'
+            : r.how === 'notes'
+              ? '子对话正在执行，已实时送达，它执行中会读到'
+              : r.how === 'next-node'
+                ? '子对话正在执行，已实时送达，它接下来的步骤会带上'
+                : '子对话正在执行，这一轮结束后会自动处理这条'
+      return { ok: true, info: `「${child.title}」${how}` }
+    }
+    void (async () => {
+      const free = await takeSlot(parentId)
+      try {
+        await followUp(id, { text: message, attachments: [] })
+        await live.get(id)?.done
+      } finally {
+        free()
+      }
+    })().catch((e) => log.error('task', '子对话执行出错', { task: id, error: (e as Error).message }))
+    return { ok: true, info: `已交给子对话「${child.title}」，它在后台执行` }
+  }
+
+  /**
+   * 后台命令跑完把结果推回发起的对话：子对话按父对话投递的路子走（正在跑就实时送达，空闲就占名额开新一轮），
+   * 顶层对话正在跑就实时送达，空闲就直接开新的一轮接着干
+   */
+  const background = createBackground((job, text) => {
+    void (async () => {
+      const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
+      if (!tk || tk.archived) return
+      if (tk.parentTaskId) {
+        await sendToChild(tk.parentTaskId, tk.id, text)
+        return
+      }
+      const running = live.get(tk.id)
+      if (running?.task.status === 'running') {
+        const msg: TaskMessage = {
+          id: randomUUID(),
+          role: 'user',
+          agentId: '',
+          step: '',
+          text,
+          tools: [],
+          at: new Date().toISOString(),
+        }
+        await deliver(running, msg, text, [])
+      } else await followUp(tk.id, { text, attachments: [] })
+    })().catch((e) => log.warn('task', '后台命令结果推回对话失败', { task: job.taskId, error: (e as Error).message }))
+  })
+
+  /**
+   * 子对话提交编译：把它独立分支上的改动试合回开分支的那个目录，跑「合并时编译」的步骤，
+   * 通过才提交，失败就撤回合并、原目录保持原样。排队执行，结果推回给子对话，也告诉父对话。
+   * 马上返回排队情况，子对话不用干等编译
+   */
+  async function submitBuild(childId: string, note: string): Promise<{ ok: boolean; info: string }> {
+    const tk = live.get(childId)?.task ?? (await store.get(childId))
+    if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能提交编译' }
+    if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
+    const project = await deps.projects.get(tk.projectId)
+    if (!project) return { ok: false, info: '项目已经不存在' }
+    const parentId = tk.parentTaskId
+    const ahead = mergeWaiting.get(parentId) ?? 0
+    const wt = tk.worktree!
+    // 先把现在的改动提交到它自己的分支：之后再改的不在这次编译里
+    try {
+      await commitWorktree(wt, `Agent 面板：${tk.title}${note ? ` — ${note.slice(0, 60)}` : ''}`)
+    } catch (e) {
+      return { ok: false, info: `提交到独立分支失败：${(e as Error).message}` }
+    }
+    void mergeLock(parentId, async () => {
+      const parent = live.get(parentId)?.task ?? (await store.get(parentId))
+      if (!parent) return
+      const r = await integrate(tk, parent, project)
+      const head = r.ok ? `合并编译通过：${r.info}` : `合并编译没通过：${r.info}`
+      await sendToChild(
+        parentId,
+        childId,
+        `【面板】${head}${r.ok ? '' : '\n在你的分支里修好后再调用 submit_build 提交一次。'}`,
+      )
+      await noteParent(parentId, tk, `子对话「${tk.title}」${head.split('\n')[0]}`, head.slice(0, 2000))
+    }).catch((e) => log.error('task', '合并编译出错', { task: childId, error: (e as Error).message }))
+    return {
+      ok: true,
+      info: `已提交编译${ahead ? `，前面还有 ${ahead} 个在排队` : ''}。结果会推回给你，等待期间可以先做别的（这次提交之后再改的文件要再提交一次）。`,
+    }
+  }
+
+  /** 一次合并 + 编译：试合并 → 跑合并时编译的步骤 → 通过提交 / 失败撤回 */
+  async function integrate(tk: Task, parent: Task, project: Project): Promise<{ ok: boolean; info: string }> {
+    const wt = tk.worktree!
+    const target = await taskDir(parent)
+    // 从哪开的分支就合回哪：原目录后来换了分支就不合，免得合到别的分支上
+    const now = await currentBranch(target)
+    if (wt.baseBranch && now !== wt.baseBranch)
+      return {
+        ok: false,
+        info: `原目录现在在「${now || '分离的 HEAD'}」，不是开分支时的「${wt.baseBranch}」，没有合并。切回「${wt.baseBranch}」后再提交。`,
+      }
+    const m = await trialMerge(target, wt.branch)
+    if (!m.ok) return { ok: false, info: `合回原目录时有冲突，已撤回，原目录没有改动。\n${m.error}` }
+    if (m.nothing) return { ok: true, info: '分支上没有新的改动，原目录已经是最新的' }
+    const steps = project.testSteps.filter((s) => s.enabled && s.merge)
+    const built = steps.length
+      ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro })
+      : { ok: true, runs: [] }
+    if (!built.ok) {
+      await abortMerge(target)
+      const bad = built.runs.at(-1)!
+      return {
+        ok: false,
+        info: `「${bad.name}」失败，已撤回合并，原目录没有改动。\n${built.runs
+          .filter((x) => x.ok)
+          .map((x) => `✓ ${x.name}`)
+          .join('\n')}\n✗ ${bad.name}\n\n\`\`\`\n${bad.tail}\n\`\`\``,
+      }
+    }
+    try {
+      const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
+      const ran = built.runs.map((x) => `✓ ${x.name}（${Math.round(x.ms / 1000)} 秒）`).join('\n')
+      return {
+        ok: true,
+        info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${
+          ran ? `\n${ran}` : '\n项目没有标「合并时编译」的测试步骤，只合并没有编译。'
+        }`,
+      }
+    } catch (e) {
+      await abortMerge(target)
+      return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
+    }
+  }
+
   async function closeChildren(parentId: string) {
     const kids = (await store.list()).filter((x) => x.parentTaskId === parentId)
     for (const k of kids) {
@@ -319,26 +578,142 @@ export function tasksApi(deps: {
   /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
   async function reportToParent(task: Task) {
     if (!task.parentTaskId) return
-    const parent = live.get(task.parentTaskId)?.task ?? (await store.get(task.parentTaskId))
-    if (!parent) return
     const status = task.status === 'done' ? t('已完成') : task.status === 'failed' ? t('失败') : t('已停止')
     const summary = task.summary || lastReply(task)
-    parent.messages.push({
+    // 在独立分支里做完的：提醒父对话看过结果后合回来
+    const merge =
+      isolated(task) && task.status === 'done'
+        ? `\n（它在独立分支 ${task.worktree!.branch} 里改；改动要它调用 submit_build 合回原目录编译通过后才算进去）`
+        : ''
+    const text = `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}${merge}`
+    await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`)
+  }
+
+  /**
+   * 「/rule 内容」发布一条全局规则；「/rule」不带内容列出现有规则；「/rule clear」清空，「/rule -2」删掉第 2 条。
+   * 只有项目里的顶层对话能用：规则存在这个对话上，名下所有子对话（连同它们的工作流节点）每次调用都带上，
+   * 正在执行的子对话马上收到。不写进项目的 AGENTS.md
+   */
+  async function ruleCommand(id: string, text: string): Promise<{ task: Task } | { error: string }> {
+    const entry = live.get(id)
+    const tk = entry?.task ?? (await store.get(id))
+    if (!tk) return { error: t('任务不存在') }
+    if (!tk.projectId || tk.parentTaskId)
+      return { error: t('全局规则只能在项目对话里发布，子对话会自动遵守父对话的规则') }
+    const arg = text.replace(RULE_CMD, '').trim()
+    const at = new Date().toISOString()
+    let note: string
+    let fresh = ''
+    if (!arg) {
+      note = tk.rules.length
+        ? t('这个对话的全局规则：\n{list}', { list: tk.rules.map((r, i) => `${i + 1}. ${r.text}`).join('\n') })
+        : t('这个对话还没有全局规则。输入「/rule 内容」发布一条，所有子对话都会遵守。')
+    } else if (/^(clear|清空)$/i.test(arg)) {
+      tk.rules = []
+      note = t('已清空全局规则')
+    } else if (/^-\d+$/.test(arg)) {
+      const n = Number(arg.slice(1))
+      const gone = tk.rules[n - 1]
+      if (!gone) return { error: t('没有第 {n} 条规则', { n }) }
+      tk.rules = tk.rules.filter((_, i) => i !== n - 1)
+      note = t('已删除全局规则：{text}', { text: gone.text })
+    } else {
+      tk.rules = [...tk.rules, { id: randomUUID(), text: arg.slice(0, 2000), at }]
+      fresh = arg
+      note = t('已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。', { text: arg })
+    }
+    tk.messages.push({ id: randomUUID(), role: 'system', agentId: '', step: '', text: note, tools: [], at })
+    tk.updatedAt = at
+    if (entry) entry.rev++
+    await store.update(tk.id, tk)
+    // 正在执行的子对话马上收到新规则；没在执行的下一轮开始时从父对话读
+    if (fresh)
+      for (const k of [...live.values()].filter((e) => e.task.parentTaskId === tk.id && e.task.working)) {
+        const body = `父对话发布了新的全局规则，接下来必须遵守：${fresh}`
+        const msg: TaskMessage = { id: randomUUID(), role: 'system', agentId: '', step: '', text: body, tools: [], at }
+        const how = await steerTask(k.task, body, msg).catch(() => false)
+        if (!how) k.task.messages.push(msg)
+        k.rev++
+      }
+    return { task: tk }
+  }
+
+  /** 父对话分派的子对话：占一个执行位再开始，这一轮结束（含它跑的工作流）才让出来 */
+  async function startChild(parentId: string, sub: Task, message: string, agents: Agent[]) {
+    const free = await takeSlot(parentId)
+    try {
+      const entry = reserve(sub)
+      await start(entry, withAttachments(message, []), true, agents)
+      await entry.done
+    } catch (e) {
+      log.error('task', '子对话执行出错', { task: sub.id, error: (e as Error).message })
+    } finally {
+      free()
+    }
+  }
+
+  /** 子对话给父对话发消息：父对话正在执行就实时交给它，否则记进父对话，下一轮一起处理 */
+  async function messageParent(child: Task, text: string, question: boolean) {
+    const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
+    if (!parent) return { ok: false, info: '找不到父对话' }
+    const head = question ? `子对话「${child.title}」提问` : `子对话「${child.title}」汇报`
+    const msg: TaskMessage = {
       id: randomUUID(),
       role: 'system',
       agentId: '',
       step: '',
-      text: `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}`,
+      text: `${head}：\n${text}`,
+      tools: [],
+      at: new Date().toISOString(),
+    }
+    const entry = live.get(parent.id)
+    const how = entry?.task.working ? await steerTask(entry.task, msg.text, msg).catch(() => false) : false
+    if (!how) {
+      parent.messages.push(msg)
+      parent.inbox.push({ from: child.id, title: child.title, text: question ? `（提问）${text}` : text, at: msg.at })
+    }
+    parent.updatedAt = msg.at
+    if (entry) entry.rev++
+    else await store.update(parent.id, parent).catch(() => {})
+    if (how) return { ok: true, info: '已实时交给父对话' }
+    return {
+      ok: true,
+      info: question
+        ? '父对话现在没在执行，问题已经记在父对话里，它下一轮会处理。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。'
+        : '已记在父对话里，它下一轮会看到',
+    }
+  }
+
+  /**
+   * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
+   * 在子对话里留一条提醒，并告诉父对话由它协调（两边共用一个目录，后写的会覆盖先写的）
+   */
+  async function checkCollisions(child: Task) {
+    // 独立分支里的子对话各改各的，撞了也是合并时的事
+    if (isolated(child)) return
+    const mine = child.changes.map((c) => c.path)
+    if (!mine.length) return
+    const others = [...live.values()]
+      .map((e) => e.task)
+      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working && !isolated(x))
+      .map((x) => ({ title: x.title, files: x.changes.map((c) => c.path) }))
+    const hit = collisions(mine, others)
+    if (!hit.length) return
+    const list = hit.map((h) => `${h.path}（「${h.with}」也在改）`).join('、')
+    child.messages.push({
+      id: randomUUID(),
+      role: 'system',
+      agentId: '',
+      step: '',
+      text: t('这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。', { list }),
       tools: [],
       at: new Date().toISOString(),
     })
-    parent.updatedAt = new Date().toISOString()
-    const entry = live.get(parent.id)
-    if (entry) entry.rev++
-    // 父对话空闲时也要马上落盘，否则页面刷新后看不到子对话的回报
-    await store
-      .update(parent.id, parent)
-      .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
+    await messageParent(
+      child,
+      `我这一轮改的文件和正在执行的其他子对话撞了：${list}。共用一个目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
+      true,
+    )
   }
 
   async function start(
@@ -374,8 +749,17 @@ export function tasksApi(deps: {
       live.delete(task.id)
       throw e
     })
-    // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录
-    const project = found && isolated(task) ? { ...found, path: task.worktree!.path } : found
+    // 项目里给必备角色填的参数当作这个项目里的默认值（对话、节点、派出去的子 Agent 都按它）
+    agents = withProjectParams(agents, found ?? undefined)
+    if (task.projectId) await ensureChildWorktree(entry, found)
+    // 独立分支执行时，Agent 在任务自己的工作目录里改，不碰项目目录；
+    // 子对话不建独立分支，和父对话用同一个目录（父对话在独立分支里时就是父的那个目录）
+    const dir = found ? await taskDir(task).catch(() => found.path) : ''
+    const project = found && dir && dir !== found.path ? { ...found, path: dir } : found
+    const parentTask = task.parentTaskId
+      ? (live.get(task.parentTaskId)?.task ?? (await store.get(task.parentTaskId)) ?? undefined)
+      : undefined
+    const rootId = task.parentTaskId || task.id
     // 这一轮启动时的选择，用来判断执行中用户有没有换 CLI/模型/强度。
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
     const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
@@ -431,6 +815,33 @@ export function tasksApi(deps: {
         prewarmTurnDoneAt: beforeTurnDoneAt,
         workflowCatalog: () => (defaultWf ? workflowCatalog(project, allWorkflows, defaultWf) : []),
         resolveWorkflow: (id) => (project?.id ? planWorkflow(project, allWorkflows, defaultWf, id) : undefined),
+        // 全局规则：父对话自己的，子对话用父对话的（这一轮开始时读一次，执行中新发的靠实时推送）
+        rules: (task.parentTaskId ? (parentTask?.rules ?? []) : entry.task.rules).map((r) => r.text),
+        takeInbox: task.parentTaskId
+          ? undefined
+          : () => {
+              const got = entry.task.inbox
+              entry.task.inbox = []
+              return got
+            },
+        messageParent: task.parentTaskId ? (text, question) => messageParent(entry.task, text, question) : undefined,
+        childIsolation: found?.childIsolation,
+        submitBuild: task.parentTaskId && isolated(entry.task) ? (note) => submitBuild(task.id, note) : undefined,
+        // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
+        runBackground:
+          task.mode === 'chat' && dir
+            ? async (input) => background.start({ ...input, taskId: task.id, root: dir })
+            : undefined,
+        checkBackground: (id) => background.check(task.id, id),
+        // 独立分支里的子对话改不到别人的文件，不用认领
+        claimFiles:
+          task.parentTaskId && !isolated(entry.task)
+            ? (paths) => claims.claim(rootId, { taskId: task.id, title: entry.task.title }, paths)
+            : undefined,
+        releaseFiles:
+          task.parentTaskId && !isolated(entry.task)
+            ? (paths) => claims.release(rootId, task.id, paths.length ? paths : undefined)
+            : undefined,
         listConversations: async () => {
           const kids = (await store.list()).filter((x) => x.parentTaskId === entry.task.id)
           // 正在跑的对话用内存里的最新状态（标题只在创建时定，摘要随每一轮更新）
@@ -445,7 +856,7 @@ export function tasksApi(deps: {
             }
           })
         },
-        createConversation: async ({ title, message }) => {
+        createConversation: async ({ title, message, files }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
           const worker = agents.find((a) => a.origin === 'builtin:worker')
           const subId = randomUUID()
@@ -462,53 +873,32 @@ export function tasksApi(deps: {
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
           // 只有直接调接口没给时才退回用户消息开头
           if (title.trim()) draft.title = title.trim().slice(0, 80)
-          // 和接口创建的子对话一致：项目开着「子对话用独立分支」时先起一个独立目录
-          if (project?.id && project.childIsolate) await isolateChild(draft, project, entry.task)
+          // 父对话划好的范围先替它认领：别的子对话改这些文件要等它做完
+          const got = files?.length
+            ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
+            : { granted: [], held: [] }
           const sub = await store.create({ ...draft, id: subId })
-          void start(reserve(sub), withAttachments(message, []), true, agents).catch((e) =>
-            log.error('task', '子对话执行出错', { task: sub.id, error: (e as Error).message }),
-          )
+          const wait =
+            queued(entry.task.id) > 0 || (slots.get(entry.task.id)?.running ?? 0) >= settings.childConcurrency
+          void startChild(entry.task.id, sub, message, agents)
           return {
             ok: true,
             id: sub.id,
             title: sub.title,
-            info: `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
+            info: [
+              wait
+                ? `已新建子对话「${sub.title}」。同时执行的子对话已经到上限（${settings.childConcurrency} 个），它在排队，前面的做完一个就开始`
+                : `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
+              got.granted.length ? `已替它认领：${got.granted.join('、')}` : '',
+              got.held.length
+                ? `这些已经归别的子对话，没有认领：${got.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。让它等那边做完再改，或者把这部分交给那个子对话`
+                : '',
+            ]
+              .filter(Boolean)
+              .join('\n'),
           }
         },
-        sendToConversation: async (id, message) => {
-          const child = live.get(id)?.task ?? (await store.get(id))
-          if (!child || child.parentTaskId !== entry.task.id) return { ok: false, info: '找不到这个子对话' }
-          if (child.imported) return { ok: false, info: READONLY }
-          const running = live.get(id)
-          if (running?.task.status === 'running') {
-            // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
-            const msg: TaskMessage = {
-              id: randomUUID(),
-              role: 'user',
-              agentId: '',
-              step: '',
-              text: message,
-              tools: [],
-              at: new Date().toISOString(),
-            }
-            const r = await deliver(running, msg, message, [])
-            const how =
-              r.how === 'wait'
-                ? '已直接交给子对话，它正在处理'
-                : r.how === 'steer'
-                  ? '子对话正在执行，已实时送达'
-                  : r.how === 'notes'
-                    ? '子对话正在执行，已实时送达，它执行中会读到'
-                    : r.how === 'next-node'
-                      ? '子对话正在执行，已实时送达，它接下来的步骤会带上'
-                      : '子对话正在执行，这一轮结束后会自动处理这条'
-            return { ok: true, info: `「${child.title}」${how}` }
-          }
-          void followUp(id, { text: message, attachments: [] }).catch((e) =>
-            log.error('task', '子对话执行出错', { task: id, error: (e as Error).message }),
-          )
-          return { ok: true, info: `已交给子对话「${child.title}」，它在后台执行` }
-        },
+        sendToConversation: (id, message) => sendToChild(entry.task.id, id, message),
       })
     })()
     entry.done = run
@@ -564,7 +954,12 @@ export function tasksApi(deps: {
           delete entry.task.usage.agents[entry.task.agentId]
         }
         endRun(entry.task)
-        // 子对话这一轮结束了：更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
+        // 子对话这一轮结束了：释放认领的文件，查一下和同时在改的兄弟子对话有没有改到同一个文件
+        if (entry.task.parentTaskId) {
+          claims.release(entry.task.parentTaskId, task.id)
+          if (!prewarm) await checkCollisions(entry.task).catch(() => {})
+        }
+        // 更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
         if (!prewarm && entry.task.parentTaskId) {
           entry.task.summary = lastReply(entry.task)
           await flush(keepTime)
@@ -740,6 +1135,9 @@ export function tasksApi(deps: {
           cliAlive: live.has(liveTask.id),
           // 排序按真正的最近消息时间：updatedAt 也会被改名、看过的标记改动
           lastMessageAt: lastMessageAt(liveTask),
+          // 总览分组用：等用户确认的请求数、独立 worktree 的分支
+          requests: liveTask.requests.length,
+          branch: liveTask.worktree?.branch ?? '',
         }
       })
     return c.json(kids)
@@ -899,7 +1297,7 @@ export function tasksApi(deps: {
       // 旧界面不传 agentId 时跟着项目的默认对话 Agent；传了空字符串表示不用 Agent 角色
       if (!(body && typeof body === 'object' && 'agentId' in body) && project.defaultAgentId)
         input.agentId = project.defaultAgentId
-      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的 Agent'))
+      if (input.agentId && !agents.some((a) => a.id === input.agentId)) return bad(c, t('请选择对话的角色'))
     }
     const lack = chatMissingParams(input, agents)
     if (lack) return bad(c, lack)
@@ -919,15 +1317,13 @@ export function tasksApi(deps: {
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
     }
-    // 显式传了 isolate 就按它；没传时子对话按项目设置默认隔离，其他任务不隔离
-    if ((input.isolate ?? (!!parent && project.childIsolate)) && input.projectId) {
-      if (input.isolate) {
-        try {
-          draft.worktree = await createWorktree(project.path, draft.id, draft.title)
-        } catch (e) {
-          return bad(c, (e as Error).message)
-        }
-      } else await isolateChild(draft, project, parent)
+    // 只有顶层对话能选独立分支：子对话一律和父对话用同一个目录，同时改文件靠认领协调
+    if (input.isolate && !parent && input.projectId) {
+      try {
+        draft.worktree = await createWorktree(project.path, draft.id, draft.title)
+      } catch (e) {
+        return bad(c, (e as Error).message)
+      }
     }
     // 工作流的第一条要求也能用「/命令」：展开后交给各节点，对话里仍显示输入的原文
     const expanded = await expandForWorkflow(draft, input.prompt)
@@ -945,6 +1341,11 @@ export function tasksApi(deps: {
     if (!p.success) return bad(c, z.prettifyError(p.error))
     const { text, attachments, interrupt } = p.data
     if ((await current(id))?.imported) return bad(c, READONLY, 409)
+    // 「/rule」：父对话发布全局规则，面板自己处理，不发给 CLI
+    if (RULE_CMD.test(text.trim())) {
+      const r = await ruleCommand(id, text.trim())
+      return 'error' in r ? bad(c, r.error) : c.json(r.task)
+    }
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
       // 执行中：先试能实时送到 CLI 的办法（等下一句、插话、read_user_notes），
@@ -1129,13 +1530,20 @@ export function tasksApi(deps: {
     }
   })
 
-  /** 任务的工作目录：项目目录，聊天是它自己的目录 */
-  const taskDir = async (tk: Pick<Task, 'worktree' | 'projectId' | 'id'>) =>
-    isolated(tk)
-      ? tk.worktree!.path
-      : tk.projectId
-        ? ((await deps.projects.get(tk.projectId))?.path ?? '')
-        : path.join(CHATS_DIR, tk.id)
+  /**
+   * 任务的工作目录：项目目录，聊天是它自己的目录。
+   * 子对话不建独立分支：父对话在独立分支里时用父的那个目录（旧版本建过独立分支的子对话仍用自己的）
+   */
+  const taskDir = async (
+    tk: Pick<Task, 'worktree' | 'projectId' | 'id'> & { parentTaskId?: string },
+  ): Promise<string> => {
+    if (isolated(tk)) return tk.worktree!.path
+    if (tk.parentTaskId) {
+      const parent = live.get(tk.parentTaskId)?.task ?? (await store.get(tk.parentTaskId))
+      if (parent && isolated(parent) && existsSync(parent.worktree!.path)) return parent.worktree!.path
+    }
+    return tk.projectId ? ((await deps.projects.get(tk.projectId))?.path ?? '') : path.join(CHATS_DIR, tk.id)
+  }
 
   /**
    * 合并或丢弃独立分支：只在任务停下时做，免得 Agent 还在往里写。
@@ -1174,32 +1582,6 @@ export function tasksApi(deps: {
     repo ??= (await deps.projects.get(tk.projectId))?.path
     if (repo) await removeWorktree(repo, tk.worktree!, true).catch(() => {})
     else await rm(tk.worktree!.path, { recursive: true, force: true }).catch(() => {})
-  }
-
-  /**
-   * 子对话默认起独立分支：父对话也在独立分支时接着父的分支开，形成「子 → 父 → 项目」。
-   * 建不出来（不是 git 仓库、还没有提交、分支重名）就退回上层目录，留一条说明，不挡住创建。
-   */
-  async function isolateChild<
-    T extends { id: string; title: string; worktree: Task['worktree']; messages: TaskMessage[] },
-  >(draft: T, project: Project, parent?: Task) {
-    const base = parent && isolated(parent) ? parent.worktree!.path : project.path
-    try {
-      draft.worktree = await createWorktree(base, draft.id, draft.title)
-    } catch (e) {
-      draft.worktree = null
-      draft.messages.push({
-        id: randomUUID(),
-        role: 'system',
-        agentId: '',
-        step: '',
-        text: t('没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。', {
-          reason: (e as Error).message,
-        }),
-        tools: [],
-        at: new Date().toISOString(),
-      })
-    }
   }
 
   // 一个改动文件的差异：git 仓库和任务开始时的提交比；不是仓库时拼出 Agent 改这个文件时给出的改动
@@ -1333,6 +1715,12 @@ export function tasksApi(deps: {
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
     if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
+    // 归档：只拦正在执行这一轮的；CLI 只是活着（等下一句、预热）时照样归档，顺手结束这个进程和它名下的子对话
+    if (p.data.archived === true && e) {
+      if (e.task.working) return bad(c, t('对话正在执行，等这一轮结束或停止后再归档'), 409)
+      if (!cancelWait(id)) stopTask(id)
+      else void closeChildren(id)
+    }
     const beforeAgentId = cur.agentId
     const agentChanged = p.data.agentId !== undefined && p.data.agentId !== beforeAgentId
     const touchesRun =
@@ -1340,7 +1728,7 @@ export function tasksApi(deps: {
     if (touchesRun && cur.mode !== 'chat') return bad(c, t('只有对话任务可以这样做'))
     const settings = touchesRun ? await getSettings() : undefined
     const agents = touchesRun ? await deps.agents.list() : undefined
-    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return bad(c, t('找不到这个 Agent'))
+    if (p.data.agentId && !agents?.some((a) => a.id === p.data.agentId)) return bad(c, t('找不到这个角色'))
     const runOf = (t: Task) => {
       const agent = t.agentId ? agents?.find((a) => a.id === t.agentId) : { ...defaultAgent(), id: '' }
       return agent && settings ? agentRun(withTaskModel(agent, t), settings) : undefined
@@ -1563,12 +1951,14 @@ export function tasksApi(deps: {
     // 删父对话时把它的子对话一起删掉，不留孤儿
     const kids = (await store.list()).filter((x) => x.parentTaskId === id)
     stopTask(id)
+    background.stop(id)
     const task = await store.get(id)
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
     forgetPresence(id)
     const dropped = [task]
     for (const k of kids) {
       stopTask(k.id)
+      background.stop(k.id)
       await store.remove(k.id)
       forgetPresence(k.id)
       dropped.push(k)

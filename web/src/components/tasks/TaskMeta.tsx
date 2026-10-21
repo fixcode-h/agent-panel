@@ -108,7 +108,7 @@ function contextLines(
         const a = byId.get(s.agentId)
         return {
           key: s.id,
-          name: s === node ? (a?.name ?? t('已删除的 Agent')) : stepLabel(s),
+          name: s === node ? (a?.name ?? t('已删除的角色')) : stepLabel(s),
           icon: a?.icon,
           cli: a?.cli,
           u: s.usage!,
@@ -132,7 +132,7 @@ function contextLines(
   }
   return Object.entries(task.usage.agents).map(([id, u]) => {
     const a = byId.get(id)
-    return { key: id, name: a?.name ?? t('已删除的 Agent'), icon: a?.icon, cli: a?.cli, u, live: u }
+    return { key: id, name: a?.name ?? t('已删除的角色'), icon: a?.icon, cli: a?.cli, u, live: u }
   })
 }
 
@@ -174,7 +174,7 @@ function ContextRow({ line }: { line: ContextLine }) {
       <div className="flex items-center gap-2 text-xs">
         {icon && <AgentAvatar icon={icon} cli={cli ?? ''} size="xs" />}
         <span className="min-w-0 flex-1 truncate text-fg" title={name}>
-          {name ?? t('已删除的 Agent')}
+          {name ?? t('已删除的角色')}
         </span>
         <span className="font-mono text-subtle">
           {fmtTokens(u.context)} / {fmtTokens(u.window)}
@@ -278,7 +278,7 @@ function EnvChip({
       ? workflowName
       : byCli
         ? getCli(task.cli || defaultCli(s))?.name
-        : (found?.name ?? t('已删除的 Agent'))
+        : (found?.name ?? t('已删除的角色'))
   // 用到的 CLI 里打开了「显示额度」的，每个显示一组
   const ids = new Set<string>()
   for (const id of [task.agentId, ...Object.keys(task.usage.agents)]) {
@@ -331,7 +331,7 @@ function EnvChip({
               <>
                 <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
                 <span className="truncate">
-                  {t('对话：{name}', { name: name || t('已删除的 Agent') })}
+                  {t('对话：{name}', { name: name || t('已删除的角色') })}
                   {chatAgent && <span className="font-mono text-subtle"> · {modelOf(chatAgent)}</span>}
                 </span>
               </>

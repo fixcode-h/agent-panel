@@ -85,7 +85,7 @@ export function Logo({ className }: { className?: string }) {
 }
 
 const NAV: { id: PageId; label: string; icon: LucideIcon }[] = [
-  { id: 'agents', label: 'Agent', icon: Bot },
+  { id: 'agents', label: t('角色'), icon: Bot },
   { id: 'workflows', label: t('工作流'), icon: Workflow },
   { id: 'library', label: t('Skills 与命令'), icon: Sparkles },
   { id: 'mcp', label: t('MCP 工具'), icon: Plug },

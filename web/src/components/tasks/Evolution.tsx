@@ -173,7 +173,7 @@ export function EvolutionCard({ task }: { task: Task }) {
             </ul>
             <div className="flex items-center gap-2 border-t bg-field/50 px-3.5 py-2.5">
               <span className="min-w-0 flex-1 text-xs text-subtle">
-                {t('看过差异再应用；应用后工作流和 Agent 马上按新的内容执行')}
+                {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
               </span>
               <Button size="sm" disabled={!picked.length || busy} onClick={apply}>
                 {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
@@ -265,7 +265,7 @@ export function AnalyzeDialog({
       footer={
         <>
           <span className="min-w-0 flex-1 text-xs text-subtle">
-            {t('用默认 Agent 新建一个对话来分析，只分析不改文件')}
+            {t('用默认角色新建一个对话来分析，只分析不改文件')}
           </span>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t('取消')}

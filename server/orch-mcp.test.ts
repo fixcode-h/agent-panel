@@ -3,7 +3,8 @@ import test from 'node:test'
 import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
 import { newTask } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost, type Orchestra } from '../shared/engine.ts'
-import { callOrchTool, openOrchSession, orchHint, orchMcpApi } from './orch-mcp.ts'
+import { callOrchTool, orchHint } from './orch-mcp.ts'
+import { askMcpApi, openAskBridge } from './ask-mcp.ts'
 
 const agent = (id: string, name: string): Agent => ({
   ...AgentInput.parse({ name }),
@@ -113,10 +114,10 @@ test('编排工具：派子 Agent 并行、读写共享状态、传话，节点�
   assert.equal(log.find((c) => c.step?.id === 'a/sub/h2')?.tier, 'low')
   assert.match(by('b').output, /来自「实现」的消息：接口改名了/, '传话进了对方的收件箱')
   assert.equal(log.filter((c) => c.dispatching).length, 0, '没有主 Agent 调度轮')
-  assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子 Agent/.test(m.text)))
+  assert.ok(task.messages.some((m) => m.step === 'a' && /派出 2 个子角色/.test(m.text)))
 })
 
-test('编排工具的 MCP：列出工具、调用、结束后失效', async () => {
+test('编排工具挂在面板的 MCP 上：列出工具、调用、结束后失效', async () => {
   const w = workflow()
   const task = { ...newTask({ projectId: 'p', mode: 'workflow', prompt: 'x' } as never, w, '', 't2'), id: 't2' } as Task
   const log: AgentCall[] = []
@@ -127,8 +128,8 @@ test('编排工具的 MCP：列出工具、调用、结束后失效', async () =
     return { ok: true, text: 'ok' }
   }
   await runEngineTurn(h)
-  const s = openOrchSession(orch!)
-  const app = orchMcpApi()
+  const s = openAskBridge({ orch: orch! })
+  const app = askMcpApi()
   const path = new URL(s.url).pathname.replace('/api/mcp', '')
   const post = (body: unknown) =>
     app.request(path, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } })
@@ -158,9 +159,9 @@ test('编排工具：通用 Agent 列在 spawn_agents 和用法说明里', async
     hasMain: false,
     common: [{ name: '代码侦察', description: '只读定位代码' }],
   } as unknown as Orchestra
-  const s = openOrchSession(o)
+  const s = openAskBridge({ orch: o })
   const path = new URL(s.url).pathname.replace('/api/mcp', '')
-  const res = await orchMcpApi().request(path, {
+  const res = await askMcpApi().request(path, {
     method: 'POST',
     body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }),
     headers: { 'content-type': 'application/json' },

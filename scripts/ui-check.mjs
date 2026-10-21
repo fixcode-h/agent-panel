@@ -252,11 +252,11 @@ try {
   await p.getByRole('button', { name: '任务进度' }).click()
   // 演示任务是启动后在后台模拟执行的，轮到这个任务时可能还没跑完：等测试节点的子 Agent 出现再断言
   await p
-    .getByText('子 Agent · 单元测试', { exact: false })
+    .getByText('子角色 · 单元测试', { exact: false })
     .first()
     .waitFor({ timeout: 30000 })
     .catch(() => {})
-  await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子 Agent · 单元测试'])
+  await check(p, '任务-节点与子Agent', ['分析需求、拆分任务', '单元测试', '子角色 · 单元测试'])
   // 执行中发消息：在聊天页新建一个对话，趁它还在回复时再发一条。消息立刻出现在对话里，
   // 没有「排队」卡片、也没有「下一条」的排队提示
   await p.goto(base + '#/chat')
@@ -339,8 +339,8 @@ try {
   await check(p, '内置工作流-添加后', ['识别现场与设计', '文档与提交'])
   // 项目里新建对话：输入框上可以选择用不用项目设置的 Agent，对话页不能再换 Agent 和参数
   await p.goto(base)
-  const agentSwitch = p.getByRole('switch', { name: '使用项目设置的 Agent' })
-  await agentSwitch.waitFor({ timeout: 10000 }).catch(() => errors.push('新建任务：没有「使用项目设置的 Agent」开关'))
+  const agentSwitch = p.getByRole('switch', { name: '使用项目设置的角色' })
+  await agentSwitch.waitFor({ timeout: 10000 }).catch(() => errors.push('新建任务：没有「使用项目设置的角色」开关'))
   if (await agentSwitch.count()) {
     if ((await agentSwitch.getAttribute('aria-checked')) !== 'true') errors.push('新建任务：开关默认没有勾选')
     // 开关只显示图标，Agent 名字放在 title 里
@@ -364,7 +364,7 @@ try {
     .catch(() => errors.push('对话页：没有打开输入框'))
   // 对话页输入框里只剩「提问」开关和 CLI / 模型，没有换 Agent 和改参数的地方
   if (!(await p.getByRole('button', { name: 'AI 有问题时问我' }).count())) errors.push('对话页：没有「提问」开关')
-  for (const name of ['参数', '无 Agent，直接用 CLI']) {
+  for (const name of ['参数', '无角色，直接用 CLI']) {
     if (await p.getByText(name, { exact: false }).count()) errors.push(`对话页：还能看到「${name}」`)
   }
   await check(p, '对话-不能换Agent和参数')
@@ -381,7 +381,7 @@ try {
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])
   // 内置 Agent：手动添加，已经随工作流建好的标成已添加
-  await p.getByRole('button', { name: '添加内置 Agent' }).first().click()
+  await p.getByRole('button', { name: '添加内置角色' }).first().click()
   await check(p, '内置Agent', ['通用约束', 'UE 侦察', '代码侦察', '已添加'])
   await p.keyboard.press('Escape')
   // Agent 的引入层级和参数的选项编辑（带序号的卡片、回车添加）
@@ -940,11 +940,25 @@ try {
       .catch(() => {})
   if (await settingsButton.count()) {
     await settingsButton.first().click()
-    await check(p, '项目设置-测试步骤', ['测试步骤', 'AI 生成步骤', 'WSL 发行版'])
-    const scroller = p.getByRole('dialog').locator('form').first()
-    await scroller.evaluate((el) => (el.scrollTop = el.scrollHeight))
-    await check(p, '项目设置-底部', ['推送到远端', 'AI 配置'])
+    const dlg = p.getByRole('dialog')
+    // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
+    await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
+    await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
+    await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '测试验收'])
+    await dlg.getByRole('button', { name: '工作流', exact: true }).click()
+    await check(p, '项目设置-工作流', ['AI 配置'])
+    await dlg
+      .getByRole('button', { name: /^测试步骤/ })
+      .first()
+      .click()
+    await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '合并时编译'])
     await p.keyboard.press('Escape')
+    // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
+    await p.locator('#task-prompt').click()
+    await p.keyboard.type('到货通知的按钮在详情页上点了没反应')
+    await check(p, '项目首页-相关对话', ['发到这里', '需要你处理'])
+    await p.keyboard.press('ControlOrMeta+a')
+    await p.keyboard.press('Backspace')
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
 
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

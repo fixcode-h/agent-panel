@@ -49,7 +49,7 @@ import { childEnv } from './process.ts'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
-import { openOrchSession, orchHint } from '../orch-mcp.ts'
+import { orchHint } from '../orch-mcp.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
@@ -88,6 +88,16 @@ export interface RealContext {
   listConversations?: EngineHost['listConversations']
   createConversation?: EngineHost['createConversation']
   sendToConversation?: EngineHost['sendToConversation']
+  /** 父子对话之间的通讯和文件认领（见 EngineHost） */
+  rules?: EngineHost['rules']
+  takeInbox?: EngineHost['takeInbox']
+  messageParent?: EngineHost['messageParent']
+  claimFiles?: EngineHost['claimFiles']
+  releaseFiles?: EngineHost['releaseFiles']
+  childIsolation?: EngineHost['childIsolation']
+  submitBuild?: EngineHost['submitBuild']
+  runBackground?: EngineHost['runBackground']
+  checkBackground?: EngineHost['checkBackground']
 }
 
 /** 等用户确认的请求：请求 id → 把结果交回 CLI 的函数。只在内存里，服务重启后 CLI 进程也不在了 */
@@ -430,7 +440,7 @@ export function failureHints(detail: string, cli?: { id: string; name: string })
   if (NETWORK_ERROR.test(detail))
     hints.push(
       t(
-        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让 Agent 分几次写。',
+        '· 和模型服务的连接中途断开了。常见于一次要输出很长的内容（例如写入一个大文件）时，连接被服务端或代理断开；可以点「继续执行」重试，或者换一个接口、让角色分几次写。',
       ),
     )
   // Codex 的线程里存着上一个模型的工具调用时，换成别的模型后接口会一直拒绝这条历史
@@ -460,7 +470,7 @@ async function runAgent(
   const found = agentId
     ? ctx.agents.find((a) => a.id === agentId)
     : { ...defaultAgent(), id: '', name: '', description: '' }
-  if (!found) return { ok: false, error: t('找不到执行这一步的 Agent，可能已被删除') }
+  if (!found) return { ok: false, error: t('找不到执行这一步的角色，可能已被删除') }
   // 工作流里的调用固定用默认 CLI 的档位；对话可以用 Agent 自己的 CLI，默认 Agent 还能临时换模型
   const agent =
     call.tier !== undefined ? nodeAgentRun(found, call.tier, defaultCli(settings)) : withTaskModel(found, task)
@@ -470,7 +480,7 @@ async function runAgent(
   if (!def) return { ok: false, error: t('未知的 CLI：{cli}', { cli: cliId }) }
   const cs = cliSettings(settings, cliId)
   if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
-  if (!agent.enabled) return { ok: false, error: t('Agent「{name}」已停用', { name: agent.name }) }
+  if (!agent.enabled) return { ok: false, error: t('角色「{name}」已停用', { name: agent.name }) }
   const cwd = project.path
   const dir = await stat(cwd).catch(() => null)
   if (!dir?.isDirectory()) return { ok: false, error: t('项目目录不存在：{dir}', { dir: cwd || t('（未设置）') }) }
@@ -585,8 +595,8 @@ async function runAgent(
   }
   if (carry) input = `${carry}\n\n## 现在的要求\n${input}`
   // 工作流里的调用带上编排工具（派子 Agent、查状态、提问、传话）；第一轮告诉它什么时候用，续接的会话里已经说过
-  const orch = call.orch && def.mcp && !op ? openOrchSession(call.orch) : undefined
-  if (orch && !resume) input = `${input}\n\n${orchHint(call.orch!)}`
+  const orch = call.orch && def.mcp && !op ? call.orch : undefined
+  if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
   if (instructions && !def.systemPromptFlag && !resume) {
     // 节点的角色设定放在各节点共用的部分（需求、工作流说明）后面：不同 Agent 的节点开头一样，按前缀匹配的缓存能命中
     const role = `## 你的角色\n${instructions}\n\n`
@@ -1060,7 +1070,7 @@ async function runAgent(
     keepAlive,
     // 模型自己等过下一句的，结束时不再保活一次
     waited: () => toolWaited,
-    mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
+    orch,
   }).finally(() => {
     finished = true
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
@@ -1070,7 +1080,6 @@ async function runAgent(
     }
     // 进程先结束了（崩溃、被停掉）：还在等下一句的那次请求也结束，别一直挂着
     cancelWait(task.id)
-    orch?.close()
     clearTimeout(gitTimer)
     if (steerer) {
       const set = steers.get(task.id)
@@ -1320,6 +1329,15 @@ export async function runRealTurn(ctx: RealContext) {
     listConversations: ctx.listConversations,
     createConversation: ctx.createConversation,
     sendToConversation: ctx.sendToConversation,
+    rules: ctx.rules,
+    takeInbox: ctx.takeInbox,
+    messageParent: ctx.messageParent,
+    claimFiles: ctx.claimFiles,
+    releaseFiles: ctx.releaseFiles,
+    childIsolation: ctx.childIsolation,
+    submitBuild: ctx.submitBuild,
+    runBackground: ctx.runBackground,
+    checkBackground: ctx.checkBackground,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {

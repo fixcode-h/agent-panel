@@ -68,7 +68,7 @@ export async function importWorkflow(text: string, agents: Agent[], workflows: W
   const created: Agent[] = []
   for (const x of b.data.agents) {
     const input = AgentInput.safeParse({ ...x, categoryId: '', tags: [] })
-    if (!input.success) throw new Error(t('文件里的 Agent「{name}」格式不对', { name: String(x.name ?? x.id) }))
+    if (!input.success) throw new Error(t('文件里的角色「{name}」格式不对', { name: String(x.name ?? x.id) }))
     const same = [...agents, ...created].find((a) => a.name === input.data.name)
     if (same) map.set(x.id, same.id)
     else {

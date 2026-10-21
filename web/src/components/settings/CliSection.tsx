@@ -758,7 +758,7 @@ export function CliSection({
         description={
           <>
             {t('会运行')} <code className="font-mono text-[0.75rem]">npm uninstall -g {def.npmPackage}</code>
-            {t('。用这个 CLI 的 Agent 之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
+            {t('。用这个 CLI 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
           </>
         }
         blocked={installer.busy ? t('有任务正在用它执行，请等任务完成或先停止。') : undefined}
@@ -787,7 +787,7 @@ export function CliSection({
         <Row
           title={t('三档模型')}
           desc={t(
-            'Agent 选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。',
+            '角色选了高、中、低档时使用的模型和思考强度。模型留空时跟随下面的默认模型，没设默认模型时用建议值。上下文、最大输出和思考强度按模型目录自动填，目录里没有的模型按 1M / 128K 估算，也可以手动改。',
           )}
           stack
         >
@@ -801,10 +801,10 @@ export function CliSection({
             onChange={(v) => set('tiers', v)}
           />
         </Row>
-        <Row title={t('默认模型')} desc={t('Agent 没有指定模型时使用，可以选一个档位')}>
+        <Row title={t('默认模型')} desc={t('角色没有指定模型时使用，可以选一个档位')}>
           <DefaultModel def={full} draft={draft} onChange={(v) => set('defaultModel', v)} />
         </Row>
-        <Row title={t('默认思考强度')} desc={t('Agent 和档位都没有指定时使用')}>
+        <Row title={t('默认思考强度')} desc={t('角色和档位都没有指定时使用')}>
           <Select
             aria-label={t('{cli} 默认思考强度', { cli: def.name })}
             value={draft.defaultEffort === cliDefaultModel(full)?.defaultEffort ? '' : draft.defaultEffort}
@@ -856,7 +856,7 @@ export function CliSection({
             spellCheck={false}
           />
         </Row>
-        <Row title={t('额外参数')} desc={t('每次调用都会追加，Agent 自己的参数排在后面')}>
+        <Row title={t('额外参数')} desc={t('每次调用都会追加，角色自己的参数排在后面')}>
           <Input
             value={draft.args}
             onChange={(e) => set('args', e.target.value)}

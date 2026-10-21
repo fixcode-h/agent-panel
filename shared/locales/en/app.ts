@@ -141,29 +141,15 @@ export const EN_APP: Record<string, string> = {
   '例如：官网前端': 'e.g. Website frontend',
   分类: 'Category',
   这个项目是做什么的: 'What this project is for',
-  '使用分类默认：{name}': 'Category default: {name}',
   '未选择，将使用「{name}」': 'Not selected; "{name}" will be used',
   请选择工作流: 'Choose a workflow',
-  '默认对话 Agent': 'Default chat Agent',
-  '无（直接用 CLI，不注入 Agent 角色）': 'None (use the CLI directly, no Agent role)',
-  '在项目里新建对话时默认用它。能创建子对话的 Agent 会把需求分派给子对话；能力在 Agent 设置里开关。':
-    'Used by default for new conversations in this project. Agents allowed to create sub-conversations will dispatch requests to them; capabilities are toggled in Agent settings.',
-  子对话工作流: 'Sub-conversation workflows',
-  '子对话默认工作流（必选）': 'Default workflow for sub-conversations (required)',
   可选工作流: 'Optional workflows',
-  '子对话默认用上面的工作流；需求更适合下面某个工作流时，Agent 会优先用它。':
-    'Sub-conversations use the workflow above by default; when a request fits another workflow below better, the Agent prefers it.',
-  还没有其他工作流: 'No other workflows yet',
   'AI 分析这个目录': 'Analyze this folder',
   '只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单':
     'Read-only scan: infers the stack, build and test commands from the files and fills in the form below',
   '已按本地目录填好，检查一下再保存': 'Filled in from the folder. Review it, then save',
   '已填好，但没找到内置工作流「{name}」，请手动选择':
     'Filled in, but the built-in workflow "{name}" was not found. Choose one manually',
-  '没有单独指定时使用内置的「{name}」，它会一直跟着这个项目。':
-    'Without an explicit choice, the built-in "{name}" applies to this project.',
-  '「{name}」的配置，改完保存后对新开的对话生效':
-    'Settings for "{name}". Saved changes apply to conversations started afterwards',
   版本与推送: 'Version control and push',
   推送到远端: 'Push to remote',
   '第一次需要推送时问一次（推荐）': 'Ask once when a push is first needed (recommended)',
@@ -171,20 +157,8 @@ export const EN_APP: Record<string, string> = {
   '不推送，只做本地提交': 'Never push; local commits only',
   '本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。':
     'Local commits are unaffected. Pushes, PRs and P4 submits follow this setting and the choice made in each conversation.',
-  子对话用独立分支: 'Separate branch for sub-conversations',
-  '默认隔离（推荐）': 'Isolated by default (recommended)',
-  直接用项目目录: 'Use the project directory directly',
-  '子对话在各自的 git 工作目录里执行，几个子对话同时改同一个项目也不会互相覆盖；完成后再决定合并到父对话还是丢弃。不是 git 仓库、还没有提交时自动退回项目目录。':
-    'Sub-conversations run in their own git worktrees, so several of them can work on the same project without overwriting each other; merge back into the parent or discard when done. Falls back to the project directory when it is not a git repository or has no commits yet.',
   是: 'Yes',
   否: 'No',
-  '这个项目单独指定了工作流，不受分类默认的影响。':
-    'This project uses its own workflow and ignores the category default.',
-  '跟随项目分类「{name}」的默认工作流，分类可以在':
-    'Follows the default workflow of category “{name}”. You can change it in ',
-  '设置 · 项目分类': 'Settings · Project categories',
-  '中修改。': '.',
-  '项目没有分类，需要在这里单独指定工作流。': 'This project has no category, so choose a workflow here.',
   删除项目: 'Delete project',
   确认: 'Confirm',
   创建: 'Create',
@@ -207,7 +181,7 @@ export const EN_APP: Record<string, string> = {
   打开设置: 'Open settings',
   任务: 'Tasks',
   命令面板: 'Command palette',
-  '搜索项目、任务、Agent、工作流，或者输入操作': 'Search projects, tasks, Agents, workflows or actions',
+  '搜索项目、任务、角色、工作流，或者输入操作': 'Search projects, tasks, roles, workflows or actions',
   没有找到: 'Nothing found',
   '↑↓ 选择 · Enter 打开': '↑↓ to select · Enter to open',
   '{mod}K 命令面板': '{mod}K command palette',
@@ -252,8 +226,8 @@ export const EN_APP: Record<string, string> = {
     'Codex reads AGENTS.md on every start, or AGENTS.override.md instead when it exists. AGENTS.md is the same file as Project notes.',
   '{n} 个说明文件有改动': '{n} notes files changed',
   '还没有启用 CLI': 'No CLI enabled yet',
-  '：检测到本机已安装 {name}，启用后就能运行 Agent 和工作流。':
-    ': {name} is installed on this machine. Enable it to run Agents and workflows.',
-  '：先安装并启用一个 CLI，才能运行 Agent 和工作流。': ': Install and enable a CLI to run Agents and workflows.',
+  '：检测到本机已安装 {name}，启用后就能运行角色和工作流。':
+    ': {name} is installed on this machine. Enable it to run roles and workflows.',
+  '：先安装并启用一个 CLI，才能运行角色和工作流。': ': Install and enable a CLI to run roles and workflows.',
   '去启用 {name}': 'Enable {name}',
 }

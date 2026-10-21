@@ -245,7 +245,7 @@ export function assistApi(deps: {
           : await deps.workflows.get(input.targetId)
         : undefined
       if (input.targetId && !target)
-        return bad(c, input.kind === 'agent' ? t('要优化的 Agent 不存在') : t('要优化的工作流不存在'), 404)
+        return bad(c, input.kind === 'agent' ? t('要优化的角色不存在') : t('要优化的工作流不存在'), 404)
       const settings = await getSettings()
       const agents = await deps.agents.list()
       const workflows = await deps.workflows.list()

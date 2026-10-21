@@ -40,7 +40,7 @@ export function BuiltinAgentsDialog({
       if (r.created.length) setAgents((as) => [...as, ...r.created])
       if (r.newCategories.length) setCategories((cs) => [...cs, ...r.newCategories])
       if (r.newTags.length) setTags((ts) => [...ts, ...r.newTags])
-      toast.success(t('已添加 {n} 个 Agent', { n: r.created.length }))
+      toast.success(t('已添加 {n} 个角色', { n: r.created.length }))
       const first = r.created.find((a) => keys.some((k) => a.origin === `builtin:${k}`))
       if (first) onAdded(first)
     } catch (e) {
@@ -51,12 +51,12 @@ export function BuiltinAgentsDialog({
   }
 
   return (
-    <Modal open={open} onOpenChange={onOpenChange} title={t('内置 Agent')} wide>
+    <Modal open={open} onOpenChange={onOpenChange} title={t('内置角色')} wide>
       <div className="flex flex-col gap-5 overflow-y-auto px-5 py-4">
         <div className="flex flex-wrap items-start gap-3">
           <p className="min-w-0 flex-[1_1_320px] text-[0.8125rem] leading-relaxed text-muted">
             {t(
-              '按规划、开发、质量、文档与交付、UE 和美术整理好的 Agent，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 CLI。',
+              '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 CLI。',
             )}
           </p>
           <Button
@@ -127,7 +127,7 @@ export function BuiltinAgentsDialog({
       <ConfirmDialog
         open={!!removing}
         onOpenChange={(o) => !o && setRemoving(null)}
-        title={t('删除 Agent「{name}」？', { name: removing?.name ?? '' })}
+        title={t('删除角色「{name}」？', { name: removing?.name ?? '' })}
         description={t('工作流还在用它时不能删，先改掉或删除那些工作流。')}
         onConfirm={async () => {
           if (!removing) return

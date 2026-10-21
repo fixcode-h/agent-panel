@@ -32,10 +32,10 @@ export const EN_AGENTS: Record<string, string> = {
   // Agent 详情
   '{model}（旧设置，请换成档位）': '{model} (legacy, switch to a tier)',
   '默认模型 · {model}（旧设置，请换成档位）': 'Default model · {model} (legacy, switch to a tier)',
-  '主 Agent': 'Main Agent',
-  '子 Agent': 'Sub-agents',
+  主角色: 'Main role',
+  子角色: 'Sub-roles',
   '已删除「{name}」': 'Deleted “{name}”',
-  '未命名 Agent': 'Untitled Agent',
+  未命名角色: 'Untitled role',
   'CLI 未安装': 'CLI not installed',
   还没有简介: 'No description yet',
   '名称为空，未保存': 'Name is empty, not saved',
@@ -47,11 +47,11 @@ export const EN_AGENTS: Record<string, string> = {
   一句话说明它擅长什么: 'One line on what it’s good at',
   图标: 'Icon',
   运行环境: 'Runtime',
-  '自带的默认 Agent 固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。':
-    'The built-in default Agent always uses the default CLI with its default model and effort, currently {cli} · {model} · {effort}. They follow the default CLI and model in Settings. In a chat, you can switch model and effort for the moment next to the input box.',
+  '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。':
+    'The built-in default role always uses the default CLI with its default model and effort, currently {cli} · {model} · {effort}. They follow the default CLI and model in Settings. In a chat, you can switch model and effort for the moment next to the input box.',
   '跟随默认 CLI（现在是 {cli}）': 'Follow the default CLI ({cli} for now)',
-  '在设置里换了默认 CLI，这个 Agent 也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。':
-    'When the default CLI changes in Settings, this Agent switches too, using the same tier’s model on the new CLI. Uncheck to pin a specific CLI.',
+  '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。':
+    'When the default CLI changes in Settings, this role switches too, using the same tier’s model on the new CLI. Uncheck to pin a specific CLI.',
   '三档对应的模型在设置里每个 CLI 下配置': 'The model for each tier is configured per CLI in Settings',
   '越高想得越久、越慢。选档位时默认用档位的思考强度。':
     'Higher means more thinking and slower responses. With a tier, the tier’s effort is used by default.',
@@ -68,8 +68,8 @@ export const EN_AGENTS: Record<string, string> = {
     'It’s used by the workflows {names}. Remove it from them before deleting.',
 
   // Agent 选择器、分类选择器
-  '搜索 Agent': 'Search Agents',
-  '没有可选的 Agent，先去 Agent 页面创建': 'No Agents available. Create one on the Agents page first',
+  搜索角色: 'Search roles',
+  '没有可选的角色，先去角色页面创建': 'No roles available. Create one on the Roles page first',
   '已新建分类「{name}」': 'Created category “{name}”',
   搜索或输入新分类名: 'Search or type a new category name',
   '新建分类「{name}」': 'New category “{name}”',
@@ -100,10 +100,10 @@ export const EN_AGENTS: Record<string, string> = {
   最高: 'Max',
 
   // AI 创建 / 优化
-  '一个专门写 Playwright 端到端测试的 Agent，用 Claude Code':
-    'An Agent dedicated to writing Playwright end-to-end tests, using Claude Code',
-  '负责代码审查的 Agent，重点看安全和性能问题': 'A code review Agent focused on security and performance issues',
-  '帮我写 Go 后端接口的 Agent，用 Codex': 'An Agent that writes Go backend APIs, using Codex',
+  '一个专门写 Playwright 端到端测试的角色，用 Claude Code':
+    'A role dedicated to writing Playwright end-to-end tests, using Claude Code',
+  '负责代码审查的角色，重点看安全和性能问题': 'A code review role focused on security and performance issues',
+  '帮我写 Go 后端接口的角色，用 Codex': 'A role that writes Go backend APIs, using Codex',
   'Web 功能开发：先分析需求，前后端并行开发，然后测试和代码审查，最后验收':
     'Web feature development: analyze requirements, build frontend and backend in parallel, then test and review code, and finish with acceptance review',
   'Bug 修复：复现问题、定位修复、回归测试': 'Bug fix: reproduce, locate and fix, then run regression tests',
@@ -115,7 +115,7 @@ export const EN_AGENTS: Record<string, string> = {
   '（空）': '(empty)',
   主流程: 'Main flow',
   子流程: 'Subflow',
-  '应用时会先创建 {n} 个新 Agent：{names}。': 'Applying will first create {n} new Agents: {names}.',
+  '应用时会先创建 {n} 个新角色：{names}。': 'Applying will first create {n} new roles: {names}.',
   工作流说明: 'Workflow doc',
   '格式不对，正在让 CLI 修正': 'Invalid format, asking the CLI to fix it',
   '正在写配置（已写 {n} 字）': 'Writing config ({n} characters so far)',
@@ -125,14 +125,14 @@ export const EN_AGENTS: Record<string, string> = {
   '{n} 秒': '{n}s',
   '这次用 {model}': 'Using {model} this time',
   'CLI 自动选择的模型': 'the model the CLI picks',
-  '用 AI 创建 Agent': 'Create Agent with AI',
-  '本机 CLI 按固定格式生成 Agent，校验通过后在右侧预览，确认再应用':
-    'A local CLI generates the Agent in a fixed format. Once validated, preview it on the right and apply when ready',
-  '描述你想要的 Agent，越具体越好。可以从下面的例子开始：':
-    'Describe the Agent you want. The more specific, the better. Start from an example:',
-  '描述你想要的 Agent': 'Describe the Agent you want',
-  '生成的 Agent 会显示在这里': 'The generated Agent will appear here',
-  '创建 Agent': 'Create Agent',
+  '用 AI 创建角色': 'Create role with AI',
+  '本机 CLI 按固定格式生成角色，校验通过后在右侧预览，确认再应用':
+    'A local CLI generates the role in a fixed format. Once validated, preview it on the right and apply when ready',
+  '描述你想要的角色，越具体越好。可以从下面的例子开始：':
+    'Describe the role you want. The more specific, the better. Start from an example:',
+  描述你想要的角色: 'Describe the role you want',
+  生成的角色会显示在这里: 'The generated role will appear here',
+  创建角色: 'Create role',
   '用 AI 创建工作流': 'Create workflow with AI',
   '本机 CLI 按固定格式生成工作流，校验通过后在右侧预览，确认再应用':
     'A local CLI generates the workflow in a fixed format. Once validated, preview it on the right and apply when ready',
@@ -143,7 +143,7 @@ export const EN_AGENTS: Record<string, string> = {
   创建工作流: 'Create workflow',
   '已更新「{name}」': 'Updated “{name}”',
   '已创建「{name}」': 'Created “{name}”',
-  '，并新建了 {n} 个 Agent': ', plus {n} new Agents',
+  '，并新建了 {n} 个角色': ', plus {n} new roles',
   '用 AI 优化「{name}」': 'Refine “{name}” with AI',
   使用: 'Use',
   未安装或已停用: 'Not installed or disabled',
@@ -161,27 +161,27 @@ export const EN_AGENTS: Record<string, string> = {
   // Agent 页面
   '已删除分类「{name}」': 'Deleted category “{name}”',
   分类名称: 'Category name',
-  '在此分类新建 Agent': 'New Agent in this category',
+  在此分类新建角色: 'New role in this category',
   分类操作: 'Category actions',
   重命名: 'Rename',
   删除分类: 'Delete category',
   '删除分类「{name}」？': 'Delete category “{name}”?',
-  '分类里的 Agent 不会被删除，会移到「未分类」。':
-    'Agents in this category won’t be deleted. They’ll move to “Uncategorized”.',
-  '新 Agent': 'New Agent',
+  '分类里的角色不会被删除，会移到「未分类」。':
+    'Roles in this category won’t be deleted. They’ll move to “Uncategorized”.',
+  新角色: 'New role',
   '{name} 副本': '{name} copy',
   '检测失败：{error}': 'Detection failed: {error}',
   '还没有启用 CLI，去设置里启用': 'No CLI enabled yet. Enable one in Settings',
-  '描述需求，让本机 CLI 生成 Agent': 'Describe what you need and let a local CLI generate the Agent',
+  '描述需求，让本机 CLI 生成角色': 'Describe what you need and let a local CLI generate the role',
   'AI 创建': 'Create with AI',
   重新检测: 'Detect again',
   '可用 · {version}': 'Available · {version}',
-  '这个分类还没有 Agent': 'No Agents in this category yet',
-  '没有匹配的 Agent': 'No matching Agents',
-  '创建第一个 Agent': 'Create your first Agent',
-  'Agent 是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。':
-    'An Agent combines a CLI, a model and instructions. Organize them by category, then team them up in workflows.',
-  '新建 Agent': 'New Agent',
+  这个分类还没有角色: 'No roles in this category yet',
+  没有匹配的角色: 'No matching roles',
+  创建第一个角色: 'Create your first role',
+  '角色是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。':
+    'A role combines a CLI, a model and instructions. Organize them by category, then team them up in workflows.',
+  新建角色: 'New role',
 
   // 就绪检查
   'CLI 已安装': 'CLI installed',
@@ -198,11 +198,11 @@ export const EN_AGENTS: Record<string, string> = {
   '共 {n} 字': '{n} characters',
   建议写清楚它的职责和交付标准: 'Describe its responsibilities and what it should deliver',
   未命名节点: 'Untitled node',
-  '已选择主 Agent': 'Main Agent selected',
-  '主 Agent 执行没指定 Agent 的节点，并处理追加要求':
-    'The main Agent runs nodes without an assigned Agent and handles follow-up requests',
+  已选择主角色: 'Main role selected',
+  '主角色执行没指定角色的节点，并处理追加要求':
+    'The main role runs nodes without an assigned role and handles follow-up requests',
   团队成员都可运行: 'All team members can run',
-  '共 {n} 个 Agent': '{n} Agents',
+  '共 {n} 个角色': '{n} roles',
   已设计流程: 'Flow designed',
   '从「开始」连一条线到{flow}的第一个节点': 'Connect “Start” to the first node of {flow}',
   '这些流程节点还没选流程：{names}': 'These flow nodes have no flow selected: {names}',
@@ -213,7 +213,7 @@ export const EN_AGENTS: Record<string, string> = {
   '流程循环调用：{cycle}': 'Flows call each other in a loop: {cycle}',
   '{names} 引用的流程已经删除': '{names} reference a deleted flow',
   没有循环调用: 'No loops',
-  '没指定 Agent 的节点由主 Agent 执行': 'Nodes without an Agent are run by the main Agent',
+  没指定角色的节点由主角色执行: 'Nodes without a role are run by the main role',
   节点都已连上: 'All nodes connected',
   '没有从开始连到、不会执行：{names}': 'Not reachable from Start, won’t run: {names}',
   所有节点都会执行: 'All nodes will run',
@@ -250,4 +250,18 @@ export const EN_AGENTS: Record<string, string> = {
   已生成: 'Ready',
   最小化: 'Minimize',
   关闭并终止生成: 'Close and stop generating',
+  必备: 'Core',
+  '必备角色 · {use}': 'Core role · {use}',
+  '项目对话离不开的四个角色之一，不能删除，也不能改成别的角色。名称、角色设定、能力和 Skill 由面板维护并随版本更新；你可以改下面的参数和运行环境，每个项目还能在项目设置里单独调参数。':
+    "One of the four roles every project conversation relies on. It can't be deleted or turned into a different role. Its name, instructions, abilities and skills are maintained by the panel and updated with each release; you can change the parameters and runtime below, and each project can tune the parameters in its settings.",
+  '这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。':
+    "These are the defaults for all projects. To use different values in one project, change them under Core roles in that project's settings.",
+  '由面板维护，只读。Skill：{list}': 'Maintained by the panel, read-only. Skills: {list}',
+  项目对话默认使用: 'Default for project conversations',
+  子对话默认使用: 'Default for sub-conversations',
+  所有项目文档按规则落盘: 'Writes every project document by the rules',
+  '构建、测试和验收': 'Build, test and acceptance',
+  必备角色不能删除: "Core roles can't be deleted",
+  角色: 'Roles',
+  交给角色: 'Role',
 }

@@ -36,9 +36,9 @@ type Turn = AssistMessage & { proposal?: Proposal; error?: string; msgs?: TaskMe
 
 const EXAMPLES: Record<AssistKind, string[]> = {
   agent: [
-    t('一个专门写 Playwright 端到端测试的 Agent，用 Claude Code'),
-    t('负责代码审查的 Agent，重点看安全和性能问题'),
-    t('帮我写 Go 后端接口的 Agent，用 Codex'),
+    t('一个专门写 Playwright 端到端测试的角色，用 Claude Code'),
+    t('负责代码审查的角色，重点看安全和性能问题'),
+    t('帮我写 Go 后端接口的角色，用 Codex'),
   ],
   workflow: [
     t('Web 功能开发：先分析需求，前后端并行开发，然后测试和代码审查，最后验收'),
@@ -201,7 +201,7 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
       </div>
       <div className="flex flex-wrap gap-1.5">
         {[
-          main && { a: main, role: t('主 Agent') },
+          main && { a: main, role: t('主角色') },
           ...w.members.map((m) => ({ a: who(m.agentId), role: m.responsibility })),
         ]
           .filter((x): x is { a: NonNullable<ReturnType<typeof who>>; role: string } => !!x && !!x.a)
@@ -252,7 +252,7 @@ function WorkflowPreview({ p }: { p: Extract<Proposal, { kind: 'workflow' }> }) 
       </div>
       {p.newAgents.length > 0 && (
         <p className="text-xs text-muted">
-          {t('应用时会先创建 {n} 个新 Agent：{names}。', {
+          {t('应用时会先创建 {n} 个新角色：{names}。', {
             n: p.newAgents.length,
             names: p.newAgents.map((a) => a.name).join(t('、')),
           })}
@@ -512,12 +512,12 @@ export function AssistDialog({
           }
         : kind === 'agent'
           ? {
-              create: t('用 AI 创建 Agent'),
-              desc: t('本机 CLI 按固定格式生成 Agent，校验通过后在右侧预览，确认再应用'),
-              intro: t('描述你想要的 Agent，越具体越好。可以从下面的例子开始：'),
-              placeholder: t('描述你想要的 Agent'),
-              empty: t('生成的 Agent 会显示在这里'),
-              button: t('创建 Agent'),
+              create: t('用 AI 创建角色'),
+              desc: t('本机 CLI 按固定格式生成角色，校验通过后在右侧预览，确认再应用'),
+              intro: t('描述你想要的角色，越具体越好。可以从下面的例子开始：'),
+              placeholder: t('描述你想要的角色'),
+              empty: t('生成的角色会显示在这里'),
+              button: t('创建角色'),
             }
           : kind === 'params'
             ? {
@@ -728,7 +728,7 @@ export function AssistDialog({
         setWorkflows((ws) => (target ? ws.map((x) => (x.id === w.id ? w : x)) : [...ws, w]))
         toast.success(
           (target ? t('已更新「{name}」', { name: w.name }) : t('已创建「{name}」', { name: w.name })) +
-            (r.created.length ? t('，并新建了 {n} 个 Agent', { n: r.created.length }) : ''),
+            (r.created.length ? t('，并新建了 {n} 个角色', { n: r.created.length }) : ''),
         )
         onApplied?.({ workflow: w })
       }

@@ -293,7 +293,8 @@ export function DeploySection() {
         </div>
       </Group>
 
-      <div className="sticky bottom-0 z-10 mt-5 flex flex-wrap items-center gap-3 border-t bg-card py-3">
+      {/* 吸底的操作栏：滚动区域底下还有一段内边距（pb-10），栏下面和两侧用同色底盖住，下面的列表不会透上来 */}
+      <div className="sticky -bottom-10 z-10 -mx-5 mt-5 -mb-10 flex flex-wrap items-center gap-3 border-t bg-card px-5 pt-3 pb-13 md:-mx-8 md:px-8">
         {changed && (
           <Checkbox
             checked={overwrite}

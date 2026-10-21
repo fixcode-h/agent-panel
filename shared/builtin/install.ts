@@ -9,8 +9,9 @@ import type {
   Workflow,
   WorkflowInput,
 } from '../schema.ts'
-import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, type BuiltinAgent } from './agents.ts'
+import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } from './agents.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
+import { CORE_AGENTS, coreDefinition, sameCore, syncCore } from './core.ts'
 import {
   LEGACY_AGENT_FIELDS,
   LEGACY_AGENT_FIELDS_MORE,
@@ -395,13 +396,34 @@ export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOp
 }
 
 /**
- * 启动时确保项目对话要用的两个 Agent 存在：项目协调 Agent（orchestrator）和任务 Agent（worker）。
- * 「通用项目」已经装过时不会重新 build 工作流，但这两个 Agent 可能还没建出来，旧项目升级也要用。
+ * 启动时确保四个必备角色（统筹、执行、文档、测试验收）都在，并按内置定义同步一遍（见 ./core.ts）：
+ * 缺的建出来，已有的把名称、设定、Skill、能力、参数定义换成当前版本，保留用户填的参数值和运行配置。
+ * 没有变化的不写盘，重复启动不会反复改文件。
  */
 export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) {
   const ctx = context(state, api)
-  await ctx.createAgents([...builtinAgentKeys(GENERAL), 'worker'])
-  return { created: ctx.created, newCategories: ctx.newCategories, newTags: ctx.newTags }
+  await ctx.createAgents([...builtinAgentKeys(GENERAL), ...CORE_AGENTS.map((c) => c.key)])
+  const synced: Agent[] = []
+  if (api.updateAgent) {
+    const categoryId = await ctx.category(CORE_CATEGORY, 'agent')
+    for (const { key } of CORE_AGENTS) {
+      const cur = findBuiltin(ctx.agents, key)
+      if (!cur) continue
+      const def = coreDefinition(key)
+      const includes = def.includes.map((k) => findBuiltin(ctx.agents, k)?.id ?? '').filter(Boolean)
+      const next = syncCore(cur, def, { categoryId, includes })
+      // 用户自己有同名的角色时保留建出来时加了后缀的名字，免得派活时按名字认错
+      if (ctx.agents.some((a) => a.id !== cur.id && a.name === next.name)) next.name = cur.name
+      if (sameCore(cur, next)) continue
+      const { id, createdAt: _c, updatedAt: _u, ...rest } = { ...cur, ...next }
+      const saved = await api.updateAgent(id, rest)
+      if (saved) {
+        synced.push(saved)
+        ctx.agents.splice(ctx.agents.indexOf(cur), 1, saved)
+      }
+    }
+  }
+  return { created: ctx.created, synced, newCategories: ctx.newCategories, newTags: ctx.newTags }
 }
 
 /**

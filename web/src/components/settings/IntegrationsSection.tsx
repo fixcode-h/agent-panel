@@ -137,7 +137,7 @@ export function IntegrationsSection() {
     <div className="flex flex-col gap-3">
       <p className="text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '给本机的命令行工具授权后，Agent 在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。',
+          '给本机的命令行工具授权后，角色在任务里可以直接用它们操作远端，例如合并分支、查看和创建 PR、提交 issue。登录状态由这些工具自己保存，面板不保存凭据。',
         )}
       </p>
       {list.map((v) => {

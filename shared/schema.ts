@@ -93,7 +93,7 @@ export const defaultAgent = (): Agent => {
   const at = new Date(0).toISOString()
   return {
     ...AgentInput.parse({
-      name: t('默认 Agent'),
+      name: t('默认角色'),
       description: t('使用默认 CLI 的默认模型和思考强度，对话时可以临时调整'),
       icon: 'sparkles',
     }),
@@ -545,6 +545,8 @@ export const TestStep = z.object({
     .default(0),
   note: z.string().trim().max(300).default(''),
   enabled: z.boolean().default(true),
+  /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
+  merge: z.boolean().default(false),
 })
 export type TestStep = z.infer<typeof TestStep>
 
@@ -578,6 +580,11 @@ const ProjectFields = z.object({
   /** 工作流暴露项的取值，每个工作流一份（key 是工作流 id） */
   workflowParams: WorkflowParamsById.default({}),
   /**
+   * 这个项目里给必备角色（统筹、执行、文档、测试验收）填的参数，key 是角色 id：
+   * 执行时当作这个项目里的默认值，见 shared/builtin/core.ts 的 withProjectParams
+   */
+  agentParams: WorkflowParamsById.default({}),
+  /**
    * 这个项目的测试步骤：新建对话时快照进任务，测试 Agent 按它执行。
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
@@ -589,13 +596,16 @@ const ProjectFields = z.object({
    * 留空时跟随设置里的全局格式（默认 UTF-8 无 BOM + LF）
    */
   fileFormat: FileFormat.optional(),
+  /**
+   * 子对话怎么避免互相干扰：
+   * - worktree：Git 项目里每个子对话在自己的独立分支目录里改文件（只隔离编辑，不在里面编译）；
+   *   改完提交编译，面板把它合回开分支的那个目录试编译，通过才提交、失败撤回并把报错交回子对话。
+   *   不是 Git 仓库（P4、没有版本控制）时自动退回 claim
+   * - claim：和父对话共用一个目录，改文件前认领（同一个文件同一时间只归一个子对话）
+   */
+  childIsolation: z.enum(['worktree', 'claim']).catch('worktree').default('worktree'),
   /** 推送授权：ask 第一次需要推送时问一次，allow 直接推，deny 一律不推 */
   gitPolicy: z.enum(['ask', 'allow', 'deny']).default('ask'),
-  /**
-   * 子对话默认在独立分支（git worktree）里执行：几个子对话同时改一个目录时互不干扰。
-   * 不是 git 仓库、没有提交或建不出来时退回项目目录，不挡住子对话创建
-   */
-  childIsolate: z.boolean().default(true),
   /**
    * 侧栏里的显示顺序：拖拽后由 PUT /projects/order 重新编号（1、2、3…）。
    * 没有这个字段的旧项目还没排过，按添加时间排序，并且排在拖拽过的项目后面
@@ -678,7 +688,7 @@ export const NewTaskInput = z.object({
   params: z.record(z.string(), ParamValue).default({}),
   /**
    * 在独立分支（git worktree）里执行，不直接改项目目录；只有 git 仓库可以。
-   * 不传时按项目设置：子对话默认隔离（见 Project.childIsolate），其他任务默认不隔离
+   * 只对项目里的顶层对话有效：子对话一律和父对话用同一个目录，不建独立分支（几个子对话同时改由文件认领协调）
    */
   isolate: z.boolean().optional(),
   /** 「提问」开关：Agent 的提问交给用户回答；关着时让它自己选 */
@@ -985,6 +995,13 @@ export const TaskData = z.object({
   rootTaskId: z.string().default(''),
   /** 子对话的摘要：最近一条回复的开头，协调 Agent 判断关联强度时看它 */
   summary: z.string().default(''),
+  /**
+   * 父对话发布的全局规则（输入「/rule 内容」）：名下所有子对话和它们的工作流节点都必须遵守。
+   * 只对这个对话有效，不写进项目的 AGENTS.md
+   */
+  rules: z.array(z.object({ id: z.string(), text: z.string().max(2000), at: z.string() })).default([]),
+  /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
+  inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */
@@ -1257,6 +1274,11 @@ export const Settings = z.object({
    * 期间这个对话保留一个 CLI 进程，值越大越省重开的时间，同时挂着的进程也越多
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
+  /**
+   * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
+   * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
+   */
+  childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),

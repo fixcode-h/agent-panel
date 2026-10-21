@@ -72,7 +72,7 @@ export const EN_TASKS: Record<string, string> = {
   复制: 'Copy',
   '正在思考…': 'Thinking…',
   思考过程: 'Thinking',
-  '已删除的 Agent': 'Deleted Agent',
+  已删除的角色: 'Deleted role',
   '思考 {n} 次': 'Thinking ×{n}',
   '{n} 次工具调用': 'Tool calls ×{n}',
   '{n} 段说明': 'Notes ×{n}',
@@ -90,7 +90,7 @@ export const EN_TASKS: Record<string, string> = {
   工作流已删除: 'Workflow deleted',
   ' · {done}/{total} 个节点': ' · {done}/{total} steps',
   '对话 · {name}': 'Chat · {name}',
-  'Agent 已删除': 'Agent deleted',
+  角色已删除: 'Role deleted',
   '执行时间（不含等待继续对话的时间）': 'Run time (excluding time waiting for follow-ups)',
   'Token 总数（输入 + 输出）': 'Total tokens (input + output)',
   '输入 Token（含缓存命中）': 'Input tokens (including cache hits)',
@@ -132,8 +132,8 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个节点': '{n} nodes',
   按工作流执行: 'Run as workflow',
   '不用工作流，直接对话': 'No workflow, just chat',
-  '选了工作流就按它的流程图执行；不选时直接和 Agent 对话。':
-    'With a workflow selected, it runs along that workflow’s flow; without one you chat with the Agent directly.',
+  '选了工作流就按它的流程图执行；不选时直接和角色对话。':
+    'With a workflow selected, it runs along that workflow’s flow; without one you chat with the role directly.',
   '描述要做的事，Agent 会按工作流分工完成': 'Describe what to do and the Agents will split it up by the workflow',
   改回直接对话: 'Back to a direct chat',
   '对话用的 CLI': 'CLI to chat with',
@@ -141,20 +141,20 @@ export const EN_TASKS: Record<string, string> = {
   开始执行: 'Start',
   '开始执行（Enter）': 'Start (Enter)',
   '松开鼠标，把文件附到要求里': 'Drop to attach files to your request',
-  '无 Agent，直接用 CLI': 'No Agent, use the CLI directly',
-  '无 Agent': 'No Agent',
-  '使用项目设置的 Agent': 'Use the project Agent',
-  '默认 Agent': 'Default Agent',
-  '直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）':
-    'Chat with the CLI directly, without the Agent role (click to use the project Agent again)',
-  '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用 Agent）':
-    'This chat uses “{name}” with its role and parameters and cannot be changed once started (click to use no Agent)',
-  '项目设置的 Agent 已删除或停用，这个对话直接和 CLI 对话（点一下改成不用 Agent）':
-    'The project Agent was deleted or disabled, so this chat goes straight to the CLI (click to use no Agent)',
-  '这个对话用默认 Agent，CLI、模型和思考强度可以在开始前选（点一下改成不用 Agent）':
-    'This chat uses the default Agent; pick the CLI, model and thinking effort before starting (click to use no Agent)',
-  '项目设置里选了「无 Agent」，这个对话直接和 CLI 对话；在项目设置里选一个 Agent 才会用角色（点一下改成不用 Agent）':
-    'The project is set to “No Agent”, so this chat goes straight to the CLI; pick an Agent in the project settings to use a role (click to use no Agent)',
+  '无角色，直接用 CLI': 'No role, use the CLI directly',
+  无角色: 'No role',
+  使用项目设置的角色: 'Use the project role',
+  默认角色: 'Default role',
+  '直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）':
+    'Chat with the CLI directly, without the role’s instructions (click to use the project role again)',
+  '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）':
+    'This chat uses “{name}” with its instructions and parameters and cannot be changed once started (click to use no role)',
+  '项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）':
+    'The project role was deleted or disabled, so this chat goes straight to the CLI (click to use no role)',
+  '这个对话用默认角色，CLI、模型和思考强度可以在开始前选（点一下改成不用角色）':
+    'This chat uses the default role; pick the CLI, model and thinking effort before starting (click to use no role)',
+  '项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
+    'The project is set to “No role”, so this chat goes straight to the CLI; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
   关闭子对话: 'Close sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
@@ -256,11 +256,11 @@ export const EN_TASKS: Record<string, string> = {
   删除任务: 'Delete task',
   '{name} 正在回复': '{name} is replying',
   '{name} 正在处理': '{name} is working',
-  '主 Agent': 'Main Agent',
+  主角色: 'Main role',
   继续输入要求: 'Add a follow-up',
   '{n} 个节点同时执行中': '{n} steps running in parallel',
   '执行中，可以随时暂停': 'Running. You can pause at any time',
-  '由主 Agent {name} 处理追加要求': 'Follow-ups are handled by the main Agent {name}',
+  '由主角色 {name} 处理追加要求': 'Follow-ups are handled by the main role {name}',
   会从失败的节点重新执行: 'Will rerun from the failed step',
   会从没完成的节点继续执行: 'Will resume from the unfinished step',
   '发给 {name}': 'Send to {name}',
@@ -329,14 +329,10 @@ export const EN_TASKS: Record<string, string> = {
   查看这次运行的实时输出: 'Open this run to see its live output',
   '这次运行还没有节点。': 'This run has no nodes yet.',
   撤回: 'Withdraw',
-  '在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃':
-    'Run on a separate git branch and directory without touching the project; merge or discard when done',
   独立分支: 'Separate branch',
   '这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。':
     'A task is already running in this project. Two tasks editing one directory can overwrite each other; turn on "Separate branch" to keep them apart.',
   项目当前的分支: "the project's current branch",
-  '没能创建独立分支（{reason}），这次不隔离，直接在所在目录里执行。':
-    'Could not create a separate branch ({reason}); running in the current directory without isolation.',
   '新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。':
     'The new version is downloaded; it replaces the current one and restarts after running tasks finish. You can also force the update now.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
@@ -432,28 +428,28 @@ export const EN_TASKS: Record<string, string> = {
   追加要求: 'Follow-ups',
   对话轮次: 'Turns',
   '（最近 {n} 轮，共 {total} 轮）': ' (last {n} of {total})',
-  '主 Agent 评估子 Agent 的结果、决定流程怎么走，最后整理结果':
-    'The main Agent reviews sub-agent results, decides where the flow goes, and writes the final result',
+  '主角色评估子角色的结果、决定流程怎么走，最后整理结果':
+    'The main role reviews sub-role results, decides where the flow goes, and writes the final result',
   '调度 {n} 轮': '{n} dispatch rounds',
   等节点交回结果: 'Waiting for nodes to report back',
-  '主 Agent 处理后会接着走流程': 'The main Agent handles it, then the flow continues',
+  主角色处理后会接着走流程: 'The main role handles it, then the flow continues',
   '流程停在「{title}」：结论不通过，后面的节点还没执行':
     'Flow stopped at "{title}": it did not pass, later nodes haven\'t run',
   '流程没有完成：「{title}」执行失败': 'Flow not finished: "{title}" failed',
   '流程没有完成，还有 {n} 个节点没执行': "Flow not finished: {n} nodes haven't run",
-  '流程没有完成，主 Agent 还没整理结果': "Flow not finished: the main Agent hasn't summarized the results",
+  '流程没有完成，主角色还没整理结果': "Flow not finished: the main role hasn't summarized the results",
   '从「{title}」重新检查，接着走流程': 'Re-check "{title}" and continue the flow',
   继续流程: 'Continue flow',
   结束流程: 'End flow',
   '结束流程，不再继续': 'End the flow without continuing',
   '结束这个流程？': 'End this flow?',
-  '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。':
-    "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main Agent.",
-  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
-    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main Agent to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
+  '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主角色直接处理。':
+    "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main role.",
+  '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主角色处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
+    'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main role to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
   '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
-  '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。':
-    "This run is over; unfinished nodes won't execute. Tell the main Agent what you need next and it will run the flow again when needed.",
+  '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主角色说，需要时它会再走一遍流程。':
+    "This run is over; unfinished nodes won't execute. Tell the main role what you need next and it will run the flow again when needed.",
   '任务正在执行，请先停止': 'The task is running; stop it first',
   只有工作流任务可以结束流程: 'Only workflow tasks can end a flow',
   // 导出、导入、AI 分析
@@ -462,14 +458,14 @@ export const EN_TASKS: Record<string, string> = {
   '已应用 {n} 项修改': 'Applied {n} changes',
   复制失败: 'Copy failed',
   工作流优化建议: 'Workflow suggestions',
-  '看过差异再应用；应用后工作流和 Agent 马上按新的内容执行':
-    'Review the diffs before applying; workflows and Agents use the new content right away',
+  '看过差异再应用；应用后工作流和角色马上按新的内容执行':
+    'Review the diffs before applying; workflows and roles use the new content right away',
   '应用选中的 {n} 项': 'Apply {n} selected',
   面板框架的问题: 'Panel framework issues',
   还没有可以分析的执行记录: 'No runs to analyze yet',
   'AI 分析执行结果': 'AI run analysis',
-  '用默认 Agent 新建一个对话来分析，只分析不改文件':
-    'Starts a chat with the default Agent; it only analyzes and changes no files',
+  '用默认角色新建一个对话来分析，只分析不改文件':
+    'Starts a chat with the default role; it only analyzes and changes no files',
   开始分析: 'Analyze',
   'AI 会读完整的执行记录（消息、每个节点的结果、耗时、token 和缓存命中），判断结果质量、工作流哪里需要优化、面板框架有没有问题，并给出可以直接应用的修改建议。建议要你看过差异后才会应用。':
     "The AI reads the full run record (messages, each node's result, time, tokens and cache hits), judges the result quality, what in the workflow needs work and whether the panel itself has issues, and suggests changes you can apply. Nothing is applied until you review the diff.",
@@ -505,12 +501,76 @@ export const EN_TASKS: Record<string, string> = {
   '应该是 true 或 false': 'Must be true or false',
   应该是文字: 'Must be text',
   '超过 {n} 字': 'Longer than {n} characters',
-  'Agent「{name}」· {field}': 'Agent "{name}" · {field}',
-  '本机没有这个 Agent': "This Agent doesn't exist here",
+  '角色「{name}」· {field}': 'Role "{name}" · {field}',
+  本机没有这个角色: "This role doesn't exist here",
   '工作流「{name}」· {field}': 'Workflow "{name}" · {field}',
   本机没有这个工作流: "This workflow doesn't exist here",
   '工作流「{name}」· 节点「{node}」· {field}': 'Workflow "{name}" · node "{node}" · {field}',
   工作流里没有这个节点: 'The workflow has no such node',
   '这是导入的任务，只能查看，不能继续执行': 'This is an imported task. It is read-only and cannot be continued',
   导入的任务看不到对方电脑上的文件: "Imported tasks can't show files from the other computer",
+  引用到输入框: 'Quote in the input box',
+  引用: 'Quote',
+  这里没有可以引用到的输入框: 'There is no input box to quote into here',
+  '独立分支：在单独的 git 分支和目录里执行，不改动项目目录，完成后再决定合并还是丢弃；它分出的子对话也在这个目录里':
+    'Separate branch: run on its own git branch and directory without touching the project directory, then merge or discard when done; its sub-conversations work in the same directory',
+  同时执行的子对话: 'Concurrent sub-conversations',
+  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 CLI 进程，跑工作流时更多。':
+    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one CLI process, more when running a workflow.',
+  '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
+  '全局规则只能在项目对话里发布，子对话会自动遵守父对话的规则':
+    "Global rules can only be published in a project conversation; sub-conversations follow their parent's rules automatically",
+  '这个对话的全局规则：\n{list}': 'Global rules of this conversation:\n{list}',
+  '这个对话还没有全局规则。输入「/rule 内容」发布一条，所有子对话都会遵守。':
+    'This conversation has no global rules yet. Type "/rule <text>" to publish one; every sub-conversation will follow it.',
+  已清空全局规则: 'Global rules cleared',
+  '没有第 {n} 条规则': 'There is no rule {n}',
+  '已删除全局规则：{text}': 'Global rule removed: {text}',
+  '已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。':
+    "Global rule published: {text}. Every sub-conversation of this conversation will follow it; it is not written to the project's AGENTS.md.",
+  '这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。':
+    'These files were also changed by other sub-conversations: {list}. The parent conversation has been asked to coordinate; check the content before merging.',
+  '对话正在执行，等这一轮结束或停止后再归档':
+    'The conversation is running. Archive it after this turn ends or after stopping it',
+  '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
+    'Read this project\'s folders, scripts and config, then fill in the parameters of "{name}" to fit the project, explaining why for each one',
+  必备角色: 'Core roles',
+  '项目对话靠这四个角色运转：统筹分派、执行做事、文档落盘、测试验收。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
+    "Project conversations run on these four roles: the coordinator routes, the executor does the work, docs writes everything to disk, and test & acceptance verifies. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
+  '改了 {n} 项': '{n} changed',
+  去角色页改所有项目的默认值和模型: 'Change the defaults and model for all projects on the Roles page',
+  角色设置: 'Role settings',
+  '这个角色没有可调的参数。': 'This role has no adjustable parameters.',
+  '必备角色还没装好，重启面板后会自动补上。':
+    "Core roles aren't installed yet. They'll be added when the panel restarts.",
+  '子对话要改代码时按工作流执行：默认用下面这一个，需求更适合某个可选工作流时，执行角色会改用它。每个工作流的配置分开保存，对新开的对话生效。':
+    "Sub-conversations follow a workflow when they change code: the default one below, or an optional workflow when it fits the request better. Each workflow's settings are saved separately and apply to new conversations.",
+  '跟随分类：{name}': 'Follow category: {name}',
+  '只能从「{cat}」分类里选：这类工作流是为项目常驻流程设计的。':
+    'Only workflows in the "{cat}" category can be picked: they\'re designed as the project\'s standing flow.',
+  添加可选工作流: 'Add optional workflow',
+  '还没有可选工作流。像 Bug 修复、发布这类流程可以加进来，需求合适时执行角色会自动选它。':
+    'No optional workflows yet. Add flows like bug fixing or releasing, and the executor will pick one when it fits.',
+  '测试验收角色按这里的顺序执行，新建对话时快照进任务。写清楚命令、在哪执行和什么时候跑，没有配置时它会自己找命令并提醒你补上。':
+    "The test & acceptance role runs these in order; they're snapshotted into each new conversation. Spell out the command, where it runs and when. Without steps it finds commands itself and reminds you to add them.",
+  '按这个项目现在的脚本和配置，生成类型检查、单元测试、端到端和构建的测试步骤':
+    "Based on this project's current scripts and config, generate test steps for type checking, unit tests, end-to-end tests and the build",
+  '这个工作流没有需要配置的参数。': 'This workflow has no parameters to configure.',
+  子对话隔离: 'Sub-conversation isolation',
+  '独立 worktree（推荐）': 'Separate worktree (recommended)',
+  '共用目录 + 认领文件': 'Shared folder + file claims',
+  '每个子对话在自己的独立分支目录里改文件，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。':
+    "Each sub-conversation edits files in its own branch folder without getting in the others' way. Builds don't run there: when it's done, its changes queue up to be merged back into the original folder and built with the test steps marked \"Build on merge\". They're committed only if the build passes; otherwise the merge is undone and the errors go back to the sub-conversation. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
+    "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
+  '子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交':
+    'When a sub-conversation submits its branch for a build, this step runs after merging back into the original folder; the merge is committed only if it passes',
+  合并时编译: 'Build on merge',
+  '已提交编译，等面板合回原目录编译': 'Submitted for build; waiting for the panel to merge it back and build',
+  可能相关的对话: 'Possibly related chats',
+  '看起来和这些对话是同一件事，可以直接发过去接着做：':
+    'These chats look like the same piece of work. You can send it there and continue:',
+  '把这条要求发到「{title}」': 'Send this request to “{title}”',
+  发到这里: 'Send here',
+  其他对话: 'Other chats',
 }

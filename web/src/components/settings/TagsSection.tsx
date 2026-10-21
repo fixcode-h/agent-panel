@@ -68,7 +68,7 @@ export function TagsSection() {
   return (
     <div className="flex max-w-[720px] flex-col gap-4">
       <p className="text-[0.8125rem] leading-relaxed text-muted">
-        {t('标签是全局的，Agent 和工作流共用。列表上方可以按标签筛选，搜索时也会匹配标签名。')}
+        {t('标签是全局的，角色和工作流共用。列表上方可以按标签筛选，搜索时也会匹配标签名。')}
       </p>
       <div className="flex gap-2">
         <Input
@@ -111,7 +111,7 @@ export function TagsSection() {
                 ))}
               </div>
               <span className="ml-auto text-xs text-subtle">
-                {t('{a} 个 Agent · {w} 个工作流', { a: u.agents, w: u.workflows })}
+                {t('{a} 个角色 · {w} 个工作流', { a: u.agents, w: u.workflows })}
               </span>
               <Button
                 variant="ghost"
@@ -131,7 +131,7 @@ export function TagsSection() {
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
         title={t('删除标签「{name}」？', { name: deleting?.name ?? '' })}
-        description={t('Agent 和工作流不会被删除，只是去掉这个标签。')}
+        description={t('角色和工作流不会被删除，只是去掉这个标签。')}
         onConfirm={() => deleting && void remove(deleting)}
       />
     </div>
