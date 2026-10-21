@@ -350,6 +350,11 @@
         "baseUrl": "baseUrl",
         "apiKey": "apiKey"
       },
+      "modelReasoning": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers.{provider}.models",
+        "key": "reasoning"
+      },
       "modelLimits": {
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
         "at": "providers.{provider}.models",

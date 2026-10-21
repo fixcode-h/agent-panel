@@ -513,25 +513,35 @@ async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
 /**
  * 把模型目录里的思考强度写回 CLI 配置的模型条目。
  * Command Code 的自定义接口只认 providers.json 里面声明的 reasoningEfforts：没写就当成不可调，
- * 面板传了 --effort 会启动即报错退出。设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
+ * 面板传了 --effort 会启动即报错退出。Pi 的 models.json 相近，只是用布尔 reasoning 表示「这个模型支持思考」，
+ * 没写时 Pi 报 thinking no，面板的下拉就只剩一档。
+ * 设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
  */
 async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.modelEfforts
-  if (!spec) return
+  const reasoning = def.auth?.api?.modelReasoning
+  if (!spec && !reasoning) return
   const vars = apiVars(api, def.auth?.api?.wire, provider)
-  const file = expand(fillTemplate(spec.file, vars), env)
-  const data = await readJsonFile(file)
-  if (!isObj(data)) return
   const entries = await mergedModelCatalog().catch(() => [])
-  const changed = setModelEfforts(data, fillTemplate(spec.at, vars), spec.key, (model) => {
+  const effortsOf = (model: string) => {
     const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
     if (!info.matched || !info.entry) return undefined
     // 目录里的强度都是 CLI 认的；空数组表示这个模型不能调思考强度
     return info.entry.efforts
-  })
-  if (!changed) return
-  await mkdir(path.dirname(file), { recursive: true })
-  await writeJsonAtomic(file, data)
+  }
+  const writes: { file: string; at: string; key: string; value: (model: string) => string[] | boolean | undefined }[] =
+    []
+  if (spec) writes.push({ ...spec, value: effortsOf })
+  // Pi 的 reasoning 只表示这个模型支不支持思考：目录里有强度就是支持
+  if (reasoning) writes.push({ ...reasoning, value: (model) => (effortsOf(model)?.length ? true : undefined) })
+  for (const w of writes) {
+    const file = expand(fillTemplate(w.file, vars), env)
+    const data = await readJsonFile(file)
+    if (!isObj(data)) continue
+    if (!setModelEfforts(data, fillTemplate(w.at, vars), w.key, w.value)) continue
+    await mkdir(path.dirname(file), { recursive: true })
+    await writeJsonAtomic(file, data)
+  }
 }
 
 /**

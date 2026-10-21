@@ -226,6 +226,9 @@ Pi 1.3 起项目里的 `.pi/extensions` 受「项目信任」管控，而 print 
 | `wire`            | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                        |
 | `pruneProviders`  | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                    |
 | `pruneModels`     | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                      |
+| `modelEfforts`    | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动              |
+| `modelReasoning`  | CLI 只认模型条目自己声明的「能不能调思考强度」时（Pi 的 `reasoning` 是布尔），目录里有强度的模型写 `true`，下拉才不止一档        |
+| `modelLimits`     | CLI 只认模型条目自己声明的上下文窗口时，按模型目录写回这个键；`maxOutputKey` 是最大输出写进哪个键，不写表示不接受                |
 
 已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code、Gemini CLI）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
 `{provider}` 来自 API 的 `provider`：识别到的 API 用 CLI 配置里的键（例如 `providers.tokenapi` 的 `tokenapi`），新建的从 API 名称生成。
