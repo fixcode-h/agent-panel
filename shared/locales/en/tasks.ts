@@ -155,7 +155,13 @@ export const EN_TASKS: Record<string, string> = {
     'The project is set to “No Agent”, so this chat goes straight to the CLI; pick an Agent in the project settings to use a role (click to use no Agent)',
   子对话: 'Sub-conversation',
   关闭子对话: 'Close sub-conversation',
-  '点开在右侧查看，同一时间只显示一个': 'Open on the right; only one is shown at a time',
+  '子对话 {n}': 'Sub-conversations ({n})',
+  '{n} 个在执行': '{n} running',
+  运行中: 'Running',
+  已关闭: 'Closed',
+  还没有子对话: 'No sub-conversations yet',
+  没有正在运行的子对话: 'No sub-conversation is running',
+  子对话执行中: 'Sub-conversation running',
   '第 {n} 次运行': 'Run {n}',
   '正在准备节点…': 'Preparing nodes…',
   '「提问」已打开，后续问题会交给你回答': 'Questions are on; you will be asked to answer them',
@@ -310,25 +316,17 @@ export const EN_TASKS: Record<string, string> = {
     'This file had uncommitted changes before the task started, and reverting would discard them too. Please handle it in your editor.',
   撤销: 'Revert',
   '查看「{path}」的改动': 'View changes to "{path}"',
-  // 执行中排队、打断
-  '执行中也可以输入，这一轮完成后接着处理': 'You can type while it runs; it will be handled after this turn',
-  '执行中也可以输入：Agent 执行时会取走，相关的调整方向，无关的等这一轮结束后处理':
-    'You can type while it runs: the agent picks it up during the turn, follows it if it relates to the current work, and handles unrelated notes after this turn',
-  'Agent 执行中会取走': 'The agent picks this up while running',
-  等待读取: 'Waiting to be read',
+  // 执行中发消息、打断
+  '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
+    'You can type while it runs: related notes steer the current work, unrelated ones are handled after this turn',
+  '执行中也可以输入，这一轮结束后接着处理': "You can type while it runs; it's handled right after this turn",
   等待你的下一条消息: 'Waiting for your next message',
   等待执行: 'Waiting to run',
   '运行 {n}': 'Run {n}',
   '{done}/{total} 个节点': '{done}/{total} nodes',
   查看这次运行的实时输出: 'Open this run to see its live output',
   '这次运行还没有节点。': 'This run has no nodes yet.',
-  排队: 'Queue',
-  '排队中 · 任务没在执行，点「继续执行」后处理':
-    'Queued · the task is not running; it will be handled after you resume',
-  下一条: 'Next',
-  排队中: 'Queued',
   撤回: 'Withdraw',
-  撤回这条要求: 'Withdraw this message',
   '在独立的 git 分支和目录里执行，不改动项目目录；完成后再决定合并还是丢弃':
     'Run on a separate git branch and directory without touching the project; merge or discard when done',
   独立分支: 'Separate branch',
@@ -375,8 +373,6 @@ export const EN_TASKS: Record<string, string> = {
   '撤回到这里：去掉这条和之后的对话，改了再发':
     'Rewind to here: remove this message and everything after, then edit and resend',
   撤回到这里: 'Rewind to here',
-  '执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理':
-    'You can type while it runs: related notes change the current direction, unrelated ones wait until this turn finishes',
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
@@ -401,12 +397,13 @@ export const EN_TASKS: Record<string, string> = {
   '不回答，让 AI 自己决定': 'Skip and let the AI decide',
   '你回答了：{answers}': 'You answered: {answers}',
   '你没有回答「{title}」': 'You skipped "{title}"',
+  '交给正在进行的这一轮（Enter）': 'Hand to the current turn (Enter)',
+  '{n} 个附件': '{n} attachments',
   '排队中，这一轮结束后发送：{text}': 'Queued, sends after this turn: {text}',
   等这一轮结束再发: 'Send after this turn finishes',
-  '补充给正在进行的这一轮（Enter）': 'Add to the current turn (Enter)',
+  排队: 'Queue',
   '这一轮不能补充，已改成排队': "Can't add to this turn, queued instead",
   '排队中，这一轮结束后发送': 'Queued, sends after this turn',
-  '{n} 个附件': '{n} attachments',
   'AI 正在处理：发送会补充给这一轮，也可以排队': 'AI is working: sending adds to this turn, or queue it',
   复制报错: 'Copy error',
   '· Google 已不再支持用个人账号（Gemini Code Assist for individuals）登录 Gemini CLI，这是 Google 服务端的限制，不是面板的问题。可以改用 API：在设置的「API 配置」里添加 Gemini 的 API Key（到 aistudio.google.com 获取），再到 Gemini CLI 页面把「登录方式」切到 API；Google Workspace 或付费的 Code Assist 账号仍然可以用账号登录。':
@@ -445,15 +442,11 @@ export const EN_TASKS: Record<string, string> = {
   '结束这个流程？': 'End this flow?',
   '没完成的节点不再执行，已经做完的改动保留。之后输入的要求由主 Agent 直接处理。':
     "Unfinished nodes won't run; changes already made are kept. Later requests go straight to the main Agent.",
-  修改排队的要求: 'Edit queued request',
-  '保存（Enter）': 'Save (Enter)',
-  修改这条要求: 'Edit this request',
   '流程停在「{title}」：结论是不通过，后面的节点没有执行。可以输入要求让主 Agent 处理，处理完会自动接着走流程；也可以点「继续流程」重新检查。':
     'The flow stopped at "{title}": it did not pass, so later nodes didn\'t run. Type a request for the main Agent to handle it and the flow continues afterwards, or click "Continue flow" to re-check.',
   '处理完了，从「{title}」重新检查，接着走流程': 'Done. Re-checking "{title}" and continuing the flow',
   '这次运行已经结束，没完成的节点不再执行。之后的要求直接跟主 Agent 说，需要时它会再走一遍流程。':
     "This run is over; unfinished nodes won't execute. Tell the main Agent what you need next and it will run the flow again when needed.",
-  要求不能为空: "The request can't be empty",
   '任务正在执行，请先停止': 'The task is running; stop it first',
   只有工作流任务可以结束流程: 'Only workflow tasks can end a flow',
   // 导出、导入、AI 分析

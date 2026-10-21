@@ -51,7 +51,7 @@ test('Command Code 常驻 RPC：配置驱动，初始化、开始一轮、插话
   rpc.handle({ jsonrpc: '2.0', id: steer.id, result: { turnId: 't1', queued: 1 } })
   assert.equal(await steering, true)
 
-  // CLI 报错（这一轮刚结束）时不接：调用方会排进队列
+  // CLI 报错（这一轮刚结束）时不接：调用方会把消息留到这一轮结束后处理
   const late = rpc.steer('晚了一步')
   await tick()
   const lateReq = sent.filter((x) => x.method === 'turn/steer').at(-1)

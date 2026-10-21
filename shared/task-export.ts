@@ -157,7 +157,7 @@ export function taskAgents(task: Pick<Task, 'agentId' | 'steps' | 'messages' | '
   return agents.filter((a) => ids.has(a.id))
 }
 
-/** 导出文件里的任务：去掉只在本机有意义的字段（会话、命令、项目、独立分支、排队和等待中的请求） */
+/** 导出文件里的任务：去掉只在本机有意义的字段（会话、命令、项目、独立分支和等待中的请求） */
 const ExportedTask = TaskData.omit({
   projectId: true,
   sessions: true,
@@ -168,7 +168,6 @@ const ExportedTask = TaskData.omit({
   baseRef: true,
   requests: true,
   worktree: true,
-  queue: true,
   budgetFrom: true,
   archived: true,
   imported: true,
@@ -206,7 +205,6 @@ export function exportTask(task: Task, agents: Agent[], app = '', now = new Date
     baseRef: _br,
     requests: _rq,
     worktree: _w,
-    queue: _q,
     budgetFrom: _bf,
     archived: _a,
     imported,
@@ -270,7 +268,6 @@ export function importTask(bundle: TaskExport, projectId: string, id: string, no
     baseRef: '',
     requests: [],
     worktree: null,
-    queue: [],
     working: false,
     turnDoneAt: '',
     awaitingUser: false,

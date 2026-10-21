@@ -54,7 +54,7 @@ import {
   type LocalJob,
   type LocalStatus,
 } from '@shared/local-image'
-import { agentRun, defaultCli, orderClis } from '@shared/settings'
+import { defaultCli, orderClis } from '@shared/settings'
 import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
@@ -67,7 +67,6 @@ import {
   taskSummary,
   trackWait,
   withAttachments,
-  withTaskModel,
 } from '@shared/task'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
@@ -451,11 +450,11 @@ function seed(): Db {
     ...meta(),
     createdAt,
     workflowIds: [],
-    testSteps: [],
-    wslDistro: '',
     defaultAgentId: '',
     agentSet: true,
     workflowParams: {},
+    testSteps: [],
+    wslDistro: '',
     gitPolicy: 'ask',
     ...o,
   })
@@ -472,6 +471,7 @@ function seed(): Db {
           description: '面向用户的商城网站',
           path: '/home/demo/code/web-shop',
           categoryId: web.id,
+          workflowId: '',
           // 演示里的测试步骤：项目设置里能看到增删、排序和启停
           testSteps: [
             {
@@ -498,7 +498,6 @@ function seed(): Db {
             },
           ],
           wslDistro: 'Ubuntu-24.04',
-          workflowId: '',
         },
         '2026-09-02T09:00:00.000Z',
       ),
@@ -883,13 +882,7 @@ function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
     }
   }
   if (kind === 'raw') fail('在线演示里没有图片')
-  return {
-    dir: p.path || '~/demo/shop',
-    branch: p.path ? 'main' : null,
-    isGit: !!p.path,
-    files: DEMO_FILES.map((f) => ({ path: f, status: (DEMO_STATUS[f] ?? '') as never })),
-    truncated: false,
-  }
+  return { dir, branch: p.path ? 'main' : null, isGit: !!p.path }
 }
 
 /** 演示的 Skill 列表：用户级的总是有，选了项目时多一个项目里的 */
@@ -1383,7 +1376,11 @@ export async function handle(method: string, url: string, body: unknown) {
 export const __schemas = { Agent, Category, Workflow, ProjectCategory, Project }
 
 // ---- 任务 ----
-const live = new Map<string, { stop: boolean; done?: Promise<unknown> }>()
+/** held：执行中收下、这一轮结束后接着处理的消息（消息已经记进对话） */
+const live = new Map<
+  string,
+  { stop: boolean; done?: Promise<unknown>; held?: { text: string; attachments: Attachment[] }[] }
+>()
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 function projectWorkflow(d: Db, p: Project) {
@@ -1397,14 +1394,10 @@ function projectWorkflow(d: Db, p: Project) {
   )
 }
 
-/** 这个对话实际用的 CLI（和正式版一样：默认 Agent、不用 Agent 角色时用任务上选的，其他 Agent 用自己配置的） */
-function demoChatCli(d: Db, task: Task) {
-  const a = task.agentId ? d.agents.find((x) => x.id === task.agentId) : { ...defaultAgent(), id: '' }
-  return a ? agentRun(withTaskModel(a, task), d.settings ?? Settings.parse({})).cli : ''
-}
-
 function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = false, resume = false) {
-  const entry: { stop: boolean; done?: Promise<unknown> } = { stop: false }
+  const entry: { stop: boolean; done?: Promise<unknown>; held?: { text: string; attachments: Attachment[] }[] } = {
+    stop: false,
+  }
   live.set(task.id, entry)
   beginRun(task)
   let last = 0
@@ -1432,9 +1425,9 @@ function startTurn(d: Db, task: Task, prompt: string, first: boolean, fast = fal
     endRun(task)
     live.delete(task.id)
     persist()
-    // 和正式版一样：这一轮完成后接着处理排队的要求
-    const q = task.status === 'done' ? (task.queue ??= []).shift() : undefined
-    if (q) void followUp(d, task, q.text, fast, q.attachments)
+    // 和正式版一样：这一轮完成后马上接着处理执行中收到的消息
+    const next = task.status === 'done' ? entry.held?.shift() : undefined
+    if (next) void followUp(d, task, next.text, fast, next.attachments, true)
   })
   entry.done = done
   return done
@@ -1488,19 +1481,21 @@ function createTask(d: Db, input: NewTaskInput, fast = false) {
   return { task, done: startTurn(d, task, withAttachments(input.prompt, input.attachments), true, fast) }
 }
 
-function followUp(d: Db, task: Task, text: string, fast = false, attachments: Attachment[] = []) {
+/** recorded：消息已经在对话里（执行中收到时就记下了），不再加一条 */
+function followUp(d: Db, task: Task, text: string, fast = false, attachments: Attachment[] = [], recorded = false) {
   if (live.has(task.id)) fail('任务正在执行，请等它完成或先停止')
   dropEndNotes(task)
-  task.messages.push({
-    id: `demo-${crypto.randomUUID()}`,
-    role: 'user',
-    agentId: '',
-    step: '',
-    text,
-    tools: [],
-    ...(attachments.length ? { attachments } : {}),
-    at: new Date().toISOString(),
-  })
+  if (!recorded)
+    task.messages.push({
+      id: `demo-${crypto.randomUUID()}`,
+      role: 'user',
+      agentId: '',
+      step: '',
+      text,
+      tools: [],
+      ...(attachments.length ? { attachments } : {}),
+      at: new Date().toISOString(),
+    })
   return startTurn(d, task, withAttachments(text, attachments), false, fast)
 }
 
@@ -1533,7 +1528,7 @@ function tasksRoute(
   const task = tasks.find((t) => t.id === id) ?? fail('任务不存在')
   if (
     task.imported &&
-    (['messages', 'resume', 'compact', 'review', 'rewind', 'fork', 'requests', 'revert', 'end-flow', 'queue'].includes(
+    (['messages', 'resume', 'compact', 'review', 'rewind', 'fork', 'requests', 'revert', 'end-flow'].includes(
       sub ?? '',
     ) ||
       (method === 'PATCH' && Object.keys((body ?? {}) as object).some((k) => k !== 'title' && k !== 'archived')))
@@ -1556,19 +1551,6 @@ function tasksRoute(
     persist()
     return task
   }
-  if (sub === 'queue' && method === 'DELETE') {
-    task.queue = (task.queue ?? []).filter((q) => q.id !== rid)
-    persist()
-    return task
-  }
-  if (sub === 'queue' && method === 'PATCH') {
-    const q = (task.queue ?? []).find((x) => x.id === rid) ?? fail('这条要求已经开始处理了')
-    const text = String((body as { text?: string } | undefined)?.text ?? '').trim()
-    if (!text) fail('要求不能为空')
-    q.text = text
-    persist()
-    return task
-  }
   if (sub === 'end-flow') {
     if (live.has(task.id)) fail('任务正在执行，请先停止')
     if (task.mode !== 'workflow') fail('只有工作流任务可以结束流程')
@@ -1586,7 +1568,6 @@ function tasksRoute(
       if (!task.messages.slice(0, i).some((m) => m.role === 'user')) fail('第一条消息不能撤回，可以新建一个对话')
       const removed = task.messages[i]
       task.messages = task.messages.slice(0, i)
-      task.queue = []
       task.status = 'done'
       persist()
       return { task, text: removed.text, attachments: removed.attachments ?? [] }
@@ -1601,7 +1582,6 @@ function tasksRoute(
         .slice(0, next < 0 ? task.messages.length : next)
         .map((m) => ({ ...m, id: `demo-${crypto.randomUUID()}` })),
       status: 'done',
-      queue: [],
       requests: [],
       todos: [],
       worktree: null,
@@ -1652,44 +1632,20 @@ function tasksRoute(
   if (sub === 'messages') {
     const f = parse(FollowUpInput, body)
     const cur = live.get(task.id)
-    // 补充：演示的模拟执行不会真的读它，记进对话（工作流里记在正在跑的节点上）
-    if (cur && f.steer) {
-      // 没有插话协议、靠面板的工具取补充的 CLI：演示里没人取，先排进队列，这一轮完成后照常处理
-      const def = task.mode === 'chat' ? getCli(demoChatCli(d, task)) : undefined
-      if (def?.notes && !def.steer) {
-        ;(task.queue ??= []).push({
-          id: `demo-${crypto.randomUUID()}`,
-          text: f.text,
-          attachments: f.attachments,
-          at: new Date().toISOString(),
-          note: true,
-        })
-        persist()
-        return task
-      }
-      const step =
-        task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : ''
-      task.messages.push({
+    // 演示里没有常驻 CLI：执行中收到的消息直接记进对话，这一轮结束后接着处理
+    if (cur && !f.interrupt) {
+      const msg = {
         id: `demo-${crypto.randomUUID()}`,
-        role: 'user',
+        role: 'user' as const,
         agentId: '',
-        step,
+        step: task.mode === 'workflow' ? (task.steps.find((s) => s.status === 'running' && !s.parentId)?.id ?? '') : '',
         text: f.text,
         tools: [],
         ...(f.attachments.length ? { attachments: f.attachments } : {}),
         at: new Date().toISOString(),
-      })
-      persist()
-      return task
-    }
-    if (cur && !f.interrupt) {
-      ;(task.queue ??= []).push({
-        id: `demo-${crypto.randomUUID()}`,
-        text: f.text,
-        attachments: f.attachments,
-        at: new Date().toISOString(),
-        note: false,
-      })
+      }
+      task.messages.push(msg)
+      ;(cur.held ??= []).push({ text: f.text, attachments: f.attachments })
       persist()
       return task
     }
@@ -1806,11 +1762,11 @@ function tasksRoute(
           wslDistro: project?.wslDistro ?? '',
         },
       )
+      task.workflowName = fresh.name
       if (project) {
         task.testSteps = project.testSteps
         task.platform = 'win32'
       }
-      task.workflowName = fresh.name
     }
     dropEndNotes(task)
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)

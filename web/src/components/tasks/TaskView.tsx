@@ -18,7 +18,6 @@ import {
   X,
   ListPlus,
   ArrowDown,
-  Check,
   Workflow as WorkflowIcon,
   Download,
   FileInput,
@@ -27,7 +26,7 @@ import {
 import { DEFAULT_AGENT_ID, type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import { chatName, taskSummary, withTaskModel } from '@shared/task'
+import { chatName, sortChildren, taskSummary, withTaskModel } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
@@ -166,7 +165,7 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
-/** 父对话里的子对话卡片：标题、状态、最近结果 */
+/** 父对话里的子对话入口：标题、状态、最近结果 */
 interface ChildSummary {
   id: string
   title: string
@@ -174,6 +173,43 @@ interface ChildSummary {
   summary: string
   working: boolean
   updatedAt: string
+  /** 进程还活着（预热、等下一句、正在执行） */
+  cliAlive: boolean
+  /** 最近一条消息的时间，列表按它排序 */
+  lastMessageAt: string
+}
+
+/** 右栏开着哪个子对话按父任务 id 记在本地：切走窗口、重新加载后还显示原来那个 */
+const paneChildKey = (taskId: string) => `task-child:${taskId}`
+const paneRunKey = (taskId: string) => `task-run:${taskId}`
+
+function readStored(key: string) {
+  try {
+    return localStorage.getItem(key) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function writeStored(key: string, value: string) {
+  try {
+    if (value) localStorage.setItem(key, value)
+    else localStorage.removeItem(key)
+  } catch {
+    // 隐私模式禁用本地存储时只是不记住，不影响使用
+  }
+}
+
+const readPaneChild = (taskId: string) => readStored(paneChildKey(taskId))
+const readPaneRun = (taskId: string) => Number(readStored(paneRunKey(taskId))) || 0
+function writePaneChild(taskId: string, childId: string) {
+  writeStored(paneChildKey(taskId), childId)
+  // 子对话和运行面板互斥：右栏同一时间只显示一个
+  if (childId) writeStored(paneRunKey(taskId), '')
+}
+function writePaneRun(taskId: string, run: number) {
+  writeStored(paneRunKey(taskId), run ? String(run) : '')
+  if (run) writeStored(paneChildKey(taskId), '')
 }
 
 export function TaskView({
@@ -210,9 +246,10 @@ export function TaskView({
   const mention = useFileMention(project?.id, followTa)
   const [sending, setSending] = useState(false)
   const [panel, setPanel] = useState(false)
-  // 父对话里的子对话：卡片列表，点开在右栏看，右栏同一时间只显示一个
+  // 父对话里的子对话：点开在右栏看，右栏同一时间只显示一个。
+  // 右栏开着哪个按父任务 id 记在本地：切走窗口再回来、页面重新加载后还是原来那个
   const [children, setChildren] = useState<ChildSummary[]>([])
-  const [openChild, setOpenChild] = useState('')
+  const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
   const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
@@ -238,7 +275,7 @@ export function TaskView({
   useEscape(panel, () => setPanel(false))
   useEscape(progressOpen, () => setProgressOpen(false))
   // 对话里点开的运行卡片：右边看这一次运行的实时输出
-  const [openRun, setOpenRun] = useState(0)
+  const [openRun, setOpenRun] = useState(() => (pane ? 0 : readPaneRun(taskId)))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
   // Agent 输出里点了文件路径：在弹窗里看文件内容
@@ -252,8 +289,6 @@ export function TaskView({
   const [focus, setFocus] = useState<{ id: string; at: number }>()
   const scroller = useRef<HTMLDivElement>(null)
   const stick = useRef(true)
-  // 这次打开对话有没有试过后台预热：每个任务只试一次，任务后续变化不用再发
-  const prewarmed = useRef('')
   const [rewindAsk, setRewindAsk] = useState('')
 
   const apply = (next: Task) => {
@@ -271,9 +306,33 @@ export function TaskView({
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId])
 
-  // 子对话的卡片：父对话页开着时定时刷新状态和摘要；子对话自己不显示子对话
+  // 右栏开着哪个子对话、哪一次运行：挂载时按父任务 id 读回来（切走窗口、重新加载后不丢）。
+  // 子对话自己的右栏（pane）不记也不读
   useEffect(() => {
-    setOpenChild('')
+    if (pane) {
+      setOpenChild('')
+      setOpenRun(0)
+      return
+    }
+    setOpenChild(readPaneChild(taskId))
+    setOpenRun(readPaneRun(taskId))
+  }, [taskId, pane])
+
+  // 右栏切换的统一入口：记在本地，下次打开还是这一栏。子对话自己的右栏（pane）不写
+  const openChildIn = (id: string) => {
+    setOpenChild(id)
+    if (id) setOpenRun(0)
+    if (!pane) writePaneChild(taskId, id)
+  }
+  const openRunIn = (run: number) => {
+    setOpenRun(run)
+    if (run) setOpenChild('')
+    if (!pane) writePaneRun(taskId, run)
+  }
+
+  // 子对话列表：父对话页开着时定时刷新状态和摘要；子对话自己不显示子对话。
+  // 这里只是只读查询，不给子对话发 presence、也不预热它们的 CLI
+  useEffect(() => {
     if (!task?.id || task.parentTaskId) {
       setChildren([])
       return
@@ -293,6 +352,14 @@ export function TaskView({
     // 任务 id 变了才重新订阅；子对话的变化靠定时刷新
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.parentTaskId])
+
+  // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
+  useEffect(() => {
+    if (!openChild || !children.length) return
+    if (children.some((x) => x.id === openChild)) return
+    setOpenChild('')
+    writePaneChild(taskId, '')
+  }, [children, openChild, taskId])
 
   // 打开了这个对话：告诉服务端这一轮已经看过（侧栏的橙点消失），
   // 之后离开时 CLI 才能按宽限期回收；没看过就一直留着，回来能直接接着说
@@ -334,25 +401,11 @@ export function TaskView({
     }
   }, [taskId])
 
-  // 打开旧对话时在后台用 --resume 启动，第一次发消息不用再等 CLI 启动和会话加载
-  useEffect(() => {
-    if (!task || task.id !== taskId || prewarmed.current === taskId) return
-    prewarmed.current = taskId
-    if (task.mode !== 'chat' || task.status === 'running' || task.imported || !task.sessions[task.agentId]) return
-    api
-      .prewarmTask(taskId)
-      .then(apply)
-      .catch(() => {})
-    // 只在这次打开、任务加载出来时试一次
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [task, taskId])
-
+  // 打开对话页不启动 CLI：只有真正发消息时才按当前选择启动，免得只是看一眼就起一堆进程
   const running = task?.status === 'running'
-  // CLI 真的在处理这一轮才算执行中；预热、等下一句时页面按空闲显示
+  // CLI 真的在处理这一轮才算执行中；等下一句时页面按空闲显示
   const working = task?.working ?? false
   useTaskStream(taskId, running, apply)
-  // 还在排队、CLI 没取走的补充：放在对话最下面，取走后才成为正常消息
-  const pending = running && task ? task.queue.filter((q) => q.note) : []
 
   // 停留在底部时自动跟随新输出
   useLayoutEffect(() => {
@@ -399,15 +452,15 @@ export function TaskView({
       </main>
     )
 
-  // 执行中也能发：补充（相关的调整方向，无关的等这一轮完成后再处理；能补充时默认）、排队（这一轮完成后处理）
-  const send = async (how: 'steer' | 'queue' = canSteer ? 'steer' : 'queue') => {
+  // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
+  const send = async () => {
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
     const content = forSend(text, files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     setSending(true)
     stick.current = true
     try {
-      const r = await api.sendMessage(task.id, content, files.attachments, false, working && how === 'steer')
+      const r = await api.sendMessage(task.id, content, files.attachments, false)
       apply(r)
       setText('')
       files.clear()
@@ -488,11 +541,8 @@ export function TaskView({
     : task.mode === 'chat'
       ? defaultCli(settings ?? defaultSettings())
       : ''
-  const chatDef = getCli(chatCli)
   // 工作流的节点收不了补充时，服务端会留给下一个节点，所以工作流总能补充
   const canSteer = working && (task.mode === 'workflow' || steerable(chatCli))
-  // 没有插话协议、靠面板的工具取补充的 CLI：发出去先排进队列，它执行中会自己取走
-  const byNotes = task.mode === 'chat' && !!chatDef?.notes && !chatDef.steer
   // 没有 Agent 角色（选了「无」或默认 Agent）的对话按 CLI 显示：署名是 CLI、模型和思考强度，输入框里随时能换
   const byCli = task.mode === 'chat' && (!task.agentId || task.agentId === DEFAULT_AGENT_ID)
   const chatRun = { cli: task.cli, model: task.model, effort: task.effort }
@@ -604,7 +654,6 @@ export function TaskView({
       }
       running={working}
       onStop={stop}
-      onQueue={() => void send('queue')}
       leading={
         !working &&
         canResume && (
@@ -630,10 +679,8 @@ export function TaskView({
         !working
           ? t('继续输入要求')
           : canSteer
-            ? byNotes
-              ? t('执行中也可以输入：Agent 执行时会取走，相关的调整方向，无关的等这一轮结束后处理')
-              : t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
-            : t('执行中也可以输入，这一轮完成后接着处理')
+            ? t('执行中也可以输入：相关的会调整当前方向，无关的等这一轮完成后再处理')
+            : t('执行中也可以输入，这一轮结束后接着处理')
       }
     />
   )
@@ -644,7 +691,7 @@ export function TaskView({
         <div
           className={cn('relative flex min-w-0 flex-1', pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0')}
         >
-          <main className="flex min-w-0 flex-1 flex-col md:h-full">
+          <main className="flex min-w-0 flex-1 flex-col bg-bg md:h-full">
             <header
               className={cn(
                 'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
@@ -652,14 +699,23 @@ export function TaskView({
               )}
             >
               <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
-                <button
-                  onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
-                  className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
-                >
-                  {project?.name ?? t('聊天')}
-                </button>
-                <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
-                <TaskStatusIcon status={task.status} working={task.working} className="ml-1" />
+                {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
+                {!pane && (
+                  <>
+                    <button
+                      onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
+                      className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
+                    >
+                      {project?.name ?? t('聊天')}
+                    </button>
+                    <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
+                  </>
+                )}
+                <TaskStatusIcon
+                  status={task.childrenWorking ? 'running' : task.status}
+                  working={!!task.childrenWorking || task.working}
+                  className="ml-1"
+                />
                 {renaming !== null ? (
                   <input
                     autoFocus
@@ -864,14 +920,14 @@ export function TaskView({
                         </div>
                       ) : b.kind === 'run' ? (
                         task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
-                          <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => setOpenRun(b.run)} />
+                          <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
                         ) : (
                           <RunCard
                             key={b.key}
                             task={task}
                             run={b.run}
                             name={task.workflowName || workflow?.name}
-                            onOpen={() => setOpenRun(b.run)}
+                            onOpen={() => openRunIn(b.run)}
                           />
                         )
                       ) : b.kind === 'steps' ? (
@@ -933,35 +989,6 @@ export function TaskView({
                         <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
                       ),
                     )}
-                    {!task.parentTaskId && children.length > 0 && (
-                      <section className="flex flex-col gap-2.5" aria-label={t('子对话')}>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-[0.8125rem] font-medium">{t('子对话')}</h3>
-                          <span className="rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
-                            {children.length}
-                          </span>
-                          <span className="text-xs text-subtle">{t('点开在右侧查看，同一时间只显示一个')}</span>
-                        </div>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {children.map((c) => (
-                            <button
-                              key={c.id}
-                              type="button"
-                              onClick={() => setOpenChild(c.id)}
-                              className={cn(
-                                'flex min-w-0 cursor-pointer flex-col gap-1 rounded-xl border bg-card px-3 py-2.5 text-left shadow-card transition-colors hover:border-line-strong hover:bg-sel/40',
-                                openChild === c.id && 'border-accent/60 ring-2 ring-accent/15',
-                              )}
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <TaskStatusIcon status={c.status} working={c.working} />
-                                <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium">{c.title}</span>
-                              </span>
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    )}
                     <NextWorkflows task={task} />
                     <EvolutionCard task={task} />
                     {running &&
@@ -1000,32 +1027,7 @@ export function TaskView({
                         <LiveStats task={task} />
                       </div>
                     )}
-                    {/* CLI 还没取走的消息先放在最下面，取走后才插到回复里 */}
-                    {pending.map((q) => (
-                      <UserMessage
-                        key={q.id}
-                        text={q.text}
-                        at={q.at}
-                        attachments={q.attachments}
-                        pending
-                        actions={
-                          <button
-                            type="button"
-                            className={msgAction}
-                            title={t('撤回这条要求')}
-                            aria-label={t('撤回')}
-                            onClick={() =>
-                              api
-                                .unqueue(task.id, q.id)
-                                .then(apply)
-                                .catch((e) => toast.error((e as Error).message))
-                            }
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        }
-                      />
-                    ))}
+                    {/* CLI 还没取走的消息已经直接进对话，这里不用再放一份 */}
                   </div>
                 )}
               </div>
@@ -1042,13 +1044,22 @@ export function TaskView({
               )}
             </div>
 
-            <div className="px-3 pt-1 pb-3 md:px-6 md:pb-5">
+            {/* 子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间 */}
+            {!pane && !task.parentTaskId && children.length > 0 && (
+              <ChildrenBar
+                children={children}
+                openChild={openChild}
+                onOpen={openChildIn}
+                onClose={() => openChildIn('')}
+              />
+            )}
+
+            <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
               <TaskRequestCard task={task} onAnswered={apply} />
               <WorktreeBar task={task} onChange={apply} />
               {flowLeft && !task.imported && (
                 <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
               )}
-              <QueuedList task={task} onChange={apply} />
               {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
               {/* 点开运行面板时输入框挪进面板，这里先空着，避免出现两个输入框 */}
               {!openRun && composer}
@@ -1085,14 +1096,9 @@ export function TaskView({
                 <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
               )}
               {openChild ? (
-                <div className="min-h-0 w-full flex-1">
-                  <TaskView
-                    key={openChild}
-                    taskId={openChild}
-                    project={project}
-                    pane
-                    onClose={() => setOpenChild('')}
-                  />
+                // 对话内容区统一用 bg-bg：署名行等粘贴背景的地方在父对话、右栏、弹窗里颜色都一致
+                <div className="flex min-h-0 w-full flex-1 flex-col bg-bg">
+                  <TaskView key={openChild} taskId={openChild} project={project} pane onClose={() => openChildIn('')} />
                 </div>
               ) : (
                 <>
@@ -1115,7 +1121,7 @@ export function TaskView({
                       task={task}
                       run={openRun}
                       name={task.workflowName || workflow?.name}
-                      onClose={() => setOpenRun(0)}
+                      onClose={() => openRunIn(0)}
                       footer={composer}
                     />
                   ) : (
@@ -1133,7 +1139,7 @@ export function TaskView({
           {(panel || openRun > 0) && (
             <div
               className="fixed inset-0 z-30 bg-black/40 xl:hidden"
-              onClick={() => (openRun > 0 ? setOpenRun(0) : setPanel(false))}
+              onClick={() => (openRun > 0 ? openRunIn(0) : setPanel(false))}
             />
           )}
         </div>
@@ -1258,7 +1264,144 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
 
 /** 用户消息下面的小按钮（分叉、撤回） */
 
-/** 输入框上面一行的提示条（排队的要求、没走完的流程）共用的样式 */
+/**
+ * 子对话入口：贴在输入框上方的一条状态栏，点开是悬浮窗列表。
+ * 默认只列进程还活着的子对话（预热、等下一句、正在执行），切到「全部」能看到已关闭的。
+ * 排序：正在执行的在上，其余按最近一条消息的时间倒序。
+ */
+function ChildrenBar({
+  children,
+  openChild,
+  onOpen,
+  onClose,
+}: {
+  children: ChildSummary[]
+  openChild: string
+  onOpen: (id: string) => void
+  onClose: () => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [all, setAll] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEscape(open, () => setOpen(false))
+  // 点外面关：和项目里其他浮层一样
+  useEffect(() => {
+    if (!open) return
+    const down = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', down)
+    return () => document.removeEventListener('mousedown', down)
+  }, [open])
+
+  const working = children.filter((c) => c.working).length
+  const alive = children.filter((c) => c.cliAlive)
+  const shown = sortChildren(all ? children : alive)
+  const current = children.find((c) => c.id === openChild)
+
+  return (
+    <div ref={ref} className="relative shrink-0 px-3 md:px-6">
+      <div className="mx-auto flex max-w-(--content-w) items-center gap-2 py-1.5">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-label={t('子对话')}
+          onClick={() => setOpen((v) => !v)}
+          className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
+        >
+          <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
+          <span className="shrink-0 font-medium">{t('子对话 {n}', { n: alive.length })}</span>
+          {working > 0 && (
+            <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent">
+              <span className="text-subtle">·</span>
+              <Loader2 className="h-3 w-3 animate-spin" />
+              {t('{n} 个在执行', { n: working })}
+            </span>
+          )}
+          {current && <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>}
+        </button>
+        {current && (
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t('关闭子对话')}
+            title={t('关闭子对话')}
+            className="ml-auto grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle hover:bg-sel hover:text-fg"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
+      {open && (
+        <div className="absolute bottom-full left-3 z-30 mb-1 w-[min(420px,calc(100%-1.5rem))] overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop md:left-6">
+          <div className="flex items-center gap-2 border-b px-3 py-2">
+            <span className="text-[0.8125rem] font-medium">{t('子对话')}</span>
+            <div className="ml-auto flex shrink-0 rounded-md bg-field p-0.5">
+              {(
+                [
+                  [false, t('运行中')],
+                  [true, t('全部')],
+                ] as const
+              ).map(([v, label]) => (
+                <button
+                  key={String(v)}
+                  type="button"
+                  aria-pressed={all === v}
+                  onClick={() => setAll(v)}
+                  className={cn(
+                    'cursor-pointer rounded px-2 py-0.5 text-xs',
+                    all === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="max-h-[min(46vh,320px)] overflow-y-auto p-1">
+            {shown.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => {
+                  onOpen(c.id)
+                  setOpen(false)
+                }}
+                className={cn(
+                  'flex w-full min-w-0 cursor-pointer items-start gap-2 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-sel',
+                  c.id === openChild && 'bg-sel',
+                )}
+              >
+                <span className="mt-0.5 shrink-0">
+                  <TaskStatusIcon status={c.status} working={c.working} />
+                </span>
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="flex min-w-0 items-center gap-1.5">
+                    <span className={cn('min-w-0 truncate text-[0.8125rem]', c.cliAlive ? '' : 'text-muted')}>
+                      {c.title}
+                    </span>
+                    {!c.cliAlive && (
+                      <span className="shrink-0 rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle">
+                        {t('已关闭')}
+                      </span>
+                    )}
+                    {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
+                  </span>
+                  {!c.working && c.summary && <span className="line-clamp-1 text-xs text-subtle">{c.summary}</span>}
+                </span>
+              </button>
+            ))}
+            {!shown.length && (
+              <p className="px-2.5 py-3 text-xs text-subtle">{all ? t('还没有子对话') : t('没有正在运行的子对话')}</p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/** 输入框上面一行的提示条（没走完的流程）共用的样式 */
 const barRow =
   'flex items-center gap-2 rounded-xl border border-dashed border-line-strong bg-card/60 px-3 py-2 text-[0.8125rem]'
 const barIcon =
@@ -1338,108 +1481,6 @@ function FlowBar({
         }
       />
     </div>
-  )
-}
-
-/** 执行中排队的要求：这一轮完成后按顺序处理，处理前可以修改、撤回 */
-function QueuedList({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
-  const [editing, setEditing] = useState('')
-  const [draft, setDraft] = useState('')
-  // 执行中、CLI 还没取走的补充已经作为气泡放在对话最下面了，这里只列真正排队等下一轮的
-  const items = task.status === 'running' ? task.queue.filter((q) => !q.note) : task.queue
-  if (!items.length) return null
-  const paused = task.status !== 'running'
-  const save = (qid: string) => {
-    const text = draft.trim()
-    const q = task.queue.find((x) => x.id === qid)
-    setEditing('')
-    if (!text || text === q?.text) return
-    api
-      .editQueued(task.id, qid, text)
-      .then(onChange)
-      .catch((e) => toast.error((e as Error).message))
-  }
-  return (
-    <ul className="mx-auto mb-2 flex max-w-(--content-w) flex-col gap-1.5">
-      {items.map((q, i) => (
-        <li key={q.id} className={barRow}>
-          <ListPlus className="h-3.5 w-3.5 shrink-0 text-subtle" />
-          {editing === q.id ? (
-            <>
-              <input
-                autoFocus
-                aria-label={t('修改排队的要求')}
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onFocus={(e) => e.currentTarget.select()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.nativeEvent.isComposing) {
-                    e.preventDefault()
-                    save(q.id)
-                  }
-                  if (e.key === 'Escape') {
-                    e.stopPropagation()
-                    setEditing('')
-                  }
-                }}
-                className="h-6 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 outline-none"
-              />
-              <button
-                type="button"
-                aria-label={t('保存')}
-                title={t('保存（Enter）')}
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => save(q.id)}
-                className={barIcon}
-              >
-                <Check className="h-3.5 w-3.5" />
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="min-w-0 flex-1 truncate" title={q.text}>
-                {q.text}
-              </span>
-              <span className="shrink-0 text-xs text-subtle">
-                {paused
-                  ? t('排队中 · 任务没在执行，点「继续执行」后处理')
-                  : q.note
-                    ? t('Agent 执行中会取走')
-                    : i === 0
-                      ? t('下一条')
-                      : t('排队中')}
-              </span>
-              <button
-                type="button"
-                aria-label={t('修改')}
-                title={t('修改这条要求')}
-                onClick={() => {
-                  setDraft(q.text)
-                  setEditing(q.id)
-                }}
-                className={barIcon}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </button>
-            </>
-          )}
-          <button
-            type="button"
-            aria-label={t('撤回')}
-            title={t('撤回这条要求')}
-            onClick={() =>
-              api
-                .unqueue(task.id, q.id)
-                .then(onChange)
-                .catch((e) => toast.error((e as Error).message))
-            }
-            className={barIcon}
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
-        </li>
-      ))}
-    </ul>
   )
 }
 

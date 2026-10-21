@@ -871,29 +871,20 @@ try {
     let b = await chatWith({ cli: 'claude' }, 'SLOW 插话 claude')
     let q = await chatWith({ cli: 'commandcode' }, 'SLOW 插话 cmd')
     await sleep(1200)
-    a = await call('POST', `/tasks/${a.id}/messages`, { text: '顺便看看测试', steer: true })
-    b = await call('POST', `/tasks/${b.id}/messages`, { text: '也看看文档', steer: true })
-    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队吧', steer: true })
-    assert.equal(a.queue.length, 0, '插话不排队')
+    a = await call('POST', `/tasks/${a.id}/messages`, { text: '顺便看看测试' })
+    b = await call('POST', `/tasks/${b.id}/messages`, { text: '也看看文档' })
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '插话给命令行' })
     assert.ok(
       a.messages.some((m) => m.role === 'user' && m.text === '顺便看看测试'),
       '插话的内容马上出现在对话里',
     )
-    // Command Code 的 RPC 插话先挂起等下一次模型请求（页面上显示「等待读取」），
-    // 被 CLI 取走后才是正常消息；这里两种状态都算已经交给正在跑的这一轮
     assert.ok(
-      q.messages.some((m) => m.role === 'user' && m.text === '排队吧') ||
-        q.queue.some((m) => m.note && m.text === '排队吧'),
-      'Command Code 的插话交给 CLI 了（取走前显示等待读取）',
+      q.messages.some((m) => m.role === 'user' && m.text === '插话给命令行'),
+      'Command Code 的插话也立刻进对话',
     )
     a = await waitDone(a.id)
     b = await waitDone(b.id)
     q = await waitDone(q.id)
-    assert.ok(
-      q.messages.some((m) => m.role === 'user' && m.text === '排队吧'),
-      'Command Code 取走插话后成了正常消息',
-    )
-    assert.equal(q.queue.length, 0, '取走后队列清空')
     assert.equal(a.status, 'done')
     assert.equal(b.status, 'done')
     const sl = steerLog()
@@ -906,7 +897,7 @@ try {
       'Claude Code 收到了插话',
     )
     assert.ok(
-      sl.some((x) => x.kind === 'commandcode' && x.steered.some((s) => s.includes('排队吧'))),
+      sl.some((x) => x.kind === 'commandcode' && x.steered.some((s) => s.includes('插话给命令行'))),
       'Command Code 收到了插话',
     )
     const at = a.messages.findIndex((m) => m.text === '顺便看看测试')
@@ -1069,38 +1060,73 @@ try {
     step('自动压缩阈值：Claude Code 用 CLAUDE_AUTOCOMPACT_PCT_OVERRIDE，Codex 用 model_auto_compact_token_limit')
   }
 
-  // ---- 执行中发消息：默认排队，这一轮完成后接着处理；可以撤回；打断时停下当前这一轮马上处理 ----
+  // ---- 执行中发消息：立刻进对话，能交给 CLI 就实时送达；交不出去时这一轮结束后马上接着处理 ----
   {
+    // Claude Code 能在执行中插话：发出去立刻是正常消息，并被交给正在跑的这一轮
     let q = await call('POST', '/tasks', {
       projectId: project.id,
       mode: 'chat',
       agentId: B.id,
-      prompt: 'SLOW 排队测试',
+      cli: 'claude',
+      prompt: 'SLOW 执行中发消息',
     })
-    await sleep(300)
-    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第一条（草稿）' })
-    q = await call('POST', `/tasks/${q.id}/messages`, { text: '排队的第二条' })
-    assert.deepEqual(
-      q.queue.map((x) => x.text),
-      ['排队的第一条（草稿）', '排队的第二条'],
+    await sleep(500)
+    const before = q.messages.length
+    q = await call('POST', `/tasks/${q.id}/messages`, { text: '执行中补一句' })
+    assert.equal('queue' in q, false, '不再有排队字段')
+    assert.equal(q.messages.length, before + 1, '消息马上进对话')
+    assert.equal(q.messages.at(-1).text, '执行中补一句')
+    assert.equal(q.status, 'running', '这一轮还在跑')
+    // Command Code 用常驻 RPC 的 turn/steer，同样立刻进对话
+    let c = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'commandcode',
+      prompt: 'SLOW 执行中发给命令行',
+    })
+    await sleep(800)
+    c = await call('POST', `/tasks/${c.id}/messages`, { text: '命令行也来一句' })
+    assert.ok(
+      c.messages.some((m) => m.role === 'user' && m.text === '命令行也来一句'),
+      'Command Code 的消息也立刻进对话',
     )
-    assert.equal(q.status, 'running')
-    q = await call('DELETE', `/tasks/${q.id}/queue/${q.queue[1].id}`)
-    assert.equal(q.queue.length, 1, '撤回一条')
-    q = await call('PATCH', `/tasks/${q.id}/queue/${q.queue[0].id}`, { text: '排队的第一条' })
-    assert.equal(q.queue[0].text, '排队的第一条', '排队的要求可以修改')
-    // 等两轮都跑完（第一轮慢，第二轮是排队的那条）
-    for (let i = 0; i < 100; i++) {
-      q = await call('GET', `/tasks/${q.id}`)
-      if (q.status !== 'running' && !q.queue.length) break
-      await sleep(200)
-    }
+    q = await waitDone(q.id)
+    c = await waitDone(c.id)
     assert.equal(q.status, 'done')
-    assert.deepEqual(
-      q.messages.filter((m) => m.role === 'user').map((m) => m.text),
-      ['SLOW 排队测试', '排队的第一条'],
-      '排队的要求在这一轮完成后接着处理，撤回的不处理',
+    assert.equal(c.status, 'done')
+    assert.ok(
+      readLog(`${log}.steer`).some((x) => x.steered.some((s) => s.includes('执行中补一句'))),
+      'Claude Code 收到了执行中发的消息',
     )
+    // 既不能插话、也不用面板工具取补充的 CLI（Gemini CLI）：消息照样立刻进对话，
+    // 这一轮完全结束后马上开始新一轮接着处理，不用用户再发一次
+    let g = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: 'default-agent',
+      cli: 'gemini',
+      prompt: 'SLOW 交不出去的消息',
+    })
+    const g0 = calls().filter((c) => c.kind === 'gemini').length
+    await sleep(800)
+    g = await call('POST', `/tasks/${g.id}/messages`, { text: '这一轮结束后处理这条' })
+    assert.equal(g.messages.at(-1).text, '这一轮结束后处理这条', '交不出去的消息也立刻进对话')
+    assert.equal(g.status, 'running', '第一轮还没结束')
+    // 第一轮结束后自动开新一轮：等两轮都跑完（中间会短暂停在 done）
+    const t1 = Date.now()
+    for (;;) {
+      g = await call('GET', `/tasks/${g.id}`)
+      const users = g.messages.filter((m) => m.role === 'user').length
+      const finished =
+        g.status !== 'running' && users >= 2 && calls().filter((c) => c.kind === 'gemini').length >= g0 + 2
+      if (finished) break
+      if (Date.now() - t1 > 30000) throw new Error('执行中收到的消息没有在下一轮接着处理')
+      await sleep(100)
+    }
+    assert.equal(g.status, 'done')
+    const texts = g.messages.filter((m) => m.role === 'user').map((m) => m.text)
+    assert.deepEqual(texts, ['SLOW 交不出去的消息', '这一轮结束后处理这条'], '这一轮结束后自动接着处理，不重复记消息')
     // 打断：停下当前这一轮马上处理
     let r = await call('POST', '/tasks', {
       projectId: project.id,
@@ -1116,7 +1142,67 @@ try {
     assert.equal(r.status, 'done')
     assert.equal(r.messages.filter((m) => m.role === 'user').at(-1).text, '马上改做这个')
   }
-  step('执行中发消息：默认排队、可以撤回，这一轮完成后接着处理；也可以打断马上处理')
+  step('执行中发消息：立刻进对话并实时交给 CLI，不再有排队；也可以打断马上处理')
+
+  // ---- 子对话的 CLI 生命周期：列表如实给 cliAlive；打开父对话不启动任何子对话；发消息才启动 ----
+  {
+    let parent = await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '父对话' })
+    parent = await waitDone(parent.id, 20000)
+    assert.equal(parent.status, 'done')
+    // 子对话直接用接口建（对话 Agent 建子对话需要走工作流，这里只测进程生命周期）
+    const mkChild = (title, prompt) =>
+      call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, parentTaskId: parent.id, prompt })
+    let kid = await mkChild('子对话一', '第一件事')
+    kid = await waitDone(kid.id, 20000)
+    assert.equal(kid.status, 'done')
+
+    let kids = await call('GET', `/tasks/${parent.id}/children`)
+    const one = kids.find((x) => x.id === kid.id)
+    assert.ok(one, '子对话出现在父对话的列表里')
+    assert.equal(one.cliAlive, false, '跑完、进程已经结束：cliAlive 为 false')
+    assert.ok(one.lastMessageAt, '列表带上最近一条消息的时间，用来排序')
+    assert.ok(!('queue' in kid), '不再有排队字段')
+
+    // 只打开父对话页、只读查子对话：不会把子对话的 CLI 启动起来
+    await call('POST', `/tasks/${parent.id}/presence`, { viewerId: 'e2e', active: true })
+    await call('GET', `/tasks/${parent.id}/children`)
+    kids = await call('GET', `/tasks/${parent.id}/children`)
+    assert.equal(kids.find((x) => x.id === kid.id).cliAlive, false, '打开父对话不会启动子对话的 CLI')
+    assert.ok(!(await call('GET', `/tasks/${kid.id}`)).prewarming, '也不会预热')
+
+    // 打开子对话页，不发消息：仍然没有启动
+    await call('POST', `/tasks/${kid.id}/presence`, { viewerId: 'e2e-child', active: true })
+    kids = await call('GET', `/tasks/${parent.id}/children`)
+    assert.equal(kids.find((x) => x.id === kid.id).cliAlive, false, '只打开子对话也不启动 CLI')
+
+    // 真正发消息才启动
+    const resumed = await call('POST', `/tasks/${kid.id}/messages`, { text: '接着做第二件事' })
+    assert.equal(resumed.status, 'running', '发消息才启动这一轮')
+    kids = await call('GET', `/tasks/${parent.id}/children`)
+    assert.equal(kids.find((x) => x.id === kid.id).cliAlive, true, '发消息后进程活着')
+    const busy = await call('GET', '/tasks')
+    assert.ok(
+      busy.find((x) => x.id === parent.id)?.childrenWorking >= 1,
+      '子对话在跑时父对话的摘要带上 childrenWorking，侧栏据此显示执行中',
+    )
+    kid = await waitDone(kid.id, 20000)
+    assert.equal(kid.status, 'done')
+    step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
+
+    // 父对话的 CLI 结束时一起结束子对话的进程
+    let slow = await mkChild('子对话二', 'SLOW 父对话关闭时一起结束')
+    await sleep(600)
+    assert.equal((await call('GET', `/tasks/${slow.id}`)).status, 'running', '子对话正在执行')
+    await call('POST', `/tasks/${parent.id}/stop`)
+    slow = await waitDone(slow.id, 15000)
+    assert.notEqual(slow.status, 'running', '父对话的 CLI 结束后，子对话的进程也结束了')
+    assert.ok(slow.messages.length > 0, '停止时保留已有的输出，下次发消息能重新启动')
+    const after = await call('GET', `/tasks/${parent.id}/children`)
+    assert.equal(after.find((x) => x.id === slow.id).cliAlive, false, '子对话的进程没有留成孤儿')
+    // 父对话自己也停掉，后面的用例从干净状态开始
+    await waitDone(parent.id, 15000)
+    step('父对话关闭：名下子对话的 CLI 一起结束，已有内容保留')
+  }
 
   // ---- 中断恢复：执行到一半停止，继续执行时续接那个节点的会话，从中断的地方接着做 ----
   let half = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'SLOW 中断恢复' })
@@ -1141,13 +1227,12 @@ try {
   assert.ok(!half.messages.some((m) => m.transient), '继续执行后去掉暂停说明，输出接在同一个节点里')
   step('中断恢复：停止后继续执行，被打断的节点续接会话接着做')
 
-  // ---- 工作流执行中补充信息：交给正在跑的节点（收不了时留给下一个节点），不排队、不算新要求 ----
+  // ---- 工作流执行中补充信息：交给正在跑的节点（收不了时留给下一个节点），不算新要求 ----
   {
     let w = await call('POST', '/tasks', { projectId: project.id, mode: 'workflow', prompt: 'SLOW 工作流补充' })
     await sleep(1000)
     const before = calls().length
-    w = await call('POST', `/tasks/${w.id}/messages`, { text: '接口要兼容旧版', steer: true })
-    assert.equal(w.queue.length, 0, '工作流的补充不排队')
+    w = await call('POST', `/tasks/${w.id}/messages`, { text: '接口要兼容旧版' })
     const note = w.messages.find((m) => m.text === '接口要兼容旧版')
     assert.ok(note?.step, '补充记在正在跑的节点上')
     w = await waitDone(w.id, 20000)
@@ -3966,11 +4051,11 @@ try {
     assert.ok(w.awaitingUser, '回复完停在等下一句上')
     assert.equal(w.working, false, '等下一句不算执行中')
     assert.ok(w.turnDoneAt, 'CLI 完成一轮时记了时间')
-    await call('POST', `/tasks/${w.id}/messages`, { text: '接着看看测试', steer: true })
+    await call('POST', `/tasks/${w.id}/messages`, { text: '接着看看测试' })
     w = await waitDone(w.id, 30000)
     assert.equal(w.status, 'done')
     assert.equal(w.awaitingUser, false)
-    assert.deepEqual(w.queue, [], '直接交给 CLI，不排队')
+    assert.equal('queue' in w, false, '不再有排队字段')
     const rec = readLog(log + '.wait')
       .slice(before)
       .at(-1)
@@ -4046,7 +4131,7 @@ try {
       .filter((x) => !beforePids.has(x.pid))
       .map((x) => x.pid)
     assert.equal(new Set(pids).size, 1, '整个过程只启动了一个 CLI 进程')
-    assert.deepEqual(w.queue, [], '不排队')
+    assert.equal('queue' in w, false, '不再有排队字段')
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '接着说')
     assert.ok(at > 0, '用户消息记进对话')
     assert.ok(
@@ -4061,7 +4146,7 @@ try {
   }
   step('模型没调用等待工具时，面板也把进程留着：回来发消息复用同一个 CLI')
 
-  // 打开旧对话时后台预热：不用先发消息，--resume 已经启动好停在等下一句上
+  // 预热接口本身：切换 CLI/模型后服务端会用它重开进程；打开对话页不再自动调用它
   {
     let w = await call('POST', '/tasks', {
       projectId: project.id,
@@ -4093,7 +4178,7 @@ try {
     assert.equal(w.turnDoneAt, doneAt, '预热本身不算完成一轮')
 
     // 预热好了再发消息：直接交给同一个进程，不用重新启动
-    await call('POST', `/tasks/${w.id}/messages`, { text: '预热后直接问', steer: true })
+    await call('POST', `/tasks/${w.id}/messages`, { text: '预热后直接问' })
     w = await waitDone(w.id, 30000)
     const at = w.messages.findIndex((m) => m.role === 'user' && m.text === '预热后直接问')
     assert.ok(at > 0, '用户消息记进对话')
@@ -4123,7 +4208,7 @@ try {
     assert.equal(w.turnDoneAt, askedDoneAt, '切走让预热退出不算完成一轮')
     assert.equal(w.updatedAt, askedUpdatedAt, '预热退出不改列表时间')
   }
-  step('打开旧对话时后台预热 resume：不用等发消息才启动，切走后结束')
+  step('预热接口：切换 CLI/模型后按新选择重开进程，停在等下一句；打开对话页不再自动预热')
 
   // Skills / 命令库：读写各 CLI 用户目录下的 Skill 和命令，复制给别的 CLI 时命令自动换格式
   {
@@ -4328,13 +4413,6 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
     'Windows 托盘程序：服务启动完成后告诉托盘地址，点图标切到打开着的页面，右键检查更新，托盘退出时服务和正在执行的 CLI 一起退出',
   )
 
-  console.log('\n全部通过')
-} catch (e) {
-  console.error(e)
-  process.exitCode = 1
-} finally {
-  stop()
-}
   // 项目分组顺序：默认按添加时间，拖拽后的顺序存进数据文件，重新读出来（刷新、重启）还在
   {
     const names = ['排序A', '排序B', '排序C']
@@ -4399,3 +4477,10 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   }
   step('项目分组：默认按添加时间排序，拖拽后的顺序持久化，重复 / 不存在 / 漏项的重排请求被拒绝')
 
+  console.log('\n全部通过')
+} catch (e) {
+  console.error(e)
+  process.exitCode = 1
+} finally {
+  stop()
+}

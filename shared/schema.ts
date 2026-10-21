@@ -678,21 +678,9 @@ export const PresenceInput = z.object({
 export const FollowUpInput = z.object({
   text: z.string().trim().min(1, t('内容不能为空')).max(20000),
   attachments: z.array(Attachment).max(MAX_ATTACHMENTS).default([]),
-  /** 任务正在执行时：true 先停下当前这一轮再发送；否则排队，这一轮完成后自动接着处理 */
+  /** 任务正在执行时：true 先停下当前这一轮再发送；否则直接交给正在跑的 CLI，交不出去就这一轮结束后接着处理 */
   interrupt: z.boolean().default(false),
-  /** 任务正在执行时：插话交给正在跑的 CLI，由它判断相关性（相关的调整方向，无关的等这一轮完成后再处理）；CLI 收不下时排队（见 CLI 配置的 steer、notes） */
-  steer: z.boolean().default(false),
 })
-/** 执行中发来、排队等这一轮完成后再处理的要求 */
-export const QueuedMessage = z.object({
-  id: z.string(),
-  text: z.string(),
-  attachments: z.array(Attachment).default([]),
-  at: z.string(),
-  /** 已经登记给正在跑的调用，等它用面板的工具取走（见 CLI 配置的 notes）；取走了会从队列里去掉 */
-  note: z.boolean().default(false),
-})
-export type QueuedMessage = z.infer<typeof QueuedMessage>
 /** 可以直接修改的任务字段 */
 export const TaskPatch = z
   .object({
@@ -1056,8 +1044,6 @@ export const TaskData = z.object({
   requests: z.array(TaskRequest).default([]),
   /** 独立分支执行时的工作目录和分支；直接在项目目录执行时为空 */
   worktree: TaskWorktree.nullable().default(null),
-  /** 执行中排队的要求：这一轮完成后按顺序处理；失败或暂停时留着，由用户决定 */
-  queue: z.array(QueuedMessage).default([]),
   /** 这一轮开始时的累计用量：预算上限按每次执行算，继续执行就重新给一份额度 */
   budgetFrom: z.object({ usd: z.number(), tokens: z.number() }).optional(),
   /** CLI 正在处理一轮：预热、等下一句、进程只是活着时都是 false */
@@ -1073,6 +1059,11 @@ export const TaskData = z.object({
   awaitingUser: z.boolean().default(false),
   /** 对话页打开时在后台用 --resume 启动，还没等到下一句 */
   prewarming: z.boolean().default(false),
+  /**
+   * 名下正在执行的子对话数：只在列表摘要里带，由服务端按子对话的 working 算好。
+   * 有子对话在跑时父对话在侧栏也显示执行中；它不是父对话自己的执行状态，不参与完成通知
+   */
+  childrenWorking: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
   /** 用户最近一次发消息的时间：只在列表摘要里带（摘要去掉了消息），排序和显示用 askedAt() 取 */
@@ -1095,10 +1086,18 @@ export const TaskData = z.object({
 })
 export type TaskData = z.infer<typeof TaskData>
 
-/** 旧任务的消息用节点下标记录所属节点，换成节点 id */
+/**
+ * 旧任务的消息用节点下标记录所属节点，换成节点 id。
+ * 更早的版本还有 queue（执行中排队的追加要求）：现在执行中收到的消息直接进对话，
+ * 读旧数据时把没处理的普通要求补到对话末尾，让用户仍然看得到；等 CLI 取走的补充已经不成立了，丢掉。
+ */
 function migrateTask(v: unknown) {
   if (!v || typeof v !== 'object') return v
-  const t = v as { steps?: { id?: string }[]; messages?: { step?: unknown }[] }
+  const t = v as {
+    steps?: { id?: string }[]
+    messages?: { step?: unknown; at?: string }[]
+    queue?: { id?: string; text?: unknown; attachments?: unknown; at?: unknown; note?: unknown }[]
+  }
   const steps = (t.steps ?? []).map((s, i) => ({
     ...s,
     id: s.id ?? `s${i}`,
@@ -1107,7 +1106,22 @@ function migrateTask(v: unknown) {
   const messages = (t.messages ?? []).map((m) =>
     typeof m.step === 'number' ? { ...m, step: m.step >= 0 ? (steps[m.step]?.id ?? '') : '' } : m,
   )
-  return { ...t, steps, messages }
+  const { queue, ...rest } = t
+  if (!Array.isArray(queue) || !queue.length) return { ...rest, steps, messages }
+  const now = new Date().toISOString()
+  const moved = queue
+    .filter((q) => q && q.note !== true && typeof q.text === 'string' && q.text.trim())
+    .map((q, i) => ({
+      id: typeof q.id === 'string' && q.id ? q.id : `q${i}`,
+      role: 'user' as const,
+      agentId: '',
+      step: '',
+      text: q.text as string,
+      tools: [],
+      ...(Array.isArray(q.attachments) && q.attachments.length ? { attachments: q.attachments } : {}),
+      at: typeof q.at === 'string' && q.at ? q.at : now,
+    }))
+  return { ...rest, steps, messages: [...messages, ...moved] }
 }
 
 export const Task = z.preprocess(migrateTask, TaskData.extend(Meta.shape))

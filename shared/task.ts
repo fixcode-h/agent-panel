@@ -119,7 +119,6 @@ export function newTask(
     workflowName: wf?.name ?? '',
     runSeq: 0,
     requests: [],
-    queue: [],
     working: false,
     turnDoneAt: '',
     turnSeenAt: '',
@@ -293,18 +292,37 @@ export function sessionChanged(
 }
 
 /**
- * 用户最近一次发消息的时间（含排队还没处理的），没有就用创建时间。
+ * 用户最近一次发消息的时间，没有就用创建时间。
  * 列表按它排序、显示它：Agent 回复、执行状态变化不改变顺序，只有用户发了新消息才排到前面
  */
-export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'> & { queue?: { at: string }[] }) {
+export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'>) {
   let at = t.askedAt ?? ''
   for (const m of t.messages) if (m.role === 'user' && m.at > at) at = m.at
-  for (const q of t.queue ?? []) if (q.at > at) at = q.at
   return at || t.createdAt
 }
 
 /** 按用户最近发消息的时间排，新的在前 */
 export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(a))
+
+/** 父对话下的子对话入口要显示的信息 */
+export interface ChildEntry {
+  id: string
+  title: string
+  working: boolean
+  cliAlive: boolean
+  lastMessageAt: string
+}
+
+/**
+ * 子对话列表的顺序：正在执行的排最上面，其余按最近一条消息的时间倒序。
+ * 父对话里显示子对话、悬浮窗列表都用它。
+ */
+export function sortChildren<T extends ChildEntry>(list: T[]): T[] {
+  return list.slice().sort((a, b) => {
+    if (a.working !== b.working) return a.working ? -1 : 1
+    return (b.lastMessageAt || '').localeCompare(a.lastMessageAt || '')
+  })
+}
 
 /**
  * 任务列表按自然日分组：同一天的归到一组，组内保持传进来的顺序（列表本来就按时间倒序）。

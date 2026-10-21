@@ -247,6 +247,8 @@ export const api = {
   analyzeProject: (path: string) => request<ProjectSuggestion>('/projects/analyze', json('POST', { path })),
   createProject: (input: ProjectInput) => request<Project>('/projects', json('POST', input)),
   updateProject: (id: string, input: ProjectInput) => request<Project>(`/projects/${id}`, json('PUT', input)),
+  // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
+  orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
 
   allTasks: () => request<Task[]>('/tasks'),
@@ -254,14 +256,25 @@ export const api = {
   task: (id: string) => request<Task>(`/tasks/${id}`),
   taskChildren: (id: string) =>
     request<
-      { id: string; title: string; status: Task['status']; summary: string; working: boolean; updatedAt: string }[]
+      {
+        id: string
+        title: string
+        status: Task['status']
+        summary: string
+        working: boolean
+        updatedAt: string
+        /** 进程还活着（预热、等下一句、正在执行） */
+        cliAlive: boolean
+        /** 最近一条消息的时间，列表按它排序 */
+        lastMessageAt: string
+      }[]
     >(`/tasks/${id}/children`),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
   /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
   importTask: (projectId: string, bundle: unknown) =>
     request<Task>('/tasks/import', json('POST', { projectId, bundle })),
-  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false, steer = false) =>
-    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt, steer })),
+  sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
+    request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */
   setPresence: (id: string, viewerId: string, active: boolean) =>
     request<void>(`/tasks/${id}/presence`, json('POST', { viewerId, active })),
@@ -278,9 +291,6 @@ export const api = {
   forkTask: (id: string, messageId: string) => request<Task>(`/tasks/${id}/fork`, json('POST', { messageId })),
   compactTask: (id: string) => request<Task>(`/tasks/${id}/compact`, json('POST', {})),
   reviewTask: (id: string, base = '') => request<Task>(`/tasks/${id}/review`, json('POST', base ? { base } : {})),
-  unqueue: (id: string, qid: string) => request<Task>(`/tasks/${id}/queue/${qid}`, { method: 'DELETE' }),
-  editQueued: (id: string, qid: string, text: string) =>
-    request<Task>(`/tasks/${id}/queue/${qid}`, json('PATCH', { text })),
   /** 结束工作流：没完成的节点不再执行 */
   endFlow: (id: string) => request<Task>(`/tasks/${id}/end-flow`, json('POST', {})),
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
@@ -454,6 +464,4 @@ export const api = {
     request<{ auto: boolean }>('/designs/browser/reload', json('POST', { browser })),
   revealExtension: () => request<{ ok: boolean }>('/designs/browser/reveal', json('POST', {})),
   revealProject: (projectId: string) => request<{ ok: boolean }>('/fs/reveal', json('POST', { projectId })),
-  // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
-  orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
 }

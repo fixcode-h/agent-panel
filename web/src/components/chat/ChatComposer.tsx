@@ -111,8 +111,8 @@ export function ChatComposer({
   /** 右下角默认按钮前面再加的按钮（例如「重试」） */
   leading?: React.ReactNode
   /**
-   * 正在回复时：没写东西只显示停止；写了东西显示「排队」「发送」「停止」——
-   * 发送（Enter）是补充给正在进行的这一轮，排队是等这一轮结束再发
+   * 正在回复时：没写东西只显示停止；写了东西显示「发送」「停止」——
+   * 发送（Enter）把要求交给正在进行的这一轮。给了 onQueue 时另外显示「排队」（UI 设计的对话用来等这一轮结束）
    */
   running?: boolean
   onStop?: () => void
@@ -250,7 +250,7 @@ export function ChatComposer({
                   disabled={!ready || !!disabled}
                   sending={sending}
                   size={size}
-                  title={t('补充给正在进行的这一轮（Enter）')}
+                  title={t('交给正在进行的这一轮（Enter）')}
                 />
               )}
               {onStop && <StopButton onClick={onStop} size={size} />}

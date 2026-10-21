@@ -52,6 +52,7 @@ import {
   steerTask,
   type RealContext,
 } from './exec/runner.ts'
+import { dropHeld, hasHeld, holdForNextTurn, takeHeld } from './exec/delivery.ts'
 import {
   forgetPresence,
   rescheduleIfUnwatched,
@@ -98,15 +99,19 @@ export function tasksApi(deps: {
     restart?: boolean
   }
   const live = new Map<string, Live>()
-  // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）
-  setPresenceIdleHandler(cancelWait)
+  // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）；
+  // 父对话的 CLI 结束时它名下子对话的进程一起结束，不留孤儿
+  setPresenceIdleHandler((id) => {
+    cancelWait(id)
+    void closeChildren(id)
+  })
   // 这一轮完成但用户还没打开看过（侧栏橙点）的对话不回收：用户回来时还能直接接着说
   setPresenceUnreadKeeper((id) => {
     const tk = live.get(id)?.task
     if (!tk) return false
     return !!tk.turnDoneAt && tk.turnDoneAt !== tk.turnSeenAt
   })
-  /** 服务正在退出：不再接着处理排队的要求 */
+  /** 服务正在退出：不再接着处理这一轮结束后要处理的消息 */
   let shuttingDown = false
   /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
   const reserve = (task: Task): Live => {
@@ -242,6 +247,19 @@ export function tasksApi(deps: {
     }))
   }
 
+  /** 对话 Agent 启动计划时按 id 取工作流；id 为空用项目默认工作流 */
+  function planWorkflow(project: Project, all: Workflow[], fallback: Workflow | undefined, id: string) {
+    const target = id ? (all.find((w) => w.id === id) ?? fallback) : fallback
+    if (!target) return undefined
+    const params = paramsOf(project, target.id)
+    const snapshot = taskSnapshot(target, all, params, testOpts(project))
+    return {
+      workflow: snapshot.find((w) => w.id === target.id) ?? target,
+      workflows: snapshot,
+      skillSlots: exposeSlots(target, params),
+    }
+  }
+
   /**
    * 项目级测试步骤和平台：新建对话时快照进任务，测试 Agent 按它执行，之后改项目设置不影响已开始的对话。
    * agents 用来判断某个工作流里有没有测试 Agent（见 withTestSteps）。
@@ -256,23 +274,32 @@ export function tasksApi(deps: {
   let liveAgents: Agent[] = []
   const refreshAgents = async () => (liveAgents = await deps.agents.list())
 
-  /** 对话 Agent 启动计划时按 id 取工作流；id 为空用项目默认工作流 */
-  function planWorkflow(project: Project, all: Workflow[], fallback: Workflow | undefined, id: string) {
-    const target = id ? (all.find((w) => w.id === id) ?? fallback) : fallback
-    if (!target) return undefined
-    const params = paramsOf(project, target.id)
-    const snapshot = taskSnapshot(target, all, params, testOpts(project))
-    return {
-      workflow: snapshot.find((w) => w.id === target.id) ?? target,
-      workflows: snapshot,
-      skillSlots: exposeSlots(target, params),
-    }
-  }
-
   /** 子对话的摘要：最近一条 Agent 回复的开头 */
   function lastReply(task: Task) {
     const last = [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.trim())
     return last ? last.text.replace(/\s+/g, ' ').trim().slice(0, 300) : ''
+  }
+
+  /** 最近一条消息的时间：子对话列表按它排序（updatedAt 会被改名、看过之类的操作改动） */
+  function lastMessageAt(task: Task) {
+    return task.messages.at(-1)?.at ?? task.updatedAt
+  }
+
+  /**
+   * 父对话的 CLI 结束了（宽限期到、用户停止、切换 CLI/模型、页面离开后被回收）：
+   * 它名下子对话的进程一起结束，不留孤儿。子对话已产出的内容和状态都在，下次发消息会重新启动。
+   * 统一在这里做，各个路由只管调用它。
+   */
+  async function closeChildren(parentId: string) {
+    const kids = (await store.list()).filter((x) => x.parentTaskId === parentId)
+    for (const k of kids) {
+      if (!live.has(k.id)) continue
+      const entry = live.get(k.id)!
+      // 正在等下一句的直接结束这一轮；正在执行的按停止处理（输出和状态都保留）
+      if (!cancelWait(k.id)) stopTask(k.id)
+      if (entry.done) await entry.done.catch(() => {})
+      if (live.has(k.id)) stopTask(k.id)
+    }
   }
 
   /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
@@ -438,16 +465,28 @@ export function tasksApi(deps: {
           if (child.imported) return { ok: false, info: READONLY }
           const running = live.get(id)
           if (running?.task.status === 'running') {
-            running.task.queue.push({
+            // 和人工输入走同一套投递：能交给 CLI 就马上实时送达，交不出去就等这一轮结束后接着处理
+            const msg: TaskMessage = {
               id: randomUUID(),
+              role: 'user',
+              agentId: '',
+              step: '',
               text: message,
-              attachments: [],
+              tools: [],
               at: new Date().toISOString(),
-              note: false,
-            })
-            running.task.updatedAt = new Date().toISOString()
-            await store.update(id, running.task)
-            return { ok: true, info: `「${child.title}」正在执行，消息排在它这一轮之后` }
+            }
+            const r = await deliver(running, msg, message, [])
+            const how =
+              r.how === 'wait'
+                ? '已直接交给子对话，它正在处理'
+                : r.how === 'steer'
+                  ? '子对话正在执行，已实时送达'
+                  : r.how === 'notes'
+                    ? '子对话正在执行，已实时送达，它执行中会读到'
+                    : r.how === 'next-node'
+                      ? '子对话正在执行，已实时送达，它接下来的步骤会带上'
+                      : '子对话正在执行，这一轮结束后会自动处理这条'
+            return { ok: true, info: `「${child.title}」${how}` }
           }
           void followUp(id, { text: message, attachments: [] }).catch((e) =>
             log.error('task', '子对话执行出错', { task: id, error: (e as Error).message }),
@@ -516,12 +555,13 @@ export function tasksApi(deps: {
           await reportToParent(entry.task)
         } else await flush(keepTime)
         live.delete(task.id)
-        // 这一轮顺利完成：接着处理排队的要求；失败或暂停时留着，等用户决定
-        if (entry.task.status === 'done' && entry.task.queue.length && !shuttingDown)
-          await followUp(task.id).catch((e) => console.error(`处理排队的要求失败：${(e as Error).message}`))
-        // 没有排队时按新的选择直接预热，下一条消息不会再交给旧 CLI；
+        // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
+        if (entry.task.status === 'done' && hasHeld(task.id) && !shuttingDown)
+          await followUp(task.id).catch((e) => console.error(`接着处理执行中收到的消息失败：${(e as Error).message}`))
+        else if (entry.task.status !== 'done') dropHeld(task.id)
+        // 没在等下一轮时按新的选择直接预热，下一条消息不会再交给旧 CLI；
         // PATCH 自己负责的重启不要在这里重复做
-        if (switchedRun && !entry.restart && entry.task.status === 'done' && !entry.task.queue.length && !shuttingDown)
+        if (switchedRun && !entry.restart && entry.task.status === 'done' && !hasHeld(task.id) && !shuttingDown)
           void prewarmChat(entry.task, true).catch((e) => console.error(`按新的选择预热失败：${(e as Error).message}`))
       })
     return entry.task
@@ -537,34 +577,39 @@ export function tasksApi(deps: {
     return out === text ? '' : out
   }
 
-  /** 发一条追加要求：没给内容时取排队的第一条 */
-  async function followUp(id: string, msg?: { text: string; attachments: Attachment[] }) {
+  /**
+   * 发一条追加要求。msg 为空时取这一轮结束后要接着处理的那条（CLI 执行中收不下的消息）。
+   * recorded：这条消息已经在对话里了（执行中收到时就记下了），不要再加一条。
+   */
+  async function followUp(id: string, msg?: { text: string; attachments: Attachment[]; recorded?: boolean }) {
     const task = await store.get(id)
     if (!task) throw new Error('任务不存在')
     const entry = reserve(task)
     const next = entry.task
     let m = msg
     if (!m) {
-      const q = next.queue.shift()
+      const q = takeHeld(id)
       if (!q) {
         live.delete(id)
         return next
       }
-      m = q
+      m = { text: q.text, attachments: q.attachments, recorded: true }
     }
     const expanded = await expandForWorkflow(next, m.text)
     dropEndNotes(next)
-    next.messages.push({
-      id: randomUUID(),
-      role: 'user',
-      agentId: '',
-      step: '',
-      text: m.text,
-      ...(expanded ? { prompt: expanded } : {}),
-      tools: [],
-      ...(m.attachments.length ? { attachments: m.attachments } : {}),
-      at: new Date().toISOString(),
-    })
+    if (!m.recorded) {
+      next.messages.push({
+        id: randomUUID(),
+        role: 'user',
+        agentId: '',
+        step: '',
+        text: m.text,
+        ...(expanded ? { prompt: expanded } : {}),
+        tools: [],
+        ...(m.attachments.length ? { attachments: m.attachments } : {}),
+        at: new Date().toISOString(),
+      })
+    }
     try {
       return await start(entry, withAttachments(expanded || m.text, m.attachments), false, await deps.agents.list())
     } catch (e) {
@@ -573,11 +618,57 @@ export function tasksApi(deps: {
     }
   }
 
+  /**
+   * 一条消息交给正在跑的任务，先试能实时送到 CLI 的办法：
+   * CLI 正停在等下一句 → 直接交回同一个进程；支持插话 → 插话；
+   * 能用面板工具取补充 → 登记给它取；都收不下就记下来，这一轮结束后马上开始新一轮。
+   */
+  async function deliver(entry: Live, msg: TaskMessage, text: string, attachments: Attachment[]) {
+    const task = entry.task
+    const wait = deliverWait(task, msg)
+    if (wait === 'ok') {
+      task.updatedAt = new Date().toISOString()
+      await store.update(task.id, task)
+      return { task, how: 'wait' as const }
+    }
+    // 等着的还是旧 CLI：让它退出，按输入框里现在的选择重新开始这一轮
+    if (wait === 'stale') {
+      entry.restart = true
+      if (entry.done) await entry.done
+      const next = live.get(task.id)
+      if (next) {
+        if (deliverWait(next.task, msg) === 'ok') {
+          next.task.updatedAt = new Date().toISOString()
+          await store.update(task.id, next.task)
+          return { task: next.task, how: 'wait' as const }
+        }
+        return intoTurn(next, msg, text, attachments)
+      }
+      return { task: await followUp(task.id, { text, attachments }), how: 'next' as const }
+    }
+    return intoTurn(entry, msg, text, attachments)
+  }
+
+  /** CLI 没在等下一句：插话 → 登记给 read_user_notes → 记下来这一轮结束后接着处理 */
+  async function intoTurn(entry: Live, msg: TaskMessage, text: string, attachments: Attachment[]) {
+    const task = entry.task
+    const how = await steerTask(task, withAttachments(text, attachments), msg)
+    if (!how) {
+      task.messages.push(msg)
+      holdForNextTurn(task.id, msg)
+    }
+    task.updatedAt = new Date().toISOString()
+    await store.update(task.id, task)
+    return { task, how: how || ('held' as const) }
+  }
+
   const stopTask = (id: string) => {
     const e = live.get(id)
     if (!e) return
     e.stop = true
     e.abort.abort()
+    // 用户主动停止父对话：它名下子对话的进程一起结束，不留孤儿
+    void closeChildren(id)
   }
 
   const routes = new Hono()
@@ -585,11 +676,23 @@ export function tasksApi(deps: {
   routes.get('/', async (c) => {
     const pid = c.req.query('projectId')
     // 列表只给摘要：侧栏和项目首页不需要消息内容，任务多了也不会越来越慢
-    let all = (await store.list()).map((t) => taskSummary(idle(live.get(t.id)?.task ?? t)))
+    const all = (await store.list()).map((t) => idle(live.get(t.id)?.task ?? t))
+    // 子对话在跑时父对话也算执行中：一次算好所有父对话名下的数量，前端不用再为每个任务发请求
+    const kids = new Map<string, number>()
+    for (const k of all) {
+      if (!k.parentTaskId) continue
+      const cur = live.get(k.id)?.task ?? k
+      if (!cur.working) continue
+      kids.set(k.parentTaskId, (kids.get(k.parentTaskId) ?? 0) + 1)
+    }
+    let list = all.map((t) => {
+      const n = kids.get(t.id) ?? 0
+      return taskSummary(n ? { ...t, childrenWorking: n } : t)
+    })
     // 子对话不进入项目列表：按 parentId 查询时才返回它们
     const parent = c.req.query('parentId')
-    all = parent ? all.filter((t) => t.parentTaskId === parent) : all.filter((t) => !t.parentTaskId)
-    return c.json(pid ? all.filter((t) => t.projectId === pid) : all)
+    list = parent ? list.filter((t) => t.parentTaskId === parent) : list.filter((t) => !t.parentTaskId)
+    return c.json(pid ? list.filter((t) => t.projectId === pid) : list)
   })
 
   // 父对话的子对话卡片：标题、状态、摘要和最近更新时间
@@ -607,6 +710,10 @@ export function tasksApi(deps: {
           summary: liveTask.summary || lastReply(liveTask),
           working: liveTask.working,
           updatedAt: liveTask.updatedAt,
+          // 进程还活着（预热、等下一句、正在执行）：列表默认只列这些，不用 status === 'running' 猜
+          cliAlive: live.has(liveTask.id),
+          // 排序按真正的最近消息时间：updatedAt 也会被改名、看过的标记改动
+          lastMessageAt: lastMessageAt(liveTask),
         }
       })
     return c.json(kids)
@@ -810,11 +917,11 @@ export function tasksApi(deps: {
     if ((await current(id))?.imported) return bad(c, READONLY, 409)
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
-      // 直接接着当前任务处理：CLI 停在等下一句的工具上时交回同一个进程（不用结束再 --resume），
-      // 否则按插话交给正在跑的 CLI；都收不下时排队
+      // 执行中：先试能实时送到 CLI 的办法（等下一句、插话、read_user_notes），
+      // 都收不下就把消息记进对话，这一轮结束后马上开始新一轮接着处理
       if (!interrupt) {
         const expanded = await expandForWorkflow(prev.task, text)
-        const msg = {
+        const msg: TaskMessage = {
           id: randomUUID(),
           role: 'user' as const,
           agentId: '',
@@ -825,45 +932,9 @@ export function tasksApi(deps: {
           ...(attachments.length ? { attachments } : {}),
           at: new Date().toISOString(),
         }
-        const delivered = deliverWait(prev.task, msg)
-        if (delivered === 'ok') {
-          prev.task.updatedAt = new Date().toISOString()
-          await store.update(id, prev.task)
-          return c.json(prev.task)
-        }
-        // 等着的还是旧 CLI：让它退出，按输入框里现在的选择重新开始这一轮
-        if (delivered === 'stale') {
-          prev.restart = true
-          if (prev.done) await prev.done
-          const next = live.get(id)
-          if (next) {
-            // 新进程已经起来了：直接交给它；还没进入等待时排进队列，它启动后会取走
-            if (deliverWait(next.task, msg) === 'ok') {
-              next.task.updatedAt = new Date().toISOString()
-              await store.update(id, next.task)
-              return c.json(next.task)
-            }
-            next.task.queue.push({ id: msg.id, text, attachments, at: msg.at, note: false })
-            next.task.updatedAt = new Date().toISOString()
-            await store.update(id, next.task)
-            return c.json(next.task)
-          }
-          return c.json(await followUp(id, { text, attachments }))
-        }
-        if (p.data.steer && (await steerTask(prev.task, withAttachments(expanded || text, attachments), msg))) {
-          prev.task.updatedAt = new Date().toISOString()
-          await store.update(id, prev.task)
-          return c.json(prev.task)
-        }
+        return c.json((await deliver(prev, msg, expanded || text, attachments)).task)
       }
-      if (!interrupt) {
-        // 执行中：先排队，这一轮完成后自动接着处理
-        prev.task.queue.push({ id: randomUUID(), text, attachments, at: new Date().toISOString(), note: false })
-        prev.task.updatedAt = new Date().toISOString()
-        await store.update(id, prev.task)
-        return c.json(prev.task)
-      }
-      // 打断：停下当前这一轮再发。停下后任务是「已暂停」，排队的要求不会自动跑
+      // 打断：停下当前这一轮再发
       stopTask(id)
     }
     // 刚执行完、还在落盘的任务：等它写完再接着跑
@@ -953,32 +1024,6 @@ export function tasksApi(deps: {
     return c.json(tk)
   })
 
-  // 撤回一条排队的要求
-  routes.delete('/:id/queue/:qid', async (c) => {
-    const id = c.req.param('id')
-    const tk = live.get(id)?.task ?? (await store.get(id))
-    if (!tk) return bad(c, t('任务不存在'), 404)
-    const qid = c.req.param('qid')
-    if (!tk.queue.some((q) => q.id === qid)) return bad(c, t('这条要求已经开始处理了'), 404)
-    tk.queue = tk.queue.filter((q) => q.id !== qid)
-    tk.updatedAt = new Date().toISOString()
-    return c.json(await store.update(id, tk))
-  })
-
-  // 改一条排队的要求（还没开始处理的才能改）
-  routes.patch('/:id/queue/:qid', async (c) => {
-    const id = c.req.param('id')
-    const p = z.object({ text: z.string().trim().min(1) }).safeParse(await c.req.json().catch(() => ({})))
-    if (!p.success) return bad(c, t('要求不能为空'))
-    const tk = live.get(id)?.task ?? (await store.get(id))
-    if (!tk) return bad(c, t('任务不存在'), 404)
-    const q = tk.queue.find((x) => x.id === c.req.param('qid'))
-    if (!q) return bad(c, t('这条要求已经开始处理了'), 404)
-    q.text = p.data.text
-    tk.updatedAt = new Date().toISOString()
-    return c.json(await store.update(id, tk))
-  })
-
   // 结束工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理
   routes.post('/:id/end-flow', async (c) => {
     const id = c.req.param('id')
@@ -1025,12 +1070,15 @@ export function tasksApi(deps: {
           fresh,
           await deps.workflows.list(),
           params,
-          project ? testOpts(project) : {},
+          project ? testOpts(project) : { agents: liveAgents },
         )
-        entry.task.testSteps = project ? project.testSteps : []
-        entry.task.platform = project ? process.platform : ''
         entry.task.skillSlots = exposeSlots(fresh, params)
         entry.task.workflowName = fresh.name
+        // 测试步骤跟着一起换成项目现在的配置：这里明确是「按最新的工作流继续」
+        if (project) {
+          entry.task.testSteps = project.testSteps
+          entry.task.platform = process.platform
+        }
       }
       const last = users.at(-1)
       return c.json(
@@ -1299,7 +1347,9 @@ export function tasksApi(deps: {
       }
       if (!e.done) return c.json(task)
       await e.done
-      // 排队的要求由收尾的 followUp 用新的选择接着跑，不要在这里和它抢执行位
+      // 换了 CLI/模型后旧进程的上下文不能留：名下子对话的进程一起结束，下次发消息再按新的启动
+      await closeChildren(id)
+      // 这一轮结束后要处理的消息由收尾的 followUp 用新的选择接着跑，不要在这里和它抢执行位
       if (live.has(id)) return c.json(live.get(id)!.task)
       if (!canceled) task.status = 'done'
     }
@@ -1350,7 +1400,6 @@ export function tasksApi(deps: {
       messages: task.messages.slice(0, i),
       rewind: turnBefore(task, i),
       status: 'done',
-      queue: [],
       todos: [],
     })
     return c.json({ task: updated, text: removed.text, attachments: removed.attachments ?? [] })
@@ -1380,7 +1429,6 @@ export function tasksApi(deps: {
       status: 'done',
       runMs: 0,
       runStartedAt: '',
-      queue: [],
       requests: [],
       todos: [],
       worktree: null,

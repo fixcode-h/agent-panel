@@ -14,6 +14,7 @@ import {
   type Workflow,
 } from '../../shared/schema.ts'
 import { getCli } from '../../shared/clis.ts'
+import { addNoteTaker, holdForNextTurn, noteTakersOf, removeNoteTaker, type NoteTaker } from './delivery.ts'
 import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared/settings.ts'
 import {
   changesSince,
@@ -94,28 +95,13 @@ interface Steerer {
   step: string
   agentId: string
   steer: (text: string) => Promise<boolean>
-  /** CLI 在下一个模型请求前才取走补充：先显示成待取走，等真正取走再插进正文 */
-  deferred?: boolean
-  /** 补充交给了它：立即生效的另起一条；延迟取走的记下消息，等取走时再插 */
-  accepted: (msg?: TaskMessage) => void
+  /** 补充交给了它：之后的输出另起一条，排在用户消息后面 */
+  accepted: () => void
 }
 /** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
 const steers = new Map<string, Set<Steerer>>()
 /** 工作流里正在跑的节点都收不了补充（Command Code）时，留给下一个开始的节点 */
 const notes = new Map<string, string[]>()
-
-/**
- * 对话里 CLI 没有插话协议、但能用面板的工具取补充时（见 CLI 配置的 notes）：任务 id → 正在跑的那个。
- * 补充先排进队列（页面上照样看得到、能改能撤回），同时登记给它；取走时从队列里去掉，
- * 没取走的这一轮结束后照常按队列处理
- */
-interface NoteTaker {
-  /** 新排进来一条补充 */
-  add: (queueId: string) => void
-  /** 面板的工具调用：把还没取走的交给模型，并从队列里去掉（返回给模型的文字） */
-  read: () => string[]
-}
-const noteTakers = new Map<string, Set<NoteTaker>>()
 
 /**
  * 回复完停在 wait_user_message 上等下一句的调用（任务 id → 它）。
@@ -175,40 +161,39 @@ export const steerNote = (text: string, chat: boolean) =>
 
 /**
  * 执行中的补充：把信息交给正在跑的调用，CLI 在当前这一轮里接着处理。
- * 有插话协议的直接插话；没有协议但能用面板的工具取的（见 CLI 配置的 notes）先排进队列、登记给它取；
+ * 有插话协议的直接插话；没有协议但能用面板的工具取的（见 CLI 配置的 notes）登记给它取；
  * 工作流里交给所有正在跑的节点，它们都不支持（Command Code）时留给下一个开始的节点。
- * 任务没在跑、CLI 收不下时返回 false，由调用方排队
+ * 消息在每一种情况下都立刻记进对话，让用户看得到；任务没在跑时返回 false，由调用方记进对话并等这一轮结束。
  */
-export async function steerTask(task: Task, text: string, msg: TaskMessage) {
+export async function steerTask(
+  task: Task,
+  text: string,
+  msg: TaskMessage,
+): Promise<'steer' | 'notes' | 'next-node' | false> {
   const all = steers.get(task.id) ?? []
   const took: Steerer[] = []
   for (const s of all) if (await s.steer(steerNote(text, task.mode === 'chat'))) took.push(s)
   if (took.length) {
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]
-    const saved = { ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId }
-    // Command Code 这类要等下一次模型请求才取走的：先留在队列里显示成「待取走」，
-    // 等它真正开始下一次生成时再插进正文，免得旧回合迟到的工具调用跑到用户消息后面
-    const delayed = took.every((s) => s.deferred)
-    if (delayed)
-      task.queue.push({ id: msg.id, text: msg.text, attachments: msg.attachments ?? [], at: msg.at, note: true })
-    else task.messages.push(saved)
-    for (const s of took) s.accepted(delayed ? saved : undefined)
-    return true
+    task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
+    for (const s of took) s.accepted()
+    return 'steer'
   }
-  const takers = noteTakers.get(task.id)
+  const takers = noteTakersOf(task.id)
   if (takers?.size) {
-    // 对话的 CLI 没有插话协议：排进队列，让正在跑的它自己取；取走时这条会从队列里去掉
-    task.queue.push({ id: msg.id, text: msg.text, attachments: msg.attachments ?? [], at: msg.at, note: true })
-    for (const k of takers) k.add(msg.id)
-    return true
+    // 对话的 CLI 没有插话协议：登记给正在跑的它，下一次调用 read_user_notes 时交给模型；
+    // 这一轮结束还没取走的，由 runner 交给下一轮接着处理
+    task.messages.push(msg)
+    for (const k of takers) k.add(msg)
+    return 'notes'
   }
-  // 主 Agent 在调度（评估、整理结果）时也算工作流在跑：补充留给下一个开始的调用，不用排队
+  // 主 Agent 在调度（评估、整理结果）时也算工作流在跑：补充留给下一个开始的调用
   const running = task.steps.find((x) => x.status === 'running' && !x.parentId)
   if (!(task.mode === 'workflow' && running)) return false
   ;(notes.get(task.id) ?? notes.set(task.id, []).get(task.id)!).push(text)
   task.messages.push({ ...msg, step: running.id, agentId: msg.agentId })
-  return true
+  return 'next-node'
 }
 
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
@@ -733,9 +718,16 @@ async function runAgent(
   const apply = (ev: CliEvent) => {
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
-    // 延迟取走的补充：CLI 开始下一次模型请求时，才说明它真的读到了补充；
-    // 这时把用户消息从「待取走」移到正文，之后的输出另起一条
-    if (steerNotes.length && ev.type === 'request_start') consumeSteer()
+    // 延迟取走的补充：CLI 开始下一次模型请求时说明它真的接受了补充，之后的输出另起一条。
+    // 消息本身在交出去时就已经记进对话，这里只断开输出
+    if (steerPending && ev.type === 'request_start') {
+      steerPending = false
+      cur = undefined
+      prewarmMode = false
+      task.prewarming = false
+      task.working = true
+      ctx.changed(true)
+    }
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
@@ -892,35 +884,17 @@ async function runAgent(
   const asked: string[] = []
   /** 补充：交给 CLI 成功后，之后的输出另起一条，排在用户消息后面 */
   let steerer: Steerer | undefined
-  /** 延迟取走的补充：CLI 真正开始下一次生成时才从「待取走」移到正文 */
-  let steerNotes: TaskMessage[] = []
-  const consumeSteer = () => {
-    if (!steerNotes.length) return
-    for (const m of steerNotes) {
-      const i = task.queue.findIndex((q) => q.id === m.id && q.note)
-      // 已经撤回了：不再插进正文
-      if (i < 0) continue
-      task.queue.splice(i, 1)
-      task.messages.push(m)
-    }
-    steerNotes = []
-    cur = undefined
-    // CLI 真的开始处理用户消息了：预热结束，页面进入执行中
-    prewarmMode = false
-    task.prewarming = false
-    task.working = true
-    ctx.changed(true)
-  }
+  /** 延迟取走的补充：消息已经显示在对话里，CLI 开始下一次模型请求时再把后面的输出另起一条 */
+  let steerPending = false
   const register = (c: CliControl) => {
     steerer = {
       step,
       agentId,
       steer: c.steer,
-      deferred: c.deferSteer,
-      accepted: (m) => {
-        // CLI 收下了补充：这一轮又在处理了（延迟取走的也算，消息先显示成待取走）
+      accepted: () => {
+        // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
         task.working = true
-        if (m) steerNotes.push(m)
+        if (c.deferSteer) steerPending = true
         else cur = undefined
         ctx.changed(true)
       },
@@ -933,54 +907,22 @@ async function runAgent(
   // 对话的 CLI 能用面板的工具：没有插话协议时取补充（read_user_notes）；有协议自己提问的（Claude、Codex）不用 MCP
   const canWait = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
   let taker: NoteTaker | undefined
+  /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
+  const pendingNotes = new Set<TaskMessage>()
   if (canWait && !def.steer) {
-    const pending = new Set<string>()
     taker = {
-      add: (id) => pending.add(id),
+      add: (msg) => pendingNotes.add(msg),
       read: () => {
-        const mine = task.queue.filter((q) => pending.has(q.id))
+        const mine = [...pendingNotes]
         if (!mine.length) return []
-        pending.clear()
-        task.queue = task.queue.filter((q) => !mine.some((m) => m.id === q.id))
-        for (const q of mine) {
-          // 拿到就算交出去了：和插话一样记进对话，之后的输出另起一条
-          task.messages.push({
-            id: ctx.newId(),
-            role: 'user',
-            agentId: '',
-            step: '',
-            text: q.text,
-            tools: [],
-            ...(q.attachments.length ? { attachments: q.attachments } : {}),
-            at: q.at,
-          })
-        }
+        pendingNotes.clear()
+        // 拿到就算交出去了：之后的输出另起一条，排在用户消息后面
         cur = undefined
         ctx.changed(true)
-        return mine.map((q) => steerNote(withAttachments(q.text, q.attachments), task.mode === 'chat'))
+        return mine.map((m) => steerNote(withAttachments(m.text, m.attachments ?? []), task.mode === 'chat'))
       },
     }
-    ;(noteTakers.get(task.id) ?? noteTakers.set(task.id, new Set()).get(task.id)!).add(taker)
-  }
-  // 回复完要停下来了：把这一轮里排队的要求取出来，和用户刚发的消息一样处理
-  const drainQueue = () => {
-    if (!task.queue.length) return ''
-    const all = task.queue
-    task.queue = []
-    for (const q of all)
-      task.messages.push({
-        id: ctx.newId(),
-        role: 'user',
-        agentId: '',
-        step: '',
-        text: q.text,
-        tools: [],
-        ...(q.attachments.length ? { attachments: q.attachments } : {}),
-        at: q.at,
-      })
-    cur = undefined
-    ctx.changed(true)
-    return all.map((q) => withAttachments(q.text, q.attachments)).join('\n\n')
+    addNoteTaker(task.id, taker)
   }
   // 对话页开着时，回复完停在面板的工具上等下一句：用户发消息直接交回这个进程，不用 --resume。
   // 有插话协议（Command Code、Pi）的对话也要这个工具，只是不用它取补充
@@ -998,17 +940,8 @@ async function runAgent(
     }
     // 用户在这一轮执行中换了 CLI/模型/强度：旧进程不要再等下一句，结束后按新的选择重开
     if (chat && !stillCurrent()) return null
-    // 回复期间还在排队的要求：一起交回去，不用等进程结束
-    const queued = drainQueue()
-    if (queued) {
-      // 上一轮已经回复完，只是还有排队的消息没处理
-      if (!prewarmMode && chat && !op) markTurnDone(task)
-      prewarmMode = false
-      task.prewarming = false
-      task.working = true
-      ctx.changed(true)
-      return queued
-    }
+    // 这一轮没取走的补充：不再挂着等下一句，直接结束这一轮，由调用方马上开始新一轮接着处理
+    if (pendingNotes.size) return null
     task.prewarming = false
     task.awaitingUser = true
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
@@ -1120,6 +1053,11 @@ async function runAgent(
     mcp: orch ? [{ name: 'orch', url: orch.url }] : undefined,
   }).finally(() => {
     finished = true
+    // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
+    if (steerPending) {
+      steerPending = false
+      cur = undefined
+    }
     // 进程先结束了（崩溃、被停掉）：还在等下一句的那次请求也结束，别一直挂着
     cancelWait(task.id)
     orch?.close()
@@ -1130,9 +1068,10 @@ async function runAgent(
       if (!set?.size) steers.delete(task.id)
     }
     if (taker) {
-      const set = noteTakers.get(task.id)
-      set?.delete(taker)
-      if (!set?.size) noteTakers.delete(task.id)
+      removeNoteTaker(task.id, taker)
+      // 这一轮里没取走的补充：消息已经在对话里，记下来让这一轮结束后马上接着处理
+      for (const m of pendingNotes) holdForNextTurn(task.id, m)
+      pendingNotes.clear()
     }
     meter.stop()
     // 进程结束了（完成、停止、超时），还没回答的请求作废
