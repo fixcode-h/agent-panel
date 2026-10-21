@@ -64,7 +64,7 @@ function closeNode(onClick: () => void): HTMLElement {
   btn.title = t('移除')
   btn.setAttribute('aria-label', t('移除'))
   btn.className =
-    'absolute -top-1.5 -right-1.5 grid h-4 w-4 cursor-pointer place-items-center rounded-full border bg-card text-muted hover:bg-sel hover:text-fg'
+    'absolute -top-1.5 -right-1.5 grid h-4 w-4 cursor-pointer place-items-center rounded-full border bg-card text-muted opacity-0 transition-opacity group-hover:opacity-100 hover:bg-sel hover:text-fg'
   btn.innerHTML =
     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" class="h-2.5 w-2.5"><path d="M18 6 6 18M6 6l12 12"/></svg>'
   btn.addEventListener('mousedown', (e) => e.preventDefault())
@@ -82,35 +82,32 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   el.contentEditable = 'false'
   el.dataset.chip = chip.kind
   el.dataset.name = chip.name
+  // 图片卡片：缩略图和文件名排在一行，和文字卡片一样高；删除按钮叠在右上角，位置靠外层定位
   el.className = cn(
-    'mx-0.5 inline-flex max-w-[16rem] items-center gap-1.5 rounded-md border align-middle text-[0.8125rem] leading-[1.7]',
+    'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
     isCommand(chip.kind) ? 'border-accent/35 bg-accent-soft text-accent' : 'border-line-strong bg-field/70 text-fg',
-    // 图片卡片单独包一层，删除按钮才好定位到图的右上角
-    chip.kind === 'image' && preview?.(chip.name) ? 'relative p-0.5' : 'shrink-0 px-1.5',
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   const act = actions?.()
+  el.title = t('按退格键删除')
   if (src) {
-    // 图片直接显示图片本身：点开看大图，右上角删除
+    // 图片：一行高的小缩略图，后面接文件名；点缩略图看大图，鼠标停在卡片上时可点右上角删除
     const img = document.createElement('img')
     img.src = src
-    img.alt = chip.name
-    img.className = 'h-16 w-16 cursor-zoom-in rounded object-cover'
+    img.alt = ''
+    img.className = 'h-[1.25em] w-[1.25em] shrink-0 cursor-zoom-in rounded-sm object-cover'
     img.addEventListener('mousedown', (e) => e.preventDefault())
     img.addEventListener('click', (e) => {
       e.preventDefault()
       act?.preview?.(chip.name)
     })
     el.append(img)
-    el.title = chip.name
-    if (act?.remove) el.append(closeNode(() => act.remove?.(chip.name)))
-    return el
   }
-  el.title = t('按退格键删除')
   const label = document.createElement('span')
   label.className = cn('truncate', isCommand(chip.kind) && 'font-mono')
   label.textContent = isCommand(chip.kind) ? `/${chip.name}` : chip.name
   el.append(label)
+  if (src && act?.remove) el.append(closeNode(() => act.remove?.(chip.name)))
   return el
 }
 

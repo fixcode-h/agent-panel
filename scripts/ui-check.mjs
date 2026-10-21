@@ -343,7 +343,10 @@ try {
   await agentSwitch.waitFor({ timeout: 10000 }).catch(() => errors.push('新建任务：没有「使用项目设置的 Agent」开关'))
   if (await agentSwitch.count()) {
     if ((await agentSwitch.getAttribute('aria-checked')) !== 'true') errors.push('新建任务：开关默认没有勾选')
-    await check(p, '新建任务-Agent开关', [(await agentSwitch.textContent())?.trim()])
+    // 开关只显示图标，Agent 名字放在 title 里
+    if ((await agentSwitch.textContent())?.trim()) errors.push('新建任务：Agent 开关还显示文字')
+    if (!(await agentSwitch.getAttribute('title'))) errors.push('新建任务：Agent 开关没有说明')
+    await check(p, '新建任务-Agent开关')
     // 不勾选后换成 CLI / 模型的选择
     await agentSwitch.click()
     await p.waitForTimeout(300)

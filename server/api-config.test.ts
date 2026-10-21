@@ -268,6 +268,33 @@ test('写回思考强度：匹配到的模型按目录重写，不认识的保�
   assert.equal(run(), false)
 })
 
+test('写回思考强度：Pi 的 models.json 是数组，写布尔 reasoning', () => {
+  const data = {
+    providers: {
+      tokenapi: {
+        models: [
+          { id: 'gpt-6.1-sol' },
+          { id: 'gpt-6.1-sol', name: 'custom', reasoning: true },
+          { id: 'custom/unknown' },
+        ],
+      },
+    },
+  }
+  const efforts = new Map([
+    ['gpt-6.1-sol', ['low', 'medium', 'high', 'xhigh']],
+    ['custom/unknown', []],
+  ])
+  const run = () =>
+    setModelEfforts(data, 'providers.tokenapi.models', 'reasoning', (m) => (efforts.get(m)?.length ? true : undefined))
+  assert.equal(run(), true)
+  assert.deepEqual(data.providers.tokenapi.models[0], { id: 'gpt-6.1-sol', reasoning: true })
+  // 已经有 reasoning 的项保留其他字段
+  assert.deepEqual(data.providers.tokenapi.models[1], { id: 'gpt-6.1-sol', name: 'custom', reasoning: true })
+  // 目录里没有强度（或没匹配到）的模型保持原样
+  assert.deepEqual(data.providers.tokenapi.models[2], { id: 'custom/unknown' })
+  assert.equal(run(), false)
+})
+
 test('写回上下文窗口：匹配到的模型按目录重写，不认识的保持原样', () => {
   const data = {
     provider: {

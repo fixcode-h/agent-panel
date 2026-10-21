@@ -240,28 +240,33 @@ export function pruneModelEntries(data: unknown, at: string, keep: string[]): bo
 }
 
 /**
- * 把模型条目里的思考强度改成 effortsFor 返回的列表；返回有没有改动。
+ * 把模型条目里的思考强度改成 effortsFor 返回的值；返回有没有改动。
+ * 值可以是强度列表（Command Code 的 reasoningEfforts），也可以是布尔（Pi 的 reasoning：这个模型能不能调强度）。
  * effortsFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
  */
 export function setModelEfforts(
   data: unknown,
   at: string,
   key: string,
-  effortsFor: (model: string) => string[] | undefined,
+  effortsFor: (model: string) => string[] | boolean | undefined,
 ): boolean {
   let models: unknown = data
   for (const part of at.split('.')) {
     if (!models || typeof models !== 'object' || Array.isArray(models)) return false
     models = (models as Record<string, unknown>)[part]
   }
-  if (!models || typeof models !== 'object' || Array.isArray(models)) return false
+  if (!models || typeof models !== 'object') return false
   let changed = false
-  for (const [id, entry] of Object.entries(models as Record<string, unknown>)) {
+  // 模型条目可以是对象（键是模型名，例如 Command Code 的 providers.json），也可以是数组（每项有 id，例如 Pi 的 models.json）
+  const entries: [string, unknown][] = Array.isArray(models)
+    ? models.map((entry, i) => [String(i), entry])
+    : Object.entries(models as Record<string, unknown>)
+  for (const [id, entry] of entries) {
     if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
     const rec = entry as Record<string, unknown>
     const model = typeof rec.id === 'string' && rec.id ? rec.id : id
     const efforts = effortsFor(model)
-    if (!efforts || JSON.stringify(rec[key]) === JSON.stringify(efforts)) continue
+    if (efforts === undefined || JSON.stringify(rec[key]) === JSON.stringify(efforts)) continue
     rec[key] = efforts
     changed = true
   }
@@ -375,6 +380,19 @@ export const CliAuth = z.object({
           key: z.string().default('contextWindow'),
           /** 最大输出写进哪个键；不写表示这个 CLI 不接受（Command Code 的 maxOutput 只能收窄，写了没意义） */
           maxOutputKey: z.string().optional(),
+        })
+        .optional(),
+      /**
+       * CLI 只认配置里模型条目自己声明的「能不能调思考强度」时（例如 Pi 的 models.json 的 reasoning），
+       * 按模型目录把这一项写回这个位置；不写表示不处理。
+       */
+      modelReasoning: z
+        .object({
+          file: z.string(),
+          /** 模型条目所在的位置，例如 providers.{provider}.models */
+          at: z.string(),
+          /** 写进模型条目的键名 */
+          key: z.string().default('reasoning'),
         })
         .optional(),
       /**

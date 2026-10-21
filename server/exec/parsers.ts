@@ -16,8 +16,8 @@ export type CliEvent =
   | { type: 'thinking'; text: string; delta?: boolean }
   /** id 用来把之后的 tool_result 对应到这次调用 */
   | { type: 'tool'; tool: ToolUse; file?: { path: string; add: number; del: number }; id?: string }
-  /** 还在执行的工具新输出的一段（命令的输出边跑边显示） */
-  | { type: 'tool_delta'; id: string; text: string }
+  /** 还在执行的工具新输出的一段（命令的输出边跑边显示）；snapshot 为真时 text 是到目前为止的全部输出 */
+  | { type: 'tool_delta'; id: string; text: string; snapshot?: boolean }
   /** CLI 改了文件（还没有逐个文件的统计），面板去 git 里重新读一次改动 */
   | { type: 'files_changed' }
   /** 这一轮在 CLI 会话里的位置：Codex 的 turn id，Claude Code 最后一条回复的 uuid；分叉、撤回时用 */
@@ -614,6 +614,19 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
               failed: !!g('failed'),
             })
           break
+        // 命令执行中推送的输出：`text` 是新增的一段（Codex 的增量），`snapshot` 是到目前为止的全部输出
+        // （Pi 的 partialResult），两种都发成 tool_delta，由接收方按快照处理
+        case 'tool_delta': {
+          const id = str(g('id'))
+          // 快照是完整的工具结果对象时取正文：Pi 的 partialResult 是 { content: [{ type: 'text', text }] }
+          const text = str(e.snapshot === true ? toolText(g('text')) : g('text'))
+          if (!id) break
+          if (text)
+            out.push(
+              e.snapshot === true ? { type: 'tool_delta', id, text, snapshot: true } : { type: 'tool_delta', id, text },
+            )
+          break
+        }
         case 'usage': {
           const u = {
             context: num(g('context')),

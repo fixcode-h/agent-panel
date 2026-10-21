@@ -39,6 +39,10 @@ function summarize(events: CliEvent[]) {
       const tool = tools.find((x) => x.id === e.id)
       if (tool) Object.assign(tool, { output: e.output, failed: e.failed })
       if (e.patch) patch = e.patch
+    } else if (e.type === 'tool_delta') {
+      // 快照是到目前为止的全部输出，其余是新增的一段
+      const tool = tools.find((x) => x.id === e.id)
+      if (tool) tool.output = e.snapshot ? e.text : (tool.output ?? '') + e.text
     } else if (e.type === 'usage') {
       usage.input += e.addInput ?? 0
       usage.output += e.addOutput ?? 0
@@ -285,6 +289,13 @@ test('Pi：按配置文件里的事件映射解析会话事件', () => {
   assert.deepEqual(s.files, [{ path: 'notes.txt', add: 2, del: 1 }])
   assert.equal(s.tools[2].failed, true)
   assert.match(s.tools[2].output ?? '', /Command exited with code 1/)
+  // 命令执行中的输出：Pi 的 partialResult 是累计快照，按快照发出来，面板能在窗口里实时看到
+  const live = fixture('pi-json.jsonl')
+    .flatMap((o) => parse(o))
+    .filter((e) => e.type === 'tool_delta')
+  assert.deepEqual(live, [
+    { type: 'tool_delta', id: 'call_bash', text: 'cat: missing.txt: No such file or directory\n', snapshot: true },
+  ])
   assert.deepEqual(
     {
       input: s.usage.input,

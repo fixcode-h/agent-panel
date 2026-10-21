@@ -144,10 +144,7 @@ export const EN_TASKS: Record<string, string> = {
   '无 Agent，直接用 CLI': 'No Agent, use the CLI directly',
   '无 Agent': 'No Agent',
   '使用项目设置的 Agent': 'Use the project Agent',
-  '不用 Agent': 'No Agent',
   '默认 Agent': 'Default Agent',
-  'Agent 已停用': 'Agent disabled',
-  '项目没设置 Agent': 'No project Agent',
   '直接和 CLI 对话，不带 Agent 的角色设定（点一下改回用项目设置的 Agent）':
     'Chat with the CLI directly, without the Agent role (click to use the project Agent again)',
   '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用 Agent）':

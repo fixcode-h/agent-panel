@@ -265,6 +265,19 @@
       },
       {
         "when": {
+          "type": "tool_execution_update"
+        },
+        "emit": [
+          {
+            "type": "tool_delta",
+            "id": "$.toolCallId",
+            "text": "$.partialResult",
+            "snapshot": true
+          }
+        ]
+      },
+      {
+        "when": {
           "type": "tool_execution_end",
           "toolName": "edit"
         },
@@ -349,6 +362,11 @@
         "at": "providers",
         "baseUrl": "baseUrl",
         "apiKey": "apiKey"
+      },
+      "modelReasoning": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers.{provider}.models",
+        "key": "reasoning"
       },
       "modelLimits": {
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",

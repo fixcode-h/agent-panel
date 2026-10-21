@@ -26,7 +26,7 @@ import {
   upgradeBuiltinAgents,
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
-import { LEGACY_AGENT_FIELDS } from '../shared/builtin/legacy.ts'
+import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
@@ -338,6 +338,49 @@ test('没改过的旧「通用约束」「任务 Agent」跟着升级到新规�
   // 用户改过的保留原样
   const edited = { ...old('rules', 'mine'), instructions: `${LEGACY_AGENT_FIELDS.rules.instructions}\n我自己加的一条` }
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: [edited] }, ops)).length, 0)
+})
+
+test('停在上一版的「通用约束」「代码侦察」也能升级：补回合推进和派工失败的交付底线', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  // 上一版已经发布过的副本：上一版=现在线上用户手里那份（见 LEGACY_AGENT_FIELDS_MORE）
+  const prev = (key: 'rules' | 'explorer', id: string) => ({
+    ...agents.find((a) => a.id === key)!,
+    ...LEGACY_AGENT_FIELDS_MORE[key][0],
+    id,
+    origin: `builtin:${key}`,
+    params: [],
+    skills: [],
+  })
+  const state = {
+    agents: [prev('rules', 'local-rules'), prev('explorer', 'local-explorer')],
+    categories: [],
+    tags: [],
+    workflows: [],
+  }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 2, '两个上一版副本都升级')
+  const rules = updated.find((a) => a.name === '通用约束')!
+  assert.match(rules.instructions, /## 回合怎么推进/, '补上一句就停、报错不交结果的规则')
+  assert.match(rules.instructions, /我先读取/, '点名只说一句「我先读取…」就结束回合的写法')
+  assert.match(rules.instructions, /共用工作区/, '更早一版的规则不能被覆盖掉')
+  const explorer = updated.find((a) => a.name === '代码侦察')!
+  assert.match(explorer.instructions, /不要空手结束/, '派工失败也要交出已确认的部分')
+  assert.match(explorer.instructions, /不要重复读/, '不重复读父对话已经查过的资料')
+
+  // 再启动：已经不是任何旧指纹，不再改
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
+  // 已经是最新定义的副本同样不动
+  const current = {
+    ...prev('explorer', 'now'),
+    ...BUILTIN_AGENTS.find((b) => b.key === 'explorer')!.agent,
+  }
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: [current] }, ops)).length, 0)
 })
 
 test('已合并的内置 Agent 在本机还有时补一句说明，重复启动不重复加', async () => {
