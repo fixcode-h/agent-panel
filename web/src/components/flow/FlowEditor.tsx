@@ -34,6 +34,7 @@ import type { Check } from '@/lib/readiness'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/input'
+import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { menuItem } from '@/components/ui/menu'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { FlowCanvas, smartFit } from './FlowCanvas'
@@ -60,6 +61,8 @@ function Editor({
   // 右边的属性栏默认收起，把宽度让给画布；选中节点或连线时自动打开。
   // 还没有节点的新流程默认打开，那里有怎么连线的说明和就绪检查
   const [inspector, setInspector] = useState(() => !entryFlow(w).nodes.some((n) => n.kind === 'agent'))
+  // 属性栏可以拖宽：节点的字段和说明比较长，默认比原来的 320 宽一些；拖动时至少给画布留 480
+  const pane = usePaneWidth('flow-inspector', 380, 280, () => Math.min(720, Math.max(280, window.innerWidth - 480)))
   useEffect(() => {
     if (selected && selected !== START && selected !== END) setInspector(true)
   }, [selected])
@@ -361,80 +364,84 @@ function Editor({
       </div>
       <aside
         aria-label={t('属性')}
+        style={{ '--flow-inspector-w': `${pane.width}px` } as React.CSSProperties}
         className={cn(
-          'shrink-0 overflow-y-auto border-t bg-bg lg:w-[320px] lg:border-t-0 lg:border-l',
+          'relative shrink-0 overflow-y-auto border-t bg-bg lg:flex lg:flex-col lg:overflow-hidden lg:w-[var(--flow-inspector-w)] lg:border-t-0 lg:border-l',
           !inspector && 'lg:hidden',
         )}
       >
-        {node ? (
-          <NodeInspector
-            key={node.id}
-            w={w}
-            flow={flow}
-            node={node}
-            main={main}
-            team={team}
-            setFlow={setFlow}
-            onSelect={setSelected}
-          />
-        ) : selEdge ? (
-          <div className="flex flex-col gap-4 p-5">
-            <h3 className="font-serif text-[1.0625rem] font-semibold">{t('连线')}</h3>
-            <p className="text-[0.8125rem] leading-relaxed text-muted">
-              {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
-            </p>
-            {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
-              <div className="flex flex-col gap-1.5">
-                <Label
-                  hint={t(
-                    '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
-                    { from: name(selEdge.from) },
-                  )}
-                >
-                  {t('条件')}
-                </Label>
-                <Select
-                  aria-label={t('条件')}
-                  value={selEdge.when ?? ''}
-                  onChange={(e) =>
-                    setFlow({
-                      ...flow,
-                      edges: flow.edges.map((x) =>
-                        x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
-                      ),
-                    })
-                  }
-                  options={[
-                    { value: '', label: t('总是') },
-                    { value: 'pass', label: t('结论是「通过」时') },
-                    { value: 'fail', label: t('结论是「不通过」时') },
-                  ]}
-                />
-              </div>
-            )}
-            <Button
-              variant="danger-outline"
-              className="self-start"
-              onClick={() => {
-                setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
-                setSelected('')
-              }}
-            >
-              <Trash2 className="h-4 w-4" />
-              {t('删除连线')}
-            </Button>
-          </div>
-        ) : (
-          <FlowInspector
-            w={w}
-            flow={flow}
-            atEnd={selected === END}
-            checks={checks}
-            setFlow={setFlow}
-            patch={onChange}
-            onSwitchFlow={switchFlow}
-          />
-        )}
+        <ResizeHandle pane={pane} label={t('拖动调整属性栏的宽度')} className="hidden lg:block" />
+        <div className="min-h-0 lg:flex-1 lg:overflow-y-auto">
+          {node ? (
+            <NodeInspector
+              key={node.id}
+              w={w}
+              flow={flow}
+              node={node}
+              main={main}
+              team={team}
+              setFlow={setFlow}
+              onSelect={setSelected}
+            />
+          ) : selEdge ? (
+            <div className="flex flex-col gap-4 p-5">
+              <h3 className="font-serif text-[1.0625rem] font-semibold">{t('连线')}</h3>
+              <p className="text-[0.8125rem] leading-relaxed text-muted">
+                {t('「{from}」完成后才会开始「{to}」。', { from: name(selEdge.from), to: name(selEdge.to) })}
+              </p>
+              {selEdge.from !== START && flow.nodes.find((n) => n.id === selEdge.from)?.kind === 'agent' && (
+                <div className="flex flex-col gap-1.5">
+                  <Label
+                    hint={t(
+                      '有条件时，「{from}」做完要给出结论（通过 / 不通过），只走对应的线；没走到的节点整段跳过。例如测试不通过时接到修复节点。',
+                      { from: name(selEdge.from) },
+                    )}
+                  >
+                    {t('条件')}
+                  </Label>
+                  <Select
+                    aria-label={t('条件')}
+                    value={selEdge.when ?? ''}
+                    onChange={(e) =>
+                      setFlow({
+                        ...flow,
+                        edges: flow.edges.map((x) =>
+                          x.id === selEdge.id ? { ...x, when: e.target.value as 'pass' | 'fail' | '' } : x,
+                        ),
+                      })
+                    }
+                    options={[
+                      { value: '', label: t('总是') },
+                      { value: 'pass', label: t('结论是「通过」时') },
+                      { value: 'fail', label: t('结论是「不通过」时') },
+                    ]}
+                  />
+                </div>
+              )}
+              <Button
+                variant="danger-outline"
+                className="self-start"
+                onClick={() => {
+                  setFlow({ ...flow, edges: flow.edges.filter((e) => e.id !== selEdge.id) })
+                  setSelected('')
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                {t('删除连线')}
+              </Button>
+            </div>
+          ) : (
+            <FlowInspector
+              w={w}
+              flow={flow}
+              atEnd={selected === END}
+              checks={checks}
+              setFlow={setFlow}
+              patch={onChange}
+              onSwitchFlow={switchFlow}
+            />
+          )}
+        </div>
       </aside>
     </div>
   )

@@ -236,6 +236,7 @@ export const EN_FLOW: Record<string, string> = {
   不限: 'No limit',
   收起属性栏: 'Hide properties panel',
   显示属性栏: 'Show properties panel',
+  拖动调整属性栏的宽度: 'Drag to resize the properties panel',
   推荐的下一步: 'Suggested next steps',
   '还可以添加整理好的内置工作流，「默认」工作流做完后会推荐用它们接着做':
     'You can also add the curated built-in workflows. The Default workflow recommends them as next steps when it finishes',
