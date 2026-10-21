@@ -337,6 +337,8 @@ export const EN_SERVER: Record<string, string> = {
   '这个面板打开了访问令牌。Windows 上右键托盘图标选「打开面板」；其他系统请打开终端里显示的带 token 的地址。':
     'This panel requires an access token. On Windows, right-click the tray icon and choose Open panel; elsewhere, open the address with the token shown in the terminal.',
   '正在自动续接会话重试（第 {n}/{max} 次）…': 'Resuming the session automatically (attempt {n}/{max})…',
+  '已自动续接会话（第 {n} 次），从中断的地方继续了。':
+    'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   服务出错: 'Server error',
   连接超时: 'connection timed out',

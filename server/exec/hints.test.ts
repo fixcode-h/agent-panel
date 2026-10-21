@@ -4,7 +4,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
-import { describeCompaction, failureHints } from './runner.ts'
+import type { TaskMessage } from '../../shared/schema.ts'
+import { describeCompaction, failureHints, settleNetNotes } from './runner.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -37,6 +38,25 @@ test('Command Code 的响应流中途断开：按断流处理，给出续接说�
   const hints = failureHints('Failed to process successful response', { id: 'commandcode', name: 'Command Code' })
   assert.equal(hints.length, 1)
   assert.match(hints[0], /连接中途断开/)
+})
+
+test('自动续接成功后，断开时的报错不再显示成错误', () => {
+  const msg: TaskMessage = {
+    id: 'n1',
+    role: 'system',
+    agentId: '',
+    step: '',
+    text: 'Command Code 执行失败：\n原始输出：\nFailed to process successful response\n\n正在自动续接会话重试（第 1/2 次）…',
+    tools: [],
+    at: '',
+    error: true,
+  }
+  settleNetNotes([{ msg, base: 'Command Code 执行失败：\n原始输出：\nFailed to process successful response', n: 1 }])
+  assert.equal(msg.error, undefined, '这一轮最终成功了，不能一直挂着红色错误')
+  assert.equal(msg.transient, true, '继续执行时要能去掉')
+  assert.match(msg.text, /Failed to process successful response/, '断开的原因留着，方便查')
+  assert.match(msg.text, /已自动续接会话（第 1 次）/)
+  assert.doesNotMatch(msg.text, /正在自动续接/)
 })
 
 test('模型接口拒绝聊天记录：说明换模型后旧会话接不上', () => {
