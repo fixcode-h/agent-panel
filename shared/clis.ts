@@ -284,7 +284,7 @@ export const CLIS: CliDefinition[] = [
     docs: ['CLAUDE.md', '.claude/CLAUDE.md', 'CLAUDE.local.md'],
     globalDoc: '${CLAUDE_CONFIG_DIR:-~/.claude}/CLAUDE.md',
     docsNote: t(
-      'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 CLI 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
+      'Claude Code 每次启动读 CLAUDE.md 和 .claude/CLAUDE.md；CLAUDE.local.md 是个人的说明，一般不提交。想和其他 Agent 共用 AGENTS.md，可以在 CLAUDE.md 里写一行 @AGENTS.md。',
     ),
     skills: { user: ['~/.claude/skills'], repo: ['.claude/skills'] },
     commands: { user: ['~/.claude/commands'], repo: ['.claude/commands'], format: 'md', prefix: '' },
@@ -629,7 +629,7 @@ export function registerCliSpecs(specs: unknown[]): string[] {
       continue
     }
     if (getCli(p.data.id)) {
-      errors.push(`${id}：${t('和已有的 CLI 重名')}`)
+      errors.push(`${id}：${t('和已有的 Agent 重名')}`)
       continue
     }
     CLIS.push({ ...specToDefinition(p.data), user: true })

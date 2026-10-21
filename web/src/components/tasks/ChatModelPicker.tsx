@@ -123,7 +123,7 @@ export function useRunAuthor(run: ChatRun | undefined) {
 /** 对话时选 CLI、模型和思考强度；模型默认的那项标「（默认）」，强度只显示 CLI 的英文取值 */
 export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange: (v: ChatRun) => void }) {
   const { usable, defCli, cli, def, defModel, defEffort, run } = useChatRun(value)
-  if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 CLI')}</span>
+  if (!usable.length) return <span className="px-2 text-[0.75rem] text-subtle">{t('没有可用的 Agent')}</span>
   const clisOpts = usable.map((c) => ({
     value: c.id,
     label: c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name,
@@ -134,7 +134,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
   return (
     <div className="flex min-w-0 items-center">
       <ChipSelect
-        title={t('对话用的 CLI')}
+        title={t('对话用的 Agent')}
         value={cli}
         options={clisOpts}
         // 换了 CLI，模型和思考强度回到那个 CLI 的默认

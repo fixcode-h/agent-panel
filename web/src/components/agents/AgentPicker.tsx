@@ -51,7 +51,7 @@ export function AgentPicker({
               <span className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-field text-xs text-subtle">
                 —
               </span>
-              <span className="truncate">{noneLabel || t('无角色，直接用 CLI')}</span>
+              <span className="truncate">{noneLabel || t('无角色，直接用 Agent')}</span>
             </PopoverClose>
           )}
           {groups.map((g) => (

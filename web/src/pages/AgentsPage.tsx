@@ -128,7 +128,7 @@ export function AgentsPage() {
     ) : installed ? (
       <StatusDot tone="success" label={t('就绪')} />
     ) : (
-      <StatusDot tone="warning" label={t('CLI 未安装')} />
+      <StatusDot tone="warning" label={t('Agent 未安装')} />
     )
   }
 
@@ -153,7 +153,7 @@ export function AgentsPage() {
               size="sm"
               variant="secondary"
               onClick={() => setAssist(true)}
-              title={t('描述需求，让本机 CLI 生成角色')}
+              title={t('描述需求，让本机 Agent 生成角色')}
             >
               <Sparkles className="h-4 w-4 text-accent" />
               {t('AI 创建')}
@@ -166,7 +166,7 @@ export function AgentsPage() {
         footer={
           <div className="flex flex-col gap-2">
             <div className="flex items-center text-xs text-subtle">
-              {t('默认 CLI')}
+              {t('默认 Agent')}
               <button
                 onClick={recheck}
                 disabled={checking}
@@ -193,7 +193,7 @@ export function AgentsPage() {
                   onClick={() => openSettings(`cli:${cliToEnable(clis, settings).id}`)}
                   className="cursor-pointer text-left text-[0.8125rem] text-accent hover:underline"
                 >
-                  {t('还没有启用 CLI，去设置里启用')}
+                  {t('还没有启用 Agent，去设置里启用')}
                 </button>
               )
             )}
@@ -276,7 +276,7 @@ export function AgentsPage() {
       ) : (
         !loading && (
           <DetailEmpty icon={<Bot className="h-6 w-6" />} title={t('创建第一个角色')}>
-            <p>{t('角色是「CLI + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。')}</p>
+            <p>{t('角色是「Agent + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。')}</p>
             <Button className="mt-5" onClick={() => create()}>
               <Plus className="h-4 w-4" />
               {t('新建角色')}

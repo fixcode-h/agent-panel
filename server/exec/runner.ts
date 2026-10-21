@@ -482,7 +482,7 @@ async function runAgent(
   const run = agentRun(agent, settings)
   const cliId = run.cli
   const def = getCli(cliId)
-  if (!def) return { ok: false, error: t('未知的 CLI：{cli}', { cli: cliId }) }
+  if (!def) return { ok: false, error: t('未知的 Agent：{cli}', { cli: cliId }) }
   const cs = cliSettings(settings, cliId)
   if (!cs.enabled) return { ok: false, error: t('{cli} 在设置里被停用了', { cli: def.name }) }
   if (!agent.enabled) return { ok: false, error: t('角色「{name}」已停用', { name: agent.name }) }

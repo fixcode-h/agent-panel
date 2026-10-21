@@ -261,12 +261,12 @@ export const EN_DESIGN: Record<string, string> = {
 
   // 设置
   图片生成: 'Image generation',
-  '图片生成 CLI': 'Image generation CLI',
+  '图片生成 Agent': 'Image generation agent',
   'UI 设计里生成图片时使用。目前只有 Codex 内置了生图工具，用 ChatGPT 账号登录即可，不需要 API Key。':
     'Used to generate images in UI Design. Only Codex has a built-in image tool for now; signing in with a ChatGPT account is enough, no API key needed.',
   图片生成模型: 'Image generation model',
-  '调用生图工具的模型，不选时用这个 CLI 的高档模型':
-    'The model that calls the image tool. Defaults to this CLI’s high-tier model',
+  '调用生图工具的模型，不选时用这个 Agent 的高档模型':
+    'The model that calls the image tool. Defaults to this agent’s high-tier model',
 
   // 服务端
   '浏览器扩展没有连上：请确认浏览器开着，并装好了 Agent 面板扩展':
@@ -277,8 +277,8 @@ export const EN_DESIGN: Record<string, string> = {
   浏览器里生成失败: 'Generation failed in the browser',
   浏览器里没有取到图片: 'No images were found in the browser',
   '不是能识别的图片（支持 PNG、JPEG、WebP、GIF）': 'Unrecognized image (PNG, JPEG, WebP and GIF are supported)',
-  '{cli} 不能生成图片，请在设置的「默认 CLI」里换成 Codex':
-    '{cli} can’t generate images. Switch to Codex under “Default CLI” in settings',
+  '{cli} 不能生成图片，请在设置的「默认 Agent」里换成 Codex':
+    '{cli} can’t generate images. Switch to Codex under “Default agent” in settings',
   '{error}。请确认已安装 {cli}': '{error}. Make sure {cli} is installed',
   '{cli} 没有生成图片': '{cli} didn’t generate any image',
   '检查还有这些问题：': 'The check still found these issues:',
@@ -408,8 +408,8 @@ export const EN_DESIGN: Record<string, string> = {
   '运行模式：像游戏里一样点按钮看效果': 'Play mode: click buttons like in the game',
   '运行模式 · 按 Esc 退出': 'Play mode · press Esc to exit',
   写入: 'Writing',
-  'CLI 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。':
-    "With a CLI, each image runs in its own process, at most this many at once. In the browser, only this many conversations are opened in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left); further images queue up and reuse whichever conversation is free.",
+  'Agent 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。':
+    "With an agent, each image runs in its own process, at most this many at once. In the browser, only this many conversations are opened in the selected Gemini / ChatGPT tab (shown in the site's chat list on the left); further images queue up and reuse whichever conversation is free.",
   'AI 有问题时问我': 'Ask me when the AI has a question',
   'AI 有问题时会问你，等你回答再继续（点一下改成让 AI 自己选）':
     'The AI asks you and waits for your answer (click to let the AI decide on its own)',
@@ -459,21 +459,21 @@ export const EN_DESIGN: Record<string, string> = {
   自定义命令: 'Custom commands',
   Skill: 'Skills',
   '↑↓ 选择，回车确认': '↑↓ to select, Enter to confirm',
-  '正在读取 CLI 的命令和 Skill…': "Loading the CLI's commands and skills…",
+  '正在读取 Agent 的命令和 Skill…': "Loading the agent's commands and skills…",
   会话: 'Conversation',
   '{dirs} 里的 Skill；项目里的在项目设置里看': 'Skills in {dirs}; project skills are in project settings',
   已装插件: 'installed plugins',
   '有 {n} 份配置读不进来': "{n} config file(s) couldn't be loaded",
-  '添加其他 CLI': 'Add another CLI',
-  '面板按配置文件调用 CLI：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。':
-    'The panel runs CLIs from config files: how to build the command, how to parse its output, and where skills and instruction files live. Put a JSON config in the folder below and click Reload. No code changes needed.',
+  '添加其他 Agent': 'Add another agent',
+  '面板按配置文件调用 Agent：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。':
+    'The panel runs agents from config files: how to build the command, how to parse its output, and where skills and instruction files live. Put a JSON config in the folder below and click Reload. No code changes needed.',
   配置格式: 'Config format',
   打开目录: 'Open folder',
   重新读取: 'Reload',
-  '和已有的 CLI 重名': 'has the same id as an existing CLI',
+  '和已有的 Agent 重名': 'has the same id as an existing agent',
   '{cli} 没有完成这一轮就退出了': '{cli} exited before finishing this turn',
   '检查还有问题，正在接着改': 'The check found issues, still fixing',
-  '{cli} 用不了设计工具，请换一个 CLI': '{cli} cannot use the design tools. Please switch to another CLI',
+  '{cli} 用不了设计工具，请换一个 Agent': '{cli} cannot use the design tools. Please switch to another agent',
   '{cli} 连不上设计工具，请升级到最新版：{detail}':
     '{cli} could not connect to the design tools. Please update it to the latest version: {detail}',
   '和另外 {n} 个图标一起生成': 'Generating together with {n} other icons',

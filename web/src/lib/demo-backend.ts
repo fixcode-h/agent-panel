@@ -790,7 +790,7 @@ function clis(): CliStatus[] {
 // 模拟安装 / 卸载：几秒内逐行输出，然后切换安装状态
 const installJobs = new Map<string, CliInstallJob>()
 function cliAction(id: string, action: CliInstallJob['action']) {
-  const def = getCli(id) ?? fail('未知的 CLI')
+  const def = getCli(id) ?? fail('未知的 Agent')
   if ([...installJobs.values()].some((j) => j.status === 'running')) fail('有一个安装 / 卸载还在进行，请等它完成')
   const job: CliInstallJob = {
     id: `demo-${crypto.randomUUID()}`,

@@ -190,7 +190,7 @@ export function modelCatalogApi() {
     const settings = await getSettings()
     const cli = lookupCli(settings, job.cli)
     const def = getCli(cli)
-    if (!def) return fail(job, t('没有可用的 CLI，请先在设置里安装并启用'))
+    if (!def) return fail(job, t('没有可用的 Agent，请先在设置里安装并启用'))
     const cs = cliSettings(settings, cli)
     if (!cs.enabled) return fail(job, t('{cli} 在设置里被停用了', { cli: def.name }))
     const picked = agentRun({ cli, model: settings.assist.model, effort: '' }, settings)
@@ -280,9 +280,9 @@ export function modelCatalogApi() {
       if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
       const settings = await getSettings()
       if (!settings.modelCatalog.aiLookup)
-        return c.json({ error: t('模型信息补全已关闭，请先在「设置 · CLI」里打开') }, 400)
+        return c.json({ error: t('模型信息补全已关闭，请先在「设置 · Agent」里打开') }, 400)
       const input = p.data
-      if (input.cli && !getCli(input.cli)) return c.json({ error: t('未知的 CLI：{cli}', { cli: input.cli }) }, 400)
+      if (input.cli && !getCli(input.cli)) return c.json({ error: t('未知的 Agent：{cli}', { cli: input.cli }) }, 400)
       const job: Job = {
         id: randomUUID(),
         model: input.model,

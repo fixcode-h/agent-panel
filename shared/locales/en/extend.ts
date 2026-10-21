@@ -19,8 +19,8 @@ export const EN_EXTEND: Record<string, string> = {
   '把可变的部分做成参数暴露出去：对话时用默认值（没有默认值的先问你），工作流节点上可以直接改。同一个角色换个参数就能走不同的做法。':
     'Expose the parts that vary as parameters: chats use the defaults (and ask you for ones without a default), and workflow nodes can change them. The same role can then work differently depending on the parameters.',
   'Skill 与开场白': 'Skills and starters',
-  '执行时提醒它优先用这些 Skill。Skill 本身装在 CLI 里，在「Skills 与命令」页面管理。':
-    'Reminds the agent to prefer these skills. Skills live in the CLI and are managed on the “Skills & commands” page.',
+  '执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills 与命令」页面管理。':
+    'Reminds the agent to prefer these skills. Skills live in the agent and are managed on the “Skills & commands” page.',
   开场白: 'Starters',
   '常用的要求，和它对话时显示在输入框上方，点一下就填进去。':
     'Common requests shown above the input when chatting with it; click one to fill it in.',
@@ -28,8 +28,8 @@ export const EN_EXTEND: Record<string, string> = {
   '按参数默认值展开，包含引入的角色和 Skill 提示。':
     'Expanded with default parameter values, including included roles and skill hints.',
   被这些角色引入: 'Included by',
-  '当前 CLI 的用户目录里没有这个 Skill（可能在项目里或插件里）':
-    "Not in the current CLI's user folder (it may come from the project or a plugin)",
+  '当前 Agent 的用户目录里没有这个 Skill（可能在项目里或插件里）':
+    "Not in the current agent's user folder (it may come from the project or a plugin)",
   '去掉 {name}': 'Remove {name}',
   '添加 Skill': 'Add skill',
   '搜索，或输入 Skill 名后回车': 'Search, or type a skill name and press Enter',
@@ -57,8 +57,8 @@ export const EN_EXTEND: Record<string, string> = {
   默认值: 'Default',
   '选的时候看的提示，例如：严格模式会逐行检查': 'Hint shown when choosing, e.g. Strict checks every line',
   添加参数: 'Add parameter',
-  '用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着角色的档位。':
-    "Uses this tier's model and effort on the default CLI ({cli}). Follows the role's tier until changed.",
+  '用默认 Agent（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着角色的档位。':
+    "Uses this tier's model and effort on the default agent ({cli}). Follows the role's tier until changed.",
   模型档位: 'Model tier',
   失败自动重试: 'Retry on failure',
   次: 'times',
@@ -79,8 +79,8 @@ export const EN_EXTEND: Record<string, string> = {
   '还没有标签，输入名字新建；也可以在设置里管理': 'No tags yet. Type a name to create one, or manage them in Settings',
   按标签筛选: 'Filter by tag',
   '请先选择参数：{list}': 'Choose parameters first: {list}',
-  '节点都用默认 CLI 执行，{cli} 未安装或已停用':
-    'Nodes run on the default CLI, and {cli} is not installed or is disabled',
+  '节点都用默认 Agent 执行，{cli} 未安装或已停用':
+    'Nodes run on the default agent, and {cli} is not installed or is disabled',
   '{names} 已停用': '{names} disabled',
   节点参数已填写: 'Node parameters set',
   '这些节点还有必填参数没填：{names}': 'These nodes have required parameters not set: {names}',
@@ -104,7 +104,7 @@ export const EN_EXTEND: Record<string, string> = {
   '装好了 {n} 项': 'Installed {n} item(s)',
   都已经是最新的了: 'Everything is up to date',
   装到: 'Install to',
-  '所有 CLI 共用': 'Shared by all CLIs',
+  '所有 Agent 共用': 'Shared by all agents',
   '只装没有的，已经装了的不动': 'Only installs missing ones; installed ones are left alone',
   安装全部未装的: 'Install all missing',
   '另有 {n} 个文件': '+{n} files',
@@ -112,8 +112,8 @@ export const EN_EXTEND: Record<string, string> = {
   '已添加「{name}」，新建了 {n} 个角色': 'Added “{name}” and created {n} role(s)',
   '已添加「{name}」': 'Added “{name}”',
   内置工作流: 'Built-in workflows',
-  '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 CLI。':
-    'Ready-made workflows for everyday development, UE / P4 and the art asset pipeline. Adding one also creates the roles it uses (existing ones are reused); bundled skills those roles reference are installed into the CLI automatically when they run.',
+  '按日常开发、UE / P4 和美术资产链整理好的工作流。添加时会一起建好用到的角色（已经有的直接复用），角色引用的自带 Skill 在执行时自动装进 Agent。':
+    'Ready-made workflows for everyday development, UE / P4 and the art asset pipeline. Adding one also creates the roles it uses (existing ones are reused); bundled skills those roles reference are installed into the agent automatically when they run.',
   已添加: 'Added',
   '{n} 步': '{n} steps',
   '将新建 {n} 个角色': 'will create {n} role(s)',
@@ -126,8 +126,8 @@ export const EN_EXTEND: Record<string, string> = {
   添加内置工作流: 'Add built-in workflows',
   '已添加 {n} 个角色': 'Added {n} roles',
   内置角色: 'Built-in roles',
-  '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 CLI。':
-    'Roles organized for planning, development, quality, docs and delivery, UE, and art. They all include “Common rules”. They are created only when you click Add, and the bundled skills they use are installed into the CLI when they run.',
+  '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 Agent。':
+    'Roles organized for planning, development, quality, docs and delivery, UE, and art. They all include “Common rules”. They are created only when you click Add, and the bundled skills they use are installed into the agent when they run.',
   全部添加: 'Add all',
   添加内置角色: 'Add built-in roles',
   还可以添加整理好的内置角色: 'You can also add ready-made built-in roles',
@@ -135,7 +135,7 @@ export const EN_EXTEND: Record<string, string> = {
   '删除角色「{name}」？': 'Delete role "{name}"?',
   '工作流还在用它时不能删，先改掉或删除那些工作流。':
     "It can't be deleted while a workflow uses it. Change or delete those workflows first.",
-  '没有启用，先在这个 CLI 的设置里启用': 'Not enabled. Enable it in this CLI’s settings first',
+  '没有启用，先在这个 Agent 的设置里启用': 'Not enabled. Enable it in this agent’s settings first',
   未启用: 'Not enabled',
   通用角色: 'Shared role',
   '工作流里任何角色执行时都可以把子任务派给它，不用写进工作流。':

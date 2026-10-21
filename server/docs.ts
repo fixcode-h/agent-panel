@@ -173,7 +173,7 @@ export function docsApi(deps: { projects: { get(id: string): Promise<Project | n
 
   /** 开始一次优化：检查 CLI 能用，在 dir 里只读运行，结果用 /doc-jobs 查 */
   async function start(c: Context, input: RunInput, dir: string) {
-    if (!getCli(input.cli)) return bad(c, t('未知的 CLI：{cli}', { cli: input.cli }))
+    if (!getCli(input.cli)) return bad(c, t('未知的 Agent：{cli}', { cli: input.cli }))
     if (!cliSettings(await getSettings(), input.cli).enabled)
       return bad(c, t('{cli} 在设置里被停用了', { cli: getCli(input.cli)!.name }))
     const job = {

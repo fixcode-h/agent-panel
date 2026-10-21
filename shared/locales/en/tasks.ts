@@ -136,22 +136,22 @@ export const EN_TASKS: Record<string, string> = {
     'With a workflow selected, it runs along that workflow’s flow; without one you chat with the role directly.',
   '描述要做的事，Agent 会按工作流分工完成': 'Describe what to do and the Agents will split it up by the workflow',
   改回直接对话: 'Back to a direct chat',
-  '对话用的 CLI': 'CLI to chat with',
-  '没有可用的 CLI': 'No CLI available',
+  '对话用的 Agent': 'Agent to chat with',
+  '没有可用的 Agent': 'No agent available',
   开始执行: 'Start',
   '开始执行（Enter）': 'Start (Enter)',
   '松开鼠标，把文件附到要求里': 'Drop to attach files to your request',
-  '无角色，直接用 CLI': 'No role, use the CLI directly',
+  '无角色，直接用 Agent': 'No role, use the agent directly',
   无角色: 'No role',
   使用项目设置的角色: 'Use the project role',
-  '直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）':
-    'Chat with the CLI directly, without the role’s instructions (click to use the project role again)',
+  '直接和 Agent 对话，不带角色的角色设定（点一下改回用项目设置的角色）':
+    'Chat with the agent directly, without the role’s instructions (click to use the project role again)',
   '这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）':
     'This chat uses “{name}” with its instructions and parameters and cannot be changed once started (click to use no role)',
-  '项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）':
-    'The project role was deleted or disabled, so this chat goes straight to the CLI (click to use no role)',
-  '项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
-    'The project is set to “No role”, so this chat goes straight to the CLI; pick a role in the project settings to use a role (click to use no role)',
+  '项目设置的角色已删除或停用，这个对话直接和 Agent 对话（点一下改成不用角色）':
+    'The project role was deleted or disabled, so this chat goes straight to the agent (click to use no role)',
+  '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）':
+    'The project is set to “No role”, so this chat goes straight to the agent; pick a role in the project settings to use a role (click to use no role)',
   子对话: 'Sub-conversation',
   关闭子对话: 'Close sub-conversation',
   '子对话 {n}': 'Sub-conversations ({n})',
@@ -242,7 +242,7 @@ export const EN_TASKS: Record<string, string> = {
   聊天: 'Chat',
   任务标题: 'Task title',
   双击重命名: 'Double-click to rename',
-  '没有真正调用 CLI，输出是示例': "The CLI wasn't actually called; output is sample data",
+  '没有真正调用 Agent，输出是示例': "The agent wasn't actually called; output is sample data",
   模拟: 'Simulated',
   视图: 'View',
   流程图: 'Flowchart',
@@ -289,7 +289,7 @@ export const EN_TASKS: Record<string, string> = {
   子任务: 'Subtask',
   '正在输出：{text}': 'Writing: {text}',
   '正在思考：{text}': 'Thinking: {text}',
-  '正在启动 CLI…': 'Starting CLI…',
+  '正在启动 Agent…': 'Starting agent…',
   '{s} 秒': '{s}s',
   '{m} 分 {s} 秒': '{m}m {s}s',
   '{h} 小时 {m} 分': '{h}h {m}m',
@@ -355,15 +355,15 @@ export const EN_TASKS: Record<string, string> = {
   '通过，继续': 'Approve and continue',
   '另有 {n} 个已归档': '{n} more archived',
   '停止这个任务？': 'Stop this task?',
-  '正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。':
-    'The running CLI will be stopped. You can click "Continue" later to pick up where it left off.',
+  '正在执行的 Agent 会被停下，之后可以点「继续执行」从中断的地方接着做。':
+    'The running agent will be stopped. You can click "Continue" later to pick up where it left off.',
   查看文件: 'View file',
   执行后会显示: 'Shown after it runs',
-  '让 CLI 把之前的对话压缩成摘要，腾出上下文':
-    'Have the CLI compress the conversation so far into a summary to free up context',
+  '让 Agent 把之前的对话压缩成摘要，腾出上下文':
+    'Have the agent compress the conversation so far into a summary to free up context',
   压缩上下文: 'Compact context',
-  '让 CLI 审查还没提交的改动，只列问题，不改文件':
-    'Have the CLI review uncommitted changes. It only lists issues and changes no files',
+  '让 Agent 审查还没提交的改动，只列问题，不改文件':
+    'Have the agent review uncommitted changes. It only lists issues and changes no files',
   审查改动: 'Review changes',
   已分叉成新的对话: 'Forked into a new chat',
   '从这里分叉：新建一个对话，带着到这条为止的内容':
@@ -375,8 +375,8 @@ export const EN_TASKS: Record<string, string> = {
   '思考中…': 'Thinking…',
   '改好了，下一轮回复开始生效': 'Saved. It applies from the next reply',
   '撤回到这条消息？': 'Rewind to this message?',
-  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
-    "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The CLI continues from before this message. File changes aren't undone; undo them under Changes if needed.",
+  '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
+    "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The agent continues from before this message. File changes aren't undone; undo them under Changes if needed.",
   '查看 {name}': 'View {name}',
   '放回输入框，改了再发': 'Put back in the input box to edit and resend',
   上一张: 'Previous',
@@ -512,8 +512,8 @@ export const EN_TASKS: Record<string, string> = {
   '独立分支：确定要改文件时才开单独的 git 分支和目录，在里面改，不改动项目目录，完成后再决定合并还是丢弃；之前只看代码、回答问题时仍在项目目录里':
     'Separate branch: once it needs to edit files, it opens its own git branch and directory and edits there without touching the project directory, then you merge or discard when done; reading code and answering questions still happen in the project directory',
   同时执行的子对话: 'Concurrent sub-conversations',
-  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 CLI 进程，跑工作流时更多。':
-    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one CLI process, more when running a workflow.',
+  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
+    'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
   '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
   '全局规则只能在项目对话里发布，子对话会自动遵守父对话的规则':
     "Global rules can only be published in a project conversation; sub-conversations follow their parent's rules automatically",
@@ -584,7 +584,7 @@ export const EN_TASKS: Record<string, string> = {
   删除规则: 'Delete rule',
   新规则: 'New rule',
   '例如：不要改 package.json': "e.g. Don't change package.json",
-  '子对话用指定的 CLI 和模型': 'Use a specific CLI and model for sub-chats',
+  '子对话用指定的 Agent 和模型': 'Use a specific agent and model for sub-chats',
   '不勾选时按「执行」角色自己的配置。只对这个对话的子对话生效，下一轮开始时用上。':
     "When unchecked, sub-chats use the Worker role's own settings. Applies only to this chat's sub-chats, starting from their next turn.",
   '{n} 个（跟随设置）': '{n} (from Settings)',

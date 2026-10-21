@@ -485,7 +485,7 @@ export function designsApi(deps: { projects: Lister<Project> }) {
     const cliId = settings.imageGen.cli || 'codex'
     const def = getCli(cliId)
     if (!def?.images)
-      throw new Error(t('{cli} 不能生成图片，请在设置的「默认 CLI」里换成 Codex', { cli: def?.name ?? cliId }))
+      throw new Error(t('{cli} 不能生成图片，请在设置的「默认 Agent」里换成 Codex', { cli: def?.name ?? cliId }))
     const cs = cliSettings(settings, cliId)
     if (!cs.enabled) throw new Error(t('{cli} 在设置里被停用了', { cli: def.name }))
     const run = agentRun(
@@ -753,7 +753,7 @@ ${prompt}`,
       )
     ).filter(Boolean)
     // AI 只通过设计工具（MCP）改设计，回复就是普通文字；CLI 的定义里写了怎么把工具交给它
-    if (!def.mcp) throw new Error(t('{cli} 用不了设计工具，请换一个 CLI', { cli: def.name }))
+    if (!def.mcp) throw new Error(t('{cli} 用不了设计工具，请换一个 Agent', { cli: def.name }))
     const mcp = openDesignSession(
       cache.get(d.id)!,
       (s) => (job.preview = { ...s.state, applied: s.applied }),

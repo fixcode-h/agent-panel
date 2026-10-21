@@ -80,7 +80,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
     <Group>
       <p className="pb-3 text-[0.8125rem] leading-relaxed text-subtle">
         {t(
-          '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 CLI 配置文件；模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
+          '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。',
         )}
       </p>
       <div className="flex flex-col gap-4">
@@ -287,9 +287,9 @@ function ApiCard({
     setUpdating(true)
     try {
       const { clis } = await api.applyApi(a.id)
-      if (!clis.length) toast.info(t('还没有 CLI 在用这个 API'))
+      if (!clis.length) toast.info(t('还没有 Agent 在用这个 API'))
       else {
-        toast.success(t('已更新 {n} 个 CLI 的配置文件', { n: clis.length }))
+        toast.success(t('已更新 {n} 个 Agent 的配置文件', { n: clis.length }))
         // 写进配置文件后模型列表可能变了：重新读一次
         void Promise.all(clis.map((id) => loadCliModels(id, true).catch(() => {})))
       }
@@ -386,9 +386,12 @@ function ApiCard({
                 className="h-9 font-mono text-[0.8125rem]"
               />
               <span className="text-[0.71875rem] text-subtle">
-                {t('写进 CLI 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 CLI 也用它拼模型 ID。', {
-                  provider: apiProvider(a),
-                })}
+                {t(
+                  '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。',
+                  {
+                    provider: apiProvider(a),
+                  },
+                )}
               </span>
             </label>
             <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
@@ -539,7 +542,7 @@ function ApiCard({
                 className="h-8 w-56 font-mono text-[0.75rem]"
               />
               <span className="text-[0.71875rem] text-subtle">
-                {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 CLI 的仍然是这里的模型名。')}
+                {t('映射模型默认按模型名自动识别，改过就以你选的为准；发给 Agent 的仍然是这里的模型名。')}
               </span>
             </form>
             {found && (
@@ -597,7 +600,7 @@ function ApiCard({
               variant="secondary"
               disabled={updating}
               onClick={() => void applyApi()}
-              title={t('把现在的接口地址、密钥和模型写进正在用这个 API 的 CLI 配置文件')}
+              title={t('把现在的接口地址、密钥和模型写进正在用这个 API 的 Agent 配置文件')}
             >
               <RefreshCw className={cn('h-3.5 w-3.5', updating && 'animate-spin')} />
               {t('一键更新')}

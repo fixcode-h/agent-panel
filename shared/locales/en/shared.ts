@@ -66,7 +66,7 @@ export const EN_SHARED: Record<string, string> = {
   创意: 'Creative',
 
   // settings.ts
-  'CLI 默认': 'CLI default',
+  'Agent 默认': 'Agent default',
   '{tier}档 · {model}': '{tier} tier · {model}',
 
   // schema.ts

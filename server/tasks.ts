@@ -209,7 +209,7 @@ export function tasksApi(deps: {
             agentId: '',
             step: '',
             text: t(
-              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 CLI 会话）。',
+              '面板关闭或重启时任务还在执行，已中断。点「继续执行」从中断的节点接着做（会续接那个节点的 Agent 会话）。',
             ),
             tools: [],
             transient: true,

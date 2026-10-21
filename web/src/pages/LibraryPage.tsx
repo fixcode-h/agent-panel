@@ -67,7 +67,7 @@ export function LibraryPage() {
     <PageFrame
       title={t('Skills 与命令')}
       intro={t(
-        '各个 CLI 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 CLI（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。',
+        '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。',
       )}
       actions={
         <>
@@ -76,7 +76,7 @@ export function LibraryPage() {
               variant="secondary"
               onClick={() => setAi(true)}
               disabled={!data}
-              title={t('描述需求，让本机 CLI 写 Skill')}
+              title={t('描述需求，让本机 Agent 写 Skill')}
             >
               <Sparkles className="h-4 w-4 text-accent" />
               {t('AI 创建')}
@@ -180,10 +180,10 @@ export function LibraryPage() {
             if (p.kind !== 'skill') return
             // 先放进第一个有 Skill 目录的 CLI，要给别的 CLI 用，打开它再复制
             const cli = data.clis.find((c) => c.skillDir)
-            if (!cli) throw new Error(t('没有可以放 Skill 的 CLI'))
+            if (!cli) throw new Error(t('没有可以放 Skill 的 Agent'))
             await api.saveLibraryFile({ cli: cli.id, kind: 'skill', name: p.name, content: p.content, create: true })
             toast.success(
-              t('已创建「{name}」，放在 {cli}；要给别的 CLI 用，打开它再复制', { name: p.name, cli: cli.name }),
+              t('已创建「{name}」，放在 {cli}；要给别的 Agent 用，打开它再复制', { name: p.name, cli: cli.name }),
             )
             void load()
           }}
@@ -272,7 +272,7 @@ function CreateDialog({
         </span>
       </label>
       <div className="flex flex-col gap-2">
-        <span className="text-[0.8125rem] font-medium">{t('放进哪些 CLI')}</span>
+        <span className="text-[0.8125rem] font-medium">{t('放进哪些 Agent')}</span>
         {ok.map((c) => (
           <Checkbox
             key={c.id}
@@ -437,7 +437,7 @@ function EditDialog({
         )}
         {!!targets.length && (
           <div className="flex flex-col gap-2 border-t pt-4">
-            <span className="text-[0.8125rem] font-medium">{t('复制给别的 CLI')}</span>
+            <span className="text-[0.8125rem] font-medium">{t('复制给别的 Agent')}</span>
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
               {targets.map((c) => (
                 <Checkbox

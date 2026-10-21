@@ -152,7 +152,7 @@ export function WorkflowsPage() {
               size="sm"
               variant="secondary"
               onClick={() => setAssist(true)}
-              title={t('描述需求，让本机 CLI 生成工作流')}
+              title={t('描述需求，让本机 Agent 生成工作流')}
             >
               <Sparkles className="h-4 w-4 text-accent" />
               {t('AI 创建')}
@@ -191,7 +191,7 @@ export function WorkflowsPage() {
                 }
                 title={w.name}
                 monoSubtitle={false}
-                subtitle={`${nameOf(w.mainAgentId) ?? t('直接用 CLI')} · ${t('{n} 个子角色', { n: subAgentIds(w).length })}`}
+                subtitle={`${nameOf(w.mainAgentId) ?? t('直接用 Agent')} · ${t('{n} 个子角色', { n: subAgentIds(w).length })}`}
                 tags={w.tags.length ? <TagList ids={w.tags} /> : undefined}
                 // 只有一个点时看不出是什么意思（像是「连上了没有」），带上文字
                 trailing={

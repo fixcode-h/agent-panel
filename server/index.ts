@@ -284,7 +284,7 @@ async function parseAgent(body: unknown, selfId = '') {
     if (cycle.length && !(before && includeCycle(before, list).length))
       return { error: t('引入关系会形成循环：{chain}', { chain: cycleText(cycle, all) }) }
   }
-  if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 CLI：{cli}', { cli: p.data.cli }) }
+  if (p.data.cli && !getCli(p.data.cli)) return { error: t('未知的 Agent：{cli}', { cli: p.data.cli }) }
   if (p.data.categoryId && !(await categories.get(p.data.categoryId))) return { error: t('分类不存在') }
   p.data.tags = await knownTags(p.data.tags)
   return { data: p.data }

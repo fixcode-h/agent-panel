@@ -810,7 +810,7 @@ export function TaskView({
                 )}
                 {task.simulated && (
                   <span
-                    title={t('没有真正调用 CLI，输出是示例')}
+                    title={t('没有真正调用 Agent，输出是示例')}
                     className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[0.6875rem] text-warning md:inline-flex"
                   >
                     <FlaskConical className="h-3 w-3" />
@@ -1232,7 +1232,7 @@ export function TaskView({
           open={stopAsk && working}
           onOpenChange={setStopAsk}
           title={t('停止这个任务？')}
-          description={t('正在执行的 CLI 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
+          description={t('正在执行的 Agent 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
           confirmText={t('停止')}
           onConfirm={async () => {
             await stop()
@@ -1262,7 +1262,7 @@ export function TaskView({
           onOpenChange={(o) => !o && setRewindAsk('')}
           title={t('撤回到这条消息？')}
           description={t(
-            '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。CLI 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
+            '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
           )}
           confirmText={t('撤回')}
           onConfirm={async () => {

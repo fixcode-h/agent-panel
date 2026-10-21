@@ -23,9 +23,9 @@ export function agentChecks(a: Agent, cli?: CliStatus): Check[] {
   return [
     {
       ok: !!cli?.installed && cli.enabled,
-      label: t('CLI 已安装'),
+      label: t('Agent 已安装'),
       hint: !cli
-        ? t('未知的 CLI：{cli}', { cli: a.cli })
+        ? t('未知的 Agent：{cli}', { cli: a.cli })
         : !cli.installed
           ? t('没有找到 {cmd}，安装后或在设置里填写路径', { cmd: cli.command })
           : !cli.enabled
@@ -101,13 +101,13 @@ export function workflowChecks(w: Workflow, agents: Agent[], clis: CliStatus[], 
       // 不选也能跑：没指定角色的节点直接用默认 CLI，不带角色设定
       optional: true,
       label: t('已选择主角色'),
-      hint: main ? main.name : t('没选时，没指定角色的节点直接用默认 CLI，不带角色设定'),
+      hint: main ? main.name : t('没选时，没指定角色的节点直接用默认 Agent，不带角色设定'),
     },
     {
       ok: notRunnable.length === 0 && cliOk,
       label: t('团队成员都可运行'),
       hint: !cliOk
-        ? t('节点都用默认 CLI 执行，{cli} 未安装或已停用', { cli: defCli?.name ?? '' })
+        ? t('节点都用默认 Agent 执行，{cli} 未安装或已停用', { cli: defCli?.name ?? '' })
         : notRunnable.length
           ? t('{names} 已停用', { names: notRunnable.map((a) => a.name).join(t('、')) })
           : t('共 {n} 个角色', { n: team.length }),

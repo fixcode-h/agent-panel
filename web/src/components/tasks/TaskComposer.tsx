@@ -88,12 +88,14 @@ export function TaskComposer({
   const missing = byCli || !agent ? [] : resolveParams(agentParams, params).missing
   // 开关只放图标，用来说明的话：项目没设置 Agent 时勾着也等于不用角色，要说清楚
   const agentTitle = !useAgent
-    ? t('直接和 CLI 对话，不带角色的角色设定（点一下改回用项目设置的角色）')
+    ? t('直接和 Agent 对话，不带角色的角色设定（点一下改回用项目设置的角色）')
     : agent
       ? t('这个对话用「{name}」的角色设定和参数，开始后不能再改（点一下改成不用角色）', { name: agent.name })
       : wanted && !agent
-        ? t('项目设置的角色已删除或停用，这个对话直接和 CLI 对话（点一下改成不用角色）')
-        : t('项目设置里选了「无角色」，这个对话直接和 CLI 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）')
+        ? t('项目设置的角色已删除或停用，这个对话直接和 Agent 对话（点一下改成不用角色）')
+        : t(
+            '项目设置里选了「无角色」，这个对话直接和 Agent 对话；在项目设置里选一个角色才会用角色（点一下改成不用角色）',
+          )
   // 对话直接选 CLI 和模型（用默认 Agent 执行）；空值表示默认，实际的值由 useChatRun 算出
   const [chat, setChat] = useState<ChatRun>({ cli: '', model: '', effort: '' })
   const chatRun = useChatRun(chat).run

@@ -45,7 +45,7 @@ async function cliContext(id: string) {
 export async function fixStart(input: FixInput): Promise<FixStart> {
   const settings = await getSettings()
   const cli = fixCli(settings)
-  if (!getCli(cli)) throw new Error(t('没有可用的 CLI，请先在设置里安装并启用'))
+  if (!getCli(cli)) throw new Error(t('没有可用的 Agent，请先在设置里安装并启用'))
   const topic = topics.get(input.topic)
   const extra = input.topic.startsWith('cli:')
     ? await cliContext(input.topic.slice(4))

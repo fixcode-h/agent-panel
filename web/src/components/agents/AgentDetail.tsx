@@ -261,7 +261,7 @@ export function AgentDetail({
                 ) : isReady(checks) ? (
                   <StatusDot tone="success" label={t('就绪')} />
                 ) : (
-                  <StatusDot tone="warning" label={t('CLI 未安装')} />
+                  <StatusDot tone="warning" label={t('Agent 未安装')} />
                 )}
               </>
             }
@@ -285,7 +285,7 @@ export function AgentDetail({
                   {t('对话')}
                 </Button>
                 {!core && (
-                  <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
+                  <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
                     <Sparkles className="h-4 w-4 text-accent" />
                     {t('AI 优化')}
                   </Button>
@@ -432,17 +432,17 @@ export function AgentDetail({
                   <Checkbox
                     checked={follow}
                     onChange={(v) => pickCli(v ? '' : defCli)}
-                    label={t('跟随默认 CLI（现在是 {cli}）', {
+                    label={t('跟随默认 Agent（现在是 {cli}）', {
                       cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
                     })}
                     hint={t(
-                      '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
+                      '在设置里换了默认 Agent，这个角色也跟着换，模型换成新 Agent 同一档位的模型。取消后可以固定用某个 Agent。',
                     )}
                   />
                   <div className="flex flex-wrap gap-4">
-                    <Field label="CLI" className="flex-[1_1_220px]">
+                    <Field label="Agent" className="flex-[1_1_220px]">
                       <Select
-                        aria-label="CLI"
+                        aria-label="Agent"
                         value={cliId}
                         disabled={follow}
                         onChange={(e) => pickCli(e.target.value)}
@@ -460,7 +460,7 @@ export function AgentDetail({
                     <Field
                       label={t('模型')}
                       className="flex-[2_1_280px]"
-                      hint={t('三档对应的模型在设置里每个 CLI 下配置')}
+                      hint={t('三档对应的模型在设置里每个 Agent 下配置')}
                     >
                       <Select
                         aria-label={t('模型')}
@@ -534,7 +534,7 @@ export function AgentDetail({
             {tab === 'extras' && core && (
               <FormSection title={t('开场白')}>
                 <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
-                <Field label={t('额外参数')} hint={t('追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。')}>
+                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
                   <Input
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}
@@ -808,14 +808,14 @@ export function AgentDetail({
               <FormSection title={t('Skill 与开场白')}>
                 <Field
                   label="Skill"
-                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 CLI 里，在「Skills 与命令」页面管理。')}
+                  hint={t('执行时提醒它优先用这些 Skill。Skill 本身装在 Agent 里，在「Skills 与命令」页面管理。')}
                 >
                   <SkillsPicker value={draft.skills} onChange={(v) => set('skills', v)} cli={cliId} />
                 </Field>
                 <Field label={t('开场白')} hint={t('常用的要求，和它对话时显示在输入框上方，点一下就填进去。')}>
                   <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
                 </Field>
-                <Field label={t('额外参数')} hint={t('追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。')}>
+                <Field label={t('额外参数')} hint={t('追加给 Agent 的参数，用空格分隔，含空格的值用引号包住。')}>
                   <Input
                     value={args}
                     onChange={(e) => setArgs(e.target.value)}

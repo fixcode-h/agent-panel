@@ -154,7 +154,7 @@ export function WorkflowDetail({
                   <Activity className="h-4 w-4" />
                   {t('分析执行')}
                 </Button>
-                <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 CLI 按你的要求优化')}>
+                <Button variant="secondary" onClick={() => setAssist(true)} title={t('让本机 Agent 按你的要求优化')}>
                   <Sparkles className="h-4 w-4 text-accent" />
                   {t('AI 优化')}
                 </Button>

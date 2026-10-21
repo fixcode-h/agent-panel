@@ -170,7 +170,7 @@ export const EN_FLOW: Record<string, string> = {
   未就绪: 'Not ready',
   还没有简介: 'No description yet',
   '名称为空，未保存': 'Name is empty, not saved',
-  '让本机 CLI 按你的要求优化': 'Have a local CLI refine it to your requirements',
+  '让本机 Agent 按你的要求优化': 'Have a local agent refine it to your requirements',
   'AI 优化': 'AI refine',
   复制一份: 'Duplicate',
   导出: 'Export',
@@ -194,7 +194,7 @@ export const EN_FLOW: Record<string, string> = {
   '正在被 {list} 使用，请先改用其他工作流。': 'In use by {list}. Switch them to another workflow first.',
 
   // 工作流选择与摘要
-  '直接用 CLI': 'Plain CLI',
+  '直接用 Agent': 'Plain agent',
   '{n} 个子角色': '{n} sub-roles',
   '还没有工作流，先去工作流页面创建': 'No workflows yet. Create one on the Workflows page first',
   工作流: 'Workflow',
@@ -207,7 +207,7 @@ export const EN_FLOW: Record<string, string> = {
   '已导入「{name}」': 'Imported “{name}”',
   '{name} 副本': '{name} copy',
   导入工作流文件: 'Import a workflow file',
-  '描述需求，让本机 CLI 生成工作流': 'Describe what you need and let a local CLI generate the workflow',
+  '描述需求，让本机 Agent 生成工作流': 'Describe what you need and let a local agent generate the workflow',
   'AI 创建': 'Create with AI',
   没有匹配的工作流: 'No matching workflows',
   创建第一个工作流: 'Create your first workflow',

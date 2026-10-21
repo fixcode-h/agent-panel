@@ -56,7 +56,7 @@ export function BuiltinAgentsDialog({
         <div className="flex flex-wrap items-start gap-3">
           <p className="min-w-0 flex-[1_1_320px] text-[0.8125rem] leading-relaxed text-muted">
             {t(
-              '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 CLI。',
+              '按规划、开发、质量、文档与交付、UE 和美术整理好的角色，都引入「通用约束」。只在你点添加时才建出来，引用的自带 Skill 在执行时自动装进 Agent。',
             )}
           </p>
           <Button

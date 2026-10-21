@@ -139,7 +139,7 @@ export const agentModel = (a: { cli: string; model: string }, settings: Settings
 export function modelText(a: { cli: string; model: string; effort?: string }, settings: Settings) {
   const r = agentRun(a, settings)
   const tier = tierOf(a.model)
-  const m = r.model || t('CLI 默认')
+  const m = r.model || t('Agent 默认')
   return tier
     ? t('{tier}档 · {model}', { tier: tier.label, model: m })
     : a.model

@@ -21,7 +21,7 @@ export function DemoBanner() {
       <FlaskConical className="h-4 w-4 shrink-0 text-accent" strokeWidth={1.8} />
       <span className="min-w-0 flex-1">
         <b className="font-medium">{t('在线演示')}</b>
-        <span className="text-subtle">{t('：数据只存在你的浏览器里，CLI 和本机目录是模拟的。')}</span>
+        <span className="text-subtle">{t('：数据只存在你的浏览器里，Agent 和本机目录是模拟的。')}</span>
       </span>
       <button
         onClick={() => setConfirming(true)}

@@ -394,7 +394,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
             {t('项目说明')}
           </NavItem>
           <span className="hidden px-2.5 pt-4 pb-1 text-[0.6875rem] text-subtle md:block">
-            {t('各个 CLI 读的说明')}
+            {t('各个 Agent 读的说明')}
           </span>
           {cliPages.map((c) => (
             <NavItem
@@ -436,7 +436,7 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   !docOf(SHARED_DOC)?.exists && (
                     <div className="flex flex-wrap items-center gap-2 rounded-xl border border-warning/40 bg-warning/5 px-3.5 py-2.5 text-[0.8125rem]">
                       <span className="min-w-0 flex-1">
-                        {t('检测到 AGENT.md，但各个 CLI 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
+                        {t('检测到 AGENT.md，但各个 Agent 只读 AGENTS.md（多一个 s），现在这个文件不会被读到。')}
                       </span>
                       <Button
                         size="sm"

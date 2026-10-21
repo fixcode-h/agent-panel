@@ -828,7 +828,7 @@ export async function fetchApiModels(api: Pick<ApiConfig, 'protocol' | 'baseUrl'
 export function accountsApi() {
   const need = (c: { req: { param: (k: string) => string } }) => {
     const def = getCli(c.req.param('cli'))
-    if (!def?.auth) throw new Error(t('这个 CLI 没有账号设置'))
+    if (!def?.auth) throw new Error(t('这个 Agent 没有账号设置'))
     return def
   }
   const guard = (fn: (c: any) => Promise<Response>) => async (c: any) => {

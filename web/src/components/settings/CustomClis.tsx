@@ -41,11 +41,11 @@ export function CustomClis({ demo }: { demo?: boolean }) {
   }
 
   return (
-    <Group title={t('添加其他 CLI')}>
+    <Group title={t('添加其他 Agent')}>
       <div className="flex flex-col gap-3 py-3">
         <p className="text-[0.8125rem] leading-relaxed text-muted">
           {t(
-            '面板按配置文件调用 CLI：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。',
+            '面板按配置文件调用 Agent：命令和参数怎么拼、输出怎么解析、Skill 和说明文件在哪。按格式写一份 JSON 放进下面的目录，点「重新读取」就能用，不用改代码。',
           )}{' '}
           <a
             href={DOCS}

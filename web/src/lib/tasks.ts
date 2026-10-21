@@ -94,7 +94,7 @@ export function currentActivity(a: ReturnType<typeof stepActivity>) {
   const thinking = a.last?.thinking ? plainLine(a.last.thinking, true) : ''
   if (thinking) return t('正在思考：{text}', { text: thinking })
   if (a.last) return t('正在思考…')
-  return t('正在启动 CLI…')
+  return t('正在启动 Agent…')
 }
 
 /** 去掉 Markdown 记号后的第一行（last = 取最后一行） */

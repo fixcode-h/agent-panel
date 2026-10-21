@@ -758,7 +758,7 @@ export function CliSection({
         description={
           <>
             {t('会运行')} <code className="font-mono text-[0.75rem]">npm uninstall -g {def.npmPackage}</code>
-            {t('。用这个 CLI 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
+            {t('。用这个 Agent 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。')}
           </>
         }
         blocked={installer.busy ? t('有任务正在用它执行，请等任务完成或先停止。') : undefined}
@@ -834,7 +834,7 @@ export function CliSection({
         </Row>
         <Row
           title={t('最大回合')}
-          desc={t('一轮任务最多执行多少回合（模型请求次数）。留空用 CLI 自己的默认值，Command Code 是 1000')}
+          desc={t('一轮任务最多执行多少回合（模型请求次数）。留空用 Agent 自己的默认值，Command Code 是 1000')}
         >
           <Input
             type="number"
@@ -865,7 +865,7 @@ export function CliSection({
             spellCheck={false}
           />
         </Row>
-        <Row title={t('环境变量')} desc={t('每行一个 KEY=VALUE，只传给这个 CLI')}>
+        <Row title={t('环境变量')} desc={t('每行一个 KEY=VALUE，只传给这个 Agent')}>
           <Textarea
             rows={2}
             value={draft.envText}
@@ -889,7 +889,7 @@ export function CliSection({
             value={String(draft.autoCompact)}
             onChange={(e) => set('autoCompact', Number(e.target.value))}
             options={[
-              { value: '0', label: t('{name}（默认）', { name: t('按 CLI 自己的规则') }) },
+              { value: '0', label: t('{name}（默认）', { name: t('按 Agent 自己的规则') }) },
               ...[50, 60, 70, 80, 90].map((n) => ({ value: String(n), label: `${n}%` })),
             ]}
           />

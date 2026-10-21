@@ -20,9 +20,10 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 起因：用户多次指出（v0.18 前后）。
 - 防线：人工。
 
-## 界面上 Agent 叫「角色」
+## 界面上配置的 Agent 叫「角色」，编码工具叫「Agent」
 
-- 规则：除了产品名、「Agent 模式」和「让 CLI 以 Agent 身份做事」这类说法，界面文案里的 Agent 都写「角色」（2dbcf97）。代码里的类型名不改。
+- 规则：配置出来的 Agent（角色设定 + CLI + 模型）在界面上写「角色」（2dbcf97）；编码工具本身（Claude Code、Codex、Pi…）在界面上写「Agent」，不写「CLI」，例如「默认 Agent」「本机 Agent」。「Gemini CLI」这类产品名、给开发者看的说明（CLI 定义、配置字段）照旧写 CLI。代码里的类型名、变量名不改。
+- 起因：用户问设置里的「默认 CLI」能不能叫 Agent，角色改名后 Agent 这个词空出来了。
 - 防线：人工。
 
 ## 视觉改动自己先截图看一遍

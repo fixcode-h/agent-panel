@@ -286,7 +286,7 @@ export function NodeInspector({
                     <>
                       <div className="flex flex-col gap-1.5">
                         <Label
-                          hint={t('用默认 CLI（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着角色的档位。', {
+                          hint={t('用默认 Agent（{cli}）的这一档模型，思考强度也用档位的。没改过时跟着角色的档位。', {
                             cli: clis.find((c) => c.id === defCliId)?.name ?? defCliId,
                           })}
                         >

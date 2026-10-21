@@ -85,7 +85,7 @@ export const EN_SETTINGS: Record<string, string> = {
   关闭设置: 'Close settings',
   常规: 'General',
   项目分类: 'Project categories',
-  '默认 CLI': 'Default CLI',
+  '默认 Agent': 'Default agent',
   'AI 创建': 'Create with AI',
   数据: 'Data',
   版本更新: 'Updates',
@@ -96,8 +96,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '超时时间需要是 0 到 1440 的整数': 'Timeout must be a whole number from 0 to 1440',
 
   // 常规
-  '在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 CLI。':
-    'The online demo has no local environment, so task output is sample data. Download and run it locally to call real CLIs.',
+  '在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。':
+    'The online demo has no local environment, so task output is sample data. Download and run it locally to call real agents.',
   单个步骤最长运行时间: 'Max run time per step',
   '分钟，填 0 不限制。超时后会停止这一步，任务标记为失败。':
     'In minutes; 0 means no limit. A step that times out is stopped and the task is marked as failed.',
@@ -135,9 +135,9 @@ export const EN_SETTINGS: Record<string, string> = {
   跟随全局设置: 'Follow the global setting',
 
   // 默认 CLI
-  '角色可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
-    'Roles can leave the CLI unset: "System default" uses the CLI chosen here. A model can be just a High, Medium or Low tier, which resolves to that CLI\'s model and effort for the tier at run time. Changing this switches every role that uses the defaults.',
-  '角色选了「系统默认」或没有指定 CLI 时使用': 'Used when a role picks "System default" or has no CLI set',
+  '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。':
+    'Roles can leave the agent unset: "System default" uses the agent chosen here. A model can be just a High, Medium or Low tier, which resolves to that agent\'s model and effort for the tier at run time. Changing this switches every role that uses the defaults.',
+  '角色选了「系统默认」或没有指定 Agent 时使用': 'Used when a role picks "System default" or has no agent set',
   已停用: 'Disabled',
   未安装: 'Not installed',
   '{cli} 的模型': '{cli} models',
@@ -163,8 +163,8 @@ export const EN_SETTINGS: Record<string, string> = {
   '自己装好后点右边的刷新重新检测。': 'After installing it yourself, click refresh on the right to detect again.',
   '卸载 {cli}？': 'Uninstall {cli}?',
   会运行: 'This runs',
-  '。用这个 CLI 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。':
-    ". Roles that use this CLI can't run until it's reinstalled. Sign-in info and its own config are kept.",
+  '。用这个 Agent 的角色之后都无法执行，直到重新安装。登录信息和它自己的配置不会被删除。':
+    ". Roles that use this agent can't run until it's reinstalled. Sign-in info and its own config are kept.",
   '有任务正在用它执行，请等任务完成或先停止。':
     'A task is running with it. Wait for the task to finish or stop it first.',
   模型: 'Model',
@@ -186,7 +186,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '每次调用都会追加，角色自己的参数排在后面': "Appended to every call; the role's own arguments come after",
   '例如 --add-dir ../shared': 'e.g. --add-dir ../shared',
   环境变量: 'Environment variables',
-  '每行一个 KEY=VALUE，只传给这个 CLI': 'One KEY=VALUE per line, passed only to this CLI',
+  '每行一个 KEY=VALUE，只传给这个 Agent': 'One KEY=VALUE per line, passed only to this agent',
   '实际调用（任务描述从 stdin 传入）': 'Actual command (task description is passed via stdin)',
 
   // 模型列表来源
@@ -237,13 +237,13 @@ export const EN_SETTINGS: Record<string, string> = {
   '{name} 卸载失败': '{name} uninstall failed',
 
   // AI 创建
-  '在角色和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。':
-    'On the Roles and Workflows pages, you can chat with a local CLI to generate or refine configs. The CLI replies in a fixed format, and changes apply only after the panel validates them.',
-  '使用的 CLI': 'CLI',
-  '默认用「CLI」里设为默认的那个': 'Defaults to the one set as default under "CLI"',
-  'AI 创建使用的 CLI': 'CLI for AI assist',
+  '在角色和工作流页面可以用本机 Agent 对话生成或优化配置。Agent 按固定格式输出，面板校验通过后才能应用。':
+    'On the Roles and Workflows pages, you can chat with a local agent to generate or refine configs. The agent replies in a fixed format, and changes apply only after the panel validates them.',
+  '使用的 Agent': 'Agent',
+  '默认用「Agent」里设为默认的那个': 'Defaults to the one set as default under "Agent"',
+  'AI 创建使用的 Agent': 'Agent for AI assist',
   'AI 创建使用的模型': 'Model for AI assist',
-  '默认用这个 CLI 设置里的默认模型': "Defaults to this CLI's default model",
+  '默认用这个 Agent 设置里的默认模型': "Defaults to this agent's default model",
   创建角色的补充规则: 'Extra rules for creating roles',
   '会加进提示词，例如命名习惯、团队约定': 'Added to the prompt, e.g. naming habits or team conventions',
   '例如：\n- 角色设定统一包含「职责 / 工作方式 / 交付标准」三节\n- 前端相关的角色默认用 Claude Code':
@@ -328,8 +328,8 @@ export const EN_SETTINGS: Record<string, string> = {
   切换: 'Switch',
   强制更新: 'Force update',
   '强制更新？': 'Force update?',
-  '会中断所有正在执行的 CLI 对话，没做完的内容可能丢失；然后马上替换程序文件并重启，data 目录里的数据会保留。':
-    'This interrupts every running CLI conversation — unfinished work may be lost — then replaces the app files and restarts right away. Data in the data folder is kept.',
+  '会中断所有正在执行的 Agent 对话，没做完的内容可能丢失；然后马上替换程序文件并重启，data 目录里的数据会保留。':
+    'This interrupts every running agent conversation — unfinished work may be lost — then replaces the app files and restarts right away. Data in the data folder is kept.',
   更新失败: 'Update failed',
   '新版本已经装好，但服务没有自动重启成功，请手动重新启动面板':
     "The new version is installed, but the server didn't restart automatically. Please restart the panel manually.",
@@ -338,13 +338,13 @@ export const EN_SETTINGS: Record<string, string> = {
   关闭提示: 'Dismiss',
   恢复: 'Restore',
   没有输出时提醒: 'Warn when there is no output',
-  '分钟，填 0 不检测。CLI 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。':
-    'Minutes; 0 turns it off. When a CLI prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so a CLI stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
+  '分钟，填 0 不检测。Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。':
+    'Minutes; 0 turns it off. When an agent prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so an agent stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
   '没有输出时提醒（分钟）': 'Warn when there is no output (minutes)',
   '填 0 到 1440 之间的整数，0 表示不检测': 'Enter a whole number from 0 to 1440; 0 turns it off',
   离开对话后保留多久: 'Keep the conversation alive after you leave',
-  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 CLI 留着，这段时间内回来发消息能直接接着说，不用重新启动 CLI；每个还在等的对话会占用一个 CLI 进程。':
-    'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished CLI alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one CLI process.',
+  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。':
+    'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
@@ -390,10 +390,10 @@ export const EN_SETTINGS: Record<string, string> = {
   上下文占用达到这个比例时自动压缩: 'Compact automatically when context usage reaches this level',
   '{cli} 自动压缩': '{cli} auto-compact',
   最大回合: 'Max turns',
-  '一轮任务最多执行多少回合（模型请求次数）。留空用 CLI 自己的默认值，Command Code 是 1000':
-    'Maximum number of turns (model requests) per run. Leave empty to use the CLI default; 1000 for Command Code',
+  '一轮任务最多执行多少回合（模型请求次数）。留空用 Agent 自己的默认值，Command Code 是 1000':
+    'Maximum number of turns (model requests) per run. Leave empty to use the agent default; 1000 for Command Code',
   '{cli} 最大回合': '{cli} max turns',
-  '按 CLI 自己的规则': "CLI's own rule",
+  '按 Agent 自己的规则': "Agent's own rule",
   额度: 'Usage limits',
   显示额度: 'Show usage limits',
   '在这里和任务页右栏显示账号的 5 小时、每周额度用了多少':
@@ -406,12 +406,12 @@ export const EN_SETTINGS: Record<string, string> = {
   '共 {n} 个': '{n} total',
   '还没有装 Skill': 'No skills installed yet',
   '自定义 API': 'Custom API',
-  '在这里配好 API，再到各个 CLI 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 CLI 配置文件；模型下拉优先从 CLI 读取。协议对得上的 CLI 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
-    'Set up APIs here, then switch a CLI\'s "Sign-in method" to API on its page. After editing an API, click "Update all" to write it into the config files of the CLIs using it; model lists still come from the CLI first. Only CLIs that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
+  '在这里配好 API，再到各个 Agent 的页面把「登录方式」切到 API 选用。改完 API 点「一键更新」才会写进正在用它的 Agent 配置文件；模型下拉优先从 Agent 读取。协议对得上的 Agent 才能选：Anthropic 给 Claude Code，OpenAI Responses 给 Codex，Gemini 给 Gemini CLI，Command Code 三种都能用。':
+    'Set up APIs here, then switch an agent\'s "Sign-in method" to API on its page. After editing an API, click "Update all" to write it into the config files of the agents using it; model lists still come from the agent first. Only agents that speak the protocol can use it: Anthropic for Claude Code, OpenAI Responses for Codex, Gemini for Gemini CLI; Command Code takes all three.',
   '提供方 ID': 'Provider ID',
   '留空时用 API 名称生成': 'Leave empty to derive it from the API name',
-  '写进 CLI 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 CLI 也用它拼模型 ID。':
-    'Provider name written into the CLI config; when empty, {provider} is used. CLIs that need a provider prefix also use it for model IDs.',
+  '写进 Agent 配置的 provider 名；留空时使用 {provider}，需要 provider 前缀的 Agent 也用它拼模型 ID。':
+    'Provider name written into the agent config; when empty, {provider} is used. Agents that need a provider prefix also use it for model IDs.',
   '添加 API': 'Add API',
   '从常用的开始：': 'Start from:',
   'API 名称': 'API name',
@@ -439,19 +439,19 @@ export const EN_SETTINGS: Record<string, string> = {
   '自动识别（{model}）': 'Auto-detected ({model})',
   '{model} 的默认思考强度': 'Default effort for {model}',
   '{model} 的映射模型': 'Mapped model for {model}',
-  '映射模型默认按模型名自动识别，改过就以你选的为准；发给 CLI 的仍然是这里的模型名。':
-    "Mapped models are auto-detected from the model name; once changed, your choice wins. The CLI still receives this model's name.",
+  '映射模型默认按模型名自动识别，改过就以你选的为准；发给 Agent 的仍然是这里的模型名。':
+    "Mapped models are auto-detected from the model name; once changed, your choice wins. The agent still receives this model's name.",
   一键更新: 'Update all',
-  '把现在的接口地址、密钥和模型写进正在用这个 API 的 CLI 配置文件':
-    'Write the current base URL, key and models into the CLI configs that use this API',
-  '已更新 {n} 个 CLI 的配置文件': 'Updated the config files of {n} CLI(s)',
-  '还没有 CLI 在用这个 API': 'No CLI is using this API yet',
+  '把现在的接口地址、密钥和模型写进正在用这个 API 的 Agent 配置文件':
+    'Write the current base URL, key and models into the agent configs that use this API',
+  '已更新 {n} 个 Agent 的配置文件': 'Updated the config files of {n} agent(s)',
+  '还没有 Agent 在用这个 API': 'No agent is using this API yet',
   '可以用在：{clis}': 'Usable by: {clis}',
   登录方式: 'Sign-in method',
   '用浏览器登录的账号，可以保存几个账号随时切换':
     'Use an account signed in through the browser; you can save several and switch any time',
-  '用全局设置里配的 API（接口地址和密钥）；支持写配置的 CLI 会立即保存到它自己的配置，模型下拉优先从 CLI 读取':
-    'Use an API configured in global settings (base URL and key); CLIs that support config files save it immediately, and their model list comes from the CLI first',
+  '用全局设置里配的 API（接口地址和密钥）；支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取':
+    'Use an API configured in global settings (base URL and key); agents that support config files save it immediately, and their model list comes from the agent first',
   '{cli} 登录方式': '{cli} sign-in method',
   账号: 'Account',
   API: 'API',
@@ -464,7 +464,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '{n} 个模型': '{n} models',
   还没有模型: 'No models yet',
   '还没有填模型，去 API 配置里添加': 'No models yet; add some in the API settings',
-  '还没选 API，现在会按 CLI 自己的登录运行': "No API chosen; it runs with the CLI's own sign-in for now",
+  '还没选 API，现在会按 Agent 自己的登录运行': "No API chosen; it runs with the agent's own sign-in for now",
   '还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的':
     'No compatible API: add a {protocols} one in the API settings',
   已登录: 'Signed in',
@@ -484,7 +484,8 @@ export const EN_SETTINGS: Record<string, string> = {
   保存名称: 'Save name',
   '已切换到「{name}」': 'Switched to "{name}"',
   '重命名 {name}': 'Rename {name}',
-  '删除（只删除保存的，不影响 CLI 现在的登录）': "Delete (only the saved copy; the CLI's current sign-in is untouched)",
+  '删除（只删除保存的，不影响 Agent 现在的登录）':
+    "Delete (only the saved copy; the agent's current sign-in is untouched)",
   '账号的登录凭据只保存在本机的数据目录里。切换账号只替换凭据，{cli} 的其他配置、Skill 和会话都不变。':
     "Sign-in credentials are only stored in the data directory on this computer. Switching accounts only swaps the credentials; the rest of {cli}'s config, skills and sessions stay as they are.",
   '正在登录：在打开的浏览器里完成登录': 'Signing in: finish in the browser that opened',
@@ -505,7 +506,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '连不上接口：{error}': "Can't reach the API: {error}",
   '接口返回 {status}：{detail}': 'The API returned {status}: {detail}',
   '接口没有返回模型列表，请自己填写': 'The API returned no model list; enter models yourself',
-  '这个 CLI 没有账号设置': 'This CLI has no account settings',
+  '这个 Agent 没有账号设置': 'This agent has no account settings',
   没有在登录: 'Not signing in',
   现在没有登录: 'Not signed in right now',
   没有这个账号: 'No such account',
@@ -519,8 +520,8 @@ export const EN_SETTINGS: Record<string, string> = {
     'Write what to do here; {{args}} is the arguments typed after the command.',
   '在这里写要做的事，$ARGUMENTS 是输入的参数。':
     'Write what to do here; $ARGUMENTS is the arguments typed after the command.',
-  '各个 CLI 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 CLI（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。':
-    "Skills and custom commands in each CLI's user directory live here: create, edit, delete, or copy them to another CLI in one click (commands are converted to its format). Project-level Skills are managed in project settings.",
+  '各个 Agent 用户目录下的 Skill 和自定义命令都在这里：新建、修改、删除，也能一键复制给别的 Agent（命令会自动换成对方的格式）。项目里的 Skill 在项目设置里管。':
+    "Skills and custom commands in each agent's user directory live here: create, edit, delete, or copy them to another agent in one click (commands are converted to its format). Project-level Skills are managed in project settings.",
   种类: 'Type',
   搜索名字和说明: 'Search names and descriptions',
   '没有符合的{kind}。': 'No matching {kind}.',
@@ -530,7 +531,7 @@ export const EN_SETTINGS: Record<string, string> = {
   '{cli} 里已经有同名的了': '{cli} already has one with this name',
   '只能用字母、数字、. _ -，以字母或数字开头': 'Letters, digits, . _ - only, starting with a letter or digit',
   '用来调用它的名字，创建后不能改': "The name used to call it; can't be changed after creating",
-  '放进哪些 CLI': 'Put in these CLIs',
+  '放进哪些 Agent': 'Put in these agents',
   已保存: 'Saved',
   '已复制到 {cli}': 'Copied to {cli}',
   '{cli} 里已经有同名的，没有覆盖': '{cli} already has one with this name; not overwritten',
@@ -539,17 +540,17 @@ export const EN_SETTINGS: Record<string, string> = {
   内容: 'Content',
   '文件夹里还有：': 'Also in the folder: ',
   '（复制时一起带走，这里不能编辑）': ' (copied along; not editable here)',
-  '复制给别的 CLI': 'Copy to other CLIs',
+  '复制给别的 Agent': 'Copy to other agents',
   先保存修改再复制: 'Save your changes before copying',
   '只删 {cli} 里的这一份，文件会从磁盘上删掉，不能撤销。':
     "Only the copy in {cli} is deleted. The file is removed from disk and can't be restored.",
-  'MCP 工具让 CLI 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 CLI 自己的配置文件，装在哪个 CLI 里由右边的开关决定；用 CLI 自己的命令装的也会列出来。':
-    "MCP tools let a CLI reach outside services and data (docs, databases, browsers…). This reads and writes each CLI's own config file; the switches on the right decide which CLI has the tool. Tools installed with a CLI's own commands are listed too.",
+  'MCP 工具让 Agent 能连上外部的服务和数据（文档、数据库、浏览器…）。这里直接读写各个 Agent 自己的配置文件，装在哪个 Agent 里由右边的开关决定；用 Agent 自己的命令装的也会列出来。':
+    "MCP tools let an agent reach outside services and data (docs, databases, browsers…). This reads and writes each agent's own config file; the switches on the right decide which agent has the tool. Tools installed with an agent's own commands are listed too.",
   '还没有装 MCP 工具，点右上角「添加」。': 'No MCP tools yet — click “Add” at the top right.',
   '在 {cli} 里启用': 'Enable in {cli}',
   '配置文件：': 'Config files: ',
   '。Command Code 的 MCP 配置面板暂不管理。': ". Command Code's MCP config isn't managed by the panel yet.",
-  '会从所有 CLI 的配置文件里移除这个工具。': "The tool is removed from every CLI's config file.",
+  '会从所有 Agent 的配置文件里移除这个工具。': "The tool is removed from every agent's config file.",
   '编辑 MCP 工具': 'Edit MCP tool',
   '添加 MCP 工具': 'Add MCP tool',
   测试连接: 'Test connection',
@@ -565,7 +566,7 @@ export const EN_SETTINGS: Record<string, string> = {
   地址: 'URL',
   请求头: 'Headers',
   '一行一个，写成 名字: 值': 'One per line, as Name: value',
-  '装进哪些 CLI': 'Install in these CLIs',
+  '装进哪些 Agent': 'Install in these agents',
   '连接成功，{n} 个工具': 'Connected — {n} tools',
   '连接失败：{error}': 'Connection failed: {error}',
   '一个按团队约定写提交说明的 Skill：先看改动，再按「类型：标题」的格式写':
@@ -576,26 +577,26 @@ export const EN_SETTINGS: Record<string, string> = {
     'A Skill for writing technical design docs, with background, option comparison, risks and schedule',
   没有变化: 'No change',
   '用 AI 创建 Skill': 'Create Skill with AI',
-  '本机 CLI 写出 SKILL.md，在右侧预览，确认再应用':
-    'The local CLI writes SKILL.md; preview it on the right and apply when happy',
+  '本机 Agent 写出 SKILL.md，在右侧预览，确认再应用':
+    'The local agent writes SKILL.md; preview it on the right and apply when happy',
   '描述你想要的 Skill，越具体越好。可以从下面的例子开始：':
     'Describe the Skill you want, as specifically as you can. You can start from an example:',
   '描述你想要的 Skill': 'Describe the Skill you want',
   '生成的 Skill 会显示在这里': 'The generated Skill will appear here',
   '创建 Skill': 'Create Skill',
   '用 AI 排查 MCP 工具': 'Troubleshoot MCP tool with AI',
-  '本机 CLI 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用':
-    "The local CLI checks the environment and finds why it can't connect; preview the fixed config on the right and apply when happy",
+  '本机 Agent 检查环境、找出连不上的原因，在右侧预览修复后的配置，确认再应用':
+    "The local agent checks the environment and finds why it can't connect; preview the fixed config on the right and apply when happy",
   '说说遇到的问题，或者直接让它排查。': 'Describe the problem, or just ask it to investigate.',
   补充你知道的情况: 'Add anything you know',
   修复后的配置会显示在这里: 'The fixed config will appear here',
   应用修复: 'Apply fix',
   '说说想怎么改，例如「步骤再具体一些」「description 写清楚什么时候用」。':
     'Say what to change, e.g. “make the steps more specific” or “say clearly in the description when to use it”.',
-  '描述需求，让本机 CLI 写 Skill': 'Describe what you need and let the local CLI write the Skill',
-  '没有可以放 Skill 的 CLI': 'No CLI can hold Skills',
-  '已创建「{name}」，放在 {cli}；要给别的 CLI 用，打开它再复制':
-    'Created “{name}” in {cli}; to use it in other CLIs, open it and copy',
+  '描述需求，让本机 Agent 写 Skill': 'Describe what you need and let the local agent write the Skill',
+  '没有可以放 Skill 的 Agent': 'No agent can hold Skills',
+  '已创建「{name}」，放在 {cli}；要给别的 Agent 用，打开它再复制':
+    'Created “{name}” in {cli}; to use it in other agents, open it and copy',
   '帮我排查这个工具为什么连不上，找到原因并修复配置。':
     "Please find out why this tool can't connect, and fix the config.",
   '已填入修复后的配置，可以再点「测试连接」确认': 'Fixed config filled in; click “Test connection” to confirm',
@@ -604,18 +605,18 @@ export const EN_SETTINGS: Record<string, string> = {
   未部署: 'Not deployed',
   已是最新: 'Up to date',
   '内容不同，部署时旧文件备份为 .bak': 'Differs; the old file is backed up as .bak on deploy',
-  '部署好了：技能新装 {a} 个、移除 {b} 个，全局说明写入 {c} 个 CLI':
-    'Deployed: {a} skills added, {b} removed, global instructions written to {c} CLIs',
+  '部署好了：技能新装 {a} 个、移除 {b} 个，全局说明写入 {c} 个 Agent':
+    'Deployed: {a} skills added, {b} removed, global instructions written to {c} agents',
   '{names} 在本机改过，没有覆盖': '{names} were changed locally and were not overwritten',
-  '全局说明会写进下面选中的 CLI 的用户目录，在所有项目里每次启动时读入。选中的技能放到 {dir}/<分类>/<名字>/，默认不加载：全局说明末尾会附上技能清单，任务用得上时再去读。':
-    "The global instructions are written to the user folder of the CLIs selected below and read at every start in every project. Selected skills go to {dir}/<category>/<name>/ and aren't loaded by default: a skill list is appended to the global instructions, and the CLI reads a skill when a task needs it.",
+  '全局说明会写进下面选中的 Agent 的用户目录，在所有项目里每次启动时读入。选中的技能放到 {dir}/<分类>/<名字>/，默认不加载：全局说明末尾会附上技能清单，任务用得上时再去读。':
+    "The global instructions are written to the user folder of the agents selected below and read at every start in every project. Selected skills go to {dir}/<category>/<name>/ and aren't loaded by default: a skill list is appended to the global instructions, and the agent reads a skill when a task needs it.",
   '全局说明（AGENTS.md）': 'Global instructions (AGENTS.md)',
   '已修改，保存或部署时写入': 'Changed; written on save or deploy',
   换回内置的通用约束: 'Restore the built-in common rules',
   '用 AI 优化全局说明': 'Optimize global instructions with AI',
   '用 AI 生成全局说明': 'Generate global instructions with AI',
-  'CLI 在用户目录里只读运行，只写跨项目都成立的约束，不会改任何文件。结果先给你看，采用后再保存。':
-    'The CLI runs read-only in your home folder and writes only rules that hold across projects. It changes no files. Review the result, then save it if you use it.',
+  'Agent 在用户目录里只读运行，只写跨项目都成立的约束，不会改任何文件。结果先给你看，采用后再保存。':
+    'The agent runs read-only in your home folder and writes only rules that hold across projects. It changes no files. Review the result, then save it if you use it.',
   '想怎么写（可以不填），例如：加上 Windows 下的编码注意事项':
     'What you want (optional), e.g. add encoding notes for Windows',
   '正在整理…': 'Working…',
@@ -623,7 +624,7 @@ export const EN_SETTINGS: Record<string, string> = {
   全局说明: 'Global instructions',
   '# 全局约束\n\n写给编码助手看、所有项目都适用的约定：语言、编码、提问方式、安全边界…':
     '# Global rules\n\nRules for coding assistants that apply to every project: language, encoding, how to ask, safety limits…',
-  '写到哪些 CLI': 'Write to these CLIs',
+  '写到哪些 Agent': 'Write to these agents',
   '要部署的技能（已选 {n} 个）': 'Skills to deploy ({n} selected)',
   全选: 'Select all',
   全不选: 'Select none',
@@ -645,12 +646,12 @@ export const EN_SETTINGS: Record<string, string> = {
   查看: 'View',
   // 识别 CLI 配置的 API
   '已存到 API 配置：{name}': 'Saved to API settings: {name}',
-  '正在识别本机 CLI 配置的 API…': 'Detecting APIs configured in local CLIs…',
-  '在本机 CLI 的配置里识别到 {n} 个 API': 'Found {n} APIs in local CLI configs',
-  '本机 CLI 的配置里没有识别到 API': 'No APIs found in local CLI configs',
+  '正在识别本机 Agent 配置的 API…': 'Detecting APIs configured in local agents…',
+  '在本机 Agent 的配置里识别到 {n} 个 API': 'Found {n} APIs in local agent configs',
+  '本机 Agent 的配置里没有识别到 API': 'No APIs found in local agent configs',
   重新识别: 'Detect again',
-  '读的是各个 CLI 自己的环境变量和配置文件。确认是你要用的再存进来，存好后其他 CLI 也能选用。':
-    "Read from each CLI's own environment variables and config files. Save the ones you want; once saved, other CLIs can use them too.",
+  '读的是各个 Agent 自己的环境变量和配置文件。确认是你要用的再存进来，存好后其他 Agent 也能选用。':
+    "Read from each agent's own environment variables and config files. Save the ones you want; once saved, other agents can use them too.",
   没有密钥: 'No key',
   '来自 {cli}：{source}': 'From {cli}: {source}',
   选用: 'Use',
@@ -674,8 +675,8 @@ export const EN_SETTINGS: Record<string, string> = {
   // 模型目录
   模型目录: 'Model catalog',
   '未知模型用 AI 补全': 'Use AI to fill in unknown models',
-  '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 CLI 联网查上下文窗口、最大输出、默认和可选的思考强度。':
-    'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the CLI set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
+  '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。':
+    'For models missing from the catalog, click “AI fill in” next to the tiers. It uses the agent set under “Create with AI” to look up the context window, max output, and default/available reasoning efforts online.',
   补充目录: 'Supplement file',
   'AI 补全的模型信息写在这里，和内置目录合并使用；目前收录 {n} 个模型。':
     'Model info filled in by AI is written here and merged with the built-in catalog. {n} models are currently listed.',
@@ -728,7 +729,7 @@ export const EN_SETTINGS: Record<string, string> = {
     'Space between characters; negative is tighter. Maple Mono is monospaced, so it is slightly tightened by default.',
   行高: 'Line height',
   '对话回复和文档正文的行距。': 'Line spacing of chat replies and documents.',
-  'Agent 面板按工作流调度本机的编码 CLI。': 'Agent Panel runs local coding CLIs by workflow.',
+  'Agent 面板按工作流调度本机的编码 Agent。': 'Agent Panel runs local coding agents by workflow.',
   空格宽度: 'Space width',
   '调整空格的宽度，中英文之间的空隙主要来自它。等宽字体的空格比较宽，默认收窄；代码里的空格不调。':
     'Adjusts the width of spaces, which make most of the gap between Chinese and Latin text. Monospaced fonts have wide spaces, so they are narrowed by default; spaces in code are left alone.',
@@ -827,7 +828,7 @@ export const EN_SETTINGS: Record<string, string> = {
   安装没有完成: 'Install did not finish',
   'Windows 上可能会弹出系统的权限确认，点「是」继续。':
     'Windows may show a permission prompt; click "Yes" to continue.',
-  'CLI 与 AI': 'CLI & AI',
+  'Agent 与 AI': 'Agent & AI',
   连接: 'Connections',
   生图: 'Images',
   系统: 'System',

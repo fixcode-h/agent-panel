@@ -48,7 +48,7 @@ export function CliAuthPanel({
           mode === 'account'
             ? t('用浏览器登录的账号，可以保存几个账号随时切换')
             : t(
-                '用全局设置里配的 API（接口地址和密钥）；支持写配置的 CLI 会立即保存到它自己的配置，模型下拉优先从 CLI 读取',
+                '用全局设置里配的 API（接口地址和密钥）；支持写配置的 Agent 会立即保存到它自己的配置，模型下拉优先从 Agent 读取',
               )
         }
         stack
@@ -94,7 +94,7 @@ export function CliAuthPanel({
             ) : (
               <p className="text-[0.78125rem] leading-relaxed text-warning">
                 {fitting.length
-                  ? t('还没选 API，现在会按 CLI 自己的登录运行')
+                  ? t('还没选 API，现在会按 Agent 自己的登录运行')
                   : t('还没有适用的 API：到 API 配置里添加一个 {protocols} 协议的', {
                       protocols: (def.auth?.api?.protocols ?? []).map((p) => API_PROTOCOL_LABEL[p]).join(' / '),
                     })}
@@ -326,7 +326,7 @@ function AccountList({ def }: { def: CliDefinition }) {
                   <button
                     type="button"
                     aria-label={t('删除 {name}', { name: a.name })}
-                    title={t('删除（只删除保存的，不影响 CLI 现在的登录）')}
+                    title={t('删除（只删除保存的，不影响 Agent 现在的登录）')}
                     onClick={() => run(`d:${a.id}`, () => api.deleteAccount(def.id, a.id))}
                     className="grid h-7 w-7 shrink-0 cursor-pointer place-items-center rounded-md text-subtle opacity-0 group-hover:opacity-100 hover:bg-sel hover:text-danger focus-visible:opacity-100"
                   >

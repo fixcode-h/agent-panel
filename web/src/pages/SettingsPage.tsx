@@ -79,12 +79,12 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'fonts', label: t('字体'), icon: Type, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
-  { id: 'models', label: t('默认 CLI'), icon: Cpu, group: t('CLI 与 AI') },
+  { id: 'models', label: t('默认 Agent'), icon: Cpu, group: t('Agent 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
   { id: 'apis', label: t('API 配置'), icon: KeyRound },
   ...clis.map((c) => ({ id: `cli:${c.id}`, label: c.name, cli: c })),
-  { id: 'assist', label: t('AI 创建'), icon: Sparkles, group: t('CLI 与 AI') },
+  { id: 'assist', label: t('AI 创建'), icon: Sparkles, group: t('Agent 与 AI') },
   // 外部 CLI 的授权（GitHub CLI 等），以后加新的授权工具只加定义
   { id: 'integrations', label: t('授权'), icon: ShieldCheck, group: t('连接') },
   { id: 'remote', label: t('外部访问'), icon: Globe, group: t('连接') },
@@ -343,7 +343,7 @@ function SettingsBody({
                 ) : (
                   s.icon && <s.icon className="h-4 w-4 shrink-0" strokeWidth={1.8} />
                 )}
-                <span className="truncate">{s.id === 'models' ? 'CLI' : s.label}</span>
+                <span className="truncate">{s.id === 'models' ? 'Agent' : s.label}</span>
                 {s.id === 'update' && update && (
                   <span className="ml-auto h-1.5 w-1.5 shrink-0 rounded-full bg-accent" title={t('有新版本')} />
                 )}
@@ -356,7 +356,7 @@ function SettingsBody({
       {inCli && (
         // CLI 的二级列表：默认 CLI 和各个 CLI，CLI 可以拖动调整顺序（新建 Agent、下拉框里也按这个顺序）
         <nav
-          aria-label="CLI"
+          aria-label="Agent"
           className="flex shrink-0 gap-0.5 overflow-x-auto border-b p-2 md:w-[232px] md:flex-col md:overflow-visible md:border-r md:border-b-0 md:p-3 md:pt-6"
         >
           {SECTIONS.filter(cliPage).map((s, i, list) => {
@@ -452,7 +452,7 @@ function SettingsBody({
               {demo && (
                 <p className="mb-2 flex gap-2.5 rounded-xl border p-3.5 text-[0.8125rem] leading-relaxed text-subtle">
                   <FlaskConical className="mt-0.5 h-4 w-4 shrink-0" />
-                  {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 CLI。')}
+                  {t('在线演示没有本机环境，任务的输出都是示例；下载到本机运行后会真正调用 Agent。')}
                 </p>
               )}
               <Row
@@ -474,7 +474,7 @@ function SettingsBody({
               <Row
                 title={t('没有输出时提醒')}
                 desc={t(
-                  '分钟，填 0 不检测。CLI 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。',
+                  '分钟，填 0 不检测。Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。',
                 )}
               >
                 <div className="flex flex-col gap-1">
@@ -494,7 +494,7 @@ function SettingsBody({
               <Row
                 title={t('离开对话后保留多久')}
                 desc={t(
-                  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 CLI 留着，这段时间内回来发消息能直接接着说，不用重新启动 CLI；每个还在等的对话会占用一个 CLI 进程。',
+                  '分钟，填 0 表示回复完就结束这一轮。对话页切走后，面板会把回复完的 Agent 留着，这段时间内回来发消息能直接接着说，不用重新启动 Agent；每个还在等的对话会占用一个 Agent 进程。',
                 )}
               >
                 <div className="flex flex-col gap-1">
@@ -514,7 +514,7 @@ function SettingsBody({
               <Row
                 title={t('同时执行的子对话')}
                 desc={t(
-                  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 CLI 进程，跑工作流时更多。',
+                  '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。',
                 )}
               >
                 <div className="flex flex-col gap-1">
@@ -693,13 +693,13 @@ function SettingsBody({
             <>
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
                 {t(
-                  '角色可以不指定 CLI，选「系统默认」时用这里的 CLI；模型可以只选高、中、低一档，执行时换成那个 CLI 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。',
+                  '角色可以不指定 Agent，选「系统默认」时用这里的 Agent；模型可以只选高、中、低一档，执行时换成那个 Agent 对应档位的模型和思考强度。改这里就能让所有用默认设置的角色一起切换。',
                 )}
               </p>
               <Group>
-                <Row title={t('默认 CLI')} desc={t('角色选了「系统默认」或没有指定 CLI 时使用')}>
+                <Row title={t('默认 Agent')} desc={t('角色选了「系统默认」或没有指定 Agent 时使用')}>
                   <Select
-                    aria-label={t('默认 CLI')}
+                    aria-label={t('默认 Agent')}
                     value={defCli}
                     onChange={(e) => setDefCli(e.target.value)}
                     className="w-[240px]"
@@ -765,7 +765,7 @@ function SettingsBody({
                 <Row
                   title={t('未知模型用 AI 补全')}
                   desc={t(
-                    '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 CLI 联网查上下文窗口、最大输出、默认和可选的思考强度。',
+                    '模型目录里没有的模型，可以在三档模型旁边点「AI 补全」，用「AI 创建」里设置的 Agent 联网查上下文窗口、最大输出、默认和可选的思考强度。',
                   )}
                 >
                   <Switch
@@ -785,13 +785,13 @@ function SettingsBody({
               </Group>
               <Group title={t('图片生成')}>
                 <Row
-                  title={t('图片生成 CLI')}
+                  title={t('图片生成 Agent')}
                   desc={t(
                     'UI 设计里生成图片时使用。目前只有 Codex 内置了生图工具，用 ChatGPT 账号登录即可，不需要 API Key。',
                   )}
                 >
                   <Select
-                    aria-label={t('图片生成 CLI')}
+                    aria-label={t('图片生成 Agent')}
                     value={imageGen.cli}
                     onChange={(e) => setImageGen({ ...imageGen, cli: e.target.value, model: '' })}
                     className="w-[240px]"
@@ -813,7 +813,7 @@ function SettingsBody({
                       })}
                   />
                 </Row>
-                <Row title={t('图片生成模型')} desc={t('调用生图工具的模型，不选时用这个 CLI 的高档模型')}>
+                <Row title={t('图片生成模型')} desc={t('调用生图工具的模型，不选时用这个 Agent 的高档模型')}>
                   <div className="w-[240px]">
                     <AssistModel
                       cli={imageGen.cli}
@@ -828,7 +828,7 @@ function SettingsBody({
                 <Row
                   title={t('同时生成几张')}
                   desc={t(
-                    'CLI 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。',
+                    'Agent 是每张图各开一个进程，最多同时开这么多个；浏览器是在选中的 Gemini / ChatGPT 标签页里只开这么多个对话（网页左边的对话列表里能看到），之后的图排队，哪个对话空了就接着用哪个。',
                   )}
                 >
                   <Select
@@ -876,12 +876,14 @@ function SettingsBody({
           {cur.id === 'assist' && (
             <>
               <p className="text-[0.8125rem] leading-relaxed text-subtle">
-                {t('在角色和工作流页面可以用本机 CLI 对话生成或优化配置。CLI 按固定格式输出，面板校验通过后才能应用。')}
+                {t(
+                  '在角色和工作流页面可以用本机 Agent 对话生成或优化配置。Agent 按固定格式输出，面板校验通过后才能应用。',
+                )}
               </p>
               <Group>
-                <Row title={t('使用的 CLI')} desc={t('默认用「CLI」里设为默认的那个')}>
+                <Row title={t('使用的 Agent')} desc={t('默认用「Agent」里设为默认的那个')}>
                   <Select
-                    aria-label={t('AI 创建使用的 CLI')}
+                    aria-label={t('AI 创建使用的 Agent')}
                     value={assist.cli || defCli}
                     // 选回默认的就不单独记，之后换了默认 CLI 会跟着变
                     // 换 CLI 时模型名不通用，清空回到那个 CLI 的默认模型
@@ -899,7 +901,7 @@ function SettingsBody({
                       }))}
                   />
                 </Row>
-                <Row title={t('模型')} desc={t('默认用这个 CLI 设置里的默认模型')}>
+                <Row title={t('模型')} desc={t('默认用这个 Agent 设置里的默认模型')}>
                   <AssistModel
                     key={assist.cli || defCli}
                     cli={assist.cli || defCli}

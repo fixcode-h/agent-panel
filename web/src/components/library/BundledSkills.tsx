@@ -66,7 +66,7 @@ export function BundledSkills({ query }: { query: string }) {
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border bg-card px-4 py-3">
         <span className="text-[0.8125rem] text-muted">{t('装到')}</span>
         <span className="font-mono text-[0.8125rem] text-muted">~/.agents/skills</span>
-        <span className="text-[0.75rem] text-subtle">{t('所有 CLI 共用')}</span>
+        <span className="text-[0.75rem] text-subtle">{t('所有 Agent 共用')}</span>
         <Button
           size="sm"
           className="ml-auto"

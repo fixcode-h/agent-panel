@@ -343,7 +343,7 @@ function EnvChip({
             <button
               type="button"
               disabled={!idle}
-              title={t('让 CLI 把之前的对话压缩成摘要，腾出上下文')}
+              title={t('让 Agent 把之前的对话压缩成摘要，腾出上下文')}
               onClick={async () => {
                 try {
                   onTask(await api.compactTask(task.id))

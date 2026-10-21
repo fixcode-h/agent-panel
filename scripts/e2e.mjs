@@ -3640,7 +3640,7 @@ try {
       ['uninstall', '-g', '@openai/codex'],
     ],
   )
-  await assert.rejects(call('POST', '/clis/nope/install'), /未知的 CLI/)
+  await assert.rejects(call('POST', '/clis/nope/install'), /未知的 Agent/)
   // Pi 改过包名：装新包前先卸掉旧的，否则两个包提供同一个 pi 命令时 npm 会报 EEXIST
   const pj = await waitJob((await call('POST', '/clis/pi/install')).id)
   assert.equal(pj.status, 'done', pj.error)

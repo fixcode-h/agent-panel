@@ -29,8 +29,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
     'The GPU decides which PyTorch build is installed; without a GPU it uses the CPU, which works but is very slow',
   '{n}GB 显存': '{n} GB VRAM',
   '没有找到 Python': 'Python not found',
-  '「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 CLI，让它在安装目录里排查并修好环境。':
-    '"Handle with AI" hands the failed step and its output to the CLI set under "AI Create", which diagnoses and repairs the environment in the install folder.',
+  '「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。':
+    '"Handle with AI" hands the failed step and its output to the agent set under "AI Create", which diagnoses and repairs the environment in the install folder.',
   '选一个下载即可开始用，推荐的模型放在最前面。下载好的模型会出现在 UI 设计的「生成图片的方式」里；显存比建议的少也能跑，只是慢一些。':
     'Download one to get started; recommended models come first. Downloaded models show up under "Image source" in UI design. Less VRAM than suggested still works, just slower.',
   推荐: 'Recommended',
@@ -95,8 +95,8 @@ export const EN_LOCAL_IMAGE: Record<string, string> = {
   '换成更快的设置，适合批量': 'Use faster settings for batches',
   'AI 生成工作流': 'Generate a workflow with AI',
   'AI 优化「{name}」': 'Improve "{name}" with AI',
-  '用「AI 创建」里设置的 CLI；ComfyUI 在运行时会按它装的节点来写':
-    'Uses the CLI set under "AI Create"; when ComfyUI is running it writes against the installed nodes',
+  '用「AI 创建」里设置的 Agent；ComfyUI 在运行时会按它装的节点来写':
+    'Uses the agent set under "AI Create"; when ComfyUI is running it writes against the installed nodes',
   '想生成什么样的资源、什么风格？': 'What assets and style do you want?',
   '想怎么改？': 'What should change?',
   '这是界面格式的工作流。请在 ComfyUI 里用「导出（API）」再导出一次。':

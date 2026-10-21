@@ -467,7 +467,7 @@ async function modelsFromCli(
 
 export async function cliModels(id: string, refresh = false): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
-  if (!def) throw new Error(t('未知的 CLI：{cli}', { cli: id }))
+  if (!def) throw new Error(t('未知的 Agent：{cli}', { cli: id }))
   const cs = cliSettings(await getSettings(), id)
   const entries = await mergedModelCatalog().catch(() => [])
   const protocol = cs.api?.protocol
@@ -577,7 +577,7 @@ export const invalidateModels = (id?: string) => (id ? cache.delete(id) : cache.
 export function modelsApi() {
   return new Hono().get('/:id/models', async (c) => {
     const id = c.req.param('id')
-    if (!CLIS.some((x) => x.id === id)) return c.json({ error: t('未知的 CLI：{cli}', { cli: id }) }, 404)
+    if (!CLIS.some((x) => x.id === id)) return c.json({ error: t('未知的 Agent：{cli}', { cli: id }) }, 404)
     return c.json(await cliModels(id, c.req.query('refresh') === '1'))
   })
 }
