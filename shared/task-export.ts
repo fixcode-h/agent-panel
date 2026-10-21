@@ -53,13 +53,22 @@ export interface TaskStats {
   steps: { total: number; done: number; failed: number; skipped: number; pending: number }
   /** 验收没通过、退回重做的次数 */
   reworks: number
+  /** 报错条数：带错误的系统消息 + 失败的工具调用（命令、读取、编辑等失败了也是要看的） */
   errors: number
+  /** 其中失败的工具调用次数 */
+  failedTools: number
   /** 追加要求、对话的轮数 */
   turns: number
   nodes: NodeStat[]
 }
 
 const rate = (hit: number, input: number) => (input > 0 ? Math.round((hit / input) * 1000) / 1000 : 0)
+
+/** 失败的工具调用：命令非零退出、读取失败、编辑冲突都会标上 failed */
+const failedToolsOf = (task: Task, step?: string) =>
+  task.messages
+    .filter((m) => (step === undefined ? true : m.step === step))
+    .reduce((n, m) => n + m.tools.filter((x) => x.failed).length, 0)
 
 export function taskStats(task: Task, now = Date.now()): TaskStats {
   const errorsOf = (step: string) => task.messages.filter((m) => m.error && m.step === step).length
@@ -85,7 +94,7 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
       costUsd: u.costUsd,
       files: s.changes.length,
       outputChars: s.output.length,
-      errors: errorsOf(s.id),
+      errors: errorsOf(s.id) + failedToolsOf(task, s.id),
     }
   })
   const count = (st: TaskStep['status']) => task.steps.filter((s) => s.status === st).length
@@ -106,7 +115,8 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
       pending: count('pending') + count('running'),
     },
     reworks: task.steps.reduce((n, s) => n + Math.max(0, s.rounds - (s.verdict === 'pass' ? 1 : 0)), 0),
-    errors: task.messages.filter((m) => m.error).length,
+    errors: task.messages.filter((m) => m.error).length + failedToolsOf(task),
+    failedTools: failedToolsOf(task),
     turns: task.turns?.length ?? 0,
     nodes,
   }
@@ -311,10 +321,23 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${tk.createdAt.slice(0, 16).replace('T', ' ')}`,
     '',
     '## 统计',
-    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}；追加要求/对话 ${st.turns} 轮`,
+    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}；追加要求/对话 ${st.turns} 轮（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
-    `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次；报错 ${st.errors} 条`,
+    `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
   ]
+  // 用户每条要求的发出时间：判断「后面越来越慢」时看相邻两条之间隔了多久
+  const asks = tk.messages.filter((m) => m.role === 'user')
+  if (asks.length > 1)
+    lines.push(
+      `- 用户消息 ${asks.length} 条：${asks
+        .map((m) => {
+          const d = new Date(m.at ?? '')
+          return Number.isFinite(d.getTime())
+            ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+            : '?'
+        })
+        .join('、')}`,
+    )
   if (st.nodes.length) {
     lines.push(
       '',
@@ -371,7 +394,16 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     }
   }
   lines.push('', '## 执行过程')
+  // 每条带上时间：长任务「后面越来越慢」只能靠时间戳定位从哪一步开始变慢
+  const at = (iso: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    return Number.isFinite(d.getTime())
+      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')} `
+      : ''
+  }
   let step = ''
+  let last = ''
   for (const m of tk.messages) {
     if (m.role === 'system' && !m.error && !m.answers) continue
     if (m.step !== step) {
@@ -388,21 +420,51 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
             : '用户回答'
           : `AI（${agentName(m.agentId)}）`
     const body = m.answers ? m.answers.map((a) => `${a.question}：${a.answer}`).join('\n') : m.text.trim()
+    const stamp = at(m.at ?? '')
+    // 和上一条同一秒的合并显示，不重复刷时间；间隔超过 1 分钟单独提示，看出等待在哪
+    const gap = m.at && last ? Date.parse(m.at) - Date.parse(last) : 0
+    if (gap > 60_000) lines.push('', `_（距上一条 ${fmtMs(gap)}）_`)
+    if (stamp) last = m.at ?? ''
+    const failed = m.tools.filter((x) => x.failed)
     const tools = m.tools.length
       ? `\n工具：${m.tools
           .slice(0, 30)
           .map((x) => `${x.name || x.kind} ${x.label}${x.failed ? '（失败）' : ''}`)
           .join('；')}${m.tools.length > 30 ? `…共 ${m.tools.length} 个` : ''}`
       : ''
-    if (body || tools) lines.push(`**${who}**：${clip(body, maxOutput)}${tools}`)
+    // 失败的工具调用给出输出尾部：分析返工和报错时只看到「（失败）」没法判断原因
+    const detail = failed.length
+      ? `\n失败详情：${failed
+          .slice(0, 5)
+          .map(
+            (x) => `\n- ${x.name || x.kind} ${x.label}\n${clip((x.output || x.detail || '（没有输出）').trim(), 1200)}`,
+          )
+          .join('')}`
+      : ''
+    // 用户的要求不截断：约束、边界条件常常写在后面，截掉就判断不了是否满足要求
+    const limit = m.role === 'user' ? Infinity : maxOutput
+    if (body || tools) lines.push(`**${who}**：${stamp}${clip(body, limit)}${tools}${detail}`)
   }
   const outs = tk.steps.filter((s) => s.output.trim())
   if (outs.length) {
     lines.push('', '## 节点的最终输出（交给下游的内容）')
     for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, clip(s.output.trim(), maxOutput))
   }
-  if (tk.changes.length)
-    lines.push('', '## 改动的文件', ...tk.changes.slice(0, 80).map((c) => `- ${c.path} +${c.add} -${c.del}`))
+  // 改动的文件按节点自己的记录列：任务级 changes 是「项目目录相对任务开始时」的差额，
+  // 同一个工作区里并行的其他任务改了文件也会算进来，不能当成这次任务的产出
+  const mine = tk.steps.filter((s) => s.changes.length)
+  if (mine.length) {
+    lines.push('', '## 改动的文件（按节点记录）')
+    for (const s of mine)
+      lines.push('', `### ${s.title}（${s.id}）`, ...s.changes.map((c) => `- ${c.path} +${c.add} -${c.del}`))
+  } else if (tk.changes.length) {
+    lines.push(
+      '',
+      '## 改动的文件',
+      '（任务级统计：项目目录相对任务开始时全部有变化的文件；同一工作区里别的任务改的文件也会出现在这里）',
+      ...tk.changes.slice(0, 80).map((c) => `- ${c.path} +${c.add} -${c.del}`),
+    )
+  }
   return lines.join('\n')
 }
 

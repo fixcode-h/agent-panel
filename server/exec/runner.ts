@@ -19,7 +19,9 @@ import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared
 import {
   changesSince,
   mergeChanges,
+  pauseRun,
   questionAnswers,
+  resumeRun,
   sessionChanged,
   stepUsage,
   withAttachments,
@@ -33,6 +35,7 @@ import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-l
 import { modelLimitsFor } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
 import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult, type EngineHost } from '../../shared/engine.ts'
+import { projectFormat } from '../../shared/file-format.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
@@ -281,6 +284,8 @@ export function answerRequest(task: Task, id: string, r: AskReply, newId: () => 
           : t('你拒绝了：{title}', { title: req.title })
   // 回答了问题：问题和答案在对话正文里显示，不再是一行灰色的说明
   const answers = req.kind === 'question' ? questionAnswers(req, r) : undefined
+  // 请求处理完就继续执行：等待结算进 waitMs，从这一刻重新算执行时间
+  if (!task.requests.length) resumeRun(task)
   task.messages.push({
     id: newId(),
     role: 'system',
@@ -944,6 +949,8 @@ async function runAgent(
     if (pendingNotes.size) return null
     task.prewarming = false
     task.awaitingUser = true
+    // 停在等待上：空闲时间记进等待，不算执行。keepAlive 会让这次调用一直不返回
+    if (!prewarmMode) pauseRun(task)
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
@@ -972,6 +979,8 @@ async function runAgent(
             // 用户发来第一句：预热结束，之后模型的输出正常记进对话
             prewarmMode = false
             task.messages.push(msg)
+            // 继续执行：等待到此结束，从这一刻重新算执行时间
+            resumeRun(task)
             // 收到用户消息，CLI 开始处理这一轮
             task.working = true
             // 之后的输出另起一条，排在用户消息后面
@@ -1303,6 +1312,8 @@ export async function runRealTurn(ctx: RealContext) {
     prewarmTurnDoneAt: ctx.prewarmTurnDoneAt,
     changed: ctx.changed,
     newId: ctx.newId,
+    // 项目设置优先、没设时跟随全局：默认 UTF-8 无 BOM + LF
+    fileFormat: projectFormat(ctx.project, ctx.settings),
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     listConversations: ctx.listConversations,
