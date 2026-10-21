@@ -85,38 +85,28 @@ export function TaskFiles({
         ))}
         <span className="ml-auto flex min-w-0 items-center gap-1 px-1 text-[0.75rem] text-subtle">
           <GitBranch className="h-3.5 w-3.5 shrink-0" />
-          <span className="truncate font-mono" title={files.tree?.dir ?? dir}>
-            {files.tree?.branch ?? t('没有分支')}
+          <span className="truncate font-mono" title={files.info?.dir ?? dir}>
+            {files.info?.branch ?? t('没有分支')}
           </span>
         </span>
         <button
           type="button"
           aria-label={t('刷新文件')}
           title={t('刷新文件')}
-          onClick={files.load}
+          onClick={files.refresh}
           className="grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg"
         >
           <RefreshCw className={cn('h-3.5 w-3.5', files.loading && 'animate-spin')} />
         </button>
       </div>
       {tab === 'files' ? (
-        <FileExplorer
-          tree={files.tree}
-          error={files.error}
-          hits={files.hits}
-          hitsTruncated={files.hitsTruncated}
-          searching={files.searching}
-          loading={files.loading}
-          onSearch={files.search}
-          onOpen={(path, line) => setTarget({ path, line })}
-          compact
-        />
+        <FileExplorer browser={files} onOpen={(path, line) => setTarget({ path, line })} compact />
       ) : (
         <ChangesList
           changes={changes}
           onDiff={setDiffPath}
           scoped={!!node}
-          canReview={!node && task.status !== 'running' && !task.simulated && !!files.tree?.isGit && changes.length > 0}
+          canReview={!node && task.status !== 'running' && !task.simulated && !!files.info?.isGit && changes.length > 0}
           reviewing={reviewing}
           onReview={async () => {
             setReviewing(true)
@@ -133,7 +123,7 @@ export function TaskFiles({
       {task.projectId ? (
         <ProjectFileDialog
           projectId={task.projectId}
-          dir={files.tree?.dir ?? dir ?? ''}
+          dir={files.info?.dir ?? dir ?? ''}
           target={target}
           onOpenChange={(open) => !open && setTarget(null)}
         />
@@ -147,7 +137,7 @@ export function TaskFiles({
         onReverted={(x) => {
           upsertTask(taskSummary(x))
           // 撤销后文件状态变了，重新读一遍
-          files.load()
+          files.refresh()
         }}
       />
     </div>

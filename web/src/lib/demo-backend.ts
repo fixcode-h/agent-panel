@@ -764,13 +764,54 @@ const DEMO_STATUS: Record<string, string> = {
   'tests/cart.test.ts': 'D',
 }
 
-/** 演示的项目文件树：固定一份数据，搜索在前端/local 里过滤 */
+/** 演示的项目文件：根信息只说明目录和分支，文件按层读，和正式版一致 */
+function demoProjectLevel(files: string[], status: Record<string, string>, dir: string) {
+  const levels = (path: string) => {
+    // 界面检查靠它确认「展开才读这一层、收起再展开不重复读」；只在演示包里存在
+    ;((globalThis as { __fileCalls?: string[] }).__fileCalls ??= []).push(path)
+    const prefix = path ? `${path}/` : ''
+    const seen = new Set<string>()
+    const entries: { name: string; path: string; kind: 'dir' | 'file'; status: string }[] = []
+    for (const f of files) {
+      if (!f.startsWith(prefix)) continue
+      const rest = f.slice(prefix.length)
+      const cut = rest.indexOf('/')
+      const name = cut < 0 ? rest : rest.slice(0, cut)
+      if (seen.has(name)) continue
+      seen.add(name)
+      const p = path ? `${path}/${name}` : name
+      entries.push({
+        name,
+        path: p,
+        kind: cut < 0 ? 'file' : 'dir',
+        status: cut < 0 ? (status[f] ?? '') : '',
+      })
+    }
+    entries.sort((a, b) => (a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'dir' ? -1 : 1))
+    return { dir, path, entries }
+  }
+  return levels
+}
+
+/** 演示的项目文件：根信息、按层读取、按名称或内容搜索 */
 function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
   const [id, kind] = seg.slice(1)
   const p = load().projects.find((x) => x.id === id) ?? fail('项目不存在')
+  const dir = p.path || '~/demo/shop'
+  if (kind === 'list') return demoProjectLevel(DEMO_FILES, DEMO_STATUS, dir)(query.get('path') ?? '')
   if (kind === 'search') {
     const q = (query.get('q') ?? '').trim().toLowerCase()
     if (!q) return { files: [], truncated: false }
+    if ((query.get('mode') ?? 'name') === 'name')
+      return {
+        files: DEMO_FILES.filter((f) =>
+          f
+            .slice(f.lastIndexOf('/') + 1)
+            .toLowerCase()
+            .includes(q),
+        ).map((f) => ({ path: f, status: (DEMO_STATUS[f] ?? '') as never })),
+        truncated: false,
+      }
     const files = DEMO_FILES.filter((f) => (DEMO_CONTENTS[f] ?? '').toLowerCase().includes(q)).map((f) => ({
       path: f,
       hits: (DEMO_CONTENTS[f] ?? '')
@@ -1633,17 +1674,40 @@ function tasksRoute(
   // 演示里没有真的项目目录，看不到文件内容
   if (sub === 'file')
     return { path: query.get('path') ?? '', dir: '', exists: false, content: '', truncated: false, demo: true }
-  // 任务右栏的文件树：用演示项目的那份文件列表，改过的文件带上状态
+  // 任务右栏的文件：根信息、按层读取、搜索，和正式版一致；改过的文件带上状态
   if (sub === 'files') {
     const p = d.projects.find((x) => x.id === task.projectId)
     const changed = new Set((task.changes ?? []).map((c) => c.path))
-    return {
-      dir: p?.path || '~/demo/shop',
-      branch: p?.path ? 'main' : null,
-      isGit: !!p?.path,
-      files: DEMO_FILES.map((f) => ({ path: f, status: (changed.has(f) ? 'M' : (DEMO_STATUS[f] ?? '')) as never })),
-      truncated: false,
+    const dir = p?.path || '~/demo/shop'
+    const status = { ...DEMO_STATUS }
+    for (const f of changed) status[f] = 'M'
+    if (rid === 'list') return demoProjectLevel(DEMO_FILES, status, dir)(query.get('path') ?? '')
+    if (rid === 'search') {
+      const q = (query.get('q') ?? '').trim().toLowerCase()
+      if (!q) return { files: [], truncated: false }
+      if ((query.get('mode') ?? 'content') === 'name')
+        return {
+          files: DEMO_FILES.filter((f) =>
+            f
+              .slice(f.lastIndexOf('/') + 1)
+              .toLowerCase()
+              .includes(q),
+          ).map((f) => ({ path: f, status: (status[f] ?? '') as never })),
+          truncated: false,
+        }
+      return {
+        files: DEMO_FILES.filter((f) => (DEMO_CONTENTS[f] ?? '').toLowerCase().includes(q)).map((f) => ({
+          path: f,
+          hits: (DEMO_CONTENTS[f] ?? '')
+            .split('\n')
+            .map((text, i) => ({ line: i + 1, text }))
+            .filter((h) => h.text.toLowerCase().includes(q))
+            .slice(0, 5),
+        })),
+        truncated: false,
+      }
     }
+    return { dir, branch: p?.path ? 'main' : null, isGit: !!p?.path }
   }
   // 演示里没有本机的文件管理器
   if (sub === 'reveal') return { ok: true, dir: '', demo: true }

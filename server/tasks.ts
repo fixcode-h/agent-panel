@@ -64,7 +64,7 @@ import { createTaskStore } from './task-store.ts'
 import { createWorktree, mergeWorktree, removeWorktree } from './exec/worktree.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { cleanupUploads, clipTranscript, removeUploads, saveTextUpload, uploadDirOf } from './uploads.ts'
-import { listDir, rawInDir, readInDir, searchInDir } from './files.ts'
+import { listDir, listLevel, rawInDir, readInDir, searchInDir, searchNameInDir } from './files.ts'
 import path from 'node:path'
 import { log } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -1130,14 +1130,22 @@ export function tasksApi(deps: {
     }
   }
 
-  // 任务目录里的文件树：右栏的文件系统，独立分支时是 worktree 目录
+  // 任务目录的根信息：右栏的文件系统，独立分支时是 worktree 目录
   routes.get('/:id/files', (c) => inTaskDir(c, async (dir) => c.json(await listDir(dir))))
 
-  // 任务目录里按内容搜索
+  // 任务目录里列一层：展开目录时读它的直接子项
+  routes.get('/:id/files/list', (c) =>
+    inTaskDir(c, async (dir) =>
+      c.json(await listLevel(dir, c.req.query('path') ?? '', { refresh: c.req.query('refresh') === '1' })),
+    ),
+  )
+
+  // 任务目录里搜索：默认按文件名，content 按内容
   routes.get('/:id/files/search', async (c) => {
     const q = (c.req.query('q') ?? '').trim()
     if (!q) return c.json({ files: [], truncated: false })
-    return inTaskDir(c, async (dir) => c.json(await searchInDir(dir, q)))
+    const name = (c.req.query('mode') ?? 'content') === 'name'
+    return inTaskDir(c, async (dir) => c.json(name ? await searchNameInDir(dir, q) : await searchInDir(dir, q)))
   })
 
   // Agent 输出里提到的文件：读出内容给任务页显示。只能读任务目录里面的文件

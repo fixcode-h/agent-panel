@@ -168,6 +168,7 @@ export const EN_SERVER: Record<string, string> = {
   '无法读取项目文件：{error}': 'Couldn’t read project files: {error}',
   '目录不存在：{dir}': 'Directory doesn’t exist: {dir}',
   '无法读取目录：{error}': 'Couldn’t read directory: {error}',
+  目录已经不在了: 'The folder is gone',
   请输入文件夹名: 'Enter a folder name',
   '文件夹名不能包含 \\ / : * ? " < > |，也不能以点或空格结尾':
     'Folder names can’t contain \\ / : * ? " < > | or end with a dot or space',

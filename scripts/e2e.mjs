@@ -1911,6 +1911,38 @@ try {
   assert.match(kAtt.input, /## 附件[\s\S]*截图\.png：/)
   assert.equal(kAtt.args[kAtt.args.indexOf('--add-dir') + 1], path.join(dataDir, 'uploads'))
   assert.deepEqual(await call('GET', `/projects/${project.id}/files?q=read`), ['README.md'])
+  // 文件浏览：根信息不带全量文件，列一层才读一层，名称搜索能搜到还没展开的深层文件
+  {
+    mkdirSync(path.join(projectDir, 'src/api'), { recursive: true })
+    writeFileSync(path.join(projectDir, 'src/api/deep-cart.ts'), 'export {}\n')
+    const info = await call('GET', `/project-files/${project.id}`)
+    assert.deepEqual(Object.keys(info).sort(), ['branch', 'dir', 'isGit'], '根信息不再返回全量文件')
+    const root = await call('GET', `/project-files/${project.id}/list`)
+    assert.ok(
+      root.entries.some((e) => e.name === 'src' && e.kind === 'dir'),
+      JSON.stringify(root.entries),
+    )
+    assert.ok(root.entries.some((e) => e.name === 'README.md' && e.kind === 'file'))
+    assert.ok(!root.entries.some((e) => e.path.includes('/')), '第一层不展开子目录')
+    // 未展开的深层文件也能按名字搜到
+    const found = await call('GET', `/project-files/${project.id}/search?mode=name&q=deep-cart`)
+    assert.deepEqual(
+      found.files.map((f) => f.path),
+      ['src/api/deep-cart.ts'],
+    )
+    // 未跟踪的文件带 ? 状态；越权路径按错误返回
+    assert.equal(found.files[0].status, '?')
+    const level = await call('GET', `/project-files/${project.id}/list?path=src`)
+    assert.equal(level.entries.find((e) => e.path === 'src/api').kind, 'dir')
+    const escaped = await fetch(`${base}/project-files/${project.id}/list?path=${encodeURIComponent('../..')}`)
+    assert.equal(escaped.status, 404, '不能列到项目目录外面')
+    // 任务目录同样按层读
+    const tLevel = await call('GET', `/tasks/${tAtt.id}/files/list`)
+    assert.ok(tLevel.entries.some((e) => e.name === 'README.md'))
+    const tInfo = await call('GET', `/tasks/${tAtt.id}/files`)
+    assert.deepEqual(Object.keys(tInfo).sort(), ['branch', 'dir', 'isGit'])
+  }
+  step('文件浏览：只列一层、深层名称搜索、越权路径、任务目录同样按层')
   // Agent 自己提交了改动：仍然算在任务的更改里（和任务开始时的提交比）
   let tCommit = await call('POST', '/tasks', {
     projectId: project.id,

@@ -1,4 +1,4 @@
-/** 文件浏览：项目里的文件列表（带 git 状态）、按文件名或内容搜索、看单个文件的内容 */
+/** 文件浏览：项目里的文件（带 git 状态）、按层读取目录、按文件名或内容搜索、看单个文件的内容 */
 
 /** 文件在 git 里的状态；未改动的文件为空字符串 */
 export type FileStatus = '' | 'M' | 'A' | 'D' | 'R' | 'U' | '?'
@@ -11,13 +11,38 @@ export interface FileEntry {
   from?: string
 }
 
+/** 项目的根信息：列表按层读取，这里只说明目录、分支和是不是 git 仓库 */
 export interface FileTree {
   dir: string
   /** 当前分支；不是 git 仓库或分离 HEAD 时为空 */
   branch: string | null
   isGit: boolean
+}
+
+/** 目录里的一项 */
+export interface DirEntry {
+  name: string
+  /** 相对项目目录，统一用 / 分隔 */
+  path: string
+  kind: 'dir' | 'file'
+  status: FileStatus
+  from?: string
+}
+
+/** 目录的一层：只包含这一层的直接子项，展开下一层时再单独请求 */
+export interface DirLevel {
+  dir: string
+  /** 相对目录，根目录为空字符串 */
+  path: string
+  entries: DirEntry[]
+  /** git 状态这次没拿到（超时或出错），这一层的条目都没有状态 */
+  statusSkipped?: boolean
+}
+
+/** 按文件名搜索的结果 */
+export interface NameSearch {
   files: FileEntry[]
-  /** 文件太多，只列了前面一部分 */
+  /** 命中太多，只显示了一部分 */
   truncated: boolean
 }
 

@@ -31,7 +31,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { AssistInput, AssistJob } from '@shared/assist'
-import type { ContentSearch, FileContent, FileTree } from '@shared/files'
+import type { ContentSearch, DirLevel, FileContent, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
@@ -289,8 +289,16 @@ export const api = {
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),
   projectFiles: (projectId: string, q: string) =>
     request<string[]>(`/projects/${projectId}/files?q=${encodeURIComponent(q)}`),
-  /** 文件浏览页：项目里的文件树和 git 状态 */
+  /** 文件浏览页：项目的目录、分支和是不是 git 仓库（文件按层读） */
   fileTree: (projectId: string) => request<FileTree>(`/project-files/${projectId}`),
+  /** 列一层：展开目录时读它的直接子项；refresh 时不用缓存的状态 */
+  fileLevel: (projectId: string, path: string, refresh = false) =>
+    request<DirLevel>(
+      `/project-files/${projectId}/list?path=${encodeURIComponent(path)}${refresh ? '&refresh=1' : ''}`,
+    ),
+  /** 按文件名搜索：服务端搜，还没展开的深层文件也能找到 */
+  searchFileNames: (projectId: string, q: string) =>
+    request<NameSearch>(`/project-files/${projectId}/search?mode=name&q=${encodeURIComponent(q)}`),
   /** 按文件内容搜索 */
   searchFileContent: (projectId: string, q: string) =>
     request<ContentSearch>(`/project-files/${projectId}/search?mode=content&q=${encodeURIComponent(q)}`),
@@ -316,11 +324,17 @@ export const api = {
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
   /** 任务目录里的图片：读到的文件是图片时按原图查看 */
   taskFileRaw: (id: string, path: string) => `/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
-  /** 任务页右栏的文件系统：任务工作目录（独立分支时是 worktree）里的文件树 */
+  /** 任务页右栏的根信息：任务工作目录（独立分支时是 worktree）的目录和分支 */
   taskFiles: (id: string) => request<FileTree>(`/tasks/${id}/files`),
+  /** 任务目录里列一层 */
+  taskFileLevel: (id: string, path: string, refresh = false) =>
+    request<DirLevel>(`/tasks/${id}/files/list?path=${encodeURIComponent(path)}${refresh ? '&refresh=1' : ''}`),
+  /** 任务目录里按文件名搜索 */
+  searchTaskFileNames: (id: string, q: string) =>
+    request<NameSearch>(`/tasks/${id}/files/search?mode=name&q=${encodeURIComponent(q)}`),
   /** 任务目录里按文件内容搜索 */
   searchTaskFiles: (id: string, q: string) =>
-    request<ContentSearch>(`/tasks/${id}/files/search?q=${encodeURIComponent(q)}`),
+    request<ContentSearch>(`/tasks/${id}/files/search?mode=content&q=${encodeURIComponent(q)}`),
   /** 在系统的文件管理器里打开这个文件所在的文件夹并选中它 */
   revealTaskFile: (id: string, path: string) =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
