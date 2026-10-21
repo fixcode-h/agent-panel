@@ -52,6 +52,7 @@ import { openBrowser, revealDir, revealItem } from './open.ts'
 import { modelsApi } from './models.ts'
 import { modelCatalogApi } from './model-catalog.ts'
 import { getLimits, listSkills } from './cli-extras.ts'
+import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
@@ -673,9 +674,19 @@ const updater = updateApi({
     await tasks.stopAll()
     killAllProcesses()
   },
+  interrupted: () => tasks.workingTasks(),
 })
 app.route('/app', updater.api)
 app.route('/app', pageEventsApi())
+// 新版本启动后问用户要不要继续被上次强制更新打断的任务
+app.route(
+  '/app',
+  interruptedApi({
+    ready: () => tasks.ready(),
+    getTask: (id) => tasks.get(id),
+    projectName: async (id) => (await projects.get(id))?.name ?? '',
+  }),
+)
 app.route('/remote', remoteApi({ link: withToken }))
 
 void tasks.cleanupUploads()

@@ -116,7 +116,8 @@ export function tasksApi(deps: {
   }
 
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
-  void store.list().then(async (all) => {
+  // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
+  const ready = store.list().then(async (all) => {
     for (const meta of all.filter((x) => x.status === 'running')) {
       // 列表里只有用户消息，改之前取完整的
       const task = await store.get(meta.id)
@@ -1441,6 +1442,26 @@ export function tasksApi(deps: {
      * 对话停在等下一句、预热时进程还活着但不改任何东西，不算执行中，否则更新会一直等下去
      */
     running: () => [...live.values()].filter((e) => e.task.working).length,
+    /**
+     * 正在执行的任务，以及它正在做的节点（没有节点时是最后一条要求）。
+     * 强制更新打断任务前记下来，新版本启动后据此问用户要不要继续
+     */
+    workingTasks: () =>
+      [...live.values()]
+        .filter((e) => e.task.working)
+        .map((e) => ({
+          id: e.task.id,
+          doing:
+            e.task.steps.find((s) => s.status === 'running')?.title ||
+            ([...e.task.messages].reverse().find((m) => m.role === 'user')?.text ?? '')
+              .trim()
+              .split('\n')[0]
+              .slice(0, 60),
+        })),
+    /** 启动时的迁移做完没有：读「被更新打断的任务」前等它，免得看到还没改过来的 running */
+    ready: () => ready,
+    /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */
+    get: (id: string) => current(id),
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     stopAll() {
       shuttingDown = true

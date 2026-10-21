@@ -37,6 +37,25 @@ export interface AppReleases {
   error?: string
 }
 
+/** 被强制更新打断的任务：新版本启动后弹窗问用户要不要继续 */
+export interface InterruptedTask {
+  id: string
+  title: string
+  /** 空表示聊天（不属于任何项目） */
+  projectId: string
+  projectName: string
+  /** 被打断时正在做的事：正在执行的节点标题，没有时用最后一条要求 */
+  doing: string
+}
+
+export interface InterruptedTasks {
+  /** 这次强制更新的时间；没有记录时为空 */
+  at: string
+  /** 用户已经处理过这次记录：页面不再自动弹窗 */
+  acknowledged: boolean
+  tasks: InterruptedTask[]
+}
+
 export interface AppUpdateJob {
   id: string
   tag: string
