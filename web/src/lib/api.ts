@@ -330,9 +330,9 @@ export const api = {
     }),
   projectFile: (projectId: string, path: string) =>
     request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
-  /** 项目里的图片：按原图查看 */
+  /** 项目里的图片：按原图查看（给 <img> 用，没有走 request，路径要自己带上 /api） */
   projectFileRaw: (projectId: string, path: string) =>
-    `/project-files/${projectId}/raw?path=${encodeURIComponent(path)}`,
+    `/api/project-files/${projectId}/raw?path=${encodeURIComponent(path)}`,
   stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
   resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
   taskDiff: (id: string, path: string) =>
@@ -348,8 +348,8 @@ export const api = {
       content: string
       truncated: boolean
     }>(`/tasks/${id}/file?path=${encodeURIComponent(path)}`),
-  /** 任务目录里的图片：读到的文件是图片时按原图查看 */
-  taskFileRaw: (id: string, path: string) => `/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
+  /** 任务目录里的图片：读到的文件是图片时按原图查看（同样给 <img> 用，路径自己带 /api） */
+  taskFileRaw: (id: string, path: string) => `/api/tasks/${id}/file/raw?path=${encodeURIComponent(path)}`,
   /** 任务页右栏的根信息：任务工作目录（独立分支时是 worktree）的目录和分支 */
   taskFiles: (id: string) => request<FileTree>(`/tasks/${id}/files`),
   /** 任务目录里列一层 */
