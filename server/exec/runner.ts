@@ -811,7 +811,8 @@ async function runAgent(
       }
       case 'tool_delta': {
         const t = toolsById.get(ev.id)
-        if (t) t.output = tail((t.output ?? '') + ev.text)
+        // 快照是到目前为止的全部输出（Pi 每次都给完整的一段），直接替换；其余是新增的一段，接在后面
+        if (t) t.output = ev.snapshot ? tail(ev.text) : tail((t.output ?? '') + ev.text)
         break
       }
       case 'files_changed':

@@ -265,6 +265,19 @@
       },
       {
         "when": {
+          "type": "tool_execution_update"
+        },
+        "emit": [
+          {
+            "type": "tool_delta",
+            "id": "$.toolCallId",
+            "text": "$.partialResult",
+            "snapshot": true
+          }
+        ]
+      },
+      {
+        "when": {
           "type": "tool_execution_end",
           "toolName": "edit"
         },
