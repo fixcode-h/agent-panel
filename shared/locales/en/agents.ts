@@ -264,4 +264,5 @@ export const EN_AGENTS: Record<string, string> = {
   必备角色不能删除: "Core roles can't be deleted",
   角色: 'Roles',
   交给角色: 'Role',
+  概览: 'Overview',
 }

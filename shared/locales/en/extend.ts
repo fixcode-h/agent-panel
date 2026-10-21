@@ -9,7 +9,7 @@ export const EN_EXTEND: Record<string, string> = {
   '插入角色名称，并引入它的角色设定': 'Insert a role name and include its instructions',
   插入参数: 'Insert parameter',
   按参数分支: 'Branch by parameter',
-  '还没有参数，先在下面的「参数」里添加': 'No parameters yet. Add some under “Parameters” below',
+  '还没有参数，先在「参数」页里添加': 'No parameters yet. Add some on the “Parameters” tab',
   引入的角色: 'Included roles',
   '引入的角色的角色设定会一起交给这个角色，可以把通用的规范、领域知识做成单独的角色复用。':
     'Instructions of included roles are given to this role too, so shared rules and domain knowledge can live in their own roles and be reused.',

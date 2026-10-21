@@ -10,6 +10,8 @@ import {
   Lock,
   MessageSquare,
   Plus,
+  ScrollText,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Workflow as WorkflowIcon,
@@ -43,7 +45,7 @@ import { Field, FormSection, Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Segmented } from '@/components/ui/segmented'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Detail, DetailHeader } from '@/components/layout/Detail'
+import { Detail, DetailHeader, DetailTabs } from '@/components/layout/Detail'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { AgentAvatar } from './AgentAvatar'
 import { CategoryPicker } from './CategoryPicker'
@@ -81,6 +83,9 @@ const ROLE_TEMPLATE = `# 角色
 // 会改文件、执行任意命令、不用沙箱的权限，界面上标成警告色
 const DANGER_PERMS = ['bypassPermissions', 'danger-full-access', 'yolo']
 
+const ROLE_TABS = ['basic', 'role', 'params', 'extras'] as const
+type RoleTab = (typeof ROLE_TABS)[number]
+
 const toInput = ({ id, createdAt, updatedAt, ...rest }: Agent): AgentInput => rest
 
 export function AgentDetail({
@@ -107,6 +112,22 @@ export function AgentDetail({
     if (deleteSignal) setDeleting(true)
   }, [deleteSignal])
   const [assist, setAssist] = useState(false)
+  // 表单按「概览 / 角色设定 / 参数 / Skill 与开场白」分页：一页只看一类设置，不用在长表单里来回滚。
+  // 看到哪一页记在本地，切到别的角色还停在同一页
+  const [tab, setTabState] = useState<RoleTab>(() => {
+    try {
+      const v = localStorage.getItem('role-tab') as RoleTab | null
+      return v && ROLE_TABS.includes(v) ? v : 'basic'
+    } catch {
+      return 'basic'
+    }
+  })
+  const setTab = (v: RoleTab) => {
+    setTabState(v)
+    try {
+      localStorage.setItem('role-tab', v)
+    } catch {}
+  }
 
   const value = { ...draft, extraArgs: splitArgs(args) }
   const valid = !!draft.name.trim()
@@ -298,9 +319,39 @@ export function AgentDetail({
             }
           />
         }
+        tabs={
+          <DetailTabs
+            value={tab}
+            onChange={setTab}
+            items={[
+              { id: 'basic', label: t('概览'), icon: SlidersHorizontal },
+              {
+                id: 'role',
+                label: t('角色设定'),
+                icon: ScrollText,
+                extra: draft.includes.length ? <TabCount n={draft.includes.length} /> : undefined,
+              },
+              {
+                id: 'params',
+                label: t('参数'),
+                icon: Braces,
+                extra: draft.params.length ? <TabCount n={draft.params.length} /> : undefined,
+              },
+              {
+                id: 'extras',
+                label: core ? t('开场白') : t('Skill 与开场白'),
+                icon: Sparkles,
+                // 必备角色的这一页只有开场白，数开场白；其他角色数 Skill
+                extra: (core ? draft.starters.length : draft.skills.length) ? (
+                  <TabCount n={core ? draft.starters.length : draft.skills.length} />
+                ) : undefined,
+              },
+            ]}
+          />
+        }
         form={
           <>
-            {core && (
+            {tab === 'basic' && core && (
               <section className="flex items-start gap-3 rounded-xl border border-accent/30 bg-accent-soft/40 px-4 py-3">
                 <Lock className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
                 <div className="flex min-w-0 flex-col gap-1 text-[0.8125rem] leading-relaxed">
@@ -313,7 +364,7 @@ export function AgentDetail({
                 </div>
               </section>
             )}
-            {!core && (
+            {tab === 'basic' && !core && (
               <FormSection title={t('基本信息')}>
                 <div className="flex flex-wrap gap-4">
                   <Field label={t('名称')} className="flex-[1_1_200px]" error={valid ? undefined : t('名称不能为空')}>
@@ -384,115 +435,117 @@ export function AgentDetail({
               </FormSection>
             )}
 
-            <FormSection title={t('运行环境')}>
-              {builtin ? (
-                <p className="rounded-lg border bg-field px-3 py-2.5 text-[0.8125rem] leading-relaxed text-muted">
-                  {t(
-                    '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
-                    {
-                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
-                      model: usedModel || t('自动'),
-                      effort: defEffort || t('自动'),
-                    },
-                  )}
-                </p>
-              ) : (
-                <>
-                  <Checkbox
-                    checked={follow}
-                    onChange={(v) => pickCli(v ? '' : defCli)}
-                    label={t('跟随默认 CLI（现在是 {cli}）', {
-                      cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
-                    })}
-                    hint={t(
-                      '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
+            {tab === 'basic' && (
+              <FormSection title={t('运行环境')}>
+                {builtin ? (
+                  <p className="rounded-lg border bg-field px-3 py-2.5 text-[0.8125rem] leading-relaxed text-muted">
+                    {t(
+                      '自带的默认角色固定使用默认 CLI 的默认模型和思考强度，现在是 {cli} · {model} · {effort}。在设置里换默认 CLI 或默认模型时跟着变，对话时可以在输入框旁边临时换模型和思考强度。',
+                      {
+                        cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                        model: usedModel || t('自动'),
+                        effort: defEffort || t('自动'),
+                      },
                     )}
-                  />
-                  <div className="flex flex-wrap gap-4">
-                    <Field label="CLI" className="flex-[1_1_220px]">
-                      <Select
-                        aria-label="CLI"
-                        value={cliId}
-                        disabled={follow}
-                        onChange={(e) => pickCli(e.target.value)}
-                        // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
-                        options={clis
-                          .filter((c) => (c.installed && c.enabled) || c.id === cliId)
-                          .map((c) => ({
-                            value: c.id,
-                            label:
-                              (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
-                              (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
-                          }))}
-                      />
-                    </Field>
-                    <Field
-                      label={t('模型')}
-                      className="flex-[2_1_280px]"
-                      hint={t('三档对应的模型在设置里每个 CLI 下配置')}
-                    >
-                      <Select
-                        aria-label={t('模型')}
-                        value={draft.model}
-                        onChange={(e) => set('model', e.target.value)}
-                        options={tierOptions}
-                        className="font-mono text-[0.8125rem]"
-                      />
-                    </Field>
-                  </div>
-                  {cliDef && (
-                    <Field
-                      label={t('思考强度')}
-                      hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
-                      className="max-w-[320px]"
-                    >
-                      <Select
-                        aria-label={t('思考强度')}
-                        value={draft.effort === defEffort ? '' : draft.effort}
-                        onChange={(e) => set('effort', e.target.value)}
-                        // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                        options={defaultEffortOptions(
-                          cliDef,
-                          defEffort,
-                          modelEfforts(cliDef, usedModel ?? ''),
-                          draft.effort,
-                        )}
-                      />
-                    </Field>
-                  )}
-                </>
-              )}
-              {cliDef && (
-                <Field
-                  label={t('权限')}
-                  hint={
-                    <span
-                      className={cn(
-                        // 按权限 id 判断，提示文字翻译成英文后正则就匹配不上了
-                        (DANGER_PERMS.includes(perm.id) || /任意命令|不使用沙箱/.test(perm.hint)) && 'text-warning',
+                  </p>
+                ) : (
+                  <>
+                    <Checkbox
+                      checked={follow}
+                      onChange={(v) => pickCli(v ? '' : defCli)}
+                      label={t('跟随默认 CLI（现在是 {cli}）', {
+                        cli: clis.find((c) => c.id === defCli)?.name ?? defCli,
+                      })}
+                      hint={t(
+                        '在设置里换了默认 CLI，这个角色也跟着换，模型换成新 CLI 同一档位的模型。取消后可以固定用某个 CLI。',
                       )}
-                    >
-                      {perm.hint}
-                    </span>
-                  }
-                >
-                  <div>
-                    <Segmented
-                      label={t('权限')}
-                      // CLI 设置里的权限标（默认），选它就是跟随设置
-                      value={perm.id === cs.permission ? '' : perm.id}
-                      onChange={(v) => set('permission', v)}
-                      options={cliDef.permissions.map((p) => ({
-                        id: p.id === cs.permission ? '' : p.id,
-                        label: p.id === cs.permission ? t('{name}（默认）', { name: p.label }) : p.label,
-                      }))}
                     />
-                  </div>
-                </Field>
-              )}
-            </FormSection>
+                    <div className="flex flex-wrap gap-4">
+                      <Field label="CLI" className="flex-[1_1_220px]">
+                        <Select
+                          aria-label="CLI"
+                          value={cliId}
+                          disabled={follow}
+                          onChange={(e) => pickCli(e.target.value)}
+                          // 停用或没安装的 CLI 不给选；当前选着的照常显示，并标出原因
+                          options={clis
+                            .filter((c) => (c.installed && c.enabled) || c.id === cliId)
+                            .map((c) => ({
+                              value: c.id,
+                              label:
+                                (c.id === defCli ? t('{name}（默认）', { name: c.name }) : c.name) +
+                                (!c.installed ? ` · ${t('未安装')}` : c.enabled ? '' : ` · ${t('已停用')}`),
+                            }))}
+                        />
+                      </Field>
+                      <Field
+                        label={t('模型')}
+                        className="flex-[2_1_280px]"
+                        hint={t('三档对应的模型在设置里每个 CLI 下配置')}
+                      >
+                        <Select
+                          aria-label={t('模型')}
+                          value={draft.model}
+                          onChange={(e) => set('model', e.target.value)}
+                          options={tierOptions}
+                          className="font-mono text-[0.8125rem]"
+                        />
+                      </Field>
+                    </div>
+                    {cliDef && (
+                      <Field
+                        label={t('思考强度')}
+                        hint={t('越高想得越久、越慢。选档位时默认用档位的思考强度。')}
+                        className="max-w-[320px]"
+                      >
+                        <Select
+                          aria-label={t('思考强度')}
+                          value={draft.effort === defEffort ? '' : draft.effort}
+                          onChange={(e) => set('effort', e.target.value)}
+                          // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
+                          options={defaultEffortOptions(
+                            cliDef,
+                            defEffort,
+                            modelEfforts(cliDef, usedModel ?? ''),
+                            draft.effort,
+                          )}
+                        />
+                      </Field>
+                    )}
+                  </>
+                )}
+                {cliDef && (
+                  <Field
+                    label={t('权限')}
+                    hint={
+                      <span
+                        className={cn(
+                          // 按权限 id 判断，提示文字翻译成英文后正则就匹配不上了
+                          (DANGER_PERMS.includes(perm.id) || /任意命令|不使用沙箱/.test(perm.hint)) && 'text-warning',
+                        )}
+                      >
+                        {perm.hint}
+                      </span>
+                    }
+                  >
+                    <div>
+                      <Segmented
+                        label={t('权限')}
+                        // CLI 设置里的权限标（默认），选它就是跟随设置
+                        value={perm.id === cs.permission ? '' : perm.id}
+                        onChange={(v) => set('permission', v)}
+                        options={cliDef.permissions.map((p) => ({
+                          id: p.id === cs.permission ? '' : p.id,
+                          label: p.id === cs.permission ? t('{name}（默认）', { name: p.label }) : p.label,
+                        }))}
+                      />
+                    </div>
+                  </Field>
+                )}
+              </FormSection>
+            )}
 
-            {core && coreDef && (
+            {tab === 'params' && core && coreDef && (
               <FormSection title={t('参数')}>
                 <p className="-mt-2 text-xs leading-relaxed text-subtle">
                   {t('这里改的是所有项目的默认取值；某个项目要不一样，在项目设置的「必备角色」里单独改。')}
@@ -500,7 +553,7 @@ export function AgentDetail({
                 <ParamsForm params={coreDef.agent.params} values={coreValues} onChange={setCoreValues} />
               </FormSection>
             )}
-            {core && (
+            {tab === 'extras' && core && (
               <FormSection title={t('开场白')}>
                 <StartersEditor value={draft.starters} onChange={(v) => set('starters', v)} />
                 <Field label={t('额外参数')} hint={t('追加给 CLI 的参数，用空格分隔，含空格的值用引号包住。')}>
@@ -513,7 +566,7 @@ export function AgentDetail({
                 </Field>
               </FormSection>
             )}
-            {core && (
+            {tab === 'role' && core && (
               <FormSection title={t('角色设定')}>
                 <p className="-mt-2 text-xs leading-relaxed text-subtle">
                   {t('由面板维护，只读。Skill：{list}', { list: draft.skills.join(t('、')) || t('无') })}
@@ -523,7 +576,7 @@ export function AgentDetail({
                 </pre>
               </FormSection>
             )}
-            {!core && (
+            {tab === 'role' && !core && (
               <>
                 <FormSection title={t('角色设定')}>
                   <p className="-mt-2 text-xs leading-relaxed text-subtle">
@@ -572,9 +625,7 @@ export function AgentDetail({
                             </PopoverClose>
                           )}
                           {!draft.params.length && (
-                            <p className="px-2.5 py-2 text-xs text-subtle">
-                              {t('还没有参数，先在下面的「参数」里添加')}
-                            </p>
+                            <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有参数，先在「参数」页里添加')}</p>
                           )}
                         </PopoverContent>
                       </Popover>
@@ -760,7 +811,10 @@ export function AgentDetail({
                     )}
                   </div>
                 </FormSection>
-
+              </>
+            )}
+            {tab === 'params' && !core && (
+              <>
                 <FormSection title={t('参数')}>
                   <p className="-mt-2 text-xs leading-relaxed text-subtle">
                     {t(
@@ -772,7 +826,7 @@ export function AgentDetail({
               </>
             )}
 
-            {!core && (
+            {tab === 'extras' && !core && (
               <FormSection title={t('Skill 与开场白')}>
                 <Field
                   label="Skill"
@@ -806,7 +860,12 @@ export function AgentDetail({
             />
             <ReadinessCard checks={checks} />
             {preview && (
-              <details className="group rounded-xl border bg-card p-4">
+              // 看角色设定时默认展开：改设定的同时对照最终交给它的全文
+              <details
+                key={tab === 'role' ? 'open' : 'closed'}
+                open={tab === 'role'}
+                className="group rounded-xl border bg-card p-4"
+              >
                 <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
                 <p className="mt-2 text-[0.71875rem] text-subtle">
                   {t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
@@ -866,4 +925,9 @@ export function AgentDetail({
       <AssistDialog open={assist} onOpenChange={setAssist} kind="agent" target={agent} onApplied={onOptimized} />
     </>
   )
+}
+
+/** 标签上的数量 */
+function TabCount({ n }: { n: number }) {
+  return <span className="rounded-full bg-field px-1.5 text-[0.6875rem] text-subtle tabular-nums">{n}</span>
 }

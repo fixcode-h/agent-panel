@@ -46,7 +46,7 @@ export function DetailTabs<T extends string>({
   items: { id: T; label: string; icon: React.ComponentType<{ className?: string }>; extra?: React.ReactNode }[]
 }) {
   return (
-    <div role="tablist" className="flex gap-1 border-b bg-bg px-4 md:px-8">
+    <div role="tablist" className="sticky top-0 z-10 flex gap-1 border-b bg-bg px-4 md:px-8">
       {items.map(({ id, label, icon: Icon, extra }) => (
         <button
           key={id}
