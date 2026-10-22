@@ -2295,8 +2295,10 @@ async function runHelper(
   siblings: string[],
 ) {
   const st = orchState(host)
-  if (st.running >= MAX_HELPERS_RUNNING) await new Promise<void>((r) => st.queue.push(r))
-  st.running++
+  // 有名额就当场占住；没有才排队。等待者被唤醒时不自己加一，名额由释放方直接交接，
+  // 否则唤醒到它真正继续之间新来的子 Agent 会看到还没满，又多占一个
+  if (st.running < MAX_HELPERS_RUNNING) st.running++
+  else await new Promise<void>((r) => st.queue.push(r))
   try {
     if (host.halted) return
     step.status = 'running'
@@ -2337,8 +2339,10 @@ async function runHelper(
     step.endedAt = now()
     host.changed(true)
   } finally {
-    st.running--
-    st.queue.shift()?.()
+    // 名额直接交给排在最前面的那个，running 保持不变；没人排队时才真正空出来
+    const next = st.queue.shift()
+    if (next) next()
+    else st.running--
   }
 }
 
