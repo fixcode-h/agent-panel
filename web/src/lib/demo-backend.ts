@@ -1727,6 +1727,8 @@ function tasksRoute(
   }
   if (sub === 'stop') {
     if (live.has(id)) live.get(id)!.stop = true
+    // 强制停止：演示里没有常驻 CLI，把这一轮的进程状态直接丢掉就相当于结束了进程
+    if (query.get('force')) live.delete(id)
     return task
   }
   // 演示里没有常驻 CLI，页面在场状态和预热都不用处理

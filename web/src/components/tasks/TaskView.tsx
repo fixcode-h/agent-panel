@@ -27,6 +27,7 @@ import {
   Sparkles,
   Settings2,
   GraduationCap,
+  CircleStop,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
@@ -351,6 +352,8 @@ export function TaskView({
   const [openRun, setOpenRun] = useState(() => (pane ? 0 : readPaneRun(taskId)))
   // Esc 停止正在执行的任务（先确认，免得误触）；右栏开着时 Esc 先关右栏
   const [stopAsk, setStopAsk] = useState(false)
+  // 强制停止：连 CLI 进程一起结束（预览、等下一句的进程不留着），用在会话卡住或不想再让它跑的时候
+  const [forceAsk, setForceAsk] = useState(false)
   // Agent 输出里点了文件路径：在弹窗里看文件内容
   const [fileTarget, setFileTarget] = useState<{ path: string; line?: number } | null>(null)
   const openFile = useCallback((path: string, line?: number) => setFileTarget({ path, line }), [])
@@ -666,6 +669,14 @@ export function TaskView({
   const stop = async () => {
     try {
       await api.stopTask(task.id)
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  const forceStop = async () => {
+    try {
+      apply(await api.stopTask(task.id, true))
+      toast.success(t('已强制停止，CLI 进程已结束'))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -1019,6 +1030,13 @@ export function TaskView({
                       <Sparkles className="h-4 w-4" />
                       {t('AI 分析执行结果')}
                     </MenuItem>
+                    {/* 停止只收这一轮，CLI 还留着等下一句；要连进程一起结束时用这一项 */}
+                    {!task.imported && (
+                      <MenuItem onSelect={() => setForceAsk(true)}>
+                        <CircleStop className="h-4 w-4" />
+                        {t('强制停止')}
+                      </MenuItem>
+                    )}
                     {!task.imported && wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
                       <MenuItem onSelect={() => resume(true)}>
                         <RotateCw className="h-4 w-4" />
@@ -1365,6 +1383,19 @@ export function TaskView({
             onConfirm={async () => {
               await stop()
               setStopAsk(false)
+            }}
+          />
+          <ConfirmDialog
+            open={forceAsk}
+            onOpenChange={setForceAsk}
+            title={t('强制停止这个对话？')}
+            description={t(
+              '正在执行的这一轮会被停下，CLI 进程直接结束（不再留着等下一句）。这一轮已经写出的内容保留，下一句会重新开一个会话。',
+            )}
+            confirmText={t('强制停止')}
+            onConfirm={async () => {
+              await forceStop()
+              setForceAsk(false)
             }}
           />
           {lessonOf && project && (

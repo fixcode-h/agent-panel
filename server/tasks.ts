@@ -1688,7 +1688,8 @@ export function tasksApi(deps: {
       const agent = withTaskModel(noAgent ? { ...found, id: '' } : found, task)
       const run = agentRun(agent, settings)
       const def = getCli(run.cli)
-      if (!def?.notes || !def.mcp) return task
+      // 能保活（keepAlive）的对话才值得先启动进程等着：不然预热了也用不上，每轮还是重启
+      if (!def?.keepAlive) return task
       // Claude Code、Codex 有自己的协议，不走面板的等待工具
       if (def.rpc?.nativeAsk) return task
       if (!force && task.sessionCli && task.sessionCli !== run.cli) return task
@@ -2334,6 +2335,13 @@ export function tasksApi(deps: {
   routes.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
     stopTask(id)
+    // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
+    // 进程不该再留着时（卡住、换机器前的清理）用这个，后台命令也一并停掉
+    if (c.req.query('force')) {
+      cancelWait(id)
+      forgetNotes(id)
+      background.stop(id)
+    }
     return c.json(await current(id))
   })
 

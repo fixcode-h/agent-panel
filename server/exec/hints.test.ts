@@ -5,7 +5,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from '../../shared/i18n.ts'
 import type { TaskMessage } from '../../shared/schema.ts'
-import { describeCompaction, failureHints, settleNetNotes } from './runner.ts'
+import { describeCompaction, failureHints, looksUnfinished, settleNetNotes } from './runner.ts'
 
 // 断言里是中文，不管本机是什么语言
 setLang('zh')
@@ -76,4 +76,23 @@ test('压缩上下文：写明压缩了多少、现在占上下文窗口多少',
   describeCompaction(tool, 9000)
   assert.equal(tool.label, '压缩前 9.0k token')
   assert.equal(tool.detail, '')
+})
+
+test('空回合：只说了一句「我先…」就收尾的才算没做完', () => {
+  const empty = (text: string, tools = 0, changed = 0) => looksUnfinished({ texts: [text], tools, changed })
+  // 真实发生过的两次：说完就结束，一个工具都没调
+  assert.equal(empty('我先将本地仓库更新到最新，同时查看当前状态和仓库结构。'), true)
+  assert.equal(empty('我先把工作区更新到最新，顺便确认分支和本地改动的基线。'), true)
+  assert.equal(empty('我先看一下你发的截图。'), true)
+  // 调过工具、改过文件的就是真在做事
+  assert.equal(empty('我先看一下你发的截图。', 2), false)
+  assert.equal(empty('我先看一下你发的截图。', 0, 1), false)
+  // 本来就该这么答的：结论、结果、命令，都不能当成没做完
+  assert.equal(empty('更新到最新了，接下来按你说的修。'), false)
+  assert.equal(empty('已完成：更新到 eb195c1，并跑通 typecheck 和 lint。'), false)
+  assert.equal(empty('这个项目的测试命令是 npm run test:unit。'), false)
+  // 长篇回复已经有内容，不推
+  assert.equal(empty(`我先${'看'.repeat(240)}`), false)
+  // 完全没有输出时不在这里处理（交给失败分支）
+  assert.equal(empty(''), false)
 })

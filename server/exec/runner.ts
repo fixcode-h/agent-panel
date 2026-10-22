@@ -431,6 +431,47 @@ function speedMeter(onIdle: () => void) {
 
 /** 连接断开时自动续接的次数上限 */
 const MAX_NET_RETRIES = 2
+
+/** 一轮没做完时自动催它接着做的次数上限 */
+const MAX_EMPTY_RETRIES = 1
+
+/**
+ * 只有「先说说要做什么」的准备语：模型在这一轮里什么都没动就收尾了。
+ * 命中时说明它是在计划而不是在交付，需要接着推一轮。
+ */
+/**
+ * 这一轮算不算「没做事就收尾」：模型只回了一句话，没调工具、没改文件、也没给出结论。
+ *
+ * 宁可不报也不误报：误报会在对话里挂一张红色卡片、还会白跑一轮模型请求。
+ * 所以只认最典型的一种——第一人称的「我先做点什么」加上准备动词；
+ * 已经给出结论、结果或命令的回复一律不算。
+ */
+export function looksUnfinished(o: {
+  /** 这一轮产生的所有回复 */
+  texts: string[]
+  /** 这一轮调用过的工具数 */
+  tools: number
+  /** 这一轮改过的文件数 */
+  changed: number
+}) {
+  if (o.tools > 0 || o.changed > 0) return false
+  const last = [...o.texts]
+    .reverse()
+    .find((x) => x.trim())
+    ?.trim()
+  if (!last) return false
+  // 长篇回复通常已经给了方案或结论，不算「只说了一句准备」
+  if (last.length > 200) return false
+  // 已经交东西的：有结论、有结果、给了命令，就不再推
+  if (/(已完成|已修复|已更新|已改好|全部通过|结论|总结|结果如下|以下是|建议|npm run|git (status|log|diff))/i.test(last))
+    return false
+  // 最典型的丢掉回合：「我先去/我先将…看一下/读…/更新…」——只有准备语，没有动作
+  return (
+    /(我|让我)\s*(先|这就先|来先)/.test(last) &&
+    /(看|读|查|检查|确认|了解|分析|梳理|更新|拉取|同步|找|准备|开始|处理)/.test(last)
+  )
+}
+
 /** 自动续接前写进对话的报错：续接成功后要收回成普通说明 */
 export interface NetNote {
   msg: TaskMessage
@@ -523,6 +564,8 @@ async function runAgent(
   retryCarry = '',
   /** 这一串自动续接里已经写进对话的报错：续接成功后要收回成普通说明 */
   netNotes: NetNote[] = [],
+  /** 这一轮「只说了要做」已经被自动续接几次：防止反复推同一个死循环 */
+  emptyRetries = 0,
 ): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
@@ -1039,12 +1082,15 @@ async function runAgent(
   const idleMinutes = settings.idleTimeoutMinutes
   // 测试用：环境变量把「一分钟」缩短成几百毫秒，免得端到端测试真的等上几分钟
   const idleMs = idleMinutes * (Number(process.env.AGENT_PANEL_MINUTE_MS) || 60_000)
-  // 对话的 CLI 能用面板的工具：没有插话协议时取补充（read_user_notes）；有协议自己提问的（Claude、Codex）不用 MCP
-  const canWait = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
+  // 对话的进程能不能留着等下一句（保活）：看 CLI 定义的 keepAlive 字段，不再借用 notes。
+  // notes 只管「没有插话协议时怎么取补充」，两者混用会让 Pi 这种常驻协议的白白每轮重启
+  const canWait = chat && !op && def.keepAlive && !def.rpc?.nativeAsk
+  // 用面板 MCP 工具取补充的，还得这个 CLI 能挂 MCP
+  const canTake = chat && !op && def.notes && def.mcp && !def.rpc?.nativeAsk
   let taker: NoteTaker | undefined
   /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
   const pendingNotes = new Set<TaskMessage>()
-  if (canWait && !def.steer) {
+  if (canTake && !def.steer) {
     taker = {
       add: (msg) => pendingNotes.add(msg),
       read: () => {
@@ -1172,7 +1218,8 @@ async function runAgent(
       }
     }
   }
-  const waitUser = canWait ? () => waitNext(true) : undefined
+  // 模型主动调 wait_user_message 等下一句：这个工具是面板用 MCP 注进去的，只有能挂 MCP 的 CLI 才有
+  const waitUser = canTake ? () => waitNext(true) : undefined
   // 面板保活：回复完这一轮不关进程，用户的下一条消息交给同一个进程开下一轮（不靠模型主动调等待工具）。
   // 只在对话页确实开着时这样做：没人看的时候留着一个 CLI 也没人会回来发消息
   const keepAlive = canWait
@@ -1414,6 +1461,64 @@ async function runAgent(
       ok: false,
       error: netRetries ? [message, '', t('已自动续接 {n} 次，仍然失败。', { n: netRetries })].join('\n') : message,
     }
+  }
+  // 这一轮模型只回了一句「我先…」就收尾了：没调工具、没改文件，等于什么都没做。
+  // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来
+  if (
+    chat &&
+    !op &&
+    !prewarm &&
+    !ctx.signal.aborted &&
+    looksUnfinished({ texts, tools: mine.reduce((n, m) => n + m.tools.length, 0), changed: touched.size })
+  ) {
+    if (emptyRetries < MAX_EMPTY_RETRIES) {
+      const note = t(
+        '这一轮只回了一句话就结束了，没有动手也没给出结论。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…',
+        { n: emptyRetries + 1, max: MAX_EMPTY_RETRIES },
+      )
+      task.messages.push({
+        id: ctx.newId(),
+        role: 'system',
+        agentId,
+        step,
+        text: note,
+        tools: [],
+        error: true,
+        at: new Date().toISOString(),
+      })
+      log.warn('agent', `${def.name} 只回了一句就结束，自动接一轮`, { task: task.id, step, n: emptyRetries + 1 })
+      ctx.changed(true)
+      return runAgent(
+        ctx,
+        {
+          ...call,
+          prompt:
+            '你上一条回复只说了要做什么就结束了这一轮，既没有调用工具也没有给出结论。' +
+            '现在马上动手：直接发起工具调用去完成任务，做完在这一轮里给出结论；不要再说「我先看看」这类准备语。',
+        },
+        retried,
+        netRetries,
+        retryCarry,
+        netNotes,
+        emptyRetries + 1,
+      )
+    }
+    const note = t(
+      '自动接了一轮，模型仍然只回了一句话、没有动手，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。',
+    )
+    task.messages.push({
+      id: ctx.newId(),
+      role: 'system',
+      agentId,
+      step,
+      text: note,
+      tools: [],
+      error: true,
+      at: new Date().toISOString(),
+    })
+    ctx.changed(true)
+    log.error('agent', `${def.name} 连续只回一句就结束，停止`, { task: task.id, step })
+    return { ok: false, error: note }
   }
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
   // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）

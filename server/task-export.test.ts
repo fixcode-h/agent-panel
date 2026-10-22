@@ -5,6 +5,7 @@ import { defaultWorkflow } from '../shared/builtin/default.ts'
 import {
   analysisPrompt,
   analysisReport,
+  cacheHitRate,
   applyChanges,
   demoEvolution,
   exportTask,
@@ -214,4 +215,12 @@ test('按行对比', () => {
     { kind: 'add', text: 'x' },
     { kind: 'same', text: 'c' },
   ])
+})
+
+test('缓存命中率：分母是含缓存的输入合计，任何时候都不超过 100%', () => {
+  // 正常口径：输入已含缓存
+  assert.equal(cacheHitRate({ inputTokens: 1000, cacheReadTokens: 600 }), 0.6)
+  // 口径对不上时（历史数据、某个 CLI 把未命中当输入）封顶到 100%，不把 3348% 交给用户
+  assert.equal(cacheHitRate({ inputTokens: 100, cacheReadTokens: 3348 }), 1)
+  assert.equal(cacheHitRate({ inputTokens: 0, cacheReadTokens: 500 }), 0)
 })

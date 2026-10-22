@@ -275,6 +275,12 @@ export const CliSpec = z.object({
       steer: z.boolean().default(false),
       /** 没有插话协议，但能用面板的 MCP 工具（read_user_notes）取执行中的补充 */
       notes: z.boolean().default(false),
+      /**
+       * 回复完不关进程，把下一条消息交回同一个进程开下一轮（面板保活）。
+       * 与 notes 无关：notes 管「怎么取补充」，这里管「进程能不能留着等下一句」。
+       * 常驻协议（rpc.next）的 CLI 都该开，否则每轮都要重启 + 恢复会话，首字延迟明显
+       */
+      keepAlive: z.boolean().default(false),
       /** 压缩上下文：native 走协议（rpc.compact），slash 是发「/compact」，summary 是让它写摘要、下一轮开新会话 */
       compact: z.enum(['native', 'slash', 'summary']).default('summary'),
       /** 会话中途能换模型（换了模型续接同一个会话，不用开新会话带上对话记录） */
@@ -308,6 +314,7 @@ export const CliSpec = z.object({
     .default({
       steer: false,
       notes: false,
+      keepAlive: false,
       compact: 'summary',
       fork: 'none',
       autoCompact: 'panel',
@@ -471,6 +478,7 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     parser: spec.output,
     steer: f.steer,
     notes: f.notes,
+    keepAlive: f.keepAlive,
     compact: f.compact,
     review: 'prompt',
     fork: f.fork,

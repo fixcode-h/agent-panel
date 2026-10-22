@@ -18,6 +18,7 @@ import { agentRun, cliSettings, defaultCli, defaultSettings } from '@shared/sett
 import type { StepUsage, Task, TaskStep } from '@shared/schema'
 import { topSteps } from '@shared/flow'
 import { fmtTokens, liveTps, stepLabel } from '@/lib/tasks'
+import { cacheHitRate } from '@shared/task-export'
 import { useData } from '@/lib/data'
 import { useAgentView } from '@/lib/agent-view'
 import { useDirInfo, refreshDirInfo } from '@/components/projects/DirPicker'
@@ -207,7 +208,7 @@ function TokenChip({ task, scope }: { task: Task; scope?: TaskStep[] }) {
   const tps = liveTps(task, scope ? [...new Set(scope.map((s) => s.agentId))] : undefined)
   const total = u.inputTokens + u.outputTokens
   if (!total) return null
-  const rate = u.inputTokens > 0 ? (u.cacheReadTokens ?? 0) / u.inputTokens : 0
+  const rate = cacheHitRate(u)
   const rows: [string, string][] = [
     [t('输入'), fmtTokens(u.inputTokens)],
     [t('输出'), fmtTokens(u.outputTokens)],

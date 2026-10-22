@@ -2,6 +2,7 @@ import type { Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
 import { SLOT_LABEL } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
+import { cacheHitRate } from '@shared/task-export'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -35,8 +36,7 @@ export function liveTps(task: Task, agentIds?: string[]) {
 }
 
 /** 缓存命中率：输入里命中缓存的比例 */
-export const cacheRate = (task: Task) =>
-  task.usage.inputTokens > 0 ? (task.usage.cacheReadTokens ?? 0) / task.usage.inputTokens : 0
+export const cacheRate = (task: Task) => cacheHitRate(task.usage)
 
 /** 某个节点的执行情况：操作次数、改动文件数、当前在做什么、输出；deep 时包括开始、验收、结束等子节点 */
 export function stepActivity(task: Task, id: string, deep = false) {

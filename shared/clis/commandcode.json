@@ -121,8 +121,12 @@
     "done": [
       {
         "when": { "method": "turn/completed" },
-        "ok": ["$.params.stopReason != run_error", "$.params.stopReason != interrupted"],
-        "error": "$.params.error.message"
+        "ok": [
+          "$.params.stopReason != run_error",
+          "$.params.stopReason != interrupted",
+          "$.params.stopReason != max_turns"
+        ],
+        "error": ["$.params.error.message", "max_turns"]
       }
     ]
   },
@@ -161,7 +165,8 @@
     "compact": "summary",
     "autoCompact": "panel",
     "steer": true,
-    "notes": true
+    "notes": true,
+    "keepAlive": true
   },
   "docs": ["AGENTS.md", ".commandcode/AGENTS.md"],
   "docsNote": "Command Code 每次启动读 AGENTS.md，根目录没有时读 .commandcode/AGENTS.md。AGENTS.md 和「项目说明」是同一个文件。",
