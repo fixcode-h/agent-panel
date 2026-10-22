@@ -390,7 +390,7 @@ export function ProjectFileExplorer({
   // hitLines 是这次要看的文件里全部命中的行号：弹窗接上之后用它做「上一处 / 下一处」
   const [target, setTarget] = useState<{ path: string; line?: number; hitLines?: number[] } | null>(null)
   // 弹窗里保存后重读树，否则改完的文件内容还对不上。
-  // onSaved 是那个弹窗新增的可选回调，还没合进来前用展开语法传，避免类型检查卡在别处的改动上
+  // onSaved 是弹窗那边的可选回调，写这里时它还没合进来；用展开语法传，两边都能编译，合入后不用改
   const saved = { onSaved: files.refresh } as Partial<ComponentProps<typeof ProjectFileDialog>>
   return (
     <>
