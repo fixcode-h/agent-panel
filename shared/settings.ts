@@ -21,6 +21,24 @@ export function tierFallback(def: CliDefinition | undefined, defaultModel: strin
   return (defaultModel && !defaultModel.startsWith('@') ? defaultModel : '') || def?.tiers[t].model || ''
 }
 
+/**
+ * 账号方式下实际用的模型：切回账号后，旧 API 方式留下的 provider 前缀和协议后缀不是账号模型 ID，
+ * 执行时会被 CLI 判为 unknown model，去掉。设置页的下拉也按这个显示，和实际执行的一致。
+ */
+export function accountModelId(def: CliDefinition | undefined, api: ApiConfig | undefined, model: string) {
+  if (!def?.auth || !api) return model
+  const prefix = apiModelPrefix(def.auth, api)
+  const native = prefix && model.startsWith(prefix) ? model.slice(prefix.length) : model
+  const suffixes = {
+    anthropic: ['-anthropic-messages', '-anthropic'],
+    'openai-responses': ['-responses'],
+    'openai-chat': ['-chat', '-completions'],
+    gemini: ['-gemini'],
+  }[api.protocol]
+  const suffix = suffixes?.find((x) => native.endsWith(x))
+  return suffix ? native.slice(0, -suffix.length) : native
+}
+
 /** 某个 CLI 的有效设置：没配置过的项用默认值补齐 */
 export function cliSettings(
   settings: Settings,
@@ -32,20 +50,7 @@ export function cliSettings(
   // API 模式：选的 API 协议对得上时，把接口地址、密钥按 CLI 定义里的规则加进环境变量和参数（所有调用 CLI 的地方都经过这里）
   const api = s.authMode === 'api' ? selectedApi : undefined
   const inject = def?.auth && api && apiFits(def.auth, api) ? apiInjection(def.auth, api) : undefined
-  // 切回账号后，旧 API 模式留下的 provider 前缀不是账号模型 ID，执行时会被 CLI 判为 unknown model。
-  const accountModel = (model: string) => {
-    if (s.authMode !== 'account' || !def?.auth || !selectedApi) return model
-    const prefix = apiModelPrefix(def.auth, selectedApi)
-    const native = prefix && model.startsWith(prefix) ? model.slice(prefix.length) : model
-    const suffixes = {
-      anthropic: ['-anthropic-messages', '-anthropic'],
-      'openai-responses': ['-responses'],
-      'openai-chat': ['-chat', '-completions'],
-      gemini: ['-gemini'],
-    }[selectedApi.protocol]
-    const suffix = suffixes?.find((x) => native.endsWith(x))
-    return suffix ? native.slice(0, -suffix.length) : native
-  }
+  const accountModel = (model: string) => (s.authMode === 'account' ? accountModelId(def, selectedApi, model) : model)
   const tier = (t: ModelTier) => ({
     model: accountModel(s.tiers[t].model || tierFallback(def, s.defaultModel, t)),
     effort: s.tiers[t].effort || def?.tiers[t].effort || '',

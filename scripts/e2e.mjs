@@ -4250,6 +4250,17 @@ try {
     assert.equal(JSON.parse(readFileSync(ccFile, 'utf8')).provider?.agentpanel, undefined, '不再写旧的 settings.json')
     const ccCall = calls().findLast((x) => x.kind === 'commandcode')
     assert.equal(ccCall.apiEnv.agentpanel, undefined, '密钥不再走环境变量')
+    // 两种方式的模型下拉各列各的：API 方式只列这个 API 的；账号方式（还没保存就先读）不列 BYOK 和 API 的模型
+    assert.deepEqual(
+      (await call('GET', '/clis/commandcode/models?refresh=1')).models.map((m) => m.id),
+      ['cc/cc-1'],
+    )
+    const ccAccount = await call('GET', '/clis/commandcode/models?auth=account')
+    assert.deepEqual(
+      [ccAccount.auth, ccAccount.models.map((m) => m.id)],
+      ['account', ['fake/flash', 'fake/pro', 'gpt-fake']],
+      '账号方式只列账号的模型',
+    )
     assert.ok(!ccCall.args.join(' ').includes('ck'))
     // Pi：自己接的接口写进 models.json 的 providers，模型 ID 自带 provider
     const pa = await call('POST', '/tasks', {

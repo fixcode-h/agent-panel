@@ -7,7 +7,7 @@
  * 设置环境变量 FAKE_CLI_LOG 后，每次调用的参数、目录和 stdin 会追加写进这个文件。
  */
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { crc32, deflateSync } from 'node:zlib'
@@ -276,8 +276,19 @@ if (args.includes('--list-models') && args.includes('--offline')) {
 }
 // Command Code 的 --list-models
 if (args.includes('--list-models')) {
+  // 和真的一样，providers.json 里自己接的接口（BYOK）也列出来，分组名带「(BYOK)」
+  let byok = ''
+  try {
+    const file = path.join(process.env.HOME || homedir(), '.commandcode', 'providers.json')
+    for (const [id, p] of Object.entries(JSON.parse(readFileSync(file, 'utf8')).provider ?? {}))
+      byok += `\n${p.name || id} (BYOK)\n\n${Object.keys(p.models ?? {})
+        .map((m) => `${id}/${m}               byok model`)
+        .join('\n')}\n`
+  } catch {}
   console.log(
-    'Available models  ·  3 models\n\nOpen Source\n\nfake/flash               fast model (default)\nfake/pro                 strong model\n\nOpenAI\n\ngpt-fake                 openai model\n\nPass the full id, or just the short name after the last "/":\ncmd --model fake/pro',
+    'Available models  ·  3 models\n\nOpen Source\n\nfake/flash               fast model (default)\nfake/pro                 strong model\n\nOpenAI\n\ngpt-fake                 openai model\n' +
+      byok +
+      '\nPass the full id, or just the short name after the last "/":\ncmd --model fake/pro',
   )
   process.exit(0)
 }

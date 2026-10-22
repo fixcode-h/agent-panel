@@ -24,7 +24,7 @@ import {
   type Settings,
 } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
+import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@shared/settings'
 import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
@@ -611,12 +611,25 @@ export function CliSection({
   const models = useCliModels(def.id)
   // API 模式：模型目录按这个接口的协议优先选
   const apiConfig = draft.authMode === 'api' ? apis.find((a) => a.id === draft.apiId) : undefined
+  // 账号方式：以前 API 方式存下的模型（带 provider 前缀、协议后缀）按执行时的规则换成账号模型显示，
+  // 下拉里看到的就是实际会用的，不再出现 API 的模型
+  const selectedApi = apis.find((a) => a.id === draft.apiId)
+  const shown = (m: string) => (draft.authMode === 'account' ? accountModelId(def, selectedApi, m) : m)
+  const view: CliDraft = {
+    ...draft,
+    defaultModel: shown(draft.defaultModel),
+    tiers: {
+      high: { ...draft.tiers.high, model: shown(draft.tiers.high.model) },
+      medium: { ...draft.tiers.medium, model: shown(draft.tiers.medium.model) },
+      low: { ...draft.tiers.low, model: shown(draft.tiers.low.model) },
+    },
+  }
   const perm = def.permissions.find((p) => p.id === draft.permission) ?? def.permissions[0]
   // 默认思考强度用在实际的默认模型上：默认模型是档位时是那一档的模型
-  const defTier = tierOf(draft.defaultModel)
+  const defTier = tierOf(view.defaultModel)
   const defEffortModel = defTier
-    ? draft.tiers[defTier.id].model || tierFallback(full, '', defTier.id)
-    : draft.defaultModel || cliDefaultModel(full)?.id || ''
+    ? view.tiers[defTier.id].model || tierFallback(full, '', defTier.id)
+    : view.defaultModel || cliDefaultModel(full)?.id || ''
   const ok = status?.installed
   const installer = useCliInstaller(def)
   // 在这里装好（或更新好）以后自动启用，不用再手动打开开关
@@ -794,8 +807,8 @@ export function CliSection({
         >
           <TierTable
             def={full}
-            value={draft.tiers}
-            defaultModel={draft.defaultModel}
+            value={view.tiers}
+            defaultModel={view.defaultModel}
             protocol={apiConfig?.protocol}
             apiModelMap={apiConfig?.modelMap}
             apiModelEfforts={apiConfig?.modelEfforts}
@@ -803,7 +816,7 @@ export function CliSection({
           />
         </Row>
         <Row title={t('默认模型')} desc={t('角色没有指定模型时使用，可以选一个档位')}>
-          <DefaultModel def={full} draft={draft} onChange={(v) => set('defaultModel', v)} />
+          <DefaultModel def={full} draft={view} onChange={(v) => set('defaultModel', v)} />
         </Row>
         <Row title={t('默认思考强度')} desc={t('角色和档位都没有指定时使用')}>
           <Select

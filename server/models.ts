@@ -465,10 +465,42 @@ async function modelsFromCli(
   return undefined
 }
 
-export async function cliModels(id: string, refresh = false): Promise<CliModels> {
+/** 按登录方式查模型时指定的方式：设置页切换后还没保存时也能先读到对应的列表 */
+export type ModelsMode = { authMode: 'account' | 'api'; apiId?: string }
+
+/** 缓存按「CLI + 登录方式 + 选的 API」分开存：账号和 API 来回切换时直接用已经读过的，不用每次都重跑 CLI */
+function cacheKey(id: string, api: ApiConfig | undefined) {
+  if (!api) return `${id}|account`
+  return `${id}|api|${JSON.stringify([api.id, api.name, api.provider, api.protocol, api.baseUrl, api.models])}`
+}
+
+/** 用已保存的设置算出来的缓存项：执行任务时查上下文窗口用 */
+const live = new Map<string, string>()
+
+export async function cliModels(id: string, refresh = false, mode?: ModelsMode): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
   if (!def) throw new Error(t('未知的 Agent：{cli}', { cli: id }))
-  const cs = cliSettings(await getSettings(), id)
+  const settings = await getSettings()
+  const effective = mode
+    ? {
+        ...settings,
+        clis: {
+          ...settings.clis,
+          [id]: { ...(settings.clis[id] ?? {}), authMode: mode.authMode, apiId: mode.apiId ?? '' },
+        } as typeof settings.clis,
+      }
+    : settings
+  const cs = cliSettings(effective, id)
+  const saved = cliSettings(settings, id)
+  // 不缓存的两种情况：要的是 API 方式但这个 API 还没保存（或协议对不上），读出来的其实是账号的列表；
+  // 列表要看 CLI 配置文件的（Claude Code、Codex），还没保存切换时配置文件还是另一种方式的样子
+  const unresolved =
+    (mode?.authMode === 'api' && !cs.api) ||
+    (!!mode && saved.api?.id !== cs.api?.id && def.auth?.api?.modelSource !== 'cli')
+  const key = cacheKey(id, cs.api)
+  if (!mode) live.set(id, key)
+  const hit = cache.get(key)
+  if (!refresh && !unresolved && hit && Date.now() - hit.at < TTL) return hit.data
   const entries = await mergedModelCatalog().catch(() => [])
   const protocol = cs.api?.protocol
   const applyCatalog = (data: CliModels) => {
@@ -481,31 +513,34 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
     data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
     return data
   }
+  const remember = (data: CliModels) => {
+    if (!unresolved) cache.set(key, { at: Date.now(), data })
+    return data
+  }
 
   if (cs.api) {
     const fallback = apiModelsFor(def, cs.api)
     const spec = def.auth?.api
     // 能写进 CLI 配置、CLI 也能列模型的（Command Code、Pi），只取 API 里配的那几个模型；
     // 配置文件里以前留下的其他模型不再显示。
-    if (spec?.modelSource !== 'cli' || !def.modelsFrom) return applyCatalog(fallback)
+    if (spec?.modelSource !== 'cli' || !def.modelsFrom) return remember(applyCatalog(fallback))
     const st = (await detectClis()).find((c) => c.id === id)
-    if (!st?.installed || !cs.enabled) return applyCatalog(fallback)
+    if (!st?.installed || !cs.enabled) return remember(applyCatalog(fallback))
     try {
       const listed = await modelsFromCli(def, cs.command, childEnv(cs.env))
-      if (!listed) return applyCatalog(fallback)
+      if (!listed) return remember(applyCatalog(fallback))
       const byId = new Map(listed.models.map((m) => [m.id, m]))
       const models = fallback.models.map((m) => {
         const hit = byId.get(m.id)
         return hit ? { ...hit, id: m.id, isDefault: m.isDefault } : m
       })
-      return applyCatalog({ ...fallback, source: listed.source, models, from: cs.api.name })
+      return remember(applyCatalog({ ...fallback, source: listed.source, models, from: cs.api.name }))
     } catch {
+      // 读失败不缓存：下次再试
       return applyCatalog(fallback)
     }
   }
 
-  const hit = cache.get(id)
-  if (!refresh && hit && Date.now() - hit.at < TTL) return hit.data
   const env = childEnv(cs.env)
   // 没安装或停用的 CLI 不去启动它读模型，用内置列表
   const st = (await detectClis()).find((c) => c.id === id)
@@ -517,9 +552,15 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }
   }
   if (data.source === 'cli' && !data.models.length) data = { source: 'builtin', models: builtin(def), efforts: [] }
-  data = applyCatalog(data)
-  cache.set(id, { at: Date.now(), data })
-  return data
+  // 账号方式只列账号能用的模型：CLI 配置里自己接的接口（以前 API 方式写进去的、或用户自己接的）
+  // 也会出现在 CLI 的列表里，这些不是账号的模型。只有这些可用时（没登录）才照旧列出来
+  if (data.source === 'cli' && def.auth?.api?.modelSource === 'cli') {
+    const selected = settings.apis.find((a) => a.id === cs.apiId)
+    const prefix = selected ? apiModelPrefix(def.auth, selected) : ''
+    const own = data.models.filter((m) => m.origin !== 'config' && !(prefix && m.id.startsWith(prefix)))
+    if (own.length && own.length < data.models.length) data = { ...data, models: own }
+  }
+  return remember(applyCatalog(data))
 }
 
 /** Command Code 的上下文窗口只要读文件，不用跑 CLI，执行任务时模型列表还没读过也能查到 */
@@ -570,14 +611,27 @@ export async function supportedEffort(id: string, model: string, effort?: string
 }
 
 /** 已经读过的模型列表（不触发读取）：执行任务时查上下文窗口用，不能为此再去跑一次 CLI */
-export const cachedModels = (id: string) => cache.get(id)?.data
+export const cachedModels = (id: string) => cache.get(live.get(id) ?? `${id}|account`)?.data
 
-export const invalidateModels = (id?: string) => (id ? cache.delete(id) : cache.clear())
+/**
+ * 清掉模型缓存。only 给出时只清这种登录方式的：切换登录方式只改 API 那边写进 CLI 配置的内容，
+ * 账号的列表还能用，切回来时不用再等 CLI
+ */
+export function invalidateModels(id?: string, only?: 'account' | 'api') {
+  if (!id) return cache.clear()
+  const prefix = only ? `${id}|${only}` : `${id}|`
+  for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k)
+}
 
 export function modelsApi() {
   return new Hono().get('/:id/models', async (c) => {
     const id = c.req.param('id')
     if (!CLIS.some((x) => x.id === id)) return c.json({ error: t('未知的 Agent：{cli}', { cli: id }) }, 404)
-    return c.json(await cliModels(id, c.req.query('refresh') === '1'))
+    const auth = c.req.query('auth')
+    const mode =
+      auth === 'account' || auth === 'api'
+        ? { authMode: auth as ModelsMode['authMode'], apiId: c.req.query('api') ?? '' }
+        : undefined
+    return c.json(await cliModels(id, c.req.query('refresh') === '1', mode))
   })
 }

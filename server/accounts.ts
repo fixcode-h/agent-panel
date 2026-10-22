@@ -786,7 +786,9 @@ export async function syncCliAuths(prev: Settings, next: Settings) {
     const prevApi = prev.apis.find((a) => a.id === prevCs.apiId)
     const lastProvider = prevApi ? apiProvider(prevApi, def.auth.api.defaultProvider) : undefined
     await prepareAuth(def.id, lastProvider)
-    invalidateModels(def.id)
+    // 模型从 CLI 列表读的（Command Code、Pi）账号列表只列账号的模型，不受配置里接口的影响，留着，
+    // 切回账号时不用再等 CLI；看配置文件判断登录方式的（Claude Code、Codex）两种都要重读
+    invalidateModels(def.id, def.auth.api.modelSource === 'cli' ? 'api' : undefined)
   }
 }
 

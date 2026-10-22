@@ -43,7 +43,8 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 
 - 规则：CLI 从 API 模式切回账号模式时，去掉 API provider 前缀和协议后缀，只把账号实际支持的模型 ID 交给 CLI；两个模式的模型下拉也要分别取各自来源。
 - 起因：Command Code 账号模式保留 `tokenapi/...-responses` 会先报未登录，登录后又报 `unknown model`；用户明确要求账号模式自动映射。
-- 防线：`server/settings-auth.test.ts`。
+- 补充：模型列表按「CLI + 登录方式 + 选的 API」分开缓存（服务端 `server/models.ts`、前端 `web/src/lib/cli-models.ts`），设置页切换后不等保存就换成那种方式的列表；账号方式要去掉 CLI 列表里自己接的接口（Command Code 的 BYOK 组、带 API provider 前缀的模型），下拉和档位显示用 `accountModelId`，和执行时一致。起因：Command Code 切到账号后下拉还是 `tokenapi/...`，来回切换要等好几秒（用户指出）。
+- 防线：`server/settings-auth.test.ts`；`scripts/e2e.mjs`「账号和 API」里查两种方式的列表。
 
 ## 整行命令交给 shell 走 shellCommand，Windows 上不让 Node 转义
 
