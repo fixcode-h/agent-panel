@@ -35,7 +35,14 @@ import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../mo
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
 import { modelLimitsFor } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
-import { NODE_PART, runEngineTurn, type AgentCall, type AgentResult, type EngineHost } from '../../shared/engine.ts'
+import {
+  NODE_PART,
+  helperGate,
+  runEngineTurn,
+  type AgentCall,
+  type AgentResult,
+  type EngineHost,
+} from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
 import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
@@ -154,6 +161,46 @@ export function deliverWait(task: Task, msg: TaskMessage): 'ok' | 'stale' | 'non
   return 'ok'
 }
 
+/** 对话派出的子任务（不是工作流节点） */
+const isHelperStep = (task: Task, id: string) => {
+  const s = id ? task.steps.find((x) => x.id === id) : undefined
+  return !!s && s.slot === 'sub'
+}
+
+/**
+ * 对话停下等子任务时（回复完 CLI 就退出的，Claude Code、Codex），等用户的下一条消息：
+ * 消息记进对话，交给引擎马上开一轮回复。停止、页面离开时返回 null，引擎只等子任务
+ */
+function waitChat(task: Task, signal: AbortSignal, changed: (flush?: boolean) => void): Promise<string | null> {
+  if (signal.aborted) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    let settled = false
+    const done = (value: string | null) => {
+      if (settled) return
+      settled = true
+      signal.removeEventListener('abort', onAbort)
+      const set = waiters.get(task.id)
+      set?.delete(w)
+      if (!set?.size) waiters.delete(task.id)
+      resolve(value)
+    }
+    const onAbort = () => done(null)
+    const w: Waiter = {
+      deliver: (msg) => {
+        task.messages.push(msg)
+        task.working = true
+        changed(true)
+        done(withAttachments(msg.text, msg.attachments ?? []))
+      },
+      cancel: () => done(null),
+      // 进程已经退出了，下一轮按输入框里现在的选择开
+      current: () => true,
+    }
+    ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(w)
+    signal.addEventListener('abort', onAbort, { once: true })
+  })
+}
+
 /** 用户离开了这个对话：让还在等下一句的 CLI 结束这一轮；返回有没有真的取消到 */
 export function cancelWait(taskId: string) {
   let canceled = false
@@ -193,7 +240,8 @@ export async function steerTask(
   text: string,
   msg: TaskMessage,
 ): Promise<'steer' | 'notes' | 'next-node' | false> {
-  const all = steers.get(task.id) ?? []
+  // 对话里派出的子任务也登记了插话：用户的话是说给对话的，不交给它们（交过去会记在子任务名下，对话里看不到）
+  const all = [...(steers.get(task.id) ?? [])].filter((s) => !(task.mode === 'chat' && isHelperStep(task, s.step)))
   const took: Steerer[] = []
   for (const s of all) if (await s.steer(steerNote(text, task.mode === 'chat'))) took.push(s)
   if (took.length) {
@@ -992,18 +1040,35 @@ async function runAgent(
    * 等用户的下一条消息。fromTool 是模型正在调 wait_user_message（这一轮还没结束）；
    * 否则是面板在这一轮结束后保活：不靠模型自觉调工具，回复完就把进程留着
    */
+  /** 停在等待上等子任务：CLI 本来就没有输出，不算卡住 */
+  let waitingHelpers = false
+  // 这一轮派出的子任务：对话停在面板的等待工具上等它们，等的时候用户照样能聊（见 helperGate）
+  const gate =
+    chat && orch
+      ? helperGate(
+          () => orch.helperBatch(),
+          async (text) => {
+            const s = steerer
+            if (!s || !(await s.steer(text))) return false
+            s.accepted()
+            return true
+          },
+        )
+      : undefined
   const waitNext = async (fromTool: boolean): Promise<string | null> => {
     if (fromTool) {
       if (finished) return null
       toolWaited = true
     }
-    // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回同一个进程接着做，不等用户的下一句
-    const back = chat ? orch?.helperResults(ctx.signal) : undefined
+    // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回同一个进程接着做；
+    // 等的时候用户发来的消息马上交给 CLI 回复，不用等子任务
+    const back = gate?.wait(ctx.signal, (signal) => listen(signal, true))
     if (back) {
       const text = await back
       if (!text || ctx.signal.aborted) return null
       // 之后的输出另起一条，排在交回的结果后面
       cur = undefined
+      task.working = true
       ctx.changed(true)
       return text
     }
@@ -1011,14 +1076,24 @@ async function runAgent(
     if (chat && !stillCurrent()) return null
     // 这一轮没取走的补充：不再挂着等下一句，直接结束这一轮，由调用方马上开始新一轮接着处理
     if (pendingNotes.size) return null
+    return listen(ctx.signal, false)
+  }
+  /**
+   * 停在等待上，等用户的下一条消息。helpers：其实在等子任务，这一轮没做完，
+   * 不算回复完成，也不因为页面离开就结束（子任务的结果还要交回这个进程）
+   */
+  const listen = async (signal: AbortSignal, helpers: boolean): Promise<string | null> => {
+    if (signal.aborted) return null
     task.prewarming = false
-    task.awaitingUser = true
+    // 等子任务时页面显示「等待 n 个子任务完成」，不是「等待你的下一条消息」
+    if (helpers) waitingHelpers = true
+    else task.awaitingUser = true
     // 停在等待上：空闲时间记进等待，不算执行。keepAlive 会让这次调用一直不返回
-    if (!prewarmMode) pauseRun(task)
+    if (!prewarmMode && !helpers) pauseRun(task)
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
-    if (!prewarmMode && chat && !op) markTurnDone(task)
+    if (!prewarmMode && chat && !op && !helpers) markTurnDone(task)
     ctx.changed(true)
     try {
       return await new Promise<string | null>((resolve) => {
@@ -1026,14 +1101,15 @@ async function runAgent(
         const done = (value: string | null) => {
           if (settled) return
           settled = true
-          ctx.signal.removeEventListener('abort', onAbort)
+          signal.removeEventListener('abort', onAbort)
           const set = waiters.get(task.id)
           if (waiter) set?.delete(waiter)
           if (!set?.size) waiters.delete(task.id)
           waiter = undefined
+          if (helpers) waitingHelpers = false
           task.awaitingUser = false
           task.prewarming = false
-          if (value === null && chat) task.working = false
+          if (value === null && chat && !helpers) task.working = false
           if (!finished) ctx.changed(true)
           resolve(value)
         }
@@ -1052,10 +1128,11 @@ async function runAgent(
             done(withAttachments(msg.text, msg.attachments ?? []))
           },
           cancel: () => done(null),
-          current: stillCurrent,
+          // 等子任务时没有换 CLI 的问题：消息照样交给这个进程
+          current: helpers ? () => true : stillCurrent,
         }
         ;(waiters.get(task.id) ?? waiters.set(task.id, new Set()).get(task.id)!).add(waiter)
-        ctx.signal.addEventListener('abort', onAbort, { once: true })
+        signal.addEventListener('abort', onAbort, { once: true })
         // 页面已经离开（宽限过了）：不再一直挂着，让 CLI 结束这一轮
         if (!isWatched(task.id)) done(null)
       })
@@ -1094,7 +1171,7 @@ async function runAgent(
       ? {
           ms: idleMs,
           // 在等用户确认、回答或下一句时 CLI 本来就没有输出，不算卡住
-          busy: () => task.awaitingUser || task.requests.some((x) => asked.includes(x.id)),
+          busy: () => task.awaitingUser || waitingHelpers || task.requests.some((x) => asked.includes(x.id)),
           onWarn: () => {
             task.messages.push({
               id: ctx.newId(),
@@ -1403,6 +1480,9 @@ export async function runRealTurn(ctx: RealContext) {
     checkBackground: ctx.checkBackground,
     lessons: ctx.lessons,
     runAgent: (call) => runAgent(ctx, ctx.op && !call.step ? { ...call, op: ctx.op } : call),
+    signal: ctx.signal,
+    // 对话等子任务时用户发来的消息：马上开一轮回复
+    waitChat: ctx.task.mode === 'chat' ? (signal) => waitChat(ctx.task, signal, ctx.changed) : undefined,
     // 编排工具的传话：交给正在跑的那个节点（CLI 支持执行中补充时），交不了由引擎放进它的收件箱
     steer: async (stepId, text) => {
       for (const s of steers.get(ctx.task.id) ?? [])

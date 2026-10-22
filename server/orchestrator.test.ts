@@ -172,3 +172,69 @@ test('协调 Agent：新建子对话并交给它，子对话自己不能再分�
   await runEngineTurn(sh)
   assert.equal(subLog.length, 1)
 })
+
+/**
+ * 对话等子任务时用户照样能聊：消息马上开一轮回复；整批交回时还在回复就插话打断，
+ * 插不进去的等这一轮结束再交
+ */
+async function chatWhileHelpers(steerOk: boolean) {
+  const id = steerOk ? 'h1' : 'h2'
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', agentId: 'm', prompt: '查一下' } as never, undefined, '', id),
+    id,
+  } as Task
+  const log: AgentCall[] = []
+  let release!: () => void
+  const helperGo = new Promise<void>((r) => (release = r))
+  const steered: string[] = []
+  let turn = 0
+  const h = host(task, log, async (call) => {
+    if (call.step) {
+      await helperGo
+      return { ok: true, text: '查到了' }
+    }
+    turn++
+    if (turn === 1) {
+      assert.equal(call.orch!.spawn([{ title: '调研', instructions: '查资料' }]).ids.length, 1)
+      return { ok: true, text: '派出去了' }
+    }
+    if (turn === 2) {
+      assert.match(call.prompt, /等待期间发来了消息[\s\S]*进度怎么样/)
+      // 回复用户的时候子任务交回了：先插话打断这一轮
+      release()
+      for (let i = 0; i < 50 && !steered.length; i++) await new Promise((r) => setTimeout(r, 5))
+      assert.equal(steered.length, 1)
+      assert.match(steered[0], /先放下正在回复的这条用户消息[\s\S]*查到了/)
+      return { ok: true, text: '还在查' }
+    }
+    assert.match(call.prompt, /子任务都结束了，结果如下[\s\S]*查到了/)
+    return { ok: true, text: '整理好了' }
+  })
+  h.agents = [agent('m', '协调')]
+  let asked = 0
+  h.waitChat = (signal) => {
+    if (asked++ === 0) {
+      task.messages.push({ id: 'u2', role: 'user', agentId: '', step: '', text: '进度怎么样', tools: [], at: '' })
+      return Promise.resolve('进度怎么样')
+    }
+    return new Promise((r) => signal.addEventListener('abort', () => r(null), { once: true }))
+  }
+  h.steer = async (stepId, text) => {
+    assert.equal(stepId, '')
+    steered.push(text)
+    return steerOk
+  }
+  await runEngineTurn(h)
+  assert.equal(task.status, 'done')
+  assert.ok(task.messages.some((m) => m.role === 'user' && m.text === '进度怎么样' && !m.step))
+  assert.equal(task.messages.filter((m) => m.panel === 'helpers').length, 1, '结果只交回一次')
+  return log.filter((c) => !c.step).length
+}
+
+test('等子任务时发消息：马上回复，结果交回时插话打断', async () => {
+  assert.equal(await chatWhileHelpers(true), 2, '结果插进了回复用户的那一轮，不再单独开一轮')
+})
+
+test('等子任务时发消息：插话交不进去，回复完再处理结果', async () => {
+  assert.equal(await chatWhileHelpers(false), 3)
+})

@@ -148,6 +148,90 @@ export interface HelperReport {
  * 交给一次调用的编排工具，绑定在调用它的节点上。工具调用不能等太久（Codex 默认 60 秒就超时），
  * 等子 Agent、等主 Agent 回答都有上限，没等到就先返回，之后再查
  */
+/** 一批子任务交回的结果：take() 认领，只有第一次拿得到 */
+export interface HelperBatch {
+  take: () => string
+}
+
+/** 子任务结果交给对话的 CLI。preempt：它正在回复等待期间的用户消息，先放下那条，做完再回去 */
+export const helperPrompt = (late: string, preempt = false) =>
+  preempt
+    ? `【面板】你派出的子任务都结束了。先放下正在回复的这条用户消息，根据下面的结果把派子任务之前的工作做完；` +
+      `做完后再回到那条用户消息，接着回复还没回复完的部分。\n\n${late}`
+    : `【面板】你派出的子任务都结束了，结果如下：\n\n${late}\n\n请根据这些结果接着做。`
+
+/** 等子任务期间用户发来的消息：马上回复，子任务的结果交回后再接着之前的工作 */
+export const sideChatPrompt = (text: string) =>
+  '【面板】你派出的子任务还在执行，用户在等待期间发来了消息。请直接回复这条消息，不要停下来等子任务；' +
+  '需要用到子任务结果的部分说明会在结果交回后处理。子任务全部交回后面板会把结果交给你，到时先处理结果，' +
+  `再回到这里没做完的部分。\n\n用户的消息：\n${text}`
+
+/**
+ * 对话等子任务的这段时间：用户照样能聊，消息马上交给 CLI 回复；
+ * 这一批全部交回后立刻处理结果（正在回复用户时用插话打断它），处理完再回到被打断的那条消息。
+ * 引擎（回复完 CLI 就退出的，Claude Code、Codex）和 runner（CLI 停在面板的等待工具上的）各用一个。
+ */
+export function helperGate(
+  batch: () => Promise<HelperBatch> | undefined,
+  /** 把结果插进正在回复用户消息的这一轮；交不进去返回 false，等这一轮结束再交 */
+  steer?: (text: string) => Promise<boolean>,
+) {
+  /** 交回了、但还没交给 CLI 的结果（插话没交进去） */
+  let carry = ''
+  /** CLI 正在回复等待期间的用户消息 */
+  let replying = false
+  /** 正在等的这一批：交回后它从编排状态里删掉，没认领前要自己留着 */
+  let watching: Promise<HelperBatch> | undefined
+  return {
+    /**
+     * 一轮结束后调：没有要等的子任务返回 undefined；否则等到下一件要做的事，返回交给 CLI 的提示词。
+     * listen 等用户的下一条消息（返回 null 表示不再等，比如页面离开了），停止或结果被别处认领了返回空字符串
+     */
+    wait(signal: AbortSignal, listen?: (signal: AbortSignal) => Promise<string | null>): Promise<string> | undefined {
+      replying = false
+      if (carry) {
+        const late = carry
+        carry = ''
+        return Promise.resolve(helperPrompt(late))
+      }
+      const b = watching ?? batch()
+      if (!b) return undefined
+      watching = b
+      return (async () => {
+        const ac = new AbortController()
+        const stop = () => ac.abort()
+        signal.addEventListener('abort', stop, { once: true })
+        try {
+          const aborted = new Promise<null>((r) => ac.signal.addEventListener('abort', () => r(null), { once: true }))
+          // 不再等用户（页面离开了）就只等子任务
+          const user = listen
+            ? listen(ac.signal).then((text) => (text === null ? new Promise<never>(() => {}) : { user: text }))
+            : new Promise<never>(() => {})
+          const got = await Promise.race([b.then((x) => ({ back: x })), user, aborted])
+          if (!got || signal.aborted) return ''
+          if ('back' in got) {
+            watching = undefined
+            const late = got.back.take()
+            return late ? helperPrompt(late) : ''
+          }
+          replying = true
+          // 整批交回时还在回复这条消息：插话打断它，先处理结果；交不进去的等这一轮结束再交
+          void b.then(async (x) => {
+            if (!replying || !steer) return
+            const late = x.take()
+            watching = undefined
+            if (late && !(await steer(helperPrompt(late, true)))) carry = late
+          })
+          return sideChatPrompt(got.user)
+        } finally {
+          signal.removeEventListener('abort', stop)
+          ac.abort()
+        }
+      })()
+    },
+  }
+}
+
 export interface Orchestra {
   /** 调用者的节点 id */
   self: string
@@ -162,10 +246,11 @@ export interface Orchestra {
   /** 对话里派的子任务：这一轮结束后对话停下等它们，结果自动交回，不用模型自己轮询 */
   autoReturn: boolean
   /**
-   * 还没交回的子任务：等它们全部结束，把结果作为一条面板消息记进对话并返回交给 CLI 的文字；
-   * 没有要交回的返回 undefined。对话这一轮结束时调用，对话就停在这里等子任务
+   * 这一批还没交回的子任务：等它们全部结束，把结果作为一条面板消息记进对话；没有要交回的返回 undefined。
+   * 同一批只有一个 Promise，多处等拿到的是同一个；结果由 take() 认领，只有第一次认领拿得到，免得交给 CLI 两次。
+   * 对话这一轮结束时用 helperGate 等它，等待期间用户照样能聊
    */
-  helperResults(signal?: AbortSignal): Promise<string> | undefined
+  helperBatch(): Promise<HelperBatch> | undefined
   status(): string
   spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -259,6 +344,13 @@ export interface EngineHost {
   halted?: boolean
   /** 把一段话交给正在跑的节点（CLI 支持执行中补充时）；交不了返回 false，改放进它的收件箱 */
   steer?: (stepId: string, text: string) => Promise<boolean>
+  /**
+   * 对话停下等子任务时，等用户的下一条消息（消息由宿主记进对话），马上开一轮回复它。
+   * 不再等（页面离开、停止）返回 null；没有时只等子任务
+   */
+  waitChat?: (signal: AbortSignal) => Promise<string | null>
+  /** 这一轮的停止信号：等子任务时停止任务不再等 */
+  signal?: AbortSignal
   /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
   workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
   /**
@@ -1829,6 +1921,8 @@ interface OrchState {
   errors: Map<string, string>
   /** 结果已经交回给派它的节点的子 Agent */
   delivered: Set<string>
+  /** 对话 / 节点 id → 正在等的这一批子任务 */
+  batches: Map<string, Promise<HelperBatch>>
   running: number
   queue: (() => void)[]
 }
@@ -1836,7 +1930,15 @@ const orchStates = new WeakMap<EngineHost, OrchState>()
 function orchState(host: EngineHost): OrchState {
   let st = orchStates.get(host)
   if (!st) {
-    st = { mail: new Map(), helpers: new Map(), errors: new Map(), delivered: new Set(), running: 0, queue: [] }
+    st = {
+      mail: new Map(),
+      helpers: new Map(),
+      errors: new Map(),
+      delivered: new Set(),
+      batches: new Map(),
+      running: 0,
+      queue: [],
+    }
     orchStates.set(host, st)
   }
   return st
@@ -1880,7 +1982,11 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
   const kids = () => host.task.steps.filter((s) => s.parentId === step.id && s.slot === 'sub')
-  await Promise.all(kids().map((k) => st.helpers.get(k.id) ?? Promise.resolve()))
+  // 等的这段时间里对话可能又派了几个（用户插进来聊的那一轮）：它们算进同一批，一起交回
+  for (let n = -1; n !== kids().length; ) {
+    n = kids().length
+    await Promise.all(kids().map((k) => st.helpers.get(k.id) ?? Promise.resolve()))
+  }
   const late = kids().filter((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))
   for (const k of late) st.delivered.add(k.id)
   return late
@@ -1995,26 +2101,38 @@ function makeOrchestra(
       .map((a) => ({ name: a.name, description: a.description })),
     helper,
     autoReturn: !!ctx.chat && !helper,
-    helperResults(signal) {
+    helperBatch() {
+      const going = st.batches.get(self.id)
+      if (going) return going
       const kids = () => task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
       if (!kids().some((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))) return undefined
-      const stop = new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true }))
-      return Promise.race([settleHelpers(host, self), stop.then(() => '')]).then((late) => {
-        if (!late) return ''
-        // 交回的结果记成面板消息：对话里显示成 AI 回复里的一行，不当作用户说的话
-        task.messages.push({
-          id: host.newId(),
-          role: 'system',
-          agentId: '',
-          step: where,
-          text: late,
-          tools: [],
-          panel: 'helpers',
-          at: now(),
-        })
-        host.changed(true)
-        return `【面板】你派出的子任务都结束了，结果如下：\n\n${late}\n\n请根据这些结果接着做。`
+      const batch = settleHelpers(host, self).then((late): HelperBatch => {
+        st.batches.delete(self.id)
+        if (late) {
+          // 交回的结果记成面板消息：对话里显示成 AI 回复里的一行，不当作用户说的话
+          task.messages.push({
+            id: host.newId(),
+            role: 'system',
+            agentId: '',
+            step: where,
+            text: late,
+            tools: [],
+            panel: 'helpers',
+            at: now(),
+          })
+          host.changed(true)
+        }
+        let left = late
+        return {
+          take: () => {
+            const got = left
+            left = ''
+            return got
+          },
+        }
       })
+      st.batches.set(self.id, batch)
+      return batch
     },
     run(input) {
       if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
@@ -2598,9 +2716,15 @@ async function runConversationTurn(host: EngineHost, who: string) {
   if (turn) host.changed(true)
   try {
     let prompt = await conversationPrompt(host, kind, planning, coordinator)
-    // 子任务交回结果也算一圈：派几次就要接着几次，上限放宽一些
-    for (let i = 0; i < 12; i++) {
-      const orch = makeOrchestra(
+    let orch: Orchestra | undefined
+    // 回复完 CLI 就退出的（Claude Code、Codex）在这里等子任务；停在等待工具上的 CLI 在 runner 里自己等
+    const gate = helperGate(
+      () => orch?.helperBatch(),
+      (text) => host.steer?.('', text) ?? Promise.resolve(false),
+    )
+    // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
+    for (let i = 0; i < 30; i++) {
+      orch = makeOrchestra(
         host,
         { workflow: host.workflow, tier: '', chat: true, planning, coordinator },
         chatStep(host, who),
@@ -2621,10 +2745,11 @@ async function runConversationTurn(host: EngineHost, who: string) {
         }
         return finish(host, r)
       }
-      // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回给同一个会话接着做
-      const back = orch.helperResults()
-      if (back) {
-        const text = await back
+      // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回给同一个会话接着做；
+      // 等的时候用户发来的消息马上开一轮回复
+      const next = gate.wait(host.signal ?? new AbortController().signal, host.waitChat)
+      if (next) {
+        const text = await next
         if (host.halted || !text) break
         prompt = text
         continue
