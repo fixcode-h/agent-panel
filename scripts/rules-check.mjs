@@ -2,6 +2,7 @@
 // 1. 不按 CLI 的名字写分支：CLI 的差异写进定义（shared/clis*），代码按字段走
 // 2. 文档里写的仓库路径必须存在，避免改名、删文件后文档还指着旧路径
 // 3. 教训分片的格式和大小：有 paths、每条有「规则」、单个分片不超过 6 KB、paths 至少命中一个文件
+// 4. 已跟踪文本文件的换行和编码：仓库里统一 LF、UTF-8 无 BOM（见 .gitattributes）
 // 确实需要按名字区分时（例如内置适配器内部），在这一行或上一行写 `cli-id-ok: 原因`。
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync } from 'node:fs'
@@ -71,6 +72,49 @@ for (const s of readShards()) {
     if (!/^- 规则：/m.test(sec)) errors.push(`${f}「${title}」缺少「- 规则：」`)
   }
 }
+
+// 4. 换行和编码：Windows 上 core.autocrlf 会把工作区转成 CRLF，编辑器存成带 BOM 的文字
+// 在 WSL / Linux 里跑会报 bad interpreter，所以已跟踪的文本文件一律 LF、UTF-8 无 BOM
+const attrs = existsSync(path.join(root, '.gitattributes'))
+  ? readFileSync(path.join(root, '.gitattributes'), 'utf8').split('\n')
+  : []
+// .gitattributes 里标成 binary 或 -text 的按二进制处理；不带目录的模式匹配任意层
+const attrBinary = attrs
+  .map((l) => l.trim())
+  .filter((l) => l && !l.startsWith('#'))
+  .map((l) => l.split(/\s+/))
+  .filter(([, ...a]) => a.includes('binary') || a.includes('-text'))
+  .map(([pattern]) => globToRegExp(pattern.includes('/') ? pattern : `**/${pattern}`))
+const tracked = execFileSync('git', ['ls-files', '--cached'], { cwd: root, encoding: 'utf8' })
+  .split('\n')
+  .filter((f) => f && existsSync(path.join(root, f)))
+const crlf = []
+const bom = []
+for (const f of tracked) {
+  if (attrBinary.some((re) => re.test(f))) continue
+  const buf = readFileSync(path.join(root, f))
+  // 和 git 一样：前 8 KB 里有 0 字节就当二进制，不检查换行和 BOM
+  if (buf.subarray(0, 8000).includes(0)) continue
+  if (buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) bom.push(f)
+  if (buf.includes('\r\n')) crlf.push(f)
+}
+const list = (a) => [...a.slice(0, 10).map((f) => `  ${f}`), ...(a.length > 10 ? [`  ……还有 ${a.length - 10} 个`] : [])]
+if (crlf.length)
+  errors.push(
+    [
+      `${crlf.length} 个已跟踪的文件含 CRLF 换行，仓库统一存 LF：`,
+      ...list(crlf),
+      '修复：git config core.autocrlf false，然后 git add --renormalize . 重新入库；工作区的文件用编辑器或 dos2unix 转成 LF',
+    ].join('\n'),
+  )
+if (bom.length)
+  errors.push(
+    [
+      `${bom.length} 个已跟踪的文件带 UTF-8 BOM，仓库统一用无 BOM：`,
+      ...list(bom),
+      '修复：把文件另存为 UTF-8 无 BOM（PowerShell 5.1 的 -Encoding UTF8 会写 BOM，改用 [System.IO.File]::WriteAllText）',
+    ].join('\n'),
+  )
 
 if (errors.length) {
   console.error(errors.join('\n'))

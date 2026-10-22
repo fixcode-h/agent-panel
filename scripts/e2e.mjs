@@ -2,7 +2,7 @@
  * 端到端测试：用临时数据目录启动服务，把三个 CLI 都指向 scripts/fake-cli/fake-cli.mjs，
  * 走一遍设置 → 检测 → 工作流任务（含并行阶段）→ 追加要求（续接会话）→ 对话任务 → 停止 → 失败 → 找不到命令 → 停用。
  *
- * 运行：npm run test:e2e（需要 git；假 CLI 依赖 shebang，只能在 macOS / Linux 上跑）
+ * 运行：npm run test:e2e（需要 git；假 CLI 依赖 shebang 和 /bin/sh，只能在 macOS / Linux 上跑）
  */
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
@@ -13,6 +13,15 @@ import { crc32, deflateSync } from 'node:zlib'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+
+// 假 CLI 靠 shebang 直接执行，脚本里也用 mkdir -p、tar 这类 Unix 命令：
+// Windows 上先给出能照着做的提示，不要跑到一半才报一堆看不懂的错
+if (process.platform === 'win32') {
+  console.error(
+    '端到端测试请在 WSL / macOS / Linux 上运行（Windows 上可以在 WSL 里装好依赖后跑 `npm run test:e2e:wsl`）。',
+  )
+  process.exit(1)
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fake = path.join(root, 'scripts/fake-cli/fake-cli.mjs')
@@ -31,7 +40,7 @@ const PNG_1PX = Buffer.from(
 )
 
 // 项目目录：一个已有提交、并且有一处未提交改动的 git 仓库
-execFileSync('mkdir', ['-p', projectDir])
+mkdirSync(projectDir, { recursive: true })
 const git = (...a) => execFileSync('git', a, { cwd: projectDir, stdio: 'pipe' })
 /** 在别的目录（任务的独立分支目录）里跑 git */
 const gitIn = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'pipe' })
@@ -45,17 +54,19 @@ writeFileSync(path.join(projectDir, 'pre.txt'), 'changed before the task\n')
 // 假的 GitHub Releases：三个版本，包是现做的 tar.gz，用来测试设置里的版本更新
 const appDir = path.join(tmp, 'app')
 const relDir = path.join(tmp, 'releases')
-execFileSync('mkdir', ['-p', path.join(appDir, 'dist'), path.join(appDir, 'data'), relDir])
+mkdirSync(path.join(appDir, 'dist'), { recursive: true })
+mkdirSync(path.join(appDir, 'data'), { recursive: true })
+mkdirSync(relDir, { recursive: true })
 writeFileSync(path.join(appDir, 'server.mjs'), '// old\n')
 writeFileSync(path.join(appDir, 'dist/old.html'), 'old')
 writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
 // Windows 托盘程序：上次更新挪开的 AgentPanel.exe.old 还在运行，删不掉也不能被覆盖（这里用非空目录模拟）
 writeFileSync(path.join(appDir, 'AgentPanel.exe'), 'tray-old')
-execFileSync('mkdir', ['-p', path.join(appDir, 'AgentPanel.exe.old')])
+mkdirSync(path.join(appDir, 'AgentPanel.exe.old'), { recursive: true })
 writeFileSync(path.join(appDir, 'AgentPanel.exe.old', 'busy'), '')
 for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   const d = path.join(relDir, `agent-panel-${v}`)
-  execFileSync('mkdir', ['-p', path.join(d, 'dist')])
+  mkdirSync(path.join(d, 'dist'), { recursive: true })
   // 0.11.8 的服务端加载就出错：更新时试跑不通过，要退回原来的版本
   writeFileSync(path.join(d, 'server.mjs'), v === '0.11.8' ? 'process.exit(3)\n' : `// new ${v}\n`)
   writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
@@ -69,7 +80,7 @@ for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   writeFileSync(`${d}.sums`, `${v === '0.11.4' ? '0'.repeat(64) : hash}  agent-panel-${v}.tar.gz\n`)
 }
 // 旧版本平铺的数据文件，启动时应搬进 config/
-execFileSync('mkdir', ['-p', dataDir])
+mkdirSync(dataDir, { recursive: true })
 writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
 // 旧版本把所有任务放在一个 tasks.json 里，启动后拆成每个任务一个文件
 const legacyAt = '2026-10-01T00:00:00.000Z'

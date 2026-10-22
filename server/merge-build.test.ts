@@ -11,8 +11,10 @@ process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'merge-build-data
 const { abortMerge, commitMerge, commitWorktree, createWorktree, trialMerge } = await import('./exec/worktree.ts')
 const { runMergeSteps } = await import('./merge-build.ts')
 
+// 读文本时统一换行符：本机 core.autocrlf 和平台不同，合并、检出写出的是 CRLF
 const git = (cwd: string, ...args: string[]) =>
   execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...args], { cwd }).toString()
+const readText = (file: string) => readFileSync(file, 'utf8').replace(/\r\n/g, '\n')
 
 function repo() {
   const dir = mkdtempSync(path.join(tmpdir(), 'merge-build-'))
@@ -45,10 +47,11 @@ test('子对话分支试合回原目录：编译失败撤回，原目录不变�
 
   // 编译通过：提交进 main
   m = await trialMerge(dir, wt.branch)
-  const ok = await runMergeSteps([step({ command: 'test -f b.txt' })], dir)
+  // cmd 没有 test -f：用 git 确认合并进来的文件在索引里，两种系统的写法一样
+  const ok = await runMergeSteps([step({ command: 'git ls-files --error-unmatch b.txt' })], dir)
   assert.equal(ok.ok, true)
   await commitMerge(dir, '合并')
-  assert.equal(readFileSync(path.join(dir, 'b.txt'), 'utf8'), 'new\n')
+  assert.equal(readText(path.join(dir, 'b.txt')), 'new\n')
   // 再合一次：没有新的改动
   m = await trialMerge(dir, wt.branch)
   assert.ok(m.ok && m.nothing)
@@ -65,5 +68,5 @@ test('试合并有冲突：撤回，列出冲突的文件', async () => {
   assert.equal(m.ok, false)
   assert.match(!m.ok ? m.error : '', /a\.txt/)
   assert.equal(git(dir, 'status', '--porcelain').trim(), '')
-  assert.equal(readFileSync(path.join(dir, 'a.txt'), 'utf8'), 'main\n')
+  assert.equal(readText(path.join(dir, 'a.txt')), 'main\n')
 })
