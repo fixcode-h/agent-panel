@@ -26,3 +26,9 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 
 - 规则：沙盒里直接跑 `claude` 会继承当前会话的环境和会话 id；Claude 的协议用假 CLI 测。Codex 在沙盒里没装。沙盒设了 `ANTHROPIC_BASE_URL`，会混进 API 配置的断言，跑 e2e 用 `env -u ANTHROPIC_BASE_URL npm run test:e2e`。
 - 防线：人工。
+
+## 在 WSL 里跑 e2e 要用 Linux 装的依赖
+
+- 规则：Windows 上 `node_modules` 是 Windows 装的，esbuild / rollup 的原生二进制在 WSL 里跑不起来（报 installed for another platform，接着是「服务没有启动」）。要在 WSL 里验证时，先把仓库复制一份到 Linux 文件系统里 `npm ci` 再跑，不要直接对 `/mnt/e` 这份 `npm ci`——它会把 Windows 的依赖换成 Linux 的，本机开发就跑不了了。
+- 起因：这次改完想按项目步骤跑 e2e，直接在 `/mnt/e` 里跑，卡在 esbuild 二进制不匹配。
+- 防线：人工（CI 的 Ubuntu 步骤始终是干净的 Linux 依赖）。

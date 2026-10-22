@@ -1,7 +1,12 @@
 /* 本地字体；在线演示版改用 Google Fonts，不打包这些文件 */
-@import '@fontsource/ibm-plex-sans/400.css';
-@import '@fontsource/ibm-plex-sans/500.css';
-@import '@fontsource/ibm-plex-sans/600.css';
+/* IBM Plex Sans 只打拉丁字母（含拉丁扩展）的子集：「界面字体」选它时只用来显示英文，
+   其余文字由中文字体或系统字体接上，西里尔、希腊、越南语的子集用不到，留着只会让包变大 */
+@import '@fontsource/ibm-plex-sans/latin-400.css';
+@import '@fontsource/ibm-plex-sans/latin-500.css';
+@import '@fontsource/ibm-plex-sans/latin-600.css';
+@import '@fontsource/ibm-plex-sans/latin-ext-400.css';
+@import '@fontsource/ibm-plex-sans/latin-ext-500.css';
+@import '@fontsource/ibm-plex-sans/latin-ext-600.css';
 @import '@fontsource/noto-sans-sc/400.css';
 @import '@fontsource/noto-sans-sc/500.css';
 @import '@fontsource/noto-sans-sc/600.css';
