@@ -39,6 +39,12 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 - 起因：49d7d7e 加子任务后，等子任务时用户发的消息被插话给了子任务、记在子任务名下，对话里看不到。
 - 防线：`server/orchestrator.test.ts`（等子任务时发消息）。
 
+## 账号模式要把 API 模型映射为账号模型
+
+- 规则：CLI 从 API 模式切回账号模式时，去掉 API provider 前缀和协议后缀，只把账号实际支持的模型 ID 交给 CLI；两个模式的模型下拉也要分别取各自来源。
+- 起因：Command Code 账号模式保留 `tokenapi/...-responses` 会先报未登录，登录后又报 `unknown model`；用户明确要求账号模式自动映射。
+- 防线：`server/settings-auth.test.ts`。
+
 ## 整行命令交给 shell 走 shellCommand，Windows 上不让 Node 转义
 
 - 规则：用户或 Agent 写的一整行命令（后台命令、测试步骤）用 `server/merge-build.ts` 的 `shellCommand` / `runShell` 启动。Windows 上要整行加引号、`windowsVerbatimArguments` 原样交给 `cmd.exe /d /s /c`；按普通参数传给 cmd.exe 时 Node 会把 `"` 转成 `\"`，cmd 不认，程序收到的参数多了引号。

@@ -28,11 +28,26 @@ export function cliSettings(
 ): CliSettings & { command: string; permission: string; api?: ApiConfig } {
   const def = getCli(cliId)
   const s = CliSettings.parse(settings.clis[cliId] ?? {})
+  const selectedApi = settings.apis.find((a) => a.id === s.apiId)
   // API 模式：选的 API 协议对得上时，把接口地址、密钥按 CLI 定义里的规则加进环境变量和参数（所有调用 CLI 的地方都经过这里）
-  const api = s.authMode === 'api' ? settings.apis.find((a) => a.id === s.apiId) : undefined
+  const api = s.authMode === 'api' ? selectedApi : undefined
   const inject = def?.auth && api && apiFits(def.auth, api) ? apiInjection(def.auth, api) : undefined
+  // 切回账号后，旧 API 模式留下的 provider 前缀不是账号模型 ID，执行时会被 CLI 判为 unknown model。
+  const accountModel = (model: string) => {
+    if (s.authMode !== 'account' || !def?.auth || !selectedApi) return model
+    const prefix = apiModelPrefix(def.auth, selectedApi)
+    const native = prefix && model.startsWith(prefix) ? model.slice(prefix.length) : model
+    const suffixes = {
+      anthropic: ['-anthropic-messages', '-anthropic'],
+      'openai-responses': ['-responses'],
+      'openai-chat': ['-chat', '-completions'],
+      gemini: ['-gemini'],
+    }[selectedApi.protocol]
+    const suffix = suffixes?.find((x) => native.endsWith(x))
+    return suffix ? native.slice(0, -suffix.length) : native
+  }
   const tier = (t: ModelTier) => ({
-    model: s.tiers[t].model || tierFallback(def, s.defaultModel, t),
+    model: accountModel(s.tiers[t].model || tierFallback(def, s.defaultModel, t)),
     effort: s.tiers[t].effort || def?.tiers[t].effort || '',
     // 0 是自动：不传给 CLI，面板估算时按模型的默认值
     context: s.tiers[t].context,
@@ -43,6 +58,7 @@ export function cliSettings(
   const optionEnv = (def?.options ?? []).filter((o) => options[o.id]).flatMap((o) => Object.entries(o.env))
   return {
     ...s,
+    defaultModel: accountModel(s.defaultModel),
     options,
     api: inject ? api : undefined,
     // CLI 定义自带的环境变量在最前，开关的其次，用户和 API 的覆盖它们
