@@ -214,9 +214,13 @@ export async function trialMerge(target: string, branch: string) {
   const m = await git(target, ...(await identity(target)), 'merge', '--no-commit', '--no-ff', branch)
   if (m.code !== 0) {
     const conflicts = (await git(target, 'diff', '--name-only', '--diff-filter=U')).stdout.trim()
+    // 合并根本没开始：原目录里没提交的改动会被覆盖，git 直接拒绝，不是两个分支之间的冲突
+    const dirty =
+      !conflicts && /would be overwritten|会被合并覆盖|untracked working tree files/.test(m.stderr + m.stdout)
     await abortMerge(target)
     return {
       ok: false as const,
+      dirty,
       error:
         (conflicts ? `冲突的文件：\n${conflicts}\n\n` : '') +
         (m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n'),
@@ -225,6 +229,18 @@ export async function trialMerge(target: string, branch: string) {
   const pending = (await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0
   const files = (await git(target, 'diff', '--cached', '--name-only')).stdout.trim()
   return { ok: true as const, nothing: !pending, files: files ? files.split('\n') : [] }
+}
+
+/**
+ * 合并前看一眼目标目录：有没做完的合并，或者暂存区里有别人的改动时不能合——
+ * 合并提交会把暂存区一起带进去，撤回时也可能连带清掉。返回不能合的原因，能合时返回空字符串
+ */
+export async function mergeBlocker(target: string) {
+  if ((await git(target, 'rev-parse', '-q', '--verify', 'MERGE_HEAD')).code === 0)
+    return '原目录里有一次没做完的合并（MERGE_HEAD 还在）'
+  const staged = (await git(target, '-c', 'core.quotepath=off', 'diff', '--cached', '--name-only')).stdout.trim()
+  if (staged) return `原目录的暂存区里有还没提交的改动：\n${staged.split('\n').slice(0, 20).join('\n')}`
+  return ''
 }
 
 /** 试合并通过后提交 */
