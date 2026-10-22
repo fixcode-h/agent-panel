@@ -23,6 +23,10 @@ import { mergeJson, fetchApiBalance, fetchApiModels } from './accounts.ts'
 import { toApi } from './api-detect.ts'
 import { agentRun, defaultSettings } from '../shared/settings.ts'
 import { CliSettings } from '../shared/schema.ts'
+import { setLang } from '../shared/i18n.ts'
+
+// 接口的报错文案直接断言中文：Linux 上 LANG 是英文，不固定语言会拿到英文文案
+setLang('zh')
 
 const auth = CliAuth.parse({
   home: '~',

@@ -1,6 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseApiBalance } from './api-balance.ts'
+import { setLang } from './i18n.ts'
+
+// 报错文案是中文，固定语言，免得在英文环境（LANG=en）下拿到英文
+setLang('zh')
 
 test('解析 DeepSeek 的余额返回', () => {
   assert.deepEqual(
