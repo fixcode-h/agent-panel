@@ -1,4 +1,4 @@
-import { memo, useLayoutEffect, useRef, type ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { ChevronRight, CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { stepMs } from '@shared/task'
@@ -6,6 +6,7 @@ import { topSteps } from '@shared/flow'
 import { useData } from '@/lib/data'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 import { fmtDuration } from '@/lib/tasks'
 import { Button } from '@/components/ui/button'
 import { StepIcon } from './TaskStatusIcon'
@@ -123,17 +124,8 @@ export function RunPanel({
   const teamNames = new Set(agents.map((a) => a.name))
   const steps = topSteps(task, run)
   const state = runState(task, run)
-  // 和对话窗口一样：打开时停在最新的输出，停在底部时跟着新输出走，往上翻看时不打扰
-  const scroller = useRef<HTMLDivElement>(null)
-  const stick = useRef(true)
-  // 换看另一次运行时回到最新输出
-  useLayoutEffect(() => {
-    stick.current = true
-  }, [run])
-  useLayoutEffect(() => {
-    const el = scroller.current
-    if (el && stick.current) el.scrollTop = el.scrollHeight
-  }, [task, run])
+  // 和对话窗口一样：打开时停在最新的输出，停在底部时跟着新输出走，往上翻看时不打扰；换看另一次运行时回到最新输出
+  const scroller = useStickToBottom(run, 80)
   useEscape(true, onClose)
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-bg">
@@ -153,14 +145,7 @@ export function RunPanel({
           <X className="h-4 w-4" />
         </Button>
       </header>
-      <div
-        ref={scroller}
-        onScroll={(e) => {
-          const el = e.currentTarget
-          stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-        }}
-        className="min-h-0 flex-1 overflow-y-auto"
-      >
+      <div ref={scroller.ref} onScroll={scroller.onScroll} className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-7 px-4 py-5 md:px-6">
           {steps.map((s) => {
             const msgs = task.messages.filter(
