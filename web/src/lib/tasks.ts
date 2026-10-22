@@ -147,6 +147,14 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   return undefined
 }
 
+/** 新建子对话、交给子对话这两次调用指向哪个子对话：新建的 id 在工具输出的「（id: …）」里，交给的在参数里 */
+export function panelChildId(tool: ToolUse) {
+  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
+  if (hit?.[1] === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
+  if (hit?.[1] === 'send_to_conversation') return firstLine(toolArgs(tool).id)
+  return ''
+}
+
 /** 「正在做什么」的一句话 */
 export function currentActivity(a: ReturnType<typeof stepActivity>) {
   if (a.last?.text.trim()) return t('正在输出：{text}', { text: plainLine(a.last.text, true) })

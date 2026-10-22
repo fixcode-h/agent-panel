@@ -35,7 +35,7 @@ import { ProjectFileExplorer } from '@/components/files/ProjectFileExplorer'
 import { ResizeHandle, usePaneWidth } from '@/components/ui/resize'
 import { t } from '@shared/i18n'
 
-/** 项目首页：参考 Claude Code，上面直接输入新任务，下面是这个项目的任务 */
+/** 项目首页：参考 Claude Code，上面是这个项目的任务，输入框贴在底部，和对话页的输入框在同一个位置 */
 function ProjectHome({ project }: { project: Project }) {
   const { tasks, tasksLoaded, workflows, projectCategories, upsertTask } = useData()
   const { go, openProject } = useNav()
@@ -74,95 +74,102 @@ function ProjectHome({ project }: { project: Project }) {
 
   return (
     <div ref={row} className="flex min-w-0 flex-1">
-      <main className="flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto">
-        <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
-          <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            title={t('导入别人导出的任务（对话或工作流执行），只能查看，也可以交给 AI 分析')}
-            onClick={() => file.current?.click()}
-          >
-            <FileInput className="h-4 w-4" />
-            {t('导入任务')}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => openProject(project.id)}>
-            <Settings2 className="h-4 w-4" />
-            {t('项目设置')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={filesOpen ? t('关闭文件') : t('显示文件')}
-            title={filesOpen ? t('关闭文件') : t('显示文件')}
-            aria-expanded={filesOpen}
-            onClick={() => setFilesOpen((v) => !v)}
-          >
-            {filesOpen ? <X className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
-          </Button>
-        </header>
-        <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-16 md:px-6 md:pt-12">
-          <div className="flex flex-col gap-2">
-            <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
-              <FolderGit2 className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
-              <span className="min-w-0 truncate">{project.name}</span>
-            </h1>
-            <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
-              <span className="max-w-full truncate font-mono">{project.path || t('还没有选择目录')}</span>
-              {dir?.gitBranch && (
-                <span className="flex items-center gap-1">
-                  <GitBranch className="h-3.5 w-3.5" />
-                  <span className="font-mono">{dir.gitBranch}</span>
-                </span>
-              )}
-              <span className="flex items-center gap-1">
-                <WorkflowIcon className="h-3.5 w-3.5" />
-                {wf?.name ?? t('没有默认工作流')}
-              </span>
-            </p>
-          </div>
-
-          <TaskComposer
-            project={project}
-            autoFocus
-            onCreated={(created) => {
-              upsertTask(created)
-              open(created.id)
-            }}
-          />
-
-          {list.length === 0 && tasksLoaded ? (
-            <section className="flex flex-col">
-              <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
-                <span className="flex-1">{t('任务 · {n}', { n: 0 })}</span>
-                {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
-              </h2>
-              <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.8125rem] text-subtle">
-                {t('还没有任务。在上面描述要做的事，Agent 会按工作流完成。')}
-              </p>
-            </section>
-          ) : (
-            groups.map((g, i) => (
-              <section key={g.key} className="flex flex-col">
-                <h2 className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium text-subtle">
-                  <span className={cn('h-1.5 w-1.5 rounded-full', g.dot)} aria-hidden />
-                  <span className="flex-1">
-                    {g.label} · {g.items.length}
+      <main className="flex min-w-0 flex-1 flex-col md:h-full">
+        <div className="flex flex-1 flex-col md:min-h-0 md:overflow-y-auto">
+          <header className="flex h-14 shrink-0 items-center gap-2 px-3 md:px-5">
+            <input ref={file} type="file" accept=".json,application/json" hidden onChange={onImport} />
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-auto"
+              title={t('导入别人导出的任务（对话或工作流执行），只能查看，也可以交给 AI 分析')}
+              onClick={() => file.current?.click()}
+            >
+              <FileInput className="h-4 w-4" />
+              {t('导入任务')}
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => openProject(project.id)}>
+              <Settings2 className="h-4 w-4" />
+              {t('项目设置')}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={filesOpen ? t('关闭文件') : t('显示文件')}
+              title={filesOpen ? t('关闭文件') : t('显示文件')}
+              aria-expanded={filesOpen}
+              onClick={() => setFilesOpen((v) => !v)}
+            >
+              {filesOpen ? <X className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+            </Button>
+          </header>
+          <div className="mx-auto flex w-full max-w-(--content-w) flex-col gap-8 px-4 pt-6 pb-8 md:px-6 md:pt-12">
+            <div className="flex flex-col gap-2">
+              <h1 className="flex items-center gap-3 font-serif text-[1.75rem] leading-tight font-semibold tracking-tight">
+                <FolderGit2 className="h-7 w-7 shrink-0 text-accent" strokeWidth={1.6} />
+                <span className="min-w-0 truncate">{project.name}</span>
+              </h1>
+              <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[0.8125rem] text-subtle">
+                <span className="max-w-full truncate font-mono">{project.path || t('还没有选择目录')}</span>
+                {dir?.gitBranch && (
+                  <span className="flex items-center gap-1">
+                    <GitBranch className="h-3.5 w-3.5" />
+                    <span className="font-mono">{dir.gitBranch}</span>
                   </span>
-                  {/* 归档数只在最后一组的标题上说一次 */}
-                  {i === groups.length - 1 && archived > 0 && (
-                    <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>
-                  )}
+                )}
+                <span className="flex items-center gap-1">
+                  <WorkflowIcon className="h-3.5 w-3.5" />
+                  {wf?.name ?? t('没有默认工作流')}
+                </span>
+              </p>
+            </div>
+
+            {list.length === 0 && tasksLoaded ? (
+              <section className="flex flex-col">
+                <h2 className="mb-2 flex px-1 text-xs font-medium text-subtle">
+                  <span className="flex-1">{t('任务 · {n}', { n: 0 })}</span>
+                  {archived > 0 && <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>}
                 </h2>
-                <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
-                  {g.items.map((tk) => (
-                    <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
-                  ))}
-                </ul>
+                <p className="rounded-xl border border-dashed px-4 py-6 text-center text-[0.8125rem] text-subtle">
+                  {t('还没有任务。在下面描述要做的事，Agent 会按工作流完成。')}
+                </p>
               </section>
-            ))
-          )}
+            ) : (
+              groups.map((g, i) => (
+                <section key={g.key} className="flex flex-col">
+                  <h2 className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium text-subtle">
+                    <span className={cn('h-1.5 w-1.5 rounded-full', g.dot)} aria-hidden />
+                    <span className="flex-1">
+                      {g.label} · {g.items.length}
+                    </span>
+                    {/* 归档数只在最后一组的标题上说一次 */}
+                    {i === groups.length - 1 && archived > 0 && (
+                      <span className="font-normal">{t('另有 {n} 个已归档', { n: archived })}</span>
+                    )}
+                  </h2>
+                  <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+                    {g.items.map((tk) => (
+                      <ProjectTaskRow key={tk.id} task={tk} now={now} onOpen={() => open(tk.id)} />
+                    ))}
+                  </ul>
+                </section>
+              ))
+            )}
+          </div>
+        </div>
+        {/* 输入框贴在底部不跟着列表滚；窄屏整页滚动时用 sticky 留在底部。和输入内容相近的对话列在输入框上方 */}
+        <div className="sticky bottom-0 shrink-0 bg-bg pt-2 pb-3 md:pb-5">
+          {/* 左右边距和上面的列表一致，输入框和列表一样宽 */}
+          <div className="mx-auto w-full max-w-(--content-w) px-4 md:px-6">
+            <TaskComposer
+              project={project}
+              autoFocus
+              onCreated={(created) => {
+                upsertTask(created)
+                open(created.id)
+              }}
+            />
+          </div>
         </div>
       </main>
       {/* 文件栏：宽屏是右侧常驻的一列（宽度可拖），窄屏放不下时从右边滑出，盖住主内容而不是把它挤扁 */}

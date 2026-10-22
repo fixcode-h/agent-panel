@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import {
   Bot,
   ChevronRight,
@@ -14,11 +14,14 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { panelTool, toolVerb } from '@/lib/tasks'
+import { panelChildId, panelTool, toolVerb } from '@/lib/tasks'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
 import { CommandDialog, OutputDialog } from './ToolDialog'
+
+/** 父对话页提供：在右栏打开某个子对话。子对话自己的页面（右栏里）不提供 */
+export const ChildOpenCtx = createContext<((id: string) => void) | null>(null)
 
 /** 读取的工具行里 label 是不是一个能打开的文件：像路径，而不是「读取 3 个文件」这类说明 */
 function isFilePath(label: string) {
@@ -162,11 +165,22 @@ export function ToolRow({
 }) {
   // 面板自己的工具按做了什么显示（新建子对话 + 名字），派出子任务的调用不单独显示
   const view = panelTool(raw)
+  const openChild = useContext(ChildOpenCtx)
   if (view === null) return null
-  return <ToolLine tool={view ?? raw} task={task} />
+  const child = view && openChild ? panelChildId(raw) : ''
+  return <ToolLine tool={view ?? raw} task={task} onChild={child ? () => openChild?.(child) : undefined} />
 }
 
-function ToolLine({ tool, task }: { tool: ToolUse; task?: Pick<Task, 'id' | 'status' | 'changes'> }) {
+function ToolLine({
+  tool,
+  task,
+  onChild,
+}: {
+  tool: ToolUse
+  task?: Pick<Task, 'id' | 'status' | 'changes'>
+  /** 新建 / 交给子对话的行：点一下在右栏打开那个子对话 */
+  onChild?: () => void
+}) {
   const [open, setOpen] = useState(false)
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out'>('')
   const openFile = useFileOpen()
@@ -234,6 +248,22 @@ function ToolLine({ tool, task }: { tool: ToolUse; task?: Pick<Task, 'id' | 'sta
             {chevron}
           </button>
         </div>
+      ) : onChild ? (
+        // 新建 / 交给子对话：整行点开右栏的子对话页，参数和结果不用在行内展开
+        <button
+          type="button"
+          onClick={onChild}
+          title={t('在右侧打开子对话')}
+          className="group flex w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-muted hover:text-fg"
+        >
+          {glyph}
+          <span className="min-w-0 flex-1 truncate">
+            {verb && <span className="mr-1.5 font-sans font-medium text-fg/80">{verb}</span>}
+            {tool.label}
+          </span>
+          {detail}
+          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-subtle opacity-0 transition group-hover:opacity-100" />
+        </button>
       ) : windowed ? (
         // 命令、改动、搜索等：点这一行打开独立窗口；「展开」仍在行内看，方便快速瞄一眼
         <div className="group flex w-full min-w-0 items-center gap-2 px-2.5 py-1.5 font-mono text-xs text-muted">

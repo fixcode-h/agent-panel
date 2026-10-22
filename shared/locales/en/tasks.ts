@@ -85,8 +85,8 @@ export const EN_TASKS: Record<string, string> = {
   没有默认工作流: 'No default workflow',
   '任务 · {n}': 'Tasks · {n}',
   查看这一步的输出: 'View this step’s output',
-  '还没有任务。在上面描述要做的事，Agent 会按工作流完成。':
-    'No tasks yet. Describe what you need above and Agents will get it done following the workflow.',
+  '还没有任务。在下面描述要做的事，Agent 会按工作流完成。':
+    'No tasks yet. Describe what you need below and Agents will get it done following the workflow.',
   工作流已删除: 'Workflow deleted',
   ' · {done}/{total} 个节点': ' · {done}/{total} steps',
   '对话 · {name}': 'Chat · {name}',
@@ -614,6 +614,7 @@ export const EN_TASKS: Record<string, string> = {
   '等待子任务：{list}': 'Waiting for subtasks: {list}',
   '等待 {n} 个子任务完成': 'Waiting for {n} subtask(s) to finish',
   新建子对话: 'New sub-chat',
+  在右侧打开子对话: 'Open the sub-chat on the right',
   交给子对话: 'Hand to sub-chat',
   查看子对话: 'List sub-chats',
   派出子任务: 'Start subtasks',
