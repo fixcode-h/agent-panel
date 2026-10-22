@@ -15,7 +15,7 @@
  * 怎么调用一个 Agent 由宿主决定（server/exec/runner.ts 调用 CLI，shared/runner.ts 生成示例输出）。
  */
 import type { ReviewTarget } from './clis.ts'
-import { commonAgents } from './agent-role.ts'
+import { commonAgents, includedAgents } from './agent-role.ts'
 import {
   END,
   START,
@@ -2651,7 +2651,19 @@ async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: bool
 }
 
 /** 对话 Agent 的提示：这次的消息、可选工作流、子对话目录，以及分派规则 */
-async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', planning: boolean, coordinator: boolean) {
+async function conversationPrompt(
+  host: EngineHost,
+  kind: 'top' | 'sub',
+  planning: boolean,
+  coordinator: boolean,
+  /** 角色本身是做分派的（例如「统筹」），这次却不能分派：要明说角色设定里的分派规则不适用 */
+  delegates = false,
+) {
+  // 角色设定写着「用 create_conversation 分派」，执行方式又说没有这个能力：两条直接冲突，
+  // Agent 要么空等分派、要么自己干又觉得违规。明确以执行方式为准
+  const noDelegate = delegates
+    ? '\n角色设定里用 list_conversations / create_conversation / send_to_conversation 分派子对话的规则这次不适用：这里没有这些工具，按上面的执行方式自己处理，不要假装已经分派。'
+    : ''
   const catalog = host.workflowCatalog?.() ?? []
   const wt = host.task.worktree?.state === 'active' ? host.task.worktree : null
   const parts = [
@@ -2735,14 +2747,14 @@ ${
 }`,
     )
   } else if (kind === 'top') {
-    parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。`)
+    parts.push(`## 执行方式\n直接在对话里回答或执行当前任务；没有创建子对话的能力。${noDelegate}`)
   } else {
     parts.push(
       planning
         ? `## 执行方式
-你只负责当前这个子对话的任务。要修改代码、跨模块改动或较大的研究时，调用 start_plan 按项目的默认工作流执行（更合适的可选工作流写它的 id）；只是问题、分析或一两行的小改动直接在对话里做。你没有创建子对话的能力。`
+你只负责当前这个子对话的任务。要修改代码、跨模块改动或较大的研究时，调用 start_plan 按项目的默认工作流执行（更合适的可选工作流写它的 id）；只是问题、分析或一两行的小改动直接在对话里做。你没有创建子对话的能力。${noDelegate}`
         : `## 执行方式
-你只负责当前这个子对话的任务，直接在对话里执行。你没有创建子对话或按工作流启动计划的能力。`,
+你只负责当前这个子对话的任务，直接在对话里执行。你没有创建子对话或按工作流启动计划的能力。${noDelegate}`,
     )
     if (host.messageParent)
       parts.push(
@@ -2767,12 +2779,13 @@ async function runConversationTurn(host: EngineHost, who: string) {
   const kind = task.parentTaskId ? 'sub' : 'top'
   // 能不能分派子对话由 Agent 自己的能力开关决定；子对话本身永远不能再分派
   const agent = who ? host.agents.find((a) => a.id === who) : undefined
-  const coordinator = kind === 'top' && !!agent?.canDelegate
+  // 独立聊天没有项目，create_conversation 一定失败：不按分派对话去提示
+  const coordinator = kind === 'top' && !!agent?.canDelegate && !!task.projectId
   const planning = !!agent?.canPlan
   const turn = host.prewarm ? undefined : beginTurn(task, host.newId(), host.prompt, who)
   if (turn) host.changed(true)
   try {
-    let prompt = await conversationPrompt(host, kind, planning, coordinator)
+    let prompt = await conversationPrompt(host, kind, planning, coordinator, !coordinator && delegatesRole(host, agent))
     let orch: Orchestra | undefined
     // 回复完 CLI 就退出的（Claude Code、Codex）在这里等子任务；停在等待工具上的 CLI 在 runner 里自己等
     const gate = helperGate(
@@ -2795,7 +2808,7 @@ async function runConversationTurn(host: EngineHost, who: string) {
         orch,
       })
       if (!r.ok) {
-        if (turn) endTurn(task, turn, r.stopped ? 'stopped' : 'failed')
+        if (turn) endTurn(task, turn, r.stopped ? (answeredAll(task, turn) ? 'done' : 'stopped') : 'failed')
         if (host.prewarm) {
           task.status = r.stopped ? 'stopped' : (host.prewarmFrom ?? 'done')
           return
@@ -2834,6 +2847,23 @@ async function runConversationTurn(host: EngineHost, who: string) {
     if (turn) endTurn(task, turn, 'failed')
     throw e
   }
+}
+
+/** 角色（含引入的）有分派能力：它的设定里多半写着怎么分派子对话 */
+function delegatesRole(host: EngineHost, agent: Agent | undefined) {
+  if (!agent) return false
+  return agent.canDelegate || includedAgents(agent, host.agents).some((x) => x.agent.canDelegate)
+}
+
+/**
+ * 被停下时这一轮其实已经答完了没有：保活的进程回复完停在等下一句，之后被停止、换 CLI、父对话结束而收掉，
+ * 这时 CLI 已经报过这一轮完成（turnDoneAt），而且晚于最后一条用户消息，就算正常结束，不能记成被打断。
+ */
+function answeredAll(task: Task, turn: { startedAt: string }) {
+  const done = Date.parse(task.turnDoneAt ?? '')
+  if (!Number.isFinite(done) || done < Date.parse(turn.startedAt)) return false
+  const lastAsk = [...task.messages].reverse().find((m) => m.role === 'user')
+  return !lastAsk?.at || done >= Date.parse(lastAsk.at)
 }
 
 /** 子对话的摘要：最近一条 Agent 回复的开头，父对话的协调 Agent 用它判断关联 */

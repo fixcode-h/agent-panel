@@ -778,6 +778,46 @@ try {
   assert.equal(sil.messages.filter((m) => m.role === 'agent' && m.text.trim()).length, 1, '自动接一轮之后正常给出回复')
   assert.match(sil.messages.find((m) => m.role === 'agent' && m.text.trim()).text, /这是 claude 的回复/)
 
+  // 保活时第二句才空：同一个进程里前一轮有正文，空回合判定不能把它算进来，
+  // 否则这条消息被标成已完成、进程接着保活，用户的话落进死回合（真实现场：17:54、17:55 两条消息都没回应）
+  step('保活中的第二句一个字都没回：同样留下说明并重发这一句')
+  {
+    let sk = await call('POST', '/tasks', {
+      projectId: project.id,
+      mode: 'chat',
+      agentId: def.id,
+      cli: 'commandcode',
+      askUser: false,
+      prompt: '先看代码',
+    })
+    await call('POST', `/tasks/${sk.id}/seen`, {})
+    await call('POST', `/tasks/${sk.id}/presence`, { viewerId: 'e2e-silent-keep', active: true })
+    for (let i = 0; i < 120 && !sk.awaitingUser; i++) {
+      await sleep(100)
+      sk = await call('GET', `/tasks/${sk.id}`)
+    }
+    assert.ok(sk.awaitingUser, '第一轮正常回复完停在等下一句上')
+    await call('POST', `/tasks/${sk.id}/messages`, { text: 'FAKE_SILENT 第二句' })
+    const retried = () =>
+      sk.messages.some((m) => m.role === 'system' && /没有返回任何内容/.test(m.text)) &&
+      sk.messages
+        .slice(sk.messages.findIndex((m) => m.text === 'FAKE_SILENT 第二句') + 1)
+        .some((m) => m.role === 'agent' && m.text.trim())
+    for (let i = 0; i < 200 && !retried(); i++) {
+      await sleep(150)
+      sk = await call('GET', `/tasks/${sk.id}`)
+    }
+    assert.ok(
+      retried(),
+      `第二句空回合要留下说明并重发；现有消息：${JSON.stringify(
+        sk.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]),
+      )}`,
+    )
+    await call('POST', `/tasks/${sk.id}/presence`, { viewerId: 'e2e-silent-keep', active: false })
+    sk = await waitDone(sk.id, 20000)
+    assert.equal(sk.status, 'done', sk.messages.at(-1)?.text)
+  }
+
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
   let pm = await call('POST', '/tasks', {
     projectId: project.id,

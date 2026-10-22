@@ -385,6 +385,36 @@ test('停在上一版的「通用约束」「代码侦察」也能升级（「�
   assert.equal((await upgradeBuiltinAgents({ ...state, agents: [current] }, ops)).length, 0)
 })
 
+test('通用约束：上一版副本升级后补上「已授权的操作照做」，再启动不再改', async () => {
+  const saved: Agent[] = []
+  const ops = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  const last = LEGACY_AGENT_FIELDS_MORE.rules.at(-1)!
+  const state = {
+    agents: [
+      {
+        ...agents.find((a) => a.id === 'rules')!,
+        ...last,
+        id: 'local-rules',
+        origin: 'builtin:rules',
+        params: [],
+        skills: [],
+      },
+    ],
+    categories: [],
+    tags: [],
+    workflows: [],
+  }
+  const updated = await upgradeBuiltinAgents(state, ops)
+  assert.equal(updated.length, 1, '上一版副本升级')
+  assert.match(updated[0].instructions, /用户已经明确授权的操作照授权的做/)
+  assert.equal((await upgradeBuiltinAgents({ ...state, agents: updated }, ops)).length, 0)
+})
+
 test('已合并的内置 Agent 在本机还有时补一句说明，重复启动不重复加', async () => {
   const saved: Agent[] = []
   const ops = {

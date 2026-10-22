@@ -85,6 +85,14 @@ test('通用约束：等待要有死的数字上限，超时判阻塞，不靠�
   assert.match(rules, /已经自己验证过结论时，不要再等子任务重复验证/)
 })
 
+test('通用约束：已授权的操作照做；统筹不再另立一份授权规则', () => {
+  const rules = BUILTIN_AGENTS.find((a) => a.key === 'rules')!.agent.instructions
+  assert.match(rules, /用户已经明确授权的操作照授权的做/)
+  assert.match(rules, /不要自行换成更保守的做法（改走 PR、只提交不推送）/)
+  const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
+  assert.doesNotMatch(orch, /推送、PR、submit 要用户明确授权/, '授权规则只在通用约束里写一份')
+})
+
 test('必备角色：改了设定会被同步回内置定义，参数取值和运行配置保留', async () => {
   const m = memory()
   await ensureProjectAgents(m.state(), m.ops)
