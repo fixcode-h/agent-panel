@@ -35,3 +35,14 @@ test('taskStage：已解决的子对话归已完成，还在跑也一样', () =>
   assert.equal(taskStage({ status: 'failed', resolved: true }), 'done')
   assert.equal(taskStage({ status: 'stopped', resolved: true }), 'done')
 })
+
+test('taskStage：计划没做完的不算已完成（等着下一句也一样）', () => {
+  // 子对话页面底部显示「等待你的下一条消息」，但计划才 7/8
+  assert.equal(taskStage({ status: 'running', working: false, unfinished: true }), 'unfinished')
+  assert.equal(taskStage({ status: 'running', working: false, unfinished: false }), 'done')
+  // 用户主动停下、失败、在等你处理都比「未完成」靠前：那几个已经说明了该怎么办
+  assert.equal(taskStage({ status: 'stopped', unfinished: true }), 'stopped')
+  assert.equal(taskStage({ status: 'failed', unfinished: true }), 'you')
+  assert.equal(taskStage({ status: 'running', working: true, unfinished: true }), 'running', '还在执行就算执行中')
+  assert.equal(taskStage({ status: 'running', working: false, unfinished: true, asking: 1 }), 'you')
+})

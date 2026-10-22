@@ -9,6 +9,7 @@ import {
   childTurnSettle,
   endRun,
   finishPlan,
+  openPlan,
   settleWait,
   unsummarized,
 } from './plan.ts'
@@ -180,4 +181,21 @@ test('工作流做主步骤：没指定步骤就在末尾加一步，跑完标�
   const other = fresh()
   bindRun(other, '', 1, '工作流「默认」')
   assert.equal(activePlan(other)!.steps[0].title, '工作流「默认」')
+})
+
+test('没做完的计划给进度：列表里显示「计划 7/8」、不算已完成', () => {
+  const task = fresh()
+  assert.equal(openPlan(task), undefined, '没有计划时没有进度')
+  applyPlan(task, { steps: [{ title: 'A', status: 'done' }, { title: 'B' }, { title: 'C' }] })
+  assert.deepEqual(openPlan(task), { done: 1, total: 3 })
+  // 步骤全做完时计划已经收起（doneAt），不算「没做完」
+  applyPlan(task, {
+    steps: [
+      { title: 'A', status: 'done' },
+      { title: 'B', status: 'done' },
+      { title: 'C', status: 'done' },
+    ],
+  })
+  assert.equal(task.plans!.at(-1)!.doneAt === '', false, '前提：全部完成时计划收起')
+  assert.equal(openPlan(task), undefined)
 })

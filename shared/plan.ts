@@ -77,6 +77,17 @@ export function planProgress(task: PlanTask, plan: TaskPlan) {
   return { done, total: plan.steps.length, current, waiting: waiting.length }
 }
 
+/**
+ * 还没做完的计划进度：列表里显示「计划 7/8」，有它就不算交付完（不算已完成）。
+ * 计划的步骤全做完了、只是还在写总结的不算（那份已经不会再执行），交给 finish_plan 那一条线。
+ */
+export function openPlan(task: Pick<Task, 'plans' | 'steps'>) {
+  const plan = activePlan(task)
+  if (!plan) return undefined
+  const { done, total } = planProgress(task, plan)
+  return done < total ? { done, total } : undefined
+}
+
 const clean = (s: unknown, max: number) =>
   String(s ?? '')
     .replace(/\s+/g, ' ')

@@ -64,6 +64,7 @@ import { runTurn, simAnswers } from '@shared/runner'
 import { chatMissingParams, cycleText, includeCycle } from '@shared/agent-role'
 import {
   beginRun,
+  childStartedAt,
   closeFlow,
   dropEndNotes,
   endRun,
@@ -73,6 +74,7 @@ import {
   trackWait,
   withAttachments,
 } from '@shared/task'
+import { openPlan } from '@shared/plan'
 import { END, START, autoLayout, blockedStep, edge, newFlow, newNode, taskFlow, taskWorkflows } from '@shared/flow'
 import { DEFAULT_WORKFLOW_ID, defaultWorkflow, taskSnapshot } from '@shared/builtin/default'
 import { CORE_AGENTS, coreDefinition, coreKey, isCoreAgent, syncCore } from '@shared/builtin/core'
@@ -1982,7 +1984,9 @@ function tasksRoute(
         working: x.working,
         updatedAt: x.updatedAt,
         cliAlive: live.has(x.id),
-        lastMessageAt: x.messages.at(-1)?.at ?? x.updatedAt,
+        startedAt: childStartedAt(x),
+        // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成
+        plan: openPlan(x),
         resolved: x.resolved === true,
       }))
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
