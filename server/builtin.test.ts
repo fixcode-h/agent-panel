@@ -27,7 +27,7 @@ import {
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE, LEGACY_WORKFLOWS } from '../shared/builtin/legacy.ts'
-import { coreDefinition, keepParamValues } from '../shared/builtin/core.ts'
+import { coreDefinition, keepParamValues, upgradeParamDefaults } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
@@ -89,6 +89,22 @@ test('文档角色：默认勾选「写 Bug 记录」，用户显式关掉的保
   assert.equal(keepParamValues([def], [{ ...def, default: false }])[0].default, false)
   // 没填过值的副本按新默认
   assert.equal(keepParamValues([def], [])[0].default, true)
+})
+
+test('文档角色：旧副本存着旧默认（关）的「写 Bug 记录」升级一次改成开，之后用户再关掉的保留', () => {
+  const docs = coreDefinition('docsync').agent
+  const old = AgentInput.parse({
+    ...docs,
+    params: docs.params.map((p) => (p.key === 'bug' ? { ...p, default: false } : p)),
+  })
+  const up = upgradeParamDefaults(old, 'docsync')
+  assert.equal(up.params.find((p) => p.key === 'bug')!.default, true)
+  assert.deepEqual(up.upgrades, ['docsync.bug-on'])
+  // 幂等：再跑一次不变
+  assert.deepEqual(upgradeParamDefaults(up, 'docsync'), up)
+  // 升级过之后用户关掉：不再改回来
+  const off = { ...up, params: up.params.map((p) => (p.key === 'bug' ? { ...p, default: false } : p)) }
+  assert.equal(upgradeParamDefaults(off, 'docsync').params.find((p) => p.key === 'bug')!.default, false)
 })
 
 test('内置工作流：结构合法，节点的 Agent、验收流程和参数都对得上', () => {

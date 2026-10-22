@@ -478,6 +478,8 @@ app.put('/agents/:id', async (c) => {
       ...syncCore(r.data!, coreDefinition(core), { categoryId: before.categoryId, includes: before.includes }),
       name: before.name,
       origin: before.origin,
+      // 一次性升级记录只由启动同步维护，编辑页保存不带它也不能清掉，否则下次启动会把用户关掉的开关又改回去
+      upgrades: before.upgrades,
     }
   const a = await agents.update(id, r.data!)
   return a ? c.json(a) : bad(c, t('角色不存在'), 404)

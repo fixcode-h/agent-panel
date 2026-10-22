@@ -74,6 +74,8 @@ export const AgentInput = z.object({
   canPlan: z.boolean().default(false),
   /** 用户是否确认过能力开关：升级时为旧内置 Agent 补一次默认能力，之后不再覆盖用户的选择 */
   capsSet: z.boolean().default(false),
+  /** 已经做过的一次性升级（见 shared/builtin/core.ts 的 DEFAULT_CHANGES）：做过的不再做，用户之后改回去的值不会被覆盖 */
+  upgrades: z.array(z.string().max(80)).max(50).optional(),
   /** 从内置模板建出来的 Agent 记下来源（builtin:<key>），再次添加内置工作流时复用，不重复建 */
   origin: z.string().max(80).default(''),
 })

@@ -57,3 +57,9 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试后 `submit_merge` 合回。父对话不改文件靠角色说明约束，不要给父对话关掉 CLI 的写文件工具（用户纠正，093a41e 之后撤回）。
 - 起因：父对话先把问题查到底、自己动手改，还开 worktree；编译又要合并到父对话那边才跑。
 - 防线：`server/orchestrator.test.ts`、`scripts/e2e.mjs` 的子对话合并用例。
+
+## 改参数默认值要升级已装的副本
+
+- 规则：角色参数的取值存在副本的 `default` 里，只改内置定义不会影响已装的副本（分不清用户关掉的和旧默认）。改必备角色的参数默认值时，在 `shared/builtin/core.ts` 的 `DEFAULT_CHANGES` 加一条，启动时只升级一次并记进 `upgrades`。
+- 起因：89dbf5a 把文档角色「写 Bug 记录」改成默认开，用户界面上还是关的。
+- 防线：`server/builtin.test.ts`。
