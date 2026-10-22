@@ -431,10 +431,25 @@ export function taskSummary(t: Task): Task {
   }
 }
 
+/**
+ * 一段文字的短指纹（FNV-1a 32 位）。shared 里的代码前端也会打包，不能引 node:crypto。
+ * 只用来判断「有没有变」，碰撞后果是漏推一次增量，不影响正确性
+ */
+function textKey(s: string) {
+  let h = 0x811c9dc5
+  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193)
+  return (h >>> 0).toString(36)
+}
+
 /** 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发 */
 export function messageStamp(m: TaskMessage) {
   return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${m.tools
-    .map((t) => `${t.output?.length ?? 0}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`)
+    .map(
+      (t) =>
+        // 工具输出要带内容指纹：命令输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
+        // 只看长度的话这一步的增量不会推送，界面要等到下一次长度变化才跳一下
+        `${t.output?.length ?? 0}.${t.output ? textKey(t.output) : ''}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`,
+    )
     .join(',')}`
 }
 

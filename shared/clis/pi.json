@@ -608,7 +608,8 @@
             "type": "tool",
             "name": "$.toolName",
             "id": "$.toolCallId",
-            "input": "$.args"
+            "input": "$.args",
+            "running": true
           }
         ]
       },

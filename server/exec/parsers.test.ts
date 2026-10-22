@@ -295,7 +295,9 @@ test('Pi：按配置文件里的事件映射解析会话事件', () => {
   const live = fixture('pi-json.jsonl')
     .flatMap((o) => parse(o))
     .filter((e) => e.type === 'tool_delta')
+  // 第一条是空快照（Pi 的 partialResult 是 content: []）：也要发出去，接收方才能清掉上一段旧输出；后面才是真正的输出
   assert.deepEqual(live, [
+    { type: 'tool_delta', id: 'call_bash', text: '', snapshot: true },
     { type: 'tool_delta', id: 'call_bash', text: 'cat: missing.txt: No such file or directory\n', snapshot: true },
   ])
   // Pi 的 usage.input 只是「未命中缓存的部分」，input 统一按「含缓存」记，所以这里要加上 read（2300 + 6300）
@@ -312,6 +314,41 @@ test('Pi：按配置文件里的事件映射解析会话事件', () => {
   assert.ok(s.usage.cost > 0, '费用按每条回复加起来')
   // agent_end 只是一个底层 agent 跑完了，后面可能还有重试、压缩或插话；这一轮以 agent_settled 结束（见 pi-rpc.test）
   assert.deepEqual(s.results, [])
+})
+
+test('Pi：命令调用标成还在执行，空快照也要发出去清掉旧输出', () => {
+  const parse = parserFor('pi', CWD)
+  const [start] = parse({
+    type: 'tool_execution_start',
+    toolName: 'bash',
+    toolCallId: 'b1',
+    args: { command: 'npm test' },
+  })
+  assert.equal(start.type, 'tool')
+  // 不标 running 的话界面只认 tool.running，即使后面有增量也不会边跑边显示
+  assert.equal((start as { tool: { running?: boolean } }).tool.running, true)
+  // CLI 用空快照表示「现在没有输出了」：跳过的话接收方还留着上一段
+  const snapshot = (text: string) =>
+    parse({ type: 'tool_execution_update', toolName: 'bash', toolCallId: 'b1', partialResult: text })
+  assert.deepEqual(snapshot('a\n'), [{ type: 'tool_delta', id: 'b1', text: 'a\n', snapshot: true }])
+  assert.deepEqual(snapshot(''), [{ type: 'tool_delta', id: 'b1', text: '', snapshot: true }])
+})
+
+/** messageStamp 用到的输出指纹：输出长度不变但内容变了也要算一次变化 */
+test('消息指纹：输出等长替换也算变化（推送靠它判断要不要重发）', async () => {
+  const { messageStamp } = await import('../../shared/task.ts')
+  const msg = (output: string) => ({
+    id: 'm1',
+    role: 'agent' as const,
+    agentId: '',
+    step: '',
+    text: '',
+    tools: [{ kind: 'run' as const, label: 'npm test', detail: '', output }],
+    at: '2026-01-01T00:00:00.000Z',
+  })
+  // 进度行边跑边刷新时长度常常不变，只有长度的话不会推送，界面就卡住不动
+  assert.notEqual(messageStamp(msg('1 passed')), messageStamp(msg('2 passed')))
+  assert.equal(messageStamp(msg('2 passed')), messageStamp(msg('2 passed')))
 })
 
 test('Pi：面板工具是裸名字，记成 MCP 调用，不当成子 Agent', () => {
