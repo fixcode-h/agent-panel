@@ -79,6 +79,7 @@ async function copyText(text: string) {
 
 /** 目录一层现在处于什么状态 */
 export interface LevelState {
+  /** 正在请求这一层：首次读取时显示「读取中…」；已有旧数据时只在后台重读，界面照常显示旧内容 */
   loading: boolean
   error: string
 }
@@ -248,7 +249,7 @@ export function FileExplorer({
         <ContextMenu>
           <ContextMenuTrigger asChild>
             <div className="min-h-full">
-              {browser.error ? (
+              {browser.error && !browser.info ? (
                 <p className="p-4 text-[0.8125rem] text-danger">{browser.error}</p>
               ) : browser.loading && !browser.info ? (
                 <div className="flex justify-center p-8 text-subtle">
@@ -275,15 +276,27 @@ export function FileExplorer({
                   compact={compact}
                 />
               ) : (
-                <LevelRows
-                  path=""
-                  depth={0}
-                  open={open}
-                  browser={browser}
-                  onToggle={toggle}
-                  onOpen={onOpen}
-                  compact={compact}
-                />
+                <>
+                  {browser.error && (
+                    <LevelError
+                      path=""
+                      depth={0}
+                      error={browser.error}
+                      browser={browser}
+                      compact={compact}
+                      onRetry={browser.refresh}
+                    />
+                  )}
+                  <LevelRows
+                    path=""
+                    depth={0}
+                    open={open}
+                    browser={browser}
+                    onToggle={toggle}
+                    onOpen={onOpen}
+                    compact={compact}
+                  />
+                </>
               )}
             </div>
           </ContextMenuTrigger>
@@ -348,21 +361,7 @@ function LevelRows({
 
   if (!level) {
     if (state.error)
-      return (
-        <div
-          className="flex items-center gap-2 px-2 py-1"
-          style={{ paddingLeft: `${depth * (compact ? 12 : 14) + 8}px` }}
-        >
-          <span className="min-w-0 flex-1 truncate text-[0.75rem] text-danger">{state.error}</span>
-          <button
-            type="button"
-            onClick={() => browser.load(path)}
-            className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent hover:bg-sel"
-          >
-            {t('重试')}
-          </button>
-        </div>
-      )
+      return <LevelError path={path} depth={depth} error={state.error} browser={browser} compact={compact} />
     return (
       <div
         className="flex items-center gap-1.5 px-2 py-1 text-subtle"
@@ -376,6 +375,7 @@ function LevelRows({
 
   return (
     <>
+      {state.error && <LevelError path={path} depth={depth} error={state.error} browser={browser} compact={compact} />}
       {level.statusSkipped && depth === 0 && (
         <p className="px-2 py-1 text-[0.6875rem] text-subtle">{t('这次没拿到 git 状态，文件照常列出。')}</p>
       )}
@@ -478,6 +478,37 @@ function LevelRows({
         <p className="p-4 text-[0.8125rem] text-subtle">{t('这个目录里没有文件。')}</p>
       )}
     </>
+  )
+}
+
+/** 这一层读失败了：显示原因和重试。已有旧数据时排在旧内容上方，不把树整块换掉 */
+function LevelError({
+  path,
+  depth,
+  error,
+  browser,
+  compact,
+  onRetry,
+}: {
+  path: string
+  depth: number
+  error: string
+  browser: FileBrowser
+  compact?: boolean
+  /** 根信息和目录层的重试动作不一样：根信息要整轮重读，目录只重读这一层 */
+  onRetry?: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2 px-2 py-1" style={{ paddingLeft: `${depth * (compact ? 12 : 14) + 8}px` }}>
+      <span className="min-w-0 flex-1 truncate text-[0.75rem] text-danger">{error}</span>
+      <button
+        type="button"
+        onClick={onRetry ?? (() => browser.load(path))}
+        className="shrink-0 cursor-pointer rounded px-1.5 py-0.5 text-[0.75rem] text-accent hover:bg-sel"
+      >
+        {t('重试')}
+      </button>
+    </div>
   )
 }
 

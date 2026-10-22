@@ -855,6 +855,11 @@ async function runAgent(
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  /**
+   * 工具行还没建好就到了的输出增量（有的 CLI 先推输出、后报调用）。
+   * 按 id 先攒着，等 tool 事件建好行时补上，不然开头这段输出会丢
+   */
+  const earlyDeltas = new Map<string, string>()
   // 还没跑完的工具调用什么时候开始的：结果到了算耗时
   const toolStart = new Map<ToolUse, number>()
   /** 结果到了（或者这一轮结束了还没等到结果）：记下跑了多久 */
@@ -976,7 +981,16 @@ async function runAgent(
         const m = !cur || cur.text.trim() ? newMsg() : cur
         m.text = ''
         m.tools.push(ev.tool)
-        if (ev.id) toolsById.set(ev.id, ev.tool)
+        if (ev.id) {
+          toolsById.set(ev.id, ev.tool)
+          // 输出比调用先到：补到刚建好的行上，并把这一行标成还在跑，界面才会边跑边跟着更新
+          const early = earlyDeltas.get(ev.id)
+          if (early !== undefined) {
+            earlyDeltas.delete(ev.id)
+            ev.tool.output = tail(early)
+            ev.tool.running = true
+          }
+        }
         // 调用时就带着耗时的（完成后才报的）直接用；要等结果的从现在开始计时
         if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) {
           ev.tool.startedAt = Date.now()
@@ -1034,7 +1048,16 @@ async function runAgent(
       case 'tool_delta': {
         const t = toolsById.get(ev.id)
         // 快照是到目前为止的全部输出（Pi 每次都给完整的一段），直接替换；其余是新增的一段，接在后面
-        if (t) t.output = ev.snapshot ? tail(ev.text) : tail((t.output ?? '') + ev.text)
+        if (t) {
+          t.output = ev.snapshot ? tail(ev.text) : tail((t.output ?? '') + ev.text)
+          // 有输出在更新说明还在跑：CLI 的调用事件没带这个标记时也要让界面边跑边显示。
+          // 已经有 ms 的是跑完的调用（迟到的增量），不能再标回运行中，否则会一直转圈
+          if (t.output && t.ms === undefined) t.running = true
+        } else {
+          // 工具行还没建：先攒着（快照直接替换，增量接在后面），等 tool 事件到达时补上
+          const prev = ev.snapshot ? '' : (earlyDeltas.get(ev.id) ?? '')
+          earlyDeltas.set(ev.id, tail(prev + ev.text))
+        }
         break
       }
       case 'files_changed':

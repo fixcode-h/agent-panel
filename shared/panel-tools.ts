@@ -27,4 +27,9 @@ export const PANEL_TOOL_NAMES = [
   'ask_main',
   'send_message',
   'read_messages',
+  // 提问和补充这几个也挂在同一个面板服务上：不登记的话对话里会显示成原始工具名
+  // （Command Code、Gemini CLI 报的是 mcp__panel_xxx__ask_user 这类，界面认不出来）
+  'ask_user',
+  'read_user_notes',
+  'wait_user_message',
 ] as const

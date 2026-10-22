@@ -203,6 +203,20 @@ export const EN_TASKS: Record<string, string> = {
   窗口里查看: 'View in window',
   '输出较长，在窗口里查看全部': 'Output is long — view all in a window',
   搜索结果: 'Search results',
+  // 命令行窗口和行内输出
+  复制全部输出: 'Copy all output',
+  已复制命令: 'Command copied',
+  已复制输出: 'Output copied',
+  '正在执行，等待输出…': 'Running — waiting for output…',
+  '执行失败，没有输出': 'Failed with no output',
+  这条命令没有输出: 'This command produced no output',
+  '这次调用没有标准输出或错误输出，关掉窗口展开这次调用可以看到返回的错误。':
+    'This call wrote nothing to stdout or stderr. Close the window and expand the call to see the error it returned.',
+  '命令正常结束，没有标准输出或错误输出。': 'The command finished without writing to stdout or stderr.',
+  '输出 {n} 行': '{n} output lines',
+  正在输出: 'Streaming',
+  '前面还有 {n} 行': '{n} earlier lines',
+  '{n} 行': '{n} lines',
 
   // 任务面板
   任务进度: 'Progress',
@@ -632,6 +646,9 @@ export const EN_TASKS: Record<string, string> = {
   向主角色提问: 'Ask main role',
   传话: 'Message',
   查看消息: 'Read messages',
+  查看用户补充: 'Read user notes',
+  向用户提问: 'Ask user',
+  等待用户消息: 'Wait for user message',
   找不到这个提问: 'Question not found',
   这个提问已经回答过了: 'This question has already been answered',
   回答是空的: 'The answer is empty',
