@@ -554,7 +554,7 @@ ${FRAMEWORK_MAP}
    只写成发现，写清现象、依据和可能的位置（文件路径，能确定时带行号），不要去改面板代码。
 
 ## 回复格式
-用中文写，先用两三句话给结论，再按上面四点展开，每条都要有依据。
+用中文写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」四个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
 
 最后单独写一个代码块，语言名写 ${EVOLUTION_LANG}，内容是 JSON，把建议的修改写成可以直接应用的形式：
 
@@ -666,6 +666,9 @@ export interface ResolvedChange {
   change: EvolutionChange
   /** 显示用：工作流「x」· 节点「y」· 要求 */
   label: string
+  /** label 拆开的两段：改的是哪个对象（工作流「x」· 节点「y」）、哪一项（要求）；界面分开排版 */
+  scope: string
+  field: string
   before: string
   after: string
   error?: string
@@ -716,14 +719,16 @@ export function resolveChange(c: EvolutionChange, workflows: Workflow[], agents:
   if (c.target === 'agent') {
     const a = agents.find((x) => x.id === c.agentId)
     const label = t('角色「{name}」· {field}', { name: a?.name ?? c.agentId, field: f })
-    if (!a) return { change: c, label, before: '', after, error: t('本机没有这个角色') }
-    return { change: c, label, before: text(a[c.field]), after, error: 'error' in norm ? norm.error : undefined }
+    const head = { change: c, label, scope: t('角色「{name}」', { name: a?.name ?? c.agentId }), field: f }
+    if (!a) return { ...head, before: '', after, error: t('本机没有这个角色') }
+    return { ...head, before: text(a[c.field]), after, error: 'error' in norm ? norm.error : undefined }
   }
   const w = workflows.find((x) => x.id === c.workflowId)
   if (c.target === 'workflow') {
     const label = t('工作流「{name}」· {field}', { name: w?.name ?? c.workflowId, field: f })
-    if (!w) return { change: c, label, before: '', after, error: t('本机没有这个工作流') }
-    return { change: c, label, before: text(w[c.field]), after, error: 'error' in norm ? norm.error : undefined }
+    const head = { change: c, label, scope: t('工作流「{name}」', { name: w?.name ?? c.workflowId }), field: f }
+    if (!w) return { ...head, before: '', after, error: t('本机没有这个工作流') }
+    return { ...head, before: text(w[c.field]), after, error: 'error' in norm ? norm.error : undefined }
   }
   const flow = w?.flows.find((x) => x.id === c.flowId) ?? w?.flows.find((x) => x.nodes.some((n) => n.id === c.nodeId))
   const node = flow?.nodes.find((n) => n.id === c.nodeId)
@@ -732,10 +737,12 @@ export function resolveChange(c: EvolutionChange, workflows: Workflow[], agents:
     node: node?.title || c.nodeId,
     field: f,
   })
-  if (!w) return { change: c, label, before: '', after, error: t('本机没有这个工作流') }
-  if (!node) return { change: c, label, before: '', after, error: t('工作流里没有这个节点') }
+  const scope = t('工作流「{name}」· 节点「{node}」', { name: w?.name ?? c.workflowId, node: node?.title || c.nodeId })
+  const head = { change: c, label, scope, field: f }
+  if (!w) return { ...head, before: '', after, error: t('本机没有这个工作流') }
+  if (!node) return { ...head, before: '', after, error: t('工作流里没有这个节点') }
   const cur = c.field === 'maxRounds' || c.field === 'confirm' ? (node.hooks[c.field] ?? false) : node[c.field]
-  return { change: c, label, before: text(cur), after, error: 'error' in norm ? norm.error : undefined }
+  return { ...head, before: text(cur), after, error: 'error' in norm ? norm.error : undefined }
 }
 
 /** 把选中的建议应用到工作流和 Agent 上，返回改过的那些（调用方再保存）；不合法的跳过 */

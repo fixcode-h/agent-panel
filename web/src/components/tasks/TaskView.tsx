@@ -1026,7 +1026,8 @@ export function TaskView({
                       <Download className="h-4 w-4" />
                       {t('导出任务')}
                     </MenuItem>
-                    <MenuItem disabled={running} onSelect={() => setAnalyzing(true)}>
+                    {/* CLI 还连着、只是在等下一句时也能分析：只有真的在处理这一轮才不行 */}
+                    <MenuItem disabled={running && working} onSelect={() => setAnalyzing(true)}>
                       <Sparkles className="h-4 w-4" />
                       {t('AI 分析执行结果')}
                     </MenuItem>

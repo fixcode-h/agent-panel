@@ -390,7 +390,7 @@ async function fakeAgent(ctx: RunContext, call: AgentCall): Promise<AgentResult>
     out = {
       tools: [{ kind: 'read', label: '执行记录.md', detail: '' }],
       changes: [],
-      text: `结论：这次执行整体完成了需求，但前两个节点的要求比较笼统，Agent 花了不少时间确认范围；验收一次通过，缓存命中率偏低。\n\n1. 结果质量：交付内容覆盖了需求的主要点，遗留的文案问题在总结里提到了。\n2. 工作流：建议把节点要求写得更具体，并把不需要深度推理的节点降到中档。\n3. Agent：角色设定和节点要求有部分重复，可以精简。\n4. 面板框架：见下面的发现。\n\n${demoEvolution(ctx.prompt)}`,
+      text: `这次执行整体完成了需求，但前两个节点的要求比较笼统，Agent 花了不少时间确认范围；验收一次通过，**缓存命中率偏低**。\n\n### 1. 结果质量\n\n- 交付内容覆盖了需求的主要点，遗留的文案问题在总结里提到了。\n\n### 2. 工作流\n\n- 节点要求写得笼统，**分析需求** 一步反复确认范围，建议写得更具体。\n- 不需要深度推理的节点可以降到中档。\n\n### 3. Agent\n\n- 角色设定和节点要求有部分重复，可以精简。\n\n### 4. 面板框架\n\n- 见下面的发现。\n\n${demoEvolution(ctx.prompt)}`,
     }
   // 「默认」工作流：结果后面带上推荐块（从说明里附的工作流挑前两个），演示里也能看到推荐的下一步
   if (call.step && ctx.workflow && isDefaultWorkflow(ctx.workflow.id))

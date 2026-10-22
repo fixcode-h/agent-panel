@@ -450,6 +450,12 @@ export const EN_TASKS: Record<string, string> = {
     'Review the diffs before applying; workflows and roles use the new content right away',
   '应用选中的 {n} 项': 'Apply {n} selected',
   面板框架的问题: 'Panel framework issues',
+  分析结果: 'Analysis',
+  '{n} 项修改建议': '{n} suggested changes',
+  '{n} 个框架问题': '{n} framework issues',
+  '角色「{name}」': 'Role "{name}"',
+  '工作流「{name}」': 'Workflow "{name}"',
+  '工作流「{name}」· 节点「{node}」': 'Workflow "{name}" · node "{node}"',
   还没有可以分析的执行记录: 'No runs to analyze yet',
   'AI 分析执行结果': 'AI run analysis',
   '用默认角色新建一个对话来分析，只分析不改文件':

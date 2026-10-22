@@ -39,8 +39,8 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 
 ## 「对话在不在动手」看 working，不看 status
 
-- 规则：对话停在「等待你的下一条消息」时 `status` 仍是 `running`（CLI 进程还在），能不能合并、删除、切分支这类操作要看 `task.working`；服务端对应用 `live.get(id)?.task.working`，不要用 `live.has(id)`。
-- 起因：独立分支条按 `status === 'running'` 隐藏合并按钮，对话做完了也合并不了，用户问「对话完成了为什么没有合并按钮」。
+- 规则：对话停在「等待你的下一条消息」时 `status` 仍是 `running`（CLI 进程还在），能不能合并、删除、切分支、AI 分析这类操作，以及「回复完才显示」的卡片，都要看 `task.working`；服务端对应用 `live.get(id)?.task.working`，不要用 `live.has(id)`。
+- 起因：独立分支条按 `status === 'running'` 隐藏合并按钮，对话做完了也合并不了，用户问「对话完成了为什么没有合并按钮」；后来「AI 分析执行结果」菜单和分析结果卡片又按 `status` 判断，用户问「对话结束了为啥还不可以 AI 分析」。
 - 防线：`scripts/e2e.mjs` 的独立分支用例。
 
 ## 工具条目统一点法

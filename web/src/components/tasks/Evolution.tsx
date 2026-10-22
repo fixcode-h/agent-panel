@@ -1,6 +1,17 @@
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, ChevronRight, Copy, FileCode2, Loader2, Sparkles, TriangleAlert } from 'lucide-react'
+import {
+  Bot,
+  Box,
+  Check,
+  ChevronRight,
+  Copy,
+  FileCode2,
+  Loader2,
+  Sparkles,
+  TriangleAlert,
+  Workflow,
+} from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { taskSummary } from '@shared/task'
@@ -16,6 +27,7 @@ import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { startAnalysis } from '@/lib/task-transfer'
 import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Modal } from '@/components/ui/modal'
@@ -44,30 +56,43 @@ function DiffView({ before, after }: { before: string; after: string }) {
   )
 }
 
+/** 建议改的是哪类对象：工作流、节点还是角色 */
+const TARGET = { workflow: Workflow, node: Box, agent: Bot } as const
+const targetName = (k: keyof typeof TARGET) => ({ workflow: t('工作流'), node: t('节点'), agent: t('角色') })[k]
+
 function ChangeRow({ r, checked, onCheck }: { r: ResolvedChange; checked: boolean; onCheck: (v: boolean) => void }) {
   const [open, setOpen] = useState(false)
   const same = r.before === r.after
+  const Icon = TARGET[r.change.target]
   return (
-    <li className="flex flex-col gap-2 px-3.5 py-3">
+    <li className="flex flex-col gap-2.5 px-4 py-3">
       <div className="flex items-start gap-2">
         <Checkbox
           checked={checked && !same && !r.error}
           disabled={same || !!r.error}
           onChange={onCheck}
-          label={<span className="font-medium">{r.label}</span>}
-          hint={r.change.reason || undefined}
+          label={
+            <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="font-medium">{r.field}</span>
+              <span className="inline-flex min-w-0 items-center gap-1 text-xs text-subtle">
+                <Icon className="h-3 w-3 shrink-0" aria-label={targetName(r.change.target)} />
+                <span className="truncate">{r.scope}</span>
+              </span>
+            </span>
+          }
+          hint={r.change.reason ? <span className="text-muted">{r.change.reason}</span> : undefined}
           className="min-w-0 flex-1"
         />
         {same ? (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-            <Check className="h-3.5 w-3.5" />
+          <Badge tone="success" className="shrink-0">
+            <Check className="h-3 w-3" />
             {t('已应用')}
-          </span>
+          </Badge>
         ) : r.error ? (
-          <span className="flex shrink-0 items-center gap-1 text-xs text-warning" title={r.error}>
-            <TriangleAlert className="h-3.5 w-3.5" />
-            {r.error}
-          </span>
+          <Badge tone="warning" className="max-w-[45%] shrink-0" title={r.error}>
+            <TriangleAlert className="h-3 w-3 shrink-0" />
+            <span className="truncate">{r.error}</span>
+          </Badge>
         ) : (
           <button
             type="button"
@@ -80,8 +105,31 @@ function ChangeRow({ r, checked, onCheck }: { r: ResolvedChange; checked: boolea
           </button>
         )}
       </div>
-      {open && !same && <DiffView before={r.before} after={r.after} />}
+      {open && !same && (
+        <div className="pl-[28px]">
+          <DiffView before={r.before} after={r.after} />
+        </div>
+      )}
     </li>
+  )
+}
+
+/** 结果卡片里每一段的小标题 */
+function SectionHead({
+  icon: Icon,
+  title,
+  children,
+}: {
+  icon: typeof Sparkles
+  title: string
+  children?: React.ReactNode
+}) {
+  return (
+    <h4 className="flex items-center gap-1.5 px-4 pt-3 pb-1 text-xs font-medium text-subtle">
+      <Icon className="h-3.5 w-3.5" />
+      <span className="flex-1">{title}</span>
+      {children}
+    </h4>
   )
 }
 
@@ -93,7 +141,8 @@ export function EvolutionCard({ task }: { task: Task }) {
   const { workflows, agents, setWorkflows, setAgents } = useData()
   const hit = useMemo(
     () =>
-      task.mode === 'chat' && task.status !== 'running'
+      // 分析对话回复完 CLI 往往还连着等下一句：不在处理这一轮就画出来，不等进程结束
+      task.mode === 'chat' && !(task.status === 'running' && task.working)
         ? [...task.messages].reverse().find((m) => m.role === 'agent' && m.text.includes('```' + EVOLUTION_LANG))
         : undefined,
     [task],
@@ -145,75 +194,95 @@ export function EvolutionCard({ task }: { task: Task }) {
   }
 
   return (
-    <section aria-label={t('工作流优化建议')} className="flex flex-col gap-3">
+    <section
+      aria-label={t('分析结果')}
+      className="overflow-hidden rounded-xl border border-line-strong bg-card shadow-card"
+    >
+      <header className="flex items-start gap-3 px-4 py-3.5">
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent-soft text-accent">
+          <Sparkles className="h-4 w-4" />
+        </span>
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 className="text-[0.875rem] font-semibold">{t('分析结果')}</h3>
+            {evo.changes.length > 0 && <Badge tone="accent">{t('{n} 项修改建议', { n: evo.changes.length })}</Badge>}
+            {evo.framework.length > 0 && (
+              <Badge tone="warning">{t('{n} 个框架问题', { n: evo.framework.length })}</Badge>
+            )}
+          </div>
+          {evo.summary && <p className="text-[0.8125rem] leading-relaxed text-muted">{evo.summary}</p>}
+        </div>
+      </header>
       {evo.changes.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h3 className="flex items-center gap-1.5 px-1 text-[0.78125rem] font-medium text-muted">
-            <Sparkles className="h-3.5 w-3.5 text-accent" />
-            {t('工作流优化建议')}
-          </h3>
-          <div className="overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
-            {evo.summary && <p className="border-b px-3.5 py-2.5 text-[0.8125rem]">{evo.summary}</p>}
-            <ul className="flex flex-col divide-y">
-              {rows.map((r, i) => (
-                <ChangeRow
-                  key={i}
-                  r={r}
-                  checked={!off.has(i)}
-                  onCheck={(v) =>
-                    setOff((s) => {
-                      const n = new Set(s)
-                      if (v) n.delete(i)
-                      else n.add(i)
-                      return n
-                    })
-                  }
-                />
-              ))}
-            </ul>
-            <div className="flex items-center gap-2 border-t bg-field/50 px-3.5 py-2.5">
-              <span className="min-w-0 flex-1 text-xs text-subtle">
-                {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
-              </span>
-              <Button size="sm" disabled={!picked.length || busy} onClick={apply}>
-                {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                {t('应用选中的 {n} 项', { n: picked.length })}
-              </Button>
-            </div>
+        <div className="border-t">
+          <SectionHead icon={Workflow} title={t('工作流优化建议')} />
+          <ul className="flex flex-col divide-y">
+            {rows.map((r, i) => (
+              <ChangeRow
+                key={i}
+                r={r}
+                checked={!off.has(i)}
+                onCheck={(v) =>
+                  setOff((s) => {
+                    const n = new Set(s)
+                    if (v) n.delete(i)
+                    else n.add(i)
+                    return n
+                  })
+                }
+              />
+            ))}
+          </ul>
+          <div className="flex items-center gap-3 border-t bg-field/50 px-4 py-2.5">
+            <span className="min-w-0 flex-1 text-xs text-subtle">
+              {t('看过差异再应用；应用后工作流和角色马上按新的内容执行')}
+            </span>
+            <Button size="sm" disabled={!picked.length || busy} onClick={apply}>
+              {busy && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+              {t('应用选中的 {n} 项', { n: picked.length })}
+            </Button>
           </div>
         </div>
       )}
       {evo.framework.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <h3 className="flex items-center gap-1.5 px-1 text-[0.78125rem] font-medium text-muted">
-            <FileCode2 className="h-3.5 w-3.5" />
-            <span className="flex-1">{t('面板框架的问题')}</span>
+        <div className="border-t">
+          <SectionHead icon={FileCode2} title={t('面板框架的问题')}>
             <button
               type="button"
               onClick={copyFindings}
-              className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-normal text-subtle hover:bg-sel hover:text-fg"
+              className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-normal hover:bg-sel hover:text-fg"
             >
               <Copy className="h-3.5 w-3.5" />
               {t('复制')}
             </button>
-          </h3>
-          <ul className="flex flex-col divide-y overflow-hidden rounded-xl border border-line-strong bg-card shadow-card">
+          </SectionHead>
+          <ol className="flex flex-col divide-y">
             {evo.framework.map((f, i) => (
-              <li key={i} className="flex flex-col gap-1 px-3.5 py-3">
-                <span className="text-[0.84375rem] font-medium">{f.title}</span>
-                {f.detail && <span className="text-[0.78125rem] whitespace-pre-wrap text-muted">{f.detail}</span>}
-                {f.files.length > 0 && (
-                  <span className="mt-0.5 flex flex-wrap gap-1.5">
-                    {f.files.map((x) => (
-                      <code key={x} className="rounded bg-field px-1.5 py-0.5 font-mono text-[0.71875rem] text-subtle">
-                        {x}
-                      </code>
-                    ))}
-                  </span>
-                )}
+              <li key={i} className="flex items-start gap-2.5 px-4 py-3">
+                <span className="mt-px grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-warning/12 text-[0.6875rem] font-medium text-warning tabular-nums">
+                  {i + 1}
+                </span>
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  {f.title && <span className="text-[0.84375rem] font-medium">{f.title}</span>}
+                  {f.detail && (
+                    <span className="text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-muted">{f.detail}</span>
+                  )}
+                  {f.files.length > 0 && (
+                    <span className="mt-0.5 flex flex-wrap gap-1.5">
+                      {f.files.map((x) => (
+                        <code
+                          key={x}
+                          className="rounded-md border bg-field px-1.5 py-0.5 font-mono text-[0.71875rem] text-subtle"
+                        >
+                          {x}
+                        </code>
+                      ))}
+                    </span>
+                  )}
+                </div>
               </li>
             ))}
-          </ul>
+          </ol>
         </div>
       )}
     </section>
