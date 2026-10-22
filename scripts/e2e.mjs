@@ -1326,6 +1326,10 @@ try {
     assert.equal(editLog.at(-1).cwd, project.path, '开分支前在原目录里')
     wtKid = await waitTask(wtKid.id, () => calls().at(-1)?.cwd !== project.path)
     assert.equal(wtKid.worktree?.state, 'active', '子对话要改文件时开了独立分支')
+    assert.ok(
+      !wtKid.messages.some((m) => m.role === 'system' && m.text.includes('已开独立分支')),
+      '开分支不另记居中提示，begin_edit 这次调用本身就是对话里的一行',
+    )
     assert.equal(calls().at(-1).cwd, wtKid.worktree.path, '开分支后的一轮在分支目录里执行')
     assert.match(calls().at(-1).input, /之前的对话[\s\S]*BEGIN_EDIT/, '新会话带上了之前的对话')
     assert.ok(!calls().at(-1).args.includes('--resume'), '换了目录不续接旧会话')
@@ -1351,6 +1355,40 @@ try {
       '合并后提交回到项目目录',
     )
     assert.ok((await call('GET', `/tasks/${wtParent.id}/worktrees`)).items[0].merged, '合并后标成已合并')
+    // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
+    const askKid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: wtParent.id,
+          prompt: 'ASK_PARENT 选一个方案',
+        })
+      ).id,
+      20000,
+    )
+    let askParent = await call('GET', `/tasks/${wtParent.id}`)
+    const askMsg = askParent.messages.find((m) => m.panel === 'ask')
+    assert.ok(askMsg, '父对话里记了提问卡片')
+    assert.equal(askMsg.ask.from, askKid.id)
+    assert.deepEqual(askMsg.ask.options, ['A 方案', 'B 方案'], '卡片带上子对话给的选项')
+    assert.equal(askMsg.ask.answer, undefined, '还没回答')
+    assert.ok(
+      !askParent.messages.some((m) => m.role === 'system' && !m.panel && m.text.includes('提问')),
+      '提问不再是居中的系统提示',
+    )
+    await call('POST', `/tasks/${wtParent.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
+    await waitTask(askKid.id, (k) => k.messages.some((m) => m.role === 'user' && m.text.includes('用户的决定')))
+    askParent = await call('GET', `/tasks/${wtParent.id}`)
+    const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
+    assert.equal(answeredAsk.ask.answer, 'B 方案')
+    assert.equal(answeredAsk.ask.by, 'user')
+    assert.ok(
+      askParent.inbox.some((x) => x.from === askKid.id && x.text.includes('用户已回答')) &&
+        !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
+      '父对话的收件箱里换成「用户已回答」，不会再答一遍',
+    )
     await call('DELETE', `/tasks/${wtParent.id}`)
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')

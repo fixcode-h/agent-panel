@@ -425,8 +425,8 @@ if (process.env.FAKE_CLI_LOG && titleFor === null) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 // 要改文件时才开独立分支：任务里有 BEGIN_EDIT、面板也给了 begin_edit 时，像真的 Agent 一样改文件前先调用；
 // 开好后这一轮不再改文件（下面的 COMMIT 跳过），由面板在新目录里开新会话接着做
-let beganEdit = false
-if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
+/** 调用面板自己的工具（panel MCP）：地址从 CLI 参数里的 MCP 配置取 */
+async function panelCall(name, params) {
   const cfg = args.find((a) => a.startsWith('{"mcpServers"'))
   const servers = cfg ? JSON.parse(cfg).mcpServers : {}
   const url =
@@ -450,10 +450,18 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
       return JSON.parse(data.length ? data[data.length - 1].slice(5).trim() : text)
     })
   await rpc(1, 'initialize', {})
-  const got = (await rpc(2, 'tools/call', { name: 'begin_edit', arguments: {} })).result
+  return (await rpc(2, 'tools/call', { name, arguments: params })).result
+}
+let beganEdit = false
+if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
+  const got = await panelCall('begin_edit', {})
   beganEdit = !got.isError
   if (process.env.FAKE_CLI_LOG)
     appendFileSync(process.env.FAKE_CLI_LOG + '.edit', JSON.stringify({ kind, cwd: process.cwd(), got }) + '\n')
+}
+// 子对话请父对话决定：任务里有 ASK_PARENT、面板给了 message_parent 时，带两个选项提问
+if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
+  await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })
 }
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {

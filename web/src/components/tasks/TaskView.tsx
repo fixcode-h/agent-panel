@@ -40,7 +40,7 @@ import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { plainLine, toolVerb } from '@/lib/tasks'
+import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -68,7 +68,7 @@ import {
 } from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
-import { ChildOpenCtx } from './ToolRow'
+import { ChildOpenCtx } from './child-open'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
@@ -97,8 +97,11 @@ type Block =
 const OLD_CREATED =
   /^(新建了子对话「.*」，这条消息交给它处理|Created sub-conversation “.*”; this message is handed to it)$/
 
-/** 以前子对话做完后在父对话里记的通知 */
-const OLD_CHILD_NOTE = /^子对话「[^」]*」(已完成|失败|已停止|合并编译通过|合并编译没通过)/
+/** 以前子对话做完后在父对话里记的通知，和居中显示的汇报、提问（现在汇报只给 AI，提问是卡片） */
+const OLD_CHILD_NOTE = /^子对话「[^」]*」(已完成|失败|已停止|合并编译通过|合并编译没通过|汇报：|提问：)/
+
+/** 以前开独立分支时记的居中提示：现在 begin_edit 这次调用本身显示成「开独立分支 分支名」 */
+const OLD_WORKTREE = /^(要改文件了，已开独立分支 |Ready to edit files: opened separate branch )/
 
 /** 这条消息属于第几次运行（节点 id 带 `r2/` 前缀的算第 2 次） */
 function runOf(step: string) {
@@ -131,7 +134,8 @@ function toBlocks(task: Task): Block[] {
     // 旧对话里新建子对话时记的居中提示：现在这次工具调用本身就显示成「新建子对话 标题」，不再重复
     if (m.role === 'system' && !m.step && OLD_CREATED.test(m.text)) continue
     // 子对话交回父对话的回报只给父对话的 AI 看：做完了看子对话栏和列表里的绿勾（旧数据没有标记，按文字认）
-    if (m.role === 'system' && !m.step && (m.panel === 'child' || OLD_CHILD_NOTE.test(m.text))) continue
+    if (m.role === 'system' && !m.step && (m.panel === 'child' || (!m.panel && OLD_CHILD_NOTE.test(m.text)))) continue
+    if (m.role === 'system' && !m.step && !m.panel && OLD_WORKTREE.test(m.text)) continue
     // 派出的子任务、面板推回的结果（后台命令、合并编译、子任务结果）都是 AI 这一轮回复里的一行，
     // 归进当前这轮回复，不单独成段，也不显示成用户消息
     if (!m.step && ((!byRun && m.spawned?.length) || m.panel)) {
@@ -236,7 +240,11 @@ interface ChildSummary {
 function activityText(a: ChildActivity | undefined) {
   if (!a) return ''
   if (a.steps?.length) return a.steps.join(t('、'))
-  if (a.tool) return `${toolVerb({ ...a.tool, detail: '' })} ${a.tool.label}`.trim()
+  if (a.tool) {
+    // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
+    const v = toolView({ ...a.tool, detail: '' })?.tool ?? { ...a.tool, detail: '' }
+    return `${toolVerb(v)} ${v.label}`.trim()
+  }
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
   return t('正在思考…')

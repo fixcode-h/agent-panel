@@ -457,16 +457,8 @@ export function tasksApi(deps: {
     // 改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的
     tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
     tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef).catch(() => null)) ?? {}
-    tk.messages.push({
-      id: randomUUID(),
-      role: 'system',
-      agentId: '',
-      step: '',
-      text: t('要改文件了，已开独立分支 {branch}，接下来在里面修改', { branch: tk.worktree.branch }),
-      tools: [],
-      at: new Date().toISOString(),
-    })
-    // 这一轮结束后马上接着做：消息已经记在对话里（上面那条），这里只登记交给新会话的要求
+    // 对话里不另记居中提示：begin_edit 这次工具调用本身显示成「开独立分支 分支名」，AI 的回复不被截断。
+    // 这一轮结束后马上接着做：这里只登记交给新会话的要求（不记进对话）
     holdForNextTurn(tk.id, {
       id: randomUUID(),
       role: 'user',
@@ -777,25 +769,37 @@ export function tasksApi(deps: {
     }
   }
 
-  /** 子对话给父对话发消息：父对话正在执行就实时交给它，否则记进父对话，下一轮一起处理 */
-  async function messageParent(child: Task, text: string, question: boolean) {
+  /**
+   * 子对话给父对话发消息：父对话正在执行就实时交给它，否则记进父对话，下一轮一起处理。
+   * 汇报只交给父对话的 AI（界面上在子对话自己的对话里看）；提问在父对话里显示成可以直接回答的卡片
+   */
+  async function messageParent(child: Task, text: string, question: boolean, options: string[] = []) {
     const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
     if (!parent) return { ok: false, info: '找不到父对话' }
     const head = question ? `子对话「${child.title}」提问` : `子对话「${child.title}」汇报`
+    const opts = question
+      ? options
+          .map((x) => x.trim())
+          .filter(Boolean)
+          .slice(0, 6)
+      : []
+    const body = opts.length ? `${text}\n\n可选的做法：\n${opts.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : text
     const msg: TaskMessage = {
       id: randomUUID(),
       role: 'system',
       agentId: '',
       step: '',
-      text: `${head}：\n${text}`,
+      text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : ''}`,
       tools: [],
+      panel: question ? 'ask' : 'child',
+      ...(question ? { ask: { from: child.id, title: child.title, question: text, options: opts } } : {}),
       at: new Date().toISOString(),
     }
     const entry = live.get(parent.id)
     const how = entry?.task.working ? await steerTask(entry.task, msg.text, msg).catch(() => false) : false
     if (!how) {
       parent.messages.push(msg)
-      parent.inbox.push({ from: child.id, title: child.title, text: question ? `（提问）${text}` : text, at: msg.at })
+      parent.inbox.push({ from: child.id, title: child.title, text: question ? `（提问）${body}` : text, at: msg.at })
     }
     parent.updatedAt = msg.at
     if (entry) entry.rev++
@@ -804,9 +808,70 @@ export function tasksApi(deps: {
     return {
       ok: true,
       info: question
-        ? '父对话现在没在执行，问题已经记在父对话里，它下一轮会处理。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。'
+        ? '父对话现在没在执行，问题已经记在父对话里，用户或父对话下一轮会回答。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。'
         : '已记在父对话里，它下一轮会看到',
     }
+  }
+
+  /** 父对话把消息交给子对话时：这个子对话还没人回答的提问算父对话回答了，卡片收起 */
+  function settleAsks(parent: Task, childId: string, answer: string, by: 'user' | 'parent') {
+    let hit = false
+    for (const m of parent.messages)
+      if (m.panel === 'ask' && m.ask?.from === childId && m.ask.answer === undefined) {
+        m.ask = { ...m.ask, answer: answer.slice(0, 2000), by }
+        hit = true
+      }
+    return hit
+  }
+
+  /**
+   * 用户在父对话的提问卡片上回答：答案直接交给子对话，并告诉父对话的 AI 不用再回答；
+   * 不回答而是交给父对话决定时（delegate），父对话空闲就开一轮让它处理收件箱里的提问
+   */
+  async function answerChildAsk(parentId: string, msgId: string, answer: string, delegate: boolean) {
+    const entry = live.get(parentId)
+    const parent = entry?.task ?? (await store.get(parentId))
+    const m = parent?.messages.find((x) => x.id === msgId && x.panel === 'ask')
+    if (!parent || !m?.ask) return { error: t('找不到这个提问') }
+    if (m.ask.answer !== undefined) return { error: t('这个提问已经回答过了') }
+    const { from, title, question } = m.ask
+    if (delegate) {
+      // 父对话正在执行时它已经收到这个问题；空闲时开一轮，开不了（别的操作占着）就等它下一轮从收件箱读
+      if (!entry?.task.working)
+        await followUp(parent.id, {
+          text: `子对话「${title}」在等你决定（问题在收件箱里）。决定后用 send_to_conversation 交给它（id: ${from}）。`,
+          attachments: [],
+          panel: 'child',
+        }).catch((e) => log.warn('task', '交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
+      return { task: live.get(parent.id)?.task ?? parent }
+    }
+    const r = await sendToChild(parent.id, from, `关于你刚才的提问，用户的决定：\n${answer}`)
+    if (!r.ok) return { error: r.info }
+    const cur = live.get(parent.id)?.task ?? parent
+    settleAsks(cur, from, answer, 'user')
+    // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
+    const note = `用户已经直接回答了子对话「${title}」的提问，不用再回答。\n问题：${question}\n用户的决定：${answer}`
+    const live2 = live.get(parent.id)
+    const steered = live2?.task.working
+      ? await steerTask(live2.task, note, {
+          id: randomUUID(),
+          role: 'system',
+          agentId: '',
+          step: '',
+          text: note,
+          tools: [],
+          panel: 'child',
+          at: new Date().toISOString(),
+        }).catch(() => false)
+      : false
+    if (!steered) {
+      cur.inbox = cur.inbox.filter((x) => !(x.from === from && x.text.startsWith('（提问）')))
+      cur.inbox.push({ from, title, text: `（用户已回答你收到的提问）${answer}`, at: new Date().toISOString() })
+    }
+    cur.updatedAt = new Date().toISOString()
+    if (live2) live2.rev++
+    await store.update(cur.id, cur)
+    return { task: cur }
   }
 
   /**
@@ -967,7 +1032,9 @@ export function tasksApi(deps: {
               entry.task.inbox = []
               return got
             },
-        messageParent: task.parentTaskId ? (text, question) => messageParent(entry.task, text, question) : undefined,
+        messageParent: task.parentTaskId
+          ? (text, question, options) => messageParent(entry.task, text, question, options)
+          : undefined,
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
         submitBuild:
@@ -1068,7 +1135,12 @@ export function tasksApi(deps: {
               .join('\n'),
           }
         },
-        sendToConversation: (id, message) => sendToChild(entry.task.id, id, message),
+        sendToConversation: async (id, message) => {
+          const r = await sendToChild(entry.task.id, id, message)
+          // 交给子对话就算回答了它的提问：父对话里的提问卡片收起
+          if (r.ok && settleAsks(entry.task, id, message, 'parent')) entry.rev++
+          return r
+        },
       })
     })()
     entry.done = run
@@ -1984,6 +2056,19 @@ export function tasksApi(deps: {
     return c.json(await store.update(id, { ...tk, changes }))
   })
 
+  // 回答子对话交给父对话决定的提问：直接把决定交给子对话，或者交给父对话的 AI 决定
+  routes.post('/:id/child-asks/:mid', async (c) => {
+    const body = z
+      .object({ answer: z.string().default(''), delegate: z.boolean().default(false) })
+      .safeParse(await c.req.json())
+    if (!body.success) return bad(c, z.prettifyError(body.error))
+    const answer = body.data.answer.trim()
+    if (!answer && !body.data.delegate) return bad(c, t('回答是空的'))
+    const r = await answerChildAsk(c.req.param('id'), c.req.param('mid'), answer, body.data.delegate)
+    if ('error' in r) return bad(c, r.error ?? '')
+    return c.json(r.task)
+  })
+
   // 回答 Agent 的请求：允许 / 拒绝一个操作，或者回答问题
   routes.post('/:id/requests/:rid', async (c) => {
     const e = live.get(c.req.param('id'))
@@ -2062,6 +2147,8 @@ export function tasksApi(deps: {
         step: '',
         text: on ? t('「提问」已打开，后续问题会交给你回答') : t('「提问」已关闭，后续问题由 AI 自己决定'),
         tools: [],
+        // 执行中改的：画成 AI 回复里的一行，不在回复中间插一条居中提示
+        panel: 'note',
         at: new Date().toISOString(),
       }
       void steerTask(

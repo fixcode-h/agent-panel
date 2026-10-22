@@ -294,7 +294,7 @@ export interface Orchestra {
   beginEdit(): Promise<{ ok: boolean; info: string }>
   /** small：Agent 判断是小改动，合并时只跑标了「小改动也跑」的合并步骤 */
   submitBuild(note: string, small: boolean): Promise<{ ok: boolean; info: string }>
-  toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
+  toParent(text: string, question: boolean, options?: string[]): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
   /** 本次运行的共享状态：读快照 / 写一个键 */
@@ -414,7 +414,7 @@ export interface EngineHost {
   /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
   takeInbox?: () => { title: string; text: string }[]
   /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
-  messageParent?: (text: string, question: boolean) => Promise<{ ok: boolean; info: string }>
+  messageParent?: (text: string, question: boolean, options?: string[]) => Promise<{ ok: boolean; info: string }>
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
   claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
   releaseFiles?: (paths: string[]) => number
@@ -2262,10 +2262,10 @@ function makeOrchestra(
       }
       return r
     },
-    async toParent(text, question) {
+    async toParent(text, question, options) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      return host.messageParent(text.trim(), question)
+      return host.messageParent(text.trim(), question, options)
     },
     claim(paths) {
       if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
@@ -2731,10 +2731,10 @@ ${
 - 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent 请父对话协调。做完一部分可以用 release_files 释放。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
 - 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
-- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`
+- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`
           : `## 和父对话的协作
 你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
-需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`,
+需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`,
       )
   }
   return parts.filter(Boolean).join('\n\n')

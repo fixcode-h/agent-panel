@@ -1,28 +1,32 @@
 import { memo, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { ChevronRight, X } from 'lucide-react'
+import { X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { stepDuration } from '@/lib/tasks'
+import { currentActivity, stepActivity, stepDuration } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
+import { Markdown } from './Markdown'
+import { RowShell } from './ToolRow'
 import { t } from '@shared/i18n'
 
 const helperSig = (task: Task, ids: string[]) =>
   ids
     .map((id) => {
       const s = task.steps.find((x) => x.id === id)
-      return s ? `${s.id}:${s.status}:${s.endedAt}:${s.title}:${s.agentId}` : id
+      // 执行中的行展开时显示它这会儿在做什么：消息有增加就要重画
+      return s
+        ? `${s.id}:${s.status}:${s.endedAt}:${s.title}:${s.agentId}:${s.output.length}:${s.status === 'running' ? task.messages.length : ''}`
+        : id
     })
     .join('|')
 
 /**
  * 对话里派出的子任务：在派出的位置一行一个，和工具调用一样排在 AI 的回复里；
- * 转圈是执行中，绿勾是完成，红叉是失败。点开是一个只读的子任务窗口：看它的实时对话流，没有输入框，
+ * 转圈是执行中，绿勾是完成，红叉是失败。点名字打开只读的子任务窗口（点前后的其他地方是在行内展开看结果）：看它的实时对话流，没有输入框，
  * 做完 CLI 就退出了，再打开也只是查看，不会重新启动
  */
 function HelperCardsBase({ task, ids, teamNames }: { task: Task; ids: string[]; teamNames: Set<string> }) {
@@ -60,34 +64,50 @@ const HelperRow = memo(function HelperRow({
 }) {
   const { agents } = useData()
   const [open, setOpen] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const step = task.steps.find((s) => s.id === id)
   // 默认的「子任务」角色不用再写一遍名字；点名派给「测试验收」这类角色时才标出来
   const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
   if (!step) return null
   const time = stepDuration(step, now)
+  // 展开时在行内看：做完的看交回的结果，还在跑的看它这会儿在做什么
+  const result = step.output.trim() || [...task.messages].reverse().find((m) => m.step === id && m.text.trim())?.text
+  const doing = step.status === 'running' ? currentActivity(stepActivity(task, id, true)) : ''
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title={t('打开子任务')}
-        className={cn(
-          'group flex w-full min-w-0 cursor-pointer items-center gap-2 rounded-lg border bg-field px-2.5 py-1.5 text-left font-mono text-xs text-muted transition-colors hover:text-fg',
-          step.status === 'failed' && 'border-danger/30',
-        )}
+      <RowShell
+        glyph={<StepIcon status={step.status} className="h-3.5 w-3.5" />}
+        verb={t('子任务')}
+        title={step.title}
+        onOpen={() => setOpen(true)}
+        openTip={t('打开子任务')}
+        detail={
+          <>
+            {agent && (
+              <span className="hidden shrink-0 items-center gap-1.5 font-sans text-subtle sm:flex">
+                <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
+                {agent.name}
+              </span>
+            )}
+            {time && <span className="shrink-0 font-mono text-subtle tabular-nums">{time}</span>}
+          </>
+        }
+        open={expanded}
+        onToggle={() => setExpanded(!expanded)}
+        failed={step.status === 'failed'}
       >
-        <StepIcon status={step.status} className="h-3.5 w-3.5" />
-        <span className="shrink-0 font-sans font-medium text-fg/80">{t('子任务')}</span>
-        <span className="min-w-0 flex-1 truncate">{step.title}</span>
-        {agent && (
-          <span className="hidden shrink-0 items-center gap-1.5 font-sans text-subtle sm:flex">
-            <AgentAvatar icon={agent.icon} cli={agent.cli} size="xs" />
-            {agent.name}
-          </span>
-        )}
-        {time && <span className="shrink-0 font-mono text-subtle tabular-nums">{time}</span>}
-        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-subtle opacity-0 transition group-hover:opacity-100" />
-      </button>
+        <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t bg-card/60 px-3 py-2.5 text-[0.8125rem]">
+          {doing ? (
+            <p className="text-xs text-muted">{doing}</p>
+          ) : result ? (
+            <Markdown text={result} teamNames={teamNames} />
+          ) : (
+            <p className="text-xs text-subtle">
+              {step.status === 'pending' ? t('子任务在排队，前面的做完就开始') : t('没有输出')}
+            </p>
+          )}
+        </div>
+      </RowShell>
       {open && <HelperWindow task={task} id={id} teamNames={teamNames} onClose={() => setOpen(false)} />}
     </>
   )

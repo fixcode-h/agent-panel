@@ -178,6 +178,11 @@ export function orchTools(o: Orchestra) {
               properties: {
                 text: { type: 'string', description: '要告诉父对话的内容，写清背景和你的建议' },
                 question: { type: 'boolean', description: '需要父对话（或用户）决定时为 true' },
+                options: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'question 为 true 时可选的几种做法（2–4 个，每个一句话），用户可以直接点选',
+                },
               },
               required: ['text'],
             },
@@ -439,7 +444,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     case 'message_parent': {
       const body = str(a?.text).trim()
       if (!body) return text('text 是空的', true)
-      const r = await o.toParent(body, a?.question === true)
+      const options = Array.isArray(a?.options) ? a.options.map(String).filter((x: string) => x.trim()) : undefined
+      const r = await o.toParent(body, a?.question === true, options)
       return text(r.info, !r.ok)
     }
     case 'claim_files': {

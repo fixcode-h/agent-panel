@@ -432,6 +432,9 @@ export const api = {
   discardWorktree: (id: string) => request<Task>(`/tasks/${id}/worktree/discard`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  /** 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定 */
+  answerChildAsk: (id: string, mid: string, body: { answer: string; delegate: boolean }) =>
+    request<Task>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),

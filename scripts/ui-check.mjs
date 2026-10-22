@@ -466,9 +466,9 @@ try {
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('按钮再大一点')
   await p.keyboard.press('Enter')
   // 思考、调设计工具、说明按顺序边出边显示
-  await p.getByText(/design · check/).waitFor({ timeout: 15000 })
+  await p.getByText('check', { exact: true }).first().waitFor({ timeout: 15000 })
   await p.waitForTimeout(600)
-  await check(p, 'UI设计-写入', ['design · replace_widget'])
+  await check(p, 'UI设计-写入', ['replace_widget'])
   await p.getByText(/正在生成图片 \d+\/\d+/).waitFor({ timeout: 15000 })
   await check(p, 'UI设计-生成中', ['正在生成图片'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })

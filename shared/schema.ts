@@ -921,9 +921,23 @@ export const TaskMessage = z.object({
   /**
    * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、子任务结果）：不是用户说的话，
    * 对话里显示成 AI 回复里的一行，点开看全文。child 是子对话交回父对话的回报：
-   * 只交给父对话的 AI，界面上不显示（子对话自己的状态图标已经说明做完了）
+   * 只交给父对话的 AI，界面上不显示（子对话自己的状态图标已经说明做完了，汇报在子对话自己的对话里看）。
+   * ask 是子对话请父对话决定的问题：父对话里显示成一张可以直接回答的卡片；
+   * note 是执行中用户改设置这类说明，画成回复里的一行，不把回复截成两段
    */
-  panel: z.enum(['background', 'build', 'helpers', 'child']).optional(),
+  panel: z.enum(['background', 'build', 'helpers', 'child', 'ask', 'note']).optional(),
+  /** panel 为 ask 时：哪个子对话问的、问了什么、可选的做法，以及谁怎么回答的 */
+  ask: z
+    .object({
+      from: z.string(),
+      title: z.string().default(''),
+      question: z.string().default(''),
+      options: z.array(z.string()).default([]),
+      answer: z.string().optional(),
+      /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
+      by: z.enum(['user', 'parent']).optional(),
+    })
+    .optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */

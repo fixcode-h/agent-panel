@@ -1845,6 +1845,14 @@ function tasksRoute(
     void followUp(d, task, f.text, false, f.attachments)
     return task
   }
+  // 回答子对话的提问：演示里只把卡片标成已回答
+  if (sub === 'child-asks' && rid) {
+    const m = task.messages.find((x) => x.id === rid && x.ask) ?? fail('找不到这个提问')
+    const a = body as { answer: string; delegate: boolean }
+    if (!a.delegate) m.ask = { ...m.ask!, answer: a.answer, by: 'user' }
+    persist()
+    return task
+  }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
