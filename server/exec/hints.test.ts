@@ -78,7 +78,7 @@ test('压缩上下文：写明压缩了多少、现在占上下文窗口多少',
   assert.equal(tool.detail, '')
 })
 
-test('空回合：只说了一句「我先…」就收尾的才算没做完', () => {
+test('空回合：只说了一句「我先…」就收尾、或者一个字都没回的，都算没做完', () => {
   const empty = (text: string, tools = 0, changed = 0) => looksUnfinished({ texts: [text], tools, changed })
   // 真实发生过的两次：说完就结束，一个工具都没调
   assert.equal(empty('我先将本地仓库更新到最新，同时查看当前状态和仓库结构。'), true)
@@ -93,6 +93,11 @@ test('空回合：只说了一句「我先…」就收尾的才算没做完', ()
   assert.equal(empty('这个项目的测试命令是 npm run test:unit。'), false)
   // 长篇回复已经有内容，不推
   assert.equal(empty(`我先${'看'.repeat(240)}`), false)
-  // 完全没有输出时不在这里处理（交给失败分支）
-  assert.equal(empty(''), false)
+  // 一个字都没收到也是没做完：CLI 报了一轮成功、面板却什么都没拿到时，那一轮不能算完成。
+  // 否则它会保活等下一句，用户之后发来的消息全落进死回合（既没回复也没报错）
+  assert.equal(looksUnfinished({ texts: [], tools: 0, changed: 0 }), true)
+  assert.equal(looksUnfinished({ texts: ['', '  '], tools: 0, changed: 0 }), true)
+  // 工具调过或文件改过就不算：那是真在做事，只是没说话
+  assert.equal(looksUnfinished({ texts: [], tools: 1, changed: 0 }), false)
+  assert.equal(looksUnfinished({ texts: [], tools: 0, changed: 1 }), false)
 })

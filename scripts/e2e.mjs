@@ -756,6 +756,28 @@ try {
   empKeep = await waitDone(empKeep.id, 20000)
   assert.equal(empKeep.status, 'done')
 
+  // 一个字都没回的一轮（CLI 报成功、但没有正文也没有用量）：不能算完成。
+  // 真实现场是带图请求被网关吞掉：那一轮被标成已完成并保活等下一句，用户之后发来的消息全落进死回合，既没回复也没报错
+  step('一个字都没回的一轮不算完成：留下说明并自动接一轮')
+  let sil = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'claude',
+    prompt: 'FAKE_SILENT 分析一下这个对话',
+  })
+  sil = await waitDone(sil.id, 20000)
+  assert.equal(sil.status, 'done', sil.messages.at(-1)?.text)
+  const silNote = sil.messages.find((m) => m.role === 'system' && /没有返回任何内容/.test(m.text))
+  assert.ok(
+    silNote,
+    `空成功的一轮必须留下可见说明，不能静默收尾；现有消息：${JSON.stringify(
+      sil.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]),
+    )}`,
+  )
+  assert.equal(sil.messages.filter((m) => m.role === 'agent' && m.text.trim()).length, 1, '自动接一轮之后正常给出回复')
+  assert.match(sil.messages.find((m) => m.role === 'agent' && m.text.trim()).text, /这是 claude 的回复/)
+
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
   let pm = await call('POST', '/tasks', {
     projectId: project.id,
