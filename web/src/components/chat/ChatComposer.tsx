@@ -20,6 +20,7 @@ const DRAFT = 'chat-draft:'
  */
 export function useDraft(key: string) {
   const read = (k: string) => {
+    if (!k) return ''
     try {
       return localStorage.getItem(DRAFT + k) ?? ''
     } catch {
@@ -69,11 +70,17 @@ export function ChatComposer({
   size = 'md',
   dropScope,
   onDropOver,
+  draftKey,
+  onEmptyChange,
   className,
 }: {
-  value: string
-  onChange: (v: string) => void
-  onSubmit: () => void
+  /** 不传 value / onChange 时自己管草稿：按 draftKey 记着，打字只重渲染这个输入框 */
+  value?: string
+  onChange?: (v: string) => void
+  draftKey?: string
+  /** 从有内容变成空（或反过来）时通知外面：外面只在切换时重渲染一次 */
+  onEmptyChange?: (empty: boolean) => void
+  onSubmit: (text: string) => void
   files: ReturnType<typeof useAttachments>
   taRef?: React.RefObject<RichInputHandle | null>
   id?: string
@@ -128,8 +135,26 @@ export function ChatComposer({
   const own = useRef<RichInputHandle>(null)
   const editor = taRef ?? own
   const sm = size === 'sm'
-  const typed = canSend ?? (!!value.trim() || files.attachments.length > 0)
+  const [draft, setDraft] = useDraft(draftKey ?? '')
+  const controlled = value !== undefined
+  const text = controlled ? value : draft
+  const change = useCallback(
+    (v: string) => {
+      if (controlled) onChange?.(v)
+      else setDraft(v)
+    },
+    [controlled, onChange, setDraft],
+  )
+  const typed = canSend ?? (!!text.trim() || files.attachments.length > 0)
   const ready = typed && !sending && !files.uploading
+  const submit = () => onSubmit(text)
+  // 空 / 非空只在切换时通知一次：外面（任务页）用它决定要不要显示「继续执行」
+  const empty = !text.trim()
+  const emptyCb = useRef(onEmptyChange)
+  emptyCb.current = onEmptyChange
+  useEffect(() => {
+    emptyCb.current?.(empty)
+  }, [empty])
 
   /** 附件加进来时在光标处放一张卡片；上传失败就把卡片撤掉 */
   const addFiles = useCallback(
@@ -137,10 +162,10 @@ export function ChatComposer({
       void files.add(list, {
         added: (items) =>
           items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
-        failed: (name) => onChange(dropChip(editor.current?.text() ?? '', name)),
+        failed: (name) => change(dropChip(editor.current?.text() ?? '', name)),
       })
     },
-    [files, editor, onChange],
+    [files, editor, change],
   )
   const addReady = useCallback(
     (a: Attachment) => {
@@ -157,9 +182,9 @@ export function ChatComposer({
     (key: string) => {
       const item = files.items.find((x) => x.key === key)
       files.remove(key)
-      if (item) onChange(dropChip(editor.current?.text() ?? '', item.name))
+      if (item) change(dropChip(editor.current?.text() ?? '', item.name))
     },
-    [files, editor, onChange],
+    [files, editor, change],
   )
   /** 图片卡片显示图片本身 */
   const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
@@ -211,14 +236,14 @@ export function ChatComposer({
       <RichInput
         id={id}
         handle={editor}
-        value={value}
-        onChange={onChange}
+        value={text}
+        onChange={change}
         onSync={onSync}
         onKeyDown={(e) => {
           if (onKeyDown?.(e)) return true
           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
             e.preventDefault()
-            onSubmit()
+            submit()
             return true
           }
           return false
@@ -271,7 +296,7 @@ export function ChatComposer({
               )}
               {typed && (
                 <SendButton
-                  onClick={onSubmit}
+                  onClick={submit}
                   disabled={!ready || !!disabled}
                   sending={sending}
                   size={size}
@@ -281,7 +306,7 @@ export function ChatComposer({
               {onStop && <StopButton onClick={onStop} size={size} />}
             </>
           ) : (
-            <SendButton onClick={onSubmit} disabled={!ready || !!disabled} sending={sending} size={size} />
+            <SendButton onClick={submit} disabled={!ready || !!disabled} sending={sending} size={size} />
           ))}
       </div>
     </div>

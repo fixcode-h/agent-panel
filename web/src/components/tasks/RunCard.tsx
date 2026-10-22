@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, type ReactNode } from 'react'
+import { memo, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { ChevronRight, CircleCheck, CircleX, Loader2, Workflow as WorkflowIcon, X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { stepMs } from '@shared/task'
@@ -21,6 +21,12 @@ function runState(task: Task, run: number) {
   return 'waiting' as const
 }
 
+/** 这张卡片用到的内容：节点状态、结论和时间变了才需要重画 */
+const runSig = (task: Task, run: number) =>
+  `${task.status}|${topSteps(task, run)
+    .map((s) => `${s.id}:${s.status}:${s.verdict}:${s.endedAt}:${s.title}`)
+    .join(',')}`
+
 /** 这次运行花的工夫：各个节点的执行时间相加 */
 function runDuration(task: Task, run: number, now: number) {
   const ms = topSteps(task, run).reduce((n, s) => n + stepMs(s, now), 0)
@@ -31,7 +37,7 @@ function runDuration(task: Task, run: number, now: number) {
  * 主 Agent 对话流里代表一次工作流运行的卡片：节点输出不直接铺在对话里，
  * 点开在右边看这一次运行的实时输出
  */
-export function RunCard({
+function RunCardBase({
   task,
   run,
   name,
@@ -89,6 +95,11 @@ export function RunCard({
     </button>
   )
 }
+
+export const RunCard = memo(
+  RunCardBase,
+  (a, b) => a.run === b.run && a.name === b.name && runSig(a.task, a.run) === runSig(b.task, b.run),
+)
 
 /**
  * 右边打开的这一次运行：主流程每个节点的输出按顺序排下来，跟着任务实时更新。

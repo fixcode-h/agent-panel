@@ -197,7 +197,7 @@ export function AgentMessage({
   return (
     <MessageBody
       m={text === m.text ? m : { ...m, text }}
-      task={task}
+      task={task ? { id: task.id, status: task.status, changes: task.changes } : undefined}
       teamNames={teamNames}
       compact={compact}
       live={live}
@@ -213,9 +213,12 @@ export function AgentMessage({
   )
 }
 
+/** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes'>
+
 type BodyProps = {
   m: TaskMessage
-  task?: Task
+  task?: ToolTask
   teamNames: Set<string>
   compact?: boolean
   live?: boolean
@@ -339,8 +342,12 @@ const MessageBody = memo(
     a.icon === b.icon &&
     a.cli === b.cli &&
     a.command === b.command &&
-    // 工具行的窗口要用任务里的改动信息：只有任务对象换了才重画
-    a.task === b.task,
+    // 工具行的窗口只用到任务的 id、状态和有哪些改动的文件：任务对象和改动列表每个增量都会换，
+    // 不能按引用比较，否则整段回复每 200ms 都要重画 Markdown。差异窗口打开时会自己按当前内容取，
+    // 工具输出的变化也已经在 sig 里比较过了
+    a.task?.id === b.task?.id &&
+    a.task?.status === b.task?.status &&
+    (a.task?.changes?.length ?? 0) === (b.task?.changes?.length ?? 0),
 )
 
 /** 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）：AI 回复里的一行，点开看全文 */

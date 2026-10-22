@@ -152,14 +152,21 @@ function Block({ label, text, tone }: { label: string; text: string; tone?: 'dan
  * 一次工具调用：收起时一行（图标、命令或文件、结果摘要），点开参照 Claude Code：
  * 命令显示 IN / OUT，改文件显示 diff，读文件和其他工具显示参数和输出
  */
-export function ToolRow({ tool: raw, task }: { tool: ToolUse; task?: Task }) {
+export function ToolRow({
+  tool: raw,
+  task,
+}: {
+  tool: ToolUse
+  /** 差异窗口只用到这几样，不用把整个任务传进来 */
+  task?: Pick<Task, 'id' | 'status' | 'changes'>
+}) {
   // 面板自己的工具按做了什么显示（新建子对话 + 名字），派出子任务的调用不单独显示
   const view = panelTool(raw)
   if (view === null) return null
   return <ToolLine tool={view ?? raw} task={task} />
 }
 
-function ToolLine({ tool, task }: { tool: ToolUse; task?: Task }) {
+function ToolLine({ tool, task }: { tool: ToolUse; task?: Pick<Task, 'id' | 'status' | 'changes'> }) {
   const [open, setOpen] = useState(false)
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out'>('')
   const openFile = useFileOpen()

@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef } from 'react'
-import { renderDoc } from '@/lib/workflow-doc'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { linkPaths, parsePath, useFileOpen } from './FileDialog'
@@ -66,10 +66,23 @@ export function Markdown({
   const openFile = useFileOpen()
   // 在任务页里时，像文件路径的行内代码可以点开看文件
   const canOpen = !!openFile
+  // 流式输出每 200ms 换一次文字：解析放到低优先级，输入和滚动不被长回复卡住
+  const deferred = useDeferredValue(text)
+  const [ready, setReady] = useState(() => hljsReady())
+  useEffect(() => {
+    if (ready) return
+    let off = false
+    void ensureHljs().then(() => !off && setReady(true))
+    return () => {
+      off = true
+    }
+  }, [ready])
   const html = useMemo(() => {
-    const h = renderDoc(text, teamNames)
+    // 高亮库加载完（ready 变了）要重算一次，否则代码块一直是没有颜色的原文
+    void ready
+    const h = renderDoc(deferred, teamNames, live)
     return canOpen ? linkPaths(h) : h
-  }, [text, teamNames, canOpen])
+  }, [deferred, teamNames, canOpen, live, ready])
 
   useEffect(() => {
     const root = ref.current
