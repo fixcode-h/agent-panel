@@ -5,6 +5,7 @@ import {
   commonAgents,
   composeRole,
   cycleText,
+  defaultChatPrompt,
   includeCycle,
   includeCycles,
   includeDepth,
@@ -80,6 +81,13 @@ test('节点：固定用默认 CLI 的档位', () => {
   )
   assert.equal(nodeAgentRun(a, 'low').model, '@low')
   assert.equal(nodeAgentRun(agent('b', { model: 'gpt-5' }), '').model, '@medium')
+})
+
+test('默认对话：连续工具操作时注入可见进度要求', () => {
+  const prompt = defaultChatPrompt('用户要求', '', true, false)
+  assert.match(prompt, /用户要求[\s\S]*连续做两次以上工具操作前先用一句话说明当前目标/)
+  assert.equal(defaultChatPrompt('用户要求', 'agent-1', true, false), '用户要求')
+  assert.equal(defaultChatPrompt('用户要求', '', true, true), '用户要求')
 })
 
 test('引入：层级、太深和循环', () => {

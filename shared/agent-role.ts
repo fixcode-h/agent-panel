@@ -234,6 +234,14 @@ export const cycleText = (chain: string[], agents: Agent[]) =>
 /** 通用 Agent：工作流里任何 Agent 都可以把子任务派给它们（停用的不算） */
 export const commonAgents = (agents: Agent[]) => agents.filter((a) => a.common && a.enabled)
 
+/** 默认对话没有 Agent 角色设定，补一条可见进度规则，避免整轮只剩工具调用。 */
+export const DEFAULT_CHAT_PROGRESS =
+  '## 可见进度\n连续做两次以上工具操作前先用一句话说明当前目标，完成一组工具后先用一句话报告阶段结果再继续；不要让一整轮只剩工具调用。模型没有返回思考内容时不要编造内部思考，至少给出简短的可见进度。'
+
+export function defaultChatPrompt(input: string, agentId: string, chat: boolean, operation: boolean) {
+  return chat && !agentId && !operation ? `${input}\n\n${DEFAULT_CHAT_PROGRESS}` : input
+}
+
 /**
  * 交给 CLI 的完整角色设定：自己的设定（套上参数）、引入的 Agent 的设定、参数的取值、要用的 Skill。
  * 引入的 Agent 用它们自己的参数默认值；同名参数跟着这个 Agent 的取值走，方便一个开关管住一串。
