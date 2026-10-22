@@ -28,6 +28,7 @@ import {
   Settings2,
   GraduationCap,
   CircleStop,
+  MessageCircleQuestion,
 } from 'lucide-react'
 import { ConversationSettingsDialog } from './ConversationSettingsDialog'
 import { HelperCards } from './HelperCards'
@@ -70,6 +71,7 @@ import {
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildOpenCtx } from './child-open'
+import { FoldedAskBar, ParentAskPanel } from './ChildAskCard'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
@@ -231,6 +233,8 @@ interface ChildSummary {
   lastMessageAt: string
   /** 正在等用户确认的请求数 */
   requests?: number
+  /** 请用户选择、还没人回答的提问数 */
+  asking?: number
   /** 在独立 worktree 里改时的分支 */
   branch?: string
   /** 正在执行时这会儿在做什么 */
@@ -324,6 +328,8 @@ export function TaskView({
   // 右栏开着哪个按父任务 id 记在本地：切走窗口再回来、页面重新加载后还是原来那个
   const [children, setChildren] = useState<ChildSummary[]>([])
   const [openChild, setOpenChild] = useState(() => (pane ? '' : readPaneChild(taskId)))
+  // 子对话请用户选择的弹窗收起时记下当时是哪几个提问：来了新的提问再弹出来
+  const [askFolded, setAskFolded] = useState('')
   // 宽屏右栏收起：让对话用满整个宽度，收起的按钮还在标题栏
   const [filesFolded, setFilesFolded] = useState(false)
   // 左边空白不够放任务进度时（窄屏），从标题栏打开，浮在对话上面
@@ -488,6 +494,26 @@ export function TaskView({
     // 任务 id 变了才重新订阅；子对话的变化靠定时刷新
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [task?.id, task?.parentTaskId])
+  // 父对话里提问卡片的状态变了（在子对话里选完、交给父对话决定）：马上刷新，子对话栏的「请你选择」不用等下一次定时刷新
+  const askState = task?.parentTaskId
+    ? ''
+    : (task?.messages ?? [])
+        .filter((m) => m.panel === 'ask' && m.ask?.answer === undefined && !m.ask?.delegated)
+        .map((m) => m.id)
+        .join(',')
+  useEffect(() => {
+    if (!task?.id || task.parentTaskId) return
+    let alive = true
+    api
+      .taskChildren(task.id)
+      .then((list) => alive && setChildren(list))
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+    // 只在待选择的提问变了时刷新
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [askState])
 
   // 记着的子对话已经不在这个父对话下了（被删掉）：回退到文件面板并清掉这条记录
   useEffect(() => {
@@ -785,7 +811,12 @@ export function TaskView({
   const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
 
   // 右边看某一次运行的实时输出时，输入框跟着挪到那个面板底下，不用关掉再看对话
-  const composer = !task.imported && !asksQuestion(task.requests) && (
+  // 子对话请用户选择：和 Agent 的提问一样换掉输入框（Agent 自己的提问优先）
+  const parentAsks = task.parentAsks ?? []
+  const askKey = parentAsks.map((x) => x.id).join(',')
+  const askShown = parentAsks.length > 0 && !task.imported && !asksQuestion(task.requests)
+  const askOpen = askShown && askFolded !== askKey
+  const composer = !task.imported && !asksQuestion(task.requests) && !askOpen && (
     <ChatComposer
       id="follow-up"
       // 草稿由输入框自己记：打字只重渲染输入框，不带着整页消息重画
@@ -1279,6 +1310,11 @@ export function TaskView({
 
               <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
                 <TaskRequestCard task={task} onAnswered={apply} />
+                {askOpen ? (
+                  <ParentAskPanel task={task} onFold={() => setAskFolded(askKey)} />
+                ) : (
+                  askShown && <FoldedAskBar n={parentAsks.length} onOpen={() => setAskFolded('')} />
+                )}
                 <WorktreeBar task={task} />
                 {flowLeft && !task.imported && (
                   <FlowBar
@@ -1572,6 +1608,8 @@ function ChildrenBar({
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
+  // 在等你选择的子对话：最醒目，排在状态栏最前面
+  const asking = children.filter((c) => c.asking)
   const busy = sortChildren(children.filter((c) => c.working))
   const working = busy.length
   const alive = children.filter((c) => c.cliAlive)
@@ -1603,6 +1641,21 @@ function ChildrenBar({
               <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>
             )}
           </button>
+          {asking.length > 0 && (
+            <button
+              type="button"
+              onClick={() => onOpen(asking[0].id)}
+              title={asking.map((c) => c.title).join('\n')}
+              className="flex h-7 max-w-64 min-w-0 shrink-0 cursor-pointer items-center gap-2 rounded-lg border border-warning/50 bg-warning/10 px-2.5 text-xs font-medium text-warning transition-colors hover:bg-warning/15"
+            >
+              <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0" />
+              <span className="min-w-0 truncate">
+                {asking.length > 1
+                  ? t('{n} 个子对话请你选择', { n: asking.length })
+                  : t('「{title}」请你选择', { title: asking[0].title })}
+              </span>
+            </button>
+          )}
           {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
           {busy.length > 0 && (
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
@@ -1700,6 +1753,11 @@ function ChildrenBar({
                               {t('已关闭')}
                             </span>
                           )}
+                          {!!c.asking && (
+                            <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
+                              {t('等你选择')}
+                            </span>
+                          )}
                           {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
                         </span>
                         {c.working
@@ -1743,7 +1801,7 @@ function childGroups(list: ChildSummary[], grouped: boolean) {
   ]
   for (const c of list) {
     const g =
-      c.requests || c.status === 'failed'
+      c.requests || c.asking || c.status === 'failed'
         ? groups[0]
         : // 只看这一轮是不是还在跑：回复完停在等下一句时 status 仍是 running，
           // 按 status 分组会把已经交回结果的子对话一直挂在「执行中」

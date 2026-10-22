@@ -952,6 +952,8 @@ export const TaskMessage = z.object({
       answer: z.string().optional(),
       /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
       by: z.enum(['user', 'parent']).optional(),
+      /** 用户没回答，交给父对话的 AI 决定：卡片显示「交给父对话决定」，子对话不再弹选择 */
+      delegated: z.boolean().optional(),
     })
     .optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
@@ -1187,6 +1189,13 @@ export const TaskData = z.object({
   childLimit: z.number().int().min(0).max(20).default(0),
   /** 子对话发给父对话、父对话还没读到的消息：父对话下一轮开始时交给它，读完清空 */
   inbox: z.array(z.object({ from: z.string(), title: z.string(), text: z.string(), at: z.string() })).default([]),
+  /**
+   * 子对话：请用户决定、还没人回答的提问（父对话里也有一张对应的卡片，id 是那条消息的 id）。
+   * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
+   */
+  parentAsks: z
+    .array(z.object({ id: z.string(), question: z.string(), options: z.array(z.string()).default([]) }))
+    .optional(),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),
   /** 对话时给默认 Agent 选的 CLI、模型和思考强度，继续对话也用它 */

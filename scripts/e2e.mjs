@@ -1549,6 +1549,11 @@ try {
     assert.equal(askMsg.ask.from, askKid.id)
     assert.deepEqual(askMsg.ask.options, ['A 方案', 'B 方案'], '卡片带上子对话给的选项')
     assert.equal(askMsg.ask.answer, undefined, '还没回答')
+    assert.deepEqual(
+      (await call('GET', `/tasks/${askKid.id}`)).parentAsks?.map((x) => x.id),
+      [askMsg.id],
+      '子对话上也挂着这个提问，输入框换成选择弹窗',
+    )
     assert.ok(
       !askParent.messages.some((m) => m.role === 'system' && !m.panel && m.text.includes('提问')),
       '提问不再是居中的系统提示',
@@ -1559,6 +1564,7 @@ try {
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')
     assert.equal(answeredAsk.ask.by, 'user')
+    await waitTask(askKid.id, (k) => !k.parentAsks?.length)
     assert.ok(
       askParent.inbox.some((x) => x.from === askKid.id && x.text.includes('用户已回答')) &&
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),

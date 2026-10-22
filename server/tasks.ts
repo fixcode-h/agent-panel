@@ -839,6 +839,13 @@ export function tasksApi(deps: {
       ...(question ? { ask: { from: child.id, title: child.title, question: text, options: opts } } : {}),
       at: new Date().toISOString(),
     }
+    // 提问同时挂在子对话上：子对话的输入框换成选择弹窗，用户进子对话就能直接选
+    if (question) {
+      child.parentAsks = [...(child.parentAsks ?? []), { id: msg.id, question: text, options: opts }]
+      const ce = live.get(child.id)
+      if (ce) ce.rev++
+      else await store.update(child.id, child).catch(() => {})
+    }
     const entry = live.get(parent.id)
     const how = entry?.task.working ? await steerTask(entry.task, msg.text, msg).catch(() => false) : false
     if (!how) {
@@ -857,15 +864,32 @@ export function tasksApi(deps: {
     }
   }
 
-  /** 父对话把消息交给子对话时：这个子对话还没人回答的提问算父对话回答了，卡片收起 */
-  function settleAsks(parent: Task, childId: string, answer: string, by: 'user' | 'parent') {
-    let hit = false
+  /**
+   * 父对话把消息交给子对话时：这个子对话还没人回答的提问算父对话回答了，卡片收起。
+   * 给了 msgId 只收这一张（用户在弹窗里一个个回答时，别的提问还在等）
+   */
+  function settleAsks(parent: Task, childId: string, answer: string, by: 'user' | 'parent', msgId?: string) {
+    const ids: string[] = []
     for (const m of parent.messages)
-      if (m.panel === 'ask' && m.ask?.from === childId && m.ask.answer === undefined) {
+      if (m.panel === 'ask' && m.ask?.from === childId && m.ask.answer === undefined && (!msgId || m.id === msgId)) {
         m.ask = { ...m.ask, answer: answer.slice(0, 2000), by }
-        hit = true
+        ids.push(m.id)
       }
-    return hit
+    if (ids.length)
+      void dropChildAsks(childId, ids).catch((e) =>
+        log.warn('task', '没能收起子对话的选择弹窗', { task: childId, error: (e as Error).message }),
+      )
+    return ids.length > 0
+  }
+
+  /** 子对话上挂着的提问（选择弹窗）：父对话那边回答了或交出去了就去掉 */
+  async function dropChildAsks(childId: string, ids: string[]) {
+    const entry = live.get(childId)
+    const child = entry?.task ?? (await store.get(childId))
+    if (!child?.parentAsks?.some((x) => ids.includes(x.id))) return
+    child.parentAsks = child.parentAsks.filter((x) => !ids.includes(x.id))
+    if (entry) entry.rev++
+    else await store.update(child.id, child)
   }
 
   /**
@@ -904,6 +928,11 @@ export function tasksApi(deps: {
     if (m.ask.answer !== undefined) return { error: t('这个提问已经回答过了') }
     const { from, title, question } = m.ask
     if (delegate) {
+      // 记在卡片上（刷新后还是「交给父对话决定」），子对话那边不再弹选择
+      m.ask = { ...m.ask, delegated: true }
+      if (entry) entry.rev++
+      else await store.update(parent.id, parent)
+      await dropChildAsks(from, [m.id])
       // 父对话正在执行时它已经收到这个问题；空闲时开一轮，开不了（别的操作占着）就等它下一轮从收件箱读
       if (!entry?.task.working)
         await followUp(parent.id, {
@@ -916,7 +945,7 @@ export function tasksApi(deps: {
     const r = await sendToChild(parent.id, from, `关于你刚才的提问，用户的决定：\n${answer}`)
     if (!r.ok) return { error: r.info }
     const cur = live.get(parent.id)?.task ?? parent
-    settleAsks(cur, from, answer, 'user')
+    settleAsks(cur, from, answer, 'user', m.id)
     // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
     const note = `用户已经直接回答了子对话「${title}」的提问，不用再回答。\n问题：${question}\n用户的决定：${answer}`
     const live2 = live.get(parent.id)
@@ -933,7 +962,8 @@ export function tasksApi(deps: {
         }).catch(() => false)
       : false
     if (!steered) {
-      cur.inbox = cur.inbox.filter((x) => !(x.from === from && x.text.startsWith('（提问）')))
+      // 只去掉这一个问题：同一个子对话别的提问还在等
+      cur.inbox = cur.inbox.filter((x) => !(x.from === from && x.text.startsWith(`（提问）${question}`)))
       cur.inbox.push({ from, title, text: `（用户已回答你收到的提问）${answer}`, at: new Date().toISOString() })
     }
     cur.updatedAt = new Date().toISOString()
@@ -1469,6 +1499,8 @@ export function tasksApi(deps: {
           lastMessageAt: lastMessageAt(liveTask),
           // 总览分组用：等用户确认的请求数、独立 worktree 的分支
           requests: liveTask.requests.length,
+          // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
+          asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
           activity: activityOf(liveTask),
         }
