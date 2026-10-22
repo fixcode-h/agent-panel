@@ -4,23 +4,29 @@
  *
  * 大项目不能一次扫描整棵树：列表只读当前这一层，git 状态也只看这一层有变化的文件。
  */
-import { readFile, readdir, stat } from 'node:fs/promises'
+import { lstat, mkdir, open, readFile, readdir, realpath, rename, rmdir, stat, unlink } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono, type Context } from 'hono'
-import type { Project } from '../shared/schema.ts'
+import { z } from 'zod'
+import type { FileFormat, Project } from '../shared/schema.ts'
 import type {
   ContentFile,
   ContentSearch,
   DirEntry,
   DirLevel,
   FileContent,
+  FileDiff,
   FileEntry,
   FileStatus,
   FileTree,
+  FileWrite,
   NameSearch,
   SearchMode,
 } from '../shared/files.ts'
 import { capture } from './exec/process.ts'
+import { gitFileDiff } from './exec/git.ts'
+import { projectFormat, writeTextFile } from '../shared/file-format.ts'
+import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
 import { revealItem } from './open.ts'
 import { IMAGE_TYPES } from './uploads.ts'
@@ -176,18 +182,55 @@ const hidden = (name: string) => name.startsWith('.') && name !== '.github'
  */
 const absoluteLike = (p: string) => path.isAbsolute(p) || /^[a-zA-Z]:[\\/]/.test(p) || /^[\\/]{2}/.test(p)
 
+/** full 在 root 里面（不是真正的上级目录和它的兄弟） */
+function inside(root: string, full: string) {
+  const r = path.relative(root, full)
+  // 只有真正的上级目录才算越界；..foo 这种名字是项目里的普通文件
+  return r !== '..' && !r.startsWith(`..${path.sep}`) && !path.isAbsolute(r)
+}
+
+/**
+ * 真实路径。目标还不存在（新建文件、目录）时没法直接 realpath：
+ * 先对最近的已存在祖先做 realpath，再把剩下那几段拼回去。
+ */
+async function realOf(full: string): Promise<string> {
+  const real = await realpath(full).catch(() => null)
+  if (real) return real
+  const parent = path.dirname(full)
+  // 到盘符根或 / 还解析不了，说明上面已经没有能解析的目录了
+  if (parent === full) return full
+  return path.join(await realOf(parent), path.basename(full))
+}
+
 /**
  * 相对路径落在这个目录里才接受。
  * 传进来的必须是相对路径：先剥掉开头的 / 再校验，会把 Linux 的 /tmp/x 变成项目里的 tmp/x，
  * 越权校验就被绕过了，所以绝对路径在做任何规整之前就拒绝。
+ * 比两次：先看字面路径（拦住 .. 和绝对路径），再按真实路径看一次
+ * ——项目里的符号链接、junction 指向外面时，字面路径还在项目里，实际读到的却是项目外的文件。
  */
-function into(dir: string, rel: string) {
+async function into(dir: string, rel: string) {
   if (absoluteLike(rel)) throw new Error(t('只能查看项目目录里的文件'))
-  const full = path.resolve(dir, rel)
-  const r = path.relative(dir, full)
-  // 只有真正的上级目录才算越界；..foo 这种名字是项目里的普通文件
-  if (r === '..' || r.startsWith(`..${path.sep}`) || path.isAbsolute(r)) throw new Error(t('只能查看项目目录里的文件'))
+  const root = path.resolve(dir)
+  const full = path.resolve(root, rel)
+  if (!inside(root, full)) throw new Error(t('只能查看项目目录里的文件'))
+  const realRoot = await realpath(root).catch(() => root)
+  if (!inside(realRoot, await realOf(full))) throw new Error(t('只能查看项目目录里的文件'))
   return full
+}
+
+/** 链接（符号链接、Windows 的 junction）都不跟：lstat 才看得到，Dirent 在 Windows 上不一定标出来 */
+const isLink = (full: string) =>
+  lstat(full).then(
+    (s) => s.isSymbolicLink(),
+    () => false,
+  )
+
+/** 这个路径的真实位置在项目里（中间某一层是链接时可能指到外面） */
+async function realInside(dir: string, full: string) {
+  const realRoot = await realpath(dir).catch(() => dir)
+  const real = await realpath(full).catch(() => null)
+  return real !== null && inside(realRoot, real)
 }
 
 /** 列一层的顺序：目录在前，同级按名字；大小写不敏感 */
@@ -204,7 +247,7 @@ const byEntry = (a: DirEntry, b: DirEntry) =>
  */
 export async function listLevel(dir: string, rel: string, opts: { refresh?: boolean } = {}): Promise<DirLevel> {
   // 先校验原始路径：只统一分隔符，不能先剥掉开头的 /，否则绝对路径会变成项目里的相对路径
-  const full = into(dir, norm(rel))
+  const full = await into(dir, norm(rel))
   // 校验通过后再去掉结尾的分隔符，用于拼 pathspec 和子项路径
   const want = norm(rel).replace(/\/+$/, '')
   const info = await stat(full).catch(() => null)
@@ -246,18 +289,28 @@ export async function listDir(dir: string): Promise<FileTree> {
   return { dir, branch: isGit ? await branchOf(dir) : null, isGit }
 }
 
-/** 遍历目录（不是 git 仓库时按名字搜索用），带数量上限 */
+/**
+ * 遍历目录（不是 git 仓库时按名字搜索用），带数量上限。
+ * 符号链接、junction 一律不跟：跟出去会读到项目外的文件，绕回来还会转成环。
+ */
 async function walk(root: string, limit: number): Promise<FileEntry[]> {
   const out: FileEntry[] = []
+  // 已走过的真实目录：链接没被认出时也能避免同一层走两遍
+  const seen = new Set<string>()
   const visit = async (dir: string, rel: string) => {
     if (out.length >= limit) return
+    const real = await realpath(dir).catch(() => null)
+    if (real === null || seen.has(real)) return
+    seen.add(real)
     const items = await readdir(dir, { withFileTypes: true }).catch(() => [])
     for (const it of items) {
       if (out.length >= limit) return
       if (hidden(it.name)) continue
       const r = rel ? `${rel}/${it.name}` : it.name
+      const full = path.join(dir, it.name)
+      if (it.isSymbolicLink() || (await isLink(full))) continue
       if (it.isDirectory()) {
-        if (!SKIP.has(it.name)) await visit(path.join(dir, it.name), r)
+        if (!SKIP.has(it.name)) await visit(full, r)
       } else if (it.isFile()) out.push({ path: r, status: '' })
     }
   }
@@ -322,6 +375,8 @@ export async function searchInDir(dir: string, q: string): Promise<ContentSearch
     }
     if (BINARY.test(f.path)) continue
     const full = path.join(dir, f.path)
+    // 路径中间有一层是链接时（git 也可能列出 link/a.txt），读之前确认真实位置还在项目里
+    if (!(await realInside(dir, full))) continue
     const s = await stat(full).catch(() => null)
     if (!s?.isFile() || s.size > MAX_SEARCH_BYTES) continue
     const text = await readFile(full, 'utf8').catch(() => null)
@@ -358,18 +413,175 @@ async function gitTracked(dir: string, prefix: string): Promise<FileEntry[]> {
 
 /** 读一个文件的内容；二进制文件不给内容 */
 export async function readInDir(dir: string, want: string): Promise<FileContent> {
-  const full = into(dir, want)
+  const full = await into(dir, want)
   const info = await stat(full).catch(() => null)
   if (!info?.isFile()) return { path: norm(want), exists: false, content: '', truncated: false }
   const buf = await readFile(full)
   const head = buf.subarray(0, MAX_CONTENT)
-  if (head.includes(0)) return { path: norm(want), exists: true, binary: true, content: '', truncated: false }
-  return { path: norm(want), exists: true, content: head.toString('utf8'), truncated: buf.length > MAX_CONTENT }
+  const size = info.size
+  const mtime = info.mtime.toISOString()
+  if (head.includes(0))
+    return { path: norm(want), exists: true, binary: true, content: '', truncated: false, size, mtime }
+  const text = head.toString('utf8')
+  return {
+    path: norm(want),
+    exists: true,
+    content: text,
+    truncated: buf.length > MAX_CONTENT,
+    size,
+    mtime,
+    // 保存时按这个换行回写，不把 CRLF 的文件改成 LF
+    eol: text.includes('\r\n') ? 'crlf' : 'lf',
+  }
+}
+
+/** 相对项目目录的路径，统一用 / */
+const relOf = (dir: string, full: string) => norm(path.relative(dir, full))
+
+/** 单段名字：不能带路径分隔符、.. 和盘符，否则一次就能写到别的目录去 */
+function oneName(name: string): string {
+  const n = name.trim()
+  if (!n || n === '.' || n === '..' || /[\\/]/.test(n) || /^[a-zA-Z]:/.test(n) || n.includes('\0'))
+    throw new Error(t('名字只能是单个文件名，不能带路径分隔符或 ..'))
+  return n
+}
+
+/** 内容太大时拒绝：一次写进几十兆会把面板和浏览器都卡住 */
+function checkSize(content: string) {
+  if (Buffer.byteLength(content, 'utf8') > MAX_CONTENT)
+    throw new Error(t('内容太大，最多 {kb} KB', { kb: Math.floor(MAX_CONTENT / 1000) }))
+}
+
+/** 文件里现在用的是哪种换行；空文件或读不出时返回 null */
+function eolOf(text: string): 'lf' | 'crlf' | null {
+  if (text.includes('\r\n')) return 'crlf'
+  return text.includes('\n') ? 'lf' : null
+}
+
+/** 只读开头一段：判断换行用不了整个文件（可能是几十兆的日志） */
+async function headOf(full: string, size = 64_000): Promise<string | null> {
+  const fh = await open(full, 'r').catch(() => null)
+  if (!fh) return null
+  try {
+    const buf = Buffer.alloc(size)
+    const { bytesRead } = await fh.read(buf, 0, size, 0)
+    return buf.subarray(0, bytesRead).toString('utf8')
+  } finally {
+    await fh.close()
+  }
+}
+
+/** 目标已经存在（链接也算存在，不会被覆盖） */
+const exists = (full: string) =>
+  lstat(full).then(
+    () => true,
+    () => false,
+  )
+
+/**
+ * 保存一个文件：写入格式按项目设置（没设时跟随全局），
+ * 原文件是 CRLF 时按原样回写，不在保存时把整个文件的换行都改掉。
+ */
+export async function writeInDir(dir: string, want: string, content: string, format: FileFormat): Promise<FileWrite> {
+  const full = await into(dir, norm(want))
+  const info = await stat(full).catch(() => null)
+  if (!info?.isFile()) throw new Error(t('文件已经不在了'))
+  checkSize(content)
+  const head = await headOf(full)
+  const eol = head === null ? null : eolOf(head)
+  await writeTextFile(full, content, eol ? { ...format, eol } : format)
+  const after = await stat(full)
+  return { path: norm(want), size: after.size }
+}
+
+/** 在目录里新建文件；已有同名文件或目录时拒绝覆盖 */
+export async function createInDir(
+  dir: string,
+  relDir: string,
+  name: string,
+  content: string,
+  format: FileFormat,
+): Promise<FileWrite> {
+  const base = await into(dir, norm(relDir))
+  const info = await stat(base).catch(() => null)
+  if (!info?.isDirectory()) throw new Error(t('目录已经不在了'))
+  const n = oneName(name)
+  checkSize(content)
+  const full = path.join(base, n)
+  if (await exists(full)) throw Object.assign(new Error(t('已经有一个同名的文件或目录了')), { status: 409 })
+  await writeTextFile(full, content, format)
+  const after = await stat(full)
+  return { path: relOf(dir, full), size: after.size }
+}
+
+/** 新建目录（只建一层）；已有同名文件或目录时拒绝 */
+export async function mkdirInDir(dir: string, relDir: string, name: string): Promise<{ path: string }> {
+  const base = await into(dir, norm(relDir))
+  const info = await stat(base).catch(() => null)
+  if (!info?.isDirectory()) throw new Error(t('目录已经不在了'))
+  const n = oneName(name)
+  const full = path.join(base, n)
+  if (await exists(full)) throw Object.assign(new Error(t('已经有一个同名的文件或目录了')), { status: 409 })
+  await mkdir(full)
+  return { path: relOf(dir, full) }
+}
+
+/** 在同一层里改名；目标已存在时拒绝，不覆盖别人的文件 */
+export async function renameInDir(dir: string, want: string, name: string): Promise<{ path: string }> {
+  const rel = norm(want).replace(/\/+$/, '')
+  if (!rel) throw new Error(t('不能重命名项目目录'))
+  const full = await into(dir, norm(want))
+  const info = await lstat(full).catch(() => null)
+  if (!info) throw new Error(t('文件已经不在了'))
+  const n = oneName(name)
+  const target = path.join(path.dirname(full), n)
+  // 改成本身那个名字也算同名，直接当没改
+  if (await exists(target)) throw Object.assign(new Error(t('已经有一个同名的文件或目录了')), { status: 409 })
+  await rename(full, target)
+  return { path: relOf(dir, target) }
+}
+
+/** 删除一个文件或空目录；非空目录不删，免得一次误删一整片 */
+export async function deleteInDir(dir: string, want: string): Promise<{ ok: true }> {
+  if (!norm(want).replace(/\/+$/, '')) throw new Error(t('不能删除项目目录'))
+  const full = await into(dir, norm(want))
+  const info = await lstat(full).catch(() => null)
+  if (!info) throw new Error(t('文件已经不在了'))
+  if (info.isSymbolicLink() || info.isFile()) {
+    // 链接只删链接本身，不跟进去删它指向的东西
+    await unlink(full)
+  } else if (info.isDirectory()) {
+    const items = await readdir(full)
+    if (items.length) throw new Error(t('目录里还有内容，不能删除'))
+    await rmdir(full)
+  } else throw new Error(t('只能删除文件或目录'))
+  return { ok: true }
+}
+
+/** 和 git 比一个文件的差异；新文件给整份内容，不是 git 仓库时只有说明 */
+export async function diffInDir(dir: string, want: string): Promise<FileDiff> {
+  const full = await into(dir, norm(want))
+  const rel = relOf(dir, full)
+  if (!(await isGitRepo(dir)))
+    return {
+      path: rel,
+      dir,
+      diff: '',
+      git: false,
+      before: false,
+      note: t('这个项目不是 git 仓库，看不到改动对比'),
+    }
+  // before：文件在 HEAD 里原来就有
+  const before = (await git(dir, 'cat-file', '-e', `HEAD:${rel}`)).code === 0
+  const diff = await gitFileDiff(dir, 'HEAD', rel)
+  const tracked = (await git(dir, 'ls-files', '--error-unmatch', '--', rel)).code === 0
+  if (!tracked) return { path: rel, dir, diff, git: false, before, note: t('这个文件还没提交过，下面是它的完整内容') }
+  return { path: rel, dir, diff, git: true, before }
 }
 
 /** 图片的原始内容；不是图片或文件不在了给错误 */
 export async function rawInDir(dir: string, want: string): Promise<{ type: string; buf: Buffer }> {
-  const full = into(dir, want)
+  const full = await into(dir, want)
   const type = IMAGE_TYPES[path.extname(full).slice(1).toLowerCase()]
   if (!type) throw new Error(t('不是图片'))
   const buf = await readFile(full).catch(() => null)
@@ -383,7 +595,7 @@ export async function rawInDir(dir: string, want: string): Promise<{ type: strin
  */
 export async function revealInDir(dir: string, want: string): Promise<void> {
   // 原始路径直接校验：剥掉结尾的分隔符会把 '/' 变成空串，当成项目根，绝对路径的语义就丢了
-  const full = into(dir, norm(want))
+  const full = await into(dir, norm(want))
   const info = await stat(full).catch(() => null)
   if (info?.isDirectory()) {
     revealItem(full)
@@ -393,9 +605,30 @@ export async function revealInDir(dir: string, want: string): Promise<void> {
   revealItem(info?.isFile() ? full : path.dirname(full))
 }
 
+/** 写接口的入参：字段都在这里校验，名字的单段规则在 oneName 里 */
+const WriteInput = z.object({ path: z.string(), content: z.string() })
+const NewInput = z.object({ dir: z.string().optional(), name: z.string(), content: z.string().optional() })
+const MkdirInput = z.object({ dir: z.string().optional(), name: z.string() })
+const RenameInput = z.object({ path: z.string(), name: z.string() })
+const DeleteInput = z.object({ path: z.string() })
+
 /** 项目里的文件；不是 git 仓库时没有状态 */
 function filesApi(deps: { projects: { get(id: string): Promise<Project | null> } }) {
-  const bad = (c: Context, error: string, status: 400 | 404 = 400) => c.json({ error }, status)
+  const bad = (c: Context, error: string, status: 400 | 404 | 409 = 400) => c.json({ error }, status)
+  /** 写操作失败：同名冲突给 409，其余都是 400 */
+  const fail = (c: Context, e: unknown) => bad(c, (e as Error).message, (e as { status?: 409 }).status ?? 400)
+
+  /** 写文件用的格式：按项目设置的编码和换行（没设时跟随全局） */
+  async function formatOf(id: string): Promise<FileFormat> {
+    const p = await deps.projects.get(id)
+    return projectFormat(p ?? undefined, await getSettings())
+  }
+
+  /** 写接口的请求体：不是 JSON 或字段不对时直接给 400 */
+  const body = async <T extends z.ZodType>(c: Context, schema: T): Promise<z.infer<T> | null> => {
+    const p = schema.safeParse(await c.req.json().catch(() => null))
+    return p.success ? p.data : null
+  }
 
   /** 项目目录；项目不存在或目录不在了都抛错，由各自的路由转成响应 */
   async function dirOf(id: string) {
@@ -479,6 +712,73 @@ function filesApi(deps: { projects: { get(id: string): Promise<Project | null> }
         return c.json({ ok: true, dir })
       } catch (e) {
         return bad(c, (e as Error).message, 404)
+      }
+    })
+    // 保存文件内容：路径走 into() 校验，编码和换行按项目设置（原文件是 CRLF 时按原样）
+    .put('/:id/content', async (c) => {
+      const p = await body(c, WriteInput)
+      if (!p) return bad(c, t('参数不对'))
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        return c.json(await writeInDir(dir, p.path, p.content, await formatOf(c.req.param('id'))))
+      } catch (e) {
+        return fail(c, e)
+      }
+    })
+    // 在目录里新建文件；同名不覆盖
+    .post('/:id/new', async (c) => {
+      const p = await body(c, NewInput)
+      if (!p) return bad(c, t('参数不对'))
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        const format = await formatOf(c.req.param('id'))
+        return c.json(await createInDir(dir, p.dir ?? '', p.name, p.content ?? '', format))
+      } catch (e) {
+        return fail(c, e)
+      }
+    })
+    // 新建目录；同名不覆盖
+    .post('/:id/mkdir', async (c) => {
+      const p = await body(c, MkdirInput)
+      if (!p) return bad(c, t('参数不对'))
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        return c.json(await mkdirInDir(dir, p.dir ?? '', p.name))
+      } catch (e) {
+        return fail(c, e)
+      }
+    })
+    // 改名；目标已存在时不覆盖
+    .post('/:id/rename', async (c) => {
+      const p = await body(c, RenameInput)
+      if (!p) return bad(c, t('参数不对'))
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        return c.json(await renameInDir(dir, p.path, p.name))
+      } catch (e) {
+        return fail(c, e)
+      }
+    })
+    // 删除：文件直接删，目录必须为空
+    .post('/:id/delete', async (c) => {
+      const p = await body(c, DeleteInput)
+      if (!p) return bad(c, t('参数不对'))
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        return c.json(await deleteInDir(dir, p.path))
+      } catch (e) {
+        return fail(c, e)
+      }
+    })
+    // 和 git 比一个文件的差异；不是 git 仓库或文件还没提交过时 git 为 false
+    .get('/:id/diff', async (c) => {
+      const want = (c.req.query('path') ?? '').trim()
+      if (!want) return bad(c, t('缺少文件路径'))
+      try {
+        const dir = await dirOf(c.req.param('id'))
+        return c.json(await diffInDir(dir, want))
+      } catch (e) {
+        return fail(c, e)
       }
     })
 

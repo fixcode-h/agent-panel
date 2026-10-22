@@ -38,7 +38,7 @@ import type {
 } from '@shared/schema'
 import type { ChildActivity } from '@shared/task'
 import type { AssistInput, AssistJob } from '@shared/assist'
-import type { ContentSearch, DirLevel, FileContent, FileTree, NameSearch } from '@shared/files'
+import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
@@ -420,6 +420,24 @@ export const api = {
     }),
   projectFile: (projectId: string, path: string) =>
     request<FileContent>(`/project-files/${projectId}/content?path=${encodeURIComponent(path)}`),
+  /** 保存文件内容：编码和换行按项目设置，原文件是 CRLF 时按原样回写 */
+  writeProjectFile: (projectId: string, path: string, content: string) =>
+    request<{ path: string; size: number }>(`/project-files/${projectId}/content`, json('PUT', { path, content })),
+  /** 在目录里新建文件；同名时后端拒绝，不会覆盖 */
+  createProjectFile: (projectId: string, dir: string, name: string, content = '') =>
+    request<{ path: string; size: number }>(`/project-files/${projectId}/new`, json('POST', { dir, name, content })),
+  /** 新建目录；同名时后端拒绝 */
+  createProjectDir: (projectId: string, dir: string, name: string) =>
+    request<{ path: string }>(`/project-files/${projectId}/mkdir`, json('POST', { dir, name })),
+  /** 改名；目标已存在时后端拒绝 */
+  renameProjectFile: (projectId: string, path: string, name: string) =>
+    request<{ path: string }>(`/project-files/${projectId}/rename`, json('POST', { path, name })),
+  /** 删除：文件直接删，目录必须为空 */
+  deleteProjectFile: (projectId: string, path: string) =>
+    request<{ ok: true }>(`/project-files/${projectId}/delete`, json('POST', { path })),
+  /** 和 git 比一个文件的差异；不是 git 仓库或文件还没提交过时 git 为 false */
+  projectFileDiff: (projectId: string, path: string) =>
+    request<FileDiff>(`/project-files/${projectId}/diff?path=${encodeURIComponent(path)}`),
   /** 项目里的图片：按原图查看（给 <img> 用，没有走 request，路径要自己带上 /api） */
   projectFileRaw: (projectId: string, path: string) =>
     `/api/project-files/${projectId}/raw?path=${encodeURIComponent(path)}`,

@@ -970,14 +970,39 @@ const DEMO_STATUS: Record<string, string> = {
   'tests/cart.test.ts': 'D',
 }
 
-/** 演示的项目文件：根信息只说明目录和分支，文件按层读，和正式版一致 */
-function demoProjectLevel(files: string[], status: Record<string, string>, dir: string) {
+/** 在线演示里文件页的写操作：新建的目录记在这里，改过的内容直接在 DEMO_CONTENTS 上改，刷新就回到初始状态 */
+const DEMO_DIRS = new Set<string>()
+
+/** 演示的名字校验：和正式版一样只收单段名字 */
+function demoOneName(name: unknown): string {
+  const n = typeof name === 'string' ? name.trim() : ''
+  if (!n || n === '.' || n === '..' || /[\\/]/.test(n) || /^[a-zA-Z]:/.test(n))
+    fail('名字只能是单个文件名，不能带路径分隔符或 ..')
+  return n
+}
+
+const demoExists = (p: string) =>
+  DEMO_FILES.includes(p) || p in DEMO_CONTENTS || DEMO_DIRS.has(p) || DEMO_FILES.some((f) => f.startsWith(`${p}/`))
+const demoSize = (text: string) => new TextEncoder().encode(text).length
+/** 目录里的一项和它下面的全部内容（目录改名、删除时一起挪） */
+const demoUnder = (from: string) => (p: string) => p === from || p.startsWith(`${from}/`)
+
+/** 演示的项目文件：根信息、按层读取、按名称或内容搜索 */
+function demoProjectLevel(files: string[], dirs: Set<string>, status: Record<string, string>, dir: string) {
   const levels = (path: string) => {
     // 界面检查靠它确认「展开才读这一层、收起再展开不重复读」；只在演示包里存在
     ;((globalThis as { __fileCalls?: string[] }).__fileCalls ??= []).push(path)
     const prefix = path ? `${path}/` : ''
     const seen = new Set<string>()
     const entries: { name: string; path: string; kind: 'dir' | 'file'; status: string }[] = []
+    // 新建的空目录没有任何文件，得单独列出来
+    for (const d of dirs) {
+      if (!d.startsWith(prefix)) continue
+      const rest = d.slice(prefix.length)
+      if (!rest || rest.includes('/') || seen.has(rest)) continue
+      seen.add(rest)
+      entries.push({ name: rest, path: d, kind: 'dir', status: '' })
+    }
     for (const f of files) {
       if (!f.startsWith(prefix)) continue
       const rest = f.slice(prefix.length)
@@ -999,12 +1024,73 @@ function demoProjectLevel(files: string[], status: Record<string, string>, dir: 
   return levels
 }
 
-/** 演示的项目文件：根信息、按层读取、按名称或内容搜索 */
-function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
+/** 演示的项目文件：根信息、按层读取、按名称或内容搜索，以及编辑工具条上的写操作 */
+function demoProjectFiles(
+  method: string,
+  seg: string[],
+  query: URLSearchParams,
+  body: Record<string, unknown>,
+): unknown {
   const [id, kind] = seg.slice(1)
   const p = load().projects.find((x) => x.id === id) ?? fail('项目不存在')
   const dir = p.path || '~/demo/shop'
-  if (kind === 'list') return demoProjectLevel(DEMO_FILES, DEMO_STATUS, dir)(query.get('path') ?? '')
+  const text = (v: unknown) => (typeof v === 'string' ? v : '')
+  const base = text(body.dir).replace(/^\/+|\/+$/g, '')
+  if (method === 'PUT' && kind === 'content') {
+    const want = text(body.path)
+    if (!DEMO_FILES.includes(want)) fail('文件已经不在了')
+    DEMO_CONTENTS[want] = text(body.content)
+    return { path: want, size: demoSize(DEMO_CONTENTS[want]) }
+  }
+  if (method === 'POST' && kind === 'new') {
+    const full = base ? `${base}/${demoOneName(body.name)}` : demoOneName(body.name)
+    if (demoExists(full)) fail('已经有一个同名的文件或目录了')
+    DEMO_FILES.push(full)
+    DEMO_CONTENTS[full] = text(body.content)
+    return { path: full, size: demoSize(DEMO_CONTENTS[full]) }
+  }
+  if (method === 'POST' && kind === 'mkdir') {
+    const full = base ? `${base}/${demoOneName(body.name)}` : demoOneName(body.name)
+    if (demoExists(full)) fail('已经有一个同名的文件或目录了')
+    DEMO_DIRS.add(full)
+    return { path: full }
+  }
+  if (method === 'POST' && kind === 'rename') {
+    const from = text(body.path)
+    if (!demoExists(from)) fail('文件已经不在了')
+    const cut = from.lastIndexOf('/')
+    const target = cut < 0 ? demoOneName(body.name) : `${from.slice(0, cut + 1)}${demoOneName(body.name)}`
+    if (demoExists(target)) fail('已经有一个同名的文件或目录了')
+    const under = demoUnder(from)
+    for (let i = 0; i < DEMO_FILES.length; i++)
+      if (under(DEMO_FILES[i])) DEMO_FILES[i] = `${target}${DEMO_FILES[i].slice(from.length)}`
+    for (const k of Object.keys(DEMO_CONTENTS)) {
+      if (!under(k)) continue
+      DEMO_CONTENTS[`${target}${k.slice(from.length)}`] = DEMO_CONTENTS[k]
+      delete DEMO_CONTENTS[k]
+    }
+    if (DEMO_DIRS.delete(from)) DEMO_DIRS.add(target)
+    return { path: target }
+  }
+  if (method === 'POST' && kind === 'delete') {
+    const want = text(body.path)
+    if (!demoExists(want)) fail('文件已经不在了')
+    if (DEMO_FILES.includes(want) || want in DEMO_CONTENTS) {
+      const i = DEMO_FILES.indexOf(want)
+      if (i >= 0) DEMO_FILES.splice(i, 1)
+      delete DEMO_CONTENTS[want]
+    } else if (DEMO_FILES.some((f) => f.startsWith(`${want}/`))) {
+      // 目录必须空着才删，和正式版一致
+      fail('目录里还有内容，不能删除')
+    } else DEMO_DIRS.delete(want)
+    return { ok: true }
+  }
+  if (kind === 'diff') {
+    const want = query.get('path') ?? ''
+    // 演示里没有真的仓库，不编造差异
+    return { path: want, dir, diff: '', git: false, before: false, note: '在线演示里看不到真实的 git 差异' }
+  }
+  if (kind === 'list') return demoProjectLevel(DEMO_FILES, DEMO_DIRS, DEMO_STATUS, dir)(query.get('path') ?? '')
   if (kind === 'search') {
     const q = (query.get('q') ?? '').trim().toLowerCase()
     if (!q) return { files: [], truncated: false }
@@ -1031,11 +1117,13 @@ function demoProjectFiles(seg: string[], query: URLSearchParams): unknown {
   if (kind === 'content') {
     const want = query.get('path') ?? ''
     const text = DEMO_CONTENTS[want]
+    const exists = want in DEMO_CONTENTS || DEMO_FILES.includes(want)
     return {
       path: want,
-      exists: want in DEMO_CONTENTS || DEMO_FILES.includes(want),
+      exists,
       content: text ?? '',
       truncated: false,
+      ...(exists ? { size: demoSize(text ?? ''), eol: (text ?? '').includes('\r\n') ? 'crlf' : 'lf' } : {}),
     }
   }
   if (kind === 'raw') fail('在线演示里没有图片')
@@ -1216,7 +1304,7 @@ function route(method: string, url: string, body: unknown): unknown {
     }
   }
   if (res === 'local-image') return demoLocal(method, seg, body)
-  if (res === 'project-files') return demoProjectFiles(seg, query)
+  if (res === 'project-files') return demoProjectFiles(method, seg, query, (body ?? {}) as Record<string, unknown>)
   if (res === 'accounts') return demoAccounts(method, seg, body ?? {})
   if (res === 'integrations') return demoIntegrations(method, seg, body ?? {})
   if (res === 'library' || res === 'mcp-tools') return demoLibrary(method, seg, query, body ?? {}, activeClis())
@@ -2005,7 +2093,7 @@ function tasksRoute(
     const dir = p?.path || '~/demo/shop'
     const status = { ...DEMO_STATUS }
     for (const f of changed) status[f] = 'M'
-    if (rid === 'list') return demoProjectLevel(DEMO_FILES, status, dir)(query.get('path') ?? '')
+    if (rid === 'list') return demoProjectLevel(DEMO_FILES, DEMO_DIRS, status, dir)(query.get('path') ?? '')
     if (rid === 'search') {
       const q = (query.get('q') ?? '').trim().toLowerCase()
       if (!q) return { files: [], truncated: false }
