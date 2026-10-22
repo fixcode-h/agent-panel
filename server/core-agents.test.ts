@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
+import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { ensureProjectAgents } from '../shared/builtin/install.ts'
 import {
   CORE_AGENTS,
@@ -65,6 +66,12 @@ test('必备角色：启动时四个都装好，重复启动不再改', async ()
   const again = await ensureProjectAgents(m.state(), m.ops)
   assert.equal(again.created.length, 0)
   assert.equal(again.synced.length, 0, '没有变化时不写盘')
+})
+
+test('通用约束：连续工具操作时要报告可见进度', () => {
+  const rules = BUILTIN_AGENTS.find((a) => a.key === 'rules')!.agent.instructions
+  assert.match(rules, /连续做两次以上工具操作前先用一句话说明当前目标/)
+  assert.match(rules, /模型没有返回思考内容时不要编造内部思考/)
 })
 
 test('必备角色：改了设定会被同步回内置定义，参数取值和运行配置保留', async () => {
