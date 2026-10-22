@@ -76,20 +76,29 @@ test('独占命令按目录排队，一条跑完才开始下一条；cwd 不能�
   )
 })
 
-test('停止对话时正在跑的会结束，排队的不再执行', async () => {
+test('停止对话时正在跑的会结束，排队的不再执行，也不再把结果推回对话', async () => {
   const dir = repo()
-  const { bg, got, all } = collect(1)
+  const got: BgJob[] = []
+  const bg = createBackground((job) => got.push(job))
   // 同上：cmd 没有 sleep，改成长时间不结束的 node 进程
   const long = nodeScript(dir, 'long.cjs', 'setTimeout(() => {}, 5000)\n')
   bg.start({ taskId: 't1', name: '长', command: long, cwd: '', root: dir, exclusive: true })
   bg.start({ taskId: 't1', name: '排队', command: 'echo no > never.txt', cwd: '', root: dir, exclusive: true })
   await new Promise((r) => setTimeout(r, 300))
-  bg.stop('t1')
-  await all
+  const t0 = Date.now()
+  // 等进程真正退出才返回：调用方接着要删工作目录
+  await bg.stop('t1')
+  assert.ok(Date.now() - t0 < 4000)
   await new Promise((r) => setTimeout(r, 200))
+  assert.deepEqual(got, [])
   assert.deepEqual(
-    got.map((g) => [g.job.name, g.job.state]),
-    [['长', 'stopped']],
+    bg.list('t1').map((j) => [j.name, j.state]),
+    [
+      ['长', 'stopped'],
+      ['排队', 'stopped'],
+    ],
   )
   assert.equal(existsSync(path.join(dir, 'never.txt')), false)
+  bg.forget('t1')
+  assert.deepEqual(bg.list('t1'), [])
 })
