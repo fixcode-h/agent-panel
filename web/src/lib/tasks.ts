@@ -88,7 +88,7 @@ export function toolVerb(tool: ToolUse) {
 
 /** 面板自己的工具（panel MCP）调用名：各家 CLI 显示成「panel-xxxx · create_conversation」「panel_create_conversation」等 */
 const PANEL_TOOL =
-  /panel[\w-]*\W{1,4}(create_conversation|send_to_conversation|list_conversations|spawn_agents|wait_agents|run_background|check_background|message_parent|submit_build|start_plan)\b/
+  /panel[\w-]*\W{1,4}(create_conversation|send_to_conversation|list_conversations|spawn_agents|wait_agents|run_background|check_background|message_parent|submit_build|start_plan|record_lesson|project_lessons)\b/
 
 /** 工具调用的参数：多数 CLI 给的是 JSON，解析不了就当没有 */
 function toolArgs(tool: ToolUse): Record<string, unknown> {
@@ -143,6 +143,10 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('提交编译'), firstLine(a.note))
     case 'start_plan':
       return as(t('启动工作流'), firstLine(a.input))
+    case 'record_lesson':
+      return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title))
+    case 'project_lessons':
+      return as(t('查看项目教训'), Array.isArray(a.files) ? a.files.slice(0, 3).map(String).join('、') : '', 'read')
   }
   return undefined
 }

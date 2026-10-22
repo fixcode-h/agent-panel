@@ -615,6 +615,16 @@ export type TestStep = z.infer<typeof TestStep>
  * 项目教训：Agent 在这个项目里返工过的地方，写成下次能直接照做的规则。
  * 按 paths 命中要改的文件才给全文，提示里平时只放标题，条目多了也不会占满上下文（见 shared/lessons.ts）
  */
+/** 教训被改写前的一版 */
+export const LessonRevision = z.object({
+  title: z.string().max(120),
+  rule: z.string().max(1500).default(''),
+  /** 为什么改：用户的哪条新要求和它冲突、两全的做法是什么 */
+  why: z.string().max(500).default(''),
+  at: z.string().default(''),
+})
+export type LessonRevision = z.infer<typeof LessonRevision>
+
 export const ProjectLesson = z.object({
   id: z.string().min(1),
   /** 一句话的规则：该怎么做，不是发生了什么 */
@@ -631,8 +641,33 @@ export const ProjectLesson = z.object({
   /** 在哪个对话里记的 */
   taskId: z.string().default(''),
   createdAt: z.string().default(''),
+  /** 最后一次被改写的时间：用户的新要求和它冲突、Agent 找到两全的做法时会改写它 */
+  updatedAt: z.string().default(''),
+  /** 改写前的版本（新的在前，最多留几条）：用户能看到它为什么变了，改坏了也能照着改回去 */
+  history: z.array(LessonRevision).max(5).catch([]).default([]),
 })
 export type ProjectLesson = z.infer<typeof ProjectLesson>
+
+/**
+ * 全局教训：从各个项目的教训里提取出来、换个项目也适用的规则，所有项目的对话都会带上。
+ * 只能由用户确认后修改（Agent 没有写它的工具），优先级低于项目教训和用户这次的要求。
+ * 存在数据目录的 config/global-lessons.json
+ */
+export const GlobalLesson = z.object({
+  id: z.string().min(1),
+  title: z.string().trim().min(1, t('规则不能为空')).max(120),
+  rule: z.string().trim().max(1500).default(''),
+  cause: z.string().trim().max(500).default(''),
+  /** 一般不写：不同项目的目录不一样；写了就按相对项目根的 glob 匹配 */
+  paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  enabled: z.boolean().default(true),
+  /** 从哪些项目提取的（项目名，只用来显示） */
+  from: z.array(z.string().max(60)).max(20).default([]),
+  createdAt: z.string().default(''),
+  updatedAt: z.string().default(''),
+})
+export type GlobalLesson = z.infer<typeof GlobalLesson>
+export const GlobalLessons = z.array(GlobalLesson).max(100)
 
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
 function migrateProject(input: unknown) {

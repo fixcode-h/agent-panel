@@ -26,6 +26,7 @@ import type {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  GlobalLesson,
   ProjectLesson,
   Settings,
   NewTaskInput,
@@ -303,6 +304,10 @@ export const api = {
   /** 记一条项目教训（同名的会更新），返回更新后的项目 */
   addProjectLesson: (id: string, lesson: Partial<ProjectLesson> & { title: string }) =>
     request<Project>(`/projects/${id}/lessons`, json('POST', lesson)),
+  globalLessons: () => request<GlobalLesson[]>('/global-lessons'),
+  /** 全局教训只在用户确认后整份保存，confirmed 由确认按钮带上 */
+  saveGlobalLessons: (lessons: GlobalLesson[]) =>
+    request<GlobalLesson[]>('/global-lessons', json('PUT', { lessons, confirmed: true })),
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
   orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),

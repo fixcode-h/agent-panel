@@ -27,6 +27,7 @@ import {
   type NodeStep,
   type NodeTier,
   type ParamValues,
+  type GlobalLesson,
   type ProjectLesson,
   type RunMessage,
   type RunStateEntry,
@@ -420,6 +421,8 @@ export interface EngineHost {
   /** 项目教训：按要改的文件查，Agent 被纠正后自己记一条（只有项目里的对话和节点有） */
   lessons?: {
     list: () => Promise<ProjectLesson[]>
+    /** 全局教训：只读，Agent 改不了 */
+    globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
   }
 }
@@ -430,6 +433,10 @@ export interface LessonInput {
   rule: string
   cause: string
   paths: string[]
+  /** 改写已有的那条（用户的新要求和它冲突、找到两全的做法时）：那条的 id */
+  replaces?: string
+  /** 为什么改写 */
+  why?: string
 }
 
 const MAX_DEPTH = 6
@@ -2288,7 +2295,8 @@ function makeOrchestra(
     writeState: (key, value) => writeRunState(host, self.id, key, value),
     lessons: host.lessons
       ? {
-          find: async (files) => findLessons(await host.lessons!.list(), files),
+          find: async (files) =>
+            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? []),
           record: (input) => host.lessons!.record(input),
         }
       : undefined,

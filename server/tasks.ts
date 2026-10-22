@@ -18,7 +18,7 @@ import {
   RequestAnswer,
   defaultAgent,
 } from '../shared/schema.ts'
-import type { LessonDraft } from './lessons.ts'
+import { readGlobalLessons, type LessonDraft } from './lessons.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -1001,6 +1001,7 @@ export function tasksApi(deps: {
         lessons: task.projectId
           ? {
               list: async () => (await deps.projects.get(task.projectId))?.lessons ?? [],
+              globals: readGlobalLessons,
               record: async (input) =>
                 deps.recordLesson
                   ? deps.recordLesson(task.projectId, { ...input, source: 'agent', taskId: task.id })

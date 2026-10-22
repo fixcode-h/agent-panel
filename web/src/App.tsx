@@ -106,18 +106,40 @@ function Shortcuts() {
   return <CommandPalette open={open} onOpenChange={setOpen} />
 }
 
-function ProjectDialog({ open, id, onOpenChange }: { open: boolean; id?: string; onOpenChange: (o: boolean) => void }) {
+function ProjectDialog({
+  open,
+  id,
+  section,
+  item,
+  onOpenChange,
+}: {
+  open: boolean
+  id?: string
+  section?: string
+  item?: string
+  onOpenChange: (o: boolean) => void
+}) {
   const { projects } = useData()
   const project = id ? projects.find((p) => p.id === id) : undefined
   // 要打开的项目已经不在了（例如刚被删掉），就不显示
-  return <ProjectSettingsDialog open={open && (!id || !!project)} project={project} onOpenChange={onOpenChange} />
+  return (
+    <ProjectSettingsDialog
+      open={open && (!id || !!project)}
+      project={project}
+      section={section}
+      item={item}
+      onOpenChange={onOpenChange}
+    />
+  )
 }
 
 export function App() {
   const [route, setRoute] = useHashRoute()
   const [settings, setSettings] = useState<{ open: boolean; section?: string; loaded?: boolean }>({ open: false })
   const fix = useAiFix()
-  const [project, setProject] = useState<{ open: boolean; id?: string }>({ open: false })
+  const [project, setProject] = useState<{ open: boolean; id?: string; section?: string; item?: string }>({
+    open: false,
+  })
   const [dark, toggleTheme] = useTheme()
   // 托盘右键「设置」：切到这个页面后打开设置
   usePageSignals((view) => view === 'settings' && setSettings({ open: true, loaded: true }))
@@ -129,7 +151,7 @@ export function App() {
           route,
           go: setRoute,
           openSettings: (section) => setSettings({ open: true, section, loaded: true }),
-          openProject: (id) => setProject({ open: true, id }),
+          openProject: (id, section, item) => setProject({ open: true, id, section, item }),
         }}
       >
         <div className="flex min-h-full flex-col md:h-full">

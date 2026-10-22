@@ -866,8 +866,6 @@ export const EN_SETTINGS: Record<string, string> = {
   记下: 'Save',
   '{n} 条': '{n}',
   项目教训: 'Project lessons',
-  '角色在这个项目里返工过的地方，写成下次能直接照做的规则。新会话开头只带「所有改动」的全文和其余条目的标题，角色改到哪些文件再取对应的全文，条目多了也不占满上下文。被纠正时角色会自己记一条，标「角色记录」，有空看一下写得对不对。':
-    "Places where roles had to redo work in this project, written as rules to follow next time. A new session only gets the full text of “All changes” lessons plus the titles of the rest; roles fetch the full text for the files they edit, so many lessons don't fill the context. When corrected, a role records one itself, marked “Recorded by role” — review them when you can.",
   '记成项目教训：以后这个项目里的角色都会照着做':
     'Save as project lesson: roles in this project will follow it from now on',
   规则不能为空: 'Rule cannot be empty',
@@ -891,4 +889,60 @@ export const EN_SETTINGS: Record<string, string> = {
   扩展包: 'Packages',
   '包里可以有扩展、Skill、提示词模板和主题，装在 {file} 里。扩展会在本机执行代码，只装信得过的来源':
     'Packages can bundle extensions, Skills, prompt templates and themes, and are recorded in {file}. Extensions run code on this machine, so only install sources you trust',
+  // 项目教训、全局教训
+  '已选 {n} 条，可以继续对话让它改': '{n} selected. Keep chatting to have it revise them',
+  把这个项目里换个项目也适用的教训提取出来:
+    'Extract the lessons from this project that would apply to other projects too',
+  '只看角色自己记的那些，挑出通用的': 'Only look at the ones roles recorded themselves and pick the general ones',
+  '没有适合提取成全局教训的条目，原因见左边的说明。':
+    'Nothing here is a good fit for a global lesson. See the explanation on the left.',
+  '全局教训会带进所有项目的对话。勾选要采用的，确认后才会写进去。':
+    'Global lessons go into conversations in every project. Tick the ones to adopt; nothing is written until you confirm.',
+  改写: 'Rewrite',
+  新加: 'New',
+  '起因：{text}': 'Cause: {text}',
+  '原来：{text}': 'Before: {text}',
+  提取全局教训: 'Extract global lessons',
+  '从这个项目的教训里挑出换个项目也适用的，合进全局教训；逐条确认后才写入':
+    'Picks lessons from this project that apply elsewhere and merges them into the global lessons; each one is written only after you confirm it',
+  '直接让它提取，或者说说你的要求。': 'Let it extract right away, or describe what you want.',
+  '补充要求，例如「只看角色自己记的」': 'Add a requirement, e.g. "only the ones roles recorded"',
+  提取出的全局教训会显示在这里: 'Extracted global lessons will appear here',
+  确认写入全局教训: 'Write to global lessons',
+  '让本机 Agent 从已保存的项目教训里挑出换个项目也适用的，逐条确认后写进全局教训':
+    'Have a local agent pick saved project lessons that apply to other projects too, and write them to the global lessons after you confirm each one',
+  '你的新要求和它冲突时，角色找了两全的做法改写过它；展开看改写记录':
+    'A role rewrote this when one of your requests conflicted with it and it found a way to satisfy both. Expand to see the history',
+  已改写: 'Rewritten',
+  改写记录: 'Rewrite history',
+  手动恢复成之前的版本: 'Manually restored an earlier version',
+  '为什么改：{text}': 'Why: {text}',
+  '已写入 {n} 条全局教训': 'Wrote {n} global lessons',
+  '一般不写：每个项目的目录不一样。写了就按相对项目根的路径匹配。':
+    'Usually left empty since every project has a different layout. If set, paths are matched relative to the project root.',
+  '项目教训 · {n}': 'Project lessons · {n}',
+  '还没有教训。角色被纠正、或发现自己走了弯路换了做法时，会自己记一条，下次就不再犯。':
+    "No lessons yet. When a role is corrected, or notices its approach was wrong and switches to one that works, it records a lesson so it doesn't happen again.",
+  全局教训已保存: 'Global lessons saved',
+  '全局教训会带进所有项目的对话，优先级低于项目教训和你当次的要求。角色改不了它：在项目设置的「教训」里用「提取全局教训」从项目教训里挑出通用的，或者在这里手动加；所有修改都要你确认后才保存。':
+    'Global lessons go into conversations in every project, with lower priority than project lessons and what you ask in the moment. Roles can\'t change them: use "Extract global lessons" under Lessons in project settings to pick general ones from project lessons, or add them here by hand. Every change is saved only after you confirm it.',
+  '还没有全局教训。项目教训攒了一些以后，到项目设置的「教训」里点「提取全局教训」。':
+    'No global lessons yet. Once a project has collected some lessons, click "Extract global lessons" under Lessons in its settings.',
+  '来自 {names}': 'From {names}',
+  手动添加: 'Added manually',
+  '有未保存的修改，确认后才会生效': 'Unsaved changes. They take effect after you confirm',
+  '保存…': 'Save…',
+  '修改全局教训？': 'Change global lessons?',
+  确认修改: 'Confirm changes',
+  '全局教训会带进所有项目的对话。这次的修改：': 'Global lessons go into conversations in every project. Changes:',
+  '新加 {n} 条': 'Add {n}',
+  '改了「{title}」': 'Edit "{title}"',
+  '删掉「{title}」': 'Delete "{title}"',
+  '角色在这个项目里返工过、走过弯路的地方，写成下次能直接照做的规则。被纠正、或自己发现办法不对换了做法时，角色会自己记一条，标「角色记录」；你的新要求和某条冲突时，角色会找两全的做法改写它，找不到就先问你。新会话开头只带「所有改动」的全文和其余条目的标题，改到哪些文件再取对应的全文。优先级：你当次的要求 > 项目教训 > 全局教训。':
+    'Places where roles had to redo work or took a detour in this project, written as rules to follow next time. When a role is corrected, or notices its approach was wrong and switches, it records one and marks it "Recorded by role". When a new request of yours conflicts with a lesson, the role looks for a way to satisfy both and rewrites it; if there isn\'t one, it asks you first. New sessions get the full text of "All changes" lessons and the titles of the rest, and fetch the full text for the files they touch. Priority: what you ask now > project lessons > global lessons.',
+  改写教训: 'Rewrite lesson',
+  记下教训: 'Record lesson',
+  查看项目教训: 'Check project lessons',
+  全局教训: 'Global lessons',
+  修改全局教训需要你确认: 'Changing global lessons needs your confirmation',
 }

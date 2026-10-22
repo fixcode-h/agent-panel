@@ -19,6 +19,8 @@ import {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  GlobalLesson,
+  GlobalLessons,
   ProjectLesson,
   Workflow,
   WorkflowInput,
@@ -105,7 +107,24 @@ interface Db {
   settings?: Settings
   /** 在线演示里模拟安装 / 卸载后的 CLI 状态 */
   installed?: Record<string, boolean>
+  /** 全局教训；旧版本的演示数据没有这一项 */
+  globalLessons?: GlobalLesson[]
 }
+
+/** 演示里的全局教训：一条从别的项目提取来的 */
+const DEMO_GLOBAL_LESSONS: GlobalLesson[] = [
+  {
+    id: 'demo-global-1',
+    title: '改了提示词或界面文案，先搜测试里有没有断言原句',
+    rule: '提交前在测试目录里搜一下改动前的原句，断言了的一起改；改完跑一遍相关测试。',
+    cause: '几次改了提示词，测试还在断言旧写法，提交后才发现。',
+    paths: [],
+    enabled: true,
+    from: ['运营后台'],
+    createdAt: '2026-09-15T10:00:00.000Z',
+    updatedAt: '',
+  },
+]
 
 class HttpError extends Error {}
 const fail = (msg: string): never => {
@@ -522,17 +541,28 @@ function seed(): Db {
               source: 'user',
               taskId: '',
               createdAt: '2026-09-05T10:00:00.000Z',
+              updatedAt: '',
+              history: [],
             },
             {
               id: 'demo-lesson-2',
               title: '新增支付方式写进 payment/providers 的配置，不在下单流程里按名字判断',
-              rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。',
+              rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期、是否显示优惠角标）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。活动期间的临时规则也写进配置的 promo 字段，带上结束时间。',
               cause: '加微信支付时分期开关写死在下单流程里，后来接 PayPal 又改了一遍。',
               paths: ['src/payment/**', 'src/pages/checkout/**'],
               enabled: true,
               source: 'agent',
               taskId: '',
               createdAt: '2026-09-12T15:30:00.000Z',
+              updatedAt: '2026-09-20T09:10:00.000Z',
+              history: [
+                {
+                  title: '新增支付方式写进 payment/providers 的配置，不在下单流程里按名字判断',
+                  rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。',
+                  why: '用户要求双十一期间只给支付宝显示「立减」角标，和「不按名字判断」冲突；两全的做法是把活动规则写进配置的 promo 字段。',
+                  at: '2026-09-20T09:10:00.000Z',
+                },
+              ],
             },
             {
               id: 'demo-lesson-3',
@@ -544,6 +574,21 @@ function seed(): Db {
               source: 'agent',
               taskId: '',
               createdAt: '2026-09-18T11:20:00.000Z',
+              updatedAt: '',
+              history: [],
+            },
+            {
+              id: 'demo-lesson-4',
+              title: '要等一段时间再做的事交给面板的后台命令，不用会立刻退出的定时脚本',
+              rule: '定时、轮询、等构建这类要等的事，用 run_background 起一个真正持续运行的命令，或在到点后由面板唤醒；node -e "setTimeout(...)" 这类写法在后台会被判定为立刻结束。',
+              cause: '设一小时倒计时，脚本 0 秒就被判定完成，换成面板的长驻任务才对。',
+              paths: [],
+              enabled: true,
+              source: 'agent',
+              taskId: '',
+              createdAt: '2026-09-22T08:45:00.000Z',
+              updatedAt: '',
+              history: [],
             },
           ],
         },
@@ -597,6 +642,7 @@ function load(): Db {
   db.categories = db.categories.map((c) => Category.parse(c))
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
+  db.globalLessons ??= DEMO_GLOBAL_LESSONS
   // 以前自带的默认 Agent 已经去掉（不用角色就是直接用 CLI），旧的演示数据里还有时删掉
   db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
@@ -1254,6 +1300,12 @@ function route(method: string, url: string, body: unknown): unknown {
         subject: input.subject,
         defaultCli: defaultCli(settings),
         target,
+        ...(input.kind === 'lessons'
+          ? (() => {
+              const p = d.projects.find((x) => x.id === input.projectId)
+              return { projectName: p?.name, projectLessons: p?.lessons ?? [], globalLessons: d.globalLessons ?? [] }
+            })()
+          : {}),
       })
     }
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
@@ -1412,6 +1464,14 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
   }
 
+  if (res === 'global-lessons') {
+    if (method === 'GET') return d.globalLessons ?? []
+    const b = (body ?? {}) as { lessons?: unknown; confirmed?: unknown }
+    if (b.confirmed !== true) fail('修改全局教训需要你确认')
+    d.globalLessons = parse(GlobalLessons, b.lessons)
+    persist()
+    return d.globalLessons
+  }
   if (res === 'projects' && id && sub === 'lessons' && method === 'POST') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     const b = (body ?? {}) as Partial<ProjectLesson>

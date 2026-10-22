@@ -59,6 +59,7 @@ import { log } from '../log.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { orchHint } from '../orch-mcp.ts'
 import { lessonsPrompt } from '../../shared/lessons.ts'
+import { readGlobalLessons } from '../lessons.ts'
 import { hasViewer, isWatched, seenWhileWatched } from '../presence.ts'
 
 /** 这一轮完成：页面正开着就算已经看过，没开着才留橙点等用户回来看 */
@@ -669,7 +670,7 @@ async function runAgent(
   if (orch && !resume) input = `${input}\n\n${orchHint(orch)}`
   // 项目教训：新会话开头带一次（全局条目全文 + 其余标题），按文件的全文由 Agent 用 project_lessons 自己取
   if (!resume && !op && task.projectId) {
-    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons)
+    const lessons = lessonsPrompt(project.lessons ?? [], !!orch?.lessons, await readGlobalLessons())
     if (lessons) input = `${input}\n\n${lessons}`
   }
   if (instructions && !def.systemPromptFlag && !resume) {

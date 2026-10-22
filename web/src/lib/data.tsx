@@ -345,7 +345,7 @@ export const NavCtx = createContext<{
   go: (r: Route) => void
   /** 打开设置；section 指定打开哪一栏 */
   openSettings: (section?: string) => void
-  /** 打开项目设置弹窗；不传 id 是新建项目 */
-  openProject: (id?: string) => void
+  /** 打开项目设置弹窗；不传 id 是新建项目。section 指定打开哪一栏，item 是那一栏里要展开的条目（例如教训 id） */
+  openProject: (id?: string, section?: string, item?: string) => void
 }>({ route: { page: 'home' }, go: () => {}, openSettings: () => {}, openProject: () => {} })
 export const useNav = () => useContext(NavCtx)

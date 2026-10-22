@@ -20,6 +20,7 @@ import {
 } from './flow.ts'
 import { AGENT_ICON_IDS } from './icons.ts'
 import { McpServer } from './library.ts'
+import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,
   START,
@@ -29,7 +30,9 @@ import {
   type Category,
   type Flow,
   type FlowRef,
+  type GlobalLesson,
   type ParamValues,
+  type ProjectLesson,
   type TaskMessage,
   type TestStep,
   type Workflow,
@@ -38,7 +41,7 @@ import {
 import type { DerivedParam } from './agent-params.ts'
 import { includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 
-export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps'])
+export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps', 'lessons'])
 export type AssistKind = z.infer<typeof AssistKind>
 
 export const AssistMessage = z.object({
@@ -188,7 +191,13 @@ export type TestStepsProposal = {
   kind: 'teststeps'
   steps: TestStep[]
 }
+/** 从项目教训里提取的全局教训改动：用户在界面上逐条勾选确认后才写进去 */
+export type LessonsProposal = {
+  kind: 'lessons'
+  changes: GlobalLessonChange[]
+}
 export type Proposal =
+  | LessonsProposal
   | AgentProposal
   | WorkflowProposal
   | SkillProposal
@@ -239,6 +248,9 @@ export interface AssistContext {
   paramAgentId?: string
   /** teststeps 校验和展示用的系统 */
   platform?: string
+  /** lessons：这个项目的教训和现有的全局教训 */
+  projectLessons?: ProjectLesson[]
+  globalLessons?: GlobalLesson[]
 }
 
 const KIND_NAME = {
@@ -248,6 +260,7 @@ const KIND_NAME = {
   mcp: 'MCP 工具',
   params: '参数配置',
   teststeps: '测试步骤',
+  lessons: '全局教训',
 }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
@@ -391,6 +404,7 @@ export function buildAssistPrompt(
   if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
   if (kind === 'params') return buildParamsPrompt(ctx, messages)
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
+  if (kind === 'lessons') return buildLessonsPrompt(ctx, messages)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -676,6 +690,80 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
     .join('\n\n')
 }
 
+/** lessons 的提示词：从一个项目的教训里挑出换个项目也适用的，合并进现有的全局教训 */
+function buildLessonsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
+  const convo = messages
+    .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
+    .join('\n\n')
+  const line = (l: ProjectLesson | GlobalLesson) =>
+    [
+      `- [${l.id}] ${l.title}${l.enabled ? '' : '（已停用）'}`,
+      l.rule ? `  说明：${l.rule.replace(/\n+/g, ' ')}` : '',
+      l.cause ? `  起因：${l.cause.replace(/\n+/g, ' ')}` : '',
+      l.paths.length ? `  范围：${l.paths.join('、')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  const own = ctx.projectLessons ?? []
+  const globals = ctx.globalLessons ?? []
+  return [
+    `你是「Agent 面板」里的配置助手，正在帮用户从项目「${ctx.projectName || '未命名'}」的教训里**提取全局教训**。`,
+    '项目教训是 Agent 在这个项目里返工过、被纠正过的地方写成的规则。全局教训所有项目的对话都会带上，优先级低于项目教训和用户当次的要求，只有用户确认后才能修改。',
+    `## 这个项目的教训（${own.length} 条）\n${own.map(line).join('\n') || '（没有）'}`,
+    `## 现有的全局教训（${globals.length} 条）\n${globals.map(line).join('\n') || '（还没有）'}`,
+    `## 提取规则
+- 只提取换一个项目、换一种技术栈也成立的做法（例如「等待、计时用面板的后台任务，不用会立刻退出的脚本」「改了提示词先搜测试里有没有断言原句」）。只对这个项目的目录、字段、命令、业务成立的不要提。
+- 提取时改写成通用的说法：去掉这个项目的文件名、字段名，具体事件只留在 cause 里一句话带过。
+- 和现有全局教训说的是同一件事时，用 update 改写那一条（id 写它的 id），把两边的要点合在一起；不要新加重复的。
+- 现有全局教训和这个项目的教训冲突时，不要改全局教训去迁就一个项目；这种情况在说明里讲出来，让用户决定。
+- paths 一般留空：不同项目的目录不一样。
+- 宁缺毋滥：没有适合的就输出空的 changes，在说明里讲为什么。`,
+    `## 输出格式
+先用两三句中文说明挑了哪些、为什么，以及哪些看起来通用但没提（原因）。
+然后输出且只输出一个 \`\`\`json 代码块：
+\`\`\`json
+{ "changes": [ { "op": "add", "id": "", "title": "一句话的规则", "rule": "展开说明", "cause": "从什么情况总结的", "paths": [], "sources": ["项目教训的 id"] } ] }
+\`\`\`
+op 只能是 add 或 update；update 的 id 必须是现有全局教训的 id；sources 写它来自这个项目的哪几条教训（id）。`,
+    `## 对话\n${convo}`,
+    '请回复用户最后一条消息。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+const LESSON_CHANGE = z.object({
+  op: z.enum(['add', 'update']),
+  id: z.string().trim().max(60).default(''),
+  title: z.string().trim().min(1, 'title 不能为空').max(120),
+  rule: z.string().trim().max(1500).default(''),
+  cause: z.string().trim().max(500).default(''),
+  paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  sources: z.array(z.string().trim()).max(50).default([]),
+})
+
+/** 校验 AI 给出的全局教训改动：update 要指向现有的那条，同一条不能改两次 */
+export function resolveLessonChanges(
+  json: unknown,
+  globals: GlobalLesson[],
+): { changes?: GlobalLessonChange[]; error?: string } {
+  const obj = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  const raw = Array.isArray(obj) ? obj : obj?.changes
+  const arr = z
+    .array(LESSON_CHANGE)
+    .max(30)
+    .safeParse(raw ?? [])
+  if (!arr.success) return { error: z.prettifyError(arr.error) }
+  const seen = new Set<string>()
+  for (const c of arr.data) {
+    if (c.op !== 'update') continue
+    if (!globals.some((g) => g.id === c.id)) return { error: `update 的 id「${c.id}」不是现有全局教训的 id` }
+    if (seen.has(c.id)) return { error: `全局教训「${c.id}」被改了两次，合成一条 update` }
+    seen.add(c.id)
+  }
+  return { changes: arr.data.map((c) => (c.op === 'add' ? { ...c, id: '' } : c)) }
+}
+
 /** params 这个 Agent 分组会用到的参数；指定了 paramAgentId 时只留那个 Agent 的 */
 function paramSpecFor(ctx: AssistContext) {
   const all = ctx.paramSpec ?? []
@@ -841,6 +929,10 @@ export function resolveProposal(
     const r = resolveParamValues(json, paramSpecFor(ctx))
     if (r.error) return { error: r.error }
     return { proposal: { kind: 'params', workflowId: ctx.target?.id ?? '', values: r.values! } }
+  }
+  if (kind === 'lessons') {
+    const r = resolveLessonChanges(json, ctx.globalLessons ?? [])
+    return r.error ? { error: r.error } : { proposal: { kind: 'lessons', changes: r.changes! } }
   }
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)
@@ -1052,7 +1144,7 @@ export async function applyProposal(
     return c.id
   }
   // Skill、MCP 工具由各自的页面应用；参数和测试步骤只填进项目设置的表单草稿
-  if (p.kind === 'skill' || p.kind === 'mcp' || p.kind === 'params' || p.kind === 'teststeps')
+  if (p.kind === 'skill' || p.kind === 'mcp' || p.kind === 'params' || p.kind === 'teststeps' || p.kind === 'lessons')
     return { created: [], categories: [] }
   if (p.kind === 'agent')
     return {

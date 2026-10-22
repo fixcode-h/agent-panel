@@ -25,6 +25,7 @@ import { childEnv } from './exec/process.ts'
 import { getSettings } from './settings.ts'
 import { resolvePath } from './fs.ts'
 import { t } from '../shared/i18n.ts'
+import { readGlobalLessons } from './lessons.ts'
 
 type Lister<T> = { list(): Promise<T[]>; get(id: string): Promise<T | null> }
 
@@ -251,8 +252,13 @@ export function assistApi(deps: {
       const workflows = await deps.workflows.list()
       // params / teststeps：只读分析一个项目。targetId 是要配的工作流，subject.agentId 是只配一个 Agent 分组
       const analyzeProject = input.kind === 'params' || input.kind === 'teststeps'
-      const project = analyzeProject && input.projectId ? await deps.projects.get(input.projectId) : null
-      if (analyzeProject && input.projectId && !project) return bad(c, t('项目不存在'), 404)
+      // lessons：只看项目的教训，不进项目目录
+      const project =
+        (analyzeProject || input.kind === 'lessons') && input.projectId
+          ? await deps.projects.get(input.projectId)
+          : null
+      if ((analyzeProject || input.kind === 'lessons') && input.projectId && !project)
+        return bad(c, t('项目不存在'), 404)
       const wf = input.kind === 'params' && input.targetId ? workflows.find((w) => w.id === input.targetId) : undefined
       const ctx: AssistContext = {
         agents,
@@ -267,7 +273,10 @@ export function assistApi(deps: {
         subject: input.subject,
         target: target ?? undefined,
         defaultCli: defaultCli(settings),
-        ...(project ? { projectPath: project.path, projectName: project.name } : {}),
+        ...(project && analyzeProject ? { projectPath: project.path, projectName: project.name } : {}),
+        ...(project && input.kind === 'lessons'
+          ? { projectName: project.name, projectLessons: project.lessons, globalLessons: await readGlobalLessons() }
+          : {}),
         ...(wf ? { paramSpec: derivedParams(wf, agents), target: wf } : {}),
         ...(input.subject.agentId ? { paramAgentId: input.subject.agentId } : {}),
         platform: process.platform,

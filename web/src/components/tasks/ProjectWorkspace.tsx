@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ContextMenu, ContextMenuContent, ContextMenuTrigger } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
+import { ProjectLessonsCard } from '@/components/projects/Lessons'
 import { TaskComposer } from './TaskComposer'
 import { projectDefaultWorkflow } from '@shared/project-workflow'
 import { TaskControlButton } from './TaskControl'
@@ -155,6 +156,8 @@ function ProjectHome({ project }: { project: Project }) {
                 </section>
               ))
             )}
+
+            <ProjectLessonsCard project={project} />
           </div>
         </div>
         {/* 输入框贴在底部不跟着列表滚；窄屏整页滚动时用 sticky 留在底部。和输入内容相近的对话列在输入框上方 */}

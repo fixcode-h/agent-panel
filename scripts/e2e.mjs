@@ -1447,6 +1447,14 @@ try {
     const { lessons: _lessons, ...withoutLessons } = projectInput
     const kept = await call('PUT', `/projects/${project.id}`, withoutLessons)
     assert.equal(kept.lessons.length, 2)
+    // 全局教训：没确认不能写；写进去后新会话的提示里排在项目教训后面
+    const unconfirmed = await call('PUT', '/global-lessons', { lessons: [] }).catch((e) => e)
+    assert.ok(unconfirmed instanceof Error, '没确认不能改全局教训')
+    await call('PUT', '/global-lessons', {
+      confirmed: true,
+      lessons: [{ id: 'g-e2e', title: '等待用后台命令', rule: '不用会立刻退出的定时脚本' }],
+    })
+    assert.equal((await call('GET', '/global-lessons')).length, 1)
     const learned = await waitDone(
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '看看教训' })).id,
       20000,
@@ -1456,6 +1464,12 @@ try {
     assert.ok(lessonLog.includes('格式化统一走 src/utils/money.ts'), '所有改动都适用的给全文')
     assert.ok(lessonLog.includes('支付方式写进配置'), '按文件的列标题')
     assert.ok(!lessonLog.includes('下单流程只读配置字段'), '按文件的全文不放进提示，按需用工具取')
+    assert.ok(lessonLog.includes('不用会立刻退出的定时脚本'), '全局教训也带上')
+    assert.ok(
+      lessonLog.indexOf('格式化统一走') < lessonLog.indexOf('不用会立刻退出的定时脚本'),
+      '全局教训排在项目教训后面',
+    )
+    await call('PUT', '/global-lessons', { confirmed: true, lessons: [] })
     await call('DELETE', `/tasks/${learned.id}`)
     await call('PUT', `/projects/${project.id}`, { ...projectInput, lessons: [] })
     step('项目教训：接口记录和同名更新，新会话的提示只带全局条目全文和其余标题')

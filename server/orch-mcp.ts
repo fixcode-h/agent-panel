@@ -239,7 +239,7 @@ export function orchTools(o: Orchestra) {
           {
             name: 'record_lesson',
             description:
-              '记一条项目教训，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就不要重复记。',
+              '记一条项目教训，或改写已有的一条，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、你发现自己的办法不对换了做法才成、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就带 id 改写那一条。用户的新要求和某条教训冲突且找到两全的做法时，也带 id 改写并在 change 里说明。全局教训只有用户能改。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -254,6 +254,15 @@ export function orchTools(o: Orchestra) {
                   type: 'array',
                   items: { type: 'string' },
                   description: '它管哪些文件（相对项目根的 glob，** 跨目录，目录名也行）；所有改动都适用时不写',
+                },
+                id: {
+                  type: 'string',
+                  description:
+                    '改写已有的那条时填它的 id（project_lessons 或提示里列出的）：用户的新要求和它冲突、你找到两全的做法时用；新记一条不填',
+                },
+                change: {
+                  type: 'string',
+                  description: '改写时必填：用户的哪条新要求和原来的规则冲突、两全的做法是什么',
                 },
               },
               required: ['title', 'rule'],
@@ -372,7 +381,16 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const title = str(a?.title).trim()
       if (!title) return text('title 不能为空：写一句该怎么做的规则', true)
       const paths = Array.isArray(a?.paths) ? a.paths.map(String).filter((p: string) => p.trim()) : []
-      const r = await o.lessons.record({ title, rule: str(a?.rule).trim(), cause: str(a?.cause).trim(), paths })
+      const replaces = str(a?.id).trim()
+      const why = str(a?.change).trim()
+      if (replaces && !why) return text('改写已有的教训时要写 change：用户的哪条新要求和它冲突、两全的做法是什么', true)
+      const r = await o.lessons.record({
+        title,
+        rule: str(a?.rule).trim(),
+        cause: str(a?.cause).trim(),
+        paths,
+        ...(replaces ? { replaces, why } : {}),
+      })
       return text(r.info, !r.ok)
     }
     case 'write_state': {
