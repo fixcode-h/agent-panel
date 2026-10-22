@@ -13,7 +13,7 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 ## 面板写回 CLI 自己的配置时，写全 CLI 判断能力要的字段
 
 - 规则：写 models.json / providers.json 这类文件，按模型目录原样写强度、上下文、是否支持思考，不按面板的档位过滤；写完用 CLI 自己的列表命令或界面核对能选几档。
-- 起因：Pi 的 models.json 没写 `reasoning: true`，下拉只剩一档（deacb24）；Command Code 写回 `reasoningEfforts` 时被档位过滤掉了几档（bc33580）。
+- 起因：Pi 的 models.json 没写 `reasoning: true`，下拉只剩一档（deacb24）；Command Code 写回 `reasoningEfforts` 时被档位过滤掉了几档（bc33580）；Pi 只写了 `reasoning` 没写 `thinkingLevelMap`，xhigh 被当成不支持，按模型配的默认强度也没写进 `modelThinkingLevels`（用户指出「一键更新不带思考强度」）。写之前先读 CLI 文档里模型条目和设置的全部字段，别只补报错的那一个。
 - 防线：`server/api-config.test.ts`。
 
 ## 按模型查能力前先解析 API 映射

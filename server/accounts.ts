@@ -576,11 +576,24 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
     // 目录里的强度都是 CLI 认的；空数组表示这个模型不能调思考强度
     return info.entry.efforts
   }
-  const writes: { file: string; at: string; key: string; value: (model: string) => string[] | boolean | undefined }[] =
-    []
+  const writes: { file: string; at: string; key: string; value: (model: string) => unknown }[] = []
   if (spec) writes.push({ ...spec, value: effortsOf })
   // Pi 的 reasoning 只表示这个模型支不支持思考：目录里有强度就是支持
   if (reasoning) writes.push({ ...reasoning, value: (model) => (effortsOf(model)?.length ? true : undefined) })
+  // 每档强度的取值表：CLI 的每一档（关闭除外）模型支持就发同名值，不支持写 null，CLI 才不会把 xhigh / max 当成不支持
+  if (reasoning?.levelsKey) {
+    const levels = def.efforts.map((e) => e.id).filter((id) => id !== 'off')
+    writes.push({
+      file: reasoning.file,
+      at: reasoning.at,
+      key: reasoning.levelsKey,
+      value: (model) => {
+        const efforts = effortsOf(model)
+        if (!efforts?.length) return undefined
+        return Object.fromEntries(levels.map((id) => [id, efforts.includes(id) ? id : null]))
+      },
+    })
+  }
   for (const w of writes) {
     const file = expand(fillTemplate(w.file, vars), env)
     const data = await readJsonFile(file)
@@ -589,6 +602,46 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
     await mkdir(path.dirname(file), { recursive: true })
     await writeJsonAtomic(file, data)
   }
+}
+
+/**
+ * 把每个模型的默认思考强度写进 CLI 启动时读的表（Pi settings.json 的 modelThinkingLevels）。
+ * Pi 只在表里有这个模型时才按模型取，否则一律用 defaultThinkingLevel；面板每轮都传 --thinking，
+ * 但在终端里直接用 Pi 时就和设置里配的对不上。API 设置里配过的优先，其次是模型目录的默认值；
+ * 都没有、或这个强度模型不支持的不写。这个 provider 下已经不在 API 里的模型从表里删掉。
+ */
+async function writeModelDefaultEfforts(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+  const spec = def.auth?.api?.modelDefaultEffort
+  if (!spec) return
+  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const file = expand(fillTemplate(spec.file, vars), env)
+  // 文件在但读不出来（例如手写坏了）时不动，免得把用户别的设置覆盖掉
+  const data = (await readJsonFile(file)) ?? (existsSync(file) ? undefined : {})
+  if (!isObj(data)) return
+  const entries = await mergedModelCatalog().catch(() => [])
+  const prefix = apiModelPrefix(def.auth, api)
+  const keyOf = (model: string) => fillTemplate(spec.key, { ...vars, model })
+  const want: Record<string, string> = {}
+  for (const m of modelsForProtocol(api.models, api.protocol)) {
+    const info = modelLimitsFor(api.modelMap?.[m] || m, { entries, protocol: api.protocol })
+    const effort = api.modelEfforts?.[m] || (info.matched ? info.defaultEffort : '')
+    // 目录认识这个模型时只写它支持的强度；不认识时信用户自己配的
+    if (!effort || (info.matched && !info.entry?.efforts.includes(effort))) continue
+    want[keyOf(nativeModelId(m, prefix))] = effort
+  }
+  // 找到表所在的对象，没有就建
+  let table: Record<string, unknown> = data
+  for (const part of spec.at.split('.')) {
+    if (!isObj(table[part])) table[part] = {}
+    table = table[part] as Record<string, unknown>
+  }
+  const before = JSON.stringify(table)
+  const own = keyOf('')
+  for (const k of Object.keys(table)) if (own && k.startsWith(own) && !(k in want)) delete table[k]
+  Object.assign(table, want)
+  if (JSON.stringify(table) === before) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, data)
 }
 
 /**
@@ -670,6 +723,7 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
       const injection = apiInjection(def.auth, cs.api)
       await applyEdits(injection.edits, env)
       await writeModelEfforts(def, cs.api, injection.provider, env)
+      await writeModelDefaultEfforts(def, cs.api, injection.provider, env)
       await writeModelLimits(def, cs.api, injection.provider, env)
       await pruneApiProviders(def, cs.api, injection.provider, env)
       await pruneApiModels(def, cs.api, injection.provider, env)

@@ -20,7 +20,7 @@
 1. **思考强度**：CLI 支持哪几档写进 `efforts`；强度由模型决定的写 `effortsFromModel`；会话中途不能换的写 `effortBoundSession`；
    `tiers` 三档各配好默认的模型和强度。不要在代码里按 CLI 名字补档位。
 2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
-3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelLimits`，
+3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelDefaultEffort` / `modelLimits`，
    写完用 CLI 自己的列表或界面核对能选几档。
 4. **参数和协议**：`args` 覆盖 model、effort、permission、resume、fork；常驻协议的握手、插话、中断、结束判断都有。
 5. **能力** `features`：压缩、自动压缩、分叉、插话（`steer` 或 `notes`）、「/命令」，按 CLI 实际支持的写，不支持的面板会走兜底做法。
@@ -295,21 +295,23 @@ CLI 有自己的包管理（例如 `pi install`）时，设置的 CLI 页会多�
 设置里给 CLI 选了一个 API 后，面板在**保存设置时**就会按 `auth.api` 的规则写进 CLI 自己的配置（执行前还会再写一次，保证配置没被别的工具改掉）。
 模型下拉只列这个 API 里配的模型，并按当前协议过滤后缀：`-anthropic`、`-responses`、`-chat`/`-completions`、`-gemini` 只显示对应协议的，不带后缀的通用模型所有协议都显示；换协议时同一个模型会自动换到对应后缀。
 
-| 字段              | 说明                                                                                                                             |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `protocols`       | 能接受哪些协议的 API                                                                                                             |
-| `defaultProvider` | API 没有指定 provider 时，写进 CLI 配置的 provider 名，默认 `agentpanel`                                                         |
-| `modelSource`     | `api`（默认）用全局 API 的模型；`cli` 也从 CLI 读取这些模型的上下文和强度，但列表仍只保留 API 里配的模型                         |
-| `modelPrefix`     | 模型 ID 的 provider 前缀模板，例如 `{provider}/`；写进 provider 配置时会把重复的前缀去掉，执行旧的无前缀模型 ID 时会补上         |
-| `env` / `args`    | 只在 CLI 只能通过环境变量/参数接收 API 时用；能写配置文件的优先写 `edits`，执行时不再重复传 API 和密钥                           |
-| `edits`           | 切到 API 时改的配置文件，保存设置时写；`format` 可以是 `json`（默认）、`toml`、`env`；`merge: true` 时对象递归合并，保留已有配置 |
-| `accountEdits`    | 切回账号时还原的配置文件                                                                                                         |
-| `wire`            | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                        |
-| `pruneProviders`  | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                    |
-| `pruneModels`     | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                      |
-| `modelEfforts`    | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动               |
-| `modelReasoning`  | CLI 只认模型条目自己声明的「能不能调思考强度」时（Pi 的 `reasoning` 是布尔），目录里有强度的模型写 `true`，下拉才不止一档        |
-| `modelLimits`     | CLI 只认模型条目自己声明的上下文窗口时，按模型目录写回这个键；`maxOutputKey` 是最大输出写进哪个键，不写表示不接受                |
+| 字段                       | 说明                                                                                                                                                                       |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `protocols`                | 能接受哪些协议的 API                                                                                                                                                       |
+| `defaultProvider`          | API 没有指定 provider 时，写进 CLI 配置的 provider 名，默认 `agentpanel`                                                                                                   |
+| `modelSource`              | `api`（默认）用全局 API 的模型；`cli` 也从 CLI 读取这些模型的上下文和强度，但列表仍只保留 API 里配的模型                                                                   |
+| `modelPrefix`              | 模型 ID 的 provider 前缀模板，例如 `{provider}/`；写进 provider 配置时会把重复的前缀去掉，执行旧的无前缀模型 ID 时会补上                                                   |
+| `env` / `args`             | 只在 CLI 只能通过环境变量/参数接收 API 时用；能写配置文件的优先写 `edits`，执行时不再重复传 API 和密钥                                                                     |
+| `edits`                    | 切到 API 时改的配置文件，保存设置时写；`format` 可以是 `json`（默认）、`toml`、`env`；`merge: true` 时对象递归合并，保留已有配置                                           |
+| `accountEdits`             | 切回账号时还原的配置文件                                                                                                                                                   |
+| `wire`                     | 协议在 CLI 配置里的写法，用 `{wire}` 引用                                                                                                                                  |
+| `pruneProviders`           | API 方式下清掉同一地址和密钥的旧 provider，只留正在用的；不同接口的 provider 不动，不写不处理                                                                              |
+| `pruneModels`              | API 方式下 provider 的 models 只保留 API 里配的模型，旧模型删掉；不写不处理                                                                                                |
+| `modelEfforts`             | CLI 只认模型条目自己声明的强度时（Command Code 的 `reasoningEfforts`），按模型目录写回这个键；目录里没有的模型不动                                                         |
+| `modelReasoning`           | CLI 只认模型条目自己声明的「能不能调思考强度」时（Pi 的 `reasoning` 是布尔），目录里有强度的模型写 `true`，下拉才不止一档                                                  |
+| `modelReasoning.levelsKey` | 每档强度的取值表写进哪个键（Pi 的 `thinkingLevelMap`）：CLI 的每一档（关闭除外）模型支持写同名值、不支持写 `null`；Pi 不写这张表时不认 xhigh / max                         |
+| `modelDefaultEffort`       | CLI 启动时按模型取默认强度的表（Pi `settings.json` 的 `modelThinkingLevels`）：`file`、`at`、`key`（如 `{provider}/{model}`）；写 API 设置里配的默认强度，没配用目录默认值 |
+| `modelLimits`              | CLI 只认模型条目自己声明的上下文窗口时，按模型目录写回这个键；`maxOutputKey` 是最大输出写进哪个键，不写表示不接受                                                          |
 
 已经能写配置文件的 CLI（Codex、Command Code、Pi、Claude Code、Gemini CLI）把 API 地址和密钥都写进各自的配置，执行时的 `env` / `args` 只留模型、思考强度和沙箱等运行参数。
 `{provider}` 来自 API 的 `provider`：识别到的 API 用 CLI 配置里的键（例如 `providers.tokenapi` 的 `tokenapi`），新建的从 API 名称生成。

@@ -665,7 +665,7 @@
       "id": "codemode",
       "label": "codemode 和工具搜索",
       "hint": "让模型写脚本批量调用工具、按需搜索工具；MCP 工具多时省上下文",
-      "default": false
+      "default": true
     }
   ],
   "auth": {
@@ -690,7 +690,13 @@
       "modelReasoning": {
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
         "at": "providers.{provider}.models",
-        "key": "reasoning"
+        "key": "reasoning",
+        "levelsKey": "thinkingLevelMap"
+      },
+      "modelDefaultEffort": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
+        "at": "modelThinkingLevels",
+        "key": "{provider}/{model}"
       },
       "modelLimits": {
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",

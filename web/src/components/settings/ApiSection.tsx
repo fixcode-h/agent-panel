@@ -486,30 +486,31 @@ function ApiCard({
             {modelsForProtocol(a.models, a.protocol).map((m, i) => (
               <div
                 key={m}
-                className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border bg-card px-2.5 py-2"
+                className="flex items-center gap-3 rounded-lg border bg-card px-2.5 py-1.5"
                 title={i === 0 ? t('第一个是默认模型') : undefined}
               >
-                <span className="min-w-0 flex-1 basis-48 truncate font-mono text-[0.78125rem]">
+                {/* 模型名按自己的长度占位，映射模型的下拉填满剩下的；窄的时候两边一起收，模型名至少留几个字 */}
+                <span className="min-w-[6rem] max-w-[45%] shrink truncate font-mono text-[0.78125rem]">
                   {m}
                   {i === 0 && (
                     <span className="ml-1.5 rounded bg-accent-soft px-1 text-[0.625rem] text-accent">{t('默认')}</span>
                   )}
                 </span>
-                <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
+                <label className="flex shrink-0 items-center gap-1.5 text-[0.75rem] text-subtle">
                   {t('默认思考强度')}
                   <Select
                     aria-label={t('{model} 的默认思考强度', { model: m })}
-                    className="h-7 w-28 text-[0.75rem]"
+                    className="h-7 w-24 text-[0.75rem]"
                     value={a.modelEfforts[m] ?? ''}
                     options={effortOptions(m)}
                     onChange={(e) => setEffort(m, e.target.value)}
                   />
                 </label>
-                <label className="flex items-center gap-1.5 text-[0.75rem] text-subtle">
-                  {t('映射模型')}
+                <label className="flex min-w-[9rem] flex-1 items-center gap-1.5 text-[0.75rem] text-subtle">
+                  <span className="shrink-0">{t('映射模型')}</span>
                   <Select
                     aria-label={t('{model} 的映射模型', { model: m })}
-                    className="h-7 w-56 font-mono text-[0.75rem]"
+                    className="h-7 min-w-0 flex-1 font-mono text-[0.75rem]"
                     value={a.modelMap[m] ?? ''}
                     options={mapOptions(m, a.modelMap[m])}
                     onChange={(e) => setMap(m, e.target.value)}

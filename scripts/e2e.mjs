@@ -710,7 +710,11 @@ try {
   c = calls().at(-1)
   assert.equal(c.kind, 'pi')
   assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
-  assert.equal(c.args[c.args.indexOf('--tools') + 1], '+grep,+find,+ls', '全部工具：在 Pi 默认工具上补搜索')
+  assert.equal(
+    c.args[c.args.indexOf('--tools') + 1],
+    '+grep,+find,+ls,+codemode,+tool_search',
+    '全部工具：在 Pi 默认工具上补搜索，codemode 默认开着并进同一个 --tools',
+  )
   assert.ok(!c.args.includes('--exclude-tools'), '全部工具时不去掉任何工具')
   assert.equal(c.args[c.args.indexOf('--name') + 1], pm.title, '对话标题交给 Pi 当会话名')
   assert.match(c.input, /^## 用户这次的消息\n用 Pi\n\n/, '任务描述走 RPC 的 prompt 命令')
