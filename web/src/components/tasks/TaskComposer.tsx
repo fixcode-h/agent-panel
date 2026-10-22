@@ -1,4 +1,4 @@
-import { useCallback, useDeferredValue, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import {
   ArrowUp,
@@ -12,8 +12,8 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import { type Attachment, type ParamValues, type Project, type Task } from '@shared/schema'
-import { dropChip, forSend } from '@shared/composer'
+import { type ParamValues, type Project, type Task } from '@shared/schema'
+import { forSend } from '@shared/composer'
 import { resolveParams } from '@shared/agent-role'
 import { relatedTasks } from '@shared/related'
 import { defaultCli, defaultSettings } from '@shared/settings'
@@ -23,19 +23,10 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
-import {
-  ATTACHMENT_PROMPT,
-  AttachMenu,
-  chipKind,
-  DropHint,
-  useAttachments,
-  useDropPaste,
-  useFileMention,
-  type AttachHooks,
-} from '@/components/chat/Attachments'
+import { ATTACHMENT_PROMPT, AttachMenu, DropHint, useAttachments, useFileMention } from '@/components/chat/Attachments'
+import { useComposerChips } from '@/components/chat/composer-chips'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
-import { RichInput, type ChipActions, type RichInputHandle } from '@/components/chat/RichInput'
-import { Lightbox } from '@/components/ui/lightbox'
+import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
 import { useDraft } from '@/components/chat/ChatComposer'
 import { AskToggle, useNewAskUser } from '@/components/chat/AskToggle'
 import { ParamsChip } from '@/components/agents/ParamFields'
@@ -117,55 +108,8 @@ export function TaskComposer({
   const editor = useRef<RichInputHandle>(null)
   const files = useAttachments(draftKey)
   const mention = useFileMention(project?.id, editor)
-  /** 附件加进来时在光标处放一张卡片；上传失败就把卡片撤掉 */
-  const addFiles = useCallback(
-    (list: File[]) => {
-      void files.add(list, {
-        added: (items) =>
-          items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
-        failed: (name) => setPrompt(dropChip(editor.current?.text() ?? '', name)),
-      })
-    },
-    [files, editor, setPrompt],
-  )
-  const addReady = useCallback(
-    (a: Attachment) => {
-      const hooks: AttachHooks = {
-        added: (items) =>
-          items.forEach((x) => editor.current?.insertChip({ kind: chipKind(x.mime, x.name), name: x.name })),
-      }
-      files.addReady(a, hooks)
-    },
-    [files, editor],
-  )
-  /** 附件从输入框里的卡片删掉：卡片和附件一起去掉 */
-  const removeFile = useCallback(
-    (key: string) => {
-      const item = files.items.find((x) => x.key === key)
-      files.remove(key)
-      if (item) setPrompt(dropChip(editor.current?.text() ?? '', item.name))
-    },
-    [files, editor, setPrompt],
-  )
-  /** 图片卡片直接显示图片本身 */
-  const preview = useCallback((name: string) => files.items.find((x) => x.name === name)?.preview, [files.items])
-  /** 点卡片上的图看大图、点右上角删除 */
-  const lightbox = files.items.flatMap((x) => (x.preview ? [{ src: x.preview, name: x.name }] : []))
-  const [openImage, setOpenImage] = useState<number>()
-  const chipActions = useMemo<ChipActions>(
-    () => ({
-      preview: (name) => {
-        const at = lightbox.findIndex((x) => x.name === name)
-        if (at >= 0) setOpenImage(at)
-      },
-      remove: (name) => {
-        const item = files.items.find((x) => x.name === name)
-        if (item) removeFile(item.key)
-      },
-    }),
-    [lightbox, files.items, removeFile],
-  )
-  const drop = useDropPaste(addFiles)
+  const chips = useComposerChips({ files, editor, text: prompt, change: setPrompt })
+  const { addFiles, addReady, drop } = chips
   // 「/」菜单：对话按选的 CLI 列；工作流的节点都用默认 CLI，按它列，发出去时展开成普通的要求
   const slash = useSlashMenu({
     cli: workflow ? defaultCli(settings ?? defaultSettings()) : chatRun.cli,
@@ -312,14 +256,14 @@ export function TaskComposer({
         {mention.menu}
         {slash.menu}
         {drop.over && <DropHint />}
-        <Lightbox images={lightbox} index={openImage} onClose={() => setOpenImage(undefined)} />
+        {chips.viewer}
         <RichInput
           id="task-prompt"
           handle={editor}
           label={t('任务描述')}
           autoFocus={autoFocus}
           value={prompt}
-          onChange={setPrompt}
+          onChange={chips.onChange}
           onSync={() => {
             mention.sync()
             slash.sync()
@@ -333,9 +277,9 @@ export function TaskComposer({
             }
             return false
           }}
-          onPaste={drop.onPaste}
-          preview={preview}
-          actions={chipActions}
+          onPaste={chips.onPaste}
+          preview={chips.preview}
+          actions={chips.chipActions}
           placeholder={workflow ? t('描述要做的事，Agent 会按工作流分工完成') : t('想问什么，或者让它做什么')}
           pad="px-4 pt-4"
           className="max-h-80 min-h-[84px] text-[0.9375rem] leading-relaxed"

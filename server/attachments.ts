@@ -7,6 +7,7 @@
  * 提示里给的相对路径就是 `attachments/<文件名>`。
  *
  * 超过上限（20M）的不拷，只用原来的路径：大文件拷一份既慢又占空间。
+ * 粘贴路径引用的已有文件（Attachment.ref）也不拷：用户要的就是那个文件本身。
  */
 import { copyFile, mkdir, stat } from 'node:fs/promises'
 import path from 'node:path'
@@ -57,6 +58,11 @@ export async function placeAttachments(dir: string, attachments: Attachment[]): 
     // 已经在任务目录里的（上一轮拷过的、引入会话生成的）不再拷一遍，只把路径换成相对的
     if (full.startsWith(root + path.sep)) {
       out.push({ ...a, path: path.relative(root, full).replace(/\\/g, '/') })
+      continue
+    }
+    // 引用的已有文件（粘贴回来的路径）用原来的路径，不再拷一份；引用卡片的原文直接写进要求里，不用拷
+    if (a.ref || a.quote !== undefined) {
+      out.push(a)
       continue
     }
     const size =

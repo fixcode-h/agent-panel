@@ -65,6 +65,14 @@ test('文字里引用了附件：路径换到原来的位置，没引用的才�
   )
 })
 
+test('引用卡片在原位换成引用块，没写进文字的引用放在最前面，不列进附件', () => {
+  const q = { name: '原文#q1', path: '/uploads/4/quote-q1.md', size: 1, mime: 'text/markdown', quote: '第一行\n第二行' }
+  const r = { name: '别的#q2', path: '/uploads/5/quote-q2.md', size: 1, mime: 'text/markdown', quote: '别的' }
+  assert.equal(withAttachments('看这个 [引用:原文#q1] 再说', [q]), '看这个 \n> 第一行\n> 第二行\n\n 再说')
+  assert.equal(withAttachments('[引用:原文#q1]', [q]), '> 第一行\n> 第二行\n\n')
+  assert.equal(withAttachments('就这样', [r]), '> 别的\n\n就这样')
+})
+
 test('回答的问题和答案一一对应，没回答时没有', () => {
   assert.deepEqual(
     questionAnswers(

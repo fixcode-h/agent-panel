@@ -9,7 +9,7 @@
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts'
 import { includedAgents } from './agent-role.ts'
-import { stepMs, stepUsage } from './task.ts'
+import { stepMs, stepUsage, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
@@ -59,6 +59,8 @@ export interface TaskStats {
   failedTools: number
   /** 追加要求、对话的轮数 */
   turns: number
+  /** 其中没有正常结束的（停在执行中就被打断、服务重启） */
+  turnsUnfinished: number
   nodes: NodeStat[]
 }
 
@@ -136,6 +138,7 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
     errors: task.messages.filter((m) => m.error).length + failedToolsOf(task),
     failedTools: failedToolsOf(task),
     turns: task.turns?.length ?? 0,
+    turnsUnfinished: (task.turns ?? []).filter((x) => x.status !== 'done').length,
     nodes,
   }
 }
@@ -332,6 +335,16 @@ const fmtMs = (ms: number) => {
 }
 const fmtK = (n: number) => (n >= 1000 ? `${(n / 1000).toFixed(1)}k` : String(n))
 const pct = (r: number) => `${Math.round(r * 100)}%`
+/**
+ * 记录里的时间统一用本地时间：表头原来直接切 ISO 串（UTC），正文却用 getHours()，
+ * 同一份记录里能差出几个小时，读的人会以为任务跑了很久。
+ */
+const localTime = (iso: string) => {
+  const d = new Date(iso)
+  if (!iso || !Number.isFinite(d.getTime())) return iso
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`
+}
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
 
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
@@ -341,10 +354,10 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   const agentName = (id: string) => (id ? (b.agents.find((a) => a.id === id)?.name ?? id) : '主 Agent')
   const lines: string[] = [
     `# 执行记录：${tk.title}`,
-    `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${tk.createdAt.slice(0, 16).replace('T', ' ')}`,
+    `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${localTime(tk.createdAt)}`,
     '',
     '## 统计',
-    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}；追加要求/对话 ${st.turns} 轮（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
+    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}；追加要求/对话 ${st.turns} 轮${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
     ...(cacheMismatch(st)
       ? [
@@ -447,7 +460,9 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
             ? '报错'
             : '用户回答'
           : `AI（${agentName(m.agentId)}）`
-    const body = m.answers ? m.answers.map((a) => `${a.question}：${a.answer}`).join('\n') : m.text.trim()
+    const body = m.answers
+      ? m.answers.map((a) => `${a.question}：${a.answer}`).join('\n')
+      : (m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text).trim()
     const stamp = at(m.at ?? '')
     // 和上一条同一秒的合并显示，不重复刷时间；间隔超过 1 分钟单独提示，看出等待在哪
     const gap = m.at && last ? Date.parse(m.at) - Date.parse(last) : 0

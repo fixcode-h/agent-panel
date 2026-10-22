@@ -73,3 +73,16 @@ test('没有执行目录时原样返回，不报错', async () => {
   const [placed] = await placeAttachments('', [make(dir('none'), 'x.txt')])
   assert.ok(placed.path.endsWith('x.txt'))
 })
+
+test('粘贴路径引用的已有文件和引用卡片不拷，用原来的路径', async () => {
+  const from = dir('from')
+  const task = dir('task')
+  const ref = { ...make(from, '引用.txt'), ref: true }
+  const quote = { ...make(from, 'quote-q1.md'), quote: 'hello' }
+  const placed = await placeAttachments(task, [ref, quote])
+  assert.deepEqual(
+    placed.map((a) => a.path),
+    [ref.path, quote.path],
+  )
+  assert.ok(!existsSync(path.join(task, ATTACH_DIR, '引用.txt')))
+})

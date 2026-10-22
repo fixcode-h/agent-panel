@@ -14,29 +14,29 @@ import {
 } from './schema.ts'
 import { currentRun, inRun, planTask } from './flow.ts'
 import { getLang, t } from './i18n.ts'
+import { attachChip, chipMarker, quoteBlock } from './composer.ts'
 
 export function taskTitle(prompt: string) {
   // 标题里不放附件引用，用户写的第一句话才是标题；只发了附件时仍用原文
   const raw = prompt.trim().split('\n')[0]
   const line =
     raw
-      .replace(/\[(?:图片|文件):[^\]]+\]/g, '')
+      .replace(/\[(?:图片|文件|引用):[^\]]+\]/g, '')
       .replace(/\s+/g, ' ')
       .trim() || raw
   return line.length > 32 ? line.slice(0, 32) + '…' : line
 }
 
 /**
- * 附件引用标记：旧版输入框会把标记插进文字，发送给 CLI 前换成附件的实际路径。
- * 现在附件只显示成输入框上方的卡片，这里保留是为了继续支持已经存下的带标记的消息。
+ * 附件在文字里的标记：输入框里的图片、文件、引用卡片都是这样存的，交给 CLI 前换成路径或引用块（见 shared/composer.ts）
  */
-export function attachmentRef(a: Pick<Attachment, 'name' | 'mime'>) {
-  const image = a.mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.name)
-  return `[${image ? '图片' : '文件'}:${a.name}]`
+export function attachmentRef(a: Pick<Attachment, 'name' | 'mime' | 'quote'>) {
+  return chipMarker(attachChip(a), a.name)
 }
 
 /**
- * 交给 Agent 的要求：文字里引用到的附件在原来的位置换成路径；没引用到的仍然列在后面。
+ * 交给 Agent 的要求：文字里引用到的附件在原来的位置换成路径，引用卡片换成引用块；
+ * 没引用到的引用放在最前面，文件仍然列在后面。
  * CLI 用自己的读文件工具去读（Claude Code、Codex 都能直接看图片）
  */
 export function withAttachments(prompt: string, attachments: Attachment[] | undefined) {
@@ -47,10 +47,13 @@ export function withAttachments(prompt: string, attachments: Attachment[] | unde
   for (const a of [...attachments].sort((x, y) => y.name.length - x.name.length)) {
     const ref = attachmentRef(a)
     if (!text.includes(ref)) continue
-    text = text.split(ref).join(a.path)
+    text = text.split(ref).join(a.quote !== undefined ? `\n${quoteBlock(a.quote)}` : a.path)
     used.add(a)
   }
-  const rest = attachments.filter((a) => !used.has(a))
+  const quotes = attachments.filter((a) => !used.has(a) && a.quote !== undefined)
+  if (quotes.length) text = quotes.map((a) => quoteBlock(a.quote ?? '')).join('') + text
+  text = text.replace(/^\n+/, '')
+  const rest = attachments.filter((a) => !used.has(a) && a.quote === undefined)
   if (!rest.length) return text
   const list = rest.map((a) => `- ${a.name}：${a.path}`).join('\n')
   return `${text}\n\n## 附件\n用户附上了这些文件，需要时直接读取：\n${list}`

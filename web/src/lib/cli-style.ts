@@ -1,5 +1,6 @@
 import { getCli, type CliDefinition } from '@shared/clis'
 import { t } from '@shared/i18n'
+import { clampEffort } from '@shared/settings'
 /** 每种 CLI 的标识色：写在 CLI 的定义里（配置文件的 color） */
 export const cliColor = (id: string) => getCli(id)?.color ?? '#64748b'
 
@@ -32,18 +33,37 @@ export function modelEfforts(def: CliDefinition, model: string) {
  * 思考强度的选项：只显示 CLI 的英文取值（off / low / high / max），不追加中文名。
  * 「不指定」时用 CLI 默认的强度，那个选项的值是 ''；不知道默认是哪个时标成 auto。
  * list 给某个模型的强度时只列这个模型支持的那些（模型不认的强度 CLI 会直接报错退出）；
- * keep 是设置里存着的值，这个模型不支持时也列出来，免得下拉里没有当前值。
+ * 默认强度这个模型不支持时换成最接近的那档，不把不支持的档位放进下拉
  */
-export function defaultEffortOptions(
-  def: CliDefinition,
-  defaultId?: string,
-  list: { id: string }[] = def.efforts,
-  keep?: string,
-) {
-  const opts = list.map((e) => ({ value: e.id === defaultId ? '' : e.id, label: e.id }))
-  if (!defaultId || !list.some((e) => e.id === defaultId)) opts.unshift({ value: '', label: defaultId || 'auto' })
-  if (keep && keep !== defaultId && !list.some((e) => e.id === keep)) opts.push({ value: keep, label: keep })
+export function defaultEffortOptions(def: CliDefinition, defaultId?: string, list: { id: string }[] = def.efforts) {
+  const shown = defaultShown(def, defaultId, list)
+  const opts = list.map((e) => ({ value: e.id === shown ? '' : e.id, label: e.id }))
+  if (!shown) opts.unshift({ value: '', label: defaultId || 'auto' })
   return opts
+}
+
+const defaultShown = (def: CliDefinition, defaultId: string | undefined, list: { id: string }[]) =>
+  list.length
+    ? clampEffort(
+        def.efforts.map((e) => e.id),
+        list.map((e) => e.id),
+        defaultId,
+      )
+    : (defaultId ?? '')
+
+/**
+ * 下拉里显示的值：存着的强度这个模型不支持时显示实际会用的那档（执行时同样换成最接近的），
+ * 和默认一样时是 ''
+ */
+export function effortValue(def: CliDefinition, defaultId: string | undefined, list: { id: string }[], value: string) {
+  const v = list.length
+    ? clampEffort(
+        def.efforts.map((e) => e.id),
+        list.map((e) => e.id),
+        value,
+      )
+    : value
+  return !v || v === defaultShown(def, defaultId, list) ? '' : v
 }
 
 /** CLI 输出的版本信息里只取版本号：Codex 输出「codex-cli 0.46.0」，Claude Code 输出「2.1.3 (Claude Code)」 */

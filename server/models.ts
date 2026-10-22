@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import { CLIS, type CliDefinition } from '../shared/clis.ts'
 import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
-import { cliSettings } from '../shared/settings.ts'
+import { clampEffort, cliSettings } from '../shared/settings.ts'
 import { modelLimitsFor, type ModelCatalogEntry } from '../shared/model-catalog.ts'
 import {
   apiModelList,
@@ -689,7 +689,8 @@ export async function supportedEffort(id: string, model: string, effort?: string
   if (!known.size) return effort
   // 模型名可能写成完整的 id，也可能只有后半段（providers.json 里自己接的）
   const list = known.get(model) ?? known.get(model.slice(model.lastIndexOf('/') + 1))
-  return !list || list.includes(effort) ? effort : ''
+  // 模型不认的强度换成最接近的那档（和设置页下拉里显示的一致），一档都不支持时不传
+  return !list ? effort : clampEffort(CLIS.find((c) => c.id === id)?.efforts.map((e) => e.id) ?? [], list, effort)
 }
 
 /** 已经读过的模型列表（不触发读取）：执行任务时查上下文窗口用，不能为此再去跑一次 CLI */

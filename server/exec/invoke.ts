@@ -102,10 +102,12 @@ export async function invokeCli(o: {
   const cs = cliSettings(await getSettings(), o.cliId)
   const model = apiModelIdFor(o.build.model ?? '', def.auth, cs.api)
   const req = model === o.build.model ? o.build : { ...o.build, model }
-  // 模型不认的思考强度会让 CLI 启动即报错退出（退出码 1），整个任务白跑：按读到的模型能力挡一下，这一轮不传
+  // 模型不认的思考强度会让 CLI 启动即报错退出（退出码 1），整个任务白跑：按读到的模型能力换成最接近的那档
   const effort = await supportedEffort(o.cliId, model, req.effort)
   if (effort !== (req.effort ?? ''))
-    log.info('agent', `模型 ${model} 不支持 ${req.effort}，这次不带思考强度`, { cli: o.cliId })
+    log.info('agent', `模型 ${model} 不支持 ${req.effort}，这次${effort ? `用 ${effort}` : '不带思考强度'}`, {
+      cli: o.cliId,
+    })
   const picked = effort === req.effort ? req : { ...req, effort }
   // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
   const build = picked.options ? picked : { ...picked, options: cs.options }

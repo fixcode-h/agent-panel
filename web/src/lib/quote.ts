@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
-import { segments, chipMarker, type Chip } from '@shared/composer'
+import { segments, chipMarker, quoteBlock, type Chip } from '@shared/composer'
 
 /**
  * 「引用」：消息下面的按钮把这段内容作为一张引用卡片放进输入框（和附件卡片一样，右上角能删）。
+ * 引用卡片背后是一个带原文的附件（Attachment.quote，见 Attachments.tsx 的 addQuote），发出去后对话里还是这张卡片。
  * 按钮从自己的位置往上冒一个事件，离它最近的对话（子对话在父对话的右栏里时就是子对话）接住，
  * 所以同一页上有几个输入框时也不会放错地方
  */
@@ -15,17 +16,9 @@ export function quoteFrom(el: HTMLElement, text: string) {
   return ev.defaultPrevented
 }
 
-/** 引用块：每行前面加「> 」，后面空一行给用户接着写 */
-export function quoteBlock(text: string) {
-  const body = text
-    .trim()
-    .split('\n')
-    .map((l) => (l.trim() ? `> ${l}` : '>'))
-    .join('\n')
-  return `${body}\n\n`
-}
+export { quoteBlock }
 
-// 卡片标记里只放一小段摘要和编号，原文存在本地：草稿跟着对话记住，切走再回来、刷新页面后卡片还能发出原文
+// 以前的引用卡片只有标记，原文存在本地：留着读取，旧草稿里的卡片还能发出原文
 const STORE = 'chat-quotes'
 /** 没发出去的引用最多留这么久，免得本地越攒越多 */
 const KEEP_MS = 14 * 24 * 3600 * 1000
@@ -64,22 +57,34 @@ export const quoteText = (name: string) => {
   return id ? (readStore()[id]?.text ?? '') : ''
 }
 
-/** 存好原文，返回放进输入框的卡片 */
-export function quoteChip(text: string): Chip {
+/**
+ * 新引用卡片的名字「摘要#编号」：标记里不能有方括号和换行；摘要取开头一小段，太长的卡片会把输入框撑乱。
+ * 服务端认回粘贴的引用文件时按同样的规则起名（server/uploads.ts）
+ */
+export function quoteName(text: string) {
   const id = `q${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`
-  saveQuote(id, text)
-  // 标记里不能有方括号和换行；摘要取开头一小段，太长的卡片会把输入框撑乱
   const flat = text.replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim()
   const label = flat.length > 40 ? `${flat.slice(0, 40)}…` : flat
-  return { kind: 'quote', name: `${label}#${id}` }
+  return { id, name: `${label}#${id}` }
 }
 
-/** 发送前把引用卡片换回引用块；原文丢了（例如清过浏览器数据）就用卡片上的摘要 */
-export function expandQuotes(value: string) {
+/** 只存在本地的引用卡片（附件上传不了时退回用它） */
+export function quoteChip(text: string): Chip {
+  const { id, name } = quoteName(text)
+  saveQuote(id, text)
+  return { kind: 'quote', name }
+}
+
+/**
+ * 发送前处理只存在本地的引用卡片：换回引用块；原文丢了（例如清过浏览器数据）就用卡片上的摘要。
+ * 有对应附件的引用卡片（现在的做法）原样留着，发出去后对话里还是卡片
+ */
+export function expandQuotes(value: string, attachments: readonly { name: string; quote?: string }[] = []) {
   let out = ''
   for (const s of segments(value)) {
     if ('text' in s) out += s.text
-    else if (s.chip.kind !== 'quote') out += chipMarker(s.chip.kind, s.chip.name)
+    else if (s.chip.kind !== 'quote' || attachments.some((a) => a.quote !== undefined && a.name === s.chip.name))
+      out += chipMarker(s.chip.kind, s.chip.name)
     else out += `\n${quoteBlock(quoteText(s.chip.name) || quoteLabel(s.chip.name))}`
   }
   return out.replace(/^\n+/, '')

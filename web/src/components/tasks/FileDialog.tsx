@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Code2, Copy, Loader2, X } from 'lucide-react'
+import { Code2, Copy, ExternalLink, FolderOpen, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
@@ -47,32 +47,47 @@ type File = Awaited<ReturnType<typeof api.taskFile>>
 /** 按扩展名先认出图片，直接看原图，不用等文本接口回来再切换 */
 const IMAGE = /\.(png|jpe?g|gif|webp|bmp)$/i
 
-/** Agent 输出里点了一个文件路径：显示文件内容，跳到提到的那一行，可以在编辑器里打开 */
+/**
+ * Agent 输出里点了一个文件路径：显示文件内容，跳到提到的那一行，可以在编辑器里打开。
+ * local：附件卡片（上传的、粘贴路径引用的本机文件），按绝对路径读，不限在任务目录里；
+ * 看不了内容的（PDF、Office 这类）可以用系统默认程序打开或在文件夹里显示
+ */
 export function FileDialog({
   taskId,
   target,
   onOpenChange,
 }: {
   taskId: string
-  target: { path: string; line?: number } | null
+  target: { path: string; line?: number; local?: boolean } | null
   onOpenChange: (open: boolean) => void
 }) {
   const [file, setFile] = useState<File | null>(null)
   const [error, setError] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const isImage = !!target && IMAGE.test(target.path)
+  const local = !!target?.local
   // 图片不显示文本：用看图的浮层看原图（和附件一样）；演示版没有项目目录，还是用下面的文本弹窗说明
-  const raw = isImage && !import.meta.env.VITE_DEMO ? api.taskFileRaw(taskId, target!.path) : ''
+  const raw =
+    isImage && !import.meta.env.VITE_DEMO
+      ? local
+        ? `/api/uploads/raw?path=${encodeURIComponent(target!.path)}`
+        : api.taskFileRaw(taskId, target!.path)
+      : ''
   useEffect(() => {
     if (!target) return
     setFile(null)
     setError('')
     if (raw) return
-    api
-      .taskFile(taskId, target.path)
+    ;(target.local ? api.localFile(target.path) : api.taskFile(taskId, target.path))
       .then(setFile)
       .catch((e) => setError((e as Error).message))
   }, [taskId, target, raw])
+  const openLocal = (reveal: boolean) =>
+    target &&
+    api
+      .openLocalFile(target.path, reveal)
+      .then((r) => !reveal && r.revealed && toast(t('这是可执行文件，不直接运行，已在文件夹中显示')))
+      .catch((e) => toast.error((e as Error).message))
   // 内容出来后滚到提到的那一行
   useEffect(() => {
     if (!file || !target?.line) return
@@ -118,7 +133,24 @@ export function FileDialog({
               >
                 <Copy className="h-4 w-4" />
               </Button>
-              {file?.exists && file.dir && (
+              {local && file?.exists && (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => openLocal(false)}>
+                    <ExternalLink className="h-4 w-4" />
+                    {t('用默认程序打开')}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('在文件夹中显示')}
+                    title={t('在文件夹中显示')}
+                    onClick={() => openLocal(true)}
+                  >
+                    <FolderOpen className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
+              {file?.exists && file.dir && !(local && file.binary) && (
                 <Button
                   variant="ghost"
                   size="sm"
@@ -143,12 +175,18 @@ export function FileDialog({
                 </div>
               ) : !file.exists ? (
                 <p className="p-6 text-[0.8125rem] text-subtle">
-                  {import.meta.env.VITE_DEMO
-                    ? t('在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。')
-                    : t('项目目录里找不到这个文件，可能已经被移动或删除。')}
+                  {local
+                    ? t('找不到这个文件，可能已经被移动或删除。')
+                    : import.meta.env.VITE_DEMO
+                      ? t('在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。')
+                      : t('项目目录里找不到这个文件，可能已经被移动或删除。')}
                 </p>
               ) : file.binary ? (
-                <p className="p-6 text-[0.8125rem] text-subtle">{t('这是二进制文件，不显示内容。')}</p>
+                <p className="p-6 text-[0.8125rem] text-subtle">
+                  {local
+                    ? t('这个文件不是文字，这里显示不了。可以用默认程序打开，或在文件夹中找到它。')
+                    : t('这是二进制文件，不显示内容。')}
+                </p>
               ) : (
                 <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
                   {lines.map((l, i) => (

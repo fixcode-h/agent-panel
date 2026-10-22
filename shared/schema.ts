@@ -787,6 +787,13 @@ export const Attachment = z.object({
   path: z.string().min(1),
   size: z.number().int().min(0),
   mime: z.string().default(''),
+  /** 引用已有的文件（把复制出来的路径粘贴回输入框）：发送时不再拷进对话目录，直接用这个路径 */
+  ref: z.boolean().optional(),
+  /**
+   * 引用对话里的一段内容：原文。界面上是一张引用卡片，交给 Agent 时在原位换成引用块；
+   * 原文同时存成附件目录里的一个文件（path），复制消息时给的就是这个路径，粘贴回来还能认出是引用
+   */
+  quote: z.string().max(50000).optional(),
 })
 export type Attachment = z.infer<typeof Attachment>
 /** 一次最多附上的文件数 */

@@ -1522,8 +1522,9 @@ export function tasksApi(deps: {
             : m.run
               ? `AI（${[m.run.cli, m.run.model].filter(Boolean).join(' · ')}）`
               : 'AI'
-      const files = m.attachments?.length ? `\n（附件：${m.attachments.map((a) => a.name).join('、')}）` : ''
-      lines.push(`### ${who}\n${m.text.trim()}${files}`)
+      // 用户消息里的图片、文件、引用卡片换成路径和引用块，和当时交给 Agent 的一样
+      const body = m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text
+      lines.push(`### ${who}\n${body.trim()}`)
     }
     const name = `${t('会话')}-${task.title.replace(/\s+/g, ' ').slice(0, 40)}.md`
     return c.json(await saveTextUpload(name, clipTranscript(lines.join('\n\n'))), 201)

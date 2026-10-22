@@ -28,7 +28,7 @@ import { accountModelId, cliSettings, defaultCli, tierFallback, tierOf } from '@
 import { autoLimits, fmtTokens, limitSupport, parseTokens } from '@shared/model-limits'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
-import { cliColor, cliDefaultModel, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
+import { cliColor, cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
 import { useCliDef, useCliModels } from '@/lib/cli-models'
 import { lookupModel, refreshModelCatalog, useModelCatalog } from '@/lib/model-catalog'
 import { clearInstallJob, startInstall, useInstallJob } from '@/lib/cli-install'
@@ -375,10 +375,10 @@ export function TierTable({
                 />
                 <Select
                   aria-label={t('{cli} {tier}档思考强度', { cli: def.name, tier: tr.label })}
-                  value={value[tr.id].effort === defaultEffort ? '' : value[tr.id].effort}
+                  value={effortValue(def, defaultEffort, effortList, value[tr.id].effort)}
                   onChange={(e) => set(tr.id, 'effort', e.target.value)}
                   // 只列这一档实际用的模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                  options={defaultEffortOptions(def, defaultEffort, effortList, value[tr.id].effort)}
+                  options={defaultEffortOptions(def, defaultEffort, effortList)}
                 />
               </>
             )}
@@ -821,13 +821,17 @@ export function CliSection({
         <Row title={t('默认思考强度')} desc={t('角色和档位都没有指定时使用')}>
           <Select
             aria-label={t('{cli} 默认思考强度', { cli: def.name })}
-            value={draft.defaultEffort === cliDefaultModel(full)?.defaultEffort ? '' : draft.defaultEffort}
+            value={effortValue(
+              full,
+              cliDefaultModel(full)?.defaultEffort,
+              modelEfforts(full, defEffortModel),
+              draft.defaultEffort,
+            )}
             onChange={(e) => set('defaultEffort', e.target.value)}
             options={defaultEffortOptions(
               full,
               cliDefaultModel(full)?.defaultEffort,
               modelEfforts(full, defEffortModel),
-              draft.defaultEffort,
             )}
           />
         </Row>

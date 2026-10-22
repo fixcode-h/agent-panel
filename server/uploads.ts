@@ -8,6 +8,7 @@ import { capture } from './exec/process.ts'
 import { pickFiles } from './pick-file.ts'
 import { DATA_DIR } from './store.ts'
 import { resolvePath } from './fs.ts'
+import { openWithSystem, revealItem } from './open.ts'
 import { t } from '../shared/i18n.ts'
 
 /** 用户上传的附件放在数据目录里，不放进项目目录，免得算进任务的文件改动 */
@@ -56,7 +57,7 @@ export function uploadsApi() {
           name: path.basename(file),
           path: file,
           size: s.size,
-          mime: IMAGE_TYPES[path.extname(file).slice(1).toLowerCase()] ?? '',
+          mime: mimeOf(file),
         })
       }
       return c.json({ files })
@@ -64,8 +65,73 @@ export function uploadsApi() {
       return c.json({ error: t('打不开选择文件的窗口：{error}', { error: (e as Error).message }) }, 400)
     }
   })
+  /**
+   * 粘贴进输入框的路径：确认哪些是本机真实存在的文件，交回附件信息（只引用，不拷贝）。
+   * 引用卡片存下的原文文件（quote-<编号>.md）认回成引用，带上原文
+   */
+  routes.post('/resolve', async (c) => {
+    const p = z
+      .object({ paths: z.array(z.string().min(1).max(4096)).max(50) })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
+    const files: (Attachment & { from: string })[] = []
+    for (const from of p.data.paths) {
+      const file = resolvePath(from)
+      const s = await stat(file).catch(() => null)
+      if (!s?.isFile()) continue
+      const base = path.basename(file)
+      const quote = file.startsWith(UPLOADS_DIR + path.sep) ? QUOTE_FILE.exec(base) : null
+      if (quote && s.size <= 200_000) {
+        const text = await readFile(file, 'utf8').catch(() => null)
+        if (text !== null) {
+          files.push({
+            from,
+            name: quoteName(text, quote[1]),
+            path: file,
+            size: s.size,
+            mime: 'text/markdown',
+            quote: text,
+            ref: true,
+          })
+          continue
+        }
+      }
+      files.push({ from, name: base, path: file, size: s.size, mime: mimeOf(file), ref: true })
+    }
+    return c.json({ files })
+  })
+  /** 点开附件卡片后：用系统默认程序打开，或在文件管理器里显示（可执行文件只显示，不运行） */
+  routes.post('/open', async (c) => {
+    const p = z
+      .object({ path: z.string().min(1).max(4096), reveal: z.boolean().default(false) })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!p.success || !path.isAbsolute(p.data.path)) return c.json({ error: t('不是附件') }, 400)
+    const file = path.resolve(p.data.path)
+    if (!(await stat(file).catch(() => null))) return c.json({ error: t('附件已经不在了') }, 404)
+    if (p.data.reveal) {
+      revealItem(file)
+      return c.json({ ok: true, revealed: true })
+    }
+    if (openWithSystem(file)) return c.json({ ok: true, revealed: false })
+    revealItem(file)
+    return c.json({ ok: true, revealed: true })
+  })
   return routes
 }
+
+/** 引用卡片的原文存成的文件名：quote-<编号>.md，编号和卡片名字末尾的「#编号」一样 */
+const QUOTE_FILE = /^quote-(q[0-9a-z]+)\.md$/
+
+/** 引用卡片的名字：开头一小段摘要加编号（和网页 web/src/lib/quote.ts 的 quoteName 一致） */
+function quoteName(text: string, id: string) {
+  const flat = text.replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+  return `${flat.length > 40 ? `${flat.slice(0, 40)}…` : flat}#${id}`
+}
+
+/** 看文件时最多读这么多（和查看项目文件一样） */
+const MAX_VIEW = 400_000
+
+const mimeOf = (file: string) => IMAGE_TYPES[path.extname(file).slice(1).toLowerCase()] ?? ''
 
 /** 面板自己生成的附件（例如引入的会话记录）：和上传的一样存进附件目录 */
 export async function saveTextUpload(name: string, text: string): Promise<Attachment> {
@@ -84,20 +150,39 @@ export const clipTranscript = (s: string) =>
     ? `${s.slice(0, MAX_TRANSCRIPT * 0.3)}\n\n…（中间省略 ${s.length - MAX_TRANSCRIPT} 字）…\n\n${s.slice(-MAX_TRANSCRIPT * 0.7)}`
     : s
 
-/** 只读出附件目录里的文件，给页面显示缩略图；不能用来读任意路径 */
+/**
+ * 给页面看附件：raw 读原图（缩略图、看大图），file 读文字内容（点文件卡片时看）。
+ * 附件目录里的文件都能读；粘贴路径引用的本机文件在附件目录外面，只有绝对路径才读，raw 只给图片
+ */
 export function uploadsRawApi() {
   const routes = new Hono()
   routes.get('/', async (c) => {
-    const file = path.resolve(c.req.query('path') ?? '')
-    if (!file.startsWith(UPLOADS_DIR + path.sep)) return c.json({ error: t('不是附件') }, 400)
+    const want = c.req.query('path') ?? ''
+    if (!path.isAbsolute(want)) return c.json({ error: t('不是附件') }, 400)
+    const file = path.resolve(want)
+    const ext = path.extname(file).slice(1).toLowerCase()
+    const inUploads = file.startsWith(UPLOADS_DIR + path.sep)
+    if (!inUploads && !IMAGE_TYPES[ext]) return c.json({ error: t('不是图片') }, 400)
     const buf = await readFile(file).catch(() => null)
     if (!buf) return c.json({ error: t('附件已经不在了') }, 404)
-    const ext = path.extname(file).slice(1).toLowerCase()
     const type = IMAGE_TYPES[ext] ?? 'application/octet-stream'
     return c.body(buf, 200, { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' })
   })
+  routes.get('/file', async (c) => {
+    const want = c.req.query('path') ?? ''
+    if (!path.isAbsolute(want)) return c.json({ error: t('不是附件') }, 400)
+    const file = path.resolve(want)
+    const dir = path.dirname(file)
+    const s = await stat(file).catch(() => null)
+    if (!s?.isFile()) return c.json({ path: file, dir, exists: false, content: '', truncated: false })
+    const buf = await readFile(file)
+    const head = buf.subarray(0, MAX_VIEW)
+    if (head.includes(0)) return c.json({ path: file, dir, exists: true, binary: true, content: '', truncated: false })
+    return c.json({ path: file, dir, exists: true, content: head.toString('utf8'), truncated: buf.length > MAX_VIEW })
+  })
   return routes
 }
+
 export const IMAGE_TYPES: Record<string, string> = {
   png: 'image/png',
   jpg: 'image/jpeg',

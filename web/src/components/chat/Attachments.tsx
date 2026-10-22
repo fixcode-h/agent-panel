@@ -7,7 +7,6 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  File as FileIcon,
   FileCode2,
   FolderGit2,
   Gamepad2,
@@ -28,14 +27,14 @@ import { cn } from '@/lib/utils'
 import { useData } from '@/lib/data'
 import { isReady, workflowChecks } from '@/lib/readiness'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
-import { Lightbox } from '@/components/ui/lightbox'
 import type { RichInputHandle } from './RichInput'
-import type { ChipKind } from '@shared/composer'
+import { attachChip, type ChipKind } from '@shared/composer'
+import { quoteName } from '@/lib/quote'
 import { t } from '@shared/i18n'
 
 /** 附件加进来、上传失败时通知输入框：照着在光标处放一张卡片 */
 export interface AttachHooks {
-  added?: (items: { name: string; mime: string }[]) => void
+  added?: (items: { name: string; mime: string; kind: ChipKind }[]) => void
   failed?: (name: string) => void
 }
 
@@ -47,6 +46,8 @@ interface Item {
   size: number
   /** 本地预览（图片），不用等上传完 */
   preview?: string
+  /** 引用卡片的原文：上传完之前也能点开看 */
+  quote?: string
   done?: Attachment
 }
 
@@ -55,6 +56,10 @@ export const isImage = (mime: string, name = '') =>
 
 /** 附件在输入框里的卡片类型：图片是图片卡片，其他都是文件卡片 */
 export const chipKind = (mime: string, name: string): ChipKind => (isImage(mime, name) ? 'image' : 'file')
+
+/** 输入框里一个附件对应的卡片类型（引用卡片看原文） */
+export const itemKind = (x: { name: string; mime: string; quote?: string; done?: Attachment }): ChipKind =>
+  x.quote !== undefined || x.done?.quote !== undefined ? 'quote' : chipKind(x.mime, x.name)
 
 export function formatSize(n: number) {
   if (n < 1024) return `${n} B`
@@ -118,6 +123,9 @@ export function useAttachments(draftKey?: string) {
   const [items, setItems] = useState<Item[]>(() => (draftKey ? readAttachments(draftKey) : []))
   const count = useRef(0)
   count.current = items.length
+  // 同一次事件里连着加（粘贴好几个路径）时还没重新渲染，按这份最新的算
+  const itemsRef = useRef(items)
+  itemsRef.current = items
   const names = useRef(new Set<string>())
   names.current = new Set(items.map((x) => x.name))
   // 同一个输入框换了对话：换成那个对话的附件
@@ -173,7 +181,7 @@ export function useAttachments(draftKey?: string) {
         ...xs,
         ...accepted.map((a) => ({ key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a })),
       ])
-      hooks?.added?.(accepted.map((a) => ({ name: a.name, mime: a.mime })))
+      hooks?.added?.(accepted.map((a) => ({ name: a.name, mime: a.mime, kind: chipKind(a.mime, a.name) })))
     } catch (e) {
       toast.error((e as Error).message)
     }
@@ -214,7 +222,7 @@ export function useAttachments(draftKey?: string) {
         ...xs,
         ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
       ])
-      hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime })))
+      hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime, kind: chipKind(mime, name) })))
       for (const x of accepted) {
         try {
           const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
@@ -232,9 +240,71 @@ export function useAttachments(draftKey?: string) {
   const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
     if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
     setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
-    hooks?.added?.([{ name: a.name, mime: a.mime }])
+    hooks?.added?.([{ name: a.name, mime: a.mime, kind: attachChip(a) }])
+  }, [])
+  /**
+   * 引用对话里的一段：原文存成附件目录里的一个文件（复制消息时给这个路径，粘贴回来还认得出是引用），
+   * 卡片马上放进输入框，不用等上传
+   */
+  const addQuote = useCallback((text: string, hooks?: AttachHooks) => {
+    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+    const { id, name } = quoteName(text)
+    const key = crypto.randomUUID()
+    const size = new Blob([text]).size
+    setItems((xs) => [...xs, { key, name, mime: 'text/markdown', size, quote: text }])
+    hooks?.added?.([{ name, mime: 'text/markdown', kind: 'quote' }])
+    void readBase64(new Blob([text], { type: 'text/markdown' }))
+      .then((data) => api.upload({ name: `quote-${id}.md`, mime: 'text/markdown', data }))
+      .then((done) =>
+        setItems((xs) => xs.map((i) => (i.key === key ? { ...i, done: { ...done, name, quote: text } } : i))),
+      )
+      .catch((e) => {
+        toast.error(t('引用没有加上：{error}', { error: (e as Error).message }))
+        setItems((xs) => xs.filter((i) => i.key !== key))
+        hooks?.failed?.(name)
+      })
+  }, [])
+  /**
+   * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字），
+   * 超过上限的不加
+   */
+  const addRefs = useCallback((list: Attachment[]) => {
+    const names = new Map<string, { name: string; kind: ChipKind }>()
+    const taken = new Set(itemsRef.current.map((x) => x.name))
+    const fresh: Item[] = []
+    let full = false
+    for (const a of list) {
+      if (names.has(a.path)) continue
+      const had = itemsRef.current.find((x) => x.done?.path === a.path)
+      if (had) {
+        names.set(a.path, { name: had.name, kind: itemKind(had) })
+        continue
+      }
+      if (itemsRef.current.length + fresh.length >= MAX_ATTACHMENTS) {
+        full = true
+        continue
+      }
+      const name = a.quote !== undefined ? a.name : uniqueName(a.name, taken)
+      taken.add(name)
+      fresh.push({ key: crypto.randomUUID(), name, mime: a.mime, size: a.size, done: { ...a, name } })
+      names.set(a.path, { name, kind: attachChip(a) })
+    }
+    if (full) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+    if (fresh.length) {
+      itemsRef.current = [...itemsRef.current, ...fresh]
+      setItems((xs) => [...xs, ...fresh])
+    }
+    return names
+  }, [])
+  /** 换成另一组附件（撤回消息时把那条的附件放回输入框，卡片已经在文字里） */
+  const replace = useCallback((list: Attachment[]) => {
+    setItems(list.map((a) => ({ key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a })))
   }, [])
   const remove = (key: string) => setItems((xs) => xs.filter((x) => x.key !== key))
+  /** 卡片从文字里没了（退格删掉、整段剪掉）：这些名字的附件不再发送 */
+  const removeNames = useCallback((gone: Set<string>) => {
+    if (gone.size) setItems((xs) => xs.filter((x) => !gone.has(x.name)))
+  }, [])
   // 发送成功后页面可能马上切走，等不到 effect 删草稿；这里直接删，免得下次新建时附件又冒出来
   const clear = useCallback(() => {
     setItems([])
@@ -249,7 +319,11 @@ export function useAttachments(draftKey?: string) {
     /** 在面板所在的本机选文件，直接引用原路径（大文件用，也能选小文件） */
     pick: pickLarge,
     addReady,
+    addQuote,
+    addRefs,
+    replace,
     remove,
+    removeNames,
     clear,
     uploading: items.some((x) => !x.done),
     attachments: items.flatMap((x) => (x.done ? [x.done] : [])),
@@ -351,52 +425,6 @@ export function DropOverlay() {
       <span className="rounded-2xl border border-dashed border-accent bg-card px-5 py-3 text-[0.875rem] text-accent shadow-pop">
         {t('松开鼠标，把文件附到要求里')}
       </span>
-    </div>
-  )
-}
-
-/** 用户消息里的附件：图片缩略图，点开看原图；其他文件显示名字 */
-export function MessageAttachments({ items, className }: { items: Attachment[]; className?: string }) {
-  const [urls, setUrls] = useState<Record<string, string>>({})
-  const [open, setOpen] = useState<number>()
-  useEffect(() => {
-    let alive = true
-    void Promise.all(
-      items.filter((a) => isImage(a.mime, a.name)).map(async (a) => [a.path, (await attachmentUrl(a)) ?? ''] as const),
-    ).then((list) => alive && setUrls(Object.fromEntries(list.filter(([, u]) => u))))
-    return () => {
-      alive = false
-    }
-  }, [items])
-  // 点开图片在页面上看大图，多张图可以左右切换
-  const images = items.filter((a) => urls[a.path]).map((a) => ({ src: urls[a.path], name: a.name }))
-  return (
-    <div className={cn('flex flex-wrap justify-end gap-2', className)}>
-      {items.map((a) =>
-        urls[a.path] ? (
-          <button
-            key={a.path}
-            type="button"
-            title={a.name}
-            aria-label={t('查看 {name}', { name: a.name })}
-            onClick={() => setOpen(images.findIndex((x) => x.src === urls[a.path]))}
-            className="block cursor-zoom-in overflow-hidden rounded-xl border transition hover:brightness-95"
-          >
-            <img src={urls[a.path]} alt={a.name} className="h-24 max-w-[200px] object-cover" />
-          </button>
-        ) : (
-          <span
-            key={a.path}
-            title={a.path}
-            className="inline-flex h-9 max-w-[260px] items-center gap-2 rounded-xl border bg-field/60 px-3 text-[0.78125rem]"
-          >
-            <FileIcon className="h-4 w-4 shrink-0 text-subtle" strokeWidth={1.7} />
-            <span className="truncate">{a.name}</span>
-            <span className="shrink-0 text-[0.6875rem] text-subtle">{formatSize(a.size)}</span>
-          </span>
-        ),
-      )}
-      <Lightbox images={images} index={open} onClose={() => setOpen(undefined)} />
     </div>
   )
 }

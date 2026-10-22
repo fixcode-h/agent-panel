@@ -10,7 +10,7 @@ import {
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react'
-import { chipMarker, removeChip, segments, type Chip, type ChipKind } from '@shared/composer'
+import { chipMarker, isAttachChip, removeChip, segments, type Chip, type ChipKind } from '@shared/composer'
 import { cn } from '@/lib/utils'
 import { scrollCaretIntoView } from '@/lib/caret'
 import { quoteLabel, quoteText } from '@/lib/quote'
@@ -37,9 +37,9 @@ export interface RichInputHandle {
 /** 图片卡片要显示缩略图：按附件名字取本地预览地址 */
 type Preview = (name: string) => string | undefined
 
-/** 卡片上的两个操作：点图片看大图、点右上角删除 */
+/** 卡片上的两个操作：点卡片打开查看（图片看大图、文件看内容、引用看原文）、点右上角删除 */
 export interface ChipActions {
-  preview?: (name: string) => void
+  open?: (chip: Chip) => void
   remove?: (name: string) => void
 }
 
@@ -117,14 +117,31 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   el.dataset.name = chip.name
   // 图片卡片：缩略图和文件名排在一行，和文字卡片一样高；删除按钮叠在右上角，位置靠外层定位
   const style = CHIP_STYLE[chip.kind]
+  const attach = isAttachChip(chip.kind)
+  // 样子和消息里的卡片一样（AttachmentView.tsx 的 CHIP_CLASS），发出去前后看起来是同一张
   el.className = cn(
     'mx-0.5 group relative inline-flex max-w-[16rem] shrink-0 items-center gap-1.5 rounded-md border px-1.5 align-middle text-[0.8125rem] leading-[1.7]',
     style.accent ? 'border-accent/35 bg-accent-soft text-accent' : 'border-line-strong bg-field/70 text-fg',
+    attach && 'cursor-pointer transition-colors hover:border-subtle/60 hover:bg-field',
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
   const act = actions?.()
   // 引用卡片只显示开头一小段，鼠标停上去看完整原文
-  el.title = chip.kind === 'quote' ? quoteText(chip.name) || t('按退格键删除') : t('按退格键删除')
+  el.title =
+    chip.kind === 'quote'
+      ? quoteText(chip.name) || t('点击查看，按退格键删除')
+      : attach
+        ? t('点击查看，按退格键删除')
+        : t('按退格键删除')
+  if (attach) {
+    // 点卡片打开查看；按下时不把光标挪进卡片
+    el.addEventListener('mousedown', (e) => e.preventDefault())
+    el.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-chip-action]')) return
+      e.preventDefault()
+      actions?.()?.open?.(chip)
+    })
+  }
   if (!src) {
     // 没有缩略图的卡片前面放类型图标：文件、技能、命令一眼能分开
     const icon = document.createElement('span')
@@ -133,16 +150,11 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
     el.append(icon)
   }
   if (src) {
-    // 图片：一行高的小缩略图，后面接文件名；点缩略图看大图，鼠标停在卡片上时可点右上角删除
+    // 图片：一行高的小缩略图，后面接文件名；点卡片看大图，鼠标停在卡片上时可点右上角删除
     const img = document.createElement('img')
     img.src = src
     img.alt = ''
-    img.className = 'h-[1.25em] w-[1.25em] shrink-0 cursor-zoom-in rounded-sm object-cover'
-    img.addEventListener('mousedown', (e) => e.preventDefault())
-    img.addEventListener('click', (e) => {
-      e.preventDefault()
-      act?.preview?.(chip.name)
-    })
+    img.className = 'h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover'
     el.append(img)
   }
   const label = document.createElement('span')
@@ -152,7 +164,7 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   // 每张卡片都能点右上角删除：附件交给页面去掉（连同上传的文件），其他的直接从输入框里拿掉
   el.append(
     closeNode(() => {
-      if ((chip.kind === 'image' || chip.kind === 'file') && act?.remove) return act.remove(chip.name)
+      if (attach && act?.remove) return act.remove(chip.name)
       const root = el.closest('[contenteditable="true"]')
       el.remove()
       root?.dispatchEvent(new Event('input', { bubbles: true }))
@@ -241,7 +253,7 @@ export function RichInput({
   pad?: string
   className?: string
   preview?: Preview
-  /** 卡片上的操作：点图片看大图、点右上角删除 */
+  /** 卡片上的操作：点卡片打开查看、点右上角删除 */
   actions?: ChipActions
 }) {
   const el = useRef<HTMLDivElement>(null)
