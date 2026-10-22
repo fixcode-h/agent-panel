@@ -432,6 +432,7 @@
     }
   },
   "systemPromptFlag": "--append-system-prompt",
+  "systemPromptFileFlag": "--append-system-prompt",
   "output": {
     "format": "ndjson",
     "events": [

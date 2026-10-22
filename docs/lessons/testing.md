@@ -31,6 +31,7 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 
 - 规则：Windows 上 `node_modules` 是 Windows 装的，esbuild / rollup 的原生二进制在 WSL 里跑不起来（报 installed for another platform，接着是「服务没有启动」）。要在 WSL 里验证时，先把仓库复制一份到 Linux 文件系统里 `npm ci` 再跑，不要直接对 `/mnt/e` 这份 `npm ci`——它会把 Windows 的依赖换成 Linux 的，本机开发就跑不了了。
 - 起因：这次改完想按项目步骤跑 e2e，直接在 `/mnt/e` 里跑，卡在 esbuild 二进制不匹配。
+- 补充：在 worktree 里跑时不用复制整个仓库（worktree 的 `node_modules` 是指向主仓库的软链接，装什么都会落到 Windows 那份上）：在 WSL 里 `npm i --prefix /tmp/esb @esbuild/linux-x64@<和仓库相同的版本>`，再 `ESBUILD_BINARY_PATH=/tmp/esb/node_modules/@esbuild/linux-x64/bin/esbuild npm run test:e2e`，就只换 esbuild 的二进制。
 - 防线：人工（CI 的 Ubuntu 步骤始终是干净的 Linux 依赖）。
 
 ## 自己起服务做验证时清掉面板的环境变量

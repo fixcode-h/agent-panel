@@ -283,6 +283,12 @@ export const CliSpec = z.object({
   output: z.union([z.string(), OutputSpec]),
   /** 角色说明怎么给：flag 是追加系统提示词的参数（如 --append-system-prompt），不给时拼进任务描述 */
   systemPromptFlag: z.string().default(''),
+  /**
+   * 这个 CLI 能把系统提示词从文件读时用的参数（值写成文件路径）：例如 Pi 的 --append-system-prompt 会读文件内容。
+   * 填了就总是传文件路径（invoke 把角色说明写进这一轮的临时目录），参数里不再带多行文本：
+   * Windows 上参数里的换行会让 cmd.exe 截断命令行，后面的参数（例如 Pi 的 -e 桥接扩展）会全部丢失
+   */
+  systemPromptFileFlag: z.string().default(''),
   features: z
     .object({
       /** 执行中能插话 */
@@ -472,13 +478,14 @@ export function specToDefinition(input: CliSpecInput): CliDefinition {
     permissions: spec.permissions.map((p) => ({ id: p.id, label: tr(p.label), hint: tr(p.hint) })),
     defaultPermission: spec.defaultPermission ?? spec.permissions[0].id,
     systemPromptFlag: !!spec.systemPromptFlag,
+    systemPromptFileFlag: spec.systemPromptFileFlag,
     buildArgs: (o) => {
       // 常驻协议和一次性执行的参数不一样（不能再带 -p / --output-format）
       const rules = spec.protocol === 'rpc' ? (spec.rpcArgs ?? spec.args) : spec.args
+      // 系统提示词能传文件时用文件参数（调用方已经把内容写成文件，见 invoke）
+      const promptFlag = spec.systemPromptFileFlag || spec.systemPromptFlag
       return buildFromRules(
-        spec.systemPromptFlag
-          ? [...rules, { if: 'systemPrompt', args: [spec.systemPromptFlag, '{systemPrompt}'] }]
-          : rules,
+        promptFlag ? [...rules, { if: 'systemPrompt', args: [promptFlag, '{systemPrompt}'] }] : rules,
         o,
       )
     },
