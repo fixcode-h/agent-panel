@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { setLang } from '../shared/i18n.ts'
 import { DEFAULT_FILE_FORMAT } from '../shared/schema.ts'
 import {
   createInDir,
@@ -19,6 +20,10 @@ import {
   searchNameInDir,
   writeInDir,
 } from './files.ts'
+
+// 这里断言的是 files.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
+// （server/files.ts 会经 settings.ts → lang.ts 按 process.env.LANG 改全局语言，CI 上是英文）
+setLang('zh')
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-files-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
