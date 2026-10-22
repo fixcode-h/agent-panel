@@ -23,7 +23,14 @@ import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { useDirInfo } from '@/components/projects/DirPicker'
 import { ChatModelPicker, useChatRun, type ChatRun } from './ChatModelPicker'
-import { ATTACHMENT_PROMPT, AttachMenu, DropHint, useAttachments, useFileMention } from '@/components/chat/Attachments'
+import {
+  ATTACHMENT_PROMPT,
+  AttachMenu,
+  DropHint,
+  FileRefHint,
+  useAttachments,
+  useFileMention,
+} from '@/components/chat/Attachments'
 import { useComposerChips } from '@/components/chat/composer-chips'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { RichInput, type RichInputHandle } from '@/components/chat/RichInput'
@@ -247,15 +254,17 @@ export function TaskComposer({
         </div>
       )}
       <div
+        ref={chips.dropRef}
         {...drop.container}
         className={cn(
           'relative rounded-[20px] border border-line-strong bg-card shadow-card transition-[border-color,box-shadow] focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
-          drop.over && 'border-accent ring-2 ring-accent/25',
+          (drop.over || chips.refOver) && 'border-accent ring-2 ring-accent/25',
         )}
       >
         {mention.menu}
         {slash.menu}
         {drop.over && <DropHint />}
+        {chips.refOver && <FileRefHint />}
         {chips.viewer}
         <RichInput
           id="task-prompt"
