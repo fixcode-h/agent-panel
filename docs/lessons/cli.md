@@ -6,8 +6,8 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 
 ## CLI 才有的行为做成 CliSpec 字段，所有 CLI 按字段走
 
-- 规则：某个 CLI 特有的东西（强度档位、强度是否跟着模型走、会话能否中途换强度、模型从哪读、账号怎么识别）写成定义里的字段（`shared/clis/*.json` 或 `shared/clis.ts`），代码只读字段；新字段同时登记进 `docs/cli-config.md`，并把已有的每个 CLI 都过一遍要不要填。
-- 起因：思考强度先只给 Command Code 写死了档位（3ab9c74、bc33580 才改成跟着模型走），后来接 Pi 又各补了一遍 max 档和 reasoning（1456578、deacb24）。
+- 规则：某个 CLI 特有的东西（强度档位、强度是否跟着模型走、会话能否中途换强度、模型从哪读、账号怎么识别）写成定义里的字段（`shared/clis/*.json` 或 `shared/clis.ts`），代码只读字段，不按数值猜（usage 口径写 `inputExcludesCache`）；新字段同时登记进 `docs/cli-config.md`，并把已有的每个 CLI 都过一遍要不要填。
+- 起因：思考强度先只给 Command Code 写死了档位（3ab9c74、bc33580 才改成跟着模型走），后来接 Pi 又各补了一遍 max 档和 reasoning（1456578、deacb24）。fc8a32f 猜 Pi 的缓存口径。
 - 防线：`scripts/rules-check.mjs` 拦 `id === '<CLI 名>'` 这类分支；接新 CLI 走 `docs/cli-config.md` 的「接入检查清单」。
 
 ## 面板写回 CLI 自己的配置时，写全 CLI 判断能力要的字段

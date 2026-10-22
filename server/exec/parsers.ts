@@ -31,6 +31,8 @@ export type CliEvent =
   | { type: 'compacted'; context?: number; before?: number }
   /** patch：改文件的工具给出的 unified diff，用来替换调用时记下的改前改后 */
   | { type: 'tool_result'; id: string; output: string; failed?: boolean; patch?: string; detail?: string }
+  /** 模型在生成、但不显示的输出（Pi 流式给出的工具参数）：只算进实时速度，不然写大文件时速度会被校准得偏高 */
+  | { type: 'gen'; text: string }
   /**
    * 用量。context 是当前上下文占用；add* 是这次新增的 token：输入都按「含缓存」计，缓存命中、缓存写入是输入里的一部分
    */
@@ -603,6 +605,9 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
                 : { type: e.type, text: str(g('text')) },
             )
           break
+        case 'gen':
+          if (str(g('text'))) out.push({ type: 'gen', text: str(g('text')) })
+          break
         case 'thinking':
           if (str(g('text'))) out.push({ type: 'thinking', text: str(g('text')), delta: !!g('delta') })
           break
@@ -636,7 +641,8 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         }
         case 'usage': {
           // 各家 CLI 对 inputTokens 的口径不同：有的已含缓存（AI SDK），有的只算未命中的部分。
-          // 比缓存还小说明是不含缓存的口径，加上缓存才是完整输入，否则缓存命中率会超过 100%
+          // 定义里写明 inputExcludesCache（Pi 的 usage.input 只算未命中的）时总是加上缓存；没写时按大小猜：
+          // 比缓存还小说明是不含缓存的口径。只靠猜不行：某一次未命中的比命中的多时会少算缓存那部分
           const rawIn = num(g('addInput'))
           const read = num(g('addCacheRead'))
           const write = num(g('addCacheWrite'))
@@ -645,7 +651,8 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
             context: num(g('context')),
             window: num(g('window')),
             model: str(g('model')) || undefined,
-            addInput: rawIn === undefined ? undefined : rawIn >= cache ? rawIn : rawIn + cache,
+            addInput:
+              rawIn === undefined ? undefined : e.inputExcludesCache === true || rawIn < cache ? rawIn + cache : rawIn,
             addOutput: num(g('addOutput')),
             addCacheRead: read,
             addCacheWrite: write,
@@ -673,12 +680,17 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
                 ? t('自动重试 {n} 次后仍然失败：{error}', { n, error: err })
                 : e.kind === 'compact_failed'
                   ? err && t('压缩上下文失败：{error}', { error: err })
-                  : str(g('text'))
+                  : e.kind === 'tools_failed'
+                    ? t('面板的工具没接上（{error}）：这一轮不能派子任务、新建子对话，也不能向你提问', {
+                        error: err || t('原因未知'),
+                      })
+                    : str(g('text'))
           if (text)
             out.push({
               type: 'notice',
               text,
-              failed: e.kind === 'retry_failed' || e.kind === 'compact_failed' || !!g('failed'),
+              failed:
+                e.kind === 'retry_failed' || e.kind === 'compact_failed' || e.kind === 'tools_failed' || !!g('failed'),
             })
           break
         }

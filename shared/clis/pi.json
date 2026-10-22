@@ -463,6 +463,20 @@
       {
         "when": {
           "type": "extension_ui_request",
+          "method": "setStatus",
+          "statusKey": "agent-panel-tools"
+        },
+        "emit": [
+          {
+            "type": "notice",
+            "kind": "tools_failed",
+            "error": "$.statusText"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "extension_ui_request",
           "method": "notify"
         },
         "emit": [
@@ -522,6 +536,18 @@
       {
         "when": {
           "type": "message_update",
+          "assistantMessageEvent.type": "toolcall_delta"
+        },
+        "emit": [
+          {
+            "type": "gen",
+            "text": "$.assistantMessageEvent.delta"
+          }
+        ]
+      },
+      {
+        "when": {
+          "type": "message_update",
           "assistantMessageEvent.type": "thinking_delta"
         },
         "emit": [
@@ -546,7 +572,8 @@
             "addOutput": "$.message.usage.output",
             "addCacheRead": "$.message.usage.cacheRead",
             "addCacheWrite": "$.message.usage.cacheWrite",
-            "addCost": "$.message.usage.cost.total"
+            "addCost": "$.message.usage.cost.total",
+            "inputExcludesCache": true
           }
         ]
       },
@@ -755,7 +782,7 @@
   "mcp": {
     "args": ["-e", "{dir}/agent-panel-{name}.ts"],
     "files": {
-      "{dir}/agent-panel-{name}.ts": "// Agent 面板这一轮放在自己数据目录里的桥接扩展：把面板的工具（MCP）交给 Pi，跑完就删掉\nimport { request } from 'node:http'\n\nconst url = new URL('{url}')\nlet seq = 0\n\n// 用 node:http 而不是 fetch：等用户回答提问可能很久，fetch 默认 5 分钟就超时\nfunction rpc(method: string, params: unknown): Promise<any> {\n  const body = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params })\n  return new Promise((resolve, reject) => {\n    const req = request(\n      url,\n      { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } },\n      (res) => {\n        let text = ''\n        res.setEncoding('utf8')\n        res.on('data', (c) => (text += c))\n        res.on('end', () => {\n          try {\n            const raw = text.trim().startsWith('{')\n              ? text\n              : (text.split('\\n').filter((l) => l.startsWith('data:')).pop() ?? '').slice(5)\n            const msg = JSON.parse(raw)\n            if (msg.error) reject(new Error(msg.error.message))\n            else resolve(msg.result)\n          } catch {\n            reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`))\n          }\n        })\n      },\n    )\n    req.on('error', reject)\n    req.end(body)\n  })\n}\n\nexport default async function (pi: any) {\n  let tools: any[] = []\n  try {\n    await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pi', version: '1' } })\n    tools = (await rpc('tools/list', {}))?.tools ?? []\n  } catch (e) {\n    // 连不上面板时不拦着 Pi 启动，只是这一轮没有面板的工具\n    console.error(`agent-panel: ${(e as Error).message}`)\n  }\n  for (const tool of tools)\n    pi.registerTool({\n      name: tool.name,\n      label: tool.title ?? tool.name,\n      description: tool.description ?? '',\n      parameters: tool.inputSchema ?? { type: 'object', properties: {} },\n      async execute(_id: string, args: unknown) {\n        const r = await rpc('tools/call', { name: tool.name, arguments: args ?? {} })\n        const content = (r?.content ?? []).map((c: any) =>\n          c.type === 'image'\n            ? { type: 'image', data: c.data, mimeType: c.mimeType }\n            : { type: 'text', text: c.type === 'text' ? c.text : JSON.stringify(c) },\n        )\n        if (r?.isError) throw new Error(content.map((c: any) => c.text ?? '').join('\\n'))\n        return { content, details: {} }\n      },\n    })\n}\n"
+      "{dir}/agent-panel-{name}.ts": "// Agent 面板这一轮放在自己数据目录里的桥接扩展：把面板的工具（MCP）交给 Pi，跑完就删掉\nimport { request } from 'node:http'\n\nconst url = new URL('{url}')\nlet seq = 0\n\n// 用 node:http 而不是 fetch：等用户回答提问可能很久，fetch 默认 5 分钟就超时\nfunction rpc(method: string, params: unknown): Promise<any> {\n  const body = JSON.stringify({ jsonrpc: '2.0', id: ++seq, method, params })\n  return new Promise((resolve, reject) => {\n    const req = request(\n      url,\n      { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' } },\n      (res) => {\n        let text = ''\n        res.setEncoding('utf8')\n        res.on('data', (c) => (text += c))\n        res.on('end', () => {\n          try {\n            const raw = text.trim().startsWith('{')\n              ? text\n              : (text.split('\\n').filter((l) => l.startsWith('data:')).pop() ?? '').slice(5)\n            const msg = JSON.parse(raw)\n            if (msg.error) reject(new Error(msg.error.message))\n            else resolve(msg.result)\n          } catch {\n            reject(new Error(`HTTP ${res.statusCode}: ${text.slice(0, 200)}`))\n          }\n        })\n      },\n    )\n    req.on('error', reject)\n    req.end(body)\n  })\n}\n\nexport default async function (pi: any) {\n  let tools: any[] = []\n  try {\n    await rpc('initialize', { protocolVersion: '2025-03-26', capabilities: {}, clientInfo: { name: 'pi', version: '1' } })\n    tools = (await rpc('tools/list', {}))?.tools ?? []\n  } catch (e) {\n    // 连不上面板时不拦着 Pi 启动，但要让面板知道：用固定的状态键报出去，面板显示成一行错误，\n    // 不然模型只会说「面板工具没挂上」，用户看不出原因\n    const error = (e as Error).message\n    console.error(`agent-panel: ${error}`)\n    pi.on('session_start', (_event: unknown, ctx: any) => ctx.ui.setStatus('agent-panel-tools', error))\n  }\n  for (const tool of tools)\n    pi.registerTool({\n      name: tool.name,\n      label: tool.title ?? tool.name,\n      description: tool.description ?? '',\n      parameters: tool.inputSchema ?? { type: 'object', properties: {} },\n      async execute(_id: string, args: unknown) {\n        const r = await rpc('tools/call', { name: tool.name, arguments: args ?? {} })\n        const content = (r?.content ?? []).map((c: any) =>\n          c.type === 'image'\n            ? { type: 'image', data: c.data, mimeType: c.mimeType }\n            : { type: 'text', text: c.type === 'text' ? c.text : JSON.stringify(c) },\n        )\n        if (r?.isError) throw new Error(content.map((c: any) => c.text ?? '').join('\\n'))\n        return { content, details: {} }\n      },\n    })\n}\n"
     }
   },
   "i18n": {

@@ -423,6 +423,9 @@ export const EN_SERVER: Record<string, string> = {
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
+  '面板的工具没接上（{error}）：这一轮不能派子任务、新建子对话，也不能向你提问':
+    "Panel tools didn't connect ({error}). This turn can't spawn sub-tasks, create sub-conversations or ask you questions",
+  原因未知: 'unknown reason',
   提示: 'Notice',
   '这个 CLI 不支持扩展包': "This CLI doesn't support packages",
   不支持这个操作: 'Unsupported action',

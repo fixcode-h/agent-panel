@@ -146,7 +146,7 @@ interface Waiter {
 const waiters = new Map<string, Set<Waiter>>()
 
 /** 预热时不记进对话的事件：正文、思考、工具和待办 */
-const PREWARM_QUIET = new Set(['thinking', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
+const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
 /**
  * 把用户消息交给正在等下一句的 CLI。
@@ -921,6 +921,9 @@ async function runAgent(
         streamed(ev.text)
         break
       }
+      case 'gen':
+        streamed(ev.text)
+        break
       case 'text_delta': {
         if (!cur && !ev.text.trim()) break
         const m = cur ?? newMsg()

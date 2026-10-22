@@ -61,6 +61,9 @@ export const tokenGuard: MiddlewareHandler = async (c, next) => {
   if (!requireToken || getCookie(c, COOKIE) === accessToken()) return next()
   // AI 改设计用的工具由 CLI 调，没有 Cookie；地址里的随机令牌只在那一轮设计里有效，由接口自己核对
   if (c.req.path.startsWith('/api/mcp/design/')) return next()
+  // 面板工具（提问、派子任务、新建子对话）同理：CLI 拿着这一轮的随机地址来调，没有 Cookie，
+  // 拦下来 CLI 就一个面板工具都没有了；地址不对的由接口自己回 404
+  if (c.req.path.startsWith('/api/mcp/ask/')) return next()
   // 浏览器扩展拿不到面板的 Cookie；它能调的只有 /bridge 下面的几个接口（index.ts 里按来源限制了）
   if (c.req.path.startsWith('/api/bridge/') && /^(chrome|moz)-extension:\/\//.test(c.req.header('origin') ?? ''))
     return next()

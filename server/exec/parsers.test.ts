@@ -323,6 +323,31 @@ test('Pi：面板工具是裸名字，记成 MCP 调用，不当成子 Agent', (
   assert.equal(tool.tool.label, 'panel · wait_agents')
 })
 
+test('Pi：未命中的输入比命中的多时也加上缓存，工具参数只算速度，面板工具没接上要显示出来', () => {
+  const parse = parserFor('pi', CWD)
+  const usage = { input: 5000, output: 40, cacheRead: 1000, cacheWrite: 0, totalTokens: 6040, cost: { total: 0 } }
+  const ev = parse({ type: 'message_end', message: { role: 'assistant', model: 'deepseek-flash', usage } })
+  // Pi 的 usage.input 永远不含缓存：只靠「比缓存小才加」去猜，这一条会少记 1000，命中率就偏高
+  assert.equal((ev.find((e) => e.type === 'usage') as { addInput?: number }).addInput, 6000)
+  assert.deepEqual(
+    parse({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'toolcall_delta', contentIndex: 1, delta: '{"pa' },
+    }),
+    [{ type: 'gen', text: '{"pa' }],
+  )
+  const [notice] = parse({
+    type: 'extension_ui_request',
+    id: 'x',
+    method: 'setStatus',
+    statusKey: 'agent-panel-tools',
+    statusText: 'HTTP 401: {}',
+  })
+  assert.equal(notice.type, 'notice')
+  assert.equal((notice as { failed?: boolean }).failed, true)
+  assert.match((notice as { text: string }).text, /面板的工具没接上（HTTP 401: \{\}）/)
+})
+
 test('Pi：按配置文件拼参数（默认走 RPC）', () => {
   const def = getCli('pi')!
   assert.deepEqual(
