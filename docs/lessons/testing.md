@@ -27,6 +27,12 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 - 规则：沙盒里直接跑 `claude` 会继承当前会话的环境和会话 id；Claude 的协议用假 CLI 测。Codex 在沙盒里没装。沙盒设了 `ANTHROPIC_BASE_URL`，会混进 API 配置的断言，跑 e2e 用 `env -u ANTHROPIC_BASE_URL npm run test:e2e`。
 - 防线：人工。
 
+## 临时改坏代码验证测试会失败时，还原别用 git checkout
+
+- 规则：为了确认新测试真能挡住 bug，临时把修复去掉跑一遍是对的；但还原时不要用 `git checkout -- <文件>` / `git restore <文件>`——未提交的改动会整份丢掉。先 `cp` 到临时目录或 `git stash push <文件>`，验证完从备份恢复，再用 `git diff --stat` 确认改动还在。
+- 起因：修 Pi 面板工具时把 `process.ts` 的兜底临时去掉，证明新加的 `.cmd` 垫片测试会失败；用 `git checkout --` 还原时把那一整份修复抹掉了，只能从 /tmp 的临时备份找回。
+- 防线：人工（还原后先看一眼 `git diff --stat`）。
+
 ## 在 WSL 里跑 e2e 要用 Linux 装的依赖
 
 - 规则：Windows 上 `node_modules` 是 Windows 装的，esbuild / rollup 的原生二进制在 WSL 里跑不起来（报 installed for another platform，接着是「服务没有启动」）。要在 WSL 里验证时，先把仓库复制一份到 Linux 文件系统里 `npm ci` 再跑，不要直接对 `/mnt/e` 这份 `npm ci`——它会把 Windows 的依赖换成 Linux 的，本机开发就跑不了了。
