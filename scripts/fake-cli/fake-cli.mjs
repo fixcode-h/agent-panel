@@ -634,6 +634,10 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 const reply = turnReply()
 // 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
 const emptyTurn = input.includes('FAKE_EMPTY') && !input.includes('只说了要做什么就结束了这一轮')
+// 一个字都不回、也不报用量的一轮：CLI 报这一轮「成功」，面板什么都没收到。
+// 复现「网关吞掉请求后空成功收尾」——那一轮会被当成已完成并保活，用户后面发的消息全落进死回合。
+// 面板重试时会带上「上一次请求没有返回任何内容」，那时正常回复
+const silentTurn = () => input.includes('FAKE_SILENT') && !input.includes('上一次请求没有返回任何内容')
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
@@ -1122,6 +1126,11 @@ if (kind === 'claude') {
     })
     process.exit(0)
   }
+  // 一个字都不回：只报这一轮成功，没有正文也没有用量（网关把请求吞掉时就是这样）
+  if (silentTurn()) {
+    out({ type: 'result', subtype: 'success', is_error: false, session_id: session })
+    process.exit(0)
+  }
   out({
     type: 'stream_event',
     event: {
@@ -1344,6 +1353,17 @@ if (kind === 'claude') {
       process.exit(6)
     }
     const r = turnReply()
+    // 一个字都不回：只报这一轮正常结束，没有正文也没有用量（网关把请求吞掉、带图请求被拒时就是这样）
+    if (silentTurn()) {
+      process.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'turn/completed',
+          params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'end_turn' },
+        }) + '\n',
+      )
+      return await exitTurn(0)
+    }
     // 空回合：只说一句准备语，连工具都不能发（否则零工具不成立，面板的空回合判定永远测不到）
     if (emptyTurn) {
       ev({ type: 'run_start', sessionId: session })

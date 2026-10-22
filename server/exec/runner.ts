@@ -123,8 +123,11 @@ interface Steerer {
   step: string
   agentId: string
   steer: (text: string) => Promise<boolean>
-  /** 补充交给了它：之后的输出另起一条，排在用户消息后面 */
-  accepted: () => void
+  /**
+   * 补充交给了它：之后的输出另起一条，排在用户消息后面。
+   * msg 是交出去的那条用户消息，这一轮最后没有任何输出时要靠它把消息捡回来重放
+   */
+  accepted: (msg?: TaskMessage) => void
 }
 /** 任务 id → 正在跑、能接收补充的调用（工作流里同时执行的节点可能有几个） */
 const steers = new Map<string, Set<Steerer>>()
@@ -251,7 +254,7 @@ export async function steerTask(
     // 工作流里的补充记在节点上：不算任务的新要求（继续执行时不会把它当成要求重跑）
     const at = took[0]
     task.messages.push({ ...msg, step: at.step, agentId: at.step ? at.agentId : msg.agentId })
-    for (const s of took) s.accepted()
+    for (const s of took) s.accepted(msg)
     return 'steer'
   }
   const takers = noteTakersOf(task.id)
@@ -450,11 +453,13 @@ const MAX_EMPTY_RETRIES = 1
  * 命中时说明它是在计划而不是在交付，需要接着推一轮。
  */
 /**
- * 这一轮算不算「没做事就收尾」：模型只回了一句话，没调工具、没改文件、也没给出结论。
+ * 这一轮算不算「没做事就收尾」：模型只回了一句话，或者干脆一个字都没回，
+ * 没调工具、没改文件、也没给出结论。
  *
- * 宁可不报也不误报：误报会在对话里挂一张红色卡片、还会白跑一轮模型请求。
- * 所以只认最典型的一种——第一人称的「我先做点什么」加上准备动词；
- * 已经给出结论、结果或命令的回复一律不算。
+ * 误报会在对话里挂一张红色卡片、还会白跑一轮模型请求，所以「只说了一句准备语」这种
+ * 仍按第一人称的「我先做点什么」加准备动词来认；但一个字都没输出不能放过：
+ * CLI 报了一轮成功、面板却什么都没收到时，那一轮会被当成已完成并保活等下一句，
+ * 用户发来的消息全落在死回合里，既没有回复也没有报错（见 docs/lessons/execution.md）。
  */
 export function looksUnfinished(o: {
   /** 这一轮产生的所有回复 */
@@ -469,7 +474,8 @@ export function looksUnfinished(o: {
     .reverse()
     .find((x) => x.trim())
     ?.trim()
-  if (!last) return false
+  // 没有任何输出：这一轮确实什么都没做，交给空回合兜底重跑，不能让「成功」的空结果收尾
+  if (!last) return true
   // 长篇回复通常已经给了方案或结论，不算「只说了一句准备」
   if (last.length > 200) return false
   // 已经交东西的：有结论、有结果、给了命令，就不再推
@@ -1153,8 +1159,9 @@ async function runAgent(
       step,
       agentId,
       steer: c.steer,
-      accepted: () => {
+      accepted: (msg) => {
         // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
+        if (msg) steered.add(msg)
         task.working = true
         if (c.deferSteer) {
           steerPending = true
@@ -1176,6 +1183,12 @@ async function runAgent(
   let taker: NoteTaker | undefined
   /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
   const pendingNotes = new Set<TaskMessage>()
+  /**
+   * 以插话方式交出去的补充：CLI 收下不等于模型看见了。
+   * 这一轮一个字都没产出时（网关吞了、请求根本没发出去），这些消息要交给下一轮重放，
+   * 否则用户的消息只留在对话里，既没有回复也没有报错。
+   */
+  const steered = new Set<TaskMessage>()
   // notes 与 steer 不互斥：steer 在 CLI 不在活跃轮次时返回 false，补充会丢；两个通道都开（同样见 invoke.ts）
   if (canTake) {
     taker = {
@@ -1396,6 +1409,10 @@ async function runAgent(
       for (const m of pendingNotes) holdForNextTurn(task.id, m)
       pendingNotes.clear()
     }
+    // 插话交出去、这一轮却一个字都没产出的：CLI 收下不等于模型看见，交回下一轮重放。
+    // texts 要等进程结束后才汇总，这里看 mine 里已经收到的正文
+    if (!mine.some((m) => m.role === 'agent' && m.text.trim())) for (const m of steered) holdForNextTurn(task.id, m)
+    steered.clear()
     meter.stop()
     // 进程结束了（完成、停止、超时），还没回答的请求作废
     for (const id of asked) replies.delete(id)
@@ -1552,7 +1569,7 @@ async function runAgent(
       error: netRetries ? [message, '', t('已自动续接 {n} 次，仍然失败。', { n: netRetries })].join('\n') : message,
     }
   }
-  // 这一轮模型只回了一句「我先…」就收尾了：没调工具、没改文件，等于什么都没做。
+  // 这一轮模型只回了一句「我先…」就收尾了，或者干脆一个字都没回：没调工具、没改文件，等于什么都没做。
   // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来。
   // 不限定对话：子 Agent（工作流节点、并行子任务）同样会只报一句进度就结束，那一路没人催就只能干等。
   if (
@@ -1561,11 +1578,17 @@ async function runAgent(
     !ctx.signal.aborted &&
     looksUnfinished({ texts, tools: mine.reduce((n, m) => n + m.tools.length, 0), changed: touched.size })
   ) {
+    // 一个字都没收到：模型根本没答这条要求（网关吞了、带图请求被拒），不能按「只说了要做」去催
+    const silent = !texts.some((x) => x.trim())
+    const what = silent
+      ? t('这一轮 {cli} 没有返回任何内容，用户的要求还没处理', { cli: def.name })
+      : t('这一轮只回了一句话就结束了，没有动手也没给出结论')
     if (emptyRetries < MAX_EMPTY_RETRIES) {
-      const note = t(
-        '这一轮只回了一句话就结束了，没有动手也没给出结论。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…',
-        { n: emptyRetries + 1, max: MAX_EMPTY_RETRIES },
-      )
+      const note = t('{what}。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…', {
+        what,
+        n: emptyRetries + 1,
+        max: MAX_EMPTY_RETRIES,
+      })
       task.messages.push({
         id: ctx.newId(),
         role: 'system',
@@ -1577,15 +1600,21 @@ async function runAgent(
         at: new Date().toISOString(),
       })
       const pushed = task.messages.at(-1)!
-      log.warn('agent', `${def.name} 只回了一句就结束，自动接一轮`, { task: task.id, step, n: emptyRetries + 1 })
+      log.warn('agent', `${def.name} ${silent ? '没有返回任何内容' : '只回了一句就结束'}，自动接一轮`, {
+        task: task.id,
+        step,
+        n: emptyRetries + 1,
+      })
       ctx.changed(true)
       return runAgent(
         ctx,
         {
           ...call,
-          prompt:
-            '你上一条回复只说了要做什么就结束了这一轮，既没有调用工具也没有给出结论。' +
-            '现在马上动手：直接发起工具调用去完成任务，做完在这一轮里给出结论；不要再说「我先看看」这类准备语。',
+          // 没有任何输出时上一轮没答这条要求，按原样再要一次；只说了一句准备语时才把要求换成「现在动手」
+          prompt: silent
+            ? '（上一次请求没有返回任何内容，这是重试。）\n\n' + call.prompt
+            : '你上一条回复只说了要做什么就结束了这一轮，既没有调用工具也没有给出结论。' +
+              '现在马上动手：直接发起工具调用去完成任务，做完在这一轮里给出结论；不要再说「我先看看」这类准备语。',
         },
         retried,
         netRetries,
@@ -1596,7 +1625,8 @@ async function runAgent(
       )
     }
     const note = t(
-      '自动接了一轮，模型仍然只回了一句话、没有动手，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。',
+      '{what}。自动接了一轮仍然没有产出，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。',
+      { what },
     )
     task.messages.push({
       id: ctx.newId(),
@@ -1634,9 +1664,16 @@ async function runAgent(
     })
     ctx.changed(true)
   }
-  // 这一轮调了模型、却一条用量事件都没收到（网关不回 usage）：统计会是 0，别让 0 被当成「没消耗」
-  if (chat && !op && !prewarm && !usageSeen && (texts.length || errors.length))
-    sysMsg(t('这次没有拿到 {cli} 报告的用量，下面的 token 和费用统计不可信（不代表没有消耗）。', { cli: def.name }))
+  // 这一轮调了模型、却一条用量事件都没收到（网关不回 usage）：统计会是 0，别让 0 被当成「没消耗」。
+  // 正文和报错都为空时同样要说明：那一轮很可能连模型请求都没发出去，只留一行 0 的统计会看不出问题
+  if (chat && !op && !prewarm && !usageSeen)
+    sysMsg(
+      texts.length || errors.length
+        ? t('这次没有拿到 {cli} 报告的用量，下面的 token 和费用统计不可信（不代表没有消耗）。', { cli: def.name })
+        : t('这次没有拿到 {cli} 的任何输出和用量：这条要求很可能没有被处理，可以重发或换一个模型再试。', {
+            cli: def.name,
+          }),
+    )
   // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
   if (op?.kind === 'compact' && def.compact === 'summary') {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
