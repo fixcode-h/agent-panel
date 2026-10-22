@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { DEFAULT_FILE_FORMAT } from '../shared/schema.ts'
+import { setLang } from '../shared/i18n.ts'
 import {
   createInDir,
   deleteInDir,
@@ -19,6 +20,9 @@ import {
   searchNameInDir,
   writeInDir,
 } from './files.ts'
+
+// 这里的断言都是中文报错文案：固定语言，Linux / CI 上 LANG 是英文时也能过
+setLang('zh')
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-files-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
