@@ -2916,6 +2916,16 @@ try {
   assert.equal(job.status, 'done', job.error)
   assert.equal(job.attempt, 2)
   assert.match(calls().at(-1).input, /不符合要求[\s\S]*nope/)
+  // Pi 的工具调用开始时就标成运行中：结果回来后要收掉，不然 AI 创建 / 分析里的工具行一直转圈
+  job = await assist('agent', `FAKE_JSON:${JSON.stringify(draftAgent)}`, { cli: 'pi' })
+  assert.equal(job.status, 'done', job.error)
+  const piTools = job.messages.flatMap((m) => m.tools)
+  assert.ok(piTools.length >= 2, '工具调用显示出来')
+  assert.deepEqual(
+    piTools.filter((x) => x.running).map((x) => x.label),
+    [],
+    '工具结束后不再显示运行中',
+  )
   // 两次都不对时失败并说明原因
   job = await assist('agent', `FAKE_JSON:${JSON.stringify({ ...draftAgent, name: '甲' })}`)
   assert.equal(job.status, 'failed')
