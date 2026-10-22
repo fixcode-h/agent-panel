@@ -51,9 +51,14 @@ export function useWorktrees(taskId: string, key: string, enabled = true) {
 export const worktreeKey = (task: Task) =>
   `${task.status}:${task.working}:${task.turnDoneAt ?? ''}:${task.worktree?.state ?? ''}:${task.childrenWorking ?? 0}`
 
+/** 还有东西没合回原分支：分支上有原分支没有的提交，或者目录里有没提交的改动。两边都为 0 时没有可合的东西 */
+const pending = (x: WorktreeItem) => x.ahead > 0 || x.dirty > 0
+
+/** 需要合并（界面才给合并按钮）：分支还在、状态还是 active、并且真有东西没合回去 */
+export const needsMerge = (x: WorktreeItem) => x.state === 'active' && !x.merged && pending(x)
+
 /** 还没合回原分支、还能处理的 */
-export const unmergedOf = (items: WorktreeItem[] | undefined) =>
-  (items ?? []).filter((x) => x.state === 'active' && !x.merged)
+export const unmergedOf = (items: WorktreeItem[] | undefined) => (items ?? []).filter(needsMerge)
 
 /** 绿色的勾：改动都在原分支里了；感叹号：还有没合并的 */
 export function WorktreeMark({ item, className }: { item: WorktreeItem; className?: string }) {
@@ -68,7 +73,8 @@ export function worktreeSummary(item: WorktreeItem) {
   if (item.state === 'discarded') return t('已删除，改动没有合并')
   if (item.state === 'merged') return t('已合并到「{branch}」，分支已删除', { branch: item.note || base })
   if (item.working) return t('正在执行，不改动原目录')
-  if (item.merged) return t('已在「{branch}」里', { branch: base })
+  // 没有提交也没有未提交的文件就是合过了：不能给按钮（见 unmergedOf）却拼出「未合并到「…」：」后面空着这种句子
+  if (item.merged || !pending(item)) return t('已在「{branch}」里', { branch: base })
   const parts: string[] = []
   if (item.ahead) parts.push(t('{n} 个提交', { n: item.ahead }))
   if (item.dirty) parts.push(t('{n} 个文件未提交', { n: item.dirty }))
@@ -192,7 +198,7 @@ export function WorktreeRow({
       </div>
       {idle && (
         <span className="flex shrink-0 items-center gap-0.5">
-          {!item.merged && (
+          {needsMerge(item) && (
             <button
               type="button"
               disabled={busy}
@@ -282,7 +288,7 @@ export function DeleteTaskDialog({
     }
   }, [open, task.id])
   const left = unmergedOf(items ?? undefined)
-  const kept = (items ?? []).filter((x) => x.state === 'active' && x.merged).length
+  const kept = (items ?? []).filter((x) => x.state === 'active' && !needsMerge(x)).length
   const run = async (what: 'ai' | 'delete') => {
     if (pending) return
     setPending(what)

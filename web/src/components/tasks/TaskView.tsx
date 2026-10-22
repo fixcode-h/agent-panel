@@ -65,6 +65,7 @@ import { TaskMeta } from './TaskMeta'
 import {
   DeleteTaskDialog,
   WorktreeMark,
+  needsMerge,
   useWorktreeActions,
   useWorktrees,
   worktreeKey,
@@ -2017,7 +2018,7 @@ function WorktreeBar({ task }: { task: Task }) {
       </span>
       {item && item.state === 'active' && !item.working && (
         <span className="flex shrink-0 items-center gap-1">
-          {!item.merged && (
+          {needsMerge(item) && (
             <Button
               size="sm"
               variant="secondary"

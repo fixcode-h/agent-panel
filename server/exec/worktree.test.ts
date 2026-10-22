@@ -4,7 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { setLang } from '../../shared/i18n.ts'
 import { createWorktree, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.ts'
+
+// 断言的是 worktree.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
+setLang('zh')
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-wt-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
@@ -84,6 +88,55 @@ test('独立分支的状态：没合并时标出提交和没提交的文件，�
     st = await worktreeStatus(repo, wt)
     assert.equal(st.merged, true)
     assert.ok(existsSync(path.join(repo, 'b.txt')))
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('用手动 git merge 合进原分支、分支还留着时也算作已合并', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'manual')
+  try {
+    writeFileSync(path.join(wt.path, 'b.txt'), 'b\n')
+    git(wt.path, 'add', '-A')
+    git(wt.path, 'commit', '-qm', 'b')
+    assert.equal((await worktreeStatus(repo, wt)).merged, false)
+    // 用户自己在原目录合，不删分支
+    git(repo, 'merge', '--no-ff', '--no-edit', '-m', '手动合并', wt.branch)
+    assert.deepEqual(await worktreeStatus(repo, wt), { exists: true, branch: true, ahead: 0, dirty: 0, merged: true })
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('分支已经删掉时：状态还停在 active 也算已合并，主动丢弃的算没合并', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'deleted')
+  writeFileSync(path.join(wt.path, 'b.txt'), 'b\n')
+  git(wt.path, 'add', '-A')
+  git(wt.path, 'commit', '-qm', 'b')
+  git(repo, 'merge', '--no-ff', '--no-edit', '-m', '合并', wt.branch)
+  // 面板合并（或者用户自己）把目录和分支清掉了，任务记录里的 state 还停在 active：
+  // 不能报成 ahead=0 / dirty=0 / merged=false，那样界面上会出现「未合并到「…」：」后面空着加一个没用的合并按钮
+  await removeWorktree(repo, wt, true)
+  assert.deepEqual(await worktreeStatus(repo, wt), { exists: false, branch: false, ahead: 0, dirty: 0, merged: true })
+  assert.equal((await worktreeStatus(repo, { ...wt, state: 'merged', note: wt.baseBranch })).merged, true)
+  assert.equal((await worktreeStatus(repo, { ...wt, state: 'discarded' })).merged, false)
+})
+
+test('开分支时的原分支后来被删了：和原目录现在的提交比，不当作已合并', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'base-gone')
+  try {
+    writeFileSync(path.join(wt.path, 'b.txt'), 'b\n')
+    git(wt.path, 'add', '-A')
+    git(wt.path, 'commit', '-qm', 'b')
+    git(repo, 'checkout', '-qb', 'other')
+    git(repo, 'branch', '-D', wt.baseBranch)
+    const st = await worktreeStatus(repo, wt)
+    assert.equal(st.branch, true)
+    assert.equal(st.ahead, 1)
+    assert.equal(st.merged, false)
   } finally {
     await removeWorktree(repo, wt, true)
   }
