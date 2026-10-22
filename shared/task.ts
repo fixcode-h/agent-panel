@@ -441,9 +441,11 @@ function textKey(s: string) {
   return (h >>> 0).toString(36)
 }
 
-/** 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发 */
+/** 消息的指纹：文字、思考、提问状态、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发 */
 export function messageStamp(m: TaskMessage) {
-  return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${m.tools
+  // 提问卡片在别处答完后也要推给前端，不然卡片一直停在「待决定」
+  const ask = m.ask ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}` : ''
+  return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${ask}|${m.tools
     .map(
       (t) =>
         // 工具输出要带内容指纹：命令输出是按快照替换的，长度可能刚好不变（边跑边刷新的状态行），
