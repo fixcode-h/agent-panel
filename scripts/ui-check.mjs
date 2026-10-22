@@ -466,9 +466,9 @@ try {
   await p.getByRole('textbox', { name: '告诉 AI 要做什么' }).fill('按钮再大一点')
   await p.keyboard.press('Enter')
   // 思考、调设计工具、说明按顺序边出边显示
-  await p.getByText(/design · check/).waitFor({ timeout: 15000 })
+  await p.getByText('check', { exact: true }).first().waitFor({ timeout: 15000 })
   await p.waitForTimeout(600)
-  await check(p, 'UI设计-写入', ['design · replace_widget'])
+  await check(p, 'UI设计-写入', ['replace_widget'])
   await p.getByText(/正在生成图片 \d+\/\d+/).waitFor({ timeout: 15000 })
   await check(p, 'UI设计-生成中', ['正在生成图片'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
@@ -557,6 +557,8 @@ try {
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   await p.getByRole('button', { name: '设置' }).first().click()
   await check(p, '设置', ['常规', '内容宽度'])
+  await p.getByRole('button', { name: '全局教训', exact: true }).click()
+  await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '字体', exact: true }).click()
   await check(p, '设置-字体', ['Maple Mono NL', '字间距', '空格宽度'])
   await p.getByRole('button', { name: '风格库' }).click()
@@ -960,7 +962,13 @@ try {
       .getByRole('button', { name: /^测试步骤/ })
       .first()
       .click()
-    await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '合并时编译'])
+    await check(p, '项目设置-测试步骤', [
+      'AI 生成步骤',
+      'WSL 发行版',
+      '合并时编译',
+      '小改动也跑',
+      '按改动大小决定验证范围',
+    ])
     // 项目教训：演示项目里有手动记的和角色记的，按文件生效的显示范围
     await dlg
       .getByRole('button', { name: /^项目教训/ })
@@ -974,6 +982,21 @@ try {
     await check(p, '项目首页-相关对话', ['发到这里', '需要你处理'])
     await p.keyboard.press('ControlOrMeta+a')
     await p.keyboard.press('Backspace')
+    // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
+    await p.getByText('项目教训 · ', { exact: false }).first().scrollIntoViewIfNeeded()
+    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '要等一段时间再做的事'])
+    await p
+      .getByRole('button', { name: /新增支付方式写进/ })
+      .first()
+      .click()
+    await check(p, '项目教训-改写记录', ['改写记录', '为什么改', '提取全局教训'])
+    // 提取全局教训：AI 给出的改动逐条勾选，确认后写进去
+    await p.getByRole('button', { name: '提取全局教训' }).first().click()
+    await p.getByText('把这个项目里换个项目也适用的教训提取出来').first().click()
+    await check(p, '提取全局教训', ['确认写入全局教训', '新加'])
+    await p.getByRole('button', { name: '确认写入全局教训' }).click()
+    await check(p, '提取全局教训-已写入', ['条全局教训'])
+    await p.keyboard.press('Escape')
   } else errors.push('项目设置：项目页上没有「项目设置」按钮')
 
   // 英文界面：切到 English 后对话页的执行中提示和按钮都正常，没有 Queue

@@ -27,12 +27,14 @@ import {
   type NodeStep,
   type NodeTier,
   type ParamValues,
+  type GlobalLesson,
   type ProjectLesson,
   type RunMessage,
   type RunStateEntry,
   type Task,
   type TaskRun,
   type TaskStep,
+  type TestStep,
   type Workflow,
 } from './schema.ts'
 import {
@@ -75,6 +77,7 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { findLessons } from './lessons.ts'
+import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 
@@ -148,6 +151,90 @@ export interface HelperReport {
  * 交给一次调用的编排工具，绑定在调用它的节点上。工具调用不能等太久（Codex 默认 60 秒就超时），
  * 等子 Agent、等主 Agent 回答都有上限，没等到就先返回，之后再查
  */
+/** 一批子任务交回的结果：take() 认领，只有第一次拿得到 */
+export interface HelperBatch {
+  take: () => string
+}
+
+/** 子任务结果交给对话的 CLI。preempt：它正在回复等待期间的用户消息，先放下那条，做完再回去 */
+export const helperPrompt = (late: string, preempt = false) =>
+  preempt
+    ? `【面板】你派出的子任务都结束了。先放下正在回复的这条用户消息，根据下面的结果把派子任务之前的工作做完；` +
+      `做完后再回到那条用户消息，接着回复还没回复完的部分。\n\n${late}`
+    : `【面板】你派出的子任务都结束了，结果如下：\n\n${late}\n\n请根据这些结果接着做。`
+
+/** 等子任务期间用户发来的消息：马上回复，子任务的结果交回后再接着之前的工作 */
+export const sideChatPrompt = (text: string) =>
+  '【面板】你派出的子任务还在执行，用户在等待期间发来了消息。请直接回复这条消息，不要停下来等子任务；' +
+  '需要用到子任务结果的部分说明会在结果交回后处理。子任务全部交回后面板会把结果交给你，到时先处理结果，' +
+  `再回到这里没做完的部分。\n\n用户的消息：\n${text}`
+
+/**
+ * 对话等子任务的这段时间：用户照样能聊，消息马上交给 CLI 回复；
+ * 这一批全部交回后立刻处理结果（正在回复用户时用插话打断它），处理完再回到被打断的那条消息。
+ * 引擎（回复完 CLI 就退出的，Claude Code、Codex）和 runner（CLI 停在面板的等待工具上的）各用一个。
+ */
+export function helperGate(
+  batch: () => Promise<HelperBatch> | undefined,
+  /** 把结果插进正在回复用户消息的这一轮；交不进去返回 false，等这一轮结束再交 */
+  steer?: (text: string) => Promise<boolean>,
+) {
+  /** 交回了、但还没交给 CLI 的结果（插话没交进去） */
+  let carry = ''
+  /** CLI 正在回复等待期间的用户消息 */
+  let replying = false
+  /** 正在等的这一批：交回后它从编排状态里删掉，没认领前要自己留着 */
+  let watching: Promise<HelperBatch> | undefined
+  return {
+    /**
+     * 一轮结束后调：没有要等的子任务返回 undefined；否则等到下一件要做的事，返回交给 CLI 的提示词。
+     * listen 等用户的下一条消息（返回 null 表示不再等，比如页面离开了），停止或结果被别处认领了返回空字符串
+     */
+    wait(signal: AbortSignal, listen?: (signal: AbortSignal) => Promise<string | null>): Promise<string> | undefined {
+      replying = false
+      if (carry) {
+        const late = carry
+        carry = ''
+        return Promise.resolve(helperPrompt(late))
+      }
+      const b = watching ?? batch()
+      if (!b) return undefined
+      watching = b
+      return (async () => {
+        const ac = new AbortController()
+        const stop = () => ac.abort()
+        signal.addEventListener('abort', stop, { once: true })
+        try {
+          const aborted = new Promise<null>((r) => ac.signal.addEventListener('abort', () => r(null), { once: true }))
+          // 不再等用户（页面离开了）就只等子任务
+          const user = listen
+            ? listen(ac.signal).then((text) => (text === null ? new Promise<never>(() => {}) : { user: text }))
+            : new Promise<never>(() => {})
+          const got = await Promise.race([b.then((x) => ({ back: x })), user, aborted])
+          if (!got || signal.aborted) return ''
+          if ('back' in got) {
+            watching = undefined
+            const late = got.back.take()
+            return late ? helperPrompt(late) : ''
+          }
+          replying = true
+          // 整批交回时还在回复这条消息：插话打断它，先处理结果；交不进去的等这一轮结束再交
+          void b.then(async (x) => {
+            if (!replying || !steer) return
+            const late = x.take()
+            watching = undefined
+            if (late && !(await steer(helperPrompt(late, true)))) carry = late
+          })
+          return sideChatPrompt(got.user)
+        } finally {
+          signal.removeEventListener('abort', stop)
+          ac.abort()
+        }
+      })()
+    },
+  }
+}
+
 export interface Orchestra {
   /** 调用者的节点 id */
   self: string
@@ -162,10 +249,11 @@ export interface Orchestra {
   /** 对话里派的子任务：这一轮结束后对话停下等它们，结果自动交回，不用模型自己轮询 */
   autoReturn: boolean
   /**
-   * 还没交回的子任务：等它们全部结束，把结果作为一条面板消息记进对话并返回交给 CLI 的文字；
-   * 没有要交回的返回 undefined。对话这一轮结束时调用，对话就停在这里等子任务
+   * 这一批还没交回的子任务：等它们全部结束，把结果作为一条面板消息记进对话；没有要交回的返回 undefined。
+   * 同一批只有一个 Promise，多处等拿到的是同一个；结果由 take() 认领，只有第一次认领拿得到，免得交给 CLI 两次。
+   * 对话这一轮结束时用 helperGate 等它，等待期间用户照样能聊
    */
-  helperResults(signal?: AbortSignal): Promise<string> | undefined
+  helperBatch(): Promise<HelperBatch> | undefined
   status(): string
   spawn(tasks: HelperSpec[]): { ids: string[]; error?: string }
   wait(ids: string[], ms: number): Promise<{ done: HelperReport[]; running: HelperReport[] }>
@@ -204,8 +292,9 @@ export interface Orchestra {
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitBuild(note: string): Promise<{ ok: boolean; info: string }>
-  toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
+  /** small：Agent 判断是小改动，合并时只跑标了「小改动也跑」的合并步骤 */
+  submitBuild(note: string, small: boolean): Promise<{ ok: boolean; info: string }>
+  toParent(text: string, question: boolean, options?: string[]): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
   /** 本次运行的共享状态：读快照 / 写一个键 */
@@ -259,6 +348,13 @@ export interface EngineHost {
   halted?: boolean
   /** 把一段话交给正在跑的节点（CLI 支持执行中补充时）；交不了返回 false，改放进它的收件箱 */
   steer?: (stepId: string, text: string) => Promise<boolean>
+  /**
+   * 对话停下等子任务时，等用户的下一条消息（消息由宿主记进对话），马上开一轮回复它。
+   * 不再等（页面离开、停止）返回 null；没有时只等子任务
+   */
+  waitChat?: (signal: AbortSignal) => Promise<string | null>
+  /** 这一轮的停止信号：等子任务时停止任务不再等 */
+  signal?: AbortSignal
   /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
   workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
   /**
@@ -284,8 +380,15 @@ export interface EngineHost {
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
   /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、合回原目录编译，claim 共用目录认领文件 */
   childIsolation?: 'claim' | 'worktree'
+  /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。推送要先合到这里再从这里推 */
+  worktreeHome?: string
   /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
-  submitBuild?: (note: string) => Promise<{ ok: boolean; info: string }>
+  submitBuild?: (note: string, small: boolean) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
+   * 不传时提示里不带这一段（没有项目的聊天、在线演示）
+   */
+  verify?: { steps: TestStep[]; platform: string; wslDistro: string; scaled: boolean }
   /**
    * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
    * 只有对话有（工作流在创建时就建好了）
@@ -311,13 +414,15 @@ export interface EngineHost {
   /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
   takeInbox?: () => { title: string; text: string }[]
   /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
-  messageParent?: (text: string, question: boolean) => Promise<{ ok: boolean; info: string }>
+  messageParent?: (text: string, question: boolean, options?: string[]) => Promise<{ ok: boolean; info: string }>
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
   claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
   releaseFiles?: (paths: string[]) => number
   /** 项目教训：按要改的文件查，Agent 被纠正后自己记一条（只有项目里的对话和节点有） */
   lessons?: {
     list: () => Promise<ProjectLesson[]>
+    /** 全局教训：只读，Agent 改不了 */
+    globals?: () => Promise<GlobalLesson[]>
     record: (input: LessonInput) => Promise<{ ok: boolean; info: string }>
   }
 }
@@ -328,6 +433,10 @@ export interface LessonInput {
   rule: string
   cause: string
   paths: string[]
+  /** 改写已有的那条（用户的新要求和它冲突、找到两全的做法时）：那条的 id */
+  replaces?: string
+  /** 为什么改写 */
+  why?: string
 }
 
 const MAX_DEPTH = 6
@@ -684,6 +793,18 @@ function buildPart(host: EngineHost) {
 - 可以跑不写构建产物的快速检查：类型检查、lint、单个文件的语法检查。
 - 改完一批后调用 submit_build：面板把改动排队合回原目录，按项目里标了「合并时编译」的步骤编译，通过才算合进去；失败会撤回，并把报错推回给你，在这里修好再提交一次。
 - 提交后不用干等，可以接着做别的部分；结果到了再处理。没有编译通过，不说完成。`
+}
+
+/** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
+function verifyPart(host: EngineHost) {
+  const v = host.verify
+  if (!v) return ''
+  return verifyBlock(v.steps, {
+    platform: v.platform,
+    wslDistro: v.wslDistro,
+    scaled: v.scaled,
+    submit: !!host.submitBuild,
+  })
 }
 
 /** 要改文件时才开独立分支：不说清楚的话模型会直接在原目录里改，隔离就落空了 */
@@ -1829,6 +1950,8 @@ interface OrchState {
   errors: Map<string, string>
   /** 结果已经交回给派它的节点的子 Agent */
   delivered: Set<string>
+  /** 对话 / 节点 id → 正在等的这一批子任务 */
+  batches: Map<string, Promise<HelperBatch>>
   running: number
   queue: (() => void)[]
 }
@@ -1836,7 +1959,15 @@ const orchStates = new WeakMap<EngineHost, OrchState>()
 function orchState(host: EngineHost): OrchState {
   let st = orchStates.get(host)
   if (!st) {
-    st = { mail: new Map(), helpers: new Map(), errors: new Map(), delivered: new Set(), running: 0, queue: [] }
+    st = {
+      mail: new Map(),
+      helpers: new Map(),
+      errors: new Map(),
+      delivered: new Set(),
+      batches: new Map(),
+      running: 0,
+      queue: [],
+    }
     orchStates.set(host, st)
   }
   return st
@@ -1880,7 +2011,11 @@ function helperReport(host: EngineHost, s: TaskStep): HelperReport {
 async function settleHelpers(host: EngineHost, step: TaskStep) {
   const st = orchState(host)
   const kids = () => host.task.steps.filter((s) => s.parentId === step.id && s.slot === 'sub')
-  await Promise.all(kids().map((k) => st.helpers.get(k.id) ?? Promise.resolve()))
+  // 等的这段时间里对话可能又派了几个（用户插进来聊的那一轮）：它们算进同一批，一起交回
+  for (let n = -1; n !== kids().length; ) {
+    n = kids().length
+    await Promise.all(kids().map((k) => st.helpers.get(k.id) ?? Promise.resolve()))
+  }
   const late = kids().filter((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))
   for (const k of late) st.delivered.add(k.id)
   return late
@@ -1995,26 +2130,38 @@ function makeOrchestra(
       .map((a) => ({ name: a.name, description: a.description })),
     helper,
     autoReturn: !!ctx.chat && !helper,
-    helperResults(signal) {
+    helperBatch() {
+      const going = st.batches.get(self.id)
+      if (going) return going
       const kids = () => task.steps.filter((s) => s.parentId === self.id && s.slot === 'sub')
       if (!kids().some((k) => !st.delivered.has(k.id) && st.helpers.has(k.id))) return undefined
-      const stop = new Promise<void>((r) => signal?.addEventListener('abort', () => r(), { once: true }))
-      return Promise.race([settleHelpers(host, self), stop.then(() => '')]).then((late) => {
-        if (!late) return ''
-        // 交回的结果记成面板消息：对话里显示成 AI 回复里的一行，不当作用户说的话
-        task.messages.push({
-          id: host.newId(),
-          role: 'system',
-          agentId: '',
-          step: where,
-          text: late,
-          tools: [],
-          panel: 'helpers',
-          at: now(),
-        })
-        host.changed(true)
-        return `【面板】你派出的子任务都结束了，结果如下：\n\n${late}\n\n请根据这些结果接着做。`
+      const batch = settleHelpers(host, self).then((late): HelperBatch => {
+        st.batches.delete(self.id)
+        if (late) {
+          // 交回的结果记成面板消息：对话里显示成 AI 回复里的一行，不当作用户说的话
+          task.messages.push({
+            id: host.newId(),
+            role: 'system',
+            agentId: '',
+            step: where,
+            text: late,
+            tools: [],
+            panel: 'helpers',
+            at: now(),
+          })
+          host.changed(true)
+        }
+        let left = late
+        return {
+          take: () => {
+            const got = left
+            left = ''
+            return got
+          },
+        }
       })
+      st.batches.set(self.id, batch)
+      return batch
     },
     run(input) {
       if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
@@ -2106,19 +2253,19 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitBuild(note) {
+    async submitBuild(note, small) {
       if (!host.submitBuild) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
-      const r = await host.submitBuild(note.trim())
+      const r = await host.submitBuild(note.trim(), small)
       if (r.ok) {
         system(host, t('已提交编译，等面板合回原目录编译'), where)
         host.changed(true)
       }
       return r
     },
-    async toParent(text, question) {
+    async toParent(text, question, options) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      return host.messageParent(text.trim(), question)
+      return host.messageParent(text.trim(), question, options)
     },
     claim(paths) {
       if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
@@ -2148,7 +2295,8 @@ function makeOrchestra(
     writeState: (key, value) => writeRunState(host, self.id, key, value),
     lessons: host.lessons
       ? {
-          find: async (files) => findLessons(await host.lessons!.list(), files),
+          find: async (files) =>
+            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? []),
           record: (input) => host.lessons!.record(input),
         }
       : undefined,
@@ -2295,8 +2443,10 @@ async function runHelper(
   siblings: string[],
 ) {
   const st = orchState(host)
-  if (st.running >= MAX_HELPERS_RUNNING) await new Promise<void>((r) => st.queue.push(r))
-  st.running++
+  // 有名额就当场占住；没有才排队。等待者被唤醒时不自己加一，名额由释放方直接交接，
+  // 否则唤醒到它真正继续之间新来的子 Agent 会看到还没满，又多占一个
+  if (st.running < MAX_HELPERS_RUNNING) st.running++
+  else await new Promise<void>((r) => st.queue.push(r))
   try {
     if (host.halted) return
     step.status = 'running'
@@ -2337,8 +2487,10 @@ async function runHelper(
     step.endedAt = now()
     host.changed(true)
   } finally {
-    st.running--
-    st.queue.shift()?.()
+    // 名额直接交给排在最前面的那个，running 保持不变；没人排队时才真正空出来
+    const next = st.queue.shift()
+    if (next) next()
+    else st.running--
   }
 }
 
@@ -2498,6 +2650,7 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
     rulesPart(host),
     inboxPart(host),
     buildPart(host),
+    verifyPart(host),
     editPart(host),
     backgroundPart(host),
     statePart(host.task),
@@ -2509,7 +2662,12 @@ ${
   host.task.parentTaskId
     ? '别的子对话改不到这里，你也不用认领文件，放心改。编译不在这里跑，改完用 submit_build 交给面板合回原目录编译，见下面的「编译交给面板」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
-}不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
+}不要自己切换 / 检出新分支；用户没要求时不要合并主分支。
+不要推送这个独立分支。用户要求推送时，先把它合回原分支${
+          host.task.parentTaskId
+            ? '（调用 submit_build，合并编译通过后改动就在原分支上了）'
+            : `（在原目录里 git merge --no-ff ${wt.branch}）`
+        }，再在原目录${host.worktreeHome ? ` ${host.worktreeHome}` : ''}里推送原分支。
 ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       : '',
     catalog.length && planning
@@ -2573,10 +2731,10 @@ ${
 - 改文件前先用 claim_files 认领要改的文件或目录；被别的子对话占着的不要改，先做别的部分或用 message_parent 请父对话协调。做完一部分可以用 release_files 释放。
 - 不要切换分支、不要 reset / checkout 别人的文件、不要格式化整个仓库，只动自己负责的范围。
 - 编译或测试报错的位置不在你改的文件里时，先确认是不是别的子对话正在改的，不要去修别人的文件；提交时只 git add 你自己改的文件，不用 -A。
-- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`
+- 需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`
           : `## 和父对话的协作
 你是项目对话分出来的子对话。只动自己负责的范围，不要格式化整个仓库。
-需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定）。你不能直接联系其他子对话。`,
+需要决定、发现和别的任务有关、或者做完一个阶段时，用 message_parent 告诉父对话（question 设为 true 表示需要它决定，options 列出可选的做法）。你不能直接联系其他子对话。`,
       )
   }
   return parts.filter(Boolean).join('\n\n')
@@ -2594,9 +2752,15 @@ async function runConversationTurn(host: EngineHost, who: string) {
   if (turn) host.changed(true)
   try {
     let prompt = await conversationPrompt(host, kind, planning, coordinator)
-    // 子任务交回结果也算一圈：派几次就要接着几次，上限放宽一些
-    for (let i = 0; i < 12; i++) {
-      const orch = makeOrchestra(
+    let orch: Orchestra | undefined
+    // 回复完 CLI 就退出的（Claude Code、Codex）在这里等子任务；停在等待工具上的 CLI 在 runner 里自己等
+    const gate = helperGate(
+      () => orch?.helperBatch(),
+      (text) => host.steer?.('', text) ?? Promise.resolve(false),
+    )
+    // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
+    for (let i = 0; i < 30; i++) {
+      orch = makeOrchestra(
         host,
         { workflow: host.workflow, tier: '', chat: true, planning, coordinator },
         chatStep(host, who),
@@ -2617,10 +2781,11 @@ async function runConversationTurn(host: EngineHost, who: string) {
         }
         return finish(host, r)
       }
-      // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回给同一个会话接着做
-      const back = orch.helperResults()
-      if (back) {
-        const text = await back
+      // 这一轮派出的子任务还没交回：对话停在这里等它们做完，结果交回给同一个会话接着做；
+      // 等的时候用户发来的消息马上开一轮回复
+      const next = gate.wait(host.signal ?? new AbortController().signal, host.waitChat)
+      if (next) {
+        const text = await next
         if (host.halted || !text) break
         prompt = text
         continue

@@ -297,6 +297,21 @@ function mcpDraft(_text: string, ctx: AssistContext) {
   return { draft: sv, note: '检查了命令和地址的格式，没有发现能确定的问题；请确认命令在 PATH 里、需要的密钥已经填写。' }
 }
 
+/** 全局教训提取：演示里把「所有改动都适用」、又不带项目文件名的条目当作通用的 */
+function lessonsDraft(_text: string, ctx: AssistContext) {
+  const own = (ctx.projectLessons ?? []).filter((l) => l.enabled && !l.paths.length && !/src\/|\.ts\b/.test(l.rule))
+  const globals = ctx.globalLessons ?? []
+  const changes = own
+    .filter((l) => !globals.some((g) => g.title === l.title))
+    .map((l) => ({ op: 'add', id: '', title: l.title, rule: l.rule, cause: l.cause, paths: [], sources: [l.id] }))
+  return {
+    draft: { changes },
+    note: changes.length
+      ? `从 ${ctx.projectLessons?.length ?? 0} 条项目教训里挑出 ${changes.length} 条换个项目也适用的；按文件生效、或写着这个项目的文件和字段的没有提。`
+      : '这个项目的教训都和它自己的文件、业务有关，没有适合提成全局教训的。',
+  }
+}
+
 export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJob {
   const text = [...input.messages].reverse().find((m) => m.role === 'user')?.text ?? ''
   const job: AssistJob = {
@@ -316,7 +331,9 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
         ? skillDraft(text, ctx)
         : input.kind === 'mcp'
           ? mcpDraft(text, ctx)
-          : workflowDraft(text, ctx)
+          : input.kind === 'lessons'
+            ? lessonsDraft(text, ctx)
+            : workflowDraft(text, ctx)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`

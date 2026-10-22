@@ -5,7 +5,7 @@ import type { Task } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
-import { ConfirmDialog } from '@/components/ui/dialog'
+import { DeleteTaskDialog } from './Worktrees'
 import { ContextMenuItem, ContextMenuSeparator } from '@/components/ui/menu'
 import { useTaskControl } from './TaskControl'
 import { t } from '@shared/i18n'
@@ -84,7 +84,8 @@ export function useTaskRowMenu(task: Task, onDeleted?: () => void) {
     </>
   )
   const confirm = (
-    <ConfirmDialog
+    <DeleteTaskDialog
+      task={task}
       open={deleting}
       onOpenChange={setDeleting}
       title={t('删除「{name}」？', { name: task.title })}

@@ -13,7 +13,7 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 ## 面板写回 CLI 自己的配置时，写全 CLI 判断能力要的字段
 
 - 规则：写 models.json / providers.json 这类文件，按模型目录原样写强度、上下文、是否支持思考，不按面板的档位过滤；写完用 CLI 自己的列表命令或界面核对能选几档。
-- 起因：Pi 的 models.json 没写 `reasoning: true`，下拉只剩一档（deacb24）；Command Code 写回 `reasoningEfforts` 时被档位过滤掉了几档（bc33580）。
+- 起因：Pi 的 models.json 没写 `reasoning: true`，下拉只剩一档（deacb24）；Command Code 写回 `reasoningEfforts` 时被档位过滤掉了几档（bc33580）；Pi 只写了 `reasoning` 没写 `thinkingLevelMap`，xhigh 被当成不支持，按模型配的默认强度也没写进 `modelThinkingLevels`（用户指出「一键更新不带思考强度」）。写之前先读 CLI 文档里模型条目和设置的全部字段，别只补报错的那一个。
 - 防线：`server/api-config.test.ts`。
 
 ## 按模型查能力前先解析 API 映射
@@ -32,3 +32,9 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 
 - 规则：断流、退出码异常先把完整错误显示在节点上，再按规则续接（最多 2 次）；不吞错误、不静默重试。用户明确要求过。
 - 防线：人工。
+
+## 用户的补充只交给对话自己的调用
+
+- 规则：执行中的补充（插话、`read_user_notes`、等下一句）在对话里只交给对话自己那次调用（step 为空），不交给它派出的子任务；新加一种「同一个任务里还在跑的调用」时，检查 `steerTask` 会不会把用户消息送过去。对话停下等子任务时也要能收消息（`helperGate`）。
+- 起因：49d7d7e 加子任务后，等子任务时用户发的消息被插话给了子任务、记在子任务名下，对话里看不到。
+- 防线：`server/orchestrator.test.ts`（等子任务时发消息）。

@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
-import { createWorktree, removeWorktree } from './worktree.ts'
+import { createWorktree, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.ts'
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-wt-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))
@@ -60,4 +60,50 @@ test('不是 git 仓库或还没有提交时明确报错', async () => {
   mkdirSync(empty, { recursive: true })
   git(empty, 'init', '-q')
   await assert.rejects(() => createWorktree(empty, tid(), 'x'), /还没有任何提交/)
+})
+
+test('独立分支的状态：没合并时标出提交和没提交的文件，合并后分支留着、算作已合并', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'merge')
+  try {
+    // 刚开出来什么都没改：算作已经在原分支里
+    assert.deepEqual(await worktreeStatus(repo, wt), { exists: true, branch: true, ahead: 0, dirty: 0, merged: true })
+    writeFileSync(path.join(wt.path, 'b.txt'), 'b\n')
+    let st = await worktreeStatus(repo, wt)
+    assert.equal(st.dirty, 1)
+    assert.equal(st.merged, false)
+    git(wt.path, 'add', '-A')
+    git(wt.path, 'commit', '-qm', 'b')
+    st = await worktreeStatus(repo, wt)
+    assert.equal(st.ahead, 1)
+    assert.equal(st.merged, false)
+    // 合并时保留：分支和目录都在，状态变成已合并
+    const into = await mergeWorktree(repo, wt, '合并', repo, true)
+    assert.equal(into, wt.baseBranch)
+    assert.ok(existsSync(wt.path))
+    st = await worktreeStatus(repo, wt)
+    assert.equal(st.merged, true)
+    assert.ok(existsSync(path.join(repo, 'b.txt')))
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('原目录换了分支就不合并，冲突时带上 conflict 标记并撤回', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), 'conflict')
+  try {
+    writeFileSync(path.join(wt.path, 'README.md'), '# 分支里改的\n')
+    git(repo, 'checkout', '-qb', 'other')
+    await assert.rejects(mergeWorktree(repo, wt, '合并', repo, true), /没有合并/)
+    git(repo, 'checkout', '-q', wt.baseBranch)
+    writeFileSync(path.join(repo, 'README.md'), '# 原目录改的\n')
+    git(repo, 'commit', '-qam', 'base')
+    const err = await mergeWorktree(repo, wt, '合并', repo, true).catch((e) => e as Error & { conflict?: boolean })
+    assert.ok(err instanceof Error && err.conflict)
+    assert.equal(git(repo, 'status', '--porcelain').toString().trim(), '')
+    assert.equal(readFileSync(path.join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), '# 原目录改的\n')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
 })

@@ -16,6 +16,12 @@ function repo() {
   return dir
 }
 
+/** 把一段 node 脚本写进目录，命令直接跑脚本：cmd 和 sh 对引号、分号的处理不一样，不把代码拼进命令行 */
+function nodeScript(dir: string, name: string, code: string) {
+  writeFileSync(path.join(dir, name), code)
+  return `node ${name}`
+}
+
 /** 收集跑完的结果，等到够数为止 */
 function collect(n: number) {
   const got: { job: BgJob; text: string }[] = []
@@ -34,7 +40,9 @@ test('后台命令马上返回，跑完把结果推回；跑的期间文件变�
   const a = bg.start({ taskId: 't1', name: '回显', command: 'echo hello', cwd: '', root: dir, exclusive: false })
   assert.ok(a.ok)
   assert.match(a.info, /已放到后台/)
-  bg.start({ taskId: 't1', name: '改文件', command: 'echo two > a.txt; exit 3', cwd: '', root: dir, exclusive: false })
+  // 用脚本写文件并以 3 退出：cmd 不把 ; 当分隔符，Windows 下这个用例会变成成功
+  const fail = nodeScript(dir, 'fail.cjs', "require('fs').writeFileSync('a.txt', 'two')\nprocess.exit(3)\n")
+  bg.start({ taskId: 't1', name: '改文件', command: fail, cwd: '', root: dir, exclusive: false })
   await all
   const ok = got.find((g) => g.job.name === '回显')!
   assert.equal(ok.job.state, 'done')
@@ -52,7 +60,9 @@ test('后台命令马上返回，跑完把结果推回；跑的期间文件变�
 test('独占命令按目录排队，一条跑完才开始下一条；cwd 不能跳出目录', async () => {
   const dir = repo()
   const { bg, got, all } = collect(2)
-  bg.start({ taskId: 't1', name: '一', command: 'sleep 0.3; echo 1 >> order.log', cwd: '', root: dir, exclusive: true })
+  // cmd 没有 sleep：用 node 等一会儿再写，命令行写法在 Windows 和 Unix 上一致
+  const wait = nodeScript(dir, 'wait.cjs', "setTimeout(() => require('fs').appendFileSync('order.log', '1\\n'), 300)\n")
+  bg.start({ taskId: 't1', name: '一', command: wait, cwd: '', root: dir, exclusive: true })
   const b = bg.start({ taskId: 't2', name: '二', command: 'echo 2 >> order.log', cwd: '', root: dir, exclusive: true })
   assert.match(b.info, /前面还有 1 条/)
   await all
@@ -69,7 +79,9 @@ test('独占命令按目录排队，一条跑完才开始下一条；cwd 不能�
 test('停止对话时正在跑的会结束，排队的不再执行', async () => {
   const dir = repo()
   const { bg, got, all } = collect(1)
-  bg.start({ taskId: 't1', name: '长', command: 'sleep 5', cwd: '', root: dir, exclusive: true })
+  // 同上：cmd 没有 sleep，改成长时间不结束的 node 进程
+  const long = nodeScript(dir, 'long.cjs', 'setTimeout(() => {}, 5000)\n')
+  bg.start({ taskId: 't1', name: '长', command: long, cwd: '', root: dir, exclusive: true })
   bg.start({ taskId: 't1', name: '排队', command: 'echo no > never.txt', cwd: '', root: dir, exclusive: true })
   await new Promise((r) => setTimeout(r, 300))
   bg.stop('t1')

@@ -1,15 +1,18 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
-import { ChevronRight, GraduationCap, Loader2, Plus, Search, Sparkles, Trash2 } from 'lucide-react'
-import type { Project, ProjectLesson } from '@shared/schema'
-import { newLessonId } from '@shared/lessons'
+import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
+import type { GlobalLesson, Project, ProjectLesson } from '@shared/schema'
+import { applyGlobalChanges, newGlobalLessonId, newLessonId } from '@shared/lessons'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
-import { useData } from '@/lib/data'
+import { useData, useNav } from '@/lib/data'
 import { Button } from '@/components/ui/button'
 import { Field, Input, Textarea } from '@/components/ui/input'
+import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
+import { timeAgo } from '@/lib/tasks'
+import { AssistDialog } from '@/components/assist/AssistDialog'
 
 /** 输入框里的范围：逗号、顿号、空白都能分隔 */
 const splitPaths = (s: string) =>
@@ -28,6 +31,8 @@ const blankLesson = (): ProjectLesson => ({
   source: 'user',
   taskId: '',
   createdAt: new Date().toISOString(),
+  updatedAt: '',
+  history: [],
 })
 
 /**
@@ -37,13 +42,20 @@ const blankLesson = (): ProjectLesson => ({
 export function LessonsEditor({
   lessons,
   onChange,
+  project,
+  initialOpen,
 }: {
   lessons: ProjectLesson[]
   onChange: (v: ProjectLesson[]) => void
+  /** 已保存的项目：有它才能用 AI 提取全局教训（按保存过的教训提取） */
+  project?: Project
+  /** 打开时展开的那条（项目首页点进来的） */
+  initialOpen?: string
 }) {
   const [q, setQ] = useState('')
   // 新加的那条直接展开，其余默认收起：条目多了一屏也看得过来
-  const [open, setOpen] = useState<string>('')
+  const [open, setOpen] = useState<string>(initialOpen ?? '')
+  const [extracting, setExtracting] = useState(false)
   const patch = (id: string, p: Partial<ProjectLesson>) =>
     onChange(lessons.map((l) => (l.id === id ? { ...l, ...p } : l)))
   const key = q.trim().toLowerCase()
@@ -66,6 +78,18 @@ export function LessonsEditor({
         </div>
         {fromAgent > 0 && (
           <span className="text-xs text-subtle">{t('其中 {n} 条是角色自己记的', { n: fromAgent })}</span>
+        )}
+        {project && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!project.lessons.some((l) => l.enabled)}
+            title={t('让本机 Agent 从已保存的项目教训里挑出换个项目也适用的，逐条确认后写进全局教训')}
+            onClick={() => setExtracting(true)}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {t('提取全局教训')}
+          </Button>
         )}
         <Button
           size="sm"
@@ -111,6 +135,14 @@ export function LessonsEditor({
                       {l.paths.length ? l.paths.join('  ') : t('所有改动')}
                     </span>
                   </span>
+                  {l.history.length > 0 && (
+                    <span
+                      className="shrink-0 rounded-full border px-2 py-0.5 text-[0.6875rem] text-muted"
+                      title={t('你的新要求和它冲突时，角色找了两全的做法改写过它；展开看改写记录')}
+                    >
+                      {t('已改写')}
+                    </span>
+                  )}
                   {l.source === 'agent' && (
                     <span
                       className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent"
@@ -142,25 +174,118 @@ export function LessonsEditor({
               {expanded && (
                 <div className="flex flex-col gap-3 border-t px-3.5 py-3.5">
                   <LessonFields lesson={l} onChange={(p) => patch(l.id, p)} />
+                  {l.history.length > 0 && <LessonHistory lesson={l} onRestore={(p) => patch(l.id, p)} />}
                 </div>
               )}
             </li>
           )
         })}
       </ul>
+      {project && <ExtractGlobalLessons project={project} open={extracting} onOpenChange={setExtracting} />}
     </div>
   )
 }
 
+/** 改写记录：每一版的规则和为什么改，可以恢复成那一版（恢复也只改草稿，确认保存才生效） */
+function LessonHistory({
+  lesson,
+  onRestore,
+}: {
+  lesson: ProjectLesson
+  onRestore: (p: Partial<ProjectLesson>) => void
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-xs font-medium text-muted">{t('改写记录')}</span>
+      <ol className="flex flex-col gap-2">
+        {lesson.history.map((h, i) => (
+          <li key={i} className="flex flex-col gap-1 rounded-lg border border-dashed px-3 py-2 text-xs">
+            <span className="flex items-center gap-2">
+              <span className="min-w-0 flex-1 truncate text-muted">{t('原来：{text}', { text: h.title })}</span>
+              {h.at && <span className="shrink-0 text-subtle">{timeAgo(h.at)}</span>}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                onClick={() =>
+                  onRestore({
+                    title: h.title,
+                    rule: h.rule,
+                    history: [
+                      {
+                        title: lesson.title,
+                        rule: lesson.rule,
+                        why: t('手动恢复成之前的版本'),
+                        at: new Date().toISOString(),
+                      },
+                      ...lesson.history.filter((_, j) => j !== i),
+                    ].slice(0, 5),
+                  })
+                }
+              >
+                <RotateCcw className="h-3 w-3" />
+                {t('恢复')}
+              </Button>
+            </span>
+            {h.rule && <span className="leading-relaxed text-subtle">{h.rule}</span>}
+            {h.why && <span className="text-subtle">{t('为什么改：{text}', { text: h.why })}</span>}
+          </li>
+        ))}
+      </ol>
+    </div>
+  )
+}
+
+/** 「提取全局教训」：本机 Agent 挑出通用的条目，用户在预览里逐条勾选，确认后才写进全局教训 */
+function ExtractGlobalLessons({
+  project,
+  open,
+  onOpenChange,
+}: {
+  project: Project
+  open: boolean
+  onOpenChange: (o: boolean) => void
+}) {
+  const [globals, setGlobals] = useState<GlobalLesson[]>([])
+  useEffect(() => {
+    if (!open) return
+    api
+      .globalLessons()
+      .then(setGlobals)
+      .catch((e) => toast.error((e as Error).message))
+  }, [open])
+  return (
+    <AssistDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      kind="lessons"
+      projectId={project.id}
+      globalLessons={globals}
+      onApply={async (p) => {
+        if (p.kind !== 'lessons' || !p.changes.length) return
+        // 写之前再读一次：别的项目刚确认过的改动不被这次盖掉
+        const latest = await api.globalLessons()
+        await api.saveGlobalLessons(applyGlobalChanges(latest, p.changes, project.name))
+        toast.success(t('已写入 {n} 条全局教训', { n: p.changes.length }))
+      }}
+    />
+  )
+}
+
 /** 一条教训的输入项：设置页和「记成项目教训」弹窗共用 */
+type LessonText = Pick<ProjectLesson, 'title' | 'rule' | 'cause' | 'paths'>
+
 function LessonFields({
   lesson,
   onChange,
   autoFocus,
+  global,
 }: {
-  lesson: ProjectLesson
-  onChange: (p: Partial<ProjectLesson>) => void
+  lesson: LessonText
+  onChange: (p: Partial<LessonText>) => void
   autoFocus?: boolean
+  /** 全局教训：范围一般不写，说明换成全局的口径 */
+  global?: boolean
 }) {
   // 范围在输入时保留原样（含末尾的逗号），离开输入框再拆成列表
   const [paths, setPaths] = useState(lesson.paths.join(', '))
@@ -194,9 +319,13 @@ function LessonFields({
       </Field>
       <Field
         label={t('管哪些文件')}
-        hint={t(
-          '相对项目根，** 跨目录，写目录名也行，逗号分隔；不写表示所有改动都适用。按文件生效的条目平时只给角色看标题，改到这些文件时它再取全文。',
-        )}
+        hint={
+          global
+            ? t('一般不写：每个项目的目录不一样。写了就按相对项目根的路径匹配。')
+            : t(
+                '相对项目根，** 跨目录，写目录名也行，逗号分隔；不写表示所有改动都适用。按文件生效的条目平时只给角色看标题，改到这些文件时它再取全文。',
+              )
+        }
       >
         <Input
           className="font-mono text-xs"
@@ -319,5 +448,253 @@ export function RecordLessonDialog({
         </D.Content>
       </D.Portal>
     </D.Root>
+  )
+}
+
+/** 按最近记下或改写的时间排，新的在前 */
+const lessonTime = (l: { createdAt: string; updatedAt: string }) => l.updatedAt || l.createdAt
+
+/**
+ * 项目首页的「项目教训」：列出最近记下或改写的几条，点一条打开项目设置的「教训」并展开它。
+ * 角色自己记的、改写过的标出来，方便用户顺手复查
+ */
+export function ProjectLessonsCard({ project }: { project: Project }) {
+  const { openProject } = useNav()
+  const all = project.lessons
+  const recent = [...all].sort((a, b) => lessonTime(b).localeCompare(lessonTime(a))).slice(0, 4)
+  const fromAgent = all.filter((l) => l.source === 'agent').length
+  return (
+    <section className="flex flex-col">
+      <h2 className="mb-2 flex items-center gap-1.5 px-1 text-xs font-medium text-subtle">
+        <GraduationCap className="h-3.5 w-3.5" aria-hidden />
+        <span className="flex-1">{t('项目教训 · {n}', { n: all.length })}</span>
+        {fromAgent > 0 && <span className="font-normal">{t('其中 {n} 条是角色自己记的', { n: fromAgent })}</span>}
+        {all.length > 0 && (
+          <button
+            type="button"
+            className="cursor-pointer rounded px-1 font-normal text-accent hover:underline"
+            onClick={() => openProject(project.id, 'lessons')}
+          >
+            {t('全部')}
+          </button>
+        )}
+      </h2>
+      {all.length === 0 ? (
+        <button
+          type="button"
+          onClick={() => openProject(project.id, 'lessons')}
+          className="cursor-pointer rounded-xl border border-dashed px-4 py-5 text-center text-[0.8125rem] leading-relaxed text-subtle transition-colors hover:bg-field/40"
+        >
+          {t('还没有教训。角色被纠正、或发现自己走了弯路换了做法时，会自己记一条，下次就不再犯。')}
+        </button>
+      ) : (
+        <ul className="flex flex-col divide-y overflow-hidden rounded-xl border bg-card">
+          {recent.map((l) => (
+            <li key={l.id}>
+              <button
+                type="button"
+                onClick={() => openProject(project.id, 'lessons', l.id)}
+                className={cn(
+                  'flex w-full cursor-pointer items-center gap-3 px-4 py-2.5 text-left transition-colors hover:bg-field/50',
+                  !l.enabled && 'opacity-60',
+                )}
+              >
+                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span className="truncate text-[0.8125rem]">{l.title}</span>
+                  <span className="truncate font-mono text-[0.6875rem] text-subtle">
+                    {l.paths.length ? l.paths.join('  ') : t('所有改动')}
+                  </span>
+                </span>
+                {l.history.length > 0 && (
+                  <span className="shrink-0 rounded-full border px-2 py-0.5 text-[0.6875rem] text-muted">
+                    {t('已改写')}
+                  </span>
+                )}
+                {l.source === 'agent' && (
+                  <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent">
+                    {t('角色记录')}
+                  </span>
+                )}
+                {!l.enabled && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('停用')}</span>}
+                {lessonTime(l) && (
+                  <span className="w-16 shrink-0 text-right text-xs text-subtle">{timeAgo(lessonTime(l))}</span>
+                )}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  )
+}
+
+const blankGlobal = (): GlobalLesson => ({
+  id: newGlobalLessonId(),
+  title: '',
+  rule: '',
+  cause: '',
+  paths: [],
+  enabled: true,
+  from: [],
+  createdAt: new Date().toISOString(),
+  updatedAt: '',
+})
+
+/** 草稿和已保存的比，数出新加、改了、删了几条，确认时给用户看 */
+function globalDiff(saved: GlobalLesson[], draft: GlobalLesson[]) {
+  const same = (a: GlobalLesson, b: GlobalLesson) => JSON.stringify(a) === JSON.stringify(b)
+  return {
+    added: draft.filter((l) => !saved.some((x) => x.id === l.id)),
+    changed: draft.filter((l) => saved.some((x) => x.id === l.id && !same(x, l))),
+    removed: saved.filter((l) => !draft.some((x) => x.id === l.id)),
+  }
+}
+
+/**
+ * 设置里的「全局教训」：所有项目的对话都会带上。角色改不了它；
+ * 这里的增删改先停在草稿里，点「保存」再确认一次才写进去
+ */
+export function GlobalLessonsSection() {
+  const [saved, setSaved] = useState<GlobalLesson[] | null>(null)
+  const [draft, setDraft] = useState<GlobalLesson[]>([])
+  const [open, setOpen] = useState('')
+  const [confirming, setConfirming] = useState(false)
+  useEffect(() => {
+    api
+      .globalLessons()
+      .then((ls) => {
+        setSaved(ls)
+        setDraft(ls)
+      })
+      .catch((e) => toast.error((e as Error).message))
+  }, [])
+  const patch = (id: string, p: Partial<GlobalLesson>) =>
+    setDraft((ls) => ls.map((l) => (l.id === id ? { ...l, ...p } : l)))
+  const diff = globalDiff(saved ?? [], draft)
+  const dirty = diff.added.length + diff.changed.length + diff.removed.length > 0
+  const invalid = draft.some((l) => !l.title.trim())
+  const save = async () => {
+    try {
+      const now = new Date().toISOString()
+      const changed = new Set(diff.changed.map((l) => l.id))
+      const ls = await api.saveGlobalLessons(draft.map((l) => (changed.has(l.id) ? { ...l, updatedAt: now } : l)))
+      setSaved(ls)
+      setDraft(ls)
+      setConfirming(false)
+      toast.success(t('全局教训已保存'))
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+  if (!saved) return <Loader2 className="h-4 w-4 animate-spin text-subtle" />
+  return (
+    <div className="flex max-w-[760px] flex-col gap-4">
+      <p className="text-[0.8125rem] leading-relaxed text-muted">
+        {t(
+          '全局教训会带进所有项目的对话，优先级低于项目教训和你当次的要求。角色改不了它：在项目设置的「教训」里用「提取全局教训」从项目教训里挑出通用的，或者在这里手动加；所有修改都要你确认后才保存。',
+        )}
+      </p>
+      <div className="flex items-center gap-2">
+        <span className="flex-1 text-xs text-subtle">{t('{n} 条', { n: draft.length })}</span>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={() => {
+            const l = blankGlobal()
+            setDraft((ls) => [l, ...ls])
+            setOpen(l.id)
+          }}
+        >
+          <Plus className="h-3.5 w-3.5" />
+          {t('加一条')}
+        </Button>
+      </div>
+      {draft.length === 0 && (
+        <p className="rounded-xl border border-dashed px-4 py-5 text-center text-xs leading-relaxed text-subtle">
+          {t('还没有全局教训。项目教训攒了一些以后，到项目设置的「教训」里点「提取全局教训」。')}
+        </p>
+      )}
+      <ul className="flex flex-col gap-2">
+        {draft.map((l) => {
+          const expanded = open === l.id || !l.title.trim()
+          return (
+            <li key={l.id} className={cn('rounded-xl border bg-card', !l.enabled && 'opacity-60')}>
+              <div className="flex items-center gap-2 px-3 py-2">
+                <button
+                  type="button"
+                  onClick={() => setOpen(expanded ? '' : l.id)}
+                  aria-expanded={expanded}
+                  className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left"
+                >
+                  <ChevronRight
+                    className={cn('h-4 w-4 shrink-0 text-subtle transition-transform', expanded && 'rotate-90')}
+                    strokeWidth={2}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-[0.8125rem] font-medium">{l.title || t('（还没写规则）')}</span>
+                    <span className="truncate text-[0.6875rem] text-subtle">
+                      {l.from.length ? t('来自 {names}', { names: l.from.join('、') }) : t('手动添加')}
+                    </span>
+                  </span>
+                </button>
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted">
+                  <input
+                    type="checkbox"
+                    className="accent-accent"
+                    checked={l.enabled}
+                    onChange={(e) => patch(l.id, { enabled: e.target.checked })}
+                  />
+                  {t('启用')}
+                </label>
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  aria-label={t('删除这条教训')}
+                  title={t('删除这条教训')}
+                  onClick={() => setDraft((ls) => ls.filter((x) => x.id !== l.id))}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+              {expanded && (
+                <div className="flex flex-col gap-3 border-t px-3.5 py-3.5">
+                  <LessonFields global lesson={l} onChange={(p) => patch(l.id, p)} />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      {dirty && (
+        <div className="sticky bottom-0 flex items-center gap-2 rounded-xl border bg-card px-4 py-2.5 shadow-pop">
+          <span className="flex-1 text-xs text-muted">{t('有未保存的修改，确认后才会生效')}</span>
+          <Button size="sm" variant="ghost" onClick={() => setDraft(saved)}>
+            {t('撤销')}
+          </Button>
+          <Button size="sm" disabled={invalid} onClick={() => setConfirming(true)}>
+            {t('保存…')}
+          </Button>
+        </div>
+      )}
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={t('修改全局教训？')}
+        confirmText={t('确认修改')}
+        onConfirm={save}
+        description={
+          <span className="flex flex-col gap-1.5">
+            <span>{t('全局教训会带进所有项目的对话。这次的修改：')}</span>
+            {diff.added.length > 0 && <span>{t('新加 {n} 条', { n: diff.added.length })}</span>}
+            {diff.changed.map((l) => (
+              <span key={l.id}>{t('改了「{title}」', { title: l.title })}</span>
+            ))}
+            {diff.removed.map((l) => (
+              <span key={l.id}>{t('删掉「{title}」', { title: l.title })}</span>
+            ))}
+          </span>
+        }
+      />
+    </div>
   )
 }

@@ -20,6 +20,7 @@ import {
   Type,
   Globe,
   ShieldCheck,
+  GraduationCap,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -45,6 +46,7 @@ import { ApiSection } from '@/components/settings/ApiSection'
 import { DataSection } from '@/components/settings/DataSection'
 import { LocalImageSection } from '@/components/settings/LocalImageSection'
 import { TagsSection } from '@/components/settings/TagsSection'
+import { GlobalLessonsSection } from '@/components/projects/Lessons'
 import { RemoteSection } from '@/components/settings/RemoteSection'
 import { IntegrationsSection } from '@/components/settings/IntegrationsSection'
 import { DeploySection } from '@/components/settings/DeploySection'
@@ -79,6 +81,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'fonts', label: t('字体'), icon: Type, group: t('通用') },
   { id: 'categories', label: t('项目分类'), icon: Layers, group: t('项目') },
   { id: 'tags', label: t('标签'), icon: TagIcon, group: t('项目') },
+  { id: 'global-lessons', label: t('全局教训'), icon: GraduationCap, group: t('项目') },
   { id: 'models', label: t('默认 Agent'), icon: Cpu, group: t('Agent 与 AI') },
   // 部署和 API 也是 CLI 的事（写全局说明、放技能；各 CLI 用哪个 API），放在 CLI 二级列表里默认 CLI 下面
   { id: 'deploy', label: t('部署'), icon: Rocket },
@@ -870,6 +873,7 @@ function SettingsBody({
           {cur.id === 'data' && <DataSection />}
           {cur.id === 'deploy' && <DeploySection />}
           {cur.id === 'tags' && <TagsSection />}
+          {cur.id === 'global-lessons' && <GlobalLessonsSection />}
           {cur.id === 'update' && <UpdateSection />}
 
           {cur.id === 'categories' && <ProjectCategoryList />}

@@ -2,7 +2,7 @@
  * 端到端测试：用临时数据目录启动服务，把三个 CLI 都指向 scripts/fake-cli/fake-cli.mjs，
  * 走一遍设置 → 检测 → 工作流任务（含并行阶段）→ 追加要求（续接会话）→ 对话任务 → 停止 → 失败 → 找不到命令 → 停用。
  *
- * 运行：npm run test:e2e（需要 git；假 CLI 依赖 shebang，只能在 macOS / Linux 上跑）
+ * 运行：npm run test:e2e（需要 git；假 CLI 依赖 shebang 和 /bin/sh，只能在 macOS / Linux 上跑）
  */
 import http from 'node:http'
 import { spawn, execFileSync } from 'node:child_process'
@@ -13,6 +13,15 @@ import { crc32, deflateSync } from 'node:zlib'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
+
+// 假 CLI 靠 shebang 直接执行，脚本里也用 mkdir -p、tar 这类 Unix 命令：
+// Windows 上先给出能照着做的提示，不要跑到一半才报一堆看不懂的错
+if (process.platform === 'win32') {
+  console.error(
+    '端到端测试请在 WSL / macOS / Linux 上运行（Windows 上可以在 WSL 里装好依赖后跑 `npm run test:e2e:wsl`）。',
+  )
+  process.exit(1)
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const fake = path.join(root, 'scripts/fake-cli/fake-cli.mjs')
@@ -31,7 +40,7 @@ const PNG_1PX = Buffer.from(
 )
 
 // 项目目录：一个已有提交、并且有一处未提交改动的 git 仓库
-execFileSync('mkdir', ['-p', projectDir])
+mkdirSync(projectDir, { recursive: true })
 const git = (...a) => execFileSync('git', a, { cwd: projectDir, stdio: 'pipe' })
 /** 在别的目录（任务的独立分支目录）里跑 git */
 const gitIn = (cwd, ...a) => execFileSync('git', a, { cwd, stdio: 'pipe' })
@@ -45,17 +54,19 @@ writeFileSync(path.join(projectDir, 'pre.txt'), 'changed before the task\n')
 // 假的 GitHub Releases：三个版本，包是现做的 tar.gz，用来测试设置里的版本更新
 const appDir = path.join(tmp, 'app')
 const relDir = path.join(tmp, 'releases')
-execFileSync('mkdir', ['-p', path.join(appDir, 'dist'), path.join(appDir, 'data'), relDir])
+mkdirSync(path.join(appDir, 'dist'), { recursive: true })
+mkdirSync(path.join(appDir, 'data'), { recursive: true })
+mkdirSync(relDir, { recursive: true })
 writeFileSync(path.join(appDir, 'server.mjs'), '// old\n')
 writeFileSync(path.join(appDir, 'dist/old.html'), 'old')
 writeFileSync(path.join(appDir, 'data/keep.json'), '{"keep":true}')
 // Windows 托盘程序：上次更新挪开的 AgentPanel.exe.old 还在运行，删不掉也不能被覆盖（这里用非空目录模拟）
 writeFileSync(path.join(appDir, 'AgentPanel.exe'), 'tray-old')
-execFileSync('mkdir', ['-p', path.join(appDir, 'AgentPanel.exe.old')])
+mkdirSync(path.join(appDir, 'AgentPanel.exe.old'), { recursive: true })
 writeFileSync(path.join(appDir, 'AgentPanel.exe.old', 'busy'), '')
 for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   const d = path.join(relDir, `agent-panel-${v}`)
-  execFileSync('mkdir', ['-p', path.join(d, 'dist')])
+  mkdirSync(path.join(d, 'dist'), { recursive: true })
   // 0.11.8 的服务端加载就出错：更新时试跑不通过，要退回原来的版本
   writeFileSync(path.join(d, 'server.mjs'), v === '0.11.8' ? 'process.exit(3)\n' : `// new ${v}\n`)
   writeFileSync(path.join(d, 'dist/index.html'), `<p>${v}</p>`)
@@ -69,7 +80,7 @@ for (const v of ['0.11.9-dev', '0.11.8', '0.11.4']) {
   writeFileSync(`${d}.sums`, `${v === '0.11.4' ? '0'.repeat(64) : hash}  agent-panel-${v}.tar.gz\n`)
 }
 // 旧版本平铺的数据文件，启动时应搬进 config/
-execFileSync('mkdir', ['-p', dataDir])
+mkdirSync(dataDir, { recursive: true })
 writeFileSync(path.join(dataDir, 'project-categories.json'), '[]')
 // 旧版本把所有任务放在一个 tasks.json 里，启动后拆成每个任务一个文件
 const legacyAt = '2026-10-01T00:00:00.000Z'
@@ -699,7 +710,11 @@ try {
   c = calls().at(-1)
   assert.equal(c.kind, 'pi')
   assert.deepEqual(c.args.slice(0, 2), ['--mode', 'rpc'])
-  assert.equal(c.args[c.args.indexOf('--tools') + 1], '+grep,+find,+ls', '全部工具：在 Pi 默认工具上补搜索')
+  assert.equal(
+    c.args[c.args.indexOf('--tools') + 1],
+    '+grep,+find,+ls,+codemode,+tool_search',
+    '全部工具：在 Pi 默认工具上补搜索，codemode 默认开着并进同一个 --tools',
+  )
   assert.ok(!c.args.includes('--exclude-tools'), '全部工具时不去掉任何工具')
   assert.equal(c.args[c.args.indexOf('--name') + 1], pm.title, '对话标题交给 Pi 当会话名')
   assert.match(c.input, /^## 用户这次的消息\n用 Pi\n\n/, '任务描述走 RPC 的 prompt 命令')
@@ -1311,6 +1326,10 @@ try {
     assert.equal(editLog.at(-1).cwd, project.path, '开分支前在原目录里')
     wtKid = await waitTask(wtKid.id, () => calls().at(-1)?.cwd !== project.path)
     assert.equal(wtKid.worktree?.state, 'active', '子对话要改文件时开了独立分支')
+    assert.ok(
+      !wtKid.messages.some((m) => m.role === 'system' && m.text.includes('已开独立分支')),
+      '开分支不另记居中提示，begin_edit 这次调用本身就是对话里的一行',
+    )
     assert.equal(calls().at(-1).cwd, wtKid.worktree.path, '开分支后的一轮在分支目录里执行')
     assert.match(calls().at(-1).input, /之前的对话[\s\S]*BEGIN_EDIT/, '新会话带上了之前的对话')
     assert.ok(!calls().at(-1).args.includes('--resume'), '换了目录不续接旧会话')
@@ -1326,11 +1345,49 @@ try {
     assert.ok(!wtPrompt.includes('claim_files 认领'), '独立分支里不用认领文件')
     // 假 CLI 每次都在工作目录写输出文件：项目目录里前面测试留下的那份没进版本控制，会挡住合并
     for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+    const before = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
+    assert.equal(before.length, 1, '父对话的独立分支列表带上子对话的')
+    assert.ok(before[0].child && !before[0].merged && before[0].ahead + before[0].dirty > 0, '子对话的分支还没合并')
     const merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
-    assert.equal(merged.worktree.state, 'merged')
+    assert.equal(merged.task.worktree.state, 'active', '合并后分支留着，对话还能接着改')
     assert.ok(
       gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
       '合并后提交回到项目目录',
+    )
+    assert.ok((await call('GET', `/tasks/${wtParent.id}/worktrees`)).items[0].merged, '合并后标成已合并')
+    // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
+    const askKid = await waitDone(
+      (
+        await call('POST', '/tasks', {
+          projectId: project.id,
+          mode: 'chat',
+          agentId: B.id,
+          parentTaskId: wtParent.id,
+          prompt: 'ASK_PARENT 选一个方案',
+        })
+      ).id,
+      20000,
+    )
+    let askParent = await call('GET', `/tasks/${wtParent.id}`)
+    const askMsg = askParent.messages.find((m) => m.panel === 'ask')
+    assert.ok(askMsg, '父对话里记了提问卡片')
+    assert.equal(askMsg.ask.from, askKid.id)
+    assert.deepEqual(askMsg.ask.options, ['A 方案', 'B 方案'], '卡片带上子对话给的选项')
+    assert.equal(askMsg.ask.answer, undefined, '还没回答')
+    assert.ok(
+      !askParent.messages.some((m) => m.role === 'system' && !m.panel && m.text.includes('提问')),
+      '提问不再是居中的系统提示',
+    )
+    await call('POST', `/tasks/${wtParent.id}/child-asks/${askMsg.id}`, { answer: 'B 方案', delegate: false })
+    await waitTask(askKid.id, (k) => k.messages.some((m) => m.role === 'user' && m.text.includes('用户的决定')))
+    askParent = await call('GET', `/tasks/${wtParent.id}`)
+    const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
+    assert.equal(answeredAsk.ask.answer, 'B 方案')
+    assert.equal(answeredAsk.ask.by, 'user')
+    assert.ok(
+      askParent.inbox.some((x) => x.from === askKid.id && x.text.includes('用户已回答')) &&
+        !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
+      '父对话的收件箱里换成「用户已回答」，不会再答一遍',
     )
     await call('DELETE', `/tasks/${wtParent.id}`)
     await call('PUT', `/projects/${project.id}`, projectInput)
@@ -1428,6 +1485,14 @@ try {
     const { lessons: _lessons, ...withoutLessons } = projectInput
     const kept = await call('PUT', `/projects/${project.id}`, withoutLessons)
     assert.equal(kept.lessons.length, 2)
+    // 全局教训：没确认不能写；写进去后新会话的提示里排在项目教训后面
+    const unconfirmed = await call('PUT', '/global-lessons', { lessons: [] }).catch((e) => e)
+    assert.ok(unconfirmed instanceof Error, '没确认不能改全局教训')
+    await call('PUT', '/global-lessons', {
+      confirmed: true,
+      lessons: [{ id: 'g-e2e', title: '等待用后台命令', rule: '不用会立刻退出的定时脚本' }],
+    })
+    assert.equal((await call('GET', '/global-lessons')).length, 1)
     const learned = await waitDone(
       (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: '看看教训' })).id,
       20000,
@@ -1437,6 +1502,12 @@ try {
     assert.ok(lessonLog.includes('格式化统一走 src/utils/money.ts'), '所有改动都适用的给全文')
     assert.ok(lessonLog.includes('支付方式写进配置'), '按文件的列标题')
     assert.ok(!lessonLog.includes('下单流程只读配置字段'), '按文件的全文不放进提示，按需用工具取')
+    assert.ok(lessonLog.includes('不用会立刻退出的定时脚本'), '全局教训也带上')
+    assert.ok(
+      lessonLog.indexOf('格式化统一走') < lessonLog.indexOf('不用会立刻退出的定时脚本'),
+      '全局教训排在项目教训后面',
+    )
+    await call('PUT', '/global-lessons', { confirmed: true, lessons: [] })
     await call('DELETE', `/tasks/${learned.id}`)
     await call('PUT', `/projects/${project.id}`, { ...projectInput, lessons: [] })
     step('项目教训：接口记录和同名更新，新会话的提示只带全局条目全文和其余标题')
@@ -2349,7 +2420,10 @@ try {
   assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '合并失败时项目目录没被改动')
   rmSync(blocker)
   const merged = await call('POST', `/tasks/${tIso.id}/worktree/merge`)
-  assert.equal(merged.worktree.state, 'merged')
+  assert.equal(merged.task.worktree.state, 'active', '合并后分支和目录留着')
+  assert.ok(existsSync(tIso.worktree.path), '合并后独立目录还在')
+  const status = (await call('GET', `/tasks/${tIso.id}/worktrees`)).items[0]
+  assert.ok(status.merged && status.ahead === 0 && status.dirty === 0, '合并后标成已合并')
   assert.ok(existsSync(path.join(projectDir, 'committed.txt')), '合并后改动进了项目目录')
   assert.ok(existsSync(path.join(projectDir, 'later.txt')), '没提交的改动合并前先提交')
   assert.equal(
@@ -2357,8 +2431,10 @@ try {
     'changed before the task\n',
     '项目里原有的改动保留',
   )
-  assert.ok(!existsSync(tIso.worktree.path), '合并后删掉独立目录')
-  assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '合并后删掉任务分支')
+  const removed = await call('POST', `/tasks/${tIso.id}/worktree/discard`)
+  assert.equal(removed.worktree.state, 'merged', '合并过的分支删除后记成已合并')
+  assert.ok(!existsSync(tIso.worktree.path), '删除后独立目录没了')
+  assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '删除后任务分支没了')
   // 退回合并前，免得影响后面的测试（--keep 保留 pre.txt 的未提交改动）
   git('reset', '-q', '--keep', 'HEAD~1')
   writeFileSync(blocker, blockerText)

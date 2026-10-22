@@ -20,6 +20,7 @@ import {
 } from './flow.ts'
 import { AGENT_ICON_IDS } from './icons.ts'
 import { McpServer } from './library.ts'
+import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,
   START,
@@ -29,15 +30,18 @@ import {
   type Category,
   type Flow,
   type FlowRef,
+  type GlobalLesson,
   type ParamValues,
+  type ProjectLesson,
   type TaskMessage,
   type TestStep,
   type Workflow,
   type WorkflowInput,
 } from './schema.ts'
 import type { DerivedParam } from './agent-params.ts'
+import { includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 
-export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps'])
+export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps', 'lessons'])
 export type AssistKind = z.infer<typeof AssistKind>
 
 export const AssistMessage = z.object({
@@ -187,7 +191,13 @@ export type TestStepsProposal = {
   kind: 'teststeps'
   steps: TestStep[]
 }
+/** 从项目教训里提取的全局教训改动：用户在界面上逐条勾选确认后才写进去 */
+export type LessonsProposal = {
+  kind: 'lessons'
+  changes: GlobalLessonChange[]
+}
 export type Proposal =
+  | LessonsProposal
   | AgentProposal
   | WorkflowProposal
   | SkillProposal
@@ -238,6 +248,9 @@ export interface AssistContext {
   paramAgentId?: string
   /** teststeps 校验和展示用的系统 */
   platform?: string
+  /** lessons：这个项目的教训和现有的全局教训 */
+  projectLessons?: ProjectLesson[]
+  globalLessons?: GlobalLesson[]
 }
 
 const KIND_NAME = {
@@ -247,6 +260,7 @@ const KIND_NAME = {
   mcp: 'MCP 工具',
   params: '参数配置',
   teststeps: '测试步骤',
+  lessons: '全局教训',
 }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
@@ -390,6 +404,7 @@ export function buildAssistPrompt(
   if (kind === 'skill' || kind === 'mcp') return buildLibraryPrompt(kind, ctx, messages)
   if (kind === 'params') return buildParamsPrompt(ctx, messages)
   if (kind === 'teststeps') return buildTestStepsPrompt(ctx, messages)
+  if (kind === 'lessons') return buildLessonsPrompt(ctx, messages)
   const improving = !!ctx.target
   const what = KIND_NAME[kind]
   const clis = CLIS.map(
@@ -518,40 +533,54 @@ const SkillDraft = z.object({
 
 /**
  * 项目设置里的 Agent 参数：在项目目录里只读看代码，给出每个参数的合理值。
- * 只读约束写进提示词；需要跑命令时先说明并等用户确认。
+ * 每个参数附上「取不同值时角色设定差在哪」和工作流节点上的预设，CLI 才有判断依据；
+ * 否则它只看到一个标签（「TDD」「任务记录」），只能把开关原样拿去问用户。
  */
 function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
   const spec = paramSpecFor(ctx)
+  const wf = ctx.target && 'flows' in ctx.target ? ctx.target : undefined
   const params = spec
     .map((d) => {
       const options = d.options.length ? `，可选值：${d.options.map((o) => `"${o}"`).join('、')}` : ''
       const def = d.defaultValue === undefined ? '，没有默认值' : `，默认值：${JSON.stringify(d.defaultValue)}`
       const who = [...new Set(d.agents.map((a) => a.name))].join('、')
-      return `- ${d.key}（${d.label}，类型 ${d.type}${options}${def}${d.required ? '，必须填' : ''}）${
-        d.description ? `：${d.description}` : ''
-      }\n  影响：${who}`
+      const preset = wf ? nodePresets(wf, d.key) : ''
+      const effect = paramEffect(d, ctx.agents)
+      return [
+        `- ${d.key}（${d.label}，类型 ${d.type}${options}${def}${d.required ? '，必须填' : ''}）${d.description ? `：${d.description}` : ''}`,
+        `  影响：${who}`,
+        preset ? `  工作流节点上已预设：${preset}（项目里填了值会覆盖这些节点）` : '',
+        effect,
+      ]
+        .filter(Boolean)
+        .join('\n')
     })
     .join('\n')
   const where = ctx.projectPath
     ? `项目「${ctx.projectName || ctx.projectPath}」的目录是 ${ctx.projectPath}。
-只读地看这个目录里的代码和配置（依赖清单、构建 / 测试脚本、目录结构、README、CI 配置），据此判断参数值。
+只读地看这个目录：AGENTS.md / CLAUDE.md、README、依赖清单、构建 / 测试脚本、CI 配置、docs 和目录结构，据此判断参数值。
 **不许修改任何文件、不许安装依赖、不许执行有副作用的命令。** 需要跑命令确认时，先说清楚要跑什么并等用户确认。`
     : '没有项目目录：只按对话内容和参数说明给出合理值，不要编造项目里不存在的命令。'
   return [
     '你是「Agent 面板」里的配置助手，正在帮用户填一个项目里某个工作流的 Agent 参数。',
     where,
     `## 要配置的参数\n${params || '（没有可配置的参数）'}`,
+    `## 怎么判断
+- 每个参数都由你自己决定，不要把参数的取舍拿去问用户：你给的值只会显示在右侧预览里，用户确认后才填进表单，填错了用户能直接改。
+- 依据按这个顺序找：项目里的事实（文件、脚本、约定文档里写的规则）→ 参数「取不同值时」的差别 → 默认值。默认值和节点预设是工作流作者针对一般项目选好的，没有看到需要改的依据就保持不变，这本身就是一个确定的结论。
+- 只有两种情况才请用户补充：参数必须填、没有默认值，而且项目里查不到（例如外部服务地址、账号）；或者用户在对话里提的要求和项目事实冲突。这时也先给出你推荐的值。
+- 事实自己查，查不到就按上面的顺序落到默认值，不要因为「没有明确依据」而停下来提问。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
-先用两三句中文说明你的判断依据（看到了哪些文件、为什么这样填）${ctx.projectPath ? '，以及还有哪些参数需要用户确认' : ''}。
+先逐个参数用一行中文写结论和依据，例如「TDD：打开（package.json 有 test:unit，server/ 下有 *.test.ts）」「任务记录：保持默认（项目没有 worklog 目录，也没有跨会话的大任务约定）」。
 然后输出且只输出一个 \`\`\`json 代码块，形如：
 \`\`\`json
 { "values": { "scope": "本次改动", "env": "wsl", "regress": true } }
 \`\`\`
-- 只能出现上面列出的参数 key；不确定的可以不写（留空表示用默认值），不要瞎填。
+- 只能出现上面列出的参数 key；要改的参数写进 values，保持默认（或节点预设）的不写。
 - 值必须符合类型：下拉写可选值之一，开关写 true / false，数字写数字，多选写字符串数组。
 - 命令、路径这类字符串要能直接用，不要写占位符。`,
     `## 对话\n${convo}`,
@@ -559,6 +588,60 @@ function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/** 工作流节点（和步骤）上已经写好的这个参数的值，例如第一个节点的 scene=true */
+function nodePresets(w: Workflow, key: string) {
+  const out: string[] = []
+  for (const f of w.flows)
+    for (const n of f.nodes) {
+      const name = n.title || n.id
+      if (n.params[key] !== undefined) out.push(`「${name}」= ${JSON.stringify(n.params[key])}`)
+      for (const s of n.steps)
+        if (s.params[key] !== undefined) out.push(`「${name}」的步骤 = ${JSON.stringify(s.params[key])}`)
+    }
+  return [...new Set(out)].slice(0, 8).join('、')
+}
+
+/**
+ * 参数取不同值时，角色设定（含引入的角色）里多出来的内容。
+ * 按每个取值各渲染一遍模板，只列这个取值独有的行，让 CLI 知道开关实际管什么。
+ */
+function paramEffect(d: DerivedParam, agents: Agent[]) {
+  const variants: [string, ParamValues[string]][] =
+    d.type === 'bool'
+      ? [
+          ['打开时', true],
+          ['关闭时', false],
+        ]
+      : d.options.length && d.type !== 'multi'
+        ? d.options.slice(0, 6).map((o) => [`选「${o}」时`, o])
+        : []
+  if (!variants.length) return ''
+  const owners = d.agents.map((o) => agents.find((a) => a.id === o.id)).filter((a): a is Agent => !!a)
+  const seen = new Set<string>()
+  const roles = owners.flatMap((a) => [a, ...includedAgents(a, agents).map((x) => x.agent)])
+  const texts = roles.filter((a) => !seen.has(a.id) && seen.add(a.id) && a.instructions.includes(`{{#if`))
+  if (!texts.length) return ''
+  const linesOf = (v: ParamValues[string]) => {
+    const out = new Set<string>()
+    for (const a of texts) {
+      const base = resolveParams(a.params).values
+      for (const l of renderTemplate(a.instructions, { ...base, [d.key]: v }).split('\n'))
+        if (l.trim()) out.add(l.trim())
+    }
+    return out
+  }
+  const sets = variants.map(([, v]) => linesOf(v))
+  const rows = variants
+    .map(([label], i) => {
+      const own = [...sets[i]].filter((l) => sets.some((s, j) => j !== i && !s.has(l)))
+      if (!own.length) return ''
+      const text = own.join(' ')
+      return `  ${label}角色设定里会多出：${text.length > 360 ? `${text.slice(0, 360)}…` : text}`
+    })
+    .filter(Boolean)
+  return rows.join('\n')
 }
 
 /** teststeps 的提示词：读项目实际的技术栈和脚本，生成可以直接执行的步骤 */
@@ -585,7 +668,8 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - timeoutSec：超时秒数，0 表示不限
 - note：给执行者看的说明，例如「同一时间只编译一次」
 - enabled：默认 true
-- merge：合并时编译。子对话在独立分支里改完提交编译时，面板把改动合回原目录后跑标了 true 的步骤，通过才提交；编译、构建、类型检查这类能发现「合在一起坏了」的标 true，耗时很长的端到端测试标 false`,
+- merge：合并时编译。子对话在独立分支里改完提交编译时，面板把改动合回原目录后跑标了 true 的步骤，通过才提交；编译、构建、类型检查这类能发现「合在一起坏了」的标 true，耗时很长的端到端测试标 false
+- quick：小改动也跑。Agent 判断是小改动（改文案、样式、一两处局部修改）时只跑标了 true 的步骤；类型检查、lint、语法检查这类几十秒内跑完的标 true，单元测试、端到端、完整构建标 false`,
     `## 写步骤的规则
 - 按执行顺序排：先静态检查和单元测试，再端到端和构建；编译类放在需要它之前。
 - 只写项目里真的有的命令：先看 package.json 的 scripts，没有脚本就不要编 \`npm run xxx\`。
@@ -604,6 +688,80 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/** lessons 的提示词：从一个项目的教训里挑出换个项目也适用的，合并进现有的全局教训 */
+function buildLessonsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
+  const convo = messages
+    .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
+    .join('\n\n')
+  const line = (l: ProjectLesson | GlobalLesson) =>
+    [
+      `- [${l.id}] ${l.title}${l.enabled ? '' : '（已停用）'}`,
+      l.rule ? `  说明：${l.rule.replace(/\n+/g, ' ')}` : '',
+      l.cause ? `  起因：${l.cause.replace(/\n+/g, ' ')}` : '',
+      l.paths.length ? `  范围：${l.paths.join('、')}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n')
+  const own = ctx.projectLessons ?? []
+  const globals = ctx.globalLessons ?? []
+  return [
+    `你是「Agent 面板」里的配置助手，正在帮用户从项目「${ctx.projectName || '未命名'}」的教训里**提取全局教训**。`,
+    '项目教训是 Agent 在这个项目里返工过、被纠正过的地方写成的规则。全局教训所有项目的对话都会带上，优先级低于项目教训和用户当次的要求，只有用户确认后才能修改。',
+    `## 这个项目的教训（${own.length} 条）\n${own.map(line).join('\n') || '（没有）'}`,
+    `## 现有的全局教训（${globals.length} 条）\n${globals.map(line).join('\n') || '（还没有）'}`,
+    `## 提取规则
+- 只提取换一个项目、换一种技术栈也成立的做法（例如「等待、计时用面板的后台任务，不用会立刻退出的脚本」「改了提示词先搜测试里有没有断言原句」）。只对这个项目的目录、字段、命令、业务成立的不要提。
+- 提取时改写成通用的说法：去掉这个项目的文件名、字段名，具体事件只留在 cause 里一句话带过。
+- 和现有全局教训说的是同一件事时，用 update 改写那一条（id 写它的 id），把两边的要点合在一起；不要新加重复的。
+- 现有全局教训和这个项目的教训冲突时，不要改全局教训去迁就一个项目；这种情况在说明里讲出来，让用户决定。
+- paths 一般留空：不同项目的目录不一样。
+- 宁缺毋滥：没有适合的就输出空的 changes，在说明里讲为什么。`,
+    `## 输出格式
+先用两三句中文说明挑了哪些、为什么，以及哪些看起来通用但没提（原因）。
+然后输出且只输出一个 \`\`\`json 代码块：
+\`\`\`json
+{ "changes": [ { "op": "add", "id": "", "title": "一句话的规则", "rule": "展开说明", "cause": "从什么情况总结的", "paths": [], "sources": ["项目教训的 id"] } ] }
+\`\`\`
+op 只能是 add 或 update；update 的 id 必须是现有全局教训的 id；sources 写它来自这个项目的哪几条教训（id）。`,
+    `## 对话\n${convo}`,
+    '请回复用户最后一条消息。',
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
+const LESSON_CHANGE = z.object({
+  op: z.enum(['add', 'update']),
+  id: z.string().trim().max(60).default(''),
+  title: z.string().trim().min(1, 'title 不能为空').max(120),
+  rule: z.string().trim().max(1500).default(''),
+  cause: z.string().trim().max(500).default(''),
+  paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  sources: z.array(z.string().trim()).max(50).default([]),
+})
+
+/** 校验 AI 给出的全局教训改动：update 要指向现有的那条，同一条不能改两次 */
+export function resolveLessonChanges(
+  json: unknown,
+  globals: GlobalLesson[],
+): { changes?: GlobalLessonChange[]; error?: string } {
+  const obj = json && typeof json === 'object' ? (json as Record<string, unknown>) : null
+  const raw = Array.isArray(obj) ? obj : obj?.changes
+  const arr = z
+    .array(LESSON_CHANGE)
+    .max(30)
+    .safeParse(raw ?? [])
+  if (!arr.success) return { error: z.prettifyError(arr.error) }
+  const seen = new Set<string>()
+  for (const c of arr.data) {
+    if (c.op !== 'update') continue
+    if (!globals.some((g) => g.id === c.id)) return { error: `update 的 id「${c.id}」不是现有全局教训的 id` }
+    if (seen.has(c.id)) return { error: `全局教训「${c.id}」被改了两次，合成一条 update` }
+    seen.add(c.id)
+  }
+  return { changes: arr.data.map((c) => (c.op === 'add' ? { ...c, id: '' } : c)) }
 }
 
 /** params 这个 Agent 分组会用到的参数；指定了 paramAgentId 时只留那个 Agent 的 */
@@ -629,6 +787,7 @@ const TEST_STEP_SHAPE = z.object({
   note: z.string().trim().max(300).default(''),
   enabled: z.boolean().default(true),
   merge: z.boolean().default(false),
+  quick: z.boolean().default(false),
 })
 
 /**
@@ -770,6 +929,10 @@ export function resolveProposal(
     const r = resolveParamValues(json, paramSpecFor(ctx))
     if (r.error) return { error: r.error }
     return { proposal: { kind: 'params', workflowId: ctx.target?.id ?? '', values: r.values! } }
+  }
+  if (kind === 'lessons') {
+    const r = resolveLessonChanges(json, ctx.globalLessons ?? [])
+    return r.error ? { error: r.error } : { proposal: { kind: 'lessons', changes: r.changes! } }
   }
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)
@@ -981,7 +1144,7 @@ export async function applyProposal(
     return c.id
   }
   // Skill、MCP 工具由各自的页面应用；参数和测试步骤只填进项目设置的表单草稿
-  if (p.kind === 'skill' || p.kind === 'mcp' || p.kind === 'params' || p.kind === 'teststeps')
+  if (p.kind === 'skill' || p.kind === 'mcp' || p.kind === 'params' || p.kind === 'teststeps' || p.kind === 'lessons')
     return { created: [], categories: [] }
   if (p.kind === 'agent')
     return {

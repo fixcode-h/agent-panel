@@ -279,6 +279,29 @@ export function TaskComposer({
 
   return (
     <div className="flex flex-col gap-3">
+      {/* 输入框贴在页面底部，相关的对话列在它上方，跟着输入一起看到 */}
+      {related.length > 0 && (
+        <div className="-mb-1 flex flex-col gap-1 px-1" aria-label={t('可能相关的对话')}>
+          <span className="text-xs text-subtle">{t('看起来和这些对话是同一件事，可以直接发过去接着做：')}</span>
+          {related.map(({ task: x }) => (
+            <button
+              key={x.id}
+              type="button"
+              disabled={busy}
+              onClick={() => sendTo(x.id)}
+              title={t('把这条要求发到「{title}」', { title: x.title })}
+              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
+              <span className="min-w-0 flex-1 truncate">{x.title}</span>
+              <span className="flex shrink-0 items-center gap-1 text-xs text-subtle group-hover:text-accent">
+                <CornerDownRight className="h-3.5 w-3.5" />
+                {t('发到这里')}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <div
         {...drop.container}
         className={cn(
@@ -427,28 +450,6 @@ export function TaskComposer({
               </PopoverContent>
             </Popover>
           )}
-        </div>
-      )}
-      {related.length > 0 && (
-        <div className="-mt-1 flex flex-col gap-1 px-1" aria-label={t('可能相关的对话')}>
-          <span className="text-xs text-subtle">{t('看起来和这些对话是同一件事，可以直接发过去接着做：')}</span>
-          {related.map(({ task: x }) => (
-            <button
-              key={x.id}
-              type="button"
-              disabled={busy}
-              onClick={() => sendTo(x.id)}
-              title={t('把这条要求发到「{title}」', { title: x.title })}
-              className="group flex h-8 min-w-0 cursor-pointer items-center gap-2 rounded-lg px-2 text-left text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              <MessageSquare className="h-3.5 w-3.5 shrink-0 text-subtle" />
-              <span className="min-w-0 flex-1 truncate">{x.title}</span>
-              <span className="flex shrink-0 items-center gap-1 text-xs text-subtle group-hover:text-accent">
-                <CornerDownRight className="h-3.5 w-3.5" />
-                {t('发到这里')}
-              </span>
-            </button>
-          ))}
         </div>
       )}
       {busyProject && canIsolate && !isolate && (

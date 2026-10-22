@@ -88,7 +88,10 @@ export function toolVerb(tool: ToolUse) {
 
 /** 面板自己的工具（panel MCP）调用名：各家 CLI 显示成「panel-xxxx · create_conversation」「panel_create_conversation」等 */
 const PANEL_TOOL =
-  /panel[\w-]*\W{1,4}(create_conversation|send_to_conversation|list_conversations|spawn_agents|wait_agents|run_background|check_background|message_parent|submit_build|start_plan)\b/
+  /panel[\w-]*\W{1,4}(create_conversation|send_to_conversation|list_conversations|spawn_agents|wait_agents|run_background|check_background|message_parent|submit_build|start_plan|get_status|begin_edit|run_workflow|close_run|claim_files|release_files|project_lessons|record_lesson|read_state|write_state|ask_main|send_message|read_messages)\b/
+
+/** 别的 MCP 工具：解析器记成 name「MCP」、label「服务名 · 工具名」 */
+const MCP_LABEL = /^(.+?) · (.+)$/
 
 /** 工具调用的参数：多数 CLI 给的是 JSON，解析不了就当没有 */
 function toolArgs(tool: ToolUse): Record<string, unknown> {
@@ -106,8 +109,37 @@ const firstLine = (v: unknown) =>
     .map((l) => l.trim())
     .find(Boolean) ?? ''
 
+const list = (v: unknown) => (Array.isArray(v) ? v.map(String).filter(Boolean).join(t('、')) : '')
+
+/** 一次工具调用在对话里怎么显示：tool 是改写后的调用，server 是别的 MCP 工具所在的服务（单独淡色标出） */
+export interface ToolView {
+  tool: ToolUse
+  server?: string
+  /** 新建、交给子对话的调用：点标题打开的子对话 id */
+  child?: string
+}
+
+/**
+ * 工具调用的显示：面板工具说做了什么（新建子对话 + 名字、开独立分支 + 分支名），别的 MCP 工具把工具名当动作、
+ * 服务名淡色放在旁边，不再是一串「MCP 服务名 · 工具名」。返回 null 表示不用显示（派出的子任务另有自己的一行）
+ */
+export function toolView(tool: ToolUse): ToolView | null {
+  const panel = panelTool(tool)
+  if (panel === null) return null
+  if (panel) {
+    const child = panelChildId(tool)
+    return { tool: panel, ...(child && { child }) }
+  }
+  const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null
+  if (!mcp) return { tool }
+  const a = toolArgs(tool)
+  const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
+  return { tool: { ...tool, name: mcp[2], label: arg ? firstLine(arg).slice(0, 120) : '' }, server: mcp[1] }
+}
+
 /**
  * 面板工具在对话里怎么显示：说做了什么（新建子对话 + 子对话名字），不显示 MCP 服务名和原始工具名。
+ * 展开时看的是正文（交给子对话的消息、回报的内容），不是一段 JSON。
  * 返回 undefined 表示不是面板工具，照常显示；null 表示不用显示（派出的子任务另有自己的一行）
  */
 export function panelTool(tool: ToolUse): ToolUse | null | undefined {
@@ -115,17 +147,19 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   if (!hit) return undefined
   const a = toolArgs(tool)
   const quoted = /「([^」]+)」/.exec(tool.output ?? '')?.[1] ?? ''
-  const as = (name: string, label: string, kind: ToolUse['kind'] = 'other'): ToolUse => ({
+  const as = (name: string, label: string, kind: ToolUse['kind'] = 'other', input?: string): ToolUse => ({
     ...tool,
     kind,
     name,
     label,
+    ...(input !== undefined && { input }),
   })
+  const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
   switch (hit[1]) {
     case 'create_conversation':
-      return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent')
+      return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
     case 'send_to_conversation':
-      return as(t('交给子对话'), quoted || firstLine(a.id), 'agent')
+      return as(t('交给子对话'), quoted || firstLine(a.id), 'agent', text(a.message))
     case 'list_conversations':
       return as(t('查看子对话'), '')
     // 成功派出时子任务各有一行（转圈、完成、失败），这次调用不再单独显示；失败了要让人看到原因
@@ -134,23 +168,65 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'wait_agents':
       return as(t('等待子任务'), '', 'agent')
     case 'run_background':
-      return as(t('后台命令'), firstLine(a.name) || firstLine(a.command))
+      return as(t('后台命令'), firstLine(a.name) || firstLine(a.command), 'other', text(a.command))
     case 'check_background':
       return as(t('查看后台命令'), firstLine(a.id))
-    case 'message_parent':
-      return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text))
+    case 'message_parent': {
+      const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
+      const body = [text(a.text), opts].filter(Boolean).join('\n\n')
+      return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text), 'other', body || undefined)
+    }
     case 'submit_build':
       return as(t('提交编译'), firstLine(a.note))
     case 'start_plan':
-      return as(t('启动工作流'), firstLine(a.input))
+    case 'run_workflow':
+      return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))
+    case 'close_run':
+      return as(t('结束这次运行'), '')
+    case 'get_status':
+      return as(t('查看节点状态'), '')
+    case 'begin_edit': {
+      // 开出来的分支名在结果里：「已开独立分支 xxx（目录 …）」「已经在独立分支 xxx 里」
+      const branch = /独立分支 (\S+?)(?:（| 里|$)/.exec(tool.output ?? '')?.[1] ?? ''
+      return as(t('开独立分支'), branch)
+    }
+    case 'claim_files':
+      return as(t('认领文件'), list(a.paths))
+    case 'release_files':
+      return as(t('释放文件'), list(a.paths))
+    case 'record_lesson':
+      return as(a.id ? t('改写教训') : t('记下教训'), firstLine(a.title), 'other', text(a.rule))
+    case 'project_lessons':
+      return as(t('查看项目教训'), list(a.files), 'read')
+    case 'read_state':
+      return as(t('读取共享状态'), '')
+    case 'write_state':
+      return as(t('写入共享状态'), firstLine(a.key), 'other', text(a.value))
+    case 'ask_main':
+      return as(t('向主角色提问'), firstLine(a.question), 'other', text(a.question))
+    case 'send_message':
+      return as(t('传话'), [firstLine(a.to), firstLine(a.text)].filter(Boolean).join(' · '), 'other', text(a.text))
+    case 'read_messages':
+      return as(t('查看消息'), '')
   }
   return undefined
+}
+
+/** 新建子对话、交给子对话这两次调用指向哪个子对话：新建的 id 在工具输出的「（id: …）」里，交给的在参数里 */
+export function panelChildId(tool: ToolUse) {
+  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
+  if (hit?.[1] === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
+  if (hit?.[1] === 'send_to_conversation') return firstLine(toolArgs(tool).id)
+  return ''
 }
 
 /** 「正在做什么」的一句话 */
 export function currentActivity(a: ReturnType<typeof stepActivity>) {
   if (a.last?.text.trim()) return t('正在输出：{text}', { text: plainLine(a.last.text, true) })
-  if (a.lastTool) return `${toolVerb(a.lastTool)} ${a.lastTool.label}`.trim()
+  if (a.lastTool) {
+    const v = toolView(a.lastTool)?.tool ?? a.lastTool
+    return `${toolVerb(v)} ${v.label}`.trim()
+  }
   // 开着思考的模型先想很久才出正文，这时显示想到哪了，免得一直停在「正在启动」
   const thinking = a.last?.thinking ? plainLine(a.last.thinking, true) : ''
   if (thinking) return t('正在思考：{text}', { text: thinking })

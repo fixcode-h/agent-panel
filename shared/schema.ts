@@ -603,6 +603,11 @@ export const TestStep = z.object({
   enabled: z.boolean().default(true),
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
+  /**
+   * 小改动也跑：Agent 判断这次是小改动时只跑标了这个的步骤（类型检查、lint 这类几秒到几十秒的），
+   * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
+   */
+  quick: z.boolean().default(false),
 })
 export type TestStep = z.infer<typeof TestStep>
 
@@ -610,6 +615,16 @@ export type TestStep = z.infer<typeof TestStep>
  * 项目教训：Agent 在这个项目里返工过的地方，写成下次能直接照做的规则。
  * 按 paths 命中要改的文件才给全文，提示里平时只放标题，条目多了也不会占满上下文（见 shared/lessons.ts）
  */
+/** 教训被改写前的一版 */
+export const LessonRevision = z.object({
+  title: z.string().max(120),
+  rule: z.string().max(1500).default(''),
+  /** 为什么改：用户的哪条新要求和它冲突、两全的做法是什么 */
+  why: z.string().max(500).default(''),
+  at: z.string().default(''),
+})
+export type LessonRevision = z.infer<typeof LessonRevision>
+
 export const ProjectLesson = z.object({
   id: z.string().min(1),
   /** 一句话的规则：该怎么做，不是发生了什么 */
@@ -626,8 +641,33 @@ export const ProjectLesson = z.object({
   /** 在哪个对话里记的 */
   taskId: z.string().default(''),
   createdAt: z.string().default(''),
+  /** 最后一次被改写的时间：用户的新要求和它冲突、Agent 找到两全的做法时会改写它 */
+  updatedAt: z.string().default(''),
+  /** 改写前的版本（新的在前，最多留几条）：用户能看到它为什么变了，改坏了也能照着改回去 */
+  history: z.array(LessonRevision).max(5).catch([]).default([]),
 })
 export type ProjectLesson = z.infer<typeof ProjectLesson>
+
+/**
+ * 全局教训：从各个项目的教训里提取出来、换个项目也适用的规则，所有项目的对话都会带上。
+ * 只能由用户确认后修改（Agent 没有写它的工具），优先级低于项目教训和用户这次的要求。
+ * 存在数据目录的 config/global-lessons.json
+ */
+export const GlobalLesson = z.object({
+  id: z.string().min(1),
+  title: z.string().trim().min(1, t('规则不能为空')).max(120),
+  rule: z.string().trim().max(1500).default(''),
+  cause: z.string().trim().max(500).default(''),
+  /** 一般不写：不同项目的目录不一样；写了就按相对项目根的 glob 匹配 */
+  paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  enabled: z.boolean().default(true),
+  /** 从哪些项目提取的（项目名，只用来显示） */
+  from: z.array(z.string().max(60)).max(20).default([]),
+  createdAt: z.string().default(''),
+  updatedAt: z.string().default(''),
+})
+export type GlobalLesson = z.infer<typeof GlobalLesson>
+export const GlobalLessons = z.array(GlobalLesson).max(100)
 
 /** 旧项目的 workflowParams 是单层（只属于 workflowId 那一个工作流），读出来时按工作流分组 */
 function migrateProject(input: unknown) {
@@ -669,6 +709,11 @@ const ProjectFields = z.object({
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
   testSteps: z.array(TestStep).max(40).default([]),
+  /**
+   * 按改动大小决定验证范围：小改动只跑快速检查就收尾，大改动跑完整的测试步骤。
+   * 关掉时每次改动都跑完整步骤。旧项目也默认打开：小改动在没有标「小改动也跑」的合并步骤时仍跑全部合并步骤，不会少编译
+   */
+  scaledVerify: z.boolean().default(true),
   /** 项目教训：旧项目没有时是空数组 */
   lessons: z.array(ProjectLesson).max(200).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */
@@ -876,9 +921,23 @@ export const TaskMessage = z.object({
   /**
    * 面板推回给 CLI 的消息（后台命令结果、合并编译结果、子任务结果）：不是用户说的话，
    * 对话里显示成 AI 回复里的一行，点开看全文。child 是子对话交回父对话的回报：
-   * 只交给父对话的 AI，界面上不显示（子对话自己的状态图标已经说明做完了）
+   * 只交给父对话的 AI，界面上不显示（子对话自己的状态图标已经说明做完了，汇报在子对话自己的对话里看）。
+   * ask 是子对话请父对话决定的问题：父对话里显示成一张可以直接回答的卡片；
+   * note 是执行中用户改设置这类说明，画成回复里的一行，不把回复截成两段
    */
-  panel: z.enum(['background', 'build', 'helpers', 'child']).optional(),
+  panel: z.enum(['background', 'build', 'helpers', 'child', 'ask', 'note']).optional(),
+  /** panel 为 ask 时：哪个子对话问的、问了什么、可选的做法，以及谁怎么回答的 */
+  ask: z
+    .object({
+      from: z.string(),
+      title: z.string().default(''),
+      question: z.string().default(''),
+      options: z.array(z.string()).default([]),
+      answer: z.string().optional(),
+      /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
+      by: z.enum(['user', 'parent']).optional(),
+    })
+    .optional(),
   /** 系统消息是用户对 Agent 提问的回答：在对话正文里像用户消息一样显示每个问题和答案 */
   answers: z.array(z.object({ question: z.string(), answer: z.string() })).optional(),
   /** 对话里用户消息对应的 CLI 那一轮：分叉、撤回时让 CLI 从这一轮截断会话 */

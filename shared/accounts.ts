@@ -248,7 +248,7 @@ export function setModelEfforts(
   data: unknown,
   at: string,
   key: string,
-  effortsFor: (model: string) => string[] | boolean | undefined,
+  effortsFor: (model: string) => unknown,
 ): boolean {
   let models: unknown = data
   for (const part of at.split('.')) {
@@ -406,6 +406,25 @@ export const CliAuth = z.object({
           at: z.string(),
           /** 写进模型条目的键名 */
           key: z.string().default('reasoning'),
+          /**
+           * 每档强度发给接口的值写进哪个键（Pi 的 thinkingLevelMap）：模型支持的档写成同名值，不支持的写 null。
+           * 不写这个表时 Pi 把 xhigh / max 当成不支持、把模型不支持的 minimal 也列出来；不写表示不处理
+           */
+          levelsKey: z.string().optional(),
+        })
+        .optional(),
+      /**
+       * CLI 启动时按模型取默认思考强度的表（例如 Pi settings.json 的 modelThinkingLevels）：
+       * 把 API 设置里按模型配的默认强度（没配时用模型目录的默认值）写进去，直接在终端里用 CLI 也是这个强度。
+       * 不写表示不处理。
+       */
+      modelDefaultEffort: z
+        .object({
+          file: z.string(),
+          /** 表所在的位置，例如 modelThinkingLevels */
+          at: z.string(),
+          /** 表里的键，例如 {provider}/{model} */
+          key: z.string().default('{model}'),
         })
         .optional(),
       /**

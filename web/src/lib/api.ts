@@ -26,6 +26,7 @@ import type {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  GlobalLesson,
   ProjectLesson,
   Settings,
   NewTaskInput,
@@ -111,6 +112,31 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
+
+/** 一个独立分支（git worktree）和它在 git 里的实际情况 */
+export interface WorktreeItem {
+  taskId: string
+  title: string
+  /** 是名下的子对话的（不是对话自己的） */
+  child: boolean
+  /** 那个对话正在动手 */
+  working: boolean
+  branch: string
+  /** 从哪个分支开出、要合回哪个分支 */
+  baseBranch: string
+  path: string
+  state: 'active' | 'merged' | 'discarded'
+  note: string
+  /** 合回去的目录 */
+  home: string
+  exists: boolean
+  /** 原分支里还没有的提交数 */
+  ahead: number
+  /** 没提交的文件数 */
+  dirty: number
+  /** 改动都已经在原分支里了 */
+  merged: boolean
+}
 
 /** 用户加的 CLI 配置：原文（页面拿去注册）、读不进来的原因、所在目录 */
 export interface UserClis {
@@ -278,6 +304,10 @@ export const api = {
   /** 记一条项目教训（同名的会更新），返回更新后的项目 */
   addProjectLesson: (id: string, lesson: Partial<ProjectLesson> & { title: string }) =>
     request<Project>(`/projects/${id}/lessons`, json('POST', lesson)),
+  globalLessons: () => request<GlobalLesson[]>('/global-lessons'),
+  /** 全局教训只在用户确认后整份保存，confirmed 由确认按钮带上 */
+  saveGlobalLessons: (lessons: GlobalLesson[]) =>
+    request<GlobalLesson[]>('/global-lessons', json('PUT', { lessons, confirmed: true })),
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
   orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
@@ -394,11 +424,17 @@ export const api = {
   revealTaskFile: (id: string, path = '') =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
-  /** 独立分支：合并进项目当前的分支，或丢弃 */
-  finishWorktree: (id: string, merge: boolean) =>
-    request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
+  /** 这个对话和它名下子对话的独立分支，带上是否已经合回原分支 */
+  taskWorktrees: (id: string) => request<{ items: WorktreeItem[] }>(`/tasks/${id}/worktrees`),
+  /** 把独立分支合回原分支；分支和目录保留。冲突时错误的 body 带 conflict */
+  mergeWorktree: (id: string) => request<{ task: Task; into: string }>(`/tasks/${id}/worktree/merge`, json('POST', {})),
+  /** 删除独立分支（连目录一起） */
+  discardWorktree: (id: string) => request<Task>(`/tasks/${id}/worktree/discard`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
+  /** 子对话请父对话决定的提问：直接回答（交给子对话），或者交给父对话的 AI 决定 */
+  answerChildAsk: (id: string, mid: string, body: { answer: string; delegate: boolean }) =>
+    request<Task>(`/tasks/${id}/child-asks/${mid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),
   /** 任务页以外的会话（UI 设计、AI 创建…）在等用户的审批和提问 */
   asks: (scope: string) => request<TaskRequest[]>(`/asks?scope=${encodeURIComponent(scope)}`),

@@ -3,7 +3,8 @@ import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 
 import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
-import { ToolRow } from './ToolRow'
+import { RowShell, ToolRow } from './ToolRow'
+import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
 import { stripNext } from '@shared/builtin/default'
@@ -197,7 +198,7 @@ export function AgentMessage({
   return (
     <MessageBody
       m={text === m.text ? m : { ...m, text }}
-      task={task}
+      task={task ? { id: task.id, status: task.status, changes: task.changes } : undefined}
       teamNames={teamNames}
       compact={compact}
       live={live}
@@ -213,9 +214,12 @@ export function AgentMessage({
   )
 }
 
+/** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
+type ToolTask = Pick<Task, 'id' | 'status' | 'changes'>
+
 type BodyProps = {
   m: TaskMessage
-  task?: Task
+  task?: ToolTask
   teamNames: Set<string>
   compact?: boolean
   live?: boolean
@@ -339,8 +343,12 @@ const MessageBody = memo(
     a.icon === b.icon &&
     a.cli === b.cli &&
     a.command === b.command &&
-    // 工具行的窗口要用任务里的改动信息：只有任务对象换了才重画
-    a.task === b.task,
+    // 工具行的窗口只用到任务的 id、状态和有哪些改动的文件：任务对象和改动列表每个增量都会换，
+    // 不能按引用比较，否则整段回复每 200ms 都要重画 Markdown。差异窗口打开时会自己按当前内容取，
+    // 工具输出的变化也已经在 sig 里比较过了
+    a.task?.id === b.task?.id &&
+    a.task?.status === b.task?.status &&
+    (a.task?.changes?.length ?? 0) === (b.task?.changes?.length ?? 0),
 )
 
 /** 面板推回给 CLI 的消息（后台命令、合并编译、子任务的结果）：AI 回复里的一行，点开看全文 */
@@ -350,11 +358,12 @@ const PANEL_KIND = {
   helpers: { icon: Bot, verb: () => t('子任务结果') },
   // 子对话的回报不画出来（inlineEntry 先拦掉），这里只为类型完整
   child: { icon: Info, verb: () => t('子对话') },
+  note: { icon: Info, verb: () => t('设置') },
 } as const
 
 function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
   const [open, setOpen] = useState(false)
-  const kind = PANEL_KIND[m.panel ?? 'background']
+  const kind = PANEL_KIND[m.panel === 'ask' || !m.panel ? 'background' : m.panel]
   const Icon = kind.icon
   const body = m.text.replace(/^【面板】/, '').trim()
   // 一行里放第一句：后台命令「名字」跑完了：失败……；子任务结果放交回了几个
@@ -366,30 +375,21 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
           .replace(/^(后台命令|合并编译)/, '')
           .trim()
   const failed = m.panel !== 'helpers' && /跑完了：失败|被停止了|没通过/.test(body.split('\n')[0])
+  // 面板推回的结果没有单独的窗口：点哪里都是展开收起，在行内看全文
   return (
-    <div className={cn('min-w-0 overflow-hidden rounded-lg border bg-field', failed && 'border-danger/30')}>
-      <button
-        type="button"
-        onClick={() => setOpen(!open)}
-        aria-expanded={open}
-        className="group flex w-full min-w-0 cursor-pointer items-center gap-2 px-2.5 py-1.5 text-left font-mono text-xs text-muted hover:text-fg"
-      >
-        <Icon className={cn('h-3.5 w-3.5 shrink-0', failed ? 'text-danger' : 'text-subtle')} />
-        <span className="shrink-0 font-sans font-medium text-fg/80">{kind.verb()}</span>
-        <span className="min-w-0 flex-1 truncate">{head}</span>
-        <ChevronRight
-          className={cn(
-            'h-3.5 w-3.5 shrink-0 text-subtle opacity-0 transition group-hover:opacity-100',
-            open && 'rotate-90 opacity-100',
-          )}
-        />
-      </button>
-      {open && (
-        <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-[0.8125rem]">
-          <Markdown text={body} teamNames={teamNames} />
-        </div>
-      )}
-    </div>
+    <RowShell
+      glyph={<Icon className={cn('h-3.5 w-3.5 shrink-0', failed ? 'text-danger' : 'text-subtle')} />}
+      verb={kind.verb()}
+      title={head}
+      open={open}
+      // 一句话的说明（执行中改设置）没有更多可看的，不能展开
+      onToggle={body.includes('\n') || m.panel !== 'note' ? () => setOpen(!open) : undefined}
+      failed={failed}
+    >
+      <div className="max-h-[min(50vh,420px)] overflow-y-auto border-t px-3 py-2.5 text-[0.8125rem]">
+        <Markdown text={body} teamNames={teamNames} />
+      </div>
+    </RowShell>
   )
 }
 
@@ -403,6 +403,8 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
   const body =
     m.spawned?.length && task ? (
       <HelperCards task={task} ids={m.spawned} teamNames={teamNames} />
+    ) : m.panel === 'ask' && m.ask ? (
+      <ChildAskCard m={m} task={task} teamNames={teamNames} />
     ) : m.panel ? (
       <PanelRow m={m} teamNames={teamNames} />
     ) : null

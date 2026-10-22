@@ -178,6 +178,11 @@ export function orchTools(o: Orchestra) {
               properties: {
                 text: { type: 'string', description: '要告诉父对话的内容，写清背景和你的建议' },
                 question: { type: 'boolean', description: '需要父对话（或用户）决定时为 true' },
+                options: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description: 'question 为 true 时可选的几种做法（2–4 个，每个一句话），用户可以直接点选',
+                },
               },
               required: ['text'],
             },
@@ -190,7 +195,14 @@ export function orchTools(o: Orchestra) {
                     '改完、在独立分支里做完快速检查后调用：面板把你现在的改动提交到你的分支，排队合回原目录跑编译，通过才算合进去，失败会撤回并把报错推回给你。马上返回，不用干等结果。',
                   inputSchema: {
                     type: 'object',
-                    properties: { note: { type: 'string', description: '这次改了什么，一句话' } },
+                    properties: {
+                      note: { type: 'string', description: '这次改了什么，一句话' },
+                      small: {
+                        type: 'boolean',
+                        description:
+                          '小改动（文案、样式、一两处局部修改）时为 true：合并时只跑标了「小改动也跑」的步骤',
+                      },
+                    },
                   },
                 },
               ]
@@ -232,7 +244,7 @@ export function orchTools(o: Orchestra) {
           {
             name: 'record_lesson',
             description:
-              '记一条项目教训，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就不要重复记。',
+              '记一条项目教训，或改写已有的一条，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、你发现自己的办法不对换了做法才成、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就带 id 改写那一条。用户的新要求和某条教训冲突且找到两全的做法时，也带 id 改写并在 change 里说明。全局教训只有用户能改。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -247,6 +259,15 @@ export function orchTools(o: Orchestra) {
                   type: 'array',
                   items: { type: 'string' },
                   description: '它管哪些文件（相对项目根的 glob，** 跨目录，目录名也行）；所有改动都适用时不写',
+                },
+                id: {
+                  type: 'string',
+                  description:
+                    '改写已有的那条时填它的 id（project_lessons 或提示里列出的）：用户的新要求和它冲突、你找到两全的做法时用；新记一条不填',
+                },
+                change: {
+                  type: 'string',
+                  description: '改写时必填：用户的哪条新要求和原来的规则冲突、两全的做法是什么',
                 },
               },
               required: ['title', 'rule'],
@@ -365,7 +386,16 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const title = str(a?.title).trim()
       if (!title) return text('title 不能为空：写一句该怎么做的规则', true)
       const paths = Array.isArray(a?.paths) ? a.paths.map(String).filter((p: string) => p.trim()) : []
-      const r = await o.lessons.record({ title, rule: str(a?.rule).trim(), cause: str(a?.cause).trim(), paths })
+      const replaces = str(a?.id).trim()
+      const why = str(a?.change).trim()
+      if (replaces && !why) return text('改写已有的教训时要写 change：用户的哪条新要求和它冲突、两全的做法是什么', true)
+      const r = await o.lessons.record({
+        title,
+        rule: str(a?.rule).trim(),
+        cause: str(a?.cause).trim(),
+        paths,
+        ...(replaces ? { replaces, why } : {}),
+      })
       return text(r.info, !r.ok)
     }
     case 'write_state': {
@@ -408,13 +438,14 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'submit_build': {
-      const r = await o.submitBuild(str(a?.note))
+      const r = await o.submitBuild(str(a?.note), a?.small === true)
       return text(r.info, !r.ok)
     }
     case 'message_parent': {
       const body = str(a?.text).trim()
       if (!body) return text('text 是空的', true)
-      const r = await o.toParent(body, a?.question === true)
+      const options = Array.isArray(a?.options) ? a.options.map(String).filter((x: string) => x.trim()) : undefined
+      const r = await o.toParent(body, a?.question === true, options)
       return text(r.info, !r.ok)
     }
     case 'claim_files': {

@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Crown, Loader2, Workflow as WorkflowIcon } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { parseVerdict } from '@shared/engine'
@@ -34,11 +35,22 @@ function runs(msgs: TaskMessage[]) {
   return out
 }
 
+/** 消息对象都没换（流式增量只替换变了的那几条） */
+const sameMsgs = (a: TaskMessage[], b: TaskMessage[]) =>
+  a === b || (a.length === b.length && a.every((m, i) => m === b[i]))
+
+/** 这个节点和它下面的节点：状态、结论、结束时间变了才要重画 */
+const stepSig = (task: Task, rootId: string) =>
+  task.steps
+    .filter((s) => s.id === rootId || s.id.startsWith(`${rootId}/`))
+    .map((s) => `${s.id}:${s.status}:${s.verdict}:${s.endedAt}`)
+    .join('|')
+
 /**
  * 一个主流程节点的输出：节点自己的消息，以及开始、验收、结束流程里各节点的消息（缩进显示）。
  * 验收不通过后节点继续修改的输出按时间顺序接在验收后面。
  */
-export function StepSection({
+function StepSectionBase({
   task,
   rootId,
   msgs,
@@ -170,3 +182,17 @@ export function StepSection({
     </section>
   )
 }
+
+// 任务对象每个流式增量都会换：按这个节点用到的内容比较，没变就不重画
+export const StepSection = memo(
+  StepSectionBase,
+  (a, b) =>
+    a.rootId === b.rootId &&
+    a.bare === b.bare &&
+    a.sticky === b.sticky &&
+    a.teamNames === b.teamNames &&
+    a.task.id === b.task.id &&
+    a.task.status === b.task.status &&
+    sameMsgs(a.msgs, b.msgs) &&
+    stepSig(a.task, a.rootId) === stepSig(b.task, b.rootId),
+)

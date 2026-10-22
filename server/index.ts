@@ -56,7 +56,7 @@ import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } fro
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { setPresenceGraceMs } from './presence.ts'
-import { Settings } from '../shared/schema.ts'
+import { GlobalLessons, Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { gitBranches, gitCheckout } from './exec/git.ts'
@@ -82,7 +82,7 @@ import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
-import { projectLessons, type LessonDraft } from './lessons.ts'
+import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
 if (process.argv.includes('--self-check')) process.exit(0)
@@ -625,6 +625,16 @@ app.post('/projects/:id/lessons', async (c) => {
     source: 'user',
   })
   return r.ok && r.project ? c.json(r.project) : bad(c, r.info)
+})
+
+// 全局教训：所有项目共用。只有界面上用户确认过的修改才会写进来，Agent 没有写它的工具
+app.get('/global-lessons', async (c) => c.json(await readGlobalLessons()))
+app.put('/global-lessons', async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { lessons?: unknown; confirmed?: unknown } | null
+  if (body?.confirmed !== true) return bad(c, t('修改全局教训需要你确认'))
+  const r = GlobalLessons.safeParse(body.lessons)
+  if (!r.success) return bad(c, r.error.issues.map((i) => i.message).join('；'))
+  return c.json(await writeGlobalLessons(r.data))
 })
 
 app.delete('/projects/:id', async (c) => {

@@ -19,6 +19,8 @@ import {
   ProjectCategory,
   ProjectCategoryInput,
   ProjectInput,
+  GlobalLesson,
+  GlobalLessons,
   ProjectLesson,
   Workflow,
   WorkflowInput,
@@ -105,7 +107,24 @@ interface Db {
   settings?: Settings
   /** 在线演示里模拟安装 / 卸载后的 CLI 状态 */
   installed?: Record<string, boolean>
+  /** 全局教训；旧版本的演示数据没有这一项 */
+  globalLessons?: GlobalLesson[]
 }
+
+/** 演示里的全局教训：一条从别的项目提取来的 */
+const DEMO_GLOBAL_LESSONS: GlobalLesson[] = [
+  {
+    id: 'demo-global-1',
+    title: '改了提示词或界面文案，先搜测试里有没有断言原句',
+    rule: '提交前在测试目录里搜一下改动前的原句，断言了的一起改；改完跑一遍相关测试。',
+    cause: '几次改了提示词，测试还在断言旧写法，提交后才发现。',
+    paths: [],
+    enabled: true,
+    from: ['运营后台'],
+    createdAt: '2026-09-15T10:00:00.000Z',
+    updatedAt: '',
+  },
+]
 
 class HttpError extends Error {}
 const fail = (msg: string): never => {
@@ -455,6 +474,7 @@ function seed(): Db {
     agentParams: {},
     childIsolation: 'worktree',
     isolateDefault: false,
+    scaledVerify: true,
     workflowIds: [],
     defaultAgentId: '',
     agentSet: true,
@@ -492,6 +512,7 @@ function seed(): Db {
               note: '',
               enabled: true,
               merge: true,
+              quick: true,
             },
             {
               id: 'demo-e2e',
@@ -504,6 +525,7 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
+              quick: false,
             },
           ],
           wslDistro: 'Ubuntu-24.04',
@@ -519,17 +541,28 @@ function seed(): Db {
               source: 'user',
               taskId: '',
               createdAt: '2026-09-05T10:00:00.000Z',
+              updatedAt: '',
+              history: [],
             },
             {
               id: 'demo-lesson-2',
               title: '新增支付方式写进 payment/providers 的配置，不在下单流程里按名字判断',
-              rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。',
+              rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期、是否显示优惠角标）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。活动期间的临时规则也写进配置的 promo 字段，带上结束时间。',
               cause: '加微信支付时分期开关写死在下单流程里，后来接 PayPal 又改了一遍。',
               paths: ['src/payment/**', 'src/pages/checkout/**'],
               enabled: true,
               source: 'agent',
               taskId: '',
               createdAt: '2026-09-12T15:30:00.000Z',
+              updatedAt: '2026-09-20T09:10:00.000Z',
+              history: [
+                {
+                  title: '新增支付方式写进 payment/providers 的配置，不在下单流程里按名字判断',
+                  rule: '每种支付方式一份 provider 配置（图标、限额、是否支持分期）；下单、退款代码只读配置字段，不写 if (method === "alipay") 这类分支。',
+                  why: '用户要求双十一期间只给支付宝显示「立减」角标，和「不按名字判断」冲突；两全的做法是把活动规则写进配置的 promo 字段。',
+                  at: '2026-09-20T09:10:00.000Z',
+                },
+              ],
             },
             {
               id: 'demo-lesson-3',
@@ -541,6 +574,21 @@ function seed(): Db {
               source: 'agent',
               taskId: '',
               createdAt: '2026-09-18T11:20:00.000Z',
+              updatedAt: '',
+              history: [],
+            },
+            {
+              id: 'demo-lesson-4',
+              title: '要等一段时间再做的事交给面板的后台命令，不用会立刻退出的定时脚本',
+              rule: '定时、轮询、等构建这类要等的事，用 run_background 起一个真正持续运行的命令，或在到点后由面板唤醒；node -e "setTimeout(...)" 这类写法在后台会被判定为立刻结束。',
+              cause: '设一小时倒计时，脚本 0 秒就被判定完成，换成面板的长驻任务才对。',
+              paths: [],
+              enabled: true,
+              source: 'agent',
+              taskId: '',
+              createdAt: '2026-09-22T08:45:00.000Z',
+              updatedAt: '',
+              history: [],
             },
           ],
         },
@@ -594,6 +642,7 @@ function load(): Db {
   db.categories = db.categories.map((c) => Category.parse(c))
   db.projects = db.projects.map((p) => Project.parse(p))
   db.tags ??= []
+  db.globalLessons ??= DEMO_GLOBAL_LESSONS
   // 以前自带的默认 Agent 已经去掉（不用角色就是直接用 CLI），旧的演示数据里还有时删掉
   db.agents = db.agents.filter((a) => a.id !== LEGACY_DEFAULT_AGENT_ID)
   if (!db.workflows.some((w) => w.id === DEFAULT_WORKFLOW_ID)) db.workflows.unshift(defaultWorkflow())
@@ -1251,6 +1300,12 @@ function route(method: string, url: string, body: unknown): unknown {
         subject: input.subject,
         defaultCli: defaultCli(settings),
         target,
+        ...(input.kind === 'lessons'
+          ? (() => {
+              const p = d.projects.find((x) => x.id === input.projectId)
+              return { projectName: p?.name, projectLessons: p?.lessons ?? [], globalLessons: d.globalLessons ?? [] }
+            })()
+          : {}),
       })
     }
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
@@ -1409,6 +1464,14 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
   }
 
+  if (res === 'global-lessons') {
+    if (method === 'GET') return d.globalLessons ?? []
+    const b = (body ?? {}) as { lessons?: unknown; confirmed?: unknown }
+    if (b.confirmed !== true) fail('修改全局教训需要你确认')
+    d.globalLessons = parse(GlobalLessons, b.lessons)
+    persist()
+    return d.globalLessons
+  }
   if (res === 'projects' && id && sub === 'lessons' && method === 'POST') {
     const p = d.projects.find((x) => x.id === id) ?? fail('项目不存在')
     const b = (body ?? {}) as Partial<ProjectLesson>
@@ -1619,6 +1682,9 @@ function followUp(d: Db, task: Task, text: string, fast = false, attachments: At
   return startTurn(d, task, withAttachments(text, attachments), false, fast)
 }
 
+/** 演示里点过「合并」的独立分支（没有真的仓库，只记在内存里） */
+const demoMerged = new Set<string>()
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -1779,6 +1845,14 @@ function tasksRoute(
     void followUp(d, task, f.text, false, f.attachments)
     return task
   }
+  // 回答子对话的提问：演示里只把卡片标成已回答
+  if (sub === 'child-asks' && rid) {
+    const m = task.messages.find((x) => x.id === rid && x.ask) ?? fail('找不到这个提问')
+    const a = body as { answer: string; delegate: boolean }
+    if (!a.delegate) m.ask = { ...m.ask!, answer: a.answer, by: 'user' }
+    persist()
+    return task
+  }
   // 回答 Agent 的请求：去掉请求，记一条说明；模拟执行那边在等它消失
   if (sub === 'requests' && rid) {
     const req = (task.requests ??= []).find((r) => r.id === rid) ?? fail('这个请求已经结束了')
@@ -1807,10 +1881,44 @@ function tasksRoute(
     persist()
     return task
   }
+  // 独立分支：演示里没有真的仓库，合并只记一下「已经合进去了」，删除改状态
+  if (sub === 'worktrees') {
+    const list = [task, ...tasks.filter((x) => x.parentTaskId === task.id)].filter((x) => x.worktree)
+    return {
+      items: list.map((x) => {
+        const wt = x.worktree!
+        const merged = wt.state === 'merged' || (wt.state === 'active' && demoMerged.has(x.id))
+        return {
+          taskId: x.id,
+          title: x.title,
+          child: x.id !== task.id,
+          working: !!x.working,
+          branch: wt.branch,
+          baseBranch: wt.baseBranch,
+          path: wt.path,
+          state: wt.state,
+          note: wt.note,
+          home: wt.state === 'active' ? 'E:\\Project\\demo' : '',
+          exists: wt.state === 'active',
+          ahead: merged || wt.state !== 'active' ? 0 : 2,
+          dirty: merged || wt.state !== 'active' ? 0 : 1,
+          merged,
+        }
+      }),
+    }
+  }
   if (sub === 'worktree' && task.worktree) {
-    if (live.has(task.id)) fail('任务正在执行，等它停下后再处理独立分支')
-    const merge = rid === 'merge'
-    task.worktree = { ...task.worktree, state: merge ? 'merged' : 'discarded', note: merge ? 'main' : '' }
+    if (task.working) fail('对话正在执行，等这一轮结束后再处理独立分支')
+    if (rid === 'merge') {
+      demoMerged.add(task.id)
+      return { task, into: task.worktree.baseBranch || 'main' }
+    }
+    const merged = demoMerged.has(task.id)
+    task.worktree = {
+      ...task.worktree,
+      state: merged ? 'merged' : 'discarded',
+      note: merged ? task.worktree.baseBranch : '',
+    }
     persist()
     return task
   }

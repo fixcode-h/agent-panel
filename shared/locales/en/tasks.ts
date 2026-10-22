@@ -85,8 +85,8 @@ export const EN_TASKS: Record<string, string> = {
   没有默认工作流: 'No default workflow',
   '任务 · {n}': 'Tasks · {n}',
   查看这一步的输出: 'View this step’s output',
-  '还没有任务。在上面描述要做的事，Agent 会按工作流完成。':
-    'No tasks yet. Describe what you need above and Agents will get it done following the workflow.',
+  '还没有任务。在下面描述要做的事，Agent 会按工作流完成。':
+    'No tasks yet. Describe what you need below and Agents will get it done following the workflow.',
   工作流已删除: 'Workflow deleted',
   ' · {done}/{total} 个节点': ' · {done}/{total} steps',
   '对话 · {name}': 'Chat · {name}',
@@ -329,24 +329,10 @@ export const EN_TASKS: Record<string, string> = {
   独立分支: 'Separate branch',
   '这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。':
     'A task is already running in this project. Two tasks editing one directory can overwrite each other; turn on "Separate branch" to keep them apart.',
-  项目当前的分支: "the project's current branch",
   '新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。':
     'The new version is downloaded; it replaces the current one and restarts after running tasks finish. You can also force the update now.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
-  已丢弃独立分支: 'Separate branch discarded',
-  '独立分支已合并到「{branch}」': 'Separate branch merged into "{branch}"',
-  '独立分支已丢弃，项目目录没有改动': 'Separate branch discarded; the project directory was not changed',
-  '在独立分支 {name} 上执行，不改动项目目录': 'Running on separate branch {name}; the project directory is untouched',
-  '改动在独立分支 {name} 上，还没进项目目录':
-    'Changes are on separate branch {name} and not yet in the project directory',
-  丢弃: 'Discard',
   '合并到「{branch}」': 'Merge into "{branch}"',
-  '把改动合并到「{branch}」？': 'Merge the changes into "{branch}"?',
-  '丢弃独立分支？': 'Discard the separate branch?',
-  '没提交的改动会先提交到任务分支，再合并进项目目录当前的分支。有冲突时不会改动项目目录。':
-    "Uncommitted changes are committed to the task branch first, then merged into the project's current branch. On a conflict the project directory is left unchanged.",
-  '会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。':
-    'Deletes the task branch and its working directory, losing all changes in it. The project directory is not affected.',
   合并: 'Merge',
   '要退回修改时，写上要改的地方': 'To send it back, describe what to change',
   退回意见: 'Comments for changes',
@@ -563,6 +549,12 @@ export const EN_TASKS: Record<string, string> = {
   '子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交':
     'When a sub-conversation submits its branch for a build, this step runs after merging back into the original folder; the merge is committed only if it passes',
   合并时编译: 'Build on merge',
+  小改动也跑: 'Run for small changes',
+  '角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint':
+    'When a role judges a change to be small, it runs only the steps checked here. Good for type checks and lint that finish in under a minute',
+  按改动大小决定验证范围: 'Scale verification to the size of the change',
+  '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。':
+    'When a conversation changes code, the role first judges how big the change is. Small changes such as text or style tweaks only run the steps marked "Run for small changes"; everything else runs the full test steps. Turn this off to always run the full steps. Test and review steps inside workflows are not affected.',
   '已提交编译，等面板合回原目录编译': 'Submitted for build; waiting for the panel to merge it back and build',
   可能相关的对话: 'Possibly related chats',
   '看起来和这些对话是同一件事，可以直接发过去接着做：':
@@ -597,8 +589,32 @@ export const EN_TASKS: Record<string, string> = {
   '新建对话时默认勾选「独立分支」': 'Turn on "Separate branch" for new conversations by default',
   '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。':
     'Such conversations read code and answer questions in the project directory first, and open a separate branch (git worktree) only once they need to edit files, continuing there. Most projects get a full checkout; large projects such as UE skip downloading LFS files.',
-  '要改文件了，已开独立分支 {branch}，接下来在里面修改':
-    'Ready to edit files: opened separate branch {branch} and will continue there',
+  你已决定: 'You decided',
+  父对话已决定: 'Parent decided',
+  交给父对话决定: 'Let the parent decide',
+  待决定: 'Needs decision',
+  子对话请你决定: 'Sub-conversation asks',
+  决定: 'Decision',
+  '都不合适？写下你的决定…': 'None fit? Write your decision…',
+  '写下你的决定…': 'Write your decision…',
+  你的决定: 'Your decision',
+  '父对话会处理这个问题，决定后交给子对话':
+    'The parent conversation will handle this and pass its decision to the sub-conversation',
+  你的决定会直接交给子对话: 'Your decision goes straight to the sub-conversation',
+  结束这次运行: 'End this run',
+  查看节点状态: 'Check node status',
+  开独立分支: 'Open separate branch',
+  认领文件: 'Claim files',
+  释放文件: 'Release files',
+  查看项目教训: 'Read project lessons',
+  读取共享状态: 'Read shared state',
+  写入共享状态: 'Write shared state',
+  向主角色提问: 'Ask main role',
+  传话: 'Message',
+  查看消息: 'Read messages',
+  找不到这个提问: 'Question not found',
+  这个提问已经回答过了: 'This question has already been answered',
+  回答是空的: 'The answer is empty',
   打开子任务: 'Open subtask',
   '子任务执行中，做完后结果会自动交回给派它的对话':
     'Subtask running; its result goes back to the chat that started it when done',
@@ -614,6 +630,7 @@ export const EN_TASKS: Record<string, string> = {
   '等待子任务：{list}': 'Waiting for subtasks: {list}',
   '等待 {n} 个子任务完成': 'Waiting for {n} subtask(s) to finish',
   新建子对话: 'New sub-chat',
+  在右侧打开子对话: 'Open the sub-chat on the right',
   交给子对话: 'Hand to sub-chat',
   查看子对话: 'List sub-chats',
   派出子任务: 'Start subtasks',
@@ -623,4 +640,40 @@ export const EN_TASKS: Record<string, string> = {
   回报父对话: 'Report to parent chat',
   提交编译: 'Submit build',
   启动工作流: 'Start workflow',
+  '已合并到「{branch}」，分支已删除': 'Merged into “{branch}”, branch deleted',
+  '已删除，改动没有合并': 'Deleted, changes were not merged',
+  '在独立分支上执行，不改动项目目录': 'Running on a separate branch, project folder untouched',
+  原分支: 'original branch',
+  删除独立分支: 'Delete separate branch',
+  已合并: 'Merged',
+  未合并: 'Not merged',
+  '正在执行，不改动原目录': 'Running, original folder untouched',
+  '已在「{branch}」里': 'Already in “{branch}”',
+  '{n} 个提交': '{n} commit(s)',
+  '{n} 个文件未提交': '{n} uncommitted file(s)',
+  '未合并到「{branch}」：{what}': 'Not merged into “{branch}”: {what}',
+  '用 AI 合并': 'Merge with AI',
+  '已交给 AI 合并，结果会在对话里回复': 'Handed to AI to merge; the result will show in the chat',
+  '已删除独立分支 {name}': 'Deleted separate branch {name}',
+  '删除独立分支 {name}？': 'Delete separate branch {name}?',
+  '这个分支还有改动没合并到「{branch}」，删除后这些改动会丢掉。原目录不受影响。':
+    'This branch has changes not merged into “{branch}”. Deleting it loses them. The original folder is not affected.',
+  '改动都已经在原分支里了，删除分支和它的工作目录不会丢东西。':
+    'All changes are already in the original branch, so deleting the branch and its folder loses nothing.',
+  '{n} 个没合并': '{n} not merged',
+  '已交给 AI 合并，合并完再删除对话': 'Handed to AI to merge. Delete the chat after it is merged',
+  '它的独立分支已经合并，会一起删除。': 'Its separate branches are merged and will be deleted too.',
+  '正在检查独立分支…': 'Checking separate branches…',
+  '有 {n} 个独立分支还没合并，直接删除会丢掉这些改动':
+    '{n} separate branch(es) not merged. Deleting now loses those changes',
+  '把合并要求发给分支所在的对话，由 AI 解决冲突后合回原分支；对话先不删除':
+    'Sends a merge request to the chat that owns the branch; AI resolves conflicts and merges it back. The chat is not deleted',
+  直接删除: 'Delete anyway',
+  '原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。':
+    'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
+  '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
+  '对话正在执行，等这一轮结束后再删除独立分支': 'The chat is running. Delete the separate branch after this turn ends',
+  '、': ', ',
+  '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
+    'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
 }

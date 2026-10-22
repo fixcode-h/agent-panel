@@ -26,6 +26,8 @@ export interface RichInputHandle {
   insert(text: string): void
   /** 光标处插入一张卡片 */
   insertChip(chip: Chip): void
+  /** 整个换成另一段文字（撤回、引用到输入框、外面替输入框清空时用） */
+  setText(text: string): void
   /** 替换一段（命令菜单、@ 引用用）：位置按带标记的文字算 */
   replace(from: number, to: number, text: string): void
   focus(): void
@@ -381,6 +383,15 @@ export function RichInput({
         }
         scrollCaretIntoView(node)
         emit()
+      },
+      setText: (text) => {
+        const node = el.current
+        if (!node) return
+        paint(node, text, cb.current.preview, () => cb.current.actions)
+        painted.current = { value: text, preview: cb.current.preview }
+        cb.current.onChange(text)
+        cb.current.onSync?.()
+        place(Number.MAX_SAFE_INTEGER)
       },
       focus: () => el.current?.focus(),
       element: () => el.current,

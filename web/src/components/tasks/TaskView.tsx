@@ -3,10 +3,12 @@ import { t } from '@shared/i18n'
 import { expandQuotes, quoteChip, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
+  ArrowRight,
   ChevronRight,
   FlaskConical,
   GitBranch,
   GitFork,
+  GitMerge,
   Loader2,
   MessageSquareText,
   MoreHorizontal,
@@ -38,7 +40,7 @@ import { api } from '@/lib/api'
 import { useTaskStream } from '@/lib/task-stream'
 import { useEscape } from '@/lib/useEscape'
 import { useNow } from '@/lib/useNow'
-import { plainLine, toolVerb } from '@/lib/tasks'
+import { plainLine, toolVerb, toolView } from '@/lib/tasks'
 import { WithAgents, useData, useNav } from '@/lib/data'
 import { downloadTask } from '@/lib/task-transfer'
 import { withImportedAgents } from '@shared/task-export'
@@ -56,16 +58,25 @@ import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
 import { TaskPanel } from './TaskPanel'
 import { TaskMeta } from './TaskMeta'
+import {
+  DeleteTaskDialog,
+  WorktreeMark,
+  useWorktreeActions,
+  useWorktrees,
+  worktreeKey,
+  worktreeSummary,
+} from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
+import { ChildOpenCtx } from './child-open'
 import { TaskRequestCard, asksQuestion } from './RequestCard'
 import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
-import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
+import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
-import { chipMarker, forSend } from '@shared/composer'
+import { forSend } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 
@@ -86,8 +97,11 @@ type Block =
 const OLD_CREATED =
   /^(新建了子对话「.*」，这条消息交给它处理|Created sub-conversation “.*”; this message is handed to it)$/
 
-/** 以前子对话做完后在父对话里记的通知 */
-const OLD_CHILD_NOTE = /^子对话「[^」]*」(已完成|失败|已停止|合并编译通过|合并编译没通过)/
+/** 以前子对话做完后在父对话里记的通知，和居中显示的汇报、提问（现在汇报只给 AI，提问是卡片） */
+const OLD_CHILD_NOTE = /^子对话「[^」]*」(已完成|失败|已停止|合并编译通过|合并编译没通过|汇报：|提问：)/
+
+/** 以前开独立分支时记的居中提示：现在 begin_edit 这次调用本身显示成「开独立分支 分支名」 */
+const OLD_WORKTREE = /^(要改文件了，已开独立分支 |Ready to edit files: opened separate branch )/
 
 /** 这条消息属于第几次运行（节点 id 带 `r2/` 前缀的算第 2 次） */
 function runOf(step: string) {
@@ -120,7 +134,8 @@ function toBlocks(task: Task): Block[] {
     // 旧对话里新建子对话时记的居中提示：现在这次工具调用本身就显示成「新建子对话 标题」，不再重复
     if (m.role === 'system' && !m.step && OLD_CREATED.test(m.text)) continue
     // 子对话交回父对话的回报只给父对话的 AI 看：做完了看子对话栏和列表里的绿勾（旧数据没有标记，按文字认）
-    if (m.role === 'system' && !m.step && (m.panel === 'child' || OLD_CHILD_NOTE.test(m.text))) continue
+    if (m.role === 'system' && !m.step && (m.panel === 'child' || (!m.panel && OLD_CHILD_NOTE.test(m.text)))) continue
+    if (m.role === 'system' && !m.step && !m.panel && OLD_WORKTREE.test(m.text)) continue
     // 派出的子任务、面板推回的结果（后台命令、合并编译、子任务结果）都是 AI 这一轮回复里的一行，
     // 归进当前这轮回复，不单独成段，也不显示成用户消息
     if (!m.step && ((!byRun && m.spawned?.length) || m.panel)) {
@@ -225,7 +240,11 @@ interface ChildSummary {
 function activityText(a: ChildActivity | undefined) {
   if (!a) return ''
   if (a.steps?.length) return a.steps.join(t('、'))
-  if (a.tool) return `${toolVerb({ ...a.tool, detail: '' })} ${a.tool.label}`.trim()
+  if (a.tool) {
+    // 面板工具、MCP 工具按对话里显示的说法（开独立分支 xxx），不是「MCP panel-xxxx · begin_edit」
+    const v = toolView({ ...a.tool, detail: '' })?.tool ?? { ...a.tool, detail: '' }
+    return `${toolVerb(v)} ${v.label}`.trim()
+  }
   if (a.helpers?.length) return t('等待子任务：{list}', { list: a.helpers.join(t('、')) })
   if (a.text) return plainLine(a.text)
   return t('正在思考…')
@@ -291,8 +310,9 @@ export function TaskView({
   const agents = useMemo(() => withImportedAgents(localAgents, { imported }), [localAgents, imported])
   const [analyzing, setAnalyzing] = useState(false)
   const [convSettings, setConvSettings] = useState(false)
-  // 没发出去的内容按对话分开记，切到别的对话再回来还在
-  const [text, setText] = useDraft(`task:${taskId}`)
+  // 没发出去的内容由 ChatComposer 自己按对话记着（切走再回来还在），打字时不再重渲染整页；
+  // 这里只留一个「输入框是不是空的」，给「继续执行」按钮用，只在空 / 非空切换时更新
+  const [draftEmpty, setDraftEmpty] = useState(true)
   const followTa = useRef<RichInputHandle>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments(`task:${taskId}`)
@@ -349,10 +369,7 @@ export function TaskView({
   useQuoteTarget(dropArea, (quoted) => {
     const chip = quoteChip(quoted)
     const ed = followTa.current
-    if (!ed) {
-      setText(`${text.trimEnd()} ${chipMarker(chip.kind, chip.name)} `.trimStart())
-      return
-    }
+    if (!ed) return
     ed.focus()
     ed.setCaret(Number.MAX_SAFE_INTEGER)
     ed.insertChip(chip)
@@ -362,11 +379,50 @@ export function TaskView({
   // 「记成项目教训」弹窗：存的是那条用户消息的原文
   const [lessonOf, setLessonOf] = useState('')
 
+  // 流式输出每 200ms 推一次：任务本身马上换（对话要实时显示），全局列表的摘要最多 1 秒写一次。
+  // 状态、标题、等待确认这些侧栏马上要反映的变化仍然立即写
+  const lastTask = useRef<Task | null>(null)
+  const summaryAt = useRef(0)
+  const summaryTimer = useRef<number | undefined>(undefined)
+  const pushSummary = (next: Task) => {
+    const prev = lastTask.current
+    lastTask.current = next
+    const important =
+      !prev ||
+      prev.id !== next.id ||
+      prev.title !== next.title ||
+      prev.status !== next.status ||
+      prev.working !== next.working ||
+      prev.turnDoneAt !== next.turnDoneAt ||
+      (prev.requests?.length ?? 0) !== (next.requests?.length ?? 0)
+    const now = Date.now()
+    if (important || now - summaryAt.current >= 1000) {
+      summaryAt.current = now
+      if (summaryTimer.current) {
+        clearTimeout(summaryTimer.current)
+        summaryTimer.current = undefined
+      }
+      // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
+      upsertTask(taskSummary(next))
+      return
+    }
+    if (summaryTimer.current) return
+    summaryTimer.current = window.setTimeout(() => {
+      summaryTimer.current = undefined
+      summaryAt.current = Date.now()
+      if (lastTask.current) upsertTask(taskSummary(lastTask.current))
+    }, 1000)
+  }
   const apply = (next: Task) => {
     setTask(next)
-    // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
-    upsertTask(taskSummary(next))
+    pushSummary(next)
   }
+  useEffect(
+    () => () => {
+      if (summaryTimer.current) clearTimeout(summaryTimer.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     api
@@ -395,6 +451,9 @@ export function TaskView({
     if (id) setOpenRun(0)
     if (!pane) writePaneChild(taskId, id)
   }
+  // 消息里「新建子对话」「交给子对话」那一行点开右栏的子对话；引用保持不变，消息行不用跟着重画
+  // oxlint-disable-next-line react-hooks/exhaustive-deps
+  const openChildRow = useCallback((id: string) => openChildIn(id), [taskId, pane])
   const openRunIn = (run: number) => {
     setOpenRun(run)
     if (run) setOpenChild('')
@@ -537,7 +596,8 @@ export function TaskView({
     projectId: project?.id,
     // 压缩、审查是对话的操作，工作流里不提供
     scope: task?.mode === 'workflow' ? 'new' : 'task',
-    setText,
+    // 草稿在输入框里，命令菜单清空 / 换内容时交给它
+    setText: (v) => followTa.current?.setText(v),
     editor: followTa,
     onAction: (a, arg) => {
       if (!task) return
@@ -548,6 +608,12 @@ export function TaskView({
         .catch((e) => toast.error((e as Error).message))
     },
   })
+
+  // 分段只在任务内容变了时重算：打字、开关面板不再把上千条消息重新归一遍
+  const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
+  // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
+  const hidden = Math.max(0, blocks.length - limit)
+  const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
     return (
@@ -560,7 +626,8 @@ export function TaskView({
   const noFiles = !task.projectId
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
-  const send = async () => {
+  const send = async (input?: string) => {
+    const text = input ?? followTa.current?.text() ?? ''
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
     const content = forSend(expandQuotes(text), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
@@ -569,7 +636,7 @@ export function TaskView({
     try {
       const r = await api.sendMessage(task.id, content, files.attachments, false)
       apply(r)
-      setText('')
+      followTa.current?.setText('')
       files.clear()
       setTimeout(
         () =>
@@ -666,9 +733,6 @@ export function TaskView({
     }
   }
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
-  const blocks = toBlocks(task)
-  // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
-  const hidden = Math.max(0, blocks.length - limit)
   const isFlow = task.mode === 'workflow' && view === 'flow'
   // 点了任务进度里的某一步：切到流程图并定位到那一步
   const openStep =
@@ -702,7 +766,7 @@ export function TaskView({
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
-  const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim() && !flowLeft
+  const canResume = (task.status === 'failed' || task.status === 'stopped') && draftEmpty && !flowLeft
 
   const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
 
@@ -710,9 +774,10 @@ export function TaskView({
   const composer = !task.imported && !asksQuestion(task.requests) && (
     <ChatComposer
       id="follow-up"
-      value={text}
-      onChange={setText}
-      onSubmit={() => void send()}
+      // 草稿由输入框自己记：打字只重渲染输入框，不带着整页消息重画
+      draftKey={`task:${taskId}`}
+      onEmptyChange={setDraftEmpty}
+      onSubmit={(v) => void send(v)}
       files={files}
       taRef={followTa}
       // 拖文件到页面任何位置都算引入到要求里；流程图视图里节点自己有自己的拖拽，不接管
@@ -729,7 +794,6 @@ export function TaskView({
         slash.sync()
       }}
       onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
-      canSend={!!text.trim() || files.attachments.length > 0}
       attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
       tools={
         <>
@@ -799,546 +863,572 @@ export function TaskView({
   return (
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
-        <div
-          className={cn('relative flex min-w-0 flex-1', pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0')}
-        >
-          <main ref={setDropArea} className="relative flex min-w-0 flex-1 flex-col bg-bg md:h-full">
-            {/* 从外面把文件拖到对话页任何位置都算引入到要求里；右栏和流程图有自己的拖拽语义，不在范围内 */}
-            {dropOver && <DropOverlay />}
-            <header
-              className={cn(
-                'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
-                scrolled ? 'border-line' : 'border-transparent',
-              )}
-            >
-              <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
-                {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
-                {!pane && (
-                  <>
-                    <button
-                      onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
-                      className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
-                    >
-                      {project?.name ?? t('聊天')}
-                    </button>
-                    <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
-                  </>
-                )}
-                <TaskStatusIcon
-                  status={task.childrenWorking ? 'running' : task.status}
-                  working={!!task.childrenWorking || task.working}
-                  className="ml-1"
-                />
-                {renaming !== null ? (
-                  <input
-                    autoFocus
-                    aria-label={t('任务标题')}
-                    value={renaming}
-                    maxLength={80}
-                    onChange={(e) => setRenaming(e.target.value)}
-                    onFocus={(e) => e.currentTarget.select()}
-                    onBlur={rename}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
-                      if (e.key === 'Escape') setRenaming(null)
-                    }}
-                    className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
-                  />
-                ) : (
-                  <h2
-                    title={t('双击重命名')}
-                    onDoubleClick={() => setRenaming(task.title)}
-                    className="min-w-0 truncate px-1 font-medium"
-                  >
-                    {task.title}
-                  </h2>
-                )}
-                {task.simulated && (
-                  <span
-                    title={t('没有真正调用 Agent，输出是示例')}
-                    className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[0.6875rem] text-warning md:inline-flex"
-                  >
-                    <FlaskConical className="h-3 w-3" />
-                    {t('模拟')}
-                  </span>
-                )}
-                {task.imported && (
-                  <span
-                    title={t('从导出的文件导入，只能查看')}
-                    className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent md:inline-flex"
-                  >
-                    <FileInput className="h-3 w-3" />
-                    {t('导入')}
-                  </span>
-                )}
-              </nav>
-              {task.mode === 'workflow' && (
-                <div className="flex shrink-0 rounded-lg bg-field p-0.5" role="tablist" aria-label={t('视图')}>
-                  {(
-                    [
-                      ['chat', t('对话'), MessageSquareText],
-                      ['flow', t('流程图'), GitBranch],
-                    ] as const
-                  ).map(([v, label, Icon]) => (
-                    <button
-                      key={v}
-                      role="tab"
-                      aria-label={label}
-                      aria-selected={view === v}
-                      onClick={() => {
-                        setView(v)
-                        stick.current = v === 'chat'
-                        if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
-                      }}
-                      className={cn(
-                        'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
-                        view === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
-                      )}
-                    >
-                      <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
-                      <span className="hidden sm:inline">{label}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              {task.mode === 'workflow' && tops.length > 0 && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={t('任务进度')}
-                  title={t('任务进度')}
-                  aria-expanded={progressOpen}
-                  onClick={() => setProgressOpen((v) => !v)}
-                >
-                  <ListPlus className="h-4 w-4" />
-                </Button>
-              )}
-              {!pane && !noFiles && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="xl:hidden"
-                  aria-label={t('显示文件')}
-                  title={t('文件')}
-                  onClick={() => setPanel(true)}
-                >
-                  <PanelRight className="h-4 w-4" />
-                </Button>
-              )}
-              <Menu>
-                <MenuTrigger asChild>
-                  <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
-                    <MoreHorizontal className="h-4 w-4" />
-                  </Button>
-                </MenuTrigger>
-                <MenuContent>
-                  {/* 项目里的父对话有自己的设置：目标、全局规则、子对话 */}
-                  {task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported && (
-                    <MenuItem onSelect={() => setConvSettings(true)}>
-                      <Settings2 className="h-4 w-4" />
-                      {t('对话设置')}
-                    </MenuItem>
-                  )}
-                  <MenuItem onSelect={() => setRenaming(task.title)}>
-                    <Pencil className="h-4 w-4" />
-                    {t('重命名')}
-                  </MenuItem>
-                  <MenuItem onSelect={exportIt}>
-                    <Download className="h-4 w-4" />
-                    {t('导出任务')}
-                  </MenuItem>
-                  <MenuItem disabled={running} onSelect={() => setAnalyzing(true)}>
-                    <Sparkles className="h-4 w-4" />
-                    {t('AI 分析执行结果')}
-                  </MenuItem>
-                  {!task.imported && wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
-                    <MenuItem onSelect={() => resume(true)}>
-                      <RotateCw className="h-4 w-4" />
-                      {t('按最新的工作流继续')}
-                    </MenuItem>
-                  )}
-                  <MenuItem danger onSelect={() => setDeleting(true)}>
-                    <Trash2 className="h-4 w-4" />
-                    {t('删除任务')}
-                  </MenuItem>
-                </MenuContent>
-              </Menu>
-              {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
-              {!pane && !noFiles && openRun === 0 && !openChild && (
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="hidden xl:inline-flex"
-                  aria-label={t('收起文件面板')}
-                  title={t('收起文件面板')}
-                  aria-expanded={!filesFolded}
-                  onClick={() => setFilesFolded((v) => !v)}
-                >
-                  {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
-                </Button>
-              )}
-              {pane && onClose && (
-                <Button variant="ghost" size="icon-sm" aria-label={t('关闭子对话')} onClick={onClose}>
-                  <X className="h-4 w-4" />
-                </Button>
-              )}
-              {embed?.actions}
-            </header>
-
-            <div className="relative flex min-h-0 flex-1 flex-col">
-              {progressOpen && (
-                <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
-                  <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
-                </div>
-              )}
-              <div
-                ref={scroller}
-                onScroll={(e) => {
-                  const el = e.currentTarget
-                  stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
-                  setScrolled(el.scrollTop > 4)
-                  setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
-                }}
-                // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
-                className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
-              >
-                {isFlow ? (
-                  <Suspense fallback={null}>
-                    <TaskFlow
-                      task={task}
-                      focus={focus}
-                      onSelect={setFlowSel}
-                      onOpenChat={() => {
-                        stick.current = true
-                        setView('chat')
-                      }}
-                    />
-                  </Suspense>
-                ) : (
-                  <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
-                    {hidden > 0 && (
-                      <button
-                        type="button"
-                        onClick={() => setLimit(Infinity)}
-                        className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
-                      >
-                        {t('显示更早的 {n} 段', { n: hidden })}
-                      </button>
-                    )}
-                    {blocks.slice(hidden).map((b, i) =>
-                      b.kind === 'turn' ? (
-                        <div key={b.key} className="flex flex-col gap-4">
-                          <ChatTurn
-                            msgs={b.msgs}
-                            task={task}
-                            teamNames={teamNames}
-                            live={working && i + hidden === blocks.length - 1}
-                            last={!working && i + hidden === blocks.length - 1}
-                            fallback={byCli ? chatRun : undefined}
-                            command={task.command}
-                          />
-                        </div>
-                      ) : b.kind === 'run' ? (
-                        task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
-                          <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
-                        ) : (
-                          <RunCard
-                            key={b.key}
-                            task={task}
-                            run={b.run}
-                            name={task.workflowName || workflow?.name}
-                            onOpen={() => openRunIn(b.run)}
-                          />
-                        )
-                      ) : b.kind === 'helpers' ? (
-                        <HelperCards key={b.key} task={task} ids={b.ids} teamNames={teamNames} />
-                      ) : b.kind === 'steps' ? (
-                        <div key={b.key} className="flex flex-col gap-7">
-                          {b.roots.map((r) => (
-                            <StepSection
-                              key={r}
-                              task={task}
-                              rootId={r}
-                              msgs={b.byRoot.get(r)!}
-                              teamNames={teamNames}
-                              sticky="chat"
-                            />
-                          ))}
-                        </div>
-                      ) : b.m.role === 'user' ? (
-                        <UserMessage
-                          key={b.m.id}
-                          text={b.m.text}
-                          at={b.m.at}
-                          attachments={b.m.attachments}
-                          actions={
-                            <>
-                              {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
-                              {project && !task.imported && (
-                                <button
-                                  className={msgAction}
-                                  title={t('记成项目教训：以后这个项目里的角色都会照着做')}
-                                  aria-label={t('记成项目教训')}
-                                  onClick={() => setLessonOf(b.m.text)}
-                                >
-                                  <GraduationCap className="h-3.5 w-3.5" />
-                                </button>
-                              )}
-                              {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
-                              {task.mode === 'chat' && !running && !task.imported && (
-                                <>
-                                  <button
-                                    className={msgAction}
-                                    title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
-                                    aria-label={t('从这里分叉')}
-                                    onClick={() => fork(b.m.id)}
-                                  >
-                                    <GitFork className="h-3.5 w-3.5" />
-                                  </button>
-                                  {b.m.id !== firstUser && (
-                                    <button
-                                      className={msgAction}
-                                      title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
-                                      aria-label={t('撤回到这里')}
-                                      onClick={() => setRewindAsk(b.m.id)}
-                                    >
-                                      <Undo2 className="h-3.5 w-3.5" />
-                                    </button>
-                                  )}
-                                </>
-                              )}
-                            </>
-                          }
-                        />
-                      ) : b.m.role === 'system' ? (
-                        <NoteMessage
-                          key={b.m.id}
-                          m={b.m}
-                          msgs={task.messages}
-                          task={task}
-                          className="justify-center text-center"
-                        />
-                      ) : (
-                        <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
-                      ),
-                    )}
-                    <NextWorkflows task={task} />
-                    <EvolutionCard task={task} />
-                    {running &&
-                      task.mode === 'chat' &&
-                      working &&
-                      (blocks.at(-1)?.kind === 'turn' ? (
-                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                          <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
-                          <LiveStats task={task} agentIds={[task.agentId]} />
-                        </div>
-                      ) : (
-                        // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
-                        <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
-                          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                            <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                            <RunPhase task={task} label={t('思考中…')} />
-                            <LiveStats task={task} agentIds={[task.agentId]} />
-                          </div>
-                        </PendingReply>
-                      ))}
-                    {running && task.mode === 'chat' && !working && task.awaitingUser && (
-                      <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                        <MessageSquareText className="h-4 w-4 text-subtle" />
-                        <span>{t('等待你的下一条消息')}</span>
-                        <LiveStats task={task} agentIds={[task.agentId]} />
-                      </div>
-                    )}
-                    {working && task.mode === 'workflow' && runningSteps.length === 0 && (
-                      <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
-                        <Loader2 className="h-4 w-4 animate-spin text-accent" />
-                        <RunPhase task={task} label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })} />
-                        <LiveStats task={task} />
-                      </div>
-                    )}
-                    {/* CLI 还没取走的消息已经直接进对话，这里不用再放一份 */}
-                  </div>
-                )}
-              </div>
-              {!isFlow && away && (
-                <button
-                  type="button"
-                  onClick={toBottom}
-                  aria-label={t('回到底部')}
-                  title={t('回到底部')}
-                  className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
-                >
-                  <ArrowDown className="h-4 w-4" />
-                </button>
-              )}
-            </div>
-
-            {/* 子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间 */}
-            {!pane && !task.parentTaskId && children.length > 0 && (
-              <ChildrenBar
-                children={children}
-                openChild={openChild}
-                onOpen={openChildIn}
-                onClose={() => openChildIn('')}
-              />
+        <ChildOpenCtx.Provider value={pane || task.parentTaskId ? null : openChildRow}>
+          <div
+            className={cn(
+              'relative flex min-w-0 flex-1',
+              pane ? 'h-full min-h-0' : 'min-h-[70vh] md:h-full md:min-h-0',
             )}
-
-            <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
-              <TaskRequestCard task={task} onAnswered={apply} />
-              <WorktreeBar task={task} onChange={apply} />
-              {flowLeft && !task.imported && (
-                <FlowBar task={task} blocked={blocked} resuming={resuming} onResume={() => resume()} onChange={apply} />
-              )}
-              {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
-              {/* 点开运行面板时输入框挪进面板，这里先空着，避免出现两个输入框 */}
-              {!openRun && composer}
-              {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
-              <TaskMeta
-                task={task}
-                projectName={project?.name}
-                projectPath={project?.path}
-                workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
-                node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
-                onTask={apply}
-              />
-            </div>
-          </main>
-
-          {/* 右栏：子对话、某一次运行的输出，或者文件系统。外面不滚动，拖动条才不会被 overflow 裁掉。
-              点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
-          {!pane && (
-            <aside
-              aria-label={openChild ? t('子对话') : openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')}
-              data-task-panel
-              style={{ width: openChild ? '50%' : taskPanel.width }}
-              className={cn(
-                'shrink-0 flex-col border-l bg-rail',
-                panel || openRun > 0 || openChild
-                  ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop'
-                  : 'hidden',
-                // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
-                'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
-                (filesFolded || noFiles) && openRun === 0 && !openChild && 'xl:hidden',
-              )}
-            >
-              {!openChild && !panel && (
-                <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
-              )}
-              {openChild ? (
-                // 对话内容区统一用 bg-bg：署名行等粘贴背景的地方在父对话、右栏、弹窗里颜色都一致
-                <div className="flex min-h-0 w-full flex-1 flex-col bg-bg">
-                  <TaskView key={openChild} taskId={openChild} project={project} pane onClose={() => openChildIn('')} />
-                </div>
-              ) : (
-                <>
-                  {panel && openRun === 0 && (
-                    <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 xl:hidden">
-                      <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
-                      <Button
-                        autoFocus
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={t('关闭面板')}
-                        onClick={() => setPanel(false)}
+          >
+            <main ref={setDropArea} className="relative flex min-w-0 flex-1 flex-col bg-bg md:h-full">
+              {/* 从外面把文件拖到对话页任何位置都算引入到要求里；右栏和流程图有自己的拖拽语义，不在范围内 */}
+              {dropOver && <DropOverlay />}
+              <header
+                className={cn(
+                  'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
+                  scrolled ? 'border-line' : 'border-transparent',
+                )}
+              >
+                <nav aria-label={t('位置')} className="flex min-w-0 flex-1 items-center gap-1 text-[0.84375rem]">
+                  {/* 子对话在右栏里：不显示「返回项目」的面包屑，子对话之间用输入框上方的入口切换 */}
+                  {!pane && (
+                    <>
+                      <button
+                        onClick={() => go(project ? { page: 'projects', id: project.id } : { page: 'chat' })}
+                        className="hidden max-w-[30%] shrink-0 cursor-pointer truncate rounded-md px-1.5 py-1 text-muted hover:bg-sel hover:text-fg sm:block"
                       >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    </div>
+                        {project?.name ?? t('聊天')}
+                      </button>
+                      <ChevronRight className="hidden h-3.5 w-3.5 shrink-0 text-subtle sm:block" />
+                    </>
                   )}
-                  {openRun > 0 ? (
-                    <RunPanel
-                      task={task}
-                      run={openRun}
-                      name={task.workflowName || workflow?.name}
-                      onClose={() => openRunIn(0)}
-                      footer={composer}
+                  <TaskStatusIcon
+                    status={task.childrenWorking ? 'running' : task.status}
+                    working={!!task.childrenWorking || task.working}
+                    className="ml-1"
+                  />
+                  {renaming !== null ? (
+                    <input
+                      autoFocus
+                      aria-label={t('任务标题')}
+                      value={renaming}
+                      maxLength={80}
+                      onChange={(e) => setRenaming(e.target.value)}
+                      onFocus={(e) => e.currentTarget.select()}
+                      onBlur={rename}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.nativeEvent.isComposing) e.currentTarget.blur()
+                        if (e.key === 'Escape') setRenaming(null)
+                      }}
+                      className="h-8 min-w-0 flex-1 rounded-md border border-accent bg-field px-2 font-medium outline-none"
                     />
                   ) : (
-                    <TaskFiles
-                      task={task}
-                      dir={project?.path}
-                      node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
-                      onTask={apply}
-                    />
+                    <h2
+                      title={t('双击重命名')}
+                      onDoubleClick={() => setRenaming(task.title)}
+                      className="min-w-0 truncate px-1 font-medium"
+                    >
+                      {task.title}
+                    </h2>
                   )}
-                </>
+                  {task.simulated && (
+                    <span
+                      title={t('没有真正调用 Agent，输出是示例')}
+                      className="hidden shrink-0 items-center gap-1 rounded-full bg-warning/12 px-2 py-0.5 text-[0.6875rem] text-warning md:inline-flex"
+                    >
+                      <FlaskConical className="h-3 w-3" />
+                      {t('模拟')}
+                    </span>
+                  )}
+                  {task.imported && (
+                    <span
+                      title={t('从导出的文件导入，只能查看')}
+                      className="hidden shrink-0 items-center gap-1 rounded-full bg-accent-soft px-2 py-0.5 text-[0.6875rem] text-accent md:inline-flex"
+                    >
+                      <FileInput className="h-3 w-3" />
+                      {t('导入')}
+                    </span>
+                  )}
+                </nav>
+                {task.mode === 'workflow' && (
+                  <div className="flex shrink-0 rounded-lg bg-field p-0.5" role="tablist" aria-label={t('视图')}>
+                    {(
+                      [
+                        ['chat', t('对话'), MessageSquareText],
+                        ['flow', t('流程图'), GitBranch],
+                      ] as const
+                    ).map(([v, label, Icon]) => (
+                      <button
+                        key={v}
+                        role="tab"
+                        aria-label={label}
+                        aria-selected={view === v}
+                        onClick={() => {
+                          setView(v)
+                          stick.current = v === 'chat'
+                          if (v === 'flow' && scroller.current) scroller.current.scrollTop = 0
+                        }}
+                        className={cn(
+                          'flex h-7 cursor-pointer items-center gap-1.5 rounded-md px-2.5 text-xs font-medium',
+                          view === v ? 'bg-card text-fg shadow-card' : 'text-muted hover:text-fg',
+                        )}
+                      >
+                        <Icon className={cn('h-3.5 w-3.5', v === 'flow' && 'rotate-90')} />
+                        <span className="hidden sm:inline">{label}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {task.mode === 'workflow' && tops.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t('任务进度')}
+                    title={t('任务进度')}
+                    aria-expanded={progressOpen}
+                    onClick={() => setProgressOpen((v) => !v)}
+                  >
+                    <ListPlus className="h-4 w-4" />
+                  </Button>
+                )}
+                {!pane && !noFiles && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="xl:hidden"
+                    aria-label={t('显示文件')}
+                    title={t('文件')}
+                    onClick={() => setPanel(true)}
+                  >
+                    <PanelRight className="h-4 w-4" />
+                  </Button>
+                )}
+                <Menu>
+                  <MenuTrigger asChild>
+                    <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </MenuTrigger>
+                  <MenuContent>
+                    {/* 项目里的父对话有自己的设置：目标、全局规则、子对话 */}
+                    {task.projectId && !task.parentTaskId && task.mode === 'chat' && !task.imported && (
+                      <MenuItem onSelect={() => setConvSettings(true)}>
+                        <Settings2 className="h-4 w-4" />
+                        {t('对话设置')}
+                      </MenuItem>
+                    )}
+                    <MenuItem onSelect={() => setRenaming(task.title)}>
+                      <Pencil className="h-4 w-4" />
+                      {t('重命名')}
+                    </MenuItem>
+                    <MenuItem onSelect={exportIt}>
+                      <Download className="h-4 w-4" />
+                      {t('导出任务')}
+                    </MenuItem>
+                    <MenuItem disabled={running} onSelect={() => setAnalyzing(true)}>
+                      <Sparkles className="h-4 w-4" />
+                      {t('AI 分析执行结果')}
+                    </MenuItem>
+                    {!task.imported && wfChanged && (task.status === 'failed' || task.status === 'stopped') && (
+                      <MenuItem onSelect={() => resume(true)}>
+                        <RotateCw className="h-4 w-4" />
+                        {t('按最新的工作流继续')}
+                      </MenuItem>
+                    )}
+                    <MenuItem danger onSelect={() => setDeleting(true)}>
+                      <Trash2 className="h-4 w-4" />
+                      {t('删除任务')}
+                    </MenuItem>
+                  </MenuContent>
+                </Menu>
+                {/* 宽屏右栏一直占着位置，这个按钮把文件面板收起来，让对话用满整个宽度；运行面板、子对话开着时右栏不是文件面板，不显示 */}
+                {!pane && !noFiles && openRun === 0 && !openChild && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="hidden xl:inline-flex"
+                    aria-label={t('收起文件面板')}
+                    title={t('收起文件面板')}
+                    aria-expanded={!filesFolded}
+                    onClick={() => setFilesFolded((v) => !v)}
+                  >
+                    {filesFolded ? <PanelRight className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
+                  </Button>
+                )}
+                {pane && onClose && (
+                  <Button variant="ghost" size="icon-sm" aria-label={t('关闭子对话')} onClick={onClose}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                )}
+                {embed?.actions}
+              </header>
+
+              <div className="relative flex min-h-0 flex-1 flex-col">
+                {progressOpen && (
+                  <div className="absolute top-3 left-3 z-20 w-[min(340px,calc(100%-1.5rem))] md:left-4">
+                    <TaskPanel task={task} onStep={openStep} className="shadow-pop" />
+                  </div>
+                )}
+                <div
+                  ref={scroller}
+                  onScroll={(e) => {
+                    const el = e.currentTarget
+                    stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+                    setScrolled(el.scrollTop > 4)
+                    setAway(el.scrollHeight - el.scrollTop - el.clientHeight > 240)
+                  }}
+                  // 流程图视图自己管滚动：上面的流程图固定，只有下面的节点输出滚动
+                  className={isFlow ? 'flex min-h-0 flex-1 flex-col overflow-hidden' : 'flex-1 overflow-y-auto'}
+                >
+                  {isFlow ? (
+                    <Suspense fallback={null}>
+                      <TaskFlow
+                        task={task}
+                        focus={focus}
+                        onSelect={setFlowSel}
+                        onOpenChat={() => {
+                          stick.current = true
+                          setView('chat')
+                        }}
+                      />
+                    </Suspense>
+                  ) : (
+                    <div className="mx-auto flex max-w-(--content-w) flex-col gap-7 px-4 pt-4 pb-8 md:px-6">
+                      {hidden > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => setLimit(Infinity)}
+                          className="cursor-pointer self-center rounded-full border px-3 py-1 text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+                        >
+                          {t('显示更早的 {n} 段', { n: hidden })}
+                        </button>
+                      )}
+                      {shownBlocks.map((b, i) =>
+                        b.kind === 'turn' ? (
+                          <div key={b.key} className="flex flex-col gap-4">
+                            <ChatTurn
+                              msgs={b.msgs}
+                              task={task}
+                              teamNames={teamNames}
+                              live={working && i + hidden === blocks.length - 1}
+                              last={!working && i + hidden === blocks.length - 1}
+                              fallback={byCli ? chatRun : undefined}
+                              command={task.command}
+                            />
+                          </div>
+                        ) : b.kind === 'run' ? (
+                          task.mode === 'chat' && (task.runs?.length ?? 0) > 0 ? (
+                            <RunChecklist key={b.key} task={task} run={b.run} onOpen={() => openRunIn(b.run)} />
+                          ) : (
+                            <RunCard
+                              key={b.key}
+                              task={task}
+                              run={b.run}
+                              name={task.workflowName || workflow?.name}
+                              onOpen={() => openRunIn(b.run)}
+                            />
+                          )
+                        ) : b.kind === 'helpers' ? (
+                          <HelperCards key={b.key} task={task} ids={b.ids} teamNames={teamNames} />
+                        ) : b.kind === 'steps' ? (
+                          <div key={b.key} className="flex flex-col gap-7">
+                            {b.roots.map((r) => (
+                              <StepSection
+                                key={r}
+                                task={task}
+                                rootId={r}
+                                msgs={b.byRoot.get(r)!}
+                                teamNames={teamNames}
+                                sticky="chat"
+                              />
+                            ))}
+                          </div>
+                        ) : b.m.role === 'user' ? (
+                          <UserMessage
+                            key={b.m.id}
+                            text={b.m.text}
+                            at={b.m.at}
+                            attachments={b.m.attachments}
+                            actions={
+                              <>
+                                {/* 用户消息常常是一次纠正：项目里的对话随时可以记成项目教训 */}
+                                {project && !task.imported && (
+                                  <button
+                                    className={msgAction}
+                                    title={t('记成项目教训：以后这个项目里的角色都会照着做')}
+                                    aria-label={t('记成项目教训')}
+                                    onClick={() => setLessonOf(b.m.text)}
+                                  >
+                                    <GraduationCap className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {/* 对话停着时可以从这条分叉、撤回到这条（第一条不能撤回） */}
+                                {task.mode === 'chat' && !running && !task.imported && (
+                                  <>
+                                    <button
+                                      className={msgAction}
+                                      title={t('从这里分叉：新建一个对话，带着到这条为止的内容')}
+                                      aria-label={t('从这里分叉')}
+                                      onClick={() => fork(b.m.id)}
+                                    >
+                                      <GitFork className="h-3.5 w-3.5" />
+                                    </button>
+                                    {b.m.id !== firstUser && (
+                                      <button
+                                        className={msgAction}
+                                        title={t('撤回到这里：去掉这条和之后的对话，改了再发')}
+                                        aria-label={t('撤回到这里')}
+                                        onClick={() => setRewindAsk(b.m.id)}
+                                      >
+                                        <Undo2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+                              </>
+                            }
+                          />
+                        ) : b.m.role === 'system' ? (
+                          <NoteMessage
+                            key={b.m.id}
+                            m={b.m}
+                            msgs={task.messages}
+                            task={task}
+                            className="justify-center text-center"
+                          />
+                        ) : (
+                          <AgentMessage key={b.m.id} m={b.m} task={task} teamNames={teamNames} />
+                        ),
+                      )}
+                      <NextWorkflows task={task} />
+                      <EvolutionCard task={task} />
+                      {running &&
+                        task.mode === 'chat' &&
+                        working &&
+                        (blocks.at(-1)?.kind === 'turn' ? (
+                          <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                            <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                            <RunPhase task={task} label={t('{name} 正在回复', { name: chatLabel })} />
+                            <LiveStats task={task} agentIds={[task.agentId]} />
+                          </div>
+                        ) : (
+                          // 发出消息、还没有输出时就显示是谁在回复、用的哪个模型，不用等第一段输出
+                          <PendingReply fallback={byCli ? chatRun : undefined} agentId={task.agentId}>
+                            <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                              <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                              <RunPhase task={task} label={t('思考中…')} />
+                              <LiveStats task={task} agentIds={[task.agentId]} />
+                            </div>
+                          </PendingReply>
+                        ))}
+                      {running && task.mode === 'chat' && !working && task.awaitingUser && (
+                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                          <MessageSquareText className="h-4 w-4 text-subtle" />
+                          <span>{t('等待你的下一条消息')}</span>
+                          <LiveStats task={task} agentIds={[task.agentId]} />
+                        </div>
+                      )}
+                      {working && task.mode === 'workflow' && runningSteps.length === 0 && (
+                        <div className="flex items-center gap-2 text-[0.8125rem] text-muted">
+                          <Loader2 className="h-4 w-4 animate-spin text-accent" />
+                          <RunPhase
+                            task={task}
+                            label={t('{name} 正在处理', { name: mainAgent?.name ?? t('主角色') })}
+                          />
+                          <LiveStats task={task} />
+                        </div>
+                      )}
+                      {/* CLI 还没取走的消息已经直接进对话，这里不用再放一份 */}
+                    </div>
+                  )}
+                </div>
+                {!isFlow && away && (
+                  <button
+                    type="button"
+                    onClick={toBottom}
+                    aria-label={t('回到底部')}
+                    title={t('回到底部')}
+                    className="absolute bottom-3 left-1/2 z-20 grid h-9 w-9 -translate-x-1/2 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
+                  >
+                    <ArrowDown className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* 子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间 */}
+              {!pane && !task.parentTaskId && children.length > 0 && (
+                <ChildrenBar
+                  children={children}
+                  openChild={openChild}
+                  onOpen={openChildIn}
+                  onClose={() => openChildIn('')}
+                />
               )}
-            </aside>
-          )}
-          {(panel || openRun > 0) && (
-            <div
-              className="fixed inset-0 z-30 bg-black/40 xl:hidden"
-              onClick={() => (openRun > 0 ? openRunIn(0) : setPanel(false))}
+
+              <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
+                <TaskRequestCard task={task} onAnswered={apply} />
+                <WorktreeBar task={task} />
+                {flowLeft && !task.imported && (
+                  <FlowBar
+                    task={task}
+                    blocked={blocked}
+                    resuming={resuming}
+                    onResume={() => resume()}
+                    onChange={apply}
+                  />
+                )}
+                {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
+                {/* 点开运行面板时输入框挪进面板，这里先空着，避免出现两个输入框 */}
+                {!openRun && composer}
+                {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
+                <TaskMeta
+                  task={task}
+                  projectName={project?.name}
+                  projectPath={project?.path}
+                  workflowName={task.mode === 'workflow' ? (workflow?.name ?? t('已删除的工作流')) : undefined}
+                  node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+                  onTask={apply}
+                />
+              </div>
+            </main>
+
+            {/* 右栏：子对话、某一次运行的输出，或者文件系统。外面不滚动，拖动条才不会被 overflow 裁掉。
+              点开子对话时中间和右栏各占一半，同一时间只显示一个子对话 */}
+            {!pane && (
+              <aside
+                aria-label={openChild ? t('子对话') : openRun > 0 ? t('运行 {n}', { n: openRun }) : t('文件')}
+                data-task-panel
+                style={{ width: openChild ? '50%' : taskPanel.width }}
+                className={cn(
+                  'shrink-0 flex-col border-l bg-rail',
+                  panel || openRun > 0 || openChild
+                    ? 'fixed inset-y-0 right-0 z-40 flex max-w-full shadow-pop'
+                    : 'hidden',
+                  // 宽屏固定在这一栏上：拖动条 absolute 定位在左边缘，位置不能是 static，否则会跑到外层容器上去
+                  'xl:relative xl:z-auto xl:flex xl:h-full xl:shadow-none',
+                  (filesFolded || noFiles) && openRun === 0 && !openChild && 'xl:hidden',
+                )}
+              >
+                {!openChild && !panel && (
+                  <ResizeHandle pane={taskPanel} label={t('拖动调整文件面板的宽度')} className="hidden xl:block" />
+                )}
+                {openChild ? (
+                  // 对话内容区统一用 bg-bg：署名行等粘贴背景的地方在父对话、右栏、弹窗里颜色都一致
+                  <div className="flex min-h-0 w-full flex-1 flex-col bg-bg">
+                    <TaskView
+                      key={openChild}
+                      taskId={openChild}
+                      project={project}
+                      pane
+                      onClose={() => openChildIn('')}
+                    />
+                  </div>
+                ) : (
+                  <>
+                    {panel && openRun === 0 && (
+                      <div className="flex shrink-0 items-center justify-between border-b px-3 py-2 xl:hidden">
+                        <span className="text-[0.8125rem] font-semibold">{t('文件')}</span>
+                        <Button
+                          autoFocus
+                          variant="ghost"
+                          size="icon-sm"
+                          aria-label={t('关闭面板')}
+                          onClick={() => setPanel(false)}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    )}
+                    {openRun > 0 ? (
+                      <RunPanel
+                        task={task}
+                        run={openRun}
+                        name={task.workflowName || workflow?.name}
+                        onClose={() => openRunIn(0)}
+                        footer={composer}
+                      />
+                    ) : (
+                      <TaskFiles
+                        task={task}
+                        dir={project?.path}
+                        node={isFlow ? task.steps.find((s) => s.id === flowSel) : undefined}
+                        onTask={apply}
+                      />
+                    )}
+                  </>
+                )}
+              </aside>
+            )}
+            {(panel || openRun > 0) && (
+              <div
+                className="fixed inset-0 z-30 bg-black/40 xl:hidden"
+                onClick={() => (openRun > 0 ? openRunIn(0) : setPanel(false))}
+              />
+            )}
+          </div>
+          <ConfirmDialog
+            open={stopAsk && working}
+            onOpenChange={setStopAsk}
+            title={t('停止这个任务？')}
+            description={t('正在执行的 Agent 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
+            confirmText={t('停止')}
+            onConfirm={async () => {
+              await stop()
+              setStopAsk(false)
+            }}
+          />
+          {lessonOf && project && (
+            <RecordLessonDialog
+              project={project}
+              text={lessonOf}
+              taskId={task.id}
+              taskTitle={task.title}
+              onClose={() => setLessonOf('')}
+              // 对话里的角色知道刚才哪里做错了，交给它整理；工作流任务和导入的任务没有能接话的角色
+              onAskAgent={
+                task.mode === 'chat'
+                  ? async (message) => {
+                      stick.current = true
+                      apply(await api.sendMessage(task.id, message, [], false))
+                    }
+                  : undefined
+              }
             />
           )}
-        </div>
-        <ConfirmDialog
-          open={stopAsk && working}
-          onOpenChange={setStopAsk}
-          title={t('停止这个任务？')}
-          description={t('正在执行的 Agent 会被停下，之后可以点「继续执行」从中断的地方接着做。')}
-          confirmText={t('停止')}
-          onConfirm={async () => {
-            await stop()
-            setStopAsk(false)
-          }}
-        />
-        {lessonOf && project && (
-          <RecordLessonDialog
-            project={project}
-            text={lessonOf}
-            taskId={task.id}
-            taskTitle={task.title}
-            onClose={() => setLessonOf('')}
-            // 对话里的角色知道刚才哪里做错了，交给它整理；工作流任务和导入的任务没有能接话的角色
-            onAskAgent={
-              task.mode === 'chat'
-                ? async (message) => {
-                    stick.current = true
-                    apply(await api.sendMessage(task.id, message, [], false))
-                  }
-                : undefined
-            }
+          <ConfirmDialog
+            open={!!rewindAsk}
+            onOpenChange={(o) => !o && setRewindAsk('')}
+            title={t('撤回到这条消息？')}
+            description={t(
+              '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
+            )}
+            confirmText={t('撤回')}
+            onConfirm={async () => {
+              try {
+                const r = await api.rewindTask(task.id, rewindAsk)
+                apply(r.task)
+                followTa.current?.setText(r.text)
+                setRewindAsk('')
+                followTa.current?.focus()
+              } catch (e) {
+                toast.error((e as Error).message)
+              }
+            }}
           />
-        )}
-        <ConfirmDialog
-          open={!!rewindAsk}
-          onOpenChange={(o) => !o && setRewindAsk('')}
-          title={t('撤回到这条消息？')}
-          description={t(
-            '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。',
+          <DeleteTaskDialog
+            task={task}
+            open={deleting}
+            onOpenChange={setDeleting}
+            title={t('删除任务「{title}」？', { title: task.title })}
+            description={t('会删除这个任务的对话记录，不会撤销已经改动的文件。')}
+            onConfirm={remove}
+          />
+          <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
+          {convSettings && (
+            <ConversationSettingsDialog
+              task={task}
+              open={convSettings}
+              onOpenChange={setConvSettings}
+              onSaved={apply}
+            />
           )}
-          confirmText={t('撤回')}
-          onConfirm={async () => {
-            try {
-              const r = await api.rewindTask(task.id, rewindAsk)
-              apply(r.task)
-              setText(r.text)
-              setRewindAsk('')
-              followTa.current?.focus()
-            } catch (e) {
-              toast.error((e as Error).message)
-            }
-          }}
-        />
-        <ConfirmDialog
-          open={deleting}
-          onOpenChange={setDeleting}
-          title={t('删除任务「{title}」？', { title: task.title })}
-          description={t('会删除这个任务的对话记录，不会撤销已经改动的文件。')}
-          onConfirm={remove}
-        />
-        <FileDialog taskId={task.id} target={fileTarget} onOpenChange={(o) => !o && setFileTarget(null)} />
-        {convSettings && (
-          <ConversationSettingsDialog task={task} open={convSettings} onOpenChange={setConvSettings} onSaved={apply} />
-        )}
-        <AnalyzeDialog
-          open={analyzing}
-          onOpenChange={setAnalyzing}
-          tasks={async () => [await api.task(task.id)]}
-          projectId={task.projectId}
-        />
+          <AnalyzeDialog
+            open={analyzing}
+            onOpenChange={setAnalyzing}
+            tasks={async () => [await api.task(task.id)]}
+            projectId={task.projectId}
+          />
+        </ChildOpenCtx.Provider>
       </FileOpenCtx.Provider>
     </WithAgents>
   )
@@ -1476,7 +1566,7 @@ function ChildrenBar({
               <span className="min-w-0 truncate text-xs text-subtle">· {current.title}</span>
             )}
           </button>
-          {/* 正在执行的子对话一个一块：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
+          {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
           {busy.length > 0 && (
             <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
               {busy.slice(0, 3).map((c) => (
@@ -1486,7 +1576,7 @@ function ChildrenBar({
                   onClick={() => onOpen(c.id)}
                   title={`${c.title}${activityText(c.activity) ? ` · ${activityText(c.activity)}` : ''}`}
                   className={cn(
-                    'flex h-7 min-w-0 flex-1 basis-0 cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                    'flex h-7 w-56 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
                     c.id === openChild ? 'border-line-strong' : 'border-line',
                   )}
                 >
@@ -1494,7 +1584,7 @@ function ChildrenBar({
                     <span className="absolute inset-0 animate-ping rounded-full bg-accent/60" />
                     <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
                   </span>
-                  <span className="min-w-0 truncate font-medium text-fg">{c.title}</span>
+                  <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
                   <span className="min-w-0 flex-1 truncate text-subtle">{activityText(c.activity)}</span>
                 </button>
               ))}
@@ -1711,10 +1801,14 @@ function FlowBar({
   )
 }
 
-/** 独立分支执行的任务：停下后可以把改动合并进项目，或者整个丢弃 */
-function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
-  const [asking, setAsking] = useState<'merge' | 'discard' | null>(null)
+/**
+ * 输入框上面的独立分支条：从哪个分支开出 → 独立分支，合没合回去（绿勾 / 感叹号），
+ * 这一轮没在动手时可以直接合并或删除
+ */
+function WorktreeBar({ task }: { task: Task }) {
   const wt = task.worktree
+  const items = useWorktrees(task.id, worktreeKey(task), !!wt)
+  const actions = useWorktreeActions(task.id)
   // 要改文件时才开：还没开时说明现在在哪个目录，免得以为已经在分支里了
   if (!wt && task.wantsWorktree)
     return (
@@ -1724,54 +1818,62 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
       </div>
     )
   if (!wt) return null
-  const running = task.status === 'running'
-  const target = wt.baseBranch || t('项目当前的分支')
-  const finish = (merge: boolean) =>
-    api
-      .finishWorktree(task.id, merge)
-      .then((x) => {
-        onChange(x)
-        setAsking(null)
-        toast.success(merge ? t('已合并到「{branch}」', { branch: x.worktree?.note || target }) : t('已丢弃独立分支'))
-      })
-      .catch((e) => {
-        setAsking(null)
-        toast.error((e as Error).message)
-      })
+  const item = items?.find((x) => x.taskId === task.id)
+  const active = wt.state === 'active'
+  const busy = actions.busy === task.id
   return (
-    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[0.8125rem]">
-      <GitBranch className={cn('h-3.5 w-3.5 shrink-0', wt.state === 'active' ? 'text-accent' : 'text-subtle')} />
-      <span className="min-w-0 flex-1 text-muted">
-        {wt.state === 'merged'
-          ? t('独立分支已合并到「{branch}」', { branch: wt.note || target })
-          : wt.state === 'discarded'
-            ? t('独立分支已丢弃，项目目录没有改动')
-            : running
-              ? t('在独立分支 {name} 上执行，不改动项目目录', { name: wt.branch })
-              : t('改动在独立分支 {name} 上，还没进项目目录', { name: wt.branch })}
+    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line bg-card/60 px-3 py-1.5 text-[0.8125rem]">
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+      ) : item ? (
+        <WorktreeMark item={item} />
+      ) : (
+        <GitBranch className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-accent' : 'text-subtle')} />
+      )}
+      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.78125rem]">
+        <span className="shrink-0 text-subtle">{wt.baseBranch || 'HEAD'}</span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
+        <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={wt.path}>
+          {wt.branch}
+        </span>
       </span>
-      {wt.state === 'active' && !running && (
+      <span className="min-w-0 flex-1 truncate text-xs text-subtle">
+        {item
+          ? worktreeSummary(item)
+          : !active
+            ? wt.state === 'merged'
+              ? t('已合并到「{branch}」，分支已删除', { branch: wt.note || wt.baseBranch })
+              : t('已删除，改动没有合并')
+            : t('在独立分支上执行，不改动项目目录')}
+      </span>
+      {item && item.state === 'active' && !item.working && (
         <span className="flex shrink-0 items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setAsking('discard')}>
-            {t('丢弃')}
-          </Button>
-          <Button size="sm" onClick={() => setAsking('merge')}>
-            {t('合并到「{branch}」', { branch: target })}
+          {!item.merged && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7"
+              disabled={busy}
+              onClick={() => void actions.merge(item)}
+            >
+              <GitMerge className="h-3.5 w-3.5" />
+              {t('合并到「{branch}」', { branch: item.baseBranch || t('原分支') })}
+            </Button>
+          )}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={busy}
+            title={t('删除独立分支')}
+            aria-label={t('删除独立分支')}
+            className="hover:bg-danger/10 hover:text-danger"
+            onClick={() => actions.askRemove(item)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </span>
       )}
-      <ConfirmDialog
-        open={!!asking}
-        onOpenChange={(o) => !o && setAsking(null)}
-        title={asking === 'merge' ? t('把改动合并到「{branch}」？', { branch: target }) : t('丢弃独立分支？')}
-        description={
-          asking === 'merge'
-            ? t('没提交的改动会先提交到任务分支，再合并进项目目录当前的分支。有冲突时不会改动项目目录。')
-            : t('会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。')
-        }
-        confirmText={asking === 'merge' ? t('合并') : t('丢弃')}
-        onConfirm={() => finish(asking === 'merge')}
-      />
+      {actions.confirm}
     </div>
   )
 }

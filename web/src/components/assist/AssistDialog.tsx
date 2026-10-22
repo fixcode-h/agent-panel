@@ -5,8 +5,18 @@ import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Wand2, X } from 'l
 import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
-import type { Agent, AgentInput, ParamValues, Settings, TaskMessage, TestStep, Workflow } from '@shared/schema'
+import type {
+  Agent,
+  AgentInput,
+  GlobalLesson,
+  ParamValues,
+  Settings,
+  TaskMessage,
+  TestStep,
+  Workflow,
+} from '@shared/schema'
 import type { DerivedParam } from '@shared/agent-params'
+import type { GlobalLessonChange } from '@shared/lessons'
 import { ENV_LABEL } from '@shared/test-steps'
 import { api } from '@/lib/api'
 import { cliColor, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
@@ -55,6 +65,7 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('按这个项目的情况，把测试与验收的参数配一下'),
     t('这个项目在 Windows 上，端到端测试要在 WSL 里跑，按这个填'),
   ],
+  lessons: [t('把这个项目里换个项目也适用的教训提取出来'), t('只看角色自己记的那些，挑出通用的')],
   teststeps: [
     t('按项目现在的脚本，生成一套类型检查、单元测试、端到端和构建的步骤'),
     t('这是 UE 项目，补上编译和 Lua 语法检查的步骤'),
@@ -408,6 +419,66 @@ function ParamPreview({ values, spec }: { values: ParamValues; spec: DerivedPara
   )
 }
 
+/**
+ * 全局教训的预览：每条改动前面一个勾选框，用户勾了的才会写进去；
+ * 改写已有的那条时把原来的规则一起列出来对照
+ */
+function LessonChangesPreview({
+  changes,
+  globals,
+  picked,
+  onPick,
+}: {
+  changes: GlobalLessonChange[]
+  globals: GlobalLesson[]
+  picked: Set<number>
+  onPick: (i: number, on: boolean) => void
+}) {
+  if (!changes.length)
+    return <p className="text-[0.8125rem] text-subtle">{t('没有适合提取成全局教训的条目，原因见左边的说明。')}</p>
+  return (
+    <div className="flex flex-col gap-3">
+      <span className="text-xs text-muted">{t('全局教训会带进所有项目的对话。勾选要采用的，确认后才会写进去。')}</span>
+      <ul className="flex flex-col gap-2">
+        {changes.map((c, i) => {
+          const old = c.op === 'update' ? globals.find((g) => g.id === c.id) : undefined
+          return (
+            <li key={i}>
+              <label
+                className={cn(
+                  'flex cursor-pointer gap-2.5 rounded-lg border bg-field/40 p-2.5',
+                  !picked.has(i) && 'opacity-60',
+                )}
+              >
+                <input
+                  type="checkbox"
+                  className="mt-0.5 accent-accent"
+                  checked={picked.has(i)}
+                  onChange={(e) => onPick(i, e.target.checked)}
+                />
+                <span className="flex min-w-0 flex-1 flex-col gap-1">
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge tone={old ? 'accent' : 'neutral'}>{old ? t('改写') : t('新加')}</Badge>
+                    <span className="text-[0.8125rem] font-medium">{c.title}</span>
+                  </span>
+                  {c.rule && <span className="text-xs leading-relaxed text-muted">{c.rule}</span>}
+                  {c.cause && <span className="text-xs text-subtle">{t('起因：{text}', { text: c.cause })}</span>}
+                  {old && (
+                    <span className="mt-1 rounded-md border border-dashed px-2 py-1.5 text-xs text-subtle">
+                      {t('原来：{text}', { text: old.title })}
+                      {old.rule && <span className="mt-0.5 block line-through decoration-subtle/60">{old.rule}</span>}
+                    </span>
+                  )}
+                </span>
+              </label>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
 function TestStepsPreview({ steps }: { steps: TestStep[] }) {
   return (
     <div className="flex flex-col gap-3">
@@ -446,6 +517,7 @@ export function AssistDialog({
   projectId,
   paramSpec,
   paramAgentId,
+  globalLessons,
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
@@ -467,6 +539,8 @@ export function AssistDialog({
   paramSpec?: DerivedParam[]
   /** params：只配这一个 Agent 分组的参数 */
   paramAgentId?: string
+  /** lessons：现有的全局教训，预览「改写」时对照 */
+  globalLessons?: GlobalLesson[]
 }) {
   const shown = target?.name ?? title
   const { clis, settings, categories, agents, setAgents, setCategories, setWorkflows } = useData()
@@ -528,23 +602,32 @@ export function AssistDialog({
                 empty: t('参数值会显示在这里'),
                 button: t('填进表单'),
               }
-            : kind === 'teststeps'
+            : kind === 'lessons'
               ? {
-                  create: t('AI 生成测试步骤'),
-                  desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
-                  intro: t('说说你的要求，或者直接让它按项目情况生成。'),
-                  placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
-                  empty: t('测试步骤会显示在这里'),
-                  button: t('填进表单'),
+                  create: t('提取全局教训'),
+                  desc: t('从这个项目的教训里挑出换个项目也适用的，合进全局教训；逐条确认后才写入'),
+                  intro: t('直接让它提取，或者说说你的要求。'),
+                  placeholder: t('补充要求，例如「只看角色自己记的」'),
+                  empty: t('提取出的全局教训会显示在这里'),
+                  button: t('确认写入全局教训'),
                 }
-              : {
-                  create: t('用 AI 创建工作流'),
-                  desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
-                  intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
-                  placeholder: t('描述你想要的工作流'),
-                  empty: t('生成的工作流会显示在这里'),
-                  button: t('创建工作流'),
-                }
+              : kind === 'teststeps'
+                ? {
+                    create: t('AI 生成测试步骤'),
+                    desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
+                    intro: t('说说你的要求，或者直接让它按项目情况生成。'),
+                    placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
+                    empty: t('测试步骤会显示在这里'),
+                    button: t('填进表单'),
+                  }
+                : {
+                    create: t('用 AI 创建工作流'),
+                    desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+                    intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+                    placeholder: t('描述你想要的工作流'),
+                    empty: t('生成的工作流会显示在这里'),
+                    button: t('创建工作流'),
+                  }
 
   useEffect(() => {
     if (!open) return
@@ -623,6 +706,11 @@ export function AssistDialog({
   }, [turns, job?.text, job?.messages?.length, job?.outChars])
 
   const latest = useMemo(() => [...turns].reverse().find((t) => t.proposal)?.proposal, [turns])
+  // 全局教训：每次出了新结果默认全选，用户取消勾选不要的
+  const [picked, setPicked] = useState<Set<number>>(new Set())
+  useEffect(() => {
+    if (latest?.kind === 'lessons') setPicked(new Set(latest.changes.map((_, i) => i)))
+  }, [latest])
   const running = !!job
   // 最小化：窗口收成右下角的悬浮按钮，生成照常进行，点按钮再展开
   const [minimized, setMinimized] = useState(false)
@@ -706,6 +794,11 @@ export function AssistDialog({
     if (!latest) return
     setApplying(true)
     try {
+      if (latest.kind === 'lessons') {
+        await onApply?.({ ...latest, changes: latest.changes.filter((_, i) => picked.has(i)) })
+        onOpenChange(false)
+        return
+      }
       if (latest.kind === 'skill' || latest.kind === 'mcp' || latest.kind === 'params' || latest.kind === 'teststeps') {
         await onApply?.(latest)
         onOpenChange(false)
@@ -953,6 +1046,20 @@ export function AssistDialog({
                       <ParamPreview values={latest.values} spec={paramSpec ?? []} />
                     ) : latest.kind === 'teststeps' ? (
                       <TestStepsPreview steps={latest.steps} />
+                    ) : latest.kind === 'lessons' ? (
+                      <LessonChangesPreview
+                        changes={latest.changes}
+                        globals={globalLessons ?? []}
+                        picked={picked}
+                        onPick={(i, on) =>
+                          setPicked((s) => {
+                            const n = new Set(s)
+                            if (on) n.add(i)
+                            else n.delete(i)
+                            return n
+                          })
+                        }
+                      />
                     ) : latest.kind === 'agent' ? (
                       <AgentPreview
                         agent={latest.agent}
@@ -971,9 +1078,19 @@ export function AssistDialog({
                 </div>
                 <footer className="flex items-center gap-2 border-t px-5 py-3">
                   <span className="text-xs text-subtle">
-                    {latest ? (shown ? t('应用后会覆盖当前内容') : t('可以继续对话修改，满意后再创建')) : ''}
+                    {latest
+                      ? latest.kind === 'lessons'
+                        ? t('已选 {n} 条，可以继续对话让它改', { n: picked.size })
+                        : shown
+                          ? t('应用后会覆盖当前内容')
+                          : t('可以继续对话修改，满意后再创建')
+                      : ''}
                   </span>
-                  <Button className="ml-auto" disabled={!latest || running || applying} onClick={apply}>
+                  <Button
+                    className="ml-auto"
+                    disabled={!latest || running || applying || (latest.kind === 'lessons' && !picked.size)}
+                    onClick={apply}
+                  >
                     {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                     {shown ? (kind === 'mcp' ? L.button : t('应用修改')) : L.button}
                   </Button>

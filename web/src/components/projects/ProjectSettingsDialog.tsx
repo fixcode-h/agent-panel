@@ -20,7 +20,13 @@ import {
 } from 'lucide-react'
 import type { Agent, ParamValue, Project, ProjectInput, TestStep, Workflow, WorkflowExpose } from '@shared/schema'
 import { DEFAULT_FILE_FORMAT } from '@shared/schema'
-import { derivedParams, agentParamGroups, type AgentParamGroup, type DerivedParam } from '@shared/agent-params'
+import {
+  derivedParams,
+  agentParamGroups,
+  isDefaultValue,
+  type AgentParamGroup,
+  type DerivedParam,
+} from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId } from '@shared/test-steps'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { api } from '@/lib/api'
@@ -71,6 +77,7 @@ const blank: ProjectInput = {
   childIsolation: 'worktree',
   isolateDefault: false,
   testSteps: [],
+  scaledVerify: true,
   lessons: [],
   wslDistro: '',
   fileFormat: undefined,
@@ -97,10 +104,16 @@ export function DialogCloseButton({ label = t('关闭') }: { label?: string }) {
 export function ProjectSettingsDialog({
   open,
   project,
+  section,
+  item,
   onOpenChange,
 }: {
   open: boolean
   project?: Project
+  /** 打开时先显示哪一栏（例如项目首页点教训时直接到「教训」） */
+  section?: string
+  /** 那一栏里要展开的条目 */
+  item?: string
   onOpenChange: (open: boolean) => void
 }) {
   return (
@@ -113,14 +126,32 @@ export function ProjectSettingsDialog({
           onInteractOutside={(e) => e.preventDefault()}
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] h-[min(800px,calc(100dvh-2rem))] w-[min(1120px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
         >
-          {open && <Body key={project?.id ?? 'new'} project={project} onClose={() => onOpenChange(false)} />}
+          {open && (
+            <Body
+              key={project?.id ?? 'new'}
+              project={project}
+              initialSection={section}
+              item={item}
+              onClose={() => onOpenChange(false)}
+            />
+          )}
         </D.Content>
       </D.Portal>
     </D.Root>
   )
 }
 
-function Body({ project, onClose }: { project?: Project; onClose: () => void }) {
+function Body({
+  project,
+  initialSection,
+  item,
+  onClose,
+}: {
+  project?: Project
+  initialSection?: string
+  item?: string
+  onClose: () => void
+}) {
   const { projectCategories, setProjectCategories, setProjects, workflows, agents, clis, reloadTasks } = useData()
   const { go, route } = useNav()
   const [draft, setDraft] = useState<ProjectInput>(() =>
@@ -273,7 +304,8 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
   }
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
-  const [section, setSection] = useState('general')
+  const [section, setSection] = useState(initialSection || 'general')
+  const [lessonIds0] = useState(() => new Set(project?.lessons.map((l) => l.id)))
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
   const [docError, setDocError] = useState('')
   const [docDrafts, setDocDrafts] = useState<Partial<Record<DocFile, string>>>({})
@@ -301,7 +333,11 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
     if (!valid || saving) return
     setSaving(true)
     try {
-      const input = { ...draft, name: draft.name.trim() }
+      // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
+      const fresh = (project?.lessons ?? []).filter(
+        (l) => !lessonIds0.has(l.id) && !draft.lessons.some((x) => x.id === l.id),
+      )
+      const input = { ...draft, name: draft.name.trim(), lessons: [...draft.lessons, ...fresh] }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
         for (const [f, c] of changedDocs) await api.saveProjectDoc(project.id, f, c)
@@ -646,10 +682,15 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                 <PageIntro
                   title={t('项目教训')}
                   desc={t(
-                    '角色在这个项目里返工过的地方，写成下次能直接照做的规则。新会话开头只带「所有改动」的全文和其余条目的标题，角色改到哪些文件再取对应的全文，条目多了也不占满上下文。被纠正时角色会自己记一条，标「角色记录」，有空看一下写得对不对。',
+                    '角色在这个项目里返工过、走过弯路的地方，写成下次能直接照做的规则。被纠正、或自己发现办法不对换了做法时，角色会自己记一条，标「角色记录」；你的新要求和某条冲突时，角色会找两全的做法改写它，找不到就先问你。新会话开头只带「所有改动」的全文和其余条目的标题，改到哪些文件再取对应的全文。优先级：你当次的要求 > 项目教训 > 全局教训。',
                   )}
                 />
-                <LessonsEditor lessons={draft.lessons} onChange={(v) => set('lessons', v)} />
+                <LessonsEditor
+                  lessons={draft.lessons}
+                  onChange={(v) => set('lessons', v)}
+                  project={project}
+                  initialOpen={item}
+                />
               </div>
             ) : section === 'tests' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -657,6 +698,14 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                   title={t('测试步骤')}
                   desc={t(
                     '测试验收角色按这里的顺序执行，新建对话时快照进任务。写清楚命令、在哪执行和什么时候跑，没有配置时它会自己找命令并提醒你补上。',
+                  )}
+                />
+                <Checkbox
+                  checked={draft.scaledVerify}
+                  onChange={(v) => set('scaledVerify', v)}
+                  label={t('按改动大小决定验证范围')}
+                  hint={t(
+                    '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。',
                   )}
                 />
                 <TestStepsEditor
@@ -917,11 +966,18 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
           onApply={(p) => {
             if (p.kind === 'params') {
               const id = ai.workflowId || p.workflowId || active?.id
+              const wf = workflows.find((w) => w.id === id)
+              const spec = wf ? derivedParams(wf, agents) : []
               if (id)
-                setDraft((d) => ({
-                  ...d,
-                  workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), ...p.values } },
-                }))
+                setDraft((d) => {
+                  const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
+                  // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
+                  for (const [k, v] of Object.entries(p.values)) {
+                    const def = spec.find((x) => x.key === k)
+                    if (def && isDefaultValue(def, v)) delete next[k]
+                  }
+                  return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
+                })
               toast.success(t('已填进表单，确认保存后生效'))
             } else if (p.kind === 'teststeps') {
               set('testSteps', p.steps)
@@ -1186,6 +1242,18 @@ function TestStepsEditor({
                 />
                 {t('合并时编译')}
               </label>
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
+                title={t('角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint')}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={s.quick}
+                  onChange={(e) => patch(i, { quick: e.target.checked })}
+                />
+                {t('小改动也跑')}
+              </label>
             </div>
             {s.note && <span className="text-xs text-subtle">{s.note}</span>}
           </li>
@@ -1209,6 +1277,7 @@ function TestStepsEditor({
                 note: '',
                 enabled: true,
                 merge: false,
+                quick: false,
               },
             ])
           }

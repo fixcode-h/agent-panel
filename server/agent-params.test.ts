@@ -11,7 +11,7 @@ import {
 import { applyExpose } from '../shared/expose.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { defaultTestSteps, isTestAgent, stepCommand, testStepsBlock, testStepIssues } from '../shared/test-steps.ts'
-import { resolveParamValues, resolveTestSteps } from '../shared/assist.ts'
+import { buildAssistPrompt, resolveParamValues, resolveTestSteps } from '../shared/assist.ts'
 import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
 import { BUILTIN_WORKFLOWS, builtinAgentKeys } from '../shared/builtin/workflows.ts'
 import { MERGED_AGENTS } from '../shared/builtin/legacy.ts'
@@ -448,4 +448,34 @@ test('旧副本引用了已合并的 Agent：重定向到合并目标，说明�
   saved.length = 0
   assert.deepEqual(await redirectMergedWorkflows({ ...state, workflows: [next] }, ops as never), [])
   assert.equal(saved.length, 0)
+})
+
+test('AI 配参数的提示词带上每个开关管什么和节点预设，让 CLI 自己判断', () => {
+  const coder = agent(
+    'coder',
+    [
+      { key: 'tdd', label: 'TDD', type: 'bool', default: true },
+      { key: 'scene', label: '先识别现场', type: 'bool', default: false },
+    ],
+    {
+      instructions:
+        '{{#if tdd}}新增行为先写失败的测试。{{else}}不强制 TDD。{{/if}}\n{{#if scene}}先只读识别现场。{{/if}}',
+    },
+  )
+  const w = Workflow.parse({
+    ...workflow({ mainAgentId: 'coder' }),
+    flows: [
+      { id: 'main', nodes: [{ id: 'n1', title: '理解需求', agentId: 'coder', params: { scene: true } }], edges: [] },
+    ],
+  })
+  const prompt = buildAssistPrompt(
+    'params',
+    { agents: [coder], categories: [], workflows: [w], rules: '', target: w, paramSpec: derivedParams(w, [coder]) },
+    [{ role: 'user', text: '按项目情况填' }],
+    [],
+  )
+  assert.match(prompt, /打开时角色设定里会多出：新增行为先写失败的测试。/)
+  assert.match(prompt, /关闭时角色设定里会多出：不强制 TDD。/)
+  assert.match(prompt, /工作流节点上已预设：「理解需求」= true/)
+  assert.match(prompt, /不要把参数的取舍拿去问用户/)
 })
