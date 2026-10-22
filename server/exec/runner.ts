@@ -113,8 +113,6 @@ export interface RealContext {
   childIsolation?: EngineHost['childIsolation']
   worktreeHome?: EngineHost['worktreeHome']
   branch?: EngineHost['branch']
-  /** 父对话（统筹）：不改文件，能按名字关掉工具的 CLI 把改文件的工具关掉 */
-  noEdit?: boolean
   submitMerge?: EngineHost['submitMerge']
   verify?: EngineHost['verify']
   beginEdit?: EngineHost['beginEdit']
@@ -788,7 +786,7 @@ async function runAgent(
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
-    noEdit: chat && (!!ctx.beginEdit || !!ctx.noEdit),
+    noEdit: chat && !!ctx.beginEdit,
     autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
     contextWindow: limits.context || undefined,
     maxOutput: limits.maxOutput || undefined,
