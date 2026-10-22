@@ -20,7 +20,13 @@ import {
 } from 'lucide-react'
 import type { Agent, ParamValue, Project, ProjectInput, TestStep, Workflow, WorkflowExpose } from '@shared/schema'
 import { DEFAULT_FILE_FORMAT } from '@shared/schema'
-import { derivedParams, agentParamGroups, type AgentParamGroup, type DerivedParam } from '@shared/agent-params'
+import {
+  derivedParams,
+  agentParamGroups,
+  isDefaultValue,
+  type AgentParamGroup,
+  type DerivedParam,
+} from '@shared/agent-params'
 import { ENV_LABEL, newTestStepId } from '@shared/test-steps'
 import { AssistDialog } from '@/components/assist/AssistDialog'
 import { api } from '@/lib/api'
@@ -917,11 +923,18 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
           onApply={(p) => {
             if (p.kind === 'params') {
               const id = ai.workflowId || p.workflowId || active?.id
+              const wf = workflows.find((w) => w.id === id)
+              const spec = wf ? derivedParams(wf, agents) : []
               if (id)
-                setDraft((d) => ({
-                  ...d,
-                  workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), ...p.values } },
-                }))
+                setDraft((d) => {
+                  const next = { ...(d.workflowParams[id] ?? {}), ...p.values }
+                  // 等于默认值的不存：存下来会覆盖工作流节点上的预设（例如第一个节点的「先识别现场」）
+                  for (const [k, v] of Object.entries(p.values)) {
+                    const def = spec.find((x) => x.key === k)
+                    if (def && isDefaultValue(def, v)) delete next[k]
+                  }
+                  return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
+                })
               toast.success(t('已填进表单，确认保存后生效'))
             } else if (p.kind === 'teststeps') {
               set('testSteps', p.steps)

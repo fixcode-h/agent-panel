@@ -36,6 +36,7 @@ import {
   type WorkflowInput,
 } from './schema.ts'
 import type { DerivedParam } from './agent-params.ts'
+import { includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 
 export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps'])
 export type AssistKind = z.infer<typeof AssistKind>
@@ -518,40 +519,54 @@ const SkillDraft = z.object({
 
 /**
  * 项目设置里的 Agent 参数：在项目目录里只读看代码，给出每个参数的合理值。
- * 只读约束写进提示词；需要跑命令时先说明并等用户确认。
+ * 每个参数附上「取不同值时角色设定差在哪」和工作流节点上的预设，CLI 才有判断依据；
+ * 否则它只看到一个标签（「TDD」「任务记录」），只能把开关原样拿去问用户。
  */
 function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
   const spec = paramSpecFor(ctx)
+  const wf = ctx.target && 'flows' in ctx.target ? ctx.target : undefined
   const params = spec
     .map((d) => {
       const options = d.options.length ? `，可选值：${d.options.map((o) => `"${o}"`).join('、')}` : ''
       const def = d.defaultValue === undefined ? '，没有默认值' : `，默认值：${JSON.stringify(d.defaultValue)}`
       const who = [...new Set(d.agents.map((a) => a.name))].join('、')
-      return `- ${d.key}（${d.label}，类型 ${d.type}${options}${def}${d.required ? '，必须填' : ''}）${
-        d.description ? `：${d.description}` : ''
-      }\n  影响：${who}`
+      const preset = wf ? nodePresets(wf, d.key) : ''
+      const effect = paramEffect(d, ctx.agents)
+      return [
+        `- ${d.key}（${d.label}，类型 ${d.type}${options}${def}${d.required ? '，必须填' : ''}）${d.description ? `：${d.description}` : ''}`,
+        `  影响：${who}`,
+        preset ? `  工作流节点上已预设：${preset}（项目里填了值会覆盖这些节点）` : '',
+        effect,
+      ]
+        .filter(Boolean)
+        .join('\n')
     })
     .join('\n')
   const where = ctx.projectPath
     ? `项目「${ctx.projectName || ctx.projectPath}」的目录是 ${ctx.projectPath}。
-只读地看这个目录里的代码和配置（依赖清单、构建 / 测试脚本、目录结构、README、CI 配置），据此判断参数值。
+只读地看这个目录：AGENTS.md / CLAUDE.md、README、依赖清单、构建 / 测试脚本、CI 配置、docs 和目录结构，据此判断参数值。
 **不许修改任何文件、不许安装依赖、不许执行有副作用的命令。** 需要跑命令确认时，先说清楚要跑什么并等用户确认。`
     : '没有项目目录：只按对话内容和参数说明给出合理值，不要编造项目里不存在的命令。'
   return [
     '你是「Agent 面板」里的配置助手，正在帮用户填一个项目里某个工作流的 Agent 参数。',
     where,
     `## 要配置的参数\n${params || '（没有可配置的参数）'}`,
+    `## 怎么判断
+- 每个参数都由你自己决定，不要把参数的取舍拿去问用户：你给的值只会显示在右侧预览里，用户确认后才填进表单，填错了用户能直接改。
+- 依据按这个顺序找：项目里的事实（文件、脚本、约定文档里写的规则）→ 参数「取不同值时」的差别 → 默认值。默认值和节点预设是工作流作者针对一般项目选好的，没有看到需要改的依据就保持不变，这本身就是一个确定的结论。
+- 只有两种情况才请用户补充：参数必须填、没有默认值，而且项目里查不到（例如外部服务地址、账号）；或者用户在对话里提的要求和项目事实冲突。这时也先给出你推荐的值。
+- 事实自己查，查不到就按上面的顺序落到默认值，不要因为「没有明确依据」而停下来提问。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式
-先用两三句中文说明你的判断依据（看到了哪些文件、为什么这样填）${ctx.projectPath ? '，以及还有哪些参数需要用户确认' : ''}。
+先逐个参数用一行中文写结论和依据，例如「TDD：打开（package.json 有 test:unit，server/ 下有 *.test.ts）」「任务记录：保持默认（项目没有 worklog 目录，也没有跨会话的大任务约定）」。
 然后输出且只输出一个 \`\`\`json 代码块，形如：
 \`\`\`json
 { "values": { "scope": "本次改动", "env": "wsl", "regress": true } }
 \`\`\`
-- 只能出现上面列出的参数 key；不确定的可以不写（留空表示用默认值），不要瞎填。
+- 只能出现上面列出的参数 key；要改的参数写进 values，保持默认（或节点预设）的不写。
 - 值必须符合类型：下拉写可选值之一，开关写 true / false，数字写数字，多选写字符串数组。
 - 命令、路径这类字符串要能直接用，不要写占位符。`,
     `## 对话\n${convo}`,
@@ -559,6 +574,60 @@ function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+/** 工作流节点（和步骤）上已经写好的这个参数的值，例如第一个节点的 scene=true */
+function nodePresets(w: Workflow, key: string) {
+  const out: string[] = []
+  for (const f of w.flows)
+    for (const n of f.nodes) {
+      const name = n.title || n.id
+      if (n.params[key] !== undefined) out.push(`「${name}」= ${JSON.stringify(n.params[key])}`)
+      for (const s of n.steps)
+        if (s.params[key] !== undefined) out.push(`「${name}」的步骤 = ${JSON.stringify(s.params[key])}`)
+    }
+  return [...new Set(out)].slice(0, 8).join('、')
+}
+
+/**
+ * 参数取不同值时，角色设定（含引入的角色）里多出来的内容。
+ * 按每个取值各渲染一遍模板，只列这个取值独有的行，让 CLI 知道开关实际管什么。
+ */
+function paramEffect(d: DerivedParam, agents: Agent[]) {
+  const variants: [string, ParamValues[string]][] =
+    d.type === 'bool'
+      ? [
+          ['打开时', true],
+          ['关闭时', false],
+        ]
+      : d.options.length && d.type !== 'multi'
+        ? d.options.slice(0, 6).map((o) => [`选「${o}」时`, o])
+        : []
+  if (!variants.length) return ''
+  const owners = d.agents.map((o) => agents.find((a) => a.id === o.id)).filter((a): a is Agent => !!a)
+  const seen = new Set<string>()
+  const roles = owners.flatMap((a) => [a, ...includedAgents(a, agents).map((x) => x.agent)])
+  const texts = roles.filter((a) => !seen.has(a.id) && seen.add(a.id) && a.instructions.includes(`{{#if`))
+  if (!texts.length) return ''
+  const linesOf = (v: ParamValues[string]) => {
+    const out = new Set<string>()
+    for (const a of texts) {
+      const base = resolveParams(a.params).values
+      for (const l of renderTemplate(a.instructions, { ...base, [d.key]: v }).split('\n'))
+        if (l.trim()) out.add(l.trim())
+    }
+    return out
+  }
+  const sets = variants.map(([, v]) => linesOf(v))
+  const rows = variants
+    .map(([label], i) => {
+      const own = [...sets[i]].filter((l) => sets.some((s, j) => j !== i && !s.has(l)))
+      if (!own.length) return ''
+      const text = own.join(' ')
+      return `  ${label}角色设定里会多出：${text.length > 360 ? `${text.slice(0, 360)}…` : text}`
+    })
+    .filter(Boolean)
+  return rows.join('\n')
 }
 
 /** teststeps 的提示词：读项目实际的技术栈和脚本，生成可以直接执行的步骤 */
