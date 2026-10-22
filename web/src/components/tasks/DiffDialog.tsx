@@ -211,7 +211,8 @@ export function DiffDialog({
   onOpenChange,
   onReverted,
 }: {
-  task: Task
+  /** 只用到任务的 id、状态和改动列表：工具行里不传整个任务 */
+  task: Pick<Task, 'id' | 'status' | 'changes'>
   path?: string | null
   /** 直接给出差异（工具行里的编辑记录）：不取任务级的差异，也没有撤销 */
   diff?: string

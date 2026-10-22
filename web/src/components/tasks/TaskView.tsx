@@ -63,9 +63,9 @@ import { useSlashMenu } from '@/components/chat/SlashMenu'
 import { AskToggle } from '@/components/chat/AskToggle'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
-import { ChatComposer, useDraft } from '@/components/chat/ChatComposer'
+import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
-import { chipMarker, forSend } from '@shared/composer'
+import { forSend } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 
@@ -291,8 +291,9 @@ export function TaskView({
   const agents = useMemo(() => withImportedAgents(localAgents, { imported }), [localAgents, imported])
   const [analyzing, setAnalyzing] = useState(false)
   const [convSettings, setConvSettings] = useState(false)
-  // 没发出去的内容按对话分开记，切到别的对话再回来还在
-  const [text, setText] = useDraft(`task:${taskId}`)
+  // 没发出去的内容由 ChatComposer 自己按对话记着（切走再回来还在），打字时不再重渲染整页；
+  // 这里只留一个「输入框是不是空的」，给「继续执行」按钮用，只在空 / 非空切换时更新
+  const [draftEmpty, setDraftEmpty] = useState(true)
   const followTa = useRef<RichInputHandle>(null)
   // 和新建任务的输入框一样：可以附文件、粘贴截图、拖进来、输入 @ 引用项目文件
   const files = useAttachments(`task:${taskId}`)
@@ -349,10 +350,7 @@ export function TaskView({
   useQuoteTarget(dropArea, (quoted) => {
     const chip = quoteChip(quoted)
     const ed = followTa.current
-    if (!ed) {
-      setText(`${text.trimEnd()} ${chipMarker(chip.kind, chip.name)} `.trimStart())
-      return
-    }
+    if (!ed) return
     ed.focus()
     ed.setCaret(Number.MAX_SAFE_INTEGER)
     ed.insertChip(chip)
@@ -362,11 +360,50 @@ export function TaskView({
   // 「记成项目教训」弹窗：存的是那条用户消息的原文
   const [lessonOf, setLessonOf] = useState('')
 
+  // 流式输出每 200ms 推一次：任务本身马上换（对话要实时显示），全局列表的摘要最多 1 秒写一次。
+  // 状态、标题、等待确认这些侧栏马上要反映的变化仍然立即写
+  const lastTask = useRef<Task | null>(null)
+  const summaryAt = useRef(0)
+  const summaryTimer = useRef<number | undefined>(undefined)
+  const pushSummary = (next: Task) => {
+    const prev = lastTask.current
+    lastTask.current = next
+    const important =
+      !prev ||
+      prev.id !== next.id ||
+      prev.title !== next.title ||
+      prev.status !== next.status ||
+      prev.working !== next.working ||
+      prev.turnDoneAt !== next.turnDoneAt ||
+      (prev.requests?.length ?? 0) !== (next.requests?.length ?? 0)
+    const now = Date.now()
+    if (important || now - summaryAt.current >= 1000) {
+      summaryAt.current = now
+      if (summaryTimer.current) {
+        clearTimeout(summaryTimer.current)
+        summaryTimer.current = undefined
+      }
+      // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
+      upsertTask(taskSummary(next))
+      return
+    }
+    if (summaryTimer.current) return
+    summaryTimer.current = window.setTimeout(() => {
+      summaryTimer.current = undefined
+      summaryAt.current = Date.now()
+      if (lastTask.current) upsertTask(taskSummary(lastTask.current))
+    }, 1000)
+  }
   const apply = (next: Task) => {
     setTask(next)
-    // 全局列表只放摘要，侧栏不用跟着每段输出重新渲染消息
-    upsertTask(taskSummary(next))
+    pushSummary(next)
   }
+  useEffect(
+    () => () => {
+      if (summaryTimer.current) clearTimeout(summaryTimer.current)
+    },
+    [],
+  )
 
   useEffect(() => {
     api
@@ -537,7 +574,8 @@ export function TaskView({
     projectId: project?.id,
     // 压缩、审查是对话的操作，工作流里不提供
     scope: task?.mode === 'workflow' ? 'new' : 'task',
-    setText,
+    // 草稿在输入框里，命令菜单清空 / 换内容时交给它
+    setText: (v) => followTa.current?.setText(v),
     editor: followTa,
     onAction: (a, arg) => {
       if (!task) return
@@ -548,6 +586,12 @@ export function TaskView({
         .catch((e) => toast.error((e as Error).message))
     },
   })
+
+  // 分段只在任务内容变了时重算：打字、开关面板不再把上千条消息重新归一遍
+  const blocks = useMemo(() => (task ? toBlocks(task) : []), [task])
+  // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
+  const hidden = Math.max(0, blocks.length - limit)
+  const shownBlocks = useMemo(() => blocks.slice(hidden), [blocks, hidden])
 
   if (!task)
     return (
@@ -560,7 +604,8 @@ export function TaskView({
   const noFiles = !task.projectId
 
   // 执行中也能发：相关的要求会调整当前方向，交不出去的等这一轮结束后接着处理
-  const send = async () => {
+  const send = async (input?: string) => {
+    const text = input ?? followTa.current?.text() ?? ''
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
     const content = forSend(expandQuotes(text), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
@@ -569,7 +614,7 @@ export function TaskView({
     try {
       const r = await api.sendMessage(task.id, content, files.attachments, false)
       apply(r)
-      setText('')
+      followTa.current?.setText('')
       files.clear()
       setTimeout(
         () =>
@@ -666,9 +711,6 @@ export function TaskView({
     }
   }
   const mainAgent = agents.find((a) => a.id === workflow?.mainAgentId)
-  const blocks = toBlocks(task)
-  // 很长的任务先只画最后一部分，打开、刷新更快；往前看时再全部显示
-  const hidden = Math.max(0, blocks.length - limit)
   const isFlow = task.mode === 'workflow' && view === 'flow'
   // 点了任务进度里的某一步：切到流程图并定位到那一步
   const openStep =
@@ -702,7 +744,7 @@ export function TaskView({
   // 工作流没走完时输入框上面有「继续流程」，输入框里就不再放「继续执行」
   const flowLeft = task.mode === 'workflow' && !running && flowUnfinished(task, workflow)
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
-  const canResume = (task.status === 'failed' || task.status === 'stopped') && !text.trim() && !flowLeft
+  const canResume = (task.status === 'failed' || task.status === 'stopped') && draftEmpty && !flowLeft
 
   const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
 
@@ -710,9 +752,10 @@ export function TaskView({
   const composer = !task.imported && !asksQuestion(task.requests) && (
     <ChatComposer
       id="follow-up"
-      value={text}
-      onChange={setText}
-      onSubmit={() => void send()}
+      // 草稿由输入框自己记：打字只重渲染输入框，不带着整页消息重画
+      draftKey={`task:${taskId}`}
+      onEmptyChange={setDraftEmpty}
+      onSubmit={(v) => void send(v)}
       files={files}
       taRef={followTa}
       // 拖文件到页面任何位置都算引入到要求里；流程图视图里节点自己有自己的拖拽，不接管
@@ -729,7 +772,6 @@ export function TaskView({
         slash.sync()
       }}
       onKeyDown={(e) => slash.onKeyDown(e) || mention.onKeyDown(e)}
-      canSend={!!text.trim() || files.attachments.length > 0}
       attach={{ onMention: mention.start, canMention: !!project?.path, self: task.id }}
       tools={
         <>
@@ -1025,7 +1067,7 @@ export function TaskView({
                         {t('显示更早的 {n} 段', { n: hidden })}
                       </button>
                     )}
-                    {blocks.slice(hidden).map((b, i) =>
+                    {shownBlocks.map((b, i) =>
                       b.kind === 'turn' ? (
                         <div key={b.key} className="flex flex-col gap-4">
                           <ChatTurn
@@ -1314,7 +1356,7 @@ export function TaskView({
             try {
               const r = await api.rewindTask(task.id, rewindAsk)
               apply(r.task)
-              setText(r.text)
+              followTa.current?.setText(r.text)
               setRewindAsk('')
               followTa.current?.focus()
             } catch (e) {

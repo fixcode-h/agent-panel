@@ -59,11 +59,18 @@ export function useDesignEditor(id: string) {
       // 切到别的设计后，上一个设计迟到的响应不要用
       if (d.id !== current.current) return
       setServer(d)
-      setDesigns((list) =>
-        list.map((x) =>
-          x.id === d.id ? { ...x, title: d.title, updatedAt: d.updatedAt, running: d.job?.status === 'running' } : x,
-        ),
-      )
+      // 轮询每 1.2 秒来一次：标题、更新时间、执行状态都没变时沿用原数组，
+      // 侧栏和设计列表不用跟着重新渲染
+      setDesigns((list) => {
+        const i = list.findIndex((x) => x.id === d.id)
+        if (i < 0) return list
+        const cur = list[i]
+        const running = d.job?.status === 'running'
+        if (cur.title === d.title && cur.updatedAt === d.updatedAt && cur.running === running) return list
+        const next = list.slice()
+        next[i] = { ...cur, title: d.title, updatedAt: d.updatedAt, running }
+        return next
+      })
       setDoc((cur) => {
         if (!cur) {
           rev.current = d.rev

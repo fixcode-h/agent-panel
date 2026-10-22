@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   AlignCenterHorizontal,
   AlignCenterVertical,
@@ -221,34 +221,97 @@ export function Viewport({
     return () => ro.disconnect()
   }, [size.X, size.Y])
 
-  // 选中框跟着控件走：每帧量一次（图片加载、布局变化都会影响位置）
-  useEffect(() => {
-    let raf = 0
-    const tick = () => {
-      const st = stage.current
-      const el = selected ? st?.querySelector<HTMLElement>(`[data-wid="${CSS.escape(selected)}"]`) : null
-      if (st && el) {
-        const a = st.getBoundingClientRect()
-        const b = el.getBoundingClientRect()
-        const next = {
-          x: (b.left - a.left) / scale,
-          y: (b.top - a.top) / scale,
-          w: b.width / scale,
-          h: b.height / scale,
-        }
-        setBox((cur) =>
-          cur &&
-          Math.abs(cur.x - next.x) + Math.abs(cur.y - next.y) + Math.abs(cur.w - next.w) + Math.abs(cur.h - next.h) <
-            0.5
-            ? cur
-            : next,
-        )
-      } else setBox(null)
-      raf = requestAnimationFrame(tick)
+  // 选中框和多选框跟着控件走。以前是每帧无条件量一次，选中一个控件后什么都不动也在跑；
+  // 现在只在内容变化、滚动、拖动、缩放、动画时量几帧，连续两帧结果不变就停
+  const selectedRef = useRef(selected)
+  selectedRef.current = selected
+  const extraRef = useRef(extra)
+  extraRef.current = extra
+  const frame = useRef(0)
+  const [extraBoxes, setExtraBoxes] = useState<{ x: number; y: number; w: number; h: number }[]>([])
+  const boxesKey = useCallback(() => {
+    const st = stage.current
+    const sc = scaleRef.current
+    const at = (id: string, a: DOMRect) => {
+      const el = st?.querySelector<HTMLElement>(`[data-wid="${CSS.escape(id)}"]`)
+      if (!el) return null
+      const b = el.getBoundingClientRect()
+      return {
+        x: (b.left - a.left) / sc,
+        y: (b.top - a.top) / sc,
+        w: b.width / sc,
+        h: b.height / sc,
+      }
     }
-    tick()
-    return () => cancelAnimationFrame(raf)
-  }, [selected, scale])
+    if (!st) return ''
+    const a = st.getBoundingClientRect()
+    const id = selectedRef.current
+    const next = id ? at(id, a) : null
+    setBox((cur) =>
+      cur &&
+      next &&
+      Math.abs(cur.x - next.x) + Math.abs(cur.y - next.y) + Math.abs(cur.w - next.w) + Math.abs(cur.h - next.h) < 0.5
+        ? cur
+        : next,
+    )
+    const list = extraRef.current
+    const ex = list.length
+      ? (list.map((x) => at(x, a)).filter(Boolean) as { x: number; y: number; w: number; h: number }[])
+      : []
+    setExtraBoxes((cur) => (JSON.stringify(cur) === JSON.stringify(ex) ? cur : ex))
+    return `${JSON.stringify(next)}|${JSON.stringify(ex)}`
+  }, [])
+  const settle = useCallback(
+    (holdMs = 400) => {
+      cancelAnimationFrame(frame.current)
+      const start = performance.now()
+      let prev = ''
+      let still = 0
+      const tick = () => {
+        const key = boxesKey()
+        still = key === prev ? still + 1 : 0
+        prev = key
+        // 图片加载、布局变化可能在下一两帧才完成，稳定两帧后再停
+        if (still < 2 && performance.now() - start < holdMs) frame.current = requestAnimationFrame(tick)
+      }
+      tick()
+    },
+    [boxesKey],
+  )
+  const extraKey = extra.join('|')
+  useEffect(() => {
+    settle()
+    return () => cancelAnimationFrame(frame.current)
+  }, [settle, selected, scale, extraKey, root, components, target, device])
+  // 滚动（滚轮缩放后、抓手拖动、页面滚动）、容器大小变化时重新量
+  useEffect(() => {
+    const el = wrap.current
+    if (!el) return
+    const on = () => settle(250)
+    el.addEventListener('scroll', on, { passive: true })
+    let ro: ResizeObserver | undefined
+    if (typeof ResizeObserver !== 'undefined') {
+      ro = new ResizeObserver(() => settle(300))
+      ro.observe(el)
+      if (stage.current) ro.observe(stage.current)
+    }
+    return () => {
+      el.removeEventListener('scroll', on)
+      ro?.disconnect()
+    }
+  }, [settle])
+  // 选中的控件自己变大变小（图片加载完、文字换行）：重新量一次
+  useEffect(() => {
+    const el = selected ? stage.current?.querySelector<HTMLElement>(`[data-wid="${CSS.escape(selected)}"]`) : null
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const ro = new ResizeObserver(() => settle(200))
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [selected, root, settle])
+  // 动画面板拖播放头 / 播放时位置一直在变：这段期间继续量
+  useEffect(() => {
+    if (animCommand) settle(2500)
+  }, [animCommand, settle])
 
   const parent = selected ? findParent(root, selected) : undefined
   const movable = parent?.Type === 'CanvasPanel' && !!findWidget(root, selected)?.Slot
@@ -272,21 +335,6 @@ export function Viewport({
       const p = findParent(root, id)
       return p?.Type === 'CanvasPanel' && p.id === parent?.id
     })
-  const [extraBoxes, setExtraBoxes] = useState<{ x: number; y: number; w: number; h: number }[]>([])
-  useEffect(() => {
-    if (!extra.length) return setExtraBoxes([])
-    let raf = 0
-    const tick = () => {
-      const next = extra.map(measure).filter(Boolean) as { x: number; y: number; w: number; h: number }[]
-      setExtraBoxes((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next))
-      raf = requestAnimationFrame(tick)
-    }
-    tick()
-    return () => cancelAnimationFrame(raf)
-    // measure 每次渲染都是新的函数，只在多选或缩放变化时重新开始
-    // oxlint-disable-next-line react-hooks/exhaustive-deps
-  }, [extra.join('|'), scale])
-
   // 拖图片时能放的控件：能放图（Image、Border、Button、Picture、Frame…）且大小合适；按住 Alt 不看大小
   const [slots, setSlots] = useState<(Rect & { id: string; name: string; fits: boolean })[]>([])
   const [hot, setHot] = useState('')

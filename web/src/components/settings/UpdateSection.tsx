@@ -20,7 +20,7 @@ import {
   rollbackRelease,
   useAppUpdate,
 } from '@/lib/app-update'
-import { renderDoc } from '@/lib/workflow-doc'
+import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
@@ -77,7 +77,17 @@ function ReleaseRow({
   onInstall: (r: AppRelease) => void
 }) {
   const [open, setOpen] = useState(false)
-  const html = useMemo(() => (open ? renderDoc(r.notes || t('没有更新说明。'), new Set()) : ''), [open, r.notes])
+  // 高亮库按需加载，加载完重渲染一次才有高亮
+  const [hlReady, setHlReady] = useState(() => hljsReady())
+  useEffect(() => {
+    if (!open || hlReady) return
+    void ensureHljs().then(() => setHlReady(true))
+  }, [open, hlReady])
+  const html = useMemo(() => {
+    // 高亮库加载完（hlReady 变了）要重算一次，代码块才有高亮
+    void hlReady
+    return open ? renderDoc(r.notes || t('没有更新说明。'), new Set()) : ''
+  }, [open, r.notes, hlReady])
   const isCur = r.version === current
   const newer = compareVersions(r.version, current) > 0
   return (

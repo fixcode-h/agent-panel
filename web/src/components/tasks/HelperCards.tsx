@@ -12,12 +12,20 @@ import { StepIcon } from './TaskStatusIcon'
 import { Msgs } from './Messages'
 import { t } from '@shared/i18n'
 
+const helperSig = (task: Task, ids: string[]) =>
+  ids
+    .map((id) => {
+      const s = task.steps.find((x) => x.id === id)
+      return s ? `${s.id}:${s.status}:${s.endedAt}:${s.title}:${s.agentId}` : id
+    })
+    .join('|')
+
 /**
  * 对话里派出的子任务：在派出的位置一行一个，和工具调用一样排在 AI 的回复里；
  * 转圈是执行中，绿勾是完成，红叉是失败。点开是一个只读的子任务窗口：看它的实时对话流，没有输入框，
  * 做完 CLI 就退出了，再打开也只是查看，不会重新启动
  */
-export function HelperCards({ task, ids, teamNames }: { task: Task; ids: string[]; teamNames: Set<string> }) {
+function HelperCardsBase({ task, ids, teamNames }: { task: Task; ids: string[]; teamNames: Set<string> }) {
   const running = ids.some((id) => task.steps.find((s) => s.id === id)?.status === 'running')
   const now = useNow(running)
   return (
@@ -28,6 +36,16 @@ export function HelperCards({ task, ids, teamNames }: { task: Task; ids: string[
     </div>
   )
 }
+
+// 任务对象每个流式增量都会换：子任务的状态和标题没变时不用重画
+export const HelperCards = memo(
+  HelperCardsBase,
+  (a, b) =>
+    a.teamNames === b.teamNames &&
+    a.ids.length === b.ids.length &&
+    a.ids.every((id, i) => id === b.ids[i]) &&
+    helperSig(a.task, a.ids) === helperSig(b.task, b.ids),
+)
 
 const HelperRow = memo(function HelperRow({
   task,

@@ -1,8 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AtSign, Eye, FileText, PencilLine } from 'lucide-react'
 import type { Agent } from '@shared/schema'
 import { t } from '@shared/i18n'
-import { renderDoc } from '@/lib/workflow-doc'
+import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { fieldClass } from '@/components/ui/input'
@@ -36,6 +36,12 @@ export function DocEditor({
   minHeight?: number
 }) {
   const [mode, setMode] = useState<'edit' | 'preview'>('edit')
+  // 高亮库按需加载：加载完重渲染一次，预览里的代码块就有颜色了
+  const [hlReady, setHlReady] = useState(() => hljsReady())
+  useEffect(() => {
+    if (hlReady) return
+    void ensureHljs().then(() => setHlReady(true))
+  }, [hlReady])
   const ref = useRef<HTMLTextAreaElement>(null)
 
   const insert = (text: string) => {

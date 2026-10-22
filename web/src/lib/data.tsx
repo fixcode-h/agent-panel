@@ -71,6 +71,39 @@ interface Data {
 
 const Ctx = createContext<Data | null>(null)
 
+/**
+ * 任务摘要里列表和侧栏会用到的字段：流式推送每个增量都会重发整个摘要，
+ * 这些没变时沿用原来的对象和数组，所有 useData() 的消费者就不用跟着重渲染。
+ */
+function sameTask(a: Task, b: Task) {
+  return (
+    a.title === b.title &&
+    a.status === b.status &&
+    a.updatedAt === b.updatedAt &&
+    a.turnDoneAt === b.turnDoneAt &&
+    a.turnSeenAt === b.turnSeenAt &&
+    a.working === b.working &&
+    a.childrenWorking === b.childrenWorking &&
+    a.archived === b.archived &&
+    a.projectId === b.projectId &&
+    a.parentTaskId === b.parentTaskId &&
+    a.askedAt === b.askedAt &&
+    (a.requests?.length ?? 0) === (b.requests?.length ?? 0) &&
+    a.worktree?.state === b.worktree?.state
+  )
+}
+
+/** 定时全量刷新：只把真正变了的任务换掉；整份列表没变时连数组都不换 */
+function mergeTasks(cur: Task[], next: Task[]) {
+  const sameOrder = cur.length === next.length && cur.every((x, i) => x.id === next[i].id && sameTask(x, next[i]))
+  if (sameOrder) return cur
+  const before = new Map(cur.map((x) => [x.id, x]))
+  return next.map((x) => {
+    const old = before.get(x.id)
+    return old && sameTask(old, x) ? old : x
+  })
+}
+
 /** 全局数据：页面之间共享 Agent、分类、工作流和 CLI 检测结果 */
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
@@ -123,13 +156,20 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         void api
           .designs()
           .then((ds) =>
-            // 只更新状态，名字等以页面上的为准（正在改名时不被盖掉）
-            setDesigns((cur) =>
-              cur.map((x) => {
+            // 只更新状态，名字等以页面上的为准（正在改名时不被盖掉）。
+            // 转圈状态没变时不换数组，侧栏不用每 2.5 秒重渲染一次
+            setDesigns((cur) => {
+              let changed = false
+              const next = cur.map((x) => {
                 const d = ds.find((d) => d.id === x.id)
-                return { ...x, running: !!d?.running, asking: !!d?.asking }
-              }),
-            ),
+                const running = !!d?.running
+                const asking = !!d?.asking
+                if (x.running === running && x.asking === asking) return x
+                changed = true
+                return { ...x, running, asking }
+              })
+              return changed ? next : cur
+            }),
           )
           .catch(() => {}),
       2500,
@@ -139,7 +179,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   const reloadTasks = useCallback(async () => {
     try {
-      setTasks(await api.allTasks())
+      const next = await api.allTasks()
+      setTasks((cur) => mergeTasks(cur, next))
     } catch {
       // 后端暂时连不上时保留现有列表，下次刷新再试
     } finally {
@@ -162,7 +203,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [anyRunning])
   const upsertTask = useCallback(
     (t: Task) =>
-      setTasks((ts) => (ts.some((x) => x.id === t.id) ? ts.map((x) => (x.id === t.id ? t : x)) : [...ts, t])),
+      setTasks((ts) => {
+        const i = ts.findIndex((x) => x.id === t.id)
+        if (i < 0) return [...ts, t]
+        // 摘要没变时沿用原数组：流式输出期间每 200ms 来一次，不能每次都让侧栏重算
+        if (sameTask(ts[i], t)) return ts
+        const next = ts.slice()
+        next[i] = t
+        return next
+      }),
     [],
   )
   const removeTask = useCallback((id: string) => setTasks((ts) => ts.filter((t) => t.id !== id)), [])
@@ -204,41 +253,60 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setClis(await api.clis(force))
   }, [])
 
-  return (
-    <Ctx.Provider
-      value={{
-        loading,
-        agents,
-        categories,
-        tags,
-        workflows,
-        clis,
-        projects,
-        projectCategories,
-        settings,
-        tasks,
-        tasksLoaded,
-        designs,
-        setDesigns,
-        designProjects,
-        setDesignProjects,
-        reloadDesigns,
-        upsertTask,
-        removeTask,
-        reloadTasks,
-        setSettings,
-        setAgents,
-        setCategories,
-        setTags,
-        setWorkflows,
-        setProjects,
-        setProjectCategories,
-        refreshClis,
-      }}
-    >
-      {children}
-    </Ctx.Provider>
+  // 每次渲染都换新对象会让所有 useData() 的消费者一起重渲染：上面的数据都没变时沿用同一个值
+  const value = useMemo(
+    () => ({
+      loading,
+      agents,
+      categories,
+      tags,
+      workflows,
+      clis,
+      projects,
+      projectCategories,
+      settings,
+      tasks,
+      tasksLoaded,
+      designs,
+      setDesigns,
+      designProjects,
+      setDesignProjects,
+      reloadDesigns,
+      upsertTask,
+      removeTask,
+      reloadTasks,
+      setSettings,
+      setAgents,
+      setCategories,
+      setTags,
+      setWorkflows,
+      setProjects,
+      setProjectCategories,
+      refreshClis,
+    }),
+    [
+      loading,
+      agents,
+      categories,
+      tags,
+      workflows,
+      clis,
+      projects,
+      projectCategories,
+      settings,
+      tasks,
+      tasksLoaded,
+      designs,
+      designProjects,
+      reloadDesigns,
+      upsertTask,
+      removeTask,
+      reloadTasks,
+      refreshClis,
+    ],
   )
+
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
 /** 导入的任务里用到了本机没有的 Agent：任务页里换成带上它们的列表，名字、图标照常显示 */
