@@ -19,6 +19,7 @@ import {
   defaultAgent,
 } from '../shared/schema.ts'
 import { readGlobalLessons, type LessonDraft } from './lessons.ts'
+import { currentShell } from './shells.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -589,6 +590,15 @@ export function tasksApi(deps: {
   })
 
   /**
+   * 结束对话的后台命令，连同它名下子对话的：对话停止、归档、删除时调用。
+   * CLI 因为页面切走被回收、换 CLI 重启时不调用，那时对话还在，结果推回会接着开一轮
+   */
+  async function endBackground(id: string) {
+    const kids = (await store.list()).filter((x) => x.parentTaskId === id)
+    await Promise.all([background.stop(id), ...kids.map((k) => endBackground(k.id))])
+  }
+
+  /**
    * 子对话提交编译：把它独立分支上的改动试合回开分支的那个目录，跑「合并时编译」的步骤，
    * 通过才提交，失败就撤回合并、原目录保持原样。排队执行，结果推回给子对话，也告诉父对话。
    * 马上返回排队情况，子对话不用干等编译
@@ -649,7 +659,7 @@ export function tasksApi(deps: {
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原目录已经是最新的' }
     const { run: steps, skipped } = mergeStepsFor(project.testSteps, small)
     const built = steps.length
-      ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro })
+      ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro, shell: await currentShell() })
       : { ok: true, runs: [] }
     if (!built.ok) {
       await abortMerge(target)
@@ -1404,8 +1414,10 @@ export function tasksApi(deps: {
   routes.post('/:id/children/stop', async (c) => {
     const parent = await current(c.req.param('id'))
     if (!parent) return bad(c, t('任务不存在'), 404)
-    const before = (await store.list()).filter((x) => x.parentTaskId === parent.id && live.has(x.id)).length
+    const kids = (await store.list()).filter((x) => x.parentTaskId === parent.id)
+    const before = kids.filter((x) => live.has(x.id)).length
     await closeChildren(parent.id)
+    await Promise.all(kids.map((k) => endBackground(k.id)))
     return c.json({ stopped: before })
   })
 
@@ -1929,6 +1941,8 @@ export function tasksApi(deps: {
       if (!cancelWait(id)) stopTask(id)
       await entry.done?.catch(() => {})
     }
+    // 后台命令跑在这个目录里：先停掉并等进程退出，目录删掉后它的结果也没意义了
+    await background.stop(id)
     try {
       await removeWorktree(project.path, wt, true)
     } catch (e) {
@@ -2097,6 +2111,8 @@ export function tasksApi(deps: {
       if (!cancelWait(id)) stopTask(id)
       else void closeChildren(id)
     }
+    // 归档的对话不再接收结果：后台命令（连同名下子对话的）一起停掉
+    if (p.data.archived === true) await endBackground(id)
     const beforeAgentId = cur.agentId
     const agentChanged = p.data.agentId !== undefined && p.data.agentId !== beforeAgentId
     const touchesRun =
@@ -2335,12 +2351,13 @@ export function tasksApi(deps: {
   routes.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
     stopTask(id)
+    // 停止就是这个对话先别干了：它和名下子对话的后台命令一起停掉，不然跑完的结果推回来又会开新的一轮
+    void endBackground(id)
     // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
-    // 进程不该再留着时（卡住、换机器前的清理）用这个，后台命令也一并停掉
+    // 进程不该再留着时（卡住、换机器前的清理）用这个
     if (c.req.query('force')) {
       cancelWait(id)
       forgetNotes(id)
-      background.stop(id)
     }
     return c.json(await current(id))
   })
@@ -2351,15 +2368,17 @@ export function tasksApi(deps: {
     const kids = (await store.list()).filter((x) => x.parentTaskId === id)
     stopTask(id)
     forgetNotes(id)
-    background.stop(id)
+    // 等后台命令的进程真正退出再删目录：Windows 上进程占着目录删不掉
+    await endBackground(id)
     const task = await store.get(id)
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
     forgetPresence(id)
+    background.forget(id)
     const dropped = [task]
     for (const k of kids) {
       stopTask(k.id)
       forgetNotes(k.id)
-      background.stop(k.id)
+      background.forget(k.id)
       await store.remove(k.id)
       forgetPresence(k.id)
       dropped.push(k)
@@ -2412,6 +2431,8 @@ export function tasksApi(deps: {
       const removed = (await store.list()).filter((t) => t.projectId === projectId)
       for (const t of removed) {
         stopTask(t.id)
+        await background.stop(t.id)
+        background.forget(t.id)
         await store.remove(t.id)
         forgetPresence(t.id)
         await dropWorktree(t, repo)

@@ -218,6 +218,7 @@
       "protocols": ["openai-chat", "openai-responses"],
       "context": 1000000,
       "maxOutput": 128000,
+      "images": true,
       "tier": "high",
       "efforts": ["low", "medium", "high"],
       "defaultEffort": "high"
@@ -231,6 +232,7 @@
       "protocols": ["openai-chat", "openai-responses"],
       "context": 1000000,
       "maxOutput": 128000,
+      "images": true,
       "tier": "low",
       "efforts": ["low", "high", "max"],
       "defaultEffort": "high"
@@ -244,6 +246,7 @@
       "protocols": ["openai-chat", "openai-responses"],
       "context": 128000,
       "maxOutput": 64000,
+      "images": true,
       "tier": "high",
       "efforts": ["low", "medium", "high"],
       "defaultEffort": "high"

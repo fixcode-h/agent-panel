@@ -56,6 +56,11 @@ export interface RpcAdapter {
   exit?: (ctx: RpcContext) => void
   /** 执行中插话；返回是否交给了 CLI */
   steer: (ctx: RpcContext, text: string) => Promise<boolean>
+  /**
+   * 插话还排着、命令跑太久时让 CLI 马上处理：停下正在执行的命令，把排着的插话作为新的一句交给它（前面加上 note）。
+   * 返回是否这样做了；插话已经被取走、或 CLI 没有这种办法时返回 false
+   */
+  redirect?: (ctx: RpcContext, note: string) => Promise<boolean>
   /** 中断这一轮；返回是否发出去了 */
   interrupt: (ctx: RpcContext) => boolean
   /** 进程结束前的清理 */

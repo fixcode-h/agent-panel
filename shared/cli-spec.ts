@@ -189,6 +189,20 @@ export const RpcSpec = z.object({
   turnLimit: z.object({ when: z.record(z.string(), z.unknown()) }).optional(),
   /** 插话要等 CLI 的下一个模型请求才取走，页面上先显示成「待取走」 */
   deferSteer: z.boolean().default(false),
+  /**
+   * 插话要等正在执行的命令跑完才会被取走（Pi 的 steer）：命令跑太久时面板用这一套让它马上处理。
+   * 先按 take 收回还排着的插话（texts 是回复里插话原文列表的路径），收回的是空的说明已经被取走了，什么都不做；
+   * 否则按 stop 停下这一轮（会中断正在执行的命令），停下时的结束记录不算这一轮结束，
+   * 再按 then 把收回的插话作为新的一句交给它（{text}）
+   */
+  redirect: z
+    .object({
+      take: RpcAction,
+      texts: z.string(),
+      stop: RpcAction,
+      then: z.array(RpcAction).default([]),
+    })
+    .optional(),
   /** 协议自己处理提问和审批，不用面板的 MCP 工具 */
   nativeAsk: z.boolean().default(false),
   /** 能主动查账号额度、列 Skill */

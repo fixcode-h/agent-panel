@@ -1,5 +1,5 @@
 import { readFileSync, realpathSync } from 'node:fs'
-import { readFile } from 'node:fs/promises'
+import { readdir, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { Hono } from 'hono'
@@ -21,6 +21,7 @@ import { rpcQuery } from './exec/rpc/query.ts'
 import { getSettings } from './settings.ts'
 import { resolveCommand } from './cli-source.ts'
 import { detectClis } from './detect.ts'
+import { expandHome } from './cli-extras.ts'
 import { t } from '../shared/i18n.ts'
 
 /**
@@ -209,7 +210,11 @@ async function commandCodeModels(command: string, env: NodeJS.ProcessEnv): Promi
  * Pi：`pi --list-models` 列出配好了凭据的提供方的模型（环境变量、auth.json、models.json 里自己接的都算），
  * 一行一个：provider、model、context、max-out、thinking、images。模型写成 provider/model，Pi 的 --model 认这种写法
  */
-export function parsePiModels(out: string, efforts: string[]): CliModel[] {
+export function parsePiModels(
+  out: string,
+  efforts: string[],
+  levels?: (id: string) => string[] | undefined,
+): CliModel[] {
   const models: CliModel[] = []
   for (const raw of out.split('\n')) {
     const cells = raw
@@ -222,14 +227,17 @@ export function parsePiModels(out: string, efforts: string[]): CliModel[] {
     const out = parseContextSize(maxOut)
     // 只认表格里的行：上下文是「200K」这样的大小，thinking 列是 yes / no（提示文字不是模型）
     if (!w || !/^(yes|no)$/.test(thinking)) continue
+    const id = `${provider}/${model}`
+    // 能思考的模型按 Pi 自己的规则算档位（thinkingLevelMap）；不知道映射时也按 Pi 的默认：xhigh、max 不支持
+    const own = levels?.(id) ?? piLevels({ reasoning: true })
     models.push({
-      id: `${provider}/${model}`,
+      id,
       label: model,
       group: provider,
       contextWindow: w,
       ...(out ? { maxOutput: out } : {}),
       // 不支持思考的模型不给思考强度，选了 Pi 也会忽略
-      efforts: thinking === 'yes' ? efforts : [],
+      efforts: thinking === 'yes' ? own.filter((e) => efforts.includes(e)) : [],
       // images 列：纯文本模型看不到附上的图片，选模型时要说明
       ...(/^(yes|no)$/.test(images ?? '') ? { images: images === 'yes' } : {}),
     })
@@ -237,14 +245,88 @@ export function parsePiModels(out: string, efforts: string[]): CliModel[] {
   return models
 }
 
+const PI_LEVELS = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * Pi 判断一个模型支持哪些思考强度的规则（pi-ai 的 getSupportedThinkingLevels）：不能思考的只有 off；
+ * thinkingLevelMap 里写成 null 的不支持；xhigh、max 要在映射里明确写出来才支持，其余没写的都支持
+ */
+export function piLevels(m: { reasoning?: boolean; thinkingLevelMap?: Record<string, unknown> }) {
+  if (!m.reasoning) return ['off']
+  return PI_LEVELS.filter((l) => {
+    const v = m.thinkingLevelMap?.[l]
+    return v !== null && (l === 'xhigh' || l === 'max' ? v !== undefined : true)
+  })
+}
+
+/**
+ * Pi 每个模型的思考强度：内置的模型从安装包里 pi-ai 的模型目录读（providers/data/*.json），
+ * 自己接的模型和 modelOverrides 从 models.json 读（面板写 API 配置时也写在这里）。读不到的不放，按 Pi 的默认算
+ */
+async function piThinkingLevels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv) {
+  const known = new Map<string, { reasoning?: boolean; thinkingLevelMap?: Record<string, unknown> }>()
+  const pkg = [def.npmPackage, ...(def.npmRenameFrom ?? [])].map((name) => packageDir(command, env, name)).find(Boolean)
+  if (pkg) {
+    // pi-ai 是 Pi 的依赖：装在它自己的 node_modules 里，或者和它并列（同一个 scope 下）
+    const scope = path.basename(path.dirname(pkg))
+    const dirs = [path.join(pkg, 'node_modules', scope, 'pi-ai'), path.join(path.dirname(pkg), 'pi-ai')]
+    for (const d of dirs) {
+      const data = path.join(d, 'dist', 'providers', 'data')
+      const files = await readdir(data).catch(() => [] as string[])
+      for (const f of files.filter((x) => x.endsWith('.json'))) {
+        try {
+          const j = JSON.parse(await readFile(path.join(data, f), 'utf8'))
+          // 按接口分组：{ "openai-completions": { "chat:deepseek-flash": { provider, id, reasoning, thinkingLevelMap } } }
+          for (const group of Object.values(j ?? {}))
+            for (const m of Object.values((group ?? {}) as Record<string, any>))
+              if (m?.provider && m?.id && m.type !== 'image' && m.type !== 'classifier')
+                known.set(`${m.provider}/${m.id}`, { reasoning: !!m.reasoning, thinkingLevelMap: m.thinkingLevelMap })
+        } catch {}
+      }
+      if (files.length) break
+    }
+  }
+  const file = def.auth?.api?.modelReasoning?.file
+  if (file) {
+    try {
+      const j = JSON.parse(await readFile(expandHome(file), 'utf8'))
+      for (const [provider, p] of Object.entries<any>(j?.providers ?? {})) {
+        for (const m of Array.isArray(p?.models) ? p.models : [])
+          if (m?.id)
+            known.set(`${provider}/${m.id}`, { reasoning: !!m.reasoning, thinkingLevelMap: m.thinkingLevelMap })
+        // modelOverrides 只改内置模型的部分字段
+        for (const [id, o] of Object.entries<any>(p?.modelOverrides ?? {})) {
+          const base = known.get(`${provider}/${id}`)
+          if (!base || !o || typeof o !== 'object') continue
+          known.set(`${provider}/${id}`, {
+            reasoning: o.reasoning ?? base.reasoning,
+            thinkingLevelMap: o.thinkingLevelMap
+              ? { ...base.thinkingLevelMap, ...o.thinkingLevelMap }
+              : base.thinkingLevelMap,
+          })
+        }
+      }
+    } catch {}
+  }
+  return (id: string) => {
+    const m = known.get(id)
+    // 表格说能思考、目录里却写着不能：以表格为准，按默认档位算
+    return m && piLevels({ ...m, reasoning: true })
+  }
+}
+
 async function piModels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv): Promise<Picked> {
   // --offline：只读本机的模型表，不去联网检查更新
-  const r = await capture(command, ['--list-models', '--offline'], homedir(), env, 30_000)
+  const [r, levels] = await Promise.all([
+    capture(command, ['--list-models', '--offline'], homedir(), env, 30_000),
+    piThinkingLevels(def, command, env),
+  ])
   // Pi 的模型表写在 stderr（stdout 是空的），错误信息和提示也在 stderr，合起来解析
   const text = [r.stdout, r.stderr].filter((s) => s.trim()).join('\n')
   const models = parsePiModels(
     text,
     def.efforts.map((e) => e.id),
+    levels,
   )
   if (!models.length) {
     if (r.spawnError) throw new Error(r.spawnError)
@@ -465,10 +547,42 @@ async function modelsFromCli(
   return undefined
 }
 
-export async function cliModels(id: string, refresh = false): Promise<CliModels> {
+/** 按登录方式查模型时指定的方式：设置页切换后还没保存时也能先读到对应的列表 */
+export type ModelsMode = { authMode: 'account' | 'api'; apiId?: string }
+
+/** 缓存按「CLI + 登录方式 + 选的 API」分开存：账号和 API 来回切换时直接用已经读过的，不用每次都重跑 CLI */
+function cacheKey(id: string, api: ApiConfig | undefined) {
+  if (!api) return `${id}|account`
+  return `${id}|api|${JSON.stringify([api.id, api.name, api.provider, api.protocol, api.baseUrl, api.models])}`
+}
+
+/** 用已保存的设置算出来的缓存项：执行任务时查上下文窗口用 */
+const live = new Map<string, string>()
+
+export async function cliModels(id: string, refresh = false, mode?: ModelsMode): Promise<CliModels> {
   const def = CLIS.find((c) => c.id === id)
   if (!def) throw new Error(t('未知的 Agent：{cli}', { cli: id }))
-  const cs = cliSettings(await getSettings(), id)
+  const settings = await getSettings()
+  const effective = mode
+    ? {
+        ...settings,
+        clis: {
+          ...settings.clis,
+          [id]: { ...(settings.clis[id] ?? {}), authMode: mode.authMode, apiId: mode.apiId ?? '' },
+        } as typeof settings.clis,
+      }
+    : settings
+  const cs = cliSettings(effective, id)
+  const saved = cliSettings(settings, id)
+  // 不缓存的两种情况：要的是 API 方式但这个 API 还没保存（或协议对不上），读出来的其实是账号的列表；
+  // 列表要看 CLI 配置文件的（Claude Code、Codex），还没保存切换时配置文件还是另一种方式的样子
+  const unresolved =
+    (mode?.authMode === 'api' && !cs.api) ||
+    (!!mode && saved.api?.id !== cs.api?.id && def.auth?.api?.modelSource !== 'cli')
+  const key = cacheKey(id, cs.api)
+  if (!mode) live.set(id, key)
+  const hit = cache.get(key)
+  if (!refresh && !unresolved && hit && Date.now() - hit.at < TTL) return hit.data
   const entries = await mergedModelCatalog().catch(() => [])
   const protocol = cs.api?.protocol
   const applyCatalog = (data: CliModels) => {
@@ -481,31 +595,34 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
     data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
     return data
   }
+  const remember = (data: CliModels) => {
+    if (!unresolved) cache.set(key, { at: Date.now(), data })
+    return data
+  }
 
   if (cs.api) {
     const fallback = apiModelsFor(def, cs.api)
     const spec = def.auth?.api
     // 能写进 CLI 配置、CLI 也能列模型的（Command Code、Pi），只取 API 里配的那几个模型；
     // 配置文件里以前留下的其他模型不再显示。
-    if (spec?.modelSource !== 'cli' || !def.modelsFrom) return applyCatalog(fallback)
+    if (spec?.modelSource !== 'cli' || !def.modelsFrom) return remember(applyCatalog(fallback))
     const st = (await detectClis()).find((c) => c.id === id)
-    if (!st?.installed || !cs.enabled) return applyCatalog(fallback)
+    if (!st?.installed || !cs.enabled) return remember(applyCatalog(fallback))
     try {
       const listed = await modelsFromCli(def, cs.command, childEnv(cs.env))
-      if (!listed) return applyCatalog(fallback)
+      if (!listed) return remember(applyCatalog(fallback))
       const byId = new Map(listed.models.map((m) => [m.id, m]))
       const models = fallback.models.map((m) => {
         const hit = byId.get(m.id)
         return hit ? { ...hit, id: m.id, isDefault: m.isDefault } : m
       })
-      return applyCatalog({ ...fallback, source: listed.source, models, from: cs.api.name })
+      return remember(applyCatalog({ ...fallback, source: listed.source, models, from: cs.api.name }))
     } catch {
+      // 读失败不缓存：下次再试
       return applyCatalog(fallback)
     }
   }
 
-  const hit = cache.get(id)
-  if (!refresh && hit && Date.now() - hit.at < TTL) return hit.data
   const env = childEnv(cs.env)
   // 没安装或停用的 CLI 不去启动它读模型，用内置列表
   const st = (await detectClis()).find((c) => c.id === id)
@@ -517,9 +634,15 @@ export async function cliModels(id: string, refresh = false): Promise<CliModels>
     data = { source: 'builtin', models: builtin(def), efforts: [], error: (e as Error).message }
   }
   if (data.source === 'cli' && !data.models.length) data = { source: 'builtin', models: builtin(def), efforts: [] }
-  data = applyCatalog(data)
-  cache.set(id, { at: Date.now(), data })
-  return data
+  // 账号方式只列账号能用的模型：CLI 配置里自己接的接口（以前 API 方式写进去的、或用户自己接的）
+  // 也会出现在 CLI 的列表里，这些不是账号的模型。只有这些可用时（没登录）才照旧列出来
+  if (data.source === 'cli' && def.auth?.api?.modelSource === 'cli') {
+    const selected = settings.apis.find((a) => a.id === cs.apiId)
+    const prefix = selected ? apiModelPrefix(def.auth, selected) : ''
+    const own = data.models.filter((m) => m.origin !== 'config' && !(prefix && m.id.startsWith(prefix)))
+    if (own.length && own.length < data.models.length) data = { ...data, models: own }
+  }
+  return remember(applyCatalog(data))
 }
 
 /** Command Code 的上下文窗口只要读文件，不用跑 CLI，执行任务时模型列表还没读过也能查到 */
@@ -570,14 +693,27 @@ export async function supportedEffort(id: string, model: string, effort?: string
 }
 
 /** 已经读过的模型列表（不触发读取）：执行任务时查上下文窗口用，不能为此再去跑一次 CLI */
-export const cachedModels = (id: string) => cache.get(id)?.data
+export const cachedModels = (id: string) => cache.get(live.get(id) ?? `${id}|account`)?.data
 
-export const invalidateModels = (id?: string) => (id ? cache.delete(id) : cache.clear())
+/**
+ * 清掉模型缓存。only 给出时只清这种登录方式的：切换登录方式只改 API 那边写进 CLI 配置的内容，
+ * 账号的列表还能用，切回来时不用再等 CLI
+ */
+export function invalidateModels(id?: string, only?: 'account' | 'api') {
+  if (!id) return cache.clear()
+  const prefix = only ? `${id}|${only}` : `${id}|`
+  for (const k of [...cache.keys()]) if (k.startsWith(prefix)) cache.delete(k)
+}
 
 export function modelsApi() {
   return new Hono().get('/:id/models', async (c) => {
     const id = c.req.param('id')
     if (!CLIS.some((x) => x.id === id)) return c.json({ error: t('未知的 Agent：{cli}', { cli: id }) }, 404)
-    return c.json(await cliModels(id, c.req.query('refresh') === '1'))
+    const auth = c.req.query('auth')
+    const mode =
+      auth === 'account' || auth === 'api'
+        ? { authMode: auth as ModelsMode['authMode'], apiId: c.req.query('api') ?? '' }
+        : undefined
+    return c.json(await cliModels(id, c.req.query('refresh') === '1', mode))
   })
 }

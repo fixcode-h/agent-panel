@@ -177,6 +177,9 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
   // 面板自己数的回合（见 turnLimit），每轮重新数
   let turns = 0
   let limited = false
+  /** 正在为插话停下这一轮（见 redirect）：这时收到的结束记录不算这一轮结束，留着以防没停成 */
+  let redirecting = false
+  let swallowed = false
   // 会话、轮次 id 一拿到就发，后面的输出不用等所有启动步骤走完
   function emitIds(ctx: RpcContext) {
     const session = idOf(spec.sessionId) ?? getPath(last, spec.sessionId)
@@ -189,6 +192,15 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       turnSent = String(turn)
       ctx.emit({ type: 'turn', id: turnSent })
     }
+  }
+
+  /** 这一轮结束：交结果 */
+  function settle(ctx: RpcContext, ok: boolean, error: string) {
+    // 退出消息等确认真的不用这个进程了再发（见 exit）；保活时进程要留着开下一轮
+    const end = () => void ctx.finish(ok, ok ? undefined : error || t('执行失败'), spec.closeDelayMs)
+    // 交结果前再问一次（例如准确的上下文占用）；这些请求都是可选的，失败了照常结束
+    if (spec.after.length) void run(ctx, spec.after).then(end, end)
+    else end()
   }
 
   const adapter: RpcAdapter = {
@@ -223,11 +235,11 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       const event = spec.unwrap ? (getPath(msg, spec.unwrap) ?? msg) : msg
       for (const ev of o.parser(event)) ctx.emit(ev)
       if (!done) return
-      // 退出消息等确认真的不用这个进程了再发（见 exit）；保活时进程要留着开下一轮
-      const end = () => void ctx.finish(ok, ok ? undefined : error || t('执行失败'), spec.closeDelayMs)
-      // 交结果前再问一次（例如准确的上下文占用）；这些请求都是可选的，失败了照常结束
-      if (spec.after.length) void run(ctx, spec.after).then(end, end)
-      else end()
+      if (redirecting) {
+        swallowed = true
+        return
+      }
+      settle(ctx, ok, error)
     },
     request(ctx, msg) {
       const ask = spec.asks.find((a) => matches(a.when, msg))
@@ -271,6 +283,35 @@ export function createSpecAdapter(spec: RpcSpec, o: SpecAdapterOptions): RpcAdap
       }
       const reply = await ctx.request(msg, { timeoutMs: spec.steer.timeoutMs })
       return !reply?.error
+    },
+    async redirect(ctx, note) {
+      const r = spec.redirect
+      if (!r || ctx.finished || redirecting) return false
+      // 先收回还排着的插话：已经被取走了（命令刚好跑完）就不用打断
+      const queued = await ctx.request(record(r.take, {}), { timeoutMs: r.take.timeoutMs }).catch(() => undefined)
+      if (!queued || replyError(queued) || ctx.finished) return false
+      const got = getPath(queued, r.texts)
+      const texts = Array.isArray(got) ? got.map(String).filter((x) => x.trim()) : []
+      if (!texts.length) return false
+      redirecting = true
+      swallowed = false
+      await ctx.request(record(r.stop, {}), { timeoutMs: r.stop.timeoutMs })
+      redirecting = false
+      if (!swallowed) {
+        // 没停下来（没等到这一轮的结束记录）：插话还回去照旧排着，等它自己取
+        for (const x of texts) await adapter.steer(ctx, x)
+        return false
+      }
+      // 停下来了：收回的插话作为新的一句交给它，同一轮接着输出，面板不把这次停下当成结束。
+      // 被停下的命令后面标一行，用户知道它为什么没跑完
+      ctx.emit({ type: 'notice', text: t('为了马上处理新消息，停下了正在执行的命令') })
+      limited = false
+      turns = 0
+      const ok = await run(ctx, r.then, { text: [note, ...texts].filter(Boolean).join('\n\n') }).catch((e: Error) => {
+        void ctx.finish(false, e.message)
+        return false
+      })
+      return ok
     },
     interrupt(ctx) {
       if (!spec.interrupt) return false

@@ -146,7 +146,7 @@ interface Waiter {
 const waiters = new Map<string, Set<Waiter>>()
 
 /** 预热时不记进对话的事件：正文、思考、工具和待办 */
-const PREWARM_QUIET = new Set(['thinking', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
+const PREWARM_QUIET = new Set(['thinking', 'gen', 'text_delta', 'text', 'tool', 'tool_result', 'tool_delta', 'todos'])
 
 /**
  * 把用户消息交给正在等下一句的 CLI。
@@ -271,6 +271,15 @@ export async function steerTask(
 }
 
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
+/**
+ * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
+ * 读文件、改文件和多数检查几秒就完，留一点余量，免得用户一发消息就把快跑完的命令打断
+ */
+// 测试用环境变量缩短，免得端到端测试真的等
+const REDIRECT_AFTER_MS = Number(process.env.AGENT_PANEL_REDIRECT_MS) || 8000
+/** 停下命令后跟补充一起交给模型的说明 */
+const REDIRECT_NOTE =
+  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
 
@@ -479,6 +488,12 @@ export interface NetNote {
   n: number
 }
 
+/** 空回合续一轮前写进对话的提示：续上了也要收回成普通说明 */
+export interface EmptyNote {
+  msg: TaskMessage
+  base: string
+}
+
 /**
  * 续接成功了：之前那次断开的报错已经不成立，收成普通说明。
  * 不收的话对话里会一直挂着一张红色的「执行失败」卡片，用户以为这一轮失败了。
@@ -488,6 +503,18 @@ export function settleNetNotes(notes: NetNote[]) {
     msg.error = undefined
     msg.transient = true
     msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
+  }
+}
+
+/**
+ * 空回合续上的报错卡也一样的道理：续上了就说明这一轮其实做成了，
+ * 不能把「只回了一句话就结束了」一直留成红色失败卡片。
+ */
+export function settleEmptyNotes(notes: EmptyNote[]) {
+  for (const { msg, base } of notes) {
+    msg.error = undefined
+    msg.transient = true
+    msg.text = [base, '', t('已自动接一轮，这一轮继续做完了。')].join('\n')
   }
 }
 const NETWORK_ERROR =
@@ -566,6 +593,8 @@ async function runAgent(
   netNotes: NetNote[] = [],
   /** 这一轮「只说了要做」已经被自动续接几次：防止反复推同一个死循环 */
   emptyRetries = 0,
+  /** 空回合续一轮时写进对话的提示：续上了要收回成普通说明 */
+  emptyNotes: EmptyNote[] = [],
 ): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
@@ -825,6 +854,7 @@ async function runAgent(
     if (t0 === undefined) return
     toolStart.delete(x)
     x.ms = Date.now() - t0
+    delete x.startedAt
   }
   // 正在思考的那条消息和第一段思考到达的时刻：思考之后来了别的输出，思考就结束了
   let thinkingOf: { m: TaskMessage; at: number } | undefined
@@ -871,6 +901,8 @@ async function runAgent(
     // 消息本身在交出去时就已经记进对话，这里只断开输出
     if (steerPending && ev.type === 'request_start') {
       steerPending = false
+      clearTimeout(redirectTimer)
+      redirectTimer = undefined
       cur = undefined
       prewarmMode = false
       task.prewarming = false
@@ -900,6 +932,9 @@ async function runAgent(
         streamed(ev.text)
         break
       }
+      case 'gen':
+        streamed(ev.text)
+        break
       case 'text_delta': {
         if (!cur && !ev.text.trim()) break
         const m = cur ?? newMsg()
@@ -920,7 +955,12 @@ async function runAgent(
         m.tools.push(ev.tool)
         if (ev.id) toolsById.set(ev.id, ev.tool)
         // 调用时就带着耗时的（完成后才报的）直接用；要等结果的从现在开始计时
-        if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) toolStart.set(ev.tool, Date.now())
+        if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) {
+          ev.tool.startedAt = Date.now()
+          toolStart.set(ev.tool, ev.tool.startedAt)
+          // 补充还排着时又开始跑命令：同样要等它跑完才取，一起计时
+          if (steerPending && !redirectTimer) checkRedirect()
+        }
         if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file) refreshChanges()
         if (ev.file && !ctx.isGit) {
@@ -1064,7 +1104,32 @@ async function runAgent(
   let steerer: Steerer | undefined
   /** 延迟取走的补充：消息已经显示在对话里，CLI 开始下一次模型请求时再把后面的输出另起一条 */
   let steerPending = false
+  let control: CliControl | undefined
+  let redirectTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * 补充排在正在执行的命令后面（Pi 要等这一批工具跑完才取）：命令跑了一会儿还没完（例如 sleep 等 CI），
+   * 用户就一直等不到回应。超过 REDIRECT_AFTER_MS 就停下这条命令，让 CLI 马上处理补充
+   */
+  const checkRedirect = () => {
+    clearTimeout(redirectTimer)
+    redirectTimer = undefined
+    const c = control
+    if (!steerPending || finished || !c?.redirect) return
+    // 只等命令：读文件、改文件很快就完；面板自己的工具（等子任务这些）另有办法接用户的消息
+    const started = [...toolStart].filter(([x]) => x.kind === 'run').map(([, at]) => at)
+    if (!started.length) return
+    const wait = Math.min(...started) + REDIRECT_AFTER_MS - Date.now()
+    if (wait > 0) {
+      redirectTimer = setTimeout(checkRedirect, wait)
+      redirectTimer.unref?.()
+      return
+    }
+    void c
+      .redirect(REDIRECT_NOTE)
+      .catch((e: Error) => log.warn('task', '停下命令处理补充失败', { task: task.id, error: e.message }))
+  }
   const register = (c: CliControl) => {
+    control = c
     steerer = {
       step,
       agentId,
@@ -1072,8 +1137,10 @@ async function runAgent(
       accepted: () => {
         // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
         task.working = true
-        if (c.deferSteer) steerPending = true
-        else cur = undefined
+        if (c.deferSteer) {
+          steerPending = true
+          checkRedirect()
+        } else cur = undefined
         ctx.changed(true)
       },
     }
@@ -1090,7 +1157,8 @@ async function runAgent(
   let taker: NoteTaker | undefined
   /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
   const pendingNotes = new Set<TaskMessage>()
-  if (canTake && !def.steer) {
+  // notes 与 steer 不互斥：steer 在 CLI 不在活跃轮次时返回 false，补充会丢；两个通道都开（同样见 invoke.ts）
+  if (canTake) {
     taker = {
       add: (msg) => pendingNotes.add(msg),
       read: () => {
@@ -1280,6 +1348,7 @@ async function runAgent(
     limits: manual,
   }).finally(() => {
     finished = true
+    clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
     if (steerPending) {
@@ -1463,9 +1532,9 @@ async function runAgent(
     }
   }
   // 这一轮模型只回了一句「我先…」就收尾了：没调工具、没改文件，等于什么都没做。
-  // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来
+  // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来。
+  // 不限定对话：子 Agent（工作流节点、并行子任务）同样会只报一句进度就结束，那一路没人催就只能干等。
   if (
-    chat &&
     !op &&
     !prewarm &&
     !ctx.signal.aborted &&
@@ -1486,6 +1555,7 @@ async function runAgent(
         error: true,
         at: new Date().toISOString(),
       })
+      const pushed = task.messages.at(-1)!
       log.warn('agent', `${def.name} 只回了一句就结束，自动接一轮`, { task: task.id, step, n: emptyRetries + 1 })
       ctx.changed(true)
       return runAgent(
@@ -1501,6 +1571,7 @@ async function runAgent(
         retryCarry,
         netNotes,
         emptyRetries + 1,
+        [...emptyNotes, { msg: pushed, base: note }],
       )
     }
     const note = t(
@@ -1523,7 +1594,9 @@ async function runAgent(
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
   // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）
   settleNetNotes(netNotes)
-  if (netNotes.length) ctx.changed(true)
+  // 空回合的提示同理：已经接一轮做完了，那张红卡不能挂着让人以为这一轮失败了
+  settleEmptyNotes(emptyNotes)
+  if (netNotes.length || emptyNotes.length) ctx.changed(true)
   const done: AgentResult = { ok: true, text: texts.join('\n\n') }
   // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
   if (rewind) task.rewind = undefined

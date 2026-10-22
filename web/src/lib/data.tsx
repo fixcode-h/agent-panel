@@ -15,6 +15,7 @@ import type { DesignMeta, DesignProject } from '@shared/design'
 import { api } from './api'
 import { rememberAskUserDefault } from './askUserDefault'
 import { applyAppearance } from './appearance'
+import { setCliModes } from './cli-models'
 import { registerCliSpecs } from '@shared/clis'
 import { t } from '@shared/i18n'
 
@@ -116,6 +117,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [projectCategories, setProjectCategories] = useState<ProjectCategory[]>([])
   const [settings, setSettings] = useState<Settings | null>(null)
   useEffect(() => applyContentWidth(settings?.contentWidth), [settings?.contentWidth])
+  // 模型下拉按每个 CLI 现在的登录方式取列表（账号和 API 各列各的）
+  useEffect(() => {
+    if (settings) setCliModes(settings)
+  }, [settings])
   const appearance = settings?.appearance
   useEffect(() => {
     if (appearance) applyAppearance(appearance)

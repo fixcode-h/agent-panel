@@ -895,6 +895,8 @@ export const ToolUse = z.object({
   running: z.boolean().optional(),
   /** 这次调用跑了多久（毫秒）：跑完才有 */
   ms: z.number().optional(),
+  /** 还在等结果的调用从什么时候开始（毫秒时间戳）：界面边跑边显示已经用了多久，跑完换成 ms */
+  startedAt: z.number().optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
@@ -1497,6 +1499,17 @@ export const Settings = z.object({
   fileFormat: FileFormat.prefault({}),
   /** 界面语言：auto 跟随浏览器 */
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
+  /**
+   * 命令行环境：面板替 Agent 跑整行命令（后台命令、合并时编译里「自动」环境的步骤）用哪个 shell。
+   * 只在 Windows 上有选择；kind 为空表示按本机检测的推荐（有 WSL 用 WSL，否则 Git Bash，再没有用 cmd）
+   */
+  shell: z
+    .object({
+      kind: z.enum(['', 'wsl', 'gitbash', 'powershell', 'cmd']).catch('').default(''),
+      /** WSL 的发行版；空时用 WSL 的默认发行版 */
+      wslDistro: z.string().trim().max(60).default(''),
+    })
+    .prefault({}),
   /** UI 设计里生成图片用的 CLI 和模型（目前只有 Codex 内置了生图工具）；模型为空用这个 CLI 的高档 */
   imageGen: z
     .object({

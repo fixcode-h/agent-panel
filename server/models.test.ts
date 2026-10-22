@@ -3,7 +3,7 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseCommandCodeCatalog, parsePiModels } from './models.ts'
+import { parseCommandCodeCatalog, parsePiModels, piLevels } from './models.ts'
 
 test('Command Code：安装包里的模型目录读出上下文窗口和每个模型支持的思考强度', () => {
   const md = [
@@ -64,4 +64,30 @@ test('Pi：pi --list-models 的表格换成 provider/model，带上下文窗口�
   ])
   // 一个提供方都没配时只有一句提示，没有模型
   assert.deepEqual(parsePiModels('No models available. Use /login to log into a provider', []), [])
+})
+
+test('Pi 的思考强度按模型自己的 thinkingLevelMap 算，不是 Pi 全部的档位', () => {
+  const all = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']
+  // deepseek-flash 在 Pi 的模型目录里：minimal、medium 写成 null，max 明确写出
+  const flash = piLevels({
+    reasoning: true,
+    thinkingLevelMap: { minimal: null, low: 'low', medium: null, high: 'high', max: 'max' },
+  })
+  assert.deepEqual(flash, ['off', 'low', 'high', 'max'])
+  // 没写映射时 xhigh、max 不支持；不能思考的只有 off
+  assert.deepEqual(piLevels({ reasoning: true }), ['off', 'minimal', 'low', 'medium', 'high'])
+  assert.deepEqual(piLevels({ reasoning: false }), ['off'])
+  const out = [
+    'provider  model           context  max-out  thinking  images',
+    'deepseek  deepseek-flash  1M       384K     yes       yes',
+    'mine      local           128K     8K       yes       no',
+  ].join('\n')
+  const models = parsePiModels(out, all, (id) => (id === 'deepseek/deepseek-flash' ? flash : undefined))
+  assert.deepEqual(
+    models.map((m) => [m.id, m.efforts]),
+    [
+      ['deepseek/deepseek-flash', ['off', 'low', 'high', 'max']],
+      ['mine/local', ['off', 'minimal', 'low', 'medium', 'high']],
+    ],
+  )
 })

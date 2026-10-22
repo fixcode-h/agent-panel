@@ -19,6 +19,7 @@ import {
   pruneModelEntries,
   pruneProviderEntries,
   setModelEfforts,
+  setModelInput,
   setModelLimits,
   ApiConfig,
   type JsonEdit,
@@ -674,6 +675,30 @@ async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: st
 }
 
 /**
+ * 把模型目录里的「能不能看图片」写回 CLI 配置的模型条目。
+ * Pi 只看模型条目自己的 input 里有没有 image：不写时一律按不支持图片处理，
+ * 用户附上的截图会被换成「(image omitted: model does not support images)」而不是发给模型。
+ * 目录里没登记的模型不动（不能靠猜）。设置里给模型配了映射时按映射到的模型算。
+ */
+async function writeModelInput(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+  const spec = def.auth?.api?.modelInput
+  if (!spec) return
+  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const file = expand(fillTemplate(spec.file, vars), env)
+  const data = await readJsonFile(file)
+  if (!isObj(data)) return
+  const entries = await mergedModelCatalog().catch(() => [])
+  const changed = setModelInput(data, fillTemplate(spec.at, vars), spec.key, (model) => {
+    const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+    if (info.images === undefined) return undefined
+    return info.images ? spec.withImage : spec.withoutImage
+  })
+  if (!changed) return
+  await mkdir(path.dirname(file), { recursive: true })
+  await writeJsonAtomic(file, data)
+}
+
+/**
  * API 方式只留一份接口配置：同一个地址（忽略 /v1）和密钥的旧 provider 从 CLI 配置里删掉，
  * 保留正在用的那个；不同接口的 provider 不动。
  */
@@ -725,6 +750,7 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
       await writeModelEfforts(def, cs.api, injection.provider, env)
       await writeModelDefaultEfforts(def, cs.api, injection.provider, env)
       await writeModelLimits(def, cs.api, injection.provider, env)
+      await writeModelInput(def, cs.api, injection.provider, env)
       await pruneApiProviders(def, cs.api, injection.provider, env)
       await pruneApiModels(def, cs.api, injection.provider, env)
     } else {
@@ -760,7 +786,9 @@ export async function syncCliAuths(prev: Settings, next: Settings) {
     const prevApi = prev.apis.find((a) => a.id === prevCs.apiId)
     const lastProvider = prevApi ? apiProvider(prevApi, def.auth.api.defaultProvider) : undefined
     await prepareAuth(def.id, lastProvider)
-    invalidateModels(def.id)
+    // 模型从 CLI 列表读的（Command Code、Pi）账号列表只列账号的模型，不受配置里接口的影响，留着，
+    // 切回账号时不用再等 CLI；看配置文件判断登录方式的（Claude Code、Codex）两种都要重读
+    invalidateModels(def.id, def.auth.api.modelSource === 'cli' ? 'api' : undefined)
   }
 }
 

@@ -14,6 +14,7 @@ export interface RpcSession {
   /** 已经解析好的消息（测试和复用的入口） */
   handle: (msg: any) => void
   steer: (text: string) => Promise<boolean>
+  redirect: (note: string) => Promise<boolean>
   interrupt: () => boolean
   /** 进程结束、或者外层不再需要它了 */
   close: () => void
@@ -186,6 +187,10 @@ export function createRpcSession(o: {
     steer(text) {
       if (ended) return Promise.resolve(false)
       return o.adapter.steer(ctx, text)
+    },
+    redirect(note) {
+      if (ended || !o.adapter.redirect) return Promise.resolve(false)
+      return o.adapter.redirect(ctx, note)
     },
     interrupt() {
       if (ended) return false

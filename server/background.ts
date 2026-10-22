@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { capture } from './exec/process.ts'
 import { runShell } from './merge-build.ts'
+import { currentShell } from './shells.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -45,6 +46,8 @@ async function fingerprint(dir: string) {
 export function createBackground(onDone: (job: BgJob, text: string) => void) {
   const jobs = new Map<string, BgJob>()
   const aborts = new Map<string, AbortController>()
+  /** 正在跑的命令什么时候真正结束：停止后要等进程退出再删工作目录（Windows 上进程占着目录删不掉） */
+  const runs = new Map<string, Promise<void>>()
   /** 独占的命令（编译这类）按项目目录排队 */
   const chains = new Map<string, Promise<unknown>>()
 
@@ -69,9 +72,11 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
     if (ac.signal.aborted) {
       aborts.delete(j.id)
       j.state = 'stopped'
+      j.endedAt = new Date().toISOString()
       return
     }
     const r = await runShell(j.command, j.cwd, {
+      shell: await currentShell(),
       timeoutMs: MAX_MS,
       signal: ac.signal,
       onLine: (l) => {
@@ -88,7 +93,14 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
     if (r.spawnError) j.lines.push(r.spawnError)
     if (r.killed === 'timeout') j.lines.push('（超过两小时，已停止）')
     j.endedAt = new Date().toISOString()
-    onDone(j, resultText(j))
+    // 被停止的是对话自己结束了（停止、归档、删除）：不再把结果推回去，不然会把刚停下的对话又拉起新的一轮
+    if (j.state !== 'stopped') onDone(j, resultText(j))
+  }
+
+  function run(j: BgJob, root: string) {
+    const p = exec(j, root).finally(() => runs.delete(j.id))
+    runs.set(j.id, p)
+    return p
   }
 
   return {
@@ -126,12 +138,12 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
             x.cwd.startsWith(input.root),
         ).length
         const prev = chains.get(input.root) ?? Promise.resolve()
-        const next = prev.catch(() => {}).then(() => (j.state === 'stopped' ? undefined : exec(j, input.root)))
+        const next = prev.catch(() => {}).then(() => (j.state === 'stopped' ? undefined : run(j, input.root)))
         chains.set(
           input.root,
           next.catch(() => {}),
         )
-      } else void exec(j, input.root)
+      } else void run(j, input.root)
       return {
         ok: true,
         info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}。跑完结果会自动推回给你，先去做不依赖它的事。`,
@@ -152,13 +164,27 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
     list(taskId: string) {
       return [...jobs.values()].filter((j) => j.taskId === taskId)
     },
-    /** 对话被删除、关闭时结束它的后台命令 */
+    /**
+     * 后台命令跟着对话的生命周期走：对话停止、归档、删除、独立分支被删时结束它的后台命令，排队的不再执行。
+     * 返回的 Promise 等正在跑的进程真正退出
+     */
     stop(taskId: string) {
+      const waits: Promise<void>[] = []
       for (const j of jobs.values()) {
         if (j.taskId !== taskId) continue
-        if (j.state === 'queued') j.state = 'stopped'
+        if (j.state === 'queued') {
+          j.state = 'stopped'
+          j.endedAt = new Date().toISOString()
+        }
         aborts.get(j.id)?.abort()
+        const p = runs.get(j.id)
+        if (p) waits.push(p)
       }
+      return Promise.allSettled(waits).then(() => {})
+    },
+    /** 对话被删掉以后它的记录也不用留了 */
+    forget(taskId: string) {
+      for (const j of [...jobs.values()]) if (j.taskId === taskId && j.state !== 'running') jobs.delete(j.id)
     },
   }
 }

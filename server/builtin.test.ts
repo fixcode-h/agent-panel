@@ -330,7 +330,8 @@ test('没改过的旧「通用约束」「任务 Agent」（现在的「执行�
   assert.equal(updated.length, 2, '两个旧副本都升级')
   const rules = updated.find((a) => a.name === '通用约束')!
   assert.match(rules.instructions, /共用工作区/, '补上共用工作区规则')
-  assert.match(rules.instructions, /单次不超过 60 秒/, '补上长等待上限')
+  assert.match(rules.instructions, /怎么等，什么时候算阻塞/, '补上等待与阻塞判定')
+  assert.doesNotMatch(rules.instructions, /单次不超过 60 秒/, '旧的 60 秒轮询规则已经换成新的等待规则')
   const worker = updated.find((a) => a.name === '执行')!
   assert.match(worker.instructions, /没有开启按工作流执行计划的能力/, '补上不能起计划时怎么退化成对话')
   // 再启动：已经不是旧指纹，不再改

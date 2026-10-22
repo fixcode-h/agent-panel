@@ -125,3 +125,36 @@ test('整行命令交给 shell：Windows 上整行加引号原样交给 cmd，�
   assert.ok(Date.now() - start >= 250, '定时器没等到就退出了')
   assert.deepEqual(out, ['到点'])
 })
+
+test('命令行环境：WSL、Git Bash、PowerShell 按各自的方式起，选的不在这台机器上时回到推荐的', async () => {
+  const { pickShell } = await import('../shared/shells.ts')
+  const line = `echo "a b"`
+  assert.deepEqual(shellCommand(line, 'win32', { id: 'wsl', path: 'wsl.exe', distro: 'Debian' }).args, [
+    '-d',
+    'Debian',
+    '-e',
+    'bash',
+    '-lc',
+    line,
+  ])
+  const git = shellCommand(line, 'win32', { id: 'gitbash', path: 'C:\\Git\\bin\\bash.exe' })
+  assert.equal(git.command, 'C:\\Git\\bin\\bash.exe')
+  assert.equal(git.env.CHERE_INVOKING, '1')
+  assert.equal(shellCommand(line, 'win32', { id: 'powershell', path: 'powershell.exe' }).command, 'powershell.exe')
+  assert.equal(shellCommand(line, 'linux', { id: 'wsl', path: 'wsl.exe' }).command, 'sh', '非 Windows 一律 sh')
+  const report = {
+    platform: 'win32',
+    shells: [
+      { id: 'gitbash' as const, path: 'bash.exe' },
+      { id: 'cmd' as const, path: 'cmd.exe' },
+    ],
+  }
+  assert.equal(pickShell(report, { kind: '', wslDistro: '' }).id, 'gitbash', '没有 WSL 时默认 Git Bash')
+  assert.equal(pickShell(report, { kind: 'wsl', wslDistro: '' }).id, 'gitbash', '选的 WSL 没装：回到推荐的')
+  assert.equal(pickShell(report, { kind: 'cmd', wslDistro: '' }).id, 'cmd')
+  const withWsl = {
+    platform: 'win32',
+    shells: [{ id: 'wsl' as const, path: 'wsl.exe', distros: ['Ubuntu'] }, ...report.shells],
+  }
+  assert.equal(pickShell(withWsl, { kind: '', wslDistro: 'Gone' }).distro, '', '发行版不在了用默认的')
+})

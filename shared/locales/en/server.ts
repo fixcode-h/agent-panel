@@ -345,6 +345,7 @@ export const EN_SERVER: Record<string, string> = {
   '正在自动续接会话重试（第 {n}/{max} 次）…': 'Resuming the session automatically (attempt {n}/{max})…',
   '已自动续接会话（第 {n} 次），从中断的地方继续了。':
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
+  '已自动接一轮，这一轮继续做完了。': 'Continued automatically and finished the work in this turn.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   '这一轮只回了一句话就结束了，没有动手也没给出结论。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':
     'This turn ended after a single sentence: nothing was done and no conclusion was given. Continuing automatically so it acts now (attempt {n}/{max})…',
@@ -422,6 +423,9 @@ export const EN_SERVER: Record<string, string> = {
   '模型请求失败，{s} 秒后第 {n}/{max} 次重试：{error}': 'Model request failed; retry {n}/{max} in {s}s: {error}',
   '自动重试 {n} 次后仍然失败：{error}': 'Still failing after {n} automatic retries: {error}',
   '压缩上下文失败：{error}': 'Context compaction failed: {error}',
+  '面板的工具没接上（{error}）：这一轮不能派子任务、新建子对话，也不能向你提问':
+    "Panel tools didn't connect ({error}). This turn can't spawn sub-tasks, create sub-conversations or ask you questions",
+  原因未知: 'unknown reason',
   提示: 'Notice',
   '这个 CLI 不支持扩展包': "This CLI doesn't support packages",
   不支持这个操作: 'Unsupported action',
@@ -429,4 +433,5 @@ export const EN_SERVER: Record<string, string> = {
   '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',
   '命令失败（退出码 {code}）': 'Command failed (exit code {code})',
   '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
+  '为了马上处理新消息，停下了正在执行的命令': 'Stopped the running command to handle the new message right away',
 }

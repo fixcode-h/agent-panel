@@ -240,6 +240,34 @@ export function pruneModelEntries(data: unknown, at: string, keep: string[]): bo
 }
 
 /**
+ * 按模型逐个改写模型条目里的一个键；返回有没有改动。
+ * 模型条目可以是对象（键是模型名，例如 Command Code 的 providers.json），也可以是数组（每项有 id，例如 Pi 的 models.json）。
+ * valueFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
+ */
+export function setModelField(data: unknown, at: string, key: string, valueFor: (model: string) => unknown): boolean {
+  let models: unknown = data
+  for (const part of at.split('.')) {
+    if (!models || typeof models !== 'object' || Array.isArray(models)) return false
+    models = (models as Record<string, unknown>)[part]
+  }
+  if (!models || typeof models !== 'object') return false
+  let changed = false
+  const entries: [string, unknown][] = Array.isArray(models)
+    ? models.map((entry, i) => [String(i), entry])
+    : Object.entries(models as Record<string, unknown>)
+  for (const [id, entry] of entries) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
+    const rec = entry as Record<string, unknown>
+    const model = typeof rec.id === 'string' && rec.id ? rec.id : id
+    const value = valueFor(model)
+    if (value === undefined || JSON.stringify(rec[key]) === JSON.stringify(value)) continue
+    rec[key] = value
+    changed = true
+  }
+  return changed
+}
+
+/**
  * 把模型条目里的思考强度改成 effortsFor 返回的值；返回有没有改动。
  * 值可以是强度列表（Command Code 的 reasoningEfforts），也可以是布尔（Pi 的 reasoning：这个模型能不能调强度）。
  * effortsFor 返回 undefined 的模型保持原样（目录里不认识的模型不动用户配置）。
@@ -250,27 +278,21 @@ export function setModelEfforts(
   key: string,
   effortsFor: (model: string) => unknown,
 ): boolean {
-  let models: unknown = data
-  for (const part of at.split('.')) {
-    if (!models || typeof models !== 'object' || Array.isArray(models)) return false
-    models = (models as Record<string, unknown>)[part]
-  }
-  if (!models || typeof models !== 'object') return false
-  let changed = false
-  // 模型条目可以是对象（键是模型名，例如 Command Code 的 providers.json），也可以是数组（每项有 id，例如 Pi 的 models.json）
-  const entries: [string, unknown][] = Array.isArray(models)
-    ? models.map((entry, i) => [String(i), entry])
-    : Object.entries(models as Record<string, unknown>)
-  for (const [id, entry] of entries) {
-    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) continue
-    const rec = entry as Record<string, unknown>
-    const model = typeof rec.id === 'string' && rec.id ? rec.id : id
-    const efforts = effortsFor(model)
-    if (efforts === undefined || JSON.stringify(rec[key]) === JSON.stringify(efforts)) continue
-    rec[key] = efforts
-    changed = true
-  }
-  return changed
+  return setModelField(data, at, key, effortsFor)
+}
+
+/**
+ * 把模型条目里的「能接收哪些输入」改成 inputFor 返回的值；返回有没有改动。
+ * inputFor 返回 undefined 的模型保持原样（目录里没登记的模型不靠猜），
+ * 免得把用户手写在 CLI 配置里的能力声明抹掉。
+ */
+export function setModelInput(
+  data: unknown,
+  at: string,
+  key: string,
+  inputFor: (model: string) => string[] | undefined,
+): boolean {
+  return setModelField(data, at, key, inputFor)
 }
 
 /**
@@ -393,6 +415,24 @@ export const CliAuth = z.object({
           key: z.string().default('contextWindow'),
           /** 最大输出写进哪个键；不写表示这个 CLI 不接受（Command Code 的 maxOutput 只能收窄，写了没意义） */
           maxOutputKey: z.string().optional(),
+        })
+        .optional(),
+      /**
+       * CLI 靠模型条目里自己声明的「能接收哪些输入」决定要不要把图片发给模型时（例如 Pi 的 models.json 的
+       * input: ["text","image"]，不写就一律按不支持图片处理，图片会被替换成占位文字甚至根本不发），
+       * 按模型目录把这一项写回这个位置；不写表示不处理。
+       */
+      modelInput: z
+        .object({
+          file: z.string(),
+          /** 模型条目所在的位置，例如 providers.{provider}.models */
+          at: z.string(),
+          /** 写进模型条目的键名，默认 input */
+          key: z.string().default('input'),
+          /** 支持图片时写进去的完整值，默认 ["text","image"] */
+          withImage: z.array(z.string()).default(['text', 'image']),
+          /** 不支持图片时写进去的值；不写表示只在支持时写 */
+          withoutImage: z.array(z.string()).optional(),
         })
         .optional(),
       /**

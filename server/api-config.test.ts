@@ -16,6 +16,7 @@ import {
   pruneProviderEntries,
   sameApi,
   setModelEfforts,
+  setModelInput,
   setModelLimits,
 } from '../shared/accounts.ts'
 import { mergeJson, fetchApiModels } from './accounts.ts'
@@ -346,6 +347,36 @@ test('写回上下文窗口：Pi 的 models.json 是数组，同时写最大输�
     contextWindow: 1000000,
     maxTokens: 128000,
   })
+  assert.deepEqual(data.providers.tokenapi.models[2], { id: 'custom/unknown' })
+  assert.equal(run(), false)
+})
+
+test('写回图片能力：Pi 的 models.json 按目录写 input，没登记的模型不动', () => {
+  const data = {
+    providers: {
+      tokenapi: {
+        models: [
+          { id: 'deepseek/deepseek-v4-flash' },
+          { id: 'deepseek/deepseek-v4-flash', name: 'custom' },
+          { id: 'custom/unknown' },
+        ],
+      },
+    },
+  }
+  const inputs = new Map<string, string[] | undefined>([
+    ['deepseek/deepseek-v4-flash', ['text', 'image']],
+    ['custom/unknown', undefined],
+  ])
+  const run = () => setModelInput(data, 'providers.tokenapi.models', 'input', (m) => inputs.get(m))
+  assert.equal(run(), true)
+  // 不写 input 时 Pi 一律按不支持图片处理，截图会被换成占位文字
+  assert.deepEqual(data.providers.tokenapi.models[0], { id: 'deepseek/deepseek-v4-flash', input: ['text', 'image'] })
+  assert.deepEqual(data.providers.tokenapi.models[1], {
+    id: 'deepseek/deepseek-v4-flash',
+    name: 'custom',
+    input: ['text', 'image'],
+  })
+  // 目录里没登记的模型不能被猜，否则会抹掉用户手写的能力声明
   assert.deepEqual(data.providers.tokenapi.models[2], { id: 'custom/unknown' })
   assert.equal(run(), false)
 })

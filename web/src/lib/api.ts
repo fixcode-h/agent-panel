@@ -1,3 +1,4 @@
+import type { ShellReport } from '@shared/shells'
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -148,6 +149,7 @@ export interface UserClis {
 export const api = {
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
+  shells: (fresh = false) => request<ShellReport>(`/shells${fresh ? '?fresh=1' : ''}`),
 
   remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
   remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),
@@ -204,7 +206,15 @@ export const api = {
   apiModels: (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),
-  cliModels: (id: string, refresh = false) => request<CliModels>(`/clis/${id}/models${refresh ? '?refresh=1' : ''}`),
+  /** mode 给出时按这种登录方式读（设置页切换后还没保存也能先读到） */
+  cliModels: (id: string, refresh = false, mode?: { authMode: 'account' | 'api'; apiId?: string }) => {
+    const q = new URLSearchParams()
+    if (refresh) q.set('refresh', '1')
+    if (mode) q.set('auth', mode.authMode)
+    if (mode?.authMode === 'api') q.set('api', mode.apiId ?? '')
+    const qs = q.toString()
+    return request<CliModels>(`/clis/${id}/models${qs ? `?${qs}` : ''}`)
+  },
   /** 模型目录：内置的加上用户补充的 */
   modelCatalog: () => request<ModelCatalogInfo>('/model-catalog'),
   lookupModel: (body: { model: string; protocol?: ApiProtocol; cli?: string }) =>

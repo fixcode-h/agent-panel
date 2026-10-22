@@ -1,3 +1,5 @@
+import { shellNote } from '../shared/shells.ts'
+import { lastShell } from './shells.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -36,11 +38,18 @@ const tasksField = (o: Orchestra) => ({
   },
 })
 
+/** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
+const shellHint = () => {
+  const sh = lastShell()
+  return sh ? shellNote(sh) : ''
+}
+
 export function orchTools(o: Orchestra) {
   const main = o.self.endsWith('@main')
   return [
     {
       name: 'get_status',
+      title: '查看节点状态',
       description: '查看这次运行里各节点和派出的子 Agent 的状态、结果摘要，按层级缩进。传话、等结果前先用它找节点 id。',
       inputSchema: { type: 'object', properties: {} },
     },
@@ -48,6 +57,7 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'begin_edit',
+            title: '开独立分支',
             description:
               '确定要改文件时先调用：面板从当前目录开一个独立分支。成功后用一两句写下查到的情况和打算怎么改，然后马上结束这一轮，面板会在独立分支的目录里开新会话接着做。调用前不要改任何文件。',
             inputSchema: { type: 'object', properties: {} },
@@ -58,8 +68,10 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'run_background',
+            title: '后台命令',
             description:
-              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。',
+              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。' +
+              shellHint(),
             inputSchema: {
               type: 'object',
               properties: {
@@ -76,6 +88,7 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'check_background',
+            title: '查看后台命令',
             description: '查后台命令的状态和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
             inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
           },
@@ -85,6 +98,7 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'start_plan',
+            title: '启动工作流',
             description:
               '按工作流启动一次计划执行：节点全部新建，同一层没有依赖的节点同时执行，跑完把结果交回对话。需要完整流程、跨模块改动或较大的研究时用；简单任务直接在对话里做更快。',
             inputSchema: {
@@ -105,6 +119,7 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'run_workflow',
+            title: '启动工作流',
             description:
               '起一次新的工作流运行：节点全部新建，从开始节点按流程图顺序执行一遍（同一层没有依赖的节点同时执行）。这次运行走完就停下，不会自己再跑。你的会话保留，前面几轮的结论还在。',
             inputSchema: {
@@ -117,6 +132,7 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'close_run',
+            title: '结束这次运行',
             description:
               '结束这次运行：还没执行的节点不再执行，之后的要求由你直接处理。用户说不用再走了、或者走不下去时用。',
             inputSchema: { type: 'object', properties: {} },
@@ -127,11 +143,13 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'list_conversations',
+            title: '查看子对话',
             description: '列出当前对话下的子对话：id、标题、状态和最近一条结果。分派前先用它确认有没有合适的子对话。',
             inputSchema: { type: 'object', properties: {} },
           },
           {
             name: 'create_conversation',
+            title: '新建子对话',
             description:
               '新建一个子对话并把这条需求交给它处理（异步执行，马上返回）。现有子对话都不相关、且需求需要改代码或做较大的研究时用。标题由你分析这条需求后起，不要照抄用户原话的开头几个字。',
             inputSchema: {
@@ -154,6 +172,7 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'send_to_conversation',
+            title: '交给子对话',
             description:
               '把消息交给一个已有的子对话继续处理（异步执行）。它和这条消息相关时用，id 从 list_conversations 取。',
             inputSchema: {
@@ -171,6 +190,7 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'message_parent',
+            title: '回报父对话',
             description:
               '给父对话发消息：汇报阶段进展、发现和别的任务有关的事、或者需要父对话决定时用。你不能直接联系其他子对话，需要配合都经过父对话。',
             inputSchema: {
@@ -191,6 +211,7 @@ export function orchTools(o: Orchestra) {
             ? [
                 {
                   name: 'submit_build',
+                  title: '提交编译',
                   description:
                     '改完、在独立分支里做完快速检查后调用：面板把你现在的改动提交到你的分支，排队合回原目录跑编译，通过才算合进去，失败会撤回并把报错推回给你。马上返回，不用干等结果。',
                   inputSchema: {
@@ -211,6 +232,7 @@ export function orchTools(o: Orchestra) {
             ? [
                 {
                   name: 'claim_files',
+                  title: '认领文件',
                   description:
                     '改文件前认领要改的文件或目录（相对项目根）。子对话共用一个目录，被别的子对话占着的会列出来，那些不要改。这一轮结束时自动释放。',
                   inputSchema: {
@@ -221,6 +243,7 @@ export function orchTools(o: Orchestra) {
                 },
                 {
                   name: 'release_files',
+                  title: '释放文件',
                   description: '提前释放认领的文件（做完一部分、让给别的子对话时用）；不写 paths 释放全部。',
                   inputSchema: { type: 'object', properties: { paths: { type: 'array', items: { type: 'string' } } } },
                 },
@@ -232,6 +255,7 @@ export function orchTools(o: Orchestra) {
       ? [
           {
             name: 'project_lessons',
+            title: '查看项目教训',
             description:
               '取这个项目的教训（以前返工过的地方写成的规则）：传要改的文件，返回管这些文件的条目全文；不传 files 列出全部标题。动手改文件前用。',
             inputSchema: {
@@ -243,6 +267,7 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'record_lesson',
+            title: '记下教训',
             description:
               '记一条项目教训，或改写已有的一条，以后这个项目里的 Agent 改到相关文件时都会看到。用户纠正了你的做法、你发现自己的办法不对换了做法才成、或你在修之前改出来的问题时用；写成通用规则，同类的已经有了就带 id 改写那一条。用户的新要求和某条教训冲突且找到两全的做法时，也带 id 改写并在 change 里说明。全局教训只有用户能改。',
             inputSchema: {
@@ -277,11 +302,13 @@ export function orchTools(o: Orchestra) {
       : []),
     {
       name: 'read_state',
+      title: '读取共享状态',
       description: '读这次运行里所有节点共享的状态（键、值、版本、谁写的），长时间执行时中途用它同步进展。',
       inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'write_state',
+      title: '写入共享状态',
       description:
         '写共享状态的一个键：并发节点都能看到，后写的覆盖先写的。用来同步接口、文件分工、进度和结论，写之前先读一遍别覆盖别人刚写的。',
       inputSchema: {
@@ -299,27 +326,38 @@ export function orchTools(o: Orchestra) {
       : [
           {
             name: 'spawn_agents',
+            title: '派出子任务',
             description: o.autoReturn
               ? '派子任务并行处理互不相关的几件事（收集资料、查代码、核实结论、出计划），马上返回它们的 id。派完就可以结束这一轮回复：对话会停下等它们全部做完，结果自动交回给你接着做，不用轮询。子任务不能再派子任务、不能启动工作流或子对话。只拆真正能同时做的事，小事自己做更快。'
               : '派子任务并行处理互不相关的几块工作（收集资料、查代码、核实结论、出计划），马上返回它们的 id，不等它们做完；之后用 wait_agents 取结果，节点结束前没取的结果也会并进你的输出。子任务不能再派子任务。只拆真正能同时做、不会改同一个文件的事，小事自己做更快。',
             inputSchema: { type: 'object', properties: { tasks: tasksField(o) }, required: ['tasks'] },
           },
-          {
-            name: 'wait_agents',
-            description: `等派出的子任务做完并取回结果。一次最多等 ${MAX_WAIT_S} 秒，没做完的会列出来，过一会儿再调用；做完前不要自己重复它们的工作。${o.autoReturn ? '一般不用调用：这一轮结束后结果会自动交回。' : ''}`,
-            inputSchema: {
-              type: 'object',
-              properties: {
-                ids: { type: 'array', items: { type: 'string' }, description: '子任务的 id；不写等你派出的全部' },
-                seconds: { type: 'number', description: `最多等几秒（默认 ${DEFAULT_WAIT_S}，最多 ${MAX_WAIT_S}）` },
-              },
-            },
-          },
+          // 对话里子任务做完会自动交回，不给等待工具：给了模型就会每隔几十秒调一次轮询，白白占着上下文
+          ...(o.autoReturn
+            ? []
+            : [
+                {
+                  name: 'wait_agents',
+                  title: '等待子任务',
+                  description: `等派出的子任务做完并取回结果。一次最多等 ${MAX_WAIT_S} 秒，没做完的会列出来，过一会儿再调用；做完前不要自己重复它们的工作。`,
+                  inputSchema: {
+                    type: 'object',
+                    properties: {
+                      ids: { type: 'array', items: { type: 'string' }, description: '子任务的 id；不写等你派出的全部' },
+                      seconds: {
+                        type: 'number',
+                        description: `最多等几秒（默认 ${DEFAULT_WAIT_S}，最多 ${MAX_WAIT_S}）`,
+                      },
+                    },
+                  },
+                },
+              ]),
         ]),
     ...(o.hasMain && !main
       ? [
           {
             name: 'ask_main',
+            title: '向主角色提问',
             description:
               '向主 Agent 提问：需求有歧义、几种做法拿不准、和别的节点有冲突时用它，不要自己猜。主 Agent 忙时先返回，回答之后用 read_messages 取。',
             inputSchema: {
@@ -332,6 +370,7 @@ export function orchTools(o: Orchestra) {
       : []),
     {
       name: 'send_message',
+      title: '传话',
       description: main
         ? '给某个 Agent 发指示：正在执行的会马上收到（或在它下次查看消息时），还没开始的开始时会带上。'
         : '给同时执行的其他 Agent 传话：to 写节点 id 或标题。例如告诉并行节点你改了某个接口，让它别重复改。',
@@ -349,6 +388,7 @@ export function orchTools(o: Orchestra) {
     },
     {
       name: 'read_messages',
+      title: '查看消息',
       description: '看别的 Agent 发给你的消息（看过就清掉）。做比较久的事时中途看一下。',
       inputSchema: { type: 'object', properties: {} },
     },
@@ -487,14 +527,18 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     }
     case 'wait_agents': {
       const ids = Array.isArray(a?.ids) ? a.ids.map(String) : []
-      const s = Math.min(MAX_WAIT_S, Math.max(1, Number(a?.seconds) || DEFAULT_WAIT_S))
+      // 对话里结果会自动交回：老会话里模型还记得这个工具时不陪它等，告诉它结束这一轮
+      const s = o.autoReturn ? 0 : Math.min(MAX_WAIT_S, Math.max(1, Number(a?.seconds) || DEFAULT_WAIT_S))
       const r = await o.wait(ids, s * 1000)
       if (!r.done.length && !r.running.length) return text('你还没有派出子任务')
+      const again = o.autoReturn
+        ? '不用再查：结束这一轮回复，它们全部做完后结果会自动交回给你。'
+        : '过一会儿再调用 wait_agents。'
       return text(
         [
           r.done.length ? `做完 ${r.done.length} 个：\n\n${r.done.map(reportText).join('\n\n')}` : '',
           r.running.length
-            ? `还在执行 ${r.running.length} 个：${r.running.map((x) => `${x.id}｜${x.title}`).join('、')}\n过一会儿再调用 wait_agents。`
+            ? `还在执行 ${r.running.length} 个：${r.running.map((x) => `${x.id}｜${x.title}`).join('、')}\n${again}`
             : '',
         ]
           .filter(Boolean)
@@ -544,11 +588,13 @@ export function orchHint(o: Orchestra) {
     (o.child
       ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_build 改完提交编译（结果会推回来）、' : ''}message_parent 向父对话汇报或提问；`
       : '')
+  // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
+  const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'
   if (o.planning)
     return `（你有面板工具 panel：${o.coordinator ? `list_conversations 看现有子对话、create_conversation 新建子对话、send_to_conversation 交给已有子对话；` : ''}start_plan 按工作流启动一次计划；${child}get_status 查看节点状态；${state}send_message 给并行节点传话、read_messages 看别人发给你的；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   if (o.coordinator)
     return `（你有面板工具 panel：先用 list_conversations 看现有子对话的标题、状态和最近结果，相关就用 send_to_conversation 交给它，需要新建就用 create_conversation；${bg}get_status 查看节点状态；需要并行收集、核实或出计划时用 spawn_agents 派子任务，派完结束这一轮，结果会自动交回${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
   return o.self.endsWith('@main')
-    ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子任务、wait_agents 取结果${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
-    : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子任务同时做，再用 wait_agents 取结果；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    ? `（你有面板工具 panel：${o.planner ? 'run_workflow 按流程图起一次新的运行、close_run 结束这次运行；' : ''}get_status 查看各 Agent 的状态和结果；${state}send_message 给正在执行的 Agent 发指示；需要并行核实时可以用 spawn_agents 派子任务，${collect}${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
+    : `（你有面板工具 panel：${child}能拆成互不相关的几块时用 spawn_agents 派子任务同时做，${collect}；get_status 查看其他 Agent 的状态；${state}${o.hasMain ? '拿不准、需要决定时用 ask_main 问主 Agent，不要自己猜；' : ''}send_message 传话，read_messages 看别人发给你的${common}。不要用 CLI 自带的子 Agent（Task / agent 这类工具）：要拆出去并行就用 spawn_agents，面板才能显示进度、管住并发。）`
 }

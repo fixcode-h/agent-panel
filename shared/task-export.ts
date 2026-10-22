@@ -73,6 +73,15 @@ export function cacheHitRate(u: { inputTokens: number; cacheReadTokens: number }
   return Math.min(1, Math.max(0, Math.round((u.cacheReadTokens / total) * 1000) / 1000))
 }
 
+/**
+ * 缓存命中数超过了输入合计：说明分子分母不是一个口径（例如某个 CLI 的 input 不含缓存、没换算）。
+ * 封顶本身会把数字压成 100% 看不出来，报告里要单独提示一句，否则错误口径会一直隐身。
+ */
+export function cacheMismatch(u: { inputTokens: number; cacheReadTokens: number }) {
+  const total = u.inputTokens || 0
+  return total > 0 && (u.cacheReadTokens || 0) > total * 1.05
+}
+
 /** 失败的工具调用：命令非零退出、读取失败、编辑冲突都会标上 failed */
 const failedToolsOf = (task: Task, step?: string) =>
   task.messages
@@ -337,6 +346,11 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     '## 统计',
     `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}；追加要求/对话 ${st.turns} 轮（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
+    ...(cacheMismatch(st)
+      ? [
+          `- 注意：缓存命中数 ${fmtK(st.cacheReadTokens)} 超过输入合计 ${fmtK(st.inputTokens)}，这两个数不是一个口径（某个 CLI 的 input 不含缓存或没换算），命中率已封顶到 100%，实际值不可信`,
+        ]
+      : []),
     `- 节点 ${st.steps.total} 个：完成 ${st.steps.done}，失败 ${st.steps.failed}，跳过 ${st.steps.skipped}，未完成 ${st.steps.pending}；返工 ${st.reworks} 次；报错 ${st.errors} 条（其中失败的工具调用 ${st.failedTools} 次）`,
   ]
   // 用户每条要求的发出时间：判断「后面越来越慢」时看相邻两条之间隔了多久
@@ -540,7 +554,7 @@ ${FRAMEWORK_MAP}
    只写成发现，写清现象、依据和可能的位置（文件路径，能确定时带行号），不要去改面板代码。
 
 ## 回复格式
-用中文写，先用两三句话给结论，再按上面四点展开，每条都要有依据。
+用中文写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」四个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
 
 最后单独写一个代码块，语言名写 ${EVOLUTION_LANG}，内容是 JSON，把建议的修改写成可以直接应用的形式：
 
@@ -652,6 +666,9 @@ export interface ResolvedChange {
   change: EvolutionChange
   /** 显示用：工作流「x」· 节点「y」· 要求 */
   label: string
+  /** label 拆开的两段：改的是哪个对象（工作流「x」· 节点「y」）、哪一项（要求）；界面分开排版 */
+  scope: string
+  field: string
   before: string
   after: string
   error?: string
@@ -702,14 +719,16 @@ export function resolveChange(c: EvolutionChange, workflows: Workflow[], agents:
   if (c.target === 'agent') {
     const a = agents.find((x) => x.id === c.agentId)
     const label = t('角色「{name}」· {field}', { name: a?.name ?? c.agentId, field: f })
-    if (!a) return { change: c, label, before: '', after, error: t('本机没有这个角色') }
-    return { change: c, label, before: text(a[c.field]), after, error: 'error' in norm ? norm.error : undefined }
+    const head = { change: c, label, scope: t('角色「{name}」', { name: a?.name ?? c.agentId }), field: f }
+    if (!a) return { ...head, before: '', after, error: t('本机没有这个角色') }
+    return { ...head, before: text(a[c.field]), after, error: 'error' in norm ? norm.error : undefined }
   }
   const w = workflows.find((x) => x.id === c.workflowId)
   if (c.target === 'workflow') {
     const label = t('工作流「{name}」· {field}', { name: w?.name ?? c.workflowId, field: f })
-    if (!w) return { change: c, label, before: '', after, error: t('本机没有这个工作流') }
-    return { change: c, label, before: text(w[c.field]), after, error: 'error' in norm ? norm.error : undefined }
+    const head = { change: c, label, scope: t('工作流「{name}」', { name: w?.name ?? c.workflowId }), field: f }
+    if (!w) return { ...head, before: '', after, error: t('本机没有这个工作流') }
+    return { ...head, before: text(w[c.field]), after, error: 'error' in norm ? norm.error : undefined }
   }
   const flow = w?.flows.find((x) => x.id === c.flowId) ?? w?.flows.find((x) => x.nodes.some((n) => n.id === c.nodeId))
   const node = flow?.nodes.find((n) => n.id === c.nodeId)
@@ -718,10 +737,12 @@ export function resolveChange(c: EvolutionChange, workflows: Workflow[], agents:
     node: node?.title || c.nodeId,
     field: f,
   })
-  if (!w) return { change: c, label, before: '', after, error: t('本机没有这个工作流') }
-  if (!node) return { change: c, label, before: '', after, error: t('工作流里没有这个节点') }
+  const scope = t('工作流「{name}」· 节点「{node}」', { name: w?.name ?? c.workflowId, node: node?.title || c.nodeId })
+  const head = { change: c, label, scope, field: f }
+  if (!w) return { ...head, before: '', after, error: t('本机没有这个工作流') }
+  if (!node) return { ...head, before: '', after, error: t('工作流里没有这个节点') }
   const cur = c.field === 'maxRounds' || c.field === 'confirm' ? (node.hooks[c.field] ?? false) : node[c.field]
-  return { change: c, label, before: text(cur), after, error: 'error' in norm ? norm.error : undefined }
+  return { ...head, before: text(cur), after, error: 'error' in norm ? norm.error : undefined }
 }
 
 /** 把选中的建议应用到工作流和 Agent 上，返回改过的那些（调用方再保存）；不合法的跳过 */

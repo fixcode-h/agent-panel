@@ -30,7 +30,7 @@ import { defaultCli, orderClis } from '@shared/settings'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
 import { cliColor } from '@/lib/cli-style'
-import { loadCliModels, useCliDef } from '@/lib/cli-models'
+import { loadCliModels, preloadCliModels, setCliMode, useCliDef } from '@/lib/cli-models'
 import { useModelCatalog } from '@/lib/model-catalog'
 import { resumeInstallJobs, setInstallFinish } from '@/lib/cli-install'
 import { notifyEnabled, notifySupported, setNotify } from '@/lib/notify'
@@ -55,6 +55,7 @@ import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
+import { ShellSetting } from '@/components/settings/ShellSetting'
 import { CustomClis } from '@/components/settings/CustomClis'
 import {
   AssistModel,
@@ -116,6 +117,7 @@ function SettingsBody({
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
+  const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
@@ -221,6 +223,18 @@ function SettingsBody({
   useEffect(() => {
     for (const c of CLIS) loadCliModels(c.id).catch(() => {})
   }, [])
+  // 切换账号 / API 时模型下拉马上换成那种方式的列表，不等自动保存；
+  // 模型从 CLI 列表读的（Command Code、Pi）两种方式的列表都提前读好，切换时不用等 CLI
+  useEffect(() => {
+    for (const c of CLIS) {
+      const d = drafts[c.id]
+      if (!d) continue
+      setCliMode(c.id, { authMode: d.authMode, apiId: d.apiId })
+      if (!d.enabled || c.auth?.api?.modelSource !== 'cli') continue
+      preloadCliModels(c.id, { authMode: 'account' })
+      if (d.apiId && apis.some((a) => a.id === d.apiId)) preloadCliModels(c.id, { authMode: 'api', apiId: d.apiId })
+    }
+  }, [drafts, apis])
 
   const minutes = Number(timeout)
   const valid = timeout !== '' && Number.isInteger(minutes) && minutes >= 0 && minutes <= 1440
@@ -236,6 +250,7 @@ function SettingsBody({
     requireToken,
     remoteAccess,
     askUserDefault,
+    shell,
     proxy: proxy.trim(),
     contentWidth,
     appearance,
@@ -637,6 +652,7 @@ function SettingsBody({
                   onCheckedChange={setAskUserDefault}
                 />
               </Row>
+              <ShellSetting value={shell} onChange={setShell} />
               <Row
                 title={t('新建文件的格式')}
                 desc={t(
