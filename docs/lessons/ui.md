@@ -18,7 +18,8 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 
 - 规则：不单独列「默认」「自动」「CLI 默认」选项，直接预选默认值并在后面标「（默认）」；思考强度标签写 `english · 中文`；停用或没装的 CLI 不出现在任何选择器和列表里；名字叫「Codex」不叫「Codex CLI」。
 - 起因：用户多次指出（v0.18 前后）。
-- 防线：人工。
+- 思考强度下拉只列当前模型支持的档位，按 CLI 的档位顺序；默认值或存着的值模型不支持时用 `effortValue` / `defaultEffortOptions` 换成最接近的那档，不把它补进下拉（用户指出中档的 medium 排在 off 前面）。
+- 防线：`web/src/lib/cli-style.test.ts`；其余人工。
 
 ## 界面上配置的 Agent 叫「角色」，编码工具叫「Agent」
 

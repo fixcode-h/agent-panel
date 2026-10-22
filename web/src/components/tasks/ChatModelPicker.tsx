@@ -4,7 +4,7 @@ import { getCli, type CliDefinition } from '@shared/clis'
 import { apiModelIdFor } from '@shared/accounts'
 import { useData } from '@/lib/data'
 import { useCliDef } from '@/lib/cli-models'
-import { cliColor, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
+import { cliColor, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { modelOptions } from '@/components/agents/ModelSelect'
@@ -155,7 +155,7 @@ export function ChatModelPicker({ value, onChange }: { value: ChatRun; onChange:
       {efforts.length > 1 && (
         <ChipSelect
           title={t('思考强度')}
-          value={run.effort === defEffort ? '' : run.effort}
+          value={effortValue(def!, defEffort, modelEfforts(def!, run.model), run.effort)}
           options={efforts}
           onChange={(e) => onChange({ ...value, cli, effort: e })}
           className="max-w-[160px]"

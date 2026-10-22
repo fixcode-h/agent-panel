@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import type { CliDefinition } from '@shared/clis'
-import { defaultEffortOptions, shortVersion } from '@/lib/cli-style'
+import { defaultEffortOptions, effortValue, shortVersion } from '@/lib/cli-style'
 
 const def = {
   efforts: [
@@ -40,13 +40,19 @@ test('defaultEffortOptions：不知道默认是哪档时，最前面放「auto�
   assert.equal(defaultEffortOptions(def, 'ultra')[0].label, 'ultra')
 })
 
-test('defaultEffortOptions：设置里存着、当前模型又不支持的强度也列出来，下拉里不会没有当前值', () => {
-  const opts = defaultEffortOptions(def, 'high', undefined, 'ultra')
-  assert.deepEqual(opts.at(-1), { value: 'ultra', label: 'ultra' })
-  assert.equal(opts.length, 4)
+test('defaultEffortOptions：默认强度这个模型不支持时换成最接近的那档，不把不支持的档位放进下拉', () => {
+  // 模型只支持 low、max：默认的 high 往高找到 max（Pi 自己也这样夹），下拉里不出现 high
+  const opts = defaultEffortOptions(def, 'high', [{ id: 'low' }, { id: 'max' }])
+  assert.deepEqual(opts, [
+    { value: 'low', label: 'low' },
+    { value: '', label: 'max' },
+  ])
 })
 
-test('defaultEffortOptions：当前值就是默认值时不再重复列一条', () => {
-  const opts = defaultEffortOptions(def, 'high', undefined, 'high')
-  assert.equal(opts.filter((o) => o.label === 'high').length, 1)
+test('effortValue：存着的强度模型不支持时显示实际会用的那档，和默认一样时是空', () => {
+  const list = [{ id: 'low' }, { id: 'max' }]
+  assert.equal(effortValue(def, 'low', list, 'high'), 'max')
+  assert.equal(effortValue(def, 'high', list, 'high'), '')
+  assert.equal(effortValue(def, 'high', list, 'low'), 'low')
+  assert.equal(effortValue(def, 'high', list, ''), '')
 })

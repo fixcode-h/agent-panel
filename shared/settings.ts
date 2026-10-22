@@ -121,6 +121,20 @@ export const tierToken = (t: ModelTier) => `@${t}`
 /** 模型字段是档位时返回档位 */
 export const tierOf = (model: string) => MODEL_TIERS.find((t) => model === `@${t.id}`)
 
+/**
+ * 模型不支持某个思考强度时换成最接近的那档：按 CLI 的档位顺序先往高找，再往低找（Pi 自己也是这样夹的）。
+ * order 是 CLI 的全部档位，list 是这个模型支持的；want 为空或模型一档都不支持时返回空
+ */
+export function clampEffort(order: string[], list: string[], want?: string) {
+  if (!want || !list.length) return ''
+  if (list.includes(want)) return want
+  const at = order.indexOf(want)
+  if (at < 0) return ''
+  for (let i = at + 1; i < order.length; i++) if (list.includes(order[i])) return order[i]
+  for (let i = at - 1; i >= 0; i--) if (list.includes(order[i])) return order[i]
+  return ''
+}
+
 /** CLI 支持这个思考强度吗；模型驱动的 CLI 交给执行前按模型判断，这里先放行 */
 export const supportsEffort = (cli: string, effort: string) => {
   const def = getCli(cli)

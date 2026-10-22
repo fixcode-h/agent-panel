@@ -31,7 +31,7 @@ import {
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { AGENT_ICONS } from '@/lib/agent-icons'
-import { cliDefaultModel, defaultEffortOptions, modelEfforts } from '@/lib/cli-style'
+import { cliDefaultModel, defaultEffortOptions, effortValue, modelEfforts } from '@/lib/cli-style'
 import { useCliDef } from '@/lib/cli-models'
 import { agentChecks, isReady } from '@/lib/readiness'
 import { useAutosave } from '@/lib/useAutosave'
@@ -479,15 +479,10 @@ export function AgentDetail({
                     >
                       <Select
                         aria-label={t('思考强度')}
-                        value={draft.effort === defEffort ? '' : draft.effort}
+                        value={effortValue(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''), draft.effort)}
                         onChange={(e) => set('effort', e.target.value)}
                         // 只列这个模型支持的强度：模型不认的强度 CLI 会启动即报错退出
-                        options={defaultEffortOptions(
-                          cliDef,
-                          defEffort,
-                          modelEfforts(cliDef, usedModel ?? ''),
-                          draft.effort,
-                        )}
+                        options={defaultEffortOptions(cliDef, defEffort, modelEfforts(cliDef, usedModel ?? ''))}
                       />
                     </Field>
                   )}
