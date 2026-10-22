@@ -173,11 +173,36 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
   },
   stdio: ['ignore', 'pipe', 'inherit'],
 })
-const stop = () => {
-  server.kill()
-  relServer.close()
+/**
+ * 退出前要收尾的资源：临时起的 server、子进程。都登记进来，断言失败时统一关掉。
+ * 不登记的话，没关的 server 会一直占着事件循环，进程明明已经失败却不退出，CI 会挂到超时才结束
+ */
+const cleanups = new Set()
+const onExit = (fn) => {
+  cleanups.add(fn)
+  return () => cleanups.delete(fn)
 }
-process.on('exit', stop)
+const cleanupAll = () => {
+  // 后起的先关（临时 server 可能依赖先起的那几个）
+  for (const fn of [...cleanups].reverse()) {
+    cleanups.delete(fn)
+    try {
+      fn()
+    } catch {}
+  }
+}
+onExit(() => server.kill())
+onExit(() => relServer.close())
+process.on('exit', cleanupAll)
+// 主流程之外抛出的错误（后台 promise、写文件失败）也走同一套收尾，不要留下半开的服务
+const fail = (e) => {
+  console.error(e)
+  process.exitCode = 1
+  cleanupAll()
+  process.exit(1)
+}
+process.on('uncaughtException', fail)
+process.on('unhandledRejection', fail)
 
 const call = async (method, url, body) => {
   // 下面大部分用例测的是按连线自动执行（每次调用的顺序、提示词都按这个断言）；没有编排器的那条单独写明 dispatch: true
@@ -228,7 +253,19 @@ const calls = () => {
   const ends = new Map(readLog(`${log}.end`).map((e) => [e.pid, e.end]))
   return readLog(log).map((c) => ({ ...c, end: ends.get(c.pid) }))
 }
-const step = (name) => console.log(`✓ ${name}`)
+// 看门狗：某一步卡住（等一个永远不返回的请求）时打印最后完成的步骤并失败退出，
+// 别让一整轮 e2e 把 CI 拖到 workflow 的超时
+const WATCHDOG_MS = Number(process.env.AGENT_PANEL_E2E_WATCHDOG_MS ?? 10 * 60_000)
+let lastStep = '启动服务'
+const step = (name) => {
+  lastStep = name
+  console.log(`✓ ${name}`)
+}
+const watchdog = setTimeout(() => {
+  console.error(`端到端测试超过 ${Math.round(WATCHDOG_MS / 60000)} 分钟没有跑完，最后完成：${lastStep}`)
+  cleanupAll()
+  process.exit(1)
+}, WATCHDOG_MS)
 
 for (let i = 0; ; i++) {
   try {
@@ -4248,18 +4285,36 @@ try {
       res.end(JSON.stringify({ data: [{ id: 'm-b' }, { id: 'm-a' }] }))
     })
     await new Promise((r) => apiSrv.listen(0, '127.0.0.1', r))
+    // 这个临时 server 也要登记：后面的断言一失败，它留着就会让进程退不出去
+    const closeApiSrv = onExit(() => apiSrv.close())
     const apiBase = `http://127.0.0.1:${apiSrv.address().port}/v1`
+    // name 必填（服务端按厂家名称查默认地址和余额接口），页面传的是整份 API 配置
     const got = await call('POST', '/accounts/api-models', {
+      name: 'OpenAI',
       protocol: 'openai-chat',
       baseUrl: apiBase,
       apiKey: 'sk-test',
     })
     assert.deepEqual(got.models, ['m-a', 'm-b'])
     await assert.rejects(
-      call('POST', '/accounts/api-models', { protocol: 'openai-chat', baseUrl: apiBase, apiKey: 'wrong' }),
+      call('POST', '/accounts/api-models', {
+        name: 'OpenAI',
+        protocol: 'openai-chat',
+        baseUrl: apiBase,
+        apiKey: 'wrong',
+      }),
       /401/,
     )
-    apiSrv.close()
+    // 缺 name 要明确报错，不能静默当成空名字（那样厂家默认地址和余额接口都查不到）
+    await assert.rejects(
+      call('POST', '/accounts/api-models', { protocol: 'openai-chat', baseUrl: apiBase, apiKey: 'sk-test' }),
+      /at name/,
+    )
+    // 余额接口：地址只按厂家名称取，不支持余额的厂家、缺名称、缺密钥都要明确报错
+    await assert.rejects(call('POST', '/accounts/api-balance', { name: '中转 A', apiKey: 'sk-test' }), /不支持余额查询/)
+    await assert.rejects(call('POST', '/accounts/api-balance', { apiKey: 'sk-test' }), /at name/)
+    await assert.rejects(call('POST', '/accounts/api-balance', { name: 'DeepSeek', apiKey: '' }), /先填密钥/)
+    closeApiSrv()
     const apis = [
       {
         id: 'ap1',
@@ -4930,6 +4985,10 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
       },
       stdio: ['pipe', 'pipe', 'inherit'],
     })
+    // 断言失败时也要把它关掉：它自己不会退，留着会占住事件循环，进程退不出去
+    onExit(() => {
+      if (child.exitCode === null) child.kill()
+    })
     let out = ''
     child.stdout.on('data', (d) => (out += d))
     const exited = new Promise((r) => child.on('exit', (code) => r(code)))
@@ -5065,5 +5124,12 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
   console.error(e)
   process.exitCode = 1
 } finally {
-  stop()
+  clearTimeout(watchdog)
+  cleanupAll()
+  // 收尾后还有东西占着事件循环时到点强制退出：unref 的定时器在有别的句柄时才会触发，
+  // 清理干净了就自然退出，不会多等
+  setTimeout(() => {
+    console.error('收尾后进程没有自己退出，强制退出')
+    process.exit(process.exitCode ?? 0)
+  }, 2000).unref()
 }
