@@ -10,7 +10,7 @@ import { mergeStepsFor, verifyBlock } from '../shared/test-steps.ts'
 // 独立分支目录建在数据目录里：测试用临时目录，不碰本机真实的数据
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'merge-build-data-'))
 const { abortMerge, commitMerge, commitWorktree, createWorktree, trialMerge } = await import('./exec/worktree.ts')
-const { runMergeSteps } = await import('./merge-build.ts')
+const { runMergeSteps, runShell, shellCommand } = await import('./merge-build.ts')
 
 // 读文本时统一换行符：本机 core.autocrlf 和平台不同，合并、检出写出的是 CRLF
 const git = (cwd: string, ...args: string[]) =>
@@ -109,4 +109,19 @@ test('对话的验证说明：按改动大小分开，关掉时一律完整跑',
   const off = verifyBlock(steps, { platform: 'linux', scaled: false, submit: false })
   assert.match(off, /每次改动都跑完整的测试步骤/)
   assert.doesNotMatch(off, /小改动/)
+})
+
+test('整行命令交给 shell：Windows 上整行加引号原样交给 cmd，引号里的代码不被转义成字符串', async () => {
+  const line = `node -e "setTimeout(()=>console.log('到点'),300)"`
+  const win = shellCommand(line, 'win32')
+  assert.deepEqual(win.args, ['/d', '/s', '/c', `"${line}"`])
+  assert.equal(win.windowsVerbatimArguments, true)
+  assert.deepEqual(shellCommand(line, 'linux').args, ['-c', line])
+  // 真跑一次：等到定时器到点才退出，不是 0 秒就结束
+  const start = Date.now()
+  const out: string[] = []
+  const r = await runShell(line, tmpdir(), { timeoutMs: 20_000, onLine: (l) => out.push(l) })
+  assert.equal(r.code, 0)
+  assert.ok(Date.now() - start >= 250, '定时器没等到就退出了')
+  assert.deepEqual(out, ['到点'])
 })

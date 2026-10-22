@@ -9,15 +9,25 @@ const DEFAULT_TIMEOUT_MS = 90 * 60_000
 const TAIL = 6000
 
 /** 用系统的 shell 跑一整行命令（Windows 上 cmd，其他系统 sh） */
+/**
+ * 一整行命令交给系统 shell 时的启动方式。
+ * Windows 上和 Node 的 shell: true 一样：整行包一层引号、原样（verbatim）交给 cmd.exe /d /s /c。
+ * 不能让 Node 按普通参数转义：它会把行里的 " 写成 \"，cmd 不认这种转义，原样传给程序，
+ * 例如 node -e "setTimeout(...)" 里的代码变成带引号的字符串字面量，0 秒就「成功」退出
+ */
+export function shellCommand(line: string, platform: string = process.platform) {
+  return platform === 'win32'
+    ? { command: 'cmd.exe', args: ['/d', '/s', '/c', `"${line}"`], windowsVerbatimArguments: true }
+    : { command: 'sh', args: ['-c', line], windowsVerbatimArguments: false }
+}
+
 export function runShell(
   line: string,
   cwd: string,
   o: { timeoutMs: number; signal?: AbortSignal; onLine: (l: string) => void },
 ) {
-  const win = process.platform === 'win32'
   return runProcess({
-    command: win ? 'cmd.exe' : 'sh',
-    args: win ? ['/d', '/s', '/c', line] : ['-c', line],
+    ...shellCommand(line),
     cwd,
     env: process.env,
     timeoutMs: o.timeoutMs,

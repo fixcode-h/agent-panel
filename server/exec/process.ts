@@ -94,6 +94,8 @@ export function runProcess(o: {
   keepStdinOpen?: boolean
   /** 启动后拿到写 stdin 的方法：按协议一来一回对话的 CLI（codex app-server）用它发请求 */
   onSpawn?: (io: { write: (s: string) => void; end: () => void }) => void
+  /** Windows 上参数原样拼进命令行、不加引号转义：交给 cmd.exe /c 的整行命令要用它（见 shellCommand） */
+  windowsVerbatimArguments?: boolean
 }): Promise<ProcessResult> {
   return new Promise((resolve) => {
     let killed: ProcessResult['killed'] = null
@@ -116,6 +118,7 @@ export function runProcess(o: {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
         detached: !isWin,
+        windowsVerbatimArguments: o.windowsVerbatimArguments,
       })
     } catch (e) {
       return resolve({ code: null, killed: null, spawnError: (e as Error).message, stderr: '' })

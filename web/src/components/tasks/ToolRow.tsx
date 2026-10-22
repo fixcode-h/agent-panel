@@ -15,7 +15,7 @@ import {
 } from 'lucide-react'
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
-import { toolVerb, toolView, type ToolView } from '@/lib/tasks'
+import { fmtSecs, toolVerb, toolView, type ToolView } from '@/lib/tasks'
 import { useChildOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
@@ -162,6 +162,7 @@ export function RowShell({
   title,
   titleClass,
   detail,
+  ms,
   open,
   onToggle,
   onOpen,
@@ -177,6 +178,8 @@ export function RowShell({
   title?: React.ReactNode
   titleClass?: string
   detail?: React.ReactNode
+  /** 跑了多久（毫秒），跑完才给：显示在最右边 */
+  ms?: number
   open: boolean
   /** 不给就不能展开（没有可看的内容），点哪里都不动 */
   onToggle?: () => void
@@ -240,6 +243,7 @@ export function RowShell({
           ) : null}
         </span>
         {detail}
+        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtSecs(ms)}</span>}
         {toggle && (
           <ChevronRight
             className={cn(
@@ -326,6 +330,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         badge={view.server}
         title={tool.label}
         detail={detail}
+        ms={tool.running ? undefined : tool.ms}
         open={open}
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}

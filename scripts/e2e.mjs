@@ -970,6 +970,7 @@ try {
     const run = a.messages.flatMap((m) => m.tools).find((x) => x.kind === 'run')
     assert.equal(run.output, 'total 8\nREADME.md\n')
     assert.ok(!run.running)
+    assert.equal(typeof run.ms, 'number', '跑完的命令记下了耗时')
     step('插话：Codex、Claude Code、Command Code 都交给正在跑的这一轮；命令输出边跑边显示')
 
     // ---- 额度：Codex 主动查，Claude Code 用执行时收到的 ----

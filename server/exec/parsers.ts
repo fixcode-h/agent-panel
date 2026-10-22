@@ -13,7 +13,8 @@ export type CliEvent =
   /** 一整段文字（没有流式增量时使用） */
   | { type: 'text'; text: string }
   /** 思考过程：Claude 是增量，Codex 是一段段的推理摘要 */
-  | { type: 'thinking'; text: string; delta?: boolean }
+  /** ms：CLI 报得出这段思考用了多久时给（Codex 的推理条目），否则面板按收到的时刻算 */
+  | { type: 'thinking'; text: string; delta?: boolean; ms?: number }
   /** id 用来把之后的 tool_result 对应到这次调用 */
   | { type: 'tool'; tool: ToolUse; file?: { path: string; add: number; del: number }; id?: string }
   /** 还在执行的工具新输出的一段（命令的输出边跑边显示）；snapshot 为真时 text 是到目前为止的全部输出 */
