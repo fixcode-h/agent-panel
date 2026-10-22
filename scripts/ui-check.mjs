@@ -368,15 +368,23 @@ try {
     if (await p.getByText(name, { exact: false }).count()) errors.push(`对话页：还能看到「${name}」`)
   }
   await check(p, '对话-不能换Agent和参数')
-  // AI 分析执行结果：新建分析对话，给出修改建议的差异和框架问题，勾选后应用到工作流
+  // AI 分析执行结果：新建分析对话，代码问题按模块分组带「修复」，角色和工作流的优化可以逐条或全部应用
   await p.goto(workflowTaskUrl)
   await p.getByRole('button', { name: '更多操作' }).click()
   await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
-  await p.getByText('工作流优化建议').waitFor({ timeout: 20000 })
+  await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
   await p.getByRole('button', { name: '看差异' }).first().click()
-  await check(p, 'AI分析-建议', ['工作流优化建议', '面板框架的问题', '先确认范围'])
-  await p.getByRole('button', { name: /应用选中的 2 项/ }).click()
+  await check(p, 'AI分析-建议', ['代码问题', '商品卡片', '面板框架', '工作流优化', '先确认范围', '应用到工作流'])
+  // 项目代码的问题能开子对话去修；面板框架的问题在非面板源代码项目里修不了
+  await p.getByRole('button', { name: '修复', exact: true }).first().click()
+  await p
+    .getByRole('button', { name: /处理中|查看/ })
+    .first()
+    .waitFor({ timeout: 20000 })
+    .catch(() => errors.push('AI 分析：点了「修复」没有开出子对话'))
+  await check(p, 'AI分析-修复子对话')
+  await p.getByRole('button', { name: /全部应用/ }).click()
   await check(p, 'AI分析-已应用', ['已应用'])
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])

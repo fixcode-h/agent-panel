@@ -1376,6 +1376,8 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'ai-fix') return demoFixStart(body)
   if (res === 'doc-jobs')
     return (sub === 'stop' ? stopDemoDocJob(id) : demoDocJob(id)) ?? fail('找不到这次优化，可能已过期')
+  // 演示里的项目都不是面板自己的源代码
+  if (res === 'projects' && id && sub === 'panel-source') return { panelSource: false }
   if (res === 'projects' && id && sub === 'files') {
     const q = (query.get('q') ?? '').toLowerCase()
     return DEMO_FILES.filter((f) => f.toLowerCase().includes(q)).slice(0, 30)
@@ -1752,7 +1754,8 @@ function tasksRoute(
   if (!id) {
     if (method === 'GET') {
       const pid = query.get('projectId')
-      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks).map(taskSummary)
+      // 和正式版一样：子对话不进项目列表，在父对话里看
+      return (pid ? tasks.filter((t) => t.projectId === pid) : tasks).filter((t) => !t.parentTaskId).map(taskSummary)
     }
     return createTask(d, parse(NewTaskInput, body)).task
   }
@@ -1871,6 +1874,19 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  if (sub === 'children' && method === 'GET')
+    return tasks
+      .filter((x) => x.parentTaskId === task.id)
+      .map((x) => ({
+        id: x.id,
+        title: x.title,
+        status: x.status,
+        summary: x.summary,
+        working: x.working,
+        updatedAt: x.updatedAt,
+        cliAlive: live.has(x.id),
+        lastMessageAt: x.messages.at(-1)?.at ?? x.updatedAt,
+      }))
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
   if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }
   if (sub === 'messages') {

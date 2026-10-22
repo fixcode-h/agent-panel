@@ -38,6 +38,7 @@ import { askMcpApi } from './ask-mcp.ts'
 import { askExtensionReload, bridgeApi, browserStatus, extensionDir, openExtensionsPage } from './bridge.ts'
 import { docsApi } from './docs.ts'
 import { fixApi } from './fix.ts'
+import { isPanelSource } from './panel-source.ts'
 import { deployApi } from './deploy.ts'
 import { detectClis } from './detect.ts'
 import { accountsApi, syncCliAuths } from './accounts.ts'
@@ -641,6 +642,12 @@ app.put('/global-lessons', async (c) => {
   const r = GlobalLessons.safeParse(body.lessons)
   if (!r.success) return bad(c, r.error.issues.map((i) => i.message).join('；'))
   return c.json(await writeGlobalLessons(r.data))
+})
+
+// 项目是不是 agent-panel 自己的源代码：AI 分析结果据此决定能不能开子对话改进源代码
+app.get('/projects/:id/panel-source', async (c) => {
+  const p = await projects.get(c.req.param('id'))
+  return p ? c.json({ panelSource: await isPanelSource(p.path) }) : bad(c, t('项目不存在'), 404)
 })
 
 app.delete('/projects/:id', async (c) => {

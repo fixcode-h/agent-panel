@@ -1244,7 +1244,18 @@ export function TaskView({
                         ),
                       )}
                       <NextWorkflows task={task} />
-                      <EvolutionCard task={task} />
+                      <EvolutionCard
+                        task={task}
+                        project={project}
+                        kids={children}
+                        onSpawned={(id) =>
+                          void api
+                            .taskChildren(task.id)
+                            .then(setChildren)
+                            .catch(() => {})
+                            .finally(() => openChildIn(id))
+                        }
+                      />
                       {running &&
                         task.mode === 'chat' &&
                         working &&

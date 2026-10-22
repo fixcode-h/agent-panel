@@ -321,6 +321,8 @@ export const api = {
   // 侧栏拖拽后的顺序：传全部项目的 id，服务端重新编号
   orderProjects: (ids: string[]) => request<Project[]>('/projects/order', json('PUT', ids)),
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
+  /** 项目是不是 agent-panel 自己的源代码（AI 分析结果里多一个「补充进源代码」） */
+  panelSource: (id: string) => request<{ panelSource: boolean }>(`/projects/${id}/panel-source`),
 
   allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),

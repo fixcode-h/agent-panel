@@ -580,9 +580,11 @@ ${focus.trim() ? `\n用户特别关心：${focus.trim()}\n` : ''}
    例如状态不对、输出丢失、重复执行、等待时间算错、提示词拼得不对。面板代码的位置：
 ${FRAMEWORK_MAP}
    只写成发现，写清现象、依据和可能的位置（文件路径，能确定时带行号），不要去改面板代码。
+5. 交付的代码：执行改出来的项目代码里如果有能从记录确定的具体缺陷（报错、漏改、明显写错），也写成发现，同样不要去改；
+   拿不准的不写。
 
 ## 回复格式
-用中文写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」四个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
+用中文写，排版要好读：开头不加标题，用两三句话给结论；再用「### 1. 结果质量」「### 2. 工作流」「### 3. Agent」「### 4. 面板框架」「### 5. 交付的代码」五个小标题分节，节里用列表一条一条写，每条都要有依据，关键数字和节点名加粗。没有问题的一节写一句「没有发现问题」。
 
 最后单独写一个代码块，语言名写 ${EVOLUTION_LANG}，内容是 JSON，把建议的修改写成可以直接应用的形式：
 
@@ -594,12 +596,16 @@ ${FRAMEWORK_MAP}
     {"target": "workflow", "workflowId": "…", "field": "document", "value": "改好后的完整说明", "reason": "…"},
     {"target": "agent", "agentId": "…", "field": "instructions", "value": "改好后的完整角色设定", "reason": "…"}
   ],
-  "framework": [
-    {"title": "问题标题", "detail": "现象、依据、建议怎么改", "files": ["shared/engine.ts:120"]}
+  "issues": [
+    {"scope": "panel", "category": "执行引擎", "title": "问题标题", "detail": "现象、依据、建议怎么改", "files": ["shared/engine.ts:120"]},
+    {"scope": "project", "category": "登录页", "title": "…", "detail": "…", "files": ["src/pages/Login.tsx:42"]}
   ]
 }
 \`\`\`
 
+- issues 是代码问题（上面第 4、5 点的发现）：scope 为 panel 表示面板框架本身的问题，project 表示这次交付的项目代码的问题；
+  category 写问题所在的模块，四个字以内（面板的问题用执行引擎、调度、角色设定、CLI 调用、统计、界面这类名字），同一模块的问题用同一个名字。
+  界面按模块分组显示，每条可以单独开一个子对话去修，所以每条只写一个问题，detail 要写到修的人不看记录也能动手。
 - target 为 node 时 field 可以是 instructions、title、tier（high/medium/low/空字符串）、retries（0-5）、maxRounds（1-10）、confirm（true/false）；
   workflow 可以是 document、description；agent 可以是 instructions、description。
 - value 写修改后的**完整**值（不是片段，也不是差异），用户会看到和现在的对比再决定是否应用。
@@ -639,7 +645,11 @@ const Change = z.discriminatedUnion('target', [
 ])
 export type EvolutionChange = z.infer<typeof Change>
 
-export interface FrameworkFinding {
+/** 一条代码问题：panel 是面板框架本身的，project 是这次交付的项目代码的 */
+export interface CodeIssue {
+  scope: 'panel' | 'project'
+  /** 问题所在的模块，界面按它分组；AI 没给时为空 */
+  category: string
   title: string
   detail: string
   files: string[]
@@ -648,7 +658,7 @@ export interface FrameworkFinding {
 export interface Evolution {
   summary: string
   changes: EvolutionChange[]
-  framework: FrameworkFinding[]
+  issues: CodeIssue[]
 }
 
 const BLOCK = new RegExp('```' + EVOLUTION_LANG + '[^\\n]*\\n([\\s\\S]*?)```', 'g')
@@ -669,15 +679,21 @@ export function parseEvolution(text: string): Evolution | null {
     .map((c) => Change.safeParse(c))
     .filter((p) => p.success)
     .map((p) => p.data)
-  const framework = (Array.isArray(o.framework) ? o.framework : [])
+  // 旧版的建议块只有 framework（都是面板框架的问题），照样读出来
+  const list = Array.isArray(o.issues) ? o.issues : Array.isArray(o.framework) ? o.framework : []
+  const issues = list
     .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
     .map((f) => ({
+      scope: f.scope === 'project' ? ('project' as const) : ('panel' as const),
+      category: String(f.category ?? '')
+        .trim()
+        .slice(0, 20),
       title: String(f.title ?? '').trim(),
       detail: String(f.detail ?? '').trim(),
       files: Array.isArray(f.files) ? f.files.map(String).slice(0, 10) : [],
     }))
     .filter((f) => f.title || f.detail)
-  return { summary: String(o.summary ?? '').trim(), changes, framework }
+  return { summary: String(o.summary ?? '').trim(), changes, issues }
 }
 
 /** 显示时去掉建议块（界面另外画成可以审阅的差异）；流式输出到一半时去掉到结尾 */
@@ -832,7 +848,7 @@ export function lineDiff(a: string, b: string): { kind: 'same' | 'add' | 'del'; 
 /** 在线演示：按分析要求里列出的对象编一份建议，演示里也能看到差异和应用 */
 export function demoEvolution(prompt: string) {
   const node = /- 工作流 workflowId: (\S+?)｜[^\n]*\n {2}- 节点 flowId: (\S+?), nodeId: (\S+?)｜([^\n]+)/.exec(prompt)
-  const changes = node
+  const changes: Record<string, unknown>[] = node
     ? [
         // 演示只改简介和档位，不动节点要求：免得应用后演示里的工作流不能用了
         {
@@ -853,6 +869,16 @@ export function demoEvolution(prompt: string) {
         },
       ]
     : []
+  // 角色也给一条：演示里能看到「应用到角色」
+  const agent = /- Agent agentId: (\S+?)｜/.exec(prompt)
+  if (agent)
+    changes.push({
+      target: 'agent',
+      agentId: agent[1],
+      field: 'description',
+      value: '动手前先列出要改的文件和验证方式，做完逐条对照要求自查',
+      reason: '记录里同一个范围问题问了两遍，简介写明先确认范围',
+    })
   return (
     '```' +
     EVOLUTION_LANG +
@@ -861,12 +887,22 @@ export function demoEvolution(prompt: string) {
       {
         summary: '把做法写进简介，降低不必要的模型档位',
         changes,
-        framework: [
+        issues: [
           {
+            scope: 'panel',
+            category: '执行引擎',
             title: '验收不通过后重做时没有带上一轮的改动摘要',
             detail:
               '演示示例：重做的节点重新读了一遍全部文件，耗时比第一轮还长。可以在退回意见里附上上一轮的改动列表。',
             files: ['shared/engine.ts'],
+          },
+          {
+            scope: 'project',
+            category: '商品卡片',
+            title: '价格为空时卡片报错',
+            detail:
+              '演示示例：商品没有价格时 product.price.toFixed 会抛错，整个列表白屏。显示前先判断，没有价格时显示「暂无报价」。',
+            files: ['src/components/ProductCard.tsx:7'],
           },
         ],
       },
