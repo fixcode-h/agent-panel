@@ -35,6 +35,17 @@ export function revealDir(dir: string) {
   } catch {}
 }
 
+/** 可执行的文件不直接打开：点一下附件卡片不该跑起一个程序 */
+const RUNNABLE =
+  /\.(exe|com|bat|cmd|msi|msc|ps1|psm1|vbs|vbe|js|jse|wsf|wsh|hta|scr|pif|lnk|reg|jar|app|command|sh|run|appimage|desktop)$/i
+
+/** 用系统默认的程序打开文件（参数直接传给程序，不经过 shell）；可执行文件返回 false，不打开 */
+export function openWithSystem(file: string) {
+  if (RUNNABLE.test(file)) return false
+  revealDir(file)
+  return true
+}
+
 /**
  * 打开所在的目录并选中它：装扩展时用户把选中的文件夹直接拖到浏览器的扩展页面上就装好了，
  * 不用在「加载已解压的扩展程序」的窗口里找路径。Linux 的文件管理器没有统一的「选中」参数，只打开上一级

@@ -9,7 +9,7 @@
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts'
 import { includedAgents } from './agent-role.ts'
-import { stepMs, stepUsage } from './task.ts'
+import { stepMs, stepUsage, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
 
 export const TASK_EXPORT_FORMAT = 'agent-panel/task'
@@ -460,7 +460,9 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
             ? '报错'
             : '用户回答'
           : `AI（${agentName(m.agentId)}）`
-    const body = m.answers ? m.answers.map((a) => `${a.question}：${a.answer}`).join('\n') : m.text.trim()
+    const body = m.answers
+      ? m.answers.map((a) => `${a.question}：${a.answer}`).join('\n')
+      : (m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text).trim()
     const stamp = at(m.at ?? '')
     // 和上一条同一秒的合并显示，不重复刷时间；间隔超过 1 分钟单独提示，看出等待在哪
     const gap = m.at && last ? Date.parse(m.at) - Date.parse(last) : 0

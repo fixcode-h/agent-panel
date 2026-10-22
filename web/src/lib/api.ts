@@ -374,6 +374,22 @@ export const api = {
   upload: (input: { name: string; mime: string; data: string }) => request<Attachment>('/uploads', json('POST', input)),
   /** 在面板所在的本机弹出系统的文件选择框，返回选中文件的绝对路径（取消时为空） */
   pickFiles: () => request<{ files: Attachment[] }>('/uploads/pick', json('POST', {})),
+  /** 粘贴进输入框的路径：哪些是本机真实存在的文件（from 是粘贴时写的原样） */
+  resolvePaths: (paths: string[]) =>
+    request<{ files: (Attachment & { from: string })[] }>('/uploads/resolve', json('POST', { paths })),
+  /** 用系统默认程序打开附件（可执行文件改成在文件夹里显示），reveal 时直接在文件夹里显示 */
+  openLocalFile: (path: string, reveal = false) =>
+    request<{ ok: boolean; revealed: boolean }>('/uploads/open', json('POST', { path, reveal })),
+  /** 附件、粘贴引用的本机文件：读文字内容，点文件卡片时看 */
+  localFile: (path: string) =>
+    request<{
+      path: string
+      dir: string
+      exists: boolean
+      binary?: boolean
+      content: string
+      truncated: boolean
+    }>(`/uploads/raw/file?path=${encodeURIComponent(path)}`),
   /** 引入会话：把任务或设计的对话整理成一份附件 */
   taskTranscript: (id: string) => request<Attachment>(`/tasks/${id}/transcript`, json('POST', {})),
   designTranscript: (id: string) => request<Attachment>(`/designs/${id}/transcript`, json('POST', {})),

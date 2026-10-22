@@ -288,7 +288,8 @@ function transcript(task: Task, upto: number) {
   const lines: string[] = []
   for (const m of task.messages.slice(0, upto)) {
     if (m.step || m.role === 'system' || !m.text.trim()) continue
-    lines.push(`${m.role === 'user' ? '用户' : '你'}：${m.text.trim()}`)
+    const text = m.role === 'user' ? withAttachments(m.text, m.attachments) : m.text
+    lines.push(`${m.role === 'user' ? '用户' : '你'}：${text.trim()}`)
   }
   return lines.join('\n\n')
 }

@@ -28,6 +28,16 @@ export const EN_TASKS: Record<string, string> = {
   '项目目录里找不到这个文件，可能已经被移动或删除。':
     'This file is not in the project directory; it may have been moved or deleted.',
   '这是二进制文件，不显示内容。': 'This is a binary file, contents are not shown.',
+  引用的内容: 'Quoted content',
+  '引用没有加上：{error}': 'Could not add the quote: {error}',
+  '点击查看，按退格键删除': 'Click to view, press Backspace to remove',
+  '这是可执行文件，不直接运行，已在文件夹中显示':
+    'This is an executable, so it was shown in its folder instead of being run',
+  用默认程序打开: 'Open with default app',
+  在文件夹中显示: 'Show in folder',
+  '找不到这个文件，可能已经被移动或删除。': 'This file could not be found. It may have been moved or deleted.',
+  '这个文件不是文字，这里显示不了。可以用默认程序打开，或在文件夹中找到它。':
+    "This file isn't text, so it can't be shown here. Open it with the default app or find it in its folder.",
   '文件太大，只显示了前面一部分。完整内容请在编辑器里查看。':
     'The file is too large; only the first part is shown. Open it in the editor for the full contents.',
   '在线演示没有真的项目目录，下载到本机运行后可以在这里查看文件。':
@@ -368,7 +378,6 @@ export const EN_TASKS: Record<string, string> = {
   '撤回到这条消息？': 'Rewind to this message?',
   '这条消息和之后的对话会去掉，内容放回输入框，改了可以再发。Agent 会从这条之前接着聊；已经改动的文件不会撤销，需要的话在「更改」里撤销。':
     "This message and everything after it will be removed, and its text goes back into the input so you can edit and resend. The agent continues from before this message. File changes aren't undone; undo them under Changes if needed.",
-  '查看 {name}': 'View {name}',
   '放回输入框，改了再发': 'Put back in the input box to edit and resend',
   上一张: 'Previous',
   下一张: 'Next',

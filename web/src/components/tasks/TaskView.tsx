@@ -1,6 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { t } from '@shared/i18n'
-import { expandQuotes, quoteChip, useQuoteTarget } from '@/lib/quote'
+import { expandQuotes, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
   ArrowRight,
@@ -77,7 +77,7 @@ import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { ATTACHMENT_PROMPT, DropOverlay, useAttachments, useFileMention } from '@/components/chat/Attachments'
 import { ChatComposer } from '@/components/chat/ChatComposer'
 import type { RichInputHandle } from '@/components/chat/RichInput'
-import { forSend } from '@shared/composer'
+import { dropChip, forSend } from '@shared/composer'
 import { UserMessage, msgAction } from '@/components/chat/ChatMessage'
 import { RecordLessonDialog } from '@/components/projects/Lessons'
 
@@ -368,14 +368,17 @@ export function TaskView({
   // 拖文件的接收范围：对话页的主区域（消息流、状态行、子对话、输入框），右栏不在里面。
   // 用 state 存元素：ref 在首帧还是空的，effect 拿不到要监听的节点
   const [dropArea, setDropArea] = useState<HTMLElement | null>(null)
-  // 消息下面的「引用」：像附件一样在输入框末尾放一张引用卡片，不把整段原文铺进输入框；发送时才换回引用块
+  // 消息下面的「引用」：像附件一样在输入框末尾放一张引用卡片，不把整段原文铺进输入框；
+  // 原文跟着附件走，发出去后对话里还是这张卡片，交给 Agent 时才换成引用块
   useQuoteTarget(dropArea, (quoted) => {
-    const chip = quoteChip(quoted)
     const ed = followTa.current
     if (!ed) return
     ed.focus()
     ed.setCaret(Number.MAX_SAFE_INTEGER)
-    ed.insertChip(chip)
+    files.addQuote(quoted, {
+      added: (items) => items.forEach((x) => ed.insertChip({ kind: x.kind, name: x.name })),
+      failed: (name) => ed.setText(dropChip(ed.text(), name)),
+    })
   })
   const [dropOver, setDropOver] = useState(false)
   const [rewindAsk, setRewindAsk] = useState('')
@@ -632,7 +635,7 @@ export function TaskView({
   const send = async (input?: string) => {
     const text = input ?? followTa.current?.text() ?? ''
     if ((!text.trim() && !files.attachments.length) || sending || files.uploading) return
-    const content = forSend(expandQuotes(text), files.attachments.length ? ATTACHMENT_PROMPT : '')
+    const content = forSend(expandQuotes(text, files.attachments), files.attachments.length ? ATTACHMENT_PROMPT : '')
     if (!files.items.length && slash.intercept(content)) return
     setSending(true)
     stick.current = true
@@ -1430,6 +1433,8 @@ export function TaskView({
                 const r = await api.rewindTask(task.id, rewindAsk)
                 apply(r.task)
                 followTa.current?.setText(r.text)
+                // 那条消息的图片、文件、引用一起放回来：卡片已经在文字里
+                files.replace(r.attachments ?? [])
                 setRewindAsk('')
                 followTa.current?.focus()
               } catch (e) {

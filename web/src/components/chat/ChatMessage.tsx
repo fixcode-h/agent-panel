@@ -7,7 +7,8 @@ import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { getLang, t } from '@shared/i18n'
-import { MessageAttachments, attachmentUrl, isImage } from './Attachments'
+import { copyText } from '@shared/composer'
+import { MessageBody } from './AttachmentView'
 
 /** 消息时间：今天只写时分，今年写月日，更早的带上年份；悬停看完整时间 */
 export function formatAt(at: string) {
@@ -28,42 +29,6 @@ export function formatAt(at: string) {
 export const msgAction =
   'grid h-7 w-7 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg disabled:cursor-default disabled:opacity-40'
 
-/** 附件在复制出来的文字里怎么写：图片和文件都直接给路径，粘贴到别处还知道原文在哪 */
-const attachLines = (items: Attachment[]) =>
-  items.length ? `\n\n${items.map((a) => `${a.name}：${a.path}`).join('\n')}` : ''
-
-/**
- * 复制：文字后面补上附件路径。
- * 有图片时把图片也一起写进剪贴板：粘贴到能接图片的地方得到图片，别的编辑器仍然拿到文字
- */
-async function copyWithAttachments(text: string, items: Attachment[]) {
-  const full = text + attachLines(items)
-  const images = items.filter((a) => isImage(a.mime, a.name))
-  if (!images.length || typeof ClipboardItem === 'undefined' || !navigator.clipboard?.write) {
-    await navigator.clipboard?.writeText(full)
-    return
-  }
-  const blobs = await Promise.all(
-    images.map((a) =>
-      attachmentUrl(a)
-        .then((url) => (url ? fetch(url) : null))
-        .then((r) => (r?.ok ? r.blob() : null))
-        .catch(() => null),
-    ),
-  )
-  // 同一次写入里带上文字和图片：分成两次写，后一次会把前一次覆盖掉
-  const entry: Record<string, Blob> = { 'text/plain': new Blob([full], { type: 'text/plain' }) }
-  blobs.forEach((b, i) => {
-    if (b) entry[b.type || images[i].mime || 'image/png'] = b
-  })
-  try {
-    await navigator.clipboard.write([new ClipboardItem(entry)])
-  } catch {
-    // 有的浏览器只认文字：退回去只复制文字和路径，不让整个操作失败
-    await navigator.clipboard.writeText(full)
-  }
-}
-
 /** 复制按钮：点了显示一下「已复制」 */
 export function CopyButton({
   text,
@@ -72,7 +37,7 @@ export function CopyButton({
   label,
 }: {
   text: string
-  /** 连附件一起复制：文字后面补路径，图片写进剪贴板 */
+  /** 用户消息的附件：卡片换成文件路径再复制（粘贴回输入框时按路径认回卡片） */
   attachments?: Attachment[]
   className?: string
   label?: string
@@ -85,7 +50,7 @@ export function CopyButton({
       title={done ? t('已复制') : (label ?? t('复制'))}
       aria-label={label ?? t('复制')}
       onClick={() => {
-        void (attachments?.length ? copyWithAttachments(text, attachments) : navigator.clipboard?.writeText(text)).then(
+        void Promise.resolve(navigator.clipboard?.writeText(attachments ? copyText(text, attachments) : text)).then(
           () => {
             setDone(true)
             setTimeout(() => setDone(false), 1500)
@@ -125,7 +90,7 @@ export function MessageMeta({
 }: {
   text: string
   at?: string
-  /** 连附件一起复制 */
+  /** 用户消息：复制、引用时卡片换成文件路径 */
   attachments?: Attachment[]
   actions?: React.ReactNode
   align?: 'start' | 'end'
@@ -140,7 +105,7 @@ export function MessageMeta({
       )}
     >
       {text && <CopyButton text={text} attachments={attachments} />}
-      {text && <QuoteButton text={text} />}
+      {text && <QuoteButton text={attachments ? copyText(text, attachments) : text} />}
       {actions}
       {time?.short && (
         <time dateTime={at} title={time.full} className="px-1.5 tabular-nums">
@@ -151,7 +116,10 @@ export function MessageMeta({
   )
 }
 
-/** 用户发的消息：附件、气泡，下面是等待状态、时间和各个对话自己的操作（分叉、撤回…） */
+/**
+ * 用户发的消息：和输入框里一样，图片、文件、引用都是文字里的一行高的小卡片，放在同一个气泡里，点开查看；
+ * 下面是时间和各个对话自己的操作（分叉、撤回…）
+ */
 export function UserMessage({
   text,
   at,
@@ -170,21 +138,20 @@ export function UserMessage({
 }) {
   return (
     <div className="group/msg ml-auto flex max-w-[85%] flex-col items-end gap-1.5">
-      {!!attachments?.length && <MessageAttachments items={attachments} />}
-      {(text || extra) && (
+      {(text || extra || !!attachments?.length) && (
         <div
           className={cn(
             'max-w-full min-w-0 rounded-2xl bg-sel whitespace-pre-wrap [overflow-wrap:anywhere]',
             size === 'sm'
-              ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
-              : 'px-4 py-2.5 text-[0.90625rem] leading-relaxed',
+              ? 'rounded-br-md px-3.5 py-2 text-[0.84375rem] leading-relaxed'
+              : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
           )}
         >
-          {text}
+          <MessageBody text={text} attachments={attachments} />
           {extra}
         </div>
       )}
-      <MessageMeta text={text} at={at} attachments={attachments} actions={actions} align="end" />
+      <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" />
     </div>
   )
 }
@@ -233,8 +200,8 @@ export function AnswerMessage({
         className={cn(
           'flex max-w-full min-w-0 flex-col gap-2 rounded-2xl bg-sel [overflow-wrap:anywhere]',
           size === 'sm'
-            ? 'rounded-br-md px-3.5 py-2 text-[0.8125rem] leading-relaxed'
-            : 'px-4 py-2.5 text-[0.90625rem] leading-relaxed',
+            ? 'rounded-br-md px-3.5 py-2 text-[0.84375rem] leading-relaxed'
+            : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
         )}
       >
         {answers.map((a, i) => (

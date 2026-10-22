@@ -4,7 +4,9 @@
  *
  * 发送时的规矩：Skill / 命令决定这一轮怎么跑，必须提到最前面交给服务端展开；
  * 图片、文件留在原来的位置，由 withAttachments 换成真实路径（没引用到的追加在末尾）；
- * 引用卡片只是对话里某段内容的占位，发送前由网页换回引用块。
+ * 引用卡片对应一个带原文的附件（Attachment.quote），交给 Agent 时由 withAttachments 在原位换成引用块。
+ *
+ * 发出去的消息在对话里按同样的卡片显示；复制消息时卡片换成文件路径，粘贴回输入框时再按路径认回卡片（findPaths）。
  */
 export type ChipKind = 'image' | 'file' | 'skill' | 'command' | 'quote'
 
@@ -74,13 +76,110 @@ export function removeChip(value: string, chip: Chip): string {
   return i < 0 ? value : join(removeAt(list, i))
 }
 
+/** 附件类的卡片：背后有一个附件（图片、文件、引用），删卡片时附件也要一起去掉 */
+export const isAttachChip = (kind: ChipKind) => kind === 'image' || kind === 'file' || kind === 'quote'
+
 /** 附件从输入框里删掉时，把它那张卡片一起去掉 */
 export function dropChip(value: string, name: string): string {
   const list = segments(value)
-  const i = list.findIndex(
-    (s) => 'chip' in s && s.chip.name === name && (s.chip.kind === 'image' || s.chip.kind === 'file'),
-  )
+  const i = list.findIndex((s) => 'chip' in s && s.chip.name === name && isAttachChip(s.chip.kind))
   return i < 0 ? value : join(removeAt(list, i))
+}
+
+/** 卡片用到的附件字段（Attachment 的一部分，免得这里依赖 schema） */
+export interface AttachLike {
+  name: string
+  path: string
+  mime: string
+  quote?: string
+}
+
+const IMAGE_NAME = /\.(png|jpe?g|gif|webp|bmp)$/i
+
+/** 附件是哪种卡片：带原文的是引用，图片按类型或扩展名认，其他都是文件 */
+export function attachChip(a: Pick<AttachLike, 'name' | 'mime' | 'quote'>): ChipKind {
+  if (a.quote !== undefined) return 'quote'
+  return a.mime.startsWith('image/') || IMAGE_NAME.test(a.name) ? 'image' : 'file'
+}
+
+/** 卡片对应的附件：先按名字和类型找，旧数据类型对不上时只按名字 */
+export function attachOf<T extends AttachLike>(chip: Chip, list: readonly T[]): T | undefined {
+  return list.find((a) => a.name === chip.name && attachChip(a) === chip.kind) ?? list.find((a) => a.name === chip.name)
+}
+
+/** 引用块：每行前面加「> 」，后面空一行再接着写 */
+export function quoteBlock(text: string) {
+  const body = text
+    .trim()
+    .split('\n')
+    .map((l) => (l.trim() ? `> ${l}` : '>'))
+    .join('\n')
+  return `${body}\n\n`
+}
+
+/** 复制出来的路径：带空格、引号的用双引号包起来，粘贴回输入框时还能整段认出来 */
+export const pathText = (p: string) => (/[\s'"]/.test(p) ? `"${p.replace(/"/g, '')}"` : p)
+
+/**
+ * 复制一条用户消息：卡片换成它的文件路径（引用给的是存原文的那个文件），Skill / 命令写成「/名字」。
+ * 文字里没有卡片的附件（旧消息）放在最前面，和对话里显示的位置一致
+ */
+export function copyText(value: string, attachments: readonly AttachLike[] = []) {
+  const used = new Set<AttachLike>()
+  let out = ''
+  for (const s of segments(value)) {
+    if ('text' in s) {
+      out += s.text
+      continue
+    }
+    if (!isAttachChip(s.chip.kind)) {
+      out += `/${s.chip.name}`
+      continue
+    }
+    const a = attachOf(s.chip, attachments)
+    if (!a) {
+      out += chipMarker(s.chip.kind, s.chip.name)
+      continue
+    }
+    used.add(a)
+    out += pathText(a.path)
+  }
+  const rest = attachments.filter((a) => !used.has(a)).map((a) => pathText(a.path))
+  if (!rest.length) return out
+  return out.trim() ? `${rest.join(' ')} ${out}` : rest.join(' ')
+}
+
+/** 粘贴进来的文字里像本机绝对路径的地方 */
+export interface PathHit {
+  start: number
+  end: number
+  path: string
+}
+
+const ABS = /^(?:[A-Za-z]:[\\/]|\/(?!\/))/
+/**
+ * 双引号包着的路径（可以有空格），或者不带空格的绝对路径：Windows 的「C:\」「D:/」开头，其他系统「/」开头。
+ * 网址里的「//」、相对路径、词中间的斜杠不算；中文的逗号、句号这些标点当作路径结束
+ */
+const PATH_RE = /"([^"\n]+)"|(?<![\w:/\\.~-])((?:[A-Za-z]:[\\/]|\/(?!\/))[^\s"'<>|*?，。；、！？「」《》]+)/g
+/** 句尾跟着的标点不是路径的一部分 */
+const TAIL = /[，。、；：！？,.;:!?)）\]】》>'"]+$/
+
+/** 找出文字里的绝对路径：粘贴时交给服务端确认是不是真的文件，是的话换成卡片 */
+export function findPaths(text: string, max = 20): PathHit[] {
+  const out: PathHit[] = []
+  for (const m of text.matchAll(PATH_RE)) {
+    if (out.length >= max) break
+    const start = m.index ?? 0
+    if (m[1] !== undefined) {
+      const p = m[1].trim()
+      if (ABS.test(p)) out.push({ start, end: start + m[0].length, path: p })
+      continue
+    }
+    const p = m[2].replace(TAIL, '')
+    if (p.length > 1) out.push({ start, end: start + p.length, path: p })
+  }
+  return out
 }
 
 /** 发给服务端的内容。fallback：只放了附件、一个字没写时补上的一句话（例如「请查看附件」） */
@@ -93,7 +192,8 @@ export function forSend(value: string, fallback = ''): string {
   let body = list
   for (let i = body.length - 1; i >= 0; i--) if (isCommand(body[i])) body = removeAt(body, i)
   const rest = join(body).trim()
-  const text = typed ? rest : files ? fallback.trim() : ''
+  // 只放了图片、文件时补上那句话；卡片留在原位，对话里照样显示成卡片
+  const text = typed ? rest : files && fallback.trim() ? `${rest} ${fallback.trim()}` : rest
   const name = head && 'chip' in head ? head.chip.name : ''
   return name ? `/${name}${text ? ` ${text}` : ''}` : text
 }

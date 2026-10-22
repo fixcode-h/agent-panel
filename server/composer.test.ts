@@ -1,6 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { chipMarker, chips, dropChip, forSend, removeChip, segments } from '../shared/composer.ts'
+import {
+  attachChip,
+  chipMarker,
+  chips,
+  copyText,
+  dropChip,
+  findPaths,
+  forSend,
+  removeChip,
+  segments,
+} from '../shared/composer.ts'
 
 test('带卡片的文字拆成文本段和卡片段', () => {
   assert.deepEqual(segments('看图 [图片:设计稿.png] 改成'), [
@@ -30,7 +40,10 @@ test('发给服务端：Skill 和命令提到最前面，图片和文件留在�
 })
 
 test('只放了附件、没写要求时用一句默认的话；没写要求也没附件时是空的', () => {
-  assert.equal(forSend('[图片:设计稿.png]', '请查看附件'), '请查看附件')
+  // 卡片留在原位：发出去后对话里照样显示成卡片
+  assert.equal(forSend('[图片:设计稿.png]', '请查看附件'), '[图片:设计稿.png] 请查看附件')
+  // 只有引用卡片时引用本身就是内容，不补那句话
+  assert.equal(forSend('[引用:一段话#q1]', '请查看附件'), '[引用:一段话#q1]')
   assert.equal(forSend('[图片:设计稿.png] 按这个改', '请查看附件'), '[图片:设计稿.png] 按这个改')
   assert.equal(forSend('[技能:blender]', '请查看附件'), '/blender')
   assert.equal(forSend('', '请查看附件'), '')
@@ -55,4 +68,45 @@ test('退格删卡片：技能和命令也能整张删掉，同名不同类型�
   // 卡片后面直接接着打的字：删掉卡片后补一个空格，两边不会粘在一起
   assert.equal(removeChip('看 [技能:blender]改完了', { kind: 'skill', name: 'blender' }), '看 改完了')
   assert.equal(removeChip('没有卡片', { kind: 'skill', name: 'blender' }), '没有卡片')
+})
+
+test('引用卡片也算附件卡片：附件删掉时卡片一起去掉', () => {
+  assert.equal(dropChip('看 [引用:一段话#q1] 再说', '一段话#q1'), '看 再说')
+})
+
+test('附件对应哪种卡片：带原文的是引用，图片按类型或扩展名认', () => {
+  assert.equal(attachChip({ name: 'a#q1', mime: 'text/markdown', quote: '原文' }), 'quote')
+  assert.equal(attachChip({ name: 'a.PNG', mime: '' }), 'image')
+  assert.equal(attachChip({ name: 'a.pdf', mime: 'application/pdf' }), 'file')
+})
+
+test('复制用户消息：卡片换成路径，带空格的路径加引号，没写进文字的附件放在最前面', () => {
+  const img = { name: '设计稿.png', path: '/data/uploads/1/设计稿.png', mime: 'image/png' }
+  const doc = { name: '需求.pdf', path: 'C:\\Users\\Me Too\\需求.pdf', mime: '' }
+  const quote = { name: '一段话#q1', path: '/data/uploads/2/quote-q1.md', mime: 'text/markdown', quote: '一段话' }
+  assert.equal(
+    copyText('按 [图片:设计稿.png] 改，参考 [文件:需求.pdf] 和 [引用:一段话#q1]', [img, doc, quote]),
+    '按 /data/uploads/1/设计稿.png 改，参考 "C:\\Users\\Me Too\\需求.pdf" 和 /data/uploads/2/quote-q1.md',
+  )
+  assert.equal(copyText('修复下吧', [img]), '/data/uploads/1/设计稿.png 修复下吧')
+  assert.equal(copyText('/blender 做个箱子'), '/blender 做个箱子')
+})
+
+test('粘贴的文字里找绝对路径：引号里的可以带空格，网址、相对路径不算，句尾标点去掉', () => {
+  const text =
+    '看 /data/uploads/1/a.png，还有 "C:\\Users\\Me Too\\b.pdf" 和 D:/x/c.txt。网址 https://a.com/b 不算，src/a.ts 也不算'
+  const hits = findPaths(text)
+  assert.deepEqual(
+    hits.map((h) => h.path),
+    ['/data/uploads/1/a.png', 'C:\\Users\\Me Too\\b.pdf', 'D:/x/c.txt'],
+  )
+  // 位置对得上：换成卡片时按位置替换
+  for (const h of hits) assert.ok(text.slice(h.start, h.end).includes(h.path))
+  assert.deepEqual(findPaths('没有路径'), [])
+  // 复制出来的再粘贴回去能认全
+  const copied = copyText('看 [图片:a b.png]', [{ name: 'a b.png', path: '/tmp/x/a b.png', mime: 'image/png' }])
+  assert.deepEqual(
+    findPaths(copied).map((h) => h.path),
+    ['/tmp/x/a b.png'],
+  )
 })

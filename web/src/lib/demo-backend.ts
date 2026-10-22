@@ -890,6 +890,39 @@ function cliAction(id: string, action: CliInstallJob['action']) {
 /** 演示上传的附件内容（data URL），刷新页面后就没了 */
 export const demoUploads = new Map<string, string>()
 
+/** 演示附件的文字内容（data: 地址解出来）；不是文字或不在了给 null */
+function demoUploadText(p: string): string | null {
+  const url = demoUploads.get(p)
+  if (!url) return null
+  const [head, data = ''] = url.split(',')
+  if (!/^data:(text\/|application\/(json|javascript|xml))/.test(head) && !/\.(md|txt|json|ts|js|css|html)$/i.test(p))
+    return null
+  try {
+    return new TextDecoder().decode(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)))
+  } catch {
+    return null
+  }
+}
+
+/** 演示里认回粘贴的路径：引用卡片的原文文件认回成引用 */
+function demoResolve(paths: string[]): (Attachment & { from: string })[] {
+  return paths.flatMap((from) => {
+    const url = demoUploads.get(from)
+    if (!url) return []
+    const base = from.split('/').pop() ?? from
+    const mime = /^data:([^;,]+)/.exec(url)?.[1] ?? ''
+    const size = Math.floor(((url.split(',')[1] ?? '').length * 3) / 4)
+    const q = /^quote-(q[0-9a-z]+)\.md$/.exec(base)
+    const text = q ? demoUploadText(from) : null
+    if (q && text !== null) {
+      const flat = text.replace(/[[\]]/g, ' ').replace(/\s+/g, ' ').trim()
+      const name = `${flat.length > 40 ? `${flat.slice(0, 40)}…` : flat}#${q[1]}`
+      return [{ from, name, path: from, size, mime: 'text/markdown', quote: text, ref: true }]
+    }
+    return [{ from, name: base, path: from, size, mime, ref: true }]
+  })
+}
+
 /** 演示项目里的文件，输入 @ 时从这里找 */
 const DEMO_FILES = [
   'package.json',
@@ -1310,6 +1343,14 @@ function route(method: string, url: string, body: unknown): unknown {
     }
     if (sub === 'stop') return stopDemoAssist(id) ?? fail('找不到这次生成')
     return demoAssistJob(id) ?? fail('找不到这次生成，可能已过期')
+  }
+  // 粘贴回来的路径：演示里只认得这次页面里上传过的附件
+  if (res === 'uploads' && id === 'resolve') return { files: demoResolve((body as { paths: string[] }).paths) }
+  if (res === 'uploads' && id === 'open') fail('在线演示不能打开本机的文件，下载到本机运行后可以用')
+  if (res === 'uploads' && id === 'raw' && sub === 'file') {
+    const p = query.get('path') ?? ''
+    const text = demoUploadText(p)
+    return { path: p, dir: p.replace(/\/[^/]*$/, ''), exists: text !== null, content: text ?? '', truncated: false }
   }
   // 附件：演示没有本机磁盘，内容留在页面内存里给缩略图用，路径是假的
   if (res === 'uploads' && method === 'POST') {
