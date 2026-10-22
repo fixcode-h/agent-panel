@@ -431,9 +431,13 @@ export function taskSummary(t: Task): Task {
   }
 }
 
-/** 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发 */
+/**
+ * 消息的指纹：文字、思考、工具和工具输出有变化时会变，推送增量时用来判断哪些消息要重发。
+ * 提问卡片是否已回答也要算进去，否则在别处答完（父对话里点选、父对话转达）后卡片仍是「待决定」
+ */
 export function messageStamp(m: TaskMessage) {
-  return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${m.tools
+  const ask = m.ask ? `ask:${m.ask.by ?? ''}:${m.ask.answer ?? ''}` : ''
+  return `${m.text.length}|${m.thinking?.length ?? 0}|${m.error ? 1 : 0}|${ask}|${m.tools
     .map((t) => `${t.output?.length ?? 0}${t.failed ? 'x' : ''}${t.input?.length ?? 0}`)
     .join(',')}`
 }
