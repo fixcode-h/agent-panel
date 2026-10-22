@@ -881,6 +881,8 @@ async function runAgent(
   const toolStart = new Map<ToolUse, number>()
   /** 结果到了（或者这一轮结束了还没等到结果）：记下跑了多久 */
   const endTool = (x: ToolUse) => {
+    // 被打断、CLI 没报结果的调用也要收掉运行中标记，不然这一行会一直转圈
+    delete x.running
     const t0 = toolStart.get(x)
     if (t0 === undefined) return
     toolStart.delete(x)

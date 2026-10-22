@@ -12,6 +12,7 @@ import {
   globToRegExp,
   lessonMatches,
   lessonsPrompt,
+  normTags,
   upsertLesson,
 } from '../shared/lessons.ts'
 import { resolveLessonChanges } from '../shared/assist.ts'
@@ -73,6 +74,41 @@ test('提示有预算：条目再多也只给一部分全文，其余列标题',
   assert.match(p, /另有 \d+ 条/)
 })
 
+test('project_lessons 有预算：命中再多也只给最相关的全文，其余列标题', () => {
+  const ls = [
+    ...Array.from({ length: 300 }, (_, i) => lesson(`宽规则 ${i}`, ['src/**'], { rule: '说明'.repeat(100) })),
+    lesson('最具体的', ['src/pay/wechat.ts']),
+    lesson('目录里的', ['src/pay/*.ts']),
+  ]
+  const hit = findLessons(ls, ['src/pay/wechat.ts'])
+  assert.ok(hit.length < 16000, `结果太长：${hit.length}`)
+  assert.ok(hit.indexOf('### 最具体的') < hit.indexOf('### 目录里的'), '写死的文件排在 * 前面')
+  assert.ok(hit.indexOf('### 目录里的') < hit.indexOf('### 宽规则 0'), '* 排在 ** 前面')
+  assert.match(hit, /另有 \d+ 条相关的/)
+})
+
+test('project_lessons：按关键词、标签、id 查', () => {
+  const ls = [
+    lesson('并发占位不跨 await', [], { tags: ['并发'] }),
+    lesson('断言用 t() 算期望', ['server/*.test.ts'], { tags: ['测试'] }),
+  ]
+  assert.match(findLessons(ls, [], [], { tags: ['并发'] }), /### 并发占位/)
+  assert.doesNotMatch(findLessons(ls, [], [], { tags: ['并发'] }), /断言/)
+  assert.match(findLessons(ls, [], [], { query: '断言 期望' }), /### 断言用/)
+  assert.match(findLessons(ls, [], [], { query: ls[0].id }), /### 并发占位/)
+  assert.equal(findLessons(ls, [], [], { query: '没有这个词' }), '没有符合条件的教训。')
+  // 文件和标签一起给时取交集
+  assert.doesNotMatch(findLessons(ls, ['server/a.test.ts'], [], { tags: ['测试'] }), /并发/)
+  assert.match(findLessons(ls, []), /已有的标签：并发（1）、测试（1）/)
+})
+
+test('标签：去掉 #、重复，大小写不同时沿用已有写法，最多 5 个', () => {
+  assert.deepEqual(normTags(['#UI', 'ui', ' 测试 ', ''], ['ui']), ['ui', '测试'])
+  assert.equal(normTags(['a', 'b', 'c', 'd', 'e', 'f']).length, 5)
+  // 旧数据没有 tags，读进来是空的
+  assert.deepEqual(ProjectLesson.parse({ id: 'x', title: '旧的' }).tags, [])
+})
+
 test('同名的规则更新原来那条，不重复堆积', () => {
   const a = lesson('CLI 能力写进配置')
   const r = upsertLesson([a], { ...lesson('CLI 能力 写进配置'), id: 'new', cause: '又犯了一次' })
@@ -107,6 +143,10 @@ test('几个对话同时记，排队写入不丢条目', async () => {
   assert.ok(p.lessons.every((l) => l.id && l.createdAt))
   const bad = await record('p1', { title: '  ' })
   assert.equal(bad.ok, false)
+  // 标签沿用项目里已有的写法
+  await record('p1', { title: '四', tags: ['UI'] })
+  await record('p1', { title: '五', tags: ['#ui', '界面'] })
+  assert.deepEqual(p.lessons.at(-1)?.tags, ['UI', '界面'])
 })
 
 test('面板工具：只有项目里的调用有 project_lessons / record_lesson，参数缺了会报错', async () => {
@@ -130,8 +170,8 @@ test('面板工具：只有项目里的调用有 project_lessons / record_lesson
   assert.equal(found.content[0].text, '查了 a.ts')
   const empty = await callOrchTool(o, 'record_lesson', { title: ' ' })
   assert.equal(empty.isError, true)
-  await callOrchTool(o, 'record_lesson', { title: '写进配置', rule: '说明', paths: ['src/**', ' '] })
-  assert.deepEqual(got, [{ title: '写进配置', rule: '说明', cause: '', paths: ['src/**'] }])
+  await callOrchTool(o, 'record_lesson', { title: '写进配置', rule: '说明', paths: ['src/**', ' '], tags: ['配置'] })
+  assert.deepEqual(got, [{ title: '写进配置', rule: '说明', cause: '', paths: ['src/**'], tags: ['配置'] }])
 })
 
 test('冲突改写：带 replaces 改写那一条，旧版本留进 history，没给的字段沿用', () => {
@@ -229,5 +269,5 @@ test('面板工具：record_lesson 带 id 改写时必须写 change', async () =
   const noWhy = await callOrchTool(o, 'record_lesson', { title: '新规则', id: 'l1' })
   assert.equal(noWhy.isError, true)
   await callOrchTool(o, 'record_lesson', { title: '新规则', id: 'l1', change: '两全' })
-  assert.deepEqual(got, [{ title: '新规则', rule: '', cause: '', paths: [], replaces: 'l1', why: '两全' }])
+  assert.deepEqual(got, [{ title: '新规则', rule: '', cause: '', paths: [], tags: [], replaces: 'l1', why: '两全' }])
 })

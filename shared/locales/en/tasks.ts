@@ -609,8 +609,8 @@ export const EN_TASKS: Record<string, string> = {
   引用到输入框: 'Quote in the input box',
   引用: 'Quote',
   这里没有可以引用到的输入框: 'There is no input box to quote into here',
-  '独立分支：确定要改文件时才开单独的 git 分支和目录，在里面改，不改动项目目录，完成后再决定合并还是丢弃；之前只看代码、回答问题时仍在项目目录里':
-    'Separate branch: once it needs to edit files, it opens its own git branch and directory and edits there without touching the project directory, then you merge or discard when done; reading code and answering questions still happen in the project directory',
+  '独立分支：对话一创建就开单独的 git 分支和目录，在里面执行，不改动项目目录，完成后再决定合并还是丢弃；父对话的子对话也从这个分支开出、合回这里':
+    "Separate branch: creates its own git branch and folder as soon as the conversation starts and works there, leaving the project folder untouched; merge or discard when done. A parent conversation's children branch from and merge back into it",
   同时执行的子对话: 'Concurrent sub-conversations',
   '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
     'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
@@ -701,9 +701,6 @@ export const EN_TASKS: Record<string, string> = {
   '已开始，还没有输出': 'Started, no output yet',
   '还在项目目录里查看，要改文件时才开独立分支':
     'Still reading in the project directory; a separate branch opens once files need editing',
-  '新建对话时默认勾选「独立分支」': 'Turn on "Separate branch" for new conversations by default',
-  '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。父对话（统筹）不改文件，不开独立分支。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。':
-    "Such conversations read code and answer questions in the project directory first, and open a separate branch (git worktree) only once they need to edit files, continuing there. Parent conversations (Coordinator) never edit files and don't open a branch. Most projects get a full checkout; large projects such as UE skip downloading LFS files.",
   你已决定: 'You decided',
   父对话已决定: 'Parent decided',
   交给父对话决定: 'Let the parent decide',

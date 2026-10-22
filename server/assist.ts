@@ -110,6 +110,11 @@ export function assistApi(deps: {
       msgs.push(cur)
       return cur
     }
+    const endTool = (x: ToolUse) => {
+      delete x.running
+      if (x.startedAt) x.ms = Date.now() - x.startedAt
+      delete x.startedAt
+    }
     const setRaw = (m: (typeof msgs)[number], raw: string) => {
       m.raw = raw
       m.text = raw.split('```')[0].trimEnd()
@@ -167,13 +172,23 @@ export function assistApi(deps: {
           } else if (ev.type === 'tool') {
             const m = !cur || cur.raw.trim() ? newMsg() : cur
             m.tools.push(ev.tool)
-            if (ev.id) toolsById.set(ev.id, ev.tool)
+            if (ev.id) {
+              toolsById.set(ev.id, ev.tool)
+              if (ev.tool.ms === undefined) ev.tool.startedAt = Date.now()
+            }
+          } else if (ev.type === 'tool_delta') {
+            // 快照（Pi）是到目前为止的全部输出，直接替换；其余是新增的一段
+            const t = toolsById.get(ev.id)
+            if (t) t.output = (ev.snapshot ? ev.text : (t.output ?? '') + ev.text).slice(-4000)
           } else if (ev.type === 'tool_result') {
+            // 调用时带了 running 的（Pi 的 tool_execution_start）要在这里收掉，不然这一行会一直转圈
             const t = toolsById.get(ev.id)
             if (t) {
               if (ev.output) t.output = ev.output
               if (ev.failed) t.failed = true
               if (ev.patch) t.input = ev.patch
+              if (ev.detail !== undefined) t.detail = ev.detail
+              endTool(t)
             }
           }
           if (ev.type === 'text_delta') text += ev.text
@@ -187,7 +202,11 @@ export function assistApi(deps: {
           job.text = text.split('```')[0].trim()
           job.outChars = text.length
         },
-      }).finally(asks.done)
+      }).finally(() => {
+        asks.done()
+        // 停止、超时或 CLI 退出时还没等到结果的调用不再算在跑
+        for (const x of toolsById.values()) if (x.running || x.startedAt) endTool(x)
+      })
       if (r.killed === 'stopped') return fail(job, t('已停止'))
       if (r.killed === 'timeout') return fail(job, t('超过 5 分钟没有完成，已停止'))
       if (r.spawnError)

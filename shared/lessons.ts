@@ -15,6 +15,14 @@ const FULL_BUDGET_NO_TOOL = 6000
 const GLOBAL_BUDGET = 2000
 /** 标题最多列多少条，再多只报个数 */
 const MAX_TITLES = 60
+/** project_lessons 一次返回的全文预算：命中再多也只给最相关的这些，其余列标题，免得一次吐出几十万字 */
+const FIND_BUDGET = 8000
+const FIND_GLOBAL_BUDGET = 3000
+/** 每条最多几个标签、每个多长 */
+export const MAX_TAGS = 5
+export const MAX_TAG_LEN = 20
+/** 提示里列出的已有标签数：让 Agent 记新条目时复用，不另造近义词 */
+const MAX_TAG_HINT = 30
 
 /** `paths` 里的 glob 转成正则：`**` 跨目录，`*` 不跨；不带通配符的写法同时匹配这个目录下的文件 */
 export function globToRegExp(g: string) {
@@ -29,11 +37,65 @@ export function globToRegExp(g: string) {
 
 const norm = (p: string) => p.trim().replaceAll('\\', '/').replace(/^\.\//, '').replace(/\/+$/, '')
 
+// 同一批 glob 每次查找都要用：编译一次缓存起来（上万条时省掉大半耗时）。条目都是用户和 Agent 写的，数量有限，超了清空重来即可
+const globCache = new Map<string, RegExp>()
+function globRe(g: string) {
+  let re = globCache.get(g)
+  if (!re) {
+    if (globCache.size > 5000) globCache.clear()
+    re = globToRegExp(g)
+    globCache.set(g, re)
+  }
+  return re
+}
+
+/**
+ * 这条教训和这些文件有多相关：0 不相关；没写 paths 的对所有改动都适用，算最低的 1；
+ * 写死的文件或目录最具体，`*` 次之，`**` 最宽。files 要先 norm 过
+ */
+function matchScore(l: { paths: string[] }, files: string[]) {
+  if (!l.paths.length) return 1
+  let best = 0
+  for (const g of l.paths) {
+    const score = g.includes('**') ? 2 : /[*?]/.test(g) ? 3 : 4
+    if (score > best && files.some((f) => globRe(g).test(f))) best = score
+  }
+  return best
+}
+
 /** 这条教训管不管这些文件；没写 paths 的对所有改动都适用 */
 export function lessonMatches(l: { paths: string[] }, files: string[]) {
-  if (!l.paths.length) return true
-  const res = l.paths.map(globToRegExp)
-  return files.some((f) => res.some((re) => re.test(norm(f))))
+  return matchScore(l, files.map(norm)) > 0
+}
+
+/** 整理标签：去掉 #、空白和重复；和已有标签只差大小写的沿用已有的写法，免得同一个词出现两种拼法 */
+export function normTags(tags: string[], existing: string[] = []) {
+  const known = new Map(existing.map((x) => [x.toLowerCase(), x]))
+  const out: string[] = []
+  for (const raw of tags) {
+    const x = raw.replace(/^#+/, '').trim().slice(0, MAX_TAG_LEN)
+    if (!x) continue
+    const v = known.get(x.toLowerCase()) ?? x
+    if (!out.some((o) => o.toLowerCase() === v.toLowerCase())) out.push(v)
+  }
+  return out.slice(0, MAX_TAGS)
+}
+
+/** 各标签用了几条，多的在前 */
+export function tagCounts(lessons: { tags?: string[] }[]) {
+  const m = new Map<string, number>()
+  for (const l of lessons) for (const x of l.tags ?? []) m.set(x, (m.get(x) ?? 0) + 1)
+  return [...m].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+}
+
+/** 搜索用的全文（小写）：界面搜索框和 project_lessons 的 query 用同一套 */
+export const lessonHaystack = (l: ProjectLesson | GlobalLesson) =>
+  [l.id, l.title, l.rule, l.cause, ...l.paths, ...('tags' in l ? l.tags : [])].join('\n').toLowerCase()
+
+/** 空格分开的几个词都要出现 */
+export function queryMatcher(q: string) {
+  const words = q.toLowerCase().split(/\s+/).filter(Boolean)
+  return (hay: string) => words.every((w) => hay.includes(w))
 }
 
 /** withId：带上 id，Agent 要改写这一条时用（record_lesson 的 id） */
@@ -43,43 +105,95 @@ export function lessonText(l: ProjectLesson | GlobalLesson, withId = false) {
     l.rule,
     l.cause ? `起因：${l.cause}` : '',
     l.paths.length ? `范围：${l.paths.join('、')}` : '',
+    'tags' in l && l.tags.length ? `标签：${l.tags.join('、')}` : '',
   ]
     .filter(Boolean)
     .join('\n')
 }
 
-/** project_lessons 的结果：按文件命中的全文（项目的在前，全局的在后）；没给文件时列出全部标题 */
-export function findLessons(lessons: ProjectLesson[], files: string[], globals: GlobalLesson[] = []) {
+export interface LessonQuery {
+  /** 关键词：空格分开的几个词都要出现在标题、说明、起因、范围、标签或 id 里 */
+  query?: string
+  /** 带其中任一个标签的 */
+  tags?: string[]
+}
+
+/**
+ * project_lessons 的结果：按文件 / 关键词 / 标签命中的条目，最相关的在前，给到预算为止的全文，其余列标题（项目的在前，全局的在后）；
+ * 什么条件都没给时列出全部标题
+ */
+export function findLessons(
+  lessons: ProjectLesson[],
+  files: string[],
+  globals: GlobalLesson[] = [],
+  opts: LessonQuery = {},
+) {
   const on = lessons.filter((l) => l.enabled)
   const gs = globals.filter((l) => l.enabled)
   if (!on.length && !gs.length) return '这个项目还没有教训。'
   const list = files.map(norm).filter(Boolean)
-  if (!list.length)
+  const q = opts.query?.trim() ?? ''
+  const tags = normTags(opts.tags ?? []).map((x) => x.toLowerCase())
+  if (!list.length && !q && !tags.length) {
+    const tc = tagCounts(on)
     return [
-      on.length ? `这个项目的教训（${on.length} 条），传 files 取相关条目的全文：\n${titles(on, true)}` : '',
+      on.length
+        ? `这个项目的教训（${on.length} 条），传 files 取相关条目的全文，或用 query / tags 查：\n${titles(on, true)}`
+        : '',
+      tc.length ? tagLine(tc) : '',
       gs.length ? `全局教训（${gs.length} 条，优先级低于项目教训）：\n${titles(gs)}` : '',
     ]
       .filter(Boolean)
       .join('\n\n')
-  const hit = on.filter((l) => lessonMatches(l, list))
-  const ghit = gs.filter((l) => lessonMatches(l, list))
-  if (!hit.length && !ghit.length) return '这些文件没有相关的教训。'
+  }
+  const hasQ = queryMatcher(q)
+  const rank = <T extends ProjectLesson | GlobalLesson>(ls: T[]) => {
+    const out: { l: T; score: number }[] = []
+    for (const l of ls) {
+      if (tags.length && !('tags' in l && l.tags.some((x) => tags.includes(x.toLowerCase())))) continue
+      if (q && !hasQ(lessonHaystack(l))) continue
+      const score = list.length ? matchScore(l, list) : 1
+      if (score) out.push({ l, score })
+    }
+    // sort 是稳定的：同样相关时保持原来的顺序
+    return out.sort((a, b) => b.score - a.score).map((x) => x.l)
+  }
+  const hit = rank(on)
+  const ghit = rank(gs)
+  if (!hit.length && !ghit.length)
+    return list.length && !q && !tags.length ? '这些文件没有相关的教训。' : '没有符合条件的教训。'
+  const full = pick(hit, FIND_BUDGET, true)
+  const gfull = pick(ghit, FIND_GLOBAL_BUDGET, false)
+  const more = (n: number) => `另有 ${n} 条相关的，只列标题（要看全文时把 id 或关键词传给 query）：`
   return [
-    hit.map((l) => lessonText(l, true)).join('\n\n'),
+    full.map((l) => lessonText(l, true)).join('\n\n'),
+    hit.length > full.length ? `${more(hit.length - full.length)}\n${titles(hit.slice(full.length), true)}` : '',
     ghit.length
-      ? `## 全局教训（优先级低于上面的项目教训，冲突时以项目教训为准）\n${ghit.map((l) => lessonText(l)).join('\n\n')}`
+      ? `## 全局教训（优先级低于上面的项目教训，冲突时以项目教训为准）\n${gfull.map((l) => lessonText(l)).join('\n\n')}`
       : '',
+    ghit.length > gfull.length ? `${more(ghit.length - gfull.length)}\n${titles(ghit.slice(gfull.length))}` : '',
   ]
     .filter(Boolean)
     .join('\n\n')
 }
 
+const tagLine = (tc: [string, number][]) =>
+  `已有的标签：${tc
+    .slice(0, MAX_TAG_HINT)
+    .map(([x, n]) => `${x}（${n}）`)
+    .join('、')}${tc.length > MAX_TAG_HINT ? ` 等 ${tc.length} 个` : ''}`
+
 const titles = (ls: (ProjectLesson | GlobalLesson)[], withId = false) =>
   [
     ...ls
       .slice(0, MAX_TITLES)
-      .map((l) => `- ${l.title}${l.paths.length ? `（${l.paths.join('、')}）` : ''}${withId ? `〔id: ${l.id}〕` : ''}`),
-    ls.length > MAX_TITLES ? `- 另有 ${ls.length - MAX_TITLES} 条` : '',
+      .map(
+        (l) =>
+          `- ${l.title}${l.paths.length ? `（${l.paths.join('、')}）` : ''}${'tags' in l && l.tags.length ? ` ${l.tags.map((x) => `#${x}`).join(' ')}` : ''}${withId ? `〔id: ${l.id}〕` : ''}`,
+      ),
+    ls.length > MAX_TITLES
+      ? `- 另有 ${ls.length - MAX_TITLES} 条${withId ? '（用 project_lessons 的 query 或 tags 查）' : ''}`
+      : '',
   ]
     .filter(Boolean)
     .join('\n')
@@ -90,7 +204,8 @@ function pick<T extends ProjectLesson | GlobalLesson>(pool: T[], budget: number,
   let used = 0
   for (const l of pool) {
     const n = lessonText(l, withId).length
-    if (used + n > budget) break
+    // 第一条再长也给全文：不然最相关的那条反而只剩标题
+    if (used + n > budget && full.length) break
     full.push(l)
     used += n
   }
@@ -125,6 +240,7 @@ export function lessonsPrompt(lessons: ProjectLesson[], tools: boolean, globals:
     gs.length ? '### 全局教训（所有项目共用，只有用户能改）' : '',
     gfull.map((l) => lessonText(l)).join('\n\n'),
     grest.length ? `${restHint}：\n${titles(grest)}` : '',
+    tools && tagCounts(on).length ? `${tagLine(tagCounts(on))}。记教训时优先用这些标签，不另造近义词` : '',
     tools ? RECORD_HINT : '',
   ]
     .filter(Boolean)
@@ -167,6 +283,7 @@ export function upsertLesson(
       ...l,
       cause: l.cause || same.cause,
       paths: l.paths.length ? l.paths : same.paths,
+      tags: l.tags.length ? l.tags : same.tags,
       id: same.id,
       createdAt: same.createdAt,
       updatedAt: now,

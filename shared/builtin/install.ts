@@ -11,7 +11,7 @@ import type {
 } from '../schema.ts'
 import { BUILTIN_AGENTS, COMMON_AGENT_KEYS, CORE_CATEGORY, type BuiltinAgent } from './agents.ts'
 import { DEFAULT_WORKFLOW_ID } from './default.ts'
-import { CORE_AGENTS, coreDefinition, sameCore, syncCore } from './core.ts'
+import { CORE_AGENTS, coreDefinition, sameCore, syncCore, upgradeParamDefaults } from './core.ts'
 import {
   LEGACY_AGENT_FIELDS,
   LEGACY_AGENT_FIELDS_MORE,
@@ -496,7 +496,7 @@ export async function ensureProjectAgents(state: BuiltinState, api: BuiltinOps) 
       if (!cur) continue
       const def = coreDefinition(key)
       const includes = def.includes.map((k) => findBuiltin(ctx.agents, k)?.id ?? '').filter(Boolean)
-      const next = syncCore(cur, def, { categoryId, includes })
+      const next = upgradeParamDefaults(syncCore(cur, def, { categoryId, includes }), key)
       // 用户自己有同名的角色时保留建出来时加了后缀的名字，免得派活时按名字认错
       if (ctx.agents.some((a) => a.id !== cur.id && a.name === next.name)) next.name = cur.name
       if (sameCore(cur, next)) continue

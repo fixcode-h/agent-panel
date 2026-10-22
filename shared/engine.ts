@@ -76,7 +76,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
-import { findLessons } from './lessons.ts'
+import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
@@ -317,9 +317,9 @@ export interface Orchestra {
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
-  /** 项目教训：按文件取全文、记一条；不在项目里时没有 */
+  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有 */
   lessons?: {
-    find(files: string[]): Promise<string>
+    find(files: string[], opts?: LessonQuery): Promise<string>
     record(input: LessonInput): Promise<{ ok: boolean; info: string }>
   }
 }
@@ -464,6 +464,8 @@ export interface LessonInput {
   rule: string
   cause: string
   paths: string[]
+  /** 标签：优先用这个项目已有的 */
+  tags?: string[]
   /** 改写已有的那条（用户的新要求和它冲突、找到两全的做法时）：那条的 id */
   replaces?: string
   /** 为什么改写 */
@@ -2377,8 +2379,8 @@ function makeOrchestra(
     writeState: (key, value) => writeRunState(host, self.id, key, value),
     lessons: host.lessons
       ? {
-          find: async (files) =>
-            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? []),
+          find: async (files, opts) =>
+            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? [], opts),
           record: (input) => host.lessons!.record(input),
         }
       : undefined,
@@ -2795,8 +2797,13 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       `## 你的定位：父对话只统筹，不动手
 你是项目的父对话，负责理解用户的意思、收集上下文、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
 - 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。
-- 你就在项目目录的当前分支${host.branch ? `「${host.branch}」` : ''}上，不开独立分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
-- 推送：子对话的分支不推。用户明确要求推送时，由你在这里推送当前分支。
+${
+  wt
+    ? `- 你在这个对话的独立分支 ${wt.branch} 上（创建对话时开好的），不要再开别的分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
+- 推送：子对话的分支和你的独立分支都不推。用户明确要求推送时，按上面「执行目录」里说的先合回原分支再推。`
+    : `- 你就在项目目录的当前分支${host.branch ? `「${host.branch}」` : ''}上，不开独立分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
+- 推送：子对话的分支不推。用户明确要求推送时，由你在这里推送当前分支。`
+}
 
 ## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。

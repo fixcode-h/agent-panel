@@ -885,7 +885,8 @@ ${prompt}`,
                   at,
                   patch:
                     ev.type === 'tool_delta'
-                      ? { output: ((cur.output ?? '') + ev.text).slice(-4000) }
+                      ? // 快照（Pi）是到目前为止的全部输出，直接替换；其余是新增的一段
+                        { output: (ev.snapshot ? ev.text : (cur.output ?? '') + ev.text).slice(-4000) }
                       : { output: ev.output.slice(-4000), failed: ev.failed, running: false },
                 })
             } else if (ev.type === 'error') errors.push(ev.message)
@@ -897,6 +898,11 @@ ${prompt}`,
         }).finally(() => {
           asks.done()
           job.control = undefined
+          // 停止或 CLI 退出时没等到结果的调用不再转圈
+          for (const at of toolAt.values())
+            if (parts[at[0]]?.tools[at[1]]?.running)
+              parts = addToParts(parts, { type: 'tool_update', at, patch: { running: false } })
+          job.parts = parts
         })
         if (r.killed === 'stopped') throw new Error(t('已停止'))
         if (r.spawnError)

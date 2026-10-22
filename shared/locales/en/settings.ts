@@ -864,8 +864,15 @@ export const EN_SETTINGS: Record<string, string> = {
   生图: 'Images',
   系统: 'System',
   // 项目教训
-  '搜索规则、起因或文件': 'Search rules, causes or files',
+  '搜索规则、起因、文件或标签': 'Search rules, causes, files or tags',
   搜索教训: 'Search lessons',
+  按标签筛选: 'Filter by tag',
+  '另有 {n} 个标签，用搜索找': '{n} more tags, use search',
+  '再显示 {n} 条（还有 {left} 条）': 'Show {n} more ({left} left)',
+  标签: 'Tags',
+  '按主题归类，最多 5 个，逗号分隔；能按标签筛选，角色也能按标签查不对应具体文件的条目':
+    'Group by topic, up to 5, comma separated. You can filter by tag, and roles can look up lessons not tied to specific files by tag',
+  '例如：并发, 测试': 'e.g. concurrency, testing',
   '其中 {n} 条是角色自己记的': '{n} recorded by roles themselves',
   加一条: 'Add one',
   '还没有教训。对话里纠正了角色的做法时，它会自己记一条；也可以在对话里用户消息下面的「记成项目教训」，或者在这里手动加。':
