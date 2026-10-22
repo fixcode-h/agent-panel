@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react'
 import {
+  ArrowUpRight,
   Bot,
   ChevronRight,
   FileText,
   FoldVertical,
   Globe,
   Loader2,
+  Maximize2,
   PencilLine,
   Plug,
   Search,
@@ -22,6 +24,9 @@ import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
 import { CommandDialog, OutputDialog } from './ToolDialog'
+
+/** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
+const LIVE_ROWS = 8
 
 /** 读取的工具行里 label 是不是一个能打开的文件：像路径，而不是「读取 3 个文件」这类说明 */
 function isFilePath(label: string) {
@@ -133,21 +138,52 @@ export function DiffView({ diff }: { diff: string }) {
   )
 }
 
-function Block({ label, text, tone }: { label: string; text: string; tone?: 'danger' }) {
+/**
+ * 展开后的 IN / OUT 一段：小标签单独一行，正文和对话里的代码块同一套字号、行高，
+ * 不再用左侧挤着的窄标签，长文本也不会被标签列压得换行
+ */
+function Block({
+  label,
+  text,
+  tone,
+  aside,
+}: {
+  label: string
+  text: string
+  tone?: 'danger'
+  /** 标签右边的状态，例如输出行数 */
+  aside?: React.ReactNode
+}) {
   return (
-    <div className="flex gap-3 px-3 py-2">
-      <span className="w-8 shrink-0 pt-px font-sans text-[0.65625rem] font-medium tracking-wider text-subtle">
-        {label}
-      </span>
+    <div className="px-3.5 py-2.5">
+      <div className="mb-1 flex items-center gap-2">
+        <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">{label}</span>
+        {aside}
+      </div>
       <pre
         className={cn(
-          'max-h-[320px] min-w-0 flex-1 overflow-auto font-mono text-[0.75rem] leading-[1.6] whitespace-pre-wrap [overflow-wrap:anywhere]',
+          'max-h-[320px] min-w-0 overflow-auto font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap [overflow-wrap:anywhere]',
           tone === 'danger' ? 'text-danger' : 'text-fg/90',
         )}
       >
         {text}
       </pre>
     </div>
+  )
+}
+
+/** 行内放不下、要去窗口里看的那条：和展开区其它行的字号、悬停一致，不像一条普通文字链 */
+function MoreLink({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex w-full cursor-pointer items-center gap-1.5 px-3.5 py-2 text-left font-sans text-xs text-muted transition-colors hover:bg-sel hover:text-fg"
+    >
+      <Maximize2 className="h-3.5 w-3.5 shrink-0 text-subtle" />
+      <span className="min-w-0 truncate">{label}</span>
+      <ArrowUpRight className="ml-auto h-3.5 w-3.5 shrink-0 text-subtle" />
+    </button>
   )
 }
 
@@ -322,9 +358,13 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
             : undefined
   // 行内展开时的输出：长的只留前一段，后面提示去窗口里看
   const short = output.length > 400 ? `${output.slice(0, 400).trimEnd()}…` : output
-  // 命令还在跑：展开时只显示最新的三行，像终端一样滚动；跑完再按现有高度显示完整输出
+  // 命令还在跑：展开时只跟最新的几行，像终端一样往下走；跑完再按现有高度显示完整输出
   const live = !!tool.running && tool.kind === 'run'
-  const liveRows = live ? output.trimEnd().split('\n').slice(-3) : []
+  const liveRows = live ? output.trimEnd().split('\n') : []
+  // 按行数截，不按 em 算高度：字号跟着设置变、某一行刚好折行时都不会切出半行，
+  // 截掉的几行在上面用一行提示说明
+  const liveTail = liveRows.slice(-LIVE_ROWS)
+  const liveCut = liveRows.length > LIVE_ROWS
 
   return (
     <>
@@ -361,35 +401,50 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
             {output ? (
               <>
                 {live ? (
-                  // 命令还在跑：只跟显示最新三行，高度固定，不会把对话越撑越长；
+                  // 命令还在跑：只跟最新的几行，高度固定，不会把对话越撑越长；
                   // 完整输出点命令打开命令行窗口看
-                  <div className="flex gap-3 px-3 py-2">
-                    <span className="w-8 shrink-0 pt-px font-sans text-[0.65625rem] font-medium tracking-wider text-subtle">
-                      OUT
-                    </span>
-                    {/* 最多三行：高度按这个字号的行高算（3 × 1.3em），字号跟着设置变也不会错位 */}
-                    <pre
-                      style={{ maxHeight: '3.9em' }}
-                      className="min-w-0 flex-1 overflow-hidden font-mono text-[0.75rem] leading-[1.3] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]"
-                    >
-                      {liveRows.join('\n')}
-                    </pre>
+                  <div className="px-3.5 py-2.5">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className="font-mono text-[0.625rem] font-medium tracking-[0.14em] text-subtle/80">
+                        OUT
+                      </span>
+                      <span className="flex items-center gap-1.5 font-sans text-[0.6875rem] text-accent">
+                        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" />
+                        {t('正在输出')}
+                      </span>
+                    </div>
+                    <div>
+                      {/* 只跟最新的几行，更早的不显示：上面用一行提示说还有多少行，
+                          不靠裁高度，任何字号下都不会切出半行 */}
+                      {liveCut && (
+                        <div className="mb-0.5 font-sans text-[0.6875rem] text-subtle/70">
+                          {t('前面还有 {n} 行', { n: liveRows.length - LIVE_ROWS })}
+                        </div>
+                      )}
+                      <pre className="font-mono text-[0.75rem] leading-[1.65] whitespace-pre-wrap text-fg/90 [overflow-wrap:anywhere]">
+                        {liveTail.join('\n')}
+                      </pre>
+                    </div>
                   </div>
                 ) : (
-                  <Block label="OUT" text={short} tone={tool.failed ? 'danger' : undefined} />
+                  <Block
+                    label="OUT"
+                    text={short}
+                    tone={tool.failed ? 'danger' : undefined}
+                    aside={
+                      <span className="font-mono text-[0.625rem] text-subtle/70 tabular-nums">
+                        {t('{n} 行', { n: output.split('\n').length })}
+                      </span>
+                    }
+                  />
                 )}
                 {!live && short !== output && (
-                  <button
-                    onClick={() => setWin('out')}
-                    className="w-full cursor-pointer px-3 py-2 text-left font-sans text-xs text-muted hover:bg-sel hover:text-fg"
-                  >
-                    {t('输出较长，在窗口里查看全部')}
-                  </button>
+                  <MoreLink onClick={() => setWin('out')} label={t('输出较长，在窗口里查看全部')} />
                 )}
               </>
             ) : (
               !isDiff && (
-                <div className="px-3 py-2 font-sans text-xs text-subtle">
+                <div className="px-3.5 py-2.5 font-sans text-xs text-subtle">
                   {tool.kind === 'read' && !input ? tool.label : live ? t('正在执行…') : t('没有输出')}
                 </div>
               )
@@ -403,6 +458,8 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
           output={output}
           failed={tool.failed}
           running={tool.running}
+          ms={tool.ms}
+          startedAt={tool.startedAt}
           open
           onOpenChange={(o) => !o && setWin('')}
         />

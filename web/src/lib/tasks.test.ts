@@ -29,6 +29,19 @@ test('面板工具在对话里显示中文名，不再露出原始工具名', ()
   assert.equal(toolView(tool('mcp__panel__wait_agents', ''))?.tool.name, '等待子任务')
 })
 
+test('面板挂在同一个服务上的提问、补充工具也显示中文名', () => {
+  // 这三个没登记进 PANEL_TOOL_NAMES 时，对话里会直接露出 mcp__panel-xxxx__read_user_notes 这串名字
+  const notes = toolView(tool('mcp__panel__read_user_notes', ''))
+  assert.equal(notes?.tool.name, '查看用户补充')
+  assert.equal(notes?.tool.kind, 'read')
+  // 带服务名的写法（Command Code、Gemini CLI 走配置文件接 MCP）
+  assert.equal(toolView(tool('mcp__panel-142a58__read_user_notes', ''))?.tool.name, '查看用户补充')
+  const ask = toolView(tool('mcp__panel-142a58__ask_user', '', { input: '{"questions":[{"question":"先做哪个？"}]}' }))
+  assert.equal(ask?.tool.name, '向用户提问')
+  assert.equal(ask?.tool.label, '先做哪个？')
+  assert.equal(toolView(tool('mcp__panel__wait_user_message', ''))?.tool.name, '等待用户消息')
+})
+
 test('MCP 服务名的写法也认：panel-xxxx · record_lesson', () => {
   const view = toolView(tool('MCP', 'panel-ab12cd · record_lesson', { input: '{"title":"写进配置"}' }))
   assert.equal(view?.tool.name, '记下教训')
