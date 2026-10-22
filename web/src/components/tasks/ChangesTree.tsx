@@ -1,33 +1,13 @@
 import { useMemo, useState } from 'react'
-import {
-  ChevronDown,
-  ChevronRight,
-  File,
-  FileCode2,
-  FileImage,
-  FileJson,
-  FileText,
-  Folder,
-  FolderOpen,
-} from 'lucide-react'
+import { ChevronDown, ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import type { FileChange } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { fileIcon } from '@/lib/file-icon'
 import { buildChangeTree, visibleChangeRows } from './changes-tree'
 
 /** 一次渲染这么多行，再多的点「显示更多」；上千个文件也不会一次建几千个 DOM */
 const PAGE = 400
-
-/** 按扩展名挑图标：文件树那边有同样的逻辑，这里单独一份，避免动到那边正在改的代码 */
-function iconOf(path: string) {
-  const ext = path.slice(path.lastIndexOf('.') + 1).toLowerCase()
-  if (/^(png|jpe?g|gif|webp|svg|bmp|ico)$/.test(ext)) return FileImage
-  if (/^(json|jsonc|ya?ml|toml|ini|lock)$/.test(ext)) return FileJson
-  if (/^(md|mdx|txt|rst)$/.test(ext)) return FileText
-  if (/^(ts|tsx|js|jsx|mjs|cjs|vue|svelte|py|go|rs|java|kt|swift|c|h|cc|cpp|hpp|cs|rb|php|lua|sh|ps1)$/.test(ext))
-    return FileCode2
-  return File
-}
 
 /**
  * 「改动」的树形视图：按目录分组，目录行汇总下面所有文件的增删行数，点文件看差异。
@@ -61,7 +41,7 @@ export function ChangesTree({
     <div className="flex flex-col">
       {rows.slice(0, shown).map(({ node, depth }) => {
         const open = node.dir && !collapsed.has(node.path)
-        const Icon = node.dir ? (open ? FolderOpen : Folder) : iconOf(node.path)
+        const Icon = node.dir ? (open ? FolderOpen : Folder) : fileIcon(node.path)
         return (
           <button
             key={`${node.dir ? 'd' : 'f'}:${node.path}`}
