@@ -41,6 +41,7 @@ import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
 import type { ApiConfig, ApiProtocol, DetectedApi } from '@shared/accounts'
+import type { ApiBalance } from '@shared/api-balance'
 import type { ModelCatalogInfo, ModelLookupJob } from '@shared/model-catalog'
 import type { RemoteAccessStatus } from '@shared/remote'
 import type { IntegrationInstallJob, IntegrationLoginJob, IntegrationView } from '@shared/integrations'
@@ -203,8 +204,10 @@ export const api = {
     request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, json('PATCH', { name })),
   deleteAccount: (cli: string, id: string) =>
     request<CliAccounts>(`/accounts/${cli}/accounts/${id}`, { method: 'DELETE' }),
-  apiModels: (a: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
+  apiModels: (a: Pick<ApiConfig, 'name' | 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) =>
     request<{ models: string[] }>('/accounts/api-models', json('POST', a)),
+  /** 查 API 账户余额（服务端带上密钥去请求，页面拿不到密钥也不直连第三方） */
+  apiBalance: (a: Pick<ApiConfig, 'name' | 'apiKey'>) => request<ApiBalance>('/accounts/api-balance', json('POST', a)),
   applyApi: (id: string) => request<{ clis: string[] }>(`/accounts/apis/${id}/apply`, json('POST', {})),
   /** mode 给出时按这种登录方式读（设置页切换后还没保存也能先读到） */
   cliModels: (id: string, refresh = false, mode?: { authMode: 'account' | 'api'; apiId?: string }) => {

@@ -19,7 +19,7 @@ import {
   setModelInput,
   setModelLimits,
 } from '../shared/accounts.ts'
-import { mergeJson, fetchApiModels } from './accounts.ts'
+import { mergeJson, fetchApiBalance, fetchApiModels } from './accounts.ts'
 import { toApi } from './api-detect.ts'
 import { agentRun, defaultSettings } from '../shared/settings.ts'
 import { CliSettings } from '../shared/schema.ts'
@@ -401,6 +401,26 @@ test('API 测试连接：成功返回模型，失败带状态和原因', async (
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }
+})
+
+test('API 测试连接：地址留空且没有厂家默认时先要求填地址', async () => {
+  await assert.rejects(
+    () =>
+      fetchApiModels({
+        name: '自定义 API',
+        protocol: 'openai-chat',
+        baseUrl: ' ',
+        apiKey: 'k',
+        authHeader: 'x-api-key',
+      }),
+    /先填接口地址/,
+  )
+})
+
+test('余额查询：厂家没有余额接口、或没填密钥时直接说明原因，不发请求', async () => {
+  await assert.rejects(() => fetchApiBalance({ name: 'OpenAI', apiKey: 'sk-main' }), /不支持余额查询/)
+  await assert.rejects(() => fetchApiBalance({ name: '自定义 API', apiKey: 'sk-main' }), /不支持余额查询/)
+  await assert.rejects(() => fetchApiBalance({ name: 'DeepSeek', apiKey: '  ' }), /先填密钥/)
 })
 
 test('API 方式：执行时只认 API 里配的模型，其它模型换成第一个并补前缀', () => {

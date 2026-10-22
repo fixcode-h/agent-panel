@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import { getCli, type CliDefinition } from '@shared/clis'
 import { API_PROTOCOL_LABEL, apiFits, type ApiConfig } from '@shared/accounts'
+import { apiBaseUrl } from '@shared/api-vendors'
 import type { CliAccounts, LoginJob, ProviderAuthCheck } from '@shared/schema'
 import { api } from '@/lib/api'
 import { DetectedApis } from './DetectedApis'
@@ -101,7 +102,7 @@ export function CliAuthPanel({
             </div>
             {cur ? (
               <p className="text-[0.78125rem] leading-relaxed text-subtle">
-                <span className="font-mono">{cur.baseUrl || t('默认地址')}</span>
+                <span className="font-mono">{apiBaseUrl(cur) || t('默认地址')}</span>
                 {' · '}
                 {cur.models.length ? t('{n} 个模型', { n: cur.models.length }) : t('还没有填模型，去 API 配置里添加')}
               </p>
