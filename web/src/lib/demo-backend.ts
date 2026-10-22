@@ -44,6 +44,7 @@ import {
   type DirListing,
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
+import { UsageQuery, usageReport } from '@shared/usage'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
@@ -1679,8 +1680,15 @@ function route(method: string, url: string, body: unknown): unknown {
   if (res === 'tasks') return tasksRoute(method, id, sub, query, body, seg[3])
   // 演示里的 AI 不会请求确认，也不会提问
   if (res === 'asks') return method === 'GET' ? [] : { ok: true }
+  if (res === 'usage') return demoUsage(d, query)
 
   return fail(`未知接口：${method} ${path}${sub ? '/' + sub : ''}`)
+}
+
+/** 演示里的用量统计：按浏览器里存的演示任务算，和正式版用同一个聚合函数 */
+function demoUsage(d: Db, query: URLSearchParams) {
+  const grain = UsageQuery.grain(query.get('grain'))
+  return usageReport(d.tasks ?? [], { grain, count: UsageQuery.count(query.get('count'), grain) })
 }
 
 export async function handle(method: string, url: string, body: unknown) {

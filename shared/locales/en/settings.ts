@@ -981,4 +981,27 @@ export const EN_SETTINGS: Record<string, string> = {
   '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。有 WSL 默认用 WSL，没有就用 Git Bash。':
     'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to WSL when installed, otherwise Git Bash.',
   '重新检测（刚装了 WSL 或 Git 时用）': 'Detect again (after installing WSL or Git)',
+  // 设置里的用量统计：shared/usage.ts 的粒度标签和 components/usage/UsageSection.tsx 的表格
+  按天: 'Daily',
+  按周: 'Weekly',
+  按月: 'Monthly',
+  用量统计: 'Usage',
+  暂无用量: 'No usage yet',
+  统计粒度: 'Granularity',
+  刷新用量: 'Refresh usage',
+  '共 {n} 轮': '{n} turns in total',
+  时间: 'Time',
+  输入: 'Input',
+  输出: 'Output',
+  缓存命中: 'Cache hit',
+  缓存写入: 'Cache write',
+  费用: 'Cost',
+  任务: 'Tasks',
+  轮数: 'Turns',
+  合计: 'Total',
+  '{y}年{m}月': '{y}-{m}',
+  '{m}月{d}日': '{m}/{d}',
+  '{m}月{d}日这一周': 'Week of {m}/{d}',
+  '按本机本地时间统计每轮执行的 token，一轮算在它开始的那一天（周从周一起算）。输入含缓存命中和缓存写入的部分。':
+    'Counts tokens from every turn in local time, placed on the day the turn started (weeks start on Monday). Input includes cache hits and cache writes.',
 }

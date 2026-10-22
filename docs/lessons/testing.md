@@ -46,3 +46,9 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 - 规则：在面板的会话里（托盘启动的） `AGENT_PANEL_TRAY=1` 会传下去，服务进了托盘模式， stdin 一结束就退出，表现成「服务已启动」之后连不上。写验证脚本拉起服务时把 `AGENT_PANEL_TRAY` 和 `AGENT_PANEL_SUPERVISED` 置空；接口都在 `/api` 下（`/api/health`），不是根路径。
 - 起因：验证「强制停止」时自己起服务，连试了几次都报「服务没有启动」，实际是服务启动后立即退出了。
 - 防线：人工。
+
+## e2e 里起的资源要登记，退出别指望它们自己关
+
+- 规则：`scripts/e2e.mjs` 里起的 `http.createServer`、子进程都用 `onExit()` 登记（返回的函数既能立刻关掉、又从登记表摘掉）；关 server 先 `closeAllConnections()` 再 `close()`，只 `close()` 会留下 keep-alive 连接。`finally` 里 `cleanupAll()` 之后按退出码强制退出，不等事件循环自然清空。
+- 起因：`/accounts/api-models` 的 `name` 改成必填后 e2e 报 400，临时 `apiSrv` 没关，进程挂 95 分钟才被手动取消。
+- 防线：`npm run test:e2e`（10 分钟看门狗 + 收尾后 2 秒强制退出兜底）。

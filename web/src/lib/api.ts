@@ -76,6 +76,7 @@ import type {
 } from '@shared/design'
 import type { DocFile, DocJob, DocOptimizeInput, ProjectDoc, ProjectDocs } from '@shared/docs'
 import type { DataKind, DataUsage } from '@shared/data'
+import type { UsageGrain, UsageReport } from '@shared/usage'
 import type { AppReleases, AppUpdateBusy, AppUpdateJob, InterruptedTasks } from '@shared/version'
 import { t } from '@shared/i18n'
 
@@ -535,6 +536,9 @@ export const api = {
   exportData: (kinds: DataKind[]) => request<unknown>(`/data/export?kinds=${kinds.join(',')}`),
   importData: (backup: unknown) =>
     request<{ ok: boolean; kinds: DataKind[]; files: number }>('/data/import', json('POST', backup)),
+  /** 设置里的用量统计：按天 / 周 / 月聚合各轮执行的 token（聚合在服务端做） */
+  tokenUsage: (q: { grain: UsageGrain; count: number }) =>
+    request<UsageReport>(`/usage?grain=${q.grain}&count=${q.count}`),
   designs: () => request<DesignMeta[]>('/designs'),
   designProjects: () => request<DesignProject[]>('/designs/projects'),
   createDesignProject: (input: DesignProjectInput) => request<DesignProject>('/designs/projects', json('POST', input)),
