@@ -4,6 +4,7 @@ import { Code2, Copy, ExternalLink, FolderOpen, Loader2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { editorUrl } from '@/lib/editor-url'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Lightbox } from '@/components/ui/lightbox'
@@ -34,12 +35,6 @@ export function linkPaths(html: string) {
     if (!parsePath(raw)) return all
     return `<code class="md-path" role="button" tabindex="0" data-path="${text.replace(/"/g, '&quot;')}" title="${t('查看文件')}">${text}</code>`
   })
-}
-
-/** 编辑器里打开的地址（VS Code 及兼容的编辑器认 vscode://file/），带上行号 */
-const editorUrl = (dir: string, file: string, line?: number) => {
-  const full = (/^([A-Za-z]:)?[\\/]/.test(file) ? file : `${dir.replace(/[\\/]+$/, '')}/${file}`).replace(/\\/g, '/')
-  return `vscode://file/${full.startsWith('/') ? full.slice(1) : full}${line ? `:${line}` : ''}`
 }
 
 type File = Awaited<ReturnType<typeof api.taskFile>>
