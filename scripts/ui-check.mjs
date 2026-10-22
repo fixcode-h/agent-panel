@@ -984,7 +984,7 @@ try {
     await p.keyboard.press('Backspace')
     // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
     await p.getByText('项目教训 · ', { exact: false }).first().scrollIntoViewIfNeeded()
-    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '要等一段时间再做的事'])
+    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '后台命令报完成后先看用时'])
     await p
       .getByRole('button', { name: /新增支付方式写进/ })
       .first()

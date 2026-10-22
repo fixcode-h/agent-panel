@@ -1,5 +1,5 @@
 ---
-paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, shared/accounts.ts, shared/model-catalog*, shared/model-limits.ts, server/exec/**, server/models.ts, server/accounts.ts, server/cli-*.ts, server/install.ts, scripts/fake-cli/**, docs/cli-config.md, docs/model-catalog.md, web/src/lib/cli-*.ts, web/src/components/settings/**
+paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, shared/accounts.ts, shared/model-catalog*, shared/model-limits.ts, server/exec/**, server/models.ts, server/accounts.ts, server/cli-*.ts, server/install.ts, server/merge-build.ts, server/background.ts, scripts/fake-cli/**, docs/cli-config.md, docs/model-catalog.md, web/src/lib/cli-*.ts, web/src/components/settings/**
 ---
 
 # CLI 定义、模型和思考强度
@@ -38,3 +38,9 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 - 规则：执行中的补充（插话、`read_user_notes`、等下一句）在对话里只交给对话自己那次调用（step 为空），不交给它派出的子任务；新加一种「同一个任务里还在跑的调用」时，检查 `steerTask` 会不会把用户消息送过去。对话停下等子任务时也要能收消息（`helperGate`）。
 - 起因：49d7d7e 加子任务后，等子任务时用户发的消息被插话给了子任务、记在子任务名下，对话里看不到。
 - 防线：`server/orchestrator.test.ts`（等子任务时发消息）。
+
+## 整行命令交给 shell 走 shellCommand，Windows 上不让 Node 转义
+
+- 规则：用户或 Agent 写的一整行命令（后台命令、测试步骤）用 `server/merge-build.ts` 的 `shellCommand` / `runShell` 启动。Windows 上要整行加引号、`windowsVerbatimArguments` 原样交给 `cmd.exe /d /s /c`；按普通参数传给 cmd.exe 时 Node 会把 `"` 转成 `\"`，cmd 不认，程序收到的参数多了引号。
+- 起因：15c1a1d 的后台命令在 Windows 上跑 `node -e "setTimeout(...)"`，代码变成字符串字面量，0 秒就报成功，Agent 以为面板判断错了。
+- 防线：`server/merge-build.test.ts`（shellCommand 的 Windows 形式、定时器真的等到点）。
