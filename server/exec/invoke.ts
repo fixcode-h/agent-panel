@@ -36,8 +36,10 @@ const WAIT_HINT =
 export interface CliControl {
   steer: (text: string) => Promise<boolean>
   interrupt: () => boolean
-  /** 插话要等 CLI 的下一个模型请求才取走（Command Code）：确认接受不等于已经读到 */
+  /** 插话要等 CLI 的下一个模型请求才取走（Pi）：确认接受不等于已经读到 */
   deferSteer?: boolean
+  /** 插话被正在执行的命令挡着时让 CLI 马上处理（见 rpc.redirect）；返回是否这样做了 */
+  redirect?: (note: string) => Promise<boolean>
 }
 
 /** 中断后等 CLI 自己收尾的时间，超过就直接结束进程 */
@@ -277,6 +279,7 @@ async function invoke(
       steer: (text) => session.steer(text),
       interrupt: () => session.interrupt(),
       deferSteer: def.rpc?.deferSteer,
+      ...(def.rpc?.redirect ? { redirect: (note: string) => session.redirect(note) } : {}),
     })
     // 面板保活：一轮结束后不关进程，用户的下一条消息在同一进程里开下一轮。
     // 只在适配器支持时启用；不支持的一轮一个进程

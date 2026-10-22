@@ -326,3 +326,59 @@ test('Pi RPC：Pi 没有回合上限参数，面板数 turn_start，超过就 ab
     [{ type: 'result', ok: false, error: '达到回合上限（2），停止这一轮' }],
   )
 })
+
+/** 开好一轮，停在 Pi 正在执行的时候 */
+async function running(input: string) {
+  const s = await session(input)
+  s.rpc.handle(reply(s.sent, 'get_state', { sessionId: 'pi-r' }))
+  await tick()
+  s.rpc.handle(reply(s.sent, 'get_fork_messages', { messages: [] }))
+  await tick()
+  s.rpc.handle(reply(s.sent, 'prompt', { disposition: 'started' }))
+  await tick()
+  return s
+}
+
+test('Pi RPC：插话被长命令挡着时，收回插话、abort，停下的结束不算结束，再把插话作为新的一句交给 Pi', async () => {
+  const { rpc, events, sent } = await running('等 CI')
+  const steered = rpc.steer('推送远端')
+  await tick()
+  rpc.handle(reply(sent, 'steer', { disposition: 'queued' }))
+  assert.equal(await steered, true)
+  const p = rpc.redirect('（说明）')
+  await tick()
+  assert.equal(sent.at(-1).type, 'clear_queue', '先收回还排着的插话')
+  rpc.handle(reply(sent, 'clear_queue', { steering: ['推送远端'], followUp: [] }))
+  await tick()
+  assert.equal(sent.at(-1).type, 'abort')
+  // Pi 的 abort 等这一轮停下才回：结束记录先到
+  rpc.handle({ type: 'message_end', message: { role: 'assistant', stopReason: 'aborted' } })
+  rpc.handle({ type: 'agent_settled', aborted: true })
+  await tick()
+  assert.ok(!rpc.finished, '为插话停下的不算这一轮结束')
+  rpc.handle(reply(sent, 'abort', {}))
+  await tick()
+  assert.ok(
+    events.some((e) => e.type === 'notice'),
+    '标出停下了命令',
+  )
+  const prompt = sent.at(-1)
+  assert.deepEqual({ type: prompt.type, message: prompt.message }, { type: 'prompt', message: '（说明）\n\n推送远端' })
+  rpc.handle(lastReply(sent, 'prompt', { disposition: 'started' }))
+  assert.equal(await p, true)
+  rpc.handle({ type: 'message_end', message: { role: 'assistant', stopReason: 'stop' } })
+  await settle(rpc, sent)
+  assert.deepEqual(
+    events.filter((e) => e.type === 'result'),
+    [{ type: 'result', ok: true, error: undefined }],
+  )
+})
+
+test('Pi RPC：插话已经被取走（命令刚好跑完）就不打断', async () => {
+  const { rpc, sent } = await running('等 CI')
+  const p = rpc.redirect('（说明）')
+  await tick()
+  rpc.handle(reply(sent, 'clear_queue', { steering: [], followUp: [] }))
+  assert.equal(await p, false)
+  assert.ok(!sent.some((x) => x.type === 'abort'))
+})

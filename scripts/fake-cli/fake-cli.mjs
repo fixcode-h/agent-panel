@@ -304,6 +304,9 @@ const session =
 let piRpcExit
 // 面板发的是 compact（压缩）而不是 prompt 时记下来：下面按压缩回事件
 let piCompact
+// 「长命令挡住插话」的场景：真的 Pi 收到 abort 会先停下这一轮（agent_settled）再回 abort；之后的 prompt 是新的一句
+let piSleepAbort
+let piNextPrompt
 // 分叉到某一轮之前（RPC 的 fork）：记下截在哪条用户消息，测试检查
 let piForkAt
 if (piRpc) {
@@ -348,6 +351,7 @@ if (piRpc) {
     } else if (m.type === 'prompt') {
       input = String(m.message ?? '')
       say({ type: 'response', command: 'prompt', id: m.id, success: true, data: { disposition: 'started' } })
+      if (answered) piNextPrompt?.(input)
       if (!answered) {
         answered = true
         onPrompt?.()
@@ -355,6 +359,12 @@ if (piRpc) {
     } else if (m.type === 'steer') {
       steered.push(String(m.message ?? ''))
       say({ type: 'response', command: 'steer', id: m.id, success: true, data: { disposition: 'queued' } })
+    } else if (m.type === 'clear_queue') {
+      // 收回还没取走的插话
+      const steering = steered.splice(0)
+      say({ type: 'response', command: 'clear_queue', id: m.id, success: true, data: { steering, followUp: [] } })
+    } else if (m.type === 'abort' && input.includes('FAKE_PI_SLEEP')) {
+      piSleepAbort?.(m.id)
     } else if (m.type === 'abort') {
       interrupted = true
       say({ type: 'response', command: 'abort', id: m.id, success: true })
@@ -994,6 +1004,61 @@ if (kind === 'pi') {
     out({ type: 'compaction_start', reason: 'manual' })
     out({ type: 'compaction_end', reason: 'manual', result, aborted: false, willRetry: false })
     out({ type: 'response', command: 'compact', id: piCompact, success: true, data: result })
+    await piRpcExit
+    process.exit(0)
+  }
+  // 模型在前台跑 sleep 等 CI：插话要等这条命令跑完才会被取走，面板应当 abort 掉它、把插话作为新的一句交回来
+  if (piRpc && input.includes('FAKE_PI_SLEEP')) {
+    out({ type: 'agent_start' })
+    out({ type: 'turn_start' })
+    out({ type: 'message_update', assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: '等 CI 跑完' } })
+    out({
+      type: 'tool_execution_start',
+      toolCallId: 's1',
+      toolName: 'bash',
+      args: { command: 'sleep 120; gh pr checks 14' },
+    })
+    const abortId = await new Promise((r) => {
+      piSleepAbort = r
+      setTimeout(() => r(null), 20000)
+    })
+    if (abortId === null) {
+      out({
+        type: 'tool_execution_end',
+        toolCallId: 's1',
+        toolName: 'bash',
+        result: { content: [{ type: 'text', text: 'done' }] },
+        isError: false,
+      })
+      out({ type: 'agent_settled', aborted: false })
+      await piRpcExit
+      process.exit(0)
+    }
+    out({
+      type: 'tool_execution_end',
+      toolCallId: 's1',
+      toolName: 'bash',
+      result: { content: [{ type: 'text', text: 'Command aborted' }] },
+      isError: true,
+    })
+    const stopped = assistant([], { stopReason: 'aborted' })
+    out({ type: 'message_end', message: stopped })
+    out({ type: 'agent_end', messages: [stopped] })
+    out({ type: 'agent_settled', aborted: true })
+    const next = new Promise((r) => (piNextPrompt = r))
+    out({ type: 'response', command: 'abort', id: abortId, success: true })
+    const text = await next
+    if (process.env.FAKE_CLI_LOG)
+      appendFileSync(process.env.FAKE_CLI_LOG + '.redirect', JSON.stringify({ text }) + '\n')
+    out({ type: 'turn_start' })
+    const reply = assistant([{ type: 'text', text: '好的，马上推送' }])
+    out({
+      type: 'message_update',
+      assistantMessageEvent: { type: 'text_delta', contentIndex: 0, delta: '好的，马上推送' },
+    })
+    out({ type: 'message_end', message: reply })
+    out({ type: 'agent_end', messages: [reply] })
+    out({ type: 'agent_settled', aborted: false })
     await piRpcExit
     process.exit(0)
   }

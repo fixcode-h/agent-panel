@@ -167,6 +167,7 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
     AGENT_PANEL_NO_RESTART: '1',
     // 空闲超时按「分钟」设置，测试里一分钟只算 1.5 秒
     AGENT_PANEL_MINUTE_MS: '1500',
+    AGENT_PANEL_REDIRECT_MS: '600',
     // 对话页切走后的宽限也缩短，测试不用等一分钟
     AGENT_PANEL_PRESENCE_GRACE_MS: '1200',
   },
@@ -1018,6 +1019,33 @@ try {
     assert.ok(!run.running)
     assert.equal(typeof run.ms, 'number', '跑完的命令记下了耗时')
     step('插话：Codex、Claude Code、Command Code 都交给正在跑的这一轮；命令输出边跑边显示')
+
+    // Pi 的插话要等这一批工具跑完才取：模型在前台 sleep 等 CI 时，面板停下命令，把插话作为新的一句交给它
+    let pz = await chatWith({ cli: 'pi' }, 'FAKE_PI_SLEEP 等 CI')
+    for (let i = 0; i < 40; i++) {
+      pz = await call('GET', `/tasks/${pz.id}`)
+      if (pz.messages.some((m) => m.tools.some((x) => x.kind === 'run'))) break
+      await sleep(150)
+    }
+    await call('POST', `/tasks/${pz.id}/messages`, { text: '推送远端' })
+    pz = await waitDone(pz.id)
+    assert.equal(pz.status, 'done', '停下命令不算这一轮失败')
+    const redirected = readLog(`${log}.redirect`)
+    assert.ok(
+      redirected.some((x) => x.text.includes('推送远端') && x.text.includes('面板说明')),
+      'Pi 收到的新一句是插话加上命令被停下的说明',
+    )
+    const said = pz.messages.findIndex((m) => m.role === 'user' && m.text === '推送远端')
+    const after = pz.messages.slice(said + 1)
+    assert.ok(
+      pz.messages.some((m) => m.tools.some((x) => x.label === '为了马上处理新消息，停下了正在执行的命令')),
+      '回复里标出停下了命令',
+    )
+    assert.ok(
+      after.some((m) => m.role === 'agent' && m.text.includes('好的，马上推送')),
+      '回复排在插话后面',
+    )
+    step('插话被长命令挡着（Pi）：停下命令，插话马上交给 Pi，这一轮照常完成')
 
     // ---- 额度：Codex 主动查，Claude Code 用执行时收到的 ----
     const cl = await call('GET', '/clis/codex/limits')

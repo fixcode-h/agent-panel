@@ -271,6 +271,15 @@ export async function steerTask(
 }
 
 /** 留着的命令输出最多这么多字（只留最后一段，最新的输出最有用） */
+/**
+ * 补充排在正在执行的命令后面、命令跑了这么久还没完：停下命令让 CLI 马上处理补充（见 rpc.redirect）。
+ * 读文件、改文件和多数检查几秒就完，留一点余量，免得用户一发消息就把快跑完的命令打断
+ */
+// 测试用环境变量缩短，免得端到端测试真的等
+const REDIRECT_AFTER_MS = Number(process.env.AGENT_PANEL_REDIRECT_MS) || 8000
+/** 停下命令后跟补充一起交给模型的说明 */
+const REDIRECT_NOTE =
+  '（面板说明：用户在你执行命令时发来了下面的消息。为了马上回应，刚才还在执行的命令已被中断。先回应用户；之后如果还需要那条命令的结果，重新执行。需要等待的命令（sleep、轮询 CI、长时间的测试或编译）不要在前台阻塞，用后台命令执行或直接告诉用户你在等什么。）'
 const MAX_LIVE_OUTPUT = 8000
 const tail = (s: string) => (s.length > MAX_LIVE_OUTPUT ? '…' + s.slice(-MAX_LIVE_OUTPUT) : s)
 
@@ -892,6 +901,8 @@ async function runAgent(
     // 消息本身在交出去时就已经记进对话，这里只断开输出
     if (steerPending && ev.type === 'request_start') {
       steerPending = false
+      clearTimeout(redirectTimer)
+      redirectTimer = undefined
       cur = undefined
       prewarmMode = false
       task.prewarming = false
@@ -947,6 +958,8 @@ async function runAgent(
         if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) {
           ev.tool.startedAt = Date.now()
           toolStart.set(ev.tool, ev.tool.startedAt)
+          // 补充还排着时又开始跑命令：同样要等它跑完才取，一起计时
+          if (steerPending && !redirectTimer) checkRedirect()
         }
         if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file) refreshChanges()
@@ -1091,7 +1104,32 @@ async function runAgent(
   let steerer: Steerer | undefined
   /** 延迟取走的补充：消息已经显示在对话里，CLI 开始下一次模型请求时再把后面的输出另起一条 */
   let steerPending = false
+  let control: CliControl | undefined
+  let redirectTimer: ReturnType<typeof setTimeout> | undefined
+  /**
+   * 补充排在正在执行的命令后面（Pi 要等这一批工具跑完才取）：命令跑了一会儿还没完（例如 sleep 等 CI），
+   * 用户就一直等不到回应。超过 REDIRECT_AFTER_MS 就停下这条命令，让 CLI 马上处理补充
+   */
+  const checkRedirect = () => {
+    clearTimeout(redirectTimer)
+    redirectTimer = undefined
+    const c = control
+    if (!steerPending || finished || !c?.redirect) return
+    // 只等命令：读文件、改文件很快就完；面板自己的工具（等子任务这些）另有办法接用户的消息
+    const started = [...toolStart].filter(([x]) => x.kind === 'run').map(([, at]) => at)
+    if (!started.length) return
+    const wait = Math.min(...started) + REDIRECT_AFTER_MS - Date.now()
+    if (wait > 0) {
+      redirectTimer = setTimeout(checkRedirect, wait)
+      redirectTimer.unref?.()
+      return
+    }
+    void c
+      .redirect(REDIRECT_NOTE)
+      .catch((e: Error) => log.warn('task', '停下命令处理补充失败', { task: task.id, error: e.message }))
+  }
   const register = (c: CliControl) => {
+    control = c
     steerer = {
       step,
       agentId,
@@ -1099,8 +1137,10 @@ async function runAgent(
       accepted: () => {
         // CLI 收下了补充：这一轮又在处理了；延迟取走的那些等它真正开始下一次生成再断开输出
         task.working = true
-        if (c.deferSteer) steerPending = true
-        else cur = undefined
+        if (c.deferSteer) {
+          steerPending = true
+          checkRedirect()
+        } else cur = undefined
         ctx.changed(true)
       },
     }
@@ -1308,6 +1348,7 @@ async function runAgent(
     limits: manual,
   }).finally(() => {
     finished = true
+    clearTimeout(redirectTimer)
     for (const x of [...toolStart.keys()]) endTool(x)
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
     if (steerPending) {

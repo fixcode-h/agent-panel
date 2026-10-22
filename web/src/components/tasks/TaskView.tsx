@@ -1974,7 +1974,10 @@ function PendingReply({
 function RunPhase({ task, label }: { task: Task; label: string }) {
   const now = useNow(true)
   const idle = now - Date.parse(task.updatedAt)
-  const busy = !!task.requests.length || (task.messages.at(-1)?.tools ?? []).some((x) => x.running)
+  // 执行中发的补充排在最后：还在跑的命令在它前面那条回复里，不能只看最后一条
+  const busy =
+    !!task.requests.length ||
+    task.messages.slice(-4).some((m) => m.tools.some((x) => x.running || (x.ms === undefined && !!x.startedAt)))
   // 对话派出的子任务还没做完：对话停在这里等它们，结果交回后接着回复
   const helpers = task.steps.filter((s) => s.slot === 'sub' && s.parentId === '@chat' && s.status === 'running')
   if (helpers.length && !busy) return <>{t('等待 {n} 个子任务完成', { n: helpers.length })}</>

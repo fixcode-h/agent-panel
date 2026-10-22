@@ -244,6 +244,28 @@
     },
     "sessionId": "state.data.sessionId",
     "deferSteer": true,
+    "redirect": {
+      "take": {
+        "record": {
+          "type": "clear_queue"
+        }
+      },
+      "texts": "data.steering",
+      "stop": {
+        "record": {
+          "type": "abort"
+        },
+        "timeoutMs": 30000
+      },
+      "then": [
+        {
+          "record": {
+            "type": "prompt",
+            "message": "{text}"
+          }
+        }
+      ]
+    },
     "remember": [
       {
         "when": {

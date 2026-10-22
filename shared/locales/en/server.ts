@@ -433,4 +433,5 @@ export const EN_SERVER: Record<string, string> = {
   '命令超过 10 分钟没结束，已停止': 'The command ran for more than 10 minutes and was stopped',
   '命令失败（退出码 {code}）': 'Command failed (exit code {code})',
   '达到回合上限（{n}），停止这一轮': 'Reached the turn limit ({n}); this round was stopped',
+  '为了马上处理新消息，停下了正在执行的命令': 'Stopped the running command to handle the new message right away',
 }
