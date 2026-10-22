@@ -2,8 +2,25 @@ import { spawn as nodeSpawn, spawnSync as nodeSpawnSync } from 'node:child_proce
 import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
+import { log } from '../log.ts'
 
 const isWin = process.platform === 'win32'
+
+/**
+ * npm 全局安装的 CLI 是 .cmd 垫片，cross-spawn 要经过 cmd.exe 转一手；参数里的换行会把整条命令行从那里截断，
+ * 后面的参数全部丢失（Pi 的 -e 桥接扩展就是这样丢的，模型只剩内建工具）。换行在 Windows 的参数里本来也没法传，
+ * 统一压成空格：宁可让提示词变成一行，也不能悄悄少掉后面的参数
+ */
+function oneLineArgs(args: string[]) {
+  let flattened = 0
+  const out = args.map((a) => {
+    if (!/[\r\n]/.test(a)) return a
+    flattened++
+    return a.replace(/\r\n|\r|\n/g, ' ')
+  })
+  if (flattened) log.warn('exec', '参数里的换行在 Windows 上会被 cmd 截断命令行，已换成空格', { args: flattened })
+  return out
+}
 
 export interface ProcessResult {
   code: number | null
@@ -97,6 +114,7 @@ export function runProcess(o: {
   /** Windows 上参数原样拼进命令行、不加引号转义：交给 cmd.exe /c 的整行命令要用它（见 shellCommand） */
   windowsVerbatimArguments?: boolean
 }): Promise<ProcessResult> {
+  const args = isWin ? oneLineArgs(o.args) : o.args
   return new Promise((resolve) => {
     let killed: ProcessResult['killed'] = null
     let stderr = ''
@@ -112,7 +130,7 @@ export function runProcess(o: {
 
     let child: ReturnType<typeof spawn>
     try {
-      child = spawn(o.command, o.args, {
+      child = spawn(o.command, args, {
         cwd: o.cwd,
         env: o.env,
         stdio: ['pipe', 'pipe', 'pipe'],

@@ -22,7 +22,7 @@
 2. **模型**：模型从哪读（`modelsFrom` 或内置列表），上下文和最大输出能不能从 CLI 拿到，拿不到的补进[模型目录](./model-catalog.md)。
 3. **写回 CLI 自己的配置**（`auth.api.edits`）：CLI 靠模型条目判断能力时，配上 `modelEfforts` / `modelReasoning` / `modelDefaultEffort` / `modelLimits` / `modelInput`，
    写完用 CLI 自己的列表或界面核对能选几档。
-4. **参数和协议**：`args` 覆盖 model、effort、permission、resume、fork；常驻协议的握手、插话、中断、结束判断都有。
+4. **参数和协议**：`args` 覆盖 model、effort、permission、resume、fork；常驻协议的握手、插话、中断、结束判断都有。角色说明能传文件的写 `systemPromptFileFlag`（Windows 上参数里不能带换行，见 `server/exec/process.ts`）。
 5. **能力** `features`：压缩、自动压缩、分叉、插话（`steer` 或 `notes`）、「/命令」，按 CLI 实际支持的写，不支持的面板会走兜底做法。
 6. **测试**：`scripts/fake-cli` 能模拟它（含 RPC 多轮），`server/exec/fixtures/` 录一段真实输出并加解析测试。
 7. **文案**：界面上的名字、说明的英文写进 `i18n.en`。新加的字段登记进本文档的表格，并回头看已有的 CLI 要不要填。
@@ -49,6 +49,7 @@
 | `args`                            | 参数规则，见下面                                                                                                                                        |
 | `output`                          | 输出解析，见下面                                                                                                                                        |
 | `systemPromptFlag`                | 追加系统提示词的参数（如 `--append-system-prompt`）；不写时角色说明拼进任务描述                                                                         |
+| `systemPromptFileFlag`            | 系统提示词能传文件时用的参数（值写成文件路径，例如 Pi 的 `--append-system-prompt`）：填了就把角色说明写进临时目录传路径，参数里不带换行                 |
 | `features`                        | 能力，见下面                                                                                                                                            |
 | `docs`                            | 项目里每次启动会读的说明文件（相对项目目录），第一个是还没有文件时新建的                                                                                |
 | `docsNote`                        | 项目设置里说明文件那一页的说明                                                                                                                          |

@@ -14,13 +14,24 @@ import type { Orchestra } from '../../shared/engine.ts'
 import { supportedEffort } from '../models.ts'
 import { log } from '../log.ts'
 import { randomUUID } from 'node:crypto'
-import { rm } from 'node:fs/promises'
+import { rm, mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { CACHE_DIR } from '../store.ts'
 import { expandHome } from '../cli-extras.ts'
 
 /** 这一轮面板自己的临时目录（绝对路径）：放 CLI 要加载的桥接脚本等，用完删掉 */
 export const scratchDir = () => path.join(CACHE_DIR, 'cli-run', randomUUID().slice(0, 12))
+
+/**
+ * 把角色说明写进这一轮的临时目录，返回目录和文件路径：CLI 定义里写了 systemPromptFileFlag 时用它代替参数里的多行文本
+ */
+export async function writeSystemPrompt(text: string) {
+  const dir = scratchDir()
+  const file = path.join(dir, 'system-prompt.md')
+  await mkdir(dir, { recursive: true })
+  await writeFile(file, text)
+  return { dir, file }
+}
 
 /** 交给没有提问通道的 CLI 的一句用法说明 */
 const ASK_HINT = '（需要向用户提问时，用工具 ask_user，不要把问题写成普通文字。）'
@@ -115,7 +126,20 @@ export async function invokeCli(o: {
       ? req
       : { ...req, effort, extraArgs: [...(req.extraArgs ?? []), ...thinkArgs] }
   // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
-  const build = picked.options ? picked : { ...picked, options: cs.options }
+  let build = picked.options ? picked : { ...picked, options: cs.options }
+  // 角色说明（多行）不走参数：能传文件的 CLI 写进这一轮的临时目录，参数里只放路径。
+  // Windows 上参数里的换行会把 cmd.exe 转发的整条命令行截断，后面的参数（Pi 的 -e 桥接扩展）就全丢了
+  let promptDir = ''
+  if (def.systemPromptFileFlag && build.systemPrompt) {
+    try {
+      const written = await writeSystemPrompt(build.systemPrompt)
+      promptDir = written.dir
+      build = { ...build, systemPrompt: written.file }
+    } catch (e) {
+      // 写不成就照旧把文本放进参数：提示词会变成一行，但这一轮照常跑（见 process.ts）
+      log.warn('agent', `${def.name} 的角色说明写入失败，改为直接放参数里`, { error: (e as Error).message })
+    }
+  }
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程
   let control: CliControl = { steer: async () => false, interrupt: () => false }
   const setControl = (c: CliControl) => {
@@ -209,6 +233,7 @@ export async function invokeCli(o: {
     await restore?.().catch(() => {})
     await restoreLimits?.().catch(() => {})
     if (dir) await rm(dir, { recursive: true, force: true }).catch(() => {})
+    if (promptDir) await rm(promptDir, { recursive: true, force: true }).catch(() => {})
   }
 }
 

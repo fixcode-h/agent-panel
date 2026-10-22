@@ -101,6 +101,11 @@ export interface CliDefinition {
   defaultPermission: string
   /** 是否支持 --append-system-prompt 这类参数 */
   systemPromptFlag: boolean
+  /**
+   * 系统提示词能直接传文件时用的参数（值写成文件路径）：Pi 的 --append-system-prompt 会读文件内容，
+   * 传路径就不用把多行提示词塞进参数里（Windows 上的参数不能带换行，见 process.ts）
+   */
+  systemPromptFileFlag?: string
   /** 非交互执行的参数（不含任务描述，任务描述走 stdin） */
   buildArgs: (o: BuildOptions) => string[]
   installHint: string
