@@ -773,6 +773,17 @@ async function runAgent(
     })
   }
   const toolsById = new Map<string, ToolUse>()
+  // 还没跑完的工具调用什么时候开始的：结果到了算耗时
+  const toolStart = new Map<ToolUse, number>()
+  /** 结果到了（或者这一轮结束了还没等到结果）：记下跑了多久 */
+  const endTool = (x: ToolUse) => {
+    const t0 = toolStart.get(x)
+    if (t0 === undefined) return
+    toolStart.delete(x)
+    x.ms = Date.now() - t0
+  }
+  // 正在思考的那条消息和第一段思考到达的时刻：思考之后来了别的输出，思考就结束了
+  let thinkingOf: { m: TaskMessage; at: number } | undefined
   // 刚压缩完、还不知道压缩后多大：下一次报告上下文用量时补到这次压缩的工具调用上
   let compaction: { tool: ToolUse; before?: number } | undefined
   // 这一轮在 CLI 会话里的位置，结束后记在触发它的用户消息上（分叉、撤回用）
@@ -822,6 +833,8 @@ async function runAgent(
       task.working = true
       ctx.changed(true)
     }
+    if (thinkingOf && ev.type !== 'thinking' && ev.type !== 'usage' && ev.type !== 'limits' && ev.type !== 'session')
+      thinkingOf = undefined
     switch (ev.type) {
       case 'session':
         task.sessions[sessionKey] = ev.id
@@ -834,6 +847,12 @@ async function runAgent(
         // 思考属于接下来的那段回复：当前消息已经有文字或工具时另起一条
         const m = !cur || cur.text.trim() || cur.tools.length ? newMsg() : cur
         m.thinking = ev.delta ? (m.thinking ?? '') + ev.text : ev.text
+        // CLI 报了这段用了多久就用它；否则从第一段到达算到最新一段，边想边更新
+        if (ev.ms !== undefined) m.thinkingMs = (m.thinkingMs ?? 0) + ev.ms
+        else {
+          if (thinkingOf?.m !== m) thinkingOf = { m, at: Date.now() - (m.thinkingMs ?? 0) }
+          m.thinkingMs = Date.now() - thinkingOf.at
+        }
         streamed(ev.text)
         break
       }
@@ -856,6 +875,8 @@ async function runAgent(
         m.text = ''
         m.tools.push(ev.tool)
         if (ev.id) toolsById.set(ev.id, ev.tool)
+        // 调用时就带着耗时的（完成后才报的）直接用；要等结果的从现在开始计时
+        if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) toolStart.set(ev.tool, Date.now())
         if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file) refreshChanges()
         if (ev.file && !ctx.isGit) {
@@ -898,6 +919,7 @@ async function runAgent(
           if (ev.patch) t.input = ev.patch
           if (ev.detail !== undefined) t.detail = ev.detail
           delete t.running
+          endTool(t)
         }
         break
       }
@@ -958,6 +980,8 @@ async function runAgent(
       }
       case 'result':
         result = ev
+        // 一轮结束还没等到结果的调用（被打断、CLI 没报结果）：算到这里为止
+        for (const x of [...toolStart.keys()]) endTool(x)
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
         if (chat && !op) {
           task.working = false
@@ -1208,6 +1232,7 @@ async function runAgent(
     limits: manual,
   }).finally(() => {
     finished = true
+    for (const x of [...toolStart.keys()]) endTool(x)
     // CLI 一直没报告开始下一次模型请求：补充也算交给了它，输出直接另起一条
     if (steerPending) {
       steerPending = false

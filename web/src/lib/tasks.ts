@@ -248,6 +248,11 @@ export function plainLine(text: string, last = false) {
   return (last ? lines.at(-1) : lines[0]) ?? ''
 }
 
+/** 一次操作的耗时：秒，保留两位小数，例如 1.23s */
+export function fmtSecs(ms: number) {
+  return `${(Math.max(0, ms) / 1000).toFixed(2)}s`
+}
+
 export function fmtDuration(ms: number) {
   const s = Math.max(0, Math.round(ms / 1000))
   if (s < 60) return t('{s} 秒', { s })

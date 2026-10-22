@@ -19,6 +19,8 @@ export function codexAdapter(
   let thread = ''
   let turnId = ''
   let startedCmds = new Set<string>()
+  // 每个条目开始的时刻：完成时才发的条目（改文件、MCP、搜索）用它算耗时
+  const itemStart = new Map<string, number>()
   const review = o.op?.kind === 'review'
   // 回复和推理摘要是否已经流式输出过：输出过的在 item/completed 时不再重复整段
   const streamed = new Set<string>()
@@ -157,6 +159,22 @@ export function codexAdapter(
   }
 
   const onItem = (item: any): CliEvent[] => {
+    const evs = itemEvents(item)
+    // 耗时：Codex 报了 durationMs 就用它，否则按 item/started 到 item/completed 算
+    const t0 = item?.id ? itemStart.get(item.id) : undefined
+    if (item?.id) itemStart.delete(item.id)
+    const ms = typeof item?.durationMs === 'number' ? item.durationMs : t0 !== undefined ? Date.now() - t0 : undefined
+    if (ms === undefined) return evs
+    return evs.map((ev) =>
+      ev.type === 'tool' && ev.tool.ms === undefined
+        ? { ...ev, tool: { ...ev.tool, ms } }
+        : ev.type === 'thinking'
+          ? { ...ev, ms }
+          : ev,
+    )
+  }
+
+  const itemEvents = (item: any): CliEvent[] => {
     switch (item?.type) {
       case 'agentMessage':
         // 审查时审查员的原始输出不显示，结果在 exitedReviewMode 里
@@ -306,6 +324,7 @@ export function codexAdapter(
         void startThread(ctx)
         return
       case 'item/started':
+        if (p.item?.id) itemStart.set(p.item.id, Date.now())
         // 新的一段回复开始，之前的段落要和它分开
         if (p.item?.type === 'agentMessage' && textSeen && !review) ctx.emit({ type: 'text_delta', text: '\n\n' })
         if (p.item?.type === 'commandExecution' && p.item.id) {

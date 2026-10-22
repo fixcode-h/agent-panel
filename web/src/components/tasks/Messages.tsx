@@ -4,6 +4,7 @@ import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
+import { fmtSecs } from '@/lib/tasks'
 import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
@@ -112,13 +113,13 @@ export function NoteMessage({
 
 /** 这一轮模型请求用了多久：两步之间看起来在等的时间基本都在这里 */
 function ModelTime({ ms }: { ms: number }) {
-  return <span className="text-xs text-subtle">{t('模型 {s}s', { s: (ms / 1000).toFixed(1) })}</span>
+  return <span className="text-xs text-subtle tabular-nums">{t('模型 {s}s', { s: (ms / 1000).toFixed(2) })}</span>
 }
 
 /**
  * 思考过程：正在思考时展开并跟随最新内容，思考结束（开始输出回复）后自动收起成一行，可以点开看完整内容
  */
-function Thinking({ text, live, ms }: { text: string; live: boolean; ms?: number }) {
+function Thinking({ text, live, ms, thinkingMs }: { text: string; live: boolean; ms?: number; thinkingMs?: number }) {
   const [open, setOpen] = useState<boolean | null>(null)
   const box = useRef<HTMLDivElement>(null)
   const shown = open ?? live
@@ -134,6 +135,7 @@ function Thinking({ text, live, ms }: { text: string; live: boolean; ms?: number
       >
         <Brain className={cn('h-3.5 w-3.5', live && 'animate-pulse text-accent')} />
         <span className={cn(live && 'thinking-shimmer')}>{live ? t('正在思考…') : t('思考过程')}</span>
+        {!live && thinkingMs !== undefined && <span className="tabular-nums">{fmtSecs(thinkingMs)}</span>}
         {!live && !!ms && <ModelTime ms={ms} />}
         <ChevronRight className={cn('h-3 w-3 transition-transform', shown && 'rotate-90')} />
       </button>
@@ -239,9 +241,9 @@ type BodyProps = {
 // 工具输出在跑的时候服务端只留最后一段（长度到了上限就不再变），只比长度会漏掉更新：
 // 再带上末尾几十个字、是否还在跑和摘要，命令窗口和行内输出才会跟着刷新
 const toolSig = (x: TaskMessage['tools'][number]) =>
-  `${x.output?.length ?? 0}:${x.output?.slice(-48) ?? ''}${x.failed ? '!' : ''}${x.running ? '~' : ''}:${x.detail}:${x.input?.length ?? 0}`
+  `${x.output?.length ?? 0}:${x.output?.slice(-48) ?? ''}${x.failed ? '!' : ''}${x.running ? '~' : ''}:${x.ms ?? ''}:${x.detail}:${x.input?.length ?? 0}`
 const sig = (m: TaskMessage) =>
-  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.tools.map(toolSig).join(',')}`
+  `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.thinkingMs ?? 0}|${m.tools.map(toolSig).join(',')}`
 
 /** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
 function StickyAuthor({ author }: { author: Author }) {
@@ -312,7 +314,12 @@ const MessageBody = memo(
           )}
           {slot}
           {!hideProcess && m.thinking?.trim() && (
-            <Thinking text={m.thinking} live={!!live && !m.text.trim() && !m.tools.length} ms={m.modelMs} />
+            <Thinking
+              text={m.thinking}
+              live={!!live && !m.text.trim() && !m.tools.length}
+              ms={m.modelMs}
+              thinkingMs={m.thinkingMs}
+            />
           )}
           {!hideProcess && !m.thinking?.trim() && !!m.modelMs && <ModelTime ms={m.modelMs} />}
           {!hideProcess && m.tools.length > 0 && (

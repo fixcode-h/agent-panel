@@ -266,11 +266,14 @@ async function speak(ctx: RunContext, agentId: string, step: string, out: Output
     a.tps = 0
     return true
   }
+  const t0 = Date.now()
   if (!(await stream(thoughtFor(out), (s) => (msg.thinking = s)))) return false
+  msg.thinkingMs = Date.now() - t0
   for (const t of out.tools) {
+    const at = Date.now()
     await ctx.sleep(450)
     if (ctx.stopped()) return false
-    msg.tools.push(t)
+    msg.tools.push({ ...t, ms: Date.now() - at })
     ctx.changed()
   }
   const owner = step ? ctx.task.steps.find((x) => x.id === step) : undefined

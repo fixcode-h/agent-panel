@@ -3,7 +3,8 @@ import * as D from '@radix-ui/react-dialog'
 import { X } from 'lucide-react'
 import type { Task } from '@shared/schema'
 import { useData } from '@/lib/data'
-import { currentActivity, stepActivity, stepDuration } from '@/lib/tasks'
+import { currentActivity, fmtSecs, stepActivity } from '@/lib/tasks'
+import { stepMs } from '@shared/task'
 import { useNow } from '@/lib/useNow'
 import { Button } from '@/components/ui/button'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
@@ -69,7 +70,8 @@ const HelperRow = memo(function HelperRow({
   // 默认的「子任务」角色不用再写一遍名字；点名派给「测试验收」这类角色时才标出来
   const agent = agents.find((a) => a.id === step?.agentId && a.origin !== 'builtin:helper')
   if (!step) return null
-  const time = stepDuration(step, now)
+  // 只在做完后显示耗时，跑的时候行首的转圈已经说明在做
+  const ended = step.status === 'done' || step.status === 'failed'
   // 展开时在行内看：做完的看交回的结果，还在跑的看它这会儿在做什么
   const result = step.output.trim() || [...task.messages].reverse().find((m) => m.step === id && m.text.trim())?.text
   const doing = step.status === 'running' ? currentActivity(stepActivity(task, id, true)) : ''
@@ -89,9 +91,9 @@ const HelperRow = memo(function HelperRow({
                 {agent.name}
               </span>
             )}
-            {time && <span className="shrink-0 font-mono text-subtle tabular-nums">{time}</span>}
           </>
         }
+        ms={ended && step.endedAt ? stepMs(step, now) : undefined}
         open={expanded}
         onToggle={() => setExpanded(!expanded)}
         failed={step.status === 'failed'}
@@ -141,7 +143,7 @@ function HelperWindow({
     if (el && pinned.current) el.scrollTop = el.scrollHeight
   }, [size])
   if (!step) return null
-  const time = stepDuration(step, now)
+  const time = step.endedAt && !live ? fmtSecs(stepMs(step, now)) : ''
   return (
     <D.Root open onOpenChange={(o) => !o && onClose()}>
       <D.Portal>
