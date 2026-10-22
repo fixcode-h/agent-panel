@@ -1975,6 +1975,7 @@ function tasksRoute(
         updatedAt: x.updatedAt,
         cliAlive: live.has(x.id),
         lastMessageAt: x.messages.at(-1)?.at ?? x.updatedAt,
+        resolved: x.resolved === true,
       }))
   // 演示里没有真的在跑的子对话进程，停止全部子对话什么也不用做
   if (sub === 'children' && method === 'POST' && rid === 'stop') return { stopped: 0 }

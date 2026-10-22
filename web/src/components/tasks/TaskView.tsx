@@ -5,6 +5,7 @@ import { toast } from 'sonner'
 import {
   ArrowRight,
   ChevronRight,
+  CheckCircle2,
   FlaskConical,
   GitBranch,
   GitFork,
@@ -238,6 +239,8 @@ interface ChildSummary {
   asking?: number
   /** 在独立 worktree 里改时的分支 */
   branch?: string
+  /** 用户标记了「解决」：归到「已完成」并带标记 */
+  resolved?: boolean
   /** 正在执行时这会儿在做什么 */
   activity?: ChildActivity
 }
@@ -348,6 +351,8 @@ export function TaskView({
   const [deleting, setDeleting] = useState(false)
   const [renaming, setRenaming] = useState<string | null>(null)
   const [resuming, setResuming] = useState(false)
+  // 子对话的「解决」标记正在提交：防重复点击
+  const [resolving, setResolving] = useState(false)
   const [scrolled, setScrolled] = useState(false)
   // 往上翻得比较远时显示「回到底部」
   const [away, setAway] = useState(false)
@@ -429,6 +434,19 @@ export function TaskView({
   const apply = (next: Task) => {
     setTask(next)
     pushSummary(next)
+  }
+  // 子对话标记为已解决：只改标记（PATCH resolved），不停 CLI、不改 status；
+  // 已经解决的重复点击不再发请求
+  const resolveChild = async () => {
+    if (resolving || !task || task.resolved) return
+    setResolving(true)
+    try {
+      apply(await api.resolveTask(taskId, true))
+    } catch (e) {
+      toast.error((e as Error).message)
+    } finally {
+      setResolving(false)
+    }
   }
   useEffect(
     () => () => {
@@ -921,7 +939,8 @@ export function TaskView({
               {dropOver && <DropOverlay />}
               <header
                 className={cn(
-                  'flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
+                  // group/hdr：标题栏右侧的「解决」按钮默认隐起来，鼠标进到标题栏或 Tab 聚焦时才显示
+                  'group/hdr flex h-14 shrink-0 items-center gap-2 border-b px-3 transition-colors md:px-5',
                   scrolled ? 'border-line' : 'border-transparent',
                 )}
               >
@@ -1039,6 +1058,30 @@ export function TaskView({
                     <PanelRight className="h-4 w-4" />
                   </Button>
                 )}
+                {/* 子对话面板右上角的「解决」：标记为已解决，记录、分支和未提交改动都保留；已经解决时换成标记 */}
+                {pane &&
+                  task.parentTaskId &&
+                  (task.resolved ? (
+                    <span
+                      title={t('已解决')}
+                      className="flex h-7 shrink-0 items-center gap-1 rounded-full bg-success/12 px-2 text-[0.6875rem] text-success"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {t('已解决')}
+                    </span>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label={t('解决')}
+                      title={t('解决')}
+                      disabled={resolving}
+                      onClick={() => void resolveChild()}
+                      className="opacity-0 group-hover/hdr:opacity-100 focus-visible:opacity-100"
+                    >
+                      <CheckCircle2 className="h-4 w-4" />
+                    </Button>
+                  ))}
                 <Menu>
                   <MenuTrigger asChild>
                     <Button variant="ghost" size="icon-sm" aria-label={t('更多操作')}>
@@ -1632,9 +1675,9 @@ function ChildrenBar({
     return () => document.removeEventListener('mousedown', down)
   }, [open])
 
-  // 在等你选择的子对话：最醒目，排在状态栏最前面
-  const asking = children.filter((c) => c.asking)
-  const busy = sortChildren(children.filter((c) => c.working))
+  // 在等你选择的子对话：最醒目，排在状态栏最前面；已经解决的不再算你要处理的事
+  const asking = children.filter((c) => c.asking && !c.resolved)
+  const busy = sortChildren(children.filter((c) => c.working && !c.resolved))
   const working = busy.length
   const alive = children.filter((c) => c.cliAlive)
   const shown = sortChildren(all ? children : alive)
@@ -1771,7 +1814,7 @@ function ChildrenBar({
                       )}
                     >
                       <span className="mt-0.5 shrink-0">
-                        <TaskStatusIcon status={c.status} working={c.working} />
+                        <TaskStatusIcon status={c.status} working={c.working && !c.resolved} />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="flex min-w-0 items-center gap-1.5">
@@ -1783,14 +1826,22 @@ function ChildrenBar({
                               {t('已关闭')}
                             </span>
                           )}
-                          {!!c.asking && (
+                          {c.resolved && (
+                            <span className="flex shrink-0 items-center gap-0.5 rounded-full bg-success/12 px-1.5 text-[0.6875rem] text-success">
+                              <CheckCircle2 className="h-3 w-3" />
+                              {t('已解决')}
+                            </span>
+                          )}
+                          {!!c.asking && !c.resolved && (
                             <span className="shrink-0 rounded-full bg-warning/15 px-1.5 text-[0.6875rem] text-warning">
                               {t('等你选择')}
                             </span>
                           )}
-                          {c.working && <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>}
+                          {c.working && !c.resolved && (
+                            <span className="shrink-0 text-[0.6875rem] text-accent">{t('执行中')}</span>
+                          )}
                         </span>
-                        {c.working
+                        {c.working && !c.resolved
                           ? activityText(c.activity) && (
                               <span className="line-clamp-1 text-xs text-subtle">{activityText(c.activity)}</span>
                             )
@@ -1831,15 +1882,18 @@ function childGroups(list: ChildSummary[], grouped: boolean) {
   ]
   for (const c of list) {
     const g =
-      c.requests || c.asking || c.status === 'failed'
-        ? groups[0]
-        : // 只看这一轮是不是还在跑：回复完停在等下一句时 status 仍是 running，
-          // 按 status 分组会把已经交回结果的子对话一直挂在「执行中」
-          c.working
-          ? groups[1]
-          : c.status === 'done'
-            ? groups[2]
-            : groups[3]
+      // 已解决优先归「已完成」：就算它这会儿还在跑，也不再挂到「需要你处理 / 执行中」里
+      c.resolved
+        ? groups[2]
+        : c.requests || c.asking || c.status === 'failed'
+          ? groups[0]
+          : // 只看这一轮是不是还在跑：回复完停在等下一句时 status 仍是 running，
+            // 按 status 分组会把已经交回结果的子对话一直挂在「执行中」
+            c.working
+            ? groups[1]
+            : c.status === 'done'
+              ? groups[2]
+              : groups[3]
     g.items.push(c)
   }
   return groups.filter((g) => g.items.length)

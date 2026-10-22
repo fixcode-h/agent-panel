@@ -868,6 +868,8 @@ export const TaskPatch = z
   .object({
     title: z.string().trim().min(1, t('标题不能为空')).max(80),
     archived: z.boolean(),
+    // 子对话「解决」：只是标记，不动 status、不停进程，随时能再打开
+    resolved: z.boolean(),
     // 对话用的 CLI、模型和思考强度，执行中也能改，下一轮生效
     cli: z.string().trim().max(40),
     model: z.string().trim().max(200),
@@ -1370,6 +1372,11 @@ export const TaskData = z.object({
   childrenWorking: z.number().int().min(0).optional(),
   /** 归档：侧栏默认不显示，筛选「已归档」时才列出来；不删除任何内容 */
   archived: z.boolean().optional(),
+  /**
+   * 子对话已经解决：只用于标记（列表归到「已完成」并显示标记），不改 status、不停 CLI，
+   * 父对话的等待逻辑和 childrenWorking 聚合都不看它
+   */
+  resolved: z.boolean().optional(),
   /** 用户最近一次发消息的时间：只在列表摘要里带（摘要去掉了消息），排序和显示用 askedAt() 取 */
   askedAt: z.string().optional(),
   /** 用户结束了工作流：没完成的节点不再执行，之后的要求由主 Agent 直接处理 */

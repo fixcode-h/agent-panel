@@ -229,6 +229,8 @@ export const EN_TASKS: Record<string, string> = {
   '{n} 个在执行': '{n} running',
   运行中: 'Running',
   已关闭: 'Closed',
+  解决: 'Resolve',
+  已解决: 'Resolved',
   还没有子对话: 'No sub-conversations yet',
   没有正在运行的子对话: 'No sub-conversation is running',
   子对话执行中: 'Sub-conversation running',

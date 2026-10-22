@@ -346,6 +346,8 @@ export const api = {
         branch?: string
         /** 正在执行时这会儿在做什么 */
         activity?: ChildActivity
+        /** 用户标记了「解决」：列表归到「已完成」并带标记 */
+        resolved?: boolean
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
@@ -496,6 +498,8 @@ export const api = {
     request<Task>(`/tasks/${id}`, json('PATCH', patch)),
   renameTask: (id: string, title: string) => request<Task>(`/tasks/${id}`, json('PATCH', { title })),
   archiveTask: (id: string, archived: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { archived })),
+  /** 子对话的「解决」标记：只改标记，不停 CLI、不影响父对话 */
+  resolveTask: (id: string, resolved: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { resolved })),
   setChatRun: (id: string, run: { cli: string; model: string; effort: string }) =>
     request<Task>(`/tasks/${id}`, json('PATCH', run)),
   deleteTask: (id: string) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
