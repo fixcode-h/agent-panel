@@ -1557,6 +1557,8 @@ export function tasksApi(deps: {
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
           activity: activityOf(liveTask),
+          // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
+          resolved: liveTask.resolved === true,
         }
       })
     return c.json(kids)
