@@ -3,6 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import { Code2, Columns2, Copy, FolderOpen, List, Loader2, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Task } from '@shared/schema'
+import type { FileDiff } from '@shared/files'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { editorUrl } from '@/lib/editor-url'
@@ -193,20 +194,31 @@ function DiffBody({ diff }: { diff: string }) {
   )
 }
 
-/** 项目文件页的「查看改动」：字段按后端的约定，note 是后端给的说明（不是 git 仓库、未跟踪文件这类） */
-export type ProjectDiffData = {
-  path: string
-  dir: string
-  diff: string
-  git: boolean
-  /** 改动前这个文件存不存在：后端没给就不解释 */
-  before?: boolean
-  /** 后端给的说明：有它又没有差异时直接显示这句，不拿空 diff 糊弄 */
-  note?: string
+/**
+ * 弹窗里的滚动内容区。
+ * 底色铺满整个内容区（连下沿的圆角一起），滚动区本身退到离下沿一个圆角的高度，
+ * 这样横向、纵向滚动条都只出现在直边上，不会压进 rounded-2xl 的两个下圆角。
+ * 三个弹窗都用它，尺寸和圆角才对得上。
+ */
+export function DialogScroll({
+  box,
+  children,
+}: {
+  /** 需要滚动定位时（比如跳到某一行）要拿到的滚动容器 */
+  box?: React.RefObject<HTMLDivElement | null>
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-(--code-bg) pb-4">
+      <div ref={box} className="min-h-0 flex-1 overflow-auto">
+        {children}
+      </div>
+    </div>
+  )
 }
 
 /**
- * 项目里一个文件的改动：和任务里的差异共用一套渲染（左右 / 上下对照）。
+ * 项目里一个文件的改动（接口给的就是 FileDiff）：和任务里的差异共用一套渲染（左右 / 上下对照）。
  * 不提供撤销：项目页面不是任务，说不清「恢复到什么时候」。
  */
 export function ProjectDiffDialog({
@@ -217,7 +229,7 @@ export function ProjectDiffDialog({
 }: {
   /** 要看的文件；null 时窗口关着 */
   path: string | null
-  data: ProjectDiffData | null
+  data: FileDiff | null
   error: string
   onOpenChange: (open: boolean) => void
 }) {
@@ -263,7 +275,7 @@ export function ProjectDiffDialog({
               </Button>
             </D.Close>
           </header>
-          <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+          <DialogScroll>
             {error ? (
               <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
             ) : !data ? (
@@ -280,7 +292,7 @@ export function ProjectDiffDialog({
             ) : (
               <DiffBody diff={text} />
             )}
-          </div>
+          </DialogScroll>
           {note && text.trim() && <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">{note}</p>}
         </D.Content>
       </D.Portal>
@@ -416,7 +428,7 @@ export function DiffDialog({
               </Button>
             </D.Close>
           </header>
-          <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+          <DialogScroll>
             {error ? (
               <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
             ) : !ready ? (
@@ -434,7 +446,7 @@ export function DiffDialog({
             ) : (
               <DiffBody diff={text} />
             )}
-          </div>
+          </DialogScroll>
           {!own && data && !data.git && text.trim() && (
             <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
               {t('项目不是 git 仓库：这里是 Agent 每次修改这个文件时给出的改动，按时间先后排列。')}
