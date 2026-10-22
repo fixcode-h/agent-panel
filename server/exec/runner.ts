@@ -44,7 +44,7 @@ import {
   type EngineHost,
 } from '../../shared/engine.ts'
 import { projectFormat } from '../../shared/file-format.ts'
-import { composeRole, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
+import { composeRole, defaultChatPrompt, includedAgents, nodeAgentRun } from '../../shared/agent-role.ts'
 import { fillSkills } from '../../shared/expose.ts'
 import { listIntegrations } from '../integrations.ts'
 import { ensureBundled } from '../bundled-skills.ts'
@@ -648,6 +648,7 @@ async function runAgent(
     ),
   )
   let input = op?.kind === 'review' && def.review !== 'native' ? reviewPrompt(op.target) : prompt
+  input = defaultChatPrompt(input, agentId, chat, !!op)
   // 之前的节点收不了的补充，交给这个节点
   const pending = step ? notes.get(task.id) : undefined
   if (pending?.length) {
