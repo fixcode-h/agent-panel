@@ -1,3 +1,5 @@
+import { shellNote } from '../shared/shells.ts'
+import { lastShell } from './shells.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -36,6 +38,12 @@ const tasksField = (o: Orchestra) => ({
   },
 })
 
+/** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
+const shellHint = () => {
+  const sh = lastShell()
+  return sh ? shellNote(sh) : ''
+}
+
 export function orchTools(o: Orchestra) {
   const main = o.self.endsWith('@main')
   return [
@@ -59,7 +67,8 @@ export function orchTools(o: Orchestra) {
           {
             name: 'run_background',
             description:
-              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。',
+              '把要跑很久的命令（完整测试、编译、打包）交给面板在后台跑，马上返回编号，不用干等；跑完结果会自动推回给你。等待期间不要改这条命令要检查的文件。' +
+              shellHint(),
             inputSchema: {
               type: 'object',
               properties: {

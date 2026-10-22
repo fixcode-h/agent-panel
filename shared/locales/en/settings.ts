@@ -945,4 +945,9 @@ export const EN_SETTINGS: Record<string, string> = {
   查看项目教训: 'Check project lessons',
   全局教训: 'Global lessons',
   修改全局教训需要你确认: 'Changing global lessons needs your confirmation',
+  // 命令行环境
+  命令行环境: 'Command shell',
+  '面板替角色跑整行命令时用的 shell：后台命令，以及合并时编译里环境为「自动」的测试步骤。有 WSL 默认用 WSL，没有就用 Git Bash。':
+    'The shell the panel uses to run full command lines for roles: background commands, and test steps set to "Auto" when building on merge. Defaults to WSL when installed, otherwise Git Bash.',
+  '重新检测（刚装了 WSL 或 Git 时用）': 'Detect again (after installing WSL or Git)',
 }

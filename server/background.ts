@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import path from 'node:path'
 import { capture } from './exec/process.ts'
 import { runShell } from './merge-build.ts'
+import { currentShell } from './shells.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -72,6 +73,7 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
       return
     }
     const r = await runShell(j.command, j.cwd, {
+      shell: await currentShell(),
       timeoutMs: MAX_MS,
       signal: ac.signal,
       onLine: (l) => {

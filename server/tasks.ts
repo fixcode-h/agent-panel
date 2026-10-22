@@ -19,6 +19,7 @@ import {
   defaultAgent,
 } from '../shared/schema.ts'
 import { readGlobalLessons, type LessonDraft } from './lessons.ts'
+import { currentShell } from './shells.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -649,7 +650,7 @@ export function tasksApi(deps: {
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原目录已经是最新的' }
     const { run: steps, skipped } = mergeStepsFor(project.testSteps, small)
     const built = steps.length
-      ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro })
+      ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro, shell: await currentShell() })
       : { ok: true, runs: [] }
     if (!built.ok) {
       await abortMerge(target)

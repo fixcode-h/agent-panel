@@ -55,6 +55,7 @@ import { ProjectCategoryList } from '@/components/projects/ProjectCategoryList'
 import { DialogCloseButton } from '@/components/projects/ProjectSettingsDialog'
 import { useAppUpdate } from '@/lib/app-update'
 import { Group, ReadValue, Row } from '@/components/settings/parts'
+import { ShellSetting } from '@/components/settings/ShellSetting'
 import { CustomClis } from '@/components/settings/CustomClis'
 import {
   AssistModel,
@@ -116,6 +117,7 @@ function SettingsBody({
   const [requireToken, setRequireToken] = useState(initial.requireToken)
   const [remoteAccess, setRemoteAccess] = useState(initial.remoteAccess)
   const [askUserDefault, setAskUserDefault] = useState(initial.askUserDefault)
+  const [shell, setShell] = useState(initial.shell)
   const [proxy, setProxy] = useState(initial.proxy)
   const [contentWidth, setContentWidth] = useState(initial.contentWidth)
   const [fileFormat, setFileFormat] = useState(initial.fileFormat)
@@ -236,6 +238,7 @@ function SettingsBody({
     requireToken,
     remoteAccess,
     askUserDefault,
+    shell,
     proxy: proxy.trim(),
     contentWidth,
     appearance,
@@ -637,6 +640,7 @@ function SettingsBody({
                   onCheckedChange={setAskUserDefault}
                 />
               </Row>
+              <ShellSetting value={shell} onChange={setShell} />
               <Row
                 title={t('新建文件的格式')}
                 desc={t(

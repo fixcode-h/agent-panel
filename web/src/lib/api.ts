@@ -1,3 +1,4 @@
+import type { ShellReport } from '@shared/shells'
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -148,6 +149,7 @@ export interface UserClis {
 export const api = {
   settings: () => request<Settings>('/settings'),
   saveSettings: (s: Settings) => request<Settings>('/settings', json('PUT', s)),
+  shells: (fresh = false) => request<ShellReport>(`/shells${fresh ? '?fresh=1' : ''}`),
 
   remoteStatus: () => request<RemoteAccessStatus>('/remote/status'),
   remoteCheck: () => request<RemoteAccessStatus>('/remote/check', { method: 'POST' }),

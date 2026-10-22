@@ -82,6 +82,7 @@ import { grantCookie, tokenGuard, withToken } from './auth.ts'
 import { hostOf, isAllowedHost, isLocalHost } from './hosts.ts'
 import { applyRemote, configureRemote, remoteApi, stopRemote } from './remote.ts'
 import { installLogging, log, logFile } from './log.ts'
+import { detectShells, currentShell } from './shells.ts'
 import { projectLessons, readGlobalLessons, writeGlobalLessons, type LessonDraft } from './lessons.ts'
 
 // 更新时旧版本用这个参数试加载新的 server.mjs：模块都能加载就说明这台电脑的 Node 能跑，不动数据、不监听端口
@@ -304,6 +305,9 @@ async function parseWorkflow(body: unknown, selfId = '') {
 app.get('/health', (c) => c.json({ ok: true }))
 // ---- 设置 ----
 app.get('/settings', async (c) => c.json(await getSettings()))
+// 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
+void currentShell().catch(() => {})
+app.get('/shells', async (c) => c.json(await detectShells(c.req.query('fresh') === '1')))
 app.put('/settings', async (c) => {
   const p = Settings.safeParse(await c.req.json())
   if (!p.success) return bad(c, z.prettifyError(p.error))
@@ -315,6 +319,8 @@ app.put('/settings', async (c) => {
   const saved = await saveSettings(p.data)
   // 对话页切走后 CLI 还等多久：保存后立即生效，不用重启服务
   setPresenceGraceMs(saved.presenceGraceMinutes * 60_000)
+  // 命令行环境：工具说明里写的「命令在哪执行」跟着换
+  void currentShell().catch(() => {})
   // API / 账号方式或 API 配置变了：立即写进 CLI 自己的配置，不用等到下一次执行
   await syncCliAuths(prev, saved)
   // 只有外网访问的开关、方式、地址变了才重启隧道；其他设置每次自动保存都把 quick 地址换掉会断线

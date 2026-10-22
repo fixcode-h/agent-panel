@@ -1464,6 +1464,17 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
   }
 
+  // 演示按 Windows 上装了 WSL 和 Git 的情况显示命令行环境
+  if (res === 'shells')
+    return {
+      platform: 'win32',
+      shells: [
+        { id: 'wsl', path: 'wsl.exe', distros: ['Ubuntu-24.04', 'Debian'] },
+        { id: 'gitbash', path: 'C:\\Program Files\\Git\\bin\\bash.exe' },
+        { id: 'powershell', path: 'powershell.exe' },
+        { id: 'cmd', path: 'cmd.exe' },
+      ],
+    }
   if (res === 'global-lessons') {
     if (method === 'GET') return d.globalLessons ?? []
     const b = (body ?? {}) as { lessons?: unknown; confirmed?: unknown }
