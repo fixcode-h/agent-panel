@@ -2036,6 +2036,7 @@ function ChatTurn({
       teamNames={teamNames}
       live={live}
       last={last}
+      fold
       author={withCommand}
       command={withCommand ? undefined : command}
     />

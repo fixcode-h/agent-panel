@@ -131,6 +131,13 @@ try {
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
   await p.keyboard.press('Escape')
+  // 回复完成后思考和工具调用收进一个折叠，折叠行写这段做了什么；点开能看到过程，再点收起
+  {
+    const fold = p.getByRole('button', { name: /查看 \d+ 个文件/ }).first()
+    await fold.click().catch(() => errors.push('任务：回复完成后没有收起过程的折叠行'))
+    await check(p, '任务-展开过程', ['思考过程'])
+    await fold.click().catch(() => {})
+  }
   // 窄版右栏的右键菜单：能弹出，而且整个菜单都在视口里（不能溢出去）
   {
     const compactRow = p.locator('button[title="package.json"]').first()
