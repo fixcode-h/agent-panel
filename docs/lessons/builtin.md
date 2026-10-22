@@ -51,3 +51,9 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 - 规则：AI 配参数这类「让 CLI 按项目定值」的提示词，每个选项要附上它实际改变什么（`paramEffect` 按取值渲染角色设定取差异）和节点上已有的预设，写明判断顺序「项目事实 → 选项差别 → 默认值」，并告诉它结果要用户确认才生效、不要把取舍拿去问用户。只给标签和一句说明时，CLI 只能把开关原样问回来。
 - 起因：c3678e9 的参数提示词只列标签，还要求写「哪些参数需要用户确认」；用户在「通用项目」上看到 AI 把 TDD / 任务记录 / 先识别现场 / 串行全部问回来。
 - 防线：`server/agent-params.test.ts`（提示词带取值差异和节点预设）。
+
+## 父对话只统筹，改文件、编译、计划步骤都在子对话里
+
+- 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试后 `submit_merge` 合回。这条既写提示词，也落到工具上（父对话 `noEdit`，Pi 用 `--exclude-tools` 去掉 edit/write）。
+- 起因：父对话先把问题查到底、自己动手改，还开 worktree；编译又要合并到父对话那边才跑。
+- 防线：`server/orchestrator.test.ts`、`scripts/e2e.mjs` 的子对话合并用例。

@@ -191,8 +191,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')
       return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text), 'other', body || undefined)
     }
+    case 'submit_merge':
     case 'submit_build':
-      return as(t('提交编译'), firstLine(a.note))
+      return as(t('合回原分支'), firstLine(a.note))
     case 'start_plan':
     case 'run_workflow':
       return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))

@@ -15,7 +15,7 @@ import {
   MenuTrigger,
 } from '@/components/ui/menu'
 import { t } from '@shared/i18n'
-import { askedAt, byAskedAt, groupByDay } from '@shared/task'
+import { askedAt, byAskedAt, groupByDay, taskBusy } from '@shared/task'
 
 // 侧栏里的任务列表：一行任务、搜索和筛选、聊天列表
 
@@ -60,8 +60,8 @@ export function TaskRow({
   const menu = useTaskRowMenu(task, onDeleted)
   if (menu.renaming)
     return <TaskRenameInput task={task} onCommit={menu.rename} onCancel={() => menu.setRenaming(false)} />
-  // 自己在执行，或者名下子对话在执行：都算「还在跑」（转圈）
-  const busy = task.working || !!task.childrenWorking
+  // 自己在执行、名下子对话在执行、或者在等派出的子任务：都算「还在跑」（转圈）
+  const busy = taskBusy(task)
   // CLI 进程还开着（等下一句、预热）但没在处理这一轮：用虚线边框表示，前面的对话 / 工作流图标一直显示
   const online = task.status === 'running' && !busy
   const ModeIcon = task.mode === 'workflow' ? Workflow : MessageSquare
@@ -136,7 +136,7 @@ export const FILTERS: { id: TaskFilter; label: string }[] = [
 /** 按标题和第一条要求搜索，按状态筛选；归档的只在「已归档」里出现 */
 export function matchTask(tk: Task, query: string, filter: TaskFilter) {
   if (filter === 'archived' ? !tk.archived : tk.archived) return false
-  if (filter === 'running' && !tk.working && !tk.childrenWorking) return false
+  if (filter === 'running' && !taskBusy(tk)) return false
   if (filter === 'failed' && tk.status !== 'failed') return false
   if (filter === 'waiting' && !tk.requests?.length && !tk.awaitingUser) return false
   const q = query.trim().toLowerCase()

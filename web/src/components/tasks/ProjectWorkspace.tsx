@@ -16,7 +16,7 @@ import {
 import { useRef, useState, type CSSProperties } from 'react'
 import { toast } from 'sonner'
 import type { Project, Task } from '@shared/schema'
-import { byAskedAt, taskDuration, taskSummary, waitDuration } from '@shared/task'
+import { byAskedAt, helpersWorking, taskBusy, taskDuration, taskSummary, waitDuration } from '@shared/task'
 import { importTaskFile } from '@/lib/task-transfer'
 import { useData, useNav } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
@@ -229,7 +229,7 @@ function groupByState(list: Task[]) {
     { key: 'rest', label: t('其他对话'), dot: 'bg-subtle', items: [] as Task[] },
   ]
   for (const tk of list) {
-    const g = needsYou(tk) ? all[0] : tk.working || tk.childrenWorking ? all[1] : all[2]
+    const g = needsYou(tk) ? all[0] : taskBusy(tk) ? all[1] : all[2]
     g.items.push(tk)
   }
   return all.filter((g) => g.items.length)
@@ -264,7 +264,7 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               onClick={onOpen}
               className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 py-3 pl-4 pr-3 text-left"
             >
-              <TaskStatusIcon status={task.status} working={task.working} />
+              <TaskStatusIcon status={task.status} working={taskBusy(task)} />
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 <span className="truncate text-[0.875rem]">{task.title}</span>
                 <span className="truncate text-xs text-subtle">
@@ -277,20 +277,18 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
               <span
                 className={cn(
                   'hidden shrink-0 text-xs sm:block',
-                  task.status === 'failed'
-                    ? 'text-danger'
-                    : task.working || task.childrenWorking
-                      ? 'text-accent'
-                      : 'text-subtle',
+                  task.status === 'failed' ? 'text-danger' : taskBusy(task) ? 'text-accent' : 'text-subtle',
                 )}
               >
                 {task.status === 'done'
                   ? timeAgo(task.updatedAt, now)
-                  : task.status === 'running' && !task.working && !task.childrenWorking
+                  : task.status === 'running' && !taskBusy(task)
                     ? t('等待你的下一条消息')
                     : task.childrenWorking && !task.working
                       ? t('子对话执行中')
-                      : statusLabel[task.status]}
+                      : helpersWorking(task) && !task.working
+                        ? t('子任务执行中')
+                        : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

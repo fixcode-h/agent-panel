@@ -37,6 +37,8 @@ import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { HelpTip } from '@/components/ui/help-tip'
+import type { ProjectProposal } from '@shared/assist'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
 import { DirPicker, useDirInfo } from './DirPicker'
 import { t } from '@shared/i18n'
@@ -160,6 +162,29 @@ function Body({
       : // 新项目默认用协调 Agent；用户可以在下面改成「无」或别的 Agent
         { ...blank, defaultAgentId: agents.find((a) => a.origin === 'builtin:orchestrator')?.id ?? '' },
   )
+  // 页面上的项目列表是启动时读的：对话里的角色后来用 record_lesson 记的教训不在里面。
+  // 打开时重新读一次，把新记的教训补进草稿，教训页才看得到，保存时也不会把它们盖掉
+  useEffect(() => {
+    if (!project) return
+    let alive = true
+    api
+      .projects()
+      .then((list) => {
+        const fresh = list.find((p) => p.id === project.id)
+        if (!alive || !fresh) return
+        setProjects(list)
+        setDraft((d) => ({
+          ...d,
+          lessons: [...d.lessons, ...fresh.lessons.filter((l) => !d.lessons.some((x) => x.id === l.id))],
+        }))
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+    // 只在打开（换项目）时读一次
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.id])
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
@@ -256,7 +281,7 @@ function Body({
   const format = draft.fileFormat ?? globalFormat
   // AI 配置：一次只开一个，结果只填草稿；用户取消不会改数据
   const [ai, setAi] = useState<{
-    kind: 'params' | 'teststeps'
+    kind: 'params' | 'teststeps' | 'project'
     workflowId?: string
     agentId?: string
     title: string
@@ -265,42 +290,50 @@ function Body({
   } | null>(null)
 
   // 项目的「AI 分析」：读本地目录给出名称、简介、工作流和配置项，填进表单；用户确认后才保存
+  // 「AI 分析这个目录」：先快速扫一遍（几毫秒，拿工作流参数、WSL 这类能直接读出的事实），
+  // 再打开 AI 对话，让本机 Agent 只读地看目录给出名称、简介、类型和测试步骤，确认后填进表单
+  const [scan, setScan] = useState<Awaited<ReturnType<typeof api.analyzeProject>> | null>(null)
   const analyze = async () => {
     if (!draft.path.trim() || analyzing) return
     setAnalyzing(true)
     try {
       const r = await api.analyzeProject(draft.path)
+      setScan(r)
       setSignals(r.signals)
-      const want = r.workflow === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
-      const wf =
-        workflows.find((w) => w.origin === `builtin:project-${r.workflow}`) ?? workflows.find((w) => w.name === want)
-      setDraft((d) => ({
-        ...d,
-        name: d.name.trim() || r.name,
-        description: r.description || d.description,
-        // 已经填过步骤的不覆盖：用户可能自己调过
-        ...(r.testSteps.length && !d.testSteps.length ? { testSteps: r.testSteps } : {}),
-        ...(r.wslDistro && !d.wslDistro ? { wslDistro: r.wslDistro } : {}),
-        ...(wf
-          ? {
-              workflowId: wf.id,
-              workflowParams: {
-                ...d.workflowParams,
-                [wf.id]: { ...(d.workflowParams[wf.id] ?? {}), ...r.workflowParams },
-              },
-            }
-          : {}),
-      }))
-      toast.success(
-        wf
-          ? t('已按本地目录填好，检查一下再保存')
-          : t('已填好，但没找到内置工作流「{name}」，请手动选择', { name: want }),
-      )
+      setAi({
+        kind: 'project',
+        title: t('AI 分析项目'),
+        start: t('看看这个项目是做什么的，把名称、简介和测试步骤填好'),
+      })
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
       setAnalyzing(false)
     }
+  }
+  const applyAnalysis = (p: ProjectProposal) => {
+    const want = p.type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
+    const wf = workflows.find((w) => w.origin === `builtin:project-${p.type}`) ?? workflows.find((w) => w.name === want)
+    // 扫描给的工作流参数只在类型对得上时用
+    const params = scan && scan.workflow === p.type ? scan.workflowParams : {}
+    setDraft((d) => ({
+      ...d,
+      name: d.name.trim() || p.name,
+      description: p.description || d.description,
+      ...(p.steps.length ? { testSteps: p.steps } : {}),
+      ...(scan?.wslDistro && !d.wslDistro ? { wslDistro: scan.wslDistro } : {}),
+      ...(wf
+        ? {
+            workflowId: wf.id,
+            workflowParams: { ...d.workflowParams, [wf.id]: { ...(d.workflowParams[wf.id] ?? {}), ...params } },
+          }
+        : {}),
+    }))
+    toast.success(
+      wf
+        ? t('已按 AI 的分析填好，检查一下再保存')
+        : t('已填好，但没找到内置工作流「{name}」，请手动选择', { name: want }),
+    )
   }
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
@@ -585,7 +618,12 @@ function Body({
                   )}
                 />
                 <div className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted">{t('默认工作流')}</span>
+                  <span className="flex items-center gap-1 text-xs text-muted">
+                    {t('默认工作流')}
+                    <HelpTip>
+                      {t('只能从「{cat}」分类里选：这类工作流是为项目常驻流程设计的。', { cat: PROJECT_WF_CATEGORY })}
+                    </HelpTip>
+                  </span>
                   <Select
                     aria-label={t('默认工作流')}
                     value={draft.workflowId}
@@ -612,9 +650,6 @@ function Body({
                       ...defaultChoices.map((w) => ({ value: w.id, label: w.name })),
                     ]}
                   />
-                  <span className="text-xs text-subtle">
-                    {t('只能从「{cat}」分类里选：这类工作流是为项目常驻流程设计的。', { cat: PROJECT_WF_CATEGORY })}
-                  </span>
                 </div>
                 {active && (
                   <WorkflowCard
@@ -704,7 +739,7 @@ function Body({
                   checked={draft.scaledVerify}
                   onChange={(v) => set('scaledVerify', v)}
                   label={t('按改动大小决定验证范围')}
-                  hint={t(
+                  tip={t(
                     '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。',
                   )}
                 />
@@ -778,9 +813,11 @@ function Body({
                       )}
                       {t('AI 分析这个目录')}
                     </Button>
-                    <span className="text-xs text-subtle">
-                      {t('只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单')}
-                    </span>
+                    <HelpTip>
+                      {t(
+                        '让 AI 只读地看一遍这个目录，判断技术栈、构建和测试命令，填进下面的表单和测试步骤；保存前你可以再改',
+                      )}
+                    </HelpTip>
                   </div>
                   {signals.length > 0 && (
                     <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
@@ -793,7 +830,13 @@ function Body({
 
                 <FormSection title={t('文件格式')}>
                   <div className="flex flex-wrap gap-3">
-                    <Field label={t('编码')} className="flex-[1_1_200px]">
+                    <Field
+                      label={t('编码')}
+                      className="flex-[1_1_200px]"
+                      tip={t(
+                        '这个项目里新建和改写的文本文件用它，角色写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
+                      )}
+                    >
                       <Select
                         value={format.encoding}
                         onChange={(e) =>
@@ -817,12 +860,8 @@ function Body({
                     </Field>
                   </div>
                   <span className="text-xs text-subtle">
-                    {t(
-                      '这个项目里新建和改写的文本文件用它，角色写文件时也按这个来。默认 UTF-8（不带 BOM）+ LF，在 WSL / Linux 里执行带 shebang 的脚本不会报 bad interpreter。',
-                    )}
                     {!draft.fileFormat && (
                       <>
-                        {' '}
                         <button
                           type="button"
                           className="cursor-pointer text-accent hover:underline"
@@ -834,7 +873,6 @@ function Body({
                     )}
                     {draft.fileFormat && (
                       <>
-                        {' '}
                         <button
                           type="button"
                           className="cursor-pointer text-accent hover:underline"
@@ -852,14 +890,25 @@ function Body({
                     checked={draft.isolateDefault}
                     onChange={(v) => set('isolateDefault', v)}
                     label={t('新建对话时默认勾选「独立分支」')}
-                    hint={t(
-                      '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。',
+                    tip={t(
+                      '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。父对话（统筹）不改文件，不开独立分支。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。',
                     )}
                   />
                 </FormSection>
 
                 <FormSection title={t('子对话')}>
-                  <Field label={t('子对话隔离')}>
+                  <Field
+                    label={t('子对话隔离')}
+                    tip={
+                      draft.childIsolation === 'worktree'
+                        ? t(
+                            '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话的分支不推到远端，子对话标记完成后删除。不是 Git 仓库（P4 等）时自动用共用目录。',
+                          )
+                        : t(
+                            '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',
+                          )
+                    }
+                  >
                     <div>
                       <Segmented
                         label={t('子对话隔离')}
@@ -872,19 +921,13 @@ function Body({
                       />
                     </div>
                   </Field>
-                  <span className="text-xs leading-relaxed text-subtle">
-                    {draft.childIsolation === 'worktree'
-                      ? t(
-                          '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。',
-                        )
-                      : t(
-                          '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',
-                        )}
-                  </span>
                 </FormSection>
 
                 <FormSection title={t('版本与推送')}>
-                  <Field label={t('推送到远端')}>
+                  <Field
+                    label={t('推送到远端')}
+                    tip={t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
+                  >
                     <Select
                       value={draft.gitPolicy}
                       onChange={(v) => set('gitPolicy', v.target.value as ProjectInput['gitPolicy'])}
@@ -895,9 +938,6 @@ function Body({
                       ]}
                     />
                   </Field>
-                  <span className="text-xs text-subtle">
-                    {t('本地提交不受影响；推送、PR、P4 submit 这类对外操作按这里的设置和对话里的选择来。')}
-                  </span>
                 </FormSection>
               </div>
             )}
@@ -950,6 +990,7 @@ function Body({
           onOpenChange={(o) => !o && setAi(null)}
           kind={ai.kind}
           projectId={project?.id ?? ''}
+          subject={ai.kind === 'project' ? { path: draft.path.trim(), scan: scan ? scanText(scan) : '' } : undefined}
           title={ai.title}
           autoStart={ai.start}
           paramAgentId={ai.agentId}
@@ -979,6 +1020,8 @@ function Body({
                   return { ...d, workflowParams: { ...d.workflowParams, [id]: next } }
                 })
               toast.success(t('已填进表单，确认保存后生效'))
+            } else if (p.kind === 'project') {
+              applyAnalysis(p)
             } else if (p.kind === 'teststeps') {
               set('testSteps', p.steps)
               toast.success(t('已填进表单，确认保存后生效'))
@@ -988,6 +1031,19 @@ function Body({
       )}
     </>
   )
+}
+
+/** 扫描结果写成交给 AI 的线索 */
+function scanText(r: Awaited<ReturnType<typeof api.analyzeProject>>) {
+  return [
+    `- 名称：${r.name}`,
+    r.description ? `- 简介：${r.description}` : '',
+    `- 类型：${r.workflow}`,
+    ...r.signals.map((s) => `- ${s}`),
+    r.testSteps.length ? `- 扫出的测试步骤：${r.testSteps.map((s) => `${s.name}（${s.command}）`).join('；')}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n')
 }
 
 /** 每个设置页顶上的标题和一句说明 */
@@ -1229,18 +1285,6 @@ function TestStepsEditor({
                   onChange={(e) => patch(i, { enabled: e.target.checked })}
                 />
                 {t('启用')}
-              </label>
-              <label
-                className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
-                title={t('子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交')}
-              >
-                <input
-                  type="checkbox"
-                  className="accent-accent"
-                  checked={s.merge}
-                  onChange={(e) => patch(i, { merge: e.target.checked })}
-                />
-                {t('合并时编译')}
               </label>
               <label
                 className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"

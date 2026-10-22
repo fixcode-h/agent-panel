@@ -142,6 +142,14 @@
       "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search", "--exclude-tools", "bash,powershell,edit,write"]
     },
     {
+      "if": ["noEdit", "permission=full"],
+      "args": ["--exclude-tools", "edit,write"]
+    },
+    {
+      "if": ["noEdit", "permission=edit"],
+      "args": ["--exclude-tools", "bash,powershell,edit,write"]
+    },
+    {
       "if": "title",
       "args": ["--name", "{title}"]
     },
@@ -190,6 +198,14 @@
     {
       "if": ["permission=readonly", "opt.codemode"],
       "args": ["--tools", "+grep,+find,+ls,+codemode,+tool_search", "--exclude-tools", "bash,powershell,edit,write"]
+    },
+    {
+      "if": ["noEdit", "permission=full"],
+      "args": ["--exclude-tools", "edit,write"]
+    },
+    {
+      "if": ["noEdit", "permission=edit"],
+      "args": ["--exclude-tools", "bash,powershell,edit,write"]
     },
     {
       "if": "title",

@@ -1516,13 +1516,22 @@ try {
     assert.equal(wtList.find((x) => x.id === wtKid.id)?.branch, wtKid.worktree.branch, '子对话列表带上分支')
     const wtPrompt = JSON.stringify(calls().at(-1))
     assert.match(wtPrompt, /别的子对话改不到这里/, '提示里说明了在独立分支里改')
-    assert.match(wtPrompt, /编译交给面板/, '提示里说明编译交给面板')
+    assert.match(wtPrompt, /在独立分支里验证，再合回原分支/, '提示里说明在自己的分支里编译测试、再合回去')
+    assert.match(wtPrompt, /submit_merge/, '合回原分支用 submit_merge')
     assert.ok(!wtPrompt.includes('claim_files 认领'), '独立分支里不用认领文件')
     // 假 CLI 每次都在工作目录写输出文件：项目目录里前面测试留下的那份没进版本控制，会挡住合并
     for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
     const before = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
     assert.equal(before.length, 1, '父对话的独立分支列表带上子对话的')
     assert.ok(before[0].child && !before[0].merged && before[0].ahead + before[0].dirty > 0, '子对话的分支还没合并')
+    // 还没合回原分支时不能标记完成：标记完成会删掉分支
+    const early = await fetch(`${base}/tasks/${wtKid.id}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ resolved: true }),
+    })
+    assert.equal(early.status, 409, '有没合并的改动时不标记完成')
+    assert.match((await early.json()).error, /先合并或删除分支/)
     const merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
     assert.equal(merged.task.worktree.state, 'active', '合并后分支留着，对话还能接着改')
     assert.ok(
@@ -1530,6 +1539,17 @@ try {
       '合并后提交回到项目目录',
     )
     assert.ok((await call('GET', `/tasks/${wtParent.id}/worktrees`)).items[0].merged, '合并后标成已合并')
+    // 合完再标记完成：独立分支的目录和分支一起删掉
+    const wtDir = merged.task.worktree.path
+    const resolved = await call('PATCH', `/tasks/${wtKid.id}`, { resolved: true })
+    assert.equal(resolved.resolved, true)
+    assert.equal(resolved.worktree.state, 'merged', '标记完成后独立分支记成已合并')
+    assert.ok(!existsSync(wtDir), '标记完成后独立分支的目录删掉了')
+    assert.ok(
+      !gitIn(project.path, 'branch', '--list', merged.task.worktree.branch).toString().trim(),
+      '标记完成后分支也删掉了',
+    )
+    step('子对话标记完成：没合并时拦下，合并后删掉独立分支')
     // 子对话请父对话决定：父对话里是一张提问卡片（带选项），用户在卡片上回答后直接交给子对话
     const askKid = await waitDone(
       (

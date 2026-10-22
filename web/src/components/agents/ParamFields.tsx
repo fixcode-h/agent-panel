@@ -10,6 +10,7 @@ import { Input, Select } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
+import { HelpTip } from '@/components/ui/help-tip'
 
 /** 一个参数的输入控件：按类型是下拉、多选、开关、文本或数字 */
 export function ParamControl({
@@ -118,32 +119,45 @@ export function ParamsForm({
     onChange(next)
   }
   return (
-    <div className={cn('flex flex-col', compact ? 'gap-3' : 'gap-4')}>
+    <div className={cn('flex flex-col', compact ? 'gap-2.5' : 'gap-3')}>
       {params.map((p) => {
         const lack = missing.some((m) => m.key === p.key)
         const changed = p.key in values
-        return (
+        // 开关和下拉跟标签放在同一行（控件靠右），文本、多选放不下才单独占一行
+        const inline = p.type === 'bool' || p.type === 'select' || p.type === 'number'
+        const label = (
+          <span className="flex min-w-0 items-center gap-1.5 text-xs">
+            <span className={cn('truncate font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
+            {p.description && <HelpTip>{p.description}</HelpTip>}
+            {p.ask && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('必填')}</span>}
+            {changed && !p.ask && (
+              <button
+                type="button"
+                onClick={() => set(p.key, undefined)}
+                className="shrink-0 cursor-pointer text-[0.6875rem] text-accent"
+              >
+                {t('恢复默认')}
+              </button>
+            )}
+          </span>
+        )
+        const control = (
+          <ParamControl
+            param={p}
+            value={changed ? values[p.key] : p.ask ? undefined : p.default}
+            onChange={(v) => set(p.key, v)}
+            placeholder={!p.ask && p.default !== undefined ? t('默认：{v}', { v: valueText(p.default) }) : undefined}
+          />
+        )
+        return inline ? (
+          <div key={p.key} className="flex min-h-9 items-center justify-between gap-4">
+            {label}
+            <div className={cn('flex shrink-0 justify-end', p.type !== 'bool' && 'w-[min(14rem,50%)]')}>{control}</div>
+          </div>
+        ) : (
           <div key={p.key} className="flex flex-col gap-1.5">
-            <span className="flex items-center gap-2 text-xs">
-              <span className={cn('font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
-              {p.ask && <span className="text-[0.6875rem] text-subtle">{t('必填')}</span>}
-              {changed && !p.ask && (
-                <button
-                  type="button"
-                  onClick={() => set(p.key, undefined)}
-                  className="ml-auto cursor-pointer text-[0.6875rem] text-accent"
-                >
-                  {t('恢复默认')}
-                </button>
-              )}
-            </span>
-            <ParamControl
-              param={p}
-              value={changed ? values[p.key] : p.ask ? undefined : p.default}
-              onChange={(v) => set(p.key, v)}
-              placeholder={!p.ask && p.default !== undefined ? t('默认：{v}', { v: valueText(p.default) }) : undefined}
-            />
-            {p.description && <span className="text-[0.71875rem] leading-relaxed text-subtle">{p.description}</span>}
+            {label}
+            {control}
           </div>
         )
       })}

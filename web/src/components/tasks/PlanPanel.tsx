@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRight, Circle, CircleCheck, Hourglass, ListChecks, Loader2 } from 'lucide-react'
+import { Check, ChevronRight, CircleCheck, Hourglass, ListChecks, Loader2 } from 'lucide-react'
 import { t } from '@shared/i18n'
 import type { PlanItem, PlanStatus, PlanStep, Task, TaskPlan } from '@shared/schema'
 import { planChildren, planProgress, shownPlan } from '@shared/plan'
@@ -16,14 +16,34 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
   done: t('完成'),
 }
 
-/** 计划步骤的状态图标：待做空心圆、进行中转圈、等待中沙漏、完成绿勾 */
+/**
+ * 计划步骤的勾选圆点（清单样式）：完成是实心圆里一个勾，待做是空心圆，
+ * 进行中是转动的强调色圆弧，等待中是圆里一个沙漏
+ */
 function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
-  const c = cn('shrink-0', small ? 'h-3.5 w-3.5' : 'h-4 w-4')
+  const box = cn('grid shrink-0 place-items-center rounded-full', small ? 'h-3.5 w-3.5' : 'h-[1.125rem] w-[1.125rem]')
   const label = STATUS_LABEL[status]
-  if (status === 'running') return <Loader2 className={cn(c, 'animate-spin text-accent')} aria-label={label} />
-  if (status === 'waiting') return <Hourglass className={cn(c, 'text-warning')} aria-label={label} />
-  if (status === 'done') return <CircleCheck className={cn(c, 'text-success')} aria-label={label} />
-  return <Circle className={cn(c, 'text-line-strong')} aria-label={label} />
+  if (status === 'done')
+    return (
+      <span role="img" aria-label={label} className={cn(box, 'bg-muted text-card')}>
+        <Check className={small ? 'h-2.5 w-2.5' : 'h-3 w-3'} strokeWidth={3} />
+      </span>
+    )
+  if (status === 'running')
+    return (
+      <span
+        role="img"
+        aria-label={label}
+        className={cn(box, 'animate-spin border-2 border-accent/25 border-t-accent')}
+      />
+    )
+  if (status === 'waiting')
+    return (
+      <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-warning text-warning')}>
+        <Hourglass className={small ? 'h-2 w-2' : 'h-2.5 w-2.5'} strokeWidth={2.5} />
+      </span>
+    )
+  return <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')} />
 }
 
 /** 步骤后面的一小段：等待中写在等什么，完成写用了多久，进行中写做了多久 */
@@ -117,26 +137,17 @@ function PlanWindow({ task, plan }: { task: Task; plan: TaskPlan }) {
     <div
       role="dialog"
       aria-label={t('执行计划')}
-      className="absolute bottom-full left-0 z-30 mb-1 flex max-h-[min(64vh,560px)] w-[min(460px,calc(100vw-2rem))] flex-col overflow-hidden rounded-xl border border-line-strong bg-card shadow-pop"
+      className="absolute bottom-full left-0 z-30 mb-1 flex max-h-[min(64vh,560px)] w-[min(460px,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop"
     >
-      <div className="shrink-0 border-b px-3.5 pt-2.5 pb-2">
-        <div className="flex items-center gap-2">
-          <ListChecks className="h-4 w-4 shrink-0 text-subtle" />
-          <span className="min-w-0 flex-1 truncate text-[0.8125rem] font-medium" title={plan.title}>
-            {plan.title || t('执行计划')}
-          </span>
-          <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
-            {p.done}/{p.total}
-          </span>
-        </div>
-        <div className="mt-2 h-1 overflow-hidden rounded-full bg-field">
-          <div
-            className={cn('h-full rounded-full transition-[width] duration-500', live ? 'bg-accent' : 'bg-success')}
-            style={{ width: `${p.total ? (p.done / p.total) * 100 : 0}%` }}
-          />
-        </div>
+      <div className="flex shrink-0 items-center gap-2 px-4 pt-3 pb-1">
+        <span className="min-w-0 flex-1 truncate text-xs font-medium text-subtle" title={plan.title}>
+          {plan.title || t('执行计划')}
+        </span>
+        <span className="shrink-0 font-mono text-xs text-subtle tabular-nums">
+          {p.done}/{p.total}
+        </span>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-1.5">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
         <ol className="flex flex-col">
           {plan.steps.map((s) => (
             <PlanStepRow key={s.id} task={task} step={s} now={now} />
@@ -186,20 +197,19 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
         aria-expanded={kids.length ? open : undefined}
         onClick={() => setManual(!open)}
         className={cn(
-          'flex w-full min-w-0 items-start gap-2 rounded-lg px-2 py-1.5 text-left',
+          'flex w-full min-w-0 items-start gap-3 rounded-lg px-2 py-2 text-left',
           kids.length ? 'cursor-pointer hover:bg-sel' : 'cursor-default',
-          step.status === 'running' && 'bg-accent/6',
         )}
       >
-        <span className="mt-0.5">
+        <span className="mt-[0.0625rem]">
           <PlanIcon status={step.status} />
         </span>
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 items-baseline gap-2">
             <span
               className={cn(
-                'min-w-0 flex-1 text-[0.8125rem] leading-5',
-                step.status === 'done' ? 'text-muted' : step.status === 'pending' ? 'text-fg/80' : 'text-fg',
+                'min-w-0 flex-1 text-[0.875rem] leading-5',
+                step.status === 'pending' ? 'text-muted' : 'text-fg',
                 step.status === 'running' && 'font-medium',
               )}
             >
@@ -229,19 +239,19 @@ function PlanStepRow({ task, step, now }: { task: Task; step: PlanStep; now: num
         )}
       </button>
       {open && (
-        <ol className="mb-1 ml-[1.0625rem] flex flex-col border-l border-line pl-2.5">
+        <ol className="mb-1 ml-[2.4375rem] flex flex-col">
           {kids.map((c) => {
             const m = itemMeta(c, now)
             return (
-              <li key={c.id} className="flex min-w-0 items-start gap-2 rounded-md px-1.5 py-1">
-                <span className="mt-px">
+              <li key={c.id} className="flex min-w-0 items-start gap-2.5 rounded-md py-1 pr-2">
+                <span className="mt-0.5">
                   <PlanIcon status={c.status} small />
                 </span>
                 <span className="flex min-w-0 flex-1 flex-col">
                   <span
                     className={cn(
-                      'text-xs leading-[1.125rem]',
-                      c.status === 'done' ? 'text-subtle' : c.status === 'running' ? 'text-fg' : 'text-muted',
+                      'text-[0.8125rem] leading-[1.125rem]',
+                      c.status === 'pending' ? 'text-subtle' : c.status === 'running' ? 'text-fg' : 'text-muted',
                     )}
                   >
                     {c.title}

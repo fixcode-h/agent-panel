@@ -112,7 +112,10 @@ export interface RealContext {
   releaseFiles?: EngineHost['releaseFiles']
   childIsolation?: EngineHost['childIsolation']
   worktreeHome?: EngineHost['worktreeHome']
-  submitBuild?: EngineHost['submitBuild']
+  branch?: EngineHost['branch']
+  /** 父对话（统筹）：不改文件，能按名字关掉工具的 CLI 把改文件的工具关掉 */
+  noEdit?: boolean
+  submitMerge?: EngineHost['submitMerge']
   verify?: EngineHost['verify']
   beginEdit?: EngineHost['beginEdit']
   runBackground?: EngineHost['runBackground']
@@ -785,7 +788,7 @@ async function runAgent(
       ...(task.messages.some((m) => m.attachments?.length) ? [UPLOADS_DIR] : []),
       ...(existsSync(path.join(HANDOFF_DIR, task.id)) ? [path.join(HANDOFF_DIR, task.id)] : []),
     ],
-    noEdit: chat && !!ctx.beginEdit,
+    noEdit: chat && (!!ctx.beginEdit || !!ctx.noEdit),
     autoCompactTokens: pct && def.autoCompact === 'config' ? Math.floor((windowFor(model) * pct) / 100) : undefined,
     contextWindow: limits.context || undefined,
     maxOutput: limits.maxOutput || undefined,
@@ -799,6 +802,7 @@ async function runAgent(
       : []),
     // 用户在环境变量里自己写了同名的，以设置里这一档的值为准（写在后面）
     ...limitEnvVars(def, limits),
+    ...noPushEnv(task),
   ])
 
   // 记下这次启动的命令，任务页里可以复制出来自己跑一遍排查问题；角色设定很长，用占位代替
@@ -1755,6 +1759,19 @@ async function runAgent(
  * 这次执行里能用的授权：项目设置的推送策略、这个对话里用户已经做过的选择、
  * 本机已经装好并登录的外部工具（gh、cloudflared 等）。列进提示词，模型不用重新探测
  */
+/**
+ * 子对话的独立分支一律不推到远端（推送只由父对话在原分支上做）：提示词拦不住所有模型，
+ * 用 git 的 pushInsteadOf 把所有远端地址的推送改写到一个不存在的协议，CLI 里跑的 git push 都会失败，拉取不受影响
+ */
+export function noPushEnv(task: Task): { key: string; value: string }[] {
+  if (!task.parentTaskId || task.worktree?.state !== 'active') return []
+  return [
+    { key: 'GIT_CONFIG_COUNT', value: '1' },
+    { key: 'GIT_CONFIG_KEY_0', value: 'url.agent-panel-no-push://.pushInsteadOf' },
+    { key: 'GIT_CONFIG_VALUE_0', value: '' },
+  ]
+}
+
 async function taskPolicy(ctx: RealContext): Promise<EngineHost['policy']> {
   const views = await listIntegrations().catch(() => [])
   return {
@@ -1795,7 +1812,8 @@ export async function runRealTurn(ctx: RealContext) {
     releaseFiles: ctx.releaseFiles,
     childIsolation: ctx.childIsolation,
     worktreeHome: ctx.worktreeHome,
-    submitBuild: ctx.submitBuild,
+    branch: ctx.branch,
+    submitMerge: ctx.submitMerge,
     verify: ctx.verify,
     beginEdit: ctx.beginEdit,
     runBackground: ctx.runBackground,

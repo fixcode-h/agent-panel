@@ -656,20 +656,21 @@ export const EN_TASKS: Record<string, string> = {
   子对话隔离: 'Sub-conversation isolation',
   '独立 worktree（推荐）': 'Separate worktree (recommended)',
   '共用目录 + 认领文件': 'Shared folder + file claims',
-  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译不在里面跑，改完排队合回原来的目录，按测试步骤里勾了「合并时编译」的步骤编译，通过才提交，失败撤回并把报错交回子对话。不是 Git 仓库（P4 等）时自动用共用目录。':
-    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. Builds don't run there: when it's done, its changes queue up to be merged back into the original folder and built with the test steps marked \"Build on merge\". They're committed only if the build passes; otherwise the merge is undone and the errors go back to the sub-conversation. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话的分支不推到远端，子对话标记完成后删除。不是 Git 仓库（P4 等）时自动用共用目录。':
+    "When a sub-conversation needs to edit files, it opens its own branch folder, so it stays out of the others' way. It builds and tests in its own branch, then queues up to be merged into the parent conversation's branch; on a conflict the merge is undone and handed back to it. Sub-conversation branches are never pushed to the remote, and are deleted once the sub-conversation is marked done. Projects that aren't Git repositories (P4 etc.) use the shared folder automatically.",
+  '这个子对话的独立分支还有没合回原分支的改动（{n} 个提交、{d} 个未提交的文件）：先合并或删除分支，再标记完成':
+    "This sub-conversation's branch still has changes that aren't merged into the original branch ({n} commits, {d} uncommitted files). Merge or delete the branch first, then mark it done",
+  '对话正在执行，等这一轮结束后再标记完成': 'The conversation is running. Mark it done after this turn ends',
   '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。':
     "Sub-conversations edit the project folder directly and claim files first, so each file belongs to one sub-conversation at a time. No branches are created, but a build may pick up another sub-conversation's half-finished changes.",
-  '子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交':
-    'When a sub-conversation submits its branch for a build, this step runs after merging back into the original folder; the merge is committed only if it passes',
-  合并时编译: 'Build on merge',
   小改动也跑: 'Run for small changes',
   '角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint':
     'When a role judges a change to be small, it runs only the steps checked here. Good for type checks and lint that finish in under a minute',
   按改动大小决定验证范围: 'Scale verification to the size of the change',
   '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。':
     'When a conversation changes code, the role first judges how big the change is. Small changes such as text or style tweaks only run the steps marked "Run for small changes"; everything else runs the full test steps. Turn this off to always run the full steps. Test and review steps inside workflows are not affected.',
-  '已提交编译，等面板合回原目录编译': 'Submitted for build; waiting for the panel to merge it back and build',
+  '已提交合并，等面板合回原分支': 'Submitted; waiting for the panel to merge it into the original branch',
+  合回原分支: 'Merge into original branch',
   可能相关的对话: 'Possibly related chats',
   '看起来和这些对话是同一件事，可以直接发过去接着做：':
     'These chats look like the same piece of work. You can send it there and continue:',
@@ -701,8 +702,8 @@ export const EN_TASKS: Record<string, string> = {
   '还在项目目录里查看，要改文件时才开独立分支':
     'Still reading in the project directory; a separate branch opens once files need editing',
   '新建对话时默认勾选「独立分支」': 'Turn on "Separate branch" for new conversations by default',
-  '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。':
-    'Such conversations read code and answer questions in the project directory first, and open a separate branch (git worktree) only once they need to edit files, continuing there. Most projects get a full checkout; large projects such as UE skip downloading LFS files.',
+  '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。父对话（统筹）不改文件，不开独立分支。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。':
+    "Such conversations read code and answer questions in the project directory first, and open a separate branch (git worktree) only once they need to edit files, continuing there. Parent conversations (Coordinator) never edit files and don't open a branch. Most projects get a full checkout; large projects such as UE skip downloading LFS files.",
   你已决定: 'You decided',
   父对话已决定: 'Parent decided',
   交给父对话决定: 'Let the parent decide',
@@ -742,6 +743,7 @@ export const EN_TASKS: Record<string, string> = {
   这个提问已经回答过了: 'This question has already been answered',
   回答是空的: 'The answer is empty',
   打开子任务: 'Open subtask',
+  子任务执行中: 'Subtasks running',
   '子任务执行中，做完后结果会自动交回给派它的对话':
     'Subtask running; its result goes back to the chat that started it when done',
   '子任务在排队，前面的做完就开始': 'Subtask queued; it starts when an earlier one finishes',
@@ -767,7 +769,6 @@ export const EN_TASKS: Record<string, string> = {
   查看后台命令: 'Check background command',
   请父对话决定: 'Ask parent chat',
   回报父对话: 'Report to parent chat',
-  提交编译: 'Submit build',
   启动工作流: 'Start workflow',
   '已合并到「{branch}」，分支已删除': 'Merged into “{branch}”, branch deleted',
   '已删除，改动没有合并': 'Deleted, changes were not merged',

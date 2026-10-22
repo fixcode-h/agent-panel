@@ -75,8 +75,10 @@ export function assistApi(deps: {
     // 只读分析（params / teststeps）在项目目录里执行，让 CLI 自己看代码；
     // 其他生成在临时目录里执行，碰不到项目文件
     const project = input.projectId ? await deps.projects.get(input.projectId) : null
-    const projectDir = project?.path ?? ''
-    const readOnlyProject = (input.kind === 'params' || input.kind === 'teststeps') && !!projectDir
+    // 分析项目时项目可能还没保存（新建项目的设置里），目录由页面带来
+    const projectDir = project?.path ?? (input.kind === 'project' ? (input.subject.path ?? '') : '')
+    const readOnlyProject =
+      (input.kind === 'params' || input.kind === 'teststeps' || input.kind === 'project') && !!projectDir
     const cwd = readOnlyProject ? resolvePath(projectDir) : path.join(tmpdir(), 'agent-panel-assist')
     if (!readOnlyProject) await mkdir(cwd, { recursive: true })
     // 项目目录可能在只读分析期间被删掉：先确认还在，避免 CLI 启动就失败
@@ -251,7 +253,9 @@ export function assistApi(deps: {
       const agents = await deps.agents.list()
       const workflows = await deps.workflows.list()
       // params / teststeps：只读分析一个项目。targetId 是要配的工作流，subject.agentId 是只配一个 Agent 分组
-      const analyzeProject = input.kind === 'params' || input.kind === 'teststeps'
+      const analyzeProject = input.kind === 'params' || input.kind === 'teststeps' || input.kind === 'project'
+      if (input.kind === 'project' && !input.projectId && !input.subject.path?.trim())
+        return bad(c, t('先选好项目目录'))
       // lessons：只看项目的教训，不进项目目录
       const project =
         (analyzeProject || input.kind === 'lessons') && input.projectId
@@ -274,6 +278,7 @@ export function assistApi(deps: {
         target: target ?? undefined,
         defaultCli: defaultCli(settings),
         ...(project && analyzeProject ? { projectPath: project.path, projectName: project.name } : {}),
+        ...(!project && input.kind === 'project' ? { projectPath: input.subject.path!.trim() } : {}),
         ...(project && input.kind === 'lessons'
           ? { projectName: project.name, projectLessons: project.lessons, globalLessons: await readGlobalLessons() }
           : {}),

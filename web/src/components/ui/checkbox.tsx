@@ -1,5 +1,6 @@
 import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { HelpTip } from './help-tip'
 
 /** 勾选框：方块里一个对勾，后面跟文字和说明，整行都能点 */
 export function Checkbox({
@@ -7,6 +8,7 @@ export function Checkbox({
   onChange,
   label,
   hint,
+  tip,
   disabled,
   className,
 }: {
@@ -14,10 +16,12 @@ export function Checkbox({
   onChange: (v: boolean) => void
   label: React.ReactNode
   hint?: React.ReactNode
+  /** 复杂项的说明：文字后面一个问号，鼠标移上去才显示 */
+  tip?: React.ReactNode
   disabled?: boolean
   className?: string
 }) {
-  return (
+  const box = (
     <button
       type="button"
       role="checkbox"
@@ -42,5 +46,13 @@ export function Checkbox({
         {hint && <span className="text-xs leading-relaxed text-subtle">{hint}</span>}
       </span>
     </button>
+  )
+  if (!tip) return box
+  // 问号不能放进按钮里（按钮里不能再套可聚焦的元素），挨着放
+  return (
+    <span className="flex items-start gap-1.5">
+      {box}
+      <HelpTip className="mt-0.5">{tip}</HelpTip>
+    </span>
   )
 }
