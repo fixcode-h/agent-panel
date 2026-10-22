@@ -349,6 +349,8 @@ export const EN_SERVER: Record<string, string> = {
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   '这一轮只回了一句话就结束了，没有动手也没给出结论。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':
     'This turn ended after a single sentence: nothing was done and no conclusion was given. Continuing automatically so it acts now (attempt {n}/{max})…',
+  '这次没有拿到 {cli} 报告的用量，下面的 token 和费用统计不可信（不代表没有消耗）。':
+    'No usage was reported by {cli} for this turn, so the token and cost figures below are unreliable (it does not mean nothing was consumed).',
   '自动接了一轮，模型仍然只回了一句话、没有动手，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。':
     'Continued automatically once, but it again replied with a single sentence and did nothing, so it stopped here. Click Continue to push it again, or switch models or make the request more specific.',
   服务出错: 'Server error',

@@ -724,6 +724,38 @@ try {
   assert.match(empAgent[0].text, /我先把工作区更新到最新/)
   assert.match(empAgent[1].text, /这是 claude 的回复/, '被催之后正常交了结果')
 
+  // 同一件事走常驻保活的 CLI（Command Code）：回复完会先进入 keepAlive 等下一句，
+  // 一挂起 runAgent 就不返回，收尾处的空回合兜底没机会跑。必须在保活前判定，命中就不保活。
+  let empKeep = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'commandcode',
+    askUser: false,
+    prompt: 'FAKE_EMPTY 确认一下保活下的空回合',
+  })
+  await call('POST', `/tasks/${empKeep.id}/seen`, {})
+  await call('POST', `/tasks/${empKeep.id}/presence`, { viewerId: 'e2e-empty', active: true })
+  // 这个 CLI 回复完会停在等下一句上（保活），任务状态一直算执行中，不能等 status；按消息判断
+  const empKeepDone = () =>
+    empKeep.messages.some((m) => m.role === 'system' && /只回了一句话就结束了/.test(m.text)) &&
+    empKeep.messages.filter((m) => m.role === 'agent').length >= 2
+  for (let i = 0; i < 200 && !empKeepDone(); i++) {
+    await sleep(150)
+    empKeep = await call('GET', `/tasks/${empKeep.id}`)
+  }
+  assert.ok(
+    empKeep.messages.some((m) => m.role === 'system' && /只回了一句话就结束了/.test(m.text)),
+    `保活路径下也要自动接一轮；现有消息：${JSON.stringify(
+      empKeep.messages.map((x) => [x.role, x.error ?? false, x.text.slice(0, 40)]),
+    )}`,
+  )
+  assert.equal(empKeep.messages.filter((m) => m.role === 'agent').length, 2, '第一轮只说了一句 + 催促后的一轮')
+  // 收尾：页面切走，让还挂着等下一句的 CLI 结束这一轮
+  await call('POST', `/tasks/${empKeep.id}/presence`, { viewerId: 'e2e-empty', active: false })
+  empKeep = await waitDone(empKeep.id, 20000)
+  assert.equal(empKeep.status, 'done')
+
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
   let pm = await call('POST', '/tasks', {
     projectId: project.id,
@@ -1338,7 +1370,13 @@ try {
     slow = await waitDone(slow.id, 15000)
     assert.notEqual(slow.status, 'running', '父对话的 CLI 结束后，子对话的进程也结束了')
     assert.ok(slow.messages.length > 0, '停止时保留已有的输出，下次发消息能重新启动')
-    const after = await call('GET', `/tasks/${parent.id}/children`)
+    // 停止时子对话的进程是异步结束的（stopTask 里的 closeChildren 不阻塞停止请求），
+    // 状态先落盘、进程随后退出，这里等一小会儿再看，不和进程回收抢时间
+    let after = await call('GET', `/tasks/${parent.id}/children`)
+    for (let i = 0; i < 30 && after.find((x) => x.id === slow.id)?.cliAlive; i++) {
+      await sleep(100)
+      after = await call('GET', `/tasks/${parent.id}/children`)
+    }
     assert.equal(after.find((x) => x.id === slow.id).cliAlive, false, '子对话的进程没有留成孤儿')
     // 父对话自己也停掉，后面的用例从干净状态开始
     await waitDone(parent.id, 15000)

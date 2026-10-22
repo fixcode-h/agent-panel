@@ -1344,6 +1344,22 @@ if (kind === 'claude') {
       process.exit(6)
     }
     const r = turnReply()
+    // 空回合：只说一句准备语，连工具都不能发（否则零工具不成立，面板的空回合判定永远测不到）
+    if (emptyTurn) {
+      ev({ type: 'run_start', sessionId: session })
+      ev({ type: 'model_request_start' })
+      ev({ type: 'message_start' })
+      ev({ type: 'message_end', content: [{ type: 'text', text: r }] })
+      process.stdout.write(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'turn/completed',
+          params: { seq: ++rpcSeq, turnId: 'turn_1', stopReason: 'end_turn' },
+        }) + '\n',
+      )
+      // 和正常一轮一样收尾：RPC 常驻时等面板发下一轮或关 stdin，直接 return 会让面板等不到这一轮结束
+      return await exitTurn(0)
+    }
     const bad = input.includes('FAIL')
     ev({ type: 'run_start', sessionId: session })
     ev({ type: 'model_request_start' })

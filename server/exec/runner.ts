@@ -825,6 +825,8 @@ async function runAgent(
 
   // CLI 报告过窗口后就以它为准，后面没带窗口的用量事件不要改回估计值
   let reported = false
+  /** 这一轮收到过用量事件：一个都没收到时统计不可信，要告给用户（不能把 0 当成真没消耗） */
+  let usageSeen = false
 
   // 中途换了模型（改了 Agent 或设置）：记录换成这次实际用的，CLI 报告了模型时再以报告的为准
   const prevUsage = task.usage.agents[agentId]
@@ -894,6 +896,20 @@ async function runAgent(
     if (u.tps > 0) u.lastTps = u.tps
   }
 
+  /**
+   * 这一轮是不是「只回了一句准备语就收尾」：零工具、零改动，最后一句是「我先…」。
+   * keepAlive 会在这里先挂起等用户下一句，runAgent 就一直不返回，收尾处的兜底没机会跑；
+   * 所以判定要能在 result 到达时（保活之前）问一次，命中就不保活，让兜底接管。
+   */
+  const emptyTurn = () => {
+    if (prewarmMode || op || ctx.signal.aborted) return false
+    // texts 要等进程结束后才汇总，这里直接用这次调用的消息，result 到达时就能判断
+    return looksUnfinished({
+      texts: mine.filter((m) => m.role === 'agent').map((m) => m.text),
+      tools: mine.reduce((n, m) => n + m.tools.length, 0),
+      changed: touched.size,
+    })
+  }
   const apply = (ev: CliEvent) => {
     // 预热时模型可能先回一句话再调用等待工具：这些不显示，也不占消息
     if (prewarmMode && PREWARM_QUIET.has(ev.type)) return
@@ -970,6 +986,7 @@ async function runAgent(
         break
       }
       case 'usage': {
+        usageSeen = true
         const u = au()
         if (ev.model) u.model = ev.model
         if (ev.context !== undefined) u.context = ev.context
@@ -1069,7 +1086,8 @@ async function runAgent(
         // 一轮结束以 CLI 的 result 为准：进程还活着也可能已经回复完了
         if (chat && !op) {
           task.working = false
-          if (ev.ok && !prewarmMode) markTurnDone(task)
+          // 只回一句就收尾的不算完成：这一轮要交给收尾处的空回合兜底去催，不能先记成已完成
+          if (ev.ok && !prewarmMode && !emptyTurn()) markTurnDone(task)
         }
         break
       case 'ask': {
@@ -1293,6 +1311,8 @@ async function runAgent(
   const keepAlive = canWait
     ? async () => {
         if (!hasViewer(task.id)) return null
+        // 这一轮只回了一句、什么都没做：不保活，直接让它返回，交给收尾处的空回合兜底催一轮
+        if (emptyTurn()) return null
         const text = await waitNext(false)
         // 拿到下一句就是新一轮开始了：上一轮模型有没有等过，跟新一轮无关
         if (text !== null) toolWaited = false
@@ -1613,6 +1633,9 @@ async function runAgent(
     })
     ctx.changed(true)
   }
+  // 这一轮调了模型、却一条用量事件都没收到（网关不回 usage）：统计会是 0，别让 0 被当成「没消耗」
+  if (chat && !op && !prewarm && !usageSeen && (texts.length || errors.length))
+    sysMsg(t('这次没有拿到 {cli} 报告的用量，下面的 token 和费用统计不可信（不代表没有消耗）。', { cli: def.name }))
   // 不能压缩会话的 CLI：摘要写好了，下一轮开新会话带上它
   if (op?.kind === 'compact' && def.compact === 'summary') {
     task.rewind = { session: '', through: null, latest: false, summary: done.text }
