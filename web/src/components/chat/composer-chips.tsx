@@ -4,6 +4,8 @@ import { useCallback, useMemo, useRef, useState, type ClipboardEvent, type RefOb
 import { chipMarker, chips, dropChip, findPaths, isAttachChip, type ChipKind } from '@shared/composer'
 import type { Attachment } from '@shared/schema'
 import { api } from '@/lib/api'
+import { useData } from '@/lib/data'
+import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
 import type { ChipActions, RichInputHandle } from './RichInput'
@@ -25,6 +27,7 @@ export function useComposerChips({
   change: (v: string) => void
   dropScope?: HTMLElement | null
 }) {
+  const { settings } = useData()
   const shown = useRef(text)
   shown.current = text
   const insert = useCallback(
@@ -95,7 +98,8 @@ export function useComposerChips({
   const drop = useDropPaste(addFiles, dropScope)
 
   /**
-   * 粘贴：有文件（截图、从文件管理器复制的文件）照旧上传一份；
+   * 粘贴：有文件（截图、从文件管理器复制的文件）照旧上传一份（大文件只引用原路径，见 useAttachments 的 add）；
+   * 很长的纯文字存成文本文件放卡片；
    * 只有文字时找里面的本机路径，确认是真实存在的文件就换成卡片，直接引用那个文件，不再拷贝
    * （复制对话里的消息得到的就是这些路径）
    */
@@ -104,6 +108,14 @@ export function useComposerChips({
       drop.onPaste(e)
       if (e.defaultPrevented) return
       const pasted = e.clipboardData.getData('text/plain')
+      // 很长的一段文字（日志、整份文档）存成文本文件，输入框里放它的卡片，不把消息撑满
+      const longAt = settings?.longPasteChars ?? 5000
+      if (longAt > 0 && pasted.length > longAt) {
+        e.preventDefault()
+        const stamp = new Date().toTimeString().slice(0, 8).replace(/:/g, '')
+        addFiles([new File([pasted], `${t('粘贴的文字')}-${stamp}.txt`, { type: 'text/plain' })])
+        return
+      }
       const hits = findPaths(pasted)
       const ed = editor.current
       if (!hits.length || !ed) return
@@ -137,7 +149,7 @@ export function useComposerChips({
         })
         .catch(() => put(pasted))
     },
-    [drop, editor, files],
+    [drop, editor, files, settings, addFiles],
   )
 
   return {

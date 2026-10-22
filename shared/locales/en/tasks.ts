@@ -29,6 +29,11 @@ export const EN_TASKS: Record<string, string> = {
     'This file is not in the project directory; it may have been moved or deleted.',
   '这是二进制文件，不显示内容。': 'This is a binary file, contents are not shown.',
   引用的内容: 'Quoted content',
+  '没找到「{name}」在本机的位置，可以手动选择这个文件来引用它':
+    'Could not find "{name}" on this computer. Pick the file manually to reference it.',
+  选择文件: 'Choose file',
+  粘贴的文字: 'Pasted text',
+  全部引用: 'Quote all',
   '引用没有加上：{error}': 'Could not add the quote: {error}',
   '点击查看，按退格键删除': 'Click to view, press Backspace to remove',
   '这是可执行文件，不直接运行，已在文件夹中显示':

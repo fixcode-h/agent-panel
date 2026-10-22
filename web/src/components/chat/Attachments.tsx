@@ -70,6 +70,9 @@ export function formatSize(n: number) {
 /** 只发了附件、没写要求时交给 Agent 的一句话：输入框里不留附件文字，发送时补上 */
 export const ATTACHMENT_PROMPT = t('请查看附件')
 
+/** 超过多大的文件只引用原路径、不上传（设置 → 常规里改） */
+export const largeBytes = (s: { largeFileMB?: number } | null | undefined) => (s?.largeFileMB ?? 10) * 1024 * 1024
+
 /** 同名附件加序号，文件名才分得清 */
 function uniqueName(name: string, taken: Set<string>) {
   if (!taken.has(name)) return name
@@ -126,6 +129,9 @@ export function useAttachments(draftKey?: string) {
   // 同一次事件里连着加（粘贴好几个路径）时还没重新渲染，按这份最新的算
   const itemsRef = useRef(items)
   itemsRef.current = items
+  const { settings } = useData()
+  const settingsRef = useRef(settings)
+  settingsRef.current = settings
   const names = useRef(new Set<string>())
   names.current = new Set(items.map((x) => x.name))
   // 同一个输入框换了对话：换成那个对话的附件
@@ -187,83 +193,6 @@ export function useAttachments(draftKey?: string) {
     }
   }, [])
 
-  const add = useCallback(
-    async (files: File[], hooks?: AttachHooks) => {
-      const room = MAX_ATTACHMENTS - count.current
-      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-      const taken = new Set(names.current)
-      const accepted: { file: File; key: string; name: string; mime: string; preview?: string }[] = []
-      let large = false
-      for (const f of files.slice(0, Math.max(room, 0))) {
-        if (f.size > MAX_ATTACHMENT_BYTES) {
-          large = true
-          continue
-        }
-        // 粘贴的截图没有像样的文件名
-        const base =
-          f.name && f.name !== 'image.png'
-            ? f.name
-            : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
-        const name = uniqueName(base, taken)
-        taken.add(name)
-        accepted.push({
-          file: f,
-          key: crypto.randomUUID(),
-          name,
-          mime: f.type,
-          preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
-        })
-      }
-      if (!accepted.length) {
-        if (large) await pickLarge(hooks)
-        return
-      }
-      setItems((xs) => [
-        ...xs,
-        ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
-      ])
-      hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime, kind: chipKind(mime, name) })))
-      for (const x of accepted) {
-        try {
-          const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
-          setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, done } : i)))
-        } catch (e) {
-          toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
-          setItems((xs) => xs.filter((i) => i.key !== x.key))
-          hooks?.failed?.(x.name)
-        }
-      }
-    },
-    [pickLarge],
-  )
-  /** 已经在服务端生成好的附件（引入的会话记录） */
-  const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
-    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-    setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
-    hooks?.added?.([{ name: a.name, mime: a.mime, kind: attachChip(a) }])
-  }, [])
-  /**
-   * 引用对话里的一段：原文存成附件目录里的一个文件（复制消息时给这个路径，粘贴回来还认得出是引用），
-   * 卡片马上放进输入框，不用等上传
-   */
-  const addQuote = useCallback((text: string, hooks?: AttachHooks) => {
-    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
-    const { id, name } = quoteName(text)
-    const key = crypto.randomUUID()
-    const size = new Blob([text]).size
-    setItems((xs) => [...xs, { key, name, mime: 'text/markdown', size, quote: text }])
-    hooks?.added?.([{ name, mime: 'text/markdown', kind: 'quote' }])
-    void readBase64(new Blob([text], { type: 'text/markdown' }))
-      .then((data) => api.upload({ name: `quote-${id}.md`, mime: 'text/markdown', data }))
-      .then((done) =>
-        setItems((xs) => xs.map((i) => (i.key === key ? { ...i, done: { ...done, name, quote: text } } : i))),
-      )
-      .catch((e) => {
-        toast.error(t('引用没有加上：{error}', { error: (e as Error).message }))
-        setItems((xs) => xs.filter((i) => i.key !== key))
-        hooks?.failed?.(name)
-      })
-  }, [])
   /**
    * 粘贴回来的路径：引用已有的文件，不上传也不拷贝。返回每个路径用的卡片名字（已经附上的同一个文件沿用原来的名字），
    * 超过上限的不加
@@ -295,6 +224,117 @@ export function useAttachments(draftKey?: string) {
       setItems((xs) => [...xs, ...fresh])
     }
     return names
+  }, [])
+  /** 上传一批文件：卡片马上放进输入框，传完换成服务端的附件 */
+  const upload = useCallback(async (files: File[], hooks?: AttachHooks) => {
+    const taken = new Set(names.current)
+    const accepted: { file: File; key: string; name: string; mime: string; preview?: string }[] = []
+    for (const f of files) {
+      // 粘贴的截图没有像样的文件名
+      const base =
+        f.name && f.name !== 'image.png'
+          ? f.name
+          : `${t('截图')}-${new Date().toTimeString().slice(0, 8).replace(/:/g, '')}.png`
+      const name = uniqueName(base, taken)
+      taken.add(name)
+      accepted.push({
+        file: f,
+        key: crypto.randomUUID(),
+        name,
+        mime: f.type,
+        preview: isImage(f.type, name) ? URL.createObjectURL(f) : undefined,
+      })
+    }
+    if (!accepted.length) return
+    setItems((xs) => [
+      ...xs,
+      ...accepted.map((x) => ({ key: x.key, name: x.name, mime: x.mime, size: x.file.size, preview: x.preview })),
+    ])
+    hooks?.added?.(accepted.map(({ name, mime }) => ({ name, mime, kind: chipKind(mime, name) })))
+    for (const x of accepted) {
+      try {
+        const done = await api.upload({ name: x.name, mime: x.mime, data: await readBase64(x.file) })
+        setItems((xs) => xs.map((i) => (i.key === x.key ? { ...i, done } : i)))
+      } catch (e) {
+        toast.error(t('「{name}」上传失败：{error}', { name: x.name, error: (e as Error).message }))
+        setItems((xs) => xs.filter((i) => i.key !== x.key))
+        hooks?.failed?.(x.name)
+      }
+    }
+  }, [])
+
+  /**
+   * 加附件（选文件、粘贴、拖进来）。added：文件名定下来的那一刻回调（输入框照着在光标处放卡片）；failed：上传失败时回调。
+   *
+   * 超过设置里「大文件」大小的不上传、不拷贝：浏览器给不出原路径，交给面板在本机按名字、大小、修改时间找回原文件，
+   * 直接引用它（卡片和普通附件一样）。找不到时，不算太大的照常上传一份；实在太大的提示用户自己选
+   */
+  const add = useCallback(
+    async (files: File[], hooks?: AttachHooks) => {
+      const room = MAX_ATTACHMENTS - count.current
+      if (files.length > room) toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+      const limit = largeBytes(settingsRef.current)
+      const list = files.slice(0, Math.max(room, 0))
+      const small = list.filter((f) => f.size <= limit)
+      const big = list.filter((f) => f.size > limit)
+      const uploading = upload(small, hooks)
+      if (big.length) {
+        const found = await api
+          .locateFiles(big.map((f) => ({ name: f.name, size: f.size, mtime: f.lastModified || undefined })))
+          .then((r) => r.files)
+          .catch(() => [])
+        const hit = new Set(found.map((x) => x.index))
+        const refs = found.map(({ index: _, ...a }) => a)
+        if (refs.length) {
+          const names = addRefs(refs)
+          hooks?.added?.(
+            refs.flatMap((a) => {
+              const n = names.get(a.path)
+              return n ? [{ name: n.name, mime: a.mime, kind: n.kind }] : []
+            }),
+          )
+        }
+        const rest = big.filter((_, i) => !hit.has(i))
+        void upload(
+          rest.filter((f) => f.size <= MAX_ATTACHMENT_BYTES),
+          hooks,
+        )
+        for (const f of rest.filter((x) => x.size > MAX_ATTACHMENT_BYTES))
+          toast.error(t('没找到「{name}」在本机的位置，可以手动选择这个文件来引用它', { name: f.name }), {
+            action: { label: t('选择文件'), onClick: () => void pickLarge(hooks) },
+          })
+      }
+      await uploading
+    },
+    [pickLarge, upload, addRefs],
+  )
+  /** 已经在服务端生成好的附件（引入的会话记录） */
+  const addReady = useCallback((a: Attachment, hooks?: AttachHooks) => {
+    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+    setItems((xs) => [...xs, { key: crypto.randomUUID(), name: a.name, mime: a.mime, size: a.size, done: a }])
+    hooks?.added?.([{ name: a.name, mime: a.mime, kind: attachChip(a) }])
+  }, [])
+  /**
+   * 引用对话里的一段：原文存成附件目录里的一个文件（复制消息时给这个路径，粘贴回来还认得出是引用），
+   * 卡片马上放进输入框，不用等上传
+   */
+  const addQuote = useCallback((text: string, hooks?: AttachHooks) => {
+    if (count.current >= MAX_ATTACHMENTS) return toast.error(t('一次最多附上 {n} 个文件', { n: MAX_ATTACHMENTS }))
+    const { id, name } = quoteName(text)
+    const key = crypto.randomUUID()
+    const size = new Blob([text]).size
+    setItems((xs) => [...xs, { key, name, mime: 'text/markdown', size, quote: text }])
+    hooks?.added?.([{ name, mime: 'text/markdown', kind: 'quote' }])
+    void readBase64(new Blob([text], { type: 'text/markdown' }))
+      .then((data) => api.upload({ name: `quote-${id}.md`, mime: 'text/markdown', data }))
+      .then((done) =>
+        setItems((xs) => xs.map((i) => (i.key === key ? { ...i, done: { ...done, name, quote: text } } : i))),
+      )
+      .catch((e) => {
+        toast.error(t('引用没有加上：{error}', { error: (e as Error).message }))
+        setItems((xs) => xs.filter((i) => i.key !== key))
+        hooks?.failed?.(name)
+      })
   }, [])
   /** 换成另一组附件（撤回消息时把那条的附件放回输入框，卡片已经在文字里） */
   const replace = useCallback((list: Attachment[]) => {

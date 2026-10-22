@@ -704,7 +704,7 @@ app.route('/deploy', deployApi({ startDoc: docs.start }))
 
 // ---- 附件和 @ 引用的项目文件 ----
 app.route('/uploads/raw', uploadsRawApi())
-app.route('/uploads', uploadsApi())
+app.route('/uploads', uploadsApi({ dirs: async () => (await projects.list()).map((p) => p.path).filter(Boolean) }))
 // 文件浏览页：项目里的文件树、内容搜索、看单个文件
 app.route('/project-files', filesApi({ projects }))
 app.get('/projects/:id/files', async (c) => {

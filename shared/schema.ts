@@ -798,8 +798,11 @@ export const Attachment = z.object({
 export type Attachment = z.infer<typeof Attachment>
 /** 一次最多附上的文件数 */
 export const MAX_ATTACHMENTS = 10
-/** 单个附件的大小上限（字节） */
-export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
+/**
+ * 上传一个附件最大多少（字节）。比设置里「大文件」小的才上传；大文件先在本机找回原路径直接引用，
+ * 找不到时没超过这个上限的仍然上传一份
+ */
+export const MAX_ATTACHMENT_BYTES = 50 * 1024 * 1024
 export type TaskMode = z.infer<typeof TaskMode>
 
 export const NewTaskInput = z.object({
@@ -1476,6 +1479,10 @@ export const Settings = z.object({
    * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
    */
   childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
+  /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
+  largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
+  /** 粘贴的纯文字超过这么多字时存成一个文本文件，输入框里放文件卡片；0 表示不转 */
+  longPasteChars: z.number().int().min(0).max(1_000_000).catch(5000).default(5000),
   /** Agent 选「系统默认」时使用的 CLI */
   defaultCli: z.string().default('claude'),
   clis: z.record(z.string(), CliSettings).default({}),

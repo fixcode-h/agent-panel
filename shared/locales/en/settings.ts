@@ -337,6 +337,16 @@ export const EN_SETTINGS: Record<string, string> = {
   // 在线演示提示条
   关闭提示: 'Dismiss',
   恢复: 'Restore',
+  大文件只引用路径: 'Reference large files by path',
+  'MB。粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。':
+    'MB. Files pasted or dropped into the input above this size are not uploaded or copied into the conversation folder. The panel finds the original file on this computer and references its path.',
+  '大文件只引用路径（MB）': 'Reference large files by path (MB)',
+  '填 1 到 50 之间的整数': 'Enter a whole number from 1 to 50',
+  长文字存成文件: 'Save long text as a file',
+  '字，填 0 不转。粘贴进输入框的纯文字超过这么多字时存成一个文本文件，输入框里只放这个文件的卡片，消息不会被一大段文字撑满。':
+    'Characters, 0 to turn off. Plain text pasted into the input longer than this is saved as a text file, and only that file shows in the input as a chip, so the message is not flooded with text.',
+  '长文字存成文件（字）': 'Save long text as a file (characters)',
+  '填 0 到 1000000 之间的整数，0 表示不转': 'Enter a whole number from 0 to 1000000; 0 turns it off',
   没有输出时提醒: 'Warn when there is no output',
   '分钟，填 0 不检测。Agent 这么久没有任何输出时在任务里提醒一次，再过同样的时间还没有就自动停止，免得卡在登录或确认上一直显示执行中。':
     'Minutes; 0 turns it off. When an agent prints nothing for this long the task shows a warning, and if it stays silent for the same time again it is stopped, so an agent stuck on a login or confirmation prompt doesn\'t stay "running" forever.',
