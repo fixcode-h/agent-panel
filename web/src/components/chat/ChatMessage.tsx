@@ -1,7 +1,7 @@
 // 通用的对话消息：用户的气泡、AI 回复下面的时间和操作。
 // 除了工作流的节点输出，所有 AI 对话（任务对话、UI 设计）都用这一套，各自通过 actions 加自己的按钮
-import { useState } from 'react'
-import { Check, Copy, Quote } from 'lucide-react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { Check, ChevronDown, Copy, Quote } from 'lucide-react'
 import { toast } from 'sonner'
 import { quoteFrom } from '@/lib/quote'
 import type { Attachment } from '@shared/schema'
@@ -147,12 +147,63 @@ export function UserMessage({
               : 'px-4 py-2.5 text-[0.9375rem] leading-relaxed',
           )}
         >
-          <MessageBody text={text} attachments={attachments} />
+          <FoldBody>
+            <MessageBody text={text} attachments={attachments} />
+          </FoldBody>
           {extra}
         </div>
       )}
       <MessageMeta text={text} at={at} attachments={attachments ?? []} actions={actions} align="end" />
     </div>
+  )
+}
+
+/** 超过这么多行才折叠，折起来留 FOLD_SHOW 行；中间留几行余量，免得只藏一两行还要点开 */
+const FOLD_OVER = 18
+const FOLD_SHOW = 15
+
+/**
+ * 很长的用户消息（贴了大段需求、日志）折起来，只留前面十几行，底下渐隐加一个展开按钮。
+ * 按实际显示的行数算（长行折行也算），所以量的是高度，不数换行符
+ */
+function FoldBody({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [long, setLong] = useState(false)
+  const [open, setOpen] = useState(false)
+  useLayoutEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      const line = parseFloat(getComputedStyle(el).lineHeight) || 24
+      setLong(el.scrollHeight > line * FOLD_OVER)
+    }
+    measure()
+    // 气泡宽度跟着窗口、侧栏变，折行数也跟着变
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
+  const folded = long && !open
+  return (
+    <>
+      <div
+        ref={ref}
+        className={cn(folded && 'overflow-hidden [mask-image:linear-gradient(to_bottom,#000_70%,transparent)]')}
+        style={folded ? { maxHeight: `${FOLD_SHOW}lh` } : undefined}
+      >
+        {children}
+      </div>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          className="mt-1 inline-flex cursor-pointer items-center gap-1 text-[0.78125rem] text-muted transition-colors hover:text-fg"
+        >
+          <ChevronDown className={cn('size-3.5 transition-transform', open && 'rotate-180')} />
+          {open ? t('收起') : t('展开')}
+        </button>
+      )}
+    </>
   )
 }
 
