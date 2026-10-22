@@ -1,5 +1,6 @@
 import { EN_AGENTS } from './en/agents.ts'
 import { EN_APP } from './en/app.ts'
+import { EN_CHANGES } from './en/changes.ts'
 import { EN_DESIGN } from './en/design.ts'
 import { EN_EXTEND } from './en/extend.ts'
 import { EN_FLOW } from './en/flow.ts'
@@ -14,6 +15,7 @@ export const EN: Record<string, string> = {
   ...EN_SHARED,
   ...EN_SERVER,
   ...EN_APP,
+  ...EN_CHANGES,
   ...EN_AGENTS,
   ...EN_FLOW,
   ...EN_SETTINGS,
