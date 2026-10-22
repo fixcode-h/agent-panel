@@ -191,6 +191,10 @@ function claudeTool(name: string, input: any, cwd: string): CliEvent {
       return { ...tool({ kind: 'edit', label: file, detail: `+${add} -${del}` }), file: { path: file, add, del } }
     }
     case 'Bash':
+      // Claude Code 拿不到命令的中间输出，所以这里不标 running、也不发 tool_delta，只能跑完一次性显示：
+      // stream-json 的 --include-partial-messages 只流文字、思考和工具入参（input_json_delta），不流工具结果；
+      // 它内部确实有 bash_progress，但只在 CLAUDE_CODE_REMOTE / CLAUDE_CODE_CONTAINER_ID 下才转成 tool_progress，
+      // 而且只带 elapsed_time_seconds 和 task_id，没有输出正文。不要在这里补心跳行假装实时
       return tool({ kind: 'run', label: oneLine(String(input?.command ?? '')) })
     case 'Grep':
       return tool({ kind: 'search', label: searchLabel(input?.pattern, rel(cwd, input?.path)) })
@@ -614,7 +618,11 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         case 'tool': {
           const name = str(g('name')) || 'tool'
           const input = g('input') ?? {}
-          out.push(detailed(genericTool(name, input, cwd), g('id'), name, input))
+          const ev = detailed(genericTool(name, input, cwd), g('id'), name, input)
+          // 定义里写了 running 的工具表示调用已开始、结果还没来：界面按它决定是否边跑边显示输出。
+          // 不写这个字段的 CLI（结果和调用一起到达）不算还在跑
+          if (ev.type === 'tool' && g('running') === true) ev.tool.running = true
+          out.push(ev)
           break
         }
         case 'tool_result':
@@ -633,7 +641,9 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
           // 快照是完整的工具结果对象时取正文：Pi 的 partialResult 是 { content: [{ type: 'text', text }] }
           const text = str(e.snapshot === true ? toolText(g('text')) : g('text'))
           if (!id) break
-          if (text)
+          // 空快照也要发：CLI 用空快照表示「现在没有输出了」，跳过的话接收方还留着上一段旧输出。
+          // 空的新增（不是快照）没有意义，照旧丢掉
+          if (text || e.snapshot === true)
             out.push(
               e.snapshot === true ? { type: 'tool_delta', id, text, snapshot: true } : { type: 'tool_delta', id, text },
             )
