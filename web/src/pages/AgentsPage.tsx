@@ -69,8 +69,8 @@ export function AgentsPage() {
       items: agents.filter((a) => !isCoreAgent(a) && a.categoryId === g.id && match(a)),
     })),
   ]
-    // 搜索、筛选时隐藏空分类；「未分类」为空时也不显示
-    .filter((g) => g.items.length || (!q && !tag && g.category))
+    // 没有角色的分类不显示，空着只占位置
+    .filter((g) => g.items.length)
 
   const create = async (input: Partial<AgentInput> = {}) => {
     try {
@@ -248,7 +248,6 @@ export function AgentsPage() {
                 }
               />
             ))}
-            {g.items.length === 0 && <p className="px-2.5 pb-1 text-xs text-subtle">{t('这个分类还没有角色')}</p>}
           </ListGroup>
         ))}
         {!loading && agents.length > 0 && groups.length === 0 && <ListEmpty>{t('没有匹配的角色')}</ListEmpty>}
