@@ -1,9 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import { ChevronRight, GraduationCap, Loader2, Plus, RotateCcw, Search, Sparkles, Trash2 } from 'lucide-react'
 import type { GlobalLesson, Project, ProjectLesson } from '@shared/schema'
-import { applyGlobalChanges, newGlobalLessonId, newLessonId } from '@shared/lessons'
+import {
+  applyGlobalChanges,
+  lessonHaystack,
+  newGlobalLessonId,
+  newLessonId,
+  normTags,
+  queryMatcher,
+  tagCounts,
+} from '@shared/lessons'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
@@ -27,6 +35,7 @@ const blankLesson = (): ProjectLesson => ({
   rule: '',
   cause: '',
   paths: [],
+  tags: [],
   enabled: true,
   source: 'user',
   taskId: '',
@@ -34,6 +43,11 @@ const blankLesson = (): ProjectLesson => ({
   updatedAt: '',
   history: [],
 })
+
+/** 列表一次画多少条：上万条一次全画出来要好几秒，搜索框也会一个字卡一秒 */
+const PAGE = 100
+/** 筛选栏上列几个标签，其余的靠搜索 */
+const TAG_CHIPS = 12
 
 /**
  * 项目设置里的「教训」：增删改、启停，Agent 自己记的标出来方便复查。
@@ -53,15 +67,37 @@ export function LessonsEditor({
   initialOpen?: string
 }) {
   const [q, setQ] = useState('')
+  const [tag, setTag] = useState('')
+  const [limit, setLimit] = useState(PAGE)
   // 新加的那条直接展开，其余默认收起：条目多了一屏也看得过来
   const [open, setOpen] = useState<string>(initialOpen ?? '')
   const [extracting, setExtracting] = useState(false)
   const patch = (id: string, p: Partial<ProjectLesson>) =>
     onChange(lessons.map((l) => (l.id === id ? { ...l, ...p } : l)))
-  const key = q.trim().toLowerCase()
-  const shown = key
-    ? lessons.filter((l) => [l.title, l.rule, l.cause, ...l.paths].some((x) => x.toLowerCase().includes(key)))
-    : lessons
+  // 搜索按延后的值算：输入框先跟手，过滤和重画排在后面
+  const query = useDeferredValue(q.trim())
+  // 小写的全文按条目缓存：改了哪条才重算哪条，搜索时不用每个字都把上万条重新拼一遍
+  const hay = useMemo(() => {
+    const m = new WeakMap<ProjectLesson, string>()
+    return (l: ProjectLesson) => {
+      let h = m.get(l)
+      if (h === undefined) m.set(l, (h = lessonHaystack(l)))
+      return h
+    }
+  }, [])
+  const tags = useMemo(() => tagCounts(lessons), [lessons])
+  const filtered = useMemo(() => {
+    const match = queryMatcher(query)
+    return lessons.filter((l) => (!tag || l.tags.includes(tag)) && (!query || match(hay(l))))
+  }, [lessons, query, tag, hay])
+  // 正在展开的那条（项目首页点进来的、刚加的）排在分页外面也要画出来
+  const shown = useMemo(() => {
+    const page = filtered.slice(0, limit)
+    const extra = open ? filtered.find((l, i) => i >= limit && l.id === open) : undefined
+    return extra ? [extra, ...page] : page
+  }, [filtered, limit, open])
+  // 换了搜索词或标签从头显示
+  useEffect(() => setLimit(PAGE), [query, tag])
   const fromAgent = lessons.filter((l) => l.source === 'agent').length
   return (
     <div className="flex flex-col gap-3">
@@ -72,7 +108,7 @@ export function LessonsEditor({
             className="h-8 pl-8 text-xs"
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder={t('搜索规则、起因或文件')}
+            placeholder={t('搜索规则、起因、文件或标签')}
             aria-label={t('搜索教训')}
           />
         </div>
@@ -105,6 +141,30 @@ export function LessonsEditor({
           {t('加一条')}
         </Button>
       </div>
+      {tags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label={t('按标签筛选')}>
+          {tags.slice(0, TAG_CHIPS).map(([x, n]) => (
+            <button
+              key={x}
+              type="button"
+              aria-pressed={tag === x}
+              onClick={() => setTag(tag === x ? '' : x)}
+              className={cn(
+                'cursor-pointer rounded-full border px-2.5 py-0.5 text-[0.6875rem] transition-colors',
+                tag === x ? 'border-accent bg-accent-soft text-accent' : 'text-muted hover:bg-sel/70 hover:text-fg',
+              )}
+            >
+              {x}
+              <span className="ml-1 text-subtle">{n}</span>
+            </button>
+          ))}
+          {tags.length > TAG_CHIPS && (
+            <span className="text-[0.6875rem] text-subtle">
+              {t('另有 {n} 个标签，用搜索找', { n: tags.length - TAG_CHIPS })}
+            </span>
+          )}
+        </div>
+      )}
       {lessons.length === 0 && (
         <p className="rounded-xl border border-dashed px-4 py-5 text-center text-xs leading-relaxed text-subtle">
           {t(
@@ -112,7 +172,7 @@ export function LessonsEditor({
           )}
         </p>
       )}
-      {lessons.length > 0 && shown.length === 0 && <p className="px-1 text-xs text-subtle">{t('没有匹配的教训')}</p>}
+      {lessons.length > 0 && filtered.length === 0 && <p className="px-1 text-xs text-subtle">{t('没有匹配的教训')}</p>}
       <ul className="flex flex-col gap-2">
         {shown.map((l) => {
           const expanded = open === l.id || !l.title.trim()
@@ -131,8 +191,11 @@ export function LessonsEditor({
                   />
                   <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <span className="truncate text-[0.8125rem] font-medium">{l.title || t('（还没写规则）')}</span>
-                    <span className="truncate font-mono text-[0.6875rem] text-subtle">
-                      {l.paths.length ? l.paths.join('  ') : t('所有改动')}
+                    <span className="flex min-w-0 items-center gap-2 text-[0.6875rem] text-subtle">
+                      <span className="truncate font-mono">{l.paths.length ? l.paths.join('  ') : t('所有改动')}</span>
+                      {l.tags.length > 0 && (
+                        <span className="shrink-0 truncate">{l.tags.map((x) => `#${x}`).join(' ')}</span>
+                      )}
                     </span>
                   </span>
                   {l.history.length > 0 && (
@@ -173,7 +236,7 @@ export function LessonsEditor({
               </div>
               {expanded && (
                 <div className="flex flex-col gap-3 border-t px-3.5 py-3.5">
-                  <LessonFields lesson={l} onChange={(p) => patch(l.id, p)} />
+                  <LessonFields lesson={l} knownTags={tags} onChange={(p) => patch(l.id, p)} />
                   {l.history.length > 0 && <LessonHistory lesson={l} onRestore={(p) => patch(l.id, p)} />}
                 </div>
               )}
@@ -181,6 +244,14 @@ export function LessonsEditor({
           )
         })}
       </ul>
+      {filtered.length > limit && (
+        <Button size="sm" variant="ghost" className="self-center" onClick={() => setLimit((n) => n + PAGE)}>
+          {t('再显示 {n} 条（还有 {left} 条）', {
+            n: Math.min(PAGE, filtered.length - limit),
+            left: filtered.length - limit,
+          })}
+        </Button>
+      )}
       {project && <ExtractGlobalLessons project={project} open={extracting} onOpenChange={setExtracting} />}
     </div>
   )
@@ -273,22 +344,33 @@ function ExtractGlobalLessons({
 }
 
 /** 一条教训的输入项：设置页和「记成项目教训」弹窗共用 */
-type LessonText = Pick<ProjectLesson, 'title' | 'rule' | 'cause' | 'paths'>
+type LessonText = Pick<ProjectLesson, 'title' | 'rule' | 'cause' | 'paths'> & { tags?: string[] }
 
 function LessonFields({
   lesson,
   onChange,
   autoFocus,
   global,
+  knownTags = [],
 }: {
   lesson: LessonText
   onChange: (p: Partial<LessonText>) => void
   autoFocus?: boolean
+  /** 这个项目已有的标签（按用的条数排好）：点一下加上，少造近义词 */
+  knownTags?: [string, number][]
   /** 全局教训：范围一般不写，说明换成全局的口径 */
   global?: boolean
 }) {
   // 范围在输入时保留原样（含末尾的逗号），离开输入框再拆成列表
   const [paths, setPaths] = useState(lesson.paths.join(', '))
+  const [tagText, setTagText] = useState((lesson.tags ?? []).join(', '))
+  const known = knownTags.map(([x]) => x)
+  const setTags = (list: string[]) => {
+    const v = normTags(list, known)
+    setTagText(v.join(', '))
+    onChange({ tags: v })
+  }
+  const suggest = known.filter((x) => !(lesson.tags ?? []).includes(x)).slice(0, 8)
   return (
     <>
       <Field label={t('规则')} hint={t('一句话写该怎么做，不是发生了什么')}>
@@ -335,6 +417,33 @@ function LessonFields({
           placeholder="src/payment/**, docs/api.md"
         />
       </Field>
+      {!global && lesson.tags && (
+        <Field
+          label={t('标签')}
+          hint={t('按主题归类，最多 5 个，逗号分隔；能按标签筛选，角色也能按标签查不对应具体文件的条目')}
+        >
+          <Input
+            value={tagText}
+            onChange={(e) => setTagText(e.target.value)}
+            onBlur={() => setTags(splitPaths(tagText))}
+            placeholder={t('例如：并发, 测试')}
+          />
+          {suggest.length > 0 && (lesson.tags?.length ?? 0) < 5 && (
+            <span className="flex flex-wrap items-center gap-1.5 pt-1.5">
+              {suggest.map((x) => (
+                <button
+                  key={x}
+                  type="button"
+                  onClick={() => setTags([...(lesson.tags ?? []), x])}
+                  className="cursor-pointer rounded-full border px-2 py-0.5 text-[0.6875rem] text-muted hover:bg-sel/70 hover:text-fg"
+                >
+                  + {x}
+                </button>
+              ))}
+            </span>
+          )}
+        </Field>
+      )}
     </>
   )
 }
@@ -418,7 +527,12 @@ export function RecordLessonDialog({
                 '记下来以后，这个项目里的角色改到相关文件时都会看到它。写成通用的规则（例如「新能力写进配置文件」），下次换个地方也用得上。',
               )}
             </p>
-            <LessonFields autoFocus lesson={lesson} onChange={(p) => setLesson((l) => ({ ...l, ...p }))} />
+            <LessonFields
+              autoFocus
+              lesson={lesson}
+              knownTags={tagCounts(project.lessons)}
+              onChange={(p) => setLesson((l) => ({ ...l, ...p }))}
+            />
           </div>
           <footer className="flex shrink-0 flex-wrap items-center gap-2 border-t px-5 py-3.5">
             {onAskAgent && (

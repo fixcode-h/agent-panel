@@ -637,6 +637,8 @@ export const ProjectLesson = z.object({
   cause: z.string().trim().max(500).default(''),
   /** 管哪些文件（相对项目根的 glob，`**` 跨目录）；空表示所有改动都适用 */
   paths: z.array(z.string().trim().min(1).max(200)).max(20).default([]),
+  /** 标签：按主题归类（并发、测试……），界面上能按它筛，Agent 也能按它查不对应具体文件的条目；旧数据没有时为空 */
+  tags: z.array(z.string().trim().min(1).max(20)).max(5).catch([]).default([]),
   enabled: z.boolean().default(true),
   /** 谁记的：用户手动加的，还是 Agent 被纠正后自己记的（方便用户复查） */
   source: z.enum(['user', 'agent']).catch('user').default('user'),

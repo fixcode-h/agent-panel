@@ -76,7 +76,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
-import { findLessons } from './lessons.ts'
+import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
@@ -317,9 +317,9 @@ export interface Orchestra {
   /** 本次运行的共享状态：读快照 / 写一个键 */
   readState(): string
   writeState(key: string, value: string): { ok: boolean; info: string }
-  /** 项目教训：按文件取全文、记一条；不在项目里时没有 */
+  /** 项目教训：按文件 / 关键词 / 标签取全文、记一条；不在项目里时没有 */
   lessons?: {
-    find(files: string[]): Promise<string>
+    find(files: string[], opts?: LessonQuery): Promise<string>
     record(input: LessonInput): Promise<{ ok: boolean; info: string }>
   }
 }
@@ -464,6 +464,8 @@ export interface LessonInput {
   rule: string
   cause: string
   paths: string[]
+  /** 标签：优先用这个项目已有的 */
+  tags?: string[]
   /** 改写已有的那条（用户的新要求和它冲突、找到两全的做法时）：那条的 id */
   replaces?: string
   /** 为什么改写 */
@@ -2377,8 +2379,8 @@ function makeOrchestra(
     writeState: (key, value) => writeRunState(host, self.id, key, value),
     lessons: host.lessons
       ? {
-          find: async (files) =>
-            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? []),
+          find: async (files, opts) =>
+            findLessons(await host.lessons!.list(), files, (await host.lessons!.globals?.()) ?? [], opts),
           record: (input) => host.lessons!.record(input),
         }
       : undefined,

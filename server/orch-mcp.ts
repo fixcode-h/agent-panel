@@ -328,11 +328,17 @@ export function orchTools(o: Orchestra) {
             name: 'project_lessons',
             title: '查看项目教训',
             description:
-              '取这个项目的教训（以前返工过的地方写成的规则）：传要改的文件，返回管这些文件的条目全文；不传 files 列出全部标题。动手改文件前用。',
+              '取这个项目的教训（以前返工过的地方写成的规则）：传要改的文件，返回管这些文件的条目全文，最相关的在前；也能按关键词或标签查（例如不对应具体文件的条目、提示里只列了标题的条目）；什么都不传列出全部标题和已有标签。动手改文件前用。',
             inputSchema: {
               type: 'object',
               properties: {
                 files: { type: 'array', items: { type: 'string' }, description: '要改的文件或目录，相对项目根' },
+                query: {
+                  type: 'string',
+                  description:
+                    '关键词，空格分开的几个词都要出现（标题、说明、起因、范围、标签或 id 里）；传 id 取那一条的全文',
+                },
+                tags: { type: 'array', items: { type: 'string' }, description: '带其中任一个标签的条目' },
               },
             },
           },
@@ -355,6 +361,12 @@ export function orchTools(o: Orchestra) {
                   type: 'array',
                   items: { type: 'string' },
                   description: '它管哪些文件（相对项目根的 glob，** 跨目录，目录名也行）；所有改动都适用时不写',
+                },
+                tags: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    '1～3 个主题标签（例如 并发、测试、界面），最多 5 个；先用提示或 project_lessons 列出的已有标签，不另造近义词',
                 },
                 id: {
                   type: 'string',
@@ -498,7 +510,8 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     case 'project_lessons': {
       if (!o.lessons) return text('这个对话不在项目里，没有项目教训', true)
       const files = Array.isArray(a?.files) ? a.files.map(String) : []
-      return text(await o.lessons.find(files))
+      const tags = Array.isArray(a?.tags) ? a.tags.map(String) : []
+      return text(await o.lessons.find(files, { query: str(a?.query), tags }))
     }
     case 'record_lesson': {
       if (!o.lessons) return text('这个对话不在项目里，记不了项目教训', true)
@@ -513,6 +526,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         rule: str(a?.rule).trim(),
         cause: str(a?.cause).trim(),
         paths,
+        tags: Array.isArray(a?.tags) ? a.tags.map(String) : [],
         ...(replaces ? { replaces, why } : {}),
       })
       return text(r.info, !r.ok)

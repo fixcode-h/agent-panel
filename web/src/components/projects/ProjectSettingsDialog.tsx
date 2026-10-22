@@ -173,10 +173,11 @@ function Body({
         const fresh = list.find((p) => p.id === project.id)
         if (!alive || !fresh) return
         setProjects(list)
-        setDraft((d) => ({
-          ...d,
-          lessons: [...d.lessons, ...fresh.lessons.filter((l) => !d.lessons.some((x) => x.id === l.id))],
-        }))
+        setDraft((d) => {
+          // 用 Set 查：条目多时两层 some 是平方级，上万条要卡近一秒
+          const have = new Set(d.lessons.map((x) => x.id))
+          return { ...d, lessons: [...d.lessons, ...fresh.lessons.filter((l) => !have.has(l.id))] }
+        })
       })
       .catch(() => {})
     return () => {
@@ -367,9 +368,8 @@ function Body({
     setSaving(true)
     try {
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
-      const fresh = (project?.lessons ?? []).filter(
-        (l) => !lessonIds0.has(l.id) && !draft.lessons.some((x) => x.id === l.id),
-      )
+      const inDraft = new Set(draft.lessons.map((x) => x.id))
+      const fresh = (project?.lessons ?? []).filter((l) => !lessonIds0.has(l.id) && !inDraft.has(l.id))
       const input = { ...draft, name: draft.name.trim(), lessons: [...draft.lessons, ...fresh] }
       if (project) {
         // 说明文件先存：写到项目目录里，失败时项目设置也不算保存成功，改动还留在弹窗里
