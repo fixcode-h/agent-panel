@@ -3,8 +3,10 @@ import * as D from '@radix-ui/react-dialog'
 import { Code2, Columns2, Copy, FolderOpen, List, Loader2, Undo2, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Task } from '@shared/schema'
+import type { FileDiff } from '@shared/files'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
+import { editorUrl } from '@/lib/editor-url'
 import { useScopedSetting } from '@/lib/useScopedSetting'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -86,12 +88,6 @@ function sideBySide(lines: string[]) {
   }
   flush()
   return out
-}
-
-/** 编辑器里打开的地址（VS Code 及兼容的编辑器认 vscode://file/） */
-const editorUrl = (dir: string, file: string) => {
-  const full = `${dir.replace(/[\\/]+$/, '')}/${file}`.replace(/\\/g, '/')
-  return `vscode://file/${full.startsWith('/') ? full.slice(1) : full}`
 }
 
 /**
@@ -195,6 +191,112 @@ function DiffBody({ diff }: { diff: string }) {
         </pre>
       )}
     </>
+  )
+}
+
+/**
+ * 弹窗里的滚动内容区。
+ * 底色铺满整个内容区（连下沿的圆角一起），滚动区本身退到离下沿一个圆角的高度，
+ * 这样横向、纵向滚动条都只出现在直边上，不会压进 rounded-2xl 的两个下圆角。
+ * 三个弹窗都用它，尺寸和圆角才对得上。
+ */
+export function DialogScroll({
+  box,
+  children,
+}: {
+  /** 需要滚动定位时（比如跳到某一行）要拿到的滚动容器 */
+  box?: React.RefObject<HTMLDivElement | null>
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col bg-(--code-bg) pb-4">
+      <div ref={box} className="min-h-0 flex-1 overflow-auto">
+        {children}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * 项目里一个文件的改动（接口给的就是 FileDiff）：和任务里的差异共用一套渲染（左右 / 上下对照）。
+ * 不提供撤销：项目页面不是任务，说不清「恢复到什么时候」。
+ */
+export function ProjectDiffDialog({
+  path,
+  data,
+  error,
+  onOpenChange,
+}: {
+  /** 要看的文件；null 时窗口关着 */
+  path: string | null
+  data: FileDiff | null
+  error: string
+  onOpenChange: (open: boolean) => void
+}) {
+  const text = data?.diff ?? ''
+  const note = (data?.note ?? '').trim()
+  const shown = data?.path || path || ''
+  return (
+    <D.Root open={!!path} onOpenChange={onOpenChange}>
+      <D.Portal>
+        {/* 它总是从文件预览窗口里打开，层级要高过那个窗口 */}
+        <D.Overlay className="fixed inset-0 z-[60] bg-black/45 animate-[fade-in_150ms_ease-out]" />
+        <D.Content
+          aria-describedby={undefined}
+          className="fixed top-1/2 left-1/2 z-[70] flex h-[min(900px,calc(100dvh-2rem))] w-[min(1440px,calc(100vw-2rem))] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-line-strong bg-card shadow-pop animate-[pop-in_160ms_ease-out] focus:outline-none"
+        >
+          <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+            <D.Title className="min-w-0 flex-1 truncate font-mono text-[0.8125rem] font-medium" title={shown}>
+              {shown}
+            </D.Title>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('复制路径')}
+              title={t('复制路径')}
+              onClick={() =>
+                navigator.clipboard
+                  ?.writeText(shown)
+                  .then(() => toast.success(t('已复制')))
+                  .catch(() => {})
+              }
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+            {data?.dir && shown && (
+              <Button variant="ghost" size="sm" onClick={() => window.open(editorUrl(data.dir, shown))}>
+                <Code2 className="h-4 w-4" />
+                {t('在编辑器中打开')}
+              </Button>
+            )}
+            <D.Close asChild>
+              <Button variant="ghost" size="icon-sm" aria-label={t('关闭')} title={t('关闭')}>
+                <X className="h-4 w-4" />
+              </Button>
+            </D.Close>
+          </header>
+          <DialogScroll>
+            {error ? (
+              <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
+            ) : !data ? (
+              <div className="flex h-full items-center justify-center text-subtle">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : note && !text.trim() ? (
+              // 后端说明了为什么没有差异（不是 git 仓库、文件没被跟踪），照原话显示
+              <p className="p-6 text-[0.8125rem] leading-relaxed text-subtle">{note}</p>
+            ) : !text.trim() ? (
+              <p className="p-6 text-[0.8125rem] text-subtle">
+                {data.git ? t('这个文件还没有改动。') : t('项目不是 git 仓库，也没有拿到这个文件的改动内容。')}
+              </p>
+            ) : (
+              <DiffBody diff={text} />
+            )}
+          </DialogScroll>
+          {note && text.trim() && <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">{note}</p>}
+        </D.Content>
+      </D.Portal>
+    </D.Root>
   )
 }
 
@@ -326,7 +428,7 @@ export function DiffDialog({
               </Button>
             </D.Close>
           </header>
-          <div className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+          <DialogScroll>
             {error ? (
               <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
             ) : !ready ? (
@@ -344,7 +446,7 @@ export function DiffDialog({
             ) : (
               <DiffBody diff={text} />
             )}
-          </div>
+          </DialogScroll>
           {!own && data && !data.git && text.trim() && (
             <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
               {t('项目不是 git 仓库：这里是 Agent 每次修改这个文件时给出的改动，按时间先后排列。')}

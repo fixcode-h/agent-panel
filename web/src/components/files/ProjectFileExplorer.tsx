@@ -1,12 +1,31 @@
-import { useEffect, useRef, useState } from 'react'
+import { type ComponentProps, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@shared/files'
 import { api } from '@/lib/api'
-import { type FileBrowser, type LevelState, FileExplorer } from './FileTree'
+import { type FileBrowser, type FileTreeOps, type LevelState, FileExplorer } from './FileTree'
 import { ProjectFileDialog } from './ProjectFileDialog'
 
 /** 搜索输入停顿这么久再发请求，打字过程中不发 */
 const SEARCH_DELAY = 250
+
+/**
+ * 树的写操作接口（按约定声明）：后端那四个接口还没合进来时这里是 undefined，
+ * 菜单据此不显示，也不用为了类型检查去动 api.ts。
+ */
+interface TreeOpsApi {
+  createProjectFile?: (
+    projectId: string,
+    dir: string,
+    name: string,
+    content?: string,
+  ) => Promise<{ path: string; size: number }>
+  createProjectDir?: (projectId: string, dir: string, name: string) => Promise<{ path: string }>
+  renameProjectFile?: (projectId: string, path: string, name: string) => Promise<{ path: string }>
+  deleteProjectFile?: (projectId: string, path: string) => Promise<{ ok: true }>
+}
+
+/** 相对路径所在的目录，根目录是空字符串 */
+const parentOf = (path: string) => (path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '')
 
 /**
  * 项目文件的数据：根信息、按层读取的目录、按名称或内容搜索。
@@ -22,6 +41,7 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
   const [namesError, setNamesError] = useState('')
   const [hits, setHits] = useState<ContentFile[]>([])
   const [hitsTruncated, setHitsTruncated] = useState(false)
+  const [hitsError, setHitsError] = useState('')
   const [searching, setSearching] = useState(false)
   // 读到的层和每一层的状态放在 ref 里：请求回来自行更新，用计数触发渲染
   const levels = useRef<Record<string, DirLevel>>({})
@@ -31,6 +51,15 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   const searchSeq = useRef(0)
   const rootSeq = useRef(0)
+  /** 最后一次搜索的关键词和方式：换项目或刷新之后按同样的关键词重搜，不用用户再打一遍 */
+  const lastSearch = useRef<{ q: string; mode: SearchMode } | null>(null)
+  /** 每一层正在进行中的请求：同一层重复 load 复用同一个 Promise，递归展开才能等到结果 */
+  const inflight = useRef<Record<string, { round: number; promise: Promise<DirLevel | null> }>>({})
+  /**
+   * 每一层请求的序号：写操作后强制重读时，先发的旧请求晚回来不能把新结果盖掉。
+   * 只靠「轮次」区分不了同一轮里的一前一后。
+   */
+  const reqSeq = useRef<Record<string, number>>({})
   const lastScope = useRef('')
   const lastRefresh = useRef(refreshKey)
   /** 手动刷新后的一小段时间里，重新读的层不要服务端缓存的状态 */
@@ -63,10 +92,13 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     setNamesError('')
     setHits([])
     setHitsTruncated(false)
+    setHitsError('')
     setSearching(false)
     setInfo(null)
     setError('')
     setLoading(false)
+    inflight.current = {}
+    reqSeq.current = {}
   }
 
   /**
@@ -125,40 +157,54 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
   /**
    * 读一层：这一轮已经读过或正在读就不重复请求。
    * 刷新后旧数据先留着（FileTree 继续显示），新结果回来再原地替换，避免整块闪成「读取中…」。
+   * 返回这一层的数据（失败时是 null）：递归展开要等每一层读完才知道下面还有哪些目录。
    */
-  const load = (path: string) => {
+  const load = (path: string): Promise<DirLevel | null> => {
     const project = projectId
     const task = taskId
-    if (!project && !task) return
+    if (!project && !task) return Promise.resolve(null)
     const round = epoch.current
-    if (pending.current[path] === round || levelEpoch.current[path] === round) return
+    if (levelEpoch.current[path] === round) return Promise.resolve(levels.current[path] ?? null)
+    const doing = inflight.current[path]
+    if (doing && doing.round === round) return doing.promise
+    const seq = (reqSeq.current[path] = (reqSeq.current[path] ?? 0) + 1)
     // 刚点过刷新：这一轮读到的层不要服务端几秒内的旧状态
     const force = Date.now() < freshUntil.current
     states.current[path] = { loading: true, error: '' }
     pending.current[path] = round
     bump()
     const req = project ? api.fileLevel(project, path, force) : api.taskFileLevel(task!, path, force)
-    req
+    const promise = req
       .then((level) => {
-        // 换过项目的话这一层已经不属于当前范围了，丢掉
-        if ((projectId || taskId) !== scopeRef.current) return
-        // 上一轮的请求晚回来：新一轮正在重读，旧结果比它旧，直接丢掉
-        if (round !== epoch.current) return
+        // 换过项目的话这一层已经不属于当前范围了，丢掉；同一层有更新的请求时旧结果也让位
+        if ((projectId || taskId) !== scopeRef.current || reqSeq.current[path] !== seq) return null
         levels.current = { ...levels.current, [path]: level }
         levelEpoch.current[path] = round
         states.current[path] = { loading: false, error: '' }
         // 新结果里没有的目录，连同它下面已经读过的层一起清掉，不留幽灵行
         pruneGone()
+        return level
       })
       .catch((e) => {
-        if ((projectId || taskId) !== scopeRef.current) return
-        if (round !== epoch.current) return
-        states.current[path] = { loading: false, error: (e as Error).message }
+        if ((projectId || taskId) === scopeRef.current && reqSeq.current[path] === seq)
+          states.current[path] = { loading: false, error: (e as Error).message }
+        return null
       })
       .finally(() => {
         if (pending.current[path] === round) delete pending.current[path]
+        if (inflight.current[path]?.promise === promise) delete inflight.current[path]
         bump()
       })
+    inflight.current[path] = { round, promise }
+    return promise
+  }
+
+  /** 写操作之后强制重读一层：这一轮已经读过也要重新请求 */
+  const reload = (path: string) => {
+    delete levelEpoch.current[path]
+    delete pending.current[path]
+    delete inflight.current[path]
+    void load(path)
   }
 
   /** 刷新：开新的一轮，已经展开的层在旧数据之上后台重读（重读时不再用服务端的状态缓存） */
@@ -174,12 +220,14 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     const needle = q.trim()
     clearTimeout(timer.current)
     const seq = ++searchSeq.current
+    lastSearch.current = needle ? { q, mode } : null
     if (!needle || (!projectId && !taskId)) {
       setNames(null)
       setNamesError('')
       setNamesLoading(false)
       setHits([])
       setHitsTruncated(false)
+      setHitsError('')
       setSearching(false)
       return
     }
@@ -188,6 +236,7 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
       setNamesError('')
       setHits([])
       setHitsTruncated(false)
+      setHitsError('')
       setSearching(false)
       timer.current = setTimeout(() => {
         ;(projectId ? api.searchFileNames(projectId, needle) : api.searchTaskFileNames(taskId!, needle))
@@ -206,6 +255,7 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     setNames(null)
     setNamesError('')
     setNamesLoading(false)
+    setHitsError('')
     setSearching(true)
     timer.current = setTimeout(() => {
       ;(projectId ? api.searchFileContent(projectId, needle) : api.searchTaskFiles(taskId!, needle))
@@ -215,7 +265,8 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
           setHitsTruncated(r.truncated)
         })
         .catch((e) => {
-          if (seq === searchSeq.current) setError((e as Error).message)
+          // 内容搜索的错误单独放：它只在内容结果里显示，不能混进根错误（那会让整棵树变成报错）
+          if (seq === searchSeq.current) setHitsError((e as Error).message)
         })
         .finally(() => {
           if (seq === searchSeq.current) setSearching(false)
@@ -239,9 +290,14 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
       freshUntil.current = Date.now() + 2000
       cleared = true
     }
-    if (cleared) setVersion((v) => v + 1)
+    if (cleared) {
+      setVersion((v) => v + 1)
+      // 换项目（或刷新）后缓存都清了：搜索框里的关键词还在，按同样的关键词重搜一遍
+      const last = lastSearch.current
+      if (last) search(last.q, last.mode)
+    }
     loadRoot()
-    // 项目切换、任务改动或执行结束时重新读；loadRoot 每次渲染都是新函数
+    // 项目切换、任务改动或执行结束时重新读；loadRoot、search 每次渲染都是新函数
     // oxlint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId, taskId, refreshKey])
 
@@ -252,6 +308,36 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     if (projectId) void api.revealProjectFile(projectId, path).catch((e) => toast.error((e as Error).message))
     else if (taskId) void api.revealTaskFile(taskId, path).catch((e) => toast.error((e as Error).message))
   }
+
+  /**
+   * 树的写操作：四个接口都在、而且是项目（任务右栏只读）时才提供。
+   * 成功后重读受影响的那一层，失败把原始错误抛给调用方去提示，不在这里静默重试。
+   */
+  const { createProjectFile, createProjectDir, renameProjectFile, deleteProjectFile } = api as unknown as TreeOpsApi
+  const ops: FileTreeOps | undefined =
+    projectId && createProjectFile && createProjectDir && renameProjectFile && deleteProjectFile
+      ? {
+          createFile: async (dir, name, content) => {
+            const r = await createProjectFile(projectId, dir, name, content)
+            reload(dir)
+            return r
+          },
+          createDir: async (dir, name) => {
+            const r = await createProjectDir(projectId, dir, name)
+            reload(dir)
+            return r
+          },
+          rename: async (path, name) => {
+            const r = await renameProjectFile(projectId, path, name)
+            reload(parentOf(path))
+            return r
+          },
+          remove: async (path) => {
+            await deleteProjectFile(projectId, path)
+            reload(parentOf(path))
+          },
+        }
+      : undefined
 
   /** 相对路径 → 绝对路径；目录还没读到时只能给相对路径 */
   const absolute = (path: string) => {
@@ -267,7 +353,10 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     info,
     error,
     loading,
-    levels: levels.current,
+    // 用 getter：递归展开在 await 之后还要读最新读到的层，渲染时拿到的快照会过期
+    get levels() {
+      return levels.current
+    },
     levelState: (path) => states.current[path] ?? { loading: false, error: '' },
     load,
     refresh,
@@ -277,10 +366,12 @@ export function useProjectFiles(projectId: string, refreshKey?: string, taskId?:
     namesError,
     hits,
     hitsTruncated,
+    hitsError,
     searching,
     search,
     reveal,
     absolute,
+    ops,
   }
 }
 
@@ -296,12 +387,16 @@ export function ProjectFileExplorer({
   className?: string
 }) {
   const files = useProjectFiles(projectId)
-  const [target, setTarget] = useState<{ path: string; line?: number } | null>(null)
+  // hitLines 是这次要看的文件里全部命中的行号：弹窗接上之后用它做「上一处 / 下一处」
+  const [target, setTarget] = useState<{ path: string; line?: number; hitLines?: number[] } | null>(null)
+  // 弹窗里保存后重读树，否则改完的文件内容还对不上。
+  // onSaved 是弹窗那边的可选回调，写这里时它还没合进来；用展开语法传，两边都能编译，合入后不用改
+  const saved = { onSaved: files.refresh } as Partial<ComponentProps<typeof ProjectFileDialog>>
   return (
     <>
       <FileExplorer
         browser={files}
-        onOpen={(path, line) => setTarget({ path, line })}
+        onOpen={(path, line, hitLines) => setTarget({ path, line, hitLines })}
         compact={compact}
         className={className}
       />
@@ -310,6 +405,7 @@ export function ProjectFileExplorer({
         dir={files.info?.dir ?? dir ?? ''}
         target={target}
         onOpenChange={(open) => !open && setTarget(null)}
+        {...saved}
       />
     </>
   )
