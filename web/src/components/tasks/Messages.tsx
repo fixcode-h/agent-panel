@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { useData } from '@/lib/data'
@@ -348,6 +348,8 @@ const PANEL_KIND = {
   background: { icon: Terminal, verb: () => t('后台命令') },
   build: { icon: GitMerge, verb: () => t('合并编译') },
   helpers: { icon: Bot, verb: () => t('子任务结果') },
+  // 子对话的回报不画出来（inlineEntry 先拦掉），这里只为类型完整
+  child: { icon: Info, verb: () => t('子对话') },
 } as const
 
 function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) {
@@ -396,6 +398,8 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
  * 和工具调用一样缩进在头像后面；不是这几种返回 null
  */
 function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
+  // 子对话的回报只给 AI 看，界面上不画
+  if (m.panel === 'child') return <Fragment key={m.id} />
   const body =
     m.spawned?.length && task ? (
       <HelperCards task={task} ids={m.spawned} teamNames={teamNames} />

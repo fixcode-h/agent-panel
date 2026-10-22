@@ -495,6 +495,8 @@ export function tasksApi(deps: {
       step: '',
       text,
       tools: [],
+      // 只交给父对话的 AI：界面上子对话的状态图标已经显示做完了，不再多一条通知
+      panel: 'child',
       at: new Date().toISOString(),
     }
     // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理

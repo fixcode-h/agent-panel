@@ -86,6 +86,9 @@ type Block =
 const OLD_CREATED =
   /^(新建了子对话「.*」，这条消息交给它处理|Created sub-conversation “.*”; this message is handed to it)$/
 
+/** 以前子对话做完后在父对话里记的通知 */
+const OLD_CHILD_NOTE = /^子对话「[^」]*」(已完成|失败|已停止|合并编译通过|合并编译没通过)/
+
 /** 这条消息属于第几次运行（节点 id 带 `r2/` 前缀的算第 2 次） */
 function runOf(step: string) {
   const m = /^r(\d+)\//.exec(step)
@@ -116,6 +119,8 @@ function toBlocks(task: Task): Block[] {
     if (m.step && helpers.length && inHelper(m.step)) continue
     // 旧对话里新建子对话时记的居中提示：现在这次工具调用本身就显示成「新建子对话 标题」，不再重复
     if (m.role === 'system' && !m.step && OLD_CREATED.test(m.text)) continue
+    // 子对话交回父对话的回报只给父对话的 AI 看：做完了看子对话栏和列表里的绿勾（旧数据没有标记，按文字认）
+    if (m.role === 'system' && !m.step && (m.panel === 'child' || OLD_CHILD_NOTE.test(m.text))) continue
     // 派出的子任务、面板推回的结果（后台命令、合并编译、子任务结果）都是 AI 这一轮回复里的一行，
     // 归进当前这轮回复，不单独成段，也不显示成用户消息
     if (!m.step && ((!byRun && m.spawned?.length) || m.panel)) {
