@@ -651,3 +651,30 @@ body,
     transform: rotate(-14deg);
   }
 }
+
+/*
+ * 计划步骤「等待中」的沙漏：慢慢缩小再回来，像沙在流。
+ * 不用转圈——「进行中」已经是转动的圆弧，两种状态要能一眼分开
+ */
+@keyframes plan-waiting {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scale(0.84);
+    opacity: 1;
+  }
+}
+.plan-waiting {
+  transform-origin: center;
+  animation: plan-waiting 2.4s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* 关动效时保持静态的沙漏，不隐藏 */
+  .plan-waiting {
+    animation: none;
+    opacity: 1;
+  }
+}

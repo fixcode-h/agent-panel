@@ -18,7 +18,7 @@ const STATUS_LABEL: Record<PlanStatus, string> = {
 
 /**
  * 计划步骤的勾选圆点（清单样式）：完成是实心圆里一个勾，待做是空心圆，
- * 进行中是转动的强调色圆弧，等待中是圆里一个沙漏
+ * 进行中是转动的强调色圆弧，等待中是圆里一个慢慢呼吸的沙漏
  */
 function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
   const box = cn('grid shrink-0 place-items-center rounded-full', small ? 'h-3.5 w-3.5' : 'h-[1.125rem] w-[1.125rem]')
@@ -40,7 +40,7 @@ function PlanIcon({ status, small }: { status: PlanStatus; small?: boolean }) {
   if (status === 'waiting')
     return (
       <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-warning text-warning')}>
-        <Hourglass className={small ? 'h-2 w-2' : 'h-2.5 w-2.5'} strokeWidth={2.5} />
+        <Hourglass className={cn('plan-waiting', small ? 'h-2 w-2' : 'h-2.5 w-2.5')} strokeWidth={2.5} />
       </span>
     )
   return <span role="img" aria-label={label} className={cn(box, 'border-[1.5px] border-line-strong')} />
@@ -109,7 +109,7 @@ export function PlanButton({ task }: { task: Task }) {
         )}
         {!finished && p.waiting > 0 && (
           <span className="flex shrink-0 items-center gap-1 text-xs text-warning">
-            <Hourglass className="h-3 w-3" />
+            <Hourglass className="plan-waiting h-3 w-3" />
             {t('{n} 个在等待', { n: p.waiting })}
           </span>
         )}
