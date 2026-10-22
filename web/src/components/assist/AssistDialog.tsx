@@ -2,7 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
 import { toast } from 'sonner'
 import { Check, CircleAlert, Crown, Loader2, Minus, Sparkles, Wand2, X } from 'lucide-react'
-import { applyProposal, type AssistJob, type AssistKind, type AssistMessage, type Proposal } from '@shared/assist'
+import {
+  applyProposal,
+  type AssistJob,
+  type AssistKind,
+  type AssistMessage,
+  type ProjectProposal,
+  type Proposal,
+} from '@shared/assist'
 import { CLIS, MODEL_TIERS, type CliDefinition, type ModelTier } from '@shared/clis'
 import { agentRun, cliSettings, defaultCli, orderClis } from '@shared/settings'
 import type {
@@ -66,6 +73,7 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('这个项目在 Windows 上，端到端测试要在 WSL 里跑，按这个填'),
   ],
   lessons: [t('把这个项目里换个项目也适用的教训提取出来'), t('只看角色自己记的那些，挑出通用的')],
+  project: [t('看看这个项目是做什么的，把名称、简介和测试步骤填好')],
   teststeps: [
     t('按项目现在的脚本，生成一套类型检查、单元测试、端到端和构建的步骤'),
     t('这是 UE 项目，补上编译和 Lua 语法检查的步骤'),
@@ -501,6 +509,26 @@ function TestStepsPreview({ steps }: { steps: TestStep[] }) {
   )
 }
 
+/** 项目分析的预览：名称、简介、类型，下面是测试步骤 */
+function ProjectPreview({ p }: { p: ProjectProposal }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[0.9375rem] font-semibold">{p.name}</span>
+          <Badge>{p.type === 'ue' ? t('UE 项目') : t('一般项目')}</Badge>
+        </div>
+        {p.description && <p className="text-[0.8125rem] leading-relaxed text-muted">{p.description}</p>}
+      </div>
+      {p.steps.length ? (
+        <TestStepsPreview steps={p.steps} />
+      ) : (
+        <span className="text-xs text-subtle">{t('没有找到可以直接执行的测试步骤')}</span>
+      )}
+    </div>
+  )
+}
+
 /**
  * 用本机 CLI 对话生成 / 优化 Agent 或工作流。左边对话，右边预览最新的结果，确认后应用。
  */
@@ -611,23 +639,32 @@ export function AssistDialog({
                   empty: t('提取出的全局教训会显示在这里'),
                   button: t('确认写入全局教训'),
                 }
-              : kind === 'teststeps'
+              : kind === 'project'
                 ? {
-                    create: t('AI 生成测试步骤'),
-                    desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
-                    intro: t('说说你的要求，或者直接让它按项目情况生成。'),
-                    placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
-                    empty: t('测试步骤会显示在这里'),
+                    create: t('AI 分析项目'),
+                    desc: t('在项目目录里只读分析，给出名称、简介、项目类型和测试步骤；确认后才填进表单'),
+                    intro: t('直接让它分析，或者说说你的要求。'),
+                    placeholder: t('补充要求，例如「端到端测试要在 WSL 里跑」'),
+                    empty: t('分析结果会显示在这里'),
                     button: t('填进表单'),
                   }
-                : {
-                    create: t('用 AI 创建工作流'),
-                    desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
-                    intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
-                    placeholder: t('描述你想要的工作流'),
-                    empty: t('生成的工作流会显示在这里'),
-                    button: t('创建工作流'),
-                  }
+                : kind === 'teststeps'
+                  ? {
+                      create: t('AI 生成测试步骤'),
+                      desc: t('在项目目录里只读分析，按实际的脚本和命令生成测试步骤；确认后才填进表单'),
+                      intro: t('说说你的要求，或者直接让它按项目情况生成。'),
+                      placeholder: t('补充要求，例如「编译要放在单元测试前面」'),
+                      empty: t('测试步骤会显示在这里'),
+                      button: t('填进表单'),
+                    }
+                  : {
+                      create: t('用 AI 创建工作流'),
+                      desc: t('本机 Agent 按固定格式生成工作流，校验通过后在右侧预览，确认再应用'),
+                      intro: t('描述你想要的工作流，越具体越好。可以从下面的例子开始：'),
+                      placeholder: t('描述你想要的工作流'),
+                      empty: t('生成的工作流会显示在这里'),
+                      button: t('创建工作流'),
+                    }
 
   useEffect(() => {
     if (!open) return
@@ -799,7 +836,13 @@ export function AssistDialog({
         onOpenChange(false)
         return
       }
-      if (latest.kind === 'skill' || latest.kind === 'mcp' || latest.kind === 'params' || latest.kind === 'teststeps') {
+      if (
+        latest.kind === 'skill' ||
+        latest.kind === 'mcp' ||
+        latest.kind === 'params' ||
+        latest.kind === 'teststeps' ||
+        latest.kind === 'project'
+      ) {
         await onApply?.(latest)
         onOpenChange(false)
         return
@@ -1046,6 +1089,8 @@ export function AssistDialog({
                       <ParamPreview values={latest.values} spec={paramSpec ?? []} />
                     ) : latest.kind === 'teststeps' ? (
                       <TestStepsPreview steps={latest.steps} />
+                    ) : latest.kind === 'project' ? (
+                      <ProjectPreview p={latest} />
                     ) : latest.kind === 'lessons' ? (
                       <LessonChangesPreview
                         changes={latest.changes}

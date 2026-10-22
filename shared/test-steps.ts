@@ -90,24 +90,10 @@ export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = 
 }
 
 /**
- * 合并编译要跑哪些步骤：小改动只跑同时标了「小改动也跑」的合并步骤；
- * 一条都没标时照常跑全部合并步骤，宁可多编译一次，也不让没配过的项目悄悄少了编译
- */
-export function mergeStepsFor(steps: TestStep[], small: boolean) {
-  const all = steps.filter((s) => s.enabled && s.merge)
-  const quick = all.filter((s) => s.quick)
-  if (!small || !quick.length) return { run: all, skipped: [] as TestStep[] }
-  return { run: quick, skipped: all.filter((s) => !s.quick) }
-}
-
-/**
  * 对话里怎么验证：按改动大小定范围（参照 Claude Code 的做法，小改动跑完快速检查就收尾）。
  * 只给对话用，工作流里的测试验收节点照常跑完整步骤：走工作流本身就说明改动不小
  */
-export function verifyBlock(
-  steps: TestStep[],
-  o: { platform: string; wslDistro?: string; scaled: boolean; submit: boolean },
-) {
+export function verifyBlock(steps: TestStep[], o: { platform: string; wslDistro?: string; scaled: boolean }) {
   const active = steps.filter((s) => s.enabled)
   const quick = active.filter((s) => s.quick)
   // 关掉时不分大小，「快速」标记没有意义，不写出来免得 Agent 只跑这几条
@@ -125,14 +111,9 @@ ${list}`
   return `## 验证按改动大小定
 改完先判断这次改动的大小，再决定验证范围：
 - 小改动：只改文案、样式、注释、文档、配置值，或者一两个文件里几十行以内的局部修改，不动接口、数据结构、执行流程、构建配置和依赖。${fast}，通过就收尾，不跑单元测试、端到端、完整构建，也不为它启动工作流。
-- 其他都算大改动：按项目的测试步骤完整跑一遍${o.submit ? '' : '（太长的放到后台）'}。
+- 其他都算大改动：按项目的测试步骤完整跑一遍（太长的放到后台）。
 - 拿不准就按大改动；快速检查没过、或者报错不在你改的地方，也改按大改动处理。
-- 回复里用一句话写明按哪种验证的、跑了什么。${
-    o.submit
-      ? `
-- 调用 submit_build 时小改动把 small 设为 true：合并时只跑同时标了「快速」和「合并时编译」的步骤，一条都没标就照常全跑。`
-      : ''
-  }
+- 回复里用一句话写明按哪种验证的、跑了什么。
 ${list}`
 }
 

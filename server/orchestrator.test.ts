@@ -146,6 +146,11 @@ test('协调 Agent：新建子对话并交给它，子对话自己不能再分�
   const made: { title: string; message: string }[] = []
   const h = host(task, log, async (call) => {
     assert.equal(call.orch?.coordinator, true)
+    // 父对话只统筹：不改文件、不开分支，收集到模块为止就交出去
+    assert.match(call.prompt, /父对话只统筹，不动手/)
+    assert.match(call.prompt, /不修改、新建或删除任何文件/)
+    assert.match(call.prompt, /分派前只收集到模块为止/)
+    assert.doesNotMatch(call.prompt, /可以自己当场改/)
     assert.match(await call.orch!.conversations(), /还没有子对话/)
     const r = await call.orch!.createConversation('登录改造', '实现登录，带手机号验证码')
     assert.equal(r.ok, true)

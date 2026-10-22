@@ -36,7 +36,15 @@ import { HelperCards } from './HelperCards'
 import { type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import { sortChildren, taskStage, taskSummary, withTaskModel, type ChildActivity, type TaskStage } from '@shared/task'
+import {
+  sortChildren,
+  taskBusy,
+  taskStage,
+  taskSummary,
+  withTaskModel,
+  type ChildActivity,
+  type TaskStage,
+} from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
@@ -960,7 +968,7 @@ export function TaskView({
                   )}
                   <TaskStatusIcon
                     status={task.childrenWorking ? 'running' : task.status}
-                    working={!!task.childrenWorking || task.working}
+                    working={taskBusy(task)}
                     className="ml-1"
                   />
                   {renaming !== null ? (

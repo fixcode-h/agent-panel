@@ -286,19 +286,14 @@ export function orchTools(o: Orchestra) {
           ...(o.canSubmit
             ? [
                 {
-                  name: 'submit_build',
-                  title: '提交编译',
+                  name: 'submit_merge',
+                  title: '合回原分支',
                   description:
-                    '改完、在独立分支里做完快速检查后调用：面板把你现在的改动提交到你的分支，排队合回原目录跑编译，通过才算合进去，失败会撤回并把报错推回给你。马上返回，不用干等结果。',
+                    '在独立分支里改完、编译测试都跑通后调用：面板把你现在的改动提交到你的分支，排队合回原分支（父对话所在的分支）。有冲突会撤回并把冲突推回给你。马上返回，不用干等结果。',
                   inputSchema: {
                     type: 'object',
                     properties: {
                       note: { type: 'string', description: '这次改了什么，一句话' },
-                      small: {
-                        type: 'boolean',
-                        description:
-                          '小改动（文案、样式、一两处局部修改）时为 true：合并时只跑标了「小改动也跑」的步骤',
-                      },
                     },
                   },
                 },
@@ -562,8 +557,10 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.beginEdit()
       return text(r.info, !r.ok)
     }
+    // submit_build 是旧名字：保活的 CLI 进程拿的还是旧工具列表
+    case 'submit_merge':
     case 'submit_build': {
-      const r = await o.submitBuild(str(a?.note), a?.small === true)
+      const r = await o.submitMerge(str(a?.note))
       return text(r.info, !r.ok)
     }
     case 'message_parent': {
@@ -672,7 +669,7 @@ export function orchHint(o: Orchestra) {
   const child =
     bg +
     (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_build 改完提交编译（结果会推回来）、' : ''}message_parent 向父对话汇报或提问；`
+      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_merge 验证通过后合回原分支（结果会推回来）、' : ''}message_parent 向父对话汇报或提问；`
       : '')
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'

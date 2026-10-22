@@ -19,7 +19,6 @@ import {
   defaultAgent,
 } from '../shared/schema.ts'
 import { readGlobalLessons, type LessonDraft } from './lessons.ts'
-import { currentShell } from './shells.ts'
 import { blockedStep, entryFlow, taskFlow, taskWorkflows, topoOrder } from '../shared/flow.ts'
 import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
@@ -52,6 +51,7 @@ import {
   cancelWait,
   deliverWait,
   forgetNotes,
+  noPushEnv,
   runRealTurn,
   steerTask,
   type RealContext,
@@ -80,8 +80,6 @@ import {
   trialMerge,
   checkRepo,
 } from './exec/worktree.ts'
-import { runMergeSteps } from './merge-build.ts'
-import { mergeStepsFor } from '../shared/test-steps.ts'
 import { createBackground } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -676,20 +674,18 @@ export function tasksApi(deps: {
   }
 
   /**
-   * 子对话提交编译：把它独立分支上的改动试合回开分支的那个目录，跑「合并时编译」的步骤，
-   * 通过才提交，失败就撤回合并、原目录保持原样。排队执行，结果推回给子对话，也告诉父对话。
-   * 马上返回排队情况，子对话不用干等编译
+   * 子对话把改动合回原分支：先提交到它自己的分支，再排队试合回开分支的那个目录（父对话所在的分支）。
+   * 编译、测试子对话已经在自己的独立分支里跑过，这里只合并：有冲突就撤回、原目录保持原样，把冲突推回给子对话。
+   * 马上返回排队情况，结果推回给子对话，也告诉父对话
    */
-  async function submitBuild(childId: string, note: string, small = false): Promise<{ ok: boolean; info: string }> {
+  async function submitMerge(childId: string, note: string): Promise<{ ok: boolean; info: string }> {
     const tk = live.get(childId)?.task ?? (await store.get(childId))
-    if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能提交编译' }
-    if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
-    const project = await deps.projects.get(tk.projectId)
-    if (!project) return { ok: false, info: '项目已经不存在' }
+    if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能合回原分支' }
+    if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
     const parentId = tk.parentTaskId
     const ahead = mergeWaiting.get(parentId) ?? 0
     const wt = tk.worktree!
-    // 先把现在的改动提交到它自己的分支：之后再改的不在这次编译里
+    // 先把现在的改动提交到它自己的分支：之后再改的不在这次合并里
     try {
       await commitWorktree(wt, `Agent 面板：${tk.title}${note ? ` — ${note.slice(0, 60)}` : ''}`)
     } catch (e) {
@@ -698,30 +694,24 @@ export function tasksApi(deps: {
     void mergeLock(parentId, async () => {
       const parent = live.get(parentId)?.task ?? (await store.get(parentId))
       if (!parent) return
-      // 项目关掉了「按改动大小验证」时不认小改动，照常全跑
-      const r = await integrate(tk, parent, project, small && project.scaledVerify)
-      const head = r.ok ? `合并编译通过：${r.info}` : `合并编译没通过：${r.info}`
+      const r = await integrate(tk, parent)
+      const head = r.ok ? `已合回原分支：${r.info}` : `没能合回原分支：${r.info}`
       await sendToChild(
         parentId,
         childId,
-        `【面板】${head}${r.ok ? '' : '\n在你的分支里修好后再调用 submit_build 提交一次。'}`,
+        `【面板】${head}${r.ok ? '' : '\n在你的分支里处理好后再调用 submit_merge。'}`,
         'build',
       )
       await noteParent(parentId, tk, `子对话「${tk.title}」${head.split('\n')[0]}`, head.slice(0, 2000))
-    }).catch((e) => log.error('task', '合并编译出错', { task: childId, error: (e as Error).message }))
+    }).catch((e) => log.error('task', '合回原分支出错', { task: childId, error: (e as Error).message }))
     return {
       ok: true,
-      info: `已提交编译${ahead ? `，前面还有 ${ahead} 个在排队` : ''}。结果会推回给你，等待期间可以先做别的（这次提交之后再改的文件要再提交一次）。`,
+      info: `已提交合并${ahead ? `，前面还有 ${ahead} 个在排队` : ''}。结果会推回给你（这次提交之后再改的文件要再合一次）。`,
     }
   }
 
-  /** 一次合并 + 编译：试合并 → 跑合并时编译的步骤 → 通过提交 / 失败撤回 */
-  async function integrate(
-    tk: Task,
-    parent: Task,
-    project: Project,
-    small: boolean,
-  ): Promise<{ ok: boolean; info: string }> {
+  /** 一次合并：试合并 → 提交；冲突或原目录状态不对就撤回，原目录不变 */
+  async function integrate(tk: Task, parent: Task): Promise<{ ok: boolean; info: string }> {
     const wt = tk.worktree!
     const target = await taskDir(parent)
     // 从哪开的分支就合回哪：原目录后来换了分支就不合，免得合到别的分支上
@@ -729,43 +719,22 @@ export function tasksApi(deps: {
     if (wt.baseBranch && now !== wt.baseBranch)
       return {
         ok: false,
-        info: `原目录现在在「${now || '分离的 HEAD'}」，不是开分支时的「${wt.baseBranch}」，没有合并。切回「${wt.baseBranch}」后再提交。`,
+        info: `原目录现在在「${now || '分离的 HEAD'}」，不是开分支时的「${wt.baseBranch}」，没有合并。切回「${wt.baseBranch}」后再合。`,
       }
     const blocked = await mergeBlocker(target)
-    if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再提交。` }
+    if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再合。` }
     const m = await trialMerge(target, wt.branch)
     if (!m.ok)
       return {
         ok: false,
         info: m.dirty
-          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边提交后再提交。\n${m.error}`
-          : `合回原目录时和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突并提交，再调用 submit_build。\n${m.error}`,
+          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边处理后再合。\n${m.error}`
+          : `和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突、重新跑一遍验证并提交，再调用 submit_merge。\n${m.error}`,
       }
-    if (m.nothing) return { ok: true, info: '分支上没有新的改动，原目录已经是最新的' }
-    const { run: steps, skipped } = mergeStepsFor(project.testSteps, small)
-    const built = steps.length
-      ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro, shell: await currentShell() })
-      : { ok: true, runs: [] }
-    if (!built.ok) {
-      await abortMerge(target)
-      const bad = built.runs.at(-1)!
-      return {
-        ok: false,
-        info: `「${bad.name}」失败，已撤回合并，原目录没有改动。\n${built.runs
-          .filter((x) => x.ok)
-          .map((x) => `✓ ${x.name}`)
-          .join('\n')}\n✗ ${bad.name}\n\n\`\`\`\n${bad.tail}\n\`\`\``,
-      }
-    }
+    if (m.nothing) return { ok: true, info: '分支上没有新的改动，原分支已经是最新的' }
     try {
       const sha = await commitMerge(target, `Agent 面板：合并「${tk.title}」`)
-      const ran = built.runs.map((x) => `✓ ${x.name}（${Math.round(x.ms / 1000)} 秒）`).join('\n')
-      return {
-        ok: true,
-        info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${
-          ran ? `\n${ran}` : '\n项目没有标「合并时编译」的测试步骤，只合并没有编译。'
-        }${skipped.length ? `\n小改动，跳过了：${skipped.map((x) => x.name).join('、')}` : ''}`,
-      }
+      return { ok: true, info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。` }
     } catch (e) {
       await abortMerge(target)
       return { ok: false, info: `合并后提交失败，已撤回：${(e as Error).message}` }
@@ -811,7 +780,7 @@ export function tasksApi(deps: {
     // 在独立分支里做完的：提醒父对话看过结果后合回来
     const merge =
       isolated(task) && task.status === 'done'
-        ? `\n（它在独立分支 ${task.worktree!.branch} 里改；改动要它调用 submit_build 合回原目录编译通过后才算进去）`
+        ? `\n（它在独立分支 ${task.worktree!.branch} 里改；改动要它调用 submit_merge 合回原分支后才算进去）`
         : ''
     const text = `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}${merge}`
     await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`, {
@@ -1142,6 +1111,8 @@ export function tasksApi(deps: {
     // 不用 Agent 角色的对话（agentId 为空）按默认 Agent 的配置算，CLI、模型取任务里选的那一套
     const startAgent = task.agentId ? agents.find((a) => a.id === task.agentId) : { ...defaultAgent(), id: '' }
     const startedRun = startAgent ? agentRun(withTaskModel(startAgent, task), settings) : undefined
+    // 项目里用分派角色（统筹）的顶层对话就是父对话：只统筹，不改文件
+    const coordinatorRole = !task.parentTaskId && !!task.projectId && !!startAgent?.canDelegate
     let last = 0
     // 预热退出要恢复列表时间：最后一次写不能把它改成现在
     const flush = (keepUpdatedAt = false) =>
@@ -1212,8 +1183,7 @@ export function tasksApi(deps: {
           : undefined,
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
-        submitBuild:
-          task.parentTaskId && isolated(entry.task) ? (note, small) => submitBuild(task.id, note, small) : undefined,
+        submitMerge: task.parentTaskId && isolated(entry.task) ? (note) => submitMerge(task.id, note) : undefined,
         // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑
         verify:
           task.mode === 'chat' && found?.id
@@ -1224,14 +1194,17 @@ export function tasksApi(deps: {
                 scaled: found.scaledVerify,
               }
             : undefined,
+        // 父对话（统筹）不改文件、不开独立分支：就在项目目录的当前分支上，子对话从这里开、合回这里
         beginEdit:
-          task.mode === 'chat' && entry.task.wantsWorktree && !isolated(entry.task)
+          task.mode === 'chat' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
             ? () => beginEdit(entry, changed)
             : undefined,
+        noEdit: coordinatorRole,
+        branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
           task.mode === 'chat' && dir
-            ? async (input) => background.start({ ...input, taskId: task.id, root: dir })
+            ? async (input) => background.start({ ...input, taskId: task.id, root: dir, env: noPushEnv(entry.task) })
             : undefined,
         checkBackground: (id) => background.check(task.id, id),
         // 独立分支里的子对话改不到别人的文件，不用认领；要改时才开分支的也一样
@@ -1271,13 +1244,6 @@ export function tasksApi(deps: {
         },
         createConversation: async ({ title, message, files }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
-          // 父对话勾了独立分支、自己还没开：开第一个子对话前先建好，子对话从它开、合回它；
-          // 不然子对话会绕过父对话的分支，直接合进项目目录
-          if (entry.task.wantsWorktree && !isolated(entry.task)) {
-            const err = await openWorktree(entry.task)
-            if (err) return { ok: false, info: `开父对话的独立分支失败，没有新建子对话：${err}` }
-            changed(true)
-          }
           const worker = agents.find((a) => a.origin === 'builtin:worker')
           const subId = randomUUID()
           const at = new Date().toISOString()
@@ -1776,7 +1742,9 @@ export function tasksApi(deps: {
     // 这里是顶层对话选的独立分支（子对话由项目设置决定）。
     // 对话要改文件时才建：先在项目目录里看代码、回答问题，用不着改就不白开一个分支；
     // 工作流的节点一开始就会改，创建时直接建好
-    if (input.isolate && !parent && input.projectId) {
+    // 父对话（分派角色）不开独立分支：它不改文件，子对话各自开
+    const coordinator = !!agents.find((a) => a.id === input.agentId)?.canDelegate
+    if (input.isolate && !parent && input.projectId && !coordinator) {
       try {
         if (input.mode === 'chat') {
           await checkRepo(project.path)
@@ -2287,6 +2255,35 @@ export function tasksApi(deps: {
     const cur = e?.task ?? (await store.get(id))
     if (!cur) return bad(c, t('任务不存在'), 404)
     if (cur.imported && Object.keys(p.data).some((k) => k !== 'title' && k !== 'archived')) return bad(c, READONLY, 409)
+    // 子对话标记完成：它的独立分支跟着删掉。改动还没合回原分支时不标，免得把没合的改动一起删了
+    if (p.data.resolved === true && cur.parentTaskId && isolated(cur)) {
+      const project = await deps.projects.get(cur.projectId)
+      const st = project ? await worktreeStatus(project.path, cur.worktree!).catch(() => null) : null
+      if (project && st && !st.merged)
+        return bad(
+          c,
+          t(
+            '这个子对话的独立分支还有没合回原分支的改动（{n} 个提交、{d} 个未提交的文件）：先合并或删除分支，再标记完成',
+            {
+              n: st.ahead,
+              d: st.dirty,
+            },
+          ),
+          409,
+        )
+      if (project) {
+        if (e?.task.working) return bad(c, t('对话正在执行，等这一轮结束后再标记完成'), 409)
+        if (e) {
+          if (!cancelWait(id)) stopTask(id)
+          await e.done?.catch(() => {})
+        }
+        await background.stop(id)
+        await removeWorktree(project.path, cur.worktree!, true).catch((err) =>
+          log.warn('task', '标记完成时删除独立分支失败', { task: id, error: (err as Error).message }),
+        )
+        cur.worktree = { ...cur.worktree!, state: 'merged', note: cur.worktree!.baseBranch }
+      }
+    }
     // 归档：只拦正在执行这一轮的；CLI 只是活着（等下一句、预热）时照样归档，顺手结束这个进程和它名下的子对话
     if (p.data.archived === true && e) {
       if (e.task.working) return bad(c, t('对话正在执行，等这一轮结束或停止后再归档'), 409)

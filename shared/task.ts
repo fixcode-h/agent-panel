@@ -452,6 +452,19 @@ function dayLabel(d: Date, now: Date, loc: string) {
  * 列表用的任务摘要：侧栏、项目首页只要标题、状态、进度和用量。去掉消息内容、节点输出这些大块数据，
  * 只留第一条要求（截短）给搜索用。打开任务时再取完整内容。
  */
+/**
+ * 对话派出的子任务（spawn_agents 的步骤）还在跑：CLI 这一轮已经回复完（working 已是 false），
+ * 但对话停在那里等它们交回结果，在侧栏和项目首页里也算「还在跑」
+ */
+export function helpersWorking(t: Pick<Task, 'status' | 'steps'>) {
+  return t.status === 'running' && t.steps.some((s) => s.slot === 'sub' && s.status === 'running')
+}
+
+/** 列表里的「执行中」：自己在执行、名下子对话在执行，或者在等它派出的子任务 */
+export function taskBusy(t: Pick<Task, 'status' | 'steps' | 'working' | 'childrenWorking'>) {
+  return t.working || !!t.childrenWorking || helpersWorking(t)
+}
+
 export function taskSummary(t: Task): Task {
   const first = t.messages.find((m) => m.role === 'user')
   return {

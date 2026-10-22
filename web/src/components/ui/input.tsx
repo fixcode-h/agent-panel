@@ -4,6 +4,7 @@ import * as P from '@radix-ui/react-popover'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { HelpTip } from './help-tip'
 
 export const fieldClass =
   'w-full rounded-lg border border-line-strong bg-field px-3 text-sm text-fg placeholder:text-subtle ' +
@@ -238,19 +239,25 @@ export function ComboInput({
 export function Field({
   label,
   hint,
+  tip,
   error,
   children,
   className,
 }: {
   label: string
   hint?: React.ReactNode
+  /** 复杂项的说明：标签后面一个问号，鼠标移上去才显示，不占一行 */
+  tip?: React.ReactNode
   error?: string
   children: React.ReactNode
   className?: string
 }) {
   return (
     <label className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <span className="text-xs text-muted">{label}</span>
+      <span className="flex items-center gap-1 text-xs text-muted">
+        {label}
+        {tip && <HelpTip>{tip}</HelpTip>}
+      </span>
       {children}
       {error ? (
         <span className="text-xs text-danger">{error}</span>

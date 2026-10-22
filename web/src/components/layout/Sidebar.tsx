@@ -60,7 +60,7 @@ import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { byAskedAt } from '@shared/task'
+import { byAskedAt, taskBusy } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
@@ -377,7 +377,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   }
   // 一键清理：只动这个项目下没在执行的对话（子对话在跑的父对话也算在执行，删它会连带结束子对话）
   const [bulk, setBulk] = useState<{ project: Project; action: 'archive' | 'delete'; n: number }>()
-  const idleTasks = (pid: string) => recent.filter((x) => x.projectId === pid && !x.working && !x.childrenWorking)
+  const idleTasks = (pid: string) => recent.filter((x) => x.projectId === pid && !taskBusy(x))
   const runBulk = async () => {
     if (!bulk) return
     const { project, action } = bulk
@@ -610,7 +610,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           {allOpen &&
             groups.map(([pid, ts], gi) => {
               const open = !folded.has(pid)
-              const running = ts.filter((t) => t.working).length
+              const running = ts.filter((t) => taskBusy(t)).length
               // 收起「更多」时也要露出正在看的那个任务
               const shown = more.has(pid)
                 ? ts

@@ -145,9 +145,21 @@ export const EN_APP: Record<string, string> = {
   请选择工作流: 'Choose a workflow',
   可选工作流: 'Optional workflows',
   'AI 分析这个目录': 'Analyze this folder',
-  '只读扫描，按文件判断技术栈、构建和测试命令，填进下面的表单':
-    'Read-only scan: infers the stack, build and test commands from the files and fills in the form below',
-  '已按本地目录填好，检查一下再保存': 'Filled in from the folder. Review it, then save',
+  '让 AI 只读地看一遍这个目录，判断技术栈、构建和测试命令，填进下面的表单和测试步骤；保存前你可以再改':
+    'Lets the AI look through this folder read-only, work out the stack and the build and test commands, and fill in the form and test steps below. You can still edit them before saving',
+  '已按 AI 的分析填好，检查一下再保存': "Filled in from the AI's analysis. Review it, then save",
+  'AI 分析项目': 'AI project analysis',
+  '看看这个项目是做什么的，把名称、简介和测试步骤填好':
+    'Find out what this project does, and fill in its name, description and test steps',
+  'UE 项目': 'UE project',
+  一般项目: 'General project',
+  没有找到可以直接执行的测试步骤: 'No runnable test steps found',
+  '在项目目录里只读分析，给出名称、简介、项目类型和测试步骤；确认后才填进表单':
+    "Reads the project folder (read-only) and suggests a name, description, project type and test steps. They're filled into the form only after you confirm",
+  '直接让它分析，或者说说你的要求。': 'Let it analyze right away, or tell it what you need.',
+  '补充要求，例如「端到端测试要在 WSL 里跑」': 'Add a requirement, e.g. "end-to-end tests run in WSL"',
+  分析结果会显示在这里: 'The analysis will appear here',
+  先选好项目目录: 'Choose the project folder first',
   '已填好，但没找到内置工作流「{name}」，请手动选择':
     'Filled in, but the built-in workflow "{name}" was not found. Choose one manually',
   版本与推送: 'Version control and push',

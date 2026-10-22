@@ -981,13 +981,7 @@ try {
       .getByRole('button', { name: /^测试步骤/ })
       .first()
       .click()
-    await check(p, '项目设置-测试步骤', [
-      'AI 生成步骤',
-      'WSL 发行版',
-      '合并时编译',
-      '小改动也跑',
-      '按改动大小决定验证范围',
-    ])
+    await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '小改动也跑', '按改动大小决定验证范围'])
     // 项目教训：演示项目里有手动记的和角色记的，按文件生效的显示范围
     await dlg
       .getByRole('button', { name: /^项目教训/ })

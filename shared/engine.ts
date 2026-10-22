@@ -305,13 +305,12 @@ export interface Orchestra {
     info: string
   }>
   checkBackground(id: string): string
-  /** 独立分支里的子对话：把改动交给面板合回原目录编译（排队，结果推回来） */
+  /** 独立分支里的子对话：验证通过后把改动交给面板合回原分支（排队，结果推回来） */
   canSubmit: boolean
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  /** small：Agent 判断是小改动，合并时只跑标了「小改动也跑」的合并步骤 */
-  submitBuild(note: string, small: boolean): Promise<{ ok: boolean; info: string }>
+  submitMerge(note: string): Promise<{ ok: boolean; info: string }>
   toParent(text: string, question: boolean, options?: string[]): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
@@ -406,12 +405,14 @@ export interface EngineHost {
   }) => Promise<{ ok: boolean; id?: string; title?: string; info: string }>
   /** 给已有子对话追加消息并异步执行 */
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
-  /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、合回原目录编译，claim 共用目录认领文件 */
+  /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、在里面验证完合回原分支，claim 共用目录认领文件 */
   childIsolation?: 'claim' | 'worktree'
+  /** 父对话所在目录现在的分支：父对话不开独立分支，子对话从这里开、合回这里 */
+  branch?: string
   /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。推送要先合到这里再从这里推 */
   worktreeHome?: string
-  /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
-  submitBuild?: (note: string, small: boolean) => Promise<{ ok: boolean; info: string }>
+  /** 独立分支里的子对话：合回原分支（面板排队试合并，有冲突撤回，结果推回子对话） */
+  submitMerge?: (note: string) => Promise<{ ok: boolean; info: string }>
   /**
    * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
    * 不传时提示里不带这一段（没有项目的聊天、在线演示）
@@ -813,16 +814,16 @@ function fileFormatPart(host: EngineHost) {
  * 放在最前面，按前缀匹配缓存的模型服务（Codex 等）能多命中一段
  */
 /**
- * 独立分支里的子对话（连同它的工作流节点）：分支只用来隔离改文件，里面没有编译产物和依赖的构建结果，
- * 编译、构建这类步骤交给面板合回原目录统一跑，不在这里跑
+ * 独立分支里的子对话（连同它的工作流节点）：编译、测试都在自己的分支目录里跑，验证通过后交给面板合回原分支。
+ * 分支目录是新检出的，没有依赖和编译产物，不说的话 Agent 会以为环境坏了
  */
 function buildPart(host: EngineHost) {
-  if (!host.submitBuild) return ''
-  return `## 编译交给面板
-你在独立分支的目录里改文件，这里只隔离编辑：不要在这里跑编译、构建、打包或会写构建产物的命令（UE 的 Build.bat、npm run build 这类），也不要为了编译去装依赖。
-- 可以跑不写构建产物的快速检查：类型检查、lint、单个文件的语法检查。
-- 改完一批后调用 submit_build：面板把改动排队合回原目录，按项目里标了「合并时编译」的步骤编译，通过才算合进去；失败会撤回，并把报错推回给你，在这里修好再提交一次。
-- 提交后不用干等，可以接着做别的部分；结果到了再处理。没有编译通过，不说完成。`
+  if (!host.submitMerge) return ''
+  return `## 在独立分支里验证，再合回原分支
+编译、测试都在你这个独立分支的目录里跑，不用交给别人。
+- 这个目录是新检出的，没有依赖和编译产物：第一次编译、测试前按项目的方式装好依赖（例如 npm ci），装出来的东西不要提交。
+- 按下面的「验证」跑通后先提交到你的分支，再调用 submit_merge：面板排队把它合回原分支（父对话所在的分支），有冲突会撤回并把冲突推回给你。
+- 合并结果推回来之前不说完成。不要推送这个分支（面板会拦下，git push 报 remote-agent-panel-no-push），也不要自己去原目录合并。`
 }
 
 /** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
@@ -833,7 +834,6 @@ function verifyPart(host: EngineHost) {
     platform: v.platform,
     wslDistro: v.wslDistro,
     scaled: v.scaled,
-    submit: !!host.submitBuild,
   })
 }
 
@@ -851,7 +851,7 @@ function editPart(host: EngineHost) {
 function backgroundPart(host: EngineHost) {
   if (!host.runBackground) return ''
   return `## 长命令放到后台
-预计超过一分钟的命令（完整测试、端到端测试、长时间的检查${host.submitBuild ? '' : '、编译'}）用 run_background 交给面板在后台跑，它马上返回，结果跑完会自动推回给你：
+预计超过一分钟的命令（完整测试、端到端测试、长时间的检查、编译）用 run_background 交给面板在后台跑，它马上返回，结果跑完会自动推回给你：
 - 等结果的时候接着做不依赖它的事：读代码、写文档、改和这条命令无关的文件。不要改这条命令要检查的文件，改了结果就不算数（面板会标出期间被改过）。
 - 编译、打包这类会抢文件锁的命令把 exclusive 设为 true，面板按项目排队，同一时间只跑一个。
 - 手上没有别的事时直接结束这一轮，结果到了会接着处理；不要反复调用 check_background 轮询。
@@ -2326,7 +2326,7 @@ function makeOrchestra(
     checkBackground(id) {
       return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
     },
-    canSubmit: !helper && !!host.submitBuild,
+    canSubmit: !helper && !!host.submitMerge,
     // 只有对话自己能开：派出去的子角色、计划里的节点中途换目录，会和对话本身对不上
     canBeginEdit: !!host.beginEdit && !!ctx.chat && !self.parentId,
     async beginEdit() {
@@ -2335,11 +2335,11 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitBuild(note, small) {
-      if (!host.submitBuild) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
-      const r = await host.submitBuild(note.trim(), small)
+    async submitMerge(note) {
+      if (!host.submitMerge) return { ok: false, info: '你没有独立分支，改动已经在原目录里，不用合并' }
+      const r = await host.submitMerge(note.trim())
       if (r.ok) {
-        system(host, t('已提交编译，等面板合回原目录编译'), where)
+        system(host, t('已提交合并，等面板合回原分支'), where)
         host.changed(true)
       }
       return r
@@ -2758,12 +2758,12 @@ async function conversationPrompt(
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
 ${
   host.task.parentTaskId
-    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译不在这里跑，改完用 submit_build 交给面板合回原目录编译，见下面的「编译交给面板」。'
+    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
-不要推送这个独立分支。用户要求推送时，先把它合回原分支${
+不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
           host.task.parentTaskId
-            ? '（调用 submit_build，合并编译通过后改动就在原分支上了）'
+            ? '（调用 submit_merge，合进去后改动就在原分支上了）'
             : `（在原目录里 git merge --no-ff ${wt.branch}）`
         }，再在原目录${host.worktreeHome ? ` ${host.worktreeHome}` : ''}里推送原分支。
 ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
@@ -2781,7 +2781,6 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
   ]
   if (coordinator) {
     const list = host.listConversations ? await host.listConversations() : []
-    const busy = list.filter((c) => c.busy)
     parts.push(
       `## 现有子对话\n${
         list.length
@@ -2793,26 +2792,32 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
               .join('\n')
           : '（还没有子对话）'
       }`,
-      `## 这条消息怎么处理
+      `## 你的定位：父对话只统筹，不动手
+你是项目的父对话，负责理解用户的意思、收集上下文、分派和汇总；改代码、编译、测试、找具体的 Bug 都交给子对话。
+- 不修改、新建或删除任何文件，也不跑会写文件的命令（编译、安装依赖、格式化、提交）。看代码、搜索、跑只读命令（git log、git diff 这类）可以。
+- 你就在项目目录的当前分支${host.branch ? `「${host.branch}」` : ''}上，不开独立分支。子对话从这个分支开出自己的独立分支，验证通过后合回这里。
+- 推送：子对话的分支不推。用户明确要求推送时，由你在这里推送当前分支。
+
+## 这条消息怎么处理
 1. 先判断它和现有子对话的关联强度：相关就调用 send_to_conversation，把消息交给最合适的那个子对话。
-2. 现有子对话都不相关，而且需要修改代码或者做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起，message 写完整的需求和背景；子对话会按项目的默认工作流列计划并执行。
+2. 现有子对话都不相关，要改代码、要排查问题或者要做较大的研究：调用 create_conversation 新建一个子对话，标题由你分析后起；子对话会自己列计划并执行。改动再小（一行、一个文案）也交给子对话。
 3. 只是一般问题、讨论、查询：自己回答。
-4. 很小的改动（改一两行、改个文案）：${
-        busy.length
-          ? `现在有子对话在执行（${busy.map((c) => `「${c.title}」`).join('、')}），你不要自己改任何文件，再小也交给子对话（有相关的就交给它）。你所在的目录是子对话合并、编译的地方，这时改文件会和它们的合并撞上。看代码、跑只读命令照常可以。`
-          : '现在没有子对话在执行，可以自己当场改，比新建子对话快。改完马上提交（只 add 自己改的文件），不要把没提交的改动留在目录里，之后子对话的改动要合进这里。在这一轮里新建了子对话之后就不要再改文件。'
-      }
 一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
-分派时把你已经查到的东西一起交过去：相关文件和行号、已经确认的结论、用户的原话和验收标准都写进 message，子对话不用从头再摸一遍。Bug 例外：你只定位到模块，不去找具体是哪一行，把现象、复现步骤、报错原文和模块的入口交过去，由子对话从这个模块开始逐层定位。
+
+## 分派前只收集到模块为止
+分派前花少量时间把方向找准就交出去，不要自己把问题分析到底：
+- 找出这件事涉及的大体模块和入口文件（目录、主要文件），相关的文档（设计说明、AGENTS.md 里的约定、docs 里的说明）。
+- 不去定位具体是哪一行、哪个函数出的错，不写修改方案的细节，不读完整个模块；这些交给子对话。
+- message 里写：用户的原话和验收标准、现象 / 复现步骤 / 报错原文（有的话）、你找到的模块和入口文件、相关文档的路径。
 
 ${
   host.childIsolation === 'worktree'
     ? `## 子对话各自在独立分支里改
-要改代码的子对话都有自己的独立分支目录，只用来隔离改文件，互相看不到对方改到一半的文件。
-- 编译不在子对话里跑：子对话改完调用 submit_build，面板排队把它合回原目录（这个对话所在的目录）试编译，通过才提交，失败撤回并把报错推回给那个子对话。一次只合一个，相当于构建锁。
-- 每次合并编译的结果会告诉你。子对话反复失败、或者报错其实是别的子对话的改动引起的，由你协调。
-- 几个子对话都合进去之后，需要的话派「测试验收」在原目录里跑一遍完整的测试。
-- 合并编译通过时面板已经在原分支上提交了，你不用另外提交。子对话不推送；用户要求推送时由你在原目录推原分支，不推子对话的分支。`
+要改代码的子对话都有自己的独立分支目录，互相看不到对方改到一半的文件。
+- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支，有冲突撤回并推回给那个子对话。一次只合一个。
+- 每次合并的结果会告诉你。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
+- 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
+- 合并时面板已经在这个分支上提交了，你不用另外提交。`
     : `## 子对话共用一个目录
 所有子对话都在同一个目录里直接改，不建独立分支。为了不互相覆盖：
 - 新建子对话时用 files 写清它负责的文件或目录（相对项目根），面板替它认领；别的子对话改这些文件要等它做完。

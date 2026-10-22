@@ -24,6 +24,8 @@ export interface BgJob {
   lines: string[]
   /** 跑的期间工作目录里的文件变了：结果可能已经不准 */
   changed: boolean
+  /** 额外的环境变量（子对话的独立分支禁止推送） */
+  env?: { key: string; value: string }[]
 }
 
 /** 没有限时的后台命令最多跑多久 */
@@ -79,6 +81,7 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
       shell: await currentShell(),
       timeoutMs: MAX_MS,
       signal: ac.signal,
+      env: j.env,
       onLine: (l) => {
         j.lines.push(l)
         if (j.lines.length > KEEP_LINES) j.lines.splice(0, j.lines.length - KEEP_LINES)
@@ -105,7 +108,15 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
 
   return {
     /** 排一条后台命令，马上返回；root 是对话的目录（cwd 相对它），也是比较文件有没有变的范围 */
-    start(input: { taskId: string; name: string; command: string; cwd: string; root: string; exclusive: boolean }) {
+    start(input: {
+      taskId: string
+      name: string
+      command: string
+      cwd: string
+      root: string
+      exclusive: boolean
+      env?: { key: string; value: string }[]
+    }) {
       const cwd = path.resolve(input.root, input.cwd || '.')
       if (path.relative(input.root, cwd).startsWith('..')) return { ok: false, info: 'cwd 不能跳出当前目录' }
       const j: BgJob = {
@@ -115,6 +126,7 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
         command: input.command,
         cwd,
         exclusive: input.exclusive,
+        ...(input.env?.length ? { env: input.env } : {}),
         state: 'queued',
         code: null,
         startedAt: '',

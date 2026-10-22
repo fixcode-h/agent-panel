@@ -85,7 +85,7 @@ export function worktreeSummary(item: WorktreeItem) {
 function aiMergeText(item: WorktreeItem) {
   const base = item.baseBranch || '原分支'
   const last = item.child
-    ? '3. 调用 submit_build，交给面板合回原目录编译，通过后才算合并完成。'
+    ? '3. 按项目的测试步骤在独立分支里验证通过后调用 submit_merge，交给面板合回原分支。'
     : `3. 到原目录 ${item.home} 里（应该在「${base}」分支上）执行 git merge --no-ff ${item.branch}。原目录有未提交的改动挡住时先停下告诉我，不要丢弃它们。`
   return `请把独立分支 ${item.branch} 合并回「${base}」：
 1. 先把独立分支目录里还没提交的改动提交到这个分支。

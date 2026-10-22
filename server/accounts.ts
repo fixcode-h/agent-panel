@@ -1054,7 +1054,10 @@ export function accountsApi() {
             baseUrl: true,
             apiKey: true,
             authHeader: true,
-          }).safeParse(await c.req.json())
+          })
+            // 名字只用来认自带厂家，没填时按地址取模型列表
+            .partial({ name: true })
+            .safeParse(await c.req.json())
           if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
           return c.json({ models: await fetchApiModels(p.data) })
         }),
