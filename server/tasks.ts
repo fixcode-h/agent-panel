@@ -91,6 +91,8 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
+import { settleWait, waitNote } from '../shared/plan.ts'
+import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
 import { createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
@@ -502,10 +504,50 @@ export function tasksApi(deps: {
     }
   }
 
-  /** 父对话的聊天里记一条系统消息并放进收件箱：它正在执行就实时交给它 */
-  async function noteParent(parentId: string, from: Task, text: string, inboxText = text) {
+  /**
+   * 父对话的聊天里记一条系统消息并放进收件箱：它正在执行就实时交给它。
+   * settle：父对话计划里有步骤在等这个子对话时，按结果标完成或退回进行中，并马上让父对话处理（空闲就开一轮），不放进收件箱干等
+   */
+  async function noteParent(
+    parentId: string,
+    from: Task,
+    body: string,
+    inboxText = body,
+    settle?: { kind: PlanWait['kind']; ref: string; ok: boolean },
+  ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
+    const hit = settle ? settleWait(parent, settle.kind, settle.ref, settle.ok) : []
+    const text = waitNote(hit) + body
+    if (hit.length) {
+      const entry = live.get(parent.id)
+      parent.updatedAt = new Date().toISOString()
+      if (entry) entry.rev++
+      await store.update(parent.id, parent).catch(() => {})
+      try {
+        if (entry?.task.status === 'running') {
+          await deliver(
+            entry,
+            {
+              id: randomUUID(),
+              role: 'system',
+              agentId: '',
+              step: '',
+              text,
+              tools: [],
+              panel: 'child',
+              at: new Date().toISOString(),
+            },
+            text,
+            [],
+          )
+        } else await followUp(parent.id, { text, attachments: [], panel: 'child' })
+        return
+      } catch (e) {
+        // 父对话这会儿被别的操作占着：退回收件箱，它下一轮开始时一起处理
+        log.warn('task', '计划步骤等的结果没能马上交给父对话', { task: parent.id, error: (e as Error).message })
+      }
+    }
     const msg: TaskMessage = {
       id: randomUUID(),
       role: 'system',
@@ -588,10 +630,18 @@ export function tasksApi(deps: {
    * 后台命令跑完把结果推回发起的对话：子对话按父对话投递的路子走（正在跑就实时送达，空闲就占名额开新一轮），
    * 顶层对话正在跑就实时送达，空闲就直接开新的一轮接着干
    */
-  const background = createBackground((job, text) => {
+  const background = createBackground((job, result) => {
     void (async () => {
       const tk = live.get(job.taskId)?.task ?? (await store.get(job.taskId))
       if (!tk || tk.archived) return
+      // 计划里有步骤在等这条命令：成功标完成、失败退回进行中，推回的结果点名先处理这一步
+      const hit = settleWait(tk, 'background', job.id, job.state === 'done')
+      const text = waitNote(hit) + result
+      if (hit.length) {
+        const entry = live.get(tk.id)
+        if (entry) entry.rev++
+        else await store.update(tk.id, tk)
+      }
       // 结果交给 CLI，但不是用户说的话：记成面板消息，对话里显示成 AI 回复里的一行
       if (tk.parentTaskId) {
         await sendToChild(tk.parentTaskId, tk.id, text, 'background')
@@ -743,7 +793,11 @@ export function tasksApi(deps: {
         ? `\n（它在独立分支 ${task.worktree!.branch} 里改；改动要它调用 submit_build 合回原目录编译通过后才算进去）`
         : ''
     const text = `子对话「${task.title}」${status}${summary ? `：\n${summary}` : ''}${merge}`
-    await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`)
+    await noteParent(task.parentTaskId, task, text, `${status}${summary ? `：${summary}` : ''}`, {
+      kind: 'child',
+      ref: task.id,
+      ok: task.status === 'done',
+    })
   }
 
   /**

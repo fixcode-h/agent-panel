@@ -127,6 +127,10 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
+  await p.getByRole('button', { name: '执行计划' }).click()
+  await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
+  await p.keyboard.press('Escape')
   // 窄版右栏的右键菜单：能弹出，而且整个菜单都在视口里（不能溢出去）
   {
     const compactRow = p.locator('button[title="package.json"]').first()

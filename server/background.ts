@@ -146,6 +146,7 @@ export function createBackground(onDone: (job: BgJob, text: string) => void) {
       } else void run(j, input.root)
       return {
         ok: true,
+        id: j.id,
         info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}。跑完结果会自动推回给你，先去做不依赖它的事。`,
       }
     },

@@ -30,6 +30,7 @@ import {
   TaskPatch,
   NewTaskInput,
   Settings,
+  type PlanStatus,
   type Task,
   type TaskStep,
   type CliInstallJob,
@@ -2117,6 +2118,60 @@ function spreadSteps(t: Task) {
 }
 
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
+/** 演示里的执行计划：一份做完带总结的，一份正在做（一步在等端到端测试，一步展开着子步骤） */
+function demoPlans(task: Task) {
+  const at = (min: number) => new Date(Date.now() - min * 60_000).toISOString()
+  const item = (id: string, title: string, status: PlanStatus, start = 0, end = 0) => ({
+    id,
+    title,
+    status,
+    note: '',
+    waits: [],
+    startedAt: start ? at(start) : '',
+    endedAt: end ? at(end) : '',
+  })
+  task.plans = [
+    {
+      id: 'p1',
+      title: '定位角标不刷新的原因',
+      createdAt: at(40),
+      doneAt: at(30),
+      summary:
+        '角标读的是首次渲染时的购物车快照，加购后没有订阅 `cart:changed` 事件。已确认问题在 `CartBadge.tsx`，修复放到下一份计划里做。',
+      autoSummary: false,
+      steps: [
+        { ...item('1', '复现：连续加购三次看角标', 'done', 40, 37), children: [] },
+        { ...item('2', '找出角标的数据来源', 'done', 37, 30), children: [] },
+      ],
+    },
+    {
+      id: 'p2',
+      title: '修复购物车角标',
+      createdAt: at(28),
+      doneAt: '',
+      summary: '',
+      autoSummary: false,
+      steps: [
+        { ...item('1', '角标订阅购物车变化', 'done', 28, 20), children: [] },
+        {
+          ...item('2', '跑端到端测试', 'waiting', 20),
+          waits: [{ kind: 'background', ref: 'e2e01', label: '端到端测试', state: 'waiting' }],
+          children: [],
+        },
+        {
+          ...item('3', '补上加购后的单元测试', 'running', 18),
+          children: [
+            item('3.1', '覆盖连续加购', 'done', 18, 12),
+            item('3.2', '覆盖删除商品后角标归零', 'running', 12),
+            item('3.3', '覆盖未登录的本地购物车', 'pending'),
+          ],
+        },
+        { ...item('4', '整理改动和总结', 'pending'), children: [] },
+      ],
+    },
+  ]
+}
+
 async function seedTasks(d: Db) {
   const [shop, admin] = d.projects
   const fe = d.agents.find((a) => a.name === '前端开发')
@@ -2187,6 +2242,7 @@ async function seedTasks(d: Db) {
       true,
     )
     await done
+    demoPlans(task)
     back(task, 60 * 3)
   }
   if (shop) {

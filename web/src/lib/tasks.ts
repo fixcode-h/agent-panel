@@ -196,6 +196,13 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     case 'start_plan':
     case 'run_workflow':
       return as(t('启动工作流'), firstLine(a.input), 'other', text(a.input))
+    case 'set_plan': {
+      const n = Array.isArray(a.steps) ? a.steps.length : 0
+      // 展开看合并后的计划（工具结果里有），不看一段 JSON
+      return as(t('更新计划'), firstLine(a.title) || (n ? t('{n} 个步骤', { n }) : ''), 'other', '')
+    }
+    case 'finish_plan':
+      return as(t('计划总结'), firstLine(a.summary), 'other', text(a.summary))
     case 'close_run':
       return as(t('结束这次运行'), '')
     case 'get_status':

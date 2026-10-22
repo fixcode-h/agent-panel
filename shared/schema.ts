@@ -1093,6 +1093,56 @@ export const TaskTodo = z.object({
 })
 export type TaskTodo = z.infer<typeof TaskTodo>
 
+/**
+ * 对话的执行计划：对话分析完列出主步骤，每个主步骤最多再分一层子步骤。
+ * 完成的步骤锁死不再改；整份做完、写了总结后收起，之后的新内容开一份新计划。
+ * waiting：步骤在等后台命令、子对话这类耗时的结果，对话先去做下一步，结果回来再处理它
+ */
+export const PlanStatus = z.enum(['pending', 'running', 'waiting', 'done'])
+export type PlanStatus = z.infer<typeof PlanStatus>
+
+/** 步骤在等的东西：后台命令（编号）、子对话（id）；结果回来时按它找到步骤 */
+export const PlanWait = z.object({
+  kind: z.enum(['background', 'child']),
+  ref: z.string(),
+  label: z.string().default(''),
+  state: z.enum(['waiting', 'ok', 'failed']).default('waiting'),
+})
+export type PlanWait = z.infer<typeof PlanWait>
+
+export const PlanItem = z.object({
+  id: z.string(),
+  title: z.string(),
+  status: PlanStatus.default('pending'),
+  /** Agent 写的一句备注（在等什么、卡在哪），或者面板写的等待结果 */
+  note: z.string().default(''),
+  waits: z.array(PlanWait).default([]),
+  startedAt: z.string().default(''),
+  endedAt: z.string().default(''),
+})
+export type PlanItem = z.infer<typeof PlanItem>
+
+export const PlanStep = PlanItem.extend({
+  /** 子步骤；主步骤是一次工作流运行时为空，子步骤就是那次运行的节点（run） */
+  children: z.array(PlanItem).default([]),
+  /** 这个主步骤是第几次工作流运行（start_plan 启动的） */
+  run: z.number().int().optional(),
+})
+export type PlanStep = z.infer<typeof PlanStep>
+
+export const TaskPlan = z.object({
+  id: z.string(),
+  title: z.string().default(''),
+  steps: z.array(PlanStep).default([]),
+  createdAt: z.string(),
+  /** 所有步骤都完成的时间；没完成时为空 */
+  doneAt: z.string().default(''),
+  /** 计划完成后 Agent 写的总结（必须有）；auto 表示 Agent 没写、面板取了它最后的回复 */
+  summary: z.string().default(''),
+  autoSummary: z.boolean().default(false),
+})
+export type TaskPlan = z.infer<typeof TaskPlan>
+
 /** CLI 一次提的一个问题（Claude Code 的 AskUserQuestion 一次可以问几个） */
 export const AskQuestion = z.object({
   /** 很短的标签，多个问题时显示在页签上 */
@@ -1270,6 +1320,8 @@ export const TaskData = z.object({
     .default({ agents: {}, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0, costUsd: 0 }),
   /** CLI 维护的待办清单（Claude Code 的 TodoWrite、Codex 的计划），对话任务的进度看它 */
   todos: z.array(TaskTodo).default([]),
+  /** 对话的执行计划：最后一份没完成的是当前计划，之前的连同总结留着看 */
+  plans: z.array(TaskPlan).default([]),
   /** 任务开始时项目里已有的未提交改动（git numstat），统计改动时排除 */
   baseline: z.record(z.string(), z.string()).default({}),
   /** 任务创建时的工作流（连同引用的其他工作流）；之后改动、删除工作流不影响这个任务。旧任务没有 */

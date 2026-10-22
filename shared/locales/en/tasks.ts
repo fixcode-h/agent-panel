@@ -1,5 +1,25 @@
 /** 英文词典的一部分，键是中文原文 */
 export const EN_TASKS: Record<string, string> = {
+  // 执行计划
+  待做: 'To do',
+  进行中: 'In progress',
+  等待中: 'Waiting',
+  '等：{what}': 'Waiting on: {what}',
+  执行计划: 'Plan',
+  计划已完成: 'Plan complete',
+  '计划 {done}/{total}': 'Plan {done}/{total}',
+  '{n} 个在等待': '{n} waiting',
+  正在写总结: 'Writing summary',
+  '以前的计划 · {n}': 'Earlier plans · {n}',
+  总结: 'Summary',
+  '（AI 没写总结，取的是最后一条回复）': '(The AI wrote no summary; this is its last reply)',
+  '步骤都完成了，AI 正在写总结': 'All steps are done; the AI is writing the summary',
+  未命名的计划: 'Untitled plan',
+  '{done}/{total} 步': '{done}/{total} steps',
+  更新计划: 'Update plan',
+  '{n} 个步骤': '{n} steps',
+  计划总结: 'Plan summary',
+  '（AI 没有写总结）': '(The AI wrote no summary)',
   // 文件浏览
   文件: 'Files',
   关闭文件: 'Close files',

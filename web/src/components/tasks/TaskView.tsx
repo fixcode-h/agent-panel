@@ -59,6 +59,7 @@ import { AnalyzeDialog, EvolutionCard } from './Evolution'
 import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
 import { TaskPanel } from './TaskPanel'
+import { PlanButton } from './PlanPanel'
 import { TaskMeta } from './TaskMeta'
 import {
   DeleteTaskDialog,
@@ -1309,14 +1310,23 @@ export function TaskView({
                 )}
               </div>
 
-              {/* 子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间 */}
-              {!pane && !task.parentTaskId && children.length > 0 && (
+              {/* 计划和子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间 */}
+              {!pane && !task.parentTaskId && children.length > 0 ? (
                 <ChildrenBar
+                  lead={task.plans?.length ? <PlanButton task={task} /> : null}
                   children={children}
                   openChild={openChild}
                   onOpen={openChildIn}
                   onClose={() => openChildIn('')}
                 />
+              ) : (
+                task.plans?.length > 0 && (
+                  <div className="shrink-0 px-3 md:px-6">
+                    <div className="mx-auto flex max-w-(--content-w) items-center py-1.5">
+                      <PlanButton task={task} />
+                    </div>
+                  </div>
+                )
               )}
 
               <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
@@ -1595,11 +1605,14 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
  * 排序：正在执行的在上，其余按最近一条消息的时间倒序。
  */
 function ChildrenBar({
+  lead,
   children,
   openChild,
   onOpen,
   onClose,
 }: {
+  /** 排在「子对话」前面的东西（计划按钮），和它共用这一行 */
+  lead?: React.ReactNode
   children: ChildSummary[]
   openChild: string
   onOpen: (id: string) => void
@@ -1632,6 +1645,12 @@ function ChildrenBar({
       {/* 弹窗以这一行内容为基准：左边和「子对话」按钮对齐，不跟着外层的内边距和居中偏移走 */}
       <div className="relative mx-auto max-w-(--content-w)">
         <div className="flex items-center gap-2 py-1.5">
+          {lead && (
+            <>
+              {lead}
+              <span aria-hidden className="h-4 w-px shrink-0 bg-line" />
+            </>
+          )}
           <button
             type="button"
             aria-expanded={open}
