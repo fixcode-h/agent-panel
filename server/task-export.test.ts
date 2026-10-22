@@ -6,6 +6,7 @@ import {
   analysisPrompt,
   analysisReport,
   cacheHitRate,
+  cacheMismatch,
   applyChanges,
   demoEvolution,
   exportTask,
@@ -223,4 +224,15 @@ test('缓存命中率：分母是含缓存的输入合计，任何时候都不�
   // 口径对不上时（历史数据、某个 CLI 把未命中当输入）封顶到 100%，不把 3348% 交给用户
   assert.equal(cacheHitRate({ inputTokens: 100, cacheReadTokens: 3348 }), 1)
   assert.equal(cacheHitRate({ inputTokens: 0, cacheReadTokens: 500 }), 0)
+})
+
+test('缓存命中数超过输入合计时单独标记出来，不让封顶把口径错误藏掉', () => {
+  // 常态不提示
+  assert.equal(cacheMismatch({ inputTokens: 1000, cacheReadTokens: 600 }), false)
+  // 缓存命中是输入的 33 倍（Pi 旧记录里出现过）：这就是分子分母不同口径
+  assert.equal(cacheMismatch({ inputTokens: 100, cacheReadTokens: 3348 }), true)
+  // 旧记录里那组真实数据：842.3k 输入、74685.2k 缓存命中，88 倍
+  assert.equal(cacheMismatch({ inputTokens: 842_300, cacheReadTokens: 74_685_200 }), true)
+  // 没有输入时无法判断口径，不提示
+  assert.equal(cacheMismatch({ inputTokens: 0, cacheReadTokens: 500 }), false)
 })

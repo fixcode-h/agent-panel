@@ -132,7 +132,9 @@ export async function invokeCli(o: {
   // 「等下一句」现在由面板在自己这一轮结束时保活（见 keepAlive），工具留着给模型主动等的场景：
   // 模型在回复里调用它时，这一轮不结束、把进程留住，用户下一句交回同一个进程
   const nativeAsk = def.rpc?.nativeAsk
-  const notes = def.notes && !def.steer ? o.readNotes : undefined
+  // notes 与 steer 不互斥：steer 是控制消息，CLI 不在活跃轮次里时会返回 false，
+  // 这时补充消息就彻底丢了。两个通道都开，模型下一轮可以自己从 notes 取。
+  const notes = def.notes ? o.readNotes : undefined
   const wait = def.notes && !nativeAsk ? o.waitUser : undefined
   const own = (askable || notes || wait) && !nativeAsk
   if (def.mcp && (own || o.orch)) {

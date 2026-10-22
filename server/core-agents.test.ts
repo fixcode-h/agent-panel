@@ -74,6 +74,17 @@ test('通用约束：连续工具操作时要报告可见进度', () => {
   assert.match(rules, /模型没有返回思考内容时不要编造内部思考/)
 })
 
+test('通用约束：等待要有死的数字上限，超时判阻塞，不靠轮询耗时间', () => {
+  const rules = BUILTIN_AGENTS.find((a) => a.key === 'rules')!.agent.instructions
+  // 只写「不要轮询」拦不住：实际发生过连发 sleep 90/100/120/150/180 共 640 秒
+  assert.match(rules, /单次不超过 30 秒/)
+  assert.match(rules, /同一件事累计不超过 2 分钟/)
+  assert.match(rules, /超过 2 分钟没有新进展就判定阻塞/)
+  assert.match(rules, /不要自己写 `sleep` 循环轮询/)
+  // 自己验证过的结论不要再等子任务重复验证（那次空等 307 秒就属于这类）
+  assert.match(rules, /已经自己验证过结论时，不要再等子任务重复验证/)
+})
+
 test('必备角色：改了设定会被同步回内置定义，参数取值和运行配置保留', async () => {
   const m = memory()
   await ensureProjectAgents(m.state(), m.ops)

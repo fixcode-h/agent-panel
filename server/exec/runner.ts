@@ -479,6 +479,12 @@ export interface NetNote {
   n: number
 }
 
+/** 空回合续一轮前写进对话的提示：续上了也要收回成普通说明 */
+export interface EmptyNote {
+  msg: TaskMessage
+  base: string
+}
+
 /**
  * 续接成功了：之前那次断开的报错已经不成立，收成普通说明。
  * 不收的话对话里会一直挂着一张红色的「执行失败」卡片，用户以为这一轮失败了。
@@ -488,6 +494,18 @@ export function settleNetNotes(notes: NetNote[]) {
     msg.error = undefined
     msg.transient = true
     msg.text = [base, '', t('已自动续接会话（第 {n} 次），从中断的地方继续了。', { n })].join('\n')
+  }
+}
+
+/**
+ * 空回合续上的报错卡也一样的道理：续上了就说明这一轮其实做成了，
+ * 不能把「只回了一句话就结束了」一直留成红色失败卡片。
+ */
+export function settleEmptyNotes(notes: EmptyNote[]) {
+  for (const { msg, base } of notes) {
+    msg.error = undefined
+    msg.transient = true
+    msg.text = [base, '', t('已自动接一轮，这一轮继续做完了。')].join('\n')
   }
 }
 const NETWORK_ERROR =
@@ -566,6 +584,8 @@ async function runAgent(
   netNotes: NetNote[] = [],
   /** 这一轮「只说了要做」已经被自动续接几次：防止反复推同一个死循环 */
   emptyRetries = 0,
+  /** 空回合续一轮时写进对话的提示：续上了要收回成普通说明 */
+  emptyNotes: EmptyNote[] = [],
 ): Promise<AgentResult> {
   const { agentId, prompt, sessionKey } = call
   const step = call.step?.id ?? ''
@@ -1090,7 +1110,8 @@ async function runAgent(
   let taker: NoteTaker | undefined
   /** 登记了、CLI 还没取走的补充：消息已经在对话里，这一轮结束前没取走的交给下一轮接着处理 */
   const pendingNotes = new Set<TaskMessage>()
-  if (canTake && !def.steer) {
+  // notes 与 steer 不互斥：steer 在 CLI 不在活跃轮次时返回 false，补充会丢；两个通道都开（同样见 invoke.ts）
+  if (canTake) {
     taker = {
       add: (msg) => pendingNotes.add(msg),
       read: () => {
@@ -1463,9 +1484,9 @@ async function runAgent(
     }
   }
   // 这一轮模型只回了一句「我先…」就收尾了：没调工具、没改文件，等于什么都没做。
-  // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来
+  // 按「错误一律显示」的规矩，先把这件事写进对话，再自动接一轮催它立即动手；次数用完就报出来。
+  // 不限定对话：子 Agent（工作流节点、并行子任务）同样会只报一句进度就结束，那一路没人催就只能干等。
   if (
-    chat &&
     !op &&
     !prewarm &&
     !ctx.signal.aborted &&
@@ -1486,6 +1507,7 @@ async function runAgent(
         error: true,
         at: new Date().toISOString(),
       })
+      const pushed = task.messages.at(-1)!
       log.warn('agent', `${def.name} 只回了一句就结束，自动接一轮`, { task: task.id, step, n: emptyRetries + 1 })
       ctx.changed(true)
       return runAgent(
@@ -1501,6 +1523,7 @@ async function runAgent(
         retryCarry,
         netNotes,
         emptyRetries + 1,
+        [...emptyNotes, { msg: pushed, base: note }],
       )
     }
     const note = t(
@@ -1523,7 +1546,9 @@ async function runAgent(
   log.info('agent', `${def.name} 完成`, { task: task.id, step })
   // 续接成功了：之前那次断开的报错已经不成立，收成普通说明（否则对话里一直留着一张红色「执行失败」卡片）
   settleNetNotes(netNotes)
-  if (netNotes.length) ctx.changed(true)
+  // 空回合的提示同理：已经接一轮做完了，那张红卡不能挂着让人以为这一轮失败了
+  settleEmptyNotes(emptyNotes)
+  if (netNotes.length || emptyNotes.length) ctx.changed(true)
   const done: AgentResult = { ok: true, text: texts.join('\n\n') }
   // 赋成 undefined 而不是 delete：保存时和旧记录合并，delete 掉的字段会被旧值补回来
   if (rewind) task.rewind = undefined

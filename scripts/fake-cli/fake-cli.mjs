@@ -524,6 +524,11 @@ const file = `${kind}-output.txt`
 // 回复按当前 input 算：RPC 保活时同一进程会跑下一轮，input 已经换成新的那句
 const turnReply = () => {
   if (titleFor !== null) return `「${titleFor}·AI」`
+  // FAKE_EMPTY：第一轮只回一句「我先…」就收尾（复现模型只报准备语、不调工具），
+  // 面板催了之后（提示里带「只说了要做什么就结束了这一轮」）才正常回复。用来测空回合自动接一轮。
+  // 第一轮连工具都不发（noTools），否则 zero 工具永远不成立，这条分支就测不到。
+  if (input.includes('FAKE_EMPTY') && !input.includes('只说了要做什么就结束了这一轮'))
+    return '我先把工作区更新到最新，顺便确认分支和本地改动的基线。'
   const verdict = input.includes('最后单独一行写「验收结论')
     ? input.includes('第 1 轮验收')
       ? '\n验收结论：不通过'
@@ -606,6 +611,8 @@ if (input.includes('FAKE_NOTES') && !rpcMode && (kind === 'commandcode' || kind 
 
 // 一次性执行（stdin 传一个任务、跑一轮就退出）用的回复；RPC 保活时每轮用 turnReply() 重算
 const reply = turnReply()
+// 空回合：这一轮只回一句准备语，连工具都不调（复现「只回一句话就结束」）
+const emptyTurn = input.includes('FAKE_EMPTY') && !input.includes('只说了要做什么就结束了这一轮')
 
 // 真的 CLI 一开始就报告会话 id，慢的时候也先报，测试「中断恢复」要用
 if (slow && kind === 'claude')
@@ -1020,6 +1027,25 @@ if (kind === 'pi') {
 
 if (kind === 'claude') {
   out({ type: 'system', subtype: 'init', session_id: session, model: 'claude-fake', cwd: process.cwd() })
+  // 空回合：这一轮只说一句准备语就结束，不调任何工具（零工具 + 零改动才能触发面板的空回合判定）
+  if (emptyTurn) {
+    out({
+      type: 'stream_event',
+      event: { type: 'message_start', message: { id: 'm1', model: 'claude-fake', usage: { input_tokens: 10 } } },
+    })
+    out({ type: 'assistant', message: { id: 'm1', content: [{ type: 'text', text: reply }] } })
+    out({ type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 20 } } })
+    out({
+      type: 'result',
+      subtype: 'success',
+      is_error: false,
+      result: reply,
+      session_id: session,
+      total_cost_usd: 0,
+      usage: { input_tokens: 10, output_tokens: 20 },
+    })
+    process.exit(0)
+  }
   out({
     type: 'stream_event',
     event: {

@@ -38,6 +38,11 @@ export const ModelCatalogEntry = z.object({
   efforts: z.array(z.string().trim().min(1)).default([]),
   /** 这个模型默认用的思考强度 */
   defaultEffort: z.string().trim().default(''),
+  /**
+   * 能不能看图片。CLI 会读自己配置里的模型条目决定要不要把图片发给模型（Pi 看 input 里有没有 image），
+   * 面板写回配置时要照这个值写；不写表示目录里还没登记，按不支持处理
+   */
+  images: z.boolean().optional(),
   tier: z.enum(MODEL_TIER_NAMES).default('medium'),
   /** 其他可以匹配到这条记录的写法 */
   aliases: z.array(z.string().trim().min(1)).default([]),
@@ -389,6 +394,8 @@ export function modelLimitsFor(
   efforts: string[]
   defaultEffort: string
   tier: ModelTier
+  /** 能不能看图片；目录里没登记时为 undefined */
+  images?: boolean
   entry?: ModelCatalogEntry
   matched: boolean
 } {
@@ -400,6 +407,7 @@ export function modelLimitsFor(
         efforts: hit.entry.efforts,
         defaultEffort: hit.entry.defaultEffort,
         tier: hit.tier,
+        images: hit.entry.images,
         entry: hit.entry,
         matched: true,
       }

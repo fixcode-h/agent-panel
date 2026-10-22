@@ -705,6 +705,13 @@
         "key": "contextWindow",
         "maxOutputKey": "maxTokens"
       },
+      "modelInput": {
+        "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
+        "at": "providers.{provider}.models",
+        "key": "input",
+        "withImage": ["text", "image"],
+        "withoutImage": ["text"]
+      },
       "wire": {
         "anthropic": "anthropic-messages",
         "openai-responses": "openai-responses",

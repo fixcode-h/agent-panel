@@ -697,6 +697,32 @@ try {
   await waitDone(gm.id)
   c = calls().at(-1)
   assert.equal(c.args[c.args.indexOf('--resume') + 1], gm.sessions[gm.agentId], '继续时续接会话')
+  // 空回合：模型只回一句「我先…」就收尾（零工具、零改动），面板要先把这件事写进对话再自动接一轮；
+  // 接上之后模型正常交结果，那条报错卡片要收成普通说明，不能一直挂成失败
+  let emp = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: def.id,
+    cli: 'claude',
+    prompt: 'FAKE_EMPTY 看一下这个项目',
+  })
+  emp = await waitDone(emp.id)
+  assert.equal(emp.status, 'done', emp.messages.at(-1)?.text)
+  const empNotes = emp.messages.filter((m) => m.role === 'system' && !m.step)
+  const empNote = empNotes.find((m) => /只回了一句话就结束了/.test(m.text))
+  assert.ok(
+    empNote,
+    `自动接一轮要可见；现有消息：${JSON.stringify(
+      emp.messages.map((x) => [x.role, x.step, x.transient ?? false, x.error ?? false, x.text.slice(0, 30)]),
+    )}`,
+  )
+  assert.ok(!empNote.error, '接上之后不能还挂着红色错误卡片')
+  assert.match(empNote.text, /已自动接一轮，这一轮继续做完了/, '写明已经接一轮做完了')
+  const empAgent = emp.messages.filter((m) => m.role === 'agent')
+  assert.equal(empAgent.length, 2, '第一轮只说了一句 + 催促后的一轮')
+  assert.match(empAgent[0].text, /我先把工作区更新到最新/)
+  assert.match(empAgent[1].text, /这是 claude 的回复/, '被催之后正常交了结果')
+
   // Pi：按配置文件（shared/clis/pi.json）拼参数、走 --mode rpc（get_state / prompt / agent_settled）
   let pm = await call('POST', '/tasks', {
     projectId: project.id,
@@ -4372,11 +4398,12 @@ try {
       const rec = readLog(log + '.askbridge')
         .slice(before)
         .at(-1)
-      // Command Code 现在用 RPC 的 turn/steer 插话，只剩「等下一句」的 MCP 工具
+      // Command Code 现在用 RPC 的 turn/steer 插话；notes 与 steer 不再互斥，所以 read_user_notes 也注册了：
+      // steer 在 CLI 不在活跃轮次时返回 false，没这个兜底通道补充消息会丢
       // 编排工具也挂在同一个面板服务上，这里只看提问这一组
       assert.deepEqual(
         rec.tools.filter((n) => ['ask_user', 'wait_user_message', 'read_user_notes'].includes(n)),
-        cli === 'commandcode' ? ['ask_user', 'wait_user_message'] : ['ask_user'],
+        cli === 'commandcode' ? ['ask_user', 'read_user_notes', 'wait_user_message'] : ['ask_user'],
       )
       assert.match(rec.got, /想做什么？ → 写文档/, '回答交回给了模型')
       assert.ok(rec.hint, '提示里告诉模型有 ask_user')

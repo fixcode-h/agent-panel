@@ -345,6 +345,7 @@ export const EN_SERVER: Record<string, string> = {
   '正在自动续接会话重试（第 {n}/{max} 次）…': 'Resuming the session automatically (attempt {n}/{max})…',
   '已自动续接会话（第 {n} 次），从中断的地方继续了。':
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
+  '已自动接一轮，这一轮继续做完了。': 'Continued automatically and finished the work in this turn.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
   '这一轮只回了一句话就结束了，没有动手也没给出结论。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':
     'This turn ended after a single sentence: nothing was done and no conclusion was given. Continuing automatically so it acts now (attempt {n}/{max})…',
