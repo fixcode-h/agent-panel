@@ -50,3 +50,9 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 - 规则：用户或 Agent 写的一整行命令（后台命令、测试步骤）用 `server/merge-build.ts` 的 `shellCommand` / `runShell` 启动。Windows 上要整行加引号、`windowsVerbatimArguments` 原样交给 `cmd.exe /d /s /c`；按普通参数传给 cmd.exe 时 Node 会把 `"` 转成 `\"`，cmd 不认，程序收到的参数多了引号。
 - 起因：15c1a1d 的后台命令在 Windows 上跑 `node -e "setTimeout(...)"`，代码变成字符串字面量，0 秒就报成功，Agent 以为面板判断错了。
 - 防线：`server/merge-build.test.ts`（shellCommand 的 Windows 形式、定时器真的等到点）。
+
+## 按工具名猜类型之前，先认出面板自己的工具
+
+- 规则：`genericTool` 这类按名字正则猜 kind 的解析，先查 `shared/panel-tools.ts` 的面板工具表再猜；新加面板工具时同时登记进这张表。面板工具在对话里按「做了什么」显示，不能被当成 CLI 自己的读文件、子 Agent。
+- 起因：Pi 的桥接扩展（b0a47d2）按裸名字注册面板工具，`wait_agents` 因为名字里有 agent 被当成 CLI 自己的子 Agent，对话里显示成没头没尾的「子任务」，用户以为又开了一个子 Agent。
+- 防线：`server/exec/parsers.test.ts`（Pi 面板工具是裸名字）。

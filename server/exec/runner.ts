@@ -845,6 +845,7 @@ async function runAgent(
     if (t0 === undefined) return
     toolStart.delete(x)
     x.ms = Date.now() - t0
+    delete x.startedAt
   }
   // 正在思考的那条消息和第一段思考到达的时刻：思考之后来了别的输出，思考就结束了
   let thinkingOf: { m: TaskMessage; at: number } | undefined
@@ -940,7 +941,10 @@ async function runAgent(
         m.tools.push(ev.tool)
         if (ev.id) toolsById.set(ev.id, ev.tool)
         // 调用时就带着耗时的（完成后才报的）直接用；要等结果的从现在开始计时
-        if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) toolStart.set(ev.tool, Date.now())
+        if (ev.tool.ms === undefined && (ev.id || ev.tool.running)) {
+          ev.tool.startedAt = Date.now()
+          toolStart.set(ev.tool, ev.tool.startedAt)
+        }
         if (ev.file) touched.add(ev.file.path.replaceAll('\\', '/'))
         if (ev.file) refreshChanges()
         if (ev.file && !ctx.isGit) {

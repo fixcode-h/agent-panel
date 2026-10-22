@@ -3,6 +3,7 @@ import { SLOT_LABEL } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
 import { cacheHitRate } from '@shared/task-export'
+import { PANEL_TOOL_NAMES } from '@shared/panel-tools'
 
 export const statusLabel: Record<TaskStatus, string> = {
   running: t('执行中'),
@@ -87,8 +88,17 @@ export function toolVerb(tool: ToolUse) {
 }
 
 /** 面板自己的工具（panel MCP）调用名：各家 CLI 显示成「panel-xxxx · create_conversation」「panel_create_conversation」等 */
-const PANEL_TOOL =
-  /panel[\w-]*\W{1,4}(create_conversation|send_to_conversation|list_conversations|spawn_agents|wait_agents|run_background|check_background|message_parent|submit_build|start_plan|get_status|begin_edit|run_workflow|close_run|claim_files|release_files|project_lessons|record_lesson|read_state|write_state|ask_main|send_message|read_messages)\b/
+const PANEL_TOOL = new RegExp(`panel[\\w-]*\\W{1,4}(${PANEL_TOOL_NAMES.join('|')})\\b`)
+
+/** 旧数据：Pi 报上来的 wait_agents 被记成了 CLI 自己的子 Agent（没有名字、没有标题），按它的输出认回来 */
+const OLD_WAIT = /^(做完 \d+ 个|还在执行 \d+ 个|你还没有派出子任务)/
+
+/** 面板工具的名字：认不出来时是空的 */
+function panelName(tool: ToolUse) {
+  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
+  if (hit) return hit[1]
+  return tool.kind === 'agent' && !tool.name && !tool.label && OLD_WAIT.test(tool.output ?? '') ? 'wait_agents' : ''
+}
 
 /** 别的 MCP 工具：解析器记成 name「MCP」、label「服务名 · 工具名」 */
 const MCP_LABEL = /^(.+?) · (.+)$/
@@ -143,8 +153,8 @@ export function toolView(tool: ToolUse): ToolView | null {
  * 返回 undefined 表示不是面板工具，照常显示；null 表示不用显示（派出的子任务另有自己的一行）
  */
 export function panelTool(tool: ToolUse): ToolUse | null | undefined {
-  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
-  if (!hit) return undefined
+  const name = panelName(tool)
+  if (!name) return undefined
   const a = toolArgs(tool)
   const quoted = /「([^」]+)」/.exec(tool.output ?? '')?.[1] ?? ''
   const as = (name: string, label: string, kind: ToolUse['kind'] = 'other', input?: string): ToolUse => ({
@@ -155,7 +165,7 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     ...(input !== undefined && { input }),
   })
   const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
-  switch (hit[1]) {
+  switch (name) {
     case 'create_conversation':
       return as(t('新建子对话'), firstLine(a.title) || quoted, 'agent', text(a.message))
     case 'send_to_conversation':
@@ -165,8 +175,9 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
     // 成功派出时子任务各有一行（转圈、完成、失败），这次调用不再单独显示；失败了要让人看到原因
     case 'spawn_agents':
       return tool.failed ? as(t('派出子任务'), '', 'agent') : null
+    // 等子任务是在等面板派出的那几个，不是 CLI 自己的子 Agent：标题写清楚等了几个、做完几个
     case 'wait_agents':
-      return as(t('等待子任务'), '', 'agent')
+      return as(t('等待子任务'), waitSummary(tool, a), 'agent')
     case 'run_background':
       return as(t('后台命令'), firstLine(a.name) || firstLine(a.command), 'other', text(a.command))
     case 'check_background':
@@ -212,11 +223,22 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
   return undefined
 }
 
+/** 等待子任务这一行的标题：等完了说做完几个、还剩几个，没等完说在等几个 */
+function waitSummary(tool: ToolUse, a: Record<string, unknown>) {
+  const out = tool.output ?? ''
+  const done = Number(/做完 (\d+) 个/.exec(out)?.[1] ?? 0)
+  const left = Number(/还在执行 (\d+) 个/.exec(out)?.[1] ?? 0)
+  if (done || left) return left ? t('做完 {done} 个，还剩 {left} 个', { done, left }) : t('{n} 个都做完了', { n: done })
+  if (/你还没有派出子任务/.test(out)) return t('没有派出的子任务')
+  const ids = Array.isArray(a.ids) ? a.ids.length : 0
+  return ids ? t('{n} 个', { n: ids }) : t('全部')
+}
+
 /** 新建子对话、交给子对话这两次调用指向哪个子对话：新建的 id 在工具输出的「（id: …）」里，交给的在参数里 */
 export function panelChildId(tool: ToolUse) {
-  const hit = PANEL_TOOL.exec(`${tool.name ?? ''} ${tool.label}`)
-  if (hit?.[1] === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
-  if (hit?.[1] === 'send_to_conversation') return firstLine(toolArgs(tool).id)
+  const name = panelName(tool)
+  if (name === 'create_conversation') return /（id: ([^）\s]+)）/.exec(tool.output ?? '')?.[1] ?? ''
+  if (name === 'send_to_conversation') return firstLine(toolArgs(tool).id)
   return ''
 }
 

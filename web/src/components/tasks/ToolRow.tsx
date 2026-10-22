@@ -16,6 +16,7 @@ import {
 import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { fmtSecs, toolVerb, toolView, type ToolView } from '@/lib/tasks'
+import { useNow } from '@/lib/useNow'
 import { useChildOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
@@ -178,7 +179,7 @@ export function RowShell({
   title?: React.ReactNode
   titleClass?: string
   detail?: React.ReactNode
-  /** 跑了多久（毫秒），跑完才给：显示在最右边 */
+  /** 跑了多久（毫秒）：显示在最右边，还在跑的每秒更新 */
   ms?: number
   open: boolean
   /** 不给就不能展开（没有可看的内容），点哪里都不动 */
@@ -284,6 +285,9 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const openChild = useChildOpen()
   const Icon = view.server ? Plug : (toolIcon[tool.kind] ?? Wrench)
   const verb = toolVerb(tool)
+  // 还在等结果（任务还在跑、没有耗时）：每秒刷新已经用了多久，等子任务、长命令不再看着像卡住
+  const pending = tool.ms === undefined && !!tool.startedAt && task?.status === 'running'
+  const now = useNow(pending)
   const diff = tool.kind === 'edit' ? tool.detail.match(/^(\+\d+)?\s*(-\d+)?$/) : null
   const input = tool.input?.trim() ?? ''
   const output = tool.output?.replace(/\s+$/, '') ?? ''
@@ -330,7 +334,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
         badge={view.server}
         title={tool.label}
         detail={detail}
-        ms={tool.running ? undefined : tool.ms}
+        ms={pending ? now - tool.startedAt! : tool.ms}
         open={open}
         onToggle={() => setOpen(!open)}
         onOpen={target?.open}

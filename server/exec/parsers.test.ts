@@ -314,6 +314,15 @@ test('Pi：按配置文件里的事件映射解析会话事件', () => {
   assert.deepEqual(s.results, [])
 })
 
+test('Pi：面板工具是裸名字，记成 MCP 调用，不当成子 Agent', () => {
+  const parse = parserFor('pi', CWD)
+  const ev = parse({ type: 'tool_execution_start', toolName: 'wait_agents', toolCallId: 'w1', args: { seconds: 50 } })
+  const tool = ev.find((e) => e.type === 'tool')
+  assert.ok(tool && tool.type === 'tool')
+  assert.equal(tool.tool.kind, 'other')
+  assert.equal(tool.tool.label, 'panel · wait_agents')
+})
+
 test('Pi：按配置文件拼参数（默认走 RPC）', () => {
   const def = getCli('pi')!
   assert.deepEqual(

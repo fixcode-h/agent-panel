@@ -895,6 +895,8 @@ export const ToolUse = z.object({
   running: z.boolean().optional(),
   /** 这次调用跑了多久（毫秒）：跑完才有 */
   ms: z.number().optional(),
+  /** 还在等结果的调用从什么时候开始（毫秒时间戳）：界面边跑边显示已经用了多久，跑完换成 ms */
+  startedAt: z.number().optional(),
 })
 export type ToolUse = z.infer<typeof ToolUse>
 

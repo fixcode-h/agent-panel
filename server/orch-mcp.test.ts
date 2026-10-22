@@ -209,6 +209,11 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   }
   await runEngineTurn(h)
   assert.match(text(await callOrchTool(orch!, 'get_status', {})), /@chat\/sub\/h1/)
+  // 对话里结果自动交回：不给等待工具、说明里也不提，免得模型每隔几十秒轮询一次
+  assert.equal(orch!.autoReturn, true)
+  assert.ok(!orchTools(orch!).some((x) => x.name === 'wait_agents'))
+  assert.doesNotMatch(orchHint(orch!), /wait_agents/)
+  assert.match(text(await callOrchTool(orch!, 'wait_agents', {})), /做完 1 个/)
   // 对话这一轮结束后停下等子任务，结果交回同一个会话接着做；对话里记成面板消息，不是用户消息
   assert.equal(prompts.length, 2)
   assert.match(prompts[1], /页面查好了/)
