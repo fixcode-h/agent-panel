@@ -131,8 +131,22 @@ test('修改建议：解析、对比、应用；不合法的值和找不到的�
   const text = `分析完了。\n\n${demoEvolution(analysisPrompt([exportTask(task, [coder])]))}`
   assert.equal(stripEvolution(text), '分析完了。')
   const evo = parseEvolution(text)!
-  assert.equal(evo.changes.length, 2)
-  assert.equal(evo.framework[0].files[0], 'shared/engine.ts')
+  assert.equal(evo.changes.length, 3)
+  assert.equal(evo.changes[2].target, 'agent')
+  assert.equal(evo.issues[0].files[0], 'shared/engine.ts')
+  assert.deepEqual(
+    evo.issues.map((x) => [x.scope, x.category]),
+    [
+      ['panel', '执行引擎'],
+      ['project', '商品卡片'],
+    ],
+  )
+  // 旧版建议块只有 framework：照样读成面板框架的问题
+  const old = parseEvolution('```workflow-evolution\n{"framework":[{"title":"旧的","detail":"x"}]}\n```')!
+  assert.deepEqual(
+    old.issues.map((x) => [x.scope, x.category, x.title]),
+    [['panel', '', '旧的']],
+  )
   const rows = evo.changes.map((c) => resolveChange(c, [wf], [coder]))
   assert.ok(rows.every((r) => !r.error))
   assert.equal(rows[1].before, 'high')

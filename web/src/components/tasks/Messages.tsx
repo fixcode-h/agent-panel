@@ -1,10 +1,10 @@
 import { Fragment, memo, useEffect, useRef, useState } from 'react'
 import { Bot, Brain, ChevronRight, CircleAlert, GitMerge, Info, Terminal } from 'lucide-react'
-import type { Task, TaskMessage } from '@shared/schema'
+import type { Task, TaskMessage, ToolUse } from '@shared/schema'
 import { useData } from '@/lib/data'
 import { cn } from '@/lib/utils'
 import { RowShell, ToolRow } from './ToolRow'
-import { fmtSecs } from '@/lib/tasks'
+import { fmtSecs, toolView, type ToolView } from '@/lib/tasks'
 import { ChildAskCard } from './ChildAskCard'
 import { AnswerMessage, CopyButton, ReplyFrame } from '@/components/chat/ChatMessage'
 import { Markdown } from './Markdown'
@@ -439,6 +439,7 @@ export function Msgs({
   compactFirst,
   hideAuthor,
   stickyAuthor,
+  lead,
 }: {
   msgs: TaskMessage[]
   task?: Task
@@ -455,6 +456,8 @@ export function Msgs({
   hideAuthor?: boolean
   /** 名字行吸顶：对话里滚到回复中部时还能看到是谁、用的什么模型 */
   stickyAuthor?: boolean
+  /** 放在所有消息前面、署名栏后面的一行（第一条不是 Agent 消息时的折叠开关） */
+  lead?: React.ReactNode
 }) {
   const lastAgent = lastIndex(msgs, (m) => m.role === 'agent')
   const firstAgent = msgs.findIndex((m) => m.role === 'agent')
@@ -470,6 +473,12 @@ export function Msgs({
         <StickyAuthor
           author={{ name: sticky.name, cli: sticky.cli, icon: sticky.icon, model: modelOf(sticky), command }}
         />
+      )}
+      {lead && (
+        <div className="flex gap-3">
+          <span className="w-[26px] shrink-0" />
+          <div className="min-w-0 flex-1">{lead}</div>
+        </div>
       )}
       {msgs.map((m, k) => {
         const inline = inlineEntry(m, task, teamNames)
@@ -497,9 +506,54 @@ export function Msgs({
   )
 }
 
+/** 文件路径只留文件名：折叠行里放得下两三个 */
+const baseName = (p: string) => p.trim().split(/[\\/]/).filter(Boolean).pop() ?? p.trim()
+
 /**
- * 一段完成的输出（一个节点、一轮对话）：思考、工具调用和中间的说明折叠成一行，只留最后的回复，
- * 和 Claude Code 一样；执行中的那段照常流式显示。
+ * 折叠起来的过程做了什么，和 Claude Code 一样按动作归总成一句：读了几个文件、改了哪些文件、跑了几条命令。
+ * 改的文件不多时直接写文件名，一眼看出这段回复动了哪里；失败的调用单独标出来
+ */
+function processBrief(process: TaskMessage[], helpers: number, notes: number) {
+  const tools = process.flatMap((m) =>
+    m.tools
+      .map(toolView)
+      .filter((v): v is ToolView => !!v)
+      .map((v) => v.tool),
+  )
+  const files = (kind: ToolUse['kind']) =>
+    new Set(
+      tools
+        .filter((x) => x.kind === kind)
+        .map((x) => x.label.trim())
+        .filter(Boolean),
+    )
+  const count = (kind: ToolUse['kind']) => tools.filter((x) => x.kind === kind).length
+  const read = files('read').size || count('read')
+  const edited = [...files('edit')]
+  const edits = edited.length || count('edit')
+  const other = tools.filter((x) => !['read', 'edit', 'run', 'search', 'web'].includes(x.kind)).length
+  const thoughts = process.filter((m) => m.thinking?.trim()).length
+  const parts = [
+    read && t('查看 {n} 个文件', { n: read }),
+    edits &&
+      (edited.length && edited.length <= 2
+        ? t('修改 {files}', { files: edited.map(baseName).join(t('、')) })
+        : t('修改 {n} 个文件', { n: edits })),
+    count('run') && t('运行 {n} 条命令', { n: count('run') }),
+    count('search') && t('搜索 {n} 次', { n: count('search') }),
+    count('web') && t('查阅网页 {n} 次', { n: count('web') }),
+    helpers && t('派出 {n} 个子任务', { n: helpers }),
+    other && t('其他操作 {n} 次', { n: other }),
+    thoughts && t('思考 {n} 次', { n: thoughts }),
+    notes && t('{n} 段说明', { n: notes }),
+  ].filter((x): x is string => !!x)
+  return { parts, failed: tools.filter((x) => x.failed).length }
+}
+
+/**
+ * 一段完成的输出（一个节点、一轮对话）：思考、工具调用、中间的说明、派出的子任务和面板推回的结果都收进一个折叠，
+ * 折叠行上写这段过程做了什么，下面只留最后的回复，和 Claude Code 一样；执行中的那段照常流式显示，
+ * 回复一完成就自动收起。报错和子对话的提问不收：报错要让人看到，提问要人回答
  */
 export function FoldedRun({
   msgs,
@@ -508,6 +562,8 @@ export function FoldedRun({
   live,
   author,
   command,
+  hideAuthor,
+  stickyAuthor,
 }: {
   msgs: TaskMessage[]
   task?: Task
@@ -516,42 +572,82 @@ export function FoldedRun({
   author?: Author
   /** 启动这些回复的命令 */
   command?: string[]
+  /** 名字和模型由外面统一显示（对话一轮的吸顶署名） */
+  hideAuthor?: boolean
+  /** 展开时名字行吸顶（按 Agent 显示的对话） */
+  stickyAuthor?: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const { agents } = useData()
+  const { modelOf } = useAgentView()
+  const all = (
+    <Msgs
+      msgs={msgs}
+      task={task}
+      teamNames={teamNames}
+      live={live}
+      author={author}
+      command={command}
+      hideAuthor={hideAuthor}
+      stickyAuthor={stickyAuthor}
+    />
+  )
   const last = lastIndex(msgs, (m) => m.role === 'agent' && !!replyText(m).trim())
-  const process = last < 0 ? [] : msgs.slice(0, last + 1).filter((m) => m.role === 'agent')
-  const tools = process.reduce((n, m) => n + m.tools.length, 0)
-  const thoughts = process.filter((m) => m.thinking?.trim()).length
+  if (live || last < 0) return all
+  const before = msgs.slice(0, last)
+  const process = msgs.slice(0, last + 1).filter((m) => m.role === 'agent')
+  // 留在外面的：报错、子对话的提问；子对话的回报界面上本来就不画
+  const kept = (m: TaskMessage) => m.panel === 'ask' || (m.role === 'system' && !m.panel && !m.spawned?.length)
+  const folded = before.filter((m) => !kept(m) && m.role !== 'agent' && m.panel !== 'child')
+  const helpers = folded.reduce((n, m) => n + (m.spawned?.length ?? 0), 0)
   const notes = process.slice(0, -1).filter((m) => replyText(m).trim()).length
-  if (live || last < 0 || (!tools && !thoughts && !notes))
-    return <Msgs msgs={msgs} task={task} teamNames={teamNames} live={live} author={author} command={command} />
+  const { parts, failed } = processBrief(process, helpers, notes)
+  // 面板推回的结果（后台命令、合并编译、子任务交回）也收在里面，按条数写
+  const results = folded.filter((m) => m.panel).length
+  if (results) parts.push(t('{n} 条面板结果', { n: results }))
+  if (!parts.length) return all
 
-  const parts = [
-    thoughts && t('思考 {n} 次', { n: thoughts }),
-    tools && t('{n} 次工具调用', { n: tools }),
-    notes && t('{n} 段说明', { n: notes }),
-  ]
   const toggle = (
     <button
       onClick={() => setOpen(!open)}
       aria-expanded={open}
-      className="flex w-fit cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-xs text-subtle hover:text-muted"
+      title={open ? t('收起过程') : t('展开过程')}
+      className="flex w-fit max-w-full cursor-pointer items-center gap-1.5 rounded-md py-0.5 text-left text-xs text-subtle hover:text-muted"
     >
-      <ChevronRight className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-90')} />
-      {open ? t('收起过程') : t('已完成 · {parts}', { parts: parts.filter(Boolean).join(' · ') })}
+      <ChevronRight className={cn('h-3.5 w-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
+      <span className="truncate">{parts.join(' · ')}</span>
+      {failed > 0 && <span className="shrink-0 text-danger">{t('{n} 次失败', { n: failed })}</span>}
     </button>
   )
   if (open)
     return (
-      // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方
-      <Msgs msgs={msgs} task={task} teamNames={teamNames} slot={toggle} author={author} command={command} />
+      // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方；
+      // 回复是从子任务、面板结果开始的，开关放在最前面，不夹在过程中间
+      <Msgs
+        msgs={msgs}
+        task={task}
+        teamNames={teamNames}
+        slot={msgs[0].role === 'agent' ? toggle : undefined}
+        lead={msgs[0].role === 'agent' ? undefined : toggle}
+        author={author}
+        command={command}
+        hideAuthor={hideAuthor}
+        stickyAuthor={stickyAuthor}
+      />
     )
-  // 折叠时：中间的系统提示照常显示，Agent 的过程收起来，最后一条回复带上名字显示
+  // 收起时：报错和提问照常显示，其余的过程收起来，最后一条回复带上名字和折叠行显示
   const tail = msgs.slice(last + 1)
+  // 名字行要吸顶时和展开时一样放在整段外面（理由见 Msgs）
+  const sticky = !author && stickyAuthor && agents.find((x) => x.id === msgs[last].agentId)
   return (
     <>
-      {msgs
-        .slice(0, last)
+      {sticky && (
+        <StickyAuthor
+          author={{ name: sticky.name, cli: sticky.cli, icon: sticky.icon, model: modelOf(sticky), command }}
+        />
+      )}
+      {before
+        .filter(kept)
         .map(
           (m) =>
             inlineEntry(m, task, teamNames) ??
@@ -562,6 +658,7 @@ export function FoldedRun({
         task={task}
         teamNames={teamNames}
         hideProcess
+        hideAuthor={hideAuthor || !!sticky}
         slot={toggle}
         author={author}
         command={command}
@@ -572,6 +669,7 @@ export function FoldedRun({
         teamNames={teamNames}
         author={author}
         command={command}
+        hideAuthor={hideAuthor || !!sticky}
         compactFirst={tail[0]?.role === 'agent' && tail[0].agentId === msgs[last].agentId}
       />
     </>
@@ -580,7 +678,7 @@ export function FoldedRun({
 
 /**
  * 通用对话里的一轮回复（工作流以外的 AI 对话都用它）：思考、工具调用和说明按发生的顺序流式显示，
- * 不折叠；完成后下面是时间、复制和各个对话自己的操作
+ * 项目对话里回复完成后收进一个折叠；完成后下面是时间、复制和各个对话自己的操作
  */
 export function ChatReply({
   msgs,
@@ -591,12 +689,15 @@ export function ChatReply({
   command,
   actions,
   last,
+  fold,
   children,
 }: {
   msgs: TaskMessage[]
   task?: Task
   teamNames: Set<string>
   live?: boolean
+  /** 回复完成后思考、工具调用和中间的说明收进一个折叠（项目对话）；UI 设计等对话照常全部显示 */
+  fold?: boolean
   author?: Author
   /** 启动这一轮的命令：按 Agent 显示的对话没有 author，用这个显示在名字那行最右边 */
   command?: string[]
@@ -606,14 +707,16 @@ export function ChatReply({
   /** 回复下面、时间上面的内容（例如需要的图片、AI 问的问题） */
   children?: React.ReactNode
 }) {
+  const Run = fold ? FoldedRun : Msgs
   const body = (
     <>
       {author && <StickyAuthor author={author} />}
-      <Msgs
+      {/* 回复完成后思考、工具调用和中间的说明自动收进一个折叠，折叠行写这段做了什么 */}
+      <Run
         msgs={msgs}
+        live={live}
         task={task}
         teamNames={teamNames}
-        live={live}
         author={author}
         command={command}
         hideAuthor={!!author}

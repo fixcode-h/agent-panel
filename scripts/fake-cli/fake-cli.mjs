@@ -484,6 +484,17 @@ if (input.includes('BEGIN_EDIT') && input.includes('begin_edit')) {
 if (input.includes('ASK_PARENT') && input.includes('message_parent') && !input.includes('用户的决定')) {
   await panelCall('message_parent', { text: '用 A 方案还是 B 方案？', question: true, options: ['A 方案', 'B 方案'] })
 }
+// 执行计划：任务里有 PLAN_BG、面板给了 set_plan 时，列两步计划，第二步挂在后台命令上等结果；
+// 面板追要总结时（计划都完成了还没写总结）调用 finish_plan
+if (input.includes('PLAN_BG') && input.includes('set_plan')) {
+  await panelCall('set_plan', {
+    title: '后台等待',
+    steps: [{ title: '改代码', status: 'done' }, { title: '跑测试' }],
+  })
+  await panelCall('run_background', { command: 'node -e "setTimeout(()=>{},300)"', name: '端到端测试', step: '2' })
+}
+if (input.includes('还没写总结') && input.includes('finish_plan'))
+  await panelCall('finish_plan', { summary: '改好了代码，测试通过' })
 // 退出前把插话收到的内容记下来，测试检查插话真的交给了 CLI
 process.on('exit', () => {
   if (process.env.FAKE_CLI_LOG && steered.length)

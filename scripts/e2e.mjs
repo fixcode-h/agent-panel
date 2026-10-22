@@ -1549,6 +1549,11 @@ try {
     assert.equal(askMsg.ask.from, askKid.id)
     assert.deepEqual(askMsg.ask.options, ['A 方案', 'B 方案'], '卡片带上子对话给的选项')
     assert.equal(askMsg.ask.answer, undefined, '还没回答')
+    assert.deepEqual(
+      (await call('GET', `/tasks/${askKid.id}`)).parentAsks?.map((x) => x.id),
+      [askMsg.id],
+      '子对话上也挂着这个提问，输入框换成选择弹窗',
+    )
     assert.ok(
       !askParent.messages.some((m) => m.role === 'system' && !m.panel && m.text.includes('提问')),
       '提问不再是居中的系统提示',
@@ -1559,6 +1564,7 @@ try {
     const answeredAsk = askParent.messages.find((m) => m.id === askMsg.id)
     assert.equal(answeredAsk.ask.answer, 'B 方案')
     assert.equal(answeredAsk.ask.by, 'user')
+    await waitTask(askKid.id, (k) => !k.parentAsks?.length)
     assert.ok(
       askParent.inbox.some((x) => x.from === askKid.id && x.text.includes('用户已回答')) &&
         !askParent.inbox.some((x) => x.from === askKid.id && x.text.startsWith('（提问）')),
@@ -1567,6 +1573,35 @@ try {
     await call('DELETE', `/tasks/${wtParent.id}`)
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
+
+    // ---- 执行计划：步骤挂在后台命令上等结果，结果回来自动标完成；计划做完没写总结时面板追一轮要总结 ----
+    {
+      const planned = await waitDone(
+        (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'PLAN_BG 列计划' }))
+          .id,
+        20000,
+      )
+      assert.equal(planned.plans.length, 1, '列了一份计划')
+      const done = await waitTask(planned.id, (k) => !!k.plans[0]?.summary, 30000)
+      const plan = done.plans[0]
+      assert.deepEqual(
+        plan.steps.map((x) => [x.title, x.status]),
+        [
+          ['改代码', 'done'],
+          ['跑测试', 'done'],
+        ],
+        '后台命令成功后，等它的步骤自动标完成',
+      )
+      assert.equal(plan.steps[1].waits[0].state, 'ok')
+      assert.ok(plan.doneAt, '全部完成后计划收起')
+      assert.equal(plan.summary, '改好了代码，测试通过', '面板追要总结，AI 调用 finish_plan 写下')
+      assert.ok(
+        done.messages.some((m) => m.panel === 'background' && m.text.includes('计划步骤「跑测试」')),
+        '推回的后台结果点名是计划里哪一步在等',
+      )
+      await call('DELETE', `/tasks/${planned.id}`)
+      step('执行计划：等待中的步骤结果回来自动完成，计划做完必须写总结')
+    }
 
     // ---- 全局规则：父对话输入 /rule 发布，不发给 CLI；子对话这一轮的提示里带上 ----
     const ruleParent = await waitDone(

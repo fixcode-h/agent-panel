@@ -38,6 +38,27 @@ const tasksField = (o: Orchestra) => ({
   },
 })
 
+/** 计划步骤：开出去的等待挂在哪一步上 */
+const stepField = (what: string) => ({
+  type: 'string',
+  description: `计划里哪一步在等${what}（步骤 id，见 set_plan 返回的计划）：这一步会标成等待中，结果回来自动推给你；不在计划里的不写`,
+})
+
+const planItem = {
+  type: 'object',
+  properties: {
+    id: { type: 'string', description: '已有步骤的 id（set_plan 返回的计划里有）；新步骤不写' },
+    title: { type: 'string', description: '步骤名：要做的一件事，10–30 字' },
+    status: {
+      type: 'string',
+      enum: ['pending', 'running', 'waiting', 'done'],
+      description: '待做 / 进行中 / 等待中 / 完成',
+    },
+    note: { type: 'string', description: '一句备注：在等什么、卡在哪；没有不写' },
+  },
+  required: ['title'],
+}
+
 /** 后台命令在哪个 shell 里跑（设置里的命令行环境），Agent 按它的语法写命令 */
 const shellHint = () => {
   const sh = lastShell()
@@ -82,6 +103,7 @@ export function orchTools(o: Orchestra) {
                   type: 'boolean',
                   description: '编译、打包这类会抢文件锁的命令设为 true：按项目排队，同一时间只跑一个',
                 },
+                ...(o.plans ? { step: stepField('这条命令') } : {}),
               },
               required: ['command'],
             },
@@ -91,6 +113,49 @@ export function orchTools(o: Orchestra) {
             title: '查看后台命令',
             description: '查后台命令的状态和最近的输出；不写 id 列出这个对话的全部。结果会自动推回来，不需要轮询。',
             inputSchema: { type: 'object', properties: { id: { type: 'string' } } },
+          },
+        ]
+      : []),
+    ...(o.plans
+      ? [
+          {
+            name: 'set_plan',
+            title: '更新计划',
+            description:
+              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。完成的步骤不能再改，同样的内容要再做就新加一步；整份完成后必须调用 finish_plan 写总结。返回合并后的计划和每一步的 id。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: '这份计划的名字（开新计划时写）' },
+                steps: {
+                  type: 'array',
+                  description: '主步骤，按执行顺序',
+                  items: {
+                    ...planItem,
+                    properties: {
+                      ...planItem.properties,
+                      children: { type: 'array', description: '子步骤（只能一层）', items: planItem },
+                    },
+                  },
+                },
+              },
+              required: ['steps'],
+            },
+          },
+          {
+            name: 'finish_plan',
+            title: '计划总结',
+            description: '计划的步骤全部完成后调用（必须）：写这份计划的总结，计划就此结束，之后的新内容开新计划。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                summary: {
+                  type: 'string',
+                  description: '总结：做了什么、验证结果（测试、编译）、改了哪些地方、遗留问题。用户会在计划窗口里看到',
+                },
+              },
+              required: ['summary'],
+            },
           },
         ]
       : []),
@@ -109,6 +174,15 @@ export function orchTools(o: Orchestra) {
                   description: '工作流 id（见提示里的「可用工作流」）；不写用项目默认工作流',
                 },
                 input: { type: 'string', description: '这次计划要做什么：目标、范围、验收标准' },
+                ...(o.plans
+                  ? {
+                      step: {
+                        type: 'string',
+                        description:
+                          '执行计划里哪个主步骤用这个工作流做（步骤 id），工作流的节点就是它的子步骤；不写就在计划末尾加一步',
+                      },
+                    }
+                  : {}),
               },
               required: ['input'],
             },
@@ -166,6 +240,7 @@ export function orchTools(o: Orchestra) {
                   description:
                     '这个子对话负责的文件或目录（相对项目根），面板替它认领；子对话共用一个目录，别的子对话不会再改这些',
                 },
+                ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
               required: ['title', 'message'],
             },
@@ -180,6 +255,7 @@ export function orchTools(o: Orchestra) {
               properties: {
                 id: { type: 'string', description: '子对话 id' },
                 message: { type: 'string', description: '要交给它的消息，写清楚和原任务的关系' },
+                ...(o.plans ? { step: stepField('这个子对话') } : {}),
               },
               required: ['id', 'message'],
             },
@@ -411,7 +487,15 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     case 'start_plan': {
       const input = str(a?.input).trim()
       if (!input) return text('input 是空的：写清楚这次计划要做什么', true)
-      const r = o.plan(str(a?.workflow).trim(), input)
+      const r = o.plan(str(a?.workflow).trim(), input, str(a?.step).trim())
+      return text(r.info, !r.ok)
+    }
+    case 'set_plan': {
+      const r = o.setPlan({ title: str(a?.title), steps: Array.isArray(a?.steps) ? a.steps : [] })
+      return text(r.info, !r.ok)
+    }
+    case 'finish_plan': {
+      const r = o.finishPlan(str(a?.summary))
       return text(r.info, !r.ok)
     }
     case 'read_state':
@@ -450,14 +534,14 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const message = str(a?.message).trim()
       if (!message) return text('message 不能为空：写清楚需求', true)
       const files = Array.isArray(a?.files) ? a.files.map(String).filter(Boolean) : undefined
-      const r = await o.createConversation(str(a?.title).trim(), message, files)
+      const r = await o.createConversation(str(a?.title).trim(), message, files, str(a?.step).trim())
       return text(r.id ? `${r.info}（id: ${r.id}）` : r.info, !r.ok)
     }
     case 'send_to_conversation': {
       const id = str(a?.id).trim()
       const message = str(a?.message).trim()
       if (!id || !message) return text('id 和 message 都要写', true)
-      const r = await o.sendToConversation(id, message)
+      const r = await o.sendToConversation(id, message, str(a?.step).trim())
       return text(r.info, !r.ok)
     }
     case 'run_background': {
@@ -468,6 +552,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
         name: str(a?.name).trim() || command.slice(0, 40),
         cwd: str(a?.cwd).trim(),
         exclusive: a?.exclusive === true,
+        step: str(a?.step).trim(),
       })
       return text(r.info, !r.ok)
     }
@@ -581,6 +666,7 @@ export function orchHint(o: Orchestra) {
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
   const bg =
+    (o.plans ? 'set_plan 列执行计划、随时更新进度，计划做完用 finish_plan 写总结；' : '') +
     (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
     (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
   const child =

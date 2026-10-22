@@ -14,6 +14,8 @@ export const PANEL_TOOL_NAMES = [
   'message_parent',
   'submit_build',
   'start_plan',
+  'set_plan',
+  'finish_plan',
   'get_status',
   'begin_edit',
   'run_workflow',

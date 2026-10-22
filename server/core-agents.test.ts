@@ -1,7 +1,8 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { AgentInput, type Agent, type Category, type Tag } from '../shared/schema.ts'
-import { BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import { BUG_METHOD, BUILTIN_AGENTS } from '../shared/builtin/agents.ts'
+import { renderTemplate } from '../shared/agent-role.ts'
 import { ensureProjectAgents } from '../shared/builtin/install.ts'
 import {
   CORE_AGENTS,
@@ -91,6 +92,31 @@ test('通用约束：已授权的操作照做；统筹不再另立一份授权�
   assert.match(rules, /不要自行换成更保守的做法（改走 PR、只提交不推送）/)
   const orch = BUILTIN_AGENTS.find((a) => a.key === 'orchestrator')!.agent.instructions
   assert.doesNotMatch(orch, /推送、PR、submit 要用户明确授权/, '授权规则只在通用约束里写一份')
+})
+
+test('Bug：统筹只定位到模块，执行和开发从模块逐层定位，找到就停', () => {
+  const role = (key: string) => BUILTIN_AGENTS.find((a) => a.key === key)!.agent.instructions
+  // 只写「找到根因」时 Agent 会一路挖到底层：起点、往下一层的条件、停止和深度上限都要写成能照做的规则
+  assert.match(BUG_METHOD, /用户点名的模块或部分 → 父对话交来的模块/)
+  assert.match(BUG_METHOD, /这一层排除了才往下一层/)
+  assert.match(BUG_METHOD, /不要再往更底层找「更根本」的问题/)
+  assert.match(BUG_METHOD, /不改代码去猜，先加临时日志或写针对性的测试复现/)
+  assert.match(BUG_METHOD, /下到第三层还没找到/)
+
+  const orch = role('orchestrator')
+  assert.match(orch, /## Bug 怎么交/)
+  assert.match(orch, /不去读实现找具体是哪一行/)
+  assert.match(orch, /不要为同一个 Bug 开几个子对话同时找/)
+
+  const worker = role('worker')
+  assert.ok(renderTemplate(worker, { mode: '自动' }).includes(BUG_METHOD))
+  assert.match(renderTemplate(worker, { mode: '自动' }), /Bug：不启动工作流/)
+  assert.match(renderTemplate(worker, { mode: '总是按工作流' }), /按可用工作流里的「Bug 修复」执行/)
+
+  const dev = role('developer')
+  assert.ok(renderTemplate(dev, { task: '修 Bug' }).includes(BUG_METHOD))
+  assert.ok(!renderTemplate(dev, { task: '实现' }).includes(BUG_METHOD))
+  assert.ok(!renderTemplate(dev, { task: '性能问题' }).includes(BUG_METHOD), '性能问题按基线走，不套 Bug 的逐层定位')
 })
 
 test('必备角色：改了设定会被同步回内置定义，参数取值和运行配置保留', async () => {

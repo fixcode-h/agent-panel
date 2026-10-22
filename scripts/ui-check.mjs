@@ -127,6 +127,17 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
+  await p.getByRole('button', { name: '执行计划' }).click()
+  await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
+  await p.keyboard.press('Escape')
+  // 回复完成后思考和工具调用收进一个折叠，折叠行写这段做了什么；点开能看到过程，再点收起
+  {
+    const fold = p.getByRole('button', { name: /查看 \d+ 个文件/ }).first()
+    await fold.click().catch(() => errors.push('任务：回复完成后没有收起过程的折叠行'))
+    await check(p, '任务-展开过程', ['思考过程'])
+    await fold.click().catch(() => {})
+  }
   // 窄版右栏的右键菜单：能弹出，而且整个菜单都在视口里（不能溢出去）
   {
     const compactRow = p.locator('button[title="package.json"]').first()
@@ -368,15 +379,23 @@ try {
     if (await p.getByText(name, { exact: false }).count()) errors.push(`对话页：还能看到「${name}」`)
   }
   await check(p, '对话-不能换Agent和参数')
-  // AI 分析执行结果：新建分析对话，给出修改建议的差异和框架问题，勾选后应用到工作流
+  // AI 分析执行结果：新建分析对话，代码问题按模块分组带「修复」，角色和工作流的优化可以逐条或全部应用
   await p.goto(workflowTaskUrl)
   await p.getByRole('button', { name: '更多操作' }).click()
   await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
   await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
-  await p.getByText('工作流优化建议').waitFor({ timeout: 20000 })
+  await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
   await p.getByRole('button', { name: '看差异' }).first().click()
-  await check(p, 'AI分析-建议', ['工作流优化建议', '面板框架的问题', '先确认范围'])
-  await p.getByRole('button', { name: /应用选中的 2 项/ }).click()
+  await check(p, 'AI分析-建议', ['代码问题', '商品卡片', '面板框架', '工作流优化', '先确认范围', '应用到工作流'])
+  // 项目代码的问题能开子对话去修；面板框架的问题在非面板源代码项目里修不了
+  await p.getByRole('button', { name: '修复', exact: true }).first().click()
+  await p
+    .getByRole('button', { name: /处理中|查看/ })
+    .first()
+    .waitFor({ timeout: 20000 })
+    .catch(() => errors.push('AI 分析：点了「修复」没有开出子对话'))
+  await check(p, 'AI分析-修复子对话')
+  await p.getByRole('button', { name: /全部应用/ }).click()
   await check(p, 'AI分析-已应用', ['已应用'])
   await p.goto(base + '#/agents')
   await check(p, 'Agent', ['命令预览'])

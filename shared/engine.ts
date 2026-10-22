@@ -80,6 +80,17 @@ import { findLessons } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
+import {
+  activePlan,
+  applyPlan,
+  bindRun,
+  bindWait,
+  endRun,
+  finishPlan,
+  planText,
+  unsummarized,
+  type PlanItemInput,
+} from './plan.ts'
 
 /** 提示词里的流程入口名，固定用中文（提示词不跟随界面语言） */
 const SLOT_PROMPT: Record<string, string> = {
@@ -266,23 +277,30 @@ export interface Orchestra {
   closeRun(): { ok: boolean; info: string }
   /** 对话 Agent：可以把一次工作流运行排到这一轮后面，跑完再继续对话 */
   planning: boolean
-  plan(workflowId: string, input: string): { ok: boolean; info: string }
+  /** step：这次运行是计划里的哪个主步骤（不写就在计划末尾加一步） */
+  plan(workflowId: string, input: string, step?: string): { ok: boolean; info: string }
+  /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 写总结 */
+  plans: boolean
+  setPlan(input: { title?: string; steps?: PlanItemInput[] }): { ok: boolean; info: string }
+  finishPlan(summary: string): { ok: boolean; info: string }
   /** 协调 Agent：能不能创建 / 给子对话发消息 */
   coordinator: boolean
   conversations(): Promise<string>
+  /** step：计划里哪一步在等这个子对话，开出去以后它挂成等待中 */
   createConversation(
     title: string,
     message: string,
     files?: string[],
+    step?: string,
   ): Promise<{ ok: boolean; id?: string; info: string }>
-  sendToConversation(id: string, message: string): Promise<{ ok: boolean; info: string }>
+  sendToConversation(id: string, message: string, step?: string): Promise<{ ok: boolean; info: string }>
   /** 子对话（连同它的工作流节点）：和父对话通讯、认领要改的文件；子对话之间不能直接通讯 */
   child: boolean
   /** 子对话和兄弟共用目录、需要认领文件（独立分支里的不用） */
   claims: boolean
   /** 对话（项目对话、子对话）：长命令交给面板在后台跑，跑完把结果推回这个对话 */
   canBackground: boolean
-  runBackground(input: { command: string; name: string; cwd: string; exclusive: boolean }): Promise<{
+  runBackground(input: { command: string; name: string; cwd: string; exclusive: boolean; step?: string }): Promise<{
     ok: boolean
     info: string
   }>
@@ -411,6 +429,8 @@ export interface EngineHost {
   runBackground?: (input: { command: string; name: string; cwd: string; exclusive: boolean }) => Promise<{
     ok: boolean
     info: string
+    /** 后台命令的编号：计划步骤挂等待时用，结果回来按它找到步骤 */
+    id?: string
   }>
   /** 查后台命令：不传编号列出这个对话的全部 */
   checkBackground?: (id: string) => string
@@ -837,6 +857,38 @@ function backgroundPart(host: EngineHost) {
 - 手上没有别的事时直接结束这一轮，结果到了会接着处理；不要反复调用 check_background 轮询。
 - 不要在前台用 sleep 等待（等 CI、等部署、等别的进程）：前台命令跑着时用户发来的消息要等它结束才能处理。要等就把等待和检查写成一条命令交给 run_background，或者直接结束这一轮、告诉用户你在等什么。
 - 几秒就能跑完的命令照常直接执行。`
+}
+
+/**
+ * 对话的执行计划：当前计划和维护规则。项目里的对话（父、子都有）每一轮都带上，
+ * 计划的规则由面板在 set_plan 里兜底（完成的锁死、做完收起），这里讲清楚什么时候列、怎么更新、等待怎么挂
+ */
+function planPart(host: EngineHost, coordinator: boolean) {
+  const { task } = host
+  if (!task.projectId) return ''
+  const cur = activePlan(task)
+  const owed = unsummarized(task)
+  const now = cur
+    ? `当前计划：\n${planText(task, cur)}`
+    : owed
+      ? `上一份计划「${owed.title || '未命名'}」已经全部完成，还没写总结：先调用 finish_plan 写总结。\n${planText(task, owed)}`
+      : '现在没有进行中的计划。'
+  return `## 执行计划
+${now}
+
+- 需要好几步才能做完的事（改代码、排查问题、跨模块、要测试验证），分析梳理完先用 set_plan 列出计划再动手；一问一答、一两行的小改动不用列。
+- 最多两层：主步骤写要交付的一件事，子步骤写这件事里的具体动作。步骤名写做什么，不写怎么想的。某个主步骤要按工作流执行时调用 start_plan 并带上它的 step，工作流的节点就是它的子步骤，不用自己写。
+- 每次 set_plan 交整份列表，已有的步骤带上 id。开始做一步、做完一步都马上更新；同一时间只有一个步骤是「进行中」。
+- 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
+- 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
+- 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
+- 当前计划的步骤全部完成后必须调用 finish_plan 写总结：做了什么、验证结果（测试、编译）、改了哪些地方、遗留问题；这一轮回复的结尾也把总结告诉用户。之后再有新内容，用 set_plan 开一份新的计划（写 title）。
+- 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
+    coordinator
+      ? `
+- 你是父对话：分析只做到判断这件事属于哪个模块、该交给哪个子对话为止，具体定位和修改交给子对话，把你查到的模块、文件和线索一起交过去。交给子对话的每件事是计划里的一个主步骤，带 step 挂成等待中；用户随时发来的新消息马上答复或分派，不要因为在等子对话让用户等。`
+      : ''
+  }`
 }
 
 function commonPart(host: EngineHost, w?: Workflow) {
@@ -2086,6 +2138,8 @@ function takePendingRun(host: EngineHost) {
 interface PlannedRun {
   workflowId: string
   input: string
+  /** 计划里的哪个主步骤；空表示在计划末尾加一步 */
+  step?: string
 }
 const pendingPlans = new WeakMap<EngineHost, PlannedRun[]>()
 
@@ -2196,14 +2250,14 @@ function makeOrchestra(
       return { ok: true, info: '这次运行已经结束，没完成的节点不再执行' }
     },
     planning: !!ctx.planning,
-    plan(workflowId, input) {
+    plan(workflowId, input, step) {
       if (helper) return { ok: false, info: '子任务不能启动工作流，只做派给你的这一件事' }
       if (!ctx.chat) return { ok: false, info: '节点里不能启动计划，按流程执行' }
       if (!ctx.planning)
         return { ok: false, info: '这个 Agent 没有开启「按工作流执行计划」的能力，直接在当前对话里执行' }
       if (task.steps.some((s) => !s.parentId && inRun(s.id, currentRun(task)) && s.status === 'running'))
         return { ok: false, info: '上一次计划还在执行，等它结束再启动新的' }
-      askPlan(host, { workflowId: workflowId.trim(), input: input.trim() })
+      askPlan(host, { workflowId: workflowId.trim(), input: input.trim(), step: step?.trim() })
       const wf = workflowId ? task.runs.flatMap((r) => r.workflows).find((w) => w.id === workflowId) : undefined
       const label = wf?.name || workflowId || '默认工作流'
       system(
@@ -2214,6 +2268,19 @@ function makeOrchestra(
       host.changed(true)
       return { ok: true, info: '这一轮结束后会同步跑完这次计划，再把结果交回对话' }
     },
+    plans: !!ctx.chat && !helper && !!task.projectId,
+    setPlan(input) {
+      if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
+      const r = applyPlan(task, input)
+      if (r.ok) host.changed(true)
+      return r
+    },
+    finishPlan(summary) {
+      if (!ctx.chat || helper || !task.projectId) return { ok: false, info: '只有项目里的对话有执行计划' }
+      const r = finishPlan(task, summary)
+      if (r.ok) host.changed(true)
+      return r
+    },
     coordinator,
     async conversations() {
       if (!coordinator || !host.listConversations) return '（这个对话不能分派子对话）'
@@ -2223,7 +2290,7 @@ function makeOrchestra(
         .map((c) => `- ${c.id}｜${c.title}｜${c.status}${c.summary ? `：${clip(c.summary, 200)}` : ''}｜最近 ${c.at}`)
         .join('\n')
     },
-    async createConversation(title, message, files) {
+    async createConversation(title, message, files, step) {
       if (!coordinator || !host.createConversation) return { ok: false, info: '这个对话不能创建子对话' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       // 标题由父对话的 Agent 分析需求后给出，不拿用户原话截断凑数
@@ -2231,15 +2298,17 @@ function makeOrchestra(
         return { ok: false, info: 'title 不能为空：先分析这条需求，起一个能区分任务的短标题，再调用一次' }
       const r = await host.createConversation({ title: title.trim(), message, files })
       // 不另记系统消息：对话里这次工具调用本身显示成「新建子对话 标题」
+      const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'child', ref: r.id, label: title.trim() }) : ''
       if (r.ok) host.changed(true)
-      return { ok: r.ok, id: r.id, info: r.info }
+      return { ok: r.ok, id: r.id, info: [r.info, wait].filter(Boolean).join('\n') }
     },
-    async sendToConversation(id, message) {
+    async sendToConversation(id, message, step) {
       if (!coordinator || !host.sendToConversation) return { ok: false, info: '这个对话不能给子对话发消息' }
       if (!message.trim()) return { ok: false, info: 'message 不能为空' }
       const r = await host.sendToConversation(id.trim(), message)
+      const wait = r.ok && step ? bindWait(task, step, { kind: 'child', ref: id.trim(), label: id.trim() }) : ''
       if (r.ok) host.changed(true)
-      return r
+      return wait ? { ok: r.ok, info: `${r.info}\n${wait}` } : r
     },
     // 子任务的结果只交回派它的对话，不直接和父对话通讯、不认领文件、不用后台命令（推回的结果没有地方接）
     child: !helper && !!task.parentTaskId && !!host.messageParent,
@@ -2248,9 +2317,11 @@ function makeOrchestra(
     async runBackground(input) {
       if (!host.runBackground) return { ok: false, info: '这里不能用后台命令，直接执行' }
       if (!input.command.trim()) return { ok: false, info: 'command 是空的' }
-      const r = await host.runBackground(input)
+      const { step, ...job } = input
+      const r = await host.runBackground(job)
+      const wait = r.ok && r.id && step ? bindWait(task, step, { kind: 'background', ref: r.id, label: job.name }) : ''
       if (r.ok) host.changed(true)
-      return r
+      return { ok: r.ok, info: [r.info, wait].filter(Boolean).join('\n') }
     },
     checkBackground(id) {
       return host.checkBackground ? host.checkBackground(id.trim()) : '这里没有后台命令'
@@ -2627,6 +2698,8 @@ async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: bool
   ensureTaskRun(host, workflow, run, skillSlots)
   for (const s of planTask(workflow, run).steps)
     if (!host.task.steps.some((x) => x.id === s.id)) host.task.steps.push(s)
+  // 工作流是计划里的一个主步骤，它的节点就是子步骤
+  if (host.task.projectId) bindRun(host.task, plan.step ?? '', run, t('工作流「{name}」', { name: workflow.name }))
   host.changed(true)
   const inv: Invocation = {
     workflow,
@@ -2644,6 +2717,7 @@ async function startPlan(host: EngineHost, plan: PlannedRun): Promise<{ ok: bool
     rec.status = r.ok ? 'done' : r.stopped ? 'stopped' : 'failed'
     rec.endedAt = now()
   }
+  endRun(host.task, run, r.ok, r.ok ? '' : r.error)
   // 一次运行失败不拖住后面的对话：下一次计划重新开始
   host.halted = false
   host.changed(true)
@@ -2676,6 +2750,7 @@ async function conversationPrompt(
     verifyPart(host),
     editPart(host),
     backgroundPart(host),
+    planPart(host, coordinator),
     statePart(host.task),
     // 独立分支的子对话：不说清楚它会以为自己在项目目录里，去切分支或把改动提交到错的地方
     wt
@@ -2728,7 +2803,7 @@ ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
           : '现在没有子对话在执行，可以自己当场改，比新建子对话快。改完马上提交（只 add 自己改的文件），不要把没提交的改动留在目录里，之后子对话的改动要合进这里。在这一轮里新建了子对话之后就不要再改文件。'
       }
 一条消息里有几件互不相关的事时拆开，分别交给不同的子对话，它们会同时执行。不要把同一件事发给多个子对话。子对话不能再创建子对话，子对话之间也不能直接通讯，需要配合时由你转达。
-分派时把你已经查到的东西一起交过去：相关文件和行号、已经确认的结论、用户的原话和验收标准都写进 message，子对话不用从头再摸一遍。
+分派时把你已经查到的东西一起交过去：相关文件和行号、已经确认的结论、用户的原话和验收标准都写进 message，子对话不用从头再摸一遍。Bug 例外：你只定位到模块，不去找具体是哪一行，把现象、复现步骤、报错原文和模块的入口交过去，由子对话从这个模块开始逐层定位。
 
 ${
   host.childIsolation === 'worktree'
@@ -2792,6 +2867,8 @@ async function runConversationTurn(host: EngineHost, who: string) {
       () => orch?.helperBatch(),
       (text) => host.steer?.('', text) ?? Promise.resolve(false),
     )
+    // 计划做完了必须写总结：这一轮结束时还没写就追一次，还不写就取最后的回复当总结
+    let askedSummary = false
     // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
     for (let i = 0; i < 30; i++) {
       orch = makeOrchestra(
@@ -2825,7 +2902,28 @@ async function runConversationTurn(host: EngineHost, who: string) {
         continue
       }
       const plans = takePendingPlans(host)
-      if (!plans.length) break
+      if (!plans.length) {
+        const owed = task.projectId && !host.halted ? unsummarized(task) : undefined
+        if (owed && !askedSummary) {
+          askedSummary = true
+          prompt = `（面板）计划「${owed.title || '这份计划'}」的步骤都完成了，还没写总结。现在调用 finish_plan 写总结（必须）：做了什么、验证结果、改了哪些地方、遗留问题，并在回复里告诉用户。\n${planText(task, owed)}`
+          continue
+        }
+        if (owed) {
+          // 追了一次还是没写：取最后一条回复当总结，标上是面板代取的，界面上看得出来
+          owed.summary =
+            clip(
+              [...task.messages]
+                .reverse()
+                .find((m) => m.role === 'agent' && m.text.trim())
+                ?.text.trim() ?? '',
+              6000,
+            ) || t('（AI 没有写总结）')
+          owed.autoSummary = true
+          host.changed(true)
+        }
+        break
+      }
       const results: string[] = []
       for (const p of plans) {
         const out = await startPlan(host, p)

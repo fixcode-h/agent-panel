@@ -37,6 +37,8 @@ export function QuestionPanel({
   onSkip,
   skipLabel,
   onClose,
+  closeLabel,
+  label,
   who,
   className,
 }: {
@@ -48,6 +50,10 @@ export function QuestionPanel({
   skipLabel?: string
   /** 右上角的关闭：先不回答，暂停对话；不给就没有这个按钮 */
   onClose?: () => unknown
+  /** 关闭按钮的提示，默认「关闭并暂停对话」 */
+  closeLabel?: string
+  /** 左上角的标题，默认「需要你回答」 */
+  label?: string
   /** 谁在问：Agent 的名字 */
   who?: React.ReactNode
   className?: string
@@ -128,7 +134,7 @@ export function QuestionPanel({
     >
       <div className="flex min-w-0 items-center gap-2 px-4 pt-3 text-xs">
         <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0 text-accent" />
-        <span className="shrink-0 font-medium text-accent">{t('需要你回答')}</span>
+        <span className="shrink-0 font-medium text-accent">{label ?? t('需要你回答')}</span>
         {who && <span className="flex min-w-0 items-center gap-1.5 text-muted">{who}</span>}
         <span className="flex-1" />
         {n > 1 && (
@@ -158,8 +164,8 @@ export function QuestionPanel({
         {onClose && (
           <button
             type="button"
-            aria-label={t('关闭并暂停对话')}
-            title={t('关闭并暂停对话')}
+            aria-label={closeLabel ?? t('关闭并暂停对话')}
+            title={closeLabel ?? t('关闭并暂停对话')}
             disabled={closing || busy}
             onClick={async () => {
               setClosing(true)

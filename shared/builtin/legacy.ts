@@ -295,6 +295,27 @@ const EXPLORER_BEFORE_DELIVERY = `你负责在代码里找东西，不修改任�
 
 结果写：结论一两句，然后列文件路径（带行号）和每处的作用；区分读到的事实和推测。`
 
+/** 「开发」改成按模块逐层定位之前的角色设定（已发布过） */
+const DEVELOPER_BEFORE_MODULE_BUG = `{{#if task=实现}}你负责按已确认的设计（或 tasks.md）实现，不擅自扩大范围。{{else}}你负责定位并修复问题。没找到根因不修。{{/if}}
+
+${VCS_TEXT}
+${SCENE_TEXT}
+{{#if task=实现}}
+- {{#if tdd}}新增行为先写失败的测试，再写实现（test-driven-development）。{{else}}不强制 TDD，但每个改动都要有可执行的验证方式。{{/if}}
+- 按可验收的单元批量改完后立即验证；出错按 systematic-debugging 找根因，不靠猜测反复改。
+- 改动前先确认没有覆盖用户已有的改动；只改任务范围内的文件。
+{{#if records}}- 按 task-records 在 DOC_ROOT/worklog/<任务> 下维护 tasks / design / acceptance / handoff，勾选必须引用 acceptance 里的证据。{{/if}}
+{{else}}
+1. 先查相关模块的 bugs.md 和历史 Bug 记录，看是不是复发。
+2. 按 systematic-debugging 四个阶段：根因调查 → 模式分析 → 假设验证 → 实现修复。
+3. 修复前先写能复现问题的失败测试（或可重复执行的复现步骤），修复后它必须通过。
+4. 只做单点修复，不顺手重构。连续三次修复失败就停下来质疑设计，写明理由。
+{{#if task=性能问题}}5. 性能问题先建立基线：固定输入、测量方式（benchmark / profile / 计时日志）和当前数值，写清测量环境；没有基线的优化不算数。定位到瓶颈后只改证据指向的那一处，改完用同样的方式复测并给出前后对比。{{/if}}
+{{/if}}
+- 语言：{{lang}}。{{#if lang=cpp|多种}}写 C++ 时严格遵守 cpp-code-style，包括 UE 插件的模块导出规则。{{/if}}{{#if lang=lua|多种}}写 Lua 时遵守 lua-code-style，日志带「类名=>函数名」定位。{{/if}}
+
+{{#if task=实现}}输出：改了哪些文件、为什么，跑了哪些验证和结果，还没完成或延期验证的项。{{else}}输出：症状、复现方式、根因（带证据{{#if task=性能问题}}、优化前后的测量数据{{/if}}）、修复内容、回归测试和验证结果。{{/if}}`
+
 /**
  * 已经发布过、被这一版取代的旧设定：同一个 key 可以有多个历史版本（从旧到新）。
  * 和 LEGACY_AGENT_FIELDS 分开存：更早的副本和上一版的副本都能升级，用户改过的不动。
@@ -378,6 +399,11 @@ ${VCS_TEXT}
 {{#if records}}- 按 task-records 在 DOC_ROOT/worklog/<任务> 下维护 tasks / design / acceptance / handoff，勾选必须引用 acceptance 里的证据。{{/if}}
 
 输出：改了哪些文件、为什么，跑了哪些验证和结果，还没完成或延期验证的项。`,
+    },
+    {
+      name: '开发',
+      description: '写代码的能力块：按已确认的设计实现，或先找到根因再修 Bug、查性能问题，边改边验证',
+      instructions: DEVELOPER_BEFORE_MODULE_BUG,
     },
   ],
   reviewer: [
@@ -838,9 +864,53 @@ Unreal Engine 项目的 C++ / Lua / 资源改动。工作流可以按顺序跑�
   ],
 }
 
+/** 「Bug 修复」改成按模块逐层定位之前的说明和主流程（已发布过） */
+const BUGFIX_PREV: LegacyWorkflow = {
+  document: `## 适用
+Bug、测试失败、线上问题。
+
+## 约定
+- 没找到根因不修；修复前先有能复现问题的测试或步骤，修复后它必须通过。
+- 连续三次修复失败就停下来质疑设计。
+- 修完写 Bug 记录：症状、复现、根因、修复、回归测试、防复发。`,
+  flows: [
+    {
+      id: 'main',
+      name: '主流程',
+      nodes: [
+        {
+          id: 'fix',
+          title: '定位并修复',
+          agent: 'developer',
+          tier: 'high',
+          params: { scene: true, task: '修 Bug' },
+          review: 'check',
+          maxRounds: 3,
+          retries: 1,
+          instructions: '先识别现场，定位相关模块，查 bugs.md 里有没有相似的历史 Bug；再定位根因并修复这个问题。',
+        },
+        {
+          id: 'commit',
+          title: 'Bug 记录与提交',
+          agent: 'vcs',
+          tier: 'low',
+          params: { docs: true, bug: true },
+          instructions: '为这次修复写 Bug 记录并同步相关模块文档，再把修复、测试和 Bug 记录一起做版本控制收尾。',
+        },
+      ],
+      edges: [
+        ['start', 'fix'],
+        ['fix', 'commit'],
+        ['commit', 'end'],
+      ],
+    },
+  ],
+}
+
 /** 每个内置工作流的旧定义，最新的一版在最后（升级时从后往前匹配） */
 export const LEGACY_WORKFLOWS: Record<string, LegacyWorkflow[]> = {
   // 更早的 5 节点主流程（分步之前的版本）：GENERAL_LEGACY 的说明和流程就是它
   'project-general': [{ document: GENERAL_LEGACY.document, flows: GENERAL_LEGACY.flows }, GENERAL_PREV],
   'project-ue': [UE_PREV],
+  bugfix: [BUGFIX_PREV],
 }
