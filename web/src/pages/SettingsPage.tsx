@@ -936,7 +936,6 @@ function SettingsBody({
             <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
           )}
           {cur.id === 'data' && <DataSection />}
-          {/* 用量统计：数据来源（api.tokenUsage）等另一个子对话把 api.ts 交回来后接上 */}
           {cur.id === 'usage' && <UsageSection />}
           {cur.id === 'deploy' && <DeploySection />}
           {cur.id === 'tags' && <TagsSection />}

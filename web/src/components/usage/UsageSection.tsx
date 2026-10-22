@@ -2,11 +2,9 @@ import { useEffect, useState } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { t } from '@shared/i18n'
 import { USAGE_GRAINS, usageCount, usageLabel, type UsageGrain, type UsageReport } from '@shared/usage'
+import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-
-/** 取用量报表：由设置页传进来（接的是 `api.tokenUsage`），组件自己不关心怎么请求 */
-export type UsageLoad = (q: { grain: UsageGrain; count: number }) => Promise<UsageReport>
 
 /** 千分位，等宽字体对齐由表格的 font-mono 负责 */
 const num = (n: number) => n.toLocaleString()
@@ -16,9 +14,10 @@ const usd = (n: number) => `$${n > 0 && n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`
 
 /**
  * 设置里的「用量统计」：按天 / 周 / 月看 token 用量。
- * 聚合在服务端做，这里只拿到几十个桶；老任务没有轮次明细时服务端就不计入，界面只会显示「暂无用量」。
+ * 聚合在服务端做（`GET /usage`），这里只拿到几十个桶；老任务没有轮次明细时服务端就不计入，
+ * 界面只会显示「暂无用量」。
  */
-export function UsageSection({ load }: { load?: UsageLoad }) {
+export function UsageSection() {
   const [grain, setGrain] = useState<UsageGrain>('day')
   const [report, setReport] = useState<UsageReport>()
   const [loading, setLoading] = useState(false)
@@ -26,19 +25,18 @@ export function UsageSection({ load }: { load?: UsageLoad }) {
   const [tick, setTick] = useState(0)
 
   useEffect(() => {
-    // 接口还没接上时先不请求，界面显示空状态
-    if (!load) return
     let dead = false
     setLoading(true)
     setError('')
-    load({ grain, count: usageCount(grain) })
+    api
+      .tokenUsage({ grain, count: usageCount(grain) })
       .then((r) => !dead && setReport(r))
       .catch((e) => !dead && setError((e as Error).message))
       .finally(() => !dead && setLoading(false))
     return () => {
       dead = true
     }
-  }, [grain, load, tick])
+  }, [grain, tick])
 
   const total = report?.total
   const buckets = report?.buckets ?? []
@@ -71,7 +69,7 @@ export function UsageSection({ load }: { load?: UsageLoad }) {
             variant="ghost"
             size="icon-sm"
             aria-label={t('刷新用量')}
-            disabled={loading || !load}
+            disabled={loading}
             onClick={() => setTick((n) => n + 1)}
           >
             <RefreshCw className={cn('h-3.5 w-3.5', loading && 'animate-spin')} />
@@ -90,7 +88,7 @@ export function UsageSection({ load }: { load?: UsageLoad }) {
         </div>
       ) : (
         <div className="overflow-x-auto rounded-xl border">
-          <table className="w-full min-w-[560px] text-[0.78125rem]">
+          <table className="w-full min-w-[640px] text-[0.78125rem]">
             <thead>
               <tr className="border-b text-left text-[0.6875rem] text-subtle">
                 <th className="px-3 py-2 font-medium">{t('时间')}</th>
