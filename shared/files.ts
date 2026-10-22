@@ -70,6 +70,30 @@ export interface FileContent {
   binary?: boolean
   content: string
   truncated: boolean
+  /** 文件大小（字节）；文件不存在时没有 */
+  size?: number
+  /** 修改时间（ISO）；文件不存在时没有 */
+  mtime?: string
+  /** 文件现在用的换行符：保存时按原样回写，不把 CRLF 的文件改成 LF */
+  eol?: 'lf' | 'crlf'
+}
+
+/** 写文件、新建文件的结果：写完之后的大小 */
+export interface FileWrite {
+  path: string
+  size: number
+}
+
+/** 一个项目和 git 比的差异；不是 git 仓库或文件没提交过时 git 为 false，用 note 说明原因 */
+export interface FileDiff {
+  path: string
+  dir: string
+  diff: string
+  git: boolean
+  /** 文件在基准提交里原来就有 */
+  before: boolean
+  /** 看不到正常差异时给前端的说明 */
+  note?: string
 }
 
 /** 搜索方式：按文件名，或按文件内容 */
