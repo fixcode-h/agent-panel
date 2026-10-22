@@ -835,6 +835,30 @@ export function tasksApi(deps: {
   }
 
   /**
+   * 用户直接在子对话里回复：这就算回答了它挂在父对话里的提问。
+   * 以前只有「在父对话卡片上点选」和「父对话转发」两条路会收起卡片，用户自己进子对话答完，
+   * 父对话里的卡片仍停在「待决定」，还得再答一次
+   */
+  async function settleAskFromChild(childId: string, answer: string) {
+    const child = live.get(childId)?.task ?? (await store.get(childId))
+    if (!child?.parentTaskId) return
+    const entry = live.get(child.parentTaskId)
+    const parent = entry?.task ?? (await store.get(child.parentTaskId))
+    if (!parent || !settleAsks(parent, childId, answer, 'user')) return
+    // 父对话的 AI 也从收件箱收到过这个问题：换成「用户已回答」，免得它再决定一遍
+    parent.inbox = parent.inbox.filter((x) => !(x.from === childId && x.text.startsWith('（提问）')))
+    parent.inbox.push({
+      from: childId,
+      title: child.title,
+      text: `（用户已回答你收到的提问）${answer}`,
+      at: new Date().toISOString(),
+    })
+    parent.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    await store.update(parent.id, parent)
+  }
+
+  /**
    * 用户在父对话的提问卡片上回答：答案直接交给子对话，并告诉父对话的 AI 不用再回答；
    * 不回答而是交给父对话决定时（delegate），父对话空闲就开一轮让它处理收件箱里的提问
    */
@@ -1633,6 +1657,10 @@ export function tasksApi(deps: {
       const r = await ruleCommand(id, text.trim())
       return 'error' in r ? bad(c, r.error) : c.json(r.task)
     }
+    // 用户直接进子对话回复，就当作回答了它挂在父对话里的提问（不打断这次发送）
+    await settleAskFromChild(id, text).catch((e) =>
+      log.warn('task', '回答子对话时没能收起父对话的提问卡片', { task: id, error: (e as Error).message }),
+    )
     let prev = live.get(id)
     if (prev?.task.status === 'running') {
       // 执行中：先试能实时送到 CLI 的办法（等下一句、插话、read_user_notes），

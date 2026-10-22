@@ -223,6 +223,17 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       return as(t('传话'), [firstLine(a.to), firstLine(a.text)].filter(Boolean).join(' · '), 'other', text(a.text))
     case 'read_messages':
       return as(t('查看消息'), '')
+    case 'read_user_notes':
+      return as(t('查看用户补充'), '', 'read')
+    // 提问和等下一句：问题本身有提问卡片，这里只说明模型在做什么
+    case 'ask_user':
+      return as(
+        t('向用户提问'),
+        firstLine(a.question) || firstLine((a.questions as { question?: unknown }[] | undefined)?.[0]?.question),
+        'other',
+      )
+    case 'wait_user_message':
+      return as(t('等待用户消息'), '')
   }
   return undefined
 }
