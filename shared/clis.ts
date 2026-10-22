@@ -345,6 +345,9 @@ export const CLIS: CliDefinition[] = [
           },
         ],
         wire: {},
+        // Claude Code 自己在地址后面拼 /v1/messages：设置里写成 …/v1 的中转地址要去掉 /v1
+        baseUrl: { anthropic: '{root}' },
+        thinkArgs: [],
       },
       // 环境变量和 settings.json 的 env 里配的网关、密钥
       apiSources: [
@@ -551,6 +554,9 @@ export const CLIS: CliDefinition[] = [
           },
         ],
         wire: { 'openai-responses': 'responses' },
+        baseUrl: {},
+        // 第三方接口的模型 Codex 不认识，默认既不发思考强度、也不要思考摘要；用户选了强度就打开
+        thinkArgs: ['-c', 'model_supports_reasoning_summaries=true'],
       },
       // config.toml 里自己接的 model_providers，环境变量和 auth.json 里的 OPENAI_API_KEY
       apiSources: [

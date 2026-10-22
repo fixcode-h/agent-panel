@@ -16,11 +16,11 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 - 起因：Pi 的 models.json 没写 `reasoning: true`，下拉只剩一档（deacb24）；Command Code 写回 `reasoningEfforts` 时被档位过滤掉了几档（bc33580）；Pi 只写了 `reasoning` 没写 `thinkingLevelMap`，xhigh 被当成不支持，按模型配的默认强度也没写进 `modelThinkingLevels`（用户指出「一键更新不带思考强度」）。写之前先读 CLI 文档里模型条目和设置的全部字段，别只补报错的那一个。
 - 防线：`server/api-config.test.ts`。
 
-## 按模型查能力前先解析 API 映射
+## 按模型查能力统一走 apiModelInfo
 
-- 规则：凡是按模型查强度、上下文、协议的地方，先换成 API 配置里映射到的模型，再查目录。
-- 起因：bda5817，设了映射后强度选项、运行时校验和写回都按原模型算错。
-- 防线：人工。
+- 规则：按模型查强度、上下文的地方都用 `apiModelInfo`（先换成 API 映射到的模型、带上 API 的协议），按模型记的表用 `apiModelKey` 去掉 provider 前缀再查。
+- 起因：bda5817 映射后强度算错；执行前夹强度、设置页下拉没带协议，带前缀的模型查不到映射。
+- 防线：`server/api-protocol.test.ts`。
 
 ## CLI 升级先看变更，再重录样本
 
@@ -43,7 +43,7 @@ paths: shared/clis.ts, shared/clis/**, shared/cli-spec.ts, shared/settings.ts, s
 
 - 规则：CLI 从 API 模式切回账号模式时，去掉 API provider 前缀和协议后缀，只把账号实际支持的模型 ID 交给 CLI；两个模式的模型下拉也要分别取各自来源。
 - 起因：Command Code 账号模式保留 `tokenapi/...-responses` 会先报未登录，登录后又报 `unknown model`；用户明确要求账号模式自动映射。
-- 补充：模型列表按「CLI + 登录方式 + 选的 API」分开缓存（服务端 `server/models.ts`、前端 `web/src/lib/cli-models.ts`），设置页切换后不等保存就换成那种方式的列表；账号方式要去掉 CLI 列表里自己接的接口（Command Code 的 BYOK 组、带 API provider 前缀的模型），下拉和档位显示用 `accountModelId`，和执行时一致。起因：Command Code 切到账号后下拉还是 `tokenapi/...`，来回切换要等好几秒（用户指出）。
+- 补充：模型列表按「CLI + 登录方式 + 选的 API」分开缓存（`server/models.ts`、`web/src/lib/cli-models.ts`），切换后不等保存就换列表；账号方式去掉 CLI 自己接的接口（BYOK 组、带 API 前缀的模型），下拉用 `accountModelId`。起因：Command Code 切到账号后下拉还是 `tokenapi/...`（用户指出）。
 - 防线：`server/settings-auth.test.ts`；`scripts/e2e.mjs`「账号和 API」里查两种方式的列表。
 
 ## 整行命令交给 shell 走 shellCommand，Windows 上不让 Node 转义

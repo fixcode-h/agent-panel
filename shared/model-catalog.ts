@@ -10,7 +10,7 @@
  * 5. 当前 API 的协议（OpenAI Responses / Chat、Anthropic、Gemini）优先选择支持它的模型
  */
 import { z } from 'zod'
-import { API_PROTOCOLS, type ApiProtocol } from './accounts.ts'
+import { API_PROTOCOLS, type ApiConfig, type ApiProtocol } from './accounts.ts'
 import type { ModelTier } from './clis.ts'
 import raw from './model-catalog.json'
 
@@ -419,6 +419,32 @@ export function modelLimitsFor(
         tier: 'medium',
         matched: false,
       }
+}
+
+/**
+ * API 里某个模型在目录里的数值：设置里给模型配了映射时按映射到的模型查，并按这个 API 的协议挑记录。
+ * 写 CLI 配置、执行前夹思考强度、估算上下文、设置页下拉都走这里，免得有的地方带协议、有的不带，
+ * 同一个模型在不同地方查出不同的强度和窗口
+ */
+export function apiModelInfo(
+  model: string,
+  api: Pick<ApiConfig, 'protocol' | 'modelMap'> | undefined,
+  entries?: ModelCatalogEntry[],
+) {
+  return modelLimitsFor(api?.modelMap?.[apiModelKey(model, api?.modelMap)] || model, {
+    entries,
+    protocol: api?.protocol,
+  })
+}
+
+/**
+ * API 设置里按模型记的表（映射、默认强度）的键是 API 里写的模型名；CLI 列表和执行时用的模型带着
+ * provider 前缀（agentpanel/x）。从前往后去掉前缀段，找到表里有的那个；都没有时原样返回
+ */
+export function apiModelKey(model: string, table: Record<string, unknown> | undefined) {
+  if (!table) return model
+  for (let m = model; m; m = m.includes('/') ? m.slice(m.indexOf('/') + 1) : '') if (m in table) return m
+  return model
 }
 
 /** AI 补全的一次查询 */

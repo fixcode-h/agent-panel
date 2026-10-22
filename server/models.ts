@@ -7,14 +7,8 @@ import { CLIS, type CliDefinition } from '../shared/clis.ts'
 import { RpcSpec } from '../shared/cli-spec.ts'
 import type { CliModel, CliModels } from '../shared/schema.ts'
 import { clampEffort, cliSettings } from '../shared/settings.ts'
-import { modelLimitsFor, type ModelCatalogEntry } from '../shared/model-catalog.ts'
-import {
-  apiModelList,
-  apiModelPrefix,
-  modelsForProtocol,
-  type ApiConfig,
-  type ApiProtocol,
-} from '../shared/accounts.ts'
+import { apiModelInfo, type ModelCatalogEntry } from '../shared/model-catalog.ts'
+import { apiModelList, apiModelPrefix, modelsForProtocol, type ApiConfig } from '../shared/accounts.ts'
 import { mergedModelCatalog } from './model-catalog-store.ts'
 import { capture, childEnv } from './exec/process.ts'
 import { rpcQuery } from './exec/rpc/query.ts'
@@ -259,33 +253,68 @@ export function piLevels(m: { reasoning?: boolean; thinkingLevelMap?: Record<str
   })
 }
 
+/** Pi 安装包里 pi-ai 自带的一个模型：能不能思考、每档强度发给接口的值，以及走哪种接口 */
+export interface PiBuiltinModel {
+  provider: string
+  id: string
+  api: string
+  reasoning: boolean
+  thinkingLevelMap?: Record<string, unknown>
+}
+
+/**
+ * Pi 依赖的 pi-ai 自带的模型目录（dist/providers/data/*.json），键是 provider/id。
+ * 面板的模型目录不认识的模型（第三方接口上的 gpt-5.4-mini、gemini-2.5-pro 这类）靠它知道能不能思考
+ */
+export async function piBuiltinModels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv) {
+  const known = new Map<string, PiBuiltinModel>()
+  const pkg = [def.npmPackage, ...(def.npmRenameFrom ?? [])].map((name) => packageDir(command, env, name)).find(Boolean)
+  if (!pkg) return known
+  // pi-ai 是 Pi 的依赖：装在它自己的 node_modules 里，或者和它并列（同一个 scope 下）
+  const scope = path.basename(path.dirname(pkg))
+  const dirs = [path.join(pkg, 'node_modules', scope, 'pi-ai'), path.join(path.dirname(pkg), 'pi-ai')]
+  for (const d of dirs) {
+    const data = path.join(d, 'dist', 'providers', 'data')
+    const files = await readdir(data).catch(() => [] as string[])
+    for (const f of files.filter((x) => x.endsWith('.json'))) {
+      try {
+        const j = JSON.parse(await readFile(path.join(data, f), 'utf8'))
+        // 按接口分组：{ "openai-completions": { "chat:deepseek-flash": { provider, id, reasoning, thinkingLevelMap } } }
+        for (const group of Object.values(j ?? {}))
+          for (const m of Object.values((group ?? {}) as Record<string, any>))
+            if (m?.provider && m?.id && m.type !== 'image' && m.type !== 'classifier')
+              known.set(`${m.provider}/${m.id}`, {
+                provider: String(m.provider),
+                id: String(m.id),
+                api: String(m.api ?? ''),
+                reasoning: !!m.reasoning,
+                ...(m.thinkingLevelMap ? { thinkingLevelMap: m.thinkingLevelMap } : {}),
+              })
+      } catch {}
+    }
+    if (files.length) break
+  }
+  return known
+}
+
+/**
+ * 按模型名在 pi-ai 自带的目录里找同一个模型：API 里的模型挂在面板自己的 provider 下，只能按名字对。
+ * 同名的有好几家（官方、各种网关）时优先选接口和这个 API 一样的
+ */
+export function pickPiBuiltin(models: Iterable<PiBuiltinModel>, model: string, api: string) {
+  const bare = model.slice(model.lastIndexOf('/') + 1).toLowerCase()
+  const same = [...models].filter((m) => m.id.toLowerCase() === bare)
+  return same.find((m) => m.api === api) ?? same[0]
+}
+
 /**
  * Pi 每个模型的思考强度：内置的模型从安装包里 pi-ai 的模型目录读（providers/data/*.json），
  * 自己接的模型和 modelOverrides 从 models.json 读（面板写 API 配置时也写在这里）。读不到的不放，按 Pi 的默认算
  */
 async function piThinkingLevels(def: CliDefinition, command: string, env: NodeJS.ProcessEnv) {
   const known = new Map<string, { reasoning?: boolean; thinkingLevelMap?: Record<string, unknown> }>()
-  const pkg = [def.npmPackage, ...(def.npmRenameFrom ?? [])].map((name) => packageDir(command, env, name)).find(Boolean)
-  if (pkg) {
-    // pi-ai 是 Pi 的依赖：装在它自己的 node_modules 里，或者和它并列（同一个 scope 下）
-    const scope = path.basename(path.dirname(pkg))
-    const dirs = [path.join(pkg, 'node_modules', scope, 'pi-ai'), path.join(path.dirname(pkg), 'pi-ai')]
-    for (const d of dirs) {
-      const data = path.join(d, 'dist', 'providers', 'data')
-      const files = await readdir(data).catch(() => [] as string[])
-      for (const f of files.filter((x) => x.endsWith('.json'))) {
-        try {
-          const j = JSON.parse(await readFile(path.join(data, f), 'utf8'))
-          // 按接口分组：{ "openai-completions": { "chat:deepseek-flash": { provider, id, reasoning, thinkingLevelMap } } }
-          for (const group of Object.values(j ?? {}))
-            for (const m of Object.values((group ?? {}) as Record<string, any>))
-              if (m?.provider && m?.id && m.type !== 'image' && m.type !== 'classifier')
-                known.set(`${m.provider}/${m.id}`, { reasoning: !!m.reasoning, thinkingLevelMap: m.thinkingLevelMap })
-        } catch {}
-      }
-      if (files.length) break
-    }
-  }
+  for (const [k, m] of await piBuiltinModels(def, command, env))
+    known.set(k, { reasoning: m.reasoning, thinkingLevelMap: m.thinkingLevelMap })
   const file = def.auth?.api?.modelReasoning?.file
   if (file) {
     try {
@@ -478,14 +507,9 @@ async function claudeAuth(command: string, env: NodeJS.ProcessEnv): Promise<'acc
  * 用模型目录补齐 CLI 没有报告的项：上下文窗口、最大输出、可选思考强度和默认强度。
  * 目录里没有的模型保持原样，执行时按 1M / 128K 估算，思考强度交给 CLI 自己判断。
  */
-function withCatalog(
-  models: CliModel[],
-  entries: ModelCatalogEntry[],
-  allowed: string[],
-  protocol?: ApiProtocol,
-): CliModel[] {
+function withCatalog(models: CliModel[], entries: ModelCatalogEntry[], allowed: string[], api?: ApiConfig): CliModel[] {
   return models.map((m) => {
-    const info = modelLimitsFor(m.id, { entries, protocol })
+    const info = apiModelInfo(m.id, api, entries)
     if (!info.matched || !info.entry) return m
     const entry = info.entry
     // 只保留这个 CLI 认识的强度 id；目录里有、CLI 没有的不往下拉里放
@@ -553,7 +577,7 @@ export type ModelsMode = { authMode: 'account' | 'api'; apiId?: string }
 /** 缓存按「CLI + 登录方式 + 选的 API」分开存：账号和 API 来回切换时直接用已经读过的，不用每次都重跑 CLI */
 function cacheKey(id: string, api: ApiConfig | undefined) {
   if (!api) return `${id}|account`
-  return `${id}|api|${JSON.stringify([api.id, api.name, api.provider, api.protocol, api.baseUrl, api.models])}`
+  return `${id}|api|${JSON.stringify([api.id, api.name, api.provider, api.protocol, api.baseUrl, api.models, api.modelMap])}`
 }
 
 /** 用已保存的设置算出来的缓存项：执行任务时查上下文窗口用 */
@@ -584,13 +608,12 @@ export async function cliModels(id: string, refresh = false, mode?: ModelsMode):
   const hit = cache.get(key)
   if (!refresh && !unresolved && hit && Date.now() - hit.at < TTL) return hit.data
   const entries = await mergedModelCatalog().catch(() => [])
-  const protocol = cs.api?.protocol
   const applyCatalog = (data: CliModels) => {
     data.models = withCatalog(
       uniq(data.models),
       entries,
       def.efforts.map((e) => e.id),
-      protocol,
+      cs.api,
     )
     data.efforts = [...new Set(data.models.flatMap((m) => m.efforts ?? []))]
     return data
@@ -681,7 +704,7 @@ export async function supportedEffort(id: string, model: string, effort?: string
   // API 设置里给这个模型配了映射时按映射到的模型算
   const catalog = await mergedModelCatalog().catch(() => [])
   const cs = cliSettings(await getSettings(), id)
-  const hit = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries: catalog })
+  const hit = apiModelInfo(model, cs.api, catalog)
   if (hit.matched && hit.entry) {
     const allowed = CLIS.find((c) => c.id === id)?.efforts.map((e) => e.id) ?? []
     known.set(model, allowed.length ? hit.entry.efforts.filter((e) => allowed.includes(e)) : hit.entry.efforts)

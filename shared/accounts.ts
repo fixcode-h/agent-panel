@@ -156,8 +156,8 @@ export interface DetectedApi {
   api: ApiConfig
 }
 
-/** 接口地址的比较键：忽略末尾的 / 和常见的 /v1、/v1beta 后缀 */
-const apiBase = (url: string) =>
+/** 接口地址的比较键：忽略末尾的 / 和常见的 /v1、/v1beta 后缀；也是各 CLI 地址写法里的 {root} */
+export const apiBase = (url: string) =>
   url
     .trim()
     .replace(/\/+$/, '')
@@ -390,6 +390,17 @@ export const CliAuth = z.object({
       /** 协议在这个 CLI 配置里的写法，用 {wire} 引用 */
       wire: z.record(z.string(), z.string()).default({}),
       /**
+       * 协议 → 这个 CLI 要的接口地址写法，{baseUrl} 按它填；{root} 是去掉末尾 /v1、/v1beta 的地址。
+       * 各家 SDK 自己拼版本路径的方式不同：Anthropic SDK 会再加 /v1/messages（地址带 /v1 就成了 /v1/v1），
+       * Pi 的 Gemini 接口把地址当成已经带版本的，Gemini CLI 又会自己加 /v1beta。没写的协议原样用设置里的地址
+       */
+      baseUrl: z.record(z.string(), z.string()).default({}),
+      /**
+       * 这一轮要思考（带了思考强度、不是 off）时加的参数。Codex 对自己不认识的模型（第三方接口的模型）
+       * 不发 reasoning 参数：思考强度不生效，也收不到思考摘要，要用 model_supports_reasoning_summaries 打开
+       */
+      thinkArgs: z.array(z.string()).default([]),
+      /**
        * CLI 只认配置里模型条目自己声明的思考强度时（例如 Command Code 的 providers.json），
        * 把模型目录里的强度写回这个位置；不写表示不处理。
        */
@@ -451,6 +462,12 @@ export const CliAuth = z.object({
            * 不写这个表时 Pi 把 xhigh / max 当成不支持、把模型不支持的 minimal 也列出来；不写表示不处理
            */
           levelsKey: z.string().optional(),
+          /**
+           * 模型目录里没有的模型，再查 CLI 安装包自带的模型数据（内置读法的名字，现在只有 pi-ai：
+           * Pi 依赖的 pi-ai 的 dist/providers/data/*.json），按模型名找能不能思考和每档的取值。
+           * 不写时目录里没有的模型不动：Pi 把它当成不能思考，Responses、Anthropic、Gemini 协议下就不请求思考
+           */
+          known: z.enum(['pi-ai']).optional(),
         })
         .optional(),
       /**
@@ -504,9 +521,17 @@ export type CliAuth = z.infer<typeof CliAuth>
  * ANTHROPIC_AUTH_TOKEN）；{x|json} 填成 JSON 字符串（带引号，写进 TOML 参数时用）。
  * 整个值正好是 {models} 时换成 { 模型: {} } 的对象，正好是 {modelList} 时换成 [{ id: 模型 }] 的数组（Pi 的 models.json）
  */
-export function apiVars(api: ApiConfig, wire: Record<string, string> = {}, provider = apiProvider(api)) {
+export function apiVars(
+  api: ApiConfig,
+  wire: Record<string, string> = {},
+  provider = apiProvider(api),
+  baseUrls: Record<string, string> = {},
+) {
+  const root = apiBase(api.baseUrl)
+  const rule = baseUrls[api.protocol]
   return {
-    baseUrl: api.baseUrl,
+    baseUrl: rule && api.baseUrl ? fillTemplate(rule, { root, baseUrl: api.baseUrl }) : api.baseUrl,
+    root,
     apiKey: api.apiKey,
     name: api.name,
     id: api.id,
@@ -587,7 +612,7 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
     modelMap: {},
     modelEfforts: {},
   }
-  const vars = apiVars(base, spec.wire, provider)
+  const vars = apiVars(base, spec.wire, provider, spec.baseUrl)
   const prefix = api && spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''
   return edits.map((e) => ({
     file: fillTemplate(e.file, vars),
@@ -602,7 +627,7 @@ export function fillEdits(edits: JsonEdit[], auth: CliAuth, api?: ApiConfig, las
 export function apiInjection(auth: CliAuth, api: ApiConfig) {
   const spec = auth.api!
   const provider = apiProvider(api, spec.defaultProvider)
-  const vars = apiVars(api, spec.wire, provider)
+  const vars = apiVars(api, spec.wire, provider, spec.baseUrl)
   const prefix = spec.modelPrefix ? fillTemplate(spec.modelPrefix, vars) : ''
   return {
     provider,

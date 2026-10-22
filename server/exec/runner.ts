@@ -33,7 +33,7 @@ import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
-import { modelLimitsFor } from '../../shared/model-catalog.ts'
+import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
 import {
   NODE_PART,
@@ -630,9 +630,11 @@ async function runAgent(
   // 模型目录里的默认思考强度：没有手动指定时用它；目录里没有的模型交给 CLI 自己决定
   const entries = await mergedModelCatalog().catch(() => [])
   // API 设置里给这个模型配了映射时，默认思考强度按映射到的模型算
-  const catalogInfo = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries, protocol: cs.api?.protocol })
+  const catalogInfo = apiModelInfo(model, cs.api, entries)
   // API 设置里给这个模型配的默认思考强度优先，其次才是模型目录的默认值
-  const defaultEffort = cs.api?.modelEfforts?.[model] || (catalogInfo.matched ? catalogInfo.defaultEffort : '')
+  const defaultEffort =
+    cs.api?.modelEfforts?.[apiModelKey(model, cs.api.modelEfforts)] ||
+    (catalogInfo.matched ? catalogInfo.defaultEffort : '')
   const requested = run.effort || defaultEffort
   let effort = await supportedEffort(cliId, model, requested)
   // 模型不认 Agent 自己或档位给的强度时，再试档位 / 模型默认的强度，不能直接变成不传
@@ -646,7 +648,7 @@ async function runAgent(
   // 接第三方接口时模型不在它们认识的内置表里，不传就按默认窗口截断，压缩点会小很多。
   // 只传上下文：最大输出在它们那里也是全局的，按目录传会把这个 CLI 的所有模型都改成同一个值。
   // 目录里没有的模型不传，交给 CLI 自己判断
-  const known = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries, protocol: cs.api?.protocol })
+  const known = apiModelInfo(model, cs.api, entries)
   const limits: ModelLimits = {
     context: manual.context || (known.matched ? known.context : undefined),
     maxOutput: manual.maxOutput || undefined,

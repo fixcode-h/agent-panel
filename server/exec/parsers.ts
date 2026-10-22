@@ -589,6 +589,8 @@ const str = (v: unknown) => (v === undefined || v === null ? '' : typeof v === '
 const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined)
 
 export function specParser(spec: OutputSpec, cwd: string): Parser {
+  // 这段思考已经流式推过增量：final 的整段（Pi 的 thinking_end）就不再发，免得重复一遍
+  let thinkingStreamed = false
   return (o) => {
     const rule = spec.events.find((r) => Object.entries(r.when).every(([k, want]) => evalExpr(o, `$.${k}`) === want))
     if (!rule) return []
@@ -612,9 +614,17 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
         case 'gen':
           if (str(g('text'))) out.push({ type: 'gen', text: str(g('text')) })
           break
-        case 'thinking':
+        case 'thinking': {
+          // final：这段思考结束时的完整内容。有的接口（一些 Responses 中转）不推增量，只在结束时给整段，
+          // 只认增量的话思考就整段丢了；推过增量的照旧用增量
+          if (e.final === true) {
+            const streamed = thinkingStreamed
+            thinkingStreamed = false
+            if (streamed) break
+          } else if (g('delta')) thinkingStreamed = true
           if (str(g('text'))) out.push({ type: 'thinking', text: str(g('text')), delta: !!g('delta') })
           break
+        }
         case 'tool': {
           const name = str(g('name')) || 'tool'
           const input = g('input') ?? {}
