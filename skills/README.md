@@ -13,7 +13,7 @@
 |                  | `openspec`                         | OpenSpec 各阶段的产物、门禁、回流和归档规则               |
 |                  | `task-records`                     | 按任务规模维护 tasks / design / acceptance / handoff 记录 |
 | 编码 `coding/`   | `test-driven-development`          | 红-绿-重构，先写失败的测试                                |
-|                  | `systematic-debugging`             | 先查历史 Bug，再四阶段找根因后修复                        |
+|                  | `systematic-debugging`             | 先查历史 Bug，从模块逐层定位，找到根因再修、修完就停      |
 |                  | `verification-before-completion`   | 没有新鲜验证证据不声称完成                                |
 |                  | `software-architecture-design`     | 项目、子系统架构的设计与评审（含 UE、Lua、C# 参考）       |
 | 文档 `docs/`     | `project-documentation`            | PROJECT_ROOT / DOC_ROOT、模块文档、bugs.md 与文档更新规则 |

@@ -26,7 +26,7 @@ import {
   upgradeBuiltinAgents,
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
-import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE } from '../shared/builtin/legacy.ts'
+import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE, LEGACY_WORKFLOWS } from '../shared/builtin/legacy.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
@@ -479,4 +479,59 @@ test('旧项目迁移：指向内置「默认」工作流的也改用「通用�
       { id: 'missing', workflowId: 'g' },
     ],
   )
+})
+
+test('没改过的「开发」和「Bug 修复」升级成按模块逐层定位，再启动不再改', async () => {
+  const saved: Agent[] = []
+  const agentOps = {
+    async updateAgent(id: string, input: AgentInput) {
+      saved.push({ ...AgentInput.parse(input), id, createdAt: '', updatedAt: '' })
+      return saved.at(-1)!
+    },
+  }
+  const prev = {
+    ...agents.find((a) => a.id === 'developer')!,
+    ...LEGACY_AGENT_FIELDS_MORE.developer.at(-1)!,
+    id: 'local-dev',
+    origin: 'builtin:developer',
+  }
+  const st = { agents: [prev], categories: [], tags: [], workflows: [] }
+  const up = await upgradeBuiltinAgents(st, agentOps)
+  assert.equal(up.length, 1, '上一版「开发」升级')
+  assert.match(up[0].instructions, /按模块逐层定位/)
+  assert.equal((await upgradeBuiltinAgents({ ...st, agents: up }, agentOps)).length, 0, '再启动不再改')
+
+  // 「Bug 修复」：上一版的说明和主流程（验收流程没变，照新定义）
+  const def = BUILTIN_WORKFLOWS.find((w) => w.key === 'bugfix')!
+  const old = LEGACY_WORKFLOWS.bugfix.at(-1)!
+  const mine = agents.map((a) => ({ ...a, origin: `builtin:${a.id}` }))
+  const legacy = WorkflowInput.parse({
+    ...buildWorkflow(
+      { ...def, document: old.document, flows: [...old.flows, ...def.flows.filter((f) => f.id !== 'main')] },
+      (k) => k,
+    ),
+    categoryId: 'cat',
+    tags: [],
+    origin: 'builtin:bugfix',
+  })
+  let wf: Workflow | null = null
+  const meta = () => ({ id: 'new', createdAt: '', updatedAt: '' })
+  const ops: BuiltinOps = {
+    createAgent: async (a) => ({ ...AgentInput.parse(a), ...meta() }),
+    createCategory: async (name, scope) => ({ ...CategoryInput.parse({ name, scope }), ...meta() }),
+    createTag: async (x) => ({ ...TagInput.parse(x), ...meta() }),
+    createWorkflow: async (x) => ({ ...WorkflowInput.parse(x), ...meta() }),
+    updateWorkflow: async (id, input) => {
+      wf = { ...WorkflowInput.parse(input), id, createdAt: '', updatedAt: '' }
+      return wf
+    },
+  }
+  const w: Workflow = { ...legacy, id: 'bf', createdAt: '', updatedAt: '' }
+  const r = await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [w] }, ops)
+  assert.ok(wf, '旧副本被升级')
+  const next = r.state.workflows.find((x) => x.id === 'bf')!
+  assert.match(next.document, /找到能完整解释现象的原因就修，修完就停/)
+  wf = null
+  await seedProjectWorkflows({ agents: mine, categories: [], tags: [], workflows: [next] }, ops)
+  assert.equal(wf, null, '再启动不再改')
 })
