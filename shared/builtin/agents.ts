@@ -355,7 +355,8 @@ ${BUG_METHOD}
         key: 'bug',
         label: '写 Bug 记录',
         type: 'bool',
-        default: false,
+        // 默认勾选：文档角色的职责就是把修 Bug 的过程记下来，不需要每次手动打开
+        default: true,
         description: '打开后修 Bug 时在模块 bugs.md 加索引并写单独的 Bug 文档',
       }),
     ],
