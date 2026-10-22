@@ -4,7 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { setLang } from '../../shared/i18n.ts'
 import { createWorktree, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.ts'
+
+// 断言的是 worktree.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
+setLang('zh')
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-wt-'))
 process.on('exit', () => rmSync(tmp, { recursive: true, force: true }))

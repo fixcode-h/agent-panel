@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { parseApiBalance } from './api-balance.ts'
+import { t } from './i18n.ts'
 
 test('解析 DeepSeek 的余额返回', () => {
   assert.deepEqual(
@@ -36,7 +37,9 @@ test('多个币种、数字金额和余额不可用', () => {
 })
 
 test('认不出的返回直接报错，不静默当成没有余额', () => {
-  assert.throws(() => parseApiBalance({}), /余额/)
-  assert.throws(() => parseApiBalance(null), /余额/)
-  assert.throws(() => parseApiBalance({ balance_infos: [{ total_balance: '1' }] }), /余额/)
+  // 期望文案用 t() 算：CI 的 LANG 是英文，写死中文本机能过、CI 挂
+  const expected = { message: t('接口没有返回余额信息') }
+  assert.throws(() => parseApiBalance({}), expected)
+  assert.throws(() => parseApiBalance(null), expected)
+  assert.throws(() => parseApiBalance({ balance_infos: [{ total_balance: '1' }] }), expected)
 })
