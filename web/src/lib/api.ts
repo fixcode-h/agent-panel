@@ -380,6 +380,9 @@ export const api = {
   /** 用系统默认程序打开附件（可执行文件改成在文件夹里显示），reveal 时直接在文件夹里显示 */
   openLocalFile: (path: string, reveal = false) =>
     request<{ ok: boolean; revealed: boolean }>('/uploads/open', json('POST', { path, reveal })),
+  /** 粘贴、拖进来的大文件：按名字、大小、修改时间在本机找回原路径（index 对应传入的第几个，找不到的不在里面） */
+  locateFiles: (files: { name: string; size: number; mtime?: number }[]) =>
+    request<{ files: (Attachment & { index: number })[] }>('/uploads/locate', json('POST', { files })),
   /** 附件、粘贴引用的本机文件：读文字内容，点文件卡片时看 */
   localFile: (path: string) =>
     request<{

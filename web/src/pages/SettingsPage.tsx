@@ -112,6 +112,8 @@ function SettingsBody({
   const [idle, setIdle] = useState(String(initial.idleTimeoutMinutes))
   const [presence, setPresence] = useState(String(initial.presenceGraceMinutes))
   const [children, setChildren] = useState(String(initial.childConcurrency))
+  const [largeMB, setLargeMB] = useState(String(initial.largeFileMB))
+  const [longPaste, setLongPaste] = useState(String(initial.longPasteChars))
   const [notify, setNotifyOn] = useState(notifyEnabled)
   const [openBrowser, setOpenBrowser] = useState(initial.openBrowser)
   const [requireToken, setRequireToken] = useState(initial.requireToken)
@@ -244,6 +246,10 @@ function SettingsBody({
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const childN = Number(children)
   const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
+  const largeN = Number(largeMB)
+  const largeValid = largeMB !== '' && Number.isInteger(largeN) && largeN >= 1 && largeN <= 50
+  const pasteN = Number(longPaste)
+  const pasteValid = longPaste !== '' && Number.isInteger(pasteN) && pasteN >= 0 && pasteN <= 1_000_000
   const tier = (x: CliSettings['tiers']['high']) => ({ ...x, model: x.model.trim() })
   const value: Settings = {
     openBrowser,
@@ -261,6 +267,8 @@ function SettingsBody({
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     childConcurrency: childValid ? childN : initial.childConcurrency,
+    largeFileMB: largeValid ? largeN : initial.largeFileMB,
+    longPasteChars: pasteValid ? pasteN : initial.longPasteChars,
     defaultCli: defCli,
     clis: Object.fromEntries(
       Object.entries(drafts).map(([id, d]) => [
@@ -651,6 +659,44 @@ function SettingsBody({
                   checked={askUserDefault}
                   onCheckedChange={setAskUserDefault}
                 />
+              </Row>
+              <Row
+                title={t('大文件只引用路径')}
+                desc={t(
+                  'MB。粘贴、拖进输入框的文件超过这么大时不上传、不拷进对话目录，面板在本机找到原文件后直接引用它的路径。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={largeMB}
+                    onChange={(e) => setLargeMB(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!largeValid}
+                    className={cn('h-9', !largeValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('大文件只引用路径（MB）')}
+                  />
+                  {!largeValid && <span className="text-xs text-danger">{t('填 1 到 50 之间的整数')}</span>}
+                </div>
+              </Row>
+              <Row
+                title={t('长文字存成文件')}
+                desc={t(
+                  '字，填 0 不转。粘贴进输入框的纯文字超过这么多字时存成一个文本文件，输入框里只放这个文件的卡片，消息不会被一大段文字撑满。',
+                )}
+              >
+                <div className="flex flex-col gap-1">
+                  <Input
+                    inputMode="numeric"
+                    value={longPaste}
+                    onChange={(e) => setLongPaste(e.target.value.replace(/[^\d]/g, ''))}
+                    aria-invalid={!pasteValid}
+                    className={cn('h-9', !pasteValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('长文字存成文件（字）')}
+                  />
+                  {!pasteValid && (
+                    <span className="text-xs text-danger">{t('填 0 到 1000000 之间的整数，0 表示不转')}</span>
+                  )}
+                </div>
               </Row>
               <ShellSetting value={shell} onChange={setShell} />
               <Row

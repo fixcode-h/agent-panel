@@ -225,7 +225,8 @@ function ApiCard({
     onChange({ modelEfforts })
   }
   /** 模型目录里自动识别到的配置：用户没改映射时用它 */
-  const autoModel = (m: string) => matchModel(m, { entries: modelCatalog?.entries ?? [] })?.entry.id ?? ''
+  const autoModel = (m: string) =>
+    matchModel(m, { entries: modelCatalog?.entries ?? [], protocol: a.protocol })?.entry.id ?? ''
   // 映射选项：先按模型名推测厂商，只列这个厂商的模型；第一项是自动识别
   const mapOptions = (m: string, current = '') => {
     const entries = modelCatalog?.entries ?? []
@@ -245,7 +246,9 @@ function ApiCard({
   }
   /** 默认思考强度：映射到的模型优先，没设映射时用自动识别到的模型 */
   const effortOptions = (m: string) => {
-    const efforts = matchModel(a.modelMap[m] || m, { entries: modelCatalog?.entries ?? [] })?.entry.efforts ?? []
+    const efforts =
+      matchModel(a.modelMap[m] || m, { entries: modelCatalog?.entries ?? [], protocol: a.protocol })?.entry.efforts ??
+      []
     const current = a.modelEfforts[m] ?? ''
     // 目录变了、已选的值不在里面时也要能显示
     const list = current && !efforts.includes(current) ? [...efforts, current] : efforts

@@ -3,12 +3,13 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
+import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, type Attachment } from '../shared/schema.ts'
 import { capture } from './exec/process.ts'
 import { pickFiles } from './pick-file.ts'
 import { DATA_DIR } from './store.ts'
 import { resolvePath } from './fs.ts'
 import { openWithSystem, revealItem } from './open.ts'
+import { locateFiles } from './locate-file.ts'
 import { t } from '../shared/i18n.ts'
 
 /** 用户上传的附件放在数据目录里，不放进项目目录，免得算进任务的文件改动 */
@@ -24,7 +25,8 @@ const UploadInput = z.object({
 /** 文件名里去掉路径和系统不允许的字符 */
 const safeName = (n: string) => path.basename(n).replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_') || 'file'
 
-export function uploadsApi() {
+/** dirs：找大文件原路径时额外翻的目录（各个项目的目录） */
+export function uploadsApi(opts: { dirs?: () => Promise<string[]> } = {}) {
   const routes = new Hono()
   routes.post('/', async (c) => {
     const p = UploadInput.safeParse(await c.req.json().catch(() => null))
@@ -98,6 +100,30 @@ export function uploadsApi() {
       }
       files.push({ from, name: base, path: file, size: s.size, mime: mimeOf(file), ref: true })
     }
+    return c.json({ files })
+  })
+  /**
+   * 粘贴、拖进来的大文件（超过上限，不上传）：浏览器给不出路径，按名字、大小、修改时间在本机找回原文件，
+   * 只引用不拷贝（见 locate-file.ts）。找不到的不在结果里，index 对应请求里的第几个
+   */
+  routes.post('/locate', async (c) => {
+    const p = z
+      .object({
+        files: z
+          .array(
+            z.object({ name: z.string().min(1).max(260), size: z.number().int().min(0), mtime: z.number().optional() }),
+          )
+          .min(1)
+          .max(MAX_ATTACHMENTS),
+      })
+      .safeParse(await c.req.json().catch(() => null))
+    if (!p.success) return c.json({ error: t('上传的内容不对') }, 400)
+    const dirs = (await opts.dirs?.().catch(() => [])) ?? []
+    const found = await locateFiles(p.data.files, dirs)
+    const files = p.data.files.flatMap((w, index) => {
+      const file = found.get(w)
+      return file ? [{ index, name: w.name, path: file, size: w.size, mime: mimeOf(file), ref: true }] : []
+    })
     return c.json({ files })
   })
   /** 点开附件卡片后：用系统默认程序打开，或在文件管理器里显示（可执行文件只显示，不运行） */

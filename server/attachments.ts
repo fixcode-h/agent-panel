@@ -6,7 +6,7 @@
  * 而且提示里给绝对路径也不方便 Agent 自己去找。所以开始时拷一份到 <执行目录>/attachments/，
  * 提示里给的相对路径就是 `attachments/<文件名>`。
  *
- * 超过上限（20M）的不拷，只用原来的路径：大文件拷一份既慢又占空间。
+ * 超过上限（MAX_ATTACHMENT_BYTES）的不拷，只用原来的路径：大文件拷一份既慢又占空间。
  * 粘贴路径引用的已有文件（Attachment.ref）也不拷：用户要的就是那个文件本身。
  */
 import { copyFile, mkdir, stat } from 'node:fs/promises'

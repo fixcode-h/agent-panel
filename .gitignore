@@ -22,3 +22,6 @@ logs/
 
 # 测试里假 CLI 偶尔留在仓库根目录的输出
 /commandcode-output.txt
+
+# 用户在对话里粘贴的截图和文件，面板拷进来给 Agent 看的，不进仓库
+/attachments/

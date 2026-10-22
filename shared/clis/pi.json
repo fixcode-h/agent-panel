@@ -582,6 +582,19 @@
       },
       {
         "when": {
+          "type": "message_update",
+          "assistantMessageEvent.type": "thinking_end"
+        },
+        "emit": [
+          {
+            "type": "thinking",
+            "text": "$.assistantMessageEvent.content",
+            "final": true
+          }
+        ]
+      },
+      {
+        "when": {
           "type": "message_end",
           "message.role": "assistant"
         },
@@ -742,7 +755,8 @@
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/models.json",
         "at": "providers.{provider}.models",
         "key": "reasoning",
-        "levelsKey": "thinkingLevelMap"
+        "levelsKey": "thinkingLevelMap",
+        "known": "pi-ai"
       },
       "modelDefaultEffort": {
         "file": "${PI_CODING_AGENT_DIR:-~/.pi/agent}/settings.json",
@@ -761,6 +775,10 @@
         "key": "input",
         "withImage": ["text", "image"],
         "withoutImage": ["text"]
+      },
+      "baseUrl": {
+        "anthropic": "{root}",
+        "gemini": "{root}/v1beta"
       },
       "wire": {
         "anthropic": "anthropic-messages",

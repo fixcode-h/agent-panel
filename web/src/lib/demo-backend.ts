@@ -1346,6 +1346,8 @@ function route(method: string, url: string, body: unknown): unknown {
   }
   // 粘贴回来的路径：演示里只认得这次页面里上传过的附件
   if (res === 'uploads' && id === 'resolve') return { files: demoResolve((body as { paths: string[] }).paths) }
+  // 演示没有本机磁盘，找不回大文件的原路径
+  if (res === 'uploads' && id === 'locate') return { files: [] }
   if (res === 'uploads' && id === 'open') fail('在线演示不能打开本机的文件，下载到本机运行后可以用')
   if (res === 'uploads' && id === 'raw' && sub === 'file') {
     const p = query.get('path') ?? ''

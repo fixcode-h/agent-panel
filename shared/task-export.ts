@@ -347,6 +347,19 @@ const localTime = (iso: string) => {
 }
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
 
+/**
+ * 记录从头到尾的跨度：执行时间只算有 CLI 在跑的时间，等用户只算进程停在等待上的时间；
+ * 回复完进程就退出（页面没开着）后到用户再发消息的空档两边都不算。不写出来，分析时会把
+ * 「执行 11 分钟、等用户 0 秒」和记录里一个多小时的间隔对不上当成统计错误
+ */
+function idleNote(messages: { at?: string }[], runMs: number) {
+  const ats = messages.map((m) => Date.parse(m.at ?? '')).filter(Number.isFinite)
+  if (ats.length < 2) return ''
+  const span = Math.max(...ats) - Math.min(...ats)
+  if (span - runMs < 60_000) return ''
+  return `（记录从头到尾跨度 ${fmtMs(span)}：两轮之间没有进程在跑的空档既不算执行也不算等用户）`
+}
+
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
 export function taskReport(b: TaskExport, maxOutput = 4000) {
   const tk = b.task
@@ -357,7 +370,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
     `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${localTime(tk.createdAt)}`,
     '',
     '## 统计',
-    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}；追加要求/对话 ${st.turns} 轮${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
+    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}${idleNote(tk.messages, st.durationMs)}；追加要求/对话 ${st.turns} 轮${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
     ...(cacheMismatch(st)
       ? [

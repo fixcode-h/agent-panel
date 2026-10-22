@@ -33,7 +33,7 @@ import { HANDOFF_DIR } from '../store.ts'
 import { expandSlash } from '../slash.ts'
 import { cachedModels, knownWindows, markNoEffort, supportedEffort } from '../models.ts'
 import { autoLimits, limitEnvVars, type ModelLimits } from '../../shared/model-limits.ts'
-import { modelLimitsFor } from '../../shared/model-catalog.ts'
+import { apiModelInfo, apiModelKey } from '../../shared/model-catalog.ts'
 import { mergedModelCatalog } from '../model-catalog-store.ts'
 import {
   NODE_PART,
@@ -630,9 +630,11 @@ async function runAgent(
   // 模型目录里的默认思考强度：没有手动指定时用它；目录里没有的模型交给 CLI 自己决定
   const entries = await mergedModelCatalog().catch(() => [])
   // API 设置里给这个模型配了映射时，默认思考强度按映射到的模型算
-  const catalogInfo = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries, protocol: cs.api?.protocol })
+  const catalogInfo = apiModelInfo(model, cs.api, entries)
   // API 设置里给这个模型配的默认思考强度优先，其次才是模型目录的默认值
-  const defaultEffort = cs.api?.modelEfforts?.[model] || (catalogInfo.matched ? catalogInfo.defaultEffort : '')
+  const defaultEffort =
+    cs.api?.modelEfforts?.[apiModelKey(model, cs.api.modelEfforts)] ||
+    (catalogInfo.matched ? catalogInfo.defaultEffort : '')
   const requested = run.effort || defaultEffort
   let effort = await supportedEffort(cliId, model, requested)
   // 模型不认 Agent 自己或档位给的强度时，再试档位 / 模型默认的强度，不能直接变成不传
@@ -646,7 +648,7 @@ async function runAgent(
   // 接第三方接口时模型不在它们认识的内置表里，不传就按默认窗口截断，压缩点会小很多。
   // 只传上下文：最大输出在它们那里也是全局的，按目录传会把这个 CLI 的所有模型都改成同一个值。
   // 目录里没有的模型不传，交给 CLI 自己判断
-  const known = modelLimitsFor(cs.api?.modelMap?.[model] || model, { entries, protocol: cs.api?.protocol })
+  const known = apiModelInfo(model, cs.api, entries)
   const limits: ModelLimits = {
     context: manual.context || (known.matched ? known.context : undefined),
     maxOutput: manual.maxOutput || undefined,
@@ -809,6 +811,14 @@ async function runAgent(
   const touched = new Set<string>()
   // 只收集这次调用新产生的消息：同一个节点返工、续跑时，之前几次调用的输出不能再算进来
   const mine: TaskMessage[] = []
+  /**
+   * 当前这一轮从哪开始：保活时一个进程会连着处理好几条用户消息，mine 里堆着前几轮的回复。
+   * 判「这一轮什么都没做」只能看这一轮自己的输出，不然前一轮的正文会把后面的空回合盖住，
+   * 用户的消息落进死回合既没回复也没报错。input 是这一轮要处理的要求，空回合重试时重发它
+   */
+  let turnMark = { from: 0, touched: 0, input: call.prompt }
+  const turnMsgs = () => mine.slice(turnMark.from)
+  const turnTools = () => turnMsgs().reduce((n, m) => n + m.tools.length, 0)
   let cur: TaskMessage | undefined
   const texts: string[] = []
   const errors: string[] = []
@@ -917,9 +927,11 @@ async function runAgent(
     if (prewarmMode || op || ctx.signal.aborted) return false
     // texts 要等进程结束后才汇总，这里直接用这次调用的消息，result 到达时就能判断
     return looksUnfinished({
-      texts: mine.filter((m) => m.role === 'agent').map((m) => m.text),
-      tools: mine.reduce((n, m) => n + m.tools.length, 0),
-      changed: touched.size,
+      texts: turnMsgs()
+        .filter((m) => m.role === 'agent')
+        .map((m) => m.text),
+      tools: turnTools(),
+      changed: touched.size - turnMark.touched,
     })
   }
   const apply = (ev: CliEvent) => {
@@ -1322,7 +1334,10 @@ async function runAgent(
             task.working = true
             // 之后的输出另起一条，排在用户消息后面
             cur = undefined
-            done(withAttachments(msg.text, msg.attachments ?? []))
+            const text = withAttachments(msg.text, msg.attachments ?? [])
+            // 新的一轮从这里算起：空回合判定只看这条消息之后的输出
+            turnMark = { from: mine.length, touched: touched.size, input: text }
+            done(text)
           },
           cancel: () => done(null),
           // 等子任务时没有换 CLI 的问题：消息照样交给这个进程
@@ -1434,7 +1449,8 @@ async function runAgent(
     }
     // 插话交出去、这一轮却一个字都没产出的：CLI 收下不等于模型看见，交回下一轮重放。
     // texts 要等进程结束后才汇总，这里看 mine 里已经收到的正文
-    if (!mine.some((m) => m.role === 'agent' && m.text.trim())) for (const m of steered) holdForNextTurn(task.id, m)
+    if (!turnMsgs().some((m) => m.role === 'agent' && m.text.trim()))
+      for (const m of steered) holdForNextTurn(task.id, m)
     steered.clear()
     meter.stop()
     // 进程结束了（完成、停止、超时），还没回答的请求作废
@@ -1444,6 +1460,8 @@ async function runAgent(
   })
 
   for (const m of mine) if (m.text && m.role === 'agent') texts.push(m.text)
+  // 空回合兜底只看最后一轮：保活时前几轮的回复不能把最后一条没人答的消息盖住
+  const turnTexts = turnMsgs().flatMap((m) => (m.text && m.role === 'agent' ? [m.text] : []))
   // 记下这一轮在会话里的位置，分叉、撤回时让 CLI 从这里截断
   if (asker && task.sessions[sessionKey])
     asker.turn = { session: task.sessions[sessionKey], id: turn.id, end: turn.end }
@@ -1599,10 +1617,10 @@ async function runAgent(
     !op &&
     !prewarm &&
     !ctx.signal.aborted &&
-    looksUnfinished({ texts, tools: mine.reduce((n, m) => n + m.tools.length, 0), changed: touched.size })
+    looksUnfinished({ texts: turnTexts, tools: turnTools(), changed: touched.size - turnMark.touched })
   ) {
     // 一个字都没收到：模型根本没答这条要求（网关吞了、带图请求被拒），不能按「只说了要做」去催
-    const silent = !texts.some((x) => x.trim())
+    const silent = !turnTexts.some((x) => x.trim())
     const what = silent
       ? t('这一轮 {cli} 没有返回任何内容，用户的要求还没处理', { cli: def.name })
       : t('这一轮只回了一句话就结束了，没有动手也没给出结论')
@@ -1635,7 +1653,7 @@ async function runAgent(
           ...call,
           // 没有任何输出时上一轮没答这条要求，按原样再要一次；只说了一句准备语时才把要求换成「现在动手」
           prompt: silent
-            ? '（上一次请求没有返回任何内容，这是重试。）\n\n' + call.prompt
+            ? '（上一次请求没有返回任何内容，这是重试。）\n\n' + turnMark.input
             : '你上一条回复只说了要做什么就结束了这一轮，既没有调用工具也没有给出结论。' +
               '现在马上动手：直接发起工具调用去完成任务，做完在这一轮里给出结论；不要再说「我先看看」这类准备语。',
         },

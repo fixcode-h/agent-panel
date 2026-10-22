@@ -1745,7 +1745,9 @@ function childGroups(list: ChildSummary[], grouped: boolean) {
     const g =
       c.requests || c.status === 'failed'
         ? groups[0]
-        : c.working || c.status === 'running'
+        : // 只看这一轮是不是还在跑：回复完停在等下一句时 status 仍是 running，
+          // 按 status 分组会把已经交回结果的子对话一直挂在「执行中」
+          c.working
           ? groups[1]
           : c.status === 'done'
             ? groups[2]

@@ -253,6 +253,7 @@
     "identity": "gemini",
     "api": {
       "protocols": ["gemini"],
+      "baseUrl": { "gemini": "{root}" },
       "edits": [
         {
           "file": "${GEMINI_CLI_HOME:-~}/.gemini/settings.json",

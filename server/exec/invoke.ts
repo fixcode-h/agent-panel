@@ -108,7 +108,12 @@ export async function invokeCli(o: {
     log.info('agent', `模型 ${model} 不支持 ${req.effort}，这次${effort ? `用 ${effort}` : '不带思考强度'}`, {
       cli: o.cliId,
     })
-  const picked = effort === req.effort ? req : { ...req, effort }
+  // API 方式下这一轮要思考：加上 CLI 定义里打开思考的参数（Codex 对第三方接口的模型默认不要思考摘要）
+  const thinkArgs = cs.api && effort && effort !== 'off' ? (def.auth?.api?.thinkArgs ?? []) : []
+  const picked =
+    effort === req.effort && !thinkArgs.length
+      ? req
+      : { ...req, effort, extraArgs: [...(req.extraArgs ?? []), ...thinkArgs] }
   // 设置里的开关（参数规则按 opt.<id> 判断）：调用方没给时用这个 CLI 现在的设置
   const build = picked.options ? picked : { ...picked, options: cs.options }
   // 停止时先让 CLI 自己中断这一轮（会话里留下完整的记录，继续时上下文还在），一会儿还没退出再结束进程

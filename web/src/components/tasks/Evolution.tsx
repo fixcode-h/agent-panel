@@ -8,6 +8,7 @@ import {
   Copy,
   FileCode2,
   Loader2,
+  Quote,
   Sparkles,
   TriangleAlert,
   Workflow,
@@ -21,12 +22,14 @@ import {
   lineDiff,
   parseEvolution,
   resolveChange,
+  type FrameworkFinding,
   type ResolvedChange,
 } from '@shared/task-export'
 import { api } from '@/lib/api'
 import { useData, useNav } from '@/lib/data'
 import { startAnalysis } from '@/lib/task-transfer'
 import { cn } from '@/lib/utils'
+import { quoteFrom } from '@/lib/quote'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -60,6 +63,52 @@ function DiffView({ before, after }: { before: string; after: string }) {
 const TARGET = { workflow: Workflow, node: Box, agent: Bot } as const
 const targetName = (k: keyof typeof TARGET) => ({ workflow: t('工作流'), node: t('节点'), agent: t('角色') })[k]
 
+/** 一条框架问题写成的文字：复制、引用都用它 */
+const findingText = (f: FrameworkFinding) =>
+  `## ${f.title}\n${f.detail}${f.files.length ? `\n\n${f.files.map((x) => `- ${x}`).join('\n')}` : ''}`
+
+/** 一条修改建议写成的文字：改哪里、为什么、改成什么 */
+const changeText = (r: ResolvedChange) =>
+  [`## ${r.field}（${r.scope}）`, r.change.reason, r.after ? `改成：\n${r.after}` : ''].filter(Boolean).join('\n\n')
+
+function copyText(text: string) {
+  void navigator.clipboard.writeText(text).then(
+    () => toast.success(t('已复制')),
+    () => toast.error(t('复制失败')),
+  )
+}
+
+const itemAction =
+  'grid h-6 w-6 shrink-0 cursor-pointer place-items-center rounded-md text-subtle transition-colors hover:bg-sel hover:text-fg'
+
+/** 每条结果后面的两个小按钮：引用到输入框（接着和 AI 讨论这一条）、复制 */
+function ItemActions({ text }: { text: () => string }) {
+  return (
+    <span className="flex shrink-0 items-center">
+      <button
+        type="button"
+        className={itemAction}
+        title={t('引用到输入框')}
+        aria-label={t('引用')}
+        onClick={(e) => {
+          if (!quoteFrom(e.currentTarget, text())) toast(t('这里没有可以引用到的输入框'))
+        }}
+      >
+        <Quote className="h-3.5 w-3.5" />
+      </button>
+      <button
+        type="button"
+        className={itemAction}
+        title={t('复制')}
+        aria-label={t('复制')}
+        onClick={() => copyText(text())}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </button>
+    </span>
+  )
+}
+
 function ChangeRow({ r, checked, onCheck }: { r: ResolvedChange; checked: boolean; onCheck: (v: boolean) => void }) {
   const [open, setOpen] = useState(false)
   const same = r.before === r.after
@@ -83,6 +132,7 @@ function ChangeRow({ r, checked, onCheck }: { r: ResolvedChange; checked: boolea
           hint={r.change.reason ? <span className="text-muted">{r.change.reason}</span> : undefined}
           className="min-w-0 flex-1"
         />
+        <ItemActions text={() => changeText(r)} />
         {same ? (
           <Badge tone="success" className="shrink-0">
             <Check className="h-3 w-3" />
@@ -183,15 +233,7 @@ export function EvolutionCard({ task }: { task: Task }) {
       setBusy(false)
     }
   }
-  const copyFindings = () => {
-    const md = evo.framework
-      .map((f) => `## ${f.title}\n${f.detail}${f.files.length ? `\n\n${f.files.map((x) => `- ${x}`).join('\n')}` : ''}`)
-      .join('\n\n')
-    void navigator.clipboard.writeText(md).then(
-      () => toast.success(t('已复制')),
-      () => toast.error(t('复制失败')),
-    )
-  }
+  const allFindings = () => evo.framework.map(findingText).join('\n\n')
 
   return (
     <section
@@ -249,7 +291,17 @@ export function EvolutionCard({ task }: { task: Task }) {
           <SectionHead icon={FileCode2} title={t('面板框架的问题')}>
             <button
               type="button"
-              onClick={copyFindings}
+              onClick={(e) => {
+                if (!quoteFrom(e.currentTarget, allFindings())) toast(t('这里没有可以引用到的输入框'))
+              }}
+              className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-normal hover:bg-sel hover:text-fg"
+            >
+              <Quote className="h-3.5 w-3.5" />
+              {t('全部引用')}
+            </button>
+            <button
+              type="button"
+              onClick={() => copyText(allFindings())}
               className="flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 font-normal hover:bg-sel hover:text-fg"
             >
               <Copy className="h-3.5 w-3.5" />
@@ -280,6 +332,7 @@ export function EvolutionCard({ task }: { task: Task }) {
                     </span>
                   )}
                 </div>
+                <ItemActions text={() => findingText(f)} />
               </li>
             ))}
           </ol>

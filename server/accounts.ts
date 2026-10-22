@@ -33,11 +33,11 @@ import {
   type Settings,
 } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
-import { modelLimitsFor } from '../shared/model-catalog.ts'
+import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { invalidateClis } from './detect.ts'
-import { invalidateModels } from './models.ts'
+import { invalidateModels, pickPiBuiltin, piBuiltinModels } from './models.ts'
 import { log } from './log.ts'
 import { getSettings, saveSettings } from './settings.ts'
 import { detectApis } from './api-detect.ts'
@@ -565,22 +565,40 @@ async function applyEdits(edits: JsonEdit[], env: NodeJS.ProcessEnv) {
  * 没写时 Pi 报 thinking no，面板的下拉就只剩一档。
  * 设置里给模型配了映射时按映射到的模型算，目录里没有的模型不动。
  */
-async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
+async function writeModelEfforts(
+  def: CliDefinition,
+  api: ApiConfig,
+  provider: string,
+  env: NodeJS.ProcessEnv,
+  command: string,
+) {
   const spec = def.auth?.api?.modelEfforts
   const reasoning = def.auth?.api?.modelReasoning
   if (!spec && !reasoning) return
-  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const vars = apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl)
   const entries = await mergedModelCatalog().catch(() => [])
   const effortsOf = (model: string) => {
-    const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+    const info = apiModelInfo(model, api, entries)
     if (!info.matched || !info.entry) return undefined
     // 目录里的强度都是 CLI 认的；空数组表示这个模型不能调思考强度
     return info.entry.efforts
   }
+  // 面板目录里没有的模型再查 CLI 自带的目录（Pi 的 pi-ai）：不查的话 Pi 当成不能思考，
+  // Responses 协议下就不发 reasoning 参数，接口不回思考摘要，强度下拉也只剩「关闭」
+  const builtin = reasoning?.known === 'pi-ai' ? await piBuiltinModels(def, command, env) : undefined
+  const wire = vars.wire
+  const builtinOf = (model: string) =>
+    builtin && effortsOf(model) === undefined
+      ? pickPiBuiltin(builtin.values(), api.modelMap?.[apiModelKey(model, api.modelMap)] || model, wire)
+      : undefined
   const writes: { file: string; at: string; key: string; value: (model: string) => unknown }[] = []
   if (spec) writes.push({ ...spec, value: effortsOf })
   // Pi 的 reasoning 只表示这个模型支不支持思考：目录里有强度就是支持
-  if (reasoning) writes.push({ ...reasoning, value: (model) => (effortsOf(model)?.length ? true : undefined) })
+  if (reasoning)
+    writes.push({
+      ...reasoning,
+      value: (model) => (effortsOf(model)?.length ? true : builtinOf(model)?.reasoning || undefined),
+    })
   // 每档强度的取值表：CLI 的每一档（关闭除外）模型支持就发同名值，不支持写 null，CLI 才不会把 xhigh / max 当成不支持
   if (reasoning?.levelsKey) {
     const levels = def.efforts.map((e) => e.id).filter((id) => id !== 'off')
@@ -590,7 +608,8 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
       key: reasoning.levelsKey,
       value: (model) => {
         const efforts = effortsOf(model)
-        if (!efforts?.length) return undefined
+        // CLI 自带目录里的取值表本来就是它自己的写法，原样用
+        if (!efforts?.length) return builtinOf(model)?.reasoning ? builtinOf(model)?.thinkingLevelMap : undefined
         return Object.fromEntries(levels.map((id) => [id, efforts.includes(id) ? id : null]))
       },
     })
@@ -614,7 +633,7 @@ async function writeModelEfforts(def: CliDefinition, api: ApiConfig, provider: s
 async function writeModelDefaultEfforts(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.modelDefaultEffort
   if (!spec) return
-  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const vars = apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl)
   const file = expand(fillTemplate(spec.file, vars), env)
   // 文件在但读不出来（例如手写坏了）时不动，免得把用户别的设置覆盖掉
   const data = (await readJsonFile(file)) ?? (existsSync(file) ? undefined : {})
@@ -624,7 +643,7 @@ async function writeModelDefaultEfforts(def: CliDefinition, api: ApiConfig, prov
   const keyOf = (model: string) => fillTemplate(spec.key, { ...vars, model })
   const want: Record<string, string> = {}
   for (const m of modelsForProtocol(api.models, api.protocol)) {
-    const info = modelLimitsFor(api.modelMap?.[m] || m, { entries, protocol: api.protocol })
+    const info = apiModelInfo(m, api, entries)
     const effort = api.modelEfforts?.[m] || (info.matched ? info.defaultEffort : '')
     // 目录认识这个模型时只写它支持的强度；不认识时信用户自己配的
     if (!effort || (info.matched && !info.entry?.efforts.includes(effort))) continue
@@ -654,7 +673,7 @@ async function writeModelDefaultEfforts(def: CliDefinition, api: ApiConfig, prov
 async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.modelLimits
   if (!spec) return
-  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const vars = apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl)
   const file = expand(fillTemplate(spec.file, vars), env)
   const data = await readJsonFile(file)
   if (!isObj(data)) return
@@ -664,7 +683,7 @@ async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: st
     fillTemplate(spec.at, vars),
     { context: spec.key, maxOutput: spec.maxOutputKey },
     (model) => {
-      const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+      const info = apiModelInfo(model, api, entries)
       if (!info.matched) return undefined
       return { context: info.context, maxOutput: spec.maxOutputKey ? info.maxOutput : undefined }
     },
@@ -683,13 +702,13 @@ async function writeModelLimits(def: CliDefinition, api: ApiConfig, provider: st
 async function writeModelInput(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.modelInput
   if (!spec) return
-  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const vars = apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl)
   const file = expand(fillTemplate(spec.file, vars), env)
   const data = await readJsonFile(file)
   if (!isObj(data)) return
   const entries = await mergedModelCatalog().catch(() => [])
   const changed = setModelInput(data, fillTemplate(spec.at, vars), spec.key, (model) => {
-    const info = modelLimitsFor(api.modelMap?.[model] || model, { entries, protocol: api.protocol })
+    const info = apiModelInfo(model, api, entries)
     if (info.images === undefined) return undefined
     return info.images ? spec.withImage : spec.withoutImage
   })
@@ -705,7 +724,7 @@ async function writeModelInput(def: CliDefinition, api: ApiConfig, provider: str
 async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.pruneProviders
   if (!spec) return
-  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const vars = apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl)
   const file = expand(fillTemplate(spec.file, vars), env)
   const data = await readJsonFile(file)
   if (!isObj(data)) return
@@ -721,7 +740,7 @@ async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: s
 async function pruneApiModels(def: CliDefinition, api: ApiConfig, provider: string, env: NodeJS.ProcessEnv) {
   const spec = def.auth?.api?.pruneModels
   if (!spec) return
-  const vars = apiVars(api, def.auth?.api?.wire, provider)
+  const vars = apiVars(api, def.auth?.api?.wire, provider, def.auth?.api?.baseUrl)
   const file = expand(fillTemplate(spec.file, vars), env)
   const data = await readJsonFile(file)
   if (!isObj(data)) return
@@ -747,7 +766,7 @@ export async function prepareAuth(cliId: string, lastProvider?: string) {
     if (cs.api && apiFits(def.auth, cs.api)) {
       const injection = apiInjection(def.auth, cs.api)
       await applyEdits(injection.edits, env)
-      await writeModelEfforts(def, cs.api, injection.provider, env)
+      await writeModelEfforts(def, cs.api, injection.provider, env, cs.command)
       await writeModelDefaultEfforts(def, cs.api, injection.provider, env)
       await writeModelLimits(def, cs.api, injection.provider, env)
       await writeModelInput(def, cs.api, injection.provider, env)
