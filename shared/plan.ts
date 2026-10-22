@@ -351,6 +351,21 @@ export function settleWait(
   return hit
 }
 
+/**
+ * 子对话这一轮结束（跑完一轮、CLI 停在等用户下一句）时，父对话计划里等它的那一步该怎么收口：
+ * - 还有没答的提问 / 确认：子对话是停下来等用户（死约定：子对话要停下等用户时必须先提问），
+ *   不算结束，步骤继续挂着等
+ * - 被停止、执行失败：算结束但没成功，退回进行中并写上原因（settleWait 本来就这个语义）
+ * - 其余（包括 status 还是 running、只是没在跑、在等下一句）：这一轮交付完了，算成功
+ * 正在跑的（working）不能当成完成，免得还在写代码的子对话被提前标完成
+ */
+export function childTurnSettle(task: Pick<Task, 'status' | 'working' | 'requests'>): { over: boolean; ok: boolean } {
+  if (task.requests.length) return { over: false, ok: false }
+  if (task.status === 'failed' || task.status === 'stopped') return { over: true, ok: false }
+  if (task.working) return { over: false, ok: false }
+  return { over: true, ok: true }
+}
+
 /** 推回对话的结果前面加一句：它是计划里哪一步在等的，先处理这一步 */
 export function waitNote(hit: { title: string; done: boolean }[]) {
   if (!hit.length) return ''

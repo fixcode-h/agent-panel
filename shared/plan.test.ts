@@ -1,7 +1,17 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import type { Task } from './schema.ts'
-import { activePlan, applyPlan, bindRun, bindWait, endRun, finishPlan, settleWait, unsummarized } from './plan.ts'
+import {
+  activePlan,
+  applyPlan,
+  bindRun,
+  bindWait,
+  childTurnSettle,
+  endRun,
+  finishPlan,
+  settleWait,
+  unsummarized,
+} from './plan.ts'
 
 const fresh = () => ({ plans: [], steps: [] }) as unknown as Pick<Task, 'plans' | 'steps'>
 
@@ -113,6 +123,48 @@ test('子步骤在等子对话：结果回来子步骤完成，主步骤跟着�
   settleWait(task, 'child', 'kid', true)
   assert.equal(activePlan(task), undefined)
   assert.equal(task.plans[0].steps[0].status, 'done')
+})
+
+test('子对话这一轮结束：成功标完成、失败退回进行中、有提问不算结束', () => {
+  // 父对话列好计划，带 step 把子对话挂成等待中
+  const waiting = () => {
+    const task = fresh()
+    applyPlan(task, { steps: [{ title: '派子对话改文件', children: [{ title: '改文件' }] }] })
+    bindWait(task, '1.1', { kind: 'child', ref: 'kid', label: '改文件' })
+    assert.equal(activePlan(task)!.steps[0].status, 'waiting')
+    return task
+  }
+  const request = [{}] as unknown as Task['requests']
+
+  // 跑完一轮：status 还是 running、只是没在跑（进程留着等下一句），算结束也算成功
+  assert.deepEqual(childTurnSettle({ status: 'running', working: false, requests: [] }), { over: true, ok: true })
+  const okTask = waiting()
+  const ok = childTurnSettle({ status: 'running', working: false, requests: [] })
+  assert.deepEqual(settleWait(okTask, 'child', 'kid', ok.ok), [{ title: '改文件', done: true }])
+  assert.equal(okTask.plans![0].steps[0].status, 'done')
+  assert.ok(okTask.plans![0].doneAt)
+
+  // 还在跑：不能当成完成
+  assert.equal(childTurnSettle({ status: 'running', working: true, requests: [] }).over, false)
+
+  // 有没答的提问：子对话是停下来等用户，不收口，步骤继续挂着等
+  const askTask = waiting()
+  assert.deepEqual(childTurnSettle({ status: 'running', working: false, requests: request }), {
+    over: false,
+    ok: false,
+  })
+  assert.equal(activePlan(askTask)!.steps[0].status, 'waiting')
+
+  // 执行失败、被停止：退回进行中，note 里看得出是等谁失败了
+  for (const status of ['failed', 'stopped'] as const) {
+    assert.deepEqual(childTurnSettle({ status, working: false, requests: [] }), { over: true, ok: false })
+    const badTask = waiting()
+    const bad = childTurnSettle({ status, working: false, requests: [] })
+    assert.deepEqual(settleWait(badTask, 'child', 'kid', bad.ok), [{ title: '改文件', done: false }])
+    const item = activePlan(badTask)!.steps[0].children[0]
+    assert.equal(item.status, 'running')
+    assert.match(item.note, /改文件/)
+  }
 })
 
 test('工作流做主步骤：没指定步骤就在末尾加一步，跑完标完成', () => {
