@@ -907,8 +907,8 @@ try {
     ['my-cli'],
   )
   assert.ok(
-    us.errors.some((e) => e.startsWith('broken')),
-    '写错的配置报出原因',
+    us.errors.some((e) => /^broken\.json 已跳过：缺少字段 command/.test(e)),
+    '写错的配置报出文件名和缺的字段：' + us.errors.join('\n'),
   )
   assert.ok((await call('GET', '/clis')).some((x) => x.id === 'my-cli' && x.installed))
   let mine = await call('POST', '/tasks', {

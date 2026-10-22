@@ -640,22 +640,33 @@ export const steerable = (cli: string | undefined) => {
  * 换上用户自己加的 CLI（数据目录 config/clis/ 下的配置）：服务端启动和重新读取时调用，页面从接口拿到后也调一遍。
  * 之前加的先去掉（配置文件可能删了）；和内置的 id 相同的不加。返回加不进来的原因
  */
-export function registerCliSpecs(specs: unknown[]): string[] {
+export function registerCliSpecs(specs: unknown[]): { index: number; error: string }[] {
   for (let i = CLIS.length - 1; i >= 0; i--) if (CLIS[i].user) CLIS.splice(i, 1)
-  const errors: string[] = []
-  for (const raw of specs) {
-    const id = (raw as { id?: string })?.id ?? '?'
+  const errors: { index: number; error: string }[] = []
+  specs.forEach((raw, index) => {
     const p = CliSpec.safeParse(raw)
     if (!p.success) {
-      errors.push(`${id}：${p.error.issues.map((i) => `${i.path.join('.')} ${i.message}`).join('；')}`)
-      continue
+      // 没写的字段 zod 报的是 expected string, received undefined，看不出是漏写，单独说成缺少
+      const at = (path: PropertyKey[]) =>
+        path.reduce<unknown>(
+          (o, k) => (o && typeof o === 'object' ? (o as Record<PropertyKey, unknown>)[k] : undefined),
+          raw,
+        )
+      const missing = p.error.issues.filter((i) => i.path.length > 0 && at(i.path) === undefined)
+      const other = p.error.issues.filter((i) => !missing.includes(i))
+      const parts = [
+        ...(missing.length ? [t('缺少字段 {f}', { f: missing.map((i) => i.path.join('.')).join('、') })] : []),
+        ...other.map((i) => `${i.path.join('.')} ${i.message}`),
+      ]
+      errors.push({ index, error: parts.join('；') })
+      return
     }
     if (getCli(p.data.id)) {
-      errors.push(`${id}：${t('和已有的 Agent 重名')}`)
-      continue
+      errors.push({ index, error: t('和已有的 Agent 重名') })
+      return
     }
     CLIS.push({ ...specToDefinition(p.data), user: true })
-  }
+  })
   return errors
 }
 
