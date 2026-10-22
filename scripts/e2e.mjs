@@ -180,7 +180,11 @@ const server = spawn(path.join(root, 'node_modules/.bin/tsx'), ['server/index.ts
 const cleanups = new Set()
 const onExit = (fn) => {
   cleanups.add(fn)
-  return () => cleanups.delete(fn)
+  // 返回值可以立刻关掉这个资源，同时从登记表里去掉，退出时不会再关第二次
+  return () => {
+    if (!cleanups.delete(fn)) return
+    fn()
+  }
 }
 const cleanupAll = () => {
   // 后起的先关（临时 server 可能依赖先起的那几个）
@@ -192,7 +196,12 @@ const cleanupAll = () => {
   }
 }
 onExit(() => server.kill())
-onExit(() => relServer.close())
+// close() 只是停止接受新连接，已经建好的 keep-alive 连接会一直挂着（进程因此退不出去），
+// 所以先把它们断掉再关
+onExit(() => {
+  relServer.closeAllConnections()
+  relServer.close()
+})
 process.on('exit', cleanupAll)
 // 主流程之外抛出的错误（后台 promise、写文件失败）也走同一套收尾，不要留下半开的服务
 const fail = (e) => {
@@ -4286,7 +4295,10 @@ try {
     })
     await new Promise((r) => apiSrv.listen(0, '127.0.0.1', r))
     // 这个临时 server 也要登记：后面的断言一失败，它留着就会让进程退不出去
-    const closeApiSrv = onExit(() => apiSrv.close())
+    const closeApiSrv = onExit(() => {
+      apiSrv.closeAllConnections()
+      apiSrv.close()
+    })
     const apiBase = `http://127.0.0.1:${apiSrv.address().port}/v1`
     // name 必填（服务端按厂家名称查默认地址和余额接口），页面传的是整份 API 配置
     const got = await call('POST', '/accounts/api-models', {
@@ -5126,10 +5138,10 @@ readline.createInterface({ input: process.stdin }).on('line', (l) => {
 } finally {
   clearTimeout(watchdog)
   cleanupAll()
-  // 收尾后还有东西占着事件循环时到点强制退出：unref 的定时器在有别的句柄时才会触发，
-  // 清理干净了就自然退出，不会多等
+  // 收尾后可能还有句柄拖着事件循环（测试自己起的 fetch 连接池、子进程管道）。
+  // unref 的定时器只有在这种情况下才会触发：到点就直接按退出码退出，不再等它们自然关闭
   setTimeout(() => {
-    console.error('收尾后进程没有自己退出，强制退出')
+    if (process.exitCode) console.error('收尾后还有管道 / 连接没关，按退出码强制退出')
     process.exit(process.exitCode ?? 0)
   }, 2000).unref()
 }
