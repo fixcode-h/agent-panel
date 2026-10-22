@@ -22,7 +22,7 @@ import {
 } from './files.ts'
 
 // 这里断言的是 files.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
-// （server/files.ts 会经 settings.ts → lang.ts 按 process.env.LANG 改全局语言，CI 上是英文）
+// （server/files.ts 会经 settings.ts → lang.ts 按 process.env.LANG 改全局语言，Linux / CI 上是英文）
 setLang('zh')
 
 const tmp = mkdtempSync(path.join(tmpdir(), 'agent-panel-files-'))

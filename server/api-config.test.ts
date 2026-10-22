@@ -23,10 +23,7 @@ import { mergeJson, fetchApiBalance, fetchApiModels } from './accounts.ts'
 import { toApi } from './api-detect.ts'
 import { agentRun, defaultSettings } from '../shared/settings.ts'
 import { CliSettings } from '../shared/schema.ts'
-import { setLang } from '../shared/i18n.ts'
-
-// 接口的报错文案直接断言中文：Linux 上 LANG 是英文，不固定语言会拿到英文文案
-setLang('zh')
+import { t } from '../shared/i18n.ts'
 
 const auth = CliAuth.parse({
   home: '~',
@@ -408,6 +405,7 @@ test('API 测试连接：成功返回模型，失败带状态和原因', async (
 })
 
 test('API 测试连接：地址留空且没有厂家默认时先要求填地址', async () => {
+  // 期望文案用 t() 算，不写死中文：CI 的 LANG 是英文，写死中文本机能过、CI 挂
   await assert.rejects(
     () =>
       fetchApiModels({
@@ -417,14 +415,15 @@ test('API 测试连接：地址留空且没有厂家默认时先要求填地址'
         apiKey: 'k',
         authHeader: 'x-api-key',
       }),
-    /先填接口地址/,
+    { message: t('先填接口地址') },
   )
 })
 
 test('余额查询：厂家没有余额接口、或没填密钥时直接说明原因，不发请求', async () => {
-  await assert.rejects(() => fetchApiBalance({ name: 'OpenAI', apiKey: 'sk-main' }), /不支持余额查询/)
-  await assert.rejects(() => fetchApiBalance({ name: '自定义 API', apiKey: 'sk-main' }), /不支持余额查询/)
-  await assert.rejects(() => fetchApiBalance({ name: 'DeepSeek', apiKey: '  ' }), /先填密钥/)
+  const noBalance = { message: t('这个厂家不支持余额查询') }
+  await assert.rejects(() => fetchApiBalance({ name: 'OpenAI', apiKey: 'sk-main' }), noBalance)
+  await assert.rejects(() => fetchApiBalance({ name: '自定义 API', apiKey: 'sk-main' }), noBalance)
+  await assert.rejects(() => fetchApiBalance({ name: 'DeepSeek', apiKey: '  ' }), { message: t('先填密钥') })
 })
 
 test('API 方式：执行时只认 API 里配的模型，其它模型换成第一个并补前缀', () => {
