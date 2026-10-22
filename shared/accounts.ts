@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { apiBaseUrl } from './api-vendors.ts'
 
 /**
  * 账号和 API：每个 CLI 可以用「账号」（浏览器登录的订阅账号）或「API」（全局设置里配的接口 + 密钥）。
@@ -519,6 +520,7 @@ export type CliAuth = z.infer<typeof CliAuth>
 /**
  * 填占位：{baseUrl}、{apiKey}、{name}、{id}、{protocol}、{wire}、{keyEnv}（Anthropic 协议按 authHeader 选 ANTHROPIC_API_KEY 或
  * ANTHROPIC_AUTH_TOKEN）；{x|json} 填成 JSON 字符串（带引号，写进 TOML 参数时用）。
+ * {baseUrl} 用实际要用的地址：用户填了就用用户的，留空时用厂家按协议给的默认地址（见 apiBaseUrl）。
  * 整个值正好是 {models} 时换成 { 模型: {} } 的对象，正好是 {modelList} 时换成 [{ id: 模型 }] 的数组（Pi 的 models.json）
  */
 export function apiVars(
@@ -527,10 +529,11 @@ export function apiVars(
   provider = apiProvider(api),
   baseUrls: Record<string, string> = {},
 ) {
-  const root = apiBase(api.baseUrl)
+  const baseUrl = apiBaseUrl(api)
+  const root = apiBase(baseUrl)
   const rule = baseUrls[api.protocol]
   return {
-    baseUrl: rule && api.baseUrl ? fillTemplate(rule, { root, baseUrl: api.baseUrl }) : api.baseUrl,
+    baseUrl: rule && baseUrl ? fillTemplate(rule, { root, baseUrl }) : baseUrl,
     root,
     apiKey: api.apiKey,
     name: api.name,

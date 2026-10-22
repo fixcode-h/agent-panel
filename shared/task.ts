@@ -341,6 +341,44 @@ export function askedAt(t: Pick<Task, 'messages' | 'createdAt' | 'askedAt'>) {
 /** 按用户最近发消息的时间排，新的在前 */
 export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(a))
 
+/**
+ * 任务（含子对话）当下的阶段：列表分组、状态图标、行内状态文字都用这一套，
+ * 避免列表说一个说法、点进去又是另一个。
+ */
+export type TaskStage = 'you' | 'running' | 'done' | 'stopped'
+
+/**
+ * 一个任务属于哪个阶段：
+ * - 已标记解决（子对话）→ 已完成
+ * - 有等用户确认的请求或没回答的提问 → 需要你处理
+ * - 执行失败 → 需要你处理
+ * - 正在跑这一轮 → 执行中
+ * - 用户 / 父对话主动停下 → 已停止
+ * - 其余 → 已完成
+ *
+ * 「已停止」只认 status === 'stopped'：对话交付完一轮后 status 仍是 running，
+ * 只是 working 变回 false、CLI 在等下一句，它已经做完了，不能算停止。
+ * 子对话要停下来等用户时应当先提问（见内置「通用约束」），所以没在跑也没提问就等于交付完了。
+ */
+export function taskStage(x: {
+  status: Task['status']
+  /** CLI 正在处理这一轮：进程活着但在等下一句 / 预热时算 false */
+  working?: boolean
+  /** 子对话被标记为已解决 */
+  resolved?: boolean
+  /** 正在等用户确认的请求数 */
+  requests?: number
+  /** 还没回答的提问数 */
+  asking?: number
+}): TaskStage {
+  if (x.resolved) return 'done'
+  if (x.requests || x.asking) return 'you'
+  if (x.status === 'failed') return 'you'
+  if (x.working) return 'running'
+  if (x.status === 'stopped') return 'stopped'
+  return 'done'
+}
+
 /** 父对话下的子对话入口要显示的信息 */
 export interface ChildEntry {
   id: string

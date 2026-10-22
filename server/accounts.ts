@@ -34,6 +34,8 @@ import {
 } from '../shared/schema.ts'
 import { cliSettings } from '../shared/settings.ts'
 import { apiModelInfo, apiModelKey } from '../shared/model-catalog.ts'
+import { apiBalanceUrl, apiBaseUrl } from '../shared/api-vendors.ts'
+import { parseApiBalance, type ApiBalance } from '../shared/api-balance.ts'
 import { t } from '../shared/i18n.ts'
 import { capture, childEnv, runProcess } from './exec/process.ts'
 import { invalidateClis } from './detect.ts'
@@ -728,7 +730,9 @@ async function pruneApiProviders(def: CliDefinition, api: ApiConfig, provider: s
   const file = expand(fillTemplate(spec.file, vars), env)
   const data = await readJsonFile(file)
   if (!isObj(data)) return
-  if (!pruneProviderEntries(data, fillTemplate(spec.at, vars), provider, api, spec)) return
+  // 写进配置的是实际要用的地址：用户留空时用的是厂家默认地址，清理旧 provider 也按它比
+  const used = { ...api, baseUrl: apiBaseUrl(api) }
+  if (!pruneProviderEntries(data, fillTemplate(spec.at, vars), provider, used, spec)) return
   await mkdir(path.dirname(file), { recursive: true })
   await writeJsonAtomic(file, data)
 }
@@ -935,9 +939,14 @@ async function startLogin(def: CliDefinition): Promise<LoginJob> {
 
 // ---- 全局 API：读接口的模型列表 ----
 
-/** 从 API 读可用的模型：按协议用对应的接口和请求头 */
-export async function fetchApiModels(api: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'>) {
-  const base = api.baseUrl.trim().replace(/\/+$/, '')
+/**
+ * 从 API 读可用的模型：按协议用对应的接口和请求头。
+ * 接口地址按实际要用的算（用户填了就用自己的，留空时用厂家默认），和输入框里显示的一致
+ */
+export async function fetchApiModels(
+  api: Pick<ApiConfig, 'protocol' | 'baseUrl' | 'apiKey' | 'authHeader'> & { name?: string },
+) {
+  const base = apiBaseUrl(api).replace(/\/+$/, '')
   if (!base && api.protocol !== 'gemini') throw new Error(t('先填接口地址'))
   const url =
     api.protocol === 'gemini'
@@ -971,6 +980,34 @@ export async function fetchApiModels(api: Pick<ApiConfig, 'protocol' | 'baseUrl'
     .filter(Boolean)
   if (!ids.length) throw new Error(t('接口没有返回模型列表，请自己填写'))
   return [...new Set(ids)].sort()
+}
+
+// ---- 全局 API：查账户余额 ----
+
+/**
+ * 查 API 账户余额（现在只有 DeepSeek 有公开接口）：密钥只放在请求头里，
+ * 错误文案只用固定文案和接口给的原因，不把密钥拼进去。
+ */
+export async function fetchApiBalance(api: Pick<ApiConfig, 'name' | 'apiKey'>): Promise<ApiBalance> {
+  const url = apiBalanceUrl(api)
+  if (!url) throw new Error(t('这个厂家不支持余额查询'))
+  const apiKey = api.apiKey.trim()
+  if (!apiKey) throw new Error(t('先填密钥'))
+  const res = await fetch(url, {
+    headers: { authorization: `Bearer ${apiKey}` },
+    signal: AbortSignal.timeout(20_000),
+  }).catch((e: Error) => {
+    throw new Error(t('连不上接口：{error}', { error: e.message }))
+  })
+  const body = (await res.json().catch(() => undefined)) as any
+  if (!res.ok)
+    throw new Error(
+      t('接口返回 {status}：{detail}', {
+        status: String(res.status),
+        detail: String(body?.error?.message ?? body?.error ?? body?.message ?? res.statusText).slice(0, 200),
+      }),
+    )
+  return parseApiBalance(body)
 }
 
 export function accountsApi() {
@@ -1011,11 +1048,24 @@ export function accountsApi() {
       .post(
         '/api-models',
         guard(async (c) => {
-          const p = ApiConfig.pick({ protocol: true, baseUrl: true, apiKey: true, authHeader: true }).safeParse(
-            await c.req.json(),
-          )
+          const p = ApiConfig.pick({
+            name: true,
+            protocol: true,
+            baseUrl: true,
+            apiKey: true,
+            authHeader: true,
+          }).safeParse(await c.req.json())
           if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
           return c.json({ models: await fetchApiModels(p.data) })
+        }),
+      )
+      // 查 API 账户余额（在服务端请求：密钥不发给页面里的第三方地址，也不受跨域限制）
+      .post(
+        '/api-balance',
+        guard(async (c) => {
+          const p = ApiConfig.pick({ name: true, apiKey: true }).safeParse(await c.req.json())
+          if (!p.success) return c.json({ error: z.prettifyError(p.error) }, 400)
+          return c.json(await fetchApiBalance(p.data))
         }),
       )
       .post(

@@ -93,6 +93,12 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
             : [`${base.includes('deepseek') ? 'deepseek' : 'gpt'}-chat`, 'gpt-6-sol', 'gpt-6-luna'],
     }
   }
+  // 演示：余额按 DeepSeek 的返回格式给一份假数据
+  if (cli === 'api-balance')
+    return {
+      available: true,
+      rows: [{ currency: 'CNY', total: '110.00', granted: '10.00', toppedUp: '100.00' }],
+    }
   const s = demo(cli)
   // 演示里的凭据检查：一家能用、一家没配
   if (sub === 'check')

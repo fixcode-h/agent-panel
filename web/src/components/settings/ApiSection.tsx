@@ -13,6 +13,8 @@ import {
   PlugZap,
   RefreshCw,
   Trash2,
+  Unlink,
+  Wallet,
   X,
 } from 'lucide-react'
 import { CLIS } from '@shared/clis'
@@ -32,17 +34,18 @@ import { AiFixButton } from '@/components/ui/ai-fix'
 import { Group } from './parts'
 import { DetectedApis } from './DetectedApis'
 import { t } from '@shared/i18n'
-import { API_VENDORS, findVendor, vendorEndpoint } from '@shared/api-vendors'
+import { API_VENDORS, apiBalanceUrl, apiBaseUrl, findVendor, isVendorUrl, vendorEndpoint } from '@shared/api-vendors'
+import type { ApiBalance } from '@shared/api-balance'
 import { fmtTokens } from '@shared/model-limits'
 import { matchModel } from '@shared/model-catalog'
 import { useModelCatalog } from '@/lib/model-catalog'
 import { loadCliModels } from '@/lib/cli-models'
 
-/** 新建时可以从常用的开始 */
-const PRESETS: { label: string; protocol: ApiProtocol; baseUrl: string }[] = [
-  { label: 'Anthropic', protocol: 'anthropic', baseUrl: 'https://api.anthropic.com' },
-  { label: 'OpenAI', protocol: 'openai-responses', baseUrl: 'https://api.openai.com/v1' },
-  { label: 'Gemini', protocol: 'gemini', baseUrl: 'https://generativelanguage.googleapis.com' },
+/** 新建时可以从常用的开始：协议定下来，接口地址用厂家默认的（留空，输入框里当灰字提示） */
+const PRESETS: { label: string; protocol: ApiProtocol }[] = [
+  { label: 'Anthropic', protocol: 'anthropic' },
+  { label: 'OpenAI', protocol: 'openai-responses' },
+  { label: 'Gemini', protocol: 'gemini' },
 ]
 
 /** API 卡片展开还是收起，按 API 记在本地 */
@@ -69,7 +72,7 @@ export function ApiSection({ apis, onChange }: { apis: ApiConfig[]; onChange: (l
       name: preset?.label ?? t('自定义 API'),
       provider: '',
       protocol: preset?.protocol ?? 'openai-chat',
-      baseUrl: preset?.baseUrl ?? '',
+      baseUrl: '',
       apiKey: '',
       authHeader: 'x-api-key',
       models: [],
@@ -149,7 +152,11 @@ function ApiCard({
   }
   const modelCatalog = useModelCatalog()
   const busy = fetching || testing
-  const canProbe = !!a.baseUrl.trim() || a.protocol === 'gemini'
+  /** 绑定的内置厂家：名称就是绑定（没有单独的绑定字段），有厂家时名称不给直接改 */
+  const vendor = findVendor(a.name)
+  /** 厂家按当前协议给的地址：只当接口地址输入框的提示，留空时请求就用它 */
+  const vendorUrl = vendor?.urls[a.protocol] ?? ''
+  const canProbe = !!apiBaseUrl(a) || a.protocol === 'gemini'
 
   // 连接相关的字段一改，上一次的测试结果就过期了
   useEffect(() => {
@@ -260,23 +267,33 @@ function ApiCard({
       })),
     ]
   }
-  /** 从下拉里选了厂家：名称、协议、接口地址一起填好；provider 没自己填过时也换成厂家的 */
+  /**
+   * 从下拉里选了厂家：名称和协议一起换好，provider 没自己填过时也换成厂家的。
+   * 厂家地址只当输入框的提示，不写进真实值；用户自己写过的地址不动，
+   * 旧版本自动写进去的厂家地址清掉，免得换厂家后还被它顶着
+   */
   const pickVendor = (v: string) => {
-    const vendor = findVendor(v)
-    if (!vendor) return
+    const picked = findVendor(v)
+    if (!picked) return
     const old = findVendor(a.name)
-    setName(vendor.name)
+    setName(picked.name)
     onChange({
-      name: vendor.name,
-      ...vendorEndpoint(vendor, a.protocol),
-      ...(!a.provider.trim() || a.provider === old?.provider ? { provider: vendor.provider } : {}),
+      name: picked.name,
+      protocol: vendorEndpoint(picked, a.protocol).protocol,
+      ...(isVendorUrl(a.baseUrl) ? { baseUrl: '' } : {}),
+      ...(!a.provider.trim() || a.provider === old?.provider ? { provider: picked.provider } : {}),
     })
   }
-  /** 换协议时，地址还是厂家给的那个就跟着换成这个协议的地址 */
+  /** 换协议：地址留空时提示跟着厂家的新地址；旧版本写进真实值的厂家地址一并清掉 */
   const setProtocol = (protocol: ApiProtocol) => {
-    const vendor = findVendor(a.name)
-    const auto = vendor && (!a.baseUrl.trim() || Object.values(vendor.urls).includes(a.baseUrl.trim()))
-    onChange({ protocol, ...(auto && vendor.urls[protocol] ? { baseUrl: vendor.urls[protocol] } : {}) })
+    onChange({ protocol, ...(isVendorUrl(a.baseUrl) ? { baseUrl: '' } : {}) })
+  }
+  /** 清空厂家绑定：名称回到自定义，接口地址、密钥和模型都不动（整卡删除在展开后的底部） */
+  const clearVendor = () => {
+    const plain = t('自定义 API')
+    setName(plain)
+    onChange({ name: plain })
+    toast.success(t('已改成自定义 API，名称可以自己改了'))
   }
   const saveName = () => {
     const v = name.trim()
@@ -331,6 +348,17 @@ function ApiCard({
               ].join(' · ')}
             </span>
           </button>
+        ) : vendor ? (
+          // 绑定了内置厂家：名称不给直接改（改了就相当于换厂家），要改就先用右上角的按钮回到自定义 API
+          <div className="flex h-9 min-w-0 flex-1 items-center gap-2">
+            <span className="truncate font-medium">{a.name}</span>
+            <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[0.625rem] text-accent">
+              {t('内置厂家')}
+            </span>
+            <span className="truncate text-[0.71875rem] text-subtle">
+              {t('名称固定，点右上角的按钮改成自定义 API')}
+            </span>
+          </div>
         ) : (
           <div className="min-w-0 flex-1">
             <ComboInput
@@ -346,14 +374,33 @@ function ApiCard({
             />
           </div>
         )}
-        {open && (
+        {open && !vendor && (
           <Button size="sm" variant="secondary" disabled={!name.trim() || name.trim() === a.name} onClick={saveName}>
             {t('保存')}
           </Button>
         )}
-        <Button variant="ghost" size="icon-sm" aria-label={t('删除 {name}', { name: a.name })} onClick={onRemove}>
-          <Trash2 className="h-4 w-4" />
-        </Button>
+        {vendor ? (
+          // 厂家绑定着时这里是「清空绑定」，整卡删除在展开后的底部：两个动作分开，别一按删掉配置和模型
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('清空厂家绑定，改成自定义 API')}
+            title={t('清空厂家绑定，改成自定义 API（接口地址、密钥和模型都不动）')}
+            onClick={clearVendor}
+          >
+            <Unlink className="h-4 w-4" />
+          </Button>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('删除 {name}', { name: a.name })}
+            title={t('删除这个 API')}
+            onClick={onRemove}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        )}
       </div>
       {open && (
         <>
@@ -372,11 +419,16 @@ function ApiCard({
               <Input
                 value={a.baseUrl}
                 onChange={(e) => onChange({ baseUrl: e.target.value })}
-                placeholder="https://api.example.com/v1"
+                placeholder={vendorUrl || 'https://api.example.com/v1'}
                 spellCheck={false}
                 aria-label={t('接口地址')}
                 className="h-9 font-mono text-[0.8125rem]"
               />
+              {vendorUrl && !a.baseUrl.trim() && (
+                <span className="text-[0.71875rem] text-subtle">
+                  {t('留空时用 {vendor} 的默认地址：{url}', { vendor: a.name, url: vendorUrl })}
+                </span>
+              )}
             </label>
             <label className="flex flex-col gap-1 text-[0.75rem] text-subtle sm:col-span-2">
               {t('提供方 ID')}
@@ -437,6 +489,7 @@ function ApiCard({
               </label>
             )}
           </div>
+          <ApiBalanceRow a={a} />
           <div className="flex flex-col gap-2">
             <div className="flex items-center gap-2">
               <span className="text-[0.75rem] text-subtle">{t('可用的模型')}</span>
@@ -474,7 +527,7 @@ function ApiCard({
                       context: [
                         `API 名称：${a.name}`,
                         `协议：${a.protocol}`,
-                        `接口地址：${a.baseUrl || '（空）'}`,
+                        `接口地址：${apiBaseUrl(a) || '（空）'}${a.baseUrl.trim() ? '' : '（留空时用厂家默认地址）'}`,
                         `提供方 ID：${apiProvider(a)}`,
                         `密钥：${a.apiKey ? '已填写' : '未填写'}`,
                         `已选模型：${a.models.join(', ') || '（空）'}`,
@@ -598,6 +651,13 @@ function ApiCard({
             <p className="min-w-0 flex-1 text-[0.75rem] text-subtle">
               {t('可以用在：{clis}', { clis: usedBy(a.protocol).join('、') || '—' })}
             </p>
+            {/* 绑定了厂家时右上角是「清空绑定」，整卡删除放在这里，两个动作分得开 */}
+            {vendor && (
+              <Button size="sm" variant="ghost" className="text-danger hover:bg-danger/10" onClick={onRemove}>
+                <Trash2 className="h-3.5 w-3.5" />
+                {t('删除这个 API')}
+              </Button>
+            )}
             {/* 改 API 不会自动改 CLI 的配置文件，点这里才写进去 */}
             <Button
               size="sm"
@@ -611,6 +671,100 @@ function ApiCard({
             </Button>
           </div>
         </>
+      )}
+    </div>
+  )
+}
+
+/**
+ * 账户余额：厂家定义里写了余额接口才有（现在只有 DeepSeek，见 shared/api-vendors.ts）。
+ * 卡片展开时查一次，之后点刷新才重查：失败不自动重试，免得一直刷屏请求。
+ * 厂家不支持、密钥没填、查询失败都写明原因，不留空白。
+ */
+function ApiBalanceRow({ a }: { a: ApiConfig }) {
+  const url = apiBalanceUrl(a)
+  const apiKey = a.apiKey.trim()
+  const [state, setState] = useState<{
+    loading: boolean
+    /** 查过一次时记下当时用的密钥：密钥改过了就不显示旧结果 */
+    forKey?: string
+    data?: ApiBalance
+    error?: string
+  }>({ loading: false })
+  // 点一次刷新加一次，effect 跟着重查
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    if (!url || !apiKey) {
+      setState({ loading: false })
+      return
+    }
+    let alive = true
+    setState({ loading: true, forKey: apiKey })
+    api
+      .apiBalance(a)
+      .then((data) => alive && setState({ loading: false, forKey: apiKey, data }))
+      .catch((e: Error) => alive && setState({ loading: false, forKey: apiKey, error: e.message }))
+    return () => {
+      alive = false
+    }
+    // 只在展开（挂载）、余额接口变化或点了刷新（tick）时查一次；密钥不在依赖里，边打字边请求会刷屏
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [url, tick])
+  // 自定义 API 没有厂家，也就没有余额接口可查：不显示这一行
+  if (!findVendor(a.name)) return null
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg border bg-card px-2.5 py-1.5 text-[0.75rem]">
+      <span className="flex shrink-0 items-center gap-1.5 text-subtle">
+        <Wallet className="h-3.5 w-3.5" />
+        {t('账户余额')}
+      </span>
+      {!url ? (
+        <span className="text-subtle">{t('这个厂家不支持查询账户余额')}</span>
+      ) : !apiKey ? (
+        <span className="text-subtle">{t('填上密钥后可以查看余额')}</span>
+      ) : !state.forKey || state.forKey !== apiKey ? (
+        <span className="text-subtle">{t('点刷新按钮查看余额')}</span>
+      ) : state.loading ? (
+        <span className="flex items-center gap-1.5 text-subtle">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          {t('正在查询余额…')}
+        </span>
+      ) : state.error ? (
+        <span className="flex min-w-0 items-center gap-1.5 text-danger">
+          <CircleAlert className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 break-words">{state.error}</span>
+        </span>
+      ) : state.data ? (
+        <>
+          {state.data.rows.map((r, i) => (
+            <span
+              key={`${r.currency}-${i}`}
+              className="font-mono"
+              title={[
+                r.granted && t('赠送余额：{amount}', { amount: r.granted }),
+                r.toppedUp && t('充值余额：{amount}', { amount: r.toppedUp }),
+              ]
+                .filter(Boolean)
+                .join('\n')}
+            >
+              {r.currency} {r.total || '—'}
+            </span>
+          ))}
+          {!state.data.available && <span className="text-danger">{t('余额不足，接口会拒绝请求')}</span>}
+        </>
+      ) : null}
+      <span className="flex-1" />
+      {url && apiKey && (
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          aria-label={t('刷新余额')}
+          title={t('刷新余额')}
+          disabled={state.loading}
+          onClick={() => setTick((n) => n + 1)}
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', state.loading && 'animate-spin')} />
+        </Button>
       )}
     </div>
   )
