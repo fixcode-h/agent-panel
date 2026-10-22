@@ -174,7 +174,6 @@ export const EN_AGENTS: Record<string, string> = {
   'AI 创建': 'Create with AI',
   重新检测: 'Detect again',
   '可用 · {version}': 'Available · {version}',
-  这个分类还没有角色: 'No roles in this category yet',
   没有匹配的角色: 'No matching roles',
   创建第一个角色: 'Create your first role',
   '角色是「Agent + 模型 + 角色设定」的组合，可以按分类整理，之后在工作流里组队使用。':
