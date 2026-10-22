@@ -21,6 +21,7 @@ import {
   Globe,
   ShieldCheck,
   GraduationCap,
+  Gauge,
 } from 'lucide-react'
 import { CLIS, type CliDefinition } from '@shared/clis'
 import { type CliSettings, type Settings, CONTENT_MAX, CONTENT_WIDTH } from '@shared/schema'
@@ -44,6 +45,7 @@ import { UpdateSection } from '@/components/settings/UpdateSection'
 import { StylesSettings } from '@/components/settings/StylesSettings'
 import { ApiSection } from '@/components/settings/ApiSection'
 import { DataSection } from '@/components/settings/DataSection'
+import { UsageSection } from '@/components/usage/UsageSection'
 import { LocalImageSection } from '@/components/settings/LocalImageSection'
 import { TagsSection } from '@/components/settings/TagsSection'
 import { GlobalLessonsSection } from '@/components/projects/Lessons'
@@ -95,6 +97,7 @@ const sectionsFor = (clis: CliDefinition[]): Section[] => [
   { id: 'local-image', label: t('本机生图'), icon: ImageIcon, group: t('生图') },
   { id: 'styles', label: t('风格库'), icon: Palette, group: t('生图') },
   { id: 'data', label: t('数据'), icon: HardDrive, group: t('系统') },
+  { id: 'usage', label: t('用量统计'), icon: Gauge, group: t('系统') },
   { id: 'update', label: t('版本更新'), icon: ArrowUpCircle, group: t('系统') },
 ]
 
@@ -933,6 +936,8 @@ function SettingsBody({
             <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
           )}
           {cur.id === 'data' && <DataSection />}
+          {/* 用量统计：数据来源（api.tokenUsage）等另一个子对话把 api.ts 交回来后接上 */}
+          {cur.id === 'usage' && <UsageSection />}
           {cur.id === 'deploy' && <DeploySection />}
           {cur.id === 'tags' && <TagsSection />}
           {cur.id === 'global-lessons' && <GlobalLessonsSection />}
