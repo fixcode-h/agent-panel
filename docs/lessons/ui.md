@@ -36,3 +36,9 @@ paths: web/src/**, shared/i18n.ts, shared/locales/**, scripts/ui-check.mjs
 - 规则：面板推给 CLI 的内容（后台命令、合并编译、子任务结果）记成 `TaskMessage.panel` 的系统消息，界面画成 AI 回复里的一行；面板工具调用按「做了什么 + 对象名」显示（`panelTool`），不再另记居中的系统提示。
 - 起因：15c1a1d 把后台命令结果当用户消息推回，新建子对话又多记一条居中提示，用户要求改成工具条目。
 - 防线：`server/orch-mcp.test.ts`、`server/orchestrator.test.ts`。
+
+## 「对话在不在动手」看 working，不看 status
+
+- 规则：对话停在「等待你的下一条消息」时 `status` 仍是 `running`（CLI 进程还在），能不能合并、删除、切分支这类操作要看 `task.working`；服务端对应用 `live.get(id)?.task.working`，不要用 `live.has(id)`。
+- 起因：独立分支条按 `status === 'running'` 隐藏合并按钮，对话做完了也合并不了，用户问「对话完成了为什么没有合并按钮」。
+- 防线：`scripts/e2e.mjs` 的独立分支用例。

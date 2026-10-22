@@ -112,6 +112,31 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
 const json = (method: string, body: unknown) => ({ method, body: JSON.stringify(body) })
 
+/** 一个独立分支（git worktree）和它在 git 里的实际情况 */
+export interface WorktreeItem {
+  taskId: string
+  title: string
+  /** 是名下的子对话的（不是对话自己的） */
+  child: boolean
+  /** 那个对话正在动手 */
+  working: boolean
+  branch: string
+  /** 从哪个分支开出、要合回哪个分支 */
+  baseBranch: string
+  path: string
+  state: 'active' | 'merged' | 'discarded'
+  note: string
+  /** 合回去的目录 */
+  home: string
+  exists: boolean
+  /** 原分支里还没有的提交数 */
+  ahead: number
+  /** 没提交的文件数 */
+  dirty: number
+  /** 改动都已经在原分支里了 */
+  merged: boolean
+}
+
 /** 用户加的 CLI 配置：原文（页面拿去注册）、读不进来的原因、所在目录 */
 export interface UserClis {
   specs: unknown[]
@@ -394,9 +419,12 @@ export const api = {
   revealTaskFile: (id: string, path = '') =>
     request<{ ok: boolean; dir: string }>(`/tasks/${id}/reveal`, json('POST', { path })),
   revertFile: (id: string, path: string) => request<Task>(`/tasks/${id}/revert`, json('POST', { path })),
-  /** 独立分支：合并进项目当前的分支，或丢弃 */
-  finishWorktree: (id: string, merge: boolean) =>
-    request<Task>(`/tasks/${id}/worktree/${merge ? 'merge' : 'discard'}`, json('POST', {})),
+  /** 这个对话和它名下子对话的独立分支，带上是否已经合回原分支 */
+  taskWorktrees: (id: string) => request<{ items: WorktreeItem[] }>(`/tasks/${id}/worktrees`),
+  /** 把独立分支合回原分支；分支和目录保留。冲突时错误的 body 带 conflict */
+  mergeWorktree: (id: string) => request<{ task: Task; into: string }>(`/tasks/${id}/worktree/merge`, json('POST', {})),
+  /** 删除独立分支（连目录一起） */
+  discardWorktree: (id: string) => request<Task>(`/tasks/${id}/worktree/discard`, json('POST', {})),
   answerRequest: (id: string, rid: string, body: { allow: boolean; answer?: string; answers?: string[] }) =>
     request<Task>(`/tasks/${id}/requests/${rid}`, json('POST', body)),
   setTaskAskUser: (id: string, askUser: boolean) => request<Task>(`/tasks/${id}`, json('PATCH', { askUser })),

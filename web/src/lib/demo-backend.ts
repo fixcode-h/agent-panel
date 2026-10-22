@@ -1622,6 +1622,9 @@ function followUp(d: Db, task: Task, text: string, fast = false, attachments: At
   return startTurn(d, task, withAttachments(text, attachments), false, fast)
 }
 
+/** 演示里点过「合并」的独立分支（没有真的仓库，只记在内存里） */
+const demoMerged = new Set<string>()
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -1810,10 +1813,44 @@ function tasksRoute(
     persist()
     return task
   }
+  // 独立分支：演示里没有真的仓库，合并只记一下「已经合进去了」，删除改状态
+  if (sub === 'worktrees') {
+    const list = [task, ...tasks.filter((x) => x.parentTaskId === task.id)].filter((x) => x.worktree)
+    return {
+      items: list.map((x) => {
+        const wt = x.worktree!
+        const merged = wt.state === 'merged' || (wt.state === 'active' && demoMerged.has(x.id))
+        return {
+          taskId: x.id,
+          title: x.title,
+          child: x.id !== task.id,
+          working: !!x.working,
+          branch: wt.branch,
+          baseBranch: wt.baseBranch,
+          path: wt.path,
+          state: wt.state,
+          note: wt.note,
+          home: wt.state === 'active' ? 'E:\\Project\\demo' : '',
+          exists: wt.state === 'active',
+          ahead: merged || wt.state !== 'active' ? 0 : 2,
+          dirty: merged || wt.state !== 'active' ? 0 : 1,
+          merged,
+        }
+      }),
+    }
+  }
   if (sub === 'worktree' && task.worktree) {
-    if (live.has(task.id)) fail('任务正在执行，等它停下后再处理独立分支')
-    const merge = rid === 'merge'
-    task.worktree = { ...task.worktree, state: merge ? 'merged' : 'discarded', note: merge ? 'main' : '' }
+    if (task.working) fail('对话正在执行，等这一轮结束后再处理独立分支')
+    if (rid === 'merge') {
+      demoMerged.add(task.id)
+      return { task, into: task.worktree.baseBranch || 'main' }
+    }
+    const merged = demoMerged.has(task.id)
+    task.worktree = {
+      ...task.worktree,
+      state: merged ? 'merged' : 'discarded',
+      note: merged ? task.worktree.baseBranch : '',
+    }
     persist()
     return task
   }

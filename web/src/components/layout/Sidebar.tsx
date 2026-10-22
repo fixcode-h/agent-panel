@@ -53,6 +53,7 @@ import {
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { ResizeHandle, contentPaneWidth, usePaneWidth } from '@/components/ui/resize'
 import { TOGGLE_SIDEBAR } from './CommandPalette'
+import { unmergedOf } from '@/components/tasks/Worktrees'
 import { api } from '@/lib/api'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
@@ -382,9 +383,16 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     const list = idleTasks(project.id)
     let ok = 0
     let failed = 0
+    let kept = 0
     for (const tk of list) {
       try {
         if (action === 'delete') {
+          // 有没合并的独立分支的对话不在一键清理里删，免得改动悄悄丢掉；要删就单独删，会先警告
+          const wts = await api.taskWorktrees(tk.id).catch(() => ({ items: [] }))
+          if (unmergedOf(wts.items).length) {
+            kept++
+            continue
+          }
           await api.deleteTask(tk.id)
           removeTask(tk.id)
         } else upsertTask(await api.archiveTask(tk.id, true))
@@ -398,6 +406,8 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     if (action === 'delete' && route.page === 'projects' && route.sub && list.some((x) => x.id === route.sub))
       go({ page: 'projects', id: project.id })
     if (failed) toast.error(t('{ok} 个成功，{failed} 个失败', { ok, failed }))
+    else if (action === 'delete' && kept)
+      toast.success(t('已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删', { n: ok, kept }))
     else if (action === 'delete') toast.success(t('已删除 {n} 个对话', { n: ok }))
     else toast.success(t('已归档 {n} 个对话，可以在筛选里选「已归档」找到', { n: ok }))
   }
@@ -887,7 +897,9 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
         }
         description={
           bulk?.action === 'delete'
-            ? t('正在执行的对话不受影响。删除后对话记录和它们的子对话都找不回来，不会动本地目录里的文件。')
+            ? t(
+                '正在执行的对话、有没合并的独立分支的对话不受影响。删除后对话记录和它们的子对话都找不回来，不会动本地目录里的文件。',
+              )
             : t('正在执行的对话不受影响。归档的对话不会删除，可以在筛选里选「已归档」找到。')
         }
         confirmText={bulk?.action === 'delete' ? t('删除') : t('归档')}

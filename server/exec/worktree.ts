@@ -114,30 +114,65 @@ async function identity(cwd: string) {
 /**
  * 合并：先把独立目录里还没提交的改动提交到任务分支，再合并进目标目录当前所在的分支。
  * target 默认是项目目录；子对话传父对话的目录，合成「子 → 父 → 项目」的顺序。
- * 有冲突时放弃这次合并，目标目录保持原样，返回冲突的说明。成功后删掉独立目录和分支。
+ * 有冲突时放弃这次合并，目标目录保持原样，返回冲突的说明。keep 为 false 时成功后删掉独立目录和分支。
  */
-export async function mergeWorktree(repo: string, wt: TaskWorktree, message: string, target = repo) {
-  if (existsSync(wt.path)) {
-    await git(wt.path, 'add', '-A')
-    const dirty = (await git(wt.path, 'diff', '--cached', '--quiet')).code !== 0
-    if (dirty) {
-      const c = await git(wt.path, ...(await identity(wt.path)), 'commit', '-q', '-m', message)
-      if (c.code !== 0) throw fail(c, t('提交改动失败'))
-    }
-  }
+export async function mergeWorktree(repo: string, wt: TaskWorktree, message: string, target = repo, keep = false) {
+  await commitWorktree(wt, message)
   const into = (await git(target, 'rev-parse', '--abbrev-ref', 'HEAD')).stdout.trim()
+  // 从哪开的分支就合回哪：原目录后来换了分支就不合，免得合到别的分支上
+  if (wt.baseBranch && into !== wt.baseBranch)
+    throw new Error(
+      t('原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。', {
+        now: into || 'HEAD',
+        base: wt.baseBranch,
+      }),
+    )
   const m = await git(target, ...(await identity(target)), 'merge', '--no-ff', '--no-edit', '-m', message, wt.branch)
   if (m.code !== 0) {
     await git(target, 'merge', '--abort')
-    throw new Error(
-      t('合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。', {
-        branch: into,
-        name: wt.branch,
-      }) + `\n\n${(m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n')}`,
+    throw Object.assign(
+      new Error(
+        t('合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。', {
+          branch: into,
+          name: wt.branch,
+        }) + `\n\n${(m.stderr || m.stdout).trim().split('\n').slice(-6).join('\n')}`,
+      ),
+      { conflict: true },
     )
   }
-  await removeWorktree(repo, wt, false)
+  if (!keep) await removeWorktree(repo, wt, false)
   return into
+}
+
+/** 独立分支现在的情况：目录还在不在、比原分支多几个提交、有几个没提交的文件、是不是已经都合回原分支 */
+export interface WorktreeStatus {
+  exists: boolean
+  /** 分支还在 */
+  branch: boolean
+  /** 原分支里还没有的提交数 */
+  ahead: number
+  /** 独立目录里没提交的文件数 */
+  dirty: number
+  /** 改动都已经在原分支里了（没有改动也算） */
+  merged: boolean
+}
+
+export async function worktreeStatus(repo: string, wt: TaskWorktree): Promise<WorktreeStatus> {
+  const exists = existsSync(wt.path)
+  const has = (await git(repo, 'rev-parse', '-q', '--verify', `refs/heads/${wt.branch}`)).code === 0
+  let dirty = 0
+  if (exists) {
+    const st = await git(wt.path, 'status', '--porcelain')
+    dirty = st.code === 0 ? st.stdout.split('\n').filter((l) => l.trim()).length : 0
+  }
+  let ahead = 0
+  if (has) {
+    // 不知道从哪开的（分离 HEAD）时和项目目录现在的提交比
+    const base = wt.baseBranch || 'HEAD'
+    const r = await git(repo, 'rev-list', '--count', `${base}..refs/heads/${wt.branch}`)
+    ahead = r.code === 0 ? Number(r.stdout.trim()) || 0 : 0
+  }
+  return { exists, branch: has, ahead, dirty, merged: has ? ahead === 0 && dirty === 0 : wt.state === 'merged' }
 }
 
 /** 删掉独立目录；force 时连分支一起删（丢弃），否则分支已经合并，用 -d 删 */

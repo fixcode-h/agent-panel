@@ -329,24 +329,10 @@ export const EN_TASKS: Record<string, string> = {
   独立分支: 'Separate branch',
   '这个项目有任务正在执行。两个任务同时改一个目录容易互相覆盖，可以打开「独立分支」分开执行。':
     'A task is already running in this project. Two tasks editing one directory can overwrite each other; turn on "Separate branch" to keep them apart.',
-  项目当前的分支: "the project's current branch",
   '新版本已经下载完，等正在执行的任务结束后才会替换并重启；也可以现在强制更新。':
     'The new version is downloaded; it replaces the current one and restarts after running tasks finish. You can also force the update now.',
   '已合并到「{branch}」': 'Merged into "{branch}"',
-  已丢弃独立分支: 'Separate branch discarded',
-  '独立分支已合并到「{branch}」': 'Separate branch merged into "{branch}"',
-  '独立分支已丢弃，项目目录没有改动': 'Separate branch discarded; the project directory was not changed',
-  '在独立分支 {name} 上执行，不改动项目目录': 'Running on separate branch {name}; the project directory is untouched',
-  '改动在独立分支 {name} 上，还没进项目目录':
-    'Changes are on separate branch {name} and not yet in the project directory',
-  丢弃: 'Discard',
   '合并到「{branch}」': 'Merge into "{branch}"',
-  '把改动合并到「{branch}」？': 'Merge the changes into "{branch}"?',
-  '丢弃独立分支？': 'Discard the separate branch?',
-  '没提交的改动会先提交到任务分支，再合并进项目目录当前的分支。有冲突时不会改动项目目录。':
-    "Uncommitted changes are committed to the task branch first, then merged into the project's current branch. On a conflict the project directory is left unchanged.",
-  '会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。':
-    'Deletes the task branch and its working directory, losing all changes in it. The project directory is not affected.',
   合并: 'Merge',
   '要退回修改时，写上要改的地方': 'To send it back, describe what to change',
   退回意见: 'Comments for changes',
@@ -630,4 +616,40 @@ export const EN_TASKS: Record<string, string> = {
   回报父对话: 'Report to parent chat',
   提交编译: 'Submit build',
   启动工作流: 'Start workflow',
+  '已合并到「{branch}」，分支已删除': 'Merged into “{branch}”, branch deleted',
+  '已删除，改动没有合并': 'Deleted, changes were not merged',
+  '在独立分支上执行，不改动项目目录': 'Running on a separate branch, project folder untouched',
+  原分支: 'original branch',
+  删除独立分支: 'Delete separate branch',
+  已合并: 'Merged',
+  未合并: 'Not merged',
+  '正在执行，不改动原目录': 'Running, original folder untouched',
+  '已在「{branch}」里': 'Already in “{branch}”',
+  '{n} 个提交': '{n} commit(s)',
+  '{n} 个文件未提交': '{n} uncommitted file(s)',
+  '未合并到「{branch}」：{what}': 'Not merged into “{branch}”: {what}',
+  '用 AI 合并': 'Merge with AI',
+  '已交给 AI 合并，结果会在对话里回复': 'Handed to AI to merge; the result will show in the chat',
+  '已删除独立分支 {name}': 'Deleted separate branch {name}',
+  '删除独立分支 {name}？': 'Delete separate branch {name}?',
+  '这个分支还有改动没合并到「{branch}」，删除后这些改动会丢掉。原目录不受影响。':
+    'This branch has changes not merged into “{branch}”. Deleting it loses them. The original folder is not affected.',
+  '改动都已经在原分支里了，删除分支和它的工作目录不会丢东西。':
+    'All changes are already in the original branch, so deleting the branch and its folder loses nothing.',
+  '{n} 个没合并': '{n} not merged',
+  '已交给 AI 合并，合并完再删除对话': 'Handed to AI to merge. Delete the chat after it is merged',
+  '它的独立分支已经合并，会一起删除。': 'Its separate branches are merged and will be deleted too.',
+  '正在检查独立分支…': 'Checking separate branches…',
+  '有 {n} 个独立分支还没合并，直接删除会丢掉这些改动':
+    '{n} separate branch(es) not merged. Deleting now loses those changes',
+  '把合并要求发给分支所在的对话，由 AI 解决冲突后合回原分支；对话先不删除':
+    'Sends a merge request to the chat that owns the branch; AI resolves conflicts and merges it back. The chat is not deleted',
+  直接删除: 'Delete anyway',
+  '原目录现在在「{now}」，不是开分支时的「{base}」，没有合并。切回「{base}」后再合并。':
+    'The original folder is now on “{now}”, not “{base}” where the branch started, so nothing was merged. Switch back to “{base}” and merge again.',
+  '对话正在执行，等这一轮结束后再合并': 'The chat is running. Merge after this turn ends',
+  '对话正在执行，等这一轮结束后再删除独立分支': 'The chat is running. Delete the separate branch after this turn ends',
+  '、': ', ',
+  '已删除 {n} 个对话，{kept} 个有没合并的独立分支，留着没删':
+    'Deleted {n} chat(s); kept {kept} with unmerged separate branches',
 }

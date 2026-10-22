@@ -1341,12 +1341,16 @@ try {
     assert.ok(!wtPrompt.includes('claim_files 认领'), '独立分支里不用认领文件')
     // 假 CLI 每次都在工作目录写输出文件：项目目录里前面测试留下的那份没进版本控制，会挡住合并
     for (const f of ['codex-output.txt', 'claude-output.txt']) rmSync(path.join(project.path, f), { force: true })
+    const before = (await call('GET', `/tasks/${wtParent.id}/worktrees`)).items
+    assert.equal(before.length, 1, '父对话的独立分支列表带上子对话的')
+    assert.ok(before[0].child && !before[0].merged && before[0].ahead + before[0].dirty > 0, '子对话的分支还没合并')
     const merged = await call('POST', `/tasks/${wtKid.id}/worktree/merge`)
-    assert.equal(merged.worktree.state, 'merged')
+    assert.equal(merged.task.worktree.state, 'active', '合并后分支留着，对话还能接着改')
     assert.ok(
       gitIn(project.path, 'log', '--oneline').toString().includes('子对话在自己的分支'),
       '合并后提交回到项目目录',
     )
+    assert.ok((await call('GET', `/tasks/${wtParent.id}/worktrees`)).items[0].merged, '合并后标成已合并')
     await call('DELETE', `/tasks/${wtParent.id}`)
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
@@ -2364,7 +2368,10 @@ try {
   assert.ok(!existsSync(path.join(projectDir, 'committed.txt')), '合并失败时项目目录没被改动')
   rmSync(blocker)
   const merged = await call('POST', `/tasks/${tIso.id}/worktree/merge`)
-  assert.equal(merged.worktree.state, 'merged')
+  assert.equal(merged.task.worktree.state, 'active', '合并后分支和目录留着')
+  assert.ok(existsSync(tIso.worktree.path), '合并后独立目录还在')
+  const status = (await call('GET', `/tasks/${tIso.id}/worktrees`)).items[0]
+  assert.ok(status.merged && status.ahead === 0 && status.dirty === 0, '合并后标成已合并')
   assert.ok(existsSync(path.join(projectDir, 'committed.txt')), '合并后改动进了项目目录')
   assert.ok(existsSync(path.join(projectDir, 'later.txt')), '没提交的改动合并前先提交')
   assert.equal(
@@ -2372,8 +2379,10 @@ try {
     'changed before the task\n',
     '项目里原有的改动保留',
   )
-  assert.ok(!existsSync(tIso.worktree.path), '合并后删掉独立目录')
-  assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '合并后删掉任务分支')
+  const removed = await call('POST', `/tasks/${tIso.id}/worktree/discard`)
+  assert.equal(removed.worktree.state, 'merged', '合并过的分支删除后记成已合并')
+  assert.ok(!existsSync(tIso.worktree.path), '删除后独立目录没了')
+  assert.equal(git('branch', '--list', tIso.worktree.branch).toString().trim(), '', '删除后任务分支没了')
   // 退回合并前，免得影响后面的测试（--keep 保留 pre.txt 的未提交改动）
   git('reset', '-q', '--keep', 'HEAD~1')
   writeFileSync(blocker, blockerText)

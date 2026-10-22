@@ -303,8 +303,6 @@ export const EN_SERVER: Record<string, string> = {
   提交改动失败: 'Failed to commit the changes',
   '合并到「{branch}」时有冲突或那个目录里有未提交的改动挡住了，目录没有改动。可以在那里手动合并分支 {name}。':
     'Merging into "{branch}" hit a conflict or was blocked by uncommitted changes in that directory; the directory was not changed. You can merge branch {name} manually there.',
-  '任务正在执行，等它停下后再处理独立分支':
-    'The task is running; wait until it stops before handling its separate branch',
   这个任务没有待处理的独立分支: 'This task has no pending separate branch',
   '· {cli} 好像没有登录，或者登录已经过期。请在终端里{how}，登录后回来点「继续执行」。':
     '· {cli} does not seem to be logged in, or the login has expired. In a terminal, {how}, then come back and click "Continue".',

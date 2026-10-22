@@ -3,10 +3,12 @@ import { t } from '@shared/i18n'
 import { expandQuotes, quoteChip, useQuoteTarget } from '@/lib/quote'
 import { toast } from 'sonner'
 import {
+  ArrowRight,
   ChevronRight,
   FlaskConical,
   GitBranch,
   GitFork,
+  GitMerge,
   Loader2,
   MessageSquareText,
   MoreHorizontal,
@@ -56,6 +58,14 @@ import { StepSection } from './StepSection'
 import { RunCard, RunPanel } from './RunCard'
 import { TaskPanel } from './TaskPanel'
 import { TaskMeta } from './TaskMeta'
+import {
+  DeleteTaskDialog,
+  WorktreeMark,
+  useWorktreeActions,
+  useWorktrees,
+  worktreeKey,
+  worktreeSummary,
+} from './Worktrees'
 import { TaskFiles } from './TaskFiles'
 import { FileDialog, FileOpenCtx } from './FileDialog'
 import { ChildOpenCtx } from './ToolRow'
@@ -1239,7 +1249,7 @@ export function TaskView({
 
               <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
                 <TaskRequestCard task={task} onAnswered={apply} />
-                <WorktreeBar task={task} onChange={apply} />
+                <WorktreeBar task={task} />
                 {flowLeft && !task.imported && (
                   <FlowBar
                     task={task}
@@ -1387,7 +1397,8 @@ export function TaskView({
               }
             }}
           />
-          <ConfirmDialog
+          <DeleteTaskDialog
+            task={task}
             open={deleting}
             onOpenChange={setDeleting}
             title={t('删除任务「{title}」？', { title: task.title })}
@@ -1782,10 +1793,14 @@ function FlowBar({
   )
 }
 
-/** 独立分支执行的任务：停下后可以把改动合并进项目，或者整个丢弃 */
-function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => void }) {
-  const [asking, setAsking] = useState<'merge' | 'discard' | null>(null)
+/**
+ * 输入框上面的独立分支条：从哪个分支开出 → 独立分支，合没合回去（绿勾 / 感叹号），
+ * 这一轮没在动手时可以直接合并或删除
+ */
+function WorktreeBar({ task }: { task: Task }) {
   const wt = task.worktree
+  const items = useWorktrees(task.id, worktreeKey(task), !!wt)
+  const actions = useWorktreeActions(task.id)
   // 要改文件时才开：还没开时说明现在在哪个目录，免得以为已经在分支里了
   if (!wt && task.wantsWorktree)
     return (
@@ -1795,54 +1810,62 @@ function WorktreeBar({ task, onChange }: { task: Task; onChange: (t: Task) => vo
       </div>
     )
   if (!wt) return null
-  const running = task.status === 'running'
-  const target = wt.baseBranch || t('项目当前的分支')
-  const finish = (merge: boolean) =>
-    api
-      .finishWorktree(task.id, merge)
-      .then((x) => {
-        onChange(x)
-        setAsking(null)
-        toast.success(merge ? t('已合并到「{branch}」', { branch: x.worktree?.note || target }) : t('已丢弃独立分支'))
-      })
-      .catch((e) => {
-        setAsking(null)
-        toast.error((e as Error).message)
-      })
+  const item = items?.find((x) => x.taskId === task.id)
+  const active = wt.state === 'active'
+  const busy = actions.busy === task.id
   return (
-    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-2 rounded-xl border border-line bg-card/60 px-3 py-2 text-[0.8125rem]">
-      <GitBranch className={cn('h-3.5 w-3.5 shrink-0', wt.state === 'active' ? 'text-accent' : 'text-subtle')} />
-      <span className="min-w-0 flex-1 text-muted">
-        {wt.state === 'merged'
-          ? t('独立分支已合并到「{branch}」', { branch: wt.note || target })
-          : wt.state === 'discarded'
-            ? t('独立分支已丢弃，项目目录没有改动')
-            : running
-              ? t('在独立分支 {name} 上执行，不改动项目目录', { name: wt.branch })
-              : t('改动在独立分支 {name} 上，还没进项目目录', { name: wt.branch })}
+    <div className="mx-auto mb-2 flex max-w-(--content-w) flex-wrap items-center gap-x-2.5 gap-y-1 rounded-xl border border-line bg-card/60 px-3 py-1.5 text-[0.8125rem]">
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+      ) : item ? (
+        <WorktreeMark item={item} />
+      ) : (
+        <GitBranch className={cn('h-3.5 w-3.5 shrink-0', active ? 'text-accent' : 'text-subtle')} />
+      )}
+      <span className="flex min-w-0 items-center gap-1 font-mono text-[0.78125rem]">
+        <span className="shrink-0 text-subtle">{wt.baseBranch || 'HEAD'}</span>
+        <ArrowRight className="h-3 w-3 shrink-0 text-subtle" />
+        <span className={cn('min-w-0 truncate', active ? 'text-fg' : 'text-subtle line-through')} title={wt.path}>
+          {wt.branch}
+        </span>
       </span>
-      {wt.state === 'active' && !running && (
+      <span className="min-w-0 flex-1 truncate text-xs text-subtle">
+        {item
+          ? worktreeSummary(item)
+          : !active
+            ? wt.state === 'merged'
+              ? t('已合并到「{branch}」，分支已删除', { branch: wt.note || wt.baseBranch })
+              : t('已删除，改动没有合并')
+            : t('在独立分支上执行，不改动项目目录')}
+      </span>
+      {item && item.state === 'active' && !item.working && (
         <span className="flex shrink-0 items-center gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setAsking('discard')}>
-            {t('丢弃')}
-          </Button>
-          <Button size="sm" onClick={() => setAsking('merge')}>
-            {t('合并到「{branch}」', { branch: target })}
+          {!item.merged && (
+            <Button
+              size="sm"
+              variant="secondary"
+              className="h-7"
+              disabled={busy}
+              onClick={() => void actions.merge(item)}
+            >
+              <GitMerge className="h-3.5 w-3.5" />
+              {t('合并到「{branch}」', { branch: item.baseBranch || t('原分支') })}
+            </Button>
+          )}
+          <Button
+            size="icon-sm"
+            variant="ghost"
+            disabled={busy}
+            title={t('删除独立分支')}
+            aria-label={t('删除独立分支')}
+            className="hover:bg-danger/10 hover:text-danger"
+            onClick={() => actions.askRemove(item)}
+          >
+            <Trash2 className="h-3.5 w-3.5" />
           </Button>
         </span>
       )}
-      <ConfirmDialog
-        open={!!asking}
-        onOpenChange={(o) => !o && setAsking(null)}
-        title={asking === 'merge' ? t('把改动合并到「{branch}」？', { branch: target }) : t('丢弃独立分支？')}
-        description={
-          asking === 'merge'
-            ? t('没提交的改动会先提交到任务分支，再合并进项目目录当前的分支。有冲突时不会改动项目目录。')
-            : t('会删除任务分支和它的工作目录，里面的改动都会丢掉，项目目录不受影响。')
-        }
-        confirmText={asking === 'merge' ? t('合并') : t('丢弃')}
-        onConfirm={() => finish(asking === 'merge')}
-      />
+      {actions.confirm}
     </div>
   )
 }

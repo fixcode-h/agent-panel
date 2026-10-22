@@ -74,6 +74,7 @@ import {
   currentBranch,
   mergeWorktree,
   removeWorktree,
+  worktreeStatus,
   trialMerge,
   checkRepo,
 } from './exec/worktree.ts'
@@ -968,6 +969,7 @@ export function tasksApi(deps: {
             },
         messageParent: task.parentTaskId ? (text, question) => messageParent(entry.task, text, question) : undefined,
         childIsolation: found?.childIsolation,
+        worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
         submitBuild:
           task.parentTaskId && isolated(entry.task) ? (note, small) => submitBuild(task.id, note, small) : undefined,
         // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑
@@ -1762,36 +1764,106 @@ export function tasksApi(deps: {
     return tk.projectId ? ((await deps.projects.get(tk.projectId))?.path ?? '') : path.join(CHATS_DIR, tk.id)
   }
 
+  /** 独立分支合回去的目录：子对话合进父对话的目录（父也在独立分支时是父的那个），顶层对话合进项目目录 */
+  async function worktreeHome(tk: Task, project: Project) {
+    const parent = tk.parentTaskId ? (live.get(tk.parentTaskId)?.task ?? (await store.get(tk.parentTaskId))) : null
+    return parent ? (await taskDir(parent)) || project.path : project.path
+  }
+
+  /** 正在动手（不是停在等下一句）的对话不能动它的独立分支，免得 Agent 还在往里写 */
+  const busyWith = (id: string) => !!live.get(id)?.task.working
+
   /**
-   * 合并或丢弃独立分支：只在任务停下时做，免得 Agent 还在往里写。
-   * 子对话合并进父对话的分支（父也在独立分支时），否则合并进项目当前的分支。
+   * 这个对话和它名下子对话的独立分支，带上 git 里的实际情况（有没有合进原分支、几个提交没合、几个文件没提交）。
+   * 合并编译、AI 合并都会改变这些，所以每次现查，不存在任务上
    */
-  async function finishWorktree(c: Context, merge: boolean) {
+  routes.get('/:id/worktrees', async (c) => {
     const id = c.req.param('id')!
-    if (live.has(id)) return bad(c, t('任务正在执行，等它停下后再处理独立分支'), 409)
-    const tk = await store.get(id)
+    const tk = await current(id)
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    const project = tk.projectId ? await deps.projects.get(tk.projectId) : null
+    const kids = (await store.list()).filter((x) => x.parentTaskId === id).map((k) => live.get(k.id)?.task ?? k)
+    const list = [tk, ...kids].filter((x) => x.worktree)
+    const items = await Promise.all(
+      list.map(async (x) => {
+        const wt = x.worktree!
+        const st = project && wt.state === 'active' ? await worktreeStatus(project.path, wt).catch(() => null) : null
+        return {
+          taskId: x.id,
+          title: x.title,
+          child: x.id !== id,
+          working: !!x.working,
+          branch: wt.branch,
+          baseBranch: wt.baseBranch,
+          path: wt.path,
+          state: wt.state,
+          note: wt.note,
+          home: project && wt.state === 'active' ? await worktreeHome(x, project) : '',
+          exists: st?.exists ?? false,
+          ahead: st?.ahead ?? 0,
+          dirty: st?.dirty ?? 0,
+          merged: st ? st.merged : wt.state === 'merged',
+        }
+      }),
+    )
+    return c.json({ items })
+  })
+
+  /**
+   * 合并独立分支：没提交的改动先提交到任务分支，再合进开分支的那个目录（原分支）。
+   * 合完分支和目录都留着，对话还能接着在里面改；不要了再单独删除。
+   */
+  routes.post('/:id/worktree/merge', async (c) => {
+    const id = c.req.param('id')!
+    if (busyWith(id)) return bad(c, t('对话正在执行，等这一轮结束后再合并'), 409)
+    const tk = await current(id)
     if (!tk) return bad(c, t('任务不存在'), 404)
     if (!isolated(tk)) return bad(c, t('这个任务没有待处理的独立分支'))
     const project = await deps.projects.get(tk.projectId)
     if (!project) return bad(c, t('任务所属的项目已经不存在'))
     const wt = tk.worktree!
-    // 父对话也在独立分支、而且目录还在：先并回父的分支，父再并回项目
-    const parent = tk.parentTaskId ? await store.get(tk.parentTaskId) : null
-    const target =
-      parent && isolated(parent) && existsSync(parent.worktree!.path) ? parent.worktree!.path : project.path
     try {
-      if (merge) {
-        const into = await mergeWorktree(project.path, wt, `Agent 面板：${tk.title}`, target)
-        return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'merged', note: into } }))
-      }
+      const into = await mergeWorktree(
+        project.path,
+        wt,
+        `Agent 面板：合并「${tk.title}」`,
+        await worktreeHome(tk, project),
+        true,
+      )
+      log.info('task', '合并了独立分支', { task: id, branch: wt.branch, into })
+      return c.json({ task: await current(id), into })
+    } catch (e) {
+      return c.json({ error: (e as Error).message, conflict: !!(e as { conflict?: boolean }).conflict }, 409)
+    }
+  })
+
+  /** 删除独立分支：连目录和分支一起删；还没合并的改动就丢了（界面上先确认过） */
+  routes.post('/:id/worktree/discard', async (c) => {
+    const id = c.req.param('id')!
+    if (busyWith(id)) return bad(c, t('对话正在执行，等这一轮结束后再删除独立分支'), 409)
+    const tk = await current(id)
+    if (!tk) return bad(c, t('任务不存在'), 404)
+    if (!isolated(tk)) return bad(c, t('这个任务没有待处理的独立分支'))
+    const project = await deps.projects.get(tk.projectId)
+    if (!project) return bad(c, t('任务所属的项目已经不存在'))
+    const wt = tk.worktree!
+    const st = await worktreeStatus(project.path, wt).catch(() => null)
+    const into = st?.merged ? wt.baseBranch : ''
+    // 对话还停在等下一句：先结束这一轮，CLI 的工作目录马上就没了；下一轮按原目录开新会话
+    const entry = live.get(id)
+    if (entry) {
+      if (!cancelWait(id)) stopTask(id)
+      await entry.done?.catch(() => {})
+    }
+    try {
       await removeWorktree(project.path, wt, true)
-      return c.json(await store.update(id, { ...tk, worktree: { ...wt, state: 'discarded', note: '' } }))
     } catch (e) {
       return bad(c, (e as Error).message, 409)
     }
-  }
-  routes.post('/:id/worktree/merge', (c) => finishWorktree(c, true))
-  routes.post('/:id/worktree/discard', (c) => finishWorktree(c, false))
+    const cur = (await store.get(id)) ?? tk
+    const next = { ...wt, state: st?.merged ? ('merged' as const) : ('discarded' as const), note: into }
+    return c.json(await store.update(id, { ...cur, worktree: next }))
+  })
 
   /** 删除任务时，没合并的独立分支一起清掉，免得数据目录里越积越多 */
   async function dropWorktree(tk: Task, repo?: string) {

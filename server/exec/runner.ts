@@ -105,6 +105,7 @@ export interface RealContext {
   claimFiles?: EngineHost['claimFiles']
   releaseFiles?: EngineHost['releaseFiles']
   childIsolation?: EngineHost['childIsolation']
+  worktreeHome?: EngineHost['worktreeHome']
   submitBuild?: EngineHost['submitBuild']
   verify?: EngineHost['verify']
   beginEdit?: EngineHost['beginEdit']
@@ -1475,6 +1476,7 @@ export async function runRealTurn(ctx: RealContext) {
     claimFiles: ctx.claimFiles,
     releaseFiles: ctx.releaseFiles,
     childIsolation: ctx.childIsolation,
+    worktreeHome: ctx.worktreeHome,
     submitBuild: ctx.submitBuild,
     verify: ctx.verify,
     beginEdit: ctx.beginEdit,

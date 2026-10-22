@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
+  ArrowRight,
   Check,
   ChevronDown,
   Coins,
@@ -27,6 +28,7 @@ import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
 import { withTaskModel } from '@shared/task'
+import { WorktreeMark, WorktreeSection, useWorktrees, worktreeKey } from './Worktrees'
 
 /** 输入框下面那几个小块的共同样式 */
 const chip =
@@ -285,10 +287,13 @@ function EnvChip({
     if (a) ids.add(agentRun(withTaskModel(a, task), s).cli)
   }
   const limited = [...ids].filter((c) => hasLimits(c) && cliSettings(s, c).showLimits)
+  // 在独立分支里：分支那块写「开出的分支 → 独立分支」，后面标合没合回去
+  const wt = task.worktree?.state === 'active' ? task.worktree : null
+  const own = useWorktrees(task.id, worktreeKey(task), !!wt)?.find((x) => x.taskId === task.id)
   return (
     <Popover>
       <PopoverTrigger
-        className={cn(chip, 'min-w-0 max-w-[min(360px,60vw)]')}
+        className={cn(chip, 'min-w-0 max-w-[min(480px,70vw)]')}
         title={projectPath || t('环境')}
         aria-label={t('环境')}
       >
@@ -298,11 +303,21 @@ function EnvChip({
           <MessageSquare className="h-3.5 w-3.5 shrink-0" />
         )}
         <span className="min-w-0 truncate">{projectName || projectPath || t('聊天')}</span>
-        {dir?.gitBranch && (
-          <span className="flex shrink-0 items-center gap-1 font-mono">
-            <GitBranch className="h-3 w-3" />
-            {dir.gitBranch}
+        {wt ? (
+          <span className="flex min-w-0 items-center gap-1 font-mono">
+            <GitBranch className="h-3 w-3 shrink-0" />
+            <span className="shrink-0">{wt.baseBranch || dir?.gitBranch || 'HEAD'}</span>
+            <ArrowRight className="h-3 w-3 shrink-0" />
+            <span className="min-w-0 truncate">{wt.branch}</span>
+            {own && <WorktreeMark item={own} className="h-3 w-3" />}
           </span>
+        ) : (
+          dir?.gitBranch && (
+            <span className="flex shrink-0 items-center gap-1 font-mono">
+              <GitBranch className="h-3 w-3" />
+              {dir.gitBranch}
+            </span>
+          )
         )}
       </PopoverTrigger>
       <PopoverContent className="w-[min(440px,calc(100vw-24px))]">
@@ -320,6 +335,7 @@ function EnvChip({
           {dir?.gitBranch && (
             <BranchRow key={projectPath} path={projectPath ?? ''} branch={dir.gitBranch} disabled={!idle} />
           )}
+          {projectPath && <WorktreeSection task={task} />}
           <div className="flex items-center gap-2">
             {task.mode === 'workflow' ? (
               <>

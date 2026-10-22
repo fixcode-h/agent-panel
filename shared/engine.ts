@@ -379,6 +379,8 @@ export interface EngineHost {
   sendToConversation?: (id: string, message: string) => Promise<{ ok: boolean; info: string }>
   /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、合回原目录编译，claim 共用目录认领文件 */
   childIsolation?: 'claim' | 'worktree'
+  /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。推送要先合到这里再从这里推 */
+  worktreeHome?: string
   /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
   submitBuild?: (note: string, small: boolean) => Promise<{ ok: boolean; info: string }>
   /**
@@ -2652,7 +2654,12 @@ ${
   host.task.parentTaskId
     ? '别的子对话改不到这里，你也不用认领文件，放心改。编译不在这里跑，改完用 submit_build 交给面板合回原目录编译，见下面的「编译交给面板」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
-}不要自己切换 / 检出新分支、不要推送到远端、不要合并主分支。
+}不要自己切换 / 检出新分支；用户没要求时不要合并主分支。
+不要推送这个独立分支。用户要求推送时，先把它合回原分支${
+          host.task.parentTaskId
+            ? '（调用 submit_build，合并编译通过后改动就在原分支上了）'
+            : `（在原目录里 git merge --no-ff ${wt.branch}）`
+        }，再在原目录${host.worktreeHome ? ` ${host.worktreeHome}` : ''}里推送原分支。
 ${wt.baseBranch ? `这个分支从「${wt.baseBranch}」开出。` : ''}`
       : '',
     catalog.length && planning
