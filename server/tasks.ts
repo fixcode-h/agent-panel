@@ -50,6 +50,7 @@ import {
   autoAnswerQuestions,
   cancelWait,
   deliverWait,
+  forgetNotes,
   runRealTurn,
   steerTask,
   type RealContext,
@@ -88,9 +89,13 @@ import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
+import { createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
 const RULE_CMD = /^\/rules?(?=\s|$)/i
+
+/** 同一个任务已经有执行位时又要发消息：路由按 409 处理，不能当成 500 */
+class TaskBusyError extends Error {}
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
@@ -126,30 +131,16 @@ export function tasksApi(deps: {
   const claims = createClaims()
   /**
    * 每个项目对话同时执行的子对话数：父对话分派的子对话超过上限（设置里的 childConcurrency）就排队，
-   * 前面的做完一轮再开始。用户自己在子对话里发消息不排队
+   * 前面的做完一轮再开始。用户自己在子对话里发消息不排队。
+   * 上限在对话设置里定了就用它，否则跟随全局设置
    */
-  const slots = new Map<string, { running: number; queue: (() => void)[] }>()
-  /** 父对话同时执行的子对话上限：对话设置里定了就用它，否则跟随设置 */
   async function childLimit(parentId: string) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     return parent?.childLimit || (await getSettings()).childConcurrency
   }
-  async function takeSlot(parentId: string) {
-    const limit = await childLimit(parentId)
-    const s = slots.get(parentId) ?? slots.set(parentId, { running: 0, queue: [] }).get(parentId)!
-    if (s.running >= limit) await new Promise<void>((r) => s.queue.push(r))
-    s.running++
-    let done = false
-    return () => {
-      if (done) return
-      done = true
-      s.running--
-      const next = s.queue.shift()
-      if (next) next()
-      else if (!s.running) slots.delete(parentId)
-    }
-  }
-  const queued = (parentId: string) => slots.get(parentId)?.queue.length ?? 0
+  const slots = createSlotPool(childLimit)
+  const takeSlot = (parentId: string) => slots.take(parentId)
+  const queued = (parentId: string) => slots.queued(parentId)
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）；
   // 父对话的 CLI 结束时它名下子对话的进程一起结束，不留孤儿
   setPresenceIdleHandler((id) => {
@@ -164,12 +155,18 @@ export function tasksApi(deps: {
   })
   /** 服务正在退出：不再接着处理这一轮结束后要处理的消息 */
   let shuttingDown = false
-  /** 同步占住任务的执行位，避免两次请求在 await 的间隙里各自启动一遍 */
-  const reserve = (task: Task): Live => {
-    const entry: Live = { task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0 }
-    live.set(task.id, entry)
-    return entry
-  }
+  /**
+   * 同步占住任务的执行位：检查和占住是同一步，避免两次请求在 await 的间隙里各自启动一遍。
+   * 已经在执行时返回已有的那一份（fresh 为 false），由调用方决定复用还是返回 409，不能覆盖
+   */
+  const reserve = (task: Task) =>
+    reserveOnce(
+      live,
+      task.id,
+      (): Live => ({ task: structuredClone(task), stop: false, abort: new AbortController(), rev: 0 }),
+    )
+  /** 只释放自己的执行位：旧的一轮收尾时不能把新的一轮删掉 */
+  const release = (entry: Live) => releaseIfSame(live, entry.task.id, entry)
 
   // 服务重启时，之前没跑完的任务标记为已停止；正在跑的节点记为被打断，继续执行时续接它的会话
   // 对外暴露成 ready：读取「被更新打断的任务」时要等这一步做完，否则还会读到 running
@@ -758,7 +755,10 @@ export function tasksApi(deps: {
   async function startChild(parentId: string, sub: Task, message: string, agents: Agent[]) {
     const free = await takeSlot(parentId)
     try {
-      const entry = reserve(sub)
+      const got = reserve(sub)
+      // 同一个子对话已经被启动了：复用正在跑的那一轮，不再开第二个进程
+      if (!got.fresh) return
+      const entry = got.value
       await start(entry, withAttachments(message, []), true, agents)
       await entry.done
     } catch (e) {
@@ -862,7 +862,7 @@ export function tasksApi(deps: {
       getSettings(),
       task.projectId ? deps.projects.get(task.projectId) : chatWorkspace(task.id),
     ]).catch((e) => {
-      live.delete(task.id)
+      release(entry)
       throw e
     })
     // 项目里给必备角色填的参数当作这个项目里的默认值（对话、节点、派出去的子 Agent 都按它）
@@ -1027,7 +1027,7 @@ export function tasksApi(deps: {
             : { granted: [], held: [] }
           const sub = await store.create({ ...draft, id: subId })
           const limit = await childLimit(entry.task.id)
-          const wait = queued(entry.task.id) > 0 || (slots.get(entry.task.id)?.running ?? 0) >= limit
+          const wait = queued(entry.task.id) > 0 || slots.running(entry.task.id) >= limit
           void startChild(entry.task.id, sub, message, agents)
           return {
             ok: true,
@@ -1115,7 +1115,10 @@ export function tasksApi(deps: {
           await flush(keepTime)
           await reportToParent(entry.task)
         } else await flush(keepTime)
-        live.delete(task.id)
+        // 只删自己的执行位：这一轮收尾时如果已经有新的一轮占住了，不能把它删掉
+        release(entry)
+        // 整轮结束了，没被节点取走的补充不会再有人取
+        forgetNotes(task.id)
         // 这一轮顺利完成：执行中收不下的消息，马上开始新一轮接着处理；失败或暂停时消息留在对话里等用户决定
         if (entry.task.status === 'done' && hasHeld(task.id) && !shuttingDown)
           await followUp(task.id).catch((e) => console.error(`接着处理执行中收到的消息失败：${(e as Error).message}`))
@@ -1148,13 +1151,16 @@ export function tasksApi(deps: {
   ) {
     const task = await store.get(id)
     if (!task) throw new Error('任务不存在')
-    const entry = reserve(task)
+    const got = reserve(task)
+    // 已经有了执行位：并发进来的两条消息只能有一条启动，另一条交给路由按 409 处理
+    if (!got.fresh) throw new TaskBusyError('任务正在执行，请等它完成或先停止')
+    const entry = got.value
     const next = entry.task
     let m = msg
     if (!m) {
       const q = takeHeld(id)
       if (!q) {
-        live.delete(id)
+        release(entry)
         return next
       }
       m = { text: q.text, attachments: q.attachments, recorded: true }
@@ -1180,7 +1186,7 @@ export function tasksApi(deps: {
     try {
       return await start(entry, withAttachments(expanded || m.text, placed), false, await deps.agents.list())
     } catch (e) {
-      live.delete(id)
+      release(entry)
       throw e
     }
   }
@@ -1238,6 +1244,8 @@ export function tasksApi(deps: {
   }
 
   const stopTask = (id: string) => {
+    // 停止、删除后不会再开始排队的子对话：让等着的调用拿到明确失败，不然它们会一直挂着
+    slots.drain(id, new Error('任务已停止，排队的子对话不再开始'))
     const e = live.get(id)
     if (!e) return
     e.stop = true
@@ -1501,7 +1509,10 @@ export function tasksApi(deps: {
     // 对话里显示的仍是原来那份（缩略图从附件目录读）
     const placed = await placeInTask(draft, input.attachments ?? [])
     const task = await store.create(draft)
-    return c.json(await start(reserve(task), withAttachments(expanded || input.prompt, placed), true, agents), 201)
+    return c.json(
+      await start(reserve(task).value, withAttachments(expanded || input.prompt, placed), true, agents),
+      201,
+    )
   })
 
   routes.post('/:id/messages', async (c) => {
@@ -1543,7 +1554,13 @@ export function tasksApi(deps: {
     prev = live.get(id)
     if (prev) await prev.done
     if (live.has(id)) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
-    return c.json(await followUp(id, { text, attachments }))
+    try {
+      return c.json(await followUp(id, { text, attachments }))
+    } catch (e) {
+      // 检查执行位和真正占到之间另一条请求先占了：按「正在执行」返回，不能冒成 500
+      if (e instanceof TaskBusyError) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+      throw e
+    }
   })
 
   /**
@@ -1564,6 +1581,7 @@ export function tasksApi(deps: {
       task.awaitingUser = false
       task.prewarming = false
     }
+    let entry: Live | undefined
     try {
       const settings = await getSettings()
       const agents = await deps.agents.list()
@@ -1581,10 +1599,13 @@ export function tasksApi(deps: {
       if (def.rpc?.nativeAsk) return task
       if (!force && task.sessionCli && task.sessionCli !== run.cli) return task
       if (live.has(task.id)) return live.get(task.id)!.task
-      const entry = reserve(task)
+      const got = reserve(task)
+      entry = got.value
+      // 另一个请求已经先占住（真正发消息或另一次预热）：复用它的执行位，不再开第二个 CLI
+      if (!got.fresh) return entry.task
       return await start(entry, PREWARM_PROMPT, false, agents, undefined, false, true)
     } catch (e) {
-      live.delete(task.id)
+      if (entry) release(entry)
       log.warn('task', '对话预热失败', { task: task.id, error: (e as Error).message })
       return task
     }
@@ -1649,21 +1670,29 @@ export function tasksApi(deps: {
     const task = await store.get(id)
     if (!task) return bad(c, t('任务不存在'), 404)
     if (task.imported) return bad(c, READONLY, 409)
-    // 停在某个节点结论上的工作流（例如前置检查不通过）也能继续：从那个节点重新检查
-    const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, await deps.workflows.list()).workflow))
-    if (task.status !== 'failed' && task.status !== 'stopped' && !blocked)
-      return bad(c, t('只有失败或停止的任务可以继续'))
-    // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
-    const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
-    let fresh: Workflow | undefined
-    if (latest && task.workflowId) {
-      fresh = (await deps.workflows.get(task.workflowId)) ?? undefined
-      if (!fresh) return bad(c, t('工作流已经被删除，只能按任务创建时的工作流继续'))
-    }
-    const entry = reserve(task)
-    dropEndNotes(entry.task)
+    // 占执行位要在后面的 await 之前：否则两条「继续」请求会各自检查通过、各启动一遍
+    const got = reserve(task)
+    if (!got.fresh) return bad(c, t('任务正在执行'), 409)
+    const entry = got.value
     const users = task.messages.filter((m) => m.role === 'user' && !m.step)
     try {
+      // 停在某个节点结论上的工作流（例如前置检查不通过）也能继续：从那个节点重新检查
+      const blocked = !!blockedStep(task, taskFlow(task, taskWorkflows(task, await deps.workflows.list()).workflow))
+      if (task.status !== 'failed' && task.status !== 'stopped' && !blocked) {
+        release(entry)
+        return bad(c, t('只有失败或停止的任务可以继续'))
+      }
+      // latest：改用现在的工作流（任务创建后工作流改过，想按新的流程接着跑）
+      const { latest } = (await c.req.json().catch(() => ({}))) as { latest?: boolean }
+      let fresh: Workflow | undefined
+      if (latest && task.workflowId) {
+        fresh = (await deps.workflows.get(task.workflowId)) ?? undefined
+        if (!fresh) {
+          release(entry)
+          return bad(c, t('工作流已经被删除，只能按任务创建时的工作流继续'))
+        }
+      }
+      dropEndNotes(entry.task)
       if (fresh) {
         const project = task.projectId ? await deps.projects.get(task.projectId) : null
         const params = project ? paramsOf(project, fresh.id) : {}
@@ -1694,7 +1723,7 @@ export function tasksApi(deps: {
         ),
       )
     } catch (e) {
-      live.delete(id)
+      release(entry)
       throw e
     }
   })
@@ -2071,7 +2100,9 @@ export function tasksApi(deps: {
     const task = await idleTask(c)
     if (task instanceof Response) return task
     if (!task.sessions[task.agentId] && !task.rewind) return bad(c, t('还没有会话，不需要压缩'))
-    const entry = reserve(task)
+    const got = reserve(task)
+    if (!got.fresh) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+    const entry = got.value
     entry.task.messages.push({
       id: randomUUID(),
       role: 'system',
@@ -2084,7 +2115,7 @@ export function tasksApi(deps: {
     try {
       return c.json(await start(entry, '', false, await deps.agents.list(), { kind: 'compact' }))
     } catch (e) {
-      live.delete(task.id)
+      release(entry)
       throw e
     }
   })
@@ -2093,11 +2124,16 @@ export function tasksApi(deps: {
   routes.post('/:id/review', async (c) => {
     const task = await idleTask(c, false)
     if (task instanceof Response) return task
+    // 占执行位放在检查目录这些 await 之前：两条「审查」请求不会各自通过检查再各启动一遍
+    const got = reserve(task)
+    if (!got.fresh) return bad(c, t('任务正在执行，请等它完成或先停止'), 409)
+    const entry = got.value
     const body = (await c.req.json().catch(() => ({}))) as { base?: string }
     const target = body.base ? { type: 'base' as const, branch: body.base } : { type: 'uncommitted' as const }
-    if (!(await taskDir(task)) || (await gitNumstat(await taskDir(task), '').catch(() => null)) === null)
+    if (!(await taskDir(task)) || (await gitNumstat(await taskDir(task), '').catch(() => null)) === null) {
+      release(entry)
       return bad(c, t('项目不是 git 仓库，没法审查改动'))
-    const entry = reserve(task)
+    }
     const text = body.base ? t('审查相对 {branch} 的改动', { branch: body.base }) : t('审查还没提交的改动')
     entry.task.messages.push({
       id: randomUUID(),
@@ -2111,7 +2147,7 @@ export function tasksApi(deps: {
     try {
       return c.json(await start(entry, text, false, await deps.agents.list(), { kind: 'review', target }))
     } catch (e) {
-      live.delete(task.id)
+      release(entry)
       throw e
     }
   })
@@ -2127,6 +2163,7 @@ export function tasksApi(deps: {
     // 删父对话时把它的子对话一起删掉，不留孤儿
     const kids = (await store.list()).filter((x) => x.parentTaskId === id)
     stopTask(id)
+    forgetNotes(id)
     background.stop(id)
     const task = await store.get(id)
     if (!task || !(await store.remove(id))) return bad(c, t('任务不存在'), 404)
@@ -2134,6 +2171,7 @@ export function tasksApi(deps: {
     const dropped = [task]
     for (const k of kids) {
       stopTask(k.id)
+      forgetNotes(k.id)
       background.stop(k.id)
       await store.remove(k.id)
       forgetPresence(k.id)

@@ -77,12 +77,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
  * 原子写 JSON：先写唯一的临时文件再改名。Windows 上杀毒软件、索引服务短暂占用文件时改名会报 EPERM / EBUSY，重试几次。
+ * mode：含凭据、密钥的文件传 0o600，只让当前用户读（Windows 忽略这个参数）
  */
-export async function writeJsonAtomic(file: string, data: unknown, compact = false) {
+export async function writeJsonAtomic(file: string, data: unknown, compact = false, mode?: number) {
   await mkdir(path.dirname(file), { recursive: true })
   const tmp = `${file}.${process.pid}.${randomUUID().slice(0, 8)}.tmp`
   // compact：大文件（任务的对话）不缩进，写得快、占地方小
-  await writeFile(tmp, compact ? JSON.stringify(data) : JSON.stringify(data, null, 2), 'utf8')
+  const text = compact ? JSON.stringify(data) : JSON.stringify(data, null, 2)
+  await writeFile(tmp, text, mode === undefined ? 'utf8' : { encoding: 'utf8', mode })
   for (let i = 0; ; i++) {
     try {
       return await rename(tmp, file)
@@ -132,7 +134,15 @@ export function createCollection<I extends object, T extends I & Entity>(
   const FILE = dataPath(file)
   let cache: T[] | null = null
   let writing = Promise.resolve()
+  // 「读快照 → 改 → 写盘」整体串行：只串行写盘的话，两个并发的保存会各自基于旧快照写，后写的那次覆盖掉先写的改动
+  let mutating: Promise<unknown> = Promise.resolve()
   onReset(() => (cache = null))
+
+  function mutate<R>(fn: () => Promise<R>): Promise<R> {
+    const run = mutating.catch(() => {}).then(fn)
+    mutating = run
+    return run
+  }
 
   async function list(): Promise<T[]> {
     if (cache) return cache
@@ -157,29 +167,35 @@ export function createCollection<I extends object, T extends I & Entity>(
     async get(id: string) {
       return (await list()).find((x) => x.id === id) ?? null
     },
-    async create(input: I) {
-      const now = new Date().toISOString()
-      const item = { ...input, id: randomUUID(), createdAt: now, updatedAt: now } as unknown as T
-      await persist([...(await list()), item])
-      return item
+    create(input: I) {
+      return mutate(async () => {
+        const now = new Date().toISOString()
+        const item = { ...input, id: randomUUID(), createdAt: now, updatedAt: now } as unknown as T
+        await persist([...(await list()), item])
+        return item
+      })
     },
-    async update(id: string, input: I) {
-      const items = await list()
-      const old = items.find((x) => x.id === id)
-      if (!old) return null
-      const item = { ...old, ...input, id, updatedAt: new Date().toISOString() } as T
-      await persist(items.map((x) => (x.id === id ? item : x)))
-      return item
+    update(id: string, input: I) {
+      return mutate(async () => {
+        const items = await list()
+        const old = items.find((x) => x.id === id)
+        if (!old) return null
+        const item = { ...old, ...input, id, updatedAt: new Date().toISOString() } as T
+        await persist(items.map((x) => (x.id === id ? item : x)))
+        return item
+      })
     },
-    async remove(id: string) {
-      const items = await list()
-      if (!items.some((x) => x.id === id)) return false
-      await persist(items.filter((x) => x.id !== id))
-      return true
+    remove(id: string) {
+      return mutate(async () => {
+        const items = await list()
+        if (!items.some((x) => x.id === id)) return false
+        await persist(items.filter((x) => x.id !== id))
+        return true
+      })
     },
     /** 整体替换：重排这类操作要一次写成，不会出现只改了一半的顺序 */
-    async setAll(items: T[]) {
-      await persist(items)
+    setAll(items: T[]) {
+      return mutate(() => persist(items))
     },
   }
 }

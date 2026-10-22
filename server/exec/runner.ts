@@ -164,6 +164,11 @@ export function cancelWait(taskId: string) {
   return canceled
 }
 
+/** 任务删掉了：还没被节点取走的补充也一起清掉，别一直留在内存里 */
+export function forgetNotes(taskId: string) {
+  notes.delete(taskId)
+}
+
 /**
  * 交给 CLI 的补充。对话里先让模型判断这条补充和当前任务的关系：
  * 相关就调整方向；无关就先做完手上的事，再处理这条，别把当前任务丢在半路。
@@ -1130,6 +1135,12 @@ async function runAgent(
     }
     // 进程先结束了（崩溃、被停掉）：还在等下一句的那次请求也结束，别一直挂着
     cancelWait(task.id)
+    // 留给「下一个节点」的补充：后面还有节点会取走时就留着，没有了就清掉。
+    // 不按任务清是因为当前这个节点结束时，下一个节点还没来得及启动
+    const nextStep =
+      task.mode === 'workflow' &&
+      task.steps.some((s) => s.id !== step && s.status !== 'done' && s.status !== 'failed' && s.status !== 'skipped')
+    if (!nextStep) notes.delete(task.id)
     clearTimeout(gitTimer)
     if (steerer) {
       const set = steers.get(task.id)
