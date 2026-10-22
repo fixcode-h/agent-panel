@@ -91,7 +91,7 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import { settleWait, waitNote } from '../shared/plan.ts'
+import { childTurnSettle, settleWait, waitNote } from '../shared/plan.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
@@ -507,17 +507,19 @@ export function tasksApi(deps: {
   /**
    * 父对话的聊天里记一条系统消息并放进收件箱：它正在执行就实时交给它。
    * settle：父对话计划里有步骤在等这个子对话时，按结果标完成或退回进行中，并马上让父对话处理（空闲就开一轮），不放进收件箱干等
+   * onlyIfWaiting：只有计划里真的在等它时才说一声。子对话每跑完一轮都走这里收口，没在等它时不能往父对话里刷消息
    */
   async function noteParent(
     parentId: string,
     from: Task,
     body: string,
     inboxText = body,
-    settle?: { kind: PlanWait['kind']; ref: string; ok: boolean },
+    settle?: { kind: PlanWait['kind']; ref: string; ok: boolean; onlyIfWaiting?: boolean },
   ) {
     const parent = live.get(parentId)?.task ?? (await store.get(parentId))
     if (!parent) return
     const hit = settle ? settleWait(parent, settle.kind, settle.ref, settle.ok) : []
+    if (settle?.onlyIfWaiting && !hit.length) return
     const text = waitNote(hit) + body
     if (hit.length) {
       const entry = live.get(parent.id)
@@ -780,6 +782,25 @@ export function tasksApi(deps: {
       if (entry.done) await entry.done.catch(() => {})
       if (live.has(k.id)) stopTask(k.id)
     }
+  }
+
+  /**
+   * 子对话这一轮结束了：收口父对话计划里等它的那一步。
+   * 对话类子对话回复完会把进程留着等下一句，run 一直不返回，收尾处的 reportToParent 等不到，
+   * 所以要在这一轮真结束的地方直接按 child + 子对话 id 收一次（settleWait 幂等，收尾时再调一次没有副作用）。
+   * 有没答的提问时不算结束：那是子对话停下来等用户，步骤继续挂着
+   */
+  function settleChildTurn(child: Task) {
+    if (!child.parentTaskId) return
+    const r = childTurnSettle(child)
+    if (!r.over) return
+    const how = r.ok ? '这一轮做完了' : child.status === 'stopped' ? '被停止了' : '执行失败了'
+    void noteParent(child.parentTaskId, child, `子对话「${child.title}」${how}`, how, {
+      kind: 'child',
+      ref: child.id,
+      ok: r.ok,
+      onlyIfWaiting: true,
+    }).catch((e) => log.warn('task', '子对话结束收口计划失败', { task: child.id, error: (e as Error).message }))
   }
 
   /** 子对话跑完一轮后，把结果摘要回报给父对话（父对话还开着就实时推送） */
@@ -1166,6 +1187,8 @@ export function tasksApi(deps: {
         signal: entry.abort.signal,
         changed,
         newId: randomUUID,
+        // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
+        onTurnEnd: task.parentTaskId ? () => settleChildTurn(entry.task) : undefined,
         isGit: snapshot !== null,
         op,
         resume,
