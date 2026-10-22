@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import * as D from '@radix-ui/react-dialog'
-import { Code2, Columns2, Copy, FolderOpen, List, Loader2, Undo2, X } from 'lucide-react'
+import { Code2, Columns2, Copy, FolderOpen, List, Loader2, Undo2, WrapText, X } from 'lucide-react'
 import { toast } from 'sonner'
 import type { Task } from '@shared/schema'
 import type { FileDiff } from '@shared/files'
@@ -11,103 +11,38 @@ import { useScopedSetting } from '@/lib/useScopedSetting'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
+import { numbered, sideBySide } from './diff-rows'
 
 type Diff = Awaited<ReturnType<typeof api.taskDiff>>
 
-/** 一行差异的样式：新增绿、删除红、块头灰，文件头不显示 */
-function lineClass(l: string) {
-  if (l.startsWith('+++') || l.startsWith('---') || l.startsWith('diff ') || l.startsWith('index ')) return null
-  if (l.startsWith('new file') || l.startsWith('deleted file') || l.startsWith('similarity')) return null
-  if (l.startsWith('@@')) return 'bg-field text-subtle'
-  if (l.startsWith('+')) return 'bg-success/10 text-success'
-  if (l.startsWith('-')) return 'bg-danger/10 text-danger'
-  return 'text-muted'
-}
-
-/** 给每行配上改前、改后的行号（从 @@ -a,n +b,m @@ 推出来）；文件头那几行不显示 */
-function numbered(lines: string[]) {
-  let a = 0
-  let b = 0
-  const out: { l: string; cls: string; a?: number; b?: number }[] = []
-  for (const l of lines) {
-    const cls = lineClass(l)
-    if (cls === null) continue
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l)
-    if (h) {
-      a = Number(h[1])
-      b = Number(h[2])
-      out.push({ l, cls })
-    } else if (l.startsWith('+')) out.push({ l, cls, b: b++ })
-    else if (l.startsWith('-')) out.push({ l, cls, a: a++ })
-    else if (l.startsWith('\\')) out.push({ l, cls })
-    else out.push({ l, cls, a: a++, b: b++ })
-  }
-  return out
-}
-
-type Row =
-  | { kind: 'hunk'; l: string }
-  | { kind: 'note'; l: string }
-  | { kind: 'pair'; left?: { n: number; l: string }; right?: { n: number; l: string } }
-
-/**
- * 把 unified diff 排成左右对照：一段连续的删行接一段连续的增行，按位置配对，多出来的那侧留空。
- * 行号沿用 @@ 里给的数，只用来显示
- */
-function sideBySide(lines: string[]) {
-  let a = 0
-  let b = 0
-  const out: Row[] = []
-  // 连续的删行和增行先攒着，遇到上下文行或块结束时配对
-  let dels: { n: number; l: string }[] = []
-  let adds: { n: number; l: string }[] = []
-  const flush = () => {
-    const n = Math.max(dels.length, adds.length)
-    for (let i = 0; i < n; i++) out.push({ kind: 'pair', left: dels[i], right: adds[i] })
-    dels = []
-    adds = []
-  }
-  for (const l of lines) {
-    if (lineClass(l) === null) continue
-    const h = /^@@ -(\d+)(?:,\d+)? \+(\d+)/.exec(l)
-    if (h) {
-      flush()
-      a = Number(h[1])
-      b = Number(h[2])
-      out.push({ kind: 'hunk', l })
-    } else if (l.startsWith('-')) dels.push({ n: a++, l: l.slice(1) })
-    else if (l.startsWith('+')) adds.push({ n: b++, l: l.slice(1) })
-    else if (l.startsWith('\\')) {
-      flush()
-      out.push({ kind: 'note', l })
-    } else {
-      flush()
-      const text = l.slice(1)
-      out.push({ kind: 'pair', left: { n: a++, l: text }, right: { n: b++, l: text } })
-    }
-  }
-  flush()
-  return out
-}
+/** 折行时的排版：保留缩进和连续空格，超长的路径、URL 也能在任意位置断开 */
+const WRAP = 'whitespace-pre-wrap wrap-anywhere'
 
 /**
  * 左右对照：左边改前、右边改后；配对的两行都变了才标红标绿，只在一侧出现的是删除或新增。
- * 两列各自按内容撑开、至少各占一半：长行只把整块撑宽（外面横向滚动），不会盖到另一边
+ * 折行时两列各占一半、内容各自折行，左右靠网格行对齐（左边折成几行时，右边同一逻辑行仍在同一行里）。
+ * 不折行时两列按内容撑开，整块横向滚动看原样（新增文件的左栏只占行号那一列的宽度，不白占一半）。
+ * 缺失的一侧只留中性底色：新增文件整条左栏是空的，染成红色会被当成整段删除。
  */
-function SplitView({ lines }: { lines: string[] }) {
+function SplitView({ lines, wrap }: { lines: string[]; wrap: boolean }) {
+  // 配对只在差异内容变了才重算：切折行开关不该把上千行重新排一遍
+  const rows = useMemo(() => sideBySide(lines), [lines])
   return (
-    <div className="min-w-max font-mono text-[0.78125rem] leading-[1.6]">
-      <div className="grid grid-cols-[minmax(max-content,1fr)_minmax(max-content,1fr)]">
-        {sideBySide(lines).map((r, i) => {
+    <div className={cn('font-mono text-[0.78125rem] leading-[1.6]', !wrap && 'min-w-max')}>
+      <div className={cn('grid', wrap ? 'grid-cols-2' : 'grid-cols-[max-content_max-content]')}>
+        {rows.map((r, i) => {
           if (r.kind === 'hunk')
             return (
-              <div key={i} className="col-span-2 whitespace-pre bg-field px-3 py-0.5 text-subtle">
+              <div
+                key={i}
+                className={cn('col-span-2 bg-field px-3 py-0.5 text-subtle', wrap ? WRAP : 'whitespace-pre')}
+              >
                 {r.l}
               </div>
             )
           if (r.kind === 'note')
             return (
-              <div key={i} className="col-span-2 whitespace-pre px-3 py-0.5 text-subtle/70">
+              <div key={i} className={cn('col-span-2 px-3 py-0.5 text-subtle/70', wrap ? WRAP : 'whitespace-pre')}>
                 {r.l}
               </div>
             )
@@ -115,9 +50,7 @@ function SplitView({ lines }: { lines: string[] }) {
           const cell = (side: 'left' | 'right') => {
             const c = side === 'left' ? r.left : r.right
             const tone = !c
-              ? side === 'left'
-                ? 'bg-danger/5'
-                : 'bg-success/5'
+              ? 'bg-field/40'
               : changed
                 ? side === 'left'
                   ? 'bg-danger/10 text-danger'
@@ -126,10 +59,16 @@ function SplitView({ lines }: { lines: string[] }) {
             return (
               <div
                 key={`${i}-${side}`}
-                className={cn('flex whitespace-pre', tone, side === 'left' && 'border-r border-line')}
+                className={cn(
+                  'flex',
+                  wrap ? `min-w-0 ${WRAP}` : 'whitespace-pre',
+                  tone,
+                  side === 'left' && 'border-r border-line',
+                )}
               >
+                {/* 行号列固定宽度：折行时只有内容往下走，行号不跟着挪位 */}
                 <span className="w-11 shrink-0 pr-2 text-right text-subtle/70 select-none">{c?.n ?? ''}</span>
-                <span className="pr-4">{c ? c.l || ' ' : ''}</span>
+                <span className={cn('pr-4', wrap && `min-w-0 flex-1 ${WRAP}`)}>{c ? c.l || ' ' : ''}</span>
               </div>
             )
           }
@@ -142,7 +81,7 @@ function SplitView({ lines }: { lines: string[] }) {
 
 /**
  * 差异正文：默认左右对照，可以切回上下对照（像 git diff 那样逐行看，横向更省地方）。
- * 选择记在浏览器里，下次打开沿用上次的
+ * 长行默认折行（不再横向滚动），可以切回不折行看原样。两个选择都记在浏览器里，下次打开沿用上次的
  */
 function DiffBody({ diff }: { diff: string }) {
   const [mode, setMode] = useScopedSetting<'split' | 'unified'>(
@@ -151,10 +90,31 @@ function DiffBody({ diff }: { diff: string }) {
     (raw) => (raw === 'unified' ? 'unified' : 'split'),
     (v) => v,
   )
-  const lines = diff.split('\n')
+  const [wrap, setWrap] = useScopedSetting<boolean>(
+    'diff-wrap',
+    'default',
+    (raw) => raw !== 'nowrap',
+    (v) => (v ? 'wrap' : 'nowrap'),
+  )
+  // 拆行只跟差异内容走：切折行开关、切对照模式时行数据不重算
+  const lines = useMemo(() => diff.split('\n'), [diff])
+  // 同理：行号也只跟差异内容走，切开关和切模式时复用
+  const rows = useMemo(() => numbered(lines), [lines])
   return (
     <>
       <div className="sticky top-0 z-10 flex items-center justify-end gap-1 border-b bg-card/95 px-3 py-1.5 backdrop-blur">
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-pressed={wrap}
+          title={wrap ? t('长行折行显示') : t('长行不折行，可以左右滚动')}
+          onClick={() => setWrap(!wrap)}
+          className={cn(wrap && 'bg-sel text-fg')}
+        >
+          <WrapText className="h-4 w-4" />
+          {t('折行')}
+        </Button>
+        <span className="mx-1 h-4 w-px bg-line" aria-hidden />
         <Button
           variant="ghost"
           size="sm"
@@ -177,15 +137,15 @@ function DiffBody({ diff }: { diff: string }) {
         </Button>
       </div>
       {mode === 'split' ? (
-        <SplitView lines={lines} />
+        <SplitView lines={lines} wrap={wrap} />
       ) : (
-        <pre className="min-w-max py-2 font-mono text-[0.78125rem] leading-[1.6]">
-          {numbered(lines).map(({ l, cls, a, b }, i) => (
-            <div key={i} className={cn('flex whitespace-pre', cls)}>
-              {/* 改前、改后的行号，参照 Claude Code 的差异显示 */}
+        <pre className={cn('py-2 font-mono text-[0.78125rem] leading-[1.6]', !wrap && 'min-w-max')}>
+          {rows.map(({ l, cls, a, b }, i) => (
+            <div key={i} className={cn('flex', wrap ? WRAP : 'whitespace-pre', cls)}>
+              {/* 改前、改后的行号，参照 Claude Code 的差异显示；宽度固定，折行时不跟着挪位 */}
               <span className="w-11 shrink-0 pr-2 text-right text-subtle/70 select-none">{a ?? ''}</span>
               <span className="w-11 shrink-0 pr-3 text-right text-subtle/70 select-none">{b ?? ''}</span>
-              <span className="pr-4">{l || ' '}</span>
+              <span className={cn('pr-4', wrap && `min-w-0 flex-1 ${WRAP}`)}>{l || ' '}</span>
             </div>
           ))}
         </pre>
