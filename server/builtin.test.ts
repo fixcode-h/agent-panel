@@ -27,6 +27,7 @@ import {
   type BuiltinOps,
 } from '../shared/builtin/install.ts'
 import { LEGACY_AGENT_FIELDS, LEGACY_AGENT_FIELDS_MORE, LEGACY_WORKFLOWS } from '../shared/builtin/legacy.ts'
+import { coreDefinition, keepParamValues } from '../shared/builtin/core.ts'
 import { CategoryInput, TagInput } from '../shared/schema.ts'
 import { ensureBundled, installBundled, listBundled } from './bundled-skills.ts'
 
@@ -79,6 +80,15 @@ test('内置 Agent：引用的 Skill 都是自带的，引入的 Agent 存在，
   }
   // 除了「通用约束」自己，都引入了它
   for (const a of agents.filter((x) => x.id !== 'rules')) assert.ok(a.includes.includes('rules'), a.name)
+})
+
+test('文档角色：默认勾选「写 Bug 记录」，用户显式关掉的保留', () => {
+  const def = coreDefinition('docsync').agent.params.find((p) => p.key === 'bug')!
+  assert.equal(def.default, true, '文档角色的「写 Bug 记录」应该默认打开')
+  // 启动同步只换参数定义、把用户填的值带过去：显式存过 false 的不被改回 true
+  assert.equal(keepParamValues([def], [{ ...def, default: false }])[0].default, false)
+  // 没填过值的副本按新默认
+  assert.equal(keepParamValues([def], [])[0].default, true)
 })
 
 test('内置工作流：结构合法，节点的 Agent、验收流程和参数都对得上', () => {
