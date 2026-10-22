@@ -14,7 +14,9 @@
     "lint": "oxlint --deny-warnings && prettier --check web/src server shared scripts vite.config.ts && node scripts/rules-check.mjs",
     "lessons": "node scripts/lessons.mjs",
     "test:e2e": "node scripts/e2e.mjs",
-    "test:unit": "tsx --test server/exec/*.test.ts server/*.test.ts",
+    "test:e2e:wsl": "wsl -e bash -lc \"npm run test:e2e\"",
+    "test:unit": "tsx --test \"server/**/*.test.ts\" \"shared/**/*.test.ts\"",
+    "test:coverage": "tsx --test --experimental-test-coverage \"server/**/*.test.ts\" \"shared/**/*.test.ts\"",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {
