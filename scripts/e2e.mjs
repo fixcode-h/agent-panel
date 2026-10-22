@@ -1498,9 +1498,8 @@ try {
       prompt: 'COMMIT BEGIN_EDIT 父对话在独立分支',
       isolate: true,
     })
-    assert.equal(isoNew.worktree, null, '对话要改文件时才开独立分支，创建时还没开')
-    assert.equal(isoNew.wantsWorktree, true)
-    const isoParent = await waitTask(isoNew.id, (t) => t.worktree?.state === 'active' && !t.wantsWorktree)
+    assert.equal(isoNew.worktree?.state, 'active', '勾了独立分支就在创建对话时开好')
+    const isoParent = await waitDone(isoNew.id, 20000)
     assert.equal(isoParent.worktree?.state, 'active', '顶层对话传了 isolate 才隔离')
     let isoKid = await call('POST', '/tasks', {
       projectId: project.id,
@@ -2671,7 +2670,7 @@ try {
     prompt: 'COMMIT BEGIN_EDIT 在独立分支上改',
     isolate: true,
   })
-  assert.equal(tIso.worktree, null, '要改文件时才开独立分支')
+  assert.equal(tIso.worktree?.state, 'active', '创建对话时就开好独立分支')
   tIso = await waitTask(tIso.id, (t) => existsSync(path.join(t.worktree?.path ?? '/nope', 'committed.txt')))
   assert.equal(tIso.worktree?.state, 'active', '建了独立分支')
   assert.ok(existsSync(path.join(tIso.worktree.path, 'committed.txt')), 'Agent 在独立目录里改')

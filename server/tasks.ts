@@ -1738,17 +1738,11 @@ export function tasksApi(deps: {
       testSteps: workflow ? project.testSteps : [],
       platform: workflow ? process.platform : '',
     }
-    // 这里是顶层对话选的独立分支（子对话由项目设置决定）。
-    // 对话要改文件时才建：先在项目目录里看代码、回答问题，用不着改就不白开一个分支；
-    // 工作流的节点一开始就会改，创建时直接建好
-    // 父对话（分派角色）不开独立分支：它不改文件，子对话各自开
-    const coordinator = !!agents.find((a) => a.id === input.agentId)?.canDelegate
-    if (input.isolate && !parent && input.projectId && !coordinator) {
+    // 这里是顶层对话选的独立分支（子对话由项目设置决定）：只看输入框的「独立分支」按钮，不看角色。
+    // 勾了就在创建时建好（用户要求），父对话也一样，它的子对话从这个分支开出、合回这里
+    if (input.isolate && !parent && input.projectId) {
       try {
-        if (input.mode === 'chat') {
-          await checkRepo(project.path)
-          draft.wantsWorktree = true
-        } else draft.worktree = await createWorktree(project.path, draft.id, draft.title)
+        draft.worktree = await createWorktree(project.path, draft.id, draft.title)
       } catch (e) {
         return bad(c, (e as Error).message)
       }

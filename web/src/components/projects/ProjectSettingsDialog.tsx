@@ -885,17 +885,6 @@ function Body({
                   </span>
                 </FormSection>
 
-                <FormSection title={t('独立分支')}>
-                  <Checkbox
-                    checked={draft.isolateDefault}
-                    onChange={(v) => set('isolateDefault', v)}
-                    label={t('新建对话时默认勾选「独立分支」')}
-                    tip={t(
-                      '勾选的对话先在项目目录里看代码、回答问题，确定要改文件时才开独立分支（git worktree），在里面接着改。父对话（统筹）不改文件，不开独立分支。一般项目完整检出；UE 这类大项目不下载 LFS 大文件。',
-                    )}
-                  />
-                </FormSection>
-
                 <FormSection title={t('子对话')}>
                   <Field
                     label={t('子对话隔离')}
