@@ -12,8 +12,9 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 
 ## 测试不依赖系统语言
 
-- 规则：断言中文文案的测试先固定语言；e2e 已固定服务端 `LANG=zh_CN`。
-- 起因：3ab9a8d，英文系统上单测失败。
+- 规则：断言 `t()` 文案的测试在文件顶部 `setLang('zh')`（见 `server/files.test.ts`）；`shared/i18n.ts` 的语言是模块级全局，`server/lang.ts` 会在导入时按 `process.env.LANG` 改它（例如 `server/files.ts` → `server/settings.ts` → `server/lang.ts`），不要靠「别的文件先设过」或环境变量。e2e 已固定服务端 `LANG=zh_CN`。
+- 起因：3ab9a8d 英文系统上单测失败；同一个坑又踩一次——CI 的 `LANG=en_US.UTF-8` 让 11 个单测拿到英文报错文案，本地 Windows 全过。
+- 复现：`LANG=en_US.UTF-8 npm run test:unit`。
 - 防线：CI。
 
 ## 改执行流程时假 CLI 跟着改
