@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronLeft, Loader2, MessageCircleQuestion, PencilLine, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { Markdown } from '@/components/tasks/Markdown'
+
+/** 问题里的 @名字 只是普通文字时不当成提及高亮 */
+const NO_NAMES = new Set<string>()
 
 export interface PanelQuestion {
   /** 很短的标签，多个问题时显示在页签上 */
@@ -40,6 +44,7 @@ export function QuestionPanel({
   closeLabel,
   label,
   who,
+  teamNames,
   className,
 }: {
   questions: PanelQuestion[]
@@ -56,6 +61,8 @@ export function QuestionPanel({
   label?: string
   /** 谁在问：Agent 的名字 */
   who?: React.ReactNode
+  /** 问题正文里的 @名字 高亮：有名册时穿进来 */
+  teamNames?: Set<string>
   className?: string
 }) {
   const n = questions.length
@@ -137,6 +144,12 @@ export function QuestionPanel({
         <span className="shrink-0 font-medium text-accent">{label ?? t('需要你回答')}</span>
         {who && <span className="flex min-w-0 items-center gap-1.5 text-muted">{who}</span>}
         <span className="flex-1" />
+        {/* 多选跟着标题行，不跟着正文滚走 */}
+        {q.multiSelect && (
+          <span className="shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-[0.6875rem] text-accent">
+            {t('多选')}
+          </span>
+        )}
         {n > 1 && (
           <div role="tablist" className="flex min-w-0 gap-1 overflow-x-auto">
             {questions.map((x, i) => (
@@ -181,14 +194,15 @@ export function QuestionPanel({
           </button>
         )}
       </div>
-      <p className="px-4 pt-2 pb-2.5 text-[0.875rem] leading-relaxed font-medium [overflow-wrap:anywhere]">
-        {q.question}
-        {q.multiSelect && (
-          <span className="ml-2 inline-flex shrink-0 translate-y-[-1px] items-center rounded-md bg-accent-soft px-1.5 py-0.5 align-middle text-[0.6875rem] font-normal text-accent">
-            {t('多选')}
-          </span>
-        )}
-      </p>
+      {/* 问题正文可能是 AI 写的 Markdown：渲染出来，长了在框里滚，选项和底部按钮始终留着 */}
+      <div className="px-4 pt-2 pb-2.5">
+        <Markdown
+          text={q.question}
+          teamNames={teamNames ?? NO_NAMES}
+          compact
+          className="max-h-[min(50vh,460px)] overflow-y-auto"
+        />
+      </div>
       <div className="flex max-h-[min(46vh,420px)] flex-col gap-1 overflow-y-auto px-2.5">
         {q.options.map((o, i) => {
           const on = a.picked.includes(i)

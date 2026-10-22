@@ -339,6 +339,64 @@ body,
   @apply bg-warning/15 text-warning;
 }
 
+/* 提问面板里的 Markdown：面板窄，字号和间距比对话正文收一档，免得把下面的选项挤走 */
+.chat-md-compact {
+  @apply text-[0.84375rem];
+  line-height: 1.6;
+}
+.chat-md-compact > * {
+  @apply my-1.5 first:mt-0 last:mb-0;
+}
+.chat-md-compact p {
+  @apply my-1.5 first:mt-0 last:mb-0;
+}
+/* 标题只比正文重一档，不按文档里的大字级撑高面板 */
+.chat-md-compact h1 {
+  @apply mt-2.5 mb-1 text-[0.96875rem] leading-snug font-semibold;
+}
+.chat-md-compact h2 {
+  @apply mt-2.5 mb-1 text-[0.90625rem] leading-snug font-semibold;
+}
+.chat-md-compact h3 {
+  @apply mt-2 mb-1 text-[0.875rem] leading-snug font-semibold;
+}
+.chat-md-compact h4,
+.chat-md-compact h5,
+.chat-md-compact h6 {
+  @apply mt-1.5 mb-0.5 text-[0.84375rem] font-semibold text-muted;
+}
+.chat-md-compact ul,
+.chat-md-compact ol {
+  @apply my-1.5 pl-4;
+}
+.chat-md-compact li {
+  @apply my-0.5;
+}
+.chat-md-compact li > ul,
+.chat-md-compact li > ol {
+  @apply my-0.5;
+}
+.chat-md-compact hr {
+  @apply my-2.5;
+}
+.chat-md-compact :not(pre) > code {
+  @apply text-[0.75rem];
+}
+.chat-md-compact .md-code,
+.chat-md-compact > pre {
+  @apply my-2;
+}
+.chat-md-compact pre {
+  @apply px-3 py-2 text-[0.75rem] leading-[1.6];
+}
+.chat-md-compact table {
+  @apply my-2 text-[0.78125rem];
+}
+.chat-md-compact th,
+.chat-md-compact td {
+  @apply px-2 py-1;
+}
+
 /* 代码高亮配色（两套主题各一份，颜色在 :root / .dark 的变量里） */
 .hljs-comment,
 .hljs-quote {

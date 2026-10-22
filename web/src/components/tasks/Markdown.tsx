@@ -55,11 +55,14 @@ export function Markdown({
   text,
   teamNames,
   live,
+  compact,
   className,
 }: {
   text: string
   teamNames: Set<string>
   live?: boolean
+  /** 窄面板里用（提问面板）：字号、段距、列表缩进都收一档 */
+  compact?: boolean
   className?: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
@@ -145,7 +148,7 @@ export function Markdown({
       onKeyDown={(e) => {
         if (e.key === 'Enter' && (e.target as HTMLElement).dataset.path) onClick(e as unknown as React.MouseEvent)
       }}
-      className={cn('chat-md [overflow-wrap:anywhere]', className)}
+      className={cn('chat-md [overflow-wrap:anywhere]', compact && 'chat-md-compact', className)}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   )
