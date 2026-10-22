@@ -190,7 +190,14 @@ export function orchTools(o: Orchestra) {
                     '改完、在独立分支里做完快速检查后调用：面板把你现在的改动提交到你的分支，排队合回原目录跑编译，通过才算合进去，失败会撤回并把报错推回给你。马上返回，不用干等结果。',
                   inputSchema: {
                     type: 'object',
-                    properties: { note: { type: 'string', description: '这次改了什么，一句话' } },
+                    properties: {
+                      note: { type: 'string', description: '这次改了什么，一句话' },
+                      small: {
+                        type: 'boolean',
+                        description:
+                          '小改动（文案、样式、一两处局部修改）时为 true：合并时只跑标了「小改动也跑」的步骤',
+                      },
+                    },
                   },
                 },
               ]
@@ -408,7 +415,7 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       return text(r.info, !r.ok)
     }
     case 'submit_build': {
-      const r = await o.submitBuild(str(a?.note))
+      const r = await o.submitBuild(str(a?.note), a?.small === true)
       return text(r.info, !r.ok)
     }
     case 'message_parent': {

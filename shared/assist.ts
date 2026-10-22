@@ -654,7 +654,8 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - timeoutSec：超时秒数，0 表示不限
 - note：给执行者看的说明，例如「同一时间只编译一次」
 - enabled：默认 true
-- merge：合并时编译。子对话在独立分支里改完提交编译时，面板把改动合回原目录后跑标了 true 的步骤，通过才提交；编译、构建、类型检查这类能发现「合在一起坏了」的标 true，耗时很长的端到端测试标 false`,
+- merge：合并时编译。子对话在独立分支里改完提交编译时，面板把改动合回原目录后跑标了 true 的步骤，通过才提交；编译、构建、类型检查这类能发现「合在一起坏了」的标 true，耗时很长的端到端测试标 false
+- quick：小改动也跑。Agent 判断是小改动（改文案、样式、一两处局部修改）时只跑标了 true 的步骤；类型检查、lint、语法检查这类几十秒内跑完的标 true，单元测试、端到端、完整构建标 false`,
     `## 写步骤的规则
 - 按执行顺序排：先静态检查和单元测试，再端到端和构建；编译类放在需要它之前。
 - 只写项目里真的有的命令：先看 package.json 的 scripts，没有脚本就不要编 \`npm run xxx\`。
@@ -698,6 +699,7 @@ const TEST_STEP_SHAPE = z.object({
   note: z.string().trim().max(300).default(''),
   enabled: z.boolean().default(true),
   merge: z.boolean().default(false),
+  quick: z.boolean().default(false),
 })
 
 /**

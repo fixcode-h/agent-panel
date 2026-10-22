@@ -33,6 +33,7 @@ import {
   type Task,
   type TaskRun,
   type TaskStep,
+  type TestStep,
   type Workflow,
 } from './schema.ts'
 import {
@@ -75,6 +76,7 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { findLessons } from './lessons.ts'
+import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
 
@@ -289,7 +291,8 @@ export interface Orchestra {
   /** 要改文件时才开独立分支的对话：还没开，改文件前先调用 begin_edit */
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
-  submitBuild(note: string): Promise<{ ok: boolean; info: string }>
+  /** small：Agent 判断是小改动，合并时只跑标了「小改动也跑」的合并步骤 */
+  submitBuild(note: string, small: boolean): Promise<{ ok: boolean; info: string }>
   toParent(text: string, question: boolean): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
@@ -377,7 +380,12 @@ export interface EngineHost {
   /** 子对话怎么隔离（项目设置里选）：worktree 各自独立分支、合回原目录编译，claim 共用目录认领文件 */
   childIsolation?: 'claim' | 'worktree'
   /** 独立分支里的子对话：提交编译（面板排队试合并、跑合并时编译的步骤，结果推回子对话） */
-  submitBuild?: (note: string) => Promise<{ ok: boolean; info: string }>
+  submitBuild?: (note: string, small: boolean) => Promise<{ ok: boolean; info: string }>
+  /**
+   * 对话里怎么验证：项目的测试步骤和「按改动大小决定验证范围」开关。
+   * 不传时提示里不带这一段（没有项目的聊天、在线演示）
+   */
+  verify?: { steps: TestStep[]; platform: string; wslDistro: string; scaled: boolean }
   /**
    * 要改文件时才开独立分支、现在还没开：面板从当前目录建 worktree，这一轮结束后在里面开新会话接着做。
    * 只有对话有（工作流在创建时就建好了）
@@ -776,6 +784,18 @@ function buildPart(host: EngineHost) {
 - 可以跑不写构建产物的快速检查：类型检查、lint、单个文件的语法检查。
 - 改完一批后调用 submit_build：面板把改动排队合回原目录，按项目里标了「合并时编译」的步骤编译，通过才算合进去；失败会撤回，并把报错推回给你，在这里修好再提交一次。
 - 提交后不用干等，可以接着做别的部分；结果到了再处理。没有编译通过，不说完成。`
+}
+
+/** 对话自己改代码时的验证范围：小改动跑快速检查就收尾，省掉完整测试的时间 */
+function verifyPart(host: EngineHost) {
+  const v = host.verify
+  if (!v) return ''
+  return verifyBlock(v.steps, {
+    platform: v.platform,
+    wslDistro: v.wslDistro,
+    scaled: v.scaled,
+    submit: !!host.submitBuild,
+  })
 }
 
 /** 要改文件时才开独立分支：不说清楚的话模型会直接在原目录里改，隔离就落空了 */
@@ -2224,9 +2244,9 @@ function makeOrchestra(
       if (r.ok) host.changed(true)
       return r
     },
-    async submitBuild(note) {
+    async submitBuild(note, small) {
       if (!host.submitBuild) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
-      const r = await host.submitBuild(note.trim())
+      const r = await host.submitBuild(note.trim(), small)
       if (r.ok) {
         system(host, t('已提交编译，等面板合回原目录编译'), where)
         host.changed(true)
@@ -2620,6 +2640,7 @@ async function conversationPrompt(host: EngineHost, kind: 'top' | 'sub', plannin
     rulesPart(host),
     inboxPart(host),
     buildPart(host),
+    verifyPart(host),
     editPart(host),
     backgroundPart(host),
     statePart(host.task),

@@ -77,6 +77,7 @@ const blank: ProjectInput = {
   childIsolation: 'worktree',
   isolateDefault: false,
   testSteps: [],
+  scaledVerify: true,
   lessons: [],
   wslDistro: '',
   fileFormat: undefined,
@@ -665,6 +666,14 @@ function Body({ project, onClose }: { project?: Project; onClose: () => void }) 
                     '测试验收角色按这里的顺序执行，新建对话时快照进任务。写清楚命令、在哪执行和什么时候跑，没有配置时它会自己找命令并提醒你补上。',
                   )}
                 />
+                <Checkbox
+                  checked={draft.scaledVerify}
+                  onChange={(v) => set('scaledVerify', v)}
+                  label={t('按改动大小决定验证范围')}
+                  hint={t(
+                    '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。',
+                  )}
+                />
                 <TestStepsEditor
                   steps={draft.testSteps}
                   distro={draft.wslDistro}
@@ -1199,6 +1208,18 @@ function TestStepsEditor({
                 />
                 {t('合并时编译')}
               </label>
+              <label
+                className="flex cursor-pointer items-center gap-1.5 text-xs text-muted"
+                title={t('角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint')}
+              >
+                <input
+                  type="checkbox"
+                  className="accent-accent"
+                  checked={s.quick}
+                  onChange={(e) => patch(i, { quick: e.target.checked })}
+                />
+                {t('小改动也跑')}
+              </label>
             </div>
             {s.note && <span className="text-xs text-subtle">{s.note}</span>}
           </li>
@@ -1222,6 +1243,7 @@ function TestStepsEditor({
                 note: '',
                 enabled: true,
                 merge: false,
+                quick: false,
               },
             ])
           }

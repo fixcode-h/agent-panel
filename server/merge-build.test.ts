@@ -5,6 +5,7 @@ import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { TestStep } from '../shared/schema.ts'
+import { mergeStepsFor, verifyBlock } from '../shared/test-steps.ts'
 
 // 独立分支目录建在数据目录里：测试用临时目录，不碰本机真实的数据
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'merge-build-data-'))
@@ -69,4 +70,43 @@ test('试合并有冲突：撤回，列出冲突的文件', async () => {
   assert.match(!m.ok ? m.error : '', /a\.txt/)
   assert.equal(git(dir, 'status', '--porcelain').trim(), '')
   assert.equal(readText(path.join(dir, 'a.txt')), 'main\n')
+})
+
+test('小改动合并时只跑标了「小改动也跑」的合并步骤；一条都没标时照常全跑', () => {
+  const tc = step({ id: 'tc', name: '类型检查', quick: true })
+  const build = step({ id: 'b', name: '构建' })
+  const e2e = step({ id: 'e', name: '端到端', merge: false, quick: true })
+  const off = step({ id: 'o', name: '停用的', quick: true, enabled: false })
+  const names = (x: TestStep[]) => x.map((s) => s.name)
+
+  let r = mergeStepsFor([tc, build, e2e, off], true)
+  assert.deepEqual(names(r.run), ['类型检查'])
+  assert.deepEqual(names(r.skipped), ['构建'])
+  // 大改动：全部合并步骤
+  r = mergeStepsFor([tc, build, e2e, off], false)
+  assert.deepEqual(names(r.run), ['类型检查', '构建'])
+  assert.deepEqual(r.skipped, [])
+  // 没有标快速的合并步骤：小改动也不少编译
+  r = mergeStepsFor([build], true)
+  assert.deepEqual(names(r.run), ['构建'])
+  // 旧数据没有 quick 字段
+  assert.equal(TestStep.parse({ id: 'x', name: 'x', command: 'x' }).quick, false)
+})
+
+test('对话的验证说明：按改动大小分开，关掉时一律完整跑', () => {
+  const steps = [step({ id: 'tc', name: '类型检查', quick: true }), step({ id: 'e', name: '端到端', merge: false })]
+  const on = verifyBlock(steps, { platform: 'linux', scaled: true, submit: true })
+  assert.match(on, /小改动.*只跑标「快速」的步骤（类型检查）/)
+  assert.match(on, /small 设为 true/)
+  assert.match(on, /类型检查（自动，快速）/)
+  const none = verifyBlock([step({ id: 'e', name: '端到端', merge: false })], {
+    platform: 'linux',
+    scaled: true,
+    submit: false,
+  })
+  assert.match(none, /挑一个最快的检查/)
+  assert.doesNotMatch(none, /submit_build/)
+  const off = verifyBlock(steps, { platform: 'linux', scaled: false, submit: false })
+  assert.match(off, /每次改动都跑完整的测试步骤/)
+  assert.doesNotMatch(off, /小改动/)
 })

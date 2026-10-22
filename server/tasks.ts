@@ -78,6 +78,7 @@ import {
   checkRepo,
 } from './exec/worktree.ts'
 import { runMergeSteps } from './merge-build.ts'
+import { mergeStepsFor } from '../shared/test-steps.ts'
 import { createBackground } from './background.ts'
 import { mkdir, rm } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
@@ -234,6 +235,7 @@ export function tasksApi(deps: {
     childIsolation: 'claim',
     isolateDefault: false,
     testSteps: [],
+    scaledVerify: true,
     lessons: [],
     wslDistro: '',
     gitPolicy: 'ask',
@@ -598,7 +600,7 @@ export function tasksApi(deps: {
    * 通过才提交，失败就撤回合并、原目录保持原样。排队执行，结果推回给子对话，也告诉父对话。
    * 马上返回排队情况，子对话不用干等编译
    */
-  async function submitBuild(childId: string, note: string): Promise<{ ok: boolean; info: string }> {
+  async function submitBuild(childId: string, note: string, small = false): Promise<{ ok: boolean; info: string }> {
     const tk = live.get(childId)?.task ?? (await store.get(childId))
     if (!tk?.parentTaskId) return { ok: false, info: '只有子对话能提交编译' }
     if (!isolated(tk)) return { ok: false, info: '你没有独立分支，改动已经在原目录里：直接按项目测试步骤验证' }
@@ -616,7 +618,8 @@ export function tasksApi(deps: {
     void mergeLock(parentId, async () => {
       const parent = live.get(parentId)?.task ?? (await store.get(parentId))
       if (!parent) return
-      const r = await integrate(tk, parent, project)
+      // 项目关掉了「按改动大小验证」时不认小改动，照常全跑
+      const r = await integrate(tk, parent, project, small && project.scaledVerify)
       const head = r.ok ? `合并编译通过：${r.info}` : `合并编译没通过：${r.info}`
       await sendToChild(
         parentId,
@@ -633,7 +636,12 @@ export function tasksApi(deps: {
   }
 
   /** 一次合并 + 编译：试合并 → 跑合并时编译的步骤 → 通过提交 / 失败撤回 */
-  async function integrate(tk: Task, parent: Task, project: Project): Promise<{ ok: boolean; info: string }> {
+  async function integrate(
+    tk: Task,
+    parent: Task,
+    project: Project,
+    small: boolean,
+  ): Promise<{ ok: boolean; info: string }> {
     const wt = tk.worktree!
     const target = await taskDir(parent)
     // 从哪开的分支就合回哪：原目录后来换了分支就不合，免得合到别的分支上
@@ -646,7 +654,7 @@ export function tasksApi(deps: {
     const m = await trialMerge(target, wt.branch)
     if (!m.ok) return { ok: false, info: `合回原目录时有冲突，已撤回，原目录没有改动。\n${m.error}` }
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原目录已经是最新的' }
-    const steps = project.testSteps.filter((s) => s.enabled && s.merge)
+    const { run: steps, skipped } = mergeStepsFor(project.testSteps, small)
     const built = steps.length
       ? await runMergeSteps(steps, target, { wslDistro: project.wslDistro })
       : { ok: true, runs: [] }
@@ -668,7 +676,7 @@ export function tasksApi(deps: {
         ok: true,
         info: `已合进「${wt.baseBranch || '原目录'}」（${sha}），改了 ${m.files.length} 个文件。${
           ran ? `\n${ran}` : '\n项目没有标「合并时编译」的测试步骤，只合并没有编译。'
-        }`,
+        }${skipped.length ? `\n小改动，跳过了：${skipped.map((x) => x.name).join('、')}` : ''}`,
       }
     } catch (e) {
       await abortMerge(target)
@@ -960,7 +968,18 @@ export function tasksApi(deps: {
             },
         messageParent: task.parentTaskId ? (text, question) => messageParent(entry.task, text, question) : undefined,
         childIsolation: found?.childIsolation,
-        submitBuild: task.parentTaskId && isolated(entry.task) ? (note) => submitBuild(task.id, note) : undefined,
+        submitBuild:
+          task.parentTaskId && isolated(entry.task) ? (note, small) => submitBuild(task.id, note, small) : undefined,
+        // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑
+        verify:
+          task.mode === 'chat' && found?.id
+            ? {
+                steps: found.testSteps,
+                platform: process.platform,
+                wslDistro: found.wslDistro,
+                scaled: found.scaledVerify,
+              }
+            : undefined,
         beginEdit:
           task.mode === 'chat' && entry.task.wantsWorktree && !isolated(entry.task)
             ? () => beginEdit(entry, changed)

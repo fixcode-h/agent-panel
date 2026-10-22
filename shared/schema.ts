@@ -603,6 +603,11 @@ export const TestStep = z.object({
   enabled: z.boolean().default(true),
   /** 合并时编译：子对话提交编译时，面板把它合回原目录后跑这些步骤，通过才提交 */
   merge: z.boolean().default(false),
+  /**
+   * 小改动也跑：Agent 判断这次是小改动时只跑标了这个的步骤（类型检查、lint 这类几秒到几十秒的），
+   * 不跑完整测试；合并编译时也只跑同时标了「合并时编译」的。旧步骤没有时是 false
+   */
+  quick: z.boolean().default(false),
 })
 export type TestStep = z.infer<typeof TestStep>
 
@@ -669,6 +674,11 @@ const ProjectFields = z.object({
    * 旧项目没有这个字段时是空数组（Agent 自己找命令，并建议用户补上）。
    */
   testSteps: z.array(TestStep).max(40).default([]),
+  /**
+   * 按改动大小决定验证范围：小改动只跑快速检查就收尾，大改动跑完整的测试步骤。
+   * 关掉时每次改动都跑完整步骤。旧项目也默认打开：小改动在没有标「小改动也跑」的合并步骤时仍跑全部合并步骤，不会少编译
+   */
+  scaledVerify: z.boolean().default(true),
   /** 项目教训：旧项目没有时是空数组 */
   lessons: z.array(ProjectLesson).max(200).default([]),
   /** 标了 WSL 的测试步骤用哪个发行版；空时用 Ubuntu-24.04 */

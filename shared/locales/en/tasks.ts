@@ -563,6 +563,12 @@ export const EN_TASKS: Record<string, string> = {
   '子对话在独立分支里改完提交编译时，合回原目录后跑这一步，通过才提交':
     'When a sub-conversation submits its branch for a build, this step runs after merging back into the original folder; the merge is committed only if it passes',
   合并时编译: 'Build on merge',
+  小改动也跑: 'Run for small changes',
+  '角色判断是小改动时只跑勾了这项的步骤，适合几十秒内跑完的类型检查、lint':
+    'When a role judges a change to be small, it runs only the steps checked here. Good for type checks and lint that finish in under a minute',
+  按改动大小决定验证范围: 'Scale verification to the size of the change',
+  '对话里改代码时，角色先判断改动大小：改文案、样式这类小改动只跑勾了「小改动也跑」的步骤就收尾，其他改动跑完整的测试步骤。关掉后每次都跑完整步骤。工作流里的测试验收不受影响。':
+    'When a conversation changes code, the role first judges how big the change is. Small changes such as text or style tweaks only run the steps marked "Run for small changes"; everything else runs the full test steps. Turn this off to always run the full steps. Test and review steps inside workflows are not affected.',
   '已提交编译，等面板合回原目录编译': 'Submitted for build; waiting for the panel to merge it back and build',
   可能相关的对话: 'Possibly related chats',
   '看起来和这些对话是同一件事，可以直接发过去接着做：':

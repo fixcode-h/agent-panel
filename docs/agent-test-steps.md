@@ -58,6 +58,7 @@ type TestStep = {
   when: string // 执行条件，例如「仅改了 web/ 时」
   timeoutSec: number // 0 表示不限
   merge: boolean // 合并时编译：子对话用独立 worktree 时，submit_build 把改动试合回原目录后跑这些步骤，通过才提交
+  quick: boolean // 小改动也跑：Agent 判断是小改动时只跑这些（类型检查、lint 这类快的）
   note: string // 给执行者看的说明
   enabled: boolean
 }
@@ -76,6 +77,18 @@ type TestStep = {
   评审、建模这类流程不会看到一份无关的命令。
 - 之后改项目设置不影响已经开始的对话；「按最新的工作流继续」时才会换。
 - 没有配置步骤时给出兜底：让 Agent 按 package.json / Makefile / CI / README 自己找，找不到就报告缺口并建议补上，**不编命令**。
+
+### 按改动大小决定验证范围
+
+参照 Claude Code：小改动跑完快速检查就收尾，不跑全量测试。`Project.scaledVerify`（默认开）控制，
+项目里的对话（父对话、子对话）提示里带「验证按改动大小定」一段（`verifyBlock`，`EngineHost.verify`）：
+
+- 小改动（文案、样式、注释、文档、配置值，一两个文件几十行内的局部修改，不动接口 / 数据结构 / 执行流程 / 构建配置 / 依赖）
+  只跑 `quick` 的步骤；一条都没标就让 Agent 挑一个最快的检查。拿不准、快速检查没过都按大改动。
+- 大改动跑完整步骤，或者走带测试验收的工作流。工作流里的测试验收节点不受这个开关影响。
+- 独立分支的子对话调用 `submit_build` 时传 `small: true`，合并编译只跑同时标了 `merge` 和 `quick` 的步骤
+  （`mergeStepsFor`）；一条都没有时照常跑全部合并步骤，不会因为没配过而少编译。结果里写明跳过了哪些。
+- 关掉开关时提示改成「每次都跑完整步骤」，`small` 也不再生效。
 
 ### 环境怎么真正执行
 

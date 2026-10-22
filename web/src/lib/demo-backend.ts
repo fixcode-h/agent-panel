@@ -455,6 +455,7 @@ function seed(): Db {
     agentParams: {},
     childIsolation: 'worktree',
     isolateDefault: false,
+    scaledVerify: true,
     workflowIds: [],
     defaultAgentId: '',
     agentSet: true,
@@ -492,6 +493,7 @@ function seed(): Db {
               note: '',
               enabled: true,
               merge: true,
+              quick: true,
             },
             {
               id: 'demo-e2e',
@@ -504,6 +506,7 @@ function seed(): Db {
               note: '在 WSL 里执行，不要在 PowerShell 里直接跑',
               enabled: true,
               merge: false,
+              quick: false,
             },
           ],
           wslDistro: 'Ubuntu-24.04',

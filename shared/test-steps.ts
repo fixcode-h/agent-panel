@@ -57,7 +57,7 @@ export function testStepsText(steps: TestStep[], platform: string, wslDistro = '
   return steps
     .map((s, i) => {
       const lines = [
-        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.enabled ? '' : t('，已停用')}）`,
+        `${i + 1}. ${s.name}（${ENV_LABEL[s.env]}${s.quick ? '，快速' : ''}${s.enabled ? '' : t('，已停用')}）`,
         `   - 命令：${stepCommand(s, platform, wslDistro)}`,
       ]
       if (s.cwd) lines.push(`   - 工作目录：${s.cwd}（相对项目根）`)
@@ -89,6 +89,53 @@ export function testStepsBlock(steps: TestStep[], platform: string, wslDistro = 
 结果里写清楚「项目没有配置测试步骤，建议在项目设置里补上：名称 + 命令 + 环境」。`
 }
 
+/**
+ * 合并编译要跑哪些步骤：小改动只跑同时标了「小改动也跑」的合并步骤；
+ * 一条都没标时照常跑全部合并步骤，宁可多编译一次，也不让没配过的项目悄悄少了编译
+ */
+export function mergeStepsFor(steps: TestStep[], small: boolean) {
+  const all = steps.filter((s) => s.enabled && s.merge)
+  const quick = all.filter((s) => s.quick)
+  if (!small || !quick.length) return { run: all, skipped: [] as TestStep[] }
+  return { run: quick, skipped: all.filter((s) => !s.quick) }
+}
+
+/**
+ * 对话里怎么验证：按改动大小定范围（参照 Claude Code 的做法，小改动跑完快速检查就收尾）。
+ * 只给对话用，工作流里的测试验收节点照常跑完整步骤：走工作流本身就说明改动不小
+ */
+export function verifyBlock(
+  steps: TestStep[],
+  o: { platform: string; wslDistro?: string; scaled: boolean; submit: boolean },
+) {
+  const active = steps.filter((s) => s.enabled)
+  const quick = active.filter((s) => s.quick)
+  // 关掉时不分大小，「快速」标记没有意义，不写出来免得 Agent 只跑这几条
+  const shown = o.scaled ? active : active.map((s) => ({ ...s, quick: false }))
+  const list = active.length
+    ? `项目的测试步骤（当前系统：${o.platform || '未知'}${o.scaled ? '；标「快速」的是小改动也要跑的' : ''}）：\n${testStepsText(shown, o.platform, o.wslDistro)}`
+    : '项目还没有配置测试步骤：从 package.json 的 scripts、Makefile、CI 配置里找命令，找不到就说明缺口，不要编命令。'
+  if (!o.scaled)
+    return `## 验证
+这个项目要求每次改动都跑完整的测试步骤，改完按顺序全部跑通再说完成。
+${list}`
+  const fast = quick.length
+    ? `只跑标「快速」的步骤（${quick.map((s) => s.name).join('、')}）`
+    : '挑一个最快的检查跑（类型检查、lint 或改动文件的语法检查，几十秒内跑完的）'
+  return `## 验证按改动大小定
+改完先判断这次改动的大小，再决定验证范围：
+- 小改动：只改文案、样式、注释、文档、配置值，或者一两个文件里几十行以内的局部修改，不动接口、数据结构、执行流程、构建配置和依赖。${fast}，通过就收尾，不跑单元测试、端到端、完整构建，也不为它启动工作流。
+- 其他都算大改动：按项目的测试步骤完整跑一遍${o.submit ? '' : '（太长的放到后台）'}。
+- 拿不准就按大改动；快速检查没过、或者报错不在你改的地方，也改按大改动处理。
+- 回复里用一句话写明按哪种验证的、跑了什么。${
+    o.submit
+      ? `
+- 调用 submit_build 时小改动把 small 设为 true：合并时只跑同时标了「快速」和「合并时编译」的步骤，一条都没标就照常全跑。`
+      : ''
+  }
+${list}`
+}
+
 /** 新建项目时的默认步骤：按技术栈给一份够用的，用户确认后保存才生效 */
 export function defaultTestSteps(
   kind: TestKind,
@@ -105,6 +152,7 @@ export function defaultTestSteps(
     note: '',
     enabled: true,
     merge: false,
+    quick: false,
     ...extra,
   })
   if (kind === 'ue')
@@ -115,6 +163,7 @@ export function defaultTestSteps(
         note: t('同一时间只编译一次；把 <Target> 和 <.uproject> 换成项目里的实际名字'),
       }),
       step('ue-lua', t('Lua 语法检查'), 'luac -p <文件>', {
+        quick: true,
         note: t('有 Lua 改动时执行；按项目实际用的 Lua 版本换命令'),
       }),
       step(
@@ -129,14 +178,14 @@ export function defaultTestSteps(
     ]
   if (kind === 'rust')
     return [
-      step('rust-fmt', t('格式检查'), 'cargo fmt --check'),
+      step('rust-fmt', t('格式检查'), 'cargo fmt --check', { quick: true }),
       step('rust-clippy', t('静态检查'), 'cargo clippy --all-targets -- -D warnings'),
       step('rust-test', t('单元测试'), 'cargo test'),
       step('rust-build', t('构建'), 'cargo build', { merge: true }),
     ]
   if (kind === 'go')
     return [
-      step('go-vet', t('静态检查'), 'go vet ./...'),
+      step('go-vet', t('静态检查'), 'go vet ./...', { quick: true }),
       step('go-test', t('单元测试'), 'go test ./...'),
       step('go-build', t('构建'), 'go build ./...', { merge: true }),
     ]
@@ -158,8 +207,9 @@ export function defaultTestSteps(
   // Node / TypeScript：只列出项目里真的有的 scripts，不编不存在的命令
   const has = (k: string) => !!opts.scripts?.[k]
   const node: TestStep[] = []
-  if (has('typecheck')) node.push(step('node-typecheck', t('类型检查'), 'npm run typecheck', { merge: true }))
-  if (has('lint')) node.push(step('node-lint', t('代码检查'), 'npm run lint'))
+  if (has('typecheck'))
+    node.push(step('node-typecheck', t('类型检查'), 'npm run typecheck', { merge: true, quick: true }))
+  if (has('lint')) node.push(step('node-lint', t('代码检查'), 'npm run lint', { quick: true }))
   if (has('test:unit')) node.push(step('node-unit', t('单元测试'), 'npm run test:unit'))
   if (has('test:e2e'))
     node.push(
