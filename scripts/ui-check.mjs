@@ -127,6 +127,12 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // Token 胶囊：点开浮层看整个运行的合计（演示里的任务没有子对话，退化成只显示总数和输入输出）
+  {
+    await p.getByTitle('Token 用量').first().click()
+    await check(p, '任务-Token浮层', ['整个运行', '缓存命中'])
+    await p.keyboard.press('Escape')
+  }
   // 执行计划：输入框上方的按钮，点开是计划窗口（进行中的主步骤展开子步骤），以前的计划收在下面
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
@@ -787,6 +793,14 @@ try {
   await p.evaluate(() => document.documentElement.classList.remove('dark'))
   await p.goto(base + '#/projects')
   await check(p, '项目-浅色', ['任务', '设置'])
+  // 浅色主题下再看一眼 Token 浮层：边框、分隔线、速度的颜色都要跟着主题
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p.getByTitle('Token 用量').first().click()
+    await check(p, '任务-浅色-Token浮层', ['整个运行', '缓存命中'])
+    await p.keyboard.press('Escape')
+  }
   // 文件页：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存
   {
     await p.goto(base + '#/files')

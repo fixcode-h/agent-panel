@@ -32,6 +32,7 @@ import { createCollection, DATA_DIR, migrateDataDir } from './store.ts'
 import { dataApi } from './data.ts'
 import { tasksApi } from './tasks.ts'
 import { usageApi } from './usage.ts'
+import { runUsageApi } from './run-usage.ts'
 import { assistApi } from './assist.ts'
 import { designsApi } from './designs.ts'
 import { designMcpApi } from './design-mcp.ts'
@@ -664,6 +665,8 @@ app.delete('/projects/:id', async (c) => {
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
 app.route('/tasks', tasks.routes)
+// 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
+app.route('/tasks', runUsageApi({ tasks }).routes)
 // 设置页的用量统计：按天 / 周 / 月聚合各任务每轮执行的 token
 app.route('/usage', usageApi({ tasks }).routes)
 app.route('/assist', assistApi({ agents, categories, workflows, projects }))

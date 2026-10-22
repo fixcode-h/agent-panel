@@ -37,6 +37,7 @@ import type {
   WorkflowInput,
 } from '@shared/schema'
 import type { ChildActivity } from '@shared/task'
+import type { RunUsage } from '@shared/run-usage'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
 import type { DeployConfig, DeployResult, DeployRun, DeployState, GlobalDocOptimize } from '@shared/deploy'
@@ -331,6 +332,8 @@ export const api = {
   allTasks: () => request<Task[]>('/tasks'),
   tasks: (projectId: string) => request<Task[]>(`/tasks?projectId=${encodeURIComponent(projectId)}`),
   task: (id: string) => request<Task>(`/tasks/${id}`),
+  /** 整个运行的用量：父对话 + 所有子对话（含多层）+ 派出的子任务，带实时速度 */
+  taskRunUsage: (id: string) => request<RunUsage>(`/tasks/${id}/run-usage`),
   taskChildren: (id: string) =>
     request<
       {

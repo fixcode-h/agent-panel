@@ -45,6 +45,7 @@ import {
 } from '@shared/schema'
 import { DATA_KINDS, type DataKind } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
+import { runUsage } from '@shared/run-usage'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
 import { REPO, pickUpdate, type AppRelease, type AppReleases, type InterruptedTasks } from '@shared/version'
@@ -1975,6 +1976,7 @@ function tasksRoute(
     void followUp(d, task, base ? `审查相对 ${base} 的改动` : '审查还没提交的改动')
     return task
   }
+  if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   if (sub === 'children' && method === 'GET')
     return tasks
       .filter((x) => x.parentTaskId === task.id)
