@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Files, GitBranch, GitCompareArrows, Loader2, RefreshCw, ScanSearch } from 'lucide-react'
 import { toast } from 'sonner'
 import { type Task, type TaskStep } from '@shared/schema'
@@ -13,6 +13,31 @@ import { ProjectFileDialog } from '@/components/files/ProjectFileDialog'
 import { useProjectFiles } from '@/components/files/ProjectFileExplorer'
 import { DiffDialog } from './DiffDialog'
 import { FileDialog } from './FileDialog'
+
+/**
+ * 执行中文件改动合并的时间窗。一次工具调用可能连着改好几个文件，
+ * 每个都触发一次文件树重读既没意义又费请求；合并成一波可以接受几百毫秒的延迟。
+ */
+const REFRESH_DELAY = 350
+
+/**
+ * 刷新键去抖：执行中隔一小段时间合并一次，任务状态一变（跑完、出错）立即生效。
+ * 返回的值交给 useProjectFiles 当 refreshKey 用。
+ */
+function useRefreshKey(raw: string, immediate: boolean) {
+  const [key, setKey] = useState(raw)
+  useEffect(() => {
+    // 任务状态变了就立即跟上，顺带补上还在等待窗口里没落地的那次改动
+    if (immediate) {
+      setKey(raw)
+      return
+    }
+    if (key === raw) return
+    const timer = setTimeout(() => setKey(raw), REFRESH_DELAY)
+    return () => clearTimeout(timer)
+  }, [raw, immediate, key])
+  return key
+}
 
 /**
  * 任务页右栏：当前项目的文件树，带 git 状态；没有项目的聊天用任务工作目录。
@@ -50,7 +75,10 @@ export function TaskFiles({
       })()
     : task.changes
   const stamp = changes.map((c) => `${c.path}:${c.add}:${c.del}`).join('|')
-  const files = useProjectFiles(task.projectId, `${task.id}|${stamp}|${task.status !== 'running'}`, task.id)
+  // 执行中文件一直在改，把接连的改动合并成一次重读；任务结束/出错时立刻重读，保证最终状态及时
+  const ended = task.status !== 'running'
+  const refreshKey = useRefreshKey(`${task.id}|${stamp}|${ended}`, ended)
+  const files = useProjectFiles(task.projectId, refreshKey, task.id)
   const add = changes.reduce((n, c) => n + c.add, 0)
   const del = changes.reduce((n, c) => n + c.del, 0)
   return (
