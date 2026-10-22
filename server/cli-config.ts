@@ -2,6 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { registerCliSpecs } from '../shared/clis.ts'
+import { t } from '../shared/i18n.ts'
 
 /**
  * 用户自己加的 CLI：数据目录 config/clis/ 下每个 .json 是一份 CLI 配置（格式见 docs/cli-config.md），
@@ -18,22 +19,27 @@ let loaded: { specs: unknown[]; errors: string[] } = { specs: [], errors: [] }
 
 export function loadUserClis() {
   const specs: unknown[] = []
+  const files: string[] = []
   const errors: string[] = []
+  // 读不进来的文件跳过，其他照常注册；原因带上文件名，用户知道去改哪一份
+  const skip = (f: string, why: string) => errors.push(t('{f} 已跳过：{why}', { f, why }))
   if (existsSync(CLI_CONFIG_DIR))
     for (const f of readdirSync(CLI_CONFIG_DIR)
       .filter((x) => x.endsWith('.json'))
       .sort()) {
       try {
         specs.push(JSON.parse(readFileSync(path.join(CLI_CONFIG_DIR, f), 'utf8')))
+        files.push(f)
       } catch (e) {
-        errors.push(`${f}：${(e as Error).message}`)
+        skip(f, (e as Error).message)
       }
     }
   const bad = registerCliSpecs(specs)
+  for (const b of bad) skip(files[b.index], b.error)
   // 加不进来的不交给页面，免得页面上注册出一个坏的
-  const ok = specs.filter((s) => !bad.some((b) => b.startsWith(`${(s as { id?: string })?.id ?? '?'}：`)))
-  loaded = { specs: ok, errors: [...errors, ...bad] }
-  if (loaded.errors.length) console.error(`读取 CLI 配置出错：\n${loaded.errors.join('\n')}`)
+  const ok = specs.filter((_, i) => !bad.some((b) => b.index === i))
+  loaded = { specs: ok, errors }
+  if (errors.length) console.warn(`${t('CLI 配置有问题')}（${CLI_CONFIG_DIR}）：\n${errors.join('\n')}`)
   return loaded
 }
 
