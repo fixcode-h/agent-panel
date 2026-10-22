@@ -3,7 +3,7 @@ import * as D from '@radix-ui/react-dialog'
 import { Code2, Copy, GitCompareArrows, Loader2, PencilLine, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { t } from '@shared/i18n'
-import type { FileContent } from '@shared/files'
+import type { FileContent, FileDiff } from '@shared/files'
 import { api } from '@/lib/api'
 import { editorUrl } from '@/lib/editor-url'
 import { fmtClock } from '@/lib/tasks'
@@ -12,22 +12,10 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Lightbox } from '@/components/ui/lightbox'
-import { ProjectDiffDialog, type ProjectDiffData } from '@/components/tasks/DiffDialog'
+import { DialogScroll, ProjectDiffDialog } from '@/components/tasks/DiffDialog'
 
 /** 按扩展名先认出图片，直接看原图，不用等文本接口回来再切换 */
 const IMAGE = /\.(png|jpe?g|gif|webp|svg|bmp)$/i
-
-/**
- * 保存和取改动的接口（后端另一个子对话在加）：类型先按约定写在这里，接口还没上线时
- * 对应的按钮不显示，免得点了报「不是函数」。等接口合进 api.ts 后可以改成直接调用。
- */
-type SaveFile = (projectId: string, path: string, content: string) => Promise<{ path: string; size: number }>
-type DiffFile = (projectId: string, path: string) => Promise<ProjectDiffData>
-const saveApi = (api as unknown as { writeProjectFile?: SaveFile }).writeProjectFile
-const diffApi = (api as unknown as { projectFileDiff?: DiffFile }).projectFileDiff
-
-/** FileContent 新增的大小和修改时间（后端合入前这里先按可选读，没有就不显示） */
-type Detail = FileContent & { size?: number; mtime?: number | string }
 
 type Hljs = Awaited<ReturnType<typeof ensureHljs>>
 
@@ -140,12 +128,6 @@ function sizeText(n: number) {
   return `${(n / 1024 / 1024).toFixed(1)} MB`
 }
 
-/** 后端的修改时间可能是 ISO 字符串或时间戳（秒或毫秒），统一成 ISO 再按界面习惯显示 */
-function mtimeIso(v: number | string) {
-  if (typeof v !== 'number') return v
-  return new Date(v < 1e12 ? v * 1000 : v).toISOString()
-}
-
 /**
  * 文件浏览页里点开一个文件：显示内容（带语法高亮），跳到指定的行，可以在编辑器里打开、
  * 直接改完保存，也能看这个文件相对 git 的改了什么。图片用看图的浮层看原图。
@@ -174,7 +156,7 @@ export function ProjectFileDialog({
   const [askClose, setAskClose] = useState(false)
   const [hl, setHl] = useState<Hljs | null>(null)
   const [diffOpen, setDiffOpen] = useState(false)
-  const [diffData, setDiffData] = useState<ProjectDiffData | null>(null)
+  const [diffData, setDiffData] = useState<FileDiff | null>(null)
   const [diffError, setDiffError] = useState('')
   const box = useRef<HTMLDivElement>(null)
   const path = target?.path ?? ''
@@ -215,13 +197,13 @@ export function ProjectFileDialog({
       file?.exists && !file.binary && !file.truncated && !isImage ? highlightLines(hl, body, path) : null,
     [hl, body, path, file?.exists, file?.binary, file?.truncated, isImage],
   )
-  const detail = (file ?? null) as Detail | null
-  const size = typeof detail?.size === 'number' ? sizeText(detail.size) : ''
-  const mtime = detail?.mtime != null ? fmtClock(mtimeIso(detail.mtime)) : ''
+  const size = typeof file?.size === 'number' ? sizeText(file.size) : ''
+  const mtime = file?.mtime ? fmtClock(file.mtime) : ''
   const editing = draft !== null
   const dirty = editing && !!file && draft !== file.content
-  const canEdit = typeof saveApi === 'function' && !!file?.exists && !file.binary && !file.truncated
-  const canDiff = typeof diffApi === 'function' && !!file?.exists && !file.binary && !isImage
+  // 截断的文件不提供编辑：存回去会把后面没读到的部分删掉
+  const canEdit = !!file?.exists && !file.binary && !file.truncated
+  const canDiff = !!file?.exists && !file.binary && !isImage
   const textOpen = !!target && !raw
 
   const close = () => {
@@ -237,11 +219,11 @@ export function ProjectFileDialog({
     close()
   }
   const save = async () => {
-    if (!saveApi || !file || draft === null || saving) return
+    if (!file || draft === null || saving) return
     setSaving(true)
     setSaveError('')
     try {
-      await saveApi(projectId, file.path, draft)
+      await api.writeProjectFile(projectId, file.path, draft)
       // 保存后重新读一遍：后端可能调整了换行或截断，界面上显示的应该是盘上的真实内容
       const fresh = await api.projectFile(projectId, file.path)
       setFile(fresh)
@@ -256,11 +238,12 @@ export function ProjectFileDialog({
     }
   }
   const openDiff = () => {
-    if (!diffApi || !target) return
+    if (!target) return
     setDiffOpen(true)
     setDiffData(null)
     setDiffError('')
-    diffApi(projectId, target.path)
+    api
+      .projectFileDiff(projectId, target.path)
       .then(setDiffData)
       .catch((e) => setDiffError((e as Error).message))
   }
@@ -373,7 +356,7 @@ export function ProjectFileDialog({
             {saveError && (
               <p className="shrink-0 border-b bg-danger/10 px-4 py-2 text-[0.8125rem] text-danger">{saveError}</p>
             )}
-            <div ref={box} className="min-h-0 flex-1 overflow-auto bg-(--code-bg)">
+            <DialogScroll box={box}>
               {error ? (
                 <p className="p-6 text-[0.8125rem] text-danger">{error}</p>
               ) : !file ? (
@@ -417,7 +400,7 @@ export function ProjectFileDialog({
                   ))}
                 </pre>
               )}
-            </div>
+            </DialogScroll>
             {file?.truncated && (
               <p className="shrink-0 border-t px-4 py-2 text-xs text-subtle">
                 {t('文件太大，只显示了前面一部分。完整内容请在编辑器里查看。')}
