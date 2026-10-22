@@ -46,6 +46,19 @@ export async function detectClis(force = false): Promise<CliStatus[]> {
   return mark(await probe(key, settings))
 }
 
+/**
+ * 从失败输出里挑出说明原因的那一行。Node 写的 CLI 崩溃时第一行是 `node:internal/...:271` 这种源码位置，
+ * 接着是出错的那行源码和 ^ 标记，真正的原因（Error [ERR_MODULE_NOT_FOUND]: Cannot find module ...）在后面
+ */
+export function failLine(stdout: string, stderr: string) {
+  const lines = `${stderr}\n${stdout}`
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean)
+  const noise = (l: string) => /^(node:internal\/|file:\/\/|at\s)|^[\s^~]+$|^throw\b|^Node\.js v\d/.test(l)
+  return lines.find((l) => /^(\w*Error\b|Error \[|\w+Error:)/.test(l)) ?? lines.find((l) => !noise(l)) ?? lines[0] ?? ''
+}
+
 /** 真正跑一遍检测；同时有好几个请求时只跑一次 */
 function probe(key: string, settings: Awaited<ReturnType<typeof getSettings>>) {
   if (running?.key === key) return running.p
@@ -53,12 +66,12 @@ function probe(key: string, settings: Awaited<ReturnType<typeof getSettings>>) {
     CLIS.map(async (c): Promise<CliStatus> => {
       const cs = cliSettings(settings, c.id)
       const r = await capture(cs.command, c.versionArgs, process.cwd(), childEnv(cs.env), 10_000)
-      const out = (r.stdout || r.stderr).trim().split('\n')[0] ?? ''
       const installed = !r.spawnError && !r.killed && r.code === 0
+      const out = installed ? ((r.stdout || r.stderr).trim().split('\n')[0] ?? '') : failLine(r.stdout, r.stderr)
       const env = childEnv(cs.env)
-      const file = installed ? resolveCommand(cs.command, env) : undefined
+      const file = resolveCommand(cs.command, env)
       return {
-        path: file,
+        path: installed ? file : undefined,
         source: installed ? await cliSource(c.id, file) : undefined,
         id: c.id,
         name: c.name,
@@ -68,7 +81,10 @@ function probe(key: string, settings: Awaited<ReturnType<typeof getSettings>>) {
         version: installed ? out : undefined,
         error: installed
           ? undefined
-          : (r.spawnError ?? (r.killed ? t('检测超时') : out || t('退出码 {code}', { code: String(r.code) }))),
+          : (r.spawnError ??
+            (r.killed ? t('检测超时') : out || t('退出码 {code}', { code: String(r.code) })) +
+              // 跑起来但报错时带上实际跑的是哪个文件：多半是这份安装坏了，或者 PATH 里先找到了旧的那份
+              (file && !r.spawnError ? ` (${file})` : '')),
         models: c.models,
         docsUrl: c.docsUrl,
       }
