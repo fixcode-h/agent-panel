@@ -9,7 +9,8 @@ import { mergeStepsFor, verifyBlock } from '../shared/test-steps.ts'
 
 // 独立分支目录建在数据目录里：测试用临时目录，不碰本机真实的数据
 process.env.AGENT_PANEL_DATA = mkdtempSync(path.join(tmpdir(), 'merge-build-data-'))
-const { abortMerge, commitMerge, commitWorktree, createWorktree, trialMerge } = await import('./exec/worktree.ts')
+const { abortMerge, commitMerge, commitWorktree, createWorktree, mergeBlocker, trialMerge } =
+  await import('./exec/worktree.ts')
 const { runMergeSteps, runShell, shellCommand } = await import('./merge-build.ts')
 
 // 读文本时统一换行符：本机 core.autocrlf 和平台不同，合并、检出写出的是 CRLF
@@ -70,6 +71,26 @@ test('试合并有冲突：撤回，列出冲突的文件', async () => {
   assert.match(!m.ok ? m.error : '', /a\.txt/)
   assert.equal(git(dir, 'status', '--porcelain').trim(), '')
   assert.equal(readText(path.join(dir, 'a.txt')), 'main\n')
+})
+
+test('原目录暂存区有别人的改动时不合；没提交的改动和分支改了同一个文件时，合并没开始就停', async () => {
+  const dir = repo()
+  const wt = await createWorktree(dir, 'task-9abc0def', 'fix')
+  writeFileSync(path.join(wt.path, 'a.txt'), 'child\n')
+  await commitWorktree(wt, '子对话改 a')
+  assert.equal(await mergeBlocker(dir), '')
+
+  // 暂存区里的改动会被合并提交一起带走：先拦下
+  writeFileSync(path.join(dir, 'c.txt'), 'parent\n')
+  git(dir, 'add', 'c.txt')
+  assert.match(await mergeBlocker(dir), /暂存区.*\n.*c\.txt/s)
+  git(dir, 'reset', '-q', 'c.txt')
+
+  // 原目录里 a.txt 没提交的改动会被覆盖：git 拒绝，标成 dirty，原目录的改动还在
+  writeFileSync(path.join(dir, 'a.txt'), 'parent edit\n')
+  const m = await trialMerge(dir, wt.branch)
+  assert.ok(!m.ok && m.dirty)
+  assert.equal(readText(path.join(dir, 'a.txt')), 'parent edit\n')
 })
 
 test('小改动合并时只跑标了「小改动也跑」的合并步骤；一条都没标时照常全跑', () => {

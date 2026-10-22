@@ -72,6 +72,7 @@ import {
   commitMerge,
   commitWorktree,
   createWorktree,
+  mergeBlocker,
   currentBranch,
   mergeWorktree,
   removeWorktree,
@@ -144,6 +145,8 @@ export function tasksApi(deps: {
   const slots = createSlotPool(childLimit)
   const takeSlot = (parentId: string) => slots.take(parentId)
   const queued = (parentId: string) => slots.queued(parentId)
+  /** 排队等名额、还没开始执行的子对话：父对话判断「有没有子对话在跑」时也算上 */
+  const startQueue = new Set<string>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）；
   // 父对话的 CLI 结束时它名下子对话的进程一起结束，不留孤儿
   setPresenceIdleHandler((id) => {
@@ -443,21 +446,43 @@ export function tasksApi(deps: {
     }
   }
 
-  /** 对话要改文件了：从它现在的目录开独立分支，这一轮结束后在新目录里开新会话接着做 */
-  async function beginEdit(entry: Live, changed: (f?: boolean) => void): Promise<{ ok: boolean; info: string }> {
-    const tk = entry.task
-    if (isolated(tk)) return { ok: true, info: `已经在独立分支 ${tk.worktree!.branch} 里，直接改` }
+  /** 从对话现在的目录开独立分支（开不了时返回原因）。改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的 */
+  async function openWorktree(tk: Task): Promise<string> {
     const base = await taskDir({ ...tk, worktree: null })
     try {
       tk.worktree = await createWorktree(base, tk.id, tk.title)
     } catch (e) {
       log.warn('task', '开独立分支失败', { task: tk.id, error: (e as Error).message })
-      return { ok: false, info: `开独立分支失败：${(e as Error).message}\n先不要改文件，把情况告诉用户。` }
+      return (e as Error).message
     }
     tk.wantsWorktree = false
-    // 改动从分支开出的那一刻算起：原目录里别人没提交的改动不算这个对话的
     tk.baseRef = await gitHead(tk.worktree.path).catch(() => tk.baseRef)
     tk.baseline = (await gitNumstat(tk.worktree.path, tk.baseRef).catch(() => null)) ?? {}
+    return ''
+  }
+
+  /** 还在执行或排队等着执行的子对话 */
+  async function busyChildren(parentId: string) {
+    return (await store.list())
+      .filter((x) => x.parentTaskId === parentId)
+      .map((x) => live.get(x.id)?.task ?? x)
+      .filter((x) => x.working || startQueue.has(x.id))
+  }
+
+  /** 对话要改文件了：从它现在的目录开独立分支，这一轮结束后在新目录里开新会话接着做 */
+  async function beginEdit(entry: Live, changed: (f?: boolean) => void): Promise<{ ok: boolean; info: string }> {
+    const tk = entry.task
+    if (isolated(tk)) return { ok: true, info: `已经在独立分支 ${tk.worktree!.branch} 里，直接改` }
+    // 父对话的目录是子对话合并、编译的地方：有子对话在跑时父对话自己不改，交给子对话
+    const busy = await busyChildren(tk.id)
+    if (busy.length)
+      return {
+        ok: false,
+        info: `现在有子对话在执行（${busy.map((k) => `「${k.title}」`).join('、')}），你不能自己改文件：用 send_to_conversation 交给相关的子对话，或者 create_conversation 新建一个。`,
+      }
+    const err = await openWorktree(tk)
+    if (err) return { ok: false, info: `开独立分支失败：${err}\n先不要改文件，把情况告诉用户。` }
+    const wt = tk.worktree!
     // 对话里不另记居中提示：begin_edit 这次工具调用本身显示成「开独立分支 分支名」，AI 的回复不被截断。
     // 这一轮结束后马上接着做：这里只登记交给新会话的要求（不记进对话）
     holdForNextTurn(tk.id, {
@@ -465,15 +490,15 @@ export function tasksApi(deps: {
       role: 'user',
       agentId: '',
       step: '',
-      text: `（面板）已经开好独立分支 ${tk.worktree.branch}，你现在在它的目录里。接着刚才的任务开始修改；已经查清楚的不用重查。`,
+      text: `（面板）已经开好独立分支 ${wt.branch}，你现在在它的目录里。接着刚才的任务开始修改；已经查清楚的不用重查。`,
       tools: [],
       at: new Date().toISOString(),
     })
     changed(true)
-    log.info('task', '对话开了独立分支', { task: tk.id, branch: tk.worktree.branch })
+    log.info('task', '对话开了独立分支', { task: tk.id, branch: wt.branch })
     return {
       ok: true,
-      info: `已开独立分支 ${tk.worktree.branch}（目录 ${tk.worktree.path}）。现在用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮，不要在当前目录改任何文件；面板会在独立分支的目录里开新会话，带上这段对话接着做。`,
+      info: `已开独立分支 ${wt.branch}（目录 ${wt.path}）。现在用一两句写下已经查到的情况和打算怎么改，然后马上结束这一轮，不要在当前目录改任何文件；面板会在独立分支的目录里开新会话，带上这段对话接着做。`,
     }
   }
 
@@ -654,8 +679,16 @@ export function tasksApi(deps: {
         ok: false,
         info: `原目录现在在「${now || '分离的 HEAD'}」，不是开分支时的「${wt.baseBranch}」，没有合并。切回「${wt.baseBranch}」后再提交。`,
       }
+    const blocked = await mergeBlocker(target)
+    if (blocked) return { ok: false, info: `${blocked}，没有合并。这不是你的问题，等父对话或用户处理好后再提交。` }
     const m = await trialMerge(target, wt.branch)
-    if (!m.ok) return { ok: false, info: `合回原目录时有冲突，已撤回，原目录没有改动。\n${m.error}` }
+    if (!m.ok)
+      return {
+        ok: false,
+        info: m.dirty
+          ? `原目录里有还没提交的改动和你改的文件重叠，没有合并，原目录没有改动。这不是你的问题，告诉父对话，等那边提交后再提交。\n${m.error}`
+          : `合回原目录时和「${wt.baseBranch || '原分支'}」上新合进去的改动冲突，已撤回，原目录没有改动。在你的目录里先 git merge ${wt.baseBranch || '原分支'} 把它合进来、解决冲突并提交，再调用 submit_build。\n${m.error}`,
+      }
     if (m.nothing) return { ok: true, info: '分支上没有新的改动，原目录已经是最新的' }
     const { run: steps, skipped } = mergeStepsFor(project.testSteps, small)
     const built = steps.length
@@ -764,7 +797,8 @@ export function tasksApi(deps: {
 
   /** 父对话分派的子对话：占一个执行位再开始，这一轮结束（含它跑的工作流）才让出来 */
   async function startChild(parentId: string, sub: Task, message: string, agents: Agent[]) {
-    const free = await takeSlot(parentId)
+    startQueue.add(sub.id)
+    const free = await takeSlot(parentId).finally(() => startQueue.delete(sub.id))
     try {
       const got = reserve(sub)
       // 同一个子对话已经被启动了：复用正在跑的那一轮，不再开第二个进程
@@ -1122,6 +1156,7 @@ export function tasksApi(deps: {
               id: cur.id,
               title: cur.title,
               status: cur.status,
+              busy: cur.working || startQueue.has(cur.id),
               summary: cur.summary || lastReply(cur),
               at: cur.updatedAt,
             }
@@ -1129,6 +1164,13 @@ export function tasksApi(deps: {
         },
         createConversation: async ({ title, message, files }) => {
           if (!project?.id) return { ok: false, info: '独立聊天没有项目，不能创建子对话' }
+          // 父对话勾了独立分支、自己还没开：开第一个子对话前先建好，子对话从它开、合回它；
+          // 不然子对话会绕过父对话的分支，直接合进项目目录
+          if (entry.task.wantsWorktree && !isolated(entry.task)) {
+            const err = await openWorktree(entry.task)
+            if (err) return { ok: false, info: `开父对话的独立分支失败，没有新建子对话：${err}` }
+            changed(true)
+          }
           const worker = agents.find((a) => a.origin === 'builtin:worker')
           const subId = randomUUID()
           const at = new Date().toISOString()
