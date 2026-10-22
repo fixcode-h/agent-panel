@@ -149,7 +149,7 @@
 
 占位符：`{input}`、`{text}`（插话内容）、`{model}`、`{effort}`、`{resume}`、`{maxTurns}`、`{cwd}`。整条就是占位、运行时又没有值时，这个字段不传。
 命令行参数规则（`args` / `rpcArgs`）另外还能用 `{title}`：对话的标题，例如 Pi 的 `--name`，在 CLI 自己的会话列表里认得出是哪个对话。
-条件里还能用 `noEdit`：这一轮不许改文件（父对话、还没开独立分支的对话），能按名字关工具的 CLI 用它把改文件的工具关掉，例如 Pi 的 `--exclude-tools edit,write`（Pi 的多个 `--exclude-tools` 只有最后一个生效，要和权限的那条合在一起写）。
+条件里还能用 `noEdit`：这一轮不许改文件（还没开独立分支的对话；父对话不改文件只靠角色说明，不关工具），能按名字关工具的 CLI 用它把改文件的工具关掉，例如 Pi 的 `--exclude-tools edit,write`（Pi 的多个 `--exclude-tools` 只有最后一个生效，要和权限的那条合在一起写）。
 
 ### 要用户回答的请求 `asks`
 

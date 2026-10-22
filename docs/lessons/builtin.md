@@ -54,6 +54,6 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 父对话只统筹，改文件、编译、计划步骤都在子对话里
 
-- 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试后 `submit_merge` 合回。这条既写提示词，也落到工具上（父对话 `noEdit`，Pi 用 `--exclude-tools` 去掉 edit/write）。
+- 规则：父对话（统筹角色）只收集到模块、相关代码和文档为止就分派，不改文件、不开 worktree，留在当前分支；子对话在父对话所在分支上开独立分支，自己编译测试后 `submit_merge` 合回。父对话不改文件靠角色说明约束，不要给父对话关掉 CLI 的写文件工具（用户纠正，093a41e 之后撤回）。
 - 起因：父对话先把问题查到底、自己动手改，还开 worktree；编译又要合并到父对话那边才跑。
 - 防线：`server/orchestrator.test.ts`、`scripts/e2e.mjs` 的子对话合并用例。

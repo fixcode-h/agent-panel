@@ -1194,12 +1194,11 @@ export function tasksApi(deps: {
                 scaled: found.scaledVerify,
               }
             : undefined,
-        // 父对话（统筹）不改文件、不开独立分支：就在项目目录的当前分支上，子对话从这里开、合回这里
+        // 父对话（统筹）不改文件、不开独立分支（靠角色说明约束，不关它的工具）：就在项目目录的当前分支上，子对话从这里开、合回这里
         beginEdit:
           task.mode === 'chat' && !coordinatorRole && entry.task.wantsWorktree && !isolated(entry.task)
             ? () => beginEdit(entry, changed)
             : undefined,
-        noEdit: coordinatorRole,
         branch: coordinatorRole && dir ? await currentBranch(dir).catch(() => '') : undefined,
         // 只给对话用：工作流节点一跑完就结束，结果没有地方推回
         runBackground:
