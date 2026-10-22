@@ -32,3 +32,9 @@ paths: scripts/e2e.mjs, scripts/fake-cli/**, scripts/ui-check.mjs, server/**/*.t
 - 规则：Windows 上 `node_modules` 是 Windows 装的，esbuild / rollup 的原生二进制在 WSL 里跑不起来（报 installed for another platform，接着是「服务没有启动」）。要在 WSL 里验证时，先把仓库复制一份到 Linux 文件系统里 `npm ci` 再跑，不要直接对 `/mnt/e` 这份 `npm ci`——它会把 Windows 的依赖换成 Linux 的，本机开发就跑不了了。
 - 起因：这次改完想按项目步骤跑 e2e，直接在 `/mnt/e` 里跑，卡在 esbuild 二进制不匹配。
 - 防线：人工（CI 的 Ubuntu 步骤始终是干净的 Linux 依赖）。
+
+## 自己起服务做验证时清掉面板的环境变量
+
+- 规则：在面板的会话里（托盘启动的） `AGENT_PANEL_TRAY=1` 会传下去，服务进了托盘模式， stdin 一结束就退出，表现成「服务已启动」之后连不上。写验证脚本拉起服务时把 `AGENT_PANEL_TRAY` 和 `AGENT_PANEL_SUPERVISED` 置空；接口都在 `/api` 下（`/api/health`），不是根路径。
+- 起因：验证「强制停止」时自己起服务，连试了几次都报「服务没有启动」，实际是服务启动后立即退出了。
+- 防线：人工。

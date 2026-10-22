@@ -923,6 +923,26 @@ try {
   assert.ok(Date.now() - t0 < 5000, '停止应该很快生效')
   step('停止：进程被结束，任务标记为已停止')
 
+  // ---- 强制停止：任务停下，CLI 进程一起结束（不留给下一句、后台命令也不留在后面）----
+  const forcedTask = await call('POST', '/tasks', {
+    projectId: project.id,
+    mode: 'chat',
+    agentId: B.id,
+    prompt: 'SLOW 强制停止',
+  })
+  await sleep(800)
+  const forcedPid = calls().at(-1)?.pid
+  await call('POST', `/tasks/${forcedTask.id}/stop?force=1`)
+  const forcedDone = await waitDone(forcedTask.id, 8000)
+  assert.equal(forcedDone.status, 'stopped')
+  let forcedEnd = null
+  for (let i = 0; i < 40 && !forcedEnd; i++) {
+    forcedEnd = calls().find((c) => c.pid === forcedPid)?.end
+    if (!forcedEnd) await sleep(150)
+  }
+  assert.ok(forcedPid && forcedEnd, '强制停止后 CLI 进程结束了')
+  step('强制停止：任务停下，CLI 进程一起结束')
+
   // ---- 插话：Codex 用 turn/steer、Claude Code 写进 stdin、Command Code 用常驻 RPC 的 turn/steer，交给正在跑的这一轮 ----
   {
     const steerLog = () => readLog(`${log}.steer`)

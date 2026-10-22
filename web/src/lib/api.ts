@@ -392,7 +392,8 @@ export const api = {
   /** 项目里的图片：按原图查看（给 <img> 用，没有走 request，路径要自己带上 /api） */
   projectFileRaw: (projectId: string, path: string) =>
     `/api/project-files/${projectId}/raw?path=${encodeURIComponent(path)}`,
-  stopTask: (id: string) => request<Task>(`/tasks/${id}/stop`, { method: 'POST' }),
+  stopTask: (id: string, force = false) =>
+    request<Task>(`/tasks/${id}/stop${force ? '?force=1' : ''}`, { method: 'POST' }),
   resumeTask: (id: string, latest = false) => request<Task>(`/tasks/${id}/resume`, json('POST', { latest })),
   taskDiff: (id: string, path: string) =>
     request<{ path: string; dir: string; diff: string; git: boolean; before: boolean }>(

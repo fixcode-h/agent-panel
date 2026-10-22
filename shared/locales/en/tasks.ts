@@ -343,6 +343,11 @@ export const EN_TASKS: Record<string, string> = {
   '停止这个任务？': 'Stop this task?',
   '正在执行的 Agent 会被停下，之后可以点「继续执行」从中断的地方接着做。':
     'The running agent will be stopped. You can click "Continue" later to pick up where it left off.',
+  强制停止: 'Force stop',
+  '强制停止这个对话？': 'Force stop this chat?',
+  '正在执行的这一轮会被停下，CLI 进程直接结束（不再留着等下一句）。这一轮已经写出的内容保留，下一句会重新开一个会话。':
+    'The current turn stops and the CLI process ends right away instead of staying alive for the next message. What it already wrote is kept; the next message starts a new session.',
+  '已强制停止，CLI 进程已结束': 'Force stopped; the CLI process has ended',
   查看文件: 'View file',
   执行后会显示: 'Shown after it runs',
   '让 Agent 把之前的对话压缩成摘要，腾出上下文':

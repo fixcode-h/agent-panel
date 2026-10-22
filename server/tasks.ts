@@ -2334,6 +2334,13 @@ export function tasksApi(deps: {
   routes.post('/:id/stop', async (c) => {
     const id = c.req.param('id')
     stopTask(id)
+    // 强制停止：连 CLI 进程一起结束。平时停止只收这一轮，等下一句的进程留着（下一句直接交给它）；
+    // 进程不该再留着时（卡住、换机器前的清理）用这个，后台命令也一并停掉
+    if (c.req.query('force')) {
+      cancelWait(id)
+      forgetNotes(id)
+      background.stop(id)
+    }
     return c.json(await current(id))
   })
 
