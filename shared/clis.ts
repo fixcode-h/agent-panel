@@ -137,6 +137,11 @@ export interface CliDefinition {
    * 补充直接记进对话并登记给正在跑的调用，模型取走时交给它；没取走的这一轮结束后立刻接着处理
    */
   notes: boolean
+  /**
+   * 回复完不关进程，下一条消息交回同一个进程开下一轮（面板保活）。
+   * 与 notes 无关：常驻协议的 CLI 都应该开，否则每轮重启 + 恢复会话，首字延迟明显
+   */
+  keepAlive: boolean
   /** 压缩上下文：native 走协议，slash 发「/compact」，summary 让它写摘要、下一轮开新会话 */
   compact: 'native' | 'slash' | 'summary'
   /** 审查改动：native 走 CLI 的审查模式，prompt 按审查要求跑一轮 */
@@ -282,6 +287,7 @@ export const CLIS: CliDefinition[] = [
     parser: 'claude',
     steer: true,
     notes: false,
+    keepAlive: true,
     compact: 'slash',
     review: 'prompt',
     fork: 'end',
@@ -482,6 +488,7 @@ export const CLIS: CliDefinition[] = [
     parser: '',
     steer: true,
     notes: false,
+    keepAlive: true,
     compact: 'native',
     review: 'native',
     fork: 'turn',

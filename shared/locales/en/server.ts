@@ -346,6 +346,10 @@ export const EN_SERVER: Record<string, string> = {
   '已自动续接会话（第 {n} 次），从中断的地方继续了。':
     'Automatically resumed the session (attempt {n}) and continued from where it broke off.',
   '已自动续接 {n} 次，仍然失败。': 'Still failing after {n} automatic resumes.',
+  '这一轮只回了一句话就结束了，没有动手也没给出结论。正在自动接一轮，让它现在就去做（第 {n}/{max} 次）…':
+    'This turn ended after a single sentence: nothing was done and no conclusion was given. Continuing automatically so it acts now (attempt {n}/{max})…',
+  '自动接了一轮，模型仍然只回了一句话、没有动手，已停在这里。可以点「继续」再推一次，或者换一个模型、把要求写得更具体。':
+    'Continued automatically once, but it again replied with a single sentence and did nothing, so it stopped here. Click Continue to push it again, or switch models or make the request more specific.',
   服务出错: 'Server error',
   连接超时: 'connection timed out',
   域名解析失败: 'DNS lookup failed',

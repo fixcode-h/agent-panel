@@ -298,6 +298,7 @@ test('Pi：按配置文件里的事件映射解析会话事件', () => {
   assert.deepEqual(live, [
     { type: 'tool_delta', id: 'call_bash', text: 'cat: missing.txt: No such file or directory\n', snapshot: true },
   ])
+  // Pi 的 usage.input 只是「未命中缓存的部分」，input 统一按「含缓存」记，所以这里要加上 read（2300 + 6300）
   assert.deepEqual(
     {
       input: s.usage.input,
@@ -306,7 +307,7 @@ test('Pi：按配置文件里的事件映射解析会话事件', () => {
       context: s.usage.context,
       model: s.usage.model,
     },
-    { input: 2300, output: 120, read: 6300, context: 2310, model: 'claude-sonnet-4-6' },
+    { input: 8600, output: 120, read: 6300, context: 2310, model: 'claude-sonnet-4-6' },
   )
   assert.ok(s.usage.cost > 0, '费用按每条回复加起来')
   // agent_end 只是一个底层 agent 跑完了，后面可能还有重试、压缩或插话；这一轮以 agent_settled 结束（见 pi-rpc.test）

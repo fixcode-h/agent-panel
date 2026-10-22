@@ -631,17 +631,23 @@ export function specParser(spec: OutputSpec, cwd: string): Parser {
           break
         }
         case 'usage': {
+          // 各家 CLI 对 inputTokens 的口径不同：有的已含缓存（AI SDK），有的只算未命中的部分。
+          // 比缓存还小说明是不含缓存的口径，加上缓存才是完整输入，否则缓存命中率会超过 100%
+          const rawIn = num(g('addInput'))
+          const read = num(g('addCacheRead'))
+          const write = num(g('addCacheWrite'))
+          const cache = (read ?? 0) + (write ?? 0)
           const u = {
             context: num(g('context')),
             window: num(g('window')),
             model: str(g('model')) || undefined,
-            addInput: num(g('addInput')),
+            addInput: rawIn === undefined ? undefined : rawIn >= cache ? rawIn : rawIn + cache,
             addOutput: num(g('addOutput')),
-            addCacheRead: num(g('addCacheRead')),
-            addCacheWrite: num(g('addCacheWrite')),
+            addCacheRead: read,
+            addCacheWrite: write,
             addCost: num(g('addCost')),
           }
-          if (Object.values(u).some((x) => x !== undefined)) out.push({ type: 'usage', ...u })
+          if (Object.values(u).some((x) => x !== undefined)) out.push({ type: 'usage', ...u } as CliEvent)
           break
         }
         case 'files_changed':

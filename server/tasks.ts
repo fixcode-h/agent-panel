@@ -1688,7 +1688,8 @@ export function tasksApi(deps: {
       const agent = withTaskModel(noAgent ? { ...found, id: '' } : found, task)
       const run = agentRun(agent, settings)
       const def = getCli(run.cli)
-      if (!def?.notes || !def.mcp) return task
+      // 能保活（keepAlive）的对话才值得先启动进程等着：不然预热了也用不上，每轮还是重启
+      if (!def?.keepAlive) return task
       // Claude Code、Codex 有自己的协议，不走面板的等待工具
       if (def.rpc?.nativeAsk) return task
       if (!force && task.sessionCli && task.sessionCli !== run.cli) return task

@@ -10,6 +10,7 @@ import { isMainStep, mainStep, stepTree, topSteps } from '@shared/flow'
 import { StepIcon, TaskStatusIcon } from './TaskStatusIcon'
 import { t } from '@shared/i18n'
 import { stepMs, taskDuration, turnStats, waitDuration } from '@shared/task'
+import { cacheHitRate } from '@shared/task-export'
 
 /**
  * 任务进度：工作流按主流程节点列出状态、耗时和用量，对话按待办清单和轮次列出。
@@ -363,7 +364,7 @@ function Stats({
 }) {
   const tokens = u.inputTokens + u.outputTokens
   if (ms < 1000 && !tokens) return null
-  const rate = u.inputTokens > 0 ? (u.cacheReadTokens ?? 0) / u.inputTokens : 0
+  const rate = cacheHitRate(u)
   const item = 'flex items-center gap-1 whitespace-nowrap font-mono text-[0.6875rem] text-subtle tabular-nums'
   return (
     <>

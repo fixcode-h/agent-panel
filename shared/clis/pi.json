@@ -258,8 +258,8 @@
         "when": {
           "type": "agent_settled"
         },
-        "ok": ["assistant.message.stopReason != error", "$.aborted != true"],
-        "error": "assistant.message.errorMessage"
+        "ok": ["assistant.message.stopReason != error", "assistant.message.stopReason != aborted", "$.aborted != true"],
+        "error": ["assistant.message.errorMessage", "assistant.message.stopReason"]
       }
     ],
     "compact": [
@@ -627,6 +627,7 @@
   },
   "features": {
     "steer": true,
+    "keepAlive": true,
     "fork": "before",
     "compact": "native",
     "autoCompact": "panel",

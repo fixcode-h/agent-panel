@@ -62,7 +62,16 @@ export interface TaskStats {
   nodes: NodeStat[]
 }
 
-const rate = (hit: number, input: number) => (input > 0 ? Math.round((hit / input) * 1000) / 1000 : 0)
+/**
+ * 缓存命中率：命中缓存的 token 占输入合计的比例。
+ * 输入统一按「含缓存」记（见 parser 的 usage 换算），所以分母就是 inputTokens；
+ * 封顶到 100%，口径真的对不上时宁可显示 100% 也不把 3348% 这种数字交给用户。
+ */
+export function cacheHitRate(u: { inputTokens: number; cacheReadTokens: number }) {
+  const total = u.inputTokens || 0
+  if (!total) return 0
+  return Math.min(1, Math.max(0, Math.round((u.cacheReadTokens / total) * 1000) / 1000))
+}
 
 /** 失败的工具调用：命令非零退出、读取失败、编辑冲突都会标上 failed */
 const failedToolsOf = (task: Task, step?: string) =>
@@ -90,7 +99,7 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
       inputTokens: u.inputTokens,
       outputTokens: u.outputTokens,
       cacheReadTokens: u.cacheReadTokens,
-      cacheHitRate: rate(u.cacheReadTokens, u.inputTokens),
+      cacheHitRate: cacheHitRate(u),
       costUsd: u.costUsd,
       files: s.changes.length,
       outputChars: s.output.length,
@@ -105,7 +114,7 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheReadTokens: u.cacheReadTokens,
-    cacheHitRate: rate(u.cacheReadTokens, u.inputTokens),
+    cacheHitRate: cacheHitRate(u),
     costUsd: u.costUsd,
     steps: {
       total: task.steps.length,
