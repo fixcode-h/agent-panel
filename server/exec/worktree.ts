@@ -153,7 +153,11 @@ export interface WorktreeStatus {
   ahead: number
   /** 独立目录里没提交的文件数 */
   dirty: number
-  /** 改动都已经在原分支里了（没有改动也算） */
+  /**
+   * 改动都已经在原分支里了（没有改动也算）。
+   * 判定的依据是 ahead 和 dirty，不是 task.worktree.state：分支被删掉之后 state 常常还停在 active
+   * （手动删了分支、面板合并后清掉了目录），只看 state 会把「已合回原分支」显示成「未合并」
+   */
   merged: boolean
 }
 
@@ -165,14 +169,22 @@ export async function worktreeStatus(repo: string, wt: TaskWorktree): Promise<Wo
     const st = await git(wt.path, 'status', '--porcelain')
     dirty = st.code === 0 ? st.stdout.split('\n').filter((l) => l.trim()).length : 0
   }
-  let ahead = 0
-  if (has) {
-    // 不知道从哪开的（分离 HEAD）时和项目目录现在的提交比
-    const base = wt.baseBranch || 'HEAD'
-    const r = await git(repo, 'rev-list', '--count', `${base}..refs/heads/${wt.branch}`)
-    ahead = r.code === 0 ? Number(r.stdout.trim()) || 0 : 0
+  if (!has) {
+    // 分支已经不在了：没提交的改动就再也提交不了，剩下的只能按任务记录的状态判断。
+    // active 还留着分支被删的残留（面板合并、submit_build 之后手动清理过），算改动已经进了原分支；
+    // discarded 是用户主动丢弃，仍然算没合并。
+    const merged = wt.state !== 'discarded' && dirty === 0
+    return { exists, branch: false, ahead: 0, dirty, merged }
   }
-  return { exists, branch: has, ahead, dirty, merged: has ? ahead === 0 && dirty === 0 : wt.state === 'merged' }
+  // 不知道从哪开的（分离 HEAD）、或者开分支时的那个分支后来被删了：和项目目录现在的提交比，
+  // 不然 rev-list 直接失败，会被当成 ahead=0 而误判成已合并
+  const baseAlive = wt.baseBranch
+    ? (await git(repo, 'rev-parse', '-q', '--verify', `refs/heads/${wt.baseBranch}`)).code === 0
+    : false
+  const base = baseAlive ? wt.baseBranch : 'HEAD'
+  const r = await git(repo, 'rev-list', '--count', `${base}..refs/heads/${wt.branch}`)
+  const ahead = r.code === 0 ? Number(r.stdout.trim()) || 0 : 0
+  return { exists, branch: true, ahead, dirty, merged: ahead === 0 && dirty === 0 }
 }
 
 /** 删掉独立目录；force 时连分支一起删（丢弃），否则分支已经合并，用 -d 删 */
