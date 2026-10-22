@@ -324,6 +324,7 @@ export const EN_TASKS: Record<string, string> = {
   失败: 'Failed',
   跳过: 'Skipped',
   已完成: 'Done',
+  未完成: 'Unfinished',
   已暂停: 'Paused',
 
   // 任务页

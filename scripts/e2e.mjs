@@ -1441,7 +1441,7 @@ try {
     const one = kids.find((x) => x.id === kid.id)
     assert.ok(one, '子对话出现在父对话的列表里')
     assert.equal(one.cliAlive, false, '跑完、进程已经结束：cliAlive 为 false')
-    assert.ok(one.lastMessageAt, '列表带上最近一条消息的时间，用来排序')
+    assert.ok(one.startedAt, '列表带上本次开启的时间，用来排序')
     assert.ok(!('queue' in kid), '不再有排队字段')
 
     // 只打开父对话页、只读查子对话：不会把子对话的 CLI 启动起来
@@ -1468,6 +1468,13 @@ try {
     )
     kid = await waitDone(kid.id, 20000)
     assert.equal(kid.status, 'done')
+    // 第二轮跑完再看：本次开启时间已经换成新这一轮的，列表按它把这条重新排到前面
+    kids = await call('GET', `/tasks/${parent.id}/children`)
+    const again = kids.find((x) => x.id === kid.id)
+    assert.ok(
+      again.startedAt > one.startedAt,
+      `完成后再接新任务：本次开启时间往前走（${one.startedAt} → ${again.startedAt}）`,
+    )
     step('子对话：列表如实给 cliAlive，打开对话不启动 CLI，发消息才启动，父对话带上 childrenWorking')
 
     // 父对话的 CLI 结束时一起结束子对话的进程

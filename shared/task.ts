@@ -345,7 +345,7 @@ export const byAskedAt = (a: Task, b: Task) => askedAt(b).localeCompare(askedAt(
  * 任务（含子对话）当下的阶段：列表分组、状态图标、行内状态文字都用这一套，
  * 避免列表说一个说法、点进去又是另一个。
  */
-export type TaskStage = 'you' | 'running' | 'done' | 'stopped'
+export type TaskStage = 'you' | 'running' | 'unfinished' | 'done' | 'stopped'
 
 /**
  * 一个任务属于哪个阶段：
@@ -354,11 +354,13 @@ export type TaskStage = 'you' | 'running' | 'done' | 'stopped'
  * - 执行失败 → 需要你处理
  * - 正在跑这一轮 → 执行中
  * - 用户 / 父对话主动停下 → 已停止
+ * - 计划还没做完（见 shared/plan.ts 的 openPlan）→ 未完成：交付了一半，不算已完成
  * - 其余 → 已完成
  *
  * 「已停止」只认 status === 'stopped'：对话交付完一轮后 status 仍是 running，
  * 只是 working 变回 false、CLI 在等下一句，它已经做完了，不能算停止。
- * 子对话要停下来等用户时应当先提问（见内置「通用约束」），所以没在跑也没提问就等于交付完了。
+ * 子对话要停下来等用户时应当先提问（见内置「通用约束」），所以没在跑也没提问就等于交付完了；
+ * 但计划没做完的不算：那是真的还剩任务，别让它看起来已完成。
  */
 export function taskStage(x: {
   status: Task['status']
@@ -370,22 +372,43 @@ export function taskStage(x: {
   requests?: number
   /** 还没回答的提问数 */
   asking?: number
+  /** 计划还没做完：列表里归「未完成」，不算交付完 */
+  unfinished?: boolean
 }): TaskStage {
   if (x.resolved) return 'done'
   if (x.requests || x.asking) return 'you'
   if (x.status === 'failed') return 'you'
   if (x.working) return 'running'
   if (x.status === 'stopped') return 'stopped'
+  if (x.unfinished) return 'unfinished'
   return 'done'
 }
 
-/** 父对话下的子对话入口要显示的信息 */
+/**
+ * 子对话「本次开启」的时间：最近一轮开始执行的时间。
+ * 做完或停下后又接到新任务会开新的一轮，它就往前走，列表里重新排到最前面；
+ * 还没执行过任何一轮的按创建时间算。
+ */
+export function childStartedAt(t: Pick<Task, 'turns' | 'createdAt'>) {
+  return t.turns.at(-1)?.startedAt || t.createdAt
+}
+
+/** 子对话列表排序要用的字段：父对话的子对话栏、悬浮窗列表都传这些进来 */
 export interface ChildEntry {
   id: string
   title: string
+  status: Task['status']
   working: boolean
   cliAlive: boolean
-  lastMessageAt: string
+  /** 本次开启的时间，见 childStartedAt */
+  startedAt: string
+  /** 正在等用户确认的请求数、没回答的提问数：都算「需要你处理」 */
+  requests?: number
+  asking?: number
+  /** 用户标记的「解决」：算已完成 */
+  resolved?: boolean
+  /** 还没做完的计划：「计划 7/8」，有它就不算已完成 */
+  plan?: { done: number; total: number }
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（只有一项有值） */
@@ -402,14 +425,34 @@ export interface ChildActivity {
   thinking?: boolean
 }
 
+/** 子对话列表里状态分类的先后：要你处理的在最上面，然后执行中、未完成、做完的、停下的 */
+const stageRank: TaskStage[] = ['you', 'running', 'unfinished', 'done', 'stopped']
+
+/** 这一条在列表里算哪个阶段：计划没做完的不算已完成（见 taskStage） */
+export const childStage = (x: ChildEntry) => taskStage({ ...x, unfinished: !!x.plan })
+
 /**
- * 子对话列表的顺序：正在执行的排最上面，其余按最近一条消息的时间倒序。
- * 父对话里显示子对话、悬浮窗列表都用它。
+ * 浮层「运行中」只列真正在执行（working）的子对话：进程活着但在等下一句的，
+ * 在它自己页面上是「等待你的下一条消息」，混进来就会被当成还在跑。
+ */
+export function runningChildren<T extends ChildEntry>(list: T[]): T[] {
+  return list.filter((x) => x.working && !x.resolved)
+}
+
+/**
+ * 子对话列表的顺序：先按状态分类（需要你处理 → 执行中 → 未完成 → 已完成 → 已停止），
+ * 同一类里按本次开启的时间倒序（见 childStartedAt），时间一样用 id 兜底免得每次渲染抖动。
+ * 排序键不取最近一条消息：执行中的输出会让列表不停跳。
+ * 父对话里显示子对话、悬浮窗列表都用它；「全部」里的分组标题见 TaskView 的 childGroups，
+ * 它按 list 的先后往各组里放，所以两边顺序一致。
  */
 export function sortChildren<T extends ChildEntry>(list: T[]): T[] {
   return list.slice().sort((a, b) => {
-    if (a.working !== b.working) return a.working ? -1 : 1
-    return (b.lastMessageAt || '').localeCompare(a.lastMessageAt || '')
+    const byStage = stageRank.indexOf(childStage(a)) - stageRank.indexOf(childStage(b))
+    if (byStage) return byStage
+    const byStart = (b.startedAt || '').localeCompare(a.startedAt || '')
+    if (byStart) return byStart
+    return a.id.localeCompare(b.id)
   })
 }
 

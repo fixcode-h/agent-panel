@@ -25,6 +25,7 @@ import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'
 import {
   beginRun,
+  childStartedAt,
   closeFlow,
   dropEndNotes,
   endRun,
@@ -89,7 +90,7 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import { childTurnSettle, settleWait, waitNote } from '../shared/plan.ts'
+import { childTurnSettle, openPlan, settleWait, waitNote } from '../shared/plan.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
@@ -395,11 +396,6 @@ export function tasksApi(deps: {
       await store.update(task.id, cur)
       log.info('task', '自动起了标题', { task: task.id, title: cur.title })
     })().catch((e) => log.warn('task', '自动起标题失败', (e as Error).message))
-  }
-
-  /** 最近一条消息的时间：子对话列表按它排序（updatedAt 会被改名、看过之类的操作改动） */
-  function lastMessageAt(task: Task) {
-    return task.messages.at(-1)?.at ?? task.updatedAt
   }
 
   /**
@@ -1537,10 +1533,12 @@ export function tasksApi(deps: {
           updatedAt: liveTask.updatedAt,
           // 进程还活着（预热、等下一句、正在执行）：列表默认只列这些，不用 status === 'running' 猜
           cliAlive: live.has(liveTask.id),
-          // 排序按真正的最近消息时间：updatedAt 也会被改名、看过的标记改动
-          lastMessageAt: lastMessageAt(liveTask),
+          // 排序按本次开启的时间：做完或停下后又接到新任务会开新的一轮，重新排到最前面
+          startedAt: childStartedAt(liveTask),
           // 总览分组用：等用户确认的请求数、独立 worktree 的分支
           requests: liveTask.requests.length,
+          // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」
+          plan: openPlan(liveTask),
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
