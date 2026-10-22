@@ -5,6 +5,7 @@ import { chipMarker, chips, dropChip, findPaths, isAttachChip, type ChipKind } f
 import type { Attachment } from '@shared/schema'
 import { api } from '@/lib/api'
 import { useData } from '@/lib/data'
+import { insertFileRef, useFileRefDrop } from '@/lib/fileDrag'
 import { t } from '@shared/i18n'
 import { useDropPaste, type AttachHooks, type useAttachments } from './Attachments'
 import { AttachmentViewer, viewOf, type ViewTarget } from './AttachmentView'
@@ -96,6 +97,12 @@ export function useComposerChips({
   )
 
   const drop = useDropPaste(addFiles, dropScope)
+  // 文件树里右键拖过来的文件 / 文件夹：松手时在光标处插入 @路径，不当附件上传
+  const dropRef = useRef<HTMLDivElement>(null)
+  const refOver = useFileRefDrop(dropRef, (item) => {
+    const ed = editor.current
+    if (ed) insertFileRef(ed, item)
+  })
 
   /**
    * 粘贴：有文件（截图、从文件管理器复制的文件）照旧上传一份（大文件只引用原路径，见 useAttachments 的 add）；
@@ -161,6 +168,10 @@ export function useComposerChips({
     preview,
     chipActions,
     drop,
+    /** 绑到输入框外层容器上：接住文件树拖过来的引用 */
+    dropRef,
+    /** 现在有没有拖到输入框上（高亮用） */
+    refOver,
     viewer: <AttachmentViewer target={view} onClose={() => setView(null)} />,
   }
 }

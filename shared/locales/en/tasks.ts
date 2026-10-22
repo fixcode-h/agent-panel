@@ -185,6 +185,8 @@ export const EN_TASKS: Record<string, string> = {
   开始执行: 'Start',
   '开始执行（Enter）': 'Start (Enter)',
   '松开鼠标，把文件附到要求里': 'Drop to attach files to your request',
+  '拖到输入框上，松开插入引用': 'Drag onto the input box and release to insert a reference',
+  '松开鼠标，插入引用': 'Release to insert the reference',
   '无角色，直接用 Agent': 'No role, use the agent directly',
   无角色: 'No role',
   使用项目设置的角色: 'Use the project role',

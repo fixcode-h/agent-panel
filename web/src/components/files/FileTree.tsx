@@ -21,6 +21,7 @@ import { toast } from 'sonner'
 import type { ContentFile, DirLevel, FileTree, NameSearch, SearchMode } from '@shared/files'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
+import { startFileDrag } from '@/lib/fileDrag'
 import { Input } from '@/components/ui/input'
 import {
   ContextMenu,
@@ -390,6 +391,10 @@ function LevelRows({
               <ContextMenuTrigger asChild onContextMenu={(ev) => ev.stopPropagation()}>
                 <button
                   onClick={() => (e.kind === 'dir' ? onToggle(e.path) : onOpen(e.path))}
+                  // 右键按住这一行拖到输入框里：左键还是打开 / 展开，不抢左键
+                  onPointerDown={(ev) => {
+                    if (ev.button === 2) startFileDrag({ path: e.path, kind: e.kind }, { x: ev.clientX, y: ev.clientY })
+                  }}
                   // 缩进跟着层级走
                   style={{ paddingLeft: `${depth * (compact ? 12 : 14) + 8}px` }}
                   className={cn(
@@ -529,7 +534,16 @@ function FileRow({
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild onContextMenu={(ev) => ev.stopPropagation()}>
-        <button type="button" onClick={() => onOpen(path)} className={className} title={path}>
+        <button
+          type="button"
+          onClick={() => onOpen(path)}
+          // 搜索结果也是文件行，一样能右键拖进输入框
+          onPointerDown={(ev) => {
+            if (ev.button === 2) startFileDrag({ path, kind: 'file' }, { x: ev.clientX, y: ev.clientY })
+          }}
+          className={className}
+          title={path}
+        >
           {children}
         </button>
       </ContextMenuTrigger>

@@ -993,3 +993,12 @@ export function DropHint() {
     </div>
   )
 }
+
+/** 从文件树右键拖文件 / 文件夹过来时盖在输入框上的提示 */
+export function FileRefHint() {
+  return (
+    <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center rounded-[20px] bg-card/90 text-[0.8125rem] text-accent">
+      {t('松开鼠标，插入引用')}
+    </div>
+  )
+}

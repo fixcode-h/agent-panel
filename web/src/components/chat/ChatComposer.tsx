@@ -6,7 +6,7 @@ import { ArrowUp, ListPlus, Loader2, Square } from 'lucide-react'
 import type { DesignKind, SavedStyle } from '@shared/design'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
-import { AttachMenu, DropHint, type useAttachments } from './Attachments'
+import { AttachMenu, DropHint, FileRefHint, type useAttachments } from './Attachments'
 import { RichInput, type RichInputHandle } from './RichInput'
 import { useComposerChips } from './composer-chips'
 
@@ -170,6 +170,7 @@ export function ChatComposer({
   }, [])
   return (
     <div
+      ref={chips.dropRef}
       {...drop.container}
       className={cn(
         'relative border border-line-strong shadow-card transition-[border-color,box-shadow]',
@@ -177,11 +178,13 @@ export function ChatComposer({
           ? 'rounded-2xl bg-field focus-within:border-focus/60 dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft'
           : 'mx-auto max-w-(--content-w) rounded-[20px] bg-card focus-within:shadow-pop dark:focus-within:border-focus dark:focus-within:ring-[3px] dark:focus-within:ring-focus-soft',
         drop.over && !dropScope && 'border-accent ring-2 ring-accent/25',
+        chips.refOver && 'border-accent ring-2 ring-accent/25',
         className,
       )}
     >
       {menus}
       {drop.over && !dropScope && <DropHint />}
+      {chips.refOver && <FileRefHint />}
       {chips.viewer}
       {above}
       <RichInput
