@@ -36,7 +36,7 @@ import { HelperCards } from './HelperCards'
 import { type Project, type Task, type TaskMessage, type TaskStep } from '@shared/schema'
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
-import { sortChildren, taskSummary, withTaskModel, type ChildActivity } from '@shared/task'
+import { sortChildren, taskStage, taskSummary, withTaskModel, type ChildActivity, type TaskStage } from '@shared/task'
 import { agentRun, defaultCli, defaultSettings } from '@shared/settings'
 import { getCli, steerable } from '@shared/clis'
 import { api } from '@/lib/api'
@@ -1870,31 +1870,19 @@ function ChildrenBar({
 
 /**
  * 「全部」里按状态分组看子对话：要你处理的（等确认、失败）在最上面，然后执行中、做完的、停下的；
- * 「运行中」只有活着的几个，不分组
+ * 「运行中」只有活着的几个，不分组。分组用 taskStage：和状态图标、行内标签是同一套映射
  */
 function childGroups(list: ChildSummary[], grouped: boolean) {
   if (!grouped) return [{ key: 'all', label: '', items: list }]
-  const groups = [
-    { key: 'you', label: t('需要你处理'), items: [] as ChildSummary[] },
-    { key: 'running', label: t('执行中'), items: [] as ChildSummary[] },
-    { key: 'done', label: t('已完成'), items: [] as ChildSummary[] },
-    { key: 'stopped', label: t('已停止'), items: [] as ChildSummary[] },
+  const groups: { key: TaskStage; label: string; items: ChildSummary[] }[] = [
+    { key: 'you', label: t('需要你处理'), items: [] },
+    { key: 'running', label: t('执行中'), items: [] },
+    { key: 'done', label: t('已完成'), items: [] },
+    { key: 'stopped', label: t('已停止'), items: [] },
   ]
   for (const c of list) {
-    const g =
-      // 已解决优先归「已完成」：就算它这会儿还在跑，也不再挂到「需要你处理 / 执行中」里
-      c.resolved
-        ? groups[2]
-        : c.requests || c.asking || c.status === 'failed'
-          ? groups[0]
-          : // 只看这一轮是不是还在跑：回复完停在等下一句时 status 仍是 running，
-            // 按 status 分组会把已经交回结果的子对话一直挂在「执行中」
-            c.working
-            ? groups[1]
-            : c.status === 'done'
-              ? groups[2]
-              : groups[3]
-    g.items.push(c)
+    const g = groups.find((x) => x.key === taskStage(c))
+    if (g) g.items.push(c)
   }
   return groups.filter((g) => g.items.length)
 }
