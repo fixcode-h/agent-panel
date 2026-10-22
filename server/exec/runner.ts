@@ -80,6 +80,11 @@ export interface RealContext {
   /** 本轮用户输入 */
   prompt: string
   signal: AbortSignal
+  /**
+   * 对话这一轮真的结束了（CLI 报了这一轮的结果，或者回复完停在等下一句）。
+   * 子对话靠它收口父对话计划里等自己的步骤：进程会被保活留着等下一句，run 不会返回，收尾处的回报等不到
+   */
+  onTurnEnd?: () => void
   changed: (flush?: boolean) => void
   newId: () => string
   /** 任务所在目录是否是 git 仓库（决定改动从 git 读还是从工具调用里统计） */
@@ -1129,7 +1134,10 @@ async function runAgent(
         if (chat && !op) {
           task.working = false
           // 只回一句就收尾的不算完成：这一轮要交给收尾处的空回合兜底去催，不能先记成已完成
-          if (ev.ok && !prewarmMode && !emptyTurn()) markTurnDone(task)
+          if (ev.ok && !prewarmMode && !emptyTurn()) {
+            markTurnDone(task)
+            ctx.onTurnEnd?.()
+          }
         }
         break
       case 'ask': {
@@ -1302,7 +1310,10 @@ async function runAgent(
     // CLI 回复完停在等下一句：这一轮已经结束，页面不再显示执行中
     task.working = false
     // 真正处理过用户消息的轮次才算完成；预热还没处理消息时不算
-    if (!prewarmMode && chat && !op && !helpers) markTurnDone(task)
+    if (!prewarmMode && chat && !op && !helpers) {
+      markTurnDone(task)
+      ctx.onTurnEnd?.()
+    }
     ctx.changed(true)
     try {
       return await new Promise<string | null>((resolve) => {
