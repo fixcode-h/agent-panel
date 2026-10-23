@@ -396,6 +396,8 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   if (st.nodes.length) {
     lines.push(
       '',
+      '改文件列只统计 CLI 亲自报告的文件改动（Write、Edit 类工具）；只读节点和用命令写文件的不计入。任务整体的改动见下面的「改动的文件」。',
+      '',
       '| 节点 id | 标题 | 类型 | Agent | 状态 | 耗时 | 等待 | 验收轮数/结论 | 输入/缓存命中 | 输出 | 改文件 | 报错 |',
       '|---|---|---|---|---|---|---|---|---|---|---|---|',
     )
@@ -513,7 +515,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   // 同一个工作区里并行的其他任务改了文件也会算进来，不能当成这次任务的产出
   const mine = tk.steps.filter((s) => s.changes.length)
   if (mine.length) {
-    lines.push('', '## 改动的文件（按节点记录）')
+    lines.push('', '## 改动的文件（按节点记录）', '（只列 CLI 报告的文件改动，不是这个节点期间工作区的全部变化）')
     for (const s of mine)
       lines.push('', `### ${s.title}（${s.id}）`, ...s.changes.map((c) => `- ${c.path} +${c.add} -${c.del}`))
   } else if (tk.changes.length) {

@@ -22,6 +22,7 @@ import { agentPermission, agentRun, cliSettings, defaultCli } from '../../shared
 import {
   changesSince,
   mergeChanges,
+  ownedChanges,
   pauseRun,
   questionAnswers,
   resumeRun,
@@ -1501,8 +1502,9 @@ async function runAgent(
   if (ctx.isGit) {
     const changes = await gitChanges(cwd, task.baseline, task.baseRef).catch(() => null)
     if (changes) {
-      // 同时在跑的节点的改动也会出现在差值里：CLI 报告了改哪些文件时只算这些，没报告（例如用命令写的）才全算
-      const mine = changesSince(before, changes).filter((c) => !touched.size || touched.has(c.path))
+      // 只在跑的节点的改动也会出现在差值里：只算 CLI 亲自报告的文件改动（Write、Edit 报的 file 事件）。
+      // 没报告过文件的节点（只读调研、用命令写的）不加归因：差值里可能是并行子对话的改动，算给它就变成了它的改动
+      const mine = ownedChanges(changesSince(before, changes), touched)
       if (owner) mergeChanges((owner.changes ??= []), mine)
       task.changes = changes
     }
