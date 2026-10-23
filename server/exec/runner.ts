@@ -1079,6 +1079,7 @@ async function runAgent(
         if (t) {
           if (ev.output) t.output = ev.output
           if (ev.failed) t.failed = true
+          if (ev.exitCode !== undefined) t.exitCode = ev.exitCode
           if (ev.patch) t.input = ev.patch
           if (ev.detail !== undefined) t.detail = ev.detail
           delete t.running

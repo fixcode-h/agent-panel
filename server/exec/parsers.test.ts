@@ -112,6 +112,31 @@ test('Claude Code：出错的结果', () => {
   assert.deepEqual(s.results, [{ ok: false, error: 'error_max_turns' }])
 })
 
+test('Claude Code：Bash 的 tool_use_result 带着退出码', () => {
+  const parse = claudeParser(CWD)
+  const [ok] = parse({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{ tool_use_id: 't1', type: 'tool_result', content: 'Command exited with code 1', is_error: true }],
+    },
+    // Bash 的 tool_use_result 是 { code, stdout, stderr }：退出码在这里，不在 content 里
+    tool_use_result: { code: 1, stdout: '', stderr: 'fatal: not a git repository' },
+  })
+  assert.equal(ok.type, 'tool_result')
+  assert.equal((ok as { exitCode?: number }).exitCode, 1, '失败的工具行要能拿到退出码')
+  // 不是 Bash 的结果、或者 CLI 没报 code 时不要凭空写一个 0
+  const [edit] = parse({
+    type: 'user',
+    message: {
+      role: 'user',
+      content: [{ tool_use_id: 't2', type: 'tool_result', content: 'updated' }],
+    },
+    tool_use_result: { filePath: `${CWD}/src/a.ts`, structuredPatch: [] },
+  })
+  assert.equal((edit as { exitCode?: number }).exitCode, undefined)
+})
+
 test('Codex app-server：推理摘要、命令、改文件、计划和累计用量', async () => {
   const sent: any[] = []
   const events: CliEvent[] = []
@@ -332,6 +357,25 @@ test('Pi：命令调用标成还在执行，空快照也要发出去清掉旧输
     parse({ type: 'tool_execution_update', toolName: 'bash', toolCallId: 'b1', partialResult: text })
   assert.deepEqual(snapshot('a\n'), [{ type: 'tool_delta', id: 'b1', text: 'a\n', snapshot: true }])
   assert.deepEqual(snapshot(''), [{ type: 'tool_delta', id: 'b1', text: '', snapshot: true }])
+})
+
+test('Pi：命令的退出码从 result.structuredContent.exit_code 取', () => {
+  const parse = parserFor('pi', CWD)
+  const end = (structuredContent?: Record<string, unknown>) =>
+    parse({
+      type: 'tool_execution_end',
+      toolCallId: 'b1',
+      toolName: 'bash',
+      result: {
+        content: [{ type: 'text', text: 'x' }],
+        details: {},
+        ...(structuredContent ? { structuredContent } : {}),
+      },
+      isError: true,
+    }).find((e) => e.type === 'tool_result') as { exitCode?: number } | undefined
+  assert.equal(end({ output: 'x', exit_code: 1 })?.exitCode, 1)
+  // read / edit 的 structuredContent 里没有退出码：不写，免得导出报告里出现「退出码 0」
+  assert.equal(end(undefined)?.exitCode, undefined)
 })
 
 /** messageStamp 用到的输出指纹：输出长度不变但内容变了也要算一次变化 */

@@ -354,6 +354,34 @@ test('旧导出没有跨度和空闲字段：按记录现算，不写 NaN', () =
   assert.ok(!report.includes('NaN'), '旧数据不把 NaN 交给用户')
 })
 
+test('失败详情：命令用完整原文，带上退出码，没输出时写明', () => {
+  const cmd = `git worktree list ${'--porcelain '.repeat(20)}`.trim()
+  const label = `${cmd.slice(0, 120)}…`
+  const tk = Task.parse({
+    ...task,
+    messages: [
+      {
+        id: 'a1',
+        role: 'agent',
+        agentId: coder.id,
+        step: 'handle',
+        text: '跑命令',
+        at,
+        tools: [
+          // label 是截断过的一行，input 才是实际执行的完整命令
+          { kind: 'run', label, input: cmd, exitCode: 1, output: 'fatal: not a git repository', failed: true },
+          // grep 没匹配到：退出码非零但没有任何输出
+          { kind: 'run', label: 'grep -r foo src', input: 'grep -r foo src', exitCode: 1, failed: true },
+        ],
+      },
+    ],
+  })
+  const report = analysisReport([exportTask(tk, [coder])])
+  assert.ok(report.includes(cmd), '命令用完整原文，不读被截断的 label')
+  assert.match(report, /（退出码 1）\nfatal: not a git repository/, '退出码和输出写在一起')
+  assert.match(report, /grep -r foo src（退出码 1）\n（没有输出）/, '没输出时写明，不和退出码非零混在一起')
+})
+
 test('按行对比', () => {
   assert.deepEqual(lineDiff('a\nb\nc', 'a\nx\nc'), [
     { kind: 'same', text: 'a' },

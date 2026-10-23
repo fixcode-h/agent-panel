@@ -636,13 +636,18 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
           .map((x) => `${x.name || x.kind} ${x.label}${x.failed ? '（失败）' : ''}`)
           .join('；')}${m.tools.length > 30 ? `…共 ${m.tools.length} 个` : ''}`
       : ''
-    // 失败的工具调用给出输出尾部：分析返工和报错时只看到「（失败）」没法判断原因
+    // 失败的工具调用给出完整命令、退出码和输出尾部：只看到「（失败）」判断不了原因，
+    // 而 label 是截断过的一行，命令后半段（往往正是出错的那段）看不到
     const detail = failed.length
       ? `\n失败详情：${failed
           .slice(0, 5)
-          .map(
-            (x) => `\n- ${x.name || x.kind} ${x.label}\n${clip((x.output || x.detail || '（没有输出）').trim(), 1200)}`,
-          )
+          .map((x) => {
+            const what = (x.kind === 'run' && x.input ? x.input : x.label).trim()
+            const code = x.exitCode === undefined ? '' : `（退出码 ${x.exitCode}）`
+            const out = (x.output || x.detail || '').trim()
+            // 有输出但退出码非零，和什么都没输出，是两种不同的排查方向，分开写
+            return `\n- ${x.name || x.kind} ${what}${code}\n${out ? clip(out, 1200) : '（没有输出）'}`
+          })
           .join('')}`
       : ''
     // 用户的要求不截断：约束、边界条件常常写在后面，截掉就判断不了是否满足要求
