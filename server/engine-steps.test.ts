@@ -246,7 +246,7 @@ test('多步骤节点：步骤派出的子 Agent 挂在步骤记录下', async (
 
 test('推送由父对话决定：子对话的提示词不问用户要不要推送，父对话侧仍按授权流程问一次', async () => {
   /** 跑一轮对话，拿回这次交给 CLI 的提示词 */
-  const promptsOf = async (chat: Record<string, unknown>) => {
+  const promptsOf = async (chat: Record<string, unknown>, extra: Partial<EngineHost> = {}) => {
     const prompts: string[] = []
     const task = {
       ...newTask({ projectId: 'p', mode: 'chat', prompt: '把剩下的测试补完', ...chat } as never, undefined, '', 'kid'),
@@ -267,16 +267,26 @@ test('推送由父对话决定：子对话的提示词不问用户要不要推�
         prompts.push(call.prompt)
         return { ok: true, text: '好了' }
       },
+      ...extra,
     })
     return prompts
   }
 
-  const child = await promptsOf({ parentTaskId: 'parent' })
+  const child = await promptsOf({ parentTaskId: 'parent' }, { wrapUp: 'merge' })
   assert.equal(child.length, 1)
   assert.match(child[0], /由父对话决定，不在你的处理范围内/)
   assert.match(child[0], /不执行、不询问用户、也不写进提问、计划步骤或建议/)
   assert.match(child[0], /完成」就是改动已合回父对话所在的分支/, '完成只到「已合回父对话所在的分支」')
-  assert.match(child[0], /不要写进计划步骤/, '合回父分支是收尾动作，不是计划里的一步')
+  assert.match(child[0], /面板会自动列成计划的最后一步，不要自己再写一步/, '合回父分支由面板列成计划的最后一步')
+  assert.match(child[0], /## 收尾：计划的最后一步[\s\S]*submit_merge/)
+  // P4 工作区：收尾是按文件类型分 changelist，不是合回分支
+  const p4 = await promptsOf({ parentTaskId: 'parent' }, { wrapUp: 'p4' })
+  assert.match(p4[0], /完成」就是改动已按文件类型分进各自的 pending changelist/)
+  assert.match(p4[0], /\[C\+\+\][\s\S]*\[XLSX\][\s\S]*\[Lua\][\s\S]*\[Other\]/)
+  assert.match(p4[0], /不能全留在 default，也不能都放进同一个/)
+  // 共用父对话目录的 Git 子对话没有收尾这一步
+  const shared = await promptsOf({ parentTaskId: 'parent' })
+  assert.doesNotMatch(shared[0], /## 收尾：计划的最后一步/)
   assert.match(child[0], /不要写「等推送 \/ 等合入其他分支 \/ 同步远端」/, '计划步骤里也不许写等推送')
   assert.doesNotMatch(child[0], /第一次需要推送时先用提问工具问用户一次/, '子对话不再问用户要不要推送')
   // 收尾建议的工具说明也写清了：只能写本地动作、remote 必须写 none

@@ -9,6 +9,7 @@ import {
   childTurnSettle,
   endRun,
   finishPlan,
+  markWrapUp,
   openPlan,
   settleWait,
   unsummarized,
@@ -200,4 +201,99 @@ test('没做完的计划给进度：列表里显示「计划 7/8」、不算已�
   })
   assert.equal(task.plans!.at(-1)!.doneAt === '', false, '前提：全部完成时计划收起')
   assert.equal(openPlan(task), undefined)
+})
+
+test('子对话的收尾：面板加在计划最后，漏写、挪到前面都放回最后', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'running' }, { title: '跑测试' }] }, undefined, 'p4')
+  let plan = activePlan(task)!
+  assert.deepEqual(
+    plan.steps.map((s) => [s.id, s.wrapUp ?? '']),
+    [
+      ['1', ''],
+      ['2', ''],
+      ['3', 'p4'],
+    ],
+  )
+  assert.match(plan.steps[2].title, /按文件类型/)
+  // Agent 交的列表里没写收尾：原样放回，id 不变
+  applyPlan(
+    task,
+    { steps: [{ id: '1', title: '改代码', status: 'done' }, { id: '2', title: '跑测试' }, { title: '补文档' }] },
+    undefined,
+    'p4',
+  )
+  plan = activePlan(task)!
+  assert.deepEqual(
+    plan.steps.map((s) => s.id),
+    ['1', '2', '4', '3'],
+  )
+  // 挪到中间也放回最后
+  applyPlan(
+    task,
+    {
+      steps: [
+        { id: '1', title: '改代码', status: 'done' },
+        { id: '3', title: plan.steps[3].title },
+        { id: '2', title: '跑测试', status: 'done' },
+        { id: '4', title: '补文档', status: 'done' },
+      ],
+    },
+    undefined,
+    'p4',
+  )
+  plan = activePlan(task)!
+  assert.equal(plan.steps.at(-1)!.wrapUp, 'p4')
+  assert.equal(plan.doneAt, '', '收尾没做完，计划不收起')
+  // P4 的收尾由 Agent 自己标完成
+  applyPlan(task, { steps: [{ id: '3', title: plan.steps.at(-1)!.title, status: 'done' }] }, undefined, 'p4')
+  assert.notEqual(task.plans!.at(-1)!.doneAt, '', '收尾做完，计划结束')
+})
+
+test('合回分支的收尾只由面板标完成，新加的工作流步骤插在它前面', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码', status: 'done' }] }, undefined, 'merge')
+  const wrap = () => activePlan(task)!.steps.find((s) => s.wrapUp === 'merge')!
+  assert.equal(wrap().id, '2')
+  // Agent 自己标完成不算
+  const r = applyPlan(
+    task,
+    {
+      steps: [
+        { id: '1', title: '改代码', status: 'done' },
+        { id: '2', title: wrap().title, status: 'done' },
+      ],
+    },
+    undefined,
+    'merge',
+  )
+  assert.equal(wrap().status, 'pending')
+  assert.match(r.info, /不要自己标/)
+  // 工作流步骤不指定 step 时插在收尾前面
+  bindRun(task, '', 1, '工作流「开发」')
+  assert.deepEqual(
+    activePlan(task)!.steps.map((s) => s.id),
+    ['1', '3', '2'],
+  )
+  endRun(task, 1, true)
+  assert.ok(markWrapUp(task, 'merge', 'running', '已提交合并'))
+  assert.equal(wrap().status, 'running')
+  assert.ok(markWrapUp(task, 'merge', 'done'))
+  assert.notEqual(task.plans!.at(-1)!.doneAt, '', '合进去后计划做完')
+  // 合进去后又加了要做的事：在最后再收一次尾
+  applyPlan(task, { title: '补一处', steps: [{ title: '修评审意见' }] }, undefined, 'merge')
+  assert.deepEqual(
+    activePlan(task)!.steps.map((s) => s.wrapUp ?? ''),
+    ['', 'merge'],
+  )
+})
+
+test('不用收尾的对话（父对话、共用目录的 Git 子对话）计划里没有收尾步骤', () => {
+  const task = fresh()
+  applyPlan(task, { steps: [{ title: '改代码' }] })
+  assert.equal(
+    activePlan(task)!.steps.some((s) => s.wrapUp),
+    false,
+  )
+  assert.equal(markWrapUp(task, 'merge', 'done'), false)
 })

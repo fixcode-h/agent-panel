@@ -105,7 +105,8 @@ import path from 'node:path'
 import { log } from './log.ts'
 import { suggestTitle, titleInput } from './task-title.ts'
 import { t } from '../shared/i18n.ts'
-import { childTurnSettle, openPlan, settleWait, waitNote } from '../shared/plan.ts'
+import { childTurnSettle, markWrapUp, openPlan, settleWait, waitNote, type WrapUpKind } from '../shared/plan.ts'
+import { detectVcs } from './projects-analyze.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
@@ -119,6 +120,29 @@ class TaskBusyError extends Error {}
 
 /** 任务还在用自己的独立分支（没合并也没丢弃） */
 const isolated = (tk: Pick<Task, 'worktree'>) => tk.worktree?.state === 'active'
+
+/** 项目目录是不是 P4 工作区：每轮都要判断，结果按目录记住（工作区类型不会在运行中变） */
+const p4Dirs = new Map<string, Promise<boolean>>()
+const isP4 = (dir: string) => {
+  let got = p4Dirs.get(dir)
+  if (!got) {
+    got = detectVcs(dir)
+      .then((v) => v.vcs === 'p4')
+      .catch(() => false)
+    p4Dirs.set(dir, got)
+  }
+  return got
+}
+
+/**
+ * 子对话计划最后一步的收尾（见 plan.ts 的 ensureWrapUp）：独立分支（或要改时才开）的合回父对话所在的分支，
+ * P4 工作区按文件类型分 changelist；共用父对话目录的 Git 子对话改完就在父对话的分支上，不用收尾
+ */
+async function childWrapUp(tk: Task, projectPath: string | undefined): Promise<WrapUpKind | undefined> {
+  if (!tk.parentTaskId || tk.mode !== 'chat') return undefined
+  if (isolated(tk) || tk.wantsWorktree) return 'merge'
+  return projectPath && (await isP4(projectPath)) ? 'p4' : undefined
+}
 
 /** 打开对话页时后台启动 CLI 用的提示：只让它停在等下一句上，不做任何事 */
 const PREWARM_PROMPT =
@@ -870,6 +894,7 @@ export function tasksApi(deps: {
     }
     merging.add(childId)
     mergeNudged.delete(childId)
+    await wrapUpState(childId, 'running', '已提交合并，等面板合回父对话所在的分支')
     void mergeLock(parentId, async () => {
       const parent = live.get(parentId)?.task ?? (await store.get(parentId))
       if (!parent) return
@@ -895,6 +920,7 @@ export function tasksApi(deps: {
         )
         return
       }
+      await wrapUpState(childId, 'running', head.split('\n')[0])
       await sendToChild(
         parentId,
         childId,
@@ -911,6 +937,16 @@ export function tasksApi(deps: {
       ok: true,
       info: `已提交合并${ahead ? `，前面还有 ${ahead} 个在排队` : ''}。合进去后它还差的结果会推回给你；计划、后台命令、提问都完了面板才把它标为完成（这次提交之后再改的文件不在这次合并里）。`,
     }
+  }
+
+  /** 子对话计划里「合回父对话所在的分支」这一步跟着合并走：排队、失败标进行中，合进去标完成 */
+  async function wrapUpState(childId: string, status: 'running' | 'done', note: string) {
+    const entry = live.get(childId)
+    const tk = entry?.task ?? (await store.get(childId))
+    if (!tk || !markWrapUp(tk, 'merge', status, note)) return
+    tk.updatedAt = new Date().toISOString()
+    if (entry) entry.rev++
+    await store.update(tk.id, tk)
   }
 
   /**
@@ -934,6 +970,8 @@ export function tasksApi(deps: {
     }
     const steered = entry?.task.working ? await steerTask(entry.task, text, msg).catch(() => false) : false
     if (!steered) tk.messages.push(msg)
+    // 计划最后一步「合回父对话所在的分支」由面板标完成：计划做完才走得到完成那一步
+    markWrapUp(tk, 'merge', 'done', '已合回父对话所在的分支')
     tk.updatedAt = new Date().toISOString()
     if (entry) entry.rev++
     await store.update(tk.id, tk)
@@ -1651,6 +1689,7 @@ export function tasksApi(deps: {
           : undefined,
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
+        wrapUp: await childWrapUp(entry.task, project?.path),
         submitMerge:
           task.parentTaskId && isolated(entry.task) ? (note, tests) => submitMerge(task.id, note, tests) : undefined,
         // 只有项目里的对话有：工作流的测试验收节点照常按快照里的完整步骤跑

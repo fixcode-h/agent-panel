@@ -123,6 +123,7 @@ export interface RealContext {
   childIsolation?: EngineHost['childIsolation']
   worktreeHome?: EngineHost['worktreeHome']
   branch?: EngineHost['branch']
+  wrapUp?: EngineHost['wrapUp']
   submitMerge?: EngineHost['submitMerge']
   verify?: EngineHost['verify']
   beginEdit?: EngineHost['beginEdit']
@@ -1833,6 +1834,7 @@ export async function runRealTurn(ctx: RealContext) {
     childIsolation: ctx.childIsolation,
     worktreeHome: ctx.worktreeHome,
     branch: ctx.branch,
+    wrapUp: ctx.wrapUp,
     submitMerge: ctx.submitMerge,
     verify: ctx.verify,
     beginEdit: ctx.beginEdit,
