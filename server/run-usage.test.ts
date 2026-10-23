@@ -22,7 +22,7 @@ const app = (all: Task[]) =>
     '/tasks',
     runUsageApi({
       tasks: {
-        get: async (id) => all.find((x) => x.id === id) ?? null,
+        peek: async (id) => all.find((x) => x.id === id) ?? null,
         list: async () => all,
       },
     }).routes,

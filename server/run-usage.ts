@@ -16,7 +16,8 @@ import { t } from '../shared/i18n.ts'
 export function runUsageApi(deps: {
   /** 按 id 取任务（执行中的取内存里那一份） */
   tasks: {
-    get(id: string): Promise<Task | null>
+    /** 只要任务本身（用量、步骤、状态），不带对话：这个接口执行中每秒问一次，不能每次都读每个子对话的对话文件 */
+    peek(id: string): Promise<Task | null>
     list(): Promise<Task[]>
   }
 }) {
@@ -25,12 +26,12 @@ export function runUsageApi(deps: {
 
   routes.get('/:id/run-usage', async (c) => {
     const id = c.req.param('id')
-    const root = await deps.tasks.get(id)
+    const root = await deps.tasks.peek(id)
     if (!root) return bad(c, t('任务不存在'))
     try {
       // 先按全部任务找出整棵树，再逐个取（执行中的那份带实时速度）
       const tree = runTree(root, await deps.tasks.list())
-      const loaded = await Promise.all(tree.map((x) => (x.id === id ? root : deps.tasks.get(x.id))))
+      const loaded = await Promise.all(tree.map((x) => (x.id === id ? root : deps.tasks.peek(x.id))))
       const tasks = loaded.filter((x): x is Task => !!x)
       return c.json(runUsage(root, tasks))
     } catch (e) {

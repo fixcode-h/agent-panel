@@ -1,9 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
+import { availableParallelism } from 'node:os'
 import path from 'node:path'
 import { capture } from './exec/process.ts'
 import { runShell as runShellIn } from './merge-build.ts'
 import { currentShell } from './shells.ts'
 import { log } from './log.ts'
+import { createSlotPool } from './slots.ts'
 
 /**
  * 后台命令：CLI 把要跑很久的命令（完整测试、编译）交给面板，自己接着干别的；
@@ -39,6 +41,12 @@ const KEEP_JOBS = 20
  * close 可能永远不来；记录不能跟着一起挂，到点先置终态，残留进程交给下次启动的遗留清理
  */
 const KILL_GRACE_MS = 8000
+/**
+ * 整个面板同时跑的后台命令上限。独占命令只按目录排队，可每个子对话的独立分支是不同的目录：
+ * 父对话派出十几个子对话、各自交一条完整测试或编译，就是十几条重活同时跑，CPU、内存被吃满，
+ * 面板和整台机器一起卡住。超过上限的照样马上返回、记成排队，前面的跑完一条就开始
+ */
+const MAX_RUNNING = Math.max(2, Math.floor(availableParallelism() / 2))
 
 /**
  * 兜底计时用的定时器。默认是真实的 setTimeout；测试换成可控的假时钟，推进时间就能到点，
@@ -83,11 +91,21 @@ async function fingerprint(dir: string) {
 export function createBackground(
   onDone: (job: BgJob, text: string) => void,
   /** 测试用：换掉真正跑命令的实现、缩短停止后的等待上限、换成假时钟 */
-  deps: { run?: typeof runShellIn; killGraceMs?: number; timers?: BgTimers } = {},
+  deps: { run?: typeof runShellIn; killGraceMs?: number; timers?: BgTimers; maxRunning?: number } = {},
 ) {
   const runShell = deps.run ?? runShellIn
   const killGraceMs = deps.killGraceMs ?? KILL_GRACE_MS
   const timers = deps.timers ?? realTimers
+  const maxRunning = deps.maxRunning ?? MAX_RUNNING
+  /** 全局名额（见 MAX_RUNNING）：所有对话的后台命令共用一个键 */
+  const gate = createSlotPool(() => maxRunning)
+  /** 每条命令占着的名额：置终态时就还（见 finish），不等 close——close 不来的进程不能永久占一个名额 */
+  const gateFree = new Map<string, () => void>()
+  const releaseGate = (id: string) => {
+    const free = gateFree.get(id)
+    gateFree.delete(id)
+    free?.()
+  }
   const jobs = new Map<string, BgJob>()
   const aborts = new Map<string, AbortController>()
   /** 正在跑的命令什么时候真正结束：停止后要等进程退出再删工作目录（Windows 上进程占着目录删不掉） */
@@ -108,6 +126,7 @@ export function createBackground(
     if (info.code !== undefined) j.code = info.code
     if (info.note) j.lines.push(info.note)
     j.endedAt = new Date().toISOString()
+    releaseGate(j.id)
     const t = killTimers.get(j.id)
     if (t !== undefined) {
       timers.clearTimeout(t)
@@ -182,7 +201,15 @@ export function createBackground(
   }
 
   function run(j: BgJob, root: string) {
-    const p = exec(j, root).finally(() => runs.delete(j.id))
+    const p = (async () => {
+      gateFree.set(j.id, await gate.take(''))
+      try {
+        // 排队等名额期间被停掉（对话停止、删除）：不再启动
+        if (!j.endedAt) await exec(j, root)
+      } finally {
+        releaseGate(j.id)
+      }
+    })().finally(() => runs.delete(j.id))
     runs.set(j.id, p)
     return p
   }
@@ -233,15 +260,17 @@ export function createBackground(
         const prev = chains.get(input.root) ?? Promise.resolve()
         // 排队期间被停掉或者被置了终态（停止、上次退出清理）：不再执行
         const next = prev.catch(() => {}).then(() => (j.endedAt ? undefined : run(j, input.root)))
-        chains.set(
-          input.root,
-          next.catch(() => {}),
-        )
+        const tail = next.catch(() => {})
+        chains.set(input.root, tail)
+        // 队尾跑完了就把这个目录的记录去掉：子对话的独立分支用完即删，目录一个个攒在这里不放
+        void tail.then(() => chains.get(input.root) === tail && chains.delete(input.root))
       } else void run(j, input.root)
+      // 名额是异步拿的，这会儿还没算上刚排的这几条：直接数还没结束的记录
+      const full = [...jobs.values()].filter((x) => x.id !== j.id && !x.endedAt).length >= maxRunning
       return {
         ok: true,
         id: j.id,
-        info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}。跑完结果会自动推回给你，先去做不依赖它的事。`,
+        info: `已放到后台（编号 ${j.id}）${ahead ? `，前面还有 ${ahead} 条独占命令在排队` : ''}${full ? `，面板同时最多跑 ${maxRunning} 条后台命令，它可能要等前面的跑完` : ''}。跑完结果会自动推回给你，先去做不依赖它的事。`,
       }
     },
     /** 查状态；不传编号列出这个对话的全部 */

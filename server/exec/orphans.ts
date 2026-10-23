@@ -55,23 +55,32 @@ function write(list: TrackedCli[]) {
   }
 }
 
+/**
+ * 登记在内存里留一份，文件只在有变化时写。以前每个进程结束（包括 git status 这类短命令）都要同步读一遍文件，
+ * 子对话一多、git 查询一频繁，事件循环上就全是同步读盘
+ */
+let mem: TrackedCli[] | null = null
+const tracked = () => (mem ??= read())
+
 /** 面板起了一个带自己痕迹的 CLI：记下来，面板被强杀后下次启动能认出来 */
 export function trackCliProcess(pid: number, argv: string, cwd: string) {
-  const list = read().filter((x) => x.pid !== pid)
+  const list = tracked().filter((x) => x.pid !== pid)
   list.push({ pid, argv, cwd, startedAt: Date.now() })
+  mem = list
   write(list)
 }
 
-/** 进程正常结束了：从登记里去掉（不在登记里时不写盘，短命令很多） */
+/** 进程正常结束了：从登记里去掉（不在登记里时不碰文件，短命令很多） */
 export function untrackCliProcess(pid: number) {
-  const list = read()
-  const rest = list.filter((x) => x.pid !== pid)
-  if (rest.length === list.length) return
-  write(rest)
+  const list = tracked()
+  if (!list.some((x) => x.pid === pid)) return
+  mem = list.filter((x) => x.pid !== pid)
+  write(mem)
 }
 
 /** 面板正常退出：CLI 已经由 killAllProcesses 停掉，登记清空 */
 export function clearTrackedClis() {
+  mem = []
   write([])
 }
 
@@ -114,7 +123,7 @@ async function listProcesses(): Promise<Map<number, string>> {
  * kill 由调用方传入（process.ts 的 killTree），避免这里和进程管理互相 import
  */
 export async function cleanStaleCliProcesses(kill: (pid: number) => void): Promise<void> {
-  const stale = read()
+  const stale = tracked()
   if (!stale.length) return
   const all = await listProcesses()
   let killed = 0

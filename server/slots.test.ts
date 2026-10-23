@@ -67,3 +67,29 @@ test('停止时排空队列：等着的调用拿到明确失败，不会永远�
   free()
   assert.equal(pool.running('p'), 0)
 })
+
+test('并发闸：同时最多 n 个，多的排队，前面的结束一个就放一个', async () => {
+  const { createGate } = await import('./slots.ts')
+  const gate = createGate(2)
+  let running = 0
+  let peak = 0
+  const opens: (() => void)[] = []
+  const job = () =>
+    gate(async () => {
+      running++
+      peak = Math.max(peak, running)
+      await new Promise<void>((r) => opens.push(r))
+      running--
+    })
+  const all = [job(), job(), job(), job()]
+  await tick()
+  await tick()
+  assert.equal(running, 2)
+  while (opens.length || running) {
+    opens.shift()?.()
+    await tick()
+    await tick()
+  }
+  await Promise.all(all)
+  assert.equal(peak, 2)
+})

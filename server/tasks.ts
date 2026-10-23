@@ -109,7 +109,7 @@ import { childTurnSettle, openPlan, settleWait, waitNote } from '../shared/plan.
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
 import { collisions, createClaims } from './claims.ts'
-import { createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
+import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
 const RULE_CMD = /^\/rules?(?=\s|$)/i
@@ -147,6 +147,8 @@ export function tasksApi(deps: {
     rev: number
     /** 换 CLI/模型/强度时由 PATCH 负责重启，收尾不要重复预热 */
     restart?: boolean
+    /** 子对话占着的父对话并发名额：停在等下一句（保活）时就让出来，见 releaseSlot */
+    freeSlot?: () => void
   }
   const live = new Map<string, Live>()
   /** 子对话共用父对话的目录：改文件前的认领，按父对话分组 */
@@ -163,6 +165,31 @@ export function tasksApi(deps: {
   const slots = createSlotPool(childLimit)
   const takeSlot = (parentId: string) => slots.take(parentId)
   const queued = (parentId: string) => slots.queued(parentId)
+  /**
+   * 子对话让出名额。名额管的是「同时在干活的子对话」，回复完停在等下一句的进程不干活：
+   * 以前要等进程结束（页面宽限期默认一小时）才让，用户点开看过几个子对话后名额就被占满，
+   * 父对话后面派的子对话一直排队，看起来就是卡死了。幂等，多调几次没关系
+   */
+  const releaseSlot = (entry: Live) => {
+    const free = entry.freeSlot
+    entry.freeSlot = undefined
+    free?.()
+  }
+  /**
+   * 保活中的子对话被交了新消息、又开始干活：补占一个名额，名额满时它照样先做（消息已经交给进程了），
+   * 只是后面排队的要等它这一轮做完。拿到名额时这一轮已经结束（又停在等待上或进程退出）就马上还回去
+   */
+  function holdSlot(entry: Live) {
+    const parentId = entry.task.parentTaskId
+    if (!parentId || entry.freeSlot) return
+    void takeSlot(parentId)
+      .then((free) => {
+        if (live.get(entry.task.id) !== entry || !entry.task.working || entry.freeSlot) return free()
+        entry.freeSlot = free
+        void entry.done?.finally(() => releaseSlot(entry))
+      })
+      .catch(() => {})
+  }
   /** 排队等名额、还没开始执行的子对话：父对话判断「有没有子对话在跑」时也算上 */
   const startQueue = new Set<string>()
   // 对话页切走后宽限期到了就别让 CLI 一直等下一句了，结束这一轮（宽限时长在设置里改）；
@@ -639,15 +666,19 @@ export function tasksApi(deps: {
     // 父对话正在执行：实时交给它；交不了的记进收件箱，父对话下一轮开始时一起处理
     const entry = live.get(parent.id)
     const how = entry?.task.working ? await steerTask(entry.task, text, msg).catch(() => false) : false
+    // 写进「现在」的那一份：上面读的是磁盘上的旧对象，等待期间父对话可能已经开始执行（执行器拿的是一份拷贝），
+    // 再往旧对象里写、拿旧对象落盘，收件箱这条会被执行器下一次落盘盖掉，父对话永远收不到这个子对话的回报
+    const target = live.get(parent.id)?.task ?? parent
     if (!how) {
-      parent.messages.push(msg)
-      parent.inbox.push({ from: from.id, title: from.title, text: inboxText, at: msg.at })
+      target.messages.push(msg)
+      target.inbox.push({ from: from.id, title: from.title, text: inboxText, at: msg.at })
     }
-    parent.updatedAt = new Date().toISOString()
-    if (entry) entry.rev++
+    target.updatedAt = new Date().toISOString()
+    const now = live.get(parent.id)
+    if (now) now.rev++
     // 父对话空闲时也要马上落盘，否则页面刷新后看不到子对话的回报
     await store
-      .update(parent.id, parent)
+      .update(parent.id, target)
       .catch((e) => log.warn('task', '回报父对话失败', { error: (e as Error).message }))
   }
 
@@ -679,6 +710,8 @@ export function tasksApi(deps: {
         at: new Date().toISOString(),
       }
       const r = await deliver(running, msg, message, [])
+      // 停在等下一句的子对话被唤醒、开始干活：它的名额在停下时让出去了，这里补上
+      if (r.how === 'wait') holdSlot(running)
       const how =
         r.how === 'wait'
           ? '已直接交给子对话，它正在处理'
@@ -696,6 +729,8 @@ export function tasksApi(deps: {
       try {
         try {
           await followUp(id, { text: message, attachments: [], panel })
+          const cur = live.get(id)
+          if (cur) cur.freeSlot = free
         } catch (e) {
           // 上一轮刚结束、还在收尾（回报父对话、写盘）时执行位还占着：记进对话，登记成下一轮要处理的，
           // 收尾那边会接着开新一轮；收尾已经过了那一步就由这里补开，消息不能丢
@@ -1042,16 +1077,20 @@ export function tasksApi(deps: {
   }
 
   async function closeChildren(parentId: string) {
-    const kids = (await store.list()).filter((x) => x.parentTaskId === parentId)
-    for (const k of kids) {
-      if (!live.has(k.id)) continue
-      const entry = live.get(k.id)!
-      // 正在等下一句的直接结束这一轮；正在执行的按停止处理（输出和状态都保留）。
-      // 原因是 parent：父对话收尾停的子对话不能显示成「用户按了暂停」
-      if (!cancelWait(k.id)) stopTask(k.id, 'parent')
-      if (entry.done) await entry.done.catch(() => {})
-      if (live.has(k.id)) stopTask(k.id, 'parent')
-    }
+    const kids = (await store.list()).filter((x) => x.parentTaskId === parentId && live.has(x.id))
+    // 先一起发停止、再一起等：一个一个等的话每个子对话收尾最多要几秒（杀进程树、写盘），
+    // 父对话名下十几个子对话时停一次父对话就要卡上一两分钟，期间新的请求也排在后面
+    await Promise.all(
+      kids.map(async (k) => {
+        const entry = live.get(k.id)
+        if (!entry) return
+        // 正在等下一句的直接结束这一轮；正在执行的按停止处理（输出和状态都保留）。
+        // 原因是 parent：父对话收尾停的子对话不能显示成「用户按了暂停」
+        if (!cancelWait(k.id)) stopTask(k.id, 'parent')
+        if (entry.done) await entry.done.catch(() => {})
+        if (live.has(k.id)) stopTask(k.id, 'parent')
+      }),
+    )
   }
 
   /**
@@ -1200,6 +1239,7 @@ export function tasksApi(deps: {
       // 同一个子对话已经被启动了：复用正在跑的那一轮，不再开第二个进程
       if (!got.fresh) return
       const entry = got.value
+      entry.freeSlot = free
       await start(entry, withAttachments(message, []), true, agents)
       await entry.done
     } catch (e) {
@@ -1579,7 +1619,11 @@ export function tasksApi(deps: {
         // 停下这一轮的原因：engine 收尾时按它决定写「已暂停」还是写清是谁结束的（见 StopReason）
         stopReason: () => entry.stopReason,
         // 开始保活（CLI 停在等下一句）前先按全局上限收一批最久没用的，别让挂着的进程越来越多
-        onKeepAlive: (taskId) => void enforceKeepAlive(taskId),
+        onKeepAlive: (taskId) => {
+          // 子对话回复完停在等下一句：不再干活，把父对话的并发名额让给排队的子对话
+          if (task.parentTaskId) releaseSlot(entry)
+          void enforceKeepAlive(taskId)
+        },
         changed,
         newId: randomUUID,
         // 子对话这一轮真结束的地方收口父对话计划里等它的步骤（进程保活等下一句时 run 不返回，等不到收尾）
@@ -2005,6 +2049,12 @@ export function tasksApi(deps: {
     return c.json(pid ? list.filter((t) => t.projectId === pid) : list)
   })
 
+  /** childUnmerged 的结果缓存：子对话 id → 当时的子对话版本、问的时间和结果 */
+  const unmergedSeen = new Map<string, { key: string; at: number; value: boolean }>()
+  const UNMERGED_TTL = 10_000
+  /** 子对话栏查 git 的并发上限：几十个子对话时别一下子起上百个 git 进程 */
+  const gitGate = createGate(4)
+
   /**
    * 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged）：只问本地 git，和推没推远端无关。
    * 别的条件都满足了才去问：还在跑、计划没做完时阶段本来就不是「已完成」，
@@ -2013,9 +2063,19 @@ export function tasksApi(deps: {
   async function childUnmerged(tk: Task, project: Project | null) {
     if (!project || tk.worktree?.state !== 'active') return false
     if (childHoldsOf(tk, { background: pendingJobs(tk.id), merged: true }).length) return false
+    // 子对话没变过就沿用刚问过的结果：父对话页每 4 秒刷一次子对话栏，每个做完的子对话要跑 4 条 git，
+    // 子对话一多、再开着两个页面，就是每秒十几个 git 进程抢 CPU 和仓库的锁
+    const key = `${tk.updatedAt}|${tk.worktree.branch}|${tk.worktree.path}`
+    const hit = unmergedSeen.get(tk.id)
+    if (hit && hit.key === key && Date.now() - hit.at < UNMERGED_TTL) return hit.value
     // git 读不出来时不当成没合并：这里只为了让没合回去的子对话不显示成已完成，不该反过来把它卡住
-    const st = await worktreeStatus(project.path, tk.worktree).catch(() => null)
-    return st ? !st.merged : false
+    const st = await gitGate(() => worktreeStatus(project.path, tk.worktree!)).catch(() => null)
+    const value = st ? !st.merged : false
+    unmergedSeen.set(tk.id, { key, at: Date.now(), value })
+    // 顺手丢掉早就过期的记录，删掉的子对话不会一直留在这里
+    if (unmergedSeen.size > 200)
+      for (const [id, v] of unmergedSeen) if (Date.now() - v.at > UNMERGED_TTL * 6) unmergedSeen.delete(id)
+    return value
   }
 
   // 父对话的子对话卡片：标题、状态、摘要和最近更新时间
@@ -2056,6 +2116,8 @@ export function tasksApi(deps: {
           activity: activityOf(liveTask),
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
           resolved: liveTask.resolved === true,
+          // 停下的原因：任务本身就有，页面不用再为每个停下的子对话取一遍完整对话
+          stopReason: idle(liveTask).stopReason ?? '',
         }
       }),
     )
@@ -2091,7 +2153,27 @@ export function tasksApi(deps: {
       let beat = Date.now()
       let seen = ''
       const send = (event: string, data: unknown) => stream.writeSSE({ event, data: JSON.stringify(data) })
+      const jobKey = () =>
+        background
+          .list(id)
+          .filter((j) => j.state === 'queued' || j.state === 'running')
+          .map((j) => `${j.id}:${j.state}`)
+          .join(',')
       while (!closed) {
+        // 没在执行的任务先只看任务本身的更新时间：完整对话在内存里只留十几个，被挤出去后
+        // 每秒都 current() 一次就是每秒从磁盘重读、校验一遍几 MB 的对话；没变就不用读
+        const e = live.get(id)
+        if (!e && meta) {
+          const head = await store.peek(id)
+          if (head && `${head.updatedAt}|${jobKey()}` === seen.slice(seen.indexOf('#') + 1)) {
+            if (Date.now() - beat > 15_000) {
+              await stream.writeSSE({ event: 'ping', data: '' })
+              beat = Date.now()
+            }
+            await stream.sleep(1000)
+            continue
+          }
+        }
         const cur = await current(id)
         if (!cur) {
           await send('gone', {})
@@ -2100,9 +2182,9 @@ export function tasksApi(deps: {
         const t = withJobs(cur)
         // 没有变化时什么都不比较：长任务的消息很多，每次都逐条比较、序列化会拖慢整个服务。
         // 后台命令开始、结束不一定改任务本身（对话空闲时），状态单独算进去
-        const e = live.get(id)
         const jobs = t.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
-        const key = `${e ? `${e.rev}|${t.updatedAt}` : `${t.updatedAt}|${t.messages.length}`}|${jobs}`
+        // # 后面是不在执行时的比较键（只用任务本身的更新时间），上面那一步不读对话就能比
+        const key = `${e ? `${e.rev}|${t.messages.length}` : t.messages.length}#${t.updatedAt}|${jobs}`
         if (key === seen && meta) {
           if (Date.now() - beat > 15_000) {
             await stream.writeSSE({ event: 'ping', data: '' })
@@ -3111,6 +3193,16 @@ export function tasksApi(deps: {
     ready: () => ready,
     /** 按 id 取任务（内存里有的用内存里的）；被更新打断的任务列表用它 */
     get: (id: string) => current(id),
+    /**
+     * 只要任务本身、不要对话（用量、状态这类）：执行中的用内存里那份，其余用任务文件里的摘要（只带用户消息）。
+     * 不会为了几个数字去读几 MB 的对话文件
+     */
+    peek: async (id: string) => {
+      const e = live.get(id)
+      if (e) return e.task
+      const head = await store.peek(id)
+      return head ? idle(head) : null
+    },
     /** 服务退出前停掉所有正在跑的 CLI，免得它们在后台继续改项目 */
     stopAll() {
       shuttingDown = true

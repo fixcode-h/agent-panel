@@ -124,7 +124,8 @@ async function statusIn(
   rel: string,
   prefix: string,
 ): Promise<Map<string, { status: FileStatus; from?: string }> | null> {
-  const args = ['status', '--porcelain=v1', '-z', '--untracked-files=all']
+  // 只读查询不加索引锁：文件面板开着时会反复查，不能和 Agent 正在做的 git add/commit 抢 index.lock
+  const args = ['--no-optional-locks', 'status', '--porcelain=v1', '-z', '--untracked-files=all']
   if (rel) args.push('--', rel)
   const r = await git(dir, ...args)
   if (r.code !== 0 || r.killed) return null

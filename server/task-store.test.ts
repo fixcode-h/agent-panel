@@ -86,3 +86,51 @@ test('消息连续更新时对话文件按间隔合并写，窗口内的最后�
   await new Promise((r) => setTimeout(r, 600))
   assert.equal(existsSync(file), false, '删掉的任务不会被定时器写回来')
 })
+
+test('同时在跑的对话超过内存里留的份数：落盘带着完整对话时照样写对，peek 只给任务本身', async () => {
+  const store = createTaskStore()
+  const make = (title: string) =>
+    store.create({
+      projectId: '',
+      title,
+      mode: 'chat',
+      status: 'running',
+      agentId: '',
+      workflowId: '',
+      prompt: '',
+      attachments: [],
+      cli: '',
+      model: '',
+      effort: '',
+      isolate: false,
+      askUser: false,
+      params: {},
+      messages: [{ id: 'u', role: 'user', text: '做事', tools: [], at: '' }],
+      steps: [],
+      requests: [],
+    } as never)
+  const first = await make('first')
+  // 把第一个挤出内存（内存里只留十几份完整对话）
+  for (let i = 0; i < 20; i++) await make(`other-${i}`)
+  const messages = [
+    { id: 'u', role: 'user', text: '做事', tools: [], at: '' },
+    { id: 'a', role: 'agent', text: '做完了', tools: [], at: '' },
+  ]
+  const saved = await store.update(first.id, { ...first, title: 'renamed', messages } as never)
+  assert.equal(saved?.title, 'renamed')
+  assert.deepEqual(
+    saved?.messages.map((m) => m.id),
+    ['u', 'a'],
+  )
+  const head = await store.peek(first.id)
+  assert.equal(head?.title, 'renamed')
+  assert.deepEqual(
+    head?.messages.map((m) => m.id),
+    ['u'],
+    'peek 只带用户消息，不读对话文件',
+  )
+  assert.deepEqual(
+    (await store.get(first.id))?.messages.map((m) => m.id),
+    ['u', 'a'],
+  )
+})
