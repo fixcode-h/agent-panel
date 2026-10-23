@@ -1540,7 +1540,7 @@ function SearchExcludeField({ value, onChange }: { value: string[] | undefined; 
         </>
       }
       hint={t(
-        'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。',
+        'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。Git 项目里 .gitignore 已经忽略的目录会自动跳过，这里只需填它没覆盖的。',
       )}
       stacked
     >

@@ -1818,6 +1818,7 @@ export async function runRealTurn(ctx: RealContext) {
     fileFormat: projectFormat(ctx.project, ctx.settings),
     // 项目设置里的搜索排除清单（项目填的 + 内置默认），写进提示词的搜索段
     searchExclude: searchExcludeOf(ctx.project),
+    searchInGit: ctx.isGit,
     workflowCatalog: ctx.workflowCatalog,
     resolveWorkflow: ctx.resolveWorkflow,
     listConversations: ctx.listConversations,

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {
   DEFAULT_SEARCH_EXCLUDE,
   UE_SEARCH_EXCLUDE,
+  searchExcludeFindPrune,
   searchExcludeGlobs,
   searchExcludeOf,
   searchExcludePrompt,
@@ -39,10 +40,23 @@ test('提示词里是一行逗号分隔的清单，rg 例子能直接照抄', ()
   const prompt = searchExcludePrompt({ searchExclude: ['Saved', 'Intermediate'] })
   assert.ok(prompt.startsWith('搜索时排除：Saved, Intermediate, '), prompt)
   assert.ok(!prompt.includes('\n'), '提示词里只占一行')
+  // 末尾带斜杠：rg 按 .gitignore 语义只排除目录，叫 build 的脚本文件不受影响
   assert.equal(
     searchExcludeGlobs({ searchExclude: ['Saved'] }),
-    [`-g '!Saved'`, ...DEFAULT_SEARCH_EXCLUDE.map((d) => `-g '!${d}'`)].join(' '),
+    [`-g '!Saved/'`, ...DEFAULT_SEARCH_EXCLUDE.map((d) => `-g '!${d}/'`)].join(' '),
   )
+})
+
+test('Git 仓库只给项目自己填的目录：内置默认已经靠 .gitignore 跳过，再列只会误伤叫 build 的源码目录', () => {
+  assert.equal(searchExcludeGlobs({ searchExclude: ['Saved', 'node_modules'] }, { onlyProject: true }), `-g '!Saved/'`)
+  assert.equal(searchExcludeGlobs(undefined, { onlyProject: true }), '')
+})
+
+test('find 的剪枝表达式只剪目录、用整份清单（find 不读 .gitignore）', () => {
+  const prune = searchExcludeFindPrune({ searchExclude: ['Saved'] })
+  assert.ok(prune.startsWith(`\\( -type d \\( -name 'Saved' -o `), prune)
+  assert.ok(prune.endsWith(`\\) \\) -prune -o`), prune)
+  for (const d of DEFAULT_SEARCH_EXCLUDE) assert.ok(prune.includes(`-name '${d}'`), d)
 })
 
 test('搜索排除配置能存进项目并读回来（序列化往返）', () => {
