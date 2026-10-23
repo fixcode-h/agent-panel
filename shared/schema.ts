@@ -1582,6 +1582,18 @@ export const Settings = z.object({
    */
   presenceGraceMinutes: z.number().int().min(0).max(1440).default(60),
   /**
+   * 这一轮回复完成、但用户还没打开看过的对话，多久回收（分钟）；0 表示回复完就回收。
+   * 这类对话没有页面开着，不收的话进程会一直挂着，而橙点只有用户点开才会消
+   */
+  unreadGraceMinutes: z.number().int().min(0).max(1440).catch(30).default(30),
+  /**
+   * 没人在看、还在等的对话最多留几个：超了先回收最久没被看的（正在看的不会被回收）；0 表示不按数量限制。
+   * 每个这样的对话占一个 CLI 进程，限住它免得开过很多对话后进程越攒越多
+   */
+  keepAliveLimit: z.number().int().min(0).max(100).catch(8).default(8),
+  /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
+  reclaimIdleCli: z.boolean().catch(true).default(true),
+  /**
    * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
    * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
    */

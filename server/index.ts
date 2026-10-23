@@ -58,12 +58,13 @@ import { interruptedApi } from './interrupted.ts'
 import { appDir, cleanupOldTray, currentVersion, restartProcess, updateApi } from './update.ts'
 import { pageEventsApi, parseTrayCommand, signalPages } from './page-events.ts'
 import { getSettings, saveSettings } from './settings.ts'
-import { setPresenceGraceMs } from './presence.ts'
+import { setPresenceReclaimPolicy } from './presence.ts'
 import { GlobalLessons, Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { gitBranches, gitCheckout } from './exec/git.ts'
-import { killAllProcesses } from './exec/process.ts'
+import { killAllProcesses, killTree } from './exec/process.ts'
+import { cleanStaleCliProcesses } from './exec/orphans.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { filesApi } from './files.ts'
@@ -96,6 +97,9 @@ installLogging()
 migrateDataDir()
 // 删掉的角色该转到哪个：要在读工作流、对话之前装上，读出来的旧引用才会被改写
 loadAgentAliases()
+// 上次面板被强杀（taskkill /F、崩溃）时来不及停的 CLI：按登记文件 + 命令行特征清理，
+// 用户自己跑的 pi、codex 命令行里没有面板的痕迹，不会动
+void cleanStaleCliProcesses(killTree)
 
 const agents = createCollection<AgentInput, Agent>('agents.json', Agent)
 const categories = createCollection<CategoryInput, Category>('categories.json', Category)
@@ -307,6 +311,14 @@ async function parseWorkflow(body: unknown, selfId = '') {
 
 app.get('/health', (c) => c.json({ ok: true }))
 // ---- 设置 ----
+/** 回收策略跟着设置走：宽限、上限、总开关；保存后立即生效，不用重启服务 */
+const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
+  setPresenceReclaimPolicy({
+    enabled: s.reclaimIdleCli,
+    graceMs: s.presenceGraceMinutes * 60_000,
+    unreadGraceMs: s.unreadGraceMinutes * 60_000,
+    limit: s.keepAliveLimit,
+  })
 app.get('/settings', async (c) => c.json(await getSettings()))
 // 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
 void currentShell().catch(() => {})
@@ -320,8 +332,8 @@ app.put('/settings', async (c) => {
   const prev = await getSettings()
   const before = JSON.stringify(prev.remoteAccess)
   const saved = await saveSettings(p.data)
-  // 对话页切走后 CLI 还等多久：保存后立即生效，不用重启服务
-  setPresenceGraceMs(saved.presenceGraceMinutes * 60_000)
+  // 对话页切走后 CLI 还等多久、没人看的会话留几个：保存后立即生效，不用重启服务
+  applyPresenceReclaim(saved)
   // 命令行环境：工具说明里写的「命令在哪执行」跟着换
   void currentShell().catch(() => {})
   // API / 账号方式或 API 配置变了：立即写进 CLI 自己的配置，不用等到下一次执行
@@ -852,7 +864,7 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
   void applyRemote()
-  void getSettings().then((s) => setPresenceGraceMs(s.presenceGraceMinutes * 60_000))
+  void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
   if (tray) {
     // 托盘程序读这两行：显示地址，并由它打开浏览器（服务自己打开会经过 cmd）

@@ -357,6 +357,17 @@ export const EN_SETTINGS: Record<string, string> = {
     'Minutes; 0 ends the turn as soon as the reply finishes. After you leave a conversation page the panel keeps the finished agent alive, so coming back within this window lets you keep talking without restarting it. Each waiting conversation holds one agent process.',
   '离开对话后保留多久（分钟）': 'Keep the conversation alive after you leave (minutes)',
   '填 0 到 1440 之间的整数，0 表示不保留': 'Enter a whole number from 0 to 1440; 0 keeps nothing alive',
+  '自动回收闲置 Agent': 'Reclaim idle agents automatically',
+  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后进程会一直留着，开过的对话越多占的内存越多。':
+    'Agents that finished and have nobody watching are reclaimed after the two windows below; coming back restarts one in a few seconds and resumes the conversation. Turned off, these processes stay forever and every conversation you opened keeps holding memory.',
+  没看过的回复保留多久: 'Keep unread replies for',
+  '分钟，填 0 表示回复完就回收。这一轮回复完成、但对话还没打开看过（侧栏的橙点还亮着）时，最多再留这么久；到期回收，之后打开对话会重新启动 Agent 并续接会话。':
+    'Minutes; 0 reclaims as soon as the reply finishes. When a turn finished but you have not opened the conversation yet (the orange dot in the sidebar is still on), the agent is kept at most this long; after that opening it restarts the agent and resumes the conversation.',
+  '没看过的回复保留多久（分钟）': 'Keep unread replies for (minutes)',
+  '同时最多留几个在等的 Agent': 'At most how many waiting agents',
+  '没人在看、还在等下一句的对话最多留这么多个，超出的先回收最久没被看的（正在看的不会回收）；填 0 表示不按数量限制。每个占一个 Agent 进程。':
+    'How many conversations with nobody watching may stay waiting for the next message; beyond this the ones not looked at for the longest are reclaimed first (ones you are viewing are never reclaimed). 0 means no count limit. Each one holds an agent process.',
+  '填 0 到 100 之间的整数，0 表示不限制': 'Enter a whole number from 0 to 100; 0 means no limit',
   '回到上一个版本 v{version}': 'Back to previous version v{version}',
   '回到 v{version}？': 'Go back to v{version}?',
   '会换回更新前的程序文件，然后自动重启，数据会保留。之后还可以再换回当前版本。':
