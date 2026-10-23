@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { ArrowDown, Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
 import {
+  INSTALL_ASK,
   LOCAL_MODELS,
   PYTHON_RANGE,
   PYTHON_SUPPORT,
@@ -157,10 +158,23 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
               {st.running ? t('运行中') : ready ? t('已安装，未启动') : t('未安装')}
             </span>
             {!ready ? (
-              <Button size="sm" disabled={busy} onClick={() => void act(() => api.localImageAction('install'))}>
-                <Download className="h-3.5 w-3.5" />
-                {t('一键安装')}
-              </Button>
+              <>
+                <AiFixButton
+                  variant="ghost"
+                  label={t('让 AI 安装')}
+                  title={t('让「AI 创建」里设置的 Agent 直接在这台电脑上装好 ComfyUI 和 PyTorch')}
+                  issue={{
+                    title: t('本机生图：安装 ComfyUI'),
+                    topic: 'local-image',
+                    ask: INSTALL_ASK,
+                    act: true,
+                  }}
+                />
+                <Button size="sm" disabled={busy} onClick={() => void act(() => api.localImageAction('install'))}>
+                  <Download className="h-3.5 w-3.5" />
+                  {t('一键安装')}
+                </Button>
+              </>
             ) : st.running ? (
               !st.external && (
                 <Button size="sm" variant="ghost" onClick={() => void act(() => api.localImageAction('stop'))}>

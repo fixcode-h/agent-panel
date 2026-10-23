@@ -192,7 +192,47 @@ export const modelGb = (m: LocalModel, have: (id: string) => boolean = () => fal
 export const mirrorUrl = (url: string, mirror: boolean) =>
   mirror ? url.replace('https://huggingface.co/', 'https://hf-mirror.com/') : url
 
+/**
+ * 装 ComfyUI 的依赖时备用的 PyPI 索引：清华的同步会滞后几个小时，刚发布的子包
+ * （例如 comfyui-workflow-templates-media-assets-02）在它那里是 404，只挂清华一个索引时整条 requirements 都装不上
+ */
+export const PYPI_FALLBACK = 'https://mirrors.aliyun.com/pypi/simple'
+
 export type LocalGpu = 'cuda' | 'rocm' | 'mps' | 'cpu'
+
+/**
+ * 装 PyTorch 用的索引：官方源在国内只有 1~2 MB/s，2.7GB 的 torch wheel 下到一半断开，
+ * 整个安装就失败（用户看到的是「已取消」）。上海交大的 PyTorch wheel 镜像同样是 2.7GB，
+ * 两分多钟下完，而且和官方一样是 PEP 503 索引，torch / torchvision / torchaudio 连依赖一起有。
+ * CUDA 用 cu130：ComfyUI 0.42 起要求 cu130+，更低版本会禁掉 comfy-kitchen 的 CUDA 加速后端
+ */
+export const TORCH_INDEX: Record<LocalGpu, { official: string; mirror?: string }> = {
+  cuda: {
+    official: 'https://download.pytorch.org/whl/cu130',
+    mirror: 'https://mirror.sjtu.edu.cn/pytorch-wheels/cu130',
+  },
+  rocm: {
+    official: 'https://download.pytorch.org/whl/rocm6.4',
+    mirror: 'https://mirror.sjtu.edu.cn/pytorch-wheels/rocm6.4',
+  },
+  cpu: { official: 'https://download.pytorch.org/whl/cpu', mirror: 'https://mirror.sjtu.edu.cn/pytorch-wheels/cpu' },
+  // 苹果芯片用 PyPI 上的默认包，没有单独的索引
+  mps: { official: '' },
+}
+
+/** 装 PyTorch 依次尝试的索引：开了国内镜像先用镜像、装不上再回退官方；苹果和没开镜像时只给一条 */
+export function torchIndexes(gpu: LocalGpu, mirror: boolean): string[] {
+  const i = TORCH_INDEX[gpu]
+  if (!i.official) return ['']
+  return mirror && i.mirror ? [i.mirror, i.official] : [i.official]
+}
+
+/**
+ * 「让 AI 安装」的第一句话：不是报错，是让它在这台电脑上直接把环境装好。
+ * 具体环境（显卡、Python、安装目录、装完怎么验证）由 server/comfy.ts 的 local-image topic 补上
+ */
+export const INSTALL_ASK =
+  '在这台电脑上把本机生图用的 ComfyUI 直接装好（面板的「一键安装」还没成功）。按下面给的环境选对 PyTorch 的版本，网络慢时用国内镜像，把依赖装全、验证能导入，再按约定写入安装完成标记。'
 
 /** 安装、下载、修复的进度（同一时间只有一个） */
 export interface LocalJob {

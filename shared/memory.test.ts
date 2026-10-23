@@ -142,7 +142,7 @@ test('交给 AI 的报告：两路内存、趋势、规模、数据目录都在�
 test('不是报错时的提示词：换成主动检查，不写成「出错了」', () => {
   const input = FixInput.parse({ title: '面板内存分析', ask: '看一下内存有没有问题', topic: 'memory' })
   const prompt = fixPrompt(input, { os: 'win32', cwd: '/tmp/x' })
-  assert.ok(prompt.includes('要做一次主动检查'))
+  assert.ok(prompt.includes('要做一件事'))
   assert.ok(prompt.includes('这次要做的：看一下内存有没有问题'))
   assert.ok(!prompt.includes('在操作时出错了'))
   assert.ok(!prompt.includes('出了什么问题'))

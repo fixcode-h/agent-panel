@@ -15,6 +15,7 @@ import {
   pickWorkflow,
   pythonIssueText,
   pythonSupport,
+  torchIndexes,
 } from '../shared/local-image.ts'
 import { t } from '../shared/i18n.ts'
 import { localPrompts } from '../shared/design.ts'
@@ -149,4 +150,13 @@ test('版本不支持的说明带上范围和建议版本', () => {
     }),
   )
   assert.ok(pythonIssueText('3.9.13', 'too-old').includes(PYTHON_SUPPORT.min))
+})
+
+test('装 PyTorch 开了镜像先用国内的，失败再回退官方源；苹果只走 PyPI', () => {
+  const [first, second] = torchIndexes('cuda', true)
+  assert.ok(first.includes('mirror.sjtu.edu.cn'), '开了镜像时第一条是国内镜像')
+  assert.equal(second, 'https://download.pytorch.org/whl/cu130', '镜像装不上时回退官方源')
+  assert.deepEqual(torchIndexes('cuda', false), ['https://download.pytorch.org/whl/cu130'])
+  // 苹果芯片的 torch 在 PyPI 上，没有单独的索引
+  assert.deepEqual(torchIndexes('mps', true), [''])
 })
