@@ -1060,12 +1060,20 @@ export const EN_SETTINGS: Record<string, string> = {
   '今天还没有用量，显示最近有数据的一天：{shown}': 'Nothing today, showing the latest day with usage: {shown}',
   '本周还没有用量，显示最近有数据的一周：{shown}': 'Nothing this week, showing the latest week with usage: {shown}',
   '本月还没有用量，显示最近有数据的一个月：{shown}': 'Nothing this month, showing the latest month with usage: {shown}',
-  '按 {model} 官方 API 单价折算（元 / 百万 token，{date}）：输入 {input}、输出 {output}、缓存命中 {hit}、缓存写入 {write}。官方分高峰和空闲两档，这里按高峰价估算。缓存写入官方没有单列，按未命中输入价计。':
-    'Estimated from the official {model} API prices (per million tokens, {date}): input {input}, output {output}, cache hit {hit}, cache write {write}. The vendor has peak and off-peak tiers; peak prices are used here. Cache writes are not priced separately by the vendor, so they are billed at the cache-miss input price.',
+  '按 {model} 官方 API 单价折算（元 / 百万 token，{date}）：输入 {input}、输出 {output}、缓存命中 {hit}、缓存写入 {write}。官方分高峰、空闲两档，空闲价是高峰价的一半；北京时间周一至周五 9:00-12:00、14:00-18:00 为高峰，其余时段（含周末、法定节假日）为空闲。每一轮按它开始的时间归档。缓存写入官方没有单列，按未命中输入价计。':
+    'Estimated from the official {model} API prices (per million tokens, {date}): input {input}, output {output}, cache hit {hit}, cache write {write}. The vendor has peak and off-peak tiers, with off-peak at half the peak price: peak is 9:00-12:00 and 14:00-18:00 Beijing time on weekdays, everything else (weekends and public holidays included) is off-peak. Each turn is attributed by the time it started. Cache writes are not priced separately by the vendor, so they are billed at the cache-miss input price.',
   '这个计价模型没有配置单价，费用按 0 处理。': 'This pricing model has no price configured, so cost is treated as 0.',
   'CLI 上报的费用（{cost}）只作对照，不参与合计。':
     'The cost reported by the CLI ({cost}) is for comparison only and is not included in the total.',
   '按 {model} 单价估算': 'Estimated with {model} prices',
+  '高峰 {tokens} · {cost}': 'Peak {tokens} · {cost}',
+  '空闲 {tokens} · {cost}': 'Off-peak {tokens} · {cost}',
+  '高峰时段：北京时间周一至周五 9:00-12:00、14:00-18:00':
+    'Peak hours: 9:00-12:00 and 14:00-18:00 Beijing time, Monday to Friday',
+  '空闲时段：其余时间，含周末和法定节假日': 'Off-peak hours: everything else, weekends and public holidays included',
+  '{total}（高峰 {peak} · 空闲 {offPeak}）': '{total} (peak {peak} · off-peak {offPeak})',
+  '{unit} / 百万 token · {model} 按峰谷分档计价':
+    '{unit} per million tokens · {model} billed by peak and off-peak tiers',
   '用量明细（{range}）': 'Usage details ({range})',
   '{unit} / 百万 token · {model} 高峰时段单价': '{unit} per million tokens · {model} peak price',
   '第 {n} 周 · {from} - {to}': 'Week {n} · {from} - {to}',

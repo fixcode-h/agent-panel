@@ -53,24 +53,65 @@ export type UsageSample = {
   costUsd: number
 }
 
+/**
+ * 四项 token：输入含缓存命中和缓存写入（和 Task.usage 的口径一致）。
+ * 单独成一个类型，是因为分时段计价要把同一批数字按峰 / 谷拆成两份。
+ */
+export type TokenTotals = {
+  inputTokens: number
+  outputTokens: number
+  cacheReadTokens: number
+  cacheWriteTokens: number
+}
+
+/**
+ * 分时段定价的时段定义：`ranges` 里算高峰，其余时段（含周末、法定节假日）算空闲 / 优惠。
+ * 判定用 `timeZone` 的当地钟点，不用本机时区：本机可能不是用户付费所在时区，按本机算会把峰谷算反。
+ * 详情和价格来源见 `shared/pricing.ts` 的注释。
+ */
+export type PeakWindow = {
+  /** IANA 时区，按它的当地钟点判定 */
+  timeZone: string
+  /** 高峰时段的钟点范围（当地时间的 HH:MM，左闭右开），上午、下午各一段时可以给多段 */
+  ranges: ReadonlyArray<{ start: string; end: string }>
+  /** 只有这几天算高峰（0 = 周日 … 6 = 周六）；不填表示每天都一样 */
+  weekdays?: ReadonlyArray<number>
+  /** 全天算空闲的当地日期（YYYY-MM-DD）：法定节假日 */
+  holidays?: ReadonlyArray<string>
+}
+
+/**
+ * DeepSeek 官方的时段规则：北京时间周一至周五 9:00-12:00、14:00-18:00 是高峰，其余是空闲。
+ * 官方定价页（2026-10-23 抓取）原文：「空闲时段价格为高峰时段价格的一半。北京时间周一至周五
+ * （不含中国法定节假日）9:00 - 12:00、14:00 - 18:00 为高峰时段；其余时段，包括周末及中国
+ * 法定节假日全天均为空闲时段。」来源 URL 见 `shared/pricing.ts`。
+ *
+ * 法定节假日没有内置表（每年国务院公布一次，写死会过期）：节假日按高峰算，价格更高，不会低估费用。
+ */
+export const DEEPSEEK_PEAK_WINDOW: PeakWindow = {
+  timeZone: 'Asia/Shanghai',
+  ranges: [
+    { start: '09:00', end: '12:00' },
+    { start: '14:00', end: '18:00' },
+  ],
+  weekdays: [1, 2, 3, 4, 5],
+}
+
 /** 一个桶（一天 / 一周 / 一个月） */
-export type UsageBucket = {
+export type UsageBucket = TokenTotals & {
   /** 桶的标识：天和周是桶第一天的日期 2026-10-20，月是 2026-10 */
   key: string
   /** 桶的第一天（本地时间的零点，ISO）；前端用它格式化标签 */
   start: string
-  /** 输入（含缓存命中和写入的部分，和 Task.usage 的定义一致） */
-  inputTokens: number
-  outputTokens: number
-  /** 输入里命中缓存的部分，是 inputTokens 的一部分，不另外相加 */
-  cacheReadTokens: number
-  /** 输入里写入缓存的部分，是 inputTokens 的一部分，不另外相加 */
-  cacheWriteTokens: number
   costUsd: number
   /** 这一桶里有几轮执行 */
   turns: number
   /** 这一桶里有几轮不同的任务 */
   tasks: number
+  /** 落在高峰时段的那部分，已经包含在上面四项里，不另外相加 */
+  peak: TokenTotals
+  /** 落在空闲（优惠）时段的那部分，已经包含在上面四项里，不另外相加 */
+  offPeak: TokenTotals
 }
 
 export type UsageTotal = Omit<UsageBucket, 'key' | 'start'>
@@ -87,6 +128,8 @@ export type UsageReport = {
 }
 
 const num = (n: number) => (Number.isFinite(n) && n > 0 ? n : 0)
+
+const noTokens = (): TokenTotals => ({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheWriteTokens: 0 })
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -239,7 +282,52 @@ const emptyBucket = (grain: UsageGrain, start: Date): UsageBucket => ({
   costUsd: 0,
   turns: 0,
   tasks: 0,
+  peak: noTokens(),
+  offPeak: noTokens(),
 })
+
+/** HH:MM → 当天的分钟数 */
+const toMinutes = (hhmm: string) => {
+  const [h, m] = hhmm.split(':').map(Number)
+  return (h || 0) * 60 + (m || 0)
+}
+
+/** 按指定时区取当地钟点的格式化器（每个时区建一次，表格每行都要判定） */
+const clockFormats = new Map<string, Intl.DateTimeFormat>()
+function clockFormat(timeZone: string) {
+  let f = clockFormats.get(timeZone)
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-US', {
+      timeZone,
+      hourCycle: 'h23',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      weekday: 'short',
+    })
+    clockFormats.set(timeZone, f)
+  }
+  return f
+}
+
+const WEEKDAY_INDEX: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
+
+/**
+ * 这一轮开始时间落在不在高峰时段：按 `window.timeZone` 的当地钟点算，和本机时区无关。
+ * 时间认不出来时算高峰（价格更高，不会低估费用）；落在时段边界上按左闭右开处理（09:00 算高峰、12:00 算空闲）。
+ */
+export function inPeak(at: string | Date, window: PeakWindow = DEEPSEEK_PEAK_WINDOW): boolean {
+  const d = at instanceof Date ? at : new Date(at)
+  if (Number.isNaN(d.getTime())) return true
+  const parts: Record<string, string> = {}
+  for (const p of clockFormat(window.timeZone).formatToParts(d)) parts[p.type] = p.value
+  if (window.holidays?.includes(`${parts.year}-${parts.month}-${parts.day}`)) return false
+  if (window.weekdays && !window.weekdays.includes(WEEKDAY_INDEX[parts.weekday])) return false
+  const minutes = Number(parts.hour) * 60 + Number(parts.minute)
+  return window.ranges.some((r) => minutes >= toMinutes(r.start) && minutes < toMinutes(r.end))
+}
 
 /**
  * 把样本聚合成 `count` 个桶（含当前这个桶，往前数），从新到旧排。
@@ -249,6 +337,8 @@ export function aggregateUsage(
   samples: UsageSample[],
   query: { grain: UsageGrain; count: number },
   now: Date = new Date(),
+  /** 判定峰谷用的时段定义；接口固定用官方那一套 */
+  peakWindow: PeakWindow = DEEPSEEK_PEAK_WINDOW,
 ): UsageReport {
   const grain = UsageQuery.grain(query.grain)
   const count = UsageQuery.count(query.count, grain)
@@ -272,6 +362,12 @@ export function aggregateUsage(
     b.cacheWriteTokens += num(s.cacheWriteTokens)
     b.costUsd += num(s.costUsd)
     b.turns += 1
+    // 峰谷按「这一轮开始的时间」判定，再各记一份，两份加起来等于上面的总量
+    const tier = inPeak(at, peakWindow) ? b.peak : b.offPeak
+    tier.inputTokens += num(s.inputTokens)
+    tier.outputTokens += num(s.outputTokens)
+    tier.cacheReadTokens += num(s.cacheReadTokens)
+    tier.cacheWriteTokens += num(s.cacheWriteTokens)
     let ids = seen.get(b)
     if (!ids) seen.set(b, (ids = new Set()))
     ids.add(s.taskId)
@@ -299,6 +395,8 @@ export function sumBuckets(buckets: UsageBucket[]): UsageTotal {
     costUsd: 0,
     turns: 0,
     tasks: 0,
+    peak: noTokens(),
+    offPeak: noTokens(),
   }
   for (const b of buckets) {
     total.inputTokens += b.inputTokens
@@ -308,11 +406,22 @@ export function sumBuckets(buckets: UsageBucket[]): UsageTotal {
     total.costUsd += b.costUsd
     total.turns += b.turns
     total.tasks += b.tasks
+    for (const tier of ['peak', 'offPeak'] as const) {
+      total[tier].inputTokens += b[tier].inputTokens
+      total[tier].outputTokens += b[tier].outputTokens
+      total[tier].cacheReadTokens += b[tier].cacheReadTokens
+      total[tier].cacheWriteTokens += b[tier].cacheWriteTokens
+    }
   }
   return total
 }
 
 /** 任务列表 → 样本 → 报表，服务端一次调用就够 */
-export function usageReport(tasks: Task[], query: { grain: UsageGrain; count: number }, now: Date = new Date()) {
-  return aggregateUsage(tasks.flatMap(usageSamples), query, now)
+export function usageReport(
+  tasks: Task[],
+  query: { grain: UsageGrain; count: number },
+  now: Date = new Date(),
+  peakWindow: PeakWindow = DEEPSEEK_PEAK_WINDOW,
+) {
+  return aggregateUsage(tasks.flatMap(usageSamples), query, now, peakWindow)
 }
