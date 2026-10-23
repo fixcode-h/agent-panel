@@ -252,8 +252,8 @@ function SettingsBody({
   const presenceValid = presence !== '' && Number.isInteger(presenceMin) && presenceMin >= 0 && presenceMin <= 1440
   const unreadMin = Number(unread)
   const unreadValid = unread !== '' && Number.isInteger(unreadMin) && unreadMin >= 0 && unreadMin <= 1440
-  const keepAliveN = Number(keepAlive)
-  const keepAliveValid = keepAlive !== '' && Number.isInteger(keepAliveN) && keepAliveN >= 0 && keepAliveN <= 100
+  const keepN = Number(keepAlive)
+  const keepValid = keepAlive !== '' && Number.isInteger(keepN) && keepN >= 0 && keepN <= 50
   const childN = Number(children)
   const childValid = children !== '' && Number.isInteger(childN) && childN >= 1 && childN <= 20
   const largeN = Number(largeMB)
@@ -277,7 +277,7 @@ function SettingsBody({
     idleTimeoutMinutes: idleValid ? idleMin : initial.idleTimeoutMinutes,
     presenceGraceMinutes: presenceValid ? presenceMin : initial.presenceGraceMinutes,
     unreadGraceMinutes: unreadValid ? unreadMin : initial.unreadGraceMinutes,
-    keepAliveLimit: keepAliveValid ? keepAliveN : initial.keepAliveLimit,
+    keepAliveLimit: keepValid ? keepN : initial.keepAliveLimit,
     reclaimIdleCli: reclaim,
     childConcurrency: childValid ? childN : initial.childConcurrency,
     largeFileMB: largeValid ? largeN : initial.largeFileMB,
@@ -534,7 +534,7 @@ function SettingsBody({
               <Row
                 title={t('自动回收闲置 Agent')}
                 desc={t(
-                  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后进程会一直留着，开过的对话越多占的内存越多。',
+                  '回复完没人看着的 Agent 会在下面两段时间结束后回收，用户回来时重新启动（几秒，会话会续接）。关掉后不再按时间回收，只会按「同时保活的会话上限」收，进程会越攒越多。',
                 )}
               >
                 <Switch aria-label={t('自动回收闲置 Agent')} checked={reclaim} onCheckedChange={setReclaim} />
@@ -580,9 +580,9 @@ function SettingsBody({
                 </div>
               </Row>
               <Row
-                title={t('同时最多留几个在等的 Agent')}
+                title={t('同时保活的会话上限')}
                 desc={t(
-                  '没人在看、还在等下一句的对话最多留这么多个，超出的先回收最久没被看的（正在看的不会回收）；填 0 表示不按数量限制。每个占一个 Agent 进程。',
+                  '回复完停在等下一句、又没人在看的对话最多留几个，超过就结束最久没用（下次打开需要重新启动一次）。填 0 表示不限制。',
                 )}
               >
                 <div className="flex flex-col gap-1">
@@ -590,13 +590,11 @@ function SettingsBody({
                     inputMode="numeric"
                     value={keepAlive}
                     onChange={(e) => setKeepAlive(e.target.value.replace(/[^\d]/g, ''))}
-                    aria-invalid={!keepAliveValid}
-                    className={cn('h-9', !keepAliveValid && 'border-danger focus:border-danger focus:ring-danger/20')}
-                    aria-label={t('同时最多留几个在等的 Agent')}
+                    aria-invalid={!keepValid}
+                    className={cn('h-9', !keepValid && 'border-danger focus:border-danger focus:ring-danger/20')}
+                    aria-label={t('同时保活的会话上限')}
                   />
-                  {!keepAliveValid && (
-                    <span className="text-xs text-danger">{t('填 0 到 100 之间的整数，0 表示不限制')}</span>
-                  )}
+                  {!keepValid && <span className="text-xs text-danger">{t('填 0 到 50 之间的整数')}</span>}
                 </div>
               </Row>
               <Row

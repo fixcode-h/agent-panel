@@ -728,6 +728,12 @@ const ProjectFields = z.object({
    */
   fileFormat: FileFormat.optional(),
   /**
+   * 找文件、搜代码时要跳过的目录（相对名字，例如 Saved、Intermediate）：
+   * 实际生效的是它加上内置默认清单（见 shared/search-exclude.ts），提示词里会带上一行。
+   * 没设时只用内置默认清单（和 fileFormat 一样是可选的：旧数据和直接拼 Project 字面量的地方不用补）
+   */
+  searchExclude: z.array(z.string().trim().min(1).max(120)).max(60).optional(),
+  /**
    * 子对话怎么避免互相干扰：
    * - worktree：Git 项目里每个子对话在自己的独立分支目录里改文件（只隔离编辑，不在里面编译）；
    *   改完提交编译，面板把它合回开分支的那个目录试编译，通过才提交、失败撤回并把报错交回子对话。
@@ -1065,6 +1071,24 @@ export type TaskStep = z.infer<typeof TaskStep>
 export const TaskStatus = z.enum(['running', 'done', 'failed', 'stopped'])
 export type TaskStatus = z.infer<typeof TaskStatus>
 
+/**
+ * 任务停在 stopped 的原因。只有 'user' 是用户自己按的暂停，其余都是别的动作顺带把这一轮结束了：
+ * 以前 stopTask 只有一个 boolean，全走同一条，界面一律显示「已暂停」，用户没按暂停却看到几只子对话被停了。
+ * 界面按它决定说「已暂停」还是说清是谁结束的（见 shared/task.ts 的 childIcon / stopReasonText）。
+ */
+export const StopReason = z.enum([
+  'user', // 用户点「暂停」
+  'parent', // 父对话收尾，名下子对话一起结束（closeChildren）
+  'switch', // 换 CLI / 模型 / 角色，这一轮重启
+  'archive', // 归档
+  'restart', // 面板重启、服务退出
+  'presence', // 页面切走、宽限期到了，CLI 不再等下一句
+  'idle', // 保活会话超过全局上限，闲置回收（不是用户按的暂停）
+  'supersede', // 用户发了新消息，打断当前这一轮
+  'finish', // 任务自己彻底完成，收尾时结束等下一句的 CLI
+])
+export type StopReason = z.infer<typeof StopReason>
+
 /** 不属于流程节点的一轮执行：工作流跑完后的追加要求、对话的每一轮。任务进度里一轮一行，带耗时和用量 */
 export const TaskTurn = z.object({
   id: z.string(),
@@ -1293,6 +1317,8 @@ export const TaskData = z.object({
   /** 对话时 Agent 参数的值 */
   params: z.record(z.string(), ParamValue).default({}),
   status: TaskStatus,
+  /** 停下来的原因：只有 'user' 是用户按的暂停，其余几种界面要写清是谁结束的（见 StopReason） */
+  stopReason: StopReason.optional(),
   /** 累计执行时间（毫秒），不含等用户继续对话的空闲时间 */
   runMs: z.number().default(0),
   /** 这一轮开始执行的时间；没在执行时为空 */
@@ -1586,13 +1612,13 @@ export const Settings = z.object({
    * 这类对话没有页面开着，不收的话进程会一直挂着，而橙点只有用户点开才会消
    */
   unreadGraceMinutes: z.number().int().min(0).max(1440).catch(30).default(30),
-  /**
-   * 没人在看、还在等的对话最多留几个：超了先回收最久没被看的（正在看的不会被回收）；0 表示不按数量限制。
-   * 每个这样的对话占一个 CLI 进程，限住它免得开过很多对话后进程越攒越多
-   */
-  keepAliveLimit: z.number().int().min(0).max(100).catch(8).default(8),
   /** 关掉后不自动回收：回复完没人看的 CLI 进程一直留着，进程会越攒越多，内存只增不减 */
   reclaimIdleCli: z.boolean().catch(true).default(true),
+  /**
+   * 同时保活的会话上限：回复完停在等下一句、又没人在看的 CLI 最多留几个，超过就结束最久没用的那个，
+   * 下次打开靠 --resume 续接（冷启动一次）。0 表示不限制
+   */
+  keepAliveLimit: z.number().int().min(0).max(50).catch(4).default(4),
   /**
    * 一个项目对话下同时执行的子对话最多几个：超出的排队，前面的做完再开始。
    * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI

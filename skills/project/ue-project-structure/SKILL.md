@@ -16,6 +16,41 @@ C++ 代码风格见 `cpp-code-style`，多 Agent 并行时的资源冲突见 `ue
 - 插件：`Plugins/` 下自己写的插件，`.uplugin` 里的模块和加载阶段。
 - 资产根：`Content/`、插件里的内容、`Config/` 的关键项（`DefaultEngine.ini`、`DefaultGame.ini`）。
 
+## 怎么找代码
+
+UE 工程根目录下有几十万文件，在根目录全仓 grep 会把 `Saved/`、`Intermediate/`、`Binaries/` 里的产物一起扫出来，几分钟才停。搜索前先定位模块：按项目文档（模块地图、模块 README）或 `Source/<模块>/` 的目录名缩小范围，再在模块目录里搜；报错指到具体文件时直接读那个文件。通用的收敛顺序（先文档、再最小目录、已知文件直接读）见 `project-structure`。
+
+必须排除的目录（写进项目设置的「搜索时跳过的目录」，提示词会带出来）：
+
+| 目录 | 里面是什么 |
+| --- | --- |
+| `Binaries/` | 编译出的 dll / pdb |
+| `Intermediate/` | UBT / UHT 生成的中间文件（含 `*.generated.h`） |
+| `Saved/` | 日志、自动截图、Cook 与打包产物 |
+| `DerivedDataCache/` | DDC 缓存 |
+| `Build/`、`.vs/` | 平台打包产物、Visual Studio 缓存 |
+| `Plugins/*/Intermediate`、`Plugins/*/Binaries` | 插件各自的产物 |
+
+`Content/` 里的 `.uasset` / `.umap` 是二进制：只能按文件名找路径，**不要 grep 内容**——搜不到可读文本，还会拖慢整个搜索。要看资产引用了谁，用编辑器的 Reference Viewer（右键资产 → Reference Viewer），不要靠 grep。
+
+可照抄的命令：
+
+```bash
+# 只在某个游戏模块里搜 C++
+rg -n -g '!Binaries' -g '!Intermediate' -g '!Saved' -g '!DerivedDataCache' 'FMyClass' Source/MyGame/
+
+# 找资产路径（按名字，不搜内容）
+rg --files Content -g '*.uasset' -g '*.umap' | rg 'BP_Player'
+
+# 只在被跟踪的源文件里搜（Git 仓库；P4 / 无版本控制时用下面的 rg）
+git grep -n 'FMyClass' -- 'Source/**/*.h' 'Source/**/*.cpp'
+
+# 看未跟踪的源文件：从 Source/ 子目录起，并剪掉中间产物
+find Source -maxdepth 4 -type f \( -name '*.h' -o -name '*.cpp' \) -print
+```
+
+`find . -name ...` 在 UE 工程根目录会遍历 `Saved/`、`Intermediate/`、`DDC`，跑几分钟：要么从 `Source/` 这样的子目录起，要么带 `-maxdepth` 和 `-path '*/Intermediate' -prune`。
+
 ## 模块和依赖
 
 - **依赖方向单向**：底层模块不引用上层。公共能力抽到底层模块，不要用 `Type = "Editor"` 的反向依赖绕过。

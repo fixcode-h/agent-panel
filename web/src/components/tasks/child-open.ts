@@ -22,5 +22,19 @@ export const useRunOpen = () => useContext(PaneNavCtx)?.run ?? null
  * 父对话的任务页提供：它名下子对话的摘要（任务页自己定时取的那份）。
  * 全局任务列表不含子对话，要知道哪些子对话在干活只能从这里拿；没有提供时是空的
  */
-export const ChildListCtx = createContext<{ id: string; title: string; working: boolean; resolved?: boolean }[]>([])
+export const ChildListCtx = createContext<
+  {
+    id: string
+    title: string
+    working: boolean
+    resolved?: boolean
+    /** 本次开启的时间（最近一轮开始执行），行右边的时长从这里算（见 childStartedAt） */
+    startedAt?: string
+    /** 最后一次有变化的时间：等用户时用它停住计时 */
+    updatedAt?: string
+    /** 待用户确认的请求数、没回答的提问数：有就是停在那里等你 */
+    requests?: number
+    asking?: number
+  }[]
+>([])
 export const useChildList = () => useContext(ChildListCtx)

@@ -17,7 +17,7 @@ const {
 } = await import('./presence.ts')
 
 // 上限默认 8，这里的用例自己设定；未读宽限默认 30 分钟，用例里调小
-setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300, limit: 0 })
+setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
 
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
@@ -79,7 +79,7 @@ test('这一轮完成还没看过：也回收，只是宽限更长', async () =>
   })
   const unread = new Set([id])
   setPresenceUnreadKeeper((taskId) => unread.has(taskId))
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300, limit: 0 })
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
 
   setViewer(id, 'tab-a', true)
   setViewer(id, 'tab-a', false)
@@ -134,7 +134,7 @@ test('宽限计时开始后才变成未读：计时照旧走完，到点回收',
   })
   let unread = false
   setPresenceUnreadKeeper((taskId) => taskId === id && unread)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300, limit: 0 })
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
 
   // 已经看过：离开就按已读宽限开始计时
   setViewer(id, 'tab-a', true)
@@ -149,45 +149,6 @@ test('宽限计时开始后才变成未读：计时照旧走完，到点回收',
   forgetPresence(id)
 })
 
-test('超过保活上限：先回收最久没被看的，正在看的不会被回收', async () => {
-  const evicted: string[] = []
-  setPresenceIdleHandler((taskId) => evicted.push(taskId))
-  // 当作未读：计时器按未读宽限（300ms）走，比下面每步的 5ms 长得多，不会被宽限到期抢先回收
-  setPresenceUnreadKeeper(() => true)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300, limit: 2 })
-
-  // 每次都是「打开看过 → 离开」，即进入待回收队列
-  const leave = async (id: string) => {
-    setViewer(id, 'tab-a', true)
-    setViewer(id, 'tab-a', false)
-    await wait(5)
-  }
-  await leave('lru-a')
-  await leave('lru-b')
-  assert.deepEqual(evicted, [], '还没到上限')
-  await leave('lru-c')
-  assert.deepEqual(evicted, ['lru-a'], '到上限了，先回收最久没被看的')
-  assert.equal(hasViewer('lru-a'), false)
-  assert.equal(hasViewer('lru-b'), true)
-  assert.equal(hasViewer('lru-c'), true)
-
-  // 重新打开最久没看的那个看：正在看的不占保活名额，也不会被回收
-  setViewer('lru-b', 'tab-b', true)
-  await leave('lru-d')
-  assert.deepEqual(evicted, ['lru-a'], '正在看的会话不参与上限')
-  assert.equal(hasViewer('lru-b'), true, '页面还开着')
-
-  // 刚看过的 lru-b 关掉后排在队尾：这次轮到位列最前的 lru-c
-  setViewer('lru-b', 'tab-b', false)
-  await wait(5)
-  assert.deepEqual(evicted, ['lru-a', 'lru-c'])
-  assert.equal(hasViewer('lru-b'), true)
-
-  setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300, limit: 0 })
-  for (const id of ['lru-a', 'lru-b', 'lru-c', 'lru-d']) forgetPresence(id)
-})
-
 test('关掉自动回收：页面切走后也不结束，进程一直留着', async () => {
   const id = 'presence-reclaim-off'
   let idle = 0
@@ -195,7 +156,7 @@ test('关掉自动回收：页面切走后也不结束，进程一直留着', as
     if (taskId === id) idle++
   })
   setPresenceUnreadKeeper(() => false)
-  setPresenceReclaimPolicy({ enabled: false, limit: 2 })
+  setPresenceReclaimPolicy({ enabled: false })
 
   setViewer(id, 'tab-a', true)
   setViewer(id, 'tab-a', false)
@@ -203,7 +164,7 @@ test('关掉自动回收：页面切走后也不结束，进程一直留着', as
   assert.equal(idle, 0, '关掉后不计时')
   assert.equal(hasViewer(id), true, '一直留着')
 
-  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300, limit: 0 })
+  setPresenceReclaimPolicy({ enabled: true, unreadGraceMs: 300 })
   forgetPresence(id)
 })
 

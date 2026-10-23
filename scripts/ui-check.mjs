@@ -156,6 +156,51 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 实时推送时输入框不能被重新挂载、不能丢焦点：演示任务改成执行中，打字期间会不停推快照
+  // （一次推送整页重渲染时，输入框如果跟着重挂载或重画，用户打一半就会失焦、字也会跳）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    const openTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(400)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await openTask()
+    const before = await p.evaluate(() => {
+      window.__composer = document.querySelector('#follow-up')
+      return { id: window.__composer?.id ?? '' }
+    })
+    await p.locator('#follow-up').click()
+    await p.keyboard.type('实时推送时输入的内容')
+    await p.waitForTimeout(1600)
+    const after = await p.evaluate(() => {
+      const el = document.querySelector('#follow-up')
+      return {
+        same: el === window.__composer,
+        focused: el === document.activeElement,
+        active: document.activeElement?.id ?? document.activeElement?.tagName ?? '',
+        text: el?.textContent ?? '',
+      }
+    })
+    if (before.id !== 'follow-up') errors.push('任务页没有找到输入框')
+    else {
+      if (!after.same) errors.push('实时推送时输入框被重新挂载')
+      if (!after.focused) errors.push(`实时推送时输入框丢了焦点（焦点在 ${after.active}）`)
+      if (!after.text.includes('实时推送时输入的内容')) errors.push('实时推送时输入的文字丢了')
+    }
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await openTask()
+  }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()

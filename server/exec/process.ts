@@ -141,11 +141,13 @@ export function runProcess(o: {
     let stderr = ''
     let settled = false
     let killerTimer: ReturnType<typeof setTimeout> | undefined
+    let exitTimer: ReturnType<typeof setTimeout> | undefined
     const done = (r: Omit<ProcessResult, 'stderr' | 'killed'>) => {
       if (settled) return
       settled = true
       clearTimeout(timer)
       clearTimeout(killerTimer)
+      clearTimeout(exitTimer)
       clearInterval(idleTimer)
       o.signal?.removeEventListener('abort', onAbort)
       resolve({ ...r, killed, stderr: stderr.slice(-4000) })
@@ -236,8 +238,20 @@ export function runProcess(o: {
     })
     child.on('close', (code) => {
       forget()
+      clearTimeout(exitTimer)
       rl.close()
       done({ code })
+    })
+    // 进程已经退出，但输出流还被别人（孙进程继承了 stdout）握着时，close 可能永远不来：
+    // 已经读不到更多输出了，等 3 秒给它收尾，别让等结果的调用方（后台命令、任务）挂死
+    child.on('exit', (code) => {
+      if (settled || exitTimer) return
+      exitTimer = setTimeout(() => {
+        if (settled) return
+        log.warn('exec', '进程已退出但输出流没关，先结束等待', { pid: child.pid, code })
+        done({ code })
+      }, 3000)
+      exitTimer.unref?.()
     })
 
     child.stdin!.on('error', () => {})

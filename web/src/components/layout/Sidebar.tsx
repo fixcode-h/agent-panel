@@ -60,7 +60,7 @@ import { t } from '@shared/i18n'
 import { ChatList, TaskRow, TaskSearch, matchTask, type TaskFilter } from './SidebarTasks'
 import { DesignList } from './SidebarDesigns'
 import { isTaskUnread, useUnreadTasks } from '@/lib/task-unread'
-import { byAskedAt, taskBusy } from '@shared/task'
+import { byAskedAt, taskBusy, taskBusyCount } from '@shared/task'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
 import { sortProjects } from '@shared/project-order'
 
@@ -599,7 +599,7 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
           {allOpen &&
             groups.map(([pid, ts], gi) => {
               const open = !folded.has(pid)
-              const running = ts.filter((t) => taskBusy(t)).length
+              const running = taskBusyCount(ts)
               // 收起「更多」时也要露出正在看的那个任务
               const shown = more.has(pid)
                 ? ts

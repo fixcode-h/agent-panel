@@ -63,6 +63,7 @@ import { GlobalLessons, Settings } from '../shared/schema.ts'
 import { cycleText, includeCycle } from '../shared/agent-role.ts'
 import { inspectDir, listDir, makeDir, resolvePath } from './fs.ts'
 import { gitBranches, gitCheckout } from './exec/git.ts'
+import { sweepWorktrees } from './exec/worktree.ts'
 import { killAllProcesses, killTree } from './exec/process.ts'
 import { cleanStaleCliProcesses } from './exec/orphans.ts'
 import { listCommands } from './slash.ts'
@@ -317,7 +318,6 @@ const applyPresenceReclaim = (s: Awaited<ReturnType<typeof getSettings>>) =>
     enabled: s.reclaimIdleCli,
     graceMs: s.presenceGraceMinutes * 60_000,
     unreadGraceMs: s.unreadGraceMinutes * 60_000,
-    limit: s.keepAliveLimit,
   })
 app.get('/settings', async (c) => c.json(await getSettings()))
 // 本机能用的命令行环境（设置「常规」里选）；fresh=1 重新检测
@@ -676,6 +676,45 @@ app.delete('/projects/:id', async (c) => {
 
 // ---- 任务 ----
 const tasks = tasksApi({ agents, workflows, projects, projectCategories, recordLesson: lessons.record })
+
+/**
+ * 回收没人管的独立工作目录：面板重启、父对话结束、任务记录丢了之后，不再有人触发收口，
+ * 已合并的目录会一直留在磁盘上（见 server/exec/worktree.ts 的 sweepWorktrees）。
+ * 只清「改动都已合回原分支 + 任务已收口 / 记录已不存在」的，以及 git 注册表外的残留；
+ * 在改、没合、还在跑的一律不碰。出问题时可以用 AGENT_PANEL_KEEP_WORKTREES=1 启动，只扫不删。
+ */
+async function sweepStaleWorktrees() {
+  if (process.env.AGENT_PANEL_KEEP_WORKTREES === '1') return
+  // 正在执行的任务从内存里拿：任务记录里的 working 可能是上一轮留下的
+  const working = new Set(tasks.workingTasks().map((w) => w.id))
+  const res = await sweepWorktrees({
+    taskInfo: async (id) => {
+      const tk = await tasks.get(id)
+      if (!tk) return null
+      const p = tk.projectId ? await projects.get(tk.projectId) : null
+      return {
+        // 显式收口，或者这一轮已经跑完 / 被停掉：剩下没人会再触发收口（面板重启、父对话结束）
+        done: tk.resolved === true || tk.archived === true || tk.status === 'done' || tk.status === 'stopped',
+        // 等下一句、预热中的 CLI 还活着，也算在用，目录不能动
+        working: working.has(id) || tk.working === true || tk.awaitingUser === true || tk.prewarming === true,
+        projectPath: p?.path ?? '',
+        branch: tk.worktree?.branch ?? '',
+        baseBranch: tk.worktree?.baseBranch ?? '',
+      }
+    },
+  }).catch((e: Error) => {
+    log.error('worktree', '清扫独立目录出错', { error: e.message })
+    return null
+  })
+  if (res)
+    log.info('worktree', '清扫独立目录完成', {
+      dryRun: res.dryRun,
+      removed: res.removed.length,
+      kept: res.kept.length,
+      failed: res.failed.length,
+    })
+}
+
 app.route('/tasks', tasks.routes)
 // 整个运行的用量（父对话 + 所有子对话 + 派出的子任务）：子对话不在任务列表里，只能服务端算
 app.route('/tasks', runUsageApi({ tasks }).routes)
@@ -863,6 +902,9 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
+  // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
+  setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
+  setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
   void applyRemote()
   void getSettings().then(applyPresenceReclaim)
   const open = prod && !restarted && !process.env.AGENT_PANEL_SUPERVISED && (await getSettings()).openBrowser
