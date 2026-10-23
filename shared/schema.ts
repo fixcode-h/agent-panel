@@ -1622,7 +1622,7 @@ export const Settings = z.object({
   language: z.enum(['auto', 'zh', 'en']).default('auto'),
   /**
    * 命令行环境：面板替 Agent 跑整行命令（后台命令、合并时编译里「自动」环境的步骤）用哪个 shell。
-   * 只在 Windows 上有选择；kind 为空表示按本机检测的推荐（有 WSL 用 WSL，否则 Git Bash，再没有用 cmd）
+   * 只在 Windows 上有选择；kind 为空表示按本机检测的推荐（有 Git Bash 用 Git Bash，没有用 WSL，再没有用 cmd）
    */
   shell: z
     .object({
