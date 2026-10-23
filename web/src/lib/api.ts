@@ -36,7 +36,7 @@ import type {
   Workflow,
   WorkflowInput,
 } from '@shared/schema'
-import type { ChildActivity } from '@shared/task'
+import type { ChildActivity, ChildHold } from '@shared/task'
 import type { RunUsage } from '@shared/run-usage'
 import type { AssistInput, AssistJob } from '@shared/assist'
 import type { ContentSearch, DirLevel, FileContent, FileDiff, FileTree, NameSearch } from '@shared/files'
@@ -140,6 +140,8 @@ export interface WorktreeItem {
   dirty: number
   /** 改动都已经在原分支里了 */
   merged: boolean
+  /** 子对话还没彻底完成、所以独立分支还留着的原因（合回去了才有） */
+  holds?: ChildHold[]
 }
 
 /** 用户加的 CLI 配置：原文（页面拿去注册）、读不进来的原因、所在目录 */

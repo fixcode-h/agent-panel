@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import type { Task } from './schema.ts'
-import { childComplete, childHolds, childHoldsOf, childHoldText, taskStage } from './task.ts'
+import { childComplete, childHolds, childHoldsOf, childHoldText, runRunning, taskBusy, taskStage } from './task.ts'
 
 // 文案断言按中文：跟着系统语言跑会让结果不稳定
 setLang('zh')
@@ -110,4 +110,56 @@ test('taskStage：计划没做完的不算已完成（等着下一句也一样�
   assert.equal(taskStage({ status: 'failed', unfinished: true }), 'you')
   assert.equal(taskStage({ status: 'running', working: true, unfinished: true }), 'running', '还在执行就算执行中')
   assert.equal(taskStage({ status: 'running', working: false, unfinished: true, asking: 1 }), 'you')
+})
+
+test('runRunning：start_plan 启动的工作流运行没跑完就算还在跑', () => {
+  const run = (status: string, endedAt = '') => ({ id: 1, status, startedAt: '', endedAt }) as Task['runs'][number]
+  assert.equal(runRunning({ status: 'running', runs: [run('running')] }), true)
+  assert.equal(runRunning({ status: 'running', runs: [run('done', '2026-01-01')] }), false)
+  // 运行停了/任务被停：节点状态残留也不当成还在跑
+  assert.equal(runRunning({ status: 'stopped', runs: [run('running')] }), false)
+  // 旧任务没有运行记录：这一轮里还有节点在跑就算
+  const step = (status: string) => ({ id: 's1', status }) as Task['steps'][number]
+  assert.equal(runRunning({ status: 'running', steps: [step('running')] }), true)
+  assert.equal(runRunning({ status: 'running', steps: [step('done')] }), false)
+  // 有运行记录时以它为准，不看节点状态
+  assert.equal(runRunning({ status: 'running', runs: [run('done')], steps: [step('running')] }), false)
+})
+
+test('工作流还在跑：不算彻底完成、阶段仍是执行中、任务列表也算执行中', () => {
+  assert.deepEqual(childHolds({ workflow: true }), ['workflow'])
+  assert.equal(childComplete({ workflow: true }), false)
+  assert.equal(childHoldText(['workflow']), '工作流还没跑完')
+  assert.equal(taskStage({ status: 'running', working: false, workflow: true }), 'running')
+  assert.equal(taskStage({ status: 'running', working: false, workflow: true, resolved: true }), 'running')
+  const task = {
+    status: 'running' as const,
+    working: true,
+    requests: [],
+    parentAsks: [],
+    plans: [],
+    steps: [],
+    runs: [{ id: 1, status: 'running', startedAt: '', endedAt: '' }] as Task['runs'],
+  }
+  assert.deepEqual(childHoldsOf(task, { merged: true }), ['working', 'workflow'])
+  assert.equal(taskBusy({ status: 'running', steps: [], working: false, runs: task.runs }), true)
+  assert.equal(taskBusy({ status: 'running', steps: [], working: false, runs: [] }), false)
+})
+
+test('派出去的子任务还在跑：也不算彻底完成', () => {
+  assert.deepEqual(childHolds({ helpers: true }), ['helpers'])
+  assert.equal(childHoldText(['helpers']), '派出的子任务还没跑完')
+  assert.equal(taskStage({ status: 'running', working: false, helpers: true }), 'running')
+  const task = {
+    status: 'running' as const,
+    working: false,
+    requests: [],
+    parentAsks: [],
+    plans: [],
+    steps: [{ slot: 'sub', status: 'running' }] as Task['steps'],
+    runs: [] as Task['runs'],
+  }
+  assert.deepEqual(childHoldsOf(task, { merged: true }), ['helpers'])
+  // 工作流节点（不是派出的子任务）算在 workflow 上，两条不重复
+  assert.deepEqual(childHoldsOf({ ...task, steps: [{ slot: '', status: 'running' }] as Task['steps'] }), ['workflow'])
 })

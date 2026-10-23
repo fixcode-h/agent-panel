@@ -5,7 +5,15 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
-import { createWorktree, ensureWorktree, mergeWorktree, removeWorktree, worktreeStatus } from './worktree.ts'
+import { childHolds } from '../../shared/task.ts'
+import {
+  createWorktree,
+  ensureWorktree,
+  mergeWorktree,
+  releaseWorktree,
+  removeWorktree,
+  worktreeStatus,
+} from './worktree.ts'
 
 // 断言的是 worktree.ts 里 t() 出来的报错文案：显式固定语言，不跟着 LANG 走
 setLang('zh')
@@ -217,5 +225,49 @@ test('原目录换了分支就不合并，冲突时带上 conflict 标记并撤�
     assert.equal(readFileSync(path.join(repo, 'README.md'), 'utf8').replace(/\r\n/g, '\n'), '# 原目录改的\n')
   } finally {
     await removeWorktree(repo, wt, true)
+  }
+})
+
+test('彻底完成才回收独立分支：计划没做完 / 有提问 / 后台命令在跑时保留目录和分支', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '门禁')
+  writeFileSync(path.join(wt.path, 'README.md'), '# 子对话改的\n')
+  // 合并回原分支，但目录和分支先留着（keep）
+  await mergeWorktree(repo, wt, '合并', repo, true)
+  const branchAlive = () => git(repo, 'branch', '--list', wt.branch).toString().trim().length > 0
+  try {
+    // 合并完成只是分支回去了：计划 5/7 还没做完，这一轮、后台命令还在跑时都不能删
+    for (const holds of [
+      childHolds({ plan: { done: 5, total: 7 } }),
+      childHolds({ asking: 1 }),
+      childHolds({ background: 1 }),
+      childHolds({ working: true }),
+    ]) {
+      const why = await releaseWorktree(repo, wt, holds)
+      assert.ok(why, '还差条件时说明原因')
+      assert.ok(existsSync(wt.path), '独立目录还在，改动不会被删掉')
+      assert.ok(branchAlive(), '分支也还在')
+    }
+    // 全部条件满足（计划做完、后台命令结束、没有问题、已经合回去）
+    assert.equal(await releaseWorktree(repo, wt, childHolds({ plan: { done: 7, total: 7 } })), '')
+    assert.ok(!existsSync(wt.path), '彻底完成后目录回收了')
+    assert.ok(!branchAlive(), '分支也回收了')
+  } finally {
+    if (existsSync(wt.path)) await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('没合回原分支时即使别的条件都满足也不删独立分支', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '未合并')
+  writeFileSync(path.join(wt.path, 'README.md'), '# 还没合\n')
+  writeFileSync(path.join(wt.path, 'new.txt'), 'x\n')
+  try {
+    const why = await releaseWorktree(repo, wt, [])
+    assert.match(why, /独立分支还没合回原分支/, '说清为什么还留着')
+    assert.ok(existsSync(wt.path), '有没合回去的改动时目录保留')
+    assert.ok(existsSync(path.join(wt.path, 'new.txt')), '改动文件还在')
+  } finally {
+    await removeWorktree(repo, wt, true).catch(() => {})
   }
 })
