@@ -307,7 +307,7 @@ await runShard('子对话与计划', async (api) => {
     await call('PUT', `/projects/${project.id}`, projectInput)
     step('子对话独立 worktree：第一次执行时开分支，提交不影响项目目录，编译交给面板，合并后回到原目录')
 
-    // ---- 执行计划：步骤挂在后台命令上等结果，结果回来自动标完成；计划做完没写总结时面板追一轮要总结 ----
+    // ---- 执行计划：步骤挂在后台命令上等结果，结果回来自动标完成；计划全部完成就结束，不再补总结 ----
     {
       const planned = await waitDone(
         (await call('POST', '/tasks', { projectId: project.id, mode: 'chat', agentId: B.id, prompt: 'PLAN_BG 列计划' }))
@@ -315,7 +315,8 @@ await runShard('子对话与计划', async (api) => {
         20000,
       )
       assert.equal(planned.plans.length, 1, '列了一份计划')
-      const done = await waitTask(planned.id, (k) => !!k.plans[0]?.summary, 30000)
+      // 计划结束看它自己的完成字段（doneAt），不再拿 summary 当哨兵
+      const done = await waitTask(planned.id, (k) => !!k.plans[0]?.doneAt, 30000)
       const plan = done.plans[0]
       assert.deepEqual(
         plan.steps.map((x) => [x.title, x.status]),
@@ -327,13 +328,19 @@ await runShard('子对话与计划', async (api) => {
       )
       assert.equal(plan.steps[1].waits[0].state, 'ok')
       assert.ok(plan.doneAt, '全部完成后计划收起')
-      assert.equal(plan.summary, '改好了代码，测试通过', '面板追要总结，AI 调用 finish_plan 写下')
+      assert.equal(plan.summary, '', '不再补计划总结')
       assert.ok(
         done.messages.some((m) => m.panel === 'background' && m.text.includes('计划步骤「跑测试」')),
         '推回的后台结果点名是计划里哪一步在等',
       )
+      // 计划结束就是结束了：下一件事直接开新计划，不需要先写总结
+      await call('POST', `/tasks/${planned.id}/messages`, { text: 'PLAN_NEXT 接着做' })
+      const next = await waitTask(planned.id, (k) => k.plans.length === 2 && k.plans[1].steps.length > 0, 30000)
+      assert.equal(next.plans[0].doneAt === '', false, '上一份计划已经结束')
+      assert.equal(next.plans[1].steps[0].title, '继续改代码', '不需要写总结就能开新计划')
+      assert.equal(next.plans[1].doneAt, '', '新计划还在进行中')
       await call('DELETE', `/tasks/${planned.id}`)
-      step('执行计划：等待中的步骤结果回来自动完成，计划做完必须写总结')
+      step('执行计划：等待中的步骤结果回来自动完成，计划全部完成就结束、可以直接开新计划')
     }
 
     // ---- 还在跑的后台命令：这一轮说完了它还在跑，任务上带着 jobs；跑完推回结果，要 AI 重新总结 ----

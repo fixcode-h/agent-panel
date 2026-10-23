@@ -9,16 +9,13 @@ export const EN_TASKS: Record<string, string> = {
   计划已完成: 'Plan complete',
   '计划 {done}/{total}': 'Plan {done}/{total}',
   '{n} 个在等待': '{n} waiting',
-  正在写总结: 'Writing summary',
   '以前的计划 · {n}': 'Earlier plans · {n}',
-  总结: 'Summary',
-  '（AI 没写总结，取的是最后一条回复）': '(The AI wrote no summary; this is its last reply)',
-  '步骤都完成了，AI 正在写总结': 'All steps are done; the AI is writing the summary',
   未命名的计划: 'Untitled plan',
   '{done}/{total} 步': '{done}/{total} steps',
   更新计划: 'Update plan',
   '{n} 个步骤': '{n} steps',
-  计划总结: 'Plan summary',
+  结束计划: 'End plan',
+  // engine.ts 的追要总结线还在引用，那份逻辑失效后一起删
   '（AI 没有写总结）': '(The AI wrote no summary)',
   // 文件浏览
   文件: 'Files',
