@@ -1928,10 +1928,13 @@ export function tasksApi(deps: {
     const ueProject = task.mode === 'chat' && !!found?.path && (await isBigProject(found.path).catch(() => false))
     const ueRole = !ueProject ? undefined : task.parentTaskId ? 'child' : coordinatorRole ? 'parent' : undefined
     let last = 0
-    // 预热退出要恢复列表时间：最后一次写不能把它改成现在
-    const flush = (keepUpdatedAt = false) =>
+    /**
+     * 落盘。now：对话消息立即写，不等 400ms 合并窗口——关键节点（changed(true)、这一轮结束/失败/停止）
+     * 用它，面板被强杀时不会丢最后一段。keepUpdatedAt：预热收尾要保留原来的列表时间
+     */
+    const flush = (keepUpdatedAt = false, now = false) =>
       store
-        .update(task.id, entry.task, { keepUpdatedAt })
+        .update(task.id, entry.task, { keepUpdatedAt, now })
         .catch((e) => console.error(`保存任务失败：${(e as Error).message}`))
     const changed = (f?: boolean) => {
       entry.task.updatedAt = new Date().toISOString()
@@ -1940,13 +1943,13 @@ export function tasksApi(deps: {
       // 对话的 CLI 回复完会常驻等下一句，不等进程结束：第一次回复完就起标题
       if (entry.task.turnDoneAt) nameOnce(entry.task, startedRun?.cli ?? '')
       // 流式输出时最多每 3 秒落盘一次，关键节点（节点开始/结束、调用完成、提问、等用户决定、这一轮收尾）
-      // 都走 changed(true) 立即落盘，所以节流只影响正在输出途中的中间态。
+      // 都走 changed(true) 立即落盘（消息文件也不走合并窗口），所以节流只影响正在输出途中的中间态。
       // 从 1 秒放宽到 3 秒：指纹已经是增量的（见 task-store 的 createStampTracker），
       // 但整份 messages 的序列化还是 O(全部消息)，3 秒一次把这个成本降下来，
       // 代价是面板被强杀时最多丢 3 秒的流式输出（正常结束、失败、停止都还会立即写一次）。
       if (f || Date.now() - last > 3000) {
         last = Date.now()
-        void flush()
+        void flush(false, f === true)
       }
     }
     log.info('task', first ? '开始执行任务' : '继续执行任务', {
@@ -2259,9 +2262,10 @@ export function tasksApi(deps: {
         // 更新摘要并回报父对话（父对话卡片和消息流据此显示进度）
         if (!prewarm && entry.task.parentTaskId) {
           entry.task.summary = lastReply(entry.task)
-          await flush(keepTime)
+          // 这一轮结束：消息立即落盘，不等合并窗口（进程保活等下一句时这可能是最后一次写）
+          await flush(keepTime, true)
           await reportToParent(entry.task)
-        } else await flush(keepTime)
+        } else await flush(keepTime, true)
         // 只删自己的执行位：这一轮收尾时如果已经有新的一轮占住了，不能把它删掉
         release(entry)
         // 整轮结束了，没被节点取走的补充不会再有人取
