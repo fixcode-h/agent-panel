@@ -39,6 +39,9 @@ export interface DerivedParam {
   description: string
   /** 哪些 Agent 会用这个参数（同 key 共用） */
   agents: AgentParamOwner[]
+  /** 联动：第一个声明里的显示条件和选项规则（见 AgentParam） */
+  when?: AgentParam['when']
+  optionsBy?: AgentParam['optionsBy']
 }
 
 /** 工作流实际用到的 Agent id：主 Agent + 所有节点 / 步骤的 Agent，去重 */
@@ -99,6 +102,8 @@ export function derivedParams(w: Pick<Workflow, 'expose' | 'mainAgentId' | 'flow
           required: p.ask && p.default === undefined,
           description: p.description,
           agents: [owner],
+          ...(p.when && { when: p.when }),
+          ...(p.optionsBy && { optionsBy: p.optionsBy }),
         })
         continue
       }

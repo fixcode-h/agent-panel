@@ -40,7 +40,7 @@ import {
   type WorkflowInput,
 } from './schema.ts'
 import type { DerivedParam } from './agent-params.ts'
-import { includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
+import { condText, includedAgents, renderTemplate, resolveParams } from './agent-role.ts'
 
 export const AssistKind = z.enum(['agent', 'workflow', 'skill', 'mcp', 'params', 'teststeps', 'lessons', 'project'])
 export type AssistKind = z.infer<typeof AssistKind>
@@ -575,8 +575,17 @@ function buildParamsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
       const who = [...new Set(d.agents.map((a) => a.name))].join('、')
       const preset = wf ? nodePresets(wf, d.key) : ''
       const effect = paramEffect(d, ctx.agents)
+      const decl = d.agents[0]?.id ? ctx.agents.find((a) => a.id === d.agents[0].id)?.params : undefined
+      const when = d.when && decl ? `  只在${condText(d.when, decl)}生效，不满足时不用填` : ''
+      const by = d.optionsBy
+        ? `  可选值跟着 ${d.optionsBy.key} 变：${Object.entries(d.optionsBy.map)
+            .map(([v, os]) => `${v} → ${os.length ? os.join(' / ') : '不适用'}`)
+            .join('；')}`
+        : ''
       return [
         `- ${d.key}（${d.label}，类型 ${d.type}${options}${def}${d.required ? '，必须填' : ''}）${d.description ? `：${d.description}` : ''}`,
+        when,
+        by,
         `  影响：${who}`,
         preset ? `  工作流节点上已预设：${preset}（项目里填了值会覆盖这些节点）` : '',
         effect,

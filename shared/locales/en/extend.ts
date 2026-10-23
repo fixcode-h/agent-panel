@@ -8,7 +8,6 @@ export const EN_EXTEND: Record<string, string> = {
     'e.g.\n# Role\nYou are a senior front-end engineer who builds pages from designs.\n\n# Output\nRun the tests when done and report the results.',
   '插入角色名称，并引入它的角色设定': 'Insert a role name and include its instructions',
   插入参数: 'Insert parameter',
-  按参数分支: 'Branch by parameter',
   '还没有参数，先在「参数」页里添加': 'No parameters yet. Add some on the “Parameters” tab',
   引入的角色: 'Included roles',
   '引入的角色的角色设定会一起交给这个角色，可以把通用的规范、领域知识做成单独的角色复用。':

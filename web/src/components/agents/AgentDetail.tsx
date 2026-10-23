@@ -17,7 +17,7 @@ import {
   Workflow as WorkflowIcon,
   X,
 } from 'lucide-react'
-import { type Agent, type AgentInput, type ParamValues } from '@shared/schema'
+import { type Agent, type AgentInput, type AgentParam, type ParamValues } from '@shared/schema'
 import { getCli, MODEL_TIERS } from '@shared/clis'
 import {
   agentCli,
@@ -54,6 +54,8 @@ import { t } from '@shared/i18n'
 import {
   MAX_INCLUDE_DEPTH,
   composeRole,
+  renameParamRefs,
+  templateKeys,
   cycleText,
   includeCycle,
   includeDepth,
@@ -64,7 +66,7 @@ import { DocEditor } from '@/components/workflows/DocEditor'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 import { TagPicker } from '@/components/tags/Tags'
 import { AgentPicker } from './AgentPicker'
-import { ParamsEditor, ParamsForm } from './ParamFields'
+import { ParamsChip, ParamsEditor, ParamsForm } from './ParamFields'
 import { coreDefinition, coreKey, coreUse } from '@shared/builtin/core'
 import { SkillsPicker, StartersEditor } from './AgentExtras'
 
@@ -215,7 +217,11 @@ export function AgentDetail({
     .map((a) => ({ a, depth: includeDepth(a, withLive) }))
     .filter((x) => x.depth > MAX_INCLUDE_DEPTH)
   const sortIncludes = useDragSort((from, to) => set('includes', moveItem(draft.includes, from, to)))
-  const preview = composeRole(live, agents)
+  // 预览可以临时换参数试：只影响右边的预览，不存
+  const [trial, setTrial] = useState<ParamValues>({})
+  const preview = composeRole(live, agents, trial)
+  // 角色设定里写了、参数里却没有的名字：多半是改名漏了或者拼错了，执行时会原样留在提示词里
+  const unknownRefs = [...templateKeys(draft.instructions)].filter((k) => !draft.params.some((p) => p.key === k))
   const startChat = () => go({ page: 'chat' })
   const checks = agentChecks(live, cli)
   const category = categories.find((c) => c.id === draft.categoryId)
@@ -577,26 +583,26 @@ export function AgentDetail({
                             {t('插入参数')}
                           </Button>
                         </PopoverTrigger>
-                        <PopoverContent align="end" className="w-[260px]">
+                        <PopoverContent align="end" className="w-[300px]">
                           {draft.params.map((p) => (
-                            <PopoverClose key={p.key} className={menuItem} onClick={() => insert(`{{${p.key}}}`)}>
-                              <code className="font-mono text-[0.75rem] text-accent">{`{{${p.key}}}`}</code>
-                              <span className="truncate text-subtle">{p.label}</span>
-                            </PopoverClose>
+                            <div key={p.key} className="flex items-center gap-1">
+                              <PopoverClose
+                                className={cn(menuItem, 'min-w-0 flex-1')}
+                                onClick={() => insert(`{{${p.key}}}`)}
+                              >
+                                <code className="font-mono text-[0.75rem] text-accent">{`{{${p.key}}}`}</code>
+                                <span className="truncate text-subtle">{p.label}</span>
+                              </PopoverClose>
+                              <PopoverClose
+                                className={cn(menuItem, 'w-auto shrink-0 px-2')}
+                                title={t('插入按「{name}」走不同做法的分支', { name: p.label || p.key })}
+                                onClick={() => insert(branchSnippet(p))}
+                              >
+                                <GitBranch className="h-3.5 w-3.5 text-subtle" />
+                                {t('分支')}
+                              </PopoverClose>
+                            </div>
                           ))}
-                          {draft.params.length > 0 && (
-                            <PopoverClose
-                              className={menuItem}
-                              onClick={() =>
-                                insert(
-                                  `{{#if ${draft.params[0].key}=${draft.params[0].options[0] ?? '值'}}}\n\n{{else}}\n\n{{/if}}`,
-                                )
-                              }
-                            >
-                              <GitBranch className="h-3.5 w-3.5 text-subtle" />
-                              {t('按参数分支')}
-                            </PopoverClose>
-                          )}
                           {!draft.params.length && (
                             <p className="px-2.5 py-2 text-xs text-subtle">{t('还没有参数，先在「参数」页里添加')}</p>
                           )}
@@ -604,6 +610,17 @@ export function AgentDetail({
                       </Popover>
                     )}
                   />
+                  {unknownRefs.length > 0 && (
+                    <p className="flex items-start gap-1.5 text-[0.71875rem] leading-relaxed text-warning">
+                      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                      {t(
+                        '角色设定里引用了没有的参数：{list}。执行时会原样留在提示词里，去「参数」页添加，或者改成已有的参数名。',
+                        {
+                          list: unknownRefs.map((k) => `{{${k}}}`).join(t('、')),
+                        },
+                      )}
+                    </p>
+                  )}
                   <div className="flex flex-col gap-2">
                     <span className="text-xs text-muted">{t('引入的角色')}</span>
                     <p className="-mt-1 text-[0.71875rem] leading-relaxed text-subtle">
@@ -794,7 +811,13 @@ export function AgentDetail({
                       '把可变的部分做成参数暴露出去：对话时用默认值（没有默认值的先问你），工作流节点上可以直接改。同一个角色换个参数就能走不同的做法。',
                     )}
                   </p>
-                  <ParamsEditor value={draft.params} onChange={(v) => set('params', v)} />
+                  <ParamsEditor
+                    value={draft.params}
+                    onChange={(v) => set('params', v)}
+                    onRename={(from, to) =>
+                      setDraft((d) => ({ ...d, instructions: renameParamRefs(d.instructions, from, to) }))
+                    }
+                  />
                 </FormSection>
               </>
             )}
@@ -840,9 +863,14 @@ export function AgentDetail({
                 className="group rounded-xl border bg-card p-4"
               >
                 <summary className="cursor-pointer text-[0.8125rem] font-semibold">{t('实际交给它的设定')}</summary>
-                <p className="mt-2 text-[0.71875rem] text-subtle">
-                  {t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
-                </p>
+                <div className="mt-2 flex items-center gap-2">
+                  <p className="min-w-0 flex-1 text-[0.71875rem] text-subtle">
+                    {Object.keys(trial).length
+                      ? t('按试的参数展开（不保存），包含引入的角色和 Skill 提示。')
+                      : t('按参数默认值展开，包含引入的角色和 Skill 提示。')}
+                  </p>
+                  {draft.params.length > 0 && <ParamsChip params={draft.params} values={trial} onChange={setTrial} />}
+                </div>
                 <pre className="mt-2 max-h-80 overflow-auto rounded-lg bg-field p-2.5 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap">
                   {preview}
                 </pre>
@@ -898,6 +926,12 @@ export function AgentDetail({
       <AssistDialog open={assist} onOpenChange={setAssist} kind="agent" target={agent} onApplied={onOptimized} />
     </>
   )
+}
+
+/** 「按参数分支」插入的模板：开关、文本按有没有值分，单选 / 多选按第一个选项分 */
+function branchSnippet(p: AgentParam) {
+  const cond = p.type === 'select' || p.type === 'multi' ? `${p.key}=${p.options[0] ?? '值'}` : p.key
+  return `{{#if ${cond}}}\n\n{{else}}\n\n{{/if}}`
 }
 
 /** 标签上的数量 */

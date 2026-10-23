@@ -1,7 +1,15 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, GripVertical, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, GripVertical, Link2, Plus, SlidersHorizontal, Trash2, X } from 'lucide-react'
 import type { AgentParam, ParamValue, ParamValues } from '@shared/schema'
-import { PARAM_TYPES, coerceValue, paramLabel, resolveParams, valueText } from '@shared/agent-role'
+import {
+  PARAM_TYPES,
+  coerceValue,
+  condDepOk,
+  paramLabel,
+  resolveParams,
+  shownParam,
+  valueText,
+} from '@shared/agent-role'
 import { t } from '@shared/i18n'
 import { cn } from '@/lib/utils'
 import { moveItem, useDragSort } from '@/lib/useDragSort'
@@ -11,6 +19,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/menu'
 import { HelpTip } from '@/components/ui/help-tip'
+import { Segmented } from '@/components/ui/segmented'
 
 /** 一个参数的输入控件：按类型是下拉、多选、开关、文本或数字 */
 export function ParamControl({
@@ -155,7 +164,8 @@ export function ParamsForm({
   onChange: (v: ParamValues) => void
   compact?: boolean
 }) {
-  const { missing } = resolveParams(params, values)
+  // 联动：前面参数没选到的不显示，选项跟着前面的取值缩小
+  const { missing, hidden, options } = resolveParams(params, values)
   const set = (key: string, v: ParamValue | undefined) => {
     const next = { ...values }
     if (v === undefined) delete next[key]
@@ -164,7 +174,9 @@ export function ParamsForm({
   }
   return (
     <div className={cn('flex flex-col', compact ? 'gap-2.5' : 'gap-3')}>
-      {params.map((p) => {
+      {params.map((raw) => {
+        if (hidden.includes(raw.key)) return null
+        const p = shownParam(raw, options)
         const lack = missing.some((m) => m.key === p.key)
         const changed = p.key in values
         // 开关、下拉和数字跟标签放在同一行（控件靠右），文本、多选放不下才单独占一行
@@ -219,9 +231,9 @@ export function ParamsChip({
   onOpenChange?: (o: boolean) => void
 }) {
   if (!params.length) return null
-  const { missing, values: used } = resolveParams(params, values)
+  const { missing, hidden, values: used } = resolveParams(params, values)
   const summary = params
-    .filter((p) => !missing.includes(p))
+    .filter((p) => !missing.includes(p) && !hidden.includes(p.key))
     .map((p) => `${paramLabel(p)}：${valueText(used[p.key]) || '—'}`)
     .join('；')
   return (
@@ -235,7 +247,9 @@ export function ParamsChip({
       >
         <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">
-          {missing.length ? t('选参数（{n}）', { n: missing.length }) : t('参数 · {n}', { n: params.length })}
+          {missing.length
+            ? t('选参数（{n}）', { n: missing.length })
+            : t('参数 · {n}', { n: params.length - hidden.length })}
         </span>
       </PopoverTrigger>
       <PopoverContent align="start" className="max-h-[min(480px,70vh)] w-[300px] overflow-y-auto p-3">
@@ -248,10 +262,40 @@ export function ParamsChip({
 
 const KEY_RE = /^[A-Za-z_一-龥][\w一-龥-]*$/
 
-/** Agent 页编辑参数的定义：名字、类型、选项、默认值、是否必须问用户 */
-export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChange: (v: AgentParam[]) => void }) {
+/** 参数改名或删除后，引用它的联动规则跟着改（to 为空表示删掉了，去掉这些规则） */
+function relink(params: AgentParam[], from: string, to: string): AgentParam[] {
+  return params.map((x) => {
+    let next = x
+    if (x.when?.key === from) next = { ...next, when: to ? { ...x.when, key: to } : undefined }
+    if (x.optionsBy?.key === from) next = { ...next, optionsBy: to ? { ...x.optionsBy, key: to } : undefined }
+    return next
+  })
+}
+
+/**
+ * Agent 页编辑参数的定义：名字、类型、选项、默认值、是否必须问用户，以及和前面参数的联动。
+ * onRename：参数名改了（新旧名都不和别的参数重名时）通知外面，把角色设定里的 {{旧名}} 一起改掉。
+ */
+export function ParamsEditor({
+  value,
+  onChange,
+  onRename,
+}: {
+  value: AgentParam[]
+  onChange: (v: AgentParam[]) => void
+  onRename?: (from: string, to: string) => void
+}) {
   const [openKey, setOpenKey] = useState<number | null>(null)
   const set = (i: number, p: Partial<AgentParam>) => onChange(value.map((x, j) => (j === i ? { ...x, ...p } : x)))
+  const rename = (i: number, to: string) => {
+    const from = value[i].key
+    const others = value.filter((_, j) => j !== i).map((x) => x.key)
+    // 撞名时不联动：不然两个参数的引用会被合到一起，再改名就分不开了
+    const linked = !!from && !!to && from !== to && !others.includes(from) && !others.includes(to)
+    const next = value.map((x, j) => (j === i ? { ...x, key: to } : x))
+    onChange(linked ? relink(next, from, to) : next)
+    if (linked) onRename?.(from, to)
+  }
   const move = (i: number, d: number) => {
     const j = i + d
     if (j < 0 || j >= value.length) return
@@ -287,6 +331,18 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                   {`{{${p.key}}}`}
                 </code>
                 <span className="truncate text-[0.8125rem]">{p.label}</span>
+                {(p.when || p.optionsBy) && (
+                  <span
+                    className={cn(
+                      'inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 text-[0.6875rem]',
+                      brokenLink(value, i) ? 'bg-danger/10 text-danger' : 'bg-accent-soft text-accent',
+                    )}
+                    title={linkSummary(value, i)}
+                  >
+                    <Link2 className="h-3 w-3" />
+                    {t('联动')}
+                  </span>
+                )}
                 <span className="ml-auto shrink-0 text-xs text-subtle">
                   {PARAM_TYPES.find((x) => x.id === p.type)?.label}
                   {' · '}
@@ -304,7 +360,9 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                 size="icon-sm"
                 aria-label={t('删除参数')}
                 onClick={() => {
-                  onChange(value.filter((_, j) => j !== i))
+                  const rest = value.filter((_, j) => j !== i)
+                  // 还有同名参数时规则照旧指向它；否则引用这个参数的联动规则一起去掉
+                  onChange(rest.some((x) => x.key === p.key) ? rest : relink(rest, p.key, ''))
                   setOpenKey(null)
                 }}
               >
@@ -319,7 +377,7 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                     <Input
                       value={p.key}
                       maxLength={40}
-                      onChange={(e) => set(i, { key: e.target.value.trim() })}
+                      onChange={(e) => rename(i, e.target.value.trim())}
                       className={cn('h-9 font-mono text-[0.8125rem]', badKey && 'border-danger')}
                     />
                     {badKey && (
@@ -354,6 +412,7 @@ export function ParamsEditor({ value, onChange }: { value: AgentParam[]; onChang
                     <OptionsInput value={p.options} onChange={(options) => set(i, { options })} />
                   </div>
                 )}
+                <ParamLinks params={value} index={i} onChange={(patch) => set(i, patch)} />
                 <Checkbox
                   checked={p.ask}
                   onChange={(ask) => set(i, { ask })}
@@ -488,6 +547,274 @@ function OptionsInput({ value, onChange }: { value: string[]; onChange: (v: stri
         aria-label={t('新选项')}
       />
       {error && <span className="text-[0.71875rem] text-danger">{error}</span>}
+    </div>
+  )
+}
+
+/** 能被后面的参数依赖的：前面的单选、多选（要有选项）和开关 */
+const linkable = (params: AgentParam[], i: number) =>
+  params
+    .slice(0, i)
+    .filter((x, j, a) => a.findIndex((y) => y.key === x.key) === j)
+    .filter((x) => x.type === 'bool' || ((x.type === 'select' || x.type === 'multi') && x.options.length > 0))
+
+/** 依赖参数的可选值：开关是打开 / 关闭 */
+const depChoices = (dep: AgentParam) =>
+  dep.type === 'bool'
+    ? [
+        { value: 'true', label: t('打开') },
+        { value: 'false', label: t('关闭') },
+      ]
+    : dep.options.map((o) => ({ value: o, label: o }))
+
+/** 联动规则指向的参数已经不在前面了（被删、改名或者被拖到后面），规则不生效 */
+function brokenLink(params: AgentParam[], i: number) {
+  const p = params[i]
+  return (!!p.when && !condDepOk(params, i, p.when.key)) || (!!p.optionsBy && !condDepOk(params, i, p.optionsBy.key))
+}
+
+/** 显示条件写成界面上的一句话（提示词里用 shared 的 condText，那边不翻译） */
+function condLabel(c: NonNullable<AgentParam['when']>, params: AgentParam[]) {
+  const dep = params.find((x) => x.key === c.key)
+  const name = dep ? paramLabel(dep) : c.key
+  if (!c.values.length) return c.not ? t('「{name}」为空时', { name }) : t('「{name}」有值时', { name })
+  if (dep?.type === 'bool' && c.values.length === 1)
+    return (c.values[0] === 'true') !== c.not ? t('「{name}」打开时', { name }) : t('「{name}」关闭时', { name })
+  const list = c.values.join(' / ')
+  return c.not ? t('「{name}」不是 {list} 时', { name, list }) : t('「{name}」是 {list} 时', { name, list })
+}
+
+/** 折叠时标签上的提示：「只在 xx 时显示；选项跟着 yy 变」 */
+function linkSummary(params: AgentParam[], i: number) {
+  const p = params[i]
+  const dep = (k: string) => params.find((x) => x.key === k)
+  return [
+    p.when && t('只在{cond}显示', { cond: condLabel(p.when, params) }),
+    p.optionsBy &&
+      t('选项跟着「{name}」变', { name: dep(p.optionsBy.key) ? paramLabel(dep(p.optionsBy.key)!) : p.optionsBy.key }),
+    brokenLink(params, i) && t('依赖的参数不在它前面，规则暂不生效'),
+  ]
+    .filter(Boolean)
+    .join(t('；'))
+}
+
+/** 一排可以点选的小块：联动规则里选依赖参数的取值、选这时可选的选项都用它 */
+function Chips({
+  items,
+  picked,
+  onToggle,
+  label,
+}: {
+  items: { value: string; label: string }[]
+  picked: (v: string) => boolean
+  onToggle: (v: string) => void
+  label: string
+}) {
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label={label}>
+      {items.map((o) => {
+        const on = picked(o.value)
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            onClick={() => onToggle(o.value)}
+            className={cn(
+              'h-7 cursor-pointer rounded-md border px-2 text-[0.75rem] transition-colors',
+              on ? 'border-accent bg-accent-soft text-accent' : 'border-line-strong text-muted hover:text-fg',
+            )}
+          >
+            {o.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/**
+ * 和前面参数的联动：
+ * - 显示条件：前面某个参数取某些值时才显示（不满足时不问、按空值处理）；
+ * - 选项跟随（单选 / 多选才有）：前面某个参数取不同值时，这里能选的选项不同。
+ * 只能依赖排在前面的参数，保证从上往下填的时候前面的已经定了。
+ */
+function ParamLinks({
+  params,
+  index,
+  onChange,
+}: {
+  params: AgentParam[]
+  index: number
+  onChange: (patch: Partial<AgentParam>) => void
+}) {
+  const p = params[index]
+  const deps = linkable(params, index)
+  const whenDep = p.when ? params.slice(0, index).find((x) => x.key === p.when!.key) : undefined
+  const byDep = p.optionsBy ? params.slice(0, index).find((x) => x.key === p.optionsBy!.key) : undefined
+  const canBy = (p.type === 'select' || p.type === 'multi') && p.options.length > 0
+  const depOptions = (list: AgentParam[]) => [
+    { value: '', label: t('不联动') },
+    ...list.map((d) => ({ value: d.key, label: `${paramLabel(d)}（${d.key}）` })),
+  ]
+  const broken = brokenLink(params, index)
+  if (!deps.length && !p.when && !p.optionsBy)
+    return (
+      <div className="flex flex-col gap-1">
+        <span className="text-xs text-muted">{t('联动')}</span>
+        <p className="text-[0.71875rem] text-subtle">
+          {t('前面还没有单选、多选或开关参数。把它排在这类参数后面，就能按前面的选择决定显示它、或者换一组选项。')}
+        </p>
+      </div>
+    )
+  const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v])
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-dashed px-3 py-2.5">
+      <div className="flex items-center gap-1.5">
+        <Link2 className="h-3.5 w-3.5 text-subtle" />
+        <span className="text-xs font-medium text-muted">{t('联动')}</span>
+        <HelpTip>
+          {t(
+            '按前面参数的选择决定这个参数：不满足显示条件时不显示、不用填，角色设定里按空值处理；选项跟随可以让前面选不同值时这里给不同的选项。',
+          )}
+        </HelpTip>
+      </div>
+      {broken && (
+        <p className="-mt-1 text-[0.71875rem] text-danger">
+          {t('依赖的参数不在它前面了（删掉、改名或者排到了后面），规则暂不生效。重新选一下，或者把它挪回去。')}
+        </p>
+      )}
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs text-muted">{t('显示条件')}</span>
+          <div className="w-[min(16rem,100%)]">
+            <Select
+              aria-label={t('显示条件')}
+              value={p.when?.key ?? ''}
+              onChange={(e) => {
+                const key = e.target.value
+                const dep = deps.find((d) => d.key === key)
+                onChange({
+                  when: dep
+                    ? { key, values: dep.type === 'bool' ? ['true'] : dep.options.slice(0, 1), not: false }
+                    : undefined,
+                })
+              }}
+              options={
+                p.when && !whenDep
+                  ? [...depOptions(deps), { value: p.when.key, label: t('{key}（不在前面）', { key: p.when.key }) }]
+                  : depOptions(deps)
+              }
+            />
+          </div>
+        </div>
+        {p.when && whenDep && (
+          <div className="flex flex-col gap-1.5 pl-0.5">
+            {whenDep.type === 'bool' ? (
+              <Segmented
+                label={t('开关状态')}
+                value={(p.when.values[0] === 'false') !== p.when.not ? 'false' : 'true'}
+                onChange={(v) => onChange({ when: { key: p.when!.key, values: [v], not: false } })}
+                options={[
+                  { id: 'true', label: t('打开时显示') },
+                  { id: 'false', label: t('关闭时显示') },
+                ]}
+              />
+            ) : (
+              <>
+                <Segmented
+                  label={t('条件')}
+                  value={p.when.not ? 'not' : 'is'}
+                  onChange={(v) => onChange({ when: { ...p.when!, not: v === 'not' } })}
+                  options={[
+                    { id: 'is', label: t('选了其中一个时') },
+                    { id: 'not', label: t('都没选时') },
+                  ]}
+                />
+                <Chips
+                  label={t('条件取值')}
+                  items={depChoices(whenDep)}
+                  picked={(v) => p.when!.values.includes(v)}
+                  onToggle={(v) => onChange({ when: { ...p.when!, values: toggle(p.when!.values, v) } })}
+                />
+                {!p.when.values.length && (
+                  <span className="text-[0.71875rem] text-subtle">
+                    {p.when.not
+                      ? t('没选取值：「{name}」为空时显示', { name: paramLabel(whenDep) })
+                      : t('没选取值：「{name}」有值就显示', { name: paramLabel(whenDep) })}
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      {canBy && (
+        <div className="flex flex-col gap-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs text-muted">{t('选项跟随')}</span>
+            <div className="w-[min(16rem,100%)]">
+              <Select
+                aria-label={t('选项跟随')}
+                value={p.optionsBy?.key ?? ''}
+                onChange={(e) => onChange({ optionsBy: e.target.value ? { key: e.target.value, map: {} } : undefined })}
+                options={
+                  p.optionsBy && !byDep
+                    ? [
+                        ...depOptions(deps),
+                        { value: p.optionsBy.key, label: t('{key}（不在前面）', { key: p.optionsBy.key }) },
+                      ]
+                    : depOptions(deps)
+                }
+              />
+            </div>
+          </div>
+          {p.optionsBy && byDep && (
+            <div className="flex flex-col gap-2 pl-0.5">
+              <p className="text-[0.71875rem] text-subtle">
+                {t('「{name}」选不同值时这里能选哪些；默认全部可选，一个都不选表示这时不显示这个参数。', {
+                  name: paramLabel(byDep),
+                })}
+              </p>
+              {depChoices(byDep).map((c) => {
+                const map = p.optionsBy!.map
+                const limited = c.value in map
+                const cur = limited ? map[c.value] : p.options
+                const setRow = (list: string[] | undefined) => {
+                  const next = { ...map }
+                  if (list === undefined) delete next[c.value]
+                  else next[c.value] = p.options.filter((o) => list.includes(o))
+                  onChange({ optionsBy: { key: p.optionsBy!.key, map: next } })
+                }
+                return (
+                  <div key={c.value} className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2 text-[0.71875rem]">
+                      <span className="font-medium text-muted">{t('选「{v}」时', { v: c.label })}</span>
+                      {limited ? (
+                        <button type="button" className="cursor-pointer text-accent" onClick={() => setRow(undefined)}>
+                          {t('恢复全部可选')}
+                        </button>
+                      ) : (
+                        <span className="text-subtle">{t('全部可选')}</span>
+                      )}
+                    </div>
+                    <Chips
+                      label={t('选「{v}」时的选项', { v: c.label })}
+                      items={p.options.map((o) => ({ value: o, label: o }))}
+                      picked={(o) => cur.includes(o)}
+                      onToggle={(o) => {
+                        const next = toggle(cur, o)
+                        // 又选回全部时去掉这一行，等于不限制，之后加的新选项也能选
+                        setRow(next.length === p.options.length ? undefined : next)
+                      }}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }
