@@ -776,6 +776,12 @@ function dropRerun(host: EngineHost, step: TaskStep) {
 function policyPart(host: EngineHost) {
   const p = host.policy
   if (!p) return ''
+  const tools = p.tools.length
+    ? `已经授权可用的工具：${p.tools.join('、')}（直接用，不要重新登录）。`
+    : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
+  // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
+  if (host.task.parentTaskId)
+    return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问或建议；你的分支由面板合回原分支，不推远端。\n${tools}`
   const push =
     p.push === 'deny'
       ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
@@ -784,9 +790,6 @@ function policyPart(host: EngineHost) {
         : p.answered === 'allowed' || p.push === 'allow'
           ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
           : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
-  const tools = p.tools.length
-    ? `已经授权可用的工具：${p.tools.join('、')}（直接用，不要重新登录）。`
-    : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
   return `## 授权情况\n${push}\n${tools}`
 }
 
@@ -813,7 +816,11 @@ function rulesPart(host: EngineHost) {
 function inboxPart(host: EngineHost) {
   const got = host.takeInbox?.() ?? []
   if (!got.length) return ''
-  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。`
+  // 「提问」关着时子对话的提问 / 收尾建议不会交给用户，等的是父对话自己的决定
+  const ask = host.task.askUser
+    ? ''
+    : '「提问」关着：子对话的提问和收尾建议都由你决定，用户不会回答。按已有信息选最合理的做法，写清「你替他决定了什么、依据、如果不对怎么改」，缺关键信息也选一个默认方案继续并在结论里标出；不要空着等用户。'
+  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。${ask}`
 }
 
 /**
@@ -2870,7 +2877,8 @@ ${
 子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用 ask_user 把问题、选项和各自的后果写清楚；要父对话决定时用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」。`)
     if (host.messageParent)
       parts.push(`## 收尾建议要交给用户选
-这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。`)
+这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。
+建议只写你自己能做完的本地动作；推送、创建 PR、P4 submit、合并到主干由父对话决定，不要写成建议项，也不要写成要用户回答的问题。调用时 remote 必须写 "none"（这些建议不改远端）：写了别的值会被直接拒绝，卡片不会交给用户。`)
     if (host.messageParent)
       parts.push(
         host.claimFiles
