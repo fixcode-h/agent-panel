@@ -13,6 +13,67 @@ export function lineClass(l: string): string | null {
   return 'text-muted'
 }
 
+/** 文件的变更统计：增删行数和差异块（@@）数量 */
+export interface DiffStats {
+  add: number
+  del: number
+  hunks: number
+}
+
+/** 数一遍 diff 里的增行、删行和差异块。文件头（diff / index / --- / +++）不算 */
+export function diffStats(lines: string[]): DiffStats {
+  const out: DiffStats = { add: 0, del: 0, hunks: 0 }
+  for (const l of lines) {
+    if (lineClass(l) === null) continue
+    if (l.startsWith('@@')) out.hunks++
+    else if (l.startsWith('+')) out.add++
+    else if (l.startsWith('-')) out.del++
+  }
+  return out
+}
+
+/** 行内高亮的一段：changed 的部分是这一行真正改动的位置 */
+export interface InlinePart {
+  text: string
+  changed?: boolean
+}
+
+/** 超过这个长度的行不做逐字符比对：超长行（压缩后的资源、单行 JSON）比对没有意义，还可能拖慢渲染 */
+const INLINE_MAX = 4000
+
+const isLowSurrogate = (code: number) => code >= 0xdc00 && code <= 0xdfff
+
+/**
+ * 一对修改行的行内差异：去掉公共前缀、后缀，中间那段就是改动。
+ * 只按字符比，不做 LCS——逐行看差异时这样已经够用，而且不会因为长行（几千个字符）卡住。
+ * 切分点落在代理对（emoji 这类）中间时往回退一格，避免把一个字符拆成两半显示成乱码。
+ */
+export function inlineDiff(a: string, b: string): { left: InlinePart[]; right: InlinePart[] } {
+  if (a === b || a.length > INLINE_MAX || b.length > INLINE_MAX) return { left: [{ text: a }], right: [{ text: b }] }
+  const max = Math.min(a.length, b.length)
+  let p = 0
+  while (p < max && a[p] === b[p]) p++
+  if (p > 0 && p < a.length && isLowSurrogate(a.charCodeAt(p))) p--
+  let s = 0
+  while (s < max - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++
+  if (s > 0 && isLowSurrogate(a.charCodeAt(a.length - s))) s--
+  const left: InlinePart[] = []
+  const right: InlinePart[] = []
+  const leftMid = a.slice(p, a.length - s)
+  const rightMid = b.slice(p, b.length - s)
+  if (p) {
+    left.push({ text: a.slice(0, p) })
+    right.push({ text: b.slice(0, p) })
+  }
+  if (leftMid) left.push({ text: leftMid, changed: true })
+  if (rightMid) right.push({ text: rightMid, changed: true })
+  if (s) {
+    left.push({ text: a.slice(a.length - s) })
+    right.push({ text: b.slice(b.length - s) })
+  }
+  return { left, right }
+}
+
 /** 上下对照的一行：cls 是整行的样式，a / b 是改前、改后的行号 */
 export interface NumberedLine {
   l: string
