@@ -1032,10 +1032,52 @@ try {
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
   await check(p, 'ComfyUI-工作流', ['游戏图标 · 道具与技能', '内置，只读', '{{prompt}}', 'KSampler'])
+  // 节点图打开时就要适应到画布：节点占满主要区域、文字看得清
+  // （以前视口宽的比例缩放成 0.43，上下各留一半空白）
+  const graphFit = () =>
+    p.evaluate(() => {
+      const pane = document.querySelector('.react-flow')
+      const viewport = document.querySelector('.react-flow__viewport')
+      const nodes = [...document.querySelectorAll('.react-flow__node')]
+      if (!pane || !viewport || !nodes.length) return null
+      const zoom = new DOMMatrixReadOnly(getComputedStyle(viewport).transform).a
+      const rects = nodes.map((el) => el.getBoundingClientRect())
+      const box = pane.getBoundingClientRect()
+      const left = Math.min(...rects.map((r) => r.left))
+      const top = Math.min(...rects.map((r) => r.top))
+      const right = Math.max(...rects.map((r) => r.right))
+      const bottom = Math.max(...rects.map((r) => r.bottom))
+      return { zoom, coverW: (right - left) / box.width, coverH: (bottom - top) / box.height }
+    })
+  const checkGraph = async (where) => {
+    const g = await graphFit()
+    if (!g) return errors.push(`ComfyUI-节点图 ${where}：没有画出来`)
+    if (g.zoom < 0.5) errors.push(`ComfyUI-节点图 ${where}：缩放只有 ${g.zoom.toFixed(2)}，节点文字看不清`)
+    if (g.coverW < 0.8 || g.coverH < 0.8)
+      errors.push(
+        `ComfyUI-节点图 ${where}：节点只占画布宽 ${Math.round(g.coverW * 100)}%、高 ${Math.round(g.coverH * 100)}%，留白太多`,
+      )
+  }
+  await checkGraph('1440')
+  await check(p, 'ComfyUI-节点图-1440')
+  // 窗口变大节点图跟着变大；窗口窄时也能用，不留大片空白、不横向滚动
+  for (const size of [
+    { width: 1920, height: 1080 },
+    { width: 1280, height: 800 },
+  ]) {
+    await p.setViewportSize(size)
+    await p.waitForTimeout(500)
+    await checkGraph(String(size.width))
+    await check(p, `ComfyUI-节点图-${size.width}`)
+  }
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 节点图可以在图形和配置（JSON）之间切换
   await p.getByRole('radio', { name: '配置', exact: true }).click()
   await check(p, 'ComfyUI-节点图配置', ['"class_type"'])
   await p.getByRole('radio', { name: '图形', exact: true }).click()
+  // 切回图形要重新适应，不是带着上一次的缩放
+  await p.waitForTimeout(500)
+  await checkGraph('切回图形')
   // 在 ComfyUI 页点 Agent 模式要能切回去（之前会停在 ComfyUI）
   await p.getByRole('radio', { name: /^Agent 模式/ }).click()
   await p
@@ -1044,6 +1086,9 @@ try {
   await p.goto(base + '#/comfy/game')
   await p.getByRole('radio', { name: '网页 UI' }).click()
   await check(p, 'ComfyUI-网页工作流', ['网页插画'])
+  // 换了工作流也要重新适应，不能带着上一个工作流的位置和缩放
+  await p.waitForTimeout(500)
+  await checkGraph('网页工作流')
   await p.getByRole('button', { name: 'AI 优化' }).click()
   await p.getByRole('button', { name: '出图更清晰、边缘更干净' }).click()
   await p.getByRole('button', { name: '优化', exact: true }).click()
