@@ -23,8 +23,6 @@ export const EN_TASKS: Record<string, string> = {
   // 文件浏览
   文件: 'Files',
   关闭文件: 'Close files',
-  '先添加一个项目，再浏览项目里的文件。': 'Add a project first to browse its files.',
-  切换项目: 'Switch project',
   查找文件: 'Find file',
   搜索文件内容: 'Search file contents',
   搜索方式: 'Search mode',
@@ -45,7 +43,6 @@ export const EN_TASKS: Record<string, string> = {
   查看改动: 'View changes',
   文件内容: 'File contents',
   '「{path}」这次改的内容不会保存。': 'Changes to "{path}" will not be saved.',
-  浏览项目里的文件: 'Browse project files',
   '这个文件还没有改动。': 'This file has no changes yet.',
   '项目不是 git 仓库，也没有拿到这个文件的改动内容。':
     'The project is not a git repository, and no changes were provided for this file.',
