@@ -1,4 +1,5 @@
 import type { ShellReport } from '@shared/shells'
+import type { TaskExport } from '@shared/task-export'
 import type { ComfyWorkflow, LocalStatus } from '@shared/local-image'
 import type { InstalledPackage } from '@shared/cli-spec'
 import type { ProjectSuggestion } from '@shared/project-scan'
@@ -402,9 +403,12 @@ export const api = {
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),
   createTask: (input: NewTaskInput) => request<Task>('/tasks', json('POST', input)),
-  /** 导入别人导出的任务（只读）；projectId 为空放进聊天 */
+  /** 导入别人导出的任务（连同包里的子对话），只读；projectId 为空放进聊天。返回父任务在前 */
   importTask: (projectId: string, bundle: unknown) =>
-    request<Task>('/tasks/import', json('POST', { projectId, bundle })),
+    request<Task[]>('/tasks/import', json('POST', { projectId, bundle })),
+  /** 导出任务连同它分出的子对话：服务端整理成一个包，超过体积上限时直接报错 */
+  taskExport: (id: string, app = '') =>
+    request<{ bundle: TaskExport; bytes: number }>(`/tasks/${id}/export?app=${encodeURIComponent(app)}`),
   sendMessage: (id: string, text: string, attachments: Attachment[] = [], interrupt = false) =>
     request<Task>(`/tasks/${id}/messages`, json('POST', { text, attachments, interrupt })),
   /** 对话页还开着：CLI 才能停在等下一句的工具上，切走后一分钟才结束 */

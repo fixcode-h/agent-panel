@@ -399,7 +399,8 @@ await runShard('对话与续接', async (api) => {
     },
     agents: [{ id: 'their-agent', name: '他们的 Agent', createdAt: at, updatedAt: at }],
   }
-  const imp = await call('POST', '/tasks/import', { projectId: project.id, bundle })
+  // 导入返回整棵树（父任务在前）：包里没有子对话时只有一个
+  const [imp] = await call('POST', '/tasks/import', { projectId: project.id, bundle })
   assert.equal(imp.projectId, project.id)
   assert.equal(imp.imported.agents[0].name, '他们的 Agent')
   assert.ok(!JSON.stringify(imp).includes('sk-abcdef'), '导入时去掉密钥')
@@ -408,8 +409,31 @@ await runShard('对话与续接', async (api) => {
   await assert.rejects(call('PATCH', `/tasks/${imp.id}`, { askUser: true }), /导入的任务/)
   assert.equal((await call('PATCH', `/tasks/${imp.id}`, { title: '改个名' })).title, '改个名', '能改名')
   await assert.rejects(call('POST', '/tasks/import', { bundle: { format: 'x' } }), /不是 Agent 面板导出的任务/)
-  await call('DELETE', `/tasks/${imp.id}`)
-  step('导入别人导出的任务：只读，去掉密钥，不能继续执行')
+  // 导出父对话会带上子对话：children 一起导入，父子关系指向本机新分配的父任务
+  const tree = await call('POST', '/tasks/import', {
+    projectId: project.id,
+    bundle: {
+      ...bundle,
+      children: [{ ...bundle.task, id: 'their-child', title: '他们的子对话', messages: [] }],
+    },
+  })
+  assert.equal(tree.length, 2, '父任务和子对话一起导入')
+  assert.equal(tree[1].parentTaskId, tree[0].id, '子对话挂在新分配的父任务下')
+  assert.equal(tree[1].rootTaskId, tree[0].id)
+  const kids = await call('GET', `/tasks/${tree[0].id}/children`)
+  assert.deepEqual(
+    kids.map((x) => x.id),
+    [tree[1].id],
+    '子对话栏能看到导入的子对话',
+  )
+  // 再导出这个父对话：子对话跟着走，包里还有它的父子关系
+  const exported = await call('GET', `/tasks/${tree[0].id}/export`)
+  assert.equal(exported.bundle.children.length, 1, '导出父对话会带上它的子对话')
+  assert.equal(exported.bundle.children[0].parentTaskId, '', '直接挂在父任务下的子对话写成空')
+  assert.ok(exported.bytes > 0, '给出包的体积')
+  // 删父对话会连带删掉它的子对话（见 DELETE /tasks/:id）
+  for (const tk of [tree[0], imp]) await call('DELETE', `/tasks/${tk.id}`)
+  step('导入别人导出的任务：连同子对话建成只读的整棵树，去掉密钥，不能继续执行')
   const other = await call('POST', '/tasks', {
     projectId: project.id,
     mode: 'chat',

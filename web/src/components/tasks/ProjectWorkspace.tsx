@@ -72,9 +72,14 @@ function ProjectHome({ project }: { project: Project }) {
     e.target.value = ''
     if (!f) return
     try {
-      const tk = await importTaskFile(f, project.id)
+      // 包里的子对话一起导入：返回父任务在前的整棵树，打开父任务就能在子对话栏看到它们
+      const [tk, ...kids] = await importTaskFile(f, project.id)
       upsertTask(taskSummary(tk))
-      toast.success(t('已导入「{title}」', { title: tk.title }))
+      toast.success(
+        kids.length
+          ? t('已导入「{title}」和 {n} 个子对话', { title: tk.title, n: kids.length })
+          : t('已导入「{title}」', { title: tk.title }),
+      )
       open(tk.id)
     } catch (err) {
       toast.error((err as Error).message)

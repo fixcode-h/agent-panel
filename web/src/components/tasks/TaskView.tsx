@@ -912,7 +912,14 @@ export function TaskView({
   const blocked = task.mode === 'workflow' ? blockedStep(task, taskFlow(task, workflow)) : undefined
   const canResume = (task.status === 'failed' || task.status === 'stopped') && draftEmpty && !flowLeft
 
-  const exportIt = () => downloadTask(task.id, agents).catch((e) => toast.error((e as Error).message))
+  const exportIt = () =>
+    downloadTask(task.id).then(
+      ({ children }) =>
+        toast.success(
+          children ? t('已导出任务和 {n} 个子对话，导入后父子结构能还原', { n: children }) : t('已导出任务'),
+        ),
+      (e: Error) => toast.error(e.message),
+    )
   /**
    * 复制对话：服务端把这个任务的对话整理成一份转录附件（和「引入会话」同一套格式，超长由它截断并注明），
    * 剪贴板里只放这个文件的路径——粘贴回输入框就会变成一张会话卡片，而不是一大段文字。
@@ -1203,7 +1210,7 @@ export function TaskView({
                         <Pencil className="h-4 w-4" />
                         {t('重命名')}
                       </MenuItem>
-                      <MenuItem onSelect={exportIt}>
+                      <MenuItem onSelect={exportIt} title={t('连同它分出的子对话一起导出，导入后父子结构能还原')}>
                         <Download className="h-4 w-4" />
                         {t('导出任务')}
                       </MenuItem>

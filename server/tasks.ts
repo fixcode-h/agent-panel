@@ -123,7 +123,8 @@ import {
   type WrapUpKind,
 } from '../shared/plan.ts'
 import type { PlanWait, TaskProcess } from '../shared/schema.ts'
-import { importTask, parseTaskExport } from '../shared/task-export.ts'
+import { importTaskTree, parseTaskExport, exportTaskTree, checkExportSize } from '../shared/task-export.ts'
+import { runTree } from '../shared/run-usage.ts'
 import { childFilesInfo, collisionNotice, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { detectVcs } from './projects-analyze.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
@@ -2901,20 +2902,44 @@ export function tasksApi(deps: {
     return c.json(await saveTextUpload(name, clipTranscript(lines.join('\n\n'))), 201)
   })
 
-  // 导入别人导出的任务：建一个只读的任务，放进指定的项目（为空放进聊天）
+  /**
+   * 导出任务：连同它分出的所有子对话（含多层）整理成一个包。
+   * 不交给前端自己拼：要先按 parentTaskId 找出整棵树、按体积上限拦一下，几百 MB 的包不该先传到浏览器再发现装不下。
+   */
+  routes.get('/:id/export', async (c) => {
+    const id = c.req.param('id')
+    const root = await store.get(id)
+    if (!root) return bad(c, t('任务不存在'), 404)
+    try {
+      // 先按摘要找出整棵树的 id，再逐个读完整任务（导出时才读子对话的对话文件，平时不读）
+      const ids = runTree(root, await store.list()).map((x) => x.id)
+      const tree = (await Promise.all(ids.map((x) => (x === id ? root : store.get(x))))).filter((x): x is Task => !!x)
+      const bundle = exportTaskTree(root, tree, await deps.agents.list(), c.req.query('app') ?? '')
+      return c.json({ bundle, bytes: checkExportSize(bundle) })
+    } catch (e) {
+      return bad(c, (e as Error).message)
+    }
+  })
+
+  // 导入别人导出的任务：连同包里的子对话一起建成本机的只读任务，放进指定的项目（为空放进聊天）
   routes.post('/import', async (c) => {
     const body = (await c.req.json().catch(() => null)) as { projectId?: string; bundle?: unknown } | null
     if (!body) return bad(c, t('不是有效的 JSON 文件'))
     const projectId = body.projectId ?? ''
     if (projectId && !(await deps.projects.get(projectId))) return bad(c, t('项目不存在'), 404)
-    let task: Task
+    let created: Task[]
     try {
-      task = importTask(parseTaskExport(body.bundle), projectId, randomUUID())
+      const bundle = parseTaskExport(body.bundle)
+      // 父任务和每个子对话各分配一个本机 id（父在前、子在后）；重复导入同一棵树也不会撞 id
+      created = importTaskTree(bundle, projectId, [randomUUID(), ...bundle.children.map(() => randomUUID())])
     } catch (e) {
       return bad(c, (e as Error).message)
     }
-    log.info('task', '导入任务', { task: task.id, title: task.title })
-    return c.json(await store.create(task), 201)
+    // 按父先子后的顺序落盘：子对话的 parentTaskId 指向的是前面的父任务
+    const saved: Task[] = []
+    for (const task of created) saved.push(await store.create(task))
+    log.info('task', '导入任务', { task: saved[0].id, title: saved[0].title, children: saved.length - 1 })
+    return c.json(saved, 201)
   })
 
   routes.post('/', async (c) => {

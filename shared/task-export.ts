@@ -9,6 +9,7 @@
 import { z } from 'zod'
 import { Agent, TaskData, Workflow, type Task, type TaskStep } from './schema.ts'
 import { includedAgents } from './agent-role.ts'
+import { runTree } from './run-usage.ts'
 import { stepMs, stepUsage, withAttachments } from './task.ts'
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord } from './prompt-lang.ts'
@@ -344,6 +345,13 @@ const ExportedTask = TaskData.omit({
 }).extend({ createdAt: z.string(), updatedAt: z.string() })
 export type ExportedTask = z.infer<typeof ExportedTask>
 
+/**
+ * 包里的子对话：和父任务一样是去掉本机字段的任务，另外带上自己的 id，
+ * 好让更深一层的子对话用 `parentTaskId` 指回它（`parentTaskId` 为空表示直接挂在这个包的父任务下）。
+ */
+const ExportedChild = ExportedTask.extend({ id: z.string(), parentTaskId: z.string().default('') })
+export type ExportedChild = z.infer<typeof ExportedChild>
+
 export const TaskExport = z.object({
   format: z.literal(TASK_EXPORT_FORMAT),
   version: z.literal(TASK_EXPORT_VERSION),
@@ -351,20 +359,43 @@ export const TaskExport = z.object({
   /** 导出它的面板版本，方便排查格式问题 */
   app: z.string().default(''),
   task: ExportedTask,
+  /**
+   * 这个任务分出的所有子对话（含多层），平铺在这个数组里，靠 `parentTaskId` 连回父任务或更上层的子对话。
+   * 旧版本的包没有这个字段，读成空数组
+   */
+  children: z.array(ExportedChild).default([]),
   agents: z.array(Agent).default([]),
   /** 导出时算好的统计，分析时不用再算；导入时会重新算 */
   stats: z.unknown().optional(),
 })
 export type TaskExport = z.infer<typeof TaskExport>
 
-/** 把任务整理成导出文件的内容 */
-export function exportTask(
-  task: Task,
-  agents: Agent[],
-  app = '',
-  now = new Date(),
-  children: StatsTotal = NO_TOTALS,
-): TaskExport {
+/** 导出包的体积上限：消息文件可能有几百 MB，一个 JSON 装不下也不该装，导出前先拦下来 */
+export const TASK_EXPORT_MAX_BYTES = 50 * 1024 * 1024
+
+export const fmtBytes = (n: number) =>
+  n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
+
+/** 导出包的体积（UTF-8 字节）：服务端和浏览器都按这个算，判断能不能放进一个文件 */
+export function exportBytes(bundle: TaskExport): number {
+  return new TextEncoder().encode(JSON.stringify(bundle)).length
+}
+
+/** 超过上限就报错：与其生成一个打不开的几百 MB 文件，不如让用户先精简子对话 */
+export function checkExportSize(bundle: TaskExport): number {
+  const bytes = exportBytes(bundle)
+  if (bytes > TASK_EXPORT_MAX_BYTES)
+    throw new Error(
+      t('这次导出连同子对话有 {size}，超过了 {max} 的上限。可以先删掉不需要的子对话，或者单独导出其中的子对话。', {
+        size: fmtBytes(bytes),
+        max: fmtBytes(TASK_EXPORT_MAX_BYTES),
+      }),
+    )
+  return bytes
+}
+
+/** 任务在导出文件里的样子：去掉只在本机有意义的字段，运行中的临时状态都按空闲算 */
+function exportedBody(task: Task): ExportedTask {
   const {
     id: _id,
     projectId: _p,
@@ -380,10 +411,10 @@ export function exportTask(
     worktree: _w,
     budgetFrom: _bf,
     archived: _a,
-    imported,
+    imported: _i,
     ...rest
   } = task
-  const body: ExportedTask = {
+  return {
     ...rest,
     // 还在执行的任务导出的是当时的样子
     status: rest.status === 'running' ? 'stopped' : rest.status,
@@ -395,8 +426,18 @@ export function exportTask(
       m.attachments ? { ...m, attachments: m.attachments.map((a) => ({ ...a, path: a.name })) } : m,
     ),
   }
+}
+/** 把任务整理成导出文件的内容 */
+export function exportTask(
+  task: Task,
+  agents: Agent[],
+  app = '',
+  now = new Date(),
+  children: StatsTotal = NO_TOTALS,
+): TaskExport {
+  const body = exportedBody(task)
   // 导入的任务再导出时，用导入时带来的 Agent
-  const pool = imported ? [...agents, ...imported.agents.filter((a) => !agents.some((x) => x.id === a.id))] : agents
+  const pool = importedAgentsPool([task], agents)
   const used = taskAgents(task, pool).map((a) => ({ ...a, categoryId: '', tags: [] }))
   return redactDeep({
     format: TASK_EXPORT_FORMAT,
@@ -404,9 +445,44 @@ export function exportTask(
     exportedAt: now.toISOString(),
     app,
     task: body,
+    children: [],
     agents: used,
-    stats: taskStats(task, now.getTime(), children),
+    // 用 steps 的副本：算统计时 stepUsage 会给缺省值补上 usage，别把导出过程写回内存里的任务
+    stats: taskStats({ ...task, steps: body.steps }, now.getTime(), children),
   })
+}
+
+/** 可用的 Agent：本机的，加上这些任务导出时带来的（导入过的任务再导出，要能找回对方那边自定义的角色） */
+function importedAgentsPool(tasks: Task[], agents: Agent[]) {
+  const pool = [...agents]
+  for (const tk of tasks) for (const a of tk.imported?.agents ?? []) if (!pool.some((x) => x.id === a.id)) pool.push(a)
+  return pool
+}
+
+/**
+ * 把任务连同它分出的所有子对话（含多层）整理成一个导出文件。
+ * 子对话平铺在 `children` 里，`parentTaskId` 指向包内的上层任务（空表示直接挂在父任务下）；
+ * 子任务（`steps` 里 `slot: 'sub'` 的）本来就在各自的任务里，跟着一起走，不用另外收集。
+ */
+export function exportTaskTree(root: Task, all: Task[], agents: Agent[], app = '', now = new Date()): TaskExport {
+  // 按 parentTaskId 逐层往下找，同一个任务只收一次（两个父对话共用一个子对话时不会重复）
+  const kids = runTree(root, all).filter((x) => x.id !== root.id)
+  const pool = importedAgentsPool([root, ...kids], agents)
+  const bundle = exportTask(root, pool, app, now, descendantTotals(kids))
+  bundle.children = kids.map((k) => ({
+    ...exportedBody(k),
+    id: k.id,
+    // 直接挂在父任务下的写空：父任务的 id 不出现在包里（导入时会重新分配），指向它没法还原
+    parentTaskId: k.parentTaskId === root.id ? '' : k.parentTaskId,
+  }))
+  // 子对话用到的 Agent 也带上：本机没有这些角色时，导入的一方还能看到名字和设定
+  const extra: Agent[] = []
+  for (const k of kids)
+    for (const a of taskAgents(k, pool))
+      if (!bundle.agents.some((x) => x.id === a.id) && !extra.some((x) => x.id === a.id)) extra.push(a)
+  if (extra.length) bundle.agents = [...bundle.agents, ...extra.map((a) => ({ ...a, categoryId: '', tags: [] }))]
+  // 导出前整体再去一遍密钥（子对话的内容还没走过这一步），已去掉的部分不会被再改
+  return redactDeep(bundle)
 }
 
 export const exportFileName = (title: string) =>
@@ -430,11 +506,26 @@ export function parseTaskExport(raw: unknown): TaskExport {
  */
 export function importTask(bundle: TaskExport, projectId: string, id: string, now = new Date().toISOString()): Task {
   const b = redactDeep(bundle)
+  // 导出的任务本身可能是别人那边的子对话：本机没有它的父对话，导入后要当顶层任务才能看到
+  return importedTask(b.task, b, projectId, id, now, '', '')
+}
+
+/** 一个导出文件里的任务 → 本机的只读任务（`parentTaskId` / `rootTaskId` 由调用方按新树回填） */
+function importedTask(
+  body: ExportedTask,
+  bundle: Pick<TaskExport, 'exportedAt' | 'app' | 'agents'>,
+  projectId: string,
+  id: string,
+  now: string,
+  parentTaskId: string,
+  rootTaskId: string,
+): Task {
   return {
-    ...b.task,
+    ...body,
     id,
+    parentTaskId,
+    rootTaskId,
     projectId,
-    title: b.task.title,
     sessions: {},
     wantsWorktree: false,
     command: [],
@@ -446,11 +537,65 @@ export function importTask(bundle: TaskExport, projectId: string, id: string, no
     turnDoneAt: '',
     awaitingUser: false,
     prewarming: false,
-    simulated: b.task.simulated,
-    imported: { at: now, exportedAt: b.exportedAt, app: b.app, agents: b.agents },
-    createdAt: b.task.createdAt,
+    simulated: body.simulated,
+    imported: { at: now, exportedAt: bundle.exportedAt, app: bundle.app, agents: bundle.agents },
+    createdAt: body.createdAt,
     updatedAt: now,
   }
+}
+
+/**
+ * 导入整个包：父任务连同它的子对话一起建成只读任务，父在前、子在后（`ids` 由调用方生成，第一个给父任务）。
+ * 子对话的 `parentTaskId` / `rootTaskId` 指向本机新分配的 id，父子结构和不导入时一样；
+ * 步骤 id 原样保留，所以消息里 `spawned` 引用的子任务、节点里的输出都对得上。
+ * 子对话的父不在包里（导出后父对话被删了）时挂到父任务下，不让它变成看不见的孤儿。
+ */
+export function importTaskTree(
+  bundle: TaskExport,
+  projectId: string,
+  ids: string[],
+  now = new Date().toISOString(),
+): Task[] {
+  const [rootId] = ids
+  if (!rootId) throw new Error(t('缺少导入任务的 id'))
+  const b = redactDeep(bundle)
+  const root = importedTask(b.task, b, projectId, rootId, now, '', '')
+  // 同一个子对话在包里出现两次时只收一次（导出时已经去过重，这里防手改过的包）
+  const seen = new Set<string>()
+  const left = b.children.filter((c) => {
+    if (!c.id || seen.has(c.id)) return false
+    seen.add(c.id)
+    return true
+  })
+  // 父先子后：父对话还没分配新 id 的子对话先跳过，这一轮分不下去的（父不在包里）挂到父任务下
+  const newIds = new Map<string, string>()
+  /** 依次分配新 id：第一个给父任务，之后按父先子后的顺序；调用方给的 id 不够时补一个不会重复的 */
+  const nextId = () => ids[newIds.size + 1] || `${rootId}-${newIds.size + 1}`
+  const order: { child: ExportedChild; parentTaskId: string }[] = []
+  let placed = left.length > 0
+  while (left.length && placed) {
+    placed = false
+    for (let i = left.length - 1; i >= 0; i--) {
+      const child = left[i]
+      const parent = child.parentTaskId ? newIds.get(child.parentTaskId) : rootId
+      if (parent === undefined) continue
+      newIds.set(child.id, nextId())
+      order.push({ child, parentTaskId: parent })
+      left.splice(i, 1)
+      placed = true
+    }
+  }
+  for (const child of left) {
+    newIds.set(child.id, nextId())
+    order.push({ child, parentTaskId: rootId })
+  }
+  // 父任务在前，子对话在后：子对话的 parentTaskId 指的就是这里分配的新 id
+  return [
+    root,
+    ...order.map(({ child, parentTaskId }) =>
+      importedTask(child, b, projectId, newIds.get(child.id)!, now, parentTaskId, rootId),
+    ),
+  ]
 }
 
 /** 页面显示导入的任务时，本机没有的 Agent 用导入时带来的 */
