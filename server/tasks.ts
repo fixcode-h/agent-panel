@@ -32,7 +32,6 @@ import {
   endRun,
   messageStamp,
   pauseStep,
-  sharesWorkdir,
   trackWait,
   waitDuration,
   newTask,
@@ -96,7 +95,7 @@ import { t } from '../shared/i18n.ts'
 import { childTurnSettle, holdWait, openPlan, settleWait, waitNote } from '../shared/plan.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
-import { collisions, createClaims } from './claims.ts'
+import { collisionNotice, createClaims } from './claims.ts'
 import { createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
@@ -1177,20 +1176,15 @@ export function tasksApi(deps: {
 
   /**
    * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
-   * 在子对话里留一条提醒，并告诉父对话（只在这些对话真的共用一个工作目录时：后写的会覆盖先写的）。
-   * 走独立分支的子对话各改各的，撞了也是合并时的事，不提醒。
+   * 在子对话里留一条提醒（只在这些对话真的共用一个工作目录时：后写的会覆盖先写的）。
+   * 走独立分支的子对话各改各的，撞了是合并时的事，由 git merge 处理，不提醒也不汇报父对话。
    */
   async function checkCollisions(child: Task) {
-    if (!sharesWorkdir(child)) return
-    const mine = child.changes.map((c) => c.path)
-    if (!mine.length) return
-    const others = [...live.values()]
-      .map((e) => e.task)
-      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working && sharesWorkdir(x))
-      .map((x) => ({ title: x.title, files: x.changes.map((c) => c.path) }))
-    const hit = collisions(mine, others)
-    if (!hit.length) return
-    const list = hit.map((h) => `${h.path}（「${h.with}」也在改）`).join('、')
+    const list = collisionNotice(
+      child,
+      [...live.values()].map((e) => e.task),
+    )
+    if (!list) return
     child.messages.push({
       id: randomUUID(),
       role: 'system',
@@ -1203,11 +1197,6 @@ export function tasksApi(deps: {
       tools: [],
       at: new Date().toISOString(),
     })
-    await messageParent(
-      child,
-      `我这一轮改的文件和正在执行的其他子对话撞了：${list}。这些对话共用一个工作目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
-      false,
-    )
   }
 
   async function start(
