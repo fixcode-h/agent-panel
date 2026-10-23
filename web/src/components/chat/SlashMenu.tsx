@@ -8,6 +8,7 @@ import { t } from '@shared/i18n'
 import { chipMarker, commandChip, type ChipKind } from '@shared/composer'
 import { builtinCommands } from '@shared/commands'
 import type { RichInputHandle } from './RichInput'
+import { useMenuBox } from './useMenuBox'
 
 /** 面板自己执行的命令：不发给 CLI，直接调对应的操作 */
 export type SlashAction = 'compact' | 'review'
@@ -127,7 +128,16 @@ export function useSlashMenu({
     .slice(0, 80)
   const open = !!cli && query !== null && !closed && (items.length > 0 || cmds === null)
 
-  useEffect(() => setActive(0), [kw, cli])
+  // 菜单的滚动和高度：选中项跟着 ↑↓ 滚进可视区，矮窗口时压短（见 useMenuBox）
+  const box = useMenuBox(active, open, 20)
+
+  // 换了关键词或 CLI：回到第一条，菜单也回到顶部，不用等 ↑↓ 才滚回来
+  useEffect(() => {
+    setActive(0)
+    if (box.current) box.current.scrollTop = 0
+    // box 是稳定的 ref，不用进依赖
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [kw, cli])
 
   const pick = (x: Item) => {
     const el = editor.current
@@ -188,9 +198,10 @@ export function useSlashMenu({
   ]
   const menu = open ? (
     <div
+      ref={box}
       role="listbox"
       aria-label={t('命令')}
-      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-80 overflow-y-auto rounded-xl border border-line-strong bg-card p-1 shadow-pop"
+      className="absolute right-3 bottom-full left-3 z-30 mb-2 max-h-[min(20rem,60vh)] overflow-y-auto overscroll-contain rounded-xl border border-line-strong bg-card p-1 shadow-pop"
     >
       <div className="flex items-center gap-2 px-2.5 pt-1.5 pb-1 text-[0.6875rem] text-subtle">
         <span className="font-medium text-muted">{getCli(cli)?.name ?? cli}</span>
@@ -211,8 +222,10 @@ export function useSlashMenu({
                   type="button"
                   role="option"
                   aria-selected={i === active}
+                  data-i={i}
                   onMouseDown={(e) => e.preventDefault()}
-                  onMouseEnter={() => setActive(i)}
+                  // 用 mousemove 不用 mouseenter：滚动时列表会在鼠标底下换行，mouseenter 会跟着再改一次选中项，来回抖
+                  onMouseMove={() => setActive(i)}
                   onClick={() => pick(x)}
                   title={x.description}
                   className={cn(
