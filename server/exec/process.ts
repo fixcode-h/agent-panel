@@ -3,7 +3,14 @@ import { createInterface } from 'node:readline'
 import spawn from 'cross-spawn'
 import { t } from '../../shared/i18n.ts'
 import { log } from '../log.ts'
-import { looksLikePanelCli, trackCliProcess, untrackCliProcess, clearTrackedClis } from './orphans.ts'
+import {
+  looksLikePanelCli,
+  trackCliProcess,
+  untrackCliProcess,
+  clearTrackedClis,
+  touchCliProcess,
+  type TrackedOwner,
+} from './orphans.ts'
 
 const isWin = process.platform === 'win32'
 
@@ -36,7 +43,7 @@ export interface ProcessResult {
 const live = new Map<number, ReturnType<typeof spawn>>()
 
 /** pid 还在不在（不关心它是什么进程） */
-function isAlive(pid: number) {
+export function isProcessAlive(pid: number) {
   try {
     process.kill(pid, 0)
     return true
@@ -44,6 +51,7 @@ function isAlive(pid: number) {
     return false
   }
 }
+const isAlive = isProcessAlive
 
 /** 结束整个进程树：CLI 往往会再起子进程（shell、MCP 服务等） */
 export function killTree(pid: number, force = false) {
@@ -134,6 +142,8 @@ export function runProcess(o: {
   onSpawn?: (io: { write: (s: string) => void; end: () => void }) => void
   /** Windows 上参数原样拼进命令行、不加引号转义：交给 cmd.exe /c 的整行命令要用它（见 shellCommand） */
   windowsVerbatimArguments?: boolean
+  /** 这个进程是哪个对话（含子对话、子任务、工作流）起的：进程面板按它归属和统计内存 */
+  owner?: TrackedOwner
 }): Promise<ProcessResult> {
   const args = isWin ? oneLineArgs(o.args) : o.args
   return new Promise((resolve) => {
@@ -210,7 +220,17 @@ export function runProcess(o: {
     // 短命令（git、版本检测）不带这些痕迹，不登记也不频繁写盘
     if (pid) {
       const argv = [o.command, ...args].join(' ')
-      if (looksLikePanelCli(argv)) trackCliProcess(pid, argv, o.cwd)
+      if (looksLikePanelCli(argv)) trackCliProcess(pid, argv, o.cwd, o.owner)
+    }
+    // 有输出就记一下「最后一次出声」：进程面板据此区分运行中和长时间没输出。
+    // 一行一个事件，1 秒节流一次就够
+    let touchedAt = 0
+    const touch = () => {
+      if (!pid) return
+      const now = Date.now()
+      if (now - touchedAt < 1000) return
+      touchedAt = now
+      touchCliProcess(pid)
     }
     const forget = () => {
       if (!pid) return
@@ -225,11 +245,13 @@ export function runProcess(o: {
     child.stderr!.on('data', (d: string) => {
       stderr = (stderr + d).slice(-16000)
       active()
+      touch()
       o.onStderr?.(d)
     })
     const rl = createInterface({ input: child.stdout! })
     rl.on('line', (line) => {
       active()
+      touch()
       try {
         o.onLine?.(line)
       } catch (e) {

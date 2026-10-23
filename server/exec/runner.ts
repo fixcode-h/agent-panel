@@ -1423,6 +1423,8 @@ async function runAgent(
     cwd,
     env,
     input,
+    // 进程面板按这个归属：子对话、子任务、工作流都是同一个任务树上的进程
+    owner: { taskId: task.id, rootTaskId: task.rootTaskId || task.id, title: task.title },
     signal: ctx.signal,
     // 0 表示不限制
     timeoutMs: settings.stepTimeoutMinutes ? settings.stepTimeoutMinutes * 60_000 : 0,

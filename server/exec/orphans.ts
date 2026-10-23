@@ -14,8 +14,20 @@ import { DATA_DIR } from '../store.ts'
  */
 const FILE = path.join(DATA_DIR, 'run', 'cli-pids.json')
 
+/** 这条 CLI 是哪个对话（含子对话、子任务、工作流）起的：taskId 是执行它的那个任务，rootTaskId 是对话树的最上层 */
+export type TrackedOwner = { taskId: string; rootTaskId: string; title: string }
+
 /** 一条登记：pid、命令行（拼好的，日志和判定用）、工作目录、开始时间 */
-export type TrackedCli = { pid: number; argv: string; cwd: string; startedAt: number }
+export type TrackedCli = {
+  pid: number
+  argv: string
+  cwd: string
+  startedAt: number
+  /** 归属：任务执行起的进程才有；AI 创建、文档、模型检测这类面板自己的动作为空 */
+  owner?: TrackedOwner
+  /** 最后一次有输出的时刻（只留在内存里，不写盘）：判断「很久没有输出」 */
+  lastOutputAt?: number
+}
 
 const run = promisify(execFile)
 
@@ -63,11 +75,28 @@ let mem: TrackedCli[] | null = null
 const tracked = () => (mem ??= read())
 
 /** 面板起了一个带自己痕迹的 CLI：记下来，面板被强杀后下次启动能认出来 */
-export function trackCliProcess(pid: number, argv: string, cwd: string) {
+export function trackCliProcess(pid: number, argv: string, cwd: string, owner?: TrackedOwner) {
+  const now = Date.now()
   const list = tracked().filter((x) => x.pid !== pid)
-  list.push({ pid, argv, cwd, startedAt: Date.now() })
+  list.push({ pid, argv, cwd, startedAt: now, lastOutputAt: now, ...(owner ? { owner } : {}) })
   mem = list
   write(list)
+}
+
+/** 这个进程还有输出（stdout 每一行、stderr 每一块都会走到）：只更新内存，不写盘 */
+export function touchCliProcess(pid: number) {
+  const e = tracked().find((x) => x.pid === pid)
+  if (e) e.lastOutputAt = Date.now()
+}
+
+/** 当前登记的进程（副本）；内存采样的每一点都读它，不能把内部数组交出去 */
+export function trackedClis(): TrackedCli[] {
+  return tracked().map((x) => ({ ...x }))
+}
+
+/** 这条登记现在还在不在 */
+export function isTrackedCli(pid: number) {
+  return tracked().some((x) => x.pid === pid)
 }
 
 /** 进程正常结束了：从登记里去掉（不在登记里时不碰文件，短命令很多） */

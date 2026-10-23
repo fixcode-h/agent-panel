@@ -4,6 +4,7 @@ import { cliSettings } from '../../shared/settings.ts'
 import { rpcSessionFor } from './rpc/index.ts'
 import { parserFor, type CliEvent } from './parsers.ts'
 import { runProcess, type ProcessResult } from './process.ts'
+import type { TrackedOwner } from './orphans.ts'
 import { t } from '../../shared/i18n.ts'
 import { AUTO_ANSWER } from '../asks.ts'
 import { prepareAuth } from '../accounts.ts'
@@ -107,6 +108,8 @@ export async function invokeCli(o: {
   orch?: Orchestra
   /** 设置里手动改的上下文窗口、最大输出：CLI 定义里写了 limitFile 时，这一轮写进它的配置文件 */
   limits?: { context?: number; maxOutput?: number }
+  /** 这个进程是哪个对话（含子对话、子任务、工作流）起的：进程面板按它归属和统计内存 */
+  owner?: TrackedOwner
 }): Promise<ProcessResult> {
   const def = getCli(o.cliId)!
   // 旧设置里的模型可能没带 API 的 provider 前缀（例如 deepseek/...），执行前按当前 API 归一化
@@ -321,6 +324,7 @@ async function invoke(
         args,
         cwd: o.cwd,
         env: o.env,
+        owner: o.owner,
         signal,
         timeoutMs: o.timeoutMs,
         // 保活期间在等用户下一句，不算卡住
@@ -346,6 +350,7 @@ async function invoke(
     args,
     cwd: o.cwd,
     env: o.env,
+    owner: o.owner,
     stdin: o.input,
     signal,
     timeoutMs: o.timeoutMs,

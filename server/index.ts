@@ -66,6 +66,7 @@ import { gitBranches, gitCheckout } from './exec/git.ts'
 import { sweepWorktrees } from './exec/worktree.ts'
 import { killAllProcesses, killTree } from './exec/process.ts'
 import { cleanStaleCliProcesses } from './exec/orphans.ts'
+import { startMemorySampler } from './exec/proc-stats.ts'
 import { listCommands } from './slash.ts'
 import { searchProjectFiles, uploadsApi, uploadsRawApi } from './uploads.ts'
 import { filesApi } from './files.ts'
@@ -917,6 +918,8 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
   log.info('server', '启动', { version: currentVersion(), data: DATA_DIR, log: logFile(), prod, tray, restarted })
   // 作为系统服务登录时自动启动的，不打开浏览器，免得每次开机都弹出来
   // 设置里开着外网访问时启动隧道；quick 模式的地址要等 cloudflared 输出，设置页里能看到
+  // 内存曲线：30 秒采一点（面板 server + 各对话的 CLI 进程树），落盘后重启接着用
+  stopMemorySampler = startMemorySampler()
   // 回收没人管的独立目录：启动后跑一次，之后每小时一次（进程退出不用等它）
   setTimeout(() => void sweepStaleWorktrees(), 10_000).unref()
   setInterval(() => void sweepStaleWorktrees(), 60 * 60_000).unref()
@@ -929,6 +932,9 @@ const server = serve({ fetch: root.fetch, port, hostname: '127.0.0.1' }, async (
     if (open) console.log(`AGENT_PANEL_OPEN ${url}`)
   } else if (open) openBrowser(url)
 })
+/** 停掉内存采样的定时器，并把这批点写进历史 */
+let stopMemorySampler: (() => void) | undefined
+
 /**
  * 退出前停掉正在执行的 CLI，并把任务状态落盘。macOS / Linux 上 CLI 跑在独立的进程组里，
  * 服务退出时不会跟着结束，不停掉的话会在后台继续改项目。最多等 5 秒。
@@ -938,6 +944,7 @@ async function shutdown(code = 0) {
   if (exiting) return process.exit(1)
   exiting = true
   log.info('server', '正在退出，停止正在执行的任务')
+  stopMemorySampler?.()
   server.close()
   await Promise.race([stopRemote(), new Promise((r) => setTimeout(r, 5000))])
   await Promise.race([tasks.stopAll(), new Promise((r) => setTimeout(r, 5000))])
