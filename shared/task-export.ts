@@ -44,8 +44,12 @@ export interface NodeStat {
 }
 
 export interface TaskStats {
+  /** 记录从头到尾的跨度：第一条到最后一个时间戳 */
+  spanMs: number
   durationMs: number
   waitMs: number
+  /** 跨度里既不算执行也不算等用户的部分：进程退出了、用户在忙别的 */
+  idleMs: number
   inputTokens: number
   outputTokens: number
   cacheReadTokens: number
@@ -58,10 +62,12 @@ export interface TaskStats {
   errors: number
   /** 其中失败的工具调用次数 */
   failedTools: number
-  /** 追加要求、对话的轮数 */
+  /** 追加要求、对话的轮数（一次 CLI 调用一轮） */
   turns: number
   /** 其中没有正常结束的（停在执行中就被打断、服务重启） */
   turnsUnfinished: number
+  /** 用户消息条数：和轮数不是一个口径，报告里两个都写出来 */
+  asks: number
   nodes: NodeStat[]
 }
 
@@ -90,6 +96,25 @@ const failedToolsOf = (task: Task, step?: string) =>
   task.messages
     .filter((m) => (step === undefined ? true : m.step === step))
     .reduce((n, m) => n + m.tools.filter((x) => x.failed).length, 0)
+
+/**
+ * 记录从头到尾的跨度（毫秒）：创建、消息、轮次、节点里最晚的时间减去最早的。
+ * 不用 updatedAt：导入的任务会把它改成导入时间，跨度会凭空变长。
+ */
+export function recordSpan(rec: {
+  createdAt: string
+  messages: { at?: string }[]
+  turns?: { startedAt: string; endedAt?: string }[]
+  steps?: { startedAt: string; endedAt?: string }[]
+}) {
+  const ats: number[] = [Date.parse(rec.createdAt)]
+  for (const m of rec.messages) ats.push(Date.parse(m.at ?? ''))
+  for (const t of rec.turns ?? []) ats.push(Date.parse(t.startedAt), Date.parse(t.endedAt ?? ''))
+  for (const s of rec.steps ?? []) ats.push(Date.parse(s.startedAt), Date.parse(s.endedAt ?? ''))
+  const ok = ats.filter(Number.isFinite)
+  if (!ok.length) return 0
+  return Math.max(0, Math.max(...ok) - Math.min(...ok))
+}
 
 export function taskStats(task: Task, now = Date.now()): TaskStats {
   const errorsOf = (step: string) => task.messages.filter((m) => m.error && m.step === step).length
@@ -120,9 +145,15 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
   })
   const count = (st: TaskStep['status']) => task.steps.filter((s) => s.status === st).length
   const u = task.usage
+  const durationMs = task.runMs ?? 0
+  const waitMs = task.waitMs ?? 0
+  const spanMs = recordSpan(task)
   return {
-    durationMs: task.runMs ?? 0,
-    waitMs: task.waitMs ?? 0,
+    spanMs,
+    durationMs,
+    waitMs,
+    // 跨度里扣掉执行和等用户，剩下的就是谁也没在跑的空档（至少 0，旧记录时间戳对不上时不出负数）
+    idleMs: Math.max(0, spanMs - durationMs - waitMs),
     inputTokens: u.inputTokens,
     outputTokens: u.outputTokens,
     cacheReadTokens: u.cacheReadTokens,
@@ -140,6 +171,7 @@ export function taskStats(task: Task, now = Date.now()): TaskStats {
     failedTools: failedToolsOf(task),
     turns: task.turns?.length ?? 0,
     turnsUnfinished: (task.turns ?? []).filter((x) => x.status !== 'done').length,
+    asks: task.messages.filter((m) => m.role === 'user').length,
     nodes,
   }
 }
@@ -348,30 +380,27 @@ const localTime = (iso: string) => {
 }
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n)}\n…（后面省略 ${s.length - n} 字）` : s)
 
-/**
- * 记录从头到尾的跨度：执行时间只算有 CLI 在跑的时间，等用户只算进程停在等待上的时间；
- * 回复完进程就退出（页面没开着）后到用户再发消息的空档两边都不算。不写出来，分析时会把
- * 「执行 11 分钟、等用户 0 秒」和记录里一个多小时的间隔对不上当成统计错误
- */
-function idleNote(messages: { at?: string }[], runMs: number) {
-  const ats = messages.map((m) => Date.parse(m.at ?? '')).filter(Number.isFinite)
-  if (ats.length < 2) return ''
-  const span = Math.max(...ats) - Math.min(...ats)
-  if (span - runMs < 60_000) return ''
-  return `（记录从头到尾跨度 ${fmtMs(span)}：两轮之间没有进程在跑的空档既不算执行也不算等用户）`
-}
-
 /** 一次执行整理成 Markdown：统计、工作流定义、每个节点的结果、报错、用户的要求 */
 export function taskReport(b: TaskExport, maxOutput = 4000) {
   const tk = b.task
-  const st = (b.stats as TaskStats | undefined) ?? taskStats({ ...tk, id: '', projectId: '' } as Task)
+  // 旧导出的 stats 没有跨度和空闲字段，按记录里的时间戳现算补齐，不把 undefined 写进报告
+  const computed = taskStats({ ...tk, id: '', projectId: '' } as Task)
+  const raw = (b.stats ?? {}) as Partial<TaskStats>
+  const st: TaskStats = {
+    ...computed,
+    ...raw,
+    spanMs: raw.spanMs ?? computed.spanMs,
+    idleMs: raw.idleMs ?? computed.idleMs,
+    asks: raw.asks ?? computed.asks,
+  }
   const agentName = (id: string) => (id ? (b.agents.find((a) => a.id === id)?.name ?? id) : '主 Agent')
   const lines: string[] = [
     `# 执行记录：${tk.title}`,
     `方式：${tk.mode === 'workflow' ? `工作流「${tk.workflowName || tk.workflowId}」（id: ${tk.workflowId}）` : `对话（Agent: ${agentName(tk.agentId)}）`}　状态：${tk.status}　开始：${localTime(tk.createdAt)}`,
     '',
     '## 统计',
-    `- 执行 ${fmtMs(st.durationMs)}，其中等用户 ${fmtMs(st.waitMs)}${idleNote(tk.messages, st.durationMs)}；追加要求/对话 ${st.turns} 轮${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）`,
+    `- 跨度 ${fmtMs(st.spanMs)}：执行 ${fmtMs(st.durationMs)}，等用户 ${fmtMs(st.waitMs)}，空闲 ${fmtMs(st.idleMs)}（空闲是一轮结束到用户下一条消息之间，没有进程在跑、用户也不在等的时候）`,
+    `- 轮次：用户消息 ${st.asks} 条，分成 ${st.turns} 轮执行${st.turnsUnfinished ? `（其中 ${st.turnsUnfinished} 轮没有正常结束）` : ''}${st.turns ? '（对话页开着时，用户的新消息会直接交回同一个进程，多条消息可能都算在同一轮里）' : '（这条记录没有分轮信息，按用户消息的条数和过程里的时间来对）'}`,
     `- Token：输入 ${fmtK(st.inputTokens)}（缓存命中 ${fmtK(st.cacheReadTokens)}，${pct(st.cacheHitRate)}），输出 ${fmtK(st.outputTokens)}，费用 $${st.costUsd.toFixed(3)}`,
     ...(cacheMismatch(st)
       ? [
@@ -384,7 +413,7 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   const asks = tk.messages.filter((m) => m.role === 'user')
   if (asks.length > 1)
     lines.push(
-      `- 用户消息 ${asks.length} 条：${asks
+      `- 用户发言时间：${asks
         .map((m) => {
           const d = new Date(m.at ?? '')
           return Number.isFinite(d.getTime())
