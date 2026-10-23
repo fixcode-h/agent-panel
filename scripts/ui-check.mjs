@@ -1028,6 +1028,60 @@ try {
   await p.getByRole('button', { name: '下载' }).first().click()
   await p.getByText('Z-Image Turbo 已下载').or(p.getByText('已下载').first()).waitFor({ timeout: 10000 })
   await check(p, '设置-本机生图-已下载', ['已下载'])
+  // 用量统计：只展示当前一个区间，日历选日期，周/月各看一段，计价模型和快捷键都在工具条上
+  await p.getByRole('button', { name: '用量统计', exact: true }).click()
+  await p.waitForTimeout(400)
+  await check(p, '设置-用量统计', ['按天', '按周', '按月', 'DeepSeek Flash', '切换区间', '回到今天', '关闭设置'])
+  // 打开时焦点落在粒度选择器上，方向键直接能切
+  if ((await p.evaluate(() => document.activeElement?.getAttribute('role'))) !== 'tab')
+    errors.push('设置-用量统计：打开时焦点没落在区段选择器上')
+  const usageText = () => p.locator('section[aria-label="用量统计"]').innerText()
+  const rangeLabel = () => p.locator('[data-usage-period-trigger]').first().innerText()
+  if (!/^\d+月\d+日$/.test(await rangeLabel())) errors.push(`设置-用量统计：按天标签是「${await rangeLabel()}」`)
+  // 日历：有数据的日子带标记；Esc 只关日历，设置还在
+  await p.getByRole('button', { name: /选择时间范围/ }).click()
+  await check(p, '设置-用量统计-日历', ['今天', '点一天看那天的用量'])
+  if (!(await p.getByRole('button', { name: /有数据/ }).count())) errors.push('设置-用量统计-日历：没有带标记的日期')
+  await p.keyboard.press('Escape')
+  if (await p.locator('[data-usage-calendar]').count()) errors.push('设置-用量统计-日历：Esc 没有关掉日历')
+  if (!(await p.getByRole('dialog').isVisible())) errors.push('设置-用量统计-日历：Esc 把设置也关掉了')
+  // 点一个历史日子：表格切到那一天
+  await p.getByRole('button', { name: /选择时间范围/ }).click()
+  await p.waitForTimeout(250)
+  await p
+    .getByRole('button', { name: /有数据/ })
+    .first()
+    .click()
+  await p.waitForTimeout(400)
+  await check(p, '设置-用量统计-选中某天', ['合计', '费用'])
+  if (!/^\d+月\d+日$/.test(await rangeLabel())) errors.push('设置-用量统计-选中某天：区间标签没变')
+  if (!/\d+\.\d+M|\d+\.\d+K/.test(await usageText())) errors.push('设置-用量统计：token 没有用 K/M 显示')
+  // 快捷键：T 回到今天，[ ] 前后翻区间
+  await p.keyboard.press('t')
+  await p.waitForTimeout(250)
+  const today = await rangeLabel()
+  await p.keyboard.press('[')
+  await p.waitForTimeout(250)
+  if ((await rangeLabel()) === today) errors.push('设置-用量统计：按 [ 没有切到上一个区间')
+  await p.keyboard.press(']')
+  await p.waitForTimeout(250)
+  if ((await rangeLabel()) !== today) errors.push('设置-用量统计：按 ] 没有回到下一个区间')
+  // 按周：只展示一周，标签写第几周和起止日期
+  await p.getByRole('tab', { name: '按周' }).click()
+  await check(p, '设置-用量统计-按周', ['合计'])
+  if (!/^第 \d+ 周 · \d+月\d+日 - \d+月\d+日$/.test(await rangeLabel()))
+    errors.push(`设置-用量统计-按周：标签是「${await rangeLabel()}」`)
+  // 按月：只展示一个月
+  await p.getByRole('tab', { name: '按月' }).click()
+  await check(p, '设置-用量统计-按月', ['合计'])
+  if (!/^\d{4}年\d+月$/.test(await rangeLabel())) errors.push(`设置-用量统计-按月：标签是「${await rangeLabel()}」`)
+  // 计价模型：换成 V4 Pro，费用跟着变（表头写明按高峰时段单价）
+  const beforeCost = await usageText()
+  await p.getByRole('combobox', { name: '计价模型' }).click()
+  await p.getByRole('option', { name: 'DeepSeek V4 Pro' }).click()
+  await p.waitForTimeout(300)
+  if ((await usageText()) === beforeCost) errors.push('设置-用量统计：换计价模型后费用没有变化')
+  await check(p, '设置-用量统计-计价', ['DeepSeek V4 Pro', '单价估算'])
   await p.keyboard.press('Escape')
   // ComfyUI 工作流：游戏和网页分开，内置的只读
   await p.goto(base + '#/comfy/game')
@@ -1674,6 +1728,13 @@ try {
   await check(m, '手机-首页', ['今天要做什么'])
   await m.goto(base + '#/workflows')
   await check(m, '手机-工作流')
+  // 用量统计在手机宽度下：工具条换行、表格隐藏缓存和任务列，不能出现横向滚动
+  // 手机布局的侧栏收在抽屉里，先点顶部的菜单再进设置
+  await m.getByRole('button', { name: '打开菜单' }).click()
+  await m.getByRole('button', { name: '设置' }).first().click()
+  await m.getByRole('button', { name: '用量统计', exact: true }).click()
+  await m.waitForTimeout(400)
+  await check(m, '手机-用量统计', ['按天', '按周', '按月', '合计'])
 } catch (e) {
   // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
   if (process.env.GITHUB_ACTIONS)
