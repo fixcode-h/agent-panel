@@ -54,7 +54,7 @@ import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { ParamRow, ParamsForm } from '@/components/agents/ParamFields'
+import { ParamControl, ParamRow, ParamsForm } from '@/components/agents/ParamFields'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 
 /** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
@@ -212,7 +212,7 @@ function Body({
   const active = own ?? inherited ?? general
   // 每个工作流一份配置：默认工作流和每个可选工作流各自保存
   const paramsOf = (id: string) => draft.workflowParams[id] ?? {}
-  const setParam = (id: string, key: string, value: string | boolean) =>
+  const setParam = (id: string, key: string, value: ParamValue) =>
     setDraft((d) => ({
       ...d,
       workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), [key]: value } },
@@ -259,7 +259,7 @@ function Body({
           <ExposeField
             key={e.key}
             e={e}
-            value={paramsOf(w.id)[e.key] as string | boolean | undefined}
+            value={paramsOf(w.id)[e.key] as ParamValue | undefined}
             onChange={(v) => setParam(w.id, e.key, v)}
           />
         ))}
@@ -1446,11 +1446,16 @@ function ExposeField({
   onChange,
 }: {
   e: WorkflowExpose
-  value: string | boolean | undefined
-  onChange: (v: string | boolean) => void
+  value: ParamValue | undefined
+  onChange: (v: ParamValue) => void
 }) {
   const label = e.label || e.key
-  const text = typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : (value ?? '')
+  // 多选存的是字符串数组，早先的版本存成 "a, b" 字符串，这里两种都认
+  const text =
+    typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : String(value ?? '')
+  const list = Array.isArray(value) ? value : text ? text.split(/\s*,\s*/).filter(Boolean) : []
+  // 没改过时显示默认值（这些选项本来就生效），改动后再存实际的数组
+  const shown = list.length || !Array.isArray(e.default) ? list : e.default
   const fallback = defaultText(e.default)
   // 和角色参数一样：说明与默认值收进 ⓘ，行里只留名字，控件靠右
   const hint = [e.description, fallback && t('默认：{v}', { v: fallback })].filter(Boolean).join('；')
@@ -1459,7 +1464,7 @@ function ExposeField({
     <ParamRow
       label={<span className="truncate font-medium text-muted">{label}</span>}
       hint={hint}
-      controlClass={e.type === 'bool' ? undefined : 'w-[min(14rem,50%)]'}
+      controlClass={e.type === 'bool' ? undefined : e.type === 'multi' ? 'w-[min(20rem,60%)]' : 'w-[min(14rem,50%)]'}
     >
       {e.type === 'select' ? (
         <Select
@@ -1475,6 +1480,21 @@ function ExposeField({
       ) : e.type === 'bool' ? (
         // 开关的取值照旧存成 'true' / 'false' 字符串，和工作流配置里的格式一致
         <Switch checked={on} onCheckedChange={(x) => onChange(x ? 'true' : 'false')} aria-label={label} />
+      ) : e.type === 'multi' ? (
+        // 多选和角色参数用同一个控件：值是字符串数组，exposeValue 会拼成「a, b」填进 {{槽名}}
+        <ParamControl
+          param={{
+            key: e.key,
+            label,
+            type: 'multi',
+            options: e.options,
+            ask: false,
+            description: e.description,
+            default: e.default,
+          }}
+          value={shown}
+          onChange={(v) => onChange(Array.isArray(v) ? v : [])}
+        />
       ) : (
         <Input
           aria-label={label}
