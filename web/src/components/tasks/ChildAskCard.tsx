@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowUpRight, Loader2, MessageCircleQuestion } from 'lucide-react'
+import { ArrowUpRight, Lightbulb, Loader2, MessageCircleQuestion } from 'lucide-react'
 import type { Task, TaskMessage } from '@shared/schema'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
@@ -12,13 +12,16 @@ import { RowShell } from './ToolRow'
 import { useChildOpen } from './child-open'
 
 /**
- * 子对话请用户决定的问题，在父对话消息流里的那一条：只做提醒，选择在子对话的输入框处弹出。
+ * 子对话请用户决定的事（执行中的提问、这一轮做完的收尾建议），在父对话消息流里的那一条：
+ * 只做提醒，选择在子对话的输入框处弹出。
  * 没回答时醒目地展开着，「去选择」在右栏打开那个子对话；也可以直接交给父对话的 AI 决定。
  * 回答后（在子对话里选的，或父对话把决定交给了那个子对话）收成一行，点开能看问题和决定。
  * 几个子对话同时问时各自留在发生的位置，不挡住父对话的输入框
  */
 export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Task; teamNames: Set<string> }) {
   const ask = m.ask!
+  // 收尾建议是这一轮做完了在问下一步怎么做，说法和「提问」不一样：别让用户以为它还在等一个问题
+  const suggestion = ask.kind === 'suggestion'
   const answered = ask.answer !== undefined
   const [busy, setBusy] = useState(false)
   // 点了「交给父对话决定」：接口返回前就换成已交出，刷新后由 ask.delegated 记着
@@ -63,8 +66,22 @@ export function ChildAskCard({ m, task, teamNames }: { m: TaskMessage; task?: Ta
 
   return (
     <RowShell
-      glyph={<MessageCircleQuestion className={cn('h-3.5 w-3.5 shrink-0', pending ? 'text-warning' : 'text-subtle')} />}
-      verb={pending ? t('子对话请你选择') : t('子对话请你决定')}
+      glyph={
+        suggestion ? (
+          <Lightbulb className={cn('h-3.5 w-3.5 shrink-0', pending ? 'text-warning' : 'text-subtle')} />
+        ) : (
+          <MessageCircleQuestion className={cn('h-3.5 w-3.5 shrink-0', pending ? 'text-warning' : 'text-subtle')} />
+        )
+      }
+      verb={
+        pending
+          ? suggestion
+            ? t('子对话的收尾建议，请你决定下一步')
+            : t('子对话请你选择')
+          : suggestion
+            ? t('子对话的收尾建议')
+            : t('子对话请你决定')
+      }
       title={ask.title}
       onOpen={openChild ? () => openChild(ask.from) : undefined}
       openTip={t('在右侧打开子对话')}
@@ -125,6 +142,7 @@ export function ParentAskPanel({ task, onFold }: { task: Task; onFold: () => voi
   const asks = task.parentAsks ?? []
   const parentId = task.parentTaskId
   if (!asks.length || !parentId) return null
+  const suggesting = asks.every((a) => a.kind === 'suggestion')
   const answerAll = async (answers: string[], delegate: boolean) => {
     try {
       // 一个个交：前面的已经交给子对话了，后面的出错时只报错，不回滚
@@ -137,8 +155,13 @@ export function ParentAskPanel({ task, onFold }: { task: Task; onFold: () => voi
   return (
     <QuestionPanel
       className="mb-2"
-      label={t('需要你选择')}
-      who={<span className="truncate">{t('子对话请你决定，选择会直接交给它')}</span>}
+      // 收尾建议和提问共用这套弹窗：只有说法不同，用户选完都是同一个结果（直接交给子对话）
+      label={suggesting ? t('下一步怎么做') : t('需要你选择')}
+      who={
+        <span className="truncate">
+          {suggesting ? t('子对话给出了下一步的建议，选一下就按它继续') : t('子对话请你决定，选择会直接交给它')}
+        </span>
+      }
       questions={asks.map((a, i) => ({
         header: asks.length > 1 ? t('问题 {n}', { n: i + 1 }) : undefined,
         question: a.question,
@@ -153,13 +176,19 @@ export function ParentAskPanel({ task, onFold }: { task: Task; onFold: () => voi
   )
 }
 
-/** 选择弹窗收起后贴在输入框上方的一条：提醒还有提问在等，点一下重新展开 */
-export function FoldedAskBar({ n, onOpen }: { n: number; onOpen: () => void }) {
+/** 选择弹窗收起后贴在输入框上方的一条：提醒还有提问（或收尾建议）在等，点一下重新展开 */
+export function FoldedAskBar({ n, suggestion, onOpen }: { n: number; suggestion?: boolean; onOpen: () => void }) {
   return (
     <div className="mx-auto mb-2 flex max-w-(--content-w) items-center gap-2 rounded-xl border border-warning/45 bg-warning/5 px-3 py-2 text-[0.8125rem]">
       <MessageCircleQuestion className="h-3.5 w-3.5 shrink-0 text-warning" />
       <span className="min-w-0 flex-1 truncate">
-        {n > 1 ? t('有 {n} 个问题在等你选择', { n }) : t('有一个问题在等你选择')}
+        {suggestion
+          ? n > 1
+            ? t('有 {n} 条收尾建议在等你选择', { n })
+            : t('有一条收尾建议在等你选择')
+          : n > 1
+            ? t('有 {n} 个问题在等你选择', { n })
+            : t('有一个问题在等你选择')}
         <span className="text-subtle"> · {t('在输入框里回复也算回答')}</span>
       </span>
       <Button variant="ghost" size="sm" onClick={onOpen} className="h-7 shrink-0 text-xs">

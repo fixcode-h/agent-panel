@@ -916,6 +916,10 @@ export const ToolUse = z.object({
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
+/** 子对话交出去的两种需要用户拍板的事：执行中的提问、这一轮做完的收尾建议 */
+export const AskKind = z.enum(['question', 'suggestion'])
+export type AskKind = z.infer<typeof AskKind>
+
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -960,6 +964,8 @@ export const TaskMessage = z.object({
       title: z.string().default(''),
       question: z.string().default(''),
       options: z.array(z.string()).default([]),
+      /** question：执行中需要拍板的问题；suggestion：这一轮做完的收尾建议，等用户选下一步怎么做 */
+      kind: AskKind.default('question'),
       answer: z.string().optional(),
       /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
       by: z.enum(['user', 'parent']).optional(),
@@ -1266,7 +1272,15 @@ export const TaskData = z.object({
    * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
    */
   parentAsks: z
-    .array(z.object({ id: z.string(), question: z.string(), options: z.array(z.string()).default([]) }))
+    .array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        options: z.array(z.string()).default([]),
+        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
+        kind: AskKind.default('question'),
+      }),
+    )
     .optional(),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),

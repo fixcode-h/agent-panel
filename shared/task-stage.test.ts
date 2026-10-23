@@ -2,7 +2,19 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { setLang } from './i18n.ts'
 import type { Task } from './schema.ts'
-import { childComplete, childHolds, childHoldsOf, childHoldText, runRunning, taskBusy, taskStage } from './task.ts'
+import {
+  childComplete,
+  childHolds,
+  childHoldsOf,
+  childHoldText,
+  childSpinning,
+  childStage,
+  childWaiting,
+  runRunning,
+  taskBusy,
+  taskStage,
+  type ChildEntry,
+} from './task.ts'
 
 // 文案断言按中文：跟着系统语言跑会让结果不稳定
 setLang('zh')
@@ -162,4 +174,40 @@ test('派出去的子任务还在跑：也不算彻底完成', () => {
   assert.deepEqual(childHoldsOf(task, { merged: true }), ['helpers'])
   // 工作流节点（不是派出的子任务）算在 workflow 上，两条不重复
   assert.deepEqual(childHoldsOf({ ...task, steps: [{ slot: '', status: 'running' }] as Task['steps'] }), ['workflow'])
+})
+
+test('没彻底完成的子对话行首转圈，在等你选择时不转', () => {
+  const kid = (over: Partial<ChildEntry> = {}) =>
+    ({
+      id: 'c',
+      title: '子对话',
+      status: 'running',
+      working: false,
+      cliAlive: true,
+      startedAt: '',
+      ...over,
+    }) as ChildEntry
+  // 还在干活、计划没做完、后台命令/工作流/派出的子任务还在跑、独立分支没合回：都要转圈
+  assert.equal(childSpinning(kid({ working: true })), true)
+  assert.equal(childSpinning(kid({ plan: { done: 6, total: 9 } })), true)
+  assert.equal(childSpinning(kid({ background: 1 })), true)
+  assert.equal(childSpinning(kid({ workflow: true })), true)
+  assert.equal(childSpinning(kid({ helpers: true })), true)
+  assert.equal(childSpinning(kid({ unmerged: true })), true)
+  assert.equal(childStage(kid({ unmerged: true })), 'unfinished')
+  // 在等你：换成提问图标，转圈会把「等你选择」说成「还在跑」
+  assert.equal(childSpinning(kid({ asking: 1 })), false)
+  assert.equal(childWaiting(kid({ asking: 1 })), true)
+  assert.equal(childWaiting(kid({ requests: 1 })), true)
+  assert.equal(childWaiting(kid({ working: true })), false)
+  assert.equal(childSpinning(kid({ plan: { done: 1, total: 3 }, asking: 1 })), false)
+  // 做完了、停下了、失败了都不转圈
+  assert.equal(childSpinning(kid({})), false)
+  assert.equal(childSpinning(kid({ status: 'stopped' })), false)
+  assert.equal(childSpinning(kid({ status: 'failed' })), false)
+  assert.equal(childSpinning(kid({ plan: { done: 9, total: 9 } })), false)
+  // 已标记解决但分支还没合回：分组上仍是未完成，行首也跟着转，别一边说未完成一边像做完了
+  assert.equal(childStage(kid({ unmerged: true, resolved: true })), 'unfinished')
+  assert.equal(childSpinning(kid({ unmerged: true, resolved: true })), true)
+  assert.equal(childStage(kid({})), 'done')
 })
