@@ -1,5 +1,6 @@
 import { shellNote } from '../shared/shells.ts'
 import { lastShell } from './shells.ts'
+import { askOptions } from '../shared/task.ts'
 import type { HelperReport, HelperSpec, Orchestra } from '../shared/engine.ts'
 
 /**
@@ -278,6 +279,28 @@ export function orchTools(o: Orchestra) {
                   type: 'array',
                   items: { type: 'string' },
                   description: 'question 为 true 时可选的几种做法（2–4 个，每个一句话），用户可以直接点选',
+                },
+              },
+              required: ['text'],
+            },
+          },
+          {
+            name: 'suggest_next_step',
+            title: '收尾建议交给用户选',
+            description:
+              '这一轮做完、总结里要给用户「下一步怎么做」的建议时调用：把建议和 2–4 个可选做法交给用户选，选完会自动交回给你接着做。不要只把建议写在结论里——那样用户不知道你是在等他，还是已经结束了。',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                text: {
+                  type: 'string',
+                  description: '给用户的建议：建议接着做什么，一句话说清理由',
+                },
+                options: {
+                  type: 'array',
+                  items: { type: 'string' },
+                  description:
+                    '2–4 个可选做法（每个一句话），第一个是推荐做法并在末尾标「（推荐）」；不给时用「按建议继续」「先不做，先停在这」',
                 },
               },
               required: ['text'],
@@ -590,6 +613,13 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
       const r = await o.toParent(body, a?.question === true, options)
       return text(r.info, !r.ok)
     }
+    case 'suggest_next_step': {
+      const body = str(a?.text).trim()
+      if (!body) return text('text 是空的：写清建议用户接下来做什么', true)
+      const options = (Array.isArray(a?.options) ? a.options : []).map(String)
+      const r = await o.toParent(body, true, askOptions(options, 'suggestion'), 'suggestion')
+      return text(r.info, !r.ok)
+    }
     case 'claim_files': {
       const paths = Array.isArray(a?.paths) ? a.paths.map(String) : []
       const r = o.claim(paths)
@@ -689,7 +719,7 @@ export function orchHint(o: Orchestra) {
   const child =
     bg +
     (o.child
-      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_merge 测试跑通后合回原分支、完成子对话（结果会推回来）、' : ''}message_parent 向父对话汇报或提问；`
+      ? `${o.claims ? 'claim_files 改文件前认领（被别的子对话占着的不要改）、' : ''}${o.canSubmit ? 'submit_merge 测试跑通后合回原分支、完成子对话（结果会推回来）、' : ''}suggest_next_step 把收尾建议交给用户选（总结里要给建议时必须用它，不要只写在结论里）、message_parent 向父对话汇报或提问；`
       : '')
   // 对话里派完子任务结束这一轮就行，结果自动交回；工作流节点要自己用 wait_agents 取
   const collect = o.autoReturn ? '派完结束这一轮，结果会自动交回' : '再用 wait_agents 取结果'

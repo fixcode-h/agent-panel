@@ -205,6 +205,11 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')
       return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text), 'other', body || undefined)
     }
+    case 'suggest_next_step': {
+      const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
+      const body = [text(a.text), opts].filter(Boolean).join('\n\n')
+      return as(t('收尾建议交给用户选'), firstLine(a.text), 'other', body || undefined)
+    }
     case 'submit_merge':
     case 'submit_build':
       return as(t('完成并合回'), firstLine(a.note), 'other', text(a.tests))

@@ -37,8 +37,10 @@ import { type Project, type Task, type TaskMessage, type TaskStep } from '@share
 import { ChatModelPicker, useChatRun, useRunAuthor, type ChatRun } from './ChatModelPicker'
 import { blockedStep, flowUnfinished, MAIN_STEP, rootStepId, taskFlow, taskWorkflows, topSteps } from '@shared/flow'
 import {
+  childSpinning,
   childStage,
   childRunning,
+  childWaiting,
   runningChildren,
   sortChildren,
   taskBusy,
@@ -254,6 +256,8 @@ interface ChildSummary {
   workflow?: boolean
   /** 派出的子任务还在跑：也是还在执行 */
   helpers?: boolean
+  /** 独立分支还没合回父对话的分支：不算彻底完成，归「未完成」 */
+  unmerged?: boolean
   /** 请用户选择、还没人回答的提问数 */
   asking?: number
   /** 在独立 worktree 里改时的分支 */
@@ -1375,31 +1379,41 @@ export function TaskView({
                   )}
                 </div>
 
-                {/* 计划和子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间 */}
-                {!pane && !task.parentTaskId && children.length > 0 ? (
-                  <ChildrenBar
-                    lead={task.plans?.length ? <PlanButton task={task} /> : null}
-                    children={children}
-                    openChild={openChild}
-                    onOpen={openChildIn}
-                    onClose={() => openChildIn('')}
-                  />
-                ) : (
-                  task.plans?.length > 0 && (
+                {/* 计划和子对话贴在输入框上方、在消息流外面：不跟着滚，也不插在用户消息和回复之间。
+                    有子对话时分成两行：计划在上、子对话在下，子对话这一行和输入框左对齐，
+                    不为了两边并排把子对话挤到右边 */}
+                <>
+                  {task.plans?.length > 0 && (
                     <div className="shrink-0 px-3 md:px-6">
-                      <div className="mx-auto flex max-w-(--content-w) items-center py-1.5">
-                        <PlanButton task={task} />
+                      <div className="mx-auto mb-2 max-w-(--content-w)">
+                        <div className={barRow}>
+                          <PlanButton task={task} />
+                        </div>
                       </div>
                     </div>
-                  )
-                )}
+                  )}
+                  {!pane && !task.parentTaskId && children.length > 0 && (
+                    <ChildrenBar
+                      children={children}
+                      openChild={openChild}
+                      onOpen={openChildIn}
+                      onClose={() => openChildIn('')}
+                    />
+                  )}
+                </>
 
                 <div className="shrink-0 px-3 pt-1 pb-3 md:px-6 md:pb-5">
                   <TaskRequestCard task={task} onAnswered={apply} />
                   {askOpen ? (
                     <ParentAskPanel task={task} onFold={() => setAskFolded(askKey)} />
                   ) : (
-                    askShown && <FoldedAskBar n={parentAsks.length} onOpen={() => setAskFolded('')} />
+                    askShown && (
+                      <FoldedAskBar
+                        n={parentAsks.length}
+                        suggestion={parentAsks.every((a) => a.kind === 'suggestion')}
+                        onOpen={() => setAskFolded('')}
+                      />
+                    )
                   )}
                   <WorktreeBar task={task} />
                   {flowLeft && !task.imported && (
@@ -1671,14 +1685,11 @@ function ImportedBar({ task, onAnalyze }: { task: Task; onAnalyze: () => void })
  * 排序：正在执行的在上，其余按最近一条消息的时间倒序。
  */
 function ChildrenBar({
-  lead,
   children,
   openChild,
   onOpen,
   onClose,
 }: {
-  /** 排在「子对话」前面的东西（计划按钮），和它共用这一行 */
-  lead?: React.ReactNode
   children: ChildSummary[]
   openChild: string
   onOpen: (id: string) => void
@@ -1711,34 +1722,32 @@ function ChildrenBar({
 
   return (
     <div ref={ref} className="shrink-0 px-3 md:px-6">
-      {/* 弹窗以这一行内容为基准：左边和「子对话」按钮对齐，不跟着外层的内边距和居中偏移走 */}
+      {/* 弹窗以这一行内容为基准：左边和输入框左对齐，不跟着外层的内边距和居中偏移走 */}
       <div className="relative mx-auto max-w-(--content-w)">
-        <div className="flex items-center gap-2 py-1.5">
-          {lead && (
-            <>
-              {lead}
-              <span aria-hidden className="h-4 w-px shrink-0 bg-line" />
-            </>
-          )}
+        <div className={cn(barRow, 'mb-2 flex-wrap')}>
+          {/* 计划已经单独占一行（见调用处）：这里只放子对话自己的那几样，不为了并排把内容挤到右边 */}
           <button
             type="button"
             aria-expanded={open}
-            aria-label={t('子对话')}
+            aria-label={
+              working > 0
+                ? t('子对话，{n} 个在执行，共 {total} 个', { n: working, total })
+                : t('子对话 {n}', { n: total })
+            }
             onClick={() => setOpen((v) => !v)}
             className="flex min-w-0 cursor-pointer items-center gap-2 rounded-lg px-1.5 py-1 text-[0.8125rem] text-muted transition-colors hover:bg-sel hover:text-fg"
           >
             <GitFork className="h-3.5 w-3.5 shrink-0 text-subtle" />
-            <span className="shrink-0 font-medium">{t('子对话 {n}', { n: total })}</span>
-            {/* 执行中的数量写成 3/4（分母是子对话总数）：没在执行时只显示总数，不出现 0/4 */}
-            {working > 0 && (
-              <span
-                aria-label={t('{n} 个在执行', { n: working })}
-                className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent"
-              >
-                <span className="text-subtle">·</span>
+            <span className="shrink-0 font-medium">{t('子对话')}</span>
+            {/* 运行中的在前、总数在后：转圈 1/2 读作「1 个在跑，一共 2 个」，总数不重复说两遍 */}
+            {working > 0 ? (
+              <span className="flex shrink-0 items-center gap-1 pr-1 text-xs text-accent tabular-nums">
                 <Loader2 className="h-3 w-3 animate-spin" />
                 {working}/{total}
               </span>
+            ) : (
+              // 没在跑时只写总数，不出现 0/2
+              <span className="shrink-0 text-xs text-subtle tabular-nums">{total}</span>
             )}
           </button>
           {asking.length > 0 && (
@@ -1758,7 +1767,7 @@ function ChildrenBar({
           )}
           {/* 正在执行的子对话一个一块，宽度固定不随内容和个数伸缩：名字后面接着它这会儿在做什么，点一下在右栏打开 */}
           {busy.length > 0 && (
-            <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               {busy.slice(0, 3).map((c) => (
                 <button
                   key={c.id}
@@ -1766,14 +1775,12 @@ function ChildrenBar({
                   onClick={() => onOpen(c.id)}
                   title={`${c.title}${activityText(c.activity) ? ` · ${activityText(c.activity)}` : ''}`}
                   className={cn(
-                    'flex h-7 w-56 min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
+                    'flex h-7 w-56 max-w-full min-w-0 shrink cursor-pointer items-center gap-2 rounded-lg border bg-card px-2.5 text-xs transition-colors hover:bg-sel',
                     c.id === openChild ? 'border-line-strong' : 'border-line',
                   )}
                 >
-                  <span className="relative flex h-1.5 w-1.5 shrink-0">
-                    <span className="absolute inset-0 animate-ping rounded-full bg-accent/60" />
-                    <span className="relative h-1.5 w-1.5 rounded-full bg-accent" />
-                  </span>
+                  {/* 执行中的子对话用和列表、行首同一套转圈，不再另画一个跳动的小点 */}
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-accent" />
                   <span className="max-w-[60%] min-w-0 shrink-0 truncate font-medium text-fg">{c.title}</span>
                   <span className="min-w-0 flex-1 truncate text-subtle">{activityText(c.activity)}</span>
                 </button>
@@ -1841,7 +1848,12 @@ function ChildrenBar({
                       )}
                     >
                       <span className="mt-0.5 shrink-0">
-                        <TaskStatusIcon status={c.status} working={childRunning(c)} />
+                        <TaskStatusIcon
+                          status={c.status}
+                          working={childRunning(c)}
+                          spin={childSpinning(c)}
+                          waiting={childWaiting(c)}
+                        />
                       </span>
                       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                         <span className="flex min-w-0 items-center gap-1.5">

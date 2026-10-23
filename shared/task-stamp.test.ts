@@ -13,7 +13,7 @@ const ask = (answer?: string): TaskMessage =>
     tools: [],
     at: '2026-10-22T00:00:00.000Z',
     panel: 'ask',
-    ask: { from: 'c1', title: '子对话', question: '怎么做？', options: [], answer },
+    ask: { from: 'c1', title: '子对话', question: '怎么做？', options: [], kind: 'question', answer },
   }) as TaskMessage
 
 test('提问被回答后指纹要变：不然卡片在别的页面答完仍是「待决定」', () => {

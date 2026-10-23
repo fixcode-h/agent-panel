@@ -1,5 +1,6 @@
 /** 新建任务的初始数据；真实执行和在线演示共用 */
 import {
+  type AskKind,
   type Attachment,
   type FileChange,
   type NewTaskInput,
@@ -354,6 +355,23 @@ export type TaskStage = 'you' | 'running' | 'unfinished' | 'done' | 'stopped'
 export type ChildHold = 'working' | 'background' | 'workflow' | 'helpers' | 'plan' | 'asking' | 'requests' | 'unmerged'
 
 /**
+ * 子对话的收尾建议没给可选做法时用这两个：第一个是推荐做法，最后一个是明确停下。
+ * 「换个做法」由选择弹窗自带的「自己输入」覆盖，不单独占一项
+ */
+export const suggestChoices = () => [t('按建议继续（推荐）'), t('先不做，先停在这')]
+
+/**
+ * 提问、收尾建议的可选做法：去掉空白和重复，最多 6 个。
+ * 收尾建议一个都没给时用默认的两项——弹窗里没有选项只剩输入框，用户就得自己写，
+ * 等于又变回「看着建议不知道下一步该干什么」
+ */
+export function askOptions(options: string[] | undefined, kind: AskKind = 'question'): string[] {
+  const list = [...new Set((options ?? []).map((x) => String(x ?? '').trim()).filter(Boolean))]
+  if (list.length) return list.slice(0, 6)
+  return kind === 'suggestion' ? suggestChoices() : []
+}
+
+/**
  * 子对话彻底完成要满足的条件，缺哪个列哪个：
  * - working：这一轮还在跑
  * - background：后台命令还在跑 / 排队（结果推回来还要接着做）
@@ -480,12 +498,14 @@ export function taskStage(x: {
   helpers?: boolean
   /** 计划还没做完：列表里归「未完成」，不算交付完 */
   unfinished?: boolean
+  /** 独立分支还没合回父对话的分支：同样是「未完成」，不能显示成已完成 */
+  unmerged?: boolean
 }): TaskStage {
   if (x.requests || x.asking) return 'you'
   if (x.status === 'failed') return 'you'
   if (x.working || x.background || x.workflow || x.helpers) return 'running'
   if (x.status === 'stopped' && !x.resolved) return 'stopped'
-  if (x.unfinished) return 'unfinished'
+  if (x.unfinished || x.unmerged) return 'unfinished'
   return 'done'
 }
 
@@ -520,6 +540,8 @@ export interface ChildEntry {
   workflow?: boolean
   /** 派出去的子任务还在跑：转圈不能提前停（见 childHolds） */
   helpers?: boolean
+  /** 独立分支还没合回父对话的分支：不算彻底完成，列表里归「未完成」（见 childHolds 的 unmerged） */
+  unmerged?: boolean
 }
 
 /** 子对话这会儿在做什么：父对话的子对话栏接在名字后面显示（只有一项有值） */
@@ -539,8 +561,21 @@ export interface ChildActivity {
 /** 子对话列表里状态分类的先后：要你处理的在最上面，然后执行中、未完成、做完的、停下的 */
 const stageRank: TaskStage[] = ['you', 'running', 'unfinished', 'done', 'stopped']
 
-/** 这一条在列表里算哪个阶段：计划没做完的不算已完成（见 taskStage） */
-export const childStage = (x: ChildEntry) => taskStage({ ...x, unfinished: !!x.plan })
+/** 这一条在列表里算哪个阶段：计划没做完、独立分支没合回的不算已完成（见 taskStage） */
+export const childStage = (x: ChildEntry) => taskStage({ ...x, unfinished: !!x.plan && x.plan.done < x.plan.total })
+
+/**
+ * 行首要不要转圈：还没彻底完成（还在干活、计划没做完、独立分支没合回）时转，
+ * 一眼看出它还在跑，不会把「未完成」当成做完了。
+ * 等用户处理（提问、待确认）不转：那是在等你，转圈会把「等你选择」说成「还在跑」
+ */
+export const childSpinning = (x: ChildEntry) => {
+  const st = childStage(x)
+  return st === 'running' || st === 'unfinished'
+}
+
+/** 行首换成「等你选择」的图标：有提问 / 待确认，真在等你拍板（失败还是用失败的图标） */
+export const childWaiting = (x: ChildEntry) => childStage(x) === 'you' && !!(x.asking || x.requests)
 
 /**
  * 子对话这会儿真的在干活：这一轮在跑、后台命令还在跑，或者工作流运行没完（进程活着等下一句不算）。

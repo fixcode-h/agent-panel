@@ -10,6 +10,7 @@ import {
   NewTaskInput,
   Task,
   type Agent,
+  type AskKind,
   type Attachment,
   type Project,
   type ProjectCategory,
@@ -24,6 +25,7 @@ import { taskSnapshot } from '../shared/builtin/default.ts'
 import { projectDefaultWorkflow } from '../shared/project-workflow.ts'
 import { exposeSlots } from '../shared/expose.ts'
 import {
+  askOptions,
   beginRun,
   childStartedAt,
   childHoldsOf,
@@ -1151,18 +1153,25 @@ export function tasksApi(deps: {
 
   /**
    * 子对话给父对话发消息：父对话正在执行就实时交给它，否则记进父对话，下一轮一起处理。
-   * 汇报只交给父对话的 AI（界面上在子对话自己的对话里看）；提问在父对话里显示成可以直接回答的卡片
+   * 汇报只交给父对话的 AI（界面上在子对话自己的对话里看）；提问、收尾建议在父对话里显示成可以直接选择的卡片。
+   * kind 为 suggestion 时是这一轮做完的收尾建议：说法不一样，没给选项时补上默认的两个
    */
-  async function messageParent(child: Task, text: string, question: boolean, options: string[] = []) {
+  async function messageParent(
+    child: Task,
+    text: string,
+    question: boolean,
+    options: string[] = [],
+    kind: AskKind = 'question',
+  ) {
     const parent = live.get(child.parentTaskId)?.task ?? (await store.get(child.parentTaskId))
     if (!parent) return { ok: false, info: '找不到父对话' }
-    const head = question ? `子对话「${child.title}」提问` : `子对话「${child.title}」汇报`
-    const opts = question
-      ? options
-          .map((x) => x.trim())
-          .filter(Boolean)
-          .slice(0, 6)
-      : []
+    const suggestion = question && kind === 'suggestion'
+    const head = question
+      ? suggestion
+        ? `子对话「${child.title}」的收尾建议`
+        : `子对话「${child.title}」提问`
+      : `子对话「${child.title}」汇报`
+    const opts = question ? askOptions(options, kind) : []
     const body = opts.length ? `${text}\n\n可选的做法：\n${opts.map((x, i) => `${i + 1}. ${x}`).join('\n')}` : text
     const msg: TaskMessage = {
       id: randomUUID(),
@@ -1172,12 +1181,22 @@ export function tasksApi(deps: {
       text: `${head}：\n${body}${question ? `\n\n（决定后用 send_to_conversation 交给这个子对话，id: ${child.id}）` : ''}`,
       tools: [],
       panel: question ? 'ask' : 'child',
-      ...(question ? { ask: { from: child.id, title: child.title, question: text, options: opts } } : {}),
+      ...(question
+        ? {
+            ask: {
+              from: child.id,
+              title: child.title,
+              question: text,
+              options: opts,
+              kind: suggestion ? ('suggestion' as const) : ('question' as const),
+            },
+          }
+        : {}),
       at: new Date().toISOString(),
     }
-    // 提问同时挂在子对话上：子对话的输入框换成选择弹窗，用户进子对话就能直接选
+    // 提问、收尾建议同时挂在子对话上：子对话的输入框换成选择弹窗，用户进子对话就能直接选
     if (question) {
-      child.parentAsks = [...(child.parentAsks ?? []), { id: msg.id, question: text, options: opts }]
+      child.parentAsks = [...(child.parentAsks ?? []), { id: msg.id, question: text, options: opts, kind }]
       const ce = live.get(child.id)
       if (ce) ce.rev++
       else await store.update(child.id, child).catch(() => {})
@@ -1195,7 +1214,9 @@ export function tasksApi(deps: {
     return {
       ok: true,
       info: question
-        ? '父对话现在没在执行，问题已经记在父对话里，用户或父对话下一轮会回答。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。'
+        ? suggestion
+          ? '父对话现在没在执行，这条收尾建议已经记在父对话里，用户会在面板上直接选。选完会自动交回给你；这一轮可以结束了，不要再把建议重复写进结论里等它。'
+          : '父对话现在没在执行，问题已经记在父对话里，用户或父对话下一轮会回答。不要停下来等：先按最稳妥的做法继续，或者结束这一轮并写清需要决定的事。'
         : '已记在父对话里，它下一轮会看到',
     }
   }
@@ -1263,6 +1284,7 @@ export function tasksApi(deps: {
     if (!parent || !m?.ask) return { error: t('找不到这个提问') }
     if (m.ask.answer !== undefined) return { error: t('这个提问已经回答过了') }
     const { from, title, question } = m.ask
+    const suggestion = m.ask.kind === 'suggestion'
     if (delegate) {
       // 记在卡片上（刷新后还是「交给父对话决定」），子对话那边不再弹选择
       m.ask = { ...m.ask, delegated: true }
@@ -1278,12 +1300,18 @@ export function tasksApi(deps: {
         }).catch((e) => log.warn('task', '交给父对话决定时没能开始新的一轮', { error: (e as Error).message }))
       return { task: live.get(parent.id)?.task ?? parent }
     }
-    const r = await sendToChild(parent.id, from, `关于你刚才的提问，用户的决定：\n${answer}`)
+    const r = await sendToChild(
+      parent.id,
+      from,
+      suggestion ? `关于你刚才的收尾建议，用户的决定：\n${answer}` : `关于你刚才的提问，用户的决定：\n${answer}`,
+    )
     if (!r.ok) return { error: r.info }
     const cur = live.get(parent.id)?.task ?? parent
     settleAsks(cur, from, answer, 'user', m.id)
     // 父对话的 AI 也收到过这个问题：告诉它用户已经回答了，不要再答一遍
-    const note = `用户已经直接回答了子对话「${title}」的提问，不用再回答。\n问题：${question}\n用户的决定：${answer}`
+    const note = suggestion
+      ? `用户已经决定了子对话「${title}」建议的下一步，不用再回答。\n建议：${question}\n用户的选择：${answer}`
+      : `用户已经直接回答了子对话「${title}」的提问，不用再回答。\n问题：${question}\n用户的决定：${answer}`
     const live2 = live.get(parent.id)
     const steered = live2?.task.working
       ? await steerTask(live2.task, note, {
@@ -1475,7 +1503,7 @@ export function tasksApi(deps: {
               return got
             },
         messageParent: task.parentTaskId
-          ? (text, question, options) => messageParent(entry.task, text, question, options)
+          ? (text, question, options, kind) => messageParent(entry.task, text, question, options, kind)
           : undefined,
         childIsolation: found?.childIsolation,
         worktreeHome: isolated(entry.task) && found ? await worktreeHome(entry.task, found) : undefined,
@@ -1855,13 +1883,27 @@ export function tasksApi(deps: {
     return c.json(pid ? list.filter((t) => t.projectId === pid) : list)
   })
 
+  /**
+   * 子对话的独立分支还没合回父对话的分支（见 childHolds 的 unmerged）：只问本地 git，和推没推远端无关。
+   * 别的条件都满足了才去问：还在跑、计划没做完时阶段本来就不是「已完成」，
+   * 每 4 秒为这些子对话多跑几次 git 不值得
+   */
+  async function childUnmerged(tk: Task, project: Project | null) {
+    if (!project || tk.worktree?.state !== 'active') return false
+    if (childHoldsOf(tk, { background: pendingJobs(tk.id), merged: true }).length) return false
+    // git 读不出来时不当成没合并：这里只为了让没合回去的子对话不显示成已完成，不该反过来把它卡住
+    const st = await worktreeStatus(project.path, tk.worktree).catch(() => null)
+    return st ? !st.merged : false
+  }
+
   // 父对话的子对话卡片：标题、状态、摘要和最近更新时间
   routes.get('/:id/children', async (c) => {
     const parent = await current(c.req.param('id'))
     if (!parent) return bad(c, t('任务不存在'), 404)
-    const kids = (await store.list())
-      .filter((t) => t.parentTaskId === parent.id)
-      .map((t) => {
+    const project = parent.projectId ? await deps.projects.get(parent.projectId) : null
+    const kids = (await store.list()).filter((t) => t.parentTaskId === parent.id)
+    const items = await Promise.all(
+      kids.map(async (t) => {
         const liveTask = live.get(t.id)?.task ?? t
         return {
           id: liveTask.id,
@@ -1884,6 +1926,8 @@ export function tasksApi(deps: {
           helpers: helpersWorking(liveTask),
           // 计划没做完（如「计划 7/8」）：不算已完成，浮层里归「未完成」
           plan: openPlan(liveTask),
+          // 独立分支还没合回父分支：任务看起来做完了也不算完成（见 childUnmerged）
+          unmerged: await childUnmerged(liveTask, project),
           // 请用户选择、还没人回答的提问数：父对话的子对话栏里显眼地提示
           asking: liveTask.parentAsks?.length ?? 0,
           branch: liveTask.worktree?.branch ?? '',
@@ -1891,8 +1935,9 @@ export function tasksApi(deps: {
           // 用户标记的「解决」：列表归到「已完成」并加标记，和 status / working 都无关
           resolved: liveTask.resolved === true,
         }
-      })
-    return c.json(kids)
+      }),
+    )
+    return c.json(items)
   })
 
   /** 对话设置里的「停止全部子对话」：正在执行的停下（输出和状态保留），等下一句的结束这一轮 */

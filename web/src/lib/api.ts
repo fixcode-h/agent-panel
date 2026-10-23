@@ -353,6 +353,8 @@ export const api = {
         requests?: number
         /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」 */
         plan?: { done: number; total: number }
+        /** 独立分支还没合回父分支：也不算彻底完成，列表归「未完成」、行首转圈 */
+        unmerged?: boolean
         /** 在独立 worktree 里改时的分支 */
         branch?: string
         /** 正在执行时这会儿在做什么 */

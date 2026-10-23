@@ -20,6 +20,7 @@ import {
   END,
   START,
   type Agent,
+  type AskKind,
   type Flow,
   type FlowNode,
   type FlowEdge,
@@ -311,7 +312,7 @@ export interface Orchestra {
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
   submitMerge(note: string, tests: string): Promise<{ ok: boolean; info: string }>
-  toParent(text: string, question: boolean, options?: string[]): Promise<{ ok: boolean; info: string }>
+  toParent(text: string, question: boolean, options?: string[], kind?: AskKind): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
   /** 本次运行的共享状态：读快照 / 写一个键 */
@@ -444,8 +445,13 @@ export interface EngineHost {
   goal?: string
   /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
   takeInbox?: () => { title: string; text: string }[]
-  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
-  messageParent?: (text: string, question: boolean, options?: string[]) => Promise<{ ok: boolean; info: string }>
+  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定，kind 区分提问和收尾建议 */
+  messageParent?: (
+    text: string,
+    question: boolean,
+    options?: string[],
+    kind?: AskKind,
+  ) => Promise<{ ok: boolean; info: string }>
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
   claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
   releaseFiles?: (paths: string[]) => number
@@ -2360,10 +2366,10 @@ function makeOrchestra(
       }
       return r
     },
-    async toParent(text, question, options) {
+    async toParent(text, question, options, kind) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      return host.messageParent(text.trim(), question, options)
+      return host.messageParent(text.trim(), question, options, kind)
     },
     claim(paths) {
       if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
@@ -2860,6 +2866,9 @@ ${
     // 界面把「没在跑、也没有提问」的子对话当成已完成：子对话安静停下等于把未决的问题藏起来
     parts.push(`## 停下之前先提问
 子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用 ask_user 把问题、选项和各自的后果写清楚；要父对话决定时用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」。`)
+    if (host.messageParent)
+      parts.push(`## 收尾建议要交给用户选
+这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。`)
     if (host.messageParent)
       parts.push(
         host.claimFiles

@@ -222,3 +222,42 @@ test('对话里派的子 Agent 挂在 @chat 下，get_status 也要列出来', a
   assert.match(back!.text, /### 页面/)
   assert.equal(task.status, 'done')
 })
+
+test('收尾建议：走提问链路交给用户选，没给选项时用默认的两个', async () => {
+  const calls: { text: string; question: boolean; options?: string[]; kind?: string }[] = []
+  const o = {
+    self: 'a',
+    hasMain: false,
+    child: true,
+    common: [],
+    toParent: async (text: string, question: boolean, options?: string[], kind?: string) => {
+      calls.push({ text, question, options, kind })
+      return { ok: true, info: '已交给父对话' }
+    },
+  } as unknown as Orchestra
+  // 子对话的工具里有它，用法说明里也写了；不是子对话时没有
+  const names = (orchTools(o) as { name: string }[]).map((x) => x.name)
+  assert.ok(names.includes('suggest_next_step'), '子对话能用 suggest_next_step')
+  assert.match(orchHint(o), /suggest_next_step/)
+  assert.ok(
+    !(orchTools({ self: 'a', hasMain: false, common: [] } as unknown as Orchestra) as { name: string }[]).some(
+      (x) => x.name === 'suggest_next_step',
+    ),
+  )
+  // 没给可选做法：补上「按建议继续 / 先不做」，用户不会只剩一个空输入框
+  await callOrchTool(o, 'suggest_next_step', { text: '  接着把剩下的两个流程跑完  ' })
+  assert.deepEqual(calls[0], {
+    text: '接着把剩下的两个流程跑完',
+    question: true,
+    options: ['按建议继续（推荐）', '先不做，先停在这'],
+    kind: 'suggestion',
+  })
+  // 给了就按给的：去掉空白和重复，最多 6 个
+  await callOrchTool(o, 'suggest_next_step', { text: 'x', options: ['a', ' a ', 'b', '', 'c', 'd', 'e', 'f', 'g'] })
+  assert.deepEqual(calls[1].options, ['a', 'b', 'c', 'd', 'e', 'f'])
+  assert.equal(calls[1].kind, 'suggestion')
+  // 建议是空的：报错，不交给父对话
+  const bad = await callOrchTool(o, 'suggest_next_step', { text: '   ' })
+  assert.match(text(bad), /text 是空的/)
+  assert.equal(calls.length, 2)
+})
