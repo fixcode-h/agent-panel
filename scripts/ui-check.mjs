@@ -925,6 +925,9 @@ try {
   // 费用列按计价模型折算，分时段定价的模型还能看到峰谷明细
   await p.getByRole('button', { name: '用量统计', exact: true }).click()
   await check(p, '设置-用量统计-按天', ['用量统计', '费用', '合计'])
+  // 打开时焦点落在粒度选择器上，方向键直接能切
+  if ((await p.evaluate(() => document.activeElement?.getAttribute('role'))) !== 'tab')
+    errors.push('用量统计：打开时焦点没落在区段选择器上')
   // 计价模型是下拉框的 aria-label，页面上显示的是选中的模型名，所以按 role 查而不是按文本
   if (!(await p.getByRole('combobox', { name: '计价模型' }).count())) errors.push('用量统计：没有计价模型选择器')
   const usageRows = () => p.locator('section[aria-label="用量统计"] table tbody tr')
@@ -942,6 +945,32 @@ try {
   if (!(await p.getByLabel('上个月').count())) errors.push('用量统计：日历没有翻月按钮')
   await check(p, '设置-用量统计-日历')
   await p.keyboard.press('Escape')
+  // 点一个有数据的历史日子：表格切到那一天
+  await p.locator('[data-usage-period-trigger]').click()
+  await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
+  await p.locator('[data-usage-calendar] button[aria-label*="有数据"]').first().click()
+  await p.waitForTimeout(400)
+  await check(p, '设置-用量统计-选中某天', ['合计', '费用'])
+  const usageRange = () => p.locator('[data-usage-period-trigger]').innerText()
+  const usageBody = await p.locator('section[aria-label="用量统计"]').innerText()
+  if (!/\d+\.\d+M|\d+\.\d+K/.test(usageBody)) errors.push('用量统计：token 没有用 K/M 显示')
+  // 快捷键：T 回到今天，[ ] 前后翻区间
+  await p.keyboard.press('t')
+  await p.waitForTimeout(250)
+  const todayRange = await usageRange()
+  await p.keyboard.press('[')
+  await p.waitForTimeout(250)
+  if ((await usageRange()) === todayRange) errors.push('用量统计：按 [ 没有切到上一个区间')
+  await p.keyboard.press(']')
+  await p.waitForTimeout(250)
+  if ((await usageRange()) !== todayRange) errors.push('用量统计：按 ] 没有回到下一个区间')
+  // Esc 只关日历，不关设置
+  await p.locator('[data-usage-period-trigger]').click()
+  await p.locator('[data-usage-calendar]').waitFor({ timeout: 5000 })
+  await p.keyboard.press('Escape')
+  await p.waitForTimeout(250)
+  if (await p.locator('[data-usage-calendar]').count()) errors.push('用量统计：Esc 没有关掉日历')
+  if (!(await p.getByRole('dialog').isVisible())) errors.push('用量统计：Esc 把设置也关掉了')
   // 周 / 月：同样只显示一个区间，标签跟着粒度变
   await p.getByRole('tab', { name: '按周', exact: true }).click()
   await p.waitForTimeout(300)
@@ -1767,6 +1796,13 @@ try {
   await check(m, '手机-首页', ['今天要做什么'])
   await m.goto(base + '#/workflows')
   await check(m, '手机-工作流')
+  // 用量统计在手机宽度下：工具条换行、表格隐藏缓存和任务列，不能出现横向滚动
+  // 手机布局的侧栏收在抽屉里，先点顶部的菜单再进设置
+  await m.getByRole('button', { name: '打开菜单' }).click()
+  await m.getByRole('button', { name: '设置' }).first().click()
+  await m.getByRole('button', { name: '用量统计', exact: true }).click()
+  await m.waitForTimeout(400)
+  await check(m, '手机-用量统计', ['按天', '按周', '按月', '合计'])
 } catch (e) {
   // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
   if (process.env.GITHUB_ACTIONS)

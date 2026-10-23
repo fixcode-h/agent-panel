@@ -28,8 +28,15 @@ const num = (n: number) => Math.round(n).toLocaleString()
 
 const WEEKDAY = [t('周日'), t('周一'), t('周二'), t('周三'), t('周四'), t('周五'), t('周六')]
 
-/** 表格里的日期：10月20日 周二 */
-const dayLabel = (d: Date) => `${t('{m}月{d}日', { m: d.getMonth() + 1, d: d.getDate() })} ${WEEKDAY[d.getDay()]}`
+/** 表格里的日期：10月23日 周五；窄屏只留日期，免得把轮数列挤出去 */
+function Day({ day }: { day: Date }) {
+  return (
+    <td className="px-2.5 py-1.5 whitespace-nowrap">
+      {t('{m}月{d}日', { m: day.getMonth() + 1, d: day.getDate() })}
+      <span className="ml-1 hidden text-muted sm:inline">{WEEKDAY[day.getDay()]}</span>
+    </td>
+  )
+}
 
 /** 数字单元格：短格式 + 鼠标移上去看精确值，等宽字体对齐 */
 function Tokens({ value }: { value: number }) {
@@ -134,7 +141,8 @@ export function UsageSection({
   const today0 = new Date()
   const todayStart = periodStart('day', today0)
   const min = report?.buckets.length ? new Date(report.buckets[report.buckets.length - 1].start) : todayStart
-  const max = report?.buckets.length ? new Date(report.buckets[0].start) : todayStart
+  // 数据只有过去一年，但日历要能前后翻月：往后也留一年，翻到未来显示「这段时间暂无用量」
+  const max = periodStart('day', new Date(today0.getFullYear() + 1, today0.getMonth(), today0.getDate()))
 
   const model = pricingModel(pricingId)
   const currency = model?.currency ?? 'CNY'
@@ -221,7 +229,6 @@ export function UsageSection({
     <section className="flex flex-col gap-3" onKeyDown={onKeyDown} aria-label={t('用量统计')}>
       {/* 统一工具条：粒度、时间范围、计价模型、刷新排成一行，窄窗口换行不溢出 */}
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-[0.8125rem] font-semibold">{t('用量统计')}</h3>
         <div className="inline-flex rounded-lg border p-0.5" role="tablist" aria-label={t('统计粒度')}>
           {USAGE_GRAINS.map((g, i) => (
             <button
@@ -256,7 +263,7 @@ export function UsageSection({
         <div className="ml-auto flex items-center gap-1.5">
           <Select
             aria-label={t('计价模型')}
-            className="h-8 w-[196px]"
+            className="h-8 w-[200px]"
             value={pricingId || DEFAULT_PRICING_MODEL}
             options={PRICING_MODELS.map((m) => ({ value: m.id, label: m.label }))}
             onChange={(e) => onPricingModel(e.target.value)}
@@ -301,7 +308,7 @@ export function UsageSection({
       {/* 汇总：费用放最显眼的位置，其他指标一格一个，一屏内看全 */}
       <div className="rounded-xl border bg-field/40 px-3.5 py-3">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
-          <div className="min-w-0">
+          <div className="min-w-[160px]">
             <div className="flex items-center gap-1 text-[0.6875rem] text-subtle">
               {t('费用')}
               <HelpTip>
@@ -361,7 +368,7 @@ export function UsageSection({
               </div>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-x-5 gap-y-2 sm:grid-cols-3">
+          <div className="grid flex-1 basis-[420px] grid-cols-3 gap-x-6 gap-y-2 sm:grid-cols-6">
             <Stat label={t('输入')} value={total.inputTokens} />
             <Stat label={t('输出')} value={total.outputTokens} />
             <Stat label={t('缓存命中')} value={total.cacheReadTokens} />
@@ -380,130 +387,140 @@ export function UsageSection({
         title={t('用量明细（{range}）', { range: shown })}
         className="max-h-[min(46vh,420px)] overflow-y-auto rounded-xl border outline-none focus-visible:ring-[3px] focus-visible:ring-focus-soft"
       >
-        <table className="w-full text-[0.78125rem]">
-          <thead>
-            <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
-              <th className="px-2.5 py-2 font-medium whitespace-nowrap">{t('时间')}</th>
-              <th className="px-2.5 py-2 text-right font-medium">{t('输入')}</th>
-              <th className="px-2.5 py-2 text-right font-medium">{t('输出')}</th>
-              <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存命中')}</th>
-              <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存写入')}</th>
-              <th
-                className="px-2.5 py-2 text-right font-medium whitespace-nowrap"
-                title={
-                  tiered
-                    ? t('{unit} / 百万 token · {model} 按峰谷分档计价', {
-                        unit: currency === 'CNY' ? t('元') : t('美元'),
-                        model: model?.label ?? '',
-                      })
-                    : t('{unit} / 百万 token · {model} 高峰时段单价', {
-                        unit: currency === 'CNY' ? t('元') : t('美元'),
-                        model: model?.label ?? '',
-                      })
-                }
-              >
-                {t('费用')}
-              </th>
-              <th className="hidden px-2.5 py-2 text-right font-medium md:table-cell">{t('任务')}</th>
-              <th className="px-2.5 py-2 text-right font-medium">{t('轮数')}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((b) => {
-              const dayCost = usageCost(b, model, b)
-              return (
-                <tr key={b.key} className="border-b last:border-b-0 hover:bg-sel/30">
-                  <td className="px-2.5 py-1.5 whitespace-nowrap">{dayLabel(new Date(b.start))}</td>
-                  <Tokens value={b.inputTokens} />
-                  <Tokens value={b.outputTokens} />
-                  <td
-                    className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
-                    title={num(b.cacheReadTokens)}
-                  >
-                    {formatTokens(b.cacheReadTokens)}
-                  </td>
-                  <td
-                    className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
-                    title={num(b.cacheWriteTokens)}
-                  >
-                    {formatTokens(b.cacheWriteTokens)}
-                  </td>
-                  <td
-                    className="px-2.5 py-1.5 text-right font-mono tabular-nums"
-                    title={
-                      dayCost === null
-                        ? t('未配置单价')
-                        : tiered
-                          ? t('{total}（高峰 {peak} · 空闲 {offPeak}）', {
-                              total: formatMoney(dayCost, currency),
-                              peak: formatMoney(tierCost(b.peak, model, 'peak') ?? 0, currency),
-                              offPeak: formatMoney(tierCost(b.offPeak, model, 'offPeak') ?? 0, currency),
-                            })
-                          : formatMoney(dayCost, currency)
-                    }
-                  >
-                    {dayCost === null ? (
-                      <span className="text-subtle">{t('未配置单价')}</span>
-                    ) : (
-                      formatMoney(dayCost, currency)
-                    )}
-                  </td>
-                  <td
-                    className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums md:table-cell"
-                    title={num(b.tasks)}
-                  >
-                    {formatTokens(b.tasks)}
-                  </td>
-                  <td className="px-2.5 py-1.5 text-right font-mono tabular-nums" title={num(b.turns)}>
-                    {formatTokens(b.turns)}
-                  </td>
-                </tr>
-              )
-            })}
-            {listEmpty && (
-              <tr>
-                <td colSpan={8} className="px-3.5 py-8 text-center text-[0.8125rem] text-subtle">
-                  {loading ? '…' : t('这段时间暂无用量')}
+        {listEmpty ? (
+          <div className="px-3.5 py-8 text-center text-[0.8125rem] text-subtle">
+            {loading ? '…' : t('这段时间暂无用量')}
+          </div>
+        ) : (
+          <table className="w-full text-[0.78125rem] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
+            <thead>
+              <tr className="sticky top-0 z-10 border-b bg-card text-left text-[0.6875rem] text-subtle">
+                <th className="px-2.5 py-2 font-medium whitespace-nowrap">{t('时间')}</th>
+                <th className="px-2.5 py-2 text-right font-medium">{t('输入')}</th>
+                <th className="px-2.5 py-2 text-right font-medium">{t('输出')}</th>
+                <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存命中')}</th>
+                <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存写入')}</th>
+                <th
+                  className="px-2.5 py-2 text-right font-medium whitespace-nowrap"
+                  title={
+                    tiered
+                      ? t('{unit} / 百万 token · {model} 按峰谷分档计价', {
+                          unit: currency === 'CNY' ? t('元') : t('美元'),
+                          model: model?.label ?? '',
+                        })
+                      : t('{unit} / 百万 token · {model} 高峰时段单价', {
+                          unit: currency === 'CNY' ? t('元') : t('美元'),
+                          model: model?.label ?? '',
+                        })
+                  }
+                >
+                  {t('费用')}
+                </th>
+                <th className="hidden px-2.5 py-2 text-right font-medium md:table-cell">{t('任务')}</th>
+                <th className="hidden px-2.5 py-2 text-right font-medium whitespace-nowrap sm:table-cell">
+                  {t('轮数')}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((b) => {
+                const dayCost = usageCost(b, model, b)
+                return (
+                  <tr key={b.key} className="border-b last:border-b-0 hover:bg-sel/30">
+                    <Day day={new Date(b.start)} />
+                    <Tokens value={b.inputTokens} />
+                    <Tokens value={b.outputTokens} />
+                    <td
+                      className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
+                      title={num(b.cacheReadTokens)}
+                    >
+                      {formatTokens(b.cacheReadTokens)}
+                    </td>
+                    <td
+                      className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
+                      title={num(b.cacheWriteTokens)}
+                    >
+                      {formatTokens(b.cacheWriteTokens)}
+                    </td>
+                    <td
+                      className="px-2.5 py-1.5 text-right font-mono tabular-nums"
+                      title={
+                        dayCost === null
+                          ? t('未配置单价')
+                          : tiered
+                            ? t('{total}（高峰 {peak} · 空闲 {offPeak}）', {
+                                total: formatMoney(dayCost, currency),
+                                peak: formatMoney(tierCost(b.peak, model, 'peak') ?? 0, currency),
+                                offPeak: formatMoney(tierCost(b.offPeak, model, 'offPeak') ?? 0, currency),
+                              })
+                            : formatMoney(dayCost, currency)
+                      }
+                    >
+                      {dayCost === null ? (
+                        <span className="text-subtle">{t('未配置单价')}</span>
+                      ) : (
+                        formatMoney(dayCost, currency)
+                      )}
+                    </td>
+                    <td
+                      className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums md:table-cell"
+                      title={num(b.tasks)}
+                    >
+                      {formatTokens(b.tasks)}
+                    </td>
+                    <td
+                      className="hidden px-2.5 py-1.5 text-right font-mono tabular-nums sm:table-cell"
+                      title={num(b.turns)}
+                    >
+                      {formatTokens(b.turns)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t bg-field/60 font-medium">
+                <td className="px-2.5 py-2 whitespace-nowrap">{t('合计')}</td>
+                <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.inputTokens)}>
+                  {formatTokens(total.inputTokens)}
+                </td>
+                <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.outputTokens)}>
+                  {formatTokens(total.outputTokens)}
+                </td>
+                <td
+                  className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
+                  title={num(total.cacheReadTokens)}
+                >
+                  {formatTokens(total.cacheReadTokens)}
+                </td>
+                <td
+                  className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
+                  title={num(total.cacheWriteTokens)}
+                >
+                  {formatTokens(total.cacheWriteTokens)}
+                </td>
+                <td
+                  className="px-2.5 py-2 text-right font-mono tabular-nums"
+                  title={cost === null ? t('未配置单价') : formatMoney(cost, currency)}
+                >
+                  {cost === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(cost, currency)}
+                </td>
+                <td
+                  className="hidden px-2.5 py-2 text-right font-mono tabular-nums md:table-cell"
+                  title={num(total.tasks)}
+                >
+                  {formatTokens(total.tasks)}
+                </td>
+                <td
+                  className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
+                  title={num(total.turns)}
+                >
+                  {formatTokens(total.turns)}
                 </td>
               </tr>
-            )}
-          </tbody>
-          <tfoot>
-            <tr className="border-t bg-field/60 font-medium">
-              <td className="px-2.5 py-2 whitespace-nowrap">{t('合计')}</td>
-              <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.inputTokens)}>
-                {formatTokens(total.inputTokens)}
-              </td>
-              <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.outputTokens)}>
-                {formatTokens(total.outputTokens)}
-              </td>
-              <td
-                className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
-                title={num(total.cacheReadTokens)}
-              >
-                {formatTokens(total.cacheReadTokens)}
-              </td>
-              <td
-                className="hidden px-2.5 py-2 text-right font-mono tabular-nums sm:table-cell"
-                title={num(total.cacheWriteTokens)}
-              >
-                {formatTokens(total.cacheWriteTokens)}
-              </td>
-              <td className="px-2.5 py-2 text-right font-mono tabular-nums">
-                {cost === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(cost, currency)}
-              </td>
-              <td
-                className="hidden px-2.5 py-2 text-right font-mono tabular-nums md:table-cell"
-                title={num(total.tasks)}
-              >
-                {formatTokens(total.tasks)}
-              </td>
-              <td className="px-2.5 py-2 text-right font-mono tabular-nums" title={num(total.turns)}>
-                {formatTokens(total.turns)}
-              </td>
-            </tr>
-          </tfoot>
-        </table>
+            </tfoot>
+          </table>
+        )}
       </div>
     </section>
   )
