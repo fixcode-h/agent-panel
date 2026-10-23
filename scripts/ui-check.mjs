@@ -301,6 +301,54 @@ try {
   }
   if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
+  // 文件树里的文件左键长按拖到输入框：按住够久才拖起来，松手插入「@相对路径」纯文本，不当附件上传；
+  // 拖动之后的补发 click 要压掉（不能顺手把文件打开），短按仍然是打开文件
+  {
+    const row = p.locator('button[data-file-row][data-path="package.json"]').first()
+    const input = p.locator('#follow-up')
+    await input.fill('')
+    const rb = await row.boundingBox()
+    const ib = await input.boundingBox()
+    if (!rb || !ib) errors.push('长按拖入：找不到文件行或输入框')
+    else {
+      await p.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2)
+      await p.mouse.down()
+      await p.waitForTimeout(420)
+      const tx = ib.x + ib.width / 2
+      const ty = ib.y + ib.height / 2
+      for (let i = 1; i <= 12; i++) {
+        await p.mouse.move(rb.x + ((tx - rb.x) * i) / 12, rb.y + ((ty - rb.y) * i) / 12)
+        await p.waitForTimeout(25)
+      }
+      await p.mouse.up()
+      await p.waitForTimeout(300)
+      const text = (await input.textContent()) ?? ''
+      if (!text.includes('@package.json')) errors.push(`长按拖入：输入框里没有引用（${JSON.stringify(text)}）`)
+      if (await input.locator('[data-chip]').count()) errors.push('长按拖入：引用被做成了附件卡片')
+      if (await p.getByRole('dialog').count()) errors.push('长按拖入：拖动把文件也打开了')
+      // 行首的 @ 用等宽字体造形，不能是「图标和文字叠在一起」那个坏字形
+      const atW = await p.evaluate(() => {
+        const el = document.querySelector('#follow-up')
+        const node = el?.firstChild
+        if (!node || node.nodeType !== Node.TEXT_NODE) return 0
+        const r = document.createRange()
+        r.setStart(node, 0)
+        r.setEnd(node, 1)
+        return r.getBoundingClientRect().width
+      })
+      if (atW < 6 || atW > 11) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常等宽字形`)
+      await check(p, '任务-长按拖入引用', ['@package.json'])
+      // 短按还是打开文件
+      await row.click()
+      await p
+        .getByRole('dialog')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('长按拖入：短按没有打开文件'))
+      await p.keyboard.press('Escape')
+      await input.fill('')
+    }
+  }
   // 从外面把文件拖到消息区（不是输入框）也算引入到要求里：拖入时整页提示，松开后进附件条和内联卡片；
   // 只拖文字时不拦截浏览器默认行为
   {

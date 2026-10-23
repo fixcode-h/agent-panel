@@ -14,3 +14,15 @@
   font-display: swap;
   src: url('./assets/fonts/maple-mono-nl/MapleMonoNL-Italic-wght.woff2') format('woff2');
 }
+/* Maple Mono NL（官方字体就这样）的 @ 是一个 a 加一道竖笔，圆圏是开口的：13–14px 下看着像「图标和文字叠在一起」，
+  拖文件进来插的「@相对路径」排在行首时最明显（用户报过）。@ 这一个字符改用内置的 JetBrains Mono 画：
+   同样是等宽字体，宽度不变，不会把代码和路径的对齐打破；同一家族后声明的 face 优先，只影响 U+0040。 */
+@font-face {
+  font-family: 'Maple Mono NL';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('@fontsource-variable/jetbrains-mono/files/jetbrains-mono-latin-wght-normal.woff2')
+    format('woff2-variations');
+  unicode-range: U+0040;
+}
