@@ -1,5 +1,4 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { availableParallelism } from 'node:os'
 import path from 'node:path'
 import { capture } from './exec/process.ts'
 import { runShell as runShellIn } from './merge-build.ts'
@@ -42,11 +41,11 @@ const KEEP_JOBS = 20
  */
 const KILL_GRACE_MS = 8000
 /**
- * 整个面板同时跑的后台命令上限。独占命令只按目录排队，可每个子对话的独立分支是不同的目录：
- * 父对话派出十几个子对话、各自交一条完整测试或编译，就是十几条重活同时跑，CPU、内存被吃满，
+ * 整个面板同时跑的后台命令上限的默认值（设置里的 backgroundLimit）。独占命令只按目录排队，可每个子对话的
+ * 独立分支是不同的目录：父对话派出十几个子对话、各自交一条完整测试或编译，CPU、内存会被吃满，
  * 面板和整台机器一起卡住。超过上限的照样马上返回、记成排队，前面的跑完一条就开始
  */
-const MAX_RUNNING = Math.max(2, Math.floor(availableParallelism() / 2))
+const MAX_RUNNING = 16
 
 /**
  * 兜底计时用的定时器。默认是真实的 setTimeout；测试换成可控的假时钟，推进时间就能到点，
@@ -91,14 +90,26 @@ async function fingerprint(dir: string) {
 export function createBackground(
   onDone: (job: BgJob, text: string) => void,
   /** 测试用：换掉真正跑命令的实现、缩短停止后的等待上限、换成假时钟 */
-  deps: { run?: typeof runShellIn; killGraceMs?: number; timers?: BgTimers; maxRunning?: number } = {},
+  deps: {
+    run?: typeof runShellIn
+    killGraceMs?: number
+    timers?: BgTimers
+    /** 同时跑的上限：每次排名额时重新取（设置里改了马上生效） */
+    maxRunning?: number | (() => number | Promise<number>)
+  } = {},
 ) {
   const runShell = deps.run ?? runShellIn
   const killGraceMs = deps.killGraceMs ?? KILL_GRACE_MS
   const timers = deps.timers ?? realTimers
-  const maxRunning = deps.maxRunning ?? MAX_RUNNING
+  /** 最近一次取到的上限：排队提示是同步拼的，用它 */
+  let maxRunning = typeof deps.maxRunning === 'number' ? deps.maxRunning : MAX_RUNNING
+  const limit = async () => {
+    const v = typeof deps.maxRunning === 'function' ? await deps.maxRunning() : maxRunning
+    if (Number.isInteger(v) && v >= 1) maxRunning = v
+    return maxRunning
+  }
   /** 全局名额（见 MAX_RUNNING）：所有对话的后台命令共用一个键 */
-  const gate = createSlotPool(() => maxRunning)
+  const gate = createSlotPool(limit)
   /** 每条命令占着的名额：置终态时就还（见 finish），不等 close——close 不来的进程不能永久占一个名额 */
   const gateFree = new Map<string, () => void>()
   const releaseGate = (id: string) => {

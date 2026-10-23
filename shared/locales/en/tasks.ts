@@ -651,6 +651,10 @@ export const EN_TASKS: Record<string, string> = {
   '一个项目对话下最多同时执行几个子对话，超出的排队，前面的做完再开始。每个子对话至少占一个 Agent 进程，跑工作流时更多。':
     'How many sub-conversations of one project conversation can run at the same time. Extra ones wait in line until an earlier one finishes. Each sub-conversation uses at least one agent process, more when running a workflow.',
   '填 1 到 20 之间的整数': 'Enter a whole number from 1 to 20',
+  同时运行的后台命令: 'Concurrent background commands',
+  '所有对话交给面板在后台跑的命令（完整测试、编译）最多同时跑几条，超出的排队，前面的跑完一条再开始。机器配置低时调小，免得一起跑卡住。':
+    'How many background commands (full test runs, builds) handed to the panel can run at once across all conversations. Extra ones wait until an earlier one finishes. Lower it on a slower machine so they do not bog it down together.',
+  '填 1 到 64 之间的整数': 'Enter a whole number from 1 to 64',
   '全局规则只能在项目对话里发布，子对话会自动遵守父对话的规则':
     "Global rules can only be published in a project conversation; sub-conversations follow their parent's rules automatically",
   '这个对话的全局规则：\n{list}': 'Global rules of this conversation:\n{list}',

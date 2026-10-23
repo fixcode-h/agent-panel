@@ -1,5 +1,5 @@
 ---
-paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/task-store.ts, server/exec/worktree.ts, shared/task.ts
+paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/task-store.ts, server/exec/worktree.ts, shared/task.ts, shared/plan.ts
 ---
 
 # 服务端接口和访问控制
@@ -33,3 +33,9 @@ paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.t
 - 规则：用量、状态、子对话栏这类只看 `usage` / `steps` / `status` 的地方用 `store.peek` 或 `tasksApi().peek`（执行中的取内存，其余取任务文件），不要 `store.get` / `current`——完整对话在内存里只留 `KEEP_FULL` 份，被挤出去后每次 get 都是读盘加校验几 MB 的 JSON。`store.update` 收到带 `messages` 的完整任务时也不再读旧对话。
 - 起因：父对话开了十几个子对话后面板卡死：`/run-usage` 执行中每秒为每个子对话 get 一次，同时在跑的对话超过 12 个时每次落盘又互相挤出缓存、重读对话文件。
 - 防线：`server/task-store.test.ts` 的「同时在跑的对话超过内存里留的份数」。
+
+## 子对话的收尾是计划的最后一步，由面板加
+
+- 规则：子对话的收尾（独立分支 `submit_merge` 合回父对话所在的分支；P4 工作区按 [C++]/[XLSX]/[Lua]/[Other] 分进各自的 pending changelist）由 `applyPlan` 的 `wrapUp` 自动放在计划最后（`shared/plan.ts` 的 `ensureWrapUp`），Agent 漏写、删掉、挪到前面都会放回去；合回分支那一步只由面板在合并成功后标完成（`markWrapUp`）。提示词里不要再写「收尾不列进计划」，P4 分桶规则写在对话提示词（`wrapUpPart`）里，不要只靠 project-vcs 技能或「版本控制」角色。
+- 起因：用户纠正——以前提示词要求「合回父分支是收尾动作，不写进计划步骤」，子对话改完就停，P4 改动全留在 default 或塞进同一个 changelist。
+- 防线：`shared/plan.test.ts` 的收尾用例、`server/engine-steps.test.ts` 的提示词断言。

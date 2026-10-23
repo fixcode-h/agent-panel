@@ -260,3 +260,24 @@ test('全局名额：同时跑的后台命令有上限，多的排队；卡住�
   assert.ok(peak <= 3)
   assert.deepEqual(got.map((g) => g.job.name).sort(), ['job1', 'job2'])
 })
+
+test('上限从设置里取：每次排名额时重新读，改了马上生效', async () => {
+  let limit = 1
+  const finishers: (() => void)[] = []
+  const fake = (() =>
+    new Promise((resolve) =>
+      finishers.push(() => resolve({ code: 0, killed: null, stderr: '' })),
+    )) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const { bg, all } = collect(3, { run: fake, maxRunning: () => limit })
+  const dirs = [0, 1, 2].map((i) => mkdtempSync(path.join(tmpdir(), `bg-limit-${i}-`)))
+  bg.start({ taskId: 'a', name: 'a', command: 'x', cwd: '', root: dirs[0], exclusive: false })
+  for (let i = 0; i < 40 && finishers.length < 1; i++) await new Promise((r) => setTimeout(r, 25))
+  // 上限调大以后再来的两条马上一起跑，不用等第一条
+  limit = 3
+  bg.start({ taskId: 'b', name: 'b', command: 'x', cwd: '', root: dirs[1], exclusive: false })
+  bg.start({ taskId: 'c', name: 'c', command: 'x', cwd: '', root: dirs[2], exclusive: false })
+  for (let i = 0; i < 40 && finishers.length < 3; i++) await new Promise((r) => setTimeout(r, 25))
+  assert.equal(finishers.length, 3)
+  while (finishers.length) finishers.shift()!()
+  await all
+})

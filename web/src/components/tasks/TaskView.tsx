@@ -1012,7 +1012,8 @@ export function TaskView({
   return (
     <WithAgents agents={agents}>
       <FileOpenCtx.Provider value={openFile}>
-        <PaneNavCtx.Provider value={pane ? { run: openPaneRun } : task.parentTaskId ? null : { child: openChildRow }}>
+        {/* 子对话（右栏面板或单独打开）里点「启动工作流」：就地换成这次运行的视图，下面带着输入框 */}
+        <PaneNavCtx.Provider value={pane || task.parentTaskId ? { run: openPaneRun } : { child: openChildRow }}>
           <ChildListCtx.Provider value={children}>
             <div
               className={cn(
@@ -1492,8 +1493,8 @@ export function TaskView({
                     />
                   )}
                   {task.imported && <ImportedBar task={task} onAnalyze={() => setAnalyzing(true)} />}
-                  {/* 点开运行面板时输入框挪进面板，这里先空着，避免出现两个输入框 */}
-                  {!openRun && composer}
+                  {/* 点开运行面板、子对话里就地打开运行时输入框挪进去，这里先空着，避免出现两个输入框 */}
+                  {!openRun && !paneRun && composer}
                   {/* 上下文、Token 用量和环境放在输入框下面，右栏留给文件系统 */}
                   <TaskMeta
                     task={task}
@@ -1504,15 +1505,17 @@ export function TaskView({
                     onTask={apply}
                   />
                 </div>
-                {/* 子对话面板里点开的一次运行：盖在这块面板上，子对话本身不卸载，返回后滚动位置原样保留。
-                    返回（←）回子对话这一层，✕ 走 onClose 关掉子对话面板本身 */}
-                {pane && paneRun && (
+                {/* 子对话里点开的一次运行：盖在这块面板上，子对话本身不卸载，返回后滚动位置原样保留。
+                    返回（←）回子对话这一层，✕ 走 onClose 关掉子对话面板本身。
+                    输入框跟着放在运行视图底下，和父对话右栏的运行面板一样，看着节点也能补充要求 */}
+                {paneRun && (
                   <RunView
                     task={task}
                     run={paneRun.run}
                     tool={paneRun.tool}
                     onBack={() => setPaneRun(null)}
                     onClose={onClose}
+                    footer={composer}
                   />
                 )}
               </main>

@@ -1629,6 +1629,11 @@ export const Settings = z.object({
    * 每个子对话至少占一个 CLI 进程，跑工作流时还会更多，限住它免得一次开出太多 CLI
    */
   childConcurrency: z.number().int().min(1).max(20).catch(5).default(5),
+  /**
+   * 整个面板同时跑的后台命令最多几条（所有对话共用）：超出的排队，前面的跑完一条再开始。
+   * 每个子对话的独立分支是不同目录，按目录排队拦不住十几条编译、测试一起跑
+   */
+  backgroundLimit: z.number().int().min(1).max(64).catch(16).default(16),
   /** 超过这么大（MB）的文件放进输入框时不上传、不拷进对话目录，直接引用它在本机的路径 */
   largeFileMB: z.number().int().min(1).max(50).catch(10).default(10),
   /** 粘贴的纯文字超过这么多字时存成一个文本文件，输入框里放文件卡片；0 表示不转 */
