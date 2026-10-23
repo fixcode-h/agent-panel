@@ -246,14 +246,27 @@ const toolSig = (x: TaskMessage['tools'][number]) =>
 const sig = (m: TaskMessage) =>
   `${m.id}|${m.text.length}|${m.thinking?.length ?? 0}|${m.modelMs ?? 0}|${m.thinkingMs ?? 0}|${m.tools.map(toolSig).join(',')}`
 
+/**
+ * 角色名后面的 Agent（CLI）名：同一个角色换了 CLI 时跟着变，一眼看出这条回复是哪个 CLI 跑的。
+ * 按 Agent 显示的对话里名字本来就是 CLI 名，再显示一次只是重复
+ */
+function CliLabel({ cli, name }: { cli: string; name: string }) {
+  const { cliName } = useAgentView()
+  const label = cliName({ cli })
+  if (name.startsWith(label)) return null
+  return <span className="shrink-0 text-xs text-subtle">{`· ${label}`}</span>
+}
+
 /** 对话一轮的署名栏：滚到顶部后固定，下一次署名前被顶走 */
 function StickyAuthor({ author }: { author: Author }) {
   return (
     <div className="sticky top-0 z-10 -mx-2 flex items-center gap-3 bg-bg px-2 py-2">
       <AgentAvatar icon={author.icon ?? 'sparkles'} cli={author.cli} size="sm" />
       <div className="flex min-w-0 flex-1 items-center gap-2 text-[0.8125rem]">
-        <span className="truncate font-medium">{author.name}</span>
-        {author.model && <span className="truncate font-mono text-xs text-subtle">{author.model}</span>}
+        <span className="shrink-0 font-medium">{author.name}</span>
+        <CliLabel cli={author.cli} name={author.name} />
+        {/* 窄的时候先压缩模型这一段，名字和 Agent 名不被截成一半 */}
+        {author.model && <span className="min-w-0 truncate font-mono text-xs text-subtle">{author.model}</span>}
       </div>
       {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
       {author.command?.length ? <StepCommand argv={author.command} className="ml-auto -my-1" /> : null}
@@ -307,8 +320,10 @@ const MessageBody = memo(
         <div className="flex min-w-0 flex-1 flex-col gap-2">
           {!noHeader && (
             <div className="flex items-center gap-2 pt-0.5 text-[0.8125rem]">
-              <span className="font-medium">{name}</span>
-              {model && <span className="font-mono text-xs text-subtle">{model}</span>}
+              <span className="shrink-0 font-medium">{name}</span>
+              <CliLabel cli={cli} name={name} />
+              {/* 窄的时候先压缩模型这一段，名字和 Agent 名不被截成一半 */}
+              {model && <span className="min-w-0 truncate font-mono text-xs text-subtle">{model}</span>}
               {/* 启动命令和工作流节点标题旁的一样，只放图标，点开看完整命令 */}
               {command?.length ? <StepCommand argv={command} className="ml-auto -my-1" /> : null}
             </div>
