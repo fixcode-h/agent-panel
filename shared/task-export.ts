@@ -505,7 +505,9 @@ export function taskReport(b: TaskExport, maxOutput = 4000) {
   const outs = tk.steps.filter((s) => s.output.trim())
   if (outs.length) {
     lines.push('', '## 节点的最终输出（交给下游的内容）')
-    for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, clip(s.output.trim(), maxOutput))
+    // 引擎已经把输出截到 MAX_OUTPUT，更长的全文存在 handoff 文件里、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）。
+    // 这里按 maxOutput 再截一次正好切掉那句去向说明，分析时既看不到全文也不知道去哪读，所以原样输出
+    for (const s of outs) lines.push('', `### ${s.title}（${s.id}）`, s.output.trim())
   }
   // 改动的文件按节点自己的记录列：任务级 changes 是「项目目录相对任务开始时」的差额，
   // 同一个工作区里并行的其他任务改了文件也会算进来，不能当成这次任务的产出

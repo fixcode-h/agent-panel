@@ -179,6 +179,15 @@ test('修改建议：解析、对比、应用；不合法的值和找不到的�
   assert.equal(wf.flows[0].nodes[0].tier, 'high', '原来的工作流不动')
 })
 
+test('节点的最终输出原样导出：保留末尾的 handoff 文件去向，不再二次截断', () => {
+  // 引擎已经把输出截到 MAX_OUTPUT，超长部分的全文存在 handoff 文件、去向说明写在输出末尾（见 shared/engine.ts 的 storeOutput）
+  const file = 'C:\\Users\\me\\.agent-panel\\handoff\\t1\\n1.md'
+  const output = `${'甲'.repeat(4000)}\n\n（完整结果有 9000 字，这里只附了开头。完整内容在文件 ${file}，开始之前请先读完。）`
+  const report = analysisReport([exportTask(Task.parse({ ...task, steps: [{ ...task.steps[0], output }] }), [coder])])
+  assert.ok(report.includes(`完整内容在文件 ${file}`), '保留 handoff 文件路径，分析时知道去哪读全文')
+  assert.ok(!report.includes('后面省略'), '导出不再静默截断')
+})
+
 test('报告：用户要求不截断、失败工具单独统计、改动按节点归属、过程带时间', () => {
   const long = `## 约束\n${'不要动 server/tasks.ts 里的并发逻辑。'.repeat(400)}`
   const withTools = Task.parse({
