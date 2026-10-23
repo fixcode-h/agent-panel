@@ -837,7 +837,9 @@ try {
   await p.mouse.click(row.x - 14, row.y + row.height / 2)
   await p.waitForURL(/demo-design-menu/, { timeout: 5000 })
   await p.getByRole('button', { name: '设置' }).first().click()
-  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'WSL（默认）'])
+  // 默认项断言当前真正默认的那一个（不写成「或」，默认再变时要红）：演示后端固定返回 win32 和
+  // gitbash → wsl → powershell → cmd 的顺序，recommendedShell() 选 Git Bash，与跑检查的机器无关
+  await check(p, '设置', ['常规', '内容宽度', '命令行环境', 'Git Bash（默认）'])
   await p.getByRole('button', { name: '全局教训', exact: true }).click()
   await check(p, '设置-全局教训', ['改了提示词或界面文案', '加一条'])
   await p.getByRole('button', { name: '字体', exact: true }).click()
