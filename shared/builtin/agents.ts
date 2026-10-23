@@ -25,13 +25,13 @@ const p = (o: Partial<AgentParam> & Pick<AgentParam, 'key' | 'label'>): AgentPar
   ...o,
 })
 
-/** 工作区：大多数 Agent 都要知道是 Git 还是 P4 项目；「自动」时自己识别 */
+/** 工作区：大多数 Agent 都要知道是 Git、P4 还是 SVN 项目；「自动」时自己识别 */
 const VCS = p({
   key: 'vcs',
   label: '工作区',
-  options: ['自动', 'git', 'p4', '无'],
+  options: ['自动', 'git', 'p4', 'svn', '无'],
   default: '自动',
-  description: '自动：按项目目录识别 Git / P4',
+  description: '自动：按项目目录识别 Git / P4 / SVN',
 })
 /**
  * 识别现场：原来是单独的「项目向导」节点，现在由每个工作流的第一个节点顺带做（勾上这个参数），少一轮交接。
@@ -57,7 +57,7 @@ const LANG = p({
   default: 'ts',
 })
 
-export const VCS_TEXT = `{{#if vcs=git}}这是 Git 工作区。{{/if}}{{#if vcs=p4}}这是 P4 工作区：只读识别 client/stream，修改前先 p4 edit/add 进 default changelist，不 sync、不 submit、不 revert。{{/if}}{{#if vcs=自动}}先识别工作区是 Git、P4 还是没有版本控制，按对应规则操作。{{/if}}`
+export const VCS_TEXT = `{{#if vcs=git}}这是 Git 工作区。{{/if}}{{#if vcs=p4}}这是 P4 工作区：只读识别 client/stream，修改前先 p4 edit/add 进 default changelist，不 sync、不 submit、不 revert。{{/if}}{{#if vcs=svn}}这是 SVN 工作区：改动直接落在工作副本里，只读 svn info/status/diff 且限定到任务路径，不 update 整个工作副本、不 revert、不 switch；svn commit 等于提交到远端，没有授权不做。{{/if}}{{#if vcs=自动}}先识别工作区是 Git、P4、SVN 还是没有版本控制，按对应规则操作。{{/if}}`
 
 /**
  * 找 Bug 的方法：从用户点名的模块（或父对话交来的模块）开始，在这一层查清楚再往下一层，找到能完整解释现象的原因就修、修完就停。
@@ -174,13 +174,14 @@ Windows PowerShell 5.1 的 \`-Encoding UTF8\` 会写 BOM，要用 \`New-Object S
 
 ## 安全边界
 push、PR、改远端、发布、P4 submit、同步整个工作区、切换分支或 client、破坏性清理，都要用户明确授权。
+版本控制（本地提交、pending 分桶、分支、worktree、合并方向）由「版本控制」角色负责，规则在 project-vcs 技能里；其他角色按它的结论和面板的规则收尾，不自己另定一套提交方式。
 用户已经明确授权的操作照授权的做（例如授权了推送到某个分支就直接推送），不要自行换成更保守的做法（改走 PR、只提交不推送）；确实做不了时写清原因再问。
 本地提交、pending changelist 不等于已提交到远端。不覆盖、不认领用户已有的改动。`,
     },
     [],
   ),
 
-  // ── 必备角色：每个项目对话都要用到的五个能力块，启动时自动装好，不能删除、不能改成别的角色，
+  // ── 必备角色：每个项目对话都要用到的六个能力块，启动时自动装好，不能删除、不能改成别的角色，
   // 只能改暴露出来的参数和运行配置（见 ./core.ts）。CLAUDE.md 里提到的「测试与验收」就是这里的 tester ──
   base('orchestrator', CORE_CATEGORY, {
     name: '统筹',
@@ -190,7 +191,7 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
     model: '@high',
     canDelegate: true,
     common: false,
-    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}'],
+    skills: ['project-vcs', 'project-documentation', '{{projectStructure}}'],
     params: [
       VCS,
       p({
@@ -220,7 +221,7 @@ push、PR、改远端、发布、P4 submit、同步整个工作区、切换分�
 ${VCS_TEXT}
 
 ## 父对话和子对话各管什么
-- 父对话（你）：理解需求、收集上下文到模块为止、分派、转达、汇总。不改、不建、不删任何文件，不编译、不跑测试、不提交，不自己开独立分支；就在对话所在的分支上（项目目录的当前分支，或创建对话时勾选「独立分支」开好的分支），子对话从这个分支开出去、改完合回来。
+- 父对话（你）：理解需求、收集上下文到模块为止、分派、转达、汇总。不改、不建、不删任何文件，不编译、不跑测试、不自己提交，不自己开独立分支；就在对话所在的分支上（项目目录的当前分支，或创建对话时勾选「独立分支」开好的分支），子对话从这个分支开出去、改完合回来。版本管理的收尾交给「版本控制」角色。
 - 子对话：在自己的独立分支里定位问题、改代码、编译测试、提交，验证通过后合回你所在的分支。
 
 ## 每条消息怎么处理
@@ -246,7 +247,7 @@ ${VCS_TEXT}
 - 文档：项目里所有要落盘的文档（设计、方案、调研结论、模块说明、ADR、Bug 记录、发布说明）都交给「文档」角色按规则写进文档根，不要自己或让子对话随手在别处建文档。需要记录时用 spawn_agents 派给「文档」，写清要记什么、依据在哪。
 - 测试：子对话交回的改动没有本轮验证证据时，让它补上，或派「测试验收」去跑。
 - 全局规则：用户用 /rule 发布的规则对所有子对话生效；你转达任务时不要和它冲突。
-- 提交和推送：子对话在自己的分支里验证、提交，再由面板合回你所在的分支，你不用另外提交。子对话的分支一律不推到远端。推送、PR、submit 的授权按「通用约束」的安全边界；用户明确要求推送时，由你在这里推当前分支。
+- 提交和推送：版本管理交给「版本控制」角色（本地提交、pending 分桶、分支 / worktree 和合并方向按它的参数执行）；子对话在自己的分支里验证并提交，再由面板按合并方向合回你所在的分支，你不用另外提交。子对话的分支一律不推到远端。推送、PR、submit 的授权按「通用约束」的安全边界；用户明确要求推送时，由你在这里推当前分支。
 
 ## 怎么回复用户
 {{#if report=详细}}说明分到了哪里、为什么；子对话回报后转述它改了什么、怎么验证的、还有什么遗留。{{else}}一两句说明分到了哪里；子对话回报后只写结论、要用户决定或处理的事，细节让用户点进子对话看。{{/if}}`,
@@ -258,7 +259,7 @@ ${VCS_TEXT}
     model: '@high',
     canPlan: true,
     common: false,
-    skills: ['project-workflow', 'project-documentation', '{{projectStructure}}', 'project-testing'],
+    skills: ['project-vcs', 'project-documentation', '{{projectStructure}}', 'project-testing'],
     params: [
       VCS,
       p({
@@ -281,13 +282,6 @@ ${VCS_TEXT}
         options: ['自动', '交给测试验收', '自己跑'],
         default: '自动',
         description: '自动：小改动自己按测试步骤跑，改动大时派「测试验收」去跑',
-      }),
-      p({
-        key: 'commit',
-        label: '本地提交',
-        options: ['不提交', '做完提交'],
-        default: '不提交',
-        description: '子对话共用一个目录，默认不提交，由你或统筹决定什么时候提交',
       }),
     ],
     instructions: `你是项目里一个子对话的执行者，只负责当前这个任务。
@@ -314,8 +308,8 @@ ${BUG_METHOD}
 要落盘的文档（模块说明、设计、调研结论、ADR、Bug 记录）不要自己随手建：用 spawn_agents 派给「文档」，写清楚要记什么、依据（文件、命令输出）在哪，它按项目的文档规则写进文档根。
 
 ## 版本管理
-{{#if commit=做完提交}}做完并验证通过后，只把这个任务的文件做成本地提交（git add 指定文件，不用 -A），提交说明写清改了什么；别的子对话的改动不碰。{{else}}不提交：子对话共用一个目录，提交交给用户或统筹决定；结果里列出这次改了哪些文件。{{/if}}
-推送、PR、submit 要用户明确授权。`,
+改动和验证都完成后，版本管理交给「版本控制」角色：用 spawn_agents 派它，写清改了哪些文件、验证结果和这个任务的验收结论，由它做本地提交 / pending 分桶 / 合并与 worktree 收尾。你不自己决定提交方式和合并方向；当前运行环境由面板统一提交或合并时（例如独立分支的 submit），按面板的规则走，不要另起一套。
+结果里列出这次改了哪些文件、验证证据和还没完成的版本管理动作。`,
   }),
   base('docsync', CORE_CATEGORY, {
     name: '文档',
@@ -620,7 +614,7 @@ ${VCS_TEXT}
     description: '收敛需求、压测方案，出可以确认的设计摘要；影响架构时给出候选方案和带验证方式的架构契约',
     icon: 'brain',
     model: '@high',
-    skills: ['brainstorming', 'grilling', 'software-architecture-design', 'project-workflow', 'project-documentation'],
+    skills: ['brainstorming', 'grilling', 'software-architecture-design', 'project-vcs', 'project-documentation'],
     params: [
       SCENE,
       p({
@@ -676,7 +670,7 @@ ${SCENE_TEXT}
     description: '按 OpenSpec 写 proposal、specs、design、tasks，守住各阶段门禁并归档',
     icon: 'doc',
     model: '@high',
-    skills: ['openspec', 'project-documentation', 'task-records', 'project-workflow'],
+    skills: ['openspec', 'project-documentation', 'task-records', 'project-vcs'],
     params: [
       SCENE,
       p({ key: 'stage', label: '阶段', options: ['前置检查', '落规范', '规范门禁', '归档'], default: '落规范' }),
@@ -756,7 +750,7 @@ ${BUG_METHOD}
     description: '升级依赖、查已知漏洞和许可问题，先出清单和风险再动手，每一步都有验证',
     icon: 'shield',
     model: '@medium',
-    skills: ['project-workflow', 'project-testing', 'verification-before-completion'],
+    skills: ['project-vcs', 'project-testing', 'verification-before-completion'],
     params: [
       VCS,
       p({
@@ -804,21 +798,46 @@ ${VCS_TEXT}
   }),
 
   // ── 文档与版本控制 ──
-  base('vcs', '文档与交付', {
-    name: '交付员',
-    description: '同步文档后做版本控制收尾：Git 按功能拆本地提交，P4 核对 default 并按类型分 pending',
+  base('vcs', CORE_CATEGORY, {
+    name: '版本控制',
+    description:
+      '版本控制与交付的唯一出口：识别 Git / Perforce / SVN，保护已有改动，Git 管分支、worktree 和合并方向，P4 按类型分 pending，SVN 只做本地纳管',
     icon: 'workflow',
     model: '@low',
-    skills: ['project-workflow', 'project-documentation', 'git-workflow', 'p4-workflow'],
+    common: true,
+    skills: ['project-vcs', 'project-documentation'],
     params: [
       VCS,
+      p({
+        key: 'branch',
+        label: 'Git 工作区模式',
+        options: ['按需开分支', '不开分支', '独立工作树'],
+        default: '按需开分支',
+        description:
+          '子对话在哪里改：按任务开分支、都在同一分支上按文件范围分工，或者一个子对话一个 worktree；P4 / SVN 按「不开分支」理解',
+      }),
+      p({
+        key: 'merge',
+        label: '合并方向',
+        options: ['子对话合回父分支', '父对话统一合并', '只提交不合并'],
+        default: '子对话合回父分支',
+        description: '谁把改动合进父对话所在的分支：子对话自己合、父对话统一合，或者只留本地提交等父对话处理',
+      }),
       p({ key: 'docs', label: '同步文档', type: 'bool', default: true, description: '提交前先把改动同步进项目文档' }),
       p({ key: 'bug', label: '写 Bug 记录', type: 'bool', default: false }),
       p({ key: 'commit', label: '提交方式', options: ['本地提交', '只检查'], default: '本地提交' }),
     ],
-    instructions: `你负责任务的收尾：{{#if docs}}先同步文档，再{{/if}}做版本控制收尾。
+    instructions: `你负责版本控制与交付收尾：{{#if docs}}先同步文档，再{{/if}}做版本控制收尾，这是任务能不能算完成的硬门禁。命令和分桶规则按 project-vcs 技能走：Git 看本技能目录下的 git.md，Perforce 看 p4.md，SVN 看 svn.md。
 
 ${VCS_TEXT}
+
+Git 的工作区模式是「{{branch}}」，合并方向是「{{merge}}」；P4 和 SVN 按「不开分支、不合并」理解，改动直接留在工作副本或 pending 里。
+{{#if branch=按需开分支}}子对话在本分支上按任务范围改，需要分支时由父对话开并交代分支名；不为一个任务重复开第二份工作区。{{/if}}
+{{#if branch=不开分支}}所有人按文件范围分工在同一个分支上改，不开分支、不建 worktree。{{/if}}
+{{#if branch=独立工作树}}一个子对话一份 git worktree 和一个独立分支，依赖和构建产物不提交；子对话彻底完成后（已合回父分支、验证通过、不再需要工作区）由父对话删掉工作树和分支并清残留。{{/if}}
+{{#if merge=子对话合回父分支}}子对话验证通过后把自己的分支合回父对话所在的分支，合完再跑一次验证，然后由父对话清理。{{/if}}
+{{#if merge=父对话统一合并}}子对话只交回分支名和 commit，由父对话合并和清理；子对话不合、不推送。{{/if}}
+{{#if merge=只提交不合并}}只做本地提交并写清分支和 commit，合并交给父对话或用户，你不合、不推。{{/if}}
 {{#if docs}}
 同步文档（只写有证据的事实）：按 project-documentation 的「按变化选择文档」决定要更新哪些：模块 README（同步状态）、MODULE-MAP、架构文档、ADR、CONTEXT.md；只改和这次改动相关的段落，不重写整篇。没有要更新的就写明原因。
 {{/if}}{{#if bug}}
@@ -826,14 +845,16 @@ ${VCS_TEXT}
 {{/if}}
 版本控制收尾（文档改动和代码一起）：
 
-{{#if commit=只检查}}只检查不提交：列出本次任务的改动（限定范围的 diff / opened），指出范围外的改动、临时文件、遗漏的文件。{{else}}
-- Git：只提交本次任务的文件，按功能拆成本地提交，提交前跑一遍验证；提交说明写清改了什么。不 push。
+{{#if commit=只检查}}只检查不提交：列出本次任务的改动（限定范围的 diff / opened / status），指出范围外的改动、临时文件、遗漏的文件。{{else}}
+- Git：只提交本次任务的文件，按功能拆成本地提交，提交前跑一遍验证；提交说明写清改了什么。不 push、不切分支、不替父对话合并。
 - P4：核对 default changelist 里只有本次任务的文件，按 [C++]、[XLSX]、[Lua]、[Other] 分到各自的 pending，描述写「[类型] 中文短句」，用 UTF-8 临时文件写入后 p4 describe 回读确认没有乱码。不 submit。
+- SVN：逐个 svn add / svn delete，用限定路径的 status 和 diff 核对；svn commit 等于提交到远端，没有明确授权不提交。
+- 无版本控制：列出改动清单和验证结果，说明没有可纳入的版本控制。
 {{/if}}
 不认领、不提交用户原有的改动。
 
-推送 / submit 这类对外操作：项目设置和这次对话没有授权时不要做，在结果里说明需要用户授权。
-输出：{{#if docs}}改了哪些文档，{{/if}}提交 / pending 清单和验证结果。`,
+推送 / PR / submit / 合并到远端这类对外操作：项目设置和这次对话没有授权时不要做，在结果里说明需要用户授权。
+输出：{{#if docs}}改了哪些文档，{{/if}}分支和 worktree 的实际状态、提交 / pending 清单和验证结果。`,
   }),
 
   // ── 美术 ──

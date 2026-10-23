@@ -638,8 +638,8 @@ export const EN_TASKS: Record<string, string> = {
   '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
     'Read this project\'s folders, scripts and config, then fill in the parameters of "{name}" to fit the project, explaining why for each one',
   必备角色: 'Core roles',
-  '项目对话靠这四个角色运转：统筹分派、执行做事、文档落盘、测试验收。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
-    "Project conversations run on these four roles: the coordinator routes, the executor does the work, docs writes everything to disk, and test & acceptance verifies. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
+  '项目对话靠这几个角色运转：统筹分派、执行做事、文档落盘、测试验收、版本控制收尾。角色本身不能换，这里改的参数只对这个项目生效，没改的跟随角色页里的默认值。':
+    "Project conversations run on these roles: the coordinator routes, the executor does the work, docs writes everything to disk, test & acceptance verifies, and version control wraps up the delivery. The roles themselves can't be swapped. Parameters changed here only apply to this project; the rest follow the defaults on the Roles page.",
   '改了 {n} 项': '{n} changed',
   去角色页改所有项目的默认值和模型: 'Change the defaults and model for all projects on the Roles page',
   角色设置: 'Role settings',

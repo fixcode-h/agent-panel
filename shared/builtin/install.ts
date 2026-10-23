@@ -341,12 +341,20 @@ function agentInUse(id: string, state: BuiltinState, projects: Pick<Project, 'de
 }
 
 /** 已合并 Agent 的本机副本是不是没改过：和它的旧指纹一致（简介后面补的合并说明不算改动） */
+/**
+ * 去掉简介末尾的合并说明。说明里的角色名会随合并目标改名，所以按形状认（从「已合并到」到结尾），
+ * 不只认当前这一句：否则改过名字的旧副本永远匹配不上指纹，也不会更新成新的说明。
+ */
+const stripMergedNote = (description: string) => {
+  const m = description.match(/（已合并到.*）$/s)
+  return (m ? description.slice(0, m.index) : description).trim()
+}
+
 function untouchedMerged(a: Agent, key: string) {
   const olds = [LEGACY_AGENT_FIELDS[key], ...(LEGACY_AGENT_FIELDS_MORE[key] ?? [])].filter(Boolean)
   // 更早合并的几个没留指纹：它们早就只剩一条说明，引用也在上一版重定向过了
   if (!olds.length) return true
-  const note = `（${MERGED_AGENTS[key].note}）`
-  const desc = a.description.replace(note, '').trim()
+  const desc = stripMergedNote(a.description)
   return olds.some(
     (o) => a.name === o.name && desc === o.description.trim() && a.instructions.trim() === o.instructions.trim(),
   )
@@ -481,7 +489,7 @@ export async function migrateGeneralWorkflow(state: BuiltinState, api: BuiltinOp
 }
 
 /**
- * 启动时确保五个必备角色（统筹、执行、文档、测试验收、子任务）都在，并按内置定义同步一遍（见 ./core.ts）：
+ * 启动时确保六个必备角色（统筹、执行、文档、测试验收、版本控制、子任务）都在，并按内置定义同步一遍（见 ./core.ts）：
  * 缺的建出来，已有的把名称、设定、Skill、能力、参数定义换成当前版本，保留用户填的参数值和运行配置。
  * 没有变化的不写盘，重复启动不会反复改文件。
  */
@@ -601,12 +609,11 @@ export async function annotateMergedAgents(state: BuiltinState, api: { updateAge
     const cur = findBuiltin(state.agents, key)
     if (!cur) continue
     const note = `（${m.note}）`
-    if (cur.description.includes(note)) continue
-    const next = await api.updateAgent(cur.id, {
-      ...cur,
-      description: `${cur.description}${cur.description ? ' ' : ''}${note}`.slice(0, 200),
-    })
-    if (next) out.push(next)
+    const head = stripMergedNote(cur.description)
+    const next = `${head}${head ? ' ' : ''}${note}`.slice(0, 200)
+    if (cur.description === next) continue
+    const saved = await api.updateAgent(cur.id, { ...cur, description: next })
+    if (saved) out.push(saved)
   }
   return out
 }
