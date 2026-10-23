@@ -653,28 +653,127 @@ body,
 }
 
 /*
- * 计划步骤「等待中」的沙漏：慢慢缩小再回来，像沙在流。
+ * 计划步骤「等待中」的沙漏（web/src/components/tasks/PlanPanel.tsx 的内联 SVG）：
+ * 上腔的沙变少、下半腔的沙堆高，中轴一条细沙在落；一轮流完整体翻转 180° 接着流。
  * 不用转圈——「进行中」已经是转动的圆弧，两种状态要能一眼分开
  */
-@keyframes plan-waiting {
+@keyframes plan-hourglass-turn {
   0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.72;
+  40% {
+    /* 沙全落在下腔以后才翻，翻过去画出来的样子正好等于 0% 的初始状态（见下面 sand 的说明） */
+    transform: rotate(0deg);
+    animation-timing-function: ease-in-out;
   }
   50% {
-    transform: scale(0.84);
-    opacity: 1;
+    transform: rotate(180deg);
+  }
+  90% {
+    transform: rotate(180deg);
+    animation-timing-function: ease-in-out;
+  }
+  100% {
+    transform: rotate(360deg);
   }
 }
-.plan-waiting {
-  transform-origin: center;
-  animation: plan-waiting 2.4s ease-in-out infinite;
+
+/*
+ * 一个腔体的沙量：上腔从满流到空（0→38%），下一个 50% 里又装满（50→88%）。
+ * 下半腔用同一段动画晚半个循环，翻转（40→50%、90→100%）时两边都不动：
+ * 下腔那块沙（满的）绕中心转 180° 转上去，画出来正好和上腔满的时候重合，所以翻过去、循环回开头都不闪跳
+ */
+@keyframes plan-hourglass-sand {
+  0% {
+    transform: scaleY(1);
+  }
+  38%,
+  50% {
+    transform: scaleY(0);
+  }
+  88%,
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+/* 中轴落沙：在上腔还有沙的时候才有，虚线往下走（落进下半腔，堆上去的沙会把它盖住）。
+   一段动画只管一次流沙，翻身后的那条靠 animation-delay 晚半个循环出场；
+   虚线偏移量取 dasharray 周期（2 + 1.6 = 3.6）的整数倍，循环接回开头看不出来 */
+@keyframes plan-hourglass-stream {
+  0% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+  2% {
+    opacity: 1;
+  }
+  36% {
+    opacity: 1;
+  }
+  40% {
+    opacity: 0;
+  }
+  100% {
+    stroke-dashoffset: -36;
+    opacity: 0;
+  }
+}
+.plan-hourglass {
+  /* 一轮（一次流完 + 翻转）的时长，改这里三处动效一起变 */
+  --plan-hourglass-cycle: 3s;
+}
+.plan-hourglass-turn {
+  transform-box: view-box;
+  transform-origin: 50% 50%;
+  animation: plan-hourglass-turn var(--plan-hourglass-cycle) linear infinite;
+}
+.plan-hourglass-sand {
+  fill: currentColor;
+  /* 以腔体底边为准竖向伸缩：上腔的沙面往下落、下腔的沙从底下往上堆 */
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: plan-hourglass-sand var(--plan-hourglass-cycle) linear infinite;
+}
+.plan-hourglass-sand-bottom {
+  animation: plan-hourglass-sand var(--plan-hourglass-cycle) linear calc(var(--plan-hourglass-cycle) * -0.5) infinite;
+}
+.plan-hourglass-glass {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.9;
+}
+.plan-hourglass-stream {
+  stroke: currentColor;
+  stroke-width: 1.05;
+  stroke-linecap: round;
+  stroke-dasharray: 2 1.6;
+  animation: plan-hourglass-stream var(--plan-hourglass-cycle) linear var(--plan-hourglass-stream-delay, 0s) infinite;
+}
+/* 两条落沙线是彼此的 180° 镜像（上面那条在翻转后才是「下面」），晚半个循环出场 */
+.plan-hourglass-stream-up {
+  --plan-hourglass-stream-delay: calc(var(--plan-hourglass-cycle) * -0.5);
 }
 @media (prefers-reduced-motion: reduce) {
-  /* 关动效时保持静态的沙漏，不隐藏 */
-  .plan-waiting {
+  /* 关动效时停在半满的沙漏：有沙、看不出在流，也不隐藏 */
+  .plan-hourglass-turn,
+  .plan-hourglass-sand,
+  .plan-hourglass-sand-bottom,
+  .plan-hourglass-stream {
     animation: none;
-    opacity: 1;
+  }
+  .plan-hourglass-sand {
+    transform: scaleY(0.6);
+  }
+  .plan-hourglass-sand-bottom {
+    transform: scaleY(0.4);
+  }
+  .plan-hourglass-stream {
+    opacity: 0.4;
+  }
+  /* 两条落沙线都静止时会叠成一根柱子，静态图里只留下面那条 */
+  .plan-hourglass-stream-up {
+    opacity: 0;
   }
 }
