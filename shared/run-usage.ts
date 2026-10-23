@@ -1,4 +1,4 @@
-import type { AgentUsage, StepUsage, Task, TaskStep } from './schema.ts'
+import type { StepUsage, Task, TaskStep } from './schema.ts'
 
 /**
  * 「整个运行」的用量：一个父对话 + 它分出的所有子对话（含多层）+ 它派出的子任务（spawn_agents 的节点）。
@@ -11,6 +11,7 @@ import type { AgentUsage, StepUsage, Task, TaskStep } from './schema.ts'
  *
  * 速度是按 Agent 记的（`Task.usage.agents[id].tps`），一个角色既被父对话自己用、又被子任务用时没法拆开，
  * 算进「本对话」：宁可让本对话的速度偏高，也不让分项加起来超过整体。
+ * 速度的三层（本对话 / 子任务与子对话 / 整体）都只用实时的 tps，见 `tpsNow`。
  */
 
 /** 一组 token 的合计：任务累计和节点用量是同一套字段 */
@@ -110,13 +111,18 @@ export function runTree<T extends { id: string; parentTaskId?: string }>(root: T
 }
 
 /**
- * 一组 Agent 现在的速度之和：正在输出时用 tps，都没有输出时用这一轮最后一次的 lastTps。
+ * 一组 Agent **现在**的输出速度：只算正在输出的那几条（CLI 那边 1.5 秒没有新输出就把 tps 清零）。
  * 不传 agentIds 就是任务里所有 Agent。
+ *
+ * 为什么不回退 lastTps：lastTps 是「这一轮最后一次的速度」，已经停下的子对话还留着它。
+ * 拿它冒充实时速度会出现「什么都没在输出，浮层里还有 2041.7 token/s」，
+ * 而且父对话那一层和子对话那一层回退的时机不一样（父对话每轮从 0 清），三层加起来就不一致了。
+ * 已经结束的任务一律算 0：进程崩溃、面板重启前留下的 tps 不是「现在」的速度。
  */
-export function liveTps(task: Pick<Task, 'usage'>, agentIds?: string[]) {
+export function tpsNow(task: Pick<Task, 'usage' | 'status'>, agentIds?: string[]) {
+  if (task.status !== 'running') return 0
   const list = Object.entries(task.usage?.agents ?? {}).filter(([id]) => !agentIds || agentIds.includes(id))
-  const live = list.reduce((n, [, u]) => n + (u.tps ?? 0), 0)
-  return live > 0 ? live : list.reduce((n, [, u]) => n + ((u as AgentUsage).lastTps ?? 0), 0)
+  return list.reduce((n, [, u]) => n + (u.tps ?? 0), 0)
 }
 
 export type RunUsage = {
@@ -126,9 +132,11 @@ export type RunUsage = {
   own: TokenTotals
   /** 子任务与子对话合计 = total − own */
   sub: TokenTotals
-  /** 当前父对话本身的速度（token/s） */
+  /** 当前父对话本身的速度（token/s），没在输出就是 0 */
   tps: number
-  /** 整个运行的速度：父对话 + 在跑的子对话 + 在跑的子任务 */
+  /** 子任务与子对话的速度：只算正在输出的那几条，停下的不贡献速度 */
+  subTps: number
+  /** 整个运行的速度 = 本对话 + 在跑的子对话 + 在跑的子任务（三层都是实时值，加起来才一致） */
   runTps: number
   /** 子对话数（含多层）和派出的子任务数：都是 0、子任务也没有用量时界面不显示分组，退化成只显示总数 */
   children: number
@@ -147,15 +155,19 @@ export function runUsage(root: Task, all: Task[]): RunUsage {
 
   const helpers = helperSteps(root)
   const helperIds = new Set(helpers.map((s) => s.id))
-  const ownAgents = new Set<string>()
-  for (const s of root.steps) if (s.agentId && !helperIds.has(s.id)) ownAgents.add(s.agentId)
   // 只在子任务里出现的角色才算子任务的速度；父子共用的角色算本对话（见文件头）
   const helperAgents = new Set<string>()
-  for (const s of helpers) if (s.agentId && !ownAgents.has(s.agentId)) helperAgents.add(s.agentId)
+  for (const s of helpers) if (s.agentId) helperAgents.add(s.agentId)
+  for (const s of root.steps) if (s.agentId && !helperIds.has(s.id)) helperAgents.delete(s.agentId)
+  // 其余 Agent 都算本对话：自己的步骤用到的，以及根本没挂在节点上的（对话的一轮不是节点，
+  // 子任务却会挂成 slot: sub，只按步骤分的话对话自己的速度会整个丢掉）
+  const agentIds = Object.keys(root.usage?.agents ?? {})
+  const ownIds = agentIds.filter((id) => !helperAgents.has(id))
 
-  const ownTps = helperAgents.size ? liveTps(root, [...ownAgents]) : liveTps(root)
-  const helperTps = helperAgents.size ? liveTps(root, [...helperAgents]) : 0
-  const childTps = kids.reduce((n, k) => n + liveTps(k), 0)
+  const ownTps = ownIds.length ? tpsNow(root, ownIds) : helperAgents.size ? 0 : tpsNow(root)
+  const helperTps = helperAgents.size ? tpsNow(root, [...helperAgents]) : 0
+  const childTps = kids.reduce((n, k) => n + tpsNow(k), 0)
+  const subTps = helperTps + childTps
 
   const total = tree.reduce((acc, x) => addTokens(acc, tokensOf(x.usage)), NO_TOKENS)
   const own = ownTokens(root)
@@ -164,7 +176,8 @@ export function runUsage(root: Task, all: Task[]): RunUsage {
     own,
     sub: subTokens(total, own),
     tps: ownTps,
-    runTps: ownTps + helperTps + childTps,
+    subTps,
+    runTps: ownTps + subTps,
     children: kids.length,
     helpers: helpers.length,
   }

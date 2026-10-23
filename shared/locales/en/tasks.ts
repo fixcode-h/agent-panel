@@ -316,6 +316,7 @@ export const EN_TASKS: Record<string, string> = {
   '{name} 的待办': "{name}'s to-dos",
   上下文占用: 'Context usage',
   '命中 {n}%': '{n}% hit',
+  空闲: 'Idle',
 
   // 状态
   等待: 'Pending',
