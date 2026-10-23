@@ -166,8 +166,12 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
   await p.keyboard.press('Enter')
   await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
+  // 应用完 AI 优化的窗口自己关上；等它关掉再关下面的编辑框（以前按 Esc，机器慢时会把编辑框也关掉）
   await p.getByRole('button', { name: '应用修改' }).click()
-  await p.keyboard.press('Escape')
+  await p
+    .getByRole('button', { name: '应用修改' })
+    .waitFor({ state: 'detached', timeout: 10000 })
+    .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
   // 命令：「所有 Agent」的命令和 AI 创建（上面的 Skill 编辑框还开着，先关掉）
   await p.getByRole('dialog').getByText('关闭', { exact: true }).click()
   await p.getByRole('radio', { name: '命令' }).click()

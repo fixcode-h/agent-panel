@@ -13,7 +13,7 @@
  */
 import { spawn } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { availableParallelism, tmpdir } from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -47,7 +47,11 @@ else
       for (const s of readdirSync(shots)) if (s.startsWith(prefix)) rmSync(path.join(shots, s), { force: true })
   }
 
-const limit = Math.max(1, Number(process.env.AGENT_PANEL_UI_CONCURRENCY ?? shards.length))
+// 默认同时跑的分片不超过 CPU 核数：每个分片一个浏览器，挤在一起时页面变慢，一些时序敏感的步骤会偶发失败
+const limit = Math.max(
+  1,
+  Number(process.env.AGENT_PANEL_UI_CONCURRENCY ?? Math.min(shards.length, availableParallelism())),
+)
 const timingDir = mkdtempSync(path.join(tmpdir(), 'agent-panel-ui-timings-'))
 const startedAt = Date.now()
 const fmtMs = (ms) => (ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`)

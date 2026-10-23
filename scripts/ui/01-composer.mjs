@@ -232,7 +232,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
       .locator('#task-prompt')
       .waitFor({ state: 'detached', timeout: 20000 })
       .catch(() => errors.push('路径可点：发出后没有打开对话页'))
-    // 等演示的回复写完：还在回复时页面会定时把内存里的对话写回 localStorage，盖掉下面补进去的那条
+    // 等演示的回复写完，免得刷新后接着回复、把补进去的那条挤到中间
     await p
       .waitForFunction(
         () => {
@@ -245,13 +245,16 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         { timeout: 20000 },
       )
       .catch(() => errors.push('路径可点：演示的回复一直没写完'))
-    // 演示的回复是固定的，往这个对话里补一条带路径的回复（回复里出现的路径才是要测的）
-    const added = await p.evaluate(() => {
+    // 演示的回复是固定的，往这个对话里补一条带路径的回复（回复里出现的路径才是要测的）。
+    // 在页面脚本运行之前写进 localStorage（addInitScript）：页面卸载时会把内存里的对话写回去，
+    // 直接改 localStorage 再刷新，机器慢时补进去的这条会被盖掉
+    const added = decodeURIComponent(new URL(p.url()).hash.split('/').pop() ?? '')
+    if (!added) errors.push('路径可点：没有找到刚建的对话，补不进回复')
+    await p.addInitScript((id) => {
       const key = 'agent-panel-demo-v3'
       const d = JSON.parse(localStorage.getItem(key) ?? '{}')
-      const id = decodeURIComponent(location.hash.split('/').pop() ?? '')
       const task = (d.tasks ?? []).find((x) => x.id === id)
-      if (!task) return ''
+      if (!task || task.messages.some((m) => m.id === 'demo-paths')) return
       task.messages.push({
         id: 'demo-paths',
         role: 'agent',
@@ -268,10 +271,7 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
         at: new Date().toISOString(),
       })
       localStorage.setItem(key, JSON.stringify(d))
-      return id
-    })
-    if (!added) errors.push('路径可点：没有找到刚建的对话，补不进回复')
-    // 改了 localStorage 必须真的重新加载，页面才读得到新数据
+    }, added)
     await p.reload()
     const mdPath = p.locator('code.md-path')
     await mdPath
@@ -364,8 +364,21 @@ await runShard(import.meta.filename, async ({ base, page, check, errors, settle 
   await check(m, '手机-工作流')
   // 用量统计在手机宽度下：工具条换行、表格隐藏缓存和任务列，不能出现横向滚动
   // 手机布局的侧栏收在抽屉里，先点顶部的菜单再进设置
-  await m.getByRole('button', { name: '打开菜单' }).click()
-  await m.getByRole('button', { name: '设置' }).first().click()
+  // 工作流页加载完会自动选中第一个工作流（地址变了，抽屉跟着关上）：等它跳完再开抽屉。
+  // 抽屉滑出来之前，页面上的「设置」是看不见的那个：只点看得见的；没出来就再点一次
+  await m.waitForURL(/#\/workflows\/.+/, { timeout: 10000 }).catch(() => {})
+  const mobileSettings = m.getByRole('button', { name: '设置' }).filter({ visible: true }).first()
+  for (let i = 0; i < 3; i++) {
+    await m.getByRole('button', { name: '打开菜单' }).click()
+    if (
+      await mobileSettings.waitFor({ timeout: 5000 }).then(
+        () => true,
+        () => false,
+      )
+    )
+      break
+  }
+  await mobileSettings.click()
   await m.getByRole('button', { name: '用量统计', exact: true }).click()
   await check(m, '手机-用量统计', ['按天', '按周', '按月', '合计'])
 })

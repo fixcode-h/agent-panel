@@ -60,9 +60,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.keyboard.press('Enter')
   // 思考、调设计工具、说明按顺序边出边显示
   await p.getByText('check', { exact: true }).first().waitFor({ timeout: 15000 })
-  await check(p, 'UI设计-写入', ['replace_widget'])
+  // 生成图片只有几秒：一出现就先截「生成中」，再截写入的工具调用（机器慢时先截写入会错过生成中）
   await p.getByText(/正在生成图片 \d+\/\d+/).waitFor({ timeout: 15000 })
   await check(p, 'UI设计-生成中', ['正在生成图片'])
+  await check(p, 'UI设计-写入', ['replace_widget'])
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 20000 })
   await p.getByRole('tab', { name: /图片/ }).click()
   await check(p, 'UI设计-图片')
@@ -128,9 +129,10 @@ await runShard(import.meta.filename, async ({ base, page, check, errors }) => {
   await p.getByRole('button', { name: '提交 2 个回答' }).click()
   await p.getByText('做好了产品首页').first().waitFor({ timeout: 20000 })
   // 回答显示在对话里：问题一行小字，下面是答案
-  await check(p, 'UI设计-回答', ['主色调偏向哪种？', '蓝紫渐变'])
+  // 接着就生成图片，只有几秒：先等它出现再收尾，回答在对话里一直都在，生成完再截
   await p.getByText(/正在生成图片/).waitFor({ timeout: 20000 })
   await p.getByText(/正在生成图片/).waitFor({ state: 'detached', timeout: 30000 })
+  await check(p, 'UI设计-回答', ['主色调偏向哪种？', '蓝紫渐变'])
   await check(p, 'UI设计-网页', ['Hero', 'FeatureCard'])
   await p.getByRole('radio', { name: /手机/ }).click()
   await check(p, 'UI设计-网页-手机')

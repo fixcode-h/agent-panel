@@ -132,7 +132,14 @@ export async function runShard(file, fn) {
     failed = true
     // CI 里看不到截图时，至少在检查结果的注释里能看到是哪一步、为什么失败
     if (process.env.GITHUB_ACTIONS)
-      console.log(`::error title=界面检查::${prefix} 第 ${n} 步之后出错：${String(e?.message ?? e).split('\n')[0]}`)
+      console.log(
+        `::error title=界面检查::${prefix} 第 ${n} 步之后出错：${String(e?.message ?? e)
+          .split('\n')
+          .filter((l) => l.trim() && !/^Call log/.test(l))
+          .slice(0, 2)
+          .join(' ')
+          .replace(/\x1b\[[0-9;]*m/g, '')}`,
+      )
     console.error(e)
   } finally {
     writeTimings()
