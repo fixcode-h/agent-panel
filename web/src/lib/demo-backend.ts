@@ -1619,13 +1619,13 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
   }
 
-  // 演示按 Windows 上装了 WSL 和 Git 的情况显示命令行环境
+  // 演示按 Windows 上装了 Git Bash 和 WSL 的情况显示命令行环境（默认 Git Bash 在前）
   if (res === 'shells')
     return {
       platform: 'win32',
       shells: [
-        { id: 'wsl', path: 'wsl.exe', distros: ['Ubuntu-24.04', 'Debian'] },
         { id: 'gitbash', path: 'C:\\Program Files\\Git\\bin\\bash.exe' },
+        { id: 'wsl', path: 'wsl.exe', distros: ['Ubuntu-24.04', 'Debian'] },
         { id: 'powershell', path: 'powershell.exe' },
         { id: 'cmd', path: 'cmd.exe' },
       ],
