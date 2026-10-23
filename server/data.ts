@@ -2,10 +2,11 @@ import { mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { Hono } from 'hono'
 import { z } from 'zod'
-import { DATA_KINDS, type DataKind, type DataUsage } from '../shared/data.ts'
+import { DATA_KINDS, DataUsage, MemoryUsage, type DataKind } from '../shared/data.ts'
 import { Settings } from '../shared/schema.ts'
 import { CACHE_DIR, DATA_DIR, resetCaches } from './store.ts'
 import { getSettings } from './settings.ts'
+import type { MemorySampler } from './memory.ts'
 import { revealDir } from './open.ts'
 import { logDir, logFile } from './log.ts'
 import { t } from '../shared/i18n.ts'
@@ -62,7 +63,7 @@ function allowed(rel: string, kinds: DataKind[]) {
   return kinds.some((k) => PATHS[k].some((p) => norm === p || norm.startsWith(p + '/')))
 }
 
-export function dataApi(deps: { running: () => number }) {
+export function dataApi(deps: { running: () => number; memory: MemorySampler }) {
   const routes = new Hono()
   const busy = () => (deps.running() ? t('有任务正在执行，等它们结束后再操作') : '')
 
@@ -73,7 +74,7 @@ export function dataApi(deps: { running: () => number }) {
         return { id: k.id, files: fs.length, bytes: fs.reduce((n, f) => n + f.size, 0) }
       }),
     )
-    const m = process.memoryUsage()
+    const memory = await deps.memory.snapshot()
     const logs = await readdir(logDir()).catch(() => [] as string[])
     const sizes = await Promise.all(
       logs.map((f) =>
@@ -83,13 +84,21 @@ export function dataApi(deps: { running: () => number }) {
         ),
       ),
     )
-    return c.json({
-      dir: DATA_DIR,
-      kinds,
-      logs: { dir: logDir(), current: logFile(), files: logs.length, bytes: sizes.reduce((a, b) => a + b, 0) },
-      memory: { rss: m.rss, heapUsed: m.heapUsed },
-    } satisfies DataUsage)
+    return c.json(
+      DataUsage.parse({
+        dir: DATA_DIR,
+        kinds,
+        logs: { dir: logDir(), current: logFile(), files: logs.length, bytes: sizes.reduce((a, b) => a + b, 0) },
+        ...memory,
+      }),
+    )
   })
+
+  /**
+   * 只返回内存这块（最新采样 + 序列 + 规模），不遍历数据目录：
+   * 页面上的内存曲线按采样间隔刷新时用它，不用把数据目录整个再 stat 一遍
+   */
+  routes.get('/memory', async (c) => c.json(MemoryUsage.parse(await deps.memory.snapshot())))
 
   routes.post('/reveal', async (c) => {
     await mkdir(DATA_DIR, { recursive: true })

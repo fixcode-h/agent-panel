@@ -2,15 +2,21 @@ import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { Download, FolderOpen, Loader2, RefreshCw, Trash2, Upload } from 'lucide-react'
 import { DATA_KINDS, type DataKind, type DataUsage } from '@shared/data'
+import { MEMORY_ASK, MEMORY_TOPIC, formatBytes, formatSampleTime, formatUptime, memoryReport } from '@shared/memory'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useData } from '@/lib/data'
+import type { FixIssue } from '@/lib/ai-fix'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Select } from '@/components/ui/input'
+import { AiFixButton } from '@/components/ui/ai-fix'
+import { MemoryChart } from '@/components/settings/MemoryChart'
 import { t } from '@shared/i18n'
 
-export const size = (n: number) =>
-  n < 1024 ? `${n} B` : n < 1024 * 1024 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1024 / 1024).toFixed(1)} MB`
+/** 和共享的格式化保持一致：数据占用、内存都按同一套单位显示 */
+export const size = formatBytes
 
 const demo = !!import.meta.env.VITE_DEMO
 
@@ -23,11 +29,19 @@ export function DataSection() {
   const [importing, setImporting] = useState<{ name: string; data: any } | null>(null)
   const [busy, setBusy] = useState(false)
   const file = useRef<HTMLInputElement>(null)
+  const { settings, setSettings } = useData()
+  /** 内存采样定时刷新失败的原因：显示出来，不悄悄一直重试 */
+  const [memoryError, setMemoryError] = useState('')
+  /** 刷新一次就换一个值：定时刷新的 effect 依赖它，点「刷新占用」能重新开始（失败后定时器已经停了） */
+  const [memoryRestart, setMemoryRestart] = useState(0)
 
   const load = async () => {
     setLoading(true)
     try {
       setUsage(await api.dataUsage())
+      // 这次拉成功了就清掉上次的错误，并让下面的定时刷新重新起来：否则失败一次后定时器一直停着、错误也永远留着
+      setMemoryError('')
+      setMemoryRestart((n) => n + 1)
     } catch (e) {
       toast.error((e as Error).message)
     } finally {
@@ -38,8 +52,52 @@ export function DataSection() {
     void load()
   }, [])
 
+  // 内存曲线按采样间隔刷新：只拉内存这一块（/data/memory），不把数据目录整个再 stat 一遍。
+  // 失败就停下并显示原因，不悄悄重试；用户点右上角的刷新可以重新开始
+  const intervalMs = usage?.sampling.intervalMs
+  useEffect(() => {
+    if (!intervalMs) return
+    let stopped = false
+    let id: ReturnType<typeof setInterval> | undefined
+    const tick = async () => {
+      try {
+        const m = await api.memoryUsage()
+        if (!stopped) setUsage((u) => (u ? { ...u, ...m } : u))
+      } catch (e) {
+        if (stopped) return
+        stopped = true
+        if (id) clearInterval(id)
+        setMemoryError((e as Error).message)
+      }
+    }
+    id = setInterval(() => void tick(), intervalMs)
+    return () => {
+      stopped = true
+      if (id) clearInterval(id)
+    }
+  }, [intervalMs, memoryRestart])
+
   const of = (k: DataKind) => usage?.kinds.find((x) => x.id === k)
   const total = usage?.kinds.reduce((n, k) => n + k.bytes, 0) ?? 0
+
+  /** 采样间隔改完，服务端下一次采样就用新的；界面上的说明马上跟着变 */
+  const saveInterval = async (seconds: number) => {
+    if (!settings || seconds === settings.memorySampleSeconds) return
+    try {
+      setSettings(await api.saveSettings({ ...settings, memorySampleSeconds: seconds }))
+      await load()
+    } catch (e) {
+      toast.error((e as Error).message)
+    }
+  }
+
+  /** 「AI 分析」：这段采样和趋势交给本机 CLI 体检，结论在弹窗里聊，对话留在聊天列表 */
+  const memoryIssue = (u: DataUsage): FixIssue => ({
+    title: t('面板内存分析'),
+    topic: MEMORY_TOPIC,
+    ask: MEMORY_ASK,
+    context: memoryReport(u),
+  })
 
   const clear = async (k: DataKind) => {
     try {
@@ -153,10 +211,7 @@ export function DataSection() {
       <section className="flex flex-col">
         <div className="flex items-center pb-2">
           <h3 className="text-[0.8125rem] font-semibold">{t('占用')}</h3>
-          <span className="ml-2 text-xs text-subtle">
-            {t('共 {size}', { size: size(total) })}
-            {usage && ` · ${t('面板进程内存 {size}', { size: size(usage.memory.rss) })}`}
-          </span>
+          <span className="ml-2 text-xs text-subtle">{t('共 {size}', { size: size(total) })}</span>
           <Button
             variant="ghost"
             size="icon-sm"
@@ -199,6 +254,71 @@ export function DataSection() {
             )
           })}
         </div>
+      </section>
+
+      {/* 内存：面板自己的进程 + 它拉起的 CLI 子进程，按采样间隔画曲线；AI 分析把这份采样交给本机 CLI 体检 */}
+      <section className="flex flex-col gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-[0.8125rem] font-semibold">{t('内存')}</h3>
+          {usage && (
+            <span className="text-xs text-subtle">
+              {t('合计 {total} · 面板 {panel} · 进程 {child}', {
+                total: formatBytes(usage.memory.rss + (usage.memory.child ?? 0)),
+                panel: formatBytes(usage.memory.rss),
+                child:
+                  usage.memory.child === null
+                    ? t('{n} 个未采集', { n: usage.child.processes })
+                    : usage.child.processes === 0
+                      ? // 0 个进程是真实的 0，但写成「0 B」会被当成采集失败（就是之前「进程 0 MB」那个观感）
+                        t('没有子进程')
+                      : formatBytes(usage.memory.child),
+              })}
+            </span>
+          )}
+          <AiFixButton
+            className="ml-auto"
+            label={t('AI 分析')}
+            title={t('把这次的内存采样交给 AI 分析有没有问题、怎么优化')}
+            disabled={!usage}
+            issue={() => (usage ? memoryIssue(usage) : { title: t('面板内存分析') })}
+          />
+        </div>
+        {usage ? (
+          <>
+            <MemoryChart samples={usage.samples} />
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-subtle">
+              <span>{t('每 {n} 秒采样一次', { n: Math.round(usage.sampling.intervalMs / 1000) })}</span>
+              <span>·</span>
+              <span>{t('最近一次采样 {time}', { time: formatSampleTime(usage.memory.at) })}</span>
+              <span>·</span>
+              <span>{t('已运行 {time}', { time: formatUptime(usage.uptimeMs) })}</span>
+              <Select
+                className="ml-auto h-7 w-[112px] text-xs"
+                aria-label={t('采样间隔')}
+                value={String(settings?.memorySampleSeconds ?? 30)}
+                onChange={(e) => void saveInterval(Number(e.target.value))}
+                options={[
+                  { value: '10', label: t('每 10 秒') },
+                  { value: '30', label: t('每 30 秒') },
+                  { value: '60', label: t('每 1 分钟') },
+                  { value: '300', label: t('每 5 分钟') },
+                ]}
+              />
+            </div>
+            {memoryError && (
+              <p className="text-xs leading-relaxed text-danger">
+                {t('刷新内存采样失败：{msg}', { msg: memoryError })}
+              </p>
+            )}
+          </>
+        ) : (
+          <p className="text-[0.8125rem] leading-relaxed text-subtle">{t('正在读取内存…')}</p>
+        )}
+        <p className="text-[0.8125rem] leading-relaxed text-subtle">
+          {t(
+            '「面板」是面板服务这个本机 Node 进程自己的内存，「进程」是它拉起的编码 CLI（运行中的任务）合计占用；读不到时显示「未采集」，不会当成 0。曲线按上面的间隔记点、保留最近两小时，在曲线上按住右键左右拖动可以往前看，拖到最右边回到最新。',
+          )}
+        </p>
       </section>
 
       <section className="flex flex-col gap-3">
