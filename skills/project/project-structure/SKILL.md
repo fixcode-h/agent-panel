@@ -26,6 +26,35 @@ user-invocable: true
 
 命令一律从项目自己的配置里抄，不凭经验编。
 
+## 怎么找代码（先缩小范围，再搜）
+
+大项目全仓搜一次要几分钟，还会命中几万行编译产物。按下面的顺序收敛，能在前三步停下就不要全仓搜：
+
+1. **已知具体文件就直接读**：报错、堆栈、别人点名给了路径或文件名时，直接读那个文件；不知道路径就用 `rg --files -g '**/名字*'` 按名字找。有明确目标时不做搜索。
+2. **先读项目文档定位模块**：`DOC_ROOT` 的模块地图（`docs/MODULE-MAP.md`）、模块 README（`docs/modules/<模块>/README.md`）、`AGENTS.md` / `CLAUDE.md`、构建配置。文档里通常已经写了「这个功能在哪个目录」，比搜代码快得多；文档缺失或过期时才往下走。
+3. **从入口 / 构建配置反推目录**：路由表、`package.json` 的 `scripts` 和 `workspaces`、`CMakeLists.txt`、`.uproject` 的模块列表，能确定该看哪几个目录。
+4. **在最小目录里搜**：先限定到模块目录，搜完没命中再把范围扩大一级（`src/模块名` → `src/` → 仓库根），不要一上来就 `rg <关键词> .`。
+5. **搜索带排除**：项目设置里的「搜索时跳过的目录」会随提示词给出（`搜索时排除：…`），照着加 `-g '!目录'`；没有这份清单时至少排除依赖和产物（`node_modules`、`dist`、`build`、`target`、`out`、`.venv`、`coverage`）。UE 项目的完整清单见 `ue-project-structure`。
+6. **可能超过 60 秒的搜索放后台**：先小范围试（限定目录、`--max-count` 看命中量），确认范围对了再扩大；确实要扫大范围时用面板的 `run_background` 放后台跑，不要在前台干等。
+
+可照抄的命令：
+
+```bash
+# 只在某个模块里搜，排除产物目录
+rg -n --glob '!node_modules' --glob '!dist' --glob '!build' '关键字' src/模块名
+
+# 只列文件名（找「叫这个名字的文件在哪」），比全文搜索快得多
+rg --files -g '!node_modules' -g '!dist' | rg '文件名|关键字'
+
+# Git 仓库：只在被跟踪的文件里搜，自动跳过 .gitignore 里的产物
+git grep -n '关键字' -- src/模块名
+
+# 不是 Git 仓库时用 find：必须限深度并剪掉产物目录
+find . -maxdepth 3 \( -name node_modules -o -name dist -o -name build \) -prune -o -name '*关键字*' -print
+```
+
+`grep -r .` / `find .` 不带范围在几十万文件的目录里会跑很久，优先 `rg` / `git grep`；`find` 一定带 `-maxdepth`，并 prune 掉产物目录。
+
 ## 产出一份现场说明
 
 第一次弄清楚之后，写一份简短说明（放在项目文档里，位置按 `project-documentation` 的规则），内容只写有证据的事实：

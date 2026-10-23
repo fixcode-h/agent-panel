@@ -7,6 +7,7 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
+  useState,
   type ClipboardEvent,
   type KeyboardEvent,
 } from 'react'
@@ -37,10 +38,12 @@ export interface RichInputHandle {
 /** 图片卡片要显示缩略图：按附件名字取本地预览地址 */
 type Preview = (name: string) => string | undefined
 
-/** 卡片上的两个操作：点卡片打开查看（图片看大图、文件看内容、引用看原文）、点右上角删除 */
+/** 卡片上的操作：点卡片打开查看（图片看大图、文件看内容、引用看原文）、点右上角删除、右键弹菜单 */
 export interface ChipActions {
   open?: (chip: Chip) => void
   remove?: (name: string) => void
+  /** 右键卡片：位置是鼠标坐标，菜单自己在那个位置弹出来 */
+  context?: (chip: Chip, at: { x: number; y: number }) => void
 }
 
 const isCommand = (kind: ChipKind) => kind === 'skill' || kind === 'command'
@@ -125,7 +128,6 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
     attach && 'cursor-pointer transition-colors hover:border-subtle/60 hover:bg-field',
   )
   const src = chip.kind === 'image' ? preview?.(chip.name) : undefined
-  const act = actions?.()
   // 引用卡片只显示开头一小段，鼠标停上去看完整原文
   el.title =
     chip.kind === 'quote'
@@ -140,6 +142,13 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
       if ((e.target as HTMLElement).closest('[data-chip-action]')) return
       e.preventDefault()
       actions?.()?.open?.(chip)
+    })
+    // 右键弹卡片菜单（复制）：不用浏览器原生菜单；右键不会触发 click，单击查看不受影响
+    el.addEventListener('contextmenu', (e) => {
+      const act = actions?.()
+      if (!act?.context) return
+      e.preventDefault()
+      act.context(chip, { x: e.clientX, y: e.clientY })
     })
   }
   if (!src) {
@@ -164,7 +173,9 @@ function chipNode(chip: Chip, preview?: Preview, actions?: () => ChipActions | u
   // 每张卡片都能点右上角删除：附件交给页面去掉（连同上传的文件），其他的直接从输入框里拿掉
   el.append(
     closeNode(() => {
-      if (attach && act?.remove) return act.remove(chip.name)
+      // 重新取一次：卡片画出来以后附件可能才传完，创建时拿到的 actions 里还没有这张图的附件
+      const now = actions?.()
+      if (attach && now?.remove) return now.remove(chip.name)
       const root = el.closest('[contenteditable="true"]')
       el.remove()
       root?.dispatchEvent(new Event('input', { bubbles: true }))
@@ -183,6 +194,31 @@ function nodesOf(value: string, preview?: Preview, actions?: () => ChipActions |
 /** 按文字重新画一遍输入框 */
 function paint(root: HTMLElement, value: string, preview?: Preview, actions?: () => ChipActions | undefined) {
   root.replaceChildren(...nodesOf(value, preview, actions))
+}
+
+/**
+ * 文字没变、只是上传完成有了缩略图：只把图片卡片换成缩略图，不重画整棵。
+ * 重画会把所有卡片和文字换成新节点，打断输入法的组合，光标还得靠重设选区恢复
+ */
+function updatePreviews(root: HTMLElement, preview?: Preview) {
+  if (!preview) return
+  for (const chip of root.querySelectorAll<HTMLElement>('[data-chip="image"]')) {
+    const src = preview(chip.dataset.name ?? '')
+    if (!src) continue
+    const img = chip.querySelector('img')
+    if (img) {
+      if (img.getAttribute('src') !== src) img.src = src
+      continue
+    }
+    // 上传完成前只有类型图标：就地换成缩略图
+    const icon = chip.firstElementChild
+    if (!icon || icon.tagName === 'IMG') continue
+    const next = document.createElement('img')
+    next.alt = ''
+    next.className = 'h-[1.25em] w-[1.25em] shrink-0 rounded-sm object-cover'
+    next.src = src
+    icon.replaceWith(next)
+  }
 }
 
 /** 一张卡片在文字里的起点 */
@@ -258,8 +294,11 @@ export function RichInput({
 }) {
   const el = useRef<HTMLDivElement>(null)
   // 最后一次画进 DOM 的内容：自己输入引起的变化不再画一遍，否则光标会跳。
-  // 预览地址也要记：图片缩略图是上传完才有的，那时文字没变也得重画一次。
+  // 预览地址也要记：上传完成时只换缩略图，不重画整棵（见 updatePreviews）
   const painted = useRef<{ value: string; preview?: Preview } | null>(null)
+  /** 输入法组合中：这时候不重画（会打断输入法），组合结束再补 */
+  const composing = useRef(false)
+  const [composeEnd, setComposeEnd] = useState(0)
   const cb = useRef({ onChange, onSync, onKeyDown, onPaste, preview, actions })
   cb.current = { onChange, onSync, onKeyDown, onPaste, preview, actions }
 
@@ -485,13 +524,22 @@ export function RichInput({
   useLayoutEffect(() => {
     const node = el.current
     if (!node) return
-    if (painted.current?.value === value && painted.current?.preview === preview) return
+    if (painted.current?.value === value) {
+      // 文字没变：只可能是上传完成有了缩略图，换图就够了，不重画整棵
+      if (painted.current.preview !== preview) {
+        painted.current = { value, preview }
+        updatePreviews(node, preview)
+      }
+      return
+    }
+    // 输入法组合中不重画：重画会把组合里的字擦掉、打断输入法；组合结束后由 onCompositionEnd 再跑一次
+    if (composing.current) return
     const focused = document.activeElement === node
     const at = focused ? caretNow() : -1
     paint(node, value, preview, () => cb.current.actions)
     painted.current = { value, preview }
     if (at >= 0) place(Math.min(at, serialize(node).length))
-  }, [value, preview, caretNow, place])
+  }, [value, preview, caretNow, place, composeEnd])
 
   // 光标动了（点、选、方向键）也要让「/」「@」列表跟着变
   useEffect(() => {
@@ -527,6 +575,14 @@ export function RichInput({
           className,
         )}
         onInput={emit}
+        onCompositionStart={() => {
+          composing.current = true
+        }}
+        onCompositionEnd={() => {
+          composing.current = false
+          // 组合结束后再补一次重画：组合期间跳过的那些变化在这里落地
+          setTimeout(() => setComposeEnd((x) => x + 1), 0)
+        }}
         onKeyDown={(e) => {
           if (cb.current.onKeyDown?.(e)) return
           if (e.defaultPrevented || e.nativeEvent.isComposing) return

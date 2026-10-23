@@ -13,6 +13,44 @@ export const menuItem =
 export const Menu = M.Root
 export const MenuTrigger = M.Trigger
 
+/**
+ * 按坐标弹出的菜单：输入框里的卡片是命令式建出来的 DOM，没有 React 触发元素可用，只能指定鼠标位置。
+ * 用 0 尺寸的固定定位元素当锚点，贴近视口边缘时 Radix 自己翻边。
+ */
+export function PointMenu({
+  at,
+  open,
+  onOpenChange,
+  children,
+}: {
+  /** 弹出位置（鼠标坐标）；null 表示还没弹出过 */
+  at: { x: number; y: number } | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  children: React.ReactNode
+}) {
+  return (
+    <M.Root open={open} onOpenChange={onOpenChange} modal={false}>
+      <M.Trigger asChild>
+        <span aria-hidden className="fixed h-0 w-0" style={{ left: at?.x ?? 0, top: at?.y ?? 0 }} />
+      </M.Trigger>
+      <M.Portal>
+        <M.Content
+          side="bottom"
+          align="start"
+          sideOffset={2}
+          collisionPadding={8}
+          className={cn(popoverPanel, 'max-w-[calc(100vw-16px)] min-w-[180px]')}
+          // 关闭后默认把焦点还给锚点（0 尺寸的元素）；卡片菜单要交回输入框，由调用方给焦点
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
+          {children}
+        </M.Content>
+      </M.Portal>
+    </M.Root>
+  )
+}
+
 export function MenuContent({ children, align = 'end' }: { children: React.ReactNode; align?: 'start' | 'end' }) {
   return (
     <M.Portal>

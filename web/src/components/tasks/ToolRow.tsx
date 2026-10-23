@@ -19,7 +19,7 @@ import type { Task, ToolUse } from '@shared/schema'
 import { cn } from '@/lib/utils'
 import { fmtSecs, toolVerb, toolView, type ToolView } from '@/lib/tasks'
 import { useNow } from '@/lib/useNow'
-import { useChildOpen } from './child-open'
+import { useChildOpen, useRunOpen } from './child-open'
 import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
@@ -201,6 +201,7 @@ export function RowShell({
   titleClass,
   detail,
   ms,
+  msFormat,
   open,
   onToggle,
   onOpen,
@@ -218,6 +219,8 @@ export function RowShell({
   detail?: React.ReactNode
   /** 跑了多久（毫秒）：显示在最右边，还在跑的每秒更新 */
   ms?: number
+  /** 改成别的写法：工具调用用精确到两位小数的 1.23s，子对话这种跑得久的用「2 分 47 秒」 */
+  msFormat?: (ms: number) => string
   open: boolean
   /** 不给就不能展开（没有可看的内容），点哪里都不动 */
   onToggle?: () => void
@@ -281,7 +284,7 @@ export function RowShell({
           ) : null}
         </span>
         {detail}
-        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{fmtSecs(ms)}</span>}
+        {ms !== undefined && <span className="shrink-0 text-subtle tabular-nums">{(msFormat ?? fmtSecs)(ms)}</span>}
         {toggle && (
           <ChevronRight
             className={cn(
@@ -320,6 +323,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
   const openChild = useChildOpen()
+  const openRunPane = useRunOpen()
   const Icon = view.server ? Plug : (toolIcon[tool.kind] ?? Wrench)
   const verb = toolVerb(tool)
   // 还在等结果（任务还在跑、没有耗时）：每秒刷新已经用了多久，等子任务、长命令不再看着像卡住
@@ -348,14 +352,17 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )
+  // 「启动工作流」这一行点开什么：子对话面板里就地换成这次运行的视图（能返回），别的位置还是弹运行窗口
+  const openRunView = openRunPane ? () => openRunPane(tool) : () => setWin('plan')
   // 点标题打开什么：子对话、这次运行、文件、命令行、差异，或者看完整输出的窗口
   const target: { open: () => void; tip: string } | undefined = file
     ? { open: () => openFile?.(file), tip: t('查看文件') }
     : view.child && openChild
       ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
       : view.startsRun && task?.id
-        ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本
-          { open: () => setWin('plan'), tip: t('打开这次运行的对话') }
+        ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本。
+          // 子对话面板里点它就地把面板换成这次运行的视图（带返回），别的页面照旧弹运行窗口
+          { open: openRunView, tip: t('打开这次运行的对话') }
         : tool.kind === 'run'
           ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
           : tool.kind === 'edit'
@@ -448,7 +455,7 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                 {!live && short !== output && (
                   // 启动工作流这一行的输出就是那次运行的结论：跟着打开运行窗口，不再是另一个文本窗口
                   <MoreLink
-                    onClick={() => setWin(view.startsRun && task?.id ? 'plan' : 'out')}
+                    onClick={() => (view.startsRun && task?.id ? openRunView() : setWin('out'))}
                     label={t('输出较长，在窗口里查看全部')}
                   />
                 )}

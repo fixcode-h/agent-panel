@@ -351,6 +351,8 @@ export const api = {
         startedAt: string
         /** 正在等用户确认的请求数 */
         requests?: number
+        /** 请用户选择、还没人回答的提问数（也是「停在等你」的一种） */
+        asking?: number
         /** 还没做完的计划进度：有它就不算已完成，界面显示「计划 7/8」 */
         plan?: { done: number; total: number }
         /** 独立分支还没合回父分支：也不算彻底完成，列表归「未完成」、行首转圈 */

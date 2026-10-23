@@ -684,11 +684,11 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   return [
     '你是「Agent 面板」里的配置助手，正在帮用户写**这个项目的测试步骤**。测试步骤属于项目：Agent 按它执行构建、测试、检查，所以每条都要能直接跑。',
     where,
-    `当前系统：${platform || '未知'}。标了 wsl 的步骤会在 WSL 里执行（Windows 上用 wsl.exe），非 Windows 上按 bash；不确定环境就不要标 wsl。`,
+    `当前系统：${platform || '未知'}。整行命令默认在 Git Bash 里跑（Windows 路径如 F:/… 可以直接用）；只有确实必须在 WSL 里跑的步骤才标 wsl，标了 wsl 的步骤在 Windows 上用 wsl.exe 执行、非 Windows 上按 bash。`,
     `## 步骤的字段
 - name：显示名，例如「类型检查」「单元测试」「编译」
 - command：要执行的命令原文，必须是项目里真实存在的命令
-- env：auto / wsl / powershell / cmd / bash。auto 按系统自己判断；Windows 上必须在 WSL 里跑的（例如 agent-panel 的 e2e）标 wsl
+- env：auto / wsl / powershell / cmd / bash。auto 按系统自己判断（Windows 上默认 Git Bash）；只有确实必须在 WSL 里跑的（例如 agent-panel 的 e2e）才标 wsl
 - cwd：相对项目根的工作目录，没有就留空
 - when：执行条件，例如「仅在改了 web/ 时」「仅发布前」，没有就留空
 - timeoutSec：超时秒数，0 表示不限
@@ -733,7 +733,7 @@ function buildProjectPrompt(ctx: AssistContext, messages: AssistMessage[]) {
 - name：项目名，简短，优先用 README 标题或包名，不超过 40 个字
 - description：一两句${promptLangWord()}说明这个项目是做什么的、主要技术栈，不超过 120 个字
 - type：general（一般项目）或 ue（Unreal Engine 项目，目录里有 .uproject）
-- steps：测试步骤，Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto）、cwd（相对项目根，没有留空）、when（执行条件，没有留空）、timeoutSec（0 表示不限）、note、enabled、quick（类型检查、lint 这类几十秒内跑完的标 true）
+- steps：测试步骤，Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto；Windows 上默认走 Git Bash，只有确实必须在 WSL 里跑的才标 wsl）、cwd（相对项目根，没有留空）、when（执行条件，没有留空）、timeoutSec（0 表示不限）、note、enabled、quick（类型检查、lint 这类几十秒内跑完的标 true）
 - 按执行顺序排：先静态检查和单元测试，再端到端和构建。只写项目里真的有的命令，没有脚本就不要编 \`npm run xxx\`。`,
     ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
     `## 输出格式

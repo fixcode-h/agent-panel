@@ -43,7 +43,13 @@ const errors = []
 let n = 0
 
 async function page(viewport) {
-  const p = await browser.newPage({ viewport, locale: 'zh-CN' })
+  // 复制图片、复制对话要往系统剪贴板里写，验证时还要读回来对一下
+  const ctx = await browser.newContext({
+    viewport,
+    locale: 'zh-CN',
+    permissions: ['clipboard-read', 'clipboard-write'],
+  })
+  const p = await ctx.newPage()
   p.on('pageerror', (e) => errors.push(`页面出错：${e.message}`))
   p.on('console', (m) => {
     if (m.type() !== 'error') return
@@ -113,6 +119,22 @@ try {
   if (!(await imageChip.locator('img[src^="blob:"]').count())) errors.push('行内图片卡片：没有显示缩略图')
   // 输入框上方不再有附件条
   if (await p.getByRole('button', { name: '移除 截图.png' }).count()) errors.push('输入框上方还有附件条')
+  // 右键卡片弹出面板自己的菜单（不是浏览器原生菜单），点「复制图片」真的写进系统剪贴板
+  await imageChip.click({ button: 'right' })
+  const copyImageItem = p.getByRole('menuitem', { name: '复制图片' })
+  await copyImageItem.waitFor({ timeout: 3000 }).catch(() => errors.push('行内图片卡片：右键没有弹出卡片菜单'))
+  await check(p, '输入框卡片-右键菜单', ['复制图片'])
+  await copyImageItem.click()
+  await p
+    .getByText('图片已复制到剪贴板')
+    .waitFor({ timeout: 5000 })
+    .catch(() => errors.push('行内图片卡片：复制图片后没有成功提示'))
+  const clipTypes = await p
+    .evaluate(async () => (await navigator.clipboard.read()).flatMap((i) => i.types))
+    .catch(() => null)
+  if (!clipTypes) errors.push('行内图片卡片：读不到剪贴板（权限或浏览器不支持）')
+  else if (!clipTypes.includes('image/png'))
+    errors.push(`行内图片卡片：剪贴板里没有 PNG（${clipTypes.join(',') || '空'}）`)
   // 点图片能看大图
   await imageChip.locator('img').click()
   await p
@@ -134,6 +156,51 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 实时推送时输入框不能被重新挂载、不能丢焦点：演示任务改成执行中，打字期间会不停推快照
+  // （一次推送整页重渲染时，输入框如果跟着重挂载或重画，用户打一半就会失焦、字也会跳）
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    const openTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(400)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const task = db.tasks.find((x) => x.title.includes('购物车'))
+      task.status = 'running'
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    await openTask()
+    const before = await p.evaluate(() => {
+      window.__composer = document.querySelector('#follow-up')
+      return { id: window.__composer?.id ?? '' }
+    })
+    await p.locator('#follow-up').click()
+    await p.keyboard.type('实时推送时输入的内容')
+    await p.waitForTimeout(1600)
+    const after = await p.evaluate(() => {
+      const el = document.querySelector('#follow-up')
+      return {
+        same: el === window.__composer,
+        focused: el === document.activeElement,
+        active: document.activeElement?.id ?? document.activeElement?.tagName ?? '',
+        text: el?.textContent ?? '',
+      }
+    })
+    if (before.id !== 'follow-up') errors.push('任务页没有找到输入框')
+    else {
+      if (!after.same) errors.push('实时推送时输入框被重新挂载')
+      if (!after.focused) errors.push(`实时推送时输入框丢了焦点（焦点在 ${after.active}）`)
+      if (!after.text.includes('实时推送时输入的内容')) errors.push('实时推送时输入的文字丢了')
+    }
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await openTask()
+  }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()
@@ -228,6 +295,104 @@ try {
   await p.getByRole('button', { name: '执行计划' }).click()
   await check(p, '执行计划', ['修复购物车角标', '等：端到端测试', '覆盖删除商品后角标归零', '以前的计划 · 1'])
   await p.keyboard.press('Escape')
+  // 子对话里点「启动工作流」：在子对话这块面板内换成那次运行的视图，标题栏左边能返回子对话，
+  // 右边是 ⋯ 和 ✕（✕ 关掉子对话面板本身，和返回不一样），返回后子对话原样回来
+  {
+    const key = 'agent-panel-demo-v3'
+    const saved = await p.evaluate((k) => localStorage.getItem(k), key)
+    // 演示数据里没有子对话：照父对话里的工作流任务造一个，并补一条「启动工作流」的调用
+    await p.evaluate((k) => {
+      const db = JSON.parse(localStorage.getItem(k))
+      const parent = db.tasks.find((x) => x.title.includes('购物车'))
+      const wf = db.tasks.find((x) => x.mode === 'workflow' && x.runs?.length && x.projectId === parent.projectId)
+      if (!wf) return
+      db.tasks = db.tasks.filter((x) => x.id !== 'demo-child-run')
+      const child = structuredClone(wf)
+      Object.assign(child, {
+        id: 'demo-child-run',
+        parentTaskId: parent.id,
+        rootTaskId: parent.id,
+        title: '子对话：到货提醒',
+      })
+      child.messages.splice(1, 0, {
+        id: 'demo-child-tool',
+        role: 'agent',
+        agentId: '',
+        step: '',
+        text: '',
+        at: new Date().toISOString(),
+        tools: [
+          {
+            kind: 'other',
+            name: 'MCP__panel__start_plan',
+            label: '',
+            detail: '',
+            input: JSON.stringify({ input: '给商品详情页加「到货提醒」' }),
+            output: '',
+            ms: 1200,
+          },
+        ],
+      })
+      db.tasks.push(child)
+      localStorage.setItem(k, JSON.stringify(db))
+    }, key)
+    const gotoTask = async () => {
+      await p.reload()
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    /** 输入框上方的「子对话」→ 全部 → 打开那个子对话 */
+    const openChild = async () => {
+      await gotoTask()
+      await p.getByRole('button', { name: /^子对话/ }).click()
+      await p.getByRole('button', { name: '全部' }).click()
+      await p.getByText('子对话：到货提醒').first().click()
+      await p.waitForTimeout(400)
+    }
+    await openChild()
+    await check(p, '子对话-面板', ['子对话：到货提醒'])
+    const runTitle = p.locator('button[title="打开这次运行的对话"]')
+    if (!(await runTitle.count())) errors.push('子对话：工作流那几行没有「打开这次运行的对话」的入口')
+    // 点「启动工作流」这一行：面板内换成这次运行的视图，不是把内容铺在子对话里
+    await runTitle.first().click()
+    await check(p, '子对话-运行视图', ['子对话：到货提醒', '第 1 次运行'])
+    if (!(await p.getByRole('button', { name: '返回子对话' }).count()))
+      errors.push('子对话运行视图：标题栏左边没有返回子对话的按钮')
+    if (!(await p.getByRole('button', { name: '关闭子对话面板' }).count()))
+      errors.push('子对话运行视图：标题栏右边没有关闭子对话面板的按钮')
+    // 窄窗口：标题截断，但返回和 ✕ 不能被挤掉（手机上子对话面板占满整个宽度）
+    {
+      await p.setViewportSize({ width: 420, height: 860 })
+      await p.waitForTimeout(300)
+      const back = await p.getByRole('button', { name: '返回子对话' }).boundingBox()
+      const close = await p.getByRole('button', { name: '关闭子对话面板' }).boundingBox()
+      if (!back || !close) errors.push('子对话运行视图（窄窗口）：返回或关闭按钮不见了')
+      else if (back.x < 0 || close.x + close.width > 420)
+        errors.push(`子对话运行视图（窄窗口）：标题把按钮挤出视口（返回 ${back.x}，关闭 ${close.x + close.width}）`)
+      await check(p, '子对话-运行视图-窄窗口')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.waitForTimeout(300)
+    }
+    // 返回：回到子对话，不是关掉面板
+    await p.getByRole('button', { name: '返回子对话' }).click()
+    await p.waitForTimeout(400)
+    await check(p, '子对话-返回', ['子对话：到货提醒'])
+    if (await p.getByRole('button', { name: '返回子对话' }).count())
+      errors.push('子对话运行视图：点了返回，运行的视图还在')
+    // 这一次运行的卡片也进同一个视图
+    await runTitle.last().click()
+    await check(p, '子对话-运行视图-卡片')
+    // ✕：关掉子对话面板本身，回到父对话的文件面板
+    await p.getByRole('button', { name: '关闭子对话面板' }).click()
+    await p.waitForTimeout(400)
+    await check(p, '子对话-关闭面板', ['购物车右上角'])
+    if (await p.getByText('子对话：到货提醒').count()) errors.push('子对话运行视图：点 ✕ 后子对话面板还在')
+    await p.evaluate(([k, raw]) => (raw ? localStorage.setItem(k, raw) : localStorage.removeItem(k)), [key, saved])
+    await gotoTask()
+  }
   // 回复完成后思考和工具调用收进一个折叠，折叠行写这段做了什么；点开能看到过程，再点收起
   {
     const fold = p.getByRole('button', { name: /查看 \d+ 个文件/ }).first()
@@ -1239,6 +1404,26 @@ try {
       if (!chip.src || chip.broken) errors.push(`图片气泡：缩略图没有显示出来（src=${chip.src || '空'}）`)
     }
     await check(p, '对话-图片气泡')
+    // 右上角「⋯」里的「复制对话」：剪贴板里是转录文件的路径，粘贴回输入框变成一张会话卡片，不是一段文字
+    await p.getByRole('button', { name: '更多操作' }).first().click()
+    await p.getByRole('menuitem', { name: '复制对话' }).click()
+    await p
+      .getByText('对话已复制，粘贴到输入框会变成一张会话卡片')
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('复制对话：没有成功提示'))
+    const copied = await p.evaluate(() => navigator.clipboard.readText()).catch(() => '')
+    if (!/\.md\s*$/.test(copied)) errors.push(`复制对话：剪贴板里不是转录文件的路径（${copied || '空'}）`)
+    await p.locator('#follow-up').click()
+    await p.keyboard.press('Control+V')
+    const convChip = p.locator('#follow-up [data-chip="file"]')
+    await convChip.waitFor({ timeout: 5000 }).catch(() => errors.push('复制对话：粘贴后输入框里没有出现会话卡片'))
+    // 卡片背后要有附件（才能发给 Agent），输入框里不能留着那段路径文字
+    const draftText = await p
+      .locator('#follow-up')
+      .innerText()
+      .catch(() => '')
+    if (copied.trim() && draftText.includes(copied.trim())) errors.push('复制对话：粘贴后还留着一大段路径文字')
+    await check(p, '复制对话-粘贴成卡片')
     // 点开浮层看大图：别等 Playwright 的可点击判定（演示的回复还在流式输出、消息区跟着滚），直接点
     await bubble.evaluate((el) => el.click())
     await p

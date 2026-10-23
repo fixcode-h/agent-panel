@@ -32,6 +32,7 @@ import {
   type ProjectLesson,
   type RunMessage,
   type RunStateEntry,
+  type StopReason,
   type Task,
   type TaskRun,
   type TaskStep,
@@ -78,21 +79,12 @@ import {
 } from './dispatch.ts'
 import { t } from './i18n.ts'
 import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
+import { searchExcludeGlobs, searchExcludePrompt } from './search-exclude.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
-import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
+import { beginTurn, endTurn, pauseStep, stopReasonText, withAttachments } from './task.ts'
 import { DEFAULT_WORKFLOW_ID } from './builtin/default.ts'
-import {
-  activePlan,
-  applyPlan,
-  bindRun,
-  bindWait,
-  endRun,
-  finishPlan,
-  planText,
-  unsummarized,
-  type PlanItemInput,
-} from './plan.ts'
+import { activePlan, applyPlan, bindRun, bindWait, endRun, finishPlan, planText, type PlanItemInput } from './plan.ts'
 
 /** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 const SLOT_PROMPT: Record<string, string> = {
@@ -281,7 +273,7 @@ export interface Orchestra {
   planning: boolean
   /** step：这次运行是计划里的哪个主步骤（不写就在计划末尾加一步） */
   plan(workflowId: string, input: string, step?: string): { ok: boolean; info: string }
-  /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 写总结 */
+  /** 项目里的对话有执行计划：set_plan 交整份计划，finish_plan 结束这份计划 */
   plans: boolean
   setPlan(input: { title?: string; steps?: PlanItemInput[] }): { ok: boolean; info: string }
   finishPlan(summary: string): { ok: boolean; info: string }
@@ -374,6 +366,11 @@ export interface EngineHost {
   waitChat?: (signal: AbortSignal) => Promise<string | null>
   /** 这一轮的停止信号：等子任务时停止任务不再等 */
   signal?: AbortSignal
+  /**
+   * 停下这一轮的原因（见 StopReason）：'user' 是用户自己按的暂停，
+   * 其余是父对话收尾、换 CLI、面板重启这些顺带结束的动作。收尾时读现值的，所以要传函数
+   */
+  stopReason?: () => StopReason | undefined
   /** 项目里可选的工作流目录：启动计划时 Agent 按名称、说明和节点概览挑一个 */
   workflowCatalog?: () => { id: string; name: string; description: string; steps: string[] }[]
   /**
@@ -381,6 +378,11 @@ export interface EngineHost {
    * 不传时说明文件不带这一段（在线演示）
    */
   fileFormat?: { encoding: 'utf8' | 'utf8-bom'; eol: 'lf' | 'crlf' }
+  /**
+   * 项目设置里的搜索排除目录（项目自己填的会补上内置默认，见 search-exclude.ts）：
+   * 写进搜索那一段，Agent 直接照着拼 `-g '!目录'`，不靠临场叮嘱
+   */
+  searchExclude?: string[]
   /** 按 id 取工作流和这次运行要用的快照、技能槽；id 为空表示项目的默认工作流 */
   resolveWorkflow?: (
     id: string,
@@ -411,7 +413,7 @@ export interface EngineHost {
   childIsolation?: 'claim' | 'worktree'
   /** 父对话所在目录现在的分支：父对话不开独立分支，子对话从这里开、合回这里 */
   branch?: string
-  /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。推送要先合到这里再从这里推 */
+  /** 在独立分支里时：分支要合回去的目录（开分支的那个目录，在原分支上）。父对话要推送时先合到这里再推；子对话的完成只管合回这里，与推送无关 */
   worktreeHome?: string
   /** 独立分支里的子对话：测试跑通后合回原分支（面板排队试合并，有冲突撤回，结果推回子对话；合进去就算完成） */
   submitMerge?: (note: string, tests: string) => Promise<{ ok: boolean; info: string }>
@@ -773,9 +775,26 @@ function dropRerun(host: EngineHost, step: TaskStep) {
  * 同一轮执行里的授权情况：项目设置的推送策略、这个对话里用户已经做过的选择、本机已经登录的外部工具。
  * 只写已经具备的能力，没装的、没授权的不要列出来，免得模型去试。
  */
+/**
+ * 这个项目的搜索排除清单：紧跟在通用约束的「搜索范围」后面，Agent 直接照着拼带排除的命令。
+ * 清单来自项目设置（项目填的 + 内置默认），每个项目一份；没有清单时不出这一段
+ */
+function searchPart(host: EngineHost) {
+  const project = { searchExclude: host.searchExclude }
+  const line = searchExcludePrompt(project)
+  if (!line) return ''
+  return `## 搜索排除（这个项目）\n${line}。找 Bug 在这一层定位时也用同样的排除。\n例如 \`rg ${searchExcludeGlobs(project)} <关键字> <目录>\`（没有 rg 时用 \`git grep\`，它天然跳过生成物）；\`find\` 用 \`-path '*/<目录>' -prune -o\` 跳过这些目录。不要在这些目录里搜。`
+}
+
 function policyPart(host: EngineHost) {
   const p = host.policy
   if (!p) return ''
+  const tools = p.tools.length
+    ? `已经授权可用的工具：${p.tools.join('、')}（直接用，不要重新登录）。`
+    : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
+  // 子对话不碰远端：不论项目设置怎么定，推不推都由父对话决定，问了也只是白问（曾经弹出「要不要推送」的问题）
+  if (host.task.parentTaskId)
+    return `## 授权情况\n推送：推送、创建 PR、P4 submit、合并到主干由父对话决定，不在你的处理范围内：不执行、不询问用户、也不写进提问、计划步骤或建议。你这一轮的「完成」就是改动已合回父对话所在的分支：这是收尾动作（submit_merge 由面板合并），不要写进计划步骤，也不要写「等推送 / 等合入其他分支 / 同步远端」，更不因此停下来等。\n${tools}`
   const push =
     p.push === 'deny'
       ? '推送：这个项目不允许推送到远端，只做本地提交 / pending；需要推送时告诉用户去项目设置里改。'
@@ -784,9 +803,6 @@ function policyPart(host: EngineHost) {
         : p.answered === 'allowed' || p.push === 'allow'
           ? '推送：这次可以推送到远端（用户已经授权）；推送前确认分支和远端，推完回读确认。'
           : '推送：第一次需要推送时先用提问工具问用户一次（推荐「允许这次推送」和「只做本地提交」），按回答做，这个对话里不再重复问。'
-  const tools = p.tools.length
-    ? `已经授权可用的工具：${p.tools.join('、')}（直接用，不要重新登录）。`
-    : '本机没有检测到可用的外部授权工具（例如 gh），需要时请用户先自己登录。'
   return `## 授权情况\n${push}\n${tools}`
 }
 
@@ -813,7 +829,11 @@ function rulesPart(host: EngineHost) {
 function inboxPart(host: EngineHost) {
   const got = host.takeInbox?.() ?? []
   if (!got.length) return ''
-  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。`
+  // 「提问」关着时子对话的提问 / 收尾建议不会交给用户，等的是父对话自己的决定
+  const ask = host.task.askUser
+    ? ''
+    : '「提问」关着：子对话的提问和收尾建议都由你决定，用户不会回答。按已有信息选最合理的做法，写清「你替他决定了什么、依据、如果不对怎么改」，缺关键信息也选一个默认方案继续并在结论里标出；不要空着等用户。'
+  return `## 子对话发来的消息\n${got.map((m) => `- 「${m.title}」：${clip(m.text, 2000)}`).join('\n')}\n需要回复的用 send_to_conversation 交回给对应的子对话。${ask}`
 }
 
 /**
@@ -890,12 +910,7 @@ function planPart(host: EngineHost, coordinator: boolean) {
   const { task } = host
   if (!task.projectId) return ''
   const cur = activePlan(task)
-  const owed = unsummarized(task)
-  const now = cur
-    ? `当前计划：\n${planText(task, cur)}`
-    : owed
-      ? `上一份计划「${owed.title || '未命名'}」已经全部完成，还没写总结：先调用 finish_plan 写总结。\n${planText(task, owed)}`
-      : '现在没有进行中的计划。'
+  const now = cur ? `当前计划：\n${planText(task, cur)}` : '现在没有进行中的计划。'
   return `## 执行计划
 ${now}
 
@@ -905,7 +920,7 @@ ${now}
 - 完成的步骤不再重开：后来的内容哪怕和它完全一样，也新加一步去做。
 - 用户中途加了内容：先判断它该放进计划的哪一步——属于还没完成的步骤就并进那一步（加子步骤），不属于就在合适的位置新加主步骤，然后按计划接着做。
 - 要等很久的事（完整测试、编译、远端 CI、${coordinator ? '交给子对话的工作' : '长时间的检查'}）：调用 run_background${coordinator ? ' / create_conversation / send_to_conversation' : ''} 时带上 step，这一步变成「等待中」，你马上接着做计划的下一步，不要干等或轮询。结果推回来时先处理那一步：成功面板会标完成，失败会退回「进行中」并带上原因。
-- 当前计划的步骤全部完成后必须调用 finish_plan 写总结：做了什么、验证结果（测试、编译）、改了哪些地方、遗留问题；这一轮回复的结尾也把总结告诉用户。之后再有新内容，用 set_plan 开一份新的计划（写 title）。
+- 计划的步骤全部完成后调用 finish_plan 结束这份计划（不需要写总结）；之后再有新内容，用 set_plan 开一份新的计划（写 title）。这一轮该给用户的结论照常写——那是回复内容，不是计划总结。
 - 不要用 CLI 自带的待办 / 计划工具（TodoWrite、update_plan 这类）记计划，用 set_plan，用户在面板的计划窗口里看进度。${
     coordinator
       ? `
@@ -926,6 +941,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     policyPart(host),
     goalPart(host),
     rulesPart(host),
+    searchPart(host),
     buildPart(host),
     fileFormatPart(host),
     `## 通用要求\n完成后用${promptLangWord()}简要总结：做了什么、改了哪些文件、有没有遗留问题。\n` +
@@ -2769,6 +2785,7 @@ async function conversationPrompt(
     policyPart(host),
     goalPart(host),
     rulesPart(host),
+    searchPart(host),
     inboxPart(host),
     buildPart(host),
     verifyPart(host),
@@ -2870,7 +2887,8 @@ ${
 子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用 ask_user 把问题、选项和各自的后果写清楚；要父对话决定时用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」。`)
     if (host.messageParent)
       parts.push(`## 收尾建议要交给用户选
-这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。`)
+这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。
+建议只写你自己能做完的本地动作；完成标准是改动已合回父对话所在的分支——这是收尾动作（submit_merge 由面板合并），不要列成计划步骤；计划步骤和收尾里不写「等推送 / 等合入其他分支 / 同步远端」。推送、创建 PR、P4 submit、合并到主干由父对话决定，不要写成建议项，也不要写成要用户回答的问题。调用时 remote 必须写 "none"（这些建议不改远端）：写了别的值会被直接拒绝，卡片不会交给用户。`)
     if (host.messageParent)
       parts.push(
         host.claimFiles
@@ -2907,8 +2925,6 @@ async function runConversationTurn(host: EngineHost, who: string) {
       () => orch?.helperBatch(),
       (text) => host.steer?.('', text) ?? Promise.resolve(false),
     )
-    // 计划做完了必须写总结：这一轮结束时还没写就追一次，还不写就取最后的回复当总结
-    let askedSummary = false
     // 子任务交回结果、等待时用户插进来聊也算一圈：上限放宽一些
     for (let i = 0; i < 30; i++) {
       orch = makeOrchestra(
@@ -2942,28 +2958,7 @@ async function runConversationTurn(host: EngineHost, who: string) {
         continue
       }
       const plans = takePendingPlans(host)
-      if (!plans.length) {
-        const owed = task.projectId && !host.halted ? unsummarized(task) : undefined
-        if (owed && !askedSummary) {
-          askedSummary = true
-          prompt = `（面板）计划「${owed.title || '这份计划'}」的步骤都完成了，还没写总结。现在调用 finish_plan 写总结（必须）：做了什么、验证结果、改了哪些地方、遗留问题，并在回复里告诉用户。\n${planText(task, owed)}`
-          continue
-        }
-        if (owed) {
-          // 追了一次还是没写：取最后一条回复当总结，标上是面板代取的，界面上看得出来
-          owed.summary =
-            clip(
-              [...task.messages]
-                .reverse()
-                .find((m) => m.role === 'agent' && m.text.trim())
-                ?.text.trim() ?? '',
-              6000,
-            ) || t('（AI 没有写总结）')
-          owed.autoSummary = true
-          host.changed(true)
-        }
-        break
-      }
+      if (!plans.length) break
       const results: string[] = []
       for (const p of plans) {
         const out = await startPlan(host, p)
@@ -3039,17 +3034,27 @@ function finish(host: EngineHost, r: Fail) {
       s.endedAt = now()
     }
   if (r.budget) system(host, r.error, '', false, true)
-  else if (r.stopped)
+  else if (r.stopped) {
+    // 谁结束的这一轮：只有用户按的暂停才说「已暂停」，别的动作要说清是谁结束的，
+    // 不能让用户看到「我没点暂停却变成已暂停」（父对话收尾的时候子对话就是这种）
+    const reason = host.stopReason?.() ?? 'user'
+    host.task.stopReason = reason
+    const next = host.task.mode === 'workflow' ? t('点「继续流程」') : t('点「继续执行」')
     system(
       host,
-      host.task.mode === 'workflow'
-        ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
-        : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。'),
+      reason === 'user'
+        ? host.task.mode === 'workflow'
+          ? t('已暂停。点「继续流程」从中断的地方接着做，或者在下面输入新的要求。')
+          : t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')
+        : t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
+            reason: stopReasonText(reason),
+            next,
+          }),
       '',
       false,
       true,
     )
-  else {
+  } else {
     const failed = host.task.steps
       .filter((s) => s.status === 'failed' && !s.parentId)
       .map((s) => t('「{title}」', { title: s.title }))
@@ -3078,6 +3083,8 @@ function finish(host: EngineHost, r: Fail) {
 export async function runEngineTurn(host: EngineHost) {
   const { task } = host
   task.status = 'running'
+  // 又开了一轮：上一轮停下的原因不再成立（不然图标一直挂在暂停 / 中断上）
+  task.stopReason = undefined
   // 预算按每次执行算：从这一轮开始时的用量起算
   task.budgetFrom = { usd: task.usage.costUsd, tokens: task.usage.inputTokens + task.usage.outputTokens }
   // 旧版对话里的常驻编排器不再工作：记录留着可以看，但不再参与执行

@@ -7,10 +7,13 @@ import {
   childHolds,
   childHoldsOf,
   childHoldText,
+  childIcon,
   childSpinning,
   childStage,
   childWaiting,
+  keepAliveVictims,
   runRunning,
+  stopReasonText,
   taskBusy,
   taskStage,
   type ChildEntry,
@@ -210,4 +213,141 @@ test('没彻底完成的子对话行首转圈，在等你选择时不转', () =>
   assert.equal(childStage(kid({ unmerged: true, resolved: true })), 'unfinished')
   assert.equal(childSpinning(kid({ unmerged: true, resolved: true })), true)
   assert.equal(childStage(kid({})), 'done')
+})
+
+/** 列表里的一行：图标、分组、徽标都读 ChildEntry（见 TaskView 的子对话行） */
+const row = (over: Partial<ChildEntry> = {}) =>
+  ({
+    id: 'c',
+    title: '子对话',
+    status: 'running',
+    working: false,
+    cliAlive: true,
+    startedAt: '',
+    ...over,
+  }) as ChildEntry
+
+test('childIcon：分组、图标、childHolds 三者同源，已完成 ⇔ 图标完成 ⇔ 没有没做完的', () => {
+  // 每种快照都从同一份 ChildEntry 算：进「已完成」组、图标是完成态、childHolds 为空必须同时成立
+  const cases: ChildEntry[] = [
+    // 交付完一轮、CLI 还在等下一句
+    row({}),
+    // 已标记解决：以前图标按 status='stopped' 画成暂停，分组却是已完成
+    row({ status: 'stopped', resolved: true }),
+    // 已关闭（进程没了）但确实做完了：不能因为进程没了就画成暂停
+    row({ cliAlive: false }),
+    row({ status: 'stopped', resolved: true, cliAlive: false }),
+    // 还没做完的几种
+    row({ plan: { done: 1, total: 3 } }),
+    row({ unmerged: true }),
+    row({ working: true }),
+    row({ background: 1 }),
+    row({ workflow: true }),
+    row({ helpers: true }),
+    row({ asking: 1 }),
+    row({ requests: 1 }),
+    row({ status: 'failed' }),
+    row({ status: 'stopped' }),
+    row({ status: 'stopped', stopReason: 'parent' }),
+  ]
+  for (const c of cases) {
+    const stage = childStage(c)
+    const icon = childIcon(c)
+    const holds = childHolds({ ...c })
+    assert.equal(
+      stage === 'done',
+      icon === 'done',
+      `分组和图标必须一致：${JSON.stringify(c)} 分组 ${stage}，图标 ${icon}`,
+    )
+    // 进「已完成」的一定没有没做完的事；反过来，还有没做完的事就一定不在已完成组
+    if (stage === 'done') assert.equal(holds.length, 0, `已完成的不该还差着东西：${JSON.stringify(c)}`)
+    if (holds.length) assert.notEqual(stage, 'done', `还差着东西的不能归已完成：${JSON.stringify(c)}`)
+    // 失败是另一个维度（不是没做完，是没做成）：不在已完成组，图标是失败，不拿暂停盖住
+    if (c.status === 'failed') {
+      assert.equal(icon, 'failed')
+      assert.notEqual(stage, 'done')
+    }
+    // 图标和 childSpinning / childWaiting 也是同一份判定
+    assert.equal(childSpinning(c), icon === 'running')
+    assert.equal(childWaiting(c), icon === 'waiting')
+  }
+})
+
+test('childIcon：resolved 的项是完成态，不能画成暂停，也不管 CLI 关没关', () => {
+  assert.equal(childIcon(row({ status: 'stopped', resolved: true })), 'done')
+  assert.equal(childIcon(row({ status: 'stopped', resolved: true, cliAlive: false })), 'done')
+  // 已解决但还在跑 / 计划没做完：不能拿「已解决」盖住还在跑的事实
+  assert.equal(childIcon(row({ status: 'stopped', resolved: true, working: true })), 'running')
+  assert.equal(childIcon(row({ status: 'stopped', resolved: true, plan: { done: 1, total: 2 } })), 'running')
+})
+
+test('childIcon：只有用户自己按的暂停才是暂停图标，别的来源是「中断」', () => {
+  assert.equal(childIcon(row({ status: 'stopped', stopReason: 'user' })), 'stopped')
+  // 旧任务没有原因：当时只有用户按暂停这一条路，保持暂停图标
+  assert.equal(childIcon(row({ status: 'stopped' })), 'stopped')
+  // 父对话收尾、换 CLI、归档、面板重启、页面切走、被新消息打断：都不是用户暂停
+  for (const reason of ['parent', 'switch', 'archive', 'restart', 'presence', 'supersede'] as const) {
+    assert.equal(childIcon(row({ status: 'stopped', stopReason: reason })), 'idle', reason)
+  }
+  // 中断的项不算失败，也不能说成已完成
+  assert.equal(childStage(row({ status: 'stopped', stopReason: 'parent' })), 'stopped')
+  assert.notEqual(childIcon(row({ status: 'stopped', stopReason: 'parent' })), 'failed')
+})
+
+test('childIcon：父对话收尾停掉子对话，子对话不是「用户暂停」', () => {
+  // 父对话 92dfd0da 被中断后 closeChildren 逐个停子对话：原因标成 parent，不是 user
+  const kid = row({ status: 'stopped', stopReason: 'parent', cliAlive: false })
+  assert.equal(childIcon(kid), 'idle')
+  assert.equal(childSpinning(kid), false)
+  assert.notEqual(childIcon(kid), 'stopped', '父对话收尾不能显示成用户按了暂停')
+  // 进程异常退出是 failed：失败图标 + 原因，不是停止
+  assert.equal(childIcon(row({ status: 'failed' })), 'failed')
+})
+
+test('stopReasonText：只有用户按的暂停说「已暂停」，其它来源说清是谁结束的', () => {
+  assert.equal(stopReasonText('user'), '已暂停')
+  // 旧任务没有原因：当时只有用户按暂停这一条路
+  assert.equal(stopReasonText(undefined), '已暂停')
+  assert.equal(stopReasonText('parent'), '父对话结束时一起结束')
+  assert.equal(stopReasonText('switch'), '换 CLI / 模型时中断')
+  assert.equal(stopReasonText('archive'), '归档时结束')
+  assert.equal(stopReasonText('restart'), '面板重启时中断')
+  assert.equal(stopReasonText('presence'), '页面切走后结束')
+  assert.equal(stopReasonText('supersede'), '被新消息打断')
+  assert.equal(stopReasonText('finish'), '做完后收尾')
+  // 除了 user，每种来源都不能落回「已暂停」
+  assert.equal(stopReasonText('idle'), '闲置太久已回收')
+  for (const r of ['parent', 'switch', 'archive', 'restart', 'presence', 'idle', 'supersede', 'finish'] as const)
+    assert.notEqual(stopReasonText(r), '已暂停', r)
+})
+
+test('keepAliveVictims：超过上限时结束最久没用的，正在看的和刚进入的不算', () => {
+  const alive = (id: string, seen: string, awaiting = true) => ({
+    id,
+    awaitingUser: awaiting,
+    turnSeenAt: seen,
+    turnDoneAt: '',
+    updatedAt: seen,
+  })
+  const list = [
+    alive('a', '2026-01-01T10:00:00Z'),
+    alive('b', '2026-01-01T12:00:00Z'),
+    alive('c', '2026-01-01T11:00:00Z'),
+    alive('running', '2026-01-01T09:00:00Z', false),
+  ]
+  // 上限 3、刚进来的 d：只超一个，收掉最久没用的 a（running 不在等下一句，不算）
+  assert.deepEqual(keepAliveVictims([...list, alive('d', '2026-01-01T13:00:00Z')], 3, 'd'), ['a'])
+  // 上限 2：超两个就收两个，从最久没用的开始
+  assert.deepEqual(keepAliveVictims([...list, alive('d', '2026-01-01T13:00:00Z')], 2, 'd'), ['a', 'c'])
+  // 没超限不动
+  assert.deepEqual(keepAliveVictims(list, 4, 'd'), [])
+  // 刚进入保活的那个不会被自己收掉
+  assert.deepEqual(keepAliveVictims(list, 3, 'a'), [])
+  // 页面正开着的不算：b 正在看，就轮不到它
+  assert.deepEqual(
+    keepAliveVictims(list, 2, 'd', (id) => id === 'a'),
+    ['c'],
+  )
+  // 0 表示不限制
+  assert.deepEqual(keepAliveVictims(list, 0, 'd'), [])
 })

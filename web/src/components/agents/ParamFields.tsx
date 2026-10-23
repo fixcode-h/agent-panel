@@ -97,6 +97,50 @@ export function ParamControl({
 }
 
 /**
+ * 一项参数的一行：左边标签（旁边跟「必填」「恢复默认」这类小字）+ ⓘ 说明，右边控件。
+ * 下拉、开关、数字放得下就排同一行；文本、多选放不下，控件另起一行（stacked）。
+ * 角色设置和项目设置都用它，两处不用各写一套样式。
+ */
+export function ParamRow({
+  label,
+  hint,
+  stacked,
+  controlClass,
+  children,
+}: {
+  /** 标签内容（参数名和它旁边的小字），已经组装好 */
+  label: React.ReactNode
+  /** ⓘ 里显示的说明；没有就不显示问号 */
+  hint?: React.ReactNode
+  /** 控件另起一行 */
+  stacked?: boolean
+  /** 控件容器额外样式：默认只按内容撑开，要限宽时由调用方给 */
+  controlClass?: string
+  children: React.ReactNode
+}) {
+  const head = (
+    <span className="flex min-w-0 items-center gap-1.5 text-xs">
+      {label}
+      {hint && <HelpTip>{hint}</HelpTip>}
+    </span>
+  )
+  if (stacked) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        {head}
+        {children}
+      </div>
+    )
+  }
+  return (
+    <div className="flex min-h-9 items-center justify-between gap-4">
+      {head}
+      <div className={cn('flex shrink-0 justify-end', controlClass)}>{children}</div>
+    </div>
+  )
+}
+
+/**
  * 填参数：节点上、对话里共用。值只存改过的，没填的用默认值；
  * 要问用户（没有默认值）的参数没填时标红。
  */
@@ -123,42 +167,37 @@ export function ParamsForm({
       {params.map((p) => {
         const lack = missing.some((m) => m.key === p.key)
         const changed = p.key in values
-        // 开关和下拉跟标签放在同一行（控件靠右），文本、多选放不下才单独占一行
+        // 开关、下拉和数字跟标签放在同一行（控件靠右），文本、多选放不下才单独占一行
         const inline = p.type === 'bool' || p.type === 'select' || p.type === 'number'
-        const label = (
-          <span className="flex min-w-0 items-center gap-1.5 text-xs">
-            <span className={cn('truncate font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
-            {p.description && <HelpTip>{p.description}</HelpTip>}
-            {p.ask && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('必填')}</span>}
-            {changed && !p.ask && (
-              <button
-                type="button"
-                onClick={() => set(p.key, undefined)}
-                className="shrink-0 cursor-pointer text-[0.6875rem] text-accent"
-              >
-                {t('恢复默认')}
-              </button>
-            )}
-          </span>
-        )
-        const control = (
-          <ParamControl
-            param={p}
-            value={changed ? values[p.key] : p.ask ? undefined : p.default}
-            onChange={(v) => set(p.key, v)}
-            placeholder={!p.ask && p.default !== undefined ? t('默认：{v}', { v: valueText(p.default) }) : undefined}
-          />
-        )
-        return inline ? (
-          <div key={p.key} className="flex min-h-9 items-center justify-between gap-4">
-            {label}
-            <div className={cn('flex shrink-0 justify-end', p.type !== 'bool' && 'w-[min(14rem,50%)]')}>{control}</div>
-          </div>
-        ) : (
-          <div key={p.key} className="flex flex-col gap-1.5">
-            {label}
-            {control}
-          </div>
+        return (
+          <ParamRow
+            key={p.key}
+            label={
+              <>
+                <span className={cn('truncate font-medium', lack ? 'text-danger' : 'text-muted')}>{paramLabel(p)}</span>
+                {p.ask && <span className="shrink-0 text-[0.6875rem] text-subtle">{t('必填')}</span>}
+                {changed && !p.ask && (
+                  <button
+                    type="button"
+                    onClick={() => set(p.key, undefined)}
+                    className="shrink-0 cursor-pointer text-[0.6875rem] text-accent"
+                  >
+                    {t('恢复默认')}
+                  </button>
+                )}
+              </>
+            }
+            hint={p.description}
+            stacked={!inline}
+            controlClass={p.type !== 'bool' ? 'w-[min(14rem,50%)]' : undefined}
+          >
+            <ParamControl
+              param={p}
+              value={changed ? values[p.key] : p.ask ? undefined : p.default}
+              onChange={(v) => set(p.key, v)}
+              placeholder={!p.ask && p.default !== undefined ? t('默认：{v}', { v: valueText(p.default) }) : undefined}
+            />
+          </ParamRow>
         )
       })}
     </div>

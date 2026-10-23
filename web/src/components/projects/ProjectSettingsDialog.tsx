@@ -37,6 +37,7 @@ import { CategoryPicker } from '@/components/ui/category-picker'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Field, FormSection, Input, Select } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
 import { HelpTip } from '@/components/ui/help-tip'
 import type { ProjectProposal } from '@shared/assist'
 import { ReadinessCard } from '@/components/layout/ReadinessCard'
@@ -46,6 +47,7 @@ import { CLIS } from '@shared/clis'
 import { GENERAL_NAME, UE_PROJECT_NAME } from '@shared/builtin/workflows'
 import { cliDocs, SHARED_DOC, type DocFile, type ProjectDocs } from '@shared/docs'
 import { cliSettings, orderClis } from '@shared/settings'
+import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclude'
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
@@ -53,7 +55,7 @@ import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
-import { ParamsForm } from '@/components/agents/ParamFields'
+import { ParamControl, ParamRow, ParamsForm } from '@/components/agents/ParamFields'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger, menuItem } from '@/components/ui/menu'
 
 /** 默认工作流从这个工作流分类里选（内置的「通用项目」「UE 项目」都在这里） */
@@ -83,6 +85,7 @@ const blank: ProjectInput = {
   lessons: [],
   wslDistro: '',
   fileFormat: undefined,
+  searchExclude: [],
   gitPolicy: 'ask',
 }
 
@@ -211,7 +214,7 @@ function Body({
   const active = own ?? inherited ?? general
   // 每个工作流一份配置：默认工作流和每个可选工作流各自保存
   const paramsOf = (id: string) => draft.workflowParams[id] ?? {}
-  const setParam = (id: string, key: string, value: string | boolean) =>
+  const setParam = (id: string, key: string, value: ParamValue) =>
     setDraft((d) => ({
       ...d,
       workflowParams: { ...d.workflowParams, [id]: { ...(d.workflowParams[id] ?? {}), [key]: value } },
@@ -258,7 +261,7 @@ function Body({
           <ExposeField
             key={e.key}
             e={e}
-            value={paramsOf(w.id)[e.key] as string | boolean | undefined}
+            value={paramsOf(w.id)[e.key] as ParamValue | undefined}
             onChange={(v) => setParam(w.id, e.key, v)}
           />
         ))}
@@ -885,13 +888,17 @@ function Body({
                   </span>
                 </FormSection>
 
+                <FormSection title={t('搜索')}>
+                  <SearchExcludeField value={draft.searchExclude} onChange={(v) => set('searchExclude', v)} />
+                </FormSection>
+
                 <FormSection title={t('子对话')}>
                   <Field
                     label={t('子对话隔离')}
                     tip={
                       draft.childIsolation === 'worktree'
                         ? t(
-                            '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话的分支不推到远端，子对话标记完成后删除。不是 Git 仓库（P4 等）时自动用共用目录。',
+                            '每个子对话要改文件时才开自己的独立分支目录，互不干扰；编译、测试在自己的分支里跑，通过后排队合回父对话所在的分支，有冲突撤回并交回子对话。子对话标记完成后删除分支。不是 Git 仓库（P4 等）时自动用共用目录。',
                           )
                         : t(
                             '子对话都在项目目录里直接改，改文件前先认领，同一个文件同一时间只归一个子对话。不用建分支，但编译时可能读到别的子对话改到一半的文件。',
@@ -1356,7 +1363,7 @@ function AgentParamsEditor({
   const mine = agents.filter((d) => d.agents.some((a) => a.id === group.agentId) && !hidden.has(d.key))
   if (!mine.length) return null
   return (
-    <div className="flex flex-col gap-3 rounded-xl border bg-field/40 p-3">
+    <div className="flex flex-col gap-2 rounded-xl border bg-field/40 p-3">
       <div className="flex items-center gap-2">
         <span className="truncate text-[0.8125rem] font-medium">{group.agentName}</span>
         <span className="text-xs text-subtle">{t('{n} 个参数', { n: mine.length })}</span>
@@ -1372,6 +1379,14 @@ function AgentParamsEditor({
   )
 }
 
+/** 参数的默认值写成人能看的字：开关是「是 / 否」，多选用顿号连起来 */
+function defaultText(v: ParamValue | undefined) {
+  if (v === undefined || v === '') return ''
+  if (typeof v === 'boolean') return v ? t('是') : t('否')
+  if (Array.isArray(v)) return v.join(t('、'))
+  return String(v)
+}
+
 /** 一项派生参数：按类型渲染，显示默认值；多个 Agent 共用同一个 key 时注明影响面 */
 function DerivedParamField({
   d,
@@ -1383,51 +1398,50 @@ function DerivedParamField({
   onChange: (v: string | boolean) => void
 }) {
   const label = d.label || d.key
-  const fallback = Array.isArray(d.defaultValue) ? d.defaultValue.join(', ') : (d.defaultValue ?? '')
+  const fallback = defaultText(d.defaultValue)
   const shared = d.agents.length > 1
+  // 说明、默认值和影响面都收进 ⓘ，行里只留参数名——参数多时一屏能看到全条
+  const hint = [
+    d.description,
+    fallback && t('默认：{v}', { v: fallback }),
+    shared && t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) }),
+  ]
+    .filter(Boolean)
+    .join('；')
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="flex flex-wrap items-center gap-1.5 text-xs text-muted">
-        {label}
-        <span className="font-mono text-[0.6875rem] text-subtle">{d.key}</span>
-        {d.required && <span className="text-[0.6875rem] text-warning">{t('必须填')}</span>}
-        {shared && (
-          <span className="text-[0.6875rem] text-subtle">
-            {t('同时影响 {names}', { names: [...new Set(d.agents.map((a) => a.name))].join(t('、')) })}
-          </span>
-        )}
-      </span>
+    <ParamRow
+      label={
+        <>
+          <span className="truncate font-medium text-muted">{label}</span>
+          <span className="shrink-0 font-mono text-[0.6875rem] text-subtle">{d.key}</span>
+          {d.required && <span className="shrink-0 text-[0.6875rem] text-warning">{t('必须填')}</span>}
+        </>
+      }
+      hint={hint}
+      controlClass={d.type === 'bool' ? undefined : 'w-[min(14rem,50%)]'}
+    >
       {d.type === 'select' ? (
         <Select
+          aria-label={label}
           value={String(value ?? '')}
           onChange={(e) => onChange(e.target.value)}
           options={[
-            { value: '', label: fallback ? t('默认：{v}', { v: String(fallback) }) : t('未选择') },
+            { value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') },
             ...d.options.map((o) => ({ value: o, label: o })),
           ]}
         />
       ) : d.type === 'bool' ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value === true}
-            onChange={(e) => onChange(e.target.checked)}
-          />
-          {value === true ? t('是') : t('否')}
-          {d.defaultValue !== undefined && (
-            <span className="text-xs text-subtle">{t('默认：{v}', { v: d.defaultValue ? t('是') : t('否') })}</span>
-          )}
-        </label>
+        <Switch checked={value === true} onCheckedChange={(x) => onChange(x)} aria-label={label} />
       ) : (
         <Input
+          aria-label={label}
           value={typeof value === 'string' ? value : ''}
           onChange={(e) => onChange(e.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
+          className="h-9"
         />
       )}
-      {d.description && <span className="text-xs text-subtle">{d.description}</span>}
-    </div>
+    </ParamRow>
   )
 }
 
@@ -1438,43 +1452,154 @@ function ExposeField({
   onChange,
 }: {
   e: WorkflowExpose
-  value: string | boolean | undefined
-  onChange: (v: string | boolean) => void
+  value: ParamValue | undefined
+  onChange: (v: ParamValue) => void
 }) {
   const label = e.label || e.key
-  const text = typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : (value ?? '')
-  const fallback = Array.isArray(e.default) ? e.default.join(', ') : (e.default ?? '')
+  // 多选存的是字符串数组，早先的版本存成 "a, b" 字符串，这里两种都认
+  const text =
+    typeof value === 'boolean' ? String(value) : Array.isArray(value) ? value.join(', ') : String(value ?? '')
+  const list = Array.isArray(value) ? value : text ? text.split(/\s*,\s*/).filter(Boolean) : []
+  // 没改过时显示默认值（这些选项本来就生效），改动后再存实际的数组
+  const shown = list.length || !Array.isArray(e.default) ? list : e.default
+  const fallback = defaultText(e.default)
+  // 和角色参数一样：说明与默认值收进 ⓘ，行里只留名字，控件靠右
+  const hint = [e.description, fallback && t('默认：{v}', { v: fallback })].filter(Boolean).join('；')
+  const on = value === true || text === 'true'
   return (
-    <div className="flex flex-col gap-1.5">
-      <span className="text-xs text-muted">{label}</span>
+    <ParamRow
+      label={<span className="truncate font-medium text-muted">{label}</span>}
+      hint={hint}
+      controlClass={e.type === 'bool' ? undefined : e.type === 'multi' ? 'w-[min(20rem,60%)]' : 'w-[min(14rem,50%)]'}
+    >
       {e.type === 'select' ? (
         <Select
+          aria-label={label}
           value={text}
           onChange={(ev) => onChange(ev.target.value)}
           options={[
-            ...(text || fallback ? [] : [{ value: '', label: t('未选择') }]),
+            // 没选时显示默认值（或「未选择」），选了就只显示选中的
+            ...(text ? [] : [{ value: '', label: fallback ? t('默认：{v}', { v: fallback }) : t('未选择') }]),
             ...e.options.map((o) => ({ value: o, label: o })),
           ]}
         />
       ) : e.type === 'bool' ? (
-        <label className="flex cursor-pointer items-center gap-2 text-[0.8125rem]">
-          <input
-            type="checkbox"
-            className="accent-accent"
-            checked={value === true || value === 'true'}
-            onChange={(ev) => onChange(ev.target.checked ? 'true' : 'false')}
-          />
-          {text === 'true' || value === true ? t('是') : t('否')}
-        </label>
+        // 开关的取值照旧存成 'true' / 'false' 字符串，和工作流配置里的格式一致
+        <Switch checked={on} onCheckedChange={(x) => onChange(x ? 'true' : 'false')} aria-label={label} />
+      ) : e.type === 'multi' ? (
+        // 多选和角色参数用同一个控件：值是字符串数组，exposeValue 会拼成「a, b」填进 {{槽名}}
+        <ParamControl
+          param={{
+            key: e.key,
+            label,
+            type: 'multi',
+            options: e.options,
+            ask: false,
+            description: e.description,
+            default: e.default,
+          }}
+          value={shown}
+          onChange={(v) => onChange(Array.isArray(v) ? v : [])}
+        />
       ) : (
         <Input
+          aria-label={label}
           value={text}
           onChange={(ev) => onChange(ev.target.value)}
-          placeholder={fallback ? t('默认：{v}', { v: String(fallback) }) : ''}
+          placeholder={fallback ? t('默认：{v}', { v: fallback }) : ''}
+          className="h-9"
         />
       )}
-      {e.description && <span className="text-xs text-subtle">{e.description}</span>}
-    </div>
+    </ParamRow>
+  )
+}
+
+/**
+ * 搜索排除目录：一项一个 chip，回车或点「添加」加一项，点 × 删一项。
+ * 只存用户填的；内置默认清单（依赖、产物、缓存）始终生效，不占这里的输入。
+ */
+function SearchExcludeField({ value, onChange }: { value: string[] | undefined; onChange: (v: string[]) => void }) {
+  const [text, setText] = useState('')
+  const list = value ?? []
+  // 输入时就把首尾空白和尾部斜杠去掉：`Saved/` 和 `Saved` 是同一个目录，存两种写法只会重复
+  const clean = (s: string) => s.trim().replace(/[\\/]+$/, '')
+  const add = () => {
+    const item = clean(text)
+    setText('')
+    if (!item || list.includes(item)) return
+    onChange([...list, item])
+  }
+  // UE 预设只补缺的：已经填过的项不重复加，用户自己加的也留着
+  const preset = () => onChange([...list, ...UE_SEARCH_EXCLUDE.filter((d) => !list.includes(d))])
+  return (
+    <ParamRow
+      label={
+        <>
+          <span className="truncate font-medium text-muted">{t('搜索时跳过的目录')}</span>
+          <span className="shrink-0 text-[0.6875rem] text-subtle">{t('相对项目根')}</span>
+        </>
+      }
+      hint={t(
+        'Agent 找文件、搜代码时跳过这些目录。大项目里全仓搜索会跑几分钟、命中大量编译产物，所以先读项目文档定位到模块，再在最小目录里搜。',
+      )}
+      stacked
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {list.map((d) => (
+            <span
+              key={d}
+              className="flex h-7 items-center gap-1 rounded-md border border-line-strong bg-field pr-1 pl-2 text-[0.78125rem] text-muted"
+            >
+              <span className="font-mono">{d}</span>
+              <button
+                type="button"
+                aria-label={t('删除 {name}', { name: d })}
+                title={t('删除 {name}', { name: d })}
+                onClick={() => onChange(list.filter((x) => x !== d))}
+                className="grid h-5 w-5 cursor-pointer place-items-center rounded text-subtle hover:bg-sel hover:text-fg"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </span>
+          ))}
+          <Input
+            aria-label={t('搜索时跳过的目录')}
+            value={text}
+            placeholder={t('目录名，回车添加')}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              // 回车是加一项，不是提交整个设置表单
+              e.preventDefault()
+              add()
+            }}
+            className="h-7 w-[11rem] text-xs"
+          />
+          <Button variant="secondary" size="sm" onClick={add} disabled={!clean(text)} className="h-7">
+            <Plus className="h-3.5 w-3.5" />
+            {t('添加')}
+          </Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <button type="button" className="cursor-pointer text-accent hover:underline" onClick={preset}>
+            {t('填入 UE 排除清单')}
+          </button>
+          {list.length > 0 && (
+            <button
+              type="button"
+              className="cursor-pointer text-subtle hover:text-fg hover:underline"
+              onClick={() => onChange([])}
+            >
+              {t('清空')}
+            </button>
+          )}
+        </div>
+        <span className="text-xs text-subtle">
+          {t('此外始终跳过：{list}', { list: DEFAULT_SEARCH_EXCLUDE.join(t('、')) })}
+        </span>
+      </div>
+    </ParamRow>
   )
 }
 

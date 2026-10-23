@@ -16,7 +16,15 @@ import {
 import { useRef, useState, type CSSProperties } from 'react'
 import { toast } from 'sonner'
 import type { Project, Task } from '@shared/schema'
-import { byAskedAt, helpersWorking, taskBusy, taskDuration, taskSummary, waitDuration } from '@shared/task'
+import {
+  byAskedAt,
+  helpersWorking,
+  stopReasonText,
+  taskBusy,
+  taskDuration,
+  taskSummary,
+  waitDuration,
+} from '@shared/task'
 import { importTaskFile } from '@/lib/task-transfer'
 import { useData, useNav } from '@/lib/data'
 import { cacheRate, fmtDuration, fmtTokens, statusLabel, timeAgo } from '@/lib/tasks'
@@ -288,7 +296,9 @@ function ProjectTaskRow({ task, now, onOpen }: { task: Task; now: number; onOpen
                       ? t('子对话执行中')
                       : helpersWorking(task) && !task.working
                         ? t('子任务执行中')
-                        : statusLabel[task.status]}
+                        : task.status === 'stopped'
+                          ? stopReasonText(task.stopReason)
+                          : statusLabel[task.status]}
               </span>
             </button>
             <TaskControlButton task={task} className="mr-4" />

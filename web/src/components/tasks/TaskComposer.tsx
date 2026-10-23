@@ -266,6 +266,7 @@ export function TaskComposer({
         {drop.over && <DropHint />}
         {chips.refOver && <FileRefHint />}
         {chips.viewer}
+        {chips.chipMenu}
         <RichInput
           id="task-prompt"
           handle={editor}

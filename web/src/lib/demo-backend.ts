@@ -1619,13 +1619,13 @@ function route(method: string, url: string, body: unknown): unknown {
     return method === 'POST' ? create('projectCategories', input) : update('projectCategories', id, input, '分类不存在')
   }
 
-  // 演示按 Windows 上装了 WSL 和 Git 的情况显示命令行环境
+  // 演示按 Windows 上装了 Git Bash 和 WSL 的情况显示命令行环境（默认 Git Bash 在前）
   if (res === 'shells')
     return {
       platform: 'win32',
       shells: [
-        { id: 'wsl', path: 'wsl.exe', distros: ['Ubuntu-24.04', 'Debian'] },
         { id: 'gitbash', path: 'C:\\Program Files\\Git\\bin\\bash.exe' },
+        { id: 'wsl', path: 'wsl.exe', distros: ['Ubuntu-24.04', 'Debian'] },
         { id: 'powershell', path: 'powershell.exe' },
         { id: 'cmd', path: 'cmd.exe' },
       ],
@@ -1685,7 +1685,13 @@ function route(method: string, url: string, body: unknown): unknown {
         ? ((d.tasks ?? []).find((x) => x.id === id)?.title ?? fail('任务不存在'))
         : ((demoDesigns('GET', id, undefined, null) as { title: string }).title ?? fail('设计不存在'))
     const name = `会话-${title.slice(0, 40)}.md`
-    return { name, path: `/demo/uploads/${crypto.randomUUID()}/${name}`, size: 4096, mime: 'text/markdown' }
+    const path = `/demo/uploads/${crypto.randomUUID()}/${name}`
+    // 和真实服务端一样把转录内容存下来：粘贴回剪贴板里的路径时能认回附件、点开能看到内容
+    demoUploads.set(
+      path,
+      `data:text/markdown;charset=utf-8,${encodeURIComponent(`# 参考会话：${title}\n\n这是演示里的对话记录。`)}`,
+    )
+    return { name, path, size: 4096, mime: 'text/markdown' }
   }
   if (res === 'designs' && id === 'styles') return demoStyles(method, sub, body ?? {})
   if (res === 'designs' && sub === 'extract-style') return demoExtractStyle(id)
@@ -2004,6 +2010,9 @@ function tasksRoute(
         updatedAt: x.updatedAt,
         cliAlive: live.has(x.id),
         startedAt: childStartedAt(x),
+        // 和正式版一致：等用户确认的请求数、没回答的提问数，行右边的时长靠它判断停在等你
+        requests: (x.requests ?? []).length,
+        asking: x.parentAsks?.length ?? 0,
         // 计划没做完：和正式版一致，显示「计划 7/8」、不算已完成
         plan: openPlan(x),
         resolved: x.resolved === true,

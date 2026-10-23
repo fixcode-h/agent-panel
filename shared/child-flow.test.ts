@@ -4,6 +4,7 @@ import { setLang } from './i18n.ts'
 import type { Task } from './schema.ts'
 import {
   advanceChild,
+  childComplete,
   childFlowAt,
   childFlowOf,
   childFlowSteps,
@@ -14,6 +15,7 @@ import {
   type ChildEntry,
   type ChildFlowState,
   type ChildFlowStep,
+  type ChildHold,
 } from './task.ts'
 
 // 文案断言按中文：跟着系统语言跑会让结果不稳定
@@ -89,6 +91,28 @@ test('这一轮还在跑 / 独立分支没合回：卡在前两步，父对话�
   const unmergedRun = await advanceChild({ working: false, unmerged: true }, recorder().host)
   assert.deepEqual(unmergedRun.holds, ['unmerged'])
   assert.deepEqual(unmergedRun.left, ['pending', 'complete', 'report', 'list'])
+  // 卡住的原因是「没合回父对话所在的分支」这一件本地的事，不扯推送
+  assert.equal(unmergedRun.info, childHoldText(['unmerged']))
+  assert.doesNotMatch(unmergedRun.info, /推送|远端|push|remote|origin/i)
+})
+
+test('子分支都合进父分支就算完成：推送、远端、父分支上的其他提交都不参与', () => {
+  // ChildFlowState 里根本没有与推送相关的字段：unmerged 只来自「子分支还有没合回父分支的提交」
+  const idle = { working: false, plan: { done: 3, total: 3 }, background: 0, asking: 0, requests: 0, unmerged: false }
+  assert.deepEqual(childHolds(idle), [], '合回父分支就是做完了，没有别的条件')
+  assert.equal(childComplete(idle), true)
+  assert.equal(childFlowAt(idle), 'complete', '流转也直接走到置完成')
+  // 反例：只差合并这一条
+  assert.deepEqual(childHolds({ ...idle, unmerged: true }), ['unmerged'])
+  assert.equal(childComplete({ ...idle, unmerged: true }), false)
+})
+
+test('卡住的原因只说本地合并：所有文案里都没有推送、远端字样', () => {
+  const all: ChildHold[] = ['working', 'background', 'workflow', 'helpers', 'plan', 'asking', 'requests', 'unmerged']
+  for (const h of all) assert.doesNotMatch(childHoldText([h]), /推送|远端|push|remote|origin|其他分支/i)
+  assert.match(childHoldText(['unmerged']), /独立分支还没合回原分支/)
+  // 组合起来也不带：界面把整串直接显示给用户
+  assert.doesNotMatch(childHoldText(['plan', 'unmerged', 'requests']), /推送|远端|push|remote|origin/i)
 })
 
 test('全部收口：子对话先置完成，再上报父对话，父对话列表最后才变', async () => {

@@ -176,6 +176,7 @@ export function AgentMessage({
   hideProcess,
   hideAuthor,
   slot,
+  slotKey,
   author,
   command,
 }: {
@@ -192,6 +193,8 @@ export function AgentMessage({
   hideAuthor?: boolean
   /** 放在名字下面、回复上面的内容（折叠起来的过程） */
   slot?: React.ReactNode
+  /** slot 的内容签名：slot 每次都是新画的元素，按引用比较会让这条消息每次都重渲染 */
+  slotKey?: string
   /** 不是某个 Agent 说的（例如「AI 创建」里直接调用的 CLI）：显示这个名字和 CLI 颜色 */
   author?: Author
   /** 启动这条回复的命令：没有 author 时（按 Agent 显示的对话）用这个 */
@@ -211,6 +214,7 @@ export function AgentMessage({
       hideProcess={hideProcess}
       hideAuthor={hideAuthor}
       slot={slot}
+      slotKey={slotKey}
       name={author?.name ?? a?.name ?? t('已删除的角色')}
       model={author ? author.model : a ? modelOf(a) : undefined}
       icon={a || author ? (a?.icon ?? author!.icon ?? 'sparkles') : undefined}
@@ -218,6 +222,23 @@ export function AgentMessage({
       command={author?.command ?? command}
     />
   )
+}
+
+/** 启动命令是数组：任务推送时每次都是新对象，比较按内容 */
+const commandSig = (command?: string[]) => command?.join('\u0000') ?? ''
+
+/**
+ * slot 里「还在运行」那块的签名：它的内容变了 slot 要跟着重画，没变就整段回复一起跳过。
+ * 收尾后还在跑的工具、后台命令、工作流节点都要算进来，否则这一行会停在旧状态
+ */
+function runningKey(msgs: TaskMessage[], task?: Task) {
+  const tools = runningTools(msgs)
+    .map((x) => `${x.name}:${x.output?.length ?? 0}:${x.detail ?? ''}`)
+    .join(',')
+  const jobs = task?.jobs?.map((j) => `${j.id}:${j.state}`).join(',') ?? ''
+  const runs = task?.runs?.map((r) => `${r.id}:${r.status}`).join(',') ?? ''
+  const steps = task?.steps?.map((s) => s.status[0]).join('') ?? ''
+  return `${tools}|${jobs}|${runs}|${steps}|${task?.status ?? ''}`
 }
 
 /** 工具行只用到任务的这几样：不把整个任务（含上千条消息）传进每条回复 */
@@ -235,6 +256,8 @@ type BodyProps = {
   hideProcess?: boolean
   hideAuthor?: boolean
   slot?: React.ReactNode
+  /** slot 的内容签名：比较函数按它判断要不要重画 */
+  slotKey?: string
   name: string
   model?: string
   /** 没有时显示空白头像（Agent 已删除） */
@@ -359,8 +382,8 @@ const MessageBody = memo(
     )
   },
   (a, b) =>
-    !a.slot &&
-    !b.slot &&
+    // slot 是每次新画的元素：按内容签名比，内容没变就不重画整段回复
+    (a.slot === b.slot || (!!a.slotKey && a.slotKey === b.slotKey)) &&
     sig(a.m) === sig(b.m) &&
     a.teamNames === b.teamNames &&
     a.compact === b.compact &&
@@ -371,7 +394,8 @@ const MessageBody = memo(
     a.model === b.model &&
     a.icon === b.icon &&
     a.cli === b.cli &&
-    a.command === b.command &&
+    // 启动命令是数组，任务推送时每次都是新对象，按内容比
+    commandSig(a.command) === commandSig(b.command) &&
     // 工具行的窗口只用到任务的 id、状态和有哪些改动的文件：任务对象和改动列表每个增量都会换，
     // 不能按引用比较，否则整段回复每 200ms 都要重画 Markdown。差异窗口打开时会自己按当前内容取，
     // 工具输出的变化也已经在 sig 里比较过了
@@ -462,6 +486,7 @@ export function Msgs({
   teamNames,
   live,
   slot,
+  slotKey,
   author,
   command,
   compactFirst,
@@ -475,6 +500,8 @@ export function Msgs({
   live?: boolean
   /** 放在第一条 Agent 消息名字下面的内容（展开后的折叠开关） */
   slot?: React.ReactNode
+  /** slot 的内容签名（同 AgentMessage） */
+  slotKey?: string
   author?: Author
   /** 启动这些回复的命令 */
   command?: string[]
@@ -523,6 +550,7 @@ export function Msgs({
             teamNames={teamNames}
             live={live && k === lastAgent}
             slot={k === firstAgent ? slot : undefined}
+            slotKey={k === firstAgent ? slotKey : undefined}
             author={author}
             command={command}
             hideAuthor={hideAuthor || (!!sticky && k === firstAgent)}
@@ -728,6 +756,8 @@ export function FoldedRun({
   ) : (
     toggle
   )
+  // slot 每次都是新画的元素：给内容算个签名，内容没变时整段回复不重画
+  const slotKey = `${parts.join('·')}|${failed}|${open ? 1 : 0}|${running ? runningKey(msgs, task) : ''}`
   if (open)
     return (
       // 展开后开关仍然放在第一条回复的名字下面，不跑到名字上方；
@@ -737,6 +767,7 @@ export function FoldedRun({
         task={task}
         teamNames={teamNames}
         slot={msgs[0].role === 'agent' ? head : undefined}
+        slotKey={slotKey}
         lead={msgs[0].role === 'agent' ? undefined : head}
         author={author}
         command={command}
@@ -769,6 +800,7 @@ export function FoldedRun({
         hideProcess
         hideAuthor={hideAuthor || !!sticky}
         slot={head}
+        slotKey={slotKey}
         author={author}
         command={command}
       />

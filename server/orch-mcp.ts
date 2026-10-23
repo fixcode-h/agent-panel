@@ -123,7 +123,7 @@ export function orchTools(o: Orchestra) {
             name: 'set_plan',
             title: '更新计划',
             description:
-              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。完成的步骤不能再改，同样的内容要再做就新加一步；整份完成后必须调用 finish_plan 写总结。返回合并后的计划和每一步的 id。',
+              '列出或更新这个对话的执行计划，每次交整份列表（已有的步骤带 id）。最多两层：主步骤和子步骤。完成的步骤不能再改，同样的内容要再做就新加一步；步骤全部完成后这份计划就结束，之后的新内容直接开新计划。返回合并后的计划和每一步的 id。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -145,17 +145,17 @@ export function orchTools(o: Orchestra) {
           },
           {
             name: 'finish_plan',
-            title: '计划总结',
-            description: '计划的步骤全部完成后调用（必须）：写这份计划的总结，计划就此结束，之后的新内容开新计划。',
+            title: '结束计划',
+            description:
+              '主动结束这份计划（步骤全部完成时计划本来就会自动结束）。不用写总结，传了也不保存；之后有新内容用 set_plan 开新计划。',
             inputSchema: {
               type: 'object',
               properties: {
                 summary: {
                   type: 'string',
-                  description: '总结：做了什么、验证结果（测试、编译）、改了哪些地方、遗留问题。用户会在计划窗口里看到',
+                  description: '不用写：给这一步留的兼容字段，传了也不会保存',
                 },
               },
-              required: ['summary'],
             },
           },
         ]
@@ -288,7 +288,7 @@ export function orchTools(o: Orchestra) {
             name: 'suggest_next_step',
             title: '收尾建议交给用户选',
             description:
-              '这一轮做完、总结里要给用户「下一步怎么做」的建议时调用：把建议和 2–4 个可选做法交给用户选，选完会自动交回给你接着做。不要只把建议写在结论里——那样用户不知道你是在等他，还是已经结束了。',
+              '这一轮做完、总结里要给用户「下一步怎么做」的建议时调用：把建议和 2–4 个可选做法交给用户选，选完会自动交回给你接着做。不要只把建议写在结论里——那样用户不知道你是在等他，还是已经结束了。子对话的完成标准是改动已合回父对话所在的分支（收尾动作，不是计划步骤）：计划和建议里都不要写推送 / 等推送 / 同步远端 / 其他分支，这类操作（推送、创建 PR、P4 submit、合并到主干）由父对话决定：remote 必须写 none，写其它值会被拒绝、卡片不会交给用户。',
             inputSchema: {
               type: 'object',
               properties: {
@@ -302,8 +302,14 @@ export function orchTools(o: Orchestra) {
                   description:
                     '2–4 个可选做法（每个一句话），第一个是推荐做法并在末尾标「（推荐）」；不给时用「按建议继续」「先不做，先停在这」',
                 },
+                remote: {
+                  type: 'string',
+                  enum: ['none', 'push', 'pr', 'submit', 'merge-main'],
+                  description:
+                    '这些建议会不会改远端：只做本地动作写 none；推送 → push、创建 PR → pr、P4 submit → submit、合并到主干 → merge-main。后四种不在子对话的处理范围，写了会被拒绝。不改远端也必须写 none（不能省）。',
+                },
               },
-              required: ['text'],
+              required: ['text', 'remote'],
             },
           },
           ...(o.canSubmit
@@ -312,7 +318,7 @@ export function orchTools(o: Orchestra) {
                   name: 'submit_merge',
                   title: '完成并合回原分支',
                   description:
-                    '子对话完成的标记：在独立分支里改完、编译测试都跑通后调用。面板把你现在的改动提交到你的分支，排队合回原分支（父对话所在的分支），合进去这个子对话就算完成，独立分支随后回收。有冲突会撤回并把冲突推回给你。验证没跑通不要调用。马上返回，不用干等结果。',
+                    '子对话完成的标记：在独立分支里改完、编译测试都跑通后调用。面板把你现在的改动提交到你的分支，排队合回原分支（父对话所在的分支）；合进去这个子对话就算完成（完成只是「已合回父对话所在的分支」，不涉及推送，这是收尾动作，不写进计划步骤），独立分支随后回收。有冲突会撤回并把冲突推回给你。验证没跑通不要调用。马上返回，不用干等结果。',
                   inputSchema: {
                     type: 'object',
                     properties: {
@@ -616,6 +622,19 @@ export async function callOrchTool(o: Orchestra, name: string, a: any) {
     case 'suggest_next_step': {
       const body = str(a?.text).trim()
       if (!body) return text('text 是空的：写清建议用户接下来做什么', true)
+      // 推送这类对外操作只在父对话决定：子对话用结构化字段声明一次，命中就不生成卡片、直接退回让它重新给建议
+      // （不靠文案里出现「推送」两个字：那既拦不住换个说法，也会误伤「别推送」这类正常建议）
+      const remote = str(a?.remote).trim().toLowerCase()
+      if (!remote)
+        return text(
+          'remote 没写：先声明这些建议会不会改远端。只做本地动作写 none；推送 / 创建 PR / P4 submit / 合并到主干不在子对话的处理范围，由父对话决定。改成只有本地动作的建议再来。',
+          true,
+        )
+      if (remote !== 'none')
+        return text(
+          `建议里不能有对外操作（remote=${remote}）：推送、创建 PR、P4 submit、合并到主干由父对话决定，子对话的完成只是「已合回父对话所在的分支」，不涉及推送。把这类建议去掉，只留你自己能做完的本地动作，再把 remote 写成 none 重新调用。`,
+          true,
+        )
       const options = (Array.isArray(a?.options) ? a.options : []).map(String)
       const r = await o.toParent(body, true, askOptions(options, 'suggestion'), 'suggestion')
       return text(r.info, !r.ok)
@@ -713,7 +732,7 @@ export function orchHint(o: Orchestra) {
   const state = 'read_state / write_state 读写本次运行的共享状态，并发节点靠它同步进展；'
   // 子对话（连同它的节点）多两样：和父对话通讯、改文件前先认领
   const bg =
-    (o.plans ? 'set_plan 列执行计划、随时更新进度，计划做完用 finish_plan 写总结；' : '') +
+    (o.plans ? 'set_plan 列执行计划、随时更新进度；' : '') +
     (o.canBeginEdit ? '改文件前先调用 begin_edit 开独立分支，开好后结束这一轮；' : '') +
     (o.canBackground ? 'run_background 把要跑很久的命令放到后台（跑完结果自动推回）；' : '')
   const child =

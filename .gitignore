@@ -25,3 +25,6 @@ logs/
 
 # 用户在对话里粘贴的截图和文件，面板拷进来给 Agent 看的，不进仓库
 /attachments/
+
+# e2e 跑完写出的计时报告（scripts/e2e.mjs）
+/e2e-timings.json

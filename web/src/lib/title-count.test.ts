@@ -7,7 +7,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { setLang, t } from '@shared/i18n'
 import {
-  countWorking,
+  countBusy,
   initialTitleState,
   nextTitleState,
   settleFor,
@@ -138,7 +138,16 @@ test('打开页面时已经有任务在跑，标题直接带数量', () => {
   assert.equal(settleFor(0, 3), 0, '0 → n 不等，免得刚启动的任务迟迟不显示')
 })
 
-test('只算 CLI 真的在处理的任务：预热、等下一句都不算', () => {
-  assert.equal(countWorking([{ working: true }, { working: false }, { working: true }]), 2)
-  assert.equal(countWorking([]), 0)
+test('标题计数和侧栏、行首转圈读同一个判定：两个在跑就是 2', () => {
+  type B = Parameters<typeof countBusy>[0][number]
+  const task = (over: Partial<B> = {}) => ({ status: 'running', steps: [], working: false, ...over }) as B
+  // 自己在跑
+  assert.equal(countBusy([task({ working: true }), task({ working: true })]), 2)
+  // 自己在跑 + 名下子对话在跑：不能只数 working，否则两行在转圈、标题写 (1)
+  assert.equal(countBusy([task({ working: true }), task({ childrenWorking: 2 })]), 2)
+  // 后台命令还在跑 / 工作流运行没跑完
+  assert.equal(countBusy([task({ runs: [{ status: 'running', endedAt: '' }] as B['runs'] })]), 1)
+  // 预热、等下一句、已完成、已停止都不算
+  assert.equal(countBusy([task(), task({ status: 'done' }), task({ status: 'stopped' })]), 0)
+  assert.equal(countBusy([]), 0)
 })

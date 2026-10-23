@@ -1,18 +1,31 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { setLang } from '../../shared/i18n.ts'
 import type { Task } from '../../shared/schema.ts'
-import { childHolds, childHoldsOf } from '../../shared/task.ts'
+import { childHoldText, childHolds, childHoldsOf } from '../../shared/task.ts'
 import {
   createWorktree,
   ensureWorktree,
+  isolateDeps,
+  missingDeps,
   mergeWorktree,
   releaseWorktree,
   removeWorktree,
+  sweepWorktrees,
   worktreeStatus,
 } from './worktree.ts'
 
@@ -35,6 +48,7 @@ function project(): string {
   writeFileSync(path.join(dir, 'README.md'), '# demo\n')
   mkdirSync(path.join(dir, 'node_modules', 'dep'), { recursive: true })
   writeFileSync(path.join(dir, 'node_modules', 'dep', 'index.js'), 'module.exports = 1\n')
+  writeFileSync(path.join(dir, 'node_modules', 'dep', 'package.json'), '{"name":"dep","version":"1.0.0"}\n')
   writeFileSync(path.join(dir, '.env'), 'TOKEN=dev\n')
   writeFileSync(path.join(dir, '.env.local'), 'SECRET=real\n')
   git(dir, 'init', '-q')
@@ -47,7 +61,7 @@ test('独立目录接上项目的依赖和环境文件，不复制密钥', async
   const repo = project()
   const wt = await createWorktree(repo, tid(), '测试任务')
   try {
-    // 依赖用链接，不复制一份
+    // 依赖各用一份独立副本（不是链接，见下面「依赖隔离」的用例）
     assert.ok(existsSync(path.join(wt.path, 'node_modules', 'dep', 'index.js')), '依赖能读到')
     // .env 复制，含密钥的 .env.local 不复制
     assert.equal(readFileSync(path.join(wt.path, '.env'), 'utf8').trim(), 'TOKEN=dev', '环境文件复制过去')
@@ -273,52 +287,301 @@ test('没合回原分支时即使别的条件都满足也不删独立分支', as
   }
 })
 
-test('父分支没推送到远端、远端还有新提交：都仍然算合回父分支、可以回收独立分支', async () => {
+/** 一个已经收口、没在跑的子对话任务：除了合并状态，childHolds 的其他条件都满足 */
+const idleChild = () =>
+  ({
+    status: 'running',
+    working: false,
+    requests: [],
+    parentAsks: [],
+    plans: [],
+    steps: [],
+  }) as unknown as Task
+
+/** 带本地远端的项目：远端先推一次，之后父分支要不要推由用例决定 */
+function projectWithRemote() {
   const repo = project()
   const branch = git(repo, 'rev-parse', '--abbrev-ref', 'HEAD').toString().trim()
   const tag = Math.random().toString(36).slice(2, 8)
-  // 配一个远端：项目推一次，之后父分支再往前走就不推了
   const remote = path.join(tmp, `remote-${tag}.git`)
   mkdirSync(remote, { recursive: true })
   execFileSync('git', ['init', '-q', '--bare', remote], { stdio: 'pipe' })
   git(repo, 'remote', 'add', 'origin', remote)
   git(repo, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`)
   git(remote, 'symbolic-ref', 'HEAD', `refs/heads/${branch}`)
-  // 另一个 clone 往远端推一个提交：远端的这个分支比父分支上的提交新
+  return { repo, branch, remote }
+}
+
+/** 子对话在自己的分支上提交一个文件，再合回父分支（合完只留着分支，目录先不删） */
+async function commitAndMerge(repo: string, name: string, file: string) {
+  const wt = await createWorktree(repo, tid(), name)
+  writeFileSync(path.join(wt.path, file), 'x\n')
+  git(wt.path, 'add', '-A')
+  git(wt.path, 'commit', '-qm', file)
+  await mergeWorktree(repo, wt, '合并', repo, true)
+  return wt
+}
+
+/**
+ * 完成判定只问一件事：子分支的提交有没有都进父对话所在的分支（worktreeStatus.merged）。
+ * 下面三个用例是同一件事的三种现实状态：父分支没推到远端、远端比父分支新、父分支上又合进了别的任务——
+ * 推送相关的状态一律不参与，都必须算彻底完成、独立分支可以回收。
+ */
+test('父分支没推送到远端：合回父分支就算彻底完成，可以回收独立分支', async () => {
+  const { repo, branch } = projectWithRemote()
+  const wt = await commitAndMerge(repo, '父分支没推', 'a.txt')
+  try {
+    // 父分支自己往前走一个提交，但不推：origin 上的同名分支落后于它
+    writeFileSync(path.join(repo, 'local.txt'), 'local\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', '父分支上的本地提交')
+    assert.ok(
+      Number(git(repo, 'rev-list', '--count', `origin/${branch}..HEAD`).toString().trim()) > 0,
+      '前提成立：父分支有远端没有的提交',
+    )
+    // ahead 只数「父分支..子分支」：父分支自己走多远都不影响
+    assert.deepEqual(await worktreeStatus(repo, wt), { exists: true, branch: true, ahead: 0, dirty: 0, merged: true })
+    assert.deepEqual(childHoldsOf(idleChild(), { merged: true }), [], '推送状态不参与完成判定')
+    assert.equal(await releaseWorktree(repo, wt, childHoldsOf(idleChild(), { merged: true })), '')
+    assert.ok(!existsSync(wt.path), '独立目录回收了')
+  } finally {
+    if (existsSync(wt.path)) await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('远端比父分支新：同样算合回父分支，不影响完成判定', async () => {
+  const { repo, branch, remote } = projectWithRemote()
+  const tag = Math.random().toString(36).slice(2, 8)
+  // 另一个 clone 往远端推一个提交：远端有父分支没有的提交，父分支也没跟上
   const other = path.join(tmp, `other-${tag}`)
   execFileSync('git', ['clone', '-q', remote, other], { stdio: 'pipe' })
   writeFileSync(path.join(other, 'remote.txt'), 'remote\n')
   git(other, 'add', '-A')
   git(other, 'commit', '-qm', '远端上的提交')
   git(other, 'push', '-q', 'origin', `HEAD:refs/heads/${branch}`)
-  const wt = await createWorktree(repo, tid(), '远端无关')
+  const wt = await commitAndMerge(repo, '远端更新', 'b.txt')
   try {
-    // 子对话的改动合回父分支（父分支的这个提交不推远端）
-    writeFileSync(path.join(wt.path, 'b.txt'), 'b\n')
-    git(wt.path, 'add', '-A')
-    git(wt.path, 'commit', '-qm', 'b')
-    await mergeWorktree(repo, wt, '合并', repo, true)
     git(repo, 'fetch', '-q', 'origin')
-    // 两种情形同时成立：父分支有远端没有的提交，远端也有父分支没有的提交
     assert.ok(
-      Number(git(repo, 'rev-list', '--count', `origin/${branch}..HEAD`).toString().trim()) > 0,
-      '父分支没推上去',
+      Number(git(repo, 'rev-list', '--count', `HEAD..origin/${branch}`).toString().trim()) > 0,
+      '前提成立：远端有父分支没有的提交',
     )
-    assert.ok(Number(git(repo, 'rev-list', '--count', `HEAD..origin/${branch}`).toString().trim()) > 0, '远端有更新')
-    // 合并判定只看本地比较：推没推、远端有没有新提交都不参与
     assert.deepEqual(await worktreeStatus(repo, wt), { exists: true, branch: true, ahead: 0, dirty: 0, merged: true })
-    const tk = {
-      status: 'running' as const,
-      working: false,
-      requests: [],
-      parentAsks: [],
-      plans: [],
-      steps: [],
-    } as unknown as Task
-    assert.deepEqual(childHoldsOf(tk, { merged: true }), [], '合回父分支就算彻底完成')
-    assert.equal(await releaseWorktree(repo, wt, childHoldsOf(tk, { merged: true })), '')
+    assert.deepEqual(childHoldsOf(idleChild(), { merged: true }), [], '远端有新提交也不影响完成判定')
+    assert.equal(await releaseWorktree(repo, wt, childHoldsOf(idleChild(), { merged: true })), '')
     assert.ok(!existsSync(wt.path), '独立目录回收了')
   } finally {
     if (existsSync(wt.path)) await removeWorktree(repo, wt, true).catch(() => {})
   }
+})
+
+test('父分支上又合进了别的任务的提交：子分支仍算已合回，可以回收', async () => {
+  const repo = project()
+  const wt = await commitAndMerge(repo, '别的任务', 'c.txt')
+  try {
+    // 合完之后父分支上又有别的子对话的改动合进来：子分支的提交仍在父分支的历史里
+    writeFileSync(path.join(repo, 'other.txt'), 'other\n')
+    git(repo, 'add', '-A')
+    git(repo, 'commit', '-qm', '别的任务合进来的提交')
+    assert.deepEqual(await worktreeStatus(repo, wt), { exists: true, branch: true, ahead: 0, dirty: 0, merged: true })
+    assert.deepEqual(childHoldsOf(idleChild(), { merged: true }), [])
+    assert.equal(await releaseWorktree(repo, wt, childHoldsOf(idleChild(), { merged: true })), '')
+    assert.ok(!existsSync(wt.path), '独立目录回收了')
+  } finally {
+    if (existsSync(wt.path)) await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('子分支还有没合回父分支的提交：拦住，原因里不提推送', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '差一个提交')
+  writeFileSync(path.join(wt.path, 'x.txt'), 'x\n')
+  git(wt.path, 'add', '-A')
+  git(wt.path, 'commit', '-qm', '没合回去的提交')
+  try {
+    const st = await worktreeStatus(repo, wt)
+    assert.equal(st.merged, false, '还有没合回父分支的提交')
+    assert.equal(st.ahead, 1, 'ahead 只数父分支..子分支，正好一个')
+    assert.deepEqual(childHoldsOf(idleChild(), { merged: false }), ['unmerged'], '只差合并这一条')
+    const why = await releaseWorktree(repo, wt, childHoldsOf(idleChild(), { merged: false }))
+    assert.match(why, /独立分支还没合回原分支/, '说清为什么还留着')
+    // 门禁和文案都只针对父对话所在的分支：不出现推送、远端、别的分支
+    for (const text of [why, childHoldText(['unmerged'])])
+      assert.doesNotMatch(text, /推送|远端|push|remote|origin|其他分支/i)
+    assert.ok(existsSync(wt.path), '拦住时目录保留')
+    assert.ok(existsSync(path.join(wt.path, 'x.txt')), '改动文件还在')
+  } finally {
+    await removeWorktree(repo, wt, true).catch(() => {})
+  }
+})
+
+test('依赖隔离：独立目录的依赖是各自的一份，在里面删依赖不影响项目', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '依赖隔离')
+  try {
+    const mine = path.join(wt.path, 'node_modules')
+    // 链接共用时，子对话按自己那份 package.json 修剪依赖，剪掉的正是项目里的真目录（2026-10 的事故）
+    assert.equal(lstatSync(mine).isSymbolicLink(), false, 'node_modules 不是链接')
+    assert.notEqual(realpathSync(mine), realpathSync(path.join(repo, 'node_modules')), '和项目那份是两个目录')
+    // 模拟 npm 在独立目录里修剪依赖
+    rmSync(mine, { recursive: true, force: true })
+    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目那份依赖还在')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖隔离：早先开的工作目录里依赖是链接，准备时换成独立的一份', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '链接迁移')
+  try {
+    const mine = path.join(wt.path, 'node_modules')
+    // 旧版本开出来的目录长这样：node_modules 是指向项目的链接
+    rmSync(mine, { recursive: true, force: true })
+    symlinkSync(path.join(repo, 'node_modules'), mine, process.platform === 'win32' ? 'junction' : 'dir')
+    await isolateDeps(wt.path, repo)
+    assert.equal(lstatSync(mine).isSymbolicLink(), false, '链接换成了独立副本')
+    assert.ok(existsSync(path.join(mine, 'dep', 'index.js')), '依赖还在')
+    // 换完之后在副本里删东西，项目那份不动
+    rmSync(path.join(mine, 'dep'), { recursive: true, force: true })
+    assert.ok(existsSync(path.join(repo, 'node_modules', 'dep', 'index.js')), '项目那份没被删')
+  } finally {
+    await removeWorktree(repo, wt, true)
+  }
+})
+
+test('依赖隔离：声明了但没装上的包列得出来，好在日志里直接说清少了什么', async () => {
+  const repo = project()
+  writeFileSync(path.join(repo, 'package.json'), JSON.stringify({ dependencies: { dep: '1', gone: '1' } }))
+  assert.deepEqual(await missingDeps(repo), ['gone'])
+  // 没有 package.json 的目录不算异常：别的目录、非 node 项目都这样
+  assert.deepEqual(await missingDeps(path.join(tmp, '拿不到')), [])
+})
+
+/** 在指定目录下开一个独立工作目录（createWorktree 的位置固定在数据目录，清理用例要自己指定） */
+function worktreeAt(root: string, repo: string, name: string) {
+  const dir = path.join(root, name)
+  const branch = `agent-panel/${name}`
+  git(repo, 'worktree', 'add', '-q', '-b', branch, dir, 'HEAD')
+  return { dir, branch }
+}
+
+const branchAlive = (repo: string, branch: string) => git(repo, 'branch', '--list', branch).toString().trim() !== ''
+
+/** 任务记录：默认已收口、没在跑，改动都已合回原分支 */
+const doneInfo = (over: Partial<{ done: boolean; working: boolean; projectPath: string; branch: string }> = {}) => ({
+  done: true,
+  working: false,
+  projectPath: '',
+  branch: '',
+  baseBranch: '',
+  ...over,
+})
+
+test('守护清理：git 注册表外的残留目录被清（面板重启、prune 之后留下的）', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir } = worktreeAt(root, repo, 'orphan1')
+  // 真实残留长这样：注册记录已经被 prune 掉，目录还在，里面的 .git 指向已经不存在的路径
+  git(repo, 'worktree', 'remove', '--force', dir)
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(path.join(dir, '.git'), `gitdir: ${path.join(repo, '.git', 'worktrees', 'orphan1')}\n`)
+  writeFileSync(path.join(dir, 'README.md'), '# 残留\n')
+  // minAgeMs: 0：测试里刚建出来的目录也要参与判定（真实运行默认 10 分钟内不动）
+  const res = await sweepWorktrees({ root, minAgeMs: 0, taskInfo: async () => doneInfo() })
+  assert.deepEqual(
+    res.removed.map((i) => i.taskId),
+    ['orphan1'],
+    '注册表外的残留清掉了',
+  )
+  assert.ok(!existsSync(dir), '目录被删掉')
+  assert.deepEqual(res.failed, [])
+})
+
+test('守护清理：已合并且任务已收口的被清掉目录和分支', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir, branch } = worktreeAt(root, repo, 'merged1')
+  const { dir: goneDir, branch: goneBranch } = worktreeAt(root, repo, 'norecord1')
+  const res = await sweepWorktrees({
+    root,
+    minAgeMs: 0,
+    // 一个任务已收口，另一个任务记录已经不在了（面板重启、记录被删后没人收）
+    taskInfo: async (id) => (id === 'norecord1' ? null : doneInfo({ branch })),
+  })
+  assert.deepEqual(res.removed.map((i) => i.taskId).sort(), ['merged1', 'norecord1'])
+  assert.ok(!existsSync(dir), '已收口的目录被清掉')
+  assert.ok(!branchAlive(repo, branch), '对应的 agent-panel 分支也删了')
+  assert.ok(!existsSync(goneDir), '记录不在了的目录也清掉')
+  assert.ok(!branchAlive(repo, goneBranch))
+})
+
+test('守护清理：有未合提交、任务在跑、任务没收口的一律不碰', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const unmerged = worktreeAt(root, repo, 'unmerged1')
+  const busy = worktreeAt(root, repo, 'busy1')
+  const pending = worktreeAt(root, repo, 'pending1')
+  writeFileSync(path.join(unmerged.dir, 'x.txt'), 'x\n')
+  git(unmerged.dir, 'add', '-A')
+  git(unmerged.dir, 'commit', '-qm', '还没合回原分支的改动')
+  const res = await sweepWorktrees({
+    root,
+    minAgeMs: 0,
+    taskInfo: async (id) => {
+      if (id === 'unmerged1') return doneInfo({ branch: unmerged.branch })
+      if (id === 'busy1') return doneInfo({ working: true, branch: busy.branch })
+      return doneInfo({ done: false, branch: pending.branch })
+    },
+  })
+  assert.deepEqual(res.removed, [], '一个都没清')
+  assert.ok(existsSync(unmerged.dir), '还有没合回原分支的提交，目录保留')
+  assert.ok(branchAlive(repo, unmerged.branch), '分支也保留')
+  assert.ok(existsSync(busy.dir), '任务还在跑，目录保留')
+  assert.ok(existsSync(pending.dir), '任务还没收口，目录保留')
+  for (const [dir] of [unmerged, busy, pending].map((w) => [w.dir])) git(repo, 'worktree', 'remove', '--force', dir)
+})
+
+test('守护清理：dry-run 只出清单，目录和分支都不动', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir, branch } = worktreeAt(root, repo, 'dry1')
+  const res = await sweepWorktrees({ root, dryRun: true, minAgeMs: 0, taskInfo: async () => doneInfo({ branch }) })
+  assert.equal(res.dryRun, true)
+  assert.deepEqual(
+    res.removed.map((i) => i.taskId),
+    ['dry1'],
+    '清单里有它',
+  )
+  assert.ok(existsSync(dir), '目录没删')
+  assert.ok(branchAlive(repo, branch), '分支没删')
+  git(repo, 'worktree', 'remove', '--force', dir)
+})
+
+test('删除结果以实际状态为准：目录已经手动删掉时仍算回收成功', async () => {
+  const repo = project()
+  const wt = await createWorktree(repo, tid(), '已手动删')
+  // 用户自己删了目录：git worktree remove 会报「不是工作树」，但那不算失败
+  rmSync(wt.path, { recursive: true, force: true })
+  assert.equal(await removeWorktree(repo, wt, true), '', '目录和分支都清干净了')
+  assert.ok(!branchAlive(repo, wt.branch), '分支回收了')
+})
+
+test('守护清理：core.worktree 被写成别的平台路径时也不误清（走注册文件兜底）', async () => {
+  const repo = project()
+  const root = mkdtempSync(path.join(tmp, 'sweep-'))
+  const { dir, branch } = worktreeAt(root, repo, 'broken1')
+  writeFileSync(path.join(dir, 'x.txt'), 'x\n')
+  git(dir, 'add', '-A')
+  git(dir, 'commit', '-qm', '还没合回原分支的改动')
+  // 本机真实遇到过：WSL 里留下的 core.worktree=/mnt/... 让 git worktree list 和 rev-list 整个失败
+  const cfg = readFileSync(path.join(repo, '.git', 'config'), 'utf8')
+  writeFileSync(path.join(repo, '.git', 'config'), `${cfg}\n[core]\n\tworktree = /mnt/nope\n`)
+  const res = await sweepWorktrees({ root, minAgeMs: 0, taskInfo: async () => doneInfo({ branch }) })
+  assert.deepEqual(res.removed, [], '一个都没清')
+  assert.ok(existsSync(dir), '还有没合回的提交，目录保留')
+  assert.ok(
+    res.kept.some((k) => k.taskId === 'broken1' && k.why.includes('没合回原分支')),
+    '按注册文件读到分支状态，没把目录当成残留',
+  )
 })
