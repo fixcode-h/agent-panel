@@ -2241,6 +2241,74 @@ function spreadSteps(t: Task) {
   }
 }
 
+/** 示例对话派出的子任务：输入框上方的「子任务」栏、列表和只读窗口都要有东西看 */
+function demoHelper(task: Task, agent: { id: string; name: string }) {
+  const end = task.messages.at(-1)?.at ?? new Date().toISOString()
+  const start = new Date(Date.parse(end) - 8_600).toISOString()
+  // 这个对话在模拟执行时已经派过子角色（@chat/sub/h1、h2），取一个没被占用的编号：
+  // 用同一个 id 会跟已有的子任务撞在一起，列表里只显示前一个同 id 的标题
+  const used = new Set(task.steps.map((s) => s.id))
+  const id = (() => {
+    let i = 1
+    while (used.has(`@chat/sub/h${i}`)) i++
+    return `@chat/sub/h${i}`
+  })()
+  const title = '核对角标的订阅时机'
+  const result = '角标在首次渲染时读了一次购物车快照，加购后没有订阅 `cart:changed`。问题在 `CartBadge.tsx`。'
+  task.steps.push({
+    id,
+    parentId: '@chat',
+    slot: 'sub',
+    round: 0,
+    workflowId: '',
+    flowId: '',
+    nodeId: '',
+    kind: 'agent',
+    title,
+    agentId: agent.id,
+    status: 'done',
+    startedAt: start,
+    endedAt: end,
+    spentMs: 0,
+    waitMs: 0,
+    waitStartedAt: '',
+    output: result,
+    verdict: '',
+    rounds: 0,
+    interrupted: false,
+    command: [],
+    changes: [],
+    runId: 1,
+  })
+  const at = new Date(Date.parse(end) - 8_000).toISOString()
+  // 子任务自己的对话（父对话里收进栏里，不在消息流平铺）
+  const own = {
+    id: 'demo-' + crypto.randomUUID(),
+    role: 'agent' as const,
+    agentId: agent.id,
+    step: id,
+    text: result,
+    tools: [],
+    at: end,
+  }
+  // 派出它的那条系统消息：消息流里不画卡片，折叠行上仍写着「派出 1 个子任务」
+  const spawned = {
+    id: 'demo-' + crypto.randomUUID(),
+    role: 'system' as const,
+    agentId: '',
+    step: '',
+    text: '「' + task.title + '」派出 1 个子角色：' + title,
+    tools: [],
+    at,
+    spawned: [id],
+  }
+  const last = task.messages
+    .map((m, i) => (m.role === 'agent' ? i : -1))
+    .filter((i) => i >= 0)
+    .at(-1)
+  task.messages.splice(last ?? task.messages.length, 0, spawned, own)
+}
+
 /** 示例任务：用模拟执行一次性跑完，再把时间往前挪，看起来像之前做过的任务 */
 /** 演示里的执行计划：一份做完带总结的，一份正在做（一步在等端到端测试，一步展开着子步骤） */
 function demoPlans(task: Task) {
@@ -2368,6 +2436,7 @@ async function seedTasks(d: Db) {
     await done
     demoPlans(task)
     back(task, 60 * 3)
+    demoHelper(task, fe)
   }
   if (shop) {
     const { task, done } = createTask(

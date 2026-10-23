@@ -1,10 +1,10 @@
 /**
- * 从文件树拖到输入框时插入的引用文字：路径前面没有空隙时补一个空格，文件夹带结尾的斜杠。
- * 这几条错了会让引用和前一个字粘在一起，Agent 读不出来。
+ * 从文件树拖到输入框：插入的引用文字（路径前面没有空隙时补一个空格，文件夹带结尾的斜杠），
+ * 以及「按住多久才算拖动」。这几条错了会让引用和前一个字粘在一起、或者短按就被当成拖动。
  */
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { insertFileRef } from '@/lib/fileDrag'
+import { insertFileRef, longPressed, LONG_PRESS_MS } from '@/lib/fileDrag'
 
 function editor(text = '') {
   const state = { text, caret: text.length, focused: false }
@@ -52,4 +52,12 @@ test('insertFileRef：插在光标处，不动后面的内容', () => {
   ed.state.caret = 2
   insertFileRef(ed, { path: 'a.ts', kind: 'file' })
   assert.equal(ed.state.text, '开头 @a.ts 结尾')
+})
+
+test('longPressed：按住不到 300ms 算单击，到点和更久才开始拖动', () => {
+  assert.equal(LONG_PRESS_MS, 300)
+  assert.equal(longPressed(0), false)
+  assert.equal(longPressed(LONG_PRESS_MS - 1), false)
+  assert.equal(longPressed(LONG_PRESS_MS), true)
+  assert.equal(longPressed(LONG_PRESS_MS + 500), true)
 })

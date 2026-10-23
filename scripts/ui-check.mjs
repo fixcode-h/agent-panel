@@ -134,6 +134,40 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
+  {
+    const openTask = async () => {
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    // 折叠行「派出 3 个子任务」也是一个按钮，入口按钮的 aria-label 正好是「子任务」，按精确名字定位它
+    const bar = p.getByRole('button', { name: '子任务', exact: true })
+    if (!(await bar.count())) errors.push('子任务栏：输入框上方没有「子任务」入口')
+    else {
+      if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
+        errors.push('子任务栏：消息流里还画着子任务卡片')
+      await bar.first().click()
+      // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
+      await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.60s'])
+      await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+      await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(300)
+      // 窄窗口：入口和输入框上方那一行不能被挤坏（运行中的块在窄屏收进按钮里）
+      await p.setViewportSize({ width: 900, height: 800 })
+      await p.reload()
+      await openTask()
+      if (!(await p.getByRole('button', { name: '子任务', exact: true }).count()))
+        errors.push('子任务栏：窄窗口里入口不见了')
+      await check(p, '子任务-窄窗口')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.reload()
+      await openTask()
+    }
+  }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()
@@ -301,6 +335,54 @@ try {
   }
   if (!(await p.getByPlaceholder('查找文件').count())) errors.push('任务：没有文件搜索框')
   if (!(await p.getByLabel('刷新文件').first().count())) errors.push('任务：没有「刷新文件」')
+  // 文件树里的文件左键长按拖到输入框：按住够久才拖起来，松手插入「@相对路径」纯文本，不当附件上传；
+  // 拖动之后的补发 click 要压掉（不能顺手把文件打开），短按仍然是打开文件
+  {
+    const row = p.locator('button[data-file-row][data-path="package.json"]').first()
+    const input = p.locator('#follow-up')
+    await input.fill('')
+    const rb = await row.boundingBox()
+    const ib = await input.boundingBox()
+    if (!rb || !ib) errors.push('长按拖入：找不到文件行或输入框')
+    else {
+      await p.mouse.move(rb.x + rb.width / 2, rb.y + rb.height / 2)
+      await p.mouse.down()
+      await p.waitForTimeout(420)
+      const tx = ib.x + ib.width / 2
+      const ty = ib.y + ib.height / 2
+      for (let i = 1; i <= 12; i++) {
+        await p.mouse.move(rb.x + ((tx - rb.x) * i) / 12, rb.y + ((ty - rb.y) * i) / 12)
+        await p.waitForTimeout(25)
+      }
+      await p.mouse.up()
+      await p.waitForTimeout(300)
+      const text = (await input.textContent()) ?? ''
+      if (!text.includes('@package.json')) errors.push(`长按拖入：输入框里没有引用（${JSON.stringify(text)}）`)
+      if (await input.locator('[data-chip]').count()) errors.push('长按拖入：引用被做成了附件卡片')
+      if (await p.getByRole('dialog').count()) errors.push('长按拖入：拖动把文件也打开了')
+      // 行首的 @ 用等宽字体造形，不能是「图标和文字叠在一起」那个坏字形
+      const atW = await p.evaluate(() => {
+        const el = document.querySelector('#follow-up')
+        const node = el?.firstChild
+        if (!node || node.nodeType !== Node.TEXT_NODE) return 0
+        const r = document.createRange()
+        r.setStart(node, 0)
+        r.setEnd(node, 1)
+        return r.getBoundingClientRect().width
+      })
+      if (atW < 6 || atW > 11) errors.push(`长按拖入：@ 的宽度是 ${atW}，不像正常等宽字形`)
+      await check(p, '任务-长按拖入引用', ['@package.json'])
+      // 短按还是打开文件
+      await row.click()
+      await p
+        .getByRole('dialog')
+        .first()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push('长按拖入：短按没有打开文件'))
+      await p.keyboard.press('Escape')
+      await input.fill('')
+    }
+  }
   // 从外面把文件拖到消息区（不是输入框）也算引入到要求里：拖入时整页提示，松开后进附件条和内联卡片；
   // 只拖文字时不拦截浏览器默认行为
   {
@@ -517,6 +599,16 @@ try {
   await check(p, 'Skills与命令', ['commit-message', 'code-review'])
   await p.getByRole('radio', { name: '自带 Skill' }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
+  // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
+  if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
+  await p.getByRole('button', { name: '更新全部' }).click()
+  await p
+    .getByText('和自带的不同')
+    .first()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
+  if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
+  await check(p, '自带Skill-一键更新', ['已安装'])
   await p.getByRole('radio', { name: 'Skill', exact: true }).click()
   await p.getByText('commit-message', { exact: true }).first().click()
   await check(p, 'Skill编辑', ['复制给别的 Agent', '保存'])
