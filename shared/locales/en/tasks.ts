@@ -328,6 +328,7 @@ export const EN_TASKS: Record<string, string> = {
   本对话: 'This chat',
   子任务与子对话: 'Subagents and subchats',
   费用: 'Cost',
+  'CLI 上报费用': 'Cost reported by CLI',
   '{name} 的待办': "{name}'s to-dos",
   上下文占用: 'Context usage',
   '命中 {n}%': '{n}% hit',

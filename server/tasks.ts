@@ -117,7 +117,7 @@ import { childTurnSettle, markWrapUp, openPlan, settleWait, waitNote, type WrapU
 import { detectVcs } from './projects-analyze.ts'
 import type { PlanWait } from '../shared/schema.ts'
 import { importTask, parseTaskExport } from '../shared/task-export.ts'
-import { collisions, createClaims, normClaimPath, overlaps } from './claims.ts'
+import { childFilesInfo, collisions, createClaims, normClaimPath, scopeOverlaps } from './claims.ts'
 import { createGate, createSlotPool, releaseIfSame, reserveOnce } from './slots.ts'
 
 /** 发布全局规则的命令：/rule 或 /rules */
@@ -187,9 +187,9 @@ export function tasksApi(deps: {
   const claims = createClaims()
   /**
    * 独立分支模式下父对话划给子对话的改文件范围（create_conversation 的 files）。
-   * 共用目录下的 files 由 claims 认领；独立分支里各改各的文件，认领没有消费者，
-   * 但要靠这份范围在创建时就看出「两个子对话要改同一批文件」：两个分支先后改同一个文件时
-   * git 常常能自动合上、不报冲突，谁也发现不了，等发现时已经盖掉了。
+   * 共用目录下的 files 由 claims 认领；独立分支里不认领，两个子对话可以同时改同一个文件，
+   * 各在自己的 worktree 里改、互不影响。这份范围只用来在创建时提示「两边都改了这些文件」，
+   * 合并回父对话分支时按 git merge 处理，真冲突会撤回并交回子对话，所以它只是信息、不是限制。
    */
   const scopes = new Map<string, Map<string, { title: string; files: string[] }>>()
   /**
@@ -1983,27 +1983,29 @@ export function tasksApi(deps: {
           // 标题只在创建时由父对话的 Agent 分析后给一次，后续追加消息不再改标题；
           // 只有直接调接口没给时才退回用户消息开头
           if (title.trim()) draft.title = title.trim().slice(0, 80)
-          // 父对话划好的范围先替它认领：别的子对话改这些文件要等它做完
-          const got = files?.length
-            ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
-            : { granted: [], held: [] }
-          // 独立分支里认领没有消费者，但父对话划的范围有用：和兄弟子对话的范围、已改文件重叠时，
-          // 两个分支先后改同一个文件，git 合并往往能自动合上、不报冲突，等于悄悄把对方的改动盖掉
-          const both: { path: string; with: string }[] = []
+          // 共用目录模式：父对话划好的范围先替它认领，别的子对话改这些文件要等它做完
+          // 独立分支模式不认领：两个子对话可以同时改同一个文件，各在自己的 worktree 里改互不影响
+          const sharedDir = project.childIsolation !== 'worktree'
+          const got =
+            sharedDir && files?.length
+              ? claims.claim(entry.task.id, { taskId: subId, title: draft.title }, files)
+              : { granted: [], held: [] }
+          let both: { path: string; with: string }[] = []
           const round = (files ?? []).map(normClaimPath).filter(Boolean)
-          if (round.length && project.childIsolation === 'worktree') {
+          if (round.length && !sharedDir) {
             const mine = scopes.get(entry.task.id) ?? scopes.set(entry.task.id, new Map()).get(entry.task.id)!
+            const others: { title: string; files: string[] }[] = []
             for (const [otherId, s] of mine) {
               const other = live.get(otherId)?.task
               if (!other || !isolated(other)) {
                 mine.delete(otherId)
                 continue
               }
-              for (const a of round) for (const b of s.files) if (overlaps(a, b)) both.push({ path: a, with: s.title })
+              others.push({ title: s.title, files: s.files })
               // 兄弟没声明范围、但已经改了这些文件：同样算重叠
-              for (const c of other.changes)
-                for (const a of round) if (overlaps(a, c.path)) both.push({ path: a, with: other.title })
+              others.push({ title: other.title, files: other.changes.map((c) => c.path) })
             }
+            both = scopeOverlaps(round, others)
             mine.set(subId, { title: draft.title, files: round })
           }
           const sub = await store.create({ ...draft, id: subId })
@@ -2018,13 +2020,12 @@ export function tasksApi(deps: {
               wait
                 ? `已新建子对话「${sub.title}」。同时执行的子对话已经到上限（${limit} 个），它在排队，前面的做完一个就开始`
                 : `已新建子对话「${sub.title}」，它在后台执行，完成后会回报到这里`,
-              got.granted.length ? `已替它认领：${got.granted.join('、')}` : '',
-              got.held.length
-                ? `这些已经归别的子对话，没有认领：${got.held.map((h) => `${h.path}（「${h.by}」）`).join('、')}。让它等那边做完再改，或者把这部分交给那个子对话`
-                : '',
-              both.length
-                ? `这些文件和别的子对话重叠了：${[...new Set(both.map((x) => `${x.path}（「${x.with}」）`))].join('、')}。独立分支里两边先后改同一个文件时 git 常常能自动合上、不报冲突，等于悄悄盖掉对方的改动；请拆开范围，或者在 message 里说清各自改哪一部分，合并后核对内容`
-                : '',
+              ...childFilesInfo({
+                isolation: sharedDir ? 'claim' : 'worktree',
+                granted: got.granted,
+                held: got.held,
+                both,
+              }),
             ]
               .filter(Boolean)
               .join('\n'),

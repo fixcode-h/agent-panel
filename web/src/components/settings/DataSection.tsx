@@ -113,7 +113,16 @@ export function DataSection() {
             {usage?.dir ?? '…'}
           </span>
           {!demo && (
-            <Button variant="ghost" size="sm" onClick={() => api.revealData().catch((e) => toast.error(e.message))}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                api
+                  .revealData()
+                  .then((r) => toast.success(t('已在文件夹中打开：{dir}', { dir: r.dir })))
+                  .catch((e) => toast.error((e as Error).message))
+              }
+            >
               <FolderOpen className="h-3.5 w-3.5" />
               {t('打开')}
             </Button>
@@ -142,7 +151,16 @@ export function DataSection() {
             >
               {usage.logs.current || usage.logs.dir}
             </span>
-            <Button variant="ghost" size="sm" onClick={() => api.revealLogs().catch((e) => toast.error(e.message))}>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                api
+                  .revealLogs()
+                  .then((r) => toast.success(t('已在文件夹中打开：{dir}', { dir: r.dir })))
+                  .catch((e) => toast.error((e as Error).message))
+              }
+            >
               <FolderOpen className="h-3.5 w-3.5" />
               {t('打开')}
             </Button>

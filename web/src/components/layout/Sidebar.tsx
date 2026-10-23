@@ -413,7 +413,11 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
   }
   const reveal = (p: Project) => {
     if (!p.path) return toast.error(t('这个项目还没有选择本地目录'))
-    api.revealProject(p.id).catch((e) => toast.error((e as Error).message))
+    // 成功也给一句：资源管理器可能开在浏览器后面，没有反馈时用户只能看到「点了没反应」
+    api
+      .revealProject(p.id)
+      .then((r) => toast.success(t('已在文件夹中打开：{dir}', { dir: r.dir })))
+      .catch((e) => toast.error((e as Error).message))
   }
 
   const body = (narrow: boolean) => (

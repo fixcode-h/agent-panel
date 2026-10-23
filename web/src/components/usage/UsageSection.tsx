@@ -15,7 +15,7 @@ import {
   type UsageGrain,
   type UsageReport,
 } from '@shared/usage'
-import { DEFAULT_PRICING_MODEL, PRICING_MODELS, formatMoney, pricingModel, usageCost } from '@shared/pricing'
+import { DEFAULT_PRICING_MODEL, PRICING_MODELS, formatMoney, pricingModel, tierCost, usageCost } from '@shared/pricing'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -146,7 +146,14 @@ export function UsageSection({
 
   const model = pricingModel(pricingId)
   const currency = model?.currency ?? 'CNY'
-  const cost = usageCost(total, model)
+  // 聚合层已经按轮把 token 拆成峰 / 谷两组，两边各自乘单价后相加
+  const cost = usageCost(total, model, total)
+  // 官方分时段定价的模型才显示峰谷明细；不支持的模型只有单一价
+  const tiered = !!model?.offPeakPrices
+  const peakCost = tierCost(total.peak, model, 'peak')
+  const offPeakCost = tierCost(total.offPeak, model, 'offPeak')
+  /** 一档的 token 量（输入 + 输出，和表格口径一致） */
+  const tierTokens = (x: { inputTokens: number; outputTokens: number }) => x.inputTokens + x.outputTokens
   const shown = periodLabel(selected)
   const onToday = todayStart.getTime() === selected.start.getTime()
   const fellBack = fallback && !picked && !onToday && rows.length > 0
@@ -308,7 +315,7 @@ export function UsageSection({
                 <span className="block">
                   {model
                     ? t(
-                        '按 {model} 官方 API 单价折算（元 / 百万 token，{date}）：输入 {input}、输出 {output}、缓存命中 {hit}、缓存写入 {write}。官方分高峰和空闲两档，这里按高峰价估算。缓存写入官方没有单列，按未命中输入价计。',
+                        '按 {model} 官方 API 单价折算（元 / 百万 token，{date}）：输入 {input}、输出 {output}、缓存命中 {hit}、缓存写入 {write}。官方分高峰、空闲两档，空闲价是高峰价的一半；北京时间周一至周五 9:00-12:00、14:00-18:00 为高峰，其余时段（含周末、法定节假日）为空闲。每一轮按它开始的时间归档。缓存写入官方没有单列，按未命中输入价计。',
                         {
                           model: model.label,
                           date: model.priceAt,
@@ -340,6 +347,26 @@ export function UsageSection({
               {model ? t('按 {model} 单价估算', { model: model.label }) : t('未配置单价')}
               {total.turns > 0 && ` · ${t('共 {n} 轮', { n: num(total.turns) })}`}
             </div>
+            {/* 峰谷明细：只占一行小字，不撑宽表格；分时段定价的模型才显示 */}
+            {tiered && total.turns > 0 && (
+              <div
+                className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.6875rem] text-subtle"
+                data-usage-tiers
+              >
+                <span title={t('高峰时段：北京时间周一至周五 9:00-12:00、14:00-18:00')}>
+                  {t('高峰 {tokens} · {cost}', {
+                    tokens: formatTokens(tierTokens(total.peak)),
+                    cost: peakCost === null ? t('未配置单价') : formatMoney(peakCost, currency),
+                  })}
+                </span>
+                <span title={t('空闲时段：其余时间，含周末和法定节假日')}>
+                  {t('空闲 {tokens} · {cost}', {
+                    tokens: formatTokens(tierTokens(total.offPeak)),
+                    cost: offPeakCost === null ? t('未配置单价') : formatMoney(offPeakCost, currency),
+                  })}
+                </span>
+              </div>
+            )}
           </div>
           <div className="grid flex-1 basis-[420px] grid-cols-3 gap-x-6 gap-y-2 sm:grid-cols-6">
             <Stat label={t('输入')} value={total.inputTokens} />
@@ -375,10 +402,17 @@ export function UsageSection({
                 <th className="hidden px-2.5 py-2 text-right font-medium sm:table-cell">{t('缓存写入')}</th>
                 <th
                   className="px-2.5 py-2 text-right font-medium whitespace-nowrap"
-                  title={t('{unit} / 百万 token · {model} 高峰时段单价', {
-                    unit: currency === 'CNY' ? t('元') : t('美元'),
-                    model: model?.label ?? '',
-                  })}
+                  title={
+                    tiered
+                      ? t('{unit} / 百万 token · {model} 按峰谷分档计价', {
+                          unit: currency === 'CNY' ? t('元') : t('美元'),
+                          model: model?.label ?? '',
+                        })
+                      : t('{unit} / 百万 token · {model} 高峰时段单价', {
+                          unit: currency === 'CNY' ? t('元') : t('美元'),
+                          model: model?.label ?? '',
+                        })
+                  }
                 >
                   {t('费用')}
                 </th>
@@ -390,7 +424,7 @@ export function UsageSection({
             </thead>
             <tbody>
               {rows.map((b) => {
-                const dayCost = usageCost(b, model)
+                const dayCost = usageCost(b, model, b)
                 return (
                   <tr key={b.key} className="border-b last:border-b-0 hover:bg-sel/30">
                     <Day day={new Date(b.start)} />
@@ -410,7 +444,17 @@ export function UsageSection({
                     </td>
                     <td
                       className="px-2.5 py-1.5 text-right font-mono tabular-nums"
-                      title={dayCost === null ? t('未配置单价') : formatMoney(dayCost, currency)}
+                      title={
+                        dayCost === null
+                          ? t('未配置单价')
+                          : tiered
+                            ? t('{total}（高峰 {peak} · 空闲 {offPeak}）', {
+                                total: formatMoney(dayCost, currency),
+                                peak: formatMoney(tierCost(b.peak, model, 'peak') ?? 0, currency),
+                                offPeak: formatMoney(tierCost(b.offPeak, model, 'offPeak') ?? 0, currency),
+                              })
+                            : formatMoney(dayCost, currency)
+                      }
                     >
                       {dayCost === null ? (
                         <span className="text-subtle">{t('未配置单价')}</span>
@@ -455,7 +499,10 @@ export function UsageSection({
                 >
                   {formatTokens(total.cacheWriteTokens)}
                 </td>
-                <td className="px-2.5 py-2 text-right font-mono tabular-nums">
+                <td
+                  className="px-2.5 py-2 text-right font-mono tabular-nums"
+                  title={cost === null ? t('未配置单价') : formatMoney(cost, currency)}
+                >
                   {cost === null ? <span className="text-subtle">{t('未配置单价')}</span> : formatMoney(cost, currency)}
                 </td>
                 <td
