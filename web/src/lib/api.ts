@@ -363,6 +363,8 @@ export const api = {
         activity?: ChildActivity
         /** 用户标记了「解决」：列表归到「已完成」并带标记 */
         resolved?: boolean
+        /** 停下的原因（空字符串表示没记）：行上写清是谁结束的 */
+        stopReason?: Task['stopReason'] | ''
       }[]
     >(`/tasks/${id}/children`),
   stopChildren: (id: string) => request<{ stopped: number }>(`/tasks/${id}/children/stop`, json('POST', {})),

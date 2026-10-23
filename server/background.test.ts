@@ -223,3 +223,40 @@ test('启动时清理上次遗留的记录：running / queued 都置终态，不
   // 已经终态的不再改一遍
   assert.equal(bg.recover(stale), 0)
 })
+
+test('全局名额：同时跑的后台命令有上限，多的排队；卡住的进程置终态后名额就还回来', async () => {
+  let running = 0
+  let peak = 0
+  const finishers: (() => void)[] = []
+  // 假 runner：不真的起进程，记下同时在跑的条数，由用例决定什么时候结束
+  const fake = (() =>
+    new Promise((resolve) => {
+      running++
+      peak = Math.max(peak, running)
+      finishers.push(() => {
+        running--
+        resolve({ code: 0, killed: null, stderr: '' })
+      })
+    })) as unknown as NonNullable<Parameters<typeof createBackground>[1]>['run']
+  const { bg, got } = collect(3, { run: fake, maxRunning: 2, killGraceMs: 50 })
+  // 每条在不同的目录（像各个子对话的独立分支）：按目录排队拦不住，只能靠全局名额
+  const dirs = [0, 1, 2].map((i) => mkdtempSync(path.join(tmpdir(), `bg-gate-${i}-`)))
+  const infos = dirs.map(
+    (root, i) => bg.start({ taskId: `t${i}`, name: `job${i}`, command: 'x', cwd: '', root, exclusive: false }).info,
+  )
+  for (let i = 0; i < 40 && running < 2; i++) await new Promise((r) => setTimeout(r, 25))
+  await new Promise((r) => setTimeout(r, 100))
+  assert.equal(running, 2, '只跑两条')
+  assert.equal(bg.list('t2')[0].state, 'queued', '第三条排队')
+  assert.match(infos[2], /同时最多跑 2 条/)
+  // 停掉卡住的第一条：记录置终态就还名额，第三条马上开始，不用等 close
+  void bg.stop('t0')
+  for (let i = 0; i < 40 && bg.list('t2')[0].state !== 'running'; i++) await new Promise((r) => setTimeout(r, 25))
+  assert.equal(bg.list('t2')[0].state, 'running')
+  // 第三条真正调到 runner（算完指纹）才有它的结束开关
+  for (let i = 0; i < 40 && finishers.length < 3; i++) await new Promise((r) => setTimeout(r, 25))
+  while (finishers.length) finishers.shift()!()
+  for (let i = 0; i < 40 && got.length < 2; i++) await new Promise((r) => setTimeout(r, 25))
+  assert.ok(peak <= 3)
+  assert.deepEqual(got.map((g) => g.job.name).sort(), ['job1', 'job2'])
+})

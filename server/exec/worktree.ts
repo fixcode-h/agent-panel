@@ -344,7 +344,8 @@ export async function worktreeStatus(repo: string, wt: TaskWorktree): Promise<Wo
   const has = (await git(repo, 'rev-parse', '-q', '--verify', `refs/heads/${wt.branch}`)).code === 0
   let dirty = 0
   if (exists) {
-    const st = await git(wt.path, 'status', '--porcelain')
+    // 只读：status 默认会顺手刷新索引并加锁，子对话栏轮询时和 CLI 自己的 git add/commit 抢 index.lock
+    const st = await git(wt.path, '--no-optional-locks', 'status', '--porcelain')
     dirty = st.code === 0 ? st.stdout.split('\n').filter((l) => l.trim()).length : 0
   }
   if (!has) {
@@ -558,7 +559,7 @@ function parseRegistry(text: string) {
  * 不要像 worktreeStatus 那样把读失败当成 ahead=0，那会把没合的改动误判成已合并。
  */
 async function worktreeFacts(repo: string, dir: string, branch: string, baseBranch: string) {
-  const dirtyOut = await git(dir, 'status', '--porcelain')
+  const dirtyOut = await git(dir, '--no-optional-locks', 'status', '--porcelain')
   if (dirtyOut.code !== 0) return null
   const dirty = dirtyOut.stdout.split('\n').filter((l) => l.trim()).length
   if (!branch) return { dirty, ahead: 0 }

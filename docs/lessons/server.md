@@ -1,5 +1,5 @@
 ---
-paths: server/auth.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/task-store.ts, server/exec/worktree.ts, shared/task.ts
+paths: server/auth.ts, server/run-usage.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/task-store.ts, server/exec/worktree.ts, shared/task.ts
 ---
 
 # 服务端接口和访问控制
@@ -27,3 +27,9 @@ paths: server/auth.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, s
 - 规则：`store.update` 会被流式输出每秒调用几十次，对话文件可能几 MB。`stampOf` 全量拼指纹、`JSON.stringify` 整个文件、写盘都要按任务节流（`server/task-store.ts` 的 `MSG_GAP`：窗口内只留最后一次，到点写最新的），任务本身的小文件照旧每次写；指纹只在真要写时算，不要每次 update 都拼一遍。改节流时注意三点：`create` 要立即写（不然新建的任务断电就丢）、旧格式迁移要把对话一起写到新文件、`remove` 要清掉窗口里等着写的那份（否则删完又被定时器写回来）。
 - 起因：用户反馈 Agent 实时输出时输入卡。实测 609 条 / 2.9MB 的对话：`stampOf` 单次 2.4ms、`JSON.stringify` 13.5ms、写盘 19.5ms；100 次更新旧实现写 336MB，节流后只写 2 次 6.7MB。
 - 防线：`server/task-store.test.ts`（窗口内合并不写、窗口后写最后一次、删除后不会被定时器写回）。
+
+## 只要任务本身时不读对话：轮询接口用 peek，不用 get
+
+- 规则：用量、状态、子对话栏这类只看 `usage` / `steps` / `status` 的地方用 `store.peek` 或 `tasksApi().peek`（执行中的取内存，其余取任务文件），不要 `store.get` / `current`——完整对话在内存里只留 `KEEP_FULL` 份，被挤出去后每次 get 都是读盘加校验几 MB 的 JSON。`store.update` 收到带 `messages` 的完整任务时也不再读旧对话。
+- 起因：父对话开了十几个子对话后面板卡死：`/run-usage` 执行中每秒为每个子对话 get 一次，同时在跑的对话超过 12 个时每次落盘又互相挤出缓存、重读对话文件。
+- 防线：`server/task-store.test.ts` 的「同时在跑的对话超过内存里留的份数」。

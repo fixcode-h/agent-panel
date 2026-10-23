@@ -66,3 +66,18 @@ export function createSlotPool(limitFor: (key: string) => Promise<number> | numb
     running: (key: string) => groups.get(key)?.running ?? 0,
   }
 }
+
+/**
+ * 简单的并发闸：同时最多 n 个在跑，多的按先后排队。不分键，用来给一批只读查询（git 状态这类）限流
+ */
+export function createGate(n: number) {
+  const pool = createSlotPool(() => n)
+  return async <T>(run: () => Promise<T>): Promise<T> => {
+    const free = await pool.take('')
+    try {
+      return await run()
+    } finally {
+      free()
+    }
+  }
+}

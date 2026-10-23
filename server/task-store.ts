@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, rename, rmdir, unlink } from 'node:fs/promises'
 import path from 'node:path'
@@ -28,7 +28,14 @@ const MSG = '.messages.json'
 
 /** 任务文件里只放用户消息：摘要要第一条要求，清理附件要知道哪些附件还在用 */
 const head = (t: Task): Task => ({ ...t, messages: t.messages.filter((m) => m.role === 'user') })
-const stampOf = (msgs: TaskMessage[]) => `${msgs.length}:${msgs.map((m) => m.id + messageStamp(m)).join(';')}`
+/**
+ * 对话的指纹：只留摘要。原文是每条消息 id + 戳拼起来的长串，几百条消息就是几十 KB，
+ * 每个读过的任务都记一份、删任务前一直不放，任务多了就是几十 MB 常驻内存
+ */
+const stampOf = (msgs: TaskMessage[]) =>
+  createHash('sha1')
+    .update(`${msgs.length}:${msgs.map((m) => m.id + messageStamp(m)).join(';')}`)
+    .digest('base64')
 
 /** 读过对话的任务最多留这么多个在内存里（正在执行的另外由执行器拿着） */
 const KEEP_FULL = 12
@@ -236,8 +243,15 @@ export function createTaskStore() {
       await persist(item)
       return item
     },
+    /** 只要任务本身（不带对话）：实时推送判断有没有变化时用，不为一个没变的任务去读几 MB 的对话文件 */
+    async peek(id: string): Promise<Task | null> {
+      return (await all()).get(id) ?? null
+    },
     async update(id: string, input: TaskData & { updatedAt?: string }, opts?: { keepUpdatedAt?: boolean }) {
-      const old = await getFull(id)
+      // 调用方给了完整对话（执行中的落盘都是）就不用再读旧的：读过的对话只留 KEEP_FULL 个，
+      // 同时在跑的对话一多（父对话派出十几个子对话），每次落盘都会把别人挤出去、自己又从磁盘重读一遍对话，
+      // 读文件 + 校验几 MB 的 JSON 一秒几十次，事件循环被占满，整个面板跟着卡
+      const old = Array.isArray(input.messages) ? (await all()).get(id) : await getFull(id)
       if (!old) return null
       // 默认用现在的时间；预热收尾这类要保留原来的列表时间时，用调用方给的值
       const updatedAt = opts?.keepUpdatedAt ? (input.updatedAt ?? old.updatedAt) : new Date().toISOString()

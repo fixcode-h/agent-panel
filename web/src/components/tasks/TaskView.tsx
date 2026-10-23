@@ -235,6 +235,14 @@ function toBlocks(task: Task): Block[] {
 /** 任务页一开始最多画多少段（一个节点组、一轮对话算一段） */
 const BLOCK_LIMIT = 30
 
+/**
+ * 内容没变就沿用原来的数组：子对话栏 4 秒轮询一次，每次都换新数组会让整个对话页（连同几百条消息）重渲染，
+ * 子对话一多、消息一长，打字和滚动都会跟着一顿一顿的
+ */
+function sameJson<T>(cur: T, next: T): T {
+  return JSON.stringify(cur) === JSON.stringify(next) ? cur : next
+}
+
 /** 父对话里的子对话入口：标题、状态、最近结果 */
 interface ChildSummary {
   id: string
@@ -267,7 +275,7 @@ interface ChildSummary {
   resolved?: boolean
   /** 正在执行时这会儿在做什么 */
   activity?: ChildActivity
-  /** 停在 stopped 的原因：/children 响应里没有，加载时对停下的子对话单独取（见 loadChildren） */
+  /** 停在 stopped 的原因：/children 直接给；演示后端没有这一项时单独取（见 loadChildren） */
   stopReason?: StopReason
 }
 
@@ -361,7 +369,11 @@ export function TaskView({
   // （见 stopReasonText）。停下后原因不会变，取到的记在 ref 里，4 秒一次的轮询不再重复问
   const childStopReasons = useRef(new Map<string, StopReason>())
   const loadChildren = useCallback(async (id: string) => {
-    const list = await api.taskChildren(id)
+    const raw = await api.taskChildren(id)
+    // 服务端已经给了原因（空字符串是没记）：不用再为每个停下的子对话取一遍完整任务，几十个子对话就是几十份几 MB 的对话
+    if (raw.every((c) => c.stopReason !== undefined))
+      return raw.map((c): ChildSummary => ({ ...c, stopReason: c.stopReason || undefined }))
+    const list = raw.map((c): ChildSummary => ({ ...c, stopReason: undefined }))
     // 又跑起来了就清掉旧原因：下次停下可能是另一个来源
     for (const c of list) if (c.status !== 'stopped') childStopReasons.current.delete(c.id)
     await Promise.all(
@@ -559,7 +571,7 @@ export function TaskView({
     let alive = true
     const load = () =>
       loadChildren(task.id)
-        .then((list) => alive && setChildren(list))
+        .then((list) => alive && setChildren((cur) => sameJson(cur, list)))
         .catch(() => {})
     void load()
     const timer = setInterval(load, 4000)
@@ -585,7 +597,7 @@ export function TaskView({
     if (!task?.id || task.parentTaskId) return
     let alive = true
     loadChildren(task.id)
-      .then((list) => alive && setChildren(list))
+      .then((list) => alive && setChildren((cur) => sameJson(cur, list)))
       .catch(() => {})
     return () => {
       alive = false
