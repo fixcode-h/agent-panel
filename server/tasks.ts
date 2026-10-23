@@ -32,6 +32,7 @@ import {
   endRun,
   messageStamp,
   pauseStep,
+  sharesWorkdir,
   trackWait,
   waitDuration,
   newTask,
@@ -1176,16 +1177,16 @@ export function tasksApi(deps: {
 
   /**
    * 子对话一轮结束后：这一轮改过的文件和其他还在执行的兄弟子对话改过的撞了，
-   * 在子对话里留一条提醒，并告诉父对话由它协调（两边共用一个目录，后写的会覆盖先写的）
+   * 在子对话里留一条提醒，并告诉父对话（只在这些对话真的共用一个工作目录时：后写的会覆盖先写的）。
+   * 走独立分支的子对话各改各的，撞了也是合并时的事，不提醒。
    */
   async function checkCollisions(child: Task) {
-    // 独立分支里的子对话各改各的，撞了也是合并时的事
-    if (isolated(child)) return
+    if (!sharesWorkdir(child)) return
     const mine = child.changes.map((c) => c.path)
     if (!mine.length) return
     const others = [...live.values()]
       .map((e) => e.task)
-      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working && !isolated(x))
+      .filter((x) => x.id !== child.id && x.parentTaskId === child.parentTaskId && x.working && sharesWorkdir(x))
       .map((x) => ({ title: x.title, files: x.changes.map((c) => c.path) }))
     const hit = collisions(mine, others)
     if (!hit.length) return
@@ -1195,14 +1196,17 @@ export function tasksApi(deps: {
       role: 'system',
       agentId: '',
       step: '',
-      text: t('这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。', { list }),
+      text: t(
+        '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。',
+        { list },
+      ),
       tools: [],
       at: new Date().toISOString(),
     })
     await messageParent(
       child,
-      `我这一轮改的文件和正在执行的其他子对话撞了：${list}。共用一个目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
-      true,
+      `我这一轮改的文件和正在执行的其他子对话撞了：${list}。这些对话共用一个工作目录，后写的可能覆盖先写的，请安排先后或让一方检查。`,
+      false,
     )
   }
 

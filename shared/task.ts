@@ -385,6 +385,18 @@ export function taskStage(x: {
 }
 
 /**
+ * 这个子对话和兄弟子对话是否共用一个工作目录（共用才需要提示「文件撞了」）：
+ * Git 项目里的子对话走独立分支——wantsWorktree 表示这一轮后要开、worktree 有 state 表示已经在自己的分支里
+ * （active 正在用；merged 是合并后回收，继续对话时面板会自动重建），各改各的，真撞了是合并时的事，不用提醒；
+ * 只有都没有（P4、SVN、没有版本控制，或项目设成共用目录）才是共用，后写的会覆盖先写的。
+ * 用户主动丢弃的（discarded）之后回到父对话的目录，也算共用。
+ */
+export function sharesWorkdir(tk: Pick<Task, 'wantsWorktree' | 'worktree'>) {
+  if (tk.wantsWorktree) return false
+  return !tk.worktree || tk.worktree.state === 'discarded'
+}
+
+/**
  * 子对话「本次开启」的时间：最近一轮开始执行的时间。
  * 做完或停下后又接到新任务会开新的一轮，它就往前走，列表里重新排到最前面；
  * 还没执行过任何一轮的按创建时间算。
