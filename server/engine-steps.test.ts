@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { AgentInput, Workflow, type Agent, type Task } from '../shared/schema.ts'
-import { newTask } from '../shared/task.ts'
+import { AgentInput, Workflow, type Agent, type StopReason, type Task } from '../shared/schema.ts'
+import { newTask, stopReasonText } from '../shared/task.ts'
 import { runEngineTurn, type AgentCall, type EngineHost } from '../shared/engine.ts'
+import { t } from '../shared/i18n.ts'
 
 /**
  * 多步骤节点：每一步一条 slot=step 的执行记录、一个独立会话，按顺序执行，
@@ -358,4 +359,67 @@ test('搜索排除清单：Git 仓库里 rg 只补项目自己填的目录，并
   assert.doesNotMatch(part.split('\n## ')[0], /-g '!node_modules\/'/)
   // find 不读 .gitignore，Git 仓库里也要整份剪枝
   assert.match(part, /-name 'node_modules'/)
+})
+
+/**
+ * 跑一轮对话，runAgent 返回「被停止」：克隆出用户截图里那种「CLI 已经答完、面板才把它收掉」的场景
+ * （answered=true 时先写 turnDoneAt，等于 runner 已经报过这一轮完成），以及真的没答完就被停掉。
+ */
+const stoppedChatTurn = async (opts: { answered: boolean; reason: StopReason }) => {
+  const task = {
+    ...newTask({ projectId: 'p', mode: 'chat', prompt: '做完收尾' } as never, undefined, '', 'kid'),
+    id: 'kid',
+    parentTaskId: 'parent',
+  } as Task
+  await runEngineTurn({
+    task,
+    agents,
+    workflows: [],
+    prompt: '做完收尾',
+    stopReason: () => opts.reason,
+    changed: () => {},
+    newId: () => 'x',
+    runAgent: async () => {
+      // 这一轮已经答完：CLI 报过完成、停在等下一句，之后才被合并回收 / 收尾停掉
+      if (opts.answered) task.turnDoneAt = new Date().toISOString()
+      return { ok: false, stopped: true, error: '已停止' }
+    },
+  })
+  return task
+}
+
+test('这一轮已经答完才被收掉：不写「这一轮被中断」，这一轮和任务都是完成', async () => {
+  const task = await stoppedChatTurn({ answered: true, reason: 'finish' })
+  assert.equal(task.turns.at(-1)?.status, 'done', '这一轮记成完成，不是停止')
+  assert.equal(task.status, 'done', '任务状态不被改成 stopped')
+  assert.equal(task.stopReason, undefined, '不记停止原因（界面就不会挂「被中断」）')
+  // 这一轮答完了，finish 不该写任何系统提示（「这一轮被中断」「已暂停」都是 t() 出来的，这里不看具体语言）
+  assert.ok(!task.messages.some((m) => m.role === 'system'), '既没有「这一轮被中断」，也没有「已暂停」')
+})
+
+test('真停止（用户暂停、面板重启之类）照旧写中断说明', async () => {
+  const paused = await stoppedChatTurn({ answered: false, reason: 'user' })
+  assert.equal(paused.turns.at(-1)?.status, 'stopped')
+  assert.equal(paused.status, 'stopped')
+  assert.equal(paused.stopReason, 'user')
+  assert.ok(
+    paused.messages.some((m) => m.text === t('已暂停。点「继续执行」从中断的地方接着做，或者在下面输入新的要求。')),
+  )
+
+  // 面板自己的收尾（合并回收、父对话结束）而这一轮没答完：要说清是谁结束的
+  const finished = await stoppedChatTurn({ answered: false, reason: 'finish' })
+  assert.equal(finished.turns.at(-1)?.status, 'stopped')
+  assert.equal(finished.status, 'stopped')
+  assert.equal(finished.stopReason, 'finish')
+  assert.ok(
+    finished.messages.some(
+      (m) =>
+        m.text ===
+        t('这一轮被中断：{reason}。{next}从中断的地方接着做，或者在下面输入新的要求。', {
+          reason: stopReasonText('finish'),
+          next: t('点「继续执行」'),
+        }),
+    ),
+    '原因写成「做完后收尾」，用户看得出是谁结束的',
+  )
 })

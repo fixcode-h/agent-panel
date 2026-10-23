@@ -149,10 +149,13 @@ test('落盘：消息变了才重写消息文件，新增/替换/返工删除都
   assert.equal(readFileSync(file, 'utf8'), marker, '消息没变不重写')
 
   const ids = (raw: string) => JSON.parse(raw) as { id: string; text: string }[]
+  // 消息文件按 400ms 窗口合并写：等窗口过去再读，否则读到的是上一次落地的那份
+  const settle = () => new Promise((r) => setTimeout(r, 500))
 
   // 新增一条
   const added = [...created.messages, msg('c', '第三条')]
   await store.update(created.id, { ...created, messages: added })
+  await settle()
   assert.deepEqual(
     ids(readFileSync(file, 'utf8')).map((x) => x.id),
     ['a', 'b', 'c'],
@@ -160,10 +163,12 @@ test('落盘：消息变了才重写消息文件，新增/替换/返工删除都
 
   // 替换最后一条
   await store.update(created.id, { ...created, messages: [...added.slice(0, 2), msg('c', '第三条，接着写')] })
+  await settle()
   assert.equal(ids(readFileSync(file, 'utf8')).at(-1)?.text, '第三条，接着写')
 
   // 返工删消息：回到两条
   await store.update(created.id, { ...created, messages: created.messages })
+  await settle()
   assert.deepEqual(
     ids(readFileSync(file, 'utf8')).map((x) => x.id),
     ['a', 'b'],
