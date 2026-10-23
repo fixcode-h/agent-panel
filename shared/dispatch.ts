@@ -1,7 +1,8 @@
 /**
  * 主 Agent 调度的提示词和结论格式。子 Agent 的节点完成后，执行引擎续接主 Agent 的会话把结果交给它，
  * 它在回复最后写一个 dispatch 代码块决定流程怎么走；流程结束时它整理最终结果。
- * 提示词固定用中文（和节点提示词一样，不跟界面语言走：结论靠固定格式识别）。
+ * 提示词正文用中文（和其他发给 Agent 的提示一样），回复语言跟随面板设置；
+ * 决定靠 json 代码块里的 action 识别，和回复用什么语言无关。
  */
 import { END, START, type Agent, type Flow, type Workflow } from './schema.ts'
 import { flowLabel, nodeAgent, nodeSteps, topoOrder } from './flow.ts'
