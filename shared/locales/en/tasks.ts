@@ -634,8 +634,8 @@ export const EN_TASKS: Record<string, string> = {
   '已删除全局规则：{text}': 'Global rule removed: {text}',
   '已发布全局规则：{text}。这个对话下的所有子对话都会遵守，不写进项目的 AGENTS.md。':
     "Global rule published: {text}. Every sub-conversation of this conversation will follow it; it is not written to the project's AGENTS.md.",
-  '这些文件同时被别的子对话改过：{list}。已经告诉父对话协调，合并前请检查一遍内容。':
-    'These files were also changed by other sub-conversations: {list}. The parent conversation has been asked to coordinate; check the content before merging.',
+  '这些文件同时被别的子对话改过：{list}。这些对话和你在同一个工作目录里改文件，后写的会覆盖先写的，先约定先后或各自改哪些文件。':
+    'These files were also changed by other sub-conversations: {list}. They share the same working directory, so later writes overwrite earlier ones; agree on an order or on who changes which files.',
   '对话正在执行，等这一轮结束或停止后再归档':
     'The conversation is running. Archive it after this turn ends or after stopping it',
   '读一下这个项目的目录、脚本和配置，按项目的实际情况把「{name}」的参数配好，说明每一项为什么这么填':
