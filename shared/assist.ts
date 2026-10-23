@@ -22,6 +22,7 @@ import {
 import { AGENT_ICON_IDS } from './icons.ts'
 import { libraryName, McpServer } from './library.ts'
 import { builtinCommands } from './commands.ts'
+import { buildProjectInitPrompt, ProjectInitDraft, resolveProjectInit, type ProjectProposal } from './project-init.ts'
 import type { GlobalLessonChange } from './lessons.ts'
 import {
   END,
@@ -87,14 +88,6 @@ export const AssistInput = z.object({
   projectId: z.string().trim().max(100).default(''),
 })
 export type AssistInput = z.infer<typeof AssistInput>
-
-/** CLI 输出的项目分析：步骤按测试步骤的规则另外校验 */
-const ProjectDraft = z.object({
-  name: z.string().trim().min(1, 'name 不能为空').max(40, 'name 最多 40 个字'),
-  description: z.string().trim().max(200).default(''),
-  type: z.enum(['general', 'ue']).default('general'),
-  steps: z.array(z.unknown()).max(40).default([]),
-})
 
 /** CLI 输出的 Agent 草稿：分类、CLI 用名字或 id 表示 */
 export const AgentDraft = z.object({
@@ -217,20 +210,12 @@ export type TestStepsProposal = {
   kind: 'teststeps'
   steps: TestStep[]
 }
-/** 分析项目目录：名称、简介、项目类型和测试步骤，用户确认后填进项目设置的表单 */
-export type ProjectProposal = {
-  kind: 'project'
-  name: string
-  description: string
-  /** 选哪个内置项目工作流：一般项目还是 UE 项目 */
-  type: 'general' | 'ue'
-  steps: TestStep[]
-}
 /** 从项目教训里提取的全局教训改动：用户在界面上逐条勾选确认后才写进去 */
 export type LessonsProposal = {
   kind: 'lessons'
   changes: GlobalLessonChange[]
 }
+export type { ProjectProposal } from './project-init.ts'
 export type Proposal =
   | ProjectProposal
   | LessonsProposal
@@ -285,6 +270,8 @@ export interface AssistContext {
   paramAgentId?: string
   /** teststeps 校验和展示用的系统 */
   platform?: string
+  /** project：可以当默认工作流的那些（「项目」分类里的）；空表示不限 */
+  defaultWorkflowIds?: string[]
   /** lessons：这个项目的教训和现有的全局教训 */
   projectLessons?: ProjectLesson[]
   globalLessons?: GlobalLesson[]
@@ -299,7 +286,7 @@ const KIND_NAME = {
   params: '参数配置',
   teststeps: '测试步骤',
   lessons: '全局教训',
-  project: '项目分析',
+  project: '项目初始化',
 }
 
 const AGENT_RULES = `- name 简短，体现职责，例如「前端开发」「代码审查」；不要和已有 Agent 重名（优化时保留原名，除非用户要求改名）
@@ -785,39 +772,20 @@ function buildTestStepsPrompt(ctx: AssistContext, messages: AssistMessage[]) {
     .join('\n\n')
 }
 
-/**
- * project 的提示词：在项目目录里只读地看一遍，给出名称、简介、项目类型和测试步骤。
- * 面板自己的规则扫描（scan）一起交过去当线索，AI 以实际看到的为准
- */
+/** project 的提示词：AI 初始化项目，见 project-init.ts */
 function buildProjectPrompt(ctx: AssistContext, messages: AssistMessage[]) {
   const convo = messages
     .map((m) => `### ${m.role === 'user' ? '用户' : '你（上一轮的回复）'}\n${m.text.trim()}`)
     .join('\n\n')
-  return [
-    '你是「Agent 面板」里的配置助手，正在帮用户**分析一个项目目录**，填好项目设置：名称、简介、项目类型和测试步骤。',
-    `项目目录是 ${ctx.projectPath}。只读地看这个目录：README、依赖清单（package.json / Cargo.toml / go.mod / *.uproject / *.sln 等）、scripts、Makefile、CI 配置、目录结构，弄清楚它是做什么的、用什么技术栈、怎么构建和测试。
-**不许修改任何文件、不许安装依赖、不许执行有副作用的命令。** 读文件、列目录、git log 这类只读操作可以直接做。`,
-    `当前系统：${ctx.platform || '未知'}。`,
-    ctx.subject?.scan ? `## 面板按文件规则扫出来的线索（可能不全或不准，以你实际看到的为准）\n${ctx.subject.scan}` : '',
-    `## 要填的字段
-- name：项目名，简短，优先用 README 标题或包名，不超过 40 个字
-- description：一两句${promptLangWord()}说明这个项目是做什么的、主要技术栈，不超过 120 个字
-- type：general（一般项目）或 ue（Unreal Engine 项目，目录里有 .uproject）
-- steps：测试步骤，Agent 按它执行构建、测试、检查，每条都要能直接跑。字段：id（简短英文标识）、name、command（项目里真实存在的命令）、env（auto / wsl / powershell / cmd / bash，不确定就 auto；Windows 上默认走 Git Bash，只有确实必须在 WSL 里跑的才标 wsl）、cwd（相对项目根，没有留空）、when（执行条件，没有留空）、timeoutSec（0 表示不限）、note、enabled、quick（类型检查、lint 这类几十秒内跑完的标 true）
-- 按执行顺序排：先静态检查和单元测试，再端到端和构建。只写项目里真的有的命令，没有脚本就不要编 \`npm run xxx\`。`,
-    ctx.rules.trim() ? `## 用户补充的规则（优先遵守）\n${ctx.rules.trim()}` : '',
-    `## 输出格式
-先用三五句${promptLangWord()}说明你看到了什么：项目是做什么的、技术栈、构建和测试怎么跑、有什么要用户注意的。
-然后输出且只输出一个 \`\`\`json 代码块：
-\`\`\`json
-{ "name": "官网前端", "description": "公司官网的前端，React + Vite。", "type": "general", "steps": [ { "id": "node-typecheck", "name": "类型检查", "command": "npm run typecheck", "env": "auto", "quick": true } ] }
-\`\`\`
-字段名不能改；步骤里没有的字段可以不写（会按默认值补）。`,
-    `## 对话\n${convo}`,
-    '请回复用户最后一条消息。',
-  ]
-    .filter(Boolean)
-    .join('\n\n')
+  return buildProjectInitPrompt({
+    path: ctx.projectPath ?? '',
+    platform: ctx.platform ?? '',
+    scan: ctx.subject?.scan ?? '',
+    rules: ctx.rules,
+    convo,
+    workflows: ctx.workflows,
+    defaultChoices: ctx.defaultWorkflowIds ?? [],
+  })
 }
 
 /** lessons 的提示词：从一个项目的教训里挑出换个项目也适用的，合并进现有的全局教训 */
@@ -1065,11 +1033,16 @@ export function resolveProposal(
     return r.error ? { error: r.error } : { proposal: { kind: 'lessons', changes: r.changes! } }
   }
   if (kind === 'project') {
-    const p = ProjectDraft.safeParse(json)
+    const p = ProjectInitDraft.safeParse(json)
     if (!p.success) return { error: issues(p.error) }
+    // 文件已经写好了，步骤格式不对时只丢掉步骤，不为它让 CLI 把初始化重跑一遍
     const r = p.data.steps.length ? resolveTestSteps({ steps: p.data.steps }) : { steps: [] as TestStep[] }
-    if (r.error) return { error: `steps：${r.error}` }
-    return { proposal: { kind: 'project', ...p.data, steps: r.steps! } }
+    return {
+      proposal: {
+        ...resolveProjectInit(p.data, ctx.workflows, ctx.defaultWorkflowIds ?? []),
+        steps: r.steps ?? [],
+      },
+    }
   }
   if (kind === 'teststeps') {
     const r = resolveTestSteps(json)

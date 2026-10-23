@@ -61,6 +61,7 @@ import { DEFAULT_SEARCH_EXCLUDE, UE_SEARCH_EXCLUDE } from '@shared/search-exclud
 import { cliColor } from '@/lib/cli-style'
 import { cn } from '@/lib/utils'
 import { DocPage } from './ProjectDocs'
+import { ProjectInitPanel } from './ProjectInitPanel'
 import { LessonsEditor } from './Lessons'
 import { Segmented } from '@/components/ui/segmented'
 import { CORE_AGENTS, coreKey, coreUse, findCore } from '@shared/builtin/core'
@@ -97,6 +98,7 @@ const blank: ProjectInput = {
   fileFormat: undefined,
   searchExclude: [],
   gitPolicy: 'ask',
+  initializedAt: '',
 }
 
 /** 关闭按钮：设置类弹窗共用，带边框，比纯图标更容易看到 */
@@ -203,6 +205,8 @@ function Body({
   const [deleting, setDeleting] = useState(false)
   const [analyzing, setAnalyzing] = useState(false)
   const [signals, setSignals] = useState<string[]>([])
+  // 这次打开弹窗里 AI 初始化的结果：推荐项在「AI 初始化」页逐项或整体应用
+  const [init, setInit] = useState<ProjectProposal | null>(null)
   // 没单独选工作流时跟随分类的默认工作流，同样算选好了（服务端也是这么解析的）
   const valid =
     !!draft.name.trim() && !!(draft.workflowId || projectCategories.find((c) => c.id === draft.categoryId)?.workflowId)
@@ -303,11 +307,11 @@ function Body({
     start?: string
   } | null>(null)
 
-  // 项目的「AI 分析」：读本地目录给出名称、简介、工作流和配置项，填进表单；用户确认后才保存
-  // 「AI 分析这个目录」：先快速扫一遍（几毫秒，拿工作流参数、WSL 这类能直接读出的事实），
-  // 再打开 AI 对话，让本机 Agent 只读地看目录给出名称、简介、类型和测试步骤，确认后填进表单
+  // 「AI 初始化项目」：先快速扫一遍目录（几毫秒，拿技术栈、版本控制这类能直接读出的线索），
+  // 再打开 AI 对话，让本机 Agent 在项目目录里写 AGENTS.md 和文档框架、评估工作流和设置。
+  // 推荐项回到「AI 初始化」页应用；收下结果才算初始化过，之后才能确认保存
   const [scan, setScan] = useState<Awaited<ReturnType<typeof api.analyzeProject>> | null>(null)
-  const analyze = async () => {
+  const startInit = async () => {
     if (!draft.path.trim() || analyzing) return
     setAnalyzing(true)
     try {
@@ -316,8 +320,8 @@ function Body({
       setSignals(r.signals)
       setAi({
         kind: 'project',
-        title: t('AI 分析项目'),
-        start: t('看看这个项目是做什么的，把名称、简介和测试步骤填好'),
+        title: t('AI 初始化项目'),
+        start: t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置'),
       })
     } catch (e) {
       toast.error((e as Error).message)
@@ -325,33 +329,34 @@ function Body({
       setAnalyzing(false)
     }
   }
-  const applyAnalysis = (p: ProjectProposal) => {
-    const want = p.type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
-    const wf = workflows.find((w) => w.origin === `builtin:project-${p.type}`) ?? workflows.find((w) => w.name === want)
-    // 扫描给的工作流参数只在类型对得上时用
-    const params = scan && scan.workflow === p.type ? scan.workflowParams : {}
-    setDraft((d) => ({
-      ...d,
-      name: d.name.trim() || p.name,
-      description: p.description || d.description,
-      ...(p.steps.length ? { testSteps: p.steps } : {}),
-      ...(scan?.wslDistro && !d.wslDistro ? { wslDistro: scan.wslDistro } : {}),
-      ...(wf
-        ? {
-            workflowId: wf.id,
-            workflowParams: { ...d.workflowParams, [wf.id]: { ...(d.workflowParams[wf.id] ?? {}), ...params } },
-          }
-        : {}),
-    }))
-    toast.success(
-      wf
-        ? t('已按 AI 的分析填好，检查一下再保存')
-        : t('已填好，但没找到内置工作流「{name}」，请手动选择', { name: want }),
-    )
+  // AI 没评估出默认工作流时按项目类型落到内置的「通用项目」/「UE 项目」
+  const fallbackWorkflow = (type: 'general' | 'ue') => {
+    const want = type === 'ue' ? UE_PROJECT_NAME : GENERAL_NAME
+    return workflows.find((w) => w.origin === `builtin:project-${type}`) ?? workflows.find((w) => w.name === want)
+  }
+  const acceptInit = (p: ProjectProposal) => {
+    // 扫描给的工作流参数（结构技能、文档目录）没被 AI 覆盖时一起推荐
+    const params = scan && scan.workflow === p.type ? { ...scan.workflowParams, ...p.params } : p.params
+    const def = p.workflows.find((w) => w.verdict === 'default')?.id ?? fallbackWorkflow(p.type)?.id
+    const expose = workflows.find((w) => w.id === def)?.expose ?? []
+    setInit({
+      ...p,
+      params: Object.fromEntries(Object.entries(params).filter(([k]) => expose.some((e) => e.key === k))),
+    })
+    setDraft((d) => ({ ...d, initializedAt: new Date().toISOString() }))
+    setSection('init')
+    // AGENTS.md 刚被改过，「项目说明」页要读新的
+    if (project?.path)
+      void api
+        .projectDocs(project.id)
+        .then(setDocs)
+        .catch(() => {})
+    toast.success(t('初始化完成，按需应用推荐的设置后点「确认」保存'))
   }
 
   // 左边的菜单：常规、通用的项目说明、各个 CLI 读的说明文件
-  const [section, setSection] = useState(initialSection || 'general')
+  // 还没初始化的旧项目打开时先到「AI 初始化」：不初始化就不能保存
+  const [section, setSection] = useState(initialSection || (project && !project.initializedAt ? 'init' : 'general'))
   const [lessonIds0] = useState(() => new Set(project?.lessons.map((l) => l.id)))
   const [docs, setDocs] = useState<ProjectDocs | null>(null)
   const [docError, setDocError] = useState('')
@@ -377,7 +382,7 @@ function Body({
   )
 
   const confirm = async () => {
-    if (!valid || saving) return
+    if (!valid || saving || !draft.initializedAt) return
     setSaving(true)
     try {
       // 弹窗开着时角色在对话里新记的教训（打开时还没有、草稿里也没有）一起留下，不被这次保存盖掉
@@ -437,6 +442,10 @@ function Body({
           <NavItem on={section === 'general'} onClick={() => setSection('general')}>
             <Settings2 className="h-4 w-4 shrink-0" strokeWidth={1.8} />
             {t('常规')}
+          </NavItem>
+          <NavItem on={section === 'init'} onClick={() => setSection('init')} dot={!draft.initializedAt}>
+            <Sparkles className="h-4 w-4 shrink-0" strokeWidth={1.8} />
+            {t('AI 初始化')}
           </NavItem>
           <NavItem
             on={section === 'roles'}
@@ -569,7 +578,21 @@ function Body({
             }}
             className="flex min-h-0 flex-1 flex-col gap-7 overflow-y-auto px-6 py-6 md:flex-row"
           >
-            {section === 'roles' ? (
+            {section === 'init' ? (
+              <ProjectInitPanel
+                draft={draft}
+                setDraft={setDraft}
+                result={init}
+                workflows={workflows}
+                activeId={active?.id ?? ''}
+                fallbackId={init ? (fallbackWorkflow(init.type)?.id ?? '') : ''}
+                globalFormat={globalFormat}
+                canStart={!!draft.path.trim()}
+                starting={analyzing || ai?.kind === 'project'}
+                signals={signals}
+                onStart={() => void startInit()}
+              />
+            ) : section === 'roles' ? (
               <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <PageIntro
                   title={t('必备角色')}
@@ -812,32 +835,23 @@ function Body({
 
                 <FormSection title={t('本地目录')}>
                   <DirPicker value={draft.path} onChange={pickDir} info={dir} />
-                  <div className="mt-3 flex flex-wrap items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => void analyze()}
-                      disabled={!draft.path.trim() || analyzing}
-                    >
-                      {analyzing ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3.5 w-3.5" />
-                      )}
-                      {t('AI 分析这个目录')}
-                    </Button>
-                    <HelpTip>
-                      {t(
-                        '让 AI 只读地看一遍这个目录，判断技术栈、构建和测试命令，填进下面的表单和测试步骤；保存前你可以再改',
-                      )}
-                    </HelpTip>
-                  </div>
-                  {signals.length > 0 && (
-                    <ul className="mt-2 flex flex-col gap-1 text-xs text-muted">
-                      {signals.map((s) => (
-                        <li key={s}>· {s}</li>
-                      ))}
-                    </ul>
+                  {!draft.initializedAt && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent-soft/40 px-3.5 py-2.5">
+                      <Sparkles className="h-4 w-4 shrink-0 text-accent" />
+                      <span className="min-w-0 flex-1 text-[0.8125rem]">
+                        {draft.path.trim()
+                          ? t('选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。')
+                          : t('选好本地目录后，先 AI 初始化项目才能保存。')}
+                      </span>
+                      <Button size="sm" onClick={() => void startInit()} disabled={!draft.path.trim() || analyzing}>
+                        {analyzing ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Sparkles className="h-3.5 w-3.5" />
+                        )}
+                        {t('AI 初始化项目')}
+                      </Button>
+                    </div>
                   )}
                 </FormSection>
 
@@ -974,7 +988,16 @@ function Body({
         {changedDocs.length > 0 && (
           <span className="text-xs text-subtle">{t('{n} 个说明文件有改动', { n: changedDocs.length })}</span>
         )}
-        <Button onClick={() => void confirm()} disabled={!valid || saving}>
+        {!draft.initializedAt && (
+          <button
+            type="button"
+            className="cursor-pointer text-xs text-warning hover:underline"
+            onClick={() => setSection('init')}
+          >
+            {t('先完成「AI 初始化项目」才能保存')}
+          </button>
+        )}
+        <Button onClick={() => void confirm()} disabled={!valid || saving || !draft.initializedAt}>
           {saving && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
           {project ? t('确认') : t('创建')}
         </Button>
@@ -1027,7 +1050,7 @@ function Body({
                 })
               toast.success(t('已填进表单，确认保存后生效'))
             } else if (p.kind === 'project') {
-              applyAnalysis(p)
+              acceptInit(p)
             } else if (p.kind === 'teststeps') {
               set('testSteps', p.steps)
               toast.success(t('已填进表单，确认保存后生效'))
@@ -1199,7 +1222,7 @@ function TestStepsEditor({
       </div>
       {steps.length === 0 && (
         <p className="rounded-lg border border-dashed p-3 text-xs text-subtle">
-          {t('还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。')}
+          {t('还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。')}
         </p>
       )}
       <ul className="flex flex-col gap-2">

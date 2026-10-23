@@ -49,6 +49,14 @@ export function safeArgs(args: string[]) {
   return out
 }
 const TIMEOUT = 5 * 60_000
+/** 初始化项目要读项目、写好几份文档，给足时间 */
+const INIT_TIMEOUT = 20 * 60_000
+
+/** 「项目」分类里的工作流：项目的默认工作流只从这里选（和项目设置页一致）；没有这个分类时不限 */
+async function projectWorkflowIds(categories: Lister<Category>, workflows: Workflow[]) {
+  const cat = (await categories.list()).find((c) => c.scope === 'workflow' && c.name === '项目')
+  return cat ? workflows.filter((w) => w.categoryId === cat.id).map((w) => w.id) : []
+}
 
 /** AI 创建 / 优化 Agent 和工作流：调用本机 CLI 生成，校验格式，不合格时让 CLI 自己修正一次 */
 export function assistApi(deps: {
@@ -72,18 +80,21 @@ export function assistApi(deps: {
     const cs = cliSettings(settings, input.cli)
     const run = agentRun({ cli: input.cli, model: input.model, effort: input.effort }, settings)
     const installed = (await detectClis()).filter((c) => c.installed && c.enabled).map((c) => c.id)
-    // 只读分析（params / teststeps）在项目目录里执行，让 CLI 自己看代码；
+    // 只读分析（params / teststeps）和项目初始化在项目目录里执行，让 CLI 自己看代码；
     // 其他生成在临时目录里执行，碰不到项目文件
     const project = input.projectId ? await deps.projects.get(input.projectId) : null
-    // 分析项目时项目可能还没保存（新建项目的设置里），目录由页面带来
-    const projectDir = project?.path ?? (input.kind === 'project' ? (input.subject.path ?? '') : '')
-    const readOnlyProject =
+    // 初始化项目时目录以页面带来的为准：新建项目还没保存，已有项目可能刚改了目录
+    const projectDir =
+      input.kind === 'project' ? input.subject.path?.trim() || project?.path || '' : (project?.path ?? '')
+    const inProject =
       (input.kind === 'params' || input.kind === 'teststeps' || input.kind === 'project') && !!projectDir
-    const cwd = readOnlyProject ? resolvePath(projectDir) : path.join(tmpdir(), 'agent-panel-assist')
-    if (!readOnlyProject) await mkdir(cwd, { recursive: true })
-    // 项目目录可能在只读分析期间被删掉：先确认还在，避免 CLI 启动就失败
+    // 初始化要写 AGENTS.md 和文档，按设置里的权限执行（要确认时弹卡片）；其余在项目目录里只读
+    const readOnlyProject = inProject && input.kind !== 'project'
+    const cwd = inProject ? resolvePath(projectDir) : path.join(tmpdir(), 'agent-panel-assist')
+    if (!inProject) await mkdir(cwd, { recursive: true })
+    // 项目目录可能在分析期间被删掉：先确认还在，避免 CLI 启动就失败
     if (
-      readOnlyProject &&
+      inProject &&
       !(await stat(cwd)
         .then((s) => s.isDirectory())
         .catch(() => false))
@@ -159,7 +170,7 @@ export function assistApi(deps: {
         env: childEnv(cs.env),
         input: buildAssistPrompt(input.kind, ctx, messages, installed),
         signal: job.abort.signal,
-        timeoutMs: TIMEOUT,
+        timeoutMs: input.kind === 'project' ? INIT_TIMEOUT : TIMEOUT,
         onEvent: (ev) => {
           if (ev.type === 'thinking') {
             const m = !cur || cur.raw.trim() || cur.tools.length ? newMsg() : cur
@@ -208,7 +219,11 @@ export function assistApi(deps: {
         for (const x of toolsById.values()) if (x.running || x.startedAt) endTool(x)
       })
       if (r.killed === 'stopped') return fail(job, t('已停止'))
-      if (r.killed === 'timeout') return fail(job, t('超过 5 分钟没有完成，已停止'))
+      if (r.killed === 'timeout')
+        return fail(
+          job,
+          input.kind === 'project' ? t('超过 20 分钟没有完成，已停止') : t('超过 5 分钟没有完成，已停止'),
+        )
       if (r.spawnError)
         return fail(
           job,
@@ -297,7 +312,10 @@ export function assistApi(deps: {
         target: target ?? undefined,
         defaultCli: defaultCli(settings),
         ...(project && analyzeProject ? { projectPath: project.path, projectName: project.name } : {}),
-        ...(!project && input.kind === 'project' ? { projectPath: input.subject.path!.trim() } : {}),
+        ...(input.kind === 'project' && input.subject.path?.trim() ? { projectPath: input.subject.path.trim() } : {}),
+        ...(input.kind === 'project'
+          ? { defaultWorkflowIds: await projectWorkflowIds(deps.categories, workflows) }
+          : {}),
         ...(project && input.kind === 'lessons'
           ? { projectName: project.name, projectLessons: project.lessons, globalLessons: await readGlobalLessons() }
           : {}),

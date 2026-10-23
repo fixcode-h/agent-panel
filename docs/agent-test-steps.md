@@ -113,7 +113,7 @@ type TestStep = {
 - UE：编译（`Build.bat <Target> Win64 Development -Project=<.uproject> -WaitMutex`）、Lua 语法检查、可选的 AutomationTest（默认停用）。
 - Rust / Go / Python / .NET / CMake 各给常用的检查、测试、构建。
 
-「AI 分析这个目录」（`POST /projects/analyze`）会把这份默认步骤一起填进表单，用户确认保存后才生效。
+「AI 初始化项目」先用 `POST /projects/analyze` 快速扫一遍（这份默认步骤当线索），再让本机 Agent 在项目目录里写 AGENTS.md 和文档框架（`skills/docs/project-documentation`），评估工作流、推荐测试步骤和项目设置（`shared/project-init.ts`）。推荐项在项目设置的「AI 初始化」页逐项或整体应用，用户确认保存后才生效；`Project.initializedAt` 为空的项目（含旧项目）不能保存设置。
 
 ## 3. 项目设置里的 Agent 参数
 

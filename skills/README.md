@@ -16,7 +16,7 @@
 |                  | `systematic-debugging`             | 先查历史 Bug，从模块逐层定位，找到根因再修、修完就停                                                                                                                     |
 |                  | `verification-before-completion`   | 没有新鲜验证证据不声称完成                                                                                                                                               |
 |                  | `software-architecture-design`     | 项目、子系统架构的设计与评审（含 UE、Lua、C# 参考）                                                                                                                      |
-| 文档 `docs/`     | `project-documentation`            | PROJECT_ROOT / DOC_ROOT、模块文档、bugs.md 与文档更新规则                                                                                                                |
+| 文档 `docs/`     | `project-documentation`            | DOC_ROOT、AGENTS.md 分工、模块地图与文档骨架、更新规则                                                                                                                   |
 | 项目 `project/`  | `project-structure`                | 陌生项目的目录、构建、测试、运行方式和常见坑                                                                                                                             |
 |                  | `ue-project-structure`             | UE 模块与插件、UHT/UBT、自动化测试、Cook、资产规则                                                                                                                       |
 |                  | `project-testing`                  | 按改动选测试、找项目自己的验证命令、写验收证据                                                                                                                           |

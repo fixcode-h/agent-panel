@@ -30,8 +30,8 @@ export const EN_SETTINGS: Record<string, string> = {
   没有给出可用的值: 'No usable values were given',
   '测试角色按这些步骤执行构建、测试和检查。新建对话时快照进任务，之后改这里不影响已经开始的对话；没配置时角色会自己找命令并建议你补上。':
     'The test role runs builds, tests and checks following these steps. They are snapshotted into a task when it starts, so later edits here do not affect conversations already under way; without any steps the role finds commands itself and suggests adding them.',
-  '还没有测试步骤。新建 Node 项目时「AI 分析这个目录」会按 scripts 填一份。':
-    'No test steps yet. For a new Node project, "AI analyze this folder" fills in a set based on the scripts.',
+  '还没有测试步骤。「AI 初始化项目」会按项目的脚本推荐一份。':
+    'No test steps yet. "AI initialize project" recommends a set based on the project scripts.',
   '步骤名，例如「单元测试」': 'Step name, e.g. "Unit tests"',
   步骤名: 'Step name',
   要执行的命令: 'Command to run',
@@ -1050,4 +1050,79 @@ export const EN_SETTINGS: Record<string, string> = {
   '{m}月{d}日这一周': 'Week of {m}/{d}',
   '按本机本地时间统计每轮执行的 token，一轮算在它开始的那一天（周从周一起算）。输入含缓存命中和缓存写入的部分。':
     'Counts tokens from every turn in local time, placed on the day the turn started (weeks start on Monday). Input includes cache hits and cache writes.',
+  // AI 初始化项目
+  '初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置':
+    'Initialize this project: write AGENTS.md and the documentation skeleton, evaluate the available workflows and recommend project settings',
+  写入的文件: 'Files written',
+  未改: 'Unchanged',
+  没有报告写入的文件: 'No files were reported',
+  '推荐了 {n} 项设置（工作流、测试步骤、子对话、文件格式等）。点「查看推荐并应用」回到项目设置，逐项或整体应用。':
+    '{n} recommendations (workflows, test steps, sub-chats, file format and more). Click "Review and apply" to go back to the project settings and apply them one by one or all at once.',
+  'AI 初始化项目': 'AI initialize project',
+  '在项目目录里写好 AGENTS.md 和文档框架，评估工作流、推荐项目设置；推荐项回到项目设置里逐项或整体应用':
+    'Writes AGENTS.md and the documentation skeleton in the project folder, evaluates workflows and recommends project settings; apply the recommendations one by one or all at once in the project settings',
+  '直接让它初始化，或者说说你的要求。': 'Let it initialize right away, or describe what you need.',
+  '补充要求，例如「文档放在 Docs/ 下」': 'Extra requirements, e.g. "put the docs under Docs/"',
+  初始化的结果会显示在这里: 'The initialization result will appear here',
+  查看推荐并应用: 'Review and apply',
+  '文件已经写好，推荐的设置回到项目设置里应用':
+    'Files are written; apply the recommended settings in the project settings',
+  '独立 worktree': 'Separate worktree',
+  第一次需要推送时问一次: 'Ask the first time a push is needed',
+  只用内置清单: 'Built-in list only',
+  'Ubuntu-24.04（默认）': 'Ubuntu-24.04 (default)',
+  '（未选择）': '(not selected)',
+  'Unreal Engine 项目': 'Unreal Engine project',
+  '可选工作流「{name}」': 'Optional workflow "{name}"',
+  未加入: 'Not added',
+  加入: 'Add',
+  '「{wf}」的{name}': '{name} of "{wf}"',
+  '（没有）': '(none)',
+  '{n} 步：{names}': '{n} steps: {names}',
+  子对话与推送: 'Sub-chats and pushing',
+  文件与搜索: 'Files and search',
+  重新初始化: 'Initialize again',
+  '本机 Agent 读一遍项目，写好 AGENTS.md 和项目文档框架，再评估哪些工作流可用、项目设置该怎么配。推荐项可以逐项应用，也可以整组或全部应用；每个项目初始化一次，完成后才能保存项目设置。':
+    'A local agent reads the project, writes AGENTS.md and the documentation skeleton, then evaluates which workflows fit and how the project should be configured. Apply recommendations one by one, by group or all at once. Each project is initialized once, and the settings can only be saved after that.',
+  '已于 {date} 初始化': 'Initialized on {date}',
+  这个项目还没有初始化: 'This project has not been initialized',
+  '项目结构有大变化时可以重新初始化：已有的文档只补不覆盖。':
+    'Initialize again after big structural changes: existing documents are only extended, never overwritten.',
+  '初始化完成并应用后，才能点「确认」保存项目设置。':
+    'Initialize and apply the result before you can click Confirm to save the project settings.',
+  '先在「常规」里选好本地目录。': 'Choose the local folder under General first.',
+  '没有就新建，已有就保留原内容补全：项目说明、硬规则、常用命令、文档地图':
+    'Created if missing, otherwise extended while keeping what is there: overview, hard rules, common commands, documentation map',
+  文档框架: 'Documentation skeleton',
+  '按 project-documentation 建文档入口、模块地图和各模块的说明；P4 项目放在项目外':
+    'Doc entry, module map and per-module notes following project-documentation; P4 projects keep them outside the project',
+  评估工作流: 'Evaluate workflows',
+  '逐个判断已添加的工作流：哪个当默认、哪些放进可选、哪些用不上':
+    'Checks each added workflow: which one is the default, which are optional and which do not fit',
+  推荐设置: 'Recommended settings',
+  '测试步骤、子对话隔离、推送、编码换行、搜索排除等，每项附依据':
+    'Test steps, sub-chat isolation, pushing, encoding and line endings, search exclusions and more, each with a reason',
+  初始化完成: 'Initialization finished',
+  '文档根：{dir}': 'Docs root: {dir}',
+  'Agent 没有报告写了哪些文件，可以在左边的「项目说明」里查看 AGENTS.md。':
+    'The agent did not report which files it wrote; check AGENTS.md under Project notes on the left.',
+  '{n} 项和当前设置不同，应用后点「确认」保存':
+    '{n} differ from the current settings; apply them, then click Confirm to save',
+  '全部推荐都已和当前设置一致，点「确认」保存': 'All recommendations match the current settings; click Confirm to save',
+  没有需要调整的设置: 'No settings need changing',
+  全部应用: 'Apply all',
+  '{n} 项待应用': '{n} to apply',
+  已一致: 'Matches',
+  应用本组: 'Apply group',
+  查看推荐的步骤: 'Show recommended steps',
+  评估后不适用的工作流: 'Workflows that do not fit',
+  '初始化完成，按需应用推荐的设置后点「确认」保存':
+    'Initialized. Apply the recommended settings you want, then click Confirm to save',
+  'AI 初始化': 'AI initialize',
+  '选好目录后先 AI 初始化项目：写好 AGENTS.md 和文档框架，并推荐工作流和设置。':
+    'Initialize the project with AI first: it writes AGENTS.md and the documentation skeleton and recommends workflows and settings.',
+  '选好本地目录后，先 AI 初始化项目才能保存。':
+    'Choose a local folder, then initialize the project with AI before saving.',
+  '先完成「AI 初始化项目」才能保存': 'Run "AI initialize project" before saving',
+  '超过 20 分钟没有完成，已停止': 'Did not finish within 20 minutes and was stopped',
 }

@@ -317,6 +317,7 @@ export function tasksApi(deps: {
     lessons: [],
     wslDistro: '',
     gitPolicy: 'ask',
+    initializedAt: '',
     createdAt: '',
     updatedAt: '',
   })

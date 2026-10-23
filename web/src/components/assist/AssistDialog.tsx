@@ -78,7 +78,7 @@ const EXAMPLES: Record<AssistKind, string[]> = {
     t('这个项目在 Windows 上，端到端测试要在 WSL 里跑，按这个填'),
   ],
   lessons: [t('把这个项目里换个项目也适用的教训提取出来'), t('只看角色自己记的那些，挑出通用的')],
-  project: [t('看看这个项目是做什么的，把名称、简介和测试步骤填好')],
+  project: [t('初始化这个项目：写好 AGENTS.md 和项目文档框架，评估可用的工作流，推荐项目设置')],
   teststeps: [
     t('按项目现在的脚本，生成一套类型检查、单元测试、端到端和构建的步骤'),
     t('这是 UE 项目，补上编译和 Lua 语法检查的步骤'),
@@ -527,8 +527,13 @@ function TestStepsPreview({ steps }: { steps: TestStep[] }) {
   )
 }
 
-/** 项目分析的预览：名称、简介、类型，下面是测试步骤 */
+/** 初始化的预览：写了哪些文件、推荐了多少项；逐项应用在项目设置的「AI 初始化」页 */
 function ProjectPreview({ p }: { p: ProjectProposal }) {
+  const recs =
+    p.settings.length +
+    Object.keys(p.params).length +
+    p.workflows.filter((w) => w.verdict !== 'skip').length +
+    (p.steps.length ? 1 : 0)
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-col gap-1">
@@ -538,11 +543,31 @@ function ProjectPreview({ p }: { p: ProjectProposal }) {
         </div>
         {p.description && <p className="text-[0.8125rem] leading-relaxed text-muted">{p.description}</p>}
       </div>
-      {p.steps.length ? (
-        <TestStepsPreview steps={p.steps} />
-      ) : (
-        <span className="text-xs text-subtle">{t('没有找到可以直接执行的测试步骤')}</span>
-      )}
+      <div className="flex flex-col gap-1.5">
+        <span className="text-xs text-muted">{t('写入的文件')}</span>
+        {p.files.length ? (
+          <ul className="flex flex-col gap-1">
+            {p.files.map((f) => (
+              <li key={f.path} className="flex items-center gap-2 text-xs">
+                <Badge tone={f.action === 'created' ? 'success' : f.action === 'updated' ? 'accent' : 'neutral'}>
+                  {f.action === 'created' ? t('新建') : f.action === 'updated' ? t('修改') : t('未改')}
+                </Badge>
+                <code className="min-w-0 truncate font-mono">{f.path}</code>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <span className="text-xs text-subtle">{t('没有报告写入的文件')}</span>
+        )}
+      </div>
+      <p className="rounded-lg border bg-field/40 px-3 py-2.5 text-[0.8125rem] leading-relaxed">
+        {t(
+          '推荐了 {n} 项设置（工作流、测试步骤、子对话、文件格式等）。点「查看推荐并应用」回到项目设置，逐项或整体应用。',
+          {
+            n: recs,
+          },
+        )}
+      </p>
     </div>
   )
 }
@@ -668,12 +693,14 @@ export function AssistDialog({
                   }
                 : kind === 'project'
                   ? {
-                      create: t('AI 分析项目'),
-                      desc: t('在项目目录里只读分析，给出名称、简介、项目类型和测试步骤；确认后才填进表单'),
-                      intro: t('直接让它分析，或者说说你的要求。'),
-                      placeholder: t('补充要求，例如「端到端测试要在 WSL 里跑」'),
-                      empty: t('分析结果会显示在这里'),
-                      button: t('填进表单'),
+                      create: t('AI 初始化项目'),
+                      desc: t(
+                        '在项目目录里写好 AGENTS.md 和文档框架，评估工作流、推荐项目设置；推荐项回到项目设置里逐项或整体应用',
+                      ),
+                      intro: t('直接让它初始化，或者说说你的要求。'),
+                      placeholder: t('补充要求，例如「文档放在 Docs/ 下」'),
+                      empty: t('初始化的结果会显示在这里'),
+                      button: t('查看推荐并应用'),
                     }
                   : kind === 'teststeps'
                     ? {
@@ -1158,9 +1185,11 @@ export function AssistDialog({
                     {latest
                       ? latest.kind === 'lessons'
                         ? t('已选 {n} 条，可以继续对话让它改', { n: picked.size })
-                        : shown
-                          ? t('应用后会覆盖当前内容')
-                          : t('可以继续对话修改，满意后再创建')
+                        : latest.kind === 'project'
+                          ? t('文件已经写好，推荐的设置回到项目设置里应用')
+                          : shown
+                            ? t('应用后会覆盖当前内容')
+                            : t('可以继续对话修改，满意后再创建')
                       : ''}
                   </span>
                   <Button
@@ -1169,7 +1198,7 @@ export function AssistDialog({
                     onClick={apply}
                   >
                     {applying ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                    {shown ? (kind === 'mcp' ? L.button : t('应用修改')) : L.button}
+                    {shown && kind !== 'mcp' && kind !== 'project' ? t('应用修改') : L.button}
                   </Button>
                 </footer>
               </section>

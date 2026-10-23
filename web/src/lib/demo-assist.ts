@@ -330,6 +330,59 @@ function lessonsDraft(_text: string, ctx: AssistContext) {
   }
 }
 
+/** 项目初始化：演示里没有本机目录，按演示项目编一份写过的文件和推荐设置 */
+function projectInitDraft(_text: string, ctx: AssistContext) {
+  const path = ctx.projectPath ?? ''
+  const ue = /ue|unreal|game|游戏/i.test(path)
+  const choices = ctx.defaultWorkflowIds?.length
+    ? ctx.workflows.filter((w) => ctx.defaultWorkflowIds!.includes(w.id))
+    : ctx.workflows
+  const def = choices[0]
+  const name =
+    path
+      .replace(/[\\/]+$/, '')
+      .split(/[\\/]/)
+      .pop() || '演示项目'
+  return {
+    draft: {
+      name,
+      description: ue ? 'Unreal Engine 客户端工程，C++ + Lua。' : '面向用户的网站，React + Vite + TypeScript。',
+      type: ue ? 'ue' : 'general',
+      reasons: {
+        name: '目录名',
+        description: 'README 第一段',
+        steps: ue ? '按 .uproject 和 Build.bat' : '按 package.json 的 scripts',
+        params: '文档写在 docs/ 下',
+      },
+      docRoot: 'docs',
+      files: [
+        { path: 'AGENTS.md', action: 'created', summary: '项目说明、硬规则、常用命令、文档地图' },
+        { path: 'CLAUDE.md', action: 'created', summary: '一行 @AGENTS.md' },
+        { path: 'docs/README.md', action: 'created', summary: '项目入口、快速开始、文档索引' },
+        { path: 'docs/MODULE-MAP.md', action: 'created', summary: '4 个模块的路径、职责和入口' },
+        { path: 'docs/modules/web/README.md', action: 'created', summary: '状态 inferred，待确认数据流' },
+      ],
+      workflows: ctx.workflows.map((w, i) => ({
+        name: w.name,
+        verdict: w === def ? 'default' : i % 2 ? 'optional' : 'skip',
+        reason: w === def ? '日常改动走这个流程' : i % 2 ? '修 Bug 时更合适' : '项目里用不上',
+      })),
+      params: Object.fromEntries((def?.expose ?? []).filter((e) => e.key === 'docRoot').map((e) => [e.key, 'docs'])),
+      settings: {
+        childIsolation: { value: 'worktree', reason: 'Git 仓库，子对话各自开分支互不干扰' },
+        gitPolicy: { value: 'ask', reason: '有远端 origin，第一次推送前确认一次' },
+        eol: { value: 'lf', reason: '.editorconfig 写了 end_of_line = lf' },
+        searchExclude: { value: ue ? ['Saved', 'Intermediate'] : ['playwright-report'], reason: '编译产物和测试报告' },
+      },
+      steps: [
+        { id: 'typecheck', name: '类型检查', command: 'npm run typecheck', env: 'auto', quick: true },
+        { id: 'unit', name: '单元测试', command: 'npm test', env: 'auto' },
+      ],
+    },
+    note: '读了 README、package.json 和目录结构：新建了 AGENTS.md、CLAUDE.md 和 docs/ 下的文档入口、模块地图和模块说明，评估了已添加的工作流，推荐了测试步骤和几项设置。',
+  }
+}
+
 export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJob {
   const text = [...input.messages].reverse().find((m) => m.role === 'user')?.text ?? ''
   const job: AssistJob = {
@@ -353,7 +406,9 @@ export function startDemoAssist(input: AssistInput, ctx: AssistContext): AssistJ
             ? mcpDraft(text, ctx)
             : input.kind === 'lessons'
               ? lessonsDraft(text, ctx)
-              : workflowDraft(text, ctx)
+              : input.kind === 'project'
+                ? projectInitDraft(text, ctx)
+                : workflowDraft(text, ctx)
   const full = `（在线演示：没有调用真实 CLI，下面是按关键词生成的示例。）\n\n${gen.note}`
   // 先演示一段「思考」，再逐字输出说明，最后是 JSON
   const think = `用户想要：${text.slice(0, 40)}。先看看现有的 Agent 和分类，确定需要哪些角色、谁先谁后、哪里需要验收…`
