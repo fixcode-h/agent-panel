@@ -1,7 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { Task, TaskTurn } from './schema.ts'
-import { aggregateUsage, usageLabel, usageSamples, type UsageGrain, type UsageReport } from './usage.ts'
+import {
+  aggregateUsage,
+  dayKey,
+  formatTokens,
+  isoWeek,
+  periodLabel,
+  sumBuckets,
+  usageLabel,
+  usagePeriod,
+  usageSamples,
+  type UsageGrain,
+  type UsageReport,
+} from './usage.ts'
 
 /** 固定的「现在」：本地时间 2026-10-20（周二）10:00，所在周从 10 月 19 日（周一）起 */
 const now = new Date(2026, 9, 20, 10, 0, 0)
@@ -227,4 +239,55 @@ test('桶的标签按粒度写', () => {
   const report = at('month', 1)
   assert.match(usageLabel(report.buckets[0], 'month'), /2026.*10/)
   assert.match(usageLabel(at('day', 1).buckets[0], 'day'), /10.*20/)
+})
+
+const dates = (p: ReturnType<typeof usagePeriod>) => p.days.map(dayKey)
+
+/** 一段日期：本地时间，测试不依赖时区 */
+const local = (y: number, m: number, d: number) => new Date(y, m - 1, d)
+
+test('区间：天是一天，周是周一到周日，月是整个自然月', () => {
+  // 2026-10-20 是周二
+  assert.deepEqual(dates(usagePeriod('day', local(2026, 10, 20))), ['2026-10-20'])
+  const week = usagePeriod('week', local(2026, 10, 20))
+  assert.deepEqual(dates(week), [
+    '2026-10-19',
+    '2026-10-20',
+    '2026-10-21',
+    '2026-10-22',
+    '2026-10-23',
+    '2026-10-24',
+    '2026-10-25',
+  ])
+  // 周日算在上一周里
+  assert.equal(dayKey(usagePeriod('week', local(2026, 10, 25)).start), '2026-10-19')
+  assert.equal(usagePeriod('month', local(2026, 2, 15)).days.length, 28)
+  assert.equal(usagePeriod('month', local(2028, 2, 1)).days.length, 29)
+  assert.equal(dayKey(usagePeriod('month', local(2026, 12, 31)).end), '2026-12-31')
+})
+
+test('区间标签：周写第几周和起止日期', () => {
+  assert.equal(periodLabel(usagePeriod('day', local(2026, 10, 23))), '10月23日')
+  assert.equal(periodLabel(usagePeriod('month', local(2026, 10, 23))), '2026年10月')
+  assert.equal(periodLabel(usagePeriod('week', local(2026, 10, 20))), '第 43 周 · 10月19日 - 10月25日')
+  // 跨年的那一周按 ISO 的归属算周号：2024-12-30 属于 2025 年第 1 周
+  assert.deepEqual(isoWeek(local(2024, 12, 30)), { year: 2025, week: 1 })
+  // 2021-01-01 是周五，属于 2020 年第 53 周
+  assert.deepEqual(isoWeek(local(2021, 1, 1)), { year: 2020, week: 53 })
+})
+
+test('token 短格式：K / M 两位小数，0 就是 0', () => {
+  assert.equal(formatTokens(0), '0')
+  assert.equal(formatTokens(999), '999')
+  assert.equal(formatTokens(1500), '1.5K')
+  assert.equal(formatTokens(3_328_101), '3.33M')
+  assert.equal(formatTokens(727_366_264), '727.37M')
+  assert.equal(formatTokens(1_000_000), '1M')
+  assert.equal(formatTokens(-5), '0')
+  assert.equal(formatTokens(Number.NaN), '0')
+})
+
+test('几个桶相加和接口给的合计是同一个算法', () => {
+  const r = at('day', 3, [task('a', [turn(new Date(2026, 9, 19, 9, 0), 10, 2, 3)])])
+  assert.deepEqual(sumBuckets(r.buckets), r.total)
 })

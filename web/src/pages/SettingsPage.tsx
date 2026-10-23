@@ -183,6 +183,8 @@ function SettingsBody({
   const [assist, setAssist] = useState(initial.assist)
   const [imageGen, setImageGen] = useState(initial.imageGen)
   const [modelCatalog, setModelCatalog] = useState(initial.modelCatalog)
+  // 用量统计的计价模型（存在设置里，跟着自动保存）
+  const [pricingModel, setPricingModel] = useState(initial.usagePricingModel)
   const catalogInfo = useModelCatalog()
   const [defCli, setDefCli] = useState(() => defaultCli(initial))
   const [apis, setApis] = useState(initial.apis)
@@ -312,6 +314,7 @@ function SettingsBody({
     assist: { ...assist, model: assist.model.trim() },
     imageGen: { ...imageGen, model: imageGen.model.trim() },
     modelCatalog,
+    usagePricingModel: pricingModel,
   }
   const save = useAutosave(
     value,
@@ -1014,7 +1017,7 @@ function SettingsBody({
             <LocalImageSection value={imageGen.local} onChange={(local) => setImageGen({ ...imageGen, local })} />
           )}
           {cur.id === 'data' && <DataSection />}
-          {cur.id === 'usage' && <UsageSection />}
+          {cur.id === 'usage' && <UsageSection pricingModel={pricingModel} onPricingModel={setPricingModel} />}
           {cur.id === 'deploy' && <DeploySection />}
           {cur.id === 'tags' && <TagsSection />}
           {cur.id === 'global-lessons' && <GlobalLessonsSection />}

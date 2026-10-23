@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { ApiConfig } from './accounts.ts'
 import { t } from './i18n.ts'
+import { DEFAULT_PRICING_MODEL } from './pricing.ts'
 
 /** 参数的值：单选、文本是字符串，多选是字符串数组，开关是布尔，数字是数字 */
 export const ParamValue = z.union([z.string().max(2000), z.number(), z.boolean(), z.array(z.string().max(200)).max(30)])
@@ -1746,6 +1747,11 @@ export const Settings = z.object({
       aiLookup: z.boolean().default(true),
     })
     .default({ aiLookup: true }),
+  /**
+   * 用量统计的「计价模型」：按哪个模型的官方 API 单价折算费用（单价表在 shared/pricing.ts）。
+   * 存模型 id；找不到时界面显示「未配置单价」，不拿 0 冒充
+   */
+  usagePricingModel: z.string().default(DEFAULT_PRICING_MODEL),
   /** AI 创建 / 优化 Agent 和工作流 */
   assist: z
     .object({
