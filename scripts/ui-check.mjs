@@ -134,6 +134,40 @@ try {
   await p.getByText('购物车右上角', { exact: false }).first().click()
   // 右栏是文件系统（带 git 状态），启动命令是名字那行最右边的图标，上下文和用量在输入框下面
   await check(p, '任务', ['src', '命中', 'package.json'])
+  // 派出的子任务不再铺在消息流里：入口在输入框上方、和子对话同一行，点开是列表和只读窗口
+  {
+    const openTask = async () => {
+      await p.waitForTimeout(500)
+      if (!(await p.getByTitle('Token 用量').count())) {
+        await p.getByText('购物车右上角', { exact: false }).first().click()
+        await p.waitForTimeout(600)
+      }
+    }
+    // 折叠行「派出 3 个子任务」也是一个按钮，入口按钮的 aria-label 正好是「子任务」，按精确名字定位它
+    const bar = p.getByRole('button', { name: '子任务', exact: true })
+    if (!(await bar.count())) errors.push('子任务栏：输入框上方没有「子任务」入口')
+    else {
+      if (await p.getByText('核对角标的订阅时机', { exact: false }).count())
+        errors.push('子任务栏：消息流里还画着子任务卡片')
+      await bar.first().click()
+      // 这个示例对话本来就有 2 个子角色，演示数据又添了 1 个
+      await check(p, '子任务-列表', ['共 3 个', '已完成', '核对角标的订阅时机', '8.60s'])
+      await p.getByRole('button', { name: /核对角标的订阅时机/ }).click()
+      await check(p, '子任务-窗口', ['问题在', '这里只能查看'])
+      await p.keyboard.press('Escape')
+      await p.waitForTimeout(300)
+      // 窄窗口：入口和输入框上方那一行不能被挤坏（运行中的块在窄屏收进按钮里）
+      await p.setViewportSize({ width: 900, height: 800 })
+      await p.reload()
+      await openTask()
+      if (!(await p.getByRole('button', { name: '子任务', exact: true }).count()))
+        errors.push('子任务栏：窄窗口里入口不见了')
+      await check(p, '子任务-窄窗口')
+      await p.setViewportSize({ width: 1440, height: 900 })
+      await p.reload()
+      await openTask()
+    }
+  }
   // Token 胶囊：点开浮层看整个运行的合计（本对话 + 子对话 + 派出的子任务）
   {
     await p.getByTitle('Token 用量').first().click()

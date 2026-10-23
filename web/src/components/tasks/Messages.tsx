@@ -14,7 +14,6 @@ import { stripDispatch } from '@shared/dispatch'
 import { stripEvolution } from '@shared/task-export'
 import { AgentAvatar } from '@/components/agents/AgentAvatar'
 import { StepCommand } from './StepCommand'
-import { HelperCards } from './HelperCards'
 import { AiFixButton } from '@/components/ui/ai-fix'
 import { useAgentView } from '@/lib/agent-view'
 import { conversationAround } from '@shared/fix'
@@ -398,16 +397,17 @@ function PanelRow({ m, teamNames }: { m: TaskMessage; teamNames: Set<string> }) 
 }
 
 /**
- * 夹在 AI 回复里、不是谁说的话的几种消息：派出的子任务、面板推回的结果。
+ * 夹在 AI 回复里、不是谁说的话的几种消息：面板推回的结果、子对话的提问。
  * 和工具调用一样缩进在头像后面；不是这几种返回 null
  */
 function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<string>) {
   // 子对话的回报只给 AI 看，界面上不画
   if (m.panel === 'child') return <Fragment key={m.id} />
+  // 派出的子任务在输入框上方的「子任务」栏里看：消息流里不再画卡片，
+  // 这条消息只用来记派出了哪几个，已完成的那一轮折叠行上仍写着「派出 n 个子任务」
+  if (m.spawned?.length) return <Fragment key={m.id} />
   const body =
-    m.spawned?.length && task ? (
-      <HelperCards task={task} ids={m.spawned} teamNames={teamNames} />
-    ) : m.panel === 'ask' && m.ask ? (
+    m.panel === 'ask' && m.ask ? (
       <ChildAskCard m={m} task={task} teamNames={teamNames} />
     ) : m.panel ? (
       <PanelRow m={m} teamNames={teamNames} />
@@ -421,7 +421,7 @@ function inlineEntry(m: TaskMessage, task: Task | undefined, teamNames: Set<stri
   )
 }
 
-/** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字） */
+/** 这条消息不打断同一个 Agent 的连续回复（下一条不用再显示名字）：面板结果和派出子任务的那条 */
 const transparent = (m: TaskMessage) => !!m.panel || !!m.spawned?.length
 
 /** 一串消息按顺序显示；同一个 Agent 连续的消息只显示一次头像和名字 */
