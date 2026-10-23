@@ -2,7 +2,7 @@
  * 一段回复收尾后折叠起来的过程：折叠行上的统计口径，以及「一段已经收尾、又从子对话或后台命令来了新内容」时怎么分段。
  * 界面（Messages.tsx 的 FoldedRun / ChatReply）直接用这里的结果，口径和分段都能单独测。
  */
-import type { TaskMessage, ToolUse } from '@shared/schema'
+import type { StepStatus, TaskMessage, ToolUse } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { stripToolMarkup } from '@shared/task'
 import { toolView, type ToolView } from './tasks'
@@ -12,6 +12,25 @@ export const replyText = (m: TaskMessage) => (m.role === 'agent' ? stripToolMark
 
 /** 留在折叠外面的：报错（要让人看到）、子对话的提问（要人回答）；子对话的回报界面上本来就不画 */
 export const keptOut = (m: TaskMessage) => m.panel === 'ask' || (m.role === 'system' && !m.panel && !m.spawned?.length)
+
+/**
+ * 派出的子任务里还没收尾的（排队中、执行中，口径和 engine 里算子任务名额一样）：
+ * 它们的卡片和运行中的工具、后台命令一样留在折叠外面，放在这一段的总结上面，
+ * 交回结果之后才跟着这一段收进折叠。一次派了几个、只有几个还在跑时，只把还在跑的那几行留在外面
+ */
+export function liveHelpers(
+  msgs: TaskMessage[],
+  steps: { id: string; status: StepStatus }[] | undefined,
+): { msg: TaskMessage; ids: string[] }[] {
+  const live = new Set((steps ?? []).filter((s) => s.status === 'running' || s.status === 'pending').map((s) => s.id))
+  const out: { msg: TaskMessage; ids: string[] }[] = []
+  if (!live.size) return out
+  for (const m of msgs) {
+    const ids = (m.spawned ?? []).filter((id) => live.has(id))
+    if (ids.length) out.push({ msg: m, ids })
+  }
+  return out
+}
 
 /** 最后一个满足条件的下标（目标库没有 findLastIndex） */
 function lastIndex<T>(list: T[], ok: (x: T) => boolean) {
