@@ -34,6 +34,13 @@ const stampOf = (msgs: TaskMessage[]) => `${msgs.length}:${msgs.map((m) => m.id 
 const KEEP_FULL = 12
 
 /**
+ * 消息文件的最小写入间隔。流式输出时一秒会更新几十次，每次都把几 MB 的对话重新算一遍指纹、
+ * 序列化、写一遍盘，磁盘和事件循环都被占满（推送跟着变慢、延迟，前端还会收到积压后一起重渲染）。
+ * 窗口内只留最后一次，到点写最新的；任务本身的小文件（不带对话）照旧每次写，崩溃最多丢窗口内这点对话。
+ */
+const MSG_GAP = 400
+
+/**
  * 任务记录：任务本身全部读进内存，对话消息按需读。写入按任务串行化、原子写；
  * 消息没变时只重写小的任务文件。旧格式第一次读时转换，原文件挪到缓存目录备份。
  */
@@ -45,23 +52,69 @@ export function createTaskStore() {
   /** 每个任务上次写入的消息指纹，没变就不重写消息文件 */
   const written = new Map<string, string>()
   const writing = new Map<string, Promise<void>>()
+  /** 消息文件上次写入的时间、窗口内等着写的最新一份和定时器 */
+  const msgAt = new Map<string, number>()
+  const msgPending = new Map<string, Task>()
+  const msgTimers = new Map<string, ReturnType<typeof setTimeout>>()
   onReset(() => {
     metas = null
     loading = null
     full.clear()
     written.clear()
+    for (const timer of msgTimers.values()) clearTimeout(timer)
+    msgTimers.clear()
+    msgPending.clear()
+    msgAt.clear()
   })
 
   const fileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}.json`)
   const msgFileOf = (t: { id: string; projectId: string }) => path.join(dirOf(t.projectId), `${t.id}${MSG}`)
 
   async function writeFull(t: Task) {
-    const stamp = stampOf(t.messages)
-    if (written.get(t.id) !== stamp) {
-      await writeJsonAtomic(msgFileOf(t), t.messages, true)
-      written.set(t.id, stamp)
-    }
     await writeJsonAtomic(fileOf(t), head(t))
+  }
+
+  /** 写对话消息：指纹没变就跳过 */
+  async function writeMessages(t: Task) {
+    const stamp = stampOf(t.messages)
+    if (written.get(t.id) === stamp) return
+    written.set(t.id, stamp)
+    await writeJsonAtomic(msgFileOf(t), t.messages, true)
+  }
+
+  /** 同任务的写入排队，前一次失败不影响后面的 */
+  function queueWrite(t: Task, run: (x: Task) => Promise<void>) {
+    const id = t.id
+    const next = (writing.get(id) ?? Promise.resolve()).catch(() => {}).then(() => run(t))
+    writing.set(id, next)
+    void next.finally(() => writing.get(id) === next && writing.delete(id)).catch(() => {})
+    return next
+  }
+
+  /**
+   * 写对话消息文件：不在窗口内就写，窗口内只留最后一次，到点写最新的一份。
+   * 窗口内也要排队写，不能和小文件抢顺序
+   */
+  function persistMessages(t: Task): Promise<void> | undefined {
+    const id = t.id
+    const wait = (msgAt.get(id) ?? 0) + MSG_GAP - Date.now()
+    if (wait > 0) {
+      msgPending.set(id, t)
+      if (!msgTimers.has(id)) {
+        msgTimers.set(
+          id,
+          setTimeout(() => {
+            msgTimers.delete(id)
+            const last = msgPending.get(id)
+            msgPending.delete(id)
+            if (last) void queueWrite(last, writeMessages)
+          }, wait),
+        )
+      }
+      return undefined
+    }
+    msgAt.set(id, Date.now())
+    return queueWrite(t, writeMessages)
   }
 
   /**
@@ -100,6 +153,8 @@ export function createTaskStore() {
     for (const t of olds) {
       await mkdir(dirOf(t.projectId), { recursive: true })
       await writeFull(t)
+      // 拆文件时对话一起写到新的消息文件里，不能只留任务本身
+      await writeMessages(t)
       map.set(t.id, head(t))
     }
     if (existsSync(ITEMS_DIR)) {
@@ -161,17 +216,10 @@ export function createTaskStore() {
   }
 
   function persist(task: Task) {
-    const id = task.id
-    // 同一个任务的写入排队，前一次失败不影响后面的
-    const next = (writing.get(id) ?? Promise.resolve())
-      .catch(() => {})
-      .then(async () => {
-        await mkdir(dirOf(task.projectId), { recursive: true })
-        await writeFull(task)
-      })
-    writing.set(id, next)
-    void next.finally(() => writing.get(id) === next && writing.delete(id)).catch(() => {})
-    return next
+    const next = queueWrite(task, writeFull)
+    // 对话文件单独节流：任务本身的小文件每次都写，状态和列表不会落后
+    const msgs = persistMessages(task)
+    return msgs ? Promise.all([next, msgs]).then(() => {}) : next
   }
 
   return {
@@ -206,6 +254,12 @@ export function createTaskStore() {
       map.delete(id)
       full.delete(id)
       written.delete(id)
+      // 窗口里还等着写的那份一起丢掉，不能删完又被定时器写回来
+      const timer = msgTimers.get(id)
+      if (timer) clearTimeout(timer)
+      msgTimers.delete(id)
+      msgPending.delete(id)
+      msgAt.delete(id)
       await (writing.get(id) ?? Promise.resolve()).catch(() => {})
       await unlink(fileOf(meta)).catch(() => {})
       await unlink(msgFileOf(meta)).catch(() => {})
