@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
+import { ArrowDown, Check, Download, Loader2, Play, RefreshCw, Square, Trash2, X } from 'lucide-react'
 import {
   LOCAL_MODELS,
   PYTHON_RANGE,
@@ -14,6 +14,7 @@ import type { Settings } from '@shared/schema'
 import { t } from '@shared/i18n'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
+import { useStickToBottom } from '@/lib/useStickToBottom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Switch } from '@/components/ui/switch'
@@ -65,6 +66,36 @@ function EnvLine({ label, value, hint, mono }: { label: string; value: string; h
         </span>
         {hint && <span className="mt-0.5 block break-all text-[0.75rem] leading-relaxed text-subtle">{hint}</span>}
       </div>
+    </div>
+  )
+}
+
+/**
+ * 安装 / 下载的日志区：高度固定不撑高整页，始终停在最新一行（安装过程的输出一直在往下追加）。
+ * 往上翻看历史时不打扰，滚回底部附近再接着跟；换一轮任务或任务结束时重新贴底，
+ * 保证报错和最后一行不会停在可视区外
+ */
+function JobLog({ job }: { job: NonNullable<LocalStatus['job']> }) {
+  const { ref, onScroll, away, toBottom } = useStickToBottom(`${job.id}:${job.status}`)
+  return (
+    <div className="relative mt-2">
+      <div ref={ref} onScroll={onScroll} className="max-h-48 overflow-x-hidden overflow-y-auto rounded-lg bg-field p-2">
+        {/* 等宽、自动折行：URL 和路径这类长行不把容器撑出横向滚动条 */}
+        <pre className="font-mono text-[0.71875rem] leading-relaxed break-all whitespace-pre-wrap text-muted">
+          {job.log.slice(-6000)}
+        </pre>
+      </div>
+      {away && (
+        <button
+          type="button"
+          onClick={toBottom}
+          aria-label={t('回到底部')}
+          title={t('回到底部')}
+          className="absolute right-2 bottom-2 grid h-6 w-6 cursor-pointer place-items-center rounded-full border border-line-strong bg-card text-muted shadow-pop transition-colors hover:text-fg"
+        >
+          <ArrowDown className="h-3 w-3" />
+        </button>
+      )}
     </div>
   )
 }
@@ -265,11 +296,7 @@ export function LocalImageSection({ value, onChange }: { value: LocalSettings; o
             {job.error && (
               <p className="mt-2 text-[0.78125rem] leading-relaxed whitespace-pre-wrap text-danger">{job.error}</p>
             )}
-            {job.log && (
-              <pre className="mt-2 max-h-48 overflow-auto rounded-lg bg-field p-2 font-mono text-[0.71875rem] leading-relaxed whitespace-pre-wrap text-muted">
-                {job.log.slice(-6000)}
-              </pre>
-            )}
+            {job.log && <JobLog job={job} />}
             {job.status === 'failed' && (
               <p className="mt-2 text-[0.75rem] text-subtle">
                 {t('「AI 处理」会把出错的步骤和输出交给「AI 创建」里设置的 Agent，让它在安装目录里排查并修好环境。')}
