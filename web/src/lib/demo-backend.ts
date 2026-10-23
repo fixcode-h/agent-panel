@@ -35,6 +35,7 @@ import {
   type TaskProcess,
   type TaskProcesses,
   type TaskMemoryHistory,
+  type TaskMemoryAnalysis,
   type TaskStep,
   type TaskTurn,
   type CliInstallJob,
@@ -50,6 +51,14 @@ import {
 import { DATA_KINDS, type DataKind, type MemoryUsage } from '@shared/data'
 import { UsageQuery, usageReport } from '@shared/usage'
 import { runTree, runUsage } from '@shared/run-usage'
+import {
+  TASK_MEMORY_ASK,
+  clipReport,
+  ownersOf,
+  taskMemoryReport,
+  taskMemoryTrend,
+  taskTrendText,
+} from '@shared/memory-analysis'
 import { descendantTotals } from '@shared/task-export'
 import { newLessonId, upsertLesson } from '@shared/lessons'
 import { orderProjects, projectOrderError, sortProjects } from '@shared/project-order'
@@ -2110,6 +2119,62 @@ function demoMemory(task: Task, query: URLSearchParams): TaskMemoryHistory {
   return { sampledAt: now, intervalMs, capacity, points }
 }
 
+/** 演示版的内存分析：和正式后端同一套口径（shared/memory-analysis.ts），数字来自演示数据 */
+function demoMemoryAnalysis(task: Task, tasks: Task[], projects: Project[]): TaskMemoryAnalysis {
+  const history = demoMemory(task, new URLSearchParams())
+  const points = history.points
+  const panel = demoProcesses(task, tasks)
+  const owners = ownersOf(panel.processes, task.id)
+  const tree = runTree(task, tasks)
+  const contexts = tree
+    .map((x) => {
+      let best = { context: 0, window: 0 }
+      for (const u of Object.values(x.usage?.agents ?? {})) {
+        if ((u.context ?? 0) > best.context) best = { context: u.context ?? 0, window: u.window ?? 0 }
+      }
+      return { id: x.id, title: x.title, ...best, self: x.id === task.id }
+    })
+    .filter((x) => x.context > 0)
+  const project = projects.find((p) => p.id === task.projectId) ?? null
+  const trend = taskMemoryTrend(points)
+  const report = taskMemoryReport({
+    task: { title: task.title, mode: task.mode, status: task.status },
+    project: project ? { name: project.name, path: project.path } : null,
+    points,
+    intervalMs: history.intervalMs,
+    panel: { cliMemory: panel.cliMemory, serverMemory: panel.serverMemory, unavailable: panel.unavailable },
+    owners,
+    tree: {
+      tasks: tree.length,
+      children: tree.length - 1,
+      running: tree.filter((x) => x.status === 'running').length,
+    },
+    contexts,
+  })
+  return {
+    sampledAt: Date.now(),
+    intervalMs: history.intervalMs,
+    report: clipReport(report),
+    ask: TASK_MEMORY_ASK,
+    cwd: project?.path ?? '',
+    trend: trend?.trend ?? null,
+    trendText: taskTrendText(trend),
+    owners: owners.map(({ taskId, title, self, rss, count, counted }) => ({
+      taskId,
+      title,
+      self,
+      rss,
+      count,
+      counted,
+    })),
+    tree: {
+      tasks: tree.length,
+      children: tree.length - 1,
+      running: tree.filter((x) => x.status === 'running').length,
+    },
+  }
+}
+
 function tasksRoute(
   method: string,
   id: string | undefined,
@@ -2255,6 +2320,7 @@ function tasksRoute(
     if (method === 'POST' && rid) return demoKill(task, Number(rid))
   }
   if (sub === 'memory' && method === 'GET') return demoMemory(task, query)
+  if (sub === 'memory-analysis' && method === 'GET') return demoMemoryAnalysis(task, tasks, d.projects ?? [])
   if (sub === 'run-usage' && method === 'GET') return runUsage(task, tasks)
   // 子对话的统计合计：和正式后端一样，把子对话（含多层）的耗时、token、报错汇总进来
   if (sub === 'children-stats' && method === 'GET')

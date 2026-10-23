@@ -40,6 +40,7 @@ import type {
   KillProcessResult,
   ProcessSuggestResult,
   TaskMemoryHistory,
+  TaskMemoryAnalysis,
   TaskProcesses,
 } from '@shared/schema'
 import type { ChildActivity, ChildHold, ChildWait } from '@shared/task'
@@ -366,6 +367,8 @@ export const api = {
     const qs = q.toString()
     return request<TaskMemoryHistory>(`/tasks/${id}/memory${qs ? `?${qs}` : ''}`)
   },
+  /** 会话内存的 AI 分析报告：点「AI 分析」时现算，交给本机 CLI 体检 */
+  taskMemoryAnalysis: (id: string) => request<TaskMemoryAnalysis>(`/tasks/${id}/memory-analysis`),
   taskChildren: (id: string) =>
     request<
       {
