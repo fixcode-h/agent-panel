@@ -344,8 +344,6 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
     if (next !== ordered) void saveOrder(next)
   })
   const projectName = (id: string) => projects.find((p) => p.id === id)?.name ?? t('已删除的项目')
-  // 文件页按项目看：跟着正在看的项目走，不在项目里时用第一个项目
-  const filesProject = (route.page === 'files' || route.page === 'projects' ? route.id : undefined) ?? ordered[0]?.id
   const allOpen = !folded.has(ALL)
   // 右键菜单里的重命名就地改名，删除先确认
   const [renaming, setRenaming] = useState('')
@@ -480,15 +478,6 @@ export function Sidebar({ dark, onToggleTheme }: { dark: boolean; onToggleTheme:
               on={route.page === 'home'}
               onClick={() => go({ page: 'home' })}
               className={cn(!narrow && '[&>svg]:rounded-full [&>svg]:bg-accent [&>svg]:p-[3px] [&>svg]:text-white')}
-            />
-            {/* 文件页是项目里的东西，放在新建任务后面、和角色等工作流配置分开；
-                还没有项目时直接打开添加项目的窗口 */}
-            <Row
-              icon={FolderOpen}
-              label={t('文件')}
-              collapsed={narrow}
-              on={route.page === 'files'}
-              onClick={() => (filesProject ? go({ page: 'files', id: filesProject }) : openProject())}
             />
             {NAV.map((n) => (
               <Row
