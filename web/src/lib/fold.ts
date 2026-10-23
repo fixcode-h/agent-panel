@@ -111,6 +111,25 @@ export function addFoldCut(key: string, len: number) {
 }
 
 /**
+ * 用户点开 / 收起某一段的选择：按「这一轮 + 第几段」记在内存里。
+ * 来了新内容重新分段、切到别的页签又回来、消息被裁掉再恢复时组件会重新挂载，
+ * 不记住的话每次都会回到默认的收起状态，用户点开过的那段又缩回去了
+ */
+const segOpen = new Map<string, boolean>()
+
+/** 这一段现在是展开的（没点过就是收起的，和收尾后的默认状态一致） */
+export function segOpenOf(id: string) {
+  return segOpen.get(id) ?? false
+}
+
+/** 点了这一段的开关：记下新的状态并返回，界面直接用这个值 */
+export function toggleSegOpen(id: string) {
+  const next = !segOpenOf(id)
+  segOpen.set(id, next)
+  return next
+}
+
+/**
  * 按记下的位置把这一轮分成几段：前面的段都已经收尾（始终折叠），最后一段是这次新来的内容。
  * 最后一段可能是空的（收尾后还没有新内容）；记下的位置超出现在的消息数时按现有消息切，不丢消息
  */

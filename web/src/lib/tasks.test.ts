@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { tokenGroups, toolView } from './tasks.ts'
+import { startedRun, tokenGroups, toolView } from './tasks.ts'
 import { setLang } from '../../../shared/i18n.ts'
 
 // 断言里是中文，不管本机是什么语言
@@ -109,4 +109,35 @@ test('放到后台的命令记下面板给的编号：命令还在跑时那一�
   assert.equal(view?.job, '1a2b3c4d')
   assert.equal(view?.tool.label, '单元测试')
   assert.equal(toolView(tool('mcp__panel__check_background', '', { input: '{"id":"1a2b3c4d"}' }))?.job, undefined)
+})
+
+test('「启动工作流」一行认回启动的是第几次运行', () => {
+  const start = (input: string, output = '') =>
+    tool('mcp__panel__start_plan', '启动工作流', { input: `{"input":"${input}"}`, output })
+  const msg = (at: number, step: string, tools: Parameters<typeof toolView>[0][] = []) =>
+    ({ id: `m${at}`, role: 'agent', agentId: 'a', step, text: '', tools, at: String(at) }) as never
+  // 主 Agent 的常驻节点不是一次运行里的节点，后面的运行按节点 id 前缀分
+  const step = (id: string, runId: number) => ({ id, kind: 'agent', parentId: '', runId }) as never
+  const task = (messages: unknown[], steps: unknown[]) => ({ messages, steps }) as never
+
+  // 第一次运行：调用之后第一条属于运行节点的消息，那个节点的 runId 就是这次运行
+  const first = start('补接口')
+  const one = task([msg(1, '@main', [first]), msg(2, 'n1'), msg(3, '@main')], [step('@main', 1), step('n1', 1)])
+  assert.equal(startedRun(one, toolView(first)!.tool), 1)
+
+  // 第二次运行的节点带 r2/ 前缀：同一次调用对上的还是第一次运行
+  const two = task(
+    [msg(1, '@main', [first]), msg(2, 'n1'), msg(3, 'r2/n1')],
+    [step('@main', 1), step('n1', 1), step('r2/n1', 2)],
+  )
+  assert.equal(startedRun(two, toolView(first)!.tool), 1)
+
+  // 调用没跑起来（后面又启动了一次）：没有运行可看，界面按「没有启动运行」显示原因
+  const failed = start('跑不起来')
+  const none = task([msg(1, '@main', [failed]), msg(2, '@main', [start('另一件事')])], [step('@main', 1)])
+  assert.equal(startedRun(none, toolView(failed)!.tool), undefined)
+
+  // 认不回同一次调用时不乱认到别的运行上
+  const other = task([msg(1, '@main', [failed]), msg(2, 'n1')], [step('@main', 1), step('n1', 1)])
+  assert.equal(startedRun(other, toolView(start('另一件事'))!.tool), undefined)
 })

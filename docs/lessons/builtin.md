@@ -12,9 +12,15 @@ paths: shared/builtin/**, skills/**, server/builtin*.ts, server/bundled-skills.t
 
 ## 改内置定义要带升级
 
-- 规则：改 `shared/builtin/` 的定义时同步 `shared/builtin/legacy.ts`，已装副本的升级要幂等（跑两次结果一样），并补升级测试。必备的四个角色（`core.ts`）例外，启动时直接同步，只要别改参数 key。
+- 规则：改 `shared/builtin/` 的定义时同步 `shared/builtin/legacy.ts`，已装副本的升级要幂等（跑两次结果一样），并补升级测试。必备角色（`core.ts` 的 `CORE_AGENTS`）例外，启动时直接同步，只要别改参数 key。
 - 起因：5edc8a2 补漏掉的升级测试。
 - 防线：`server/builtin.test.ts`。
+
+## 自制 Skill 改名或合并后要清用户目录的旧副本
+
+- 规则：内置 Skill 改名、合并或删除时，把旧目录名和旧版每个文件的 sha256 记进 `server/bundled-skills.ts` 的 `RETIRED_BUNDLED`；`ensureBundled` 只补缺的不删多的，不登记就会在 `~/.agents/skills` 里同时留着新旧两个入口。只删内容和旧版完全一致的，用户改过或自己加过文件的保留。
+- 起因：project-workflow / git-workflow / p4-workflow 合并成 project-vcs。
+- 防线：`server/builtin.test.ts` 里 retireBundled 的单测。
 
 ## 改提示词或文案前先搜断言
 

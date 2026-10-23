@@ -1,6 +1,6 @@
 ---
 name: project-documentation
-description: 管理项目文档：确定 PROJECT_ROOT 与 DOC_ROOT、文档入口与模块地图、模块 README 状态与 bugs.md、按变化选择要更新的文档。项目任务开始时使用；需要初始化文档结构、阅读项目、写模块摘要、更新 CONTEXT 或架构说明、ADR、技术契约、runbook、发布说明时也使用。任何技术栈、任何版本控制系统通用的规则；版本控制的专项命令见 project-workflow。
+description: 管理项目文档：确定 PROJECT_ROOT 与 DOC_ROOT、文档入口与模块地图、模块 README 状态与 bugs.md、按变化选择要更新的文档。项目任务开始时使用；需要初始化文档结构、阅读项目、写模块摘要、更新 CONTEXT 或架构说明、ADR、技术契约、runbook、发布说明时也使用。任何技术栈、任何版本控制系统通用的规则；版本控制的专项命令见 project-vcs。
 user-invocable: true
 ---
 
@@ -8,7 +8,7 @@ user-invocable: true
 
 ## 项目任务门禁
 
-项目任务开始时使用本技能，与 `project-workflow` 配合；使用本技能不等于批量生成文档，也不启动 OpenSpec 流程。非项目问答不创建项目文档。
+项目任务开始时使用本技能，与 `project-vcs` 配合；使用本技能不等于批量生成文档，也不启动 OpenSpec 流程。非项目问答不创建项目文档。
 
 1. 项目任务开始前确定 `PROJECT_ROOT` 与 `DOC_ROOT`，读取已存在的文档入口和模块地图；缺失时先读取项目入口，按本技能初始化最小必要文档，不假设目标项目已有文档脚本。
 2. 根据模块地图找到对应模块 README，再由其中的路径、入口和关键符号定位代码。优先在模块范围内搜索；只有文档无法定位或证据不足时才扩大范围，并把新定位信息回写文档。

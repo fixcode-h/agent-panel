@@ -1,5 +1,5 @@
 ---
-paths: server/auth.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/exec/worktree.ts
+paths: server/auth.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, server/tasks.ts, server/exec/worktree.ts, shared/task.ts
 ---
 
 # 服务端接口和访问控制
@@ -12,6 +12,12 @@ paths: server/auth.ts, server/ask-mcp.ts, server/orch-mcp.ts, server/index.ts, s
 
 ## 对话的独立分支不推远端，标记完成就删
 
-- 规则：子对话的 worktree 里给 CLI 和后台命令都带 `noPushEnv`（`pushInsteadOf` 指向不存在的协议），用户明确要求才由父对话推当前分支；子对话标记完成时删掉它的 worktree 和分支，还有没合回的改动就拒绝。
+- 规则：子对话的 worktree 里给 CLI 和后台命令都带 `noPushEnv`（`pushInsteadOf` 指向不存在的协议），用户明确要求才由父对话推当前分支；子对话标记完成时删掉它的 worktree 和分支，还有没合回的改动就拒绝，其余条件见下一条。
 - 起因：用户要求「对话的 worktree 不能推送到远端」「子对话标记完成就删除对应的 worktree」。
 - 防线：`server/no-push.test.ts`、`scripts/e2e.mjs`。
+
+## 合并成功不等于做完了：置完成和删 worktree 必须过同一套「彻底完成」判定
+
+- 规则：`shared/task.ts` 的 `childFlowOf` / `childHolds` 是唯一判定，置 `resolved`、回收独立分支、面板阶段和转圈都读它；任何路径（合并成功、一轮结束、后台命令结束、面板或父对话手动标记完成）都只走 `server/tasks.ts` 的 `advanceChildTo`（第 4 步置完成 → 第 5 步上报父对话 → 第 6 步列表刷新），顺序和幂等由 `shared/task.ts` 的 `advanceChild` 管，不许直接调 `removeWorktree` 或写 `resolved`；条件不满足就保留目录和分支并把 `childHoldText` 的原因显示给用户。用户显式「删除独立分支 / 丢弃」照旧直接删。
+- 起因：合并本改动的那次提交（2026-10，子对话 worktree-ed7cb8cc）——用户报「还有后台命令、计划没完成就被标成已完成」，worktree 也跟着被删了；后来用户要求完成状态只能单向流转，父对话不许跳步直接改子对话的最终状态。
+- 防线：`shared/child-flow.test.ts`、`shared/task-stage.test.ts`、`server/exec/worktree.test.ts`。

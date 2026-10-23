@@ -916,6 +916,10 @@ export const ToolUse = z.object({
 })
 export type ToolUse = z.infer<typeof ToolUse>
 
+/** 子对话交出去的两种需要用户拍板的事：执行中的提问、这一轮做完的收尾建议 */
+export const AskKind = z.enum(['question', 'suggestion'])
+export type AskKind = z.infer<typeof AskKind>
+
 export const TaskMessage = z.object({
   id: z.string(),
   role: z.enum(['user', 'agent', 'system']),
@@ -938,6 +942,11 @@ export const TaskMessage = z.object({
   error: z.boolean().optional(),
   /** 这次执行结束时写的状态说明（已暂停、失败后可以重试）：继续执行时它已经不成立，会被去掉 */
   transient: z.boolean().optional(),
+  /**
+   * 计划启动时写进对话的那条提示（把计划输入又抄了一遍）：对话流里不画出来，
+   * 但数据照旧保留，历史任务、导出和继续执行都读得到
+   */
+  planStart: z.boolean().optional(),
   /** 派出子角色的那条系统消息：派出的子角色（步骤 id），对话里在这里放可以展开的「子任务」卡片 */
   spawned: z.array(z.string()).optional(),
   /**
@@ -955,6 +964,8 @@ export const TaskMessage = z.object({
       title: z.string().default(''),
       question: z.string().default(''),
       options: z.array(z.string()).default([]),
+      /** question：执行中需要拍板的问题；suggestion：这一轮做完的收尾建议，等用户选下一步怎么做 */
+      kind: AskKind.default('question'),
       answer: z.string().optional(),
       /** user：用户在卡片上回答；parent：父对话的 AI 交给了这个子对话 */
       by: z.enum(['user', 'parent']).optional(),
@@ -1261,7 +1272,15 @@ export const TaskData = z.object({
    * 有它时子对话的输入框换成选择弹窗；回答、交给父对话决定或父对话转达了决定后清掉
    */
   parentAsks: z
-    .array(z.object({ id: z.string(), question: z.string(), options: z.array(z.string()).default([]) }))
+    .array(
+      z.object({
+        id: z.string(),
+        question: z.string(),
+        options: z.array(z.string()).default([]),
+        /** 见 TaskMessage.ask.kind：收尾建议和提问共用这套弹窗，只是说法不同 */
+        kind: AskKind.default('question'),
+      }),
+    )
     .optional(),
   workflowId: z.string().default(''),
   agentId: z.string().default(''),

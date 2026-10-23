@@ -20,9 +20,7 @@
 | 项目 `project/`  | `project-structure`                | 陌生项目的目录、构建、测试、运行方式和常见坑              |
 |                  | `ue-project-structure`             | UE 模块与插件、UHT/UBT、自动化测试、Cook、资产规则        |
 |                  | `project-testing`                  | 按改动选测试、找项目自己的验证命令、写验收证据            |
-| 版本控制 `vcs/`  | `project-workflow`                 | 识别 Git / P4 / 无版本控制，保护既有改动，收尾核对        |
-|                  | `git-workflow`                     | Git 基线、限定 diff、按需本地提交，不推送                 |
-|                  | `p4-workflow`                      | P4 default changelist、pending 分桶、中文描述编码安全     |
+| 版本控制 `vcs/`  | `project-vcs`                      | 版本控制与交付的唯一入口：识别 Git / P4 / SVN，保护既有改动；Git 的分支、worktree 与合并方向、P4 的 pending 分桶、SVN 的本地纳管分在技能内的 `git.md`、`p4.md`、`svn.md` |
 | UE `ue/`         | `cpp-code-style`                   | C++ / UE C++ 格式、日志格式、模块导出规则                 |
 |                  | `lua-code-style`                   | Lua 日志格式与排版                                        |
 |                  | `lua-luac-compiler`                | LuacPacker 编译 .luac 与 Lua 语法检查                     |
@@ -36,6 +34,7 @@
 - 文件夹名必须等于 frontmatter 的 `name`，且在所有分类里唯一（安装后是平铺的）。
 - frontmatter 只写 `name`、`description`，需要时加 `user-invocable: true`。`description` 不超过 1024 字，写清楚做什么、什么时候用。
 - 脚本、模板、参考资料都放在技能文件夹里，正文用「本技能目录下的 `scripts/…`」引用，不引用仓库里其他位置的文件。
+- 同一个能力块的细则放在一个技能里：入口 `SKILL.md` 只管识别和路由，具体规则放同目录的子文件（例如 `project-vcs` 的 `git.md`、`p4.md`、`svn.md`），不拆成多个顶层技能。
 - 不在技能里写「加载某某技能」「每轮默认使用」之类的编排；引用别的技能写成「需要时配合 X 技能」，X 必须是这里已有的技能。
 - 文本文件用 UTF-8（无 BOM）和 LF 换行。
 

@@ -20,6 +20,7 @@ import {
   END,
   START,
   type Agent,
+  type AskKind,
   type Flow,
   type FlowNode,
   type FlowEdge,
@@ -76,6 +77,7 @@ import {
   type Dispatch,
 } from './dispatch.ts'
 import { t } from './i18n.ts'
+import { promptLangRules, promptLangWord, VERDICT_LINE } from './prompt-lang.ts'
 import { findLessons, type LessonQuery } from './lessons.ts'
 import { verifyBlock } from './test-steps.ts'
 import { beginTurn, endTurn, pauseStep, withAttachments } from './task.ts'
@@ -92,7 +94,7 @@ import {
   type PlanItemInput,
 } from './plan.ts'
 
-/** 提示词里的流程入口名，固定用中文（提示词不跟随界面语言） */
+/** 提示词里的流程入口名：提示词正文是给 Agent 的中文指令（只有回复语言跟随设置，见 prompt-lang.ts） */
 const SLOT_PROMPT: Record<string, string> = {
   start: '开始',
   review: '验收',
@@ -311,7 +313,7 @@ export interface Orchestra {
   canBeginEdit: boolean
   beginEdit(): Promise<{ ok: boolean; info: string }>
   submitMerge(note: string, tests: string): Promise<{ ok: boolean; info: string }>
-  toParent(text: string, question: boolean, options?: string[]): Promise<{ ok: boolean; info: string }>
+  toParent(text: string, question: boolean, options?: string[], kind?: AskKind): Promise<{ ok: boolean; info: string }>
   claim(paths: string[]): { ok: boolean; info: string }
   release(paths: string[]): { ok: boolean; info: string }
   /** 本次运行的共享状态：读快照 / 写一个键 */
@@ -444,8 +446,13 @@ export interface EngineHost {
   goal?: string
   /** 父对话：子对话发来、上一轮之后还没读的消息（读一次就清掉） */
   takeInbox?: () => { title: string; text: string }[]
-  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定 */
-  messageParent?: (text: string, question: boolean, options?: string[]) => Promise<{ ok: boolean; info: string }>
+  /** 子对话：给父对话发消息（汇报进展、提问）；question 表示需要父对话决定，kind 区分提问和收尾建议 */
+  messageParent?: (
+    text: string,
+    question: boolean,
+    options?: string[],
+    kind?: AskKind,
+  ) => Promise<{ ok: boolean; info: string }>
   /** 子对话：认领 / 释放要改的文件（同一父对话下的子对话共用一个目录） */
   claimFiles?: (paths: string[]) => { granted: string[]; held: { path: string; by: string }[] }
   releaseFiles?: (paths: string[]) => number
@@ -594,8 +601,8 @@ type FlowResult = { ok: true; output: string } | Fail
 
 /**
  * 从验收输出里读结论（也用于条件连线的「结论」）；没写结论时视为通过。
- * 给 Agent 的提示词（节点说明、验收要求、结论格式）固定用中文，不跟界面语言走：结论靠固定的说法识别，
- * 提示词跟着界面换语言，换语言前后的工作流行为就会不一样。英文的「verdict: pass/fail」也认，模型偶尔会这样写
+ * 回复语言跟随面板设置（见 prompt-lang.ts），但结论靠固定的说法识别，所以提示词里两种写法都给了：
+ * 中文「结论：通过 / 不通过」、英文「Verdict: pass / fail」，回复换成英文也不会丢结论。
  */
 export function parseVerdict(text: string): 'pass' | 'fail' | '' {
   const all = [...text.matchAll(/结论\s*[:：]\s*\**\s*(不通过|通过)/g)]
@@ -615,6 +622,20 @@ export function system(host: EngineHost, text: string, step = '', error = false,
     tools: [],
     ...(error && { error }),
     ...(transient && { transient }),
+    at: now(),
+  })
+}
+
+/** 计划 / 工作流启动的那条提示：只是把计划输入又抄了一遍，界面上不显示（用户知道自己让 Agent 干了什么），数据里留着 */
+function planStarted(host: EngineHost, text: string, step = '') {
+  host.task.messages.push({
+    id: host.newId(),
+    role: 'system',
+    agentId: '',
+    step,
+    text,
+    tools: [],
+    planStart: true,
     at: now(),
   })
 }
@@ -897,6 +918,8 @@ function commonPart(host: EngineHost, w?: Workflow) {
   const { original, extra } = userRequests(host.task)
   return [
     `## 用户需求\n${original}`,
+    // 放在前面：同一个任务里各个节点提示词的开头都一样，按前缀匹配缓存的模型服务能多命中一段
+    promptLangRules(),
     extra.length ? `## 用户的补充要求\n${extra.map((t) => `- ${t}`).join('\n')}` : '',
     w?.document.trim() ? `## 工作流说明\n${w.document.trim()}` : '',
     statePart(host.task),
@@ -905,7 +928,7 @@ function commonPart(host: EngineHost, w?: Workflow) {
     rulesPart(host),
     buildPart(host),
     fileFormatPart(host),
-    '## 通用要求\n完成后用中文简要总结：做了什么、改了哪些文件、有没有遗留问题。\n' +
+    `## 通用要求\n完成后用${promptLangWord()}简要总结：做了什么、改了哪些文件、有没有遗留问题。\n` +
       // 一次输出太长时，模型服务的连接容易中途断开，整个节点白做
       '写很长的文件时分几次写：先写开头一部分，再分段追加或编辑补上，每次不超过约 300 行；不要一次输出整个大文件。',
   ]
@@ -953,11 +976,9 @@ function unitPrompt(
           .join('\n')}`
       : '',
     `## 要求\n只完成本${multi ? '步' : '节点'}「${step.title}」，不要做其他${multi ? '步骤' : '节点'}的工作。`,
-    reviewing
-      ? '你在验收上面「输入」里的结果。逐条检查，不通过时列出必须修改的地方。最后单独一行写「验收结论：通过」或「验收结论：不通过」。'
-      : '',
+    reviewing ? `你在验收上面「输入」里的结果。逐条检查，不通过时列出必须修改的地方。最后${VERDICT_LINE.review}。` : '',
     deciding
-      ? `## 结论\n后面的流程按你的结论走${route('pass') ? `：通过时接着做${route('pass')}` : ''}${route('fail') ? `；不通过时接着做${route('fail')}` : ''}。完成后最后单独一行写「结论：通过」或「结论：不通过」。`
+      ? `## 结论\n后面的流程按你的结论走${route('pass') ? `：通过时接着做${route('pass')}` : ''}${route('fail') ? `；不通过时接着做${route('fail')}` : ''}。完成后最后${VERDICT_LINE.branch}。`
       : '',
   ]
     .filter(Boolean)
@@ -988,7 +1009,7 @@ function prevRoundSession(host: EngineHost, inv: Invocation, kind: NodeStep['kin
 function nextRoundPrompt(inv: Invocation, step: TaskStep, input: string) {
   const what =
     inv.slot === 'review'
-      ? `这是第 ${inv.round} 轮验收：被验收的节点按上一轮的意见修改过了，下面是修改后的结果。请在上一轮检查的基础上重新逐条验收，确认上一轮提出的问题都已解决、没有引入新的问题。最后单独一行写「验收结论：通过」或「验收结论：不通过」。`
+      ? `这是第 ${inv.round} 轮验收：被验收的节点按上一轮的意见修改过了，下面是修改后的结果。请在上一轮检查的基础上重新逐条验收，确认上一轮提出的问题都已解决、没有引入新的问题。最后${VERDICT_LINE.review}。`
       : `上一轮的结果需要修改，下面是这一轮的输入。请在你上一轮工作的基础上继续完善本节点「${step.title}」，完成后同样简要总结。`
   return [what, input ? `## 输入\n${input}` : ''].filter(Boolean).join('\n\n')
 }
@@ -1128,7 +1149,7 @@ async function runNodeSingle(
         : prev
           ? nextRoundPrompt(inv, step, input)
           : ''
-    const tail = deciding && (extra || cont) ? '\n\n最后同样单独一行写「结论：通过」或「结论：不通过」。' : ''
+    const tail = deciding && (extra || cont) ? `\n\n最后同样${VERDICT_LINE.branch}。` : ''
     const call = (prompt: string) =>
       host.runAgent({
         step,
@@ -1529,7 +1550,7 @@ async function runNodeSteps(
         : prev
           ? nextRoundPrompt(inv, r, before)
           : ''
-    const tail = decidingHere && (extra || cont) ? '\n\n最后同样单独一行写「结论：通过」或「结论：不通过」。' : ''
+    const tail = decidingHere && (extra || cont) ? `\n\n最后同样${VERDICT_LINE.branch}。` : ''
     const call = (prompt: string) =>
       host.runAgent({
         step: r,
@@ -2262,7 +2283,7 @@ function makeOrchestra(
       askPlan(host, { workflowId: workflowId.trim(), input: input.trim(), step: step?.trim() })
       const wf = workflowId ? task.runs.flatMap((r) => r.workflows).find((w) => w.id === workflowId) : undefined
       const label = wf?.name || workflowId || '默认工作流'
-      system(
+      planStarted(
         host,
         t('开始执行计划（{name}）：{input}', { name: label, input: clip(input || t('按工作流走一遍'), 300) }),
         where,
@@ -2346,10 +2367,10 @@ function makeOrchestra(
       }
       return r
     },
-    async toParent(text, question, options) {
+    async toParent(text, question, options, kind) {
       if (!host.messageParent) return { ok: false, info: '这个对话没有父对话' }
       if (!text.trim()) return { ok: false, info: 'text 不能为空' }
-      return host.messageParent(text.trim(), question, options)
+      return host.messageParent(text.trim(), question, options, kind)
     },
     claim(paths) {
       if (!host.claimFiles) return { ok: false, info: '这个对话不需要认领文件' }
@@ -2543,7 +2564,7 @@ async function runHelper(
       siblings.length
         ? `## 同时进行的子 Agent\n下面这些和你同时执行，不要做它们的工作，也尽量不要改同一个文件：\n${siblings.map((x) => `- ${x}`).join('\n')}`
         : '',
-      '## 要求\n只完成上面这件事，不要做发起节点的其他工作。完成后用中文简要总结结果，结果会交回给派你的 Agent。',
+      `## 要求\n只完成上面这件事，不要做发起节点的其他工作。完成后用${promptLangWord()}简要总结结果，结果会交回给派你的 Agent。`,
     ]
       .filter(Boolean)
       .join('\n\n')
@@ -2744,6 +2765,7 @@ async function conversationPrompt(
   const wt = host.task.worktree?.state === 'active' ? host.task.worktree : null
   const parts = [
     `## 用户这次的消息\n${host.prompt}`,
+    promptLangRules(),
     policyPart(host),
     goalPart(host),
     rulesPart(host),
@@ -2760,7 +2782,7 @@ async function conversationPrompt(
 你在独立分支 ${wt.branch} 的单独目录里工作，不是项目目录；项目目录里的未提交改动看不到。
 ${
   host.task.parentTaskId
-    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支、完成这个子对话，见上面的「在独立分支里验证，再合回原分支」。'
+    ? '别的子对话改不到这里，你也不用认领文件，放心改。编译、测试就在这里跑，跑通后用 submit_merge 合回原分支，见上面的「在独立分支里验证，再合回原分支」。'
     : '提交留在这个分支上，由用户决定合并还是丢弃。'
 }不要自己切换 / 检出新分支；用户没要求时不要合并主分支${host.task.parentTaskId ? '（合并编译报冲突、面板让你把原分支合进来时除外）' : ''}。
 不要把这个独立分支推送到远端，用户明确要求之前一律不推。用户要求推送时，先把它合回原分支${
@@ -2821,7 +2843,7 @@ ${
   host.childIsolation === 'worktree'
     ? `## 子对话各自在独立分支里改
 要改代码的子对话都有自己的独立分支目录，互相看不到对方改到一半的文件。
-- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支，合进去这个子对话就标记完成；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。
+- 子对话在自己的分支里编译、测试，跑通后调用 submit_merge，面板排队把它合回你所在的分支；有冲突撤回并推回给那个子对话。一次只合一个，你不用自己合并。合回去只代表改动进了你的分支，不等于它做完了：它还有计划没做完、后台命令还在跑、待回答的提问或者这一轮没结束时，面板不会把它标成完成，你也不要当它已经交付完了。
 - 每次合并的结果会告诉你；子对话做完一轮却没合并时，面板会先催它一次，还没合再交给你决定。子对话反复冲突、或者问题其实是别的子对话的改动引起的，由你协调。
 - 几个子对话都合进来之后，需要整体验证时新建一个子对话去跑完整的测试，你自己不跑。
 - 合并时面板已经在这个分支上提交了，你不用另外提交。`
@@ -2846,6 +2868,9 @@ ${
     // 界面把「没在跑、也没有提问」的子对话当成已完成：子对话安静停下等于把未决的问题藏起来
     parts.push(`## 停下之前先提问
 子对话的「已停止」只由用户或父对话主动停止产生，你不要安静地停下。遇到拿不准的、需要用户确认的、不可逆的操作、缺外部信息时：用 ask_user 把问题、选项和各自的后果写清楚；要父对话决定时用 message_parent 并把 question 设为 true。先把提问发出去再结束这一轮，不要只在结论里写一句「待确认」。`)
+    if (host.messageParent)
+      parts.push(`## 收尾建议要交给用户选
+这一轮做完了、结论里要给用户下一步怎么做的建议时（继续做某个方向、换个做法、要不要接着做），必须调用 suggest_next_step（text 写建议，options 写 2–4 个做法，第一个是推荐做法并标「（推荐）」），不要只写在结论里：只写在结论里用户看不出你是在等他，还是已经结束了，子对话就一直停在那条没人处理的建议上。用户选完会自动交回给你接着做。`)
     if (host.messageParent)
       parts.push(
         host.claimFiles
@@ -2988,16 +3013,18 @@ function summaryOf(task: Task) {
 function followUpPrompt(host: EngineHost, blocked?: TaskStep) {
   const { original } = userRequests(host.task)
   if (host.task.mode === 'chat') return host.prompt
+  const after = `完成后用${promptLangWord()}简要说明改了什么。`
   return [
     `用户对任务「${host.task.title}」提出了追加要求：\n${host.prompt}`,
+    promptLangRules(),
     `## 任务的原始需求\n${original}`,
     host.workflow?.document.trim() ? `## 工作流说明\n${host.workflow.document.trim()}` : '',
     blocked
       ? `工作流停在了节点「${blocked.title}」：它的结论是不通过，后面的节点还没有执行。它的结果：\n${clip(blocked.output, 3000)}\n\n` +
-        `请按追加要求处理（例如修好不通过的地方），必要时自己验证；完成后用中文简要说明改了什么。之后会重新执行「${blocked.title}」，通过后接着走后面的流程，后面节点的工作不用你做。`
+        `请按追加要求处理（例如修好不通过的地方），必要时自己验证；${after}之后会重新执行「${blocked.title}」，通过后接着走后面的流程，后面节点的工作不用你做。`
       : host.task.flowClosed
-        ? '用户已经结束了工作流，没完成的节点不再执行。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。'
-        : '工作流的各个节点已经完成。请按追加要求直接修改，必要时自己验证；完成后用中文简要说明改了什么。',
+        ? `用户已经结束了工作流，没完成的节点不再执行。请按追加要求直接修改，必要时自己验证；${after}`
+        : `工作流的各个节点已经完成。请按追加要求直接修改，必要时自己验证；${after}`,
   ]
     .filter(Boolean)
     .join('\n\n')

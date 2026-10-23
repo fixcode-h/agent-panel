@@ -1,5 +1,5 @@
 import type { Task, TaskStatus, TaskStep, ToolUse } from '@shared/schema'
-import { SLOT_LABEL } from '@shared/flow'
+import { SLOT_LABEL, topSteps } from '@shared/flow'
 import { getLang, t } from '@shared/i18n'
 import { stepMs } from '@shared/task'
 import { cacheHitRate } from '@shared/task-export'
@@ -144,6 +144,8 @@ export interface ToolView {
   child?: string
   /** 放到后台的命令：面板给的编号，命令还在跑时这一行一直转圈 */
   job?: string
+  /** 这次调用启动了一次工作流：点标题打开这次运行的对话，不是一段文本 */
+  startsRun?: boolean
 }
 
 /**
@@ -154,15 +156,46 @@ export function toolView(tool: ToolUse): ToolView | null {
   const panel = panelTool(tool)
   if (panel === null) return null
   if (panel) {
+    const name = panelName(tool)
     const child = panelChildId(tool)
-    const job = panelName(tool) === 'run_background' ? /编号 ([0-9a-f]{8})/.exec(tool.output ?? '')?.[1] : undefined
-    return { tool: panel, ...(child && { child }), ...(job && { job }) }
+    const job = name === 'run_background' ? /编号 ([0-9a-f]{8})/.exec(tool.output ?? '')?.[1] : undefined
+    const startsRun = name === 'start_plan' || name === 'run_workflow'
+    return { tool: panel, ...(child && { child }), ...(job && { job }), ...(startsRun && { startsRun }) }
   }
   const mcp = tool.name === 'MCP' ? MCP_LABEL.exec(tool.label) : null
   if (!mcp) return { tool }
   const a = toolArgs(tool)
   const arg = Object.values(a).find((v) => typeof v === 'string' && v.trim()) as string | undefined
   return { tool: { ...tool, name: mcp[2], label: arg ? firstLine(arg).slice(0, 120) : '' }, server: mcp[1] }
+}
+
+/**
+ * 「启动工作流」这一行启动的是第几次运行：调用之后第一条属于运行节点的消息，那个节点的 runId 就是这次运行。
+ * 工具调用没有自己的 id，只能按交给它的内容（input，跑完了再加上输出）认回同一次调用；
+ * 认不回来（调用失败、还没开始执行）时返回 undefined，界面按「没有运行」显示原因
+ */
+export function startedRun(task: Task, tool: ToolUse): number | undefined {
+  const input = (tool.input ?? '').trim()
+  const output = (tool.output ?? '').trim()
+  const call = (t: ToolUse) => {
+    const v = toolView(t)
+    if (!v?.startsRun) return false
+    if ((v.tool.input ?? '').trim() !== input) return false
+    // 输出认得出来时一并比：同一段要求在同一个对话里跑过两次，靠它分成两次
+    const got = (v.tool.output ?? '').trim()
+    return !output || !got || got === output
+  }
+  const at = task.messages.findIndex((m) => m.tools.some(call))
+  if (at < 0) return undefined
+  const runs = [...new Set(task.steps.map((s) => s.runId))].filter((r) => r >= 1).sort((a, b) => a - b)
+  for (const m of task.messages.slice(at + 1)) {
+    // 再往后又启动了一次工作流：那是另一件事，说明这一条没有跑起来
+    if (m.tools.some((t) => toolView(t)?.startsRun)) return undefined
+    if (!m.step) continue
+    const run = runs.find((r) => topSteps(task, r).some((s) => m.step === s.id || m.step.startsWith(`${s.id}/`)))
+    if (run !== undefined) return run
+  }
+  return undefined
 }
 
 /**
@@ -204,6 +237,11 @@ export function panelTool(tool: ToolUse): ToolUse | null | undefined {
       const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
       const body = [text(a.text), opts].filter(Boolean).join('\n\n')
       return as(a.question ? t('请父对话决定') : t('回报父对话'), firstLine(a.text), 'other', body || undefined)
+    }
+    case 'suggest_next_step': {
+      const opts = Array.isArray(a.options) ? a.options.map((x, i) => `${i + 1}. ${String(x)}`).join('\n') : ''
+      const body = [text(a.text), opts].filter(Boolean).join('\n\n')
+      return as(t('收尾建议交给用户选'), firstLine(a.text), 'other', body || undefined)
     }
     case 'submit_merge':
     case 'submit_build':

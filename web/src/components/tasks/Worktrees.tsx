@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
+import { childHoldText } from '@shared/task'
 
 /**
  * 独立分支的实际情况（合没合进原分支）要问 git，同一个对话页里输入框上下两处都要用：
@@ -74,7 +75,12 @@ export function worktreeSummary(item: WorktreeItem) {
   if (item.state === 'merged') return t('已合并到「{branch}」，分支已删除', { branch: item.note || base })
   if (item.working) return t('正在执行，不改动原目录')
   // 没有提交也没有未提交的文件就是合过了：不能给按钮（见 unmergedOf）却拼出「未合并到「…」：」后面空着这种句子
-  if (item.merged || !pending(item)) return t('已在「{branch}」里', { branch: base })
+  if (item.merged || !pending(item)) {
+    // 合回去了但还没彻底完成（这一轮还在跑、计划没做完、后台命令还在跑…）：说清为什么还留着分支，别让人以为卡住了
+    const holds = item.holds ?? []
+    if (holds.length) return t('已在「{branch}」里，独立分支先留着：{why}', { branch: base, why: childHoldText(holds) })
+    return t('已在「{branch}」里', { branch: base })
+  }
   const parts: string[] = []
   if (item.ahead) parts.push(t('{n} 个提交', { n: item.ahead }))
   if (item.dirty) parts.push(t('{n} 个文件未提交', { n: item.dirty }))

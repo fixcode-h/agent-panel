@@ -12,6 +12,7 @@ export const PANEL_TOOL_NAMES = [
   'run_background',
   'check_background',
   'message_parent',
+  'suggest_next_step',
   'submit_merge',
   'submit_build',
   'start_plan',

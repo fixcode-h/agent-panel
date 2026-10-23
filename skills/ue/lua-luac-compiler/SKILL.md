@@ -16,7 +16,7 @@ python <本技能目录>/scripts/check_lua_syntax.py path\to\file.lua another\fi
 
 `lupa` 未安装或目标 Lua 版本与项目运行时不一致时，不得将该检查结果当作目标运行时兼容性证明；应记录工具链差异并使用项目目标运行时复核。
 
-本技能的目标是使用项目选定的 VS Code `LuacPacker` 扩展完成可重复、可验证的 Lua 字节码构建；不替代项目的 Lua/宿主架构设计。P4 任务中，只有本技能前置条件全部满足时才允许编译 `.luac`；生成的 `.luac` 必须由 `p4-workflow` 纳入与源 `.lua` 相同的 Lua pending。Git 等其他版本控制下，`.luac` 是否入库按项目的忽略规则（如 `.gitignore`）和既有约定处理，不擅自改忽略规则。
+本技能的目标是使用项目选定的 VS Code `LuacPacker` 扩展完成可重复、可验证的 Lua 字节码构建；不替代项目的 Lua/宿主架构设计。P4 任务中，只有本技能前置条件全部满足时才允许编译 `.luac`；生成的 `.luac` 必须由 `project-vcs` 的 P4 细则纳入与源 `.lua` 相同的 Lua pending。Git 等其他版本控制下，`.luac` 是否入库按项目的忽略规则（如 `.gitignore`）和既有约定处理，不擅自改忽略规则。
 
 ## 前置检查
 
@@ -33,7 +33,7 @@ python <本技能目录>/scripts/check_lua_syntax.py path\to\file.lua another\fi
 
 ## LuacPacker 使用流程
 
-在 P4 任务中，如果以下任一条件不满足，立即停止本技能的编译部分，只把源 Lua 文件交给 `p4-workflow` 处理，并记录原因：VS Code 已安装并启用 `LuacPacker`、扩展实际编译入口已确认、编译器可执行、目标 Lua 实现/版本已确认且兼容、输出目录和排除规则已确认。
+在 P4 任务中，如果以下任一条件不满足，立即停止本技能的编译部分，只把源 Lua 文件交给 `project-vcs` 的 P4 细则处理，并记录原因：VS Code 已安装并启用 `LuacPacker`、扩展实际编译入口已确认、编译器可执行、目标 Lua 实现/版本已确认且兼容、输出目录和排除规则已确认。
 
 1. 在 VS Code 扩展面板确认 `LuacPacker` 的安装版本和可用命令。
 2. 打开项目根目录，不要以单个 Lua 文件作为工作区根目录。

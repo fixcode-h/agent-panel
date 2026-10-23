@@ -24,6 +24,7 @@ import { t } from '@shared/i18n'
 import { useFileOpen } from './FileDialog'
 import { DiffDialog } from './DiffDialog'
 import { CommandDialog, OutputDialog } from './ToolDialog'
+import { RunDialog } from './RunCard'
 
 /** 命令还在跑时行内只跟这么多行：再长就把对话撑长了，完整输出去命令行窗口看 */
 const LIVE_ROWS = 8
@@ -316,7 +317,7 @@ export function ToolRow({
 function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'status' | 'changes' | 'jobs'> }) {
   const { tool } = view
   const [open, setOpen] = useState(false)
-  const [win, setWin] = useState<'' | 'run' | 'edit' | 'out'>('')
+  const [win, setWin] = useState<'' | 'run' | 'edit' | 'out' | 'plan'>('')
   const openFile = useFileOpen()
   const openChild = useChildOpen()
   const Icon = view.server ? Plug : (toolIcon[tool.kind] ?? Wrench)
@@ -347,18 +348,21 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
   ) : (
     tool.detail && <span className={cn('shrink-0', tool.failed ? 'text-danger' : 'text-subtle')}>{tool.detail}</span>
   )
-  // 点标题打开什么：文件、子对话、命令行、差异，或者看完整输出的窗口
+  // 点标题打开什么：子对话、这次运行、文件、命令行、差异，或者看完整输出的窗口
   const target: { open: () => void; tip: string } | undefined = file
     ? { open: () => openFile?.(file), tip: t('查看文件') }
     : view.child && openChild
       ? { open: () => openChild(view.child!), tip: t('在右侧打开子对话') }
-      : tool.kind === 'run'
-        ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
-        : tool.kind === 'edit'
-          ? { open: () => setWin('edit'), tip: t('打开差异窗口') }
-          : hasWindow(tool)
-            ? { open: () => setWin('out'), tip: t('打开窗口') }
-            : undefined
+      : view.startsRun && task?.id
+        ? // 工作流也是一次对话：按节点铺开 Agent 的说明、思考和工具行，不是一段原始文本
+          { open: () => setWin('plan'), tip: t('打开这次运行的对话') }
+        : tool.kind === 'run'
+          ? { open: () => setWin('run'), tip: t('打开命令行窗口') }
+          : tool.kind === 'edit'
+            ? { open: () => setWin('edit'), tip: t('打开差异窗口') }
+            : hasWindow(tool)
+              ? { open: () => setWin('out'), tip: t('打开窗口') }
+              : undefined
   // 行内展开时的输出：长的只留前一段，后面提示去窗口里看
   const short = output.length > 400 ? `${output.slice(0, 400).trimEnd()}…` : output
   // 命令还在跑：展开时只跟最新的几行，像终端一样往下走；跑完再按现有高度显示完整输出
@@ -442,7 +446,11 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
                   />
                 )}
                 {!live && short !== output && (
-                  <MoreLink onClick={() => setWin('out')} label={t('输出较长，在窗口里查看全部')} />
+                  // 启动工作流这一行的输出就是那次运行的结论：跟着打开运行窗口，不再是另一个文本窗口
+                  <MoreLink
+                    onClick={() => setWin(view.startsRun && task?.id ? 'plan' : 'out')}
+                    label={t('输出较长，在窗口里查看全部')}
+                  />
                 )}
               </>
             ) : (
@@ -475,6 +483,9 @@ function ToolLine({ view, task }: { view: ToolView; task?: Pick<Task, 'id' | 'st
           onOpenChange={(o) => !o && setWin('')}
           onReverted={() => {}}
         />
+      )}
+      {win === 'plan' && task?.id && (
+        <RunDialog taskId={task.id} tool={tool} open onOpenChange={(o) => !o && setWin('')} />
       )}
       {win === 'out' && (
         <OutputDialog
