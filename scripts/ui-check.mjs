@@ -1149,6 +1149,128 @@ try {
     await p.close()
   }
 
+  // 对话里的图片 / 文件路径：点开直接看大图或文件内容；不像路径的行内代码保持原样
+  {
+    const p = await page({ width: 1440, height: 900 })
+    await p.goto(base + '#/chat')
+    await p.waitForTimeout(900)
+    await p.locator('#task-prompt').fill('看看这些文件')
+    await p.locator('#task-prompt').press('Enter')
+    await p
+      .locator('#task-prompt')
+      .waitFor({ state: 'detached', timeout: 20000 })
+      .catch(() => errors.push('路径可点：发出后没有打开对话页'))
+    // 演示的回复是固定的，往这个对话里补一条带路径的回复（回复里出现的路径才是要测的）
+    const added = await p.evaluate(() => {
+      const key = 'agent-panel-demo-v3'
+      const d = JSON.parse(localStorage.getItem(key) ?? '{}')
+      const id = decodeURIComponent(location.hash.split('/').pop() ?? '')
+      const task = (d.tasks ?? []).find((x) => x.id === id)
+      if (!task) return ''
+      task.messages.push({
+        id: 'demo-paths',
+        role: 'agent',
+        agentId: task.messages.find((m) => m.role === 'agent')?.agentId ?? '',
+        step: '',
+        text: [
+          '截图：`ui-shots/107-对话-图片气泡.png`',
+          '',
+          '改的是 `src/App.tsx:7`。',
+          '',
+          '不是路径的：`console.log`、`1.2.3`、`https://example.com/a.png`',
+        ].join('\n'),
+        tools: [],
+        at: new Date().toISOString(),
+      })
+      localStorage.setItem(key, JSON.stringify(d))
+      return id
+    })
+    if (!added) errors.push('路径可点：没有找到刚建的对话，补不进回复')
+    // 改了 localStorage 必须真的重新加载，页面才读得到新数据
+    await p.reload()
+    const mdPath = p.locator('code.md-path')
+    await mdPath
+      .first()
+      .waitFor({ timeout: 15000 })
+      .catch(() => errors.push('路径可点：回复里的路径没有标成能点的'))
+    const links = await mdPath.evaluateAll((els) =>
+      els.map((el) => ({ text: el.textContent ?? '', tip: el.getAttribute('title') ?? '' })),
+    )
+    const texts = links.map((l) => l.text)
+    if (!texts.includes('ui-shots/107-对话-图片气泡.png'))
+      errors.push(`路径可点：中文图片路径没有变成链接（${texts.join('、')}`)
+    if (!texts.includes('src/App.tsx:7')) errors.push('路径可点：带行号的文件路径没有变成链接')
+    if (links.find((l) => l.text === 'ui-shots/107-对话-图片气泡.png')?.tip !== '查看图片')
+      errors.push('路径可点：图片路径的提示不是「查看图片」')
+    // 不像路径的行内代码不能变成点了报错的假链接
+    const wrong = await p.evaluate(() => {
+      const notPath = ['console.log', '1.2.3', 'https://example.com/a.png']
+      return [...document.querySelectorAll('code')]
+        .filter((el) => notPath.includes(el.textContent ?? '') && el.classList.contains('md-path'))
+        .map((el) => el.textContent ?? '')
+    })
+    if (wrong.length) errors.push(`路径可点：${wrong.join('、')} 不该变成链接`)
+    await check(p, '对话-路径可点')
+    // 点图片路径：弹出来看大图
+    await mdPath
+      .filter({ hasText: 'ui-shots/107-对话-图片气泡.png' })
+      .first()
+      .evaluate((el) => el.click())
+    // 图是异步加载的：等它真的画出来再看 naturalWidth，否则拿到的是 0
+    await p
+      .waitForFunction(
+        () => {
+          const img = document.querySelector('[role="dialog"] img')
+          return !!img && img.complete && img.naturalWidth > 0
+        },
+        undefined,
+        { timeout: 8000 },
+      )
+      .catch(() => errors.push('路径可点：点开图片路径没有出现图片浮层'))
+    const big = await p
+      .locator('[role="dialog"] img')
+      .first()
+      .evaluate((el) => ({ src: el.getAttribute('src') ?? '', width: el.naturalWidth }))
+      .catch(() => null)
+    if (!big || !big.src || big.width === 0) errors.push('路径可点：图片路径点开后没有显示图片')
+    await check(p, '对话-路径-图片大图')
+    await p.keyboard.press('Escape')
+    // 点文件路径：弹窗里显示文件内容并停在提到的那一行
+    await mdPath
+      .filter({ hasText: 'src/App.tsx:7' })
+      .first()
+      .evaluate((el) => el.click())
+    const dialog = p.locator('[role="dialog"]')
+    await dialog
+      .getByText('src/App.tsx:7', { exact: false })
+      .first()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('路径可点：点开文件路径没有打开文件弹窗'))
+    // 文件内容是异步读回来的：等第一行出现再断言，不然拿到的是还在转圈的弹窗
+    await dialog
+      .locator('[data-line]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('路径可点：文件弹窗里没有显示文件内容'))
+    const shown = await p
+      .evaluate(() => {
+        const rows = [...document.querySelectorAll('[data-line]')]
+        const hit = rows.find((r) => r.getAttribute('data-line') === '7')
+        return {
+          lines: rows.length,
+          text: hit?.textContent ?? '',
+          marked: hit?.className.includes('bg-accent') ?? false,
+        }
+      })
+      .catch(() => null)
+    if (!shown || shown.lines < 5 || !shown.text.includes('return ('))
+      errors.push('路径可点：文件弹窗里没有显示文件内容')
+    else if (!shown.marked) errors.push('路径可点：文件弹窗没有停在提到的那一行（第 7 行没高亮）')
+    await check(p, '对话-路径-文件')
+    await p.keyboard.press('Escape')
+    await p.close()
+  }
+
   const m = await page({ width: 390, height: 844 })
   await m.goto(base)
   await check(m, '手机-首页', ['今天要做什么'])

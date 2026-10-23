@@ -2,7 +2,8 @@ import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { ensureHljs, hljsReady, renderDoc } from '@/lib/workflow-doc'
 import { cn } from '@/lib/utils'
 import { t } from '@shared/i18n'
-import { linkPaths, parsePath, useFileOpen } from './FileDialog'
+import { linkPaths } from '@/lib/file-path'
+import { useFileOpen } from './FileDialog'
 
 let seq = 0
 let mermaidLoad: Promise<typeof import('mermaid').default> | undefined
@@ -126,10 +127,10 @@ export function Markdown({
 
   // 复制按钮是渲染出来的 HTML，用事件委托处理
   const onClick = (e: React.MouseEvent) => {
-    const file = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
-    if (file && openFile) {
-      const p = parsePath(file.textContent ?? '')
-      if (p) openFile(p.path, p.line)
+    const el = (e.target as HTMLElement).closest<HTMLElement>('[data-path]')
+    if (el && openFile) {
+      // 路径和行号是 linkPaths 解析好放在 data-* 上的，这里直接用
+      openFile(el.dataset.path ?? '', el.dataset.line ? Number(el.dataset.line) : undefined)
       return
     }
     const btn = (e.target as HTMLElement).closest<HTMLButtonElement>('[data-copy]')
