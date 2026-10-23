@@ -97,6 +97,54 @@ try {
   await p.locator('#task-prompt').fill('/')
   await p.locator('#task-prompt').press('End')
   await check(p, '斜杠命令', ['/init', '/commit', 'frontend-design'])
+  // 菜单限高后超出的部分靠滚动看：按 ↓ 时选中项要跟着滚进菜单可视区，不能被裁在菜单外面
+  const picked = () =>
+    p.evaluate(() => {
+      const box = document.querySelector('[role="listbox"]')
+      const cur = box?.querySelector('[aria-selected="true"]')
+      if (!box || !cur) return null
+      const b = box.getBoundingClientRect()
+      const r = cur.getBoundingClientRect()
+      return {
+        scrollTop: box.scrollTop,
+        scrollable: box.scrollHeight > box.clientHeight + 1,
+        boxTop: b.top,
+        boxBottom: b.bottom,
+        top: r.top,
+        bottom: r.bottom,
+      }
+    })
+  // 先往下挪几格停在菜单中部，顺便留一张选中项在菜单中部的截图
+  for (let i = 0; i < 6; i++) await p.locator('#task-prompt').press('ArrowDown')
+  await check(p, '斜杠命令-选中项跟随滚动')
+  const mid = await picked()
+  if (!mid) errors.push('斜杠命令：按 ↓ 后找不到选中的命令')
+  else {
+    if (!mid.scrollable) errors.push('斜杠命令：演示的命令太少，菜单没滚起来，检查不了滚动')
+    if (mid.boxTop < -0.5) errors.push('斜杠命令：菜单顶部超出窗口')
+    if (mid.top < mid.boxTop - 0.5 || mid.bottom > mid.boxBottom + 0.5)
+      errors.push('斜杠命令：按 ↓ 后选中项不在菜单可视区里')
+  }
+  // 一路按到最后一项：菜单要跟着滚，选中项仍然完整可见
+  for (let i = 0; i < 40; i++) await p.locator('#task-prompt').press('ArrowDown')
+  const last = await picked()
+  if (!last || last.scrollTop <= 0) errors.push('斜杠命令：↓ 到最后一项时菜单没滚动（scrollTop 还是 0）')
+  else if (last.top < last.boxTop - 0.5 || last.bottom > last.boxBottom + 0.5)
+    errors.push('斜杠命令：↓ 到最后一项时选中项被裁在菜单外面')
+  // 窗口矮的时候菜单也不能顶出窗口外
+  await p.setViewportSize({ width: 1440, height: 520 })
+  await p.locator('#task-prompt').fill('/')
+  await p.locator('#task-prompt').press('End')
+  for (let i = 0; i < 6; i++) await p.locator('#task-prompt').press('ArrowDown')
+  const short = await picked()
+  if (!short) errors.push('斜杠命令-矮窗口：没有弹出菜单')
+  else {
+    if (short.boxTop < -0.5) errors.push(`斜杠命令-矮窗口：菜单顶部超出窗口 ${Math.round(-short.boxTop)}px`)
+    if (short.boxBottom > 520.5) errors.push('斜杠命令-矮窗口：菜单超出窗口底部')
+    if (short.top < short.boxTop - 0.5 || short.bottom > short.boxBottom + 0.5)
+      errors.push('斜杠命令-矮窗口：选中项不在菜单可视区里')
+  }
+  await p.setViewportSize({ width: 1440, height: 900 })
   // 选中后是文字原位的一张卡片；光标停在它后面，按一次退格整张删掉
   await p.locator('#task-prompt').fill('前 ')
   await p.locator('#task-prompt').pressSequentially('/frontend-design')
