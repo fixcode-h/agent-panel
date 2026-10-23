@@ -1,5 +1,5 @@
 ---
-paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui-check.mjs
+paths: web/src/**, shared/i18n.ts, shared/locales/**, shared/task.ts, scripts/ui-check.mjs, scripts/ui/**
 ---
 
 # 界面、文案和样式

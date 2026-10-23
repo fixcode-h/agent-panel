@@ -1,6 +1,7 @@
 import { CLIS } from '@shared/clis'
 import type { CliAccounts, LoginJob, SavedAccount } from '@shared/schema'
 import type { DetectedApi } from '@shared/accounts'
+import { demoMs } from './demo-speed'
 
 /**
  * 在线演示里的账号：没有本机的 CLI 和凭据，数据放在内存里，登录用一段假的过程演示
@@ -126,7 +127,7 @@ export function demoAccounts(method: string, seg: string[], body: Record<string,
       s.live = `user${n}@example.com`
       s.accounts.push({ id: `a${n}`, name: s.live, email: s.live, savedAt: new Date().toISOString() })
       job.status = 'done'
-    }, 2200)
+    }, demoMs(2200))
     return job
   }
   if (sub === 'save') {

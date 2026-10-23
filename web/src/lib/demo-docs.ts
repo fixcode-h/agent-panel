@@ -11,6 +11,7 @@ import {
   type ProjectDoc,
   type ProjectDocs,
 } from '@shared/docs'
+import { demoMs } from './demo-speed'
 
 const SAMPLE = `# 项目约定
 
@@ -53,8 +54,8 @@ export function startDemoDocJob(body: unknown): DocJob {
   const job: DocJob = { id: crypto.randomUUID(), path: input.path, status: 'running', text: '', startedAt: Date.now() }
   jobs.set(job.id, job)
   const base = input.content.trim() || `# 项目约定\n\nReact + Vite 的商城前端。`
-  setTimeout(() => (job.thinking = '先看看 package.json 和目录结构，核对说明里的命令。'), 600)
-  setTimeout(() => (job.tools = ['package.json', 'src/', 'README.md']), 1200)
+  setTimeout(() => (job.thinking = '先看看 package.json 和目录结构，核对说明里的命令。'), demoMs(600))
+  setTimeout(() => (job.tools = ['package.json', 'src/', 'README.md']), demoMs(1200))
   setTimeout(() => {
     if (job.status !== 'running') return
     job.status = 'done'
@@ -73,7 +74,7 @@ export function startDemoDocJob(body: unknown): DocJob {
 - TypeScript 严格模式，组件用函数式写法
 - 改完运行 \`npm test\`，全部通过再提交
 ${input.request ? `\n## 补充\n\n- ${input.request}\n` : ''}`
-  }, 2400)
+  }, demoMs(2400))
   return job
 }
 
@@ -89,7 +90,7 @@ export function startDemoGlobalDocJob(body: { content?: string; request?: string
   const job: DocJob = { id: crypto.randomUUID(), path: 'AGENTS.md', status: 'running', text: '', startedAt: Date.now() }
   jobs.set(job.id, job)
   const base = body.content?.trim() || '# 全局约束\n\n## 语言\n始终用中文回答；代码、命令和报错原文保持原样。'
-  setTimeout(() => (job.thinking = '只保留跨项目都成立的约束，去掉具体项目的命令。'), 600)
+  setTimeout(() => (job.thinking = '只保留跨项目都成立的约束，去掉具体项目的命令。'), demoMs(600))
   setTimeout(() => {
     if (job.status !== 'running') return
     job.status = 'done'
@@ -100,6 +101,6 @@ export function startDemoGlobalDocJob(body: { content?: string; request?: string
 
 push、发布、破坏性清理都要用户明确授权；不覆盖用户已有的改动。
 ${body.request ? `\n## 补充\n\n- ${body.request}\n` : ''}`
-  }, 2000)
+  }, demoMs(2000))
   return job
 }

@@ -1,0 +1,372 @@
+/**
+ * 界面检查分片：项目：侧栏排序和拖拽、浅色主题、文件面板、项目设置、AI 初始化、项目教训
+ *
+ * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
+ * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
+ */
+import assert from 'node:assert/strict'
+import { runShard } from './harness.mjs'
+
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+  const p = await page({ width: 1440, height: 900 })
+  await p.goto(base)
+  // 侧栏项目分组：默认按添加时间排（演示项目的时间各不相同），拖拽手柄能调整顺序并持久化，刷新后还是新顺序
+  const projectRows = () =>
+    p
+      .locator('[data-sidebar] section button[title^="打开项目「"]')
+      .evaluateAll((els) => els.map((e) => (e.getAttribute('title') ?? '').match(/「(.+?)」/)?.[1] ?? ''))
+  await p.goto(base + '#/projects')
+  const order0 = await projectRows()
+  assert.deepEqual(
+    order0.slice(0, 4),
+    ['商城前台', '运营后台', '客户端主工程', '旧官网'],
+    `侧栏项目没有按添加时间排序：${order0.join('、')}`,
+  )
+  await check(p, '侧栏-项目按添加时间', ['商城前台', '运营后台'])
+  // 拖住「运营后台」的手柄，放到「商城前台」上：出现插入提示
+  const orderGrip = p.getByRole('button', { name: '拖动调整「运营后台」的顺序' })
+  const target = (await p.locator('[data-sidebar] section').nth(0).boundingBox()) ?? null
+  if (!(await orderGrip.count()) || !target) errors.push('侧栏-拖拽：没有拖拽手柄')
+  else {
+    // 无头浏览器的鼠标拖不出 HTML5 拖放，用脚本发拖放事件（和 UI 设计拖图片的写法一样）
+    await p.evaluate(() => {
+      window.__dt = new DataTransfer()
+      const handle = document.querySelector('[aria-label="拖动调整「运营后台」的顺序"]')
+      handle.dispatchEvent(new DragEvent('dragstart', { bubbles: true, dataTransfer: window.__dt }))
+    })
+    await p.waitForTimeout(150)
+    await p.evaluate(() => {
+      const section = document.querySelectorAll('[data-sidebar] section')[0]
+      const r = section.getBoundingClientRect()
+      section.dispatchEvent(
+        new DragEvent('dragover', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: window.__dt,
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        }),
+      )
+    })
+    await p.waitForTimeout(150)
+    await check(p, '侧栏-拖拽插入提示')
+    await p.evaluate(() => {
+      const section = document.querySelectorAll('[data-sidebar] section')[0]
+      const r = section.getBoundingClientRect()
+      section.dispatchEvent(
+        new DragEvent('drop', {
+          bubbles: true,
+          cancelable: true,
+          dataTransfer: window.__dt,
+          clientX: r.left + r.width / 2,
+          clientY: r.top + r.height / 2,
+        }),
+      )
+      document
+        .querySelector('[aria-label="拖动调整「运营后台」的顺序"]')
+        .dispatchEvent(new DragEvent('dragend', { bubbles: true, dataTransfer: window.__dt }))
+    })
+    for (let i = 0; i < 40 && (await projectRows())[0] !== '运营后台'; i++) await p.waitForTimeout(50)
+    const order1 = await projectRows()
+    assert.deepEqual(order1.slice(0, 2), ['运营后台', '商城前台'], `拖拽后顺序不对：${order1.join('、')}`)
+    await check(p, '侧栏-拖拽后顺序', ['运营后台', '商城前台'])
+    // 刷新后仍是新顺序（演示版把顺序存在浏览器里，等价于真实服务端写盘）
+    const saved = await p.evaluate(() => JSON.parse(localStorage.getItem('agent-panel-demo-v3') ?? '{}'))
+    assert.ok(
+      saved.projects?.every((x) => typeof x.sortOrder === 'number'),
+      '拖拽后没有把顺序存下来',
+    )
+    await p.reload()
+    await p.locator('[data-sidebar] section button[title^="打开项目「"]').first().waitFor({ timeout: 10000 })
+    assert.deepEqual((await projectRows()).slice(0, 2), ['运营后台', '商城前台'], '刷新后顺序变了')
+    await check(p, '侧栏-刷新后顺序', ['运营后台', '商城前台'])
+  }
+  // 浅色主题
+  await p.evaluate(() => document.documentElement.classList.remove('dark'))
+  await p.goto(base + '#/projects')
+  await check(p, '项目-浅色', ['任务', '设置'])
+  // 浅色主题下再看一眼 Token 浮层：边框、分隔线、速度的颜色都要跟着主题
+  {
+    await p.goto(base)
+    await p.getByText('购物车右上角', { exact: false }).first().click()
+    await p.getByTitle('Token 用量').first().click()
+    await check(p, '任务-浅色-Token浮层', ['整个运行', '缓存命中'])
+    await p.keyboard.press('Escape')
+  }
+  // 项目首页右侧的文件面板：首屏只读根目录一层，展开哪个目录才读哪一层，收起再展开用缓存。
+  // 左侧栏原来的独立文件页已经去掉，这里验证的是同一套 FileExplorer
+  {
+    await p.goto(base)
+    // #/projects 的地址里带项目 id，演示里的 id 每次生成都不一样，从侧栏点进去
+    await p.locator('[data-sidebar]').getByText('商城前台').first().click()
+    // 面板打开时才开始读文件：清掉之前页面记下的请求，再看打开面板读了哪几层
+    await p.evaluate(() => {
+      window.__fileCalls = []
+    })
+    await p.getByRole('button', { name: '显示文件', exact: true }).first().click()
+    await p
+      .locator('aside button[title="src"]')
+      .first()
+      .waitFor({ timeout: 8000 })
+      .catch(() => {})
+    const panel = p.locator('aside').filter({ has: p.getByPlaceholder('查找文件') })
+    const calls = () => p.evaluate(() => (window.__fileCalls ?? []).filter((x, i, a) => a.indexOf(x) === i).join(','))
+    const first = await calls()
+    if (first !== '') errors.push(`文件面板：打开时不该读整棵树，实际读了「${first || '(根)'}」，应该只读根目录一层`)
+    const row = (name) => panel.locator(`button[title="${name}"]`).first()
+    // 根目录这一层有 src、tests 和几个文件，没有更深层的内容
+    await row('src')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件面板：根目录没有列出 src'))
+    await row('tests')
+      .waitFor({ timeout: 3000 })
+      .catch(() => errors.push('文件面板：根目录没有列出 tests'))
+    if (await row('src/App.tsx').count()) errors.push('文件面板：没展开 src 就列出了它下面的文件')
+    if (await panel.getByText('共 20000 个文件', { exact: false }).count())
+      errors.push('文件面板：还在显示全量文件数量')
+    await check(p, '文件面板-根目录一层', ['src', 'README.md'])
+    // 展开 src：这时才读 src 这一层
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件面板：展开 src 后没有读它这一层'))
+    if (!(await calls()).split(',').includes('src')) errors.push('文件面板：展开 src 时没有请求这一层')
+    await check(p, '文件面板-展开一层', ['api', 'App.tsx'])
+    // 收起再展开：不重复请求
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    const before = await p.evaluate(() => (window.__fileCalls ?? []).length)
+    await row('src').click()
+    await row('src/App.tsx')
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    const after = await p.evaluate(() => (window.__fileCalls ?? []).length)
+    if (after !== before) errors.push(`文件面板：收起再展开又请求了一次（${before} → ${after}）`)
+    // 名称搜索：还没展开的深层文件也能搜到，结果是平铺的
+    await panel.getByPlaceholder('查找文件').fill('Restock')
+    await panel
+      .locator('button[title="src/components/RestockButton.tsx"]')
+      .waitFor({ timeout: 8000 })
+      .catch(() => errors.push('文件面板：名称搜索没有找到还没展开的深层文件'))
+    await check(p, '文件面板-名称搜索', ['RestockButton'])
+    await panel.getByPlaceholder('查找文件').fill('')
+    await panel
+      .locator('button[title="src/components/RestockButton.tsx"]')
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+
+    // 右键菜单：文件行、文件夹行、空白处各一次；右键本身不能打开文件或展开目录
+    const menu = () => p.locator('[role="menu"]')
+    const menuText = async () => (await menu().innerText()).replace(/\s+/g, ' ')
+    const closeMenu = async () => {
+      await p.keyboard.press('Escape')
+      await menu()
+        .waitFor({ state: 'detached', timeout: 3000 })
+        .catch(() => {})
+    }
+    // 文件行右键：出现菜单项，但文件没有被打开（没有弹出文件窗口）
+    await row('package.json').click({ button: 'right' })
+    await menu()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('文件右键：没有弹出菜单'))
+    const fileMenu = await menuText().catch(() => '')
+    for (const item of ['打开', '复制相对路径', '复制绝对路径', '在文件夹中打开'])
+      if (!fileMenu.includes(item)) errors.push(`文件右键：菜单里没有「${item}」`)
+    if (await p.getByRole('dialog').count()) errors.push('文件右键：右键打开了文件窗口')
+    await check(p, '文件面板-右键菜单')
+    await closeMenu()
+    if (await p.getByRole('dialog').count()) errors.push('文件右键：菜单项没点，文件窗口却开着')
+    // 文件夹行右键：菜单是「展开」，目录没有被展开
+    await row('tests').click({ button: 'right' })
+    await menu()
+      .waitFor({ timeout: 5000 })
+      .catch(() => errors.push('文件夹右键：没有弹出菜单'))
+    const dirMenu = await menuText().catch(() => '')
+    for (const item of ['展开', '复制相对路径', '在文件夹中打开'])
+      if (!dirMenu.includes(item)) errors.push(`文件夹右键：菜单里没有「${item}」`)
+    // 第一项必须是「展开」；整行比较，避免「在文件夹中打开」里的「打开」被误判
+    const dirItems = await menu()
+      .locator('[role="menuitem"]')
+      .evaluateAll((els) => els.map((e) => (e.textContent ?? '').trim()))
+    if (dirItems[0] !== '展开') errors.push(`文件夹右键：第一项是「${dirItems[0]}」，不是「展开」`)
+    if (dirItems.includes('打开')) errors.push('文件夹右键：出现了只给文件的「打开」')
+    if (await row('tests/cart.test.ts').count()) errors.push('文件夹右键：右键把目录展开了')
+    await check(p, '文件面板-文件夹右键菜单')
+    await closeMenu()
+    // 空白处右键：整棵树的菜单。
+    // 行的按钮是整宽的，右上角又被搜索栏占着，所以在树的右键触发元素（min-h-full 那层）
+    // 右下角的空白上点真实鼠标。每次先把滚动区滚到底，保证这块空白在视口里。
+    const scroll = panel.locator('div.min-h-full').first().locator('..')
+    const blankTrigger = () => panel.locator('div.min-h-full').first()
+    const openBlankMenu = async (label) => {
+      await scroll
+        .evaluate((el) => {
+          el.scrollTop = el.scrollHeight
+        })
+        .catch(() => {})
+      const tb = await blankTrigger()
+        .boundingBox()
+        .catch(() => null)
+      if (!tb) {
+        errors.push(`${label}：找不到文件树容器`)
+        return
+      }
+      await p.mouse.click(tb.x + tb.width - 24, tb.y + tb.height - 8, { button: 'right' })
+      await menu()
+        .waitFor({ timeout: 5000 })
+        .catch(() => errors.push(`${label}：没有弹出菜单`))
+    }
+    await openBlankMenu('空白处右键')
+    const blankMenu = await menuText().catch(() => '')
+    for (const item of ['刷新', '全部展开', '全部收起', '复制项目路径', '在文件夹中打开'])
+      if (!blankMenu.includes(item)) errors.push(`空白处右键：菜单里没有「${item}」`)
+    await check(p, '文件面板-空白处右键菜单')
+    await closeMenu()
+    await menu()
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    // 先测「全部收起」：此时 src 还开着，收起后子项应该消失
+    await openBlankMenu('空白处右键')
+    const collapse = menu().locator('[role="menuitem"]').filter({ hasText: '全部收起' })
+    if (!(await collapse.count())) errors.push('空白处右键：没有「全部收起」')
+    else {
+      // 用真实鼠标点：Radix 的菜单项要按下和抬起都落在同一个元素上才触发
+      const cb = await collapse.boundingBox()
+      if (!cb) errors.push('空白处右键：「全部收起」不可见')
+      else {
+        await p.mouse.click(cb.x + cb.width / 2, cb.y + cb.height / 2)
+        await menu()
+          .first()
+          .waitFor({ state: 'detached', timeout: 3000 })
+          .catch(() => {})
+        if (await p.locator('[role="menu"]').count())
+          errors.push('空白处右键：点了「全部收起」菜单没有关闭（可能没点中）')
+      }
+    }
+    await menu()
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    const collapsedRows = await panel
+      .locator('button[title="src/App.tsx"]')
+      .count()
+      .catch(() => 0)
+    if (collapsedRows) errors.push('全部收起：收起后目录下面还显示着子项')
+    // 收起后没有展开的目录：这一项应该变灰
+    await openBlankMenu('空白处右键')
+    const collapseItem = menu().locator('[role="menuitem"]').filter({ hasText: '全部收起' })
+    const disabled = await collapseItem.getAttribute('data-disabled').catch(() => null)
+    if (disabled === null) errors.push('全部收起：没有展开的目录时菜单项没有禁用')
+    await p.keyboard.press('Escape')
+    await menu()
+      .first()
+      .waitFor({ state: 'detached', timeout: 3000 })
+      .catch(() => {})
+    // 最后测「全部展开」：只作用于已经读过的层，不会新读没有出现过的目录。
+    // 放在最后是因为展开后行会铺满可视区，右侧就不再有空白能点开菜单了。
+    const beforeExpand = await calls()
+    await openBlankMenu('空白处右键')
+    const expandItem = menu().locator('[role="menuitem"]').filter({ hasText: '全部展开' })
+    const eb = await expandItem.boundingBox().catch(() => null)
+    if (!eb) errors.push('空白处右键：没有「全部展开」')
+    else await p.mouse.click(eb.x + eb.width / 2, eb.y + eb.height / 2)
+    await row('src/App.tsx')
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    await settle(p)
+    const afterExpand = await calls()
+    const requested = afterExpand.split(',').filter((x) => x && !beforeExpand.split(',').includes(x))
+    const known = await panel
+      .locator('button[title]')
+      .evaluateAll((els) => els.map((e) => e.getAttribute('title') ?? ''))
+    const unknown = requested.filter((p2) => !known.some((k) => k.startsWith(p2 + '/')))
+    if (unknown.length) errors.push(`全部展开：读了界面上还没有的目录「${unknown.join('、')}」`)
+    await check(p, '文件面板-全部展开')
+    await p.keyboard.press('Escape')
+  }
+  // 项目设置：测试步骤和按 Agent 派生的参数都要能正常显示，不能溢出、不能串行
+  // 先点侧栏的项目（title 是「打开项目「名字」」）进入项目首页，管理区里有「项目设置」按钮
+  const settingsButton = p.getByRole('button', { name: '项目设置' })
+  if (!(await settingsButton.count()))
+    await p
+      .locator('[data-sidebar] button[title^="打开项目「"]')
+      // 演示里只有「商城前台」配了测试步骤，按名字点它，不依赖侧栏顺序
+      .filter({ hasText: '商城前台' })
+      .first()
+      .click()
+      .catch(() => {})
+  if (await settingsButton.count()) {
+    await settingsButton.first().click()
+    const dlg = p.getByRole('dialog')
+    // 设置按左侧的页面分开：常规、必备角色、工作流、测试步骤各看一页
+    await check(p, '项目设置-常规', ['推送到远端', '子对话隔离'])
+    await dlg.getByRole('button', { name: '必备角色', exact: true }).click()
+    await check(p, '项目设置-必备角色', ['统筹', '执行', '文档', '测试验收'])
+    await dlg.getByRole('button', { name: '工作流', exact: true }).click()
+    await check(p, '项目设置-工作流', ['AI 配置'])
+    await dlg
+      .getByRole('button', { name: /^测试步骤/ })
+      .first()
+      .click()
+    await check(p, '项目设置-测试步骤', ['AI 生成步骤', 'WSL 发行版', '小改动也跑', '按改动大小决定验证范围'])
+    // 项目教训：演示项目里有手动记的和角色记的，按文件生效的显示范围
+    await dlg
+      .getByRole('button', { name: /^项目教训/ })
+      .first()
+      .click()
+    await check(p, '项目设置-项目教训', ['价格一律用分', '角色记录', 'src/payment/**', '加一条'])
+    // AI 初始化：演示项目已经初始化过，重新初始化后写过的文件和推荐设置按组列出，能逐项或全部应用
+    await dlg.getByRole('button', { name: 'AI 初始化', exact: true }).click()
+    await check(p, '项目设置-AI初始化', ['已于', '重新初始化'])
+    await dlg.getByRole('button', { name: '重新初始化' }).click()
+    const reviewInit = p.getByRole('button', { name: '查看推荐并应用' })
+    await p
+      .waitForFunction(
+        () =>
+          [...document.querySelectorAll('button')].some(
+            (b) => b.textContent?.includes('查看推荐并应用') && !b.disabled,
+          ),
+        null,
+        { timeout: 20000 },
+      )
+      .catch(() => errors.push('AI 初始化：等不到「查看推荐并应用」'))
+    await check(p, 'AI初始化-对话', ['写入的文件', 'AGENTS.md'])
+    await reviewInit.click().catch(() => {})
+    await check(p, 'AI初始化-推荐设置', ['初始化完成', '推荐设置', '全部应用', '工作流', '测试步骤'])
+    await p
+      .getByRole('button', { name: '全部应用' })
+      .click()
+      .catch(() => errors.push('AI 初始化：没有「全部应用」'))
+    await check(p, 'AI初始化-全部应用', ['已应用'])
+    await p
+      .getByText('评估后不适用的工作流')
+      .scrollIntoViewIfNeeded()
+      .catch(() => {})
+    await check(p, 'AI初始化-工作流评估', ['评估后不适用的工作流', '可选工作流'])
+    await p.keyboard.press('Escape')
+    // 项目首页：任务按状态分组；输入和已有对话是同一件事的要求时，提示可以直接发过去
+    await p.locator('#task-prompt').click()
+    await p.keyboard.type('到货通知的按钮在详情页上点了没反应')
+    await check(p, '项目首页-相关对话', ['发到这里', '需要你处理'])
+    await p.keyboard.press('ControlOrMeta+a')
+    await p.keyboard.press('Backspace')
+    // 项目首页的项目教训：点一条打开项目设置的「教训」并展开它，改写过的带改写记录
+    await p.getByText('项目教训 · ', { exact: false }).first().scrollIntoViewIfNeeded()
+    await check(p, '项目首页-项目教训', ['项目教训 · 4', '已改写', '后台命令报完成后先看用时'])
+    await p
+      .getByRole('button', { name: /新增支付方式写进/ })
+      .first()
+      .click()
+    await check(p, '项目教训-改写记录', ['改写记录', '为什么改', '提取全局教训'])
+    // 提取全局教训：AI 给出的改动逐条勾选，确认后写进去
+    await p.getByRole('button', { name: '提取全局教训' }).first().click()
+    await p.getByText('把这个项目里换个项目也适用的教训提取出来').first().click()
+    await check(p, '提取全局教训', ['确认写入全局教训', '新加'])
+    await p.getByRole('button', { name: '确认写入全局教训' }).click()
+    await check(p, '提取全局教训-已写入', ['条全局教训'])
+    await p.keyboard.press('Escape')
+  } else errors.push('项目设置：项目页上没有「项目设置」按钮')
+})

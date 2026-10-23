@@ -28,3 +28,4 @@ logs/
 
 # e2e 跑完写出的计时报告（scripts/e2e.mjs）
 /e2e-timings.json
+/ui-timings.json

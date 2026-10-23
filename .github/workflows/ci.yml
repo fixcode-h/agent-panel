@@ -48,10 +48,12 @@ jobs:
           path: e2e-timings.json
           retention-days: 7
 
-  # 界面检查：打开在线演示版走一遍常用页面，没有报错、没有横向滚动；截图作为附件上传，改界面时可以下载对比
+  # 界面检查：打开在线演示版走一遍常用页面，没有报错、没有横向滚动；截图作为附件上传，改界面时可以下载对比。
+  # scripts/ui-check.mjs 内部并行跑 scripts/ui/ 下的各个分片（各自的服务、浏览器和演示数据）
   ui:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # 正常一分钟左右；卡住时快速失败
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,7 +61,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      # 浏览器按 Playwright 的版本缓存：命中时不用再下载。系统依赖 ubuntu-latest 自带的 Chrome 已经装齐
+      - id: pw
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright install --with-deps chromium
       - run: npx vite build --mode demo
       - run: node scripts/ui-check.mjs
       - uses: actions/upload-artifact@v4
@@ -67,6 +78,13 @@ jobs:
         with:
           name: ui-shots
           path: ui-shots/
+          retention-days: 7
+      # 各分片每一步的耗时写进 ui-timings.json，改了检查可以下载对比
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ui-timings
+          path: ui-timings.json
           retention-days: 7
 
   # 推送到 dev 时看这次改了哪些文件：Windows 托盘那一步最慢，只在托盘程序、服务端或出包相关的文件变了时才跑。

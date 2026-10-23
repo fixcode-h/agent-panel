@@ -1,0 +1,191 @@
+/**
+ * 界面检查分片：工作流、内置工作流、新建任务的 Agent 开关、AI 分析执行结果、角色、Skill 与命令、MCP
+ *
+ * 和其他分片并行跑：每个分片自己起静态服务、开浏览器，演示数据各自从头生成（见 harness.mjs）。
+ * 总入口 scripts/ui-check.mjs 并行跑全部分片并汇总。
+ */
+import { runShard } from './harness.mjs'
+
+await runShard(import.meta.filename, async ({ base, page, check, errors, settle }) => {
+  const p = await page({ width: 1440, height: 900 })
+  await p.goto(base + '#/workflows')
+  await check(p, '工作流', ['流程图', '主流程'])
+  // 内置工作流列表：整理后的能力块和新补的四个流程都要能正常显示，不重复、不溢出
+  await p.getByRole('button', { name: '添加内置或导入的工作流' }).first().click()
+  await p.getByText('从内置工作流添加').first().click()
+  await check(p, '工作流-内置列表', ['日常开发', '依赖升级与安全', '发布与回滚', '项目初始化'])
+  await p.keyboard.press('Escape')
+  // 属性栏的宽度可调：选中节点后拖左边缘，变宽并记住
+  await p.getByText('处理并推荐').first().click()
+  const inspector = p.locator('aside[aria-label="属性"]')
+  const grip = p.locator('[role="separator"][aria-label="拖动调整属性栏的宽度"]')
+  const width = async () => (await inspector.boundingBox())?.width ?? 0
+  const before = await width().catch(() => 0)
+  const g = await grip.boundingBox().catch(() => null)
+  if (!g) errors.push('工作流-属性栏：找不到拖动条')
+  else {
+    await p.mouse.move(g.x + g.width / 2, g.y + g.height / 2)
+    await p.mouse.down()
+    await p.mouse.move(g.x - 160, g.y + g.height / 2, { steps: 10 })
+    await p.mouse.up()
+    await settle(p)
+    if (Math.abs(before - 380) > 2) errors.push(`工作流-属性栏：默认宽度是 ${before}，不是 380`)
+    const after = await width()
+    if (after < before + 100) errors.push(`工作流-属性栏：拖动后宽度是 ${after}，没有变宽`)
+  }
+  await check(p, '工作流-属性栏宽度')
+  // 执行步骤可以折叠：收起后只剩标题行和一行摘要，输入框不再占高度；再点一下展开回来
+  {
+    const fold = p.getByRole('button', { name: '收起这一步' }).first()
+    if (!(await fold.count())) errors.push('工作流-步骤折叠：步骤上没有折叠按钮')
+    else {
+      await fold.click()
+      await p
+        .getByRole('button', { name: '展开这一步' })
+        .first()
+        .waitFor({ timeout: 3000 })
+        .catch(() => {})
+      if (!(await p.getByRole('button', { name: '展开这一步' }).count()))
+        errors.push('工作流-步骤折叠：收起后按钮没有变成「展开这一步」')
+      if (await p.getByLabel('这一步要做的事').count())
+        errors.push('工作流-步骤折叠：收起后「这一步要做的事」还占着位置')
+      await check(p, '工作流-步骤折叠')
+      await p.getByRole('button', { name: '展开这一步' }).first().click()
+      await p
+        .getByLabel('这一步要做的事')
+        .first()
+        .waitFor({ timeout: 3000 })
+        .catch(() => {})
+      if (!(await p.getByLabel('这一步要做的事').count())) errors.push('工作流-步骤折叠：再点一下没有展开')
+    }
+  }
+  // 内置工作流：添加后连同 Agent 一起建好，直接打开
+  await p.getByRole('button', { name: '添加内置或导入的工作流' }).click()
+  await p.getByRole('menuitem', { name: '从内置工作流添加' }).click()
+  await check(p, '内置工作流', ['日常开发', '功能开发（OpenSpec）', 'Blender 建模与动画'])
+  await p.getByRole('button', { name: '添加', exact: true }).first().click()
+  // 要建好几个 Agent，演示里每个请求都有模拟的延迟，等弹窗关掉
+  await p.getByRole('dialog').waitFor({ state: 'hidden', timeout: 20000 })
+  await check(p, '内置工作流-添加后', ['识别现场与设计', '文档与提交'])
+  // 项目里新建对话：输入框上可以选择用不用项目设置的 Agent，对话页不能再换 Agent 和参数
+  await p.goto(base)
+  const agentSwitch = p.getByRole('switch', { name: '使用项目设置的角色' })
+  await agentSwitch.waitFor({ timeout: 10000 }).catch(() => errors.push('新建任务：没有「使用项目设置的角色」开关'))
+  if (await agentSwitch.count()) {
+    if ((await agentSwitch.getAttribute('aria-checked')) !== 'true') errors.push('新建任务：开关默认没有勾选')
+    // 开关只显示图标，Agent 名字放在 title 里
+    if ((await agentSwitch.textContent())?.trim()) errors.push('新建任务：Agent 开关还显示文字')
+    if (!(await agentSwitch.getAttribute('title'))) errors.push('新建任务：Agent 开关没有说明')
+    await check(p, '新建任务-Agent开关')
+    // 不勾选后换成 CLI / 模型的选择
+    await agentSwitch.click()
+    await p
+      .getByRole('switch', { name: '使用项目设置的角色', checked: false })
+      .waitFor({ timeout: 3000 })
+      .catch(() => {})
+    if ((await agentSwitch.getAttribute('aria-checked')) !== 'false') errors.push('新建任务：开关点一下没有关掉')
+    if (!(await p.getByTitle('对话用的 Agent').count())) errors.push('新建任务：关掉 Agent 后没有显示 CLI 选择')
+    await check(p, '新建任务-不用Agent')
+    await agentSwitch.click()
+  }
+  await p.locator('#task-prompt').fill('分析一下这个项目的结构')
+  await p.waitForTimeout(300)
+  await p.locator('#task-prompt').press('Enter')
+  await p
+    .locator('#follow-up')
+    .waitFor({ timeout: 20000 })
+    .catch(() => errors.push('对话页：没有打开输入框'))
+  // 对话页输入框里只剩「提问」开关和 CLI / 模型，没有换 Agent 和改参数的地方
+  if (!(await p.getByRole('button', { name: 'AI 有问题时问我' }).count())) errors.push('对话页：没有「提问」开关')
+  for (const name of ['参数', '无角色，直接用 Agent']) {
+    if (await p.getByText(name, { exact: false }).count()) errors.push(`对话页：还能看到「${name}」`)
+  }
+  await check(p, '对话-不能换Agent和参数')
+  // AI 分析执行结果：新建分析对话，代码问题按模块分组带「修复」，角色和工作流的优化可以逐条或全部应用
+  // 工作流任务从项目首页的任务列表点进去
+  await p.goto(base)
+  await p.getByText('商品详情页增加', { exact: false }).first().click()
+  await p.getByRole('button', { name: '更多操作' }).click()
+  await p.getByRole('menuitem', { name: 'AI 分析执行结果' }).click()
+  await p.getByRole('dialog').getByRole('button', { name: '开始分析' }).click()
+  await p.getByText('工作流优化', { exact: true }).waitFor({ timeout: 20000 })
+  await p.getByRole('button', { name: '看差异' }).first().click()
+  await check(p, 'AI分析-建议', ['代码问题', '商品卡片', '面板框架', '工作流优化', '先确认范围', '应用到工作流'])
+  // 项目代码的问题能开子对话去修；面板框架的问题在非面板源代码项目里修不了
+  await p.getByRole('button', { name: '修复', exact: true }).first().click()
+  await p
+    .getByRole('button', { name: /处理中|查看/ })
+    .first()
+    .waitFor({ timeout: 20000 })
+    .catch(() => errors.push('AI 分析：点了「修复」没有开出子对话'))
+  await check(p, 'AI分析-修复子对话')
+  await p.getByRole('button', { name: /全部应用/ }).click()
+  await check(p, 'AI分析-已应用', ['已应用'])
+  await p.goto(base + '#/agents')
+  await check(p, 'Agent', ['命令预览'])
+  // 内置 Agent：手动添加，已经随工作流建好的标成已添加
+  await p.getByRole('button', { name: '添加内置角色' }).first().click()
+  await check(p, '内置Agent', ['通用约束', '调研', '方案设计', '已添加'])
+  await p.keyboard.press('Escape')
+  // Agent 的引入层级和参数的选项编辑（带序号的卡片、回车添加）
+  // 角色页按「概览 / 角色设定 / 参数 / Skill 与开场白」分页
+  await p.getByText('评审', { exact: true }).first().click()
+  await p.getByRole('tab', { name: /^参数/ }).click()
+  await p.getByRole('button', { name: /\{\{vcs\}\}/ }).click()
+  await p.getByRole('textbox', { name: '新选项' }).fill('svn')
+  await p.getByRole('textbox', { name: '新选项' }).press('Enter')
+  await p.getByRole('button', { name: '删除选项「svn」' }).scrollIntoViewIfNeeded()
+  await check(p, 'Agent-参数选项', ['svn'])
+  // 参数联动：后面的参数按前面的选择决定显示，规则在参数卡片里配
+  await p.getByRole('combobox', { name: '显示条件' }).click()
+  await p.getByRole('option', { name: /（target）/ }).click()
+  await p.getByRole('group', { name: '条件取值' }).scrollIntoViewIfNeeded()
+  await check(p, 'Agent-参数联动', ['选了其中一个时', '选项跟随', '联动'])
+  await p.getByRole('tab', { name: /^角色设定/ }).click()
+  await check(p, '角色-角色设定', ['通用约束', '实际交给它的设定'])
+  await p.getByRole('tab', { name: /^概览/ }).click()
+  await check(p, '角色-概览', ['能开启子对话', '能启动计划', '运行环境'])
+  await p.goto(base + '#/library')
+  await check(p, 'Skills与命令', ['commit-message', 'code-review'])
+  await p.getByRole('radio', { name: '自带 Skill' }).click()
+  await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
+  // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
+  if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
+  await p.getByRole('button', { name: '更新全部' }).click()
+  await p
+    .getByText('和自带的不同')
+    .first()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
+  if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
+  await check(p, '自带Skill-一键更新', ['已安装'])
+  await p.getByRole('radio', { name: 'Skill', exact: true }).click()
+  await p.getByText('commit-message', { exact: true }).first().click()
+  await check(p, 'Skill编辑', ['复制给别的 Agent', '保存'])
+  await p.getByRole('button', { name: 'AI 优化' }).click()
+  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('步骤写得再具体一些')
+  await p.keyboard.press('Enter')
+  await check(p, 'Skill-AI优化', ['格式校验通过', 'SKILL.md'])
+  // 应用完 AI 优化的窗口自己关上；等它关掉再关下面的编辑框（以前按 Esc，机器慢时会把编辑框也关掉）
+  await p.getByRole('button', { name: '应用修改' }).click()
+  await p
+    .getByRole('button', { name: '应用修改' })
+    .waitFor({ state: 'detached', timeout: 10000 })
+    .catch(() => errors.push('Skill-AI优化：点了「应用修改」窗口没有关上'))
+  // 命令：「所有 Agent」的命令和 AI 创建（上面的 Skill 编辑框还开着，先关掉）
+  await p.getByRole('dialog').getByText('关闭', { exact: true }).click()
+  await p.getByRole('radio', { name: '命令' }).click()
+  await check(p, '命令-所有Agent', ['/changelog', '所有 Agent'])
+  await p.getByRole('button', { name: 'AI 创建' }).click()
+  await p.getByRole('dialog').getByRole('textbox', { name: '描述' }).fill('/i18n：找出没翻译的文案，补上英文')
+  await p.keyboard.press('Enter')
+  await check(p, '命令-AI创建', ['格式校验通过', '命令文件（所有 Agent 共用）'])
+  await p.getByRole('button', { name: '创建命令' }).click()
+  await check(p, '命令-AI创建后', ['/i18n'])
+  await p.goto(base + '#/mcp')
+  await check(p, 'MCP工具', ['github', 'filesystem'])
+  await p.getByLabel('编辑').first().click()
+  await p.getByRole('button', { name: '测试连接' }).click()
+  await check(p, 'MCP编辑', ['连接成功', 'read_file'])
+  await p.keyboard.press('Escape')
+})
