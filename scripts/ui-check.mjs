@@ -599,6 +599,16 @@ try {
   await check(p, 'Skills与命令', ['commit-message', 'code-review'])
   await p.getByRole('radio', { name: '自带 Skill' }).click()
   await check(p, '自带Skill', ['brainstorming', 'blender', '版本控制'])
+  // 一键更新：演示版预置了两条「和自带的不同」，点一下全部换回自带版本
+  if (!(await p.getByText('和自带的不同').count())) errors.push('自带Skill：没有可更新的项，「更新全部」没法验证')
+  await p.getByRole('button', { name: '更新全部' }).click()
+  await p
+    .getByText('和自带的不同')
+    .first()
+    .waitFor({ state: 'detached', timeout: 5000 })
+    .catch(() => {})
+  if (await p.getByText('和自带的不同').count()) errors.push('自带Skill-一键更新：更新后还留着「和自带的不同」')
+  await check(p, '自带Skill-一键更新', ['已安装'])
   await p.getByRole('radio', { name: 'Skill', exact: true }).click()
   await p.getByText('commit-message', { exact: true }).first().click()
   await check(p, 'Skill编辑', ['复制给别的 Agent', '保存'])
